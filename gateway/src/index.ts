@@ -8092,7 +8092,6 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         sessionID: sessionId,
         parts: [{ type: 'text', text: prompt }],
         system: systemPrompt,
-        noReply: false,
         ...(model ? { model: { providerID: 'opencode', modelID: model } } : {}),
       });
       const text = result.parts

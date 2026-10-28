@@ -135,9 +135,8 @@ export function buildUnitsForQuestion(
 }
 
 /** Write all units for a question into the given (isolated) store, serially.
- *  skipMerge is set so the benchmark ingests one deterministic unit per
- *  round/session — MinHash cross-tier merging would collapse near-duplicate
- *  rounds and break per-session mapping. */
+ *  MinHash cross-tier merging is retired (V2 ①a), so deterministic per-round
+ *  units are no longer collapsed and per-session mapping stays stable. */
 export async function ingestQuestion(
   store: HarmonicUnitFileStore,
   question: LmeQuestion,
@@ -145,7 +144,7 @@ export async function ingestQuestion(
 ): Promise<{ unitCount: number; sessionOfUnit: Map<string, string> }> {
   const { units, sessionOfUnit } = buildUnitsForQuestion(question, options);
   for (const unit of units) {
-    await store.write(unit, undefined, { skipMerge: true });
+    await store.write(unit);
   }
   return { unitCount: units.length, sessionOfUnit };
 }

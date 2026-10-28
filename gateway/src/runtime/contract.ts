@@ -168,8 +168,6 @@ export interface SessionPromptOpts {
   /** 期望本条消息触发 LLM 回复。false = 落历史免回复（opencode noReply 语义）。
    *  pi 无原生等价——全路径降级为普通消息（busy 时 followUp），每会话 warn 一次。 */
   expectReply?: boolean;
-  /** @deprecated 用 expectReply: false 替代；消费方迁移完成后删除 */
-  noReply?: boolean;
   /** 回合数上限（一次 prompt 内 agentic loop 步数）；超出即中止。原生支持见 turnBudgetApi。 */
   maxTurns?: number;
   /** 本次 prompt 的美元成本上限；超出即中止。原生支持见 turnBudgetApi。 */

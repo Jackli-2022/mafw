@@ -26,11 +26,4 @@ describe('V2 MinHash retirement (write path)', () => {
     expect(entries.map(e => e.id).sort()).toEqual(['u1', 'u2']);
     expect((entries.find(e => e.id === 'u1') as any).superseded_by).toBeUndefined();
   });
-
-  it('skipMerge option is an accepted no-op', async () => {
-    const idx = new HarmonicIndexManager(dir);
-    const store = new HarmonicUnitFileStore(dir, idx);
-    await store.write(mkUnit('u3', 'anything'), undefined, { skipMerge: true });
-    expect(idx.getIndex().entries).toHaveLength(1);
-  });
 });

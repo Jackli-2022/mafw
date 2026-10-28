@@ -28,21 +28,21 @@ function unit(id: string, abstraction: string, body: string): HarmonicUnit {
 describe('write() identifier harvest', () => {
   test('body-only identifiers become searchable cues', async () => {
     const { store, index } = build();
-    await store.write(unit('a', 'deployment notes', 'Root cause was in harmonic-index.ts: fetchScored must pass retriever.'), undefined, { skipMerge: true });
+    await store.write(unit('a', 'deployment notes', 'Root cause was in harmonic-index.ts: fetchScored must pass retriever.'));
     const entry = index.getIndex().entries.find(e => e.id === 'a')!;
     expect(entry.cue_anchors.join(' ')).toContain('harmonic-index.ts');
   });
 
   test('harvested cue makes the memory retrievable by that identifier', async () => {
     const { store, index } = build();
-    await store.write(unit('a', 'deployment notes', 'Root cause was in harmonic-index.ts during rollout'), undefined, { skipMerge: true });
+    await store.write(unit('a', 'deployment notes', 'Root cause was in harmonic-index.ts during rollout'));
     const hits = index.searchScored('harmonic-index.ts', 5, { retriever: 'bm25' }).map(s => s.entry.id);
     expect(hits).toContain('a');
   });
 
   test('respects maxCueAnchors and does not duplicate existing cues', async () => {
     const { store, index } = build();
-    await store.write(unit('a', 'notes', 'see alphaBeta gammaDelta and existing cue'), undefined, { skipMerge: true });
+    await store.write(unit('a', 'notes', 'see alphaBeta gammaDelta and existing cue'));
     const entry = index.getIndex().entries.find(e => e.id === 'a')!;
     expect(entry.cue_anchors.filter((c: string) => c === 'existing cue')).toHaveLength(1);
     expect(entry.cue_anchors.length).toBeLessThanOrEqual(8 + (config.memory.harvestMaxCues ?? 8));

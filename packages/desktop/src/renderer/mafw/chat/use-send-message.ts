@@ -258,23 +258,6 @@ export function useSendMessage(deps: SendMessageDeps) {
     const visionable = attsForSend.filter(a => { const m = a.mime || mimeOf(a.name); return m.startsWith("image/") || m.startsWith("video/") || m.startsWith("audio/") })
     for (const a of visionable) {
       try {
-        // Pre-uploaded attachment (voice segments): reuse the A2A task pointer
-        // directly — no second upload round-trip on send.
-        if ((a as any).taskPromise) {
-          const pre = await (a as any).taskPromise
-          if (pre) {
-            const artifactIdPart = pre.artifactId ? ` artifactId: ${pre.artifactId}` : ""
-            visionParts.push({
-              type: "text",
-              id: `prt_media_${ts}_${visionParts.length}`,
-              text: `[媒体附件 taskID: ${pre.taskID} contextID: ${pre.contextId}${artifactIdPart}（媒体: ${a.name}），这是用户发给你的媒体消息（图片/视频/音频）——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${pre.taskID}）]`,
-              synthetic: true,
-            })
-            visionThumbs.push({ name: a.name, mime: a.mime || "audio/wav", dataUrl: a.dataUrl || "" })
-            console.log("[media] reused pre-uploaded task:", pre.taskID.slice(0, 8), a.name)
-            continue
-          }
-        }
         let dataUrl = a.dataUrl
         let pickedBytes: ArrayBuffer | undefined
         if (!dataUrl && a.path) {

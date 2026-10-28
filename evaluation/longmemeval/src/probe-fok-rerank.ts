@@ -64,7 +64,7 @@ async function measure(
   try {
     const store = new HarmonicUnitFileStore(dir);
     const { units } = buildUnitsForQuestion(question, { granularity: 'round', energyMode: 'frozen' });
-    for (const u of units) await store.write(u, undefined, { skipMerge: true });
+    for (const u of units) await store.write(u);
     const index = new HarmonicIndexManager(dir);
     const scored = index.searchScored(question.question, 10, { retriever: 'bm25' });
     const probs = await reranker.scoreCandidates(question.question, scored);

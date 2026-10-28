@@ -178,17 +178,17 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       const { id } = await registry.create(dir, { model: { provider, modelID } });
       return { id };
     },
-    promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
+    promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
       const converted = partsToPromptInput(opts.parts);
       const text = opts.message ?? converted.text ?? '';
       if (converted.media?.length) registry.attachMedia(opts.sessionID, converted.media);
-      await registry.promptAsync(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, expectReply: opts.expectReply, delivery: opts.delivery, images: converted.images });
+      await registry.promptAsync(opts.sessionID, text, { system: opts.system, agent: opts.agent, expectReply: opts.expectReply, delivery: opts.delivery, images: converted.images });
     },
-    prompt: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
+    prompt: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
       const converted = partsToPromptInput(opts.parts);
       const text = opts.message ?? converted.text ?? '';
       if (converted.media?.length) registry.attachMedia(opts.sessionID, converted.media);
-      return registry.prompt(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, expectReply: opts.expectReply, delivery: opts.delivery, images: converted.images });
+      return registry.prompt(opts.sessionID, text, { system: opts.system, agent: opts.agent, expectReply: opts.expectReply, delivery: opts.delivery, images: converted.images });
     },
     messages: async (opts: { sessionID: string }) => {
       const { data } = await registry.messages(opts.sessionID);

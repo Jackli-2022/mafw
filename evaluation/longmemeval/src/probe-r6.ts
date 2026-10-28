@@ -34,7 +34,7 @@ async function main() {
         try {
           const store = new HarmonicUnitFileStore(dir);
           const { units, sessionOfUnit } = buildUnitsForQuestion(q, { granularity: 'session', energyMode: 'frozen' });
-          for (const u of units) await store.write(u, undefined, { skipMerge: true });
+          for (const u of units) await store.write(u);
           const index = new HarmonicIndexManager(dir);
           const entries = index.searchScored(q.question, 10, { retriever: 'bm25', temporalNeighbors: arm === 'on' });
           const sessions = entries.map(e => sessionOfUnit.get(e.entry.id)!);

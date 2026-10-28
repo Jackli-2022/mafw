@@ -201,7 +201,7 @@ function emitRoute(
 /** Minimal store surface routeAndWrite needs (matches HarmonicUnitFileStore). */
 export interface RouteStore {
   read(id: string): Promise<HarmonicUnit | null>;
-  write(unit: HarmonicUnit, tier?: string, opts?: { skipMerge?: boolean }): Promise<string>;
+  write(unit: HarmonicUnit, tier?: string): Promise<string>;
   markSuperseded(id: string, byId: string): boolean | void | Promise<void>;
 }
 
@@ -232,7 +232,7 @@ export async function routeAndWrite(
       cue_anchors: dedupeCap([`redundant:${decision.targetId}`, ...(unit.cue_anchors || [])], 8),
       updated_at: new Date().toISOString(),
     };
-    await store.write(sunk, undefined, { skipMerge: true });
+    await store.write(sunk);
     try {
       getRetrievalEventBuffer().record({ id: decision.targetId, prob: decision.pRedundant, kind: 'recall', ts: Date.now() });
     } catch { /* fail-open */ }
@@ -277,7 +277,7 @@ export async function routeAndWrite(
     energy: Math.min(1, (unit.energy ?? 0.8) + 0.15),
     updated_at: new Date().toISOString(),
   };
-  await store.write(merged, undefined, { skipMerge: true });
+  await store.write(merged);
   await store.markSuperseded(target.id, merged.id);
   deps.vectors.remove(target.id);
   deps.vectors.flush();

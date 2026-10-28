@@ -56,7 +56,7 @@ export class HarmonicUnitFileStore {
     return this.coactivationStore;
   }
 
-  async write(unit: HarmonicUnit, tier?: string, opts?: { skipMerge?: boolean }): Promise<string> {
+  async write(unit: HarmonicUnit, tier?: string): Promise<string> {
     let fileName = '';
     let writtenUnit: HarmonicUnit = unit;
     // C: auto-fill missing cue_anchors from the abstraction so every memory
@@ -78,17 +78,9 @@ export class HarmonicUnitFileStore {
       }
     }
     await this.writeQueue.enqueue(async () => {
-      // Cross-tier merge check: if the incoming unit is highly similar to an
-      // existing memory, fold the existing one into it (skipped when the unit
-      // is itself the product of a merge, or the caller opts out 鈥?e.g. the
-      // LongMemEval benchmark ingests one deterministic unit per round and must
-      // not be collapsed).
       // V2 ①a (2026-10-12): write-path MinHash merge RETIRED. The brain's
       // write-time operation is pattern SEPARATION; dedup moved to three
       // tiers (exact-hash at write / read-time collapse / consolidation).
-      // `opts.skipMerge` is a deprecated no-op kept one cleanup cycle
-      // (noReply precedent) so evaluation callers keep compiling.
-      void opts;
       const targetUnit = unit;
       writtenUnit = unit;
 

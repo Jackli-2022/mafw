@@ -33,7 +33,7 @@ export interface ConsolidationLlmConfig {
 export interface ConsolidationDeps {
   store: {
     read(id: string): Promise<HarmonicUnit | null>;
-    write(unit: HarmonicUnit, tier?: string, opts?: { skipMerge?: boolean }): Promise<string>;
+    write(unit: HarmonicUnit, tier?: string): Promise<string>;
     markSuperseded(id: string, byId: string): boolean | void | Promise<void>;
   };
   vectors: MemoryVectorStore;
@@ -377,7 +377,7 @@ export class ConsolidationService {
       energy: Math.min(1, (incoming.energy ?? 0.8) + 0.15),
       updated_at: new Date().toISOString(),
     };
-    await this.store.write(merged, undefined, { skipMerge: true });
+    await this.store.write(merged);
     await this.store.markSuperseded(targetId, merged.id);
     this.vectors.remove(targetId);
     this.vectors.flush();

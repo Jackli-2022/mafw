@@ -118,7 +118,7 @@ export class PiSessionRegistry {
 
   sessionIdFor(session: any): string | undefined { return this.bySession.get(session); }
 
-  async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup'; thinkingLevel?: ThinkingLevel; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<void> {
+  async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; expectReply?: boolean; delivery?: 'steer' | 'followup'; thinkingLevel?: ThinkingLevel; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<void> {
     const s = this.requireSession(id);
     this.touch(id);
     this.warnNoReplyOnce(id, opts);
@@ -144,7 +144,7 @@ export class PiSessionRegistry {
     }
   }
 
-  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup'; thinkingLevel?: ThinkingLevel; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<{ parts: any[]; finish?: string; usage?: { input: number; output: number; cached?: number; reasoning?: number; costUsd?: number } }> {
+  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; expectReply?: boolean; delivery?: 'steer' | 'followup'; thinkingLevel?: ThinkingLevel; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<{ parts: any[]; finish?: string; usage?: { input: number; output: number; cached?: number; reasoning?: number; costUsd?: number } }> {
     const s = this.requireSession(id);
     this.touch(id);
     this.warnNoReplyOnce(id, opts);
@@ -173,12 +173,11 @@ export class PiSessionRegistry {
     };
   }
 
-  private buildPiPromptOpts(opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }>; thinkingLevel?: ThinkingLevel }): Record<string, any> {
+  private buildPiPromptOpts(opts?: { system?: string; agent?: string; images?: Array<{ data: string; mimeType: string }>; thinkingLevel?: ThinkingLevel }): Record<string, any> {
     if (!opts) return {};
     const piOpts: Record<string, any> = {};
     if (opts.system) piOpts.system = opts.system;
     if (opts.agent) piOpts.agent = opts.agent;
-    if (opts.noReply) piOpts.noReply = opts.noReply;
     if (opts.images?.length) piOpts.images = opts.images;
     if (opts.thinkingLevel) piOpts.thinkingLevel = opts.thinkingLevel;
     return piOpts;
@@ -189,9 +188,9 @@ export class PiSessionRegistry {
     return opts?.delivery === 'steer' ? 'steer' : 'followUp';
   }
 
-  /** pi 无原生 noReply：expectReply=false 全路径降级为普通消息，每会话 warn 一次（已拍板）。 */
-  private warnNoReplyOnce(id: string, opts?: { noReply?: boolean; expectReply?: boolean; logWarn?: (m: string) => void }): void {
-    if (opts?.expectReply !== false && !opts?.noReply) return;
+  /** pi 无原生免回复：expectReply=false 全路径降级为普通消息，每会话 warn 一次（已拍板）。 */
+  private warnNoReplyOnce(id: string, opts?: { expectReply?: boolean; logWarn?: (m: string) => void }): void {
+    if (opts?.expectReply !== false) return;
     if (this.warnedNoReply.has(id)) return;
     this.warnedNoReply.add(id);
     (opts?.logWarn ?? ((m: string) => {}))(`[PiRuntime] expectReply=false has no native pi equivalent — message delivered as normal (session ${id}, warned once)`);
