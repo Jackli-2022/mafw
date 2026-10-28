@@ -1,0 +1,6 @@
+qwen-asr[vllm]
+fastapi
+uvicorn[standard]
+websockets
+numpy
+soundfile
