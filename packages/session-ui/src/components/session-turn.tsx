@@ -427,11 +427,15 @@ export function SessionTurn(
             <div
               ref={autoScroll.contentRef}
               data-message={message()!.id}
-              data-message-role="user"
               data-slot="session-turn-message-container"
               class={props.classes?.container}
             >
-              <div data-slot="session-turn-message-content" aria-live="off">
+              <div
+                data-slot="session-turn-message-content"
+                data-message-role="user"
+                data-message-id={message()!.id}
+                aria-live="off"
+              >
                 <Message message={message()!} parts={parts()} actions={props.actions} assistantActions={props.assistantActions} />
               </div>
               <Show when={divider()}>
@@ -443,7 +447,7 @@ export function SessionTurn(
                 <div
                   data-slot="session-turn-assistant-content"
                   data-message-role="assistant"
-                  data-message-id={assistantMessages()[assistantMessages().length - 1]?.id}
+                  data-message-ids={assistantMessages().map((m) => m.id).join(",")}
                   aria-hidden={working()}
                 >
                   <AssistantParts

@@ -9,6 +9,7 @@ import { buildChangeTree, nextPulseState, changeStatusLetter, type ChangeTreeNod
 import { menuController } from "../context-menu/controller"
 import { buildReviewRowMenu } from "../context-menu/builders/panel"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 
 function ChangeNode(props: {
   node: ChangeTreeNode
@@ -60,6 +61,7 @@ function ChangeNode(props: {
           onClick={() => { if (props.node.file) props.onOpen(props.node.file) }}
           onContextMenu={(event) => requestRowMenu(props.node.file, event)}
           onKeyDown={(e: KeyboardEvent) => {
+            openMenuOnKey(e)
             if ((e.key === "Enter" || e.key === " ") && props.node.file) {
               e.preventDefault()
               props.onOpen(props.node.file)

@@ -1080,19 +1080,21 @@ export class MafwClient implements IMafwClient {
     },
 
     setSticky: async (id: string, sticky: boolean, stickyDays?: number): Promise<void> => {
-      await this.request('/api/memory/pin', {
+      const data = await this.request<{ success?: boolean; error?: string }>('/api/memory/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, sticky, stickyDays }),
       })
+      if (data?.success === false) throw new Error(data.error || 'memory pin failed')
     },
 
     setPinned: async (id: string, pinned: boolean): Promise<void> => {
-      await this.request('/api/memory/pin', {
+      const data = await this.request<{ success?: boolean; error?: string }>('/api/memory/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, pinned }),
       })
+      if (data?.success === false) throw new Error(data.error || 'memory pin failed')
     },
 
     stats: async (): Promise<MemoryStats> => {

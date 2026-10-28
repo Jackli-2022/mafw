@@ -6,6 +6,7 @@ import { SkeletonRows } from "../components/Skeleton"
 import { menuController } from "../context-menu/controller"
 import { buildApprovalPermissionMenu, buildApprovalQuestionMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 
 // Two approval sources, one page:
 //  - permission cards (opencode tool approvals, live in chat flow) — the badge counts these
@@ -91,7 +92,7 @@ export function ApprovalsPage(props: {
           <div class="mafw-approvals-group-title">权限审批 · {perms().length}</div>
           <For each={perms()}>
             {(p) => (
-              <div class="mafw-card" onContextMenu={(event) => requestPermissionMenu(p, event)}>
+              <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestPermissionMenu(p, event)}>
                 <div style={{ flex: 1, "min-width": 0 }}>
                   <div class="mafw-card-title">{p.action?.title || p.id}</div>
                   <div class="mafw-card-meta">
@@ -114,7 +115,7 @@ export function ApprovalsPage(props: {
           <div class="mafw-approvals-group-title">待回答问题 · {pendingQuestions().length}</div>
           {pendingQuestions().map(a => {
             return (
-            <div class="mafw-card" onContextMenu={(event) => requestQuestionMenu(a, event)}>
+            <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestQuestionMenu(a, event)}>
                 <div style={{ flex: 1 }}>
                   <div class="mafw-card-title">{a.question || a.id}</div>
                   <div class="mafw-card-meta">Goal: {a.goalId} · {a.status} · {a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}</div>

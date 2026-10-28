@@ -11,6 +11,7 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { menuController } from "../context-menu/controller"
 import { buildEditorTabMenu } from "../context-menu/builders/editor-tab"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 import { Icon } from "@mafw/ui/icon"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import {
@@ -934,7 +935,7 @@ export function EditorDock(props: {
                 title={f.rel}
                 onClick={() => { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() }}
                 onContextMenu={(event) => requestTabMenu(f.rel, model().files.findIndex(x => x.rel === f.rel), event)}
-                onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() } }}
+                onKeyDown={(e: KeyboardEvent) => { openMenuOnKey(e); if (e.key === "Enter") { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() } }}
               >
                 <span class="mafw-editor-tab-name">{f.rel.split("/").pop()}</span>
                 <Show when={f.dirty}><span class="mafw-editor-tab-dot" title="未保存">●</span></Show>

@@ -11,6 +11,7 @@ import { ConfirmOverlay } from "./ConfirmOverlay"
 import { menuController } from "../context-menu/controller"
 import { buildNotesCardMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 
 interface StickyNote {
   id: string
@@ -127,7 +128,7 @@ export function NotesDock() {
             {(note) => {
               const left = daysLeft(note.sticky_until)
               return (
-                <div class="mafw-notes-card" classList={{ urgent: left !== null && left <= 1 }} onContextMenu={(event) => requestNoteMenu(note, event)}>
+                <div class="mafw-notes-card" tabIndex={0} onKeyDown={openMenuOnKey} classList={{ urgent: left !== null && left <= 1 }} onContextMenu={(event) => requestNoteMenu(note, event)}>
                   <div class="mafw-notes-card-text">{note.memory_value}</div>
                   <div class="mafw-notes-card-meta">
                     <span class="mafw-notes-card-type">[{note.type}]</span>

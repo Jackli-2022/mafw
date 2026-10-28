@@ -6,6 +6,7 @@ import { formatDuration, cellSummary, artifactRef, type Lane } from "../goal-tim
 import { menuController } from "../context-menu/controller"
 import { buildGoalCellMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 
 const TONE_CLASS: Record<string, string> = {
   ok: "mafw-cell-ok", running: "mafw-cell-running", fail: "mafw-cell-fail", idle: "mafw-cell-idle",
@@ -78,6 +79,8 @@ export function GoalTimelineLane(props: {
                     <div class="mafw-lane-cellwrap">
                       <div
                         class={`mafw-lane-cell ${TONE_CLASS[cell.tone]}`}
+                        tabIndex={0}
+                        onKeyDown={openMenuOnKey}
                         onClick={() => latest && toggle(lane.node, loop)}
                         onContextMenu={(event) => requestCellMenu(lane, loop, latest, event)}
                       >

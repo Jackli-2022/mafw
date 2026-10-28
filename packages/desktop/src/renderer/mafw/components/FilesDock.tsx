@@ -12,6 +12,7 @@ import { menuController } from "../context-menu/controller"
 import { buildFileTreeMenu } from "../context-menu/builders/file-tree"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { pushComposerInsert } from "../composer-insert"
+import { openMenuOnKey } from "../context-menu/menu-key"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 
 export function FilesDock(props: {
@@ -152,6 +153,7 @@ export function FilesDock(props: {
                 onClick={() => activate(row)}
                 onContextMenu={(event) => requestRowMenu(row, event)}
                 onKeyDown={(e: KeyboardEvent) => {
+                  openMenuOnKey(e)
                   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(row) }
                 }}
               >

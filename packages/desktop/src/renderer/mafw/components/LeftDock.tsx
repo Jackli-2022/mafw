@@ -9,6 +9,7 @@ import { buildSessionMenu } from "../context-menu/builders/session"
 import { buildProjectMenu } from "../context-menu/builders/project"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { isMenuKey } from "../context-menu/keyboard"
+import { L } from "../context-menu/labels"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
@@ -222,7 +223,7 @@ export function LeftDock(props: Props) {
     setHi(-1)
   }
 
-  const sessionMenu = (node: SessionNode, point: { x: number; y: number }, from: "contextmenu" | "ellipsis" | "keyboard") => {
+  const sessionMenu = (node: SessionNode, point: { x: number; y: number }, from: "contextmenu" | "ellipsis" | "keyboard", returnFocus?: HTMLElement | null) => {
     menuController.request(
       buildSessionMenu,
       {
@@ -239,43 +240,42 @@ export function LeftDock(props: Props) {
         else if (id === "session.copyId") void copyText(node.id)
         else if (id === "session.delete") setDeleteConfirmId(node.id)
       },
-      { point, from },
+      { point, from, returnFocus },
     )
   }
 
   const requestSessionMenu = (node: SessionNode, event: MouseEvent) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
     event.preventDefault()
-    sessionMenu(node, { x: event.clientX, y: event.clientY }, "contextmenu")
+    sessionMenu(node, { x: event.clientX, y: event.clientY }, "contextmenu", event.currentTarget as HTMLElement)
   }
 
   const requestSessionMenuFromButton = (node: SessionNode, event: MouseEvent) => {
     event.stopPropagation()
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    sessionMenu(node, { x: rect.left, y: rect.bottom }, "ellipsis")
+    const row = (event.currentTarget as HTMLElement).closest(".mafw-rail-session") as HTMLElement | null
+    sessionMenu(node, { x: rect.left, y: rect.bottom }, "ellipsis", row)
   }
 
   const onRowKeyDown = (node: SessionNode, event: KeyboardEvent) => {
     if (!isMenuKey(event)) return
     event.preventDefault()
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    sessionMenu(node, { x: rect.left + 12, y: rect.bottom }, "keyboard")
+    sessionMenu(node, { x: rect.left + 12, y: rect.bottom }, "keyboard", event.currentTarget as HTMLElement)
   }
 
-  const requestProjectMenu = (event: MouseEvent) => {
+  const requestProjectMenu = (path: string, event: MouseEvent, before?: () => void) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
     event.preventDefault()
-    const path = projectID()
-    if (!path) return
     menuController.request(
       buildProjectMenu,
       { id: path, path },
       (id) => {
-        if (id === "project.newSession") props.onNewSession()
+        if (id === "project.newSession") { before?.(); props.onNewSession() }
         else if (id === "project.reveal") void window.api.revealPath(path)
         else if (id === "project.copyPath") void copyText(path)
       },
-      { point: { x: event.clientX, y: event.clientY } },
+      { point: { x: event.clientX, y: event.clientY }, returnFocus: event.currentTarget as HTMLElement },
     )
   }
 
@@ -323,7 +323,10 @@ export function LeftDock(props: Props) {
 
   const projectSwitcher = () => (
     <DropdownMenu placement="bottom-start">
-      <DropdownMenu.Trigger as="div" class="mafw-rail-switcher" onContextMenu={requestProjectMenu}>
+      <DropdownMenu.Trigger as="div" class="mafw-rail-switcher" onContextMenu={(event: MouseEvent) => {
+        const path = projectID()
+        if (path) requestProjectMenu(path, event)
+      }}>
         <span class="mafw-rail-switcher-name">{railProjectName(currentProject()?.worktree, true)}</span>
         <Icon name="chevron-down" size="small" class="mafw-rail-switcher-caret" />
       </DropdownMenu.Trigger>
@@ -331,7 +334,10 @@ export function LeftDock(props: Props) {
         <DropdownMenu.Content class="mafw-rail-switcher-menu">
           <For each={projects()}>
             {(p) => (
-              <DropdownMenu.Item onSelect={() => selectProject(p)}>
+              <DropdownMenu.Item
+                onSelect={() => selectProject(p)}
+                onContextMenu={(event: MouseEvent) => requestProjectMenu(p.worktree || p.id, event, () => selectProject(p))}
+              >
                 <DropdownMenu.ItemLabel>{railProjectName(p.worktree || p.id, (p.worktree || p.id) === projectID())}</DropdownMenu.ItemLabel>
                 {currentProject()?.worktree === p.worktree && <Icon name="check-small" size="small" class="mafw-rail-check" />}
               </DropdownMenu.Item>
@@ -341,7 +347,7 @@ export function LeftDock(props: Props) {
             <DropdownMenu.ItemLabel>＋ 打开项目文件夹…</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
           <DropdownMenu.Item onSelect={() => copyText(projectID() || "")}>
-            <DropdownMenu.ItemLabel>Copy path</DropdownMenu.ItemLabel>
+            <DropdownMenu.ItemLabel>{L.project.copyPath}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

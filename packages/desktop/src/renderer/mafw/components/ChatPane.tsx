@@ -83,6 +83,8 @@ import { requestOpenEditor } from "../editor-open"
 import { menuController } from "../context-menu/controller"
 import { buildFilePathMenu } from "../context-menu/builders/file-path"
 import { buildCodeBlockMenu, buildMessageMenu } from "../context-menu/builders/message"
+import { resolvePath } from "../context-menu/paths"
+import { codeFence, markdownFromParts, textFromParts } from "../context-menu/message-text"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
@@ -487,8 +489,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     store.session.find((s: any) => s.id === sidProp())?.directory
   const worktreeBadgeOf = () => worktreeBadge(sessionDirectory(), props.projectDirectory)
 
-  const joinRoot = (root: string, rel: string) => `${root.replace(/[\\/]+$/, "")}/${rel.replace(/^[\\/]+/, "")}`
-
   const onTurnContextMenu = (event: MouseEvent) => {
     const target = event.target as HTMLElement | null
     if (!target) return
@@ -506,8 +506,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       const root = sessionDirectory() ?? ""
       if (!rel || !root) return
 
-      const inRoot = !rel.startsWith("..") && !/^([a-zA-Z]:[\\/]|\/)/.test(rel)
-      const abs = joinRoot(root, rel)
+      const { abs, inRoot } = resolvePath(root, rel)
       const name = rel.split(/[\\/]/).pop() ?? rel
       const sid = sidProp()
 
@@ -526,42 +525,51 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           else if (id === "filePath.copy.rel") void navigator.clipboard.writeText(rel)
           else if (id === "filePath.copy.name") void navigator.clipboard.writeText(name)
         },
-        { point },
+        { point, returnFocus: fileEl },
       )
       return
     }
 
     if (preEl) {
-      const codeText = preEl.querySelector("code")?.textContent ?? preEl.textContent ?? ""
+      const codeEl = preEl.querySelector("code")
+      const codeText = codeEl?.textContent ?? preEl.textContent ?? ""
+      const language = codeEl?.className.match(/language-([^\s]+)/)?.[1]
       menuController.request(
         buildCodeBlockMenu,
         { code: codeText },
         (id) => {
-          if (id === "code.copy" || id === "code.copyMarkdown") void navigator.clipboard.writeText(codeText)
+          if (id === "code.copy") void navigator.clipboard.writeText(codeText)
+          else if (id === "code.copyMarkdown") void navigator.clipboard.writeText(codeFence(codeText, language))
         },
-        { point },
+        { point, returnFocus: preEl },
       )
       return
     }
 
     if (messageEl) {
       const role = messageEl.getAttribute("data-message-role") === "user" ? "user" : "assistant"
-      const messageID = messageEl.getAttribute("data-message-id") ?? messageEl.getAttribute("data-message") ?? ""
-      const text = messageEl.innerText.trim()
+      const ids = messageEl.getAttribute("data-message-ids") ?? messageEl.getAttribute("data-message-id") ?? ""
+      const parts = ids
+        ? ids.split(",").flatMap((id) => ((store.part[id] as any[]) ?? []))
+        : []
+      const text = parts.length > 0 ? textFromParts(parts) : messageEl.innerText.trim()
+      const markdown = parts.length > 0 ? markdownFromParts(parts) : text
+      const messageID = role === "user" ? (messageEl.getAttribute("data-message-id") ?? ids) : ids
       const canFork = role === "user" && branchActionsVisible(props.runtimeCaps)
       menuController.request(
         buildMessageMenu,
         { id: messageID, role, hasText: text.length > 0, canFork, tts: false },
         (id) => {
-          if (id === "message.copy" || id === "message.copyMarkdown") void navigator.clipboard.writeText(text)
-          else if (id === "message.quote") pushComposerInsert(sidProp(), formatQuote(text))
+          if (id === "message.copy") void navigator.clipboard.writeText(text)
+          else if (id === "message.copyMarkdown") void navigator.clipboard.writeText(markdown)
+          else if (id === "message.quote") pushComposerInsert(sidProp(), formatQuote(markdown || text))
           else if (id === "message.fork") {
             void window.api.mafw.sessions.fork(sidProp(), messageID)
               .then((res: any) => { if (res?.session?.id) props.onOpenForkedSession?.(res.session.id) })
               .catch(() => showToastV2({ description: "分叉失败", duration: 3000 }))
           }
         },
-        { point },
+        { point, returnFocus: messageEl },
       )
     }
   }

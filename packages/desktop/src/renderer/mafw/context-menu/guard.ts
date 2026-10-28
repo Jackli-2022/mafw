@@ -11,7 +11,7 @@ export function shouldUseNativeMenu(facts: GuardFacts): boolean {
 }
 
 const EDITABLE_SELECTOR = "input, textarea, [contenteditable='true'], [data-native-menu]"
-const MEDIA_SELECTOR = "img, video, audio, a[href]"
+const MEDIA_SELECTOR = "img, video, audio, a[href]:not([data-file-path])"
 
 export function guardFactsFromEvent(event: MouseEvent): GuardFacts {
   const target = event.target as HTMLElement | null

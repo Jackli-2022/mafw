@@ -9,6 +9,8 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { menuController } from "../context-menu/controller"
 import { buildExecutionRowMenu } from "../context-menu/builders/panel"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { ConfirmOverlay } from "./ConfirmOverlay"
+import { openMenuOnKey } from "../context-menu/menu-key"
 import { backgroundRows, ingestBackgroundEvent } from "../background-store"
 import { rowsForSession, type BackgroundRow, type BgStatus } from "../background-tracker"
 import { taskRows, cancelTask } from "../task-store"
@@ -47,6 +49,7 @@ export function BackgroundDock(props: {
   const [taskExpanded, setTaskExpanded] = createSignal<string | null>(null)
   const [taskOutputs, setTaskOutputs] = createSignal<Record<string, string>>({})
   const [confirmingTask, setConfirmingTask] = createSignal<string | null>(null)
+  const [cancelConfirmId, setCancelConfirmId] = createSignal<string | null>(null)
 
   const rows = () => rowsForSession(backgroundRows(), props.activeSessionId ?? "")
   const tasks = () => taskRows().filter(t => !props.activeSessionId || t.parentSessionID === props.activeSessionId)
@@ -144,13 +147,9 @@ export function BackgroundDock(props: {
       { taskID: t.id, kind: t.kind === "shell" ? "background" : "subagent", canCancel: cancellable },
       (id) => {
         if (id === "panel.copyId") void navigator.clipboard.writeText(t.id)
-        else if (id === "panel.cancel") {
-          void cancelTask(t.id).then((done) => {
-            showToastV2({ description: done ? "任务已取消" : "取消任务失败", duration: 2500 } as any)
-          })
-        }
+        else if (id === "panel.cancel") setCancelConfirmId(t.id)
       },
-      { point: { x: event.clientX, y: event.clientY } },
+      { point: { x: event.clientX, y: event.clientY }, returnFocus: event.currentTarget as HTMLElement },
     )
   }
 
@@ -174,6 +173,7 @@ export function BackgroundDock(props: {
                   onClick={() => void toggleTask(t)}
                   onContextMenu={(event) => requestTaskMenu(t, event)}
                   onKeyDown={(e: KeyboardEvent) => {
+                    openMenuOnKey(e)
                     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void toggleTask(t) }
                   }}
                 >
@@ -256,6 +256,23 @@ export function BackgroundDock(props: {
           )}
         </For>
       </Show>
+      <ConfirmOverlay
+        open={cancelConfirmId() !== null}
+        title="终止后台任务"
+        message="任务会被立即取消；已产生的输出仍保留在任务记录里。"
+        confirmLabel="终止"
+        danger
+        onConfirm={() => {
+          const id = cancelConfirmId()
+          setCancelConfirmId(null)
+          if (id) {
+            void cancelTask(id).then((done) => {
+              showToastV2({ description: done ? "任务已取消" : "取消任务失败", duration: 2500 } as any)
+            })
+          }
+        }}
+        onCancel={() => setCancelConfirmId(null)}
+      />
     </div>
   )
 }

@@ -31,6 +31,7 @@ import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
+import { filePathFromHref } from "./markdown-file-links"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -273,9 +274,8 @@ function markInlineCode(root: HTMLDivElement) {
 function markFileLinks(root: HTMLDivElement) {
   const links = Array.from(root.querySelectorAll<HTMLAnchorElement>("a[href]"))
   for (const link of links) {
-    const href = link.getAttribute("href") ?? ""
-    if (!href || /^(https?:|mailto:|#|javascript:|data:|\/\/)/i.test(href)) continue
-    link.dataset.filePath = decodeURI(href)
+    const path = filePathFromHref(link.getAttribute("href") ?? "")
+    if (path) link.dataset.filePath = path
   }
 }
 

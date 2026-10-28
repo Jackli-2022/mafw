@@ -5864,3 +5864,15 @@ html[data-theme="light"] body {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+
+.mafw-card:focus-visible,
+.mafw-lane-cell:focus-visible,
+.mafw-notes-card:focus-visible,
+.mafw-bg-row:focus-visible,
+.mafw-file-tree-row:focus-visible,
+.mafw-editor-tab:focus-visible,
+.mafw-changes-row:focus-visible,
+.mafw-subagent-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

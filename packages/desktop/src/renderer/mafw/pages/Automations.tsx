@@ -11,6 +11,7 @@ import { ConfirmOverlay } from "../components/ConfirmOverlay"
 import { menuController } from "../context-menu/controller"
 import { buildAutomationCardMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 
 export function AutomationsPage() {
   const [rules, setRules] = createSignal<any[]>([])
@@ -149,7 +150,7 @@ export function AutomationsPage() {
           <EmptyState glyph="⏱" title="还没有自动化规则" hint="添加定时或事件驱动的任务规则" />
       ) : (
         rules().map((rule, idx) =>
-          <div class="mafw-card" onContextMenu={(event) => requestRuleMenu(rule, event)}>
+          <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestRuleMenu(rule, event)}>
             <div style={{ flex: 1 }}>
               <div class="mafw-card-title">{rule.name || rule.id}</div>
               {rule.trigger?.schedule && (

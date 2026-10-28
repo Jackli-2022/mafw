@@ -8,6 +8,7 @@ import { ConfirmOverlay } from "../components/ConfirmOverlay"
 import { menuController } from "../context-menu/controller"
 import { buildTriageCardMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 
 export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
   const [items, setItems] = createSignal<any[]>([])
@@ -75,7 +76,7 @@ export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
           const proposeConfirm = () => void act("提议确认", () => window.api.mafw.triage.propose(t.id, "confirm", "用户在桌面端提议确认"))
           const proposeReject = () => void act("提议拒绝", () => window.api.mafw.triage.propose(t.id, "reject", "用户在桌面端提议拒绝"))
           return (
-            <div class="mafw-card" onContextMenu={(event) => requestTriageMenu(t, event)}>
+            <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestTriageMenu(t, event)}>
               <div style={{ flex: 1 }}>
                 <div class="mafw-card-title">{t.reason || t.id}</div>
                 <div class="mafw-card-meta">Goal: {t.goalId} · {t.createdAt ? new Date(t.createdAt).toLocaleString() : ""}</div>

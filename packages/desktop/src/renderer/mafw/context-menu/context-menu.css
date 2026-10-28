@@ -3,6 +3,11 @@
   max-width: 320px;
 }
 
+[data-slot="dropdown-menu-content"].mafw-context-menu,
+[data-slot="dropdown-menu-sub-content"].mafw-context-menu {
+  z-index: 1000;
+}
+
 .mafw-context-menu [data-danger] {
   color: var(--danger-text, var(--danger));
 }

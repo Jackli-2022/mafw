@@ -12,3 +12,7 @@ test("shortcut column and icon slot exist", () => {
   expect(css).toMatch(/\.mafw-context-menu-shortcut\s*\{/)
   expect(css).toMatch(/\.mafw-context-menu-icon\s*\{/)
 })
+
+test("menu sits above modal overlays", () => {
+  expect(css).toMatch(/z-index:\s*1000/)
+})

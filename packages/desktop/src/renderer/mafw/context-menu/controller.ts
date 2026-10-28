@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js"
 import { clampMenuPoint, type Point } from "./clamp"
+import { shouldRestoreFocus } from "./focus"
 import type { MenuModel, MenuOpenSource } from "./types"
 
 export interface MenuRequest {
@@ -7,11 +8,13 @@ export interface MenuRequest {
   run: (id: string) => void
   point: Point
   from: MenuOpenSource
+  returnFocus?: HTMLElement | null
 }
 
 export interface MenuRequestOptions {
   point?: Point
   from?: MenuOpenSource
+  returnFocus?: HTMLElement | null
 }
 
 export interface MenuController {
@@ -36,10 +39,16 @@ export function createMenuController(): MenuController {
         opts.point ?? { x: viewport.width / 2, y: viewport.height / 2 },
         viewport,
       )
-      setRequest({ model: build(target), run, point, from: opts.from ?? "contextmenu" })
+      setRequest({ model: build(target), run, point, from: opts.from ?? "contextmenu", returnFocus: opts.returnFocus ?? null })
     },
     close() {
+      const returnFocus = request()?.returnFocus ?? null
       setRequest(null)
+      queueMicrotask(() => {
+        if (!returnFocus?.isConnected) return
+        if (!shouldRestoreFocus(document.activeElement as any)) return
+        returnFocus.focus?.({ preventScroll: true })
+      })
     },
     current: request,
     point() {

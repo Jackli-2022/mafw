@@ -8,6 +8,7 @@ import { formatDuration } from "../goal-timeline"
 import { menuController } from "../context-menu/controller"
 import { buildExecutionRowMenu } from "../context-menu/builders/panel"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 import type { SubagentRow, SubagentStatus } from "../subagent-tracker"
 
 const STATUS_LABEL: Record<SubagentStatus, string> = {
@@ -71,6 +72,7 @@ export function SubagentDock(props: {
               onClick={() => open(r.childID)}
               onContextMenu={(event) => requestRowMenu(r, event)}
               onKeyDown={(e: KeyboardEvent) => {
+                openMenuOnKey(e)
                 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(r.childID) }
               }}
             >

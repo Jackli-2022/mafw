@@ -192,8 +192,8 @@ export function createMafwApi(): MafwAPI {
       getEnergyDistribution: () => invoke("memory", "getEnergyDistribution"),
       getL5Axioms: (topK) => invoke("memory", "getL5Axioms", topK),
       listSticky: () => invoke("memory", "listSticky"),
-      setSticky: (id, sticky, stickyDays?) => invoke("memory", "setSticky", { id, sticky, stickyDays }),
-      setPinned: (id, pinned) => invoke("memory", "setPinned", { id, pinned }),
+      setSticky: (id, sticky, stickyDays?) => invoke("memory", "setSticky", id, sticky, stickyDays),
+      setPinned: (id, pinned) => invoke("memory", "setPinned", id, pinned),
       stats: () => invoke("memory", "stats"),
     },
 

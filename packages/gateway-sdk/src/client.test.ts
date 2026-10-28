@@ -632,6 +632,12 @@ test("memory.setPinned sends POST /api/memory/pin with pinned body", async () =>
     }))
 })
 
+test("memory.setPinned throws when the gateway returns success:false", async () => {
+  fetchMock.mockResolvedValue(okJson({ success: false, error: "memory not found: x" }))
+  const c = new MafwClient()
+  await expect(c.memory.setPinned("x", true)).rejects.toThrow("memory not found: x")
+})
+
 // ── Approvals ──
 
 test("approvals.list returns approvals", async () => {

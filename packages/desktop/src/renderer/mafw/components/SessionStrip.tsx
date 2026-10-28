@@ -77,7 +77,7 @@ export function SessionStrip(props: {
     props.onClose(id)
   }
 
-  const tabMenu = (session: { id: string; title: string }, point: { x: number; y: number }, from: "contextmenu" | "ellipsis" | "keyboard") => {
+  const tabMenu = (session: { id: string; title: string }, point: { x: number; y: number }, from: "contextmenu" | "ellipsis" | "keyboard", returnFocus?: HTMLElement | null) => {
     menuController.request(
       buildSessionMenu,
       {
@@ -94,21 +94,21 @@ export function SessionStrip(props: {
         else if (id === "session.copyId") props.onCopyId(session.id)
         else if (id === "session.closeTab") handleClose(session.id)
       },
-      { point, from },
+      { point, from, returnFocus },
     )
   }
 
   const requestTabMenu = (session: { id: string; title: string }, event: MouseEvent) => {
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
     event.preventDefault()
-    tabMenu(session, { x: event.clientX, y: event.clientY }, "contextmenu")
+    tabMenu(session, { x: event.clientX, y: event.clientY }, "contextmenu", event.currentTarget as HTMLElement)
   }
 
   const onTabKeyDown = (session: { id: string; title: string }, event: KeyboardEvent) => {
     if (!isMenuKey(event)) return
     event.preventDefault()
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    tabMenu(session, { x: rect.left + 12, y: rect.bottom }, "keyboard")
+    tabMenu(session, { x: rect.left + 12, y: rect.bottom }, "keyboard", event.currentTarget as HTMLElement)
   }
 
   return (

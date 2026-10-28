@@ -12,6 +12,7 @@ import { mafwFileRoots, registerRootDir } from "./mafw-file-protocol"
 import { FsWatchRegistry } from "./fs-watcher"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
+import { appOpenCommand } from "./open-app-command"
 import { getStore, removeStoreFileIfEmpty } from "./store"
 import { windowExpanded } from "../shared/window-state"
 import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setTitlebar } from "./windows"
@@ -250,10 +251,13 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
-    if (!app) return shell.openPath(path)
+    if (!app) {
+      const error = await shell.openPath(path)
+      if (error) throw new Error(error)
+      return
+    }
+    const { cmd, args } = appOpenCommand(process.platform, app, path)
     await new Promise<void>((resolve, reject) => {
-      const [cmd, args] =
-        process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)
       execFile(cmd, args, (err) => (err ? reject(err) : resolve()))
     })
   })

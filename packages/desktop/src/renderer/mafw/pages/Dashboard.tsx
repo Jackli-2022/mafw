@@ -5,6 +5,7 @@ import { ConfirmOverlay } from "../components/ConfirmOverlay"
 import { menuController } from "../context-menu/controller"
 import { buildGoalCardMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 import { GoalDetailOverlay } from "../components/GoalDetailOverlay"
 import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
@@ -97,7 +98,7 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void; on
           <EmptyState glyph="◎" title="还没有 Goal" hint="让 Manager 为你编排第一个目标，或从欢迎页快速创建" />
         ) : (
           goals().map(g => (
-            <div class="mafw-card" onContextMenu={(event) => requestGoalMenu(g, event)}>
+            <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestGoalMenu(g, event)}>
               <div>
                   <div class="mafw-card-title">{g.title || g.goalId}</div>
                   <div class="mafw-card-meta">Wave {g.currentWave}/{g.totalWaves} · Loop {g.loop}</div>

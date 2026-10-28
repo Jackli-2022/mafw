@@ -10,6 +10,7 @@ import { ConfirmOverlay } from "../components/ConfirmOverlay"
 import { menuController } from "../context-menu/controller"
 import { buildMemoryCardMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { openMenuOnKey } from "../context-menu/menu-key"
 
 interface EnergyDistribution { critical: number; high: number; medium: number; low: number; total: number }
 interface L5Axiom { id: string; content: string; energy: number; created_at?: string }
@@ -170,7 +171,7 @@ export function MemoryPage() {
           <SkeletonRows rows={3} h="52px" />
         ) : results().length > 0 ? results().map(unit => {
           return (
-            <div class="mafw-card" style={{ "flex-direction": "column", "align-items": "stretch", "margin-bottom": "6px" }} onContextMenu={(event) => requestMemoryMenu(unit, event)}>
+            <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} style={{ "flex-direction": "column", "align-items": "stretch", "margin-bottom": "6px" }} onContextMenu={(event) => requestMemoryMenu(unit, event)}>
                 <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between" }}>
                   <div class="mafw-card-title">{unit.primary_abstraction ?? unit.id}</div>
                   <div style={{ display: "flex", "align-items": "center", gap: "6px", "flex-shrink": "0px" }}>
