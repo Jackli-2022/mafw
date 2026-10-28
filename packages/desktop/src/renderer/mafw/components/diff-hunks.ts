@@ -63,14 +63,17 @@ export function pickSelectedFile(files: string[], current: string | null): strin
 
 /**
  * W0-3：hunk 内第 idx 行的 new 侧行号（行级评论锚点）。
- * "+" / " " 行返回 new 侧行号；"-" 行（删除行没有 new 侧位置）与越界返回 null。
+ * "+" / " " 行返回 new 侧行号；"-" 行（删除行没有 new 侧位置）、
+ * "\\ No newline at end of file" 等非内容标记行与越界均返回 null。
+ * 非 new 侧行不消耗行号计数（否则后续行号会整体偏移）。
  */
 export function lineNewNumber(h: DiffHunk, idx: number): number | null {
   if (idx < 0 || idx >= h.lines.length) return null
   let n = h.newStart
   for (let i = 0; i < h.lines.length; i++) {
     const l = h.lines[i]
-    if (l.startsWith('-')) continue
+    const isNewSide = l.startsWith('+') || l.startsWith(' ')
+    if (!isNewSide) continue
     if (i === idx) return n
     n++
   }

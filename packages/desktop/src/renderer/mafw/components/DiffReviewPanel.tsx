@@ -272,7 +272,6 @@ export function DiffReviewPanel(props: {
                                           del: line.startsWith("-"),
                                           commentable: commentable(),
                                         }}
-                                        title={commentable() ? "点击评论此行" : undefined}
                                         onClick={commentable() ? (e: MouseEvent) => openLineComment(e, key, li()) : undefined}
                                       >{line}</span>
                                       <Show when={commentingLine()?.key === key && commentingLine()?.idx === li()}>

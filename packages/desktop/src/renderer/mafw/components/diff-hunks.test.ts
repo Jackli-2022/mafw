@@ -91,6 +91,22 @@ describe('lineNewNumber（W0-3 行级评论锚点）', () => {
   test('越界下标返回 null', () => {
     expect(lineNewNumber(hunks[0], 99)).toBeNull()
   })
+  test('"\\ No newline at end of file" 标记行不计数也不占行号（终审修复）', () => {
+    const { hunks: hs } = splitHunks([
+      'diff --git a/t.txt b/t.txt',
+      '@@ -8,4 +8,5 @@',
+      ' ctx',
+      '-last',
+      '\\ No newline at end of file',
+      '+last',
+      '+extra',
+    ].join('\n'))
+    expect(lineNewNumber(hs[0], 0)).toBe(8)   // ' ctx'
+    expect(lineNewNumber(hs[0], 1)).toBeNull() // '-last'
+    expect(lineNewNumber(hs[0], 2)).toBeNull() // '\ No newline…' 标记行不可评论
+    expect(lineNewNumber(hs[0], 3)).toBe(9)    // '+last'（不偏移）
+    expect(lineNewNumber(hs[0], 4)).toBe(10)   // '+extra'
+  })
 })
 
 describe('buildLineCommentPrompt（W0-3）', () => {
