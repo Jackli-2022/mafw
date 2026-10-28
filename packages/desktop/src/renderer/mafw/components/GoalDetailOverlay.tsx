@@ -6,14 +6,18 @@ import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { GoalTimelineLane } from "./GoalTimelineLane"
+import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { buildGoalLanes, formatDuration } from "../goal-timeline"
 import { goalsRev } from "../goals-rev"
+
+const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
 
 export function GoalDetailOverlay(props: { goalId: string | null; onClose: () => void; onOpenSession: (sid: string) => void }) {
   const [timeline, setTimeline] = createSignal<any>(null)
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [retrying, setRetrying] = createSignal(false)
+  const [planOpen, setPlanOpen] = createSignal(false)
 
   async function load(id: string) {
     setLoading(true); setError(null)
@@ -81,6 +85,23 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
     return "mafw-phase-badge-run"
   }
 
+  // W1 计划审阅入口：最新 plan run 存在即可看；manual+pending 显「待批准」徽标。
+  const planEntry = () => {
+    const g = timeline()?.goal
+    if (!g) return null
+    const hasPlanRun = (timeline()?.nodes || []).some((n: any) => n.node === "plan")
+    if (!hasPlanRun && !g.planApproval) return null
+    return {
+      canOpen: true,
+      pending: g.planApproval?.status === "pending",
+      badge: g.planApproval?.status === "pending" ? "待批准"
+        : g.planApproval?.status === "approved" ? "已批准"
+        : g.planApproval?.status === "rejected" ? "已驳回" : undefined,
+      onOpen: () => setPlanOpen(true),
+    }
+  }
+  const goalTerminal = () => TERMINAL_ACTIONS.has(timeline()?.goal?.nextAction)
+
   return (
     <Show when={props.goalId}>
       <div class="mafw-goal-overlay" onClick={e => { if (e.target === e.currentTarget) props.onClose() }}>
@@ -108,6 +129,11 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
               <span class="mafw-card-meta">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
               <Show when={elapsed() != null}><span class="mafw-card-meta">已用 {formatDuration(elapsed())}</span></Show>
               <Show when={timeline()?.goal?.verdict}><span class="mafw-card-meta">verdict {timeline()?.goal?.verdict}</span></Show>
+              <Show when={planEntry()}>
+                <ButtonV2 variant="outline" size="small" onClick={planEntry()!.onOpen}>
+                  计划{planEntry()!.badge ? ` · ${planEntry()!.badge}` : ""}
+                </ButtonV2>
+              </Show>
             </div>
 
             <Show when={(timeline()?.nodes || []).length} fallback={<div class="mafw-empty">尚未开始执行</div>}>
@@ -116,6 +142,7 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
                 loops={lanes().loops}
                 lanes={lanes().lanes}
                 artifacts={timeline()?.artifacts}
+                plan={planEntry() ?? undefined}
                 onOpenSession={(sid) => { props.onClose(); props.onOpenSession(sid) }}
                 onRetry={retry}
                 retrying={retrying()}
@@ -131,6 +158,9 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
           </Show>
         </div>
       </div>
+      <Show when={planOpen()}>
+        <PlanReviewOverlay goalId={props.goalId!} terminal={goalTerminal()} onClose={() => setPlanOpen(false)} />
+      </Show>
     </Show>
   )
 }

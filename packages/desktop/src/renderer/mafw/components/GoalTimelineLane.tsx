@@ -18,6 +18,8 @@ export function GoalTimelineLane(props: {
   onOpenSession: (sid: string) => void
   onRetry: (runId: number, node: string) => void
   retrying: boolean
+  /** W1 计划审阅：plan 格子徽标与「查看计划」入口。 */
+  plan?: { badge?: string; pending?: boolean; canOpen: boolean; onOpen: () => void }
 }) {
   const [expanded, setExpanded] = createSignal<string | null>(null)
   const key = (node: string, loop: number) => `${node}:${loop}`
@@ -59,6 +61,9 @@ export function GoalTimelineLane(props: {
                           <Show when={cell.attempts.length > 1}>
                             <span class="mafw-lane-attempt-badge">×{cell.attempts.length}</span>
                           </Show>
+                          <Show when={lane.node === "plan" && props.plan?.pending}>
+                            <span class="mafw-lane-plan-badge">{props.plan!.badge}</span>
+                          </Show>
                           <Show when={expanded() === key(lane.node, loop)}>
                             <span class="mafw-lane-caret">▾</span>
                           </Show>
@@ -98,6 +103,9 @@ export function GoalTimelineLane(props: {
                         <div class="mafw-lane-expand-error">feedback 见评审报告</div>
                       </Show>
                       <div class="mafw-lane-expand-actions">
+                        <Show when={lane.node === "plan" && props.plan?.canOpen}>
+                          <ButtonV2 variant="neutral" size="small" onClick={() => props.plan!.onOpen()}>查看计划</ButtonV2>
+                        </Show>
                         <Show when={run().sessionId}>
                           <ButtonV2 variant="neutral" size="small" onClick={() => props.onOpenSession(run().sessionId)}>打开会话</ButtonV2>
                         </Show>
