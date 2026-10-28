@@ -16,6 +16,13 @@ import type { OutputSchemaSpec } from '../../runtime/structured-output';
 
 export interface GoalRuntimeClient {
   create(directory: string): Promise<{ id: string }>;
+  /**
+   * W1：节点会话建好后按身份绑模型。opencode v2 会话模型与 agent 解耦
+   * （agent md 的 model 只对 subagent 工具子会话生效），goal 会话是先
+   * create（默认模型）再 promptAsync(agent)——必须显式 switchModel。
+   * 可选 + fail-open：pi 等无 switchModel 的 runtime 跳过。
+   */
+  bindModel?(sessionID: string, agent: string): Promise<void>;
   promptAsync(opts: {
     sessionID: string;
     parts: Array<{ type: string; text: string }>;
@@ -141,6 +148,11 @@ export class NodeDriver {
     const session = await this.deps.client.create(state.projectDir);
     const sessionId = session.id;
     this.deps.onSessionCreated({ goalId, sessionId, phase: node, loop: round });
+
+    // W1：身份绑模型（fail-open——适配器无实现/运行时不支持时跳过）
+    if (this.deps.client.bindModel) {
+      try { await this.deps.client.bindModel(sessionId, `mafw-${node}`); } catch { /* fail-open */ }
+    }
 
     const runId = this.deps.db.insertNodeRun({
       goalId, projectId: state.projectDir, loop: round, node, attempt, sessionId,

@@ -81,7 +81,7 @@ export function discoverAgentsFiles(
   while (true) {
     chain.push(cur);
     if (f.existsSync(path.join(cur, '.git'))) {
-      gitRoot = cur;
+      if (!gitRoot) gitRoot = cur; // nearest .git wins for the project scope label
       if (!insideHome) break;
     }
     if (insideHome && comparable(cur) === comparable(home)) break;

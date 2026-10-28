@@ -56,6 +56,21 @@ describe('toAgentDefinition (materialization derivation parity)', () => {
     expect(def.permissions.edit).toBeUndefined();
     expect(def.tools).toBeUndefined();
   });
+
+  it('W1：model 序列化为 provider/model 完整引用（丢 provider 是潜伏 bug）', () => {
+    const spec = { ...manager, model: { providerID: 'gateway', modelID: 'volcengine/deepseek-v4.1-flash' } };
+    const def = toAgentDefinition(spec);
+    expect(def.model).toBe('gateway/volcengine/deepseek-v4.1-flash');
+  });
+
+  it('W1：goal 节点身份钉模型 gateway/volcengine/deepseek-v4.1-flash（用户裁决）', () => {
+    const reg = createBuiltinIdentityRegistry();
+    for (const name of ['mafw-plan', 'mafw-execute', 'mafw-review']) {
+      const spec = reg.get(name)!;
+      expect(spec.model).toEqual({ providerID: 'gateway', modelID: 'volcengine/deepseek-v4.1-flash' });
+      expect(toAgentDefinition(spec).model).toBe('gateway/volcengine/deepseek-v4.1-flash');
+    }
+  });
 });
 
 describe('resolveToolCategory', () => {

@@ -845,6 +845,16 @@ class MafwScheduler {
           const rec = await this.sdkSession.create(directory);
           return { id: rec.id };
         },
+        // W1：节点会话按身份绑模型（v2 会话模型与 agent 解耦，agent md 的
+        // model 只对 subagent 工具子会话生效——goal 会话必须显式 switch）。
+        // 身份未钉模型 / runtime 无 switchModel → no-op（fail-open）。
+        bindModel: async (sessionID: string, agent: string) => {
+          const model = this.identityRegistry.get(agent)?.model;
+          if (!model) return;
+          const fn = this.runtime?.session.switchModel;
+          if (!fn) return;
+          await fn({ sessionID, model: { providerID: model.providerID, modelID: model.modelID } });
+        },
         promptAsync: async (opts) => {
           const text = opts.parts.find((p) => p.type === 'text')?.text ?? '';
           await this.sdkSession.promptAsync(opts.sessionID, text, undefined, opts.agent, undefined, opts.outputSchema);
@@ -1675,7 +1685,7 @@ class MafwScheduler {
           const info = await rt.session.get({ sessionID }).catch(() => null);
           return (info as any)?.directory ?? (info as any)?.location?.directory ?? null;
         },
-        broadcast: (e) => this.broadcast(e as any),
+        broadcast: (e) => this.broadcast(mafwBroadcast(e as any)),
         gatewayProjectDir: this.projectDir,
         mafwDir: this.mafwDir,
         homeDir: os.homedir(),

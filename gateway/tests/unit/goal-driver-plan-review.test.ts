@@ -49,6 +49,16 @@ describe('W1 plan-review gate: park', () => {
     expect(h.load('g1')!.planFeedback).toBeNull();
   });
 
+  it('executeNode 建会话后调 bindModel（W1：身份模型绑定，v2 会话模型与 agent 解耦）', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g1');
+    await h.driver.advance('g1');
+    const bind = h.calls.filter((c: any) => c.op === 'bindModel');
+    expect(bind).toHaveLength(1);
+    expect(bind[0].agent).toBe('mafw-plan');
+    expect(bind[0].sessionId).toBeTruthy();
+  });
+
   it('auto goal plan ready → 直接 execute（回归：无门）', async () => {
     const h = makeHarness();
     seedGoal(h, 'g1'); // 无 planReview = auto

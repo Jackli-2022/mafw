@@ -56,9 +56,19 @@ interface BaseSnapshot {
   degraded: boolean;
   degradedReason?: DiscoveryDegradedReason;
   warnings: DiscoveryWarning[];
+  /** True when the runtime skill catalog could not be read (loadSkill -> 503). */
+  skillsFailed: boolean;
 }
 
 const MAX_SKILL_BYTES = 512 * 1024;
+
+function realOrResolve(p: string): string {
+  try {
+    return fs.realpathSync(path.resolve(p));
+  } catch {
+    return path.resolve(p);
+  }
+}
 
 export class DiscoveryService {
   private cache = new Map<string, { base: BaseSnapshot; expiresAt: number }>();
@@ -67,18 +77,21 @@ export class DiscoveryService {
   private now: () => number;
   private ttlMs: number;
   private degradedTtlMs: number;
+  private gatewayProjectDir: string;
 
   constructor(private deps: DiscoveryServiceDeps) {
     this.now = deps.now ?? Date.now;
     this.ttlMs = deps.ttlMs ?? 30_000;
     this.degradedTtlMs = deps.degradedTtlMs ?? 5_000;
+    this.gatewayProjectDir = realOrResolve(deps.gatewayProjectDir);
   }
 
   async get(sessionID: string, opts: { directory?: string; force?: boolean } = {}): Promise<DiscoverySnapshot> {
     const directory = await this.resolveDirectory(sessionID, opts.directory);
     this.knownSessions.set(sessionID, directory);
     const base = await this.baseFor(directory, opts.force === true);
-    return { ...base, sessionID };
+    const { skillsFailed: _skillsFailed, ...publicBase } = base;
+    return { ...publicBase, sessionID };
   }
 
   async refresh(sessionID: string, opts: { directory?: string } = {}): Promise<DiscoverySnapshot> {
@@ -92,23 +105,25 @@ export class DiscoveryService {
     key: string,
     opts: { directory?: string; force?: boolean } = {},
   ): Promise<DiscoverySkillContent> {
-    const snap = await this.get(sessionID, opts);
+    const directory = await this.resolveDirectory(sessionID, opts.directory);
+    this.knownSessions.set(sessionID, directory);
+    const base = await this.baseFor(directory, opts.force === true);
     const rt = this.deps.getRuntime();
-    if (!rt?.capabilities?.discoveryApi || !rt.discovery?.loadSkill) {
+    if (!rt?.capabilities?.discoveryApi || !rt.discovery?.loadSkill || base.skillsFailed) {
       throw new DiscoveryError(503, 'skill catalog unavailable');
     }
 
-    const byId = snap.skills.find((s) => s.id === key);
+    const byId = base.skills.find((s) => s.id === key);
     let skill = byId;
     if (!skill) {
-      const matches = snap.skills.filter((s) => s.name === key);
+      const matches = base.skills.filter((s) => s.name === key);
       if (matches.length > 1) throw new DiscoveryError(409, 'ambiguous skill name; use id');
       skill = matches[0];
     }
     if (!skill) throw new DiscoveryError(404, `skill not found: ${key}`);
     let loaded;
     try {
-      loaded = await rt.discovery.loadSkill({ directory: snap.directory, key });
+      loaded = await rt.discovery.loadSkill({ directory, key });
     } catch {
       throw new DiscoveryError(503, 'skill catalog unavailable');
     }
@@ -125,8 +140,15 @@ export class DiscoveryService {
   ): Promise<{ commands: LegacyCommandInfo[]; location: { directory: string }; warnings: DiscoveryWarning[] }> {
     const dir = await this.resolveDefaultDirectory(directory);
     const base = await this.baseFor(dir, opts.force === true);
+    const mafwNames = new Set<string>();
+    try {
+      for (const def of this.deps.getMafwCommands()) {
+        mafwNames.add(def.name.toLowerCase());
+        for (const alias of def.aliases ?? []) mafwNames.add(alias.toLowerCase());
+      }
+    } catch { /* warning already surfaced by buildBase */ }
     const commands = base.commands
-      .filter((c) => c.source === 'runtime')
+      .filter((c) => c.source === 'runtime' && !mafwNames.has(c.name.toLowerCase()))
       .map((c): LegacyCommandInfo => ({
         name: c.name,
         ...(c.description ? { description: c.description } : {}),
@@ -226,13 +248,13 @@ export class DiscoveryService {
     const warnings: DiscoveryWarning[] = [];
     let degraded = false;
     let degradedReason: DiscoveryDegradedReason | undefined;
+    let skillsFailed = false;
 
     let mafw: MafwCommandDef[] = [];
     try {
       mafw = this.deps.getMafwCommands();
     } catch (err: any) {
-      degraded = true;
-      degradedReason = 'runtime_error';
+      // MAFW registry failure is a warning only; the runtime side may still work.
       warnings.push({ source: 'commands', message: String(err?.message ?? err).slice(0, 300) });
     }
 
@@ -245,13 +267,19 @@ export class DiscoveryService {
         runtimeCommands = found.commands;
         runtimeSkills = found.skills;
         for (const warning of found.warnings) warnings.push(warning);
+        const commandWarn = found.warnings.some((w) => w.source === 'commands');
+        const skillWarn = found.warnings.some((w) => w.source === 'skills');
+        if (skillWarn) skillsFailed = true;
         if (found.warnings.length > 0) {
           degraded = true;
-          degradedReason = 'partial';
+          degradedReason = found.commands.length === 0 && found.skills.length === 0 && commandWarn && skillWarn
+            ? 'runtime_error'
+            : 'partial';
         }
       } catch (err: any) {
         degraded = true;
         degradedReason = 'runtime_error';
+        skillsFailed = true;
         const message = String(err?.message ?? err).slice(0, 300);
         warnings.push({ source: 'commands', message });
         warnings.push({ source: 'skills', message });
@@ -259,10 +287,12 @@ export class DiscoveryService {
     } else if (rt) {
       degraded = true;
       degradedReason = 'capability_absent';
+      skillsFailed = true;
       warnings.push({ source: 'skills', message: 'runtime does not expose discoveryApi' });
     } else {
       degraded = true;
       degradedReason = 'capability_absent';
+      skillsFailed = true;
       warnings.push({ source: 'commands', message: 'runtime unavailable' });
     }
 
@@ -270,7 +300,7 @@ export class DiscoveryService {
       mafw,
       runtime: runtimeCommands,
       directory,
-      gatewayProjectDir: this.deps.gatewayProjectDir,
+      gatewayProjectDir: this.gatewayProjectDir,
       mafwDir: this.deps.mafwDir,
     });
     warnings.push(...merged.warnings);
@@ -311,6 +341,7 @@ export class DiscoveryService {
       degraded,
       ...(degradedReason ? { degradedReason } : {}),
       warnings,
+      skillsFailed,
     };
   }
 

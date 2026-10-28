@@ -75,6 +75,7 @@ export function mergeCommands(input: {
     if (!runtime?.name) continue;
     const existing = byName.get(runtime.name.toLowerCase());
     if (existing) {
+      if (existing.source === 'runtime') continue; // first runtime entry wins
       existing.runtime = true;
       if (runtime.agent) existing.agent = runtime.agent;
       if (runtime.model) existing.model = runtime.model;

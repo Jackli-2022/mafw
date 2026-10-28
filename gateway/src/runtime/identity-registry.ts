@@ -120,6 +120,7 @@ function buildBuiltins(): IdentitySpec[] {
       name: 'mafw-plan',
       description: 'MAFW goal 编排 plan 节点：依据 charter 拆解 waves 计划，产出 waves.json。只读。',
       scope: 'worker',
+      model: { providerID: 'gateway', modelID: 'volcengine/deepseek-v4.1-flash' },
       systemPrompt: [
         '你是 MAFW goal 编排的 PLAN 节点执行者。你的唯一任务是依据 goal charter 产出 wave 计划文件。',
         '',
@@ -139,6 +140,7 @@ function buildBuiltins(): IdentitySpec[] {
       name: 'mafw-execute',
       description: 'MAFW goal 编排 execute 节点：按 waves.json 执行任务，产出 receipts。全权限。',
       scope: 'worker',
+      model: { providerID: 'gateway', modelID: 'volcengine/deepseek-v4.1-flash' },
       systemPrompt: [
         '你是 MAFW goal 编排的 EXECUTE 节点执行者。按计划文件逐 wave 执行任务并写回执。',
         '',
@@ -155,6 +157,7 @@ function buildBuiltins(): IdentitySpec[] {
       name: 'mafw-review',
       description: 'MAFW goal 编排 review 节点：独立验证执行结果，产出结构化 verdict。只读+可跑测试。',
       scope: 'worker',
+      model: { providerID: 'gateway', modelID: 'volcengine/deepseek-v4.1-flash' },
       systemPrompt: [
         '你是 MAFW goal 编排的 REVIEW 节点执行者——独立 evaluator，不是执行者的延续。',
         '',
@@ -198,7 +201,9 @@ export function toAgentDefinition(spec: IdentitySpec): AgentDefinition {
     description: spec.description,
     mode: spec.scope === 'primary' ? 'primary' : 'subagent',
     ...(spec.color ? { color: spec.color } : {}),
-    ...(spec.model ? { model: spec.model.modelID } : {}),
+    // W1 修复：opencode agent 的 model 是 provider/model 完整引用——只序列化
+    // modelID 会物化出无 provider 的悬空引用（潜伏 bug，首个钉模型的身份暴露）。
+    ...(spec.model ? { model: `${spec.model.providerID}/${spec.model.modelID}` } : {}),
     systemPrompt: spec.systemPrompt,
     permissions,
     ...(spec.nativeTools ? { tools: spec.nativeTools } : {}),
