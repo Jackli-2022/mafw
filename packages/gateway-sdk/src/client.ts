@@ -589,6 +589,21 @@ export class MafwClient implements IMafwClient {
       if (Array.isArray(data)) return data
       return (data as any).items || (data as any).skills || []
     },
+    /** W4 v1：读 SKILL.md 内容（服务端白名单校验 id）。 */
+    content: async (id: string, directory?: string): Promise<import('./types').SkillContent> => {
+      const qs = new URLSearchParams()
+      qs.set('id', id)
+      if (directory) qs.set('directory', directory)
+      return this.request<import('./types').SkillContent>(`/api/skill/content?${qs.toString()}`)
+    },
+  }
+
+  // W4 v1：MCP 服务器状态（CLI `opencode mcp list` 解析；serve HTTP 无此 API）
+  mcp = {
+    servers: async (): Promise<Array<import('./types').McpServerEntry>> => {
+      const data = await this.request<{ servers?: Array<import('./types').McpServerEntry> }>('/api/mcp/servers')
+      return Array.isArray(data?.servers) ? data.servers : []
+    },
   }
 
   discovery = {

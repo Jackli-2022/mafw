@@ -8,9 +8,9 @@ describe("config-nav", () => {
     }
   })
 
-  test("covers the nine nav keys exactly once, in order", () => {
+  test("covers the ten nav keys exactly once, in order", () => {
     const keys = navItems().map((i) => i.key)
-    expect(keys).toEqual(["gateway", "desktop", "plugins", "models", "memory", "usage", "approvals", "opencode", "mafw"])
+    expect(keys).toEqual(["gateway", "desktop", "plugins", "models", "memory", "usage", "approvals", "extensions", "opencode", "mafw"])
     expect(new Set(keys).size).toBe(keys.length)
   })
 

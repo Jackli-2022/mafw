@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
 import * as yaml from 'js-yaml';
-import { spawn, execSync } from 'child_process';
+import { spawn, execSync, execFile } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
 import { log } from './core/utils/logger';
@@ -18,6 +18,8 @@ import { recoverGoals, watchdogScan } from './core/goal/recovery';
 import { handleGoalTimeline } from './routes/goal-timeline';
 import { handleGoalPlan } from './routes/goal-plan';
 import { handleNodeRetry } from './routes/goal-node-retry';
+import { handleMcpList, resolveMcpListCommand } from './routes/mcp-list';
+import { handleSkillContent } from './routes/skill-content';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
@@ -190,7 +192,7 @@ import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecor
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
 import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './runtime/opencode-21-events';
 import { injectServeAuth } from './runtime/proxy-auth';
-import { serveAuthHeaders } from './runtime/serve-sidecar';
+import { serveAuthHeaders, resolveOpencodeBin } from './runtime/serve-sidecar';
 import { wrapDialectEventStream } from './runtime/event-stream-wiring';
 import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
@@ -5291,7 +5293,7 @@ class MafwScheduler {
 
         // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — W1 计划审阅
         // （须在 dashboard /api/goals* 兜底之前）。
-        if (req.url?.match(/^\/api\/goals\/[^/]+\/plan(-approval)?(?:\?|$)/)) {
+        if (req.url?.match(/^\/api\/goals\/([^/]+)\/plan(?:\?|$)/) || req.url?.match(/^\/api\/goals\/([^/]+)\/plan-approval(?:\?|$)/)) {
           let body: any = {};
           if (req.method === 'POST') {
             try { body = JSON.parse(await readBody(req)); } catch { body = {}; }
@@ -5305,6 +5307,33 @@ class MafwScheduler {
             },
             approvePlan: (g) => this.goalDriver!.approvePlan(g),
             rejectPlan: (g, feedback) => this.goalDriver!.rejectPlan(g, feedback),
+          })) return;
+        }
+
+        // B3（W4 v1）：MCP 服务器状态——serve 2.1 HTTP 无 MCP 运行时端点，
+        // 以官方 CLI `opencode mcp list` 为准（wire 实证见 mcp-list.ts 注释）。
+        if (req.url?.match(/^\/api\/mcp\/servers(?:\?|$)/)) {
+          if (await handleMcpList(req, res, req.url!, {
+            listMcpOutput: () => new Promise<string>((resolve) => {
+              try {
+                const cmd = resolveMcpListCommand(resolveOpencodeBin(), fs.existsSync);
+                if (!cmd) { resolve(''); return; }
+                execFile(cmd.bin, ['mcp', 'list'], { timeout: 15_000, windowsHide: true, shell: cmd.shell }, (err, stdout) => {
+                  resolve(err && !stdout ? '' : String(stdout ?? ''));
+                });
+              } catch { resolve(''); }
+            }),
+          })) return;
+        }
+
+        // B3（W4 v1）：技能详情（白名单：只读列表内 location）。
+        if (req.url?.match(/^\/api\/skill\/content(?:\?|$)/)) {
+          if (await handleSkillContent(req, res, req.url!, {
+            listSkills: async (dir) => {
+              const r = await this.getDiscoveryService().getLegacySkills(dir);
+              return Array.isArray(r?.skills) ? r.skills : [];
+            },
+            readFile: (p) => fs.readFileSync(p, 'utf-8'),
           })) return;
         }
 

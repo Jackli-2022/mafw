@@ -139,6 +139,12 @@ export function createMafwApi(): MafwAPI {
 
     skill: {
       list: (directory?) => invoke("skill", "list", directory),
+      content: (id, directory?) => invoke("skill", "content", id, directory),
+    },
+
+    // W4 v1：MCP 服务器状态（CLI 解析）
+    mcp: {
+      servers: () => invoke("mcp", "servers"),
     },
 
     mafwCommands: {

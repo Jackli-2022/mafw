@@ -101,6 +101,13 @@ export type MafwAPI = {
 
   skill: {
     list: (directory?: string) => Promise<any[]>
+    /** W4 v1：技能详情（SKILL.md 内容）。 */
+    content: (id: string, directory?: string) => Promise<{ id: string; name: string; location: string; content: string }>
+  }
+
+  /** W4 v1：MCP 服务器状态（CLI `opencode mcp list` 解析）。 */
+  mcp: {
+    servers: () => Promise<Array<{ name: string; status: string; detail?: string }>>
   }
 
   mafwCommands: {

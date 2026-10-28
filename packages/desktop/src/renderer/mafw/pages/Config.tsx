@@ -1,5 +1,5 @@
 ﻿// @ts-nocheck
-import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
+import { createSignal, createEffect, createMemo, onMount, onCleanup, on, Show, For, ErrorBoundary } from "solid-js"
 import { Portal } from "solid-js/web"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
@@ -26,7 +26,7 @@ interface ConfigSection {
 export { isNavKey }
 export type { NavKey }
 
-export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void }) {
+export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void; projectDir?: string }) {
   const [activeNav, setActiveNav] = createSignal<NavKey>(isNavKey(props.initialSection) ? props.initialSection : "gateway")
 
   // ── MAFW raw config ──
@@ -121,7 +121,12 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     }
   }
 
-  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadEmbeddingConfig(); loadTrayPrefs(); loadSearchDraft(); loadMemStats() })
+  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadEmbeddingConfig(); loadTrayPrefs(); loadSearchDraft(); loadMemStats(); void loadSkills(); void loadMcp() })
+
+  // W4 v1：进入「扩展」节时刷新技能与 MCP 状态（避免长时间陈旧）。
+  createEffect(on(activeNav, (nav) => {
+    if (nav === "extensions") { void loadSkills(); void loadMcp() }
+  }, { defer: true }))
 
   // Memory observability refresh (15s, same cadence as Approvals).
   onMount(() => {
@@ -529,6 +534,88 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     }
     setModelSaving(prev => ({ ...prev, goal: false }))
   }
+
+  // ── W4 v1：扩展（Skills 查看 + MCP 运行时管理） ──
+  const [skills, setSkills] = createSignal<any[] | null>(null)
+  const [skillsErr, setSkillsErr] = createSignal("")
+  const [skillOpen, setSkillOpen] = createSignal<string | null>(null)
+  const [skillContent, setSkillContent] = createSignal<Record<string, string>>({})
+  const [skillContentErr, setSkillContentErr] = createSignal("")
+
+  async function loadSkills() {
+    setSkillsErr("")
+    try {
+      const list = await window.api.mafw.skill.list(props.projectDir)
+      setSkills(Array.isArray(list) ? list : [])
+    } catch (err: any) {
+      setSkillsErr(err.message)
+      setSkills([])
+    }
+  }
+
+  async function toggleSkill(id: string) {
+    if (skillOpen() === id) { setSkillOpen(null); return }
+    setSkillOpen(id)
+    setSkillContentErr("")
+    if (skillContent()[id]) return
+    try {
+      const r = await window.api.mafw.skill.content(id, props.projectDir)
+      setSkillContent(prev => ({ ...prev, [id]: r?.content ?? "" }))
+    } catch (err: any) {
+      setSkillContentErr(`${id}: ${err.message}`)
+    }
+  }
+
+  const [mcpStatus, setMcpStatus] = createSignal<Record<string, { status: string; detail?: string }> | null>(null)
+  const [mcpServers, setMcpServers] = createSignal<Array<{ name: string; config: any; source: string }>>([])
+  const [mcpErr, setMcpErr] = createSignal("")
+
+  async function loadMcp() {
+    setMcpErr("")
+    try {
+      const [statusList, docs] = await Promise.all([
+        window.api.mafw.mcp.servers().catch(() => []),
+        window.api.mafw.opencodeConfig.get().catch(() => []),
+      ])
+      const byName: Record<string, { status: string; detail?: string }> = {}
+      for (const s of Array.isArray(statusList) ? statusList : []) {
+        if (s?.name) byName[s.name] = { status: s.status, ...(s.detail ? { detail: s.detail } : {}) }
+      }
+      setMcpStatus(byName)
+      // 配置文档层数组（[{type:'document', path, info}]）合并 mcp.servers；后者覆盖前者。
+      const merged = new Map<string, { name: string; config: any; source: string }>()
+      for (const doc of Array.isArray(docs) ? docs as any[] : []) {
+        const servers = doc?.info?.mcp?.servers
+        if (!servers || typeof servers !== 'object') continue
+        for (const [name, cfg] of Object.entries(servers)) {
+          merged.set(name, { name, config: cfg, source: String(doc.path ?? '').split(/[\\/]/).pop() ?? '' })
+        }
+      }
+      // CLI 有但配置文档缺失（运行时动态/缓存）也列出。
+      for (const name of Object.keys(byName)) {
+        if (!merged.has(name)) merged.set(name, { name, config: null, source: '' })
+      }
+      setMcpServers([...merged.values()].sort((a, b) => a.name.localeCompare(b.name)))
+    } catch (err: any) {
+      setMcpErr(err.message)
+      setMcpServers([])
+    }
+  }
+
+  // W4 v1：认证在 opencode 内进行（serve 2.1 HTTP 无 MCP 运行时端点）——复制官方命令。
+  async function copyMcpAuthCommand(name: string) {
+    try {
+      await navigator.clipboard.writeText(`opencode mcp auth ${name}`)
+      showToastV2({ description: `已复制：opencode mcp auth ${name}`, duration: 3000 })
+    } catch (err: any) {
+      showToastV2({ description: `复制失败: ${err.message}`, duration: 3000 })
+    }
+  }
+
+  const mcpBadgeClass = (status: string) =>
+    status === "connected" ? "mafw-phase-badge mafw-phase-badge-ok"
+    : status === "failed" ? "mafw-phase-badge mafw-phase-badge-fail"
+    : status && status !== "unknown" ? "mafw-phase-badge mafw-phase-badge-run" : "mafw-phase-badge"
 
   // ── Memory embedding ──
   const [embState, setEmbState] = createSignal<any>(null)
@@ -1298,6 +1385,99 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
           {/* ═══ Approvals（审批持久白名单）═══*/}
           <Show when={activeNav() === "approvals"}>
             <ApprovalsSection />
+          </Show>
+
+          {/* ═══ 扩展（W4 v1：Skills 查看 + MCP 运行时管理）═══*/}
+          <Show when={activeNav() === "extensions"}>
+            <div class="mafw-config-section">
+              <div class="mafw-config-section-header">
+                <span class="mafw-config-section-icon">🧩</span>
+                <span class="mafw-config-section-title">技能（Skills）</span>
+                <ButtonV2 variant="ghost" size="small" onClick={() => { void loadSkills() }}>刷新</ButtonV2>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
+                <div class="mafw-config-section-desc">
+                  列出全局（~/.config/opencode/skills 等）与项目（.opencode/skills）技能；详情只读。启停/安装走 opencode 配置（v2）。
+                </div>
+                <Show when={!skillsErr()} fallback={<div class="mafw-config-error-row"><span>{skillsErr()}</span><ButtonV2 variant="outline" size="small" onClick={() => void loadSkills()}>重试</ButtonV2></div>}>
+                  <Show when={skills()} fallback={<div class="mafw-config-inline-loading"><LoaderV2 width={14} height={14} /> 加载中…</div>}>
+                    <Show when={skills()!.length > 0} fallback={<div class="mafw-config-hint">未发现技能</div>}>
+                      <div class="mafw-ext-list">
+                        {skills()!.map((s: any) => (
+                          <div class="mafw-ext-row">
+                            <div class="mafw-ext-main">
+                              <div class="mafw-ext-name">
+                                {s.name || s.id}
+                                <span class="mafw-ext-badge">{s.scope === "project" ? "项目" : "全局"}</span>
+                                <Show when={typeof s.contentLength === "number"}>
+                                  <span class="mafw-config-hint">{Math.round(s.contentLength / 1024 * 10) / 10} KB</span>
+                                </Show>
+                              </div>
+                              <div class="mafw-config-hint mafw-ext-desc">{s.description || "（无描述）"}</div>
+                            </div>
+                            <div class="mafw-ext-actions">
+                              <ButtonV2 variant="ghost" size="small" onClick={() => void toggleSkill(s.id)}>{skillOpen() === s.id ? "收起" : "详情"}</ButtonV2>
+                              <Show when={s.location}>
+                                <ButtonV2 variant="ghost" size="small" onClick={() => { try { (window.api as any).revealPath?.(s.location) } catch { /* ignore */ } }}>打开目录</ButtonV2>
+                              </Show>
+                            </div>
+                            <Show when={skillOpen() === s.id}>
+                              <pre class="mafw-ext-content">{skillContent()[s.id] ?? (skillContentErr() || "加载中…")}</pre>
+                            </Show>
+                          </div>
+                        ))}
+                      </div>
+                    </Show>
+                  </Show>
+                </Show>
+              </div>
+            </div>
+
+            <div class="mafw-config-section">
+              <div class="mafw-config-section-header">
+                <span class="mafw-config-section-icon">🔌</span>
+                <span class="mafw-config-section-title">MCP 服务器</span>
+                <ButtonV2 variant="ghost" size="small" onClick={() => { void loadMcp() }}>刷新</ButtonV2>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
+                <div class="mafw-config-section-desc">
+                  展示 opencode 配置中的 MCP 服务器与 CLI 状态（`opencode mcp list`）。连接/断开在 opencode `/mcps` 内操作；需要认证时复制命令执行（v2 将支持图形化添加/删除）。
+                </div>
+                <Show when={!mcpErr()} fallback={<div class="mafw-config-error-row"><span>{mcpErr()}</span><ButtonV2 variant="outline" size="small" onClick={() => void loadMcp()}>重试</ButtonV2></div>}>
+                  <Show when={mcpStatus()} fallback={<div class="mafw-config-inline-loading"><LoaderV2 width={14} height={14} /> 加载中…</div>}>
+                    <Show when={mcpServers().length > 0} fallback={<div class="mafw-config-hint">未配置 MCP 服务器</div>}>
+                      <div class="mafw-ext-list">
+                        {mcpServers().map((srv) => {
+                          const st = mcpStatus()?.[srv.name]?.status ?? "unknown"
+                          return (
+                            <div class="mafw-ext-row">
+                              <div class="mafw-ext-main">
+                                <div class="mafw-ext-name">
+                                  {srv.name}
+                                  <span class="mafw-ext-badge">{srv.config?.type === "remote" ? "remote" : srv.config ? "local" : "runtime"}</span>
+                                  <span class={mcpBadgeClass(st)}>{st}</span>
+                                </div>
+                                <div class="mafw-config-hint mafw-ext-desc">
+                                  {srv.config?.type === "remote" ? srv.config?.url : (Array.isArray(srv.config?.command) ? srv.config.command.join(" ") : "")}
+                                  {srv.source ? ` · 来源 ${srv.source}` : ""}
+                                  {srv.config?.disabled ? " · 配置中 disabled" : ""}
+                                  {mcpStatus()?.[srv.name]?.detail ? ` · ${mcpStatus()?.[srv.name]?.detail}` : ""}
+                                </div>
+                              </div>
+                              <div class="mafw-ext-actions">
+                                <Show when={st === "needs_auth"}>
+                                  <ButtonV2 variant="outline" size="small" onClick={() => void copyMcpAuthCommand(srv.name)}>复制认证命令</ButtonV2>
+                                </Show>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </Show>
+                  </Show>
+                </Show>
+              </div>
+            </div>
           </Show>
 
           {/* ═══ OpenCode Config ═══*/}

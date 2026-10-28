@@ -116,7 +116,7 @@ describe('createOpencodeRuntime', () => {
       nativeApprovals: true, providerConfigApi: true, perLlmCallTransform: true,
       sessionStorageApi: true, agentConfigApi: true, agentProcessApi: true,
       // turnBudgetApi false：预算由 gateway 侧 BudgetGuard 承担（adapter 无 maxTurns 字段）
-      completionApi: true, sessionBranchApi: true, revertUndoApi: false, checkpointApi: true, runStateApi: true, turnBudgetApi: false, questionApi: true, diffApi: true, worktreeApi: true, instructionsApi: true, discoveryApi: true,
+      completionApi: true, sessionBranchApi: true, revertUndoApi: false, checkpointApi: true, runStateApi: true, turnBudgetApi: false, questionApi: true, diffApi: true, worktreeApi: true, instructionsApi: true, discoveryApi: true, steerApi: true,
     });
     expect(rt.external).toBe(false);
     // 装饰不覆盖 adapter 返回的 client 方法面

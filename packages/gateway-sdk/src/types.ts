@@ -474,18 +474,42 @@ export interface SkillInfo {
   name: string
   description?: string
   slash?: boolean
+  /** W4 v1：来源范围（user / project）。 */
+  scope?: string
   location?: string
   path?: string
   contentLength?: number
   content?: string
 }
 
-export interface CommandNamespace {
-  list(directory?: string): Promise<CommandInfo[]>
+/** W4 v1：技能详情（SKILL.md 内容，白名单读取）。 */
+export interface SkillContent {
+  id: string
+  name: string
+  location: string
+  content: string
 }
 
 export interface SkillNamespace {
   list(directory?: string): Promise<SkillInfo[]>
+  /** W4 v1：读 SKILL.md 内容（id 必须命中列表）。 */
+  content(id: string, directory?: string): Promise<SkillContent>
+}
+
+// ── MCP status (W4 v1, CLI-backed) ──
+export type McpServerState = 'connected' | 'disabled' | 'failed' | 'needs_auth' | 'unknown'
+export interface McpServerEntry {
+  name: string
+  status: McpServerState
+  detail?: string
+}
+export interface McpNamespace {
+  /** 官方 CLI `opencode mcp list` 解析结果（serve 2.1 HTTP 无 MCP 运行时端点）。 */
+  servers(): Promise<McpServerEntry[]>
+}
+
+export interface CommandNamespace {
+  list(directory?: string): Promise<CommandInfo[]>
 }
 
 // ── Discovery (T2-5 capability discovery) ──

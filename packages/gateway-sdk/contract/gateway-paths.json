@@ -1205,6 +1205,32 @@
         }
       }
     },
+    "/api/skill/content": {
+      "get": {
+        "operationId": "skill.content",
+        "tags": [
+          "skill"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/mcp/servers": {
+      "get": {
+        "operationId": "mcp.servers",
+        "tags": [
+          "mcp"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/mafw-commands/run": {
       "post": {
         "operationId": "mafwCommands.run",
@@ -1512,6 +1538,52 @@
     "/api/goals/{id}": {
       "get": {
         "operationId": "goals.get",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goals/{id}/plan": {
+      "get": {
+        "operationId": "goals.plan",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goals/{id}/plan-approval": {
+      "post": {
+        "operationId": "goals.planApproval",
         "tags": [
           "goals"
         ],

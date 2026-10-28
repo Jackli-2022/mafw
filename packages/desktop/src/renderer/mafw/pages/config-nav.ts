@@ -1,4 +1,4 @@
-export type NavKey = "gateway" | "desktop" | "plugins" | "models" | "memory" | "usage" | "approvals" | "opencode" | "mafw"
+export type NavKey = "gateway" | "desktop" | "plugins" | "models" | "memory" | "usage" | "approvals" | "extensions" | "opencode" | "mafw"
 
 export interface NavItem {
   key: NavKey
@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: "memory",   icon: "database",  label: "Memory",   desc: "嵌入引擎、检索行为开关与记忆观测（FOK 标注/事件流/管线心跳）" },
   { key: "usage",    icon: "chart-bar",  label: "Usage",    desc: "设置 token 限额、余额预算和平台 cookie" },
   { key: "approvals", icon: "shield",    label: "Approvals", desc: "审批持久白名单（跨会话放行工具/命令前缀）" },
+  { key: "extensions", icon: "layout-grid", label: "扩展", desc: "技能（Skills）只读查看与 MCP 服务器配置/状态（CLI）" },
   { key: "opencode", icon: "file",       label: "opencode", desc: "编辑 opencode 原生配置文件" },
   { key: "mafw",     icon: "sparkles",   label: "MAFW",     desc: "MAFW 原始配置文件（高级用户）" },
 ]
