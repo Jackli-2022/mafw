@@ -1,0 +1,41 @@
+.mafw-context-menu {
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.mafw-context-menu [data-danger] {
+  color: var(--danger-text, var(--danger));
+}
+
+.mafw-context-menu [data-danger][data-highlighted] {
+  background: var(--danger-dim);
+}
+
+.mafw-context-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  color: var(--text-4);
+}
+
+.mafw-context-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.mafw-context-menu-shortcut {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 11px;
+  color: var(--text-4);
+  white-space: nowrap;
+}
