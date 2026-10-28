@@ -230,11 +230,11 @@ MAFW 的 `markdown-stream.project()` 只有「尾部是未闭合 code fence」�
 
 本机微基准（只测 `project()` CPU，不含 DOM/worker/SSE）：
 
-| workload | deltas | chars | project() CPU |
-|---|---:|---:|---:|
-| 单段长 prose | 2000 | 10,337 | **7,377 ms** |
-| 多段 prose（空行边界） | 2000 | 10,541 | **17,233 ms** |
-| growing list | 2000 | 11,289 | **11,428 ms** |
+| workload | deltas | chars | project() CPU（P1 前） | P1 后 |
+|---|---:|---:|---:|---:|
+| 单段长 prose | 2000 | 10,337 | **7,377 ms** | **51 ms** |
+| 多段 prose（空行边界） | 2000 | 10,541 | **17,233 ms** | **23 ms** |
+| growing list | 2000 | 11,289 | **11,428 ms** | **48 ms** |
 
 这条路径在长回答（尤其是 Code Mode 返回后模型写长总结）时会把主线程吃满；如果同时还有 execute progress burst，其他流式输出就会明显卡顿。上游已用增量 live-tail 投影修过（PR #55857 的基准 15.9×–114.3×，最终 #57016 落地）；MAFW 目前还是旧实现，可直接移植同思路。
 
@@ -335,7 +335,7 @@ type Scheduler = {
 
 ## 7. 待拍板
 
-- P0 已实施（见 §8），下一步是否做 P1 的 Markdown live-tail 增量投影？它是长回答卡顿的根治项。
+- P0 / P1 已实施（见 §8），下一步是否做 P2：`content-visibility`/虚拟化、`codemode:false` 开关或 execute 输出限幅？
 - Edit / Write 的 2.1 形状与 history output 已一并修复；如果还要每个 gateway MCP 的完整结果卡，是否加 `codemode:false` 开关？
 - §6 的菜单渲染错误已由并行提交 `d87c87b3` 修复（本批未改）；GUI 验证已恢复。
 
@@ -348,6 +348,9 @@ type Scheduler = {
   - 新增 `execute-model.ts` / `execute.tsx`：`metadata.toolCalls` 子调用行、running 状态、失败标记、最终 output；`execute` 默认展开。
 - `b815a130` perf(desktop): coalesce running tool part snapshots per frame
   - 新增 `tool-part-scheduler.ts`：running tool part 按 `part.id` 合并到 rAF，completed/error 立即 apply；`turn.completed/part.complete` 前 flush。
-- 门禁：session-ui **113/113**、desktop **1888/1888**、`tsgo --noEmit -p` rc=0（desktop + session-ui）、`electron-vite build` rc=0。
+- `00b608fa` perf(session-ui): grow the streaming markdown tail in place
+  - `markdown-stream.ts`：live tail 原地追加；空行边界 / open fence / late refs / 非追加更新 fallback；`liveSource` 只 heal 活跃 tail；`stream` raw 从源文本切片（裸列表标记不累积）。
+  - 新增 14 个回归用例；本机 `project()` 基准：单段 7,377→51ms、多段 17,233→23ms、列表 11,428→48ms。
+- 门禁：session-ui **127/127**、desktop **1888/1888**、`tsgo --noEmit -p` rc=0（desktop + session-ui）、`electron-vite build` rc=0。
 - GUI 冒烟：world 会话（`ses_e7d324d21ffemqN3O7AJSjPpYR`）实测 execute 卡显示「1 次调用」+ `✓ mafw_add_memory` + 参数 + 输出 KV；write 卡显示文件名。Edit 卡在该会话已超出 10 轮渲染窗口，未直接目测；形状已由 2.1 fixture 单测覆盖。
 
