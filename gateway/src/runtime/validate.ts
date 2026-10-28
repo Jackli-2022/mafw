@@ -53,6 +53,8 @@ const CAPABILITY_REQUIREMENTS: Array<{ cap: keyof RuntimeCapabilities; label: st
   { cap: 'instructionsApi', label: 'session.instructions.{list,put,remove}', satisfied: (rt) =>
       isObject(rt.session?.instructions) && isFn(rt.session.instructions.list) &&
       isFn(rt.session.instructions.put) && isFn(rt.session.instructions.remove) },
+  { cap: 'discoveryApi', label: 'discovery.{list,loadSkill}', satisfied: (rt) =>
+      isObject(rt.discovery) && isFn(rt.discovery.list) && isFn(rt.discovery.loadSkill) },
 ];
 
 export function validateRuntime(rt: AgentRuntime, source: string): RuntimeValidation {

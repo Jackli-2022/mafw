@@ -63,6 +63,8 @@ export interface RuntimeCapabilities {
   worktreeApi?: boolean;
   /** runtime 提供 per-session instruction entries（opencode 2.1 experimental）。 */
   instructionsApi?: boolean;
+  /** runtime 提供 command/skill 目录发现（opencode 2.1；pi false）。 */
+  discoveryApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -90,6 +92,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     turnBudgetApi: false,
     questionApi: true,
     instructionsApi: true,
+    discoveryApi: true,
   };
 }
 
@@ -110,6 +113,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     diffApi: false,
     worktreeApi: false,
     instructionsApi: false,
+    discoveryApi: false,
   };
 }
 
@@ -318,6 +322,44 @@ export interface CompletionChannel {
   complete(req: CompletionRequest): Promise<CompletionResult>;
 }
 
+export interface RuntimeCommandInfo {
+  name: string;
+  description?: string;
+  agent?: string;
+  model?: { id: string; providerID: string; variant?: string };
+  subtask?: boolean;
+  template?: string;
+}
+
+export interface RuntimeSkillInfo {
+  id: string;
+  name: string;
+  description?: string;
+  slash?: boolean;
+  location?: string;
+  contentLength: number;
+}
+
+export interface RuntimeSkillContent extends RuntimeSkillInfo {
+  content: string;
+}
+
+export interface RuntimeDiscoveryWarning {
+  source: 'commands' | 'skills';
+  message: string;
+}
+
+export interface RuntimeDiscoveryResult {
+  commands: RuntimeCommandInfo[];
+  skills: RuntimeSkillInfo[];
+  warnings: RuntimeDiscoveryWarning[];
+}
+
+export interface RuntimeDiscoveryChannel {
+  list(opts: { directory: string }): Promise<RuntimeDiscoveryResult>;
+  loadSkill(opts: { directory: string; key: string }): Promise<RuntimeSkillContent | null>;
+}
+
 export interface RuntimeClient {
   session: {
     create(opts: SessionCreateOpts): Promise<{ id: string; [k: string]: any }>;
@@ -426,6 +468,8 @@ export interface RuntimeClient {
   app: {
     agents(): Promise<any[]>;
   };
+  /** runtime 原生命令/技能目录（discoveryApi 能力）。 */
+  discovery?: RuntimeDiscoveryChannel;
   config: {
     get(): Promise<any>;
     update(config: any): Promise<any>;
