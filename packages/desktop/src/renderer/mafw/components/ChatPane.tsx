@@ -78,6 +78,7 @@ import { CheckpointOverlay } from "./CheckpointOverlay"
 import { checkpointRev } from "../checkpoint-rev"
 import { keybindingFor } from "../keybinding-store"
 import { matchesCombo } from "../keybindings"
+import { pendingInserts, takeComposerInsert } from "../composer-insert"
 import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
@@ -292,6 +293,26 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // C2：空历史提示一次性闸（pane 按 sid keyed，切换会话自然重置）。
   let emptyHistHinted = false
+
+  // B2（W5b）：文件选区「引用」→ 追加到 composer 草稿（不发送）。
+  // 订阅插入队列；按当前会话取走，拼到现有草稿尾部并聚焦。
+  createEffect(() => {
+    void pendingInserts()
+    const sid = sidProp()
+    if (!sid) return
+    const text = takeComposerInsert(sid)
+    if (!text) return
+    const next = input().trim() ? `${input().replace(/\s+$/, "")}\n\n${text}` : text
+    setInput(next)
+    setDraft(sid, next)
+    queueMicrotask(() => {
+      const ta = textareaEl()
+      if (!ta) return
+      ta.focus()
+      ta.style.height = "auto"
+      ta.style.height = `${ta.scrollHeight}px`
+    })
+  })
 
   // W0-1：session.checkpoint SSE → checkpointRev bump；overlay 打开期间重拉
   // 服务端检查点列表（关着不拉——打开按钮本身会拉一次）。

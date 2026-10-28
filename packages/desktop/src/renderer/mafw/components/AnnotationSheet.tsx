@@ -1,5 +1,5 @@
 // 批注抽屉（2026-10-27 rev2）：停靠在工作台底部，不遮挡被批注内容；Enter 发送 / Ctrl+Enter 攒草稿。
-import { createSignal, onCleanup, onMount } from "solid-js"
+import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import { placeAnnotationBox, type BoxRect } from "../annotation-placement"
@@ -10,6 +10,8 @@ export function AnnotationSheet(props: {
   /** 锚点描述（文件 › 引文/路径/单元格/区域） */
   meta: string
   placeholder?: string
+  /** B2：引用到输入框（不发送）；提供时头部显示「引用」按钮。 */
+  onQuote?: () => void
   onSubmit: (comment: string, mode: "send" | "draft") => void
   onCancel: () => void
 }) {
@@ -63,6 +65,9 @@ export function AnnotationSheet(props: {
       <div class="mafw-annot-sheet-head">
         <span class="mafw-annot-sheet-title">批注</span>
         <span class="mafw-annot-sheet-meta" title={props.meta}>{props.meta}</span>
+        <Show when={props.onQuote}>
+          <ButtonV2 variant="ghost" size="small" onClick={() => props.onQuote!()}>引用</ButtonV2>
+        </Show>
         <ButtonV2 variant="ghost" size="small" onClick={props.onCancel}>取消</ButtonV2>
       </div>
       <TextareaV2

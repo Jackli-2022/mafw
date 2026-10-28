@@ -32,6 +32,8 @@ import { annotationApplies, buildAnnotationPrompt, buildAnnotationPromptAnchored
 import { diffEntryFor } from "../editor-diff"
 import { AnnotationSheet } from "./AnnotationSheet"
 import { buildQuoteAnchor } from "../quote-anchor"
+import { pushComposerInsert } from "../composer-insert"
+import { buildFileQuote } from "../file-quote"
 import { describeAnchor, jsonPathOf, a1Ref } from "../annotation-anchor"
 import { dragRectPx, cropImageDataUrl, type Rect01 } from "../region-capture"
 import { addMark, clearMarks, marksFor, type MarkVisual } from "../annotation-marks"
@@ -1143,6 +1145,15 @@ export function EditorDock(props: {
               anchor={quoteSel()!.box}
               meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(quoteSel()!.anchor)}`}
               placeholder="这段要改成什么…"
+              onQuote={props.sessionID ? () => {
+                // B2：引用到输入框（不发送）——引文块进 composer 草稿，可编辑后再发。
+                const a = quoteSel()?.anchor
+                if (!a || a.kind !== "quote") return
+                pushComposerInsert(props.sessionID!, buildFileQuote(activeFile()?.rel ?? "", a.quote))
+                showToastV2({ description: "已引用到输入框", duration: 2000 })
+                setQuoteOpen(false)
+                setQuoteSel(null)
+              } : undefined}
               onSubmit={(comment, action) => {
                 submitAnnotationAnchored(quoteSel()?.anchor, comment, action, { visual: { rects: quoteSel()?.rects } })
                 setQuoteOpen(false)
