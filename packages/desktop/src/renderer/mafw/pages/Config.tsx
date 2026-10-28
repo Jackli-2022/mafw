@@ -26,7 +26,7 @@ interface ConfigSection {
 export { isNavKey }
 export type { NavKey }
 
-export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void; projectDir?: string }) {
+export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void; projectDir?: string; runtimeCaps?: Record<string, boolean> }) {
   const [activeNav, setActiveNav] = createSignal<NavKey>(isNavKey(props.initialSection) ? props.initialSection : "gateway")
 
   // ── MAFW raw config ──
@@ -567,35 +567,30 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   }
 
   const [mcpStatus, setMcpStatus] = createSignal<Record<string, { status: string; detail?: string }> | null>(null)
-  const [mcpServers, setMcpServers] = createSignal<Array<{ name: string; config: any; source: string }>>([])
+  const [mcpServers, setMcpServers] = createSignal<Array<{ name: string; type?: string; url?: string; command?: string[]; source?: string; disabled?: boolean }>>([])
   const [mcpErr, setMcpErr] = createSignal("")
 
   async function loadMcp() {
     setMcpErr("")
     try {
-      const [statusList, docs] = await Promise.all([
-        window.api.mafw.mcp.servers().catch(() => []),
-        window.api.mafw.opencodeConfig.get().catch(() => []),
-      ])
+      // 适配器已合并「配置定义 + 运行时状态」——桌面只消费中立 DTO。
+      const list = await window.api.mafw.mcp.servers()
       const byName: Record<string, { status: string; detail?: string }> = {}
-      for (const s of Array.isArray(statusList) ? statusList : []) {
-        if (s?.name) byName[s.name] = { status: s.status, ...(s.detail ? { detail: s.detail } : {}) }
+      const rows: Array<{ name: string; type?: string; url?: string; command?: string[]; source?: string; disabled?: boolean }> = []
+      for (const s of Array.isArray(list) ? list : []) {
+        if (!s?.name) continue
+        byName[s.name] = { status: s.status, ...(s.detail ? { detail: s.detail } : {}) }
+        rows.push({
+          name: s.name,
+          ...(s.type ? { type: s.type } : {}),
+          ...(s.url ? { url: s.url } : {}),
+          ...(Array.isArray(s.command) ? { command: s.command } : {}),
+          ...(s.source ? { source: s.source } : {}),
+          ...(s.disabled ? { disabled: true } : {}),
+        })
       }
       setMcpStatus(byName)
-      // 配置文档层数组（[{type:'document', path, info}]）合并 mcp.servers；后者覆盖前者。
-      const merged = new Map<string, { name: string; config: any; source: string }>()
-      for (const doc of Array.isArray(docs) ? docs as any[] : []) {
-        const servers = doc?.info?.mcp?.servers
-        if (!servers || typeof servers !== 'object') continue
-        for (const [name, cfg] of Object.entries(servers)) {
-          merged.set(name, { name, config: cfg, source: String(doc.path ?? '').split(/[\\/]/).pop() ?? '' })
-        }
-      }
-      // CLI 有但配置文档缺失（运行时动态/缓存）也列出。
-      for (const name of Object.keys(byName)) {
-        if (!merged.has(name)) merged.set(name, { name, config: null, source: '' })
-      }
-      setMcpServers([...merged.values()].sort((a, b) => a.name.localeCompare(b.name)))
+      setMcpServers(rows.sort((a, b) => a.name.localeCompare(b.name)))
     } catch (err: any) {
       setMcpErr(err.message)
       setMcpServers([])
@@ -1452,6 +1447,20 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
               </div>
             </div>
 
+            <Show
+              when={props.runtimeCaps?.mcpApi !== false}
+              fallback={
+                <div class="mafw-config-section">
+                  <div class="mafw-config-section-header">
+                    <span class="mafw-config-section-icon">🔌</span>
+                    <span class="mafw-config-section-title">MCP 服务器</span>
+                  </div>
+                  <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
+                    <div class="mafw-config-hint">当前 runtime 不支持 MCP 管理（mcpApi=false）。</div>
+                  </div>
+                </div>
+              }
+            >
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
                 <span class="mafw-config-section-icon">🔌</span>
@@ -1473,13 +1482,13 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                               <div class="mafw-ext-main">
                                 <div class="mafw-ext-name">
                                   {srv.name}
-                                  <span class="mafw-ext-badge">{srv.config?.type === "remote" ? "remote" : srv.config ? "local" : "runtime"}</span>
+                                  <span class="mafw-ext-badge">{srv.type === "remote" ? "remote" : srv.type ? "local" : "runtime"}</span>
                                   <span class={mcpBadgeClass(st)}>{st}</span>
                                 </div>
                                 <div class="mafw-config-hint mafw-ext-desc">
-                                  {srv.config?.type === "remote" ? srv.config?.url : (Array.isArray(srv.config?.command) ? srv.config.command.join(" ") : "")}
+                                  {srv.type === "remote" ? (srv.url ?? "") : (Array.isArray(srv.command) ? srv.command.join(" ") : "")}
                                   {srv.source ? ` · 来源 ${srv.source}` : ""}
-                                  {srv.config?.disabled ? " · 配置中 disabled" : ""}
+                                  {srv.disabled ? " · 配置中 disabled" : ""}
                                   {mcpStatus()?.[srv.name]?.detail ? ` · ${mcpStatus()?.[srv.name]?.detail}` : ""}
                                 </div>
                               </div>
@@ -1505,6 +1514,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 </Show>
               </div>
             </div>
+            </Show>
           </Show>
 
           {/* ═══ OpenCode Config ═══*/}

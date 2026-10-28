@@ -502,6 +502,12 @@ export interface McpServerEntry {
   name: string
   status: McpServerState
   detail?: string
+  /** 配置来源（runtime 合并后返回；opencode 适配器实现）。 */
+  type?: 'local' | 'remote'
+  url?: string
+  command?: string[]
+  source?: string
+  disabled?: boolean
 }
 export interface McpNamespace {
   /** 官方 CLI `opencode mcp list` 解析结果（serve 2.1 HTTP 无 MCP 运行时端点）。 */

@@ -105,9 +105,18 @@ export type MafwAPI = {
     content: (id: string, directory?: string) => Promise<{ id: string; name: string; location: string; content: string }>
   }
 
-  /** W4 v1：MCP 服务器状态（CLI `opencode mcp list` 解析）。 */
+  /** W4 v1：MCP 服务器状态（runtime 合并后的中立 DTO）。 */
   mcp: {
-    servers: () => Promise<Array<{ name: string; status: string; detail?: string }>>
+    servers: () => Promise<Array<{
+      name: string
+      status: string
+      detail?: string
+      type?: 'local' | 'remote'
+      url?: string
+      command?: string[]
+      source?: string
+      disabled?: boolean
+    }>>
     /** B3.1：运行时连接/断开（不改配置）。 */
     connect: (name: string) => Promise<unknown>
     disconnect: (name: string) => Promise<unknown>

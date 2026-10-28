@@ -1968,7 +1968,7 @@ export function MafwShell() {
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
             {showConfig() ? (
-              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme()} onToggleTheme={toggleTheme} projectDir={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined} />
+              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme()} onToggleTheme={toggleTheme} projectDir={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined} runtimeCaps={rtCaps()} />
             ) : connDown() && activeTab() !== "chat" ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : activeTab() === "chat" ? (

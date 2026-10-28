@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
 import * as yaml from 'js-yaml';
-import { spawn, execSync, execFile } from 'child_process';
+import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
 import { log } from './core/utils/logger';
@@ -18,8 +18,7 @@ import { recoverGoals, watchdogScan } from './core/goal/recovery';
 import { handleGoalTimeline } from './routes/goal-timeline';
 import { handleGoalPlan } from './routes/goal-plan';
 import { handleNodeRetry } from './routes/goal-node-retry';
-import { handleMcpList, resolveMcpListCommand } from './routes/mcp-list';
-import { handleMcpRuntime } from './routes/mcp-runtime';
+import { handleMcp } from './routes/mcp';
 import { handleSkillContent } from './routes/skill-content';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
@@ -200,7 +199,7 @@ import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecor
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
 import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './runtime/opencode-21-events';
 import { injectServeAuth } from './runtime/proxy-auth';
-import { serveAuthHeaders, resolveOpencodeBin } from './runtime/serve-sidecar';
+import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { wrapDialectEventStream } from './runtime/event-stream-wiring';
 import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
@@ -5381,50 +5380,30 @@ class MafwScheduler {
           })) return;
         }
 
-        // B3（W4 v1）：MCP 服务器状态——serve 2.1 HTTP 无 MCP 运行时端点，
-        // 以官方 CLI `opencode mcp list` 为准（wire 实证见 mcp-list.ts 注释）。
-        if (req.url?.match(/^\/api\/mcp\/servers(?:\?|$)/)) {
-          if (await handleMcpList(req, res, req.url!, {
-            listMcpOutput: () => new Promise<string>((resolve) => {
-              try {
-                const cmd = resolveMcpListCommand(resolveOpencodeBin(), fs.existsSync);
-                if (!cmd) { resolve(''); return; }
-                execFile(cmd.bin, ['mcp', 'list'], { timeout: 15_000, windowsHide: true, shell: cmd.shell }, (err, stdout) => {
-                  resolve(err && !stdout ? '' : String(stdout ?? ''));
-                });
-              } catch { resolve(''); }
-            }),
+        // MCP 管理门面（runtime-neutral）：gateway 只做能力门 + 契约调用；
+        // opencode 的 v2 HTTP / CLI / 配置文档细节在 runtime/opencode-mcp.ts。
+        if (req.url?.match(/^\/api\/mcp\//)) {
+          const rt = this.runtime;
+          const channel = rt?.mcp;
+          if (await handleMcp(req, res, req.url!, {
+            supported: !!channel && rt?.capabilities?.mcpApi === true,
+            list: (opts) => channel!.list(opts),
+            connect: (name, opts) => channel!.connect(name, opts),
+            disconnect: (name, opts) => channel!.disconnect(name, opts),
           })) return;
         }
 
-        // B3.1：MCP 运行时反代（serve /api/mcp/*）。URL 必须 `${apiBase}${path}` 拼接：
-        // new URL('/mcp', 'http://host/api') 会丢掉 /api（2026-10-28 误判根源）。
-        if (req.url?.match(/^\/api\/mcp(?:\/|$)/)) {
-          if (await handleMcpRuntime(req, res, req.url!, {
-            fetchServe: async (path, init) => {
-              const base = this.runtime?.getBaseUrl?.() ?? config.server.serveUrl;
-              if (!base) throw new Error('runtime not available');
-              const apiBase = base.replace(/\/+$/, '') + '/api';
-              const r2 = await fetch(apiBase + path, {
-                method: init?.method ?? 'GET',
-                headers: {
-                  Accept: 'application/json',
-                  ...serveAuthHeaders(),
-                  ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-                },
-                ...(init?.body ? { body: init.body } : {}),
-              });
-              const text = await r2.text();
-              let body: any = text;
-              try { body = JSON.parse(text); } catch { /* keep text */ }
-              return { status: r2.status, body };
-            },
-          })) return;
-        }
-
-        // B3（W4 v1）：技能详情（白名单：只读列表内 location）。
+        // B3（W4 v1）：技能详情——优先走 runtime discovery 通道（契约），
+        // MAFW 本地技能回退白名单文件读取。
         if (req.url?.match(/^\/api\/skill\/content(?:\?|$)/)) {
           if (await handleSkillContent(req, res, req.url!, {
+            loadSkill: async (opts) => {
+              try {
+                return (await this.runtime?.discovery?.loadSkill?.(opts)) ?? null;
+              } catch {
+                return null;
+              }
+            },
             listSkills: async (dir) => {
               const r = await this.getDiscoveryService().getLegacySkills(dir);
               return Array.isArray(r?.skills) ? r.skills : [];

@@ -16,8 +16,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { AgentRuntime, SessionInfo, fullCapabilities, CompletionRequest, CompletionResult } from './contract';
 import { AgentDefinition } from './agent-definition';
-import { startServeSidecar, killServePort, resolveServePassword, serveAuthHeaders } from './serve-sidecar';
+import { startServeSidecar, killServePort, resolveServePassword, serveAuthHeaders, resolveOpencodeBin } from './serve-sidecar';
 import { createOpencodeAdapter } from './opencode-adapter';
+import { createOpencodeMcpChannel, resolveMcpListCommand } from './opencode-mcp';
+import { execFile } from 'child_process';
 import { config as gatewayConfig } from '../config';
 import { getProviderApiKey } from './auth';
 import { httpComplete } from './completion-http';
@@ -371,6 +373,41 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
   // spawnServe (windowsHide-safe `opencode serve` sidecar) and restart (kill
   // the serve port; gateway orchestrates the respawn + event resubscribe).
   // Gateway core never hardcodes agent-specific spawn details.
+  // MCP 运行时管理（mcpApi）：opencode 的 v2 HTTP / CLI 兜底 / 配置文档形状全部
+  // 收敛在 opencode-mcp.ts；gateway 只消费 RuntimeMcpChannel 契约。
+  rt.mcp = createOpencodeMcpChannel({
+    getBaseUrl: () => rt.getBaseUrl?.() ?? config.baseUrl,
+    headers: () => ({ ...serveAuthHeaders(), ...(config.headers ?? {}) }),
+    getConfigDocuments: async () => {
+      try {
+        const cfg: any = await client.config.get();
+        return Array.isArray(cfg) ? cfg : [];
+      } catch {
+        return [];
+      }
+    },
+    listCliOutput: () =>
+      new Promise<string>((resolve) => {
+        try {
+          const cmd = resolveMcpListCommand(resolveOpencodeBin(), fs.existsSync);
+          if (!cmd) {
+            resolve('');
+            return;
+          }
+          execFile(
+            cmd.bin,
+            ['mcp', 'list'],
+            { timeout: 15_000, windowsHide: true, shell: cmd.shell },
+            (err, stdout) => {
+              resolve(err && !stdout ? '' : String(stdout ?? ''));
+            },
+          );
+        } catch {
+          resolve('');
+        }
+      }),
+  });
+
   if (!rt.external) {
     rt.agentProcess = {
       spawnServe: async (opts) => {

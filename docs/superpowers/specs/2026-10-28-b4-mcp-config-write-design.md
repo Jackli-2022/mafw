@@ -1,13 +1,33 @@
-# B4：MCP 图形化增删（全局配置写入）设计
+# B4：MCP 图形化增删（全局配置写入）设计 · rev2（契约化）
 
-- 日期：2026-10-28
+- 日期：2026-10-28（rev2：按「契约能力增强」重写分层）
 - 状态：**待用户批准**（批准前不实现、不写任何用户配置）
-- 前置：B3（扩展页只读 + CLI 状态）、B3.1（运行时连接/断开）
+- 前置：B3/B3.2（扩展页 + `RuntimeMcpChannel` 契约化）、B3.1（运行时连接/断开）
 - 相关：`docs/research/2026-10-28-mcp-skills-management-research.md`
+
+## 0. 分层原则（rev2 的核心）
+
+MCP / Skills 是 **runtime 能力**，不是 gateway 能力。gateway 只依赖契约：
+
+```
+desktop  ──▶  gateway HTTP 门面（runtime-neutral）
+                    │  capabilities.mcpApi / mcpConfigApi
+                    ▼
+             RuntimeClient.mcp（契约）
+                    │
+      ┌─────────────┴─────────────┐
+ opencode 适配器                pi 适配器
+ (v2 HTTP / CLI / JSONC 写入)   (不实现 → 能力位 false → 503/隐藏)
+```
+
+**判定标准**：gateway 代码里不允许出现 `opencode`、`/api/experimental`、`opencode.jsonc`、
+CLI 二进制解析、Windows shim 细节——这些都只能出现在 `gateway/src/runtime/` 的适配器实现里。
+本 rev2 之前 B3/B3.1 违反此原则，已在 B3.2 修复（见 AGENTS.md）。
 
 ## 1. 意图
 
-B3/B3.1 已能查看 MCP 配置、看状态、运行时连接/断开，但**增删仍要手改 `opencode.jsonc`**。B4 在 Config → 扩展 → MCP 卡里提供**图形化添加/删除**，并且：
+B3 已能查看 MCP 配置与状态、运行时连接/断开，但**增删仍要手改 `opencode.jsonc`**。
+B4 在 Config → 扩展 → MCP 卡里提供图形化添加/删除，并且：
 
 - 写入必须**持久**（重启 serve 后仍在）；
 - 写用户全局配置前**备份 + 明确确认**；
@@ -22,12 +42,12 @@ B3/B3.1 已能查看 MCP 配置、看状态、运行时连接/断开，但**增�
 | 步骤 | 结果 |
 |---|---|
 | `GET /api/mcp` baseline | `{"location":{...},"data":[]}` |
-| `PUT /api/experimental/mcp/mafw-b4-probe` body `{"config":{"type":"remote","url":"http://127.0.0.1:1/mcp"}}` | **204** |
-| PUT 后 `GET /api/mcp` | 出现 `{"name":"mafw-b4-probe","status":{"status":"failed",...}}` |
+| `PUT /api/experimental/mcp/:server` body `{"config":{"type":"remote","url":"..."}}` | **204** |
+| PUT 后 `GET /api/mcp` | 出现服务器（failed 状态） |
 | 重启 serve 后 `GET /api/mcp` | `data: []`（**消失**） |
 | 临时 HOME/项目/XDG 目录 | **没有生成任何 `.json/.jsonc`** |
 
-→ 持久化只能由 gateway 写配置文件；运行时 API 只用于「写完后立即生效」。
+→ 持久化必须由 **opencode 适配器** 写配置文件；运行时 API 只用于「写完后立即生效」。
 
 ### 2.2 官方写入渠道（已探测，v1 不采用）
 
@@ -36,13 +56,13 @@ B3/B3.1 已能查看 MCP 配置、看状态、运行时连接/断开，但**增�
 | `opencode mcp add <name> [--url/--header/--env] [--global]` | 存在且支持全局/项目；但**无 remove 子命令**、无备份、JSONC 保注释未知 |
 | `PATCH /api/opencode-config` | gateway 转 `runtime.config.update()` = **运行时合并**，不保证写盘/保注释 |
 
-→ 采用自建「JSONC 保注释编辑 + 备份 + 原子写」。
+→ 持久化在适配器内用「JSONC 保注释编辑 + 备份 + 原子写」实现。
 
 ### 2.3 其他事实
 
-- 全局配置真实路径：`C:\Users\15524\.config\opencode\opencode.jsonc`（`GET /api/opencode-config` document 层）；含 `mcp.servers.mafw`，也含 `providers.*.settings.apiKey` 等敏感字段。
-- 现有自接线范式：`src/utils/self-wiring.ts` 使用 `<file>.bak-mafw-<ts>` 备份，B4 沿用同一命名。
-- 仓库未安装 `jsonc-parser`（VS Code 的 JSONC 编辑器，`modify()`/`applyEdits()` 保留注释与格式）。
+- 全局配置真实路径：`~/.config/opencode/opencode.jsonc`（由 **opencode 适配器** 解析，gateway 不知道）。
+- 现有自接线范式：`src/utils/self-wiring.ts` 使用 `<file>.bak-mafw-<ts>` 备份，B4 沿用命名。
+- 仓库未安装 `jsonc-parser`；由适配器引入（gateway 依赖，MIT）。
 
 ## 3. 目标 / 非目标 / 反目标
 
@@ -50,11 +70,12 @@ B3/B3.1 已能查看 MCP 配置、看状态、运行时连接/断开，但**增�
 
 1. 图形化**添加/覆盖**全局 MCP 服务器（remote：url；local：command + args）。
 2. 图形化**删除**全局配置中的服务器。
-3. 写入前 **dry-run 预览 diff**（含将被保留/丢弃的字段），提交需二次确认；每次写入前自动备份。
+3. 写入前 **preview（diff）**，提交需二次确认；每次写入前自动备份。
 4. 写入保持 JSONC 注释与格式；其他配置键零改动；**未暴露字段默认保留**。
-5. 写后尽力立即生效（运行时 PUT），失败时明确「已持久化但未生效」。
+5. 写后尽力立即生效（运行时 add/connect），失败时明确「已持久化但未生效」。
 6. 支持**恢复上次备份的 `mcp.servers` 子树**（只回滚 MCP，不覆盖其他配置）。
-7. 全程不把配置内容（尤其 apiKey/headers）打进日志。
+7. gateway 代码零 opencode 知识；pi/其他 runtime 能力位 false → UI 隐藏 / 503。
+8. 全程不把配置内容（尤其 apiKey/headers）打进日志。
 
 **非目标（v1 不做）**
 
@@ -67,157 +88,150 @@ B3/B3.1 已能查看 MCP 配置、看状态、运行时连接/断开，但**增�
 
 **反目标（即使能跑也算失败）**
 
+- gateway 源码出现 opencode 专有路径/文件名/CLI 细节。
 - 解析失败仍写文件；或写入丢失注释/格式化、覆盖相邻配置键。
 - 写全局配置却没有备份、或没有明确确认。
 - 把含密钥的配置内容写进日志/遥测/diff。
 - 覆盖时静默丢弃未暴露字段（headers/env/oauth/disabled 等）。
-- renderer 传任意路径读写文件（路径必须服务端固定）。
+- renderer 传任意路径读写文件（路径必须由适配器固定）。
 
-## 4. 设计
+## 4. 契约增强（本批要新增）
 
-### 4.1 目标文件（服务端固定，单一）
+### 4.1 能力位
 
-| scope | 路径 |
-|---|---|
-| v1 | `~/.config/opencode/opencode.jsonc`（仅此一个） |
-
-- 客户端不传路径；路径由 gateway 固定拼出。
-- 文件必须存在（缺失报错，不擅自创建全局配置）。
-- 大小上限 512KB；超过拒绝编辑。
-
-### 4.2 JSONC 保注释编辑
-
-引入 `jsonc-parser`（gateway 依赖，MIT）：
-
-- 读取：`parseTree` 校验语法；有错 → 拒绝写入并返回 `{line, column, message}`。
-- 新增/覆盖（字段级合并）：若 `mcp.servers.<name>` 已存在，**只修改本次提交的字段**（`type` + `url` 或 `command`+`args`），其余字段原样保留；`type` 发生变化（remote↔local）时需显式 `replace: true`（否则 400 + 提示冲突字段）。
-- 删除：`modify(text, ['mcp','servers',name], undefined)`。
-- `mcp`/`servers` 不存在时按路径创建（保留既有注释与缩进）。
-- 不改动其余键；不重排；缩进沿用文件现有探测（缺省 2 空格）。
-
-### 4.3 写入管线（两阶段 + 乐观锁）
-
-**阶段一：dry-run（不落盘）** `POST /api/mcp/config/servers?dryRun=1`
-
-```jsonc
-{ "name": "sentry", "config": { "type": "remote", "url": "https://..." } }
-```
-
-返回：
-
-```jsonc
-{
-  "ok": true,
-  "target": "C:/Users/.../.config/opencode/opencode.jsonc",
-  "etag": "sha256:<hash>",            // 文件当前内容哈希，commit 必须回传
-  "backup": "...opencode.jsonc.bak-mafw-<ts>",  // 预告值（commit 实际生成）
-  "diff": "--- before\n+++ after\n@@ ...",
-  "existing": true,                    // 同名服务器已存在
-  "preserved": ["headers.Authorization", "environment"],  // 覆盖时保留的字段
-  "wouldReplaceType": false,
-  "runtime": { "wouldApply": true }
+```ts
+export interface RuntimeCapabilities {
+  // ...既有
+  mcpApi?: boolean;        // 列表/状态 + 连接/断开（B3.2 已实现）
+  mcpConfigApi?: boolean;  // 持久化增删/预览/恢复（B4 新增）
 }
 ```
 
-**阶段二：提交** 同路由 `?dryRun=0`，body 必须带 `confirm: true` + `etag`（缺 → 400/409）。
+### 4.2 通道
 
-管线：
+```ts
+export interface RuntimeMcpServerConfigInput {
+  name: string;
+  type: 'remote' | 'local';
+  url?: string;            // remote
+  command?: string[];      // local
+  overwrite?: boolean;     // 同名覆盖
+  replace?: boolean;       // type 变更时显式替换
+}
 
-1. 重新读文件；`etag` 不匹配 → **409**（UI 重新 dry-run）。
-2. 备份：同目录 `<file>.bak-mafw-<ts>`；失败 → 中止。
-3. 原子写：同目录临时文件 + rename；失败 → 保持原文件（备份仍在）。
-4. 运行时应用（尽力）：`PUT /api/experimental/mcp/:server`（add/upsert + 立即连接）；失败不回收文件，返回 `applied:false` + `runtimeError`。
-5. 返回：`{ok, target, backup, applied, runtimeError?}`。
+export interface RuntimeMcpConfigPreview {
+  token: string;           // 内容哈希/乐观锁令牌（适配器生成）
+  target: string;          // 展示给用户的目标文件（绝对路径）
+  diff: string;            // 统一 diff（密钥已掩码）
+  backup?: string;         // 预计备份名（新建文件时 null）
+  preserved?: string[];    // 覆盖时保留的未暴露字段
+  warnings?: string[];
+}
 
-**删除**：`DELETE /api/mcp/config/servers/:name`（body/query 带 `etag`）
-顺序：**先改文件**（备份+原子写），成功后再运行时 `DELETE /api/experimental/mcp/:server`（尽力）；文件失败 → 运行时不动。返回同上。
+export interface RuntimeMcpConfigChannel {
+  preview(input: RuntimeMcpServerConfigInput): Promise<RuntimeMcpConfigPreview>;
+  apply(input: RuntimeMcpServerConfigInput & { token: string; confirm: true }): Promise<{
+    applied: boolean;          // 配置已持久化
+    runtimeApplied: boolean;   // 运行时立即生效
+    backup?: string;
+    error?: string;
+  }>;
+  remove(name: string, opts: { token: string; confirm: true }): Promise<{
+    applied: boolean; runtimeApplied: boolean; backup?: string; error?: string;
+  }>;
+  restore(opts: { token: string; confirm: true }): Promise<{
+    applied: boolean; runtimeApplied: boolean; backup?: string; error?: string;
+  }>;
+}
+```
 
-**恢复**：`POST /api/mcp/config/restore` body `{backupPath}`
-- `backupPath` 必须是 `~/.config/opencode/` 下、文件名匹配 `opencode.jsonc.bak-mafw-*`（防任意路径）。
-- 只从备份中提取 `mcp.servers` 子树，写回当前文件（**外科式回滚**，不回滚其他键的后续修改）。
-- 回滚前把当前文件再备份一次；同样原子写。
+`RuntimeClient.mcp` 扩展为 `RuntimeMcpChannel & { config?: RuntimeMcpConfigChannel }`（可选子能力）。
 
-### 4.4 校验
+### 4.3 gateway 门面（薄）
 
-| 项 | 规则 |
+| 路由 | 行为 |
 |---|---|
-| name | `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`；重复且无 `overwrite:true` → 409（dry-run 提示） |
-| remote | `url` 必须 `http(s)://`；`oauth` 可选 boolean |
-| local | `command` 非空字符串数组（首项非空）；不接受 shell 字符串 |
-| type 变更 | 已存在且 type 改变时需 `replace:true`；否则 400 |
-| 解析 | `parseTree` 有 error → 400 + 位置 |
-| 大小 | ≤ 512KB |
-| etag | dry-run 返回；commit/delete 必带，不匹配 409 |
+| `GET /api/mcp/config` | `mcpConfigApi` 能力门 → `runtime.mcp.config?.preview` 所需的当前配置（只读；密钥掩码） |
+| `POST /api/mcp/config/preview` | `preview(input)` 透传 |
+| `POST /api/mcp/config/apply` | `apply(input)` 透传（token/confirm 门） |
+| `DELETE /api/mcp/config/servers/:name` | `remove(name, opts)` 透传 |
+| `POST /api/mcp/config/restore` | `restore(opts)` 透传 |
 
-### 4.5 密钥与日志
+gateway 不做：路径解析、JSONC 解析、备份、原子写、diff 生成——全部适配器负责。
+能力缺失 → 503 `{error:'runtime does not support MCP config write'}`。
 
-- `mcp.servers` 的 `headers.*` / `environment.*` / `*token*` / `*key*` 值：UI 与 diff 一律掩码为 `••••`；写路径不读取这些值。
-- 服务端日志仅记录：name、target 文件名、是否成功、备份文件名、applied；**不记录配置内容**。
+### 4.4 opencode 适配器实现（内部）
 
-### 4.6 Desktop UI（Config → 扩展 → MCP 卡）
+- 目标文件：`~/.config/opencode/opencode.jsonc`（仅此一个；v1 不接项目级）。
+- 校验：name 正则、remote url、local command、type 变更需 `replace`、文件大小 ≤512KB。
+- JSONC：`jsonc-parser` 的 `parseTree` / `modify` / `applyEdits`（保留注释与缩进）。
+- 覆盖：**字段级合并**，保留 headers/env/oauth/disabled 等未暴露字段。
+- 备份：`<file>.bak-mafw-<ts>`；原子写：同目录 tmp + rename；失败保持原文件。
+- 令牌：文件内容 sha256；`apply/remove/restore` 必须回传，不匹配 → 409。
+- 运行时：`apply` 后 PUT（尽力）；`remove` 先文件后 DELETE（尽力）；失败 `runtimeApplied:false`。
+- 恢复：只从备份提取 `mcp.servers` 子树写回（外科式），回滚前再备份当前文件。
+- 日志：只记 name/文件名/备份名/结果，不记配置内容；diff/响应中敏感值掩码。
 
-- 卡头「添加服务器」→ `McpServerDialog`：
-  - 名称、类型（remote/local）、URL 或 命令+参数。
-  - 下一步 → dry-run：显示目标文件、备份名、diff、`preserved` 字段与 type 变更警告。
-  - 「确认写入」→ commit（带 etag）；`applied:false` 时提示「已持久化，重启 agent 后生效」。
-  - 同名覆盖：显示「将覆盖 <name>」+ 保留字段列表；type 变更需勾选「替换类型」。
-- 每行按钮：保留「连接/断开」；**仅当该服务器来自全局配置文件时**显示「删除」（确认弹窗）。运行时-only 行不显示删除。
-- `needs_auth` 仍显示「复制认证命令」。
-- 写/删后刷新 `mcp.servers()` 与配置列表。
+### 4.5 Desktop UI
 
-新增 preload/SDK 方法：
+- 卡头「添加服务器」→ 对话框（名称/类型/URL 或命令+参数）→ preview（目标文件、备份名、diff、保留字段、type 变更警告）→ 确认写入。
+- 行内：连接/断开（已有）+「删除」（仅当该行来自配置文件；运行时-only 行不显示）。
+- `runtimeCaps.mcpConfigApi !== true` → 隐藏写入口，显示只读提示。
+- 写/删后刷新 `mcp.servers()` 与 config 视图。
 
-- `mcp.config()` → `{path, exists, servers, parseError?}`
-- `mcp.saveServer(opts)` → `{dryRun, confirm?, etag?, overwrite?, replace?, name, config}`
-- `mcp.removeServer(name, opts)` → `{etag, confirm}`
-- `mcp.restoreBackup(backupPath)`
+preload/SDK 方法（中立命名）：
 
-全部登记进 `route-catalog.ts` → `emit:openapi` → SDK build。
+- `mcp.config()` / `mcp.previewServer(opts)` / `mcp.applyServer(opts)` / `mcp.removeServer(name, opts)` / `mcp.restoreConfig(opts)`
 
 ## 5. 安全与审批
 
-- 所有写操作都有 confirm 门；dry-run 必显目标绝对路径 + 备份名。
-- **首次真实写全局配置由你本人触发的 GUI 冒烟执行**；实现期所有测试只用「临时 HOME 副本文件」（copied fixture），不碰真实全局配置。
-- 写盘失败自动保持原文件；备份失败中止；恢复只动 `mcp.servers` 子树。
+- 所有写操作都有 confirm 门；preview 必显目标绝对路径 + 备份名。
+- **首次真实写全局配置由你本人触发的 GUI 冒烟执行**；实现期所有测试只用「临时 HOME 副本文件」，不碰真实全局配置。
+- 写盘失败保持原文件；备份失败中止；恢复只动 `mcp.servers` 子树。
 
 ## 6. 测试计划
 
-**gateway**
+**gateway（门面层）**
 
-- `jsonc-edit` 纯函数：新增/覆盖（字段级合并保留 headers/env/oauth/disabled）/删除；注释与缩进保留；`mcp`/`servers` 缺失创建；非法 JSONC 拒绝；同名无 overwrite → 409；type 变更无 replace → 400；不触碰相邻键；大文件拒绝。
-- 路由：dry-run 不写盘（mtime/hash 不变）；commit 无 confirm / etag 不匹配 → 400/409；备份内容 = 原文；写入失败原文件不变；backupPath 非白名单 → 400；日志不含密钥（捕获 logger）。
-- 运行时失败：文件已写、`applied:false`；删除文件失败 → 运行时未动。
-- 恢复：只改 `mcp.servers`，其他键保持当前值。
+- 能力门：`mcpConfigApi=false` → 503；路由透传参数/响应；错误映射。
+- 架构护栏：`gateway/src`（排除 `runtime/`）不得出现 opencode 专有字符串（`opencode.jsonc`、`/api/experimental`、`opencode mcp`）——静态测试。
+
+**opencode 适配器（纯逻辑优先）**
+
+- JSONC 编辑：新增/字段级覆盖/删除；注释与缩进保留；`mcp`/`servers` 缺失创建；非法 JSONC 拒绝；type 变更无 replace → 400；不触碰相邻键；大文件拒绝。
+- 管线：preview 不写盘；apply token 不匹配 409；备份内容=原文；原子写失败原文件不变；remove 先文件后运行时；restore 只改 mcp.servers。
+- 密钥：diff 中 headers/env/apiKey 值掩码；日志不含配置内容。
 
 **desktop**
 
-- 表单校验（name/url/command）；dry-run → 确认 → 成功/失败 toast；覆盖保留字段提示；type 变更需勾选；删除确认；runtime-only 行无删除按钮。
+- 表单校验、preview → 确认 → 成功/失败 toast、覆盖保留提示、type 变更勾选、删除确认、runtime-only 行无删除、能力位隐藏。
 
 **GUI 冒烟（临时 HOME 副本）**
 
-- fixture `opencode.jsonc`（含注释 + mafw + 一个带 headers 的服务器）→ 添加 remote → diff → 确认 → 文件出现键、注释仍在、备份存在、运行时出现（failed 可接受）→ 删除 → 键消失、其他键不变 → 恢复备份 → 回到初始 `mcp.servers`。
+- fixture（含注释 + headers 服务器）→ 添加 → preview → 确认 → 注释仍在、备份存在、运行时出现（failed 可接受）→ 删除 → 键消失 → restore → 回到初始 `mcp.servers`。
 
 ## 7. 交付顺序（批准后）
 
-1. gateway：`jsonc-edit` 纯函数 + 测试（TDD）。
-2. gateway：config 路由（dry-run/commit/delete/restore）+ 备份/原子写/etag + 测试。
-3. SDK/preload：4 个方法 + 契约（route-catalog → emit → build）。
-4. desktop：MCP 卡按钮 + 对话框 + diff 预览 + 覆盖/替换提示 + 删除。
-5. 全量门禁 + 临时 HOME GUI 冒烟。
-6. AGENTS.md 记录 + 提交（不 push）。
+1. 契约：`mcpConfigApi` + `RuntimeMcpConfigChannel` 类型 + capabilities 基线/测试。
+2. opencode 适配器：JSONC 编辑纯函数 + preview/apply/remove/restore + 测试（TDD）。
+3. gateway 门面路由 + 能力门 + 架构护栏测试。
+4. SDK/preload：5 个方法 + 契约（route-catalog → emit → build）。
+5. desktop：对话框 + preview + 删除 + 能力位。
+6. 全量门禁 + 临时 HOME GUI 冒烟。
+7. AGENTS.md 记录 + 提交（不 push）。
 
 ## 8. 已拍板 / 我的默认（可推翻）
 
 **你已拍板**
 
 - v1 写入范围：**仅全局**（项目级 v1.1）。
+- 分层：**契约能力增强**（runtime 能力位 + 通道），非解耦逻辑下沉适配器。
 
-**我的默认（builder check 的其余 7 项裁决，可推翻）**
+**我的默认（builder check 的其余项，可推翻）**
 
-1. 覆盖时**字段级合并**，保留未暴露字段；type 变更需显式 `replace`。
-2. 删除**先文件后运行时**；文件失败则运行时不动。
-3. 恢复是**外科式**（只回滚 `mcp.servers` 子树），不做整文件回滚。
-4. dry-run 返回 `etag`，commit/delete 必须回传，不匹配 409。
-5. 行以 `(name, source)` 标识；运行时-only 行不可删除。
-6. 新文件无备份 → `backup:null`（v1 全局文件必须已存在，实际不会出现）。
-7. v1 字段仅 name/type/url/command+args；headers/env 只读保留（v1.1 再开编辑）。
+1. 覆盖 = 字段级合并，保留未暴露字段；type 变更需显式 `replace`。
+2. 删除 = 先文件后运行时；文件失败则运行时不动。
+3. 恢复 = 外科式（只回滚 `mcp.servers` 子树）。
+4. preview 返回 `token`，apply/remove/restore 必带，不匹配 409。
+5. 行按 `(name, source)` 标识；运行时-only 行不可删。
+6. v1 字段仅 name/type/url/command+args；headers/env 只读保留（v1.1 再开编辑）。

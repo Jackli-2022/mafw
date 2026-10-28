@@ -30,6 +30,53 @@ function makeDeps() {
 }
 
 describe('GET /api/skill/content', () => {
+  it('runtime discovery 通道可用 → 优先用 runtime 内容（不读文件）', async () => {
+    const { deps, reads } = makeDeps();
+    const { res, out } = makeRes();
+    const handled = await handleSkillContent(
+      { method: 'GET' } as http.IncomingMessage,
+      res,
+      '/api/skill/content?directory=D%3A%5Cp&id=vision-tools',
+      {
+        ...deps,
+        loadSkill: async (opts) => ({
+          id: opts.key,
+          name: opts.key,
+          description: 'd',
+          contentLength: 12,
+          location: 'runtime://vision-tools',
+          content: 'RUNTIME-CONTENT',
+        }),
+      },
+    );
+    expect(handled).toBe(true);
+    expect(out.status).toBe(200);
+    expect(out.body.content).toBe('RUNTIME-CONTENT');
+    expect(out.body.location).toBe('runtime://vision-tools');
+    expect(reads).toHaveLength(0);
+  });
+
+  it('runtime 返回 null / 抛错 → 回退白名单文件读取', async () => {
+    const { deps, reads } = makeDeps();
+    const r1 = makeRes();
+    await handleSkillContent(
+      { method: 'GET' } as http.IncomingMessage,
+      r1.res,
+      '/api/skill/content?directory=D%3A%5Cp&id=vision-tools',
+      { ...deps, loadSkill: async () => null },
+    );
+    expect(r1.out.body.content).toBe('CONTENT:C:/skills/vision-tools/SKILL.md');
+    const r2 = makeRes();
+    await handleSkillContent(
+      { method: 'GET' } as http.IncomingMessage,
+      r2.res,
+      '/api/skill/content?directory=D%3A%5Cp&id=vision-tools',
+      { ...deps, loadSkill: async () => { throw new Error('404'); } },
+    );
+    expect(r2.out.body.content).toBe('CONTENT:C:/skills/vision-tools/SKILL.md');
+    expect(reads).toHaveLength(2);
+  });
+
   it('已知 id → 返回内容 + location', async () => {
     const { deps, reads } = makeDeps();
     const { res, out } = makeRes();

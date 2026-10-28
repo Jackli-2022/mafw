@@ -65,6 +65,8 @@ export interface RuntimeCapabilities {
   instructionsApi?: boolean;
   /** runtime 提供 command/skill 目录发现（opencode 2.1；pi false）。 */
   discoveryApi?: boolean;
+  /** runtime 提供 MCP 服务器列表与运行时连接/断开（opencode 2.1；pi false）。 */
+  mcpApi?: boolean;
   /** W5a：runtime 接受 delivery:'steer'（opencode 2.1=回合后优先送达；pi=工具间隙注入）。 */
   steerApi?: boolean;
 }
@@ -95,6 +97,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     questionApi: true,
     instructionsApi: true,
     discoveryApi: true,
+    mcpApi: true,
     // W5a：opencode 2.1 接受 delivery:'steer'（wire probe 实证=回合结束后优先送达）。
     steerApi: true,
   };
@@ -118,6 +121,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     worktreeApi: false,
     instructionsApi: false,
     discoveryApi: false,
+    mcpApi: false,
     steerApi: false,
   };
 }
@@ -365,6 +369,32 @@ export interface RuntimeDiscoveryChannel {
   loadSkill(opts: { directory: string; key: string }): Promise<RuntimeSkillContent | null>;
 }
 
+// ── MCP 运行时管理（mcpApi；gateway 不感知具体 runtime 的 API/CLI 形态） ──
+
+export type RuntimeMcpStatus = 'connected' | 'disabled' | 'failed' | 'needs_auth' | 'unknown';
+
+export interface RuntimeMcpServer {
+  name: string;
+  status: RuntimeMcpStatus;
+  /** 失败/待认证等附加说明（来自 runtime，不保证存在）。 */
+  detail?: string;
+  /** 配置来源（本地/远端、URL/命令、来源文件名）。 */
+  type?: 'local' | 'remote';
+  url?: string;
+  command?: string[];
+  source?: string;
+  disabled?: boolean;
+}
+
+export interface RuntimeMcpChannel {
+  /** 合并「配置定义」与「运行时状态」的服务器列表（具体来源由 runtime 决定）。 */
+  list(opts?: { directory?: string }): Promise<RuntimeMcpServer[]>;
+  /** 运行时连接（不修改配置）；返回是否成功。 */
+  connect(name: string, opts?: { directory?: string }): Promise<boolean>;
+  /** 运行时断开（不修改配置）。 */
+  disconnect(name: string, opts?: { directory?: string }): Promise<boolean>;
+}
+
 export interface RuntimeClient {
   session: {
     create(opts: SessionCreateOpts): Promise<{ id: string; [k: string]: any }>;
@@ -475,6 +505,8 @@ export interface RuntimeClient {
   };
   /** runtime 原生命令/技能目录（discoveryApi 能力）。 */
   discovery?: RuntimeDiscoveryChannel;
+  /** MCP 运行时管理（mcpApi 能力）。runtime 拥有列表/连接/断开的实现细节。 */
+  mcp?: RuntimeMcpChannel;
   config: {
     get(): Promise<any>;
     update(config: any): Promise<any>;
