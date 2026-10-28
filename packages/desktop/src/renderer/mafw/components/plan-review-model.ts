@@ -36,3 +36,33 @@ export function planReviewViewModel(info: PlanReviewInfo): PlanReviewViewModel {
   const empty = !info.waves || (typeof info.waves === "object" && !("waves" in (info.waves as object)) && !("ambiguities" in (info.waves as object)))
   return { status, showActions, badge, empty }
 }
+
+// ── W1 Task 4：批注草稿（引文 + 意见）→ 驳回反馈打包 ──────────────────────
+
+export interface PlanAnnotationDraft {
+  quote: string
+  comment: string
+}
+
+/** 引文截断（引文是给人看的锚点，不是全文引用）。 */
+const QUOTE_CAP = 200
+
+/**
+ * 驳回反馈组装：批注草稿在前（逐条 `> 引文` + 意见）、freeText 在后。
+ * 全空 → ''（调用方以此禁用驳回按钮）。
+ */
+export function buildRejectFeedback(drafts: PlanAnnotationDraft[], freeText: string): string {
+  const parts: string[] = []
+  for (const d of drafts) {
+    const quote = d.quote.trim().slice(0, QUOTE_CAP)
+    const comment = d.comment.trim()
+    if (!quote && !comment) continue
+    const lines: string[] = []
+    if (quote) for (const l of quote.split("\n")) lines.push(`> ${l}`)
+    if (comment) lines.push(`意见：${comment}`)
+    parts.push(lines.join("\n"))
+  }
+  const tail = freeText.trim()
+  if (tail) parts.push(tail)
+  return parts.join("\n\n")
+}

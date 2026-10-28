@@ -1,13 +1,15 @@
 // @ts-nocheck
-// W1 计划审阅浮层：goal 泳道 plan 格子下钻——waves.json 渲染 + 批准/驳回。
-// 批注（引文锚）在 Task 4 接入；本组件先交付渲染 + 动作条。
-import { createSignal, createEffect, Show, onMount, onCleanup } from "solid-js"
+// W1 计划审阅浮层：goal 泳道 plan 格子下钻——waves.json 渲染 + 划选批注 + 批准/驳回。
+// 批注驳回专用（Task 4）：Enter 攒草稿，驳回时 buildRejectFeedback 打包；非 pending 可复制文本。
+import { createSignal, createEffect, Show, onMount, onCleanup, For } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { Markdown } from "@mafw/session-ui/markdown"
+import { AnnotationSheet } from "./AnnotationSheet"
 import { renderPlanMarkdown } from "./plan-render"
-import { planReviewViewModel } from "./plan-review-model"
+import { planReviewViewModel, buildRejectFeedback, type PlanAnnotationDraft } from "./plan-review-model"
+import type { BoxRect } from "../annotation-placement"
 
 export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; onClose: () => void }) {
   const [info, setInfo] = createSignal<any>(null)
@@ -16,6 +18,10 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
   const [acting, setActing] = createSignal(false)
   const [rejectText, setRejectText] = createSignal("")
   const [rejectOpen, setRejectOpen] = createSignal(false)
+  // Task 4：批注草稿池 + AnnotationSheet 挂载态
+  const [drafts, setDrafts] = createSignal<PlanAnnotationDraft[]>([])
+  const [sheet, setSheet] = createSignal<{ anchor: BoxRect; quote: string } | null>(null)
+  let bodyEl: HTMLDivElement | undefined
 
   async function load() {
     setLoading(true); setError(null)
@@ -56,7 +62,7 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
   }
 
   async function reject() {
-    const feedback = rejectText().trim()
+    const feedback = buildRejectFeedback(drafts(), rejectText())
     if (!feedback) return
     setActing(true)
     try {
@@ -68,6 +74,53 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
     }
     setActing(false)
   }
+
+  // ── Task 4：划选 → 引文锚 → AnnotationSheet（Enter 攒草稿） ──────────────
+  const captureSelection = () => {
+    if (!bodyEl) return
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    const node = range.commonAncestorContainer
+    const el = node.nodeType === 1 ? node : node.parentElement
+    if (!el || !bodyEl.contains(el)) return
+    const text = sel.toString().replace(/\s+/g, " ").trim()
+    if (!text) return
+    const rect = range.getBoundingClientRect()
+    const host = bodyEl.getBoundingClientRect()
+    setSheet({
+      anchor: { left: rect.left - host.left, top: rect.top - host.top, width: rect.width, height: rect.height },
+      quote: text,
+    })
+  }
+
+  const addDraft = (comment: string) => {
+    const s = sheet()
+    if (!s) return
+    setDrafts(prev => [...prev, { quote: s.quote, comment }])
+    setSheet(null)
+    try { window.getSelection()?.removeAllRanges() } catch { /* ignore */ }
+  }
+
+  const copyDrafts = () => {
+    const text = buildRejectFeedback(drafts(), "")
+    if (!text) return
+    try { navigator.clipboard.writeText(text) } catch { /* ignore */ }
+    showToastV2({ description: "批注已复制", duration: 2000 })
+  }
+
+  onMount(() => {
+    // 点外关闭 sheet（EditorDock 同款 capture 语义；sheet 内部点击不关）
+    const onPointerDown = (e: PointerEvent) => {
+      const s = sheet()
+      if (!s) return
+      const target = e.target as HTMLElement | null
+      if (target && target.closest(".mafw-annot-sheet")) return
+      setSheet(null)
+    }
+    document.addEventListener("pointerdown", onPointerDown, true)
+    onCleanup(() => document.removeEventListener("pointerdown", onPointerDown, true))
+  })
 
   return (
     <div class="mafw-goal-overlay mafw-plan-overlay" onClick={e => { if (e.target === e.currentTarget) props.onClose() }}>
@@ -91,11 +144,42 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
                 <LoaderV2 width={16} height={16} />
               </div>
         }>
-          <div class="mafw-plan-body">
+          <div class="mafw-plan-body" ref={bodyEl} onMouseUp={captureSelection}>
             <Show when={!vm().empty} fallback={<div class="mafw-empty">暂无计划内容（plan 尚未产出 waves.json）</div>}>
               <Markdown text={markdown()} cacheKey={`plan:${props.goalId}:${markdown().length}`} streaming={false} />
             </Show>
+            <Show when={sheet()}>
+              <AnnotationSheet
+                anchor={sheet()!.anchor}
+                meta={`计划 › ${sheet()!.quote.slice(0, 24)}${sheet()!.quote.length > 24 ? "…" : ""}`}
+                placeholder="对这段计划的意见（Enter 攒草稿，驳回时打包）"
+                onSubmit={(v) => addDraft(v)}
+                onCancel={() => setSheet(null)}
+              />
+            </Show>
           </div>
+
+          <Show when={drafts().length > 0}>
+            <div class="mafw-plan-drafts">
+              <div class="mafw-plan-drafts-head">
+                <span class="mafw-card-meta">批注草稿 {drafts().length} 条（驳回时随意见打包）</span>
+                <ButtonV2 variant="ghost" size="small" onClick={() => setDrafts([])}>清空</ButtonV2>
+                <ButtonV2 variant="ghost" size="small" onClick={copyDrafts}>复制批注文本</ButtonV2>
+              </div>
+              <For each={drafts()}>
+                {(d, i) => (
+                  <div class="mafw-plan-draft">
+                    <div class="mafw-plan-draft-quote">「{d.quote.slice(0, 60)}{d.quote.length > 60 ? "…" : ""}」</div>
+                    <div class="mafw-plan-draft-comment">{d.comment}</div>
+                    <ButtonV2
+                      variant="ghost" size="small" class="mafw-plan-draft-x" aria-label="删除此批注"
+                      onClick={() => setDrafts(prev => prev.filter((_, j) => j !== i()))}
+                    >✕</ButtonV2>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
 
           <Show when={vm().showActions}>
             <div class="mafw-plan-actions">
@@ -104,7 +188,7 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
                   <textarea
                     class="mafw-plan-reject-input"
                     rows={3}
-                    placeholder="驳回意见（会注入下一版计划；批注草稿也将一并打包）"
+                    placeholder="驳回意见（批注草稿将一并打包；也可只留批注）"
                     value={rejectText()}
                     onInput={e => setRejectText(e.currentTarget.value)}
                   />
@@ -112,7 +196,7 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
                     <ButtonV2 variant="ghost" size="small" onClick={() => setRejectOpen(false)}>返回</ButtonV2>
                     <ButtonV2
                       variant="contrast" size="small"
-                      disabled={acting() || !rejectText().trim()}
+                      disabled={acting() || !buildRejectFeedback(drafts(), rejectText())}
                       onClick={() => void reject()}
                     >驳回并重新规划</ButtonV2>
                   </div>
