@@ -264,6 +264,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 
 - **流式尾光标「每段都有」bug 修复（2026-10-28）**：现象——对话进行中每个 text 段后面都出现闪烁绿色块。根因：gateway 历史 text part **没有 `time.end`**（实测），`message-part.tsx` 流式判定只看 `message.time.completed`，导致未完成消息里**每个** text/reasoning part 都被当作 streaming；`mafw.css` 的 `::after{content:"▌";color:var(--accent)}`（#4FD388 绿 + 1s blink）于是挂在每个 markdown 根上。修复：新增纯函数 `shouldShowStreamingCaret`（role / messageCompleted / partEnd / **isTailPart**）+ session-ui 的 Text/Reasoning 两个分支与 desktop `ThinkingBlock` 统一改为「只有消息最后一个 part 才显示」；工具执行中（最后 part 是 tool）光标为 0。session-ui **99/99**（新增 5 例）、desktop **1843/1843**、tsgo/build rc=0；真机 `text→tool→text` 回合实测 max=1、工具阶段=0。视觉字形未改（仍是绿色半块，仅作用域修正）。
 
+- **已知债清偿（第三批，2026-10-28）**：① **SDK voice dead-contract**：`/api/voice/status` 已进契约但 SDK 无调用（并行 voice 工作遗留），补 `voice.status()` → SDK **163/163** 全绿；② **`/api/opencode-config` 命名债**：SDK 新增 `runtimeConfig`（走 `/api/runtime-config`），`opencodeConfig` 降为 deprecated 别名；preload 同步新增 `runtimeConfig` + 旧名别名；Config 页改用 `runtimeConfig`；gateway 双路由同一 handler（旧名保留兼容），catalog 里旧名两条标 `internal`（不再计入死契约）。③ **automations DELETE 契约缺失**：网关已有 `DELETE /api/automations/:id`（删除规则）但 catalog 未登记，导致并行 SDK 调用 dead-drift；补 `automations.remove` 条目。④ **dist 拷贝部署依赖遗漏**：新增 `gateway/scripts/deploy-local.mjs` + `npm run deploy:local`，同步 `dist` 并按 package.json 补齐目标缺失的生产依赖（jsonc-parser 踩坑的根治）。gateway api-contract **3/3**、SDK **163/163**、desktop **1849/1849**、tsgo/build rc=0；HTTP 实测 `/api/runtime-config`（5 docs）、旧别名、`/api/voice/status`（ok=true）均通。注：并行 WIP（NotesDock/SubagentDock 菜单迁移）未纳入本提交。
+
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类�?API 获取数据�?
 ```

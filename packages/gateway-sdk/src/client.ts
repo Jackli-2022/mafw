@@ -948,22 +948,26 @@ export class MafwClient implements IMafwClient {
 
   // 鈹€鈹€ OpenCode config (native opencode /config) 鈹€鈹€
 
-  opencodeConfig = {
+  /** runtime 中立的运行时配置读写（旧名 opencodeConfig 保留为 deprecated 别名）。 */
+  runtimeConfig = {
     get: async (): Promise<any> => {
-      const data = await this.request<{ config: any }>('/api/opencode-config')
+      const data = await this.request<{ config: any }>('/api/runtime-config')
       return data.config
     },
 
     update: async (config: Record<string, unknown>): Promise<any> => {
-      const res = await this.fetchPath(`/api/opencode-config`, {
+      const res = await this.fetchPath(`/api/runtime-config`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       })
-      if (!res.ok) throw new Error(`OpenCodeConfig update failed: ${res.status}`)
+      if (!res.ok) throw new Error(`RuntimeConfig update failed: ${res.status}`)
       return res.json()
     },
   }
+
+  /** @deprecated 使用 runtimeConfig（仅保留调用别名，避免旧代码破坏）。 */
+  opencodeConfig = this.runtimeConfig
 
   // 鈹€鈹€ Goals 鈹€鈹€
 
@@ -1409,6 +1413,14 @@ export class MafwClient implements IMafwClient {
     },
 
     artifactUrl: (id: string): string => `${this.baseUrl}/a2a/artifacts/${id}`,
+  }
+
+  // ── Voice runtime v2 status ──
+
+  voice = {
+    status: async (): Promise<{ ok: boolean; config: any; engines: any[] }> => {
+      return this.request<{ ok: boolean; config: any; engines: any[] }>('/api/voice/status')
+    },
   }
 
   // 鈹€鈹€ TTS (MiMo-V2.5-TTS speech synthesis) 鈹€鈹€

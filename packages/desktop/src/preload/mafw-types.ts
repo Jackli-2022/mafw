@@ -341,6 +341,12 @@ export type MafwAPI = {
     onChange(cb: () => void): () => void
   }
 
+  runtimeConfig: {
+    get: () => Promise<any>
+    update: (config: Record<string, unknown>) => Promise<any>
+  }
+
+  /** @deprecated 使用 runtimeConfig */
   opencodeConfig: {
     get: () => Promise<any>
     update: (config: Record<string, unknown>) => Promise<any>

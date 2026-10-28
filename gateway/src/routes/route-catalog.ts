@@ -111,8 +111,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'] },
   { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'] },
   { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'] },
-  { method: 'GET', path: '/api/opencode-config', operationId: 'opencodeConfig.get', tags: ['opencodeConfig'] },
-  { method: 'PATCH', path: '/api/opencode-config', operationId: 'opencodeConfig.update', tags: ['opencodeConfig'] },
+  { method: 'GET', path: '/api/opencode-config', operationId: 'opencodeConfig.get', tags: ['internal'] },
+  { method: 'PATCH', path: '/api/opencode-config', operationId: 'opencodeConfig.update', tags: ['internal'] },
   { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id', operationId: 'goals.get', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id/plan', operationId: 'goals.plan', tags: ['goals'] },
@@ -171,6 +171,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/model-config', operationId: 'models.update', tags: ['models'] },
   { method: 'GET', path: '/api/automations', operationId: 'automations.list', tags: ['automations'] },
   { method: 'PUT', path: '/api/automations/:id', operationId: 'automations.toggle', tags: ['automations'] },
+  { method: 'DELETE', path: '/api/automations/:id', operationId: 'automations.remove', tags: ['automations'] },
   { method: 'POST', path: '/api/automations/draft', operationId: 'automations.draft', tags: ['automations'] },
 ];
 

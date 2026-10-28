@@ -322,9 +322,14 @@ export function createMafwApi(): MafwAPI {
       delete: (type, filename) => invoke("plugins", "delete", type, filename),
     },
 
+    runtimeConfig: {
+      get: () => invoke("runtimeConfig", "get"),
+      update: (config) => invoke("runtimeConfig", "update", config),
+    },
+    /** @deprecated 使用 runtimeConfig */
     opencodeConfig: {
-      get: () => invoke("opencodeConfig", "get"),
-      update: (config) => invoke("opencodeConfig", "update", config),
+      get: () => invoke("runtimeConfig", "get"),
+      update: (config) => invoke("runtimeConfig", "update", config),
     },
 
     uiPlugins: {

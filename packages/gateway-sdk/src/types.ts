@@ -712,10 +712,13 @@ export interface ConfigNamespace {
   set(key: string, value: any): Promise<void>
 }
 
-export interface OpenCodeConfigNamespace {
+export interface RuntimeConfigNamespace {
   get(): Promise<any>
   update(config: Record<string, unknown>): Promise<any>
 }
+
+/** @deprecated 使用 RuntimeConfigNamespace（旧名保留一个周期）。 */
+export type OpenCodeConfigNamespace = RuntimeConfigNamespace
 
 export interface ModelRef {
   providerID: string
@@ -1048,7 +1051,9 @@ export interface MafwClient {
   event: EventNamespace
   runtime: RuntimeNamespace
   config: ConfigNamespace
-  opencodeConfig: OpenCodeConfigNamespace
+  runtimeConfig: RuntimeConfigNamespace
+  /** @deprecated 使用 runtimeConfig */
+  opencodeConfig: RuntimeConfigNamespace
   models: ModelConfigNamespace
   embedding: EmbeddingConfigNamespace
   chat: ChatNamespace
@@ -1064,6 +1069,7 @@ export interface MafwClient {
   automations: AutomationsNamespace
   media: MediaNamespace
   tts: TtsNamespace
+  voice: VoiceNamespace
   command: CommandNamespace
   skill: SkillNamespace
   discovery: DiscoveryNamespace
@@ -1135,6 +1141,11 @@ export interface TtsResult {
   voice: string
   mime: string
   url: string
+}
+
+export interface VoiceNamespace {
+  /** Voice runtime v2 status: config + registered ASR engines. */
+  status: () => Promise<{ ok: boolean; config: any; engines: any[] }>
 }
 
 export interface TtsNamespace {

@@ -720,7 +720,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   async function loadOpenCodeConfig() {
     setOcLoading(true)
     try {
-      const cfg = await window.api.mafw.opencodeConfig.get() as Record<string, any>
+      const cfg = await window.api.mafw.runtimeConfig.get() as Record<string, any>
       const secs: ConfigSection[] = Object.entries(cfg || {}).map(([key, value]) => ({
         key,
         expanded: false,
@@ -757,7 +757,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
       for (const [k, v] of sec.fields) {
         try { obj[k] = JSON.parse(v) } catch { obj[k] = v }
       }
-      await window.api.mafw.opencodeConfig.update({ [sectionKey]: obj })
+      await window.api.mafw.runtimeConfig.update({ [sectionKey]: obj })
       setOcMessage(`Section "${sectionKey}" saved（可能需要重启 Gateway 生效）`)
     } catch (err: any) {
       setOcMessage(`Error: ${err.message}`)

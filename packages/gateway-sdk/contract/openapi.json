@@ -1735,7 +1735,7 @@
       "get": {
         "operationId": "opencodeConfig.get",
         "tags": [
-          "opencodeConfig"
+          "internal"
         ],
         "responses": {
           "200": {
@@ -1746,7 +1746,7 @@
       "patch": {
         "operationId": "opencodeConfig.update",
         "tags": [
-          "opencodeConfig"
+          "internal"
         ],
         "responses": {
           "200": {
@@ -3157,6 +3157,27 @@
     "/api/automations/{id}": {
       "put": {
         "operationId": "automations.toggle",
+        "tags": [
+          "automations"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "automations.remove",
         "tags": [
           "automations"
         ],
