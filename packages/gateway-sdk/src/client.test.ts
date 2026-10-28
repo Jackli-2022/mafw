@@ -1127,3 +1127,44 @@ test("tasks namespace hits submit/list/get/cancel/message/output", async () => {
   expect(urls).toContain("http://gw:3000/api/tasks/t1/message")
   expect(urls).toContain("http://gw:3000/api/tasks/t1/output?cursor=1&limit=2")
 })
+
+// ── Discovery ──
+
+test("discovery.get sends session/directory/force and returns snapshot", async () => {
+  const snap = {
+    sessionID: "s1", directory: "/p", revision: "r", commandsRevision: "c",
+    generatedAt: "2026-10-28T00:00:00.000Z", commands: [], skills: [], instructions: [],
+    degraded: false, warnings: [],
+  }
+  fetchMock.mockResolvedValue(okJson(snap))
+  const c = new MafwClient("http://gw:3000")
+  const out = await c.discovery.get("s1", { directory: "/p", force: true })
+  expect(fetchMock).toHaveBeenCalledWith(
+    "http://gw:3000/api/sessions/s1/discovery?directory=%2Fp&force=1",
+    expect.anything(),
+  )
+  expect(out.revision).toBe("r")
+})
+
+test("discovery.refresh POSTs and discovery.skill encodes the key", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await c.discovery.refresh("s1", { directory: "/p" })
+  await c.discovery.skill("s1", "mafw plan", { directory: "/p", force: true })
+  const calls = (fetchMock as any).mock.calls
+  expect(calls[0][0]).toBe("http://gw:3000/api/sessions/s1/discovery/refresh?directory=%2Fp")
+  expect(calls[0][1].method).toBe("POST")
+  expect(calls[1][0]).toBe("http://gw:3000/api/sessions/s1/discovery/skills/mafw%20plan?directory=%2Fp&force=1")
+})
+
+test("command.list/skill.list hit legacy endpoints and parse envelopes", async () => {
+  fetchMock
+    .mockResolvedValueOnce(okJson({ commands: [{ name: "init", description: "i" }] }))
+    .mockResolvedValueOnce(okJson({ skills: [{ id: "a", name: "A", contentLength: 2 }] }))
+  const c = new MafwClient("http://gw:3000")
+  expect(await c.command.list("/p")).toEqual([{ name: "init", description: "i" }])
+  expect(await c.skill.list("/p")).toEqual([{ id: "a", name: "A", contentLength: 2 }])
+  const urls = (fetchMock as any).mock.calls.map((x: any) => x[0])
+  expect(urls[0]).toBe("http://gw:3000/command?directory=%2Fp")
+  expect(urls[1]).toBe("http://gw:3000/skill?directory=%2Fp")
+})

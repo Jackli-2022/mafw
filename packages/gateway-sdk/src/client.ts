@@ -1,10 +1,11 @@
-﻿import { randomUUID } from 'crypto'
+import { randomUUID } from 'crypto'
 import {
   MafwClient as IMafwClient, MafwClientOptions,
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline, GoalPlanInfo,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
+  DiscoverySnapshot, DiscoverySkillContent,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
@@ -15,10 +16,10 @@ import {
 import { SSEConnection } from './sse'
 import type { ApiPath } from './api-path'
 
-/** opencode v2 Shell.Info（/api/shell* 响应 data 的按需子集；形状见 wire probe 文档）。 */
+/** opencode v2 Shell.Info��/api/shell* ��Ӧ data �İ����Ӽ�����״�� wire probe �ĵ����� */
 export interface ShellInfo {
   id: string
-  /** v2 状态枚举（bundle 实证）：running | exited | timeout | killed */
+  /** v2 ״̬ö�٣�bundle ʵ֤����running | exited | timeout | killed */
   status: 'running' | 'exited' | 'timeout' | 'killed'
   command: string
   cwd?: string
@@ -28,7 +29,7 @@ export interface ShellInfo {
   time?: { started?: number; completed?: number }
 }
 
-/** v2 反代路径的 404 判定（requestRuntime 的错误格式：`HTTP 404: ...`）。 */
+/** v2 ����·���� 404 �ж���requestRuntime �Ĵ����ʽ��`HTTP 404: ...`���� */
 function isHttp404(e: unknown): boolean {
   return /^HTTP 404\b/.test(String((e as any)?.message ?? ''))
 }
@@ -37,8 +38,8 @@ function shellQuery(params?: { directory?: string }): string {
   return params?.directory ? `?directory=${encodeURIComponent(params.directory)}` : ''
 }
 
-/** 非 2xx → Error：优先 surface gateway 的 JSON `error`/`message`（桌面 toast
- *  的可操作文案），读不到 body 时回退 statusText。`isHttp404` 依赖 `HTTP <n>` 前缀。 */
+/** �� 2xx �� Error������ surface gateway �� JSON `error`/`message`������ toast
+ *  �Ŀɲ����İ����������� body ʱ���� statusText��`isHttp404` ���� `HTTP <n>` ǰ׺�� */
 async function httpError(res: Response): Promise<Error> {
   let detail = ''
   try {
@@ -53,12 +54,12 @@ async function httpError(res: Response): Promise<Error> {
         }
       }
     }
-  } catch { /* body unreadable → status only */ }
+  } catch { /* body unreadable �� status only */ }
   const suffix = detail ? `: ${detail}` : `: ${res.statusText}`
   return new Error(`HTTP ${res.status}${suffix}`.slice(0, 500))
 }
 
-/** /api/shell* 的统一信封（v2 实证：{location, data}）。 */
+/** /api/shell* ��ͳһ�ŷ⣨v2 ʵ֤��{location, data}���� */
 interface Envelope<T> {
   location?: { directory: string }
   data?: T
@@ -87,23 +88,23 @@ export class MafwClient implements IMafwClient {
     // Surface a clean, actionable error instead of a JSON parse SyntaxError.
     const ct = (res.headers as any)?.get?.('content-type') ?? ''
     if (ct.includes('text/html')) {
-      throw new Error(`Received HTML instead of JSON from ${path} — gateway is older than the SDK (route missing). Update/restart the gateway.`)
+      throw new Error(`Received HTML instead of JSON from ${path} �� gateway is older than the SDK (route missing). Update/restart the gateway.`)
     }
     return res.json()
   }
 
   /**
-   * 裸 fetch 的编译期约束入口：与 request 同一 ApiPath 契约，但返回原始 Response，
-   * 供 SSE 流/二进制体/自定义错误处理的调用方使用（P3 收编，fetch 直调仅剩此出口）。
+   * �� fetch �ı�����Լ����ڣ��� request ͬһ ApiPath ��Լ��������ԭʼ Response��
+   * �� SSE ��/��������/�Զ���������ĵ��÷�ʹ�ã�P3 �ձ࣬fetch ֱ����ʣ�˳��ڣ���
    */
   private fetchPath(path: ApiPath, init?: RequestInit): Promise<Response> {
     return this.fetchImpl(`${this.baseUrl}${path}`, init)
   }
 
   /**
-   * 运行时透传出口（gateway 兜底反代）：不属于 MAFW OpenAPI 契约的原生 v2 路由
-   * （/api/shell*、/api/session/:id/background）走此处，不参与 ApiPath 漂移守卫。
-   * 非 2xx 一律抛错，由调用方 fail-open（后台面板的 REST 三件是可选能力）。
+   * ����ʱ͸�����ڣ�gateway ���׷������������� MAFW OpenAPI ��Լ��ԭ�� v2 ·��
+   * ��/api/shell*��/api/session/:id/background���ߴ˴��������� ApiPath Ư��������
+   * �� 2xx һ���״����ɵ��÷� fail-open����̨���� REST �����ǿ�ѡ��������
    */
   private async requestRuntime<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
@@ -116,7 +117,7 @@ export class MafwClient implements IMafwClient {
     return res.json()
   }
 
-  // 鈹€鈹€ Session 鈹€鈹€
+  // ── Session ──
 
   session = {
     create: async (
@@ -230,7 +231,7 @@ export class MafwClient implements IMafwClient {
       })
     },
 
-    // ── 认知面 gate/rewrite（spec 2026-10-22-cognition-gate-rewrite）──
+    // ���� ��֪�� gate/rewrite��spec 2026-10-22-cognition-gate-rewrite������
     cognitionGate: async (params: { body: Record<string, unknown> }): Promise<unknown> => {
       return this.request('/api/cognition/gate', {
         method: 'POST',
@@ -271,13 +272,13 @@ export class MafwClient implements IMafwClient {
       await this.request(`/api/sessions/${params.path.id}/unrevert`, { method: 'POST' })
     },
 
-    /** 会话文件变更快照（切片 2；diffApi runtime-only，opencode） */
+    /** �Ự�ļ�������գ���Ƭ 2��diffApi runtime-only��opencode�� */
     diff: async (params: { path: { id: string }; query?: { messageID?: string } }): Promise<{ files: FileDiffInfo[] }> => {
       const q = params.query?.messageID ? `?messageID=${encodeURIComponent(params.query.messageID)}` : ''
       return this.request<{ files: FileDiffInfo[] }>(`/api/sessions/${params.path.id}/diff${q}`)
     },
 
-    /** 逐 hunk 回退：客户端传原 patch + 选中 hunk 下标，gateway 反转后 vcs.apply */
+    /** �� hunk ���ˣ��ͻ��˴�ԭ patch + ѡ�� hunk �±꣬gateway ��ת�� vcs.apply */
     revertDiff: async (
       params: { path: { id: string }; body: { patches: Array<{ file?: string; patch: string; hunkIndices: number[] }> } },
     ): Promise<{ reverted: number }> => {
@@ -288,7 +289,7 @@ export class MafwClient implements IMafwClient {
       })
     },
 
-    /** T2-1：手动创建检查点 */
+    /** T2-1���ֶ��������� */
     checkpoint: async (
       params: { path: { id: string }; body?: { messageID?: string } },
     ): Promise<{ checkpoint: SessionCheckpoint }> => {
@@ -299,14 +300,14 @@ export class MafwClient implements IMafwClient {
       })
     },
 
-    /** T2-1：检查点列表（倒序） */
+    /** T2-1�������б������� */
     checkpoints: async (
       params: { path: { id: string } },
     ): Promise<{ checkpoints: SessionCheckpoint[] }> => {
       return this.request<{ checkpoints: SessionCheckpoint[] }>(`/api/sessions/${params.path.id}/checkpoints`)
     },
 
-    /** T2-1：三态恢复（destructive——confirm 必填） */
+    /** T2-1����̬�ָ���destructive����confirm ��� */
     restoreCheckpoint: async (
       params: { path: { id: string; checkpointId: string }; body: { scope: CheckpointScope; confirm: true } },
     ): Promise<CheckpointRestoreResult> => {
@@ -320,7 +321,7 @@ export class MafwClient implements IMafwClient {
       )
     },
 
-    /** T2-2：暂停当前回合 */
+    /** T2-2����ͣ��ǰ�غ� */
     suspend: async (
       params: { path: { id: string }; body?: { reason?: string } },
     ): Promise<{ run: RunState }> => {
@@ -331,7 +332,7 @@ export class MafwClient implements IMafwClient {
       })
     },
 
-    /** T2-2：恢复暂停的回合（服务端先落 resumed 再 fire-and-forget 发送） */
+    /** T2-2���ָ���ͣ�Ļغϣ���������� resumed �� fire-and-forget ���ͣ� */
     resume: async (
       params: { path: { id: string }; body?: { runId?: string } },
     ): Promise<{ run: RunState; prompted: true }> => {
@@ -342,12 +343,12 @@ export class MafwClient implements IMafwClient {
       })
     },
 
-    /** T2-2：活跃 run */
+    /** T2-2����Ծ run */
     run: async (params: { path: { id: string } }): Promise<{ run: RunState | null }> => {
       return this.request<{ run: RunState | null }>(`/api/sessions/${params.path.id}/run`)
     },
 
-    /** T2-2：放弃暂停 */
+    /** T2-2��������ͣ */
     discardRun: async (
       params: { path: { id: string }; body?: { runId?: string } },
     ): Promise<{ run: RunState }> => {
@@ -358,7 +359,7 @@ export class MafwClient implements IMafwClient {
       })
     },
 
-    /** T2-3：注入类型化 data part（同 id 渐进更新；transient 不入历史） */
+    /** T2-3��ע�����ͻ� data part��ͬ id �������£�transient ������ʷ�� */
     data: async (
       params: { path: { id: string }; body: { name: string; id?: string; data: unknown; transient?: boolean; messageID?: string } },
     ): Promise<{ part: DataPart }> => {
@@ -516,25 +517,25 @@ export class MafwClient implements IMafwClient {
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     },
 
-    /** 把该会话全部 blocking 工具转后台（opencode v2 `session.background`，经反代透传） */
+    /** �ѸûỰȫ�� blocking ����ת��̨��opencode v2 `session.background`��������͸���� */
     background: async (params: { path: { id: string } }): Promise<void> => {
       const res = await this.fetchPath(`/api/session/${params.path.id}/background`, { method: 'POST' })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     },
   }
 
-  // ── Runtime shell commands (opencode v2 /api/shell*, proxied by the gateway) ──
-  // 非 MAFW OpenAPI 契约路径：走 requestRuntime 旁路（不可达时抛错，调用方 fail-open）。
-  // 响应形状已实证（docs/research/2026-10-22-background-wire-probe.md）：{location,data}
+  // ���� Runtime shell commands (opencode v2 /api/shell*, proxied by the gateway) ����
+  // �� MAFW OpenAPI ��Լ·������ requestRuntime ��·�����ɴ�ʱ�״������÷� fail-open����
+  // ��Ӧ��״��ʵ֤��docs/research/2026-10-22-background-wire-probe.md����{location,data}
 
   shells = {
-    /** 运行中列表（location-scoped：directory 缺省 = serve 默认位置）。形状不符 → 抛错（fail-open 由调用方处理）。 */
+    /** �������б���location-scoped��directory ȱʡ = serve Ĭ��λ�ã�����״���� �� �״���fail-open �ɵ��÷��������� */
     list: async (params?: { directory?: string }): Promise<ShellInfo[]> => {
       const body = await this.requestRuntime<Envelope<ShellInfo[]>>(`/api/shell${shellQuery(params)}`)
       if (!Array.isArray(body?.data)) throw new Error('Unexpected /api/shell response shape')
       return body.data
     },
-    /** 单个 shell；**404 → null**（已删除/不存在——对账把 null 映射为 cancelled）。 */
+    /** ���� shell��**404 �� null**����ɾ��/�����ڡ������˰� null ӳ��Ϊ cancelled���� */
     get: async (params: { path: { id: string }; directory?: string }): Promise<ShellInfo | null> => {
       try {
         const body = await this.requestRuntime<Envelope<ShellInfo>>(`/api/shell/${encodeURIComponent(params.path.id)}${shellQuery(params)}`)
@@ -544,7 +545,7 @@ export class MafwClient implements IMafwClient {
         throw e
       }
     },
-    /** 输出分页：默认返回头 64KB；用 cursor/limit 取尾巴（对账/预览）。 */
+    /** �����ҳ��Ĭ�Ϸ���ͷ 64KB���� cursor/limit ȡβ�ͣ�����/Ԥ������ */
     output: async (params: {
       path: { id: string }; directory?: string; cursor?: number; limit?: number
     }): Promise<{ output: string; cursor?: number; size?: number; truncated?: boolean }> => {
@@ -563,14 +564,14 @@ export class MafwClient implements IMafwClient {
         truncated: d.truncated,
       }
     },
-    /** 终止；404 = 已不存在 → 幂等成功。 */
+    /** ��ֹ��404 = �Ѳ����� �� �ݵȳɹ��� */
     remove: async (params: { path: { id: string }; directory?: string }): Promise<void> => {
       const res = await this.fetchImpl(`${this.baseUrl}/api/shell/${encodeURIComponent(params.path.id)}${shellQuery(params)}`, { method: 'DELETE' })
       if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     },
   }
 
-  // 鈹€鈹€ Commands & skills (opencode serve, proxied by the gateway) 鈹€鈹€
+  // ── Commands & skills (opencode serve, proxied by the gateway) ──
 
   command = {
     list: async (directory?: string): Promise<CommandInfo[]> => {
@@ -590,7 +591,34 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ MAFW native commands (desktop slash panel) 鈹€鈹€
+  discovery = {
+    get: async (sessionID: string, params?: { directory?: string; force?: boolean }): Promise<DiscoverySnapshot> => {
+      const qs = new URLSearchParams()
+      if (params?.directory) qs.set('directory', params.directory)
+      if (params?.force) qs.set('force', '1')
+      const q = qs.toString()
+      const queryString = q ? `?${q}` : ''
+      return this.request<DiscoverySnapshot>(`/api/sessions/${encodeURIComponent(sessionID)}/discovery${queryString}`)
+    },
+    refresh: async (sessionID: string, params?: { directory?: string }): Promise<DiscoverySnapshot> => {
+      const q = params?.directory ? `?directory=${encodeURIComponent(params.directory)}` : ''
+      return this.request<DiscoverySnapshot>(`/api/sessions/${encodeURIComponent(sessionID)}/discovery/refresh${q}`, { method: 'POST' })
+    },
+    skill: async (
+      sessionID: string,
+      key: string,
+      params?: { directory?: string; force?: boolean },
+    ): Promise<DiscoverySkillContent> => {
+      const qs = new URLSearchParams()
+      if (params?.directory) qs.set('directory', params.directory)
+      if (params?.force) qs.set('force', '1')
+      const q = qs.toString()
+      const queryString = q ? `?${q}` : ''
+      return this.request<DiscoverySkillContent>(`/api/sessions/${encodeURIComponent(sessionID)}/discovery/skills/${encodeURIComponent(key)}${queryString}`)
+    },
+  }
+
+  // ── MAFW native commands (desktop slash panel) ──
 
   mafwCommands = {
     run: async (params: { command: string; args?: string; sessionID?: string }): Promise<MafwCommandResult> => {
@@ -599,14 +627,14 @@ export class MafwClient implements IMafwClient {
         body: JSON.stringify(params),
       })
     },
-    /** 命令元数据清单（补全/面板）；网关不可达时由调用方 catch 兜底。 */
+    /** ����Ԫ�����嵥����ȫ/��壩�����ز��ɴ�ʱ�ɵ��÷� catch ���ס� */
     list: async (): Promise<MafwCommandDef[]> => {
       const data = await this.request<{ commands?: MafwCommandDef[] }>('/api/mafw-commands')
       return data.commands || []
     },
   }
 
-  // 鈹€鈹€ Manager session (authoritative per-project manager, from gateway DB) 鈹€鈹€
+  // ── Manager session (authoritative per-project manager, from gateway DB) ──
 
   manager = {
     session: async (projectDir?: string): Promise<ManagerSessionInfo | null> => {
@@ -626,7 +654,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Project 鈹€鈹€
+  // ── Project ──
 
   project = {
     list: async (): Promise<Project[]> => {
@@ -641,7 +669,7 @@ export class MafwClient implements IMafwClient {
     },
 
     setCurrent: async (path: string): Promise<void> => {
-      // Gateway's real register route is POST /register (index.ts) 鈥?it persists the
+      // Gateway's real register route is POST /register (index.ts) �?it persists the
       // registry and broadcasts project_registered. /api/projects/register does not
       // exist and would fall through to the opencode reverse proxy (502/SPA HTML).
       await this.request('/register', {
@@ -651,7 +679,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Event 鈹€鈹€
+  // ── Event ──
 
   event = {
     subscribe: async (): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
@@ -682,17 +710,17 @@ export class MafwClient implements IMafwClient {
       }
     },
 
-    /** SSE 杩炴帴鐘舵€侊紙onopen/onerror 缁存姢锛涗緵鐩戠潱鍣ㄥ仴搴疯疆璇級銆?*/
+    /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）�?*/
     connected: (): boolean => this._sse.connected,
 
-    /** SSE 绔偣 URL锛堝绾﹀綊 SDK锛歳enderer 鐩磋繛 EventSource 鏃剁敤姝ゆ瀯閫狅紝涓嶈嚜宸辨嫾瀛楃涓诧級銆?*/
+    /** SSE 端点 URL（契约归 SDK：renderer 直连 EventSource 时用此构造，不自己拼字符串）�?*/
     url: (sessionID?: string): string =>
       sessionID
         ? `${this.baseUrl}/api/events?sessionID=${encodeURIComponent(sessionID)}`
         : `${this.baseUrl}/api/events`,
 
-    /** 鍙戝竷鑷畾涔変簨浠跺埌鍏ㄩ儴 UI 閫氶亾锛圫SE/WS/鎺ㄩ€侊級銆倀ype 寤鸿鍛藉悕绌洪棿
-     *  'plugin:<name>:<event>'锛涙秷璐规柟瀵规湭鐭?type 蹇界暐锛圫SE 閫氱煡璇箟锛屾棤娉ㄥ唽鍒讹級銆?*/
+    /** 发布自定义事件到全部 UI 通道（SSE/WS/推送）。type 建议命名空间
+     *  'plugin:<name>:<event>'；消费方对未�?type 忽略（SSE 通知语义，无注册制）�?*/
     publish: async (event: { type: string; [key: string]: any }): Promise<{ ok: true }> =>
       this.request<{ ok: true }>("/api/events", {
         method: "POST",
@@ -701,7 +729,7 @@ export class MafwClient implements IMafwClient {
       }),
   }
 
-  // 鈹€鈹€ Runtime 鈹€鈹€
+  // ── Runtime ──
 
   runtime = {
     /** Get active runtime identity, capabilities, and plugin scan state. */
@@ -762,7 +790,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Plugins Hub 鈹€鈹€
+  // ── Plugins Hub ──
 
   plugins = {
     list: async (): Promise<{
@@ -825,22 +853,22 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Config 鈹€鈹€
+  // ── Config ──
 
   config = {
     get: async (key?: string): Promise<any> => {
       const data = await this.request<any>('/api/config')
       if (!key) return data
-      // dotted 语义路径（media.tts.engine）走嵌套读取；字面顶层 key（含历史扁平写残留）兜底
+      // dotted ����·����media.tts.engine����Ƕ�׶�ȡ�����涥�� key������ʷ��ƽд����������
       const nested = key.split('.').reduce<any>((acc, k) => (acc && typeof acc === 'object' ? acc[k] : undefined), data)
       return nested !== undefined ? nested : data[key]
     },
     set: async (key: string, value: any): Promise<void> => {
-      // NOTE: read-then-write pattern 鈥?concurrent set() calls will race.
+      // NOTE: read-then-write pattern �?concurrent set() calls will race.
       // The backend should support PATCH for individual keys to avoid lost updates.
       const current = await this.request<any>('/api/config')
-      // dotted key 展开为嵌套写入（media.tts.engine → {media:{tts:{engine}}}），
-      // 否则 yaml.dump 会固化顶层带点 key，gateway 嵌套读取永远 miss
+      // dotted key չ��ΪǶ��д�루media.tts.engine �� {media:{tts:{engine}}}����
+      // ���� yaml.dump ��̻�������� key��gateway Ƕ�׶�ȡ��Զ miss
       const parts = key.split('.')
       let cursor = current
       for (let i = 0; i < parts.length - 1; i++) {
@@ -856,7 +884,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ OpenCode config (native opencode /config) 鈹€鈹€
+  // ── OpenCode config (native opencode /config) ──
 
   opencodeConfig = {
     get: async (): Promise<any> => {
@@ -875,7 +903,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Goals 鈹€鈹€
+  // ── Goals ──
 
   goals = {
     list: async (): Promise<Goal[]> => {
@@ -947,7 +975,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Memory 鈹€鈹€
+  // ── Memory ──
 
   memory = {
     search: async (opts: MemorySearchOptions): Promise<MemoryUnit[]> => {
@@ -998,7 +1026,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Approvals 鈹€鈹€
+  // ── Approvals ──
 
   approvals = {
     list: async (): Promise<Approval[]> => {
@@ -1015,7 +1043,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Triage 鈹€鈹€
+  // ── Triage ──
 
   triage = {
     list: async (): Promise<TriageItem[]> => {
@@ -1043,7 +1071,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Questions (AskCard 鈥?proxies the native opencode Question API) 鈹€鈹€
+  // ── Questions (AskCard �?proxies the native opencode Question API) ──
 
   questions = {
     list: async (directory?: string): Promise<QuestionRequest[]> => {
@@ -1064,7 +1092,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Durable tasks (Batch 4) ──────────────────────────────────────────────
+  // ���� Durable tasks (Batch 4) ��������������������������������������������������������������������������������������������
 
   tasks = {
     submit: async (input: TaskSubmitInput): Promise<TaskEntity> => {
@@ -1105,7 +1133,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Permissions (PermissionCard 鈥?proxies the native opencode Permission API) 鈹€鈹€
+  // ── Permissions (PermissionCard �?proxies the native opencode Permission API) ──
 
   permissions = {
     list: async (): Promise<PermissionRequest[]> => {
@@ -1174,7 +1202,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Chat 鈹€鈹€
+  // ── Chat ──
 
   chat = {
     send: async (message: string, sessionID?: string): Promise<{ sessionID: string }> => {
@@ -1206,7 +1234,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Media (A2A Media Agent) 鈹€鈹€
+  // ── Media (A2A Media Agent) ──
 
   media = {
     /** List media engine plugins (status + modalities). */
@@ -1253,7 +1281,7 @@ export class MafwClient implements IMafwClient {
       question?: string
     }): Promise<{ id: string; contextId: string; state: string }> => {
       // Prefer the artifact reference path (media bytes uploaded separately
-      // via /api/media/upload) 鈥?the message carries only a URL part, so the
+      // via /api/media/upload) �?the message carries only a URL part, so the
       // JSON body stays tiny. Falls back to the raw base64 part for legacy
       // callers that only have a data URL.
       const parts: any[] = opts.artifactId
@@ -1290,9 +1318,9 @@ export class MafwClient implements IMafwClient {
         headers: { 'Content-Type': 'application/octet-stream' },
         body: input.bytes as unknown as BodyInit,
       })
-      if (!res.ok) throw new Error(`濯掍綋涓婁紶澶辫触: HTTP ${res.status}`)
+      if (!res.ok) throw new Error(`媒体上传失败: HTTP ${res.status}`)
       const data: any = await res.json()
-      if (!data?.artifactId) throw new Error('濯掍綋涓婁紶澶辫触: 鏃?artifactId')
+      if (!data?.artifactId) throw new Error('媒体上传失败: �?artifactId')
       return { artifactId: data.artifactId }
     },
 
@@ -1304,16 +1332,16 @@ export class MafwClient implements IMafwClient {
         headers: { 'Content-Type': 'application/octet-stream' },
         body: input.bytes as unknown as BodyInit,
       })
-      if (!res.ok) throw new Error(`濯掍綋涓婁紶澶辫触: HTTP ${res.status}`)
+      if (!res.ok) throw new Error(`媒体上传失败: HTTP ${res.status}`)
       const data: any = await res.json()
-      if (!data?.id) throw new Error('濯掍綋涓婁紶澶辫触: 鏃?task id')
+      if (!data?.id) throw new Error('媒体上传失败: �?task id')
       return { id: data.id, contextId: data.contextId, state: data.state, artifactId: data.artifactId, mediaType: data.mediaType, size: data.size }
     },
 
     artifactUrl: (id: string): string => `${this.baseUrl}/a2a/artifacts/${id}`,
   }
 
-  // 鈹€鈹€ TTS (MiMo-V2.5-TTS speech synthesis) 鈹€鈹€
+  // ── TTS (MiMo-V2.5-TTS speech synthesis) ──
 
   tts = {
     speak: async (opts: { text: string; voice?: string; style?: string }): Promise<{
@@ -1346,7 +1374,7 @@ export class MafwClient implements IMafwClient {
       return res.json()
     },
 
-    /** barge-in 打断：取消该 session 全部在途 TTS 合成。 */
+    /** barge-in ��ϣ�ȡ���� session ȫ����; TTS �ϳɡ� */
     interrupt: async (sessionId: string): Promise<{ ok: boolean; cancelled: number }> => {
       const res = await this.fetchPath(`/api/tts/interrupt`, {
         method: 'POST',
@@ -1357,7 +1385,7 @@ export class MafwClient implements IMafwClient {
       return res.json()
     },
 
-    /** 娴佸紡 TTS锛氳繑鍥?async iterable of base64 PCM16 chunks锛?4kHz mono锛夈€?*/
+    /** 流式 TTS：返�?async iterable of base64 PCM16 chunks�?4kHz mono）�?*/
     speakStream: (opts: { text: string; voice?: string; style?: string }): AsyncGenerator<{ data: string; voice: string }> => {
       const client = this
       return (async function* () {
@@ -1393,11 +1421,11 @@ export class MafwClient implements IMafwClient {
       })()
     },
 
-    /** 娴佸紡 TTS 绔偣 URL锛堝绾﹀綊 SDK锛欼PC 鏃犳硶鍏嬮殕 SSE 娴侊紝renderer 鐩磋繛 fetch 鏃剁敤姝ゆ瀯閫狅級銆?*/
+    /** 流式 TTS 端点 URL（契约归 SDK：IPC 无法克隆 SSE 流，renderer 直连 fetch 时用此构造）�?*/
     streamUrl: (): string => `${this.baseUrl}/api/tts/stream`,
   }
 
-  // 鈹€鈹€ Providers & Agents (composer model pill / @agent mention) 鈹€鈹€
+  // ── Providers & Agents (composer model pill / @agent mention) ──
 
   providers = {
     list: async (): Promise<{ all: Record<string, any>[]; default?: Record<string, string>; connected?: string[] } | null> => {
@@ -1413,7 +1441,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Model config (recall worker + media models) 鈹€鈹€
+  // ── Model config (recall worker + media models) ──
 
   models = {
     get: async (): Promise<import('./types').ModelConfigState> => {
@@ -1434,7 +1462,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Memory embedding config (hot-swap engine, no restart) 鈹€鈹€
+  // ── Memory embedding config (hot-swap engine, no restart) ──
 
   embedding = {
     get: async (): Promise<import('./types').EmbeddingConfigGetResponse> => {
@@ -1455,7 +1483,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ Automations 鈹€鈹€
+  // ── Automations ──
 
   automations = {
     list: async (): Promise<AutomationRule[]> => {
@@ -1470,7 +1498,7 @@ export class MafwClient implements IMafwClient {
       })
     },
 
-    /** 璧疯崏瑙勫垯锛坋nabled=false 钀界洏锛岄渶鎵嬪姩鍚敤锛夈€傝繑鍥炴牎楠岀粨鏋溿€?*/
+    /** 起草规则（enabled=false 落盘，需手动启用）。返回校验结果�?*/
     draft: async (input: {
       id: string
       trigger: { schedule: string; timezone?: string }

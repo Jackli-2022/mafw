@@ -462,7 +462,7 @@ export interface CommandInfo {
   name: string
   description?: string
   agent?: string
-  model?: string
+  model?: string | { id: string; providerID: string; variant?: string }
   source?: "command" | "mcp" | "skill" | "builtin"
   template?: string
   subtask?: boolean
@@ -470,10 +470,13 @@ export interface CommandInfo {
 }
 
 export interface SkillInfo {
+  id?: string
   name: string
   description?: string
   slash?: boolean
   location?: string
+  path?: string
+  contentLength?: number
   content?: string
 }
 
@@ -483,6 +486,71 @@ export interface CommandNamespace {
 
 export interface SkillNamespace {
   list(directory?: string): Promise<SkillInfo[]>
+}
+
+// ── Discovery (T2-5 capability discovery) ──
+
+export interface DiscoveryWarning {
+  source: 'commands' | 'skills' | 'instructions'
+  message: string
+}
+
+export interface DiscoveryCommand {
+  name: string
+  aliases?: string[]
+  description: string
+  argumentHint?: string
+  category?: 'goals' | 'session' | 'memory' | 'custom' | 'runtime'
+  destructive?: boolean
+  source: 'mafw' | 'custom' | 'runtime'
+  scope: 'gateway' | 'user' | 'project' | 'runtime'
+  runtime?: boolean
+  agent?: string
+  model?: { id: string; providerID: string; variant?: string }
+  subtask?: boolean
+}
+
+export interface DiscoverySkill {
+  id: string
+  name: string
+  description?: string
+  slash: boolean
+  scope: 'user' | 'project' | 'path'
+  location?: string
+  contentLength: number
+}
+
+export interface DiscoveryInstruction {
+  id: string
+  path: string
+  scope: 'global' | 'project' | 'nested'
+  kind: 'agents-md'
+  bytes: number
+  mtime: string
+}
+
+export interface DiscoverySnapshot {
+  sessionID: string
+  directory: string
+  revision: string
+  commandsRevision: string
+  generatedAt: string
+  commands: DiscoveryCommand[]
+  skills: DiscoverySkill[]
+  instructions: DiscoveryInstruction[]
+  degraded: boolean
+  degradedReason?: 'capability_absent' | 'runtime_error' | 'partial' | 'instructions_error'
+  warnings: DiscoveryWarning[]
+}
+
+export interface DiscoverySkillContent extends DiscoverySkill {
+  content: string
+}
+
+export interface DiscoveryNamespace {
+  get(sessionID: string, params?: { directory?: string; force?: boolean }): Promise<DiscoverySnapshot>
+  refresh(sessionID: string, params?: { directory?: string }): Promise<DiscoverySnapshot>
+  skill(sessionID: string, key: string, params?: { directory?: string; force?: boolean }): Promise<DiscoverySkillContent>
 }
 
 // ── MAFW native commands (desktop slash panel) ──
@@ -926,6 +994,7 @@ export interface MafwClient {
   tts: TtsNamespace
   command: CommandNamespace
   skill: SkillNamespace
+  discovery: DiscoveryNamespace
   mafwCommands: MafwCommandsNamespace
   manager: ManagerNamespace
 }
