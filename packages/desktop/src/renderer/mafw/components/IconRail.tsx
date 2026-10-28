@@ -2,7 +2,9 @@ import { For, Show, type ComponentProps } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
-import { ContextMenu } from "@mafw/ui/context-menu"
+import { menuController } from "../context-menu/controller"
+import { buildRailNewMenu } from "../context-menu/builders/rail"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { LeftDockFace } from "../left-dock"
 import { connDotState, railAriaLabel } from "../left-dock"
 
@@ -72,35 +74,35 @@ export function IconRail(props: IconRailProps) {
     </TooltipV2>
   )
 
+  const openNewMenu = (event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    menuController.request(
+      buildRailNewMenu,
+      { worktreeEnabled: !!props.worktreeEnabled },
+      (id) => {
+        if (id === "rail.newSession") props.onNewSession()
+        else if (id === "rail.newWorktree") props.onNewWorktreeSession?.()
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   return (
     <nav class="mafw-icon-rail" aria-label="主导航">
-      <ContextMenu>
-        <ContextMenu.Trigger as="div">
-          <TooltipV2 value="新建会话" openDelay={300}>
-            <ButtonV2
-              variant="ghost"
-              size="small"
-              class="mafw-icon-rail-icon new-action"
-              aria-label="新建会话"
-              onClick={props.onNewSession}
-            >
-              <Icon name="plus-small" size="small" />
-            </ButtonV2>
-          </TooltipV2>
-        </ContextMenu.Trigger>
-        <ContextMenu.Portal>
-          <ContextMenu.Content>
-            <ContextMenu.Item onSelect={props.onNewSession}>
-              <ContextMenu.ItemLabel>新建会话</ContextMenu.ItemLabel>
-            </ContextMenu.Item>
-            <Show when={props.worktreeEnabled && props.onNewWorktreeSession}>
-              <ContextMenu.Item onSelect={() => props.onNewWorktreeSession?.()}>
-                <ContextMenu.ItemLabel>⎇ 并行 worktree</ContextMenu.ItemLabel>
-              </ContextMenu.Item>
-            </Show>
-          </ContextMenu.Content>
-        </ContextMenu.Portal>
-      </ContextMenu>
+      <div class="mafw-icon-rail-new" style={{ display: "contents" }} onContextMenu={openNewMenu}>
+        <TooltipV2 value="新建会话" openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-icon-rail-icon new-action"
+            aria-label="新建会话"
+            onClick={props.onNewSession}
+          >
+            <Icon name="plus-small" size="small" />
+          </ButtonV2>
+        </TooltipV2>
+      </div>
       <For each={destinationItems()}>{renderItem}</For>
       <div class="mafw-icon-rail-spacer" />
       <For each={metaItems()}>{renderItem}</For>

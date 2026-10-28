@@ -1,10 +1,13 @@
 import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js"
-import { ContextMenu } from "@mafw/ui/context-menu"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
 import { Icon } from "@mafw/ui/icon"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { menuController } from "../context-menu/controller"
+import { buildSessionMenu } from "../context-menu/builders/session"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { isMenuKey } from "../context-menu/keyboard"
 import { stripOverflowed } from "./session-strip-overflow"
 import { freezeTabs } from "./session-strip-slinky"
 import { formatRailTitle } from "./rail-display"
@@ -20,6 +23,8 @@ export function SessionStrip(props: {
   onNew: () => void
   /** 点击左侧品牌位回 Welcome 首页 */
   onHome: () => void
+  forkEnabled?: boolean
+  onFork?: (id: string) => void
 }) {
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [renameDraft, setRenameDraft] = createSignal("")
@@ -72,6 +77,40 @@ export function SessionStrip(props: {
     props.onClose(id)
   }
 
+  const tabMenu = (session: { id: string; title: string }, point: { x: number; y: number }, from: "contextmenu" | "ellipsis" | "keyboard") => {
+    menuController.request(
+      buildSessionMenu,
+      {
+        id: session.id,
+        title: session.title,
+        kind: "tab" as const,
+        canFork: props.forkEnabled !== false,
+      },
+      (id) => {
+        if (id === "session.open") props.onSelect(session.id)
+        else if (id === "session.rename") { setRenamingId(session.id); setRenameDraft(session.title || "") }
+        else if (id === "session.fork") props.onFork?.(session.id)
+        else if (id === "session.export") props.onExport(session.id)
+        else if (id === "session.copyId") props.onCopyId(session.id)
+        else if (id === "session.closeTab") handleClose(session.id)
+      },
+      { point, from },
+    )
+  }
+
+  const requestTabMenu = (session: { id: string; title: string }, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    tabMenu(session, { x: event.clientX, y: event.clientY }, "contextmenu")
+  }
+
+  const onTabKeyDown = (session: { id: string; title: string }, event: KeyboardEvent) => {
+    if (!isMenuKey(event)) return
+    event.preventDefault()
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    tabMenu(session, { x: rect.left + 12, y: rect.bottom }, "keyboard")
+  }
+
   return (
     <div class="mafw-sessionstrip" onPointerLeave={endSlinky}>
       {/* 左侧品牌位（2026-10-23 裁决 B2：线框暖灰 monogram + 小字标）——
@@ -91,52 +130,39 @@ export function SessionStrip(props: {
       <div class="mafw-sessionstrip-divider" aria-hidden="true" />
       <div class="mafw-sessionstrip-scroll" ref={scrollEl}>
         {props.sessions().map(s => (
-          <ContextMenu>
-            <ContextMenu.Trigger
-              as="div"
-              class="mafw-session-tab"
-              classList={{ active: props.activeViewId() === s.id }}
-              onClick={() => props.onSelect(s.id)}
+          <div
+            class="mafw-session-tab"
+            classList={{ active: props.activeViewId() === s.id }}
+            tabIndex={0}
+            onClick={() => props.onSelect(s.id)}
+            onContextMenu={(event) => requestTabMenu(s, event)}
+            onKeyDown={(event) => onTabKeyDown(s, event)}
+          >
+            <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
+            <span
+              class="mafw-session-title"
+              onDblClick={e => { e.stopPropagation(); setRenamingId(s.id); setRenameDraft(s.title || "") }}
             >
-              <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
-              <span
-                class="mafw-session-title"
-                onDblClick={e => { e.stopPropagation(); setRenamingId(s.id); setRenameDraft(s.title || "") }}
-              >
-                <Show when={renamingId() !== s.id} fallback={
-                  <TextInputV2
-                    value={renameDraft()}
-                    onInput={e => setRenameDraft(e.currentTarget.value)}
-                    onKeyDown={e => {
-                      e.stopPropagation()
-                      if (e.key === "Enter") {
-                        const next = renameDraft().trim()
-                        if (next && next !== s.title) props.onRename(s.id, next)
-                        setRenamingId(null)
-                      }
-                      if (e.key === "Escape") setRenamingId(null)
-                    }}
-                    onBlur={() => setRenamingId(null)}
-                    style={{ width: "120px", height: "22px", "font-size": "12px" }}
-                  />
-                }>{formatRailTitle(s.title)}</Show>
-              </span>
-              <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); handleClose(s.id) }}>✕</ButtonV2>
-            </ContextMenu.Trigger>
-            <ContextMenu.Portal>
-              <ContextMenu.Content>
-                <ContextMenu.Item onSelect={() => props.onClose(s.id)}>
-                  <ContextMenu.ItemLabel>Close</ContextMenu.ItemLabel>
-                </ContextMenu.Item>
-                <ContextMenu.Item onSelect={() => props.onExport(s.id)}>
-                  <ContextMenu.ItemLabel>导出 Markdown…</ContextMenu.ItemLabel>
-                </ContextMenu.Item>
-                <ContextMenu.Item onSelect={() => props.onCopyId(s.id)}>
-                  <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
-                </ContextMenu.Item>
-              </ContextMenu.Content>
-            </ContextMenu.Portal>
-          </ContextMenu>
+              <Show when={renamingId() !== s.id} fallback={
+                <TextInputV2
+                  value={renameDraft()}
+                  onInput={e => setRenameDraft(e.currentTarget.value)}
+                  onKeyDown={e => {
+                    e.stopPropagation()
+                    if (e.key === "Enter") {
+                      const next = renameDraft().trim()
+                      if (next && next !== s.title) props.onRename(s.id, next)
+                      setRenamingId(null)
+                    }
+                    if (e.key === "Escape") setRenamingId(null)
+                  }}
+                  onBlur={() => setRenamingId(null)}
+                  style={{ width: "120px", height: "22px", "font-size": "12px" }}
+                />
+              }>{formatRailTitle(s.title)}</Show>
+            </span>
+            <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); handleClose(s.id) }}>✕</ButtonV2>
+          </div>
         ))}
       </div>
       {/* ⋯ 溢出菜单（Chrome「list all tabs」/VS Code ›）：仅溢出时出现，固定在滚动层外 */}

@@ -14,6 +14,9 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
+import { MenuHost } from "./context-menu/MenuHost"
+import { menuController } from "./context-menu/controller"
+import { branchActionsVisible } from "./components/branch-actions"
 import { formatRailTitle } from "./components/rail-display"
 import { clampLeftDockWidth, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
@@ -438,8 +441,7 @@ export function MafwShell() {
   }
 
   // Export a session to Markdown via the OS save dialog (main process).
-  const exportSession = async (sid: string) => {
-    const turns = extractExportTurns(store.message[sid] || [])
+  const exportSession = async (sid: string) => {    const turns = extractExportTurns(store.message[sid] || [])
     const title = sessions().find(s => s.id === sid)?.title || sid
     const markdown = buildSessionMarkdown({ title, turns })
     try {
@@ -449,6 +451,19 @@ export function MafwShell() {
       else showToastV2({ description: `导出失败: ${res?.error || "unknown"}`, duration: 3000 })
     } catch (e: any) {
       showToastV2({ description: `导出失败: ${e?.message || e}`, duration: 3000 })
+    }
+  }
+
+  const forkSessionFromMenu = async (sid: string) => {
+    try {
+      const res = await window.api.mafw.sessions.fork(sid)
+      const forked = res?.session?.id
+      if (forked) {
+        showToastV2({ description: "已分叉会话", duration: 2000 })
+        openSessionTab(forked)
+      }
+    } catch (e: any) {
+      showToastV2({ description: `分叉失败: ${e?.message || e}`, duration: 3000 })
     }
   }
 
@@ -1864,6 +1879,7 @@ export function MafwShell() {
           <FileComponentProvider component={FileSSR}>
             <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
               <div class="mafw-shell" classList={{ maximized: winMaximized() }}>
+      <MenuHost controller={menuController} />
       <ToastV2.Region />
       <CommandPalette
         open={paletteOpen()}
@@ -1918,6 +1934,8 @@ export function MafwShell() {
           onExport={(id) => void exportSession(id)}
           onCopyId={copyText}
           onNew={createSession}
+          forkEnabled={branchActionsVisible(rtCaps())}
+          onFork={(id) => void forkSessionFromMenu(id)}
           onHome={() => {
             closeLeftDockIfOverlay()
             setShowConfig(false)
@@ -1961,6 +1979,9 @@ export function MafwShell() {
             onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
             onSelectSession={openSessionTab}
             onSessionDeleted={closeSession}
+            forkEnabled={branchActionsVisible(rtCaps())}
+            onForkSession={(id) => void forkSessionFromMenu(id)}
+            onExportSession={(id) => void exportSession(id)}
           />
         </Show>
         <div class="mafw-main">

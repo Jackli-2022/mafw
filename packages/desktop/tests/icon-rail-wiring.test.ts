@@ -20,13 +20,13 @@ test("IconRail: six buttons, one family, approved order", () => {
   assert.equal(src.split("mafw-icon-rail-spacer").length - 1, 1, "exactly one spacer")
 })
 
-test("IconRail: new-session action with worktree-gated context menu", () => {
+test("IconRail: new-session action opens the builder-driven context menu", () => {
   const src = read("src/renderer/mafw/components/IconRail.tsx")
-  assert.match(src, /ContextMenu/)
-  assert.match(src, /新建会话/)
-  assert.match(src, /并行/)
-  assert.match(src, /when=\{.*worktreeEnabled/)
+  assert.match(src, /buildRailNewMenu/)
+  assert.match(src, /menuController\.request/)
   assert.match(src, /onNewWorktreeSession/)
+  assert.match(src, /worktreeEnabled/)
+  assert.doesNotMatch(src, /<ContextMenu/)
 })
 
 test("IconRail: theme button retired (no emoji, no toggle)", () => {

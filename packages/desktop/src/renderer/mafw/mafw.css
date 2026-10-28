@@ -5858,3 +5858,9 @@ html[data-theme="light"] body {
   min-height: 36px;
   max-height: 30vh;
 }
+
+.mafw-rail-session:focus-visible,
+.mafw-session-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

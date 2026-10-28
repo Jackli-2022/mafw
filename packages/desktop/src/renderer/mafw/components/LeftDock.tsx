@@ -4,7 +4,11 @@
 import { createSignal, createEffect, createMemo, For, Show, onMount, onCleanup } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
-import { ContextMenu } from "@mafw/ui/context-menu"
+import { menuController } from "../context-menu/controller"
+import { buildSessionMenu } from "../context-menu/builders/session"
+import { buildProjectMenu } from "../context-menu/builders/project"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { isMenuKey } from "../context-menu/keyboard"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
@@ -53,6 +57,9 @@ type Props = {
   onNewSession: () => void
   onSelectSession: (id: string, title?: string, manager?: boolean) => void
   onSessionDeleted?: (id: string) => void
+  forkEnabled?: boolean
+  onForkSession?: (id: string) => void
+  onExportSession?: (id: string) => void
 }
 
 export function LeftDock(props: Props) {
@@ -215,6 +222,63 @@ export function LeftDock(props: Props) {
     setHi(-1)
   }
 
+  const sessionMenu = (node: SessionNode, point: { x: number; y: number }, from: "contextmenu" | "ellipsis" | "keyboard") => {
+    menuController.request(
+      buildSessionMenu,
+      {
+        id: node.id,
+        title: node.title,
+        kind: "row" as const,
+        canFork: props.forkEnabled !== false,
+      },
+      (id) => {
+        if (id === "session.open") openNode(node)
+        else if (id === "session.rename") startRename(node)
+        else if (id === "session.fork") props.onForkSession?.(node.id)
+        else if (id === "session.export") props.onExportSession?.(node.id)
+        else if (id === "session.copyId") void copyText(node.id)
+        else if (id === "session.delete") setDeleteConfirmId(node.id)
+      },
+      { point, from },
+    )
+  }
+
+  const requestSessionMenu = (node: SessionNode, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    sessionMenu(node, { x: event.clientX, y: event.clientY }, "contextmenu")
+  }
+
+  const requestSessionMenuFromButton = (node: SessionNode, event: MouseEvent) => {
+    event.stopPropagation()
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    sessionMenu(node, { x: rect.left, y: rect.bottom }, "ellipsis")
+  }
+
+  const onRowKeyDown = (node: SessionNode, event: KeyboardEvent) => {
+    if (!isMenuKey(event)) return
+    event.preventDefault()
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    sessionMenu(node, { x: rect.left + 12, y: rect.bottom }, "keyboard")
+  }
+
+  const requestProjectMenu = (event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const path = projectID()
+    if (!path) return
+    menuController.request(
+      buildProjectMenu,
+      { id: path, path },
+      (id) => {
+        if (id === "project.newSession") props.onNewSession()
+        else if (id === "project.reveal") void window.api.revealPath(path)
+        else if (id === "project.copyPath") void copyText(path)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   const renderNode = (node: SessionNode) => (
     <Show
       when={renamingId() !== node.id}
@@ -232,50 +296,34 @@ export function LeftDock(props: Props) {
         </div>
       }
     >
-      <ContextMenu>
-        <ContextMenu.Trigger
-          as="div"
-          class="mafw-rail-session"
-          classList={{ active: props.activeSessionId === node.id }}
-          data-hi={hiNodeId() === node.id ? "1" : undefined}
-          onClick={() => openNode(node)}
-        >
-          <TooltipV2 value={node.worktree ? `worktree：${node.worktree}` : new Date(node.updated || Date.now()).toLocaleString()} openDelay={300}>
-            <span class="mafw-rail-session-title">
-              <Show when={node.worktree}>
-                <span class="mafw-rail-wt-badge">⎇ {node.worktree}</span>
-              </Show>
-              {formatRailTitle(node.title)}
-            </span>
-          </TooltipV2>
-          <span
-            class="mafw-rail-row-dots"
-            onClick={e => { e.stopPropagation(); e.currentTarget.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })) }}
-          ><EllipsisIcon /></span>
-        </ContextMenu.Trigger>
-        <ContextMenu.Portal>
-          <ContextMenu.Content>
-            <ContextMenu.Item onSelect={() => openNode(node)}>
-              <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
-            </ContextMenu.Item>
-            <ContextMenu.Item onSelect={() => startRename(node)}>
-              <ContextMenu.ItemLabel>Rename</ContextMenu.ItemLabel>
-            </ContextMenu.Item>
-            <ContextMenu.Item onSelect={() => setDeleteConfirmId(node.id)}>
-              <ContextMenu.ItemLabel>Delete</ContextMenu.ItemLabel>
-            </ContextMenu.Item>
-            <ContextMenu.Item onSelect={() => copyText(node.id)}>
-              <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
-            </ContextMenu.Item>
-          </ContextMenu.Content>
-        </ContextMenu.Portal>
-      </ContextMenu>
+      <div
+        class="mafw-rail-session"
+        classList={{ active: props.activeSessionId === node.id }}
+        data-hi={hiNodeId() === node.id ? "1" : undefined}
+        tabIndex={0}
+        onClick={() => openNode(node)}
+        onContextMenu={(event) => requestSessionMenu(node, event)}
+        onKeyDown={(event) => onRowKeyDown(node, event)}
+      >
+        <TooltipV2 value={node.worktree ? `worktree：${node.worktree}` : new Date(node.updated || Date.now()).toLocaleString()} openDelay={300}>
+          <span class="mafw-rail-session-title">
+            <Show when={node.worktree}>
+              <span class="mafw-rail-wt-badge">⎇ {node.worktree}</span>
+            </Show>
+            {formatRailTitle(node.title)}
+          </span>
+        </TooltipV2>
+        <span
+          class="mafw-rail-row-dots"
+          onClick={(event) => requestSessionMenuFromButton(node, event)}
+        ><EllipsisIcon /></span>
+      </div>
     </Show>
   )
 
   const projectSwitcher = () => (
     <DropdownMenu placement="bottom-start">
-      <DropdownMenu.Trigger as="div" class="mafw-rail-switcher">
+      <DropdownMenu.Trigger as="div" class="mafw-rail-switcher" onContextMenu={requestProjectMenu}>
         <span class="mafw-rail-switcher-name">{railProjectName(currentProject()?.worktree, true)}</span>
         <Icon name="chevron-down" size="small" class="mafw-rail-switcher-caret" />
       </DropdownMenu.Trigger>
