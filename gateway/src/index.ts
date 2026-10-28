@@ -523,6 +523,12 @@ class MafwScheduler {
   private ttsRegistry = new TtsEngineRegistry();
   private ttsInflight = new Map<string, Set<AbortController>>(); // sessionId → 在途合成
   private ttsPluginLoader?: TtsPluginLoader;
+  private voiceSidecar?: Qwen3AsrSidecar;
+  private voiceRuntime?: VoiceRuntime;
+  private voiceRuntimePromise?: Promise<VoiceRuntime>;
+  private voiceAsrRegistry = new AsrEngineRegistry();
+  private voiceRuntimeConfig = resolveVoiceConfig({});
+  private voiceWss?: WebSocketServer;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
   private ledger?: SchedulerLedger;
@@ -4164,6 +4170,38 @@ class MafwScheduler {
     throw new Error(`Failed to start OpenCode Serve after ${maxRetries * interval / 1000} seconds`);
   }
 
+  /**
+   * Lazy voice runtime: create/start the Qwen3-ASR sidecar only on the first
+   * `/ws/voice` hello. A missing Python env must not break gateway startup.
+   */
+  private async getVoiceRuntime(): Promise<VoiceRuntime> {
+    if (this.voiceRuntime) return this.voiceRuntime;
+    if (!this.voiceRuntimePromise) {
+      this.voiceRuntimePromise = (async () => {
+        this.voiceRuntimeConfig = resolveVoiceConfig(config.raw);
+        if (!this.voiceSidecar) {
+          this.voiceSidecar = new Qwen3AsrSidecar({
+            port: this.voiceRuntimeConfig.sidecarPort,
+            modelsDir: this.voiceRuntimeConfig.modelsDir,
+          });
+        }
+        await this.voiceSidecar.start();
+        if (!this.voiceAsrRegistry.list().some((e) => e.name === 'qwen3-asr-vllm')) {
+          this.voiceAsrRegistry.register(new Qwen3AsrEngine({ sidecar: this.voiceSidecar }));
+        }
+        this.voiceRuntime = new VoiceRuntime({
+          registry: this.voiceAsrRegistry,
+          config: this.voiceRuntimeConfig,
+          createAsr: async (name) => this.voiceAsrRegistry.resolve(name),
+        });
+        return this.voiceRuntime;
+      })().finally(() => {
+        this.voiceRuntimePromise = undefined;
+      });
+    }
+    return this.voiceRuntimePromise;
+  }
+
   // 鈹€鈹€ 2. HTTP API 鈹€鈹€
 
   private async startApiServer() {
@@ -4315,6 +4353,15 @@ class MafwScheduler {
         }
 
         // GET /api/tts/voices — 当前引擎音色 + 能力（desktop picker）
+        // GET /api/voice/status — voice config + registered ASR engines.
+        if (req.url === "/api/voice/status" && req.method === "GET") {
+          await handleVoiceStatus(req, res, {
+            runtime: this.voiceRuntime,
+            config: this.voiceRuntimeConfig,
+          });
+          return;
+        }
+
         if (req.url === "/api/tts/voices" && req.method === "GET") {
           try {
             const ttsCfg = (config.raw as any)?.media?.tts ?? {};
@@ -7429,6 +7476,7 @@ class MafwScheduler {
         // WebSocket endpoint for mobile/remote clients: same event stream as
         // SSE (/api/events) plus an upstream `send` command.
         const wss = new WebSocketServer({ noServer: true });
+        this.voiceWss = new WebSocketServer({ noServer: true });
         wss.on('connection', (ws) => {
           this.wsClients.add(ws);
           (ws as any).isAlive = true;
@@ -7493,13 +7541,33 @@ class MafwScheduler {
 
         server.on('upgrade', (req, socket, head) => {
           const url = req.url || '';
+          // Token auth on upgrade: delegated to core/auth.ts
+          const rawAddr = (req.socket as any)?.remoteAddress || (socket as any).remoteAddress || '';
+          const wsToken = (config.raw as any)?.server?.apiToken || '';
+
+          if (isVoiceUpgradePath(url)) {
+            if (!isLoopbackAddr(rawAddr)) {
+              const wsAuth = authorizeWsUpgrade({ remoteAddress: rawAddr, headers: req.headers as any, url, host: String(req.headers.host || '') }, wsToken);
+              if (!wsAuth.ok) {
+                socket.write(wsAuth.rejectResponse!);
+                socket.destroy();
+                return;
+              }
+            }
+            this.voiceWss!.handleUpgrade(req, socket, head, (ws) => {
+              attachVoiceSocket(ws as any, {
+                createSession: async () => (await this.getVoiceRuntime()).createSession(
+                  (m) => ws.send(JSON.stringify(m)),
+                ),
+              });
+            });
+            return;
+          }
+
           if (!url.startsWith('/api/ws')) {
             socket.destroy();
             return;
           }
-          // Token auth on upgrade: delegated to core/auth.ts
-          const rawAddr = (req.socket as any)?.remoteAddress || (socket as any).remoteAddress || '';
-          const wsToken = (config.raw as any)?.server?.apiToken || '';
           const wsAuth = authorizeWsUpgrade({ remoteAddress: rawAddr, headers: req.headers as any, url, host: String(req.headers.host || '') }, wsToken);
           if (!wsAuth.ok) {
             socket.write(wsAuth.rejectResponse!);

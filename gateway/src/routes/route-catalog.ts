@@ -159,6 +159,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/tts/voices', operationId: 'tts.voices', tags: ['tts'] },
   { method: 'POST', path: '/api/tts/stream', operationId: 'tts.speakStream', tags: ['tts'] },
   { method: 'POST', path: '/api/tts/interrupt', operationId: 'tts.interrupt', tags: ['tts'] },
+  { method: 'GET', path: '/api/voice/status', operationId: 'voice.status', tags: ['voice'] },
   { method: 'GET', path: '/api/provider', operationId: 'providers.list', tags: ['providers'] },
   { method: 'GET', path: '/api/agents', operationId: 'agents.list', tags: ['agents'] },
   { method: 'GET', path: '/api/model-config', operationId: 'models.get', tags: ['models'] },
