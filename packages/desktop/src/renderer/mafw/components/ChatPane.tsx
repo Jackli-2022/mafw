@@ -123,8 +123,6 @@ export type ChatPaneProps = {
   sessionID: string
   focused: boolean
   canClosePane: boolean
-  store: StoreShape
-  setStore: (fn: (prev: StoreShape) => StoreShape) => void
   todos: Record<string, any[]>
   /** 整表重写时被移出的未完成项（只读提示，不并入当前列表） */
   hiddenTodos?: Record<string, any[]>
@@ -177,23 +175,15 @@ export type ChatPaneProps = {
   onTaskHoverOpen: (el: HTMLElement | null, sid?: string | null) => void
   onTaskHoverLeave: () => void
   onFocus: () => void
-  onClosePane: () => void
+  onClosePane?: () => void
   onOpenForkedSession?: (sid: string) => void
   onCreateSession: () => Promise<string | null>
   onSetUserMsgId: (sid: string, userMsgId: string) => void
-  onRegisterAnchor: (sid: string, fn: () => void) => void
-  onUnregisterAnchor: (sid: string) => void
-  onRegisterResetSending: (sid: string, fn: () => void) => void
-  onUnregisterResetSending: (sid: string) => void
   onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void
   onUnregisterPhaseUpdater?: (sid: string) => void
-  onRegisterQueueFlush?: (sid: string, fn: () => void) => void
-  onUnregisterQueueFlush?: (sid: string) => void
   compactionMark?: { at: number; summary?: string } | null
   permissionMode?: "read-only" | "auto" | "full-access"
   onTogglePermissionMode?: () => void
-  onRegisterMediaSpeak?: (sid: string, fn: (text: string, voice?: string) => void) => void
-  onUnregisterMediaSpeak?: (sid: string) => void
   pageState: Record<string, { cursor: string | null; hasMore: boolean; loading: boolean }>
   setPageState: (sid: string, patch: any, flag?: boolean) => void
 }
@@ -1674,7 +1664,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </TooltipV2>
                 <Show when={props.canClosePane}>
                   <TooltipV2 value="关闭分屏" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onClosePane() }} aria-label="关闭分屏"><Icon name="close" size="small" /></ButtonV2>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onClosePane?.() }} aria-label="关闭分屏"><Icon name="close" size="small" /></ButtonV2>
                   </TooltipV2>
                 </Show>
                 <Show when={props.parentID && props.onBackToParent}>

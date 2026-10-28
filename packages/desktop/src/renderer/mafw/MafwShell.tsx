@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup, untrack, Show, For } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
@@ -583,9 +582,9 @@ export function MafwShell() {
     })
   }
 
-  const resolveCard = (sid: string, id: string, patch: Partial<AskCardData> & Partial<PermissionCardData>) => {
+  const resolveCard = (sid: string, id: string, patch: Record<string, any>) => {
     setFlowCards(prev => {
-      const list = (prev[sid] || []).map(c => (c.data.id === id ? { ...c, data: { ...c.data, ...patch } } : c))
+      const list = (prev[sid] || []).map(c => (c.data.id === id ? ({ ...c, data: { ...c.data, ...patch } } as any) : c))
       return { ...prev, [sid]: list }
     })
   }
@@ -594,7 +593,7 @@ export function MafwShell() {
     setFlowCards(prev => {
       const list = (prev[sid] || []).map(c => {
         if (c.data.status !== "pending") return c
-        return { ...c, data: { ...c.data, status: "expired" } }
+        return { ...c, data: { ...c.data, status: "expired" } } as any
       })
       return { ...prev, [sid]: list }
     })
@@ -1199,7 +1198,7 @@ export function MafwShell() {
       // 这里后台继续按 user turn 补齐（≤4 页封顶），密度无关（mem_1789616908701）。
       let pageCount = 1
       while (shouldKeepPaging({ collected: countUserTurns(store.message[sessionID] || []), target: 10, nextCursor, pageCount, maxPages: 4 })) {
-        const data2 = await window.api.mafw.sessions.messages(sessionID, 100, nextCursor) as any
+        const data2 = await window.api.mafw.sessions.messages(sessionID, 100, nextCursor ?? undefined) as any
         const items2 = Array.isArray(data2) ? data2 : data2?.data
         nextCursor = data2?.nextCursor ?? null
         pageCount++
@@ -1968,7 +1967,7 @@ export function MafwShell() {
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
             {showConfig() ? (
-              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme()} onToggleTheme={toggleTheme} projectDir={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined} runtimeCaps={rtCaps()} />
+              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme() ?? undefined} onToggleTheme={toggleTheme} projectDir={(store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined) as string | undefined} runtimeCaps={rtCaps()} />
             ) : connDown() && activeTab() !== "chat" ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : activeTab() === "chat" ? (
@@ -2002,7 +2001,7 @@ export function MafwShell() {
                           onBackToParent={() => backToParent(activeSessionId()!)}
                           onOpenSubagent={(id) => void openSubagentSession(id)}
                           onOpenBackgroundDock={() => openWorkbench("execution", "background")}
-                          currentProject={currentProject()}
+                          currentProject={currentProject() ?? undefined}
                           onNavigateTab={(t) => { setActiveTab(t as any); setShowConfig(false) }}
                           onToggleTheme={toggleTheme}
                           onOpenSettings={() => { setConfigSection(undefined); setShowConfig(true) }}
@@ -2201,7 +2200,7 @@ export function MafwShell() {
                         mediaType: "image/png",
                         question: text,
                       })
-                      const pointer = `[媒体附件 taskID: ${task.taskID} contextID: ${task.contextId}（媒体: annotation.png），这是用户批注的区域截图——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${task.taskID}）]`
+                      const pointer = `[媒体附件 taskID: ${task.id} contextID: ${task.contextId}（媒体: annotation.png），这是用户批注的区域截图——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${task.id}）]`
                       return window.api.mafw.sessions.promptAsync({ sessionID: sid, message: `${text}\n\n${pointer}` })
                     })()
                     void run

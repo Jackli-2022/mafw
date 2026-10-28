@@ -298,7 +298,7 @@ export type MafwAPI = {
     update: (opts: EmbeddingConfigUpdate) => Promise<{ success: boolean; current: EmbeddingConfigState; runtime: EmbeddingRuntimeState; note?: string }>
   }
   runtime: {
-    get: () => Promise<{ active: { name: string; capabilities: Record<string, boolean> }; plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[] }>
+    get: () => Promise<{ active: { name: string; capabilities: Record<string, boolean>; envOverride?: boolean }; plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[] }>
     switch: (plugin: string) => Promise<{ success: boolean; active: { name: string; capabilities: Record<string, boolean> }; envOverride: boolean }>
     restartAgent: () => Promise<{ success: boolean; mode: string }>
   }

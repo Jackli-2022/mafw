@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup, on, Show, For, ErrorBoundary } from "solid-js"
 import { Portal } from "solid-js/web"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
@@ -382,7 +381,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
   const cloneBuiltin = async (e: HubEntry) => {
     try {
-      await window.api.mafw.usagePluginsCreate({ template: "clone-builtin", values: { sourceName: e.name } })
+      await window.api.mafw.sessions.usagePluginsCreate({ template: "clone-builtin", values: { sourceName: e.name } })
       showToastV2({ description: `已克隆 ${e.name} 到 usage-plugins，可编辑后启用`, duration: 4000 })
       await loadPluginHub()
     } catch (err: any) {
@@ -770,9 +769,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
   return (
     <ErrorBoundary fallback={(err, reset) => (
-      <div style={{ padding: 16, "font-size": 13 }}>
-        <div style={{ color: "#b91c1c", "margin-bottom": 8 }}>Config 页渲染错误: {String(err?.message ?? err)}</div>
-        <pre style={{ "white-space": "pre-wrap", "font-size": 11, color: "var(--text-base)", "max-height": 200, overflow: "auto" }}>{String(err?.stack ?? "")}</pre>
+      <div style={{ padding: "16px", "font-size": "13px" }}>
+        <div style={{ color: "#b91c1c", "margin-bottom": "8px" }}>Config 页渲染错误: {String(err?.message ?? err)}</div>
+        <pre style={{ "white-space": "pre-wrap", "font-size": "11px", color: "var(--text-base)", "max-height": "200px", overflow: "auto" }}>{String(err?.stack ?? "")}</pre>
         <ButtonV2 variant="outline" size="small" onClick={reset}>重试渲染</ButtonV2>
       </div>
     )}>
@@ -796,7 +795,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
           )}
           <span class="mafw-config-nav-title">Settings</span>
         </div>
-        <div class="mafw-config-nav-desc" style={{ "padding": "0 16px 12px", "font-size": 11, "color": "var(--text-4)", "line-height": 1.4 }}>
+        <div class="mafw-config-nav-desc" style={{ "padding": "0 16px 12px", "font-size": "11px", "color": "var(--text-4)", "line-height": 1.4 }}>
           配置 Gateway、插件、模型和用量
         </div>
         <div class="mafw-config-nav-list">
@@ -841,7 +840,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   {gwStateText()}
                 </span>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
                   Gateway 进程管理。查看连接状态、重启服务、获取日志路径。
                 </div>
@@ -867,7 +866,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
               </div>
 
               {/* ── UI 工具卡插件（用户本地 ~/.mafw/ui-plugins）── */}
-              <div class="mafw-config-section-header" style={{ "margin-top": 20 }}>
+              <div class="mafw-config-section-header" style={{ "margin-top": "20px" }}>
                 <span class="mafw-config-section-icon">🧩</span>
                 <span class="mafw-config-section-title">UI 工具卡插件</span>
                 <ButtonV2 variant="ghost" size="small" onClick={() => void refreshUiPlugins()}>刷新</ButtonV2>
@@ -875,28 +874,28 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   {uiReloading() ? "重载中…" : "手动重载"}
                 </ButtonV2>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
                   本地工具卡插件（{uiPluginStatus()?.dir || "~/.mafw/ui-plugins"}）：按工具名接管渲染，声明式 Widget 树（v2 支持 markdown/progress，插件可声明 requires 依赖）。
                 </div>
                 <Show when={uiPluginStatus()?.entries?.length} fallback={<div class="mafw-empty" style={{ padding: "8px 0" }}>暂无已加载的工具卡插件</div>}>
                   <For each={uiPluginStatus()?.entries}>
                     {(e) => (
-                      <div class="mafw-card" style={{ "margin-bottom": 6 }}>
+                      <div class="mafw-card" style={{ "margin-bottom": "6px" }}>
                         <div style={{ flex: 1 }}>
                           <span class="mafw-tool-chip" style={{ "font-family": "var(--font-data)" }}>{e.tool}</span>
-                          <Show when={e.override}><span class="mafw-badge" style={{ "margin-left": 6 }}>override</span></Show>
+                          <Show when={e.override}><span class="mafw-badge" style={{ "margin-left": "6px" }}>override</span></Show>
                         </div>
                       </div>
                     )}
                   </For>
                 </Show>
                 <Show when={Object.keys(uiPluginStatus()?.lastLoad?.failed || {}).length > 0}>
-                  <div style={{ "margin-top": 8 }}>
+                  <div style={{ "margin-top": "8px" }}>
                     <For each={Object.entries(uiPluginStatus()!.lastLoad.failed)}>
                       {([file, err]) => (
-                        <div class="mafw-card" style={{ "margin-bottom": 4, border: "0.5px solid rgba(232,99,107,0.4)" }}>
-                          <span style={{ "font-size": 11 }}>⚠ {file}</span>
+                        <div class="mafw-card" style={{ "margin-bottom": "4px", border: "0.5px solid rgba(232,99,107,0.4)" }}>
+                          <span style={{ "font-size": "11px" }}>⚠ {file}</span>
                           <span class="mafw-card-meta"> — {err}</span>
                         </div>
                       )}
@@ -914,11 +913,11 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">🎨</span>
                 <span class="mafw-config-section-title">外观</span>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
                   明暗主题（spec 2026-10-27：主题从左侧 rail 迁入 Config）。也可在命令面板用 /theme 切换。
                 </div>
-                <div class="mafw-card" style={{ "margin-bottom": 6 }}>
+                <div class="mafw-card" style={{ "margin-bottom": "6px" }}>
                   <div style={{ flex: 1 }}>
                     <div class="mafw-card-title">主题</div>
                     <div class="mafw-card-meta">当前：{{ light: "亮色", dark: "暗色", system: "跟随系统" }[props.theme ?? "system"] ?? "跟随系统"}</div>
@@ -932,19 +931,19 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">🖥️</span>
                 <span class="mafw-config-section-title">桌面集成</span>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
                   系统托盘与窗口关闭行为。托盘图标悬浮提示会显示待审批数量；单击图标显示/隐藏窗口。
                 </div>
                 <Show when={trayPrefs()} fallback={<div class="mafw-empty" style={{ padding: "8px 0" }}>读取设置失败</div>}>
-                  <div class="mafw-card" style={{ "margin-bottom": 6 }}>
+                  <div class="mafw-card" style={{ "margin-bottom": "6px" }}>
                     <div style={{ flex: 1 }}>
                       <div class="mafw-card-title">显示托盘图标</div>
                       <div class="mafw-card-meta">关闭后不再显示系统托盘图标，"关闭到托盘"随之失效</div>
                     </div>
                     <SwitchV2 checked={trayPrefs()!.trayIcon} onChange={(v) => void updateTrayPrefs({ trayIcon: v })} hideLabel />
                   </div>
-                  <div class="mafw-card" style={{ "margin-bottom": 6 }}>
+                  <div class="mafw-card" style={{ "margin-bottom": "6px" }}>
                     <div style={{ flex: 1 }}>
                       <div class="mafw-card-title">关闭到托盘</div>
                       <div class="mafw-card-meta">
@@ -974,7 +973,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <ButtonV2 variant="outline" size="small" onClick={loadPluginHub} disabled={hubLoading()}>刷新</ButtonV2>
                 <ButtonV2 variant="contrast" size="small" onClick={() => setInstallOpen(!installOpen())}>安装插件</ButtonV2>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 {rtEnvOverride() && (
                   <div class="mafw-config-env-warning">
                     ⚠️ 环境变量 MAFW_RUNTIME_PLUGIN 已覆盖 config.yaml 设置
@@ -985,9 +984,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   <div class="mafw-hub-install">
                     <div class="mafw-hub-install-row">
                       <Show when={installCandidates()}>
-                        <div style={{ width: 180 }}>
+                        <div style={{ width: "180px" }}>
                           <SelectV2
-                            options={(installCandidates() ?? []).map((t) => ({ value: t, label: t }))}
+                            options={installCandidates() ?? []}
                             current={installType() ?? ""}
                             value={(x: string) => x}
                             label={(x: string) => x}
@@ -1065,7 +1064,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   <div class="mafw-hub-empty">暂无插件。点击「安装插件」从本地 .js 文件安装。</div>
                 </Show>
 
-                <div class="mafw-config-field-group" style={{ "margin-top": 4 }}>
+                <div class="mafw-config-field-group" style={{ "margin-top": "4px" }}>
                   <label class="mafw-config-label">Media 引擎</label>
                   <div class="mafw-config-grid">
                     {[
@@ -1076,7 +1075,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                     ].map(({ kind, label, value }) => (
                       <div class="mafw-config-grid-row">
                         <span class="mafw-config-grid-label">{label}</span>
-                        <div style={{ width: 180 }}>
+                        <div style={{ width: "180px" }}>
                           <SelectV2
                             options={mediaOptions()}
                             current={value || 'pi'}
@@ -1106,7 +1105,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">🤖</span>
                 <span class="mafw-config-section-title">模型配置</span>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
                   配置记忆 worker、媒体分析和 Goal 编排节点（plan/execute/review）使用的 AI 模型。记忆 worker 负责压缩和反思，媒体模型负责多模态分析；Goal 节点模型留空时使用身份内置默认。
                 </div>
@@ -1178,7 +1177,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">🧠</span>
                 <span class="mafw-config-section-title">记忆系统</span>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
                   配置长期记忆的嵌入引擎（dense 检索通道）。切换引擎会热重建运行时并后台回填向量索引，无需重启 Gateway。
                 </div>
@@ -1239,7 +1238,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                           type="number"
                           value={String(embDraft().contextSize)}
                           onInput={e => setEmbDraft((p: any) => ({ ...p, contextSize: e.currentTarget.value }))}
-                          style={{ width: 100 }}
+                          style={{ width: "100px" }}
                         />
                       </div>
                     </Show>
@@ -1251,7 +1250,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                           type="number"
                           value={String(embDraft().threads)}
                           onInput={e => setEmbDraft((p: any) => ({ ...p, threads: e.currentTarget.value }))}
-                          style={{ width: 80 }}
+                          style={{ width: "80px" }}
                         />
                       </div>
                     </Show>
@@ -1263,7 +1262,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                           : "dense 通道未启用"}
                       </span>
                     </div>
-                    <div style={{ "margin-top": 8 }}>
+                    <div style={{ "margin-top": "8px" }}>
                       <ButtonV2 variant="contrast" size="small" onClick={saveEmbeddingConfig} disabled={embSaving() || !embDirtyMemo()}>
                         {embSaving() ? "保存中…" : "应用"}
                       </ButtonV2>
@@ -1279,7 +1278,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">🎯</span>
                 <span class="mafw-config-section-title">检索行为</span>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
                   记忆检索的四个行为开关。保存后热生效，无需重启 Gateway。
                 </div>
@@ -1301,17 +1300,17 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                       <div class="mafw-config-field-group">
                         <label class="mafw-config-label">拒答阈值 / 注入阈值</label>
                         <span class="mafw-config-hint">由 fok-calibrate --log 校准产出；拒答 &lt; 注入，均在 0–1 开区间</span>
-                        <div style={{ display: "flex", gap: 8, "align-items": "center" }}>
+                        <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
                           <TextInputV2
                             value={searchDraft().probLow}
                             onInput={e => setSearchDraft((p: any) => ({ ...p, probLow: e.currentTarget.value }))}
-                            style={{ width: 80 }}
+                            style={{ width: "80px" }}
                           />
                           <span class="mafw-config-hint">/</span>
                           <TextInputV2
                             value={searchDraft().probHigh}
                             onInput={e => setSearchDraft((p: any) => ({ ...p, probHigh: e.currentTarget.value }))}
-                            style={{ width: 80 }}
+                            style={{ width: "80px" }}
                           />
                         </div>
                         <Show when={fokValidationError()}>
@@ -1347,7 +1346,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         disabled={searchSaving()}
                       />
                     </div>
-                    <div style={{ "margin-top": 8 }}>
+                    <div style={{ "margin-top": "8px" }}>
                       <ButtonV2 variant="contrast" size="small" onClick={saveSearchDraft} disabled={searchSaving() || !!fokValidationError()}>
                         {searchSaving() ? "保存中…" : "保存"}
                       </ButtonV2>
@@ -1363,7 +1362,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">📊</span>
                 <span class="mafw-config-section-title">记忆观测</span>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 {!memStats() ? (
                   <div class="mafw-config-hint">暂无数据（Gateway 未就绪或无活动）</div>
                 ) : (
@@ -1557,7 +1556,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">⚙️</span>
                 <span class="mafw-config-section-title">opencode 配置</span>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
                   opencode 原生配置编辑器。修改后可能需要重启 Gateway 生效。
                 </div>
@@ -1575,7 +1574,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                           onClick={() => toggleOcSection(sec.key)}
                           class="mafw-config-oc-header"
                         >
-                          <Icon name="chevron-down" size="small" style={{ transform: sec.expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.15s", flexShrink: 0 }} />
+                          <Icon name="chevron-down" size="small" style={{ transform: sec.expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.15s", "flex-shrink": 0 }} />
                           <span class="mafw-config-oc-name">{sec.key}</span>
                         </div>
                         {sec.expanded && (
@@ -1611,7 +1610,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">🔧</span>
                 <span class="mafw-config-section-title">MAFW 原始配置</span>
               </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
                   MAFW 原始配置文件编辑。高级用户使用，修改前请了解配置项含义。
                 </div>
@@ -1629,7 +1628,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                           onClick={() => toggleSection(sec.key)}
                           class="mafw-config-oc-header"
                         >
-                          <Icon name="chevron-down" size="small" style={{ transform: sec.expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.15s", flexShrink: 0 }} />
+                          <Icon name="chevron-down" size="small" style={{ transform: sec.expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.15s", "flex-shrink": 0 }} />
                           <span class="mafw-config-oc-name">{sec.key}</span>
                         </div>
                         {sec.expanded && (
@@ -1760,7 +1759,7 @@ function ModelSelectRow(props: {
   label: string
   allowClear?: boolean
   current: { provider: string; model: string }
-  providers: any[]
+  providers: Array<{ providerID: string; providerName?: string; models?: Array<{ id: string; name?: string }> }>
   saving: boolean
   onSave: (provider: string, model: string) => void
 }) {
@@ -1782,7 +1781,7 @@ function ModelSelectRow(props: {
   return (
     <div class="mafw-config-model-row">
       <span class="mafw-config-model-label">{props.label}</span>
-      <div style={{ display: "flex", gap: 6, "align-items": "center" }}>
+      <div style={{ display: "flex", gap: "6px", "align-items": "center" }}>
         <SearchSelect
           options={providerOptions()}
           current={currentProviderOption()}
@@ -1816,11 +1815,11 @@ function ModelTextRow(props: {
   return (
     <div class="mafw-config-model-row">
       <span class="mafw-config-model-label">{props.label}</span>
-      <div style={{ display: "flex", gap: 6, "align-items": "center" }}>
-        <div style={{ width: 120 }}>
+      <div style={{ display: "flex", gap: "6px", "align-items": "center" }}>
+        <div style={{ width: "120px" }}>
           <TextInputV2 value={prov()} onInput={e => setProv(e.currentTarget.value)} placeholder="providerID" disabled={props.saving} />
         </div>
-        <div style={{ width: 150 }}>
+        <div style={{ width: "150px" }}>
           <TextInputV2 value={model()} onInput={e => setModel(e.currentTarget.value)} placeholder="modelID" disabled={props.saving} />
         </div>
         <ButtonV2 variant="outline" size="small" disabled={props.saving || !prov() || !model()} onClick={() => props.onSave(prov(), model())}>
