@@ -335,7 +335,7 @@ type Scheduler = {
 
 ## 7. 待拍板
 
-- P0 / P1 已实施（见 §8），下一步是否做 P2：`content-visibility`/虚拟化、`codemode:false` 开关或 execute 输出限幅？
+- P0 / P1 / P2 输出限幅已实施（见 §8）；剩余可选项：`content-visibility`/虚拟化、`codemode:false` 开关。
 - Edit / Write 的 2.1 形状与 history output 已一并修复；如果还要每个 gateway MCP 的完整结果卡，是否加 `codemode:false` 开关？
 - §6 的菜单渲染错误已由并行提交 `d87c87b3` 修复（本批未改）；GUI 验证已恢复。
 
@@ -351,6 +351,9 @@ type Scheduler = {
 - `00b608fa` perf(session-ui): grow the streaming markdown tail in place
   - `markdown-stream.ts`：live tail 原地追加；空行边界 / open fence / late refs / 非追加更新 fallback；`liveSource` 只 heal 活跃 tail；`stream` raw 从源文本切片（裸列表标记不累积）。
   - 新增 14 个回归用例；本机 `project()` 基准：单段 7,377→51ms、多段 17,233→23ms、列表 11,428→48ms。
-- 门禁：session-ui **127/127**、desktop **1888/1888**、`tsgo --noEmit -p` rc=0（desktop + session-ui）、`electron-vite build` rc=0。
+- `38c45949` perf(desktop): cap execute output before inline rendering
+  - `executeOutputView()`：默认 8,000 字符 / 200 行；超出先渲染截断预览 + 「展开全部」，展开后以单 code 段呈现全文，避免工具完成瞬间 parse 巨大 JSON。
+  - 门禁：desktop **1896/1896**（本批 +8）。
+- 门禁：session-ui **127/127**、desktop **1896/1896**、`tsgo --noEmit -p` rc=0（desktop + session-ui）、`electron-vite build` rc=0。
 - GUI 冒烟：world 会话（`ses_e7d324d21ffemqN3O7AJSjPpYR`）实测 execute 卡显示「1 次调用」+ `✓ mafw_add_memory` + 参数 + 输出 KV；write 卡显示文件名。Edit 卡在该会话已超出 10 轮渲染窗口，未直接目测；形状已由 2.1 fixture 单测覆盖。
 
