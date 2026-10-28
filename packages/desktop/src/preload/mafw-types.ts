@@ -196,6 +196,7 @@ export type MafwAPI = {
     getL5Axioms: (topK?: number) => Promise<{ axioms: Axiom[]; heuristics: L5Heuristic[] }>
     listSticky: () => Promise<{ entries: StickyNote[]; budget: { max: number; maxChars: number; used: number } }>
     setSticky: (id: string, sticky: boolean, stickyDays?: number) => Promise<void>
+    setPinned: (id: string, pinned: boolean) => Promise<void>
     stats: () => Promise<MemoryStats>
   }
 
@@ -243,6 +244,7 @@ export type MafwAPI = {
   automations: {
     list: () => Promise<AutomationRule[]>
     toggle: (id: string, enabled: boolean) => Promise<void>
+    remove: (id: string) => Promise<void>
     draft: (input: { id: string; trigger: { schedule: string; timezone?: string }; skill?: string; action?: { type: 'triage' | 'goal'; template?: string; auto_confirm?: boolean }; goal_defaults?: { maxLoops?: number } }) => Promise<{ id: string; valid: boolean; errors?: string[] }>
   }
 

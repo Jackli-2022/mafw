@@ -414,6 +414,14 @@ test("automations.list returns [] on empty response", async () => {
   expect(await c.automations.list()).toEqual([])
 })
 
+test("automations.remove sends DELETE /api/automations/:id", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient()
+  await c.automations.remove("r1")
+  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/automations/r1",
+    expect.objectContaining({ method: "DELETE" }))
+})
+
 test("session.promptAsync sends POST /api/session/:id/promptAsync", async () => {
   fetchMock.mockResolvedValue(okJson({}))
   const c = new MafwClient("http://gw:3000")
@@ -610,6 +618,17 @@ test("memory.setSticky sends POST /api/memory/pin with sticky body", async () =>
     expect.objectContaining({
       method: "POST",
       body: expect.stringContaining('"stickyDays":14'),
+    }))
+})
+
+test("memory.setPinned sends POST /api/memory/pin with pinned body", async () => {
+  fetchMock.mockResolvedValue(okJson({ success: true, id: "mem-1", pinned: true }))
+  const c = new MafwClient()
+  await c.memory.setPinned("mem-1", true)
+  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/memory/pin",
+    expect.objectContaining({
+      method: "POST",
+      body: expect.stringContaining('"pinned":true'),
     }))
 })
 

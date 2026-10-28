@@ -1083,6 +1083,14 @@ export class MafwClient implements IMafwClient {
       })
     },
 
+    setPinned: async (id: string, pinned: boolean): Promise<void> => {
+      await this.request('/api/memory/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, pinned }),
+      })
+    },
+
     stats: async (): Promise<MemoryStats> => {
       return this.request<MemoryStats>('/api/memory/stats')
     },
@@ -1558,6 +1566,10 @@ export class MafwClient implements IMafwClient {
         method: 'PUT',
         body: JSON.stringify({ enabled }),
       })
+    },
+
+    remove: async (id: string): Promise<void> => {
+      await this.request(`/api/automations/${id}`, { method: 'DELETE' })
     },
 
     /** 璧疯崏瑙勫垯锛坋nabled=false 钀界洏锛岄渶鎵嬪姩鍚敤锛夈€傝繑鍥炴牎楠岀粨鏋溿€?*/

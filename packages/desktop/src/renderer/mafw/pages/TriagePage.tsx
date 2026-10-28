@@ -4,12 +4,15 @@ import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
 import { SkeletonRows } from "../components/Skeleton"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { MafwContextMenu } from "../components/MafwContextMenu"
-import type { ContextMenuItem } from "../components/MafwContextMenu"
+import { ConfirmOverlay } from "../components/ConfirmOverlay"
+import { menuController } from "../context-menu/controller"
+import { buildTriageCardMenu } from "../context-menu/builders/card"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 
-export function TriagePage() {
+export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
   const [items, setItems] = createSignal<any[]>([])
   const [loading, setLoading] = createSignal(true)
+  const [dismissConfirmId, setDismissConfirmId] = createSignal<string | null>(null)
 
   async function fetch() {
     setLoading(true)
@@ -42,6 +45,23 @@ export function TriagePage() {
     }
   }
 
+  const requestTriageMenu = (t: any, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    menuController.request(
+      buildTriageCardMenu,
+      { id: t.id, goalId: t.goalId },
+      (id) => {
+        if (id === "triage.confirm") void act("确认", () => window.api.mafw.triage.confirm(t.id))
+        else if (id === "triage.proposeConfirm") void act("提议确认", () => window.api.mafw.triage.propose(t.id, "confirm", "用户在桌面端提议确认"))
+        else if (id === "triage.proposeReject") void act("提议拒绝", () => window.api.mafw.triage.propose(t.id, "reject", "用户在桌面端提议拒绝"))
+        else if (id === "triage.viewGoal") props.onOpenGoals?.()
+        else if (id === "triage.dismiss") setDismissConfirmId(t.id)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   return (
     <div>
       <PageHeader title="Triage" subtitle="自动化扫描结果确认" />
@@ -51,17 +71,11 @@ export function TriagePage() {
           <EmptyState glyph="⚖" title="没有待确认项" hint="自动化扫描的结果会出现在这里" />
       ) : (
         items().map(t => {
-          const menu: ContextMenuItem[] = [
-            { label: "View Goal", onSelect: () => window.api.mafw.goals.get(t.goalId).catch((e: any) => console.warn("[mafw]", e)) },
-            { separator: true },
-            { label: "Dismiss", danger: true, onSelect: () => window.api.mafw.triage.dismiss(t.id).catch((e: any) => console.warn("[mafw]", e)) },
-          ]
           const confirmIt = () => void act("确认", () => window.api.mafw.triage.confirm(t.id))
           const proposeConfirm = () => void act("提议确认", () => window.api.mafw.triage.propose(t.id, "confirm", "用户在桌面端提议确认"))
           const proposeReject = () => void act("提议拒绝", () => window.api.mafw.triage.propose(t.id, "reject", "用户在桌面端提议拒绝"))
           return (
-          <MafwContextMenu items={menu}>
-            <div class="mafw-card">
+            <div class="mafw-card" onContextMenu={(event) => requestTriageMenu(t, event)}>
               <div style={{ flex: 1 }}>
                 <div class="mafw-card-title">{t.reason || t.id}</div>
                 <div class="mafw-card-meta">Goal: {t.goalId} · {t.createdAt ? new Date(t.createdAt).toLocaleString() : ""}</div>
@@ -73,9 +87,22 @@ export function TriagePage() {
                 <span class="mafw-tool-tag" style={{ background: severityColor(t.severity) + "22", color: severityColor(t.severity), border: `0.5px solid ${severityColor(t.severity)}44` }}>{t.severity}</span>
               </div>
             </div>
-          </MafwContextMenu>
-        )})
+          )
+        })
       )}
+      <ConfirmOverlay
+        open={dismissConfirmId() !== null}
+        title="忽略待确认项"
+        message="忽略后这条扫描结果不会再出现在列表里。"
+        confirmLabel="忽略"
+        danger
+        onConfirm={() => {
+          const id = dismissConfirmId()
+          setDismissConfirmId(null)
+          if (id) void act("忽略", () => window.api.mafw.triage.dismiss(id))
+        }}
+        onCancel={() => setDismissConfirmId(null)}
+      />
     </div>
   )
 }

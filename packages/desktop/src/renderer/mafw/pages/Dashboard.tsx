@@ -1,8 +1,10 @@
 import { createSignal, createEffect, For, onCleanup } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import { MafwContextMenu } from "../components/MafwContextMenu"
-import type { ContextMenuItem } from "../components/MafwContextMenu"
+import { ConfirmOverlay } from "../components/ConfirmOverlay"
+import { menuController } from "../context-menu/controller"
+import { buildGoalCardMenu } from "../context-menu/builders/card"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { GoalDetailOverlay } from "../components/GoalDetailOverlay"
 import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
@@ -32,16 +34,25 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void; on
     onCleanup(() => clearInterval(interval))
   })
 
-  function goalMenu(g: any): ContextMenuItem[] {
-    const isRunning = g.phase !== "COMPLETED" && g.phase !== "FAILED" && g.phase !== "ARCHIVED"
-    return [
-      { label: "View Details", onSelect: () => setDetailGoalId(g.goalId) },
-      { separator: true },
-      ...(isRunning
-        ? [{ label: "Pause", onSelect: () => window.api.mafw.goals.control({ goalId: g.goalId, action: "PAUSE" }).catch((e: any) => console.warn("[mafw]", e)) }]
-        : []),
-      { label: "Cancel", danger: true, onSelect: () => window.api.mafw.goals.control({ goalId: g.goalId, action: "ABORT" }).catch((e: any) => console.warn("[mafw]", e)) },
-    ]
+  const [cancelConfirmId, setCancelConfirmId] = createSignal<string | null>(null)
+
+  const isGoalRunning = (g: any) => g.phase !== "COMPLETED" && g.phase !== "FAILED" && g.phase !== "ARCHIVED"
+
+  const requestGoalMenu = (g: any, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const running = isGoalRunning(g)
+    menuController.request(
+      buildGoalCardMenu,
+      { goalId: g.goalId, running, canPause: running },
+      (id) => {
+        if (id === "goal.details" || id === "goal.timeline") setDetailGoalId(g.goalId)
+        else if (id === "goal.copyId") void navigator.clipboard.writeText(g.goalId)
+        else if (id === "goal.pause") void window.api.mafw.goals.control({ goalId: g.goalId, action: "PAUSE" }).catch((e: any) => console.warn("[mafw]", e))
+        else if (id === "goal.cancel") setCancelConfirmId(g.goalId)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
   }
 
   const kpis = [
@@ -86,9 +97,8 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void; on
           <EmptyState glyph="◎" title="还没有 Goal" hint="让 Manager 为你编排第一个目标，或从欢迎页快速创建" />
         ) : (
           goals().map(g => (
-            <MafwContextMenu items={goalMenu(g)}>
-              <div class="mafw-card">
-                <div>
+            <div class="mafw-card" onContextMenu={(event) => requestGoalMenu(g, event)}>
+              <div>
                   <div class="mafw-card-title">{g.title || g.goalId}</div>
                   <div class="mafw-card-meta">Wave {g.currentWave}/{g.totalWaves} · Loop {g.loop}</div>
                 </div>
@@ -101,10 +111,22 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void; on
                   <span style={{ "font-size": "11px", color: "var(--text-base)" }}>{g.updatedAt ? new Date(g.updatedAt).toLocaleString() : ""}</span>
                 </div>
               </div>
-            </MafwContextMenu>
           ))
         )}
       </div>
+      <ConfirmOverlay
+        open={cancelConfirmId() !== null}
+        title="取消 Goal"
+        message="取消后该 Goal 会进入终止状态，已产生的会话与产物仍会保留。"
+        confirmLabel="取消 Goal"
+        danger
+        onConfirm={() => {
+          const goalId = cancelConfirmId()
+          setCancelConfirmId(null)
+          if (goalId) void window.api.mafw.goals.control({ goalId, action: "ABORT" }).catch((e: any) => console.warn("[mafw]", e))
+        }}
+        onCancel={() => setCancelConfirmId(null)}
+      />
       <GoalDetailOverlay
         goalId={detailGoalId()}
         onClose={() => setDetailGoalId(null)}

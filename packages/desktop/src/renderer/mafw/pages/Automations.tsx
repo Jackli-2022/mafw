@@ -7,8 +7,10 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { SelectV2 } from "@mafw/ui/v2/select-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { MafwContextMenu } from "../components/MafwContextMenu"
-import type { ContextMenuItem } from "../components/MafwContextMenu"
+import { ConfirmOverlay } from "../components/ConfirmOverlay"
+import { menuController } from "../context-menu/controller"
+import { buildAutomationCardMenu } from "../context-menu/builders/card"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 
 export function AutomationsPage() {
   const [rules, setRules] = createSignal<any[]>([])
@@ -45,6 +47,33 @@ export function AutomationsPage() {
       await window.api.mafw.automations.toggle(id, enabled)
       await fetchRules()
     } catch (e) { console.warn("[mafw]", e) }
+  }
+
+  const [deleteConfirmId, setDeleteConfirmId] = createSignal<string | null>(null)
+
+  async function removeRule(id: string) {
+    try {
+      await window.api.mafw.automations.remove(id)
+      showToastV2({ description: `已删除规则 ${id}`, duration: 2000 })
+      await fetchRules()
+    } catch (e: any) {
+      showToastV2({ description: `删除失败: ${e?.message || e}`, duration: 3000 })
+    }
+  }
+
+  const requestRuleMenu = (rule: any, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    menuController.request(
+      buildAutomationCardMenu,
+      { id: rule.id, enabled: !!rule.enabled },
+      (id) => {
+        if (id === "automation.toggle") void toggleRule(rule.id, !rule.enabled)
+        else if (id === "automation.copyId") void navigator.clipboard.writeText(rule.id)
+        else if (id === "automation.delete") setDeleteConfirmId(rule.id)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
   }
 
   async function submitDraft() {
@@ -120,12 +149,7 @@ export function AutomationsPage() {
           <EmptyState glyph="⏱" title="还没有自动化规则" hint="添加定时或事件驱动的任务规则" />
       ) : (
         rules().map((rule, idx) =>
-          <MafwContextMenu items={[
-            { label: rule.enabled ? "Disable" : "Enable", onSelect: () => toggleRule(rule.id, !rule.enabled).catch((e: any) => console.warn("[mafw]", e)) },
-            { separator: true },
-            { label: "Disable", danger: true, onSelect: () => window.api.mafw.automations.toggle(rule.id, false).catch((e: any) => console.warn("[mafw]", e)) },
-          ]}>
-          <div class="mafw-card">
+          <div class="mafw-card" onContextMenu={(event) => requestRuleMenu(rule, event)}>
             <div style={{ flex: 1 }}>
               <div class="mafw-card-title">{rule.name || rule.id}</div>
               {rule.trigger?.schedule && (
@@ -135,9 +159,21 @@ export function AutomationsPage() {
             </div>
             <SwitchV2 checked={rule.enabled} onChange={v => toggleRule(rule.id, v)}>{rule.enabled ? "Enabled" : "Disabled"}</SwitchV2>
           </div>
-          </MafwContextMenu>
         )
       )}
+      <ConfirmOverlay
+        open={deleteConfirmId() !== null}
+        title="删除自动化规则"
+        message={`确定删除规则 ${deleteConfirmId() ?? ""}？此操作不可撤销。`}
+        confirmLabel="删除"
+        danger
+        onConfirm={() => {
+          const id = deleteConfirmId()
+          setDeleteConfirmId(null)
+          if (id) void removeRule(id)
+        }}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
     </div>
   )
 }

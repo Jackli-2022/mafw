@@ -193,6 +193,7 @@ export function createMafwApi(): MafwAPI {
       getL5Axioms: (topK) => invoke("memory", "getL5Axioms", topK),
       listSticky: () => invoke("memory", "listSticky"),
       setSticky: (id, sticky, stickyDays?) => invoke("memory", "setSticky", { id, sticky, stickyDays }),
+      setPinned: (id, pinned) => invoke("memory", "setPinned", { id, pinned }),
       stats: () => invoke("memory", "stats"),
     },
 
@@ -240,6 +241,7 @@ export function createMafwApi(): MafwAPI {
     automations: {
       list: () => invoke("automations", "list"),
       toggle: (id, enabled) => invoke("automations", "toggle", id, enabled),
+      remove: (id) => invoke("automations", "remove", id),
       draft: (input) => invoke("automations", "draft", input),
     },
 

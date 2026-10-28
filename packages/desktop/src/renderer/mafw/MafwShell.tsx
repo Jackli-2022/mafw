@@ -2133,7 +2133,7 @@ export function MafwShell() {
             ) : activeTab() === "approvals" ? (
               <ApprovalsPage permissionCards={pendingPermissionCards} onPermissionReply={permReply} />
             ) : activeTab() === "triage" ? (
-              <TriagePage />
+              <TriagePage onOpenGoals={() => { setActiveTab("goals"); closeLeftDockIfOverlay(); setShowConfig(false) }} />
             ) : activeTab() === "automation" ? (
               <AutomationsPage />
             ) : null}

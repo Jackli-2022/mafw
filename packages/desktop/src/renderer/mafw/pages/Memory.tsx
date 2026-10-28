@@ -5,8 +5,11 @@ import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
 import { SkeletonRows } from "../components/Skeleton"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
-import { MafwContextMenu } from "../components/MafwContextMenu"
-import type { ContextMenuItem } from "../components/MafwContextMenu"
+import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { ConfirmOverlay } from "../components/ConfirmOverlay"
+import { menuController } from "../context-menu/controller"
+import { buildMemoryCardMenu } from "../context-menu/builders/card"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 
 interface EnergyDistribution { critical: number; high: number; medium: number; low: number; total: number }
 interface L5Axiom { id: string; content: string; energy: number; created_at?: string }
@@ -64,6 +67,37 @@ export function MemoryPage() {
       setResults(prev => prev.filter(u => u.id !== id))
       void loadStats()
     } catch (e) { console.warn("[mafw] memory delete failed:", e) }
+  }
+
+  const [deleteConfirmId, setDeleteConfirmId] = createSignal<string | null>(null)
+
+  const applyMemoryChange = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+      await loadResults(query())
+      void loadStats()
+    } catch (e: any) {
+      showToastV2({ description: `操作失败: ${e?.message || e}`, duration: 3000 })
+    }
+  }
+
+  const requestMemoryMenu = (unit: any, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const sticky = !!unit.sticky_until
+    menuController.request(
+      buildMemoryCardMenu,
+      { id: unit.id, pinned: !!unit.pinned, sticky },
+      (id) => {
+        if (id === "memory.copyAbstraction") void navigator.clipboard.writeText(unit.primary_abstraction ?? "")
+        else if (id === "memory.copyFull") void navigator.clipboard.writeText(unit.memory_value ?? "")
+        else if (id === "memory.pin") void applyMemoryChange(() => window.api.mafw.memory.setPinned(unit.id, !unit.pinned))
+        else if (id === "memory.sticky" || id === "memory.renew") void applyMemoryChange(() => window.api.mafw.memory.setSticky(unit.id, true, 7))
+        else if (id === "memory.unsticky") void applyMemoryChange(() => window.api.mafw.memory.setSticky(unit.id, false))
+        else if (id === "memory.delete") setDeleteConfirmId(unit.id)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
   }
 
   const distItems = dist()
@@ -135,15 +169,8 @@ export function MemoryPage() {
         {searching() ? (
           <SkeletonRows rows={3} h="52px" />
         ) : results().length > 0 ? results().map(unit => {
-          const memItems: ContextMenuItem[] = [
-            { label: "Copy Abstraction", onSelect: () => navigator.clipboard.writeText(unit.primary_abstraction ?? "") },
-            { label: "Copy Full Text", onSelect: () => navigator.clipboard.writeText(unit.memory_value ?? "") },
-            { separator: true },
-            { label: "Delete", danger: true, onSelect: () => void handleDelete(unit.id) },
-          ]
           return (
-            <MafwContextMenu items={memItems}>
-              <div class="mafw-card" style={{ "flex-direction": "column", "align-items": "stretch", "margin-bottom": "6px" }}>
+            <div class="mafw-card" style={{ "flex-direction": "column", "align-items": "stretch", "margin-bottom": "6px" }} onContextMenu={(event) => requestMemoryMenu(unit, event)}>
                 <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between" }}>
                   <div class="mafw-card-title">{unit.primary_abstraction ?? unit.id}</div>
                   <div style={{ display: "flex", "align-items": "center", gap: "6px", "flex-shrink": "0px" }}>
@@ -163,13 +190,25 @@ export function MemoryPage() {
                 {unit.memory_value && (
                   <div class="mafw-card-meta" style={{ "margin-top": "4px", "white-space": "pre-wrap" }}>{unit.memory_value}</div>
                 )}
-              </div>
-            </MafwContextMenu>
+            </div>
           )
         }) : loaded() ? (
           <EmptyState glyph="⌕" title="没有匹配的记忆" hint="换个关键词，或先用 BM25 默认检索试试" />
         ) : null}
       </div>
+      <ConfirmOverlay
+        open={deleteConfirmId() !== null}
+        title="删除记忆"
+        message="删除后这条记忆会从谐波索引中移除，无法恢复。"
+        confirmLabel="删除"
+        danger
+        onConfirm={() => {
+          const id = deleteConfirmId()
+          setDeleteConfirmId(null)
+          if (id) void handleDelete(id)
+        }}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
     </div>
   )
 }
