@@ -14,7 +14,12 @@ export function registerThinkingBlock() {
 export function ThinkingBlock(props: { part: any; message: any }) {
   const data = useData()
   const part = () => props.part
-  const streaming = createMemo(() => reasoningStreaming(props.message, part().time))
+  // 只有消息最后一个 part 才允许流式光标（否则 text→tool→text→… 每段都挂一个闪烁绿块）
+  const isTailPart = createMemo(() => {
+    const parts = data.store.part?.[props.message.id] ?? []
+    return parts.at(-1)?.id === part().id
+  })
+  const streaming = createMemo(() => isTailPart() && reasoningStreaming(props.message, part().time))
   const text = createMemo(() => readPartText(data.store.part_text_accum_delta, part()))
   const [open, setOpen] = createSignal(false)
 

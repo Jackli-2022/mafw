@@ -32,6 +32,7 @@ import {
   QuestionInfo,
 } from "@opencode-ai/sdk/v2"
 import { useData } from "../context"
+import { shouldShowStreamingCaret } from "./streaming-caret"
 import { useFileComponent } from "@mafw/ui/context/file"
 import { useDialog } from "@mafw/ui/context/dialog"
 import { type UiI18n, useI18n } from "@mafw/ui/context/i18n"
@@ -1760,14 +1761,21 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   // 1. message 级完成信号（time.completed）优先——缺它时 abort/终帧缺失的消息
   //    会永久渲染流式尾光标；
   // 2. part 自身已有 time.end = 该段已完结（覆盖 aborted 历史/终帧丢失）；
-  // 3. 两者皆缺才视为流式中。message.time 整体缺失时原实现会 TypeError，一并防御。
-  const streaming = createMemo(() => {
-    if (props.message.role !== "assistant") return false
-    if (typeof (props.message as AssistantMessage).time?.completed === "number") return false
-    const partTime = (part() as TextPart | undefined)?.time
-    if (partTime && typeof partTime.end === "number") return false
-    return true
+  // 3. **只有消息最后一个 part 才显示**——历史 text part 没有 time.end，
+  //    否则每个 text 段都会挂一个闪烁光标（v5.1 绿块 bug）。
+  // 4. message.time 整体缺失时原实现会 TypeError，一并防御。
+  const isTailPart = createMemo(() => {
+    const parts = data.store.part?.[props.message.id] ?? []
+    return parts.at(-1)?.id === part().id
   })
+  const streaming = createMemo(() =>
+    shouldShowStreamingCaret({
+      role: props.message.role,
+      messageCompleted: (props.message as AssistantMessage).time?.completed,
+      partEnd: (part() as TextPart | undefined)?.time?.end,
+      isTailPart: isTailPart(),
+    }),
+  )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
   const isLastTextPart = createMemo(() => {
     const last = (data.store.part?.[props.message.id] ?? [])
@@ -1842,14 +1850,19 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
   const part = () => props.part as ReasoningPart
   // 同 text part 的防御层：part.time.end 优先于 message.time.completed 兜底，
-  // message.time 缺失不崩（desktop 已用 ThinkingBlock 覆盖本渲染器）。
-  const streaming = createMemo(() => {
-    if (props.message.role !== "assistant") return false
-    if (typeof (props.message as AssistantMessage).time?.completed === "number") return false
-    const partTime = part().time
-    if (partTime && typeof partTime.end === "number") return false
-    return true
+  // message.time 缺失不崩；同样只让消息最后一个 part 显示光标。
+  const isTailPart = createMemo(() => {
+    const parts = data.store.part?.[props.message.id] ?? []
+    return parts.at(-1)?.id === part().id
   })
+  const streaming = createMemo(() =>
+    shouldShowStreamingCaret({
+      role: props.message.role,
+      messageCompleted: (props.message as AssistantMessage).time?.completed,
+      partEnd: part().time?.end,
+      isTailPart: isTailPart(),
+    }),
+  )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
 
   return (
