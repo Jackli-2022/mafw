@@ -122,7 +122,9 @@ try {
           try {
             const env = JSON.parse(line.slice(5).trim());
             const data = env?.data || env;
-            if (data?.type === 'session.commands' && data.sessionID === sessionID) return data;
+            if (data?.type === 'session.commands' && data.sessionID === sessionID) {
+              return { ...data, __envelope: env?.type === 'mafw_event' };
+            }
           } catch { /* ignore non-JSON frame */ }
         }
       }
@@ -133,6 +135,7 @@ try {
   event = await readPromise;
   controller.abort();
   check(!!event, 'refresh broadcasts session.commands', event ? event.properties?.reason : 'no matching event');
+  check(event?.__envelope === true, 'session.commands uses mafw_event envelope', String(event?.__envelope));
   check(!!event && Array.isArray(event.properties?.commands) && event.properties.commands.length > 0, 'broadcast has commands', event ? String(event.properties?.commands?.length ?? 0) : '');
   check(event?.properties?.reason === 'manual_refresh', 'broadcast reason is manual_refresh', event?.properties?.reason || '');
 } catch (err) {

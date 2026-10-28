@@ -175,6 +175,7 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
       deleteCheckpoints: (sid) => gw.checkpointService?.deleteForSession(sid),
       deleteRuns: (sid) => gw.runCoordinator?.deleteForSession(sid),
       deleteDataParts: (sid) => gw.dataPartService?.deleteForSession(sid),
+      forgetDiscovery: (sid) => gw.discovery?.forget(sid),
     })));
   registry.attachHandler('session.rename', H(async (req, res) =>
     handleSessionMutations(req, res, {

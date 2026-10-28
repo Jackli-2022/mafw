@@ -83,6 +83,62 @@ describe('DiscoveryService', () => {
     expect(discoverAgents).toHaveBeenCalledTimes(2);
   });
 
+  it('skills-side failure makes loadSkill 503, not 404', async () => {
+    const dir = tempDir();
+    const rt = fakeRuntime();
+    rt.discovery.list.mockResolvedValue({
+      commands: [{ name: 'init' }],
+      skills: [],
+      warnings: [{ source: 'skills', message: 'skill endpoint down' }],
+    });
+    const svc = new DiscoveryService(deps({ runtime: rt }));
+    await expect(svc.loadSkill('s1', 'a', { directory: dir })).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('both runtime sides failing is runtime_error, not partial', async () => {
+    const rt = fakeRuntime();
+    rt.discovery.list.mockResolvedValue({
+      commands: [],
+      skills: [],
+      warnings: [
+        { source: 'commands', message: 'commands down' },
+        { source: 'skills', message: 'skills down' },
+      ],
+    });
+    const snap = await new DiscoveryService(deps({ runtime: rt })).get('s1', { directory: tempDir() });
+    expect(snap.degradedReason).toBe('runtime_error');
+  });
+
+  it('MAFW registry failure is warning-only, not a degraded runtime error', async () => {
+    const dir = tempDir();
+    const svc = new DiscoveryService(deps({
+      getMafwCommands: () => { throw new Error('registry broken'); },
+    }));
+    const snap = await svc.get('s1', { directory: dir });
+    expect(snap.degraded).toBe(false);
+    expect(snap.warnings.some((w) => w.source === 'commands')).toBe(true);
+  });
+
+  it('legacy /command excludes foreign MAFW custom names from the full registry', async () => {
+    const dir = tempDir();
+    const rt = fakeRuntime();
+    rt.discovery.list.mockResolvedValue({
+      commands: [{ name: 'foreign' }, { name: 'init' }],
+      skills: [],
+      warnings: [],
+    });
+    const svc = new DiscoveryService(deps({
+      runtime: rt,
+      getMafwCommands: () => [{
+        name: 'foreign', description: 'f', category: 'custom', kind: 'custom',
+        source: path.join(path.resolve('other'), '.mafw/commands/f.md'),
+      } as any],
+      gatewayProjectDir: dir,
+    }));
+    const commands = await svc.getLegacyCommands(dir);
+    expect(commands.commands.map((c) => c.name)).toEqual(['init']);
+  });
+
   it('loadSkill maps 404 / 409 / 413 / 503', async () => {
     const dir = tempDir();
     const rt = fakeRuntime();

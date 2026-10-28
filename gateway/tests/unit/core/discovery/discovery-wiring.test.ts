@@ -9,5 +9,6 @@ describe('discovery wiring', () => {
     expect(index).toContain("broadcastKnown('commands_changed')");
     expect(index).toContain("broadcastKnown('runtime_switched')");
     expect(index).toContain('discovery?.forget(sessionID)');
+    expect(index).toContain('this.broadcast(mafwBroadcast(e as any))');
   });
 });

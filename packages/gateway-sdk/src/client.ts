@@ -5,6 +5,7 @@ import {
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
+  DiscoverySnapshot, DiscoverySkillContent,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
@@ -587,6 +588,33 @@ export class MafwClient implements IMafwClient {
       const data = await this.request<SkillInfo[] | { items?: SkillInfo[]; skills?: SkillInfo[] }>(`/skill${query}`)
       if (Array.isArray(data)) return data
       return (data as any).items || (data as any).skills || []
+    },
+  }
+
+  discovery = {
+    get: async (sessionID: string, params?: { directory?: string; force?: boolean }): Promise<DiscoverySnapshot> => {
+      const qs = new URLSearchParams()
+      if (params?.directory) qs.set('directory', params.directory)
+      if (params?.force) qs.set('force', '1')
+      const q = qs.toString()
+      const queryString = q ? `?${q}` : ''
+      return this.request<DiscoverySnapshot>(`/api/sessions/${encodeURIComponent(sessionID)}/discovery${queryString}`)
+    },
+    refresh: async (sessionID: string, params?: { directory?: string }): Promise<DiscoverySnapshot> => {
+      const q = params?.directory ? `?directory=${encodeURIComponent(params.directory)}` : ''
+      return this.request<DiscoverySnapshot>(`/api/sessions/${encodeURIComponent(sessionID)}/discovery/refresh${q}`, { method: 'POST' })
+    },
+    skill: async (
+      sessionID: string,
+      key: string,
+      params?: { directory?: string; force?: boolean },
+    ): Promise<DiscoverySkillContent> => {
+      const qs = new URLSearchParams()
+      if (params?.directory) qs.set('directory', params.directory)
+      if (params?.force) qs.set('force', '1')
+      const q = qs.toString()
+      const queryString = q ? `?${q}` : ''
+      return this.request<DiscoverySkillContent>(`/api/sessions/${encodeURIComponent(sessionID)}/discovery/skills/${encodeURIComponent(key)}${queryString}`)
     },
   }
 

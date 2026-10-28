@@ -30,6 +30,21 @@ describe('discovery merge', () => {
     expect(out.warnings.some((w) => w.source === 'commands')).toBe(true);
   });
 
+  it('keeps the first runtime entry when names collide', () => {
+    const out = mergeCommands({
+      mafw: [],
+      runtime: [
+        { name: 'dup', agent: 'first' },
+        { name: 'dup', agent: 'second' },
+      ],
+      directory: path.resolve('proj'),
+      gatewayProjectDir: path.resolve('proj'),
+      mafwDir: path.resolve('home/.mafw'),
+    });
+    expect(out.commands).toHaveLength(1);
+    expect(out.commands[0].agent).toBe('first');
+  });
+
   it('infers skill scope and defaults slash to false', () => {
     const proj = path.resolve('proj');
     const home = path.resolve('home');
