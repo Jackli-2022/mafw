@@ -3,12 +3,14 @@ import { BasicTool } from "@mafw/session-ui/basic-tool"
 import type { ToolProps } from "@mafw/session-ui/message-part"
 import { Icon } from "@mafw/ui/icon"
 import { TextShimmer } from "@mafw/ui/text-shimmer"
-import { genericSections } from "./extract"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { genericSections, rawSection } from "./extract"
 import { ToolSections } from "./shared"
 import {
   executeCallArgs,
   executeCalls,
   executeHeaderSubtitle,
+  executeOutputView,
   executeToolIcon,
   executeToolLabel,
   type ExecuteCall,
@@ -76,9 +78,12 @@ export function MafwExecuteCard(props: ToolProps) {
     props.status === "error" ||
     props.metadata?.error === true ||
     calls().some((call) => call.status === "error")
+  const [showAll, setShowAll] = createSignal(false)
+  const output = createMemo(() => executeOutputView(props.output))
   const sections = createMemo(() => {
     if (pending()) return []
-    return genericSections(props.output)
+    if (output().truncated && showAll()) return rawSection(props.output)
+    return genericSections(output().truncated ? output().preview : props.output)
   })
 
   return (
@@ -123,9 +128,17 @@ export function MafwExecuteCard(props: ToolProps) {
         <Show when={!pending() && failed() && sections().length === 0}>
           <div class="mafw-tool-meta" style="color:#e8636b">执行失败</div>
         </Show>
+        <Show when={!pending() && output().truncated}>
+          <div class="mafw-execute-more">
+            <span>输出已截断（{output().chars} 字符 / {output().lines} 行）</span>
+            <ButtonV2 variant="ghost" size="small" onClick={() => setShowAll((value) => !value)}>
+              {showAll() ? "收起" : "展开全部"}
+            </ButtonV2>
+          </div>
+        </Show>
         <Show when={sections().length > 0}>
           <div class="mafw-execute-output">
-            <div class="mafw-execute-output-label">输出</div>
+            <div class="mafw-execute-output-label">{showAll() && output().truncated ? "输出（全文）" : "输出"}</div>
             <ToolSections sections={sections()} />
           </div>
         </Show>

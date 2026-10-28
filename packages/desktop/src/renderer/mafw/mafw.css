@@ -1237,6 +1237,15 @@ html[data-theme="light"] body {
   word-break: break-word;
 }
 .mafw-execute-empty { color: var(--text-4); font-size: 12px; padding: 2px 4px; }
+.mafw-execute-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 2px 4px;
+  color: var(--text-4);
+  font-size: 11px;
+}
 .mafw-execute-output { margin-top: 8px; border-top: 0.5px solid var(--border-subtle); padding-top: 6px; }
 .mafw-execute-output-label { color: var(--text-4); font-size: 11px; margin-bottom: 4px; }
 

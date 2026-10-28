@@ -73,3 +73,28 @@ export function executeHeaderSubtitle(calls: readonly ExecuteCall[]): string | u
   const label = executeToolLabel(call.tool)
   return args.length ? `${label} [${args.join(", ")}]` : label
 }
+
+export interface ExecuteOutputView {
+  preview: string
+  truncated: boolean
+  chars: number
+  lines: number
+}
+
+/** Bound the execute result rendered inline; the full text stays available behind
+ * an explicit expand action so a huge JSON payload cannot block the next stream. */
+export function executeOutputView(output: string | undefined, maxChars = 8000, maxLines = 200): ExecuteOutputView {
+  const text = output ?? ""
+  if (text === "") return { preview: "", truncated: false, chars: 0, lines: 0 }
+  const lines = text.split("\n").length
+  const chars = text.length
+  if (chars <= maxChars && lines <= maxLines) return { preview: text, truncated: false, chars, lines }
+  const byChars = text.slice(0, maxChars)
+  const byLines = text.split("\n").slice(0, maxLines).join("\n")
+  return {
+    preview: byChars.length <= byLines.length ? byChars : byLines,
+    truncated: true,
+    chars,
+    lines,
+  }
+}

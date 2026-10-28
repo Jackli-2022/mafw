@@ -4,6 +4,7 @@ import {
   executeCallArgs,
   executeCalls,
   executeHeaderSubtitle,
+  executeOutputView,
   executeToolLabel,
   normalizeExecuteToolName,
 } from "./execute-model"
@@ -108,5 +109,39 @@ describe("executeHeaderSubtitle", () => {
 
   test("returns undefined with no calls", () => {
     expect(executeHeaderSubtitle([])).toBeUndefined()
+  })
+})
+
+describe("executeOutputView", () => {
+  test("passes through small outputs", () => {
+    expect(executeOutputView("a\nb", 10, 5)).toEqual({ preview: "a\nb", truncated: false, chars: 3, lines: 2 })
+  })
+
+  test("truncates by characters", () => {
+    expect(executeOutputView("x".repeat(20), 10, 100)).toEqual({
+      preview: "x".repeat(10),
+      truncated: true,
+      chars: 20,
+      lines: 1,
+    })
+  })
+
+  test("truncates by lines", () => {
+    expect(executeOutputView("a\nb\nc", 100, 2)).toEqual({
+      preview: "a\nb",
+      truncated: true,
+      chars: 5,
+      lines: 3,
+    })
+  })
+
+  test("uses whichever cap is shorter when both apply", () => {
+    expect(executeOutputView("x".repeat(20), 10, 2).preview).toBe("x".repeat(10))
+    expect(executeOutputView("a\nb\nc", 3, 2).preview).toBe("a\nb")
+  })
+
+  test("handles empty and undefined output", () => {
+    expect(executeOutputView(undefined)).toEqual({ preview: "", truncated: false, chars: 0, lines: 0 })
+    expect(executeOutputView("")).toEqual({ preview: "", truncated: false, chars: 0, lines: 0 })
   })
 })
