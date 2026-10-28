@@ -43,6 +43,7 @@ export interface PiSessionRegistryOptions {
 
 export class PiSessionRegistry {
   private sessions = new Map<string, any>();
+  private directories = new Map<string, string>();
   private bySession = new Map<any, string>();
   private lastUsed = new Map<string, number>();
   private approvalBridges = new Map<string, ApprovalBridge>();
@@ -103,6 +104,7 @@ export class PiSessionRegistry {
     try {
       const { session } = await this.deps.createSession({ cwd, ...createOpts, extensionFactories: allExtensions });
       this.sessions.set(id, session);
+      this.directories.set(id, cwd);
       this.bySession.set(session, id);
       this.lastUsed.set(id, Date.now());
     } catch (err) {
@@ -265,6 +267,7 @@ export class PiSessionRegistry {
     const s = this.sessions.get(id);
     if (s) { try { await s.dispose(); } catch { /* ignore */ } }
     this.sessions.delete(id);
+    this.directories.delete(id);
     this.bySession.delete(s);
     this.lastUsed.delete(id);
     this.warnedNoReply.delete(id);
@@ -374,13 +377,23 @@ export class PiSessionRegistry {
   }
 
   async list(): Promise<any[]> {
-    return [...this.sessions.keys()].map((id) => ({ id, directory: '', title: '', time: { created: 0, updated: 0 } }));
+    return [...this.sessions.keys()].map((id) => ({
+      id,
+      directory: this.directories.get(id) ?? '',
+      title: '',
+      time: { created: 0, updated: 0 },
+    }));
   }
 
   async get(id: string): Promise<any> {
     const s = this.sessions.get(id);
     if (!s) return undefined;
-    return { id, directory: '', title: '', time: { created: 0, updated: this.lastUsed.get(id) ?? 0 } };
+    return {
+      id,
+      directory: this.directories.get(id) ?? '',
+      title: '',
+      time: { created: 0, updated: this.lastUsed.get(id) ?? 0 },
+    };
   }
 
   async setThinkingLevel(id: string, level: ThinkingLevel): Promise<void> {
@@ -405,6 +418,7 @@ export class PiSessionRegistry {
       try { await s.dispose(); } catch { /* ignore */ }
     }
     this.sessions.clear();
+    this.directories.clear();
     this.bySession.clear();
     this.lastUsed.clear();
     this.warnedNoReply.clear();

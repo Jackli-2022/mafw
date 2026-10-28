@@ -56,6 +56,21 @@ describe('PiSessionRegistry', () => {
     expect(s.setThinkingLevel).toHaveBeenCalledWith('off');
   });
 
+  it('records cwd for live sessions and exposes it via get/list', async () => {
+    const registry = new PiSessionRegistry({ createSession: async () => ({ session: fakeSession() }) });
+    const { id } = await registry.create('/tmp/proj', {});
+    expect((await registry.get(id)).directory).toBe('/tmp/proj');
+    expect((await registry.list()).find((s) => s.id === id)?.directory).toBe('/tmp/proj');
+  });
+
+  it('clears cwd on delete', async () => {
+    const registry = new PiSessionRegistry({ createSession: async () => ({ session: fakeSession() }) });
+    const { id } = await registry.create('/tmp/proj', {});
+    await registry.delete(id);
+    expect(await registry.get(id)).toBeUndefined();
+    await expect(registry.list()).resolves.toEqual([]);
+  });
+
   it('setThinkingLevel applies to the live session', async () => {
     const s = fakeSession();
     const registry = new PiSessionRegistry({ createSession: async () => ({ session: s }) });
