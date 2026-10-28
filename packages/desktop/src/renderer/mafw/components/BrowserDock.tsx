@@ -10,6 +10,9 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { menuController } from "../context-menu/controller"
+import { buildBrowserMenu } from "../context-menu/builders/browser"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { BROWSER_PARTITION, navigationDecision, normalizeAddress } from "../../../shared/browser-policy"
 import { displayMafwFilePath } from "../../../shared/mafw-file"
 import { browserNavRequest } from "../browser-nav"
@@ -192,7 +195,27 @@ export function BrowserDock(props: { sessionID: string | null }) {
   })
 
   return (
-    <div class="mafw-browser-dock">
+    <div
+      class="mafw-browser-dock"
+      onContextMenu={(event) => {
+        if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+        event.preventDefault()
+        const url = address()
+        menuController.request(
+          buildBrowserMenu,
+          { url, canBack: canBack(), canForward: canForward(), started: started(), canPick: started() && !picking() },
+          (id) => {
+            if (id === "browser.back") { try { view?.goBack?.() } catch { /* ignore */ } }
+            else if (id === "browser.forward") { try { view?.goForward?.() } catch { /* ignore */ } }
+            else if (id === "browser.reload") retry()
+            else if (id === "browser.copyLink") { if (url) void navigator.clipboard.writeText(url) }
+            else if (id === "browser.openExternal") { if (url) void window.api.browser.openExternal(url) }
+            else if (id === "browser.pick") void startPick()
+          },
+          { point: { x: event.clientX, y: event.clientY } },
+        )
+      }}
+    >
       <DockPanelHeader title={title() || "浏览器"}>
         <TooltipV2 value="后退" openDelay={300}>
           <ButtonV2 variant="ghost" size="small" disabled={!canBack()} aria-label="后退" onClick={() => { try { view?.goBack?.() } catch { /* ignore */ } }}>

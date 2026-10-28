@@ -32,3 +32,10 @@ test("file surfaces are wired", () => {
   expect(read("FilesDock.tsx")).toContain("buildFileTreeMenu")
   expect(read("EditorDock.tsx")).toContain("buildEditorTabMenu")
 })
+
+test("message, terminal and browser surfaces are wired", () => {
+  expect(read("ChatPane.tsx")).toContain("buildMessageMenu")
+  expect(read("ChatPane.tsx")).toContain("buildCodeBlockMenu")
+  expect(read("TerminalDock.tsx")).toContain("buildTerminalMenu")
+  expect(read("BrowserDock.tsx")).toContain("buildBrowserMenu")
+})

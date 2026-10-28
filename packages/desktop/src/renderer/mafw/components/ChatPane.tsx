@@ -82,6 +82,7 @@ import { pendingInserts, pushComposerInsert, takeComposerInsert } from "../compo
 import { requestOpenEditor } from "../editor-open"
 import { menuController } from "../context-menu/controller"
 import { buildFilePathMenu } from "../context-menu/builders/file-path"
+import { buildCodeBlockMenu, buildMessageMenu } from "../context-menu/builders/message"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
@@ -490,37 +491,79 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const onTurnContextMenu = (event: MouseEvent) => {
     const target = event.target as HTMLElement | null
-    const fileEl = target?.closest?.("[data-file-path]") as HTMLElement | null
-    if (!fileEl) return
+    if (!target) return
+    const fileEl = target.closest?.("[data-file-path]") as HTMLElement | null
+    const preEl = target.closest?.("pre") as HTMLElement | null
+    const messageEl = target.closest?.("[data-message-role]") as HTMLElement | null
+    if (!fileEl && !preEl && !messageEl) return
     if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
     event.preventDefault()
 
-    const rel = fileEl.getAttribute("data-file-path") ?? ""
-    const root = sessionDirectory() ?? ""
-    if (!rel || !root) return
+    const point = { x: event.clientX, y: event.clientY }
 
-    const inRoot = !rel.startsWith("..") && !/^([a-zA-Z]:[\\/]|\/)/.test(rel)
-    const abs = joinRoot(root, rel)
-    const name = rel.split(/[\\/]/).pop() ?? rel
-    const sid = sidProp()
+    if (fileEl) {
+      const rel = fileEl.getAttribute("data-file-path") ?? ""
+      const root = sessionDirectory() ?? ""
+      if (!rel || !root) return
 
-    menuController.request(
-      buildFilePathMenu,
-      { root, rel, inRoot, canOpenEditor: inRoot },
-      (id) => {
-        if (id === "filePath.attach") pushComposerInsert(sid, `@${rel}`)
-        else if (id === "filePath.openEditor") requestOpenEditor(root, rel)
-        else if (id === "filePath.openWith.default") void window.api.openPath(abs).catch(() => showToastV2({ description: "打开失败", duration: 3000 }))
-        else if (id === "filePath.openWith.vscode") void window.api.openPath(abs, "code").catch(() => showToastV2({ description: "未找到 VS Code", duration: 3000 }))
-        else if (id === "filePath.openWith.cursor") void window.api.openPath(abs, "cursor").catch(() => showToastV2({ description: "未找到 Cursor", duration: 3000 }))
-        else if (id === "filePath.openWith.zed") void window.api.openPath(abs, "zed").catch(() => showToastV2({ description: "未找到 Zed", duration: 3000 }))
-        else if (id === "filePath.reveal") void window.api.revealPath(abs)
-        else if (id === "filePath.copy.abs") void navigator.clipboard.writeText(abs)
-        else if (id === "filePath.copy.rel") void navigator.clipboard.writeText(rel)
-        else if (id === "filePath.copy.name") void navigator.clipboard.writeText(name)
-      },
-      { point: { x: event.clientX, y: event.clientY } },
-    )
+      const inRoot = !rel.startsWith("..") && !/^([a-zA-Z]:[\\/]|\/)/.test(rel)
+      const abs = joinRoot(root, rel)
+      const name = rel.split(/[\\/]/).pop() ?? rel
+      const sid = sidProp()
+
+      menuController.request(
+        buildFilePathMenu,
+        { root, rel, inRoot, canOpenEditor: inRoot },
+        (id) => {
+          if (id === "filePath.attach") pushComposerInsert(sid, `@${rel}`)
+          else if (id === "filePath.openEditor") requestOpenEditor(root, rel)
+          else if (id === "filePath.openWith.default") void window.api.openPath(abs).catch(() => showToastV2({ description: "打开失败", duration: 3000 }))
+          else if (id === "filePath.openWith.vscode") void window.api.openPath(abs, "code").catch(() => showToastV2({ description: "未找到 VS Code", duration: 3000 }))
+          else if (id === "filePath.openWith.cursor") void window.api.openPath(abs, "cursor").catch(() => showToastV2({ description: "未找到 Cursor", duration: 3000 }))
+          else if (id === "filePath.openWith.zed") void window.api.openPath(abs, "zed").catch(() => showToastV2({ description: "未找到 Zed", duration: 3000 }))
+          else if (id === "filePath.reveal") void window.api.revealPath(abs)
+          else if (id === "filePath.copy.abs") void navigator.clipboard.writeText(abs)
+          else if (id === "filePath.copy.rel") void navigator.clipboard.writeText(rel)
+          else if (id === "filePath.copy.name") void navigator.clipboard.writeText(name)
+        },
+        { point },
+      )
+      return
+    }
+
+    if (preEl) {
+      const codeText = preEl.querySelector("code")?.textContent ?? preEl.textContent ?? ""
+      menuController.request(
+        buildCodeBlockMenu,
+        { code: codeText },
+        (id) => {
+          if (id === "code.copy" || id === "code.copyMarkdown") void navigator.clipboard.writeText(codeText)
+        },
+        { point },
+      )
+      return
+    }
+
+    if (messageEl) {
+      const role = messageEl.getAttribute("data-message-role") === "user" ? "user" : "assistant"
+      const messageID = messageEl.getAttribute("data-message-id") ?? messageEl.getAttribute("data-message") ?? ""
+      const text = messageEl.innerText.trim()
+      const canFork = role === "user" && branchActionsVisible(props.runtimeCaps)
+      menuController.request(
+        buildMessageMenu,
+        { id: messageID, role, hasText: text.length > 0, canFork, tts: false },
+        (id) => {
+          if (id === "message.copy" || id === "message.copyMarkdown") void navigator.clipboard.writeText(text)
+          else if (id === "message.quote") pushComposerInsert(sidProp(), formatQuote(text))
+          else if (id === "message.fork") {
+            void window.api.mafw.sessions.fork(sidProp(), messageID)
+              .then((res: any) => { if (res?.session?.id) props.onOpenForkedSession?.(res.session.id) })
+              .catch(() => showToastV2({ description: "分叉失败", duration: 3000 }))
+          }
+        },
+        { point },
+      )
+    }
   }
 
   const userActions = () => {

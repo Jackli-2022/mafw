@@ -21,7 +21,6 @@ export function buildTerminalMenu(target: TerminalMenuTarget): MenuModel {
       sep(),
       item("terminal.close", L.terminal.close, {
         danger: true,
-        confirms: true,
         ...(target.canClose ? {} : { disabled: true, disabledReason: "终端未连接" }),
       }),
     ],

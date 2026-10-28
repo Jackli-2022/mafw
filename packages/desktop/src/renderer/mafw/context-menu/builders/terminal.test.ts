@@ -18,7 +18,7 @@ describe("buildTerminalMenu", () => {
     expect(copy.disabled).toBe(true)
     const close = m.items.at(-1) as any
     expect(close.danger).toBe(true)
-    expect(close.confirms).toBe(true)
+    expect(close.confirms).toBeFalsy()
     expect(validateMenu(m)).toEqual([])
   })
 

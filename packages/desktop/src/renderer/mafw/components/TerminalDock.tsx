@@ -10,6 +10,9 @@ import "@xterm/xterm/css/xterm.css"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { menuController } from "../context-menu/controller"
+import { buildTerminalMenu } from "../context-menu/builders/terminal"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { DockBanner, DockPanelHeader } from "./dock-panel"
 import { viewFor, planAttach, buildTerminalTheme, createResizeScheduler, type TerminalViewKind, type TerminalView } from "../terminal/terminal-view"
 import { nextConnState, type ConnState } from "../../../shared/terminal"
@@ -184,13 +187,7 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
     void attach(dir, v.action === "reopen")
   }
 
-  const requestKill = () => {
-    if (!killArmed()) {
-      setKillArmed(true)
-      if (disarmTimer) clearTimeout(disarmTimer)
-      disarmTimer = setTimeout(() => setKillArmed(false), 3000)
-      return
-    }
+  const killNow = () => {
     if (disarmTimer) clearTimeout(disarmTimer)
     setKillArmed(false)
     const dir = currentDir
@@ -206,8 +203,48 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
       })
   }
 
+  const requestKill = () => {
+    if (!killArmed()) {
+      setKillArmed(true)
+      if (disarmTimer) clearTimeout(disarmTimer)
+      disarmTimer = setTimeout(() => setKillArmed(false), 3000)
+      return
+    }
+    killNow()
+  }
+
+  const requestTerminalMenu = (event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const hasSelection = !!term?.hasSelection?.()
+    menuController.request(
+      buildTerminalMenu,
+      { hasSelection, canClose: !!term },
+      (id) => {
+        if (id === "terminal.copy") {
+          const selection = term?.getSelection() ?? ""
+          if (selection) void navigator.clipboard.writeText(selection)
+        } else if (id === "terminal.paste") {
+          void navigator.clipboard.readText().then((text) => { if (text) term?.paste(text) })
+        } else if (id === "terminal.selectAll") {
+          term?.selectAll()
+        } else if (id === "terminal.clear") {
+          term?.clear()
+          const dir = currentDir
+          if (dir) void window.api.mafw.terminal.input(dir, "\x1b[2J\x1b[H")
+        } else if (id === "terminal.openExternal") {
+          const dir = currentDir
+          if (dir) void window.api.mafw.terminal.openExternal(dir).catch(() => { /* best effort */ })
+        } else if (id === "terminal.close") {
+          killNow()
+        }
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   return (
-    <div class="mafw-terminal-dock">
+    <div class="mafw-terminal-dock" onContextMenu={requestTerminalMenu}>
       <DockPanelHeader title={dirLabel()}>
         <Show when={kind() === "live"}>
           <ButtonV2 variant="ghost" size="small" onClick={requestKill} aria-label="结束终端">
