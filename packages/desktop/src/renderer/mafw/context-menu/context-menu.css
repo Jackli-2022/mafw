@@ -44,3 +44,8 @@
   color: var(--text-4);
   white-space: nowrap;
 }
+
+.mafw-context-menu-sublabel {
+  flex: 1;
+  min-width: 0;
+}

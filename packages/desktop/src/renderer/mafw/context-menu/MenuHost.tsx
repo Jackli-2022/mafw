@@ -62,7 +62,7 @@ export function MenuHost(props: { controller: MenuController }): JSX.Element {
                   <Icon name={entry.item.icon as IconName} size="small" />
                 </span>
               </Show>
-              <DropdownMenu.ItemLabel>{entry.item.label}</DropdownMenu.ItemLabel>
+              <span class="mafw-context-menu-sublabel">{entry.item.label}</span>
             </DropdownMenu.SubTrigger>
             <DropdownMenu.Portal>
               <DropdownMenu.SubContent class="mafw-context-menu">

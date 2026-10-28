@@ -53,3 +53,13 @@ test("preload uses positional args and file links are not native links", () => {
   expect(read("../../../preload/mafw-api.ts")).toContain('invoke("memory", "setSticky", id, sticky, stickyDays)')
   expect(read("../context-menu/guard.ts")).toContain("a[href]:not([data-file-path])")
 })
+
+test("submenu triggers do not use ItemLabel (Kobalte requires Menu.Item context)", () => {
+  const host = read("../context-menu/MenuHost.tsx")
+  const start = host.indexOf("<DropdownMenu.SubTrigger>")
+  const end = host.indexOf("</DropdownMenu.SubTrigger>")
+  expect(start).toBeGreaterThan(-1)
+  expect(end).toBeGreaterThan(start)
+  expect(host.slice(start, end)).not.toContain("ItemLabel")
+  expect(host.slice(start, end)).toContain("mafw-context-menu-sublabel")
+})
