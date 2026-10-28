@@ -513,6 +513,23 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     setModelSaving(prev => ({ ...prev, [kind]: false }))
   }
 
+  // W1/W5a：goal 编排节点（plan/execute/review）模型可配置；空对=身份内置默认。
+  async function saveGoalModel(provider: string, model: string) {
+    setModelSaving(prev => ({ ...prev, goal: true }))
+    try {
+      const res = await window.api.mafw.models.update({ goal: { providerID: provider, modelID: model } })
+      setModelState(res)
+      showToastV2({
+        description: provider && model ? `Goal 节点模型已切换到 ${provider}/${model}` : "Goal 节点模型已恢复默认（身份内置）",
+        duration: 2500,
+      })
+    } catch (err: any) {
+      showToastV2({ description: `保存失败: ${err.message}`, duration: 4000 })
+      await loadModelState()
+    }
+    setModelSaving(prev => ({ ...prev, goal: false }))
+  }
+
   // ── Memory embedding ──
   const [embState, setEmbState] = createSignal<any>(null)
   const [embError, setEmbError] = createSignal("")
@@ -968,7 +985,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
               </div>
               <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
                 <div class="mafw-config-section-desc">
-                  配置记忆 worker 和媒体分析使用的 AI 模型。记忆 worker 负责压缩和反思，媒体模型负责多模态分析。
+                  配置记忆 worker、媒体分析和 Goal 编排节点（plan/execute/review）使用的 AI 模型。记忆 worker 负责压缩和反思，媒体模型负责多模态分析；Goal 节点模型留空时使用身份内置默认。
                 </div>
                 {modelError() ? (
                   <div class="mafw-config-error-row">
@@ -1015,6 +1032,16 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         <ModelTextRow label={label} current={cur} saving={!!modelSaving()[kind]} onSave={save} />
                       )
                     })}
+                    {/* W5a：Goal 编排节点模型（plan/execute/review 共用；空=身份内置默认） */}
+                    {(() => {
+                      const cur = { provider: modelState()?.goal?.nodeModel?.providerID ?? "", model: modelState()?.goal?.nodeModel?.modelID ?? "" }
+                      const save = (p: string, m: string) => saveGoalModel(p, m)
+                      return modelAvailable() ? (
+                        <ModelSelectRow label="Goal 节点（plan/execute/review）" allowClear current={cur} providers={modelAvailable() ?? []} saving={!!modelSaving().goal} onSave={save} />
+                      ) : (
+                        <ModelTextRow label="Goal 节点（plan/execute/review）" current={cur} saving={!!modelSaving().goal} onSave={save} />
+                      )
+                    })()}
                   </div>
                 )}
               </div>

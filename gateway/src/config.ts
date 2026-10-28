@@ -47,6 +47,10 @@ export interface GatewayConfig {
     initialRound: number;
     degradeOnLoopFactor: number;
   };
+  /** W1/W5a：goal 编排节点（plan/execute/review）模型覆盖；空对 = 身份内置模型。 */
+  goal: {
+    nodeModel?: { providerID: string; modelID: string };
+  };
   search: {
     defaultTopK: number;
     maxMemoryResults: number;
@@ -459,6 +463,8 @@ function defaults(projectDir: string): GatewayConfig {
       initialRound: 1,
       degradeOnLoopFactor: 0.6,
     },
+    // W1/W5a：goal 节点模型默认不覆盖（用身份内置模型；Config 页可改）。
+    goal: {},
     search: {
       defaultTopK: 20,
       maxMemoryResults: 50,

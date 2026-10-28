@@ -1448,7 +1448,7 @@ export class MafwClient implements IMafwClient {
       return this.request<import('./types').ModelConfigState>('/api/model-config')
     },
 
-    update: async (opts: import('./types').ModelConfigUpdate): Promise<{ success: boolean; recall: import('./types').ModelConfigState['recall']; media: import('./types').ModelConfigState['media'] }> => {
+    update: async (opts: import('./types').ModelConfigUpdate): Promise<{ success: boolean; recall: import('./types').ModelConfigState['recall']; media: import('./types').ModelConfigState['media']; goal?: import('./types').ModelConfigState['goal'] }> => {
       const res = await this.fetchPath(`/api/model-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

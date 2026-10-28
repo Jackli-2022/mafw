@@ -10,9 +10,11 @@ function makeDeps(overrides: any = {}) {
   // Track persisted overrides so currentConfig reflects post-persist state
   let persistedRecall: any = { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' };
   let persistedMedia: any = { provider: 'xiaomi', model: 'mimo-v2.5', image: { provider: '', model: '' }, video: { provider: '', model: '' }, audio: { provider: '', model: '' } };
+  let persistedGoal: any = { providerID: '', modelID: '' };
   return {
     persist: jest.fn().mockImplementation((o: any) => {
       if (o.recall) persistedRecall = o.recall.workerModel;
+      if (o.goal) persistedGoal = o.goal.nodeModel;
       if (o.media) {
         if (o.media.provider !== undefined) persistedMedia = { ...persistedMedia, ...o.media };
         else persistedMedia = { ...persistedMedia, ...o.media };
@@ -23,6 +25,7 @@ function makeDeps(overrides: any = {}) {
     currentConfig: jest.fn(() => ({
       recall: { workerModel: persistedRecall },
       media: persistedMedia,
+      goal: { nodeModel: persistedGoal },
     })),
     invalidateScanService: jest.fn(),
     ...overrides,
@@ -193,5 +196,56 @@ describe('POST /api/model-config', () => {
     const res = await request(server, 'POST', { recall: { providerID: 'xiaomi', modelID: 'mimo-v2.5' } });
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('disk full');
+  });
+});
+
+// W1/W5a：goal 节点模型可配置（plan/execute/review 共用）
+describe('goal node model config', () => {
+  let server: http.Server;
+  afterEach((done) => { if (server?.listening) server.close(done); else done(); });
+
+  it('GET includes goal.nodeModel（空对 = 回落身份内置模型）', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const res = await request(server, 'GET');
+    expect(res.body.goal.nodeModel).toEqual({ providerID: '', modelID: '' });
+  });
+
+  it('POST 合法 pair → persist {goal:{nodeModel}}，不回退不扫服务', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const res = await request(server, 'POST', { goal: { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' } });
+    expect(res.status).toBe(200);
+    expect(deps.persist).toHaveBeenCalledWith({ goal: { nodeModel: { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' } } });
+    expect(deps.invalidateScanService).not.toHaveBeenCalled();
+    expect(res.body.goal.nodeModel).toEqual({ providerID: 'alibaba-cn', modelID: 'qwen3.7-max' });
+  });
+
+  it('POST 空对（恢复默认）→ persist 空对', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const res = await request(server, 'POST', { goal: { providerID: '', modelID: '' } });
+    expect(res.status).toBe(200);
+    expect(deps.persist).toHaveBeenCalledWith({ goal: { nodeModel: { providerID: '', modelID: '' } } });
+  });
+
+  it('POST 未知 provider → 400 且不 persist', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const res = await request(server, 'POST', { goal: { providerID: 'nope', modelID: 'x' } });
+    expect(res.status).toBe(400);
+    expect(deps.persist).not.toHaveBeenCalled();
+  });
+
+  it('POST 半空对（只有 provider）→ 400', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const res = await request(server, 'POST', { goal: { providerID: 'xiaomi', modelID: '' } });
+    expect(res.status).toBe(400);
   });
 });

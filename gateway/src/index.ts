@@ -138,6 +138,7 @@ import { applyApprovalPolicy } from './core/approval/hook';
 import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { SessionConfigService, SessionConfigError } from './core/session-config';
 import { archiveWorktree } from './core/tools/archive-worktree.js';
+import { resolveNodeModel } from './core/goal/node-model';
 import { CheckpointService } from './core/checkpoint/checkpoint-service';
 import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { RunStateService } from './core/run/run-state-service';
@@ -848,13 +849,16 @@ class MafwScheduler {
         },
         // W1：节点会话按身份绑模型（v2 会话模型与 agent 解耦，agent md 的
         // model 只对 subagent 工具子会话生效——goal 会话必须显式 switch）。
-        // 身份未钉模型 / runtime 无 switchModel → no-op（fail-open）。
+        // W5a：模型可配置——config.goal.nodeModel 覆盖优先，身份内置兜底。
         bindModel: async (sessionID: string, agent: string) => {
-          const model = this.identityRegistry.get(agent)?.model;
+          const model = resolveNodeModel(
+            this.identityRegistry.get(agent)?.model,
+            config.raw.goal?.nodeModel,
+          );
           if (!model) return;
           const fn = this.runtime?.session.switchModel;
           if (!fn) return;
-          await fn({ sessionID, model: { providerID: model.providerID, modelID: model.modelID } });
+          await fn({ sessionID, model });
         },
         promptAsync: async (opts) => {
           const text = opts.parts.find((p) => p.type === 'text')?.text ?? '';
@@ -2268,6 +2272,7 @@ class MafwScheduler {
           video: config.raw.media.video,
           audio: config.raw.media.audio,
         },
+        goal: { nodeModel: config.raw.goal?.nodeModel ?? null },
       }),
       invalidateScanService: () => { this.scanService = null; },
     };

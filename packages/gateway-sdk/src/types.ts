@@ -678,6 +678,8 @@ export interface ModelConfigState {
     video?: MediaModelRef
     audio?: MediaModelRef
   }
+  /** W1/W5a：goal 编排节点模型覆盖（空对 = 身份内置模型）。 */
+  goal?: { nodeModel?: ModelRef | null }
   /** null → provider 列表不可用（前端回退文本输入）。 */
   available: AvailableProvider[] | null
 }
@@ -691,11 +693,12 @@ export interface ModelConfigUpdate {
     video?: MediaModelRef
     audio?: MediaModelRef
   }
+  goal?: ModelRef
 }
 
 export interface ModelConfigNamespace {
   get(): Promise<ModelConfigState>
-  update(opts: ModelConfigUpdate): Promise<{ success: boolean; recall: ModelConfigState['recall']; media: ModelConfigState['media'] }>
+  update(opts: ModelConfigUpdate): Promise<{ success: boolean; recall: ModelConfigState['recall']; media: ModelConfigState['media']; goal?: ModelConfigState['goal'] }>
 }
 
 export interface EmbeddingConfigState {

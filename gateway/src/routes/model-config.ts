@@ -24,6 +24,8 @@ export interface CurrentModelConfig {
     video?: MediaModelRef;
     audio?: MediaModelRef;
   };
+  /** W1/W5a：goal 编排节点模型覆盖（空对 = 身份内置模型）。 */
+  goal: { nodeModel?: ModelRef | null };
 }
 
 export interface ModelConfigDeps {
@@ -82,7 +84,7 @@ export async function handleModelConfigGet(
   try {
     const available = await deps.listProviders().catch(() => null);
     const cur = deps.currentConfig();
-    json(res, 200, { recall: cur.recall, media: cur.media, available });
+    json(res, 200, { recall: cur.recall, media: cur.media, goal: cur.goal, available });
   } catch (err: any) {
     json(res, 500, { error: err.message });
   }
@@ -102,12 +104,13 @@ export async function handleModelConfigUpdate(
   }
 
   const recallUpdate = body?.recall ?? null;
+  const goalUpdate = body?.goal ?? null;
   const mediaUpdate: Record<string, any> = {};
   for (const key of ['provider', 'model', ...MEDIA_MODALITIES]) {
     if (body?.media?.[key] !== undefined) mediaUpdate[key] = body.media[key];
   }
 
-  if (!recallUpdate && Object.keys(mediaUpdate).length === 0) {
+  if (!recallUpdate && !goalUpdate && Object.keys(mediaUpdate).length === 0) {
     json(res, 400, { error: 'No model config specified' });
     return;
   }
@@ -118,11 +121,26 @@ export async function handleModelConfigUpdate(
     return;
   }
 
+  // W1/W5a：goal 节点模型——空对（双空串）= 恢复默认（身份内置模型）；半空对拒绝。
+  if (goalUpdate) {
+    const gp = goalUpdate.providerID ?? '';
+    const gm = goalUpdate.modelID ?? '';
+    if ((gp === '') !== (gm === '')) {
+      json(res, 400, { error: 'goal.nodeModel requires both providerID and modelID (or both empty to reset)' });
+      return;
+    }
+  }
+
   const available = await deps.listProviders().catch(() => null);
 
   if (available !== null) {
     if (recallUpdate) {
       const err = validateRecall(recallUpdate, available);
+      if (err) { json(res, 400, { error: err, available }); return; }
+    }
+    // goal 空对 = 恢复默认，跳过校验；非空对按 recall 同规则校验。
+    if (goalUpdate && (goalUpdate.providerID || goalUpdate.modelID)) {
+      const err = validateRecall(goalUpdate, available);
       if (err) { json(res, 400, { error: err, available }); return; }
     }
     // Top-level media pair: both empty = reset to built-in default (skip);
@@ -149,6 +167,7 @@ export async function handleModelConfigUpdate(
   try {
     const overrides: Record<string, any> = {};
     if (recallUpdate) overrides.recall = { workerModel: { providerID: recallUpdate.providerID, modelID: recallUpdate.modelID } };
+    if (goalUpdate) overrides.goal = { nodeModel: { providerID: goalUpdate.providerID ?? '', modelID: goalUpdate.modelID ?? '' } };
     if (Object.keys(mediaUpdate).length > 0) overrides.media = mediaUpdate;
     deps.persist(overrides);
     if (recallUpdate) {
@@ -157,7 +176,7 @@ export async function handleModelConfigUpdate(
       }
     }
     const cur = deps.currentConfig();
-    json(res, 200, { success: true, recall: cur.recall, media: cur.media });
+    json(res, 200, { success: true, recall: cur.recall, media: cur.media, goal: cur.goal });
   } catch (err: any) {
     json(res, 500, { error: err.message });
   }
