@@ -1,6 +1,6 @@
 # T2-5 能力发现契约（commands / skills / AGENTS.md）Design
 
-> 日期：2026-10-27 · 状态：已交付 v4.41.0（review 待跑） · 来源：`docs/superpowers/specs/2026-10-22-contract-gap-research/06-gap-synthesis.md` #35
+> 日期：2026-10-27 · 状态：已交付 v4.41.0（review 已收口） · 来源：`docs/superpowers/specs/2026-10-22-contract-gap-research/06-gap-synthesis.md` #35
 
 ## 1. 意图
 
@@ -652,12 +652,12 @@ Invoke-RestMethod 'http://localhost:3000/api/command?location%5Bdirectory%5D=C%3
 
 ### 测试与构建
 
-- gateway：**403 suites / 2908 tests passed**（`--runInBand --forceExit` rc=0）
+- gateway：**403 suites / 2917 tests passed**（`--runInBand --forceExit` rc=0）
 - root plugin：**29 passed**
 - SDK client：**117 passed**；SDK `contract.test.ts` 仍有 1 个非本批失败——并行 goal-plan-review 的 `GET /api/goals/:id/plan` / `POST /api/goals/:id/plan-approval` 未登记进 openapi（已记入 ledger，交由并行 owner）
 - desktop targeted：`session-events.test.ts` **24 passed**
 - build / gateway `tsc --noEmit` / SDK `tsc --noEmit`：rc=0
-- 真机 smoke：**21/21 PASS**（snapshot、revision、skill load、legacy endpoints、directory scoping、`session.commands` SSE）
+- 真机 smoke：**22/22 PASS**（snapshot、revision、skill load、legacy endpoints、directory scoping、`session.commands` SSE + envelope）
 
 ### 已知边界
 
@@ -667,5 +667,15 @@ Invoke-RestMethod 'http://localhost:3000/api/command?location%5Bdirectory%5D=C%3
 - skills/AGENTS 无文件 watcher；TTL 30s，显式 refresh 可立即更新。
 - legacy `/command` 只返回 runtime 命令，MAFW 由桌面单独拉取，避免重复。
 - `session.commands` 只在 refresh / 命令热重载 / runtime 热切换广播；初值由 GET 拉取。
-- review 待 gateway/glm-5.3；完成后补 review 结论与修复 commits。
+### 最终 review（gateway/glm-5.3）
+
+- **1 Critical / 3 Important / 7 Minor**；Critical + Important + 6 Minor 已修，M6 为 traceability 记录。
+- C1：`packages/gateway-sdk/src/client.ts` 被错误编码为 844 个 U+FFFD、75 行中文注释/错误文案损坏。已从 `3be6435d` 恢复并以 UTF-8 重放 discovery 添加；当前 HEAD 字节扫描 `U+FFFD === 0`。修复落于 `cef8f6ec` / `d16b5fb6`。
+- I1：`session.commands` 现在经 `mafwBroadcast` 包成 `mafw_event` 信封（smoke 断言 envelope=true）。
+- I2：skills 侧读取失败显式记入 `skillsFailed`，`loadSkill` 返回 503 而不是误报 404；新增测试。
+- I3：canonical `DELETE /api/sessions/:id` 路由也调用 `forgetDiscovery`；新增 session-mutations 测试，smoke 删除不再泄漏 known session。
+- Minor 修复：M1 gatewayProjectDir realpath；M2 runtime 同名保留第一条字段；M3 两侧失败归类 `runtime_error`；M4 MAFW registry 失败仅 warning；M5 legacy `/command` 按全量 MAFW registry 过滤；M7 nearest `.git` 作为 project scope。
+- M6：Task 1 的 capability 测试被并行 goal-plan-review commit 收入，traceability 已记录在 ledger。
+- 已知外部红：SDK `contract.test.ts` 仍因并行 goal-plan-review 的 `/api/goals/:id/plan*` 未进 openapi 失败；T2-5 discovery 路径全部通过。
+
 
