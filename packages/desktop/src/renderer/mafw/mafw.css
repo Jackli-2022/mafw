@@ -1186,6 +1186,60 @@ html[data-theme="light"] body {
 }
 /* v8 内容体 surface 盒（替代旧「左竖线 + margin-left 4px」缩进） */
 .mafw-tool-box { margin: 4px 0 8px; padding: 8px 10px; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); color: var(--text-base); }
+/* Code Mode execute：子调用行 + 最终输出 */
+.mafw-execute-trigger { min-width: 0; }
+.mafw-execute-count { color: var(--text-4); font-size: 11px; white-space: nowrap; }
+.mafw-execute-count[data-failed="true"] { color: var(--danger-text, #e8636b); }
+.mafw-execute-box { padding: 6px 8px; }
+.mafw-execute-calls { display: flex; flex-direction: column; gap: 1px; }
+.mafw-execute-call-item { min-width: 0; }
+.mafw-execute-call {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.mafw-execute-call[role="button"] { cursor: pointer; }
+.mafw-execute-call[role="button"]:hover { background: var(--hover); }
+.mafw-execute-call[data-status="error"] { color: var(--danger-text, #e8636b); }
+.mafw-execute-call-status { width: 12px; flex: 0 0 12px; text-align: center; color: var(--text-4); font-size: 11px; }
+.mafw-execute-call[data-status="completed"] .mafw-execute-call-status { color: var(--accent-success, #22c55e); }
+.mafw-execute-call[data-status="error"] .mafw-execute-call-status { color: var(--danger-text, #e8636b); }
+.mafw-execute-call-icon { flex: 0 0 auto; display: inline-flex; color: var(--text-4); }
+.mafw-execute-call-name { flex: 0 0 auto; min-width: 0; }
+.mafw-execute-call-args {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-4);
+  font-size: 11px;
+  font-family: var(--font-data, monospace);
+}
+.mafw-execute-call-chevron { flex: 0 0 auto; color: var(--text-4); font-size: 10px; }
+.mafw-execute-call-input {
+  margin: 2px 0 4px 24px;
+  padding: 6px 8px;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--bg-overlay, rgba(0, 0, 0, 0.18));
+  border-radius: 4px;
+  color: var(--text-3);
+  font-family: var(--font-data, monospace);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.mafw-execute-empty { color: var(--text-4); font-size: 12px; padding: 2px 4px; }
+.mafw-execute-output { margin-top: 8px; border-top: 0.5px solid var(--border-subtle); padding-top: 6px; }
+.mafw-execute-output-label { color: var(--text-4); font-size: 11px; margin-bottom: 4px; }
+
 /* Thinking block (dsh-style collapsible reasoning) */
 .mafw-thinking { margin: 2px 0; }
 .mafw-thinking .mafw-thinking-head {
