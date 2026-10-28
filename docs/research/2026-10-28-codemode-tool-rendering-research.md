@@ -180,6 +180,42 @@ opencode 2.1 的 edit 实现（`packages/core/src/tool/plugin/edit.ts`）：
 
 `read` 卡已经用 `readPathInput`，不受影响；`patch` 卡读 `metadata.files`，也不受影响。**这是 edit/write 两个卡片的字段映射问题，不是 gateway 丢数据。**
 
+### 3.6 更广的历史输出缺口：content vs output
+
+同一个 2.1 会话里，history 的 shell part 形状是：
+
+```json
+{
+  "name": "shell",
+  "state": {
+    "status": "completed",
+    "input": { "command": "ls -la" },
+    "content": [{ "type": "text", "text": "..." }],
+    "metadata": { "status": "...", "exit": 0, "truncated": false }
+  }
+}
+```
+
+没有 `state.output`。而 desktop 的 `ToolPartDisplay` 只把 `part().state.output` 传给卡片（`message-part.tsx:1667-1683`），所以：
+
+- **live** 路径：gateway 的 2.1 翻译会从 content 合成 `output`，正常；
+- **history** 路径：`state.content[]` 的文本没有被映射，shell/python/execute 等依赖 `props.output` 的卡片在历史里只剩标题/参数，没有结果。
+
+建议一并加纯函数：
+
+```ts
+export function partOutputText(state: any): string | undefined {
+  if (typeof state?.output === "string") return state.output
+  if (Array.isArray(state?.content)) {
+    const text = state.content.filter((p: any) => p?.type === "text").map((p: any) => p.text).join("\n")
+    return text || undefined
+  }
+  return undefined
+}
+```
+
+在 `ToolPartDisplay` 单点传入 `output={partOutputText(part().state)}`，所有卡片（含 execute）的历史/live 行为一致。此项和 edit 的 diff 修复独立，但同属「输出看不到」的 P0 清理。
+
 ## 4. 第二个问题：工具等待为什么会拖累其他流式输出
 
 ### 4.1 共享单线程 + 同步 dispatcher
@@ -256,14 +292,23 @@ type Scheduler = {
 - edit/patch 的 diff 已经 `defer`，保持默认折叠；`DiffChanges` 计数不解析全文。
 - 工具完成时如果卡片不在视口内，延迟到可见再挂载（可复用 `BasicTool` 的 `defer` / IntersectionObserver）。
 
+#### 如何验证（避免只凭感觉）
+
+1. **复现 burst**：用 Code Mode 让模型并行调用 4–8 个 gateway MCP 工具，gateway `/api/events` 记录同一毫秒的 execute progress 帧数。
+2. **埋点**：dev 构建在 `dispatchShellEvent`、`markdown-stream.project()`、`ToolPartDisplay` 外层加 `performance.mark/measure`；或直接用 DevTools Performance 录一次 burst，找 >50ms 的 long task。
+3. **合并后计数**：在 `applyPartUpsert` 或 scheduler 的 apply 回调计数；同一 burst 应只产生 1 次 tool part apply（+ 独立的 text delta apply）。
+4. **Markdown 回归基准**：把 §4.2 的三组 workload 固化成 `markdown-stream` 性能/正确性测试，目标从秒级降到百毫秒内；同时保留 partition 不丢字符的断言。
+5. **GUI 验证**：先修 §6 的菜单渲染错误，否则 ChatView 进不去；再跑「一个会话长工具 + 另一个会话流式文本」的双会话场景，观察另一会话是否仍被拖慢。
+
 ## 5. 建议的优化顺序
 
 1. **P0：execute 卡 v1**（§3A）
    - 新增 `tool-cards/execute.tsx` + 纯函数 `execute-model.ts`（calls 解析、名字归一化、参数摘要、输出段）。
    - `defaultOpen` + `defer={false}` 让运行中也能看到子调用；或给 `BasicTool` 补 `allowOpenWhilePending`（上游 parity）。
    - 用真实 wire fixture（dotted 名 / 裸名 / search / 空 input / error / truncated）做单测。
-2. **P0：Edit / Write 字段映射修复**（§3.5）
+2. **P0：Edit / Write + 历史输出缺口**（§3.5 / §3.6）
    - edit/write 改用 `readPathInput`；新增 `normalizeFileDiffs(metadata)` 兼容 `files[]` / `filediff` / `diff`；edit 取 `files[0]` 喂 `resolveFileDiff`。
+   - 新增 `partOutputText(state)`，在 `ToolPartDisplay` 单点把 history 的 `content[].text` 映射为 `output`；修复 shell/python/execute 等历史无输出。
    - 用 2.1 wire fixture + legacy fixture 双回归，避免只修一边。
 3. **P0：tool part 事件合并**
    - 在 desktop 的 chat-stream 对 `part.updated` 的 **running tool** 按 `part.id` 保留最新快照，`requestAnimationFrame`（测试可用 32–50ms 假调度器）flush；completed/error 立即 flush 并取消 pending；`turn.completed` 前 flush 全部。
@@ -292,6 +337,6 @@ type Scheduler = {
 
 - v1 是否按 §3A 做「调用列表 + 最终输出」？还是先接受 `codemode:false` 换回完整 39 张卡？
 - P0 是否同时做「running tool part 合并」？它直接对着第二个问题，且改动面小。
-- Edit / Write 的 wire shape 修复是确定性 bug，是否本批一起做？（建议：做，和 execute 卡同批 UI 改动，但分开提交更容易 review。）
+- Edit / Write 的 wire shape 修复是确定性 bug，是否本批一起做？（建议：做，和 execute 卡同批 UI 改动，但分开提交更容易 review。）是否顺带修 history `content[].text` → `output` 的通用缺口？
 - P1 的 Markdown 增量投影是否本批一起做？如果不做，长回答卡顿仍会存在，但 execute 卡能先解决「等待期间看不到进度」。
 - §6 的菜单渲染错误是否本批顺手修？（建议单独修，避免和本调研混在一起。）
