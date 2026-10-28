@@ -8,10 +8,15 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
 import { visibleRows, type FsEntry, type TreeRow } from "../file-tree"
+import { menuController } from "../context-menu/controller"
+import { buildFileTreeMenu } from "../context-menu/builders/file-tree"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
+import { pushComposerInsert } from "../composer-insert"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 
 export function FilesDock(props: {
   sessionDirectory: string | null
+  sessionID?: string | null
   onOpenFile: (rel: string) => void
 }) {
   const [rootEntries, setRootEntries] = createSignal<FsEntry[]>([])
@@ -81,6 +86,31 @@ export function FilesDock(props: {
     else props.onOpenFile(row.rel)
   }
 
+  const absPath = (rel: string) => {
+    const root = (props.sessionDirectory ?? "").replace(/[\\/]+$/, "")
+    return `${root}/${rel.replace(/^[\\/]+/, "")}`
+  }
+
+  const requestRowMenu = (row: TreeRow, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const abs = absPath(row.rel)
+    const name = row.rel.split(/[\\/]/).pop() ?? row.rel
+    menuController.request(
+      buildFileTreeMenu,
+      { rel: row.rel, kind: row.kind, previewable: row.kind === "file" },
+      (id) => {
+        if (id === "fileTree.open" || id === "fileTree.preview") activate(row)
+        else if (id === "fileTree.attach") pushComposerInsert(props.sessionID ?? "", `@${row.rel}`)
+        else if (id === "fileTree.reveal") void window.api.revealPath(abs)
+        else if (id === "fileTree.copy.rel") void navigator.clipboard.writeText(row.rel)
+        else if (id === "fileTree.copy.abs") void navigator.clipboard.writeText(abs)
+        else if (id === "fileTree.copy.name") void navigator.clipboard.writeText(name)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   return (
     <div class="mafw-files-panel">
       <DockPanelHeader title="文件">
@@ -120,6 +150,7 @@ export function FilesDock(props: {
                 tabIndex={0}
                 title={row.rel}
                 onClick={() => activate(row)}
+                onContextMenu={(event) => requestRowMenu(row, event)}
                 onKeyDown={(e: KeyboardEvent) => {
                   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(row) }
                 }}

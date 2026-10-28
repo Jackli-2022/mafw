@@ -8,6 +8,9 @@ import { createSignal, createEffect, createMemo, onCleanup, onMount, untrack, Fo
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { menuController } from "../context-menu/controller"
+import { buildEditorTabMenu } from "../context-menu/builders/editor-tab"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { Icon } from "@mafw/ui/icon"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import {
@@ -525,6 +528,47 @@ export function EditorDock(props: {
     void mountActive()
   }
 
+  function closeOthers(rel: string) {
+    const others = model().files.filter(f => f.rel !== rel)
+    if (others.some(f => f.dirty)) {
+      showToastV2({ description: "其他标签有未保存修改，先保存后再关闭", duration: 3000 })
+      return
+    }
+    for (const f of others) closeRel(f.rel)
+  }
+
+  function closeRight(rel: string) {
+    const files = model().files
+    const index = files.findIndex(f => f.rel === rel)
+    if (index < 0) return
+    const right = files.slice(index + 1)
+    if (right.some(f => f.dirty)) {
+      showToastV2({ description: "右侧标签有未保存修改，先保存后再关闭", duration: 3000 })
+      return
+    }
+    for (const f of right) closeRel(f.rel)
+  }
+
+  const requestTabMenu = (rel: string, index: number, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const root = props.sessionDirectory
+    if (!root) return
+    const abs = `${root.replace(/[\\/]+$/, "")}/${rel.replace(/^[\\/]+/, "")}`
+    menuController.request(
+      buildEditorTabMenu,
+      { rel, index, count: model().files.length },
+      (id) => {
+        if (id === "editorTab.close") closeRel(rel)
+        else if (id === "editorTab.closeOthers") closeOthers(rel)
+        else if (id === "editorTab.closeRight") closeRight(rel)
+        else if (id === "editorTab.copyPath") void navigator.clipboard.writeText(abs)
+        else if (id === "editorTab.reveal") void window.api.revealPath(abs)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   async function openExternal(rel: string) {
     const root = props.sessionDirectory
     if (!root) return
@@ -889,6 +933,7 @@ export function EditorDock(props: {
                 tabIndex={0}
                 title={f.rel}
                 onClick={() => { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() }}
+                onContextMenu={(event) => requestTabMenu(f.rel, model().files.findIndex(x => x.rel === f.rel), event)}
                 onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() } }}
               >
                 <span class="mafw-editor-tab-name">{f.rel.split("/").pop()}</span>

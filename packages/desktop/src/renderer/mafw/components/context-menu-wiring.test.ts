@@ -23,3 +23,12 @@ test("rows and tabs are keyboard focusable", () => {
 test("session delete still goes through the confirm state", () => {
   expect(read("LeftDock.tsx")).toContain("setDeleteConfirmId")
 })
+
+test("file surfaces are wired", () => {
+  expect(read("../../../../../session-ui/src/components/markdown.tsx")).toContain("dataset.filePath")
+  expect(read("../../../../../session-ui/src/components/message-part.tsx")).toContain("data-file-path")
+  expect(read("../../../../../session-ui/src/components/session-turn.tsx")).toContain("data-message-role")
+  expect(read("ChatPane.tsx")).toContain("buildFilePathMenu")
+  expect(read("FilesDock.tsx")).toContain("buildFileTreeMenu")
+  expect(read("EditorDock.tsx")).toContain("buildEditorTabMenu")
+})

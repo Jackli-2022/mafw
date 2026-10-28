@@ -270,11 +270,21 @@ function markInlineCode(root: HTMLDivElement) {
   }
 }
 
+function markFileLinks(root: HTMLDivElement) {
+  const links = Array.from(root.querySelectorAll<HTMLAnchorElement>("a[href]"))
+  for (const link of links) {
+    const href = link.getAttribute("href") ?? ""
+    if (!href || /^(https?:|mailto:|#|javascript:|data:|\/\/)/i.test(href)) continue
+    link.dataset.filePath = decodeURI(href)
+  }
+}
+
 function decorate(root: HTMLDivElement, labels: CopyLabels) {
   const blocks = Array.from(root.querySelectorAll("pre"))
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
   }
+  markFileLinks(root)
   if (!document.body.hasAttribute("data-new-layout")) return
   markInlineCode(root)
   markCodeLinks(root)

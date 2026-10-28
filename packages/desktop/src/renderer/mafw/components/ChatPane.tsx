@@ -78,7 +78,11 @@ import { CheckpointOverlay } from "./CheckpointOverlay"
 import { checkpointRev } from "../checkpoint-rev"
 import { keybindingFor } from "../keybinding-store"
 import { matchesCombo } from "../keybindings"
-import { pendingInserts, takeComposerInsert } from "../composer-insert"
+import { pendingInserts, pushComposerInsert, takeComposerInsert } from "../composer-insert"
+import { requestOpenEditor } from "../editor-open"
+import { menuController } from "../context-menu/controller"
+import { buildFilePathMenu } from "../context-menu/builders/file-path"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
@@ -481,6 +485,43 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const sessionDirectory = (): string | undefined =>
     store.session.find((s: any) => s.id === sidProp())?.directory
   const worktreeBadgeOf = () => worktreeBadge(sessionDirectory(), props.projectDirectory)
+
+  const joinRoot = (root: string, rel: string) => `${root.replace(/[\\/]+$/, "")}/${rel.replace(/^[\\/]+/, "")}`
+
+  const onTurnContextMenu = (event: MouseEvent) => {
+    const target = event.target as HTMLElement | null
+    const fileEl = target?.closest?.("[data-file-path]") as HTMLElement | null
+    if (!fileEl) return
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+
+    const rel = fileEl.getAttribute("data-file-path") ?? ""
+    const root = sessionDirectory() ?? ""
+    if (!rel || !root) return
+
+    const inRoot = !rel.startsWith("..") && !/^([a-zA-Z]:[\\/]|\/)/.test(rel)
+    const abs = joinRoot(root, rel)
+    const name = rel.split(/[\\/]/).pop() ?? rel
+    const sid = sidProp()
+
+    menuController.request(
+      buildFilePathMenu,
+      { root, rel, inRoot, canOpenEditor: inRoot },
+      (id) => {
+        if (id === "filePath.attach") pushComposerInsert(sid, `@${rel}`)
+        else if (id === "filePath.openEditor") requestOpenEditor(root, rel)
+        else if (id === "filePath.openWith.default") void window.api.openPath(abs).catch(() => showToastV2({ description: "打开失败", duration: 3000 }))
+        else if (id === "filePath.openWith.vscode") void window.api.openPath(abs, "code").catch(() => showToastV2({ description: "未找到 VS Code", duration: 3000 }))
+        else if (id === "filePath.openWith.cursor") void window.api.openPath(abs, "cursor").catch(() => showToastV2({ description: "未找到 Cursor", duration: 3000 }))
+        else if (id === "filePath.openWith.zed") void window.api.openPath(abs, "zed").catch(() => showToastV2({ description: "未找到 Zed", duration: 3000 }))
+        else if (id === "filePath.reveal") void window.api.revealPath(abs)
+        else if (id === "filePath.copy.abs") void navigator.clipboard.writeText(abs)
+        else if (id === "filePath.copy.rel") void navigator.clipboard.writeText(rel)
+        else if (id === "filePath.copy.name") void navigator.clipboard.writeText(name)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
 
   const userActions = () => {
     // W0-2：sessionBranchApi=false 的 runtime 不渲染 fork/revert（隐藏而非失败 toast）。
@@ -1591,7 +1632,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   return (
     <div class="mafw-pane" data-layout="chat" onClick={props.onFocus}>
       <div class="mafw-chat-scroll-wrap">
-        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={() => { handleScroll(); suppressQuote() }} onClick={focusComposerFromView} onDblClick={() => viewFocus.cancel()}>
+        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={() => { handleScroll(); suppressQuote() }} onClick={focusComposerFromView} onContextMenu={onTurnContextMenu} onDblClick={() => viewFocus.cancel()}>
           <Show when={sidProp()}>
             <div class="mafw-session-titlebar">
               <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>

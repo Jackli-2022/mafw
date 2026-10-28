@@ -44,7 +44,7 @@ export function WorkbenchCodeView(props: {
           </ButtonV2>
         </TooltipV2>
         <div class="mafw-rw-files">
-          <FilesDock sessionDirectory={props.sessionDirectory} onOpenFile={openFile} />
+          <FilesDock sessionID={props.sessionID} sessionDirectory={props.sessionDirectory} onOpenFile={openFile} />
         </div>
       </Show>
       <div class="mafw-rw-code-main">

@@ -2308,7 +2308,7 @@ ToolRegistry.register({
     })
 
     return (
-      <div data-component="edit-tool">
+      <div data-component="edit-tool" data-file-path={props.input.filePath}>
         <BasicTool
           {...props}
           icon="code-lines"
@@ -2375,7 +2375,7 @@ ToolRegistry.register({
     const filename = () => getFilename(props.input.filePath ?? "")
     const pending = () => props.status === "pending" || props.status === "running"
     return (
-      <div data-component="write-tool">
+      <div data-component="write-tool" data-file-path={props.input.filePath}>
         <BasicTool
           {...props}
           icon="code-lines"
@@ -2557,7 +2557,7 @@ ToolRegistry.register({
           </div>
         }
       >
-        <div data-component="apply-patch-tool">
+        <div data-component="apply-patch-tool" data-file-path={single()!.relativePath}>
           <BasicTool
             {...props}
             icon="code-lines"
