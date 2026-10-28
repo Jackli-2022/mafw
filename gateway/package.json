@@ -20,6 +20,7 @@
     "bonjour-service": "^1.4.4",
     "cron": "^3.1.7",
     "js-yaml": "^4.1.0",
+    "jsonc-parser": "^3.3.1",
     "langchain-mcp-adapters": "^0.6.0",
     "ws": "^8.21.3",
     "zeromq": "^6.1.2"

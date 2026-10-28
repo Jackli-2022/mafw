@@ -1277,6 +1277,81 @@
         }
       }
     },
+    "/api/mcp/config/preview": {
+      "post": {
+        "operationId": "mcp.configPreview",
+        "tags": [
+          "mcp"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/mcp/config/preview-remove": {
+      "post": {
+        "operationId": "mcp.configPreviewRemove",
+        "tags": [
+          "mcp"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/mcp/config/apply": {
+      "post": {
+        "operationId": "mcp.configApply",
+        "tags": [
+          "mcp"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/mcp/config/restore": {
+      "post": {
+        "operationId": "mcp.configRestore",
+        "tags": [
+          "mcp"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/mcp/config/servers/{name}": {
+      "delete": {
+        "operationId": "mcp.configRemove",
+        "tags": [
+          "mcp"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/mafw-commands/run": {
       "post": {
         "operationId": "mafwCommands.run",

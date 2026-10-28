@@ -116,11 +116,22 @@ describe('createOpencodeRuntime', () => {
       nativeApprovals: true, providerConfigApi: true, perLlmCallTransform: true,
       sessionStorageApi: true, agentConfigApi: true, agentProcessApi: true,
       // turnBudgetApi false：预算由 gateway 侧 BudgetGuard 承担（adapter 无 maxTurns 字段）
-      completionApi: true, sessionBranchApi: true, revertUndoApi: false, checkpointApi: true, runStateApi: true, turnBudgetApi: false, questionApi: true, diffApi: true, worktreeApi: true, instructionsApi: true, discoveryApi: true, mcpApi: true, steerApi: true,
+      completionApi: true, sessionBranchApi: true, revertUndoApi: false, checkpointApi: true, runStateApi: true, turnBudgetApi: false, questionApi: true, diffApi: true, worktreeApi: true, instructionsApi: true, discoveryApi: true, mcpApi: true, mcpConfigApi: true, steerApi: true,
     });
     expect(rt.external).toBe(false);
     // 装饰不覆盖 adapter 返回的 client 方法面
     expect((rt as any).__clientMarker).toBe(true);
+  });
+
+  it('exposes mcp channels (mcpApi + mcpConfigApi)', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    expect(rt.capabilities.mcpApi).toBe(true);
+    expect(rt.capabilities.mcpConfigApi).toBe(true);
+    expect(typeof rt.mcp?.list).toBe('function');
+    expect(typeof rt.mcp?.connect).toBe('function');
+    expect(typeof rt.mcp?.config?.preview).toBe('function');
+    expect(typeof rt.mcp?.config?.apply).toBe('function');
   });
 
   it('marks external when MAFW_SERVER_SERVE_URL is set', async () => {

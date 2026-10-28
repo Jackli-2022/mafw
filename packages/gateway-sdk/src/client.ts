@@ -611,6 +611,46 @@ export class MafwClient implements IMafwClient {
     disconnect: async (name: string): Promise<unknown> => {
       return this.request(`/api/mcp/${encodeURIComponent(name)}/disconnect`, { method: 'POST' })
     },
+    // B4：配置持久化（实现归 runtime 适配器；gateway 只透传）
+    previewServer: async (input: import('./types').McpServerConfigInput): Promise<import('./types').McpConfigPreview> => {
+      return this.request<import('./types').McpConfigPreview>('/api/mcp/config/preview', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+    },
+    previewRemoveServer: async (name: string): Promise<import('./types').McpConfigPreview> => {
+      return this.request<import('./types').McpConfigPreview>('/api/mcp/config/preview-remove', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      })
+    },
+    applyServer: async (
+      input: import('./types').McpServerConfigInput & { token: string; confirm: true },
+    ): Promise<import('./types').McpConfigResult> => {
+      return this.request<import('./types').McpConfigResult>('/api/mcp/config/apply', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+    },
+    removeServer: async (
+      name: string,
+      opts: { token: string; confirm: true },
+    ): Promise<import('./types').McpConfigResult> => {
+      return this.request<import('./types').McpConfigResult>(
+        `/api/mcp/config/servers/${encodeURIComponent(name)}`,
+        { method: 'DELETE', body: JSON.stringify(opts) },
+      )
+    },
+    restoreConfig: async (opts: {
+      token: string
+      confirm: true
+      backupPath?: string
+    }): Promise<import('./types').McpConfigResult> => {
+      return this.request<import('./types').McpConfigResult>('/api/mcp/config/restore', {
+        method: 'POST',
+        body: JSON.stringify(opts),
+      })
+    },
   }
 
   discovery = {

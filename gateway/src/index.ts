@@ -19,6 +19,7 @@ import { handleGoalTimeline } from './routes/goal-timeline';
 import { handleGoalPlan } from './routes/goal-plan';
 import { handleNodeRetry } from './routes/goal-node-retry';
 import { handleMcp } from './routes/mcp';
+import { handleMcpConfig } from './routes/mcp-config';
 import { handleSkillContent } from './routes/skill-content';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
@@ -5390,6 +5391,19 @@ class MafwScheduler {
             list: (opts) => channel!.list(opts),
             connect: (name, opts) => channel!.connect(name, opts),
             disconnect: (name, opts) => channel!.disconnect(name, opts),
+          })) return;
+        }
+
+        // MCP 配置写入（mcpConfigApi）：持久化实现归 runtime 适配器，gateway 只透传。
+        if (req.url?.match(/^\/api\/mcp\/config\//)) {
+          const cfgChannel = this.runtime?.mcp?.config;
+          if (await handleMcpConfig(req, res, req.url!, {
+            supported: !!cfgChannel && this.runtime?.capabilities?.mcpConfigApi === true,
+            preview: (input) => cfgChannel!.preview(input),
+            previewRemove: (name) => cfgChannel!.previewRemove(name),
+            apply: (input) => cfgChannel!.apply(input),
+            remove: (name, opts) => cfgChannel!.remove(name, opts),
+            restore: (opts) => cfgChannel!.restore(opts),
           })) return;
         }
 

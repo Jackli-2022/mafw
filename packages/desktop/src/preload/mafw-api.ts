@@ -147,6 +147,11 @@ export function createMafwApi(): MafwAPI {
       servers: () => invoke("mcp", "servers"),
       connect: (name) => invoke("mcp", "connect", name),
       disconnect: (name) => invoke("mcp", "disconnect", name),
+      previewServer: (input) => invoke("mcp", "previewServer", input),
+      previewRemoveServer: (name) => invoke("mcp", "previewRemoveServer", name),
+      applyServer: (input) => invoke("mcp", "applyServer", input),
+      removeServer: (name, opts) => invoke("mcp", "removeServer", name, opts),
+      restoreConfig: (opts) => invoke("mcp", "restoreConfig", opts),
     },
 
     mafwCommands: {

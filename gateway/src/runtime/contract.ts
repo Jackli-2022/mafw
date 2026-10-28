@@ -67,6 +67,8 @@ export interface RuntimeCapabilities {
   discoveryApi?: boolean;
   /** runtime 提供 MCP 服务器列表与运行时连接/断开（opencode 2.1；pi false）。 */
   mcpApi?: boolean;
+  /** runtime 提供 MCP 配置持久化写入（preview/apply/remove/restore；opencode 2.1）。 */
+  mcpConfigApi?: boolean;
   /** W5a：runtime 接受 delivery:'steer'（opencode 2.1=回合后优先送达；pi=工具间隙注入）。 */
   steerApi?: boolean;
 }
@@ -98,6 +100,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     instructionsApi: true,
     discoveryApi: true,
     mcpApi: true,
+    mcpConfigApi: true,
     // W5a：opencode 2.1 接受 delivery:'steer'（wire probe 实证=回合结束后优先送达）。
     steerApi: true,
   };
@@ -122,6 +125,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     instructionsApi: false,
     discoveryApi: false,
     mcpApi: false,
+    mcpConfigApi: false,
     steerApi: false,
   };
 }
@@ -395,6 +399,57 @@ export interface RuntimeMcpChannel {
   disconnect(name: string, opts?: { directory?: string }): Promise<boolean>;
 }
 
+// ── MCP 配置写入（mcpConfigApi；持久化实现归 runtime 适配器） ──
+
+export interface RuntimeMcpServerConfigInput {
+  name: string;
+  type: 'remote' | 'local';
+  /** remote 必填 */
+  url?: string;
+  /** local 必填（非空字符串数组） */
+  command?: string[];
+  /** 同名覆盖（缺省 → 冲突错误） */
+  overwrite?: boolean;
+  /** type 变更时显式替换（缺省 → 冲突错误） */
+  replace?: boolean;
+}
+
+export interface RuntimeMcpConfigPreview {
+  /** 乐观锁令牌（文件内容哈希），apply/remove/restore 必须回传。 */
+  token: string;
+  /** 展示给用户的目标文件绝对路径。 */
+  target: string;
+  /** 已掩码的统一 diff。 */
+  diff: string;
+  /** 预计备份文件名（无既有文件时缺省）。 */
+  backup?: string;
+  /** 覆盖时保留的未暴露字段。 */
+  preserved?: string[];
+  warnings?: string[];
+}
+
+export interface RuntimeMcpConfigResult {
+  /** 配置文件已持久化。 */
+  applied: boolean;
+  /** 运行时立即生效（尽力）。 */
+  runtimeApplied: boolean;
+  backup?: string;
+  error?: string;
+}
+
+export interface RuntimeMcpConfigChannel {
+  /** dry-run：计算 diff/token，不写盘。 */
+  preview(input: RuntimeMcpServerConfigInput): Promise<RuntimeMcpConfigPreview>;
+  /** dry-run：删除预览（返回 token 与移除后的 diff，不写盘）。 */
+  previewRemove(name: string): Promise<RuntimeMcpConfigPreview>;
+  /** 提交写入（token 不匹配 → etag_mismatch）。 */
+  apply(input: RuntimeMcpServerConfigInput & { token: string; confirm: true }): Promise<RuntimeMcpConfigResult>;
+  /** 删除配置项（先文件后运行时）。 */
+  remove(name: string, opts: { token: string; confirm: true }): Promise<RuntimeMcpConfigResult>;
+  /** 只回滚 mcp.servers 子树（外科式恢复）。 */
+  restore(opts: { token: string; confirm: true; backupPath?: string }): Promise<RuntimeMcpConfigResult>;
+}
+
 export interface RuntimeClient {
   session: {
     create(opts: SessionCreateOpts): Promise<{ id: string; [k: string]: any }>;
@@ -506,7 +561,7 @@ export interface RuntimeClient {
   /** runtime 原生命令/技能目录（discoveryApi 能力）。 */
   discovery?: RuntimeDiscoveryChannel;
   /** MCP 运行时管理（mcpApi 能力）。runtime 拥有列表/连接/断开的实现细节。 */
-  mcp?: RuntimeMcpChannel;
+  mcp?: RuntimeMcpChannel & { config?: RuntimeMcpConfigChannel };
   config: {
     get(): Promise<any>;
     update(config: any): Promise<any>;

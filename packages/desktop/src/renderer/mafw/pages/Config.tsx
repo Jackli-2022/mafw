@@ -3,6 +3,7 @@ import { createSignal, createEffect, createMemo, onMount, onCleanup, on, Show, F
 import { Portal } from "solid-js/web"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { McpServerDialog } from "../components/McpServerDialog"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { SelectV2 } from "@mafw/ui/v2/select-v2"
 import { Icon } from "@mafw/ui/v2/icon"
@@ -608,6 +609,27 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   }
 
   const [mcpBusy, setMcpBusy] = createSignal<Record<string, boolean>>({})
+  const [mcpDialogOpen, setMcpDialogOpen] = createSignal(false)
+  const mcpConfigWritable = () => props.runtimeCaps?.mcpConfigApi === true
+
+  /** B4：删除配置项（先 preview 拿 token，再确认执行）。 */
+  async function deleteMcpServer(name: string) {
+    try {
+      const p = await window.api.mafw.mcp.previewRemoveServer(name)
+      const ok = window.confirm(
+        `删除 MCP 服务器「${name}」？\n目标文件：${p.target}\n备份：${p.backup ?? "(无)"}`,
+      )
+      if (!ok) return
+      const r = await window.api.mafw.mcp.removeServer(name, { token: p.token, confirm: true })
+      showToastV2({
+        description: r.runtimeApplied ? `已删除 ${name}` : `已删除 ${name}（运行时未同步，重启 agent 后生效）`,
+        duration: 3500,
+      })
+      await loadMcp()
+    } catch (err: any) {
+      showToastV2({ description: `删除失败: ${err.message}`, duration: 4000 })
+    }
+  }
 
   /** B3.1：运行时连接/断开（serve 2.1 v2 API；不修改配置文件）。 */
   async function mcpAction(name: string, action: "connect" | "disconnect") {
@@ -1465,6 +1487,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
               <div class="mafw-config-section-header">
                 <span class="mafw-config-section-icon">🔌</span>
                 <span class="mafw-config-section-title">MCP 服务器</span>
+                <Show when={mcpConfigWritable()}>
+                  <ButtonV2 variant="outline" size="small" onClick={() => setMcpDialogOpen(true)}>添加服务器</ButtonV2>
+                </Show>
                 <ButtonV2 variant="ghost" size="small" onClick={() => { void loadMcp() }}>刷新</ButtonV2>
               </div>
               <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
@@ -1504,6 +1529,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                                 >
                                   <ButtonV2 variant="ghost" size="small" disabled={!!mcpBusy()[srv.name]} onClick={() => void mcpAction(srv.name, "disconnect")}>断开</ButtonV2>
                                 </Show>
+                                <Show when={mcpConfigWritable() && srv.source}>
+                                  <ButtonV2 variant="ghost" size="small" onClick={() => void deleteMcpServer(srv.name)}>删除</ButtonV2>
+                                </Show>
                               </div>
                             </div>
                           )
@@ -1515,6 +1543,11 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
               </div>
             </div>
             </Show>
+            <McpServerDialog
+              open={mcpDialogOpen()}
+              onClose={() => setMcpDialogOpen(false)}
+              onSaved={() => { void loadMcp() }}
+            />
           </Show>
 
           {/* ═══ OpenCode Config ═══*/}

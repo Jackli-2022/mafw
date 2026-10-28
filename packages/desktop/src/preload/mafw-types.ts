@@ -11,6 +11,32 @@ import type {
 } from "@mafw/sdk"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 
+/** B4：MCP 配置写入 DTO（与 @mafw/sdk 对齐） */
+export interface McpServerConfigInput {
+  name: string
+  type: "remote" | "local"
+  url?: string
+  command?: string[]
+  overwrite?: boolean
+  replace?: boolean
+}
+
+export interface McpConfigPreview {
+  token: string
+  target: string
+  diff: string
+  backup?: string
+  preserved?: string[]
+  warnings?: string[]
+}
+
+export interface McpConfigResult {
+  applied: boolean
+  runtimeApplied: boolean
+  backup?: string
+  error?: string
+}
+
 export type MafwAPI = {
   notify: (opts: { title: string; body: string }) => Promise<boolean>
 
@@ -120,7 +146,15 @@ export type MafwAPI = {
     /** B3.1：运行时连接/断开（不改配置）。 */
     connect: (name: string) => Promise<unknown>
     disconnect: (name: string) => Promise<unknown>
+    /** B4：配置持久化（gateway 门面 → runtime 适配器）。 */
+    previewServer: (input: McpServerConfigInput) => Promise<McpConfigPreview>
+    previewRemoveServer: (name: string) => Promise<McpConfigPreview>
+    applyServer: (input: McpServerConfigInput & { token: string; confirm: true }) => Promise<McpConfigResult>
+    removeServer: (name: string, opts: { token: string; confirm: true }) => Promise<McpConfigResult>
+    restoreConfig: (opts: { token: string; confirm: true; backupPath?: string }) => Promise<McpConfigResult>
   }
+
+  // B4：MCP 配置写入 DTO（与 @mafw/sdk 对齐）
 
   mafwCommands: {
     run: (opts: { command: string; args?: string; sessionID?: string }) => Promise<{ ok: boolean; message?: string; text?: string; error?: string; sessionID?: string; added?: number; conflicts?: number; skipped?: number }>

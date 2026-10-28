@@ -516,6 +516,41 @@ export interface McpNamespace {
   connect(name: string): Promise<unknown>
   /** 运行时断开（不改配置）。 */
   disconnect(name: string): Promise<unknown>
+  /** B4：持久化写入 — dry-run（不写盘）。 */
+  previewServer(input: McpServerConfigInput): Promise<McpConfigPreview>
+  /** B4：删除预览（返回 token，不写盘）。 */
+  previewRemoveServer(name: string): Promise<McpConfigPreview>
+  /** B4：持久化写入 — 提交（token + confirm）。 */
+  applyServer(input: McpServerConfigInput & { token: string; confirm: true }): Promise<McpConfigResult>
+  /** B4：删除配置项（token + confirm；先文件后运行时）。 */
+  removeServer(name: string, opts: { token: string; confirm: true }): Promise<McpConfigResult>
+  /** B4：只回滚 mcp.servers 子树。 */
+  restoreConfig(opts: { token: string; confirm: true; backupPath?: string }): Promise<McpConfigResult>
+}
+
+export interface McpServerConfigInput {
+  name: string
+  type: 'remote' | 'local'
+  url?: string
+  command?: string[]
+  overwrite?: boolean
+  replace?: boolean
+}
+
+export interface McpConfigPreview {
+  token: string
+  target: string
+  diff: string
+  backup?: string
+  preserved?: string[]
+  warnings?: string[]
+}
+
+export interface McpConfigResult {
+  applied: boolean
+  runtimeApplied: boolean
+  backup?: string
+  error?: string
 }
 
 export interface CommandNamespace {

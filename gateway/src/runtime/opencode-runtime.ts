@@ -19,6 +19,7 @@ import { AgentDefinition } from './agent-definition';
 import { startServeSidecar, killServePort, resolveServePassword, serveAuthHeaders, resolveOpencodeBin } from './serve-sidecar';
 import { createOpencodeAdapter } from './opencode-adapter';
 import { createOpencodeMcpChannel, resolveMcpListCommand } from './opencode-mcp';
+import { createOpencodeMcpConfigChannel } from './opencode-mcp-config';
 import { execFile } from 'child_process';
 import { config as gatewayConfig } from '../config';
 import { getProviderApiKey } from './auth';
@@ -406,6 +407,80 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
           resolve('');
         }
       }),
+  });
+
+  // MCP 配置持久化（mcpConfigApi）：opencode.jsonc 的 JSONC 编辑/备份/原子写/乐观锁
+  // 全在 opencode-mcp-config.ts；gateway 门面不感知文件与格式。
+  rt.mcp.config = createOpencodeMcpConfigChannel({
+    configPath: () => path.join(os.homedir(), '.config', 'opencode', 'opencode.jsonc'),
+    exists: (p) => fs.existsSync(p),
+    readFile: (p) => fs.readFileSync(p, 'utf-8'),
+    backup: (p) => {
+      const b = `${p}.bak-mafw-${Date.now()}`;
+      fs.copyFileSync(p, b);
+      return b;
+    },
+    writeFileAtomic: (p, text) => {
+      const tmp = `${p}.tmp-mafw-${process.pid}-${Date.now()}`;
+      fs.writeFileSync(tmp, text, 'utf-8');
+      try {
+        fs.renameSync(tmp, p);
+      } catch {
+        try { fs.unlinkSync(p); } catch { /* ignore */ }
+        fs.renameSync(tmp, p);
+      }
+    },
+    applyRuntime: async (name, cfg) => {
+      const base = (rt.getBaseUrl?.() ?? config.baseUrl).replace(/\/+$/, '') + '/api';
+      const headers = {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...serveAuthHeaders(),
+        ...(config.headers ?? {}),
+      };
+      try {
+        const put = await fetch(`${base}/experimental/mcp/${encodeURIComponent(name)}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ config: cfg }),
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!put.ok) return false;
+        const connect = await fetch(`${base}/experimental/mcp/${encodeURIComponent(name)}/connect`, {
+          method: 'POST',
+          headers,
+          signal: AbortSignal.timeout(8000),
+        });
+        return connect.ok;
+      } catch {
+        return false;
+      }
+    },
+    removeRuntime: async (name) => {
+      const base = (rt.getBaseUrl?.() ?? config.baseUrl).replace(/\/+$/, '') + '/api';
+      try {
+        const res = await fetch(`${base}/experimental/mcp/${encodeURIComponent(name)}`, {
+          method: 'DELETE',
+          headers: { Accept: 'application/json', ...serveAuthHeaders(), ...(config.headers ?? {}) },
+          signal: AbortSignal.timeout(8000),
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+    listBackups: (p) => {
+      try {
+        const dir = path.dirname(p);
+        const base = path.basename(p);
+        return fs
+          .readdirSync(dir)
+          .filter((f) => f.startsWith(`${base}.bak-mafw-`))
+          .map((f) => path.join(dir, f));
+      } catch {
+        return [];
+      }
+    },
   });
 
   if (!rt.external) {

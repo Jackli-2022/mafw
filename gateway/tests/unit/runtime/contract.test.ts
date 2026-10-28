@@ -27,6 +27,7 @@ describe('runtime contract capabilities', () => {
       instructionsApi: true,
       discoveryApi: true,
       mcpApi: true,
+      mcpConfigApi: true,
       steerApi: true,
     });
   });
@@ -50,6 +51,7 @@ describe('runtime contract capabilities', () => {
       instructionsApi: false,
       discoveryApi: false,
       mcpApi: false,
+      mcpConfigApi: false,
       steerApi: false,
     });
   });
