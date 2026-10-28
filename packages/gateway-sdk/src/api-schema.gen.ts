@@ -1992,6 +1992,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/voice/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["voice.status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/provider": {
         parameters: {
             query?: never;
@@ -5668,6 +5684,24 @@ export interface operations {
         };
     };
     "tts.interrupt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "voice.status": {
         parameters: {
             query?: never;
             header?: never;

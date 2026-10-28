@@ -2435,6 +2435,19 @@
         }
       }
     },
+    "/api/voice/status": {
+      "get": {
+        "operationId": "voice.status",
+        "tags": [
+          "voice"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/provider": {
       "get": {
         "operationId": "providers.list",
