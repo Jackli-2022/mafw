@@ -67,6 +67,8 @@ import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind, typeLabel } from "./message-file"
 import { readPartText } from "./message-part-text"
+import { partOutputText } from "./tool-output"
+import { normalizeFileDiffs } from "./file-diff-shape"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 
 async function writeClipboard(text: string): Promise<boolean> {
@@ -1670,8 +1672,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               tool={TOOL_NAME_ALIASES[part().tool] ?? part().tool}
               sessionID={part().sessionID}
               metadata={partMetadata()}
-              // @ts-expect-error
-              output={part().state.output}
+              output={partOutputText(part().state)}
               status={part().state.status}
               hideDetails={props.hideDetails}
               defaultOpen={props.defaultOpen}
@@ -2264,19 +2265,22 @@ ToolRegistry.register({
   render(props) {
     const i18n = useI18n()
     const fileComponent = useFileComponent()
-    const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
-    const path = createMemo(() => props.metadata?.filediff?.file || props.input.filePath || "")
-    const filename = () => getFilename(props.input.filePath ?? "")
+    const filePath = createMemo(() => readPathInput(props.input))
+    const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, filePath()))
+    const diffs = createMemo(() => normalizeFileDiffs(props.metadata, filePath()))
+    const primary = createMemo(() => diffs()[0])
+    const path = createMemo(() => primary()?.file || filePath() || "")
+    const filename = () => getFilename(path() ?? "")
     const pending = () => props.status === "pending" || props.status === "running"
     const diffSource = createMemo(
       () => {
-        const filediff = props.metadata?.filediff
-        if (!filediff) return
+        const diff = primary()
+        if (!diff) return
         return {
-          file: filediff.file || props.input.filePath || "",
-          patch: typeof filediff.patch === "string" ? filediff.patch : undefined,
-          before: typeof filediff.before === "string" ? filediff.before : undefined,
-          after: typeof filediff.after === "string" ? filediff.after : undefined,
+          file: diff.file || filePath() || "",
+          patch: typeof diff.patch === "string" ? diff.patch : undefined,
+          before: typeof diff.before === "string" ? diff.before : undefined,
+          after: typeof diff.after === "string" ? diff.after : undefined,
         }
       },
       undefined,
@@ -2297,18 +2301,18 @@ ToolRegistry.register({
 
       return {
         before: {
-          name: props.metadata?.filediff?.file || props.input.filePath,
-          contents: props.metadata?.filediff?.before || props.input.oldString || "",
+          name: primary()?.file || filePath(),
+          contents: primary()?.before || props.input.oldString || "",
         },
         after: {
-          name: props.metadata?.filediff?.file || props.input.filePath,
-          contents: props.metadata?.filediff?.after || props.input.newString || "",
+          name: primary()?.file || filePath(),
+          contents: primary()?.after || props.input.newString || "",
         },
       }
     })
 
     return (
-      <div data-component="edit-tool" data-file-path={props.input.filePath}>
+      <div data-component="edit-tool" data-file-path={filePath()}>
         <BasicTool
           {...props}
           icon="code-lines"
@@ -2331,8 +2335,8 @@ ToolRegistry.register({
                 </Show>
               </div>
               <div data-slot="message-part-actions">
-                <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff} />
+                <Show when={!pending() && primary()}>
+                  <DiffChanges changes={primary()} />
                 </Show>
               </div>
             </div>
@@ -2342,8 +2346,8 @@ ToolRegistry.register({
             <ToolFileAccordion
               path={path()}
               actions={
-                <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff!} />
+                <Show when={!pending() && primary()}>
+                  <DiffChanges changes={primary()!} />
                 </Show>
               }
             >
@@ -2370,12 +2374,13 @@ ToolRegistry.register({
   render(props) {
     const i18n = useI18n()
     const fileComponent = useFileComponent()
-    const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
-    const path = createMemo(() => props.input.filePath || "")
-    const filename = () => getFilename(props.input.filePath ?? "")
+    const filePath = createMemo(() => readPathInput(props.input))
+    const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, filePath()))
+    const path = createMemo(() => filePath() || normalizeFileDiffs(props.metadata, filePath())[0]?.file || "")
+    const filename = () => getFilename(path() ?? "")
     const pending = () => props.status === "pending" || props.status === "running"
     return (
-      <div data-component="write-tool" data-file-path={props.input.filePath}>
+      <div data-component="write-tool" data-file-path={filePath()}>
         <BasicTool
           {...props}
           icon="code-lines"
@@ -2391,9 +2396,9 @@ ToolRegistry.register({
                     <span data-slot="message-part-title-filename">{filename()}</span>
                   </Show>
                 </div>
-                <Show when={!pending() && props.input.filePath?.includes("/")}>
+                <Show when={!pending() && filePath()?.includes("/")}>
                   <div data-slot="message-part-path">
-                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
+                    <span data-slot="message-part-directory">{getDirectory(filePath()!)}</span>
                   </div>
                 </Show>
               </div>
