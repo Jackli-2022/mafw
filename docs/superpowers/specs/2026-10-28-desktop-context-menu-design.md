@@ -1,6 +1,6 @@
 # Desktop 右键菜单重构设计（2026-10-28）
 
-状态：待评审（builder check 前）
+状态：已批准（2026-10-28）；实现计划见 `docs/superpowers/plans/2026-10-28-desktop-context-menu.md`
 范围：`packages/desktop` 渲染层右键菜单 + 区域动作表
 依据：
 - `docs/research/2026-10-28-desktop-context-menu-research.md`（现状与缺陷）
@@ -48,9 +48,9 @@
 | D4 | `target` 显式传对象（session/file/message/tab/goal/…），不传闭包数组 | 菜单内容可被测试与审计 |
 | D5 | 标签集中在 `context-menu/labels.ts`（中文），key 前缀 `menu.*` 预留 i18n | 当前 MAFW 渲染层无 i18n 使用；先集中，后翻译 |
 | D6 | 破坏性动作 `danger: true` + 调用方确认；标签带 `…` | 与业界一致（Delete… / Export…） |
-| D7 | webview 右键走主进程原生 `Menu.popup`，复用同一份 item 数据 | `<webview>` 没有 DOM contextmenu 事件；样式差异可接受 |
+| D7 | 浏览器菜单只挂 **dock chrome**（头部/地址栏）；webview 页面内保持原生 | 页面是「别人的应用」，原生菜单（复制链接/图片/查词）更合适；也避免一次右键两张菜单 |
 | D8 | 菜单在打开时构建，不做缓存；单次构建 O(10) | 避免订阅与失效问题 |
-| D9 | `MenuItem.id` 必填、`onSelect` 可选；提供 `serializeMenu(model)` 去掉闭包 | webview 原生菜单需要跨 IPC；只序列化 browser surface |
+| D9 | `MenuItem.id` 必填；执行走 `id + onRun` 调度，模型本身不含闭包 | 模型可被测试与审计；将来需要跨 IPC 时无需重构 |
 | D10 | 原生菜单优先级：可编辑、有文本选区、图片、链接 → 原生；其余对象容器 → 自绘 | 避免一次右键弹两张；用 `electron-context-menu` 的 `shouldShowMenu` + guard 双保险 |
 | D11 | 键盘：给列表行/页签/卡片补 `tabIndex=0` + focus-visible；Shift+F10 / ContextMenu 键打开**当前焦点元素**的菜单；不做 roving 方向键 | 全量补 roving 是大工程，超出本批；焦点可见是硬要求 |
 
@@ -92,23 +92,17 @@ packages/desktop/src/renderer/mafw/context-menu/
 ```ts
 export type MenuItem =
   | { type: "item"; id: string; label: string; icon?: string; shortcut?: string;
-      disabled?: boolean; disabledReason?: string; danger?: boolean;
-      onSelect?: () => void }
+      disabled?: boolean; disabledReason?: string; danger?: boolean; confirms?: boolean }
   | { type: "separator"; id?: string }
   | { type: "submenu"; id: string; label: string; icon?: string; items: MenuItem[] }
   | { type: "group"; id: string; label: string; items: MenuItem[] }
-  | { type: "checkbox"; id: string; label: string; checked: boolean; onSelect?: () => void }
-  | { type: "radio"; id: string; label: string; checked: boolean; onSelect?: () => void }
+  | { type: "checkbox"; id: string; label: string; checked: boolean; disabled?: boolean }
+  | { type: "radio"; id: string; label: string; checked: boolean; disabled?: boolean }
 
 export type MenuModel = {
-  surface: Surface
+  surface: MenuSurface
   items: MenuItem[]
-  /** 打开来源，用于测试与埋点 */
-  from: "contextmenu" | "ellipsis" | "keyboard"
 }
-
-/** 去掉闭包，供主进程构造原生菜单；点击后按 id 回投渲染层。 */
-export function serializeMenu(model: MenuModel): SerializedMenu
 ```
 ```
 
@@ -121,16 +115,33 @@ export function serializeMenu(model: MenuModel): SerializedMenu
 
 ### 4.3 渲染器
 
-```tsx
-<ContextMenu model={model()} from="contextmenu">
-  <div onContextMenu={…}>…</div>
-</ContextMenu>
+采用**单实例菜单宿主**（避免给每一行包一层 ContextMenu，也便于右键/`⋯`/键盘三入口共用）：
+
+```ts
+// controller.ts
+type MenuRequest = {
+  model: MenuModel
+  run: (id: string) => void
+  point: { x: number; y: number }
+  from: MenuOpenSource
+}
+createMenuController(): {
+  request(build, target, run, opts?): void   // 构建 model 并打开
+  close(): void
+  current(): MenuRequest | null
+}
 ```
 
-- 内部用 `ContextMenu`（Kobalte）的 `Content`，逐类型渲染 item/submenu/group/checkbox/radio。
-- `Content` 挂 `data-component="context-menu-content"`（`@mafw/ui` 既有样式）+ 本地 `context-menu.css` 补 `danger`、shortcut 列、icon 槽。
-- `disabled` 项用 `ContextMenu.Item disabled`；`disabledReason` 渲染为 `ItemDescription`（现有组件支持）。
-- 键盘：Kobalte 自带方向键/Enter/Esc；额外在容器上监听 `Shift+F10` 与 `ContextMenu` 键，以当前焦点行作为 target 打开。
+```tsx
+// MenuHost.tsx —— 全应用挂一次
+<MenuHost controller={menu} />
+```
+
+- 宿主内部是一个受控的 Kobalte `ContextMenu`，Trigger 是定位在 `point` 的 1px 隐藏元素（opencode 同款做法）。
+- 右键：容器 `onContextMenu` → `shouldUseNativeMenu` 为真则放行，否则 `preventDefault` + `menu.request(...)`。
+- `⋯`：`onClick` → `menu.request(..., { point: 按钮 rect })`。
+- 键盘：行上 `onKeyDown` 捕获 Shift+F10 / ContextMenu 键 → 同一 `request`。
+- 渲染逐类型处理 item/submenu/group/checkbox/radio；`Content` 复用 `@mafw/ui` 的 `context-menu` 样式 + 本地 `context-menu.css` 补 danger/shortcut/icon。
 
 ### 4.4 原生回落（guard）
 
@@ -156,9 +167,9 @@ export function shouldUseNativeMenu(e: MouseEvent): boolean {
 
 ### 4.5 webview
 
-- 主进程监听 guest `webContents.on("context-menu")`，通过 IPC 请求渲染层提供 `MenuModel`（browser surface），主进程 `Menu.buildFromTemplate` + `popup`。
-- 菜单项与渲染层浏览器菜单同源（同一个 `buildBrowserMenu`，序列化后走 IPC）。
-- v1 先做 `后退/前进/刷新/复制链接/在系统浏览器打开`；元素点选已在 BrowserDock 头部有按钮，菜单里可选加。
+- webview **页面内**不接管右键：保持 Electron/Chromium 原生菜单（复制链接、图片另存为、查词）。
+- 浏览器菜单挂在 dock chrome（面板头部/地址栏）：后退/前进/刷新/复制链接/在系统浏览器打开/点选页面元素。
+- 副产物：`electron-context-menu` 的 `shouldShowMenu` 不需要为 webview 特判，双层菜单风险归零。
 
 ## 5. 区域动作表（v1）
 
@@ -271,6 +282,8 @@ export function shouldUseNativeMenu(e: MouseEvent): boolean {
 | 3 | 在系统浏览器打开 | C | ✅ |
 | 4 | 点选页面元素 | A | ✅ G2 |
 
+注意：webview 页面内保持原生菜单；本菜单只作用于 dock chrome。
+
 ### 5.9 执行 / 审阅面板行
 
 **执行类行（子代理 / 后台任务 / 轨迹回合）**
@@ -349,7 +362,7 @@ diff **行/hunk** 级菜单（撤销此 hunk 等）**v1 不做**；现有行内�
 3. **guard 单测**：输入框/选区/`data-native-menu` 返回 true；普通容器返回 false。
 4. **CSS 契约测试**（仿 `composer-toolbar-css.test.ts`）：断言 `[data-danger]`、`context-menu-shortcut` 等选择器存在；防止再次「写属性没样式」。
 5. **接线契约测试**：grep 式断言各组件使用 `buildMenu` 而非手写数组（防止回潮）。
-6. **序列化测试**：`serializeMenu` 输出不含函数、id 与渲染模型一一对应；webview 点击 id 能回投到同一个 builder 的 item。
+6. **模型纯净性测试**：builder 输出不含函数；同 surface 两次构建 id 序列稳定。
 7. GUI 冒烟：每张菜单逐项点击路径 + 键盘 Shift+F10 + 输入框原生菜单不被夺 + 消息/图片/链接只弹一张。
 
 ## 9. 迁移顺序
@@ -370,7 +383,7 @@ diff **行/hunk** 级菜单（撤销此 hunk 等）**v1 不做**；现有行内�
 | 风险 | 缓解 |
 |---|---|
 | 右键抢走文本选区菜单 | guard + 单测 + GUI 冒烟；`data-native-menu` 逃生口 |
-| webview 双层菜单 | 主进程 `context-menu` 事件里 `preventDefault` 并只弹我们的菜单 |
+| webview 双层菜单 | 页面内不自绘（原生）；浏览器菜单只挂 dock chrome |
 | 菜单位置被 dock 裁切 | 一律 Portal 到 body（现有做法） |
 | `⋯` 与右键模型不一致 | 同一 builder；接线契约测试 |
 | 删除类动作误触 | danger + 确认；菜单不直接执行不可逆操作 |
@@ -395,7 +408,7 @@ diff **行/hunk** 级菜单（撤销此 hunk 等）**v1 不做**；现有行内�
 | 4 | 「编辑并重发」的破坏语义 | **v1 不做**（revert 会截断后续历史且不回滚文件）；保留复制/引用/分叉/朗读。语义选项进 §13 |
 | 5 | 原生菜单与自绘菜单谁赢 | 可编辑/选区/图片/链接/媒体 → 原生；其余对象 → 自绘。主进程 `shouldShowMenu` + 渲染层 guard 双重保证；不允许两张同弹 |
 | 6 | 哪些 surface 进 v1 | 代码块单独一张（复制代码/复制为 Markdown）；diff hunk 不做；执行行与审阅行分表；Approvals 提问卡与权限卡分表 |
-| 7 | MenuItem 是否可序列化 | **id 必填、onSelect 可选** + `serializeMenu`；只有 browser surface 走原生菜单，点击 id 回投渲染层 |
+| 7 | MenuItem 是否可序列化 | **id 必填、执行走 `onRun`**；模型不含闭包。webview 页面内不接管，因此 v1 不需要跨 IPC 序列化 |
 
 ## 13. 后续清单（v1 明确不做）
 
@@ -409,4 +422,5 @@ diff **行/hunk** 级菜单（撤销此 hunk 等）**v1 不做**；现有行内�
 | 文件重命名 / 删除 | 无 fs 写 API | fs 写 IPC + 回收站语义 |
 | diff hunk 菜单 | 现有行内批注按钮已覆盖 | 撤销 hunk / 复制 diff 的交互设计 |
 | 菜单插件扩展（dsh slot） | 本批只做框架 | surface 注册表 + 用户/插件命令 |
+| webview 页面内自定义菜单 | 页面是别人的应用；原生菜单更合适，避免双层 | 主进程 `context-menu` IPC + 原生 Menu 模板 |
 | roving 方向键导航 | 键盘可达先用 tab 保底 | 列表组件的统一焦点模型 |
