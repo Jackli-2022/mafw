@@ -100,4 +100,5 @@ export const L = {
     dismiss: "忽略…",
   },
   automation: { enable: "启用", disable: "停用", copyId: "复制规则 ID", delete: "删除…" },
+  text: { cut: "剪切", copy: "复制", paste: "粘贴", selectAll: "全选" },
 }

@@ -8,7 +8,6 @@ import type { Event } from "electron"
 import { app, globalShortcut, nativeTheme, net, session } from "electron"
 
 import { Deferred, Effect } from "effect"
-import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
@@ -107,7 +106,8 @@ function ensureLoopbackNoProxy() {
 }
 
 const main = Effect.gen(function* () {
-  contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithGoogle: false })
+  // All context menus are renderer-drawn (context-menu/MenuHost); the
+  // electron-context-menu default is intentionally not installed.
 
   // on macOS apps run in `/` which can cause issues with ripgrep
   try {

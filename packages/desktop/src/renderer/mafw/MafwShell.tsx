@@ -15,6 +15,7 @@ import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
 import { MenuHost } from "./context-menu/MenuHost"
+import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
 import { branchActionsVisible } from "./components/branch-actions"
 import { formatRailTitle } from "./components/rail-display"
@@ -1906,6 +1907,7 @@ export function MafwShell() {
             <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
               <div class="mafw-shell" classList={{ maximized: winMaximized() }}>
       <MenuHost controller={menuController} />
+      <TextMenuBridge />
       <ToastV2.Region />
       <CommandPalette
         open={paletteOpen()}

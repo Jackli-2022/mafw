@@ -6,6 +6,7 @@ import { buildProjectMenu } from "./builders/project"
 import { buildRailNewMenu } from "./builders/rail"
 import { buildCodeBlockMenu, buildMessageMenu } from "./builders/message"
 import { buildFilePathMenu } from "./builders/file-path"
+import { buildTextMenu } from "./builders/text"
 import { buildFileTreeMenu } from "./builders/file-tree"
 import { buildEditorTabMenu } from "./builders/editor-tab"
 import { buildTerminalMenu } from "./builders/terminal"
@@ -46,6 +47,8 @@ const fixtures: MenuModel[] = [
   buildApprovalPermissionMenu({ id: "p", command: "rm -rf x" }),
   buildTriageCardMenu({ id: "t", goalId: "g" }),
   buildAutomationCardMenu({ id: "r", enabled: true }),
+  buildTextMenu({ editable: true, hasSelection: true, canPaste: true }),
+  buildTextMenu({ editable: false, hasSelection: true, canPaste: false }),
 ]
 
 test("every builder output satisfies the grammar", () => {

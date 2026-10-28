@@ -20,6 +20,7 @@ export type MenuSurface =
   | "approval.permission"
   | "triage.card"
   | "automation.card"
+  | "edit.text"
 
 export type MenuItem =
   | {

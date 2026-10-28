@@ -7,7 +7,7 @@ export interface GuardFacts {
 }
 
 export function shouldUseNativeMenu(facts: GuardFacts): boolean {
-  return facts.isEditable || facts.hasSelection || facts.isMediaOrLink || facts.forceNative
+  return facts.forceNative
 }
 
 const EDITABLE_SELECTOR = "input, textarea, [contenteditable='true'], [data-native-menu]"

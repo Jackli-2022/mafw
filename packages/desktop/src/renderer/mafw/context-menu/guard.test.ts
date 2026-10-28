@@ -9,10 +9,10 @@ const base: GuardFacts = {
   forceNative: false,
 }
 
-test("editable, selection, media/link and forced targets use the native menu", () => {
+test("only explicit opt-outs suppress the custom menu", () => {
   expect(shouldUseNativeMenu(base)).toBe(false)
-  expect(shouldUseNativeMenu({ ...base, isEditable: true })).toBe(true)
-  expect(shouldUseNativeMenu({ ...base, hasSelection: true })).toBe(true)
-  expect(shouldUseNativeMenu({ ...base, isMediaOrLink: true })).toBe(true)
+  expect(shouldUseNativeMenu({ ...base, isEditable: true })).toBe(false)
+  expect(shouldUseNativeMenu({ ...base, hasSelection: true })).toBe(false)
+  expect(shouldUseNativeMenu({ ...base, isMediaOrLink: true })).toBe(false)
   expect(shouldUseNativeMenu({ ...base, forceNative: true })).toBe(true)
 })

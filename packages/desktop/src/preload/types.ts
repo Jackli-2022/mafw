@@ -143,6 +143,12 @@ export type ElectronAPI = {
   openLink: (url: string) => void
   openPath: (path: string, app?: string) => Promise<void>
   revealPath: (path: string) => Promise<boolean>
+  edit: {
+    cut: () => Promise<void>
+    copy: () => Promise<void>
+    paste: () => Promise<void>
+    selectAll: () => Promise<void>
+  }
   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
   showNotification: (title: string, body?: string) => void
   getWindowFocused: () => Promise<boolean>

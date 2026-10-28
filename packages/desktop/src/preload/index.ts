@@ -106,6 +106,12 @@ const api: ElectronAPI = {
   openLink: (url) => ipcRenderer.send("open-link", url),
   openPath: (path, app) => ipcRenderer.invoke("open-path", path, app),
   revealPath: (path) => ipcRenderer.invoke("reveal-path", path),
+  edit: {
+    cut: () => ipcRenderer.invoke("edit-cut"),
+    copy: () => ipcRenderer.invoke("edit-copy"),
+    paste: () => ipcRenderer.invoke("edit-paste"),
+    selectAll: () => ipcRenderer.invoke("edit-select-all"),
+  },
   readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
   showNotification: (title, body) => ipcRenderer.send("show-notification", title, body),
   getWindowFocused: () => ipcRenderer.invoke("get-window-focused"),
