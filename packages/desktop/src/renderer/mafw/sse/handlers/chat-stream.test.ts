@@ -9,6 +9,8 @@ function makeDeps(store: any = { message: {}, part: {}, session_status: {} }) {
     trace: rec("trace"),
     getStore: () => store,
     patchStore: rec("patchStore"),
+    applyToolPart: rec("applyToolPart"),
+    flushToolParts: rec("flushToolParts"),
     setSessionStatus: rec("setSessionStatus"),
     markSessionDone: rec("markSessionDone"),
     setUserMsgId: rec("setUserMsgId"),
@@ -60,6 +62,36 @@ describe("handleChatStreamEvent", () => {
     expect(calls.map(c => c.name)).toContain("patchStore")
     expect(calls.map(c => c.name)).not.toContain("setSessionStatus")
     expect(calls.map(c => c.name)).not.toContain("phase")
+  })
+
+  test("part.updated tool → applyToolPart（running 合并入口），不直接 patchStore", () => {
+    const { deps, calls } = makeDeps()
+    const part = { id: "call_1", type: "tool", tool: "execute", messageID: "m1", state: { status: "running" } }
+    const ok = handleChatStreamEvent({ type: "part.updated", sessionID: "s1", properties: { part } }, "s1", deps)
+    expect(ok).toBe(false)
+    expect(calls.find(c => c.name === "applyToolPart")!.args).toEqual([part, "s1"])
+    expect(calls.some(c => c.name === "patchStore")).toBe(false)
+  })
+
+  test("part.updated tool completed 同走 applyToolPart（由调度器立即 apply）", () => {
+    const { deps, calls } = makeDeps()
+    const part = { id: "call_1", type: "tool", tool: "execute", messageID: "m1", state: { status: "completed", output: "ok" } }
+    handleChatStreamEvent({ type: "part.updated", sessionID: "s1", properties: { part } }, "s1", deps)
+    expect(calls.find(c => c.name === "applyToolPart")!.args).toEqual([part, "s1"])
+  })
+
+  test("turn.completed → 先 flushToolParts 再 settle", () => {
+    const { deps, calls } = makeDeps()
+    handleChatStreamEvent({ type: "turn.completed", sessionID: "s1" }, "s1", deps)
+    const names = calls.map(c => c.name)
+    expect(names).toContain("flushToolParts")
+    expect(names.indexOf("flushToolParts")).toBeLessThan(names.indexOf("onTurnSettled"))
+  })
+
+  test("part.complete → flushToolParts（per-part 落帧不遗留 running 快照）", () => {
+    const { deps, calls } = makeDeps()
+    handleChatStreamEvent({ type: "part.complete", sessionID: "s1" }, "s1", deps)
+    expect(calls.map(c => c.name)).toContain("flushToolParts")
   })
 
   test("turn.completed → idle + done + onTurnSettled(expireCards: true) + notifyIdle", () => {

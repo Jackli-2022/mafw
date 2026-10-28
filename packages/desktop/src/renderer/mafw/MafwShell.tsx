@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createMemo, onMount, onCleanup, untrack, Show, For } from "solid-js"
+import { createSignal, createEffect, createMemo, onMount, onCleanup, untrack, Show, For, batch } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
 
@@ -25,6 +25,8 @@ import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
 import { mergeHiddenTodos } from "./todo-presenter"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
+import { applyPartUpsert } from "./sse/chat-reducers"
+import { createToolPartScheduler } from "./sse/tool-part-scheduler"
 import { bumpGoalsRev } from "./goals-rev"
 import { bumpCheckpointRev } from "./checkpoint-rev"
 import { keybindingFor } from "./keybinding-store"
@@ -123,6 +125,28 @@ export function MafwShell() {
   // 以下别名为同一 signal/store 对象，全部调用点保持原语法零改动。
   const store = workspace.store
   const setStore = workspace.setStore
+
+  // Code Mode / MCP progress bursts: keep only the latest running snapshot per
+  // tool part and flush on the next frame. Terminal snapshots apply immediately
+  // (the scheduler handles that), text deltas never enter this queue.
+  const toolPartScheduler = createToolPartScheduler({
+    schedule: (fn) =>
+      typeof requestAnimationFrame === "function" ? requestAnimationFrame(fn) : (setTimeout(fn, 32) as any),
+    cancel: (handle) => {
+      if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(handle)
+      else clearTimeout(handle)
+    },
+    apply: (parts) => {
+      batch(() => {
+        for (const part of parts) {
+          const sid = part.sessionID
+          if (!sid) continue
+          setStore((prev) => ({ ...prev, ...applyPartUpsert(prev as any, sid, part) }))
+        }
+      })
+    },
+  })
+  onCleanup(() => toolPartScheduler.flush())
 
   // Question widget state
   const [activeQuestion, setActiveQuestion] = createSignal<QuestionData | null>(null)
@@ -963,6 +987,8 @@ export function MafwShell() {
       trace: traceEvent,
       getStore: () => store,
       patchStore: (p) => setStore(prev => ({ ...prev, ...p })),
+      applyToolPart: (part, sid) => { toolPartScheduler.queue(part, sid) },
+      flushToolParts: () => toolPartScheduler.flush(),
       setSessionStatus: (sid, s) => setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: s } })),
       markSessionDone: (sid) => setSessions(prev => prev.map(x => x.id === sid ? { ...x, done: true } : x)),
       setUserMsgId: (sid, msgId) => setSessions(prev => prev.map(x => x.id === sid ? { ...x, userMsgId: msgId } : x)),

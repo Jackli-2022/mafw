@@ -24,6 +24,10 @@ export interface ChatDeps {
   getStore(): { message: Record<string, any[]>; part: Record<string, any[]>; session_status: Record<string, any> }
   /** reducer 输出写回。 */
   patchStore(patch: { message?: Record<string, any[]>; part?: Record<string, any[]> }): void
+  /** tool part 快照入口；desktop 可在此合并 running 快照（可选）。 */
+  applyToolPart?(part: any, sessionID: string): void
+  /** 回合/part 落帧前冲刷合并队列（可选）。 */
+  flushToolParts?(): void
   setSessionStatus(sid: string, status: { type: "busy" | "idle" }): void
   markSessionDone(sid: string): void
   setUserMsgId(sid: string, msgId: string): void
@@ -84,6 +88,8 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   d.trace(event, "chat:stream")
   // I4：回合起点 = 本回合首个非终态帧（终态帧不参与，防把进行中批注误归属上一回合）。
   if (!TURN_END_TYPES.has(event.type)) noteTurnActivity(sid)
+  // 回合/part 落帧前先冲刷合并中的 tool 快照，避免卡片停在 running。
+  if (TURN_END_TYPES.has(event.type) || event.type === "part.complete") d.flushToolParts?.()
 
   if (event.type === "part.updated") {
     const part = event.payload?.part || event.properties?.part
@@ -94,7 +100,8 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
         d.phase(sid, "writing")
         d.setSessionStatus(sid, { type: "busy" })
       }
-      d.patchStore(applyPartUpsert(d.getStore(), sid, part))
+      if (part.type === "tool" && d.applyToolPart) d.applyToolPart(part, sid)
+      else d.patchStore(applyPartUpsert(d.getStore(), sid, part))
     }
   } else if (event.type === "turn.completed") {
     d.setSessionStatus(sid, { type: "idle" })
