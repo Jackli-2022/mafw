@@ -47,3 +47,9 @@ test("panels and goal cells are wired", () => {
   expect(read("NotesDock.tsx")).toContain("buildNotesCardMenu")
   expect(read("GoalTimelineLane.tsx")).toContain("buildGoalCellMenu")
 })
+
+test("preload uses positional args and file links are not native links", () => {
+  expect(read("../../../preload/mafw-api.ts")).toContain('invoke("memory", "setPinned", id, pinned)')
+  expect(read("../../../preload/mafw-api.ts")).toContain('invoke("memory", "setSticky", id, sticky, stickyDays)')
+  expect(read("../context-menu/guard.ts")).toContain("a[href]:not([data-file-path])")
+})

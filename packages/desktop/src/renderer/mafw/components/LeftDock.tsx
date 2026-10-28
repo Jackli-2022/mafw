@@ -258,10 +258,16 @@ export function LeftDock(props: Props) {
   }
 
   const onRowKeyDown = (node: SessionNode, event: KeyboardEvent) => {
-    if (!isMenuKey(event)) return
-    event.preventDefault()
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    sessionMenu(node, { x: rect.left + 12, y: rect.bottom }, "keyboard", event.currentTarget as HTMLElement)
+    if (isMenuKey(event)) {
+      event.preventDefault()
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+      sessionMenu(node, { x: rect.left + 12, y: rect.bottom }, "keyboard", event.currentTarget as HTMLElement)
+      return
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      openNode(node)
+    }
   }
 
   const requestProjectMenu = (path: string, event: MouseEvent, before?: () => void) => {

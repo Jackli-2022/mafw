@@ -105,10 +105,16 @@ export function SessionStrip(props: {
   }
 
   const onTabKeyDown = (session: { id: string; title: string }, event: KeyboardEvent) => {
-    if (!isMenuKey(event)) return
-    event.preventDefault()
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    tabMenu(session, { x: rect.left + 12, y: rect.bottom }, "keyboard", event.currentTarget as HTMLElement)
+    if (isMenuKey(event)) {
+      event.preventDefault()
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+      tabMenu(session, { x: rect.left + 12, y: rect.bottom }, "keyboard", event.currentTarget as HTMLElement)
+      return
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      props.onSelect(session.id)
+    }
   }
 
   return (

@@ -39,7 +39,13 @@ export function createMenuController(): MenuController {
         opts.point ?? { x: viewport.width / 2, y: viewport.height / 2 },
         viewport,
       )
-      setRequest({ model: build(target), run, point, from: opts.from ?? "contextmenu", returnFocus: opts.returnFocus ?? null })
+      setRequest({
+        model: build(target),
+        run,
+        point,
+        from: opts.from ?? "contextmenu",
+        returnFocus: opts.returnFocus ?? (typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null),
+      })
     },
     close() {
       const returnFocus = request()?.returnFocus ?? null
