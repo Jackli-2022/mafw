@@ -3,6 +3,7 @@
 
 export type GoalNodeName =
   | 'plan' | 'execute' | 'review' | 'askUser'
+  | 'await_plan_approval'
   | 'archive_success' | 'archive_fail' | 'archive_max_retries';
 
 export interface RouteState {
@@ -11,12 +12,15 @@ export interface RouteState {
   round: number;
   maxRounds: number;
   pendingQuestion: unknown;
+  /** W1：manual 批准门（driver 组装：planReview==='manual' 且本版计划成功）。 */
+  planReviewGate?: boolean;
 }
 
 export type RouteStage = 'start' | 'after_plan' | 'after_execute' | 'after_review';
 
 export function routeAfterPlan(s: RouteState): GoalNodeName {
   if (s.pendingQuestion) return 'askUser';
+  if (s.planReviewGate) return 'await_plan_approval';
   return 'execute';
 }
 

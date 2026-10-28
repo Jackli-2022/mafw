@@ -56,6 +56,17 @@ export interface GoalStateV3 {
   /** D4b 任务类型（'feature'|'bugfix'|'refactor'|'research'|'docs'|'test'|'other'）。
    *  创建时声明（request.json）→ plan 节点 waves.taskType 回写覆盖（规划者优先）。 */
   taskType?: string;
+  /** W1 计划审阅模式：'manual' 时 plan 完成驻留待批；缺省 'auto'（存量零迁移）。 */
+  planReview?: 'auto' | 'manual';
+  /** W1 批准门运行态：pending = 驳留在 AWAIT_PLAN_APPROVAL。 */
+  planApproval?: {
+    status: 'pending' | 'approved' | 'rejected';
+    feedback?: string;
+    decidedAt?: string;
+    round: number;
+  };
+  /** W1 最近一次驳回反馈——注入下一版 plan prompt；plan 成功兑现时清除。 */
+  planFeedback?: string | null;
   updatedAt: string;
 }
 
@@ -115,6 +126,9 @@ function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
     sessions: raw.sessions ?? {},
     policySnapshot: raw.policySnapshot,
     taskType: raw.taskType,
+    planReview: (raw as any).planReview === 'manual' ? 'manual' : ((raw as any).planReview === 'auto' ? 'auto' : undefined),
+    planApproval: (raw as any).planApproval ?? undefined,
+    planFeedback: (raw as any).planFeedback ?? null,
     updatedAt: raw.updatedAt ?? new Date().toISOString(),
   };
 }
@@ -150,7 +164,7 @@ export function writeGoalState(
 export function ensureGoalState(
   mafwDir: string,
   goalId: string,
-  init: { projectDir: string; maxRounds: number; policySnapshot?: GoalStateV3['policySnapshot']; taskType?: string },
+  init: { projectDir: string; maxRounds: number; policySnapshot?: GoalStateV3['policySnapshot']; taskType?: string; planReview?: 'auto' | 'manual' },
 ): GoalStateV3 {
   const existing = loadGoalState(mafwDir, goalId);
   if (existing) return existing;
@@ -166,6 +180,7 @@ export function ensureGoalState(
     artifacts: {}, currentWave: 0, totalWaves: null, sessions: {},
     ...(init.policySnapshot ? { policySnapshot: init.policySnapshot } : {}),
     ...(init.taskType ? { taskType: init.taskType } : {}),
+    ...(init.planReview ? { planReview: init.planReview } : {}),
     updatedAt: new Date().toISOString(),
   };
   const p = statePathFor(mafwDir, goalId);

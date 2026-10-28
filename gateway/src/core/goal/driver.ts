@@ -110,6 +110,9 @@ export class NodeDriver {
     const { mafwDir } = found;
     const state = loadGoalState(mafwDir, goalId)!;
     if (isTerminalState(state)) return;
+    // W1 批准门驻留：仅 approvePlan/rejectPlan 解锁；stray advance（legacy 唤醒/
+    // 幂等重放/watchdog !ns 分支）不得越门推进 execute。
+    if (state.nextAction === 'AWAIT_PLAN_APPROVAL') return;
     if (state.nodeSession) return; // 节点在飞——完成回调会再次 advance
 
     const node = state.nextNode as GoalNodeName;
@@ -130,10 +133,10 @@ export class NodeDriver {
     // phase 广播（payload 形状与旧 syncToFile 一致——milestone-push 零迁移）
     this.deps.emitPhaseTransition({ type: 'phase_transition', goalId, phase: phaseNames.running, loop: round, projectDir: state.projectDir });
 
-    // attempt 语义：上一行 failed/timeout/aborted → attempt+1（重试历史在 node_runs）
+    // attempt 语义：同 (goal, round, node) 既有行存在即 max+1——含驳回重跑
+    // （上一行 succeeded）与失败重试两类（W1 修正：不再按状态过滤）。
     const prevRun = this.deps.db.latestNodeAttempt(goalId, round, node);
-    const attempt = prevRun && ['failed', 'timeout', 'aborted'].includes(prevRun.status)
-      ? prevRun.attempt + 1 : 1;
+    const attempt = prevRun ? prevRun.attempt + 1 : 1;
 
     const session = await this.deps.client.create(state.projectDir);
     const sessionId = session.id;
@@ -149,6 +152,7 @@ export class NodeDriver {
       charterPath: path.join(mafwDir, 'goals', `${goalId}.md`),
       requestPath: path.join(mafwDir, 'requests', `${goalId}.json`),
       reviewFeedback: state.reviewFeedback || undefined,
+      planFeedback: state.planFeedback || undefined,
       priorBlock: this.deps.capabilityPrior?.(goalId) ?? undefined,
       counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
     });
@@ -285,8 +289,10 @@ export class NodeDriver {
         } else {
           // D4b: the planner read charter + repo — its taskType judgement wins
           // over the creation-time declaration. Validated; absent/invalid ignored.
+          // W1: plan 成功即清 planFeedback（清除点——防上一轮驳回意见泄漏进
+          // review-FAIL 触发的后续轮次）。
           patch = {
-            wavePlanPath: a.waves, pendingQuestion: null,
+            wavePlanPath: a.waves, pendingQuestion: null, planFeedback: null,
             ...(isTaskType(waves.taskType) ? { taskType: waves.taskType } : {}),
           };
           outcome = `waves=${(waves.waves || []).length}${isTaskType(waves.taskType) ? ` taskType=${waves.taskType}` : ''}`;
@@ -344,6 +350,8 @@ export class NodeDriver {
         round: nextRound,
         maxRounds: state.maxRounds,
         pendingQuestion: patch.pendingQuestion ?? null,
+        // W1：manual 模式的 plan 成功 → 批准门（pendingQuestion 已在 routing 优先）。
+        planReviewGate: node === 'plan' && (state.planReview ?? 'auto') === 'manual',
       },
     );
 
@@ -355,6 +363,20 @@ export class NodeDriver {
       type: 'goal_node', goalId, projectDir: state.projectDir, loop: round, node,
       transition: 'finished', at: new Date().toISOString(), outcome, attempt: ns.attempt,
     });
+
+    // W1 批准门：manual plan 成功 → 驻留待批（合法 parked 态），不 advance。
+    if (node === 'plan' && nextNode === 'await_plan_approval') {
+      this.deps.emitPhaseTransition({
+        type: 'phase_transition', goalId, phase: 'PLANNING_AWAIT_APPROVAL',
+        loop: nextRound, projectDir: state.projectDir,
+      });
+      writeGoalState(mafwDir, goalId, {
+        ...patch, nodeSession: null, phase: 'PLANNING',
+        nextNode: 'execute', nextAction: 'AWAIT_PLAN_APPROVAL',
+        planApproval: { status: 'pending', round: nextRound },
+      });
+      return;
+    }
 
     writeGoalState(mafwDir, goalId, {
       ...patch, nodeSession: null, phase: phaseNames.complete, nextNode, nextAction: `NEXT_${nextNode}`,
@@ -399,6 +421,59 @@ export class NodeDriver {
     return true;
   }
 
+  // ── W1 计划批准门：approve / reject（HTTP 路由调入；走 advance 同款互斥） ──
+
+  private async withGoalMutex<T>(goalId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.mutex.get(goalId) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    this.mutex.set(goalId, next as Promise<void>);
+    try { return await next; } finally { if (this.mutex.get(goalId) === next) this.mutex.delete(goalId); }
+  }
+
+  /** 批准当前计划 → 解锁驻留，启动 execute。false = 非 pending / 终态 / 未知 goal。 */
+  async approvePlan(goalId: string): Promise<boolean> {
+    return this.withGoalMutex(goalId, async () => {
+      const found = this.findState(goalId);
+      if (!found) return false;
+      const state = loadGoalState(found.mafwDir, goalId)!;
+      if (isTerminalState(state) || state.planApproval?.status !== 'pending') return false;
+      const decidedAt = new Date().toISOString();
+      writeGoalState(found.mafwDir, goalId, {
+        planApproval: { ...state.planApproval, status: 'approved', decidedAt },
+        nextAction: 'NEXT_execute',
+      });
+      this.deps.emitPhaseTransition({
+        type: 'phase_transition', goalId, phase: 'PLANNING_APPROVED',
+        loop: effectiveRound(state), projectDir: state.projectDir,
+      });
+      await this.advanceInner(goalId);
+      return true;
+    });
+  }
+
+  /** 驳回当前计划 → planFeedback 注入，同 round 重跑 plan（attempt+1）。 */
+  async rejectPlan(goalId: string, feedback: string): Promise<boolean> {
+    return this.withGoalMutex(goalId, async () => {
+      const found = this.findState(goalId);
+      if (!found) return false;
+      const state = loadGoalState(found.mafwDir, goalId)!;
+      if (isTerminalState(state) || state.planApproval?.status !== 'pending') return false;
+      const round = effectiveRound(state);
+      const decidedAt = new Date().toISOString();
+      writeGoalState(found.mafwDir, goalId, {
+        planApproval: { ...state.planApproval, status: 'rejected', feedback, decidedAt },
+        planFeedback: feedback,
+        nextNode: 'plan', nextAction: 'RUNNING_plan',
+      });
+      this.deps.emitPhaseTransition({
+        type: 'phase_transition', goalId, phase: 'PLANNING_REJECTED',
+        loop: round, projectDir: state.projectDir,
+      });
+      await this.advanceInner(goalId);
+      return true;
+    });
+  }
+
   /**
    * 崩溃恢复 / watchdog 共用：检查在飞节点的处置（spec §6）。
    * ① 产物优先（gateway 死亡期间完成的节点直接兑现）
@@ -414,6 +489,8 @@ export class NodeDriver {
     const { mafwDir } = found;
     const state = loadGoalState(mafwDir, goalId);
     if (!state || isTerminalState(state)) return;
+    // W1：批准门驻留是合法态（非 stale、不重试）——等待 approve/reject。
+    if (state.nextAction === 'AWAIT_PLAN_APPROVAL') return;
     const ns = state.nodeSession;
     if (!ns) { await this.advance(goalId); return; }
 

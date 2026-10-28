@@ -15,6 +15,12 @@ describe('routeAfterPlan', () => {
   it('无 pendingQuestion → execute', () => {
     expect(routeAfterPlan(base)).toBe('execute');
   });
+  it('planReviewGate=true → await_plan_approval（W1 批准门）', () => {
+    expect(routeAfterPlan({ ...base, planReviewGate: true })).toBe('await_plan_approval');
+  });
+  it('pendingQuestion 优先于 planReviewGate', () => {
+    expect(routeAfterPlan({ ...base, planReviewGate: true, pendingQuestion: { questionId: 'q1' } })).toBe('askUser');
+  });
 });
 
 describe('routeAfterReview（语义逐字移植 graph.ts:4-10）', () => {
