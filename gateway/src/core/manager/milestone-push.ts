@@ -4,7 +4,7 @@ import { log } from '../utils/logger';
 // by syncToFile (index.ts buildNodeOptions) on the shared event bus; terminal
 // verdicts arrive via onArchived (archiveGoal is the single convergence point
 // of all verdict paths). Execution rounds are deliberately NOT milestones.
-const MILESTONE_PHASES = new Set(['PLANNING_COMPLETE', 'REVIEWING_COMPLETE', 'ASKING_USER']);
+const MILESTONE_PHASES = new Set(['PLANNING_COMPLETE', 'REVIEWING_COMPLETE', 'ASKING_USER', 'PLANNING_AWAIT_APPROVAL']);
 
 export interface GoalStateInfo {
   stateVersion?: number;

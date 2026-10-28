@@ -102,6 +102,8 @@ export interface NodePromptCtx {
   charterPath: string;
   requestPath: string;
   reviewFeedback?: string;
+  /** W1：上一版计划的驳回反馈（plan 重规划时注入；plan 成功兑现时由 driver 清除）。 */
+  planFeedback?: string;
   /** W4：能力账本 + 失败谱块（仅 plan 节点注入，规划时主动规避反复失败）。 */
   priorBlock?: string;
   /** D4b：反事实推演块（仅 plan 节点注入，pre-mortem）。 */
@@ -118,6 +120,8 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
       head, docs, '',
       ctx.priorBlock || '',
       ctx.counterfactualBlock || '',
+      ctx.planFeedback
+        ? `上一版计划被驳回，用户意见（本轮计划必须消化）：\n${ctx.planFeedback}` : '',
       `任务：阅读 charter 与仓库现状，产出 wave 执行计划，写入 ${a.waves}。`,
       ctx.round > 1 && ctx.reviewFeedback
         ? `上一轮 review 指出的问题（本轮计划必须消化）：\n${ctx.reviewFeedback}` : '',

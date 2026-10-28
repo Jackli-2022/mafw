@@ -25,6 +25,7 @@ describe('runtime contract capabilities', () => {
       diffApi: true,
       worktreeApi: true,
       instructionsApi: true,
+      discoveryApi: true,
     });
   });
 
@@ -45,6 +46,7 @@ describe('runtime contract capabilities', () => {
       diffApi: false,
       worktreeApi: false,
       instructionsApi: false,
+      discoveryApi: false,
     });
   });
 

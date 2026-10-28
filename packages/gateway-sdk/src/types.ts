@@ -715,10 +715,33 @@ export interface GoalTimeline {
     nextAction: string
     lastError: string | null
     updatedAt: string
+    /** W1 计划审阅状态（泳道「待批准」徽标数据源）。 */
+    planReview?: 'auto' | 'manual'
+    planApproval?: {
+      status: 'pending' | 'approved' | 'rejected'
+      feedback?: string
+      decidedAt?: string
+      round: number
+    } | null
   }
   nodes: GoalNodeRunInfo[]
   artifacts: { wavesPath: string; receipts: string[]; reviewsDir: string }
   outcome?: unknown
+}
+
+/** W1 计划审阅：GET /api/goals/:id/plan 响应。 */
+export interface GoalPlanInfo {
+  planReview: 'auto' | 'manual'
+  planApproval: {
+    status: 'pending' | 'approved' | 'rejected'
+    feedback?: string
+    decidedAt?: string
+    round: number
+  } | null
+  planFeedback: string | null
+  round: number
+  waves: unknown
+  wavePlanPath: string | null
 }
 
 export interface GoalsNamespace {
@@ -732,6 +755,12 @@ export interface GoalsNamespace {
   respondQuestion(goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }): Promise<{ status: string }>
   /** 节点级执行 trace 聚合（编排可视化）。 */
   timeline(goalId: string): Promise<GoalTimeline>
+  /** W1 计划审阅：当前计划内容 + 审批状态。 */
+  plan(goalId: string): Promise<GoalPlanInfo>
+  /** W1 批准当前计划（解锁驻留，进 execute）。非 pending/终态 409。 */
+  approvePlan(goalId: string): Promise<{ success: boolean }>
+  /** W1 驳回当前计划（feedback 注入下一版 plan）。非 pending/终态 409。 */
+  rejectPlan(goalId: string, feedback: string): Promise<{ success: boolean }>
   /** 节点重跑（execute 需 confirm）。 */
   retryNode(goalId: string, runId: number, opts?: { confirm?: boolean }): Promise<{ success: boolean; runId: number }>
 }

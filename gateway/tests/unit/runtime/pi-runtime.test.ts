@@ -76,7 +76,7 @@ describe('pi-runtime', () => {
     expect(PI_CAPABILITIES).toMatchObject({
       sessionApi: true, promptWhileBusy: true, eventStream: true,
       nativeApprovals: true, providerConfigApi: true, perLlmCallTransform: true,
-      sessionStorageApi: true, agentConfigApi: true,
+      sessionStorageApi: true, agentConfigApi: true, discoveryApi: false,
     });
   });
 

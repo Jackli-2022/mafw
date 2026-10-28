@@ -48,6 +48,9 @@ export async function handleGoalTimeline(
         round: state.round, maxRounds: state.maxRounds,
         verdict: state.reviewVerdict, nextNode: state.nextNode, nextAction: state.nextAction,
         lastError: state.lastError, updatedAt: state.updatedAt,
+        // W1：计划审阅状态（泳道「待批准」徽标数据源）
+        planReview: state.planReview ?? 'auto',
+        planApproval: state.planApproval ?? null,
       },
       nodes,
       artifacts: {

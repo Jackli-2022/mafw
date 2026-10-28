@@ -1,5 +1,5 @@
 import type {
-  Session, Project, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline,
+  Session, Project, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline, GoalPlanInfo,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions,
   EnergyDistribution, Axiom, L5Heuristic, StickyNote, ModelUsageWindows, MemoryStats,
   Approval, TriageItem, AutomationRule, GatewayStatus,
@@ -129,6 +129,9 @@ export type MafwAPI = {
     sessions: (id: string) => Promise<GoalSessionInfo[]>
     respondQuestion: (goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }) => Promise<{ status: string }>
     timeline: (id: string) => Promise<GoalTimeline>
+    plan: (id: string) => Promise<GoalPlanInfo>
+    approvePlan: (goalId: string) => Promise<{ success: boolean }>
+    rejectPlan: (goalId: string, feedback: string) => Promise<{ success: boolean }>
     retryNode: (goalId: string, runId: number, opts?: { confirm?: boolean }) => Promise<{ success: boolean; runId: number }>
   }
 

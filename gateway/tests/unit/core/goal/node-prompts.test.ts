@@ -25,3 +25,19 @@ describe('renderNodePrompt priorBlock (W4)', () => {
     expect(renderNodePrompt('execute', ctx({ priorBlock: 'PRIOR_X' }))).not.toContain('PRIOR_X');
   });
 });
+
+describe('renderNodePrompt planFeedback (W1)', () => {
+  it('plan prompt includes reject feedback when provided', () => {
+    const p = renderNodePrompt('plan', ctx({ planFeedback: 'wave 1 拆太粗，先只做登录' }));
+    expect(p).toContain('上一版计划被驳回');
+    expect(p).toContain('wave 1 拆太粗，先只做登录');
+  });
+
+  it('plan prompt omits feedback section when absent (回归)', () => {
+    expect(renderNodePrompt('plan', ctx())).not.toContain('上一版计划被驳回');
+  });
+
+  it('execute prompt never includes planFeedback', () => {
+    expect(renderNodePrompt('execute', ctx({ planFeedback: 'FEEDBACK_X' }))).not.toContain('FEEDBACK_X');
+  });
+});

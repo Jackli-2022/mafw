@@ -153,6 +153,23 @@ describe('validateRuntime — capability downgrade (declared bit, missing implem
     expect((rt as any).capabilities.instructionsApi).toBe(false);
   });
 
+  it('discoveryApi without discovery.{list,loadSkill} -> downgraded', () => {
+    const rt = OK_RT({ caps: { discoveryApi: true } });
+    const v = validateRuntime(rt as any, 'my-rt');
+    expect(v.downgraded.some((i) => i.includes('discoveryApi'))).toBe(true);
+    expect((rt as any).capabilities.discoveryApi).toBe(false);
+  });
+
+  it('discoveryApi with discovery.{list,loadSkill} -> stays true', () => {
+    const rt = OK_RT({
+      caps: { discoveryApi: true },
+      discovery: { list: async () => ({ commands: [], skills: [], warnings: [] }), loadSkill: async () => null },
+    });
+    const v = validateRuntime(rt as any, 'my-rt');
+    expect(v.downgraded).toEqual([]);
+    expect((rt as any).capabilities.discoveryApi).toBe(true);
+  });
+
   it('completionApi without completion.complete -> downgraded', () => {
     const rt = OK_RT({ caps: { completionApi: true } });
     const v = validateRuntime(rt as any, 'my-rt');

@@ -16,6 +16,7 @@ import { isTaskType } from './orchestration/capability-ledger';
 import { resolveGoalDir } from './core/goal/starter';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
 import { handleGoalTimeline } from './routes/goal-timeline';
+import { handleGoalPlan } from './routes/goal-plan';
 import { handleNodeRetry } from './routes/goal-node-retry';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
@@ -256,6 +257,8 @@ interface StateFile {
   error?: string;
   updatedAt: string;
   policySnapshot?: { version: string; proposalId: string | null };
+  /** W1 计划审阅运行态（与 state-v3 的 planApproval 同字段；ABORT 时清空）。 */
+  planApproval?: { status: 'pending' | 'approved' | 'rejected'; feedback?: string; decidedAt?: string; round: number } | null;
 }
 
 interface SessionInfo {
@@ -5241,6 +5244,25 @@ class MafwScheduler {
           })) return;
         }
 
+        // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — W1 计划审阅
+        // （须在 dashboard /api/goals* 兜底之前）。
+        if (req.url?.match(/^\/api\/goals\/[^/]+\/plan(-approval)?(?:\?|$)/)) {
+          let body: any = {};
+          if (req.method === 'POST') {
+            try { body = JSON.parse(await readBody(req)); } catch { body = {}; }
+          }
+          if (await handleGoalPlan(req, res, req.url!, {
+            body,
+            loadState: (goalId) => {
+              const mafwDir = this.goalDriverMafwDirCache.get(goalId)
+                ?? this.findGoalStatePath(goalId)?.info.mafwDir;
+              return mafwDir ? loadGoalState(mafwDir, goalId) : null;
+            },
+            approvePlan: (g) => this.goalDriver!.approvePlan(g),
+            rejectPlan: (g, feedback) => this.goalDriver!.rejectPlan(g, feedback),
+          })) return;
+        }
+
         // Dashboard API
         if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
           res.setHeader("Content-Type", "application/json");
@@ -5383,7 +5405,8 @@ class MafwScheduler {
                 case 'ABORT':
                   if (control.goalId) {
                     await this.destroyAllSessions(control.goalId);
-                    await this.patchState(control.goalId, { nextAction: 'FAILED' });
+                    // W1：取消语义 = 批准门也取消（防 terminal state 下 UI 残留 pending）
+                    await this.patchState(control.goalId, { nextAction: 'FAILED', planApproval: null });
                     const state = this.activeGoals.get(control.goalId);
                     // Find projectDir for this goal
                     let projectDir: string | null = null;
@@ -7832,6 +7855,13 @@ class MafwScheduler {
     ensureGoalState(found.mafwDir, goalId, {
       projectDir: found.projectDir,
       maxRounds: config.loop.maxRounds,
+      // W1: creation-time plan review mode (validated enum; absent = auto).
+      planReview: (() => {
+        try {
+          const req = JSON.parse(fs.readFileSync(path.join(found.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
+          return req?.planReview === 'manual' ? 'manual' : (req?.planReview === 'auto' ? 'auto' : undefined);
+        } catch { return undefined; }
+      })(),
       policySnapshot: mergeBudgetIntoSnapshot(
         (() => { try { return getActivePolicy(config.resolvePath()); } catch { return { version: 'builtin-v1', proposalId: null }; } })(),
         path.join(found.mafwDir, 'requests', `${goalId}.json`),

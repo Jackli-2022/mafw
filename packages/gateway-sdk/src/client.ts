@@ -1,7 +1,7 @@
 ﻿import { randomUUID } from 'crypto'
 import {
   MafwClient as IMafwClient, MafwClientOptions,
-  Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline,
+  Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline, GoalPlanInfo,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
@@ -919,6 +919,24 @@ export class MafwClient implements IMafwClient {
 
     timeline: async (goalId: string): Promise<GoalTimeline> => {
       return this.request<GoalTimeline>(`/api/goals/${encodeURIComponent(goalId)}/timeline`)
+    },
+
+    plan: async (goalId: string): Promise<GoalPlanInfo> => {
+      return this.request<GoalPlanInfo>(`/api/goals/${encodeURIComponent(goalId)}/plan`)
+    },
+
+    approvePlan: async (goalId: string): Promise<{ success: boolean }> => {
+      return this.request<{ success: boolean }>(
+        `/api/goals/${encodeURIComponent(goalId)}/plan-approval`,
+        { method: 'POST', body: JSON.stringify({ approve: true }) },
+      )
+    },
+
+    rejectPlan: async (goalId: string, feedback: string): Promise<{ success: boolean }> => {
+      return this.request<{ success: boolean }>(
+        `/api/goals/${encodeURIComponent(goalId)}/plan-approval`,
+        { method: 'POST', body: JSON.stringify({ approve: false, feedback }) },
+      )
     },
 
     retryNode: async (goalId: string, runId: number, opts?: { confirm?: boolean }): Promise<{ success: boolean; runId: number }> => {

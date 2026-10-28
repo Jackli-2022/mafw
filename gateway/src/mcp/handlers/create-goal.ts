@@ -40,6 +40,11 @@ export const handleCreateGoal: ToolHandler = async (args, services) => {
     if (taskType !== undefined && !isTaskType(taskType)) {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `invalid taskType: ${taskType} (feature|bugfix|refactor|research|docs|test|other)` }) }], isError: true };
     }
+    // W1: optional plan review mode (manual = plan 完成驻留待批；缺省 auto)。
+    const planReview = args.planReview as string | undefined;
+    if (planReview !== undefined && planReview !== 'auto' && planReview !== 'manual') {
+      return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `invalid planReview: ${planReview} (auto|manual)` }) }], isError: true };
+    }
 
     const goalsDir = path.join(mafwDir, "goals");
     const requestsDir = path.join(mafwDir, "requests");
@@ -61,6 +66,7 @@ export const handleCreateGoal: ToolHandler = async (args, services) => {
       degradeOnLoop: Math.ceil(maxLoops * 0.6),
       ...(hasBudget ? { budget } : {}),
       ...(taskType ? { taskType } : {}),
+      ...(planReview ? { planReview } : {}),
     };
 
     const requestPath = path.join(requestsDir, `${goalId}.json`);

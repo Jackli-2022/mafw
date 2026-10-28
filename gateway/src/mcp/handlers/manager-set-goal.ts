@@ -21,6 +21,11 @@ export const handleManagerSetGoal: ToolHandler = async (args, services) => {
     if (taskType !== undefined && !isTaskType(taskType)) {
       return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `invalid taskType: ${taskType} (feature|bugfix|refactor|research|docs|test|other)` }) }], isError: true };
     }
+    // W1: optional plan review mode (manual = plan 完成驻留待批；缺省 auto)。
+    const planReview = args.planReview as string | undefined;
+    if (planReview !== undefined && planReview !== 'auto' && planReview !== 'manual') {
+      return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `invalid planReview: ${planReview} (auto|manual)` }) }], isError: true };
+    }
 
     const requestedProjectDir = args.projectDir as string | undefined;
     const listProjects = (services as any).listProjects as
@@ -58,6 +63,7 @@ export const handleManagerSetGoal: ToolHandler = async (args, services) => {
       metrics, boundaries, priority, maxLoops, parallel: false,
       ...(hasBudget ? { budget } : {}),
       ...(taskType ? { taskType } : {}),
+      ...(planReview ? { planReview } : {}),
     };
     fs.writeFileSync(path.join(requestsDir, `${goalId}.json`), JSON.stringify(request, null, 2), 'utf-8');
 
