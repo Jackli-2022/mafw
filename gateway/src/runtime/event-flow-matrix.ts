@@ -69,6 +69,7 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   // ---- 能力面 ----
   'permission_mode':      R([], 'passthrough', 'handled', 'handled', 'gateway 自发（审批三档预设变更）；desktop flow-cards/TUI 状态栏消费'),
   'session.diff':         R([], 'passthrough', 'handled', 'ignore', 'opencode v2 会话文件变更（diffApi）；desktop diff handler 实时填充'),
+  'session.commands':     R([], 'passthrough', 'ignore', 'ignore', 'T2-5 命令发现快照；skills/AGENTS pull-only；desktop UI 采用后续'),
   'connected':            R([], 'passthrough', 'handled', 'ignore', 'SSE 建连/重连问候帧（gateway 直发，非 runtime 事件）；desktop dispatcher 消费防 miss'),
   // ---- 扁平顶层广播 ----
   'user_question':              R([], 'passthrough', 'handled', 'ignore', 'desktop setActiveQuestion + 通知'),

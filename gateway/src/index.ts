@@ -1056,6 +1056,8 @@ class MafwScheduler {
               // Same desktop hint as the route path: hand-edited config.yaml
               // switches must also refresh the renderer (menus/tabs/manager kv).
               this.broadcast({ type: 'runtime_switched', runtime: runtime.name, previous: prevPlugin ?? null });
+              this.discovery?.invalidate();
+              void this.discovery?.broadcastKnown('runtime_switched').catch((err: any) => log.warn(`[Discovery] runtime switch broadcast failed: ${err.message}`));
               // Dispose the previous runtime AFTER the new one is fully wired
               // (mirror of the route path) — without this, switching away from
               // pi leaks its AgentSessions/ApprovalBridges/event stream.
@@ -2116,6 +2118,8 @@ class MafwScheduler {
         // Desktop hint: a runtime switch swaps the session storage backend
         // (opencode SQLite vs pi), so cached session lists are stale.
         this.broadcast({ type: 'runtime_switched', runtime: rt.name, previous: prev?.name ?? null });
+        this.discovery?.invalidate();
+        void this.discovery?.broadcastKnown('runtime_switched').catch((err: any) => log.warn(`[Discovery] runtime switch broadcast failed: ${err.message}`));
         if (prev && (prev as any).dispose) {
           try { await (prev as any).dispose(); }
           catch (err: any) { log.warn(`[Runtime] dispose old runtime failed: ${err.message}`); }
@@ -6435,6 +6439,7 @@ class MafwScheduler {
             const sessionID = deleteMatch[1];
             await this.sdkSession.delete(sessionID);
             this.instructionSync?.forget(sessionID);
+            this.discovery?.forget(sessionID);
             try { this.trajectoryStore?.deleteSession(sessionID); } catch (err: any) { log.warn(`[Trajectory] delete failed: ${err.message}`); }
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));
@@ -8350,11 +8355,15 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     void scanCommandDirs(cmdDirs).then((specs) => {
       registerCustomCommands(registry, specs, execDeps);
       if (specs.length > 0) log.info(`[Commands] 自定义命令已加载: ${specs.map((s) => s.name).join(', ')}`);
+      this.discovery?.invalidate();
+      void this.discovery?.broadcastKnown('commands_changed').catch((err: any) => log.warn(`[Discovery] command scan broadcast failed: ${err.message}`));
     }).catch(() => { /* fail-open */ });
     this.customCommandWatcherDispose = watchCommandDirs(cmdDirs, (specs) => {
       registerCustomCommands(registry, specs, execDeps);
       log.info(`[Commands] 自定义命令已热重载（${specs.length} 条）`);
       this.broadcast({ type: 'mafw_commands_changed' });
+      this.discovery?.invalidate();
+      void this.discovery?.broadcastKnown('commands_changed').catch((err: any) => log.warn(`[Discovery] command change broadcast failed: ${err.message}`));
     });
     return this.mafwCommandRegistry;
   }

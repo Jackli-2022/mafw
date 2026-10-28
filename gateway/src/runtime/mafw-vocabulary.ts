@@ -46,6 +46,7 @@ export const MAFW = {
   // 能力面
   permissionMode: 'permission_mode',
   sessionDiff: 'session.diff',
+  sessionCommands: 'session.commands',
   // wire 信封类型
   envelope: 'mafw_event',
 } as const;
