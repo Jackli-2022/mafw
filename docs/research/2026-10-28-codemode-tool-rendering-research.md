@@ -321,9 +321,9 @@ type Scheduler = {
 6. **P2（可选）：`codemode:false` 开关**
    - 需要每个 gateway MCP 完整结果卡时，先在 Config/MCP 管理里提供 per-server Code Mode 开关，作为过渡。
 
-## 6. 附带发现（与本题无关，但会挡住 GUI 验证）
+## 6. 附带发现（菜单渲染错误，已由并行提交修复）
 
-本机 desktop 当前复现顶层「MAFW 渲染出错」：
+调研时本机 desktop 复现顶层「MAFW 渲染出错」：
 
 ```text
 [kobalte]: `useMenuItemContext` must be used within a `Menu.Item` component
@@ -331,12 +331,23 @@ type Scheduler = {
   ... MenuHost (packages/desktop/src/renderer/mafw/context-menu/MenuHost.tsx)
 ```
 
-高度怀疑是 `MenuHost.tsx` 的 submenu 分支在 `DropdownMenu.SubTrigger` 内使用 `DropdownMenu.ItemLabel`（Kobalte 要求 Item 上下文；SubTrigger 不是 Item）。这会令任何带 submenu 的右键菜单把整页打进 ErrorBoundary。建议单独开一个小修：把 SubTrigger 内的 label 改成普通 `span`（或 Kobalte 对应的 SubTrigger 文本节点），并补一个「菜单含 submenu」的回归测试。此项未在本次调研中改代码。
+根因是 `MenuHost.tsx` 的 submenu 分支在 `DropdownMenu.SubTrigger` 内使用 `DropdownMenu.ItemLabel`（Kobalte 要求 Item 上下文；SubTrigger 不是 Item）。该问题已由并行提交 `d87c87b3 fix(desktop): submenu trigger must not use Menu.ItemLabel` 修复，本批未改；GUI 验证已恢复。
 
 ## 7. 待拍板
 
-- v1 是否按 §3A 做「调用列表 + 最终输出」？还是先接受 `codemode:false` 换回完整 39 张卡？
-- P0 是否同时做「running tool part 合并」？它直接对着第二个问题，且改动面小。
-- Edit / Write 的 wire shape 修复是确定性 bug，是否本批一起做？（建议：做，和 execute 卡同批 UI 改动，但分开提交更容易 review。）是否顺带修 history `content[].text` → `output` 的通用缺口？
-- P1 的 Markdown 增量投影是否本批一起做？如果不做，长回答卡顿仍会存在，但 execute 卡能先解决「等待期间看不到进度」。
-- §6 的菜单渲染错误是否本批顺手修？（建议单独修，避免和本调研混在一起。）
+- P0 已实施（见 §8），下一步是否做 P1 的 Markdown live-tail 增量投影？它是长回答卡顿的根治项。
+- Edit / Write 的 2.1 形状与 history output 已一并修复；如果还要每个 gateway MCP 的完整结果卡，是否加 `codemode:false` 开关？
+- §6 的菜单渲染错误已由并行提交 `d87c87b3` 修复（本批未改）；GUI 验证已恢复。
+
+## 8. P0 实施记录（2026-10-28）
+
+- `2ab32bff` fix(session-ui): read opencode 2.1 edit/write shapes and history tool output
+  - 新增 `tool-output.ts`（history `content[].text` → card output）与 `file-diff-shape.ts`（`files[]` / `filediff` / `diff` 归一）。
+  - edit/write 卡改用 `readPathInput` + `normalizeFileDiffs`；`ToolPartDisplay` 单点传 `partOutputText(state)`。
+- `51158c04` feat(desktop): render Code Mode execute child calls
+  - 新增 `execute-model.ts` / `execute.tsx`：`metadata.toolCalls` 子调用行、running 状态、失败标记、最终 output；`execute` 默认展开。
+- `b815a130` perf(desktop): coalesce running tool part snapshots per frame
+  - 新增 `tool-part-scheduler.ts`：running tool part 按 `part.id` 合并到 rAF，completed/error 立即 apply；`turn.completed/part.complete` 前 flush。
+- 门禁：session-ui **113/113**、desktop **1888/1888**、`tsgo --noEmit -p` rc=0（desktop + session-ui）、`electron-vite build` rc=0。
+- GUI 冒烟：world 会话（`ses_e7d324d21ffemqN3O7AJSjPpYR`）实测 execute 卡显示「1 次调用」+ `✓ mafw_add_memory` + 参数 + 输出 KV；write 卡显示文件名。Edit 卡在该会话已超出 10 轮渲染窗口，未直接目测；形状已由 2.1 fixture 单测覆盖。
+
