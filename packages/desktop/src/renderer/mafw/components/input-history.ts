@@ -75,3 +75,12 @@ export function shouldNavigateHistory(key: string, value: string, caret: number)
   if (key === "ArrowDown") return !value.slice(c).includes("\n")
   return false
 }
+
+/**
+ * C2：空历史一次性提示门——历史为空时 ↑/↓ 无反应，用户易误判「不生效」。
+ * ChatPane 在 history.up()/down() 返回 null 且 entries 为空时调本门决定是否
+ * 弹一次性轻提示（每 pane 实例一次；pane 按 sid keyed，切会话自然重置）。
+ */
+export function shouldHintEmptyHistory(entryCount: number, alreadyShown: boolean): boolean {
+  return entryCount === 0 && !alreadyShown
+}

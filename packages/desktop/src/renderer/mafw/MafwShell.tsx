@@ -25,6 +25,8 @@ import { mergeHiddenTodos } from "./todo-presenter"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
 import { bumpCheckpointRev } from "./checkpoint-rev"
+import { keybindingFor } from "./keybinding-store"
+import { matchesCombo } from "./keybindings"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
 import { backgroundRows, ingestBackgroundEvent, ingestHydratedBackgroundEvents, onBackgroundTerminal } from "./background-store"
 import { backgroundRestAvailable, resetBackgroundCapability } from "./background-capability"
@@ -62,7 +64,6 @@ import {
   type WorkbenchSurface,
   type WorkbenchView,
 } from "./workbench-views"
-import { isTerminalToggleKey } from "./terminal-hotkey"
 import { fileOpenPlan } from "./file-kind"
 import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
@@ -84,7 +85,7 @@ import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
 import { nextMode as nextPermissionMode } from "./components/permission-card-mapping"
 import { findPendingToolPart } from "./components/flow-card-placement"
 import { saveLayout, loadLayout, pruneMissing } from "./layout-persist"
-import { buildSessionMarkdown } from "./export-markdown"
+import { buildSessionMarkdown, extractExportTurns } from "./export-markdown"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
@@ -385,7 +386,7 @@ export function MafwShell() {
   const [paletteOpen, setPaletteOpen] = createSignal(false)
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
+      if (matchesCombo(e, keybindingFor("command-palette"))) {
         e.preventDefault()
         setPaletteOpen(o => !o)
       }
@@ -419,6 +420,10 @@ export function MafwShell() {
         run: () => { const sid = activeSessionId(); if (sid) void exportSession(sid) },
       },
       {
+        id: "copy-session-markdown", label: "复制会话为 Markdown", hint: "Copy to clipboard", group: "会话",
+        run: () => { const sid = activeSessionId(); if (sid) void copySessionMarkdown(sid) },
+      },
+      {
         id: "open-settings", label: "打开设置", hint: "Settings", group: "导航",
         run: () => setShowConfig(true),
       },
@@ -435,12 +440,7 @@ export function MafwShell() {
 
   // Export a session to Markdown via the OS save dialog (main process).
   const exportSession = async (sid: string) => {
-    const msgs = store.message[sid] || []
-    const turns = msgs.map((m: any) => ({
-      role: m.role || "user",
-      text: [m.text, ...(store.part[m.id] || []).map((p: any) => (typeof p.text === "string" ? p.text : ""))].join(" "),
-      time: m.time?.created,
-    }))
+    const turns = extractExportTurns(store.message[sid] || [])
     const title = sessions().find(s => s.id === sid)?.title || sid
     const markdown = buildSessionMarkdown({ title, turns })
     try {
@@ -450,6 +450,19 @@ export function MafwShell() {
       else showToastV2({ description: `导出失败: ${res?.error || "unknown"}`, duration: 3000 })
     } catch (e: any) {
       showToastV2({ description: `导出失败: ${e?.message || e}`, duration: 3000 })
+    }
+  }
+
+  // C1（W3 分享）：复制会话 Markdown 到剪贴板（与导出同构建管线）。
+  const copySessionMarkdown = async (sid: string) => {
+    const turns = extractExportTurns(store.message[sid] || [])
+    const title = sessions().find(s => s.id === sid)?.title || sid
+    const markdown = buildSessionMarkdown({ title, turns })
+    try {
+      await navigator.clipboard.writeText(markdown)
+      showToastV2({ description: `已复制 ${turns.length} 条回合到剪贴板`, duration: 2500 })
+    } catch (e: any) {
+      showToastV2({ description: `复制失败: ${e?.message || e}`, duration: 3000 })
     }
   }
 
@@ -1636,10 +1649,10 @@ export function MafwShell() {
     : "initial"
   const dockPresent = createPresence(() => rightDockOpen(), SURFACE_MS)
 
-  // Ctrl/Cmd+J: toggle the TaskBar popover. Skip when typing.
+  // Ctrl/Cmd+J: toggle the TaskBar popover. Skip when typing. (C3 可自定义)
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "j") return
+      if (!matchesCombo(e, keybindingFor("taskbar"))) return
       const el = document.activeElement as HTMLElement | null
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return
       e.preventDefault()
@@ -1649,25 +1662,26 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // 布局开关快捷键（VS Code 惯例）：Ctrl+B 侧边栏、Ctrl+Alt+B 面板。skip when typing.
+  // 布局开关快捷键（VS Code 惯例）：Ctrl+B 侧边栏、Ctrl+Alt+B 面板（C3 均可自定义）。skip when typing.
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return
       const el = e.target as HTMLElement | null
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return
-      if (e.key !== "b" && e.key !== "B") return
+      const left = matchesCombo(e, keybindingFor("toggle-leftdock"))
+      const right = !left && matchesCombo(e, keybindingFor("toggle-rightdock"))
+      if (!left && !right) return
       e.preventDefault()
-      if (e.altKey) applyRightDock(!rightDockOpen())
+      if (right) applyRightDock(!rightDockOpen())
       else toggleLeftDock("sessions")
     }
     window.addEventListener("keydown", onKey)
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // Ctrl/Cmd+K: 打开左栏搜索面（全局搜索入口）。
+  // Ctrl/Cmd+K: 打开左栏搜索面（全局搜索入口；C3 可自定义）。
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return
+      if (!matchesCombo(e, keybindingFor("open-search"))) return
       // composer 聚焦时 Ctrl+K 归 readline（kill 到行尾）；Meta/Cmd 保持全局搜索。
       if (e.ctrlKey && !e.metaKey && (e.target as HTMLElement | null)?.closest?.(".mafw-composer")) return
       e.preventDefault()
@@ -1690,12 +1704,12 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // Ctrl/Cmd+`：终端开合（VS Code/Zed 惯例，2026-10-27）。
+  // Ctrl/Cmd+`：终端开合（VS Code/Zed 惯例，2026-10-27；C3 可自定义）。
   // capture 阶段消费——xterm 聚焦时也要先生效（否则 Ctrl+` 以 \x00 落进 PTY）；
   // 条可见即收起，否则跳到工作台视图并打开（终端只属工作台，见 terminalStripVisible）。
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!isTerminalToggleKey(e)) return
+      if (!matchesCombo(e, keybindingFor("toggle-terminal"))) return
       e.preventDefault()
       e.stopPropagation()
       const action = terminalHotkeyAction({

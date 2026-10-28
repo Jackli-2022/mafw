@@ -64,7 +64,7 @@ const PERMISSION_MODE_HINT: Record<PermissionMode, string> = {
   auto: "审批模式：自动 — 安全命令免审，高危仍需确认，25 次后回落只读。点击切到全开",
   "full-access": "审批模式：全开 — 不再审批（危险命令也直接执行）。点击切回只读",
 }
-import { createInputHistory, shouldNavigateHistory } from "./input-history"
+import { createInputHistory, shouldNavigateHistory, shouldHintEmptyHistory } from "./input-history"
 import { loadInputHistory, saveInputHistory } from "./input-history-persist"
 import { applyReadlineKey } from "./composer-readline"
 import { shouldFocusComposerFromClick } from "./composer-focus"
@@ -76,6 +76,8 @@ import { dataUrlToFile } from "../capture/data-url"
 import { registerCaptureSink } from "../capture/attach-sink"
 import { CheckpointOverlay } from "./CheckpointOverlay"
 import { checkpointRev } from "../checkpoint-rev"
+import { keybindingFor } from "../keybinding-store"
+import { matchesCombo } from "../keybindings"
 import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
@@ -264,7 +266,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   })
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "o") return
+      if (!matchesCombo(e, keybindingFor("toggle-details"))) return
       const el = document.activeElement as HTMLElement | null
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return
       e.preventDefault()
@@ -287,6 +289,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [revertConfirm, setRevertConfirm] = createSignal<{ messageID: string } | null>(null)
   const [canUnrevert, setCanUnrevert] = createSignal(false)
   const [checkpointsOpen, setCheckpointsOpen] = createSignal(false)
+
+  // C2：空历史提示一次性闸（pane 按 sid keyed，切换会话自然重置）。
+  let emptyHistHinted = false
 
   // W0-1：session.checkpoint SSE → checkpointRev bump；overlay 打开期间重拉
   // 服务端检查点列表（关着不拉——打开按钮本身会拉一次）。
@@ -981,7 +986,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       if (!props.focused || pickerOpen()) return
       // composer 聚焦时 Ctrl+F 归 readline（前移一字符）；Meta/Cmd 保持原生/全局。
       if (e.ctrlKey && !e.metaKey && (e.target as HTMLElement | null)?.closest?.(".mafw-composer")) return
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+      if (matchesCombo(e, keybindingFor("session-search"))) {
         e.preventDefault()
         setSearchOpen(o => !o)
       }
@@ -2003,6 +2008,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               else if (!e.isComposing && (history.browsing() || shouldNavigateHistory(e.key, e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length))) {
                 const next = e.key === "ArrowUp" ? history.up(input()) : history.down()
                 if (next !== null) { e.preventDefault(); setInput(next); queueMicrotask(() => { const ta = textareaEl(); if (ta) autoGrow(ta) }) }
+                else if (e.key === "ArrowUp" && shouldHintEmptyHistory(history.entries().length, emptyHistHinted)) {
+                  // C2：空历史 ↑ 无反应易被当成坏了——每会话一次轻提示。
+                  emptyHistHinted = true
+                  showToastV2({ description: "本会话还没有输入历史（发送第一条消息后 ↑ 可召回）", duration: 3000 } as any)
+                }
               }
               else if (e.key === "Backspace" && !e.currentTarget.value && mentionedFiles().length > 0 && mentionedAgents().length === 0) {
                 e.preventDefault()

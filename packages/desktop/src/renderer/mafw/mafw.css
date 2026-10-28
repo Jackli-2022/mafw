@@ -5320,6 +5320,14 @@ html[data-theme="light"] body {
 .mafw-plan-reject-input:focus { outline: none; border-color: var(--accent-border); }
 .mafw-plan-reject-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .mafw-plan-terminal-note { padding: 8px 4px; font-size: 12px; color: var(--text-4); }
+/* C3 快捷键节 */
+.mafw-kb-row { display: flex; align-items: center; gap: 10px; }
+.mafw-kb-row.conflict { border-color: var(--red-9); }
+.mafw-kb-combo { font-family: var(--font-data); font-size: 12px; color: var(--text-2); background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 2px 8px; min-width: 72px; text-align: center; }
+.mafw-kb-combo.recording { color: var(--accent-text); border-color: var(--accent-border); animation: mafw-kb-rec-pulse 1.2s ease-in-out infinite; }
+.mafw-kb-conflict { color: var(--red-9); margin-left: 8px; }
+@keyframes mafw-kb-rec-pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }
+@media (prefers-reduced-motion: reduce) { .mafw-kb-combo.recording { animation: none } }
 /* Task 4：草稿池 + sheet 容器（AnnotationSheet 绝对定位锚定于 plan-body） */
 .mafw-plan-body { position: relative; }
 .mafw-plan-drafts { margin: 4px 0 8px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-overlay); display: flex; flex-direction: column; gap: 6px; }

@@ -1,5 +1,23 @@
 import { describe, expect, test } from "bun:test"
-import { buildSessionMarkdown } from "./export-markdown"
+import { buildSessionMarkdown, extractExportTurns } from "./export-markdown"
+
+describe("extractExportTurns（C1 导出/复制共用）", () => {
+  test("消息+part 文本拼接、role/time 透传", () => {
+    const turns = extractExportTurns([
+      { role: "user", text: "你好", id: "m1", time: { created: 123 } },
+      { role: "assistant", text: "", id: "m2", parts: [{ type: "text", text: "回答A" }, { type: "reasoning", text: "内部" }] },
+    ] as any)
+    expect(turns).toHaveLength(2)
+    expect(turns[0]).toEqual({ role: "user", text: "你好", time: 123 })
+    expect(turns[1].role).toBe("assistant")
+    expect(turns[1].text).toContain("回答A")
+    expect(turns[1].text).toContain("内部") // 全部 part 文本拼接（导出历史全量口径）
+    expect(turns[1].time).toBeUndefined()
+  })
+  test("空消息数组 → 空数组", () => {
+    expect(extractExportTurns([])).toEqual([])
+  })
+})
 
 describe("session markdown export", () => {
   test("renders header with title and turns in order", () => {

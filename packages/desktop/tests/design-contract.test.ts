@@ -887,13 +887,13 @@ describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接�
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     const rail = read("src/renderer/mafw/components/IconRail.tsx")
     expect(shell).toMatch(/aria-pressed=\{rightDockOpen\(\)\}/)
-    expect(shell).toContain("Ctrl+Alt+B")
     expect(rail).toContain("Ctrl+B")
     expect(rail).toContain("aria-pressed")
   })
-  test("快捷键分支：Ctrl+B 切左 dock、Ctrl+Alt+B 切面板（跳过输入框）", () => {
+  test("快捷键分支经 keybindingFor（C3 可自定义）：左 dock/右面板两分支（跳过输入框）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect(shell).toMatch(/e\.altKey[\s\S]{0,300}applyRightDock/)
+    expect(shell).toMatch(/matchesCombo\(e, keybindingFor\("toggle-rightdock"\)\)[\s\S]{0,300}applyRightDock/)
+    expect(shell).toMatch(/matchesCombo\(e, keybindingFor\("toggle-leftdock"\)\)/)
     expect(shell).toMatch(/toggleLeftDock\("sessions"\)/)
     expect(shell).toContain("isContentEditable")
   })

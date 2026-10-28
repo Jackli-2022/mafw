@@ -14,7 +14,8 @@ test("terminal strip visibility goes through terminalStripVisible", () => {
 
 test("MafwShell wires Ctrl+` capture-phase hotkey", () => {
   const src = read("src/renderer/mafw/MafwShell.tsx")
-  assert.match(src, /isTerminalToggleKey/)
+  // C3：经 keybindingFor 可自定义（原 isTerminalToggleKey 硬编码退役）
+  assert.match(src, /matchesCombo\(e, keybindingFor\("toggle-terminal"\)\)/)
   assert.match(src, /terminalHotkeyAction/)
   // capture 阶段注册（xterm 聚焦时先生效，防 \x00 落进 PTY）
   assert.match(src, /addEventListener\("keydown", [^,]+, true\)/)

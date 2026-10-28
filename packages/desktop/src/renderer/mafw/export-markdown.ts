@@ -3,6 +3,15 @@
 // save dialog + file write.
 export type ExportTurn = { role: string; text: string; time?: number }
 
+/** C1：消息（store 形状）→ 导出回合。导出与「复制会话」共用（W3 分享）。 */
+export function extractExportTurns(messages: Array<any>): ExportTurn[] {
+  return (messages || []).map((m) => ({
+    role: m.role || "user",
+    text: [m.text, ...((m.parts || []).map((p: any) => (typeof p.text === "string" ? p.text : "")))].join(" "),
+    time: m.time?.created,
+  }))
+}
+
 export function buildSessionMarkdown(input: { title: string; turns: ExportTurn[] }): string {
   const title = input.title?.trim() || "MAFW 会话"
   const lines: string[] = [`# ${title}`, ""]

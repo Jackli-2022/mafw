@@ -25,9 +25,9 @@ describe("workbench 终审修复接线", () => {
     expect(preload).toContain("onExpandedChange")
     expect(shell).toContain("onExpandedChange")
   })
-  test("Ctrl+K 打开左栏搜索面（全局快捷键）", () => {
+  test("Ctrl+K 打开左栏搜索面（全局快捷键；C3 经 keybindingFor 可自定义）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect(shell).toMatch(/key\.toLowerCase\(\) !== "k"/)
+    expect(shell).toMatch(/matchesCombo\(e, keybindingFor\("open-search"\)\)/)
     expect(shell).toContain('toggleLeftDock("search")')
   })
   test("切回会话面清空搜索词（避免残留过滤把会话列表藏起来）", () => {

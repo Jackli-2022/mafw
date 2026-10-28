@@ -15,6 +15,7 @@ import { draftFromConfig, validateFokThresholds, toSearchOverrides, mergeSearchS
 import { UsageProviders } from "../components/UsageProviders"
 import { ApprovalsSection } from "../components/ApprovalsSection"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
+import { KeybindingsSection } from "./KeybindingsSection"
 
 interface ConfigSection {
   key: string
@@ -820,6 +821,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 </Show>
               </div>
             </div>
+            {/* C3（W3）：快捷键自定义 */}
+            <KeybindingsSection />
           </Show>
 
           {/* ═══ Plugins ═══*/}
