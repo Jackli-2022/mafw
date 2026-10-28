@@ -219,7 +219,7 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
     const hasSelection = !!term?.hasSelection?.()
     menuController.request(
       buildTerminalMenu,
-      { hasSelection, canClose: !!term },
+      { hasSelection, canClose: !!currentDir },
       (id) => {
         if (id === "terminal.copy") {
           const selection = term?.getSelection() ?? ""

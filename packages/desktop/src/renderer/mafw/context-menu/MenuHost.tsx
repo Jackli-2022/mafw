@@ -41,14 +41,14 @@ export function MenuHost(props: { controller: MenuController }): JSX.Element {
         )
       case "checkbox":
         return (
-          <DropdownMenu.Item onSelect={() => run(entry.item.id)}>
+          <DropdownMenu.Item role="menuitemcheckbox" aria-checked={entry.item.checked} onSelect={() => run(entry.item.id)}>
             <span class="mafw-context-menu-check">{entry.item.checked ? "✓" : ""}</span>
             <DropdownMenu.ItemLabel>{entry.item.label}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
         )
       case "radio":
         return (
-          <DropdownMenu.Item onSelect={() => run(entry.item.id)}>
+          <DropdownMenu.Item role="menuitemradio" aria-checked={entry.item.checked} onSelect={() => run(entry.item.id)}>
             <span class="mafw-context-menu-check">{entry.item.checked ? "●" : ""}</span>
             <DropdownMenu.ItemLabel>{entry.item.label}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
@@ -104,7 +104,7 @@ export function MenuHost(props: { controller: MenuController }): JSX.Element {
         }}
       />
       <DropdownMenu.Portal>
-        <DropdownMenu.Content class="mafw-context-menu">
+        <DropdownMenu.Content class="mafw-context-menu" aria-label="菜单">
           <For each={toRenderRows(request()?.model)}>{row}</For>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

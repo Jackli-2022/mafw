@@ -144,9 +144,10 @@ export function BackgroundDock(props: {
     const cancellable = t.status === "working" || t.status === "input_required"
     menuController.request(
       buildExecutionRowMenu,
-      { taskID: t.id, kind: t.kind === "shell" ? "background" : "subagent", canCancel: cancellable },
+      { sessionID: t.childSessionID, taskID: t.id, kind: t.kind === "shell" ? "background" : "subagent", canCancel: cancellable },
       (id) => {
-        if (id === "panel.copyId") void navigator.clipboard.writeText(t.id)
+        if (id === "panel.openSession" && t.childSessionID) props.onOpenSession(t.childSessionID)
+        else if (id === "panel.copyId") void navigator.clipboard.writeText(t.id)
         else if (id === "panel.cancel") setCancelConfirmId(t.id)
       },
       { point: { x: event.clientX, y: event.clientY }, returnFocus: event.currentTarget as HTMLElement },
