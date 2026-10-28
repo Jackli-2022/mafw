@@ -2,7 +2,7 @@
 
 > 范围：opencode 2.1 Code Mode（`execute`）里调用 gateway MCP 时，desktop 能否渲染子工具调用；以及 ChatView 在「工具执行等待结果」期间拖累其他流式输出的原因与优化方向。
 > 方法：opencode 2.1 / dev 源码核对 + 本机 gateway 2.1 真实 SSE 抓帧 + MAFW session-ui 代码与 `markdown-stream` 微基准。
-> 结论先行：**子工具调用数据已经在 `execute` part 的 `metadata.toolCalls` 里，desktop 只缺一张 `execute` 卡；每个子调用的 output 不在 metadata（opencode 刻意不回传），所以 v1 只能做「调用列表 + 最终输出」，做不到每个 gateway MCP 的完整结果卡。第二个问题的主因是单条全局 SSE 上的 progress 突发 + 同步 store patch + prose Markdown 的 O(n²) 投影，三者叠加会挤占其他流式渲染。**
+> 结论先行：**子工具调用数据已经在 `execute` part 的 `metadata.toolCalls` 里，desktop 只缺一张 `execute` 卡；每个子调用的 output 不在 metadata（opencode 刻意不回传），所以 v1 只能做「调用列表 + 最终输出」，做不到每个 gateway MCP 的完整结果卡。第二个问题的主因是单条全局 SSE 上的 progress 突发 + 同步 store patch + prose Markdown 的 O(n²) 投影，三者叠加会挤占其他流式渲染。另：Edit/Write 卡片在 opencode 2.1 下空白是确定的字段漂移（`path`/`metadata.files[]` vs `filePath`/`metadata.filediff`），可直接修。**
 
 ## 1. 数据链路：Code Mode 子调用到底在哪
 
@@ -114,13 +114,79 @@ t=4455  part.updated  tool=execute status=completed output=558 chars
 
 - 需要 opencode core 给嵌套调用独立 part / output，属于上游 #54812 的范畴；在 gateway 侧伪造子 part 会与上层 `execute` part 重复、缺少稳定 callID/权限语义，且插件/历史会分叉。暂不做。
 
+## 3.5 Edit / Write 工具「没有输出」：opencode 2.1 wire shape 漂移
+
+这是另一个独立但确定的 bug，和 Code Mode 无关。
+
+### 现场证据
+
+最新 2.1 会话 `ses_e7d324d21ffemqN3O7AJSjPpYR` 的真实 edit part：
+
+```json
+{
+  "type": "tool",
+  "name": "edit",
+  "state": {
+    "status": "completed",
+    "input": {
+      "newString": "...",
+      "oldString": "...",
+      "path": "C:\\work\\world\\docs\\2026-10-28-3d-megastructure-platform-research.md"
+    },
+    "content": [{ "type": "text", "text": "Edited docs/... (1 replacement)" }],
+    "metadata": {
+      "files": [{
+        "file": "docs/2026-10-28-3d-megastructure-platform-research.md",
+        "patch": "Index: ...",
+        "status": "modified",
+        "additions": 27,
+        "deletions": 0
+      }],
+      "truncated": false
+    }
+  }
+}
+```
+
+opencode 2.1 的 edit 实现（`packages/core/src/tool/plugin/edit.ts`）：
+
+- 输入字段是 `path`（不是 `filePath`）；
+- content 是 `Edited <file> (N replacements)`；
+- metadata 是 `{ files: FileDiff.Info[] }`（不是 `filediff`，也没有顶层 `diff`）；
+- 没有 `state.output`（output 在 content 里，由 gateway 的 live 翻译补成 `output`；历史出口仍是 content）。
+
+### MAFW 卡片为什么空白
+
+`packages/session-ui/src/components/message-part.tsx` 的 edit 卡：
+
+- `props.input.filePath` 取文件名 / 目录（行 2268-2269）→ 2.1 只有 `path`，所以为空；
+- `props.metadata?.filediff` 取 diff（行 2273、2300-2305）→ 2.1 只有 `metadata.files[]`，所以为 undefined；
+- `<Show when={path()}>` 因此不渲染 diff body（行 2341-2360）；
+- 结果：只剩一行「Edit」标题，文件名、diff、`Edited ...` 文本全部不显示。
+
+`write` 卡同样受影响：`props.input.filePath`（行 2374）在 2.1 应为 `path`，所以 `<Show when={props.input.content && path()}>` 不渲染内容。
+
+### 修复方向（小、确定性高）
+
+1. 统一路径读取：所有文件类卡片用 `readPathInput(props.input)`（已支持 `filePath ?? path ?? file_path`），不要直接点 `input.filePath`。
+2. 增加 `normalizeFileDiffs(metadata)`：
+   - 2.1：`metadata.files[]`；
+   - legacy：`metadata.filediff`；
+   - 兜底：`metadata.diff` 字符串 + `readPathInput(input)`。
+3. edit 卡取 `diffs[0]` 作为 `fileCompProps` 的 `{ file, patch }`；`resolveFileDiff` 已能只靠 patch 解析（`session-diff.ts:30-31`）。
+4. 标题文件名/目录用归一化后的 path；`DiffChanges` 用 `files[0]` 的 `additions/deletions`。
+5. 可选：把 `state.content` 的 `Edited ...` 文本作为 trigger subtitle / 空 diff 时的 fallback，保证「至少有输出」。
+6. 回归 fixture 直接使用上面这份 2.1 wire 形状 + 一份 legacy `filePath/filediff` 形状，防止只修一边。
+
+`read` 卡已经用 `readPathInput`，不受影响；`patch` 卡读 `metadata.files`，也不受影响。**这是 edit/write 两个卡片的字段映射问题，不是 gateway 丢数据。**
+
 ## 4. 第二个问题：工具等待为什么会拖累其他流式输出
 
 ### 4.1 共享单线程 + 同步 dispatcher
 
 - desktop 只有一条全局 SSE（`MafwShell.tsx:1023, 1057-1062`），所有会话/所有 part 的事件都在 renderer 主线程同步 `dispatchShellEvent`。
 - 任意一个会话的 execute progress 突发（实测 6 帧同一毫秒）都会排队进同一条主线程；如果这一批事件触发了昂贵的 tool card / Markdown 重渲染，**其他会话的 `part.delta` 也会一起被推迟**。这正好对应「一个工具在等结果，其他流式输出受影响」的现象。
-- `part.updated` 每帧都会 `patchStore(applyPartUpsert(...))`（`sse/handlers/chat-stream.ts:88-98`），`applyPartUpsert` 复制整个 `parts` 桶并 map 该消息的数组（`sse/chat-reducers.ts:94-115`）。单帧成本不高，但 burst + 全量重算会叠加。
+- `part.updated` 每帧都会 `patchStore(applyPartUpsert(...))`（`sse/handlers/chat-stream.ts:88-98`），`applyPartUpsert` 复制整个 `parts` 桶并 map 该消息的数组（`sse/chat-reducers.ts:94-115`）。单帧成本不高（本机 500-part 消息 fixture 约 **0.009ms/次**，30KB text delta 约 **0.001ms/次**），但 burst + 下游重算会叠加——**瓶颈在渲染，不在 reducer**。
 
 ### 4.2 prose Markdown 的 O(n²) 投影
 
@@ -140,21 +206,74 @@ MAFW 的 `markdown-stream.project()` 只有「尾部是未闭合 code fence」�
 
 `BasicTool` 的 pending 门（见 §2）使「等待结果」阶段只能看到标题，看不到任何进度；用户很容易把「没有内容」感知成「流式输出被阻塞」。execute 卡默认展开 + 子调用行实时更新，能直接消除这个感知。
 
+### 4.4 解决方法（按收益/成本排序）
+
+| 方案 | 作用 | 成本 | 建议 |
+|---|---|---|---|
+| **A. tool part 事件合并** | 把同一 part 的 running 快照按 rAF/50ms 合并成一次 store/render，burst 从 N 次变 1 次 | 小；纯调度器 + 测试 | **P0** |
+| **B. execute 卡增量渲染** | 子调用行 keyed、只更新状态；running 时不解析最终 output；输出限幅 | 小-中；新卡 + 纯函数 | **P0** |
+| **C. prose Markdown live-tail 增量投影** | 消除 O(n²)，长回答/多段/列表不再随长度变慢 | 中；移植上游算法 + 测试 | **P1（根治长文本卡顿）** |
+| **D. 终态大输出限幅/按需渲染** | 避免工具完成瞬间 parse/渲染巨大 JSON/patch 造成尖峰 | 小；卡内截断 + 展开 | P1 |
+| **E. `content-visibility` / 虚拟化** | 降低离屏 turn/card 的 layout/paint | 中；滚动高度与测试复杂 | P2，先测再上 |
+| **F. gateway 侧 progress 节流** | 减少广播帧 | 小；但会影响 TUI/SDK 的实时粒度，且 gateway 是共享源 | 不优先；desktop 侧合并更可控 |
+
+#### A 的具体设计（推荐先做）
+
+新增纯模块 `packages/desktop/src/renderer/mafw/sse/tool-part-scheduler.ts`：
+
+```ts
+type Scheduler = {
+  queue(part: any): void        // running tool part → 同 id 最新快照
+  flush(): void                 // 一次性 apply，Solid batch()
+  drop(id: string): void
+}
+```
+
+- 只合并 `part.type === "tool" && state.status === "running"`；completed/error **立即 apply**，并丢弃该 id 的 pending。
+- 调度用 `requestAnimationFrame`；测试注入 32–50ms 假调度器（避免依赖浏览器）。
+- `turn.completed/failed/aborted` 到达时先 `flush()` 再 seal；`part.delta` 不进入此队列，保持文本顺序。
+- apply 时用 Solid `batch()` 包住多次 `patchStore`，让下游只跑一轮渲染。
+- 预期：本次实测 6 帧同毫秒 burst → 1 次 execute 卡渲染 + 1 次 text delta 渲染；对多会话共享主线程同样生效。
+
+#### B 的具体设计
+
+- `execute` 卡用 `calls = createMemo(() => executeCalls(props.metadata))`；`<Index>` 按调用位置 keyed，行内 `createMemo` 解析 input 摘要。
+- running 阶段不 parse `props.output`；只有 `status === "completed"` 才 parse/限幅。
+- 行内参数摘要过滤 `content/code/oldString/newString` 等大字段，截断到 ~120 字符；完整 input 只在展开时 `JSON.stringify`。
+- 失败状态只标记对应行，不在每次 progress 时重建错误卡。
+
+#### C 的具体设计（移植上游）
+
+- `project(previous, text, live)` 在 `tail.mode === "live"` 时原地追加 `suffix`，保留已完成 blocks 的对象身份；
+- 仅在以下情况 fallback 全量 `stream()`：空行边界（含跨 delta 的 `\n` + `\n`）、非追加/截断更新、open fence、reference definition、`tail.raw` 超上限；
+- `heal` 只处理最后一个空行边界之后的 tail；
+- 基准/测试参考上游 PR #55857 的 `markdown-stream` 用例；MAFW 现有 `markdown-stream.test.ts` 可扩展同款 workload。
+- 预期：本机 10KB prose 从 7.4–17.2s 降到几十~几百 ms 量级（上游同类 workload 15.9×–114.3×）。
+
+#### D 的具体设计
+
+- `execute` 最终 output 超过 e.g. 8KB / 200 行 → 只渲染首段 + 「已截断，展开查看」；展开时仍用 code 段，不一次性 parse 成 KV。
+- edit/patch 的 diff 已经 `defer`，保持默认折叠；`DiffChanges` 计数不解析全文。
+- 工具完成时如果卡片不在视口内，延迟到可见再挂载（可复用 `BasicTool` 的 `defer` / IntersectionObserver）。
+
 ## 5. 建议的优化顺序
 
 1. **P0：execute 卡 v1**（§3A）
    - 新增 `tool-cards/execute.tsx` + 纯函数 `execute-model.ts`（calls 解析、名字归一化、参数摘要、输出段）。
    - `defaultOpen` + `defer={false}` 让运行中也能看到子调用；或给 `BasicTool` 补 `allowOpenWhilePending`（上游 parity）。
    - 用真实 wire fixture（dotted 名 / 裸名 / search / 空 input / error / truncated）做单测。
-2. **P0：tool part 事件合并**
+2. **P0：Edit / Write 字段映射修复**（§3.5）
+   - edit/write 改用 `readPathInput`；新增 `normalizeFileDiffs(metadata)` 兼容 `files[]` / `filediff` / `diff`；edit 取 `files[0]` 喂 `resolveFileDiff`。
+   - 用 2.1 wire fixture + legacy fixture 双回归，避免只修一边。
+3. **P0：tool part 事件合并**
    - 在 desktop 的 chat-stream 对 `part.updated` 的 **running tool** 按 `part.id` 保留最新快照，`requestAnimationFrame`（测试可用 32–50ms 假调度器）flush；completed/error 立即 flush 并取消 pending；`turn.completed` 前 flush 全部。
    - 只合并 tool part，不合并 text `part.delta`，避免文本快照乱序覆盖。
-3. **P1：Markdown live-tail 增量投影**
+4. **P1：Markdown live-tail 增量投影**
    - 移植上游思路：prose/list/table 的 live tail 原地追加，只有空行边界 / 非追加更新 / open fence / refs 等 fallback 才重 lex；tail 设字符上限；heal 只处理 tail。
    - 这是长回答卡顿的根治项，和 execute 卡无关但会明显改善「工具结束后长总结」的体验。
-4. **P1：execute 终态输出限幅**
+5. **P1：execute 终态输出限幅**
    - `state.output` 可能很大；parse/渲染前做字符/行数上限，超出显示「已截断 + 查看全文」或 code 折叠，避免工具完成瞬间的主线程尖峰。
-5. **P2（可选）：`codemode:false` 开关**
+6. **P2（可选）：`codemode:false` 开关**
    - 需要每个 gateway MCP 完整结果卡时，先在 Config/MCP 管理里提供 per-server Code Mode 开关，作为过渡。
 
 ## 6. 附带发现（与本题无关，但会挡住 GUI 验证）
@@ -173,5 +292,6 @@ MAFW 的 `markdown-stream.project()` 只有「尾部是未闭合 code fence」�
 
 - v1 是否按 §3A 做「调用列表 + 最终输出」？还是先接受 `codemode:false` 换回完整 39 张卡？
 - P0 是否同时做「running tool part 合并」？它直接对着第二个问题，且改动面小。
+- Edit / Write 的 wire shape 修复是确定性 bug，是否本批一起做？（建议：做，和 execute 卡同批 UI 改动，但分开提交更容易 review。）
 - P1 的 Markdown 增量投影是否本批一起做？如果不做，长回答卡顿仍会存在，但 execute 卡能先解决「等待期间看不到进度」。
 - §6 的菜单渲染错误是否本批顺手修？（建议单独修，避免和本调研混在一起。）
