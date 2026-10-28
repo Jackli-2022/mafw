@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createEffect, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { PageHeader } from "../components/PageHeader"
@@ -67,7 +66,7 @@ export function TriagePage() {
                 <div class="mafw-card-title">{t.reason || t.id}</div>
                 <div class="mafw-card-meta">Goal: {t.goalId} · {t.createdAt ? new Date(t.createdAt).toLocaleString() : ""}</div>
               </div>
-              <div style={{ display: "flex", "align-items": "center", gap: 6 }}>
+              <div style={{ display: "flex", "align-items": "center", gap: "6px" }}>
                 <ButtonV2 variant="outline" size="small" onClick={confirmIt}>确认</ButtonV2>
                 <ButtonV2 variant="ghost" size="small" onClick={proposeConfirm}>提议确认</ButtonV2>
                 <ButtonV2 variant="ghost" size="small" onClick={proposeReject}>提议拒绝</ButtonV2>

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Goal 详情：泳道（阶段 × loop）+ 点格子内联明细 + goal_node SSE 实时刷新。
 // 数据源：window.api.mafw.goals.timeline（P1 gateway API）；会话下钻经 onOpenSession。
 import { createSignal, createEffect, Show, onMount, onCleanup } from "solid-js"
@@ -116,11 +115,11 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
 
           <Show when={!loading() && !error()} fallback={
             error()
-              ? <div class="mafw-empty" style={{ display: "flex", gap: 8, "align-items": "center" }}>
+              ? <div class="mafw-empty" style={{ display: "flex", gap: "8px", "align-items": "center" }}>
                   加载失败：{error()}
                   <ButtonV2 variant="neutral" size="small" onClick={() => void load(props.goalId!)}>重试</ButtonV2>
                 </div>
-              : <div style={{ display: "flex", gap: 8, padding: "32px 0", "justify-content": "center" }}>
+              : <div style={{ display: "flex", gap: "8px", padding: "32px 0", "justify-content": "center" }}>
                   <LoaderV2 width={16} height={16} />
                 </div>
           }>
@@ -152,7 +151,7 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
             <div class="mafw-goal-actions">
               <ButtonV2
                 variant="ghost" size="small"
-                onClick={() => window.api.mafw.goals.control({ goalId: props.goalId, action: "ABORT" }).catch((e: any) => console.warn("[mafw]", e))}
+                onClick={() => window.api.mafw.goals.control({ goalId: props.goalId!, action: "ABORT" }).catch((e: any) => console.warn("[mafw]", e))}
               >取消 Goal</ButtonV2>
             </div>
           </Show>

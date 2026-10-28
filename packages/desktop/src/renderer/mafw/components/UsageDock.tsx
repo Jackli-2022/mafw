@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, Show, For, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
@@ -398,7 +397,7 @@ export function UsageDock(props: {
     setLoading(true)
     try {
       const r = await window.api.mafw.sessions.usage(sid, props.projectID || undefined)
-      setApiData(r)
+      setApiData(r as any)
     } catch (e: any) {
       console.warn("[UsageDock] fetch failed:", e?.message)
     } finally {

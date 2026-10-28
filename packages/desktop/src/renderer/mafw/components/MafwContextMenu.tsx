@@ -1,9 +1,8 @@
-﻿// @ts-nocheck
 import { ContextMenu } from "@mafw/ui/context-menu"
 import type { ParentProps } from "solid-js"
 
 export type ContextMenuItem = {
-  label: string
+  label?: string
   disabled?: boolean
   danger?: boolean
   separator?: boolean

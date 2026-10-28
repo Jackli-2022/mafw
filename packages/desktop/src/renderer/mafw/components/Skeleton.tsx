@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { For } from "solid-js"
 
 export function Skeleton(props: { w?: string; h?: string; r?: string }) {

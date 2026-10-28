@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createMemo, createSignal, createEffect, onCleanup, Show } from "solid-js"
 import { registerPartComponent } from "@mafw/session-ui/message-part"
 import { Markdown } from "@mafw/session-ui/markdown"

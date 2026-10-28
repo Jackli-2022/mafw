@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 // Sticky note board dock: mirrors the <note-board> block injected into the
 // agent's recall context, so the user can see (and manage) what the agent is
 // reminded of every turn. Board-level expiry only — removing a note never
@@ -44,7 +43,7 @@ export function NotesDock() {
       const r = await window.api.mafw.memory.listSticky()
       setData(r)
     } catch (e) {
-      console.warn("[NotesDock] fetch failed:", e?.message)
+      console.warn("[NotesDock] fetch failed:", (e as any)?.message)
     } finally {
       setLoading(false)
     }
@@ -71,7 +70,7 @@ export function NotesDock() {
       }
       await fetchNotes()
     } catch (e) {
-      showToastV2({ description: `操作失败: ${e?.message || String(e)}`, duration: 4000 })
+      showToastV2({ description: `操作失败: ${(e as any)?.message || String(e)}`, duration: 4000 })
     } finally {
       setBusyId(null)
     }
@@ -85,7 +84,7 @@ export function NotesDock() {
       <div class="mafw-notes-dock-toolbar">
         <span class="mafw-notes-dock-title">便签板</span>
         <Show when={budget()}>
-          <span class="mafw-notes-dock-budget">{budget().used}/{budget().max}</span>
+          <span class="mafw-notes-dock-budget">{budget()!.used}/{budget()!.max}</span>
         </Show>
         <TooltipV2 value="刷新" openDelay={300}>
           <ButtonV2 variant="ghost" size="small" onClick={fetchNotes} aria-label="刷新便签板">⟳</ButtonV2>
@@ -116,8 +115,8 @@ export function NotesDock() {
                       <span>{fmtDate(note.created_at)} 写入</span>
                     </Show>
                     <Show when={left !== null}>
-                      <span class="mafw-notes-card-left" classList={{ urgent: left <= 1 }}>
-                        {left <= 0 ? "今天到期" : `剩 ${left} 天`}
+                      <span class="mafw-notes-card-left" classList={{ urgent: left! <= 1 }}>
+                        {left! <= 0 ? "今天到期" : `剩 ${left} 天`}
                       </span>
                     </Show>
                   </div>

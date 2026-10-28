@@ -1,4 +1,3 @@
-// @ts-nocheck
 // TerminalDock：右 dock「终端」tab（spec 2026-10-26-terminal-dock-design）。
 // 目录级 persistent 终端（serve 托管 PTY）；xterm 前端；agent 不可见（不共享）。
 // 组件常挂载（MafwShell display:none 切换），xterm 实例不随隐藏销毁。

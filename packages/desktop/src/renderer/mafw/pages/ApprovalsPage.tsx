@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createEffect, For, Show, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { PageHeader } from "../components/PageHeader"
@@ -67,7 +66,7 @@ export function ApprovalsPage(props: {
                     <div class="mafw-card-meta" style={{ "white-space": "pre-wrap", "word-break": "break-all" }}>{p.action.payload}</div>
                   </Show>
                 </div>
-                <div style={{ display: "flex", gap: 4, "flex-shrink": 0 }}>
+                <div style={{ display: "flex", gap: "4px", "flex-shrink": "0px" }}>
                   <ButtonV2 variant="contrast" size="small" onClick={() => props.onPermissionReply?.(p, "once")}>✓ 允许一次</ButtonV2>
                   <ButtonV2 variant="outline" size="small" onClick={() => props.onPermissionReply?.(p, "always")}>始终允许</ButtonV2>
                   <ButtonV2 variant="ghost" size="small" onClick={() => props.onPermissionReply?.(p, "reject")}>✕ 拒绝</ButtonV2>
@@ -92,7 +91,7 @@ export function ApprovalsPage(props: {
                   <div class="mafw-card-title">{a.question || a.id}</div>
                   <div class="mafw-card-meta">Goal: {a.goalId} · {a.status} · {a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}</div>
                 </div>
-                <div style={{ display: "flex", gap: 4, "flex-shrink": 0 }}>
+                <div style={{ display: "flex", gap: "4px", "flex-shrink": "0px" }}>
                   <ButtonV2 variant="contrast" size="small" onClick={() => respond(a.id, "approve")}>✓ Approve</ButtonV2>
                   <ButtonV2 variant="outline" size="small" onClick={() => respond(a.id, "reject")}>✕ Reject</ButtonV2>
                 </div>

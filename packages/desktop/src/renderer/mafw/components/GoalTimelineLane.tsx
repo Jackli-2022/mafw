@@ -1,4 +1,3 @@
-// @ts-nocheck
 // 泳道（阶段 × loop）+ 点格子内联明细。纯展示：数据与动作经 props 注入。
 import { createSignal, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
@@ -90,11 +89,11 @@ export function GoalTimelineLane(props: {
                       </div>
                       <div class="mafw-lane-expand-grid">
                         <div>开始：{run().startedAt ? new Date(run().startedAt).toLocaleTimeString() : "—"}</div>
-                        <div>结束：{run().finishedAt ? new Date(run().finishedAt).toLocaleTimeString() : "进行中"}</div>
+                        <div>结束：{run().finishedAt ? new Date(run().finishedAt as any).toLocaleTimeString() : "进行中"}</div>
                         <div>耗时：{formatDuration(run().durationMs)}</div>
                         <div>Token：in {run().tokensInput ?? "—"} / out {run().tokensOutput ?? "—"}</div>
                         <div>结果：{run().outcome ?? run().status}</div>
-                        <div>成本：{run().costUsd != null ? `$${run().costUsd.toFixed(2)}` : "—"}</div>
+                        <div>成本：{run().costUsd != null ? `$${run().costUsd!.toFixed(2)}` : "—"}</div>
                       </div>
                       <Show when={run().error}>
                         <div class="mafw-lane-expand-error">{run().error}</div>
@@ -107,7 +106,7 @@ export function GoalTimelineLane(props: {
                           <ButtonV2 variant="neutral" size="small" onClick={() => props.plan!.onOpen()}>查看计划</ButtonV2>
                         </Show>
                         <Show when={run().sessionId}>
-                          <ButtonV2 variant="neutral" size="small" onClick={() => props.onOpenSession(run().sessionId)}>打开会话</ButtonV2>
+                          <ButtonV2 variant="neutral" size="small" onClick={() => props.onOpenSession(run().sessionId!)}>打开会话</ButtonV2>
                         </Show>
                         <Show when={art()}>
                           <TooltipV2 value={art()!.ref}>

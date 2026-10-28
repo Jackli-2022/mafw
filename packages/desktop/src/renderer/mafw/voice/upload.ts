@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** 语音分段上传 + 发送。store 操作经回调注入，本模块不认识 Solid store。 */
 export async function uploadVoiceSegment(deps: {
   wavBytes: ArrayBuffer

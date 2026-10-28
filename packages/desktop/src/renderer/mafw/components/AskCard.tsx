@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createMemo, createEffect, Show, For, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { flowCardInitialExpanded } from "./flow-card-placement"
@@ -78,7 +77,7 @@ export function AskCard(props: {
   })
 
   const questions = () => props.data.questions
-  const shown = createMemo(() => visibleQuestions(questions(), selected()))
+  const shown = createMemo(() => visibleQuestions(questions(), selected()) as AskQuestionData[])
   const [now, setNow] = createSignal(Date.now())
   createEffect(() => {
     if (!props.data.expiresAt) return

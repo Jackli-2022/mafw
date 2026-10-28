@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Show } from "solid-js"
 
 export function EmptyState(props: { glyph: string; title: string; hint?: string; action?: any }) {

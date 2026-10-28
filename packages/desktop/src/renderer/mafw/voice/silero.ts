@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { MicVAD } from "@ricky0123/vad-web"
 import ortWasmMjs from "../../assets/vad/ort-wasm-simd-threaded.mjs?url"
 import ortWasmBin from "../../assets/vad/ort-wasm-simd-threaded.wasm?url"
@@ -38,7 +37,7 @@ export function createSileroVadAnalyzer(params: VadParams): VadAnalyzer {
   const hub = createVadEventHub()
   let stream: MediaStream | null = null
   let ctx: AudioContext | null = null
-  let vad: InstanceType<typeof MicVAD> | null = null
+  let vad: Awaited<ReturnType<typeof MicVAD.new>> | null = null
   let starting: Promise<void> | null = null
 
   async function ensureStream(): Promise<void> {
@@ -60,7 +59,7 @@ export function createSileroVadAnalyzer(params: VadParams): VadAnalyzer {
     vad = await MicVAD.new({
       model: "v5",
       audioContext: ctx!,
-      getStream: () => stream!,
+      getStream: async () => stream!,
       baseAssetPath: MODEL_BASE,
       onnxWASMBasePath: ORT_BASE,
       positiveSpeechThreshold: params.confidence,

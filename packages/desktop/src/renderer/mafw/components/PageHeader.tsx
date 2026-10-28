@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Show } from "solid-js"
 
 export function PageHeader(props: { title: string; subtitle?: string; actions?: any }) {

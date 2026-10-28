@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { TtsPlayer, VadAnalyzer, VoiceState } from "./types"
 import type { TurnStopStrategy } from "./types"
 import { createAudioWorkletPlayer, alignPcmChunks } from "./worklet-player"
@@ -199,7 +198,7 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
           const bytes = new Uint8Array(bin.length)
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
           const { aligned, remainder: rem } = alignPcmChunks(remainder, bytes)
-          remainder = rem
+          remainder = rem as any
           if (aligned.length === 0) continue
           if (firstChunkMs < 0) firstChunkMs = performance.now()
           player.feed(new Int16Array(aligned.buffer, aligned.byteOffset, aligned.length / 2))
@@ -241,7 +240,7 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
       throw e
     } finally {
       if (activeAbort === abort) activeAbort = null
-      if (state === "speaking") setState("idle")
+      if ((state as string) === "speaking") setState("idle")
     }
   }
 
@@ -280,7 +279,7 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
         if (settled) return
         settled = true
         if (activeAudio === audio) activeAudio = null
-        if (state === "speaking") setState("idle")
+        if ((state as string) === "speaking") setState("idle")
         if (state !== "recording") deps.vad.stop()
         resolve({ ok })
       }

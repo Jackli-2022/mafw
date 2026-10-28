@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { For, Show } from "solid-js"
 import { PopoverShell } from "./PopoverShell"
 

@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
@@ -140,17 +139,14 @@ export function QuestionWidget(props: Props) {
             </ul>
           </Show>
           <Show when={!result()}>
-            <Show
-              when={hasOptions()}
-              fallback={
-                <TextInputV2
-                  value={answer()}
-                  onInput={e => setAnswer(e.currentTarget.value)}
-                  placeholder="输入你的回答…"
-                  class="mafw-question-input"
-                />
-              }
-            />
+            <Show when={!hasOptions()}>
+              <TextInputV2
+                value={answer()}
+                onInput={e => setAnswer(e.currentTarget.value)}
+                placeholder="输入你的回答…"
+                class="mafw-question-input"
+              />
+            </Show>
             <div class="mafw-question-actions">
               <ButtonV2 variant="contrast" size="small" onClick={() => submit("answer")} disabled={submitting() || !canSubmit()}>
                 <Show when={submitting()} fallback="确认">

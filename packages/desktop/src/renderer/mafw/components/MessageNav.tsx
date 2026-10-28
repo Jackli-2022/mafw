@@ -1,4 +1,3 @@
-// @ts-nocheck
 // DeepSeek-style user-turn node navigation: a vertical rail of dashes on the
 // right edge of the chat container, one dash per user input; click = smooth
 // scroll to that turn; the turn nearest the viewport top is highlighted.

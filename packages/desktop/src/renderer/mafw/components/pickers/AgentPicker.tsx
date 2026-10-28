@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createSignal, createEffect, Show, For } from "solid-js"
 import { PopoverShell } from "./PopoverShell"
 import { agentKey, isAgentKey } from "../../agent-identity"

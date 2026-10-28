@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createSignal, createEffect, createMemo, onCleanup, Show } from "solid-js"
 import { activeTodoIndex } from "../todo-presenter"
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Show, onMount, onCleanup, createSignal, createEffect } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 

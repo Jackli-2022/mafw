@@ -1,4 +1,3 @@
-// @ts-nocheck
 // 左 dock：会话/搜索两个面（spec 2026-10-22-workbench-layout D2/D3/D5）。
 // 由旧 Rail 的会话列表与搜索提取而来；品牌块/五页面导航/底部 Usage 入口已移出
 // （品牌与主题→IconRail，五页面→Dashboard，用量→右 dock「用量」tab）。
@@ -223,12 +222,12 @@ export function LeftDock(props: Props) {
         <div class="mafw-rail-session renaming">
           <TextInputV2
             value={renameDraft()}
-            onInput={e => setRenameDraft(e.currentTarget.value)}
+            onInput={e => { setRenameDraft(e.currentTarget.value) }}
             onKeyDown={e => {
               if (e.key === "Enter") { e.preventDefault(); commitRename(node.id, projectID()) }
               else if (e.key === "Escape") setRenamingId(null)
             }}
-            autoFocus
+            autofocus
           />
         </div>
       }
@@ -329,7 +328,7 @@ export function LeftDock(props: Props) {
             leadingIcon={<Icon name="magnifying-glass" size="small" />}
             showClearButton={query().length > 0}
             placeholder="Search chats…"
-            autoFocus
+            autofocus
           />
         </div>
       </Show>

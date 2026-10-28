@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js"
 import { ContextMenu } from "@mafw/ui/context-menu"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
@@ -118,11 +117,11 @@ export function SessionStrip(props: {
                       if (e.key === "Escape") setRenamingId(null)
                     }}
                     onBlur={() => setRenamingId(null)}
-                    style={{ width: 120, height: 22, fontSize: 12 }}
+                    style={{ width: "120px", height: "22px", "font-size": "12px" }}
                   />
                 }>{formatRailTitle(s.title)}</Show>
               </span>
-              <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); handleClose(s.id) }}>✕</ButtonV2>
+              <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); handleClose(s.id) }}>✕</ButtonV2>
             </ContextMenu.Trigger>
             <ContextMenu.Portal>
               <ContextMenu.Content>

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { TtsPlayer } from "./types"
 
 /** SSE chunk 边界可能切半个 sample：残余字节留到下一块拼齐。 */

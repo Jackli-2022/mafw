@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 

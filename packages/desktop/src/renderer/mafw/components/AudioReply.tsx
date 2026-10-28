@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { Show, For, createSignal, createEffect, onCleanup } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 

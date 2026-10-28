@@ -1,4 +1,3 @@
-// @ts-nocheck
 // W1 计划审阅浮层：goal 泳道 plan 格子下钻——waves.json 渲染 + 划选批注 + 批准/驳回。
 // 批注驳回专用（Task 4）：Enter 攒草稿，驳回时 buildRejectFeedback 打包；非 pending 可复制文本。
 import { createSignal, createEffect, Show, onMount, onCleanup, For } from "solid-js"
@@ -53,10 +52,10 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
     setActing(true)
     try {
       await window.api.mafw.goals.approvePlan(props.goalId)
-      showToastV2({ title: "已批准计划", description: "goal 将进入 execute", variant: "success" })
+      showToastV2({ title: "已批准计划", description: "goal 将进入 execute" })
       props.onClose()
     } catch (e: any) {
-      showToastV2({ title: "批准失败", description: String(e?.message || e).slice(0, 120), variant: "error" })
+      showToastV2({ title: "批准失败", description: String(e?.message || e).slice(0, 120) })
     }
     setActing(false)
   }
@@ -67,10 +66,10 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
     setActing(true)
     try {
       await window.api.mafw.goals.rejectPlan(props.goalId, feedback)
-      showToastV2({ title: "已驳回并重新规划", description: "plan 将带着你的意见重跑", variant: "success" })
+      showToastV2({ title: "已驳回并重新规划", description: "plan 将带着你的意见重跑" })
       props.onClose()
     } catch (e: any) {
-      showToastV2({ title: "驳回失败", description: String(e?.message || e).slice(0, 120), variant: "error" })
+      showToastV2({ title: "驳回失败", description: String(e?.message || e).slice(0, 120) })
     }
     setActing(false)
   }
@@ -136,11 +135,11 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
 
         <Show when={!loading() && !error()} fallback={
           error()
-            ? <div class="mafw-empty" style={{ display: "flex", gap: 8, "align-items": "center" }}>
+            ? <div class="mafw-empty" style={{ display: "flex", gap: "8px", "align-items": "center" }}>
                 加载失败：{error()}
                 <ButtonV2 variant="neutral" size="small" onClick={() => void load()}>重试</ButtonV2>
               </div>
-            : <div style={{ display: "flex", gap: 8, padding: "32px 0", "justify-content": "center" }}>
+            : <div style={{ display: "flex", gap: "8px", padding: "32px 0", "justify-content": "center" }}>
                 <LoaderV2 width={16} height={16} />
               </div>
         }>

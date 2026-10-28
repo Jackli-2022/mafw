@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createMemo, createSignal, createEffect, Show, For, onMount } from "solid-js"
 import { PopoverShell } from "./PopoverShell"
 
@@ -59,7 +58,7 @@ export function ModelPicker(props: {
     return recent().map(k => {
       // Composite key first; legacy plain-id entries resolve to any provider.
       return byKey.get(k) ?? (k.includes("/") ? undefined : byId.get(k))
-    }).filter(Boolean)
+    }).filter((m): m is ModelEntry => !!m)
   })
 
   const visible = createMemo(() => {

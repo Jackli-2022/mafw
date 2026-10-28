@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createMemo, createEffect, Show, For } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"

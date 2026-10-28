@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
@@ -93,7 +92,7 @@ export function MemoryPage() {
       )}
 
       {/* Search bar */}
-      <div style={{ display: "flex", gap: 8, "margin-bottom": 16 }}>
+      <div style={{ display: "flex", gap: "8px", "margin-bottom": "16px" }}>
         <TextInputV2
           value={query()}
           onInput={e => setQuery(e.currentTarget.value)}
@@ -108,7 +107,7 @@ export function MemoryPage() {
 
       {/* L5 block */}
       {(axioms().length > 0 || heuristics().length > 0) && (
-        <div class="mafw-card" style={{ "flex-direction": "column", "align-items": "stretch", "margin-bottom": 16 }}>
+        <div class="mafw-card" style={{ "flex-direction": "column", "align-items": "stretch", "margin-bottom": "16px" }}>
           <div class="mafw-card-title">L5 Axioms & Heuristics</div>
           {axioms().map(a => (
             <div class="mafw-delta-row">
@@ -144,10 +143,10 @@ export function MemoryPage() {
           ]
           return (
             <MafwContextMenu items={memItems}>
-              <div class="mafw-card" style={{ "flex-direction": "column", "align-items": "stretch", "margin-bottom": 6 }}>
+              <div class="mafw-card" style={{ "flex-direction": "column", "align-items": "stretch", "margin-bottom": "6px" }}>
                 <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between" }}>
                   <div class="mafw-card-title">{unit.primary_abstraction ?? unit.id}</div>
-                  <div style={{ display: "flex", "align-items": "center", gap: 6, "flex-shrink": 0 }}>
+                  <div style={{ display: "flex", "align-items": "center", gap: "6px", "flex-shrink": "0px" }}>
                     <span class="mafw-tool-tag" classList={{
                       "mafw-tag-semantic": unit.type === "semantic" || unit.type === "global",
                       "mafw-tag-procedural": unit.type === "procedural",
@@ -158,11 +157,11 @@ export function MemoryPage() {
                 </div>
                 {Array.isArray(unit.cue_anchors) && unit.cue_anchors.length > 0 && (
                   <div class="mafw-tool-anchors">
-                    {unit.cue_anchors.slice(0, 5).map(a => <span class="mafw-tool-chip">{a}</span>)}
+                    {unit.cue_anchors.slice(0, 5).map((a: string) => <span class="mafw-tool-chip">{a}</span>)}
                   </div>
                 )}
                 {unit.memory_value && (
-                  <div class="mafw-card-meta" style={{ "margin-top": 4, "white-space": "pre-wrap" }}>{unit.memory_value}</div>
+                  <div class="mafw-card-meta" style={{ "margin-top": "4px", "white-space": "pre-wrap" }}>{unit.memory_value}</div>
                 )}
               </div>
             </MafwContextMenu>

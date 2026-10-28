@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createMemo, createEffect, onCleanup, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { activeTodoIndex, displayStatus } from "../todo-presenter"

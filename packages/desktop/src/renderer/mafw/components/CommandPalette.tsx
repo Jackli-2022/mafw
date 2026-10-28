@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 

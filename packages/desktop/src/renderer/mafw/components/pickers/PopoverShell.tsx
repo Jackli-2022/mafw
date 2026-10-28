@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createEffect, createSignal, Show, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import type { JSX } from "solid-js"

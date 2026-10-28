@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createEffect, onMount, onCleanup, Show } from "solid-js"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { managerPhaseLabel } from "./rail-display"

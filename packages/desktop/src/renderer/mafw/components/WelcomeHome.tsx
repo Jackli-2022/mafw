@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createMemo, createSignal, Show, For, createEffect, onCleanup } from "solid-js"
 import { allWithFailureFlag } from "../connection-state"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
@@ -83,13 +82,13 @@ export function WelcomeHome(props: {
     const merged: { id: string; title: string; time?: number }[] = []
     for (const s of props.openSessions) {
       if (!s?.id || seen.has(s.id)) continue
-      if (s?.metadata?.mafw?.role === "manager") continue
+      if ((s as any)?.metadata?.mafw?.role === "manager") continue
       seen.add(s.id)
       merged.push({ id: s.id, title: formatRailTitle(s.title) })
     }
     for (const s of props.historySessions) {
       if (!s?.id || seen.has(s.id)) continue
-      if (s?.metadata?.mafw?.role === "manager") continue
+      if ((s as any)?.metadata?.mafw?.role === "manager") continue
       seen.add(s.id)
       merged.push({ id: s.id, title: formatRailTitle(s.title), time: s.time?.updated })
     }
@@ -172,7 +171,7 @@ export function WelcomeHome(props: {
           <div class="mafw-welcome-goal-input-actions">
             <span class="mafw-welcome-plan-review" title="规划完成后 manager 会先用 mafw_ask_user 把方案发给你确认，经确认后才开始执行（Cowork 式 review-then-run）">
               <SwitchV2 checked={planReview()} onChange={(v: boolean) => setPlanReview(v)} size="small" />
-              <span style={{ "font-size": 11, color: "var(--text-base)" }}>规划完成后先经我确认再执行</span>
+              <span style={{ "font-size": "11px", color: "var(--text-base)" }}>规划完成后先经我确认再执行</span>
             </span>
             <span style={{ flex: 1 }} />
             <ButtonV2 variant="contrast" size="small" disabled={goalSubmitting() || !goalDraft().trim()} onClick={() => void submitGoal()}>

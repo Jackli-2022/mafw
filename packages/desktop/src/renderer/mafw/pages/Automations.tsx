@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 import { createSignal, createEffect, onCleanup, Show } from "solid-js"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { PageHeader } from "../components/PageHeader"
@@ -75,38 +74,42 @@ export function AutomationsPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", "margin-bottom": 12 }}>
+      <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", "margin-bottom": "12px" }}>
         <PageHeader title="Automations" subtitle="定时与事件驱动任务" />
         <ButtonV2 variant="outline" size="small" onClick={() => setFormOpen(o => !o)}>{formOpen() ? "收起" : "+ 新建规则"}</ButtonV2>
       </div>
 
       <Show when={formOpen()}>
-        <div class="mafw-card" style={{ display: "flex", "flex-direction": "column", gap: 8, "margin-bottom": 16 }}>
-          <div style={{ display: "flex", gap: 8, "flex-wrap": "wrap" }}>
-            <TextInputV2 style={{ width: 200 }} value={fId()} onInput={e => setFId(e.currentTarget.value)} placeholder="规则 ID（如 nightly-review）" />
-            <TextInputV2 style={{ width: 200 }} value={fSchedule()} onInput={e => setFSchedule(e.currentTarget.value)} placeholder="cron（如 0 3 * * *）" />
-            <TextInputV2 style={{ width: 160 }} value={fTimezone()} onInput={e => setFTimezone(e.currentTarget.value)} placeholder="时区（Asia/Shanghai）" />
+        <div class="mafw-card" style={{ display: "flex", "flex-direction": "column", gap: "8px", "margin-bottom": "16px" }}>
+          <div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
+            <TextInputV2 style={{ width: "200px" }} value={fId()} onInput={e => setFId(e.currentTarget.value)} placeholder="规则 ID（如 nightly-review）" />
+            <TextInputV2 style={{ width: "200px" }} value={fSchedule()} onInput={e => setFSchedule(e.currentTarget.value)} placeholder="cron（如 0 3 * * *）" />
+            <TextInputV2 style={{ width: "160px" }} value={fTimezone()} onInput={e => setFTimezone(e.currentTarget.value)} placeholder="时区（Asia/Shanghai）" />
           </div>
-          <div style={{ display: "flex", gap: 8, "flex-wrap": "wrap", "align-items": "center" }}>
-            <div style={{ width: 140 }}>
+          <div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap", "align-items": "center" }}>
+            <div style={{ width: "140px" }}>
               <SelectV2
-                value={fAction()}
-                onChange={(v: any) => setFAction(v)}
+                current={fAction() === "goal"
+                  ? { value: "goal", label: "goal（直接建 Goal）" }
+                  : { value: "triage", label: "triage（建议确认）" }}
+                value={(x: { value: string; label: string }) => x.value}
+                label={(x: { value: string; label: string }) => x.label}
+                onSelect={(v: any) => setFAction(v?.value ?? "triage")}
                 options={[
                   { value: "triage", label: "triage（建议确认）" },
                   { value: "goal", label: "goal（直接建 Goal）" },
                 ]}
               />
             </div>
-            <TextInputV2 style={{ width: 240 }} value={fTemplate()} onInput={e => setFTemplate(e.currentTarget.value)} placeholder="模板文案（可选）" />
-            <TextInputV2 style={{ width: 180 }} value={fSkill()} onInput={e => setFSkill(e.currentTarget.value)} placeholder="执行 skill（可选）" />
-            <TextInputV2 style={{ width: 100 }} value={fMaxLoops()} onInput={e => setFMaxLoops(e.currentTarget.value)} placeholder="maxLoops" />
+            <TextInputV2 style={{ width: "240px" }} value={fTemplate()} onInput={e => setFTemplate(e.currentTarget.value)} placeholder="模板文案（可选）" />
+            <TextInputV2 style={{ width: "180px" }} value={fSkill()} onInput={e => setFSkill(e.currentTarget.value)} placeholder="执行 skill（可选）" />
+            <TextInputV2 style={{ width: "100px" }} value={fMaxLoops()} onInput={e => setFMaxLoops(e.currentTarget.value)} placeholder="maxLoops" />
           </div>
-          <div style={{ display: "flex", gap: 8, "align-items": "center" }}>
+          <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
             <ButtonV2 variant="contrast" size="small" disabled={!fId().trim() || !fSchedule().trim() || submitting()} onClick={() => void submitDraft()}>
               {submitting() ? "提交中…" : "保存草稿（禁用态）"}
             </ButtonV2>
-            <span style={{ "font-size": 11, color: "var(--text-base)" }}>草稿保存后需在列表中手动启用；启用前请确认 cron 表达式无误。</span>
+            <span style={{ "font-size": "11px", color: "var(--text-base)" }}>草稿保存后需在列表中手动启用；启用前请确认 cron 表达式无误。</span>
           </div>
         </div>
       </Show>
