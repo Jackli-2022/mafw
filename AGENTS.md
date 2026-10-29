@@ -268,6 +268,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 
 - **死代码/兼容层清偿（2026-10-28 第四批）**：① 删除确认零引用的遗留模块 `gateway/src/chat/{index,graph-runner,intent-classifier}.ts`、`gateway/src/poll.ts`、`gateway/src/core/plugin.ts`、`gateway/src/core/index.ts`（v4.1 barrel）；**保留** `core/mcp-server.ts` + `core/mcp/tools.ts`——它们仍被 `enableLegacyMcp=true` 的 spawn 路径使用（legacy opt-in，非死代码）。② `noReply` 契约字段退役：删除 `SessionPromptOpts.noReply`、pi-session/pi-runtime 的透传与警告条件，改由 `expectReply:false` 单一语义（测试已用 expectReply，未受影响）。③ `skipMerge` no-op 退役：`HarmonicUnitFileStore.write` 恢复两参签名，清理 consolidation/route-write/评估脚本/测试中的传参（MinHash 写路径早已退役）。④ 删除 desktop `use-send-message.ts` 的 `taskPromise` 死分支（全仓库无赋值点，永不进入）。gateway **3033/3033（424 suites，-1 删除的 skipMerge no-op 用例）**、desktop **1850/1850**、session-ui **99/99**、SDK **163/163**、tsgo/build rc=0。
 
+- **上下文 pill 恒 0% 修复（2026-10-29）**：ChatPane 标题栏的上下文占用只取 `tokens.input`（`t.total || t.input || ...`），开启 prompt cache 后 input 仅数百 token、真实 prompt 在 `tokens.cache.read`（实测 ~66 万），而模型窗口 1,000,000 → `round(914/1e6)` 恒为 0%。新增纯函数 `computeContextUsage`（used = input + cache.read + cache.write，与 UsageDock 既有口径一致），ChatPane 与 UsageDock 共用；desktop 新增 4 个单测（desktop **1901/1901**）、tsgo/build rc=0；真机验证活跃会话 pill 从 `0%` → `12%`（该会话 ~108k/1M，符合预期）。
+
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类�?API 获取数据�?
 ```

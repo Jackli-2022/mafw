@@ -1,4 +1,5 @@
 import { createSignal, createEffect, createMemo, onMount, Show, For, onCleanup } from "solid-js"
+import { computeContextUsage } from "../context-usage"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
@@ -424,10 +425,10 @@ export function UsageDock(props: {
     const sid = props.sessionID
     if (!sid) return null
     const msgs = props.store.message[sid] || []
-    let lastInput = 0
+    let lastTokens: any = null
     for (const m of msgs) {
       if (m.role !== "assistant" || !m.tokens) continue
-      lastInput = (m.tokens.input || 0) + (m.tokens.cache?.read || 0)
+      lastTokens = m.tokens
     }
     const m = props.model()
     let contextWindow = 0
@@ -440,8 +441,8 @@ export function UsageDock(props: {
         }
       }
     }
-    const pct = contextWindow > 0 ? Math.round((lastInput / contextWindow) * 100) : 0
-    return { lastInput, contextWindow, pct }
+    const u = computeContextUsage(lastTokens, contextWindow)
+    return { lastInput: u.used, contextWindow: u.total, pct: u.percent }
   })
 
   const hasData = () => {

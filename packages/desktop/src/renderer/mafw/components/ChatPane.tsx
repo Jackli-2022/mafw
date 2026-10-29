@@ -90,6 +90,7 @@ import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
 import { createFocusScheduler } from "./composer-focus-scheduler"
+import { computeContextUsage } from "../context-usage"
 import { normalizeToolPart } from "../tool-part"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
@@ -1627,18 +1628,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const currentModelLabel = createMemo(() => props.model()?.label || modelName())
 
-  // Context usage: last assistant message's input tokens vs model context window
+  // Context usage: last assistant message's prompt tokens (input + cache read/write)
+  // vs model context window. `input` alone excludes prompt-cache hits → always 0%.
   const contextUsage = createMemo(() => {
     const sid = sidProp()
     if (!sid) return { used: 0, total: 0, percent: 0 }
     const msgs = store.message[sid] || []
     const assistants = msgs.filter(m => m.role === "assistant")
     const last = assistants[assistants.length - 1]
-    let used = 0
-    if (last?.tokens) {
-      const t = last.tokens
-      used = t.total || t.input || (t.output || 0) + (t.cache?.read || 0) || 0
-    }
     const m = props.model()
     let total = 0
     if (m) {
@@ -1650,8 +1647,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         }
       }
     }
-    if (total === 0) return { used, total: 0, percent: 0 }
-    return { used, total, percent: Math.round((used / total) * 100) }
+    return computeContextUsage(last?.tokens, total)
   })
 
   // Cumulative session tokens + cost (from trajectory data in store)
