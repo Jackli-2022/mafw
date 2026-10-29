@@ -9,7 +9,10 @@ test('summarizeBench computes p50 and empty count', () => {
   ]);
   expect(r.count).toBe(3);
   expect(r.firstPartialP50).toBe(200);
+  expect(r.firstPartialP95).toBe(300);
   expect(r.finalP50).toBe(500);
+  expect(r.finalP95).toBe(700);
+  expect(r.maxFinalMs).toBe(700);
   expect(r.empty).toBe(1);
 });
 

@@ -1,0 +1,245 @@
+{
+  "summary": {
+    "count": 33,
+    "firstPartialP50": 180,
+    "firstPartialP95": 200,
+    "finalP50": 50,
+    "finalP95": 67,
+    "maxFirstPartialMs": 485,
+    "maxFinalMs": 68,
+    "empty": 0
+  },
+  "samples": [
+    {
+      "firstPartialMs": 485,
+      "finalMs": 67,
+      "text": "你好，欢迎使用M A F W语音唤醒词。今天天气不错，我们开始测试语音识别。",
+      "audio160Ms": 155,
+      "fixture": "zh-01.wav"
+    },
+    {
+      "firstPartialMs": 172,
+      "finalMs": 49,
+      "text": "你好，欢迎使用M A F W语音唤醒词。今天天气不错，我们开始测试语音识别。",
+      "audio160Ms": 145,
+      "fixture": "zh-01.wav"
+    },
+    {
+      "firstPartialMs": 175,
+      "finalMs": 49,
+      "text": "你好，欢迎使用M A F W语音唤醒词。今天天气不错，我们开始测试语音识别。",
+      "audio160Ms": 148,
+      "fixture": "zh-01.wav"
+    },
+    {
+      "firstPartialMs": 190,
+      "finalMs": 61,
+      "text": "请把今天的会议纪要整理一下，重点标记需要我确认的三个决定。",
+      "audio160Ms": 152,
+      "fixture": "zh-02.wav"
+    },
+    {
+      "firstPartialMs": 182,
+      "finalMs": 50,
+      "text": "请把今天的会议纪要整理一下，重点标记需要我确认的三个决定。",
+      "audio160Ms": 155,
+      "fixture": "zh-02.wav"
+    },
+    {
+      "firstPartialMs": 181,
+      "finalMs": 50,
+      "text": "请把今天的会议纪要整理一下，重点标记需要我确认的三个决定。",
+      "audio160Ms": 154,
+      "fixture": "zh-02.wav"
+    },
+    {
+      "firstPartialMs": 188,
+      "finalMs": 61,
+      "text": "我想在本地运行语音识别模型，要求首包延迟低于两百毫秒。",
+      "audio160Ms": 151,
+      "fixture": "zh-03.wav"
+    },
+    {
+      "firstPartialMs": 168,
+      "finalMs": 50,
+      "text": "我想在本地运行语音识别模型，要求首包延迟低于两百毫秒。",
+      "audio160Ms": 141,
+      "fixture": "zh-03.wav"
+    },
+    {
+      "firstPartialMs": 179,
+      "finalMs": 49,
+      "text": "我想在本地运行语音识别模型，要求首包延迟低于两百毫秒。",
+      "audio160Ms": 151,
+      "fixture": "zh-03.wav"
+    },
+    {
+      "firstPartialMs": 188,
+      "finalMs": 61,
+      "text": "这个方案听起来不错，但是还需要验证长时间连续说话时的稳定性。",
+      "audio160Ms": 151,
+      "fixture": "zh-04.wav"
+    },
+    {
+      "firstPartialMs": 167,
+      "finalMs": 50,
+      "text": "这个方案听起来不错，但是还需要验证长时间连续说话时的稳定性。",
+      "audio160Ms": 140,
+      "fixture": "zh-04.wav"
+    },
+    {
+      "firstPartialMs": 176,
+      "finalMs": 49,
+      "text": "这个方案听起来不错，但是还需要验证长时间连续说话时的稳定性。",
+      "audio160Ms": 148,
+      "fixture": "zh-04.wav"
+    },
+    {
+      "firstPartialMs": 189,
+      "finalMs": 62,
+      "text": "明天下午三点，提醒我和产品团队讨论语音交互的验收标准。",
+      "audio160Ms": 152,
+      "fixture": "zh-05.wav"
+    },
+    {
+      "firstPartialMs": 182,
+      "finalMs": 50,
+      "text": "明天下午三点，提醒我和产品团队讨论语音交互的验收标准。",
+      "audio160Ms": 154,
+      "fixture": "zh-05.wav"
+    },
+    {
+      "firstPartialMs": 179,
+      "finalMs": 49,
+      "text": "明天下午三点，提醒我和产品团队讨论语音交互的验收标准。",
+      "audio160Ms": 152,
+      "fixture": "zh-05.wav"
+    },
+    {
+      "firstPartialMs": 196,
+      "finalMs": 60,
+      "text": "请检查 gateway 的 voice status 接口，并把 cycle 端口改成三九一一。",
+      "audio160Ms": 149,
+      "fixture": "zh-06.wav"
+    },
+    {
+      "firstPartialMs": 168,
+      "finalMs": 50,
+      "text": "请检查 gateway 的 voice status 接口，并把 cycle 端口改成三九一一。",
+      "audio160Ms": 141,
+      "fixture": "zh-06.wav"
+    },
+    {
+      "firstPartialMs": 178,
+      "finalMs": 50,
+      "text": "请检查 gateway 的 voice status 接口，并把 cycle 端口改成三九一一。",
+      "audio160Ms": 151,
+      "fixture": "zh-06.wav"
+    },
+    {
+      "firstPartialMs": 200,
+      "finalMs": 62,
+      "text": "第一阶段的目标是让用户再按一次麦克风之后，可以连续说话，不需要反复点击。",
+      "audio160Ms": 153,
+      "fixture": "zh-07.wav"
+    },
+    {
+      "firstPartialMs": 183,
+      "finalMs": 51,
+      "text": "第一阶段的目标是让用户再按一次麦克风之后，可以连续说话，不需要反复点击。",
+      "audio160Ms": 155,
+      "fixture": "zh-07.wav"
+    },
+    {
+      "firstPartialMs": 177,
+      "finalMs": 50,
+      "text": "第一阶段的目标是让用户再按一次麦克风之后，可以连续说话，不需要反复点击。",
+      "audio160Ms": 149,
+      "fixture": "zh-07.wav"
+    },
+    {
+      "firstPartialMs": 189,
+      "finalMs": 68,
+      "text": "如果外放声音被麦克风再次采集，就会形成回声，所以我们需要 AAC。",
+      "audio160Ms": 151,
+      "fixture": "zh-08.wav"
+    },
+    {
+      "firstPartialMs": 175,
+      "finalMs": 50,
+      "text": "如果外放声音被麦克风再次采集，就会形成回声，所以我们需要 AAC。",
+      "audio160Ms": 148,
+      "fixture": "zh-08.wav"
+    },
+    {
+      "firstPartialMs": 176,
+      "finalMs": 50,
+      "text": "如果外放声音被麦克风再次采集，就会形成回声，所以我们需要 AAC。",
+      "audio160Ms": 149,
+      "fixture": "zh-08.wav"
+    },
+    {
+      "firstPartialMs": 188,
+      "finalMs": 55,
+      "text": "这条测试语音包含英文单词“latency”、“bargain”和“WhatsApp”。",
+      "audio160Ms": 151,
+      "fixture": "zh-09.wav"
+    },
+    {
+      "firstPartialMs": 175,
+      "finalMs": 43,
+      "text": "这条测试语音包含英文单词“latency”、“bargain”和“WhatsApp”。",
+      "audio160Ms": 148,
+      "fixture": "zh-09.wav"
+    },
+    {
+      "firstPartialMs": 174,
+      "finalMs": 42,
+      "text": "这条测试语音包含英文单词“latency”、“bargain”和“WhatsApp”。",
+      "audio160Ms": 146,
+      "fixture": "zh-09.wav"
+    },
+    {
+      "firstPartialMs": 194,
+      "finalMs": 62,
+      "text": "请记录本次基准测试的首次部分结果时间和最终结果时间。",
+      "audio160Ms": 145,
+      "fixture": "zh-10.wav"
+    },
+    {
+      "firstPartialMs": 181,
+      "finalMs": 50,
+      "text": "请记录本次基准测试的首次部分结果时间和最终结果时间。",
+      "audio160Ms": 153,
+      "fixture": "zh-10.wav"
+    },
+    {
+      "firstPartialMs": 178,
+      "finalMs": 49,
+      "text": "请记录本次基准测试的首次部分结果时间和最终结果时间。",
+      "audio160Ms": 151,
+      "fixture": "zh-10.wav"
+    },
+    {
+      "firstPartialMs": 188,
+      "finalMs": 62,
+      "text": "连续对话模式结束之后，系统应该自动回到监听状态，直到用户手动停止。",
+      "audio160Ms": 151,
+      "fixture": "zh-11.wav"
+    },
+    {
+      "firstPartialMs": 180,
+      "finalMs": 50,
+      "text": "连续对话模式结束之后，系统应该自动回到监听状态，直到用户手动停止。",
+      "audio160Ms": 153,
+      "fixture": "zh-11.wav"
+    },
+    {
+      "firstPartialMs": 176,
+      "finalMs": 50,
+      "text": "连续对话模式结束之后，系统应该自动回到监听状态，直到用户手动停止。",
+      "audio160Ms": 149,
+      "fixture": "zh-11.wav"
+    }
+  ]
+}
