@@ -27,4 +27,14 @@ describe("buildTerminalMenu", () => {
     const copy = m.items.find((i) => i.type === "item" && i.id === "terminal.copy") as any
     expect(copy.disabled).toBeFalsy()
   })
+
+  test("local-only kill; ssh omits openExternal and kill", () => {
+    const local = buildTerminalMenu({ hasSelection: false, canClose: true, canKill: true, isLocal: true })
+    expect(ids(local)).toContain("terminal.kill")
+    expect(ids(local)).toContain("terminal.openExternal")
+    const ssh = buildTerminalMenu({ hasSelection: false, canClose: true, canKill: false, isLocal: false })
+    expect(ids(ssh)).not.toContain("terminal.kill")
+    expect(ids(ssh)).not.toContain("terminal.openExternal")
+    expect(validateMenu(ssh)).toEqual([])
+  })
 })

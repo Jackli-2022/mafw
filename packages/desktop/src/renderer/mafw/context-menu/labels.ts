@@ -53,6 +53,7 @@ export const L = {
     clear: "清屏",
     openExternal: "在外部终端打开",
     close: "关闭终端",
+    kill: "结束终端",
   },
   browser: {
     back: "后退",

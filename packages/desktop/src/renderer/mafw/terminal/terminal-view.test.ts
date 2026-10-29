@@ -1,6 +1,7 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { viewFor, planAttach, buildTerminalTheme, createResizeScheduler } from "./terminal-view"
+import { viewFor, planAttach, buildTerminalTheme, createResizeScheduler, sessionView } from "./terminal-view"
+import type { TerminalSessionInfo } from "../../../shared/terminal-session"
 
 describe("terminal-view", () => {
   test("六态映射：probing busy；live 无 banner；closed/gone/unavailable 各有动作", () => {
@@ -32,6 +33,19 @@ describe("terminal-view", () => {
     const err = viewFor("closed", { error: "fetch failed" })
     assert.equal(err.banner, "终端服务不可用，请检查 gateway 或重启应用")
     assert.equal(err.action, "reconnect")
+  })
+
+  test("sessionView maps ssh statuses", () => {
+    const s: TerminalSessionInfo = { id: "ssh:1", kind: "ssh", title: "prod", status: "connecting" }
+    assert.equal(sessionView(s).busy, true)
+    assert.equal(sessionView({ ...s, status: "connected" }).banner, undefined)
+    assert.equal(
+      sessionView({ ...s, status: "reconnecting", reconnectAttempt: 2, reconnectInMs: 3000 }).banner,
+      "连接已断开，3 秒后重试（2/5）",
+    )
+    assert.equal(sessionView({ ...s, status: "error", error: "auth failed" }).banner, "auth failed")
+    assert.equal(sessionView({ ...s, status: "disconnected" }).action, "reconnect")
+    assert.equal(sessionView({ ...s, status: "closed" }).action, "open")
   })
 
   test("Important-4/5：planAttach——不可见不挂载；同目录忽略；in-flight 队列最新目录", () => {

@@ -1,6 +1,7 @@
-// 终端 dock 的纯 view model（无 Solid / 无 xterm 依赖，可单测）。
-// spec `2026-10-26-terminal-dock-design.md` §3/§8：closed=重连、gone=重开、
-// unavailable=外部终端出口、idle=空态。
+// 终端 view model（无 Solid / 无 xterm 依赖，可单测）。
+// spec `2026-10-29-terminal-surface-ssh-design.md`：会话状态 → banner/action。
+import type { TerminalSessionInfo } from "../../../shared/terminal-session"
+
 export type TerminalViewKind = "idle" | "probing" | "live" | "closed" | "gone" | "unavailable"
 export type TerminalAction = "open" | "reconnect" | "reopen" | "external"
 
@@ -47,6 +48,43 @@ export function viewFor(
       return opts.hasDirectory
         ? { kind: "idle", busy: false, banner: "终端已关闭，可重新打开", action: "open" }
         : { kind: "idle", busy: false, banner: "打开一个会话后此处可用终端" }
+  }
+}
+
+/** v2 session surface status mapping (SSH + local). */
+export function sessionView(session: TerminalSessionInfo): TerminalView {
+  switch (session.status) {
+    case "connecting":
+      return { kind: "probing", busy: true, banner: "正在连接…" }
+    case "connected":
+      return { kind: "live", busy: false }
+    case "reconnecting": {
+      const seconds = Math.max(1, Math.ceil((session.reconnectInMs ?? 0) / 1000))
+      const attempt = session.reconnectAttempt ? `（${session.reconnectAttempt}/5）` : ""
+      return {
+        kind: "closed",
+        busy: false,
+        banner: `连接已断开，${seconds} 秒后重试${attempt}`,
+        action: "reconnect",
+      }
+    }
+    case "disconnected":
+      return {
+        kind: "closed",
+        busy: false,
+        banner: session.error ?? "连接已断开",
+        action: "reconnect",
+      }
+    case "error":
+      return {
+        kind: "closed",
+        busy: false,
+        banner: session.error ?? "连接失败",
+        action: "reconnect",
+      }
+    case "closed":
+    default:
+      return { kind: "idle", busy: false, banner: "终端已关闭", action: "open" }
   }
 }
 
