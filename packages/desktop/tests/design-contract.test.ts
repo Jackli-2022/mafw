@@ -331,7 +331,8 @@ describe("IconRail CTA + UsagePill v4", () => {
     const dock = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "LeftDock.tsx"), "utf8")
     expect(dock).not.toContain("plus-small")
     expect(dock).toContain("关闭左栏")
-    expect(dock).toContain('icon="layout-left-full"')
+    expect(dock).toContain('icon="layout-left-partial"')
+    expect(dock).toContain('class="mafw-layout-toggle"')
   })
   test("UsagePill 细线进度条 2px", () =>
     expect(cssBlock(".mafw-usage-pill-progress {")).toContain("height: 2px"))
