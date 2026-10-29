@@ -1,7 +1,7 @@
 // B1 右工作台视图状态（2026-10-26 agent-workbench-layout-ia spec）。
 // 一级决定“看什么”，二级决定“当前这一类”；执行二级固定下拉。
 export type WorkbenchView = "workbench" | "execution" | "review"
-export type WorkbenchSurface = "code" | "browser"
+export type WorkbenchSurface = "code" | "browser" | "terminal"
 export type ExecutionSection = "overview" | "todos" | "subagents" | "background" | "trajectory"
 
 export type WorkbenchState = {
@@ -36,7 +36,9 @@ export const EXECUTION_SECTIONS: readonly { id: ExecutionSection; label: string 
 ]
 
 const VIEW_IDS = new Set<WorkbenchView>(WORKBENCH_VIEWS.map((v) => v.id))
-const SURFACE_IDS = new Set<WorkbenchSurface>(WORKBENCH_SURFACES.map((v) => v.id))
+// `terminal` is a valid persisted surface before Task 13 adds it to the visible
+// L2 list (avoid an intermediate commit with a dead tab).
+const SURFACE_IDS = new Set<WorkbenchSurface>([...WORKBENCH_SURFACES.map((v) => v.id), "terminal"])
 const SECTION_IDS = new Set<ExecutionSection>(EXECUTION_SECTIONS.map((v) => v.id))
 
 export function normalizeWorkbenchView(v: string | null | undefined): WorkbenchView {
@@ -76,16 +78,37 @@ export function nextWorkbenchView(current: WorkbenchView, key: string): Workbenc
   return null
 }
 
-/** 终端条只属工作台视图（2026-10-27 用户裁决，推翻 10-26「跨视图持久」）：执行/审阅一律不显示。 */
+/** @deprecated Task 13 删除：底部终端条退役，改用 terminalSurfaceHotkeyAction。 */
 export function terminalStripVisible(view: WorkbenchView, terminalOpen: boolean): boolean {
   return terminalOpen && view === "workbench"
 }
 
 export type TerminalHotkeyState = { dockOpen: boolean; view: WorkbenchView; terminalOpen: boolean }
 
-/** Ctrl+` 意图：条当前可见 → 收；其余（dock 关/终端关/被视图抑制）→ 跳到工作台并开终端。 */
+/** @deprecated Task 13 删除：底部终端条退役，改用 terminalSurfaceHotkeyAction。 */
 export function terminalHotkeyAction(s: TerminalHotkeyState): "hide" | "show" {
   return s.dockOpen && s.view === "workbench" && s.terminalOpen ? "hide" : "show"
+}
+
+export type TerminalSurfaceHotkeyState = {
+  dockOpen: boolean
+  view: WorkbenchView
+  surface: WorkbenchSurface
+  previousSurface: "code" | "browser"
+}
+
+export type TerminalSurfaceHotkeyResult = {
+  openDock: boolean
+  view: WorkbenchView
+  surface: WorkbenchSurface
+}
+
+/** Ctrl+` surface 级开合：可见即回上一个 surface；否则跳到工作台 › 终端。 */
+export function terminalSurfaceHotkeyAction(s: TerminalSurfaceHotkeyState): TerminalSurfaceHotkeyResult {
+  if (s.dockOpen && s.view === "workbench" && s.surface === "terminal") {
+    return { openDock: true, view: "workbench", surface: s.previousSurface }
+  }
+  return { openDock: true, view: "workbench", surface: "terminal" }
 }
 
 export function nextWorkbenchSurface(current: WorkbenchSurface, key: string): WorkbenchSurface | null {
@@ -117,11 +140,11 @@ const LEGACY_TABS: Record<string, LegacyTab> = {
   files: { view: "workbench", executionSection: "overview", surface: "code" },
   editor: { view: "workbench", executionSection: "overview", surface: "code" },
   browser: { view: "workbench", executionSection: "overview", surface: "browser" },
-  terminal: { view: "workbench", executionSection: "overview", surface: "code" },
+  terminal: { view: "workbench", executionSection: "overview", surface: "terminal" },
 }
 
 function legacySurface(v: string | null | undefined): WorkbenchSurface | null {
-  return v === "browser" ? "browser" : v === "editor" ? "code" : null
+  return v === "browser" ? "browser" : v === "editor" ? "code" : v === "terminal" ? "terminal" : null
 }
 
 export function workbenchStateFromStorage(read: (key: string) => string | null): WorkbenchState {

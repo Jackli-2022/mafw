@@ -14,6 +14,7 @@ import {
   normalizeWorkbenchView,
   terminalHotkeyAction,
   terminalStripVisible,
+  terminalSurfaceHotkeyAction,
   workbenchStateFromStorage,
 } from "./workbench-views"
 
@@ -27,6 +28,10 @@ describe("workbench-views", () => {
     assert.equal(normalizeWorkbenchView("bogus"), "workbench")
     assert.equal(normalizeWorkbenchSurface("bogus"), "code")
     assert.equal(normalizeExecutionSection("bogus"), "overview")
+  })
+
+  test("terminal surface id is recognized before it is visible in L2", () => {
+    assert.equal(normalizeWorkbenchSurface("terminal"), "terminal")
   })
 
   test("B1 labels are exact and ordered", () => {
@@ -86,6 +91,15 @@ describe("workbench-views", () => {
     )
     assert.equal(editor.surface, "code")
 
+    const terminal = workbenchStateFromStorage((key) =>
+      key === "mafw-right-dock-tab" ? "terminal" : null,
+    )
+    assert.equal(terminal.surface, "terminal")
+    const legacyTerminal = workbenchStateFromStorage((key) =>
+      key === "mafw-workbench-tab" ? "terminal" : null,
+    )
+    assert.equal(legacyTerminal.surface, "terminal")
+
     const fresh = workbenchStateFromStorage((key) => {
       if (key === "mafw-workbench-view") return "review"
       if (key === "mafw-workbench-surface") return "code"
@@ -105,6 +119,33 @@ describe("terminalStripVisible（终端只属工作台视图，2026-10-27 裁决
   test("execution/review 视图即使用户开着也不显示", () => {
     assert.equal(terminalStripVisible("execution", true), false)
     assert.equal(terminalStripVisible("review", true), false)
+  })
+})
+
+describe("terminalSurfaceHotkeyAction（Ctrl+` surface 级开合）", () => {
+  test("dock 关着 → 打开 dock + 工作台 + terminal", () => {
+    assert.deepEqual(
+      terminalSurfaceHotkeyAction({ dockOpen: false, view: "workbench", surface: "code", previousSurface: "code" }),
+      { openDock: true, view: "workbench", surface: "terminal" },
+    )
+  })
+  test("非工作台视图 → 跳到工作台 + terminal", () => {
+    assert.deepEqual(
+      terminalSurfaceHotkeyAction({ dockOpen: true, view: "execution", surface: "code", previousSurface: "browser" }),
+      { openDock: true, view: "workbench", surface: "terminal" },
+    )
+  })
+  test("当前就是 terminal → 回到 previousSurface", () => {
+    assert.deepEqual(
+      terminalSurfaceHotkeyAction({ dockOpen: true, view: "workbench", surface: "terminal", previousSurface: "browser" }),
+      { openDock: true, view: "workbench", surface: "browser" },
+    )
+  })
+  test("非 terminal surface → 切到 terminal", () => {
+    assert.deepEqual(
+      terminalSurfaceHotkeyAction({ dockOpen: true, view: "workbench", surface: "code", previousSurface: "browser" }),
+      { openDock: true, view: "workbench", surface: "terminal" },
+    )
   })
 })
 
