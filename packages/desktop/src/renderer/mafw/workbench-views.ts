@@ -25,6 +25,7 @@ export const WORKBENCH_VIEWS: readonly { id: WorkbenchView; label: string }[] = 
 export const WORKBENCH_SURFACES: readonly { id: WorkbenchSurface; label: string }[] = [
   { id: "code", label: "文件" },
   { id: "browser", label: "浏览器" },
+  { id: "terminal", label: "终端" },
 ]
 
 export const EXECUTION_SECTIONS: readonly { id: ExecutionSection; label: string }[] = [
@@ -36,9 +37,7 @@ export const EXECUTION_SECTIONS: readonly { id: ExecutionSection; label: string 
 ]
 
 const VIEW_IDS = new Set<WorkbenchView>(WORKBENCH_VIEWS.map((v) => v.id))
-// `terminal` is a valid persisted surface before Task 13 adds it to the visible
-// L2 list (avoid an intermediate commit with a dead tab).
-const SURFACE_IDS = new Set<WorkbenchSurface>([...WORKBENCH_SURFACES.map((v) => v.id), "terminal"])
+const SURFACE_IDS = new Set<WorkbenchSurface>(WORKBENCH_SURFACES.map((v) => v.id))
 const SECTION_IDS = new Set<ExecutionSection>(EXECUTION_SECTIONS.map((v) => v.id))
 
 export function normalizeWorkbenchView(v: string | null | undefined): WorkbenchView {
@@ -76,18 +75,6 @@ export function nextWorkbenchView(current: WorkbenchView, key: string): Workbenc
   if (key === "Home") return order[0]
   if (key === "End") return order[order.length - 1]
   return null
-}
-
-/** @deprecated Task 13 删除：底部终端条退役，改用 terminalSurfaceHotkeyAction。 */
-export function terminalStripVisible(view: WorkbenchView, terminalOpen: boolean): boolean {
-  return terminalOpen && view === "workbench"
-}
-
-export type TerminalHotkeyState = { dockOpen: boolean; view: WorkbenchView; terminalOpen: boolean }
-
-/** @deprecated Task 13 删除：底部终端条退役，改用 terminalSurfaceHotkeyAction。 */
-export function terminalHotkeyAction(s: TerminalHotkeyState): "hide" | "show" {
-  return s.dockOpen && s.view === "workbench" && s.terminalOpen ? "hide" : "show"
 }
 
 export type TerminalSurfaceHotkeyState = {

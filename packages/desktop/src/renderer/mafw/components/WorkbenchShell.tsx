@@ -1,8 +1,7 @@
-// B1 右工作台壳：一级「工作台 / 执行 / 审阅」+ 二级上下文条 + 常驻终端。
-// 工作台 › 代码/浏览器；执行 › 固定下拉（概览/待办/子代理/后台/轨迹）；审阅无二级。
+// B1 右工作台壳：一级「工作台 / 执行 / 审阅」+ 二级上下文条 + 终端 L2 surface。
+// 工作台 › 文件/浏览器/终端；执行 › 固定下拉（概览/待办/子代理/后台/轨迹）；审阅无二级。
 import { For, Show, createEffect, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
 import {
@@ -12,13 +11,11 @@ import {
   executionSectionLabel,
   nextWorkbenchSurface,
   nextWorkbenchView,
-  terminalStripVisible,
   type ExecutionSection,
   type WorkbenchSurface,
   type WorkbenchView,
 } from "../workbench-views"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
-import { TerminalDock } from "./TerminalDock"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
@@ -33,8 +30,6 @@ export type WorkbenchShellProps = {
   sessionID: string | null
   sessionDirectory: string | null
   diffs: FileDiffEntry[]
-  terminalOpen: boolean
-  onToggleTerminal: () => void
   onOpenFile: (rel: string) => void
   onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
@@ -106,20 +101,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           </For>
         </div>
         <div class="mafw-rw-l1-spacer" />
-        <Show when={props.view === "workbench"}>
-          <TooltipV2 value={props.terminalOpen ? "收起终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"} openDelay={300}>
-            <ButtonV2
-              variant="ghost"
-              size="small"
-              class="mafw-rw-terminal-toggle"
-              aria-label={props.terminalOpen ? "收起终端" : "打开终端"}
-              aria-pressed={props.terminalOpen}
-              onClick={props.onToggleTerminal}
-            >
-              <Icon name="terminal" size="small" />
-            </ButtonV2>
-          </TooltipV2>
-        </Show>
       </div>
 
       <Show when={props.view !== "review"}>
@@ -175,6 +156,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       <div class="mafw-rw-content">
         <div class="mafw-rw-pane" classList={{ "is-active": props.view === "workbench" }}>
           <WorkbenchCodeView
+            active={props.open && props.view === "workbench"}
             surface={props.surface}
             sessionID={props.sessionID}
             sessionDirectory={props.sessionDirectory}
@@ -192,16 +174,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         <div class="mafw-rw-pane" classList={{ "is-active": props.view === "review" }}>
           {props.reviewView}
         </div>
-      </div>
-
-      <div
-        class="mafw-rw-terminal"
-        classList={{ "is-collapsed": !terminalStripVisible(props.view, props.terminalOpen) }}
-      >
-        <TerminalDock
-          directory={props.sessionDirectory}
-          active={props.open && terminalStripVisible(props.view, props.terminalOpen)}
-        />
       </div>
     </div>
   )

@@ -80,7 +80,10 @@ export function sessionView(session: TerminalSessionInfo): TerminalView {
         kind: "closed",
         busy: false,
         banner: session.error ?? "连接失败",
-        action: "reconnect",
+        action:
+          session.kind === "local" && /不支持|不可用/.test(session.error ?? "")
+            ? "external"
+            : "reconnect",
       }
     case "closed":
     default:

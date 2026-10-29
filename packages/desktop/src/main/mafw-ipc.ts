@@ -12,7 +12,6 @@ import {
 } from "./mafw-sidecar"
 import { getLastFocusedWindow, trayIconPath, createMainWindow } from "./windows"
 import { walkProjectFiles } from "./file-listing"
-import { installTerminalBridge } from "./terminal/terminal-bridge"
 import { installTerminalServiceIpc } from "./terminal/terminal-ipc"
 import { installCaptureIpc } from "./capture/screenshot-capture"
 import { externalTerminalCommand } from "./terminal/terminal-core"
@@ -116,13 +115,7 @@ export function registerMafwIpcHandlers() {
   installCaptureIpc(ipcMain)
   // 内嵌终端（spec 2026-10-26）：目录级 persistent PTY；HTTP 经 gateway 反代、
   // WS 由 main 持有（窗口只经 preload 订阅）。gateway 未就绪时端口回落默认 3000。
-  installTerminalBridge(ipcMain, {
-    gatewayBase: () => `http://127.0.0.1:${getGatewayPort() ?? 3000}`,
-    log: (m) => writeLog("utility", m, {}, "warn"),
-    openExternal: openExternalTerminal,
-  })
-  // v2 terminal service (local + SSH) while the old bottom-strip TerminalDock
-  // still uses the v1 bridge until Task 13 removes it.
+  // Terminal service (local + SSH) backs the workbench L2 terminal surface.
   installTerminalServiceIpc(ipcMain, {
     dataDir: join(app.getPath("userData"), "terminal"),
     gatewayBase: () => `http://127.0.0.1:${getGatewayPort() ?? 3000}`,

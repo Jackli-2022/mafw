@@ -2876,14 +2876,12 @@ html[data-theme="light"] body {
 /* 选中态与左 rail 统一（spec 2026-10-27 §6.1 1a）：accent 12% 填充块 + accent 前景。
    用 aria 属性选择器：ButtonV2 的 classList 对多 token class 不可靠（会把整串当 classList key）。 */
 .mafw-rw-tab[aria-selected="true"],
-.mafw-rw-l2-tab[aria-selected="true"],
-.mafw-rw-terminal-toggle[aria-pressed="true"] {
+.mafw-rw-l2-tab[aria-selected="true"] {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
 }
 .mafw-rw-tab[aria-selected="true"]:hover,
-.mafw-rw-l2-tab[aria-selected="true"]:hover,
-.mafw-rw-terminal-toggle[aria-pressed="true"]:hover {
+.mafw-rw-l2-tab[aria-selected="true"]:hover {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
@@ -2928,8 +2926,6 @@ html[data-theme="light"] body {
 .mafw-rw-code-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .mafw-rw-code-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .mafw-rw-files-toggle { display: none; }
-.mafw-rw-terminal { height: 280px; max-height: 45%; flex: none; min-height: 0; border-top: 1px solid var(--border); }
-.mafw-rw-terminal.is-collapsed { display: none; }
 .mafw-rw-execution { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .mafw-rw-exec-section { display: none; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; }
 .mafw-rw-exec-section.is-active { display: flex; }
@@ -5462,11 +5458,256 @@ html[data-theme="light"] body {
 .mafw-panel-banner-error { background: var(--danger-dim); color: var(--danger-text); }
 .mafw-panel-banner-text { flex: 1 1 auto; min-width: 0; }
 
-/* ── Terminal dock（内嵌终端，spec 2026-10-26：目录级 persistent PTY）── */
-.mafw-terminal-dock { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-inset); }
+/* ── Terminal surface（工作台 L2，spec 2026-10-29）── */
+.mafw-terminal-surface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-inset);
+}
+.mafw-terminal-tabbar {
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-base);
+  min-width: 0;
+}
+.mafw-terminal-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mafw-terminal-tabs::-webkit-scrollbar { display: none; }
+.mafw-terminal-tab-wrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: var(--r-sm);
+}
+.mafw-terminal-tab-wrap.is-active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.mafw-terminal-tab {
+  max-width: 180px;
+  min-width: 0;
+  gap: 6px;
+  border-radius: var(--r-sm);
+}
+.mafw-terminal-tab[aria-selected="true"] { color: var(--accent); }
+.mafw-terminal-tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-terminal-tab-dot,
+.mafw-terminal-status-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--text-5); }
+.mafw-terminal-tab-dot.is-ok,
+.mafw-terminal-status-dot.is-ok { background: var(--accent); }
+.mafw-terminal-tab-dot.is-warn,
+.mafw-terminal-status-dot.is-warn { background: var(--warning); }
+.mafw-terminal-tab-dot.is-bad,
+.mafw-terminal-status-dot.is-bad { background: var(--danger); }
+.mafw-terminal-tab-close {
+  width: 22px;
+  min-width: 22px;
+  padding: 0;
+  opacity: 0;
+  flex: none;
+}
+.mafw-terminal-tab-wrap:hover .mafw-terminal-tab-close,
+.mafw-terminal-tab-wrap.is-active .mafw-terminal-tab-close { opacity: 1; }
+.mafw-terminal-tabbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.mafw-terminal-new-menu,
+.mafw-terminal-all-menu { min-width: 180px; }
+.mafw-terminal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.mafw-terminal-views { flex: 1; min-height: 0; display: flex; position: relative; }
+.mafw-terminal-pane { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.mafw-terminal-pane.is-active { display: flex; }
+.mafw-terminal-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .mafw-terminal-host { flex: 1 1 auto; min-height: 0; padding: 6px 4px 4px 8px; overflow: hidden; }
 .mafw-terminal-host .xterm { height: 100%; }
 .mafw-terminal-host .xterm-viewport { background: transparent !important; }
+.mafw-terminal-statusbar {
+  height: 24px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+  color: var(--text-3);
+  font-size: 11px;
+  min-width: 0;
+}
+.mafw-terminal-status-left,
+.mafw-terminal-status-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mafw-terminal-status-left { flex: 1 1 auto; overflow: hidden; white-space: nowrap; }
+.mafw-terminal-status-right { flex: none; color: var(--text-4); }
+.mafw-terminal-status-name { color: var(--text-1); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.mafw-terminal-status-addr { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; }
+.mafw-terminal-status-sep { color: var(--text-5); }
+.mafw-terminal-status-state { color: var(--text-2); }
+.mafw-terminal-statusbar[data-tone="bad"] .mafw-terminal-status-state { color: var(--danger-text); }
+.mafw-terminal-statusbar[data-tone="warn"] .mafw-terminal-status-state { color: var(--warning); }
+.mafw-terminal-status-duration { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.mafw-terminal-status-size { font-variant-numeric: tabular-nums; }
+.mafw-terminal-empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.mafw-terminal-empty-actions { display: flex; gap: 8px; padding-bottom: 24px; }
+
+/* ── SSH host drawer（覆盖式，默认收起）── */
+.mafw-host-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, .32);
+}
+.mafw-host-drawer {
+  width: min(360px, 100%);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-overlay);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-float);
+  animation: mafw-drawer-in var(--dur-surface) var(--ease-surface);
+}
+.mafw-host-drawer-head,
+.mafw-host-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex: none;
+}
+.mafw-host-drawer-head > div,
+.mafw-host-dialog-head > div { flex: 1; min-width: 0; }
+.mafw-host-drawer-title,
+.mafw-host-dialog-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.mafw-host-drawer-sub,
+.mafw-host-dialog-sub { margin-top: 2px; font-size: 11px; color: var(--text-3); line-height: 1.45; }
+.mafw-host-drawer-tools { display: flex; align-items: center; gap: 6px; padding: 8px 12px; flex: none; }
+.mafw-host-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--text-4); }
+.mafw-host-search .mafw-text-input-v2 { flex: 1; min-width: 0; }
+.mafw-host-drawer-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 6px 8px; }
+.mafw-host-drawer-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 48px 16px; text-align: center; color: var(--text-3); font-size: 12px; }
+.mafw-host-drawer-empty-hint { color: var(--text-4); font-size: 11px; line-height: 1.5; }
+.mafw-host-group { padding-top: 6px; }
+.mafw-host-group-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; color: var(--text-4); font-size: 10px; font-weight: 600; letter-spacing: .02em; }
+.mafw-host-group-count { font-variant-numeric: tabular-nums; }
+.mafw-host-row { display: flex; align-items: center; gap: 2px; border-radius: var(--r-sm); padding: 1px 2px; }
+.mafw-host-row:hover { background: var(--bg-hover); }
+.mafw-host-row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 5px 6px; text-align: left; }
+.mafw-host-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mafw-host-name { font-size: 12px; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-host-addr { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-host-jump { color: var(--text-4); }
+.mafw-host-count { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--bg-inset); color: var(--text-3); font-size: 10px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.mafw-host-row-actions { display: flex; align-items: center; gap: 0; flex: none; opacity: .55; }
+.mafw-host-row:hover .mafw-host-row-actions,
+.mafw-host-row:focus-within .mafw-host-row-actions { opacity: 1; }
+.mafw-host-drawer-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border-subtle); color: var(--text-4); font-size: 10px; }
+
+/* ── SSH host form ── */
+.mafw-host-dialog-backdrop,
+.mafw-hostkey-backdrop,
+.mafw-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .45);
+}
+.mafw-host-dialog {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  animation: mafw-modal-in var(--dur-surface) var(--ease-surface);
+  overflow: hidden;
+}
+.mafw-host-form { padding: 10px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.mafw-host-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.mafw-host-form-grid.is-address { grid-template-columns: minmax(0, 1fr) 90px; }
+.mafw-host-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 11px; color: var(--text-3); }
+.mafw-host-field > span { font-weight: 550; }
+.mafw-host-toggle { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-2); }
+.mafw-host-form-error { border: 1px solid var(--danger); background: var(--danger-dim); color: var(--danger-text); border-radius: var(--r-sm); padding: 7px 9px; font-size: 11px; line-height: 1.5; }
+.mafw-host-test-result { border-radius: var(--r-sm); padding: 7px 9px; font-size: 11px; line-height: 1.5; }
+.mafw-host-test-result.is-ok { border: 1px solid var(--accent-border); background: var(--accent-soft); color: var(--accent-text); }
+.mafw-host-test-result.is-error { border: 1px solid var(--danger); background: var(--danger-dim); color: var(--danger-text); }
+.mafw-host-dialog-foot,
+.mafw-hostkey-foot,
+.mafw-prompt-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border-subtle); flex: none; }
+.mafw-host-dialog-foot-right,
+.mafw-hostkey-actions { display: flex; align-items: center; gap: 6px; }
+
+/* ── Host key dialog ── */
+.mafw-hostkey-dialog {
+  width: min(500px, 100%);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  animation: mafw-modal-in var(--dur-surface) var(--ease-surface);
+  overflow: hidden;
+}
+.mafw-hostkey-dialog.is-danger { border-color: var(--danger); }
+.mafw-hostkey-head { padding: 12px 14px 8px; border-bottom: 1px solid var(--border-subtle); }
+.mafw-hostkey-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.mafw-hostkey-dialog.is-danger .mafw-hostkey-title { color: var(--danger-text); }
+.mafw-hostkey-host { margin-top: 2px; font-size: 11px; color: var(--text-3); font-family: var(--font-data); }
+.mafw-hostkey-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 7px; }
+.mafw-hostkey-row { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 8px; align-items: baseline; font-size: 11px; color: var(--text-3); }
+.mafw-hostkey-row code { min-width: 0; font-family: var(--font-data); font-size: 11px; color: var(--text-2); overflow-wrap: anywhere; }
+.mafw-hostkey-row.is-old code { color: var(--danger-text); }
+.mafw-hostkey-hint { margin: 2px 0 0; font-size: 11px; line-height: 1.55; color: var(--text-3); }
+
+/* ── Keyboard-interactive prompt ── */
+.mafw-prompt-dialog {
+  width: min(420px, 100%);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  animation: mafw-modal-in var(--dur-surface) var(--ease-surface);
+  overflow: hidden;
+}
+.mafw-prompt-head { padding: 12px 14px 8px; border-bottom: 1px solid var(--border-subtle); }
+.mafw-prompt-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.mafw-prompt-instructions { margin-top: 3px; font-size: 11px; color: var(--text-3); line-height: 1.5; }
+.mafw-prompt-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+
+@container (max-width: 599px) {
+  .mafw-terminal-status-right { display: none; }
+  .mafw-terminal-tab { max-width: 120px; }
+}
+@container (max-width: 480px) {
+  .mafw-terminal-statusbar { display: none; }
+  .mafw-host-form-grid,
+  .mafw-host-form-grid.is-address { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* ── 批注草稿（composer 上方，spec 2026-10-22 §5） ── */
 .mafw-pending-annotations { margin: 0 0 6px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-inset); overflow: hidden; }

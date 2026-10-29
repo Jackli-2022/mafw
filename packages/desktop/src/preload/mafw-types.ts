@@ -315,18 +315,8 @@ export type MafwAPI = {
     remove: (id: string, directory?: string) => Promise<void>
   }
 
-  /** 内嵌终端：v1 bottom strip (legacy) + v2 local/SSH session surface. */
+  /** 工作台 L2 终端：本地 PTY + SSH 会话。 */
   terminal: {
-    // legacy bottom-strip API (Task 13 removes)
-    probe: () => Promise<{ available: boolean; serveUrl?: string; reason?: string }>
-    attach: (directory: string, opts?: { reopen?: boolean }) => Promise<{ ok: true; ptyId: string; replayed: boolean } | { ok: false; reason: 'gone' | 'unavailable' | 'closed' }>
-    detach: (directory: string) => Promise<void>
-    input: (directory: string, data: string) => Promise<void>
-    resize: (directory: string, cols: number, rows: number) => Promise<void>
-    kill: (directory: string) => Promise<void>
-    onLegacyEvent: (cb: (ev: { directory: string; type: 'data' | 'closed' | 'gone'; data?: string }) => void) => () => void
-
-    // v2 session surface
     probeV2: () => Promise<TerminalProbe>
     sessions: {
       list: () => Promise<TerminalSessionInfo[]>

@@ -29,16 +29,7 @@ export function createMafwApi(): MafwAPI {
     for (const cb of healthCallbacks) cb(health)
   }
 
-  // 终端事件（spec 2026-10-26）：同样单监听器多播，防 HMR remount 堆监听器。
-  ipcRenderer.removeAllListeners("mafw-terminal-event")
-  const terminalCallbacks = new Set<(ev: { directory: string; type: 'data' | 'closed' | 'gone'; data?: string }) => void>()
-  let terminalChannelActive = false
-  const terminalRelay = (_event: any, ev: any) => {
-    for (const cb of terminalCallbacks) cb(ev)
-  }
-
-  // v2 terminal session events (local + SSH); separate channel from the
-  // legacy bottom-strip event until Task 13 removes it.
+  // Terminal session events (local + SSH): one preload listener, many callbacks.
   ipcRenderer.removeAllListeners("mafw-terminal-v2-event")
   const sessionCallbacks = new Set<(ev: TerminalEvent) => void>()
   let sessionChannelActive = false
@@ -356,30 +347,8 @@ export function createMafwApi(): MafwAPI {
     },
 
     terminal: {
-      // ── legacy bottom-strip API (removed in Task 13) ──
-      probe: () => ipcRenderer.invoke("mafw-terminal-probe") as Promise<{ available: boolean; serveUrl?: string; reason?: string }>,
-      attach: (directory: string, opts?: { reopen?: boolean }) => ipcRenderer.invoke("mafw-terminal-attach", { directory, reopen: opts?.reopen === true }) as Promise<{ ok: true; ptyId: string; replayed: boolean } | { ok: false; reason: 'gone' | 'unavailable' | 'closed' }>,
-      detach: (directory: string) => ipcRenderer.invoke("mafw-terminal-detach", { directory }) as Promise<void>,
-      input: (directory: string, data: string) => ipcRenderer.invoke("mafw-terminal-input", { directory, data }) as Promise<void>,
-      resize: (directory: string, cols: number, rows: number) => ipcRenderer.invoke("mafw-terminal-resize", { directory, cols, rows }) as Promise<void>,
-      kill: (directory: string) => ipcRenderer.invoke("mafw-terminal-kill", { directory }) as Promise<void>,
-      openExternal: (directory: string) => ipcRenderer.invoke("mafw-terminal-open-external", { directory }) as Promise<void>,
-      onLegacyEvent: (cb: (ev: { directory: string; type: 'data' | 'closed' | 'gone'; data?: string }) => void) => {
-        terminalCallbacks.add(cb)
-        if (!terminalChannelActive) {
-          ipcRenderer.on("mafw-terminal-event", terminalRelay)
-          terminalChannelActive = true
-        }
-        return () => {
-          terminalCallbacks.delete(cb)
-          if (terminalCallbacks.size === 0 && terminalChannelActive) {
-            ipcRenderer.removeListener("mafw-terminal-event", terminalRelay)
-            terminalChannelActive = false
-          }
-        }
-      },
+      openExternal: (directory: string) => ipcRenderer.invoke("mafw-terminal-v2-open-external", { directory }) as Promise<void>,
 
-      // ── v2 session surface ──
       probeV2: () => ipcRenderer.invoke("mafw-terminal-v2-probe") as Promise<TerminalProbe>,
       sessions: {
         list: () => ipcRenderer.invoke("mafw-terminal-v2-list") as Promise<TerminalSessionInfo[]>,

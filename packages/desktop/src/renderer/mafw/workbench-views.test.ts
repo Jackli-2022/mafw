@@ -12,8 +12,6 @@ import {
   normalizeExecutionSection,
   normalizeWorkbenchSurface,
   normalizeWorkbenchView,
-  terminalHotkeyAction,
-  terminalStripVisible,
   terminalSurfaceHotkeyAction,
   workbenchStateFromStorage,
 } from "./workbench-views"
@@ -30,13 +28,16 @@ describe("workbench-views", () => {
     assert.equal(normalizeExecutionSection("bogus"), "overview")
   })
 
-  test("terminal surface id is recognized before it is visible in L2", () => {
+  test("terminal is now the third visible L2 surface", () => {
+    assert.deepEqual(WORKBENCH_SURFACES.map((s) => s.label), ["文件", "浏览器", "终端"])
     assert.equal(normalizeWorkbenchSurface("terminal"), "terminal")
+    assert.equal(nextWorkbenchSurface("browser", "ArrowRight"), "terminal")
+    assert.equal(nextWorkbenchSurface("terminal", "ArrowRight"), null)
   })
 
   test("B1 labels are exact and ordered", () => {
     assert.deepEqual(WORKBENCH_VIEWS.map((v) => v.label), ["工作台", "执行", "审阅"])
-    assert.deepEqual(WORKBENCH_SURFACES.map((v) => v.label), ["文件", "浏览器"])
+    assert.deepEqual(WORKBENCH_SURFACES.map((v) => v.label), ["文件", "浏览器", "终端"])
     assert.deepEqual(
       EXECUTION_SECTIONS.map((s) => s.label),
       ["概览", "待办", "子代理", "后台", "轨迹"],
@@ -52,7 +53,8 @@ describe("workbench-views", () => {
     assert.equal(nextWorkbenchView("execution", "Home"), "workbench")
     assert.equal(nextWorkbenchView("workbench", "End"), "review")
     assert.equal(nextWorkbenchSurface("code", "ArrowRight"), "browser")
-    assert.equal(nextWorkbenchSurface("browser", "ArrowRight"), null)
+    assert.equal(nextWorkbenchSurface("browser", "ArrowRight"), "terminal")
+    assert.equal(nextWorkbenchSurface("terminal", "ArrowRight"), null)
   })
 
   test("legacy keys are removed after one-time migration", () => {
@@ -111,17 +113,6 @@ describe("workbench-views", () => {
   })
 })
 
-describe("terminalStripVisible（终端只属工作台视图，2026-10-27 裁决）", () => {
-  test("workbench 视图按用户开关显示", () => {
-    assert.equal(terminalStripVisible("workbench", true), true)
-    assert.equal(terminalStripVisible("workbench", false), false)
-  })
-  test("execution/review 视图即使用户开着也不显示", () => {
-    assert.equal(terminalStripVisible("execution", true), false)
-    assert.equal(terminalStripVisible("review", true), false)
-  })
-})
-
 describe("terminalSurfaceHotkeyAction（Ctrl+` surface 级开合）", () => {
   test("dock 关着 → 打开 dock + 工作台 + terminal", () => {
     assert.deepEqual(
@@ -146,19 +137,5 @@ describe("terminalSurfaceHotkeyAction（Ctrl+` surface 级开合）", () => {
       terminalSurfaceHotkeyAction({ dockOpen: true, view: "workbench", surface: "code", previousSurface: "browser" }),
       { openDock: true, view: "workbench", surface: "terminal" },
     )
-  })
-})
-
-describe("terminalHotkeyAction（Ctrl+` 意图：可见即隐藏，否则跳到工作台并打开）", () => {
-  test("条可见 → hide", () => {
-    assert.equal(terminalHotkeyAction({ dockOpen: true, view: "workbench", terminalOpen: true }), "hide")
-  })
-  test("dock 关着 / 终端关着 → show", () => {
-    assert.equal(terminalHotkeyAction({ dockOpen: false, view: "workbench", terminalOpen: true }), "show")
-    assert.equal(terminalHotkeyAction({ dockOpen: true, view: "workbench", terminalOpen: false }), "show")
-  })
-  test("非工作台视图（条被视图抑制）→ show（跳到工作台开终端）", () => {
-    assert.equal(terminalHotkeyAction({ dockOpen: true, view: "execution", terminalOpen: true }), "show")
-    assert.equal(terminalHotkeyAction({ dockOpen: true, view: "review", terminalOpen: false }), "show")
   })
 })

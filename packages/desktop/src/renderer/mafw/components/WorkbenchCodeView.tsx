@@ -7,11 +7,13 @@ import { Icon } from "@mafw/ui/icon"
 import { FilesDock } from "./FilesDock"
 import { EditorDock } from "./EditorDock"
 import { BrowserDock } from "./BrowserDock"
+import { TerminalSurface } from "./TerminalSurface"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { WorkbenchSurface } from "../workbench-views"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
 export function WorkbenchCodeView(props: {
+  active: boolean
   surface: WorkbenchSurface
   sessionID: string | null
   sessionDirectory: string | null
@@ -61,6 +63,12 @@ export function WorkbenchCodeView(props: {
         </div>
         <div class="mafw-rw-code-pane" style={{ display: props.surface === "browser" ? "contents" : "none" }}>
           <BrowserDock sessionID={props.sessionID} />
+        </div>
+        <div class="mafw-rw-code-pane" style={{ display: props.surface === "terminal" ? "contents" : "none" }}>
+          <TerminalSurface
+            directory={props.sessionDirectory}
+            active={props.active && props.surface === "terminal"}
+          />
         </div>
       </div>
     </div>

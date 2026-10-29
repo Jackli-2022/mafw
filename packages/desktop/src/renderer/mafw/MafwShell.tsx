@@ -64,7 +64,7 @@ import { openExecutionUsage } from "./execution-usage"
 import { defaultDockOpen } from "./workbench-defaults"
 import {
   clearLegacyWorkbenchKeys,
-  terminalHotkeyAction,
+  terminalSurfaceHotkeyAction,
   workbenchStateFromStorage,
   type ExecutionSection,
   type WorkbenchSurface,
@@ -1537,6 +1537,9 @@ export function MafwShell() {
   })
   const [workbenchView, setWorkbenchView] = createSignal<WorkbenchView>(bootView.view)
   const [workbenchSurface, setWorkbenchSurface] = createSignal<WorkbenchSurface>(bootView.surface)
+  const [previousSurface, setPreviousSurface] = createSignal<"code" | "browser">(
+    bootView.surface === "terminal" ? "code" : bootView.surface,
+  )
   const [executionSection, setExecutionSection] = createSignal<ExecutionSection>(bootView.executionSection)
   try {
     localStorage.setItem("mafw-workbench-view", bootView.view)
@@ -1544,10 +1547,6 @@ export function MafwShell() {
     localStorage.setItem("mafw-execution-section", bootView.executionSection)
     clearLegacyWorkbenchKeys((key) => localStorage.removeItem(key))
   } catch { /* ignore */ }
-  const storedTerminal = (() => { try { return localStorage.getItem("mafw-workbench-terminal") } catch { return null } })()
-  const [workbenchTerminalOpen, setWorkbenchTerminalOpen] = createSignal(
-    storedTerminal !== null ? storedTerminal !== "0" : workbenchBoot.terminalOpen,
-  )
   // 绝对 px 三档（520/640/760，默认 640）
   const [detent, setDetent] = createSignal<WorkbenchDetent>(workbenchBoot.detent)
   /** 拖动中的连续预览（松手吸附后清空）。 */
@@ -1613,6 +1612,7 @@ export function MafwShell() {
     try { localStorage.setItem("mafw-workbench-view", view) } catch { /* ignore */ }
   }
   const applyWorkbenchSurface = (surface: WorkbenchSurface) => {
+    if (surface !== "terminal") setPreviousSurface(surface)
     setWorkbenchSurface(surface)
     applyWorkbenchView("workbench")
     try { localStorage.setItem("mafw-workbench-surface", surface) } catch { /* ignore */ }
@@ -1632,11 +1632,6 @@ export function MafwShell() {
     applyWorkbenchSurface(surface)
     setRightDockOpen(true)
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
-  }
-  const toggleWorkbenchTerminal = () => {
-    const next = !workbenchTerminalOpen()
-    setWorkbenchTerminalOpen(next)
-    try { localStorage.setItem("mafw-workbench-terminal", next ? "1" : "0") } catch { /* ignore */ }
   }
   // 文件/编辑器根：会话目录属于项目（含 worktree）才采用，否则回退项目目录
   // （manager 会话的 directory 可能指向 home 等外部目录，实证 2026-10-22）
@@ -1750,27 +1745,23 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // Ctrl/Cmd+`：终端开合（VS Code/Zed 惯例，2026-10-27；C3 可自定义）。
+  // Ctrl/Cmd+`：终端 surface 级开合（VS Code/Zed 惯例，C3 可自定义）。
   // capture 阶段消费——xterm 聚焦时也要先生效（否则 Ctrl+` 以 \x00 落进 PTY）；
-  // 条可见即收起，否则跳到工作台视图并打开（终端只属工作台，见 terminalStripVisible）。
+  // 当前就是终端 → 回上一个文件/浏览器 surface；否则打开工作台 › 终端。
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!matchesCombo(e, keybindingFor("toggle-terminal"))) return
       e.preventDefault()
       e.stopPropagation()
-      const action = terminalHotkeyAction({
+      const action = terminalSurfaceHotkeyAction({
         dockOpen: rightDockOpen(),
         view: workbenchView(),
-        terminalOpen: workbenchTerminalOpen(),
+        surface: workbenchSurface(),
+        previousSurface: previousSurface(),
       })
-      if (action === "hide") {
-        setWorkbenchTerminalOpen(false)
-        try { localStorage.setItem("mafw-workbench-terminal", "0") } catch { /* ignore */ }
-      } else {
-        openWorkbench("workbench")
-        setWorkbenchTerminalOpen(true)
-        try { localStorage.setItem("mafw-workbench-terminal", "1") } catch { /* ignore */ }
-      }
+      if (action.openDock) applyRightDock(true)
+      applyWorkbenchView(action.view)
+      applyWorkbenchSurface(action.surface)
     }
     window.addEventListener("keydown", onKey, true)
     onCleanup(() => window.removeEventListener("keydown", onKey, true))
@@ -2215,8 +2206,6 @@ export function MafwShell() {
                   sessionID={currentSessionID() || null}
                   sessionDirectory={benchRoot()}
                   diffs={mergedSessionDiffs()}
-                  terminalOpen={workbenchTerminalOpen()}
-                  onToggleTerminal={toggleWorkbenchTerminal}
                   onOpenFile={(rel) => {
                     const root = benchRoot()
                     if (!root) return

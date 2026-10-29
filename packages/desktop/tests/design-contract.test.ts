@@ -837,8 +837,8 @@ describe("layout-toggles — workbench + session rail", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("Workbench 四件套同屏（树/编辑器/浏览器/终端）", () => {
     const code = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
-    for (const c of ["FilesDock", "EditorDock", "BrowserDock"]) expect(code).toContain(c)
-    expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).toContain("TerminalDock")
+    for (const c of ["FilesDock", "EditorDock", "BrowserDock", "TerminalSurface"]) expect(code).toContain(c)
+    expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).not.toContain("TerminalDock")
   })
   test("MafwShell 不再挂 RightDock；SessionRail 删除", () => {
     expect(() => read("src/renderer/mafw/components/RightDock.tsx")).toThrow()
@@ -866,9 +866,9 @@ describe("workbench merge — 档位与尺寸", () => {
     expect(src).toContain("migrateDockKeys")
     expect(src).toContain("onDblClick")
   })
-  test("CSS：树 200px / 终端 280px / 无第二右轨", () => {
+  test("CSS：树 200px / 终端 surface 满高 / 无第二右轨", () => {
     expect(cssBlock(".mafw-rw-files {")).toContain("width: 200px")
-    expect(cssBlock(".mafw-rw-terminal {")).toContain("height: 280px")
+    expect(cssBlock(".mafw-terminal-surface {")).toContain("height: 100%")
     expect(css).not.toContain(".mafw-session-rail {")
   })
 })
@@ -932,7 +932,6 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     "src/renderer/mafw/components/FilesDock.tsx",
     "src/renderer/mafw/components/EditorDock.tsx",
     "src/renderer/mafw/components/BrowserDock.tsx",
-    "src/renderer/mafw/components/TerminalDock.tsx",
     "src/renderer/mafw/components/ChangesDock.tsx",
   ]
   test("五个面板都走共享骨架（DockPanelHeader）", () => {
@@ -993,7 +992,7 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     expect(read("src/renderer/mafw/components/ScreenshotCropper.tsx")).toContain("stopImmediatePropagation")
     expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("hasSendableContent")
     expect(cssBlock(".mafw-dock-shell.is-hidden {")).toContain("display: none")
-    expect(cssBlock(".mafw-rw-terminal.is-collapsed {")).toContain("display: none")
+    expect(cssBlock(".mafw-terminal-pane {")).toContain("display: none")
     expect(cssBlock(".mafw-left-dock-notes {")).toContain("overflow-y: auto")
   })
 })
