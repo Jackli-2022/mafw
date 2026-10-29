@@ -1,7 +1,7 @@
 # Right Workbench Browser Multi-Tab + Link Routing
 
 日期：2026-10-29
-状态：已实现（代码 commits `01ff5e7`..`d63517e`；收尾契约见本批文档 commit）
+状态：已实现（代码 commits `01ff5e7`..`b13de004`；含终审修复；收尾契约见本批文档 commit）
 相关：`docs/superpowers/specs/2026-10-27-workbench-file-preview-design.md`（工作台浏览器首版）
 `docs/superpowers/specs/2026-10-29-terminal-surface-ssh-design.md`（工作台 surface 导航）
 
