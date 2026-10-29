@@ -46,6 +46,13 @@ export class PodMemoryService {
     return target;
   }
 
+  readMemoryFile(podId: string, file: 'POD' | 'MEMORY' | 'GLOSSARY'): string | null {
+    const name = MEMORY_FILES[file];
+    if (!name) throw new PodError(400, `unknown pod memory file: ${file}`);
+    const target = path.join(this.memoryDir(podId), name);
+    return fs.existsSync(target) ? fs.readFileSync(target, 'utf-8') : null;
+  }
+
   renderContext(podId: string, node: 'plan' | 'execute' | 'review'): string | null {
     const dir = this.memoryDir(podId);
     const files = ['POD.md', 'POD_MEMORY.md', 'glossary.md'];
@@ -57,6 +64,21 @@ export class PodMemoryService {
       if (!content) continue;
       sections.push(`## ${file}\n${content}`);
     }
+
+    const decisionsDir = path.join(dir, 'decisions');
+    if (fs.existsSync(decisionsDir)) {
+      const recent = fs.readdirSync(decisionsDir)
+        .filter((name) => name.endsWith('.md'))
+        .sort()
+        .reverse()
+        .slice(0, 3);
+      for (const name of recent) {
+        const target = path.join(decisionsDir, name);
+        const content = fs.readFileSync(target, 'utf-8').trim();
+        if (content) sections.push(`## decision:${name}\n${content}`);
+      }
+    }
+
     if (sections.length === 0) return null;
 
     const block = `[POD CONTEXT]\nNode: ${node}\n\n${sections.join('\n\n')}`;

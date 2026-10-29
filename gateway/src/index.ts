@@ -972,6 +972,7 @@ class MafwScheduler {
 
     // 6. 恢复活跃 Goal
     await this.recoverState();
+    await this.podService?.reconcile().catch((err: any) => log.warn(`[Pod] reconcile failed (non-fatal): ${err?.message ?? err}`));
 
     // 7. 为所有已注册项目初始化 Manager session（不存在则自动创建）
     for (const [projectDir, info] of this.registeredProjects) {
@@ -7955,9 +7956,9 @@ class MafwScheduler {
     goalId: string,
     outcome?: { verdict: string; reviewFeedback?: string | null },
   ): Promise<void> {
-    try {
-      const podId = this.podService?.getPodIdForGoal(goalId);
-      if (podId && this.podMemoryService) {
+    const podId = this.podService?.getPodIdForGoal(goalId);
+    if (podId && this.podMemoryService) {
+      try {
         const mafwDir = this.goalDriverMafwDirCache.get(goalId);
         const state = mafwDir ? loadGoalState(mafwDir, goalId) : this.activeGoals.get(goalId);
         this.podMemoryService.captureGoal(podId, {
@@ -7966,8 +7967,19 @@ class MafwScheduler {
           reviewFeedback: outcome?.reviewFeedback ?? undefined,
           receiptPath: (state as any)?.receiptPath ?? undefined,
         });
+      } catch (err: any) {
+        log.warn(`[Pod] memory capture failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
       }
-      await this.podGoalService?.onGoalArchived(goalId);
+    }
+    if (podId && outcome && outcome.verdict !== 'PASS') {
+      try {
+        this.podTaskService.reconcileArchive(podId, goalId, false);
+      } catch (err: any) {
+        log.warn(`[Pod] failure reconcile failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+      }
+    }
+    try {
+      await this.podGoalService?.onGoalArchived(goalId, { verdict: outcome?.verdict });
     } catch (err: any) {
       log.warn(`[Pod] goal archive hook failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
     }
@@ -7977,8 +7989,8 @@ class MafwScheduler {
     return this.podBudget?.cost(podId) ?? { spentUsd: 0, limitUsd: 0 };
   }
 
-  private podTranscript(_podId: string, sessionId: string): unknown {
-    const snapshot = this.podStore.getSnapshot(sessionId);
+  private podTranscript(podId: string, sessionId: string): unknown {
+    const snapshot = this.podStore.getSnapshotForPod(podId, sessionId);
     if (!snapshot) return null;
     try {
       return JSON.parse(fs.readFileSync(snapshot.path, 'utf-8'));
@@ -8216,7 +8228,11 @@ class MafwScheduler {
 
   /** Goal starter wrapper：所有 goal 创建路径都先过 Pod 单 active goal 队列。 */
   private async startGoal(goalId: string, projectDirHint?: string): Promise<void> {
-    await this.podGoalService.enqueueGoal(goalId, projectDirHint);
+    try {
+      await this.podGoalService.enqueueGoal(goalId, projectDirHint);
+    } catch (err: any) {
+      log.error(`[Goal] ${goalId}: pod queue/start failed: ${err?.message ?? err}`);
+    }
   }
 
   /** Goal starter（spec §4）：定位目标项目 → ensureState(v3) → NodeDriver.advance。 */
@@ -8225,7 +8241,7 @@ class MafwScheduler {
       .map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir }));
     const found = resolveGoalDir(projects, projectDirHint, (mafwDir) =>
       fs.existsSync(path.join(mafwDir, 'requests', `${goalId}.json`)));
-    if (!found) { log.warn(`[Goal] ${goalId}: no project dir resolved — skipping`); return; }
+    if (!found) { log.warn(`[Goal] ${goalId}: no project dir resolved — skipping`); throw new Error(`no project dir resolved for goal ${goalId}`); }
     this.goalDriverMafwDirCache.set(goalId, found.mafwDir);
     this.goalDriver?.registerGoalDir(goalId, found.mafwDir);
     ensureGoalState(found.mafwDir, goalId, {

@@ -13,14 +13,15 @@ export function canonicalProjectDir(projectDir: string): string {
 }
 
 export function podIdForProject(projectDir: string): string {
-  const canonical = canonicalProjectDir(projectDir).replace(/\\/g, '/').toLowerCase();
-  const digest = createHash('sha1').update(canonical).digest('hex').slice(0, 12);
+  const canonical = canonicalProjectDir(projectDir).replace(/\\/g, '/');
+  const key = process.platform === 'win32' ? canonical.toLowerCase() : canonical;
+  const digest = createHash('sha1').update(key).digest('hex').slice(0, 12);
   return `pod_${digest}`;
 }
 
 export function parentProjectDirForWorktree(worktreeDir: string): string | null {
   const base = path.basename(worktreeDir);
-  const match = /^(.*)-wt-(.+)$/.exec(base);
+  const match = /^(.*)-(?:wt|goal)-(.+)$/.exec(base);
   if (!match || !match[1]) return null;
   return path.join(path.dirname(worktreeDir), match[1]);
 }

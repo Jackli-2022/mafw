@@ -47,10 +47,11 @@ function makeDeps(overrides: Record<string, any> = {}) {
       list: jest.fn(() => []),
       send: jest.fn(() => ({ id: 'm1' })),
     },
-    goals: { list: jest.fn(() => []) },
+    goals: { list: jest.fn(() => []), promote: jest.fn(async () => true) },
     memory: {
       renderContext: jest.fn(() => '[POD CONTEXT]'),
       writeMemory: jest.fn(() => '/tmp/POD.md'),
+      readMemoryFile: jest.fn(() => 'full memory'),
     },
     cost: jest.fn(async () => ({ spentUsd: 0, limitUsd: 10 })),
     transcript: jest.fn(async () => ({ sessionID: 's1', messages: [] })),
@@ -109,6 +110,8 @@ describe('pod routes', () => {
 
   it('lists/sends messages and serves cost/goals/transcript/memory', async () => {
     const deps = makeDeps();
+    expect((await call('POST', '/api/pods/pod_1/wake', deps)).res.status).toBe(200);
+    expect(deps.goals.promote).toHaveBeenCalledWith('pod_1');
     expect((await call('GET', '/api/pods/pod_1/messages', deps)).res.status).toBe(200);
     expect((await call('POST', '/api/pods/pod_1/messages', deps, {
       fromMemberId: 'm_lead', kind: 'note', body: 'hello',
@@ -118,6 +121,7 @@ describe('pod routes', () => {
     expect((await call('GET', '/api/pods/pod_1/goals', deps)).res.status).toBe(200);
     expect((await call('GET', '/api/pods/pod_1/sessions/s1/transcript', deps)).res.status).toBe(200);
     expect((await call('GET', '/api/pods/pod_1/memory?node=plan', deps)).json.context).toBe('[POD CONTEXT]');
+    expect((await call('GET', '/api/pods/pod_1/memory?file=POD', deps)).json.content).toBe('full memory');
     expect((await call('POST', '/api/pods/pod_1/memory', deps, {
       file: 'POD', content: 'hello',
     })).res.status).toBe(200);

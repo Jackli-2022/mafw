@@ -6,15 +6,19 @@ export const podMemoryReadTool: PodTool = {
   args: {
     podId: z.string().describe('Pod id'),
     node: z.enum(['plan', 'execute', 'review']).optional(),
+    file: z.enum(['POD', 'MEMORY', 'GLOSSARY']).optional().describe('读取完整文件而非注入上下文'),
   },
   async execute(args, ctx) {
     try {
-      const query = args.node ? `?node=${encodeURIComponent(args.node)}` : '';
+      const params = new URLSearchParams();
+      if (args.node) params.set('node', args.node);
+      if (args.file) params.set('file', args.file);
+      const query = params.toString() ? `?${params}` : '';
       const body = await podRequest(`/api/pods/${encodeURIComponent(args.podId)}/memory${query}`, { method: 'GET' }, ctx);
       return {
-        title: '鲸群记忆',
-        output: body?.context ?? '(no pod memory)',
-        metadata: { podId: args.podId, hasContext: typeof body?.context === 'string' },
+        title: args.file ? `鲸群记忆 · ${args.file}` : '鲸群记忆',
+        output: args.file ? (body?.content ?? '(empty)') : (body?.context ?? '(no pod memory)'),
+        metadata: { podId: args.podId, file: args.file, hasContext: Boolean(body?.context ?? body?.content) },
       };
     } catch (err) {
       return toolError('鲸群记忆读取失败', err);

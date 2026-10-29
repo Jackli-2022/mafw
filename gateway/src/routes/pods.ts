@@ -10,9 +10,9 @@ export interface PodRouteDeps {
   pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus'>;
   tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask'>;
   messages: Pick<PodMessageService, 'list' | 'send'>;
-  goals: Pick<PodGoalService, 'list'>;
-  memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory'>;
-  access?: { requireMember(sessionId: string, allowed: PodMemberRole[]): PodMemberRow };
+  goals: Pick<PodGoalService, 'list' | 'promote'>;
+  memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
+  access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>;
   transcript(podId: string, sessionId: string): Promise<unknown>;
 }
@@ -46,7 +46,7 @@ export async function handlePods(
       const podId = decode(task[1]);
       requirePod(deps, podId);
       const body = await readJson(req);
-      assertAccess(deps, body, ['lead', 'builder', 'reviewer']);
+      assertAccess(deps, body, ['lead', 'builder', 'reviewer'], podId);
       const updated = deps.tasks.updateTask(podId, decode(task[2]), {
         ...(body.status ? { status: body.status } : {}),
         ...(body.ownerMemberId !== undefined ? { ownerMemberId: body.ownerMemberId } : {}),
@@ -65,7 +65,7 @@ export async function handlePods(
       }
       if (method === 'POST') {
         const body = await readJson(req);
-        assertAccess(deps, body, ['lead', 'builder']);
+        assertAccess(deps, body, ['lead', 'builder'], podId);
         const created = deps.tasks.createManual(
           podId,
           typeof body.goalId === 'string' ? body.goalId : null,
@@ -88,10 +88,12 @@ export async function handlePods(
       }
       if (method === 'POST') {
         const body = await readJson(req);
-        const member = assertAccess(deps, body, ['lead', 'builder', 'reviewer']);
-        const fromMemberId = typeof body.fromMemberId === 'string' && body.fromMemberId
-          ? body.fromMemberId
-          : member?.id;
+        const member = assertAccess(deps, body, ['lead', 'builder', 'reviewer'], podId);
+        if (member && body.fromMemberId && body.fromMemberId !== member.id) {
+          throw new PodError(403, 'fromMemberId does not match authenticated actor');
+        }
+        const fromMemberId = member?.id
+          ?? (typeof body.fromMemberId === 'string' ? body.fromMemberId : undefined);
         if (!fromMemberId) throw new PodError(400, 'fromMemberId or actorSessionID required');
         const message = deps.messages.send({
           podId,
@@ -112,6 +114,7 @@ export async function handlePods(
       const podId = decode(wake[1]);
       requirePod(deps, podId);
       const detail = deps.pods.updateStatus(podId, wake[2] === 'wake' ? 'active' : 'idle');
+      if (wake[2] === 'wake') await deps.goals.promote(podId);
       sendJson(res, 200, detail);
       return true;
     }
@@ -148,7 +151,14 @@ export async function handlePods(
       const podId = decode(memory[1]);
       requirePod(deps, podId);
       if (method === 'GET') {
-        const node = new URL(url, 'http://localhost').searchParams.get('node') || 'plan';
+        const params = new URL(url, 'http://localhost').searchParams;
+        const file = params.get('file');
+        if (file) {
+          if (!MEMORY_FILES.has(file)) throw new PodError(400, 'file must be POD|MEMORY|GLOSSARY');
+          sendJson(res, 200, { content: deps.memory.readMemoryFile(podId, file as 'POD' | 'MEMORY' | 'GLOSSARY') });
+          return true;
+        }
+        const node = params.get('node') || 'plan';
         if (node !== 'plan' && node !== 'execute' && node !== 'review') {
           throw new PodError(400, `invalid node: ${node}`);
         }
@@ -157,7 +167,7 @@ export async function handlePods(
       }
       if (method === 'POST') {
         const body = await readJson(req);
-        assertAccess(deps, body, ['lead']);
+        assertAccess(deps, body, ['lead'], podId);
         if (!MEMORY_FILES.has(String(body.file))) throw new PodError(400, 'file must be POD|MEMORY|GLOSSARY');
         const target = deps.memory.writeMemory(podId, body.file, String(body.content ?? ''));
         sendJson(res, 200, { path: target });
@@ -204,25 +214,28 @@ function assertAccess(
   deps: PodRouteDeps,
   body: any,
   allowed: PodMemberRole[],
+  podId: string,
 ): PodMemberRow | null {
   if (!body || typeof body.actorSessionID !== 'string' || !body.actorSessionID) return null;
   if (!deps.access) throw new PodError(503, 'pod access checks unavailable');
-  return deps.access.requireMember(body.actorSessionID, allowed);
+  return deps.access.requireMember(body.actorSessionID, allowed, podId);
 }
 
 function readJson(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks: Buffer[] = [];
     let size = 0;
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length;
+    req.on('data', (chunk: Buffer | string) => {
+      const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      size += buf.length;
       if (size > 64 * 1024) {
         reject(new PodError(413, 'request body too large'));
         return;
       }
-      body += chunk.toString('utf-8');
+      chunks.push(buf);
     });
     req.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf-8');
       if (!body.trim()) return resolve({});
       try {
         resolve(JSON.parse(body));

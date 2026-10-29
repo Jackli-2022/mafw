@@ -85,4 +85,25 @@ describe('PodMemoryService', () => {
     expect(fs.readFileSync(file, 'utf-8')).toBe('# Updated');
     expect(() => service.writeMemory('pod_1', 'NOPE' as any, 'x')).toThrow(PodError);
   });
+
+  test('captureGoal is included in the bounded context', () => {
+    service.ensurePodMemory('pod_1', 'Project Alpha');
+    service.captureGoal('pod_1', {
+      goalId: 'g1',
+      ok: false,
+      reviewFeedback: 'tests failed',
+    });
+
+    const context = service.renderContext('pod_1', 'plan')!;
+    expect(context).toContain('Goal g1');
+    expect(context).toContain('tests failed');
+    expect(context.length).toBeLessThanOrEqual(4096);
+  });
+
+  test('readMemoryFile returns full content beyond the context cap', () => {
+    service.ensurePodMemory('pod_1', 'Project Alpha');
+    const full = 'x'.repeat(5000);
+    service.writeMemory('pod_1', 'POD', full);
+    expect(service.readMemoryFile('pod_1', 'POD')).toBe(full);
+  });
 });

@@ -120,6 +120,19 @@ describe('PodTaskService', () => {
     expect(notifications).toContain('pod_1');
   });
 
+  test('same wave ids across goals stay separate', () => {
+    const first = service.projectWaves('pod_1', 'g1', plan);
+    service.updateTask('pod_1', first[0].id, { status: 'in_progress' });
+    service.updateTask('pod_1', first[0].id, { status: 'done' });
+    const second = service.projectWaves('pod_1', 'g2', plan);
+
+    expect(service.list('pod_1', 'g1')).toHaveLength(3);
+    expect(service.list('pod_1', 'g2')).toHaveLength(3);
+    expect(service.list('pod_1', 'g1')[0].status).toBe('done');
+    expect(service.list('pod_1', 'g2')[0].status).toBe('pending');
+    expect(second[0].id).not.toBe(first[0].id);
+  });
+
   test('reconcileArchive fails open tasks on failure and leaves success alone', () => {
     const tasks = service.projectWaves('pod_1', 'g1', plan);
     service.updateTask('pod_1', tasks[0].id, { status: 'in_progress' });

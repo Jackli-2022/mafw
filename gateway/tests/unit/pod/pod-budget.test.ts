@@ -48,4 +48,12 @@ describe('PodBudget', () => {
     expect(budget(5).canStart('pod_1').ok).toBe(false);
     expect(budget(0).canStart('pod_1').ok).toBe(true);
   });
+
+  test('includes old sessions because turn time is filtered by costForSessions', () => {
+    store.insertSession({
+      id: 'ps_old', podId: 'pod_1', memberId: 'm1', goalId: 'g1', node: 'execute',
+      sessionId: 's_old', status: 'active', transcriptRef: null, now: '2020-01-01T00:00:00.000Z',
+    });
+    expect(budget(10, 3).cost('pod_1').spentUsd).toBe(3);
+  });
 });

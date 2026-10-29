@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { PodStore } from '../../../src/core/pod/pod-store';
 import { PodService } from '../../../src/core/pod/pod-service';
+import { PodError } from '../../../src/core/pod/pod-store';
 
 describe('PodService', () => {
   let dir: string;
@@ -107,8 +108,21 @@ describe('PodService', () => {
     expect(payload.sessionID).toBe('ses_builder');
     expect(payload.messages).toHaveLength(1);
     expect(store.getSnapshot('ses_builder')?.path).toBe(expectedPath);
+    expect(store.getSessionBySessionId('ses_builder')?.transcriptRef).toBe(expectedPath);
     expect(store.listActiveSessions(detail.pod.id).map((s) => s.sessionId)).toEqual(['ses_manager']);
     expect(store.getMemberByRole(detail.pod.id, 'builder')?.status).toBe('available');
+  });
+
+  test('snapshotSession does not finalize the session when transcript fetch fails', async () => {
+    const detail = await service.ensure(projectDir);
+    store.enqueueGoal({ id: 'pg_1', podId: detail.pod.id, goalId: 'g1', now: now() });
+    service.bindSession('g1', 'execute', 'ses_builder');
+    messagesImpl = async () => { throw new Error('transcript down'); };
+
+    await expect(service.snapshotSession('ses_builder')).rejects.toBeInstanceOf(PodError);
+    expect(store.getSnapshot('ses_builder')).toBeNull();
+    expect(store.listActiveSessions(detail.pod.id).some((s) => s.sessionId === 'ses_builder')).toBe(true);
+    expect(store.getMemberByRole(detail.pod.id, 'builder')?.status).toBe('working');
   });
 
   test('reconcile ends dead goal sessions but leaves the coordination session alive', async () => {
@@ -134,5 +148,13 @@ describe('PodService', () => {
     expect(store.getSnapshot('ses_dead')).not.toBeNull();
     expect(logs.some((line) => line.includes('ses_dead'))).toBe(true);
     expect(store.listActiveSessions(detail.pod.id).some((s) => s.node === 'coordination')).toBe(true);
+  });
+
+  test('rejects an unregistered project without creating a pod', async () => {
+    const unknown = path.join(dir, 'unknown-project');
+    fs.mkdirSync(unknown, { recursive: true });
+
+    await expect(service.ensure(unknown)).rejects.toBeInstanceOf(PodError);
+    expect(store.listPods()).toHaveLength(0);
   });
 });

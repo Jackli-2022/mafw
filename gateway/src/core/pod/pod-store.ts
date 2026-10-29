@@ -242,7 +242,7 @@ export class PodStore {
         artifact_refs_json TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        UNIQUE(pod_id, source_key)
+        UNIQUE(pod_id, goal_id, source_key)
       );
       CREATE INDEX IF NOT EXISTS idx_pod_tasks_pod_goal ON pod_tasks(pod_id, goal_id);
 
@@ -429,7 +429,7 @@ export class PodStore {
         id, pod_id, goal_id, source_key, external_task_id, title, description,
         owner_member_id, status, dependencies_json, artifact_refs_json, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(pod_id, source_key) DO UPDATE SET
+      ON CONFLICT(pod_id, goal_id, source_key) DO UPDATE SET
         goal_id = excluded.goal_id,
         external_task_id = excluded.external_task_id,
         title = excluded.title,
@@ -540,6 +540,12 @@ export class PodStore {
     ).run(now, sessionId);
   }
 
+  setSessionTranscriptRef(sessionId: string, path: string, _now: string): void {
+    this.db.prepare(
+      'UPDATE pod_member_sessions SET transcript_ref = ? WHERE session_id = ?',
+    ).run(path, sessionId);
+  }
+
   insertSnapshot(input: {
     id: string; podId: string; memberId: string; goalId: string | null;
     node: string | null; sessionId: string; path: string; now: string;
@@ -561,10 +567,16 @@ export class PodStore {
     return row?.path ? { path: row.path } : null;
   }
 
-  listSessionIds(podId: string, sinceEpoch: number): string[] {
-    const since = new Date(sinceEpoch * 1000).toISOString();
+  getSnapshotForPod(podId: string, sessionId: string): { path: string } | null {
+    const row = this.db.prepare(
+      'SELECT path FROM pod_session_snapshots WHERE pod_id = ? AND session_id = ?',
+    ).get(podId, sessionId) as { path?: string } | undefined;
+    return row?.path ? { path: row.path } : null;
+  }
+
+  listSessionIds(podId: string, _sinceEpoch: number): string[] {
     return (this.db.prepare(
-      'SELECT DISTINCT session_id FROM pod_member_sessions WHERE pod_id = ? AND created_at >= ? ORDER BY session_id',
-    ).all(podId, since) as Array<{ session_id: string }>).map((r) => r.session_id);
+      "SELECT DISTINCT session_id FROM pod_member_sessions WHERE pod_id = ? AND COALESCE(node, '') <> 'coordination' ORDER BY session_id",
+    ).all(podId) as Array<{ session_id: string }>).map((r) => r.session_id);
   }
 }

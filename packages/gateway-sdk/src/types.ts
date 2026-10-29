@@ -1106,7 +1106,7 @@ export interface PodNamespace {
   ensure(projectID: string): Promise<PodDetail>
   create(projectID: string): Promise<PodDetail>
   get(podID: string): Promise<PodDetail>
-  update(podID: string, body: { status?: PodStatus; configJson?: string }): Promise<PodDetail>
+  update(podID: string, body: { status: PodStatus }): Promise<PodDetail>
   listTasks(podID: string): Promise<{ items: PodTask[] }>
   createTask(podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }>
   updateTask(podID: string, taskID: string, body: { status?: PodTaskStatus; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }>

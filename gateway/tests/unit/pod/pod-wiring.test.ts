@@ -26,6 +26,7 @@ describe('Pod gateway wiring', () => {
   test('binds node sessions and snapshots before delete', () => {
     expect(source).toContain('podService?.bindSession(');
     expect(source).toMatch(/snapshotSession\(sessionID\)[\s\S]{0,200}sdkSession\.delete\(sessionID\)/);
+    expect(source).toContain('podService?.reconcile()');
   });
 
   test('archives pod goal and captures memory', () => {

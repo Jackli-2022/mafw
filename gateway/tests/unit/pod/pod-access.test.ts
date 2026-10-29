@@ -49,4 +49,20 @@ describe('PodAccess', () => {
       expect(err.status).toBe(403);
     }
   });
+
+  test('rejects a member from another pod', () => {
+    store.ensurePod({ id: 'pod_2', projectDir: '/proj2', name: 'P2', now: '2026-10-29T00:00:00.000Z' });
+    store.upsertMember({
+      id: 'm_lead2', podId: 'pod_2', role: 'lead', displayName: 'Lead', agentName: 'manager',
+      modelProvider: null, modelId: null, status: 'available', configJson: null, now: '2026-10-29T00:00:00.000Z',
+    });
+    store.insertSession({
+      id: 'ps_lead2', podId: 'pod_2', memberId: 'm_lead2', goalId: null, node: 'coordination',
+      sessionId: 's2', status: 'active', transcriptRef: null, now: '2026-10-29T00:00:00.000Z',
+    });
+
+    expect(() => access.requireMember('s2', ['lead'], 'pod_1')).toThrow(PodError);
+    expect(() => access.requireMember('s1', ['lead'], 'pod_2')).toThrow(PodError);
+    expect(access.requireMember('s1', ['lead'], 'pod_1').id).toBe('m_lead');
+  });
 });

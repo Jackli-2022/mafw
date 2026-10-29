@@ -10,7 +10,7 @@ import {
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
-  PodDetail, PodTask, PodMessage, PodGoal, PodNamespace,
+  PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus,
   SessionConfigState, SessionConfigCategory,
   MethodNotSupportedError,
 } from './types'
@@ -1224,7 +1224,7 @@ export class MafwClient implements IMafwClient {
     get: async (podID: string): Promise<PodDetail> =>
       this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}`),
 
-    update: async (podID: string, body: { status?: PodDetail['pod']['status']; configJson?: string }): Promise<PodDetail> =>
+    update: async (podID: string, body: { status: PodStatus }): Promise<PodDetail> =>
       this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}`, {
         method: 'PATCH',
         body: JSON.stringify(body),

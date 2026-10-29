@@ -123,4 +123,66 @@ describe('PodGoalService', () => {
     await service.onGoalArchived('g1');
     expect(notifications.filter((id) => id === first.podId).length).toBeGreaterThanOrEqual(2);
   });
+
+  test('duplicate archive does not clobber the promoted active goal', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+    await service.enqueueGoal('g3', projectDir);
+
+    await service.onGoalArchived('g1');
+    expect(store.getActiveGoal(first.podId)?.goalId).toBe('g2');
+    await service.onGoalArchived('g1');
+
+    expect(store.getActiveGoal(first.podId)?.goalId).toBe('g2');
+    expect(store.getGoalByGoalId('g3')?.status).toBe('queued');
+    expect(startGoal).toHaveBeenCalledTimes(2);
+  });
+
+  test('cancelling a queued goal leaves the active goal untouched', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+
+    await service.onGoalArchived('g2', { verdict: 'CANCELLED' });
+
+    expect(store.getActiveGoal(first.podId)?.goalId).toBe('g1');
+    expect(store.getGoalByGoalId('g2')?.status).toBe('aborted');
+    expect(startGoal).toHaveBeenCalledTimes(1);
+  });
+
+  test('failed start rolls the active slot back to queued', async () => {
+    startGoal.mockRejectedValueOnce(new Error('boom'));
+
+    await expect(service.enqueueGoal('g1', projectDir)).rejects.toThrow('boom');
+
+    const pod = store.getPodByProject(path.resolve(projectDir))!;
+    expect(store.getGoalByGoalId('g1')?.status).toBe('queued');
+    expect(store.getActiveGoal(pod.id)).toBeNull();
+  });
+
+  test('promote starts a queued goal after wake', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    store.updatePod(first.podId, { status: 'paused' }, '2026-10-29T00:00:00.000Z');
+    const second = await service.enqueueGoal('g2', projectDir);
+    expect(second.status).toBe('queued');
+    await service.onGoalArchived('g1');
+    expect(store.getActiveGoal(first.podId)).toBeNull();
+
+    store.updatePod(first.podId, { status: 'idle' }, '2026-10-29T00:00:00.000Z');
+    expect(await service.promote(first.podId)).toBe(true);
+    expect(store.getActiveGoal(first.podId)?.goalId).toBe('g2');
+    expect(startGoal).toHaveBeenLastCalledWith('g2', path.resolve(projectDir));
+  });
+
+  test('re-enqueueing a budget-blocked goal starts it once budget opens', async () => {
+    let ok = false;
+    service = makeService({ canStart: () => ({ ok, spentUsd: 10, limitUsd: 5 }) });
+    const first = await service.enqueueGoal('g1', projectDir);
+    expect(first.status).toBe('queued');
+    expect(startGoal).not.toHaveBeenCalled();
+
+    ok = true;
+    const again = await service.enqueueGoal('g1', projectDir);
+    expect(again.status).toBe('started');
+    expect(startGoal).toHaveBeenCalledWith('g1', path.resolve(projectDir));
+  });
 });

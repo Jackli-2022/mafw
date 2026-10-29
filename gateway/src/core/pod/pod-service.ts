@@ -159,6 +159,7 @@ export class PodService {
       messages = await this.deps.messages(sessionId, 200);
     } catch (err: any) {
       this.deps.log?.(`[Pod] snapshot messages failed for ${sessionId}: ${err?.message ?? err}`);
+      throw new PodError(502, `transcript unavailable for session ${sessionId}`);
     }
     const safeSessionId = sessionId.replace(/[^A-Za-z0-9._-]/g, '_');
     const transcriptPath = path.join(this.deps.memoryRoot, session.podId, 'sessions', `${safeSessionId}.json`);
@@ -174,6 +175,7 @@ export class PodService {
       path: transcriptPath,
       now: this.deps.now(),
     });
+    this.deps.store.setSessionTranscriptRef(sessionId, transcriptPath, this.deps.now());
     this.deps.store.endSession(sessionId, this.deps.now());
     const member = this.deps.store.getMemberByRole(session.podId, this.roleOfMember(session.memberId));
     if (member) this.deps.store.upsertMember({ ...member, status: 'available', now: this.deps.now() });
@@ -211,7 +213,7 @@ export class PodService {
       const canonicalParent = canonicalProjectDir(parent);
       if (registered.includes(canonicalParent)) return canonicalParent;
     }
-    return canonical;
+    throw new PodError(404, `project is not registered: ${canonical}`);
   }
 
   private ensureMembers(podId: string): void {

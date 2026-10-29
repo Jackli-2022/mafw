@@ -375,10 +375,6 @@ export class NodeDriver {
       status: 'succeeded', finishedAt: new Date().toISOString(), outcome,
     });
     this.deps.emitPhaseTransition({ type: 'phase_transition', goalId, phase: phaseNames.complete, loop: nextRound, projectDir: state.projectDir });
-    this.deps.emitNodeEvent({
-      type: 'goal_node', goalId, projectDir: state.projectDir, loop: round, node,
-      transition: 'finished', at: new Date().toISOString(), outcome, attempt: ns.attempt,
-    });
 
     // W1 批准门：manual plan 成功 → 驻留待批（合法 parked 态），不 advance。
     if (node === 'plan' && nextNode === 'await_plan_approval') {
@@ -391,13 +387,29 @@ export class NodeDriver {
         nextNode: 'execute', nextAction: 'AWAIT_PLAN_APPROVAL',
         planApproval: { status: 'pending', round: nextRound },
       });
+      this.emitFinished(goalId, state.projectDir, round, node, outcome, ns.attempt);
       return;
     }
 
     writeGoalState(mafwDir, goalId, {
       ...patch, nodeSession: null, phase: phaseNames.complete, nextNode, nextAction: `NEXT_${nextNode}`,
     }, { bumpVersion: node === 'review' });
+    this.emitFinished(goalId, state.projectDir, round, node, outcome, ns.attempt);
     await this.advance(goalId);
+  }
+
+  private emitFinished(
+    goalId: string,
+    projectDir: string,
+    round: number,
+    node: 'plan' | 'execute' | 'review',
+    outcome: string | undefined,
+    attempt: number,
+  ): void {
+    this.deps.emitNodeEvent({
+      type: 'goal_node', goalId, projectDir, loop: round, node,
+      transition: 'finished', at: new Date().toISOString(), outcome, attempt,
+    });
   }
 
   /** 应答 askUser（respond 路由 / mafw_answer_question → HTTP → index.ts 调入）。 */

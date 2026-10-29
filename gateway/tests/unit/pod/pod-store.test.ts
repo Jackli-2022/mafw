@@ -185,6 +185,17 @@ describe('PodStore', () => {
       transcriptRef: null,
       now: '2026-10-29T00:00:00.000Z',
     });
+    store.insertSession({
+      id: 'ps_manager',
+      podId: 'pod_1',
+      memberId: 'm_lead',
+      goalId: null,
+      node: 'coordination',
+      sessionId: 'ses_manager',
+      status: 'active',
+      transcriptRef: null,
+      now: '2026-10-29T00:00:00.000Z',
+    });
     store.insertSnapshot({
       id: 'snap_1',
       podId: 'pod_1',
@@ -197,9 +208,11 @@ describe('PodStore', () => {
     });
     store.endSession('ses_1', '2026-10-29T00:01:00.000Z');
 
-    expect(store.listSessions('pod_1')).toHaveLength(1);
-    expect(store.listActiveSessions('pod_1')).toHaveLength(0);
+    expect(store.listSessions('pod_1')).toHaveLength(2);
+    expect(store.listActiveSessions('pod_1').map((s) => s.sessionId)).toEqual(['ses_manager']);
     expect(store.getSnapshot('ses_1')?.path).toBe('/tmp/ses_1.json');
+    expect(store.getSnapshotForPod('pod_1', 'ses_1')?.path).toBe('/tmp/ses_1.json');
+    expect(store.getSnapshotForPod('pod_2', 'ses_1')).toBeNull();
     expect(store.listSessionIds('pod_1', 0)).toEqual(['ses_1']);
   });
 });

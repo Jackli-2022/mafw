@@ -41,7 +41,13 @@ describe('pod identity', () => {
   test('parentProjectDirForWorktree maps a worktree to its parent', () => {
     const worktree = path.join('/repo', 'foo-wt-feature');
     expect(parentProjectDirForWorktree(worktree)).toBe(path.join('/repo', 'foo'));
+    expect(parentProjectDirForWorktree(path.join('/repo', 'foo-goal-g1'))).toBe(path.join('/repo', 'foo'));
     expect(parentProjectDirForWorktree(path.join('/repo', 'foo'))).toBeNull();
+  });
+
+  test('does not case-fold distinct Linux project paths', () => {
+    if (process.platform === 'win32') return;
+    expect(podIdForProject('/tmp/CaseProject')).not.toBe(podIdForProject('/tmp/caseproject'));
   });
 
   test('roleForNode maps goal nodes to pod roles', () => {
