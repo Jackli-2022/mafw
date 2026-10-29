@@ -207,6 +207,7 @@ export type TerminalSessionInfo = {
   status: TerminalSessionStatus
   reconnectAttempt?: number
   reconnectInMs?: number
+  connectedAt?: number      // epoch ms；status=connected 时设置，状态条算连接时长
   error?: string
 }
 ```
@@ -405,7 +406,7 @@ mafw-terminal-event                 (main → renderer push)
 export type TerminalEvent =
   | { type: "data"; sessionId: string; data: string }
   | { type: "status"; sessionId: string; status: TerminalSessionStatus;
-      reconnectAttempt?: number; reconnectInMs?: number; error?: string }
+      reconnectAttempt?: number; reconnectInMs?: number; connectedAt?: number; error?: string }
   | { type: "hostkey"; requestId: string; sessionId: string; host: string; port: number;
       keyType: string; fingerprint: string; kind: "new" | "changed"; oldFingerprint?: string }
   | { type: "prompt"; requestId: string; sessionId: string; title: string;
