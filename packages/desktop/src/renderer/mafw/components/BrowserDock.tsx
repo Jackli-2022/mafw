@@ -345,7 +345,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
           <TabsV2
             variant="pill"
             value={activeBrowserTabId() ?? ""}
-            onValueChange={(value: string) => { if (value) setActiveBrowserTab(String(value)) }}
+            onChange={(value: string) => { if (value) setActiveBrowserTab(String(value)) }}
           >
             <TabsV2.List class="mafw-browser-tabs" aria-label="浏览器标签">
               <Index each={tabs()}>

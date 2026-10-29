@@ -10,6 +10,8 @@ test("BrowserDock uses pill tabs and one pane per tab", () => {
   const src = read("BrowserDock.tsx")
   assert.match(src, /TabsV2/)
   assert.match(src, /variant="pill"/)
+  assert.match(src, /onChange=\{/)
+  assert.doesNotMatch(src, /onValueChange=/)
   assert.match(src, /TabsV2\.CloseButton/)
   assert.match(src, /onMiddleClick/)
   assert.match(src, /browserTabs\(\)/)
