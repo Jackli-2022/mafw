@@ -205,18 +205,14 @@ describe('PodGoalService', () => {
   });
 
   test('reconcile adopts an in-flight pre-feature goal without starting it again', async () => {
-    const pod = store.ensurePod({
-      id: 'pod_1',
-      projectDir: path.resolve(projectDir),
-      name: 'Project',
-      now: '2026-10-29T00:00:00.000Z',
-    });
     service = makeService(undefined, {
       listInFlightGoals: () => ['g0'],
       goalState: () => ({ terminal: false }),
+      listRegisteredProjectDirs: () => [path.resolve(projectDir)],
     });
 
     await service.reconcile();
+    const pod = store.getPodByProject(path.resolve(projectDir))!;
 
     expect(store.getActiveGoal(pod.id)?.goalId).toBe('g0');
     expect(store.getPod(pod.id)?.activeGoalId).toBe('g0');
@@ -232,6 +228,26 @@ describe('PodGoalService', () => {
     expect(store.getPod(first.podId)?.activeGoalId).toBe('g1');
     expect(store.getActiveGoal(first.podId)?.goalId).toBe('g1');
     expect(startGoal).toHaveBeenCalledTimes(1);
+  });
+
+  test('reconcile does not adopt in-flight work for an archived pod', async () => {
+    const pod = store.ensurePod({
+      id: 'pod_1',
+      projectDir: path.resolve(projectDir),
+      name: 'Project',
+      now: '2026-10-29T00:00:00.000Z',
+    });
+    store.updatePod(pod.id, { status: 'archived' }, '2026-10-29T00:00:00.000Z');
+    service = makeService(undefined, {
+      listInFlightGoals: () => ['g0'],
+      goalState: () => ({ terminal: false }),
+      listRegisteredProjectDirs: () => [path.resolve(projectDir)],
+    });
+
+    await service.reconcile();
+
+    expect(store.getActiveGoal(pod.id)).toBeNull();
+    expect(store.getPod(pod.id)?.status).toBe('archived');
   });
 
   test('archiving a goal preserves an archived pod status', async () => {

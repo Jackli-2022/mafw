@@ -223,8 +223,20 @@ export class PodService {
         if (session.node === 'coordination') continue;
         try {
           const info = await this.deps.getSession(session.sessionId);
-          if (!info || info.time?.idle || info.time?.completed) {
-            await this.snapshotSession(session.sessionId);
+          if (!info) {
+            try {
+              await this.snapshotSession(session.sessionId);
+            } catch {
+              this.finalizeMissingSession(session.sessionId);
+            }
+            continue;
+          }
+          if (info.time?.idle || info.time?.completed) {
+            try {
+              await this.snapshotSession(session.sessionId);
+            } catch (err: any) {
+              this.deps.log?.(`[Pod] transcript snapshot deferred for ${session.sessionId}: ${err?.message ?? err}`);
+            }
           }
         } catch (err: any) {
           this.deps.log?.(`[Pod] reconcile session ${session.sessionId}: ${err?.message ?? err}`);

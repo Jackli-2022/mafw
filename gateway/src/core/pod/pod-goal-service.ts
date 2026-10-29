@@ -1,5 +1,6 @@
-import { PodError, PodStore, type PodGoalRow } from './pod-store';
+import { PodError, PodStore, type PodGoalRow, type PodRow } from './pod-store';
 import type { PodService } from './pod-service';
+import { canonicalProjectDir } from './pod-identity';
 
 export interface PodGoalServiceDeps {
   store: PodStore;
@@ -12,6 +13,9 @@ export interface PodGoalServiceDeps {
   budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } };
   goalState?(goalId: string): { terminal: boolean } | null;
   listInFlightGoals?(projectDir: string): string[];
+  listRegisteredProjectDirs?(): string[];
+  finalizeGoal?(goalId: string, outcome?: { verdict?: string }): Promise<void>;
+  log?(message: string): void;
 }
 
 export class PodGoalService {
@@ -131,40 +135,69 @@ export class PodGoalService {
   }
 
   async reconcile(): Promise<void> {
-    for (const pod of this.deps.store.listPods()) {
-      const active = this.deps.store.getActiveGoal(pod.id);
-      if (active) {
-        if (pod.activeGoalId !== active.goalId) {
-          this.deps.store.updatePod(pod.id, { activeGoalId: active.goalId }, this.deps.now());
-        }
-        const state = this.deps.goalState?.(active.goalId);
-        if (this.deps.goalState && (!state || state.terminal)) {
-          await this.onGoalArchived(active.goalId, state ? undefined : { verdict: 'CANCELLED' });
-          continue;
-        }
-        continue;
-      }
+    const dirs = new Set<string>();
+    for (const pod of this.deps.store.listPods()) dirs.add(canonicalProjectDir(pod.projectDir));
+    for (const dir of this.deps.listRegisteredProjectDirs?.() ?? []) dirs.add(canonicalProjectDir(dir));
 
-      if (pod.activeGoalId) {
-        const state = this.deps.goalState?.(pod.activeGoalId);
-        if (this.deps.goalState && (!state || state.terminal)) {
-          this.deps.store.updatePod(pod.id, {
-            activeGoalId: null,
-            status: pod.status === 'paused' ? 'paused' : 'idle',
-          }, this.deps.now());
-        } else {
-          const row = this.deps.store.getGoalByGoalId(pod.activeGoalId)
-            ?? this.deps.store.enqueueGoal({
-              id: this.deps.newId(),
-              podId: pod.id,
-              goalId: pod.activeGoalId,
-              now: this.deps.now(),
-            });
-          this.deps.store.setGoalStatus(row.id, 'active', { startedAt: this.deps.now() });
+    for (const projectDir of dirs) {
+      let pod = this.deps.store.getPodByProject(projectDir);
+      if (!pod) {
+        const inFlight = this.deps.listInFlightGoals?.(projectDir) ?? [];
+        if (inFlight.length === 0) continue;
+        try {
+          pod = (await this.deps.pods.ensure(projectDir)).pod;
+        } catch (err: any) {
+          this.deps.log?.(`[Pod] reconcile ensure failed for ${projectDir}: ${err?.message ?? err}`);
           continue;
         }
       }
+      try {
+        await this.reconcilePod(pod);
+      } catch (err: any) {
+        this.deps.log?.(`[Pod] reconcile failed for ${pod.id}: ${err?.message ?? err}`);
+      }
+    }
+  }
 
+  private async reconcilePod(pod: PodRow): Promise<void> {
+    const active = this.deps.store.getActiveGoal(pod.id);
+    if (active) {
+      if (pod.activeGoalId !== active.goalId) {
+        this.deps.store.updatePod(pod.id, { activeGoalId: active.goalId }, this.deps.now());
+      }
+      const state = this.deps.goalState?.(active.goalId);
+      if (this.deps.goalState && (!state || state.terminal)) {
+        const outcome = state ? undefined : { verdict: 'CANCELLED' };
+        if (this.deps.finalizeGoal) await this.deps.finalizeGoal(active.goalId, outcome);
+        else await this.onGoalArchived(active.goalId, outcome);
+        return;
+      }
+      return;
+    }
+
+    const unstartable = pod.status === 'paused' || pod.status === 'archived';
+    if (pod.activeGoalId) {
+      const state = this.deps.goalState?.(pod.activeGoalId);
+      if (this.deps.goalState && (!state || state.terminal)) {
+        this.deps.store.updatePod(pod.id, {
+          activeGoalId: null,
+          status: unstartable ? pod.status : 'idle',
+        }, this.deps.now());
+      } else if (!unstartable) {
+        const row = this.deps.store.getGoalByGoalId(pod.activeGoalId)
+          ?? this.deps.store.enqueueGoal({
+            id: this.deps.newId(),
+            podId: pod.id,
+            goalId: pod.activeGoalId,
+            now: this.deps.now(),
+          });
+        this.deps.store.setGoalStatus(row.id, 'active', { startedAt: this.deps.now() });
+        this.deps.store.updatePod(pod.id, { activeGoalId: pod.activeGoalId, status: 'active' }, this.deps.now());
+        return;
+      }
+    }
+
+    if (!unstartable) {
       const inFlight = this.deps.listInFlightGoals?.(pod.projectDir) ?? [];
       const next = inFlight.find((goalId) => {
         if (this.deps.store.getGoalByGoalId(goalId)) return false;
@@ -180,12 +213,9 @@ export class PodGoalService {
         });
         this.deps.store.setGoalStatus(row.id, 'active', { startedAt: this.deps.now() });
         this.deps.store.updatePod(pod.id, { activeGoalId: next, status: 'active' }, this.deps.now());
-        continue;
+        return;
       }
-
-      if (pod.status !== 'paused' && pod.status !== 'archived') {
-        await this.promote(pod.id);
-      }
+      await this.promote(pod.id);
     }
   }
 

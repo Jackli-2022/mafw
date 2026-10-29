@@ -905,7 +905,11 @@ class MafwScheduler {
           await this.sdkSession.promptAsync(opts.sessionID, text, undefined, opts.agent, undefined, opts.outputSchema);
         },
         delete: async (sessionID: string) => {
-          await this.podService?.snapshotSession(sessionID);
+          try {
+            await this.podService?.snapshotSession(sessionID);
+          } catch {
+            this.podService?.finalizeMissingSession(sessionID);
+          }
           await this.sdkSession.delete(sessionID);
         },
         abort: async (sessionID: string) => { await this.runtime!.session.abort({ sessionID }); },
@@ -3607,6 +3611,9 @@ class MafwScheduler {
         .map((entry) => loadGoalState(entry.mafwDir, entry.goalId))
         .filter((state): state is NonNullable<typeof state> => !!state && !isTerminalState(state))
         .map((state) => state.goalId),
+      listRegisteredProjectDirs: () => Array.from(this.registeredProjects.keys()),
+      finalizeGoal: (goalId, outcome) => this.finishPodGoal(goalId, outcome as any),
+      log: (message) => log.info(message),
     });
 
     const lazyShell = () => {

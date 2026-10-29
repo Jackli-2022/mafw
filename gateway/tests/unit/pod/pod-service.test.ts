@@ -213,6 +213,29 @@ describe('PodService', () => {
     expect(store.getMemberByRole(detail.pod.id, 'builder')?.status).toBe('available');
   });
 
+  test('reconcile does not tombstone a live session on a transcript error', async () => {
+    const detail = await service.ensure(projectDir);
+    const builder = store.getMemberByRole(detail.pod.id, 'builder')!;
+    store.insertSession({
+      id: 'ps_live',
+      podId: detail.pod.id,
+      memberId: builder.id,
+      goalId: 'g1',
+      node: 'execute',
+      sessionId: 'ses_live',
+      status: 'active',
+      transcriptRef: null,
+      now: now(),
+    });
+    getSessionImpl = async () => ({ time: { idle: 1 } });
+    messagesImpl = async () => { throw new Error('messages temporarily unavailable'); };
+
+    await expect(service.reconcile()).resolves.toBeUndefined();
+
+    expect(store.getSnapshot('ses_live')).toBeNull();
+    expect(store.listActiveSessions(detail.pod.id).some((s) => s.sessionId === 'ses_live')).toBe(true);
+  });
+
   test('rejects an unregistered project without creating a pod', async () => {
     const unknown = path.join(dir, 'unknown-project');
     fs.mkdirSync(unknown, { recursive: true });
