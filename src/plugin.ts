@@ -41,6 +41,12 @@ import { taskSubmitTool } from './tools/task-submit';
 import { taskListTool } from './tools/task-list';
 import { taskCancelTool } from './tools/task-cancel';
 import { taskMessageTool } from './tools/task-message';
+import { podStatusTool } from './tools/pod-status';
+import { podTaskCreateTool } from './tools/pod-task-create';
+import { podTaskUpdateTool } from './tools/pod-task-update';
+import { podMessageTool } from './tools/pod-message';
+import { podMemoryReadTool } from './tools/pod-memory-read';
+import { podMemoryWriteTool } from './tools/pod-memory-write';
 import { ensureMcpWiring, resolveGatewayApiUrl } from './utils/self-wiring';
 import {
   zodToJsonSchema,
@@ -106,6 +112,12 @@ const V1_TOOLS: Record<string, { description: string; args: any; execute: (args:
   mafw_task_list: taskListTool,
   mafw_task_cancel: taskCancelTool,
   mafw_task_message: taskMessageTool,
+  mafw_pod_status: podStatusTool,
+  mafw_pod_task_create: podTaskCreateTool,
+  mafw_pod_task_update: podTaskUpdateTool,
+  mafw_pod_message: podMessageTool,
+  mafw_pod_memory_read: podMemoryReadTool,
+  mafw_pod_memory_write: podMemoryWriteTool,
 };
 
 /** V1 工具结果 → V2 `{ content, metadata }`。 */
