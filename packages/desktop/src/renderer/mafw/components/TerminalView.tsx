@@ -20,6 +20,7 @@ export function TerminalView(props: {
   onRequestClose: () => void
   onRequestKill: () => void
   onOpenExternal: () => void
+  onSize?: (cols: number, rows: number) => void
 }) {
   let host!: HTMLDivElement
   let term: Terminal | null = null
@@ -80,7 +81,10 @@ export function TerminalView(props: {
       attachedId = props.session.id
       requestAnimationFrame(() => {
         try { fit?.fit() } catch { /* hidden */ }
-        if (term) void window.api.mafw.terminal.sessions.resize(props.session.id, term.cols, term.rows)
+        if (term) {
+          void window.api.mafw.terminal.sessions.resize(props.session.id, term.cols, term.rows)
+          props.onSize?.(term.cols, term.rows)
+        }
         term?.focus()
       })
     } finally {
@@ -114,7 +118,10 @@ export function TerminalView(props: {
       if (!host || host.clientWidth === 0) return
       ensureTerm()
       try { fit?.fit() } catch { /* hidden */ }
-      if (term) void window.api.mafw.terminal.sessions.resize(props.session.id, term.cols, term.rows)
+      if (term) {
+        void window.api.mafw.terminal.sessions.resize(props.session.id, term.cols, term.rows)
+        props.onSize?.(term.cols, term.rows)
+      }
     })
     const ro = new ResizeObserver(() => {
       if (!host || host.clientWidth === 0) return
