@@ -1,6 +1,7 @@
 # Voice Runtime P1 benchmark (Qwen3-ASR-1.7B)
 
 > Date: 2026-10-29
+> Commit: `03f6bdb6`
 > Reference machine: RTX 4090 Laptop 16 GB / i9-13900H / 32 GB RAM / Windows 11
 > Status: **measured**. Sidecar first-partial p50 **171.8 ms**; gateway `/ws/voice` p50 **180 ms**.
 
