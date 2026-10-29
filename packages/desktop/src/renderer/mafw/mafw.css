@@ -3997,6 +3997,11 @@ html[data-theme="light"] body {
   border-top: 1px solid var(--border-subtle);
   padding-top: 8px;
 }
+.mafw-usage-models-empty {
+  padding: 8px 0 2px;
+  color: var(--text-3);
+  font-size: 11px;
+}
 
 .mafw-usage-models-head {
   display: flex;

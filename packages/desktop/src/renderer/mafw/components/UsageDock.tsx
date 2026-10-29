@@ -107,7 +107,7 @@ function ModelStatsSection(props: { windows: Record<ModelWindow, ModelStatRow[]>
   })
 
   return (
-    <Show when={rows().length > 0}>
+    <Show when={props.windows}>
       <div class="mafw-usage-models">
         <div class="mafw-usage-models-head">
           <span class="mafw-usage-models-title">按模型</span>
@@ -120,7 +120,11 @@ function ModelStatsSection(props: { windows: Record<ModelWindow, ModelStatRow[]>
             </TabsV2.List>
           </TabsV2>
         </div>
-        <div class="mafw-usage-kpis">
+        <Show
+          when={rows().length > 0}
+          fallback={<div class="mafw-usage-models-empty">该时间窗口暂无模型用量（可切换 30 天 / 全部）</div>}
+        >
+          <div class="mafw-usage-kpis">
           <div class="mafw-usage-kpi">
             <div class="mafw-usage-kpi-value">{fmt(kpi().tokens)}</div>
             <div class="mafw-usage-kpi-label">tokens</div>
@@ -151,6 +155,7 @@ function ModelStatsSection(props: { windows: Record<ModelWindow, ModelStatRow[]>
             </TooltipV2>
           )}
         </For>
+        </Show>
       </div>
     </Show>
   )

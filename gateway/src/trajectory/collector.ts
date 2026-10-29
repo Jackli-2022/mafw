@@ -6,6 +6,20 @@ import { log } from '../core/utils/logger';
 const SUMMARY_MAX = 500;
 const USER_TEXT_MAX = 300;
 
+/** opencode v2 的 assistant message 把模型放在 `info.model = { id, providerID }`；
+ *  v1 用顶层 `modelID/providerID`。两者都读，避免 trajectory 的 model/provider 变 NULL
+ *  （NULL 会被「按模型」用量过滤掉，表现为单个模型用量消失）。 */
+function modelIdentityOf(info: any): { modelID?: string; providerID?: string } {
+  const m = info?.model;
+  const modelID =
+    info?.modelID ??
+    (typeof m === 'string' ? m : m?.id ?? m?.modelID ?? undefined);
+  const providerID =
+    info?.providerID ??
+    (m && typeof m === 'object' ? (m.providerID ?? m.provider ?? undefined) : undefined);
+  return { modelID, providerID };
+}
+
 function truncate(s: string | undefined, n: number): string | undefined {
   if (!s) return undefined;
   return s.length > n ? s.slice(0, n) + '\u2026' : s;
@@ -147,22 +161,23 @@ export class TrajectoryCollector {
       }
       if (info.role === 'assistant') {
         const s = this.stateFor(sessionID, undefined, projectID);
-        if (info.modelID && s.lastModel && info.modelID !== s.lastModel) {
+        const ids = modelIdentityOf(info);
+        if (ids.modelID && s.lastModel && ids.modelID !== s.lastModel) {
           s.agentSwitchCount++;
-          const evt = this.emit(sessionID, s, 'model_switch', { model: info.modelID }, projectID);
-          s.lastModel = info.modelID;
+          const evt = this.emit(sessionID, s, 'model_switch', { model: ids.modelID }, projectID);
+          s.lastModel = ids.modelID;
           return evt;
         }
-        s.lastModel = info.modelID || s.lastModel;
-        s.model = info.modelID || s.model;
-        s.provider = info.providerID || s.provider;
+        s.lastModel = ids.modelID || s.lastModel;
+        s.model = ids.modelID || s.model;
+        s.provider = ids.providerID || s.provider;
         if (!s.stepFinishMessageIDs.has(info.id) && info.finish && info.tokens) {
           s.stepFinishMessageIDs.add(info.id);
           s.tokens = addTokens(s.tokens, info.tokens);
           s.cost += info.cost || 0;
           s.finish = info.finish;
           const evt = this.emit(sessionID, s, 'step_finish', {
-            model: info.modelID,
+            model: ids.modelID,
             tokens: info.tokens,
             cost: info.cost,
             finish: info.finish,

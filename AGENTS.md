@@ -272,6 +272,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 
 - **上下文显示统一 + UsageDock 入口（2026-10-29）**：① 修 pill 第二层根因——原 `<Show>{(ctx)=>{ const ctxText = … }}</Show>` 在 Solid 非 keyed children 里只计算一次，打开会话早期快照（tokens 未到）会**永久**显示旧值；改为 `createMemo` 的 `contextText`/`contextTooltip`，随 tokens 更新。② `formatContextUsage` 统一 pill 与 UsageDock 的文案：有窗口→`12%`，不足 1%→`<1%`，窗口未知→`1k` + tooltip「上下文: 1k tokens（窗口大小未知）」，无数据→`—`。③ 找回 UsageDock：它现在位于「右侧工作台 → 执行 → 概览 → 用量与上下文」折叠区；新增**点击上下文 pill** 直接打开（`openWorkbench('execution','overview')` + `openExecutionUsage()`），命令面板新增「打开用量与上下文」。真机验证：pill 与 UsageDock 均为 12%、点击 pill 后 `.mafw-usage-ctx-row` 可见、无渲染错误；desktop **1905/1905**（+4）、tsgo/build rc=0。
 
+- **单个模型用量消失修复（2026-10-29）**：现象——UsageDock「按模型」整块不见。根因两层：① `/api/usage.modelStats` 的 SQL 有 `WHERE model IS NOT NULL`；opencode v2 的 assistant message 把模型放在 `info.model = { id, providerID }`，而 `TrajectoryCollector` 只读 v1 顶层 `info.modelID/providerID` → 新回合 trajectory_turns 的 model/provider 全 NULL（实测当天 22 条全 NULL），按模型统计只剩 8-30 天前的旧行。修复 `modelIdentityOf()` 双读 v1/v2（`modelID ?? model.id`、`providerID ?? model.providerID`），step_finish 事件 model 同步。② UI：`ModelStatsSection` 默认窗口 7d，空列表时整块隐藏（读起来像功能被删）；改为只要 `modelStats.windows` 存在就渲染，空窗口显示「该时间窗口暂无模型用量（可切换 30 天 / 全部）」。验证：gateway 新增 3 单测（v2 形状 / v1 兼容 / v2 模型切换），gateway **3036/3036（425 suites）**、desktop **1905/1905**、tsgo/build rc=0；真机新会话 1 回合后 `today/7d` 出现 `{model:'deepseek-flash', provider:'deepseek'}`，UsageDock「按模型」可见（42% 缓存命中）。注：修复前已写入的 NULL 行不会回填（历史 30d/all 仍有旧模型数据），后续新回合正常。
+
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类�?API 获取数据�?
 ```
