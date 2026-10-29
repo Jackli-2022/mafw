@@ -1193,3 +1193,46 @@ test("command.list/skill.list hit legacy endpoints and parse envelopes", async (
   expect(urls[0]).toBe("http://gw:3000/command?directory=%2Fp")
   expect(urls[1]).toBe("http://gw:3000/skill?directory=%2Fp")
 })
+
+// -- Pod --
+
+test("pod.ensure sends GET /api/projects/:projectId/pod", async () => {
+  fetchMock.mockResolvedValue(okJson({ pod: { id: "pod_1" } }))
+  const c = new MafwClient("http://gw:3000")
+  await c.pod.ensure("p1")
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/projects/p1/pod", expect.anything())
+})
+
+test("pod.get/update/listTasks/createTask/updateTask hit pod routes", async () => {
+  const c = new MafwClient("http://gw:3000")
+  fetchMock.mockResolvedValue(okJson({}))
+  await c.pod.get("pod_1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1", expect.anything())
+  await c.pod.update("pod_1", { status: "paused" })
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1", expect.objectContaining({ method: "PATCH" }))
+  await c.pod.listTasks("pod_1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/tasks", expect.anything())
+  await c.pod.createTask("pod_1", { title: "do" })
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/tasks", expect.objectContaining({ method: "POST" }))
+  await c.pod.updateTask("pod_1", "t1", { status: "done" })
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/tasks/t1", expect.objectContaining({ method: "PATCH" }))
+})
+
+test("pod messages/wake/sleep/cost/goals/transcript hit routes", async () => {
+  const c = new MafwClient("http://gw:3000")
+  fetchMock.mockResolvedValue(okJson({}))
+  await c.pod.listMessages("pod_1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/messages", expect.anything())
+  await c.pod.sendMessage("pod_1", { fromMemberId: "m1", kind: "note", body: "hi" })
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/messages", expect.objectContaining({ method: "POST" }))
+  await c.pod.wake("pod_1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/wake", expect.objectContaining({ method: "POST" }))
+  await c.pod.sleep("pod_1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/sleep", expect.objectContaining({ method: "POST" }))
+  await c.pod.cost("pod_1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/cost", expect.anything())
+  await c.pod.goals("pod_1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/goals", expect.anything())
+  await c.pod.transcript("pod_1", "s1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/sessions/s1/transcript", expect.anything())
+})

@@ -5,6 +5,7 @@ import type {
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
+  PodNamespace,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
@@ -221,6 +222,8 @@ export type MafwAPI = {
     message: (id: string, message: string) => Promise<void>
     output: (id: string, query?: { cursor?: number; limit?: number }) => Promise<TaskOutput>
   }
+
+  pod: PodNamespace
 
   permissions: {
     list: () => Promise<PermissionRequest[]>

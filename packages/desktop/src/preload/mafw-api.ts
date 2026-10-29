@@ -219,6 +219,25 @@ export function createMafwApi(): MafwAPI {
       output: (id, query) => invoke("tasks", "output", id, query),
     },
 
+    pod: {
+      ensure: (projectID) => invoke("pod", "ensure", projectID),
+      create: (projectID) => invoke("pod", "create", projectID),
+      get: (podID) => invoke("pod", "get", podID),
+      update: (podID, body) => invoke("pod", "update", podID, body),
+      listTasks: (podID) => invoke("pod", "listTasks", podID),
+      createTask: (podID, body) => invoke("pod", "createTask", podID, body),
+      updateTask: (podID, taskID, body) => invoke("pod", "updateTask", podID, taskID, body),
+      listMessages: (podID) => invoke("pod", "listMessages", podID),
+      sendMessage: (podID, body) => invoke("pod", "sendMessage", podID, body),
+      wake: (podID) => invoke("pod", "wake", podID),
+      sleep: (podID) => invoke("pod", "sleep", podID),
+      cost: (podID) => invoke("pod", "cost", podID),
+      goals: (podID) => invoke("pod", "goals", podID),
+      transcript: (podID, sessionID) => invoke("pod", "transcript", podID, sessionID),
+      readMemory: (podID, node) => invoke("pod", "readMemory", podID, node),
+      writeMemory: (podID, body) => invoke("pod", "writeMemory", podID, body),
+    },
+
     permissions: {
       list: () => invoke("permissions", "list"),
       reply: (id, reply, message?, persist?) => invoke("permissions", "reply", id, reply, message, persist),

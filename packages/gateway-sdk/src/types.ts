@@ -1013,6 +1013,114 @@ export interface TasksNamespace {
   output(id: string, query?: { cursor?: number; limit?: number }): Promise<TaskOutput>
 }
 
+export type PodStatus = 'active' | 'idle' | 'paused' | 'archived'
+export type PodMemberRole = 'lead' | 'builder' | 'reviewer' | 'curator'
+export type PodMemberStatus = 'available' | 'working' | 'waiting' | 'sleeping' | 'retired'
+export type PodGoalStatus = 'queued' | 'active' | 'done' | 'aborted'
+export type PodTaskStatus = 'pending' | 'in_progress' | 'blocked' | 'review' | 'done' | 'failed' | 'reopened'
+
+export interface Pod {
+  id: string
+  projectDir: string
+  name: string
+  status: PodStatus
+  configJson: string
+  activeGoalId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PodMember {
+  id: string
+  podId: string
+  role: PodMemberRole
+  displayName: string
+  agentName: string
+  modelProvider: string | null
+  modelId: string | null
+  status: PodMemberStatus
+  configJson: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PodGoal {
+  id: string
+  podId: string
+  goalId: string
+  status: PodGoalStatus
+  enqueuedAt: string
+  startedAt: string | null
+  endedAt: string | null
+}
+
+export interface PodTask {
+  id: string
+  podId: string
+  goalId: string | null
+  sourceKey: string
+  externalTaskId: string | null
+  title: string
+  description: string | null
+  ownerMemberId: string | null
+  status: PodTaskStatus
+  dependenciesJson: string | null
+  artifactRefsJson: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PodMessage {
+  id: string
+  podId: string
+  fromMemberId: string
+  toMemberId: string | null
+  kind: string
+  body: string
+  createdAt: string
+  readAt: string | null
+}
+
+export interface PodSession {
+  id: string
+  podId: string
+  memberId: string
+  goalId: string | null
+  node: string | null
+  sessionId: string
+  status: string
+  transcriptRef: string | null
+  createdAt: string
+  endedAt: string | null
+}
+
+export interface PodDetail {
+  pod: Pod
+  members: PodMember[]
+  goals: PodGoal[]
+  tasks: PodTask[]
+  sessions: PodSession[]
+}
+
+export interface PodNamespace {
+  ensure(projectID: string): Promise<PodDetail>
+  create(projectID: string): Promise<PodDetail>
+  get(podID: string): Promise<PodDetail>
+  update(podID: string, body: { status?: PodStatus; configJson?: string }): Promise<PodDetail>
+  listTasks(podID: string): Promise<{ items: PodTask[] }>
+  createTask(podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }>
+  updateTask(podID: string, taskID: string, body: { status?: PodTaskStatus; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }>
+  listMessages(podID: string): Promise<{ items: PodMessage[] }>
+  sendMessage(podID: string, body: { fromMemberId: string; toMemberId?: string; kind: 'note'|'request'|'review'|'decision'|'escalation'; body: string; actorSessionID?: string }): Promise<{ message: PodMessage }>
+  wake(podID: string): Promise<PodDetail>
+  sleep(podID: string): Promise<PodDetail>
+  cost(podID: string): Promise<{ spentUsd: number; limitUsd: number }>
+  goals(podID: string): Promise<{ items: PodGoal[] }>
+  transcript(podID: string, sessionID: string): Promise<{ transcript: unknown }>
+  readMemory(podID: string, node?: 'plan' | 'execute' | 'review'): Promise<{ context: string | null }>
+  writeMemory(podID: string, body: { file: 'POD' | 'MEMORY' | 'GLOSSARY'; content: string; actorSessionID?: string }): Promise<{ path: string }>
+}
+
 /** 持久审批规则（切片 1：~/.mafw/permission-rules.json）。 */
 export interface PermissionRule {
   tool: string
@@ -1062,6 +1170,7 @@ export interface MafwClient {
   approvals: ApprovalsNamespace
   questions: QuestionsNamespace
   tasks: TasksNamespace
+  pod: PodNamespace
   permissions: PermissionsNamespace
   providers: ProvidersNamespace
   agents: AgentsNamespace

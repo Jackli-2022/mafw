@@ -10,6 +10,7 @@ import {
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
+  PodDetail, PodTask, PodMessage, PodGoal, PodNamespace,
   SessionConfigState, SessionConfigCategory,
   MethodNotSupportedError,
 } from './types'
@@ -1210,6 +1211,81 @@ export class MafwClient implements IMafwClient {
   }
 
   // 鈹€鈹€ Permissions (PermissionCard 鈥?proxies the native opencode Permission API) 鈹€鈹€
+
+  // ── Project Pod Lite ─────────────────────────────────────────────────────
+
+  pod: PodNamespace = {
+    ensure: async (projectID: string): Promise<PodDetail> =>
+      this.request<PodDetail>(`/api/projects/${encodeURIComponent(projectID)}/pod`),
+
+    create: async (projectID: string): Promise<PodDetail> =>
+      this.request<PodDetail>(`/api/projects/${encodeURIComponent(projectID)}/pod`, { method: 'POST' }),
+
+    get: async (podID: string): Promise<PodDetail> =>
+      this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}`),
+
+    update: async (podID: string, body: { status?: PodDetail['pod']['status']; configJson?: string }): Promise<PodDetail> =>
+      this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+
+    listTasks: async (podID: string): Promise<{ items: PodTask[] }> =>
+      this.request<{ items: PodTask[] }>(`/api/pods/${encodeURIComponent(podID)}/tasks`),
+
+    createTask: async (podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }> =>
+      this.request<{ task: PodTask }>(`/api/pods/${encodeURIComponent(podID)}/tasks`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    updateTask: async (podID: string, taskID: string, body: { status?: PodTask['status']; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }> =>
+      this.request<{ task: PodTask }>(`/api/pods/${encodeURIComponent(podID)}/tasks/${encodeURIComponent(taskID)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+
+    listMessages: async (podID: string): Promise<{ items: PodMessage[] }> =>
+      this.request<{ items: PodMessage[] }>(`/api/pods/${encodeURIComponent(podID)}/messages`),
+
+    sendMessage: async (
+      podID: string,
+      body: { fromMemberId: string; toMemberId?: string; kind: 'note' | 'request' | 'review' | 'decision' | 'escalation'; body: string; actorSessionID?: string },
+    ): Promise<{ message: PodMessage }> =>
+      this.request<{ message: PodMessage }>(`/api/pods/${encodeURIComponent(podID)}/messages`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    wake: async (podID: string): Promise<PodDetail> =>
+      this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}/wake`, { method: 'POST' }),
+
+    sleep: async (podID: string): Promise<PodDetail> =>
+      this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}/sleep`, { method: 'POST' }),
+
+    cost: async (podID: string): Promise<{ spentUsd: number; limitUsd: number }> =>
+      this.request<{ spentUsd: number; limitUsd: number }>(`/api/pods/${encodeURIComponent(podID)}/cost`),
+
+    goals: async (podID: string): Promise<{ items: PodGoal[] }> =>
+      this.request<{ items: PodGoal[] }>(`/api/pods/${encodeURIComponent(podID)}/goals`),
+
+    transcript: async (podID: string, sessionID: string): Promise<{ transcript: unknown }> =>
+      this.request<{ transcript: unknown }>(`/api/pods/${encodeURIComponent(podID)}/sessions/${encodeURIComponent(sessionID)}/transcript`),
+
+    readMemory: async (podID: string, node?: 'plan' | 'execute' | 'review'): Promise<{ context: string | null }> => {
+      const q = node ? `?node=${encodeURIComponent(node)}` : ''
+      return this.request<{ context: string | null }>(`/api/pods/${encodeURIComponent(podID)}/memory${q}`)
+    },
+
+    writeMemory: async (
+      podID: string,
+      body: { file: 'POD' | 'MEMORY' | 'GLOSSARY'; content: string; actorSessionID?: string },
+    ): Promise<{ path: string }> =>
+      this.request<{ path: string }>(`/api/pods/${encodeURIComponent(podID)}/memory`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+  }
 
   permissions = {
     list: async (): Promise<PermissionRequest[]> => {
