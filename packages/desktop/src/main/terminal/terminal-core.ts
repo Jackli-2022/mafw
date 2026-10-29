@@ -7,11 +7,11 @@
 // PowerShell PSReadLine 把裸 `\n` 当续行，上游 PR #23794 review 实证）。
 
 export { type ConnState, nextConnState } from "../../shared/terminal"
+import { dirKey as sharedDirKey } from "../../shared/terminal-session"
 
 /** 目录键：win32 归一分隔符+折大小写，darwin 折大小写；linux 保持大小写敏感。 */
 export function dirKey(dir: string, platform: string = process.platform): string {
-  const normalized = platform === "win32" ? dir.replace(/\\/g, "/") : dir
-  return platform === "win32" || platform === "darwin" ? normalized.toLowerCase() : normalized
+  return sharedDirKey(dir, platform)
 }
 
 /** 0x00 前缀帧一律视为 meta（即使 JSON 非法也只消费、绝不当输出）。 */
