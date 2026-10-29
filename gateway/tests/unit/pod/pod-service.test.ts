@@ -1,0 +1,138 @@
+import Database from 'better-sqlite3';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { PodStore } from '../../../src/core/pod/pod-store';
+import { PodService } from '../../../src/core/pod/pod-service';
+
+describe('PodService', () => {
+  let dir: string;
+  let db: Database.Database;
+  let store: PodStore;
+  let memoryRoot: string;
+  let projectDir: string;
+  let broadcasts: Array<{ type: string; properties?: Record<string, unknown> }>;
+  let logs: string[];
+  let managerCalls: number;
+  let seq: number;
+  let clock: number;
+  let getSessionImpl: (sessionID: string) => Promise<{ time?: { idle?: number; completed?: number }; parentID?: string }>;
+  let messagesImpl: (sessionID: string, limit: number) => Promise<unknown[]>;
+  let service: PodService;
+
+  const now = () => new Date(Date.UTC(2026, 9, 29, 0, 0, clock++)).toISOString();
+  const newId = () => `id_${++seq}`;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-service-'));
+    db = new Database(path.join(dir, 'test.db'));
+    store = new PodStore(db);
+    memoryRoot = path.join(dir, 'pods');
+    projectDir = path.join(dir, 'project');
+    fs.mkdirSync(projectDir, { recursive: true });
+    broadcasts = [];
+    logs = [];
+    managerCalls = 0;
+    seq = 0;
+    clock = 0;
+    getSessionImpl = async () => ({ time: { idle: 1 } });
+    messagesImpl = async () => [{ role: 'assistant', text: 'done' }];
+    service = new PodService({
+      store,
+      now,
+      newId,
+      broadcast: (event) => broadcasts.push(event as any),
+      getManagerSession: async () => {
+        managerCalls++;
+        return 'ses_manager';
+      },
+      getSession: (sessionID) => getSessionImpl(sessionID),
+      messages: (sessionID, limit) => messagesImpl(sessionID, limit),
+      memoryRoot,
+      listRegisteredProjectDirs: () => [projectDir],
+      ensureMemory: () => {},
+      log: (message) => logs.push(message),
+    });
+  });
+
+  afterEach(() => {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('ensure creates one pod with three members and does not duplicate the lead session', async () => {
+    const first = await service.ensure(projectDir);
+    const second = await service.ensure(projectDir);
+
+    expect(second.pod.id).toBe(first.pod.id);
+    expect(first.members.map((m) => m.role)).toEqual(['lead', 'builder', 'reviewer']);
+    expect(first.members.find((m) => m.role === 'lead')?.agentName).toBe('manager');
+    expect(first.members.find((m) => m.role === 'builder')?.agentName).toBe('mafw-execute');
+    expect(first.members.find((m) => m.role === 'reviewer')?.agentName).toBe('mafw-review');
+    expect(managerCalls).toBe(1);
+    expect(store.listSessions(first.pod.id).filter((s) => s.node === 'coordination')).toHaveLength(1);
+  });
+
+  test('bindSession resolves goal to pod/member and marks the member working', async () => {
+    const detail = await service.ensure(projectDir);
+    store.enqueueGoal({
+      id: 'pg_1',
+      podId: detail.pod.id,
+      goalId: 'g1',
+      now: now(),
+    });
+
+    const session = service.bindSession('g1', 'execute', 'ses_builder');
+    const builder = store.getMemberByRole(detail.pod.id, 'builder');
+
+    expect(session?.memberId).toBe(builder?.id);
+    expect(session?.node).toBe('execute');
+    expect(store.getMemberByRole(detail.pod.id, 'builder')?.status).toBe('working');
+    expect(service.getPodIdForGoal('g1')).toBe(detail.pod.id);
+    expect(service.getPodIdForGoal('missing')).toBeNull();
+    expect(broadcasts.some((e) => e.type === 'pod.updated' && e.properties?.kind === 'member')).toBe(true);
+  });
+
+  test('snapshotSession writes transcript, stores snapshot, ends session, and frees member', async () => {
+    const detail = await service.ensure(projectDir);
+    store.enqueueGoal({ id: 'pg_1', podId: detail.pod.id, goalId: 'g1', now: now() });
+    service.bindSession('g1', 'execute', 'ses_builder');
+
+    const transcriptPath = await service.snapshotSession('ses_builder');
+    const expectedPath = path.join(memoryRoot, detail.pod.id, 'sessions', 'ses_builder.json');
+
+    expect(transcriptPath).toBe(expectedPath);
+    expect(fs.existsSync(expectedPath)).toBe(true);
+    const payload = JSON.parse(fs.readFileSync(expectedPath, 'utf-8'));
+    expect(payload.sessionID).toBe('ses_builder');
+    expect(payload.messages).toHaveLength(1);
+    expect(store.getSnapshot('ses_builder')?.path).toBe(expectedPath);
+    expect(store.listActiveSessions(detail.pod.id).map((s) => s.sessionId)).toEqual(['ses_manager']);
+    expect(store.getMemberByRole(detail.pod.id, 'builder')?.status).toBe('available');
+  });
+
+  test('reconcile ends dead goal sessions but leaves the coordination session alive', async () => {
+    const detail = await service.ensure(projectDir);
+    const builder = store.getMemberByRole(detail.pod.id, 'builder')!;
+    store.insertSession({
+      id: 'ps_dead',
+      podId: detail.pod.id,
+      memberId: builder.id,
+      goalId: 'g1',
+      node: 'execute',
+      sessionId: 'ses_dead',
+      status: 'active',
+      transcriptRef: null,
+      now: now(),
+    });
+    getSessionImpl = async (sessionID) => {
+      if (sessionID === 'ses_dead') throw new Error('session gone');
+      return { time: { idle: 1 } };
+    };
+
+    await expect(service.reconcile()).resolves.toBeUndefined();
+    expect(store.getSnapshot('ses_dead')).not.toBeNull();
+    expect(logs.some((line) => line.includes('ses_dead'))).toBe(true);
+    expect(store.listActiveSessions(detail.pod.id).some((s) => s.node === 'coordination')).toBe(true);
+  });
+});

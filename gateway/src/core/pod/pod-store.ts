@@ -521,6 +521,13 @@ export class PodStore {
     ).all(podId) as any[]).map(sessionFromRow);
   }
 
+  getSessionBySessionId(sessionId: string): PodSessionRow | null {
+    const row = this.db.prepare(
+      'SELECT * FROM pod_member_sessions WHERE session_id = ?',
+    ).get(sessionId) as any;
+    return row ? sessionFromRow(row) : null;
+  }
+
   listActiveSessions(podId: string): PodSessionRow[] {
     return (this.db.prepare(
       'SELECT * FROM pod_member_sessions WHERE pod_id = ? AND ended_at IS NULL ORDER BY created_at DESC',
