@@ -13,3 +13,10 @@ export function requestBrowserNavigate(url: string, opts: { newTab?: boolean } =
 export function browserNavRequest(): BrowserNavRequest | null {
   return browserNav()
 }
+
+/** Consume the pending request once so remounting BrowserDock does not replay it. */
+export function takeBrowserNavRequest(): BrowserNavRequest | null {
+  const req = browserNav()
+  if (req) setBrowserNav(null)
+  return req
+}

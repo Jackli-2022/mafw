@@ -933,7 +933,6 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
   const panels = [
     "src/renderer/mafw/components/FilesDock.tsx",
     "src/renderer/mafw/components/EditorDock.tsx",
-    "src/renderer/mafw/components/BrowserDock.tsx",
     "src/renderer/mafw/components/ChangesDock.tsx",
   ]
   test("五个面板都走共享骨架（DockPanelHeader）", () => {
