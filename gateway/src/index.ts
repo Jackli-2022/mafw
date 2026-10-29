@@ -37,6 +37,8 @@ import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
 import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
+import { PodAccess } from './core/pod/pod-access';
+import { PodBudget } from './core/pod/pod-budget';
 import {
   handleSubagentCancel, handleSubagentList, handleSubagentMessage,
   handleSubagentResult, handleSubagentSpawn,
@@ -522,6 +524,8 @@ class MafwScheduler {
   private podMessageService!: PodMessageService;
   private podMemoryService!: PodMemoryService;
   private podGoalService!: PodGoalService;
+  private podAccess!: PodAccess;
+  private podBudget!: PodBudget;
   private taskService!: TaskService;
   private sessionConfigService!: SessionConfigService;
   private checkpointService!: CheckpointService;
@@ -3551,6 +3555,24 @@ class MafwScheduler {
       newId: () => `podmsg_${randomUUID()}`,
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'message' } }),
     });
+    this.podAccess = new PodAccess(this.podStore);
+    this.podBudget = new PodBudget({
+      store: this.podStore,
+      costForSessions: (sessionIds, sinceEpoch) => {
+        if (sessionIds.length === 0) return 0;
+        const placeholders = sessionIds.map(() => '?').join(', ');
+        try {
+          const row = this.getGatewayDb().getStore().prepare(
+            `SELECT COALESCE(SUM(cost), 0) AS cost FROM trajectory_turns WHERE session_id IN (${placeholders}) AND created_at >= ?`,
+          ).get(...sessionIds, sinceEpoch) as { cost?: number } | undefined;
+          return row?.cost ?? 0;
+        } catch {
+          return 0;
+        }
+      },
+      dailyUsd: () => Number((config.raw as any)?.pod?.dailyUsd ?? 0),
+      nowEpoch: () => Math.floor(Date.now() / 1000),
+    });
     this.podGoalService = new PodGoalService({
       store: this.podStore,
       pods: this.podService,
@@ -3564,6 +3586,7 @@ class MafwScheduler {
       now: () => new Date().toISOString(),
       newId: () => `podgoal_${randomUUID()}`,
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'goal' } }),
+      budget: this.podBudget,
     });
 
     const lazyShell = () => {
@@ -4354,6 +4377,7 @@ class MafwScheduler {
         messages: this.podMessageService,
         goals: this.podGoalService,
         memory: this.podMemoryService,
+        access: this.podAccess,
         cost: async (podId) => this.podCost(podId),
         transcript: async (podId, sessionId) => this.podTranscript(podId, sessionId),
       });
@@ -7950,17 +7974,7 @@ class MafwScheduler {
   }
 
   private podCost(podId: string): { spentUsd: number; limitUsd: number } {
-    const ids = this.podStore.listSessionIds(podId, 0);
-    if (ids.length === 0) return { spentUsd: 0, limitUsd: 0 };
-    const placeholders = ids.map(() => '?').join(', ');
-    try {
-      const row = this.getGatewayDb().getStore().prepare(
-        `SELECT COALESCE(SUM(cost), 0) AS cost FROM trajectory_turns WHERE session_id IN (${placeholders})`,
-      ).get(...ids) as { cost?: number } | undefined;
-      return { spentUsd: row?.cost ?? 0, limitUsd: 0 };
-    } catch {
-      return { spentUsd: 0, limitUsd: 0 };
-    }
+    return this.podBudget?.cost(podId) ?? { spentUsd: 0, limitUsd: 0 };
   }
 
   private podTranscript(_podId: string, sessionId: string): unknown {
