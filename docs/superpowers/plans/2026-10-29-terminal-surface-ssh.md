@@ -363,6 +363,20 @@ test("host verifier: changed key blocks", async () => {
   assert.equal(ok, false)
 })
 
+test("host key prompt times out to reject", async () => {
+  const verifier = createHostVerifier({
+    sessionId: "ssh:1", host: "10.0.0.12", port: 22,
+    knownHosts: { get: () => null, put: () => {}, replace: () => {} },
+    request: () => new Promise(() => {}), // never resolves
+    timeoutMs: 10,
+    keyTypeOf: () => "ssh-ed25519",
+  })
+  let ok = true
+  verifier(Buffer.from("key"), (v) => { ok = v })
+  await new Promise((r) => setTimeout(r, 25))
+  assert.equal(ok, false)
+})
+
 test("reconnect delays and auto-reconnect eligibility", () => {
   assert.deepEqual([1,2,3,4,5].map(reconnectDelay), [1000,2000,4000,8000,16000])
   assert.equal(reconnectDelay(6), null)
@@ -459,6 +473,16 @@ test("keyboard-interactive prompt is forwarded and answered", async () => {
   prompts.resolve(["123456"])
   await tick()
   assert.deepEqual(finish, ["123456"])
+})
+
+test("keyboard-interactive times out to cancel", async () => {
+  const { session, client, timers, prompts } = makeSession()
+  session.connect()
+  let finish: (answers: string[]) => void = () => {}
+  client.emit("keyboard-interactive", "OTP", "", "en", [{ prompt: "Code", echo: false }], (a: string[]) => { finish = a })
+  timers.advance(120_000)
+  assert.deepEqual(finish, [])
+  assert.equal(prompts.pending(), 0)
 })
 
 test("testSshConnection resolves on ready without opening shell", async () => {
@@ -1003,6 +1027,7 @@ Expected: FAIL（模块不存在）
 - 空态：无会话时用 `DockEmpty` + 「新建 SSH 连接」「打开本地终端」；本地能力不可用时本地 tab 显示降级 banner + 外部终端按钮。
 - tab 溢出：`⋯` 菜单列出全部会话（点击激活）；tab 条支持横向滚动。
 - tab 键盘：ArrowLeft/Right/Home/End 切换，roving tabindex（沿用工作台 tab 模式）。
+- 会话上限 10（spec §11）；超出 `openSsh`/`openLocal` toast 提示「最多同时打开 10 个终端」。
 
 - [ ] **Step 4: 跑测试确认通过 + 全量**
 
@@ -1119,7 +1144,7 @@ test("ssh2 is a production dependency", () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败/通过**
+- [ ] **Step 2: 跑测试确认通过**
 
 Run: `cd packages/desktop && node --import tsx --import ../../packages/test-shim/register.mjs --test tests/terminal-packaging.test.ts`
 Expected: PASS（Task 4 已加依赖）；若失败，补 package.json。
