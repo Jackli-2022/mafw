@@ -59,6 +59,10 @@ export interface RunDeps {
   onEvent(run: unknown): void
 }
 
+export interface PodDeps {
+  onEvent(event: unknown): void
+}
+
 export interface ShellEventDeps {
   core: CoreDeps
   lifecycle: LifecycleDeps
@@ -71,6 +75,7 @@ export interface ShellEventDeps {
   tasks: TaskDeps
   queue: QueueDeps
   run: RunDeps
+  pod: PodDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */
@@ -135,6 +140,12 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
   if (event.type === "runtime_switched") {
     deps.core.trace(event, "rail:runtime")
     deps.core.onRuntimeSwitched()
+    return
+  }
+
+  if (event.type === "pod.updated") {
+    deps.core.trace(event, "pod:updated")
+    deps.pod.onEvent(event)
     return
   }
 

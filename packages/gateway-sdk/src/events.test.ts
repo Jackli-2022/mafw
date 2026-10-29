@@ -6,8 +6,9 @@ import {
 
 test("runtime event list has no duplicates", () => {
   expect(new Set(RUNTIME_EVENT_TYPES).size).toBe(RUNTIME_EVENT_TYPES.length)
-  // 30 = 29 + session.commands（T2-5 discovery 目录变更广播，2026-10-28）
-  expect(RUNTIME_EVENT_TYPES.length).toBe(30)
+  // 31 = 30 + pod.updated（Project Pod Lite，2026-10-29）
+  expect(RUNTIME_EVENT_TYPES.length).toBe(31)
+  expect(RUNTIME_EVENT_TYPES).toContain("pod.updated")
 })
 
 test("flat event list has no duplicates", () => {

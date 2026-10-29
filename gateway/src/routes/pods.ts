@@ -88,10 +88,14 @@ export async function handlePods(
       }
       if (method === 'POST') {
         const body = await readJson(req);
-        assertAccess(deps, body, ['lead', 'builder', 'reviewer']);
+        const member = assertAccess(deps, body, ['lead', 'builder', 'reviewer']);
+        const fromMemberId = typeof body.fromMemberId === 'string' && body.fromMemberId
+          ? body.fromMemberId
+          : member?.id;
+        if (!fromMemberId) throw new PodError(400, 'fromMemberId or actorSessionID required');
         const message = deps.messages.send({
           podId,
-          fromMemberId: String(body.fromMemberId ?? ''),
+          fromMemberId,
           toMemberId: typeof body.toMemberId === 'string' ? body.toMemberId : null,
           kind: body.kind,
           body: String(body.body ?? ''),
@@ -200,10 +204,10 @@ function assertAccess(
   deps: PodRouteDeps,
   body: any,
   allowed: PodMemberRole[],
-): void {
-  if (!body || typeof body.actorSessionID !== 'string' || !body.actorSessionID) return;
+): PodMemberRow | null {
+  if (!body || typeof body.actorSessionID !== 'string' || !body.actorSessionID) return null;
   if (!deps.access) throw new PodError(503, 'pod access checks unavailable');
-  deps.access.requireMember(body.actorSessionID, allowed);
+  return deps.access.requireMember(body.actorSessionID, allowed);
 }
 
 function readJson(req: http.IncomingMessage): Promise<any> {

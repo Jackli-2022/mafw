@@ -143,6 +143,7 @@ type ShellHandledType =
   | "turn.completed" | "turn.failed" | "turn.aborted"
   | "session.diff" | "permission_mode"
   | "session.checkpoint"
+  | "pod.updated"
 
 /**
  * 类型级穷尽检查（永不抛错，编译失败即守卫生效）：
@@ -204,6 +205,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "session.config":
     case "session.commands":
     case "task.updated":
+    case "pod.updated":
       return
     default: {
       // 残余必须恰好是 plugin:* 模板；出现任何其他字面量 = 有事件未归类。

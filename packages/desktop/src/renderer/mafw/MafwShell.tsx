@@ -1089,6 +1089,9 @@ export function MafwShell() {
     run: {
       onEvent: (run) => setRun(run as any),
     },
+    pod: {
+      onEvent: () => {},
+    },
   }
 
   async function connectSse() {

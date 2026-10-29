@@ -9,6 +9,7 @@ function makeDeps() {
   const taskEvents: unknown[] = []
   const queueEvents: unknown[] = []
   const runEvents: unknown[] = []
+  const podEvents: unknown[] = []
   const deps: ShellEventDeps = {
     core: {
       trace: rec("trace"),
@@ -77,8 +78,11 @@ function makeDeps() {
     run: {
       onEvent: (run: unknown) => { runEvents.push(run) },
     },
+    pod: {
+      onEvent: (event: unknown) => { podEvents.push(event) },
+    },
   }
-  return { deps, calls, subagentEvents, backgroundEvents, taskEvents, queueEvents, runEvents }
+  return { deps, calls, subagentEvents, backgroundEvents, taskEvents, queueEvents, runEvents, podEvents }
 }
 
 describe("dispatchShellEvent: core events", () => {
@@ -119,6 +123,16 @@ describe("dispatchShellEvent: run updated", () => {
     dispatchShellEvent({ type: "run.updated", properties: { sessionID: "s1", run } }, deps)
     expect(runEvents).toEqual([run])
     expect(calls.some(c => c.name === "trace" && c.args[1] === "run:updated")).toBe(true)
+  })
+})
+
+describe("dispatchShellEvent: pod updated", () => {
+  test("pod.updated forwards the event and consumes it", () => {
+    const { deps, podEvents, calls } = makeDeps()
+    const event = { type: "pod.updated", properties: { podId: "pod_1", kind: "task" } }
+    dispatchShellEvent(event, deps)
+    expect(podEvents).toEqual([event])
+    expect(calls.some(c => c.name === "trace" && c.args[1] === "pod:updated")).toBe(true)
   })
 })
 

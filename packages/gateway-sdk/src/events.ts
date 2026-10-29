@@ -19,7 +19,7 @@ export const RUNTIME_EVENT_TYPES = [
   "message.updated", "part.updated", "part.delta", "part.complete",
   "question.asked", "question.replied", "question.rejected",
   "permission.asked", "permission.replied",
-  "plan.updated", "usage.updated", "queue.updated", "task.updated", "session.config", "session.checkpoint", "run.updated", "session.commands",
+  "plan.updated", "usage.updated", "queue.updated", "task.updated", "pod.updated", "session.config", "session.checkpoint", "run.updated", "session.commands",
   "trajectory.event", "trajectory.turn",
   "permission_mode", "session.diff",
 ] as const

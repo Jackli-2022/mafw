@@ -38,6 +38,7 @@ export const MAFW = {
   usageUpdated: 'usage.updated',
   queueUpdated: 'queue.updated',
   taskUpdated: 'task.updated',
+  podUpdated: 'pod.updated',
   sessionConfig: 'session.config',
   sessionCheckpoint: 'session.checkpoint',
   runUpdated: 'run.updated',
