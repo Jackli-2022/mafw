@@ -49,7 +49,7 @@ export type FsAPI = {
 }
 export type BrowserOpenRequest = { url: string; newTab: boolean }
 
-/** 内嵌浏览器（main 侧策略在 browser-session.ts；渲染层只接 window.open → dock 内导航事件）。 */
+/** 内嵌浏览器（main 侧策略在 browser-session.ts；MafwShell 订阅后转 dock 新 tab）。 */
 export type BrowserAPI = {
   onOpenUrl(cb: (req: BrowserOpenRequest) => void): () => void
   openExternal(url: string): Promise<{ ok: boolean }>

@@ -2,7 +2,7 @@
 // 安全基线全部在 main（browser-session.ts）：权限全拒、非 http(s) 导航拦截、
 // window.open 转 dock 内导航、will-attach-webview 加固。这里只做 UI + tab 状态。
 // 每个 tab 一个常挂载 webview；非活动 tab 只 display:none，不销毁页面状态。
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { Index, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
@@ -26,6 +26,7 @@ import {
   updateBrowserTab,
   type BrowserTab,
 } from "../browser-tabs"
+import { createBrowserViewRegistry, navigateExistingView } from "../browser-view"
 import { DockBanner, DockEmpty } from "./dock-panel"
 import { buildPickCancelScript, buildPickScript, PICK_TIMEOUT_MS, type ElementPickPayload } from "../browser/element-pick"
 import { getPendingCaptures, captureAttachmentName } from "../chat/pending-captures"
@@ -36,7 +37,7 @@ import { pushCaptureFile } from "../capture/attach-sink"
 export function BrowserDock(props: { sessionID: string | null }) {
   const [addressDraft, setAddressDraft] = createSignal("")
   const [picking, setPicking] = createSignal(false)
-  const views = new Map<string, any>()
+  const viewRegistry = createBrowserViewRegistry<any>()
   const viewUrls = new Map<string, string>()
   const paneEls = new Map<string, HTMLDivElement>()
   let host: HTMLDivElement | undefined
@@ -45,7 +46,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
   const activeTab = (): BrowserTab | null => tabs().find((tab) => tab.id === activeBrowserTabId()) ?? null
   const activeView = () => {
     const id = activeBrowserTabId()
-    return id ? views.get(id) ?? null : null
+    return id ? viewRegistry.get(id) : null
   }
   const displayAddress = (url: string) => displayMafwFilePath(url) ?? url
   const isRemote = () => {
@@ -66,9 +67,9 @@ export function BrowserDock(props: { sessionID: string | null }) {
   })
 
   const removeView = (id: string) => {
-    const view = views.get(id)
+    const view = viewRegistry.get(id)
     try { view?.remove?.() } catch { /* ignore */ }
-    views.delete(id)
+    viewRegistry.delete(id)
     viewUrls.delete(id)
     paneEls.get(id)?.remove()
     paneEls.delete(id)
@@ -111,7 +112,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
       })
     })
     pane.appendChild(el)
-    views.set(tab.id, el)
+    viewRegistry.set(tab.id, el)
     viewUrls.set(tab.id, tab.url)
     try { el.setAttribute("src", tab.url) } catch { /* ignore */ }
   }
@@ -119,7 +120,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
   const ensurePanes = () => {
     if (!host) return
     const ids = new Set(tabs().map((tab) => tab.id))
-    for (const id of [...views.keys()]) if (!ids.has(id)) removeView(id)
+    for (const id of viewRegistry.keys()) if (!ids.has(id)) removeView(id)
     for (const [id, pane] of [...paneEls.entries()]) {
       if (!ids.has(id)) {
         pane.remove()
@@ -135,7 +136,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
         paneEls.set(tab.id, pane)
       }
       pane.classList.toggle("is-active", tab.id === activeBrowserTabId())
-      const view = views.get(tab.id)
+      const view = viewRegistry.get(tab.id)
       if (!view && tab.url) {
         createView(tab, pane)
       } else if (view && tab.url && viewUrls.get(tab.id) !== tab.url) {
@@ -163,11 +164,25 @@ export function BrowserDock(props: { sessionID: string | null }) {
       showToastV2({ description: "最多同时打开 12 个浏览器标签", duration: 2200 } as any)
       return
     }
+    if (!newTab) {
+      const view = viewRegistry.get(tab.id)
+      if (view) {
+        viewUrls.set(tab.id, url)
+        navigateExistingView(view, url)
+      }
+    }
     setAddressDraft(displayAddress(url))
     queueMicrotask(() => {
-      const view = views.get(tab.id)
+      const view = viewRegistry.get(tab.id)
       try { view?.focus?.() } catch { /* ignore */ }
     })
+  }
+
+  const submitAddress = () => {
+    const raw = addressDraft().trim()
+    const tab = activeTab()
+    const target = tab && displayMafwFilePath(tab.url) === raw ? tab.url : raw
+    load(target, { newTab: false })
   }
 
   const retry = () => {
@@ -178,6 +193,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
   }
 
   const closeTab = (id: string) => {
+    if (pickTabId === id) cancelPick()
     removeView(id)
     closeBrowserTab(id)
   }
@@ -198,11 +214,20 @@ export function BrowserDock(props: { sessionID: string | null }) {
 
   /** G2：点选元素 → 元素信息 + 区域截图 → capture 草稿（+ 图片进媒体管道）。 */
   let pickToken = 0
+  let pickView: any = null
+  let pickTabId: string | null = null
   const cancelPick = () => {
     pickToken++
     setPicking(false)
-    try { void activeView()?.executeJavaScript?.(buildPickCancelScript()) } catch { /* ignore */ }
+    const view = pickView
+    pickView = null
+    pickTabId = null
+    try { void view?.executeJavaScript?.(buildPickCancelScript()) } catch { /* ignore */ }
   }
+  createEffect(() => {
+    const id = activeBrowserTabId()
+    if (picking() && pickTabId && id !== pickTabId) cancelPick()
+  })
   createEffect(() => {
     if (!picking()) return
     const onKey = (event: KeyboardEvent) => {
@@ -220,6 +245,8 @@ export function BrowserDock(props: { sessionID: string | null }) {
     const tab = activeTab()
     if (!tab) return
     const token = ++pickToken
+    pickView = view
+    pickTabId = tab.id
     setPicking(true)
     const timer = setTimeout(() => { if (token === pickToken) cancelPick() }, PICK_TIMEOUT_MS)
     try {
@@ -269,14 +296,18 @@ export function BrowserDock(props: { sessionID: string | null }) {
       if (token === pickToken) showToastV2({ description: "页面不支持点选（可能被 CSP 限制）", variant: "error", duration: 3000 } as any)
     } finally {
       clearTimeout(timer)
-      if (token === pickToken) setPicking(false)
+      if (token === pickToken) {
+        setPicking(false)
+        pickView = null
+        pickTabId = null
+      }
     }
   }
 
   onMount(() => {
     ensurePanes()
     onCleanup(() => {
-      for (const id of [...views.keys()]) removeView(id)
+      for (const id of viewRegistry.keys()) removeView(id)
     })
   })
 
@@ -317,15 +348,25 @@ export function BrowserDock(props: { sessionID: string | null }) {
             onValueChange={(value: string) => { if (value) setActiveBrowserTab(String(value)) }}
           >
             <TabsV2.List class="mafw-browser-tabs" aria-label="浏览器标签">
-              <For each={tabs()}>
+              <Index each={tabs()}>
                 {(tab) => (
-                  <TabsV2.Trigger value={tab.id} onMiddleClick={() => closeTab(tab.id)}>
+                  <TabsV2.Trigger value={tab().id} onMiddleClick={() => closeTab(tab().id)}>
                     <Icon name="globe" size="small" />
-                    <span class="mafw-browser-tab-title">{browserTabTitle(tab)}</span>
-                    <TabsV2.CloseButton onClick={() => closeTab(tab.id)} />
+                    <span class="mafw-browser-tab-title">{browserTabTitle(tab())}</span>
+                    <TabsV2.CloseButton
+                      aria-label="关闭标签"
+                      onClick={() => closeTab(tab().id)}
+                      onPointerDown={(event: PointerEvent) => event.stopPropagation()}
+                      onKeyDown={(event: KeyboardEvent) => {
+                        if (event.key !== "Enter" && event.key !== " ") return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        closeTab(tab().id)
+                      }}
+                    />
                   </TabsV2.Trigger>
                 )}
-              </For>
+              </Index>
             </TabsV2.List>
           </TabsV2>
         </Show>
@@ -361,7 +402,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
           onKeyDown={(event) => {
             if (event.key !== "Enter") return
             event.preventDefault()
-            load(addressDraft(), { newTab: false })
+            submitAddress()
           }}
         />
         <TooltipV2 value="点选元素（点击后捕获元素信息 + 截图）" openDelay={300}>

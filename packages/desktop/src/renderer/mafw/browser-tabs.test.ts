@@ -29,6 +29,10 @@ describe("browser-tabs", () => {
     resetBrowserTabsForTests()
     assert.equal(browserTabTitle(createBrowserTab("https://x.example/a", "t1")), "x.example")
     assert.equal(browserTabTitle(createBrowserTab("", "t2")), "新标签页")
+    assert.equal(
+      browserTabTitle(createBrowserTab("mafw-file://ab12cd34/docs/index.html", "t3")),
+      "index.html",
+    )
     for (let i = 0; i < BROWSER_TAB_LIMIT; i++) {
       assert.ok(openBrowserTab(`https://${i}.example`, { newTab: true }))
     }

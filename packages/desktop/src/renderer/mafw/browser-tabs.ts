@@ -1,6 +1,7 @@
 // Workbench browser tabs: pure model + module-level store that survives
 // BrowserDock unmount (right dock collapse) while webviews are recreated.
 import { createSignal } from "solid-js"
+import { displayMafwFilePath } from "../../shared/mafw-file"
 
 export type BrowserTab = {
   id: string
@@ -23,6 +24,10 @@ export function createBrowserTab(url: string, id: string, title = ""): BrowserTa
 export function browserTabTitle(tab: BrowserTab): string {
   const titled = tab.title.trim()
   if (titled) return titled
+  const localPath = displayMafwFilePath(tab.url)
+  if (localPath) {
+    return localPath.split(/[\\/]/).filter(Boolean).pop() || "新标签页"
+  }
   try {
     return new URL(tab.url).host || "新标签页"
   } catch {

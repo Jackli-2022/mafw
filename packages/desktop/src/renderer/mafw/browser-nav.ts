@@ -1,5 +1,5 @@
-// renderer 侧浏览器导航请求（MafwShell → BrowserDock，2026-10-27 文件预览）。
-// 与既有 browser-open-url（main → preload → BrowserDock 直连）互补：这条是 renderer 内部流程。
+// renderer 内部浏览器导航请求（文件预览 / MafwShell 外链路由写入，BrowserDock 消费）。
+// 与 browser-open-url（main → preload → MafwShell）互补：这条不经过 main。
 import { createSignal } from "solid-js"
 
 export type BrowserNavRequest = { url: string; newTab: boolean; at: number }
