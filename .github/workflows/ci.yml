@@ -45,7 +45,7 @@ jobs:
         run: npm run build
 
       - name: Test gateway
-        run: npm test
+        run: npm test --prefix gateway -- --forceExit
 
       - name: Test claude adapter
         working-directory: adapters/claude
