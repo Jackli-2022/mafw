@@ -1,7 +1,7 @@
 # Desktop 终端工作台 + SSH 远端会话设计
 
 日期：2026-10-29
-状态：已交付（实现 commit 2c3087a..6c629d07）
+状态：已交付（实现 commit 2c3087a..357a4c3e）
 调研：`docs/research/2026-10-29-terminal-surface-ssh-research.md`
 前置设计：
 `docs/superpowers/specs/2026-10-26-terminal-dock-design.md`（终端面板首版）
