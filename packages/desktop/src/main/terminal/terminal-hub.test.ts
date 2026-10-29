@@ -3,8 +3,10 @@ import assert from "node:assert/strict"
 import { createTerminalHub, type TerminalHubDeps } from "./terminal-hub"
 import type { LocalTerminalOps } from "./local-terminal"
 import type { SshHostProfile } from "../../shared/ssh-host"
-import type { TerminalEvent, TerminalSessionInfo } from "../../shared/terminal-session"
+import { localSessionId, type TerminalEvent, type TerminalSessionInfo } from "../../shared/terminal-session"
 import type { SshSession, SshSessionOptions } from "./ssh-session"
+
+const LOCAL_DIR = process.platform === "win32" ? "C:\\Work\\App" : "/work/app"
 
 const host = (over: Partial<SshHostProfile> = {}): SshHostProfile => ({
   id: "h1",
@@ -100,8 +102,8 @@ describe("terminal-hub", () => {
   test("local attach returns local:<dirKey>, broadcasts data, replays buffer", async () => {
     const { deps, local, events } = makeDeps()
     const hub = createTerminalHub(deps)
-    const info = await hub.attachLocal("C:\\Work\\App")
-    assert.equal(info.id, "local:c:/work/app")
+    const info = await hub.attachLocal(LOCAL_DIR)
+    assert.equal(info.id, localSessionId(LOCAL_DIR, process.platform))
     assert.equal(info.status, "connected")
     assert.equal(info.connectedAt, 1000)
     assert.equal(local.attachCalls, 1)
@@ -120,8 +122,8 @@ describe("terminal-hub", () => {
   test("attachLocal reattaches an existing local session", async () => {
     const { deps, local } = makeDeps()
     const hub = createTerminalHub(deps)
-    await hub.attachLocal("C:\\Work\\App")
-    await hub.attachLocal("C:\\Work\\App")
+    await hub.attachLocal(LOCAL_DIR)
+    await hub.attachLocal(LOCAL_DIR)
     assert.equal(local.attachCalls, 2)
   })
 
@@ -148,12 +150,12 @@ describe("terminal-hub", () => {
   test("close local detaches without killing; kill removes", async () => {
     const { deps, local } = makeDeps()
     const hub = createTerminalHub(deps)
-    const info = await hub.attachLocal("C:\\Work\\App")
+    const info = await hub.attachLocal(LOCAL_DIR)
     await hub.close(info.id)
     assert.equal(local.killCalls, 0)
     assert.equal(local.detachCalls, 1)
-    await hub.attachLocal("C:\\Work\\App")
-    await hub.kill("local:c:/work/app")
+    await hub.attachLocal(LOCAL_DIR)
+    await hub.kill(localSessionId(LOCAL_DIR, process.platform))
     assert.equal(local.killCalls, 1)
     assert.equal(hub.list().some((s) => s.kind === "local"), false)
   })
@@ -161,7 +163,7 @@ describe("terminal-hub", () => {
   test("input/resize route by session kind", async () => {
     const { deps, local, created } = makeDeps()
     const hub = createTerminalHub(deps)
-    const localInfo = await hub.attachLocal("C:\\Work\\App")
+    const localInfo = await hub.attachLocal(LOCAL_DIR)
     hub.input(localInfo.id, "ls\r")
     await hub.resize(localInfo.id, 100, 30)
     assert.deepEqual(local.inputCalls, ["ls\r"])
@@ -177,7 +179,7 @@ describe("terminal-hub", () => {
   test("attach replays buffer and detach removes subscriber", async () => {
     const { deps, local } = makeDeps()
     const hub = createTerminalHub(deps)
-    const info = await hub.attachLocal("C:\\Work\\App")
+    const info = await hub.attachLocal(LOCAL_DIR)
     local.emit({ type: "data", sessionId: info.id, data: "before\n" })
     const got: TerminalEvent[] = []
     const r = await hub.attach(info.id, (ev) => got.push(ev), "v1")
@@ -210,7 +212,7 @@ describe("terminal-hub", () => {
   test("dispose closes ssh sessions and detaches local", async () => {
     const { deps, local, created } = makeDeps()
     const hub = createTerminalHub(deps)
-    await hub.attachLocal("C:\\Work\\App")
+    await hub.attachLocal(LOCAL_DIR)
     await hub.createSsh({ hostId: "h1" })
     hub.dispose()
     assert.equal(created[0].disposed, 1)
