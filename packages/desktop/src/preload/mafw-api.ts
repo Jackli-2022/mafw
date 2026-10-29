@@ -1,6 +1,8 @@
 import { ipcRenderer } from "electron"
 import type { MafwAPI } from "./mafw-types"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
+import type { TerminalEvent, TerminalProbe, TerminalSessionInfo } from "../shared/terminal-session"
+import type { SshHostProfile, SshHostProfileInput, SshSecretInput } from "../shared/ssh-host"
 
 function invoke<T = unknown>(namespace: string, method: string, ...args: unknown[]): Promise<T> {
   return ipcRenderer.invoke("mafw-invoke", namespace, method, ...args) as Promise<T>
@@ -33,6 +35,15 @@ export function createMafwApi(): MafwAPI {
   let terminalChannelActive = false
   const terminalRelay = (_event: any, ev: any) => {
     for (const cb of terminalCallbacks) cb(ev)
+  }
+
+  // v2 terminal session events (local + SSH); separate channel from the
+  // legacy bottom-strip event until Task 13 removes it.
+  ipcRenderer.removeAllListeners("mafw-terminal-v2-event")
+  const sessionCallbacks = new Set<(ev: TerminalEvent) => void>()
+  let sessionChannelActive = false
+  const sessionRelay = (_event: any, ev: TerminalEvent) => {
+    for (const cb of sessionCallbacks) cb(ev)
   }
 
   return {
@@ -345,6 +356,7 @@ export function createMafwApi(): MafwAPI {
     },
 
     terminal: {
+      // ── legacy bottom-strip API (removed in Task 13) ──
       probe: () => ipcRenderer.invoke("mafw-terminal-probe") as Promise<{ available: boolean; serveUrl?: string; reason?: string }>,
       attach: (directory: string, opts?: { reopen?: boolean }) => ipcRenderer.invoke("mafw-terminal-attach", { directory, reopen: opts?.reopen === true }) as Promise<{ ok: true; ptyId: string; replayed: boolean } | { ok: false; reason: 'gone' | 'unavailable' | 'closed' }>,
       detach: (directory: string) => ipcRenderer.invoke("mafw-terminal-detach", { directory }) as Promise<void>,
@@ -352,7 +364,7 @@ export function createMafwApi(): MafwAPI {
       resize: (directory: string, cols: number, rows: number) => ipcRenderer.invoke("mafw-terminal-resize", { directory, cols, rows }) as Promise<void>,
       kill: (directory: string) => ipcRenderer.invoke("mafw-terminal-kill", { directory }) as Promise<void>,
       openExternal: (directory: string) => ipcRenderer.invoke("mafw-terminal-open-external", { directory }) as Promise<void>,
-      onEvent: (cb) => {
+      onLegacyEvent: (cb: (ev: { directory: string; type: 'data' | 'closed' | 'gone'; data?: string }) => void) => {
         terminalCallbacks.add(cb)
         if (!terminalChannelActive) {
           ipcRenderer.on("mafw-terminal-event", terminalRelay)
@@ -363,6 +375,50 @@ export function createMafwApi(): MafwAPI {
           if (terminalCallbacks.size === 0 && terminalChannelActive) {
             ipcRenderer.removeListener("mafw-terminal-event", terminalRelay)
             terminalChannelActive = false
+          }
+        }
+      },
+
+      // ── v2 session surface ──
+      probeV2: () => ipcRenderer.invoke("mafw-terminal-v2-probe") as Promise<TerminalProbe>,
+      sessions: {
+        list: () => ipcRenderer.invoke("mafw-terminal-v2-list") as Promise<TerminalSessionInfo[]>,
+        attachLocal: (directory: string) => ipcRenderer.invoke("mafw-terminal-v2-local-attach", { directory }) as Promise<TerminalSessionInfo>,
+        createSsh: (input: { id?: string; hostId: string }) => ipcRenderer.invoke("mafw-terminal-v2-ssh-create", input) as Promise<TerminalSessionInfo>,
+        restore: (input: { id: string; hostId: string }) => ipcRenderer.invoke("mafw-terminal-v2-ssh-restore", input) as Promise<TerminalSessionInfo>,
+        attach: (sessionId: string, key: string) => ipcRenderer.invoke("mafw-terminal-v2-attach", { sessionId, key }) as Promise<{ ok: boolean; replayed: boolean }>,
+        detach: (sessionId: string, key: string) => ipcRenderer.invoke("mafw-terminal-v2-detach", { sessionId, key }) as Promise<void>,
+        input: (sessionId: string, data: string) => ipcRenderer.invoke("mafw-terminal-v2-input", { sessionId, data }) as Promise<void>,
+        resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke("mafw-terminal-v2-resize", { sessionId, cols, rows }) as Promise<void>,
+        close: (sessionId: string) => ipcRenderer.invoke("mafw-terminal-v2-close", { sessionId }) as Promise<void>,
+        kill: (sessionId: string) => ipcRenderer.invoke("mafw-terminal-v2-kill", { sessionId }) as Promise<void>,
+        reconnect: (sessionId: string) => ipcRenderer.invoke("mafw-terminal-v2-reconnect", { sessionId }) as Promise<void>,
+      },
+      hosts: {
+        list: () => ipcRenderer.invoke("mafw-terminal-v2-hosts-list") as Promise<SshHostProfile[]>,
+        save: (profile: SshHostProfileInput, secret?: SshSecretInput) => ipcRenderer.invoke("mafw-terminal-v2-hosts-save", { profile, secret }) as Promise<SshHostProfile>,
+        remove: (id: string) => ipcRenderer.invoke("mafw-terminal-v2-hosts-remove", { id }) as Promise<void>,
+        test: (profile: SshHostProfileInput, secret?: SshSecretInput) => ipcRenderer.invoke("mafw-terminal-v2-hosts-test", { profile, secret }) as Promise<{ ok: boolean; error?: string }>,
+      },
+      hostkey: {
+        respond: (input: { requestId: string; action: "trust" | "trust-and-save" | "replace" | "reject" }) =>
+          ipcRenderer.invoke("mafw-terminal-v2-hostkey-respond", input) as Promise<void>,
+      },
+      prompt: {
+        respond: (input: { requestId: string; answers?: string[] }) =>
+          ipcRenderer.invoke("mafw-terminal-v2-prompt-respond", input) as Promise<void>,
+      },
+      onEvent: (cb: (ev: TerminalEvent) => void) => {
+        sessionCallbacks.add(cb)
+        if (!sessionChannelActive) {
+          ipcRenderer.on("mafw-terminal-v2-event", sessionRelay)
+          sessionChannelActive = true
+        }
+        return () => {
+          sessionCallbacks.delete(cb)
+          if (sessionCallbacks.size === 0 && sessionChannelActive) {
+            ipcRenderer.removeListener("mafw-terminal-v2-event", sessionRelay)
+            sessionChannelActive = false
           }
         }
       },

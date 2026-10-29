@@ -149,7 +149,7 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
 
   // 终端事件订阅（一次，多路复用）；只处理当前目录。
   onMount(() => {
-    const off = window.api.mafw.terminal.onEvent((ev) => {
+    const off = window.api.mafw.terminal.onLegacyEvent((ev) => {
       if (!currentDir || ev.directory !== currentDir) return
       if (ev.type === "data") {
         term?.write(ev.data ?? "")

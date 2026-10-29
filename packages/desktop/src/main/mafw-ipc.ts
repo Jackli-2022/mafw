@@ -1,5 +1,5 @@
 import { MafwClient } from "@mafw/sdk"
-import { BrowserWindow, Notification, app, ipcMain } from "electron"
+import { BrowserWindow, Notification, app, ipcMain, safeStorage } from "electron"
 import type { IpcMainInvokeEvent } from "electron"
 import { join } from "path"
 import { readdir } from "node:fs/promises"
@@ -13,6 +13,7 @@ import {
 import { getLastFocusedWindow, trayIconPath, createMainWindow } from "./windows"
 import { walkProjectFiles } from "./file-listing"
 import { installTerminalBridge } from "./terminal/terminal-bridge"
+import { installTerminalServiceIpc } from "./terminal/terminal-ipc"
 import { installCaptureIpc } from "./capture/screenshot-capture"
 import { externalTerminalCommand } from "./terminal/terminal-core"
 import { spawn } from "node:child_process"
@@ -119,6 +120,22 @@ export function registerMafwIpcHandlers() {
     gatewayBase: () => `http://127.0.0.1:${getGatewayPort() ?? 3000}`,
     log: (m) => writeLog("utility", m, {}, "warn"),
     openExternal: openExternalTerminal,
+  })
+  // v2 terminal service (local + SSH) while the old bottom-strip TerminalDock
+  // still uses the v1 bridge until Task 13 removes it.
+  installTerminalServiceIpc(ipcMain, {
+    dataDir: join(app.getPath("userData"), "terminal"),
+    gatewayBase: () => `http://127.0.0.1:${getGatewayPort() ?? 3000}`,
+    safeStorage,
+    openExternal: openExternalTerminal,
+    broadcast: (channel, payload) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        try {
+          if (!win.webContents.isDestroyed()) win.webContents.send(channel, payload)
+        } catch { /* window gone */ }
+      }
+    },
+    log: (m) => writeLog("utility", m, {}, "warn"),
   })
   onGatewayStateChange((state) => {
     if (state === "ready") {

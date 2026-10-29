@@ -10,6 +10,8 @@ import type {
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
 } from "@mafw/sdk"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
+import type { TerminalEvent, TerminalProbe, TerminalSessionInfo } from "../shared/terminal-session"
+import type { SshHostProfile, SshHostProfileInput, SshSecretInput } from "../shared/ssh-host"
 
 /** B4：MCP 配置写入 DTO（与 @mafw/sdk 对齐） */
 export interface McpServerConfigInput {
@@ -313,16 +315,46 @@ export type MafwAPI = {
     remove: (id: string, directory?: string) => Promise<void>
   }
 
-  /** 内嵌终端（spec 2026-10-26）：目录级 persistent PTY，不共享给 agent。 */
+  /** 内嵌终端：v1 bottom strip (legacy) + v2 local/SSH session surface. */
   terminal: {
+    // legacy bottom-strip API (Task 13 removes)
     probe: () => Promise<{ available: boolean; serveUrl?: string; reason?: string }>
     attach: (directory: string, opts?: { reopen?: boolean }) => Promise<{ ok: true; ptyId: string; replayed: boolean } | { ok: false; reason: 'gone' | 'unavailable' | 'closed' }>
     detach: (directory: string) => Promise<void>
     input: (directory: string, data: string) => Promise<void>
     resize: (directory: string, cols: number, rows: number) => Promise<void>
     kill: (directory: string) => Promise<void>
+    onLegacyEvent: (cb: (ev: { directory: string; type: 'data' | 'closed' | 'gone'; data?: string }) => void) => () => void
+
+    // v2 session surface
+    probeV2: () => Promise<TerminalProbe>
+    sessions: {
+      list: () => Promise<TerminalSessionInfo[]>
+      attachLocal: (directory: string) => Promise<TerminalSessionInfo>
+      createSsh: (input: { id?: string; hostId: string }) => Promise<TerminalSessionInfo>
+      restore: (input: { id: string; hostId: string }) => Promise<TerminalSessionInfo>
+      attach: (sessionId: string, key: string) => Promise<{ ok: boolean; replayed: boolean }>
+      detach: (sessionId: string, key: string) => Promise<void>
+      input: (sessionId: string, data: string) => Promise<void>
+      resize: (sessionId: string, cols: number, rows: number) => Promise<void>
+      close: (sessionId: string) => Promise<void>
+      kill: (sessionId: string) => Promise<void>
+      reconnect: (sessionId: string) => Promise<void>
+    }
+    hosts: {
+      list: () => Promise<SshHostProfile[]>
+      save: (profile: SshHostProfileInput, secret?: SshSecretInput) => Promise<SshHostProfile>
+      remove: (id: string) => Promise<void>
+      test: (profile: SshHostProfileInput, secret?: SshSecretInput) => Promise<{ ok: boolean; error?: string }>
+    }
+    hostkey: {
+      respond: (input: { requestId: string; action: 'trust' | 'trust-and-save' | 'replace' | 'reject' }) => Promise<void>
+    }
+    prompt: {
+      respond: (input: { requestId: string; answers?: string[] }) => Promise<void>
+    }
     openExternal: (directory: string) => Promise<void>
-    onEvent: (cb: (ev: { directory: string; type: 'data' | 'closed' | 'gone'; data?: string }) => void) => () => void
+    onEvent: (cb: (ev: TerminalEvent) => void) => () => void
   }
 
   plugins: {
