@@ -161,6 +161,35 @@ describe("terminal-store", () => {
     assert.equal(store.sessions().filter((s) => s.id === "ssh:live").length, 1)
   })
 
+  test("restored ssh without saved credentials is not auto-connected", async () => {
+    const fake = fakeApi({ sessions: [] })
+    fake.api.hosts.list = async () => [{ ...host, hasPassword: false }]
+    const store = createTerminalStore({
+      api: fake.api as any,
+      storage: memStorage({ [key]: JSON.stringify({ activeId: "ssh:r1", tabs: [{ id: "ssh:r1", kind: "ssh", hostId: "h1" }] }) }),
+      localDirectory: () => null,
+    })
+    await store.init()
+    store.setVisible(true)
+    await tick()
+    assert.equal(fake.connected, 0)
+    store.setVisible(false)
+    store.setVisible(true)
+    await tick()
+    assert.equal(fake.connected, 0)
+  })
+
+  test("openLocal works from last ensured directory when localDirectory is null", async () => {
+    const fake = fakeApi()
+    const store = createTerminalStore({ api: fake.api as any, storage: memStorage(), localDirectory: () => null })
+    await store.init()
+    store.ensureLocal("C:\\A")
+    const local = store.sessions().find((s) => s.kind === "local")!
+    await store.closeTab(local.id)
+    store.openLocal()
+    assert.equal(store.sessions().some((s) => s.kind === "local"), true)
+  })
+
   test("host key event is surfaced and responded", async () => {
     const fake = fakeApi()
     const store = createTerminalStore({ api: fake.api as any, storage: memStorage(), localDirectory: () => "C:\\A" })
@@ -180,6 +209,27 @@ describe("terminal-store", () => {
     await store.respondHostKey("trust-and-save")
     assert.deepEqual(fake.hostKeyResponse, { requestId: "r1", action: "trust-and-save" })
     assert.equal(store.hostKey(), null)
+  })
+
+  test("host key prompts queue instead of overwriting", async () => {
+    const fake = fakeApi()
+    const store = createTerminalStore({ api: fake.api as any, storage: memStorage(), localDirectory: () => "C:\\A" })
+    await store.init()
+    const req = (requestId: string) => ({
+      type: "hostkey" as const,
+      requestId,
+      sessionId: `ssh:${requestId}`,
+      host: "h",
+      port: 22,
+      keyType: "ssh-ed25519",
+      fingerprint: `SHA256:${requestId}`,
+      kind: "new" as const,
+    })
+    fake.emit(req("r1"))
+    fake.emit(req("r2"))
+    assert.equal(store.hostKey()?.requestId, "r1")
+    await store.respondHostKey("trust")
+    assert.equal(store.hostKey()?.requestId, "r2")
   })
 
   test("close active picks a neighbor and kill local removes it", async () => {

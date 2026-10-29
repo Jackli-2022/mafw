@@ -97,7 +97,7 @@ function makeDeps(over: Partial<TerminalHubDeps> = {}) {
 }
 
 describe("terminal-hub", () => {
-  test("local attach returns local:<dirKey>, forwards data, sets connectedAt", async () => {
+  test("local attach returns local:<dirKey>, broadcasts data, replays buffer", async () => {
     const { deps, local, events } = makeDeps()
     const hub = createTerminalHub(deps)
     const info = await hub.attachLocal("C:\\Work\\App")
@@ -106,12 +106,23 @@ describe("terminal-hub", () => {
     assert.equal(info.connectedAt, 1000)
     assert.equal(local.attachCalls, 1)
 
+    local.emit({ type: "data", sessionId: info.id, data: "hi" })
     const got: TerminalEvent[] = []
     const a = await hub.attach(info.id, (ev) => got.push(ev), "v1")
     assert.equal(a.ok, true)
-    local.emit({ type: "data", sessionId: info.id, data: "hi" })
     assert.deepEqual(got.filter((e) => e.type === "data"), [{ type: "data", sessionId: info.id, data: "hi" }])
+    local.emit({ type: "data", sessionId: info.id, data: "live" })
+    assert.equal(got.filter((e) => e.type === "data").length, 1) // live data goes through onEvent broadcast, not attach fanout
     assert.equal(events.some((e) => e.type === "data" && e.data === "hi"), true)
+    assert.equal(events.some((e) => e.type === "data" && e.data === "live"), true)
+  })
+
+  test("attachLocal reattaches an existing local session", async () => {
+    const { deps, local } = makeDeps()
+    const hub = createTerminalHub(deps)
+    await hub.attachLocal("C:\\Work\\App")
+    await hub.attachLocal("C:\\Work\\App")
+    assert.equal(local.attachCalls, 2)
   })
 
   test("multiple ssh sessions to the same host stay distinct", async () => {

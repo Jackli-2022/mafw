@@ -169,7 +169,15 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
           createdAt: now(),
           updatedAt: now(),
         }
-        const saved = input.id ? secrets.get(input.id) : {}
+        const savedProfile = input.id ? hosts.get(input.id) : null
+        const canUseSaved =
+          !!savedProfile &&
+          savedProfile.host === validated.value.host &&
+          savedProfile.port === validated.value.port &&
+          savedProfile.username === validated.value.username &&
+          savedProfile.auth === validated.value.auth &&
+          (savedProfile.privateKeyPath ?? "") === (validated.value.privateKeyPath ?? "")
+        const saved = canUseSaved ? secrets.get(input.id!) : {}
         const runtime: SshRuntimeSecret = {
           ...saved,
           ...(secret?.password !== undefined ? { password: secret.password } : {}),
@@ -183,7 +191,11 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
           }
         }
         const testId = `test:${newId()}`
-        const opts = { id: testId, profile, secret: runtime }
+        const jumpProfile = profile.jumpHostId ? hosts.get(profile.jumpHostId) : null
+        const jump = jumpProfile
+          ? { profile: jumpProfile, secret: runtimeSecretFor(jumpProfile.id) }
+          : undefined
+        const opts = { id: testId, profile, secret: runtime, ...(jump ? { jump } : {}) }
         const run = deps.testSshConnection ?? testSshConnection
         return run(opts, sshDeps(opts, deps.onEvent))
       },

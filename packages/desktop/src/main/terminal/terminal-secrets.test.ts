@@ -42,6 +42,15 @@ describe("terminal-secrets", () => {
     assert.throws(() => store.set("h1", { password: "x" }), /凭据存储不可用/)
   })
 
+  test("Linux basic_text backend is treated as unavailable", () => {
+    const store = createTerminalSecrets({
+      filePath: file(),
+      safeStorage: { ...safe, getSelectedStorageBackend: () => "basic_text" },
+    })
+    assert.equal(store.available(), false)
+    assert.throws(() => store.set("h1", { password: "x" }), /凭据存储不可用/)
+  })
+
   test("corrupt or undecryptable entries fail open as empty", () => {
     const path = file()
     const store = createTerminalSecrets({ filePath: path, safeStorage: safe })

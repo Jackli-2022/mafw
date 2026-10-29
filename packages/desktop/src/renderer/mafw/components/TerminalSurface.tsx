@@ -1,6 +1,6 @@
 // Terminal L2 surface: session tabs + xterm views + host drawer/dialogs.
 // `active` means the surface is truly visible (dock open + workbench + terminal).
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Index, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
@@ -246,23 +246,23 @@ export function TerminalSurface(props: { directory: string | null; active: boole
           }
         >
           <div class="mafw-terminal-views">
-            <For each={store.sessions()}>
+            <Index each={store.sessions()}>
               {(session) => (
-                <div class="mafw-terminal-pane" classList={{ "is-active": store.activeId() === session.id }}>
+                <div class="mafw-terminal-pane" classList={{ "is-active": store.activeId() === session().id }}>
                   <TerminalView
-                    session={session}
-                    active={store.activeId() === session.id}
+                    session={session()}
+                    active={store.activeId() === session().id}
                     visible={props.active}
-                    onRequestClose={() => void store.closeTab(session.id)}
-                    onRequestKill={() => requestKill(session)}
-                    onOpenExternal={() => openExternal(session)}
+                    onRequestClose={() => void store.closeTab(session().id)}
+                    onRequestKill={() => requestKill(session())}
+                    onOpenExternal={() => openExternal(session())}
                     onSize={(cols, rows) =>
-                      setSizes((prev) => ({ ...prev, [session.id]: { cols, rows } }))
+                      setSizes((prev) => ({ ...prev, [session().id]: { cols, rows } }))
                     }
                   />
                 </div>
               )}
-            </For>
+            </Index>
           </div>
           <Show when={activeSession()}>
             {(session) => (

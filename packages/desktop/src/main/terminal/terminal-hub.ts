@@ -64,12 +64,6 @@ export function createTerminalHub(deps: TerminalHubDeps): TerminalHub {
   const newId = deps.id ?? randomUUID
   const sessions = new Map<string, HubSession>()
 
-  const fanout = (session: HubSession, ev: TerminalEvent) => {
-    for (const sub of session.subscribers.values()) {
-      try { sub(ev) } catch { /* one bad subscriber must not break others */ }
-    }
-  }
-
   const handleEvent = (session: HubSession, ev: TerminalEvent) => {
     if (ev.type === "status") {
       session.info.status = ev.status
@@ -84,7 +78,9 @@ export function createTerminalHub(deps: TerminalHubDeps): TerminalHub {
     } else if (ev.type === "data") {
       session.buffer = appendBuffer(session.buffer, ev.data)
     }
-    fanout(session, ev)
+    // Exactly-once renderer delivery: the service broadcasts every event to
+    // windows; attach subscribers only receive the replay buffer. Fanning out
+    // here too would deliver every data chunk twice to the attaching window.
     deps.onEvent(ev)
   }
 
@@ -133,7 +129,22 @@ export function createTerminalHub(deps: TerminalHubDeps): TerminalHub {
     async attachLocal(directory) {
       const id = localSessionId(directory, process.platform)
       const existing = sessions.get(id)
-      if (existing) return { ...existing.info }
+      if (existing && existing.localSub) {
+        // Re-attach also recovers a local adapter whose WS closed or whose
+        // serve restarted (reopen=true recreates the PTY when gone).
+        const result = await deps.local.attach(existing.directory!, id, existing.localSub, "hub", { reopen: true })
+        if (!result.ok) {
+          existing.info.status = result.reason === "unavailable" ? "error" : "disconnected"
+          existing.info.error =
+            result.reason === "unavailable"
+              ? "当前 runtime 不支持本地终端"
+              : "终端已随服务重启关闭"
+        } else if (existing.info.status !== "connected") {
+          existing.info.status = "connected"
+          existing.info.connectedAt = now()
+        }
+        return { ...existing.info }
+      }
 
       const info: TerminalSessionInfo = {
         id,

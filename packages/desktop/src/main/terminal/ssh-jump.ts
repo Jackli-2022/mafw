@@ -54,7 +54,7 @@ export function createJumpSock(input: {
       reject(err instanceof Error ? err : new Error(String(err)))
     }
 
-    timer = setTimeout(() => fail(new Error("跳板机连接超时")), input.timeoutMs ?? 30_000)
+    timer = setTimeout(() => fail(new Error("跳板机连接超时")), input.timeoutMs ?? 120_000)
 
     const hostVerifier = createHostVerifier({
       sessionId: input.sessionId,

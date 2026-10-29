@@ -283,6 +283,7 @@ export function createSshSession(opts: SshSessionOptions, deps: SshSessionDeps):
           })
           nextStream.on("close", onClose)
           attempt = 0
+          humanInteracted = false
           emitStatus("connected")
         },
       )
@@ -422,11 +423,17 @@ export function testSshConnection(
   }
   return new Promise((resolve) => {
     let done = false
+    let timeout: any = null
+    let target: SshClientLike | null = null
+    let jump: JumpSock | null = null
     const finish = (result: { ok: boolean; error?: string }) => {
       if (done) return
       done = true
-      timers.clearTimeout(timeout)
-      try { client.end() } catch { /* ignore */ }
+      if (timeout !== null) timers.clearTimeout(timeout)
+      jump?.close()
+      jump = null
+      try { target?.end() } catch { /* ignore */ }
+      target = null
       resolve(result)
     }
     const hostVerifier = createHostVerifier({
@@ -437,23 +444,48 @@ export function testSshConnection(
       request: deps.requestHostKey,
       ...(deps.keyTypeOf ? { keyTypeOf: deps.keyTypeOf } : {}),
     })
-    const client = deps.createClient()
-    client.on("ready", () => finish({ ok: true }))
-    client.on("error", (err: unknown) => finish({ ok: false, error: redactError(err).message }))
-    client.on("close", () => finish({ ok: false, error: "连接已关闭" }))
-    client.on("keyboard-interactive", (name: string, instructions: string, _lang: string, prompts: { prompt: string; echo: boolean }[], finishPrompt: (answers: string[]) => void) => {
-      const req: PromptRequest = {
-        requestId: randomUUID(),
-        sessionId: opts.id,
-        title: name || "SSH 认证",
-        ...(instructions ? { instructions } : {}),
-        prompts: prompts.map((p) => ({ prompt: p.prompt, echo: p.echo })),
-      }
-      void deps.requestPrompt(req).then((answers) => {
-        try { finishPrompt(answers ?? []) } catch { /* ignore */ }
+    const start = (sock?: any) => {
+      if (done) return
+      const client = deps.createClient()
+      target = client
+      client.on("ready", () => finish({ ok: true }))
+      client.on("error", (err: unknown) => finish({ ok: false, error: redactError(err).message }))
+      client.on("close", () => finish({ ok: false, error: "连接已关闭" }))
+      client.on("keyboard-interactive", (name: string, instructions: string, _lang: string, prompts: { prompt: string; echo: boolean }[], finishPrompt: (answers: string[]) => void) => {
+        const req: PromptRequest = {
+          requestId: randomUUID(),
+          sessionId: opts.id,
+          title: name || "SSH 认证",
+          ...(instructions ? { instructions } : {}),
+          prompts: prompts.map((p) => ({ prompt: p.prompt, echo: p.echo })),
+        }
+        void deps.requestPrompt(req).then((answers) => {
+          try { finishPrompt(answers ?? []) } catch { /* ignore */ }
+        })
       })
-    })
-    const timeout = timers.setTimeout(() => finish({ ok: false, error: "连接超时" }), 30_000)
-    client.connect(buildSshConnectConfig({ profile: opts.profile, secret: opts.secret, hostVerifier }))
+      client.connect(buildSshConnectConfig({ profile: opts.profile, secret: opts.secret, hostVerifier, ...(sock ? { sock } : {}) }))
+    }
+
+    timeout = timers.setTimeout(() => finish({ ok: false, error: "连接超时" }), 120_000)
+    if (opts.jump) {
+      void createJumpSock({
+        sessionId: opts.id,
+        target: { host: opts.profile.host, port: opts.profile.port },
+        jump: opts.jump,
+        knownHosts: deps.knownHosts,
+        requestHostKey: deps.requestHostKey,
+        createClient: deps.createClient,
+        ...(deps.keyTypeOf ? { keyTypeOf: deps.keyTypeOf } : {}),
+      }).then((nextJump) => {
+        if (done) {
+          nextJump.close()
+          return
+        }
+        jump = nextJump
+        start(nextJump.sock)
+      }).catch((err) => finish({ ok: false, error: redactError(err).message }))
+    } else {
+      start()
+    }
   })
 }

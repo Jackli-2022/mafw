@@ -122,7 +122,11 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
   let initialized = false
   let localClosed = false
   let attachingLocal = false
+  let lastDirectory: string | null = null
   let unsub: (() => void) | null = null
+  const autoConnected = new Set<string>()
+  const hostKeyQueue: HostKeyRequest[] = []
+  const promptQueue: PromptRequest[] = []
 
   const persist = () => {
     try {
@@ -136,6 +140,16 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
       if (index < 0) return [...prev, info]
       return prev.map((s) => (s.id === info.id ? { ...s, ...info } : s))
     })
+  }
+
+  const canAutoConnect = (session: TerminalSessionInfo): boolean => {
+    if (session.kind !== "ssh" || !session.hostId) return false
+    const host = hosts().find((h) => h.id === session.hostId)
+    if (!host || !host.autoReconnect) return false
+    if (host.auth === "password") return !!host.hasPassword
+    if (host.auth === "key") return !!host.privateKeyPath
+    if (host.auth === "agent") return true
+    return false
   }
 
   const localInfo = (dir: string): TerminalSessionInfo => ({
@@ -191,8 +205,15 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
       setSessions((prev) => applyTerminalEvent({ sessions: prev }, ev).sessions)
       return
     }
-    if (ev.type === "hostkey") setHostKey(ev)
-    else if (ev.type === "prompt") setPrompt(ev)
+    if (ev.type === "hostkey") {
+      if (hostKey()?.requestId === ev.requestId) return
+      if (hostKey()) hostKeyQueue.push(ev)
+      else setHostKey(ev)
+    } else if (ev.type === "prompt") {
+      if (prompt()?.requestId === ev.requestId) return
+      if (prompt()) promptQueue.push(ev)
+      else setPrompt(ev)
+    }
   }
 
   const store: TerminalStore = {
@@ -247,9 +268,10 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
       if (!next) return
       const list = sessions()
       for (const session of list) {
-        if (session.kind === "ssh" && session.status === "disconnected") {
-          void deps.api.sessions.reconnect(session.id)
-        }
+        if (session.kind !== "ssh" || session.status !== "disconnected") continue
+        if (autoConnected.has(session.id) || !canAutoConnect(session)) continue
+        autoConnected.add(session.id)
+        void deps.api.sessions.reconnect(session.id)
       }
       const local = list.find((s) => s.kind === "local")
       if (
@@ -273,6 +295,7 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
 
     ensureLocal(directory) {
       if (!directory) return
+      lastDirectory = directory
       const existing = sessions().find((s) => s.kind === "local")
       if (localClosed && !existing) return
       if (!existing) {
@@ -308,7 +331,7 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
 
     openLocal() {
       localClosed = false
-      const directory = deps.localDirectory()
+      const directory = lastDirectory ?? deps.localDirectory()
       if (!directory) return
       const existing = sessions().find((s) => s.kind === "local")
       if (existing) {
@@ -411,14 +434,14 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
     async respondHostKey(action) {
       const request = hostKey()
       if (!request) return
-      setHostKey(null)
+      setHostKey(hostKeyQueue.shift() ?? null)
       await deps.api.hostkey.respond({ requestId: request.requestId, action })
     },
 
     async respondPrompt(answers) {
       const request = prompt()
       if (!request) return
-      setPrompt(null)
+      setPrompt(promptQueue.shift() ?? null)
       await deps.api.prompt.respond({ requestId: request.requestId, answers })
     },
 
@@ -427,6 +450,8 @@ export function createTerminalStore(deps: TerminalStoreDeps): TerminalStore {
     dispose() {
       unsub?.()
       unsub = null
+      hostKeyQueue.length = 0
+      promptQueue.length = 0
     },
   }
 

@@ -93,6 +93,23 @@ describe("terminal-service", () => {
     assert.deepEqual(await svc.hosts.list(), [])
   })
 
+  test("hosts.test never reuses a saved secret for a changed endpoint", async () => {
+    const { svc, tested } = makeService()
+    const saved = await svc.hosts.save({ ...base }, { password: "saved-secret" })
+    await svc.hosts.test({ ...base, id: saved.id, host: "evil.example" }, {})
+    assert.equal(tested.length, 1)
+    assert.equal(tested[0].secret.password, undefined)
+  })
+
+  test("hosts.test passes the configured jump host", async () => {
+    const { svc, tested } = makeService()
+    const bastion = await svc.hosts.save({ ...base, name: "bastion", host: "10.0.0.8" }, { password: "x" })
+    const target = await svc.hosts.save({ ...base, name: "prod-01", jumpHostId: bastion.id }, { password: "x" })
+    await svc.hosts.test({ ...base, id: target.id, jumpHostId: bastion.id }, {})
+    assert.equal(tested.length, 1)
+    assert.equal(tested[0].jump?.profile.id, bastion.id)
+  })
+
   test("IPC installer exposes v2 channels", () => {
     const handlers: Record<string, Function> = {}
     const ipcMain = { handle: (ch: string, fn: Function) => { handlers[ch] = fn } }

@@ -106,8 +106,7 @@ function makeTimers() {
 }
 
 const tick = async () => {
-  await Promise.resolve()
-  await Promise.resolve()
+  for (let i = 0; i < 8; i++) await Promise.resolve()
 }
 
 function makeSession(opts: {
@@ -254,6 +253,21 @@ describe("ssh-session", () => {
     assert.equal(clients[0].shellCalls, 0)
   })
 
+  test("testSshConnection routes through a jump host", async () => {
+    const m = makeSession()
+    const jumpProfile = { ...base, id: "bastion", name: "bastion", host: "10.0.0.8" }
+    const p = testSshConnection(
+      { id: "test", profile: base, secret: {}, jump: { profile: jumpProfile, secret: {} } },
+      m.deps as any,
+    )
+    m.clients[0].emit("ready")
+    await tick()
+    assert.equal(m.clients.length, 2)
+    assert.equal(m.clients[1].cfg.sock, m.clients[0].forwardStream)
+    m.clients[1].emit("ready")
+    assert.deepEqual(await p, { ok: true })
+  })
+
   test("auto reconnect pauses when host key needs human confirmation", async () => {
     const m = makeSession({
       autoReconnect: true,
@@ -261,6 +275,9 @@ describe("ssh-session", () => {
       hostKeyOnConnect: true,
     })
     m.session.connect()
+    assert.ok(m.pendingHostKey, "initial attempt asks for host key")
+    m.pendingHostKey!.resolve("trust-and-save")
+    await tick()
     m.clients[0].emit("ready")
     m.clients[0].emit("close")
     m.timers.runNext()
@@ -282,6 +299,19 @@ describe("ssh-session", () => {
     assert.equal(m.clients[1].cfg.sock, m.clients[0].forwardStream)
     m.clients[1].emit("ready")
     assert.equal(m.session.info().status, "connected")
+  })
+
+  test("auto reconnect resumes after a TOFU prompt was accepted", async () => {
+    const m = makeSession({ autoReconnect: true, hasPassword: true, hostKeyOnConnect: true })
+    m.session.connect()
+    assert.ok(m.pendingHostKey)
+    m.pendingHostKey!.resolve("trust-and-save")
+    await tick()
+    m.clients[0].emit("ready")
+    assert.equal(m.session.info().status, "connected")
+    m.clients[0].emit("close")
+    assert.equal(m.session.info().status, "reconnecting")
+    assert.equal(m.timers.pending(), 1)
   })
 
   test("auth failure is not auto-retried", () => {

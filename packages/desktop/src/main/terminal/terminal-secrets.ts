@@ -4,6 +4,8 @@ import { readJsonFile, writeJsonFileAtomic } from "./json-file"
 
 export type SafeStorageLike = {
   isEncryptionAvailable(): boolean
+  /** Electron on Linux reports basic_text even when isEncryptionAvailable() is true. */
+  getSelectedStorageBackend?(): string
   encryptString(plain: string): Buffer
   decryptString(encrypted: Buffer): string
 }
@@ -39,9 +41,12 @@ export function createTerminalSecrets(opts: {
       return undefined
     }
   }
+  const available = () =>
+    opts.safeStorage.isEncryptionAvailable() &&
+    opts.safeStorage.getSelectedStorageBackend?.() !== "basic_text"
 
   return {
-    available: () => opts.safeStorage.isEncryptionAvailable(),
+    available,
 
     has(hostId) {
       const entry = read()[hostId]
@@ -64,7 +69,7 @@ export function createTerminalSecrets(opts: {
     },
 
     set(hostId, input) {
-      if (!opts.safeStorage.isEncryptionAvailable() && (input.password || input.passphrase)) {
+      if (!available() && (input.password || input.passphrase)) {
         throw new Error("凭据存储不可用：系统钥匙串不可访问")
       }
       const entries = { ...read() }
