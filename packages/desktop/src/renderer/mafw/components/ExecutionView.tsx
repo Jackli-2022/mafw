@@ -1,5 +1,6 @@
 // 右工作台 › 执行：概览 + 待办/子代理/后台/轨迹。只读概览，不复制 ChatView 控制面。
-import { createMemo, createSignal, Show, type JSX } from "solid-js"
+import { createMemo, Show, type JSX } from "solid-js"
+import { executionUsageOpen, setExecutionUsageOpen } from "../execution-usage"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { summarizeExecution } from "../execution-summary"
@@ -35,7 +36,6 @@ export type ExecutionViewProps = {
 }
 
 export function ExecutionView(props: ExecutionViewProps) {
-  const [usageOpen, setUsageOpen] = createSignal(false)
   const subagents = createMemo(() => descendantRows(subagentRows(), props.sessionID ?? ""))
   const background = createMemo(() => rowsForSession(backgroundRows(), props.sessionID ?? ""))
   const tasks = createMemo(() =>
@@ -92,13 +92,13 @@ export function ExecutionView(props: ExecutionViewProps) {
             variant="ghost"
             size="small"
             class="mafw-rw-usage-toggle"
-            aria-expanded={usageOpen()}
-            onClick={() => setUsageOpen((v) => !v)}
+            aria-expanded={executionUsageOpen()}
+            onClick={() => setExecutionUsageOpen((v) => !v)}
           >
             <Icon name="chart" size="small" />
-            用量与上下文 {usageOpen() ? "▴" : "▾"}
+            用量与上下文 {executionUsageOpen() ? "▴" : "▾"}
           </ButtonV2>
-          <Show when={usageOpen()}>
+          <Show when={executionUsageOpen()}>
             <div class="mafw-rw-usage">{props.usage}</div>
           </Show>
         </div>

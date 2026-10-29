@@ -90,7 +90,7 @@ import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
 import { createFocusScheduler } from "./composer-focus-scheduler"
-import { computeContextUsage } from "../context-usage"
+import { computeContextUsage, formatContextUsage } from "../context-usage"
 import { normalizeToolPart } from "../tool-part"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
@@ -164,6 +164,8 @@ export type ChatPaneProps = {
   onOpenDiffReview?: () => void
   /** 打开 RightDock「后台」tab（work bar 点击；P0-3） */
   onOpenBackgroundDock?: () => void
+  /** 点击上下文 pill：打开「执行 → 概览 → 用量与上下文」 */
+  onOpenUsage?: () => void
   /** plan/build 模式三态循环（切片 3；'default' = 清除 picks 回 runtime 默认） */
   onPlanBuildToggle?: (next: "plan" | "build" | "default") => void
   /** worktree 并行隔离（切片 4）：能力门由 MafwShell 传（runtime worktreeApi） */
@@ -1676,6 +1678,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return String(n)
   }
 
+  // 响应式：pill 文案与 tooltip 必须跟随 tokens 更新（Show children 里的普通
+  // const 只会在挂载时算一次 → 打开会话早期快照会永久显示 0%）。
+  const contextText = createMemo(() => formatContextUsage(contextUsage()))
+  const contextTooltip = createMemo(() => {
+    const ctx = contextUsage()
+    const summary = sessionTokenSummary()
+    const parts: string[] = []
+    if (ctx.used > 0 || ctx.total > 0) parts.push(contextText().tooltip)
+    if (summary.turns > 0) {
+      parts.push(`会话累计: ${fmtCtx(summary.total)} tokens`)
+      parts.push(`输入 ${fmtCtx(summary.input)} · 输出 ${fmtCtx(summary.output)}`)
+      if (summary.reasoning > 0) parts.push(`推理 ${fmtCtx(summary.reasoning)}`)
+      if (summary.cacheRead > 0) parts.push(`缓存命中 ${fmtCtx(summary.cacheRead)}`)
+      if (summary.cost > 0) parts.push(`费用: $${summary.cost.toFixed(4)}`)
+      parts.push(`回合: ${summary.turns}`)
+    }
+    return parts.join(" · ")
+  })
+
   return (
     <div class="mafw-pane" data-layout="chat" onClick={props.onFocus}>
       <div class="mafw-chat-scroll-wrap">
@@ -2267,40 +2288,31 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <span class="mafw-model-name">{currentModelLabel()}</span><span class="mafw-model-chevron">▾</span>
                 </ButtonV2>
               </TooltipV2>
-              <Show when={contextUsage()}>
-                {(ctx) => {
-                  const summary = sessionTokenSummary()
-                  const tooltipParts: string[] = []
-                  if (ctx().total > 0) {
-                    tooltipParts.push(`上下文: ${fmtCtx(ctx().used)} / ${fmtCtx(ctx().total)} (${ctx().percent}%)`)
-                  } else if (ctx().used > 0) {
-                    tooltipParts.push(`上下文: ${fmtCtx(ctx().used)}`)
-                  }
-                  if (summary.turns > 0) {
-                    tooltipParts.push(`会话累计: ${fmtCtx(summary.total)} tokens`)
-                    tooltipParts.push(`输入 ${fmtCtx(summary.input)} · 输出 ${fmtCtx(summary.output)}`)
-                    if (summary.reasoning > 0) tooltipParts.push(`推理 ${fmtCtx(summary.reasoning)}`)
-                    if (summary.cacheRead > 0) tooltipParts.push(`缓存命中 ${fmtCtx(summary.cacheRead)}`)
-                    if (summary.cost > 0) tooltipParts.push(`费用: $${summary.cost.toFixed(4)}`)
-                    tooltipParts.push(`回合: ${summary.turns}`)
-                  }
-                  return (
-                    <TooltipV2 value={tooltipParts.join(" · ")} openDelay={300}>
-                      <span class="mafw-context-pill" classList={{
-                        "mafw-context-warn": ctx().percent >= 70,
-                        "mafw-context-danger": ctx().percent >= 90,
-                      }}>
-                        <span class="mafw-context-main">
-                          {ctx().total > 0 ? `${ctx().percent}%` : fmtCtx(ctx().used)}
-                        </span>
-                        <Show when={summary.cost > 0}>
-                          <span class="mafw-context-cost">${summary.cost.toFixed(2)}</span>
-                        </Show>
-                      </span>
-                    </TooltipV2>
-                  )
-                }}
-              </Show>
+              <TooltipV2 value={contextTooltip()} openDelay={300}>
+                <span
+                  class="mafw-context-pill"
+                  classList={{
+                    "mafw-context-warn": contextUsage().percent >= 70,
+                    "mafw-context-danger": contextUsage().percent >= 90,
+                  }}
+                  role={props.onOpenUsage ? "button" : undefined}
+                  tabIndex={props.onOpenUsage ? 0 : undefined}
+                  style={{ cursor: props.onOpenUsage ? "pointer" : undefined }}
+                  onClick={() => props.onOpenUsage?.()}
+                  onKeyDown={(e) => {
+                    if (!props.onOpenUsage) return
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault()
+                      props.onOpenUsage()
+                    }
+                  }}
+                >
+                  <span class="mafw-context-main">{contextText().main}</span>
+                  <Show when={sessionTokenSummary().cost > 0}>
+                    <span class="mafw-context-cost">${sessionTokenSummary().cost.toFixed(2)}</span>
+                  </Show>
+                </span>
+              </TooltipV2>
               <Show when={sessionBusy() && props.runtimeCaps?.runStateApi === true}>
                 <TooltipV2 value="暂停当前回合并保存续跑摘要" openDelay={300}>
                   <ButtonV2

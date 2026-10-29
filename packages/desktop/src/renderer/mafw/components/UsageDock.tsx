@@ -1,5 +1,5 @@
 import { createSignal, createEffect, createMemo, onMount, Show, For, onCleanup } from "solid-js"
-import { computeContextUsage } from "../context-usage"
+import { computeContextUsage, formatContextUsage } from "../context-usage"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
@@ -442,7 +442,8 @@ export function UsageDock(props: {
       }
     }
     const u = computeContextUsage(lastTokens, contextWindow)
-    return { lastInput: u.used, contextWindow: u.total, pct: u.percent }
+    const text = formatContextUsage(u)
+    return { lastInput: u.used, contextWindow: u.total, pct: u.percent, text }
   })
 
   const hasData = () => {
@@ -490,9 +491,7 @@ export function UsageDock(props: {
         <Show when={contextInfo() && contextInfo()!.lastInput > 0}>
           <div class="mafw-usage-section">
             <TooltipV2
-              value={contextInfo()!.contextWindow > 0
-                ? `${fmt(contextInfo()!.lastInput || 0)} / ${fmt(contextInfo()!.contextWindow)} tokens`
-                : `${fmt(contextInfo()!.lastInput || 0)} tokens（窗口大小未知）`}
+              value={contextInfo()!.text.tooltip}
               openDelay={300}
             >
               <div class="mafw-usage-ctx-row">
@@ -508,7 +507,7 @@ export function UsageDock(props: {
                   />
                 </div>
                 <span class="mafw-usage-ctx-pct-inline">
-                  {contextInfo()!.contextWindow > 0 ? `${contextInfo()!.pct}%` : fmt(contextInfo()!.lastInput || 0)}
+                  {contextInfo()!.text.main}
                 </span>
               </div>
             </TooltipV2>

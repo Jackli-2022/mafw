@@ -60,6 +60,7 @@ import { ChangesDock } from "./components/ChangesDock"
 import { addPending } from "./annotation-store"
 import { getSessionTurnDiffs } from "./session-turn-diffs"
 import { UsageDock } from "./components/UsageDock"
+import { openExecutionUsage } from "./execution-usage"
 import { defaultDockOpen } from "./workbench-defaults"
 import {
   clearLegacyWorkbenchKeys,
@@ -453,6 +454,10 @@ export function MafwShell() {
       {
         id: "open-settings", label: "打开设置", hint: "Settings", group: "导航",
         run: () => setShowConfig(true),
+      },
+      {
+        id: "open-usage", label: "打开用量与上下文", hint: "Usage & Context", group: "导航",
+        run: () => { setShowConfig(false); openWorkbench("execution", "overview"); openExecutionUsage() },
       },
       {
         id: "toggle-rightdock", label: "切换右侧面板", hint: "RightDock (Ctrl+T)", group: "导航",
@@ -2050,6 +2055,7 @@ export function MafwShell() {
                           onBackToParent={() => backToParent(activeSessionId()!)}
                           onOpenSubagent={(id) => void openSubagentSession(id)}
                           onOpenBackgroundDock={() => openWorkbench("execution", "background")}
+                          onOpenUsage={() => { setShowConfig(false); openWorkbench("execution", "overview"); openExecutionUsage() }}
                           currentProject={currentProject() ?? undefined}
                           onNavigateTab={(t) => { setActiveTab(t as any); setShowConfig(false) }}
                           onToggleTheme={toggleTheme}

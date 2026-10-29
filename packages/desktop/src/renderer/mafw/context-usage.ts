@@ -29,3 +29,30 @@ export function computeContextUsage(
   const percent = total > 0 ? Math.round((used / total) * 100) : 0
   return { used, total, percent }
 }
+
+export function formatContextTokens(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0"
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1000) return `${Math.round(n / 1000)}k`
+  return String(Math.round(n))
+}
+
+/** 统一 pill 与 UsageDock 的上下文文案（窗口未知时也一致）。 */
+export function formatContextUsage(u: ContextUsage): { main: string; tooltip: string } {
+  if (u.total > 0) {
+    // 0<ratio<0.5% 时显示 <1%，避免「有上下文但一直 0%」的歧义
+    const subOne = u.used > 0 && u.percent === 0
+    const pct = subOne ? "<1%" : `${u.percent}%`
+    return {
+      main: pct,
+      tooltip: `上下文: ${formatContextTokens(u.used)} / ${formatContextTokens(u.total)} (${pct})`,
+    }
+  }
+  if (u.used > 0) {
+    return {
+      main: formatContextTokens(u.used),
+      tooltip: `上下文: ${formatContextTokens(u.used)} tokens（窗口大小未知）`,
+    }
+  }
+  return { main: "—", tooltip: "上下文: 暂无数据" }
+}

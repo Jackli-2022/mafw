@@ -270,6 +270,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 
 - **上下文 pill 恒 0% 修复（2026-10-29）**：ChatPane 标题栏的上下文占用只取 `tokens.input`（`t.total || t.input || ...`），开启 prompt cache 后 input 仅数百 token、真实 prompt 在 `tokens.cache.read`（实测 ~66 万），而模型窗口 1,000,000 → `round(914/1e6)` 恒为 0%。新增纯函数 `computeContextUsage`（used = input + cache.read + cache.write，与 UsageDock 既有口径一致），ChatPane 与 UsageDock 共用；desktop 新增 4 个单测（desktop **1901/1901**）、tsgo/build rc=0；真机验证活跃会话 pill 从 `0%` → `12%`（该会话 ~108k/1M，符合预期）。
 
+- **上下文显示统一 + UsageDock 入口（2026-10-29）**：① 修 pill 第二层根因——原 `<Show>{(ctx)=>{ const ctxText = … }}</Show>` 在 Solid 非 keyed children 里只计算一次，打开会话早期快照（tokens 未到）会**永久**显示旧值；改为 `createMemo` 的 `contextText`/`contextTooltip`，随 tokens 更新。② `formatContextUsage` 统一 pill 与 UsageDock 的文案：有窗口→`12%`，不足 1%→`<1%`，窗口未知→`1k` + tooltip「上下文: 1k tokens（窗口大小未知）」，无数据→`—`。③ 找回 UsageDock：它现在位于「右侧工作台 → 执行 → 概览 → 用量与上下文」折叠区；新增**点击上下文 pill** 直接打开（`openWorkbench('execution','overview')` + `openExecutionUsage()`），命令面板新增「打开用量与上下文」。真机验证：pill 与 UsageDock 均为 12%、点击 pill 后 `.mafw-usage-ctx-row` 可见、无渲染错误；desktop **1905/1905**（+4）、tsgo/build rc=0。
+
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类�?API 获取数据�?
 ```
