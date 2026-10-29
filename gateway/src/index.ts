@@ -31,6 +31,12 @@ import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
 import { TaskService, TaskError } from './runtime/task-service';
+import { PodStore } from './core/pod/pod-store';
+import { PodService } from './core/pod/pod-service';
+import { PodTaskService } from './core/pod/pod-task-service';
+import { PodMessageService } from './core/pod/pod-message-service';
+import { PodMemoryService } from './core/pod/pod-memory-service';
+import { PodGoalService } from './core/pod/pod-goal-service';
 import {
   handleSubagentCancel, handleSubagentList, handleSubagentMessage,
   handleSubagentResult, handleSubagentSpawn,
@@ -509,6 +515,12 @@ class MafwScheduler {
   private instructionSync?: InstructionSyncService;
   private discovery?: DiscoveryService;
   private subagentService!: SubagentService;
+  private podStore!: PodStore;
+  private podService!: PodService;
+  private podTaskService!: PodTaskService;
+  private podMessageService!: PodMessageService;
+  private podMemoryService!: PodMemoryService;
+  private podGoalService!: PodGoalService;
   private taskService!: TaskService;
   private sessionConfigService!: SessionConfigService;
   private checkpointService!: CheckpointService;
@@ -886,7 +898,10 @@ class MafwScheduler {
           const text = opts.parts.find((p) => p.type === 'text')?.text ?? '';
           await this.sdkSession.promptAsync(opts.sessionID, text, undefined, opts.agent, undefined, opts.outputSchema);
         },
-        delete: (sessionID: string) => this.sdkSession.delete(sessionID),
+        delete: async (sessionID: string) => {
+          await this.podService?.snapshotSession(sessionID);
+          await this.sdkSession.delete(sessionID);
+        },
         abort: async (sessionID: string) => { await this.runtime!.session.abort({ sessionID }); },
         structured: async (sessionID: string) => structuredOutput.submitted(sessionID) ?? null,
       },
@@ -897,10 +912,14 @@ class MafwScheduler {
         latestNodeAttempt: (g, l, n) => this.getGatewayDb().latestNodeAttempt(g, l, n),
       },
       ledger: new QuestionLedger(this.mafwDir),
-      emitNodeEvent: (p) => this.broadcast(p as any), // 扁平顶层广播（wire 契约 §5.6）
+      emitNodeEvent: (p) => {
+        this.broadcast(p as any);
+        this.onPodGoalNode(p as any);
+      }, // 扁平顶层广播（wire 契约 §5.6）
       emitPhaseTransition: (p) => eventBus.emit('phase_transition', p),
       onSessionCreated: (info) => {
         recordSessionInDb(this.getGatewayDb(), info);
+        this.podService?.bindSession(info.goalId, info.phase as 'plan' | 'execute' | 'review', info.sessionId);
         const mafwDir = this.goalDriverMafwDirCache.get(info.goalId);
         if (mafwDir) this.attachBudgetGuardForGoal(info.goalId, info.sessionId, mafwDir);
       },
@@ -932,6 +951,14 @@ class MafwScheduler {
             this.memoryService?.harmonicIndex.getIndex().entries ?? [],
           );
           return counterfactualBlock({ taskType }, outcomes, taxonomy) || null;
+        } catch {
+          return null;
+        }
+      },
+      podContext: (goalId: string, node: 'plan' | 'execute' | 'review') => {
+        try {
+          const podId = this.podService?.getPodIdForGoal(goalId);
+          return podId ? this.podMemoryService?.renderContext(podId, node) ?? null : null;
         } catch {
           return null;
         }
@@ -3491,6 +3518,51 @@ class MafwScheduler {
       messages: (sid, limit) => this.runtime!.session.messages({ sessionID: sid, limit }),
       submitted: (sid) => structuredOutput.submitted(sid),
       broadcast: (e) => this.broadcast(e),
+    });
+
+    this.podStore = new PodStore(this.getGatewayDb().getStore());
+    this.podMemoryService = new PodMemoryService({
+      memoryRoot: path.join(os.homedir(), '.mafw', 'pods'),
+      now: () => new Date().toISOString(),
+    });
+    this.podService = new PodService({
+      store: this.podStore,
+      now: () => new Date().toISOString(),
+      newId: () => `pod_${randomUUID()}`,
+      broadcast: (event) => this.broadcast(event as any),
+      getManagerSession: (dir) => this.ensureManagerSession(dir, this.mafwDirFor(dir)),
+      getSession: (sessionID) => this.runtime!.session.get({ sessionID }),
+      messages: (sessionID, limit) => this.runtime!.session.messages({ sessionID, limit }).then((r: any) => r?.data ?? []),
+      memoryRoot: path.join(os.homedir(), '.mafw', 'pods'),
+      listRegisteredProjectDirs: () => Array.from(this.registeredProjects.keys()),
+      ensureMemory: (podId, projectName) => this.podMemoryService.ensurePodMemory(podId, projectName),
+      log: (message) => log.info(message),
+    });
+    this.podTaskService = new PodTaskService({
+      store: this.podStore,
+      now: () => new Date().toISOString(),
+      newId: () => `podtask_${randomUUID()}`,
+      notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'task' } }),
+    });
+    this.podMessageService = new PodMessageService({
+      store: this.podStore,
+      now: () => new Date().toISOString(),
+      newId: () => `podmsg_${randomUUID()}`,
+      notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'message' } }),
+    });
+    this.podGoalService = new PodGoalService({
+      store: this.podStore,
+      pods: this.podService,
+      startGoal: (goalId, projectDirHint) => this.startGoalDirect(goalId, projectDirHint),
+      resolveProjectDir: (goalId) => {
+        const projects = Array.from(this.registeredProjects.entries())
+          .map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir }));
+        return resolveGoalDir(projects, undefined, (mafwDir) =>
+          fs.existsSync(path.join(mafwDir, 'requests', `${goalId}.json`)))?.projectDir ?? null;
+      },
+      now: () => new Date().toISOString(),
+      newId: () => `podgoal_${randomUUID()}`,
+      notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'goal' } }),
     });
 
     const lazyShell = () => {
@@ -7796,6 +7868,7 @@ class MafwScheduler {
           });
         }
         if (projectDir) this.getMilestonePush()?.onArchived(goalId, projectDir, outcome?.verdict ?? 'CANCELLED');
+        await this.finishPodGoal(goalId, outcome);
         return;
       }
     }
@@ -7839,8 +7912,66 @@ class MafwScheduler {
     }
 
     if (projectDir) this.getMilestonePush()?.onArchived(goalId, projectDir, outcome?.verdict ?? 'CANCELLED');
+    await this.finishPodGoal(goalId, outcome);
 
     log.info(`[Scheduler] Goal ${goalId} archived`);
+  }
+
+  private async finishPodGoal(
+    goalId: string,
+    outcome?: { verdict: string; reviewFeedback?: string | null },
+  ): Promise<void> {
+    try {
+      const podId = this.podService?.getPodIdForGoal(goalId);
+      if (podId && this.podMemoryService) {
+        const mafwDir = this.goalDriverMafwDirCache.get(goalId);
+        const state = mafwDir ? loadGoalState(mafwDir, goalId) : this.activeGoals.get(goalId);
+        this.podMemoryService.captureGoal(podId, {
+          goalId,
+          ok: outcome?.verdict === 'PASS',
+          reviewFeedback: outcome?.reviewFeedback ?? undefined,
+          receiptPath: (state as any)?.receiptPath ?? undefined,
+        });
+      }
+      await this.podGoalService?.onGoalArchived(goalId);
+    } catch (err: any) {
+      log.warn(`[Pod] goal archive hook failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+    }
+  }
+
+  private onPodGoalNode(p: {
+    type?: string;
+    goalId?: string;
+    loop?: number;
+    node?: string;
+    transition?: string;
+    outcome?: string;
+  }): void {
+    if (p?.type !== 'goal_node' || p.transition !== 'finished' || !p.goalId || !p.node) return;
+    const podId = this.podService?.getPodIdForGoal(p.goalId);
+    if (!podId) return;
+    const mafwDir = this.goalDriverMafwDirCache.get(p.goalId);
+    const state: any = mafwDir ? loadGoalState(mafwDir, p.goalId) : this.activeGoals.get(p.goalId);
+    if (!state) return;
+    try {
+      if (p.node === 'plan' && state.wavePlanPath) {
+        const plan = JSON.parse(fs.readFileSync(state.wavePlanPath, 'utf-8'));
+        this.podTaskService.projectWaves(podId, p.goalId, plan);
+      } else if (p.node === 'execute' && state.receiptPath) {
+        const receipt = JSON.parse(fs.readFileSync(state.receiptPath, 'utf-8'));
+        this.podTaskService.applyReceipt(podId, p.goalId, receipt);
+      } else if (p.node === 'review') {
+        if (state.reviewVerdict === 'FAIL') {
+          this.podTaskService.reopenForReview(podId, p.goalId);
+        } else if (state.reviewVerdict === 'PASS') {
+          this.podTaskService.reconcileArchive(podId, p.goalId, true);
+        } else if (state.lastError) {
+          this.podTaskService.reconcileArchive(podId, p.goalId, false);
+        }
+      }
+    } catch (err: any) {
+      log.warn(`[Pod] goal node projection failed for ${p.goalId}/${p.node} (non-fatal): ${err?.message ?? err}`);
+    }
   }
 
   // ── 9. 恢复 ──
@@ -8035,8 +8166,13 @@ class MafwScheduler {
     return { success: true, goalId, nextAction: 'GRAPH_INVOKED' };
   }
 
-  /** Goal starter（spec §4）：定位目标项目 → ensureState(v3) → NodeDriver.advance。 */
+  /** Goal starter wrapper：所有 goal 创建路径都先过 Pod 单 active goal 队列。 */
   private async startGoal(goalId: string, projectDirHint?: string): Promise<void> {
+    await this.podGoalService.enqueueGoal(goalId, projectDirHint);
+  }
+
+  /** Goal starter（spec §4）：定位目标项目 → ensureState(v3) → NodeDriver.advance。 */
+  private async startGoalDirect(goalId: string, projectDirHint?: string): Promise<void> {
     const projects = Array.from(this.registeredProjects.entries())
       .map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir }));
     const found = resolveGoalDir(projects, projectDirHint, (mafwDir) =>
