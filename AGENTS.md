@@ -274,6 +274,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 
 - **单个模型用量消失修复（2026-10-29）**：现象——UsageDock「按模型」整块不见。根因两层：① `/api/usage.modelStats` 的 SQL 有 `WHERE model IS NOT NULL`；opencode v2 的 assistant message 把模型放在 `info.model = { id, providerID }`，而 `TrajectoryCollector` 只读 v1 顶层 `info.modelID/providerID` → 新回合 trajectory_turns 的 model/provider 全 NULL（实测当天 22 条全 NULL），按模型统计只剩 8-30 天前的旧行。修复 `modelIdentityOf()` 双读 v1/v2（`modelID ?? model.id`、`providerID ?? model.providerID`），step_finish 事件 model 同步。② UI：`ModelStatsSection` 默认窗口 7d，空列表时整块隐藏（读起来像功能被删）；改为只要 `modelStats.windows` 存在就渲染，空窗口显示「该时间窗口暂无模型用量（可切换 30 天 / 全部）」。验证：gateway 新增 3 单测（v2 形状 / v1 兼容 / v2 模型切换），gateway **3036/3036（425 suites）**、desktop **1905/1905**、tsgo/build rc=0；真机新会话 1 回合后 `today/7d` 出现 `{model:'deepseek-flash', provider:'deepseek'}`，UsageDock「按模型」可见（42% 缓存命中）。注：修复前已写入的 NULL 行不会回填（历史 30d/all 仍有旧模型数据），后续新回合正常。
 
+- **缓存命中口径统一 + 历史 NULL model 回填（2026-10-29）**：按模型卡的「缓存命中」与项目/会话详情不是同一指标——前者 `cache.read/(input+cache.read)`，后者是「缓存读取占总 token 比例」（分母含 output/reasoning），所以会出现模型卡 40% vs 会话明细 90%+ 的观感落差。统一为 `token-metrics.ts: cacheHitRate = read/(input+read+write)` （加 4 个单测），TokenGrid 新增「缓存命中率（prompt 侧）」行，模型 KPI 改名「缓存命中率」。另：按模型只统计 model 非空的回合，历史 NULL 行（collector v1 形状 bug）被排除 → 新增 `gateway/scripts/backfill-trajectory-models.ts`（dry-run 默认 / `--apply`；来源 `session_message` v2 + `session_v2.model` + legacy `message`），已回填 12 行；剩余 53 行属于已删除会话、无源可补。回填后 7d 出现 `volcengine/deepseek-v4.1-flash`（8.1M tokens / 92%），模型 KPI 91%，与当前项目 84% / 会话 93% 同口径。desktop **1909/1909（+4）**、gateway **3036/3036**、tsgo/build rc=0。
+
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类�?API 获取数据�?
 ```

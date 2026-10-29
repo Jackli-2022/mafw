@@ -1,5 +1,6 @@
 import { createSignal, createEffect, createMemo, onMount, Show, For, onCleanup } from "solid-js"
 import { computeContextUsage, formatContextUsage } from "../context-usage"
+import { cacheHitRate, totalTokens } from "../token-metrics"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
@@ -54,27 +55,27 @@ type ModelStatRow = {
   estimatedCost: number | null
 }
 
-const modelTotal = (r: ModelStatRow): number =>
-  r.tokens.input + r.tokens.output + r.tokens.reasoning + r.tokens.cache.read + r.tokens.cache.write
+const modelTotal = (r: ModelStatRow): number => totalTokens(r.tokens)
 
-const modelCacheHit = (r: ModelStatRow): number => {
-  const denom = r.tokens.input + r.tokens.cache.read
-  return denom > 0 ? Math.round((r.tokens.cache.read / denom) * 100) : 0
-}
+const modelCacheHit = (r: ModelStatRow): number => cacheHitRate(r.tokens)
 
 function ModelStatsSection(props: { windows: Record<ModelWindow, ModelStatRow[]> | undefined }) {
   const [win, setWin] = createSignal<ModelWindow>('7d')
   const rows = createMemo<ModelStatRow[]>(() => props.windows?.[win()] || [])
 
   const kpi = createMemo(() => {
-    let tokens = 0, cost = 0, cacheRead = 0, inputAll = 0
+    let tokens = 0, cost = 0
+    const agg = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
     for (const r of rows()) {
       tokens += modelTotal(r)
       cost += r.estimatedCost ?? 0
-      cacheRead += r.tokens.cache.read
-      inputAll += r.tokens.input + r.tokens.cache.read
+      agg.input += r.tokens.input
+      agg.output += r.tokens.output
+      agg.reasoning += r.tokens.reasoning
+      agg.cache.read += r.tokens.cache.read
+      agg.cache.write += r.tokens.cache.write
     }
-    return { tokens, cost, cacheHit: inputAll > 0 ? Math.round((cacheRead / inputAll) * 100) : 0 }
+    return { tokens, cost, cacheHit: cacheHitRate(agg) }
   })
 
   const items = createMemo(() => {
@@ -135,7 +136,7 @@ function ModelStatsSection(props: { windows: Record<ModelWindow, ModelStatRow[]>
           </div>
           <div class="mafw-usage-kpi">
             <div class="mafw-usage-kpi-value">{kpi().cacheHit}%</div>
-            <div class="mafw-usage-kpi-label">缓存命中</div>
+            <div class="mafw-usage-kpi-label">缓存命中率</div>
           </div>
         </div>
         <For each={items()}>
@@ -198,7 +199,7 @@ type StoreShape = { message: Record<string, any[]> }
 
 function TokenGrid(props: { data: TokenSummary }) {
   const t = () => props.data.totalTokens
-  const total = () => t().input + t().output + t().reasoning + t().cache.read + t().cache.write
+  const total = () => totalTokens(t())
   const pctOf = (v: number) => total() > 0 ? Math.round((v / total()) * 100) : 0
   return (
     <div class="mafw-usage-grid">
@@ -240,6 +241,10 @@ function TokenGrid(props: { data: TokenSummary }) {
       <div class="mafw-usage-total">
         <span>总计</span>
         <span>{fmt(total())}</span>
+      </div>
+      <div class="mafw-usage-cachehit">
+        <span>缓存命中率（prompt 侧）</span>
+        <span>{cacheHitRate(t())}%</span>
       </div>
     </div>
   )
