@@ -36,6 +36,8 @@ class FakeClient extends EventEmitter implements SshClientLike {
   shellCalls = 0
   ended = false
   stream: FakeStream | null = null
+  forwardCalls: number[][] = []
+  forwardStream = new FakeStream()
   constructor(private hostKeyOnConnect = false) { super() }
   connect(cfg: any) {
     this.cfg = cfg
@@ -53,6 +55,10 @@ class FakeClient extends EventEmitter implements SshClientLike {
     this.shellOpts = opts
     this.stream = new FakeStream()
     cb(null, this.stream)
+  }
+  forwardOut(srcIP: string, srcPort: number, dstIP: string, dstPort: number, cb: any) {
+    this.forwardCalls.push([srcIP, srcPort, dstIP, dstPort])
+    cb(null, this.forwardStream)
   }
   end() {
     this.ended = true
@@ -108,6 +114,7 @@ function makeSession(opts: {
   autoReconnect?: boolean
   hasPassword?: boolean
   hostKeyOnConnect?: boolean
+  jump?: boolean
 } = {}) {
   const clients: FakeClient[] = []
   const events: TerminalEvent[] = []
@@ -146,7 +153,15 @@ function makeSession(opts: {
     keyTypeOf: () => "ssh-ed25519",
   }
   const profile = { ...base, autoReconnect: opts.autoReconnect === true }
-  const session = createSshSession({ id: "ssh:1", profile, secret: opts.hasPassword ? { password: "x" } : {} }, deps as any)
+  const jump = opts.jump
+    ? { profile: { ...base, id: "bastion", name: "bastion", host: "10.0.0.8", username: "ops" }, secret: {} }
+    : undefined
+  const session = createSshSession({
+    id: "ssh:1",
+    profile,
+    secret: opts.hasPassword ? { password: "x" } : {},
+    ...(jump ? { jump } : {}),
+  }, deps as any)
   return {
     session,
     clients,
@@ -255,6 +270,18 @@ describe("ssh-session", () => {
     await tick()
     assert.equal(m.session.info().status, "disconnected")
     assert.equal(m.timers.pending(), 0)
+  })
+
+  test("jump host forwards a socket to the target", async () => {
+    const m = makeSession({ jump: true })
+    m.session.connect()
+    m.clients[0].emit("ready")
+    await tick()
+    assert.deepEqual(m.clients[0].forwardCalls, [["127.0.0.1", 0, "10.0.0.12", 22]])
+    assert.equal(m.clients.length, 2)
+    assert.equal(m.clients[1].cfg.sock, m.clients[0].forwardStream)
+    m.clients[1].emit("ready")
+    assert.equal(m.session.info().status, "connected")
   })
 
   test("auth failure is not auto-retried", () => {

@@ -19,6 +19,7 @@ import {
   type SshRuntimeSecret,
 } from "./ssh-connect"
 import { canAutoReconnect, reconnectDelay } from "./reconnect-policy"
+import { createJumpSock, type JumpSock } from "./ssh-jump"
 import { redactError } from "./redact"
 
 export type SshClientLike = EventEmitter & {
@@ -28,6 +29,13 @@ export type SshClientLike = EventEmitter & {
     cb: (err: Error | null, stream: SshStreamLike) => void,
   ): void
   end(): void
+  forwardOut?(
+    srcIP: string,
+    srcPort: number,
+    dstIP: string,
+    dstPort: number,
+    cb: (err: Error | null, stream: any) => void,
+  ): void
 }
 
 export type SshStreamLike = EventEmitter & {
@@ -119,6 +127,7 @@ export function createSshSession(opts: SshSessionOptions, deps: SshSessionDeps):
   let buffer = ""
   let pendingHostKeyCancel: (() => void) | null = null
   let pendingPromptCancel: (() => void) | null = null
+  let jumpSock: JumpSock | null = null
   const subscribers = new Map<unknown, (ev: TerminalEvent) => void>()
 
   const clearTimer = () => {
@@ -207,6 +216,8 @@ export function createSshSession(opts: SshSessionOptions, deps: SshSessionDeps):
 
   const onClose = () => {
     if (userClosed) return
+    jumpSock?.close()
+    jumpSock = null
     stream = null
     client = null
     if (humanInteracted) {
@@ -241,15 +252,7 @@ export function createSshSession(opts: SshSessionOptions, deps: SshSessionDeps):
     emitStatus("error", { error })
   }
 
-  const connectInternal = (auto: boolean) => {
-    if (userClosed) return
-    clearTimer()
-    if (!auto) attempt = 0
-    humanInteracted = false
-    authFailed = false
-    error = undefined
-    emitStatus("connecting")
-
+  const startClient = (sock?: any) => {
     const nextClient = deps.createClient()
     client = nextClient
     const hostVerifier = createHostVerifier({
@@ -300,7 +303,44 @@ export function createSshSession(opts: SshSessionOptions, deps: SshSessionDeps):
       })
     })
 
-    nextClient.connect(buildSshConnectConfig({ profile, secret, hostVerifier }))
+    nextClient.connect(buildSshConnectConfig({ profile, secret, hostVerifier, ...(sock ? { sock } : {}) }))
+  }
+
+  const connectInternal = (auto: boolean) => {
+    if (userClosed) return
+    clearTimer()
+    if (!auto) attempt = 0
+    humanInteracted = false
+    authFailed = false
+    error = undefined
+    jumpSock?.close()
+    jumpSock = null
+    emitStatus("connecting")
+
+    if (opts.jump) {
+      void createJumpSock({
+        sessionId: id,
+        target: { host: profile.host, port: profile.port },
+        jump: opts.jump,
+        knownHosts: deps.knownHosts,
+        requestHostKey,
+        createClient: deps.createClient,
+        ...(deps.keyTypeOf ? { keyTypeOf: deps.keyTypeOf } : {}),
+      }).then((jump) => {
+        if (userClosed) {
+          jump.close()
+          return
+        }
+        jumpSock = jump
+        startClient(jump.sock)
+      }).catch((err) => {
+        onError(err)
+        onClose()
+      })
+      return
+    }
+
+    startClient()
   }
 
   return {
@@ -355,6 +395,8 @@ export function createSshSession(opts: SshSessionOptions, deps: SshSessionDeps):
       pendingPromptCancel?.()
       pendingHostKeyCancel = null
       pendingPromptCancel = null
+      jumpSock?.close()
+      jumpSock = null
       stream?.close?.()
       stream = null
       client?.end()
