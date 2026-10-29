@@ -239,7 +239,11 @@ export class PodService {
             }
           }
         } catch (err: any) {
-          this.deps.log?.(`[Pod] reconcile session ${session.sessionId}: ${err?.message ?? err}`);
+          const message = String(err?.message ?? err);
+          this.deps.log?.(`[Pod] reconcile session ${session.sessionId}: ${message}`);
+          if (!/not found|404|gone|missing|deleted|no such/i.test(message)) {
+            continue;
+          }
           try {
             await this.snapshotSession(session.sessionId);
           } catch (snapshotErr: any) {

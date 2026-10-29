@@ -11,7 +11,7 @@ export interface PodGoalServiceDeps {
   newId(): string;
   notify(podId: string): void;
   budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } };
-  goalState?(goalId: string): { terminal: boolean } | null;
+  goalState?(goalId: string): { terminal: boolean; verdict?: string } | null;
   listInFlightGoals?(projectDir: string): string[];
   listRegisteredProjectDirs?(): string[];
   finalizeGoal?(goalId: string, outcome?: { verdict?: string }): Promise<void>;
@@ -167,7 +167,7 @@ export class PodGoalService {
       }
       const state = this.deps.goalState?.(active.goalId);
       if (this.deps.goalState && (!state || state.terminal)) {
-        const outcome = state ? undefined : { verdict: 'CANCELLED' };
+        const outcome = state ? { verdict: state.verdict } : { verdict: 'CANCELLED' };
         if (this.deps.finalizeGoal) await this.deps.finalizeGoal(active.goalId, outcome);
         else await this.onGoalArchived(active.goalId, outcome);
         return;

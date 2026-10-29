@@ -236,6 +236,29 @@ describe('PodService', () => {
     expect(store.listActiveSessions(detail.pod.id).some((s) => s.sessionId === 'ses_live')).toBe(true);
   });
 
+  test('reconcile leaves a session active on a transient session lookup error', async () => {
+    const detail = await service.ensure(projectDir);
+    const builder = store.getMemberByRole(detail.pod.id, 'builder')!;
+    store.insertSession({
+      id: 'ps_warm',
+      podId: detail.pod.id,
+      memberId: builder.id,
+      goalId: 'g1',
+      node: 'execute',
+      sessionId: 'ses_warm',
+      status: 'active',
+      transcriptRef: null,
+      now: now(),
+    });
+    getSessionImpl = async () => { throw new Error('transport timeout'); };
+    messagesImpl = async () => { throw new Error('runtime warming up'); };
+
+    await expect(service.reconcile()).resolves.toBeUndefined();
+
+    expect(store.getSnapshot('ses_warm')).toBeNull();
+    expect(store.listActiveSessions(detail.pod.id).some((s) => s.sessionId === 'ses_warm')).toBe(true);
+  });
+
   test('rejects an unregistered project without creating a pod', async () => {
     const unknown = path.join(dir, 'unknown-project');
     fs.mkdirSync(unknown, { recursive: true });

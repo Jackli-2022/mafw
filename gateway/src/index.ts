@@ -905,11 +905,7 @@ class MafwScheduler {
           await this.sdkSession.promptAsync(opts.sessionID, text, undefined, opts.agent, undefined, opts.outputSchema);
         },
         delete: async (sessionID: string) => {
-          try {
-            await this.podService?.snapshotSession(sessionID);
-          } catch {
-            this.podService?.finalizeMissingSession(sessionID);
-          }
+          await this.podService?.snapshotSession(sessionID);
           await this.sdkSession.delete(sessionID);
         },
         abort: async (sessionID: string) => { await this.runtime!.session.abort({ sessionID }); },
@@ -3604,7 +3600,11 @@ class MafwScheduler {
         const found = this.findGoalStatePath(goalId);
         if (!found) return null;
         const state = loadGoalState(found.info.mafwDir, goalId);
-        return state ? { terminal: isTerminalState(state) } : null;
+        return state ? {
+          terminal: isTerminalState(state),
+          verdict: state.reviewVerdict
+            ?? (state.nextAction === 'COMPLETED' ? 'PASS' : state.nextAction === 'CANCELLED' ? 'CANCELLED' : 'FAIL'),
+        } : null;
       },
       listInFlightGoals: (projectDir) => this.listGoalStates()
         .filter((entry) => canonicalProjectDir(entry.projectDir) === projectDir)

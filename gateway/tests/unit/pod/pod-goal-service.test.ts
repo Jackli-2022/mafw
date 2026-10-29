@@ -204,6 +204,20 @@ describe('PodGoalService', () => {
     expect(startGoal).toHaveBeenLastCalledWith('g2', path.resolve(projectDir));
   });
 
+  test('reconcile passes a terminal verdict to finalizeGoal', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    const finalizeGoal = jest.fn(async () => {});
+    service = makeService(undefined, {
+      goalState: () => ({ terminal: true, verdict: 'PASS' }),
+      finalizeGoal,
+    });
+
+    await service.reconcile();
+
+    expect(finalizeGoal).toHaveBeenCalledWith('g1', { verdict: 'PASS' });
+    expect(first.podId).toBeTruthy();
+  });
+
   test('reconcile adopts an in-flight pre-feature goal without starting it again', async () => {
     service = makeService(undefined, {
       listInFlightGoals: () => ['g0'],
