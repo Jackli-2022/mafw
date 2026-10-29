@@ -1,7 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { PodError } from './pod-store';
 
 const MAX_CONTEXT_CHARS = 4096;
+const MEMORY_FILES: Record<'POD' | 'MEMORY' | 'GLOSSARY', string> = {
+  POD: 'POD.md',
+  MEMORY: 'POD_MEMORY.md',
+  GLOSSARY: 'glossary.md',
+};
 
 export interface PodMemoryServiceDeps {
   memoryRoot: string;
@@ -28,6 +34,16 @@ export class PodMemoryService {
       const target = path.join(dir, file);
       if (!fs.existsSync(target)) fs.writeFileSync(target, content, 'utf-8');
     }
+  }
+
+  writeMemory(podId: string, file: 'POD' | 'MEMORY' | 'GLOSSARY', content: string): string {
+    const name = MEMORY_FILES[file];
+    if (!name) throw new PodError(400, `unknown pod memory file: ${file}`);
+    const dir = this.memoryDir(podId);
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, name);
+    fs.writeFileSync(target, content, 'utf-8');
+    return target;
   }
 
   renderContext(podId: string, node: 'plan' | 'execute' | 'review'): string | null {

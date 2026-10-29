@@ -1,0 +1,236 @@
+import type * as http from 'http';
+import { PodError, type PodMemberRole, type PodMemberRow } from '../core/pod/pod-store';
+import type { PodGoalService } from '../core/pod/pod-goal-service';
+import type { PodMemoryService } from '../core/pod/pod-memory-service';
+import type { PodMessageService } from '../core/pod/pod-message-service';
+import type { PodService } from '../core/pod/pod-service';
+import type { PodTaskService } from '../core/pod/pod-task-service';
+
+export interface PodRouteDeps {
+  pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus'>;
+  tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask'>;
+  messages: Pick<PodMessageService, 'list' | 'send'>;
+  goals: Pick<PodGoalService, 'list'>;
+  memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory'>;
+  access?: { requireMember(sessionId: string, allowed: PodMemberRole[]): PodMemberRow };
+  cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>;
+  transcript(podId: string, sessionId: string): Promise<unknown>;
+}
+
+const POD_STATUSES = new Set(['active', 'idle', 'paused', 'archived']);
+const MEMORY_FILES = new Set(['POD', 'MEMORY', 'GLOSSARY']);
+
+export async function handlePods(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: string,
+  deps: PodRouteDeps,
+): Promise<boolean> {
+  const pathname = url.split('?')[0];
+  const method = req.method || 'GET';
+
+  try {
+    const projectPod = pathname.match(/^\/api\/projects\/([^/]+)\/pod$/);
+    if (projectPod) {
+      if (method === 'GET' || method === 'POST') {
+        const detail = await deps.pods.ensure(decode(projectPod[1]));
+        sendJson(res, 200, detail);
+        return true;
+      }
+      return false;
+    }
+
+    const task = pathname.match(/^\/api\/pods\/([^/]+)\/tasks\/([^/]+)$/);
+    if (task) {
+      if (method !== 'PATCH') return false;
+      const podId = decode(task[1]);
+      requirePod(deps, podId);
+      const body = await readJson(req);
+      assertAccess(deps, body, ['lead', 'builder', 'reviewer']);
+      const updated = deps.tasks.updateTask(podId, decode(task[2]), {
+        ...(body.status ? { status: body.status } : {}),
+        ...(body.ownerMemberId !== undefined ? { ownerMemberId: body.ownerMemberId } : {}),
+      });
+      sendJson(res, 200, { task: updated });
+      return true;
+    }
+
+    const tasks = pathname.match(/^\/api\/pods\/([^/]+)\/tasks$/);
+    if (tasks) {
+      const podId = decode(tasks[1]);
+      requirePod(deps, podId);
+      if (method === 'GET') {
+        sendJson(res, 200, { items: deps.tasks.list(podId) });
+        return true;
+      }
+      if (method === 'POST') {
+        const body = await readJson(req);
+        assertAccess(deps, body, ['lead', 'builder']);
+        const created = deps.tasks.createManual(
+          podId,
+          typeof body.goalId === 'string' ? body.goalId : null,
+          String(body.title ?? ''),
+          typeof body.ownerMemberId === 'string' ? body.ownerMemberId : undefined,
+        );
+        sendJson(res, 200, { task: created });
+        return true;
+      }
+      return false;
+    }
+
+    const messages = pathname.match(/^\/api\/pods\/([^/]+)\/messages$/);
+    if (messages) {
+      const podId = decode(messages[1]);
+      requirePod(deps, podId);
+      if (method === 'GET') {
+        sendJson(res, 200, { items: deps.messages.list(podId) });
+        return true;
+      }
+      if (method === 'POST') {
+        const body = await readJson(req);
+        assertAccess(deps, body, ['lead', 'builder', 'reviewer']);
+        const message = deps.messages.send({
+          podId,
+          fromMemberId: String(body.fromMemberId ?? ''),
+          toMemberId: typeof body.toMemberId === 'string' ? body.toMemberId : null,
+          kind: body.kind,
+          body: String(body.body ?? ''),
+        });
+        sendJson(res, 200, { message });
+        return true;
+      }
+      return false;
+    }
+
+    const wake = pathname.match(/^\/api\/pods\/([^/]+)\/(wake|sleep)$/);
+    if (wake) {
+      if (method !== 'POST') return false;
+      const podId = decode(wake[1]);
+      requirePod(deps, podId);
+      const detail = deps.pods.updateStatus(podId, wake[2] === 'wake' ? 'active' : 'idle');
+      sendJson(res, 200, detail);
+      return true;
+    }
+
+    const cost = pathname.match(/^\/api\/pods\/([^/]+)\/cost$/);
+    if (cost) {
+      if (method !== 'GET') return false;
+      const podId = decode(cost[1]);
+      requirePod(deps, podId);
+      sendJson(res, 200, await deps.cost(podId));
+      return true;
+    }
+
+    const goals = pathname.match(/^\/api\/pods\/([^/]+)\/goals$/);
+    if (goals) {
+      if (method !== 'GET') return false;
+      const podId = decode(goals[1]);
+      requirePod(deps, podId);
+      sendJson(res, 200, { items: deps.goals.list(podId) });
+      return true;
+    }
+
+    const transcript = pathname.match(/^\/api\/pods\/([^/]+)\/sessions\/([^/]+)\/transcript$/);
+    if (transcript) {
+      if (method !== 'GET') return false;
+      const podId = decode(transcript[1]);
+      requirePod(deps, podId);
+      sendJson(res, 200, { transcript: await deps.transcript(podId, decode(transcript[2])) });
+      return true;
+    }
+
+    const memory = pathname.match(/^\/api\/pods\/([^/]+)\/memory$/);
+    if (memory) {
+      const podId = decode(memory[1]);
+      requirePod(deps, podId);
+      if (method === 'GET') {
+        const node = new URL(url, 'http://localhost').searchParams.get('node') || 'plan';
+        if (node !== 'plan' && node !== 'execute' && node !== 'review') {
+          throw new PodError(400, `invalid node: ${node}`);
+        }
+        sendJson(res, 200, { context: deps.memory.renderContext(podId, node) });
+        return true;
+      }
+      if (method === 'POST') {
+        const body = await readJson(req);
+        assertAccess(deps, body, ['lead']);
+        if (!MEMORY_FILES.has(String(body.file))) throw new PodError(400, 'file must be POD|MEMORY|GLOSSARY');
+        const target = deps.memory.writeMemory(podId, body.file, String(body.content ?? ''));
+        sendJson(res, 200, { path: target });
+        return true;
+      }
+      return false;
+    }
+
+    const pod = pathname.match(/^\/api\/pods\/([^/]+)$/);
+    if (pod) {
+      const podId = decode(pod[1]);
+      if (method === 'GET') {
+        requirePod(deps, podId);
+        sendJson(res, 200, deps.pods.get(podId));
+        return true;
+      }
+      if (method === 'PATCH') {
+        requirePod(deps, podId);
+        const body = await readJson(req);
+        if (!POD_STATUSES.has(String(body.status))) throw new PodError(400, 'invalid pod status');
+        sendJson(res, 200, deps.pods.updateStatus(podId, body.status));
+        return true;
+      }
+      return false;
+    }
+
+    return false;
+  } catch (err: any) {
+    const status = err instanceof PodError ? err.status : 500;
+    sendJson(res, status, { error: err?.message ?? String(err) });
+    return true;
+  }
+}
+
+function decode(value: string): string {
+  return decodeURIComponent(value);
+}
+
+function requirePod(deps: PodRouteDeps, podId: string): void {
+  if (!deps.pods.get(podId)) throw new PodError(404, `pod not found: ${podId}`);
+}
+
+function assertAccess(
+  deps: PodRouteDeps,
+  body: any,
+  allowed: PodMemberRole[],
+): void {
+  if (!body || typeof body.actorSessionID !== 'string' || !body.actorSessionID) return;
+  if (!deps.access) throw new PodError(503, 'pod access checks unavailable');
+  deps.access.requireMember(body.actorSessionID, allowed);
+}
+
+function readJson(req: http.IncomingMessage): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > 64 * 1024) {
+        reject(new PodError(413, 'request body too large'));
+        return;
+      }
+      body += chunk.toString('utf-8');
+    });
+    req.on('end', () => {
+      if (!body.trim()) return resolve({});
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new PodError(400, 'invalid json body'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function sendJson(res: http.ServerResponse, status: number, value: unknown): void {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(value));
+}

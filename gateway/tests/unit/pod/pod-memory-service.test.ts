@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PodMemoryService } from '../../../src/core/pod/pod-memory-service';
+import { PodError } from '../../../src/core/pod/pod-store';
 
 describe('PodMemoryService', () => {
   let root: string;
@@ -75,5 +76,13 @@ describe('PodMemoryService', () => {
     expect(text).toContain('ok: false');
     expect(text).toContain('tests failed');
     expect(text).toContain('/tmp/receipt.json');
+  });
+
+  test('writeMemory writes allowed files and rejects unknown files', () => {
+    service.ensurePodMemory('pod_1', 'Project Alpha');
+    const file = service.writeMemory('pod_1', 'POD', '# Updated');
+    expect(file).toBe(path.join(service.memoryDir('pod_1'), 'POD.md'));
+    expect(fs.readFileSync(file, 'utf-8')).toBe('# Updated');
+    expect(() => service.writeMemory('pod_1', 'NOPE' as any, 'x')).toThrow(PodError);
   });
 });

@@ -247,6 +247,7 @@ import { RouteRegistry } from './routes/registry';
 import { buildRouteCatalog } from './routes/route-catalog';
 import { attachWave1Handlers } from './routes/wave1-handlers';
 import { attachWave2Handlers } from './routes/wave2-handlers';
+import { attachPodHandlers } from './routes/pod-handlers';
 import type { EmbeddingConfigDeps } from './routes/embedding-config';
 import { runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
@@ -4347,6 +4348,15 @@ class MafwScheduler {
         beginRuntimeSwitch: () => { this.switchingRuntime = true; },
         endRuntimeSwitch: () => { this.switchingRuntime = false; },
       });
+      attachPodHandlers(this.routeRegistry, {
+        pods: this.podService,
+        tasks: this.podTaskService,
+        messages: this.podMessageService,
+        goals: this.podGoalService,
+        memory: this.podMemoryService,
+        cost: async (podId) => this.podCost(podId),
+        transcript: async (podId, sessionId) => this.podTranscript(podId, sessionId),
+      });
 
       const server = http.createServer(async (req, res) => {
         try {
@@ -7936,6 +7946,30 @@ class MafwScheduler {
       await this.podGoalService?.onGoalArchived(goalId);
     } catch (err: any) {
       log.warn(`[Pod] goal archive hook failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+    }
+  }
+
+  private podCost(podId: string): { spentUsd: number; limitUsd: number } {
+    const ids = this.podStore.listSessionIds(podId, 0);
+    if (ids.length === 0) return { spentUsd: 0, limitUsd: 0 };
+    const placeholders = ids.map(() => '?').join(', ');
+    try {
+      const row = this.getGatewayDb().getStore().prepare(
+        `SELECT COALESCE(SUM(cost), 0) AS cost FROM trajectory_turns WHERE session_id IN (${placeholders})`,
+      ).get(...ids) as { cost?: number } | undefined;
+      return { spentUsd: row?.cost ?? 0, limitUsd: 0 };
+    } catch {
+      return { spentUsd: 0, limitUsd: 0 };
+    }
+  }
+
+  private podTranscript(_podId: string, sessionId: string): unknown {
+    const snapshot = this.podStore.getSnapshot(sessionId);
+    if (!snapshot) return null;
+    try {
+      return JSON.parse(fs.readFileSync(snapshot.path, 'utf-8'));
+    } catch {
+      return null;
     }
   }
 

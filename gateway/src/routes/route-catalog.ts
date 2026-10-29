@@ -173,6 +173,22 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'PUT', path: '/api/automations/:id', operationId: 'automations.toggle', tags: ['automations'] },
   { method: 'DELETE', path: '/api/automations/:id', operationId: 'automations.remove', tags: ['automations'] },
   { method: 'POST', path: '/api/automations/draft', operationId: 'automations.draft', tags: ['automations'] },
+  { method: 'GET', path: '/api/projects/:projectId/pod', operationId: 'pods.ensure', tags: ['pods'] },
+  { method: 'POST', path: '/api/projects/:projectId/pod', operationId: 'pods.create', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId', operationId: 'pods.get', tags: ['pods'] },
+  { method: 'PATCH', path: '/api/pods/:podId', operationId: 'pods.update', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.list', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/tasks', operationId: 'pods.tasks.create', tags: ['pods'] },
+  { method: 'PATCH', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.update', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/messages', operationId: 'pods.messages.list', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/messages', operationId: 'pods.messages.create', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/wake', operationId: 'pods.wake', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/sleep', operationId: 'pods.sleep', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/cost', operationId: 'pods.cost', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/goals', operationId: 'pods.goals', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/sessions/:sessionId/transcript', operationId: 'pods.transcript', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/memory', operationId: 'pods.memory.get', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/memory', operationId: 'pods.memory.write', tags: ['pods'] },
 ];
 
 /** 非 SDK 端点补充登记（desktop/TUI/worker/dashboard 专用面），operationId 自拟，tags 'internal'。 */

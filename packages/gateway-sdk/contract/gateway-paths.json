@@ -2643,6 +2643,380 @@
         }
       }
     },
+    "/api/projects/{projectId}/pod": {
+      "get": {
+        "operationId": "pods.ensure",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "pods.create",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}": {
+      "get": {
+        "operationId": "pods.get",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "pods.update",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/tasks": {
+      "get": {
+        "operationId": "pods.tasks.list",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "pods.tasks.create",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/tasks/{taskId}": {
+      "patch": {
+        "operationId": "pods.tasks.update",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/messages": {
+      "get": {
+        "operationId": "pods.messages.list",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "pods.messages.create",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/wake": {
+      "post": {
+        "operationId": "pods.wake",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/sleep": {
+      "post": {
+        "operationId": "pods.sleep",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/cost": {
+      "get": {
+        "operationId": "pods.cost",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals": {
+      "get": {
+        "operationId": "pods.goals",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/sessions/{sessionId}/transcript": {
+      "get": {
+        "operationId": "pods.transcript",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/memory": {
+      "get": {
+        "operationId": "pods.memory.get",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "pods.memory.write",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/python/execute": {
       "post": {
         "operationId": "python.execute",
