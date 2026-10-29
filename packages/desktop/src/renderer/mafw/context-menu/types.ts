@@ -10,6 +10,7 @@ export type MenuSurface =
   | "editor.tab"
   | "terminal"
   | "browser"
+  | "browser.page"
   | "panel.execution"
   | "panel.review"
   | "goal.card"

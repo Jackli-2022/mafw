@@ -276,6 +276,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("edit-copy", (event: IpcMainInvokeEvent) => { event.sender.copy() })
   ipcMain.handle("edit-paste", (event: IpcMainInvokeEvent) => { event.sender.paste() })
   ipcMain.handle("edit-select-all", (event: IpcMainInvokeEvent) => { event.sender.selectAll() })
+  ipcMain.handle("edit-copy-image-at", (event: IpcMainInvokeEvent, x: number, y: number) => { event.sender.copyImageAt(x, y) })
 
   ipcMain.handle("read-clipboard-image", () => {
     const image = clipboard.readImage()

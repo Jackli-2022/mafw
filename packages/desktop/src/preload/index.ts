@@ -111,6 +111,7 @@ const api: ElectronAPI = {
     copy: () => ipcRenderer.invoke("edit-copy"),
     paste: () => ipcRenderer.invoke("edit-paste"),
     selectAll: () => ipcRenderer.invoke("edit-select-all"),
+    copyImageAt: (x: number, y: number) => ipcRenderer.invoke("edit-copy-image-at", x, y),
   },
   readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
   showNotification: (title, body) => ipcRenderer.send("show-notification", title, body),
@@ -186,6 +187,11 @@ const api: ElectronAPI = {
       }
       ipcRenderer.on("browser-open-url", handler)
       return () => ipcRenderer.removeListener("browser-open-url", handler)
+    },
+    onContextMenu: (cb: (payload: import("./types").BrowserContextMenuPayload) => void) => {
+      const handler = (_: unknown, payload: import("./types").BrowserContextMenuPayload) => cb(payload)
+      ipcRenderer.on("browser-context-menu", handler)
+      return () => ipcRenderer.removeListener("browser-context-menu", handler)
     },
     openExternal: (url) => ipcRenderer.invoke("browser-open-external", url),
   },

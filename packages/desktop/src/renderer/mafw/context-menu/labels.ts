@@ -16,6 +16,10 @@ export const L = {
     quote: "引用到输入框",
     fork: "从此处分叉",
     readAloud: "朗读",
+    copyImage: "复制图片",
+    copyImageUrl: "复制图片地址",
+    copyLink: "复制链接",
+    openLink: "在浏览器打开",
   },
   code: { copy: "复制代码", copyMarkdown: "复制为 Markdown" },
   filePath: {
@@ -62,6 +66,12 @@ export const L = {
     copyLink: "复制链接",
     openExternal: "在系统浏览器打开",
     pick: "点选页面元素",
+  },
+  browserPage: {
+    copySelection: "复制选中",
+    copyLink: "复制链接",
+    openLink: "在浏览器打开链接",
+    copyImageUrl: "复制图片地址",
   },
   panel: { openSession: "打开会话", copyId: "复制 ID", cancel: "终止" },
   review: { open: "打开", reveal: "在文件夹中显示", copy: "复制" },

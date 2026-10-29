@@ -11,6 +11,7 @@ import { buildFileTreeMenu } from "./builders/file-tree"
 import { buildEditorTabMenu } from "./builders/editor-tab"
 import { buildTerminalMenu } from "./builders/terminal"
 import { buildBrowserMenu } from "./builders/browser"
+import { buildBrowserPageMenu } from "./builders/browser-page"
 import { buildExecutionRowMenu, buildReviewRowMenu } from "./builders/panel"
 import {
   buildApprovalPermissionMenu,
@@ -37,6 +38,7 @@ const fixtures: MenuModel[] = [
   buildEditorTabMenu({ rel: "a.ts", index: 1, count: 3 }),
   buildTerminalMenu({ hasSelection: true, canClose: true }),
   buildBrowserMenu({ url: "https://x", canBack: true, canForward: true, started: true, canPick: true }),
+  buildBrowserPageMenu({ url: "https://x", linkURL: "https://l", selectionText: "s", imageURL: "https://i", canBack: true, canForward: false }),
   buildExecutionRowMenu({ sessionID: "s", kind: "background", canCancel: true }),
   buildReviewRowMenu({ rel: "a.ts" }),
   buildGoalCardMenu({ goalId: "g", running: true, canPause: true }),

@@ -36,8 +36,10 @@ test("file surfaces are wired", () => {
 test("message, terminal and browser surfaces are wired", () => {
   expect(read("ChatPane.tsx")).toContain("buildMessageMenu")
   expect(read("ChatPane.tsx")).toContain("buildCodeBlockMenu")
+  expect(read("ChatPane.tsx")).toContain("message.copyImage")
   expect(read("TerminalView.tsx")).toContain("buildTerminalMenu")
   expect(read("BrowserDock.tsx")).toContain("buildBrowserMenu")
+  expect(read("BrowserDock.tsx")).toContain("buildBrowserPageMenu")
 })
 
 test("panels and goal cells are wired", () => {

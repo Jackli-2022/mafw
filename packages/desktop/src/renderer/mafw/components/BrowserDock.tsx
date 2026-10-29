@@ -12,6 +12,7 @@ import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { menuController } from "../context-menu/controller"
 import { buildBrowserMenu } from "../context-menu/builders/browser"
+import { buildBrowserPageMenu } from "../context-menu/builders/browser-page"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { BROWSER_PARTITION, navigationDecision, normalizeAddress } from "../../../shared/browser-policy"
 import { displayMafwFilePath } from "../../../shared/mafw-file"
@@ -306,6 +307,40 @@ export function BrowserDock(props: { sessionID: string | null }) {
 
   onMount(() => {
     ensurePanes()
+    onCleanup(window.api.browser.onContextMenu((payload) => {
+      const tab = tabs().find((item) => {
+        try {
+          return viewRegistry.get(item.id)?.getWebContentsId?.() === payload.webContentsId
+        } catch {
+          return false
+        }
+      }) ?? activeTab()
+      const view = tab ? viewRegistry.get(tab.id) : activeView()
+      if (!view) return
+      const rect = view.getBoundingClientRect?.() ?? { left: 0, top: 0 }
+      menuController.request(
+        buildBrowserPageMenu,
+        {
+          url: payload.url,
+          linkURL: payload.linkURL,
+          selectionText: payload.selectionText,
+          imageURL: payload.imageURL,
+          canBack: payload.canGoBack,
+          canForward: payload.canGoForward,
+        },
+        (id) => {
+          if (id === "browserPage.copySelection" && payload.selectionText) void navigator.clipboard.writeText(payload.selectionText)
+          else if (id === "browserPage.copyLink" && payload.linkURL) void navigator.clipboard.writeText(payload.linkURL)
+          else if (id === "browserPage.openLink" && payload.linkURL) void window.api.browser.openExternal(payload.linkURL)
+          else if (id === "browserPage.copyImageUrl" && payload.imageURL) void navigator.clipboard.writeText(payload.imageURL)
+          else if (id === "browserPage.back") { try { view.goBack?.() } catch { /* ignore */ } }
+          else if (id === "browserPage.forward") { try { view.goForward?.() } catch { /* ignore */ } }
+          else if (id === "browserPage.reload") { try { view.reload?.() } catch { /* ignore */ } }
+          else if (id === "browserPage.openExternal") void window.api.browser.openExternal(payload.url)
+        },
+        { point: { x: rect.left + payload.x, y: rect.top + payload.y } },
+      )
+    }))
     onCleanup(() => {
       for (const id of viewRegistry.keys()) removeView(id)
     })

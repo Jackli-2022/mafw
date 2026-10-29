@@ -1,5 +1,5 @@
 import { L } from "../labels"
-import { item } from "../model"
+import { item, sep } from "../model"
 import type { MenuItem, MenuModel } from "../types"
 
 export interface MessageMenuTarget {
@@ -8,6 +8,8 @@ export interface MessageMenuTarget {
   hasText: boolean
   canFork: boolean
   tts: boolean
+  linkURL?: string
+  imageURL?: string
 }
 
 export function buildMessageMenu(target: MessageMenuTarget): MenuModel {
@@ -18,11 +20,33 @@ export function buildMessageMenu(target: MessageMenuTarget): MenuModel {
     ? {}
     : { disabled: true, disabledReason: "没有可引用的文本" }
 
-  const items: MenuItem[] = [
-    item("message.copy", L.message.copy, disabled),
-    item("message.copyMarkdown", L.message.copyMarkdown, disabled),
-    item("message.quote", L.message.quote, quoteDisabled),
-  ]
+  const targetItems: MenuItem[] = []
+  if (target.imageURL) {
+    targetItems.push(
+      item("message.copyImage", L.message.copyImage),
+      item("message.copyImageUrl", L.message.copyImageUrl),
+    )
+  }
+  if (target.linkURL) {
+    targetItems.push(
+      item("message.copyLink", L.message.copyLink),
+      item("message.openLink", L.message.openLink),
+    )
+  }
+
+  const items: MenuItem[] = targetItems.length > 0
+    ? [
+        ...targetItems,
+        sep(),
+        item("message.copy", L.message.copy, disabled),
+        item("message.copyMarkdown", L.message.copyMarkdown, disabled),
+        item("message.quote", L.message.quote, quoteDisabled),
+      ]
+    : [
+        item("message.copy", L.message.copy, disabled),
+        item("message.copyMarkdown", L.message.copyMarkdown, disabled),
+        item("message.quote", L.message.quote, quoteDisabled),
+      ]
 
   if (target.role === "user" && target.canFork) {
     items.push(item("message.fork", L.message.fork))

@@ -49,9 +49,23 @@ export type FsAPI = {
 }
 export type BrowserOpenRequest = { url: string; newTab: boolean }
 
+export type BrowserContextMenuPayload = {
+  url: string
+  linkURL?: string
+  selectionText?: string
+  imageURL?: string
+  isEditable: boolean
+  x: number
+  y: number
+  canGoBack: boolean
+  canGoForward: boolean
+  webContentsId: number
+}
+
 /** 内嵌浏览器（main 侧策略在 browser-session.ts；MafwShell 订阅后转 dock 新 tab）。 */
 export type BrowserAPI = {
   onOpenUrl(cb: (req: BrowserOpenRequest) => void): () => void
+  onContextMenu(cb: (payload: BrowserContextMenuPayload) => void): () => void
   openExternal(url: string): Promise<{ ok: boolean }>
 }
 /** 批注草稿（main 侧 electron-store JSON；形状与 shared/annotation-types.ts 一致）。 */
@@ -150,6 +164,7 @@ export type ElectronAPI = {
     copy: () => Promise<void>
     paste: () => Promise<void>
     selectAll: () => Promise<void>
+    copyImageAt: (x: number, y: number) => Promise<void>
   }
   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
   showNotification: (title: string, body?: string) => void

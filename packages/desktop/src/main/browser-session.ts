@@ -35,7 +35,32 @@ export function configureBrowserSession() {
   ses.setPermissionCheckHandler(() => false)
 
   app.on("web-contents-created", (_event, contents) => {
-    if (contents.getType() === "webview") hardenGuest(contents)
+    if (contents.getType() !== "webview") return
+    hardenGuest(contents)
+
+    contents.on("context-menu", (event, params) => {
+      event.preventDefault()
+      let canGoBack = false
+      let canGoForward = false
+      try {
+        canGoBack = contents.navigationHistory.canGoBack()
+        canGoForward = contents.navigationHistory.canGoForward()
+      } catch {
+        /* navigation history unavailable */
+      }
+      contents.hostWebContents?.send("browser-context-menu", {
+        url: contents.getURL(),
+        linkURL: params.linkURL || undefined,
+        selectionText: params.selectionText || undefined,
+        imageURL: params.mediaType === "image" ? params.srcURL || undefined : undefined,
+        isEditable: params.isEditable,
+        x: params.x,
+        y: params.y,
+        canGoBack,
+        canGoForward,
+        webContentsId: contents.id,
+      })
+    })
   })
 }
 

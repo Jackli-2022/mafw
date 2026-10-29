@@ -551,6 +551,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
     if (messageEl) {
       const role = messageEl.getAttribute("data-message-role") === "user" ? "user" : "assistant"
+      const imageEl = target.closest?.("img") as HTMLImageElement | null
+      const linkEl = target.closest?.("a[href]") as HTMLAnchorElement | null
+      const imageURL = imageEl?.currentSrc || imageEl?.src || undefined
+      const linkURL = linkEl?.href || undefined
       const ids = messageEl.getAttribute("data-message-ids") ?? messageEl.getAttribute("data-message-id") ?? ""
       const parts = ids
         ? ids.split(",").flatMap((id) => ((store.part[id] as any[]) ?? []))
@@ -561,11 +565,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       const canFork = role === "user" && branchActionsVisible(props.runtimeCaps)
       menuController.request(
         buildMessageMenu,
-        { id: messageID, role, hasText: text.length > 0, canFork, tts: false },
+        { id: messageID, role, hasText: text.length > 0, canFork, tts: false, linkURL, imageURL },
         (id) => {
           if (id === "message.copy") void navigator.clipboard.writeText(text)
           else if (id === "message.copyMarkdown") void navigator.clipboard.writeText(markdown)
           else if (id === "message.quote") pushComposerInsert(sidProp(), formatQuote(markdown || text))
+          else if (id === "message.copyImage") void window.api.edit.copyImageAt(event.clientX, event.clientY)
+          else if (id === "message.copyImageUrl" && imageURL) void navigator.clipboard.writeText(imageURL)
+          else if (id === "message.copyLink" && linkURL) void navigator.clipboard.writeText(linkURL)
+          else if (id === "message.openLink" && linkURL) void window.api.browser.openExternal(linkURL)
           else if (id === "message.fork") {
             void window.api.mafw.sessions.fork(sidProp(), messageID)
               .then((res: any) => { if (res?.session?.id) props.onOpenForkedSession?.(res.session.id) })
