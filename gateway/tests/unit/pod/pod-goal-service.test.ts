@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PodStore, type PodRow } from '../../../src/core/pod/pod-store';
-import { PodGoalService } from '../../../src/core/pod/pod-goal-service';
+import { PodGoalService, type PodGoalServiceDeps } from '../../../src/core/pod/pod-goal-service';
 import type { PodDetail } from '../../../src/core/pod/pod-service';
 
 describe('PodGoalService', () => {
@@ -25,7 +25,10 @@ describe('PodGoalService', () => {
     };
   }
 
-  function makeService(budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } }) {
+  function makeService(
+    budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } },
+    extra: Partial<PodGoalServiceDeps> = {},
+  ) {
     const pods = {
       ensure: jest.fn(async (requested: string) => {
         const canonical = path.resolve(requested);
@@ -48,6 +51,7 @@ describe('PodGoalService', () => {
       newId: () => `pg_${Math.random().toString(36).slice(2, 8)}`,
       notify: (podId) => notifications.push(podId),
       budget,
+      ...extra,
     });
   }
 
@@ -101,7 +105,7 @@ describe('PodGoalService', () => {
     expect(store.getGoalByGoalId('g2')?.status).toBe('queued');
   });
 
-  test('budget gate queues until budget opens', async () => {
+  test('budget gate promotes the oldest queued goal when budget opens', async () => {
     let ok = false;
     service = makeService({
       canStart: () => ({ ok, spentUsd: ok ? 0 : 10, limitUsd: 5 }),
@@ -112,9 +116,9 @@ describe('PodGoalService', () => {
     expect(startGoal).not.toHaveBeenCalled();
 
     ok = true;
-    const started = await service.enqueueGoal('g2', projectDir);
-    expect(started.status).toBe('started');
-    expect(startGoal).toHaveBeenCalledWith('g2', projectDir);
+    const promoted = await service.enqueueGoal('g2', projectDir);
+    expect(promoted.status).toBe('queued');
+    expect(startGoal).toHaveBeenCalledWith('g1', projectDir);
   });
 
   test('notifies on enqueue and archive', async () => {
@@ -184,5 +188,58 @@ describe('PodGoalService', () => {
     const again = await service.enqueueGoal('g1', projectDir);
     expect(again.status).toBe('started');
     expect(startGoal).toHaveBeenCalledWith('g1', path.resolve(projectDir));
+  });
+
+  test('reconcile archives a terminal active goal and promotes the next', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+    service = makeService(undefined, {
+      goalState: (goalId) => ({ terminal: goalId === 'g1' }),
+    });
+
+    await service.reconcile();
+
+    expect(store.getGoalByGoalId('g1')?.status).toBe('done');
+    expect(store.getActiveGoal(first.podId)?.goalId).toBe('g2');
+    expect(startGoal).toHaveBeenLastCalledWith('g2', path.resolve(projectDir));
+  });
+
+  test('reconcile adopts an in-flight pre-feature goal without starting it again', async () => {
+    const pod = store.ensurePod({
+      id: 'pod_1',
+      projectDir: path.resolve(projectDir),
+      name: 'Project',
+      now: '2026-10-29T00:00:00.000Z',
+    });
+    service = makeService(undefined, {
+      listInFlightGoals: () => ['g0'],
+      goalState: () => ({ terminal: false }),
+    });
+
+    await service.reconcile();
+
+    expect(store.getActiveGoal(pod.id)?.goalId).toBe('g0');
+    expect(store.getPod(pod.id)?.activeGoalId).toBe('g0');
+    expect(startGoal).not.toHaveBeenCalled();
+  });
+
+  test('reconcile repairs a missing activeGoalId pointer', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    store.updatePod(first.podId, { activeGoalId: null }, '2026-10-29T00:00:00.000Z');
+
+    await service.reconcile();
+
+    expect(store.getPod(first.podId)?.activeGoalId).toBe('g1');
+    expect(store.getActiveGoal(first.podId)?.goalId).toBe('g1');
+    expect(startGoal).toHaveBeenCalledTimes(1);
+  });
+
+  test('archiving a goal preserves an archived pod status', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    store.updatePod(first.podId, { status: 'archived' }, '2026-10-29T00:00:00.000Z');
+
+    await service.onGoalArchived('g1');
+
+    expect(store.getPod(first.podId)?.status).toBe('archived');
   });
 });

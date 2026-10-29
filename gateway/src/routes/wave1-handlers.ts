@@ -38,6 +38,7 @@ import { handleStructuredGet, handleStructuredSubmit } from './structured';
 import { structuredOutput } from '../runtime/structured-output';
 import type { TaskService } from '../runtime/task-service';
 import type { SessionConfigService } from '../core/session-config';
+import type { PodService } from '../core/pod/pod-service';
 import { handleSessionConfigGet, handleSessionConfigSet } from './session-config';
 import {
   handleTaskCancel, handleTaskGet, handleTaskList, handleTaskMessage,
@@ -71,6 +72,7 @@ export interface Wave1Gateway {
   taskService?: TaskService | null;
   sessionConfig?: SessionConfigService | null;
   checkpointService?: import('../core/checkpoint/checkpoint-service').CheckpointService | null;
+  podService?: PodService | null;
   runCoordinator?: import('../core/run/run-coordinator').RunCoordinator | null;
   dataPartService?: import('../core/data-parts/data-part-service').DataPartService | null;
   discovery?: DiscoveryService | null;
@@ -173,6 +175,14 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
         }, sid);
       },
       deleteCheckpoints: (sid) => gw.checkpointService?.deleteForSession(sid),
+      beforeDelete: async (sid) => {
+        if (!gw.podService) return;
+        try {
+          await gw.podService.snapshotSession(sid);
+        } catch {
+          gw.podService.finalizeMissingSession(sid);
+        }
+      },
       deleteRuns: (sid) => gw.runCoordinator?.deleteForSession(sid),
       deleteDataParts: (sid) => gw.dataPartService?.deleteForSession(sid),
       forgetDiscovery: (sid) => gw.discovery?.forget(sid),

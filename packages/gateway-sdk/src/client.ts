@@ -1250,7 +1250,7 @@ export class MafwClient implements IMafwClient {
 
     sendMessage: async (
       podID: string,
-      body: { fromMemberId: string; toMemberId?: string; kind: 'note' | 'request' | 'review' | 'decision' | 'escalation'; body: string; actorSessionID?: string },
+      body: { fromMemberId?: string; toMemberId?: string; kind: 'note' | 'request' | 'review' | 'decision' | 'escalation'; body: string; actorSessionID?: string },
     ): Promise<{ message: PodMessage }> =>
       this.request<{ message: PodMessage }>(`/api/pods/${encodeURIComponent(podID)}/messages`, {
         method: 'POST',

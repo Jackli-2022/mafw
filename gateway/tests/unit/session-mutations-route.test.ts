@@ -1,12 +1,18 @@
 import * as http from 'http';
 import { handleSessionMutations } from '../../src/routes/session-mutations';
 
-function createServer(deps: { getCapabilities: jest.Mock; getClient: jest.Mock; forgetDiscovery?: jest.Mock }): http.Server {
+function createServer(deps: {
+  getCapabilities: jest.Mock;
+  getClient: jest.Mock;
+  forgetDiscovery?: jest.Mock;
+  beforeDelete?: jest.Mock;
+}): http.Server {
   return http.createServer(async (req, res) => {
     const handled = await handleSessionMutations(req, res, {
       getCapabilities: deps.getCapabilities,
       getClient: deps.getClient,
       forgetDiscovery: deps.forgetDiscovery,
+      beforeDelete: deps.beforeDelete,
     });
     if (!handled) {
       res.writeHead(404);
@@ -63,6 +69,22 @@ describe('handleSessionMutations', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
     expect(del).toHaveBeenCalledWith({ sessionID: 'ses_1' });
+  });
+
+  it('DELETE runs beforeDelete before session.delete', async () => {
+    const order: string[] = [];
+    const del = jest.fn(async () => { order.push('delete'); });
+    const beforeDelete = jest.fn(async () => { order.push('snapshot'); });
+    const deps = okDeps();
+    deps.getClient.mockReturnValue({ session: { delete: del, update: jest.fn() } });
+    server = createServer({ ...deps, beforeDelete });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+
+    const res = await send(server, 'DELETE', '/api/sessions/ses_snapshot');
+
+    expect(res.status).toBe(200);
+    expect(beforeDelete).toHaveBeenCalledWith('ses_snapshot');
+    expect(order).toEqual(['snapshot', 'delete']);
   });
 
   it('DELETE forgets discovery state for the deleted session', async () => {

@@ -133,7 +133,7 @@ function buildBuiltins(): IdentitySpec[] {
       ].join('\n'),
       policy: {
         deny: ['file-edit', 'shell', 'web'],
-        allowlist: ['readonly', 'mafw_get_goal_status', 'mafw_get_deltas', 'mafw_search_hybrid'],
+        allowlist: ['readonly', 'mafw_get_goal_status', 'mafw_get_deltas', 'mafw_search_hybrid', 'mafw_pod_*'],
       },
     },
     {
@@ -171,7 +171,7 @@ function buildBuiltins(): IdentitySpec[] {
       ].join('\n'),
       policy: {
         deny: ['file-edit', 'web'],
-        allowlist: ['readonly', 'shell', 'mafw_get_goal_status', 'mafw_search_hybrid'],
+        allowlist: ['readonly', 'shell', 'mafw_get_goal_status', 'mafw_search_hybrid', 'mafw_pod_*'],
       },
     },
   ];

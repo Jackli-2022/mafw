@@ -17,7 +17,7 @@ describe('pod plugin tools', () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(okJson({ pod: { id: 'pod_1' }, members: [] }));
     const result: any = await podStatusTool.execute({ podId: 'pod_1' }, { sessionID: 'ses_lead' });
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://127.0.0.1:3000/api/pods/pod_1',
+      'http://127.0.0.1:3000/api/pods/pod_1?actorSessionID=ses_lead',
       expect.anything(),
     );
     expect(result.metadata.podId).toBe('pod_1');

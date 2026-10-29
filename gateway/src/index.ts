@@ -11,7 +11,7 @@ import { config } from "./config";
 import { log } from './core/utils/logger';
 import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
 import { NodeDriver } from './core/goal/driver';
-import { ensureGoalState, loadGoalState } from './core/goal/state-v3';
+import { ensureGoalState, isTerminalState, loadGoalState } from './core/goal/state-v3';
 import { isTaskType } from './orchestration/capability-ledger';
 import { resolveGoalDir } from './core/goal/starter';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
@@ -39,6 +39,7 @@ import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
 import { PodAccess } from './core/pod/pod-access';
 import { PodBudget } from './core/pod/pod-budget';
+import { canonicalProjectDir } from './core/pod/pod-identity';
 import {
   handleSubagentCancel, handleSubagentList, handleSubagentMessage,
   handleSubagentResult, handleSubagentSpawn,
@@ -973,6 +974,7 @@ class MafwScheduler {
     // 6. 恢复活跃 Goal
     await this.recoverState();
     await this.podService?.reconcile().catch((err: any) => log.warn(`[Pod] reconcile failed (non-fatal): ${err?.message ?? err}`));
+    await this.podGoalService?.reconcile().catch((err: any) => log.warn(`[Pod] goal reconcile failed (non-fatal): ${err?.message ?? err}`));
 
     // 7. 为所有已注册项目初始化 Manager session（不存在则自动创建）
     for (const [projectDir, info] of this.registeredProjects) {
@@ -3536,7 +3538,13 @@ class MafwScheduler {
       now: () => new Date().toISOString(),
       newId: () => `pod_${randomUUID()}`,
       broadcast: (event) => this.broadcast(event as any),
-      getManagerSession: (dir) => this.ensureManagerSession(dir, this.mafwDirFor(dir)),
+      getManagerSession: (dir) => {
+        const canonical = canonicalProjectDir(dir);
+        const entry = Array.from(this.registeredProjects.entries())
+          .find(([raw]) => canonicalProjectDir(raw) === canonical);
+        const projectRoot = entry?.[0] ?? dir;
+        return this.ensureManagerSession(projectRoot, entry?.[1].mafwDir ?? this.mafwDirFor(projectRoot));
+      },
       getSession: (sessionID) => this.runtime!.session.get({ sessionID }),
       messages: (sessionID, limit) => this.runtime!.session.messages({ sessionID, limit }).then((r: any) => r?.data ?? []),
       memoryRoot: path.join(os.homedir(), '.mafw', 'pods'),
@@ -3588,6 +3596,17 @@ class MafwScheduler {
       newId: () => `podgoal_${randomUUID()}`,
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'goal' } }),
       budget: this.podBudget,
+      goalState: (goalId) => {
+        const found = this.findGoalStatePath(goalId);
+        if (!found) return null;
+        const state = loadGoalState(found.info.mafwDir, goalId);
+        return state ? { terminal: isTerminalState(state) } : null;
+      },
+      listInFlightGoals: (projectDir) => this.listGoalStates()
+        .filter((entry) => canonicalProjectDir(entry.projectDir) === projectDir)
+        .map((entry) => loadGoalState(entry.mafwDir, entry.goalId))
+        .filter((state): state is NonNullable<typeof state> => !!state && !isTerminalState(state))
+        .map((state) => state.goalId),
     });
 
     const lazyShell = () => {
@@ -4357,6 +4376,7 @@ class MafwScheduler {
         get taskService() { return gwSelf.taskService; },
         get sessionConfig() { return gwSelf.sessionConfigService; },
         get checkpointService() { return gwSelf.checkpointService; },
+        get podService() { return gwSelf.podService; },
         get runCoordinator() { return gwSelf.runCoordinator; },
         get dataPartService() { return gwSelf.dataPartService; },
         get discovery() { return gwSelf.getDiscoveryService(); },
@@ -6694,6 +6714,11 @@ class MafwScheduler {
         if (deleteMatch && req.method === 'DELETE') {
           try {
             const sessionID = deleteMatch[1];
+            try {
+              await this.podService?.snapshotSession(sessionID);
+            } catch {
+              this.podService?.finalizeMissingSession(sessionID);
+            }
             await this.sdkSession.delete(sessionID);
             this.instructionSync?.forget(sessionID);
             this.discovery?.forget(sessionID);
@@ -7957,7 +7982,9 @@ class MafwScheduler {
     outcome?: { verdict: string; reviewFeedback?: string | null },
   ): Promise<void> {
     const podId = this.podService?.getPodIdForGoal(goalId);
-    if (podId && this.podMemoryService) {
+    const existingGoal = podId ? this.podStore?.getGoalByGoalId(goalId) : null;
+    const alreadyClosed = existingGoal?.status === 'done' || existingGoal?.status === 'aborted';
+    if (podId && this.podMemoryService && !alreadyClosed) {
       try {
         const mafwDir = this.goalDriverMafwDirCache.get(goalId);
         const state = mafwDir ? loadGoalState(mafwDir, goalId) : this.activeGoals.get(goalId);
@@ -8007,9 +8034,19 @@ class MafwScheduler {
     transition?: string;
     outcome?: string;
   }): void {
-    if (p?.type !== 'goal_node' || p.transition !== 'finished' || !p.goalId || !p.node) return;
+    if (p?.type !== 'goal_node' || !p.goalId || !p.node) return;
     const podId = this.podService?.getPodIdForGoal(p.goalId);
     if (!podId) return;
+    if (p.transition === 'started') {
+      try {
+        if (p.node === 'plan') this.podTaskService.clearProjected(podId, p.goalId);
+        else if (p.node === 'execute') this.podTaskService.startExecution(podId, p.goalId);
+      } catch (err: any) {
+        log.warn(`[Pod] goal node start projection failed for ${p.goalId}/${p.node} (non-fatal): ${err?.message ?? err}`);
+      }
+      return;
+    }
+    if (p.transition !== 'finished') return;
     const mafwDir = this.goalDriverMafwDirCache.get(p.goalId);
     const state: any = mafwDir ? loadGoalState(mafwDir, p.goalId) : this.activeGoals.get(p.goalId);
     if (!state) return;
@@ -8159,6 +8196,11 @@ class MafwScheduler {
     if (!sessionId) return;
     if (!this.runtime) return;
     try {
+      await this.podService?.snapshotSession(sessionId);
+    } catch {
+      this.podService?.finalizeMissingSession(sessionId);
+    }
+    try {
       await this.runtime.session.delete({ sessionID: sessionId });
     } catch (err: any) {
       log.warn(`[Scheduler] Failed to destroy session ${sessionId}: ${err.message}`);
@@ -8166,12 +8208,21 @@ class MafwScheduler {
   }
 
   private async destroyAllSessions(goalId: string) {
+    const ids = new Set<string>();
     const state = this.activeGoals.get(goalId);
-    if (!state) return;
-    for (const [, session] of Object.entries(state.sessions)) {
-      if (session.active) {
-        await this.destroySession(session.id);
+    if (state) {
+      for (const [, session] of Object.entries(state.sessions)) {
+        if (session.active) ids.add(session.id);
       }
+    }
+    const podId = this.podService?.getPodIdForGoal(goalId);
+    if (podId && this.podStore) {
+      for (const session of this.podStore.listActiveSessions(podId)) {
+        if (session.goalId === goalId && session.node !== 'coordination') ids.add(session.sessionId);
+      }
+    }
+    for (const sessionId of ids) {
+      await this.destroySession(sessionId);
     }
   }
 
@@ -8602,6 +8653,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       }).catch(() => {});
       this.registerInternalSession(existing.sessionId, 'manager', 'manager');
       log.info(`[Scheduler] Manager session already exists: ${existing.sessionId}`);
+      await this.syncPodLead(projectDir, existing.sessionId);
       return existing.sessionId;
     }
 
@@ -8626,11 +8678,23 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
     log.info(`[Scheduler] Manager session created: ${sessionId}`);
 
+    await this.syncPodLead(projectDir, sessionId);
     return sessionId;
   }
 
   private mafwDirFor(projectDir: string): string {
     return this.registeredProjects.get(projectDir)?.mafwDir ?? path.join(projectDir, '.mafw');
+  }
+
+  private async syncPodLead(projectDir: string, sessionId: string): Promise<void> {
+    if (!this.podService || !this.podStore || !sessionId) return;
+    const pod = this.podStore.getPodByProject(canonicalProjectDir(projectDir));
+    if (!pod) return;
+    try {
+      await this.podService.bindLead(pod.id, sessionId);
+    } catch (err: any) {
+      log.warn(`[Pod] lead rebind failed for ${projectDir} (non-fatal): ${err?.message ?? err}`);
+    }
   }
 
   private rotateDeps(): ManagerRotateDeps {
@@ -8820,6 +8884,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     await this.sdkSession.registerExternal(sessionId, projectDir, {
       mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
     }).catch(() => {});
+    await this.syncPodLead(projectDir, sessionId);
     return sessionId;
   }
 }

@@ -15,6 +15,7 @@ describe('PodService', () => {
   let broadcasts: Array<{ type: string; properties?: Record<string, unknown> }>;
   let logs: string[];
   let managerCalls: number;
+  let managerSessionId: string;
   let seq: number;
   let clock: number;
   let getSessionImpl: (sessionID: string) => Promise<{ time?: { idle?: number; completed?: number }; parentID?: string }>;
@@ -34,6 +35,7 @@ describe('PodService', () => {
     broadcasts = [];
     logs = [];
     managerCalls = 0;
+    managerSessionId = 'ses_manager';
     seq = 0;
     clock = 0;
     getSessionImpl = async () => ({ time: { idle: 1 } });
@@ -45,7 +47,7 @@ describe('PodService', () => {
       broadcast: (event) => broadcasts.push(event as any),
       getManagerSession: async () => {
         managerCalls++;
-        return 'ses_manager';
+        return managerSessionId;
       },
       getSession: (sessionID) => getSessionImpl(sessionID),
       messages: (sessionID, limit) => messagesImpl(sessionID, limit),
@@ -70,8 +72,43 @@ describe('PodService', () => {
     expect(first.members.find((m) => m.role === 'lead')?.agentName).toBe('manager');
     expect(first.members.find((m) => m.role === 'builder')?.agentName).toBe('mafw-execute');
     expect(first.members.find((m) => m.role === 'reviewer')?.agentName).toBe('mafw-review');
-    expect(managerCalls).toBe(1);
-    expect(store.listSessions(first.pod.id).filter((s) => s.node === 'coordination')).toHaveLength(1);
+    expect(managerCalls).toBe(2);
+    expect(store.listSessions(first.pod.id).filter((s) => s.node === 'coordination' && !s.endedAt)).toHaveLength(1);
+  });
+
+  test('ensure rebinds Lead when the Manager session rotates', async () => {
+    const first = await service.ensure(projectDir);
+    expect(store.getMemberBySession('ses_manager')?.role).toBe('lead');
+
+    managerSessionId = 'ses_manager_rotated';
+    await service.ensure(projectDir);
+
+    const active = store.listSessions(first.pod.id).filter((s) => s.node === 'coordination' && !s.endedAt);
+    expect(active.map((s) => s.sessionId)).toEqual(['ses_manager_rotated']);
+    expect(store.getMemberBySession('ses_manager')).toBeNull();
+    expect(store.getMemberBySession('ses_manager_rotated')?.role).toBe('lead');
+  });
+
+  test('ensure stays usable when Manager binding or memory init fails', async () => {
+    const failing = new PodService({
+      store,
+      now,
+      newId,
+      broadcast: () => {},
+      getManagerSession: async () => { throw new Error('manager unavailable'); },
+      getSession: (sessionID) => getSessionImpl(sessionID),
+      messages: (sessionID, limit) => messagesImpl(sessionID, limit),
+      memoryRoot,
+      listRegisteredProjectDirs: () => [projectDir],
+      ensureMemory: () => { throw new Error('read-only memory root'); },
+      log: (message) => logs.push(message),
+    });
+
+    const detail = await failing.ensure(projectDir);
+    expect(detail.members).toHaveLength(3);
+    expect(detail.sessions.filter((s) => s.node === 'coordination')).toHaveLength(0);
+    expect(logs.some((line) => line.includes('lead binding failed'))).toBe(true);
+    expect(logs.some((line) => line.includes('memory init failed'))).toBe(true);
   });
 
   test('bindSession resolves goal to pod/member and marks the member working', async () => {
@@ -148,6 +185,32 @@ describe('PodService', () => {
     expect(store.getSnapshot('ses_dead')).not.toBeNull();
     expect(logs.some((line) => line.includes('ses_dead'))).toBe(true);
     expect(store.listActiveSessions(detail.pod.id).some((s) => s.node === 'coordination')).toBe(true);
+  });
+
+  test('reconcile finalizes a deleted session when transcript fetch also fails', async () => {
+    const detail = await service.ensure(projectDir);
+    const builder = store.getMemberByRole(detail.pod.id, 'builder')!;
+    store.insertSession({
+      id: 'ps_dead',
+      podId: detail.pod.id,
+      memberId: builder.id,
+      goalId: 'g1',
+      node: 'execute',
+      sessionId: 'ses_dead',
+      status: 'active',
+      transcriptRef: null,
+      now: now(),
+    });
+    getSessionImpl = async () => { throw new Error('session gone'); };
+    messagesImpl = async () => { throw new Error('messages gone'); };
+
+    await expect(service.reconcile()).resolves.toBeUndefined();
+
+    const snapshot = store.getSnapshot('ses_dead');
+    expect(snapshot).not.toBeNull();
+    expect(JSON.parse(fs.readFileSync(snapshot!.path, 'utf-8')).unavailable).toBe(true);
+    expect(store.getSessionBySessionId('ses_dead')?.endedAt).toBeTruthy();
+    expect(store.getMemberByRole(detail.pod.id, 'builder')?.status).toBe('available');
   });
 
   test('rejects an unregistered project without creating a pod', async () => {

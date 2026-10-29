@@ -410,6 +410,7 @@ Pod UI 依赖以下现有缺口（不在本 spec 内实现，但必须一起排�
 
 - **角色权限**：Lead 不改代码；Builder 可编辑/执行；Reviewer 只读+测试；Curator（v1 Lead）只写 Pod 记忆。
 - **Pod API 硬校验**：所有 Pod mutation（task/message/memory/member）按 `session_id -> pod_member.role` 校验；非成员/跨项目 403。
+- **v1 本地 API 信任边界**：桌面用户操作可省略 `actorSessionID`；agent 工具必须携带，读接口在提供 actor 时校验 podId 且只有 Lead 获得 session 列表。本地 curl 绕过仍属已知边界，真正的认证/授权留 v2。
 - **执行层权限（v1 限制）**：`mafw-review` 现有 allowlist 允许 shell，v1 无法从工具层硬保证“Reviewer 只读”（shell 仍可能写文件）。Reviewer 的只读是**审计 + diff 检查 + 人工抽检**约束，不是 sandbox；真正硬隔离留 v2。
 - **人工门**：合并、删除、发布、改权限、跨项目访问必须人工批准；agent 不能自批。
 - **Reviewer 独立**：Reviewer 不能由 Builder 代替；Reviewer 的 FAIL 不能被 Builder 覆盖；Lead 只能升级给人。

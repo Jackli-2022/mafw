@@ -366,7 +366,7 @@ export class PodStore {
     const row = this.db.prepare(`
       SELECT m.* FROM pod_members m
       JOIN pod_member_sessions s ON s.member_id = m.id
-      WHERE s.session_id = ?
+      WHERE s.session_id = ? AND s.ended_at IS NULL
       ORDER BY s.created_at DESC
       LIMIT 1
     `).get(sessionId) as any;
@@ -461,6 +461,13 @@ export class PodStore {
       ? this.db.prepare('SELECT * FROM pod_tasks WHERE pod_id = ? AND goal_id = ? ORDER BY created_at ASC').all(podId, goalId)
       : this.db.prepare('SELECT * FROM pod_tasks WHERE pod_id = ? ORDER BY created_at ASC').all(podId);
     return (rows as any[]).map(taskFromRow);
+  }
+
+  deleteProjectedTasks(podId: string, goalId: string): number {
+    const result = this.db.prepare(
+      "DELETE FROM pod_tasks WHERE pod_id = ? AND goal_id = ? AND source_key LIKE 'wave:%'",
+    ).run(podId, goalId);
+    return result.changes;
   }
 
   updateTask(

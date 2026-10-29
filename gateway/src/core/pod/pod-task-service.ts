@@ -145,12 +145,26 @@ export class PodTaskService {
     return this.list(podId, goalId).filter((task) => task.status === 'reopened');
   }
 
+  startExecution(podId: string, goalId: string): PodTaskRow[] {
+    const tasks = this.deps.store.listTasks(podId, goalId)
+      .filter((task) => task.status === 'pending' || task.status === 'reopened');
+    for (const task of tasks) {
+      this.deps.store.updateTask(task.id, { status: 'in_progress' }, this.deps.now());
+    }
+    if (tasks.length > 0) this.deps.notify(podId);
+    return this.list(podId, goalId);
+  }
+
+  clearProjected(podId: string, goalId: string): void {
+    const removed = this.deps.store.deleteProjectedTasks(podId, goalId);
+    if (removed > 0) this.deps.notify(podId);
+  }
+
   reconcileArchive(podId: string, goalId: string, ok: boolean): void {
-    if (ok) return;
     const open = new Set<PodTaskStatus>(['pending', 'in_progress', 'blocked', 'review', 'reopened']);
     const tasks = this.deps.store.listTasks(podId, goalId).filter((task) => open.has(task.status));
     for (const task of tasks) {
-      this.deps.store.updateTask(task.id, { status: 'failed' }, this.deps.now());
+      this.deps.store.updateTask(task.id, { status: ok ? 'done' : 'failed' }, this.deps.now());
     }
     if (tasks.length > 0) this.deps.notify(podId);
   }

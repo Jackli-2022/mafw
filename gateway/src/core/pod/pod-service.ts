@@ -60,18 +60,18 @@ export class PodService {
     });
     this.ensureMembers(pod.id);
 
-    const lead = this.deps.store.getMemberByRole(pod.id, 'lead');
-    const hasLeadSession = lead
-      ? this.deps.store.listSessions(pod.id).some(
-        (session) => session.memberId === lead.id && session.node === 'coordination' && !session.endedAt,
-      )
-      : false;
-    if (!hasLeadSession) {
+    try {
       const managerSession = await this.deps.getManagerSession(resolved);
       await this.bindLead(pod.id, managerSession);
+    } catch (err: any) {
+      this.deps.log?.(`[Pod] lead binding failed for ${pod.id} (non-fatal): ${err?.message ?? err}`);
     }
 
-    this.deps.ensureMemory?.(pod.id, pod.name);
+    try {
+      this.deps.ensureMemory?.(pod.id, pod.name);
+    } catch (err: any) {
+      this.deps.log?.(`[Pod] memory init failed for ${pod.id} (non-fatal): ${err?.message ?? err}`);
+    }
     return this.get(pod.id)!;
   }
 
@@ -104,10 +104,13 @@ export class PodService {
     if (!pod) throw new PodError(404, `pod not found: ${podId}`);
     const lead = this.deps.store.getMemberByRole(podId, 'lead');
     if (!lead) throw new PodError(404, `pod lead not found: ${podId}`);
-    const existing = this.deps.store.listSessions(podId).find(
-      (session) => session.memberId === lead.id && session.sessionId === managerSessionId && !session.endedAt,
+    const coordination = this.deps.store.listSessions(podId).filter(
+      (session) => session.memberId === lead.id && session.node === 'coordination' && !session.endedAt,
     );
-    if (existing) return;
+    if (coordination.some((session) => session.sessionId === managerSessionId)) return;
+    for (const session of coordination) {
+      this.deps.store.endSession(session.sessionId, this.deps.now());
+    }
 
     this.deps.store.insertSession({
       id: this.deps.newId(),
@@ -125,6 +128,7 @@ export class PodService {
       status: 'available',
       now: this.deps.now(),
     });
+    this.emit(podId, 'member');
   }
 
   bindSession(goalId: string, node: 'plan' | 'execute' | 'review', sessionId: string): PodSessionRow | null {
@@ -183,18 +187,53 @@ export class PodService {
     return transcriptPath;
   }
 
+  finalizeMissingSession(sessionId: string): string | null {
+    const session = this.deps.store.getSessionBySessionId(sessionId);
+    if (!session) return null;
+    if (session.endedAt) return session.transcriptRef;
+    const safeSessionId = sessionId.replace(/[^A-Za-z0-9._-]/g, '_');
+    const transcriptPath = path.join(this.deps.memoryRoot, session.podId, 'sessions', `${safeSessionId}.json`);
+    fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
+    fs.writeFileSync(
+      transcriptPath,
+      JSON.stringify({ sessionID: sessionId, messages: [], unavailable: true }, null, 2),
+      'utf-8',
+    );
+    this.deps.store.insertSnapshot({
+      id: this.deps.newId(),
+      podId: session.podId,
+      memberId: session.memberId,
+      goalId: session.goalId,
+      node: session.node,
+      sessionId,
+      path: transcriptPath,
+      now: this.deps.now(),
+    });
+    this.deps.store.setSessionTranscriptRef(sessionId, transcriptPath, this.deps.now());
+    this.deps.store.endSession(sessionId, this.deps.now());
+    const member = this.deps.store.getMemberByRole(session.podId, this.roleOfMember(session.memberId));
+    if (member) this.deps.store.upsertMember({ ...member, status: 'available', now: this.deps.now() });
+    this.emit(session.podId, 'member');
+    return transcriptPath;
+  }
+
   async reconcile(): Promise<void> {
     for (const pod of this.deps.store.listPods()) {
       for (const session of this.deps.store.listActiveSessions(pod.id)) {
         if (session.node === 'coordination') continue;
         try {
           const info = await this.deps.getSession(session.sessionId);
-          if (info?.time?.idle || info?.time?.completed) {
+          if (!info || info.time?.idle || info.time?.completed) {
             await this.snapshotSession(session.sessionId);
           }
         } catch (err: any) {
           this.deps.log?.(`[Pod] reconcile session ${session.sessionId}: ${err?.message ?? err}`);
-          await this.snapshotSession(session.sessionId).catch(() => {});
+          try {
+            await this.snapshotSession(session.sessionId);
+          } catch (snapshotErr: any) {
+            this.deps.log?.(`[Pod] finalize missing session ${session.sessionId}: ${snapshotErr?.message ?? snapshotErr}`);
+            this.finalizeMissingSession(session.sessionId);
+          }
         }
       }
     }

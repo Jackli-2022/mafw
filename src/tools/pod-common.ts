@@ -35,7 +35,8 @@ export async function resolvePodId(ctx: PodToolCtx, explicit?: string): Promise<
   const session = await podRequest(`/api/sessions/${encodeURIComponent(ctx.sessionID)}`, { method: 'GET' }, ctx);
   const directory = session?.directory ?? session?.info?.directory;
   if (!directory) throw new Error('session directory unavailable');
-  const detail = await podRequest(`/api/projects/${encodeURIComponent(directory)}/pod`, { method: 'GET' }, ctx);
+  const actor = encodeURIComponent(ctx.sessionID);
+  const detail = await podRequest(`/api/projects/${encodeURIComponent(directory)}/pod?actorSessionID=${actor}`, { method: 'GET' }, ctx);
   const podId = detail?.pod?.id;
   if (!podId) throw new Error('pod id unavailable');
   return podId;

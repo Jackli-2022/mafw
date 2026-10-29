@@ -132,4 +132,15 @@ describe('pod routes', () => {
     const result = await call('GET', '/api/unknown', deps);
     expect(result.handled).toBe(false);
   });
+
+  it('scopes read routes when an actor session is supplied', async () => {
+    const deps = makeDeps({
+      access: {
+        requireMember: jest.fn(() => { throw new PodError(403, 'foreign pod'); }),
+      },
+    });
+
+    expect((await call('GET', '/api/pods/pod_1?actorSessionID=ses_x', deps)).res.status).toBe(403);
+    expect((await call('GET', '/api/pods/pod_1/memory?actorSessionID=ses_x', deps)).res.status).toBe(403);
+  });
 });

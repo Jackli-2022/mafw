@@ -18,6 +18,7 @@ export interface PodRouteDeps {
 }
 
 const POD_STATUSES = new Set(['active', 'idle', 'paused', 'archived']);
+const MESSAGE_KINDS = new Set(['note', 'request', 'review', 'decision', 'escalation']);
 const MEMORY_FILES = new Set(['POD', 'MEMORY', 'GLOSSARY']);
 
 export async function handlePods(
@@ -34,7 +35,8 @@ export async function handlePods(
     if (projectPod) {
       if (method === 'GET' || method === 'POST') {
         const detail = await deps.pods.ensure(decode(projectPod[1]));
-        sendJson(res, 200, detail);
+        const member = readMember(deps, url, detail.pod.id);
+        sendJson(res, 200, member && member.role !== 'lead' ? { ...detail, sessions: [] } : detail);
         return true;
       }
       return false;
@@ -60,6 +62,7 @@ export async function handlePods(
       const podId = decode(tasks[1]);
       requirePod(deps, podId);
       if (method === 'GET') {
+        readMember(deps, url, podId);
         sendJson(res, 200, { items: deps.tasks.list(podId) });
         return true;
       }
@@ -83,6 +86,7 @@ export async function handlePods(
       const podId = decode(messages[1]);
       requirePod(deps, podId);
       if (method === 'GET') {
+        readMember(deps, url, podId);
         sendJson(res, 200, { items: deps.messages.list(podId) });
         return true;
       }
@@ -95,6 +99,7 @@ export async function handlePods(
         const fromMemberId = member?.id
           ?? (typeof body.fromMemberId === 'string' ? body.fromMemberId : undefined);
         if (!fromMemberId) throw new PodError(400, 'fromMemberId or actorSessionID required');
+        if (!MESSAGE_KINDS.has(String(body.kind))) throw new PodError(400, 'invalid message kind');
         const message = deps.messages.send({
           podId,
           fromMemberId,
@@ -124,6 +129,7 @@ export async function handlePods(
       if (method !== 'GET') return false;
       const podId = decode(cost[1]);
       requirePod(deps, podId);
+      readMember(deps, url, podId);
       sendJson(res, 200, await deps.cost(podId));
       return true;
     }
@@ -133,6 +139,7 @@ export async function handlePods(
       if (method !== 'GET') return false;
       const podId = decode(goals[1]);
       requirePod(deps, podId);
+      readMember(deps, url, podId);
       sendJson(res, 200, { items: deps.goals.list(podId) });
       return true;
     }
@@ -142,6 +149,7 @@ export async function handlePods(
       if (method !== 'GET') return false;
       const podId = decode(transcript[1]);
       requirePod(deps, podId);
+      readMember(deps, url, podId);
       sendJson(res, 200, { transcript: await deps.transcript(podId, decode(transcript[2])) });
       return true;
     }
@@ -151,6 +159,7 @@ export async function handlePods(
       const podId = decode(memory[1]);
       requirePod(deps, podId);
       if (method === 'GET') {
+        readMember(deps, url, podId);
         const params = new URL(url, 'http://localhost').searchParams;
         const file = params.get('file');
         if (file) {
@@ -181,7 +190,9 @@ export async function handlePods(
       const podId = decode(pod[1]);
       if (method === 'GET') {
         requirePod(deps, podId);
-        sendJson(res, 200, deps.pods.get(podId));
+        const detail = deps.pods.get(podId)!;
+        const member = readMember(deps, url, podId);
+        sendJson(res, 200, member && member.role !== 'lead' ? { ...detail, sessions: [] } : detail);
         return true;
       }
       if (method === 'PATCH') {
@@ -219,6 +230,13 @@ function assertAccess(
   if (!body || typeof body.actorSessionID !== 'string' || !body.actorSessionID) return null;
   if (!deps.access) throw new PodError(503, 'pod access checks unavailable');
   return deps.access.requireMember(body.actorSessionID, allowed, podId);
+}
+
+function readMember(deps: PodRouteDeps, url: string, podId: string): PodMemberRow | null {
+  const actor = new URL(url, 'http://localhost').searchParams.get('actorSessionID');
+  if (!actor) return null;
+  if (!deps.access) throw new PodError(503, 'pod access checks unavailable');
+  return deps.access.requireMember(actor, ['lead', 'builder', 'reviewer'], podId);
 }
 
 function readJson(req: http.IncomingMessage): Promise<any> {

@@ -1111,7 +1111,7 @@ export interface PodNamespace {
   createTask(podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }>
   updateTask(podID: string, taskID: string, body: { status?: PodTaskStatus; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }>
   listMessages(podID: string): Promise<{ items: PodMessage[] }>
-  sendMessage(podID: string, body: { fromMemberId: string; toMemberId?: string; kind: 'note'|'request'|'review'|'decision'|'escalation'; body: string; actorSessionID?: string }): Promise<{ message: PodMessage }>
+  sendMessage(podID: string, body: { fromMemberId?: string; toMemberId?: string; kind: 'note'|'request'|'review'|'decision'|'escalation'; body: string; actorSessionID?: string }): Promise<{ message: PodMessage }>
   wake(podID: string): Promise<PodDetail>
   sleep(podID: string): Promise<PodDetail>
   cost(podID: string): Promise<{ spentUsd: number; limitUsd: number }>

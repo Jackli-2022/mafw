@@ -27,6 +27,7 @@ describe('Pod gateway wiring', () => {
     expect(source).toContain('podService?.bindSession(');
     expect(source).toMatch(/snapshotSession\(sessionID\)[\s\S]{0,200}sdkSession\.delete\(sessionID\)/);
     expect(source).toContain('podService?.reconcile()');
+    expect(source).toContain('podGoalService?.reconcile()');
   });
 
   test('archives pod goal and captures memory', () => {
@@ -44,5 +45,7 @@ describe('Pod gateway wiring', () => {
     expect(source).toContain('podTaskService.projectWaves(');
     expect(source).toContain('podTaskService.applyReceipt(');
     expect(source).toContain('podTaskService.reopenForReview(');
+    expect(source).toContain('podTaskService.startExecution(');
+    expect(source).toContain('podTaskService.clearProjected(');
   });
 });

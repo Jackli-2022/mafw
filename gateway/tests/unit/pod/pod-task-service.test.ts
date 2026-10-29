@@ -133,6 +133,35 @@ describe('PodTaskService', () => {
     expect(second[0].id).not.toBe(first[0].id);
   });
 
+  test('startExecution marks pending and reopened tasks in progress', () => {
+    const tasks = service.projectWaves('pod_1', 'g1', plan);
+    service.updateTask('pod_1', tasks[0].id, { status: 'in_progress' });
+    service.updateTask('pod_1', tasks[0].id, { status: 'done' });
+
+    const started = service.startExecution('pod_1', 'g1');
+
+    expect(started.map((t) => t.status)).toEqual(['done', 'in_progress', 'in_progress']);
+    expect(notifications).toContain('pod_1');
+  });
+
+  test('clearProjected removes wave tasks but preserves manual tasks', () => {
+    service.projectWaves('pod_1', 'g1', plan);
+    const manual = service.createManual('pod_1', 'g1', 'investigate');
+
+    service.clearProjected('pod_1', 'g1');
+
+    expect(service.list('pod_1', 'g1').map((t) => t.id)).toEqual([manual.id]);
+  });
+
+  test('reconcileArchive closes open tasks on success', () => {
+    const tasks = service.projectWaves('pod_1', 'g1', plan);
+    service.startExecution('pod_1', 'g1');
+
+    service.reconcileArchive('pod_1', 'g1', true);
+
+    expect(service.list('pod_1', 'g1').map((t) => t.status)).toEqual(['done', 'done', 'done']);
+  });
+
   test('reconcileArchive fails open tasks on failure and leaves success alone', () => {
     const tasks = service.projectWaves('pod_1', 'g1', plan);
     service.updateTask('pod_1', tasks[0].id, { status: 'in_progress' });

@@ -9,7 +9,8 @@ export const podStatusTool: PodTool = {
   async execute(args, ctx) {
     try {
       const podId = await resolvePodId(ctx, args.podId);
-      const body = await podRequest(`/api/pods/${encodeURIComponent(podId)}`, { method: 'GET' }, ctx);
+      const actor = encodeURIComponent(ctx.sessionID);
+      const body = await podRequest(`/api/pods/${encodeURIComponent(podId)}?actorSessionID=${actor}`, { method: 'GET' }, ctx);
       return {
         title: `鲸群状态 · ${body?.pod?.name ?? podId}`,
         output: JSON.stringify(body),

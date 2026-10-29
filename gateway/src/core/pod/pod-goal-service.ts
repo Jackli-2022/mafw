@@ -10,6 +10,8 @@ export interface PodGoalServiceDeps {
   newId(): string;
   notify(podId: string): void;
   budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } };
+  goalState?(goalId: string): { terminal: boolean } | null;
+  listInFlightGoals?(projectDir: string): string[];
 }
 
 export class PodGoalService {
@@ -43,8 +45,15 @@ export class PodGoalService {
       now: this.deps.now(),
     });
     const active = this.deps.store.getActiveGoal(pod.id);
+    const olderQueued = this.deps.store.listGoals(pod.id)
+      .some((candidate) => candidate.id !== row.id && candidate.status === 'queued');
     const budget = this.deps.budget?.canStart(pod.id);
     if (pod.status === 'paused' || pod.status === 'archived' || !!active || (budget && !budget.ok)) {
+      this.deps.notify(pod.id);
+      return { status: 'queued', podId: pod.id };
+    }
+    if (olderQueued) {
+      await this.promote(pod.id);
       this.deps.notify(pod.id);
       return { status: 'queued', podId: pod.id };
     }
@@ -74,7 +83,7 @@ export class PodGoalService {
 
     this.deps.store.updatePod(pod.id, {
       activeGoalId: null,
-      status: pod.status === 'paused' ? 'paused' : 'idle',
+      status: pod.status === 'paused' || pod.status === 'archived' ? pod.status : 'idle',
     }, this.deps.now());
     if (pod.status === 'paused' || pod.status === 'archived') {
       this.deps.notify(pod.id);
@@ -118,6 +127,65 @@ export class PodGoalService {
         activeGoalId: null,
       }, this.deps.now());
       throw err;
+    }
+  }
+
+  async reconcile(): Promise<void> {
+    for (const pod of this.deps.store.listPods()) {
+      const active = this.deps.store.getActiveGoal(pod.id);
+      if (active) {
+        if (pod.activeGoalId !== active.goalId) {
+          this.deps.store.updatePod(pod.id, { activeGoalId: active.goalId }, this.deps.now());
+        }
+        const state = this.deps.goalState?.(active.goalId);
+        if (this.deps.goalState && (!state || state.terminal)) {
+          await this.onGoalArchived(active.goalId, state ? undefined : { verdict: 'CANCELLED' });
+          continue;
+        }
+        continue;
+      }
+
+      if (pod.activeGoalId) {
+        const state = this.deps.goalState?.(pod.activeGoalId);
+        if (this.deps.goalState && (!state || state.terminal)) {
+          this.deps.store.updatePod(pod.id, {
+            activeGoalId: null,
+            status: pod.status === 'paused' ? 'paused' : 'idle',
+          }, this.deps.now());
+        } else {
+          const row = this.deps.store.getGoalByGoalId(pod.activeGoalId)
+            ?? this.deps.store.enqueueGoal({
+              id: this.deps.newId(),
+              podId: pod.id,
+              goalId: pod.activeGoalId,
+              now: this.deps.now(),
+            });
+          this.deps.store.setGoalStatus(row.id, 'active', { startedAt: this.deps.now() });
+          continue;
+        }
+      }
+
+      const inFlight = this.deps.listInFlightGoals?.(pod.projectDir) ?? [];
+      const next = inFlight.find((goalId) => {
+        if (this.deps.store.getGoalByGoalId(goalId)) return false;
+        const state = this.deps.goalState?.(goalId);
+        return !state || !state.terminal;
+      });
+      if (next) {
+        const row = this.deps.store.enqueueGoal({
+          id: this.deps.newId(),
+          podId: pod.id,
+          goalId: next,
+          now: this.deps.now(),
+        });
+        this.deps.store.setGoalStatus(row.id, 'active', { startedAt: this.deps.now() });
+        this.deps.store.updatePod(pod.id, { activeGoalId: next, status: 'active' }, this.deps.now());
+        continue;
+      }
+
+      if (pod.status !== 'paused' && pod.status !== 'archived') {
+        await this.promote(pod.id);
+      }
     }
   }
 

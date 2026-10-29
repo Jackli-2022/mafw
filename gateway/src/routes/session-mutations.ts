@@ -14,7 +14,8 @@ export interface SessionMutationDeps {
   getClient: () => SessionClientLike | null;
   /** 切片 4：session 删除成功后的 worktree 联动清理（fail-open；缺省跳过）。 */
   cleanupWorktree?: (sessionID: string) => Promise<void>;
-  /** T2-1：session 删除后清理检查点（fail-open；缺省跳过）。 */
+  /** Pod Lite：删除前抓取 transcript（fail-open；缺省跳过）。 */
+  beforeDelete?: (sessionID: string) => Promise<void>;
   deleteCheckpoints?: (sessionID: string) => void;
   /** T2-2：session 删除后清理 run 状态（fail-open；缺省跳过）。 */
   deleteRuns?: (sessionID: string) => void;
@@ -56,6 +57,7 @@ export async function handleSessionMutations(
   }
   try {
     if (deleteMatch) {
+      if (deps.beforeDelete) await deps.beforeDelete(sessionID);
       await client.session.delete({ sessionID });
       // 切片 4：worktree 会话删除联动（fail-open，不阻塞删除响应）
       if (deps.cleanupWorktree) {

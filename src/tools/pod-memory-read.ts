@@ -13,6 +13,7 @@ export const podMemoryReadTool: PodTool = {
       const params = new URLSearchParams();
       if (args.node) params.set('node', args.node);
       if (args.file) params.set('file', args.file);
+      params.set('actorSessionID', ctx.sessionID);
       const query = params.toString() ? `?${params}` : '';
       const body = await podRequest(`/api/pods/${encodeURIComponent(args.podId)}/memory${query}`, { method: 'GET' }, ctx);
       return {
