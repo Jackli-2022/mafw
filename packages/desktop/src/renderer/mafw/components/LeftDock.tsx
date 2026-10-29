@@ -365,7 +365,7 @@ export function LeftDock(props: Props) {
       <div class="mafw-left-dock-head">
         {projectSwitcher()}
         <TooltipV2 value="关闭左栏" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" icon="x" aria-label="关闭左栏" onClick={props.onClose} />
+          <ButtonV2 variant="ghost" size="small" icon="layout-left-full" aria-label="关闭左栏" onClick={props.onClose} />
         </TooltipV2>
       </div>
 
