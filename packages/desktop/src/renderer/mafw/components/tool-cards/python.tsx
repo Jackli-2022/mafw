@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js"
 import { BasicTool } from "@mafw/session-ui/basic-tool"
 import type { ToolProps } from "@mafw/session-ui/message-part"
+import { openImageLightbox } from "../../image-lightbox"
 
 interface PythonCardData {
   status?: string
@@ -36,17 +37,24 @@ function PythonImageGrid(props: { images?: Array<{ mimeType?: string; data?: str
     <Show when={images().length > 0}>
       <div class="mafw-python-images">
         <For each={images()}>
-          {(img) => (
-            <a
-              class="mafw-python-image"
-              href={`data:${img.mimeType || "image/png"};base64,${img.data}`}
-              target="_blank"
-              rel="noreferrer"
-              title="点击查看大图"
-            >
-              <img src={`data:${img.mimeType || "image/png"};base64,${img.data}`} alt="matplotlib figure" />
-            </a>
-          )}
+          {(img) => {
+            const src = () => `data:${img.mimeType || "image/png"};base64,${img.data}`
+            return (
+              <a
+                class="mafw-python-image"
+                href={src()}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="查看大图"
+                onClick={(event) => {
+                  event.preventDefault()
+                  openImageLightbox(src())
+                }}
+              >
+                <img src={src()} alt="matplotlib figure" />
+              </a>
+            )
+          }}
         </For>
       </div>
     </Show>

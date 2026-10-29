@@ -44,6 +44,7 @@ import { reconcileSubagentsOnce } from "./subagent-reconcile"
 import { buildTerminalNotice, createNotifyGate, shouldNotifyIdle } from "./subagent-notify"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
 import { EventInspector } from "./components/EventInspector"
+import { ImageLightbox } from "./components/ImageLightbox"
 import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
@@ -2388,6 +2389,7 @@ export function MafwShell() {
       <Show when={showInspector()}>
         <EventInspector onClose={() => setShowInspector(false)} />
       </Show>
+      <ImageLightbox />
     </div>
             </DataProvider>
           </FileComponentProvider>

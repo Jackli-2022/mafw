@@ -8,6 +8,7 @@ import { marked } from "marked"
 import { ToolRegistry, type ToolProps, type ToolComponent } from "@mafw/session-ui/message-part"
 import { BasicTool, GenericTool } from "@mafw/session-ui/basic-tool"
 import type { Widget } from "../../../shared/ui-plugins"
+import { openImageLightbox } from "../image-lightbox"
 
 // original = undefined 表示该工具本来没有注册卡（默认链是 GenericTool）
 const proxied = new Map<string, ToolComponent | undefined>()
@@ -97,12 +98,37 @@ function WidgetNode(props: { widget: Widget }): JSX.Element {
       )
     case "image":
       return (
-        <a class="mafw-python-image" href={w.dataUrl} target="_blank" rel="noreferrer" title="点击查看大图">
+        <a
+          class="mafw-python-image"
+          href={w.dataUrl}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="查看大图"
+          onClick={(event) => {
+            if (!w.dataUrl.startsWith("data:image/")) return
+            event.preventDefault()
+            openImageLightbox(w.dataUrl)
+          }}
+        >
           <img src={w.dataUrl} alt="plugin image" />
         </a>
       )
     case "link":
-      return <a class="mafw-tool-link" href={w.href} target="_blank" rel="noreferrer">{w.text}</a>
+      return (
+        <a
+          class="mafw-tool-link"
+          href={w.href}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => {
+            if (!w.href.startsWith("data:image/")) return
+            event.preventDefault()
+            openImageLightbox(w.href)
+          }}
+        >
+          {w.text}
+        </a>
+      )
     case "markdown": {
       // Escape raw HTML first (validateWidget guarantees a string), then let
       // marked apply md syntax — no injection surface from plugin output.
