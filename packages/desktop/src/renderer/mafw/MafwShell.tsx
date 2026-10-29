@@ -90,7 +90,7 @@ import { ConfirmOverlay } from "./components/ConfirmOverlay"
 import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
 import { nextMode as nextPermissionMode } from "./components/permission-card-mapping"
 import { findPendingToolPart } from "./components/flow-card-placement"
-import { saveLayout, loadLayout, pruneMissing } from "./layout-persist"
+import { saveProjectLayout, loadProjectLayout, migrateLegacyLayout, pruneMissing } from "./layout-persist"
 import { buildSessionMarkdown, extractExportTurns } from "./export-markdown"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
@@ -216,6 +216,10 @@ export function MafwShell() {
   // Registered projects + current selection (welcome pane project switcher).
   const [projects, setProjects] = createSignal<{ id: string; worktree: string }[]>([])
   const [currentProject, setCurrentProject] = createSignal<string | null>(null)
+  // Tabs are project-scoped: layoutProject is the project whose tab strip is
+  // currently loaded/safe to persist; null while switching/restoring.
+  const [layoutProject, setLayoutProject] = createSignal<string | null>(null)
+  let switchingProject = false
   // Bumped by gateway project_registered broadcasts so once-only project
   // fetches (here + Rail) refetch when a new project registers.
   const [projectsRev, setProjectsRev] = createSignal(0)
@@ -260,14 +264,36 @@ export function MafwShell() {
     onCleanup(() => { cancelled = true })
   })
 
-  // Switch the current project: gateway register + refresh sessions for it.
+  // Switch the current project: save the outgoing tab strip, restore the
+  // target project's own tabs (the strip follows the selected project).
   const handleSelectProject = async (worktree: string) => {
+    if (worktree === currentProject()) {
+      const list = await window.api.mafw.sessions.list(worktree).catch(() => [])
+      setHistorySessions(Array.isArray(list) ? list : [])
+      return
+    }
+    const prev = currentProject()
+    if (prev && layoutProject() === prev) {
+      saveProjectLayout(layoutIO, prev, {
+        tabs: sessions().map(s => ({ id: s.id, title: s.title })),
+        activeViewId: activeViewId(),
+      })
+    }
+    switchingProject = true
+    setLayoutProject(null)
     setCurrentProject(worktree)
     try {
-      await window.api.mafw.projects.setCurrent(worktree)
-    } catch (e) { console.warn("[mafw] setCurrent failed:", e) }
-    const list = await window.api.mafw.sessions.list(worktree).catch(() => [])
-    setHistorySessions(Array.isArray(list) ? list : [])
+      try {
+        await window.api.mafw.projects.setCurrent(worktree)
+      } catch (e) { console.warn("[mafw] setCurrent failed:", e) }
+      const list = await window.api.mafw.sessions.list(worktree).catch(() => [])
+      const history = Array.isArray(list) ? list : []
+      setHistorySessions(history)
+      applyProjectLayout(worktree, history)
+      setLayoutProject(worktree)
+    } finally {
+      switchingProject = false
+    }
   }
 
   // Open a session as a tab (single pane; v6 removed the split-view model).
@@ -557,41 +583,63 @@ export function MafwShell() {
   const [activeViewId, setActiveViewId] = createSignal<string | null>(null)
 
 
-  // ── Layout persistence: session tabs + active view survive restarts ──
+  // ── Layout persistence: per-project session tabs + active view ──────────
+  // Switching projects swaps the tab strip: outgoing tabs are saved under the
+  // old project, incoming tabs restored from the target project's snapshot.
   const layoutIO = { getItem: (k: string) => localStorage.getItem(k), setItem: (k: string, v: string) => localStorage.setItem(k, v), removeItem: (k: string) => localStorage.removeItem(k) }
   let layoutSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+  type LayoutHistorySession = { id: string; title?: string; metadata?: { mafw?: { role?: string } } }
+
+  const applyProjectLayout = (project: string, history: LayoutHistorySession[]) => {
+    const snap = loadProjectLayout(layoutIO, project) ?? migrateLegacyLayout(layoutIO, project)
+    setSessions([])
+    const existing = new Set(history.map(s => s.id))
+    const pruned = snap ? pruneMissing(snap, existing) : null
+    if (!pruned) {
+      setActiveSessionId(null)
+      setActiveViewId(null)
+      setShowWelcome(true)
+      return
+    }
+    const byId = new Map(history.map(s => [s.id, s]))
+    for (const t of pruned.tabs) {
+      const info = byId.get(t.id)
+      openSessionTab(t.id, t.title || info?.title, info?.metadata?.mafw?.role === "manager")
+    }
+    const active = pruned.activeViewId && pruned.tabs.some(t => t.id === pruned.activeViewId)
+      ? pruned.activeViewId
+      : pruned.tabs[0]?.id ?? null
+    if (active) {
+      setActiveSessionId(active)
+      setActiveViewId(active)
+      setShowWelcome(false)
+    }
+    console.log("[mafw] layout restored:", project, pruned.tabs.length, "tabs")
+  }
+
   createEffect(() => {
-    sessions()
-    activeViewId()
+    const project = layoutProject()
+    if (!project || project !== currentProject()) return
+    const tabs = sessions().map(s => ({ id: s.id, title: s.title }))
+    const active = activeViewId()
     if (layoutSaveTimer) clearTimeout(layoutSaveTimer)
     layoutSaveTimer = setTimeout(() => {
-      saveLayout(layoutIO, {
-        tabs: sessions().map(s => ({ id: s.id, title: s.title })),
-        activeViewId: activeViewId(),
-      })
+      saveProjectLayout(layoutIO, project, { tabs, activeViewId: active })
     }, 500)
   })
+  onCleanup(() => { if (layoutSaveTimer) clearTimeout(layoutSaveTimer) })
 
-  // Restore once the history list is loaded (prune tabs whose sessions died).
-  const [layoutRestored, setLayoutRestored] = createSignal(false)
+  // Initial restore: wait until the project's session list has actually loaded
+  // (an empty list is also a valid loaded state).
   createEffect(() => {
-    if (layoutRestored()) return
     if (gwStatus()?.state !== "ready") return
-    const hist = historySessions()
-    if (!hist || hist.length === 0) return
-    setLayoutRestored(true)
-    const snap = loadLayout(layoutIO)
-    if (!snap) return
-    const existing = new Set(hist.map(s => s.id))
-    const pruned = pruneMissing(snap, existing)
-    if (!pruned) return
-    for (const t of pruned.tabs) openSessionTab(t.id, t.title)
-    if (pruned.activeViewId) {
-      setShowWelcome(false)
-      setActiveSessionId(pruned.activeViewId)
-      setActiveViewId(pruned.activeViewId)
-    }
-    console.log("[mafw] layout restored:", pruned.tabs.length, "tabs")
+    const pd = currentProject()
+    if (!pd || layoutProject() === pd || switchingProject) return
+    if (!sessionStore.isLoaded(pd)) return
+    const history = sessionStore.sessionsFor(pd) as unknown as LayoutHistorySession[]
+    applyProjectLayout(pd, history)
+    setLayoutProject(pd)
   })
 
 

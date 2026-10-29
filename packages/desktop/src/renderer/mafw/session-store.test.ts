@@ -31,6 +31,15 @@ const seed = async (projectID: string, list: SessionInfo[]) => {
 
 beforeAll(() => stubList([]))
 
+describe("sessionStore.isLoaded", () => {
+  test("distinguishes fetched (including empty) from never-fetched", async () => {
+    const pid = "p-loaded-empty"
+    expect(sessionStore.isLoaded(pid)).toBe(false)
+    await seed(pid, [])
+    expect(sessionStore.isLoaded(pid)).toBe(true)
+  })
+})
+
 describe("sessionStore.patch", () => {
   test("updates title of a cached session", async () => {
     const pid = "p-patch-title"

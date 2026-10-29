@@ -277,6 +277,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 
 - **缓存命中口径统一 + 历史 NULL model 回填（2026-10-29）**：按模型卡的「缓存命中」与项目/会话详情不是同一指标——前者 `cache.read/(input+cache.read)`，后者是「缓存读取占总 token 比例」（分母含 output/reasoning），所以会出现模型卡 40% vs 会话明细 90%+ 的观感落差。统一为 `token-metrics.ts: cacheHitRate = read/(input+read+write)` （加 4 个单测），TokenGrid 新增「缓存命中率（prompt 侧）」行，模型 KPI 改名「缓存命中率」。另：按模型只统计 model 非空的回合，历史 NULL 行（collector v1 形状 bug）被排除 → 新增 `gateway/scripts/backfill-trajectory-models.ts`（dry-run 默认 / `--apply`；来源 `session_message` v2 + `session_v2.model` + legacy `message`），已回填 12 行；剩余 53 行属于已删除会话、无源可补。回填后 7d 出现 `volcengine/deepseek-v4.1-flash`（8.1M tokens / 92%），模型 KPI 91%，与当前项目 84% / 会话 93% 同口径。desktop **1909/1909（+4）**、gateway **3036/3036**、tsgo/build rc=0。
 
+- **SessionStrip 按项目切换（2026-10-29）**：打开 tab 改为**项目作用域**——`MafwShell` 用 `layoutProject` 标记当前已加载的 tab 集，切项目时保存旧项目、恢复目标项目自己的 tab/activeView；`layout-persist` 新增 v2 项目映射（`mafw.layout.v2`，v1 全局布局首次打开时迁移一次）；`sessionStore.isLoaded()` 区分「空列表已加载」与「还没拉」。切回项目恢复 tab，跨重启也恢复。desktop **1998/1998（本批 +5：layout-persist 4 + session-store 1）**、tsgo/electron-vite build rc=0；真机冒烟：A 开 2 tabs → 切 B 空 → 切回 A 两 tab 原样恢复；reload 后仍恢复，最后还原到 look 项目。
+
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类�?API 获取数据�?
 ```

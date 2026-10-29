@@ -74,6 +74,12 @@ export const sessionStore = {
 
   isLoading: loading,
 
+  /** True once a fetch for this project has completed (even if it was empty). */
+  isLoaded(projectID: string | null): boolean {
+    version()
+    return cache.has(keyOf(projectID))
+  },
+
   /** Reactive: last fetch for this project failed (gateway unreachable). */
   isOffline(projectID: string | null): boolean {
     version()
