@@ -68,6 +68,8 @@ test("all context menus are self-drawn", () => {
   const main = read("../../../main/index.ts")
   expect(main).not.toContain('from "electron-context-menu"')
   expect(main).not.toContain("contextMenu(")
+  expect(main).toContain('contents.on("context-menu"')
+  expect(main).toContain("event.preventDefault()")
   const bridge = read("../context-menu/TextMenuBridge.tsx")
   expect(bridge).toContain("buildTextMenu")
   expect(bridge).toContain('document.addEventListener("contextmenu"')

@@ -65,6 +65,14 @@ const APP_IDS: Record<string, string> = {
 const TEST_ONBOARDING = process.env.OPENCODE_TEST_ONBOARDING === "1"
 const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
+// Every context menu is renderer-drawn. Suppress the native one at the
+// webContents level too, so blank areas without a custom handler stay silent.
+app.on("web-contents-created", (_event, contents) => {
+  contents.on("context-menu", (event) => {
+    event.preventDefault()
+  })
+})
+
 let logger: ReturnType<typeof initLogging>
 
 const pendingDeepLinks: string[] = []
