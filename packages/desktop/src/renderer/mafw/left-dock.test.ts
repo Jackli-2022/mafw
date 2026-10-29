@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { connDotState, effectiveLeftDockWidth, leftDockPushBudget, leftDockPushDragMax, railAriaLabel, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace } from "./left-dock"
+import { closeLeftDockState, connDotState, effectiveLeftDockWidth, leftDockPushBudget, leftDockPushDragMax, railAriaLabel, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace, toggleLeftDockState } from "./left-dock"
 
 describe("left-dock 状态模型", () => {
   describe("toggleFace（VS Code toggle 语义）", () => {
@@ -11,6 +11,26 @@ describe("left-dock 状态模型", () => {
     })
     test("收起态点任一 face → 打开该 face", () => {
       expect(toggleFace({ face: "sessions", open: false }, "search")).toEqual({ face: "search", open: true })
+    })
+  })
+
+  describe("状态持久化先于 setState（two-click close 回归）", () => {
+    const io = () => {
+      const map = new Map<string, string>()
+      return { map, setItem: (k: string, v: string) => { map.set(k, v) } }
+    }
+    test("toggleLeftDockState 在同 face 收起时先写 open=0", () => {
+      const w = io()
+      const next = toggleLeftDockState({ face: "sessions", open: true }, "sessions", w)
+      expect(next).toEqual({ face: "sessions", open: false })
+      expect(w.map.get("mafw-left-dock-open")).toBe("0")
+      expect(w.map.get("mafw-left-dock-face")).toBe("sessions")
+    })
+    test("closeLeftDockState 先写 open=0", () => {
+      const w = io()
+      const next = closeLeftDockState({ face: "search", open: true }, w)
+      expect(next).toEqual({ face: "search", open: false })
+      expect(w.map.get("mafw-left-dock-open")).toBe("0")
     })
   })
 

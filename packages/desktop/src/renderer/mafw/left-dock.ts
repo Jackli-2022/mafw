@@ -14,6 +14,34 @@ export function toggleFace(s: LeftDockState, face: LeftDockFace): LeftDockState 
   return { face, open: true }
 }
 
+export interface LeftDockStorage {
+  setItem(key: string, value: string): void
+}
+
+/**
+ * Persist the preference BEFORE the caller calls setLeftDock.
+ * `shouldAutoRestoreLeftDock` reads localStorage from an effect; if state flips
+ * first, the effect sees the stale "1" and reopens the dock (two-click close bug).
+ */
+export function persistLeftDockState(io: LeftDockStorage, next: LeftDockState): void {
+  try {
+    io.setItem("mafw-left-dock-open", next.open ? "1" : "0")
+    io.setItem("mafw-left-dock-face", next.face)
+  } catch { /* storage blocked — fail-open */ }
+}
+
+export function toggleLeftDockState(s: LeftDockState, face: LeftDockFace, io: LeftDockStorage): LeftDockState {
+  const next = toggleFace(s, face)
+  persistLeftDockState(io, next)
+  return next
+}
+
+export function closeLeftDockState(s: LeftDockState, io: LeftDockStorage): LeftDockState {
+  const next = { ...s, open: false }
+  persistLeftDockState(io, next)
+  return next
+}
+
 // 宽度决定模态：推挤必须保住默认档 50:50（chat 640 + 工作台 640，spec 2026-10-27 §6.5）。
 // 只保证默认档：chat 拉 520/760 不参与阈值，由 workbench-detents 护栏钳制。
 export const LEFT_RAIL_WIDTH = 46

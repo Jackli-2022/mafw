@@ -364,10 +364,7 @@ export function LeftDock(props: Props) {
     <div ref={dockRef} tabIndex={-1} class="mafw-left-dock" classList={{ overlay: props.mode === "overlay", push: props.mode === "push" }} style={{ width: `${props.width}px` }}>
       <div class="mafw-left-dock-head">
         {projectSwitcher()}
-        <TooltipV2 value="新建会话" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" icon="plus-small" aria-label="新建会话" onClick={props.onNewSession} />
-        </TooltipV2>
-        <TooltipV2 value="关闭" openDelay={300}>
+        <TooltipV2 value="关闭左栏" openDelay={300}>
           <ButtonV2 variant="ghost" size="small" icon="x" aria-label="关闭左栏" onClick={props.onClose} />
         </TooltipV2>
       </div>

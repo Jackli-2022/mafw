@@ -327,10 +327,10 @@ describe("用量指标行 v4", () => {
 })
 
 describe("IconRail CTA + UsagePill v4", () => {
-  test("新建会话在左 dock 头部（+ 图标，Tooltip 可达）", () => {
+  test("左 dock 头部只保留关闭（新建会话常驻 IconRail，不重复）", () => {
     const dock = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "LeftDock.tsx"), "utf8")
-    expect(dock).toContain("新建会话")
-    expect(dock).toContain("plus-small")
+    expect(dock).not.toContain("plus-small")
+    expect(dock).toContain("关闭左栏")
   })
   test("UsagePill 细线进度条 2px", () =>
     expect(cssBlock(".mafw-usage-pill-progress {")).toContain("height: 2px"))

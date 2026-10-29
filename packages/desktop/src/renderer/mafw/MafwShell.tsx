@@ -19,7 +19,7 @@ import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
 import { branchActionsVisible } from "./components/branch-actions"
 import { formatRailTitle } from "./components/rail-display"
-import { clampLeftDockWidth, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
+import { clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
 import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
@@ -1710,16 +1710,16 @@ export function MafwShell() {
   })
   const leftDockMode = () => resolveMode(leftDock().open, viewportWidth(), leftDockWidth())
   const toggleLeftDock = (face: LeftDockFace) => {
-    const next = toggleFace(leftDock(), face)
+    // Persist BEFORE setLeftDock: shouldAutoRestoreLeftDock reads localStorage in
+    // an effect; if state flips first it sees the old "1" and immediately reopens
+    // (the old two-click-to-close bug).
+    const next = toggleLeftDockState(leftDock(), face, localStorage)
     setLeftDock(next)
-    try {
-      localStorage.setItem("mafw-left-dock-open", next.open ? "1" : "0")
-      localStorage.setItem("mafw-left-dock-face", next.face)
-    } catch { /* ignore */ }
   }
   const closeLeftDock = () => {
-    setLeftDock(s => ({ ...s, open: false }))
-    try { localStorage.setItem("mafw-left-dock-open", "0") } catch { /* ignore */ }
+    // Same ordering rule as toggleLeftDock (avoid the auto-restore reopen).
+    const next = closeLeftDockState(leftDock(), localStorage)
+    setLeftDock(next)
   }
   // 浮层模式下，选中会话/导航离开 chat 时自动关；推挤列保持。
   const closeLeftDockIfOverlay = () => {
