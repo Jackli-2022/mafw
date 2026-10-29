@@ -1,6 +1,6 @@
 {
   "name": "@mafw/test-shim",
-  "version": "4.42.0",
+  "version": "4.42.1",
   "private": true,
   "description": "bun:test compatibility shim so the test suites can run on node --test",
   "type": "module",
