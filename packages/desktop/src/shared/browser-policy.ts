@@ -67,6 +67,25 @@ export function windowOpenDecision(raw: string): WindowOpenDecision {
   return { action: "deny" }
 }
 
+export type BrowserLinkAction =
+  | { action: "allow" }
+  | { action: "dock"; url: string }
+  | { action: "external"; url: string }
+  | { action: "deny" }
+
+/** Main-window link routing: app-internal navigation stays, everything else uses policy. */
+export function browserLinkAction(raw: string, currentUrl: string): BrowserLinkAction {
+  const target = parse(raw)
+  if (!target) return { action: "deny" }
+  if (target.protocol === "oc:") return { action: "allow" }
+  const current = parse(currentUrl)
+  if (current && target.origin !== "null" && target.origin === current.origin) return { action: "allow" }
+  const decision = windowOpenDecision(raw)
+  if (decision.action === "navigate") return { action: "dock", url: decision.url }
+  if (decision.action === "external") return { action: "external", url: decision.url }
+  return { action: "deny" }
+}
+
 /** 地址栏输入归一化：空白 → null；无协议补 https://；显式协议原样。 */
 export function normalizeAddress(raw: string): string | null {
   const value = raw.trim()

@@ -7,6 +7,7 @@ import {
   navigationDecision,
   normalizeAddress,
   windowOpenDecision,
+  browserLinkAction,
 } from "../src/shared/browser-policy"
 
 describe("isHttpUrl", () => {
@@ -51,6 +52,26 @@ describe("windowOpenDecision（target=_blank / window.open）", () => {
   test("javascript:/about:blank → 拒绝", () => {
     expect(windowOpenDecision("javascript:alert(1)")).toEqual({ action: "deny" })
     expect(windowOpenDecision("about:blank")).toEqual({ action: "deny" })
+  })
+})
+
+describe("browserLinkAction（主窗口链接落点）", () => {
+  test("app-internal allow, http dock, mail external, dangerous deny", () => {
+    expect(browserLinkAction("http://localhost:5173/foo", "http://localhost:5173/bar")).toEqual({ action: "allow" })
+    expect(browserLinkAction("https://example.com", "oc://renderer/index.html")).toEqual({
+      action: "dock",
+      url: "https://example.com",
+    })
+    expect(browserLinkAction("mafw-file://ab12/app.js", "oc://renderer/index.html")).toEqual({
+      action: "dock",
+      url: "mafw-file://ab12/app.js",
+    })
+    expect(browserLinkAction("mailto:a@b.com", "oc://renderer/index.html")).toEqual({
+      action: "external",
+      url: "mailto:a@b.com",
+    })
+    expect(browserLinkAction("javascript:alert(1)", "oc://renderer/index.html")).toEqual({ action: "deny" })
+    expect(browserLinkAction("file:///C:/x", "oc://renderer/index.html")).toEqual({ action: "deny" })
   })
 })
 
