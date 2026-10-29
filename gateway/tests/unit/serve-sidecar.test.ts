@@ -1,3 +1,6 @@
+import * as os from 'os';
+import * as path from 'path';
+
 jest.mock('cross-spawn', () => {
   const spawnCalls: any[] = [];
   const makeChild = () => ({
@@ -63,6 +66,22 @@ describe('serve-sidecar spawn options', () => {
       expect.arrayContaining(['serve', '--hostname=127.0.0.1', '--port=4096']),
       expect.objectContaining({ windowsHide: true }),
     );
+  });
+
+  test('spawns in the provided runtime root (not inherited gateway cwd)', async () => {
+    const root = path.join(os.tmpdir(), 'mafw-runtime-root-test');
+    const pending = startServeSidecar({
+      host: '127.0.0.1',
+      port: 4096,
+      timeoutMs: 5000,
+      cwd: root,
+    } as any);
+    const child = crossSpawnMock.__lastChild();
+    const stdoutHandler = child.stdout.on.mock.calls.find((c: any[]) => c[0] === 'data')[1];
+    stdoutHandler(Buffer.from('server listening on http://127.0.0.1:4096\n'));
+    await pending;
+    const opts = crossSpawnMock.mock.calls[0][2];
+    expect(opts.cwd).toBe(root);
   });
 
   test('passes OPENCODE_CONFIG_CONTENT env like the SDK contract', async () => {

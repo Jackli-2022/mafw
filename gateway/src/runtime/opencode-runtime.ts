@@ -17,6 +17,7 @@ import * as path from 'path';
 import { AgentRuntime, SessionInfo, fullCapabilities, CompletionRequest, CompletionResult } from './contract';
 import { AgentDefinition } from './agent-definition';
 import { startServeSidecar, killServePort, resolveServePassword, serveAuthHeaders, resolveOpencodeBin } from './serve-sidecar';
+import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime-root';
 import { createOpencodeAdapter } from './opencode-adapter';
 import { createOpencodeMcpChannel, resolveMcpListCommand } from './opencode-mcp';
 import { createOpencodeMcpConfigChannel } from './opencode-mcp-config';
@@ -490,6 +491,7 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
         const sidecar = await startServeSidecar({
           host: opts.host ?? gatewayConfig.server.serveHost ?? '127.0.0.1',
           port: opts.port ?? gatewayConfig.server.servePort,
+          cwd: opts.rootDir ?? ensureRuntimeRoot(resolveRuntimeRoot()),
           timeoutMs: opts.timeoutMs,
           onOutput: opts.onOutput,
           onExit: opts.onExit,

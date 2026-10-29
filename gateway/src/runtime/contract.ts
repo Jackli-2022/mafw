@@ -625,6 +625,9 @@ export interface AgentRuntime extends RuntimeClient {
 export interface ServeSpawnOpts {
   host?: string;
   port?: number;
+  /** Server 启动根目录（绝对路径）。gateway 传入规范根（`~/.mafw/runtime-root`）；
+   *  缺省时 runtime 用自己的默认根，但不得回落到 session cwd / process.cwd()。 */
+  rootDir?: string;
   timeoutMs?: number;
   onOutput?: (chunk: string) => void;
   onExit?: (code: number | null) => void;

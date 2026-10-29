@@ -232,6 +232,7 @@ import { cleanupExamples } from './plugins/hub';
 import type { RestartAgentDeps } from './routes/restart-agent';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { ensureServeForBuiltinRuntime } from './runtime/serve-for-runtime';
+import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime/runtime-root';
 import type { UsagePluginsDeps } from './routes/usage-plugins';
 import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
@@ -328,6 +329,9 @@ class MafwScheduler {
   private apiPort: number;
   private pollInterval: number;
   private projectDir: string;
+  /** Runtime server root（规范：`~/.mafw/runtime-root`，懒初始化）。
+   *  server 不随项目切换、不重启；session 目录仍由 opts.directory 决定。 */
+  private runtimeRootDir: string | null = null;
 
   // ── Serve sidecar supervision ──
   // serveOwned: this gateway spawned the serve process (exit-event driven).
@@ -570,7 +574,7 @@ class MafwScheduler {
         if (!spawnServe) {
           throw new Error('active runtime does not own a server process (agentProcess.spawnServe missing)');
         }
-        const sidecar = await spawnServe({ timeoutMs: opts.timeoutMs });
+        const sidecar = await spawnServe({ timeoutMs: opts.timeoutMs, rootDir: this.ensureRuntimeRootDir() });
         return { url: sidecar.url, close: () => sidecar.close() };
       },
     });
@@ -1559,6 +1563,16 @@ class MafwScheduler {
     return resolvePluginProjectDir(this.currentProjectDir, config.raw.paths.projectDir);
   }
 
+  /** Runtime server 启动根（规范单一来源）：`~/.mafw/runtime-root`。
+   *  只用于 server 进程/插件 server 初始化，不参与 session cwd。 */
+  private ensureRuntimeRootDir(): string {
+    if (!this.runtimeRootDir) {
+      this.runtimeRootDir = ensureRuntimeRoot(resolveRuntimeRoot());
+      log.info(`[Runtime] server root: ${this.runtimeRootDir}`);
+    }
+    return this.runtimeRootDir;
+  }
+
   /**
    * Runtime 选择（D 收敛）：单查找路径——config.runtime.plugin 缺省 'opencode'
    * （loader 注册表成员，文件>包>内置统一优先级）；失败/缺失回退 opencode；
@@ -1602,6 +1616,7 @@ class MafwScheduler {
       const creds = name === 'opencode' ? undefined : await this.runtimeCredentialsForPlugin();
       const rt = await plugin.createRuntime(createRuntimePluginContext(creds, {
         projectDir: this.resolvedProjectDir(),
+        rootDir: this.ensureRuntimeRootDir(),
         gatewayPort: config.server.apiPort,
       }));
       // 声明 vs 实现一致性校验：必选面缺失 → 回退（fatal）；能力位虚报 → 强制降级
@@ -3912,6 +3927,7 @@ class MafwScheduler {
       // host/port 归 runtime 自定（serve 端口是实现细节）；sidecar 实际 URL
       // 由 runtime 吸收（getBaseUrl 跟随），gateway 只记 bookkeeping。
       const sidecar = await spawnServe({
+        rootDir: this.ensureRuntimeRootDir(),
         onOutput: (chunk) => log.debug(`[Serve] ${chunk.trimEnd()}`),
         onExit: (code) => this.handleServeExit(code),
       });

@@ -253,6 +253,24 @@ async create(opts) {
 
 依据：`docs/superpowers/specs/2026-10-20-session-directory-contract-design.md`
 
+## Runtime server 根目录（必读）
+
+**server 跨项目共享，不随项目切换重启**。它的启动根是固定的
+`~/.mafw/runtime-root`，由 gateway 通过 `ctx.rootDir` / `spawnServe({ rootDir })`
+提供（绝对路径，gateway 已确保目录存在）。
+
+- 自带 server 的 runtime（`external: true`）必须用它作为 server 的 cwd；
+- **不得**用 `process.cwd()`、`ctx.projectDir` 或 session 目录当 server root；
+- server root **不是** session 工作目录；建会话仍用 `opts.directory`；
+- opencode 会把 root 注册成一个 project，这是预期副作用（专用目录，不是主目录）。
+
+```js
+async createRuntime(ctx) {
+  const serverRoot = ctx.rootDir; // ~/.mafw/runtime-root
+  // 在这个 cwd 启动/连接你自己的 server
+}
+```
+
 ## 第三步：SSE 事件——产出契约与三方消费
 
 > 事件链路全景：

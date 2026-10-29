@@ -13,6 +13,7 @@
  * kill (taskkill /F /T — the cmd shim wrapper and opencode.exe form a tree).
  */
 import * as childProcess from 'child_process';
+import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime-root';
 
 // Kill whatever is listening on the serve port. windowsHide is mandatory:
 // execSync defaults to a visible console window, so every call here would
@@ -42,6 +43,9 @@ export function killServePort(port: number): void {
 export interface ServeSidecarOptions {
   host: string;
   port: number;
+  /** Server 启动根目录（绝对路径）。缺省 = 规范根 `~/.mafw/runtime-root`；
+   *  绝不继承 gateway 进程 cwd。session 目录不由此决定。 */
+  cwd?: string;
   /** How long to wait for the `opencode server listening` line. */
   timeoutMs?: number;
   /** Forwarded serve stdout/stderr chunks (restores [Serve] diagnostics). */
@@ -138,7 +142,10 @@ function treeKill(pid: number | undefined, child: any): void {
 export function startServeSidecar(opts: ServeSidecarOptions): Promise<ServeSidecar> {
   return new Promise((resolve, reject) => {
     const bin = resolveOpencodeBin();
+    // 规范：server 固定从 runtime root 启动，不继承 gateway/Electron cwd。
+    const cwd = ensureRuntimeRoot(opts.cwd ?? resolveRuntimeRoot());
     const child = crossSpawn(bin, ['serve', `--hostname=${opts.host}`, `--port=${opts.port}`], {
+      cwd,
       env: {
         ...process.env,
         OPENCODE_CONFIG_CONTENT: '{}',

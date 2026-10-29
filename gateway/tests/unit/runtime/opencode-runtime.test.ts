@@ -79,6 +79,15 @@ describe('opencode-runtime 2.1.0 修复接线', () => {
     expect(call.password.length).toBeGreaterThan(0);
   });
 
+  it('spawnServe 用 runtime root 作为 cwd（不再继承 gateway cwd）', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    mockStartServe.mockResolvedValueOnce({ url: 'http://127.0.0.1:4096', close: () => {}, password: 'x' });
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    await (rt as any).agentProcess.spawnServe({ rootDir: '/home/u/.mafw/runtime-root' } as any);
+    const call = mockStartServe.mock.calls.at(-1)?.[0] ?? {};
+    expect(call.cwd).toBe('/home/u/.mafw/runtime-root');
+  });
+
   it('healthCheck 打 /api/session?limit=1 且带 Basic auth（2.1.0：真 API 面 + 认证）', async () => {
     delete process.env.MAFW_SERVER_SERVE_URL;
     let seenUrl = '';

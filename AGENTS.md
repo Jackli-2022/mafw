@@ -851,6 +851,7 @@ opencode serve�?096）由 gateway �?**sidecar 子进�?*方式直接监管
 - 外部 serve 模式（`MAFW_SERVER_SERVE_URL`）不监管（用户管理的进程�?
 - serve �?stdout/stderr 由手�?spawn �?`onOutput` 转发（index.ts �?`[Serve]` debug 日志记录），
   serve 崩溃原因不再静默；诊断同时依�?watchdog �?"Serve unhealthy" / recovery 日志
+- **server 启动根（2026-10-29）**：serve 的 cwd **固定 `~/.mafw/runtime-root`**（`runtime/runtime-root.ts`），不再继承 gateway/Electron 的启动目录；`serve-sidecar` 缺省也落到该根。gateway 经 `agentProcess.spawnServe({ rootDir })` 传入，runtime 插件经 `ctx.rootDir` 拿到同一路径（绝对、已确保存在）。该 root **只用于 server/插件初始化**，session cwd 仍只认 `opts.directory`；opencode 会把 root 注册成一个 project（专用目录，非主目录）。gateway **3044/3044（427 suites）**、tsgo/build rc=0；调研 `docs/research/2026-10-29-runtime-server-root-dir-research.md`。
 - 经验：子进程型依赖必须配监督（检测点不能在启动时一次完事）；恢复动作必须完�?
   （重启进�?�?恢复连接，事件订阅要一并重连）�?
   **detached 环境下所有子进程 spawn 必须�?`windowsHide: true`**（python kernel / llamacpp 均已带）

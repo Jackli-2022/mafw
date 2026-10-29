@@ -27,6 +27,9 @@ export interface RuntimePluginContext {
   /** 项目根（**绝对路径**；runtime 实例创建时的当前项目快照）。
    *  **启动期信息**，不用于 session cwd —— 建会话一律用 opts.directory（契约必填）。 */
   projectDir?: string;
+  /** Runtime server 启动根目录（**绝对路径**，固定 `~/.mafw/runtime-root`）。
+   *  供插件启动/定位自己的 server；**不用于 session cwd**。 */
+  rootDir?: string;
   /** gateway API 端口（pi getBaseUrl 此前直读 config.server.apiPort） */
   gatewayPort?: number;
   /** 事件构造与校验助手（L3 构造期防线）。 */
@@ -255,7 +258,7 @@ export class RuntimePluginLoader {
 
 export function createRuntimePluginContext(
   credentials?: RuntimeCredentials,
-  extra?: { projectDir?: string; gatewayPort?: number },
+  extra?: { projectDir?: string; gatewayPort?: number; rootDir?: string },
 ): RuntimePluginContext {
   return {
     fetch: (url: string, opts?: any) =>
@@ -264,6 +267,7 @@ export function createRuntimePluginContext(
     pluginConfig: (name: string) => (config.raw as any)?.runtime?.pluginConfig?.[name] ?? {},
     credentials,
     projectDir: extra?.projectDir,
+    rootDir: extra?.rootDir,
     gatewayPort: extra?.gatewayPort,
     events: {
       make: (type: string, props?: Record<string, any>, sessionID?: string) => {
