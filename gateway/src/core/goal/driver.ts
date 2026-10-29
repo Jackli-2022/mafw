@@ -58,6 +58,8 @@ export interface DriverDeps {
   capabilityPrior?: (goalId: string) => string | null;
   /** D4b：反事实推演块（pre-mortem，仅 plan 注入），缺省不注入。fail-open。 */
   counterfactualPrior?: (goalId: string) => string | null;
+  /** Pod Lite：项目级 Pod 上下文块，缺省不注入。fail-open。 */
+  podContext?: (goalId: string, node: 'plan' | 'execute' | 'review') => string | null;
 }
 
 const NODE_PHASE: Record<'plan' | 'execute' | 'review', { running: string; complete: string }> = {
@@ -159,7 +161,7 @@ export class NodeDriver {
       startedAt: new Date().toISOString(),
     });
 
-    const prompt = renderNodePrompt(node, {
+    const basePrompt = renderNodePrompt(node, {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds,
       charterPath: path.join(mafwDir, 'goals', `${goalId}.md`),
       requestPath: path.join(mafwDir, 'requests', `${goalId}.json`),
@@ -168,6 +170,8 @@ export class NodeDriver {
       priorBlock: this.deps.capabilityPrior?.(goalId) ?? undefined,
       counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
     });
+    const podBlock = this.deps.podContext?.(goalId, node) ?? null;
+    const prompt = podBlock ? `${podBlock}\n\n${basePrompt}` : basePrompt;
 
     // 不 await——pi 的 promptAsync 在 idle 会话阻塞到回合结束，await 会卡死 advance（spec §7）
     void this.deps.client.promptAsync({
