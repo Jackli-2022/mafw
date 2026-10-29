@@ -10,7 +10,7 @@ function hardenGuest(contents: WebContents) {
     const decision = windowOpenDecision(url)
     if (decision.action === "navigate") {
       const host = contents.hostWebContents ?? BrowserWindow.getFocusedWindow()?.webContents
-      if (host && !host.isDestroyed()) host.send("browser-open-url", decision.url)
+      if (host && !host.isDestroyed()) host.send("browser-open-url", { url: decision.url, newTab: true })
     } else if (decision.action === "external") {
       void shell.openExternal(decision.url)
     }

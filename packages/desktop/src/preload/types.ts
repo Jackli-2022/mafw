@@ -47,9 +47,11 @@ export type FsAPI = {
   onChanged(cb: (e: { root: string; rel: string }) => void): () => void
   openExternal(root: string, rel: string): Promise<{ ok: boolean }>
 }
+export type BrowserOpenRequest = { url: string; newTab: boolean }
+
 /** 内嵌浏览器（main 侧策略在 browser-session.ts；渲染层只接 window.open → dock 内导航事件）。 */
 export type BrowserAPI = {
-  onOpenUrl(cb: (url: string) => void): () => void
+  onOpenUrl(cb: (req: BrowserOpenRequest) => void): () => void
   openExternal(url: string): Promise<{ ok: boolean }>
 }
 /** 批注草稿（main 侧 electron-store JSON；形状与 shared/annotation-types.ts 一致）。 */

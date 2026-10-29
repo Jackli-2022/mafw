@@ -1681,6 +1681,20 @@ export function MafwShell() {
     setRightDockOpen(true)
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
   }
+
+  // External links: chat/workbench-visible links go to a new browser tab;
+  // links from non-chat views stay visible via the system browser.
+  onMount(() => {
+    const off = window.api.browser.onOpenUrl((req) => {
+      if (!chatActive()) {
+        void window.api.browser.openExternal(req.url)
+        return
+      }
+      requestBrowserNavigate(req.url, { newTab: true })
+      openWorkbenchSurface("browser")
+    })
+    onCleanup(off)
+  })
   // 文件/编辑器根：会话目录属于项目（含 worktree）才采用，否则回退项目目录
   // （manager 会话的 directory 可能指向 home 等外部目录，实证 2026-10-22）
   const benchRoot = () =>

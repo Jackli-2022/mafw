@@ -4,7 +4,7 @@ import type { DesktopTheme } from "@mafw/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
 import { randomUUID } from "node:crypto"
 import { rmSync } from "node:fs"
-import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, screen } from "electron"
+import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, screen, shell } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -14,7 +14,7 @@ import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowRegistry } from "./window-registry"
 import { fitDefaultWindowSize, mainWindowOptions } from "./window-bounds"
-import { mainWindowWebPreferences } from "../shared/browser-policy"
+import { browserLinkAction, mainWindowWebPreferences } from "../shared/browser-policy"
 import { MAFW_FILE_SCHEME } from "../shared/mafw-file"
 import { configureBrowserSession, wireWebviewAttach } from "./browser-session"
 import { windowCloseAction } from "./close-decision"
@@ -207,6 +207,7 @@ export function createMainWindow(id: string = randomUUID()) {
 
   configureBrowserSession()
   wireWebviewAttach(win.webContents)
+  wireMainWindowLinks(win)
   allowRendererPermissions(win)
   wireWindowRecovery(win, id)
 
@@ -232,6 +233,30 @@ export function createMainWindow(id: string = randomUUID()) {
   })
 
   return win
+}
+
+function sendBrowserOpen(win: BrowserWindow, url: string) {
+  if (!win.isDestroyed()) win.webContents.send("browser-open-url", { url, newTab: true })
+}
+
+/** Route external links into the workbench browser instead of creating a new window. */
+function wireMainWindowLinks(win: BrowserWindow) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    const action = browserLinkAction(url, win.webContents.getURL())
+    if (action.action === "dock") sendBrowserOpen(win, action.url)
+    else if (action.action === "external") void shell.openExternal(action.url)
+    return { action: "deny" }
+  })
+
+  win.webContents.on("will-navigate", (event, url) => {
+    // Initial renderer load (dev server or oc://) has no current URL yet.
+    if (!win.webContents.getURL()) return
+    const action = browserLinkAction(url, win.webContents.getURL())
+    if (action.action === "allow") return
+    event.preventDefault()
+    if (action.action === "dock") sendBrowserOpen(win, action.url)
+    else if (action.action === "external") void shell.openExternal(action.url)
+  })
 }
 
 function registerWindow(win: BrowserWindow, id: string) {

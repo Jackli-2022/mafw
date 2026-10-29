@@ -40,4 +40,18 @@ describe("浏览器 tab 接线（2026-10-26 工作台合并后）", () => {
     expect(api).toContain("onOpenUrl")
     expect(types).toContain("onOpenUrl")
   })
+  test("main window routes external links to the dock", () => {
+    const src = read("src/main/windows.ts")
+    expect(src).toContain("setWindowOpenHandler")
+    expect(src).toContain("will-navigate")
+    expect(src).toContain("browser-open-url")
+    expect(src).toContain("browserLinkAction")
+  })
+  test("shell owns browser-open-url and requests a new tab", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toContain("browser.onOpenUrl")
+    expect(shell).toMatch(/requestBrowserNavigate\([^)]*newTab:\s*true/)
+    expect(shell).toContain('openWorkbenchSurface("browser")')
+    expect(read("src/renderer/mafw/components/BrowserDock.tsx")).not.toContain("browser.onOpenUrl")
+  })
 })

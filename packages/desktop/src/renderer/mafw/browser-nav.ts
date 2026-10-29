@@ -2,12 +2,12 @@
 // 与既有 browser-open-url（main → preload → BrowserDock 直连）互补：这条是 renderer 内部流程。
 import { createSignal } from "solid-js"
 
-export type BrowserNavRequest = { url: string; at: number }
+export type BrowserNavRequest = { url: string; newTab: boolean; at: number }
 
 const [browserNav, setBrowserNav] = createSignal<BrowserNavRequest | null>(null)
 
-export function requestBrowserNavigate(url: string): void {
-  setBrowserNav({ url, at: Date.now() })
+export function requestBrowserNavigate(url: string, opts: { newTab?: boolean } = {}): void {
+  setBrowserNav({ url, newTab: opts.newTab === true, at: Date.now() })
 }
 
 export function browserNavRequest(): BrowserNavRequest | null {

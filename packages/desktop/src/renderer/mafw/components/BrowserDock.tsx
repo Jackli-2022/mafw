@@ -3,7 +3,7 @@
 // window.open 转 dock 内导航、will-attach-webview 加固。这里只做 UI + 导航状态。
 // 骨架（spec 2026-10-26）：DockPanelHeader 统一头（标题=页面标题）+ 常驻错误条 +
 // 主题化空态；webview 懒挂载（首次真实导航才创建，不再预建 about:blank）。
-import { createSignal, createEffect, onCleanup, onMount, Show } from "solid-js"
+import { createSignal, createEffect, onCleanup, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
@@ -185,13 +185,9 @@ export function BrowserDock(props: { sessionID: string | null }) {
     }
   }
 
-  onMount(() => {
-    const off = window.api.browser.onOpenUrl((url) => load(url))
-    onCleanup(() => {
-      off()
-      try { view?.remove?.() } catch { /* ignore */ }
-      view = null
-    })
+  onCleanup(() => {
+    try { view?.remove?.() } catch { /* ignore */ }
+    view = null
   })
 
   return (

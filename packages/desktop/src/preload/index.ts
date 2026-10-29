@@ -1,5 +1,5 @@
 ﻿import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { ElectronAPI, WslServersEvent } from "./types"
+import type { ElectronAPI, WslServersEvent, BrowserOpenRequest } from "./types"
 import type { UpdaterState } from "../types/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
@@ -179,8 +179,11 @@ const api: ElectronAPI = {
 
   // 内嵌浏览器：window.open / target=_blank 被 main 拦截后转 dock 内导航
   browser: {
-    onOpenUrl: (cb) => {
-      const handler = (_: unknown, url: string) => cb(url)
+    onOpenUrl: (cb: (req: BrowserOpenRequest) => void) => {
+      const handler = (_: unknown, payload: string | BrowserOpenRequest) => {
+        if (typeof payload === "string") cb({ url: payload, newTab: true })
+        else if (payload && typeof payload.url === "string") cb({ url: payload.url, newTab: payload.newTab !== false })
+      }
       ipcRenderer.on("browser-open-url", handler)
       return () => ipcRenderer.removeListener("browser-open-url", handler)
     },
