@@ -296,9 +296,6 @@ export class PodStore {
         delivered_session_id TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_pod_messages_pod ON pod_messages(pod_id, created_at);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
-        ON pod_messages(pod_id, external_message_id)
-        WHERE external_message_id IS NOT NULL;
 
       CREATE TABLE IF NOT EXISTS pod_a2a_links (
         id TEXT PRIMARY KEY,

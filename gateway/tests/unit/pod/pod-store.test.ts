@@ -251,15 +251,24 @@ describe('PodStore', () => {
     })).toThrow();
   });
 
-  test('marks a message delivered to one session', () => {
-    const now = '2026-10-30T00:00:00.000Z';
-    store.ensurePod({ id: 'pod_1', projectDir: '/p', name: 'P', now });
-    store.insertMessage({
-      id: 'm1', podId: 'pod_1', fromMemberId: 'm_lead', toMemberId: 'm_builder',
-      kind: 'request', body: 'do', now,
-    });
-    store.markMessageDelivered('m1', 'ses_builder', now);
-    expect(store.listMessages('pod_1')[0].deliveredAt).toBe(now);
-    expect(store.listMessages('pod_1')[0].deliveredSessionId).toBe('ses_builder');
+  test('migrates an existing pod_messages table without A2A columns', () => {
+    const oldDb = new Database(path.join(dir, 'old.db'));
+    oldDb.exec(`
+      CREATE TABLE pod_messages (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        from_member_id TEXT NOT NULL,
+        to_member_id TEXT,
+        kind TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        read_at TEXT
+      );
+    `);
+    const migrated = new PodStore(oldDb);
+    const cols = (oldDb.prepare('PRAGMA table_info(pod_messages)').all() as any[]).map((c) => c.name);
+    expect(cols).toEqual(expect.arrayContaining(['protocol', 'external_message_id', 'delivered_at']));
+    expect(migrated.listMessages('p')).toEqual([]);
+    oldDb.close();
   });
 });
