@@ -141,6 +141,7 @@ export function buildA2AMessage(input: {
 export function buildA2ATask(input: {
   task: PodTaskRow;
   podStatus?: string;
+  state?: TaskState;
   artifacts?: { artifactId: string; name?: string; parts: Part[] }[];
 }): Task {
   const { task } = input;
@@ -149,7 +150,7 @@ export function buildA2ATask(input: {
     id: task.id,
     contextId,
     status: {
-      state: a2aStateForPodStatus(task.status),
+      state: input.state ?? a2aStateForPodStatus(task.status),
       timestamp: task.updatedAt,
     },
     history: [],
