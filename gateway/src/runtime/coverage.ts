@@ -152,7 +152,7 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
     surfaces[s.id] = { status, verification: s.verification, impact: s.impact };
     const o = obligations[s.obligation];
     o.total += 1;
-    if (status === 'present' || status === 'verified') {
+    if (status === 'present') {
       o.present += 1;
     } else if (status === 'unverified') {
       o.unverified += 1;

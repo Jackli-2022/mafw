@@ -2,6 +2,8 @@ import * as http from 'http';
 import { log } from '../core/utils/logger';
 import { AgentRuntime } from '../runtime/contract';
 import { RuntimePluginLoader } from '../runtime/loader';
+import type { RuntimeContractManifest } from '../runtime/contract-manifest-types';
+import type { RuntimeCoverage } from '../runtime/coverage';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -36,13 +38,17 @@ export interface RuntimeSwitchDeps {
   translationDrops?: () => Record<string, unknown>;
   /** canonical v3：当前方言标签（'v1'|'v2'|…；钉死名取 @ 后缀，自适应取探测结果）；缺省 null。 */
   activeDialect?: () => string | null;
+  /** Active runtime coverage（GET /api/runtime.active.coverage）。 */
+  contractCoverage?: () => RuntimeCoverage | null;
+  /** Contract manifest + coverage（GET /api/runtime/contract）。 */
+  contract?: () => { manifest: RuntimeContractManifest; coverage: RuntimeCoverage | null };
 }
 
 // ─── GET /api/runtime ─── active runtime identity + capabilities + plugin scan state
 export async function handleRuntimeGet(
   _req: http.IncomingMessage,
   res: http.ServerResponse,
-  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader' | 'unknownEvents' | 'validationNotes' | 'translationErrors' | 'translationDrops' | 'activeDialect'>,
+  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader' | 'unknownEvents' | 'validationNotes' | 'translationErrors' | 'translationDrops' | 'activeDialect' | 'contractCoverage'>,
 ): Promise<void> {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
@@ -51,6 +57,7 @@ export async function handleRuntimeGet(
       capabilities: deps.runtimeCaps(),
       envOverride: deps.envOverride(),
       dialect: deps.activeDialect ? deps.activeDialect() : null,
+      coverage: deps.contractCoverage ? deps.contractCoverage() : null,
     },
     plugins: deps.loader?.getState() ?? [],
     unknownEvents: deps.unknownEvents ? deps.unknownEvents() : {},
@@ -58,6 +65,21 @@ export async function handleRuntimeGet(
     translationErrors: deps.translationErrors ? deps.translationErrors() : {},
     translationDrops: deps.translationDrops ? deps.translationDrops() : {},
   }));
+}
+
+// ─── GET /api/runtime/contract ─── manifest + active coverage
+export async function handleRuntimeContract(
+  _req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: Pick<RuntimeSwitchDeps, 'contract'>,
+): Promise<void> {
+  if (!deps.contract) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'runtime contract manifest is not available' }));
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(deps.contract()));
 }
 
 // ─── POST /api/runtime/switch ─── hot-swap the active runtime plugin

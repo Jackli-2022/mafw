@@ -99,6 +99,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/events', operationId: 'event.subscribe', tags: ['event'] },
   { method: 'POST', path: '/api/events', operationId: 'event.publish', tags: ['event'] },
   { method: 'GET', path: '/api/runtime', operationId: 'runtime.get', tags: ['runtime'] },
+  { method: 'GET', path: '/api/runtime/contract', operationId: 'runtime.contract', tags: ['runtime'] },
   { method: 'POST', path: '/api/runtime/switch', operationId: 'runtime.switch', tags: ['runtime'] },
   { method: 'POST', path: '/api/runtime/restart-agent', operationId: 'runtime.restartAgent', tags: ['runtime'] },
   // runtime.reload（POST /api/runtime/reload）在下方 NON_SDK 补遗块登记（SDK 不调用 → internal）

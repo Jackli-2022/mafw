@@ -130,12 +130,14 @@ export function validateRuntime(
     }
 
     if (surface.obligation === 'gated') {
-      if (!surface.capability || !caps[surface.capability]) continue;
+      if (!surface.capability) continue;
+      const capKey = surface.capability as keyof RuntimeCapabilities;
+      if (!caps[capKey]) continue;
       if (status === 'present') continue;
       const requires = CAP_BY_ID.get(surface.capability)?.requires ?? [];
       if (requires.includes(surface.id)) {
-        if (effectiveCaps[surface.capability]) {
-          effectiveCaps[surface.capability] = false;
+        if (effectiveCaps[capKey]) {
+          effectiveCaps[capKey] = false;
           downgradedAny = true;
           out.downgraded.push(
             `${source}: declares ${surface.capability} but ${surface.id} is missing — capability downgraded to false (${surface.impact})`,

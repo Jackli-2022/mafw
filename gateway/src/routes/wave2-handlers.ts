@@ -17,7 +17,7 @@ import type { RouteRegistry, RouteDef } from './registry';
 import type { RuntimeSwitchDeps } from './runtime-switch';
 import type { RestartAgentDeps } from './restart-agent';
 import type { PluginsRouteDeps } from './plugins';
-import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './runtime-switch';
+import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload, handleRuntimeContract } from './runtime-switch';
 import { handleRestartAgent } from './restart-agent';
 import { handleDryEvent } from './dry-event';
 import type { DryEventDeps } from './dry-event';
@@ -47,6 +47,9 @@ export function attachWave2Handlers(registry: RouteRegistry, gw: Wave2Gateway): 
 
   registry.attachHandler('runtime.get', H(async (req, res) =>
     handleRuntimeGet(req, res, gw.runtimeDeps())));
+
+  registry.attachHandler('runtime.contract', H(async (req, res) =>
+    handleRuntimeContract(req, res, gw.runtimeDeps())));
 
   registry.attachHandler('runtime.switch', H(async (req, res) => {
     if (gw.runtimeSwitchBlocked()) {

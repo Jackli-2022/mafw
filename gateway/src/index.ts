@@ -202,6 +202,8 @@ function wirePiPermissionEvaluator(runtime: AgentRuntime, policy: ApprovalPolicy
 
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { validateRuntime, RuntimeValidation } from './runtime/validate';
+import { buildRuntimeContractManifest } from './runtime/contract-manifest';
+import type { ContractSubject, RuntimeCoverage } from './runtime/coverage';
 import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
@@ -1577,9 +1579,15 @@ class MafwScheduler {
    * 记录进 runtimeValidationNotes（GET /api/runtime 可见）并打日志。
    * fatal=false 用于内置件——兜底不能再回退，只降级+暴露。
    */
-  private applyRuntimeValidation(rt: AgentRuntime, source: string, fatal: boolean): void {
-    const v: RuntimeValidation = validateRuntime(rt, source);
+  private applyRuntimeValidation(
+    rt: AgentRuntime,
+    source: string,
+    fatal: boolean,
+    subject?: Omit<ContractSubject, 'rt'>,
+  ): void {
+    const v: RuntimeValidation = validateRuntime(rt, source, subject);
     this.runtimeValidationNotes = [...v.downgraded, ...v.warnings];
+    this.runtimeCoverage = v.staticCoverage ?? null;
     for (const d of v.downgraded) log.error(`[Runtime] capability downgraded: ${d}`);
     for (const w of v.warnings) log.warn(`[Runtime] ${w}`);
     if (v.hard.length > 0) {
@@ -1656,7 +1664,21 @@ class MafwScheduler {
       }));
       // 声明 vs 实现一致性校验：必选面缺失 → 回退（fatal）；能力位虚报 → 强制降级
       // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
-      this.applyRuntimeValidation(rt, name, fatal);
+      this.applyRuntimeValidation(rt, name, fatal, {
+        declaration: {
+          eventSource: plugin.eventSource,
+          eventMappings: plugin.eventMappings,
+          transformEvent: plugin.transformEvent,
+        },
+        plugin: {
+          name,
+          createRuntime: plugin.createRuntime,
+          external: plugin.external,
+          capabilities: plugin.capabilities,
+        },
+        dialect: (rt as any).activeDialect,
+        source: 'active',
+      });
       // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径
       if ((rt.capabilities as any)?.eventStream && !hasEventDeclarations(plugin)) {
         (rt.capabilities as any).eventStream = false;
@@ -2217,6 +2239,11 @@ class MafwScheduler {
         if (name.includes('@')) return name.split('@')[1]; // 钉死方言名（opencode@v2 → 'v2'）
         return (this.runtime as any)?.activeDialect ?? null; // 自适应探测结果
       },
+      contractCoverage: () => this.runtimeCoverage,
+      contract: () => ({
+        manifest: buildRuntimeContractManifest(),
+        coverage: this.runtimeCoverage,
+      }),
     };
   }
 
@@ -2374,6 +2401,8 @@ class MafwScheduler {
   private snapshotTimers = new Map<string, NodeJS.Timeout>();
   /** 激活期 runtime 校验记录（能力降级 + 警告），GET /api/runtime 暴露。 */
   private runtimeValidationNotes: string[] = [];
+  /** 激活期覆盖矩阵（清单驱动），GET /api/runtime(.contract) 暴露。 */
+  private runtimeCoverage: RuntimeCoverage | null = null;
   /** Serialises snapshot builds (shared GPU sidecars). */
   private snapshotBuildInFlight = false;
 
