@@ -1,0 +1,207 @@
+import { createSignal } from "solid-js"
+import type { PodDetail, PodStatus } from "@mafw/sdk"
+import { podEventAction, podIsUnsupported } from "./pod-model"
+
+export type PodStoreApi = {
+  lookup(projectDir: string): Promise<PodDetail>
+  ensure(projectDir: string): Promise<PodDetail>
+  get(podId: string): Promise<PodDetail>
+  update(podId: string, body: { status: PodStatus }): Promise<PodDetail>
+  cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>
+}
+
+export type PodStoreTimers = {
+  setTimeout(fn: () => void, ms: number): unknown
+  clearTimeout(handle: unknown): void
+}
+
+const DEFAULT_TIMERS: PodStoreTimers = {
+  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+  clearTimeout: (handle) => globalThis.clearTimeout(handle as any),
+}
+
+function errorMessage(err: unknown): string {
+  return String((err as any)?.message ?? err)
+}
+
+export function createPodStore(
+  api: PodStoreApi,
+  opts: { debounceMs?: number; timers?: PodStoreTimers } = {},
+) {
+  const debounceMs = opts.debounceMs ?? 200
+  const timers = opts.timers ?? DEFAULT_TIMERS
+
+  const [detail, setDetail] = createSignal<PodDetail | null>(null)
+  const [cost, setCost] = createSignal<{ spentUsd: number; limitUsd: number } | null>(null)
+  const [loading, setLoading] = createSignal(false)
+  const [error, setError] = createSignal<string | null>(null)
+  const [unsupported, setUnsupported] = createSignal(false)
+  const [projectDir, setProjectDir] = createSignal<string | null>(null)
+
+  let seq = 0
+  let timer: unknown = null
+  let disposed = false
+
+  const clearTimer = () => {
+    if (timer !== null) {
+      timers.clearTimeout(timer)
+      timer = null
+    }
+  }
+
+  const schedule = (fn: () => void) => {
+    clearTimer()
+    timer = timers.setTimeout(() => {
+      timer = null
+      if (!disposed) fn()
+    }, debounceMs)
+  }
+
+  const loadCost = (id: string, my: number) => {
+    void api.cost(id)
+      .then((next) => {
+        if (!disposed && my === seq) setCost(next)
+      })
+      .catch(() => {
+        if (!disposed && my === seq) setCost(null)
+      })
+  }
+
+  const applyDetail = (next: PodDetail, my: number) => {
+    if (disposed || my !== seq) return
+    setDetail(next)
+    setError(null)
+    loadCost(next.pod.id, my)
+  }
+
+  async function open(dir: string): Promise<void> {
+    if (disposed) return
+    if (dir === projectDir() && detail()) return
+    const switching = dir !== projectDir()
+    if (switching) {
+      seq++
+      clearTimer()
+      setProjectDir(dir)
+      setDetail(null)
+      setCost(null)
+      setError(null)
+      setUnsupported(false)
+    }
+    const my = seq
+    setLoading(true)
+    try {
+      const next = await api.lookup(dir)
+      if (disposed || my !== seq) return
+      setUnsupported(false)
+      applyDetail(next, my)
+    } catch (err) {
+      if (disposed || my !== seq) return
+      if (podIsUnsupported(err) || /pod not found/i.test(errorMessage(err))) {
+        setDetail(null)
+        setCost(null)
+        setError(null)
+      } else {
+        setError(errorMessage(err))
+      }
+    } finally {
+      if (!disposed && my === seq) setLoading(false)
+    }
+  }
+
+  async function create(): Promise<void> {
+    const dir = projectDir()
+    if (!dir || disposed) return
+    const my = seq
+    setLoading(true)
+    try {
+      const next = await api.ensure(dir)
+      if (disposed || my !== seq) return
+      setUnsupported(false)
+      applyDetail(next, my)
+    } catch (err) {
+      if (disposed || my !== seq) return
+      if (podIsUnsupported(err)) {
+        setUnsupported(true)
+        setError("当前 gateway 不支持 Pod，请更新 gateway")
+      } else {
+        setError(errorMessage(err))
+      }
+    } finally {
+      if (!disposed && my === seq) setLoading(false)
+    }
+  }
+
+  async function refresh(): Promise<void> {
+    const current = detail()
+    if (!current || disposed) return
+    const my = seq
+    try {
+      const next = await api.get(current.pod.id)
+      applyDetail(next, my)
+    } catch (err) {
+      if (disposed || my !== seq) return
+      setError(errorMessage(err))
+    }
+  }
+
+  async function setStatus(status: PodStatus): Promise<void> {
+    const current = detail()
+    if (!current || disposed) return
+    const my = seq
+    try {
+      const next = await api.update(current.pod.id, { status })
+      applyDetail(next, my)
+    } catch (err) {
+      if (disposed || my !== seq) return
+      setError(errorMessage(err))
+    }
+  }
+
+  function ingest(event: unknown): void {
+    if (disposed) return
+    const action = podEventAction({
+      currentPodId: detail()?.pod.id ?? null,
+      projectDir: projectDir(),
+      event,
+    })
+    if (action === "refresh") {
+      schedule(() => { void refresh() })
+    } else if (action === "lookup") {
+      schedule(() => {
+        const dir = projectDir()
+        if (dir) void open(dir)
+      })
+    }
+  }
+
+  function dispose(): void {
+    disposed = true
+    seq++
+    clearTimer()
+  }
+
+  return {
+    open,
+    create,
+    refresh,
+    setStatus,
+    ingest,
+    dispose,
+    detail,
+    cost,
+    loading,
+    error,
+    unsupported,
+    projectDir,
+  }
+}
+
+const defaultApi: PodStoreApi = {
+  lookup: (projectDir) => window.api.mafw.pod.lookup(projectDir),
+  ensure: (projectDir) => window.api.mafw.pod.ensure(projectDir),
+  get: (podId) => window.api.mafw.pod.get(podId),
+  update: (podId, body) => window.api.mafw.pod.update(podId, body),
+  cost: (podId) => window.api.mafw.pod.cost(podId),
+}
+
+export const podStore = createPodStore(defaultApi)
