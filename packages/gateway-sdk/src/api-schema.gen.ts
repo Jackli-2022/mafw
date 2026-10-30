@@ -1164,6 +1164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runtime/contract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["runtime.contract"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runtime/switch": {
         parameters: {
             query?: never;
@@ -4760,6 +4776,24 @@ export interface operations {
         };
     };
     "runtime.get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "runtime.contract": {
         parameters: {
             query?: never;
             header?: never;

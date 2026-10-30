@@ -797,10 +797,15 @@ export class MafwClient implements IMafwClient {
   runtime = {
     /** Get active runtime identity, capabilities, and plugin scan state. */
     get: async (): Promise<{
-      active: { name: string; capabilities: Record<string, boolean>; envOverride?: boolean };
+      active: { name: string; capabilities: Record<string, boolean>; envOverride?: boolean; coverage?: import('./runtime-contract').RuntimeCoverage | null };
       plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[];
     }> => {
       return this.request('/api/runtime')
+    },
+
+    /** Get the runtime contract manifest + active coverage. */
+    contract: async (): Promise<import('./runtime-contract').RuntimeContractResponse> => {
+      return this.request('/api/runtime/contract')
     },
 
     /** Get runtime configuration (Plan 3 dual-name route; opencode-config alias). */

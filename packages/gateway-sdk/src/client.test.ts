@@ -816,6 +816,14 @@ test("runtime.get + runtime.switch hit their routes", async () => {
   expect(body).toEqual({ plugin: "pi" })
 })
 
+test("runtime.contract hits /api/runtime/contract", async () => {
+  fetchMock.mockResolvedValue(okJson({ manifest: { schemaVersion: 1 }, coverage: null }))
+  const c = new MafwClient()
+  const res = await c.runtime.contract()
+  expect((fetchMock as any).mock.calls[0][0]).toContain("/api/runtime/contract")
+  expect(res.manifest.schemaVersion).toBe(1)
+})
+
 test("runtime.switch surfaces API error", async () => {
   fetchMock.mockResolvedValue({
     ok: false, status: 400, statusText: "Bad Request",

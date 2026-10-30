@@ -1592,6 +1592,19 @@
         }
       }
     },
+    "/api/runtime/contract": {
+      "get": {
+        "operationId": "runtime.contract",
+        "tags": [
+          "runtime"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/runtime/switch": {
       "post": {
         "operationId": "runtime.switch",
