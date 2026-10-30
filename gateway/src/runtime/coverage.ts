@@ -72,6 +72,7 @@ export interface RuntimeCoverage {
     verified: string[];
     failed: string[];
     unverified: string[];
+    details: Record<string, string>;
   };
 }
 
@@ -87,7 +88,8 @@ function getPath(root: any, path: string[]): any {
 /**
  * presence 探针。第一段决定探针主体：
  *   rt（缺省）/ declaration / plugin
- * 最终值非 null/undefined 即视为存在；函数天然存在。
+ * declaration/plugin 是数据面：非 null/undefined 即存在；
+ * rt 是方法面：最终值必须是函数（容器/布尔值不算实现）。
  */
 export function probePasses(subject: ContractSubject, surface: ContractSurface): boolean {
   const path = surface.probe;
@@ -177,10 +179,7 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
   for (const p of manifest.presets) {
     const required = p.requiredSurfaces.length;
     const missingIds = p.requiredSurfaces.filter((id) => surfaces[id]?.status === 'missing');
-    const covered = p.requiredSurfaces.filter((id) => {
-      const st = surfaces[id]?.status;
-      return st === 'present' || st === 'verified';
-    }).length;
+    const covered = p.requiredSurfaces.filter((id) => surfaces[id]?.status === 'present').length;
     presets[p.id] = { required, covered, missing: missingIds };
   }
 
@@ -205,7 +204,22 @@ export function applyEventStreamDeclarationDowngrade(rt: AgentRuntime, hasDeclar
 }
 
 export function applyBehaviorResults(coverage: RuntimeCoverage, results: BehaviorResult[]): RuntimeCoverage {
-  const next: RuntimeCoverage = {
+  const verified = new Set(coverage.behavioral?.verified ?? []);
+  const failed = new Set(coverage.behavioral?.failed ?? []);
+  const details: Record<string, string> = { ...(coverage.behavioral?.details ?? {}) };
+
+  for (const r of results) {
+    (r.status === 'verified' ? verified : failed).add(r.surfaceId);
+    if (r.detail) details[r.surfaceId] = r.detail;
+  }
+
+  const touched = new Set([...verified, ...failed]);
+  const unverified = Object.entries(coverage.static.surfaces)
+    .filter(([, v]) => v.verification === 'behavior' || v.verification === 'conformance')
+    .map(([id]) => id)
+    .filter((id) => !touched.has(id));
+
+  return {
     ...coverage,
     static: {
       ...coverage.static,
@@ -213,14 +227,10 @@ export function applyBehaviorResults(coverage: RuntimeCoverage, results: Behavio
     },
     behavioral: {
       scenarioResults: coverage.behavioral?.scenarioResults ?? [],
-      verified: [...(coverage.behavioral?.verified ?? [])],
-      failed: [...(coverage.behavioral?.failed ?? [])],
-      unverified: [...(coverage.behavioral?.unverified ?? [])],
+      verified: [...verified],
+      failed: [...failed],
+      unverified,
+      details,
     },
   };
-  for (const r of results) {
-    if (r.status === 'verified') next.behavioral!.verified.push(r.surfaceId);
-    else next.behavioral!.failed.push(r.surfaceId);
-  }
-  return next;
 }

@@ -105,6 +105,10 @@ export function validateRuntime(
   if (sessionMissing) {
     out.hard.push(`${source}: declares sessionApi but session is missing`);
   }
+  const configMissing = !!caps.providerConfigApi && !isObject((rt as any).config);
+  if (configMissing) {
+    out.hard.push(`${source}: declares providerConfigApi but config.get/config.update is missing`);
+  }
 
   if (caps.turnBudgetApi) {
     out.warnings.push(
@@ -119,6 +123,7 @@ export function validateRuntime(
   for (const surface of MANIFEST.surfaces) {
     if (sessionMissing && SESSION_CORE_IDS.has(surface.id)) continue;
     if (!caps.sessionApi && SESSION_CORE_IDS.has(surface.id)) continue;
+    if (configMissing && (surface.id === 'provider.config' || surface.id === 'provider.config.update')) continue;
 
     const status = coverage.static.surfaces[surface.id]?.status;
 
@@ -146,7 +151,7 @@ export function validateRuntime(
             `${source}: declares ${surface.capability} but ${surface.id} is missing — capability downgraded to false (${surface.impact})`,
           );
         }
-      } else {
+      } else if (!surface.suppressWarning) {
         out.warnings.push(`${source}: ${surface.id} is missing — ${surface.impact}`);
       }
       continue;

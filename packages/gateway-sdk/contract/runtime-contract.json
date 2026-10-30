@@ -1664,7 +1664,8 @@
       "impact": "物化残留",
       "presets": [
         "desktop"
-      ]
+      ],
+      "suppressWarning": true
     },
     {
       "direction": "gateway->runtime",

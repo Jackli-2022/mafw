@@ -34,7 +34,7 @@ export type CapabilityKind = 'feature' | 'transport' | 'strategy' | 'trust' | 'i
 
 export type PresetId = 'core' | 'conversation' | 'autonomous' | 'desktop';
 
-export type SurfaceStatus = 'present' | 'missing' | 'unverified' | 'verified' | 'failed';
+export type SurfaceStatus = 'present' | 'missing' | 'unverified';
 
 export interface ContractSurface {
   /** 稳定点号 id；发布后不可改名。 */
@@ -62,6 +62,8 @@ export interface ContractSurface {
   conformance?: string[];
   /** 期望该面的预设（反向索引；权威是 ContractPreset.requiredSurfaces）。 */
   presets?: PresetId[];
+  /** gated 但不在 requires 中时，不产生 activation warning（只进覆盖率）。 */
+  suppressWarning?: boolean;
   since?: string;
   deprecated?: boolean;
 }

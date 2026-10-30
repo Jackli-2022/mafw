@@ -2,6 +2,8 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { build } from 'esbuild';
+import { computeCoverage, applyBehaviorResults } from '../../../src/runtime/coverage';
+import { buildRuntimeContractManifest } from '../../../src/runtime/contract-manifest';
 
 const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
 let createClaudeRuntime: any;
@@ -50,6 +52,14 @@ describe('claude adapter behavior gaps', () => {
     expect(sdk.calls[0].prompt).toBe('');
     expect(rt.session.children).toBeDefined();
     expect(await rt.session.children({ sessionID: s.id })).toEqual([]);
+
+    const coverage = computeCoverage({ rt, source: 'active' }, buildRuntimeContractManifest());
+    const applied = applyBehaviorResults(coverage, [
+      { surfaceId: 'prompt.result.usage', status: 'failed', detail: 'usage missing' },
+      { surfaceId: 'prompt.parts.file', status: 'failed', detail: 'file part text dropped' },
+    ]);
+    expect(applied.behavioral?.failed).toEqual(expect.arrayContaining(['prompt.result.usage', 'prompt.parts.file']));
+    expect(applied.behavioral?.details['prompt.result.usage']).toBe('usage missing');
   });
 
   it('detects the MCP stub in registerTools', async () => {

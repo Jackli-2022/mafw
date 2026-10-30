@@ -67,6 +67,19 @@ describe('coverage engine', () => {
     expect(next.static.surfaces['prompt.result.usage'].status).toBe('unverified');
   });
 
+  it('tracks behavioral details and the unverified remainder', () => {
+    const c = computeCoverage({ rt: fakeRuntime(), source: 'active' }, manifest);
+    const next = applyBehaviorResults(c, [
+      { surfaceId: 'prompt.result.usage', status: 'failed', detail: 'usage missing' },
+      { surfaceId: 'prompt.parts.file', status: 'verified' },
+    ]);
+    expect(next.behavioral?.details['prompt.result.usage']).toBe('usage missing');
+    expect(next.behavioral?.verified).toContain('prompt.parts.file');
+    expect(next.behavioral?.unverified).not.toContain('prompt.result.usage');
+    expect(next.behavioral?.unverified).not.toContain('prompt.parts.file');
+    expect(next.behavioral?.unverified).toContain('prompt.agent');
+  });
+
   it('rejects non-function rt probes (container/value false positive)', () => {
     const rt = fakeRuntime({
       session: { ...fakeRuntime().session, update: true, question: {}, instructions: {} },

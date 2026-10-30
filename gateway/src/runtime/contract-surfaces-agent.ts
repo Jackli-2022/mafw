@@ -223,7 +223,7 @@ export const AGENT_SURFACES: ContractSurface[] = [
     id: 'identity.agents.remove', title: 'agents.remove', domain: 'identity',
     obligation: 'gated', capability: 'agentConfigApi', verification: 'presence',
     implementation: 'agents.remove', probe: ['agents', 'remove'],
-    consumer: 'identity cleanup', impact: '物化残留', presets: DESK,
+    consumer: 'identity cleanup', impact: '物化残留', presets: DESK, suppressWarning: true,
   }),
   row({
     id: 'identity.prompt.agent', title: 'prompt.agent binding', domain: 'identity',

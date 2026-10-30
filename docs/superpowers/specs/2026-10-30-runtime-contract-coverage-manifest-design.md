@@ -338,7 +338,7 @@ export interface ContractPreset {
 ### 6.7 Coverage
 
 ```ts
-export type SurfaceStatus = 'present' | 'missing' | 'unverified' | 'verified' | 'failed';
+export type SurfaceStatus = 'present' | 'missing' | 'unverified';
 
 export interface RuntimeCoverage {
   runtime: string;
@@ -381,7 +381,8 @@ export interface RuntimeCoverage {
     scenarioResults: Array<{ id: string; pass: boolean; failures: string[] }>;
     verified: string[];             // surface ids
     failed: string[];               // surface ids
-    unverified: string[];           // 未跑到的 surface ids
+    unverified: string[];           // 未跑到的 behavior/conformance surface ids
+    details: Record<string, string>; // surfaceId → 失败/验证说明
   };
 }
 ```
@@ -500,7 +501,7 @@ for surface of manifest.surfaces:
 - `requiredWhenSatisfied`：`surface.requiredWhen.capabilities` 全部为 true；为空 = 无条件。
 - `required` 缺失 → 保持现有 hard 语义：回退内置 runtime，错误消息带 surface id + impact。
 - `gated` 且在该 capability 的 `requires` 中缺失 → 降级该 capability，不整体失败；`validationNotes` 记录 surface id + impact。
-- `gated` 但不在 `requires` 中缺失 → 只 warning（如 `permissionList`），能力保持 true。
+- `gated` 但不在 `requires` 中缺失 → 只 warning（如 `permissionList`），能力保持 true；`suppressWarning: true` 的 unlocks-only 面（如 `identity.agents.remove`）只进覆盖率，不写 activation warning。
 - `optional` 缺失 → 不降级任何 capability；进覆盖率缺口；激活期 warning 只对 `WARN_ON_MISSING` 子集（`session.update` / `healthCheck` / `getBaseUrl`）发出，保持旧行为。
 - `advisory` 缺失 → warning。
 - `verification='behavior'` / `'conformance'` / `'attested'`：激活期**不探针**，`static.surfaces` 标 `unverified`；行为结果由 `mafw plugin-check` / conformance 写入 `behavioral`。
@@ -514,24 +515,23 @@ static.surfaces[id] = status:
   - present      : verification=presence && probePasses
   - missing      : verification=presence && !probePasses
   - unverified   : verification in (behavior,conformance,attested) && 尚无 behavioral 结果
-  - verified     : behavioral 结果通过（仅 behavioral 通道写入）
-  - failed       : behavioral 结果失败（仅 behavioral 通道写入）
+  (verified/failed 只存在于 behavioral 通道，不回写 static)
 
 static.presets[p] = {
   required: count(preset.requiredSurfaces[p]),
-  covered: count(preset.requiredSurfaces[p] where status=present|verified),
+  covered: count(preset.requiredSurfaces[p] where status=present),
   missing: [surface ids where status=missing]
 }
 static.obligations[o] = { total, present, unverified, missing }
 static.missing = 所有 required/optional/advisory 缺失 + gated 但 capability=false 的面
 static.unverified = attested/cognition/behavior-not-run 的面
-behavioral = { scenarioResults, verified, failed, unverified }  // 仅 plugin-check/conformance
+behavioral = { scenarioResults, verified, failed, unverified, details }  // 仅 plugin-check/conformance
 ```
 
 - `gated` 面在 capability=false 时计入“缺失”，但不算错误。
 - `attested` 面单列 `unverified`，不混进 covered。
 - 静态覆盖率按 `probePasses` 计算 presence；行为覆盖由 `behavior` probe / conformance 结果写入 `behavioral`，不覆盖 `static.surfaces` 的 presence 结果。
-- `cognition` 面永远不显示为 static present——gateway 自己提供端点，探针会假阳性；它们只能是 `unverified` 或 `verified`（跑过 S3/S4）。
+- `cognition` 面永远不显示为 static present——gateway 自己提供端点，探针会假阳性；它们只能是 `unverified`，直到 `behavioral` 标记 verified/failed（跑过 S3/S4）。
 
 ### 8.3 未声明能力的调用语义
 

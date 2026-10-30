@@ -86,6 +86,23 @@ describe('manifest-driven validateRuntime', () => {
     expect(validateRuntime(rt, 'test').downgraded.join('\n')).toMatch(/instructionsApi/);
   });
 
+  it('does not warn for the agentConfigApi unlock-only agents.remove surface', () => {
+    const rt = fakeRuntime({
+      capabilities: { ...fullCapabilities(), agentConfigApi: true },
+      agents: { install: async () => {} },
+    });
+    expect(validateRuntime(rt, 'test').warnings.join('\n')).not.toMatch(/identity\.agents\.remove/);
+  });
+
+  it('emits one config hard error when config is entirely absent', () => {
+    const rt = fakeRuntime({
+      capabilities: { ...fullCapabilities(), providerConfigApi: true },
+      config: undefined,
+    });
+    const hard = validateRuntime(rt, 'test').hard.filter((h) => h.includes('config'));
+    expect(hard).toHaveLength(1);
+  });
+
   it('does not warn about plugin declaration surfaces when the activation subject carries them', () => {
     const rt = fakeRuntime({ capabilities: { ...minimalCapabilities(), eventStream: true } });
     const v = validateRuntime(rt, 'test', {
