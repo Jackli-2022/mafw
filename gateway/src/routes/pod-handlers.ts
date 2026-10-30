@@ -4,6 +4,7 @@ import { handlePods, type PodRouteDeps } from './pods';
 export function attachPodHandlers(registry: RouteRegistry, deps: PodRouteDeps): void {
   const operationIds = [
     'pods.ensure',
+    'pods.lookup',
     'pods.create',
     'pods.get',
     'pods.update',

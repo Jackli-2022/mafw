@@ -1,5 +1,6 @@
 import * as http from 'http';
 import { PodError } from '../../../src/core/pod/pod-store';
+import { attachPodHandlers } from '../../../src/routes/pod-handlers';
 import { handlePods } from '../../../src/routes/pods';
 
 function mockRes() {
@@ -166,6 +167,13 @@ describe('pod routes', () => {
       access: { requireMember: jest.fn(() => { throw new PodError(403, 'foreign pod'); }) },
     });
     expect((await call('GET', '/api/projects/p1/pod/lookup?actorSessionID=ses_x', foreign)).res.status).toBe(403);
+  });
+
+  it('attaches a handler for the lookup operation', () => {
+    const ids: string[] = [];
+    const registry = { attachHandler: (id: string) => ids.push(id) } as any;
+    attachPodHandlers(registry, makeDeps());
+    expect(ids).toContain('pods.lookup');
   });
 
   it('falls through unknown routes', async () => {
