@@ -51,8 +51,10 @@ describe('PodMessageDelivery', () => {
     const h = makeDelivery({ node: 'execute' });
     expect(await h.delivery.deliver(h.message.id)).toBe('pending');
     expect(h.prompts).toHaveLength(0);
-    const block = h.delivery.pendingForSessionSync('ses_builder');
-    expect(block).toContain('[POD HANDOFF]');
+    const claim = h.delivery.claimPendingForSession('ses_builder');
+    expect(claim?.block).toContain('[POD HANDOFF]');
+    expect(h.store.listMessages(h.pod.id)[0].deliveredAt).toBeNull();
+    h.delivery.commitDelivered(claim!.ids, 'ses_builder');
     expect(h.store.listMessages(h.pod.id)[0].deliveredAt).toBeTruthy();
     expect(await h.delivery.pendingForSession('ses_builder')).toBeNull();
     h.db.close();

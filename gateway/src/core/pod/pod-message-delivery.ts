@@ -54,19 +54,27 @@ export class PodMessageDelivery {
     return this.pendingForSessionSync(sessionId);
   }
 
-  pendingForSessionSync(sessionId: string): string | null {
+  claimPendingForSession(sessionId: string): { block: string; ids: string[] } | null {
     const member = this.deps.store.getMemberBySession(sessionId);
     if (!member) return null;
-    const messages = this.deps.store
-      .listMessages(member.podId, 1000)
-      .filter((message) => (message.toMemberId === member.id || message.toMemberId === null) && !message.deliveredAt)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const messages = this.deps.store.listPendingMessages(member.podId, member.id);
     if (messages.length === 0) return null;
+    return {
+      block: messages.map((message) => this.render(message)).join('\n\n'),
+      ids: messages.map((message) => message.id),
+    };
+  }
+
+  commitDelivered(ids: string[], sessionId: string): void {
     const now = this.now();
-    for (const message of messages) {
-      this.deps.store.markMessageDelivered(message.id, sessionId, now);
-    }
-    return messages.map((message) => this.render(message)).join('\n\n');
+    for (const id of ids) this.deps.store.markMessageDelivered(id, sessionId, now);
+  }
+
+  pendingForSessionSync(sessionId: string): string | null {
+    const claim = this.claimPendingForSession(sessionId);
+    if (!claim) return null;
+    this.commitDelivered(claim.ids, sessionId);
+    return claim.block;
   }
 
   render(message: PodMessageRow): string {
@@ -98,10 +106,6 @@ export class PodMessageDelivery {
   }
 
   private findMessage(messageId: string): PodMessageRow | null {
-    for (const pod of this.deps.store.listPods()) {
-      const found = this.deps.store.listMessages(pod.id, 1000).find((message) => message.id === messageId);
-      if (found) return found;
-    }
-    return null;
+    return this.deps.store.getMessage(messageId);
   }
 }

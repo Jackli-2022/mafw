@@ -638,6 +638,27 @@ export class PodStore {
     ).all(podId, limit) as any[]).map(messageFromRow);
   }
 
+  getMessage(id: string): PodMessageRow | null {
+    const row = this.db.prepare('SELECT * FROM pod_messages WHERE id = ?').get(id) as any;
+    return row ? messageFromRow(row) : null;
+  }
+
+  getMessageByExternalId(podId: string, externalId: string): PodMessageRow | null {
+    const row = this.db.prepare(
+      'SELECT * FROM pod_messages WHERE pod_id = ? AND external_message_id = ?',
+    ).get(podId, externalId) as any;
+    return row ? messageFromRow(row) : null;
+  }
+
+  listPendingMessages(podId: string, memberId: string): PodMessageRow[] {
+    return (this.db.prepare(`
+      SELECT * FROM pod_messages
+      WHERE pod_id = ? AND delivered_at IS NULL
+        AND (to_member_id = ? OR to_member_id IS NULL)
+      ORDER BY created_at ASC, rowid ASC
+    `).all(podId, memberId) as any[]).map(messageFromRow);
+  }
+
   markMessageRead(id: string, now: string): void {
     this.db.prepare('UPDATE pod_messages SET read_at = ? WHERE id = ?').run(now, id);
   }

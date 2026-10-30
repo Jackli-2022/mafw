@@ -536,6 +536,7 @@ class MafwScheduler {
   private podMessageDelivery!: PodMessageDelivery;
   private podA2ABridge!: PodA2ABridge;
   private readonly podA2AAgents = new Map<string, PodA2AAgent>();
+  private readonly podPendingHandoffs = new Map<string, string[]>();
   private taskService!: TaskService;
   private sessionConfigService!: SessionConfigService;
   private checkpointService!: CheckpointService;
@@ -970,23 +971,23 @@ class MafwScheduler {
           return null;
         }
       },
-      podContext: (goalId: string, node: 'plan' | 'execute' | 'review') => {
+      podContext: (goalId: string, node: 'plan' | 'execute' | 'review', sessionId: string) => {
         try {
           const podId = this.podService?.getPodIdForGoal(goalId);
           if (!podId) return null;
-          const role = node === 'plan' ? 'lead' : node === 'execute' ? 'builder' : 'reviewer';
-          const member = this.podStore.getMemberByRole(podId, role);
-          const session = member
-            ? this.podStore.listSessions(podId)
-              .filter((item) => item.memberId === member.id && !item.endedAt)
-              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
-            : null;
-          const handoff = session ? this.podMessageDelivery?.pendingForSessionSync(session.sessionId) ?? null : null;
+          const claim = this.podMessageDelivery?.claimPendingForSession(sessionId) ?? null;
+          if (claim) this.podPendingHandoffs.set(sessionId, claim.ids);
           const memory = this.podMemoryService?.renderContext(podId, node) ?? null;
-          return [handoff, memory].filter(Boolean).join('\n\n') || null;
+          return [claim?.block ?? null, memory].filter(Boolean).join('\n\n') || null;
         } catch {
           return null;
         }
+      },
+      onPromptDispatched: (sessionId: string) => {
+        const ids = this.podPendingHandoffs.get(sessionId);
+        if (!ids) return;
+        this.podMessageDelivery?.commitDelivered(ids, sessionId);
+        this.podPendingHandoffs.delete(sessionId);
       },
     });
 

@@ -1,6 +1,6 @@
 ﻿import type { Message, Task } from '@a2a-js/sdk';
 import { TaskState } from '@a2a-js/sdk';
-import { PodError, type PodStore } from './pod-store';
+import { PodError, type PodStore, type PodTaskRow } from './pod-store';
 import { redactSecrets } from '../../recall/redact';
 import type { PodAccess } from './pod-access';
 import type { PodMessageService } from './pod-message-service';
@@ -72,9 +72,7 @@ export class PodA2ABridge {
       throw new PodError(400, 'request requires toMemberId');
     }
 
-    const existing = this.deps.store
-      .listMessages(podId, 1000)
-      .find((item) => item.externalMessageId === parsed.messageId);
+    const existing = this.deps.store.getMessageByExternalId(podId, parsed.messageId);
     if (existing) {
       const taskId = parsed.podTaskId
         ?? (parsed.kind === 'request' ? `podtask_${safeId(parsed.messageId)}` : null)
@@ -189,7 +187,7 @@ export class PodA2ABridge {
       }
     }
     this.deps.notify?.(podId);
-    return buildA2ATask({ task });
+    return buildA2ATask({ task, artifacts: this.artifactsForTask(task) });
   }
 
   getTask(podId: string, a2aTaskId: string): Task | null {
@@ -198,7 +196,7 @@ export class PodA2ABridge {
     const task = this.deps.store.getTask(localId);
     if (!task || task.podId !== podId) return null;
     const state = link?.state ? (TaskState as any)[link.state] : undefined;
-    return buildA2ATask({ task, state });
+    return buildA2ATask({ task, state, artifacts: this.artifactsForTask(task) });
   }
 
   cancelTask(podId: string, a2aTaskId: string): Task | null {
@@ -210,7 +208,20 @@ export class PodA2ABridge {
     this.deps.store.updateTask(task.id, { status: 'failed' }, this.deps.now());
     this.deps.store.setA2AState(podId, 'task', task.id, 'TASK_STATE_CANCELED');
     this.deps.notify?.(podId);
-    return buildA2ATask({ task: { ...task, status: 'failed' }, state: TaskState.TASK_STATE_CANCELED });
+    return buildA2ATask({ task: { ...task, status: 'failed' }, state: TaskState.TASK_STATE_CANCELED, artifacts: this.artifactsForTask(task) });
+  }
+
+  private artifactsForTask(task: PodTaskRow): { artifactId: string; name?: string; parts: any[] }[] {
+    if (!task.artifactRefsJson) return [];
+    try {
+      const refs = JSON.parse(task.artifactRefsJson);
+      return Array.isArray(refs)
+        ? refs.filter((ref): ref is string => typeof ref === 'string')
+          .map((ref) => ({ artifactId: ref, name: ref, parts: [] }))
+        : [];
+    } catch {
+      return [];
+    }
   }
 
   listTasks(podId: string, contextId?: string | null): Task[] {

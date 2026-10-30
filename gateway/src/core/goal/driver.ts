@@ -59,7 +59,9 @@ export interface DriverDeps {
   /** D4b：反事实推演块（pre-mortem，仅 plan 注入），缺省不注入。fail-open。 */
   counterfactualPrior?: (goalId: string) => string | null;
   /** Pod Lite：项目级 Pod 上下文块，缺省不注入。fail-open。 */
-  podContext?: (goalId: string, node: 'plan' | 'execute' | 'review') => string | null;
+  podContext?: (goalId: string, node: 'plan' | 'execute' | 'review', sessionId: string) => string | null;
+  /** Pod handoff：promptAsync 被接受后提交 pending 投递状态。 */
+  onPromptDispatched?: (sessionId: string) => void;
 }
 
 const NODE_PHASE: Record<'plan' | 'execute' | 'review', { running: string; complete: string }> = {
@@ -170,13 +172,15 @@ export class NodeDriver {
       priorBlock: this.deps.capabilityPrior?.(goalId) ?? undefined,
       counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
     });
-    const podBlock = this.deps.podContext?.(goalId, node) ?? null;
+    const podBlock = this.deps.podContext?.(goalId, node, sessionId) ?? null;
     const prompt = podBlock ? `${podBlock}\n\n${basePrompt}` : basePrompt;
 
     // 不 await——pi 的 promptAsync 在 idle 会话阻塞到回合结束，await 会卡死 advance（spec §7）
     void this.deps.client.promptAsync({
       sessionID: sessionId, parts: [{ type: 'text', text: prompt }], agent: `mafw-${node}`,
       outputSchema: nodeOutputSchema(node),
+    }).then(() => {
+      this.deps.onPromptDispatched?.(sessionId);
     }).catch((err: any) => {
       this.onSessionError(sessionId, `promptAsync: ${err?.message ?? err}`);
     });
