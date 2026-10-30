@@ -13,6 +13,8 @@ import {
   podRoleForSession,
   podShortTime,
   podTaskArtifacts,
+  podMessageDeliveryLabel,
+  podMessageProtocolLabel,
   shouldCloseTranscript,
   terminalGoalsNewestFirst,
 } from "./pod-model"
@@ -129,5 +131,14 @@ describe("pod-model", () => {
     assert.equal(podShortTime(null, Date.now()), "")
     assert.deepEqual(podTaskArtifacts(task("a", "pending", { artifactRefsJson: '["a.md","b.md"]' })), ["a.md", "b.md"])
     assert.deepEqual(podTaskArtifacts(task("b", "pending", { artifactRefsJson: "not json" })), [])
+  })
+
+  test("labels handoff protocol and delivery state", () => {
+    assert.equal(podMessageProtocolLabel({ protocol: "a2a" }), "A2A")
+    assert.equal(podMessageProtocolLabel({ protocol: "rest" }), "REST")
+    assert.equal(podMessageProtocolLabel({ protocol: null }), null)
+    assert.equal(podMessageDeliveryLabel({ deliveredAt: null }), "待投递")
+    assert.equal(podMessageDeliveryLabel({ deliveredAt: "2026-10-30T00:00:00.000Z" }), "已投递")
+    assert.equal(podMessageDeliveryLabel({}), null)
   })
 })

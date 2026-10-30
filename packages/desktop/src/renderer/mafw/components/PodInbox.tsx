@@ -3,7 +3,7 @@ import type { PodDetail, PodMessage } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { SelectV2 } from "@mafw/ui/v2/select-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { podMemberName, podShortTime } from "../pod-model"
+import { podMemberName, podMessageDeliveryLabel, podMessageProtocolLabel, podShortTime } from "../pod-model"
 
 const KINDS = [
   { value: "note", label: "备注" },
@@ -70,6 +70,12 @@ export function PodInbox(props: {
                     {podMemberName(props.detail, message.fromMemberId)} → {message.toMemberId ? podMemberName(props.detail, message.toMemberId) : "广播"}
                   </span>
                   <span class="mafw-pod-message-kind">{KINDS.find((item) => item.value === message.kind)?.label ?? message.kind}</span>
+                  <Show when={podMessageProtocolLabel(message)}>
+                    <span class="mafw-pod-message-protocol">{podMessageProtocolLabel(message)}</span>
+                  </Show>
+                  <Show when={podMessageDeliveryLabel(message)}>
+                    <span class="mafw-pod-message-delivery">{podMessageDeliveryLabel(message)}</span>
+                  </Show>
                   <span class="mafw-pod-message-time">{podShortTime(message.createdAt, Date.now())}</span>
                 </div>
                 <div class="mafw-pod-message-body">{message.body}</div>

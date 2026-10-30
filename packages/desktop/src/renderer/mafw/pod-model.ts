@@ -210,3 +210,14 @@ export function podTaskArtifacts(task: PodTask): string[] {
     return []
   }
 }
+
+export function podMessageProtocolLabel(message: { protocol?: string | null }): "A2A" | "REST" | null {
+  if (message.protocol === "a2a") return "A2A"
+  if (message.protocol === "rest") return "REST"
+  return null
+}
+
+export function podMessageDeliveryLabel(message: { deliveredAt?: string | null }): "已投递" | "待投递" | null {
+  if (message.deliveredAt === undefined) return null
+  return message.deliveredAt ? "已投递" : "待投递"
+}
