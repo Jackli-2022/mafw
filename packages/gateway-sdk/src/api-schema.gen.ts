@@ -2232,6 +2232,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/a2a/pods/{podId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.a2a"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/a2a/pods/{podId}/.well-known/agent-card.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["pods.a2aCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/a2a/pods/{podId}/artifacts/{artifactId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["pods.a2aArtifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pods/{podId}": {
         parameters: {
             query?: never;
@@ -6326,6 +6374,67 @@ export interface operations {
             header?: never;
             path: {
                 projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.a2a": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.a2aCard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.a2aArtifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                artifactId: string;
             };
             cookie?: never;
         };

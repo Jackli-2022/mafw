@@ -82,6 +82,7 @@ export function a2aStateForPodStatus(status: PodTaskStatus): TaskState {
     case 'failed':
       return TaskState.TASK_STATE_FAILED;
   }
+  return TaskState.TASK_STATE_WORKING;
 }
 
 export function podStatusForA2AState(state: TaskState): PodTaskStatus {
@@ -101,6 +102,7 @@ export function podStatusForA2AState(state: TaskState): PodTaskStatus {
     case TaskState.TASK_STATE_UNSPECIFIED:
       return 'in_progress';
   }
+  return 'in_progress';
 }
 
 export function buildA2AMessage(input: {
@@ -161,5 +163,5 @@ export function buildA2ATask(input: {
       goalId: task.goalId,
       ownerMemberId: task.ownerMemberId,
     },
-  } as Task;
+  } as unknown as Task;
 }

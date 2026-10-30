@@ -3291,6 +3291,83 @@
         }
       }
     },
+    "/a2a/pods/{podId}": {
+      "post": {
+        "operationId": "pods.a2a",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a/pods/{podId}/.well-known/agent-card.json": {
+      "get": {
+        "operationId": "pods.a2aCard",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/a2a/pods/{podId}/artifacts/{artifactId}": {
+      "get": {
+        "operationId": "pods.a2aArtifact",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/pods/{podId}": {
       "get": {
         "operationId": "pods.get",

@@ -1,5 +1,6 @@
 import type { Task } from '@a2a-js/sdk';
-import type { ListTasksRequest, ListTasksResponse, ServerCallContext, TaskStore } from '@a2a-js/sdk/server';
+import type { ListTasksRequest, ListTasksResponse } from '@a2a-js/sdk';
+import type { ServerCallContext, TaskStore } from '@a2a-js/sdk/server';
 import type { PodA2ABridge } from './pod-a2a-bridge';
 
 /**
@@ -18,6 +19,6 @@ export class PodA2ATaskStore implements TaskStore {
   }
 
   async list(_params: ListTasksRequest, _context: ServerCallContext): Promise<ListTasksResponse> {
-    return { tasks: [] } as ListTasksResponse;
+    return { tasks: [] } as unknown as ListTasksResponse;
   }
 }
