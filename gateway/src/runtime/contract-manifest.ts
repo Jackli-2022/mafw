@@ -4,24 +4,58 @@
  * 本文件只做数据装配与结构不变量校验；覆盖计算在 coverage.ts，
  * 校验投影在 validate.ts，JSON 产物由 scripts/emit-runtime-contract.ts 生成。
  */
-import type { RuntimeContractManifest } from './contract-manifest-types';
+import type { ContractDomain, RuntimeContractManifest } from './contract-manifest-types';
 import { CORE_SURFACES } from './contract-surfaces-core';
 import { AGENT_SURFACES } from './contract-surfaces-agent';
+import { CONTRACT_CAPABILITIES } from './contract-capabilities';
+import { CONTRACT_PRESETS } from './contract-presets';
+import { CONTRACT_EVENTS } from './contract-events';
+import { CONTRACT_COGNITION } from './contract-cognition';
 
 export const SCHEMA_VERSION = 1 as const;
 export const CONTRACT_VERSION = '2026.10.0';
 
+const DOMAIN_TITLES: Record<ContractDomain, string> = {
+  meta: '插件元数据/声明面',
+  session: '会话生命周期',
+  prompt: '回合输入/结果',
+  events: '事件面',
+  tools: '工具面',
+  approval: '审批/问答',
+  identity: '身份物化',
+  discovery: '命令/技能发现',
+  mcp: 'MCP 管理',
+  branch: '分支/回滚/检查点',
+  process: '进程/健康/补全',
+  provider: 'Provider/配置',
+  cognition: '认知面（runtime -> gateway）',
+  media: '媒体',
+  usage: '用量',
+};
+
+function buildDomains(surfaces: RuntimeContractManifest['surfaces']): RuntimeContractManifest['domains'] {
+  const seen = new Set<ContractDomain>();
+  const out: RuntimeContractManifest['domains'] = [];
+  for (const s of surfaces) {
+    if (seen.has(s.domain)) continue;
+    seen.add(s.domain);
+    out.push({ id: s.domain, title: DOMAIN_TITLES[s.domain], description: '' });
+  }
+  return out;
+}
+
 export function buildRuntimeContractManifest(): RuntimeContractManifest {
+  const surfaces = [...CORE_SURFACES, ...AGENT_SURFACES];
   return {
     schemaVersion: SCHEMA_VERSION,
     contractVersion: CONTRACT_VERSION,
     generatedFrom: 'gateway/src/runtime/contract-manifest.ts',
-    domains: [],
-    surfaces: [...CORE_SURFACES, ...AGENT_SURFACES],
-    capabilities: [],
-    events: [],
-    cognition: [],
-    presets: [],
+    domains: buildDomains(surfaces),
+    surfaces,
+    capabilities: CONTRACT_CAPABILITIES,
+    events: CONTRACT_EVENTS,
+    cognition: CONTRACT_COGNITION,
+    presets: CONTRACT_PRESETS,
   };
 }
 

@@ -5,6 +5,11 @@ import {
 } from '../../../src/runtime/contract-manifest';
 import { CORE_SURFACES } from '../../../src/runtime/contract-surfaces-core';
 import { AGENT_SURFACES } from '../../../src/runtime/contract-surfaces-agent';
+import { fullCapabilities, minimalCapabilities } from '../../../src/runtime/contract';
+import { CONTRACT_CAPABILITIES } from '../../../src/runtime/contract-capabilities';
+import { CONTRACT_PRESETS } from '../../../src/runtime/contract-presets';
+import { CONTRACT_EVENTS } from '../../../src/runtime/contract-events';
+import { MAFW_RUNTIME_EVENT_NAMES } from '../../../src/runtime/mafw-vocabulary';
 
 function fixture(overrides: Partial<RuntimeContractManifest> = {}): RuntimeContractManifest {
   return {
@@ -75,6 +80,10 @@ describe('runtime contract manifest invariants', () => {
     expect(m.schemaVersion).toBe(1);
     expect(m.contractVersion).toBe('2026.10.0');
     expect(m.generatedFrom).toBe('gateway/src/runtime/contract-manifest.ts');
+  });
+
+  it('full manifest passes structural invariants', () => {
+    expect(validateManifest(buildRuntimeContractManifest())).toEqual([]);
   });
 });
 
@@ -148,5 +157,53 @@ describe('agent surfaces', () => {
   it('exposes AGENT_SURFACES without duplicate ids', () => {
     const ids = AGENT_SURFACES.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('capabilities, presets, events', () => {
+  it('has one capability entry per RuntimeCapabilities key', () => {
+    const keys = Object.keys(fullCapabilities()).sort();
+    const ids = CONTRACT_CAPABILITIES.map((c) => c.id).sort();
+    expect(ids).toEqual(keys);
+    for (const key of Object.keys(minimalCapabilities())) {
+      expect(CONTRACT_CAPABILITIES.some((c) => c.id === key)).toBe(true);
+    }
+  });
+
+  it('keeps nativeApprovals as an AND-group of permissionReply', () => {
+    const cap = CONTRACT_CAPABILITIES.find((c) => c.id === 'nativeApprovals')!;
+    expect(cap.requires).toEqual(['approval.permissionReply']);
+    expect(cap.unlocks).toEqual(expect.arrayContaining(['approval.permissionList']));
+  });
+
+  it('keeps sessionStorageApi gated on listByDirectory and eventStream declaration-free', () => {
+    expect(CONTRACT_CAPABILITIES.find((c) => c.id === 'sessionStorageApi')!.requires).toEqual(['session.listByDirectory']);
+    expect(CONTRACT_CAPABILITIES.find((c) => c.id === 'eventStream')!.requires).toEqual([]);
+  });
+
+  it('presets reference existing surfaces and declare capabilities', () => {
+    const surfaceIds = new Set(buildRuntimeContractManifest().surfaces.map((s) => s.id));
+    for (const preset of CONTRACT_PRESETS) {
+      for (const id of preset.requiredSurfaces) expect(surfaceIds.has(id)).toBe(true);
+      for (const cap of preset.capabilities) expect(Object.keys(fullCapabilities())).toContain(cap);
+    }
+    expect(CONTRACT_PRESETS.map((p) => p.id)).toEqual(['core', 'conversation', 'autonomous', 'desktop']);
+  });
+
+  it('events cover the canonical runtime vocabulary exactly once', () => {
+    const types = CONTRACT_EVENTS.map((e) => e.type);
+    expect(new Set(types).size).toBe(types.length);
+    for (const type of MAFW_RUNTIME_EVENT_NAMES) expect(types).toContain(type);
+  });
+
+  it('event metadata carries family/terminal/requiredFields', () => {
+    const turn = CONTRACT_EVENTS.find((e) => e.type === 'turn.completed')!;
+    expect(turn.family).toBe('lifecycle');
+    expect(turn.terminal).toBe(true);
+    expect(turn.requiredFields).toContain('sessionID');
+    expect(CONTRACT_EVENTS.find((e) => e.type === 'part.updated')!.family).toBe('message');
+    expect(CONTRACT_EVENTS.find((e) => e.type === 'permission.asked')!.family).toBe('approval');
+    expect(CONTRACT_EVENTS.find((e) => e.type === 'usage.updated')!.family).toBe('usage');
+    expect(CONTRACT_EVENTS.find((e) => e.type === 'session.compacted')!.family).toBe('compaction');
   });
 });

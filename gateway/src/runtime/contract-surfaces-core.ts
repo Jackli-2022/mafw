@@ -153,6 +153,12 @@ export const CORE_SURFACES: ContractSurface[] = [
     obligation: 'optional', verification: 'presence', implementation: 'shell.{create,get,output,remove}',
     probe: ['shell'], consumer: 'background shell', impact: '后台 shell 不可用', presets: NONE,
   }),
+  row({
+    id: 'session.instructions', title: 'session.instructions', domain: 'session',
+    obligation: 'gated', capability: 'instructionsApi', verification: 'presence',
+    implementation: 'session.instructions.{list,put,remove}', probe: ['session', 'instructions'],
+    consumer: 'InstructionSyncService', impact: '指令分段/压缩免疫不可用', presets: DESK,
+  }),
 
   // ── branch ───────────────────────────────────────────────────────────
   row({
@@ -236,6 +242,18 @@ export const CORE_SURFACES: ContractSurface[] = [
     id: 'process.activeDialect', title: 'activeDialect', domain: 'process',
     obligation: 'optional', verification: 'conformance', implementation: 'activeDialect',
     conformance: ['chat-roundtrip'], consumer: 'GET /api/runtime', impact: '方言标签缺失', presets: NONE,
+  }),
+
+  row({
+    id: 'process.completion', title: 'completion.complete', domain: 'process',
+    obligation: 'gated', capability: 'completionApi', verification: 'presence',
+    implementation: 'completion.complete', probe: ['completion', 'complete'],
+    consumer: 'index-scan / media', impact: '无状态补全通道降级', presets: DESK,
+  }),
+  row({
+    id: 'process.credentials', title: 'credentials.getApiKey', domain: 'process',
+    obligation: 'optional', verification: 'presence', implementation: 'credentials.getApiKey',
+    probe: ['credentials', 'getApiKey'], consumer: 'media/auth', impact: '凭据回退 auth.json', presets: NONE,
   }),
 
   // ── provider ─────────────────────────────────────────────────────────
