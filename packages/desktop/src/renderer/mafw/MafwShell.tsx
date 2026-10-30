@@ -96,6 +96,7 @@ import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
 import { nextMode as nextPermissionMode } from "./components/permission-card-mapping"
 import { findPendingToolPart } from "./components/flow-card-placement"
 import { saveProjectLayout, loadProjectLayout, migrateLegacyLayout, pruneMissing } from "./layout-persist"
+import { sessionStatusFromInfo } from "./session-status"
 import { buildSessionMarkdown, extractExportTurns } from "./export-markdown"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
@@ -1286,7 +1287,9 @@ export function MafwShell() {
             session: sessionData ? [...prev.session.filter(s => s.id !== sessionID), sessionData] : prev.session,
             message: { ...prev.message, [sessionID]: msgs },
             part: { ...prev.part, ...parts },
-            session_status: { ...prev.session_status, [sessionID]: { type: "idle" } },
+            // 中途进入运行中的会话：time.busy > time.idle → busy；本地已有
+            // 状态优先（live SSE 比取回的快照新），不再无条件写 idle。
+            session_status: { ...prev.session_status, [sessionID]: sessionStatusFromInfo(sessionData, prev.session_status[sessionID]) },
           }))
         }
         return msgs

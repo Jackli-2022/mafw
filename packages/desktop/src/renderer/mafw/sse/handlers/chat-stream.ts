@@ -73,8 +73,20 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
     const delta = props.delta
     if (!delta) return true
     d.phase(sid, "writing")
+    // turn.started 可能没看到（中途进入会话）：delta 本身就是“正在跑”的证据。
+    d.setSessionStatus(sid, { type: "busy" })
     const out = applyPartDelta(d.getStore(), sid, msgId, partID, delta, field)
     if (out) d.patchStore(out)
+    return true
+  }
+
+  // 回合起点：turns 由 gateway 广播（MAFW TUI / 多客户端），桌面据此点亮 busy；
+  // 不结算、不置 done（终态由 turn.* 三元组负责）。
+  if (event.type === "turn.started") {
+    d.trace(event, "chat:turn-start")
+    d.phase(sid, "writing")
+    d.setSessionStatus(sid, { type: "busy" })
+    noteTurnActivity(sid)
     return true
   }
 

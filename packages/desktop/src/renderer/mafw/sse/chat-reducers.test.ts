@@ -58,9 +58,34 @@ describe("applyPartDelta", () => {
     const out = applyPartDelta({ message: {}, part: {} } as any, "s1", "m1", "m1-p0", "think", "reasoning")!
     expect(out.part.m1[0]).toMatchObject({ id: "m1-p0", type: "reasoning", text: "think" })
   })
-  test("non-text existing part → null", () => {
+  test("non-text existing part → appends a separate text part (id collision defense)", () => {
     const state = { message: {}, part: { m1: [{ id: "p1", type: "tool" }] } }
-    expect(applyPartDelta(state as any, "s1", "m1", "p1", "x")).toBeNull()
+    const out = applyPartDelta(state as any, "s1", "m1", "p1", "x")!
+    expect(out.part.m1).toHaveLength(2)
+    expect(out.part.m1[1]).toMatchObject({ id: "p1", type: "text", text: "x" })
+  })
+  test("text delta with the same id as a reasoning part appends to a text part", () => {
+    const state = { message: {}, part: { m1: [{ id: "p0", type: "reasoning", text: "think" }] } }
+    const out = applyPartDelta(state as any, "s1", "m1", "p0", "answer", "text")!
+    const reasoning = out.part.m1.find((p: any) => p.type === "reasoning")
+    const text = out.part.m1.find((p: any) => p.type === "text")
+    expect(reasoning.text).toBe("think")
+    expect(text.text).toBe("answer")
+  })
+  test("reasoning delta with the same id as a text part appends to a reasoning part", () => {
+    const state = { message: {}, part: { m1: [{ id: "p0", type: "text", text: "answer" }] } }
+    const out = applyPartDelta(state as any, "s1", "m1", "p0", "think", "reasoning")!
+    expect(out.part.m1.find((p: any) => p.type === "text").text).toBe("answer")
+    expect(out.part.m1.find((p: any) => p.type === "reasoning").text).toBe("think")
+  })
+  test("repeated deltas for the same kind reuse that kind's part", () => {
+    const state = { message: {}, part: { m1: [
+      { id: "p0", type: "reasoning", text: "think" },
+      { id: "p0", type: "text", text: "a" },
+    ] } }
+    const out = applyPartDelta(state as any, "s1", "m1", "p0", "b", "text")!
+    expect(out.part.m1.filter((p: any) => p.type === "text")).toHaveLength(1)
+    expect(out.part.m1.find((p: any) => p.type === "text").text).toBe("ab")
   })
 })
 
@@ -75,6 +100,22 @@ describe("applyPartUpsert", () => {
     const state = { message: {}, part: { m1: [{ id: "p1", type: "text", text: "old" }] } }
     const out = applyPartUpsert(state as any, "s1", { id: "p1", type: "text", text: "new", messageID: "m1" })!
     expect(out.part.m1[0].text).toBe("new")
+  })
+  test("same id but different type does not overwrite the other part", () => {
+    const state = { message: {}, part: { m1: [{ id: "p0", type: "reasoning", text: "think" }] } }
+    const out = applyPartUpsert(state as any, "s1", { id: "p0", type: "text", text: "answer", messageID: "m1" })!
+    expect(out.part.m1).toHaveLength(2)
+    expect(out.part.m1.find((p: any) => p.type === "reasoning").text).toBe("think")
+    expect(out.part.m1.find((p: any) => p.type === "text").text).toBe("answer")
+  })
+  test("subsequent same-type upsert updates the matching part after a collision", () => {
+    const state = { message: {}, part: { m1: [
+      { id: "p0", type: "reasoning", text: "think" },
+      { id: "p0", type: "text", text: "a" },
+    ] } }
+    const out = applyPartUpsert(state as any, "s1", { id: "p0", type: "text", text: "ab", messageID: "m1" })!
+    expect(out.part.m1).toHaveLength(2)
+    expect(out.part.m1.find((p: any) => p.type === "text").text).toBe("ab")
   })
   test("normalizes v2.1.0 name to tool (subagent)", () => {
     const state = { message: {}, part: { m1: [] } }

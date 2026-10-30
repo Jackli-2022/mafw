@@ -90,21 +90,37 @@ describe('@2.1 审批（v2 形状 → canonical permission.asked）', () => {
 });
 
 describe('@2.1 流式文本/推理', () => {
-  test('text started/delta/ended：part id 与历史合成规则一致', () => {
+  test('text started/delta/ended 共享同一 part id', () => {
     const started = apply(evt('session.text.started', { sessionID: 's1', assistantMessageID: 'm1', ordinal: 0 }))[0].payload;
     expect(started.type).toBe('part.updated');
-    expect(started.properties.part).toMatchObject({ id: 'm1-p0', messageID: 'm1', type: 'text', text: '' });
+    expect(started.properties.part).toMatchObject({ id: 'm1-text-p0', messageID: 'm1', type: 'text', text: '' });
 
     const delta = apply(evt('session.text.delta', { sessionID: 's1', assistantMessageID: 'm1', ordinal: 0, delta: 'hello' }))[0].payload;
-    expect(delta).toMatchObject({ type: 'part.delta', properties: { messageID: 'm1', partID: 'm1-p0', field: 'text', delta: 'hello' } });
+    expect(delta).toMatchObject({ type: 'part.delta', properties: { messageID: 'm1', partID: 'm1-text-p0', field: 'text', delta: 'hello' } });
 
     const ended = apply(evt('session.text.ended', { sessionID: 's1', assistantMessageID: 'm1', ordinal: 0, text: 'hello world' }))[0].payload;
-    expect(ended.properties.part).toMatchObject({ id: 'm1-p0', type: 'text', text: 'hello world' });
+    expect(ended.properties.part).toMatchObject({ id: 'm1-text-p0', type: 'text', text: 'hello world' });
   });
 
   test('reasoning delta 映射 field=reasoning（desktop 已支持累积）', () => {
     const delta = apply(evt('session.reasoning.delta', { sessionID: 's1', assistantMessageID: 'm1', ordinal: 1, delta: 'think' }))[0].payload;
-    expect(delta).toMatchObject({ type: 'part.delta', properties: { partID: 'm1-p1', field: 'reasoning', delta: 'think' } });
+    expect(delta).toMatchObject({ type: 'part.delta', properties: { partID: 'm1-reasoning-p1', field: 'reasoning', delta: 'think' } });
+  });
+
+  test('同一 step 的 reasoning 与 text 得到不同 part id（ordinal 是 step 序号）', () => {
+    const reasoning = apply(evt('session.reasoning.started', { sessionID: 's1', assistantMessageID: 'm1', ordinal: 0 }))[0].payload;
+    const text = apply(evt('session.text.started', { sessionID: 's1', assistantMessageID: 'm1', ordinal: 0 }))[0].payload;
+    expect(reasoning.properties.part.id).toBe('m1-reasoning-p0');
+    expect(text.properties.part.id).toBe('m1-text-p0');
+    expect(reasoning.properties.part.id).not.toBe(text.properties.part.id);
+  });
+
+  test('reasoning started/delta/ended 共享同一 part id', () => {
+    const started = apply(evt('session.reasoning.started', { sessionID: 's1', assistantMessageID: 'm1', ordinal: 2 }))[0].payload;
+    const delta = apply(evt('session.reasoning.delta', { sessionID: 's1', assistantMessageID: 'm1', ordinal: 2, delta: 'think' }))[0].payload;
+    const ended = apply(evt('session.reasoning.ended', { sessionID: 's1', assistantMessageID: 'm1', ordinal: 2, text: 'thought' }))[0].payload;
+    expect(delta.properties.partID).toBe(started.properties.part.id);
+    expect(ended.properties.part.id).toBe(started.properties.part.id);
   });
 });
 

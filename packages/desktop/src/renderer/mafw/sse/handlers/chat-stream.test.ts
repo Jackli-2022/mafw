@@ -32,12 +32,23 @@ describe("handleChatStreamEvent", () => {
     expect(calls.find(c => c.name === "setUserMsgId")!.args).toEqual(["s1", "m1"])
   })
 
-  test("part.delta → phase(writing) + patchStore (consumed)", () => {
+  test("part.delta → busy + phase(writing) + patchStore (consumed)", () => {
     const { deps, calls } = makeDeps()
     const ok = handleChatStreamEvent({ type: "part.delta", sessionID: "s1", properties: { messageID: "m1", partID: "p1", field: "text", delta: "hi" } }, "s1", deps)
     expect(ok).toBe(true)
     expect(calls.find(c => c.name === "phase")!.args).toEqual(["s1", "writing"])
+    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", { type: "busy" }])
     expect(calls.map(c => c.name)).toContain("patchStore")
+  })
+
+  test("turn.started → busy + phase，不结算、不置 done", () => {
+    const { deps, calls } = makeDeps()
+    const ok = handleChatStreamEvent({ type: "turn.started", sessionID: "s1", properties: { sessionID: "s1" } }, "s1", deps)
+    expect(ok).toBe(true)
+    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", { type: "busy" }])
+    expect(calls.find(c => c.name === "phase")!.args).toEqual(["s1", "writing"])
+    expect(calls.map(c => c.name)).not.toContain("markSessionDone")
+    expect(calls.map(c => c.name)).not.toContain("onTurnSettled")
   })
 
   test("part.delta field=reasoning 也被消费（2.1 方言 reasoning 流）", () => {

@@ -16,9 +16,12 @@
  *   session.usage.updated                 → usage.updated
  *   permission.v2.asked/replied           → permission.asked / permission.replied
  *
- * part id 约定：text/reasoning = `${assistantMessageID}-p${ordinal}`，与历史
- * 合成 id（adapter messages 的 `${message.id}-p${index}`）逐字对齐，避免
- * 实时/历史双份；tool part id = callID（与历史 tool part 的 id 一致）。
+ * part id 约定：text/reasoning = `${assistantMessageID}-${kind}-p${ordinal}`。
+ * 2.x 的 `ordinal` 是 **step 序号**（同一步的 reasoning/text 共享 0），不是
+ * part 序号——kind 必须参与身份，否则两类 delta 撞进同一个 part（桌面把正文
+ * 追加进 reasoning，折叠不可见）；tool part id = callID（与历史 tool part 的
+ * id 一致）。历史合成 id（adapter messages 的 `${message.id}-p${index}`）是
+ * 另一套编号，实时/历史以 type 归并而非 id 相等为前提。
  *
  * 未识别类型原样透传（unknownEvents 计数，升级漂移可见）。
  */
@@ -106,8 +109,14 @@ function eventOf(raw: any, type: string, properties: Record<string, any>): RawRu
   } as RawRuntimeEvent;
 }
 
-function partIdOf(data: any): string {
-  return `${data?.assistantMessageID ?? 'msg'}-p${Number.isFinite(data?.ordinal) ? data.ordinal : 0}`;
+function partIdOf(data: any, kind: 'text' | 'reasoning'): string {
+  // 2.x 的 `ordinal` 是 **step 序号**（同一步的 reasoning/text 共享 0），不是
+  // part 序号——旧实现按它生成 id 会让 text 与 reasoning 撞成同一个 part，
+  // 桌面把正文 delta 追加进 reasoning part（折叠的「已思考」），中途进入会话
+  // 直到 step 结束才整段出现。kind 必须参与身份；step 序号只用于跨步隔离。
+  const messageID = data?.assistantMessageID ?? 'msg';
+  const step = Number.isFinite(data?.ordinal) ? data.ordinal : 0;
+  return `${messageID}-${kind}-p${step}`;
 }
 
 /** tool 输入跨事件补齐：success/failed 事件本身不带 input。 */
@@ -269,34 +278,34 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
 
     case 'session.text.started':
       return eventOf(raw, MAFW.partUpdated, {
-        part: { id: partIdOf(data), sessionID: data.sessionID, messageID: data.assistantMessageID, type: 'text', text: '' },
+        part: { id: partIdOf(data, 'text'), sessionID: data.sessionID, messageID: data.assistantMessageID, type: 'text', text: '' },
       });
     case 'session.text.delta':
       return eventOf(raw, MAFW.partDelta, {
         messageID: data.assistantMessageID,
-        partID: partIdOf(data),
+        partID: partIdOf(data, 'text'),
         field: 'text',
         delta: data.delta ?? '',
       });
     case 'session.text.ended':
       return eventOf(raw, MAFW.partUpdated, {
-        part: { id: partIdOf(data), sessionID: data.sessionID, messageID: data.assistantMessageID, type: 'text', text: data.text ?? '' },
+        part: { id: partIdOf(data, 'text'), sessionID: data.sessionID, messageID: data.assistantMessageID, type: 'text', text: data.text ?? '' },
       });
 
     case 'session.reasoning.started':
       return eventOf(raw, MAFW.partUpdated, {
-        part: { id: partIdOf(data), sessionID: data.sessionID, messageID: data.assistantMessageID, type: 'reasoning', text: '' },
+        part: { id: partIdOf(data, 'reasoning'), sessionID: data.sessionID, messageID: data.assistantMessageID, type: 'reasoning', text: '' },
       });
     case 'session.reasoning.delta':
       return eventOf(raw, MAFW.partDelta, {
         messageID: data.assistantMessageID,
-        partID: partIdOf(data),
+        partID: partIdOf(data, 'reasoning'),
         field: 'reasoning',
         delta: data.delta ?? '',
       });
     case 'session.reasoning.ended':
       return eventOf(raw, MAFW.partUpdated, {
-        part: { id: partIdOf(data), sessionID: data.sessionID, messageID: data.assistantMessageID, type: 'reasoning', text: data.text ?? '' },
+        part: { id: partIdOf(data, 'reasoning'), sessionID: data.sessionID, messageID: data.assistantMessageID, type: 'reasoning', text: data.text ?? '' },
       });
 
     case 'session.tool.input.started':

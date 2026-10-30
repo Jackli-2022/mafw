@@ -78,7 +78,15 @@ export function applyPartDelta(
 ): { part: Record<string, any[]> } | null {
   const parts = { ...state.part }
   const existing = parts[msgId] || []
-  const idx = existing.findIndex(p => p.id === partID)
+  // Type is part of the identity: some runtimes (opencode 2.x text/reasoning
+  // streams) reuse the same wire part id for both kinds. Matching by id alone
+  // appends the answer into the reasoning part, which renders collapsed and is
+  // invisible until the step's final snapshot.
+  let idx = existing.findIndex(p => p.id === partID && p.type === partType)
+  if (idx < 0) {
+    // legacy parts without a type default to text
+    idx = existing.findIndex(p => p.id === partID && p.type === undefined && partType === "text")
+  }
   if (idx >= 0) {
     const cur = existing[idx]
     if (typeof cur.text !== "string") return null
@@ -102,7 +110,10 @@ export function applyPartUpsert(
   // v2.1.0 wire: tool parts carry `name` (e.g. "subagent"), not `tool`.
   const normalized = normalizeToolPart(part)
   const partObj = { ...normalized, id: normalized.id || `${normalized.messageID}-${normalized.type}`, sessionID: sid, messageID: normalized.messageID }
-  let idx = existing.findIndex(p => p.id === partObj.id)
+  // text/reasoning are type-scoped: same-id parts of different kinds must not
+  // overwrite each other (opencode 2.x reuses one id for both streams).
+  const typeScoped = partObj.type === "text" || partObj.type === "reasoning"
+  let idx = existing.findIndex(p => p.id === partObj.id && (!typeScoped || p.type === partObj.type))
   if (idx < 0 && normalized.type === "text") {
     // absorb the optimistic user text part (id `user-...-text`) when the
     // real user part with identical text arrives
