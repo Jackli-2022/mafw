@@ -75,13 +75,15 @@ Phase 1 已交付 Pod 后端（roster / 任务板 / 邮箱 / Pod 记忆 / 单 ac
 现有 `GET /api/projects/:projectId/pod` 语义是 `ensure`。面板打开不能复用，否则「看一眼」就会创建 Pod。补充：
 
 ```
-GET /api/projects/:projectId/pod?lookup=1
+GET /api/projects/:projectId/pod/lookup
   200 → PodDetail
   404 → 该项目还没有 Pod（不是错误）
 ```
 
+- 独立路径（不是 `?lookup=1`），老 gateway 对新路径直接 404，绝不会落进旧版 `GET /pod` 的 `ensure` 语义而误建 Pod。
 - `PodService.lookup(projectDir)` 复用 `resolveProjectDir`（canonical + worktree → 父项目）后 `store.getPodByProject`；未注册项目返回 `null`。
-- 与 `ensure` 共路径，不新增 route-catalog operation（query 变化不产生新 OpenAPI path）。
+- 读接口同样执行 actor 作用域：提供 `actorSessionID` 时校验 pod，非 Lead 返回空 sessions（与 `ensure` / `GET /api/pods/:id` 一致）。
+- 旧 `?lookup=1` 仅作为新 gateway 的兼容别名保留；桌面只用独立路径。
 - SDK `pod.lookup(projectID)`；preload 同步。
 
 ### 4.2 记忆文件读取

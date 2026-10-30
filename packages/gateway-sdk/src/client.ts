@@ -1219,7 +1219,7 @@ export class MafwClient implements IMafwClient {
       this.request<PodDetail>(`/api/projects/${encodeURIComponent(projectID)}/pod`),
 
     lookup: async (projectID: string): Promise<PodDetail> =>
-      this.request<PodDetail>(`/api/projects/${encodeURIComponent(projectID)}/pod?lookup=1`),
+      this.request<PodDetail>(`/api/projects/${encodeURIComponent(projectID)}/pod/lookup`),
 
     create: async (projectID: string): Promise<PodDetail> =>
       this.request<PodDetail>(`/api/projects/${encodeURIComponent(projectID)}/pod`, { method: 'POST' }),

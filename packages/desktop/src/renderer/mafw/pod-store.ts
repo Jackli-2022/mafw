@@ -7,6 +7,8 @@ export type PodStoreApi = {
   ensure(projectDir: string): Promise<PodDetail>
   get(podId: string): Promise<PodDetail>
   update(podId: string, body: { status: PodStatus }): Promise<PodDetail>
+  wake(podId: string): Promise<PodDetail>
+  sleep(podId: string): Promise<PodDetail>
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>
   listMessages(podId: string): Promise<{ items: PodMessage[] }>
 }
@@ -164,7 +166,11 @@ export function createPodStore(
     if (!current || disposed) return
     const my = seq
     try {
-      const next = await api.update(current.pod.id, { status })
+      const next = status === "active"
+        ? await api.wake(current.pod.id)
+        : status === "idle"
+          ? await api.sleep(current.pod.id)
+          : await api.update(current.pod.id, { status })
       applyDetail(next, my)
     } catch (err) {
       if (disposed || my !== seq) return
@@ -217,6 +223,8 @@ const defaultApi: PodStoreApi = {
   ensure: (projectDir) => window.api.mafw.pod.ensure(projectDir),
   get: (podId) => window.api.mafw.pod.get(podId),
   update: (podId, body) => window.api.mafw.pod.update(podId, body),
+  wake: (podId) => window.api.mafw.pod.wake(podId),
+  sleep: (podId) => window.api.mafw.pod.sleep(podId),
   cost: (podId) => window.api.mafw.pod.cost(podId),
   listMessages: (podId) => window.api.mafw.pod.listMessages(podId),
 }

@@ -1241,7 +1241,7 @@ test("pod.lookup uses the non-creating query and readMemoryFile reads one file",
   const c = new MafwClient("http://gw:3000")
   fetchMock.mockResolvedValue(okJson({ pod: { id: "pod_1" } }))
   await c.pod.lookup("p1")
-  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/projects/p1/pod?lookup=1", expect.anything())
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/projects/p1/pod/lookup", expect.anything())
   fetchMock.mockResolvedValue(okJson({ content: "memory" }))
   await c.pod.readMemoryFile("pod_1", "POD")
   expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/memory?file=POD", expect.anything())

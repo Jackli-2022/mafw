@@ -31,6 +31,16 @@ export async function handlePods(
   const method = req.method || 'GET';
 
   try {
+    const lookupPath = pathname.match(/^\/api\/projects\/([^/]+)\/pod\/lookup$/);
+    if (lookupPath) {
+      if (method !== 'GET') return false;
+      const detail = deps.pods.lookup(decode(lookupPath[1]));
+      if (!detail) throw new PodError(404, 'pod not found');
+      const member = readMember(deps, url, detail.pod.id);
+      sendJson(res, 200, member && member.role !== 'lead' ? { ...detail, sessions: [] } : detail);
+      return true;
+    }
+
     const projectPod = pathname.match(/^\/api\/projects\/([^/]+)\/pod$/);
     if (projectPod) {
       if (method === 'GET' || method === 'POST') {
@@ -38,7 +48,8 @@ export async function handlePods(
         if (method === 'GET' && lookup) {
           const detail = deps.pods.lookup(decode(projectPod[1]));
           if (!detail) throw new PodError(404, 'pod not found');
-          sendJson(res, 200, detail);
+          const member = readMember(deps, url, detail.pod.id);
+          sendJson(res, 200, member && member.role !== 'lead' ? { ...detail, sessions: [] } : detail);
           return true;
         }
         const detail = await deps.pods.ensure(decode(projectPod[1]));

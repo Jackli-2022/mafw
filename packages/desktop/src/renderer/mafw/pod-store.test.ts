@@ -17,6 +17,8 @@ function harness(overrides: Partial<PodStoreApi> = {}) {
     ensure: async (dir) => { calls.push(`ensure:${dir}`); return detail("pod_1", dir) },
     get: async (id) => { calls.push(`get:${id}`); return detail(id) },
     update: async (id, body) => { calls.push(`update:${id}:${body.status}`); return detail(id) },
+    wake: async (id) => { calls.push(`wake:${id}`); return detail(id) },
+    sleep: async (id) => { calls.push(`sleep:${id}`); return detail(id) },
     cost: async () => ({ spentUsd: 1, limitUsd: 10 }),
     listMessages: async () => ({ items: [{ id: "m1", podId: "pod_1", fromMemberId: "m_lead", toMemberId: null, kind: "note", body: "hi", createdAt: "2026-10-30T00:00:00.000Z", readAt: null }] }),
     ...overrides,
@@ -43,6 +45,14 @@ describe("pod-store", () => {
     await store.open("/p")
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(store.messages()[0]?.id, "m1")
+  })
+
+  test("setStatus uses the wake/sleep control endpoints so the queue promotes", async () => {
+    const { store, calls } = harness()
+    await store.open("/p")
+    await store.setStatus("idle")
+    await store.setStatus("active")
+    assert.deepEqual(calls, ["lookup:/p", "sleep:pod_1", "wake:pod_1"])
   })
 
   test("lookup 404 is an empty state; ensure 404 is unsupported", async () => {

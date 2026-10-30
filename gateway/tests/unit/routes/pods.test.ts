@@ -128,16 +128,44 @@ describe('pod routes', () => {
     })).res.status).toBe(200);
   });
 
-  it('lookup=1 reads a pod without ensuring one', async () => {
+  it('lookup reads a pod without ensuring one', async () => {
     const deps = makeDeps();
-    const found = await call('GET', '/api/projects/p1/pod?lookup=1', deps);
+    const found = await call('GET', '/api/projects/p1/pod/lookup', deps);
     expect(found.res.status).toBe(200);
     expect(found.json.pod.id).toBe('pod_1');
     expect(deps.pods.ensure).not.toHaveBeenCalled();
 
     deps.pods.lookup = jest.fn(() => null);
-    const missing = await call('GET', '/api/projects/p1/pod?lookup=1', deps);
+    const missing = await call('GET', '/api/projects/p1/pod/lookup', deps);
     expect(missing.res.status).toBe(404);
+
+    const legacy = await call('GET', '/api/projects/p1/pod?lookup=1', deps);
+    expect(legacy.handled).toBe(true);
+  });
+
+  it('lookup applies actor scoping and hides sessions from non-leads', async () => {
+    const detailWithSession = {
+      ...detail,
+      sessions: [{
+        id: 'ps1', podId: 'pod_1', memberId: 'm1', goalId: null, node: 'execute',
+        sessionId: 'ses_1', status: 'active', transcriptRef: null,
+        createdAt: '2026-10-29T00:00:00.000Z', endedAt: null,
+      }],
+    };
+    const builder = { id: 'm1', role: 'builder' };
+    const deps = makeDeps({
+      pods: { ...makeDeps().pods, lookup: jest.fn(() => detailWithSession) },
+      access: { requireMember: jest.fn(() => builder) },
+    });
+    const scoped = await call('GET', '/api/projects/p1/pod/lookup?actorSessionID=ses_builder', deps);
+    expect(scoped.res.status).toBe(200);
+    expect(scoped.json.sessions).toEqual([]);
+
+    const foreign = makeDeps({
+      pods: { ...makeDeps().pods, lookup: jest.fn(() => detailWithSession) },
+      access: { requireMember: jest.fn(() => { throw new PodError(403, 'foreign pod'); }) },
+    });
+    expect((await call('GET', '/api/projects/p1/pod/lookup?actorSessionID=ses_x', foreign)).res.status).toBe(403);
   });
 
   it('falls through unknown routes', async () => {

@@ -2687,6 +2687,29 @@
         }
       }
     },
+    "/api/projects/{projectId}/pod/lookup": {
+      "get": {
+        "operationId": "pods.lookup",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/pods/{podId}": {
       "get": {
         "operationId": "pods.get",
