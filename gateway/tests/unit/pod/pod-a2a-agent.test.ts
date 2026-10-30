@@ -65,6 +65,13 @@ describe('PodA2AAgent', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  test('rejects an unsupported A2A version', async () => {
+    const { agent, root } = makeAgent();
+    const response = await agent.handleJsonRpc(rpc('tasks/get', { id: 't1' }), { 'a2a-version': '0.3' });
+    expect(response.status).toBe(400);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   test('artifact lookup rejects traversal and serves files inside the root', () => {
     const { agent, root } = makeAgent();
     expect(agent.getArtifact('a.md')?.contentType).toContain('text/markdown');

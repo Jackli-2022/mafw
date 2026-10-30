@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+﻿import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -28,7 +28,6 @@ function makeDelivery(opts: { node: string | null; sessionId?: string }) {
   const prompts: any[] = [];
   const delivery = new PodMessageDelivery({
     store,
-    getSession: async () => ({}),
     promptAsync: async (input) => { prompts.push(input); },
   });
   return { dir, db, store, pod, builder, message, prompts, delivery };
@@ -69,3 +68,4 @@ describe('PodMessageDelivery', () => {
     fs.rmSync(h.dir, { recursive: true, force: true });
   });
 });
+

@@ -66,6 +66,13 @@ export class PodA2AAgent {
     headers: Record<string, string | undefined>,
   ): Promise<PodA2AJsonRpcResult> {
     const requestedVersion = headers[A2A_VERSION_HEADER?.toLowerCase()] || this.options.defaultVersion || '1.0';
+    if (requestedVersion !== '1.0' && requestedVersion !== '1') {
+      return {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', error: { code: -32600, message: `unsupported A2A version: ${requestedVersion}` } }),
+      };
+    }
     const context = new ServerCallContext({
       headers,
       requestedVersion,

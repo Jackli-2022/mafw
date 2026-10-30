@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+﻿import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -8,9 +8,7 @@ import { buildA2AMessage } from '../../src/core/pod/pod-a2a-mapping';
 import { PodA2AAgent } from '../../src/core/pod/pod-a2a-agent';
 import { PodA2ABridge } from '../../src/core/pod/pod-a2a-bridge';
 import { PodMessageDelivery } from '../../src/core/pod/pod-message-delivery';
-import { PodMessageService } from '../../src/core/pod/pod-message-service';
 import { PodStore } from '../../src/core/pod/pod-store';
-import { PodTaskService } from '../../src/core/pod/pod-task-service';
 
 const NOW = '2026-10-30T00:00:00.000Z';
 
@@ -27,8 +25,6 @@ test('A2A handoff end-to-end: create, deliver, pull, cancel', async () => {
   store.insertSession({ id: 'ps1', podId: pod.id, memberId: builder.id, goalId: 'g1', node: 'coordination', sessionId: 'ses_builder', status: 'active', transcriptRef: null, now: NOW });
 
   const notify = () => {};
-  const tasks = new PodTaskService({ store, now: () => NOW, newId, notify });
-  const messages = new PodMessageService({ store, now: () => NOW, newId, notify });
   const access = new PodAccess(store);
   const prompts: any[] = [];
   const delivery = new PodMessageDelivery({
@@ -36,7 +32,7 @@ test('A2A handoff end-to-end: create, deliver, pull, cancel', async () => {
     getSession: async () => ({}),
     promptAsync: async (input) => { prompts.push(input); },
   });
-  const bridge = new PodA2ABridge({ store, tasks, messages, access, delivery, now: () => NOW, newId, notify });
+  const bridge = new PodA2ABridge({ store, access, delivery, now: () => NOW, newId, notify });
 
   const message = buildA2AMessage({
     messageId: 'msg_e2e',
@@ -103,3 +99,4 @@ test('A2A handoff end-to-end: create, deliver, pull, cancel', async () => {
   db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+

@@ -15,11 +15,10 @@ const MIME: Record<string, string> = {
 };
 
 export class PodA2AArtifactStore {
-  constructor(private readonly root: string) {
-    fs.mkdirSync(root, { recursive: true });
-  }
+  constructor(private readonly root: string) {}
 
   get(id: string): { path: string; contentType: string } | null {
+    if (!fs.existsSync(this.root)) return null;
     let decoded: string;
     try {
       decoded = decodeURIComponent(id);

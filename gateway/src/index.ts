@@ -3679,7 +3679,6 @@ class MafwScheduler {
 
     this.podMessageDelivery = new PodMessageDelivery({
       store: this.podStore,
-      getSession: (sessionID) => this.runtime!.session.get({ sessionID }),
       promptAsync: async (input) => {
         await this.runtime!.session.promptAsync({
           sessionID: input.sessionID,
@@ -3692,8 +3691,6 @@ class MafwScheduler {
     });
     this.podA2ABridge = new PodA2ABridge({
       store: this.podStore,
-      tasks: this.podTaskService,
-      messages: this.podMessageService,
       access: this.podAccess,
       delivery: this.podMessageDelivery,
       now: () => new Date().toISOString(),

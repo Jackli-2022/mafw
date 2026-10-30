@@ -3,8 +3,6 @@ import { TaskState } from '@a2a-js/sdk';
 import { PodError, type PodStore, type PodTaskRow } from './pod-store';
 import { redactSecrets } from '../../recall/redact';
 import type { PodAccess } from './pod-access';
-import type { PodMessageService } from './pod-message-service';
-import type { PodTaskService } from './pod-task-service';
 import {
   buildA2AMessage,
   buildA2ATask,
@@ -13,8 +11,6 @@ import {
 
 export interface PodA2ABridgeDeps {
   store: PodStore;
-  tasks: PodTaskService;
-  messages: PodMessageService;
   access?: PodAccess;
   delivery?: { deliver(messageId: string): Promise<string> };
   now(): string;

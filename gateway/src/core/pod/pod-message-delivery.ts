@@ -4,7 +4,6 @@ export type DeliveryDecision = 'push' | 'pull' | 'pending';
 
 export interface PodMessageDeliveryDeps {
   store: PodStore;
-  getSession(sessionId: string): Promise<{ directory?: string } | null>;
   promptAsync(input: { sessionID: string; message: string; delivery?: 'queue' }): Promise<void>;
   now?(): string;
   log?(message: string): void;

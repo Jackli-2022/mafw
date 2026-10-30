@@ -176,9 +176,6 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/automations/draft', operationId: 'automations.draft', tags: ['automations'] },
   { method: 'GET', path: '/api/projects/:projectId/pod', operationId: 'pods.ensure', tags: ['pods'] },
   { method: 'GET', path: '/api/projects/:projectId/pod/lookup', operationId: 'pods.lookup', tags: ['pods'] },
-  { method: 'POST', path: '/a2a/pods/:podId', operationId: 'pods.a2a', tags: ['internal'] },
-  { method: 'GET', path: '/a2a/pods/:podId/.well-known/agent-card.json', operationId: 'pods.a2aCard', tags: ['internal'] },
-  { method: 'GET', path: '/a2a/pods/:podId/artifacts/:artifactId', operationId: 'pods.a2aArtifact', tags: ['internal'] },
   { method: 'POST', path: '/api/projects/:projectId/pod', operationId: 'pods.create', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId', operationId: 'pods.get', tags: ['pods'] },
   { method: 'PATCH', path: '/api/pods/:podId', operationId: 'pods.update', tags: ['pods'] },
@@ -198,6 +195,10 @@ const SDK_FACING_ROUTES: RouteDef[] = [
 
 /** 非 SDK 端点补充登记（desktop/TUI/worker/dashboard 专用面），operationId 自拟，tags 'internal'。 */
 const NON_SDK_ROUTES: RouteDef[] = [
+  // Pod A2A endpoint（协议内部面，不进 SDK 契约）
+  { method: 'POST', path: '/a2a/pods/:podId', operationId: 'pods.a2a', tags: ['internal'] },
+  { method: 'GET', path: '/a2a/pods/:podId/.well-known/agent-card.json', operationId: 'pods.a2aCard', tags: ['internal'] },
+  { method: 'GET', path: '/a2a/pods/:podId/artifacts/:artifactId', operationId: 'pods.a2aArtifact', tags: ['internal'] },
   // Python 内核（§5.17）
   { method: 'POST', path: '/api/python/execute', operationId: 'python.execute', tags: ['internal'] },
   { method: 'POST', path: '/api/python/restart', operationId: 'python.restart', tags: ['internal'] },

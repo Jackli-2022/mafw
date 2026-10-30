@@ -19,23 +19,29 @@ function decode(value: string): string {
 
 function isLoopback(req: http.IncomingMessage): boolean {
   const address = req.socket?.remoteAddress;
-  if (!address) return true;
+  if (!address) return false;
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
+    let rejected = false;
     const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => {
+      if (rejected) return;
       size += chunk.length;
       if (size > MAX_BODY) {
+        rejected = true;
         reject(Object.assign(new Error('request body too large'), { status: 413 }));
+        if (typeof (req as any).resume === 'function') (req as any).resume();
         return;
       }
       chunks.push(Buffer.from(chunk));
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+    req.on('end', () => {
+      if (!rejected) resolve(Buffer.concat(chunks).toString('utf-8'));
+    });
     req.on('error', reject);
   });
 }

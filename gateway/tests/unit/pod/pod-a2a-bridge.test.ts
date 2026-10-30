@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+﻿import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -7,9 +7,7 @@ import { PodAccess } from '../../../src/core/pod/pod-access';
 import { buildA2AMessage } from '../../../src/core/pod/pod-a2a-mapping';
 import { PodA2ABridge } from '../../../src/core/pod/pod-a2a-bridge';
 import { PodA2ATaskStore } from '../../../src/core/pod/pod-a2a-task-store';
-import { PodMessageService } from '../../../src/core/pod/pod-message-service';
 import { PodStore } from '../../../src/core/pod/pod-store';
-import { PodTaskService } from '../../../src/core/pod/pod-task-service';
 
 const NOW = '2026-10-30T00:00:00.000Z';
 
@@ -27,11 +25,9 @@ function makeBridge() {
   store.upsertMember({ id: 'm_other', podId: otherPod.id, role: 'lead', displayName: 'Other', agentName: 'manager', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
 
   const notify = () => {};
-  const tasks = new PodTaskService({ store, now: () => NOW, newId: () => `id_${++seq}`, notify });
-  const messages = new PodMessageService({ store, now: () => NOW, newId: () => `id_${++seq}`, notify });
   const access = new PodAccess(store);
   const bridge = new PodA2ABridge({
-    store, tasks, messages, access, now: () => NOW, newId: () => `id_${++seq}`, notify,
+    store, access, now: () => NOW, newId: () => `id_${++seq}`, notify,
   });
 
   return { dir, db, store, pod, otherPod, lead: members[0], builder: members[1], bridge };
@@ -118,3 +114,4 @@ describe('PodA2ABridge', () => {
     fs.rmSync(h.dir, { recursive: true, force: true });
   });
 });
+
