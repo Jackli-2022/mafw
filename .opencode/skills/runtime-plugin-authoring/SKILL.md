@@ -14,6 +14,19 @@ MAFW Gateway 通过**能力契约**（Runtime Capability Contract）与 agent ru
 - **Fail-open**：插件加载/运行失败 → 自动回退到内置 opencode runtime
 - **运行时热切换**：`POST /api/runtime/switch` 可在进程内热切换 runtime（无需重启）；插件文件修改后需 `POST /api/runtime/reload` 重扫或重启 gateway
 
+## 覆盖清单（Coverage Manifest）
+
+运行时契约的机器可读清单在 `packages/gateway-sdk/contract/runtime-contract.json`（由 `cd gateway && npm run emit:runtime-contract` 生成）。每个 surface 有：
+
+- `obligation`：`required` / `gated` / `optional` / `advisory`——缺失时是回退、降级、禁用还是仅提示。
+- `verification`：`presence` / `behavior` / `conformance` / `attested`——presence 在激活期检查；behavior/conformance 需要显式跑测试；attested 只记录未验证。
+- `impact`：缺失时用户失去什么。
+- `presets`：`core` / `conversation` / `autonomous` / `desktop` 四个域预设。
+
+`GET /api/runtime/contract` 返回清单 + 当前 runtime 的 static coverage；`GET /api/runtime` 的 `active.coverage` 是摘要。`behavior` / `conformance` 面不会在激活期验证，后续用 `mafw plugin-check`（P2）或 `POST /api/runtime/conformance`。
+
+**旧的 Tier 表仅作历史映射；以清单为准。**
+
 ## 第一步：理解能力分级
 
 ### Tier 0（基线，所有插件自动获得）
