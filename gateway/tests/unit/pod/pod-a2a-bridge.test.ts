@@ -106,7 +106,13 @@ describe('PodA2ABridge', () => {
 
   test('rejects cross-pod metadata and unknown recipient', async () => {
     const h = makeBridge();
+    h.store.upsertTask({
+      id: 'foreign', podId: h.otherPod.id, goalId: null, sourceKey: 'manual:foreign',
+      externalTaskId: null, title: 'foreign', description: null, ownerMemberId: null,
+      status: 'pending', dependenciesJson: null, artifactRefsJson: null, now: NOW,
+    });
     await expect(h.bridge.sendMessage(h.pod.id, handoffMessage({ podId: 'pod_2' }))).rejects.toMatchObject({ status: 403 });
+    await expect(h.bridge.sendMessage(h.pod.id, handoffMessage({ taskId: 'foreign' }))).rejects.toMatchObject({ status: 403 });
     await expect(h.bridge.sendMessage(h.pod.id, handoffMessage({ to: 'nope' }))).rejects.toMatchObject({ status: 400 });
     h.db.close();
     fs.rmSync(h.dir, { recursive: true, force: true });

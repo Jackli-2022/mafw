@@ -23,19 +23,16 @@ function a2aMessage(input: {
           taskId: '',
           parts: [
             {
-              content: { $case: 'text', value: input.body },
+              text: input.body,
               metadata: {},
               filename: '',
               mediaType: 'text/plain',
             },
             {
-              content: {
-                $case: 'data',
-                value: {
-                  kind: input.kind,
-                  toMemberId: input.toMemberId,
-                  body: input.body,
-                },
+              data: {
+                kind: input.kind,
+                toMemberId: input.toMemberId,
+                body: input.body,
               },
               metadata: {},
               filename: '',
@@ -74,8 +71,9 @@ export const podMessageTool: PodTool = {
         signal: ctx.abort,
       });
       const body: any = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const err: any = new Error(body?.error?.message ?? body?.error ?? `HTTP ${res.status}`);
+      if (!res.ok || body?.error) {
+        const message = body?.error?.message ?? body?.error ?? `HTTP ${res.status}`;
+        const err: any = new Error(typeof message === 'string' ? message : JSON.stringify(message));
         err.status = res.status;
         throw err;
       }
@@ -91,9 +89,6 @@ export const podMessageTool: PodTool = {
         },
       };
     } catch (err: any) {
-      if (err?.status && err.status !== 404) {
-        return toolError('鲸群消息发送失败', err);
-      }
       try {
         const body = await podRequest(`/api/pods/${encodeURIComponent(args.podId)}/messages`, {
           method: 'POST',

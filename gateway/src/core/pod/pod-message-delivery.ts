@@ -59,7 +59,7 @@ export class PodMessageDelivery {
     if (!member) return null;
     const messages = this.deps.store
       .listMessages(member.podId, 1000)
-      .filter((message) => message.toMemberId === member.id && !message.deliveredAt)
+      .filter((message) => (message.toMemberId === member.id || message.toMemberId === null) && !message.deliveredAt)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     if (messages.length === 0) return null;
     const now = this.now();
@@ -70,9 +70,24 @@ export class PodMessageDelivery {
   }
 
   render(message: PodMessageRow): string {
+    let data: any = {};
+    try {
+      const parts = message.partsJson ? JSON.parse(message.partsJson) : [];
+      for (const part of Array.isArray(parts) ? parts : []) {
+        if (part?.data && typeof part.data === 'object') data = part.data;
+      }
+    } catch { /* ignore malformed parts */ }
     const lines = ['[POD HANDOFF]'];
+    lines.push(`goal: ${data.goalId ?? '-'} / task: ${data.taskId ?? data.podTaskId ?? '-'}`);
     lines.push(`from: ${message.fromMemberId}${message.toMemberId ? ` → ${message.toMemberId}` : ''}`);
     lines.push(`kind: ${message.kind}`);
+    if (data.title) lines.push(`title: ${data.title}`);
+    if (data.expectedOutput) lines.push(`expected: ${data.expectedOutput}`);
+    if (Array.isArray(data.contextRefs) && data.contextRefs.length) lines.push(`context: ${data.contextRefs.join(', ')}`);
+    if (Array.isArray(data.acceptance) && data.acceptance.length) {
+      lines.push('acceptance:');
+      for (const item of data.acceptance) lines.push(`- ${item}`);
+    }
     lines.push(`body: ${message.body}`);
     lines.push(`message: ${message.id}`);
     return lines.join('\n');

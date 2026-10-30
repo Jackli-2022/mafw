@@ -87,6 +87,7 @@ export interface PodA2ALinkRow {
   localId: string;
   a2aId: string;
   contextId: string | null;
+  state: string | null;
   createdAt: string;
 }
 
@@ -195,6 +196,7 @@ function a2aLinkFromRow(row: any): PodA2ALinkRow {
     localId: row.local_id,
     a2aId: row.a2a_id,
     contextId: row.context_id ?? null,
+    state: row.state ?? null,
     createdAt: row.created_at,
   };
 }
@@ -305,6 +307,7 @@ export class PodStore {
         local_id TEXT NOT NULL,
         a2a_id TEXT NOT NULL,
         context_id TEXT,
+        state TEXT,
         created_at TEXT NOT NULL,
         UNIQUE(pod_id, local_kind, local_id),
         UNIQUE(pod_id, local_kind, a2a_id)
@@ -343,6 +346,7 @@ export class PodStore {
     this.ensureColumn('pod_messages', 'parts_json', 'parts_json TEXT');
     this.ensureColumn('pod_messages', 'delivered_at', 'delivered_at TEXT');
     this.ensureColumn('pod_messages', 'delivered_session_id', 'delivered_session_id TEXT');
+    this.ensureColumn('pod_a2a_links', 'state', 'state TEXT');
     this.db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
         ON pod_messages(pod_id, external_message_id)
@@ -591,16 +595,23 @@ export class PodStore {
     localId: string;
     a2aId: string;
     contextId?: string | null;
+    state?: string | null;
     now: string;
   }): void {
     this.db.prepare(`
       INSERT OR IGNORE INTO pod_a2a_links (
-        id, pod_id, local_kind, local_id, a2a_id, context_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        id, pod_id, local_kind, local_id, a2a_id, context_id, state, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.id, input.podId, input.localKind, input.localId,
-      input.a2aId, input.contextId ?? null, input.now,
+      input.a2aId, input.contextId ?? null, input.state ?? null, input.now,
     );
+  }
+
+  setA2AState(podId: string, localKind: 'task' | 'message', localId: string, state: string): void {
+    this.db.prepare(
+      'UPDATE pod_a2a_links SET state = ? WHERE pod_id = ? AND local_kind = ? AND local_id = ?',
+    ).run(state, podId, localKind, localId);
   }
 
   getA2ALink(podId: string, localKind: 'task' | 'message', localId: string): PodA2ALinkRow | null {

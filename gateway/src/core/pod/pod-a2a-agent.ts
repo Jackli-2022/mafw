@@ -160,7 +160,11 @@ export class PodA2AAgent {
           securityRequirements: [],
         },
       ],
-      supportedInterfaces: [],
+      supportedInterfaces: [{
+        url: `${this.options.baseUrl}/a2a/pods/${this.options.podId}`,
+        protocolBinding: 'JSONRPC',
+        protocolVersion: '1.0',
+      }] as any,
       securitySchemes: {},
       securityRequirements: [],
       signatures: [],

@@ -78,8 +78,23 @@ describe('pod plugin tools', () => {
     );
     const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0];
     expect(url).toContain('/a2a/pods/pod_1');
-    expect(JSON.parse(init.body).method).toBe('message/send');
+    const payload = JSON.parse(init.body);
+    expect(payload.method).toBe('message/send');
+    expect(payload.params.message.parts[0].text).toBe('do');
+    expect(payload.params.message.parts[1].data.kind).toBe('request');
     expect(result.metadata.protocol).toBe('a2a');
+  });
+
+  test('pod message falls back to REST on a JSON-RPC error', async () => {
+    (globalThis.fetch as jest.Mock)
+      .mockResolvedValueOnce(okJson({ jsonrpc: '2.0', error: { code: -32603, message: 'boom' } }))
+      .mockResolvedValueOnce(okJson({ message: { id: 'm1' } }));
+    const result: any = await podMessageTool.execute(
+      { podId: 'pod_1', kind: 'note', body: 'x' },
+      { sessionID: 'ses_lead' },
+    );
+    expect((globalThis.fetch as jest.Mock).mock.calls[1][0]).toContain('/api/pods/pod_1/messages');
+    expect(result.metadata.protocol).toBe('rest');
   });
 
   test('pod message falls back to REST when A2A is unavailable', async () => {

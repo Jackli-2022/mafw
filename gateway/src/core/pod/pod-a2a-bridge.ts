@@ -1,6 +1,7 @@
-import type { Message, Task } from '@a2a-js/sdk';
+﻿import type { Message, Task } from '@a2a-js/sdk';
 import { TaskState } from '@a2a-js/sdk';
 import { PodError, type PodStore } from './pod-store';
+import { redactSecrets } from '../../recall/redact';
 import type { PodAccess } from './pod-access';
 import type { PodMessageService } from './pod-message-service';
 import type { PodTaskService } from './pod-task-service';
@@ -38,6 +39,8 @@ export class PodA2ABridge {
     if (!pod) throw new PodError(404, `pod not found: ${podId}`);
 
     const parsed = parseHandoffMessage(message);
+    const body = redactSecrets(parsed.body);
+    const partsJson = redactSecrets(JSON.stringify(message.parts ?? []));
     const metadata = (message.metadata ?? {}) as Record<string, unknown>;
     const metadataPodId = typeof metadata.podId === 'string' ? metadata.podId : null;
     if (metadataPodId && metadataPodId !== podId) {
@@ -94,10 +97,10 @@ export class PodA2ABridge {
         fromMemberId,
         toMemberId: parsed.toMemberId,
         kind: parsed.kind,
-        body: parsed.body || parsed.title || parsed.kind,
+        body: body || parsed.title || parsed.kind,
         protocol: 'a2a',
         externalMessageId: parsed.messageId,
-        partsJson: JSON.stringify(message.parts ?? []),
+        partsJson: partsJson,
         now: this.deps.now(),
       });
       this.deps.store.linkA2A({
@@ -109,6 +112,13 @@ export class PodA2ABridge {
         contextId: parsed.contextId,
         now: this.deps.now(),
       });
+      if (this.deps.delivery && parsed.toMemberId) {
+        try {
+          await this.deps.delivery.deliver(saved.id);
+        } catch (err: any) {
+          this.deps.log?.(`[PodA2A] delivery failed for ${saved.id}: ${err?.message ?? err}`);
+        }
+      }
       this.deps.notify?.(podId);
       return buildA2AMessage({
         messageId: this.deps.newId(),
@@ -120,6 +130,9 @@ export class PodA2ABridge {
 
     const taskId = parsed.podTaskId || `podtask_${safeId(parsed.messageId)}`;
     let task = this.deps.store.getTask(taskId);
+    if (task && task.podId !== podId) {
+      throw new PodError(403, 'task belongs to another pod');
+    }
     if (!task) {
       task = this.deps.store.upsertTask({
         id: taskId,
@@ -143,10 +156,10 @@ export class PodA2ABridge {
       fromMemberId,
       toMemberId: parsed.toMemberId,
       kind: 'request',
-      body: parsed.body || parsed.title || 'A2A task',
+      body: body || parsed.title || 'A2A task',
       protocol: 'a2a',
       externalMessageId: parsed.messageId,
-      partsJson: JSON.stringify(message.parts ?? []),
+      partsJson: partsJson,
       now: this.deps.now(),
     });
     this.deps.store.linkA2A({
@@ -180,17 +193,31 @@ export class PodA2ABridge {
   }
 
   getTask(podId: string, a2aTaskId: string): Task | null {
-    const localId = this.deps.store.getA2ALocalId(podId, 'task', a2aTaskId) ?? a2aTaskId;
+    const link = this.deps.store.getA2ALink(podId, 'task', a2aTaskId);
+    const localId = link?.localId ?? a2aTaskId;
     const task = this.deps.store.getTask(localId);
-    return task && task.podId === podId ? buildA2ATask({ task }) : null;
+    if (!task || task.podId !== podId) return null;
+    const state = link?.state ? (TaskState as any)[link.state] : undefined;
+    return buildA2ATask({ task, state });
   }
 
   cancelTask(podId: string, a2aTaskId: string): Task | null {
-    const localId = this.deps.store.getA2ALocalId(podId, 'task', a2aTaskId) ?? a2aTaskId;
+    const link = this.deps.store.getA2ALink(podId, 'task', a2aTaskId);
+    const localId = link?.localId ?? a2aTaskId;
     const task = this.deps.store.getTask(localId);
     if (!task || task.podId !== podId) return null;
+    if (task.status === 'done' || task.status === 'failed') return null;
     this.deps.store.updateTask(task.id, { status: 'failed' }, this.deps.now());
+    this.deps.store.setA2AState(podId, 'task', task.id, 'TASK_STATE_CANCELED');
     this.deps.notify?.(podId);
     return buildA2ATask({ task: { ...task, status: 'failed' }, state: TaskState.TASK_STATE_CANCELED });
   }
+
+  listTasks(podId: string, contextId?: string | null): Task[] {
+    return this.deps.store.listTasks(podId)
+      .filter((task) => !contextId || (task.goalId ? `pod:${task.podId}:goal:${task.goalId}` : `pod:${podId}`) === contextId)
+      .map((task) => this.getTask(podId, task.id))
+      .filter((task): task is Task => !!task);
+  }
 }
+

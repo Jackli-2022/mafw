@@ -5,6 +5,7 @@ import * as path from 'path';
 import { TaskState } from '@a2a-js/sdk';
 import { PodAccess } from '../../src/core/pod/pod-access';
 import { buildA2AMessage } from '../../src/core/pod/pod-a2a-mapping';
+import { PodA2AAgent } from '../../src/core/pod/pod-a2a-agent';
 import { PodA2ABridge } from '../../src/core/pod/pod-a2a-bridge';
 import { PodMessageDelivery } from '../../src/core/pod/pod-message-delivery';
 import { PodMessageService } from '../../src/core/pod/pod-message-service';
@@ -63,6 +64,41 @@ test('A2A handoff end-to-end: create, deliver, pull, cancel', async () => {
 
   expect((bridge.cancelTask(pod.id, 't1') as any).status.state).toBe(TaskState.TASK_STATE_CANCELED);
   expect(store.getTask('t1')?.status).toBe('failed');
+  expect((bridge.getTask(pod.id, 't1') as any).status.state).toBe(TaskState.TASK_STATE_CANCELED);
+
+  const agent = new PodA2AAgent({
+    bridge,
+    podId: pod.id,
+    podName: pod.name,
+    baseUrl: 'http://127.0.0.1:3000',
+    artifactRoot: path.join(dir, 'artifacts'),
+  });
+  const wireMessage = {
+    role: 1,
+    messageId: 'msg_wire',
+    contextId: 'pod:pod_1',
+    taskId: '',
+    parts: [
+      { text: 'wire handoff', metadata: {}, filename: '', mediaType: 'text/plain' },
+      { data: { kind: 'request', taskId: 't2', goalId: 'g2', title: 'Wire' }, metadata: {}, filename: '', mediaType: 'application/json' },
+    ],
+    metadata: { podId: pod.id, fromMemberId: lead.id, toMemberId: builder.id },
+    extensions: [],
+    referenceTaskIds: [],
+  };
+  const sent = await agent.handleJsonRpc(JSON.stringify({
+    jsonrpc: '2.0', id: '1', method: 'message/send', params: { message: wireMessage },
+  }), { 'a2a-version': '1.0' });
+  const sentResult = JSON.parse(sent.body).result;
+  expect((sentResult.task ?? sentResult).id).toBe('t2');
+  expect(store.getTask('t2')).toMatchObject({ status: 'pending', title: 'Wire' });
+  expect(store.listMessages(pod.id).find((item) => item.externalMessageId === 'msg_wire')?.body).toBe('wire handoff');
+
+  const canceled = await agent.handleJsonRpc(JSON.stringify({
+    jsonrpc: '2.0', id: '2', method: 'tasks/cancel', params: { id: 't2' },
+  }), { 'a2a-version': '1.0' });
+  const canceledResult = JSON.parse(canceled.body).result;
+  expect((canceledResult.task ?? canceledResult).status.state).toBe('TASK_STATE_CANCELED');
 
   db.close();
   fs.rmSync(dir, { recursive: true, force: true });
