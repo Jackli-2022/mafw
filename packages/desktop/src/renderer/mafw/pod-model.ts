@@ -135,7 +135,7 @@ export function podRoleForSession(detail: PodDetail | null, sessionID: string): 
   return detail.members.find((member) => member.id === session.memberId)?.role ?? null
 }
 
-export function podMemberName(detail: PodDetail, memberId: string | null): string {
+export function podMemberName(detail: { members: PodMember[] }, memberId: string | null): string {
   if (!memberId) return "系统"
   return detail.members.find((member) => member.id === memberId)?.displayName ?? memberId
 }
