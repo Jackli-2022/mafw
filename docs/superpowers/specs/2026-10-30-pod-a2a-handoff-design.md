@@ -1,7 +1,7 @@
 # Pod A2A Handoff 设计与路线图
 
 日期：2026-10-30
-状态：Draft（待评审）
+状态：Approved（2026-10-30，用户确认“按推荐来，默认 A2A”）
 上游：
 - `docs/superpowers/specs/2026-10-29-project-pod-lite-design.md`（Pod 组织模型）
 - `docs/superpowers/specs/2026-10-30-pod-desktop-panel-design.md`（桌面面板）
@@ -302,18 +302,22 @@ read_at TEXT
 | 外部暴露 | v1 loopback-only；v2 认证 |
 | 协议版本漂移 | 固定 `@a2a-js/sdk` 版本 + A2A-Version 头 + 契约测试 |
 
-## 12. 决策点（需要用户确认）
+## 12. 已确认决策（2026-10-30）
 
-1. **一个 Pod Agent vs per-member Agent**：推荐 v1 一个 Pod Agent，`metadata.toMemberId` 路由；v2 再拆成员卡。
-2. **Task 权威**：推荐 Pod task 权威；A2A Task 是视图。
-3. **外部暴露**：推荐 v1 loopback-only；公网 A2A 留 v2。
-4. **投递策略**：推荐 coordination push + node pull；不向 node session 额外 push turn。
-5. **A2A 范围**：只做 task/handoff/artifact，不做 memory；长期记忆保持现状。
+| 决策 | 选择 |
+|---|---|
+| Agent 拓扑 | **v1 一个 Pod 一个 A2A Agent**；`metadata.toMemberId` 路由；per-member card 留 v2 |
+| Task 权威 | **Pod task 权威**；A2A Task 是视图 |
+| 外部暴露 | **v1 loopback-only**；公网/外部认证留 v2 |
+| 投递策略 | **coordination push + NodeDriver node pull**；不向 node session 额外 push turn |
+| A2A 范围 | 只做 task/handoff/artifact；**不做 memory** |
+| `mafw_pod_message` | **默认走 A2A**；A2A 不可达/旧 gateway 时回退 REST，并记录 `protocol` |
+| Artifact 位置 | `~/.mafw/pods/<podId>/artifacts/`；URL 经白名单 + realpath 校验 |
+| `tasks/resubscribe` v1 | 快照 + 短流（sticky `pod.updated` 事件），完整 SSE 留 v2 |
 
-## 13. 开放问题
+## 13. 开放问题（不阻塞 v1）
 
-- A2A `tasks/resubscribe` v1 是否只返回快照 + 短流，还是完整 SSE？
-- Pod task 的 `review/reopened` 在 A2A metadata 里如何命名？
-- Artifact 存 `~/.mafw/pods/<podId>/artifacts/` 还是复用项目文件路径？
-- `mafw_pod_message` 是否默认走 A2A，还是保留 REST 作为 UI 快速路径？
-- 外部 A2A 客户端是否需要独立 API token/AgentCard 认证？
+- per-member AgentCard 的认证模型（v2）。
+- 外部 A2A 客户端是否需要独立 API token/AgentCard 认证（v2）。
+- A2A streaming 进度是否复用现有 `pod.updated` 还是新增 task delta（v2）。
+- Pod task `review/reopened` 在 A2A metadata 的最终命名（v1 用 `metadata.podStatus`）。
