@@ -2,7 +2,7 @@
 // 一级决定“看什么”，二级决定“当前这一类”；执行二级固定下拉。
 export type WorkbenchView = "workbench" | "execution" | "review"
 export type WorkbenchSurface = "code" | "browser" | "terminal"
-export type ExecutionSection = "overview" | "todos" | "subagents" | "background" | "trajectory"
+export type ExecutionSection = "overview" | "pod" | "todos" | "subagents" | "background" | "trajectory"
 
 export type WorkbenchState = {
   view: WorkbenchView
@@ -30,6 +30,7 @@ export const WORKBENCH_SURFACES: readonly { id: WorkbenchSurface; label: string 
 
 export const EXECUTION_SECTIONS: readonly { id: ExecutionSection; label: string }[] = [
   { id: "overview", label: "概览" },
+  { id: "pod", label: "鲸群" },
   { id: "todos", label: "待办" },
   { id: "subagents", label: "子代理" },
   { id: "background", label: "后台" },

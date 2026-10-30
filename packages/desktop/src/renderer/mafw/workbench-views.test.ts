@@ -40,9 +40,11 @@ describe("workbench-views", () => {
     assert.deepEqual(WORKBENCH_SURFACES.map((v) => v.label), ["文件", "浏览器", "终端"])
     assert.deepEqual(
       EXECUTION_SECTIONS.map((s) => s.label),
-      ["概览", "待办", "子代理", "后台", "轨迹"],
+      ["概览", "鲸群", "待办", "子代理", "后台", "轨迹"],
     )
     assert.equal(executionSectionLabel("background"), "后台")
+    assert.equal(executionSectionLabel("pod"), "鲸群")
+    assert.equal(normalizeExecutionSection("pod"), "pod")
   })
 
   test("keyboard helpers move within L1 and L2 without wrapping", () => {

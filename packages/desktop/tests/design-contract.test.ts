@@ -800,7 +800,7 @@ describe("topframe — 顶行框架", () => {
     const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
     const views = read("src/renderer/mafw/workbench-views.ts")
     for (const t of ["workbench", "execution", "review"]) expect(views).toContain(`id: "${t}"`)
-    for (const t of ["overview", "todos", "subagents", "background", "trajectory"]) {
+    for (const t of ["overview", "pod", "todos", "subagents", "background", "trajectory"]) {
       expect(views).toContain(`id: "${t}"`)
     }
     expect(shell).toContain("DropdownMenu")
