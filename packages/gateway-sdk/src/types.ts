@@ -1079,6 +1079,10 @@ export interface PodMessage {
   body: string
   createdAt: string
   readAt: string | null
+  protocol?: string | null
+  externalMessageId?: string | null
+  deliveredAt?: string | null
+  deliveredSessionId?: string | null
 }
 
 export interface PodSession {

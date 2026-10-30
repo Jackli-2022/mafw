@@ -51,6 +51,10 @@ export class PodMessageDelivery {
   }
 
   async pendingForSession(sessionId: string): Promise<string | null> {
+    return this.pendingForSessionSync(sessionId);
+  }
+
+  pendingForSessionSync(sessionId: string): string | null {
     const member = this.deps.store.getMemberBySession(sessionId);
     if (!member) return null;
     const messages = this.deps.store

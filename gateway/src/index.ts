@@ -39,6 +39,9 @@ import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
 import { PodAccess } from './core/pod/pod-access';
 import { PodBudget } from './core/pod/pod-budget';
+import { PodMessageDelivery } from './core/pod/pod-message-delivery';
+import { PodA2ABridge } from './core/pod/pod-a2a-bridge';
+import { PodA2AAgent } from './core/pod/pod-a2a-agent';
 import { canonicalProjectDir } from './core/pod/pod-identity';
 import {
   handleSubagentCancel, handleSubagentList, handleSubagentMessage,
@@ -253,6 +256,7 @@ import { buildRouteCatalog } from './routes/route-catalog';
 import { attachWave1Handlers } from './routes/wave1-handlers';
 import { attachWave2Handlers } from './routes/wave2-handlers';
 import { attachPodHandlers } from './routes/pod-handlers';
+import { attachPodA2ARoutes } from './routes/pod-a2a';
 import type { EmbeddingConfigDeps } from './routes/embedding-config';
 import { runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
@@ -529,6 +533,9 @@ class MafwScheduler {
   private podGoalService!: PodGoalService;
   private podAccess!: PodAccess;
   private podBudget!: PodBudget;
+  private podMessageDelivery!: PodMessageDelivery;
+  private podA2ABridge!: PodA2ABridge;
+  private readonly podA2AAgents = new Map<string, PodA2AAgent>();
   private taskService!: TaskService;
   private sessionConfigService!: SessionConfigService;
   private checkpointService!: CheckpointService;
@@ -966,7 +973,17 @@ class MafwScheduler {
       podContext: (goalId: string, node: 'plan' | 'execute' | 'review') => {
         try {
           const podId = this.podService?.getPodIdForGoal(goalId);
-          return podId ? this.podMemoryService?.renderContext(podId, node) ?? null : null;
+          if (!podId) return null;
+          const role = node === 'plan' ? 'lead' : node === 'execute' ? 'builder' : 'reviewer';
+          const member = this.podStore.getMemberByRole(podId, role);
+          const session = member
+            ? this.podStore.listSessions(podId)
+              .filter((item) => item.memberId === member.id && !item.endedAt)
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+            : null;
+          const handoff = session ? this.podMessageDelivery?.pendingForSessionSync(session.sessionId) ?? null : null;
+          const memory = this.podMemoryService?.renderContext(podId, node) ?? null;
+          return [handoff, memory].filter(Boolean).join('\n\n') || null;
         } catch {
           return null;
         }
@@ -3659,6 +3676,31 @@ class MafwScheduler {
       log: (message) => log.info(message),
     });
 
+    this.podMessageDelivery = new PodMessageDelivery({
+      store: this.podStore,
+      getSession: (sessionID) => this.runtime!.session.get({ sessionID }),
+      promptAsync: async (input) => {
+        await this.runtime!.session.promptAsync({
+          sessionID: input.sessionID,
+          parts: [{ type: 'text', text: input.message }],
+          delivery: input.delivery,
+        });
+      },
+      now: () => new Date().toISOString(),
+      log: (message) => log.info(message),
+    });
+    this.podA2ABridge = new PodA2ABridge({
+      store: this.podStore,
+      tasks: this.podTaskService,
+      messages: this.podMessageService,
+      access: this.podAccess,
+      delivery: this.podMessageDelivery,
+      now: () => new Date().toISOString(),
+      newId: () => `poda2a_${randomUUID()}`,
+      notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'message' } }),
+      log: (message) => log.info(message),
+    });
+
     const lazyShell = () => {
       const shell = this.runtime?.shell;
       if (!shell) throw new TaskError(503, 'shell task API not available on this runtime');
@@ -4451,6 +4493,9 @@ class MafwScheduler {
         access: this.podAccess,
         cost: async (podId) => this.podCost(podId),
         transcript: async (podId, sessionId) => this.podTranscript(podId, sessionId),
+      });
+      attachPodA2ARoutes(this.routeRegistry, {
+        getAgent: (podId) => this.podA2AAgent(podId),
       });
 
       const server = http.createServer(async (req, res) => {
@@ -8060,6 +8105,23 @@ class MafwScheduler {
     } catch (err: any) {
       log.warn(`[Pod] goal archive hook failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
     }
+  }
+
+  private podA2AAgent(podId: string): PodA2AAgent | null {
+    const pod = this.podStore.getPod(podId);
+    if (!pod) return null;
+    let agent = this.podA2AAgents.get(podId);
+    if (!agent) {
+      agent = new PodA2AAgent({
+        bridge: this.podA2ABridge,
+        podId,
+        podName: pod.name,
+        baseUrl: `http://127.0.0.1:${config.server.apiPort}`,
+        artifactRoot: path.join(os.homedir(), '.mafw', 'pods', podId, 'artifacts'),
+      });
+      this.podA2AAgents.set(podId, agent);
+    }
+    return agent;
   }
 
   private podCost(podId: string): { spentUsd: number; limitUsd: number } {
