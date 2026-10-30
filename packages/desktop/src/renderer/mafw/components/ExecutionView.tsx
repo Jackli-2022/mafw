@@ -13,12 +13,14 @@ import { TaskList } from "./TaskList"
 import { SubagentDock } from "./SubagentDock"
 import { BackgroundDock } from "./BackgroundDock"
 import { TrajectoryDock } from "./TrajectoryDock"
+import { PodDock } from "./PodDock"
 import type { ExecutionSection } from "../workbench-views"
 
 export type ExecutionViewProps = {
   section: ExecutionSection
   sessionID: string | null
   sessionDirectory: string | null
+  projectDir: string | null
   agentLabel?: string | null
   modelLabel?: string | null
   runStatus?: string | null
@@ -29,6 +31,8 @@ export type ExecutionViewProps = {
   onClearHidden: () => void
   onClosePanel: () => void
   onOpenSubagent: (id: string) => void
+  onOpenPodSession: (id: string) => void
+  onOpenGoal: (goalId: string) => void
   onOpenSection: (section: ExecutionSection) => void
   trajectoryLive: any[]
   trajectoryTurnLive: any | null
@@ -102,6 +106,14 @@ export function ExecutionView(props: ExecutionViewProps) {
             <div class="mafw-rw-usage">{props.usage}</div>
           </Show>
         </div>
+      </div>
+
+      <div class="mafw-rw-exec-section" classList={{ "is-active": props.section === "pod" }}>
+        <PodDock
+          projectDir={props.projectDir}
+          onOpenSession={props.onOpenPodSession}
+          onOpenGoal={props.onOpenGoal}
+        />
       </div>
 
       <div class="mafw-rw-exec-section" classList={{ "is-active": props.section === "todos" }}>

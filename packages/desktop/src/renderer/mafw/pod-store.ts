@@ -222,3 +222,7 @@ const defaultApi: PodStoreApi = {
 }
 
 export const podStore = createPodStore(defaultApi)
+
+export function ingestPodEvent(event: unknown): void {
+  podStore.ingest(event)
+}

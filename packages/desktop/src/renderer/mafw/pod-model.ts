@@ -1,6 +1,7 @@
 import type {
   PodDetail,
   PodGoalStatus,
+  PodMember,
   PodMemberRole,
   PodMemberStatus,
   PodSession,

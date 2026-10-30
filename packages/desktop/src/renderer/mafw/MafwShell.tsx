@@ -51,6 +51,9 @@ import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/Cha
 import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
+import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
+import { ingestPodEvent, podStore } from "./pod-store"
+import { podRoleForSession } from "./pod-model"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { fetchTasks, ingestTask } from "./task-store"
@@ -165,6 +168,7 @@ export function MafwShell() {
   // Subagent navigation: childID → parentID. Entering a subagent session only
   // switches the content pane (no tab change); this map powers the back button.
   const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
+  const [podGoalId, setPodGoalId] = createSignal<string | null>(null)
 
   // Open a subagent session inside the current tab (no tab-list mutation, no
   // view/tab highlight change). Loads its data into the store so the pane
@@ -1090,7 +1094,7 @@ export function MafwShell() {
       onEvent: (run) => setRun(run as any),
     },
     pod: {
-      onEvent: () => {},
+      onEvent: (event) => ingestPodEvent(event),
     },
   }
 
@@ -2024,6 +2028,7 @@ export function MafwShell() {
           onExport={(id) => void exportSession(id)}
           onCopyId={copyText}
           onNew={createSession}
+          podRoleOf={(id) => podRoleForSession(podStore.detail(), id)}
           forkEnabled={branchActionsVisible(rtCaps())}
           onFork={(id) => void forkSessionFromMenu(id)}
           onHome={() => {
@@ -2334,6 +2339,7 @@ export function MafwShell() {
                       section={executionSection()}
                       sessionID={currentSessionID() || null}
                       sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
+                      projectDir={benchRoot() ?? currentProject()}
                       agentLabel={sessionAgent(currentSessionID())?.name ?? "默认 Agent"}
                       modelLabel={sessionModel(currentSessionID() || "")?.label ?? "默认模型"}
                       runStatus={sessionBusy() ? "运行中" : "空闲"}
@@ -2344,6 +2350,8 @@ export function MafwShell() {
                       onClearHidden={() => clearHiddenTodos(currentSessionID())}
                       onClosePanel={() => applyRightDock(false)}
                       onOpenSubagent={(id) => void openSubagentSession(id)}
+                      onOpenPodSession={openSessionTab}
+                      onOpenGoal={(id) => setPodGoalId(id)}
                       onOpenSection={applyExecutionSection}
                       trajectoryLive={trajectoryLive()[currentSessionID()] || []}
                       trajectoryTurnLive={trajectoryTurnLive()[currentSessionID()] || null}
@@ -2383,6 +2391,13 @@ export function MafwShell() {
           </Show>
         </div>
       </div>
+      <Show when={podGoalId()}>
+        <GoalDetailOverlay
+          goalId={podGoalId()}
+          onClose={() => setPodGoalId(null)}
+          onOpenSession={(sid) => openSessionTab(sid)}
+        />
+      </Show>
       <Show when={activeQuestion()}>
         <QuestionWidget
           question={activeQuestion()!}

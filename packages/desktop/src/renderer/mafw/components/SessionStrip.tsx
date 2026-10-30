@@ -11,6 +11,8 @@ import { isMenuKey } from "../context-menu/keyboard"
 import { stripOverflowed } from "./session-strip-overflow"
 import { freezeTabs } from "./session-strip-slinky"
 import { formatRailTitle } from "./rail-display"
+import { podRoleBadge } from "../pod-model"
+import type { PodMemberRole } from "@mafw/sdk"
 
 export function SessionStrip(props: {
   sessions: () => { id: string; title: string; manager?: boolean }[]
@@ -25,6 +27,7 @@ export function SessionStrip(props: {
   onHome: () => void
   forkEnabled?: boolean
   onFork?: (id: string) => void
+  podRoleOf?: (sessionId: string) => PodMemberRole | null
 }) {
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [renameDraft, setRenameDraft] = createSignal("")
@@ -167,6 +170,13 @@ export function SessionStrip(props: {
                 />
               }>{formatRailTitle(s.title)}</Show>
             </span>
+            <Show when={props.podRoleOf?.(s.id)}>
+              {(role) => (
+                <TooltipV2 value={`Pod · ${role()}`} openDelay={300}>
+                  <span class="mafw-session-pod-badge" aria-label={`Pod ${role()}`}>{podRoleBadge(role())}</span>
+                </TooltipV2>
+              )}
+            </Show>
             <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); handleClose(s.id) }}>✕</ButtonV2>
           </div>
         ))}
