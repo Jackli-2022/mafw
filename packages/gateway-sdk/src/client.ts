@@ -1218,6 +1218,9 @@ export class MafwClient implements IMafwClient {
     ensure: async (projectID: string): Promise<PodDetail> =>
       this.request<PodDetail>(`/api/projects/${encodeURIComponent(projectID)}/pod`),
 
+    lookup: async (projectID: string): Promise<PodDetail> =>
+      this.request<PodDetail>(`/api/projects/${encodeURIComponent(projectID)}/pod?lookup=1`),
+
     create: async (projectID: string): Promise<PodDetail> =>
       this.request<PodDetail>(`/api/projects/${encodeURIComponent(projectID)}/pod`, { method: 'POST' }),
 
@@ -1276,6 +1279,9 @@ export class MafwClient implements IMafwClient {
       const q = node ? `?node=${encodeURIComponent(node)}` : ''
       return this.request<{ context: string | null }>(`/api/pods/${encodeURIComponent(podID)}/memory${q}`)
     },
+
+    readMemoryFile: async (podID: string, file: 'POD' | 'MEMORY' | 'GLOSSARY'): Promise<{ content: string }> =>
+      this.request<{ content: string }>(`/api/pods/${encodeURIComponent(podID)}/memory?file=${file}`),
 
     writeMemory: async (
       podID: string,

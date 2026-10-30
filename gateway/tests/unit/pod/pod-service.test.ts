@@ -266,4 +266,17 @@ describe('PodService', () => {
     await expect(service.ensure(unknown)).rejects.toBeInstanceOf(PodError);
     expect(store.listPods()).toHaveLength(0);
   });
+
+  test('lookup returns the pod for a registered project without creating one', async () => {
+    expect(service.lookup(projectDir)).toBeNull();
+    const detail = await service.ensure(projectDir);
+    expect(service.lookup(projectDir)?.pod.id).toBe(detail.pod.id);
+    expect(service.lookup('/not-registered')).toBeNull();
+  });
+
+  test('lookup maps a worktree directory back to the parent pod', async () => {
+    const detail = await service.ensure(projectDir);
+    const worktree = path.join(path.dirname(projectDir), `${path.basename(projectDir)}-wt-feature`);
+    expect(service.lookup(worktree)?.pod.id).toBe(detail.pod.id);
+  });
 });

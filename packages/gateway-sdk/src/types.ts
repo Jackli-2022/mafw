@@ -1104,6 +1104,7 @@ export interface PodDetail {
 
 export interface PodNamespace {
   ensure(projectID: string): Promise<PodDetail>
+  lookup(projectID: string): Promise<PodDetail>
   create(projectID: string): Promise<PodDetail>
   get(podID: string): Promise<PodDetail>
   update(podID: string, body: { status: PodStatus }): Promise<PodDetail>
@@ -1118,6 +1119,7 @@ export interface PodNamespace {
   goals(podID: string): Promise<{ items: PodGoal[] }>
   transcript(podID: string, sessionID: string): Promise<{ transcript: unknown }>
   readMemory(podID: string, node?: 'plan' | 'execute' | 'review'): Promise<{ context: string | null }>
+  readMemoryFile(podID: string, file: 'POD' | 'MEMORY' | 'GLOSSARY'): Promise<{ content: string }>
   writeMemory(podID: string, body: { file: 'POD' | 'MEMORY' | 'GLOSSARY'; content: string; actorSessionID?: string }): Promise<{ path: string }>
 }
 

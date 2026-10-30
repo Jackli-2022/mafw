@@ -37,6 +37,7 @@ function makeDeps(overrides: Record<string, any> = {}) {
       ensure: jest.fn(async () => detail),
       get: jest.fn(() => detail),
       updateStatus: jest.fn((_id: string, status: string) => ({ ...detail, pod: { ...pod, status } })),
+      lookup: jest.fn(() => detail),
     },
     tasks: {
       list: jest.fn(() => []),
@@ -125,6 +126,18 @@ describe('pod routes', () => {
     expect((await call('POST', '/api/pods/pod_1/memory', deps, {
       file: 'POD', content: 'hello',
     })).res.status).toBe(200);
+  });
+
+  it('lookup=1 reads a pod without ensuring one', async () => {
+    const deps = makeDeps();
+    const found = await call('GET', '/api/projects/p1/pod?lookup=1', deps);
+    expect(found.res.status).toBe(200);
+    expect(found.json.pod.id).toBe('pod_1');
+    expect(deps.pods.ensure).not.toHaveBeenCalled();
+
+    deps.pods.lookup = jest.fn(() => null);
+    const missing = await call('GET', '/api/projects/p1/pod?lookup=1', deps);
+    expect(missing.res.status).toBe(404);
   });
 
   it('falls through unknown routes', async () => {

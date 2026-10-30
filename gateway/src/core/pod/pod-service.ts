@@ -87,6 +87,17 @@ export class PodService {
     };
   }
 
+  lookup(projectDir: string): PodDetail | null {
+    let resolved: string;
+    try {
+      resolved = this.resolveProjectDir(projectDir);
+    } catch {
+      return null;
+    }
+    const pod = this.deps.store.getPodByProject(resolved);
+    return pod ? this.get(pod.id) : null;
+  }
+
   getPodIdForGoal(goalId: string): string | null {
     return this.deps.store.findPodIdByGoal(goalId);
   }

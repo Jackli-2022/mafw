@@ -9,6 +9,8 @@ test("preload exposes the pod namespace", () => {
   const types = read("src/preload/mafw-types.ts")
   assert.ok(api.includes("pod: {"))
   assert.ok(api.includes('invoke("pod", "ensure"'))
+  assert.ok(api.includes('invoke("pod", "lookup"'))
+  assert.ok(api.includes('invoke("pod", "readMemoryFile"'))
   assert.ok(api.includes('invoke("pod", "updateTask"'))
   assert.ok(types.includes("pod: PodNamespace"))
 })

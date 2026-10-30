@@ -7,7 +7,7 @@ import type { PodService } from '../core/pod/pod-service';
 import type { PodTaskService } from '../core/pod/pod-task-service';
 
 export interface PodRouteDeps {
-  pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus'>;
+  pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus' | 'lookup'>;
   tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask'>;
   messages: Pick<PodMessageService, 'list' | 'send'>;
   goals: Pick<PodGoalService, 'list' | 'promote'>;
@@ -34,6 +34,13 @@ export async function handlePods(
     const projectPod = pathname.match(/^\/api\/projects\/([^/]+)\/pod$/);
     if (projectPod) {
       if (method === 'GET' || method === 'POST') {
+        const lookup = new URL(url, 'http://localhost').searchParams.get('lookup') === '1';
+        if (method === 'GET' && lookup) {
+          const detail = deps.pods.lookup(decode(projectPod[1]));
+          if (!detail) throw new PodError(404, 'pod not found');
+          sendJson(res, 200, detail);
+          return true;
+        }
         const detail = await deps.pods.ensure(decode(projectPod[1]));
         const member = readMember(deps, url, detail.pod.id);
         sendJson(res, 200, member && member.role !== 'lead' ? { ...detail, sessions: [] } : detail);

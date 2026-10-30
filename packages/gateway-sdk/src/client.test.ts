@@ -1236,3 +1236,13 @@ test("pod messages/wake/sleep/cost/goals/transcript hit routes", async () => {
   await c.pod.transcript("pod_1", "s1")
   expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/sessions/s1/transcript", expect.anything())
 })
+
+test("pod.lookup uses the non-creating query and readMemoryFile reads one file", async () => {
+  const c = new MafwClient("http://gw:3000")
+  fetchMock.mockResolvedValue(okJson({ pod: { id: "pod_1" } }))
+  await c.pod.lookup("p1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/projects/p1/pod?lookup=1", expect.anything())
+  fetchMock.mockResolvedValue(okJson({ content: "memory" }))
+  await c.pod.readMemoryFile("pod_1", "POD")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/memory?file=POD", expect.anything())
+})
