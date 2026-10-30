@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MAFW Runtime Contract Manifest",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "contractVersion",
+    "generatedFrom",
+    "domains",
+    "surfaces",
+    "capabilities",
+    "events",
+    "cognition",
+    "presets"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "contractVersion": { "type": "string", "minLength": 1 },
+    "generatedFrom": { "type": "string", "minLength": 1 },
+    "domains": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "surfaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "direction",
+          "domain",
+          "obligation",
+          "verification",
+          "implementation",
+          "consumer",
+          "impact"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "direction": { "type": "string", "enum": ["gateway->runtime", "runtime->gateway", "declaration"] },
+          "domain": { "type": "string", "minLength": 1 },
+          "obligation": { "type": "string", "enum": ["required", "gated", "optional", "advisory"] },
+          "capability": { "type": "string" },
+          "requiredWhen": {
+            "type": "object",
+            "required": ["capabilities"],
+            "properties": {
+              "capabilities": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "verification": { "type": "string", "enum": ["presence", "behavior", "conformance", "attested"] },
+          "implementation": { "type": "string", "minLength": 1 },
+          "probe": { "type": "array", "items": { "type": "string" } },
+          "behavior": { "type": "string" },
+          "consumer": { "type": "string" },
+          "impact": { "type": "string" },
+          "conformance": { "type": "array", "items": { "type": "string" } },
+          "presets": { "type": "array", "items": { "type": "string" } },
+          "since": { "type": "string" },
+          "deprecated": { "type": "boolean" }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "domain", "kind", "default", "requires", "unlocks", "degrade"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "domain": { "type": "string" },
+          "kind": { "type": "string", "enum": ["feature", "transport", "strategy", "trust", "informational"] },
+          "default": { "type": "boolean" },
+          "requires": { "type": "array", "items": { "type": "string" } },
+          "unlocks": { "type": "array", "items": { "type": "string" } },
+          "degrade": { "type": "string" },
+          "degradeRule": { "type": "string", "enum": ["any-requires-missing", "none"] },
+          "presets": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "family", "requiredFields", "producers", "consumers"],
+        "properties": {
+          "type": { "type": "string", "minLength": 1 },
+          "family": { "type": "string", "enum": ["lifecycle", "message", "tool", "approval", "question", "state", "usage", "compaction", "custom"] },
+          "terminal": { "type": "boolean" },
+          "requiredFields": { "type": "array", "items": { "type": "string" } },
+          "producers": { "type": "array", "items": { "type": "string", "enum": ["runtime", "gateway", "host"] } },
+          "consumers": { "type": "array", "items": { "type": "string" } },
+          "conformance": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "cognition": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "method", "path", "timeoutMs", "failOpen", "requiredFields", "presets"],
+        "properties": {
+          "id": { "type": "string", "enum": ["observe", "injectContext", "injectSystem", "tools", "gate", "rewrite"] },
+          "method": { "type": "string", "enum": ["GET", "POST"] },
+          "path": { "type": "string", "minLength": 1 },
+          "timeoutMs": { "type": "integer" },
+          "failOpen": { "type": "string" },
+          "requiredFields": { "type": "array", "items": { "type": "string" } },
+          "presets": { "type": "array", "items": { "type": "string" } },
+          "conformance": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "presets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description", "requiredSurfaces", "capabilities"],
+        "properties": {
+          "id": { "type": "string", "enum": ["core", "conversation", "autonomous", "desktop"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "requiredSurfaces": { "type": "array", "items": { "type": "string" } },
+          "capabilities": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
