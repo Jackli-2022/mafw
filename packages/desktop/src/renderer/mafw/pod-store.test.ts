@@ -18,6 +18,7 @@ function harness(overrides: Partial<PodStoreApi> = {}) {
     get: async (id) => { calls.push(`get:${id}`); return detail(id) },
     update: async (id, body) => { calls.push(`update:${id}:${body.status}`); return detail(id) },
     cost: async () => ({ spentUsd: 1, limitUsd: 10 }),
+    listMessages: async () => ({ items: [{ id: "m1", podId: "pod_1", fromMemberId: "m_lead", toMemberId: null, kind: "note", body: "hi", createdAt: "2026-10-30T00:00:00.000Z", readAt: null }] }),
     ...overrides,
   }
   const timers = {
@@ -35,6 +36,13 @@ describe("pod-store", () => {
     assert.deepEqual(calls, ["lookup:/p"])
     await store.create()
     assert.deepEqual(calls, ["lookup:/p", "ensure:/p"])
+  })
+
+  test("loads the mailbox alongside the detail", async () => {
+    const { store } = harness()
+    await store.open("/p")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(store.messages()[0]?.id, "m1")
   })
 
   test("lookup 404 is an empty state; ensure 404 is unsupported", async () => {
@@ -69,6 +77,7 @@ describe("pod-store", () => {
       get: async (id) => { calls.push(`get:${id}`); return detail(id) },
       update: async (id) => detail(id),
       cost: async () => ({ spentUsd: 0, limitUsd: 0 }),
+      listMessages: async () => ({ items: [] }),
     }, {
       debounceMs: 200,
       timers: {
@@ -93,6 +102,7 @@ describe("pod-store", () => {
       get: async () => detail("pod_1"),
       update: async () => detail("pod_1"),
       cost: async () => ({ spentUsd: 0, limitUsd: 0 }),
+      listMessages: async () => ({ items: [] }),
     }, { debounceMs: 200, timers: { setTimeout: (fn) => { fn(); return 0 }, clearTimeout: () => {} } })
     await store.open("/p")
     store.ingest({ type: "pod.updated", properties: { podId: "pod_9" } })

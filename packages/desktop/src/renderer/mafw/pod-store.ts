@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import type { PodDetail, PodStatus } from "@mafw/sdk"
+import type { PodDetail, PodMessage, PodStatus } from "@mafw/sdk"
 import { podEventAction, podIsUnsupported } from "./pod-model"
 
 export type PodStoreApi = {
@@ -8,6 +8,7 @@ export type PodStoreApi = {
   get(podId: string): Promise<PodDetail>
   update(podId: string, body: { status: PodStatus }): Promise<PodDetail>
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>
+  listMessages(podId: string): Promise<{ items: PodMessage[] }>
 }
 
 export type PodStoreTimers = {
@@ -33,6 +34,7 @@ export function createPodStore(
 
   const [detail, setDetail] = createSignal<PodDetail | null>(null)
   const [cost, setCost] = createSignal<{ spentUsd: number; limitUsd: number } | null>(null)
+  const [messages, setMessages] = createSignal<PodMessage[]>([])
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [unsupported, setUnsupported] = createSignal(false)
@@ -67,11 +69,22 @@ export function createPodStore(
       })
   }
 
+  const loadMessages = (id: string, my: number) => {
+    void api.listMessages(id)
+      .then((next) => {
+        if (!disposed && my === seq) setMessages(next.items ?? [])
+      })
+      .catch(() => {
+        if (!disposed && my === seq) setMessages([])
+      })
+  }
+
   const applyDetail = (next: PodDetail, my: number) => {
     if (disposed || my !== seq) return
     setDetail(next)
     setError(null)
     loadCost(next.pod.id, my)
+    loadMessages(next.pod.id, my)
   }
 
   async function open(dir: string): Promise<void> {
@@ -84,6 +97,7 @@ export function createPodStore(
       setProjectDir(dir)
       setDetail(null)
       setCost(null)
+      setMessages([])
       setError(null)
       setUnsupported(false)
     }
@@ -99,6 +113,7 @@ export function createPodStore(
       if (podIsUnsupported(err) || /pod not found/i.test(errorMessage(err))) {
         setDetail(null)
         setCost(null)
+        setMessages([])
         setError(null)
       } else {
         setError(errorMessage(err))
@@ -189,6 +204,7 @@ export function createPodStore(
     dispose,
     detail,
     cost,
+    messages,
     loading,
     error,
     unsupported,
@@ -202,6 +218,7 @@ const defaultApi: PodStoreApi = {
   get: (podId) => window.api.mafw.pod.get(podId),
   update: (podId, body) => window.api.mafw.pod.update(podId, body),
   cost: (podId) => window.api.mafw.pod.cost(podId),
+  listMessages: (podId) => window.api.mafw.pod.listMessages(podId),
 }
 
 export const podStore = createPodStore(defaultApi)
