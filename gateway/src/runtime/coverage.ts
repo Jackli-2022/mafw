@@ -21,7 +21,7 @@ export interface ContractSubject {
   /** loader 文件插件 meta / builtin extras / package entry；opencode 为 resolveEventEntry() 结果。 */
   declaration?: EventMappingEntry;
   /** loader 级插件元数据（meta.plugin 面用）。 */
-  plugin?: { name?: string; createRuntime?: Function; external?: boolean };
+  plugin?: { name?: string; createRuntime?: Function; external?: boolean; capabilities?: unknown };
   /** 当前方言（opencode 自适应探测结果；其他 runtime 缺省）。 */
   dialect?: string;
   source: 'file' | 'builtin' | 'package' | 'active';

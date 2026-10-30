@@ -1,159 +1,163 @@
 /**
- * runtime 插件返回值"声明 vs 实现"一致性校验（分严重级）。
+ * runtime 插件返回值"声明 vs 实现"一致性校验（清单驱动）。
  *
- * 目标：插件"跑起来了但有几个接口没实现"必须在激活/切换期就暴露，而不是
- * 运行时深处才炸（报错点远离原因、静默 fail-open 无迹可查）。
+ * hard       — required 面缺失（条件由 requiredWhen 决定）→ 调用方回退内置 runtime
+ * downgraded — gated 面缺失且该面在 capability.requires 中 → 能力位降级
+ * warnings   — 非阻断缺口（session.update / permissionList / healthCheck / 信任声明）
  *
- * 三级语义：
- *   hard       — 契约必选面缺失（session 全套 11 方法 / eventStream 的
- *                global.event / providerConfigApi 的 provider.list、app.agents、
- *                config.get|update / tools 注册通道 registerTools+nativeTools）。
- *                调用方据此回退内置 runtime。
- *   downgraded — 声明了能力位但缺对应可选实现（nativeApprovals→permissionReply、
- *                completionApi→completion.complete 等）。能力位被强制写回 false
- *                （作用于 rt.capabilities 的拷贝，不改插件共享对象），对应功能
- *                走 503 能力门而非运行时 TypeError。
- *   warnings   — 非阻断缺口（可选 session.update、healthCheck、getBaseUrl、
- *                permissionList、turnBudgetApi 信任声明）。只记录，不改变行为。
+ * 清单源：contract-manifest.ts；覆盖计算：coverage.ts。
  */
 import type { AgentRuntime, RuntimeCapabilities } from './contract';
+import { buildRuntimeContractManifest } from './contract-manifest';
+import { CONTRACT_CAPABILITIES } from './contract-capabilities';
+import type { ContractSurface } from './contract-manifest-types';
+import { computeCoverage, type ContractSubject, type RuntimeCoverage } from './coverage';
 
 export interface RuntimeValidation {
   hard: string[];
   downgraded: string[];
   warnings: string[];
+  staticCoverage?: RuntimeCoverage;
 }
 
-const SESSION_REQUIRED_BY_SESSION_API = [
-  'create', 'promptAsync', 'prompt', 'messages',
-  'get', 'delete', 'abort', 'list', 'todo', 'children', 'summarize',
-] as const;
+const MANIFEST = buildRuntimeContractManifest();
+const CAP_BY_ID = new Map(CONTRACT_CAPABILITIES.map((c) => [c.id, c]));
+const SESSION_CORE_IDS = new Set(CAP_BY_ID.get('sessionApi')!.requires);
+const WARN_ON_MISSING = new Set([
+  'session.update',
+  'process.healthCheck',
+  'process.getBaseUrl',
+]);
 
 function isObject(v: unknown): v is Record<string, any> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function isFn(v: unknown): v is Function {
-  return typeof v === 'function';
+function requiredWhenSatisfied(surface: ContractSurface, caps: RuntimeCapabilities): boolean {
+  if (!surface.requiredWhen) return true;
+  return surface.requiredWhen.capabilities.every((c) => !!(caps as any)[c]);
 }
 
-/** 能力位 → 所需实现（全部满足才保留声明；缺失则降级该位）。 */
-const CAPABILITY_REQUIREMENTS: Array<{ cap: keyof RuntimeCapabilities; label: string; satisfied: (rt: any) => boolean }> = [
-  { cap: 'nativeApprovals', label: 'session.permissionReply', satisfied: (rt) => isFn(rt.session?.permissionReply) },
-  { cap: 'questionApi', label: 'session.question.{list,reply,reject}', satisfied: (rt) =>
-      isObject(rt.session?.question) && isFn(rt.session.question.list) && isFn(rt.session.question.reply) && isFn(rt.session.question.reject) },
-  { cap: 'sessionBranchApi', label: 'session.fork + session.revert', satisfied: (rt) =>
-      isFn(rt.session?.fork) && isFn(rt.session?.revert) },
-  { cap: 'diffApi', label: 'session.diff + session.vcs.apply', satisfied: (rt) =>
-      isFn(rt.session?.diff) && isFn(rt.session?.vcs?.apply) },
-  { cap: 'completionApi', label: 'completion.complete', satisfied: (rt) => isFn(rt.completion?.complete) },
-  { cap: 'agentConfigApi', label: 'agents.install', satisfied: (rt) => isFn(rt.agents?.install) },
-  { cap: 'agentProcessApi', label: 'agentProcess.restart', satisfied: (rt) => isFn(rt.agentProcess?.restart) },
-  { cap: 'sessionStorageApi', label: 'session.listByDirectory', satisfied: (rt) => isFn(rt.session?.listByDirectory) },
-  { cap: 'instructionsApi', label: 'session.instructions.{list,put,remove}', satisfied: (rt) =>
-      isObject(rt.session?.instructions) && isFn(rt.session.instructions.list) &&
-      isFn(rt.session.instructions.put) && isFn(rt.session.instructions.remove) },
-  { cap: 'discoveryApi', label: 'discovery.{list,loadSkill}', satisfied: (rt) =>
-      isObject(rt.discovery) && isFn(rt.discovery.list) && isFn(rt.discovery.loadSkill) },
-];
+function hardMessage(source: string, surface: ContractSurface): string {
+  if (surface.id === 'events.global') {
+    return `${source}: declares eventStream but global.event is missing — events.global is required when eventStream is true`;
+  }
+  if (surface.id === 'tools.registerTools') {
+    return `${source}: tools.registerTools is missing (not a function) — MAFW basic tools have no path to your agents (Tier-0 required)`;
+  }
+  if (surface.id === 'tools.nativeTools') {
+    return `${source}: tools.nativeTools is missing (not a function; returning [] is valid) — tool classification falls back to the static union table`;
+  }
+  if (surface.id.startsWith('session.')) {
+    return `${source}: declares sessionApi but ${surface.id} is missing (not a function)`;
+  }
+  if (surface.id === 'provider.list') {
+    return `${source}: declares providerConfigApi but provider.list is missing (not a function)`;
+  }
+  if (surface.id === 'provider.app.agents') {
+    return `${source}: declares providerConfigApi but app.agents is missing (not a function)`;
+  }
+  if (surface.id === 'provider.config.update') {
+    return `${source}: declares providerConfigApi but config.update is missing (not a function)`;
+  }
+  return `${source}: required surface ${surface.id} is missing — ${surface.impact}`;
+}
 
-export function validateRuntime(rt: AgentRuntime, source: string): RuntimeValidation {
+export function validateRuntime(
+  rt: AgentRuntime,
+  source: string,
+  subjectOpts?: Omit<ContractSubject, 'rt'>,
+): RuntimeValidation {
   const out: RuntimeValidation = { hard: [], downgraded: [], warnings: [] };
+
   if (!isObject(rt)) {
     out.hard.push(`${source}: runtime must be an object (got ${typeof rt})`);
     return out;
   }
-
-  if (typeof rt.name !== 'string' || !rt.name) {
-    out.hard.push(`${source}: runtime.name must be a non-empty string (got ${typeof rt.name})`);
+  if (typeof (rt as any).name !== 'string' || !(rt as any).name) {
+    out.hard.push(`${source}: runtime.name must be a non-empty string (got ${typeof (rt as any).name})`);
   }
-  const caps = rt.capabilities;
+  const caps = (rt as any).capabilities as RuntimeCapabilities;
   if (!isObject(caps)) {
     out.hard.push(`${source}: runtime.capabilities must be an object (got ${typeof caps})`);
     return out;
   }
 
-  // ── hard：契约必选面 ──────────────────────────────────────────────────
-  if (caps.sessionApi) {
-    if (!isObject(rt.session)) {
-      out.hard.push(`${source}: declares sessionApi but session is missing`);
-    } else {
-      for (const method of SESSION_REQUIRED_BY_SESSION_API) {
-        if (!isFn((rt.session as any)[method])) {
-          out.hard.push(`${source}: declares sessionApi but session.${method} is missing (not a function)`);
-        }
-      }
-    }
-  }
-  if (caps.eventStream) {
-    const ev = rt.global as any;
-    if (!isObject(ev) || !isFn(ev.event)) {
-      out.hard.push(`${source}: declares eventStream but global.event is missing (not a function)`);
-    }
-  }
-  if (caps.providerConfigApi) {
-    if (!isFn((rt as any).provider?.list)) {
-      out.hard.push(`${source}: declares providerConfigApi but provider.list is missing (not a function)`);
-    }
-    if (!isFn((rt as any).app?.agents)) {
-      out.hard.push(`${source}: declares providerConfigApi but app.agents is missing (not a function)`);
-    }
-    if (!isFn((rt as any).config?.get) || !isFn((rt as any).config?.update)) {
-      out.hard.push(`${source}: declares providerConfigApi but config.get/config.update is missing (not a function)`);
-    }
-  }
-  // ── hard：工具注册通道（Tier-0 必选，无条件——非能力门控） ─────────────
-  const tools = (rt as any).tools;
-  if (!isObject(tools) || !isFn(tools.registerTools)) {
-    out.hard.push(`${source}: tools.registerTools is missing (not a function) — MAFW basic tools have no path to your agents (Tier-0 required)`);
-  }
-  if (!isObject(tools) || !isFn(tools.nativeTools)) {
-    out.hard.push(`${source}: tools.nativeTools is missing (not a function; returning [] is valid) — tool classification falls back to the static union table`);
-  }
-  if (out.hard.length > 0) return out; // 必选面已破，能力降级无意义
-
-  // ── downgraded：能力位声明 vs 可选实现 ────────────────────────────────
-  // 写回 capabilities 的拷贝——插件可能共享同一个 capabilities 常量对象
-  // （pi 的 PI_CAPABILITIES），直接改字段会污染后续实例。
-  let effectiveCaps: RuntimeCapabilities | null = null;
-  const downgrade = (cap: keyof RuntimeCapabilities, label: string) => {
-    if (!effectiveCaps) effectiveCaps = { ...caps };
-    (effectiveCaps as any)[cap] = false;
-    out.downgraded.push(
-      `${source}: declares ${cap} but ${label} is missing — capability downgraded to false ` +
-      `(gated features will 503 instead of failing at runtime)`,
-    );
+  const subject: ContractSubject = {
+    rt,
+    ...subjectOpts,
+    plugin: subjectOpts?.plugin ?? {
+      name: (rt as any).name,
+      createRuntime: () => {},
+      external: !!(rt as any).external,
+      capabilities: caps,
+    },
+    source: subjectOpts?.source ?? 'active',
   };
-  for (const req of CAPABILITY_REQUIREMENTS) {
-    if ((caps as any)[req.cap] && !req.satisfied(rt)) downgrade(req.cap, req.label);
-  }
-  if (effectiveCaps) (rt as any).capabilities = effectiveCaps;
+  const coverage = computeCoverage(subject, MANIFEST);
 
-  // ── warnings：非阻断缺口 ─────────────────────────────────────────────
-  if (caps.sessionApi && isObject(rt.session) && !isFn((rt.session as any).update)) {
-    out.warnings.push(
-      `${source}: session.update is missing — session rename (PATCH /api/sessions/:id) will fail at runtime`,
-    );
+  // 旧语义保留：sessionApi 声明为 true 但整个 session 缺失 → 单条 hard，
+  // 不再逐方法刷 11 条。
+  const sessionMissing = !!caps.sessionApi && !isObject((rt as any).session);
+  if (sessionMissing) {
+    out.hard.push(`${source}: declares sessionApi but session is missing`);
   }
-  if (caps.nativeApprovals && isFn((rt.session as any)?.permissionReply) && !isFn((rt.session as any)?.permissionList)) {
-    out.warnings.push(
-      `${source}: nativeApprovals declared with permissionReply but session.permissionList is missing — approval polling will be empty`,
-    );
-  }
-  if (!isFn((rt as any).healthCheck)) {
-    out.warnings.push(
-      `${source}: healthCheck is missing — runtime will be treated as permanently unhealthy ` +
-      `(owned runtimes will try to spawn serve; external runtimes degrade to MCP-only)`,
-    );
-  }
-  if (!isFn((rt as any).getBaseUrl)) {
-    out.warnings.push(`${source}: getBaseUrl is missing — reverse proxy falls back to the configured serve URL`);
-  }
+
   if (caps.turnBudgetApi) {
     out.warnings.push(
       `${source}: declares turnBudgetApi — trusting the runtime to enforce maxTurns/maxCostUsd natively; ` +
       `gateway BudgetGuard will NOT be attached (a false claim silently disables goal budgets)`,
     );
   }
+
+  let downgradedAny = false;
+  const effectiveCaps: RuntimeCapabilities = { ...caps };
+
+  for (const surface of MANIFEST.surfaces) {
+    if (sessionMissing && SESSION_CORE_IDS.has(surface.id)) continue;
+    if (!caps.sessionApi && SESSION_CORE_IDS.has(surface.id)) continue;
+
+    const status = coverage.static.surfaces[surface.id]?.status;
+
+    if (surface.verification !== 'presence') {
+      continue; // behavior/conformance/attested：激活期不探针
+    }
+
+    if (surface.obligation === 'required') {
+      if (!requiredWhenSatisfied(surface, caps)) continue;
+      if (status !== 'present') out.hard.push(hardMessage(source, surface));
+      continue;
+    }
+
+    if (surface.obligation === 'gated') {
+      if (!surface.capability || !caps[surface.capability]) continue;
+      if (status === 'present') continue;
+      const requires = CAP_BY_ID.get(surface.capability)?.requires ?? [];
+      if (requires.includes(surface.id)) {
+        if (effectiveCaps[surface.capability]) {
+          effectiveCaps[surface.capability] = false;
+          downgradedAny = true;
+          out.downgraded.push(
+            `${source}: declares ${surface.capability} but ${surface.id} is missing — capability downgraded to false (${surface.impact})`,
+          );
+        }
+      } else {
+        out.warnings.push(`${source}: ${surface.id} is missing — ${surface.impact}`);
+      }
+      continue;
+    }
+
+    // optional / advisory：只对旧语义里需要提示的面发 warning；其余进覆盖率。
+    if (status !== 'present' && WARN_ON_MISSING.has(surface.id)) {
+      out.warnings.push(`${source}: ${surface.id} is missing — ${surface.impact}`);
+    }
+  }
+
+  if (downgradedAny) {
+    (rt as any).capabilities = effectiveCaps;
+    coverage.static.effective = { ...effectiveCaps };
+  }
+
+  out.staticCoverage = coverage;
   return out;
 }

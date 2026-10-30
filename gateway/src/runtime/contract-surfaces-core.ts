@@ -188,7 +188,7 @@ export const CORE_SURFACES: ContractSurface[] = [
   row({
     id: 'branch.vcs', title: 'vcs.diff / vcs.apply', domain: 'branch',
     obligation: 'gated', capability: 'diffApi', verification: 'presence',
-    implementation: 'vcs.diff / vcs.apply', probe: ['vcs'],
+    implementation: 'session.vcs.diff / session.vcs.apply', probe: ['session', 'vcs', 'apply'],
     consumer: 'hunk revert / workspace patch', impact: '工作区 patch 不可用', presets: DESK,
   }),
   row({
@@ -274,5 +274,11 @@ export const CORE_SURFACES: ContractSurface[] = [
     obligation: 'required', requiredWhen: { capabilities: ['providerConfigApi'] },
     verification: 'presence', implementation: 'config.get / config.update', probe: ['config'],
     consumer: 'GET/PATCH /api/runtime-config', impact: 'runtime 配置读写不可用', presets: DESK,
+  }),
+  row({
+    id: 'provider.config.update', title: 'config.update', domain: 'provider',
+    obligation: 'required', requiredWhen: { capabilities: ['providerConfigApi'] },
+    verification: 'presence', implementation: 'config.update', probe: ['config', 'update'],
+    consumer: 'PATCH /api/runtime-config', impact: 'runtime 配置写入不可用', presets: DESK,
   }),
 ];

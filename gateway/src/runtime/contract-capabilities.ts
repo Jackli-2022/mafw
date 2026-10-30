@@ -41,8 +41,8 @@ export const CONTRACT_CAPABILITIES: ContractCapability[] = [
   }),
   cap({
     id: 'providerConfigApi', title: 'provider/config API', domain: 'provider', kind: 'feature', default: false,
-    requires: ['provider.list', 'provider.app.agents', 'provider.config'],
-    unlocks: ['provider.list', 'provider.app.agents', 'provider.config'],
+    requires: ['provider.list', 'provider.app.agents', 'provider.config.update'],
+    unlocks: ['provider.list', 'provider.app.agents', 'provider.config', 'provider.config.update'],
     degrade: 'provider/设置端点 503',
   }),
   cap({
