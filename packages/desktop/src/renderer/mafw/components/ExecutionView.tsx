@@ -31,7 +31,7 @@ export type ExecutionViewProps = {
   onClearHidden: () => void
   onClosePanel: () => void
   onOpenSubagent: (id: string) => void
-  onOpenPodSession: (id: string) => void
+  onOpenPodSession: (id: string, title?: string) => void
   onOpenGoal: (goalId: string) => void
   onOpenSection: (section: ExecutionSection) => void
   trajectoryLive: any[]
@@ -111,6 +111,7 @@ export function ExecutionView(props: ExecutionViewProps) {
       <div class="mafw-rw-exec-section" classList={{ "is-active": props.section === "pod" }}>
         <PodDock
           projectDir={props.projectDir}
+          active={props.section === "pod"}
           onOpenSession={props.onOpenPodSession}
           onOpenGoal={props.onOpenGoal}
         />

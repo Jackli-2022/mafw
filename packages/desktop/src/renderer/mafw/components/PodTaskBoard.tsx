@@ -2,7 +2,7 @@ import { For, Show, createSignal } from "solid-js"
 import type { PodGoal, PodMember, PodTask } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
-import { groupPodTasks, podGoalStatusLabel, podMemberName, podTaskArtifacts, podTaskStatusLabel } from "../pod-model"
+import { groupPodTasks, podGoalStatusLabel, podMemberName, podTaskArtifacts, podTaskStatusLabel, terminalGoalsNewestFirst } from "../pod-model"
 
 function goalOrder(goal: PodGoal): number {
   if (goal.status === "active") return 0
@@ -16,7 +16,7 @@ export function PodGoalQueue(props: { goals: PodGoal[]; onOpenGoal: (goalId: str
       (a, b) => goalOrder(a) - goalOrder(b) || a.enqueuedAt.localeCompare(b.enqueuedAt),
     )
     const open = sorted.filter((goal) => goal.status === "active" || goal.status === "queued")
-    const terminal = sorted.filter((goal) => goal.status !== "active" && goal.status !== "queued").slice(0, 3)
+    const terminal = terminalGoalsNewestFirst(sorted).slice(0, 3)
     return [...open, ...terminal]
   }
 
@@ -59,7 +59,7 @@ export function PodTaskBoard(props: {
   tasks: PodTask[]
   members: PodMember[]
   busy: boolean
-  onCreate: (title: string) => Promise<void>
+  onCreate: (title: string) => Promise<boolean>
   onOpenGoal: (goalId: string) => void
 }) {
   const [creating, setCreating] = createSignal(false)
@@ -71,7 +71,8 @@ export function PodTaskBoard(props: {
     if (!value || submitting() || props.busy) return
     setSubmitting(true)
     try {
-      await props.onCreate(value)
+      const ok = await props.onCreate(value)
+      if (!ok) return
       setTitle("")
       setCreating(false)
     } finally {

@@ -13,6 +13,8 @@ import {
   podRoleForSession,
   podShortTime,
   podTaskArtifacts,
+  shouldCloseTranscript,
+  terminalGoalsNewestFirst,
 } from "./pod-model"
 
 const task = (id: string, status: PodTaskStatus, extra: Partial<PodTask> = {}): PodTask => ({
@@ -76,6 +78,23 @@ describe("pod-model", () => {
     assert.equal(podIsUnsupported(new Error("HTTP 404: Not Found")), true)
     assert.equal(podIsUnsupported(new Error("HTTP 404: project is not registered: /p")), false)
     assert.equal(podIsUnsupported(new Error("HTTP 500: boom")), false)
+    assert.equal(podIsUnsupported(new Error("Received HTML instead of JSON from /api/projects/p/pod — gateway is older than the SDK (route missing). Update/restart the gateway.")), true)
+  })
+
+  test("orders terminal goals newest first for the queue section", () => {
+    const goals = [
+      { id: "g_old", status: "done", enqueuedAt: "2026-10-01T00:00:00.000Z", endedAt: "2026-10-02T00:00:00.000Z" },
+      { id: "g_active", status: "active", enqueuedAt: "2026-10-03T00:00:00.000Z", endedAt: null },
+      { id: "g_new", status: "aborted", enqueuedAt: "2026-10-04T00:00:00.000Z", endedAt: "2026-10-05T00:00:00.000Z" },
+    ] as any
+    assert.deepEqual(terminalGoalsNewestFirst(goals).map((g) => g.id), ["g_new", "g_old"])
+  })
+
+  test("closes a transcript when the loaded pod changes or disappears", () => {
+    assert.equal(shouldCloseTranscript("pod_a", "pod_b"), true)
+    assert.equal(shouldCloseTranscript("pod_a", null), true)
+    assert.equal(shouldCloseTranscript("pod_a", "pod_a"), false)
+    assert.equal(shouldCloseTranscript(null, "pod_b"), false)
   })
 
   test("prefers a live session, falls back to an ended snapshot", () => {

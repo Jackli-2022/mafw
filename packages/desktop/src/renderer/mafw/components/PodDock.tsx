@@ -15,18 +15,29 @@ import {
   podMemberStatusLabel,
   podRoleLabel,
   podStatusLabel,
+  shouldCloseTranscript,
 } from "../pod-model"
 
 export function PodDock(props: {
   projectDir: string | null
-  onOpenSession: (sid: string) => void
+  active: boolean
+  onOpenSession: (sid: string, title?: string) => void
   onOpenGoal: (goalId: string) => void
 }) {
   const [transcriptSession, setTranscriptSession] = createSignal<string | null>(null)
+  let transcriptPodId: string | null = null
 
   createEffect(() => {
+    if (!props.active) return
     const dir = props.projectDir
     if (dir) void podStore.open(dir)
+  })
+
+  createEffect(() => {
+    const currentPodId = podStore.detail()?.pod.id ?? null
+    if (!shouldCloseTranscript(transcriptPodId, currentPodId)) return
+    transcriptPodId = null
+    setTranscriptSession(null)
   })
 
   const memberTaskCount = (detail: PodDetail, memberId: string) =>
@@ -37,19 +48,25 @@ export function PodDock(props: {
   const openMember = (detail: PodDetail, memberId: string) => {
     const target = memberOpenTarget(detail, memberId)
     if (!target) return
-    if (target.kind === "transcript") setTranscriptSession(target.sessionId)
-    else props.onOpenSession(target.sessionId)
+    if (target.kind === "transcript") {
+      transcriptPodId = detail.pod.id
+      setTranscriptSession(target.sessionId)
+      return
+    }
+    const member = detail.members.find((item) => item.id === memberId)
+    props.onOpenSession(target.sessionId, `Pod · ${podRoleLabel(member?.role ?? "builder")}`)
   }
 
-  const createTask = async (title: string) => {
+  const createTask = async (title: string): Promise<boolean> => {
     const podId = podStore.detail()?.pod.id
-    if (!podId) return
+    if (!podId) return false
     try {
       await window.api.mafw.pod.createTask(podId, { title })
       await podStore.refresh()
+      return true
     } catch (err: any) {
       showToastV2({ description: `创建任务失败：${String(err?.message ?? err).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
-      throw err
+      return false
     }
   }
 
@@ -77,7 +94,7 @@ export function PodDock(props: {
     <div class="mafw-pod-dock">
       <DockPanelHeader title={`鲸群${podStore.detail() ? ` · ${podStore.detail()!.pod.name}` : ""}`}>
         <Show when={podStore.detail()}>
-          <ButtonV2 variant="ghost" size="small" disabled={podStore.loading()} onClick={() => void podStore.refresh()}>
+          <ButtonV2 variant="ghost" size="small" disabled={podStore.busy()} onClick={() => void podStore.refresh()}>
             刷新
           </ButtonV2>
           <ButtonV2 variant="ghost" size="small" onClick={toggleStatus}>
@@ -173,14 +190,14 @@ export function PodDock(props: {
                 <PodTaskBoard
                   tasks={detail().tasks}
                   members={detail().members}
-                  busy={podStore.loading()}
+                  busy={podStore.busy()}
                   onCreate={createTask}
                   onOpenGoal={props.onOpenGoal}
                 />
                 <PodInbox
                   detail={detail()}
                   messages={podStore.messages()}
-                  busy={podStore.loading()}
+                  busy={podStore.busy()}
                   onSend={sendMessage}
                 />
                 <PodMemoryPanel podId={detail().pod.id} />

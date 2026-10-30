@@ -38,6 +38,7 @@ export function createPodStore(
   const [cost, setCost] = createSignal<{ spentUsd: number; limitUsd: number } | null>(null)
   const [messages, setMessages] = createSignal<PodMessage[]>([])
   const [loading, setLoading] = createSignal(false)
+  const [refreshing, setRefreshing] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [unsupported, setUnsupported] = createSignal(false)
   const [projectDir, setProjectDir] = createSignal<string | null>(null)
@@ -150,21 +151,25 @@ export function createPodStore(
 
   async function refresh(): Promise<void> {
     const current = detail()
-    if (!current || disposed) return
+    if (!current || disposed || refreshing()) return
     const my = seq
+    setRefreshing(true)
     try {
       const next = await api.get(current.pod.id)
       applyDetail(next, my)
     } catch (err) {
       if (disposed || my !== seq) return
       setError(errorMessage(err))
+    } finally {
+      if (!disposed) setRefreshing(false)
     }
   }
 
   async function setStatus(status: PodStatus): Promise<void> {
     const current = detail()
-    if (!current || disposed) return
+    if (!current || disposed || refreshing()) return
     const my = seq
+    setRefreshing(true)
     try {
       const next = status === "active"
         ? await api.wake(current.pod.id)
@@ -175,6 +180,8 @@ export function createPodStore(
     } catch (err) {
       if (disposed || my !== seq) return
       setError(errorMessage(err))
+    } finally {
+      if (!disposed) setRefreshing(false)
     }
   }
 
@@ -212,6 +219,8 @@ export function createPodStore(
     cost,
     messages,
     loading,
+    refreshing,
+    busy: () => loading() || refreshing(),
     error,
     unsupported,
     projectDir,

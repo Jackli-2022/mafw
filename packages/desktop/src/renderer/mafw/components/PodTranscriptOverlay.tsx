@@ -40,6 +40,7 @@ export function PodTranscriptOverlay(props: { podId: string; sessionId: string; 
   onMount(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.stopImmediatePropagation()
         event.stopPropagation()
         props.onClose()
       }

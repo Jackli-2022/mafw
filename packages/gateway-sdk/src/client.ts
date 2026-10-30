@@ -1285,8 +1285,8 @@ export class MafwClient implements IMafwClient {
       return this.request<{ context: string | null }>(`/api/pods/${encodeURIComponent(podID)}/memory${q}`)
     },
 
-    readMemoryFile: async (podID: string, file: 'POD' | 'MEMORY' | 'GLOSSARY'): Promise<{ content: string }> =>
-      this.request<{ content: string }>(`/api/pods/${encodeURIComponent(podID)}/memory?file=${file}`),
+    readMemoryFile: async (podID: string, file: 'POD' | 'MEMORY' | 'GLOSSARY'): Promise<{ content: string | null }> =>
+      this.request<{ content: string | null }>(`/api/pods/${encodeURIComponent(podID)}/memory?file=${file}`),
 
     writeMemory: async (
       podID: string,

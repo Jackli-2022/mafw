@@ -1,5 +1,6 @@
 import type {
   PodDetail,
+  PodGoal,
   PodGoalStatus,
   PodMember,
   PodMemberRole,
@@ -107,7 +108,22 @@ export function podHttpStatus(err: unknown): number | null {
 export function podIsUnsupported(err: unknown): boolean {
   const message = String((err as any)?.message ?? err)
   if (/project is not registered/i.test(message)) return false
+  if (/older than the SDK|Received HTML instead of JSON/i.test(message)) return true
   return podHttpStatus(err) === 404
+}
+
+export function terminalGoalsNewestFirst(goals: PodGoal[]): PodGoal[] {
+  return goals
+    .filter((goal) => goal.status !== "active" && goal.status !== "queued")
+    .sort(
+      (a, b) =>
+        (b.endedAt ?? b.enqueuedAt).localeCompare(a.endedAt ?? a.enqueuedAt) ||
+        b.enqueuedAt.localeCompare(a.enqueuedAt),
+    )
+}
+
+export function shouldCloseTranscript(openPodId: string | null, currentPodId: string | null): boolean {
+  return !!openPodId && openPodId !== currentPodId
 }
 
 function memberSessions(detail: PodDetail, memberId: string): PodSession[] {

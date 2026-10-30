@@ -1119,7 +1119,7 @@ export interface PodNamespace {
   goals(podID: string): Promise<{ items: PodGoal[] }>
   transcript(podID: string, sessionID: string): Promise<{ transcript: unknown }>
   readMemory(podID: string, node?: 'plan' | 'execute' | 'review'): Promise<{ context: string | null }>
-  readMemoryFile(podID: string, file: 'POD' | 'MEMORY' | 'GLOSSARY'): Promise<{ content: string }>
+  readMemoryFile(podID: string, file: 'POD' | 'MEMORY' | 'GLOSSARY'): Promise<{ content: string | null }>
   writeMemory(podID: string, body: { file: 'POD' | 'MEMORY' | 'GLOSSARY'; content: string; actorSessionID?: string }): Promise<{ path: string }>
 }
 

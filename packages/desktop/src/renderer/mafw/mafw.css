@@ -6216,6 +6216,7 @@ html[data-theme="light"] body {
   height: 100%;
   overflow-y: auto;
   padding: 10px 12px;
+  container-type: inline-size;
 }
 
 .mafw-pod-loading,
@@ -6530,4 +6531,15 @@ html[data-theme="light"] body {
   color: var(--accent-text);
   font-size: 10px;
   font-weight: 700;
+}
+
+.mafw-pod-member:focus-visible,
+.mafw-pod-goal-row:focus-visible,
+.mafw-pod-task.is-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@container (max-width: 560px) {
+  .mafw-pod-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -54,6 +54,7 @@ import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore } from "./pod-store"
 import { podRoleForSession } from "./pod-model"
+import { retitleTab } from "./session-tab-title"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { fetchTasks, ingestTask } from "./task-store"
@@ -319,6 +320,10 @@ export function MafwShell() {
     }
     setActiveSessionId(sid)
     setActiveViewId(sid)
+    if (title?.trim()) {
+      setSessions(prev => retitleTab(prev, sid, title))
+      setStore(prev => ({ ...prev, session: retitleTab(prev.session, sid, title) }))
+    }
     syncPermissionMode(sid) // 🛡 徽标初始态（kv 真相源拉取）
     closeLeftDockIfOverlay()
   }
@@ -2350,7 +2355,7 @@ export function MafwShell() {
                       onClearHidden={() => clearHiddenTodos(currentSessionID())}
                       onClosePanel={() => applyRightDock(false)}
                       onOpenSubagent={(id) => void openSubagentSession(id)}
-                      onOpenPodSession={openSessionTab}
+                      onOpenPodSession={(sid, title) => openSessionTab(sid, title)}
                       onOpenGoal={(id) => setPodGoalId(id)}
                       onOpenSection={applyExecutionSection}
                       trajectoryLive={trajectoryLive()[currentSessionID()] || []}

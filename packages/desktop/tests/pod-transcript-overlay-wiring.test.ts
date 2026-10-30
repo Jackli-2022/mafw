@@ -11,6 +11,7 @@ test("transcript overlay fetches a snapshot and closes on Escape/backdrop", () =
   assert.match(src, /mafw-pod-transcript/)
   assert.match(src, /Escape/)
   assert.match(src, /onClose/)
+  assert.match(src, /stopImmediatePropagation/)
   assert.doesNotMatch(src, /<button[\s>]/)
   assert.doesNotMatch(src, /title=/)
 })

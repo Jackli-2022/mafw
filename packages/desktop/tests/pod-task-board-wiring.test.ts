@@ -9,6 +9,8 @@ test("task board uses model grouping and V2 primitives", () => {
   assert.match(src, /TextInputV2/)
   assert.match(src, /ButtonV2/)
   assert.match(src, /onCreate/)
+  assert.match(src, /Promise<boolean>/)
+  assert.match(src, /if \(!ok\)/)
   assert.match(src, /onOpenGoal/)
   assert.match(src, /PodGoalQueue/)
   assert.doesNotMatch(src, /<button[\s>]/)

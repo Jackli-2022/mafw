@@ -62,12 +62,14 @@ export function PodMemoryPanel(props: { podId: string }) {
 
   const save = async () => {
     if (saving()) return
+    const file = active()
+    const content = draft()
     setSaving(true)
     try {
-      await window.api.mafw.pod.writeMemory(props.podId, { file: active(), content: draft() })
-      setCache((prev) => ({ ...prev, [active()]: draft() }))
+      await window.api.mafw.pod.writeMemory(props.podId, { file, content })
+      setCache((prev) => ({ ...prev, [file]: content }))
       setEditing(false)
-      showToastV2({ description: `${active()} 已保存`, duration: 1600 } as any)
+      showToastV2({ description: `${file} 已保存`, duration: 1600 } as any)
     } catch (err: any) {
       showToastV2({ description: `保存失败：${String(err?.message ?? err).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
     } finally {
@@ -100,6 +102,7 @@ export function PodMemoryPanel(props: { podId: string }) {
               size="small"
               class="mafw-pod-memory-tab"
               aria-pressed={active() === file.id}
+              disabled={saving()}
               onClick={() => {
                 setActive(file.id)
                 setEditing(false)

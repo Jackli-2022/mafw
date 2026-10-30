@@ -55,6 +55,23 @@ describe("pod-store", () => {
     assert.deepEqual(calls, ["lookup:/p", "sleep:pod_1", "wake:pod_1"])
   })
 
+  test("refresh is single-flight and exposes busy state", async () => {
+    let resolveGet: (value: any) => void = () => {}
+    let gets = 0
+    const pending = new Promise((resolve) => { resolveGet = resolve })
+    const { store } = harness({
+      get: async () => { gets++; return pending as any },
+    })
+    await store.open("/p")
+    const first = store.refresh()
+    const second = store.refresh()
+    assert.equal(store.busy(), true)
+    assert.equal(gets, 1)
+    resolveGet(detail("pod_1"))
+    await Promise.all([first, second])
+    assert.equal(store.busy(), false)
+  })
+
   test("lookup 404 is an empty state; ensure 404 is unsupported", async () => {
     const { store } = harness({
       lookup: async () => { throw new Error("HTTP 404: Not Found") },
