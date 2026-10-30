@@ -3,6 +3,7 @@ import {
   validateManifest,
   type RuntimeContractManifest,
 } from '../../../src/runtime/contract-manifest';
+import { CORE_SURFACES } from '../../../src/runtime/contract-surfaces-core';
 
 function fixture(overrides: Partial<RuntimeContractManifest> = {}): RuntimeContractManifest {
   return {
@@ -17,6 +18,10 @@ function fixture(overrides: Partial<RuntimeContractManifest> = {}): RuntimeContr
     presets: [],
     ...overrides,
   };
+}
+
+function surface(id: string) {
+  return buildRuntimeContractManifest().surfaces.find((s) => s.id === id);
 }
 
 describe('runtime contract manifest invariants', () => {
@@ -69,5 +74,43 @@ describe('runtime contract manifest invariants', () => {
     expect(m.schemaVersion).toBe(1);
     expect(m.contractVersion).toBe('2026.10.0');
     expect(m.generatedFrom).toBe('gateway/src/runtime/contract-manifest.ts');
+  });
+});
+
+describe('core surfaces', () => {
+  it('covers loader metadata as declaration/plugin probes', () => {
+    expect(surface('plugin.name')).toMatchObject({ obligation: 'required', verification: 'presence', probe: ['plugin', 'name'] });
+    expect(surface('plugin.createRuntime')).toMatchObject({ obligation: 'required', probe: ['plugin', 'createRuntime'] });
+    expect(surface('plugin.eventMappings')).toMatchObject({ obligation: 'gated', capability: 'eventStream', probe: ['declaration', 'eventMappings'] });
+  });
+
+  it('covers the 11 required session methods', () => {
+    for (const id of ['session.create', 'session.promptAsync', 'session.prompt', 'session.messages', 'session.get', 'session.delete', 'session.abort', 'session.list', 'session.todo', 'session.children', 'session.summarize']) {
+      expect(surface(id)).toMatchObject({ obligation: 'required', verification: 'presence' });
+    }
+  });
+
+  it('marks rename optional and branch surfaces gated', () => {
+    expect(surface('session.update')).toMatchObject({ obligation: 'optional', probe: ['session', 'update'] });
+    expect(surface('branch.fork')).toMatchObject({ obligation: 'gated', capability: 'sessionBranchApi' });
+    expect(surface('branch.checkpoint')).toMatchObject({ obligation: 'gated', capability: 'checkpointApi', verification: 'attested' });
+  });
+
+  it('marks provider methods conditionally required', () => {
+    expect(surface('provider.list')).toMatchObject({
+      obligation: 'required',
+      requiredWhen: { capabilities: ['providerConfigApi'] },
+    });
+    expect(surface('provider.config')).toMatchObject({ obligation: 'required', requiredWhen: { capabilities: ['providerConfigApi'] } });
+  });
+
+  it('marks health/base-url advisory and process restart gated', () => {
+    expect(surface('process.healthCheck')).toMatchObject({ obligation: 'advisory' });
+    expect(surface('process.restart')).toMatchObject({ obligation: 'gated', capability: 'agentProcessApi' });
+  });
+
+  it('exposes CORE_SURFACES without duplicate ids', () => {
+    const ids = CORE_SURFACES.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

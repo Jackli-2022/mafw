@@ -5,6 +5,7 @@
  * 校验投影在 validate.ts，JSON 产物由 scripts/emit-runtime-contract.ts 生成。
  */
 import type { RuntimeContractManifest } from './contract-manifest-types';
+import { CORE_SURFACES } from './contract-surfaces-core';
 
 export const SCHEMA_VERSION = 1 as const;
 export const CONTRACT_VERSION = '2026.10.0';
@@ -15,7 +16,7 @@ export function buildRuntimeContractManifest(): RuntimeContractManifest {
     contractVersion: CONTRACT_VERSION,
     generatedFrom: 'gateway/src/runtime/contract-manifest.ts',
     domains: [],
-    surfaces: [],
+    surfaces: [...CORE_SURFACES],
     capabilities: [],
     events: [],
     cognition: [],
