@@ -5,6 +5,9 @@ description: 为 MAFW Gateway 编写 Runtime 插件的完整指南。覆盖能�
 
 # MAFW Runtime Plugin 编写指南
 
+> **Agent 操作手册（清单驱动 + coverage/conformance 流程）**：`docs/guides/runtime-plugin-authoring.md`
+> 本文是代码级示例与细节；动手前先读操作手册，按 preset 和 coverage 缺口推进。
+
 ## 概述
 
 MAFW Gateway 通过**能力契约**（Runtime Capability Contract）与 agent runtime 解耦。插件是一个 CJS `.js` 文件，放在 `~/.mafw/runtime-plugins/` 目录下，声明自己支持的能力等级，gateway 按能力集自动开关功能。
