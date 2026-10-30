@@ -1,8 +1,9 @@
 ﻿import type { Message, Task } from '@a2a-js/sdk';
-import { TaskState } from '@a2a-js/sdk';
+import { Part, TaskState } from '@a2a-js/sdk';
 import { PodError, type PodStore, type PodTaskRow } from './pod-store';
 import { redactSecrets } from '../../recall/redact';
 import type { PodAccess } from './pod-access';
+import type { PodA2AArtifactSummary } from './pod-a2a-artifacts';
 import {
   buildA2AMessage,
   buildA2ATask,
@@ -13,6 +14,8 @@ export interface PodA2ABridgeDeps {
   store: PodStore;
   access?: PodAccess;
   delivery?: { deliver(messageId: string): Promise<string> };
+  /** Resolves a task artifactRef to a file descriptor (project-relative first). */
+  describeArtifact?(podId: string, ref: string): PodA2AArtifactSummary | null;
   now(): string;
   newId(): string;
   notify?(podId: string): void;
@@ -211,13 +214,38 @@ export class PodA2ABridge {
     if (!task.artifactRefsJson) return [];
     try {
       const refs = JSON.parse(task.artifactRefsJson);
-      return Array.isArray(refs)
-        ? refs.filter((ref): ref is string => typeof ref === 'string')
-          .map((ref) => ({ artifactId: ref, name: ref, parts: [] }))
-        : [];
+      if (!Array.isArray(refs)) return [];
+      return refs
+        .filter((ref): ref is string => typeof ref === 'string')
+        .map((ref) => ({ artifactId: ref, name: ref, parts: this.artifactParts(task.podId, ref) }));
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Self-describing data part: path + size + media type, with inline content for
+   * small text files so an A2A client can verify a receipt without a second fetch.
+   */
+  private artifactParts(podId: string, ref: string): any[] {
+    let summary: PodA2AArtifactSummary | null = null;
+    try {
+      summary = this.deps.describeArtifact?.(podId, ref) ?? null;
+    } catch {
+      summary = null;
+    }
+    if (!summary) return [];
+    const data: Record<string, unknown> = {
+      path: summary.ref,
+      bytes: summary.bytes,
+      mediaType: summary.mediaType,
+      // Artifact ids with slashes must be one path segment on the wire (route registry
+      // matches by segment count), so hand clients a ready-to-use encoded URL.
+      url: `/a2a/pods/${podId}/artifacts/${encodeURIComponent(summary.ref)}`,
+    };
+    if (summary.content !== undefined) data.content = summary.content;
+    // Part.toJSON only emits `data` for the protobuf shape, so build it via fromJSON.
+    return [Part.fromJSON({ data, metadata: {}, mediaType: 'application/json' } as any)];
   }
 
   listTasks(podId: string, contextId?: string | null): Task[] {

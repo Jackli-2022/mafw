@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+﻿import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { Task } from '@a2a-js/sdk';
@@ -17,6 +17,9 @@ const taskRow: PodTaskRow = {
 function makeAgent() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-artifacts-'));
   fs.writeFileSync(path.join(root, 'a.md'), '# artifact');
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-project-'));
+  fs.mkdirSync(path.join(projectDir, 'receipts'), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, 'receipts', 'loop-1-receipt.json'), '{"ok":true}');
   const task = buildA2ATask({ task: taskRow }) as Task;
   const bridge = {
     sendMessage: jest.fn(async () => task),
@@ -29,23 +32,28 @@ function makeAgent() {
     podName: 'P',
     baseUrl: 'http://127.0.0.1:3000',
     artifactRoot: root,
+    projectDir,
   });
-  return { agent, bridge, root, task };
+  const cleanup = () => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  };
+  return { agent, bridge, root, projectDir, task, cleanup };
 }
 
 const rpc = (method: string, params: unknown) => JSON.stringify({ jsonrpc: '2.0', id: '1', method, params });
 
 describe('PodA2AAgent', () => {
   test('agent card advertises handoff and the Pod endpoint', () => {
-    const { agent, root } = makeAgent();
+    const { agent, cleanup } = makeAgent();
     expect(agent.agentCard.name).toContain('pod_1');
     expect(agent.agentCard.url).toBe('http://127.0.0.1:3000/a2a/pods/pod_1');
     expect(agent.agentCard.skills?.map((skill) => skill.id)).toContain('pod.handoff');
-    fs.rmSync(root, { recursive: true, force: true });
+    cleanup();
   });
 
   test('message/send returns a task and tasks/get round-trips', async () => {
-    const { agent, bridge, task, root } = makeAgent();
+    const { agent, bridge, task, cleanup } = makeAgent();
     const message = buildA2AMessage({
       messageId: 'msg_1',
       contextId: 'pod:pod_1:goal:g1',
@@ -62,22 +70,30 @@ describe('PodA2AAgent', () => {
     const got = await agent.handleJsonRpc(rpc('tasks/get', { id: 't1' }), { 'a2a-version': '1.0' });
     const gotResult = JSON.parse(got.body).result;
     expect((gotResult.task ?? gotResult).id).toBe(task.id);
-    fs.rmSync(root, { recursive: true, force: true });
+    cleanup();
   });
 
   test('rejects an unsupported A2A version', async () => {
-    const { agent, root } = makeAgent();
+    const { agent, cleanup } = makeAgent();
     const response = await agent.handleJsonRpc(rpc('tasks/get', { id: 't1' }), { 'a2a-version': '0.3' });
     expect(response.status).toBe(400);
-    fs.rmSync(root, { recursive: true, force: true });
+    cleanup();
   });
 
   test('artifact lookup rejects traversal and serves files inside the root', () => {
-    const { agent, root } = makeAgent();
+    const { agent, cleanup } = makeAgent();
     expect(agent.getArtifact('a.md')?.contentType).toContain('text/markdown');
     expect(agent.getArtifact('../a.md')).toBeNull();
     expect(agent.getArtifact('..%2Fa.md')).toBeNull();
     expect(agent.getArtifact('/etc/passwd')).toBeNull();
-    fs.rmSync(root, { recursive: true, force: true });
+    cleanup();
+  });
+
+  test('describeArtifact resolves project-relative receipts with inline content', () => {
+    const { agent, cleanup } = makeAgent();
+    const summary = agent.describeArtifact('receipts/loop-1-receipt.json');
+    expect(summary).toMatchObject({ ref: 'receipts/loop-1-receipt.json', mediaType: 'application/json', content: '{"ok":true}' });
+    expect(agent.describeArtifact('.env')).toBeNull();
+    cleanup();
   });
 });

@@ -2,7 +2,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { TaskState } from '@a2a-js/sdk';
+import { Part, TaskState } from '@a2a-js/sdk';
 import { PodAccess } from '../../../src/core/pod/pod-access';
 import { buildA2AMessage } from '../../../src/core/pod/pod-a2a-mapping';
 import { PodA2ABridge } from '../../../src/core/pod/pod-a2a-bridge';
@@ -96,6 +96,43 @@ describe('PodA2ABridge', () => {
     expect((await adapters.load('t1', {} as any))?.id).toBe('t1');
     await adapters.save({ id: 't1', contextId: 'x' } as any, {} as any);
     expect(h.store.getTask('t1')?.status).toBe('pending');
+    h.db.close();
+    fs.rmSync(h.dir, { recursive: true, force: true });
+  });
+
+  test('exposes task artifactRefs as self-describing data parts', async () => {
+    const h = makeBridge();
+    h.store.upsertTask({
+      id: 't_art', podId: h.pod.id, goalId: 'g1', sourceKey: 'wave:1', externalTaskId: null,
+      title: 'art', description: null, ownerMemberId: h.builder.id, status: 'done',
+      dependenciesJson: null,
+      artifactRefsJson: JSON.stringify(['receipts/g1/loop-1-receipt.json', 'missing.md']),
+      now: NOW,
+    });
+    const bridge = new PodA2ABridge({
+      store: h.store,
+      access: new PodAccess(h.store),
+      now: () => NOW,
+      newId: () => 'id_extra',
+      describeArtifact: (podId, ref) => (podId === h.pod.id && ref === 'receipts/g1/loop-1-receipt.json'
+        ? { ref, path: '/p1/receipts/g1/loop-1-receipt.json', bytes: 11, mediaType: 'application/json', content: '{"ok":true}' }
+        : null),
+    });
+    const task = bridge.getTask(h.pod.id, 't_art');
+    expect(task?.artifacts).toHaveLength(2);
+    expect(task?.artifacts?.[0]).toMatchObject({ artifactId: 'receipts/g1/loop-1-receipt.json', name: 'receipts/g1/loop-1-receipt.json' });
+    const part = Part.toJSON(task!.artifacts![0].parts[0] as any) as any;
+    expect(part).toMatchObject({
+      mediaType: 'application/json',
+      data: {
+        path: 'receipts/g1/loop-1-receipt.json',
+        bytes: 11,
+        mediaType: 'application/json',
+        content: '{"ok":true}',
+        url: `/a2a/pods/${h.pod.id}/artifacts/receipts%2Fg1%2Floop-1-receipt.json`,
+      },
+    });
+    expect(task?.artifacts?.[1].parts).toEqual([]);
     h.db.close();
     fs.rmSync(h.dir, { recursive: true, force: true });
   });

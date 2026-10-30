@@ -8,6 +8,8 @@ export interface PodA2ARouteDeps {
 }
 
 const MAX_BODY = 256 * 1024;
+/** Cap for artifact downloads (bytes); larger files must be fetched from the workspace. */
+export const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 
 function decode(value: string): string {
   try {
@@ -77,7 +79,7 @@ export async function handlePodA2A(
     return true;
   }
 
-  const artifact = pathname.match(/^\/a2a\/pods\/([^/]+)\/artifacts\/([^/]+)$/);
+  const artifact = pathname.match(/^\/a2a\/pods\/([^/]+)\/artifacts\/(.+)$/);
   if (artifact) {
     if (method !== 'GET') return false;
     const agent = deps.getAgent(decode(artifact[1]));
@@ -90,7 +92,18 @@ export async function handlePodA2A(
       sendJson(res, 400, { error: 'artifact not found or invalid' });
       return true;
     }
-    res.writeHead(200, { 'Content-Type': found.contentType });
+    let size = 0;
+    try {
+      size = fs.statSync(found.path).size;
+    } catch {
+      sendJson(res, 400, { error: 'artifact not found or invalid' });
+      return true;
+    }
+    if (size > MAX_ARTIFACT_BYTES) {
+      sendJson(res, 413, { error: 'artifact too large', bytes: size, limit: MAX_ARTIFACT_BYTES });
+      return true;
+    }
+    res.writeHead(200, { 'Content-Type': found.contentType, 'Content-Length': String(size) });
     res.end(fs.readFileSync(found.path));
     return true;
   }

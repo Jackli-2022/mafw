@@ -42,6 +42,7 @@ import { PodBudget } from './core/pod/pod-budget';
 import { PodMessageDelivery } from './core/pod/pod-message-delivery';
 import { PodA2ABridge } from './core/pod/pod-a2a-bridge';
 import { PodA2AAgent } from './core/pod/pod-a2a-agent';
+import { PodA2AArtifactStore } from './core/pod/pod-a2a-artifacts';
 import { canonicalProjectDir } from './core/pod/pod-identity';
 import {
   handleSubagentCancel, handleSubagentList, handleSubagentMessage,
@@ -3693,6 +3694,18 @@ class MafwScheduler {
       store: this.podStore,
       access: this.podAccess,
       delivery: this.podMessageDelivery,
+      describeArtifact: (podId, ref) => {
+        try {
+          const pod = this.podStore.getPod(podId);
+          if (!pod) return null;
+          return new PodA2AArtifactStore({
+            projectDir: pod.projectDir,
+            artifactRoot: path.join(os.homedir(), '.mafw', 'pods', podId, 'artifacts'),
+          }).describe(ref);
+        } catch {
+          return null;
+        }
+      },
       now: () => new Date().toISOString(),
       newId: () => `poda2a_${randomUUID()}`,
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'message' } }),
@@ -8116,6 +8129,7 @@ class MafwScheduler {
         podName: pod.name,
         baseUrl: `http://127.0.0.1:${config.server.apiPort}`,
         artifactRoot: path.join(os.homedir(), '.mafw', 'pods', podId, 'artifacts'),
+        projectDir: pod.projectDir,
       });
       this.podA2AAgents.set(podId, agent);
     }
