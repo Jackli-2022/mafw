@@ -73,6 +73,21 @@ export interface PodMessageRow {
   body: string;
   createdAt: string;
   readAt: string | null;
+  protocol: string | null;
+  externalMessageId: string | null;
+  partsJson: string | null;
+  deliveredAt: string | null;
+  deliveredSessionId: string | null;
+}
+
+export interface PodA2ALinkRow {
+  id: string;
+  podId: string;
+  localKind: 'task' | 'message';
+  localId: string;
+  a2aId: string;
+  contextId: string | null;
+  createdAt: string;
 }
 
 export interface PodSessionRow {
@@ -164,6 +179,23 @@ function messageFromRow(row: any): PodMessageRow {
     body: row.body,
     createdAt: row.created_at,
     readAt: row.read_at ?? null,
+    protocol: row.protocol ?? null,
+    externalMessageId: row.external_message_id ?? null,
+    partsJson: row.parts_json ?? null,
+    deliveredAt: row.delivered_at ?? null,
+    deliveredSessionId: row.delivered_session_id ?? null,
+  };
+}
+
+function a2aLinkFromRow(row: any): PodA2ALinkRow {
+  return {
+    id: row.id,
+    podId: row.pod_id,
+    localKind: row.local_kind,
+    localId: row.local_id,
+    a2aId: row.a2a_id,
+    contextId: row.context_id ?? null,
+    createdAt: row.created_at,
   };
 }
 
@@ -254,9 +286,30 @@ export class PodStore {
         kind TEXT NOT NULL,
         body TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        read_at TEXT
+        read_at TEXT,
+        protocol TEXT,
+        external_message_id TEXT,
+        parts_json TEXT,
+        delivered_at TEXT,
+        delivered_session_id TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_pod_messages_pod ON pod_messages(pod_id, created_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
+        ON pod_messages(pod_id, external_message_id)
+        WHERE external_message_id IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS pod_a2a_links (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        local_kind TEXT NOT NULL,
+        local_id TEXT NOT NULL,
+        a2a_id TEXT NOT NULL,
+        context_id TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(pod_id, local_kind, local_id),
+        UNIQUE(pod_id, local_kind, a2a_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pod_a2a_links_pod ON pod_a2a_links(pod_id, local_kind);
 
       CREATE TABLE IF NOT EXISTS pod_member_sessions (
         id TEXT PRIMARY KEY,
@@ -284,6 +337,23 @@ export class PodStore {
       );
       CREATE INDEX IF NOT EXISTS idx_pod_snapshots_pod ON pod_session_snapshots(pod_id);
     `);
+
+    this.ensureColumn('pod_messages', 'protocol', 'protocol TEXT');
+    this.ensureColumn('pod_messages', 'external_message_id', 'external_message_id TEXT');
+    this.ensureColumn('pod_messages', 'parts_json', 'parts_json TEXT');
+    this.ensureColumn('pod_messages', 'delivered_at', 'delivered_at TEXT');
+    this.ensureColumn('pod_messages', 'delivered_session_id', 'delivered_session_id TEXT');
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
+        ON pod_messages(pod_id, external_message_id)
+        WHERE external_message_id IS NOT NULL;
+    `);
+  }
+
+  private ensureColumn(table: string, column: string, ddl: string): void {
+    const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (columns.some((item) => item.name === column)) return;
+    this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   }
 
   ensurePod(input: { id: string; projectDir: string; name: string; configJson?: string; now: string }): PodRow {
@@ -487,16 +557,71 @@ export class PodStore {
     this.db.prepare(`UPDATE pod_tasks SET ${sets.join(', ')} WHERE id = ?`).run(...values);
   }
 
-  insertMessage(input: Omit<PodMessageRow, 'createdAt' | 'readAt'> & { now: string }): PodMessageRow {
+  insertMessage(input: Omit<PodMessageRow, 'createdAt' | 'readAt' | 'protocol' | 'externalMessageId' | 'partsJson' | 'deliveredAt' | 'deliveredSessionId'> & {
+    protocol?: string | null;
+    externalMessageId?: string | null;
+    partsJson?: string | null;
+    now: string;
+  }): PodMessageRow {
     const row = this.db.prepare(`
-      INSERT INTO pod_messages (id, pod_id, from_member_id, to_member_id, kind, body, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO pod_messages (
+        id, pod_id, from_member_id, to_member_id, kind, body,
+        protocol, external_message_id, parts_json, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING *
     `).get(
       input.id, input.podId, input.fromMemberId, input.toMemberId,
-      input.kind, input.body, input.now,
+      input.kind, input.body, input.protocol ?? null,
+      input.externalMessageId ?? null, input.partsJson ?? null, input.now,
     ) as any;
     return messageFromRow(row);
+  }
+
+  markMessageDelivered(id: string, sessionId: string, now: string): void {
+    this.db.prepare(
+      'UPDATE pod_messages SET delivered_at = ?, delivered_session_id = ? WHERE id = ?',
+    ).run(now, sessionId, id);
+  }
+
+  linkA2A(input: {
+    id: string;
+    podId: string;
+    localKind: 'task' | 'message';
+    localId: string;
+    a2aId: string;
+    contextId?: string | null;
+    now: string;
+  }): void {
+    this.db.prepare(`
+      INSERT OR IGNORE INTO pod_a2a_links (
+        id, pod_id, local_kind, local_id, a2a_id, context_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.id, input.podId, input.localKind, input.localId,
+      input.a2aId, input.contextId ?? null, input.now,
+    );
+  }
+
+  getA2ALink(podId: string, localKind: 'task' | 'message', localId: string): PodA2ALinkRow | null {
+    const row = this.db.prepare(
+      'SELECT * FROM pod_a2a_links WHERE pod_id = ? AND local_kind = ? AND local_id = ?',
+    ).get(podId, localKind, localId) as any;
+    return row ? a2aLinkFromRow(row) : null;
+  }
+
+  getA2ALocalId(podId: string, localKind: 'task' | 'message', a2aId: string): string | null {
+    const row = this.db.prepare(
+      'SELECT * FROM pod_a2a_links WHERE pod_id = ? AND local_kind = ? AND a2a_id = ?',
+    ).get(podId, localKind, a2aId) as any;
+    return row ? row.local_id : null;
+  }
+
+  listA2ALinks(podId: string, localKind?: 'task' | 'message'): PodA2ALinkRow[] {
+    const rows = localKind
+      ? this.db.prepare('SELECT * FROM pod_a2a_links WHERE pod_id = ? AND local_kind = ? ORDER BY created_at').all(podId, localKind)
+      : this.db.prepare('SELECT * FROM pod_a2a_links WHERE pod_id = ? ORDER BY created_at').all(podId);
+    return (rows as any[]).map(a2aLinkFromRow);
   }
 
   listMessages(podId: string, limit = 100): PodMessageRow[] {

@@ -215,4 +215,51 @@ describe('PodStore', () => {
     expect(store.getSnapshotForPod('pod_2', 'ses_1')).toBeNull();
     expect(store.listSessionIds('pod_1', 0)).toEqual(['ses_1']);
   });
+
+  test('links Pod tasks/messages to A2A ids both ways', () => {
+    const now = '2026-10-30T00:00:00.000Z';
+    store.ensurePod({ id: 'pod_1', projectDir: '/p', name: 'P', now });
+    store.linkA2A({
+      id: 'l1', podId: 'pod_1', localKind: 'task', localId: 'pt1',
+      a2aId: 'a2a_1', contextId: 'pod:pod_1:goal:g1', now,
+    });
+    expect(store.getA2ALink('pod_1', 'task', 'pt1')?.a2aId).toBe('a2a_1');
+    expect(store.getA2ALocalId('pod_1', 'task', 'a2a_1')).toBe('pt1');
+    expect(store.listA2ALinks('pod_1', 'task')).toHaveLength(1);
+    expect(store.getA2ALink('pod_1', 'message', 'pt1')).toBeNull();
+  });
+
+  test('stores A2A message fields and enforces external message id uniqueness', () => {
+    const now = '2026-10-30T00:00:00.000Z';
+    store.ensurePod({ id: 'pod_1', projectDir: '/p', name: 'P', now });
+    store.insertMessage({
+      id: 'm1', podId: 'pod_1', fromMemberId: 'm_lead', toMemberId: 'm_builder',
+      kind: 'request', body: 'do', protocol: 'a2a', externalMessageId: 'a2a_m1',
+      partsJson: '[]', now,
+    });
+    const [message] = store.listMessages('pod_1');
+    expect(message).toMatchObject({
+      protocol: 'a2a',
+      externalMessageId: 'a2a_m1',
+      deliveredAt: null,
+      deliveredSessionId: null,
+    });
+    expect(() => store.insertMessage({
+      id: 'm2', podId: 'pod_1', fromMemberId: 'm_lead', toMemberId: 'm_builder',
+      kind: 'request', body: 'again', protocol: 'a2a', externalMessageId: 'a2a_m1',
+      now,
+    })).toThrow();
+  });
+
+  test('marks a message delivered to one session', () => {
+    const now = '2026-10-30T00:00:00.000Z';
+    store.ensurePod({ id: 'pod_1', projectDir: '/p', name: 'P', now });
+    store.insertMessage({
+      id: 'm1', podId: 'pod_1', fromMemberId: 'm_lead', toMemberId: 'm_builder',
+      kind: 'request', body: 'do', now,
+    });
+    store.markMessageDelivered('m1', 'ses_builder', now);
+    expect(store.listMessages('pod_1')[0].deliveredAt).toBe(now);
+    expect(store.listMessages('pod_1')[0].deliveredSessionId).toBe('ses_builder');
+  });
 });
