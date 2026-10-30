@@ -6,6 +6,7 @@
  */
 import type { RuntimeContractManifest } from './contract-manifest-types';
 import { CORE_SURFACES } from './contract-surfaces-core';
+import { AGENT_SURFACES } from './contract-surfaces-agent';
 
 export const SCHEMA_VERSION = 1 as const;
 export const CONTRACT_VERSION = '2026.10.0';
@@ -16,7 +17,7 @@ export function buildRuntimeContractManifest(): RuntimeContractManifest {
     contractVersion: CONTRACT_VERSION,
     generatedFrom: 'gateway/src/runtime/contract-manifest.ts',
     domains: [],
-    surfaces: [...CORE_SURFACES],
+    surfaces: [...CORE_SURFACES, ...AGENT_SURFACES],
     capabilities: [],
     events: [],
     cognition: [],

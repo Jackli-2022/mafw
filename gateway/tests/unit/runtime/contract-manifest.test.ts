@@ -4,6 +4,7 @@ import {
   type RuntimeContractManifest,
 } from '../../../src/runtime/contract-manifest';
 import { CORE_SURFACES } from '../../../src/runtime/contract-surfaces-core';
+import { AGENT_SURFACES } from '../../../src/runtime/contract-surfaces-agent';
 
 function fixture(overrides: Partial<RuntimeContractManifest> = {}): RuntimeContractManifest {
   return {
@@ -111,6 +112,41 @@ describe('core surfaces', () => {
 
   it('exposes CORE_SURFACES without duplicate ids', () => {
     const ids = CORE_SURFACES.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('agent surfaces', () => {
+  it('covers prompt inputs and separates presence from behavior', () => {
+    expect(surface('prompt.parts.text')).toMatchObject({ obligation: 'required', verification: 'presence' });
+    expect(surface('prompt.parts.file')).toMatchObject({ obligation: 'optional', verification: 'behavior' });
+    expect(surface('prompt.result.usage')).toMatchObject({ obligation: 'optional', verification: 'behavior' });
+  });
+
+  it('covers event surfaces with presets', () => {
+    expect(surface('events.global')).toMatchObject({ obligation: 'required', requiredWhen: { capabilities: ['eventStream'] } });
+    expect(surface('events.turn.terminal')).toMatchObject({ obligation: 'optional', presets: expect.arrayContaining(['conversation']) });
+    expect(surface('events.part.tool')).toMatchObject({ obligation: 'optional', presets: expect.arrayContaining(['desktop']) });
+  });
+
+  it('covers tools and approvals', () => {
+    expect(surface('tools.registerTools')).toMatchObject({ obligation: 'required', verification: 'presence' });
+    expect(surface('tools.nativeTools')).toMatchObject({ obligation: 'required', verification: 'presence' });
+    expect(surface('approval.permissionReply')).toMatchObject({ obligation: 'gated', capability: 'nativeApprovals' });
+    expect(surface('approval.permissionList')).toMatchObject({ obligation: 'gated', capability: 'nativeApprovals' });
+  });
+
+  it('covers identity/discovery/mcp/cognition/media/usage', () => {
+    expect(surface('identity.agents.install')).toMatchObject({ obligation: 'gated', capability: 'agentConfigApi' });
+    expect(surface('discovery.list')).toMatchObject({ obligation: 'gated', capability: 'discoveryApi' });
+    expect(surface('mcp.list')).toMatchObject({ obligation: 'gated', capability: 'mcpApi' });
+    expect(surface('cognition.observe')).toMatchObject({ obligation: 'optional', presets: expect.arrayContaining(['conversation']) });
+    expect(surface('media.tools')).toMatchObject({ obligation: 'optional', presets: expect.arrayContaining(['desktop']) });
+    expect(surface('usage.event')).toMatchObject({ obligation: 'optional' });
+  });
+
+  it('exposes AGENT_SURFACES without duplicate ids', () => {
+    const ids = AGENT_SURFACES.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
