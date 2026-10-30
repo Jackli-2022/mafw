@@ -194,10 +194,22 @@ export const AGENT_SURFACES: ContractSurface[] = [
     consumer: 'GET /api/permissions', impact: '审批轮询为空', presets: AUTO,
   }),
   row({
-    id: 'approval.question', title: 'session.question', domain: 'approval',
+    id: 'approval.question.list', title: 'session.question.list', domain: 'approval',
     obligation: 'gated', capability: 'questionApi', verification: 'presence',
-    implementation: 'session.question.{list,reply,reject}', probe: ['session', 'question'],
-    consumer: 'question routes', impact: '结构化问答不可用', presets: AUTO,
+    implementation: 'session.question.list', probe: ['session', 'question', 'list'],
+    consumer: 'GET /api/questions', impact: '问答列表不可用', presets: AUTO,
+  }),
+  row({
+    id: 'approval.question.reply', title: 'session.question.reply', domain: 'approval',
+    obligation: 'gated', capability: 'questionApi', verification: 'presence',
+    implementation: 'session.question.reply', probe: ['session', 'question', 'reply'],
+    consumer: 'question reply route', impact: '问答回复不可用', presets: AUTO,
+  }),
+  row({
+    id: 'approval.question.reject', title: 'session.question.reject', domain: 'approval',
+    obligation: 'gated', capability: 'questionApi', verification: 'presence',
+    implementation: 'session.question.reject', probe: ['session', 'question', 'reject'],
+    consumer: 'question reject route', impact: '问答拒绝不可用', presets: AUTO,
   }),
 
   // ── identity ─────────────────────────────────────────────────────────

@@ -57,6 +57,9 @@ function hardMessage(source: string, surface: ContractSurface): string {
   if (surface.id === 'provider.app.agents') {
     return `${source}: declares providerConfigApi but app.agents is missing (not a function)`;
   }
+  if (surface.id === 'provider.config') {
+    return `${source}: declares providerConfigApi but config.get is missing (not a function)`;
+  }
   if (surface.id === 'provider.config.update') {
     return `${source}: declares providerConfigApi but config.update is missing (not a function)`;
   }

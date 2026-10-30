@@ -151,13 +151,25 @@ export const CORE_SURFACES: ContractSurface[] = [
   row({
     id: 'session.shell', title: 'session.shell', domain: 'session',
     obligation: 'optional', verification: 'presence', implementation: 'shell.{create,get,output,remove}',
-    probe: ['shell'], consumer: 'background shell', impact: '后台 shell 不可用', presets: NONE,
+    probe: ['shell', 'create'], consumer: 'background shell', impact: '后台 shell 不可用', presets: NONE,
   }),
   row({
-    id: 'session.instructions', title: 'session.instructions', domain: 'session',
+    id: 'session.instructions.list', title: 'session.instructions.list', domain: 'session',
     obligation: 'gated', capability: 'instructionsApi', verification: 'presence',
-    implementation: 'session.instructions.{list,put,remove}', probe: ['session', 'instructions'],
+    implementation: 'session.instructions.list', probe: ['session', 'instructions', 'list'],
     consumer: 'InstructionSyncService', impact: '指令分段/压缩免疫不可用', presets: DESK,
+  }),
+  row({
+    id: 'session.instructions.put', title: 'session.instructions.put', domain: 'session',
+    obligation: 'gated', capability: 'instructionsApi', verification: 'presence',
+    implementation: 'session.instructions.put', probe: ['session', 'instructions', 'put'],
+    consumer: 'InstructionSyncService', impact: '指令写入不可用', presets: DESK,
+  }),
+  row({
+    id: 'session.instructions.remove', title: 'session.instructions.remove', domain: 'session',
+    obligation: 'gated', capability: 'instructionsApi', verification: 'presence',
+    implementation: 'session.instructions.remove', probe: ['session', 'instructions', 'remove'],
+    consumer: 'InstructionSyncService', impact: '指令清理不可用', presets: DESK,
   }),
 
   // ── branch ───────────────────────────────────────────────────────────
@@ -270,10 +282,10 @@ export const CORE_SURFACES: ContractSurface[] = [
     consumer: 'GET /api/agents', impact: 'runtime agent 列表不可用', presets: DESK,
   }),
   row({
-    id: 'provider.config', title: 'config.get / config.update', domain: 'provider',
+    id: 'provider.config', title: 'config.get', domain: 'provider',
     obligation: 'required', requiredWhen: { capabilities: ['providerConfigApi'] },
-    verification: 'presence', implementation: 'config.get / config.update', probe: ['config'],
-    consumer: 'GET/PATCH /api/runtime-config', impact: 'runtime 配置读写不可用', presets: DESK,
+    verification: 'presence', implementation: 'config.get', probe: ['config', 'get'],
+    consumer: 'GET /api/runtime-config', impact: 'runtime 配置读取不可用', presets: DESK,
   }),
   row({
     id: 'provider.config.update', title: 'config.update', domain: 'provider',

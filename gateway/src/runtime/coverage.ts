@@ -111,7 +111,12 @@ export function probePasses(subject: ContractSubject, surface: ContractSurface):
   }
 
   const value = rest.length === 0 ? root : getPath(root, rest);
-  return value !== undefined && value !== null;
+  // declaration/plugin 是数据面，任意非空值即可；rt 是方法面，必须是函数。
+  // 这条规则防止 `{ question: {} }` / `update: true` 这类容器/值被误判为 present。
+  if (head === 'declaration' || head === 'plugin') {
+    return value !== undefined && value !== null;
+  }
+  return typeof value === 'function';
 }
 
 export function computeCoverage(subject: ContractSubject, manifest: RuntimeContractManifest): RuntimeCoverage {
@@ -184,6 +189,19 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
     contractVersion: manifest.contractVersion,
     static: { declared, effective, presets, obligations, surfaces, missing, unverified, notes },
   };
+}
+
+/**
+ * 包贡献 runtime 的声明兜底：eventStream=true 但没有 eventMappings/transformEvent
+ * 时先降级 capability，再计算 coverage——否则 coverage.effective 会与
+ * active.capabilities 自相矛盾。
+ */
+export function applyEventStreamDeclarationDowngrade(rt: AgentRuntime, hasDeclarations: boolean): boolean {
+  if ((rt.capabilities as any)?.eventStream && !hasDeclarations) {
+    (rt.capabilities as any).eventStream = false;
+    return true;
+  }
+  return false;
 }
 
 export function applyBehaviorResults(coverage: RuntimeCoverage, results: BehaviorResult[]): RuntimeCoverage {

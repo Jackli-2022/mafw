@@ -570,7 +570,8 @@
       "verification": "presence",
       "implementation": "shell.{create,get,output,remove}",
       "probe": [
-        "shell"
+        "shell",
+        "create"
       ],
       "consumer": "background shell",
       "impact": "后台 shell 不可用",
@@ -578,19 +579,60 @@
     },
     {
       "direction": "gateway->runtime",
-      "id": "session.instructions",
-      "title": "session.instructions",
+      "id": "session.instructions.list",
+      "title": "session.instructions.list",
       "domain": "session",
       "obligation": "gated",
       "capability": "instructionsApi",
       "verification": "presence",
-      "implementation": "session.instructions.{list,put,remove}",
+      "implementation": "session.instructions.list",
       "probe": [
         "session",
-        "instructions"
+        "instructions",
+        "list"
       ],
       "consumer": "InstructionSyncService",
       "impact": "指令分段/压缩免疫不可用",
+      "presets": [
+        "desktop"
+      ]
+    },
+    {
+      "direction": "gateway->runtime",
+      "id": "session.instructions.put",
+      "title": "session.instructions.put",
+      "domain": "session",
+      "obligation": "gated",
+      "capability": "instructionsApi",
+      "verification": "presence",
+      "implementation": "session.instructions.put",
+      "probe": [
+        "session",
+        "instructions",
+        "put"
+      ],
+      "consumer": "InstructionSyncService",
+      "impact": "指令写入不可用",
+      "presets": [
+        "desktop"
+      ]
+    },
+    {
+      "direction": "gateway->runtime",
+      "id": "session.instructions.remove",
+      "title": "session.instructions.remove",
+      "domain": "session",
+      "obligation": "gated",
+      "capability": "instructionsApi",
+      "verification": "presence",
+      "implementation": "session.instructions.remove",
+      "probe": [
+        "session",
+        "instructions",
+        "remove"
+      ],
+      "consumer": "InstructionSyncService",
+      "impact": "指令清理不可用",
       "presets": [
         "desktop"
       ]
@@ -916,7 +958,7 @@
     {
       "direction": "gateway->runtime",
       "id": "provider.config",
-      "title": "config.get / config.update",
+      "title": "config.get",
       "domain": "provider",
       "obligation": "required",
       "requiredWhen": {
@@ -925,12 +967,13 @@
         ]
       },
       "verification": "presence",
-      "implementation": "config.get / config.update",
+      "implementation": "config.get",
       "probe": [
-        "config"
+        "config",
+        "get"
       ],
-      "consumer": "GET/PATCH /api/runtime-config",
-      "impact": "runtime 配置读写不可用",
+      "consumer": "GET /api/runtime-config",
+      "impact": "runtime 配置读取不可用",
       "presets": [
         "desktop"
       ]
@@ -1524,19 +1567,62 @@
     },
     {
       "direction": "gateway->runtime",
-      "id": "approval.question",
-      "title": "session.question",
+      "id": "approval.question.list",
+      "title": "session.question.list",
       "domain": "approval",
       "obligation": "gated",
       "capability": "questionApi",
       "verification": "presence",
-      "implementation": "session.question.{list,reply,reject}",
+      "implementation": "session.question.list",
       "probe": [
         "session",
-        "question"
+        "question",
+        "list"
       ],
-      "consumer": "question routes",
-      "impact": "结构化问答不可用",
+      "consumer": "GET /api/questions",
+      "impact": "问答列表不可用",
+      "presets": [
+        "autonomous",
+        "desktop"
+      ]
+    },
+    {
+      "direction": "gateway->runtime",
+      "id": "approval.question.reply",
+      "title": "session.question.reply",
+      "domain": "approval",
+      "obligation": "gated",
+      "capability": "questionApi",
+      "verification": "presence",
+      "implementation": "session.question.reply",
+      "probe": [
+        "session",
+        "question",
+        "reply"
+      ],
+      "consumer": "question reply route",
+      "impact": "问答回复不可用",
+      "presets": [
+        "autonomous",
+        "desktop"
+      ]
+    },
+    {
+      "direction": "gateway->runtime",
+      "id": "approval.question.reject",
+      "title": "session.question.reject",
+      "domain": "approval",
+      "obligation": "gated",
+      "capability": "questionApi",
+      "verification": "presence",
+      "implementation": "session.question.reject",
+      "probe": [
+        "session",
+        "question",
+        "reject"
+      ],
+      "consumer": "question reject route",
+      "impact": "问答拒绝不可用",
       "presets": [
         "autonomous",
         "desktop"
@@ -2033,6 +2119,7 @@
       "requires": [
         "provider.list",
         "provider.app.agents",
+        "provider.config",
         "provider.config.update"
       ],
       "unlocks": [
@@ -2197,10 +2284,14 @@
       "kind": "feature",
       "default": false,
       "requires": [
-        "approval.question"
+        "approval.question.list",
+        "approval.question.reply",
+        "approval.question.reject"
       ],
       "unlocks": [
-        "approval.question",
+        "approval.question.list",
+        "approval.question.reply",
+        "approval.question.reject",
         "events.question"
       ],
       "degrade": "结构化问答 503"
@@ -2245,10 +2336,14 @@
       "kind": "transport",
       "default": false,
       "requires": [
-        "session.instructions"
+        "session.instructions.list",
+        "session.instructions.put",
+        "session.instructions.remove"
       ],
       "unlocks": [
-        "session.instructions"
+        "session.instructions.list",
+        "session.instructions.put",
+        "session.instructions.remove"
       ],
       "degrade": "指令分段/压缩免疫不可用"
     },
@@ -2974,7 +3069,9 @@
         "tools.nativeTools",
         "approval.permissionReply",
         "approval.permissionList",
-        "approval.question",
+        "approval.question.list",
+        "approval.question.reply",
+        "approval.question.reject",
         "cognition.observe",
         "cognition.injectContext",
         "cognition.injectSystem",
@@ -3019,7 +3116,9 @@
         "session.switchAgent",
         "session.switchModel",
         "session.setThinkingLevel",
-        "session.instructions",
+        "session.instructions.list",
+        "session.instructions.put",
+        "session.instructions.remove",
         "branch.fork",
         "branch.revert",
         "branch.unrevert",
@@ -3064,7 +3163,9 @@
         "tools.outOfProcess",
         "approval.permissionReply",
         "approval.permissionList",
-        "approval.question",
+        "approval.question.list",
+        "approval.question.reply",
+        "approval.question.reject",
         "identity.agents.install",
         "identity.agents.remove",
         "identity.prompt.agent",

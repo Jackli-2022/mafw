@@ -41,7 +41,7 @@ export const CONTRACT_CAPABILITIES: ContractCapability[] = [
   }),
   cap({
     id: 'providerConfigApi', title: 'provider/config API', domain: 'provider', kind: 'feature', default: false,
-    requires: ['provider.list', 'provider.app.agents', 'provider.config.update'],
+    requires: ['provider.list', 'provider.app.agents', 'provider.config', 'provider.config.update'],
     unlocks: ['provider.list', 'provider.app.agents', 'provider.config', 'provider.config.update'],
     degrade: 'provider/设置端点 503',
   }),
@@ -102,7 +102,8 @@ export const CONTRACT_CAPABILITIES: ContractCapability[] = [
   }),
   cap({
     id: 'questionApi', title: 'native question API', domain: 'approval', kind: 'feature', default: false,
-    requires: ['approval.question'], unlocks: ['approval.question', 'events.question'],
+    requires: ['approval.question.list', 'approval.question.reply', 'approval.question.reject'],
+    unlocks: ['approval.question.list', 'approval.question.reply', 'approval.question.reject', 'events.question'],
     degrade: '结构化问答 503',
   }),
   cap({
@@ -117,7 +118,8 @@ export const CONTRACT_CAPABILITIES: ContractCapability[] = [
   }),
   cap({
     id: 'instructionsApi', title: 'per-session instruction entries', domain: 'session', kind: 'transport', default: false,
-    requires: ['session.instructions'], unlocks: ['session.instructions'],
+    requires: ['session.instructions.list', 'session.instructions.put', 'session.instructions.remove'],
+    unlocks: ['session.instructions.list', 'session.instructions.put', 'session.instructions.remove'],
     degrade: '指令分段/压缩免疫不可用',
   }),
   cap({

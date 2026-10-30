@@ -203,7 +203,7 @@ function wirePiPermissionEvaluator(runtime: AgentRuntime, policy: ApprovalPolicy
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { validateRuntime, RuntimeValidation } from './runtime/validate';
 import { buildRuntimeContractManifest } from './runtime/contract-manifest';
-import type { ContractSubject, RuntimeCoverage } from './runtime/coverage';
+import { applyEventStreamDeclarationDowngrade, type ContractSubject, type RuntimeCoverage } from './runtime/coverage';
 import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
@@ -1635,7 +1635,20 @@ class MafwScheduler {
     const fallbackRt = await createOpencodeRuntime({
       ...sdkConfig,
     });
-    this.applyRuntimeValidation(fallbackRt, 'builtin:opencode(direct)', false);
+    this.applyRuntimeValidation(fallbackRt, 'builtin:opencode(direct)', false, {
+      declaration: {
+        eventSource: OPENCODE_EVENT_SOURCE,
+        eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
+        transformEvent: OPENCODE_TRANSFORM_EVENT,
+      },
+      plugin: {
+        name: 'opencode',
+        createRuntime: () => {},
+        external: !!(fallbackRt as any).external,
+        capabilities: fallbackRt.capabilities,
+      },
+      source: 'active',
+    });
     await activateRuntimeTools(fallbackRt, 'builtin:opencode(direct)', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
     wrapGlobalEventStream(fallbackRt, {
       eventSource: OPENCODE_EVENT_SOURCE,
@@ -1662,6 +1675,12 @@ class MafwScheduler {
         rootDir: this.ensureRuntimeRootDir(),
         gatewayPort: config.server.apiPort,
       }));
+      // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径。
+      // 必须在 applyRuntimeValidation 之前——否则 coverage 会记录降级前的
+      // eventStream=true，与 active.capabilities 自相矛盾。
+      if (applyEventStreamDeclarationDowngrade(rt, hasEventDeclarations(plugin))) {
+        log.error(`[Runtime] '${rt.name}' declares no event translations — eventStream downgraded (default-deny would drop the entire native stream)`);
+      }
       // 声明 vs 实现一致性校验：必选面缺失 → 回退（fatal）；能力位虚报 → 强制降级
       // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
       this.applyRuntimeValidation(rt, name, fatal, {
@@ -1679,11 +1698,6 @@ class MafwScheduler {
         dialect: (rt as any).activeDialect,
         source: 'active',
       });
-      // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径
-      if ((rt.capabilities as any)?.eventStream && !hasEventDeclarations(plugin)) {
-        (rt.capabilities as any).eventStream = false;
-        log.error(`[Runtime] '${rt.name}' declares no event translations — eventStream downgraded (default-deny would drop the entire native stream)`);
-      }
       // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
       await activateRuntimeTools(rt, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
       // 方言感知接线：所有 runtime 的原生流过同一 wrap 序列——

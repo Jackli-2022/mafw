@@ -1,4 +1,4 @@
-import { computeCoverage, applyBehaviorResults, probePasses, type ContractSubject } from '../../../src/runtime/coverage';
+import { computeCoverage, applyBehaviorResults, applyEventStreamDeclarationDowngrade, probePasses, type ContractSubject } from '../../../src/runtime/coverage';
 import { buildRuntimeContractManifest } from '../../../src/runtime/contract-manifest';
 import { fullCapabilities, minimalCapabilities } from '../../../src/runtime/contract';
 
@@ -65,6 +65,27 @@ describe('coverage engine', () => {
     const next = applyBehaviorResults(c, [{ surfaceId: 'prompt.result.usage', status: 'failed', detail: 'missing usage' }]);
     expect(next.behavioral?.failed).toContain('prompt.result.usage');
     expect(next.static.surfaces['prompt.result.usage'].status).toBe('unverified');
+  });
+
+  it('rejects non-function rt probes (container/value false positive)', () => {
+    const rt = fakeRuntime({
+      session: { ...fakeRuntime().session, update: true, question: {}, instructions: {} },
+      config: { update: async (c: any) => c },
+    });
+    const subject: ContractSubject = { rt, source: 'active' };
+    const s = buildRuntimeContractManifest().surfaces;
+    expect(probePasses(subject, s.find((x) => x.id === 'session.update')!)).toBe(false);
+    expect(probePasses(subject, s.find((x) => x.id === 'approval.question.reply')!)).toBe(false);
+    expect(probePasses(subject, s.find((x) => x.id === 'session.instructions.put')!)).toBe(false);
+    expect(probePasses(subject, s.find((x) => x.id === 'provider.config')!)).toBe(false);
+  });
+
+  it('downgrades eventStream before coverage so effective matches capabilities', () => {
+    const rt = fakeRuntime({ capabilities: { ...minimalCapabilities(), eventStream: true } });
+    expect(applyEventStreamDeclarationDowngrade(rt, false)).toBe(true);
+    const c = computeCoverage({ rt, source: 'file' }, manifest);
+    expect(c.static.effective.eventStream).toBe(false);
+    expect(c.static.surfaces['plugin.eventMappings'].status).toBe('missing');
   });
 
   it('probePasses supports rt/declaration/plugin prefixes', () => {

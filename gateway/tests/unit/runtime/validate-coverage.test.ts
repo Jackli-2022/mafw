@@ -61,4 +61,43 @@ describe('manifest-driven validateRuntime', () => {
     expect(v.staticCoverage?.runtime).toBe('fake');
     expect(v.staticCoverage?.static.surfaces['session.create'].status).toBe('present');
   });
+
+  it('requires config.get, not just a config container', () => {
+    const rt = fakeRuntime({
+      capabilities: { ...fullCapabilities(), providerConfigApi: true },
+      config: { update: async (c: any) => c },
+    });
+    expect(validateRuntime(rt, 'test').hard.join('\n')).toMatch(/config\.get/);
+  });
+
+  it('downgrades questionApi when session.question is an empty container', () => {
+    const rt = fakeRuntime({
+      capabilities: { ...fullCapabilities(), questionApi: true },
+      session: { ...fakeRuntime().session, question: {} },
+    });
+    expect(validateRuntime(rt, 'test').downgraded.join('\n')).toMatch(/questionApi/);
+  });
+
+  it('downgrades instructionsApi when session.instructions is an empty container', () => {
+    const rt = fakeRuntime({
+      capabilities: { ...fullCapabilities(), instructionsApi: true },
+      session: { ...fakeRuntime().session, instructions: {} },
+    });
+    expect(validateRuntime(rt, 'test').downgraded.join('\n')).toMatch(/instructionsApi/);
+  });
+
+  it('does not warn about plugin declaration surfaces when the activation subject carries them', () => {
+    const rt = fakeRuntime({ capabilities: { ...minimalCapabilities(), eventStream: true } });
+    const v = validateRuntime(rt, 'test', {
+      declaration: {
+        eventSource: { typePath: '$.type' },
+        eventMappings: [],
+        transformEvent: () => null,
+      },
+      plugin: { name: 'fake', createRuntime: () => {}, external: true, capabilities: rt.capabilities },
+      source: 'active',
+    });
+    expect(v.downgraded).toEqual([]);
+    expect(v.warnings.filter((w) => w.includes('plugin.'))).toEqual([]);
+  });
 });

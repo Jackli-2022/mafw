@@ -29,12 +29,19 @@ export function checkEventFields(evt: RawEvt | null | undefined): string[] {
 
   const sid = sidOf(evt);
   switch (type) {
+    case 'turn.started':
     case 'turn.completed':
     case 'turn.failed':
     case 'turn.aborted':
     case 'session.compacting':
     case 'session.compacted':
       if (!sid) warnings.push(`'${type}' without sessionID — goal driver / compaction flush / trajectory turn aggregation will not trigger`);
+      break;
+    case 'part.delta':
+      if (!props?.delta) warnings.push("part.delta without properties.delta — streaming render shows nothing");
+      break;
+    case 'part.complete':
+      if (!props?.part) warnings.push('part.complete without properties.part — no completed part snapshot');
       break;
     case 'part.updated': {
       const part = props?.part;
