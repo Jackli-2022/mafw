@@ -301,6 +301,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 
 - **PDF 有限编辑（2026-10-31，commit `391d3fc4`）**：`mafw_pdf`（pypdf + reportlab + pypdfium2，BSD/Apache 系）：`inspect_pdf`（页数/尺寸/rotation/元数据/表单字段/文本摘录）、`extract_text`、`render_pdf`；结构操作 `merge_pdfs`/`split_pdf`/`delete_pages`/`reorder_pages`/`rotate_pages`/`add_blank_page`；`set_metadata`、`fill_form`（`update_page_form_field_values`）、`add_text`/`add_image`/`watermark`（points，左上角坐标）。**不做真文字替换**——PDF 无 reflow 模型；改文字应改源 docx/pptx 再导出，盖白块+叠字仅最后手段。验证：Python **4/4**；真实 agent 会话填表单（customer=Alice）、加水印、盖章、旋转 page1 90°、渲染 2 页 + `mafw_media_ask`，历史 `office-edit`。边界：加密 PDF 需 password（仅 inspect/extract 透传，编辑函数需先解密另存）、无 OCR/数字签名/高级表单外观；叠加字体仅 Helvetica。
 
+- **Pod 任务板可编辑（2026-10-31，commits `9dfb5511`..`8a88dc96`）**：任务不再是只读投影——桌面任务卡「编辑」可改**标题**与**验收标准**，写回 `waves.json` 后重新投影（`PodTaskService.editPlanTask` + 纯函数 `core/goal/wave-plan-edit.ts`）。门：goal 终态 / 有节点在跑（`state.nodeSession != null`）→ 409；计划待批（`AWAIT_PLAN_APPROVAL`）与等待回答允许（正是人审计划的时刻）；手工任务（无 `goalId/externalTaskId`）400；有 actor 时只允许 Lead（人类操作不带 actor）。`pod_tasks` 新增 `acceptance_json` 镜像（随投影刷新，status/owner 保留），桌面显示「N 条验收」。范围：只对当前轮生效（下一轮 plan 会覆盖）；新增/删除任务留待稳定 task id 迁移。测试：gateway **3350/3352**（本批新增 18；2 个红色属并行 claude-adapter 既有失败）、desktop **2147/2147**（+3）、SDK **171/171**；`tsc`/`tsgo -p`/`electron-vite build` rc=0。spec/plan：`docs/superpowers/specs/2026-10-31-pod-task-plan-edit-design.md`、`docs/superpowers/plans/2026-10-31-pod-task-plan-edit.md`。
+
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类�?API 获取数据�?
 ```
