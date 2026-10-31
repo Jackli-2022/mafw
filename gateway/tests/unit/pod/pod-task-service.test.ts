@@ -231,4 +231,91 @@ describe('PodTaskService', () => {
     service.reconcileArchive('pod_1', 'g1', true);
     expect(service.list('pod_1', 'g1').map((t) => t.status)).toEqual(['failed', 'done', 'failed']);
   });
+
+  test('projectWaves mirrors acceptance into acceptanceJson', () => {
+    const tasks = service.projectWaves('pod_1', 'g1', {
+      waves: [{ id: 'w1', tasks: [{ title: 'a', acceptance: ['跑测试', '看日志'] }, 'b'] }],
+    });
+    expect(JSON.parse(tasks[0].acceptanceJson!)).toEqual(['跑测试', '看日志']);
+    expect(tasks[1].acceptanceJson).toBeNull();
+  });
+
+  describe('editPlanTask', () => {
+    const writePlan = (plan: unknown, nextAction = 'NEXT_execute') => {
+      const wavesPath = path.join(dir, 'waves.json');
+      fs.writeFileSync(wavesPath, JSON.stringify(plan), 'utf-8');
+      const svc = new PodTaskService({
+        store,
+        now: () => '2026-10-29T00:10:00.000Z',
+        newId: () => `task_x${++seq}`,
+        notify: (podId) => notifications.push(podId),
+        resolveGoalPlan: (goalId) => goalId === 'g1'
+          ? { wavesPath, nextAction, nodeSession: null }
+          : null,
+      });
+      return { svc, wavesPath };
+    };
+
+    test('writes title+acceptance back to waves.json and refreshes the projected task', () => {
+      const { svc, wavesPath } = writePlan(plan);
+      const tasks = svc.projectWaves('pod_1', 'g1', plan as any);
+      svc.updateTask('pod_1', tasks[1].id, { status: 'in_progress' });
+      svc.updateTask('pod_1', tasks[1].id, { status: 'review' });
+
+      const updated = svc.editPlanTask('pod_1', tasks[1].id, {
+        title: '新 b',
+        acceptance: [' npm test 全绿 ', 'npm test 全绿', '看日志'],
+      });
+
+      const written = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
+      expect(written.waves[0].tasks[1]).toEqual({
+        title: '新 b', acceptance: ['npm test 全绿', '看日志'],
+      });
+      expect(updated.title).toBe('新 b');
+      expect(JSON.parse(updated.acceptanceJson!)).toEqual(['npm test 全绿', '看日志']);
+      expect(updated.status).toBe('review');
+      expect(notifications).toContain('pod_1');
+    });
+
+    test('rejects while a node session is running', () => {
+      const wavesPath = path.join(dir, 'waves.json');
+      fs.writeFileSync(wavesPath, JSON.stringify(plan), 'utf-8');
+      const svc = new PodTaskService({
+        store,
+        now: () => '2026-10-29T00:10:00.000Z',
+        newId: () => `task_y${++seq}`,
+        notify: () => {},
+        resolveGoalPlan: () => ({ wavesPath, nextAction: 'RUNNING_execute', nodeSession: { id: 'ses_1' } }),
+      });
+      const tasks = svc.projectWaves('pod_1', 'g1', plan as any);
+      expect(() => svc.editPlanTask('pod_1', tasks[0].id, { title: 'x' }))
+        .toThrow(/running/);
+    });
+
+    test('rejects terminal goals, manual tasks and unknown goals', () => {
+      const { svc } = writePlan(plan, 'COMPLETED');
+      const tasks = svc.projectWaves('pod_1', 'g1', plan as any);
+      expect(() => svc.editPlanTask('pod_1', tasks[0].id, { title: 'x' })).toThrow(/closed/);
+
+      const manual = svc.createManual('pod_1', null, '手工');
+      expect(() => svc.editPlanTask('pod_1', manual.id, { title: 'x' })).toThrow(/plan/);
+
+      const outer = new PodTaskService({
+        store, now: () => 't', newId: () => 'id', notify: () => {},
+        resolveGoalPlan: () => null,
+      });
+      expect(() => outer.editPlanTask('pod_1', tasks[0].id, { title: 'x' })).toThrow(PodError);
+    });
+
+    test('missing task in plan is a 404-shaped error', () => {
+      const { svc } = writePlan(plan);
+      const tasks = svc.projectWaves('pod_1', 'g1', plan as any);
+      // 任务存在但计划已被换掉（模拟手工删改）
+      fs.writeFileSync(path.join(dir, 'waves.json'), JSON.stringify({
+        waves: [{ id: 'w9', tasks: ['other'] }],
+      }), 'utf-8');
+      expect(() => svc.editPlanTask('pod_1', tasks[0].id, { title: 'x' }))
+        .toThrow(/not found in plan/);
+    });
+  });
 });

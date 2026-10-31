@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { editWaveTask } from '../goal/wave-plan-edit';
 import {
   PodError,
   PodStore,
@@ -18,12 +21,22 @@ export interface GoalReceipt {
   }>;
 }
 
+export interface PodGoalPlanRef {
+  wavesPath: string;
+  nextAction: string;
+  nodeSession: unknown | null;
+}
+
 export interface PodTaskServiceDeps {
   store: PodStore;
   now(): string;
   newId(): string;
   notify(podId: string): void;
+  /** 计划文件定位（编辑计划任务用）；缺省时 editPlanTask 全部 404。 */
+  resolveGoalPlan?(goalId: string): PodGoalPlanRef | null;
 }
+
+const TERMINAL_ACTIONS = new Set(['COMPLETED', 'FAILED', 'CANCELLED', 'ARCHIVED']);
 
 const ALLOWED_TRANSITIONS: Record<PodTaskStatus, PodTaskStatus[]> = {
   pending: ['in_progress', 'blocked', 'reopened'],
@@ -52,6 +65,9 @@ export class PodTaskService {
           ? raw
           : String((raw as any)?.title ?? '').trim();
         if (!title) return;
+        const acceptance = raw && typeof raw === 'object' && Array.isArray((raw as any).acceptance)
+          ? (raw as any).acceptance.map((item: unknown) => String(item)).filter((item: string) => item.trim())
+          : [];
         const sourceKey = `wave:${wave.id}:task:${index}`;
         const task = this.deps.store.upsertTask({
           id: this.deps.newId(),
@@ -65,6 +81,7 @@ export class PodTaskService {
           status: 'pending',
           dependenciesJson: null,
           artifactRefsJson: null,
+          acceptanceJson: acceptance.length > 0 ? JSON.stringify(acceptance) : null,
           now: this.deps.now(),
         });
         tasks.push(task);
@@ -135,6 +152,54 @@ export class PodTaskService {
       }
     }
     this.deps.store.updateTask(taskId, patch, this.deps.now());
+    this.deps.notify(podId);
+    return this.deps.store.getTask(taskId)!;
+  }
+
+  /**
+   * 计划任务编辑（v1：标题 + 验收）：写回 waves.json 后重新投影。
+   * 门：goal 未终止、无节点在跑；任务必须是 waves 投影出来的（有 goalId + externalTaskId）。
+   */
+  editPlanTask(
+    podId: string,
+    taskId: string,
+    patch: { title?: string; acceptance?: string[] },
+  ): PodTaskRow {
+    const task = this.deps.store.getTask(taskId);
+    if (!task || task.podId !== podId) throw new PodError(404, `task not found: ${taskId}`);
+    if (!task.goalId || !task.externalTaskId) {
+      throw new PodError(400, 'only plan-projected tasks can be edited');
+    }
+    if (patch.title !== undefined && String(patch.title).trim() === '') {
+      throw new PodError(400, 'task title is required');
+    }
+    if (patch.acceptance !== undefined && !Array.isArray(patch.acceptance)) {
+      throw new PodError(400, 'acceptance must be a string array');
+    }
+
+    const goal = this.deps.resolveGoalPlan?.(task.goalId);
+    if (!goal) throw new PodError(404, `goal plan not found for ${task.goalId}`);
+    if (TERMINAL_ACTIONS.has(goal.nextAction)) throw new PodError(409, 'goal is closed');
+    if (goal.nodeSession) throw new PodError(409, 'goal is running; wait for the node to finish');
+    if (!fs.existsSync(goal.wavesPath)) throw new PodError(404, 'waves.json not found');
+
+    let plan: unknown;
+    try {
+      plan = JSON.parse(fs.readFileSync(goal.wavesPath, 'utf-8'));
+    } catch {
+      throw new PodError(422, 'malformed waves.json');
+    }
+    const next = editWaveTask(plan, task.externalTaskId, {
+      title: patch.title,
+      acceptance: patch.acceptance,
+    });
+    if (!next) throw new PodError(404, `task ${task.externalTaskId} not found in plan`);
+
+    const tmp = `${goal.wavesPath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf-8');
+    fs.renameSync(tmp, goal.wavesPath);
+
+    this.projectWaves(podId, task.goalId, next as WavePlan);
     this.deps.notify(podId);
     return this.deps.store.getTask(taskId)!;
   }
