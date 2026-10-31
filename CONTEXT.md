@@ -39,6 +39,17 @@
 - **Wave / loop**：goal 执行的一轮迭代；`maxLoops` 是预算上限。
 - **里程碑推送（milestone push）**：phase 转换/归档时给 manager 的 `noReply` 通知。
 
+## 鲸群（Pod）
+
+- **Pod / 鲸群**：绑定在**一个项目目录**上的固定三人 agent 编队——`Lead`（编排/规划）、
+  `Builder`（执行）、`Reviewer`（独立验收）。判定看五条**同时成立**：① 绑定项目目录（不是会话/进程）；
+  ② 三人身份持久物化、可跨会话复用；③ 同一时刻只有一个活跃 goal，其余排队；
+  ④ 成员间走 `pod_messages` 协调日志（A2A `message/send` 优先，注入 `[POD HANDOFF]`），不共享上下文；
+  ⑤ 共享记忆（`POD.md` / `MEMORY.md` / `GLOSSARY.md` + 谐波记忆检索）。
+- **不是**：k8s 的 Pod（调度单位，ephemeral，共享网络命名空间）、不是 Swarm（无固定角色的大规模短命 worker）、
+  不是 Crew（一次性 kickoff）、不是 Session（一次对话）。定义详见
+  `docs/research/2026-10-31-pod-definition.md`。
+
 ## 召回与注入
 
 - **边界 recall**：每次 LLM 调用前经 `GET /api/recall/context` 注入 `<recall>` 指针块。
