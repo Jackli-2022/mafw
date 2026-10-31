@@ -202,6 +202,8 @@ export class KernelManager {
       // stdout is unused (kernel output arrives over iopub); stderr carries
       // startup diagnostics. Ignoring stdout avoids a dangling pipe handle.
       stdio: ['ignore', 'ignore', 'pipe'],
+      // 让持久内核里的代码知道自己的会话（file-history 快照等）；环境在进程启动时固定。
+      env: { ...process.env, MAFW_SESSION_ID: this.sessionId },
     });
     this.kernel.stderr?.on('data', (buf: Buffer) => {
       this.kernelStderr += buf.toString();

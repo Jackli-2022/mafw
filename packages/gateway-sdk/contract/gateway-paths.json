@@ -1443,6 +1443,45 @@
         }
       }
     },
+    "/api/file-history/snapshot": {
+      "post": {
+        "operationId": "fileHistory.snapshot",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/file-history": {
+      "get": {
+        "operationId": "fileHistory.list",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/file-history/restore": {
+      "post": {
+        "operationId": "fileHistory.restore",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/events": {
       "get": {
         "operationId": "event.subscribe",
