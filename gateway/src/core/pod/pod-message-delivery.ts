@@ -28,10 +28,16 @@ export class PodMessageDelivery {
     return session.node === 'coordination' ? 'push' : 'pull';
   }
 
+  private memberBlockedForPush(podId: string, memberId: string): boolean {
+    const member = this.deps.store.listMembers(podId).find((item) => item.id === memberId);
+    return member?.status === 'sleeping' || member?.status === 'retired';
+  }
+
   async deliver(messageId: string, opts: { force?: boolean } = {}): Promise<'delivered' | 'pending' | 'skipped'> {
     const message = this.findMessage(messageId);
     if (!message) return 'skipped';
     if (message.deliveredAt) return 'skipped';
+    if (message.toMemberId && this.memberBlockedForPush(message.podId, message.toMemberId)) return 'pending';
     const decision = this.decide(messageId);
     if (decision !== 'push' && !opts.force) return 'pending';
 

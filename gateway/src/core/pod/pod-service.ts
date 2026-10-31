@@ -263,7 +263,26 @@ export class PodService {
           }
         }
       }
+      this.reconcileMemberStatus(pod.id);
     }
+  }
+
+  /** 成员 readiness 修复：没有活跃 session 却仍标 working 的成员回落 available。
+   *  （bindSession 置 working，snapshot/finalize 置 available；节点会话被 runtime
+   *   直接删除时这两步可能都不触发，这里兜底。sleeping/retired 是人工状态，不动。） */
+  reconcileMemberStatus(podId: string): number {
+    const active = new Set(
+      this.deps.store.listActiveSessions(podId).map((session) => session.memberId),
+    );
+    let repaired = 0;
+    for (const member of this.deps.store.listMembers(podId)) {
+      if (member.status !== 'working') continue;
+      if (active.has(member.id)) continue;
+      this.deps.store.upsertMember({ ...member, status: 'available', now: this.deps.now() });
+      repaired++;
+    }
+    if (repaired > 0) this.emit(podId, 'member');
+    return repaired;
   }
 
   memberForSession(sessionId: string): PodMemberRow | null {

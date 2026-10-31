@@ -187,6 +187,16 @@ describe('PodService', () => {
     expect(store.listActiveSessions(detail.pod.id).some((s) => s.node === 'coordination')).toBe(true);
   });
 
+  test('reconcile repairs a member stuck in working with no active session', async () => {
+    const detail = await service.ensure(projectDir);
+    const builder = store.getMemberByRole(detail.pod.id, 'builder')!;
+    store.upsertMember({ ...builder, status: 'working', now: now() });
+
+    await service.reconcile();
+
+    expect(store.getMemberByRole(detail.pod.id, 'builder')!.status).toBe('available');
+  });
+
   test('reconcile finalizes a deleted session when transcript fetch also fails', async () => {
     const detail = await service.ensure(projectDir);
     const builder = store.getMemberByRole(detail.pod.id, 'builder')!;

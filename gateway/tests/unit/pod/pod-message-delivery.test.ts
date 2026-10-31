@@ -80,6 +80,17 @@ describe('PodMessageDelivery', () => {
     fs.rmSync(h.dir, { recursive: true, force: true });
   });
 
+  test('a sleeping or retired member never receives a forced push', async () => {
+    for (const status of ['sleeping', 'retired'] as const) {
+      const h = makeDelivery({ node: 'coordination' });
+      h.store.upsertMember({ ...h.builder, status, now: NOW });
+      expect(await h.delivery.deliver(h.message.id, { force: true })).toBe('pending');
+      expect(h.prompts).toHaveLength(0);
+      h.db.close();
+      fs.rmSync(h.dir, { recursive: true, force: true });
+    }
+  });
+
   test('broadcasts the pod after a push or a pulled delivery commits', async () => {
     const pushed: string[] = [];
     const push = makeDelivery({ node: 'coordination', notify: (podId) => pushed.push(podId) });
