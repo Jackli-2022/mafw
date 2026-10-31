@@ -393,31 +393,56 @@ def set_table_cell(
 
 # ── xlsx / docx ─────────────────────────────────────────────────────────────
 
-def inspect_workbook(path: str, max_rows: int = 20, max_cols: int = 20) -> dict[str, Any]:
-    """Structural dump of an xlsx (cached values; formulas not executed)."""
+def inspect_workbook(
+    path: str,
+    max_rows: int = 20,
+    max_cols: int = 20,
+    include_formulas: bool = False,
+) -> dict[str, Any]:
+    """Structural dump of an xlsx (cached values; formulas not executed).
+
+    include_formulas adds a `formulas` list per sheet (cell + formula text).
+    """
     from openpyxl import load_workbook
 
     wb = load_workbook(path, read_only=True, data_only=True)
+    wb_formulas = load_workbook(path, read_only=True, data_only=False) if include_formulas else None
     try:
         sheets: list[dict[str, Any]] = []
         for ws in wb.worksheets:
+            last_row = min(ws.max_row or 0, max_rows)
+            last_col = min(ws.max_column or 0, max_cols)
             rows: list[list[Any]] = []
-            for row in ws.iter_rows(
-                min_row=1,
-                max_row=min(ws.max_row or 0, max_rows),
-                max_col=min(ws.max_column or 0, max_cols),
-                values_only=True,
-            ):
+            for row in ws.iter_rows(min_row=1, max_row=last_row, max_col=last_col, values_only=True):
                 rows.append(["" if v is None else v for v in row])
-            sheets.append({
+            item: dict[str, Any] = {
                 "name": ws.title,
                 "max_row": ws.max_row or 0,
                 "max_col": ws.max_column or 0,
                 "rows": rows,
-            })
+            }
+            try:
+                item["merged"] = [str(r) for r in ws.merged_cells.ranges]
+            except Exception:
+                item["merged"] = []
+            if wb_formulas is not None and ws.title in wb_formulas.sheetnames:
+                formulas: list[dict[str, str]] = []
+                fws = wb_formulas[ws.title]
+                for row in fws.iter_rows(
+                    min_row=1,
+                    max_row=min(fws.max_row or 0, max_rows),
+                    max_col=min(fws.max_column or 0, max_cols),
+                ):
+                    for cell in row:
+                        if isinstance(cell.value, str) and cell.value.startswith("="):
+                            formulas.append({"cell": cell.coordinate, "formula": cell.value})
+                item["formulas"] = formulas
+            sheets.append(item)
         return {"path": os.path.abspath(path), "sheets": sheets}
     finally:
         wb.close()
+        if wb_formulas is not None:
+            wb_formulas.close()
 
 
 def inspect_json_workbook(path: str, **kwargs: Any) -> str:
@@ -445,12 +470,176 @@ def set_cells(
     return {"ok": True, "changed": changed, "out": os.path.abspath(target)}
 
 
+def _argb(value: Any) -> str:
+    text = str(value).lstrip("#").upper()
+    if len(text) == 6:
+        return "FF" + text
+    return text
+
+
+def add_sheet(path: str, title: str | None = None, index: int | None = None, out: str | None = None) -> dict[str, Any]:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    ws = wb.create_sheet(title=title)
+    if index is not None:
+        wb._sheets.remove(ws)
+        wb._sheets.insert(max(0, min(index - 1, len(wb._sheets))), ws)
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheets": wb.sheetnames, "out": os.path.abspath(target)}
+
+
+def delete_sheet(path: str, sheet: str, out: str | None = None) -> dict[str, Any]:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    if sheet not in wb.sheetnames:
+        raise ValueError(f"sheet not found: {sheet!r}; available: {wb.sheetnames}")
+    if len(wb.sheetnames) <= 1:
+        raise ValueError("cannot delete the last worksheet")
+    wb.remove(wb[sheet])
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheets": wb.sheetnames, "out": os.path.abspath(target)}
+
+
+def rename_sheet(path: str, sheet: str, new_title: str, out: str | None = None) -> dict[str, Any]:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    if sheet not in wb.sheetnames:
+        raise ValueError(f"sheet not found: {sheet!r}; available: {wb.sheetnames}")
+    wb[sheet].title = new_title
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheets": wb.sheetnames, "out": os.path.abspath(target)}
+
+
+def set_cell_style(path: str, updates: Iterable[dict[str, Any]], out: str | None = None) -> dict[str, Any]:
+    """Apply per-cell font/fill/alignment/number-format/border without resetting
+    unspecified attributes. Each update: {sheet?, cell, bold?, italic?, size?,
+    color?, fill?, number_format?, align?, valign?, wrap?, border?}."""
+    import copy
+
+    from openpyxl import load_workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    wb = load_workbook(path)
+    changed = 0
+    for update in updates:
+        ws = wb[update["sheet"]] if update.get("sheet") else wb.worksheets[0]
+        cell = ws[str(update["cell"])]
+        font = copy.copy(cell.font)
+        if "bold" in update:
+            font.bold = bool(update["bold"])
+        if "italic" in update:
+            font.italic = bool(update["italic"])
+        if "size" in update:
+            font.size = float(update["size"])
+        if update.get("name"):
+            font.name = str(update["name"])
+        if update.get("color"):
+            font.color = _argb(update["color"])
+        cell.font = font
+        if update.get("fill"):
+            cell.fill = PatternFill(start_color=_argb(update["fill"]), end_color=_argb(update["fill"]), fill_type="solid")
+        if update.get("number_format"):
+            cell.number_format = str(update["number_format"])
+        if any(k in update for k in ("align", "valign", "wrap")):
+            alignment = copy.copy(cell.alignment)
+            if update.get("align"):
+                alignment.horizontal = str(update["align"])
+            if update.get("valign"):
+                alignment.vertical = str(update["valign"])
+            if "wrap" in update:
+                alignment.wrap_text = bool(update["wrap"])
+            cell.alignment = alignment
+        if update.get("border"):
+            side = Side(style=str(update["border"]))
+            cell.border = Border(left=side, right=side, top=side, bottom=side)
+        changed += 1
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "changed": changed, "out": os.path.abspath(target)}
+
+
+def set_formulas(path: str, updates: Iterable[dict[str, Any]], out: str | None = None) -> dict[str, Any]:
+    """Set formulas: [{sheet?, cell, formula}] (leading '=' optional). Excel
+    recalculates on open; openpyxl does not compute values."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    changed = 0
+    for update in updates:
+        ws = wb[update["sheet"]] if update.get("sheet") else wb.worksheets[0]
+        formula = str(update["formula"])
+        ws[str(update["cell"])] = formula if formula.startswith("=") else "=" + formula
+        changed += 1
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "changed": changed, "out": os.path.abspath(target)}
+
+
+def set_sheet_layout(
+    path: str,
+    sheet: str | None = None,
+    columns: dict[str, float] | None = None,
+    rows: dict[str, float] | None = None,
+    freeze: str | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    ws = wb[sheet] if sheet else wb.worksheets[0]
+    for column, width in (columns or {}).items():
+        ws.column_dimensions[str(column)].width = float(width)
+    for row, height in (rows or {}).items():
+        ws.row_dimensions[int(row)].height = float(height)
+    if freeze is not None:
+        ws.freeze_panes = freeze or None
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheet": ws.title, "out": os.path.abspath(target)}
+
+
+def add_image(
+    path: str,
+    sheet: str | None,
+    cell: str,
+    image_path: str,
+    width: int | None = None,
+    height: int | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Insert an image anchored at a cell (pixel width/height optional)."""
+    from openpyxl import load_workbook
+    from openpyxl.drawing.image import Image as XLImage
+
+    wb = load_workbook(path)
+    ws = wb[sheet] if sheet else wb.worksheets[0]
+    image = XLImage(image_path)
+    if width:
+        image.width = int(width)
+    if height:
+        image.height = int(height)
+    ws.add_image(image, cell)
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheet": ws.title, "cell": cell, "out": os.path.abspath(target)}
+
+
 def inspect_document(path: str, max_paragraphs: int = 100) -> dict[str, Any]:
-    """Paragraph + table dump of a docx."""
+    """Paragraph + table + section header/footer dump of a docx."""
     import docx
 
     document = docx.Document(path)
-    paragraphs = [p.text for p in document.paragraphs if p.text.strip()][:max_paragraphs]
+    detail = [
+        {"index": index, "text": p.text, "style": getattr(p.style, "name", "")}
+        for index, p in enumerate(document.paragraphs, 1)
+    ]
+    paragraphs = [p["text"] for p in detail if p["text"].strip()][:max_paragraphs]
     tables = []
     for table in document.tables:
         tables.append({
@@ -458,11 +647,20 @@ def inspect_document(path: str, max_paragraphs: int = 100) -> dict[str, Any]:
             "cols": len(table.columns),
             "cells": [[cell.text for cell in row.cells] for row in table.rows],
         })
+    sections = []
+    for index, section in enumerate(document.sections, 1):
+        sections.append({
+            "index": index,
+            "header": "\n".join(p.text for p in section.header.paragraphs),
+            "footer": "\n".join(p.text for p in section.footer.paragraphs),
+        })
     return {
         "path": os.path.abspath(path),
         "paragraph_count": len(document.paragraphs),
         "paragraphs": paragraphs,
+        "paragraphs_detail": detail[:max_paragraphs],
         "tables": tables,
+        "sections": sections,
     }
 
 
@@ -470,12 +668,198 @@ def inspect_json_document(path: str, **kwargs: Any) -> str:
     return json.dumps(inspect_document(path, **kwargs), ensure_ascii=False, indent=2)
 
 
+def _set_paragraph_text(paragraph, text: str) -> None:
+    runs = list(paragraph.runs)
+    if runs:
+        runs[0].text = text
+        for run in runs[1:]:
+            run.text = ""
+    else:
+        paragraph.add_run(text)
+
+
+def set_paragraph(
+    path: str,
+    index: int,
+    text: str,
+    style: str | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Replace paragraph text by 1-based body index, keeping the first run's formatting."""
+    import docx
+
+    document = docx.Document(path)
+    paragraphs = document.paragraphs
+    if index < 1 or index > len(paragraphs):
+        raise ValueError(f"paragraph index out of range: {index} (1..{len(paragraphs)})")
+    paragraph = paragraphs[index - 1]
+    _set_paragraph_text(paragraph, text)
+    if style:
+        paragraph.style = style
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "index": index, "out": os.path.abspath(target)}
+
+
+def add_paragraph(
+    path: str,
+    text: str,
+    style: str | None = None,
+    after: int | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Append a paragraph, or insert after a 1-based body index."""
+    import docx
+
+    document = docx.Document(path)
+    paragraph = document.add_paragraph(text, style=style)
+    if after is not None:
+        paragraphs = document.paragraphs
+        if after < 1 or after > len(paragraphs):
+            raise ValueError(f"after index out of range: {after} (1..{len(paragraphs)})")
+        paragraphs[after - 1]._p.addnext(paragraph._p)
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "out": os.path.abspath(target)}
+
+
+def docx_set_table_cell(
+    path: str,
+    table_index: int,
+    row: int,
+    col: int,
+    text: str,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Set a table cell by 1-based table/row/col, keeping the cell's formatting."""
+    import docx
+
+    document = docx.Document(path)
+    if table_index < 1 or table_index > len(document.tables):
+        raise ValueError(f"table index out of range: {table_index} (1..{len(document.tables)})")
+    table = document.tables[table_index - 1]
+    if row < 1 or row > len(table.rows) or col < 1 or col > len(table.columns):
+        raise ValueError(f"cell out of range: {row},{col} (table {len(table.rows)}x{len(table.columns)})")
+    cell = table.cell(row - 1, col - 1)
+    _set_paragraph_text(cell.paragraphs[0], text)
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "table": table_index, "cell": [row, col], "out": os.path.abspath(target)}
+
+
+def add_table_row(
+    path: str,
+    table_index: int,
+    values: Iterable[str],
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Append a row to a table; values fill cells left to right."""
+    import docx
+
+    document = docx.Document(path)
+    if table_index < 1 or table_index > len(document.tables):
+        raise ValueError(f"table index out of range: {table_index} (1..{len(document.tables)})")
+    table = document.tables[table_index - 1]
+    row = table.add_row()
+    for index, value in enumerate(values):
+        if index >= len(row.cells):
+            break
+        _set_paragraph_text(row.cells[index].paragraphs[0], str(value))
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "table": table_index, "rows": len(table.rows), "out": os.path.abspath(target)}
+
+
+def docx_add_table(
+    path: str,
+    rows: Iterable[Iterable[str]],
+    style: str | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Append a table; rows is a list of row value lists."""
+    import docx
+
+    document = docx.Document(path)
+    data = [[str(v) for v in row] for row in rows]
+    if not data or not data[0]:
+        raise ValueError("rows must be a non-empty 2D list")
+    table = document.add_table(rows=len(data), cols=len(data[0]))
+    if style:
+        table.style = style
+    for r, values in enumerate(data):
+        for c, value in enumerate(values):
+            if c >= len(table.columns):
+                break
+            _set_paragraph_text(table.cell(r, c).paragraphs[0], value)
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "tables": len(document.tables), "out": os.path.abspath(target)}
+
+
+def set_header(path: str, text: str, section_index: int = 1, out: str | None = None) -> dict[str, Any]:
+    """Set a section header (1-based section)."""
+    import docx
+
+    document = docx.Document(path)
+    if section_index < 1 or section_index > len(document.sections):
+        raise ValueError(f"section index out of range: {section_index} (1..{len(document.sections)})")
+    header = document.sections[section_index - 1].header
+    header.is_linked_to_previous = False
+    paragraphs = header.paragraphs
+    if paragraphs:
+        _set_paragraph_text(paragraphs[0], text)
+    else:
+        header.add_paragraph(text)
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "section": section_index, "out": os.path.abspath(target)}
+
+
+def set_footer(path: str, text: str, section_index: int = 1, out: str | None = None) -> dict[str, Any]:
+    """Set a section footer (1-based section)."""
+    import docx
+
+    document = docx.Document(path)
+    if section_index < 1 or section_index > len(document.sections):
+        raise ValueError(f"section index out of range: {section_index} (1..{len(document.sections)})")
+    footer = document.sections[section_index - 1].footer
+    footer.is_linked_to_previous = False
+    paragraphs = footer.paragraphs
+    if paragraphs:
+        _set_paragraph_text(paragraphs[0], text)
+    else:
+        footer.add_paragraph(text)
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "section": section_index, "out": os.path.abspath(target)}
+
+
+def docx_add_picture(
+    path: str,
+    image_path: str,
+    width_inches: float | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Append a picture, optionally constrained by width in inches."""
+    import docx
+    from docx.shared import Inches
+
+    document = docx.Document(path)
+    kwargs = {}
+    if width_inches:
+        kwargs["width"] = Inches(float(width_inches))
+    document.add_picture(image_path, **kwargs)
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "out": os.path.abspath(target)}
+
+
 def replace_text_docx(
     path: str,
     replacements: dict[str, str],
     out: str | None = None,
 ) -> dict[str, Any]:
-    """Run-aware replace across paragraphs and table cells."""
+    """Run-aware replace across body paragraphs, table cells, headers and footers."""
     import docx
 
     document = docx.Document(path)
@@ -489,6 +873,10 @@ def replace_text_docx(
                 for paragraph in cell.paragraphs:
                     for old, new in replacements.items():
                         total += _replace_in_paragraph(paragraph, old, new)
+    for section in document.sections:
+        for paragraph in list(section.header.paragraphs) + list(section.footer.paragraphs):
+            for old, new in replacements.items():
+                total += _replace_in_paragraph(paragraph, old, new)
     target = out or path
     atomic_save(document, target)
     return {"ok": True, "replacements": total, "out": os.path.abspath(target)}

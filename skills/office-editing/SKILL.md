@@ -183,25 +183,46 @@ render = mafw_office.render_deck(path, r"C:\work\proj\.render", slides=[1, 2])
 ### 7.1 xlsx
 
 ```python
-print(mafw_office.inspect_json_workbook(path))   # sheets / max_row / max_col / 前 20 行
+print(mafw_office.inspect_json_workbook(path, include_formulas=True))  # 值 + 公式 + merged
 mafw_office.set_cells(path, [
     {"sheet": "Sheet1", "cell": "B2", "value": 99},
     {"cell": "C3", "value": "new"},              # 省略 sheet = 第一个 sheet
 ])
+mafw_office.set_formulas(path, [{"sheet": "Sheet1", "cell": "D2", "formula": "=SUM(B2:B9)"}])
+mafw_office.set_cell_style(path, [{
+    "sheet": "Sheet1", "cell": "A1", "bold": True, "size": 14,
+    "fill": "FFF2CC", "number_format": "0.0%", "align": "center", "border": "thin",
+}])
+mafw_office.set_sheet_layout(path, sheet="Sheet1", columns={"A": 24}, rows={"1": 32}, freeze="A2")
+mafw_office.add_image(path, "Sheet1", "F2", r"C:\work\proj\logo.png", width=96, height=48)
+mafw_office.add_sheet(path, title="附录", index=2)
+mafw_office.rename_sheet(path, "附录", "Appendix")
+mafw_office.delete_sheet(path, "Appendix")
 ```
 
-- `set_cells` 保留单元格样式；公式按字符串写入，不执行。
+- `set_cells` / `set_cell_style` 保留未指定的样式；`fill/color` 用 6 位 RGB。
+- `set_formulas` 只写公式字符串；**Excel 打开时才重算**，openpyxl 不计算。需要最终数值时用 Excel COM 打开保存，或让用户确认。
+- `add_image` 需要 Pillow；`set_sheet_layout` 的 `freeze=""` 可取消冻结。
 - 图表/宏（xlsm）不建模；复杂图表改数据请先确认用户接受风险。
 
 ### 7.2 docx
 
 ```python
-print(mafw_office.inspect_json_document(path))   # 段落前 100 条 + 表格
+print(mafw_office.inspect_json_document(path))   # 段落（含 index/style）+ 表格 + 页眉页脚
+mafw_office.set_paragraph(path, 1, "新的第一段")          # 1-based body index，保 run 格式
+mafw_office.add_paragraph(path, "插入的一段", after=1)
+mafw_office.docx_set_table_cell(path, 1, 1, 1, "新值")    # 表 1 / 行 1 / 列 1
+mafw_office.add_table_row(path, 1, ["新行 A", "新行 B"])
+mafw_office.docx_add_table(path, [["列1", "列2"], ["a", "b"]], style="Table Grid")
+mafw_office.set_header(path, "2026 年度报告")
+mafw_office.set_footer(path, "内部资料 · 第 1 页")
+mafw_office.docx_add_picture(path, r"C:\work\proj\shot.png", width_inches=4.5)
 mafw_office.replace_text_docx(path, {"2025": "2026"})
 ```
 
-- `replace_text_docx` 走 run 级替换（保字体/字号）；跨 run 命中会合并该段 run。
-- 页眉页脚/批注/复杂域代码暂不覆盖，复杂版式先 inspect 并向用户确认。
+- `replace_text_docx` 走 run 级替换（保字体/字号），覆盖正文段落、表格、页眉、页脚；跨 run 命中会合并该段 run。
+- `set_header` / `set_footer` 默认第 1 节；多节文档用 `section_index`。
+- 批注、复杂域代码（TOC/页码域）、图表暂不覆盖；复杂版式先 inspect 并向用户确认。
 
 两者同样遵守“先 inspect → 快照 → 小步改 → 重开校验 → 渲染质检”：
 结构校验后用 `render_office` 导出 PNG，再按 §5.1 用 `mafw_media_ask` 看是否有溢出/遮挡/错位。

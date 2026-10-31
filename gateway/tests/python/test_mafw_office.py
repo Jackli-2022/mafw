@@ -117,6 +117,8 @@ class WorkbookTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp(prefix="mafw-office-xlsx-")
         self.path = os.path.join(self.tmp, "book.xlsx")
+        self.img = os.path.join(self.tmp, "icon.png")
+        make_png(self.img, (0, 128, 255))
         from openpyxl import Workbook
 
         wb = Workbook()
@@ -125,6 +127,47 @@ class WorkbookTests(unittest.TestCase):
         ws["A1"] = "name"
         ws["B2"] = 42
         wb.save(self.path)
+
+    def test_styles_formulas_layout_and_sheet_ops(self) -> None:
+        mo.add_sheet(self.path, title="Extra", index=1)
+        mo.rename_sheet(self.path, "Extra", "Renamed")
+        mo.set_cell_style(self.path, [{
+            "sheet": "Sheet1", "cell": "A1", "bold": True, "size": 14,
+            "fill": "FFFF00", "align": "center", "number_format": "0.00", "border": "thin",
+        }])
+        mo.set_formulas(self.path, [{"sheet": "Sheet1", "cell": "C1", "formula": "=SUM(B1:B2)"}])
+        mo.set_sheet_layout(self.path, sheet="Sheet1", columns={"A": 20}, rows={"1": 30}, freeze="A2")
+
+        from openpyxl import load_workbook
+
+        wb = load_workbook(self.path)
+        ws = wb["Sheet1"]
+        self.assertTrue(ws["A1"].font.bold)
+        self.assertEqual(ws["A1"].font.sz, 14)
+        self.assertEqual(ws["A1"].fill.fgColor.rgb, "FFFFFF00")
+        self.assertEqual(ws["A1"].alignment.horizontal, "center")
+        self.assertEqual(ws["A1"].number_format, "0.00")
+        self.assertEqual(ws["A1"].border.left.style, "thin")
+        self.assertEqual(ws["C1"].value, "=SUM(B1:B2)")
+        self.assertEqual(ws.freeze_panes, "A2")
+        self.assertEqual(ws.column_dimensions["A"].width, 20)
+        wb.close()
+
+        info = mo.inspect_workbook(self.path, include_formulas=True)
+        self.assertEqual(info["sheets"][0]["name"], "Renamed")
+        sheet1 = next(s for s in info["sheets"] if s["name"] == "Sheet1")
+        self.assertIn({"cell": "C1", "formula": "=SUM(B1:B2)"}, sheet1["formulas"])
+
+        mo.delete_sheet(self.path, "Renamed")
+        self.assertEqual(mo.inspect_workbook(self.path)["sheets"][0]["name"], "Sheet1")
+
+    def test_add_image_keeps_workbook_valid(self) -> None:
+        mo.add_image(self.path, "Sheet1", "D1", self.img, width=64, height=48)
+        from openpyxl import load_workbook
+
+        wb = load_workbook(self.path)
+        self.assertEqual(len(wb["Sheet1"]._images), 1)
+        wb.close()
 
     def test_inspect_and_set_cells(self) -> None:
         info = mo.inspect_workbook(self.path)
@@ -149,6 +192,8 @@ class DocumentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp(prefix="mafw-office-docx-")
         self.path = os.path.join(self.tmp, "doc.docx")
+        self.img = os.path.join(self.tmp, "icon.png")
+        make_png(self.img, (255, 128, 0))
         import docx
 
         document = docx.Document()
@@ -156,6 +201,31 @@ class DocumentTests(unittest.TestCase):
         table = document.add_table(rows=1, cols=1)
         table.cell(0, 0).text = "cell 2025"
         document.save(self.path)
+
+    def test_paragraph_table_header_footer_image(self) -> None:
+        mo.set_paragraph(self.path, 1, "Updated 2026")
+        mo.add_paragraph(self.path, "Inserted paragraph", after=1)
+        mo.docx_set_table_cell(self.path, 1, 1, 1, "new cell")
+        mo.add_table_row(self.path, 1, ["row2"])
+        mo.docx_add_table(self.path, [["a", "b"], ["c", "d"]])
+        mo.set_header(self.path, "Header 2025")
+        mo.set_footer(self.path, "Footer 2025")
+        mo.docx_add_picture(self.path, self.img, width_inches=1)
+
+        info = mo.inspect_document(self.path)
+        self.assertIn("Updated 2026", info["paragraphs"])
+        self.assertIn("Inserted paragraph", info["paragraphs"])
+        self.assertEqual(info["tables"][0]["cells"][0][0], "new cell")
+        self.assertEqual(info["tables"][0]["cells"][1][0], "row2")
+        self.assertEqual(len(info["tables"]), 2)
+        self.assertIn("Header 2025", info["sections"][0]["header"])
+        self.assertIn("Footer 2025", info["sections"][0]["footer"])
+
+        result = mo.replace_text_docx(self.path, {"2025": "2026"})
+        self.assertGreaterEqual(result["replacements"], 2)  # header + footer
+        info2 = mo.inspect_document(self.path)
+        self.assertIn("Header 2026", info2["sections"][0]["header"])
+        self.assertIn("Footer 2026", info2["sections"][0]["footer"])
 
     def test_inspect_and_replace(self) -> None:
         info = mo.inspect_document(self.path)
