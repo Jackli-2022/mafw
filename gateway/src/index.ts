@@ -3904,8 +3904,16 @@ class MafwScheduler {
       getApiKey: this.runtimeGetApiKey.bind(this),
     }));
     this.ttsRegistry.registerBuiltin(createKokoroEngine({ modelsDir: path.join(mafwDir, 'models') }));
+    // Kernel 解释器解析：env 覆盖 → ~/.mafw/pykernel（office 三件套标准 venv，由
+    // gateway/scripts/setup-pykernel.mjs 创建）→ 旧 agent-vision-toolkit venv。
+    const pykernelDefault = process.platform === 'win32'
+      ? path.join(os.homedir(), '.mafw', 'pykernel', 'Scripts', 'python.exe')
+      : path.join(os.homedir(), '.mafw', 'pykernel', 'bin', 'python');
+    const legacyVision = process.platform === 'win32'
+      ? path.join(os.homedir(), 'AppData', 'Local', 'agent-vision-toolkit', '.venv-pykernel', 'Scripts', 'python.exe')
+      : path.join(os.homedir(), '.local', 'share', 'agent-vision-toolkit', '.venv-pykernel', 'bin', 'python');
     const pyBin = process.env.MAFW_PYTHON_BIN
-      || path.join(os.homedir(), 'AppData', 'Local', 'agent-vision-toolkit', '.venv-pykernel', 'Scripts', 'python.exe');
+      || (fs.existsSync(pykernelDefault) ? pykernelDefault : legacyVision);
     this.kernels = new SessionKernels(pyBin);
     const cost = new CostService();
     this.ledger = new SchedulerLedger(projectDir);

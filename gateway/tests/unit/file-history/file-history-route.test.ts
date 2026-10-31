@@ -65,6 +65,30 @@ describe('file-history routes', () => {
     }
   });
 
+  it('绝对路径（session 目录内）可快照；目录外拒绝', async () => {
+    const file = join(project, 'abs.pptx');
+    writeFileSync(file, 'x');
+    const outside = join(root, 'outside.pptx');
+    writeFileSync(outside, 'y');
+    const { server, base } = await startServer(svc);
+    try {
+      const ok = await fetch(`${base}/api/file-history/snapshot`, {
+        method: 'POST',
+        body: JSON.stringify({ sessionID: 'ses_1', directory: project, paths: [file] }),
+      });
+      expect(ok.status).toBe(200);
+      expect(((await ok.json()) as any).entries).toHaveLength(1);
+      const bad = await fetch(`${base}/api/file-history/snapshot`, {
+        method: 'POST',
+        body: JSON.stringify({ sessionID: 'ses_1', directory: project, paths: [outside] }),
+      });
+      expect(bad.status).toBe(200);
+      expect(((await bad.json()) as any).entries).toHaveLength(0);
+    } finally {
+      server.close();
+    }
+  });
+
   it('directory 缺省时按 sessionID 解析（office 技能只传 sessionID）', async () => {
     const file = join(project, 'deck.pptx');
     writeFileSync(file, 'x');

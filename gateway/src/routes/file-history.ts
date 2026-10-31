@@ -9,6 +9,7 @@
  * （保存前显式快照）与桌面/调试使用。全部 loopback-only。
  */
 import * as http from 'http';
+import * as path from 'path';
 import type { FileHistoryService } from '../core/file-history/file-history-service';
 
 export type FileHistoryRouteDeps = {
@@ -88,7 +89,13 @@ export async function handleFileHistoryRoutes(
       return true;
     }
     try {
-      const result = await service.snapshot({ sessionID, projectDir: directory, relPaths: paths, reason });
+      // 绝对路径（office 技能只知道绝对路径）：限定在 session 目录内再转成 rel。
+      const relPaths = paths.map((p: string) => {
+        if (!path.isAbsolute(p)) return p;
+        const rel = path.relative(directory, p);
+        return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.replace(/\\/g, '/') : p;
+      });
+      const result = await service.snapshot({ sessionID, projectDir: directory, relPaths, reason });
       send(res, 200, result);
     } catch (err: any) {
       send(res, 500, { error: String(err?.message ?? err).slice(0, 200) });
