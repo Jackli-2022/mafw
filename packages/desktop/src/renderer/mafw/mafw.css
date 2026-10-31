@@ -6415,6 +6415,23 @@ html[data-theme="light"] body {
 .mafw-pod-task-title { color: var(--text-1); overflow-wrap: anywhere; }
 .mafw-pod-task-meta { color: var(--text-4); font-size: 11px; }
 .mafw-pod-task-artifacts { color: var(--text-4); font-size: 10px; }
+.mafw-pod-task.is-editing { border-color: var(--accent-border); }
+.mafw-pod-task-edit-trigger { align-self: flex-start; margin-top: 2px; }
+
+.mafw-pod-task-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 6px;
+  padding: 8px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+}
+
+.mafw-pod-task-edit-label { color: var(--text-4); font-size: 10px; }
+.mafw-pod-task-edit-actions { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.mafw-pod-task-edit-hint { margin-right: auto; color: var(--text-4); font-size: 10px; }
 .mafw-pod-lane-empty { color: var(--text-4); font-size: 11px; text-align: center; }
 
 .mafw-pod-empty-line {

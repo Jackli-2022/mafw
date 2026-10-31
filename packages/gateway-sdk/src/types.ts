@@ -1066,8 +1066,8 @@ export interface PodTask {
   status: PodTaskStatus
   dependenciesJson: string | null
   artifactRefsJson: string | null
-  /** waves 任务验收标准镜像（JSON string[]）；随计划投影刷新。 */
-  acceptanceJson: string | null
+  /** waves 任务验收标准镜像（JSON string[]）；随计划投影刷新。旧 gateway 可能缺省。 */
+  acceptanceJson?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -1119,7 +1119,7 @@ export interface PodNamespace {
   update(podID: string, body: { status: PodStatus }): Promise<PodDetail>
   listTasks(podID: string): Promise<{ items: PodTask[] }>
   createTask(podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }>
-  updateTask(podID: string, taskID: string, body: { status?: PodTaskStatus; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }>
+  updateTask(podID: string, taskID: string, body: { status?: PodTaskStatus; ownerMemberId?: string; title?: string; acceptance?: string[]; actorSessionID?: string }): Promise<{ task: PodTask }>
   listMessages(podID: string): Promise<{ items: PodMessage[] }>
   sendMessage(podID: string, body: { fromMemberId?: string; toMemberId?: string; kind: 'note'|'request'|'review'|'decision'|'escalation'; body: string; actorSessionID?: string; notify?: boolean }): Promise<{ message: PodMessage; delivery?: PodDeliveryState }>
   markRead(podID: string, messageID: string): Promise<{ message: PodMessage }>

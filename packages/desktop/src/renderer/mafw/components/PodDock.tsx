@@ -13,6 +13,7 @@ import { deliveryToast } from "../pod-rail-face-model"
 import {
   formatPodCost,
   memberOpenTarget,
+  podHttpStatus,
   podMemberStatusLabel,
   podRoleLabel,
   podStatusLabel,
@@ -68,6 +69,28 @@ export function PodDock(props: {
       return true
     } catch (err: any) {
       showToastV2({ description: `创建任务失败：${String(err?.message ?? err).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
+      return false
+    }
+  }
+
+  const editTask = async (
+    taskId: string,
+    patch: { title: string; acceptance: string[] },
+  ): Promise<boolean> => {
+    const podId = podStore.detail()?.pod.id
+    if (!podId) return false
+    try {
+      await window.api.mafw.pod.updateTask(podId, taskId, patch)
+      await podStore.refresh()
+      return true
+    } catch (err: any) {
+      const status = podHttpStatus(err)
+      const reason = status === 409
+        ? "goal 正在执行或已结束，暂不能改计划"
+        : status === 400
+          ? "该任务不能改计划（手工任务或参数不合法）"
+          : String(err?.message ?? err).slice(0, 60)
+      showToastV2({ description: `保存失败：${reason}`, variant: "error", duration: 3000 } as any)
       return false
     }
   }
@@ -196,6 +219,7 @@ export function PodDock(props: {
                   members={detail().members}
                   busy={podStore.busy()}
                   onCreate={createTask}
+                  onEdit={editTask}
                   onOpenGoal={props.onOpenGoal}
                 />
                 <PodInbox

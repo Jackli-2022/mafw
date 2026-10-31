@@ -13,6 +13,10 @@ import {
   podRoleForSession,
   podShortTime,
   podTaskArtifacts,
+  canEditPlanTask,
+  podTaskAcceptance,
+  parseAcceptanceLines,
+  formatAcceptanceLines,
   podMessageDeliveryLabel,
   podMessageProtocolLabel,
   podOutgoingDelivery,
@@ -149,5 +153,25 @@ describe("pod-model", () => {
     assert.equal(podOutgoingDelivery({ fromMemberId: lead, deliveredAt: "2026-10-30T00:00:00.000Z" }, lead), "已送达")
     assert.equal(podOutgoingDelivery({ fromMemberId: "m_builder", deliveredAt: null }, lead), null)
     assert.equal(podOutgoingDelivery({ fromMemberId: lead, deliveredAt: null }, null), null)
+  })
+
+  test("plan task editing is limited to projected tasks", () => {
+    assert.equal(canEditPlanTask({ goalId: "g1", externalTaskId: "w1-t1" }), true)
+    assert.equal(canEditPlanTask({ goalId: null, externalTaskId: "w1-t1" }), false)
+    assert.equal(canEditPlanTask({ goalId: "g1", externalTaskId: null }), false)
+  })
+
+  test("podTaskAcceptance parses mirrored acceptance and fails open", () => {
+    assert.deepEqual(podTaskAcceptance({ acceptanceJson: JSON.stringify(["跑测试", " 看日志 "]) }), ["跑测试", "看日志"])
+    assert.deepEqual(podTaskAcceptance({ acceptanceJson: null }), [])
+    assert.deepEqual(podTaskAcceptance({ acceptanceJson: "not json" }), [])
+    assert.deepEqual(podTaskAcceptance({ acceptanceJson: JSON.stringify([1, "ok", ""]) }), ["ok"])
+  })
+
+  test("parseAcceptanceLines trims, dedupes and caps", () => {
+    assert.deepEqual(parseAcceptanceLines(" a \n\n b\r\na\n"), ["a", "b"])
+    const many = Array.from({ length: 25 }, (_v, i) => `标准 ${i}`).join("\n")
+    assert.equal(parseAcceptanceLines(many).length, 20)
+    assert.equal(formatAcceptanceLines(["a", "b"]), "a\nb")
   })
 })

@@ -2,7 +2,19 @@ import { For, Show, createSignal } from "solid-js"
 import type { PodGoal, PodMember, PodTask } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
-import { groupPodTasks, podGoalStatusLabel, podMemberName, podTaskArtifacts, podTaskStatusLabel, terminalGoalsNewestFirst } from "../pod-model"
+import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
+import {
+  canEditPlanTask,
+  formatAcceptanceLines,
+  groupPodTasks,
+  parseAcceptanceLines,
+  podGoalStatusLabel,
+  podMemberName,
+  podTaskAcceptance,
+  podTaskArtifacts,
+  podTaskStatusLabel,
+  terminalGoalsNewestFirst,
+} from "../pod-model"
 
 function goalOrder(goal: PodGoal): number {
   if (goal.status === "active") return 0
@@ -60,11 +72,41 @@ export function PodTaskBoard(props: {
   members: PodMember[]
   busy: boolean
   onCreate: (title: string) => Promise<boolean>
+  onEdit: (taskId: string, patch: { title: string; acceptance: string[] }) => Promise<boolean>
   onOpenGoal: (goalId: string) => void
 }) {
   const [creating, setCreating] = createSignal(false)
   const [title, setTitle] = createSignal("")
   const [submitting, setSubmitting] = createSignal(false)
+  const [editingId, setEditingId] = createSignal<string | null>(null)
+  const [editTitle, setEditTitle] = createSignal("")
+  const [editAcceptance, setEditAcceptance] = createSignal("")
+  const [saving, setSaving] = createSignal(false)
+
+  const startEdit = (task: PodTask) => {
+    setCreating(false)
+    setEditingId(task.id)
+    setEditTitle(task.title)
+    setEditAcceptance(formatAcceptanceLines(podTaskAcceptance(task)))
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditTitle("")
+    setEditAcceptance("")
+  }
+
+  const saveEdit = async (taskId: string) => {
+    const value = editTitle().trim()
+    if (!value || saving() || props.busy) return
+    setSaving(true)
+    try {
+      const ok = await props.onEdit(taskId, { title: value, acceptance: parseAcceptanceLines(editAcceptance()) })
+      if (ok) cancelEdit()
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const submit = async () => {
     const value = title().trim()
@@ -117,32 +159,89 @@ export function PodTaskBoard(props: {
               <For each={lane.tasks}>
                 {(task) => {
                   const artifacts = () => podTaskArtifacts(task)
+                  const acceptanceCount = () => podTaskAcceptance(task).length
+                  const editable = () => canEditPlanTask(task)
                   const open = () => {
                     if (task.goalId) props.onOpenGoal(task.goalId)
                   }
                   return (
-                    <div
-                      class="mafw-pod-task"
-                      classList={{ "is-link": !!task.goalId }}
-                      role={task.goalId ? "button" : undefined}
-                      tabIndex={task.goalId ? 0 : undefined}
-                      onClick={open}
-                      onKeyDown={(event) => {
-                        if (!task.goalId) return
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault()
-                          open()
-                        }
-                      }}
-                    >
-                      <span class="mafw-pod-task-title">{task.title}</span>
-                      <span class="mafw-pod-task-meta">
-                        {podMemberName({ members: props.members }, task.ownerMemberId)} · {podTaskStatusLabel(task.status)}
-                      </span>
-                      <Show when={artifacts().length > 0}>
-                        <span class="mafw-pod-task-artifacts">{artifacts().length} 个产物</span>
+                    <>
+                      <div
+                        class="mafw-pod-task"
+                        classList={{ "is-link": !!task.goalId, "is-editing": editingId() === task.id }}
+                        role={task.goalId ? "button" : undefined}
+                        tabIndex={task.goalId ? 0 : undefined}
+                        onClick={open}
+                        onKeyDown={(event) => {
+                          if (!task.goalId) return
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault()
+                            open()
+                          }
+                        }}
+                      >
+                        <span class="mafw-pod-task-title">{task.title}</span>
+                        <span class="mafw-pod-task-meta">
+                          {podMemberName({ members: props.members }, task.ownerMemberId)} · {podTaskStatusLabel(task.status)}
+                        </span>
+                        <Show when={acceptanceCount() > 0}>
+                          <span class="mafw-pod-task-artifacts">{acceptanceCount()} 条验收</span>
+                        </Show>
+                        <Show when={artifacts().length > 0}>
+                          <span class="mafw-pod-task-artifacts">{artifacts().length} 个产物</span>
+                        </Show>
+                        <Show when={editable()}>
+                          <ButtonV2
+                            variant="ghost"
+                            size="small"
+                            class="mafw-pod-task-edit-trigger"
+                            disabled={props.busy || saving()}
+                            onClick={(event: MouseEvent) => {
+                              event.stopPropagation()
+                              if (editingId() === task.id) cancelEdit()
+                              else startEdit(task)
+                            }}
+                          >
+                            {editingId() === task.id ? "取消编辑" : "编辑"}
+                          </ButtonV2>
+                        </Show>
+                      </div>
+                      <Show when={editingId() === task.id}>
+                        <div
+                          class="mafw-pod-task-edit"
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") cancelEdit()
+                          }}
+                        >
+                          <span class="mafw-pod-task-edit-label">标题</span>
+                          <TextInputV2
+                            value={editTitle()}
+                            placeholder="任务标题"
+                            onInput={(event) => setEditTitle(event.currentTarget.value)}
+                          />
+                          <span class="mafw-pod-task-edit-label">验收（一行一条）</span>
+                          <TextareaV2
+                            rows={4}
+                            value={editAcceptance()}
+                            placeholder="例如：npm test -- pod 全绿"
+                            onInput={(event) => setEditAcceptance(event.currentTarget.value)}
+                          />
+                          <div class="mafw-pod-task-edit-actions">
+                            <span class="mafw-pod-task-edit-hint">只对当前轮生效</span>
+                            <ButtonV2 variant="ghost" size="small" onClick={cancelEdit}>取消</ButtonV2>
+                            <ButtonV2
+                              variant="contrast"
+                              size="small"
+                              disabled={!editTitle().trim() || saving() || props.busy}
+                              onClick={() => void saveEdit(task.id)}
+                            >
+                              {saving() ? "保存中…" : "保存"}
+                            </ButtonV2>
+                          </div>
+                        </div>
                       </Show>
-                    </div>
+                    </>
                   )
                 }}
               </For>

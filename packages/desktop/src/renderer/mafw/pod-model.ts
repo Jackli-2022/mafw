@@ -217,6 +217,47 @@ export function podTaskArtifacts(task: PodTask): string[] {
   }
 }
 
+/**
+ * 任务板编辑只对「计划投影任务」开放：手工任务没有 goalId/externalTaskId，改不了计划。
+ */
+export function canEditPlanTask(task: Pick<PodTask, "goalId" | "externalTaskId">): boolean {
+  return !!task.goalId && !!task.externalTaskId
+}
+
+/** acceptanceJson → string[]（坏数据 fail-open 为空）。 */
+export function podTaskAcceptance(task: Pick<PodTask, "acceptanceJson">): string[] {
+  if (!task.acceptanceJson) return []
+  try {
+    const parsed = JSON.parse(task.acceptanceJson)
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim())
+      : []
+  } catch {
+    return []
+  }
+}
+
+const MAX_ACCEPTANCE_ITEMS = 20
+const MAX_ACCEPTANCE_CHARS = 500
+
+/** textarea → acceptance[]：一行一条、去空、去重、上限与服务端一致。 */
+export function parseAcceptanceLines(text: string): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of text.split(/\r?\n/)) {
+    const value = raw.trim().slice(0, MAX_ACCEPTANCE_CHARS)
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    out.push(value)
+    if (out.length >= MAX_ACCEPTANCE_ITEMS) break
+  }
+  return out
+}
+
+export function formatAcceptanceLines(lines: string[]): string {
+  return lines.join("\n")
+}
+
 export function podMessageProtocolLabel(message: { protocol?: string | null }): "A2A" | "REST" | null {
   if (message.protocol === "a2a") return "A2A"
   if (message.protocol === "rest") return "REST"
