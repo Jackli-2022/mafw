@@ -83,8 +83,27 @@ describe('PodTaskService', () => {
     });
 
     expect(updated).toHaveLength(1);
-    expect(updated[0].status).toBe('done');
+    expect(updated[0].status).toBe('review');
     expect(JSON.parse(updated[0].artifactRefsJson ?? '[]')).toEqual(['a.ts']);
+  });
+
+  test('reopenForReview reopens tasks waiting in review', () => {
+    service.projectWaves('pod_1', 'g1', plan);
+    service.applyReceipt('pod_1', 'g1', {
+      receipts: [{ taskId: 'w1-t1', status: 'done' }],
+    });
+    const reopened = service.reopenForReview('pod_1', 'g1');
+    expect(reopened.map((t) => t.externalTaskId)).toContain('w1-t1');
+  });
+
+  test('reconcileArchive closes review tasks when the goal passes', () => {
+    service.projectWaves('pod_1', 'g1', plan);
+    service.applyReceipt('pod_1', 'g1', {
+      receipts: [{ taskId: 'w1-t1', status: 'done' }],
+    });
+    service.reconcileArchive('pod_1', 'g1', true);
+    const task = service.list('pod_1', 'g1').find((t) => t.externalTaskId === 'w1-t1');
+    expect(task?.status).toBe('done');
   });
 
   test('manual tasks are not matched by receipts', () => {

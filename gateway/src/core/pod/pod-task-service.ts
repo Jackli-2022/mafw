@@ -83,7 +83,7 @@ export class PodTaskService {
     for (const item of receipt.receipts) {
       const task = byExternal.get(item.taskId);
       if (!task) continue;
-      const status: PodTaskStatus = item.status === 'done' ? 'done' : 'failed';
+      const status: PodTaskStatus = item.status === 'done' ? 'review' : 'failed';
       const files = item.files ?? [];
       const existingFiles = parseStringArray(task.artifactRefsJson);
       const mergedFiles = Array.from(new Set([...existingFiles, ...files]));
@@ -137,7 +137,7 @@ export class PodTaskService {
 
   reopenForReview(podId: string, goalId: string): PodTaskRow[] {
     const tasks = this.deps.store.listTasks(podId, goalId)
-      .filter((task) => task.status === 'in_progress' || task.status === 'done');
+      .filter((task) => task.status === 'in_progress' || task.status === 'review' || task.status === 'done');
     for (const task of tasks) {
       this.deps.store.updateTask(task.id, { status: 'reopened' }, this.deps.now());
     }
