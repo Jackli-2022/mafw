@@ -3663,6 +3663,18 @@ class MafwScheduler {
       now: () => new Date().toISOString(),
       newId: () => `podtask_${randomUUID()}`,
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'task' } }),
+      // 计划任务编辑：定位 goal 的 waves.json + 运行态门（nodeSession/终态）。
+      resolveGoalPlan: (goalId) => {
+        const found = this.findGoalStatePath(goalId);
+        if (!found) return null;
+        const state = loadGoalState(found.info.mafwDir, goalId);
+        if (!state) return null;
+        return {
+          wavesPath: state.wavePlanPath ?? path.join(found.info.mafwDir, 'waves.json'),
+          nextAction: state.nextAction,
+          nodeSession: state.nodeSession,
+        };
+      },
     });
     this.podMessageService = new PodMessageService({
       store: this.podStore,

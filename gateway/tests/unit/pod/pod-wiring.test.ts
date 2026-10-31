@@ -51,6 +51,13 @@ describe('Pod gateway wiring', () => {
     expect(source).toContain('renderContext(podId, node)');
   });
 
+  test('wires plan-edit resolution for pod task board edits', () => {
+    expect(source).toContain('resolveGoalPlan:');
+    expect(source).toMatch(/resolveGoalPlan:[\s\S]{0,400}findGoalStatePath\(goalId\)/);
+    expect(source).toMatch(/resolveGoalPlan:[\s\S]{0,600}state\.nextAction/);
+    expect(source).toContain('state.nodeSession,');
+  });
+
   test('projects goal node artifacts into the task board', () => {
     expect(source).toContain('onPodGoalNode(');
     expect(source).toContain('podTaskService.projectWaves(');
