@@ -94,48 +94,41 @@ print(res)  # {"ok": True, "replacements": 3, "out": ...}
 mafw_office.set_notes(path, 3, "讲稿：本页强调留存率，不要念数字。")
 ```
 
-### 4.3 新增/删除/移动页（python-pptx 无公开 API）
+### 4.3 改单个文本框（保格式）
 
-直接操作 `p:sldIdLst`（编辑前先快照 + 复制副本）：
+`target` 用 inspect 得到的 shape 名称（或 shape_id）：
 
 ```python
-from pptx import Presentation
-prs = Presentation(path)
-xml_slides = prs.slides._sldIdLst
-slides = list(xml_slides)
-# 删除第 3 页（1-based）
-xml_slides.remove(slides[2])
-# 移动第 2 页到最前
-xml_slides.remove(slides[1]); xml_slides.insert(0, slides[1])
-mafw_office.atomic_save(prs, path)
+mafw_office.set_text(path, 2, "Title 1", "2026 年度回顾")
+mafw_office.set_paragraphs(path, 2, "Content Placeholder 2", ["第一段", "第二段"])
 ```
 
-新增页优先用模板布局：
-`prs.slides.add_slide(prs.slide_layouts[i])`；布局索引从 inspect 的母版/模板确认。
+- 保留该段第一个 run 的字体/字号/颜色；其余 run 清空。
+- 不要用 `.text =` 整段赋值（会丢行内格式）。
 
-### 4.4 替换图片（保留位置尺寸）
+### 4.4 新增/删除/移动页
 
 ```python
-from pptx import Presentation
-from PIL import Image
-prs = Presentation(path)
-slide = prs.slides[1]           # 0-based
-for sh in slide.shapes:
-    if sh.shape_type == 13:     # PICTURE
-        old = sh._element.blipFill.blip.embed
-        new_part, new_rid = slide.part.get_or_add_image(image_path)
-        sh._element.blipFill.blip.embed = new_rid
-        prs.part.drop_rel(old)
-mafw_office.atomic_save(prs, path)
+mafw_office.add_slide(path, layout_index=1, index=2)  # layout 从 inspect 的 slide_layout 选
+mafw_office.delete_slide(path, 3)
+mafw_office.move_slide(path, 2, 1)
 ```
 
-（更稳妥的做法是先 inspect 记录图片 shape 名称/位置，再按名称替换。）
+页序操作已经封装 `p:sldIdLst`；不要再手写 XML。
 
-### 4.5 改表格 / 图表数据
+### 4.5 替换图片（保留位置尺寸）
 
 ```python
-table = slide.shapes["指标表"].table
-table.cell(1, 1).text = "$1.2M"
+mafw_office.replace_image(path, 2, "Picture 4", r"C:\work\proj\new.png")
+```
+
+`target` 是 inspect 里的 picture shape 名称；底层兼容 python-pptx 1.x 的
+`get_or_add_image_part` / `rEmbed`。
+
+### 4.6 改表格单元格 / 图表数据
+
+```python
+mafw_office.set_table_cell(path, 2, "Table 3", row=2, col=2, text="$1.2M")
 
 chart = slide.shapes["营收图"].chart
 from pptx.chart.data import CategoryChartData
@@ -145,9 +138,12 @@ data.add_series("营收", (1.0, 1.2, 1.5))
 chart.replace_data(data)
 ```
 
+图表数据仍走 python-pptx 原生 `replace_data`（helper 未封装）。
+
 ## 5. 保存后必须校验
 
-- 重新 `Presentation(path)` 打开：页数、修改处文字、表格/图片/备注仍在。
+- 重新 `inspect_deck(path)` 打开：页数、修改处文字、表格/图片/备注仍在。
+- xlsx 用 `inspect_workbook`、docx 用 `inspect_document` 做同样的重开校验。
 - 报告 `replacements` 数量与页数；若为 0，说明没匹配到，不要声称已改。
 - 工作台预览会自动刷新（fs watch）；让用户看预览确认视觉。视觉细节（溢出/重叠）目前需要用户或以后用 PowerPoint COM 导出 PNG 检查。
 
@@ -161,11 +157,34 @@ chart.replace_data(data)
 - 每次写文件前都 `snapshot`；没有备份的破坏性操作不做。
 - 生成新 deck 优先用模板（用户提供的 pptx）而不是默认空白。
 
-## 7. xlsx / docx（后续同构）
+## 7. xlsx / docx
 
-- xlsx：`openpyxl.load_workbook(path)`，改单元格/公式/样式后 `wb.save(tmp)` + `os.replace`；保存前 `snapshot`。注意公式不执行、图表/宏受限。
-- docx：`docx.Document(path)`，段落/表格改文字；保存前 `snapshot`；复杂版式/页眉页脚先 inspect 再改。
-- 两者同样遵守“先 inspect → 快照 → 小步改 → 重开校验”。
+先 inspect，改完重开校验；保存前 `snapshot`。
+
+### 7.1 xlsx
+
+```python
+print(mafw_office.inspect_json_workbook(path))   # sheets / max_row / max_col / 前 20 行
+mafw_office.set_cells(path, [
+    {"sheet": "Sheet1", "cell": "B2", "value": 99},
+    {"cell": "C3", "value": "new"},              # 省略 sheet = 第一个 sheet
+])
+```
+
+- `set_cells` 保留单元格样式；公式按字符串写入，不执行。
+- 图表/宏（xlsm）不建模；复杂图表改数据请先确认用户接受风险。
+
+### 7.2 docx
+
+```python
+print(mafw_office.inspect_json_document(path))   # 段落前 100 条 + 表格
+mafw_office.replace_text_docx(path, {"2025": "2026"})
+```
+
+- `replace_text_docx` 走 run 级替换（保字体/字号）；跨 run 命中会合并该段 run。
+- 页眉页脚/批注/复杂域代码暂不覆盖，复杂版式先 inspect 并向用户确认。
+
+两者同样遵守“先 inspect → 快照 → 小步改 → 重开校验”。
 
 ## 8. 参考
 
