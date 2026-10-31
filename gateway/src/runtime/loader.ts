@@ -405,4 +405,30 @@ Load-time validation rejects unknown canonical targets / malformed paths /
 eventStream-without-declarations (plugin's eventStream capability degrades,
 fail-open). Drop counters: GET /api/runtime .translationDrops (unmatched =
 monitoring signal; suppressed = declared drop / transformEvent null).
+
+## Self-translation escape
+
+If your runtime translates to canonical events itself, declare it explicitly:
+
+\`\`\`js
+module.exports = { name: "my-runtime", eventTranslation: "self", capabilities: { eventStream: true }, ... };
+\`\`\`
+
+Coverage annotates it as \`self\` ("not recommended"); declaring both
+\`eventTranslation: "self"\` and eventMappings is contradictory and is reported
+as an error state (declared wins). Cross-event state machines (turn.started
+synthesis, terminal reset) do NOT belong in transformEvent — mapping rows are
+first-match, so terminal events never reach it. Use @mafw/runtime-kit's
+createTurnTracker on the raw stream instead.
+
+## Offline check
+
+\`\`\`
+mafw plugin-check path/to/plugin.js --preset core|conversation|autonomous|desktop [--strict]
+\`\`\`
+
+Loads the file, validates shape/event declarations/capabilities, feeds the
+optional \`sampleEvents\` export through the real mapping executor, and lists
+missing surfaces for the preset. No gateway, no LLM credentials. Online
+conformance stays in \`mafw plugin-test\`.
 `;

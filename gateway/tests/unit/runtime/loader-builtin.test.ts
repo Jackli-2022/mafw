@@ -47,4 +47,13 @@ describe('RuntimePluginLoader registerBuiltin', () => {
     expect(state[0].name).toBe('b1');
     expect(state[0].status).toBe('ok');
   });
+
+  it('pi builtin exposes the module-level PI_CAPABILITIES object as its single source', async () => {
+    const { PI_CAPABILITIES } = await import('../../../src/runtime/plugins/pi-runtime');
+    const loader = new RuntimePluginLoader(dir);
+    loader.registerBuiltin('pi', async () => ({ name: 'pi' } as any), PI_CAPABILITIES, true);
+    await loader.init();
+    const plugin = loader.get('pi')!;
+    expect(plugin.capabilities).toBe(PI_CAPABILITIES); // same object: no second declaration to drift
+  });
 });

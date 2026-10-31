@@ -47,7 +47,7 @@
 
 - `gateway->runtime`：gateway 调你的方法（session/prompt/fork/...）。
 - `runtime->gateway`：你的宿主调 gateway 的 loopback HTTP（observe/recall/...）。
-- `declaration`：插件模块导出的纯数据（name/capabilities/eventMappings/nativeTools）。
+- `declaration`：插件模块导出的纯数据（name/capabilities/eventSource/eventMappings/transformEvent/eventTranslation/preset/sampleEvents/nativeTools）。
 
 ### 2.2 义务
 
@@ -96,14 +96,28 @@ CJS 单文件：
 ```js
 module.exports = {
   name: "my-runtime",
+  preset: "conversation",              // 目标档位（plugin-check 缺面清单用）
+  eventTranslation: "declared",        // 推荐：gateway 执行器翻译（见 §5）
   capabilities: {
     // 只声明你真的实现了的增量；minimalCapabilities 已含 sessionApi/promptWhileBusy
+    // 声明是唯一来源：实例（createRuntime 返回对象）不要重复声明 capabilities
     eventStream: false,
     nativeApprovals: false,
     providerConfigApi: false,
     perLlmCallTransform: false,
   },
   external: true, // 自定义插件保持 true：gateway 不 spawn/kill 你的进程
+
+  // 声明式事件翻译（eventStream: true 时必填；纯数据，执行器在 gateway）
+  eventSource: { typePath: "$.type", sessionIdPath: "$.sessionID" },
+  eventMappings: [
+    { from: "done", to: "turn.completed", fields: { sessionID: { path: "$.sessionID" } } },
+  ],
+  transformEvent(raw) { return null },  // 状态机/1→N 才用它
+  sampleEvents: [                        // 离线检查器样本（原生事件）
+    { type: "done", sessionID: "sample" },
+  ],
+
   async createRuntime(ctx) {
     // 初始化 SDK、读 ctx.pluginConfig(name)、返回 AgentRuntime
   },
@@ -200,6 +214,14 @@ jq '.surfaces[] | select(.id=="session.fork")' \
 4. `desktop`：`identity.agents.install` / `identity.agents.remove`、`discovery.list` / `discovery.loadSkill`、`mcp.*`、`branch.*`、`session.update`、`session.listByDirectory`、`session.instructions.list` / `session.instructions.put` / `session.instructions.remove`、`process.completion`、`provider.*`、`media.tools`、`usage.*`。
 
 ## 5. 事件面（最高频漏面）
+
+### 5.0 唯一推荐路径：declared（gateway 执行器翻译）
+
+插件只推**原生事件**，翻译写成模块导出的纯数据表（`eventSource` + `eventMappings` + 可选 `transformEvent`）；执行器在 gateway（`applyEventMappings`），插件包内**不要**写自己的翻译执行器。产线示例：`adapters/claude/src/events.ts`（表）+ `adapters/claude/src/runtime.ts`（推 raw）。
+
+**逃逸：`eventTranslation: "self"`** —— 插件坚持自己翻译成 canonical 再推总线时显式声明。代价：coverage 标注「self-translation (not recommended)」，且默认 `eventStream` 校验放宽为「不强制映射表」。没有这个声明、又推 canonical 的插件必须注册恒等行（`canonicalIdentity()`），否则 default-deny 会拦截。
+
+**turn.started 这类跨事件状态机不要放 `transformEvent`**：执行器 first-match，命中映射行的终态事件不会到达逃逸口。用 `packages/runtime-kit` 的 `createTurnTracker` 在总线入口观察原生流并补发 `turn.started`（claude 适配器是参考实现）。
 
 ### 5.1 default-deny
 
@@ -309,6 +331,21 @@ tools: {
 
 ## 9. 验证流程
 
+### 9.0 离线检查（plugin-check，零 LLM、零激活）
+
+改完插件先跑离线检查，再做在线 conformance：
+
+```bash
+mafw plugin-check ~/.mafw/runtime-plugins/my-runtime.js --preset core
+mafw plugin-check ~/.mafw/runtime-plugins/my-runtime.js --preset conversation --strict
+```
+
+检查内容：加载形状、事件映射表校验、声明矩阵（declared/self、矛盾声明）、试实例化、能力盖印 + 声明↔实现校验（声明了没实现 → 降级；实现了没声明 → 自动补 + warning）、`sampleEvents` 逐条过真执行器、按 preset 列出缺失面。
+
+退出码：`0` = 通过；`1` = hard/error 或（`--strict` 时）preset 缺面；`2` = gateway dist 缺失。CI 可直接用（不需要 LLM 凭据）。
+
+需要真实 LLM 往返的场景时再跑 `mafw plugin-test`（§9.5）。
+
 ### 9.1 加载/切换
 
 ```bash
@@ -367,7 +404,8 @@ curl -X POST http://127.0.0.1:3000/api/runtime/conformance \
 
 ## 10. Definition of Done
 
-- [ ] `name` / `createRuntime` / `capabilities` 正确导出，`external: true`。
+- [ ] `name` / `createRuntime` / `capabilities` 正确导出，`external: true`；capabilities 只在模块侧声明一次。
+- [ ] `mafw plugin-check <file> --preset <target>` 退出码 0（`--strict` 时 preset 缺面为空）。
 - [ ] `core` 的 11 个 session 方法全部是函数；`session.create` 使用 `opts.directory`。
 - [ ] 目标 preset 的 `requiredSurfaces` 在 `active.coverage.static.presets.<target>.missing` 中为空（或已记录接受的缺口）。
 - [ ] 声明了 `eventStream` → 有 `eventSource` + `eventMappings`/`transformEvent`；`turn.*` / `part.*` 字段齐全。
@@ -384,6 +422,9 @@ curl -X POST http://127.0.0.1:3000/api/runtime/conformance \
 |---|---|---|
 | 插件加载但 `validation` 有 hard | 11 个 session 方法缺一个 / tools 缺 / eventStream 缺 `global.event` | 按 `hard` 消息补方法 |
 | `eventStream` 自动变 false | 没有 `eventMappings` 或 `transformEvent` | 加翻译声明或 `canonicalIdentity()` 恒等行 |
+| `eventTranslation self` 报矛盾 | 同时导出了 `eventTranslation:"self"` 和映射表 | 删掉一侧（declared 胜出，但状态会标 error） |
+| 能力声明了但被降级 | 声明 true 但实例方法缺失 | 补方法或声明 false（`plugin-check` 会直接指出） |
+| 实现了能力但没生效 | 忘了在 module.exports.capabilities 声明 | 反向校验会自动补 true + warning；把声明补上 |
 | UI 永远 busy | `turn.completed` 没带 `sessionID`，或没有终态事件 | 补 `sessionID` / `turn.failed` |
 | 工具卡不显示 | 工具事件没映射；或历史没有 `normalizeMessages` | 映射 tool part / 三原语；实现历史归一 |
 | 媒体附件消失 | `prompt` 只取 text parts，把 file parts 拍平 | 把 file parts 作为多模态输入传给目标 SDK |
