@@ -60,6 +60,8 @@ export interface PodTaskRow {
   status: PodTaskStatus;
   dependenciesJson: string | null;
   artifactRefsJson: string | null;
+  /** waves 任务验收标准的镜像（JSON string[]）；随投影刷新，状态仍独立保留。 */
+  acceptanceJson: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -165,6 +167,7 @@ function taskFromRow(row: any): PodTaskRow {
     status: row.status,
     dependenciesJson: row.dependencies_json ?? null,
     artifactRefsJson: row.artifact_refs_json ?? null,
+    acceptanceJson: row.acceptance_json ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -274,6 +277,7 @@ export class PodStore {
         status TEXT NOT NULL,
         dependencies_json TEXT,
         artifact_refs_json TEXT,
+        acceptance_json TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         UNIQUE(pod_id, goal_id, source_key)
@@ -344,6 +348,7 @@ export class PodStore {
     this.ensureColumn('pod_messages', 'delivered_at', 'delivered_at TEXT');
     this.ensureColumn('pod_messages', 'delivered_session_id', 'delivered_session_id TEXT');
     this.ensureColumn('pod_a2a_links', 'state', 'state TEXT');
+    this.ensureColumn('pod_tasks', 'acceptance_json', 'acceptance_json TEXT');
     this.db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
         ON pod_messages(pod_id, external_message_id)
@@ -494,23 +499,29 @@ export class PodStore {
     `).run(status, patch.startedAt ?? null, patch.endedAt ?? null, id);
   }
 
-  upsertTask(input: Omit<PodTaskRow, 'createdAt' | 'updatedAt'> & { now: string }): PodTaskRow {
+  upsertTask(
+    input: Omit<PodTaskRow, 'createdAt' | 'updatedAt' | 'acceptanceJson'>
+      & { acceptanceJson?: string | null; now: string },
+  ): PodTaskRow {
     const row = this.db.prepare(`
       INSERT INTO pod_tasks (
         id, pod_id, goal_id, source_key, external_task_id, title, description,
-        owner_member_id, status, dependencies_json, artifact_refs_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        owner_member_id, status, dependencies_json, artifact_refs_json, acceptance_json,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(pod_id, goal_id, source_key) DO UPDATE SET
         goal_id = excluded.goal_id,
         external_task_id = excluded.external_task_id,
         title = excluded.title,
         description = excluded.description,
+        acceptance_json = excluded.acceptance_json,
         updated_at = excluded.updated_at
       RETURNING *
     `).get(
       input.id, input.podId, input.goalId, input.sourceKey, input.externalTaskId,
       input.title, input.description, input.ownerMemberId, input.status,
-      input.dependenciesJson, input.artifactRefsJson, input.now, input.now,
+      input.dependenciesJson, input.artifactRefsJson, input.acceptanceJson ?? null,
+      input.now, input.now,
     ) as any;
     return taskFromRow(row);
   }
@@ -543,7 +554,7 @@ export class PodStore {
 
   updateTask(
     id: string,
-    patch: Partial<Pick<PodTaskRow, 'title' | 'description' | 'ownerMemberId' | 'status' | 'artifactRefsJson' | 'dependenciesJson'>>,
+    patch: Partial<Pick<PodTaskRow, 'title' | 'description' | 'ownerMemberId' | 'status' | 'artifactRefsJson' | 'dependenciesJson' | 'acceptanceJson'>>,
     now: string,
   ): void {
     const sets: string[] = [];
@@ -554,6 +565,7 @@ export class PodStore {
     if (patch.status !== undefined) { sets.push('status = ?'); values.push(patch.status); }
     if (patch.artifactRefsJson !== undefined) { sets.push('artifact_refs_json = ?'); values.push(patch.artifactRefsJson); }
     if (patch.dependenciesJson !== undefined) { sets.push('dependencies_json = ?'); values.push(patch.dependenciesJson); }
+    if (patch.acceptanceJson !== undefined) { sets.push('acceptance_json = ?'); values.push(patch.acceptanceJson); }
     sets.push('updated_at = ?'); values.push(now, id);
     this.db.prepare(`UPDATE pod_tasks SET ${sets.join(', ')} WHERE id = ?`).run(...values);
   }

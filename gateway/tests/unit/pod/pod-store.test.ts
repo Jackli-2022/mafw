@@ -146,6 +146,47 @@ describe('PodStore', () => {
     expect(store.getTaskBySourceKey('pod_1', 'wave:w1:task:0')?.id).toBe(first.id);
   });
 
+  test('acceptanceJson is mirrored on upsert and refreshed without touching status', () => {
+    store.ensurePod({ id: 'pod_1', projectDir: '/proj/a', name: 'A', now: '2026-10-29T00:00:00.000Z' });
+    const task = store.upsertTask({
+      id: 't1',
+      podId: 'pod_1',
+      goalId: 'g1',
+      sourceKey: 'wave:w1:task:0',
+      externalTaskId: 'w1-t1',
+      title: 'do a',
+      description: null,
+      ownerMemberId: null,
+      status: 'pending',
+      dependenciesJson: null,
+      artifactRefsJson: null,
+      acceptanceJson: JSON.stringify(['旧标准']),
+      now: '2026-10-29T00:00:00.000Z',
+    });
+    expect(task.acceptanceJson).toBe(JSON.stringify(['旧标准']));
+
+    store.updateTask(task.id, { status: 'review' }, '2026-10-29T00:01:00.000Z');
+    store.upsertTask({
+      id: 't2',
+      podId: 'pod_1',
+      goalId: 'g1',
+      sourceKey: 'wave:w1:task:0',
+      externalTaskId: 'w1-t1',
+      title: 'do a',
+      description: null,
+      ownerMemberId: null,
+      status: 'pending',
+      dependenciesJson: null,
+      artifactRefsJson: null,
+      acceptanceJson: JSON.stringify(['新标准', '另一条']),
+      now: '2026-10-29T00:02:00.000Z',
+    });
+
+    const refreshed = store.getTask(task.id)!;
+    expect(refreshed.acceptanceJson).toBe(JSON.stringify(['新标准', '另一条']));
+    expect(refreshed.status).toBe('review');
+  });
+
   test('messages are newest-first and markMessageRead stamps readAt', () => {
     store.ensurePod({ id: 'pod_1', projectDir: '/proj/a', name: 'A', now: '2026-10-29T00:00:00.000Z' });
     const m1 = store.insertMessage({
