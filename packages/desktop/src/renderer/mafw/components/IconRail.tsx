@@ -7,6 +7,7 @@ import { buildRailNewMenu } from "../context-menu/builders/rail"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { LeftDockFace } from "../left-dock"
 import { connDotState, railAriaLabel } from "../left-dock"
+import { formatRailBadge } from "../pod-rail-badge"
 
 type IconName = ComponentProps<typeof Icon>["name"]
 
@@ -20,6 +21,8 @@ export type IconRailProps = {
   onNewWorktreeSession?: () => void
   worktreeEnabled?: boolean
   approvals: number
+  /** 鲸群：待审 + 未读（spec 2026-10-30-pod-left-rail §4.3） */
+  podBadge?: number
   connPhase: string // connected | reconnecting | down | initial
   gatewayState?: string | null // stopped | starting | ready | failed（stopped 用中性色，不报红）
   dashboardActive?: boolean
@@ -33,6 +36,8 @@ type RailItem = {
   onClick: () => void
   active?: boolean
   badge?: number
+  /** 覆盖 badge 的显示文案（如 9+）；aria 仍用数字 badge。 */
+  badgeLabel?: string
   connDot?: boolean
 }
 
@@ -46,6 +51,15 @@ export function IconRail(props: IconRailProps) {
     { key: "sessions", icon: "bubble-5", label: props.face === "sessions" ? "收起工作 (Ctrl+B)" : "工作 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
     { key: "search", icon: "magnifying-glass", label: props.face === "search" ? "收起搜索" : "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },
     { key: "notes", icon: "sticky-note", label: props.face === "notes" ? "收起便签" : "便签", onClick: () => props.onToggleFace("notes"), active: props.face === "notes" },
+    {
+      key: "pod",
+      icon: "team-three",
+      label: props.face === "pod" ? "收起鲸群" : "鲸群",
+      onClick: () => props.onToggleFace("pod"),
+      active: props.face === "pod",
+      badge: props.podBadge,
+      badgeLabel: formatRailBadge(props.podBadge ?? 0) || undefined,
+    },
   ]
   const metaItems = (): RailItem[] => [
     { key: "dashboard", icon: "layout-grid", label: "Dashboard", onClick: props.onDashboard, active: props.dashboardActive, badge: props.approvals },
@@ -65,7 +79,7 @@ export function IconRail(props: IconRailProps) {
       >
         <Icon name={item.icon} size="small" />
         <Show when={(item.badge ?? 0) > 0}>
-          <span class="mafw-icon-rail-badge">{item.badge}</span>
+          <span class="mafw-icon-rail-badge">{item.badgeLabel ?? item.badge}</span>
         </Show>
         <Show when={item.connDot}>
           <span class="mafw-icon-rail-conn-dot" classList={{ [connClass()]: true }} />

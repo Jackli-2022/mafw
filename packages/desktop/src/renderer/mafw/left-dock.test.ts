@@ -12,6 +12,10 @@ describe("left-dock 状态模型", () => {
     test("收起态点任一 face → 打开该 face", () => {
       expect(toggleFace({ face: "sessions", open: false }, "search")).toEqual({ face: "search", open: true })
     })
+    test("pod face 与其它目的地同一 toggle 语义", () => {
+      expect(toggleFace({ face: "sessions", open: false }, "pod")).toEqual({ face: "pod", open: true })
+      expect(toggleFace({ face: "pod", open: true }, "pod")).toEqual({ face: "pod", open: false })
+    })
   })
 
   describe("状态持久化先于 setState（two-click close 回归）", () => {
