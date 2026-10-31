@@ -4,9 +4,8 @@
  * ① esbuild 现场打包 adapters/claude/src/index.ts → 单文件 CJS
  * ② 真 RuntimePluginLoader（temp 目录）扫描注册：state ok、name 'claude'
  * ③ createRuntime（假 ctx）→ runtime 面工作（不 spawn——create 不触发 query）
- * ④ **双执行器漂移对照**：bundled 声明表经 gateway 真执行器（applyEventMappings）
- *    vs adapter 本地 translateClaudeEvent——同一 fixtures 输出等价（pre-flight
- *    Row 3 风险的兜底探测器）
+ * ④ bundled 声明表经 gateway 真执行器（applyEventMappings）覆盖全部 fixtures，
+ *    且本地迷你执行器已退役（单一执行器 = gateway）
  * ⑤ 验收线：`git diff --stat gateway/src` 为空（adapter 全住在 adapters/claude/）
  */
 import { execSync } from 'child_process';
@@ -19,7 +18,7 @@ import { RuntimePluginLoader } from '../../../src/runtime/loader';
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 import { TOOL_PRIMITIVE_TYPES } from '../../../src/runtime/tool-part-assembler';
-import { translateClaudeEvent } from '../../../../adapters/claude/src/events';
+import { readFileSync } from 'fs';
 
 const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
 const isCanonicalAll = (t: string) => !!EVENT_FLOW_MATRIX[t] || TOOL_PRIMITIVE_TYPES.has(t);
@@ -76,8 +75,10 @@ describe('claude adapter 验收（零核心 diff）', () => {
     });
     expect(rt.name).toBe('claude');
     expect(rt.external).toBe(true);
-    expect(rt.capabilities.sessionApi).toBe(true);
-    expect(rt.capabilities.eventStream).toBe(true);
+    // 能力唯一声明点在 module.exports（实例不再声明，gateway 激活期盖印）
+    expect(plugin.capabilities.sessionApi).toBe(true);
+    expect(plugin.capabilities.eventStream).toBe(true);
+    expect(rt.capabilities).toBeUndefined();
     expect(typeof rt.tools.registerTools).toBe('function');
     const session = await rt.session.create({ directory: 'C:/tmp/acceptance' });
     expect(String(session.id).startsWith('cls_')).toBe(true);
@@ -87,7 +88,7 @@ describe('claude adapter 验收（零核心 diff）', () => {
     expect(typeof stream[Symbol.asyncIterator]).toBe('function');
   });
 
-  it('④ 双执行器漂移对照：bundled 表 × 真执行器 ≡ 本地 translateClaudeEvent', () => {
+  it('④ bundled 声明表经 gateway 真执行器：fixtures 全部产出 canonical；本地执行器已退役', () => {
     const sid = 'ses_drift_1';
     const fixtures: any[] = [
       { type: 'system', subtype: 'init', session_id: sid, model: 'claude-opus-4-6', tools: ['Read'] },
@@ -111,10 +112,19 @@ describe('claude adapter 验收（零核心 diff）', () => {
     ];
     const entry = { eventSource: plugin.eventSource, eventMappings: plugin.eventMappings, transformEvent: plugin.transformEvent };
     for (const fixture of fixtures) {
-      const viaReal = applyEventMappings(fixture, entry, isCanonicalAll);
-      const viaLocal = translateClaudeEvent(fixture, sid);
-      expect(viaReal).toEqual(viaLocal);
+      const out = applyEventMappings(fixture, entry, isCanonicalAll);
+      for (const evt of out) {
+        const type = evt?.payload?.type;
+        expect(isCanonicalAll(type)).toBe(true);
+        expect(evt.sessionID).toBe(sid);
+      }
     }
+    // turn.started 不在映射层合成（归 runtime-kit tracker）
+    const userOut = applyEventMappings(fixtures[3], entry, isCanonicalAll);
+    expect(userOut.map((e: any) => e.payload.type)).not.toContain('turn.started');
+    // 本地迷你执行器已退役（单一执行器 = gateway）
+    const source = readFileSync(join(REPO_ROOT, 'adapters/claude/src/events.ts'), 'utf8');
+    expect(source.includes('translateClaudeEvent')).toBe(false);
   });
 
   it('⑤ 验收线：adapter 自包含——bundle 构建输入零 gateway/src 引用（新增 SDK 不依赖核心改动）', async () => {
