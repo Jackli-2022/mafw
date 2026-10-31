@@ -17,6 +17,7 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { ResizeHandle } from "@mafw/ui/resize-handle"
 import { ManagerCard } from "./ManagerCard"
 import { NotesDock } from "./NotesDock"
+import { PodRailFace } from "./PodRailFace"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { formatRailTitle, railProjectName } from "./rail-display"
 import { sessionStore } from "../session-store"
@@ -61,6 +62,19 @@ type Props = {
   forkEnabled?: boolean
   onForkSession?: (id: string) => void
   onExportSession?: (id: string) => void
+  /** 鲸群面（spec 2026-10-30-pod-left-rail §3.2） */
+  podDetail?: any
+  podMessages?: any[]
+  podLoading?: boolean
+  podUnsupported?: boolean
+  podIsWorktree?: boolean
+  podSelfMemberId?: string | null
+  podSessionTitleOf?: (sessionId: string) => string | null
+  onPodOpenSession?: (sessionId: string) => void
+  onPodOpenGoal?: (goalId: string) => void
+  onPodOpenPanel?: (panel: "tasks" | "inbox") => void
+  onPodSend?: (input: { toMemberId: string | null; kind: string; body: string; notify: boolean }) => Promise<string>
+  onPodCreate?: () => void
 }
 
 export function LeftDock(props: Props) {
@@ -373,7 +387,24 @@ export function LeftDock(props: Props) {
         <div class="mafw-left-dock-notes"><NotesDock /></div>
       </Show>
 
-      <Show when={props.face !== "notes"}>
+      <Show when={props.face === "pod"}>
+        <PodRailFace
+          detail={props.podDetail ?? null}
+          messages={props.podMessages ?? []}
+          loading={!!props.podLoading}
+          unsupported={!!props.podUnsupported}
+          isWorktree={!!props.podIsWorktree}
+          selfMemberId={props.podSelfMemberId ?? null}
+          sessionTitleOf={props.podSessionTitleOf}
+          onOpenSession={(id) => props.onPodOpenSession?.(id)}
+          onOpenGoal={(id) => props.onPodOpenGoal?.(id)}
+          onOpenPanel={(panel) => props.onPodOpenPanel?.(panel)}
+          onSend={props.onPodSend ?? (async () => "已发送")}
+          onCreate={() => props.onPodCreate?.()}
+        />
+      </Show>
+
+      <Show when={props.face !== "notes" && props.face !== "pod"}>
 
       <Show when={props.face === "search"}>
         <div class="mafw-left-dock-search" ref={searchRef}>
