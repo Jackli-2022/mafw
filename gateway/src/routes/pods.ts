@@ -8,7 +8,7 @@ import type { PodTaskService } from '../core/pod/pod-task-service';
 
 export interface PodRouteDeps {
   pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus' | 'lookup'>;
-  tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask'>;
+  tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask' | 'editPlanTask'>;
   messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
   goals: Pick<PodGoalService, 'list' | 'promote'>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
@@ -67,6 +67,21 @@ export async function handlePods(
       const podId = decode(task[1]);
       requirePod(deps, podId);
       const body = await readJson(req);
+      const editsPlan = body?.title !== undefined || body?.acceptance !== undefined;
+      const editsState = body?.status !== undefined || body?.ownerMemberId !== undefined;
+      if (editsPlan && editsState) {
+        throw new PodError(400, 'plan fields (title/acceptance) cannot be mixed with status/owner');
+      }
+      if (editsPlan) {
+        // 计划变更属 Lead 职责：有 actor 时只允许 Lead；人类操作不带 actor。
+        assertAccess(deps, body, ['lead'], podId);
+        const updated = deps.tasks.editPlanTask(podId, decode(task[2]), {
+          ...(body.title !== undefined ? { title: body.title } : {}),
+          ...(body.acceptance !== undefined ? { acceptance: body.acceptance } : {}),
+        });
+        sendJson(res, 200, { task: updated });
+        return true;
+      }
       assertAccess(deps, body, ['lead', 'builder', 'reviewer'], podId);
       const updated = deps.tasks.updateTask(podId, decode(task[2]), {
         ...(body.status ? { status: body.status } : {}),
