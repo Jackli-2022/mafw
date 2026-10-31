@@ -10,7 +10,7 @@ import type { PromptFn, PromptPart } from './media-service';
  *   → fixMediaPayload (onPayload hook) rewrites the wire format:
  *       video/* → { type:'video_url', video_url:{url} }        (Xiaomi video format)
  *       audio/* → { type:'input_audio', input_audio:{data:url} } (Xiaomi audio format)
- *   → the configured model (e.g. xiaomi/mimo-v2.5) receives the media natively.
+ *   → the configured model (e.g. xiaomi/mimo-v2.6-pro) receives the media natively.
  *
  * Credentials are reused from opencode's auth.json (the provider must be
  * connected in opencode, e.g. `xiaomi`); the key is injected at runtime via

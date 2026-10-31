@@ -93,7 +93,7 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
   const authPath = deps.authPath ?? DEFAULT_AUTH_PATH();
   const cfg = ctx.pluginConfig('pi');
   const provider = cfg.provider ?? 'xiaomi';
-  const modelID = cfg.model ?? 'mimo-v2.5';
+  const modelID = cfg.model ?? 'mimo-v2.6-pro';
   const thinkingLevel = cfg.thinkingLevel ?? 'medium';
 
   const imp = deps.loadPi ?? (new Function('spec', 'return import(spec)') as (s: string) => Promise<any>);

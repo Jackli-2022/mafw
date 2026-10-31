@@ -100,6 +100,16 @@ class DeckTests(unittest.TestCase):
         mo.replace_image(self.deck, 1, picture_name, self.img2)
         self.assertTrue(mo.inspect_deck(self.deck)["slides"][0]["shapes"][-1]["picture"])
 
+    @unittest.skipUnless(
+        os.environ.get("MAFW_TEST_PPT_COM") == "1",
+        "set MAFW_TEST_PPT_COM=1 (Windows + PowerPoint) to run the COM render test",
+    )
+    def test_render_deck_powerpoint_com(self) -> None:
+        result = mo.render_deck(self.deck, os.path.join(self.tmp, "render"), width=640, height=360, slides=[1])
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["images"][0]["slide"], 1)
+        self.assertGreater(os.path.getsize(result["images"][0]["path"]), 1000)
+
 
 class WorkbookTests(unittest.TestCase):
     def setUp(self) -> None:

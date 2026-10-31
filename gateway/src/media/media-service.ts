@@ -11,7 +11,7 @@ import { createHash } from 'crypto';
  *
  * Configuration comes from the gateway config `media:` section:
  *   provider: 'xiaomi'              — opencode provider that owns the key
- *   model:    'mimo-v2.5'           — default model for every modality
+ *   model:    'mimo-v2.6-pro'       — default model for every modality
  *   image/video/audio: { provider?, model } — per-modality overrides
  *   lang: 'zh'                      — optional answer-language instruction
  *
@@ -31,7 +31,7 @@ export type MediaKind = 'image' | 'video' | 'audio';
 export interface MediaModelRef {
   /** Provider owning the credentials (falls back to MediaConfig.provider). */
   provider?: string;
-  /** Model ID as configured in opencode (e.g. mimo-v2.5). */
+  /** Model ID as configured in opencode (e.g. mimo-v2.6-pro). */
   model: string;
   /** Engine name override (falls back to MediaConfig.engine, then 'pi'). */
   engine?: string;
@@ -120,7 +120,7 @@ export class MediaService {
 
   /** Effective media config (gateway config merged over defaults). */
   loadConfig(): MediaConfig {
-    const base = { provider: 'xiaomi', model: 'mimo-v2.5' };
+    const base = { provider: 'xiaomi', model: 'mimo-v2.6-pro' };
     const fromCfg = this.deps.config ? (this.deps.config() ?? {}) : {};
     const merged: MediaConfig = { ...base, ...fromCfg };
     return merged;

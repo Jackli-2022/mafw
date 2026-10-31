@@ -806,7 +806,7 @@ export class MediaAgent {
     };
     return {
       name: 'MAFW MediaAgent',
-      description: 'MAFW 内置多模态 Agent：基于 gateway media 配置段（默认 xiaomi/mimo-v2.5，每模态可独立指定 provider/model）对图片、视频、音频进行多轮问答分析。',
+      description: 'MAFW 内置多模态 Agent：基于 gateway media 配置段（默认 xiaomi/mimo-v2.6-pro，每模态可独立指定 provider/model）对图片、视频、音频进行多轮问答分析。',
       url: `${this.options.baseUrl}/a2a`,
       version: '1.0.0',
       provider: { url: this.options.baseUrl, organization: 'MAFW' },

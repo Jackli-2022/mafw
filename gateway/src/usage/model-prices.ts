@@ -10,6 +10,8 @@ const PRICES: Record<string, ModelPrice> = {
   'deepseek-v3': { input: 0.27, output: 1.10, cachedRead: 0.07, cachedWrite: 0 },
   'deepseek-r1': { input: 0.55, output: 2.19, cachedRead: 0.14, cachedWrite: 0 },
   'mimo-v2.5': { input: 0.10, output: 0.30, cachedRead: 0.01, cachedWrite: 0 },
+  'mimo-v2.6-pro': { input: 0.435, output: 0.87, cachedRead: 0.0036, cachedWrite: 0 },
+  'mimo-v2.6-flash': { input: 0.10, output: 0.30, cachedRead: 0.01, cachedWrite: 0 },
   'qwen3.7-max': { input: 0.20, output: 0.60, cachedRead: 0.02, cachedWrite: 0 },
   'qwen3-coder-plus': { input: 0.15, output: 0.45, cachedRead: 0.015, cachedWrite: 0 },
   'claude-3-5-sonnet': { input: 3.00, output: 15.00, cachedRead: 0.30, cachedWrite: 3.75 },

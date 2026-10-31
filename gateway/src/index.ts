@@ -168,6 +168,7 @@ import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { FileHistoryService } from './core/file-history/file-history-service';
 import { sessionDirectoryOf } from './core/file-history/session-directory';
 import { ensureGlobalOfficeSkill } from './core/office/global-skill';
+import { ensurePiModels } from './core/media/pi-models';
 import { handleFileHistoryRoutes } from './routes/file-history';
 import { RunStateService } from './core/run/run-state-service';
 import { RunCoordinator } from './core/run/run-coordinator';
@@ -674,6 +675,18 @@ class MafwScheduler {
       }
     } catch (err: any) {
       log.warn(`[Office] global skill install failed (non-fatal): ${err?.message ?? err}`);
+    }
+    // pi-ai's bundled xiaomi catalog lags the provider (v2.5 removed). Merge the
+    // v2.6 ids into pi's models.json before Media Agent resolves a model.
+    try {
+      const models = await ensurePiModels();
+      if (models.ok) {
+        if (models.action !== 'unchanged') log.info(`[Media] pi models ${models.action}: ${models.path}`);
+      } else {
+        log.warn(`[Media] pi models not updated (${models.reason}): ${models.path}`);
+      }
+    } catch (err: any) {
+      log.warn(`[Media] pi models update failed (non-fatal): ${err?.message ?? err}`);
     }
     this.setupEventBus();
 

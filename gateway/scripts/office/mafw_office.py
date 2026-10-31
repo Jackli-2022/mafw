@@ -494,6 +494,69 @@ def replace_text_docx(
     return {"ok": True, "replacements": total, "out": os.path.abspath(target)}
 
 
+def render_deck(
+    path: str,
+    out_dir: str,
+    width: int = 1280,
+    height: int = 720,
+    slides: Iterable[int] | None = None,
+) -> dict[str, Any]:
+    """Render slides to PNG via PowerPoint COM (Windows + PowerPoint only).
+
+    Uses a dedicated PowerPoint instance (DispatchEx) so Quit never closes a
+    user's running PowerPoint. Fail-open: returns {ok: False, reason, error}.
+    """
+    if os.name != "nt":
+        return {"ok": False, "reason": "unsupported-platform", "error": "PowerPoint COM is Windows-only"}
+    try:
+        import win32com.client  # lazy: pywin32 is optional
+    except Exception as exc:
+        return {"ok": False, "reason": "pywin32-missing", "error": str(exc)}
+
+    src = os.path.abspath(path)
+    out = os.path.abspath(out_dir)
+    os.makedirs(out, exist_ok=True)
+    wanted = sorted({int(s) for s in slides}) if slides else None
+    app = None
+    pres = None
+    images: list[dict[str, Any]] = []
+    try:
+        app = win32com.client.DispatchEx("PowerPoint.Application")
+        try:
+            app.Visible = True
+        except Exception:
+            pass
+        pres = app.Presentations.Open(src, ReadOnly=True, WithWindow=False)
+        total = int(pres.Slides.Count)
+        indices = wanted if wanted is not None else list(range(1, total + 1))
+        for index in indices:
+            if index < 1 or index > total:
+                continue
+            png = os.path.join(out, f"slide-{index:02d}.png")
+            pres.Slides(index).Export(png, "PNG", int(width), int(height))
+            images.append({"slide": index, "path": png, "bytes": os.path.getsize(png)})
+        return {
+            "ok": True,
+            "engine": "powerpoint-com",
+            "out_dir": out,
+            "slides": total,
+            "images": images,
+        }
+    except Exception as exc:
+        return {"ok": False, "reason": "render-failed", "error": str(exc)[:300]}
+    finally:
+        if pres is not None:
+            try:
+                pres.Close()
+            except Exception:
+                pass
+        if app is not None:
+            try:
+                app.Quit()
+            except Exception:
+                pass
+
+
 def atomic_save(prs, path: str) -> None:
     """Save to a temp file in the same directory, then os.replace (no partial reads)."""
     directory = os.path.dirname(os.path.abspath(path)) or "."

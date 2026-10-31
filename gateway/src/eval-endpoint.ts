@@ -18,7 +18,7 @@ import * as path from 'path';
  *     the final text as an OpenAI chat completion.
  *
  * This exercises the real end-to-end chain: text-only main agent + A2A
- * multimodal tool + MediaAgent (xiaomi/mimo-v2.5 via pi adapter).
+ * multimodal tool + MediaAgent (xiaomi/mimo-v2.6-pro via pi adapter).
  */
 
 export interface EvalEndpointOptions {

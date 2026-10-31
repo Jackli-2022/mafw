@@ -145,7 +145,21 @@ chart.replace_data(data)
 - 重新 `inspect_deck(path)` 打开：页数、修改处文字、表格/图片/备注仍在。
 - xlsx 用 `inspect_workbook`、docx 用 `inspect_document` 做同样的重开校验。
 - 报告 `replacements` 数量与页数；若为 0，说明没匹配到，不要声称已改。
-- 工作台预览会自动刷新（fs watch）；让用户看预览确认视觉。视觉细节（溢出/重叠）目前需要用户或以后用 PowerPoint COM 导出 PNG 检查。
+- 工作台预览会自动刷新（fs watch）；结构正确不等于版面正确。
+
+### 5.1 视觉质检（Windows + PowerPoint）
+
+```python
+render = mafw_office.render_deck(path, r"C:\work\proj\.render", width=1280, height=720, slides=[1, 2])
+print(render)  # {ok, out_dir, images:[{slide, path, bytes}]}
+```
+
+- `ok: False`（`pywin32-missing` / `render-failed` / 非 Windows）→ 说明原因，请用户看工作台预览；
+  不要假装做过视觉检查。
+- 对每张 PNG 调 `mafw_media_ask`（`mediaPath=<png>`）：
+  「检查这页是否有文字溢出、元素遮挡、文字截断、明显错位或留白异常；只报告问题，不要改文件。」
+- 有版面问题 → 改内容/字号/位置 → 重新 render → 再检查。
+- 只有实际看过渲染图，才能说「视觉已验证」。渲染目录是临时产物，交付前可删除。
 
 ## 6. 边界与纪律
 

@@ -658,7 +658,7 @@ function defaults(projectDir: string): GatewayConfig {
     },
     media: {
       provider: 'xiaomi',
-      model: 'mimo-v2.5',
+      model: 'mimo-v2.6-pro',
       // Nested stubs so MAFW_MEDIA_IMAGE_MODEL / MAFW_MEDIA_VIDEO_MODEL /
       // MAFW_MEDIA_AUDIO_MODEL / MAFW_MEDIA_LANG env overrides are honored by
       // applyEnvOverrides (it only walks keys present in the defaults).
