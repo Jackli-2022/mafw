@@ -130,15 +130,16 @@ mafw_office.replace_image(path, 2, "Picture 4", r"C:\work\proj\new.png")
 ```python
 mafw_office.set_table_cell(path, 2, "Table 3", row=2, col=2, text="$1.2M")
 
-chart = slide.shapes["营收图"].chart
-from pptx.chart.data import CategoryChartData
-data = CategoryChartData()
-data.categories = ["Q1", "Q2", "Q3"]
-data.add_series("营收", (1.0, 1.2, 1.5))
-chart.replace_data(data)
+# 图表：categories + {系列名: 数值}；先 inspect 拿 shape 名
+mafw_office.set_chart_data(
+    path, 2, "Chart 1",
+    categories=["Q1", "Q2", "Q3"],
+    series={"营收": [1.0, 1.2, 1.5], "成本": [0.6, 0.7, 0.8]},
+)
 ```
 
-图表数据仍走 python-pptx 原生 `replace_data`（helper 未封装）。
+- `inspect_deck` 的 chart 信息含 `categories` / `series_values`，改前先看。
+- 图表类型（柱/线/饼）不变；只替换数据。
 
 ## 5. 保存后必须校验
 
@@ -151,12 +152,16 @@ chart.replace_data(data)
 
 ```python
 # pptx / xlsx / docx 自动分派：PowerPoint / Excel / Word COM → PDF → PNG
-render = mafw_office.render_office(path, r"C:\work\proj\.render", width=1280)
-print(render)  # {ok, engine, out_dir, pdf, images:[{page|slide, path, bytes}]}
+render = mafw_office.render_office(path, r"C:\work\proj\.render", width=1280, montage=True)
+print(render)  # {ok, engine, out_dir, pdf, images:[...], montage?: {path,...}}
 
 # 只渲染指定页（仅 pptx）
 render = mafw_office.render_deck(path, r"C:\work\proj\.render", slides=[1, 2])
 ```
+
+- 多页文档用 `montage=True`：生成一张拼图 `render["montage"]["path"]`，只对拼图调一次
+  `mafw_media_ask`，比逐页调用省时省钱；单页时无 `montage`。
+- 需要逐页细看时再关掉 montage。
 
 - xlsx 走 Excel COM、docx 走 Word COM；导出 PDF 后用 pypdfium2 转 PNG，`images[].page` 是页号。
 - `ok: False`（`pywin32-missing` / `pypdfium2-missing` / `render-failed` / 非 Windows）→ 说明原因，
@@ -171,7 +176,8 @@ render = mafw_office.render_deck(path, r"C:\work\proj\.render", slides=[1, 2])
 - **不要**改 SmartArt / 动画 / OLE / 3D 模型（python-pptx 不建模；通常原样保留但不可编辑）。
 - **不要**用 `Presentation().slides` 的默认 4:3 新建后直接覆盖现有模板；新 deck 显式设 16:9（13.333×7.5 in）或沿用模板尺寸。
 - **不要**整段赋值 `.text =` 改已有文字（丢行内格式）；用 `replace_text` 或逐 run 改。
-- 文件被占用/保存失败 → 提示用户关闭 PowerPoint；不要重试覆盖。
+- 文件被占用/保存失败 → 提示用户关闭对应 Office 应用；不要重试覆盖。
+- legacy `.xls/.doc/.ppt` 先 `convert_legacy` 成现代副本再编辑，不要直接改原文件。
 - 批量修改前先输出副本（`out=...`），确认后再 `os.replace` 覆盖原文件。
 - 每次写文件前都 `snapshot`；没有备份的破坏性操作不做。
 - 生成新 deck 优先用模板（用户提供的 pptx）而不是默认空白。
@@ -195,6 +201,10 @@ mafw_office.set_cell_style(path, [{
 }])
 mafw_office.set_sheet_layout(path, sheet="Sheet1", columns={"A": 24}, rows={"1": 32}, freeze="A2")
 mafw_office.add_image(path, "Sheet1", "F2", r"C:\work\proj\logo.png", width=96, height=48)
+mafw_office.add_chart(
+    path, "Sheet1", "column", data_range="B1:B4",
+    categories="A2:A4", title="季度营收", anchor="E2",
+)
 mafw_office.add_sheet(path, title="附录", index=2)
 mafw_office.rename_sheet(path, "附录", "Appendix")
 mafw_office.delete_sheet(path, "Appendix")
@@ -227,7 +237,20 @@ mafw_office.replace_text_docx(path, {"2025": "2026"})
 两者同样遵守“先 inspect → 快照 → 小步改 → 重开校验 → 渲染质检”：
 结构校验后用 `render_office` 导出 PNG，再按 §5.1 用 `mafw_media_ask` 看是否有溢出/遮挡/错位。
 
-## 8. 参考
+## 8. Legacy .xls / .doc / .ppt
+
+不要直接改 legacy 二进制；先转成现代格式，编辑转换副本：
+
+```python
+res = mafw_office.convert_legacy(path, out=r"C:\work\proj\converted.xlsx")
+print(res)  # {ok, engine, out} 或 {ok:False, reason:'exists'|'not-legacy'|...}
+```
+
+- 默认输出同名 `.xlsx/.docx/.pptx`；目标已存在会返回 `exists`，换 `out` 或显式 `overwrite=True`。
+- 转换可能改变排版/字体；编辑副本后让用户确认是否替换原文件，不要静默覆盖 legacy。
+- 转换后按正常流程 `inspect → snapshot → 编辑 → 校验 → render`。
+
+## 9. 参考
 
 - python-pptx 文档：https://python-pptx.readthedocs.io/
 - 本仓库 helper：`gateway/scripts/office/mafw_office.py`（安装后在 kernel site-packages）

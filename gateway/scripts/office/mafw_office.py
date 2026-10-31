@@ -76,6 +76,8 @@ def inspect_deck(path: str, max_slides: int = 200) -> dict[str, Any]:
                         "type": str(chart.chart_type),
                         "series": len(chart.series),
                         "series_names": [str(s.name) for s in chart.series if s.name is not None],
+                        "categories": [str(c) for c in chart.plots[0].categories],
+                        "series_values": [[v for v in s.values] for s in chart.series],
                     }
                 except Exception:
                     item["chart"] = {"type": "unknown"}
@@ -391,6 +393,45 @@ def set_table_cell(
     return {"ok": True, "slide": slide_index, "cell": [row, col], "out": os.path.abspath(target_path)}
 
 
+def set_chart_data(
+    path: str,
+    slide_index: int,
+    target: str | int,
+    categories: Iterable[str],
+    series: dict[str, Iterable[float]] | Iterable[dict[str, Any]],
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Replace a chart's data: categories + {series name: values} (or [{name,values}])."""
+    from pptx.chart.data import CategoryChartData
+
+    prs = _presentation(path)
+    slide = _slide_at(prs, slide_index)
+    shape = _find_shape(slide, target)
+    if not getattr(shape, "has_chart", False) or not shape.has_chart:
+        raise ValueError(f"shape is not a chart: {target!r}")
+    data = CategoryChartData()
+    data.categories = [str(c) for c in categories]
+    if isinstance(series, dict):
+        items = series.items()
+    else:
+        items = [
+            (item.get("name", f"Series {index + 1}"), item.get("values", []))
+            for index, item in enumerate(series)
+        ]
+    for name, values in items:
+        data.add_series(str(name), [float(v) for v in values])
+    shape.chart.replace_data(data)
+    target_path = out or path
+    atomic_save(prs, target_path)
+    return {
+        "ok": True,
+        "slide": slide_index,
+        "shape": shape.name,
+        "series": len(list(items)),
+        "out": os.path.abspath(target_path),
+    }
+
+
 # ── xlsx / docx ─────────────────────────────────────────────────────────────
 
 def inspect_workbook(
@@ -398,15 +439,19 @@ def inspect_workbook(
     max_rows: int = 20,
     max_cols: int = 20,
     include_formulas: bool = False,
+    include_charts: bool = True,
 ) -> dict[str, Any]:
     """Structural dump of an xlsx (cached values; formulas not executed).
 
     include_formulas adds a `formulas` list per sheet (cell + formula text).
+    include_charts reads drawing parts (loads a normal workbook; set false for
+    very large files).
     """
     from openpyxl import load_workbook
 
     wb = load_workbook(path, read_only=True, data_only=True)
     wb_formulas = load_workbook(path, read_only=True, data_only=False) if include_formulas else None
+    wb_charts = load_workbook(path, data_only=True) if include_charts else None
     try:
         sheets: list[dict[str, Any]] = []
         for ws in wb.worksheets:
@@ -425,6 +470,14 @@ def inspect_workbook(
                 item["merged"] = [str(r) for r in ws.merged_cells.ranges]
             except Exception:
                 item["merged"] = []
+            item["charts"] = (
+                [
+                    {"type": type(chart).__name__}
+                    for chart in getattr(wb_charts[ws.title], "_charts", [])
+                ]
+                if wb_charts is not None and ws.title in wb_charts.sheetnames
+                else []
+            )
             if wb_formulas is not None and ws.title in wb_formulas.sheetnames:
                 formulas: list[dict[str, str]] = []
                 fws = wb_formulas[ws.title]
@@ -443,6 +496,8 @@ def inspect_workbook(
         wb.close()
         if wb_formulas is not None:
             wb_formulas.close()
+        if wb_charts is not None:
+            wb_charts.close()
 
 
 def inspect_json_workbook(path: str, **kwargs: Any) -> str:
@@ -628,6 +683,62 @@ def add_image(
     target = out or path
     atomic_save(wb, target)
     return {"ok": True, "sheet": ws.title, "cell": cell, "out": os.path.abspath(target)}
+
+
+def add_chart(
+    path: str,
+    sheet: str | None,
+    chart_type: str,
+    data_range: str,
+    categories: str | None = None,
+    title: str | None = None,
+    anchor: str = "E2",
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Add a chart from a cell range. chart_type: bar|column|line|pie|area.
+
+    Existing charts follow their referenced cells, so update cells to refresh
+    their data; use this helper to create new charts.
+    """
+    from openpyxl import load_workbook
+    from openpyxl.chart import AreaChart, BarChart, LineChart, PieChart, Reference
+    from openpyxl.utils import range_boundaries
+
+    wb = load_workbook(path)
+    ws = wb[sheet] if sheet else wb.worksheets[0]
+    kind = chart_type.lower()
+    if kind in ("bar", "column"):
+        chart = BarChart()
+        chart.type = "col" if kind == "column" else "bar"
+    elif kind == "line":
+        chart = LineChart()
+    elif kind == "pie":
+        chart = PieChart()
+    elif kind == "area":
+        chart = AreaChart()
+    else:
+        raise ValueError(f"unsupported chart type: {chart_type!r} (bar|column|line|pie|area)")
+
+    min_col, min_row, max_col, max_row = range_boundaries(data_range)
+    data = Reference(ws, min_col=min_col, min_row=min_row, max_col=max_col, max_row=max_row)
+    chart.add_data(data, titles_from_data=True)
+    if categories:
+        c_min_col, c_min_row, c_max_col, c_max_row = range_boundaries(categories)
+        chart.set_categories(Reference(
+            ws, min_col=c_min_col, min_row=c_min_row, max_col=c_max_col, max_row=c_max_row,
+        ))
+    if title:
+        chart.title = title
+    ws.add_chart(chart, anchor)
+    target = out or path
+    atomic_save(wb, target)
+    return {
+        "ok": True,
+        "sheet": ws.title,
+        "chart": type(chart).__name__,
+        "anchor": anchor,
+        "out": os.path.abspath(target),
+    }
 
 
 def inspect_document(path: str, max_paragraphs: int = 100) -> dict[str, Any]:
@@ -1047,16 +1158,146 @@ def render_document(path: str, out_dir: str, width: int = 1280) -> dict[str, Any
     return _com_pdf_export(path, out_dir, "page", width, "Word.Application", opener)
 
 
-def render_office(path: str, out_dir: str, width: int = 1280, slides: Iterable[int] | None = None) -> dict[str, Any]:
+def montage_images(
+    paths: Iterable[str],
+    out_path: str,
+    cols: int = 2,
+    gap: int = 8,
+    max_cell_width: int = 1200,
+) -> dict[str, Any]:
+    """Combine rendered page PNGs into one image (fewer vision calls)."""
+    from PIL import Image
+
+    files = [p for p in paths if p and os.path.exists(p)]
+    if not files:
+        return {"ok": False, "reason": "no-images"}
+    images = [Image.open(p).convert("RGB") for p in files]
+    try:
+        cell_w = min(max(im.width for im in images), int(max_cell_width))
+        scaled = []
+        for im in images:
+            ratio = cell_w / im.width if im.width else 1.0
+            scaled.append(im.resize((max(1, int(im.width * ratio)), max(1, int(im.height * ratio)))))
+        cell_h = max(im.height for im in scaled)
+        columns = max(1, int(cols))
+        rows = (len(scaled) + columns - 1) // columns
+        width = columns * cell_w + (columns + 1) * gap
+        height = rows * cell_h + (rows + 1) * gap
+        canvas = Image.new("RGB", (width, height), (255, 255, 255))
+        for index, im in enumerate(scaled):
+            row, col = divmod(index, columns)
+            x = gap + col * (cell_w + gap) + (cell_w - im.width) // 2
+            y = gap + row * (cell_h + gap) + (cell_h - im.height) // 2
+            canvas.paste(im, (x, y))
+        os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+        canvas.save(out_path)
+        return {
+            "ok": True,
+            "path": os.path.abspath(out_path),
+            "pages": len(scaled),
+            "width": width,
+            "height": height,
+        }
+    finally:
+        for im in images:
+            try:
+                im.close()
+            except Exception:
+                pass
+
+
+def render_office(
+    path: str,
+    out_dir: str,
+    width: int = 1280,
+    slides: Iterable[int] | None = None,
+    montage: bool = False,
+) -> dict[str, Any]:
     """Render pptx/xlsx/docx by extension; unified entry point for the skill."""
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pptx":
-        return render_deck(path, out_dir, width=width, slides=slides)
-    if ext == ".xlsx":
-        return render_workbook(path, out_dir, width=width)
-    if ext == ".docx":
-        return render_document(path, out_dir, width=width)
-    return {"ok": False, "reason": "unsupported-format", "error": f"unsupported Office extension: {ext or '(none)'}"}
+        result = render_deck(path, out_dir, width=width, slides=slides)
+    elif ext == ".xlsx":
+        result = render_workbook(path, out_dir, width=width)
+    elif ext == ".docx":
+        result = render_document(path, out_dir, width=width)
+    else:
+        return {"ok": False, "reason": "unsupported-format", "error": f"unsupported Office extension: {ext or '(none)'}"}
+    if montage and result.get("ok") and len(result.get("images", [])) > 1:
+        combined = montage_images(
+            [item["path"] for item in result["images"]],
+            os.path.join(os.path.abspath(out_dir), "montage.png"),
+        )
+        if combined.get("ok"):
+            result["montage"] = combined
+    return result
+
+
+def convert_legacy(path: str, out: str | None = None, overwrite: bool = False) -> dict[str, Any]:
+    """Convert .xls/.doc/.ppt to modern Office formats via COM.
+
+    Writes a new file by default; never overwrites the source. The agent should
+    edit the converted copy and let the user decide whether to replace the
+    original (legacy conversion can change layout).
+    """
+    if os.name != "nt":
+        return {"ok": False, "reason": "unsupported-platform", "error": "Office COM is Windows-only"}
+    try:
+        import win32com.client  # lazy: pywin32 is optional
+    except Exception as exc:
+        return {"ok": False, "reason": "pywin32-missing", "error": str(exc)}
+
+    src = os.path.abspath(path)
+    ext = os.path.splitext(src)[1].lower()
+    mapping = {
+        ".xls": (".xlsx", "Excel.Application", 51),
+        ".doc": (".docx", "Word.Application", 16),
+        ".ppt": (".pptx", "PowerPoint.Application", 24),
+    }
+    if ext not in mapping:
+        return {"ok": False, "reason": "not-legacy", "error": f"not a legacy Office extension: {ext or '(none)'}"}
+    new_ext, program, file_format = mapping[ext]
+    target = os.path.abspath(out) if out else os.path.splitext(src)[0] + new_ext
+    if os.path.abspath(target) == src:
+        return {"ok": False, "reason": "same-path", "error": "output must differ from the source"}
+    if os.path.exists(target) and not overwrite:
+        return {"ok": False, "reason": "exists", "error": f"output already exists: {target}"}
+
+    app = None
+    handle = None
+    try:
+        app = win32com.client.DispatchEx(program)
+        try:
+            app.Visible = False
+        except Exception:
+            pass
+        try:
+            app.DisplayAlerts = False
+        except Exception:
+            pass
+        if ext == ".xls":
+            handle = app.Workbooks.Open(src, ReadOnly=True, UpdateLinks=0)
+            handle.SaveAs(target, FileFormat=file_format)
+        elif ext == ".doc":
+            handle = app.Documents.Open(src, ReadOnly=True, AddToRecentFiles=False, Visible=False)
+            handle.SaveAs2(target, FileFormat=file_format)
+        else:
+            handle = app.Presentations.Open(src, ReadOnly=True, WithWindow=False)
+            handle.SaveAs(target, file_format)
+        return {"ok": True, "engine": program, "out": target}
+    except Exception as exc:
+        return {"ok": False, "reason": "convert-failed", "error": str(exc)[:300]}
+    finally:
+        if handle is not None:
+            try:
+                handle.Close(False)
+            except Exception:
+                pass
+        if app is not None:
+            try:
+                app.Quit()
+            except Exception:
+                pass
 
 
 def atomic_save(prs, path: str) -> None:

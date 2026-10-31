@@ -102,6 +102,28 @@ class DeckTests(unittest.TestCase):
         mo.replace_image(self.deck, 1, picture_name, self.img2)
         self.assertTrue(mo.inspect_deck(self.deck)["slides"][0]["shapes"][-1]["picture"])
 
+    def test_chart_data(self) -> None:
+        from pptx import Presentation
+        from pptx.chart.data import CategoryChartData
+        from pptx.enum.chart import XL_CHART_TYPE
+        from pptx.util import Inches
+
+        path = os.path.join(self.tmp, "chart.pptx")
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[1])
+        data = CategoryChartData()
+        data.categories = ["Q1", "Q2"]
+        data.add_series("Series 1", (1, 2))
+        slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(1), Inches(1), Inches(4), Inches(3), data)
+        prs.save(path)
+
+        chart_name = next(s["name"] for s in mo.inspect_deck(path)["slides"][0]["shapes"] if s.get("chart"))
+        result = mo.set_chart_data(path, 1, chart_name, ["A", "B"], {"Series 1": [3, 4]})
+        self.assertTrue(result["ok"])
+        chart = next(s["chart"] for s in mo.inspect_deck(path)["slides"][0]["shapes"] if s.get("chart"))
+        self.assertEqual(chart["categories"], ["A", "B"])
+        self.assertEqual(chart["series_values"], [[3.0, 4.0]])
+
     @unittest.skipUnless(
         COM_TESTS,
         "set MAFW_TEST_OFFICE_COM=1 (Windows + Office) to run COM render tests",
@@ -168,6 +190,37 @@ class WorkbookTests(unittest.TestCase):
         wb = load_workbook(self.path)
         self.assertEqual(len(wb["Sheet1"]._images), 1)
         wb.close()
+
+    def test_add_chart(self) -> None:
+        mo.set_cells(self.path, [{"cell": "A1", "value": "Q"}, {"cell": "B1", "value": "V"}])
+        mo.set_cells(self.path, [{"cell": "A2", "value": "Q1"}, {"cell": "B2", "value": 1}])
+        mo.set_cells(self.path, [{"cell": "A3", "value": "Q2"}, {"cell": "B3", "value": 2}])
+        result = mo.add_chart(
+            self.path, "Sheet1", "column", "B1:B3", categories="A2:A3", title="Revenue", anchor="E2",
+        )
+        self.assertTrue(result["ok"])
+        info = mo.inspect_workbook(self.path)
+        self.assertEqual(len(info["sheets"][0]["charts"]), 1)
+        from openpyxl import load_workbook
+
+        wb = load_workbook(self.path)
+        self.assertEqual(len(wb["Sheet1"]._charts), 1)
+        wb.close()
+
+    def test_montage_images(self) -> None:
+        paths = []
+        for index, color in enumerate([(255, 0, 0), (0, 255, 0), (0, 0, 255)]):
+            p = os.path.join(self.tmp, f"p{index}.png")
+            make_png(p, color)
+            paths.append(p)
+        result = mo.montage_images(paths, os.path.join(self.tmp, "montage.png"), cols=2)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["pages"], 3)
+        self.assertTrue(os.path.exists(result["path"]))
+
+    def test_convert_legacy_rejects_modern_files(self) -> None:
+        result = mo.convert_legacy(self.path)
+        self.assertEqual(result["reason"], "not-legacy")
 
     def test_inspect_and_set_cells(self) -> None:
         info = mo.inspect_workbook(self.path)
