@@ -165,6 +165,7 @@ import { resolveNodeModel } from './core/goal/node-model';
 import { CheckpointService } from './core/checkpoint/checkpoint-service';
 import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { FileHistoryService } from './core/file-history/file-history-service';
+import { sessionDirectoryOf } from './core/file-history/session-directory';
 import { handleFileHistoryRoutes } from './routes/file-history';
 import { RunStateService } from './core/run/run-state-service';
 import { RunCoordinator } from './core/run/run-coordinator';
@@ -4571,7 +4572,7 @@ class MafwScheduler {
           resolveDirectory: async (sid) => {
             try {
               const info: any = await this.runtime?.session.get({ sessionID: sid });
-              return typeof info?.directory === 'string' && info.directory ? info.directory : null;
+              return sessionDirectoryOf(info);
             } catch { return null; }
           },
         })) return;
