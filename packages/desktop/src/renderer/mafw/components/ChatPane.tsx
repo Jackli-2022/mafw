@@ -1871,7 +1871,21 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       sessionID={sidProp()}
                       messageID={msg.id}
                       actions={userActions()}
-                      assistantActions={assistantActions()}
+                      assistantActions={{
+                        ...assistantActions(),
+                        ...(props.onRecordPodNote
+                          ? {
+                              onPodNote: (input: { text: string; partID: string; messageID: string }) => {
+                                void props.onRecordPodNote?.({
+                                  sessionID: sidProp(),
+                                  messageID: input.messageID,
+                                  role: "assistant",
+                                  text: input.text,
+                                })
+                              },
+                            }
+                          : {}),
+                      }}
                       classes={{ root: "min-w-0 w-full relative", content: "!overflow-visible", container: "w-full" }}
                       renderAfterPart={(part: any, message: any) => {
                         if (part.type !== "tool" || !part.callID) return undefined

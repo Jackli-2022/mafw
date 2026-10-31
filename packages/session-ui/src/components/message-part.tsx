@@ -195,6 +195,8 @@ export type UserActions = {
 export type AssistantActions = {
   speakingPartId?: () => string | null
   onSpeakToggle?: (text: string, partId: string) => void
+  /** 「记入鲸群」：把这条回复显式提升为 Pod 协调记录（spec: docs/research/2026-10-31-agent-chat-vs-team-log.md）。 */
+  onPodNote?: (input: { text: string; partID: string; messageID: string }) => void
 }
 
 export type UserMessageComment = {
@@ -224,7 +226,7 @@ export interface MessagePartProps {
 
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
-    icon: "check" | "copy" | "reset" | "volume" | "stop" | "branch" | "file"
+    icon: "check" | "copy" | "reset" | "volume" | "stop" | "branch" | "file" | "team-three"
     label: JSX.Element
     useV2?: boolean
   },
@@ -1826,6 +1828,23 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
                   aria-label={speaking() ? i18n.t("ui.message.stopSpeaking") : i18n.t("ui.message.speak")}
                 />
               </span>
+            </Show>
+            <Show when={props.assistantActions?.onPodNote}>
+              <MessageActionButton
+                icon="team-three"
+                label="记入鲸群"
+                useV2={props.useV2Actions}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.assistantActions?.onPodNote?.({
+                    text: text(),
+                    partID: part().id,
+                    messageID: props.message.id,
+                  })
+                }}
+                aria-label="记入鲸群"
+              />
             </Show>
             <MessageActionButton
               icon={copied() ? "check" : "copy"}
