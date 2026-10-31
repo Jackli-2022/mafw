@@ -65,9 +65,21 @@ const EXECUTE_OUTPUT_SCHEMA = {
 
 const REVIEW_OUTPUT_SCHEMA = {
   type: 'object',
-  required: ['verdict', 'feedback'],
+  required: ['verdict', 'tasks', 'feedback'],
   properties: {
     verdict: { type: 'string', enum: ['PASS', 'FAIL'] },
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['taskId', 'result', 'evidence'],
+        properties: {
+          taskId: { type: 'string' },
+          result: { type: 'string', enum: ['pass', 'fail', 'skipped'] },
+          evidence: { type: 'string' },
+        },
+      },
+    },
     feedback: { type: 'string' },
   },
 } as const;
@@ -151,7 +163,10 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
     '',
     `把评审报告（markdown）写入 ${a.review}，文件末尾必须包含：`,
     '```mafw-review',
-    '{"verdict":"PASS|FAIL","feedback":"FAIL 时给具体修复指引"}',
+    '{"verdict":"PASS|FAIL","tasks":[{"taskId":"w1-t1","result":"pass|fail|skipped","evidence":"跑了什么命令/看了哪个文件"}],"feedback":"FAIL 时给具体修复指引"}',
     '```',
+    '`tasks` 必须覆盖 waves.json 里的**每一个** taskId（缺一个即判为无效评审）；',
+    '`evidence` 写可复现的验证依据（命令 + 结果摘要或文件路径），不要写"看起来没问题"。',
+    '只要有一个任务 fail，verdict 必须是 FAIL。',
   ].filter(Boolean).join('\n');
 }
