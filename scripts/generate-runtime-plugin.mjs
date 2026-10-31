@@ -1,22 +1,23 @@
 #!/usr/bin/env node
 /**
- * generate-runtime-plugin.mjs — one-api（OpenAI 兼容）runtime 插件翻译层生成器
+ * generate-runtime-plugin.mjs — one-api（OpenAI 兼容）runtime 插件生成器
  *
- * 生成完整可激活的 MAFW runtime 插件骨架（CJS 单文件），翻译层覆盖：
- *   toWire     — MAFW prompt opts → OpenAI chat/completions 请求体
- *   fromWire   — 非流式响应 → PromptResultEnvelope
- *   fromSSE    — SSE chunk → delta/finish/usage → opencode 兼容事件
- * 附带：记忆接入钩子（obs/capture + recall/pinned）、文件持久化、--mock 联调假服务、--self-test 自检。
+ * 生成 raw-event-first 骨架（spec 2026-10-31-runtime-plugin-ergonomics-design）：
+ *   - 声明面：preset / eventTranslation / eventSource / eventMappings / transformEvent / sampleEvents
+ *   - 翻译由 gateway 执行器完成（插件推原生 chunk/done/error 事件）
+ *   - 按 preset 生成契约 TODO（缺失面显式列出，不静默漏掉）
+ *   - --check <file> 委托 gateway 离线检查器（plugin-check）
  *
  * 用法：
- *   node scripts/generate-runtime-plugin.mjs --name my-runtime [--baseUrl http://localhost:9000] \
- *        [--model my-model] [--out ~/.mafw/runtime-plugins] [--mock] [--self-test]
+ *   node scripts/generate-runtime-plugin.mjs --name my-runtime [--preset conversation] \
+ *        [--baseUrl http://localhost:9000] [--model my-model] [--out ~/.mafw/runtime-plugins] [--mock] [--self-test]
+ *   node scripts/generate-runtime-plugin.mjs --check path/to/plugin.js [--preset core] [--strict]
  */
 import { parseArgs } from "node:util"
-import { writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { writeFileSync, readFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { join, resolve, dirname } from "node:path"
 import { homedir, tmpdir } from "node:os"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath } from "node:url"
 import { createRequire } from "node:module"
 
 const require = createRequire(import.meta.url)
@@ -169,14 +170,58 @@ const MEMORY_GUIDE = [
 module.exports = {
   name: PLUGIN_NAME,
   external: true,
+  preset: '__PRESET__',
+  eventTranslation: 'declared',
   capabilities: {
-    eventStream: true,          // 流式翻译层产出 opencode 兼容事件
+    eventStream: true,          // raw-event-first：gateway 执行器翻译声明表
     nativeApprovals: false,
     providerConfigApi: false,
     perLlmCallTransform: false,
     sessionStorageApi: false,
     agentConfigApi: false,
   },
+
+  // ── 事件声明面（declared 是唯一推荐路径；执行器在 gateway） ──
+  eventSource: { typePath: '$.type', sessionIdPath: '$.sessionID' },
+  eventMappings: [
+    { from: 'session_meta', to: 'session.created',
+      when: [{ path: '$.info.id', exists: true }],
+      fields: { info: { path: '$.info' } } },
+    { from: 'chunk', to: 'part.delta',
+      when: [{ path: '$.choices[0].delta.content', exists: true }],
+      fields: {
+        messageID: { path: '$.messageID' },
+        partID: { path: '$.partID' },
+        field: { const: 'text' },
+        delta: { path: '$.choices[0].delta.content' },
+      } },
+    { from: 'text_final', to: 'part.updated',
+      fields: {
+        'part.id': { path: '$.partID' },
+        'part.type': { const: 'text' },
+        'part.text': { path: '$.text' },
+        'part.messageID': { path: '$.messageID' },
+        'part.sessionID': { path: '$.sessionID' },
+      } },
+    { from: 'done', to: 'turn.completed',
+      fields: { sessionID: { path: '$.sessionID' }, usage: { path: '$.usage' }, cost: { path: '$.cost' } } },
+    { from: 'error', to: 'turn.failed',
+      fields: { sessionID: { path: '$.sessionID' }, error: { path: '$.error' } } },
+    { from: 'aborted', to: 'turn.aborted',
+      fields: { sessionID: { path: '$.sessionID' }, reason: { path: '$.reason' } } },
+  ],
+  // 逃逸口占位：无状态机/1→N fan-out 需求时返回 null（声明式压制）。
+  transformEvent(raw) { return null },
+  // 离线检查器样本（mafw plugin-check 用）
+  sampleEvents: [
+    { type: 'session_meta', sessionID: 'sample', info: { id: 'sample', title: 'sample', time: { updated: 0 } } },
+    { type: 'chunk', sessionID: 'sample', messageID: 'm1', partID: 'm1-text', choices: [{ delta: { content: 'hi' } }] },
+    { type: 'text_final', sessionID: 'sample', messageID: 'm1', partID: 'm1-text', text: 'hi' },
+    { type: 'done', sessionID: 'sample', messageID: 'm1', usage: { input: 1, output: 1 } },
+  ],
+
+  // ── 契约 TODO（按 preset 从 runtime-contract.json 生成，未实现的面不会静默漏掉） ──
+__CONTRACT_TODOS__
 
   async createRuntime(ctx) {
     const cfg = ctx.pluginConfig(PLUGIN_NAME) || {}
@@ -205,12 +250,13 @@ module.exports = {
     }
 
     // ── 事件流（async queue 桥：无消费者时事件入队不丢，单消费者语义）──
+    // raw-event-first：这里推「原生事件」，翻译由 gateway 执行器按本文件顶部的
+    // eventSource/eventMappings 完成（不要在这里产出 canonical 事件名）。
     const eventQueue = []
     let pendingResolve = null
-    const emitEvent = (type, properties) => {
-      const ev = { type, properties, sessionID: properties.sessionID }
-      if (pendingResolve) { const r = pendingResolve; pendingResolve = null; r(ev) }
-      else eventQueue.push(ev)
+    const emitRaw = (event) => {
+      if (pendingResolve) { const r = pendingResolve; pendingResolve = null; r(event) }
+      else eventQueue.push(event)
     }
     const eventStream = async function* () {
       while (true) {
@@ -219,7 +265,8 @@ module.exports = {
       }
     }
 
-    // ── 单轮执行：toWire → fetch（流式/非流式）→ 事件/信封 ──
+    // ── 单轮执行：toWire → fetch（流式/非流式）→ 原生事件 ──
+    let toolFactory = null
     async function runTurn(sessionID, opts, onDelta) {
       const sess = sessions.get(sessionID)
       if (!sess) throw new Error('session not found: ' + sessionID)
@@ -237,8 +284,13 @@ module.exports = {
       if (!res.ok) throw new Error('upstream ' + res.status + ': ' + (await res.text()).slice(0, 300))
 
       let text = '', finish, usage
+      const messageID = 'as_' + Date.now().toString(36)
+      const partID = messageID + '-text'
+      const base = { sessionID, messageID, partID }
       if (body.stream) {
         for await (const chunk of parseSSE(res)) {
+          // 原生 chunk 原样推（附路由字段）；delta 提取只用于本地累积/返回值
+          emitRaw({ type: 'chunk', ...base, choices: chunk.choices, usage: chunk.usage })
           const t = fromSSE(chunk)
           if (t.delta && onDelta) onDelta(t.delta)
           text += t.delta || ''
@@ -250,29 +302,20 @@ module.exports = {
         text = wire.parts[0].text
         finish = wire.finish
         usage = wire.usage
+        emitRaw({ type: 'chunk', ...base, choices: [{ index: 0, delta: { content: text }, finish_reason: finish }] })
         if (onDelta) onDelta(text)
       }
 
       sess.messages.push({ role: 'assistant', content: text })
       sess.time = { created: sess.time.created, updated: Date.now() }
       save()
-      // 事件契约（3.1）：assistant 正文必须以 text part 进 message.part.updated（trajectory/curator 依赖）
-      // 终态快照不带 delta 键（key 稳定性；delta 只在流式增量事件上）
-      emitEvent('message.part.updated', {
-        sessionID,
-        part: { id: 'as_' + Date.now(), sessionID, type: 'text', text, time: { end: Date.now() } },
-      })
-      emitEvent('message.updated', {
-        sessionID,
-        info: { id: 'as_' + Date.now(), sessionID, role: 'assistant', text, time: { completed: Date.now() } },
-      })
-      emitEvent('session.idle', { sessionID })
+      emitRaw({ type: 'text_final', ...base, text })
+      emitRaw({ type: 'done', sessionID, messageID, usage: usage || {}, cost: sess.cost })
       return { parts: [{ type: 'text', text }], finish, usage: usage || {} }
     }
 
     return {
       name: PLUGIN_NAME,
-      capabilities: { eventStream: true },
 
       session: {
         async create(opts) {
@@ -282,7 +325,11 @@ module.exports = {
             title: 'New session', time: { created: Date.now(), updated: Date.now() },
           })
           save()
-          emitEvent('session.created', { info: { id, title: 'New session', directory: opts.directory, time: { updated: Date.now() } }, sessionID: id })
+          emitRaw({
+            type: 'session_meta',
+            sessionID: id,
+            info: { id, title: 'New session', directory: opts.directory, time: { updated: Date.now() } },
+          })
           return { id }
         },
 
@@ -294,12 +341,10 @@ module.exports = {
         async promptAsync(opts) {
           const sessionID = opts.sessionID
           mem.capture(sessionID, 'user_input', opts.message || (opts.parts || [])[0]?.text || '')
-          // 异步执行；delta 经事件流推出（stream=true 时逐 chunk，false 时整段）
-          runTurn(sessionID, opts, (delta) => {
-            emitEvent('message.part.updated', { sessionID, delta, part: { sessionID, type: 'text', text: delta } })
-          }).catch((err) => {
+          // 异步执行；原生 chunk/done 事件经总线推出（gateway 执行器翻译）
+          runTurn(sessionID, opts, null).catch((err) => {
             ctx.log.error('[' + PLUGIN_NAME + '] prompt failed: ' + err.message)
-            emitEvent('session.error', { sessionID, error: err.message })
+            emitRaw({ type: 'error', sessionID, error: err.message })
           })
           return {}
         },
@@ -317,7 +362,7 @@ module.exports = {
 
         async get({ sessionID }) { return sessions.get(sessionID) || null },
         async delete({ sessionID }) { sessions.delete(sessionID); save() },
-        async abort({ sessionID }) { emitEvent('session.idle', { sessionID }) },
+        async abort({ sessionID }) { emitRaw({ type: 'aborted', sessionID, reason: 'aborted' }) },
         async list() {
           return [...sessions.values()].map(s => ({
             id: s.id, title: s.title, directory: s.directory, time: s.time,
@@ -342,6 +387,14 @@ module.exports = {
       },
       app: { async agents() { return [] } },
       config: { async get() { return cfg }, async update(c) { return c } },
+
+      // Tier-0 必选：MAFW 基础工具通道。one-api 模板默认只 stash factory
+      // （无原生 tool-calling 时不注入）；上游支持 function calling 时在这里
+      // 把 factory(sessionId) 的结果翻译成 tools 参数并回传 tool_calls。
+      tools: {
+        async registerTools(factory) { toolFactory = factory },
+        nativeTools() { return [] },
+      },
       getBaseUrl() { return baseUrl },
 
       async healthCheck() {
@@ -421,6 +474,49 @@ http.createServer((req, res) => {
 `
 
 // ─────────────────────────────────────────────────────────────
+// 契约清单（preset → 未实现面 TODO；manifest 是唯一事实源）
+// ─────────────────────────────────────────────────────────────
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const MANIFEST_PATH = join(__dirname, '..', 'packages', 'gateway-sdk', 'contract', 'runtime-contract.json')
+
+/** 本模板已实现（或声明）的面——其余要求的面会生成 TODO 注释。 */
+const TEMPLATE_IMPLEMENTED = new Set([
+  'plugin.name', 'plugin.createRuntime', 'plugin.capabilities',
+  'plugin.eventSource', 'plugin.eventMappings', 'plugin.transformEvent',
+  'session.create', 'session.promptAsync', 'session.prompt', 'session.messages',
+  'session.get', 'session.delete', 'session.abort', 'session.list',
+  'session.todo', 'session.children', 'session.summarize',
+  'prompt.parts.text',
+  'tools.registerTools', 'tools.nativeTools',
+  'events.global',
+  'provider.list', 'provider.app.agents', 'provider.config', 'provider.config.update',
+  'process.getBaseUrl', 'process.healthCheck',
+])
+
+function loadManifest() {
+  try { return JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) } catch { return null }
+}
+
+function contractTodos(preset) {
+  const manifest = loadManifest()
+  if (!manifest) {
+    return `  // TODO: runtime-contract.json missing at ${MANIFEST_PATH} — build @mafw/sdk first`
+  }
+  const def = manifest.presets.find((p) => p.id === preset)
+  if (!def) {
+    return `  // TODO: unknown preset '${preset}' (choose core|conversation|autonomous|desktop)`
+  }
+  const missing = def.requiredSurfaces.filter((id) => !TEMPLATE_IMPLEMENTED.has(id))
+  if (missing.length === 0) {
+    return `  // preset '${preset}': all required surfaces are implemented by this template`
+  }
+  return missing.map((id) => {
+    const s = manifest.surfaces.find((x) => x.id === id)
+    return `  // TODO(contract:${id}): ${s?.title ?? id} — ${s?.impact ?? ''}`
+  }).join('\n')
+}
+
+// ─────────────────────────────────────────────────────────────
 // CLI
 // ─────────────────────────────────────────────────────────────
 function fill(template, values) {
@@ -429,13 +525,15 @@ function fill(template, values) {
   return out
 }
 
-function generate({ name, baseUrl, model, outDir, mock }) {
+function generate({ name, baseUrl, model, outDir, mock, preset = 'conversation' }) {
   const envKey = name.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_API_KEY'
   const values = {
     '__NAME__': name,
     '__BASEURL__': baseUrl,
     '__MODEL__': model,
     '__ENVKEY__': envKey,
+    '__PRESET__': preset,
+    '__CONTRACT_TODOS__': contractTodos(preset),
   }
   const pluginCode = fill(PLUGIN_TEMPLATE, values)
   const written = []
@@ -463,6 +561,9 @@ function selfTest() {
     if (!mod.name || mod.name !== 'selftest-runtime') throw new Error('exports.name invalid')
     if (typeof mod.createRuntime !== 'function') throw new Error('createRuntime missing')
     if (!mod.capabilities || mod.capabilities.eventStream !== true) throw new Error('capabilities.eventStream missing')
+    if (mod.eventTranslation !== 'declared') throw new Error('eventTranslation must be declared')
+    if (!Array.isArray(mod.eventMappings) || mod.eventMappings.length === 0) throw new Error('eventMappings missing')
+    if (!Array.isArray(mod.sampleEvents) || mod.sampleEvents.length === 0) throw new Error('sampleEvents missing')
     // 2) mock server 语法可解析（import 检查交给 node --check 等价：动态 import 会在启动时才监听端口，这里仅 require 插件 + 语法检查 mock）
     // 3) 翻译层单元行为（从生成文件里拿不到内部函数——用轻量 re-eval 抽取验证）
     const code = require('node:fs').readFileSync(written[0], 'utf8')
@@ -509,8 +610,11 @@ const args = parseArgs({
     baseUrl: { type: 'string', default: 'http://127.0.0.1:9000' },
     model: { type: 'string', default: 'gpt-4o-mini' },
     out: { type: 'string', default: join(homedir(), '.mafw', 'runtime-plugins') },
+    preset: { type: 'string', default: 'conversation' },
     mock: { type: 'boolean', default: false },
     'self-test': { type: 'boolean', default: false },
+    check: { type: 'string' },
+    strict: { type: 'boolean', default: false },
   },
 })
 
@@ -519,8 +623,32 @@ if (args.values['self-test']) {
   process.exit(0)
 }
 
+if (args.values.check) {
+  const dist = join(__dirname, '..', 'gateway', 'dist', 'runtime', 'plugin-check.js')
+  let mod
+  try {
+    mod = require(dist)
+  } catch {
+    console.error(`plugin-check needs a built gateway (missing ${dist}). Run: cd gateway && npm run build`)
+    process.exit(2)
+  }
+  const report = await mod.runPluginCheck({
+    file: resolve(args.values.check),
+    preset: args.values.preset,
+    strict: args.values.strict,
+  })
+  console.log(`Plugin: ${report.name ?? '(unnamed)'} — ${report.status}`)
+  console.log(`Translation: ${report.translation.mode}`)
+  for (const i of report.translation.issues) console.log(`  issue: ${i}`)
+  for (const h of report.hard) console.log(`  HARD: ${h}`)
+  for (const d of report.downgraded) console.log(`  DOWNGRADED: ${d}`)
+  if (report.presetMissing.length > 0) console.log(`  preset ${report.preset} missing: ${report.presetMissing.join(', ')}`)
+  process.exit(mod.pluginCheckExitCode(report, args.values.strict))
+}
+
 if (!args.values.name) {
-  console.error('用法: node scripts/generate-runtime-plugin.mjs --name <plugin-name> [--baseUrl URL] [--model M] [--out DIR] [--mock] [--self-test]')
+  console.error('用法: node scripts/generate-runtime-plugin.mjs --name <plugin-name> [--preset core|conversation|autonomous|desktop] [--baseUrl URL] [--model M] [--out DIR] [--mock] [--self-test]')
+  console.error('      node scripts/generate-runtime-plugin.mjs --check <plugin.js> [--preset <id>] [--strict]')
   process.exit(1)
 }
 
@@ -530,6 +658,7 @@ const { written, envKey } = generate({
   model: args.values.model,
   outDir: resolve(args.values.out),
   mock: args.values.mock,
+  preset: args.values.preset,
 })
 
 console.log('已生成:')
