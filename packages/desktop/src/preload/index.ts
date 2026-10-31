@@ -175,6 +175,13 @@ const api: ElectronAPI = {
       ipcRenderer.on("fs-file-changed", handler)
       return () => ipcRenderer.removeListener("fs-file-changed", handler)
     },
+    watchDir: (root, rel) => ipcRenderer.invoke("fs-watch-dir", root, rel),
+    unwatchDir: (root, rel) => ipcRenderer.invoke("fs-unwatch-dir", root, rel),
+    onDirChanged: (cb) => {
+      const handler = (_: unknown, e: { root: string; rel: string }) => cb(e)
+      ipcRenderer.on("fs-dir-changed", handler)
+      return () => ipcRenderer.removeListener("fs-dir-changed", handler)
+    },
     openExternal: (root, rel) => ipcRenderer.invoke("fs-open-external", root, rel),
   },
 

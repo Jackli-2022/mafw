@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { join, resolve } from "node:path"
 import {
-  resolveInRoot, shapeEntries, sniffBinary, MAX_READ_BYTES,
+  resolveInRoot, resolveDirInRoot, shapeEntries, sniffBinary, MAX_READ_BYTES,
   writeTextFile, readTextFile, listDir, type FsIO,
 } from "./fs-workspace"
 
@@ -41,6 +41,18 @@ describe("resolveInRoot（jail）", () => {
     expect(resolveInRoot(root, "a..b.ts")).toBe(join(root, "a..b.ts"))
   })
 })
+
+describe("resolveDirInRoot（目录 watch 用；rel=\"\" 为 root 自身）", () => {
+  test("空 rel → root 自身", () => {
+    expect(resolveDirInRoot(root, "")).toBe(resolve(root))
+  })
+  test("普通子目录 → root 下绝对路径；越界 → null", () => {
+    expect(resolveDirInRoot(root, "src/components")).toBe(join(root, "src/components"))
+    expect(resolveDirInRoot(root, "../outside")).toBeNull()
+    expect(resolveDirInRoot(root, "C:\\Windows")).toBeNull()
+  })
+})
+
 
 describe("shapeEntries", () => {
   test("目录在前 + 名称排序 + IGNORED_DIRS/隐藏文件过滤（.mafw 放行）", () => {

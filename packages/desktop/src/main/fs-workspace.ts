@@ -40,6 +40,14 @@ export function resolveInRoot(root: string, rel: string): string | null {
   return resolved
 }
 
+/**
+ * 目录路径解析：rel="" 表示 root 自身（listDir / 目录 watch 用）。
+ * 其余与 resolveInRoot 同一 jail 规则。
+ */
+export function resolveDirInRoot(root: string, rel: string): string | null {
+  return rel === "" ? pathResolve(root) : resolveInRoot(root, rel)
+}
+
 /** 单层列举整形：目录在前、名称排序；IGNORED_DIRS 与隐藏项过滤（.mafw 例外）。 */
 export function shapeEntries(entries: { name: string; isDirectory(): boolean }[]): FsEntry[] {
   const out: FsEntry[] = []
@@ -108,7 +116,7 @@ function decodeUtf8Strict(buf: Buffer): string | null {
 
 /** 单层列目录；rel="" 为 root 自身。jail 外或不可读 → null。 */
 export async function listDir(io: FsIO, root: string, rel: string): Promise<FsEntry[] | null> {
-  const abs = rel === "" ? pathResolve(root) : resolveInRoot(root, rel)
+  const abs = resolveDirInRoot(root, rel)
   if (!abs) return null
   try {
     return shapeEntries(await io.readdir(abs))

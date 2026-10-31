@@ -45,6 +45,10 @@ export type FsAPI = {
   watch(root: string, rel: string): Promise<void>
   unwatch(root: string, rel: string): Promise<void>
   onChanged(cb: (e: { root: string; rel: string }) => void): () => void
+  /** 目录 watch（文件树自动刷新）：rel="" 为 root 自身；事件只报「哪个目录变了」。 */
+  watchDir(root: string, rel: string): Promise<void>
+  unwatchDir(root: string, rel: string): Promise<void>
+  onDirChanged(cb: (e: { root: string; rel: string }) => void): () => void
   openExternal(root: string, rel: string): Promise<{ ok: boolean }>
 }
 export type BrowserOpenRequest = { url: string; newTab: boolean }

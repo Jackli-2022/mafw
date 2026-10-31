@@ -33,6 +33,7 @@ import { OfficePreview } from "./OfficePreview"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
 import { annotationApplies, buildAnnotationPrompt, buildAnnotationPromptAnchored, lineRangeOf } from "../editor-annotation"
+import { activationRefreshAction } from "../editor-activation"
 import { diffEntryFor } from "../editor-diff"
 import { AnnotationSheet } from "./AnnotationSheet"
 import { buildQuoteAnchor } from "../quote-anchor"
@@ -124,6 +125,13 @@ export function EditorDock(props: {
     const root = props.sessionDirectory
     return (root && fileProtocol.urlFor(root, rel, fileVersion()[rel])) ?? ""
   }
+
+  /** 活动文件的预览 URL。按值去抖：props.sessionDirectory 上游会随 sessions 信号抖动，
+   *  裸 getter 会让 OfficePreview 的解析 effect 重跑（清空宿主 → 白帧，2026-10-31）。 */
+  const activePreviewUrl = createMemo(() => {
+    const f = activeFile()
+    return f ? previewUrl(f.rel) : ""
+  })
 
   /** 预览态：图片恒预览；svg / csv-tsv / markdown / json 默认预览（仅显式源码态例外）。diff 模式不预览。 */
   const showsPreview = (f: OpenFile): boolean => {
@@ -292,6 +300,7 @@ export function EditorDock(props: {
         if (st.ok) {
           version = st.mtimeMs
           size = st.size
+          setMtime(root, rel, st.mtimeMs)
         }
       } catch { /* 元数据可选，失败仍可预览 */ }
       setFileVersion(prev => ({ ...prev, [rel]: version }))
@@ -300,7 +309,7 @@ export function EditorDock(props: {
       setMode("edit")
       clearSelection()
       setIoError(null)
-      void mountActive()
+      void mountActive({ fresh: true })
       return
     }
     // Office（xlsx/docx/pptx）：只读预览 tab；数据集走 mafw-file:// + fetch，不读文本。
@@ -311,12 +320,18 @@ export function EditorDock(props: {
         setIoError("Office 预览不可用（文件协议注册失败）")
         return
       }
+      // 记录打开时 mtime：切回 tab 时 stat 比对，未变则不重解析（防白帧）
+      try {
+        const st = await window.api.fs.statFile(root, rel)
+        if (root !== props.sessionDirectory) return
+        if (st.ok) setMtime(root, rel, st.mtimeMs)
+      } catch { /* 可选元数据 */ }
       setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
       setModel(m => openFile(m, rel, "", true, kind))
       setMode("edit")
       clearSelection()
       setIoError(null)
-      void mountActive()
+      void mountActive({ fresh: true })
       return
     }
     // SVG 默认预览需要协议 token（首次打开即渲染）；注册失败退回源码态。
@@ -347,14 +362,67 @@ export function EditorDock(props: {
       setMode("edit")
       clearSelection()
       setIoError(null)
-      void mountActive()
+      void mountActive({ fresh: true })
     } catch (e: any) {
       setIoError(`读取文件失败：${String(e?.message ?? e).slice(0, 60)}`)
     }
   }
 
+  // ── 激活刷新（2026-10-31）：后台 tab 期间不 watch，切回时按磁盘真值校验 ─────
+  // 只读预览 → stat 比对 mtime，未变不 bump（防无谓重解析）；文本 → 读盘，
+  // 干净时静默换基准，dirty 时只标冲突、绝不覆盖（沿用 canApplyCleanReload 语义）。
+  async function refreshActiveFromDisk(rel: string) {
+    const root = props.sessionDirectory
+    if (!root) return
+    const file = model().files.find((x) => x.rel === rel)
+    if (!file) return
+    const action = activationRefreshAction(file)
+    if (action === "none") return
+    if (action === "stat-preview") {
+      try {
+        const st = await window.api.fs.statFile(root, rel)
+        if (root !== props.sessionDirectory || !st.ok) return
+        if (getMtime(root, rel) === st.mtimeMs) return // 未变更：不重解析（否则切 tab 白一帧）
+        setMtime(root, rel, st.mtimeMs)
+        setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
+        if (file.kind === "image") {
+          setImageMeta(prev => ({ ...prev, [rel]: { ...prev[rel], size: st.size } }))
+        }
+      } catch { /* fail-open：保留现状 */ }
+      return
+    }
+    try {
+      const res = await window.api.fs.readFile(root, rel)
+      if (root !== props.sessionDirectory || !res.ok) return
+      const now = model().files.find((x) => x.rel === rel)
+      if (!now) return
+      if (now.dirty) {
+        // 有未保存修改：只探测冲突（磁盘 mtime 变了 → 冲突横幅），内容以草稿为准
+        if (getMtime(root, rel) !== undefined && getMtime(root, rel) !== res.mtimeMs) {
+          setModel(m => onExternalChange(m, rel))
+        }
+        return
+      }
+      if (!canApplyCleanReload(model(), rel)) return
+      setMtime(root, rel, res.mtimeMs)
+      setEol(root, rel, res.eol)
+      setFileVersion(prev => ({ ...prev, [rel]: res.mtimeMs }))
+      clearDraft(root, rel)
+      setModel(m => applyCleanReload(m, rel, res.content))
+    } catch { /* 读失败：保留现状，等 watch / 下次激活 */ }
+  }
+
   // ── 挂载编排（事件驱动；不用 effect：避免 markDirty 每个键重挂载）────
-  async function mountActive() {
+  // 默认先按磁盘刷新活动文件（切 tab / 关 tab 后接棒 / 从 diff 返回）；
+  // 刚读盘打开的路径传 fresh:true 跳过重复读。
+  async function mountActive(opts?: { fresh?: boolean }) {
+    const rootAtStart = props.sessionDirectory
+    const current = activeFile()
+    if (current && !opts?.fresh) {
+      await refreshActiveFromDisk(current.rel)
+      // await 期间切了文件/会话：放弃本次挂载（目标路径自己会挂）
+      if (rootAtStart !== props.sessionDirectory || model().active !== current.rel) return
+    }
     const f = activeFile()
     const el = host
     if (!el) return
@@ -413,13 +481,14 @@ export function EditorDock(props: {
       // 版本号对所有 kind 生效（图片/SVG 预览的缓存破坏；文本也会顺带更新预览图）
       setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
       if (isReadOnlyPreview(f.kind)) {
-        // 图片/Office 只读：不读盘；图片重新 stat 大小，Office 仅版本号触发重解析
-        if (f.kind === "image") {
-          void window.api.fs.statFile(root, rel).then((st) => {
-            if (root !== props.sessionDirectory || !st.ok) return
+        // 图片/Office 只读：版本号触发重解析；stat 同步 mtime（切 tab 的激活比对用）
+        void window.api.fs.statFile(root, rel).then((st) => {
+          if (root !== props.sessionDirectory || !st.ok) return
+          setMtime(root, rel, st.mtimeMs)
+          if (f.kind === "image") {
             setImageMeta(prev => ({ ...prev, [rel]: { ...prev[rel], size: st.size } }))
-          })
-        }
+          }
+        })
         return
       }
       if (f.readOnly) return
@@ -985,7 +1054,7 @@ export function EditorDock(props: {
                 <img
                   class="mafw-file-preview-img"
                   crossOrigin="anonymous"
-                  src={previewUrl(activeFile()!.rel)}
+                  src={activePreviewUrl()}
                   alt={activeFile()!.rel}
                   onLoad={(e) => recordImageDims(activeFile()!.rel, e.currentTarget)}
                 />
@@ -1097,7 +1166,7 @@ export function EditorDock(props: {
           <Show when={previewing() && activeFile() && officeKind()}>
             <OfficePreview
               kind={officeKind()!}
-              url={previewUrl(activeFile()!.rel)}
+              url={activePreviewUrl()}
               rel={activeFile()!.rel}
               onOpenExternal={() => { const f = activeFile(); if (f) void openExternal(f.rel) }}
               onAnnotateCell={(a, rect) => {

@@ -3,11 +3,12 @@
 // 文件点击 → 交给编辑器打开（onOpenFile）。root 跟随活动会话 directory。
 // 骨架（spec 2026-10-26）：DockPanelHeader 统一头 + DockEmpty/DockBanner 空/错态，
 // 图标走 @mafw/ui/icon（禁 emoji/几何字形）。
-import { createSignal, createEffect, For, Show } from "solid-js"
+import { createSignal, createEffect, onMount, onCleanup, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
 import { visibleRows, type FsEntry, type TreeRow } from "../file-tree"
+import { nextChildrenAfterRefresh, planDirWatches, sameDirEntries } from "../file-tree-watch"
 import { menuController } from "../context-menu/controller"
 import { buildFileTreeMenu } from "../context-menu/builders/file-tree"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
@@ -48,7 +49,91 @@ export function FilesDock(props: {
   // root 变化（切会话/切 worktree）→ 整树重置（Review Focus #4）
   createEffect(() => {
     props.sessionDirectory
+    releaseWatches()
     loadRoot()
+  })
+
+  // ── 目录自动刷新（2026-10-31）：watch 根 + 当前展开目录 ─────────────
+  // 折叠子树不显示，不监听；事件只重列受影响目录，不整树重置（防闪烁/丢展开态）。
+  const watched = new Map<string, string>() // rel → root（root 切换时按记录退订）
+
+  function releaseWatches() {
+    for (const [rel, root] of [...watched]) {
+      watched.delete(rel)
+      void window.api.fs.unwatchDir?.(root, rel)
+    }
+  }
+
+  function syncWatches() {
+    const root = props.sessionDirectory
+    // 换 root 后旧 watch 一律退订（按注册时的 root，不按新 root）
+    for (const [rel, r] of [...watched]) {
+      if (!root || r !== root) {
+        watched.delete(rel)
+        void window.api.fs.unwatchDir?.(r, rel)
+      }
+    }
+    const wanted = new Set<string>()
+    if (!root) return
+    wanted.add("")
+    for (const rel of expanded()) wanted.add(rel)
+    const plan = planDirWatches(new Set(watched.keys()), wanted)
+    for (const rel of plan.remove) {
+      watched.delete(rel)
+      void window.api.fs.unwatchDir?.(root, rel)
+    }
+    for (const rel of plan.add) {
+      watched.set(rel, root)
+      void window.api.fs.watchDir?.(root, rel)
+    }
+  }
+
+  createEffect(() => {
+    props.sessionDirectory
+    expanded()
+    syncWatches()
+  })
+
+  async function refreshDir(rel: string) {
+    const root = props.sessionDirectory
+    if (!root) return
+    const entries = await window.api.fs.listDir(root, rel)
+    if (root !== props.sessionDirectory) return
+    if (rel === "") {
+      if (entries) setRootEntries(prev => sameDirEntries(prev, entries) ? prev : entries)
+      return
+    }
+    setChildren(prev => {
+      const before = prev[rel]
+      if (entries && before && sameDirEntries(before, entries)) return prev
+      return nextChildrenAfterRefresh(prev, rel, entries)
+    })
+    if (entries === null) {
+      // 目录已被删除/移动：收起并退订
+      setExpanded(prev => {
+        if (!prev.has(rel)) return prev
+        const next = new Set(prev)
+        next.delete(rel)
+        return next
+      })
+      const watchedRoot = watched.get(rel)
+      if (watchedRoot) {
+        watched.delete(rel)
+        void window.api.fs.unwatchDir?.(watchedRoot, rel)
+      }
+    }
+  }
+
+  onMount(() => {
+    // 旧 preload（未重启 Electron）没有 onDirChanged：静默降级为手动刷新。
+    const off = window.api.fs.onDirChanged?.(({ root, rel }) => {
+      if (root !== props.sessionDirectory) return
+      void refreshDir(rel)
+    })
+    onCleanup(() => {
+      off?.()
+      releaseWatches()
+    })
   })
 
   const rows = () => visibleRows(rootEntries(), expanded(), children())

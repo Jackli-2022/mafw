@@ -6,6 +6,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { extractSheetRows, type SheetTable } from "../office-table"
 import { a1Ref } from "../annotation-anchor"
 import { slideIndexOf } from "../pptx-slide"
+import { nextOfficePreviewLoad } from "./office-preview-load"
 
 export type OfficeKind = "xlsx" | "docx" | "pptx"
 
@@ -30,14 +31,19 @@ export function OfficePreview(props: {
   const [activeSheet, setActiveSheet] = createSignal(0)
   let host: HTMLDivElement | undefined
   let runToken = 0
+  /** 已解析的 kind+url。props 的响应式依赖链会随会话信号抖动（回合开始/结束），
+   *  同键重跑必须早退——否则 host.innerHTML 被清空，肉眼是一次白/黑帧。 */
+  let loadedKey = ""
 
   const active = createMemo(() => sheets()[activeSheet()] ?? null)
 
   createEffect(() => {
     const kind = props.kind
     const url = props.url
+    const next = nextOfficePreviewLoad(loadedKey, kind, url)
+    if (!next.reload) return
+    loadedKey = next.key
     const token = ++runToken
-    if (!url) return
     setPhase("loading")
     setError("")
     setSheets([])

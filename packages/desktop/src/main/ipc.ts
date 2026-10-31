@@ -7,7 +7,7 @@ import type { DesktopMenuAction } from "../types/desktop-menu"
 
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { registerMafwIpcHandlers } from "./mafw-ipc"
-import { listDir, readTextFile, resolveInRoot, statFile, writeTextFile, type FsIO } from "./fs-workspace"
+import { listDir, readTextFile, resolveDirInRoot, resolveInRoot, statFile, writeTextFile, type FsIO } from "./fs-workspace"
 import { mafwFileRoots, registerRootDir } from "./mafw-file-protocol"
 import { FsWatchRegistry } from "./fs-watcher"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
@@ -73,6 +73,13 @@ export function registerIpcHandlers(deps: Deps) {
     }
   })
   app.once("will-quit", () => fsWatchRegistry.unwatchAll())
+  // 目录 watch（文件树自动刷新）：独立注册表 + 独立通道，避免和编辑器文件事件混淆。
+  const fsDirWatchRegistry = new FsWatchRegistry(({ root, rel }) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("fs-dir-changed", { root, rel })
+    }
+  })
+  app.once("will-quit", () => fsDirWatchRegistry.unwatchAll())
 
   ipcMain.handle("fs-list-dir", (_event: IpcMainInvokeEvent, root: string, rel: string) =>
     listDir(fsIo, root, rel))
@@ -92,6 +99,12 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("fs-unwatch", (_event: IpcMainInvokeEvent, root: string, rel: string) =>
     fsWatchRegistry.unwatch(root, rel))
+  ipcMain.handle("fs-watch-dir", (_event: IpcMainInvokeEvent, root: string, rel: string) => {
+    const abs = resolveDirInRoot(root, rel)
+    if (abs) fsDirWatchRegistry.watch(root, rel, abs)
+  })
+  ipcMain.handle("fs-unwatch-dir", (_event: IpcMainInvokeEvent, root: string, rel: string) =>
+    fsDirWatchRegistry.unwatch(root, rel))
   ipcMain.handle("fs-open-external", async (_event: IpcMainInvokeEvent, root: string, rel: string) => {
     const abs = resolveInRoot(root, rel)
     if (!abs) return { ok: false }
