@@ -40,6 +40,17 @@ describe('ensurePiModels', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('UTF-8 BOM 的 models.json 可解析', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'mafw-pi-models-bom-'));
+    const target = join(root, 'models.json');
+    writeFileSync(target, `\uFEFF${JSON.stringify({ providers: { xiaomi: { models: [{ id: 'mimo-v2.6-pro' }] } } })}`);
+    const result = await ensurePiModels({ modelsPath: target });
+    expect(result).toMatchObject({ ok: true, action: 'updated' });
+    const parsed = JSON.parse(readFileSync(target, 'utf8').replace(/^\uFEFF/, ''));
+    expect(parsed.providers.xiaomi.models.map((m: any) => m.id)).toEqual(['mimo-v2.6-pro', 'mimo-v2.6-flash']);
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it('坏 JSON → invalid-json 且不覆盖', async () => {
     const root = mkdtempSync(join(tmpdir(), 'mafw-pi-models-bad-'));
     const target = join(root, 'models.json');

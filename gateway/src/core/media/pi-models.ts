@@ -70,7 +70,8 @@ export async function ensurePiModels(opts: {
     const raw = await fs.readFile(target, 'utf8');
     existed = true;
     try {
-      root = JSON.parse(raw);
+      // Editors/PowerShell often write UTF-8 with BOM; JSON.parse rejects it.
+      root = JSON.parse(raw.replace(/^\uFEFF/, ''));
     } catch {
       return { ok: false, reason: 'invalid-json', path: target };
     }
