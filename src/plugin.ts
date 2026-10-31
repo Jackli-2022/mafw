@@ -24,6 +24,8 @@ import { sessionEndingHook } from './hooks/session-ending';
 import { sessionRecallHook } from './hooks/session-recall';
 import { mediaIngestHook } from './hooks/media-ingest';
 import { pythonGuideHook } from './hooks/bash-python-guide';
+import { writeToolPaths } from './utils/write-paths';
+import { snapshotBeforeWrite } from './utils/file-history';
 import { mediaAskTool } from './tools/media-ask';
 import { mediaUploadTool } from './tools/media-upload';
 import { mediaSpeakTool } from './tools/media-speak';
@@ -230,6 +232,24 @@ export default {
         console.error('[MAFW] prompt hook failed (fail-open):', err?.message || err);
       }
     });
+
+    // ── tool execute.before：写类工具执行前快照（文件级历史）────────────
+    // 必须在写入前完成：part.updated(running) 在 opencode 里晚于写入，gateway 事件钩子
+    // 只能抓到写后内容（2026-10-31 冒烟实证）。失败 fail-open，不阻塞工具。
+    try {
+      await ctx.tool.hook('execute.before', async (event: any) => {
+        try {
+          const sessionID = event?.sessionID || '';
+          const tool = String(event?.tool ?? event?.name ?? '');
+          const input = event?.input ?? event?.args ?? event?.parameters;
+          const paths = writeToolPaths(tool, input);
+          if (!sessionID || paths.length === 0) return;
+          await snapshotBeforeWrite({ sessionID, directory, paths });
+        } catch { /* fail-open */ }
+      });
+    } catch (err: any) {
+      console.warn('[MAFW] tool execute.before hook unavailable; agent-write file history disabled:', err?.message || err);
+    }
 
     // ── tool execute.after（V1 tool.execute.after + session.next.tool.failed）─
     await ctx.tool.hook('execute.after', (event: any) => {

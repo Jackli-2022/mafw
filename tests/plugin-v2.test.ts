@@ -211,6 +211,28 @@ describe('setup(ctx) registration', () => {
     expect(typeof regs.sessionHooks.prompt).toBe('function');
     expect(typeof regs.sessionHooks.context).toBe('function');
     expect(typeof regs.toolHooks['execute.after']).toBe('function');
+    expect(typeof regs.toolHooks['execute.before']).toBe('function');
+  });
+
+  it('execute.before snapshots write targets via /api/file-history/snapshot', async () => {
+    const dir = mkdtempDir();
+    const { fetchMock, calls } = makeFetch([['/api/file-history/snapshot', { entries: [] }]]);
+    global.fetch = fetchMock as any;
+    const { ctx, regs } = makeCtx(dir);
+    await (mafwPlugin as any).setup(ctx);
+    await regs.toolHooks['execute.before']({
+      sessionID: 'ses_t',
+      tool: 'write',
+      input: { path: `${dir}/a.txt`, content: 'v1' },
+    });
+    const hit = calls.find((c) => c.url.includes('/api/file-history/snapshot'));
+    expect(hit).toBeTruthy();
+    expect(hit!.body).toEqual({
+      sessionID: 'ses_t',
+      directory: dir,
+      paths: [`${dir}/a.txt`],
+      reason: 'tool:before',
+    });
   });
 
   it('registers the six slash commands', async () => {

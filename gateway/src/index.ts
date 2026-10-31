@@ -164,7 +164,7 @@ import { archiveWorktree } from './core/tools/archive-worktree.js';
 import { resolveNodeModel } from './core/goal/node-model';
 import { CheckpointService } from './core/checkpoint/checkpoint-service';
 import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
-import { FileHistoryService, writeToolPaths } from './core/file-history/file-history-service';
+import { FileHistoryService } from './core/file-history/file-history-service';
 import { handleFileHistoryRoutes } from './routes/file-history';
 import { RunStateService } from './core/run/run-state-service';
 import { RunCoordinator } from './core/run/run-coordinator';
@@ -1406,8 +1406,6 @@ class MafwScheduler {
     // tool-classes.ts 单源——审批 read-only 档 / 身份类别 / 渲染四级查找链共用此维度）。
     // 单点 enrich 保证 eventTaps / trajectory / broadcast 全下游可见。
     try { enrichToolIdentity(evt); } catch { /* fail-open：enrich 绝不阻断事件链 */ }
-    // 文件级历史：写类工具 running 时快照目标文件（早于写入；fail-open）。
-    if (sessionID) this.recordFileWriteSnapshot(f, sessionID);
     // Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。
     // 放在 internal 过滤之前——tap 要看到该会话的全量事件（fail-open 不阻断主链）。
     if (sessionID) {
@@ -8982,25 +8980,6 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   private async checkpointPorcelainOf(dir: string): Promise<string> {
     const r = await defaultGit.run(['-C', dir, 'status', '--porcelain']);
     return r.code === 0 ? r.stdout : '';
-  }
-
-  /** 写类工具 running/pending → 快照目标文件（早于写入；fail-open）。 */
-  private recordFileWriteSnapshot(f: any, sessionID: string): void {
-    try {
-      if (f?.type !== 'part.updated') return;
-      const part = f.properties?.part;
-      if (!part || part.type !== 'tool') return;
-      const status = part.state?.status;
-      if (status !== 'running' && status !== 'pending') return;
-      const tool = String(part.tool ?? part.name ?? '');
-      const paths = writeToolPaths(tool, part.state?.input);
-      if (paths.length === 0) return;
-      const dir = (typeof f.directory === 'string' && f.directory) || this.currentProjectDir || null;
-      if (!dir || !this.fileHistory) return;
-      void this.fileHistory
-        .snapshot({ sessionID, projectDir: dir, relPaths: paths, reason: `tool:${tool}` })
-        .catch((err: any) => log.warn(`[FileHistory] snapshot failed for ${sessionID} (non-fatal): ${err?.message ?? err}`));
-    } catch { /* fail-open */ }
   }
 
   /** turn.completed → 自动检查点（门控与失败语义见 core/checkpoint/auto-hook.ts）。 */
