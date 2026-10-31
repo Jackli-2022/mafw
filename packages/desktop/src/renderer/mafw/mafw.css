@@ -6455,7 +6455,9 @@ html[data-theme="light"] body {
   gap: 8px;
 }
 
-.mafw-pod-inbox-hint { color: var(--text-4); font-size: 10px; }
+.mafw-pod-inbox-notify { display: inline-flex; align-items: center; gap: 5px; }
+.mafw-pod-inbox-notify-label { font-size: 10px; color: var(--text-3); }
+.mafw-pod-inbox-hint { color: var(--text-4); font-size: 10px; margin-left: auto; }
 
 .mafw-pod-memory-tabs { display: flex; gap: 4px; }
 .mafw-pod-memory-tab[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
@@ -6554,42 +6556,74 @@ html[data-theme="light"] body {
   background: var(--bg-inset);
   border-radius: var(--r-sm);
 }
+.mafw-pod-rail-goal-label { color: var(--text-3); font-size: 9px; letter-spacing: .06em; }
 .mafw-pod-rail-goal-id { font-family: var(--font-data); font-size: 10.5px; color: var(--text-2); }
 .mafw-pod-rail-goal-state { margin-left: auto; font-size: 9.5px; color: var(--accent); }
 .mafw-pod-rail-counts { display: flex; gap: 4px; flex-wrap: wrap; }
-.mafw-pod-rail-compose {
+.mafw-pod-rail-count { flex: 1 1 0; min-width: 0; justify-content: center; border: 1px solid var(--border); }
+.mafw-pod-rail-count b { color: var(--text-1); font-weight: 600; }
+.mafw-pod-rail-count.hot b { color: #E3B341; }
+.mafw-pod-rail-count.accent { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }
+.mafw-pod-rail-count.accent b { color: var(--accent); }
+
+/* section labels（Apple HIG：侧栏层级 ≤2，只有一级分组） */
+.mafw-pod-rail-label {
+  color: var(--text-3);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.mafw-pod-rail-label-row { display: flex; align-items: center; gap: 6px; }
+.mafw-pod-rail-label-row .mafw-pod-rail-label { flex: 1 1 auto; min-width: 0; }
+.mafw-pod-rail-more { margin-left: auto; color: var(--text-3); font-size: 9.5px; }
+
+/* 成员行右侧：名下未完成任务数 */
+.mafw-pod-rail-member-count {
+  flex: 0 0 auto;
+  font-family: var(--font-data);
+  font-size: 9.5px;
+  color: var(--text-2);
+  min-width: 10px;
+  text-align: right;
+}
+.mafw-pod-rail-member[role="button"] { cursor: pointer; }
+.mafw-pod-rail-member[role="button"]:hover { background: var(--bg-hover); }
+.mafw-pod-rail-member[role="button"]:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+/* 最近消息（单行，M3 lists：紧凑断点折叠 supporting text） */
+.mafw-pod-rail-recent { display: flex; flex-direction: column; gap: 1px; }
+.mafw-pod-rail-message {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 6px;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  min-width: 0;
+}
+.mafw-pod-rail-message:hover { background: var(--bg-hover); }
+.mafw-pod-rail-message:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.mafw-pod-rail-message.unread { background: var(--bg-inset); box-shadow: inset 2px 0 0 var(--accent); }
+.mafw-pod-rail-message-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: transparent;
+}
+.mafw-pod-rail-message.unread .mafw-pod-rail-message-dot { background: var(--accent); }
+.mafw-pod-rail-message-route { flex: 0 0 auto; font-size: 9.5px; color: var(--text-3); max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-pod-rail-message-protocol { flex: 0 0 auto; font-size: 8px; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 5px; padding: 0 3px; }
+.mafw-pod-rail-message-preview { flex: 1 1 auto; min-width: 0; font-size: 10px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-pod-rail-message.unread .mafw-pod-rail-message-preview { color: var(--text-1); }
+.mafw-pod-rail-message-time { flex: 0 0 auto; font-size: 9px; color: var(--text-3); }
+.mafw-pod-rail-empty-line { color: var(--text-3); font-size: 10px; padding: 4px 6px; }
+.mafw-pod-rail-foot {
   margin-top: auto;
   padding-top: 6px;
   border-top: 1px solid var(--border);
-}
-.mafw-pod-rail-route { display: flex; gap: 6px; }
-.mafw-pod-rail-route > * { flex: 1; min-width: 0; }
-.mafw-pod-rail-input {
-  width: 100%;
-  min-height: 52px;
-  max-height: 140px;
-  padding: 6px 7px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-inset);
-  color: var(--text-1);
-  font-family: var(--font-ui);
-  font-size: 11.5px;
-  line-height: 1.5;
-  resize: vertical;
-}
-.mafw-pod-rail-actions { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.mafw-pod-rail-hint {
   color: var(--text-3);
-  font-size: 9.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1 1 auto;
-  min-width: 0;
+  font-size: 9px;
 }
 
 .mafw-pod-transcript-backdrop {

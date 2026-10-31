@@ -62,27 +62,30 @@
 
 面宽沿用 `LEFT_DOCK_WIDTH`（默认 264 / min 180 / max 400），push/overlay 判定沿用 `resolveMode`，不改预算公式。
 
-自上而下：
+自上而下（2026-10-31 rev：**左栏只读**，发送区整体移到右栏，见 §3.3）：
 
-1. **头部**：`鲸群` + 项目名（`railProjectName` 同源）+ 状态 pill（活跃 / 空闲 / 休眠，来自 `pod.status`）+ 刷新按钮。
-2. **成员区**（列表，三项固定顺序 Lead → Builder → Reviewer）：
-   - 左：角色色点 —— `working` = `--accent`，`available` = `--text-3`，`sleeping` = 虚线描边，`waiting` = `--accent` 半透明。
-   - 中：`显示名` + `agent 名`（mono 小字）+ 状态词。
-   - 第二行：**当前动作**——该成员有未结束 session 时显示「会话中 · {会话标题}」（标题来自 `sessionStore`，缺失回退「会话中」）；否则「待命」/「休眠」。
-   - 右：`打开会话 ↗`（无 session 时禁用，tooltip「暂无活跃会话」）。
-3. **当前 goal 卡**：`{goalId 短码} · {phase} · loop {n}`，数据取 `PodDetail.goals` 的 active 项 + `/api/goals` 列表（phase/loop 已有字段）；**不显示标题**（`/api/goals` 无 title，取标题需拉 timeline，代价不划算）。点击打开 Goal 详情 overlay（复用 `onOpenGoal`）。
-4. **计数条**（底部固定，三项可点）：
-   - `待审 N` = 任务状态 `review` → 打开右工作台「执行 › 鲸群 › 任务板」
+1. **头部**：`鲸群` + 状态 pill（活跃 / 空闲 / 休眠，来自 `pod.status`）+ 刷新按钮。
+2. **待我处理**（置顶）：`待审 N / 待办 N / 邮箱 N` 三项并排、等宽、可点：
+   - `待审 N` = 任务状态 `review` → 打开右工作台「执行 › 鲸群」并滚到任务板
    - `待办 N` = `pending` + `in_progress` + `blocked` + `reopened`
    - `邮箱 N` = 未读数（§4.3）→ 打开「执行 › 鲸群 › 邮箱」
-5. **输入区**（见 3.3）：收件人 + kind + 文本 + 「立即提醒」开关 + 发送。
+3. **班底**（列表，固定顺序 Lead → Builder → Reviewer）：
+   - 左：角色色点 —— `working` = `--accent`，`available` = `--text-3`，`sleeping` = 虚线描边，`waiting` = `--accent` 半透明。
+   - 中：`显示名` + `agent 名`（mono 小字）；第二行 **当前动作**——该成员有未结束 session 时「会话中 · {会话标题}」，否则「待命」/「休眠」。**不再重复状态词**（色点已表达）。
+   - 右：**名下未完成任务数**（0 显示 `—`）+ `打开会话 ↗`（无 session 时禁用）。
+   - 整行可点（有 session 时）打开该成员会话，`↗` 是同一动作的显式入口。
+4. **当前 goal 卡**：一行 `goal {goalId 短码} · {status}`；**不显示标题**（`/api/goals` 无 title）。点击打开 Goal 详情 overlay。
+5. **最近**（只读，最多 5 条单行）：`来源 → 收件人 · [A2A] · 摘要（省略） · 相对时间`；未读行 accent 左边条 + 圆点；点击 = 标记已读并打开右栏邮箱；分组头右侧「全部 ↗」。
+6. **底部一行**：`发送在右侧 › 执行 › 鲸群 › 邮箱`。
 
-**空态**：项目无 Pod（lookup 返回 404 JSON）→ 「创建鲸群」按钮（`pod.ensure`）；gateway 路由缺失（响应非 JSON / 404 但 Content-Type 是 HTML）→ 「当前 gateway 不支持鲸群，请升级」；**worktree 会话**（`benchRoot() !== currentProject()`）→ 不提供创建，显示「worktree 会话不绑定鲸群，请在主项目打开」；离线 → 现有 `ConnBanner`。
+**空态**：项目无 Pod（lookup 返回 404 JSON）→ 「创建鲸群」按钮（`pod.ensure`）；gateway 路由缺失（响应非 JSON / 404 但 Content-Type 是 HTML）→ 「当前 gateway 不支持鲸群，请升级」；**worktree 会话**（`benchRoot() !== currentProject()`）→ 不提供创建，显示「worktree 会话不绑定鲸群，请在主项目打开」；离线 → 现有 `ConnBanner`；无消息 → 「还没有交接消息」。
 
-### 3.3 发送语义（默认贴条）
+**为什么这个顺序**（调研 `docs/research/2026-10-31-pod-rail-information-architecture.md`）：Apple HIG 侧栏层级 ≤2；Slack Activity / Linear Inbox / Devin Command Center 都是「待办置顶」；M3 lists 指出紧凑断点应折叠 supporting text，所以最近消息用单行，两行预览留给宽面板。
 
-- **贴条（默认）**：`POST /api/pods/:podId/messages`，写 `pod_messages`，`toMemberId` 可空（广播）。不烧 token，对方下次被 prompt 时经 `[POD HANDOFF]` 看到。
-- **立即提醒（开关）**：请求体带 `notify: true`。gateway 找该成员未结束 session → `promptAsync({ delivery: 'queue' })` → 标记 `deliveredAt`。
+### 3.3 发送语义（只在右栏邮箱）
+
+- **贴条（默认）**：右栏邮箱发送 → `POST /api/pods/:podId/messages`，写 `pod_messages`，`toMemberId` 可空（广播）。不烧 token，对方下次被 prompt 时经 `[POD HANDOFF]` 看到。
+- **立即提醒（开关）**：右栏邮箱请求体带 `notify: true`。gateway 找该成员未结束 session → `promptAsync({ delivery: 'queue' })` → 标记 `deliveredAt`。
 - **约束**：`notify: true` 必须带 `toMemberId`（广播 + 提醒 → 400）；无活跃会话时开关禁用，tooltip「{成员} 当前没有活跃会话，消息会在下次派活时送达」；不自动建 session。
 - **响应**：`{ message, delivery?: 'delivered' | 'pending' | 'disabled' }`。老 gateway 没有该字段 → UI 显示「已发送（投递状态未知）」，不做承诺；`delivery: 'pending'` → 消息行继续显示「待投递」。
 - kind：`note`（默认）/ `request` / `review` / `decision` / `escalation`，复用 `PodInbox` 的选项与文案。
@@ -206,7 +209,8 @@ podRailBadge(tasks, messages, selfMemberId) =
 
 ## 11. 实现说明（2026-10-31 交付时回写）
 
-- **头部**：已按 §3.2 实现（状态 pill + 刷新）；加载 / 错误 / 无 Pod / 不支持 / worktree 五态互斥。
+- **2026-10-31 rev（左栏只读）**：用户裁决「左栏没必要留广播或一对一聊天那栏」——compose 整块移出左栏，「立即提醒」开关搬到右栏邮箱（`PodInbox`）；左栏改为 `待我处理 → 班底 → goal → 最近`（方案 B），并新增只读的最近 5 条消息（点击=已读+打开右栏邮箱）。依据见 `docs/research/2026-10-31-pod-rail-information-architecture.md`。
+- **头部**：状态 pill + 刷新；加载 / 错误 / 无 Pod / 不支持 / worktree 五态互斥。
 - **goal 卡**：只显示 `goalId` 短码 + `status`。`PodDetail.goals` 不含 phase/loop，取它们需要额外的 `/api/goals` 或 timeline 请求，代价不划算（覆盖上表第 5 行的 phase/loop 部分）。
 - **输入框**：用 `<textarea>`（与 `PodInbox` 同一先例）而不是 `TextInputV2`——多行更自然，且复用 `applyReadlineKey` 纯逻辑。
 - **空态优先级**：`有 Pod → ready` 优先于 worktree；只有「无 Pod」时才按 `unsupported → worktree → create` 选择（上表第 7 行按此实现）。

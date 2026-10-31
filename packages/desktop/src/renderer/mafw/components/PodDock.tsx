@@ -9,6 +9,7 @@ import { PodInbox } from "./PodInbox"
 import { PodMemoryPanel } from "./PodMemoryPanel"
 import { PodTranscriptOverlay } from "./PodTranscriptOverlay"
 import { podStore } from "../pod-store"
+import { deliveryToast } from "../pod-rail-face-model"
 import {
   formatPodCost,
   memberOpenTarget,
@@ -71,18 +72,20 @@ export function PodDock(props: {
     }
   }
 
-  const sendMessage = async (input: { kind: string; toMemberId: string | null; body: string }) => {
+  const sendMessage = async (input: { kind: string; toMemberId: string | null; body: string; notify: boolean }): Promise<string> => {
     const detail = podStore.detail()
     const podId = detail?.pod.id
     const lead = detail?.members.find((member) => member.role === "lead")
-    if (!podId || !lead) return
-    await window.api.mafw.pod.sendMessage(podId, {
+    if (!podId || !lead) return "鲸群未就绪"
+    const res = await window.api.mafw.pod.sendMessage(podId, {
       fromMemberId: lead.id,
       toMemberId: input.toMemberId ?? undefined,
       kind: input.kind as any,
       body: input.body,
+      notify: input.notify,
     })
     await podStore.refresh()
+    return input.notify ? deliveryToast(res?.delivery) : "已发送"
   }
 
   const toggleStatus = () => {

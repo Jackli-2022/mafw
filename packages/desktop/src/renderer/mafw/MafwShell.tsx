@@ -54,7 +54,6 @@ import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore } from "./pod-store"
 import { podRailBadge } from "./pod-rail-badge"
-import { deliveryToast } from "./pod-rail-face-model"
 import { podRoleForSession } from "./pod-model"
 import { retitleTab } from "./session-tab-title"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
@@ -1715,8 +1714,10 @@ export function MafwShell() {
   })
   // 文件/编辑器根：会话目录属于项目（含 worktree）才采用，否则回退项目目录
   // （manager 会话的 directory 可能指向 home 等外部目录，实证 2026-10-22）
-  const benchRoot = () =>
-    resolveWorkbenchRoot(currentProject(), store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null)
+  // memo：sessions 数组在回合开始/结束会被替换（setUserMsgId/markSessionDone），
+  // 裸函数会让每个读它的消费者重跑（文件树清空重载、Office 预览重解析白帧）。
+  const benchRoot = createMemo(() =>
+    resolveWorkbenchRoot(currentProject(), store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null))
 
   // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
@@ -1740,24 +1741,9 @@ export function MafwShell() {
   }
   const podSessionTitleOf = (sessionId: string) =>
     store.session.find((s: any) => s.id === sessionId)?.title ?? null
-  const onPodSend = async (input: {
-    toMemberId: string | null
-    kind: string
-    body: string
-    notify: boolean
-  }): Promise<string> => {
-    const detail = podStore.detail()
-    const lead = detail?.members.find((m) => m.role === "lead")
-    if (!detail || !lead) return "鲸群未就绪"
-    const res = await window.api.mafw.pod.sendMessage(detail.pod.id, {
-      fromMemberId: lead.id,
-      toMemberId: input.toMemberId ?? undefined,
-      kind: input.kind as any,
-      body: input.body,
-      notify: input.notify,
-    })
-    void podStore.refresh()
-    return input.notify ? deliveryToast(res?.delivery) : "已发送"
+  const onPodOpenMessage = (messageId: string) => {
+    void podStore.markRead(messageId)
+    openPodPanel("inbox")
   }
 
   // SSE live trajectory signals
@@ -2153,7 +2139,7 @@ export function MafwShell() {
             onPodOpenSession={(sid) => openSessionTab(sid)}
             onPodOpenGoal={(goalId) => setPodGoalId(goalId)}
             onPodOpenPanel={openPodPanel}
-            onPodSend={onPodSend}
+            onPodOpenMessage={onPodOpenMessage}
             onPodCreate={() => { void podStore.create() }}
           />
         </Show>

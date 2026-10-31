@@ -1,6 +1,13 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildMemberRows, canNotify, deliveryToast, podCounts, podEmptyState } from "./pod-rail-face-model"
+import {
+  buildMemberRows,
+  buildRecentMessages,
+  canNotify,
+  deliveryToast,
+  podCounts,
+  podEmptyState,
+} from "./pod-rail-face-model"
 
 const detail = {
   members: [
@@ -53,8 +60,45 @@ test("unknown roles sort after the reviewer instead of before the lead", () => {
   assert.deepEqual(buildMemberRows(withCurator, () => null).map((row) => row.id), ["m_l", "m_b", "m_r", "m_c"])
 })
 
-test("counts split review / todo / unread", () => {
-  const messages = [
+test("member rows carry their open task count", () => {
+  const withTasks = {
+    ...detail,
+    tasks: [
+      { status: "review", ownerMemberId: "m_b" },
+      { status: "in_progress", ownerMemberId: "m_b" },
+      { status: "done", ownerMemberId: "m_b" },
+      { status: "pending", ownerMemberId: "m_l" },
+    ],
+  } as any
+  const rows = buildMemberRows(withTasks, () => null)
+  assert.equal(rows.find((row) => row.id === "m_b")?.openTasks, 2)
+  assert.equal(rows.find((row) => row.id === "m_l")?.openTasks, 1)
+  assert.equal(rows.find((row) => row.id === "m_r")?.openTasks, 0)
+})
+
+test("recent messages give route, preview, relative time and unread flag", () => {
+  const now = Date.parse("2026-10-31T12:00:00.000Z")
+  const rows = buildRecentMessages(
+    detail,
+    [
+      { id: "m1", fromMemberId: "m_b", toMemberId: "m_l", body: "wave 3 回执收到，接着跑 wave 4", readAt: null, createdAt: "2026-10-31T11:52:00.000Z" },
+      { id: "m2", fromMemberId: "m_b", toMemberId: null, body: "types/api.ts 改了，编辑前先 pull", readAt: "2026-10-31T11:00:00.000Z", createdAt: "2026-10-31T11:28:00.000Z" },
+      { id: "m3", fromMemberId: "m_l", toMemberId: null, body: "own broadcast", readAt: null, createdAt: "2026-10-31T11:00:00.000Z" },
+    ],
+    "m_l",
+    now,
+    2,
+  )
+  assert.deepEqual(rows.map((row) => row.id), ["m1", "m2"])
+  assert.match(rows[0].route, /Builder → Lead/)
+  assert.equal(rows[0].preview, "wave 3 回执收到，接着跑 wave 4")
+  assert.equal(rows[0].unread, true)
+  assert.equal(rows[0].time, "8m")
+  assert.match(rows[1].route, /广播/)
+  assert.equal(rows[1].unread, false)
+})
+
+test("counts split review / todo / unread", () => {  const messages = [
     { readAt: null, fromMemberId: "m_b", toMemberId: "m_l" },
     { readAt: "2026-10-30T00:00:00.000Z", fromMemberId: "m_b", toMemberId: "m_l" },
   ]

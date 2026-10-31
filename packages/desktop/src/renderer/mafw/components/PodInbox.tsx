@@ -2,8 +2,11 @@ import { For, Show, createMemo, createSignal } from "solid-js"
 import type { PodDetail, PodMessage } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { SelectV2 } from "@mafw/ui/v2/select-v2"
+import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { podMemberName, podMessageDeliveryLabel, podMessageProtocolLabel, podShortTime } from "../pod-model"
+import { canNotify } from "../pod-rail-face-model"
 
 const KINDS = [
   { value: "note", label: "备注" },
@@ -17,12 +20,13 @@ export function PodInbox(props: {
   detail: PodDetail
   messages: PodMessage[]
   busy: boolean
-  onSend: (input: { kind: string; toMemberId: string | null; body: string }) => Promise<void>
+  onSend: (input: { kind: string; toMemberId: string | null; body: string; notify: boolean }) => Promise<string>
   onRead?: (messageId: string) => void
 }) {
   const [kind, setKind] = createSignal("note")
   const [toMemberId, setToMemberId] = createSignal("__all__")
   const [body, setBody] = createSignal("")
+  const [notify, setNotify] = createSignal(false)
   const [sending, setSending] = createSignal(false)
 
   const lead = createMemo(() => props.detail.members.find((member) => member.role === "lead") ?? null)
@@ -34,6 +38,20 @@ export function PodInbox(props: {
   const recipientOption = createMemo(() =>
     recipients().find((item) => item.value === toMemberId()) ?? recipients()[0],
   )
+  const hasActiveSession = createMemo(() => {
+    const target = toMemberId()
+    if (target === "__all__") return false
+    return props.detail.sessions.some((session) => session.memberId === target && !session.endedAt)
+  })
+  const notifyEnabled = createMemo(() => canNotify(
+    toMemberId() === "__all__" ? null : toMemberId(),
+    hasActiveSession(),
+  ))
+  const notifyHint = createMemo(() => {
+    if (toMemberId() === "__all__") return "广播不支持立即提醒"
+    if (!hasActiveSession()) return "对方暂无活跃会话，消息会在下次派活时送达"
+    return "回合结束后优先送达"
+  })
 
   const send = async () => {
     const text = body().trim()
@@ -41,12 +59,15 @@ export function PodInbox(props: {
     if (!text || !from || sending() || props.busy) return
     setSending(true)
     try {
-      await props.onSend({
+      const toast = await props.onSend({
         kind: kind(),
         toMemberId: toMemberId() === "__all__" ? null : toMemberId(),
         body: text,
+        notify: notify() && notifyEnabled(),
       })
       setBody("")
+      setNotify(false)
+      showToastV2({ description: toast, duration: 2500 })
     } catch (err: any) {
       showToastV2({ description: `发送失败：${String(err?.message ?? err).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
     } finally {
@@ -132,6 +153,20 @@ export function PodInbox(props: {
             }}
           />
           <div class="mafw-pod-inbox-actions">
+            <TooltipV2 value={notifyHint()} openDelay={300}>
+              <span class="mafw-pod-inbox-notify">
+                <SwitchV2
+                  checked={notify()}
+                  disabled={!notifyEnabled()}
+                  size="small"
+                  hideLabel
+                  onChange={(checked: boolean) => setNotify(checked)}
+                >
+                  立即提醒
+                </SwitchV2>
+                <span class="mafw-pod-inbox-notify-label">立即提醒</span>
+              </span>
+            </TooltipV2>
             <span class="mafw-pod-inbox-hint">以 Lead 身份发送 · Ctrl+Enter</span>
             <ButtonV2
               variant="outline"

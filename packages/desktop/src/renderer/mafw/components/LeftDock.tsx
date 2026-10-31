@@ -76,7 +76,7 @@ type Props = {
   onPodOpenSession?: (sessionId: string) => void
   onPodOpenGoal?: (goalId: string) => void
   onPodOpenPanel?: (panel: "tasks" | "inbox") => void
-  onPodSend?: (input: { toMemberId: string | null; kind: string; body: string; notify: boolean }) => Promise<string>
+  onPodOpenMessage?: (messageId: string) => void
   onPodCreate?: () => void
 }
 
@@ -404,7 +404,7 @@ export function LeftDock(props: Props) {
           onOpenSession={(id) => props.onPodOpenSession?.(id)}
           onOpenGoal={(id) => props.onPodOpenGoal?.(id)}
           onOpenPanel={(panel) => props.onPodOpenPanel?.(panel)}
-          onSend={props.onPodSend ?? (async () => { throw new Error("pod send is not wired") })}
+          onOpenMessage={(id) => props.onPodOpenMessage?.(id)}
           onCreate={() => props.onPodCreate?.()}
         />
       </Show>

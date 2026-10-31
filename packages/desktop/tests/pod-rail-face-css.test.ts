@@ -13,9 +13,19 @@ test("pod rail face styles survive a 240px dock", () => {
 
   const memberBlock = css.slice(css.indexOf(".mafw-pod-rail-member {"), css.indexOf(".mafw-pod-rail-member {") + 300)
   assert.match(memberBlock, /min-width:\s*0/)
+})
 
-  const inputBlock = css.slice(css.indexOf(".mafw-pod-rail-input {"), css.indexOf(".mafw-pod-rail-input {") + 400)
-  assert.match(inputBlock, /width:\s*100%/)
+test("recent message rows stay single-line and truncate", () => {
+  const preview = css.slice(css.indexOf(".mafw-pod-rail-message-preview {"), css.indexOf(".mafw-pod-rail-message-preview {") + 300)
+  assert.match(preview, /text-overflow:\s*ellipsis/)
+  assert.match(preview, /white-space:\s*nowrap/)
+  const unread = css.slice(css.indexOf(".mafw-pod-rail-message.unread {"), css.indexOf(".mafw-pod-rail-message.unread {") + 200)
+  assert.match(unread, /inset 2px 0 0 var\(--accent\)/)
+})
+
+test("the rail no longer carries a composer", () => {
+  assert.doesNotMatch(css, /\.mafw-pod-rail-compose/)
+  assert.doesNotMatch(css, /\.mafw-pod-rail-input/)
 })
 
 test("unread mailbox rows are visible and interactive", () => {
