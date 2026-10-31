@@ -11,6 +11,8 @@ test("inbox composes with V2 selects and sends as Lead", () => {
   assert.match(src, /广播/)
   assert.match(src, /mafw-pod-inbox-input/)
   assert.match(src, /role="lead"|lead/)
+  assert.match(src, /onRead/)
+  assert.match(src, /mafw-pod-message-row/)
   assert.doesNotMatch(src, /<button[\s>]/)
   assert.doesNotMatch(src, /title=/)
 })

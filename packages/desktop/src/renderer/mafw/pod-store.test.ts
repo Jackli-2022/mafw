@@ -47,6 +47,21 @@ describe("pod-store", () => {
     assert.equal(store.messages()[0]?.id, "m1")
   })
 
+  test("markRead patches the message optimistically", async () => {
+    const calls: string[] = []
+    const { store } = harness({
+      markRead: async (podID, messageID) => {
+        calls.push(`markRead:${podID}:${messageID}`)
+        return { message: { id: messageID, readAt: "2026-10-31T00:00:00.000Z" } as any }
+      },
+    })
+    await store.open("/p")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await store.markRead("m1")
+    assert.deepEqual(calls, ["markRead:pod_1:m1"])
+    assert.equal(store.messages().find((m) => m.id === "m1")?.readAt, "2026-10-31T00:00:00.000Z")
+  })
+
   test("setStatus uses the wake/sleep control endpoints so the queue promotes", async () => {
     const { store, calls } = harness()
     await store.open("/p")

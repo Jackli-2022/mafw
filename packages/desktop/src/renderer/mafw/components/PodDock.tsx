@@ -199,6 +199,7 @@ export function PodDock(props: {
                   messages={podStore.messages()}
                   busy={podStore.busy()}
                   onSend={sendMessage}
+                  onRead={(id) => { void podStore.markRead(id) }}
                 />
                 <PodMemoryPanel podId={detail().pod.id} />
               </>

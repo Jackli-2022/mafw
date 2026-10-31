@@ -18,6 +18,7 @@ export function PodInbox(props: {
   messages: PodMessage[]
   busy: boolean
   onSend: (input: { kind: string; toMemberId: string | null; body: string }) => Promise<void>
+  onRead?: (messageId: string) => void
 }) {
   const [kind, setKind] = createSignal("note")
   const [toMemberId, setToMemberId] = createSignal("__all__")
@@ -64,7 +65,11 @@ export function PodInbox(props: {
         <Show when={props.messages.length > 0} fallback={<div class="mafw-pod-empty-line">暂无消息</div>}>
           <For each={props.messages}>
             {(message) => (
-              <div class="mafw-pod-message">
+              <div
+                class="mafw-pod-message mafw-pod-message-row"
+                classList={{ unread: !message.readAt }}
+                onClick={() => { if (!message.readAt) props.onRead?.(message.id) }}
+              >
                 <div class="mafw-pod-message-head">
                   <span class="mafw-pod-message-route">
                     {podMemberName(props.detail, message.fromMemberId)} → {message.toMemberId ? podMemberName(props.detail, message.toMemberId) : "广播"}

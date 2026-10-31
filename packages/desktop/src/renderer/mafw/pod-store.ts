@@ -11,6 +11,7 @@ export type PodStoreApi = {
   sleep(podId: string): Promise<PodDetail>
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>
   listMessages(podId: string): Promise<{ items: PodMessage[] }>
+  markRead(podId: string, messageId: string): Promise<{ message: PodMessage }>
 }
 
 export type PodStoreTimers = {
@@ -185,6 +186,20 @@ export function createPodStore(
     }
   }
 
+  async function markRead(messageId: string): Promise<void> {
+    const current = detail()
+    if (!current || disposed) return
+    try {
+      const next = await api.markRead(current.pod.id, messageId)
+      if (disposed) return
+      const readAt = next?.message?.readAt ?? new Date().toISOString()
+      setMessages((prev) => prev.map((message) => (message.id === messageId ? { ...message, readAt } : message)))
+    } catch (err) {
+      if (!disposed) setError(errorMessage(err))
+      throw err
+    }
+  }
+
   function ingest(event: unknown): void {
     if (disposed) return
     const action = podEventAction({
@@ -213,6 +228,7 @@ export function createPodStore(
     create,
     refresh,
     setStatus,
+    markRead,
     ingest,
     dispose,
     detail,
@@ -236,6 +252,7 @@ const defaultApi: PodStoreApi = {
   sleep: (podId) => window.api.mafw.pod.sleep(podId),
   cost: (podId) => window.api.mafw.pod.cost(podId),
   listMessages: (podId) => window.api.mafw.pod.listMessages(podId),
+  markRead: (podId, messageId) => window.api.mafw.pod.markRead(podId, messageId),
 }
 
 export const podStore = createPodStore(defaultApi)
