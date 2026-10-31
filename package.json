@@ -28,6 +28,9 @@
   "files": [
     "gateway/dist/",
     "gateway/package.json",
+    "gateway/scripts/setup-pykernel.mjs",
+    "gateway/scripts/office/",
+    "skills/",
     "bin/",
     "dist/",
     "packages/tui/dist/",

@@ -28,15 +28,16 @@ import importlib.util
 print({m: bool(importlib.util.find_spec(m)) for m in ("pptx", "openpyxl", "docx", "PIL")})
 ```
 
-缺包时，在 **bash** 里运行仓库脚本（不要用 pip 污染其他环境）：
+缺包时，在 **bash** 里运行（不要用 pip 污染其他环境）：
 
 ```bash
-node gateway/scripts/setup-pykernel.mjs
+mafw office setup
 ```
 
 它会创建/刷新 `~/.mafw/pykernel`（ipykernel + numpy/pandas/matplotlib + office 三件套 + Pillow），
-并把 `mafw_office.py` 装进 site-packages。之后 `mafw_python` 的默认解释器优先使用该 venv
-（网关重启后生效；临时可设 `MAFW_PYTHON_BIN` 指向它）。
+把 `mafw_office.py` 装进 site-packages，并把本技能同步到全局 opencode 技能目录。
+之后 `mafw_python` 的默认解释器优先使用该 venv（网关重启后生效；临时可设 `MAFW_PYTHON_BIN` 指向它）。
+查看状态：`mafw office status`。仓库贡献者可回退 `node gateway/scripts/setup-pykernel.mjs`。
 
 ## 1. 确定绝对路径与工作台根
 
@@ -169,6 +170,6 @@ chart.replace_data(data)
 ## 8. 参考
 
 - python-pptx 文档：https://python-pptx.readthedocs.io/
-- 本仓库 helper：`gateway/scripts/office/mafw_office.py`
+- 本仓库 helper：`gateway/scripts/office/mafw_office.py`（安装后在 kernel site-packages）
 - 文件级历史 API：`POST /api/file-history/snapshot`、`GET /api/file-history`、`POST /api/file-history/restore`
 - 调研：`docs/research/2026-10-31-office-agent-editing-research.md`

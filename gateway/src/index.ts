@@ -166,6 +166,7 @@ import { CheckpointService } from './core/checkpoint/checkpoint-service';
 import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { FileHistoryService } from './core/file-history/file-history-service';
 import { sessionDirectoryOf } from './core/file-history/session-directory';
+import { ensureGlobalOfficeSkill } from './core/office/global-skill';
 import { handleFileHistoryRoutes } from './routes/file-history';
 import { RunStateService } from './core/run/run-state-service';
 import { RunCoordinator } from './core/run/run-coordinator';
@@ -661,6 +662,18 @@ class MafwScheduler {
 
     // 0. Init services
     await this.initServices();
+    // Install the shipped Office skill before serve spawns: opencode builds its
+    // skill catalog at startup, so a later write would not be discovered.
+    try {
+      const skill = await ensureGlobalOfficeSkill();
+      if (skill.ok) {
+        if (skill.action !== 'unchanged') log.info(`[Office] global skill ${skill.action}: ${skill.target}`);
+      } else {
+        log.warn(`[Office] global skill not installed (${skill.reason}): ${skill.target}`);
+      }
+    } catch (err: any) {
+      log.warn(`[Office] global skill install failed (non-fatal): ${err?.message ?? err}`);
+    }
     this.setupEventBus();
 
     // Boot reconcile: orphan questions for inactive goals

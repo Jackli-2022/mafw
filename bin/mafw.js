@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { spawn, execSync } = require('child_process');
+const { spawn, spawnSync, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -43,6 +43,10 @@ API Commands:
   approvals          List pending approvals (GET /api/approvals)
   triage             List triage items (GET /api/triage)
 
+Office Commands:
+  office setup       Install the Python kernel venv + global office-editing skill
+  office status      Show kernel interpreter, office libraries and skill status
+
 Service Commands:
   service-register   Register as OS-level auto-start service
   service-unregister Unregister OS-level service
@@ -60,6 +64,7 @@ const COMMANDS = [
     'health', 'stats', 'projects', 'goals', 'register',
     'sessions', 'control', 'memory-search',
     'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'route-check',
+  'office',
   'service-register', 'service-unregister',
   'config', 'dashboard', 'uninstall', 'version', 'update', 'tui',
 ];
@@ -327,6 +332,94 @@ MAFW Uninstall
   `);
 }
 
+// ── Office editing capability (venv + global opencode skill) ─────────────────
+
+const PKG_ROOT = path.resolve(__dirname, '..');
+const OFFICE_SETUP_SCRIPT = path.join(PKG_ROOT, 'gateway', 'scripts', 'setup-pykernel.mjs');
+const OFFICE_SKILL_SRC = path.join(PKG_ROOT, 'skills', 'office-editing', 'SKILL.md');
+
+function officeSkillsDir() {
+  return process.env.MAFW_OPENCODE_SKILLS_DIR || path.join(os.homedir(), '.config', 'opencode', 'skills');
+}
+
+function pykernelPython() {
+  if (process.env.MAFW_PYTHON_BIN) return process.env.MAFW_PYTHON_BIN;
+  const dir = process.env.MAFW_PYKERNEL_DIR || path.join(os.homedir(), '.mafw', 'pykernel');
+  return process.platform === 'win32' ? path.join(dir, 'Scripts', 'python.exe') : path.join(dir, 'bin', 'python');
+}
+
+function installOfficeSkill() {
+  const target = path.join(officeSkillsDir(), 'office-editing', 'SKILL.md');
+  if (!fs.existsSync(OFFICE_SKILL_SRC)) return { ok: false, error: `skill source missing: ${OFFICE_SKILL_SRC}` };
+  try {
+    const next = fs.readFileSync(OFFICE_SKILL_SRC, 'utf8');
+    const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
+    if (current !== next) {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, next, 'utf8');
+    }
+    return { ok: true, path: target, changed: current !== next };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+}
+
+function officeStatus() {
+  const python = pykernelPython();
+  const exists = fs.existsSync(python);
+  console.log(`Kernel Python: ${python} ${exists ? '' : '(missing)'}`);
+  if (exists) {
+    const probe = spawnSync(python, ['-c', [
+      'import sys, json, importlib.util',
+      'names = ["pptx", "openpyxl", "docx", "PIL", "mafw_office"]',
+      'mods = {}',
+      'for n in names:',
+      '    try:',
+      '        mods[n] = bool(importlib.util.find_spec(n))',
+      '    except Exception:',
+      '        mods[n] = False',
+      'print(json.dumps({"python": sys.version.split()[0], "modules": mods}))',
+    ].join('\n')], { encoding: 'utf8', windowsHide: true });
+    if (probe.status === 0) {
+      try {
+        const info = JSON.parse(probe.stdout.trim());
+        console.log(`Python version: ${info.python}`);
+        for (const [name, ok] of Object.entries(info.modules)) {
+          console.log(`  ${ok ? 'ok     ' : 'MISSING'} ${name}`);
+        }
+      } catch { console.log(probe.stdout.trim()); }
+    } else {
+      console.log(`Probe failed: ${(probe.stderr || '').trim().slice(0, 300)}`);
+    }
+  }
+  const target = path.join(officeSkillsDir(), 'office-editing', 'SKILL.md');
+  console.log(`Global skill: ${target} ${fs.existsSync(target) ? '(installed)' : '(missing)'}`);
+  if (!exists || !fs.existsSync(target)) {
+    console.log('Run: mafw office setup');
+  }
+}
+
+function officeCommand(args) {
+  const sub = args[0] || 'status';
+  if (sub === 'status') { officeStatus(); return; }
+  if (sub !== 'setup') {
+    console.error('Usage: mafw office <setup|status>');
+    process.exit(1);
+  }
+  if (!fs.existsSync(OFFICE_SETUP_SCRIPT)) {
+    console.error(`Setup script missing: ${OFFICE_SETUP_SCRIPT}`);
+    process.exit(1);
+  }
+  console.log('[office] provisioning ~/.mafw/pykernel (idempotent)…');
+  const r = spawnSync(process.execPath, [OFFICE_SETUP_SCRIPT], { stdio: 'inherit', windowsHide: false });
+  if (r.error) { console.error(String(r.error.message || r.error)); process.exit(1); }
+  if (r.status !== 0) { console.error(`setup-pykernel exited ${r.status}`); process.exit(r.status || 1); }
+  const skill = installOfficeSkill();
+  if (!skill.ok) { console.error(`[office] skill install failed: ${skill.error}`); process.exit(1); }
+  console.log(`[office] global skill ${skill.changed ? 'installed' : 'already current'}: ${skill.path}`);
+  console.log('[office] done. If the gateway/agent is already running, run: mafw restart-agent');
+}
+
 async function main() {
   const cmd = process.argv[2];
   if (!cmd || cmd === '--help' || cmd === '-h') { console.log(USAGE); return; }
@@ -379,6 +472,8 @@ async function main() {
       await callApi('memory-search', 'GET', `/api/memory/merged-search?query=${encodeURIComponent(query)}`);
       break;
     }
+
+    case 'office': officeCommand(process.argv.slice(3)); break;
 
     case 'service-register': registerService(); break;
     case 'service-unregister': unregisterService(); break;
