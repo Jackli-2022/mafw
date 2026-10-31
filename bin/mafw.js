@@ -376,7 +376,7 @@ function officeStatus() {
   if (exists) {
     const probe = spawnSync(python, ['-c', [
       'import sys, json, importlib.util',
-      'names = ["pptx", "openpyxl", "docx", "PIL", "pypdfium2", "win32com", "mafw_office"]',
+      'names = ["pptx", "openpyxl", "docx", "PIL", "pypdfium2", "pypdf", "reportlab", "win32com", "mafw_office", "mafw_pdf"]',
       'mods = {}',
       'for n in names:',
       '    try:',

@@ -1,6 +1,6 @@
 ---
 name: office-editing
-description: Edit Office files (pptx first, then xlsx/docx) with the persistent Python kernel. Use when the user asks to modify an existing deck/spreadsheet/document, fill a template, replace text/images, or generate an editable PPTX. Prefer python-pptx/openpyxl/python-docx over raw OOXML; always snapshot before saving.
+description: Edit Office files (pptx, xlsx, docx) and PDFs with the persistent Python kernel. Use when the user asks to modify an existing deck/spreadsheet/document, fill a template, replace text/images, fill PDF forms, add PDF watermarks/page ops, or generate an editable PPTX. Prefer python-pptx/openpyxl/python-docx and mafw_pdf over raw OOXML; always snapshot before saving.
 argument-hint: "[file] [change]"
 metadata:
   author: mafw
@@ -250,7 +250,39 @@ print(res)  # {ok, engine, out} 或 {ok:False, reason:'exists'|'not-legacy'|...}
 - 转换可能改变排版/字体；编辑副本后让用户确认是否替换原文件，不要静默覆盖 legacy。
 - 转换后按正常流程 `inspect → snapshot → 编辑 → 校验 → render`。
 
-## 9. 参考
+## 9. PDF（有限编辑）
+
+PDF 没有流式文本模型，**不能像 docx 一样改字**。`mafw_pdf` 覆盖结构编辑、表单、叠加和渲染：
+
+```python
+import mafw_pdf
+print(mafw_pdf.inspect_json_pdf(path))          # 页数/尺寸/元数据/表单字段/文本摘录
+print(mafw_pdf.extract_text(path, pages=[1]))   # 指定页文本
+
+mafw_pdf.fill_form(path, {"customer": "Alice"}, out=r"C:\work\proj\filled.pdf")
+mafw_pdf.add_text(path, "APPROVED", x=72, y=100, pages=[1], font_size=14, out=r"C:\work\proj\stamped.pdf")
+mafw_pdf.watermark(path, "DRAFT", out=r"C:\work\proj\wm.pdf", opacity=0.15, angle=45)
+mafw_pdf.add_image(path, r"C:\work\proj\logo.png", x=72, y=200, width=96, height=72, out=r"C:\work\proj\logo.pdf")
+
+mafw_pdf.rotate_pages(path, [1], 90, out=...)
+mafw_pdf.delete_pages(path, [2], out=...)
+mafw_pdf.reorder_pages(path, [2, 1], out=...)
+mafw_pdf.add_blank_page(path, 2, out=...)
+mafw_pdf.merge_pdfs([a, b], r"C:\work\proj\merged.pdf")
+mafw_pdf.split_pdf(path, r"C:\work\proj\parts", ranges=["1-2", "3"])
+mafw_pdf.set_metadata(path, {"Title": "合同", "Author": "MAFW"}, out=...)
+render = mafw_pdf.render_pdf(path, r"C:\work\proj\.render", width=1280)
+```
+
+- **坐标**：points（1/72 inch），从页面**左上角**起算；页尺寸从 `inspect_pdf` 取（A4 = 595×842）。
+- **改文字**：优先改源 docx/pptx 后重新导出；PDF 只能叠加/水印/表单。用白底矩形盖住旧字再叠新字会漂移字体/位置，非必要不要做。
+- **加密 PDF**：`inspect_pdf(..., password=...)`；编辑函数也接受 `password`（部分函数未透传时先解密另存）。
+- 表单字段先 `inspect_pdf` 看 `form_fields`；`fill_form` 后可重开确认 `/V` 值。
+- 页面操作默认写回原文件；建议 `out=` 输出副本，确认后再替换。
+- 渲染质检：`mafw_pdf.render_pdf` → `mafw_media_ask`；多页用 `montage_images` 拼图（与 Office 相同）。
+- 流程：`snapshot → inspect_pdf → 编辑副本 → 重开 inspect → render → mafw_media_ask`。
+
+## 10. 参考
 
 - python-pptx 文档：https://python-pptx.readthedocs.io/
 - 本仓库 helper：`gateway/scripts/office/mafw_office.py`（安装后在 kernel site-packages）

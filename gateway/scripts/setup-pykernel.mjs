@@ -63,7 +63,7 @@ if (!existsSync(venvPython)) {
 const version = probe(venvPython, ['-c', 'import sys; print(sys.version.split()[0])']);
 process.stderr.write(`[setup-pykernel] venv python ${venvPython} (${version})\n`);
 
-const officePackages = ['python-pptx', 'openpyxl', 'python-docx', 'Pillow', 'pypdfium2'];
+const officePackages = ['python-pptx', 'openpyxl', 'python-docx', 'Pillow', 'pypdfium2', 'pypdf', 'reportlab'];
 // pywin32 powers the optional PowerPoint COM render QA on Windows.
 if (isWin) officePackages.push('pywin32');
 run(venvPython, [
@@ -74,9 +74,10 @@ run(venvPython, [
 
 const site = probe(venvPython, ['-c', "import sysconfig; print(sysconfig.get_paths()['purelib'])"]);
 if (site) {
-  const src = path.join(here, 'office', 'mafw_office.py');
-  if (existsSync(src)) {
-    const dest = path.join(site, 'mafw_office.py');
+  for (const name of ['mafw_office.py', 'mafw_pdf.py']) {
+    const src = path.join(here, 'office', name);
+    if (!existsSync(src)) continue;
+    const dest = path.join(site, name);
     copyFileSync(src, dest);
     process.stderr.write(`[setup-pykernel] installed helper: ${dest}\n`);
   }
