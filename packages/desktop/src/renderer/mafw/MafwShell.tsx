@@ -2141,10 +2141,12 @@ export function MafwShell() {
             podDetail={podStore.detail()}
             podMessages={podStore.messages()}
             podLoading={podStore.loading()}
+            podError={podStore.error()}
             podUnsupported={podStore.unsupported()}
             podIsWorktree={benchRoot() !== currentProject()}
             podSelfMemberId={podSelfMemberId()}
             podSessionTitleOf={podSessionTitleOf}
+            onPodRefresh={() => { void podStore.refresh() }}
             onPodOpenSession={(sid) => openSessionTab(sid)}
             onPodOpenGoal={(goalId) => setPodGoalId(goalId)}
             onPodOpenPanel={openPodPanel}

@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js"
 import type { PodDetail, PodMessage, PodStatus } from "@mafw/sdk"
-import { podEventAction, podIsUnsupported } from "./pod-model"
+import { podEventAction, podIsUnsupported, podRouteMissing } from "./pod-model"
 
 export type PodStoreApi = {
   lookup(projectDir: string): Promise<PodDetail>
@@ -114,7 +114,13 @@ export function createPodStore(
       applyDetail(next, my)
     } catch (err) {
       if (disposed || my !== seq) return
-      if (podIsUnsupported(err) || /pod not found/i.test(errorMessage(err))) {
+      if (podRouteMissing(err)) {
+        setDetail(null)
+        setCost(null)
+        setMessages([])
+        setUnsupported(true)
+        setError(null)
+      } else if (podIsUnsupported(err) || /pod not found/i.test(errorMessage(err))) {
         setDetail(null)
         setCost(null)
         setMessages([])
@@ -186,17 +192,20 @@ export function createPodStore(
     }
   }
 
-  async function markRead(messageId: string): Promise<void> {
+  async function markRead(messageId: string): Promise<boolean> {
     const current = detail()
-    if (!current || disposed) return
+    if (!current || disposed) return false
     try {
       const next = await api.markRead(current.pod.id, messageId)
-      if (disposed) return
+      if (disposed) return false
       const readAt = next?.message?.readAt ?? new Date().toISOString()
       setMessages((prev) => prev.map((message) => (message.id === messageId ? { ...message, readAt } : message)))
+      return true
     } catch (err) {
-      if (!disposed) setError(errorMessage(err))
-      throw err
+      // 旧 gateway 没有 read 路由：静默忽略（spec 冒烟项 #8），其余失败记录但不抛出
+      // （调用点是 void，抛出会变成 unhandled rejection）。
+      if (!disposed && !podRouteMissing(err)) setError(errorMessage(err))
+      return false
     }
   }
 

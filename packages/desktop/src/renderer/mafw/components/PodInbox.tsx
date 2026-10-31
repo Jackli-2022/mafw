@@ -68,7 +68,15 @@ export function PodInbox(props: {
               <div
                 class="mafw-pod-message mafw-pod-message-row"
                 classList={{ unread: !message.readAt }}
+                role="button"
+                tabIndex={0}
+                aria-label={`标记已读：${message.body.slice(0, 40)}`}
                 onClick={() => { if (!message.readAt) props.onRead?.(message.id) }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  if (!message.readAt) props.onRead?.(message.id)
+                }}
               >
                 <div class="mafw-pod-message-head">
                   <span class="mafw-pod-message-route">

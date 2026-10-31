@@ -66,10 +66,12 @@ type Props = {
   podDetail?: any
   podMessages?: any[]
   podLoading?: boolean
+  podError?: string | null
   podUnsupported?: boolean
   podIsWorktree?: boolean
   podSelfMemberId?: string | null
   podSessionTitleOf?: (sessionId: string) => string | null
+  onPodRefresh?: () => void
   onPodOpenSession?: (sessionId: string) => void
   onPodOpenGoal?: (goalId: string) => void
   onPodOpenPanel?: (panel: "tasks" | "inbox") => void
@@ -392,10 +394,12 @@ export function LeftDock(props: Props) {
           detail={props.podDetail ?? null}
           messages={props.podMessages ?? []}
           loading={!!props.podLoading}
+          error={props.podError ?? null}
           unsupported={!!props.podUnsupported}
           isWorktree={!!props.podIsWorktree}
           selfMemberId={props.podSelfMemberId ?? null}
           sessionTitleOf={props.podSessionTitleOf}
+          onRefresh={() => props.onPodRefresh?.()}
           onOpenSession={(id) => props.onPodOpenSession?.(id)}
           onOpenGoal={(id) => props.onPodOpenGoal?.(id)}
           onOpenPanel={(panel) => props.onPodOpenPanel?.(panel)}

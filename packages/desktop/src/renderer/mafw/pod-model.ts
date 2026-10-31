@@ -108,8 +108,14 @@ export function podHttpStatus(err: unknown): number | null {
 export function podIsUnsupported(err: unknown): boolean {
   const message = String((err as any)?.message ?? err)
   if (/project is not registered/i.test(message)) return false
-  if (/older than the SDK|Received HTML instead of JSON/i.test(message)) return true
+  if (podRouteMissing(err)) return true
   return podHttpStatus(err) === 404
+}
+
+/** 路由缺失（旧 gateway / HTML 回退页），与「这个项目还没有 Pod」的 404 不同。 */
+export function podRouteMissing(err: unknown): boolean {
+  const message = String((err as any)?.message ?? err)
+  return /older than the SDK|Received HTML instead of JSON/i.test(message)
 }
 
 export function terminalGoalsNewestFirst(goals: PodGoal[]): PodGoal[] {

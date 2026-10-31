@@ -47,8 +47,7 @@ describe("pod-store", () => {
     assert.equal(store.messages()[0]?.id, "m1")
   })
 
-  test("markRead patches the message optimistically", async () => {
-    const calls: string[] = []
+  test("markRead patches the message optimistically", async () => {    const calls: string[] = []
     const { store } = harness({
       markRead: async (podID, messageID) => {
         calls.push(`markRead:${podID}:${messageID}`)
@@ -85,6 +84,22 @@ describe("pod-store", () => {
     resolveGet(detail("pod_1"))
     await Promise.all([first, second])
     assert.equal(store.busy(), false)
+  })
+
+  test("a route-missing gateway marks the store unsupported instead of empty", async () => {
+    const { store } = harness({
+      lookup: async () => { throw new Error("Received HTML instead of JSON from /api/projects/p/pod/lookup (gateway older than the SDK)") },
+    })
+    await store.open("/p")
+    assert.equal(store.detail(), null)
+    assert.equal(store.unsupported(), true)
+  })
+
+  test("other lookup failures surface as an error, not as an empty pod", async () => {
+    const { store } = harness({ lookup: async () => { throw new Error("fetch failed: ECONNREFUSED") } })
+    await store.open("/p")
+    assert.equal(store.unsupported(), false)
+    assert.match(store.error() ?? "", /ECONNREFUSED/)
   })
 
   test("lookup 404 is an empty state; ensure 404 is unsupported", async () => {

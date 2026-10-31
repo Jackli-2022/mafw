@@ -8106,11 +8106,13 @@ class MafwScheduler {
         log.warn(`[Pod] memory capture failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
       }
     }
-    if (podId && outcome && outcome.verdict !== 'PASS') {
+    if (podId && outcome) {
+      // 归档路径对两种 verdict 都 reconcile（幂等）：PASS 正常由 review 节点投影收口，
+      // 但事件丢失时任务会永远停在 review，这里兜底。
       try {
-        this.podTaskService.reconcileArchive(podId, goalId, false);
+        this.podTaskService.reconcileArchive(podId, goalId, outcome.verdict === 'PASS');
       } catch (err: any) {
-        log.warn(`[Pod] failure reconcile failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+        log.warn(`[Pod] archive reconcile failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
       }
     }
     try {

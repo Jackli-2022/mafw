@@ -2,6 +2,7 @@ import * as http from 'http';
 import { PodError } from '../../../src/core/pod/pod-store';
 import { attachPodHandlers } from '../../../src/routes/pod-handlers';
 import { handlePods } from '../../../src/routes/pods';
+import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 
 function mockRes() {
   const res: any = {
@@ -206,11 +207,14 @@ describe('pod routes', () => {
     expect((await call('GET', '/api/projects/p1/pod/lookup?actorSessionID=ses_x', foreign)).res.status).toBe(403);
   });
 
-  it('attaches a handler for the lookup operation', () => {
+  it('attaches every pod operation declared in the catalog', () => {
     const ids: string[] = [];
-    const registry = { attachHandler: (id: string) => ids.push(id) } as any;
+    const registry = { attachHandler: (id: string) => { ids.push(id) } } as any;
     attachPodHandlers(registry, makeDeps());
-    expect(ids).toContain('pods.lookup');
+    const expected = buildRouteCatalog()
+      .map((route) => route.operationId)
+      .filter((id) => id.startsWith('pods.') && !id.startsWith('pods.a2a'));
+    expect(ids.slice().sort()).toEqual(expected.slice().sort());
   });
 
   it('falls through unknown routes', async () => {

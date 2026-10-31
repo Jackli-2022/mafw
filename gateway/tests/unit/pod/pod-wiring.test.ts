@@ -35,6 +35,12 @@ describe('Pod gateway wiring', () => {
     expect(source).toContain('podMemoryService.captureGoal(');
   });
 
+  test('reconciles pod tasks on both archive verdicts', () => {
+    // PASS 由 review 节点投影收口；归档兜底必须两种 verdict 都 reconcile，
+    // 否则事件丢失时任务永远停在 review（评审 Important）。
+    expect(source).toContain("reconcileArchive(podId, goalId, outcome.verdict === 'PASS')");
+  });
+
   test('injects pod context into the goal driver', () => {
     expect(source).toContain('podContext:');
     expect(source).toContain('renderContext(podId, node)');

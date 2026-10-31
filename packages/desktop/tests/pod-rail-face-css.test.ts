@@ -17,3 +17,10 @@ test("pod rail face styles survive a 240px dock", () => {
   const inputBlock = css.slice(css.indexOf(".mafw-pod-rail-input {"), css.indexOf(".mafw-pod-rail-input {") + 400)
   assert.match(inputBlock, /width:\s*100%/)
 })
+
+test("unread mailbox rows are visible and interactive", () => {
+  const rowBlock = css.slice(css.indexOf(".mafw-pod-message-row {"), css.indexOf(".mafw-pod-message-row {") + 400)
+  assert.match(rowBlock, /cursor:\s*pointer/)
+  const unreadBlock = css.slice(css.indexOf(".mafw-pod-message-row.unread {"), css.indexOf(".mafw-pod-message-row.unread {") + 300)
+  assert.match(unreadBlock, /border-left/)
+})

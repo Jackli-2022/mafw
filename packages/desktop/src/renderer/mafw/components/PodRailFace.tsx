@@ -15,6 +15,7 @@ import {
   podEmptyState,
   type PodEmptyState,
 } from "../pod-rail-face-model"
+import { podStatusLabel } from "../pod-model"
 import { applyReadlineKey } from "./composer-readline"
 
 const KINDS = [
@@ -29,10 +30,12 @@ export function PodRailFace(props: {
   detail: PodDetail | null
   messages: PodMessage[]
   loading: boolean
+  error: string | null
   unsupported: boolean
   isWorktree: boolean
   selfMemberId: string | null
   sessionTitleOf?: (sessionId: string) => string | null
+  onRefresh: () => void
   onOpenSession: (sessionId: string) => void
   onOpenGoal: (goalId: string) => void
   onOpenPanel: (panel: "tasks" | "inbox") => void
@@ -120,13 +123,39 @@ export function PodRailFace(props: {
 
   return (
     <div class="mafw-pod-rail-face">
-      <Show when={emptyState() === "unsupported"}>
+      <div class="mafw-pod-rail-head">
+        <span class="mafw-pod-rail-title">鲸群</span>
+        <Show when={props.detail}>
+          {(detail) => <span class="mafw-pod-rail-status">{podStatusLabel(detail().pod.status)}</span>}
+        </Show>
+        <TooltipV2 value="刷新" openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            icon="refresh"
+            aria-label="刷新鲸群"
+            onClick={props.onRefresh}
+          />
+        </TooltipV2>
+      </div>
+
+      <Show when={props.loading && !props.detail}>
+        <div class="mafw-pod-rail-empty">加载中…</div>
+      </Show>
+      <Show when={props.error}>
+        <div class="mafw-pod-rail-empty">
+          <p>{props.error}</p>
+          <ButtonV2 variant="ghost" size="small" onClick={props.onRefresh}>重试</ButtonV2>
+        </div>
+      </Show>
+
+      <Show when={emptyState() === "unsupported" && !props.error}>
         <div class="mafw-pod-rail-empty">当前 gateway 不支持鲸群，请升级</div>
       </Show>
-      <Show when={emptyState() === "worktree"}>
+      <Show when={emptyState() === "worktree" && !props.error}>
         <div class="mafw-pod-rail-empty">worktree 会话不绑定鲸群，请在主项目打开</div>
       </Show>
-      <Show when={emptyState() === "create"}>
+      <Show when={emptyState() === "create" && !props.error}>
         <div class="mafw-pod-rail-empty">
           <p>这个项目还没有鲸群</p>
           <ButtonV2 variant="outline" size="small" onClick={props.onCreate}>创建鲸群</ButtonV2>

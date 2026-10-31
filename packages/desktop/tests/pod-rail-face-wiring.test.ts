@@ -21,3 +21,11 @@ test("left dock renders the pod face and stays out of the session list path", ()
   assert.match(dock, /face === "pod"/)
   assert.match(dock, /props\.face !== "notes" && props\.face !== "pod"/)
 })
+
+test("pod face has a header, loading and error states", () => {
+  assert.match(src, /mafw-pod-rail-head/)
+  assert.match(src, /onRefresh/)
+  assert.match(src, /加载中/)
+  assert.match(src, /props\.error/)
+  assert.match(src, /statusLabel|podStatusLabel/)
+})

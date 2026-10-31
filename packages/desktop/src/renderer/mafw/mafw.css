@@ -6478,6 +6478,13 @@ html[data-theme="light"] body {
 .mafw-pod-memory-view { max-height: 220px; overflow-y: auto; }
 .mafw-pod-memory-editor { min-height: 160px; font-family: var(--font-data); font-size: 11px; }
 
+/* 邮箱行：未读可见 + 可点击标记已读（spec 2026-10-30-pod-left-rail §4.3） */
+.mafw-pod-message-row { cursor: pointer; border-radius: var(--r-sm); }
+.mafw-pod-message-row:hover { background: var(--bg-hover); }
+.mafw-pod-message-row:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.mafw-pod-message-row.unread { border-left: 2px solid var(--accent); padding-left: 6px; }
+.mafw-pod-message-row.unread .mafw-pod-message-body { color: var(--text-1); font-weight: 500; }
+
 /* 左 dock 鲸群面（spec 2026-10-30-pod-left-rail §3.2） */
 .mafw-pod-rail-face {
   display: flex;
