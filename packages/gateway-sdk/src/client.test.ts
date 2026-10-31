@@ -1211,6 +1211,21 @@ test("pod.ensure sends GET /api/projects/:projectId/pod", async () => {
   expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/projects/p1/pod", expect.anything())
 })
 
+test("pod.sendMessage forwards notify and returns the delivery state", async () => {
+  fetchMock.mockResolvedValue(okJson({ message: { id: "m1" }, delivery: "delivered" }))
+  const c = new MafwClient("http://gw:3000")
+  const res = await c.pod.sendMessage("pod_1", { fromMemberId: "m_lead", toMemberId: "m_builder", kind: "note", body: "hi", notify: true })
+  expect(res.delivery).toBe("delivered")
+  expect(JSON.parse((fetchMock.mock.calls.at(-1) as any)[1].body)).toMatchObject({ notify: true })
+})
+
+test("pod.markRead posts to the read route", async () => {
+  fetchMock.mockResolvedValue(okJson({ message: { id: "m1", readAt: "2026-10-31T00:00:00.000Z" } }))
+  const c = new MafwClient("http://gw:3000")
+  await c.pod.markRead("pod_1", "m1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/messages/m1/read", expect.objectContaining({ method: "POST" }))
+})
+
 test("pod.get/update/listTasks/createTask/updateTask hit pod routes", async () => {
   const c = new MafwClient("http://gw:3000")
   fetchMock.mockResolvedValue(okJson({}))

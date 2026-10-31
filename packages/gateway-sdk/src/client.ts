@@ -10,7 +10,7 @@ import {
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
-  PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus,
+  PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus, PodDeliveryState,
   SessionConfigState, SessionConfigCategory,
   MethodNotSupportedError,
 } from './types'
@@ -1258,11 +1258,16 @@ export class MafwClient implements IMafwClient {
 
     sendMessage: async (
       podID: string,
-      body: { fromMemberId?: string; toMemberId?: string; kind: 'note' | 'request' | 'review' | 'decision' | 'escalation'; body: string; actorSessionID?: string },
-    ): Promise<{ message: PodMessage }> =>
-      this.request<{ message: PodMessage }>(`/api/pods/${encodeURIComponent(podID)}/messages`, {
+      body: { fromMemberId?: string; toMemberId?: string; kind: 'note' | 'request' | 'review' | 'decision' | 'escalation'; body: string; actorSessionID?: string; notify?: boolean },
+    ): Promise<{ message: PodMessage; delivery?: PodDeliveryState }> =>
+      this.request<{ message: PodMessage; delivery?: PodDeliveryState }>(`/api/pods/${encodeURIComponent(podID)}/messages`, {
         method: 'POST',
         body: JSON.stringify(body),
+      }),
+
+    markRead: async (podID: string, messageID: string): Promise<{ message: PodMessage }> =>
+      this.request<{ message: PodMessage }>(`/api/pods/${encodeURIComponent(podID)}/messages/${encodeURIComponent(messageID)}/read`, {
+        method: 'POST',
       }),
 
     wake: async (podID: string): Promise<PodDetail> =>

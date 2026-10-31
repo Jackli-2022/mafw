@@ -2886,6 +2886,37 @@
         }
       }
     },
+    "/api/pods/{podId}/messages/{messageId}/read": {
+      "post": {
+        "operationId": "pods.messages.read",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/pods/{podId}/wake": {
       "post": {
         "operationId": "pods.wake",

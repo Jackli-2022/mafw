@@ -2296,6 +2296,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pods/{podId}/messages/{messageId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.messages.read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pods/{podId}/wake": {
         parameters: {
             query?: never;
@@ -6515,6 +6531,27 @@ export interface operations {
             header?: never;
             path: {
                 podId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.messages.read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                messageId: string;
             };
             cookie?: never;
         };

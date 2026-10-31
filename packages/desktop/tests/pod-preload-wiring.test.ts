@@ -12,5 +12,6 @@ test("preload exposes the pod namespace", () => {
   assert.ok(api.includes('invoke("pod", "lookup"'))
   assert.ok(api.includes('invoke("pod", "readMemoryFile"'))
   assert.ok(api.includes('invoke("pod", "updateTask"'))
+  assert.ok(api.includes('invoke("pod", "markRead"'))
   assert.ok(types.includes("pod: PodNamespace"))
 })
