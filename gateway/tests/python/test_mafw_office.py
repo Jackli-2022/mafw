@@ -19,6 +19,8 @@ if HELPER_DIR not in sys.path:
 
 import mafw_office as mo  # noqa: E402
 
+COM_TESTS = os.environ.get("MAFW_TEST_OFFICE_COM") == "1" or os.environ.get("MAFW_TEST_PPT_COM") == "1"
+
 
 def make_png(path: str, color: tuple[int, int, int]) -> None:
     from PIL import Image
@@ -101,8 +103,8 @@ class DeckTests(unittest.TestCase):
         self.assertTrue(mo.inspect_deck(self.deck)["slides"][0]["shapes"][-1]["picture"])
 
     @unittest.skipUnless(
-        os.environ.get("MAFW_TEST_PPT_COM") == "1",
-        "set MAFW_TEST_PPT_COM=1 (Windows + PowerPoint) to run the COM render test",
+        COM_TESTS,
+        "set MAFW_TEST_OFFICE_COM=1 (Windows + Office) to run COM render tests",
     )
     def test_render_deck_powerpoint_com(self) -> None:
         result = mo.render_deck(self.deck, os.path.join(self.tmp, "render"), width=640, height=360, slides=[1])
@@ -131,6 +133,17 @@ class WorkbookTests(unittest.TestCase):
         mo.set_cells(self.path, [{"sheet": "Sheet1", "cell": "B2", "value": 99}])
         self.assertEqual(mo.inspect_workbook(self.path)["sheets"][0]["rows"][1][1], 99)
 
+    @unittest.skipUnless(COM_TESTS, "set MAFW_TEST_OFFICE_COM=1 (Windows + Excel) to run COM render tests")
+    def test_render_workbook_excel_com(self) -> None:
+        result = mo.render_workbook(self.path, os.path.join(self.tmp, "render"), width=640)
+        self.assertTrue(result["ok"], result)
+        self.assertGreaterEqual(len(result["images"]), 1)
+        self.assertGreater(os.path.getsize(result["images"][0]["path"]), 1000)
+
+    def test_render_office_rejects_unknown_extension(self) -> None:
+        result = mo.render_office(os.path.join(self.tmp, "x.txt"), os.path.join(self.tmp, "render"))
+        self.assertEqual(result["reason"], "unsupported-format")
+
 
 class DocumentTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -152,6 +165,13 @@ class DocumentTests(unittest.TestCase):
         info2 = mo.inspect_document(self.path)
         self.assertIn("Hello 2026 world", info2["paragraphs"])
         self.assertIn("cell 2026", info2["tables"][0]["cells"][0][0])
+
+    @unittest.skipUnless(COM_TESTS, "set MAFW_TEST_OFFICE_COM=1 (Windows + Word) to run COM render tests")
+    def test_render_document_word_com(self) -> None:
+        result = mo.render_document(self.path, os.path.join(self.tmp, "render"), width=640)
+        self.assertTrue(result["ok"], result)
+        self.assertGreaterEqual(len(result["images"]), 1)
+        self.assertGreater(os.path.getsize(result["images"][0]["path"]), 1000)
 
 
 if __name__ == "__main__":

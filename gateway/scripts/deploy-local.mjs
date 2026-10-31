@@ -38,6 +38,20 @@ if (!fs.existsSync(distSrc)) {
 fs.cpSync(distSrc, distDst, { recursive: true, force: true });
 console.log(`[deploy] dist → ${distDst}`);
 
+// 1b) package-shipped office assets: `mafw office setup` + gateway-startup skill install
+const pkgRoot = path.dirname(target);
+const assets = [
+  [path.join(gatewayRoot, "scripts", "setup-pykernel.mjs"), path.join(target, "scripts", "setup-pykernel.mjs")],
+  [path.join(gatewayRoot, "scripts", "office"), path.join(target, "scripts", "office")],
+  [path.join(gatewayRoot, "..", "skills"), path.join(pkgRoot, "skills")],
+];
+for (const [src, dst] of assets) {
+  if (!fs.existsSync(src)) continue;
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.cpSync(src, dst, { recursive: true, force: true });
+  console.log(`[deploy] asset → ${dst}`);
+}
+
 // 2) 缺失的生产依赖
 const targetModules = path.join(target, "node_modules");
 let copied = 0;

@@ -147,15 +147,20 @@ chart.replace_data(data)
 - 报告 `replacements` 数量与页数；若为 0，说明没匹配到，不要声称已改。
 - 工作台预览会自动刷新（fs watch）；结构正确不等于版面正确。
 
-### 5.1 视觉质检（Windows + PowerPoint）
+### 5.1 视觉质检（Windows + Office）
 
 ```python
-render = mafw_office.render_deck(path, r"C:\work\proj\.render", width=1280, height=720, slides=[1, 2])
-print(render)  # {ok, out_dir, images:[{slide, path, bytes}]}
+# pptx / xlsx / docx 自动分派：PowerPoint / Excel / Word COM → PDF → PNG
+render = mafw_office.render_office(path, r"C:\work\proj\.render", width=1280)
+print(render)  # {ok, engine, out_dir, pdf, images:[{page|slide, path, bytes}]}
+
+# 只渲染指定页（仅 pptx）
+render = mafw_office.render_deck(path, r"C:\work\proj\.render", slides=[1, 2])
 ```
 
-- `ok: False`（`pywin32-missing` / `render-failed` / 非 Windows）→ 说明原因，请用户看工作台预览；
-  不要假装做过视觉检查。
+- xlsx 走 Excel COM、docx 走 Word COM；导出 PDF 后用 pypdfium2 转 PNG，`images[].page` 是页号。
+- `ok: False`（`pywin32-missing` / `pypdfium2-missing` / `render-failed` / 非 Windows）→ 说明原因，
+  请用户看工作台预览；不要假装做过视觉检查。
 - 对每张 PNG 调 `mafw_media_ask`（`mediaPath=<png>`）：
   「检查这页是否有文字溢出、元素遮挡、文字截断、明显错位或留白异常；只报告问题，不要改文件。」
 - 有版面问题 → 改内容/字号/位置 → 重新 render → 再检查。
@@ -198,7 +203,8 @@ mafw_office.replace_text_docx(path, {"2025": "2026"})
 - `replace_text_docx` 走 run 级替换（保字体/字号）；跨 run 命中会合并该段 run。
 - 页眉页脚/批注/复杂域代码暂不覆盖，复杂版式先 inspect 并向用户确认。
 
-两者同样遵守“先 inspect → 快照 → 小步改 → 重开校验”。
+两者同样遵守“先 inspect → 快照 → 小步改 → 重开校验 → 渲染质检”：
+结构校验后用 `render_office` 导出 PNG，再按 §5.1 用 `mafw_media_ask` 看是否有溢出/遮挡/错位。
 
 ## 8. 参考
 

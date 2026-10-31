@@ -63,7 +63,7 @@ if (!existsSync(venvPython)) {
 const version = probe(venvPython, ['-c', 'import sys; print(sys.version.split()[0])']);
 process.stderr.write(`[setup-pykernel] venv python ${venvPython} (${version})\n`);
 
-const officePackages = ['python-pptx', 'openpyxl', 'python-docx', 'Pillow'];
+const officePackages = ['python-pptx', 'openpyxl', 'python-docx', 'Pillow', 'pypdfium2'];
 // pywin32 powers the optional PowerPoint COM render QA on Windows.
 if (isWin) officePackages.push('pywin32');
 run(venvPython, [

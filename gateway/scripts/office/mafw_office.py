@@ -557,6 +557,120 @@ def render_deck(
                 pass
 
 
+def _pdf_to_pngs(pdf_path: str, out_dir: str, prefix: str, width: int) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None]:
+    try:
+        import pypdfium2 as pdfium
+    except Exception as exc:
+        return None, {"reason": "pypdfium2-missing", "error": str(exc)}
+    pdf = pdfium.PdfDocument(pdf_path)
+    images: list[dict[str, Any]] = []
+    try:
+        for index in range(len(pdf)):
+            page = pdf[index]
+            page_width, _ = page.get_size()
+            scale = (float(width) / page_width) if page_width else 1.0
+            bitmap = page.render(scale=scale)
+            png = os.path.join(out_dir, f"{prefix}-{index + 1:02d}.png")
+            bitmap.to_pil().save(png)
+            images.append({"page": index + 1, "path": png, "bytes": os.path.getsize(png)})
+    finally:
+        pdf.close()
+    return images, None
+
+
+def _com_pdf_export(
+    path: str,
+    out_dir: str,
+    prefix: str,
+    width: int,
+    program: str,
+    opener,
+) -> dict[str, Any]:
+    """Shared COM → PDF → PNG pipeline. `opener(app, src, pdf)` returns a handle
+    and must export the PDF before returning."""
+    if os.name != "nt":
+        return {"ok": False, "reason": "unsupported-platform", "error": f"{program} COM is Windows-only"}
+    try:
+        import win32com.client  # lazy: pywin32 is optional
+    except Exception as exc:
+        return {"ok": False, "reason": "pywin32-missing", "error": str(exc)}
+
+    src = os.path.abspath(path)
+    out = os.path.abspath(out_dir)
+    os.makedirs(out, exist_ok=True)
+    pdf_path = os.path.join(out, f"{prefix}.pdf")
+    app = None
+    handle = None
+    try:
+        app = win32com.client.DispatchEx(program)
+        try:
+            app.Visible = False
+        except Exception:
+            pass
+        try:
+            app.DisplayAlerts = False
+        except Exception:
+            pass
+        handle = opener(app, src, pdf_path)
+        images, error = _pdf_to_pngs(pdf_path, out, prefix, width)
+        if error:
+            return {"ok": False, **error}
+        return {
+            "ok": True,
+            "engine": program,
+            "out_dir": out,
+            "pdf": pdf_path,
+            "images": images or [],
+        }
+    except Exception as exc:
+        return {"ok": False, "reason": "render-failed", "error": str(exc)[:300]}
+    finally:
+        if handle is not None:
+            try:
+                handle.Close(False)
+            except Exception:
+                pass
+        if app is not None:
+            try:
+                app.Quit()
+            except Exception:
+                pass
+
+
+def render_workbook(path: str, out_dir: str, width: int = 1280) -> dict[str, Any]:
+    """Render an xlsx to page PNGs (Excel COM → PDF → pypdfium2)."""
+
+    def opener(app, src: str, pdf_path: str):
+        workbook = app.Workbooks.Open(src, ReadOnly=True, UpdateLinks=0)
+        workbook.ExportAsFixedFormat(0, pdf_path)  # 0 = xlTypePDF
+        return workbook
+
+    return _com_pdf_export(path, out_dir, "sheet", width, "Excel.Application", opener)
+
+
+def render_document(path: str, out_dir: str, width: int = 1280) -> dict[str, Any]:
+    """Render a docx to page PNGs (Word COM → PDF → pypdfium2)."""
+
+    def opener(app, src: str, pdf_path: str):
+        document = app.Documents.Open(src, ReadOnly=True, AddToRecentFiles=False, Visible=False)
+        document.ExportAsFixedFormat(pdf_path, 17)  # 17 = wdExportFormatPDF
+        return document
+
+    return _com_pdf_export(path, out_dir, "page", width, "Word.Application", opener)
+
+
+def render_office(path: str, out_dir: str, width: int = 1280, slides: Iterable[int] | None = None) -> dict[str, Any]:
+    """Render pptx/xlsx/docx by extension; unified entry point for the skill."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".pptx":
+        return render_deck(path, out_dir, width=width, slides=slides)
+    if ext == ".xlsx":
+        return render_workbook(path, out_dir, width=width)
+    if ext == ".docx":
+        return render_document(path, out_dir, width=width)
+    return {"ok": False, "reason": "unsupported-format", "error": f"unsupported Office extension: {ext or '(none)'}"}
+
+
 def atomic_save(prs, path: str) -> None:
     """Save to a temp file in the same directory, then os.replace (no partial reads)."""
     directory = os.path.dirname(os.path.abspath(path)) or "."
