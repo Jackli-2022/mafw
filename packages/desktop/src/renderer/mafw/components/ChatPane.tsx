@@ -187,6 +187,13 @@ export type ChatPaneProps = {
   onFocus: () => void
   onClosePane?: () => void
   onOpenForkedSession?: (sid: string) => void
+  /** 「记入鲸群」：把这条消息显式提升为 Pod 协调记录（需当前项目有鲸群）。 */
+  onRecordPodNote?: (input: {
+    sessionID: string
+    messageID: string
+    role: "user" | "assistant"
+    text: string
+  }) => Promise<void>
   onCreateSession: () => Promise<string | null>
   onSetUserMsgId: (sid: string, userMsgId: string) => void
   onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void
@@ -565,7 +572,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       const canFork = role === "user" && branchActionsVisible(props.runtimeCaps)
       menuController.request(
         buildMessageMenu,
-        { id: messageID, role, hasText: text.length > 0, canFork, tts: false, linkURL, imageURL },
+        {
+          id: messageID, role, hasText: text.length > 0, canFork, tts: false, linkURL, imageURL,
+          podNote: !!props.onRecordPodNote && text.trim().length > 0,
+        },
         (id) => {
           if (id === "message.copy") void navigator.clipboard.writeText(text)
           else if (id === "message.copyMarkdown") void navigator.clipboard.writeText(markdown)
@@ -574,6 +584,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           else if (id === "message.copyImageUrl" && imageURL) void navigator.clipboard.writeText(imageURL)
           else if (id === "message.copyLink" && linkURL) void navigator.clipboard.writeText(linkURL)
           else if (id === "message.openLink" && linkURL) void window.api.browser.openExternal(linkURL)
+          else if (id === "message.podNote") {
+            void props.onRecordPodNote?.({
+              sessionID: sidProp(),
+              messageID,
+              role,
+              text,
+            })
+          }
           else if (id === "message.fork") {
             void window.api.mafw.sessions.fork(sidProp(), messageID)
               .then((res: any) => { if (res?.session?.id) props.onOpenForkedSession?.(res.session.id) })

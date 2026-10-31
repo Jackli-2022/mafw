@@ -16,6 +16,7 @@ export const L = {
     quote: "引用到输入框",
     fork: "从此处分叉",
     readAloud: "朗读",
+    podNote: "记入鲸群",
     copyImage: "复制图片",
     copyImageUrl: "复制图片地址",
     copyLink: "复制链接",

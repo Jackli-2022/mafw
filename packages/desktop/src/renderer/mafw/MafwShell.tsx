@@ -56,6 +56,7 @@ import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore } from "./pod-store"
 import { podRailBadge } from "./pod-rail-badge"
 import { podRoleForSession } from "./pod-model"
+import { buildPodNoteBody } from "./pod-note"
 import { retitleTab } from "./session-tab-title"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
@@ -1776,6 +1777,41 @@ export function MafwShell() {
     void podStore.markRead(messageId)
     openPodPanel("inbox")
   }
+  // 「记入鲸群」：chatview 的一条消息 → 一条 Pod note（不自动镜像，见
+  // docs/research/2026-10-31-agent-chat-vs-team-log.md）。
+  const recordPodNote = async (input: {
+    sessionID: string
+    messageID: string
+    role: "user" | "assistant"
+    text: string
+  }): Promise<void> => {
+    const detail = podStore.detail()
+    const lead = detail?.members.find((member) => member.role === "lead")
+    if (!detail || !lead) {
+      showToastV2({ description: "当前项目还没有鲸群", duration: 2500 } as any)
+      return
+    }
+    const role = podRoleForSession(detail, input.sessionID)
+    const speaker = input.role === "user" ? "你" : (role ? `${role}` : "成员")
+    const body = buildPodNoteBody({
+      speaker,
+      sessionId: input.sessionID,
+      messageId: input.messageID,
+      text: input.text,
+    })
+    if (!body) return
+    try {
+      await window.api.mafw.pod.sendMessage(detail.pod.id, {
+        fromMemberId: lead.id,
+        kind: "note",
+        body,
+      })
+      void podStore.refresh()
+      showToastV2({ description: "已记入鲸群", duration: 2500 } as any)
+    } catch (err: any) {
+      showToastV2({ description: `记入失败：${String(err?.message ?? err).slice(0, 60)}`, duration: 3000 } as any)
+    }
+  }
 
   // SSE live trajectory signals
   const [trajectoryLive, setTrajectoryLive] = createSignal<Record<string, any[]>>({})
@@ -2229,6 +2265,7 @@ export function MafwShell() {
                           onTaskHoverLeave={scheduleTaskClose}
                           onFocus={() => { setShowConfig(false); setActiveTab("chat") }}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
+                          onRecordPodNote={recordPodNote}
                           onOpenDiffReview={() => openWorkbench("review")}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}

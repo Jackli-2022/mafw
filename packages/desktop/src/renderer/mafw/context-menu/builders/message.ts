@@ -10,6 +10,8 @@ export interface MessageMenuTarget {
   tts: boolean
   linkURL?: string
   imageURL?: string
+  /** 当前项目有鲸群时提供「记入鲸群」（把这条对话显式提升为协调记录）。 */
+  podNote?: boolean
 }
 
 export function buildMessageMenu(target: MessageMenuTarget): MenuModel {
@@ -53,6 +55,9 @@ export function buildMessageMenu(target: MessageMenuTarget): MenuModel {
   }
   if (target.role === "assistant" && target.tts) {
     items.push(item("message.readAloud", L.message.readAloud))
+  }
+  if (target.podNote) {
+    items.push(item("message.podNote", L.message.podNote, disabled))
   }
 
   return { surface: "message", items }
