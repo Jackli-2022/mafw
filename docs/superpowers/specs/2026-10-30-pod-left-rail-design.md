@@ -203,3 +203,12 @@ podRailBadge(tasks, messages, selfMemberId) =
 | 5 | goal 卡标题无接口 | 不显示标题，只显示 goalId 短码 + phase + loop |
 | 6 | notify 契约与版本偏斜 | 广播+notify → 400；响应带 `delivery` 三态；老 gateway 无字段不承诺 |
 | 7 | 「不支持」与「无 Pod」难区分 | 404 JSON = 无 Pod（给创建）；非 JSON（HTML）= 路由缺失（给升级）；不改现有 store 空态测试语义 |
+
+## 11. 实现说明（2026-10-31 交付时回写）
+
+- **头部**：已按 §3.2 实现（状态 pill + 刷新）；加载 / 错误 / 无 Pod / 不支持 / worktree 五态互斥。
+- **goal 卡**：只显示 `goalId` 短码 + `status`。`PodDetail.goals` 不含 phase/loop，取它们需要额外的 `/api/goals` 或 timeline 请求，代价不划算（覆盖上表第 5 行的 phase/loop 部分）。
+- **输入框**：用 `<textarea>`（与 `PodInbox` 同一先例）而不是 `TextInputV2`——多行更自然，且复用 `applyReadlineKey` 纯逻辑。
+- **空态优先级**：`有 Pod → ready` 优先于 worktree；只有「无 Pod」时才按 `unsupported → worktree → create` 选择（上表第 7 行按此实现）。
+- **已读**：点消息即标记，失败静默（老 gateway 无 read 路由时不报错、不改本地状态）。
+- **待审收口**：归档对两种 verdict 都 `reconcileArchive`（PASS 也兜底），避免事件丢失时任务永久停在 `review`。
