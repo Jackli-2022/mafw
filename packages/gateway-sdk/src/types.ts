@@ -1066,6 +1066,8 @@ export interface PodTask {
   status: PodTaskStatus
   dependenciesJson: string | null
   artifactRefsJson: string | null
+  /** waves 任务验收标准镜像（JSON string[]）；随计划投影刷新。 */
+  acceptanceJson: string | null
   createdAt: string
   updatedAt: string
 }

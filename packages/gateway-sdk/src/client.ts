@@ -1249,7 +1249,7 @@ export class MafwClient implements IMafwClient {
         body: JSON.stringify(body),
       }),
 
-    updateTask: async (podID: string, taskID: string, body: { status?: PodTask['status']; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }> =>
+    updateTask: async (podID: string, taskID: string, body: { status?: PodTask['status']; ownerMemberId?: string; title?: string; acceptance?: string[]; actorSessionID?: string }): Promise<{ task: PodTask }> =>
       this.request<{ task: PodTask }>(`/api/pods/${encodeURIComponent(podID)}/tasks/${encodeURIComponent(taskID)}`, {
         method: 'PATCH',
         body: JSON.stringify(body),

@@ -1239,6 +1239,9 @@ test("pod.get/update/listTasks/createTask/updateTask hit pod routes", async () =
   expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/tasks", expect.objectContaining({ method: "POST" }))
   await c.pod.updateTask("pod_1", "t1", { status: "done" })
   expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/tasks/t1", expect.objectContaining({ method: "PATCH" }))
+  await c.pod.updateTask("pod_1", "t1", { title: "新标题", acceptance: ["npm test 全绿"] })
+  const last = fetchMock.mock.calls.at(-1)! as any[]
+  expect(JSON.parse(last[1].body)).toEqual({ title: "新标题", acceptance: ["npm test 全绿"] })
 })
 
 test("pod messages/wake/sleep/cost/goals/transcript hit routes", async () => {
