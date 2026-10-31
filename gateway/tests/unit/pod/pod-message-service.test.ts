@@ -61,13 +61,14 @@ describe('PodMessageService', () => {
     expect(first.toMemberId).toBeNull();
     expect(second.toMemberId).toBe('m_lead');
     expect(service.list('pod_1').map((m) => m.id)).toEqual(['msg_2', 'msg_1']);
-    service.markRead(first.id);
+    expect(service.markRead(first.id)).toBe(true);
     expect(service.list('pod_1').find((m) => m.id === first.id)?.readAt).toBeTruthy();
-    expect(notifications).toEqual(['pod_1', 'pod_1']);
+    expect(notifications).toEqual(['pod_1', 'pod_1', 'pod_1']);
+    expect(service.markRead('missing')).toBe(false);
+    expect(notifications).toEqual(['pod_1', 'pod_1', 'pod_1']);
   });
 
-  test('rejects empty bodies and unknown recipients', () => {
-    expect(() => service.send({
+  test('rejects empty bodies and unknown recipients', () => {    expect(() => service.send({
       podId: 'pod_1', fromMemberId: 'm_lead', kind: 'note', body: '  ',
     })).toThrow(PodError);
     expect(() => service.send({

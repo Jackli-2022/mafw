@@ -9,7 +9,7 @@ import type { PodTaskService } from '../core/pod/pod-task-service';
 export interface PodRouteDeps {
   pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus' | 'lookup'>;
   tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask'>;
-  messages: Pick<PodMessageService, 'list' | 'send'>;
+  messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
   goals: Pick<PodGoalService, 'list' | 'promote'>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
   access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
@@ -129,6 +129,19 @@ export async function handlePods(
         return true;
       }
       return false;
+    }
+
+    const messageRead = pathname.match(/^\/api\/pods\/([^/]+)\/messages\/([^/]+)\/read$/);
+    if (messageRead) {
+      const podId = decode(messageRead[1]);
+      requirePod(deps, podId);
+      if (method !== 'POST') return false;
+      readMember(deps, url, podId);
+      const messageId = decode(messageRead[2]);
+      if (!deps.messages.markRead(messageId)) throw new PodError(404, 'message not found');
+      const message = deps.messages.list(podId).find((item) => item.id === messageId);
+      sendJson(res, 200, { message });
+      return true;
     }
 
     const wake = pathname.match(/^\/api\/pods\/([^/]+)\/(wake|sleep)$/);

@@ -184,6 +184,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'PATCH', path: '/api/pods/:podId/tasks/:taskId', operationId: 'pods.tasks.update', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/messages', operationId: 'pods.messages.list', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/messages', operationId: 'pods.messages.create', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/messages/:messageId/read', operationId: 'pods.messages.read', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/wake', operationId: 'pods.wake', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/sleep', operationId: 'pods.sleep', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/cost', operationId: 'pods.cost', tags: ['pods'] },

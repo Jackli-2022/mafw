@@ -45,7 +45,11 @@ export class PodMessageService {
     return this.deps.store.listMessages(podId, limit);
   }
 
-  markRead(messageId: string): void {
+  markRead(messageId: string): boolean {
+    const message = this.deps.store.getMessage(messageId);
+    if (!message) return false;
     this.deps.store.markMessageRead(messageId, this.deps.now());
+    this.deps.notify(message.podId);
+    return true;
   }
 }

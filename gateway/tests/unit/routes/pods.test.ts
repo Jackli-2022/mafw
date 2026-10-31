@@ -129,6 +129,20 @@ describe('pod routes', () => {
     })).res.status).toBe(200);
   });
 
+  it('marks a pod message read and 404s unknown ids', async () => {
+    const deps = makeDeps();
+    (deps.messages as any).markRead = jest.fn((id: string) => id === 'm1');
+    (deps.messages as any).list = jest.fn(() => [{ id: 'm1', readAt: '2026-10-31T00:00:00.000Z' }]);
+
+    const ok = await call('POST', '/api/pods/pod_1/messages/m1/read', deps);
+    expect(ok.res.status).toBe(200);
+    expect(ok.json.message.id).toBe('m1');
+    expect((deps.messages as any).markRead).toHaveBeenCalledWith('m1');
+
+    const missing = await call('POST', '/api/pods/pod_1/messages/nope/read', deps);
+    expect(missing.res.status).toBe(404);
+  });
+
   it('lookup reads a pod without ensuring one', async () => {
     const deps = makeDeps();
     const found = await call('GET', '/api/projects/p1/pod/lookup', deps);
