@@ -183,3 +183,35 @@ Kimi 的 300 agent swarm 与 Grok 的 leader agent 都把"团队长什么样"交
 2. **回执类型化**：把 `receipts[]` 收成严格 schema（`status` 枚举 + `summary` 必填 + `files` 存在性），像 `output_pydantic` 那样在写盘前拒绝畸形回执。
 
 不借：`hierarchical` 的 LLM manager（与我们的确定性定位冲突，且 CrewAI 社区长期抱怨 manager 委派不稳）、crew 一次性 `kickoff()` 的生命周期（我们要项目级常驻）。
+
+## 9. 总表：MAFW Pod 的优势与劣势（对 Codex / Kimi / Grok / Claude / CrewAI）
+
+> 汇总自本文 §1–§8 与 `2026-10-31-pod-vs-industry.md`。判断标准是"用户实际得到什么"，不是功能清单长度。
+
+### 9.1 优势（按可辩护程度排序）
+
+| # | 优势 | 具体是什么 | 谁没有 |
+|---|---|---|---|
+| 1 | **确定性验收** | 产物文件双门 + `{taskId,result,evidence}` rubric 强校验；"够不够好"不由 LLM 一句话决定 | Codex/Grok 靠人看 diff；Kimi 模型自评；CrewAI 靠 manager（LLM）；Claude 靠 lead/人 |
+| 2 | **项目级持久** | 身份物化 + goal 队列 + Pod 记忆，跨会话/跨天/跨模型更替 | Claude Teams 只活一个会话、不可 resume；CrewAI 一次性 kickoff；Codex/Kimi/Grok 是任务/会话级 |
+| 3 | **可审计** | `goal_node_runs` 每次 attempt 一行 + 时间线 + 消息日志 + 投递状态 | Kimi swarm 近乎黑箱；Grok 子代理中间状态默认隐藏；Codex 只有 diff |
+| 4 | **硬边界** | `maxRounds=3` / 节点 attempt=2 / `sameSigCount` 提问 / BudgetGuard / PipelineBudget | 大多靠"模型自觉"或人工盯；Kimi 300 agent 成本不可控 |
+| 5 | **人机面成型** | 左栏名册（待办优先）+ chatview 直聊 + 右栏邮箱（贴条/立即提醒）+ 「记入鲸群」显式提升 | Codex/Grok 是 TUI/CLI；Kimi 是 Web；Claude 是 TUI 分栏——桌面三栏是我们的形态差异 |
+| 6 | **协议标准化** | A2A `message/send` / AgentCard / artifact，外部 agent 可接入 | 多数家用私有消息格式（CrewAI 委派工具、Claude inbox JSON） |
+
+### 9.2 劣势（按影响排序）
+
+| # | 劣势 | 现状 | 对手怎么做 |
+|---|---|---|---|
+| 1 | **没有并行与隔离** | 单活跃 goal，wave 内串行，Builder 在主目录干活 | Codex 20+ 并行（worktree）；Grok ≤8/session（worktree）；Kimi 300 子代理 |
+| 2 | **固定三人，无 specialist** | 安全/性能/文档只能复用 Reviewer | Claude 用自然语言现配角色；CrewAI 任意 agent 列表 |
+| 3 | **成员上下文用完即弃** | Builder/Reviewer 每节点新建，交接靠文件与 `[POD HANDOFF]` | Claude 每 teammate 独立 1M 上下文且会话内连续 |
+| 4 | **任务图太弱** | waves 只有顺序，无依赖/自动解锁 | CrewAI 任务依赖 + 自动解锁；Claude 共享任务列表同理 |
+| 5 | **生态与集成薄** | 无 skill 市场、无 headless/CI SDK、无云端沙箱 | Codex Skills+Automations；Grok ACP+`-p`；CrewAI Enterprise/Flow 部署 |
+| 6 | **单机单进程** | 依赖本地 gateway + serve；并发受本机资源限 | Codex/Kimi 有云端沙箱与弹性 |
+
+### 9.3 一句话
+
+我们的优势集中在 **"可复现、可审计、有边界"**，劣势集中在 **"并行、弹性、生态"**。前者是我们主动选的（用确定性换自主性），后者多数还没做（不是设计冲突）。
+
+最高 ROI 的两步：**① wave fan-out 到多 Builder × worktree**（补最大劣势，且我们已有 worktreeApi）、**② rubric evidence 上桌面**（把已有优势变成用户可感知）。
