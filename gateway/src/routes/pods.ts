@@ -147,8 +147,8 @@ export async function handlePods(
       if (method !== 'POST') return false;
       readMember(deps, url, podId);
       const messageId = decode(messageRead[2]);
-      if (!deps.messages.markRead(messageId)) throw new PodError(404, 'message not found');
-      const message = deps.messages.list(podId).find((item) => item.id === messageId);
+      const message = deps.messages.markRead(messageId, podId);
+      if (!message) throw new PodError(404, 'message not found');
       sendJson(res, 200, { message });
       return true;
     }

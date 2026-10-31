@@ -18,6 +18,7 @@ import { ResizeHandle } from "@mafw/ui/resize-handle"
 import { ManagerCard } from "./ManagerCard"
 import { NotesDock } from "./NotesDock"
 import { PodRailFace } from "./PodRailFace"
+import type { PodDetail, PodMessage } from "@mafw/sdk"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { formatRailTitle, railProjectName } from "./rail-display"
 import { sessionStore } from "../session-store"
@@ -63,8 +64,8 @@ type Props = {
   onForkSession?: (id: string) => void
   onExportSession?: (id: string) => void
   /** 鲸群面（spec 2026-10-30-pod-left-rail §3.2） */
-  podDetail?: any
-  podMessages?: any[]
+  podDetail?: PodDetail | null
+  podMessages?: PodMessage[]
   podLoading?: boolean
   podError?: string | null
   podUnsupported?: boolean
@@ -403,7 +404,7 @@ export function LeftDock(props: Props) {
           onOpenSession={(id) => props.onPodOpenSession?.(id)}
           onOpenGoal={(id) => props.onPodOpenGoal?.(id)}
           onOpenPanel={(panel) => props.onPodOpenPanel?.(panel)}
-          onSend={props.onPodSend ?? (async () => "已发送")}
+          onSend={props.onPodSend ?? (async () => { throw new Error("pod send is not wired") })}
           onCreate={() => props.onPodCreate?.()}
         />
       </Show>

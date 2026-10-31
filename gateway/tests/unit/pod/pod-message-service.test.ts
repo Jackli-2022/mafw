@@ -61,14 +61,25 @@ describe('PodMessageService', () => {
     expect(first.toMemberId).toBeNull();
     expect(second.toMemberId).toBe('m_lead');
     expect(service.list('pod_1').map((m) => m.id)).toEqual(['msg_2', 'msg_1']);
-    expect(service.markRead(first.id)).toBe(true);
+    expect(service.markRead(first.id)?.id).toBe(first.id);
     expect(service.list('pod_1').find((m) => m.id === first.id)?.readAt).toBeTruthy();
     expect(notifications).toEqual(['pod_1', 'pod_1', 'pod_1']);
-    expect(service.markRead('missing')).toBe(false);
+    expect(service.markRead('missing')).toBeNull();
     expect(notifications).toEqual(['pod_1', 'pod_1', 'pod_1']);
   });
 
-  test('rejects empty bodies and unknown recipients', () => {    expect(() => service.send({
+  test('markRead refuses a message that belongs to another pod', () => {
+    store.ensurePod({ id: 'pod_2', projectDir: '/proj/b', name: 'B', now: '2026-10-29T00:00:00.000Z' });
+    const foreign = store.insertMessage({
+      id: 'm_foreign', podId: 'pod_2', fromMemberId: 'm_lead', toMemberId: null,
+      kind: 'note', body: 'other pod', now: '2026-10-29T00:00:00.000Z',
+    });
+    expect(service.markRead(foreign.id, 'pod_1')).toBeNull();
+    expect(store.getMessage(foreign.id)?.readAt).toBeNull();
+  });
+
+  test('rejects empty bodies and unknown recipients', () => {
+    expect(() => service.send({
       podId: 'pod_1', fromMemberId: 'm_lead', kind: 'note', body: '  ',
     })).toThrow(PodError);
     expect(() => service.send({

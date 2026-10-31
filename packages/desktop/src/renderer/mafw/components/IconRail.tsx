@@ -67,7 +67,7 @@ export function IconRail(props: IconRailProps) {
   ]
 
   const renderItem = (item: RailItem) => (
-    <TooltipV2 value={item.label} openDelay={300}>
+    <TooltipV2 value={railAriaLabel(item.label, item.badge)} openDelay={300}>
       <ButtonV2
         variant="ghost"
         size="small"

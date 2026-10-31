@@ -195,16 +195,22 @@ export function createPodStore(
   async function markRead(messageId: string): Promise<boolean> {
     const current = detail()
     if (!current || disposed) return false
+    const previous = messages()
+    const optimistic = new Date().toISOString()
+    setMessages((prev) => prev.map((message) => (message.id === messageId ? { ...message, readAt: optimistic } : message)))
     try {
       const next = await api.markRead(current.pod.id, messageId)
       if (disposed) return false
-      const readAt = next?.message?.readAt ?? new Date().toISOString()
+      const readAt = next?.message?.readAt ?? optimistic
       setMessages((prev) => prev.map((message) => (message.id === messageId ? { ...message, readAt } : message)))
       return true
     } catch (err) {
-      // 旧 gateway 没有 read 路由：静默忽略（spec 冒烟项 #8），其余失败记录但不抛出
+      // 旧 gateway 没有 read 路由：静默回滚（spec 冒烟项 #8）；其余失败记录但不抛出
       // （调用点是 void，抛出会变成 unhandled rejection）。
-      if (!disposed && !podRouteMissing(err)) setError(errorMessage(err))
+      if (!disposed) {
+        setMessages(previous)
+        if (!podRouteMissing(err)) setError(errorMessage(err))
+      }
       return false
     }
   }

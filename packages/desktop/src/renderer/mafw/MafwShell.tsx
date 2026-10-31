@@ -1727,10 +1727,16 @@ export function MafwShell() {
     selfMemberId: podSelfMemberId(),
   })
   const openPodPanel = (panel: "tasks" | "inbox") => {
-    void panel
     closeLeftDockIfOverlay()
     setShowConfig(false)
+    setActiveTab("chat")
+    setShowWelcome(false)
     openWorkbench("execution", "pod")
+    // 右侧鲸群是单列滚动面板：按计数条选中的分区滚过去，而不是忽略参数。
+    queueMicrotask(() => {
+      const selector = panel === "inbox" ? ".mafw-pod-inbox" : ".mafw-pod-board-wrap"
+      document.querySelector(selector)?.scrollIntoView({ block: "start" })
+    })
   }
   const podSessionTitleOf = (sessionId: string) =>
     store.session.find((s: any) => s.id === sessionId)?.title ?? null

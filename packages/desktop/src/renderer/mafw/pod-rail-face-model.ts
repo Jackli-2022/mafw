@@ -24,12 +24,18 @@ export type PodMemberRow = {
 }
 
 type MemberLike = { id: string; role: string; displayName: string; agentName: string; status: string }
-type SessionLike = { memberId: string; sessionId: string; endedAt: string | null }
+type SessionLike = { memberId: string; sessionId: string; endedAt: string | null; createdAt?: string }
 
 function activeSessionOf(sessions: SessionLike[], memberId: string): SessionLike | null {
   return sessions
     .filter((session) => session.memberId === memberId && !session.endedAt)
-    .sort((a, b) => b.sessionId.localeCompare(a.sessionId))[0] ?? null
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.sessionId.localeCompare(a.sessionId))[0] ?? null
+}
+
+function roleRank(role: string): number {
+  const index = ROLE_ORDER.indexOf(role as any)
+  // 未知角色（如 curator）排在三名班底之后，而不是 index === -1 排到最前。
+  return index === -1 ? ROLE_ORDER.length : index
 }
 
 function dotOf(status: string): PodMemberRow["dotClass"] {
@@ -43,9 +49,7 @@ export function buildMemberRows(
   detail: { members: MemberLike[]; sessions: SessionLike[] },
   titleOf: (sessionId: string) => string | null,
 ): PodMemberRow[] {
-  const ordered = [...detail.members].sort(
-    (a, b) => ROLE_ORDER.indexOf(a.role as any) - ROLE_ORDER.indexOf(b.role as any),
-  )
+  const ordered = [...detail.members].sort((a, b) => roleRank(a.role) - roleRank(b.role))
   return ordered.map((member) => {
     const session = activeSessionOf(detail.sessions, member.id)
     const statusLabel = STATUS_LABEL[member.status] ?? member.status

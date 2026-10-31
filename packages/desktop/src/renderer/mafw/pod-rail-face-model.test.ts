@@ -31,6 +31,28 @@ test("ended sessions and missing titles fall back honestly", () => {
   assert.equal(buildMemberRows(titled, () => null)[0].action, "会话中 · 会话中")
 })
 
+test("the newest open session wins by createdAt, not by id", () => {
+  const two = {
+    ...detail,
+    sessions: [
+      { memberId: "m_l", sessionId: "ses_a", endedAt: null, createdAt: "2026-10-01T00:00:00.000Z" },
+      { memberId: "m_l", sessionId: "ses_z", endedAt: null, createdAt: "2026-10-30T00:00:00.000Z" },
+    ],
+  } as any
+  assert.equal(buildMemberRows(two, () => "t")[0].sessionId, "ses_z")
+})
+
+test("unknown roles sort after the reviewer instead of before the lead", () => {
+  const withCurator = {
+    ...detail,
+    members: [
+      { id: "m_c", role: "curator", displayName: "Curator", agentName: "memory-curator", status: "available" },
+      ...detail.members,
+    ],
+  } as any
+  assert.deepEqual(buildMemberRows(withCurator, () => null).map((row) => row.id), ["m_l", "m_b", "m_r", "m_c"])
+})
+
 test("counts split review / todo / unread", () => {
   const messages = [
     { readAt: null, fromMemberId: "m_b", toMemberId: "m_l" },

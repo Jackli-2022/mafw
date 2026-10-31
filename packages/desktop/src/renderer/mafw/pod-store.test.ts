@@ -47,7 +47,8 @@ describe("pod-store", () => {
     assert.equal(store.messages()[0]?.id, "m1")
   })
 
-  test("markRead patches the message optimistically", async () => {    const calls: string[] = []
+  test("markRead patches the message optimistically", async () => {
+    const calls: string[] = []
     const { store } = harness({
       markRead: async (podID, messageID) => {
         calls.push(`markRead:${podID}:${messageID}`)
@@ -59,6 +60,21 @@ describe("pod-store", () => {
     await store.markRead("m1")
     assert.deepEqual(calls, ["markRead:pod_1:m1"])
     assert.equal(store.messages().find((m) => m.id === "m1")?.readAt, "2026-10-31T00:00:00.000Z")
+  })
+
+  test("markRead patches before the request resolves and rolls back on failure", async () => {
+    let failRead: ((err: Error) => void) | null = null
+    const pending = new Promise((_resolve, reject) => { failRead = reject })
+    const { store } = harness({ markRead: () => pending as any })
+    await store.open("/p")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const inFlight = store.markRead("m1")
+    assert.ok(store.messages().find((m) => m.id === "m1")?.readAt, "optimistic patch before resolve")
+
+    failRead!(new Error("boom"))
+    assert.equal(await inFlight, false)
+    assert.equal(store.messages().find((m) => m.id === "m1")?.readAt, null, "rollback on failure")
   })
 
   test("setStatus uses the wake/sleep control endpoints so the queue promotes", async () => {

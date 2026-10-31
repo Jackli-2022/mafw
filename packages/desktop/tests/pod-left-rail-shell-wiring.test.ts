@@ -12,6 +12,9 @@ test("shell owns the pod subscription and feeds the rail badge", () => {
   assert.match(shell, /onPodOpenPanel/)
   assert.match(shell, /notify: input\.notify/)
   assert.match(shell, /deliveryToast/)
+  assert.match(shell, /setActiveTab\("chat"\)/)
+  assert.match(shell, /panel === "inbox"/)
+  assert.doesNotMatch(shell, /void panel/)
 })
 
 test("right workbench no longer owns the first pod load", () => {
