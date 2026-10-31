@@ -43,6 +43,11 @@ API Commands:
   approvals          List pending approvals (GET /api/approvals)
   triage             List triage items (GET /api/triage)
 
+Runtime Plugin Commands:
+  plugin-check <file> [--preset core|conversation|autonomous|desktop] [--strict] [--json]
+                     Offline plugin check: load + validate + dry-event samples (no LLM calls)
+  plugin-test        Online conformance scenarios against the active runtime (uses LLM roundtrips)
+
 Office Commands:
   office setup       Install the Python kernel venv + global office-editing skill
   office status      Show kernel interpreter, office libraries and skill status
@@ -63,7 +68,7 @@ const COMMANDS = [
   'start', 'daemon', 'stop', 'status', 'restart', 'logs',
     'health', 'stats', 'projects', 'goals', 'register',
     'sessions', 'control', 'memory-search',
-    'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'route-check',
+    'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'plugin-check', 'route-check',
   'office',
   'service-register', 'service-unregister',
   'config', 'dashboard', 'uninstall', 'version', 'update', 'tui',
@@ -475,6 +480,8 @@ async function main() {
 
     case 'office': officeCommand(process.argv.slice(3)); break;
 
+    case 'plugin-check': await runPluginCheckCli(process.argv.slice(3)); break;
+
     case 'service-register': registerService(); break;
     case 'service-unregister': unregisterService(); break;
     case 'config': showConfig(); break;
@@ -484,6 +491,50 @@ async function main() {
     case 'update': requestUpdate(); break;
     case 'tui': launchTui(); break;
   }
+}
+
+// `mafw plugin-check <file>`: offline checks against a plugin FILE — loads it,
+// validates shape + event declarations + capabilities, feeds sampleEvents
+// through the real mapping executor. No gateway needed, no LLM roundtrips.
+async function runPluginCheckCli(args) {
+  const path = require('path');
+  const file = args.find((a) => !a.startsWith('--'));
+  if (!file) {
+    console.error('Usage: mafw plugin-check <file.js> [--preset <id>] [--strict] [--json]');
+    process.exit(1);
+  }
+  const presetIdx = args.indexOf('--preset');
+  const preset = presetIdx >= 0 ? args[presetIdx + 1] : undefined;
+  const strict = args.includes('--strict');
+  const json = args.includes('--json');
+  const dist = path.join(__dirname, '..', 'gateway', 'dist', 'runtime', 'plugin-check.js');
+  let mod;
+  try {
+    mod = require(dist);
+  } catch (e) {
+    console.error(`plugin-check requires a built gateway (missing ${dist}). Run: cd gateway && npm run build`);
+    process.exit(2);
+  }
+  const report = await mod.runPluginCheck({ file: path.resolve(file), preset, strict });
+  if (json) {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    console.log(`Plugin: ${report.name ?? '(unnamed)'} — ${report.file}`);
+    console.log(`Status: ${report.status}${report.error ? ` (${report.error})` : ''}`);
+    console.log(`Translation: ${report.translation.mode}`);
+    for (const i of report.translation.issues) console.log(`  issue: ${i}`);
+    for (const h of report.hard) console.log(`  HARD: ${h}`);
+    for (const d of report.downgraded) console.log(`  DOWNGRADED: ${d}`);
+    for (const w of report.warnings) console.log(`  warn: ${w}`);
+    if (report.samples) {
+      console.log(`Samples: ${report.samples.translated} translated / ${report.samples.suppressed} suppressed / ` +
+        `${report.samples.unmatched} unmatched / ${report.samples.invalid} invalid (of ${report.samples.total})`);
+    }
+    console.log(`Preset ${report.preset}: ${report.presetMissing.length === 0 ? 'complete' : `${report.presetMissing.length} missing`}`);
+    if (report.presetMissing.length > 0) console.log(`  missing: ${report.presetMissing.join(', ')}`);
+    console.log('Next: `mafw plugin-test` for online conformance against the active runtime.');
+  }
+  process.exit(mod.pluginCheckExitCode(report, strict));
 }
 
 // `mafw plugin-test`: run conformance scenarios against the ACTIVE runtime

@@ -207,6 +207,11 @@ export function hasEventDeclarations(entry: EventMappingEntry): boolean {
   return (entry.eventMappings?.length ?? 0) > 0 || !!entry.transformEvent;
 }
 
+/** canonical 词汇集合（事件面 = runtime 契约事件 ∪ 工具三原语）——loader/plugin-check 共用。 */
+export function canonicalTypeSet(): ReadonlySet<string> {
+  return new Set(RUNTIME_IDENTITY_TYPES);
+}
+
 /**
  * 包装 runtime.global.event()：原生流在此过翻译表（v2 强制接线）。
  * 匹配优先级：eventMappings（数组序，含 identity/drop 行）→ transformEvent → 拦截+计数
