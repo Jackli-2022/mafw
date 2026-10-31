@@ -122,7 +122,7 @@ import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
-import { wrapGlobalEventStream, hasEventDeclarations } from './runtime/event-mapper';
+import { wrapGlobalEventStream } from './runtime/event-mapper';
 import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/identity-registry';
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { withInstructionSync } from './runtime/instruction-wrapper';
@@ -213,7 +213,8 @@ function wirePiPermissionEvaluator(runtime: AgentRuntime, policy: ApprovalPolicy
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { validateRuntime, RuntimeValidation } from './runtime/validate';
 import { buildRuntimeContractManifest } from './runtime/contract-manifest';
-import { applyEventStreamDeclarationDowngrade, type ContractSubject, type RuntimeCoverage } from './runtime/coverage';
+import { type ContractSubject, type RuntimeCoverage } from './runtime/coverage';
+import { resolveEventDeclaration } from './runtime/event-declaration';
 import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
@@ -1729,8 +1730,11 @@ class MafwScheduler {
       // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径。
       // 必须在 applyRuntimeValidation 之前——否则 coverage 会记录降级前的
       // eventStream=true，与 active.capabilities 自相矛盾。
-      if (applyEventStreamDeclarationDowngrade(rt, hasEventDeclarations(plugin))) {
-        log.error(`[Runtime] '${rt.name}' declares no event translations — eventStream downgraded (default-deny would drop the entire native stream)`);
+      // 判定矩阵归 event-declaration 单源（declared / self 逃逸）。
+      const declaration = resolveEventDeclaration(rt.capabilities, plugin);
+      if (!declaration.eventStream) (rt as any).capabilities.eventStream = false;
+      for (const issue of declaration.issues) {
+        log.error(`[Runtime] '${rt.name}': ${issue}`);
       }
       // 声明 vs 实现一致性校验：必选面缺失 → 回退（fatal）；能力位虚报 → 强制降级
       // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
@@ -1739,6 +1743,7 @@ class MafwScheduler {
           eventSource: plugin.eventSource,
           eventMappings: plugin.eventMappings,
           transformEvent: plugin.transformEvent,
+          eventTranslation: plugin.eventTranslation,
         },
         plugin: {
           name,

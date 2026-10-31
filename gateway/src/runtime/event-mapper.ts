@@ -50,6 +50,8 @@ export interface EventMappingEntry {
   eventSource?: EventSourceShape;
   eventMappings?: EventMapping[];
   transformEvent?: TransformEventFn;
+  /** 'self' = 插件自己翻译成 canonical（逃逸声明，coverage 会标注不推荐）；缺省 'declared'。 */
+  eventTranslation?: 'declared' | 'self';
 }
 
 /** 入口恒等翻译词汇：runtime 契约事件面（= SDK RUNTIME_EVENT_TYPES）∪ 工具三原语。 */

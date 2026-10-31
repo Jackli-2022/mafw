@@ -35,6 +35,31 @@ test('声明 eventMappings 的插件：加载后 meta 带映射；未知 canonic
   expect(state?.status).toBe('error');
 });
 
+test('eventTranslation self 逃逸：无映射也保持 eventStream 且状态 ok', async () => {
+  const dir = makePluginDir({
+    'selftr.js': `module.exports = { name: 'selftr', eventTranslation: 'self', capabilities: { eventStream: true },
+      async createRuntime() { return { name: 'selftr', capabilities: { eventStream: true } }; } };`,
+    'contradict.js': `module.exports = { name: 'contradict', eventTranslation: 'self', capabilities: { eventStream: true },
+      eventSource: { typePath: '$.type' },
+      eventMappings: [{ from: 'done', to: 'turn.completed' }],
+      async createRuntime() { return { name: 'contradict', capabilities: { eventStream: true } }; } };`,
+  });
+  const loader = new RuntimePluginLoader(dir);
+  loader.setCanonicalTypes(CANON);
+  await loader.scan();
+  const selftr = loader.get('selftr');
+  expect(selftr?.capabilities.eventStream).toBe(true);
+  expect(selftr?.eventTranslation).toBe('self');
+  expect(loader.getState().find((s) => s.name === 'selftr')?.status).toBe('ok');
+  // 矛盾声明：declared 胜出（映射生效），状态 error 提示作者删一侧
+  const contradict = loader.get('contradict');
+  expect(contradict?.capabilities.eventStream).toBe(true);
+  expect(contradict?.eventMappings).toHaveLength(1);
+  const state = loader.getState().find((s) => s.name === 'contradict');
+  expect(state?.status).toBe('error');
+  expect(state?.error).toContain('contradicts');
+});
+
 test('无声明 runtime：eventStream 能力降级 + error 状态（default-deny 前置）', async () => {
   const dir = makePluginDir({
     'bare.js': `module.exports = { name: 'bare', capabilities: { eventStream: true },

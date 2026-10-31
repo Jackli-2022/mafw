@@ -13,7 +13,8 @@ import { config } from '../config';
 import { AgentRuntime, RuntimeCapabilities, RuntimeCredentials, minimalCapabilities } from './contract';
 import { isKnownEventType } from './event-telemetry';
 import { checkEventFields } from './event-field-contract';
-import { EventMappingEntry, validateEventMappings, hasEventDeclarations } from './event-mapper';
+import { EventMappingEntry, validateEventMappings } from './event-mapper';
+import { resolveEventDeclaration } from './event-declaration';
 import type { RuntimePackageEntry } from '../plugins/package-types';
 
 export interface RuntimePluginContext {
@@ -144,11 +145,12 @@ export class RuntimePluginLoader {
       }
       // 能力合并：插件声明覆盖在 Tier-0 基线之上
       const capabilities: RuntimeCapabilities = { ...minimalCapabilities(), ...(mod.capabilities || {}) };
-      // 事件映射声明（纯数据）：eventSource + eventMappings + transformEvent
+      // 事件映射声明（纯数据）：eventSource + eventMappings + transformEvent + eventTranslation
       const eventExtras: EventMappingEntry = {
         eventSource: mod.eventSource,
         eventMappings: Array.isArray(mod.eventMappings) ? mod.eventMappings : undefined,
         transformEvent: typeof mod.transformEvent === 'function' ? mod.transformEvent : undefined,
+        ...(mod.eventTranslation === 'self' ? { eventTranslation: 'self' as const } : {}),
       };
       // 加载期校验：未知 canonical to / 坏路径 → eventStream 能力降级 + error 状态（fail-open，仍注册）
       let mappingIssues: string[] = [];
@@ -157,16 +159,11 @@ export class RuntimePluginLoader {
       } catch (err: any) {
         mappingIssues = [`event mapping validation threw: ${err.message}`];
       }
-      // B1 default-deny 前置：声明 eventStream 却无任何翻译声明 → 原生流会被整条拦截，
-      // 与其静默全灭不如加载期降级（声明翻译行或 canonicalIdentity() 恒等行后再开）。
-      if (capabilities.eventStream && !hasEventDeclarations(eventExtras)) {
-        capabilities.eventStream = false;
-        mappingIssues.push('eventStream capability declared but no eventMappings/transformEvent — default-deny would drop the entire native stream; capability downgraded (declare translations or identity rows via canonicalIdentity())');
-      }
-      if (mappingIssues.length > 0) {
-        for (const i of mappingIssues) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
-        capabilities.eventStream = false;
-      }
+      // B1 default-deny 前置 + self 逃逸：判定矩阵归 event-declaration 单源。
+      const declaration = resolveEventDeclaration(capabilities, eventExtras);
+      if (mappingIssues.length > 0 || !declaration.eventStream) capabilities.eventStream = false;
+      const issuesSoFar = [...mappingIssues, ...declaration.issues];
+      for (const i of issuesSoFar) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
       // 事件注册交叉校验：声明了映射面但事件流关闭 / 死配置——不强制降级
       // （runtime 可能直发 canonical 事件），但记 error 状态让 hub 可见。
       const crossIssues: string[] = [];
@@ -181,7 +178,7 @@ export class RuntimePluginLoader {
         crossIssues.push('eventSource declared but neither eventMappings nor transformEvent — dead config');
       }
       for (const i of crossIssues) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
-      const issues = [...mappingIssues, ...crossIssues];
+      const issues = [...issuesSoFar, ...crossIssues];
       // 插件 runtime 一律视为外部托管（gateway 不 spawn/监管其进程）
       const external = mod.external !== false;
       this.factories.set(name, mod.createRuntime);
