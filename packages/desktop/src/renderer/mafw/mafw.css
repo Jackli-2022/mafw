@@ -4424,6 +4424,29 @@ html[data-theme="light"] body {
 
 /* ── Editor dock（协同编辑器，spec 2026-10-22 §5.2） ── */
 .mafw-editor-dock { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
+/* 内联 agent 改动（只读视觉提示；回退仍走审阅面板） */
+.mafw-editor-inline-diff { display: inline-flex; align-items: center; gap: 1px; }
+.mafw-editor-inline-diff-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.cm-inline-diff-add {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--success);
+}
+.cm-inline-diff-del {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--danger);
+}
 .mafw-editor-annot-anchor { position: absolute; z-index: 5; animation: mafw-annot-pill-in 120ms var(--ease-standard, ease-out); }
 @keyframes mafw-annot-pill-in {
   from { opacity: 0; transform: translateY(-2px) scale(0.96); }
@@ -5793,6 +5816,9 @@ html[data-theme="light"] body {
   border-bottom: 1px solid var(--border-subtle);
 }
 .mafw-checkpoint-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 10px; }
+.mafw-checkpoint-list.is-hidden { display: none; }
+.mafw-checkpoint-panel.is-previewing { width: min(900px, 100%); max-height: 80vh; }
+.mafw-checkpoint-preview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .mafw-checkpoint-row { padding: 8px; border-radius: var(--r-sm); }
 .mafw-checkpoint-row:hover { background: var(--hover); }
 .mafw-checkpoint-row-head { display: flex; align-items: center; gap: 8px; }

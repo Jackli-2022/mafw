@@ -7,8 +7,8 @@ import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from
 import { checkpointsWithTurnDiffs, type Checkpoint } from "./checkpoint-model"
 import { canRewindCode, checkpointsToRewind, revertWarning } from "./checkpoint-revert"
 import { leftoverNotice, restoreWarning, toServerRows } from "./server-checkpoints"
+import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import { collectTurnDiffCandidates, loadTurnDiffs } from "./turn-diffs"
-import type { FileDiffEntry } from "./DiffReviewPanel"
 
 export function CheckpointOverlay(props: {
   sessionID: string
@@ -79,8 +79,12 @@ export function CheckpointOverlay(props: {
     return c && c.messageID === messageID ? c.mode : null
   }
 
+  const [preview, setPreview] = createSignal<Checkpoint | null>(null)
+
   const close = () => {
-    if (!working()) props.onClose()
+    if (working()) return
+    if (preview()) { setPreview(null); return }
+    props.onClose()
   }
 
   const timeLabel = (cp: Checkpoint) =>
@@ -168,6 +172,7 @@ export function CheckpointOverlay(props: {
     <div class="mafw-checkpoint-backdrop" onClick={close}>
       <div
         class="mafw-checkpoint-panel"
+        classList={{ "is-previewing": !!preview() }}
         role="dialog"
         aria-modal="true"
         aria-label="时间线"
@@ -220,7 +225,22 @@ export function CheckpointOverlay(props: {
           )}
         </Show>
 
-        <div class="mafw-checkpoint-list">
+        <Show when={preview()}>
+          {(cp) => (
+            <div class="mafw-checkpoint-preview">
+              <DiffReviewPanel
+                previewOnly
+                sessionID={props.sessionID}
+                diffs={cp().files as FileDiffEntry[]}
+                allowSessionFallback={false}
+                allowNonInvertibleRevert={false}
+                onClose={() => setPreview(null)}
+              />
+            </div>
+          )}
+        </Show>
+
+        <div class="mafw-checkpoint-list" classList={{ "is-hidden": !!preview() }}>
           <Show
             when={serverMode() && serverRows().length > 0}
             fallback={
@@ -251,6 +271,14 @@ export function CheckpointOverlay(props: {
                         </Show>
                       </div>
                       <div class="mafw-checkpoint-actions">
+                        <Show when={cp.files.some((f) => typeof f.patch === "string" && f.patch)}>
+                          <ButtonV2
+                            variant="ghost"
+                            size="small"
+                            disabled={busy()}
+                            onClick={() => setPreview(cp)}
+                          >预览</ButtonV2>
+                        </Show>
                         <Show when={conversationAvailable()}>
                           <ButtonV2
                             variant="outline"

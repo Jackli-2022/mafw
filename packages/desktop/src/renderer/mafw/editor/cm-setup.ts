@@ -1,6 +1,8 @@
 // CodeMirror 6 装配（动态 import：编辑器内核按需分包，不进主 bundle）。
 // 主题与语法色全部走 CSS token（三主题自适应），禁止硬编码色值。
+import type { Decoration as CmDecoration, DecorationSet } from "@codemirror/view"
 import { langForFile } from "./cm-lang"
+import type { InlineDiffRange } from "./inline-diff"
 
 export interface MountedEditor {
   setDoc(s: string): void
@@ -8,6 +10,10 @@ export interface MountedEditor {
   destroy(): void
   /** 容器从隐藏变可见后强制重测（SVG 预览切回源码等场景）。 */
   measure(): void
+  /** 只读内联 diff 行装饰（agent 改动；行号 1-based）。 */
+  setInlineDiff(ranges: InlineDiffRange[]): void
+  /** 滚动并聚焦到某一行（1-based）。 */
+  gotoLine(line: number): void
 }
 
 // “编辑器语言 id → LanguageDescription”匹配：先按名称（大小写不敏感），再按扩展名。
@@ -29,7 +35,7 @@ export async function mountEditor(host: HTMLElement, opts: {
   /** 选区变化（编辑器内坐标，供浮层定位）；零宽/折叠 → null。 */
   onSelectionChange?: (sel: { from: number; to: number; text: string; left: number; top: number } | null) => void
 }): Promise<MountedEditor> {
-  const [{ EditorView, basicSetup }, { EditorState }, { keymap }, { HighlightStyle, syntaxHighlighting }, { tags }, support] =
+  const [{ EditorView, basicSetup }, { EditorState, StateEffect, StateField, RangeSetBuilder }, { keymap, Decoration }, { HighlightStyle, syntaxHighlighting }, { tags }, support] =
     await Promise.all([
       import("codemirror"),
       import("@codemirror/state"),
@@ -38,6 +44,33 @@ export async function mountEditor(host: HTMLElement, opts: {
       import("@lezer/highlight"),
       loadLanguageSupport(opts.lang),
     ])
+
+  // ── 内联 diff（只读）：agent 改动行装饰 + 上一处/下一处导航 ─────────────
+  const setInlineDiffEffect = StateEffect.define<InlineDiffRange[]>()
+  const addLineDeco = Decoration.line({ class: "cm-inline-diff-add" })
+  const delLineDeco = Decoration.line({ class: "cm-inline-diff-del" })
+  const inlineDiffField = StateField.define<DecorationSet>({
+    create: () => Decoration.none,
+    update(value, tr) {
+      value = value.map(tr.changes)
+      for (const effect of tr.effects) {
+        if (!effect.is(setInlineDiffEffect)) continue
+        const builder = new RangeSetBuilder<CmDecoration>()
+        const doc = tr.state.doc
+        for (const range of effect.value) {
+          const from = Math.max(1, Math.min(range.from, doc.lines))
+          const to = Math.max(from, Math.min(range.to, doc.lines))
+          for (let n = from; n <= to; n++) {
+            const line = doc.line(n)
+            builder.add(line.from, line.from, range.kind === "add" ? addLineDeco : delLineDeco)
+          }
+        }
+        value = builder.finish()
+      }
+      return value
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  })
 
   const theme = EditorView.theme({
     "&": {
@@ -81,6 +114,7 @@ export async function mountEditor(host: HTMLElement, opts: {
       theme,
       highlight,
       saveKeymap,
+      inlineDiffField,
       ...(Array.isArray(support) ? support : [support]),
       EditorState.readOnly.of(opts.readOnly),
       EditorView.editable.of(!opts.readOnly),
@@ -122,6 +156,20 @@ export async function mountEditor(host: HTMLElement, opts: {
     destroy: () => view.destroy(),
     measure() {
       try { view.requestMeasure() } catch { /* view 已销毁 */ }
+    },
+    setInlineDiff(ranges: InlineDiffRange[]) {
+      try { view.dispatch({ effects: setInlineDiffEffect.of(ranges) }) } catch { /* view 已销毁 */ }
+    },
+    gotoLine(line: number) {
+      try {
+        const n = Math.max(1, Math.min(line, view.state.doc.lines))
+        const pos = view.state.doc.line(n).from
+        view.dispatch({
+          selection: { anchor: pos },
+          effects: EditorView.scrollIntoView(pos, { y: "center" }),
+        })
+        view.focus()
+      } catch { /* view 已销毁 */ }
     },
   }
 }

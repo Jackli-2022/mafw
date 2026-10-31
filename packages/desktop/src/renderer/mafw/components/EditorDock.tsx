@@ -34,6 +34,7 @@ import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
 import { annotationApplies, buildAnnotationPrompt, buildAnnotationPromptAnchored, lineRangeOf } from "../editor-annotation"
 import { activationRefreshAction } from "../editor-activation"
+import { inlineDiffRanges } from "../editor/inline-diff"
 import { diffEntryFor } from "../editor-diff"
 import { AnnotationSheet } from "./AnnotationSheet"
 import { buildQuoteAnchor } from "../quote-anchor"
@@ -132,6 +133,21 @@ export function EditorDock(props: {
     const f = activeFile()
     return f ? previewUrl(f.rel) : ""
   })
+
+  // ── 内联 diff（2026-10-31）：agent 改动行装饰 + 上一处/下一处 ─────────
+  const activeDiffEntry = createMemo(() => {
+    const f = activeFile()
+    return f ? diffEntryFor(props.diffs, f.rel) : null
+  })
+  const inlineRanges = createMemo(() => inlineDiffRanges(activeDiffEntry()?.patch))
+  const [inlineIndex, setInlineIndex] = createSignal(0)
+  const gotoInlineChange = (delta: number) => {
+    const ranges = inlineRanges()
+    if (!ranges.length || !editor) return
+    const next = (inlineIndex() + delta + ranges.length) % ranges.length
+    setInlineIndex(next)
+    editor.gotoLine(ranges[next].from)
+  }
 
   /** 预览态：图片恒预览；svg / csv-tsv / markdown / json 默认预览（仅显式源码态例外）。diff 模式不预览。 */
   const showsPreview = (f: OpenFile): boolean => {
@@ -429,6 +445,16 @@ export function EditorDock(props: {
     await mountFor(f, el)
   }
 
+  // agent 改动行装饰跟随：切文件/切模式/预览态/新 diff 都同步；编辑器重挂时在 mountFor 里补。
+  createEffect(() => {
+    const ranges = inlineRanges()
+    const ed = editor
+    if (!ed) return
+    if (mode() !== "edit" || previewing()) { ed.setInlineDiff([]); return }
+    ed.setInlineDiff(ranges)
+    if (inlineIndex() >= ranges.length) setInlineIndex(0)
+  })
+
   async function mountFor(f: OpenFile | null, el: HTMLElement) {
     const token = ++mountToken
     editor?.destroy()
@@ -462,6 +488,7 @@ export function EditorDock(props: {
       })
       if (token !== mountToken) { h.destroy(); return }
       editor = h
+      h.setInlineDiff(mode() === "edit" && !previewing() ? inlineRanges() : [])
       if (!f.readOnly) {
         const key = `${root}\u0000${f.rel}`
         watched.add(key)
@@ -970,6 +997,21 @@ export function EditorDock(props: {
               {previewToggleLabel()}
             </ButtonV2>
           </TooltipV2>
+        </Show>
+        <Show when={mode() === "edit" && inlineRanges().length > 0}>
+          <div class="mafw-editor-inline-diff">
+            <span class="mafw-editor-inline-diff-count" aria-label={`${inlineRanges().length} 处 agent 改动`}>{inlineRanges().length}</span>
+            <TooltipV2 value="上一处改动" openDelay={300}>
+              <ButtonV2 variant="ghost" size="small" aria-label="上一处改动" onClick={() => gotoInlineChange(-1)}>
+                <Icon name="arrow-up" size="small" />
+              </ButtonV2>
+            </TooltipV2>
+            <TooltipV2 value="下一处改动" openDelay={300}>
+              <ButtonV2 variant="ghost" size="small" aria-label="下一处改动" onClick={() => gotoInlineChange(1)}>
+                <Icon name="chevron-down" size="small" />
+              </ButtonV2>
+            </TooltipV2>
+          </div>
         </Show>
         <Show when={activeFile() && diffEntryFor(props.diffs, activeFile()!.rel)}>
           <TooltipV2 value={mode() === "diff" ? "返回编辑" : "查看改动"} openDelay={300}>

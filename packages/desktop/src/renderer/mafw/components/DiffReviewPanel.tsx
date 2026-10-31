@@ -35,6 +35,8 @@ export function DiffReviewPanel(props: {
   allowSessionFallback?: boolean
   /** 嵌入 dock 时只允许可反转的修改型 patch（默认允许，保留旧行为） */
   allowNonInvertibleRevert?: boolean
+  /** 检查点恢复前只读预览：隐藏勾选/评论/回退，仅展示差异。 */
+  previewOnly?: boolean
 }) {
   const [fetched, setFetched] = createSignal<FileDiffEntry[]>([])
   const [loading, setLoading] = createSignal(false)
@@ -173,17 +175,21 @@ export function DiffReviewPanel(props: {
         <Show when={props.embedded && props.onBack}>
           <ButtonV2 variant="ghost" size="small" class="mafw-diff-panel-back" onClick={() => props.onBack?.()}>← 改动列表</ButtonV2>
         </Show>
-        <h2>审阅改动</h2>
+        <h2>{props.previewOnly ? "改动预览（只读）" : "审阅改动"}</h2>
         <div class="mafw-diff-panel-actions">
-          <Show when={props.allowSessionFallback !== false}>
+          <Show when={props.allowSessionFallback !== false && !props.previewOnly}>
             <ButtonV2 variant="ghost" size="small" disabled={busy()} onClick={() => void refresh()}>刷新</ButtonV2>
           </Show>
           <Show when={!props.embedded}>
-            <ButtonV2 variant="ghost" size="small" onClick={() => props.onClose?.()}>关闭</ButtonV2>
+            <ButtonV2 variant="ghost" size="small" onClick={() => props.onClose?.()}>{props.previewOnly ? "返回" : "关闭"}</ButtonV2>
           </Show>
         </div>
       </header>
-      <p class="mafw-diff-panel-hint">勾选要撤销的 hunk，点「回退选中」。未勾选的改动保持不变。</p>
+      <p class="mafw-diff-panel-hint">
+        {props.previewOnly
+          ? "恢复到此检查点前将撤销以下改动；此处仅供预览（回退仍走「审阅」或时间线确认）。"
+          : "勾选要撤销的 hunk，点「回退选中」。未勾选的改动保持不变。"}
+      </p>
       <div class="mafw-diff-panel-body">
         <Show when={!loading()} fallback={<p class="mafw-diff-panel-empty">加载中…</p>}>
           <Show
@@ -231,7 +237,7 @@ export function DiffReviewPanel(props: {
                           <span class="mafw-diff-stat del">-{f().deletions}</span>
                         </Show>
                       </header>
-                      <Show when={!revertible}>
+                      <Show when={!revertible && !props.previewOnly}>
                         <p class="mafw-diff-panel-hint">新增/删除文件不支持回退</p>
                       </Show>
                       <For each={hunks}>
@@ -241,16 +247,18 @@ export function DiffReviewPanel(props: {
                           const checked = () => selected().has(key)
                           return (
                             <label class="mafw-diff-hunk" classList={{ checked: checked() }}>
-                              <input
-                                type="checkbox"
-                                checked={checked()}
-                                disabled={!revertible}
-                                onChange={() => { if (revertible) toggle(key) }}
-                              />
+                              <Show when={!props.previewOnly}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked()}
+                                  disabled={!revertible}
+                                  onChange={() => { if (revertible) toggle(key) }}
+                                />
+                              </Show>
                               <span class="mafw-diff-hunk-header">{h.header}</span>
                               <span class="mafw-diff-stat add">+{stats.added}</span>
                               <span class="mafw-diff-stat del">-{stats.removed}</span>
-                              <Show when={props.onSendComment}>
+                              <Show when={props.onSendComment && !props.previewOnly}>
                                 <ButtonV2
                                   variant="ghost"
                                   size="small"
@@ -262,7 +270,7 @@ export function DiffReviewPanel(props: {
                                 <For each={h.lines}>
                                   {(line, li) => {
                                     const lineNo = () => lineNewNumber(h, li())
-                                    const commentable = () => lineNo() !== null && (!!props.onSendComment || !!props.onAddAnnotation)
+                                    const commentable = () => !props.previewOnly && lineNo() !== null && (!!props.onSendComment || !!props.onAddAnnotation)
                                     return (
                                       <>
                                       <span
@@ -352,12 +360,14 @@ export function DiffReviewPanel(props: {
           </Show>
         </Show>
       </div>
-      <footer class="mafw-diff-panel-footer">
-        <span class="mafw-diff-panel-count">已选 {totalSel()} 个 hunk</span>
-        <ButtonV2 variant="contrast" size="small" disabled={busy() || totalSel() === 0} onClick={() => void revertSelected()}>
-          {busy() ? "回退中…" : "回退选中"}
-        </ButtonV2>
-      </footer>
+      <Show when={!props.previewOnly}>
+        <footer class="mafw-diff-panel-footer">
+          <span class="mafw-diff-panel-count">已选 {totalSel()} 个 hunk</span>
+          <ButtonV2 variant="contrast" size="small" disabled={busy() || totalSel() === 0} onClick={() => void revertSelected()}>
+            {busy() ? "回退中…" : "回退选中"}
+          </ButtonV2>
+        </footer>
+      </Show>
     </div>
   )
 }
