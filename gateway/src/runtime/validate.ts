@@ -12,6 +12,7 @@ import { buildRuntimeContractManifest } from './contract-manifest';
 import { CONTRACT_CAPABILITIES } from './contract-capabilities';
 import type { ContractSurface } from './contract-manifest-types';
 import { computeCoverage, type ContractSubject, type RuntimeCoverage } from './coverage';
+import { deriveUndeclaredCapabilities } from './capability-source';
 
 export interface RuntimeValidation {
   hard: string[];
@@ -97,20 +98,28 @@ export function validateRuntime(
     },
     source: subjectOpts?.source ?? 'active',
   };
+  // 反向校验：实现了但没声明的能力 → 自动补 true + warning（「实现了就让它生效」）。
+  // 必须在 computeCoverage 之前写回，否则 coverage.declared 与 active.capabilities 自相矛盾。
+  const derived = deriveUndeclaredCapabilities(subject, caps as RuntimeCapabilities);
+  if (derived.warnings.length > 0) {
+    for (const w of derived.warnings) out.warnings.push(`${source}: ${w}`);
+    (rt as any).capabilities = derived.caps;
+  }
   const coverage = computeCoverage(subject, MANIFEST);
+  const liveCaps: RuntimeCapabilities = (rt as any).capabilities as RuntimeCapabilities;
 
   // 旧语义保留：sessionApi 声明为 true 但整个 session 缺失 → 单条 hard，
   // 不再逐方法刷 11 条。
-  const sessionMissing = !!caps.sessionApi && !isObject((rt as any).session);
+  const sessionMissing = !!liveCaps.sessionApi && !isObject((rt as any).session);
   if (sessionMissing) {
     out.hard.push(`${source}: declares sessionApi but session is missing`);
   }
-  const configMissing = !!caps.providerConfigApi && !isObject((rt as any).config);
+  const configMissing = !!liveCaps.providerConfigApi && !isObject((rt as any).config);
   if (configMissing) {
     out.hard.push(`${source}: declares providerConfigApi but config.get/config.update is missing`);
   }
 
-  if (caps.turnBudgetApi) {
+  if (liveCaps.turnBudgetApi) {
     out.warnings.push(
       `${source}: declares turnBudgetApi — trusting the runtime to enforce maxTurns/maxCostUsd natively; ` +
       `gateway BudgetGuard will NOT be attached (a false claim silently disables goal budgets)`,
@@ -118,11 +127,11 @@ export function validateRuntime(
   }
 
   let downgradedAny = false;
-  const effectiveCaps: RuntimeCapabilities = { ...caps };
+  const effectiveCaps: RuntimeCapabilities = { ...liveCaps };
 
   for (const surface of MANIFEST.surfaces) {
     if (sessionMissing && SESSION_CORE_IDS.has(surface.id)) continue;
-    if (!caps.sessionApi && SESSION_CORE_IDS.has(surface.id)) continue;
+    if (!liveCaps.sessionApi && SESSION_CORE_IDS.has(surface.id)) continue;
     if (configMissing && (surface.id === 'provider.config' || surface.id === 'provider.config.update')) continue;
 
     const status = coverage.static.surfaces[surface.id]?.status;
@@ -132,7 +141,7 @@ export function validateRuntime(
     }
 
     if (surface.obligation === 'required') {
-      if (!requiredWhenSatisfied(surface, caps)) continue;
+      if (!requiredWhenSatisfied(surface, liveCaps)) continue;
       if (status !== 'present') out.hard.push(hardMessage(source, surface));
       continue;
     }
@@ -140,7 +149,7 @@ export function validateRuntime(
     if (surface.obligation === 'gated') {
       if (!surface.capability) continue;
       const capKey = surface.capability as keyof RuntimeCapabilities;
-      if (!caps[capKey]) continue;
+      if (!liveCaps[capKey]) continue;
       if (status === 'present') continue;
       const requires = CAP_BY_ID.get(surface.capability)?.requires ?? [];
       if (requires.includes(surface.id)) {

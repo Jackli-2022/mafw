@@ -203,6 +203,7 @@ describe('validateRuntime — capability downgrade (declared bit, missing implem
       caps: {
         nativeApprovals: true, questionApi: true, sessionBranchApi: true, diffApi: true,
         completionApi: true, agentConfigApi: true, agentProcessApi: true, sessionStorageApi: true,
+        revertUndoApi: true,
       },
       session: {
         permissionReply: async () => true,
@@ -220,6 +221,16 @@ describe('validateRuntime — capability downgrade (declared bit, missing implem
     const v = validateRuntime(rt as any, 'my-rt');
     expect(v.downgraded).toEqual([]);
     expect(JSON.stringify((rt as any).capabilities)).toBe(before);
+  });
+  it('implemented but undeclared capability is auto-enabled with a warning', () => {
+    // completion.complete 实现但没声明 completionApi —— 反向校验补 true + warning。
+    const rt = OK_RT({
+      caps: {},
+      completion: { complete: async () => ({ text: '' }) },
+    });
+    const v = validateRuntime(rt as any, 'my-rt');
+    expect((rt as any).capabilities.completionApi).toBe(true);
+    expect(v.warnings.some((i) => i.includes('completionApi') && i.includes('not declared'))).toBe(true);
   });
 });
 

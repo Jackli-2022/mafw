@@ -215,6 +215,7 @@ import { validateRuntime, RuntimeValidation } from './runtime/validate';
 import { buildRuntimeContractManifest } from './runtime/contract-manifest';
 import { type ContractSubject, type RuntimeCoverage } from './runtime/coverage';
 import { resolveEventDeclaration } from './runtime/event-declaration';
+import { stampDeclaredCapabilities } from './runtime/capability-source';
 import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
@@ -1727,6 +1728,10 @@ class MafwScheduler {
         rootDir: this.ensureRuntimeRootDir(),
         gatewayPort: config.server.apiPort,
       }));
+      // 能力声明单源（G3）：module.exports.capabilities 为准；实例若自带且不一致 →
+      // log.error 后仍以模块声明覆盖（普通可写赋值，激活期降级路径继续可写）。
+      const capabilityMismatch = stampDeclaredCapabilities(rt, plugin.capabilities);
+      if (capabilityMismatch) log.error(`[Runtime] '${rt.name}': ${capabilityMismatch}`);
       // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径。
       // 必须在 applyRuntimeValidation 之前——否则 coverage 会记录降级前的
       // eventStream=true，与 active.capabilities 自相矛盾。
