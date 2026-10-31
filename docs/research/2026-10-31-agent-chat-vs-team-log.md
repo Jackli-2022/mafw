@@ -55,3 +55,42 @@
 - Devin Desktop / Agent Command Center: https://docs.devin.ai/desktop/agent-command-center
 - 协调日志 vs transcript 的论述：agility-at-scale「Coordination Substrate Before Topology」、claudepedia「Multi-Agent Coordination」
 - Slack 转发/频道语义：slack.com/help（频道与 DM 分离、Activity 未读会话数）
+
+## 5. 追加调研：必须是「用户主动点」吗？
+
+结论：**是，但要给它一个看得见的入口**。分三层看。
+
+### 5.1 行业里「显式 vs 自动」按产物分档
+
+| 产物 | 机制 | 例子 |
+|---|---|---|
+| 个人记忆 | **自动 + 手动并存** | ChatGPT Memory：自动捕获（模型判断偏好/身份/项目状态）+ **任意消息旁的 Save 图标**手动存；界面上可查看/纠正/删除 |
+| 团队可见记录 | **显式** | Slack 转发/保存到 Later；GitHub「Reference in new issue」；Linear 从消息建 issue |
+| agent 间协调 | **由 agent 显式发起** | Claude Code 队友只能靠 `SendMessage` 汇报；空闲信号不携带产出 |
+
+映射到 MAFW：`pod_messages` 是**团队可见记录**，落在第二档 → 显式；而「agent 自己想记」这条通道已经存在（`mafw_pod_message` 工具），不需要平台替它自动镜像。
+
+### 5.2 但「右键菜单」是最差的显式入口
+
+NN/g 关于上下文菜单的两条直接命中：
+
+- 隐藏菜单**可发现性差**：「除非用户已经知道能右键，界面上没有任何东西告诉他这些动作存在」；
+- 给出的对策是 **(1) 给一个可见触发点**、**(2) 允许同样的动作换一条路做**。
+
+Slack 的做法是被反复引用的正例：**hover 出一条动作栏 + 三点「更多」**——入口本身不隐藏，只有完整菜单隐藏。Apple HIG 也要求上下文菜单里的动作配熟悉图标。
+
+所以「记入鲸群」现在的形态（只有右键）在机制上正确、在可发现性上不合格。
+
+### 5.3 可选入口的取舍
+
+| 入口 | 可发现性 | 成本 | 评价 |
+|---|---|---|---|
+| 右键菜单（现状） | 低 | 已有 | 保留作第二路径 |
+| **消息 hover 动作栏里的图标按钮** | 高（Slack 同款） | 需 session-ui 增加一个 assistant action + ChatPane 透传 | **推荐** |
+| composer 旁的「记上一句」 | 中 | 需要定义"记哪条" | 不做：单位应该是消息而不是会话 |
+| 斜杠命令 `/记入鲸群` | 中（熟手） | 便宜 | 可做备选，非必须 |
+| 自动镜像 + 撤销提示 | 高 | 低 | **不做**：污染日志、破坏未读语义（见 §2） |
+
+### 5.4 一句话
+
+用户主动点是**对的**；要修的是「只在右键里」这件事——补一个 hover 就能看见的入口，右键菜单继续留着给熟手。
