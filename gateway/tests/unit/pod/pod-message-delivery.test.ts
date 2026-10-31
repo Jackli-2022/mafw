@@ -7,7 +7,7 @@ import { PodStore } from '../../../src/core/pod/pod-store';
 
 const NOW = '2026-10-30T00:00:00.000Z';
 
-function makeDelivery(opts: { node: string | null; sessionId?: string }) {
+function makeDelivery(opts: { node: string | null; sessionId?: string; notify?: (podId: string) => void }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-delivery-'));
   const db = new Database(path.join(dir, 'test.db'));
   const store = new PodStore(db);
@@ -29,6 +29,7 @@ function makeDelivery(opts: { node: string | null; sessionId?: string }) {
   const delivery = new PodMessageDelivery({
     store,
     promptAsync: async (input) => { prompts.push(input); },
+    notify: opts.notify,
   });
   return { dir, db, store, pod, builder, message, prompts, delivery };
 }
@@ -66,6 +67,34 @@ describe('PodMessageDelivery', () => {
     expect(h.prompts).toHaveLength(0);
     h.db.close();
     fs.rmSync(h.dir, { recursive: true, force: true });
+  });
+
+  test('force pushes a handoff into a goal-node session', async () => {
+    const h = makeDelivery({ node: 'execute' });
+    expect(await h.delivery.deliver(h.message.id)).toBe('pending');
+    expect(await h.delivery.deliver(h.message.id, { force: true })).toBe('delivered');
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts[0]).toMatchObject({ sessionID: 'ses_builder', delivery: 'queue' });
+    expect(h.store.listMessages(h.pod.id)[0].deliveredAt).toBeTruthy();
+    h.db.close();
+    fs.rmSync(h.dir, { recursive: true, force: true });
+  });
+
+  test('broadcasts the pod after a push or a pulled delivery commits', async () => {
+    const pushed: string[] = [];
+    const push = makeDelivery({ node: 'coordination', notify: (podId) => pushed.push(podId) });
+    await push.delivery.deliver(push.message.id);
+    expect(pushed).toEqual([push.pod.id]);
+    push.db.close();
+    fs.rmSync(push.dir, { recursive: true, force: true });
+
+    const pulled: string[] = [];
+    const pull = makeDelivery({ node: 'execute', notify: (podId) => pulled.push(podId) });
+    const claim = pull.delivery.claimPendingForSession('ses_builder');
+    pull.delivery.commitDelivered(claim!.ids, 'ses_builder');
+    expect(pulled).toEqual([pull.pod.id]);
+    pull.db.close();
+    fs.rmSync(pull.dir, { recursive: true, force: true });
   });
 });
 

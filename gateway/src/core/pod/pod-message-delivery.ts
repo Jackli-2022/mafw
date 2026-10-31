@@ -5,6 +5,8 @@ export type DeliveryDecision = 'push' | 'pull' | 'pending';
 export interface PodMessageDeliveryDeps {
   store: PodStore;
   promptAsync(input: { sessionID: string; message: string; delivery?: 'queue' }): Promise<void>;
+  /** Broadcast a pod change after a message becomes delivered (badge/待投递 refresh). */
+  notify?(podId: string): void;
   now?(): string;
   log?(message: string): void;
 }
@@ -26,12 +28,12 @@ export class PodMessageDelivery {
     return session.node === 'coordination' ? 'push' : 'pull';
   }
 
-  async deliver(messageId: string): Promise<'delivered' | 'pending' | 'skipped'> {
+  async deliver(messageId: string, opts: { force?: boolean } = {}): Promise<'delivered' | 'pending' | 'skipped'> {
     const message = this.findMessage(messageId);
     if (!message) return 'skipped';
     if (message.deliveredAt) return 'skipped';
     const decision = this.decide(messageId);
-    if (decision !== 'push') return 'pending';
+    if (decision !== 'push' && !opts.force) return 'pending';
 
     const session = activeSessionForMember(this.deps.store, message.podId, message.toMemberId!);
     if (!session) return 'pending';
@@ -42,6 +44,7 @@ export class PodMessageDelivery {
         delivery: 'queue',
       });
       this.deps.store.markMessageDelivered(message.id, session.sessionId, this.now());
+      this.deps.notify?.(message.podId);
       return 'delivered';
     } catch (err: any) {
       this.deps.log?.(`[PodDelivery] push failed for ${message.id}: ${err?.message ?? err}`);
@@ -66,7 +69,14 @@ export class PodMessageDelivery {
 
   commitDelivered(ids: string[], sessionId: string): void {
     const now = this.now();
-    for (const id of ids) this.deps.store.markMessageDelivered(id, sessionId, now);
+    let podId: string | null = null;
+    for (const id of ids) {
+      const message = this.deps.store.getMessage(id);
+      if (!message) continue;
+      this.deps.store.markMessageDelivered(id, sessionId, now);
+      podId = message.podId;
+    }
+    if (podId) this.deps.notify?.(podId);
   }
 
   pendingForSessionSync(sessionId: string): string | null {

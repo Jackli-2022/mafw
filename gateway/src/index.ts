@@ -3688,6 +3688,7 @@ class MafwScheduler {
         });
       },
       now: () => new Date().toISOString(),
+      notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'message' } }),
       log: (message) => log.info(message),
     });
     this.podA2ABridge = new PodA2ABridge({
@@ -4502,6 +4503,7 @@ class MafwScheduler {
         goals: this.podGoalService,
         memory: this.podMemoryService,
         access: this.podAccess,
+        delivery: this.podMessageDelivery,
         cost: async (podId) => this.podCost(podId),
         transcript: async (podId, sessionId) => this.podTranscript(podId, sessionId),
       });

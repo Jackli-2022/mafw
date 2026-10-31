@@ -143,6 +143,29 @@ describe('pod routes', () => {
     expect(missing.res.status).toBe(404);
   });
 
+  it('rejects notify on a broadcast message and reports the delivery state', async () => {
+    const deps = makeDeps();
+    (deps as any).delivery = { deliver: jest.fn(async () => 'delivered') };
+
+    const broadcast = await call('POST', '/api/pods/pod_1/messages', deps, {
+      fromMemberId: 'm_lead', kind: 'note', body: 'all hands', notify: true,
+    });
+    expect(broadcast.res.status).toBe(400);
+    expect((deps as any).delivery.deliver).not.toHaveBeenCalled();
+
+    const direct = await call('POST', '/api/pods/pod_1/messages', deps, {
+      fromMemberId: 'm_lead', toMemberId: 'm_builder', kind: 'note', body: 'ping', notify: true,
+    });
+    expect(direct.res.status).toBe(200);
+    expect(direct.json.delivery).toBe('delivered');
+    expect((deps as any).delivery.deliver).toHaveBeenCalledWith('m1', { force: true });
+
+    const plain = await call('POST', '/api/pods/pod_1/messages', deps, {
+      fromMemberId: 'm_lead', kind: 'note', body: 'fyi',
+    });
+    expect(plain.json.delivery).toBeUndefined();
+  });
+
   it('lookup reads a pod without ensuring one', async () => {
     const deps = makeDeps();
     const found = await call('GET', '/api/projects/p1/pod/lookup', deps);

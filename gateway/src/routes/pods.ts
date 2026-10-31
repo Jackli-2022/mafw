@@ -13,6 +13,7 @@ export interface PodRouteDeps {
   goals: Pick<PodGoalService, 'list' | 'promote'>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
   access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
+  delivery?: { deliver(messageId: string, opts?: { force?: boolean }): Promise<'delivered' | 'pending' | 'skipped'> };
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>;
   transcript(podId: string, sessionId: string): Promise<unknown>;
 }
@@ -118,14 +119,22 @@ export async function handlePods(
           ?? (typeof body.fromMemberId === 'string' ? body.fromMemberId : undefined);
         if (!fromMemberId) throw new PodError(400, 'fromMemberId or actorSessionID required');
         if (!MESSAGE_KINDS.has(String(body.kind))) throw new PodError(400, 'invalid message kind');
+        const toMemberId = typeof body.toMemberId === 'string' ? body.toMemberId : null;
+        const notify = body.notify === true;
+        if (notify && !toMemberId) throw new PodError(400, 'notify requires toMemberId');
         const message = deps.messages.send({
           podId,
           fromMemberId,
-          toMemberId: typeof body.toMemberId === 'string' ? body.toMemberId : null,
+          toMemberId,
           kind: body.kind,
           body: String(body.body ?? ''),
         });
-        sendJson(res, 200, { message });
+        if (!notify) {
+          sendJson(res, 200, { message });
+          return true;
+        }
+        const result = deps.delivery ? await deps.delivery.deliver(message.id, { force: true }) : 'skipped';
+        sendJson(res, 200, { message, delivery: result === 'skipped' ? 'disabled' : result });
         return true;
       }
       return false;
