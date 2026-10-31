@@ -10,9 +10,29 @@ import {
 import { routeNext, GoalNodeName } from './routing';
 import { renderNodePrompt, nodeArtifactPaths, nodeOutputSchema } from './node-prompts';
 import { isTaskType } from '../../orchestration/capability-ledger';
-import { parseReviewVerdict } from '../langgraph/review-parser';
+import { parseReviewRubric } from './review-rubric';
 import { matchesSignature } from '../langgraph/signature-detector';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
+
+/** 从 waves.json 收集 taskId（与 PodTaskService 的 `${wave.id}-t${i+1}` 一致）。
+ *  文件缺失/非法 → 返回 []（旧 goal 兼容：review 仍按 verdict 判定）。 */
+function readWaveTaskIds(wavesPath: string): string[] {
+  try {
+    if (!fs.existsSync(wavesPath)) return [];
+    const plan: any = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
+    const waves = Array.isArray(plan?.waves) ? plan.waves : [];
+    const ids: string[] = [];
+    for (const wave of waves) {
+      const tasks = Array.isArray(wave?.tasks) ? wave.tasks : [];
+      tasks.forEach((_task: unknown, index: number) => {
+        if (typeof wave?.id === 'string' && wave.id.length > 0) ids.push(`${wave.id}-t${index + 1}`);
+      });
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
 
 export interface GoalRuntimeClient {
   create(directory: string): Promise<{ id: string }>;
@@ -322,12 +342,10 @@ export class NodeDriver {
         patch = { receiptPath: a.receipt };
         outcome = `receipts=${(receipt.receipts || []).length}`;
       } else {
-        const verdict = submitted
-          ? {
-              verdict: String((submitted as any).verdict) as 'PASS' | 'FAIL',
-              feedback: String((submitted as any).feedback ?? ''),
-            }
-          : parseReviewVerdict(fs.readFileSync(a.review, 'utf-8')); // 既有共享模块
+        const source = submitted
+          ? JSON.stringify(submitted)
+          : fs.readFileSync(a.review, 'utf-8');
+        const verdict = parseReviewRubric(source, readWaveTaskIds(a.waves));
         const p: Partial<GoalStateV3> = {
           reviewVerdict: verdict.verdict,
           ...(fs.existsSync(a.review) ? { reviewReportPath: a.review } : {}),

@@ -88,6 +88,42 @@ describe('completeNode 产物双门', () => {
     expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
   });
 
+  it('review 缺 tasks 但 waves 有任务 → artifact_invalid', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9', { patch: { nextNode: 'review' } });
+    const sid = await h.startAndIdle('g9');
+    const a = nodeArtifactPaths(h.mafwDir, 'g9', 1);
+    fs.mkdirSync(path.dirname(a.waves), { recursive: true });
+    fs.writeFileSync(a.waves, JSON.stringify({ waves: [{ id: 'w1', tasks: ['a', 'b'] }], status: 'ready' }), 'utf-8');
+    fs.writeFileSync(a.review, '# r\n\n```mafw-review\n{"verdict":"PASS","feedback":"ok"}\n```\n', 'utf-8');
+    const st0 = h.load('g9')!;
+    st0.wavePlanPath = a.waves;
+    fs.writeFileSync(path.join(h.mafwDir, 'state', 'g9.json'), JSON.stringify(st0), 'utf-8');
+    await h.fireIdle(sid);
+    expect(h.load('g9')!.lastError).toContain('artifact_invalid');
+  });
+
+  it('review 覆盖全部任务 → PASS 正常归档', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9', { patch: { nextNode: 'review' } });
+    const sid = await h.startAndIdle('g9');
+    const a = nodeArtifactPaths(h.mafwDir, 'g9', 1);
+    fs.mkdirSync(path.dirname(a.waves), { recursive: true });
+    fs.writeFileSync(a.waves, JSON.stringify({ waves: [{ id: 'w1', tasks: ['a'] }], status: 'ready' }), 'utf-8');
+    fs.writeFileSync(a.review, [
+      '# r', '', '```mafw-review',
+      JSON.stringify({ verdict: 'PASS', tasks: [{ taskId: 'w1-t1', result: 'pass', evidence: 'npm test' }], feedback: 'ok' }),
+      '```', '',
+    ].join('\n'), 'utf-8');
+    const st0 = h.load('g9')!;
+    st0.wavePlanPath = a.waves;
+    fs.writeFileSync(path.join(h.mafwDir, 'state', 'g9.json'), JSON.stringify(st0), 'utf-8');
+    await h.fireIdle(sid);
+    const st = h.load('g9')!;
+    expect(st.lastError ?? '').not.toContain('artifact_invalid');
+    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
+  });
+
   it('review FAIL round<max → nextNode=plan（下一轮）', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9', { patch: { nextNode: 'review', round: 1, wavePlanPath: 'x' } });
