@@ -22,6 +22,7 @@ import { formatRailTitle } from "./components/rail-display"
 import { clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
+import { needsSessionInfoHydration } from "./session-info"
 import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
 import { mergeHiddenTodos } from "./todo-presenter"
   import { traceEvent } from "./event-trace"
@@ -172,6 +173,36 @@ export function MafwShell() {
   // switches the content pane (no tab change); this map powers the back button.
   const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
   const [podGoalId, setPodGoalId] = createSignal<string | null>(null)
+
+  // store.session 的 tab 占位只有 directory "."；权威信息（directory/parentID）来自
+  // sessions.get。工作台根（benchRoot）与 worktree 徽标依赖真实 directory——激活时
+  // 补齐一次（每个 sid 一次，防重复请求）。2026-10-31。
+  const sessionInfoHydrated = new Set<string>()
+  async function hydrateSessionInfo(sid: string): Promise<void> {
+    try {
+      const info: any = await window.api.mafw.sessions.get(sid)
+      if (!info?.id) { sessionInfoHydrated.delete(sid); return }
+      setStore(prev => {
+        if (!sessions().some(s => s.id === sid)) return prev // tab 已关闭：丢弃
+        const idx = prev.session.findIndex((s: any) => s.id === sid)
+        if (idx < 0) return { ...prev, session: [...prev.session, info] } // 布局恢复：tab 没有占位条目
+        const entry = prev.session[idx]
+        const next = [...prev.session]
+        next[idx] = { ...entry, ...info, title: entry.title || info.title }
+        return { ...prev, session: next }
+      })
+    } catch {
+      sessionInfoHydrated.delete(sid) // 失败允许下次激活重试
+    }
+  }
+  createEffect(() => {
+    const sid = activeSessionId()
+    if (!sid || sessionInfoHydrated.has(sid)) return
+    const entry = store.session.find((s: any) => s.id === sid)
+    if (!needsSessionInfoHydration(entry)) return
+    sessionInfoHydrated.add(sid)
+    void hydrateSessionInfo(sid)
+  })
 
   // Open a subagent session inside the current tab (no tab-list mutation, no
   // view/tab highlight change). Loads its data into the store so the pane

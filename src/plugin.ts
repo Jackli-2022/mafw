@@ -88,7 +88,8 @@ async function registerWithGateway(directory: string, mafwDir: string) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir: directory, mafwDir }),
+        // 自动注册只登记项目，绝不切换当前项目（显式选择走 SDK project.setCurrent）。
+        body: JSON.stringify({ projectDir: directory, mafwDir, setCurrent: false }),
         signal: AbortSignal.timeout(2000),
       });
       if (res.ok) return;

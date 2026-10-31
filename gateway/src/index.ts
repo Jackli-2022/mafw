@@ -248,6 +248,7 @@ import type { RestartAgentDeps } from './routes/restart-agent';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { ensureServeForBuiltinRuntime } from './runtime/serve-for-runtime';
 import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime/runtime-root';
+import { isSelectableProject, parseRegisterIntent, pickCurrentProject } from './runtime/project-selection';
 import type { UsagePluginsDeps } from './routes/usage-plugins';
 import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
@@ -5747,13 +5748,13 @@ class MafwScheduler {
           req.on('end', async () => {
             try {
               const data = JSON.parse(body);
-              const { projectDir, mafwDir } = data;
-
-              if (!projectDir || !mafwDir) {
+              const intent = parseRegisterIntent(data);
+              if (!intent) {
                 res.writeHead(400);
                 res.end(JSON.stringify({ error: 'Missing projectDir or mafwDir' }));
                 return;
               }
+              const { projectDir, mafwDir, setCurrent } = intent;
 
               // Never register the user's home directory (or its standard data
               // folders) as a project — desktop's opencode server plugin activates
@@ -5766,22 +5767,34 @@ class MafwScheduler {
                 return;
               }
 
+              // 显式选择才允许切换当前项目；自动注册（插件激活）只登记。
+              if (setCurrent && !isSelectableProject(projectDir, resolveRuntimeRoot())) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: 'Infrastructure directory cannot be the current project' }));
+                return;
+              }
+
+              const existing = this.registeredProjects.get(projectDir);
+              const changed = !existing || existing.mafwDir !== mafwDir;
               this.registeredProjects.set(projectDir, {
                 projectDir,
                 mafwDir,
-                registeredAt: new Date().toISOString()
+                registeredAt: existing?.registeredAt ?? new Date().toISOString()
               });
 
-              // Desktop Rail 的"切换项目"（SDK project.setCurrent → POST /register）
-              // 语义 = 注册 + 设为当前项目（kv 持久化跨重启）。
-              this.currentProjectDir = projectDir;
-              this.getGatewayDb().kvSet('current-project', 'default', projectDir);
+              if (setCurrent) {
+                // 桌面 Rail 的"切换项目"（SDK project.setCurrent）。
+                this.currentProjectDir = projectDir;
+                this.getGatewayDb().kvSet('current-project', 'default', projectDir);
+              }
 
-              // 持久化到磁盘（写队列防并发覆盖）
-              await this.persistRegistry();
-
-              // 桌面 renderer 依此事件刷新 Rail 项目列表（否则只在 gateway ready 时拉一次）。
-              this.broadcast(projectRegisteredEvent(projectDir));
+              // 持久化到磁盘（写队列防并发覆盖）；无变化的自动注册不写盘/不广播，
+              // 避免 hourly 插件注册把项目列表刷到 UI。
+              if (changed || setCurrent) {
+                await this.persistRegistry();
+                // 桌面 renderer 依此事件刷新 Rail 项目列表（否则只在 gateway ready 时拉一次）。
+                this.broadcast(projectRegisteredEvent(projectDir));
+              }
 
               if (this.runtime) {
                 try {
@@ -5977,10 +5990,14 @@ class MafwScheduler {
 
         // GET /api/projects — list registered projects
         if (req.url === '/api/projects' && req.method === 'GET') {
-          const projects = Array.from(this.registeredProjects.values()).map(p => ({
-            id: p.projectDir,
-            worktree: p.projectDir,
-          }));
+          // 基础设施目录（runtime server root / "."）不是用户项目，不暴露给 Rail。
+          const runtimeRoot = resolveRuntimeRoot();
+          const projects = Array.from(this.registeredProjects.values())
+            .filter(p => isSelectableProject(p.projectDir, runtimeRoot))
+            .map(p => ({
+              id: p.projectDir,
+              worktree: p.projectDir,
+            }));
           res.end(JSON.stringify({ projects }));
           return;
         }
@@ -5990,19 +6007,28 @@ class MafwScheduler {
           if (!this.currentProjectDir) {
             this.currentProjectDir = this.getGatewayDb().kvGet<string>('current-project', 'default') || null;
           }
-          const cur = this.currentProjectDir && this.registeredProjects.has(this.currentProjectDir)
-            ? this.currentProjectDir
-            : null;
-          const entries = Array.from(this.registeredProjects.entries());
-          if (entries.length === 0) {
+          const runtimeRoot = resolveRuntimeRoot();
+          const cur = pickCurrentProject({
+            stored: this.currentProjectDir,
+            registered: this.registeredProjects.keys(),
+            runtimeRoot,
+          });
+          if (cur !== this.currentProjectDir) {
+            // 修复被污染的 current-project（旧版插件自动注册曾把 runtime-root 选成当前项目）。
+            this.currentProjectDir = cur;
+            if (cur) this.getGatewayDb().kvSet('current-project', 'default', cur);
+          }
+          if (!cur) {
             res.end(JSON.stringify({ project: null }));
             return;
           }
-          const [projectDir, info] = cur
-            ? [cur, this.registeredProjects.get(cur)!]
-            : entries[0];
+          const info = this.registeredProjects.get(cur);
+          if (!info) {
+            res.end(JSON.stringify({ project: null }));
+            return;
+          }
           res.end(JSON.stringify({
-            project: { id: projectDir, worktree: projectDir, mafwDir: info.mafwDir },
+            project: { id: cur, worktree: cur, mafwDir: info.mafwDir },
           }));
           return;
         }
