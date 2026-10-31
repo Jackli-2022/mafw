@@ -55,6 +55,21 @@ describe('coverage engine', () => {
     expect(c.static.unverified.some((u) => u.id === 'prompt.maxTurns')).toBe(true);
   });
 
+  it('annotates self-translation declarations as not recommended', () => {
+    const c = computeCoverage({
+      rt: fakeRuntime({ capabilities: { ...fullCapabilities(), eventStream: true } }),
+      source: 'file',
+      declaration: { eventTranslation: 'self' },
+    }, manifest);
+    expect(c.static.translation.mode).toBe('self');
+    expect(c.static.translation.note).toContain('not recommended');
+  });
+
+  it('defaults translation annotation to declared', () => {
+    const c = computeCoverage({ rt: fakeRuntime(), source: 'file' }, manifest);
+    expect(c.static.translation).toEqual({ mode: 'declared', note: '' });
+  });
+
   it('marks cognition surfaces unverified (gateway serves the endpoint)', () => {
     const c = computeCoverage({ rt: fakeRuntime(), source: 'active' }, manifest);
     expect(c.static.surfaces['cognition.observe'].status).toBe('unverified');

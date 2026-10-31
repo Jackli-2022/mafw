@@ -56,6 +56,8 @@ export interface RuntimeCoverage {
       verification: Verification;
       impact: string;
     }>;
+    /** 事件翻译模式（spec §4.1）：declared = gateway 执行器翻译（推荐）；self = 插件自翻译（逃逸，标注不推荐）。 */
+    translation: { mode: 'declared' | 'self'; note: string };
     missing: Array<{
       id: string;
       domain: ContractDomain;
@@ -186,7 +188,19 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
   return {
     runtime: subject.rt.name,
     contractVersion: manifest.contractVersion,
-    static: { declared, effective, presets, obligations, surfaces, missing, unverified, notes },
+    static: {
+      declared,
+      effective,
+      presets,
+      obligations,
+      surfaces,
+      missing,
+      unverified,
+      notes,
+      translation: subject.declaration?.eventTranslation === 'self'
+        ? { mode: 'self', note: 'self-translation declared (not recommended) — gateway executor bypassed; verify event field contract via conformance' }
+        : { mode: 'declared', note: '' },
+    },
   };
 }
 
