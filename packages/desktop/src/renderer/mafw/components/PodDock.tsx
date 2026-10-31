@@ -29,8 +29,8 @@ export function PodDock(props: {
 
   createEffect(() => {
     if (!props.active) return
-    const dir = props.projectDir
-    if (dir) void podStore.open(dir)
+    // 首次加载归 shell（常驻订阅）；这里只在面板被打开时补一次刷新。
+    void podStore.refresh()
   })
 
   createEffect(() => {

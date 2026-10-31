@@ -53,6 +53,8 @@ import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore } from "./pod-store"
+import { podRailBadge } from "./pod-rail-badge"
+import { deliveryToast } from "./pod-rail-face-model"
 import { podRoleForSession } from "./pod-model"
 import { retitleTab } from "./session-tab-title"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
@@ -1716,6 +1718,42 @@ export function MafwShell() {
   const benchRoot = () =>
     resolveWorkbenchRoot(currentProject(), store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null)
 
+  // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
+  // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
+  const podSelfMemberId = () => podStore.detail()?.members.find((m) => m.role === "lead")?.id ?? null
+  const podBadgeCount = () => podRailBadge({
+    tasks: podStore.detail()?.tasks ?? [],
+    messages: podStore.messages(),
+    selfMemberId: podSelfMemberId(),
+  })
+  const openPodPanel = (panel: "tasks" | "inbox") => {
+    void panel
+    closeLeftDockIfOverlay()
+    setShowConfig(false)
+    openWorkbench("execution", "pod")
+  }
+  const podSessionTitleOf = (sessionId: string) =>
+    store.session.find((s: any) => s.id === sessionId)?.title ?? null
+  const onPodSend = async (input: {
+    toMemberId: string | null
+    kind: string
+    body: string
+    notify: boolean
+  }): Promise<string> => {
+    const detail = podStore.detail()
+    const lead = detail?.members.find((m) => m.role === "lead")
+    if (!detail || !lead) return "鲸群未就绪"
+    const res = await window.api.mafw.pod.sendMessage(detail.pod.id, {
+      fromMemberId: lead.id,
+      toMemberId: input.toMemberId ?? undefined,
+      kind: input.kind as any,
+      body: input.body,
+      notify: input.notify,
+    })
+    void podStore.refresh()
+    return input.notify ? deliveryToast(res?.delivery) : "已发送"
+  }
+
   // SSE live trajectory signals
   const [trajectoryLive, setTrajectoryLive] = createSignal<Record<string, any[]>>({})
   const [trajectoryTurnLive, setTrajectoryTurnLive] = createSignal<Record<string, any>>({})
@@ -1766,6 +1804,20 @@ export function MafwShell() {
     : connPhase() === "reconnecting" ? "reconnecting"
     : connPhase() === "down" ? "down"
     : "initial"
+
+  // 鲸群常驻订阅：目录口径与右栏一致；SSE 重连后补一次刷新
+  // （spec 2026-10-30-pod-left-rail §4.1）。
+  createEffect(() => {
+    const dir = benchRoot() ?? currentProject()
+    if (dir) void podStore.open(dir)
+  })
+  let lastPodConnPhase = connPhaseLabel()
+  createEffect(() => {
+    const phase = connPhaseLabel()
+    const previous = lastPodConnPhase
+    lastPodConnPhase = phase
+    if (phase === "connected" && previous !== "connected") void podStore.refresh()
+  })
   const dockPresent = createPresence(() => rightDockOpen(), SURFACE_MS)
 
   // Ctrl/Cmd+J: toggle the TaskBar popover. Skip when typing. (C3 可自定义)
@@ -2007,6 +2059,7 @@ export function MafwShell() {
           onNewWorktreeSession={() => createWorktreeSession()}
           worktreeEnabled={worktreeEnabled()}
           approvals={pendingPermissionCount()}
+          podBadge={podBadgeCount()}
           connPhase={connPhaseLabel()}
           gatewayState={gwStatus()?.state ?? null}
           dashboardActive={activeTab() === "goals" && !showConfig()}
@@ -2085,6 +2138,18 @@ export function MafwShell() {
             forkEnabled={branchActionsVisible(rtCaps())}
             onForkSession={(id) => void forkSessionFromMenu(id)}
             onExportSession={(id) => void exportSession(id)}
+            podDetail={podStore.detail()}
+            podMessages={podStore.messages()}
+            podLoading={podStore.loading()}
+            podUnsupported={podStore.unsupported()}
+            podIsWorktree={benchRoot() !== currentProject()}
+            podSelfMemberId={podSelfMemberId()}
+            podSessionTitleOf={podSessionTitleOf}
+            onPodOpenSession={(sid) => openSessionTab(sid)}
+            onPodOpenGoal={(goalId) => setPodGoalId(goalId)}
+            onPodOpenPanel={openPodPanel}
+            onPodSend={onPodSend}
+            onPodCreate={() => { void podStore.create() }}
           />
         </Show>
         <div class="mafw-main">
