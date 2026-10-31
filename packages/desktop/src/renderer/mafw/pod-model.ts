@@ -227,3 +227,16 @@ export function podMessageDeliveryLabel(message: { deliveredAt?: string | null }
   if (message.deliveredAt === undefined) return null
   return message.deliveredAt ? "已投递" : "待投递"
 }
+
+/**
+ * 出站消息的送达徽标：只有「我发的」才需要知道对方收没收到。
+ * 注意我们只有「已送达」（进入对方会话上下文），没有「已读」——agent 不作已读回执。
+ */
+export function podOutgoingDelivery(
+  message: { fromMemberId: string; deliveredAt?: string | null },
+  selfMemberId: string | null,
+): "已送达" | "待送达" | null {
+  if (!selfMemberId || message.fromMemberId !== selfMemberId) return null
+  if (message.deliveredAt === undefined) return null
+  return message.deliveredAt ? "已送达" : "待送达"
+}

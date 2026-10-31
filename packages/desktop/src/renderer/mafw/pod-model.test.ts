@@ -15,6 +15,7 @@ import {
   podTaskArtifacts,
   podMessageDeliveryLabel,
   podMessageProtocolLabel,
+  podOutgoingDelivery,
   shouldCloseTranscript,
   terminalGoalsNewestFirst,
 } from "./pod-model"
@@ -140,5 +141,13 @@ describe("pod-model", () => {
     assert.equal(podMessageDeliveryLabel({ deliveredAt: null }), "待投递")
     assert.equal(podMessageDeliveryLabel({ deliveredAt: "2026-10-30T00:00:00.000Z" }), "已投递")
     assert.equal(podMessageDeliveryLabel({}), null)
+  })
+
+  test("only outgoing messages carry a delivery badge", () => {
+    const lead = "m_lead"
+    assert.equal(podOutgoingDelivery({ fromMemberId: lead, deliveredAt: null }, lead), "待送达")
+    assert.equal(podOutgoingDelivery({ fromMemberId: lead, deliveredAt: "2026-10-30T00:00:00.000Z" }, lead), "已送达")
+    assert.equal(podOutgoingDelivery({ fromMemberId: "m_builder", deliveredAt: null }, lead), null)
+    assert.equal(podOutgoingDelivery({ fromMemberId: lead, deliveredAt: null }, null), null)
   })
 })

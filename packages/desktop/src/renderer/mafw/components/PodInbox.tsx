@@ -5,7 +5,7 @@ import { SelectV2 } from "@mafw/ui/v2/select-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { podMemberName, podMessageDeliveryLabel, podMessageProtocolLabel, podShortTime } from "../pod-model"
+import { podMemberName, podMessageProtocolLabel, podOutgoingDelivery, podShortTime } from "../pod-model"
 import { canNotify } from "../pod-rail-face-model"
 
 const KINDS = [
@@ -107,8 +107,8 @@ export function PodInbox(props: {
                   <Show when={podMessageProtocolLabel(message)}>
                     <span class="mafw-pod-message-protocol">{podMessageProtocolLabel(message)}</span>
                   </Show>
-                  <Show when={podMessageDeliveryLabel(message)}>
-                    <span class="mafw-pod-message-delivery">{podMessageDeliveryLabel(message)}</span>
+                  <Show when={podOutgoingDelivery(message, lead()?.id ?? null)}>
+                    <span class="mafw-pod-message-delivery">{podOutgoingDelivery(message, lead()?.id ?? null)}</span>
                   </Show>
                   <span class="mafw-pod-message-time">{podShortTime(message.createdAt, Date.now())}</span>
                 </div>

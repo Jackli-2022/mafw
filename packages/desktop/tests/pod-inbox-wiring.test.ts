@@ -23,3 +23,8 @@ test("inbox owns the 立即提醒 toggle that used to live in the rail", () => {
   assert.match(src, /canNotify/)
   assert.match(src, /notify: notify\(\) && notifyEnabled\(\)/)
 })
+
+test("only outgoing messages show a delivery badge", () => {
+  assert.match(src, /podOutgoingDelivery/)
+  assert.doesNotMatch(src, /podMessageDeliveryLabel/)
+})
