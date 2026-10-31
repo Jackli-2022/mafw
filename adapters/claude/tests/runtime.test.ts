@@ -1,21 +1,29 @@
 /**
  * claude runtime 契约测试 —— SDK 注入 seam（假件脚本化），不 spawn 真进程。
  *
- * Review Focus：①spawn 失败→turn.failed 不炸；②busy 排队（promptWhileBusy）。
+ * raw-event-first：runtime 只推原生 SDKMessage；翻译由 gateway 执行器负责
+ * （见 gateway/tests/unit/runtime/claude-adapter-mappings.test.ts）。本文件钉：
+ * ①原生事件原样入总线；②tracker 合成 turn.started / 终态复位；
+ * ③busy 排队；④spawn 失败 → canonical turn.failed 且下回合仍能合成 start。
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createClaudeRuntime } from '../src/runtime.ts';
-import { __resetClaudeTurnState } from '../src/events.ts';
 
-/** 脚本化假 SDK：query 返回预排消息流。 */
-function fakeSdk(script: Array<(push: (m: any) => void) => void | Promise<void>>, opts: { failQuery?: Error } = {}) {
+function fakeSdk(
+  script: Array<(push: (m: any) => void) => void | Promise<void>>,
+  opts: { failQuery?: Error; failTimes?: number } = {},
+) {
   const calls: any[] = [];
+  let failures = 0;
   const sdk = {
     calls,
     async query(args: any) {
       calls.push(args);
-      if (opts.failQuery) throw opts.failQuery;
+      if (opts.failQuery && failures < (opts.failTimes ?? Infinity)) {
+        failures++;
+        throw opts.failQuery;
+      }
       const messages: any[] = [];
       const push = (m: any) => messages.push(m);
       for (const step of script) await step(push);
@@ -31,17 +39,21 @@ function fakeSdk(script: Array<(push: (m: any) => void) => void | Promise<void>>
     },
     async listSessions() { return [{ id: 'cs_1', title: 't', updatedAt: '2026-10-21T00:00:00Z' }]; },
     async getSessionMessages(sessionId: string) {
+      void sessionId;
       return [
         { uuid: 'u1', role: 'user', content: 'hi' },
         { uuid: 'a1', role: 'assistant', content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn', model: 'claude-opus-4-6' },
       ];
-      void sessionId;
     },
   };
   return sdk;
 }
 
-async function collectEvents(rt: any, sid: string, take: number): Promise<any[]> {
+function typeOf(e: any): string {
+  return e?.payload?.type ?? e?.type;
+}
+
+async function collectEvents(rt: any, take: number): Promise<any[]> {
   const iter = await rt.global.event();
   const stream = iter.stream ?? iter;
   const out: any[] = [];
@@ -52,39 +64,60 @@ async function collectEvents(rt: any, sid: string, take: number): Promise<any[]>
   return out;
 }
 
-test('create → cls_ 前缀 id；capabilities 声明面', async () => {
+test('create → cls_ 前缀 id；实例不再声明 capabilities（单源在 module.exports）', async () => {
   const rt = createClaudeRuntime({ sdk: fakeSdk([]) as any });
   const s = await rt.session.create({ directory: 'C:/tmp/proj' });
   assert.ok(String(s.id).startsWith('cls_'));
   assert.equal(rt.name, 'claude');
   assert.equal(rt.external, true);
-  assert.equal(rt.capabilities.sessionApi, true);
-  assert.equal(rt.capabilities.promptWhileBusy, true);
-  assert.equal(rt.capabilities.eventStream, true);
+  assert.equal(rt.capabilities, undefined);
   assert.equal(typeof rt.getBaseUrl(), 'string');
 });
 
-test('promptAsync → query 被调（sessionId + cwd）→ 消息流经方言进总线（端到端）', async () => {
-  __resetClaudeTurnState();
+test('promptAsync → query 被调（sessionId + cwd）；原生事件原样入总线，turn.started 由 tracker 合成', async () => {
   const sdk = fakeSdk([
-    (push) => push({ type: 'system', subtype: 'init', session_id: 'S', model: 'claude-opus-4-6' }),
+    (push) => push({ type: 'user', session_id: 'S', uuid: 'u1', message: { role: 'user', content: 'hi' } }),
     (push) => push({ type: 'result', subtype: 'success', session_id: 'S', usage: { input_tokens: 1 }, total_cost_usd: 0 }),
   ]);
   const rt = createClaudeRuntime({ sdk: sdk as any });
   const s = await rt.session.create({ directory: 'C:/tmp/proj' });
-  const done = collectEvents(rt, s.id, 2); // session.created + turn.completed
+  const done = collectEvents(rt, 3);
   await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'hi' }] });
   const events = await Promise.race([done, new Promise<any[]>((r) => setTimeout(() => r([]), 3000))]);
-  const types = events.map((e: any) => e.payload?.type ?? e.type);
-  assert.ok(types.includes('session.created'), JSON.stringify(types));
-  assert.ok(types.includes('turn.completed'), JSON.stringify(types));
+  assert.deepEqual(events.map(typeOf), ['turn.started', 'user', 'result']);
+  // 原生 payload 原样透传（未经本地翻译）
+  assert.equal(events[1].message.content, 'hi');
+  assert.equal(events[2].subtype, 'success');
   assert.equal(sdk.calls[0].options.sessionId, s.id);
   assert.equal(sdk.calls[0].options.cwd, 'C:/tmp/proj');
   assert.equal(sdk.calls[0].prompt, 'hi');
 });
 
-test('busy 排队：query 进行中再 promptAsync 入队，result 后 flush 队首（Review Focus 2）', async () => {
-  __resetClaudeTurnState();
+test('同回合第二条 user 不重复合成；result 后下一回合重新合成', async () => {
+  const sdk = fakeSdk([
+    (push) => push({ type: 'user', session_id: 'S', uuid: 'u1', message: { role: 'user', content: 'a' } }),
+    (push) => push({ type: 'user', session_id: 'S', uuid: 'u2', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } }),
+    (push) => push({ type: 'result', subtype: 'success', session_id: 'S' }),
+  ]);
+  const rt = createClaudeRuntime({ sdk: sdk as any });
+  const s = await rt.session.create({ directory: 'C:/tmp/proj' });
+  const done = collectEvents(rt, 4);
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'go' }] });
+  const events = await Promise.race([done, new Promise<any[]>((r) => setTimeout(() => r([]), 3000))]);
+  assert.equal(events.filter((e) => typeOf(e) === 'turn.started').length, 1);
+
+  const second = fakeSdk([
+    (push) => push({ type: 'user', session_id: 'S', uuid: 'u3', message: { role: 'user', content: 'next' } }),
+  ]);
+  const rt2 = createClaudeRuntime({ sdk: second as any });
+  const s2 = await rt2.session.create({ directory: 'C:/tmp/proj' });
+  const done2 = collectEvents(rt2, 1);
+  await rt2.session.promptAsync({ sessionID: s2.id, parts: [{ type: 'text', text: 'x' }] });
+  const first = await Promise.race([done2, new Promise<any[]>((r) => setTimeout(() => r([]), 3000))]);
+  assert.equal(typeOf(first[0]), 'turn.started');
+});
+
+test('busy 排队：query 进行中再 promptAsync 入队，result 后 flush 队首', async () => {
   let release: () => void = () => {};
   const gate = new Promise<void>((r) => { release = r; });
   const sdk = fakeSdk([
@@ -93,7 +126,6 @@ test('busy 排队：query 进行中再 promptAsync 入队，result 后 flush 队
   const rt = createClaudeRuntime({ sdk: sdk as any });
   const s = await rt.session.create({ directory: 'C:/tmp/proj' });
   await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'first' }] });
-  // busy：第二条入队
   await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'second' }] });
   assert.equal(sdk.calls.length, 1, 'second queued, not spawned');
   release();
@@ -102,7 +134,7 @@ test('busy 排队：query 进行中再 promptAsync 入队，result 后 flush 队
   assert.equal(sdk.calls[1].prompt, 'second');
 });
 
-test('abort → interrupt() 被调', async () => {
+test('abort → interrupt() 被调（不炸）', async () => {
   let release: () => void = () => {};
   const gate = new Promise<void>((r) => { release = r; });
   const sdk = fakeSdk([async (push) => { await gate; push({ type: 'result', subtype: 'success', session_id: 'S' }); }]);
@@ -112,27 +144,29 @@ test('abort → interrupt() 被调', async () => {
   await rt.session.abort({ sessionID: s.id });
   release();
   await new Promise((r) => setTimeout(r, 50));
-  // interrupt 被调过（假件自标记）——经 runtime 内部 controller，此处断言不炸 + 队列清空
   await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'after' }] });
   assert.ok(true);
 });
 
-test('spawn 失败（CLI 缺失/无凭据模拟）→ turn.failed 事件，不炸 gateway（Review Focus 1）', async () => {
-  __resetClaudeTurnState();
-  const sdk = fakeSdk([], { failQuery: new Error('claude CLI not found (spawn ENOENT)') });
+test('spawn 失败 → canonical turn.failed（恒等行放行语义）；下回合仍能合成 turn.started', async () => {
+  const sdk = fakeSdk(
+    [(push) => push({ type: 'user', session_id: 'S', uuid: 'u9', message: { role: 'user', content: 'retry' } })],
+    { failQuery: new Error('claude CLI not found (spawn ENOENT)'), failTimes: 1 },
+  );
   const rt = createClaudeRuntime({ sdk: sdk as any });
   const s = await rt.session.create({ directory: 'C:/tmp/proj' });
-  const done = collectEvents(rt, s.id, 1);
+  const done = collectEvents(rt, 1);
   await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'hi' }] });
   const events = await Promise.race([done, new Promise<any[]>((r) => setTimeout(() => r([]), 3000))]);
-  assert.equal(events.length, 1, 'exactly one failure event');
-  assert.equal(events[0].payload.type, 'turn.failed');
+  assert.equal(events.length, 1);
+  assert.equal(typeOf(events[0]), 'turn.failed');
   assert.ok(String(events[0].payload.properties.error).includes('claude CLI not found'));
-  // 会话解忙：下一次 promptAsync 可再发（再次失败也成事件）
-  const done2 = collectEvents(rt, s.id, 1);
+
+  // 失败已复位 tracker：下一回合首条 user 重新合成 start
+  const done2 = collectEvents(rt, 2);
   await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'again' }] });
   const events2 = await Promise.race([done2, new Promise<any[]>((r) => setTimeout(() => r([]), 3000))]);
-  assert.equal(events2[0].payload.type, 'turn.failed');
+  assert.deepEqual(events2.map(typeOf), ['turn.started', 'user']);
 });
 
 test('messages → getSessionMessages → normalizeClaudeHistory 产物（flat）', async () => {

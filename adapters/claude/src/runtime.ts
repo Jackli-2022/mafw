@@ -1,16 +1,20 @@
 /**
  * claude runtime —— AgentRuntime 最小实现（SDK 注入 seam，零 gateway 依赖）。
  *
- * 架构（spec §3.3 claude 节）：
- *  - session 注册表 Map<sid, {busy, queue, controller?}>（PiSessionRegistry 同款语义）
- *  - 进程内事件总线（PiEventStream 同款 fan-out）：promptAsync spawn query，
- *    SDKMessage 流逐条 push（附 session_id）——方言翻译在 loader wrap 层生效
- *  - busy 排队：query 进行中的 promptAsync 入队，result/失败后 flush 队首
- *  - spawn 失败 → push turn.failed（显式错误文本，不炸 gateway）
- *  - tools.registerTools：factory stash；prompt 时经 options.mcpServers 透传
- *    （入口 index.ts 决定具体承载形态——SDK in-process MCP server）
+ * raw-event-first（spec 2026-10-31 §4.1）：promptAsync 期间 SDKMessage 原样推入
+ * 事件总线；翻译由 gateway 的 applyEventMappings 执行（模块导出 eventSource/
+ * eventMappings/transformEvent）。turn.started 合成 / 终态复位由 runtime-kit 的
+ * createTurnTracker 在总线入口完成；本地失败（无原生终态事件）直接推 canonical
+ * turn.failed（恒等行放行）。
+ *
+ * 能力声明唯一来源在 index.ts（module.exports.capabilities）；本实例不再声明。
  */
-import { translateClaudeEvent, __resetClaudeTurnState, turnStartedBySession } from './events.ts';
+import {
+  createEventBus,
+  createSessionRegistry,
+  createTurnTracker,
+} from '../../../packages/runtime-kit/src/index.ts';
+import { isClaudeTerminal, isClaudeTurnStart } from './events.ts';
 import { normalizeClaudeHistory } from './history.ts';
 
 export interface ClaudeQueryLike extends AsyncIterable<any> {
@@ -27,11 +31,12 @@ export interface ClaudeRuntimeDeps {
   now?: () => number;
 }
 
-interface SessionState {
+interface QueueItem {
+  parts: any[];
+  message?: string;
+}
+interface SessionExtra {
   directory: string;
-  busy: boolean;
-  queue: Array<{ parts: any[]; message?: string }>;
-  controller: { interrupt(): void } | null;
   firstPrompt: boolean;
 }
 
@@ -43,75 +48,52 @@ function newSessionId(): string {
 
 export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
   const { sdk } = deps;
-  const sessions = new Map<string, SessionState>();
-
-  // ---- 事件总线（PiEventStream 同款） ----
-  const listeners = new Set<(evt: any) => void>();
-  const bus = {
-    push(event: any): void {
-      for (const l of listeners) l(event);
-    },
-    async event() {
-      const queue: any[] = [];
-      const waiters: Array<(v: any) => void> = [];
-      const listener = (evt: any) => {
-        const w = waiters.shift();
-        if (w) w(evt); else queue.push(evt);
-      };
-      listeners.add(listener);
-      const stream = {
-        [Symbol.asyncIterator]() {
-          return {
-            next: async () => {
-              if (queue.length) return { value: queue.shift(), done: false };
-              return new Promise((resolve) => waiters.push((v) => resolve({ value: v, done: false })));
-            },
-            return: async () => { listeners.delete(listener); return { done: true, value: undefined }; },
-          };
-        },
-      };
-      return { stream };
-    },
-  };
-
-  function stateFor(sid: string, directory: string): SessionState {
-    let s = sessions.get(sid);
-    if (!s) {
-      s = { directory, busy: false, queue: [], controller: null, firstPrompt: true };
-      sessions.set(sid, s);
-    }
-    return s;
-  }
+  const sessions = createSessionRegistry<QueueItem, SessionExtra>(() => ({ directory: '', firstPrompt: true }));
+  const bus = createEventBus<any>();
+  // 总线入口 tap：原生事件先过 tracker（合成 turn.started / 终态复位），再进总线。
+  const tracker = createTurnTracker<any>({
+    push: (value) => bus.push(value),
+    sessionIdOf: (raw) => raw?.session_id ?? raw?.sessionID,
+    isTurnStart: isClaudeTurnStart,
+    isTerminal: isClaudeTerminal,
+    makeTurnStarted: (sessionID) => ({
+      payload: { type: 'turn.started', properties: { sessionID } },
+      sessionID,
+    }),
+  });
 
   function failEvent(sid: string, error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    // 失败终态同样复位 turn.started 合成状态（终审 #8——下回合首条 user 仍能发出）
-    turnStartedBySession.delete(sid);
+    // 本地失败没有原生 result 事件：复位 tracker 状态，下一回合仍能合成 turn.started。
+    tracker.reset(sid);
     bus.push({ payload: { type: 'turn.failed', properties: { sessionID: sid, error: message } }, sessionID: sid });
   }
 
-  async function spawn(sid: string, s: SessionState, parts: any[], message?: string): Promise<void> {
-    s.busy = true;
+  async function spawn(sid: string, parts: any[], message?: string): Promise<void> {
+    const state = sessions.getOrCreate(sid, '');
+    sessions.begin(sid);
     const text = message ?? parts.filter((p: any) => p?.type === 'text').map((p: any) => p?.text ?? '').join('\n');
-    const options: Record<string, any> = { cwd: s.directory, sessionId: sid, ...(toolServerRef.server ? { mcpServers: { mafw: toolServerRef.server } } : {}) };
-    if (!s.firstPrompt) options.resume = sid;
-    s.firstPrompt = false;
+    const options: Record<string, any> = {
+      cwd: state.directory,
+      sessionId: sid,
+      ...(toolServerRef.server ? { mcpServers: { mafw: toolServerRef.server } } : {}),
+    };
+    if (!state.firstPrompt) options.resume = sid;
+    state.firstPrompt = false;
     try {
       const query = await sdk.query({ prompt: text, options });
-      s.controller = { interrupt: () => query.interrupt() };
+      sessions.attach(sid, { interrupt: () => query.interrupt() });
       for await (const msg of query) {
-        // 方言翻译即刻执行（bus 推 canonical 事件）；session_id 兜底注入
         const sid0 = msg?.session_id ?? sid;
-        for (const ev of translateClaudeEvent({ ...msg, session_id: sid0 }, sid0)) bus.push(ev);
+        tracker.push({ ...msg, session_id: sid0 }); // raw：gateway 执行器翻译
       }
     } catch (err) {
       failEvent(sid, err);
     } finally {
-      s.controller = null;
-      s.busy = false;
+      sessions.attach(sid, null);
+      const next = sessions.finish(sid);
       // flush 队首（一次一条——队首完成后自然续发）
-      const next = s.queue.shift();
-      if (next) void spawn(sid, s, next.parts, next.message);
+      if (next) void spawn(sid, next.parts, next.message);
     }
   }
 
@@ -122,48 +104,32 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
   const rt: any = {
     name: 'claude',
     external: true,
-    capabilities: {
-      sessionApi: true,
-      promptWhileBusy: true,
-      eventStream: true,
-      nativeApprovals: false,
-      providerConfigApi: false,
-      perLlmCallTransform: false,
-      sessionStorageApi: true,
-      agentConfigApi: false,
-      agentProcessApi: false,
-      completionApi: false,
-      sessionBranchApi: false,
-      turnBudgetApi: false,
-      questionApi: false,
-      diffApi: false,
-      worktreeApi: true,
-    },
     resolveEventEntry: undefined,
     getBaseUrl: () => `http://127.0.0.1:${deps.gatewayPort ?? 3000}`,
     session: {
       async create(opts: { directory: string }) {
         const id = newSessionId();
-        stateFor(id, opts.directory);
+        sessions.getOrCreate(id, opts.directory).directory = opts.directory;
         return { id };
       },
       async promptAsync(opts: any) {
-        const s = stateFor(opts.sessionID, opts.directory ?? 'C:/tmp');
-        if (s.busy) {
-          s.queue.push({ parts: opts.parts ?? [], message: opts.message });
+        const state = sessions.getOrCreate(opts.sessionID, opts.directory ?? 'C:/tmp');
+        if (opts.directory) state.directory = opts.directory;
+        if (state.busy) {
+          sessions.enqueue(opts.sessionID, { parts: opts.parts ?? [], message: opts.message });
           return;
         }
-        void spawn(opts.sessionID, s, opts.parts ?? [], opts.message);
+        void spawn(opts.sessionID, opts.parts ?? [], opts.message);
       },
       async prompt(opts: any) {
         // 最小实现：与 promptAsync 同径（无逐条等待聚合——契约允许简化）
-        void 0;
-        const s = stateFor(opts.sessionID, 'C:/tmp');
-        if (s.busy) {
-          s.queue.push({ parts: opts.parts ?? [], message: opts.message });
+        const state = sessions.getOrCreate(opts.sessionID, opts.directory ?? 'C:/tmp');
+        if (opts.directory) state.directory = opts.directory;
+        if (state.busy) {
+          sessions.enqueue(opts.sessionID, { parts: opts.parts ?? [], message: opts.message });
           return { parts: [] };
         }
-        void spawn(opts.sessionID, s, opts.parts ?? [], opts.message);
+        void spawn(opts.sessionID, opts.parts ?? [], opts.message);
         return { parts: [] };
       },
       async messages(opts: { sessionID: string }) {
@@ -179,9 +145,8 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
         sessions.delete(opts.sessionID);
       },
       async abort(opts: { sessionID: string }) {
-        const s = sessions.get(opts.sessionID);
-        s?.controller?.interrupt();
-        if (s) s.queue.length = 0;
+        sessions.get(opts.sessionID)?.controller?.interrupt();
+        sessions.clearQueue(opts.sessionID);
       },
       async list() {
         const raw = await sdk.listSessions();
