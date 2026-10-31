@@ -41,6 +41,11 @@ describe('Pod gateway wiring', () => {
     expect(source).toContain("reconcileArchive(podId, goalId, outcome.verdict === 'PASS')");
   });
 
+  test('projects review rubric onto per-task statuses', () => {
+    expect(source).toContain('readReviewRubric(');
+    expect(source).toContain('applyReviewResults(podId, p.goalId, rubric.tasks)');
+  });
+
   test('injects pod context into the goal driver', () => {
     expect(source).toContain('podContext:');
     expect(source).toContain('renderContext(podId, node)');

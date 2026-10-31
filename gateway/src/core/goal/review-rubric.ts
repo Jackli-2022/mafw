@@ -45,6 +45,20 @@ function normalizeResult(value: unknown): ReviewTaskResult['result'] | null {
   return value === 'pass' || value === 'fail' || value === 'skipped' ? value : null;
 }
 
+/** waves.json 的 taskId 序列（与 PodTaskService 投影一致：`${wave.id}-t${i+1}`）。 */
+export function taskIdsFromWavePlan(plan: unknown): string[] {
+  const waves = plan && typeof plan === 'object' ? (plan as any).waves : null;
+  if (!Array.isArray(waves)) return [];
+  const ids: string[] = [];
+  for (const wave of waves) {
+    const waveId = typeof wave?.id === 'string' ? wave.id : '';
+    if (!waveId) continue;
+    const tasks = Array.isArray(wave?.tasks) ? wave.tasks : [];
+    tasks.forEach((_task: unknown, index: number) => ids.push(`${waveId}-t${index + 1}`));
+  }
+  return ids;
+}
+
 export function parseReviewRubric(markdown: string, taskIds: string[]): ReviewRubric {
   const payload = extractPayload(markdown);
   if (!payload || typeof payload !== 'object') {

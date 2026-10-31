@@ -22,7 +22,7 @@ describe('goal 端到端（fake runtime）', () => {
     await h.fireIdle(); await settle();
     expect(h.load('e2e')!.nodeSession?.phase).toBe('review');
 
-    fs.writeFileSync(a.review, '```mafw-review\n{"verdict":"PASS","feedback":"done"}\n```\n', 'utf-8');
+    fs.writeFileSync(a.review, '```mafw-review\n{"verdict":"PASS","tasks":[{"taskId":"w1-t1","result":"pass","evidence":"e2e"}],"feedback":"done"}\n```\n', 'utf-8');
     await h.fireIdle(); await settle();
 
     const st = h.load('e2e')!;

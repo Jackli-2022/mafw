@@ -11,6 +11,7 @@ import { config } from "./config";
 import { log } from './core/utils/logger';
 import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
 import { NodeDriver } from './core/goal/driver';
+import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
 import { ensureGoalState, isTerminalState, loadGoalState } from './core/goal/state-v3';
 import { isTaskType } from './orchestration/capability-ledger';
 import { resolveGoalDir } from './core/goal/starter';
@@ -8251,7 +8252,10 @@ class MafwScheduler {
         const receipt = JSON.parse(fs.readFileSync(state.receiptPath, 'utf-8'));
         this.podTaskService.applyReceipt(podId, p.goalId, receipt);
       } else if (p.node === 'review') {
-        if (state.reviewVerdict === 'FAIL') {
+        const rubric = this.readReviewRubric(state);
+        if (rubric && rubric.tasks.length > 0) {
+          this.podTaskService.applyReviewResults(podId, p.goalId, rubric.tasks);
+        } else if (state.reviewVerdict === 'FAIL') {
           this.podTaskService.reopenForReview(podId, p.goalId);
         } else if (state.reviewVerdict === 'PASS') {
           this.podTaskService.reconcileArchive(podId, p.goalId, true);
@@ -8261,6 +8265,26 @@ class MafwScheduler {
       }
     } catch (err: any) {
       log.warn(`[Pod] goal node projection failed for ${p.goalId}/${p.node} (non-fatal): ${err?.message ?? err}`);
+    }
+  }
+
+  /** 读 review 报告并按 waves 任务清单解析 rubric；缺失/不合法 → null（回退旧行为）。 */
+  private readReviewRubric(state: any): { tasks: Array<{ taskId: string; result: 'pass' | 'fail' | 'skipped' }> } | null {
+    try {
+      const report = state?.reviewReportPath;
+      if (!report || !fs.existsSync(report)) return null;
+      let taskIds: string[] = [];
+      try {
+        const wavesPath = state?.wavePlanPath;
+        if (wavesPath && fs.existsSync(wavesPath)) {
+          taskIds = taskIdsFromWavePlan(JSON.parse(fs.readFileSync(wavesPath, 'utf-8')));
+        }
+      } catch { taskIds = []; }
+      const rubric = parseReviewRubric(fs.readFileSync(report, 'utf-8'), taskIds);
+      return { tasks: rubric.tasks.map((task) => ({ taskId: task.taskId, result: task.result })) };
+    } catch (err: any) {
+      log.warn(`[Pod] review rubric parse failed (non-fatal): ${err?.message ?? err}`);
+      return null;
     }
   }
 

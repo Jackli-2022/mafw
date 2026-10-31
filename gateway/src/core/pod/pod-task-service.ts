@@ -135,6 +135,33 @@ export class PodTaskService {
     return this.deps.store.getTask(taskId)!;
   }
 
+  /**
+   * Review rubric 收口：按每个任务的结果落状态（pass→done / fail→reopened / skipped→failed）。
+   * 幂等：当前状态已等于目标则跳过；未知 taskId 忽略。
+   */
+  applyReviewResults(
+    podId: string,
+    goalId: string,
+    results: Array<{ taskId: string; result: 'pass' | 'fail' | 'skipped' }>,
+  ): PodTaskRow[] {
+    if (!Array.isArray(results) || results.length === 0) return [];
+    const wanted = new Map<string, PodTaskStatus>();
+    for (const item of results) {
+      if (!item || typeof item.taskId !== 'string') continue;
+      wanted.set(item.taskId, item.result === 'pass' ? 'done' : item.result === 'fail' ? 'reopened' : 'failed');
+    }
+    if (wanted.size === 0) return [];
+    const updated: PodTaskRow[] = [];
+    for (const task of this.deps.store.listTasks(podId, goalId)) {
+      const target = task.externalTaskId ? wanted.get(task.externalTaskId) : undefined;
+      if (!target) continue;
+      this.deps.store.updateTask(task.id, { status: target }, this.deps.now());
+      updated.push(this.deps.store.getTask(task.id)!);
+    }
+    if (updated.length > 0) this.deps.notify(podId);
+    return updated;
+  }
+
   reopenForReview(podId: string, goalId: string): PodTaskRow[] {
     const tasks = this.deps.store.listTasks(podId, goalId)
       .filter((task) => task.status === 'in_progress' || task.status === 'review' || task.status === 'done');

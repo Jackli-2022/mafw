@@ -10,7 +10,7 @@ import {
 import { routeNext, GoalNodeName } from './routing';
 import { renderNodePrompt, nodeArtifactPaths, nodeOutputSchema } from './node-prompts';
 import { isTaskType } from '../../orchestration/capability-ledger';
-import { parseReviewRubric } from './review-rubric';
+import { parseReviewRubric, taskIdsFromWavePlan } from './review-rubric';
 import { matchesSignature } from '../langgraph/signature-detector';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
 
@@ -19,16 +19,7 @@ import type { OutputSchemaSpec } from '../../runtime/structured-output';
 function readWaveTaskIds(wavesPath: string): string[] {
   try {
     if (!fs.existsSync(wavesPath)) return [];
-    const plan: any = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
-    const waves = Array.isArray(plan?.waves) ? plan.waves : [];
-    const ids: string[] = [];
-    for (const wave of waves) {
-      const tasks = Array.isArray(wave?.tasks) ? wave.tasks : [];
-      tasks.forEach((_task: unknown, index: number) => {
-        if (typeof wave?.id === 'string' && wave.id.length > 0) ids.push(`${wave.id}-t${index + 1}`);
-      });
-    }
-    return ids;
+    return taskIdsFromWavePlan(JSON.parse(fs.readFileSync(wavesPath, 'utf-8')));
   } catch {
     return [];
   }

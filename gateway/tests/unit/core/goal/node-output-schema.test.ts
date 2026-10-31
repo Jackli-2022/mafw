@@ -30,7 +30,15 @@ describe('nodeOutputSchema', () => {
     expect(validateJsonSchema(nodeOutputSchema('execute').schema, {
       goalId: 'g1', receipts: [{ taskId: 'w1-t1', status: 'done', summary: 'ok' }],
     })).toEqual([]);
-    expect(validateJsonSchema(nodeOutputSchema('review').schema, { verdict: 'PASS', feedback: 'ok' })).toEqual([]);
+    expect(validateJsonSchema(nodeOutputSchema('review').schema, {
+      verdict: 'PASS',
+      tasks: [{ taskId: 'w1-t1', result: 'pass', evidence: 'npm test' }],
+      feedback: 'ok',
+    })).toEqual([]);
+    expect(validateJsonSchema(nodeOutputSchema('review').schema, { verdict: 'PASS', feedback: 'ok' }).length).toBeGreaterThan(0);
+    expect(validateJsonSchema(nodeOutputSchema('review').schema, {
+      verdict: 'PASS', tasks: [{ taskId: 'w1-t1', result: 'maybe', evidence: 'x' }], feedback: 'ok',
+    }).length).toBeGreaterThan(0);
     expect(validateJsonSchema(nodeOutputSchema('review').schema, { verdict: 'MAYBE', feedback: 'x' }).length).toBeGreaterThan(0);
   });
 });

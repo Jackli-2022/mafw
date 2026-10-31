@@ -172,6 +172,36 @@ describe('PodTaskService', () => {
     expect(service.list('pod_1', 'g1').map((t) => t.id)).toEqual([manual.id]);
   });
 
+  test('applyReviewResults closes each task by rubric result (idempotent by target)', () => {
+    service.projectWaves('pod_1', 'g1', plan);
+    service.applyReceipt('pod_1', 'g1', {
+      receipts: [
+        { taskId: 'w1-t1', status: 'done' },
+        { taskId: 'w1-t2', status: 'done' },
+        { taskId: 'w2-t1', status: 'done' },
+      ],
+    });
+    const updated = service.applyReviewResults('pod_1', 'g1', [
+      { taskId: 'w1-t1', result: 'pass' },
+      { taskId: 'w1-t2', result: 'fail' },
+      { taskId: 'w2-t1', result: 'skipped' },
+      { taskId: 'nope', result: 'pass' },
+    ]);
+    const byExternal = () => new Map(service.list('pod_1', 'g1').map((t) => [t.externalTaskId, t.status]));
+    expect(byExternal().get('w1-t1')).toBe('done');
+    expect(byExternal().get('w1-t2')).toBe('reopened');
+    expect(byExternal().get('w2-t1')).toBe('failed');
+    expect(updated).toHaveLength(3);
+
+    // 幂等：重复同一结果不再变更
+    service.applyReviewResults('pod_1', 'g1', [{ taskId: 'w1-t2', result: 'fail' }]);
+    expect(byExternal().get('w1-t2')).toBe('reopened');
+
+    // 再来一轮通过 → 收口为 done（reopened 可被 PASS 关闭）
+    service.applyReviewResults('pod_1', 'g1', [{ taskId: 'w1-t2', result: 'pass' }]);
+    expect(byExternal().get('w1-t2')).toBe('done');
+  });
+
   test('reconcileArchive closes open tasks on success', () => {
     const tasks = service.projectWaves('pod_1', 'g1', plan);
     service.startExecution('pod_1', 'g1');
