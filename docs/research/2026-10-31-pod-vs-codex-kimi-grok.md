@@ -96,3 +96,49 @@ Kimi 的 300 agent swarm 与 Grok 的 leader agent 都把"团队长什么样"交
 - Kimi: kimi.ai/blog/kimi-k2-6；kimi.com/en/help/agent/agent-swarm（2026-04-20）
 - Grok: x.ai/news/grok-build-cli；docs.x.ai multi-agent（grok-4.20-multi-agent）
 - 对照：`docs/research/2026-10-31-pod-vs-industry.md`
+
+## 7. 附加：与 Claude Code Agent Teams 的对比（2026-10）
+
+来源：`code.claude.com/docs/en/agent-teams`、alexop.dev / getclaudeskills / brandonwie / contextstudios 实测（2026-02 起，Opus 4.6 时代）
+
+### 7.1 他们的一等公民
+
+| 构件 | 说明 |
+|---|---|
+| Team Lead | 创建队伍、派活、审计划、汇总结果的主会话 |
+| Teammates | 各自独立的 Claude 实例（**独立 1M 上下文**），默认 3–5 个最实用 |
+| Shared task list | 任务有 `pending / in progress / completed` + **依赖追踪与自动解锁**（Ctrl+T 可看） |
+| Mailbox | 点对点 + 广播；`SendMessage` 支持 `message` / `broadcast` / `shutdown_request` / `shutdown_response` / `plan_approval_response` |
+| 人机 | in-process：面板选中 teammate → Enter → **直接对那个 teammate 说话**；或 tmux 分栏逐窗操作 |
+
+### 7.2 硬限制（官方 Limitations）
+
+- **队伍只存在于一个会话内**：会话结束即散，**不能跨会话 resume**；in-process teammate 中断后无法恢复
+- **一个会话只能有一个队**，且**不能嵌套**（teammate 不能再拉 teammate）
+- 权限在 spawn 时固定（继承 lead 的模式，之后可改）
+- 每个 teammate 独立上下文 → token 成本线性增长；同文件并发编辑不安全
+
+### 7.3 与 MAFW Pod 的对照
+
+| 维度 | Claude Teams | **MAFW Pod** |
+|---|---|---|
+| 生命周期 | **会话内**，结束即散 | **项目级持久**（身份物化 + goal 队列 + 记忆文件） |
+| 角色 | lead 用自然语言现定，无持久身份 | **固定 Lead/Builder/Reviewer**，身份可复用 |
+| 任务板 | 共享列表 + 依赖 + 自动解锁 | `pod_tasks`（waves 投影 + 回执 + **rubric 逐任务收口**） |
+| 验收 | **无结构化验收**（人看 / lead 判断） | **产物门 + `{taskId,result,evidence}` 强校验** |
+| 计划门 | spawn 时要求 plan approval（`plan_approval_response`） | W1 `AWAIT_PLAN_APPROVAL` + 人工批准/驳回（带批注） |
+| 消息 | mailbox（DM/broadcast）注入 `<teammate-message>` | `pod_messages` + A2A，注入 `[POD HANDOFF]`：**结构最像** |
+| 已读 | markRead 时回 receipt | 只有 `deliveredAt`，**没有 agent 已读回执**（本次裁决不做） |
+| 隔离 | 独立上下文，但**同目录**（同文件并发不安全） | 每节点独立 runtime 会话，**同目录** |
+| 人机 | TUI 面板选中即对话 / tmux 分栏 | 桌面：左栏名册 + chatview 直聊 + 右栏邮箱 |
+
+### 7.4 结论
+
+**Claude Teams 是和我们最像的一家**：lead + 共享任务列表 + mailbox 三件套几乎一一对应。差别集中在四处，且方向不同：
+
+1. **我们更持久**：他们是会话内的临时编队，我们是项目级常驻（可跨天、跨模型更替）。
+2. **我们更硬**：验收从「人/lead 判断」变成产物门 + 逐任务 rubric——这也正是他们最被诟病的"teammate 提前宣称完成"。
+3. **他们更灵活**：角色用自然语言现配（"一个架构师、一个测试"），我们固定三人，specialist 无处安放。
+4. **他们都缺 worktree 并发隔离**：Codex/Grok 才解决了「多 agent 同改一个仓库」；我们和 Claude 都还在"同目录、靠任务切分避免冲突"。
+
+值得学的：**`plan_approval_response` 这种"消息即审批"的形态**（我们目前是 HTTP 路由 + 桌面浮层，agent 侧无法发起批准请求）；以及**依赖追踪 + 自动解锁**（我们的 waves 只有顺序，任务间显式依赖还没进 `pod_tasks`）。
