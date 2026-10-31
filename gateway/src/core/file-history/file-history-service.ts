@@ -62,6 +62,16 @@ const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 const normRel = (rel: string): string => rel.replace(/\\/g, '/').replace(/^\.\/+/, '').trim();
 
+/** 工具输入常是绝对路径：项目内 → 归一为 rel；项目外保持原样交给 resolveHistoryTarget 拒绝。 */
+function toProjectRel(projectDir: string, raw: string): string {
+  const normalized = normRel(raw);
+  if (!path.isAbsolute(normalized)) return normalized;
+  const base = path.resolve(projectDir);
+  const rel = path.relative(base, path.resolve(normalized));
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return normalized;
+  return rel.replace(/\\/g, '/');
+}
+
 /** 解析历史目标路径；越界/绝对路径/盘符/NUL/空 → null。 */
 export function resolveHistoryTarget(projectDir: string, rel: string): string | null {
   if (typeof rel !== 'string') return null;
@@ -173,7 +183,7 @@ export class FileHistoryService {
       await fs.mkdir(this.blobDir(sessionID), { recursive: true });
 
       for (const raw of input.relPaths ?? []) {
-        const rel = normRel(raw);
+        const rel = toProjectRel(projectDir, String(raw));
         const target = resolveHistoryTarget(projectDir, rel);
         if (!target) { skipped.push({ rel: String(raw), reason: 'unsafe-path' }); continue; }
         try {

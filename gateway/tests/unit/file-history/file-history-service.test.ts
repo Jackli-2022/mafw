@@ -100,6 +100,20 @@ describe('FileHistoryService（非 git/二进制文件级历史）', () => {
     expect(onlyA.every((e) => e.rel === 'a.txt')).toBe(true);
   });
 
+  it('绝对路径（项目内）归一为 rel；项目外拒绝', async () => {
+    const inside = join(project, 'abs.txt');
+    writeFileSync(inside, 'x');
+    const snap = await svc.snapshot({ sessionID: 'ses_1', projectDir: project, relPaths: [inside] });
+    expect(snap.entries).toHaveLength(1);
+    expect(snap.entries[0].rel).toBe('abs.txt');
+
+    const outside = join(root, 'outside.txt');
+    writeFileSync(outside, 'y');
+    const snap2 = await svc.snapshot({ sessionID: 'ses_1', projectDir: project, relPaths: [outside] });
+    expect(snap2.entries).toHaveLength(0);
+    expect(snap2.skipped[0]?.reason).toBe('unsafe-path');
+  });
+
   it('目标路径解析：项目内通过，越界/盘符拒绝', () => {
     const proj = resolve('/proj');
     expect(resolveHistoryTarget(proj, 'a/b.txt')).toBe(join(proj, 'a/b.txt'));
