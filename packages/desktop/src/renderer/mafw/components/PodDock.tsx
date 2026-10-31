@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal } from "solid-js"
+import { For, Show, createEffect, createSignal, on } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
@@ -27,11 +27,12 @@ export function PodDock(props: {
   const [transcriptSession, setTranscriptSession] = createSignal<string | null>(null)
   let transcriptPodId: string | null = null
 
-  createEffect(() => {
-    if (!props.active) return
-    // 首次加载归 shell（常驻订阅）；这里只在面板被打开时补一次刷新。
-    void podStore.refresh()
-  })
+  // 首次加载归 shell（常驻订阅）；这里只在面板被打开时补一次刷新。
+  // 必须用 on()：refresh() 同步读 detail()/refreshing()，裸 effect 会订阅它们，
+  // setRefreshing(true/false) 再触发自己 → 无限刷新（pod listMessages / cost 打屏）。
+  createEffect(on(() => props.active, (active) => {
+    if (active) void podStore.refresh()
+  }))
 
   createEffect(() => {
     const currentPodId = podStore.detail()?.pod.id ?? null

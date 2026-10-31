@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createMemo, onMount, onCleanup, untrack, Show, For, batch } from "solid-js"
+import { createSignal, createEffect, createMemo, onMount, onCleanup, untrack, on, Show, For, batch } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
 
@@ -1812,18 +1812,15 @@ export function MafwShell() {
     : "initial"
 
   // 鲸群常驻订阅：目录口径与右栏一致；SSE 重连后补一次刷新
-  // （spec 2026-10-30-pod-left-rail §4.1）。
-  createEffect(() => {
-    const dir = benchRoot() ?? currentProject()
+  // （spec 2026-10-30-pod-left-rail §4.1）。两个 effect 都用 on() 隔离依赖：
+  // open()/refresh() 会同步读 detail()/refreshing()/projectDir()，裸 effect 会把
+  // 这些 signal 变成依赖 → 自触发无限刷新（pod listMessages / cost 打屏）。
+  createEffect(on(() => benchRoot() ?? currentProject(), (dir) => {
     if (dir) void podStore.open(dir)
-  })
-  let lastPodConnPhase = connPhaseLabel()
-  createEffect(() => {
-    const phase = connPhaseLabel()
-    const previous = lastPodConnPhase
-    lastPodConnPhase = phase
+  }))
+  createEffect(on(() => connPhaseLabel(), (phase, previous) => {
     if (phase === "connected" && previous !== "connected") void podStore.refresh()
-  })
+  }))
   const dockPresent = createPresence(() => rightDockOpen(), SURFACE_MS)
 
   // Ctrl/Cmd+J: toggle the TaskBar popover. Skip when typing. (C3 可自定义)

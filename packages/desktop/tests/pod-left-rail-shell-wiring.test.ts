@@ -15,8 +15,15 @@ test("shell owns the pod subscription and feeds the rail badge", () => {
   assert.match(shell, /setActiveTab\("chat"\)/)
   assert.match(shell, /panel === "inbox"/)
   assert.doesNotMatch(shell, /void panel/)
+  // 两个 shell effect 必须用 on() 隔离依赖，否则 refresh()/open() 的同步 signal
+  // 读取会把 effect 绑到 detail/refreshing 上，形成刷新自激。
+  assert.match(shell, /on\(\(\) => benchRoot\(\) \?\? currentProject\(\)/)
+  assert.match(shell, /on\(\(\) => connPhaseLabel\(\)/)
 })
 
 test("right workbench no longer owns the first pod load", () => {
-  assert.match(dock, /if \(!props\.active\) return[\s\S]{0,160}podStore\.refresh\(\)/)
+  // 自触发回归：refresh() 同步读 detail()/refreshing()，裸 createEffect 会订阅它们，
+  // setRefreshing 再触发 effect → 无限刷新（pod listMessages / cost 打屏）。
+  assert.match(dock, /createEffect\(on\(\(\) => props\.active/)
+  assert.match(dock, /if \(active\) void podStore\.refresh\(\)/)
 })
