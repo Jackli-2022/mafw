@@ -142,3 +142,44 @@ Kimi 的 300 agent swarm 与 Grok 的 leader agent 都把"团队长什么样"交
 4. **他们都缺 worktree 并发隔离**：Codex/Grok 才解决了「多 agent 同改一个仓库」；我们和 Claude 都还在"同目录、靠任务切分避免冲突"。
 
 值得学的：**`plan_approval_response` 这种"消息即审批"的形态**（我们目前是 HTTP 路由 + 桌面浮层，agent 侧无法发起批准请求）；以及**依赖追踪 + 自动解锁**（我们的 waves 只有顺序，任务间显式依赖还没进 `pod_tasks`）。
+
+## 8. 附加：与 CrewAI 的对比（2026-10，v1.15.x）
+
+来源：docs.crewai.com（concepts/crews、concepts/tasks）、CrewAI GitHub、Flows 实践文（2026-10 校验过 1.15.27）
+
+### 8.1 CrewAI 是两层，不是一层
+
+| 层 | 职责 | 关键件 |
+|---|---|---|
+| **Crew**（自主） | 角色型 agent 协作 | `Agent(role, goal, backstory, tools, memory)` + `Task(description, expected_output, agent, guardrails, output_pydantic/output_json, context/依赖)` + `Process.sequential \| hierarchical` |
+| **Flow**（控制） | 事件驱动编排 | `@start` / `@listen` / `@router` + Pydantic 类型化 state + 持久化/分支/重试 |
+
+官方定位一句话：**"Crews supply the intelligence. Flows supply the control flow."**
+`hierarchical` 必须给 `manager_llm` 或 `manager_agent`；manager 负责委派 + **按 `expected_output` 校验结果**（可打回重做）。
+
+### 8.2 与 MAFW Pod 的对照
+
+| 维度 | CrewAI | **MAFW Pod** |
+|---|---|---|
+| 分层 | **Crew（自主）+ Flow（控制）两层** | **一层**：状态机（确定性）+ LLM 节点 |
+| 谁决定谁干什么 | 人显式指派，或 hierarchical 的 manager 动态决定 | **代码路由**（plan→execute→review），agent 不决定拓扑 |
+| 任务契约 | `description` + `expected_output`（给 manager 的评分标准）+ 可选 `guardrails`（**代码级**校验/变换） | waves 任务（字符串）+ 回执 + **review rubric（逐任务 pass/fail + evidence，强校验）** |
+| 结构化产出 | `output_pydantic` / `output_json` | 节点 `outputSchema`（JSON Schema）+ 文件产物双门 |
+| 验收者 | manager agent（LLM）或 guardrail 代码 | **确定性校验器**（rubric 覆盖度 + 一致性 + 产物存在） |
+| 记忆 | crew `memory=True`：短期（RAG）/长期（SQLite）/实体记忆 | Pod 文件（POD/MEMORY/GLOSSARY）+ 谐波记忆（检索式，跨项目） |
+| 持久化 | 需要 Flow + Pydantic state 才有；Crew 本身一次性 `kickoff()` | **项目级持久**：state 文件 + gateway.db + goal 队列 |
+| 人机 | Python 代码 + Enterprise/Studio 可视化 + 部署平台 | 桌面三栏（左名册 / chatview / 右邮箱）+ A2A |
+| 循环上限 | `max_iter` | `maxRounds` + `attempt` + watchdog |
+
+### 8.3 结论：我们更像「Flow + 固定角色」，不像「Crew」
+
+- CrewAI 的 **Crew** 核心是"让 LLM 决定协作"，我们用**状态机代替 manager**——这与上一份调研里"用确定性替代 LLM 自由裁量"的取舍一致。
+- 但 CrewAI 有一点比我们细：**`guardrails` 是任务级的可执行校验**（在任务产出交给下一个任务之前就跑代码验证并给出反馈），我们只在 **review 节点**做一次全量校验。这意味着 execute 阶段的坏回执会一路带到 review 才被打回，浪费一整轮。
+- 另一点是 **`output_pydantic`**：他们的任务产出直接是类型化对象；我们的回执是自由 JSON（只校验 `taskId/status` 存在）。
+
+### 8.4 值得借的两件事
+
+1. **任务级 guardrail（execute 侧）**：wave 任务加可选 `verify`（shell 命令或断言），execute 写回执时 gateway 先跑它——失败直接标 `failed`，不必等 review。成本：waves schema 加字段 + 一个受限执行器（复用现有 shell 能力，需白名单/超时）。
+2. **回执类型化**：把 `receipts[]` 收成严格 schema（`status` 枚举 + `summary` 必填 + `files` 存在性），像 `output_pydantic` 那样在写盘前拒绝畸形回执。
+
+不借：`hierarchical` 的 LLM manager（与我们的确定性定位冲突，且 CrewAI 社区长期抱怨 manager 委派不稳）、crew 一次性 `kickoff()` 的生命周期（我们要项目级常驻）。
