@@ -28,8 +28,24 @@ export function renderPlanMarkdown(input: unknown): string {
   if (typeof doc.taskType === "string" && doc.taskType) lines.push(`任务类型：${doc.taskType}`, "")
   for (const w of waves) {
     lines.push(`## Wave ${w.id ?? "?"}：${w.title ?? ""}`, "")
-    const tasks = Array.isArray(w.tasks) ? w.tasks.filter((t) => typeof t === "string" && t.trim()) : []
-    if (tasks.length > 0) lines.push(...tasks.map((t) => `- ${t}`), "")
+    const rawTasks = Array.isArray(w.tasks) ? w.tasks : []
+    const rows: string[] = []
+    for (const raw of rawTasks) {
+      // 兼容两种形态：字符串任务 / { title, acceptance[] }
+      if (typeof raw === "string") {
+        if (raw.trim()) rows.push(`- ${raw.trim()}`)
+        continue
+      }
+      if (!raw || typeof raw !== "object") continue
+      const title = typeof (raw as any).title === "string" ? (raw as any).title.trim() : ""
+      if (!title) continue
+      const acceptance = Array.isArray((raw as any).acceptance)
+        ? (raw as any).acceptance.filter((item: unknown) => typeof item === "string" && item.trim())
+        : []
+      rows.push(`- ${title}`)
+      if (acceptance.length > 0) rows.push(...acceptance.map((item: string) => `  - 验收：${item.trim()}`))
+    }
+    if (rows.length > 0) lines.push(...rows, "")
     const risk = typeof w.riskNote === "string" ? w.riskNote.trim() : ""
     if (risk) lines.push(`> ${risk}`, "")
   }

@@ -8194,6 +8194,30 @@ class MafwScheduler {
         log.warn(`[Pod] archive reconcile failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
       }
     }
+    if (podId && outcome && !alreadyClosed) {
+      // 归档决策记录：定向发给 Lead（走既有 push/pull），让常驻会话拿到阶段决策；
+      // 不广播，避免污染 Builder/Reviewer 的 [POD HANDOFF]。
+      try {
+        const lead = this.podStore.getMemberByRole(podId, 'lead');
+        if (lead) {
+          const state: any = (() => {
+            const mafwDir = this.goalDriverMafwDirCache.get(goalId);
+            return mafwDir ? loadGoalState(mafwDir, goalId) : this.activeGoals.get(goalId);
+          })();
+          const rounds = Math.max(1, Number(state?.round ?? 1) - 1);
+          const failed = Array.isArray(state?.reviewFix?.tasks) ? state.reviewFix.tasks.length : 0;
+          this.podMessageService.send({
+            podId,
+            fromMemberId: lead.id,
+            toMemberId: lead.id,
+            kind: 'decision',
+            body: `[goal 摘要] ${goalId} ${outcome.verdict} · rounds=${rounds}${failed > 0 ? ` · 复核失败项 ${failed}` : ''}`,
+          });
+        }
+      } catch (err: any) {
+        log.warn(`[Pod] decision note failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+      }
+    }
     try {
       await this.podGoalService?.onGoalArchived(goalId, { verdict: outcome?.verdict });
     } catch (err: any) {

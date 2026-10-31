@@ -14,6 +14,8 @@ export interface RouteState {
   pendingQuestion: unknown;
   /** W1：manual 批准门（driver 组装：planReview==='manual' 且本版计划成功）。 */
   planReviewGate?: boolean;
+  /** 同轮复核：本轮还没用过复核（FAIL 时优先回 execute 修复，而不是下一轮 plan）。 */
+  reviewFixAvailable?: boolean;
 }
 
 export type RouteStage = 'start' | 'after_plan' | 'after_execute' | 'after_review';
@@ -27,6 +29,8 @@ export function routeAfterPlan(s: RouteState): GoalNodeName {
 export function routeAfterReview(s: RouteState): GoalNodeName {
   if (s.lastError) return 'archive_fail';
   if (s.reviewVerdict === 'PASS') return 'archive_success';
+  // 同轮复核：不消耗 round，所以优先于 maxRounds 判定
+  if (s.reviewFixAvailable) return 'execute';
   if (s.round >= s.maxRounds) return 'archive_max_retries';
   if (s.pendingQuestion) return 'askUser';
   return 'plan';

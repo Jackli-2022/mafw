@@ -45,7 +45,8 @@ function normalizeResult(value: unknown): ReviewTaskResult['result'] | null {
   return value === 'pass' || value === 'fail' || value === 'skipped' ? value : null;
 }
 
-/** waves.json 的 taskId 序列（与 PodTaskService 投影一致：`${wave.id}-t${i+1}`）。 */
+/** waves.json 的 taskId 序列（与 PodTaskService 投影一致：`${wave.id}-t${i+1}`）。
+ *  任务既可以是字符串，也可以是 `{title, acceptance?}`。 */
 export function taskIdsFromWavePlan(plan: unknown): string[] {
   const waves = plan && typeof plan === 'object' ? (plan as any).waves : null;
   if (!Array.isArray(waves)) return [];
@@ -57,6 +58,33 @@ export function taskIdsFromWavePlan(plan: unknown): string[] {
     tasks.forEach((_task: unknown, index: number) => ids.push(`${waveId}-t${index + 1}`));
   }
   return ids;
+}
+
+/** 从 waves 计划提取「taskId → acceptance[]」（对象形任务才有）。 */
+export function taskAcceptanceFromWavePlan(plan: unknown): Record<string, string[]> {
+  const waves = plan && typeof plan === 'object' ? (plan as any).waves : null;
+  if (!Array.isArray(waves)) return {};
+  const out: Record<string, string[]> = {};
+  for (const wave of waves) {
+    const waveId = typeof wave?.id === 'string' ? wave.id : '';
+    if (!waveId) continue;
+    const tasks = Array.isArray(wave?.tasks) ? wave.tasks : [];
+    tasks.forEach((task: any, index: number) => {
+      if (!task || typeof task === 'string') return;
+      const acceptance = Array.isArray(task.acceptance)
+        ? task.acceptance.map((item: unknown) => String(item).trim()).filter(Boolean)
+        : [];
+      if (acceptance.length > 0) out[`${waveId}-t${index + 1}`] = acceptance;
+    });
+  }
+  return out;
+}
+
+/** waves 里一个任务的标题（兼容字符串/对象两种形态）。 */
+export function waveTaskTitle(task: unknown): string {
+  if (typeof task === 'string') return task;
+  if (task && typeof task === 'object' && typeof (task as any).title === 'string') return (task as any).title;
+  return '';
 }
 
 export function parseReviewRubric(markdown: string, taskIds: string[]): ReviewRubric {
@@ -89,8 +117,12 @@ export function parseReviewRubric(markdown: string, taskIds: string[]): ReviewRu
     if (seen.has(taskId)) throw new RubricError('invalid', `duplicate rubric taskId: ${taskId}`);
     const result = normalizeResult(item?.result);
     if (!result) throw new RubricError('invalid', `rubric task ${taskId} has invalid result`);
+    const evidence = String(item?.evidence ?? '').trim();
+    if (result !== 'skipped' && !evidence) {
+      throw new RubricError('invalid', `rubric task ${taskId} is missing verifiable evidence`);
+    }
     seen.add(taskId);
-    tasks.push({ taskId, result, evidence: String(item?.evidence ?? '').trim() });
+    tasks.push({ taskId, result, evidence });
   }
 
   const missing = expected.filter((id) => !seen.has(id));

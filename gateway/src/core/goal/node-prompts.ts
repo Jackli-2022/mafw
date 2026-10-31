@@ -97,11 +97,17 @@ export interface NodeArtifactPaths {
   review: string;
 }
 
-export function nodeArtifactPaths(mafwDir: string, goalId: string, round: number): NodeArtifactPaths {
+export function nodeArtifactPaths(
+  mafwDir: string,
+  goalId: string,
+  round: number,
+  opts: { fix?: boolean } = {},
+): NodeArtifactPaths {
+  const suffix = opts.fix ? '-fix' : '';
   return {
     waves: path.join(mafwDir, 'waves.json'),
-    receipt: path.join(mafwDir, 'receipts', goalId, `loop-${round}-receipt.json`),
-    review: path.join(mafwDir, 'reviews', `${goalId}-loop${round}.md`),
+    receipt: path.join(mafwDir, 'receipts', goalId, `loop-${round}${suffix}-receipt.json`),
+    review: path.join(mafwDir, 'reviews', `${goalId}-loop${round}${suffix}.md`),
   };
 }
 
@@ -120,10 +126,17 @@ export interface NodePromptCtx {
   priorBlock?: string;
   /** D4b：反事实推演块（仅 plan 节点注入，pre-mortem）。 */
   counterfactualBlock?: string;
+  /** 同轮复核：失败任务 + reviewer 证据（execute 修复模式注入）。 */
+  fixTasks?: Array<{ taskId: string; evidence: string }>;
+  /** 同轮复核：上一轮完整回执路径（修复模式要在此基础上保留已通过项）。 */
+  fixPreviousReceipt?: string;
+  /** 任务验收标准（review 节点按它判定；缺省则该任务自证）。 */
+  acceptance?: Record<string, string[]>;
 }
 
 export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodePromptCtx): string {
-  const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round);
+  const isFixPass = node === 'execute' && !!ctx.fixTasks?.length;
+  const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round, { fix: isFixPass });
   const head = `【MAFW Goal ${ctx.goalId} · loop ${ctx.round}/${ctx.maxRounds}】`;
   const docs = `charter: ${ctx.charterPath}\nrequest: ${ctx.requestPath}`;
 
@@ -139,13 +152,30 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
         ? `上一轮 review 指出的问题（本轮计划必须消化）：\n${ctx.reviewFeedback}` : '',
       '',
       `产物契约（必须是合法 JSON，写入 ${a.waves}）：`,
-      '{"taskType":"feature|bugfix|refactor|research|docs|test|other","waves":[{"id":"w1","title":"...","tasks":["..."],"riskNote":"此 wave 最可能的失败 + 对应缓解"}],"status":"ready"}',
+      '{"taskType":"feature|bugfix|refactor|research|docs|test|other","waves":[{"id":"w1","title":"...","tasks":[{"title":"...","acceptance":["可验证标准 1","可验证标准 2"]}],"riskNote":"此 wave 最可能的失败 + 对应缓解"}],"status":"ready"}',
+      '每个任务尽量给 `acceptance`（2–4 条、可机械验证，如"npm test -- pod 全绿"、"receipts 含 artifact 路径"）；',
+      '字符串形式的任务也接受，但没有 acceptance 时 review 只能自证。',
       '顶层 taskType 与每 wave 的 riskNote 为 D4b 反事实要求（判断任务类型；对照历史失败模式为每个 wave 预设缓解）。',
       '若存在无法自行消除的歧义：{"status":"need_clarification","ambiguities":["问题..."]}',
     ].filter(Boolean).join('\n');
   }
 
   if (node === 'execute') {
+    if (isFixPass) {
+      const failed = (ctx.fixTasks ?? []).map((task) => `- ${task.taskId}：${task.evidence || "（reviewer 未给证据）"}`).join('\n');
+      return [
+        head, docs, '',
+        `任务：**同轮复核修复**。上一轮 review 判定以下任务未通过，只修这些，不要扩大范围：`,
+        failed,
+        ctx.reviewFeedback ? `reviewer 总结：${ctx.reviewFeedback}` : '',
+        '',
+        `先读上一轮完整回执 ${ctx.fixPreviousReceipt ?? a.receipt}：已通过的任务**原样保留**（status/files 不变），
+只更新失败任务；把**完整回执**写到 ${a.receipt}（不是只写失败项）。`,
+        `产物契约（写入 ${a.receipt}）：`,
+        `{"goalId":"${ctx.goalId}","timestamp":"<ISO>","receipts":[{"taskId":"w1-t1","status":"done|failed|skipped","summary":"一句话","files":["改动文件"]}]}`,
+        '阻塞不停下提问：标 failed 并写明原因。用 TDD，跑测试验证。',
+      ].filter(Boolean).join('\n');
+    }
     return [
       head, docs, '',
       `任务：读 ${a.waves}，逐 wave 执行。每完成一个任务把回执写入 ${a.receipt}（写完整个 JSON，覆盖式更新）。`,
@@ -156,10 +186,15 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
     ].join('\n');
   }
 
+  const acceptanceLines = Object.entries(ctx.acceptance ?? {})
+    .filter(([, items]) => Array.isArray(items) && items.length > 0)
+    .map(([taskId, items]) => `- ${taskId}：${items.join(' / ')}`);
+
   return [
     head, docs, '',
     `任务：独立验证本轮执行结果。读 charter、${a.waves}、回执 ${a.receipt}，用只读工具与测试命令复核（不信任回执自述）。`,
     ctx.reviewFeedback ? `上轮 review 参考：${ctx.reviewFeedback}` : '',
+    acceptanceLines.length > 0 ? `任务验收标准（判定依据，不要另立口径）：\n${acceptanceLines.join('\n')}` : '',
     '',
     `把评审报告（markdown）写入 ${a.review}，文件末尾必须包含：`,
     '```mafw-review',

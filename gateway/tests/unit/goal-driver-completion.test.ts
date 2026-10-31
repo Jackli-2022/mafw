@@ -136,6 +136,66 @@ describe('completeNode 产物双门', () => {
     expect(st.nextNode).toBe('plan');
   });
 
+  it('review FAIL 且本轮未复核 → 同轮 execute 修复（round 不变）', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9', { patch: { nextNode: 'review', round: 1 } });
+    const sid = await h.startAndIdle('g9');
+    const a = nodeArtifactPaths(h.mafwDir, 'g9', 1);
+    fs.writeFileSync(a.waves, JSON.stringify({
+      waves: [{ id: 'w1', tasks: [{ title: 'a', acceptance: ['npm test 全绿'] }] }],
+      status: 'ready',
+    }), 'utf-8');
+    fs.writeFileSync(a.review, '```mafw-review\n' + JSON.stringify({
+      verdict: 'FAIL',
+      tasks: [{ taskId: 'w1-t1', result: 'fail', evidence: 'npm test 红' }],
+      feedback: '修一下',
+    }) + '\n```\n', 'utf-8');
+    const st0 = h.load('g9')!;
+    st0.wavePlanPath = a.waves;
+    fs.writeFileSync(path.join(h.mafwDir, 'state', 'g9.json'), JSON.stringify(st0), 'utf-8');
+
+    await h.fireIdle(sid);
+
+    const st = h.load('g9')!;
+    expect(st.round).toBe(1);
+    expect(st.reviewFix).toMatchObject({ round: 1 });
+    expect(st.reviewFix.tasks).toEqual([{ taskId: 'w1-t1', evidence: 'npm test 红' }]);
+    expect(st.nextNode).toBe('execute');
+    expect(h.nodeRuns.at(-1)?.node).toBe('execute');
+  });
+
+  it('复核后再 PASS → 归档成功（不消耗新 round）', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9', { patch: { nextNode: 'review', round: 1 } });
+    const sid = await h.startAndIdle('g9');
+    const a = nodeArtifactPaths(h.mafwDir, 'g9', 1);
+    fs.writeFileSync(a.waves, JSON.stringify({
+      waves: [{ id: 'w1', tasks: [{ title: 'a', acceptance: ['x'] }] }], status: 'ready',
+    }), 'utf-8');
+    fs.writeFileSync(a.review, '```mafw-review\n' + JSON.stringify({
+      verdict: 'FAIL', tasks: [{ taskId: 'w1-t1', result: 'fail', evidence: '红' }], feedback: '修',
+    }) + '\n```\n', 'utf-8');
+    const st0 = h.load('g9')!;
+    st0.wavePlanPath = a.waves;
+    fs.writeFileSync(path.join(h.mafwDir, 'state', 'g9.json'), JSON.stringify(st0), 'utf-8');
+
+    await h.fireIdle(sid); // → execute 修复模式
+    const fixReceipt = nodeArtifactPaths(h.mafwDir, 'g9', 1, { fix: true }).receipt;
+    fs.mkdirSync(path.dirname(fixReceipt), { recursive: true });
+    fs.writeFileSync(fixReceipt, JSON.stringify({
+      goalId: 'g9', timestamp: new Date().toISOString(),
+      receipts: [{ taskId: 'w1-t1', status: 'done', summary: 'fix', files: [] }],
+    }), 'utf-8');
+    await h.fireIdle(); // 修复 execute 完成 → review（fix 产物）
+    const fixReview = nodeArtifactPaths(h.mafwDir, 'g9', 1, { fix: true }).review;
+    fs.writeFileSync(fixReview, '```mafw-review\n' + JSON.stringify({
+      verdict: 'PASS', tasks: [{ taskId: 'w1-t1', result: 'pass', evidence: 'npm test 绿' }], feedback: 'ok',
+    }) + '\n```\n', 'utf-8');
+    await h.fireIdle(); // 复核 review 完成 → archive
+
+    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
+  });
+
   it('review FAIL round+1>=maxRounds → archive_max_retries', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9', { patch: { nextNode: 'review', round: 2, wavePlanPath: 'x' } });

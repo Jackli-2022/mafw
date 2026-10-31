@@ -6,7 +6,7 @@ import {
 } from './pod-store';
 
 export interface WavePlan {
-  waves: Array<{ id: string; title?: string; tasks: string[] }>;
+  waves: Array<{ id: string; title?: string; tasks: Array<string | { title: string; acceptance?: string[] }> }>;
 }
 
 export interface GoalReceipt {
@@ -47,7 +47,11 @@ export class PodTaskService {
       if (!wave || typeof wave.id !== 'string' || !Array.isArray(wave.tasks)) {
         throw new PodError(400, 'invalid wave');
       }
-      wave.tasks.forEach((title, index) => {
+      wave.tasks.forEach((raw, index) => {
+        const title = typeof raw === 'string'
+          ? raw
+          : String((raw as any)?.title ?? '').trim();
+        if (!title) return;
         const sourceKey = `wave:${wave.id}:task:${index}`;
         const task = this.deps.store.upsertTask({
           id: this.deps.newId(),

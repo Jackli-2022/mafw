@@ -67,6 +67,13 @@ export interface GoalStateV3 {
   };
   /** W1 最近一次驳回反馈——注入下一版 plan prompt；plan 成功兑现时清除。 */
   planFeedback?: string | null;
+  /** 同轮复核：review FAIL 后允许一次"只修失败项"的 execute 复跑（不消耗 round）。
+   *  存在且 round 等于当前轮 → 该轮已用过复核。 */
+  reviewFix?: {
+    round: number;
+    tasks: Array<{ taskId: string; evidence: string }>;
+    feedback: string;
+  } | null;
   updatedAt: string;
 }
 
@@ -129,6 +136,7 @@ function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
     planReview: (raw as any).planReview === 'manual' ? 'manual' : ((raw as any).planReview === 'auto' ? 'auto' : undefined),
     planApproval: (raw as any).planApproval ?? undefined,
     planFeedback: (raw as any).planFeedback ?? null,
+    reviewFix: (raw as any).reviewFix ?? null,
     updatedAt: raw.updatedAt ?? new Date().toISOString(),
   };
 }

@@ -202,6 +202,14 @@ describe('PodTaskService', () => {
     expect(byExternal().get('w1-t2')).toBe('done');
   });
 
+  test('projectWaves accepts object tasks and keeps string tasks', () => {
+    const tasks = service.projectWaves('pod_1', 'g1', {
+      waves: [{ id: 'w1', tasks: ['旧式', { title: '新式', acceptance: ['x'] }] }],
+    } as any);
+    expect(tasks.map((task) => task.title)).toEqual(['旧式', '新式']);
+    expect(tasks.map((task) => task.externalTaskId)).toEqual(['w1-t1', 'w1-t2']);
+  });
+
   test('reconcileArchive closes open tasks on success', () => {
     const tasks = service.projectWaves('pod_1', 'g1', plan);
     service.startExecution('pod_1', 'g1');

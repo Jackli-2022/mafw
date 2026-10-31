@@ -10,7 +10,7 @@ import {
 import { routeNext, GoalNodeName } from './routing';
 import { renderNodePrompt, nodeArtifactPaths, nodeOutputSchema } from './node-prompts';
 import { isTaskType } from '../../orchestration/capability-ledger';
-import { parseReviewRubric, taskIdsFromWavePlan } from './review-rubric';
+import { parseReviewRubric, taskAcceptanceFromWavePlan, taskIdsFromWavePlan } from './review-rubric';
 import { matchesSignature } from '../langgraph/signature-detector';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
 
@@ -174,6 +174,16 @@ export class NodeDriver {
       startedAt: new Date().toISOString(),
     });
 
+    const fixPass = node === 'execute' && state.reviewFix?.round === round && state.reviewVerdict === 'FAIL';
+    const acceptance = (() => {
+      try {
+        const wavesPath = state.wavePlanPath;
+        if (!wavesPath || !fs.existsSync(wavesPath)) return undefined;
+        const map = taskAcceptanceFromWavePlan(JSON.parse(fs.readFileSync(wavesPath, 'utf-8')));
+        return Object.keys(map).length > 0 ? map : undefined;
+      } catch { return undefined; }
+    })();
+
     const basePrompt = renderNodePrompt(node, {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds,
       charterPath: path.join(mafwDir, 'goals', `${goalId}.md`),
@@ -182,6 +192,9 @@ export class NodeDriver {
       planFeedback: state.planFeedback || undefined,
       priorBlock: this.deps.capabilityPrior?.(goalId) ?? undefined,
       counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
+      acceptance: node === 'review' ? acceptance : undefined,
+      fixTasks: fixPass ? (state.reviewFix?.tasks ?? []) : undefined,
+      fixPreviousReceipt: fixPass ? nodeArtifactPaths(mafwDir, goalId, round).receipt : undefined,
     });
     const podBlock = this.deps.podContext?.(goalId, node, sessionId) ?? null;
     const prompt = podBlock ? `${podBlock}\n\n${basePrompt}` : basePrompt;
@@ -287,7 +300,9 @@ export class NodeDriver {
 
     const node = ns.phase;
     const round = effectiveRound(state);
-    const a = nodeArtifactPaths(mafwDir, goalId, round);
+    const fixPass = node === 'execute' && state.reviewFix?.round === round && state.reviewVerdict === 'FAIL';
+    const reviewIsFixPass = node === 'review' && state.reviewFix?.round === round;
+    const a = nodeArtifactPaths(mafwDir, goalId, round, { fix: fixPass || reviewIsFixPass });
 
     // —— Batch 1：已校验的结构化交卷优先；文件产物 fallback ——
     const submitted = await this.deps.client.structured?.(sessionID) ?? null;
@@ -337,11 +352,22 @@ export class NodeDriver {
           ? JSON.stringify(submitted)
           : fs.readFileSync(a.review, 'utf-8');
         const verdict = parseReviewRubric(source, readWaveTaskIds(a.waves));
+        // 同轮复核：FAIL 且本轮还没用过 → 保留 round（不 +1），把失败项写进 state 供
+        // execute 修复模式使用；FAIL 且已用过 → 清空 reviewFix，走原 round+1。
+        const fixAvailable = verdict.verdict === 'FAIL'
+          && !(state.reviewFix && state.reviewFix.round === round)
+          && !state.lastError;
+        const failedTasks = verdict.tasks
+          .filter((task) => task.result === 'fail')
+          .map((task) => ({ taskId: task.taskId, evidence: task.evidence }));
         const p: Partial<GoalStateV3> = {
           reviewVerdict: verdict.verdict,
           ...(fs.existsSync(a.review) ? { reviewReportPath: a.review } : {}),
           reviewFeedback: verdict.feedback,
-          round: round + 1,
+          round: fixAvailable && failedTasks.length > 0 ? round : round + 1,
+          reviewFix: fixAvailable && failedTasks.length > 0
+            ? { round, tasks: failedTasks, feedback: verdict.feedback }
+            : null,
         };
         // same-signature 追问（移植 review.node.ts:56-74，上限 3）
         if (verdict.verdict === 'FAIL' && round < state.maxRounds) {
@@ -381,6 +407,8 @@ export class NodeDriver {
         pendingQuestion: patch.pendingQuestion ?? null,
         // W1：manual 模式的 plan 成功 → 批准门（pendingQuestion 已在 routing 优先）。
         planReviewGate: node === 'plan' && (state.planReview ?? 'auto') === 'manual',
+        // 同轮复核：只有刚决定"可复核"（patch.reviewFix 落库）时才回 execute 修复
+        reviewFixAvailable: !!patch.reviewFix,
       },
     );
 

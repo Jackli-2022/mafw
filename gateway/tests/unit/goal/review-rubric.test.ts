@@ -1,4 +1,4 @@
-import { RubricError, parseReviewRubric } from '../../../src/core/goal/review-rubric';
+import { RubricError, parseReviewRubric, taskAcceptanceFromWavePlan, taskIdsFromWavePlan } from '../../../src/core/goal/review-rubric';
 
 function reviewFile(payload: unknown): string {
   return [
@@ -82,5 +82,28 @@ describe('parseReviewRubric', () => {
 
   test('rejects a review file without a mafw-review block', () => {
     expect(() => parseReviewRubric('# Review\n\nno block here', ['w1-t1'])).toThrow(RubricError);
+  });
+
+  test('evidence is required for pass/fail but not for skipped', () => {
+    expect(() => parseReviewRubric(reviewFile({
+      verdict: 'PASS', tasks: [{ taskId: 'w1-t1', result: 'pass', evidence: '' }], feedback: 'ok',
+    }), ['w1-t1'])).toThrow(RubricError);
+    expect(parseReviewRubric(reviewFile({
+      verdict: 'FAIL', tasks: [{ taskId: 'w1-t1', result: 'skipped', evidence: '' }], feedback: 'blocked',
+    }), ['w1-t1']).tasks[0].result).toBe('skipped');
+  });
+
+  test('taskAcceptanceFromWavePlan reads object tasks and ignores string tasks', () => {
+    const plan = {
+      waves: [
+        { id: 'w1', tasks: [{ title: 'a', acceptance: ['npm test 全绿', ' receipts 含路径 '] }, 'legacy'] },
+        { id: 'w2', tasks: [{ title: 'b' }] },
+      ],
+    };
+    expect(taskAcceptanceFromWavePlan(plan)).toEqual({
+      'w1-t1': ['npm test 全绿', 'receipts 含路径'],
+    });
+    expect(taskIdsFromWavePlan(plan)).toEqual(['w1-t1', 'w1-t2', 'w2-t1']);
+    expect(taskAcceptanceFromWavePlan({ waves: [{ id: 'w1', tasks: ['x'] }] })).toEqual({});
   });
 });

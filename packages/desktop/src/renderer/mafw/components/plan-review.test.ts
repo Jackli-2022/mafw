@@ -13,6 +13,16 @@ const READY = {
 }
 
 describe("renderPlanMarkdown", () => {
+  test("对象形任务渲染标题 + 验收标准（不再被过滤掉）", () => {
+    const md = renderPlanMarkdown({
+      status: "ready",
+      waves: [{ id: "w1", title: "地基", tasks: [{ title: "迁移脚本", acceptance: ["npm test 全绿", "无残留旧表"] }] }],
+    } as any)
+    expect(md).toContain("- 迁移脚本")
+    expect(md).toContain("验收：npm test 全绿")
+    expect(md).toContain("验收：无残留旧表")
+  })
+
   test("ready waves → Wave 标题 + 任务列表 + riskNote", () => {
     const md = renderPlanMarkdown(READY)
     expect(md).toContain("## Wave w1：地基")

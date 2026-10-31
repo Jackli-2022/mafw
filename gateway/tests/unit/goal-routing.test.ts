@@ -33,6 +33,10 @@ describe('routeAfterReview（语义逐字移植 graph.ts:4-10）', () => {
   it('round>=maxRounds → archive_max_retries', () => {
     expect(routeAfterReview({ ...base, reviewVerdict: 'FAIL', round: 3, maxRounds: 3 })).toBe('archive_max_retries');
   });
+  it('同轮复核可用时先于 maxRounds 回 execute（复核不消耗 round）', () => {
+    expect(routeAfterReview({ ...base, reviewVerdict: 'FAIL', round: 3, maxRounds: 3, reviewFixAvailable: true })).toBe('execute');
+    expect(routeAfterReview({ ...base, reviewVerdict: 'FAIL', round: 1, reviewFixAvailable: true })).toBe('execute');
+  });
   it('FAIL round<max 且 pendingQuestion → askUser', () => {
     expect(routeAfterReview({ ...base, reviewVerdict: 'FAIL', round: 1, pendingQuestion: { questionId: 'q1' } })).toBe('askUser');
   });
