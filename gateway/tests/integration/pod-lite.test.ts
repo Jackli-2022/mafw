@@ -92,7 +92,9 @@ describe('Pod Lite backend e2e', () => {
     const receipt = tasks.applyReceipt(detail.pod.id, 'g1', {
       receipts: [{ taskId: 'w1-t1', status: 'done', files: ['a.ts'] }],
     });
-    expect(receipt[0].status).toBe('done');
+    expect(receipt[0].status).toBe('review');
+    tasks.reconcileArchive(detail.pod.id, 'g1', true);
+    expect(tasks.list(detail.pod.id, 'g1').find((t) => t.externalTaskId === 'w1-t1')?.status).toBe('done');
 
     const lead = detail.members.find((m) => m.role === 'lead')!;
     const builder = detail.members.find((m) => m.role === 'builder')!;
