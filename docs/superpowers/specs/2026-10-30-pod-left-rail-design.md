@@ -77,7 +77,7 @@
    - `邮箱 N` = 未读数（§4.3）→ 打开「执行 › 鲸群 › 邮箱」
 5. **输入区**（见 3.3）：收件人 + kind + 文本 + 「立即提醒」开关 + 发送。
 
-**空态**：项目无 Pod（lookup 返回 404 JSON）→ 「创建鲸群」按钮（`pod.ensure`）；gateway 路由缺失（响应非 JSON / 404 但 Content-Type 是 HTML）→ 「当前 gateway 不支持鲸群，请升级」；离线 → 现有 `ConnBanner`。
+**空态**：项目无 Pod（lookup 返回 404 JSON）→ 「创建鲸群」按钮（`pod.ensure`）；gateway 路由缺失（响应非 JSON / 404 但 Content-Type 是 HTML）→ 「当前 gateway 不支持鲸群，请升级」；**worktree 会话**（`benchRoot() !== currentProject()`）→ 不提供创建，显示「worktree 会话不绑定鲸群，请在主项目打开」；离线 → 现有 `ConnBanner`。
 
 ### 3.3 发送语义（默认贴条）
 
@@ -190,6 +190,7 @@ podRailBadge(tasks, messages, selfMemberId) =
 7. 投递成功补 `pod.updated` 广播，让「待投递→已投递」与角标实时。
 8. goal 卡不显示标题，只给 goalId 短码 + phase + loop。
 9. 老 gateway 无 `delivery` 字段 → UI 不承诺投递结果。
+10. worktree 会话不提供「创建鲸群」（避免在 worktree 目录里建出碎片 Pod），只在主项目允许创建。
 
 ## 10. Builder check 决议（2026-10-30）
 
