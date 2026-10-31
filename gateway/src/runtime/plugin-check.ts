@@ -5,13 +5,17 @@
  *   require 插件 → 形状校验 → 事件映射校验 → 声明矩阵 → 试实例化 →
  *   能力盖印/校验（validateRuntime）→ sampleEvents 试衣 → preset 缺面清单。
  *
+ * 判定规则与 loader / activation 同源（event-declaration / capability-source）；
  * 在线 conformance（真实 LLM 往返）仍由 mafw plugin-test 承担。
  */
+import * as path from 'path';
+import { config } from '../config';
 import { createRuntimePluginContext } from './loader';
 import { applyEventMappings, canonicalTypeSet, validateEventMappings, type EventMappingEntry } from './event-mapper';
 import { resolveEventDeclaration } from './event-declaration';
 import { resolveDeclaredCapabilities, stampDeclaredCapabilities } from './capability-source';
 import { validateRuntime } from './validate';
+import { buildRuntimeContractManifest } from './contract-manifest';
 import type { PresetId } from './contract-manifest-types';
 
 export interface PluginCheckOptions {
@@ -30,6 +34,8 @@ export interface PluginCheckReport {
   downgraded: string[];
   warnings: string[];
   preset: PresetId;
+  /** false = preset 名未知或覆盖度未评估（避免「complete」假信息）。 */
+  presetEvaluated: boolean;
   presetMissing: string[];
   samples?: {
     total: number;
@@ -41,6 +47,7 @@ export interface PluginCheckReport {
 }
 
 const DEFAULT_PRESET: PresetId = 'conversation';
+const PRESET_IDS = new Set<string>(buildRuntimeContractManifest().presets.map((p) => p.id));
 
 export async function runPluginCheck(opts: PluginCheckOptions): Promise<PluginCheckReport> {
   const report: PluginCheckReport = {
@@ -51,6 +58,7 @@ export async function runPluginCheck(opts: PluginCheckOptions): Promise<PluginCh
     downgraded: [],
     warnings: [],
     preset: opts.preset ?? DEFAULT_PRESET,
+    presetEvaluated: false,
     presetMissing: [],
   };
 
@@ -67,6 +75,16 @@ export async function runPluginCheck(opts: PluginCheckOptions): Promise<PluginCh
     return report;
   }
 
+  try {
+    return await evaluate(mod, report, opts);
+  } catch (err: any) {
+    report.status = 'error';
+    report.error = `check failed: ${err?.message ?? String(err)}`;
+    return report;
+  }
+}
+
+async function evaluate(mod: any, report: PluginCheckReport, opts: PluginCheckOptions): Promise<PluginCheckReport> {
   report.name = typeof mod?.name === 'string' ? mod.name : undefined;
   if (!report.name) {
     report.status = 'error';
@@ -78,9 +96,14 @@ export async function runPluginCheck(opts: PluginCheckOptions): Promise<PluginCh
     report.error = "missing 'createRuntime(ctx)' export";
     return report;
   }
-  if (typeof mod.preset === 'string') {
-    report.preset = (opts.preset ?? mod.preset) as PresetId;
+
+  const presetCandidate = String(opts.preset ?? mod.preset ?? DEFAULT_PRESET);
+  if (!PRESET_IDS.has(presetCandidate)) {
+    report.status = 'error';
+    report.error = `unknown preset '${presetCandidate}' (choose ${[...PRESET_IDS].join('|')})`;
+    return report;
   }
+  report.preset = presetCandidate as PresetId;
 
   const entry: EventMappingEntry = {
     eventSource: mod.eventSource,
@@ -94,14 +117,14 @@ export async function runPluginCheck(opts: PluginCheckOptions): Promise<PluginCh
   const capabilities = resolveDeclaredCapabilities(mod.capabilities);
   const declaration = resolveEventDeclaration(capabilities, entry);
   report.translation = { mode: declaration.mode, issues: [...mappingIssues, ...declaration.issues] };
-  if (!declaration.eventStream) capabilities.eventStream = false;
+  if (mappingIssues.length > 0 || !declaration.eventStream) capabilities.eventStream = false;
   if (report.translation.issues.length > 0) report.status = 'error';
 
   let rt: any;
   try {
     rt = await mod.createRuntime(createRuntimePluginContext(undefined, {
-      gatewayPort: 3000,
-      rootDir: opts.file,
+      gatewayPort: config.server.apiPort,
+      rootDir: path.dirname(opts.file),
     }));
   } catch (err: any) {
     report.status = 'error';
@@ -119,13 +142,17 @@ export async function runPluginCheck(opts: PluginCheckOptions): Promise<PluginCh
       capabilities,
     },
     source: 'active',
+    declaredCapabilityKeys: Object.keys(mod.capabilities ?? {}),
   });
   report.hard = validation.hard;
   report.downgraded = validation.downgraded;
   report.warnings = validation.warnings;
   if (validation.hard.length > 0) report.status = 'error';
   const preset = validation.staticCoverage?.static.presets[report.preset];
-  report.presetMissing = preset?.missing ?? [];
+  if (preset) {
+    report.presetMissing = preset.missing;
+    report.presetEvaluated = true;
+  }
 
   if (Array.isArray(mod.sampleEvents)) {
     const samples = { total: 0, translated: 0, suppressed: 0, unmatched: 0, invalid: 0 };
@@ -151,6 +178,7 @@ export async function runPluginCheck(opts: PluginCheckOptions): Promise<PluginCh
 export function pluginCheckExitCode(report: PluginCheckReport, strict?: boolean): number {
   if (report.status === 'error') return 1;
   if (report.hard.length > 0) return 1;
+  if (strict && !report.presetEvaluated) return 1;
   if (strict && report.presetMissing.length > 0) return 1;
   if (report.samples && report.samples.total > 0 && report.samples.translated === 0) return 1;
   return 0;

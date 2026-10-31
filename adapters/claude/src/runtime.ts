@@ -62,10 +62,12 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
     }),
   });
 
-  function failEvent(sid: string, error: unknown): void {
+  function failEvent(sid: string, error: unknown, rawSid?: string): void {
     const message = error instanceof Error ? error.message : String(error);
-    // 本地失败没有原生 result 事件：复位 tracker 状态，下一回合仍能合成 turn.started。
+    // 本地失败没有原生 result 事件：复位 tracker 状态（gateway id 与 raw session_id
+    // 可能不同——两个键都复位，否则下一回合不合成 turn.started，UI 永远 busy）。
     tracker.reset(sid);
+    if (rawSid && rawSid !== sid) tracker.reset(rawSid);
     bus.push({ payload: { type: 'turn.failed', properties: { sessionID: sid, error: message } }, sessionID: sid });
   }
 
@@ -80,20 +82,25 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
     };
     if (!state.firstPrompt) options.resume = sid;
     state.firstPrompt = false;
+    let rawSid: string | undefined;
     try {
       const query = await sdk.query({ prompt: text, options });
       sessions.attach(sid, { interrupt: () => query.interrupt() });
       for await (const msg of query) {
         const sid0 = msg?.session_id ?? sid;
+        rawSid = msg?.session_id;
         tracker.push({ ...msg, session_id: sid0 }); // raw：gateway 执行器翻译
       }
     } catch (err) {
-      failEvent(sid, err);
+      failEvent(sid, err, rawSid);
     } finally {
-      sessions.attach(sid, null);
-      const next = sessions.finish(sid);
-      // flush 队首（一次一条——队首完成后自然续发）
-      if (next) void spawn(sid, next.parts, next.message);
+      // 会话可能在回合中被删除——不要复活注册表条目
+      if (sessions.get(sid)) {
+        sessions.attach(sid, null);
+        const next = sessions.finish(sid);
+        // flush 队首（一次一条——队首完成后自然续发）
+        if (next) void spawn(sid, next.parts, next.message);
+      }
     }
   }
 

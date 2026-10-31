@@ -46,5 +46,18 @@ export function resolveEventDeclaration(
     );
   }
 
+  // 交叉校验（loader / plugin-check 同源，code review I6）：声明面与能力位互相矛盾。
+  const declaredStream = !!caps.eventStream;
+  const hasMappings = (entry.eventMappings?.length ?? 0) > 0;
+  if (hasMappings && !declaredStream) {
+    issues.push('eventMappings declared but capabilities.eventStream is false — mappings never applied');
+  }
+  if (entry.transformEvent && !declaredStream) {
+    issues.push('transformEvent declared but capabilities.eventStream is false — never invoked');
+  }
+  if (entry.eventSource && !hasMappings && !entry.transformEvent) {
+    issues.push('eventSource declared but neither eventMappings nor transformEvent — dead config');
+  }
+
   return { mode, eventStream, issues };
 }

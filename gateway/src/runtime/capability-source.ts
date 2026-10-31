@@ -25,10 +25,13 @@ export function stampDeclaredCapabilities(
 ): string | null {
   const instance = rt.capabilities;
   const differing: string[] = [];
+  const instanceKeys = new Set<string>();
   if (instance && typeof instance === 'object') {
     const inst = instance as Record<string, unknown>;
-    for (const key of Object.keys(declared) as Array<keyof RuntimeCapabilities>) {
-      if (key in inst && inst[key] !== declared[key]) differing.push(String(key));
+    for (const key of Object.keys(inst)) instanceKeys.add(key);
+    for (const key of new Set([...Object.keys(declared), ...instanceKeys])) {
+      const k = key as keyof RuntimeCapabilities;
+      if (inst[key] !== (declared as any)[k]) differing.push(String(key));
     }
   }
   rt.capabilities = { ...declared };
@@ -37,9 +40,21 @@ export function stampDeclaredCapabilities(
     : null;
 }
 
+/**
+ * 反向推导：实现了 presence 面但没声明的能力 → 自动补 true + warning。
+ *
+ * 两条护栏（code review C1/C2）：
+ *  1. 依据 `capability.requires`（而不是 `surface.capability`）找 presence 面：
+ *     只靠声明表存在的能力（eventStream）没有实现证据，绝不能自动打开；
+ *     requires 为空的能力一律跳过。
+ *  2. `explicitKeys` = 作者在 module.exports.capabilities 里显式写过的键；
+ *     显式 false 是决定，不是「忘了声明」，永不被自动补覆盖
+ *     （opencode 的 revertUndoApi=false 就是这种：方法存在但语义不可逆）。
+ */
 export function deriveUndeclaredCapabilities(
   subject: ContractSubject,
   caps: RuntimeCapabilities,
+  explicitKeys?: ReadonlySet<string>,
 ): { caps: RuntimeCapabilities; warnings: string[] } {
   const next: RuntimeCapabilities = { ...caps };
   const warnings: string[] = [];
@@ -47,9 +62,11 @@ export function deriveUndeclaredCapabilities(
   for (const capability of MANIFEST.capabilities) {
     const key = capability.id as keyof RuntimeCapabilities;
     if (next[key]) continue;
-    const faces = MANIFEST.surfaces.filter(
-      (s) => s.capability === capability.id && s.verification === 'presence',
-    );
+    if (explicitKeys?.has(capability.id)) continue;
+    if (capability.requires.length === 0) continue;
+    const faces = capability.requires
+      .map((id) => MANIFEST.surfaces.find((s) => s.id === id))
+      .filter((s): s is NonNullable<typeof s> => !!s && s.verification === 'presence');
     if (faces.length === 0) continue;
     if (!faces.every((s) => probePasses(subject, s))) continue;
     (next as any)[key] = true;

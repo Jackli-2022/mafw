@@ -6,6 +6,7 @@
  */
 import type { AgentRuntime } from './contract';
 import type { EventMappingEntry } from './event-mapper';
+import { resolveEventDeclaration } from './event-declaration';
 import type {
   ContractDomain,
   ContractObligation,
@@ -124,7 +125,9 @@ export function probePasses(subject: ContractSubject, surface: ContractSurface):
 }
 
 export function computeCoverage(subject: ContractSubject, manifest: RuntimeContractManifest): RuntimeCoverage {
-  const declared = { ...(subject.rt.capabilities as unknown as Record<string, boolean>) };
+  // 实例可能尚未盖印（独立调用/旧 runtime）——退到插件声明面，避免裸 undefined。
+  const capsSource = (subject.rt.capabilities ?? subject.plugin?.capabilities ?? {}) as unknown as Record<string, boolean>;
+  const declared = { ...capsSource };
   const effective = { ...declared };
   const surfaces: RuntimeCoverage['static']['surfaces'] = {};
   const missing: RuntimeCoverage['static']['missing'] = [];
@@ -185,6 +188,16 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
     presets[p.id] = { required, covered, missing: missingIds };
   }
 
+  const translation = subject.declaration
+    ? {
+        mode: resolveEventDeclaration({ eventStream: !!capsSource.eventStream }, subject.declaration).mode,
+        note: '',
+      }
+    : { mode: 'declared' as const, note: '' };
+  translation.note = translation.mode === 'self'
+    ? 'self-translation declared (not recommended) — gateway executor bypassed; verify event field contract via conformance'
+    : '';
+
   return {
     runtime: subject.rt.name,
     contractVersion: manifest.contractVersion,
@@ -197,9 +210,7 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
       missing,
       unverified,
       notes,
-      translation: subject.declaration?.eventTranslation === 'self'
-        ? { mode: 'self', note: 'self-translation declared (not recommended) — gateway executor bypassed; verify event field contract via conformance' }
-        : { mode: 'declared', note: '' },
+      translation,
     },
   };
 }

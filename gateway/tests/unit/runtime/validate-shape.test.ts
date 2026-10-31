@@ -8,7 +8,7 @@
  * warnings：非阻断缺口（session.update / healthCheck / turnBudgetApi 信任声明）。
  */
 import { validateRuntime } from '../../../src/runtime/validate';
-import { minimalCapabilities } from '../../../src/runtime/contract';
+import { minimalCapabilities, fullCapabilities } from '../../../src/runtime/contract';
 
 const FULL_SESSION = () => ({
   create: async () => ({}),
@@ -231,6 +231,26 @@ describe('validateRuntime — capability downgrade (declared bit, missing implem
     const v = validateRuntime(rt as any, 'my-rt');
     expect((rt as any).capabilities.completionApi).toBe(true);
     expect(v.warnings.some((i) => i.includes('completionApi') && i.includes('not declared'))).toBe(true);
+  });
+
+  it('explicit false stays false even when the method exists (revertUndoApi)', () => {
+    const caps = { ...fullCapabilities(), revertUndoApi: false };
+    const rt = OK_RT({ caps, session: { unrevert: async () => {} } });
+    const v = validateRuntime(rt as any, 'opencode-builtin', { declaredCapabilityKeys: Object.keys(caps) });
+    expect((rt as any).capabilities.revertUndoApi).toBe(false);
+    expect(v.warnings.some((i) => i.includes('revertUndoApi'))).toBe(false);
+  });
+
+  it('declaration-only event mappings never auto-enable eventStream', () => {
+    const rt = OK_RT({ caps: {} });
+    validateRuntime(rt as any, 'decl-only', {
+      declaration: {
+        eventSource: { typePath: '$.type' },
+        eventMappings: [{ from: 'x', to: 'turn.completed' }],
+        transformEvent: () => null,
+      },
+    });
+    expect((rt as any).capabilities.eventStream).toBe(false);
   });
 });
 

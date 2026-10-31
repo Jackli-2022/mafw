@@ -56,10 +56,12 @@ export interface RuntimePluginState {
 
 export class RuntimePluginLoader {
   private factories = new Map<string, RuntimeFactory>();
-  private meta = new Map<string, { capabilities: RuntimeCapabilities; external: boolean } & EventMappingEntry>();
+  private meta = new Map<string, { capabilities: RuntimeCapabilities; external: boolean; declaredCapabilityKeys: string[] } & EventMappingEntry>();
   private state = new Map<string, RuntimePluginState>();
-  private builtins = new Map<string, { factory: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean } & EventMappingEntry>();
+  private builtins = new Map<string, { factory: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean; declaredCapabilityKeys: string[] } & EventMappingEntry>();
   private packageEntries = new Map<string, RuntimePackageEntry>();
+  /** 激活期发现的矛盾声明（实例 caps ≠ 模块声明）——hub 可见。 */
+  private extraErrors = new Map<string, string>();
   /** canonical 词汇表（校验 eventMappings.to 用）——index.ts 注入，避免 loader 依赖矩阵。 */
   private canonicalTypes: ReadonlySet<string> = new Set();
 
@@ -77,7 +79,7 @@ export class RuntimePluginLoader {
     external: boolean,
     extras?: EventMappingEntry,
   ): void {
-    this.builtins.set(name, { factory, capabilities, external, ...(extras ?? {}) });
+    this.builtins.set(name, { factory, capabilities, external, declaredCapabilityKeys: Object.keys(capabilities), ...(extras ?? {}) });
   }
 
   async init(): Promise<void> {
@@ -164,25 +166,12 @@ export class RuntimePluginLoader {
       if (mappingIssues.length > 0 || !declaration.eventStream) capabilities.eventStream = false;
       const issuesSoFar = [...mappingIssues, ...declaration.issues];
       for (const i of issuesSoFar) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
-      // 事件注册交叉校验：声明了映射面但事件流关闭 / 死配置——不强制降级
-      // （runtime 可能直发 canonical 事件），但记 error 状态让 hub 可见。
-      const crossIssues: string[] = [];
-      const hasMappings = (eventExtras.eventMappings?.length ?? 0) > 0;
-      if (hasMappings && !capabilities.eventStream) {
-        crossIssues.push('eventMappings declared but capabilities.eventStream is false — mappings never applied');
-      }
-      if (eventExtras.transformEvent && !capabilities.eventStream) {
-        crossIssues.push('transformEvent declared but capabilities.eventStream is false — never invoked');
-      }
-      if (eventExtras.eventSource && !hasMappings && !eventExtras.transformEvent) {
-        crossIssues.push('eventSource declared but neither eventMappings nor transformEvent — dead config');
-      }
-      for (const i of crossIssues) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
-      const issues = [...issuesSoFar, ...crossIssues];
+      const issues = [...issuesSoFar];
       // 插件 runtime 一律视为外部托管（gateway 不 spawn/监管其进程）
       const external = mod.external !== false;
+      const declaredCapabilityKeys = Object.keys(mod.capabilities || {});
       this.factories.set(name, mod.createRuntime);
-      this.meta.set(name, { capabilities, external, ...eventExtras });
+      this.meta.set(name, { capabilities, external, declaredCapabilityKeys, ...eventExtras });
       loadedNames.add(name);
       // Filename-stem alias: the plugin hub addresses runtime plugins by
       // filename stem (statEntry baseName) while switch/createRuntime
@@ -194,7 +183,7 @@ export class RuntimePluginLoader {
       let alias: string | undefined;
       if (stem !== name && !this.factories.has(stem) && !this.builtins.has(stem)) {
         this.factories.set(stem, mod.createRuntime);
-        this.meta.set(stem, { capabilities, external, ...eventExtras });
+        this.meta.set(stem, { capabilities, external, declaredCapabilityKeys, ...eventExtras });
         alias = stem;
       }
       this.state.set(file, {
@@ -217,7 +206,7 @@ export class RuntimePluginLoader {
   }
 
   /** 插件不存在或未通过校验时返回 undefined（调用方回退内置 opencode）。文件插件优先于内置。 */
-  get(name: string): ({ createRuntime: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean } & EventMappingEntry) | undefined {
+  get(name: string): ({ createRuntime: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean; declaredCapabilityKeys: string[] } & EventMappingEntry) | undefined {
     const createRuntime = this.factories.get(name);
     const meta = this.meta.get(name);
     if (createRuntime && meta) return { createRuntime, ...meta };
@@ -227,11 +216,20 @@ export class RuntimePluginLoader {
         createRuntime: pkg.createRuntime,
         capabilities: { ...minimalCapabilities(), ...pkg.capabilities },
         external: pkg.external,
+        declaredCapabilityKeys: Object.keys(pkg.capabilities ?? {}),
       };
     }
     const builtin = this.builtins.get(name);
     if (builtin) return { createRuntime: builtin.factory, ...builtin };
     return undefined;
+  }
+
+  /** 激活期矛盾声明等问题的 hub 可见记录（file/builtin/package 同名条目都标 error）。 */
+  markError(name: string, reason: string): void {
+    this.extraErrors.set(name, reason);
+    for (const [key, st] of this.state) {
+      if (st.name === name) this.state.set(key, { ...st, status: 'error', error: reason });
+    }
   }
 
   /** 已注册内置件名（builtin 文件件不在其中，opencode 为恒等默认由 index.ts 注入 hub）。 */
@@ -241,11 +239,20 @@ export class RuntimePluginLoader {
 
   getState(): RuntimePluginState[] {
     for (const [name, b] of this.builtins) {
-      this.state.set(`builtin:${name}`, { file: `builtin:${name}`, name, status: 'ok', capabilities: b.capabilities });
+      const extra = this.extraErrors.get(name);
+      this.state.set(`builtin:${name}`, {
+        file: `builtin:${name}`, name,
+        status: extra ? 'error' : 'ok',
+        error: extra,
+        capabilities: b.capabilities,
+      });
     }
     for (const [name, p] of this.packageEntries) {
+      const extra = this.extraErrors.get(name);
       this.state.set(`package:${name}`, {
-        file: `package:${name}`, name, status: 'ok',
+        file: `package:${name}`, name,
+        status: extra ? 'error' : 'ok',
+        error: extra,
         capabilities: { ...minimalCapabilities(), ...p.capabilities },
       });
     }
@@ -322,7 +329,8 @@ module.exports = {
     // ctx.fetch / ctx.log / ctx.pluginConfig(name) / ctx.apiKey(name)
     return {
       name: "my-runtime",
-      capabilities: { /* same object as above */ },
+      // capabilities 只在 module.exports 声明一次（实例不要重复声明；
+      // gateway 激活期会盖印模块声明，不一致会记 error）
       session: {
         async create(opts) { /* {directory?} → {id} */ },
         async promptAsync(opts) { /* {sessionID, parts|message, ...} → void */ },

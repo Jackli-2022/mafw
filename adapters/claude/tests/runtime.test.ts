@@ -12,7 +12,7 @@ import { createClaudeRuntime } from '../src/runtime.ts';
 
 function fakeSdk(
   script: Array<(push: (m: any) => void) => void | Promise<void>>,
-  opts: { failQuery?: Error; failTimes?: number } = {},
+  opts: { failQuery?: Error; failTimes?: number; throwDuringIteration?: Error } = {},
 ) {
   const calls: any[] = [];
   let failures = 0;
@@ -30,6 +30,7 @@ function fakeSdk(
       const self = {
         async *[Symbol.asyncIterator]() {
           for (const m of messages) yield m;
+          if (opts.throwDuringIteration) throw opts.throwDuringIteration;
         },
         interrupt() {
           (self as any).interrupted = true;
@@ -167,6 +168,25 @@ test('spawn 失败 → canonical turn.failed（恒等行放行语义）；下回
   await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'again' }] });
   const events2 = await Promise.race([done2, new Promise<any[]>((r) => setTimeout(() => r([]), 3000))]);
   assert.deepEqual(events2.map(typeOf), ['turn.started', 'user']);
+});
+
+test('失败发生在 raw session_id 键上时也复位 tracker（双键 reset）', async () => {
+  const sdk = fakeSdk(
+    [(push) => push({ type: 'user', session_id: 'RAW_SID', uuid: 'u1', message: { role: 'user', content: 'x' } })],
+    { throwDuringIteration: new Error('stream broke') },
+  );
+  const rt = createClaudeRuntime({ sdk: sdk as any });
+  const s = await rt.session.create({ directory: 'C:/tmp/proj' });
+  const done = collectEvents(rt, 5);
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'hi' }] });
+  await new Promise((r) => setTimeout(r, 50));
+  // 第二回合：同一个 raw session_id 应重新合成 turn.started（说明失败时复位了 RAW_SID 键）
+  await rt.session.promptAsync({ sessionID: s.id, parts: [{ type: 'text', text: 'again' }] });
+  const events = await Promise.race([done, new Promise<any[]>((r) => setTimeout(() => r([]), 3000))]);
+  const types = events.map(typeOf);
+  assert.ok(types.includes('turn.failed'), JSON.stringify(types));
+  const started = types.filter((t) => t === 'turn.started').length;
+  assert.equal(started, 2, `expected two turn.started (before + after failure): ${JSON.stringify(types)}`);
 });
 
 test('messages → getSessionMessages → normalizeClaudeHistory 产物（flat）', async () => {

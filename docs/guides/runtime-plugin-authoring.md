@@ -65,6 +65,11 @@
 - `conformance`：真实回合/场景（`POST /api/runtime/conformance`）。
 - `attested`：无法探针的信任声明（如 `turnBudgetApi`），永远 `unverified`。
 
+**presence ≠ 可用（重要）**：presence 只证明方法/声明存在，不能证明它工作。反向校验会把「实现了但没声明」的能力**自动打开**——一个只有空壳（stub / 运行时抛错）的方法也会被当成实现。所以：
+
+- 不想暴露的能力必须**显式写 false**（显式声明永不被自动补覆盖）；
+- 真实可用性只能靠 `behavior`/`conformance`（`mafw plugin-test`）证明，coverage 的 `unverified` 不是绿灯。
+
 ### 2.4 preset
 
 | preset | 目标 |

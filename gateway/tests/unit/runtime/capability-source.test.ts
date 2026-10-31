@@ -79,6 +79,48 @@ describe('deriveUndeclaredCapabilities', () => {
     expect(out.warnings).toHaveLength(0);
   });
 
+  test('declarations alone never auto-enable eventStream (no implementation evidence)', () => {
+    const rt: any = {
+      name: 'x',
+      capabilities: minimalCapabilities(),
+      global: { event: async () => ({ stream: (async function* () {})() }) },
+    };
+    const subject: any = {
+      rt,
+      source: 'file',
+      declaration: {
+        eventSource: { typePath: '$.type' },
+        eventMappings: [{ from: 'x', to: 'turn.completed' }],
+        transformEvent: () => null,
+      },
+    };
+    const out = deriveUndeclaredCapabilities(subject, rt.capabilities);
+    expect(out.caps.eventStream).toBe(false);
+  });
+
+  test('requires-based derivation enables sessionApi when all session methods exist', () => {
+    const session: any = {};
+    for (const m of ['create', 'promptAsync', 'prompt', 'messages', 'get', 'delete', 'abort', 'list', 'todo', 'children', 'summarize']) {
+      session[m] = async () => ({});
+    }
+    const rt: any = { name: 'x', capabilities: { ...minimalCapabilities(), sessionApi: false }, session };
+    const out = deriveUndeclaredCapabilities(subjectFor(rt), rt.capabilities);
+    expect(out.caps.sessionApi).toBe(true);
+  });
+
+  test('explicit false is never auto-enabled (revertUndoApi compat case)', () => {
+    const rt: any = {
+      name: 'x',
+      capabilities: { ...minimalCapabilities(), revertUndoApi: false },
+      session: { unrevert: async () => {} },
+    };
+    // 没有显式键保护时会打开（证明这个方法存在就会触发派生）
+    expect(deriveUndeclaredCapabilities(subjectFor(rt), rt.capabilities).caps.revertUndoApi).toBe(true);
+    // 显式 false = 作者决定（语义不可逆），永不覆盖
+    const guarded = deriveUndeclaredCapabilities(subjectFor(rt), rt.capabilities, new Set(['revertUndoApi']));
+    expect(guarded.caps.revertUndoApi).toBe(false);
+  });
+
   test('attested/behavior capabilities are never auto-enabled', () => {
     const rt: any = { name: 'x', capabilities: minimalCapabilities() };
     const out = deriveUndeclaredCapabilities(subjectFor(rt), rt.capabilities);

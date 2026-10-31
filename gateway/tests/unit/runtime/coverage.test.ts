@@ -70,6 +70,19 @@ describe('coverage engine', () => {
     expect(c.static.translation).toEqual({ mode: 'declared', note: '' });
   });
 
+  it('self + mappings contradiction follows declared (executor actually runs)', () => {
+    const c = computeCoverage({
+      rt: fakeRuntime({ capabilities: { ...fullCapabilities(), eventStream: true } }),
+      source: 'file',
+      declaration: {
+        eventTranslation: 'self',
+        eventSource: { typePath: '$.type' },
+        eventMappings: [{ from: 'x', to: 'turn.completed' }],
+      },
+    }, manifest);
+    expect(c.static.translation.mode).toBe('declared');
+  });
+
   it('marks cognition surfaces unverified (gateway serves the endpoint)', () => {
     const c = computeCoverage({ rt: fakeRuntime(), source: 'active' }, manifest);
     expect(c.static.surfaces['cognition.observe'].status).toBe('unverified');

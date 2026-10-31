@@ -498,7 +498,15 @@ async function main() {
 // through the real mapping executor. No gateway needed, no LLM roundtrips.
 async function runPluginCheckCli(args) {
   const path = require('path');
-  const file = args.find((a) => !a.startsWith('--'));
+  // 位置参数 = 非 flag 且不是 --preset 的取值
+  const positional = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--preset') { i++; continue; }
+    if (a.startsWith('--')) continue;
+    positional.push(a);
+  }
+  const file = positional[0];
   if (!file) {
     console.error('Usage: mafw plugin-check <file.js> [--preset <id>] [--strict] [--json]');
     process.exit(1);
@@ -530,8 +538,12 @@ async function runPluginCheckCli(args) {
       console.log(`Samples: ${report.samples.translated} translated / ${report.samples.suppressed} suppressed / ` +
         `${report.samples.unmatched} unmatched / ${report.samples.invalid} invalid (of ${report.samples.total})`);
     }
-    console.log(`Preset ${report.preset}: ${report.presetMissing.length === 0 ? 'complete' : `${report.presetMissing.length} missing`}`);
-    if (report.presetMissing.length > 0) console.log(`  missing: ${report.presetMissing.join(', ')}`);
+    if (report.presetEvaluated) {
+      console.log(`Preset ${report.preset}: ${report.presetMissing.length === 0 ? 'complete' : `${report.presetMissing.length} missing`}`);
+      if (report.presetMissing.length > 0) console.log(`  missing: ${report.presetMissing.join(', ')}`);
+    } else {
+      console.log(`Preset ${report.preset}: not evaluated${report.error ? ` (${report.error})` : ''}`);
+    }
     console.log('Next: `mafw plugin-test` for online conformance against the active runtime.');
   }
   process.exit(mod.pluginCheckExitCode(report, strict));

@@ -28,8 +28,9 @@ describe('T2-1 checkpoint contract', () => {
   });
 
   it('minimalCapabilities leaves checkpointApi off', () => {
-    // 缺省 undefined = 能力门 503（pi / 最小 runtime）
-    expect((minimalCapabilities() as any).checkpointApi).toBeUndefined();
+    // 显式 false（不是 undefined）：反向校验不会把「实现了没声明」的键打开；
+    // 显式键集里出现 = 作者决定，保持关闭（能力门 503）。
+    expect((minimalCapabilities() as any).checkpointApi).toBe(false);
   });
 
   it('session.revert accepts files:false (type-level contract)', () => {

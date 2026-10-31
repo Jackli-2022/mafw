@@ -70,7 +70,7 @@ function hardMessage(source: string, surface: ContractSurface): string {
 export function validateRuntime(
   rt: AgentRuntime,
   source: string,
-  subjectOpts?: Omit<ContractSubject, 'rt'>,
+  subjectOpts?: Omit<ContractSubject, 'rt'> & { declaredCapabilityKeys?: string[] },
 ): RuntimeValidation {
   const out: RuntimeValidation = { hard: [], downgraded: [], warnings: [] };
 
@@ -87,9 +87,10 @@ export function validateRuntime(
     return out;
   }
 
+  const { declaredCapabilityKeys, ...subjectRest } = (subjectOpts ?? {}) as Omit<ContractSubject, 'rt'> & { declaredCapabilityKeys?: string[] };
   const subject: ContractSubject = {
     rt,
-    ...subjectOpts,
+    ...subjectRest,
     plugin: subjectOpts?.plugin ?? {
       name: (rt as any).name,
       createRuntime: () => {},
@@ -99,8 +100,13 @@ export function validateRuntime(
     source: subjectOpts?.source ?? 'active',
   };
   // 反向校验：实现了但没声明的能力 → 自动补 true + warning（「实现了就让它生效」）。
-  // 必须在 computeCoverage 之前写回，否则 coverage.declared 与 active.capabilities 自相矛盾。
-  const derived = deriveUndeclaredCapabilities(subject, caps as RuntimeCapabilities);
+  // 显式声明过的键（含 false）不参与自动补。必须在 computeCoverage 之前写回，
+  // 否则 coverage.declared 与 active.capabilities 自相矛盾。
+  const derived = deriveUndeclaredCapabilities(
+    subject,
+    caps as RuntimeCapabilities,
+    declaredCapabilityKeys ? new Set(declaredCapabilityKeys) : undefined,
+  );
   if (derived.warnings.length > 0) {
     for (const w of derived.warnings) out.warnings.push(`${source}: ${w}`);
     (rt as any).capabilities = derived.caps;

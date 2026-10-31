@@ -50,4 +50,19 @@ describe('resolveEventDeclaration', () => {
       mode: 'self', eventStream: false, issues: [],
     });
   });
+
+  test('eventStream false + mappings → cross issue (never applied)', () => {
+    const r = resolveEventDeclaration({ eventStream: false }, {
+      eventSource: { typePath: '$.type' },
+      eventMappings: [{ from: 'x', to: 'turn.completed' }],
+    });
+    expect(r.issues.join(' ')).toContain('never applied');
+  });
+
+  test('eventSource without translations → dead config issue', () => {
+    const r = resolveEventDeclaration({ eventStream: true }, {
+      eventSource: { typePath: '$.type' },
+    });
+    expect(r.issues.join(' ')).toContain('dead config');
+  });
 });

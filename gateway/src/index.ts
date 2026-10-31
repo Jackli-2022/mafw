@@ -752,14 +752,21 @@ class MafwScheduler {
         dialectProbe,
       });
     const external = !!process.env.MAFW_SERVER_SERVE_URL;
+    // 环境条件性收窄必须体现在内置件声明里（code review I1）：external 模式只探不杀，
+    // 声明 agentProcessApi=true 会被实例收窄后反判成「矛盾声明」并让 restart-agent 放行。
+    const opencodeCaps = () => {
+      const caps = fullCapabilities();
+      if (external) caps.agentProcessApi = false;
+      return caps;
+    };
     // 裸名 = 自适应方言（resolveEventEntry 探测覆盖静态 @v1 fail-safe）
-    this.runtimeLoader.registerBuiltin('opencode', opencodeFactory(true), fullCapabilities(), external, {
+    this.runtimeLoader.registerBuiltin('opencode', opencodeFactory(true), opencodeCaps(), external, {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
       transformEvent: OPENCODE_TRANSFORM_EVENT,
     });
     // 钉死方言：映射表由注册 extras 直接携带（无 resolveEventEntry，探测跳过）
-    const legacyCaps = { ...fullCapabilities(), instructionsApi: false, discoveryApi: false };
+    const legacyCaps = { ...opencodeCaps(), instructionsApi: false, discoveryApi: false };
     this.runtimeLoader.registerBuiltin('opencode@v1', opencodeFactory(false), legacyCaps, external, {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
@@ -771,7 +778,7 @@ class MafwScheduler {
       transformEvent: OPENCODE_TRANSFORM_EVENT,
     });
     // 钉死 2.1.0 方言（顶层 type/data + session.* 富事件；dry-event/一致性测试用）
-    this.runtimeLoader.registerBuiltin('opencode@v21', opencodeFactory(false), fullCapabilities(), external, {
+    this.runtimeLoader.registerBuiltin('opencode@v21', opencodeFactory(false), opencodeCaps(), external, {
       eventSource: OPENCODE_21_EVENT_SOURCE,
       eventMappings: OPENCODE_21_EVENT_MAPPINGS,
       transformEvent: translateOpencode21Event,
@@ -1636,7 +1643,7 @@ class MafwScheduler {
     rt: AgentRuntime,
     source: string,
     fatal: boolean,
-    subject?: Omit<ContractSubject, 'rt'>,
+    subject?: Omit<ContractSubject, 'rt'> & { declaredCapabilityKeys?: string[] },
   ): void {
     const v: RuntimeValidation = validateRuntime(rt, source, subject);
     this.runtimeValidationNotes = [...v.downgraded, ...v.warnings];
@@ -1701,6 +1708,7 @@ class MafwScheduler {
         capabilities: fallbackRt.capabilities,
       },
       source: 'active',
+      declaredCapabilityKeys: Object.keys(fallbackRt.capabilities ?? {}),
     });
     await activateRuntimeTools(fallbackRt, 'builtin:opencode(direct)', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
     wrapGlobalEventStream(fallbackRt, {
@@ -1731,7 +1739,10 @@ class MafwScheduler {
       // 能力声明单源（G3）：module.exports.capabilities 为准；实例若自带且不一致 →
       // log.error 后仍以模块声明覆盖（普通可写赋值，激活期降级路径继续可写）。
       const capabilityMismatch = stampDeclaredCapabilities(rt, plugin.capabilities);
-      if (capabilityMismatch) log.error(`[Runtime] '${rt.name}': ${capabilityMismatch}`);
+      if (capabilityMismatch) {
+        log.error(`[Runtime] '${rt.name}': ${capabilityMismatch}`);
+        this.runtimeLoader?.markError(name, capabilityMismatch);
+      }
       // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径。
       // 必须在 applyRuntimeValidation 之前——否则 coverage 会记录降级前的
       // eventStream=true，与 active.capabilities 自相矛盾。
@@ -1758,6 +1769,7 @@ class MafwScheduler {
         },
         dialect: (rt as any).activeDialect,
         source: 'active',
+        declaredCapabilityKeys: plugin.declaredCapabilityKeys,
       });
       // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
       await activateRuntimeTools(rt, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });

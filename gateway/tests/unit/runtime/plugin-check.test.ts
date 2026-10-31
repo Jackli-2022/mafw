@@ -109,4 +109,39 @@ describe('runPluginCheck', () => {
     expect(r.samples?.unmatched).toBe(1);
     expect(pluginCheckExitCode(r)).toBe(1);
   });
+
+  test('unknown preset → error and exit 1 (no "complete" false green)', async () => {
+    const r = await runPluginCheck({ file: writePlugin(goodPlugin()), preset: 'Desktop' as any, strict: true });
+    expect(r.status).toBe('error');
+    expect(r.error).toContain('unknown preset');
+    expect(pluginCheckExitCode(r, true)).toBe(1);
+  });
+
+  test('require failure → error report, preset not evaluated', async () => {
+    const r = await runPluginCheck({ file: path.join(os.tmpdir(), 'does-not-exist-xyz.js') });
+    expect(r.status).toBe('error');
+    expect(r.presetEvaluated).toBe(false);
+    expect(pluginCheckExitCode(r)).toBe(1);
+  });
+
+  test('malformed mapping table (null row) → error report, never throws', async () => {
+    const r = await runPluginCheck({
+      file: writePlugin(`module.exports = { name: 'malformed', capabilities: { eventStream: true },
+        eventSource: { typePath: '$.type' },
+        eventMappings: [null],
+        async createRuntime() { return { name: 'malformed', ${SESSION_STUBS} }; } };`),
+    });
+    expect(r.status).toBe('error');
+    expect(pluginCheckExitCode(r)).toBe(1);
+  });
+
+  test('eventSource-only dead config → error (same verdict as loader)', async () => {
+    const r = await runPluginCheck({
+      file: writePlugin(`module.exports = { name: 'deadsource', capabilities: { eventStream: true },
+        eventSource: { typePath: '$.type' },
+        async createRuntime() { return { name: 'deadsource', ${SESSION_STUBS} }; } };`),
+    });
+    expect(r.status).toBe('error');
+    expect(r.translation.issues.join(' ')).toContain('dead config');
+  });
 });

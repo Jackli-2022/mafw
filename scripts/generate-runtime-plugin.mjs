@@ -610,7 +610,8 @@ const args = parseArgs({
     baseUrl: { type: 'string', default: 'http://127.0.0.1:9000' },
     model: { type: 'string', default: 'gpt-4o-mini' },
     out: { type: 'string', default: join(homedir(), '.mafw', 'runtime-plugins') },
-    preset: { type: 'string', default: 'conversation' },
+    preset: { type: 'string' },
+    template: { type: 'string', default: 'openai' },
     mock: { type: 'boolean', default: false },
     'self-test': { type: 'boolean', default: false },
     check: { type: 'string' },
@@ -642,8 +643,18 @@ if (args.values.check) {
   for (const i of report.translation.issues) console.log(`  issue: ${i}`)
   for (const h of report.hard) console.log(`  HARD: ${h}`)
   for (const d of report.downgraded) console.log(`  DOWNGRADED: ${d}`)
-  if (report.presetMissing.length > 0) console.log(`  preset ${report.preset} missing: ${report.presetMissing.join(', ')}`)
+  if (report.presetEvaluated) {
+    console.log(`Preset ${report.preset}: ${report.presetMissing.length === 0 ? 'complete' : `${report.presetMissing.length} missing`}`)
+    if (report.presetMissing.length > 0) console.log(`  missing: ${report.presetMissing.join(', ')}`)
+  } else {
+    console.log(`Preset ${report.preset}: not evaluated${report.error ? ` (${report.error})` : ''}`)
+  }
   process.exit(mod.pluginCheckExitCode(report, args.values.strict))
+}
+
+if (args.values.template !== 'openai') {
+  console.error(`unknown template '${args.values.template}' (only 'openai' is available)`)
+  process.exit(1)
 }
 
 if (!args.values.name) {

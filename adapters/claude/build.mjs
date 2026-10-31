@@ -8,7 +8,7 @@
  * 用法：node build.mjs（或 npm run build）
  */
 import { build } from 'esbuild';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,4 +30,8 @@ const result = await build({
 });
 
 const bytes = Object.values(result.metafile.outputs)[0]?.bytes ?? 0;
+// dist 是 CJS 单文件；package.json 声明 "type":"module" 会让 Node 把 dist/claude.js
+// 当 ESM 处理（plugin-check 直接检查产物时会 require 失败）。落一个作用域内
+// package.json 把它钉回 CommonJS。
+writeFileSync(resolve(here, 'dist/package.json'), JSON.stringify({ type: 'commonjs' }, null, 2) + '\n');
 console.log(`dist/claude.js written (${(bytes / 1024).toFixed(0)} KB)`);
