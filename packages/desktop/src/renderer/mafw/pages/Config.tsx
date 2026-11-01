@@ -11,6 +11,8 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { statusLabel, runtimeActivatable, parseAmbiguousCandidates, builtinMeta, groupEntries, typeMeta, formatSize, type HubEntry } from "./plugin-hub"
 import { runtimeCoverageSummary } from "./runtime-coverage"
+import { experienceStore } from "../experience-store"
+import { authCommandFor, mcpConfigWritable as mcpConfigActionEnabled, mcpManageEnabled as mcpManageActionEnabled } from "./mcp-experience"
 import { isNavKey, navItems, type NavKey } from "./config-nav"
 import { draftFromConfig, validateFokThresholds, toSearchOverrides, mergeSearchSection, RERANKER_OPTIONS } from "./search-behavior"
 import { embeddingDraftFromState, embeddingDraftDirty, embeddingUpdatePayload } from "./config-embedding"
@@ -604,8 +606,10 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   // W4 v1：认证在 opencode 内进行（serve 2.1 无 MCP OAuth HTTP 路由）——复制官方命令。
   async function copyMcpAuthCommand(name: string) {
     try {
-      await navigator.clipboard.writeText(`opencode mcp auth ${name}`)
-      showToastV2({ description: `已复制：opencode mcp auth ${name}`, duration: 3000 })
+      const command = authCommandFor(experienceStore.state().actions, name)
+      if (!command) return
+      await navigator.clipboard.writeText(command)
+      showToastV2({ description: `已复制：${command}`, duration: 3000 })
     } catch (err: any) {
       showToastV2({ description: `复制失败: ${err.message}`, duration: 3000 })
     }
@@ -613,7 +617,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
   const [mcpBusy, setMcpBusy] = createSignal<Record<string, boolean>>({})
   const [mcpDialogOpen, setMcpDialogOpen] = createSignal(false)
-  const mcpConfigWritable = () => props.runtimeCaps?.mcpConfigApi === true
+  const mcpConfigWritable = () => mcpConfigActionEnabled(experienceStore.state().actions)
+  const mcpManageVisible = () => experienceStore.state().status !== "ready" || mcpManageActionEnabled(experienceStore.state().actions)
 
   /** B4：删除配置项（先 preview 拿 token，再确认执行）。 */
   async function deleteMcpServer(name: string) {
@@ -1482,7 +1487,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
             </div>
 
             <Show
-              when={props.runtimeCaps?.mcpApi !== false}
+              when={mcpManageVisible()}
               fallback={
                 <div class="mafw-config-section">
                   <div class="mafw-config-section-header">

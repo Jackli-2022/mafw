@@ -26,6 +26,17 @@ describe('Experience contract', () => {
     }
   });
 
+  it('projects MCP actions only when all required surfaces exist', () => {
+    const access = {
+      can: (id: string) => ['mcp.list', 'mcp.connect', 'mcp.disconnect', 'mcp.config.preview', 'mcp.config.apply', 'mcp.config.remove', 'mcp.config.restore'].includes(id),
+      semantics: (id: string) => id === 'mcp.list' ? { authCommandTemplate: 'opencode mcp auth {name}' } : {},
+    } as any;
+    const actions = projectExperienceActions(access, {});
+    expect(actions['mcp.manage'].enabled).toBe(true);
+    expect(actions['mcp.manage'].semantics?.authCommandTemplate).toBe('opencode mcp auth {name}');
+    expect(actions['mcp.config.write'].enabled).toBe(true);
+  });
+
   it('projects background only when the neutral surface exists', () => {
     const access = {
       can: (id: string) => id === 'session.background',

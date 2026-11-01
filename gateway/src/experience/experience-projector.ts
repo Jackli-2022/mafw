@@ -27,6 +27,17 @@ export function projectExperienceActions(
   if (access?.can('session.background')) {
     actions['session.background'] = { enabled: true };
   }
+  const mcpSurfaces = ['mcp.list', 'mcp.connect', 'mcp.disconnect'];
+  if (access && mcpSurfaces.every((id) => access.can(id))) {
+    actions['mcp.manage'] = {
+      enabled: true,
+      semantics: access.semantics('mcp.list'),
+    };
+  }
+  const mcpConfigSurfaces = ['mcp.config.preview', 'mcp.config.apply', 'mcp.config.remove', 'mcp.config.restore'];
+  if (access && mcpConfigSurfaces.every((id) => access.can(id))) {
+    actions['mcp.config.write'] = { enabled: true };
+  }
   if (access?.can('prompt.delivery.steer')) {
     const semantics = access.semantics<{ boundary?: string }>('prompt.delivery.steer');
     actions['prompt.steer'] = {

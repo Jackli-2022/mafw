@@ -277,6 +277,7 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
     semantics: {
       'prompt.delivery.steer': { boundary: 'after-turn' },
       'branch.revert': { files: true, undo: false },
+      'mcp.list': { authCommandTemplate: 'opencode mcp auth {name}' },
     },
     capabilities: caps,
     external: isExternal,
