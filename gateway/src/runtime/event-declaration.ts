@@ -13,7 +13,7 @@
 import type { RuntimeCapabilities } from './contract';
 import { hasEventDeclarations, type EventMappingEntry } from './event-mapper';
 
-export type EventTranslationMode = 'declared' | 'self';
+export type EventTranslationMode = 'declared' | 'self' | 'legacy-self';
 
 export interface EventDeclarationResolution {
   mode: EventTranslationMode;
@@ -28,6 +28,12 @@ export function resolveEventDeclaration(
   const hasDeclarations = hasEventDeclarations(entry);
   const issues: string[] = [];
   let mode: EventTranslationMode = entry.eventTranslation === 'self' ? 'self' : 'declared';
+  // legacy-self 启发式（spec §4.7）：没有显式 eventTranslation、只有恒等映射行、
+  // 没有 transformEvent —— 典型是「插件自己翻译成 canonical，再注册 identity 行放行」。
+  // 行为与 declared 等价（不需要降级），只用于 coverage 标注，敦促作者显式声明。
+  if (entry.eventTranslation === undefined && isIdentityOnly(entry)) {
+    mode = 'legacy-self';
+  }
 
   // 矛盾声明：self 与映射/transform 同时存在 —— declared 胜出（映射照常生效），
   // 作者必须删掉其中一个（静默忽略任何一侧都会制造双重翻译或死配置）。
@@ -60,4 +66,15 @@ export function resolveEventDeclaration(
   }
 
   return { mode, eventStream, issues };
+}
+
+/** 全部映射行都是恒等行（from === to，无 drop/多源/transform）——legacy-self 信号。 */
+function isIdentityOnly(entry: EventMappingEntry): boolean {
+  const rows = entry.eventMappings ?? [];
+  if (rows.length === 0 || entry.transformEvent) return false;
+  return rows.every((row) => {
+    if (row.to === 'drop') return false;
+    const froms = Array.isArray(row.from) ? row.from : [row.from];
+    return froms.length > 0 && froms.every((f) => f === row.to);
+  });
 }

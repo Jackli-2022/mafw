@@ -39,3 +39,18 @@ test('stream return unsubscribes (no further delivery, push stays safe)', async 
   await it.return?.();
   bus.push(1); // must not throw
 });
+
+test('return() settles a pending next() with done:true (no dangling promise)', async () => {
+  const bus = createEventBus<number>();
+  const stream = (await bus.event()).stream;
+  const it = stream[Symbol.asyncIterator]();
+  const pending = it.next();
+  await it.return?.();
+  const result = await Promise.race([
+    pending,
+    new Promise<IteratorResult<number>>((resolve) => setTimeout(() => resolve({ value: -1, done: false }), 200)),
+  ]);
+  assert.equal(result.done, true);
+  // 关闭后继续 next 也是 done
+  assert.equal((await it.next()).done, true);
+});

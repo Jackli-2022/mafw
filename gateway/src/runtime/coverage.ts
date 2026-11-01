@@ -57,8 +57,8 @@ export interface RuntimeCoverage {
       verification: Verification;
       impact: string;
     }>;
-    /** 事件翻译模式（spec §4.1）：declared = gateway 执行器翻译（推荐）；self = 插件自翻译（逃逸，标注不推荐）。 */
-    translation: { mode: 'declared' | 'self'; note: string };
+    /** 事件翻译模式（spec §4.1）：declared = gateway 执行器翻译（推荐）；self = 显式逃逸；legacy-self = 只注册恒等行的旧式自翻译。 */
+    translation: { mode: 'declared' | 'self' | 'legacy-self'; note: string };
     missing: Array<{
       id: string;
       domain: ContractDomain;
@@ -196,7 +196,9 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
     : { mode: 'declared' as const, note: '' };
   translation.note = translation.mode === 'self'
     ? 'self-translation declared (not recommended) — gateway executor bypassed; verify event field contract via conformance'
-    : '';
+    : translation.mode === 'legacy-self'
+      ? 'legacy self-translation (identity rows only) — declare eventTranslation:\'self\' explicitly, or move to declared mappings'
+      : '';
 
   return {
     runtime: subject.rt.name,

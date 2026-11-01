@@ -29,7 +29,7 @@ export interface PluginCheckReport {
   name?: string;
   status: 'ok' | 'error';
   error?: string;
-  translation: { mode: 'declared' | 'self'; issues: string[] };
+  translation: { mode: 'declared' | 'self' | 'legacy-self'; issues: string[] };
   hard: string[];
   downgraded: string[];
   warnings: string[];

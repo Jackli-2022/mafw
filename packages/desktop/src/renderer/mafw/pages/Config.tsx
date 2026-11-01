@@ -10,6 +10,7 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { statusLabel, runtimeActivatable, parseAmbiguousCandidates, builtinMeta, groupEntries, typeMeta, formatSize, type HubEntry } from "./plugin-hub"
+import { runtimeCoverageSummary } from "./runtime-coverage"
 import { isNavKey, navItems, type NavKey } from "./config-nav"
 import { draftFromConfig, validateFokThresholds, toSearchOverrides, mergeSearchSection, RERANKER_OPTIONS } from "./search-behavior"
 import { UsageProviders } from "../components/UsageProviders"
@@ -294,6 +295,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
   // ── Plugin Switcher ──
   const [rtInfo, setRtInfo] = createSignal<any>(null)
+  const rtCoverage = () => runtimeCoverageSummary(rtInfo())
   const [rtPlugins, setRtPlugins] = createSignal<any[]>([])
   const [rtSwitching, setRtSwitching] = createSignal(false)
   const [rtEnvOverride, setRtEnvOverride] = createSignal(false)
@@ -341,6 +343,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
       const res = await window.api.mafw.runtime.switch(plugin)
       showToastV2({ description: `Runtime 已切换到 ${res.active.name}`, duration: 3000 })
       setRtInfo(prev => ({ ...prev, active: res.active }))
+      void loadPluginState() // 重新拉 coverage（switch 响应只带 active 摘要）
     } catch (err: any) {
       showToastV2({ description: `切换失败: ${err.message}`, duration: 4000 })
     }
@@ -979,6 +982,11 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                     ⚠️ 环境变量 MAFW_RUNTIME_PLUGIN 已覆盖 config.yaml 设置
                   </div>
                 )}
+                <Show when={rtCoverage()}>
+                  <div class="mafw-config-hint" classList={{ "mafw-config-hint-warn": rtCoverage()!.tone === "warn" }}>
+                    Runtime 契约：{rtCoverage()!.label}
+                  </div>
+                </Show>
 
                 <Show when={installOpen()}>
                   <div class="mafw-hub-install">

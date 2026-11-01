@@ -65,4 +65,28 @@ describe('resolveEventDeclaration', () => {
     });
     expect(r.issues.join(' ')).toContain('dead config');
   });
+
+  test('identity-only mappings without flag → legacy-self (annotate, not downgrade)', () => {
+    const r = resolveEventDeclaration({ eventStream: true }, {
+      eventSource: { typePath: '$.payload.type' },
+      eventMappings: [
+        { from: 'turn.completed', to: 'turn.completed', passProperties: '$.payload.properties' },
+        { from: 'part.updated', to: 'part.updated', passProperties: '$.payload.properties' },
+      ],
+    });
+    expect(r.mode).toBe('legacy-self');
+    expect(r.eventStream).toBe(true);
+    expect(r.issues).toEqual([]);
+  });
+
+  test('mixed mappings stay declared', () => {
+    const r = resolveEventDeclaration({ eventStream: true }, {
+      eventSource: { typePath: '$.type' },
+      eventMappings: [
+        { from: 'done', to: 'turn.completed' },
+        { from: 'part.updated', to: 'part.updated' },
+      ],
+    });
+    expect(r.mode).toBe('declared');
+  });
 });
