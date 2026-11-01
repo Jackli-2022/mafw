@@ -8,6 +8,7 @@
  */
 import * as http from 'http';
 import type { AgentRuntime } from '../runtime/contract';
+import { RuntimeAccess } from '../runtime/runtime-access';
 import {
   CheckpointRestoreError,
   type CheckpointScope,
@@ -16,6 +17,7 @@ import {
 
 export interface SessionCheckpointDeps {
   getRuntime(): AgentRuntime | null;
+  getAccess?(): RuntimeAccess | null;
   checkpoints?: CheckpointService;
   /** 回合进行中禁止 restore/create（gateway-side files apply 没有 serve 的 busy 保护）。 */
   isBusy?(sessionID: string): boolean;
@@ -53,10 +55,9 @@ export async function handleSessionCheckpoints(
   if (create && req.method !== 'POST') return false;
 
   const rt = deps.getRuntime();
-  if (!rt?.capabilities?.checkpointApi) {
-    json(res, 503, {
-      error: `capability 'checkpointApi' not available on runtime '${rt?.name ?? 'none'}'`,
-    });
+  const access = deps.getAccess?.() ?? (rt ? new RuntimeAccess(rt) : null);
+  if (!access?.can('branch.checkpoint')) {
+    json(res, 503, { error: "runtime surface 'branch.checkpoint' is not available" });
     return true;
   }
   const svc = deps.checkpoints;

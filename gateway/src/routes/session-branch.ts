@@ -1,8 +1,10 @@
 import * as http from 'http';
 import type { AgentRuntime } from '../runtime/contract';
+import { RuntimeAccess } from '../runtime/runtime-access';
 
 export interface SessionBranchDeps {
   getRuntime(): AgentRuntime | null;
+  getAccess?(): RuntimeAccess | null;
 }
 
 function readBody(req: http.IncomingMessage): Promise<any> {
@@ -35,8 +37,9 @@ export async function handleSessionBranch(
   const [, sessionID, action] = m;
 
   const rt = deps.getRuntime();
-  if (!rt?.capabilities?.sessionBranchApi) {
-    json(res, 503, { error: `capability 'sessionBranchApi' not available on runtime '${rt?.name ?? 'none'}'` });
+  const access = deps.getAccess?.() ?? (rt ? new RuntimeAccess(rt) : null);
+  if (!rt || !access?.can('branch.fork')) {
+    json(res, 503, { error: "runtime surface 'branch.fork' is not available" });
     return true;
   }
   const body = await readBody(req);
@@ -52,11 +55,11 @@ export async function handleSessionBranch(
       await rt.session.revert!({ sessionID, messageID: body.messageID, partID: body?.partID });
       json(res, 200, {});
     } else {
-      if (typeof rt.session.unrevert !== 'function') {
-        json(res, 404, { error: `runtime '${rt.name}' does not implement unrevert` });
+      if (!access.can('branch.unrevert')) {
+        json(res, 404, { error: "runtime surface 'branch.unrevert' is not available" });
         return true;
       }
-      await rt.session.unrevert({ sessionID });
+      await rt.session.unrevert!({ sessionID });
       json(res, 200, {});
     }
   } catch (err: any) {

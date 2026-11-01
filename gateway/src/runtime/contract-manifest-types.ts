@@ -62,6 +62,8 @@ export interface ContractSurface {
   conformance?: string[];
   /** 期望该面的预设（反向索引；权威是 ContractPreset.requiredSurfaces）。 */
   presets?: PresetId[];
+  /** surface 级语义键与允许值（adapter 在 AgentRuntime.semantics 中提供实例值）。 */
+  semantics?: Record<string, { description?: string; values?: string[] }>;
   /** gated 但不在 requires 中时，不产生 activation warning（只进覆盖率）。 */
   suppressWarning?: boolean;
   since?: string;

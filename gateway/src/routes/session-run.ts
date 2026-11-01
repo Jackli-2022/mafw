@@ -9,11 +9,13 @@
  */
 import * as http from 'http';
 import type { AgentRuntime } from '../runtime/contract';
+import { RuntimeAccess } from '../runtime/runtime-access';
 import { RunStateError } from '../core/run/run-state-service';
 import type { RunCoordinator } from '../core/run/run-coordinator';
 
 export interface SessionRunDeps {
   getRuntime(): AgentRuntime | null;
+  getAccess?(): RuntimeAccess | null;
   run?: RunCoordinator | null;
 }
 
@@ -49,13 +51,12 @@ export async function handleSessionRun(
   if (resume && req.method !== 'POST') return false;
 
   const rt = deps.getRuntime();
+  const access = deps.getAccess?.() ?? (rt ? new RuntimeAccess(rt) : null);
   const run = deps.run;
   // GET /run 与 discard 不需要 runtime（能力热切换后仍可清理暂停）；suspend/resume 需要。
   const needsRuntime = Boolean(suspend || resume);
-  if (!run || (needsRuntime && !rt?.capabilities?.runStateApi)) {
-    json(res, 503, {
-      error: `capability 'runStateApi' not available on runtime '${rt?.name ?? 'none'}'`,
-    });
+  if (!run || (needsRuntime && !access?.can('branch.runState'))) {
+    json(res, 503, { error: "runtime surface 'branch.runState' is not available" });
     return true;
   }
 

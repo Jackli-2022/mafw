@@ -1,14 +1,9 @@
-/**
- * P5 Wave 1 — 把 routes/*.ts 既有模块的 handler 绑定到 shadow catalog 的
- * operationId 上（registry.attachHandler），index.ts 主循环顶端统一 dispatch。
- *
- * 迁移范围（22 条）：deps 走 gateway 实例既有 helper（rotateDeps 等）或轻量闭包，
- * 无内联前置守卫。runtime×4 / plugins×5（pluginHubDeps 重 preamble + 409 守卫）
- * 留 Wave 2；A2A/SSE/反代/MCP 永久内联。
- *
- * 约定：底层 handleX 返回 false（内部正则未命中）→ 透传回 legacy 链；
- * void 视为已处理。每个闭包必须与被退役的内联调用点行为逐字节等价。
- */
+﻿/**
+ * P5 Wave 1 鈥?鎶?routes/*.ts 鏃㈡湁妯″潡鐨?handler 缁戝畾鍒?shadow catalog 鐨? * operationId 涓婏紙registry.attachHandler锛夛紝index.ts 涓诲惊鐜《绔粺涓€ dispatch銆? *
+ * 杩佺Щ鑼冨洿锛?2 鏉★級锛歞eps 璧?gateway 瀹炰緥鏃㈡湁 helper锛坮otateDeps 绛夛級鎴栬交閲忛棴鍖咃紝
+ * 鏃犲唴鑱斿墠缃畧鍗€俽untime脳4 / plugins脳5锛坧luginHubDeps 閲?preamble + 409 瀹堝崼锛? * 鐣?Wave 2锛汚2A/SSE/鍙嶄唬/MCP 姘镐箙鍐呰仈銆? *
+ * 绾﹀畾锛氬簳灞?handleX 杩斿洖 false锛堝唴閮ㄦ鍒欐湭鍛戒腑锛夆啋 閫忎紶鍥?legacy 閾撅紱
+ * void 瑙嗕负宸插鐞嗐€傛瘡涓棴鍖呭繀椤讳笌琚€€褰圭殑鍐呰仈璋冪敤鐐硅涓洪€愬瓧鑺傜瓑浠枫€? */
 import * as http from 'http';
 import { config } from '../config';
 import type { AgentRuntime } from '../runtime/contract';
@@ -53,10 +48,10 @@ import {
   type UsagePluginsDeps,
 } from './usage-plugins';
 
-/** gateway 实例的最小依赖面（只声明 Wave 1 闭包实际用到的成员）。 */
+/** gateway 瀹炰緥鐨勬渶灏忎緷璧栭潰锛堝彧澹版槑 Wave 1 闂寘瀹為檯鐢ㄥ埌鐨勬垚鍛橈級銆?*/
 export interface Wave1Gateway {
   getGatewayDb(): { listGoalSessions(goalId: string): any };
-  runtime: AgentRuntime | null;
+  runtime: import('../runtime/runtime-facade').RuntimeFacade | null;
   automationEngine?: { rejectTriage(id: string): boolean } | null;
   ledger?: { append(entry: unknown): void } | null;
   rotateDeps(): ManagerRotateDeps;
@@ -66,7 +61,7 @@ export interface Wave1Gateway {
   pluginLoader?: { reload(): Promise<void> } | null;
   mediaPluginLoader?: { reload(): Promise<void>; getState(): { name?: string }[] } | null;
   broadcast(event: { type: string; [key: string]: any }): void;
-  /** 未知事件遥测（扁平非 plugin:* 发布；缺省不采集）。 */
+  /** 鏈煡浜嬩欢閬ユ祴锛堟墎骞抽潪 plugin:* 鍙戝竷锛涚己鐪佷笉閲囬泦锛夈€?*/
   recordUnknownEvent?(type: string): void;
   runtimeCaps: SessionMutationDeps['getCapabilities'] extends () => infer C ? C : never;
   taskService?: TaskService | null;
@@ -76,13 +71,13 @@ export interface Wave1Gateway {
   runCoordinator?: import('../core/run/run-coordinator').RunCoordinator | null;
   dataPartService?: import('../core/data-parts/data-part-service').DataPartService | null;
   discovery?: DiscoveryService | null;
-  /** T2-1：回合进行中禁止检查点 restore/create（gateway-side apply 无 serve busy 保护）。 */
+  /** T2-1锛氬洖鍚堣繘琛屼腑绂佹妫€鏌ョ偣 restore/create锛坓ateway-side apply 鏃?serve busy 淇濇姢锛夈€?*/
   isCheckpointBusy?(sessionID: string): boolean;
 }
 
 type Handler = NonNullable<RouteDef['handler']>;
 
-/** 绑定 Wave 1 的 22 条路由。index.ts 在 createServer 之前调用一次。 */
+/** 缁戝畾 Wave 1 鐨?22 鏉¤矾鐢便€俰ndex.ts 鍦?createServer 涔嬪墠璋冪敤涓€娆°€?*/
 export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): void {
   const H = (fn: Handler) => fn;
 
@@ -111,11 +106,11 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     handleModelConfigUpdate(req, res, gw.modelConfigDeps())));
 
   registry.attachHandler('session.fork', H(async (req, res, params) =>
-    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime })));
+    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime, getAccess: () => gw.runtime?.access ?? null })));
   registry.attachHandler('session.revert', H(async (req, res, params) =>
-    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime })));
+    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime, getAccess: () => gw.runtime?.access ?? null })));
   registry.attachHandler('session.unrevert', H(async (req, res, params) =>
-    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime })));
+    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime, getAccess: () => gw.runtime?.access ?? null })));
 
   registry.attachHandler('session.diff', H(async (req, res, params) => {
     const u = new URL(req.url || '/', 'http://x');

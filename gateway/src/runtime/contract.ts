@@ -583,6 +583,8 @@ export interface AgentRuntime extends RuntimeClient {
   /** runtime 标识，如 'opencode' */
   readonly name: string;
   readonly capabilities: RuntimeCapabilities;
+  /** surface 级语义（由 adapter 声明；gateway 只按 surface id 读取，不按 runtime 名分支）。 */
+  readonly semantics?: Record<string, Record<string, unknown>>;
   /**
    * true = 外部托管（gateway 不 spawn/监管 serve 进程）。
    * When external=true: watchdog only probes health + reconnects event stream,

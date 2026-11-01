@@ -669,6 +669,22 @@
         "session",
         "revert"
       ],
+      "semantics": {
+        "files": {
+          "description": "revert also restores workspace files",
+          "values": [
+            "true",
+            "false"
+          ]
+        },
+        "undo": {
+          "description": "revert can be undone",
+          "values": [
+            "true",
+            "false"
+          ]
+        }
+      },
       "consumer": "timeline rewind",
       "impact": "回滚不可用",
       "presets": [
@@ -1124,6 +1140,16 @@
       "conformance": [
         "chat-roundtrip"
       ],
+      "semantics": {
+        "boundary": {
+          "description": "when a steer message is delivered",
+          "values": [
+            "after-turn",
+            "tool",
+            "unspecified"
+          ]
+        }
+      },
       "consumer": "busy steer",
       "impact": "busy 纠偏退化为普通消息",
       "presets": [
@@ -1735,6 +1761,11 @@
         "mcp",
         "list"
       ],
+      "semantics": {
+        "authCommandTemplate": {
+          "description": "optional runtime-specific auth command template; {name} is replaced by the server name"
+        }
+      },
       "consumer": "GET /api/mcp/servers",
       "impact": "MCP 状态不可见",
       "presets": [

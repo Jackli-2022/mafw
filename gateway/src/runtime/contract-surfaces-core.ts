@@ -183,6 +183,10 @@ export const CORE_SURFACES: ContractSurface[] = [
     id: 'branch.revert', title: 'session.revert', domain: 'branch',
     obligation: 'gated', capability: 'sessionBranchApi', verification: 'presence',
     implementation: 'session.revert', probe: ['session', 'revert'],
+    semantics: {
+      files: { description: 'revert also restores workspace files', values: ['true', 'false'] },
+      undo: { description: 'revert can be undone', values: ['true', 'false'] },
+    },
     consumer: 'timeline rewind', impact: '回滚不可用', presets: DESK,
   }),
   row({

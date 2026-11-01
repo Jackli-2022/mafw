@@ -4,10 +4,11 @@
 // opencode 的 v2 HTTP / CLI / 配置文档细节在 runtime/opencode-mcp.ts（适配器层）。
 import * as http from 'http';
 import type { RuntimeMcpServer } from '../runtime/contract';
+import type { RuntimeAccess } from '../runtime/runtime-access';
 
 export interface McpRouteDeps {
-  /** capabilities.mcpApi && runtime.mcp 是否可用（pi/minimal = false）。 */
-  supported: boolean;
+  /** canonical surface gate（mcp.list/connect/disconnect）；pi/minimal 自然为 false。 */
+  access?: Pick<RuntimeAccess, 'can'> | null;
   list(opts?: { directory?: string }): Promise<RuntimeMcpServer[]>;
   connect(name: string, opts?: { directory?: string }): Promise<boolean>;
   disconnect(name: string, opts?: { directory?: string }): Promise<boolean>;
@@ -34,8 +35,8 @@ export async function handleMcp(
   deps: McpRouteDeps,
 ): Promise<boolean> {
   if (req.method === 'GET' && /^\/api\/mcp\/servers(?:\?|$)/.test(url)) {
-    if (!deps.supported) {
-      json(res, 503, { error: 'runtime does not support MCP management' });
+    if (!deps.access?.can('mcp.list')) {
+      json(res, 503, { error: "runtime surface 'mcp.list' is not available" });
       return true;
     }
     try {
@@ -50,13 +51,14 @@ export async function handleMcp(
   if (req.method === 'POST') {
     const m = url.match(ACTION_RE);
     if (!m) return false;
-    if (!deps.supported) {
-      json(res, 503, { error: 'runtime does not support MCP management' });
-      return true;
-    }
     const name = decodeURIComponent(m[1] ?? '').trim();
     if (!name) return false;
     const action = m[2] as 'connect' | 'disconnect';
+    const surface = action === 'connect' ? 'mcp.connect' : 'mcp.disconnect';
+    if (!deps.access?.can(surface)) {
+      json(res, 503, { error: `runtime surface '${surface}' is not available` });
+      return true;
+    }
     try {
       const ok = action === 'connect'
         ? await deps.connect(name, { directory: directoryOf(url) })

@@ -9,11 +9,13 @@ import type { EventMappingEntry, TranslationHooks } from './event-mapper';
 import type { AgentRuntime } from './contract';
 import { wrapDialectEventStream } from './event-stream-wiring';
 import { normalizeFacadeHistory } from './normalize-messages';
+import { RuntimeAccess } from './runtime-access';
 
 export const RUNTIME_FACADE: unique symbol = Symbol('mafw.runtimeFacade');
 
 export interface RuntimeFacade extends AgentRuntime {
   readonly [RUNTIME_FACADE]: true;
+  readonly access: RuntimeAccess;
   rewireEvents(): Promise<string>;
 }
 
@@ -87,6 +89,7 @@ export async function createRuntimeFacade(
       };
     };
   }
+  facade.access = new RuntimeAccess(raw);
   facade.rewireEvents = () => wrapDialectEventStream(raw);
   Object.defineProperty(facade, RUNTIME_FACADE, { value: true, enumerable: false });
   return facade as RuntimeFacade;

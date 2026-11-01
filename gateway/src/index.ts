@@ -1614,19 +1614,20 @@ class MafwScheduler {
     ));
   }
 
-  /** 能力门：runtime 未声明该能力时以 503 显式拒绝（fail-open 的声明式降级）。 */
-  private capGuard(res: http.ServerResponse, cap: keyof RuntimeCapabilities): boolean {
-    if (this.runtimeCaps[cap]) return false;
+  /** Surface 门：业务路由不再自行解释 capability / 方法存在性。 */
+  private capGuard(res: http.ServerResponse, surface: string): boolean {
+    if (this.runtime?.access.can(surface)) return false;
     res.writeHead(503);
-    res.end(JSON.stringify({ error: `capability '${String(cap)}' not available on runtime '${this.runtimeName}'` }));
+    res.end(JSON.stringify({ error: `runtime surface '${surface}' is not available` }));
     return true;
   }
 
-  /** Question 通道能力门：优先 questionApi，向后兼容仅声明 nativeApprovals 的 runtime。 */
+  /** Question 通道门：兼容仅声明 legacy nativeApprovals 的 runtime。 */
   private capGuardQuestion(res: http.ServerResponse): boolean {
-    if (this.runtimeCaps.questionApi ?? this.runtimeCaps.nativeApprovals) return false;
+    const legacyQuestion = this.runtimeCaps.questionApi === undefined && !!this.runtimeCaps.nativeApprovals;
+    if (this.runtime?.access.can('question.list') || legacyQuestion) return false;
     res.writeHead(503);
-    res.end(JSON.stringify({ error: `capability 'questionApi' not available on runtime '${this.runtimeName}'` }));
+    res.end(JSON.stringify({ error: "runtime surface 'question.list' is not available" }));
     return true;
   }
 
@@ -5730,7 +5731,7 @@ class MafwScheduler {
           const rt = this.runtime;
           const channel = rt?.mcp;
           if (await handleMcp(req, res, req.url!, {
-            supported: !!channel && rt?.capabilities?.mcpApi === true,
+            access: rt?.access ?? null,
             list: (opts) => channel!.list(opts),
             connect: (name, opts) => channel!.connect(name, opts),
             disconnect: (name, opts) => channel!.disconnect(name, opts),
@@ -5741,7 +5742,7 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/mcp\/config\//)) {
           const cfgChannel = this.runtime?.mcp?.config;
           if (await handleMcpConfig(req, res, req.url!, {
-            supported: !!cfgChannel && this.runtime?.capabilities?.mcpConfigApi === true,
+            access: this.runtime?.access ?? null,
             preview: (input) => cfgChannel!.preview(input),
             previewRemove: (name) => cfgChannel!.previewRemove(name),
             apply: (input) => cfgChannel!.apply(input),
@@ -6379,7 +6380,7 @@ class MafwScheduler {
 
         // GET /api/permissions ── list pending permission requests（契约：session.permissionList）
         if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'nativeApprovals')) return;
+          if (this.capGuard(res, 'approval.permissionReply')) return;
           try {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
             const items = this.runtime?.session?.permissionList
@@ -6419,7 +6420,7 @@ class MafwScheduler {
 
         // GET /api/provider – list providers + models (legacy /provider)
         if (req.url?.match(/^\/api\/provider(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'providerConfigApi')) return;
+          if (this.capGuard(res, 'provider.list')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const result = await this.runtime.provider.list();
@@ -6435,7 +6436,7 @@ class MafwScheduler {
         // GET /api/agents ─ merged list: registry identities (source:'mafw') first,
         // then runtime-native agents (source:'runtime') — uniform picker across runtimes.
         if (req.url?.match(/^\/api\/agents(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'providerConfigApi')) return;
+          if (this.capGuard(res, 'provider.list')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const runtimeAgents = await this.runtime.app.agents();
@@ -6463,7 +6464,7 @@ class MafwScheduler {
 
         // GET /api/opencode-config 鈹€ return the effective opencode Config
         if (matchRuntimeConfigRoute(req.url, 'GET') && req.method === 'GET') {
-          if (this.capGuard(res, 'providerConfigApi')) return;
+          if (this.capGuard(res, 'provider.list')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const configData = await this.runtime.config.get();
@@ -6478,7 +6479,7 @@ class MafwScheduler {
 
         // PATCH /api/opencode-config 鈹€ merge-update the opencode Config (native merge semantics)
         if (matchRuntimeConfigRoute(req.url, 'PATCH') && req.method === 'PATCH') {
-          if (this.capGuard(res, 'providerConfigApi')) return;
+          if (this.capGuard(res, 'provider.list')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const body = JSON.parse(await readBody(req));
@@ -6526,7 +6527,7 @@ class MafwScheduler {
         // POST /api/permissions/{id}/reply ── { reply, message?, persist? }（契约：列表反查 sessionID → permissionReply）
         const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
         if (pReplyMatch && req.method === 'POST') {
-          if (this.capGuard(res, 'nativeApprovals')) return;
+          if (this.capGuard(res, 'approval.permissionReply')) return;
           const runtime = this.runtime;
           if (!runtime?.session?.permissionList || !runtime?.session?.permissionReply) {
             res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'permission API not available on this runtime' })); return;

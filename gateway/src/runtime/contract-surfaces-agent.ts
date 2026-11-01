@@ -57,6 +57,9 @@ export const AGENT_SURFACES: ContractSurface[] = [
     id: 'prompt.delivery.steer', title: 'prompt.delivery=steer', domain: 'prompt',
     obligation: 'gated', capability: 'steerApi', verification: 'conformance',
     implementation: 'SessionPromptOpts.delivery', conformance: ['chat-roundtrip'],
+    semantics: {
+      boundary: { description: 'when a steer message is delivered', values: ['after-turn', 'tool', 'unspecified'] },
+    },
     consumer: 'busy steer', impact: 'busy 纠偏退化为普通消息', presets: AUTO,
   }),
   row({
@@ -250,6 +253,9 @@ export const AGENT_SURFACES: ContractSurface[] = [
     id: 'mcp.list', title: 'mcp.list', domain: 'mcp',
     obligation: 'gated', capability: 'mcpApi', verification: 'presence',
     implementation: 'mcp.list', probe: ['mcp', 'list'],
+    semantics: {
+      authCommandTemplate: { description: 'optional runtime-specific auth command template; {name} is replaced by the server name' },
+    },
     consumer: 'GET /api/mcp/servers', impact: 'MCP 状态不可见', presets: DESK,
   }),
   row({

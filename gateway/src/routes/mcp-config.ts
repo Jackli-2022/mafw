@@ -3,10 +3,11 @@
 // gateway 不碰文件/JSONC/备份：全部由 RuntimeMcpConfigChannel（适配器）实现。
 import * as http from 'http';
 import type { RuntimeMcpConfigResult } from '../runtime/contract';
+import type { RuntimeAccess } from '../runtime/runtime-access';
 
 export interface McpConfigRouteDeps {
-  /** capabilities.mcpConfigApi && runtime.mcp.config 是否可用。 */
-  supported: boolean;
+  /** canonical surface gate（mcp.config.*）；缺实现自然为 false。 */
+  access?: Pick<RuntimeAccess, 'can'> | null;
   preview(input: any): Promise<any>;
   previewRemove(name: string): Promise<any>;
   apply(input: any): Promise<RuntimeMcpConfigResult>;
@@ -64,8 +65,12 @@ export async function handleMcpConfig(
   const removeMatch = req.method === 'DELETE' ? url.match(REMOVE_RE) : null;
   if (!isPreview && !isPreviewRemove && !isApply && !isRestore && !removeMatch) return false;
 
-  if (!deps.supported) {
-    json(res, 503, { error: 'runtime does not support MCP config write' });
+  const surface = isPreview || isPreviewRemove ? 'mcp.config.preview'
+    : isApply ? 'mcp.config.apply'
+      : isRestore ? 'mcp.config.restore'
+        : 'mcp.config.remove';
+  if (!deps.access?.can(surface)) {
+    json(res, 503, { error: `runtime surface '${surface}' is not available` });
     return true;
   }
 
