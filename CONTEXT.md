@@ -50,8 +50,9 @@
   每个 goal 节点以 `[POD CONTEXT]` 注入（≤4KB）。只服务本项目，不是跨项目知识。
 - **谐波记忆**：跨项目长期记忆，检索式送达（`<recall>` 指针 / pinned / sticky），
   只经显式 `mafw_add_memory` 写入。**任务状态不进这里**（waves/回执/评审、任务板、handoff 消息都不自动沉淀）。
-- **任务板**：`waves.json` 的投影 + 状态覆盖层；标题与验收标准可从任务板编辑并写回计划
-  （仅当前轮、goal 无运行中节点时）。产物文件仍是权威。
+- **任务板**：`waves.json` 的投影 + 状态覆盖层；可从任务板**编辑标题/验收、追加任务、删除任务**
+  （写回计划，仅当前轮、goal 无运行中节点时）。任务身份用稳定 `taskId`（legacy 任务回退位置 id），
+  删任务不会让其余任务状态错位；产物文件仍是权威。
 - **不是**：k8s 的 Pod（调度单位，ephemeral，共享网络命名空间）、不是 Swarm（无固定角色的大规模短命 worker）、
   不是 Crew（一次性 kickoff）、不是 Session（一次对话）。定义详见
   `docs/research/2026-10-31-pod-definition.md`。
