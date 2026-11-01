@@ -1720,6 +1720,7 @@ class MafwScheduler {
         onSuppressed: (t) => this.recordTranslationDrop('opencode', t, 'suppressed'),
         onTranslationError: (_raw, reason) => this.recordTranslationError('opencode', 'transformEvent', reason),
       },
+      onHistoryViolation: (reason) => this.recordTranslationError('opencode', 'normalizeMessages', reason),
     });
   }
 
@@ -1790,6 +1791,7 @@ class MafwScheduler {
             );
           },
         },
+        onHistoryViolation: (reason) => this.recordTranslationError(rt.name, 'normalizeMessages', reason),
       });
     } catch (err: any) {
       log.warn(`[Runtime] '${name}' createRuntime failed: ${err.message}${fatal ? ' — falling back' : ''}`);

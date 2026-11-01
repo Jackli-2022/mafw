@@ -47,6 +47,61 @@ export function applyNormalizeMessages(
 }
 
 /**
+ * RuntimeFacade 专用严格历史归一：只输出 flat MafwMessage，绝不回退原生 raw。
+ *
+ * 与 legacy `applyNormalizeMessages` 的差别是失败语义：后者为可用性 fail-open
+ * 回退原文；facade 必须 fail-closed，非法成员丢弃并产生 violation。
+ */
+export function normalizeFacadeHistory(
+  runtime: any,
+  rawData: unknown,
+  onViolation?: (reason: string) => void,
+): any[] {
+  if (!Array.isArray(rawData)) {
+    onViolation?.('normalizeMessages received non-array history — dropped');
+    return [];
+  }
+
+  const declared = runtime?.session?.normalizeMessages;
+  let items: unknown[];
+  if (typeof declared === 'function') {
+    try {
+      const out = declared.call(runtime.session, rawData);
+      if (!Array.isArray(out)) {
+        onViolation?.('normalizeMessages returned non-array — dropped');
+        return [];
+      }
+      items = out;
+    } catch (err: any) {
+      onViolation?.(`normalizeMessages threw: ${err?.message ?? String(err)} — dropped`);
+      return [];
+    }
+  } else {
+    items = rawData;
+  }
+
+  const result: any[] = [];
+  for (const item of items) {
+    if (isMafwMessage(item)) {
+      result.push(item);
+      continue;
+    }
+    try {
+      const rescued = normalizeOpencodeHistory([item]);
+      if (rescued.length === 1 && isMafwMessage(rescued[0])) {
+        onViolation?.('normalizeMessages produced wire-shaped legacy output — second-chance translated to flat');
+        result.push(rescued[0]);
+      } else {
+        onViolation?.('normalizeMessages produced a non-flat member — dropped');
+      }
+    } catch (err: any) {
+      onViolation?.(`normalizeMessages member rescue failed: ${err?.message ?? String(err)} — dropped`);
+    }
+  }
+  return result;
+}
+
+/**
  * 收口 runtime.session.messages：出口形状恒为 flat（canonical v3）。
  * 所有消费者（desktop 路由经 egress shim / waitwhat / trajectory / eval /
  * media）拿到的形状一致。幂等（重复调用不再包）。

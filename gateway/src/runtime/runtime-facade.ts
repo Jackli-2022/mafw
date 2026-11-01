@@ -8,6 +8,7 @@
 import type { EventMappingEntry, TranslationHooks } from './event-mapper';
 import type { AgentRuntime } from './contract';
 import { wrapDialectEventStream } from './event-stream-wiring';
+import { normalizeFacadeHistory } from './normalize-messages';
 
 export const RUNTIME_FACADE: unique symbol = Symbol('mafw.runtimeFacade');
 
@@ -20,6 +21,7 @@ export interface RuntimeFacadeOptions {
   entry: EventMappingEntry;
   isCanonical: (type: string) => boolean;
   hooks?: TranslationHooks & { onNoMappings?: () => void };
+  onHistoryViolation?: (reason: string) => void;
 }
 
 const PUBLIC_KEYS = [
@@ -52,11 +54,11 @@ function cloneChannel(value: any, seen = new WeakMap<object, any>()): any {
 
 export async function createRuntimeFacade(
   raw: AgentRuntime,
-  opts: RuntimeFacadeOptions,
+  options: RuntimeFacadeOptions,
 ): Promise<RuntimeFacade> {
   const hasEventStream = typeof (raw as any)?.global?.event === 'function';
   if (hasEventStream) {
-    await wrapDialectEventStream(raw, opts.entry, opts.isCanonical, opts.hooks);
+    await wrapDialectEventStream(raw, options.entry, options.isCanonical, options.hooks);
   }
 
   const facade: Record<PropertyKey, any> = {};
@@ -73,6 +75,16 @@ export async function createRuntimeFacade(
   if (hasEventStream) {
     facade.global = {
       event: () => (raw as any).global.event(),
+    };
+  }
+  if (typeof facade.session?.messages === 'function') {
+    const readMessages = facade.session.messages as (opts: any) => Promise<any>;
+    facade.session.messages = async (opts: any) => {
+      const result = await readMessages(opts);
+      return {
+        ...result,
+        data: normalizeFacadeHistory(raw, result?.data, options.onHistoryViolation),
+      };
     };
   }
   facade.rewireEvents = () => wrapDialectEventStream(raw);
