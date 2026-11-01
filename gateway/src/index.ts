@@ -239,6 +239,7 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
 import { wrapRuntimeMessages } from './runtime/normalize-messages';
 import { toWireHistory } from './runtime/wire-compat';
 import { handlePermissionReply } from './routes/permission';
+import { handleSessionBackground } from './routes/session-background';
 import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
 import { createSessionWithWorktree, cleanupWorktreeForSession } from './routes/session-worktree';
@@ -5722,6 +5723,14 @@ class MafwScheduler {
             },
             approvePlan: (g) => this.goalDriver!.approvePlan(g),
             rejectPlan: (g, feedback) => this.goalDriver!.rejectPlan(g, feedback),
+          })) return;
+        }
+
+        // Background 中性动词（必须早于 serve 透传兜底）。
+        if (req.url?.match(/^\/api\/session\/[^/]+\/background(?:\?|$)/)) {
+          if (await handleSessionBackground(req, res, req.url!, {
+            getRuntime: () => this.runtime,
+            getAccess: () => this.runtime?.access ?? null,
           })) return;
         }
 

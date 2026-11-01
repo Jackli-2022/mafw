@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { createRestProbe, createRuntimeProbe, outputPlaceholder, shouldShowRestUnavailableHint } from "./background-capability"
+import { createRestProbe, createActionProbe, outputPlaceholder, shouldShowRestUnavailableHint } from "./background-capability"
 
 test("starts checking", () => {
   const p = createRestProbe(async () => ({}))
@@ -77,10 +77,10 @@ test("runtime probe: success sticky, failure retries after 60s", async () => {
   let t = 0
   let calls = 0
   let ok = false
-  const p = createRuntimeProbe(async () => {
+  const p = createActionProbe(async () => {
     calls++
     if (!ok) throw new Error("x")
-    return { active: { name: "opencode" } }
+    return { enabled: true }
   }, () => t)
   expect(await p.available()).toBe(false)
   expect(await p.available()).toBe(false)
@@ -96,10 +96,10 @@ test("runtime probe: success sticky, failure retries after 60s", async () => {
 
 test("runtime probe: in-flight dedupe", async () => {
   let calls = 0
-  const p = createRuntimeProbe(async () => {
+  const p = createActionProbe(async () => {
     calls++
     await new Promise(r => setTimeout(r, 5))
-    return { active: { name: "opencode" } }
+    return { enabled: true }
   })
   await Promise.all([p.available(), p.available()])
   expect(calls).toBe(1)
@@ -109,14 +109,14 @@ test("runtime probe: reset discards a stale in-flight result", async () => {
   let calls = 0
   let resolveFirst: (v: any) => void = () => {}
   const first = new Promise<any>(r => { resolveFirst = r })
-  const p = createRuntimeProbe(() => {
+  const p = createActionProbe(() => {
     calls++
     if (calls === 1) return first
-    return Promise.resolve({ active: { name: "opencode" } })
+    return Promise.resolve({ enabled: true })
   })
   const stale = p.available()
   p.reset()
-  resolveFirst({ active: { name: "pi" } })
+  resolveFirst({ enabled: false })
   expect(await stale).toBe(false)
   expect(await p.available()).toBe(true)
   expect(calls).toBe(2)

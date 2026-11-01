@@ -408,6 +408,10 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         }
       },
 
+      async background(opts: { sessionID: string }) {
+        await directNative(`/session/${opts.sessionID}/background`, 'POST');
+      },
+
       async abort(opts: { sessionID: string }) {
         // 2.1.0：/session/{id}/abort 已移除，中断路由为 /interrupt
         await directNative(`/session/${opts.sessionID}/interrupt`, 'POST');

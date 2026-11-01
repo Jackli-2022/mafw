@@ -134,6 +134,11 @@ export const CORE_SURFACES: ContractSurface[] = [
     consumer: 'worktree sessions', impact: 'worktree 并行会话隔离失效', presets: DESK,
   }),
   row({
+    id: 'session.background', title: 'session.background', domain: 'session',
+    obligation: 'optional', verification: 'presence', implementation: 'session.background',
+    probe: ['session', 'background'], consumer: 'BackgroundWorkBar', impact: '无法把阻塞工具转后台', presets: DESK,
+  }),
+  row({
     id: 'session.switchAgent', title: 'session.switchAgent', domain: 'session',
     obligation: 'optional', verification: 'presence', implementation: 'session.switchAgent',
     probe: ['session', 'switchAgent'], consumer: 'POST /api/sessions/:id/agent', impact: '会话内切换 agent 503', presets: DESK,

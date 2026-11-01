@@ -466,6 +466,8 @@ export interface RuntimeClient {
     /** Rename a session (flat { sessionID, title }); optional — opencode/pi implement it. */
     update?(opts: { sessionID: string; title: string }): Promise<any>;
     abort(opts: { sessionID: string }): Promise<void>;
+    /** 把会话内 blocking 工具转后台（中性动词；无实现 = surface 缺失）。 */
+    background?(opts: { sessionID: string }): Promise<void>;
     list(opts?: { directory?: string }): Promise<any[]>;
     listByDirectory?(directory: string, limit?: number): Promise<SessionInfo[]>;
     todo(opts: { sessionID: string }): Promise<any[]>;

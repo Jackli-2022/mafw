@@ -26,6 +26,15 @@ describe('Experience contract', () => {
     }
   });
 
+  it('projects background only when the neutral surface exists', () => {
+    const access = {
+      can: (id: string) => id === 'session.background',
+      semantics: () => ({}),
+    } as any;
+    expect(projectExperienceActions(access, { sessionID: 's1' })['session.background'])
+      .toEqual({ enabled: true });
+  });
+
   it('projects steer boundary from adapter semantics', () => {
     const access = {
       can: (id: string) => id === 'prompt.delivery.steer',

@@ -88,12 +88,12 @@ export function outputPlaceholder(state: BackgroundRestState): string {
 
 // ── runtime（opencode?）探测：沿用既有缓存语义 ──────────────────────────
 
-export interface RuntimeInfo {
-  active?: { name?: string }
+export interface BackgroundActionInfo {
+  enabled?: boolean
 }
 
-export function createRuntimeProbe(
-  probe: () => Promise<RuntimeInfo | null | undefined>,
+export function createActionProbe(
+  probe: () => Promise<BackgroundActionInfo | null | undefined>,
   now: () => number = Date.now,
 ): { available(): Promise<boolean>; reset(): void } {
   type RuntimeState = { at: number; ok: boolean; known: boolean }
@@ -109,7 +109,7 @@ export function createRuntimeProbe(
     const started = now()
     inflight = probe()
       .then((info) => {
-        const ok = info?.active?.name === "opencode"
+        const ok = info?.enabled === true
         if (gen === generation) state = { at: started, ok, known: true }
         return ok
       })
@@ -133,14 +133,16 @@ export function createRuntimeProbe(
   }
 }
 
-const runtimeProbe = createRuntimeProbe(() => window.api.mafw.runtime.get())
+import { experienceStore } from "./experience-store"
+
+const actionProbe = createActionProbe(async () => experienceStore.action("session.background"))
 
 export function canUseBackgroundApi(): Promise<boolean> {
-  return runtimeProbe.available()
+  return actionProbe.available()
 }
 
 /** runtime 热切换 / SSE 重连 / 测试后重置探测缓存。 */
 export function resetBackgroundCapability(): void {
   restProbe.reset()
-  runtimeProbe.reset()
+  actionProbe.reset()
 }

@@ -509,6 +509,24 @@
     },
     {
       "direction": "gateway->runtime",
+      "id": "session.background",
+      "title": "session.background",
+      "domain": "session",
+      "obligation": "optional",
+      "verification": "presence",
+      "implementation": "session.background",
+      "probe": [
+        "session",
+        "background"
+      ],
+      "consumer": "BackgroundWorkBar",
+      "impact": "无法把阻塞工具转后台",
+      "presets": [
+        "desktop"
+      ]
+    },
+    {
+      "direction": "gateway->runtime",
       "id": "session.switchAgent",
       "title": "session.switchAgent",
       "domain": "session",
@@ -3145,6 +3163,7 @@
         "session.update",
         "session.listByDirectory",
         "session.worktree",
+        "session.background",
         "session.switchAgent",
         "session.switchModel",
         "session.setThinkingLevel",
