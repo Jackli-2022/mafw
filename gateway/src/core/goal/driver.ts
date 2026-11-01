@@ -11,6 +11,7 @@ import { routeNext, GoalNodeName } from './routing';
 import { renderNodePrompt, nodeArtifactPaths, nodeOutputSchema } from './node-prompts';
 import { isTaskType } from '../../orchestration/capability-ledger';
 import { parseReviewRubric, taskAcceptanceFromWavePlan, taskIdsFromWavePlan } from './review-rubric';
+import { ensureWaveTaskIds } from './wave-plan-edit';
 import { matchesSignature } from '../langgraph/signature-detector';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
 
@@ -316,6 +317,18 @@ export class NodeDriver {
     if (submitted && !fs.existsSync(artifactPath)) {
       fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
       fs.writeFileSync(artifactPath, JSON.stringify(submitted, null, 2), 'utf-8');
+    }
+
+    // 计划任务稳定 id：后续任务板新增/删除必须按 id 而不是位置定位
+    // （位置 id 在删任务后会让状态错位）。legacy 任务补成当前位置 id，对已有投影无迁移。
+    if (node === 'plan') {
+      try {
+        const planDoc = JSON.parse(fs.readFileSync(artifactPath, 'utf-8'));
+        const ensured = ensureWaveTaskIds(planDoc);
+        if (ensured.changed) {
+          fs.writeFileSync(artifactPath, JSON.stringify(ensured.plan, null, 2), 'utf-8');
+        }
+      } catch { /* fail-open：解析阶段会给出明确的 artifact_invalid */ }
     }
 
     // —— 解析（移植 NODE_CONFIGS.parseResult + plan.node/review.node 语义）——

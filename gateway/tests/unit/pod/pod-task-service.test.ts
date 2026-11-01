@@ -318,4 +318,82 @@ describe('PodTaskService', () => {
         .toThrow(/not found in plan/);
     });
   });
+
+  describe('addPlanTask / deleteTask (v2)', () => {
+    const legacyPlan = {
+      waves: [
+        { id: 'w1', tasks: ['do a', 'do b'] },
+        { id: 'w2', tasks: ['do c'] },
+      ],
+    };
+
+    const withPlan = (initial: unknown = legacyPlan, nextAction = 'NEXT_execute') => {
+      const wavesPath = path.join(dir, 'waves.json');
+      fs.writeFileSync(wavesPath, JSON.stringify(initial), 'utf-8');
+      const svc = new PodTaskService({
+        store,
+        now: () => '2026-10-29T00:20:00.000Z',
+        newId: () => `task_z${++seq}`,
+        notify: (podId) => notifications.push(podId),
+        resolveGoalPlan: () => ({ wavesPath, nextAction, nodeSession: null }),
+      });
+      return { svc, wavesPath };
+    };
+
+    test('delete migrates legacy keys and keeps the remaining task status', () => {
+      const { svc, wavesPath } = withPlan();
+      const tasks = svc.projectWaves('pod_1', 'g1', legacyPlan as any);
+      svc.updateTask('pod_1', tasks[1].id, { status: 'in_progress' });
+      svc.updateTask('pod_1', tasks[1].id, { status: 'review' });
+
+      const deleted = svc.deleteTask('pod_1', tasks[0].id);
+
+      expect(deleted).toEqual({ goalId: 'g1', externalTaskId: 'w1-t1' });
+      const written = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
+      expect(written.waves[0].tasks).toEqual([
+        { title: 'do b', taskId: 'w1-t2' },
+      ]);
+      const remaining = svc.list('pod_1', 'g1');
+      expect(remaining.map((t) => t.externalTaskId)).toEqual(['w1-t2', 'w2-t1']);
+      expect(remaining[0].status).toBe('review');
+      expect(remaining[0].sourceKey).toBe('wave:w1:task:w1-t2');
+      expect(svc.list('pod_1', 'g1').some((t) => t.id === tasks[0].id)).toBe(false);
+    });
+
+    test('add appends to the last wave and projects a pending task', () => {
+      const { svc, wavesPath } = withPlan();
+      svc.projectWaves('pod_1', 'g1', legacyPlan as any);
+
+      const added = svc.addPlanTask('pod_1', 'g1', null, '新任务', ['跑测试']);
+
+      const written = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
+      expect(written.waves[1].tasks.at(-1)).toMatchObject({
+        taskId: 'w2-t2', title: '新任务', acceptance: ['跑测试'],
+      });
+      expect(added.status).toBe('pending');
+      expect(added.externalTaskId).toBe('w2-t2');
+      expect(JSON.parse(added.acceptanceJson!)).toEqual(['跑测试']);
+    });
+
+    test('add/delete are blocked while a node is running', () => {
+      const wavesPath = path.join(dir, 'waves.json');
+      fs.writeFileSync(wavesPath, JSON.stringify(legacyPlan), 'utf-8');
+      const svc = new PodTaskService({
+        store, now: () => 't', newId: () => `task_r${++seq}`, notify: () => {},
+        resolveGoalPlan: () => ({ wavesPath, nextAction: 'RUNNING_execute', nodeSession: { id: 'ses_1' } }),
+      });
+      const tasks = svc.projectWaves('pod_1', 'g1', legacyPlan as any);
+      expect(() => svc.addPlanTask('pod_1', 'g1', null, 'x')).toThrow(/running/);
+      expect(() => svc.deleteTask('pod_1', tasks[0].id)).toThrow(/running/);
+    });
+
+    test('deleting a manual task only removes the row', () => {
+      const { svc, wavesPath } = withPlan();
+      const before = fs.readFileSync(wavesPath, 'utf-8');
+      const manual = svc.createManual('pod_1', null, '手工');
+      expect(svc.deleteTask('pod_1', manual.id)).toEqual({ goalId: null, externalTaskId: null });
+      expect(svc.list('pod_1').some((t) => t.id === manual.id)).toBe(false);
+      expect(fs.readFileSync(wavesPath, 'utf-8')).toBe(before);
+    });
+  });
 });

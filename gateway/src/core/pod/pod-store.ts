@@ -570,6 +570,14 @@ export class PodStore {
     this.db.prepare(`UPDATE pod_tasks SET ${sets.join(', ')} WHERE id = ?`).run(...values);
   }
 
+  updateTaskSourceKey(id: string, sourceKey: string): void {
+    this.db.prepare('UPDATE pod_tasks SET source_key = ? WHERE id = ?').run(sourceKey, id);
+  }
+
+  deleteTask(id: string): boolean {
+    return this.db.prepare('DELETE FROM pod_tasks WHERE id = ?').run(id).changes > 0;
+  }
+
   insertMessage(input: Omit<PodMessageRow, 'createdAt' | 'readAt' | 'protocol' | 'externalMessageId' | 'partsJson' | 'deliveredAt' | 'deliveredSessionId'> & {
     protocol?: string | null;
     externalMessageId?: string | null;

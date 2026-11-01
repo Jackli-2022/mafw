@@ -18,6 +18,23 @@ describe('completeNode 产物双门', () => {
     expect(h.nodeRuns[1]?.node).toBe('execute');
   });
 
+  it('plan 完成时给任务补稳定 taskId（写回 waves.json）', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9');
+    const sid = await h.startAndIdle('g9');
+    const a = nodeArtifactPaths(h.mafwDir, 'g9', 1);
+    fs.writeFileSync(a.waves, JSON.stringify({
+      waves: [{ id: 'w1', title: 't', tasks: ['a', { title: 'b', acceptance: ['x'] }] }],
+      status: 'ready',
+    }), 'utf-8');
+    await h.fireIdle(sid);
+    const written = JSON.parse(fs.readFileSync(a.waves, 'utf-8'));
+    expect(written.waves[0].tasks).toEqual([
+      { title: 'a', taskId: 'w1-t1' },
+      { title: 'b', acceptance: ['x'], taskId: 'w1-t2' },
+    ]);
+  });
+
   it('plan need_clarification → pendingQuestion + askUser 执行 + ledger asked', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9');

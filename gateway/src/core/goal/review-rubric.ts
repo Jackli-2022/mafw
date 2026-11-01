@@ -45,17 +45,21 @@ function normalizeResult(value: unknown): ReviewTaskResult['result'] | null {
   return value === 'pass' || value === 'fail' || value === 'skipped' ? value : null;
 }
 
-/** waves.json 的 taskId 序列（与 PodTaskService 投影一致：`${wave.id}-t${i+1}`）。
+import { taskIdAt } from './wave-plan-edit';
+
+/** waves.json 的 taskId 序列（稳定 `taskId` 优先，legacy 回退 `${wave.id}-t${i+1}`）。
  *  任务既可以是字符串，也可以是 `{title, acceptance?}`。 */
 export function taskIdsFromWavePlan(plan: unknown): string[] {
   const waves = plan && typeof plan === 'object' ? (plan as any).waves : null;
   if (!Array.isArray(waves)) return [];
   const ids: string[] = [];
   for (const wave of waves) {
-    const waveId = typeof wave?.id === 'string' ? wave.id : '';
-    if (!waveId) continue;
+    if (typeof wave?.id !== 'string' || !wave.id) continue;
     const tasks = Array.isArray(wave?.tasks) ? wave.tasks : [];
-    tasks.forEach((_task: unknown, index: number) => ids.push(`${waveId}-t${index + 1}`));
+    tasks.forEach((task: unknown, index: number) => {
+      const id = taskIdAt(wave, task, index);
+      if (id) ids.push(id);
+    });
   }
   return ids;
 }
@@ -66,15 +70,15 @@ export function taskAcceptanceFromWavePlan(plan: unknown): Record<string, string
   if (!Array.isArray(waves)) return {};
   const out: Record<string, string[]> = {};
   for (const wave of waves) {
-    const waveId = typeof wave?.id === 'string' ? wave.id : '';
-    if (!waveId) continue;
+    if (typeof wave?.id !== 'string' || !wave.id) continue;
     const tasks = Array.isArray(wave?.tasks) ? wave.tasks : [];
     tasks.forEach((task: any, index: number) => {
       if (!task || typeof task === 'string') return;
       const acceptance = Array.isArray(task.acceptance)
         ? task.acceptance.map((item: unknown) => String(item).trim()).filter(Boolean)
         : [];
-      if (acceptance.length > 0) out[`${waveId}-t${index + 1}`] = acceptance;
+      const id = taskIdAt(wave, task, index);
+      if (acceptance.length > 0 && id) out[id] = acceptance;
     });
   }
   return out;

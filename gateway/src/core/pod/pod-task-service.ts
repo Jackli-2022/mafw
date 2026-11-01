@@ -1,6 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { editWaveTask } from '../goal/wave-plan-edit';
+import {
+  addWaveTask,
+  deleteWaveTask,
+  editWaveTask,
+  ensureWaveTaskIds,
+  taskIdAt,
+} from '../goal/wave-plan-edit';
 import {
   PodError,
   PodStore,
@@ -65,16 +71,22 @@ export class PodTaskService {
           ? raw
           : String((raw as any)?.title ?? '').trim();
         if (!title) return;
+        const explicitId = typeof (raw as any)?.taskId === 'string' ? (raw as any).taskId.trim() : '';
+        const externalTaskId = taskIdAt(wave, raw, index) ?? `${wave.id}-t${index + 1}`;
+        // legacy 计划（无 taskId）继续用位置 key，避免给已有投影制造重复行；
+        // 结构编辑补 id 后由 migrateLegacyTaskKeys 统一迁移。
+        const sourceKey = explicitId
+          ? `wave:${wave.id}:task:${externalTaskId}`
+          : `wave:${wave.id}:task:${index}`;
         const acceptance = raw && typeof raw === 'object' && Array.isArray((raw as any).acceptance)
           ? (raw as any).acceptance.map((item: unknown) => String(item)).filter((item: string) => item.trim())
           : [];
-        const sourceKey = `wave:${wave.id}:task:${index}`;
         const task = this.deps.store.upsertTask({
           id: this.deps.newId(),
           podId,
           goalId,
           sourceKey,
-          externalTaskId: `${wave.id}-t${index + 1}`,
+          externalTaskId,
           title,
           description: null,
           ownerMemberId: null,
@@ -177,31 +189,98 @@ export class PodTaskService {
       throw new PodError(400, 'acceptance must be a string array');
     }
 
-    const goal = this.deps.resolveGoalPlan?.(task.goalId);
-    if (!goal) throw new PodError(404, `goal plan not found for ${task.goalId}`);
-    if (TERMINAL_ACTIONS.has(goal.nextAction)) throw new PodError(409, 'goal is closed');
-    if (goal.nodeSession) throw new PodError(409, 'goal is running; wait for the node to finish');
-    if (!fs.existsSync(goal.wavesPath)) throw new PodError(404, 'waves.json not found');
-
-    let plan: unknown;
-    try {
-      plan = JSON.parse(fs.readFileSync(goal.wavesPath, 'utf-8'));
-    } catch {
-      throw new PodError(422, 'malformed waves.json');
-    }
+    const { wavesPath, plan } = this.loadEditablePlan(task.goalId);
     const next = editWaveTask(plan, task.externalTaskId, {
       title: patch.title,
       acceptance: patch.acceptance,
     });
     if (!next) throw new PodError(404, `task ${task.externalTaskId} not found in plan`);
 
-    const tmp = `${goal.wavesPath}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf-8');
-    fs.renameSync(tmp, goal.wavesPath);
-
+    this.writePlan(wavesPath, next);
     this.projectWaves(podId, task.goalId, next as WavePlan);
     this.deps.notify(podId);
     return this.deps.store.getTask(taskId)!;
+  }
+
+  /**
+   * 追加计划任务（v2）：写回 waves.json（缺 id 的任务先补稳定 id），
+   * 迁移 legacy 投影 key 后重新投影，返回新任务行。
+   */
+  addPlanTask(
+    podId: string,
+    goalId: string,
+    waveId: string | null,
+    title: string,
+    acceptance?: string[],
+  ): PodTaskRow {
+    if (String(title ?? '').trim() === '') throw new PodError(400, 'task title is required');
+    if (acceptance !== undefined && !Array.isArray(acceptance)) {
+      throw new PodError(400, 'acceptance must be a string array');
+    }
+    const { wavesPath, plan } = this.loadEditablePlan(goalId);
+    const added = addWaveTask(plan, waveId, { title, acceptance });
+    if (!added) throw new PodError(404, `wave not found or plan empty: ${waveId ?? '(last)'}`);
+
+    this.writePlan(wavesPath, added.plan);
+    this.migrateLegacyTaskKeys(podId, goalId);
+    this.projectWaves(podId, goalId, added.plan as WavePlan);
+    this.deps.notify(podId);
+    const row = this.deps.store.listTasks(podId, goalId)
+      .find((task) => task.externalTaskId === added.taskId);
+    if (!row) throw new PodError(500, `projected task missing after add: ${added.taskId}`);
+    return row;
+  }
+
+  /** 删除任务：计划任务写回 waves.json（同门）；手工任务只删行。 */
+  deleteTask(podId: string, taskId: string): { goalId: string | null; externalTaskId: string | null } {
+    const task = this.deps.store.getTask(taskId);
+    if (!task || task.podId !== podId) throw new PodError(404, `task not found: ${taskId}`);
+    if (!task.goalId || !task.externalTaskId) {
+      this.deps.store.deleteTask(taskId);
+      this.deps.notify(podId);
+      return { goalId: null, externalTaskId: null };
+    }
+    const { wavesPath, plan } = this.loadEditablePlan(task.goalId);
+    const ensured = ensureWaveTaskIds(plan).plan;
+    const deleted = deleteWaveTask(ensured, task.externalTaskId);
+    if (!deleted) throw new PodError(404, `task ${task.externalTaskId} not found in plan`);
+
+    this.writePlan(wavesPath, deleted.plan);
+    this.migrateLegacyTaskKeys(podId, task.goalId);
+    this.projectWaves(podId, task.goalId, deleted.plan as WavePlan);
+    this.deps.store.deleteTask(taskId);
+    this.deps.notify(podId);
+    return { goalId: task.goalId, externalTaskId: task.externalTaskId };
+  }
+
+  /** 共用的计划门 + 读取（终态/运行中拒绝，文件缺失/畸形按 404/422）。 */
+  private loadEditablePlan(goalId: string): { wavesPath: string; plan: any } {
+    const goal = this.deps.resolveGoalPlan?.(goalId);
+    if (!goal) throw new PodError(404, `goal plan not found for ${goalId}`);
+    if (TERMINAL_ACTIONS.has(goal.nextAction)) throw new PodError(409, 'goal is closed');
+    if (goal.nodeSession) throw new PodError(409, 'goal is running; wait for the node to finish');
+    if (!fs.existsSync(goal.wavesPath)) throw new PodError(404, 'waves.json not found');
+    try {
+      return { wavesPath: goal.wavesPath, plan: JSON.parse(fs.readFileSync(goal.wavesPath, 'utf-8')) };
+    } catch {
+      throw new PodError(422, 'malformed waves.json');
+    }
+  }
+
+  private writePlan(wavesPath: string, plan: unknown): void {
+    const tmp = `${wavesPath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(plan, null, 2), 'utf-8');
+    fs.renameSync(tmp, wavesPath);
+  }
+
+  /** legacy 投影 key（`wave:<id>:task:<index>`）→ 稳定 id key；幂等。 */
+  private migrateLegacyTaskKeys(podId: string, goalId: string): void {
+    for (const task of this.deps.store.listTasks(podId, goalId)) {
+      const match = /^wave:(.+):task:(\d+)$/.exec(task.sourceKey);
+      if (!match || !task.externalTaskId) continue;
+      const next = `wave:${match[1]}:task:${task.externalTaskId}`;
+      if (next !== task.sourceKey) this.deps.store.updateTaskSourceKey(task.id, next);
+    }
   }
 
   /**
