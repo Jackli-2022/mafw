@@ -14,7 +14,6 @@ export function CheckpointOverlay(props: {
   sessionID: string
   messages: any[]
   parts: Record<string, any[]>
-  runtimeName?: string
   caps?: Record<string, boolean>
   busy?: boolean
   onClose: () => void
@@ -301,7 +300,7 @@ export function CheckpointOverlay(props: {
                           <div class="mafw-checkpoint-confirm">
                             <div class="mafw-checkpoint-confirm-text">
                               {mode() === "revert"
-                                ? revertWarning(props.runtimeName, props.caps?.revertUndoApi === true, props.caps?.diffApi === true)
+                                ? revertWarning(props.caps?.revertUndoApi === true, props.caps?.diffApi === true)
                                 : `将撤销这条消息所在的回合及之后 ${checkpointsToRewind(checkpoints(), cp.messageID).length} 个回合的文件改动；对话保留。不可自动撤销；patch 冲突时可能停在中间态。`}
                             </div>
                             <div class="mafw-checkpoint-confirm-actions">
@@ -354,7 +353,11 @@ export function CheckpointOverlay(props: {
                       {(current) => (
                         <div class="mafw-checkpoint-confirm">
                           <div class="mafw-checkpoint-confirm-text">
-                            {restoreWarning(current().scope, props.runtimeName, props.caps?.revertUndoApi === true)}
+                            {restoreWarning(
+                              current().scope,
+                              props.caps?.revertUndoApi === true,
+                              serverRows().find((r) => r.checkpoint.id === current().checkpointId)?.warningKey,
+                            )}
                           </div>
                           <div class="mafw-checkpoint-confirm-actions">
                             <ButtonV2 variant="ghost" size="small" disabled={working()} onClick={() => setRestoring(null)}>取消</ButtonV2>

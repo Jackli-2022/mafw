@@ -63,8 +63,7 @@ test("canRewindCode requires known, complete, invertible turn data", () => {
 })
 
 test("revertWarning is runtime-aware", () => {
-  expect(revertWarning("pi", false, false)).toContain("文件不会回滚")
-  expect(revertWarning("opencode", false, true)).toContain("不可撤销")
-  expect(revertWarning("opencode", true, true)).toContain("撤销回滚")
-  expect(revertWarning("other", false, false)).toContain("以运行时为准")
+  expect(revertWarning(false, false)).toContain("不可撤销")
+  expect(revertWarning(false, true)).toContain("回滚文件")
+  expect(revertWarning(true, true)).toContain("撤销回滚")
 })

@@ -14,6 +14,7 @@ import {
   type CheckpointScope,
   type CheckpointService,
 } from '../core/checkpoint/checkpoint-service';
+import { projectCheckpointActions, type CheckpointActionInput } from '../core/checkpoint/checkpoint-actions';
 
 export interface SessionCheckpointDeps {
   getRuntime(): AgentRuntime | null;
@@ -91,7 +92,16 @@ export async function handleSessionCheckpoints(
     }
 
     if (list) {
-      json(res, 200, { checkpoints: svc.list(list[1]) });
+      const rows = svc.list(list[1]) as unknown as CheckpointActionInput[];
+      const withActions = rows.map((cp, index) => ({
+        ...cp,
+        actions: projectCheckpointActions(cp, {
+          access,
+          busy: false,
+          targets: rows.slice(0, index + 1),
+        }),
+      }));
+      json(res, 200, { checkpoints: withActions });
       return true;
     }
 

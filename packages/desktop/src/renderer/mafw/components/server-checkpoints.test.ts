@@ -36,19 +36,19 @@ test("toServerRows tolerates empty collections", () => {
   assert.deepEqual(toServerRows([]), [])
 })
 
-test("restoreWarning is scope- and runtime-aware", () => {
-  const session = restoreWarning("session", "opencode", false)
+test("restoreWarning uses scope and Experience warning keys", () => {
+  const session = restoreWarning("session", false)
   assert.match(session, /撤回该消息及其后内容/)
   assert.match(session, /不动文件/)
 
-  const files = restoreWarning("files", "opencode", false)
+  const files = restoreWarning("files", false)
   assert.match(files, /只回滚文件/)
   assert.match(files, /对话保留/)
 
-  const both = restoreWarning("both", "opencode", false)
-  assert.match(both, /不可逆/)
+  const both = restoreWarning("both", false)
+  assert.match(both, /不可撤销/)
 
-  const undoable = restoreWarning("both", "opencode", true)
+  const undoable = restoreWarning("both", true, "restore-conversation-files-undoable")
   assert.match(undoable, /撤销回滚/)
 })
 

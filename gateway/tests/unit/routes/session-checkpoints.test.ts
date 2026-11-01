@@ -76,7 +76,10 @@ describe('session checkpoint routes', () => {
       '/api/sessions/s1/checkpoints', depsWith(caps, { list }));
     expect(list).toHaveBeenCalledWith('s1');
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ checkpoints: [{ id: 'ckpt_2' }, { id: 'ckpt_1' }] });
+    const body = JSON.parse(res.body);
+    expect(body.checkpoints.map((c: any) => c.id)).toEqual(['ckpt_2', 'ckpt_1']);
+    expect(body.checkpoints[0].actions.restoreConversation.enabled).toBe(true);
+    expect(body.checkpoints[0].actions.restoreFiles).toMatchObject({ enabled: false, reason: 'missing-data' });
   });
 
   it('restore requires confirm:true and a valid scope (400, service untouched)', async () => {

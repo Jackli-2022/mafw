@@ -21,8 +21,8 @@ export function projectExperienceActions(
   ) as Record<ExperienceActionId, ActionDescriptor>;
 
   // 首批切片在后续任务点亮；这里保留唯一投影入口，避免前端自行推导。
-  if (access) {
-    // no-op until slice tasks
+  if (access?.can('branch.checkpoint')) {
+    actions['checkpoint.restore'] = { enabled: true };
   }
   return actions;
 }

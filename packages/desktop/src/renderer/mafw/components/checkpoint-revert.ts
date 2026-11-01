@@ -59,19 +59,14 @@ export function canRewindCode(checkpoints: Checkpoint[], targetMessageID: string
   return any
 }
 
-/** 回滚确认文案：runtime 语义不同，不能写死「可撤销」。 */
+/** 回滚确认文案：只消费语义位，不识别 runtime 名称。 */
 export function revertWarning(
-  runtimeName: string | undefined,
   undoable: boolean,
   diffApi: boolean,
+  warningKey?: string,
 ): string {
-  if (runtimeName === "pi") {
-    return "pi 回滚保留这条消息、只撤回其后的回复；文件不会回滚，且不可撤销。"
+  if (warningKey === 'restore-conversation-files-undoable' || undoable) {
+    return '撤回这条消息及其后内容并回滚文件；可通过撤销回滚恢复对话。'
   }
-  if (runtimeName === "opencode") {
-    return undoable
-      ? "撤回这条消息及其后内容并回滚文件；可通过撤销回滚恢复对话。"
-      : "opencode 2.1 的回滚会 stage+commit，撤回这条消息及其后内容并回滚文件；不可撤销，请确认已提交/备份。"
-  }
-  return `当前 runtime 的回滚语义以运行时为准；请确认已备份。${diffApi ? "" : " 当前 runtime 不提供文件回滚。"}`
+  return `撤回这条消息及其后内容${diffApi ? '并回滚文件' : ''}；该操作不可撤销，请确认已提交或备份。`
 }

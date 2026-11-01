@@ -407,6 +407,12 @@ export interface SessionCheckpoint {
   untracked: string[]
   kind: 'auto' | 'manual'
   createdAt: string
+  /** Experience Contract：前端直接渲染的恢复动作，不再自行推导 runtime 语义。 */
+  actions?: {
+    restoreConversation: import('./experience-contract').ActionDescriptor
+    restoreFiles: import('./experience-contract').ActionDescriptor
+    restoreBoth: import('./experience-contract').ActionDescriptor
+  }
 }
 
 export interface CheckpointRestoreResult {
