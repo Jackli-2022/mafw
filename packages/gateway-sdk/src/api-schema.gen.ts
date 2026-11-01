@@ -2322,7 +2322,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["pods.tasks.delete"];
         options?: never;
         head?: never;
         patch: operations["pods.tasks.update"];
@@ -6572,6 +6572,27 @@ export interface operations {
             header?: never;
             path: {
                 podId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.tasks.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                taskId: string;
             };
             cookie?: never;
         };

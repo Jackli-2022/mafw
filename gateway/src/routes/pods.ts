@@ -8,7 +8,7 @@ import type { PodTaskService } from '../core/pod/pod-task-service';
 
 export interface PodRouteDeps {
   pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus' | 'lookup'>;
-  tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask' | 'editPlanTask'>;
+  tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask' | 'editPlanTask' | 'addPlanTask' | 'deleteTask'>;
   messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
   goals: Pick<PodGoalService, 'list' | 'promote'>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
@@ -63,6 +63,15 @@ export async function handlePods(
 
     const task = pathname.match(/^\/api\/pods\/([^/]+)\/tasks\/([^/]+)$/);
     if (task) {
+      if (method === 'DELETE') {
+        const podId = decode(task[1]);
+        requirePod(deps, podId);
+        const body = await readJson(req);
+        assertAccess(deps, body, ['lead'], podId);
+        const deleted = deps.tasks.deleteTask(podId, decode(task[2]));
+        sendJson(res, 200, { deleted });
+        return true;
+      }
       if (method !== 'PATCH') return false;
       const podId = decode(task[1]);
       requirePod(deps, podId);
@@ -102,6 +111,22 @@ export async function handlePods(
       }
       if (method === 'POST') {
         const body = await readJson(req);
+        const planMode = body?.plan === true || typeof body?.waveId === 'string';
+        if (planMode) {
+          assertAccess(deps, body, ['lead'], podId);
+          if (typeof body?.goalId !== 'string' || !body.goalId) {
+            throw new PodError(400, 'goalId is required for plan tasks');
+          }
+          const created = deps.tasks.addPlanTask(
+            podId,
+            body.goalId,
+            typeof body.waveId === 'string' ? body.waveId : null,
+            String(body.title ?? ''),
+            Array.isArray(body.acceptance) ? body.acceptance : undefined,
+          );
+          sendJson(res, 200, { task: created });
+          return true;
+        }
         assertAccess(deps, body, ['lead', 'builder'], podId);
         const created = deps.tasks.createManual(
           podId,
