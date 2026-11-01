@@ -24,5 +24,12 @@ export function projectExperienceActions(
   if (access?.can('branch.checkpoint')) {
     actions['checkpoint.restore'] = { enabled: true };
   }
+  if (access?.can('prompt.delivery.steer')) {
+    const semantics = access.semantics<{ boundary?: string }>('prompt.delivery.steer');
+    actions['prompt.steer'] = {
+      enabled: true,
+      semantics: { boundary: semantics.boundary ?? 'unspecified', queue: true },
+    };
+  }
   return actions;
 }

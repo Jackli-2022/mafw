@@ -18,6 +18,7 @@ import { MenuHost } from "./context-menu/MenuHost"
 import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
 import { branchActionsVisible } from "./components/branch-actions"
+import { experienceStore } from "./experience-store"
 import { formatRailTitle } from "./components/rail-display"
 import { clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
@@ -1045,6 +1046,7 @@ export function MafwShell() {
       onGoalEvent: () => bumpGoalsRev(),
       onCheckpointEvent: () => bumpCheckpointRev(),
       onRuntimeSwitched: () => {
+        experienceStore.invalidate()
         sessionStore.invalidate()
         void refreshMenus()
         resetChatWorkspace()
@@ -1421,6 +1423,12 @@ export function MafwShell() {
 
   // Current rendering state for SessionTurn
   const currentSessionID = () => active()?.id || ""
+  createEffect(() => {
+    const sid = currentSessionID()
+    if (gwStatus()?.state !== "ready") return
+    experienceStore.invalidate()
+    void experienceStore.load(sid || undefined)
+  })
 
   // Composer menus: agents (@ mention) + providers/models (model pill)
   const gwReadyForMenus = createMemo(() => gwStatus()?.state === "ready")

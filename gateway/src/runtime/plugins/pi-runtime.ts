@@ -238,6 +238,10 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
 
   return {
     name: 'pi',
+    semantics: {
+      'prompt.delivery.steer': { boundary: 'tool' },
+      'branch.revert': { files: false, undo: false },
+    },
     capabilities: PI_CAPABILITIES,
     external: true,
     session: sessionAPI,

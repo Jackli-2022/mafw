@@ -25,6 +25,18 @@ describe('Experience contract', () => {
       expect(actions[id]).toMatchObject<Partial<ActionDescriptor>>({ enabled: false, reason: 'unsupported' });
     }
   });
+
+  it('projects steer boundary from adapter semantics', () => {
+    const access = {
+      can: (id: string) => id === 'prompt.delivery.steer',
+      semantics: (id: string) => id === 'prompt.delivery.steer' ? { boundary: 'tool' } : {},
+    } as any;
+    const actions = projectExperienceActions(access, { sessionID: 's1' });
+    expect(actions['prompt.steer']).toEqual({
+      enabled: true,
+      semantics: { boundary: 'tool', queue: true },
+    });
+  });
 });
 
 describe('GET /api/experience/actions', () => {

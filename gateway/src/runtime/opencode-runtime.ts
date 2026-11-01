@@ -274,6 +274,10 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
   }
   const rt: AgentRuntime = Object.assign(client, {
     name: 'opencode' as const,
+    semantics: {
+      'prompt.delivery.steer': { boundary: 'after-turn' },
+      'branch.revert': { files: true, undo: false },
+    },
     capabilities: caps,
     external: isExternal,
     ...(config.dialectProbe

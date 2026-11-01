@@ -70,6 +70,7 @@ import { applyReadlineKey } from "./composer-readline"
 import { shouldFocusComposerFromClick } from "./composer-focus"
 import { appendQuote, formatQuote } from "./quote-format"
 import { branchActionsVisible } from "./branch-actions"
+import { experienceStore } from "../experience-store"
 import { QuoteToolbar, type QuoteAnchor } from "./QuoteToolbar"
 import { ScreenshotCropper, type CaptureShot } from "./ScreenshotCropper"
 import { dataUrlToFile } from "../capture/data-url"
@@ -927,7 +928,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     imageToDataUrl,
     uploadMediaBinary,
     encodeFilePath,
-    steerApi: () => props.runtimeCaps?.steerApi === true,
+    steerApi: () => experienceStore.isEnabled('prompt.steer'),
     pendingAnnotationCount: (sid) => pendingFor(sid).length,
     takeAnnotations: (sid) => takeForSend(sid),
     formatAnnotations: (items) => buildAnnotationBatch(items),
