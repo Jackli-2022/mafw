@@ -11,6 +11,7 @@ const WAVE1_OPIDS = [
   'session.diff', 'session.revertDiff',
   'session.checkpoint', 'session.checkpoints', 'session.restoreCheckpoint',
   'session.suspend', 'session.resume', 'session.run', 'session.discardRun',
+  'experience.actions',
   'session.data',
   'session.discovery', 'session.discoveryRefresh', 'session.discoverySkill',
   'command.list', 'skill.list',

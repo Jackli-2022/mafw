@@ -9,7 +9,7 @@ describe("background REST capability wiring", () => {
   test("capability module exposes tri-state + 60s retry", () => {
     const src = read("src/renderer/mafw/background-capability.ts")
     expect(src).toContain("createRestProbe")
-    expect(src).toContain("createRuntimeProbe")
+    expect(src).toContain("createActionProbe")
     expect(src).toContain('"checking"')
     expect(src).toContain("60_000")
     expect(src).toContain("shouldShowRestUnavailableHint")

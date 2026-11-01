@@ -336,7 +336,13 @@ tools: {
 
 ## 9. 验证流程
 
-### 9.0 离线检查（plugin-check，零 LLM、零激活）
+### 9.0 Runtime Ingress 与 Experience Contract
+
+原生事件、SDK 历史与 runtime 专属形状不得进入 gateway 业务核心：它们只能到达 Runtime Ingress，由 gateway 执行翻译/归一，再经 `RuntimeFacade` 进入核心。未匹配或非法数据 fail-closed，只产生 telemetry。
+
+前端消费 `GET /api/experience/actions`（版本化 Action Descriptor），不读取裸 capabilities 或 runtime 名称。Diagnostics/Admin（插件中心、runtime 切换、原生 coverage）是独立窄通道。
+
+### 9.1 离线检查（plugin-check，零 LLM、零激活）
 
 改完插件先跑离线检查，再做在线 conformance：
 

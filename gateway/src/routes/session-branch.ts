@@ -38,8 +38,9 @@ export async function handleSessionBranch(
 
   const rt = deps.getRuntime();
   const access = deps.getAccess?.() ?? (rt ? new RuntimeAccess(rt) : null);
-  if (!rt || !access?.can('branch.fork')) {
-    json(res, 503, { error: "runtime surface 'branch.fork' is not available" });
+  const surface = action === 'fork' ? 'branch.fork' : action === 'revert' ? 'branch.revert' : 'branch.unrevert';
+  if (!rt || !access?.can(surface)) {
+    json(res, action === 'unrevert' ? 404 : 503, { error: `runtime surface '${surface}' is not available` });
     return true;
   }
   const body = await readBody(req);
