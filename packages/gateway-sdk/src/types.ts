@@ -1171,6 +1171,9 @@ export interface MafwClient {
   project: ProjectNamespace
   event: EventNamespace
   runtime: RuntimeNamespace
+  experience: {
+    actions(sessionID?: string): Promise<import('./experience-contract').ExperienceActionsResponse>
+  }
   config: ConfigNamespace
   runtimeConfig: RuntimeConfigNamespace
   /** @deprecated 使用 runtimeConfig */

@@ -1,0 +1,37 @@
+{
+  "experienceVersion": "2026.11.0",
+  "actions": [
+    {
+      "id": "checkpoint.restore",
+      "scope": "checkpoint",
+      "description": "Restore a server checkpoint"
+    },
+    {
+      "id": "prompt.steer",
+      "scope": "session",
+      "description": "Deliver a busy prompt as steer or gateway queue"
+    },
+    {
+      "id": "session.background",
+      "scope": "session",
+      "description": "Move blocking tools to background"
+    },
+    {
+      "id": "mcp.manage",
+      "scope": "app",
+      "description": "List/connect/disconnect MCP servers"
+    },
+    {
+      "id": "mcp.config.write",
+      "scope": "app",
+      "description": "Persist MCP server configuration"
+    }
+  ],
+  "reasons": [
+    "unsupported",
+    "busy",
+    "missing-data",
+    "non-invertible-patch",
+    "unsafe"
+  ]
+}

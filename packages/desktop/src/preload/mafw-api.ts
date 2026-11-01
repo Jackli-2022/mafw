@@ -331,6 +331,10 @@ export function createMafwApi(): MafwAPI {
       restartAgent: () => invoke("runtime", "restartAgent"),
     },
 
+    experience: {
+      actions: (sessionID?: string) => invoke("experience", "actions", sessionID),
+    },
+
     // opencode v2 原生 shell 命令（经 gateway 兜底反代；location-scoped，不可达时调用方 fail-open）
     shells: {
       list: (directory?: string) => invoke("shells", "list", { ...(directory ? { directory } : {}) }),

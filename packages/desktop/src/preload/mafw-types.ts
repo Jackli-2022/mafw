@@ -9,6 +9,7 @@ import type {
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
+  ExperienceActionsResponse,
 } from "@mafw/sdk"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 import type { TerminalEvent, TerminalProbe, TerminalSessionInfo } from "../shared/terminal-session"
@@ -308,6 +309,9 @@ export type MafwAPI = {
     get: () => Promise<{ active: { name: string; capabilities: Record<string, boolean>; envOverride?: boolean }; plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[] }>
     switch: (plugin: string) => Promise<{ success: boolean; active: { name: string; capabilities: Record<string, boolean> }; envOverride: boolean }>
     restartAgent: () => Promise<{ success: boolean; mode: string }>
+  }
+  experience: {
+    actions: (sessionID?: string) => Promise<ExperienceActionsResponse>
   }
 
   /** opencode v2 原生 shell 命令（/api/shell*，经 gateway 兜底反代；location-scoped，不可达时抛错） */

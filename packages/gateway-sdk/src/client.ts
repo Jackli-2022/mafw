@@ -796,6 +796,16 @@ export class MafwClient implements IMafwClient {
 
   // 鈹€鈹€ Runtime 鈹€鈹€
 
+  experience = {
+    /** Versioned front-end action descriptor; never raw runtime capabilities. */
+    actions: async (sessionID?: string): Promise<import('./experience-contract').ExperienceActionsResponse> => {
+      if (sessionID) {
+        return this.request(`/api/experience/actions?sessionID=${encodeURIComponent(sessionID)}`);
+      }
+      return this.request('/api/experience/actions');
+    },
+  }
+
   runtime = {
     /** Get active runtime identity, capabilities, and plugin scan state. */
     get: async (): Promise<{

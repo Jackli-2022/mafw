@@ -69,6 +69,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/session/:id/prompt', operationId: 'session.prompt', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/promptAsync', operationId: 'session.promptAsync', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/command', operationId: 'session.command', tags: ['session'] },
+  { method: 'GET', path: '/api/experience/actions', operationId: 'experience.actions', tags: ['experience'] },
   { method: 'GET', path: '/api/usage', operationId: 'session.usage', tags: ['session'] },
   { method: 'GET', path: '/api/usage/summary', operationId: 'session.usageSummary', tags: ['session'] },
   { method: 'GET', path: '/api/usage/plugins', operationId: 'session.usagePluginsList', tags: ['session'] },

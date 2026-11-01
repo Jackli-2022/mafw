@@ -1024,6 +1024,19 @@
         }
       }
     },
+    "/api/experience/actions": {
+      "get": {
+        "operationId": "experience.actions",
+        "tags": [
+          "experience"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/usage": {
       "get": {
         "operationId": "session.usage",

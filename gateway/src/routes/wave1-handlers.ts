@@ -40,6 +40,8 @@ import {
   handleTaskOutput, handleTaskSubmit, parseTaskOutputQuery,
 } from './tasks';
 import { handleSessionSummarize } from './session-summarize';
+import { handleExperienceActions } from './experience-actions';
+import { projectExperienceActions } from '../experience/experience-projector';
 import { handleEventPublish } from './event-publish';
 import { handleMediaSwitch } from './media-switch';
 import {
@@ -229,6 +231,12 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
 
   registry.attachHandler('session.summarize', H(async (req, res) =>
     handleSessionSummarize(req, res, req.url || '', { getRuntime: () => gw.runtime })));
+
+  registry.attachHandler('experience.actions', H(async (req, res) =>
+    handleExperienceActions(req, res, req.url || '', {
+      project: (ctx) => projectExperienceActions(gw.runtime?.access ?? null, ctx),
+      isBusy: (sid) => gw.isCheckpointBusy?.(sid) ?? false,
+    })));
 
   registry.attachHandler('event.publish', H(async (req, res) =>
     handleEventPublish({ broadcast: (e) => gw.broadcast(e), recordUnknown: (t) => gw.recordUnknownEvent?.(t) }, req, res)));
