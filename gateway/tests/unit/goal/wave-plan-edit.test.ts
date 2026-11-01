@@ -1,4 +1,10 @@
-import { editWaveTask, findWaveTask } from '../../../src/core/goal/wave-plan-edit';
+import {
+  addWaveTask,
+  deleteWaveTask,
+  editWaveTask,
+  ensureWaveTaskIds,
+  findWaveTask,
+} from '../../../src/core/goal/wave-plan-edit';
 
 const plan = () => ({
   taskType: 'feature',
@@ -47,5 +53,57 @@ describe('wave-plan-edit', () => {
     expect(next.waves[1].tasks[0].acceptance).toHaveLength(20);
     const long = editWaveTask(plan(), 'w2-t1', { acceptance: ['x'.repeat(600)] }) as any;
     expect(long.waves[1].tasks[0].acceptance[0]).toHaveLength(500);
+  });
+
+  test('ensureWaveTaskIds mints positional ids once and is idempotent', () => {
+    const first = ensureWaveTaskIds(plan());
+    expect(first.changed).toBe(true);
+    const withIds: any = first.plan;
+    expect(withIds.waves[0].tasks[0]).toEqual({ title: '旧字符串任务', taskId: 'w1-t1' });
+    expect(withIds.waves[0].tasks[1]).toEqual({ title: '对象任务', acceptance: ['a'], taskId: 'w1-t2' });
+    expect(withIds.waves[1].tasks[0].taskId).toBe('w2-t1');
+
+    const again = ensureWaveTaskIds(withIds);
+    expect(again.changed).toBe(false);
+    expect(again.plan).toBe(withIds);
+  });
+
+  test('editing preserves the stable taskId', () => {
+    const withIds: any = ensureWaveTaskIds(plan()).plan;
+    const next: any = editWaveTask(withIds, 'w1-t2', { title: '改过' });
+    expect(next.waves[0].tasks[1]).toMatchObject({ taskId: 'w1-t2', title: '改过', acceptance: ['a'] });
+  });
+
+  test('addWaveTask appends to the last wave with a fresh id', () => {
+    const withIds: any = ensureWaveTaskIds(plan()).plan;
+    const added = addWaveTask(withIds, null, { title: '新任务', acceptance: ['跑测试'] })!;
+    const next: any = added.plan;
+    expect(added.taskId).toBe('w2-t2');
+    expect(next.waves[1].tasks).toHaveLength(2);
+    expect(next.waves[1].tasks[1]).toMatchObject({ taskId: 'w2-t2', title: '新任务', acceptance: ['跑测试'] });
+    // 已删过的 id 不复用
+    const afterDelete = deleteWaveTask(next, 'w2-t1')!.plan as any;
+    expect(addWaveTask(afterDelete, 'w2', { title: '再来一个' })!.taskId).toBe('w2-t3');
+  });
+
+  test('addWaveTask respects an explicit wave and rejects unknown waves/empty title', () => {
+    const added = addWaveTask(plan(), 'w1', { title: '加到 w1' })!;
+    expect((added.plan as any).waves[0].tasks).toHaveLength(3);
+    expect(addWaveTask(plan(), 'w9', { title: 'x' })).toBeNull();
+    expect(addWaveTask(plan(), null, { title: '   ' })).toBeNull();
+    expect(addWaveTask({ waves: [] }, null, { title: 'x' })).toBeNull();
+  });
+
+  test('deleteWaveTask removes only the target and keeps wave + other ids', () => {
+    const withIds: any = ensureWaveTaskIds(plan()).plan;
+    const result = deleteWaveTask(withIds, 'w1-t1')!;
+    const next: any = result.plan;
+    expect(result.removed).toEqual({ taskId: 'w1-t1', waveId: 'w1', title: '旧字符串任务' });
+    expect(next.waves[0].tasks).toEqual([{ title: '对象任务', acceptance: ['a'], taskId: 'w1-t2' }]);
+    expect(next.waves).toHaveLength(2);
+    expect(deleteWaveTask(next, 'w1-t1')).toBeNull();
+
+    const emptied: any = deleteWaveTask({ waves: [{ id: 'w1', tasks: [{ title: 'a', taskId: 'w1-t1' }] }] }, 'w1-t1')!.plan;
+    expect(emptied.waves[0].tasks).toEqual([]);
   });
 });
