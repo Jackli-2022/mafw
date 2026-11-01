@@ -228,6 +228,7 @@ export function createMafwApi(): MafwAPI {
       listTasks: (podID) => invoke("pod", "listTasks", podID),
       createTask: (podID, body) => invoke("pod", "createTask", podID, body),
       updateTask: (podID, taskID, body) => invoke("pod", "updateTask", podID, taskID, body),
+      deleteTask: (podID, taskID, body) => invoke("pod", "deleteTask", podID, taskID, body),
       listMessages: (podID) => invoke("pod", "listMessages", podID),
       sendMessage: (podID, body) => invoke("pod", "sendMessage", podID, body),
       markRead: (podID, messageID) => invoke("pod", "markRead", podID, messageID),

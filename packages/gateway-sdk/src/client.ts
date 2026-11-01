@@ -1243,9 +1243,15 @@ export class MafwClient implements IMafwClient {
     listTasks: async (podID: string): Promise<{ items: PodTask[] }> =>
       this.request<{ items: PodTask[] }>(`/api/pods/${encodeURIComponent(podID)}/tasks`),
 
-    createTask: async (podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }> =>
+    createTask: async (podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string; plan?: boolean; waveId?: string; acceptance?: string[] }): Promise<{ task: PodTask }> =>
       this.request<{ task: PodTask }>(`/api/pods/${encodeURIComponent(podID)}/tasks`, {
         method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    deleteTask: async (podID: string, taskID: string, body: { actorSessionID?: string } = {}): Promise<{ deleted: { goalId: string | null; externalTaskId: string | null } }> =>
+      this.request<{ deleted: { goalId: string | null; externalTaskId: string | null } }>(`/api/pods/${encodeURIComponent(podID)}/tasks/${encodeURIComponent(taskID)}`, {
+        method: 'DELETE',
         body: JSON.stringify(body),
       }),
 

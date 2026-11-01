@@ -1118,7 +1118,8 @@ export interface PodNamespace {
   get(podID: string): Promise<PodDetail>
   update(podID: string, body: { status: PodStatus }): Promise<PodDetail>
   listTasks(podID: string): Promise<{ items: PodTask[] }>
-  createTask(podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string }): Promise<{ task: PodTask }>
+  createTask(podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string; plan?: boolean; waveId?: string; acceptance?: string[] }): Promise<{ task: PodTask }>
+  deleteTask(podID: string, taskID: string, body?: { actorSessionID?: string }): Promise<{ deleted: { goalId: string | null; externalTaskId: string | null } }>
   updateTask(podID: string, taskID: string, body: { status?: PodTaskStatus; ownerMemberId?: string; title?: string; acceptance?: string[]; actorSessionID?: string }): Promise<{ task: PodTask }>
   listMessages(podID: string): Promise<{ items: PodMessage[] }>
   sendMessage(podID: string, body: { fromMemberId?: string; toMemberId?: string; kind: 'note'|'request'|'review'|'decision'|'escalation'; body: string; actorSessionID?: string; notify?: boolean }): Promise<{ message: PodMessage; delivery?: PodDeliveryState }>
