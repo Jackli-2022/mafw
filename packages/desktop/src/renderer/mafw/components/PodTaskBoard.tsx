@@ -71,20 +71,27 @@ export function PodTaskBoard(props: {
   tasks: PodTask[]
   members: PodMember[]
   busy: boolean
+  planGoalId: string | null
   onCreate: (title: string) => Promise<boolean>
+  onCreatePlan: (title: string) => Promise<boolean>
   onEdit: (taskId: string, patch: { title: string; acceptance: string[] }) => Promise<boolean>
+  onDelete: (taskId: string) => Promise<boolean>
   onOpenGoal: (goalId: string) => void
 }) {
   const [creating, setCreating] = createSignal(false)
+  const [createMode, setCreateMode] = createSignal<"manual" | "plan">("manual")
   const [title, setTitle] = createSignal("")
   const [submitting, setSubmitting] = createSignal(false)
   const [editingId, setEditingId] = createSignal<string | null>(null)
   const [editTitle, setEditTitle] = createSignal("")
   const [editAcceptance, setEditAcceptance] = createSignal("")
   const [saving, setSaving] = createSignal(false)
+  const [deletingId, setDeletingId] = createSignal<string | null>(null)
+  const [deleting, setDeleting] = createSignal(false)
 
   const startEdit = (task: PodTask) => {
     setCreating(false)
+    setDeletingId(null)
     setEditingId(task.id)
     setEditTitle(task.title)
     setEditAcceptance(formatAcceptanceLines(podTaskAcceptance(task)))
@@ -108,12 +115,24 @@ export function PodTaskBoard(props: {
     }
   }
 
+  const confirmDelete = async (taskId: string) => {
+    if (deleting() || props.busy) return
+    setDeleting(true)
+    try {
+      const ok = await props.onDelete(taskId)
+      if (ok) setDeletingId(null)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const submit = async () => {
     const value = title().trim()
     if (!value || submitting() || props.busy) return
+    const plan = createMode() === "plan" && !!props.planGoalId
     setSubmitting(true)
     try {
-      const ok = await props.onCreate(value)
+      const ok = plan ? await props.onCreatePlan(value) : await props.onCreate(value)
       if (!ok) return
       setTitle("")
       setCreating(false)
@@ -133,9 +152,29 @@ export function PodTaskBoard(props: {
 
       <Show when={creating()}>
         <div class="mafw-pod-task-create">
+          <Show when={props.planGoalId}>
+            <div class="mafw-pod-task-create-mode">
+              <ButtonV2
+                variant="ghost"
+                size="small"
+                aria-pressed={createMode() === "manual"}
+                onClick={() => setCreateMode("manual")}
+              >
+                手工任务
+              </ButtonV2>
+              <ButtonV2
+                variant="ghost"
+                size="small"
+                aria-pressed={createMode() === "plan"}
+                onClick={() => setCreateMode("plan")}
+              >
+                加入计划
+              </ButtonV2>
+            </div>
+          </Show>
           <TextInputV2
             value={title()}
-            placeholder="手工任务标题"
+            placeholder={createMode() === "plan" ? "追加到计划最后一个 wave" : "手工任务标题"}
             onInput={(event) => setTitle(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") void submit()
@@ -191,19 +230,47 @@ export function PodTaskBoard(props: {
                           <span class="mafw-pod-task-artifacts">{artifacts().length} 个产物</span>
                         </Show>
                         <Show when={editable()}>
-                          <ButtonV2
-                            variant="ghost"
-                            size="small"
-                            class="mafw-pod-task-edit-trigger"
-                            disabled={props.busy || saving()}
-                            onClick={(event: MouseEvent) => {
-                              event.stopPropagation()
-                              if (editingId() === task.id) cancelEdit()
-                              else startEdit(task)
-                            }}
-                          >
-                            {editingId() === task.id ? "取消编辑" : "编辑"}
-                          </ButtonV2>
+                          <div class="mafw-pod-task-actions" onClick={(event) => event.stopPropagation()}>
+                            <ButtonV2
+                              variant="ghost"
+                              size="small"
+                              disabled={props.busy || saving()}
+                              onClick={() => {
+                                if (editingId() === task.id) cancelEdit()
+                                else startEdit(task)
+                              }}
+                            >
+                              {editingId() === task.id ? "取消编辑" : "编辑"}
+                            </ButtonV2>
+                            <Show when={deletingId() !== task.id}>
+                              <ButtonV2
+                                variant="ghost"
+                                size="small"
+                                disabled={props.busy || deleting()}
+                                onClick={() => {
+                                  setCreating(false)
+                                  cancelEdit()
+                                  setDeletingId(task.id)
+                                }}
+                              >
+                                删除
+                              </ButtonV2>
+                            </Show>
+                          </div>
+                        </Show>
+                        <Show when={deletingId() === task.id}>
+                          <div class="mafw-pod-task-delete" onClick={(event) => event.stopPropagation()}>
+                            <span class="mafw-pod-task-edit-hint">删除这条计划任务？（不影响历史回执）</span>
+                            <ButtonV2 variant="ghost" size="small" onClick={() => setDeletingId(null)}>取消</ButtonV2>
+                            <ButtonV2
+                              variant="contrast"
+                              size="small"
+                              disabled={deleting() || props.busy}
+                              onClick={() => void confirmDelete(task.id)}
+                            >
+                              {deleting() ? "删除中…" : "确认删除"}
+                            </ButtonV2>
+                          </div>
                         </Show>
                       </div>
                       <Show when={editingId() === task.id}>

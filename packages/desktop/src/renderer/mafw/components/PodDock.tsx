@@ -13,6 +13,7 @@ import { deliveryToast } from "../pod-rail-face-model"
 import {
   formatPodCost,
   memberOpenTarget,
+  podActiveGoalId,
   podHttpStatus,
   podMemberStatusLabel,
   podRoleLabel,
@@ -68,7 +69,7 @@ export function PodDock(props: {
       await podStore.refresh()
       return true
     } catch (err: any) {
-      showToastV2({ description: `创建任务失败：${String(err?.message ?? err).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
+      showToastV2({ description: `创建任务失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
       return false
     }
   }
@@ -84,13 +85,36 @@ export function PodDock(props: {
       await podStore.refresh()
       return true
     } catch (err: any) {
-      const status = podHttpStatus(err)
-      const reason = status === 409
-        ? "goal 正在执行或已结束，暂不能改计划"
-        : status === 400
-          ? "该任务不能改计划（手工任务或参数不合法）"
-          : String(err?.message ?? err).slice(0, 60)
-      showToastV2({ description: `保存失败：${reason}`, variant: "error", duration: 3000 } as any)
+      showToastV2({ description: `保存失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
+      return false
+    }
+  }
+
+  const activeGoalId = () => podActiveGoalId(podStore.detail()?.goals ?? [])
+
+  const createPlanTask = async (title: string): Promise<boolean> => {
+    const podId = podStore.detail()?.pod.id
+    const goalId = activeGoalId()
+    if (!podId || !goalId) return false
+    try {
+      await window.api.mafw.pod.createTask(podId, { plan: true, goalId, title })
+      await podStore.refresh()
+      return true
+    } catch (err: any) {
+      showToastV2({ description: `加入计划失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
+      return false
+    }
+  }
+
+  const deleteTask = async (taskId: string): Promise<boolean> => {
+    const podId = podStore.detail()?.pod.id
+    if (!podId) return false
+    try {
+      await window.api.mafw.pod.deleteTask(podId, taskId)
+      await podStore.refresh()
+      return true
+    } catch (err: any) {
+      showToastV2({ description: `删除失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
       return false
     }
   }
@@ -218,8 +242,11 @@ export function PodDock(props: {
                   tasks={detail().tasks}
                   members={detail().members}
                   busy={podStore.busy()}
+                  planGoalId={activeGoalId()}
                   onCreate={createTask}
+                  onCreatePlan={createPlanTask}
                   onEdit={editTask}
+                  onDelete={deleteTask}
                   onOpenGoal={props.onOpenGoal}
                 />
                 <PodInbox
@@ -245,4 +272,12 @@ export function PodDock(props: {
       </Show>
     </div>
   )
+}
+
+function taskErrorText(err: any): string {
+  const status = podHttpStatus(err)
+  if (status === 409) return "goal 正在执行或已结束，暂不能改计划"
+  if (status === 400) return "该任务不能改计划（手工任务或参数不合法）"
+  if (status === 404) return "任务或计划文件不存在"
+  return String(err?.message ?? err).slice(0, 60)
 }

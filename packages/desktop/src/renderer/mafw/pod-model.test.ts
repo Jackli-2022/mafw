@@ -14,6 +14,7 @@ import {
   podShortTime,
   podTaskArtifacts,
   canEditPlanTask,
+  podActiveGoalId,
   podTaskAcceptance,
   parseAcceptanceLines,
   formatAcceptanceLines,
@@ -173,5 +174,15 @@ describe("pod-model", () => {
     const many = Array.from({ length: 25 }, (_v, i) => `标准 ${i}`).join("\n")
     assert.equal(parseAcceptanceLines(many).length, 20)
     assert.equal(formatAcceptanceLines(["a", "b"]), "a\nb")
+  })
+
+  test("podActiveGoalId picks the single active goal", () => {
+    const goal = (goalId: string, status: "queued" | "active" | "done") => ({
+      id: `podgoal_${goalId}`, podId: "pod_1", goalId, status,
+      enqueuedAt: "2026-10-30T00:00:00.000Z", startedAt: null, endedAt: null,
+    })
+    assert.equal(podActiveGoalId([goal("q1", "queued"), goal("g1", "active"), goal("d1", "done")]), "g1")
+    assert.equal(podActiveGoalId([goal("q1", "queued")]), null)
+    assert.equal(podActiveGoalId([]), null)
   })
 })

@@ -224,6 +224,11 @@ export function canEditPlanTask(task: Pick<PodTask, "goalId" | "externalTaskId">
   return !!task.goalId && !!task.externalTaskId
 }
 
+/** 当前可编辑计划的 goal：Pod 同时只有一个 active。 */
+export function podActiveGoalId(goals: PodGoal[]): string | null {
+  return goals.find((goal) => goal.status === "active")?.goalId ?? null
+}
+
 /** acceptanceJson → string[]（坏数据 fail-open 为空）。 */
 export function podTaskAcceptance(task: Pick<PodTask, "acceptanceJson">): string[] {
   if (!task.acceptanceJson) return []
