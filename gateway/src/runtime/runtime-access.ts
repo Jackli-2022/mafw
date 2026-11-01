@@ -43,9 +43,9 @@ export class RuntimeAccess {
     if (surface.verification === 'presence') {
       return probePasses(this.subject, surface);
     }
-    // behavior/conformance/attested：激活期已经完成能力降级；这里以 effective
-    // capability 为准，真实可用性仍由 conformance 负责，不伪装成 presence。
-    return true;
+    // behavior/conformance/attested 没有 presence 证据：只有显式 capability
+    // 才允许尝试；未验证不等于可用。
+    return !!surface.capability && !!caps[surface.capability];
   }
 
   requireSurface(surfaceId: string): void {

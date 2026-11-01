@@ -93,11 +93,12 @@ export async function handleSessionCheckpoints(
 
     if (list) {
       const rows = svc.list(list[1]) as unknown as CheckpointActionInput[];
+      const busy = deps.isBusy?.(list[1]) === true;
       const withActions = rows.map((cp, index) => ({
         ...cp,
         actions: projectCheckpointActions(cp, {
           access,
-          busy: false,
+          busy,
           targets: rows.slice(0, index + 1),
         }),
       }));

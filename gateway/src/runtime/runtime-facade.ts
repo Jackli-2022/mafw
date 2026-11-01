@@ -29,7 +29,7 @@ export interface RuntimeFacadeOptions {
 const PUBLIC_KEYS = [
   'name', 'capabilities', 'external', 'session', 'shell', 'provider', 'app',
   'discovery', 'mcp', 'config', 'tools', 'completion', 'credentials', 'agents',
-  'getBaseUrl', 'healthCheck', 'agentProcess', 'semantics',
+  'getBaseUrl', 'healthCheck', 'agentProcess', 'semantics', 'registry', 'dispose',
 ] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

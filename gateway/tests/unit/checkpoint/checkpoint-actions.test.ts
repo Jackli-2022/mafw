@@ -49,6 +49,15 @@ describe('projectCheckpointActions', () => {
     expect(a.restoreFiles).toMatchObject({ enabled: false, reason: 'non-invertible-patch' });
   });
 
+  it('manual checkpoints are files-only', () => {
+    const a = projectCheckpointActions(cp({ kind: 'manual' }), {
+      access: access(), busy: false, targets: [cp({ kind: 'manual' })],
+    });
+    expect(a.restoreConversation).toMatchObject({ enabled: false, reason: 'unsupported' });
+    expect(a.restoreBoth).toMatchObject({ enabled: false, reason: 'unsupported' });
+    expect(a.restoreFiles.enabled).toBe(true);
+  });
+
   it('uses undo semantics for warning keys', () => {
     const a = projectCheckpointActions(cp(), {
       access: access({ 'branch.revert': { files: true, undo: true } }), busy: false, targets: [cp()],

@@ -236,7 +236,7 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
   ...RUNTIME_NATIVE_DROPPED,
   ...TOOL_PRIMITIVE_TYPES,
 ]);
-import { wrapRuntimeMessages } from './runtime/normalize-messages';
+
 import { toWireHistory } from './runtime/wire-compat';
 import { handlePermissionReply } from './routes/permission';
 import { handleSessionBackground } from './routes/session-background';
@@ -1886,7 +1886,8 @@ class MafwScheduler {
   private wrapRuntimeIdentity(rt: AgentRuntime): AgentRuntime {
     // 历史消息归一收口：声明 normalizeMessages 的 runtime 在 session.messages 出口
     // 统一转 opencode {info, parts} DTO（所有消费者形状一致）。必须先于身份包装。
-    wrapRuntimeMessages(rt, (reason) => this.recordTranslationError(rt.name, 'normalizeMessages', reason));
+    // 历史归一由 RuntimeFacade 在 Ingress 出口完成；这里不得再包一次，
+    // 否则 pi/claude 的声明式 normalizeMessages 会被二次执行并损坏历史。
     this.ensureInstructionSync().reset();
     const synced = withInstructionSync(rt.session as any, (sid) => this.instructionSync!.sync(sid));
     const registry = this.identityRegistry;
@@ -6389,7 +6390,7 @@ class MafwScheduler {
 
         // GET /api/permissions ── list pending permission requests（契约：session.permissionList）
         if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'approval.permissionReply')) return;
+          if (this.capGuard(res, 'approval.permissionList')) return;
           try {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
             const items = this.runtime?.session?.permissionList
@@ -6445,7 +6446,7 @@ class MafwScheduler {
         // GET /api/agents ─ merged list: registry identities (source:'mafw') first,
         // then runtime-native agents (source:'runtime') — uniform picker across runtimes.
         if (req.url?.match(/^\/api\/agents(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'provider.list')) return;
+          if (this.capGuard(res, 'provider.app.agents')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const runtimeAgents = await this.runtime.app.agents();
@@ -6473,7 +6474,7 @@ class MafwScheduler {
 
         // GET /api/opencode-config 鈹€ return the effective opencode Config
         if (matchRuntimeConfigRoute(req.url, 'GET') && req.method === 'GET') {
-          if (this.capGuard(res, 'provider.list')) return;
+          if (this.capGuard(res, 'provider.config')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const configData = await this.runtime.config.get();
@@ -6488,7 +6489,7 @@ class MafwScheduler {
 
         // PATCH /api/opencode-config 鈹€ merge-update the opencode Config (native merge semantics)
         if (matchRuntimeConfigRoute(req.url, 'PATCH') && req.method === 'PATCH') {
-          if (this.capGuard(res, 'provider.list')) return;
+          if (this.capGuard(res, 'provider.config.update')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const body = JSON.parse(await readBody(req));

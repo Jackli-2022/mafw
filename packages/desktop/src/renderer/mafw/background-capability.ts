@@ -109,7 +109,12 @@ export function createActionProbe(
     const started = now()
     inflight = probe()
       .then((info) => {
-        const ok = info?.enabled === true
+        if (!info) {
+          // Experience 尚在加载：这是 checking，不是 unavailable，且不得缓存 60s。
+          if (gen === generation) state = { at: started, ok: false, known: false }
+          return false
+        }
+        const ok = info.enabled === true
         if (gen === generation) state = { at: started, ok, known: true }
         return ok
       })
@@ -135,7 +140,10 @@ export function createActionProbe(
 
 import { experienceStore } from "./experience-store"
 
-const actionProbe = createActionProbe(async () => experienceStore.action("session.background"))
+const actionProbe = createActionProbe(async () => {
+  if (experienceStore.state().status === "idle") await experienceStore.load()
+  return experienceStore.action("session.background")
+})
 
 export function canUseBackgroundApi(): Promise<boolean> {
   return actionProbe.available()

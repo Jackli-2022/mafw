@@ -18,7 +18,7 @@ function makeDeps(supported = true) {
   return {
     calls,
     deps: {
-      supported,
+      access: { can: () => supported },
       list: async (opts?: { directory?: string }) => {
         calls.push({ op: 'list', directory: opts?.directory });
         return [{ name: 'mafw', status: 'connected' as const }];
@@ -51,7 +51,7 @@ describe('GET /api/mcp/servers', () => {
     const { res, out } = makeRes();
     await handleMcp({ method: 'GET' } as http.IncomingMessage, res, '/api/mcp/servers', deps);
     expect(out.status).toBe(503);
-    expect(out.body.error).toContain('MCP');
+    expect(out.body.error).toContain('mcp.list');
   });
 
   it('runtime 抛错 → 502', async () => {

@@ -45,7 +45,7 @@ export function createExperienceStore(
       } catch (err: any) {
         if (gen !== generation) return
         current = {
-          status: err?.status === 404 ? 'unavailable' : 'error',
+          status: err?.status === 404 || /\b404\b|not found/i.test(String(err?.message ?? '')) ? 'unavailable' : 'error',
           sessionID,
           actions: {},
           error: err?.message ?? String(err),

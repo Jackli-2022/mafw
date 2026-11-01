@@ -3,6 +3,7 @@ import type { ActionDescriptor } from '../../experience/experience-contract';
 
 export interface CheckpointActionInput {
   id: string;
+  kind?: 'auto' | 'manual';
   anchorMessageID?: string;
   messageID?: string;
   snapshotTree?: string | null;
@@ -62,6 +63,13 @@ export function projectCheckpointActions(
       : 'restore-conversation-files-no-undo'
     : 'restore-conversation-only-no-undo';
 
+  if (checkpoint.kind === 'manual') {
+    return {
+      restoreConversation: { enabled: false, reason: 'unsupported' },
+      restoreFiles: file,
+      restoreBoth: { enabled: false, reason: 'unsupported' },
+    };
+  }
   return {
     restoreConversation: { enabled: true },
     restoreFiles: file,

@@ -27,7 +27,7 @@ function makeDeps(supported = true) {
   return {
     calls,
     deps: {
-      supported,
+      access: { can: () => supported },
       preview: async (input: any) => {
         calls.push({ op: 'preview', input });
         return { token: 't1', target: 'C:/c.jsonc', diff: '+ x' };
