@@ -62,6 +62,9 @@ export interface GatewayConfig {
     reranker: 'off' | 'heuristic' | 'cross-encoder' | 'llamacpp';
     /** GPU variant for the llamacpp reranker ('cpu' | 'vulkan' | 'cuda'). */
     rerankerGpu: string;
+    /** -b/-ub for the reranker sidecar (default 512, clamped to ctx). Sizes
+     *  the compute buffer; VRAM scales with it, not with the context window. */
+    rerankerBatchSize: number;
     /** How many candidates the retriever returns before reranking. */
     recallK: number;
     /** Drop reranked results below topScore × cutoffRatio (0 = disabled). */
@@ -256,6 +259,9 @@ export interface GatewayConfig {
         port: number;
         threads: number;
         contextSize: number;
+        /** Physical batch (-b/-ub), default 256. Drives GPU compute-buffer
+         *  VRAM; contextSize still bounds the max input length. */
+        batchSize: number;
         gpu: string;
         modelFile: string;
         binaryVersion: string;
@@ -472,6 +478,7 @@ function defaults(projectDir: string): GatewayConfig {
       defaultRetriever: 'bm25',
       reranker: 'off',
       rerankerGpu: 'vulkan',
+      rerankerBatchSize: 512,
       recallK: 50,
       cutoffRatio: 0,
       rerankWeights: {
@@ -574,6 +581,7 @@ function defaults(projectDir: string): GatewayConfig {
           port: 0,
           threads: 2,
           contextSize: 2048,
+          batchSize: 256,
           gpu: 'cpu',
           modelFile: '',
           binaryVersion: 'b10752',

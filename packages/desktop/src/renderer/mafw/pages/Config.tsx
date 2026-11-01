@@ -1241,7 +1241,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                       </div>
                       <div class="mafw-config-field-group">
                         <label class="mafw-config-label">上下文窗口（token）</label>
-                        <span class="mafw-config-hint">需 ≥ 嵌入文本上限；过大会涨内存（KV/计算缓冲随其线性增长）</span>
+                        <span class="mafw-config-hint">需 ≥ 嵌入文本上限；显存由物理批大小决定（默认 256，取 ctx 与批的较小者），上下文只影响 KV 缓存</span>
                         <TextInputV2
                           type="number"
                           value={String(embDraft().contextSize)}

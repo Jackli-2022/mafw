@@ -12,10 +12,13 @@ let cached: { key: string; r: Reranker } | null = null;
 export function getReranker(): Reranker | null {
   const name = config.search.reranker;
   if (name === 'off') return null;
-  const key = `${name}:${config.search.rerankerGpu}`;
+  const key = `${name}:${config.search.rerankerGpu}:${config.search.rerankerBatchSize}`;
   if (cached?.key === key) return cached.r;
   try {
-    const r = createReranker(name, config.search.rerankWeights, { gpu: config.search.rerankerGpu });
+    const r = createReranker(name, config.search.rerankWeights, {
+      gpu: config.search.rerankerGpu,
+      batchSize: config.search.rerankerBatchSize,
+    });
     cached = r ? { key, r } : null;
   } catch {
     cached = null;

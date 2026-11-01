@@ -24,6 +24,12 @@ export interface LlamaCppRerankerConfig {
   port?: number;
   threads?: number;
   contextSize?: number;
+  /** -b / -ub physical batch (default 512, clamped to contextSize). Sizes the
+   *  GPU compute buffer: at ctx 4096 the batch == ctx pairing cost 3452MB VRAM
+   *  vs 1139MB at 512 (measured RTX 4090 Laptop). Rerank prompts are short
+   *  (query + a 1200-char document), so the context stays large but the batch
+   *  does not need to. */
+  batchSize?: number;
   /** 'cpu' (default) | 'vulkan' | 'cuda'. */
   gpu?: string;
   binaryVersion?: string;
@@ -142,14 +148,15 @@ export class LlamaCppReranker implements Reranker {
       const port = this.cfg.port && this.cfg.port > 0 ? this.cfg.port : await pickFreePort();
       const threads = Math.max(1, this.cfg.threads ?? 2);
       const ctxSize = Math.max(256, this.cfg.contextSize ?? 4096);
+      const batchSize = Math.min(ctxSize, Math.max(32, this.cfg.batchSize ?? 512));
       const spawnFn = this.cfg.deps?.spawnFn ?? spawn;
       this.child = spawnFn(exe, [
         '-m', model,
         '--port', String(port),
         '--host', '127.0.0.1',
         '-c', String(ctxSize),
-        '-b', String(ctxSize),
-        '-ub', String(ctxSize),
+        '-b', String(batchSize),
+        '-ub', String(batchSize),
         '-t', String(threads),
         ...(this.variant() === 'cpu' ? [] : ['-ngl', '99']),
         '-fa', 'on',
@@ -181,7 +188,7 @@ export class LlamaCppReranker implements Reranker {
         await new Promise(r => setTimeout(r, 500));
       }
       this.baseUrl = url;
-      log.info(`[LlamaReranker] ready on :${port} (threads=${threads}, ctx=${ctxSize}, variant=${this.variant()})`);
+      log.info(`[LlamaReranker] ready on :${port} (threads=${threads}, ctx=${ctxSize}, batch=${batchSize}, variant=${this.variant()})`);
     })().catch(err => {
       this.starting = null;
       this.killServer();

@@ -35,6 +35,11 @@ export interface LlamaCppConfig {
    *  margin; larger values inflate RSS (KV + compute buffers scale with it).
    *  The 400-retry truncation in embed() is the final safety net. */
   contextSize?: number;
+  /** -b / -ub physical batch (default 256, clamped to contextSize). This is
+   *  what sizes the GPU compute buffer: raising it to ctx costs ~1GB VRAM on
+   *  a 0.6B model without speeding up small batches. Long inputs still embed
+   *  in full — llama-server splits the sequence across ubatches. */
+  batchSize?: number;
   /** 'cpu' (default) | 'vulkan' | 'cuda' — selects the binary variant.
    *  GPU variants get -ngl 99 (full layer offload). cuda needs an NVIDIA GPU
    *  and downloads the cudart companion zip (~615MB total on win-x64). */
@@ -214,17 +219,22 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
       const port = this.cfg.port && this.cfg.port > 0 ? this.cfg.port : await pickFreePort();
       const threads = Math.max(1, this.cfg.threads ?? 2);
       const ctxSize = Math.max(256, this.cfg.contextSize ?? 2048);
+      // Physical batch (-b/-ub) sizes the compute buffer, NOT the context:
+      // measured on RTX 4090 Laptop (Qwen3-Embedding-0.6B Q4, ctx 2048) —
+      // ub 2048 = 2040MB VRAM, ub 1024 = 1322MB, ub 256 = 986MB. The old
+      // batch == ctx pairing came from an assumption that embeddings mode
+      // cannot split a sequence across ubatches; b10752 does split it (probe:
+      // 1488-char CJK input differing only in its suffix still yields
+      // different vectors at ub 256), so long inputs stay fully embedded.
+      const batchSize = Math.min(ctxSize, Math.max(32, this.cfg.batchSize ?? 256));
       const spawnFn = this.cfg.deps?.spawnFn ?? spawn;
       this.child = spawnFn(exe, [
         '-m', model,
         '--port', String(port),
         '--host', '127.0.0.1',
         '-c', String(ctxSize),
-        // Physical batch must cover one full sequence (embeddings mode splits
-        // nothing across ubatches); keep batch == ctx so the 400 limit above
-        // is the only gate.
-        '-b', String(ctxSize),
-        '-ub', String(ctxSize),
+        '-b', String(batchSize),
+        '-ub', String(batchSize),
         '-t', String(threads),
         // GPU variants (vulkan/cuda): offload all layers — without -ngl the
         // GPU binary still runs everything on CPU. Measured on RTX 4090
@@ -268,7 +278,7 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         await new Promise(r => setTimeout(r, 500));
       }
       this.baseUrl = url;
-      log.info(`[LlamaCpp] server ready on :${port} (threads=${threads}, ctx=${ctxSize}, variant=${this.variant()})`);
+      log.info(`[LlamaCpp] server ready on :${port} (threads=${threads}, ctx=${ctxSize}, batch=${batchSize}, variant=${this.variant()})`);
     })().catch(err => {
       this.starting = null;
       this.killServer();

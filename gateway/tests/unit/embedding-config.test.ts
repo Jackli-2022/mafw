@@ -134,4 +134,23 @@ describe('embedding-config route', () => {
     const r = await request(server, 'POST', {});
     expect(r.status).toBe(400);
   });
+
+  it('POST persists llamacpp.batchSize', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const r = await request(server, 'POST', { llamacpp: { batchSize: 512 } });
+    expect(r.status).toBe(200);
+    expect(r.body.current.llamacpp.batchSize).toBe(512);
+  });
+
+  it('POST rejects out-of-range batchSize', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const r = await request(server, 'POST', { llamacpp: { batchSize: 8 } });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/batchSize/);
+    expect(deps.calls.reinit).toBe(0);
+  });
 });

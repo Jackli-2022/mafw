@@ -17,6 +17,7 @@ export interface EmbeddingConfigState {
     gpu: string;
     threads: number;
     contextSize: number;
+    batchSize: number;
   };
 }
 
@@ -73,7 +74,7 @@ export interface EmbeddingConfigUpdate {
   engine?: string;
   model?: string;
   threads?: number;
-  llamacpp?: { gpu?: string; threads?: number; contextSize?: number };
+  llamacpp?: { gpu?: string; threads?: number; contextSize?: number; batchSize?: number };
 }
 
 export async function handleEmbeddingConfigUpdate(
@@ -112,6 +113,9 @@ export async function handleEmbeddingConfigUpdate(
   }
   if (body.llamacpp?.contextSize !== undefined && (!Number.isInteger(body.llamacpp.contextSize) || body.llamacpp.contextSize < 256 || body.llamacpp.contextSize > 32768)) {
     errors.push('llamacpp.contextSize must be an integer in 256..32768');
+  }
+  if (body.llamacpp?.batchSize !== undefined && (!Number.isInteger(body.llamacpp.batchSize) || body.llamacpp.batchSize < 32 || body.llamacpp.batchSize > 32768)) {
+    errors.push('llamacpp.batchSize must be an integer in 32..32768');
   }
   if (errors.length > 0) {
     send(res, 400, { error: errors.join('; ') });

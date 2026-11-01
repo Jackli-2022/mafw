@@ -22,7 +22,11 @@ function makeDeps() {
   fs.writeFileSync(model, 'fake');
 
   const child = Object.assign(new EventEmitter(), { killed: false, pid: 4242, kill: () => true });
-  const spawnFn = (() => child) as any;
+  const spawns: string[][] = [];
+  const spawnFn = ((_exe: string, args: string[]) => {
+    spawns.push(args);
+    return child;
+  }) as any;
   const requests: Array<{ url: string; body?: any }> = [];
   const fetchFn = (async (url: any, init?: any) => {
     const u = String(url);
@@ -45,7 +49,7 @@ function makeDeps() {
     }
     throw new Error('unexpected fetch: ' + u);
   }) as any;
-  return { deps: { spawnFn, fetchFn, binDir: binDir, modelDir: path.join(dir, 'models') }, model, requests, child };
+  return { deps: { spawnFn, fetchFn, binDir: binDir, modelDir: path.join(dir, 'models') }, model, requests, child, spawns };
 }
 
 describe('LlamaCppServerProvider', () => {
@@ -104,5 +108,53 @@ describe('LlamaCppServerProvider', () => {
       llamacpp: { modelFile: d.model, deps: { ...d.deps, fetchFn: failing }, threads: 2 },
     }) as EmbeddingProvider;
     await expect(provider.embed(['x'], 'document')).rejects.toThrow(/500/);
+  });
+});
+
+// Physical batch (-b/-ub) is what drives the GPU compute buffer, not -c:
+// measured on RTX 4090 Laptop, ctx 2048 + ub 2048 = 2040MB VRAM vs ub 256 =
+// 986MB, and long inputs still embed in full (llama.cpp b10752 splits the
+// sequence across ubatches in embeddings mode). Keep ctx, shrink the batch.
+describe('LlamaCppServerProvider batch sizing', () => {
+  function flag(args: string[], name: string): string | undefined {
+    const i = args.indexOf(name);
+    return i >= 0 ? args[i + 1] : undefined;
+  }
+
+  function makeProvider(d: ReturnType<typeof makeDeps>, llamacpp: Record<string, unknown>) {
+    const p = createEmbeddingProvider({
+      provider: 'local',
+      engine: 'llamacpp',
+      llamacpp: { modelFile: d.model, deps: d.deps, threads: 2, ...llamacpp },
+    });
+    expect(p).not.toBeNull();
+    return p as EmbeddingProvider;
+  }
+
+  test('defaults keep full context and batch at 256', async () => {
+    const d = makeDeps();
+    await makeProvider(d, {}).embed(['x'], 'document');
+    const args = d.spawns[0];
+    expect(flag(args, '-c')).toBe('2048');
+    expect(flag(args, '-b')).toBe('256');
+    expect(flag(args, '-ub')).toBe('256');
+  });
+
+  test('explicit batchSize changes -b/-ub only', async () => {
+    const d = makeDeps();
+    await makeProvider(d, { contextSize: 2048, batchSize: 1024 }).embed(['x'], 'document');
+    const args = d.spawns[0];
+    expect(flag(args, '-c')).toBe('2048');
+    expect(flag(args, '-b')).toBe('1024');
+    expect(flag(args, '-ub')).toBe('1024');
+  });
+
+  test('batchSize is clamped to context size', async () => {
+    const d = makeDeps();
+    await makeProvider(d, { contextSize: 512, batchSize: 4096 }).embed(['x'], 'document');
+    const args = d.spawns[0];
+    expect(flag(args, '-c')).toBe('512');
+    expect(flag(args, '-b')).toBe('512');
+    expect(flag(args, '-ub')).toBe('512');
   });
 });

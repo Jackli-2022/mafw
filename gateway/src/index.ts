@@ -2405,6 +2405,7 @@ class MafwScheduler {
             gpu: e.llamacpp?.gpu ?? 'cpu',
             threads: e.llamacpp?.threads ?? e.threads,
             contextSize: e.llamacpp?.contextSize ?? 2048,
+            batchSize: e.llamacpp?.batchSize ?? 256,
           },
         };
       },
