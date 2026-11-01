@@ -779,7 +779,7 @@ export interface EmbeddingConfigState {
   model: string
   dimensions: number
   threads: number
-  llamacpp: { gpu: string; threads: number; contextSize: number }
+  llamacpp: { gpu: string; threads: number; contextSize: number; batchSize: number }
 }
 
 export interface EmbeddingRuntimeState {
@@ -800,7 +800,7 @@ export interface EmbeddingConfigUpdate {
   engine?: 'onnx' | 'llamacpp'
   model?: string
   threads?: number
-  llamacpp?: { gpu?: string; threads?: number; contextSize?: number }
+  llamacpp?: { gpu?: string; threads?: number; contextSize?: number; batchSize?: number }
 }
 
 export interface EmbeddingConfigNamespace {

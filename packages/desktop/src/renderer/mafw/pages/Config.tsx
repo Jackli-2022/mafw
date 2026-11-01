@@ -13,6 +13,7 @@ import { statusLabel, runtimeActivatable, parseAmbiguousCandidates, builtinMeta,
 import { runtimeCoverageSummary } from "./runtime-coverage"
 import { isNavKey, navItems, type NavKey } from "./config-nav"
 import { draftFromConfig, validateFokThresholds, toSearchOverrides, mergeSearchSection, RERANKER_OPTIONS } from "./search-behavior"
+import { embeddingDraftFromState, embeddingDraftDirty, embeddingUpdatePayload } from "./config-embedding"
 import { UsageProviders } from "../components/UsageProviders"
 import { ApprovalsSection } from "../components/ApprovalsSection"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
@@ -666,27 +667,14 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     try {
       const st = await window.api.mafw.embedding.get()
       setEmbState(st)
-      setEmbDraft({
-        provider: st?.current?.provider ?? "off",
-        engine: st?.current?.engine ?? "onnx",
-        gpu: st?.current?.llamacpp?.gpu ?? "cpu",
-        threads: st?.current?.threads ?? 2,
-        contextSize: st?.current?.llamacpp?.contextSize ?? 2048,
-      })
+      setEmbDraft(embeddingDraftFromState(st?.current))
     } catch (err: any) {
       setEmbError(err.message)
     }
   }
 
   function embDirty() {
-    const d = embDraft()
-    const c = embState()?.current
-    if (!d || !c) return false
-    return d.provider !== c.provider
-      || d.engine !== c.engine
-      || d.gpu !== (c.llamacpp?.gpu ?? "cpu")
-      || Number(d.threads) !== c.threads
-      || Number(d.contextSize) !== (c.llamacpp?.contextSize ?? 2048)
+    return embeddingDraftDirty(embDraft(), embState()?.current)
   }
 
   async function saveEmbeddingConfig() {
@@ -694,12 +682,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     if (!d) return
     setEmbSaving(true)
     try {
-      const res = await window.api.mafw.embedding.update({
-        provider: d.provider,
-        engine: d.engine,
-        threads: Number(d.threads),
-        llamacpp: { gpu: d.gpu, contextSize: Number(d.contextSize) },
-      })
+      const res = await window.api.mafw.embedding.update(embeddingUpdatePayload(d))
       setEmbState((prev: any) => ({ ...(prev ?? {}), current: res.current, runtime: res.runtime }))
       showToastV2({ description: res.note ? `已保存：${res.note}` : "嵌入配置已保存", duration: 4000 })
       // 后台回填进行中，稍后再拉一次覆盖率
@@ -1241,11 +1224,21 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                       </div>
                       <div class="mafw-config-field-group">
                         <label class="mafw-config-label">上下文窗口（token）</label>
-                        <span class="mafw-config-hint">需 ≥ 嵌入文本上限；显存由物理批大小决定（默认 256，取 ctx 与批的较小者），上下文只影响 KV 缓存</span>
+                        <span class="mafw-config-hint">需 ≥ 嵌入文本上限；上下文只影响 KV 缓存，显存主要由下面一行决定</span>
                         <TextInputV2
                           type="number"
                           value={String(embDraft().contextSize)}
                           onInput={e => setEmbDraft((p: any) => ({ ...p, contextSize: e.currentTarget.value }))}
+                          style={{ width: "100px" }}
+                        />
+                      </div>
+                      <div class="mafw-config-field-group">
+                        <label class="mafw-config-label">物理批大小（-b/-ub）</label>
+                        <span class="mafw-config-hint">显存占用随它线性增长：0.6B 模型上 2048→约 2.0GB、256→约 1.0GB。长文本仍会跨批切分，不会被截断；超过上下文时按上下文钳制</span>
+                        <TextInputV2
+                          type="number"
+                          value={String(embDraft().batchSize)}
+                          onInput={e => setEmbDraft((p: any) => ({ ...p, batchSize: e.currentTarget.value }))}
                           style={{ width: "100px" }}
                         />
                       </div>
