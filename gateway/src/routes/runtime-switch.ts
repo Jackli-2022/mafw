@@ -1,6 +1,6 @@
 import * as http from 'http';
 import { log } from '../core/utils/logger';
-import { AgentRuntime } from '../runtime/contract';
+import type { RuntimeFacade } from '../runtime/runtime-facade';
 import { RuntimePluginLoader } from '../runtime/loader';
 import type { RuntimeContractManifest } from '../runtime/contract-manifest-types';
 import type { RuntimeCoverage } from '../runtime/coverage';
@@ -17,7 +17,7 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 export interface RuntimeSwitchDeps {
   loader?: RuntimePluginLoader;
   persist: (overrides: Record<string, any>) => { changed: string[] };
-  getCurrent: () => AgentRuntime | null;
+  getCurrent: () => RuntimeFacade | null;
   /** Current runtime name (e.g. 'opencode' or plugin name). */
   runtimeName: () => string;
   /** Current runtime capabilities. */
@@ -25,9 +25,9 @@ export interface RuntimeSwitchDeps {
   /** Whether an env override (MAFW_RUNTIME_PLUGIN) is active. */
   envOverride: () => boolean;
   /** Create the runtime for the persisted config (reads config.runtime.plugin). */
-  createRuntime: () => Promise<AgentRuntime>;
+  createRuntime: () => Promise<RuntimeFacade>;
   /** Wire the new runtime into the gateway (client/caps/name/session) and re-subscribe events. */
-  onSwitched: (rt: AgentRuntime, prev: AgentRuntime | null) => Promise<void>;
+  onSwitched: (rt: RuntimeFacade, prev: RuntimeFacade | null) => Promise<void>;
   /** 未知事件遥测快照（per-source per-type 计数）；缺省空对象。 */
   unknownEvents?: () => Record<string, Record<string, number>>;
   /** 激活期"声明 vs 实现"校验记录（降级 + 警告）；缺省空数组。 */

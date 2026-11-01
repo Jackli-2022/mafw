@@ -122,7 +122,6 @@ import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
-import { wrapGlobalEventStream } from './runtime/event-mapper';
 import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/identity-registry';
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { withInstructionSync } from './runtime/instruction-wrapper';
@@ -224,9 +223,9 @@ import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MA
 import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './runtime/opencode-21-events';
 import { injectServeAuth } from './runtime/proxy-auth';
 import { serveAuthHeaders } from './runtime/serve-sidecar';
-import { wrapDialectEventStream } from './runtime/event-stream-wiring';
+import { createRuntimeFacade, type RuntimeFacade } from './runtime/runtime-facade';
 import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
-import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
+import { TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
  *  三原语是 assembler 内部入口类型：可校验、可映射，但不广播（有 handleRuntimeEvent 底线）。
@@ -501,7 +500,7 @@ class MafwScheduler {
   // private dashboard?: DashboardServer;
   private mcpEndpoint?: McpSSEEndpoint;
   private mcpStreamableEndpoint?: McpStreamableEndpoint;
-  private runtime: AgentRuntime | null = null;
+  private runtime: RuntimeFacade | null = null;
   /**
    * P4 shadow registry + P5 Wave 1 dispatch：catalog 全量登记（130 条，贡献 spec），
    * Wave 1 已 attach 的 22 条在请求链顶端优先 dispatch（见 startApiServer），
@@ -1324,12 +1323,9 @@ class MafwScheduler {
     const controller = new AbortController();
     this.eventStreamAbort = controller;
     try {
-      // 方言感知（重）接线：自适应 runtime（裸 opencode）在 serve 就绪后重探测
-      // （激活期 serve 未起，探测必然 fail-safe 落 @v1；此处是升级 @v2 的时机）；
-      // 无 resolveEventEntry 的 runtime 为幂等重包（同表重建，无叠加）。
-      if (this.runtime && (this.runtime as any).__mafwRawGlobalEvent) {
-        await wrapDialectEventStream(this.runtime);
-      }
+      // 方言感知（重）接线由 facade 在闭包内完成：RawRuntime 不出边界，
+      // 重探测/重包保持幂等，业务核心只继续消费同一个 canonical 流。
+      await this.runtime.rewireEvents();
       // Use /global/event (GlobalEvent = { directory, payload }) so we receive
       // events from ALL workspaces — /event only delivers the current
       // request-scoped workspace, missing sessions in other project dirs.
@@ -1681,7 +1677,7 @@ class MafwScheduler {
    * （loader 注册表成员，文件>包>内置统一优先级）；失败/缺失回退 opencode；
    * loader 未注册 opencode 时 direct import 安全网（不应发生）。
    */
-  private async createRuntime(sdkConfig: { baseUrl: string; directory?: string; headers: Record<string, string> }): Promise<AgentRuntime> {
+  private async createRuntime(sdkConfig: { baseUrl: string; directory?: string; headers: Record<string, string> }): Promise<RuntimeFacade> {
     const wanted = config.runtime?.plugin || 'opencode';
     const rt = await this.activatePluginRuntime(wanted, true);
     if (rt) return rt;
@@ -1711,21 +1707,24 @@ class MafwScheduler {
       declaredCapabilityKeys: Object.keys(fallbackRt.capabilities ?? {}),
     });
     await activateRuntimeTools(fallbackRt, 'builtin:opencode(direct)', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
-    wrapGlobalEventStream(fallbackRt, {
-      eventSource: OPENCODE_EVENT_SOURCE,
-      eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
-      transformEvent: OPENCODE_TRANSFORM_EVENT, // 终审 Important #2：@v1 identity 已排除 message.updated，缺转换器即全灭
-    }, (t) => CANONICAL_TYPE_SET.has(t), {
-      onUnmatched: (t) => this.recordTranslationDrop('opencode', t, 'unmatched'),
-      onSuppressed: (t) => this.recordTranslationDrop('opencode', t, 'suppressed'),
-      onTranslationError: (_raw, reason) => this.recordTranslationError('opencode', 'transformEvent', reason),
+    const wrappedFallback = this.wrapRuntimeIdentity(fallbackRt);
+    return createRuntimeFacade(wrappedFallback, {
+      entry: {
+        eventSource: OPENCODE_EVENT_SOURCE,
+        eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
+        transformEvent: OPENCODE_TRANSFORM_EVENT,
+      },
+      isCanonical: (t) => CANONICAL_TYPE_SET.has(t),
+      hooks: {
+        onUnmatched: (t) => this.recordTranslationDrop('opencode', t, 'unmatched'),
+        onSuppressed: (t) => this.recordTranslationDrop('opencode', t, 'suppressed'),
+        onTranslationError: (_raw, reason) => this.recordTranslationError('opencode', 'transformEvent', reason),
+      },
     });
-    wrapToolPartAssembly(fallbackRt);
-    return this.wrapRuntimeIdentity(fallbackRt);
   }
 
   /** 单激活路径（D 收敛）：plugin/builtin/package 同一序列。fatal=true 时校验失败抛错触发回退。 */
-  private async activatePluginRuntime(name: string, fatal: boolean): Promise<AgentRuntime | null> {
+  private async activatePluginRuntime(name: string, fatal: boolean): Promise<RuntimeFacade | null> {
     const plugin = this.runtimeLoader?.get(name);
     if (!plugin) return null;
     try {
@@ -1773,23 +1772,25 @@ class MafwScheduler {
       });
       // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
       await activateRuntimeTools(rt, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
-      // 方言感知接线：所有 runtime 的原生流过同一 wrap 序列——
-      // 映射表（差异/drop/identity 行）→ transformEvent（守卫）→ 拦截+计数。
-      // resolveEventEntry（自适应 opencode 裸名）存在时经探测覆盖静态表；
-      // assembler 合帧在 mapper 之后（wrapDialectEventStream 内部序列）。
-      await wrapDialectEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), {
-        onUnmatched: (t) => this.recordTranslationDrop(rt.name, t, 'unmatched'),
-        onSuppressed: (t) => this.recordTranslationDrop(rt.name, t, 'suppressed'),
-        onTranslationError: (_raw, reason) => this.recordTranslationError(rt.name, 'transformEvent', reason),
-        onNoMappings: () => {
-          log.warn(
-            `[Runtime] '${rt.name}' declares no event mappings/transformEvent — ` +
-            `eventStream should have been downgraded`,
-          );
+      log.info(`[Runtime] using runtime '${rt.name}' (${name}, capabilities: ${JSON.stringify(rt.capabilities)})`);
+      const wrapped = this.wrapRuntimeIdentity(rt);
+      // Runtime Ingress：翻译、合帧与 RawRuntime 全部留在 facade 闭包内；
+      // 业务核心从返回值起只看到 canonical 面。
+      return createRuntimeFacade(wrapped, {
+        entry: plugin,
+        isCanonical: (t) => CANONICAL_TYPE_SET.has(t),
+        hooks: {
+          onUnmatched: (t) => this.recordTranslationDrop(rt.name, t, 'unmatched'),
+          onSuppressed: (t) => this.recordTranslationDrop(rt.name, t, 'suppressed'),
+          onTranslationError: (_raw, reason) => this.recordTranslationError(rt.name, 'transformEvent', reason),
+          onNoMappings: () => {
+            log.warn(
+              `[Runtime] '${rt.name}' declares no event mappings/transformEvent — ` +
+              `eventStream should have been downgraded`,
+            );
+          },
         },
       });
-      log.info(`[Runtime] using runtime '${rt.name}' (${name}, capabilities: ${JSON.stringify(rt.capabilities)})`);
-      return this.wrapRuntimeIdentity(rt);
     } catch (err: any) {
       log.warn(`[Runtime] '${name}' createRuntime failed: ${err.message}${fatal ? ' — falling back' : ''}`);
       return null;
@@ -2284,7 +2285,7 @@ class MafwScheduler {
         }
         return this.createRuntime(sdkConfig);
       },
-      onSwitched: async (rt: AgentRuntime, prev: AgentRuntime | null) => {
+      onSwitched: async (rt: RuntimeFacade, prev: RuntimeFacade | null) => {
         this.runtime = rt;
         wirePiPermissionEvaluator(rt, this.approvalPolicy);
         wirePiCognition(rt, this.cognitionGate);
