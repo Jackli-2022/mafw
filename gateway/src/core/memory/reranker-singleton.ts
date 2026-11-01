@@ -14,6 +14,11 @@ export function getReranker(): Reranker | null {
   if (name === 'off') return null;
   const key = `${name}:${config.search.rerankerGpu}:${config.search.rerankerBatchSize}`;
   if (cached?.key === key) return cached.r;
+  // Config hot-reload replaced the instance — without this the previous
+  // llama-server keeps running (one orphan per change, ~1.1GB VRAM each).
+  try {
+    (cached?.r as any)?.killServer?.();
+  } catch { /* best effort */ }
   try {
     const r = createReranker(name, config.search.rerankWeights, {
       gpu: config.search.rerankerGpu,

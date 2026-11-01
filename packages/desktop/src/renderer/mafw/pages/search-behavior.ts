@@ -12,9 +12,15 @@ export interface SearchBehaviorDraft {
   neighborsPresentation: boolean
   /** off | heuristic | llamacpp */
   reranker: string
+  /** string on purpose (same reason as probLow): the batch field is free-form */
+  rerankerBatchSize: string
 }
 
+import { normalizeBatchSize } from './config-embedding'
+
 export const RERANKER_OPTIONS = ['off', 'heuristic', 'llamacpp'] as const
+/** Gateway default for search.rerankerBatchSize. */
+export const DEFAULT_RERANKER_BATCH_SIZE = 512
 
 const num = (v: string): number | null => {
   if (!v.trim()) return null
@@ -47,6 +53,10 @@ export function draftFromConfig(cfg: any): SearchBehaviorDraft {
     snapshotEnabled: snap.enabled === true,
     neighborsPresentation: tn.presentation === true,
     reranker: RERANKER_OPTIONS.includes(search.reranker) ? search.reranker : 'llamacpp',
+    rerankerBatchSize:
+      search.rerankerBatchSize !== undefined
+        ? String(search.rerankerBatchSize)
+        : String(DEFAULT_RERANKER_BATCH_SIZE),
   }
 }
 
@@ -61,6 +71,7 @@ export function toSearchOverrides(d: SearchBehaviorDraft): {
     snapshot?: { enabled: boolean }
     temporalNeighbors?: { enabled: boolean; presentation: boolean }
     reranker?: string
+    rerankerBatchSize?: number
   }
 } {
   const lo = num(d.probLow) ?? 0.2
@@ -71,6 +82,7 @@ export function toSearchOverrides(d: SearchBehaviorDraft): {
       snapshot: { enabled: d.snapshotEnabled },
       temporalNeighbors: { enabled: d.neighborsPresentation, presentation: d.neighborsPresentation },
       reranker: d.reranker,
+      rerankerBatchSize: normalizeBatchSize(d.rerankerBatchSize, DEFAULT_RERANKER_BATCH_SIZE),
     },
   }
 }

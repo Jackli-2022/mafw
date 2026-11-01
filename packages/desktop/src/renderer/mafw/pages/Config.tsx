@@ -1347,6 +1347,18 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         disabled={searchSaving()}
                       />
                     </div>
+                    <Show when={searchDraft().reranker === "llamacpp"}>
+                      <div class="mafw-config-field-group">
+                        <label class="mafw-config-label">重排批大小（-b/-ub）</label>
+                        <span class="mafw-config-hint">决定重排 sidecar 的显存占用：ctx 4096 时批 4096→约 3.4GB、512→约 1.1GB；上下文不变，长候选仍完整参与打分。保存后旧 sidecar 自动退出</span>
+                        <TextInputV2
+                          type="number"
+                          value={searchDraft().rerankerBatchSize}
+                          onInput={e => setSearchDraft((p: any) => ({ ...p, rerankerBatchSize: e.currentTarget.value }))}
+                          style={{ width: "100px" }}
+                        />
+                      </div>
+                    </Show>
                     <div style={{ "margin-top": "8px" }}>
                       <ButtonV2 variant="contrast" size="small" onClick={saveSearchDraft} disabled={searchSaving() || !!fokValidationError()}>
                         {searchSaving() ? "保存中…" : "保存"}

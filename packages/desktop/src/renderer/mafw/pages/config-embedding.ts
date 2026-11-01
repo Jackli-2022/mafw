@@ -97,9 +97,9 @@ export function embeddingUpdatePayload(draft: EmbeddingDraft): EmbeddingUpdatePa
   };
 }
 
-/** Clamp to the gateway's accepted range; NaN/empty falls back to the default. */
-export function normalizeBatchSize(raw: number | string): number {
+/** Clamp to the gateway's accepted range; NaN/empty falls back to `fallback`. */
+export function normalizeBatchSize(raw: number | string, fallback: number = DEFAULT_BATCH_SIZE): number {
   const n = typeof raw === 'string' ? Number(raw.trim()) : raw;
-  if (!Number.isFinite(n)) return DEFAULT_BATCH_SIZE;
+  if (!Number.isFinite(n) || n === 0) return fallback;
   return Math.min(BATCH_MAX, Math.max(BATCH_MIN, Math.round(n)));
 }

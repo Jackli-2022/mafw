@@ -35,6 +35,7 @@ describe('draftFromConfig', () => {
         snapshot: { enabled: true },
         temporalNeighbors: { presentation: true },
         reranker: 'llamacpp',
+        rerankerBatchSize: 256,
       },
     })
     expect(d).toEqual({
@@ -44,6 +45,7 @@ describe('draftFromConfig', () => {
       snapshotEnabled: true,
       neighborsPresentation: true,
       reranker: 'llamacpp',
+      rerankerBatchSize: '256',
     })
   })
   test('empty config → safe defaults (gates off, thresholds shown as defaults)', () => {
@@ -54,6 +56,7 @@ describe('draftFromConfig', () => {
     expect(d.probLow).toBe('0.2')
     expect(d.probHigh).toBe('0.6')
     expect(d.reranker).toBe('llamacpp')
+    expect(d.rerankerBatchSize).toBe('512')
   })
 })
 
@@ -66,11 +69,24 @@ describe('toSearchOverrides', () => {
       snapshotEnabled: true,
       neighborsPresentation: false,
       reranker: 'heuristic',
+      rerankerBatchSize: '128',
     })
     expect(o.search.fok).toEqual({ enabled: true, probLow: 0.25, probHigh: 0.65 })
     expect(o.search.snapshot).toEqual({ enabled: true })
     expect(o.search.temporalNeighbors).toEqual({ enabled: false, presentation: false })
     expect(o.search.reranker).toBe('heuristic')
+    expect(o.search.rerankerBatchSize).toBe(128)
+  })
+
+  test('reranker batch size is clamped to the gateway range', () => {
+    const build = (raw: string) => toSearchOverrides({
+      fokEnabled: false, probLow: '0.2', probHigh: '0.6',
+      snapshotEnabled: false, neighborsPresentation: false,
+      reranker: 'llamacpp', rerankerBatchSize: raw,
+    }).search.rerankerBatchSize
+    expect(build('8')).toBe(32)
+    expect(build('99999')).toBe(32768)
+    expect(build('abc')).toBe(512)
   })
 })
 

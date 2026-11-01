@@ -56,8 +56,12 @@ describe('config embedding draft', () => {
     assert.equal(normalizeBatchSize('nope'), DEFAULT_BATCH_SIZE);
   });
 
-  it('narrows unknown provider/engine ids to the safe default', () => {
-    const payload = embeddingUpdatePayload({
+  it('accepts a caller-specific fallback for other sidecars', () => {
+    assert.equal(normalizeBatchSize('nope', 512), 512);
+    assert.equal(normalizeBatchSize('', 512), 512);
+  });
+
+  it('narrows unknown provider/engine ids to the safe default', () => {    const payload = embeddingUpdatePayload({
       provider: 'weird',
       engine: 'weird',
       gpu: 'cpu',
