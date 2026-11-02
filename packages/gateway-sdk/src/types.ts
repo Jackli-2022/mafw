@@ -867,6 +867,7 @@ export interface GoalTimeline {
     /** W1 计划审阅状态（泳道「待批准」徽标数据源）。 */
     planReview?: 'auto' | 'manual'
     planApproval?: {
+      id?: string
       status: 'pending' | 'approved' | 'rejected'
       feedback?: string
       decidedAt?: string
@@ -882,6 +883,7 @@ export interface GoalTimeline {
 export interface GoalPlanInfo {
   planReview: 'auto' | 'manual'
   planApproval: {
+    id?: string
     status: 'pending' | 'approved' | 'rejected'
     feedback?: string
     decidedAt?: string
@@ -906,10 +908,10 @@ export interface GoalsNamespace {
   timeline(goalId: string): Promise<GoalTimeline>
   /** W1 计划审阅：当前计划内容 + 审批状态。 */
   plan(goalId: string): Promise<GoalPlanInfo>
-  /** W1 批准当前计划（解锁驻留，进 execute）。非 pending/终态 409。 */
-  approvePlan(goalId: string): Promise<{ success: boolean }>
-  /** W1 驳回当前计划（feedback 注入下一版 plan）。非 pending/终态 409。 */
-  rejectPlan(goalId: string, feedback: string): Promise<{ success: boolean }>
+  /** W1 批准当前计划（解锁驻留，进 execute）。必须携带当前一次性 approvalId。 */
+  approvePlan(goalId: string, approvalId: string): Promise<{ success: boolean }>
+  /** W1 驳回当前计划（feedback 注入下一版 plan）。必须携带当前一次性 approvalId。 */
+  rejectPlan(goalId: string, approvalId: string, feedback: string): Promise<{ success: boolean }>
   /** 节点重跑（execute 需 confirm）。 */
   retryNode(goalId: string, runId: number, opts?: { confirm?: boolean }): Promise<{ success: boolean; runId: number }>
 }
@@ -1023,7 +1025,31 @@ export type PodStatus = 'active' | 'idle' | 'paused' | 'archived'
 export type PodMemberRole = 'lead' | 'builder' | 'reviewer' | 'curator'
 export type PodMemberStatus = 'available' | 'working' | 'waiting' | 'sleeping' | 'retired'
 export type PodGoalStatus = 'queued' | 'active' | 'done' | 'aborted'
-export type PodTaskStatus = 'pending' | 'in_progress' | 'blocked' | 'review' | 'done' | 'failed' | 'reopened'
+export type PodTaskStatus = 'pending' | 'in_progress' | 'blocked' | 'review' | 'done' | 'failed' | 'skipped' | 'reopened'
+export type PodGoalVerdict = 'PASS' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED'
+export type PodQueueReason = 'active_goal' | 'paused' | 'archived' | 'budget' | 'state_error'
+export type PodTaskKind = 'plan' | 'note' | 'external_request'
+export type PodGoalStageOwner = 'person' | 'team' | 'system'
+export type PodGoalStageKind =
+  | 'plan_approval' | 'question' | 'blocked' | 'queued'
+  | 'working' | 'waiting' | 'ended'
+export interface PodGoalStage {
+  owner: PodGoalStageOwner
+  kind: PodGoalStageKind
+  queueReason?: PodQueueReason
+  action?: {
+    type: 'open_plan_review' | 'open_question' | 'open_goal' | 'open_result'
+    goalId: string
+    questionId?: string
+  }
+}
+export interface PodAttentionItem {
+  id: string
+  goalId: string
+  kind: 'plan_approval' | 'question' | 'blocked'
+  title: string
+  action: NonNullable<PodGoalStage['action']>
+}
 
 export interface Pod {
   id: string
@@ -1055,6 +1081,11 @@ export interface PodGoal {
   podId: string
   goalId: string
   status: PodGoalStatus
+  title: string
+  phase: string | null
+  verdict: PodGoalVerdict | null
+  stage: PodGoalStage
+  resultReady: boolean
   enqueuedAt: string
   startedAt: string | null
   endedAt: string | null
@@ -1066,6 +1097,7 @@ export interface PodTask {
   goalId: string | null
   sourceKey: string
   externalTaskId: string | null
+  kind: PodTaskKind
   title: string
   description: string | null
   ownerMemberId: string | null
@@ -1106,10 +1138,50 @@ export interface PodSession {
   endedAt: string | null
 }
 
+export interface PodMessageDelivery {
+  messageId: string
+  podId: string
+  memberId: string
+  deliveredAt: string | null
+  deliveredSessionId: string | null
+  status: 'pending' | 'delivered' | 'failed'
+  attempts: number
+  lastError: string | null
+  nextRetryAt: string | null
+}
+
+export interface PodGoalResult {
+  goalId: string
+  verdict: PodGoalVerdict | null
+  resultReady: boolean
+  goalAcceptance: string[]
+  tasks: Array<{ taskId: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
+  reviewFeedback: string
+  receipt: unknown | null
+  artifacts: string[]
+}
+
+export interface PodCreateGoalInput {
+  title: string
+  objective: string
+  acceptance?: string[]
+  boundaries?: string[]
+  planReview?: 'auto' | 'manual'
+}
+
+export interface PodCreateGoalResult {
+  goalId: string
+  status: 'started' | 'queued'
+  queueReason: PodQueueReason | null
+  goal: PodGoal
+}
+
 export interface PodDetail {
   pod: Pod
   members: PodMember[]
   goals: PodGoal[]
+  attention: PodAttentionItem[]
+  messageHealth: PodMessageDelivery[]
   tasks: PodTask[]
   sessions: PodSession[]
 }
@@ -1123,6 +1195,11 @@ export interface PodNamespace {
   create(projectID: string): Promise<PodDetail>
   get(podID: string): Promise<PodDetail>
   update(podID: string, body: { status: PodStatus }): Promise<PodDetail>
+  createGoal(podID: string, body: PodCreateGoalInput): Promise<PodCreateGoalResult>
+  result(podID: string, goalID: string): Promise<PodGoalResult>
+  cancelGoal(podID: string, goalID: string): Promise<{ goal: PodGoal }>
+  pause(podID: string): Promise<PodDetail>
+  resume(podID: string): Promise<PodDetail>
   listTasks(podID: string): Promise<{ items: PodTask[] }>
   createTask(podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string; plan?: boolean; waveId?: string; acceptance?: string[] }): Promise<{ task: PodTask }>
   deleteTask(podID: string, taskID: string, body?: { actorSessionID?: string }): Promise<{ deleted: { goalId: string | null; externalTaskId: string | null } }>

@@ -187,8 +187,8 @@ export type MafwAPI = {
     respondQuestion: (goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }) => Promise<{ status: string }>
     timeline: (id: string) => Promise<GoalTimeline>
     plan: (id: string) => Promise<GoalPlanInfo>
-    approvePlan: (goalId: string) => Promise<{ success: boolean }>
-    rejectPlan: (goalId: string, feedback: string) => Promise<{ success: boolean }>
+    approvePlan: (goalId: string, approvalId: string) => Promise<{ success: boolean }>
+    rejectPlan: (goalId: string, approvalId: string, feedback: string) => Promise<{ success: boolean }>
     retryNode: (goalId: string, runId: number, opts?: { confirm?: boolean }) => Promise<{ success: boolean; runId: number }>
   }
 

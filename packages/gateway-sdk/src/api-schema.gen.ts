@@ -2433,6 +2433,38 @@ export interface paths {
         };
         get: operations["pods.goals"];
         put?: never;
+        post: operations["pods.goals.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/goals/{goalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["pods.goals.cancel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/goals/{goalId}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["pods.goals.result"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -6789,6 +6821,68 @@ export interface operations {
             header?: never;
             path: {
                 podId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
             };
             cookie?: never;
         };

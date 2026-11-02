@@ -11,6 +11,7 @@ import {
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
   PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus, PodDeliveryState,
+  PodCreateGoalInput, PodCreateGoalResult, PodGoalResult,
   SessionConfigState, SessionConfigCategory,
   MethodNotSupportedError,
 } from './types'
@@ -1037,17 +1038,17 @@ export class MafwClient implements IMafwClient {
       return this.request<GoalPlanInfo>(`/api/goals/${encodeURIComponent(goalId)}/plan`)
     },
 
-    approvePlan: async (goalId: string): Promise<{ success: boolean }> => {
+    approvePlan: async (goalId: string, approvalId: string): Promise<{ success: boolean }> => {
       return this.request<{ success: boolean }>(
         `/api/goals/${encodeURIComponent(goalId)}/plan-approval`,
-        { method: 'POST', body: JSON.stringify({ approve: true }) },
+        { method: 'POST', body: JSON.stringify({ approve: true, approvalId }) },
       )
     },
 
-    rejectPlan: async (goalId: string, feedback: string): Promise<{ success: boolean }> => {
+    rejectPlan: async (goalId: string, approvalId: string, feedback: string): Promise<{ success: boolean }> => {
       return this.request<{ success: boolean }>(
         `/api/goals/${encodeURIComponent(goalId)}/plan-approval`,
-        { method: 'POST', body: JSON.stringify({ approve: false, feedback }) },
+        { method: 'POST', body: JSON.stringify({ approve: false, approvalId, feedback }) },
       )
     },
 
@@ -1248,6 +1249,32 @@ export class MafwClient implements IMafwClient {
       this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
+      }),
+
+    createGoal: async (podID: string, body: PodCreateGoalInput): Promise<PodCreateGoalResult> =>
+      this.request<PodCreateGoalResult>(`/api/pods/${encodeURIComponent(podID)}/goals`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    result: async (podID: string, goalID: string): Promise<PodGoalResult> =>
+      this.request<PodGoalResult>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/result`),
+
+    cancelGoal: async (podID: string, goalID: string): Promise<{ goal: PodGoal }> =>
+      this.request<{ goal: PodGoal }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}`, {
+        method: 'DELETE',
+      }),
+
+    pause: async (podID: string): Promise<PodDetail> =>
+      this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'paused' }),
+      }),
+
+    resume: async (podID: string): Promise<PodDetail> =>
+      this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'active' }),
       }),
 
     listTasks: async (podID: string): Promise<{ items: PodTask[] }> =>

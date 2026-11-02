@@ -3656,6 +3656,89 @@
             "description": "OK"
           }
         }
+      },
+      "post": {
+        "operationId": "pods.goals.create",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}": {
+      "delete": {
+        "operationId": "pods.goals.cancel",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/result": {
+      "get": {
+        "operationId": "pods.goals.result",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/pods/{podId}/sessions/{sessionId}/transcript": {

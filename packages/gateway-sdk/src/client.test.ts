@@ -1267,6 +1267,30 @@ test("pod messages/wake/sleep/cost/goals/transcript hit routes", async () => {
   expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/sessions/s1/transcript", expect.anything())
 })
 
+test("pod createGoal/result/cancelGoal/pause/resume and goal approvals hit v3 routes", async () => {
+  const c = new MafwClient("http://gw:3000")
+  fetchMock.mockResolvedValue(okJson({}))
+  await c.pod.createGoal("pod_1", { title: "Fix", objective: "Truthful", acceptance: ["tests pass"], planReview: "manual" })
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/goals", expect.objectContaining({ method: "POST" }))
+  expect(JSON.parse((fetchMock.mock.calls.at(-1)! as any[])[1].body)).toMatchObject({
+    title: "Fix", objective: "Truthful", acceptance: ["tests pass"], planReview: "manual",
+  })
+  await c.pod.result("pod_1", "g1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/goals/g1/result", expect.anything())
+  await c.pod.cancelGoal("pod_1", "g2")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/goals/g2", expect.objectContaining({ method: "DELETE" }))
+  await c.pod.pause("pod_1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1", expect.objectContaining({ method: "PATCH" }))
+  await c.pod.resume("pod_1")
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1", expect.objectContaining({ method: "PATCH" }))
+  await c.goals.approvePlan("g1", "pa_123")
+  expect(JSON.parse((fetchMock.mock.calls.at(-1)! as any[])[1].body)).toEqual({ approve: true, approvalId: "pa_123" })
+  await c.goals.rejectPlan("g1", "pa_123", "too coarse")
+  expect(JSON.parse((fetchMock.mock.calls.at(-1)! as any[])[1].body)).toEqual({
+    approve: false, approvalId: "pa_123", feedback: "too coarse",
+  })
+})
+
 test("pod.lookup uses the non-creating query and readMemoryFile reads one file", async () => {
   const c = new MafwClient("http://gw:3000")
   fetchMock.mockResolvedValue(okJson({ pod: { id: "pod_1" } }))
