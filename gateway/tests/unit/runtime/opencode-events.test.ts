@@ -237,7 +237,7 @@ describe('OPENCODE_V2_EVENT_MAPPINGS（@v2 混合消费表——next 族为主 +
   it('⑪ next 孤儿族 drop（F6 处置）', () => {
     for (const t of [
       'session.next.retried', 'session.next.moved', 'session.next.agent.switched', 'session.next.model.switched',
-      'session.next.context.updated', 'session.next.synthetic', 'session.next.shell.started', 'session.next.shell.ended',
+      'session.next.context.updated', 'session.next.shell.started', 'session.next.shell.ended',
       'session.next.text.started', 'session.next.text.ended', 'session.next.reasoning.started', 'session.next.reasoning.ended',
       'session.next.step.started', 'session.next.step.ended', 'session.next.step.failed',
       'session.next.compaction.delta', 'session.next.revert.staged', 'session.next.revert.cleared', 'session.next.revert.committed',
@@ -247,6 +247,28 @@ describe('OPENCODE_V2_EVENT_MAPPINGS（@v2 混合消费表——next 族为主 +
       expect(applyEventMappings(raw(t, { sessionID: 's1' }), ENTRY_V2, isCanonicalAll, { onSuppressed: (x) => suppressed.push(x) })).toEqual([]);
       expect(suppressed).toEqual([t]);
     }
+  });
+
+  it('⑪b session.next.synthetic 有 canonical 家：shell/subagent 生命周期 → background.job.updated', () => {
+    // 生产接线同时挂 transformEvent（index.ts/opencode-runtime.ts 的 ENTRY 形态）
+    const ENTRY_V2_FULL = { ...ENTRY_V2, transformEvent: OPENCODE_TRANSFORM_EVENT };
+    const [shell] = applyEventMappings(
+      raw('session.next.synthetic', {
+        sessionID: 's1',
+        metadata: { source: 'shell', shellID: 'sh_1', status: 'completed', exitCode: 0 },
+      }),
+      ENTRY_V2_FULL, isCanonicalAll,
+    );
+    expect(shell.payload.type).toBe('background.job.updated');
+    expect(shell.payload.properties.job).toMatchObject({ id: 'sh_1', source: 'runtime-shell', status: 'completed' });
+
+    // 非 background synthetic 仍是声明式压制（维护原「不产事件」语义）
+    const suppressed: string[] = [];
+    expect(applyEventMappings(
+      raw('session.next.synthetic', { sessionID: 's1', metadata: { source: 'system' } }),
+      ENTRY_V2_FULL, isCanonicalAll, { onSuppressed: (x) => suppressed.push(x) },
+    )).toEqual([]);
+    expect(suppressed).toEqual(['session.next.synthetic']);
   });
 
   it('⑫ 非 next 的 legacy 照常消费（idle/todo/created identity——混合表的 legacy 侧）', () => {

@@ -219,6 +219,15 @@ export function createMafwApi(): MafwAPI {
       output: (id, query) => invoke("tasks", "output", id, query),
     },
 
+    // Task 3：中性 background jobs（preload 同名通道；main 端解析 "jobs.*" 嵌套方法）
+    background: {
+      jobs: {
+        list: (sessionID) => invoke("background", "jobs.list", sessionID),
+        output: (sessionID, id, cursor) => invoke("background", "jobs.output", sessionID, id, cursor),
+        cancel: (sessionID, id) => invoke("background", "jobs.cancel", sessionID, id),
+      },
+    },
+
     pod: {
       ensure: (projectID) => invoke("pod", "ensure", projectID),
       lookup: (projectID) => invoke("pod", "lookup", projectID),

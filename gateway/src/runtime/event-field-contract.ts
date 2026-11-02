@@ -89,6 +89,17 @@ export function checkEventFields(evt: RawEvt | null | undefined): string[] {
       }
       if (!sid) warnings.push(`'${type}' without sessionID — card cannot be attached to a session`);
       break;
+    case 'background.job.updated': {
+      // Task 3：job 快照是唯一载荷（id/source/status/sessionID 是消费方最低要求）
+      const job = props?.job;
+      if (!job || typeof job !== 'object') {
+        warnings.push('background.job.updated without properties.job — background dock cannot update the row');
+        break;
+      }
+      if (!job.id) warnings.push('background.job.updated without job.id — consumer cannot dedupe the row');
+      if (!job.sessionID) warnings.push('background.job.updated without job.sessionID — row cannot be attached to a session');
+      break;
+    }
     default:
       break;
   }

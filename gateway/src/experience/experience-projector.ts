@@ -87,6 +87,14 @@ function nonEmpty(value: Record<string, unknown> | undefined): Record<string, un
   return value && Object.keys(value).length > 0 ? value : undefined;
 }
 
+function semanticSurfaceAvailable(access: RuntimeAccess | null, id: string): boolean {
+  try {
+    return !!access?.can(id);
+  } catch {
+    return false;
+  }
+}
+
 function semanticsFor(
   id: ExperienceActionId,
   access: RuntimeAccess | null,
@@ -117,8 +125,18 @@ function semanticsFor(
     case 'mcp.manage':
       return nonEmpty(surfaceSemantics(access, 'mcp.list'));
     case 'background.jobs':
-      // MAFW 本地任务始终可用；runtime shell / 子代理来源随中性 jobs 面扩展。
-      return { sources: ['mafw-task'] };
+      // MAFW 本地任务始终可用；其余来源按 runtime surface 真实点亮（三源统一，Task 3）：
+      //  - subagent：会话子列表（runtime.session.children）
+      //  - runtime-shell：runtime 拥有 shell 面（生命周期经事件流上报 → background.job.updated）
+      // verbs 是该 façade 的稳定动作集，`session.background` 仍是独立动作（把工具转后台）。
+      return {
+        sources: [
+          'mafw-task',
+          ...(semanticSurfaceAvailable(access, 'session.children') ? ['subagent'] : []),
+          ...(semanticSurfaceAvailable(access, 'session.shell') ? ['runtime-shell'] : []),
+        ],
+        verbs: ['list', 'output', 'cancel'],
+      };
     case 'terminal.attach':
       return nonEmpty(surfaceSemantics(access, 'terminal.pty'));
     default:

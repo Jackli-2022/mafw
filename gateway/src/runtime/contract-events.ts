@@ -16,6 +16,11 @@ const GATEWAY_PRODUCED = new Set([
   'task.updated', 'pod.updated', 'trajectory.event', 'trajectory.turn', 'permission_mode', 'session.commands',
 ]);
 
+/** 同域双方产出：runtime 生命周期经 Ingress 翻译，gateway 任务/取消变更直接广播。 */
+const DUAL_PRODUCED: Record<string, ContractEvent['producers']> = {
+  'background.job.updated': ['gateway', 'runtime'],
+};
+
 function familyOf(type: string): EventFamily {
   if (type.startsWith('turn.')) return 'lifecycle';
   if (type === 'session.compacting' || type === 'session.compacted') return 'compaction';
@@ -50,6 +55,8 @@ function requiredFieldsOf(type: string): string[] {
     case 'permission.asked':
     case 'question.asked':
       return ['requestId', 'sessionID'];
+    case 'background.job.updated':
+      return ['job'];
     default:
       return [];
   }
@@ -77,7 +84,7 @@ export function buildEventsSection(): ContractEvent[] {
     family: familyOf(type),
     ...(TERMINAL.has(type) ? { terminal: true } : {}),
     requiredFields: requiredFieldsOf(type),
-    producers: GATEWAY_PRODUCED.has(type) ? ['gateway'] : ['runtime'],
+    producers: DUAL_PRODUCED[type] ?? (GATEWAY_PRODUCED.has(type) ? ['gateway'] : ['runtime']),
     consumers: consumersOf(type),
     ...(conformanceOf(type) ? { conformance: conformanceOf(type) } : {}),
   }));

@@ -2,6 +2,9 @@
 // Core types (aligned with @opencode-ai/sdk subset)
 // ============================================================
 
+// Task 3：background jobs 复用 Task 1 的 View DTO（单一事实源在 view-dto.ts）
+import type { MafwBackgroundJob } from './view-dto'
+
 export interface Session {
   id: string
   projectID: string
@@ -1021,6 +1024,27 @@ export interface TasksNamespace {
   output(id: string, query?: { cursor?: number; limit?: number }): Promise<TaskOutput>
 }
 
+/**
+ * 中性后台作业（Task 3）：TaskService / runtime shell / 子代理三源合并后的只读视图。
+ * 状态机与游标语义由 MAFW 定义（`MafwBackgroundJob` 见 view-dto）。
+ */
+export interface MafwBackgroundOutput {
+  /** 下一次读取的起点（按字节推进）。 */
+  cursor: number
+  data: string
+  truncated: boolean
+}
+
+export interface BackgroundJobsNamespace {
+  list(sessionID: string): Promise<MafwBackgroundJob[]>
+  output(sessionID: string, id: string, cursor?: number): Promise<MafwBackgroundOutput>
+  cancel(sessionID: string, id: string): Promise<MafwBackgroundJob>
+}
+
+export interface BackgroundNamespace {
+  jobs: BackgroundJobsNamespace
+}
+
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived'
 export type PodMemberRole = 'lead' | 'builder' | 'reviewer' | 'curator'
 export type PodMemberStatus = 'available' | 'working' | 'waiting' | 'sleeping' | 'retired'
@@ -1179,6 +1203,8 @@ export interface PodCreateGoalResult {
 export interface PodDetail {
   pod: Pod
   members: PodMember[]
+  /** false when an older gateway omits the v3 stage/attention projection. */
+  stageSupported?: boolean
   goals: PodGoal[]
   attention: PodAttentionItem[]
   messageHealth: PodMessageDelivery[]
@@ -1203,8 +1229,6 @@ export interface PodNamespace {
   listTasks(podID: string): Promise<{ items: PodTask[] }>
   createTask(podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string; plan?: boolean; waveId?: string; acceptance?: string[] }): Promise<{ task: PodTask }>
   deleteTask(podID: string, taskID: string, body?: { actorSessionID?: string }): Promise<{ deleted: { goalId: string | null; externalTaskId: string | null } }>
-  /** false when an older gateway omits the v3 stage/attention projection. */
-  stageSupported?: boolean
   updateTask(podID: string, taskID: string, body: { status?: PodTaskStatus; ownerMemberId?: string; title?: string; acceptance?: string[]; actorSessionID?: string }): Promise<{ task: PodTask }>
   listMessages(podID: string): Promise<{ items: PodMessage[] }>
   sendMessage(podID: string, body: { fromMemberId?: string; toMemberId?: string; kind: 'note'|'request'|'review'|'decision'|'escalation'; body: string; actorSessionID?: string; notify?: boolean }): Promise<{ message: PodMessage; delivery?: PodDeliveryState }>
@@ -1271,6 +1295,8 @@ export interface MafwClient {
   approvals: ApprovalsNamespace
   questions: QuestionsNamespace
   tasks: TasksNamespace
+  /** Task 3：三源统一的后台作业 façade（`background.jobs.list/output/cancel`）。 */
+  background: BackgroundNamespace
   pod: PodNamespace
   permissions: PermissionsNamespace
   providers: ProvidersNamespace

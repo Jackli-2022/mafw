@@ -20,6 +20,8 @@
  */
 import { canonicalIdentity } from './event-mapper';
 import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
+import { backgroundJobEvent, backgroundJobFromSynthetic } from '../core/background/background-jobs';
+import type { RawRuntimeEvent } from './normalize';
 
 /** opencode 原生事件信封：GlobalEvent { directory, payload: { type, properties, sessionID? } } */
 export const OPENCODE_EVENT_SOURCE: EventSourceShape = {
@@ -172,7 +174,7 @@ export const OPENCODE_V2_EVENT_MAPPINGS: EventMapping[] = [
   ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
   // ---- next 孤儿族 drop（F6 处置：本期无 canonical 家） ----
   ...([
-    'session.next.prompt.admitted', 'session.next.context.updated', 'session.next.synthetic',
+    'session.next.prompt.admitted', 'session.next.context.updated',
     'session.next.moved', 'session.next.agent.switched', 'session.next.model.switched',
     'session.next.retried',
     'session.next.shell.started', 'session.next.shell.ended',
@@ -210,9 +212,22 @@ export const OPENCODE_V2_EVENT_MAPPINGS: EventMapping[] = [
  * info 字段全量展开为 message 值；spread 未来防漏，字段枚举不可维护）。
  * identity 行已排除 message.updated（映射优先级在前会拦截 transform）。
  * SSE wire 出口经 event-broadcast → toWireEventPayload 还原 {info}（桌面零改动）。
+ *
+ * Task 3 追加：`session.next.synthetic` 的 shell/subagent 生命周期 → canonical
+ * `background.job.updated`（job 快照），不再以 chat message 形态出现。
+ * 非 background synthetic 返回 undefined = 声明式压制（与原 drop 行等价）。
  */
 export const OPENCODE_TRANSFORM_EVENT: TransformEventFn = (event: any) => {
   const t = event?.payload?.type;
+  if (t === 'session.next.synthetic') {
+    const props = event?.payload?.properties ?? {};
+    const sid = event?.sessionID ?? event?.payload?.sessionID ?? props?.sessionID;
+    const job = backgroundJobFromSynthetic(sid, props?.metadata, event?.created);
+    if (!job) return undefined;
+    return backgroundJobEvent(job, {
+      ...(event?.directory !== undefined ? { directory: event.directory } : {}),
+    }) as unknown as RawRuntimeEvent;
+  }
   if (t !== 'message.updated') return undefined;
   const props = event?.payload?.properties ?? {};
   // transform 输出不经 mapper 的 sessionID 注入（映射行专用）——自行提取

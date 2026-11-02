@@ -32,6 +32,12 @@ import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
 import { TaskService, TaskError } from './runtime/task-service';
+import {
+  BackgroundJobError,
+  BackgroundJobService,
+  RuntimeShellRegistry,
+  jobFromTask,
+} from './core/background/background-jobs';
 import { PodStore } from './core/pod/pod-store';
 import { PodService } from './core/pod/pod-service';
 import { PodTaskService } from './core/pod/pod-task-service';
@@ -243,6 +249,7 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
 import { toWireHistory } from './runtime/wire-compat';
 import { handlePermissionReply } from './routes/permission';
 import { handleSessionBackground } from './routes/session-background';
+import { attachBackgroundJobHandlers } from './routes/background-jobs';
 import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
 import { createSessionWithWorktree, cleanupWorktreeForSession } from './routes/session-worktree';
@@ -551,6 +558,10 @@ class MafwScheduler {
   private readonly podA2AAgents = new Map<string, PodA2AAgent>();
   private readonly podPendingHandoffs = new Map<string, string[]>();
   private taskService!: TaskService;
+  /** Task 3：runtime shell 事件台账（background.job.updated 驱动，终态不回退）。 */
+  private readonly backgroundShells = new RuntimeShellRegistry();
+  /** Task 3：三源统一的后台作业服务（REST 面唯一实现）。 */
+  private backgroundJobs!: BackgroundJobService;
   private sessionConfigService!: SessionConfigService;
   private checkpointService!: CheckpointService;
   private fileHistory!: FileHistoryService;
@@ -1475,6 +1486,14 @@ class MafwScheduler {
       if (type === MAFW.turnStarted) {
         this.busySessions.set(sessionID, Date.now());
         this.runCoordinator?.onTurnStarted(sessionID);
+      }
+    }
+    // Task 3：runtime shell 台账（synthetic / shell 生命周期经翻译层产出的 canonical
+    // background.job.updated）。终态不回退；广播仍走下方统一出口（不重复发）。
+    if (type === MAFW.backgroundJobUpdated) {
+      const job = (props as any)?.job;
+      if (job && typeof job === 'object') {
+        try { this.backgroundShells.apply(job as any); } catch { /* fail-open */ }
       }
     }
     // Approval policy：asked 事件先于 internal 过滤与 Mode A 广播评估（内部会话
@@ -3832,7 +3851,48 @@ class MafwScheduler {
           return false;
         }
       },
-      emit: (task) => this.broadcast({ type: 'task.updated', task, sessionID: task.parentSessionID }),
+      emit: (task) => {
+        // 兼容期双发：task.updated 是 desktop 现有 task-store 的入口；background.job.updated
+        // 是三源统一的中性视图（Task 11 迁移后台面板后 task.updated 面收窄）。
+        this.broadcast({ type: 'task.updated', task, sessionID: task.parentSessionID });
+        try {
+          const job = jobFromTask(task);
+          this.broadcast(mafwBroadcast({ type: MAFW.backgroundJobUpdated, properties: { job }, sessionID: job.sessionID }));
+        } catch {
+          // fail-open：旧事件已发出，新视图失败不阻断任务生命周期
+        }
+      },
+    });
+    this.backgroundJobs = new BackgroundJobService({
+      tasks: this.taskService,
+      registry: this.backgroundShells,
+      listSubagents: async (sessionID) => {
+        const rows = await this.runtime?.session.children({ sessionID }) ?? [];
+        return Array.isArray(rows) ? rows : [];
+      },
+      outputShell: async (opts) => {
+        if (!this.runtime?.access.can('session.shell')) {
+          throw new BackgroundJobError(503, 'runtime shell output is not available on this runtime');
+        }
+        return this.runtime!.shell!.output(opts);
+      },
+      cancelShell: async (opts) => {
+        if (!this.runtime?.access.can('session.shell')) {
+          throw new BackgroundJobError(503, 'runtime shell cancel is not available on this runtime');
+        }
+        await this.runtime!.shell!.remove(opts);
+      },
+      cancelSubagent: async ({ sessionID }) => {
+        if (!this.runtime?.access.can('session.abort')) {
+          throw new BackgroundJobError(503, 'subagent cancel is not available on this runtime');
+        }
+        await this.runtime!.session.abort({ sessionID });
+      },
+      broadcast: (job) => this.broadcast(mafwBroadcast({
+        type: MAFW.backgroundJobUpdated,
+        properties: { job },
+        sessionID: job.sessionID,
+      })),
     });
     this.memoryService = new MemoryService(mafwDir);
 
@@ -4623,6 +4683,8 @@ class MafwScheduler {
       attachPodA2ARoutes(this.routeRegistry, {
         getAgent: (podId) => this.podA2AAgent(podId),
       });
+      // Task 3：中性 background jobs façade（三源统一；runtime shell 原生 DTO 不出 gateway）
+      attachBackgroundJobHandlers(this.routeRegistry, () => ({ service: this.backgroundJobs ?? null }));
 
       const server = http.createServer(async (req, res) => {
         try {

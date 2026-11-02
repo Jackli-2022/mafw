@@ -28,6 +28,7 @@
 import { MAFW } from './mafw-vocabulary';
 import { stopReasonOf } from './contract';
 import { formToQuestion } from './form-question';
+import { backgroundJobFromSynthetic } from '../core/background/background-jobs';
 import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
 import type { RawRuntimeEvent } from './normalize';
 
@@ -164,6 +165,14 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
   if (!type) return raw;
 
   switch (type) {
+    case 'session.next.synthetic': {
+      // Task 3：synthetic shell/subagent 生命周期不再伪装成 chat message，
+      // 由 Ingress 翻译为 canonical `background.job.updated`（job 快照）。
+      const job = backgroundJobFromSynthetic(data?.sessionID, data?.metadata, raw?.created);
+      if (!job) return raw; // 其他 synthetic（系统注入等）保持原样，漂移可见
+      return eventOf(raw, MAFW.backgroundJobUpdated, { job });
+    }
+
     case 'question.v2.asked': {
       const form = data?.form?.fields ? data.form : (Array.isArray(data?.fields) ? data : null);
       return eventOf(raw, MAFW.questionAsked, form ? formToQuestion(form) : data);

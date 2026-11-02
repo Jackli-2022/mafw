@@ -1161,6 +1161,31 @@ test("tasks namespace hits submit/list/get/cancel/message/output", async () => {
   expect(urls).toContain("http://gw:3000/api/tasks/t1/output?cursor=1&limit=2")
 })
 
+test("background.jobs namespace hits list/output/cancel with session scoping", async () => {
+  fetchMock.mockResolvedValueOnce(okJson({
+    items: [{ id: "task_1", source: "mafw-task", kind: "shell", status: "running", sessionID: "p1" }],
+  }))
+  fetchMock.mockResolvedValueOnce(okJson({ cursor: 5, data: "hi", truncated: false }))
+  fetchMock.mockResolvedValueOnce(okJson({
+    id: "task_1", source: "mafw-task", kind: "shell", status: "cancelled", sessionID: "p1",
+  }))
+  const c = new MafwClient("http://gw:3000")
+  const jobs = await c.background.jobs.list("p1")
+  const out = await c.background.jobs.output("p1", "task_1", 4)
+  const cancelled = await c.background.jobs.cancel("p1", "task_1")
+
+  const urls = (fetchMock as any).mock.calls.map((x: any) => x[0])
+  expect(urls).toContain("http://gw:3000/api/background/jobs?sessionID=p1")
+  expect(urls).toContain("http://gw:3000/api/background/jobs/task_1/output?sessionID=p1&cursor=4")
+  expect(urls).toContain("http://gw:3000/api/background/jobs/task_1/cancel?sessionID=p1")
+  expect(jobs).toHaveLength(1)
+  expect(out).toEqual({ cursor: 5, data: "hi", truncated: false })
+  expect(cancelled.status).toBe("cancelled")
+
+  const cancelCall = (fetchMock as any).mock.calls.find((x: any) => String(x[0]).includes("/cancel"))
+  expect(cancelCall?.[1]).toEqual(expect.objectContaining({ method: "POST" }))
+})
+
 // ── Discovery ──
 
 test("discovery.get sends session/directory/force and returns snapshot", async () => {

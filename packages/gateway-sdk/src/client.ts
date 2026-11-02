@@ -10,6 +10,7 @@ import {
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
+  MafwBackgroundOutput, BackgroundNamespace,
   PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus, PodDeliveryState,
   PodCreateGoalInput, PodCreateGoalResult, PodGoalResult,
   SessionConfigState, SessionConfigCategory,
@@ -17,6 +18,7 @@ import {
 } from './types'
 import { SSEConnection } from './sse'
 import type { ApiPath } from './api-path'
+import type { MafwBackgroundJob } from './view-dto'
 
 /** opencode v2 Shell.Info（/api/shell* 响应 data 的按需子集；形状见 wire probe 文档）。 */
 export interface ShellInfo {
@@ -1225,6 +1227,30 @@ export class MafwClient implements IMafwClient {
       if (typeof query?.cursor === 'number') q.set('cursor', String(query.cursor))
       if (typeof query?.limit === 'number') q.set('limit', String(query.limit))
       return this.request<TaskOutput>(`/api/tasks/${encodeURIComponent(id)}/output${q.toString() ? `?${q}` : ''}`)
+    },
+  }
+
+  // ── Neutral background jobs (Task 3: three-source aggregation) ───────────
+  // REST 面只出口 MafwBackgroundJob / MafwBackgroundOutput；runtime shell 原生
+  // DTO 在 gateway 内消化（不再调用 /api/shell* 原生面）。
+
+  background: BackgroundNamespace = {
+    jobs: {
+      list: async (sessionID: string): Promise<MafwBackgroundJob[]> => {
+        const data = await this.request<{ items: MafwBackgroundJob[] }>(`/api/background/jobs?sessionID=${encodeURIComponent(sessionID)}`)
+        return data.items || []
+      },
+
+      output: async (sessionID: string, id: string, cursor?: number): Promise<MafwBackgroundOutput> => {
+        const q = new URLSearchParams({ sessionID })
+        if (typeof cursor === 'number') q.set('cursor', String(cursor))
+        return this.request<MafwBackgroundOutput>(`/api/background/jobs/${encodeURIComponent(id)}/output?${q.toString()}`)
+      },
+
+      cancel: async (sessionID: string, id: string): Promise<MafwBackgroundJob> => {
+        const q = new URLSearchParams({ sessionID })
+        return this.request<MafwBackgroundJob>(`/api/background/jobs/${encodeURIComponent(id)}/cancel?${q.toString()}`, { method: 'POST' })
+      },
     },
   }
 

@@ -237,6 +237,16 @@ describe('Experience contract', () => {
     expect(actions['background.jobs'].supported).toBe(true);
     expect(actions['background.jobs'].enabled).toBe(true);
     expect(actions['background.jobs'].semantics?.sources).toEqual(['mafw-task']);
+    expect(actions['background.jobs'].semantics?.verbs).toEqual(['list', 'output', 'cancel']);
+  });
+
+  it('lights up subagent and runtime-shell background sources from real surfaces', () => {
+    const access = fakeAccess({ 'session.children': true, 'session.shell': true });
+    const descriptor = projectExperienceActions(access, { sessionID: 's1' })['background.jobs'];
+    expect(descriptor.semantics?.sources).toEqual(['mafw-task', 'subagent', 'runtime-shell']);
+
+    const childrenOnly = projectExperienceActions(fakeAccess({ 'session.children': true }), {})['background.jobs'];
+    expect(childrenOnly.semantics?.sources).toEqual(['mafw-task', 'subagent']);
   });
 
   it('never fakes a terminal when no neutral PTY surface exists', () => {

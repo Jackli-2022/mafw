@@ -109,6 +109,8 @@ export const IGNORED_AT_SHELL = [
   "automation_triggered", "automation_completed",
   "mafw_commands_changed", "session.compacting", "usage.updated",
   "session.config", "session.commands",
+  // Task 3：三源统一后台作业；desktop 后台面板迁移（Task 11）接管后升 handled
+  "background.job.updated",
 ] as const
 
 /** onmessage 尾部合法放行：else-if 链处理（分支不 return 落到尾部）的类型。 */
@@ -205,6 +207,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "session.config":
     case "session.commands":
     case "task.updated":
+    case "background.job.updated":
     case "pod.updated":
       return
     default: {

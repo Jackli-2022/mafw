@@ -1037,6 +1037,65 @@
         }
       }
     },
+    "/api/background/jobs": {
+      "get": {
+        "operationId": "background.jobs.list",
+        "tags": [
+          "background"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/background/jobs/{id}/output": {
+      "get": {
+        "operationId": "background.jobs.output",
+        "tags": [
+          "background"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/background/jobs/{id}/cancel": {
+      "post": {
+        "operationId": "background.jobs.cancel",
+        "tags": [
+          "background"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/usage": {
       "get": {
         "operationId": "session.usage",

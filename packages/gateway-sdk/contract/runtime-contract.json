@@ -2804,6 +2804,20 @@
       ]
     },
     {
+      "type": "background.job.updated",
+      "family": "state",
+      "requiredFields": [
+        "job"
+      ],
+      "producers": [
+        "gateway",
+        "runtime"
+      ],
+      "consumers": [
+        "desktop"
+      ]
+    },
+    {
       "type": "pod.updated",
       "family": "state",
       "requiredFields": [],
