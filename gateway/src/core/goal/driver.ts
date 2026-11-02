@@ -146,6 +146,10 @@ export interface GoalProbePort {
   report(probeId: string): ProbeReport | null;
   /** 落报告（校验 + 脱敏由实现负责）。同探针重复完成以最新为准。 */
   complete(probeId: string, report: unknown): ProbeReport;
+  /** 终态失败：把探针标记 failed（释放 Pod 运行槽）。实现负责脱敏/幂等/容错。 */
+  failProbe(probeId: string, reason: string): void;
+  /** 可重试失败：把 running 退回 queued（下一轮 claim 取回同一条）。 */
+  requeueProbe(probeId: string, reason?: string): void;
   /** 报告产物路径（prompt 告诉 Builder 写哪里）。 */
   reportPath(goalId: string, probeId: string): string;
   /** 创建隔离工作区；不可用时 null（fail-closed，driver 会失败该节点）。 */
@@ -519,8 +523,7 @@ export class NodeDriver {
     });
   }
 
-  /** 计划上下文里的探针证据（plan 节点注入；报告是事实，不因重规划消失）。 */
-  private collectProbeReports(state: GoalStateV3): ProbeReport[] | undefined {
+  /** 计划上下文里的探针证据（plan 节点注入；报告是事实，不因重规划消失）。 */  private collectProbeReports(state: GoalStateV3): ProbeReport[] | undefined {
     const port = this.deps.probes;
     const ids = state.probeRefs ?? [];
     if (!port || ids.length === 0) return undefined;
@@ -548,7 +551,7 @@ export class NodeDriver {
     const queue = state.probeQueue ?? [];
 
     if (!port || !podId) {
-      await this.abortProbeFlow(goalId, mafwDir, 'probe execution is unavailable for this goal');
+      await this.abortProbeFlow(goalId, mafwDir, 'probe execution is unavailable for this goal', queue);
       return;
     }
     if (queue.length === 0) {
@@ -574,7 +577,7 @@ export class NodeDriver {
     try {
       request = port.take({ podId, goalId, probeIds: queue });
     } catch (err: any) {
-      await this.abortProbeFlow(goalId, mafwDir, `probe claim failed: ${err?.message ?? err}`);
+      await this.abortProbeFlow(goalId, mafwDir, `probe claim failed: ${err?.message ?? err}`, queue);
       return;
     }
     if (!request) {
@@ -586,7 +589,11 @@ export class NodeDriver {
 
     const workspace = await port.prepareWorkspace({ projectDir: state.projectDir, goalId, probeId });
     if (!workspace) {
-      await this.abortProbeFlow(goalId, mafwDir, `probe workspace is unavailable for ${probeId}`);
+      this.failProbeRecord(probeId, `probe workspace is unavailable for ${probeId}`);
+      await this.abortProbeFlow(
+        goalId, mafwDir, `probe workspace is unavailable for ${probeId}`,
+        queue.filter((id) => id !== probeId),
+      );
       return;
     }
     // 报告可能已经在准备阶段完成（外部 A2A / 恢复重放）：不必再开会话。
@@ -603,7 +610,11 @@ export class NodeDriver {
       sessionId = (await this.deps.client.create(workspace.dir)).id;
     } catch (err: any) {
       try { await port.disposeWorkspace(workspace); } catch { /* fail-open */ }
-      await this.abortProbeFlow(goalId, mafwDir, `probe session create failed: ${err?.message ?? err}`);
+      this.failProbeRecord(probeId, `probe session create failed: ${err?.message ?? err}`);
+      await this.abortProbeFlow(
+        goalId, mafwDir, `probe session create failed: ${err?.message ?? err}`,
+        queue.filter((id) => id !== probeId),
+      );
       return;
     }
     this.probeWorkspaces.set(sessionId, workspace);
@@ -773,9 +784,16 @@ export class NodeDriver {
   }
 
   /** 探针无法执行（没有端口 / 工作区不可用）→ 终态失败，绝不装作计划已完成。 */
-  private async abortProbeFlow(goalId: string, mafwDir: string, message: string): Promise<void> {
+  private async abortProbeFlow(
+    goalId: string,
+    mafwDir: string,
+    message: string,
+    probeIds: string[] = [],
+  ): Promise<void> {
     const state = loadGoalState(mafwDir, goalId);
     if (!state) return;
+    // 终态失败必须把探针从 running/queued 收尾，否则 Pod 的唯一运行槽永远被占住。
+    for (const probeId of probeIds) this.failProbeRecord(probeId, `probe aborted: ${message}`);
     const at = new Date().toISOString();
     writeGoalState(mafwDir, goalId, {
       nodeSession: null, probeQueue: [], nextNode: 'archive_fail', reviewVerdict: 'ERROR',
@@ -792,10 +810,24 @@ export class NodeDriver {
     await this.continueAdvance(goalId);
   }
 
+  /** 探针终态失败（端口实现负责脱敏/幂等；失败不影响 driver 的失败路径）。 */
+  private failProbeRecord(probeId: string | null | undefined, reason: string): void {
+    if (!probeId) return;
+    try { this.deps.probes?.failProbe(probeId, reason); } catch { /* fail-open */ }
+  }
+
+  /** 探针可重试失败：退回 queued（释放运行槽，下一轮 claim 取回同一条）。 */
+  private requeueProbeRecord(probeId: string | null | undefined, reason: string): void {
+    if (!probeId) return;
+    try { this.deps.probes?.requeueProbe(probeId, reason); } catch { /* fail-open */ }
+  }
+
   /**
    * 内部推进：已在该 goal 的互斥内（advanceInner 调用链）→ 直接递归，避免自等；
    * 否则走正常的 advance 排队。probe 节点的多个终止点共用这一条语义。
    * 递归深度有硬上限：端口的异常行为（报告永远可读 / 队列不前进）不能把栈打穿。
+   * 触顶不是静默停止：写 lastError/lastFailure 并广播 `goal_node.failed`（timeline 可见），
+   * 由下一次外部推进（watchdog/应答/审批）重新开始计数。
    */
   private async continueAdvance(goalId: string): Promise<void> {
     if (!this.mutex.has(goalId)) {
@@ -806,8 +838,19 @@ export class NodeDriver {
       const mafwDir = this.stateDirs.get(goalId);
       try {
         if (mafwDir) {
+          const state = loadGoalState(mafwDir, goalId);
+          const message = `driver: advance recursion budget (${NodeDriver.MAX_ADVANCE_DEPTH}) exhausted`;
           writeGoalState(mafwDir, goalId, {
-            lastError: `driver: advance recursion budget (${NodeDriver.MAX_ADVANCE_DEPTH}) exhausted`,
+            lastError: message,
+            lastFailure: {
+              class: 'terminal_contract', code: 'advance_recursion', message,
+              node: (state?.nodeSession?.phase ?? 'probe'), attempt: 1, at: new Date().toISOString(),
+            },
+          });
+          this.deps.emitNodeEvent({
+            type: 'goal_node', goalId, projectDir: state?.projectDir ?? '', loop: effectiveRound(state ?? { round: 0 }),
+            node: state?.nodeSession?.phase ?? 'probe', revision: state ? effectiveRevision(state) : 1,
+            transition: 'failed', at: new Date().toISOString(), error: message, attempt: 1,
           });
         }
       } catch { /* last-resort */ }
@@ -1136,6 +1179,12 @@ export class NodeDriver {
       });
     }
     await this.releaseSession(sessionID);
+
+    // Task 14：探针失败必须同步探针状态，否则 running 会长久占住 Pod 的唯一运行槽。
+    if (ns?.phase === 'probe' && ns.probeId) {
+      if (retryable) this.requeueProbeRecord(ns.probeId, `${kind}: ${message}`);
+      else this.failProbeRecord(ns.probeId, `${kind}: ${message}`);
+    }
 
     if (retryable) {
       writeGoalState(mafwDir, goalId, {

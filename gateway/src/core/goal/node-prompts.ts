@@ -476,7 +476,7 @@ export function renderNodePrompt(node: ExecutableGoalNode, ctx: NodePromptCtx): 
         ? `Plan review mode: ${ctx.planReview === 'manual' ? 'manual（计划需人工批准后才实施）' : 'auto'}`
         : '',
       ctx.probeBudget
-        ? `探针额度：本 revision 最多 ${ctx.probeBudget.max} 条，已用 ${ctx.probeBudget.used} 条（剩余 ${ctx.probeBudget.remaining} 条）。额度耗尽后 need_probe 会被拒绝，必须基于现有证据给出最终计划。`
+        ? `探针额度（第 ${revision} 版）：本版最多 ${ctx.probeBudget.max} 条（已报告 + 排队合计已用 ${ctx.probeBudget.used} 条，剩余 ${ctx.probeBudget.remaining} 条）。额度耗尽后 need_probe 会被拒绝，必须基于现有证据给出最终计划。`
         : '',
       ctx.priorBlock || '',
       ctx.counterfactualBlock || '',

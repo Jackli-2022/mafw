@@ -1481,6 +1481,22 @@ export class PodStore {
     return row ? probeFromRow(row) : null;
   }
 
+  /**
+   * 可重试的探针失败：把 running 退回 queued（释放运行槽，下一轮 claim 还能取回同一条）。
+   * 只允许 running（queued/failed/completed/cancelled 不动）。
+   */
+  requeueProbe(id: string, now: string): PodProbeRow | null {
+    const row = this.db.prepare(`
+      UPDATE pod_probes SET
+        status = 'queued',
+        started_at = NULL,
+        error = NULL
+      WHERE id = ? AND status = 'running'
+      RETURNING *
+    `).get(id) as any;
+    return row ? probeFromRow(row) : null;
+  }
+
   /** failed：清理运行槽（completed/cancelled 不可再标失败）。 */
   failProbe(id: string, input: { error: string; now: string }): PodProbeRow | null {
     const row = this.db.prepare(`

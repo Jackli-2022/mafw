@@ -263,6 +263,12 @@ export class PodProbeService {
    */
   claim(podId: string): ProbeRecord | null {
     for (;;) {
+      // 已有一个 running：只有它属于终态/缺失的 Goal 时才清掉（否则 Pod 单飞）。
+      const running = this.deps.store.getRunningProbe(podId);
+      if (running) {
+        if (this.claimable(running)) return null;
+        continue; // 过期 running 已被标记 failed，槽位释放
+      }
       const row = this.deps.store.claimNextProbe(podId, this.now());
       if (!row) return null;
       if (!this.claimable(row)) continue;
@@ -274,9 +280,10 @@ export class PodProbeService {
 
   /**
    * 抢占**指定 goal** 的下一条探针（driver 用）：
-   * - 已有别的 goal 的 running 探针 → null（绝不抢占别人的运行槽）；
-   * - 本 goal 已 claim 的 running 探针 → 原样返回（会话丢失后的重跑）；
-   * - Pod-global 排队头不是本 goal 的探针 → null（FIFO，先来先跑）；
+   * - 已有 running 探针：属于终态/缺失 Goal 的先清掉（`claimable`），其余一律 null
+   *   （绝不抢占别人正在跑的槽；本 goal 自己丢会话的 running 可原样取回重跑）；
+   * - Pod-global 排队头：跳过终态 Goal 的探针（标记 failed），第一个**有效**队头不是
+   *   本 goal 的探针就 null（FIFO，先来先跑）；
    * - 否则按 id 抢占（`claimProbe` 事务内复核，不会把别人的探针标成 running 后丢弃）。
    */
   claimForGoal(podId: string, goalId: string, probeIds: string[]): ProbeRecord | null {
@@ -284,12 +291,13 @@ export class PodProbeService {
     for (;;) {
       const running = this.deps.store.getRunningProbe(podId);
       if (running) {
+        if (!this.claimable(running)) continue; // 终态 Goal 的僵尸 running：已标 failed
         if (running.goalId !== goalId || !wanted.has(running.id)) return null;
-        if (this.claimable(running)) return recordFromRow(running);
-        continue; // 过期探针已被标记 failed，槽位释放
+        return recordFromRow(running);
       }
 
-      const head = this.deps.store.listProbes(podId, { status: 'queued' })[0];
+      const queued = this.deps.store.listProbes(podId, { status: 'queued' });
+      const head = queued.find((candidate) => this.claimable(candidate));
       if (!head) return null;
       if (head.goalId !== goalId || !wanted.has(head.id)) return null;
 
@@ -406,6 +414,20 @@ export class PodProbeService {
 
     this.deps.notify?.(updated.podId);
     this.deps.log?.(`[Pod] probe failed pod=${updated.podId} probe=${probeId}`);
+    return recordFromRow(updated);
+  }
+
+  /**
+   * 可重试失败 → 退回 queued（释放运行槽；下一轮 claim 取回同一条）。
+   * 非 running 状态（已完成/已终止）不做处理，返回 null。
+   */
+  requeue(probeId: string, reason?: string): ProbeRecord | null {
+    const row = this.deps.store.getProbe(probeId);
+    if (!row) throw new PodError(404, `probe not found: ${probeId}`);
+    const updated = this.deps.store.requeueProbe(probeId, this.now());
+    if (!updated) return null;
+    this.deps.notify?.(updated.podId);
+    this.deps.log?.(`[Pod] probe requeued pod=${updated.podId} probe=${probeId}${reason ? ` reason=${redactProbeText(reason)}` : ''}`);
     return recordFromRow(updated);
   }
 

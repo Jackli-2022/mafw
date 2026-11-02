@@ -6,6 +6,7 @@
 // - 声明范围内 allow（安全、隔离的 Spike 默认不打扰用户）；
 // - 越界（未声明的路径 / 命令类别 / 网络 / 凭据）ask —— 转人工；
 // - 内部 Session / full-access 身份不能把 ask 变成自动放行（guard 在政策环之前）。
+import * as path from 'path';
 import { ApprovalPolicyService } from '../../../src/core/approval/policy-service';
 import { applyApprovalPolicy } from '../../../src/core/approval/hook';
 import {
@@ -86,6 +87,26 @@ describe('ProbeScopeGuard.evaluate', () => {
     )).toBe('deny');
     // 没有 projectDir 绑定（旧调用方）时仍按命令类别判定，不误伤普通命令。
     expect(ProbeScopeGuard.evaluate(probe(), { command: 'npm test' })).toBe('allow');
+  });
+
+  it('resolves cd targets instead of substring matching (parent dir + relative path)', () => {
+    const parent = path.dirname(MAIN_PROJECT);
+    const base = path.basename(MAIN_PROJECT);
+
+    // `cd <projectParent> && cat <basename>/src/a.ts`：两者单独看都不含项目全路径。
+    expect(ProbeScopeGuard.evaluate(binding(), {
+      command: `cd ${parent} && cat ${base}/src/a.ts`,
+    })).toBe('deny');
+    // 选项形态：`cd -- ..` / `cd -P ..` / `cd ".."` 都解析到工作区之外。
+    expect(ProbeScopeGuard.evaluate(binding(), { command: 'cd -- ..' })).toBe('deny');
+    expect(ProbeScopeGuard.evaluate(binding(), { command: 'cd -P .. && npm test' })).toBe('deny');
+    expect(ProbeScopeGuard.evaluate(binding(), { command: 'cd ".."' })).toBe('deny');
+    expect(ProbeScopeGuard.evaluate(binding(), { command: 'pushd ../..' })).toBe('deny');
+    // 相对路径参数也不许逃出工作区（即使没有 cd）。
+    expect(ProbeScopeGuard.evaluate(binding(), { command: `cat ../${base}/src/a.ts` })).toBe('deny');
+    // 允许：工作区内相对目录与工作区内绝对路径。
+    expect(ProbeScopeGuard.evaluate(binding(), { command: 'cd src && npm test' })).toBe('allow');
+    expect(ProbeScopeGuard.evaluate(binding(), { command: `cd ${WORKSPACE}/src && npm test` })).toBe('allow');
   });
 
   it('scopes credentials and command classes', () => {

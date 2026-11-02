@@ -78,19 +78,23 @@ interface FakeProbePort extends GoalProbePort {
   reports: Map<string, ProbeReport>;
   created: GoalProbeWorkspace[];
   disposed: GoalProbeWorkspace[];
-  bindings: Array<[string, { request: ProbeRequest; workspaceDir?: string | null } | null]>;
+  bindings: Array<[string, { request: ProbeRequest; workspaceDir?: string | null; projectDir?: string | null } | null]>;
   claimed: string[];
+  failed: Array<{ id: string; reason: string }>;
+  requeued: Array<{ id: string; reason?: string }>;
   /** 模拟外部（A2A / 命运路由）完成报告。 */
   completeReport(id: string, report?: Omit<ProbeReport, 'probeId'>): ProbeReport;
 }
 
-function makeProbePort(h: Harness, opts: { podId?: string | null } = {}): FakeProbePort {
+function makeProbePort(h: Harness, opts: { podId?: string | null; noWorkspace?: boolean } = {}): FakeProbePort {
   const requests: ProbeRequest[] = [];
   const reports = new Map<string, ProbeReport>();
   const created: GoalProbeWorkspace[] = [];
   const disposed: GoalProbeWorkspace[] = [];
   const bindings: FakeProbePort['bindings'] = [];
   const claimed: string[] = [];
+  const failed: FakeProbePort['failed'] = [];
+  const requeued: FakeProbePort['requeued'] = [];
   let seq = 0;
 
   const complete = (id: string, input: unknown): ProbeReport => {
@@ -106,6 +110,8 @@ function makeProbePort(h: Harness, opts: { podId?: string | null } = {}): FakePr
     disposed,
     bindings,
     claimed,
+    failed,
+    requeued,
     podIdForGoal: () => (opts.podId === undefined ? 'pod1' : opts.podId),
     enqueue: ({ podId, goalId, revision, drafts }) => drafts.map((draft) => {
       seq += 1;
@@ -136,6 +142,7 @@ function makeProbePort(h: Harness, opts: { podId?: string | null } = {}): FakePr
     reportPath: (goalId, probeId) =>
       path.join(h.mafwDir, 'goals', goalId, 'probes', `${probeId}.report.json`),
     prepareWorkspace: async ({ goalId, probeId }) => {
+      if (opts.noWorkspace) return null;
       const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), `mafw-probe-${goalId}-${probeId}-`));
       const ws: GoalProbeWorkspace = {
         dir,
@@ -149,6 +156,14 @@ function makeProbePort(h: Harness, opts: { podId?: string | null } = {}): FakePr
     },
     disposeWorkspace: async (ws) => { await ws.dispose(); },
     bindSession: (sessionId, b) => { bindings.push([sessionId, b]); },
+    failProbe: (id, reason) => {
+      failed.push({ id, reason });
+      reports.delete(id);
+    },
+    requeueProbe: (id, reason) => {
+      requeued.push({ id, reason });
+      reports.delete(id);
+    },
     completeReport: (id, report = supportsReport) => complete(id, report),
   };
   return port;
@@ -325,7 +340,8 @@ describe('two-stage Spike orchestration', () => {
   it('fails closed when the goal has no probe runner (non-Pod goal)', async () => {
     const h = makeHarness();
     seedGoal(h, 'g1', { patch: { planReview: 'manual' } });
-    attachPort(h, makeProbePort(h, { podId: null }));
+    const port = makeProbePort(h, { podId: null });
+    attachPort(h, port);
 
     await h.driver.advance('g1');
     const planSid = sessionOf(h).id;
@@ -334,6 +350,38 @@ describe('two-stage Spike orchestration', () => {
 
     expect(h.nodeRuns[0].status).toBe('failed');
     expect(h.nodeRuns[0].error).toContain('probe');
+  });
+
+  it('fails queued probes when the probe flow aborts (Pod binding lost after restart)', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g1', { patch: { planReview: 'manual' } });
+    const port = makeProbePort(h, { podId: null });
+    attachPort(h, port);
+
+    // 计划已入队，但 Pod 绑定丢失（重启/迁移）：abort 必须把队列里的探针收尾。
+    const [id] = port.enqueue({ podId: 'pod1', goalId: 'g1', revision: 1, drafts: [probeDraft()] });
+    h.write('g1', { nextNode: 'probe', probeQueue: [id], nextAction: 'RUNNING_probe' });
+
+    await h.driver.advance('g1');
+
+    expect(port.failed.map((f) => f.id)).toEqual([id]);
+    expect(h.load('g1')!.nextNode).toBe('archive_fail');
+    expect(h.load('g1')!.probeQueue).toEqual([]);
+  });
+
+  it('fails the probe record when the isolated workspace cannot be prepared', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g1', { patch: { planReview: 'manual' } });
+    const port = makeProbePort(h, { noWorkspace: true });
+    attachPort(h, port);
+
+    await h.driver.advance('g1');
+    writePlan(h, 'g1', needProbeDoc([probeDraft()]));
+    await h.fireIdle(sessionOf(h).id);
+
+    expect(port.failed.map((f) => f.id)).toEqual(['p1']);
+    expect(h.load('g1')!.nextNode).toBe('archive_fail');
+    expect(h.load('g1')!.probeQueue).toEqual([]);
   });
 
   it('caps probes per revision so a need_probe loop cannot run forever', async () => {
@@ -374,12 +422,36 @@ describe('probe budget is enforced', () => {
     expect(probeRun.status).toBe('timeout');
     expect(probeRun.error).toContain('budget');
     expect(port.disposed).toHaveLength(1);
+    // 超时是终态（attempts 用尽）→ 探针记录也必须收尾。
+    expect(port.failed.map((f) => f.id)).toEqual(['p1']);
     // 预算耗尽 = 探针失败 → goal 归档失败（不会假装计划已完成）。
     expect(h.load('g1')!.nextNode).toBe('archive_fail');
   });
+
+  it('requeues a retryable probe failure instead of leaving it running', async () => {
+    const h = makeHarness(); // maxAttempts 2 → 429 可重试
+    seedGoal(h, 'g1', { patch: { planReview: 'manual' } });
+    const port = makeProbePort(h);
+    attachPort(h, port);
+
+    await h.driver.advance('g1');
+    writePlan(h, 'g1', needProbeDoc([probeDraft()]));
+    await h.fireIdle(sessionOf(h).id);
+    const first = sessionOf(h).id;
+
+    await h.fireError(first, 'rate limited', '429');
+
+    expect(port.requeued.map((r) => r.id)).toEqual(['p1']);
+    expect(port.failed).toHaveLength(0);
+    // 重试重新 claim 同一条探针（不会留下 running 幽灵，也不会开新 probe id）。
+    expect(port.claimed).toEqual(['p1', 'p1']);
+    expect(sessionOf(h)?.probeId).toBe('p1');
+    expect(sessionOf(h)?.attempt).toBe(2);
+  });
 });
 
-describe('probe fails without a report', () => {  it('fails the probe node when the Builder produces no report and disposes the workspace', async () => {
+describe('probe fails without a report', () => {
+  it('fails the probe node when the Builder produces no report and disposes the workspace', async () => {
     const h = makeHarness();
     seedGoal(h, 'g1', { patch: { planReview: 'manual' } });
     const port = makeProbePort(h);
@@ -395,5 +467,6 @@ describe('probe fails without a report', () => {  it('fails the probe node when 
     expect(probeRun.status).toBe('failed');
     expect(probeRun.error).toContain('report');
     expect(port.disposed).toHaveLength(1);
+    expect(port.failed.map((f) => f.id)).toEqual(['p1']);
   });
 });

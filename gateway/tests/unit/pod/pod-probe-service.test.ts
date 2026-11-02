@@ -281,6 +281,58 @@ describe('PodProbeService', () => {
     expect(service.claim('pod_1')).toMatchObject({ id: next.id, status: 'running' });
   });
 
+  test('claimForGoal skips queued probes of terminal goals instead of blocking FIFO', () => {
+    // 一个已取消/归档 goal 的探针排在队头：不能让后续 goal 永久等待。
+    store.enqueueGoal({ id: 'pg_g5', podId: 'pod_1', goalId: 'g5', now: NOW });
+    seedRevision('g5');
+    const dead = service.request(requestInput({ goalId: 'g5' }));
+    const live = service.request(requestInput({ goalId: 'g1' }));
+    store.setGoalRevisionStatus({
+      podId: 'pod_1',
+      goalId: 'g5',
+      revision: 1,
+      status: 'aborted',
+      now: NOW,
+    });
+
+    expect(service.claimForGoal('pod_1', 'g1', [live.id])).toMatchObject({ id: live.id, status: 'running' });
+    expect(store.getProbe(dead.id)?.status).toBe('failed');
+    expect(store.getProbe(dead.id)?.error).toMatch(/terminal|aborted/);
+  });
+
+  test('claim clears a stale running probe from a terminal goal so the pod unblocks', () => {
+    const stale = service.request(requestInput());
+    service.claim('pod_1');
+    expect(store.getProbe(stale.id)?.status).toBe('running');
+
+    // Goal 被中止：僵尸 running 不能继续占住 Pod 的唯一运行槽。
+    store.setGoalRevisionStatus({
+      podId: 'pod_1',
+      goalId: 'g1',
+      revision: 1,
+      status: 'aborted',
+      now: NOW,
+    });
+
+    store.enqueueGoal({ id: 'pg_g6', podId: 'pod_1', goalId: 'g6', now: NOW });
+    seedRevision('g6');
+    const next = service.request(requestInput({ goalId: 'g6' }));
+
+    expect(service.claimForGoal('pod_1', 'g6', [next.id])).toMatchObject({ id: next.id, status: 'running' });
+    expect(store.getProbe(stale.id)?.status).toBe('failed');
+  });
+
+  test('requeue returns a running probe to the queue without losing it', () => {
+    const probe = service.request(requestInput());
+    service.claim('pod_1');
+
+    expect(service.requeue(probe.id, 'transient 429')).toMatchObject({ id: probe.id, status: 'queued' });
+    expect(service.claimForGoal('pod_1', 'g1', [probe.id])).toMatchObject({ id: probe.id, status: 'running' });
+    // 非 running 状态不回退（已完成/已失败的探针）。
+    service.complete(probe.id, report(probe.id));
+    expect(service.requeue(probe.id)).toBeNull();
+  });
+
   test('claim skips a probe whose goal revision became terminal without running it', () => {    store.enqueueGoal({ id: 'pg_g4', podId: 'pod_1', goalId: 'g4', now: NOW });
     seedRevision('g4');
 

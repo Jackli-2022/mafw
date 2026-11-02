@@ -8859,6 +8859,12 @@ class MafwScheduler {
         try { return JSON.parse(row.reportJson) as ProbeReport; } catch { return null; }
       },
       complete: (probeId, report) => this.podProbeService.complete(probeId, report) as ProbeReport,
+      failProbe: (probeId, reason) => {
+        try { this.podProbeService.fail(probeId, reason); } catch { /* fail-open：已完成/已取消的探针不动 */ }
+      },
+      requeueProbe: (probeId, reason) => {
+        try { this.podProbeService.requeue(probeId, reason); } catch { /* fail-open */ }
+      },
       reportPath: (goalId, probeId) => probePath(goalId, probeId),
       prepareWorkspace: async ({ projectDir, goalId, probeId }) => {
         const workspace = await this.podProbeWorkspaces.prepare(projectDir, goalId, probeId);

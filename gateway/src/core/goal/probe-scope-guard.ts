@@ -157,33 +157,101 @@ function worst(verdicts: ProbeScopeVerdict[]): ProbeScopeVerdict {
   return 'allow';
 }
 
-const DIRECTORY_CHANGE = /(?:^|[;&|(]\s*)(?:cd|pushd|chdir|set-location|sl)\s+("([^"]+)"|'([^']+)'|([^\s;&|)]+))/gi;
+const CD_COMMANDS = new Set(['cd', 'pushd', 'chdir', 'set-location', 'sl']);
+const SHELL_SEGMENT = /&&|\|\||[;|\n]/;
+
+/** 极简 shell 分词（引号感知）——只用于审批前的边界判定，不执行任何东西。 */
+function tokenizeSegment(segment: string): string[] {
+  const tokens: string[] = [];
+  const re = /"([^"]*)"|'([^']*)'|([^\s]+)/g;
+  for (let match = re.exec(segment); match; match = re.exec(segment)) {
+    tokens.push(match[1] ?? match[2] ?? match[3] ?? '');
+  }
+  return tokens;
+}
+
+/** 纯字符串归一化（不触碰文件系统）：折叠 `.` / `..`，保留盘符与根。 */
+function normalizeResolved(value: string): string {
+  const raw = normalizePath(value);
+  const drive = /^([A-Za-z]:)\//.exec(raw)?.[1] ?? '';
+  const absolute = !!drive || raw.startsWith('/');
+  const segments = (drive ? raw.slice(drive.length) : raw).split('/');
+  const out: string[] = [];
+  for (const segment of segments) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') { out.pop(); continue; }
+    out.push(segment);
+  }
+  const joined = out.join('/');
+  if (drive) return `${drive}/${joined}`;
+  return absolute ? `/${joined}` : joined;
+}
+
+/** cd 目标解析成绝对路径；无法解析（`~` / 未知 cwd）→ null（按越界处理）。 */
+function resolveDirectoryTarget(target: string, cwd: string | null): string | null {
+  const raw = normalizePath(target);
+  if (!raw || raw === '~' || raw.startsWith('~/')) return null; // HOME 在隔离工作区之外
+  if (isAbsolutePath(raw)) return normalizeResolved(raw);
+  if (!cwd) return null;
+  return normalizeResolved(`${cwd}/${raw}`);
+}
 
 /**
  * 命令级边界：
- * - 命令文本里出现**主项目绝对路径**（`cd /repo/project`、`cat /repo/project/x`）→ deny：
- *   隔离 Spike 不能靠 shell 绕开路径范围；
- * - `cd` 目标是相对 `..` 逃逸 → deny（离开隔离工作区）；
+ * - `cd` / `pushd` / `chdir` / `Set-Location` 的目标**解析成绝对路径**后判定：
+ *   落在主项目内或隔离工作区之外 → deny（覆盖 `cd <projectParent> && cat <base>/src/a.ts`、
+ *   `cd -- ..`、`cd -P ..` 这类只做子串匹配会漏掉的形态）；
+ * - 命令里的绝对路径 / `./` / `../` 参数同样解析后判定（不靠子串猜）；
  * - 其余交给命令类别 / 网络判定。
  */
-function commandVerdict(command: string, projectDir: string | null | undefined): ProbeScopeVerdict {
+function commandVerdict(
+  command: string,
+  ctx: { projectDir?: string | null; workspaceDir?: string | null },
+): ProbeScopeVerdict {
   const text = String(command ?? '');
   if (!text.trim()) return 'allow';
-  const normalized = normalizePath(text);
-  const fold = (s: string) => (process.platform === 'win32' ? s.toLowerCase() : s);
   const verdicts: ProbeScopeVerdict[] = [];
+  let cwd = ctx.workspaceDir ? normalizeResolved(ctx.workspaceDir) : null;
 
-  if (projectDir) {
-    const project = normalizePath(projectDir).replace(/\/+$/, '');
-    if (project && fold(normalized).includes(fold(project))) verdicts.push('deny');
+  const judgePath = (value: string): void => {
+    const resolved = resolveDirectoryTarget(value, cwd);
+    if (!resolved) { verdicts.push('deny'); return; }
+    if (ctx.projectDir && isInside(resolved, ctx.projectDir)) verdicts.push('deny');
+    if (ctx.workspaceDir && !isInside(resolved, ctx.workspaceDir)) verdicts.push('deny');
+  };
+
+  for (const segment of text.split(SHELL_SEGMENT)) {
+    const tokens = tokenizeSegment(segment);
+    if (tokens.length === 0) continue;
+    const head = tokens[0].toLowerCase();
+
+    if (CD_COMMANDS.has(head)) {
+      // 跳过 `--` / `-P` / `-L` / `-` 等选项，第一个非选项 token 是目标。
+      const target = tokens.slice(1).find((token) => !token.startsWith('-'));
+      const resolved = resolveDirectoryTarget(target ?? '~', cwd);
+      if (!resolved) { verdicts.push('deny'); continue; }
+      if (ctx.projectDir && isInside(resolved, ctx.projectDir)) verdicts.push('deny');
+      if (ctx.workspaceDir && !isInside(resolved, ctx.workspaceDir)) verdicts.push('deny');
+      cwd = resolved;
+      continue;
+    }
+
+    for (const token of tokens) {
+      if (token.includes('://')) continue; // URL 归网络判定
+      const pathLike = normalizePath(token);
+      const looksLikePath = isAbsolutePath(pathLike)
+        || pathLike.startsWith('./') || pathLike.startsWith('../')
+        || pathLike.split('/').includes('..');
+      if (!looksLikePath) continue;
+      judgePath(token);
+    }
   }
 
-  DIRECTORY_CHANGE.lastIndex = 0;
-  for (let match = DIRECTORY_CHANGE.exec(text); match; match = DIRECTORY_CHANGE.exec(text)) {
-    const target = (match[2] ?? match[3] ?? match[4] ?? '').trim();
-    if (!target || target === '-' || target === '~') continue;
-    const normalizedTarget = normalizePath(target);
-    if (normalizedTarget.split('/').some((segment) => segment === '..')) verdicts.push('deny');
+  // 兜底：命令里出现主项目绝对路径（即使被引号/拼接拆开，字面量也拦）。
+  if (ctx.projectDir) {
+    const project = normalizePath(ctx.projectDir).replace(/\/+$/, '');
+    const fold = (s: string) => (process.platform === 'win32' ? s.toLowerCase() : s);
+    if (project && fold(normalizePath(text)).includes(fold(project))) verdicts.push('deny');
   }
 
   return verdicts.length ? worst(verdicts) : 'allow';
@@ -234,8 +302,11 @@ export const ProbeScopeGuard = {
       verdicts.push('ask');
     }
     if (command) {
-      // 命令可能绕过路径参数直接操作主项目（`cd <mainProject>` / `cat <mainProject>/x`）。
-      verdicts.push(commandVerdict(command, effectiveProject));
+      // 命令可能绕过路径参数直接操作主项目（`cd <mainProject>` / `cd -- ..` / 绝对路径参数）。
+      verdicts.push(commandVerdict(command, {
+        projectDir: effectiveProject,
+        workspaceDir: effectiveWorkspace,
+      }));
     }
 
     if (verdicts.length === 0) {
