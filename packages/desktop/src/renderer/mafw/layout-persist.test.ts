@@ -51,6 +51,35 @@ describe("layout persistence", () => {
     expect(pruneMissing(snap, new Set(["other"]))).toBeNull()
   })
 
+  // Task 2 review round 2（spec 2026-11-02 §3.1）：Lead 是隐藏会话，不在 /api/sessions
+  // 里。恢复布局时它的 id 只来自 kv（`manager.session`），必须显式加入 keep 集合，
+  // 否则重载/切项目会把 Lead tab 当成"已删除"直接丢掉。
+  test("pruneMissing keeps a hidden session id supplied by the caller (Lead)", () => {
+    const snap = { tabs: [{ id: "lead" }, { id: "user" }], activeViewId: "lead", savedAt: 1 }
+    const out = pruneMissing(snap, new Set(["user"]), ["lead"])
+    expect(out?.tabs.map(t => t.id)).toEqual(["lead", "user"])
+    expect(out?.activeViewId).toBe("lead")
+  })
+
+  test("pruneMissing keeps a Lead-only layout (the whole strip is the hidden session)", () => {
+    const snap = { tabs: [{ id: "lead" }], activeViewId: "lead", savedAt: 1 }
+    expect(pruneMissing(snap, new Set(["user"]), ["lead"])?.tabs.map(t => t.id)).toEqual(["lead"])
+  })
+
+  test("extra keep ids never resurrect genuinely deleted sessions", () => {
+    const snap = { tabs: [{ id: "gone" }, { id: "user" }], activeViewId: "gone", savedAt: 1 }
+    const out = pruneMissing(snap, new Set(["user"]), ["lead"])
+    expect(out?.tabs.map(t => t.id)).toEqual(["user"])
+    expect(out?.activeViewId).toBe("user")
+  })
+
+  test("extra keep ids are additive only (existing pruneMissing behaviour unchanged)", () => {
+    const snap = { tabs: [{ id: "s1" }, { id: "gone" }], activeViewId: "gone", savedAt: 1 }
+    expect(pruneMissing(snap, new Set(["s1"]))?.tabs.map(t => t.id)).toEqual(["s1"])
+    expect(pruneMissing(snap, new Set(["s1"]), [])?.tabs.map(t => t.id)).toEqual(["s1"])
+    expect(pruneMissing(snap, new Set(), ["gone"])?.tabs.map(t => t.id)).toEqual(["gone"])
+  })
+
   test("save ignores empty tab lists (nothing to restore)", () => {
     const io = memIO()
     saveLayout(io, { tabs: [], activeViewId: null })

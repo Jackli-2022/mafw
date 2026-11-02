@@ -46,11 +46,26 @@ export function loadLayout(io: LayoutIO): LayoutSnapshot | null {
   }
 }
 
-/** Drop tabs whose sessions no longer exist; fix a dangling activeViewId. */
-export function pruneMissing(snap: LayoutSnapshot, existing: Set<string>): LayoutSnapshot | null {
-  const tabs = snap.tabs.filter(t => existing.has(t.id))
+/**
+ * Drop tabs whose sessions no longer exist; fix a dangling activeViewId.
+ *
+ * `extraKeepIds` keeps ids that the caller knows are alive even though they are
+ * absent from the session list — the Pod Lead session is hidden from
+ * `/api/sessions` (spec 2026-11-02 §3.1) and its id only comes from the kv
+ * (`manager.session`). Without it, every reload / project switch pruned the
+ * Lead tab as if the session had been deleted. Extra ids are additive only: a
+ * tab missing from both sets is still dropped.
+ */
+export function pruneMissing(
+  snap: LayoutSnapshot,
+  existing: Set<string>,
+  extraKeepIds: Iterable<string> = [],
+): LayoutSnapshot | null {
+  const keep = new Set(existing)
+  for (const id of extraKeepIds) if (id) keep.add(id)
+  const tabs = snap.tabs.filter(t => keep.has(t.id))
   if (tabs.length === 0) return null
-  const activeViewId = snap.activeViewId && existing.has(snap.activeViewId) ? snap.activeViewId : tabs[0].id
+  const activeViewId = snap.activeViewId && keep.has(snap.activeViewId) ? snap.activeViewId : tabs[0].id
   return { tabs, activeViewId, savedAt: snap.savedAt }
 }
 

@@ -268,22 +268,44 @@ export function MafwShell() {
   // as Lead). This id is the only way to open Lead: the gateway hides the session
   // from /api/sessions (spec 2026-11-02 §3.1).
   const [managerSessionId, setManagerSessionId] = createSignal<string | null>(null)
+  // Which project the id above belongs to (set even when the id is null → "resolved").
+  // 布局恢复必须等它落定：隐藏的 Lead tab 只能靠这个 id 保住，早于它 prune 会把
+  // Lead 当成已删除会话丢掉（重载 / 切项目各一次）。
+  const [managerSessionFor, setManagerSessionFor] = createSignal<string | null>(null)
   // Re-fetchable: the kv entry is invalidated by the gateway on runtime
   // switch (session ids belong to the active runtime's storage), so the SSE
   // runtime_switched handler re-runs this to drop the stale id immediately.
   // Monotonic token: latest call wins (rapid project switches / SSE refetch
   // must not be overwritten by an older in-flight response).
   let managerSessionFetchId = 0
-  const reloadManagerSession = (pd: string): void => {
-    if (!pd) { setManagerSessionId(null); return }
+  const fetchManagerSession = (pd: string): Promise<string | null> => {
+    if (!pd) {
+      setManagerSessionId(null)
+      setManagerSessionFor(pd || null)
+      return Promise.resolve(null)
+    }
     const fetchId = ++managerSessionFetchId
-    window.api.mafw.manager.session(pd).then((info: any) => {
-      if (fetchId === managerSessionFetchId) setManagerSessionId(info?.sessionId || null)
-    }).catch(() => { if (fetchId === managerSessionFetchId) setManagerSessionId(null) })
+    const settle = (id: string | null) => {
+      if (fetchId === managerSessionFetchId) {
+        setManagerSessionId(id)
+        setManagerSessionFor(pd)
+      }
+      return id
+    }
+    return window.api.mafw.manager.session(pd)
+      .then((info: any) => settle(info?.sessionId || null))
+      .catch(() => settle(null))
   }
+  const reloadManagerSession = (pd: string): void => { void fetchManagerSession(pd) }
+  /** 该项目的 Lead id（未落定 → null，不参与任何"保活"判定）。 */
+  const leadIdFor = (project: string | null): string | null =>
+    project && managerSessionFor() === project ? managerSessionId() : null
+  /** kv 的 Lead id 是否已经有结论（id 或 "没有"）——布局恢复的前置条件。 */
+  const managerSessionResolved = (project: string | null): boolean =>
+    !!project && managerSessionFor() === project
   createEffect(() => {
     const pd = currentProject()
-    if (!pd) { setManagerSessionId(null); return }
+    if (!pd) { setManagerSessionId(null); setManagerSessionFor(null); return }
     reloadManagerSession(pd)
   })
   createEffect(() => {
@@ -330,7 +352,9 @@ export function MafwShell() {
       const list = await window.api.mafw.sessions.list(worktree).catch(() => [])
       const history = Array.isArray(list) ? list : []
       setHistorySessions(history)
-      applyProjectLayout(worktree, history)
+      // Lead id 必须在 prune 之前到手（隐藏会话只能靠它保活）。
+      const leadId = await fetchManagerSession(worktree)
+      applyProjectLayout(worktree, history, leadId)
       setLayoutProject(worktree)
     } finally {
       switchingProject = false
@@ -367,7 +391,7 @@ export function MafwShell() {
   // gateway DB id first (the hidden Lead is usually absent from the history
   // list — see manager-session.ts), legacy role metadata only as a fallback.
   const resolveManager = () =>
-    resolveLeadSession({ managerSessionId: managerSessionId(), historySessions: historySessions() })
+    resolveLeadSession({ managerSessionId: leadIdFor(currentProject()), historySessions: historySessions() })
 
   const handleOpenManager = async (): Promise<boolean> => {
     const manager = resolveManager()
@@ -425,6 +449,8 @@ export function MafwShell() {
   const doRotateTopic = async (pd: string): Promise<void> => {
     try {
       const res = await window.api.mafw.manager.rotate(pd)
+      // 轮换后新的 Lead id 属于这个项目（布局保存/恢复都按项目作用域）。
+      setManagerSessionFor(pd)
       setManagerSessionId(res.sessionId)
       const list = await window.api.mafw.sessions.list(pd).catch(() => [])
       setHistorySessions(Array.isArray(list) ? list : [])
@@ -634,11 +660,19 @@ export function MafwShell() {
 
   type LayoutHistorySession = { id: string; title?: string; metadata?: { mafw?: { role?: string } } }
 
-  const applyProjectLayout = (project: string, history: LayoutHistorySession[]) => {
+  const applyProjectLayout = (
+    project: string,
+    history: LayoutHistorySession[],
+    leadIdOverride?: string | null,
+  ) => {
     const snap = loadProjectLayout(layoutIO, project) ?? migrateLegacyLayout(layoutIO, project)
     setSessions([])
+    // Lead 是隐藏会话（不在 /api/sessions 里）：prune 前必须把 kv 权威 id 加进 keep
+    // 集合，否则重载/切项目会把 Lead tab 当成"已删除"丢掉。优先用调用方刚取到的 id
+    // （切项目路径），否则用当前已落定的那个。
+    const leadId = leadIdOverride === undefined ? leadIdFor(project) : leadIdOverride
     const existing = new Set(history.map(s => s.id))
-    const pruned = snap ? pruneMissing(snap, existing) : null
+    const pruned = snap ? pruneMissing(snap, existing, leadId ? [leadId] : []) : null
     if (!pruned) {
       setActiveSessionId(null)
       setActiveViewId(null)
@@ -648,7 +682,6 @@ export function MafwShell() {
     const byId = new Map(history.map(s => [s.id, s]))
     // 持久化布局只存 {id,title}：隐藏的 Lead 会话不在 history 里，角色标记会丢，
     // 靠 kv 权威 id 认回来（否则恢复后新话题/agent 锁失效）。
-    const leadId = managerSessionId()
     for (const t of pruned.tabs) {
       const info = byId.get(t.id)
       const lead = (!!leadId && t.id === leadId) || isLeadSessionRole(info?.metadata?.mafw?.role)
@@ -678,12 +711,15 @@ export function MafwShell() {
   onCleanup(() => { if (layoutSaveTimer) clearTimeout(layoutSaveTimer) })
 
   // Initial restore: wait until the project's session list has actually loaded
-  // (an empty list is also a valid loaded state).
+  // (an empty list is also a valid loaded state) **and** the kv Lead id has
+  // resolved — the hidden Lead tab is only recognizable through that id, so
+  // pruning before it arrives would silently drop it.
   createEffect(() => {
     if (gwStatus()?.state !== "ready") return
     const pd = currentProject()
     if (!pd || layoutProject() === pd || switchingProject) return
     if (!sessionStore.isLoaded(pd)) return
+    if (!managerSessionResolved(pd)) return
     const history = sessionStore.sessionsFor(pd) as unknown as LayoutHistorySession[]
     applyProjectLayout(pd, history)
     setLayoutProject(pd)
@@ -2192,7 +2228,7 @@ export function MafwShell() {
             onClose={closeLeftDock}
             onResize={applyLeftDockWidth}
             activeSessionId={activeSessionId()}
-            managerSessionId={managerSessionId()}
+            managerSessionId={leadIdFor(currentProject())}
             projectsRev={projectsRev}
             onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
             onSelectSession={openSessionTab}
