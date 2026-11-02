@@ -222,6 +222,17 @@ export function podGoalResultLabel(verdict: PodGoalVerdict | null): string {
   return verdict ? GOAL_VERDICT_LABEL[verdict] ?? verdict : "已结束"
 }
 
+export function goalQueueRow(goal: Pick<PodGoal, "title" | "verdict" | "stage">): string {
+  const status = goal.stage.kind === "queued"
+    ? "排队中"
+    : goal.stage.kind === "working"
+      ? "团队工作中"
+      : goal.verdict
+        ? podGoalResultLabel(goal.verdict)
+        : podStageLabel(goal.stage)
+  return `${goal.title} · ${status}`
+}
+
 export function attentionCount(detail: Pick<PodDetail, "attention">): number {
   return detail.attention.length
 }
