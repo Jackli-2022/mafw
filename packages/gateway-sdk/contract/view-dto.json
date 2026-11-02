@@ -1,0 +1,13 @@
+{
+  "contractVersion": "2026.11.0",
+  "messages": ["role"],
+  "parts": ["id", "type"],
+  "model": ["id", "name"],
+  "session": ["id", "status"],
+  "diff": ["file"],
+  "provider": ["id", "name", "models"],
+  "agent": ["id", "label", "source", "selectable"],
+  "permission": ["id", "sessionID", "kind", "targets"],
+  "question": ["id", "sessionID", "questions"],
+  "background": ["id", "source", "kind", "status", "sessionID"]
+}

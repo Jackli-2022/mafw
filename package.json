@@ -20,6 +20,7 @@
     "pack:install": "npm run build && npm pack && npm install -g jack200714-mafw-*.tgz && mafw version",
     "version:set": "node scripts/bump-version.mjs",
     "version:check": "node scripts/bump-version.mjs --check",
+    "sync:view-dto": "node scripts/sync-view-dto.mjs",
     "test": "npm test --prefix gateway",
     "test:unit": "npm test --prefix gateway",
     "test:tui": "node --test packages/tui/tests/*.test.ts",
