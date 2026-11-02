@@ -265,6 +265,8 @@ import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps } from './routes/plugins';
 import type { DryEventDeps } from './routes/dry-event';
 import { PluginHost } from './plugins/package-host';
+import { PackageStateStore } from './plugins/package-state-store';
+import { PackageManager } from './plugins/package-manager';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
 import type { UsageStatsProvider } from './usage/plugin-context';
@@ -607,6 +609,10 @@ class MafwScheduler {
   private mediaRuntimeExecutor?: MediaRuntimeExecutor;
   private mediaRuntimeExecutorRt?: unknown;
   private pluginHost?: PluginHost;
+  /** 统一插件包启用/禁用状态（manager 独立原子持久化）。 */
+  private packageStateStore?: PackageStateStore;
+  /** 统一插件包文件系统操作（Task 6 REST 面直接调用）。 */
+  private packageManager?: PackageManager;
   /** 最近一次已提交的统一插件包 client 快照（Task 6 的 /api/plugins/client 直接读）。 */
   private pluginClientSnapshot?: PluginClientSnapshot;
   private usageStatsProvider?: UsageStatsProvider;
@@ -766,8 +772,10 @@ class MafwScheduler {
     setPiUnknownRecorder((t) => { try { this.unknownEventTracker.record('pi', t); } catch { /* fail-open */ } });
 
     // 2b. 统一插件包宿主（必须在 createRuntime 之前 init——包 runtime 贡献要先注册）
+    const pluginPackageDir = process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins');
+    this.packageStateStore = new PackageStateStore(config.resolvePath());
     this.pluginHost = new PluginHost(
-      process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins'),
+      pluginPackageDir,
       (name) => createPluginPackageContext(name, {
         getApiKey: this.runtimeGetApiKey.bind(this),
         usageStats: () => this.usageStatsProvider,
@@ -783,12 +791,19 @@ class MafwScheduler {
       {
         // 变更包若拥有当前 active runtime → 整包 pending，不打断正在使用的工作。
         activeRuntime: () => this.runtimeName,
+        // 管理器独立持久化的禁用状态：包仍在磁盘上，但扫描时跳过。
+        isDisabled: (name) => this.packageStateStore!.isDisabled(name),
         // 包事件不得冒充 canonical 事件。
         canonicalTypes: CANONICAL_TYPE_SET,
         // 包事件 + 提交后的 plugins.changed 走 gateway 既有扁平广播通道。
         broadcast: (event) => this.broadcast(event as any),
       },
     );
+    this.packageManager = new PackageManager({
+      pluginDir: pluginPackageDir,
+      host: this.pluginHost,
+      stateStore: this.packageStateStore,
+    });
     this.pluginHost.bindRuntime((entries) => this.runtimeLoader?.setPackageEntries(entries));
     // 客户端快照只在 commit 后替换；handler/源码永不下发。
     this.pluginHost.onSnapshot((snapshot) => { this.pluginClientSnapshot = snapshot; });
@@ -2496,6 +2511,11 @@ class MafwScheduler {
    */
   getPluginClientSnapshot(): PluginClientSnapshot {
     return this.pluginClientSnapshot ?? this.pluginHost?.getClientSnapshot() ?? { revision: '0:0', plugins: [] };
+  }
+
+  /** 统一插件包文件系统操作入口（Task 6 REST 路由复用）。 */
+  getPackageManager(): PackageManager | undefined {
+    return this.packageManager;
   }
 
   /** P5 Wave 2：/api/plugins* deps（Plugin Hub 四类型统一面）。 */

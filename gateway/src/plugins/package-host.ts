@@ -60,6 +60,11 @@ export interface PluginHostOptions {
   /** RegistrationBag factory (diagnostics/tests may inject a tracking bag). */
   createBag?: () => RegistrationBag;
   /**
+   * Manager-owned enabled/disabled state (thunk, read on every scan). A
+   * disabled package stays installed but contributes nothing until re-enabled.
+   */
+  isDisabled?: (name: string) => boolean;
+  /**
    * Gateway-wide flat broadcast (SSE + WS + mobile push). Used for registered
    * package events and the `plugins.changed` commit notification; absent in
    * headless/tests, where events are accepted but not delivered.
@@ -82,6 +87,21 @@ export interface PluginApplyResult {
   applied: boolean;
   revision?: string;
   error?: string;
+}
+
+/** Result of an offline candidate check (nothing is published). */
+export interface PluginCheckResult {
+  ok: boolean;
+  name?: string;
+  version?: string;
+  /** Contribution kinds of the candidate (`ui`, `actions`, `runtime`, …). */
+  contributions?: string[];
+  error?: string;
+}
+
+export interface PluginRemoveResult {
+  removed: boolean;
+  revision?: string;
 }
 
 interface PackageEntries {
@@ -170,6 +190,11 @@ export class PluginHost {
   private readonly broadcast?: PluginHostOptions['broadcast'];
   private readonly actions: PluginActionRegistry;
   private readonly events: PluginEventRegistry;
+  /**
+   * Packages whose first activation must not take over the active runtime
+   * (manager install/enable). Consumed by the next scan only.
+   */
+  private stagedNew = new Set<string>();
 
   constructor(
     private dir: string,
@@ -298,6 +323,39 @@ export class PluginHost {
     return this.enqueue(() => this.runReload());
   }
 
+  /**
+   * Marks a package whose next (first) activation must not replace the active
+   * runtime: the candidate is validated and staged as pending instead of being
+   * committed. Manager install/enable use this so a fresh package cannot
+   * silently interrupt running work.
+   *
+   * The marker is one-shot and only applies when the package is new and owns
+   * the runtime currently in use; otherwise the package commits normally.
+   */
+  stageNewPackage(name: string): void {
+    this.stagedNew.add(name);
+  }
+
+  /**
+   * Activates a candidate from an arbitrary directory, validates every
+   * contribution and disposes it again. Nothing is registered on the action/
+   * event registries, no loader/bind callback fires and no revision is
+   * published — the client snapshot is untouched.
+   *
+   * This runs trusted local Host code; it is not a security sandbox.
+   */
+  checkPackage(dir: string): Promise<PluginCheckResult> {
+    return this.enqueue(() => this.runCheckPackage(dir));
+  }
+
+  /**
+   * Disposes and forgets a package (active or pending) so its directory can be
+   * deleted. Publishes a new snapshot when the client-visible set changed.
+   */
+  removePackage(name: string): Promise<PluginRemoveResult> {
+    return this.enqueue(() => this.runRemovePackage(name));
+  }
+
   stop(): void {
     this.stopped = true;
     this.watcher?.close();
@@ -313,6 +371,7 @@ export class PluginHost {
     this.active.clear();
     this.pending.clear();
     this.failures.clear();
+    this.stagedNew.clear();
     void this.disposeBags(bags);
   }
 
@@ -340,6 +399,9 @@ export class PluginHost {
   /** 全量重扫：staging 全部 candidate 后再一次性提交。 */
   private async runReload(): Promise<void> {
     if (this.stopped) return;
+    // One-shot: a marker staged before this scan never leaks into a later one.
+    const stagedNew = this.stagedNew;
+    this.stagedNew = new Set<string>();
     const nextActive = new Map<string, ActivePackage>();
     const nextPending = new Map<string, PendingPackage>();
     const nextFailures = new Map<string, PackageFailure>();
@@ -383,9 +445,11 @@ export class PluginHost {
         const activation = await this.activate(desc, bag);
         const staged: PackageActivation = { descriptor: desc, fingerprint, bag, ...activation };
         if (previousPending?.activation) toDispose.push(previousPending.activation.bag);
-        if (existing && this.ownsActiveRuntime(activation, existing)) {
+        const stageNewcomer =
+          !existing && stagedNew.has(desc.name) && this.ownsActiveRuntime(activation);
+        if ((existing && this.ownsActiveRuntime(activation, existing)) || stageNewcomer) {
           // Active-runtime change: keep the old package live until applyPending.
-          nextActive.set(desc.name, existing);
+          if (existing) nextActive.set(desc.name, existing);
           nextPending.set(desc.name, {
             descriptor: desc,
             fingerprint,
@@ -500,6 +564,92 @@ export class PluginHost {
   }
 
   /**
+   * Offline candidate check: one private bag, one activation, immediate
+   * disposal. Uses the same `activate()` path as a real commit, so manifest,
+   * module shape, contribution validation and runtime factory wiring are all
+   * exercised — but nothing is registered or published.
+   */
+  private async runCheckPackage(dir: string): Promise<PluginCheckResult> {
+    const pkgDir = path.resolve(dir);
+    let manifest: PackageManifest | undefined;
+    let name = path.basename(pkgDir);
+    try {
+      if (!fs.statSync(pkgDir).isDirectory()) throw new Error('candidate is not a directory');
+      const manifestPath = path.join(pkgDir, 'plugin.json');
+      if (!fs.existsSync(manifestPath)) throw new Error('plugin.json not found');
+      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      if (typeof manifest?.name !== 'string' || manifest.name.length === 0) {
+        throw new Error('plugin.json is missing "name"');
+      }
+      name = manifest.name;
+      const mainFile = path.join(pkgDir, manifest.main ?? 'index.js');
+      if (!fs.existsSync(mainFile)) throw new Error(`main file not found: ${manifest.main ?? 'index.js'}`);
+      const desc: PackageDescriptor = { name, mainFile, manifest, pkgDir };
+      const bag = this.createBag();
+      try {
+        const activation = await this.activate(desc, bag);
+        return {
+          ok: true,
+          name,
+          version: activation.version ?? manifest.version,
+          contributions: activation.contributions,
+        };
+      } finally {
+        await this.disposeBags([bag]);
+        // The candidate was not committed: drop its modules so a later install
+        // (or edit) re-evaluates the files instead of the checked snapshot.
+        this.invalidatePackageCache(desc);
+      }
+    } catch (err) {
+      return { ok: false, name, version: manifest?.version, error: describeError(err) };
+    }
+  }
+
+  /** Dispose + forget one package so the manager can delete its directory. */
+  private async runRemovePackage(name: string): Promise<PluginRemoveResult> {
+    const active = this.active.get(name);
+    const pending = this.pending.get(name);
+    // Close the package-directory watcher first: on Windows an open directory
+    // handle can block deletion, and a burst from the same watcher must not
+    // re-activate the package while its files are being removed.
+    const pkgDir = active?.descriptor.pkgDir ?? pending?.descriptor.pkgDir;
+    if (pkgDir) {
+      this.dirWatchers.get(pkgDir)?.close();
+      this.dirWatchers.delete(pkgDir);
+      this.pkgDirs = this.pkgDirs.filter((dir) => dir !== pkgDir);
+    }
+    const bags: RegistrationBag[] = [];
+    if (active) bags.push(active.bag);
+    if (pending?.activation) bags.push(pending.activation.bag);
+    await this.disposeBags(bags);
+
+    const nextPending = new Map(this.pending);
+    nextPending.delete(name);
+    const nextFailures = new Map(this.failures);
+    nextFailures.delete(name);
+    this.pending = nextPending;
+    this.failures = nextFailures;
+
+    if (!active) {
+      // Pending candidates and failures are not client-visible: no snapshot
+      // change, no revision bump, no `plugins.changed`.
+      this.notifyStateChanged();
+      return { removed: false };
+    }
+
+    const nextActive = new Map(this.active);
+    nextActive.delete(name);
+    const revision = this.nextToken();
+    this.active = nextActive;
+    this.snapshot = this.buildSnapshot(revision);
+    this.publishEntries();
+    this.snapshotCb?.(this.snapshot);
+    this.broadcastPluginsChanged(revision);
+    this.notifyStateChanged();
+    return { removed: true, revision };
+  }
+
+  /**
    * Attaches a committed package's actions/events to its bag.
    *
    * Only called from the commit path: a staged candidate's registrations must
@@ -596,11 +746,14 @@ export class PluginHost {
   }
 
   /** Does this change touch the runtime the gateway is currently using? */
-  private ownsActiveRuntime(activation: ActivationResult | undefined, existing: ActivePackage): boolean {
+  private ownsActiveRuntime(
+    activation: ActivationResult | undefined,
+    existing?: ActivePackage,
+  ): boolean {
     const active = this.activeRuntimeName();
     if (!active) return false;
     const candidate = activation?.entries.runtime?.name;
-    const current = existing.entries.runtime?.name;
+    const current = existing?.entries.runtime?.name;
     return candidate === active || current === active;
   }
 
@@ -639,6 +792,16 @@ export class PluginHost {
     }
   }
 
+  /** Manager-owned enabled/disabled thunk; never throws on a broken store. */
+  private isDisabledPackage(name: string): boolean {
+    try {
+      return this.options.isDisabled?.(name) === true;
+    } catch (err) {
+      log.warn(`[PluginHost] disabled-state lookup failed for ${name}: ${describeError(err)}`);
+      return false;
+    }
+  }
+
   /** 枚举候选包；逐条错误记入 errorStates（不抛出）。 */
   private scanDescriptors(errorStates: Map<string, PackageFailure>): PackageDescriptor[] {
     const out: PackageDescriptor[] = [];
@@ -646,19 +809,30 @@ export class PluginHost {
     const entries = fs.readdirSync(this.dir, { withFileTypes: true })
       .sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
+      // Dot entries are manager scratch space (install/backup temp dirs) and OS
+      // metadata, never packages. Disabled packages stay on disk but are
+      // skipped so their contributions disappear from loaders and the snapshot.
+      if (entry.name.startsWith('.')) continue;
       try {
         if (entry.isFile() && entry.name.endsWith('.js')) {
-          out.push({ name: entry.name.replace(/\.js$/, ''), mainFile: path.join(this.dir, entry.name) });
+          const name = entry.name.replace(/\.js$/, '');
+          if (this.isDisabledPackage(name)) continue;
+          out.push({ name, mainFile: path.join(this.dir, entry.name) });
         } else if (entry.isDirectory()) {
           const pkgDir = path.join(this.dir, entry.name);
+          // Check the folder name first: a disabled package with an unreadable
+          // manifest must stay silent instead of surfacing as an error entry.
+          if (this.isDisabledPackage(entry.name)) continue;
           const manifestPath = path.join(pkgDir, 'plugin.json');
           let manifest: PackageManifest | undefined;
           if (fs.existsSync(manifestPath)) {
             manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
           }
+          const name = manifest?.name ?? entry.name;
+          if (this.isDisabledPackage(name)) continue;
           const mainFile = path.join(pkgDir, manifest?.main ?? 'index.js');
           if (!fs.existsSync(mainFile)) throw new Error(`main file not found: ${manifest?.main ?? 'index.js'}`);
-          out.push({ name: manifest?.name ?? entry.name, mainFile, manifest, pkgDir });
+          out.push({ name, mainFile, manifest, pkgDir });
         }
       } catch (err: any) {
         errorStates.set(entry.name, { source: path.join(this.dir, entry.name), error: err.message });
