@@ -60,6 +60,8 @@ export interface NodeRunRow {
   goal_id: string;
   project_id: string;
   loop: number;
+  /** Goal revision (append-only 打回循环的轮次)；legacy 行读回 1。 */
+  revision: number;
   node: string;
   attempt: number;
   session_id: string | null;
@@ -296,6 +298,7 @@ export class GatewayDatabase {
         goal_id TEXT NOT NULL,
         project_id TEXT NOT NULL,
         loop INTEGER NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
         node TEXT NOT NULL,
         attempt INTEGER NOT NULL DEFAULT 1,
         session_id TEXT,
@@ -397,6 +400,19 @@ export class GatewayDatabase {
     } catch {
       // Column already exists, ignore
     }
+
+    // Migration: Goal revision dimension on goal_node_runs（打回循环的
+    // append-only 轮次；legacy 行按 DEFAULT 1 读回 revision 1）。
+    try {
+      this.db.exec(`ALTER TABLE goal_node_runs ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`);
+    } catch {
+      // Column already exists, ignore
+    }
+    // Index 必须在 ALTER 之后建：legacy 库的旧表没有 revision 列。
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_node_runs_goal_revision
+        ON goal_node_runs(goal_id, revision, loop);
+    `);
   }
 
   // ── T1 observations ─────────────────────────────────────────────────────
@@ -726,11 +742,16 @@ export class GatewayDatabase {
   insertNodeRun(input: {
     goalId: string; projectId: string; loop: number; node: string;
     attempt: number; sessionId: string | null; startedAt: string;
+    /** Goal revision；缺省 1（legacy 调用方零迁移）。 */
+    revision?: number;
   }): number {
     const info = this.db.prepare(`
-      INSERT INTO goal_node_runs (goal_id, project_id, loop, node, attempt, session_id, status, started_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'running', ?)
-    `).run(input.goalId, input.projectId, input.loop, input.node, input.attempt, input.sessionId, input.startedAt);
+      INSERT INTO goal_node_runs (goal_id, project_id, loop, revision, node, attempt, session_id, status, started_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?)
+    `).run(
+      input.goalId, input.projectId, input.loop, input.revision ?? 1, input.node,
+      input.attempt, input.sessionId, input.startedAt,
+    );
     return Number(info.lastInsertRowid);
   }
 
@@ -755,10 +776,28 @@ export class GatewayDatabase {
     ).all(goalId) as NodeRunRow[];
   }
 
-  latestNodeAttempt(goalId: string, loop: number, node: string): NodeRunRow | null {
+  /**
+   * 同 (goal, revision, loop, node) 的最新一次 attempt。
+   *
+   * 两种调用形态并存（Task 3 契约 + 旧调用方兼容）：
+   * - `latestNodeAttempt(goalId, revision, loop, node)` —— revision 维度过滤
+   * - `latestNodeAttempt(goalId, loop, node)` —— legacy 三参，等价 revision 1
+   */
+  latestNodeAttempt(goalId: string, revision: number, loop: number, node: string): NodeRunRow | null;
+  latestNodeAttempt(goalId: string, loop: number, node: string): NodeRunRow | null;
+  latestNodeAttempt(
+    goalId: string,
+    revisionOrLoop: number,
+    loopOrNode: number | string,
+    node?: string,
+  ): NodeRunRow | null {
+    const legacyCall = node === undefined;
+    const revision = legacyCall ? 1 : revisionOrLoop;
+    const loop = legacyCall ? revisionOrLoop : (loopOrNode as number);
+    const nodeName = legacyCall ? (loopOrNode as string) : node;
     const row = this.db.prepare(
-      'SELECT * FROM goal_node_runs WHERE goal_id = ? AND loop = ? AND node = ? ORDER BY id DESC LIMIT 1',
-    ).get(goalId, loop, node) as NodeRunRow | undefined;
+      'SELECT * FROM goal_node_runs WHERE goal_id = ? AND revision = ? AND loop = ? AND node = ? ORDER BY id DESC LIMIT 1',
+    ).get(goalId, revision, loop, nodeName) as NodeRunRow | undefined;
     return row ?? null;
   }
 

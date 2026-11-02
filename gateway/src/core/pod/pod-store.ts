@@ -10,6 +10,23 @@ export type PodMemberRole = 'lead' | 'tech_lead' | 'builder' | 'reviewer';
 export const POD_ROSTER_ROLES = ['lead', 'tech_lead', 'builder', 'reviewer'] as const;
 export type PodMemberStatus = 'available' | 'working' | 'waiting' | 'sleeping' | 'retired';
 export type PodGoalStatus = 'queued' | 'active' | 'done' | 'aborted';
+/**
+ * Goal revision 生命周期（append-only 打回循环）：每个 revision 独立走
+ * 讨论 → 方向裁定 → 规划 → 计划审阅 → 排队 → 实施 → 验收 → 终态。
+ * `discarded` = 误建 Goal 的丢弃（不产生 FAIL/outcome 污染）。
+ */
+export type PodGoalRevisionStatus =
+  | 'discussing'
+  | 'direction_review'
+  | 'planning'
+  | 'plan_review'
+  | 'queued'
+  | 'implementing'
+  | 'reviewing'
+  | 'completed'
+  | 'aborted'
+  | 'discarded';
+export type PodGoalDirectionStatus = 'none' | 'pending' | 'decided';
 export type PodTaskStatus =
   | 'pending'
   | 'in_progress'
@@ -51,6 +68,29 @@ export interface PodGoalRow {
   goalId: string;
   status: PodGoalStatus;
   verdict: PodGoalVerdict | null;
+  /** 当前 revision（legacy 行为 1）；revision 内容在 pod_goal_revisions。 */
+  activeRevision: number;
+  /** Goal 级调度优先级（打回/高优先级 Goal 靠前；legacy 0）。 */
+  priority: number;
+  enqueuedAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+/** Goal revision（append-only：旧 revision 永不覆盖、verdict 永不反归档）。 */
+export interface PodGoalRevisionRow {
+  id: string;
+  podId: string;
+  goalId: string;
+  revision: number;
+  status: PodGoalRevisionStatus;
+  verdict: string | null;
+  directionStatus: PodGoalDirectionStatus;
+  directionJson: string | null;
+  planHash: string | null;
+  evalHash: string | null;
+  feedback: string | null;
+  priority: number;
   enqueuedAt: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -169,6 +209,28 @@ function goalFromRow(row: any): PodGoalRow {
     goalId: row.goal_id,
     status: row.status,
     verdict: row.verdict ?? null,
+    activeRevision: Number(row.active_revision ?? 1),
+    priority: Number(row.priority ?? 0),
+    enqueuedAt: row.enqueued_at,
+    startedAt: row.started_at ?? null,
+    endedAt: row.ended_at ?? null,
+  };
+}
+
+function goalRevisionFromRow(row: any): PodGoalRevisionRow {
+  return {
+    id: row.id,
+    podId: row.pod_id,
+    goalId: row.goal_id,
+    revision: Number(row.revision),
+    status: row.status,
+    verdict: row.verdict ?? null,
+    directionStatus: row.direction_status ?? 'none',
+    directionJson: row.direction_json ?? null,
+    planHash: row.plan_hash ?? null,
+    evalHash: row.eval_hash ?? null,
+    feedback: row.feedback ?? null,
+    priority: Number(row.priority ?? 0),
     enqueuedAt: row.enqueued_at,
     startedAt: row.started_at ?? null,
     endedAt: row.ended_at ?? null,
@@ -294,6 +356,8 @@ export class PodStore {
         goal_id TEXT NOT NULL,
         status TEXT NOT NULL,
         verdict TEXT,
+        active_revision INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 0,
         enqueued_at TEXT NOT NULL,
         started_at TEXT,
         ended_at TEXT,
@@ -301,6 +365,29 @@ export class PodStore {
       );
       CREATE INDEX IF NOT EXISTS idx_pod_goals_goal ON pod_goals(goal_id);
       CREATE INDEX IF NOT EXISTS idx_pod_goals_pod_status ON pod_goals(pod_id, status, enqueued_at);
+
+      CREATE TABLE IF NOT EXISTS pod_goal_revisions (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        goal_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        verdict TEXT,
+        direction_status TEXT NOT NULL DEFAULT 'none',
+        direction_json TEXT,
+        plan_hash TEXT,
+        eval_hash TEXT,
+        feedback TEXT,
+        priority INTEGER NOT NULL DEFAULT 0,
+        enqueued_at TEXT NOT NULL,
+        started_at TEXT,
+        ended_at TEXT,
+        UNIQUE(pod_id, goal_id, revision)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pod_goal_revisions_goal
+        ON pod_goal_revisions(pod_id, goal_id, revision);
+      CREATE INDEX IF NOT EXISTS idx_pod_goal_revisions_status
+        ON pod_goal_revisions(pod_id, status, priority);
 
       CREATE TABLE IF NOT EXISTS pod_tasks (
         id TEXT PRIMARY KEY,
@@ -400,6 +487,9 @@ export class PodStore {
     this.ensureColumn('pod_messages', 'delivered_session_id', 'delivered_session_id TEXT');
     this.ensureColumn('pod_a2a_links', 'state', 'state TEXT');
     this.ensureColumn('pod_goals', 'verdict', 'verdict TEXT');
+    // Task 3：Goal revision 根指针 + 调度优先级（legacy 行按 DEFAULT 归一为 1/0）。
+    this.ensureColumn('pod_goals', 'active_revision', 'active_revision INTEGER NOT NULL DEFAULT 1');
+    this.ensureColumn('pod_goals', 'priority', 'priority INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('pod_tasks', 'acceptance_json', 'acceptance_json TEXT');
     this.db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
@@ -576,6 +666,143 @@ export class PodStore {
         ended_at = COALESCE(?, ended_at)
       WHERE id = ?
     `).run(status, patch.verdict ?? null, patch.startedAt ?? null, patch.endedAt ?? null, id);
+  }
+
+  // ── Goal revisions（append-only 打回循环） ───────────────────────────────
+
+  /**
+   * 追加一个 revision。已存在的 (podId, goalId, revision) 原样返回——
+   * revision 历史 append-only，重试不覆盖已发生的阶段与 verdict。
+   * 注意：这里不动根 `active_revision`；切当前 revision 走 `setActiveRevision`。
+   */
+  createGoalRevision(input: {
+    id?: string;
+    podId: string;
+    goalId: string;
+    revision: number;
+    status: PodGoalRevisionStatus;
+    verdict?: string | null;
+    directionStatus?: PodGoalDirectionStatus;
+    directionJson?: string | null;
+    planHash?: string | null;
+    evalHash?: string | null;
+    feedback?: string | null;
+    priority?: number;
+    enqueuedAt?: string;
+    startedAt?: string | null;
+    endedAt?: string | null;
+    now: string;
+  }): PodGoalRevisionRow {
+    const existing = this.getGoalRevision(input.podId, input.goalId, input.revision);
+    if (existing) return existing;
+    const id = input.id ?? `goalrev_${input.goalId}_${input.revision}`;
+    const row = this.db.prepare(`
+      INSERT INTO pod_goal_revisions (
+        id, pod_id, goal_id, revision, status, verdict,
+        direction_status, direction_json, plan_hash, eval_hash, feedback,
+        priority, enqueued_at, started_at, ended_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING *
+    `).get(
+      id, input.podId, input.goalId, input.revision, input.status, input.verdict ?? null,
+      input.directionStatus ?? 'none', input.directionJson ?? null,
+      input.planHash ?? null, input.evalHash ?? null, input.feedback ?? null,
+      input.priority ?? 0, input.enqueuedAt ?? input.now,
+      input.startedAt ?? null, input.endedAt ?? null,
+    ) as any;
+    return goalRevisionFromRow(row);
+  }
+
+  getGoalRevision(podId: string, goalId: string, revision: number): PodGoalRevisionRow | null {
+    const row = this.db.prepare(
+      'SELECT * FROM pod_goal_revisions WHERE pod_id = ? AND goal_id = ? AND revision = ?',
+    ).get(podId, goalId, revision) as any;
+    return row ? goalRevisionFromRow(row) : null;
+  }
+
+  listGoalRevisions(podId: string, goalId: string): PodGoalRevisionRow[] {
+    return (this.db.prepare(
+      'SELECT * FROM pod_goal_revisions WHERE pod_id = ? AND goal_id = ? ORDER BY revision ASC',
+    ).all(podId, goalId) as any[]).map(goalRevisionFromRow);
+  }
+
+  /** 排队中的 revision：优先级高的先跑，同优先级按入队时间（打回 Goal 抢先）。 */
+  listQueuedGoalRevisions(podId: string): PodGoalRevisionRow[] {
+    return (this.db.prepare(
+      `SELECT * FROM pod_goal_revisions WHERE pod_id = ? AND status = 'queued'
+       ORDER BY priority DESC, enqueued_at ASC, revision ASC`,
+    ).all(podId) as any[]).map(goalRevisionFromRow);
+  }
+
+  /**
+   * 更新 revision 阶段。COALESCE 语义：未传的字段保持原值（含旧 verdict）；
+   * 进入 implementing/reviewing 首次盖章 started_at，终态盖章 ended_at。
+   */
+  setGoalRevisionStatus(input: {
+    podId: string;
+    goalId: string;
+    revision: number;
+    status: PodGoalRevisionStatus;
+    now: string;
+    verdict?: string | null;
+    directionStatus?: PodGoalDirectionStatus;
+    directionJson?: string | null;
+    planHash?: string | null;
+    evalHash?: string | null;
+    feedback?: string | null;
+  }): void {
+    const startsWork = input.status === 'implementing' || input.status === 'reviewing';
+    const isTerminal = input.status === 'completed'
+      || input.status === 'aborted'
+      || input.status === 'discarded';
+    this.db.prepare(`
+      UPDATE pod_goal_revisions SET
+        status = ?,
+        verdict = COALESCE(?, verdict),
+        direction_status = COALESCE(?, direction_status),
+        direction_json = COALESCE(?, direction_json),
+        plan_hash = COALESCE(?, plan_hash),
+        eval_hash = COALESCE(?, eval_hash),
+        feedback = COALESCE(?, feedback),
+        started_at = COALESCE(started_at, ?),
+        ended_at = COALESCE(?, ended_at)
+      WHERE pod_id = ? AND goal_id = ? AND revision = ?
+    `).run(
+      input.status,
+      input.verdict ?? null,
+      input.directionStatus ?? null,
+      input.directionJson ?? null,
+      input.planHash ?? null,
+      input.evalHash ?? null,
+      input.feedback ?? null,
+      startsWork ? input.now : null,
+      isTerminal ? input.now : null,
+      input.podId, input.goalId, input.revision,
+    );
+  }
+
+  /** 把 Goal 根指针切到指定 revision（旧 revision 行原样保留）。 */
+  setActiveRevision(podId: string, goalId: string, revision: number): void {
+    this.db.prepare(
+      'UPDATE pod_goals SET active_revision = ? WHERE pod_id = ? AND goal_id = ?',
+    ).run(revision, podId, goalId);
+  }
+
+  /** 下一个 revision 号：max(已有 revision, 根 active_revision) + 1（legacy 从 2 开始）。 */
+  nextGoalRevision(podId: string, goalId: string): number {
+    const row = this.db.prepare(
+      'SELECT COALESCE(MAX(revision), 0) AS max_revision FROM pod_goal_revisions WHERE pod_id = ? AND goal_id = ?',
+    ).get(podId, goalId) as { max_revision?: number } | undefined;
+    const goal = this.getGoal(podId, goalId);
+    const highest = Math.max(Number(row?.max_revision ?? 0), goal?.activeRevision ?? 1);
+    return highest + 1;
+  }
+
+  /** Goal 级调度优先级（打回 Goal 抢先于普通 queued Goal）。 */
+  setGoalPriority(podId: string, goalId: string, priority: number): void {
+    this.db.prepare(
+      'UPDATE pod_goals SET priority = ? WHERE pod_id = ? AND goal_id = ?',
+    ).run(priority, podId, goalId);
   }
 
   upsertTask(

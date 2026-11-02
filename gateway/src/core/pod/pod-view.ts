@@ -40,6 +40,9 @@ export interface PodGoalView {
   verdict: PodGoalVerdict | null;
   stage: PodGoalStage;
   resultReady: boolean;
+  /** 当前 revision（legacy 行为 1）；revision 明细见 pod_goal_revisions。 */
+  activeRevision: number;
+  priority: number;
   enqueuedAt: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -104,6 +107,8 @@ export function buildPodGoalView(
     verdict,
     stage,
     resultReady: terminal && !!description?.hasResultEvidence,
+    activeRevision: row.activeRevision,
+    priority: row.priority,
     enqueuedAt: row.enqueuedAt,
     startedAt: row.startedAt,
     endedAt: row.endedAt,
