@@ -14,7 +14,7 @@ const unsupported = (): ActionDescriptor => ({ enabled: false, reason: 'unsuppor
 
 export function projectExperienceActions(
   access: RuntimeAccess | null,
-  _ctx: ExperienceProjectionContext = {},
+  ctx: ExperienceProjectionContext = {},
 ): Record<ExperienceActionId, ActionDescriptor> {
   const actions = Object.fromEntries(
     EXPERIENCE_ACTION_IDS.map((id) => [id, unsupported()]),
@@ -23,7 +23,7 @@ export function projectExperienceActions(
   // 首批切片在后续任务点亮；这里保留唯一投影入口，避免前端自行推导。
   if (access?.can('branch.checkpoint')) {
     const revert = access.semantics<{ files?: boolean; undo?: boolean }>('branch.revert');
-    actions['checkpoint.restore'] = _ctx.busy
+    actions['checkpoint.restore'] = ctx.busy
       ? { enabled: false, reason: 'busy' }
       : {
           enabled: true,
