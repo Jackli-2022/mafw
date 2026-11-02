@@ -59,7 +59,7 @@ const CONFIG_PAGE_KEYS = ["id", "title", "schema", "loadAction", "saveAction", "
 const MESSAGE_WINDOW_KEYS = ["id", "title", "triggerEvent", "viewAction", "modal", "dismissible"] as const
 
 const ACTION_KEYS = ["name", "title", "description", "inputSchema", "outputSchema", "timeoutMs"] as const
-const EVENT_KEYS = ["type", "title", "description", "schema"] as const
+const EVENT_KEYS = ["type", "title", "description", "schema", "scope"] as const
 const DIAGNOSTIC_KEYS = ["level", "message", "code"] as const
 
 const CONFIG_ROOT_KEYS = ["type", "title", "description", "properties", "required", "additionalProperties"] as const
@@ -425,6 +425,13 @@ function readEvents(value: unknown, packageName: string, errors: string[]): Plug
         ? undefined
         : readJsonSchemaObject(item.schema, `event "${type}" schema`, errors)
     if (schema !== undefined) event.schema = schema
+    if (item.scope !== undefined) {
+      if (item.scope === "global" || item.scope === "session") {
+        event.scope = item.scope
+      } else {
+        addError(errors, `event "${type}" scope must be "global" or "session"`)
+      }
+    }
     events.push(event)
   })
   return events

@@ -129,6 +129,12 @@ export interface PluginEventDescriptor {
   title?: string
   description?: string
   schema?: PluginJsonSchema
+  /**
+   * Delivery scope declared by the package (`global` default semantics live in
+   * the Host). Preserved on the client descriptor so Desktop and later Host
+   * work can reason about the declaration without re-reading Host state.
+   */
+  scope?: "global" | "session"
 }
 
 export interface PluginDiagnostic {

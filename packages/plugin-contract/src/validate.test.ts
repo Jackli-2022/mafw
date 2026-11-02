@@ -360,3 +360,28 @@ test("trims unsupported optional values and keeps the DTO serializable", () => {
   if (result.ok) return
   assert.match(result.error, /override/i)
 })
+
+test("preserves event scope on the client descriptor", () => {
+  const descriptor = validDescriptor()
+  descriptor.events[0]!.scope = "session"
+  const result = validateClientDescriptor(descriptor)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.value.events[0]!.scope, "session")
+})
+
+test("keeps scope absent when the declaration does not set it", () => {
+  const result = validateClientDescriptor(validDescriptor())
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal("scope" in result.value.events[0]!, false)
+})
+
+test("rejects an invalid event scope", () => {
+  const descriptor = validDescriptor()
+  descriptor.events[0]!.scope = "forever" as unknown as "global"
+  const result = validateClientDescriptor(descriptor)
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.match(result.error, /scope/i)
+})

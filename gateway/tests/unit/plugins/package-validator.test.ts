@@ -15,6 +15,7 @@ function validContributions(): UnifiedPluginContributions {
         type: 'plugin:example:changed',
         title: 'Changed',
         schema: { type: 'object', properties: { id: { type: 'string' } } },
+        scope: 'session',
       },
     ],
     actions: {
@@ -351,6 +352,38 @@ describe('buildActivatedContributions', () => {
       properties: { id: { type: 'string' } },
     });
     expect(events[0].declaration).toMatchObject({ type: 'plugin:example:changed' });
+  });
+
+  it('carries the declared event scope into the client descriptor', () => {
+    const result = buildActivatedContributions('example', validContributions(), CANONICAL);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.events[0].declaration.scope).toBe('session');
+    expect(result.value.events[0].descriptor.scope).toBe('session');
+    // The descriptor must stay serializable: scope is plain data, not Host state.
+    expect(JSON.parse(JSON.stringify(result.value.events[0].descriptor)).scope).toBe('session');
+  });
+
+  it('leaves scope absent from the descriptor when it is not declared', () => {
+    const contributions = validContributions();
+    delete contributions.events![0].scope;
+    const result = buildActivatedContributions('example', contributions, CANONICAL);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect('scope' in result.value.events[0].descriptor).toBe(false);
+  });
+
+  it('rejects an invalid event scope', () => {
+    const contributions = validContributions();
+    contributions.events = [
+      { type: 'plugin:example:changed', scope: 'forever' } as any,
+    ];
+    contributions.ui = {};
+    const errors = validateUnifiedContributions('example', contributions, CANONICAL);
+    expect(errors.join('\n')).toMatch(/scope must be "global" or "session"/);
+    // Exactly one diagnostic: the contract must not repeat the Host's finding.
+    expect(errors.filter((error) => /scope must be/.test(error))).toHaveLength(1);
   });
 
   it('carries legacy contributions through untouched', () => {

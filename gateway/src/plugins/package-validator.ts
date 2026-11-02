@@ -302,7 +302,9 @@ function collectEvents(
     if (schema !== undefined) {
       errors.push(...validatePluginSchema(`event "${type}" schema`, schema));
     }
-    if (raw.scope !== undefined && raw.scope !== 'global' && raw.scope !== 'session') {
+    const scope = raw.scope;
+    const validScope = scope === 'global' || scope === 'session';
+    if (scope !== undefined && !validScope) {
       errors.push(`event "${type}" scope must be "global" or "session"`);
     }
 
@@ -310,7 +312,9 @@ function collectEvents(
     if (raw.title !== undefined) declaration.title = raw.title as string;
     if (raw.description !== undefined) declaration.description = raw.description as string;
     if (schema !== undefined) declaration.schema = schema as PluginJsonSchema;
-    if (raw.scope !== undefined) declaration.scope = raw.scope as PluginEventDeclaration['scope'];
+    // Invalid scopes are reported above and never carried into the declaration,
+    // so the shared contract cannot duplicate the same diagnostic.
+    if (validScope) declaration.scope = scope as PluginEventDeclaration['scope'];
 
     out.declarations.push(declaration);
     const descriptor: Record<string, unknown> = { type };
@@ -318,6 +322,9 @@ function collectEvents(
       if (declaration[key] !== undefined) descriptor[key] = declaration[key];
     }
     if (declaration.schema !== undefined) descriptor.schema = declaration.schema;
+    // Scope is part of the client descriptor contract (§15.3): preserve the
+    // declaration instead of dropping it in the Host-only declaration.
+    if (declaration.scope !== undefined) descriptor.scope = declaration.scope;
     out.descriptors.push(descriptor);
   });
   return out;
