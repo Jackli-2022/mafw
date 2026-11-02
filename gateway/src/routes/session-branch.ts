@@ -1,10 +1,10 @@
 import * as http from 'http';
-import type { AgentRuntime } from '../runtime/contract';
-import { RuntimeAccess } from '../runtime/runtime-access';
+import type { BusinessRuntime } from '../runtime/contract';
+import type { RuntimeAccess } from '../runtime/runtime-access';
 
 export interface SessionBranchDeps {
-  getRuntime(): AgentRuntime | null;
-  getAccess?(): RuntimeAccess | null;
+  getRuntime(): BusinessRuntime | null;
+  getAccess?(): Pick<RuntimeAccess, 'can'> | null;
 }
 
 function readBody(req: http.IncomingMessage): Promise<any> {
@@ -37,7 +37,8 @@ export async function handleSessionBranch(
   const [, sessionID, action] = m;
 
   const rt = deps.getRuntime();
-  const access = deps.getAccess?.() ?? (rt ? new RuntimeAccess(rt) : null);
+  // 能力门只经注入的 RuntimeAccess（facade 的 access）；业务不构造 raw access。
+  const access = deps.getAccess?.() ?? null;
   const surface = action === 'fork' ? 'branch.fork' : action === 'revert' ? 'branch.revert' : 'branch.unrevert';
   if (!rt || !access?.can(surface)) {
     json(res, action === 'unrevert' ? 404 : 503, { error: `runtime surface '${surface}' is not available` });

@@ -81,6 +81,33 @@ describe('RuntimeFacade', () => {
     expect(Object.getPrototypeOf(facade)).toBe(Object.prototype);
   });
 
+  it('does not expose diagnostics fields on the business facade', async () => {
+    const { rt } = makeRawRuntime();
+    const facade: any = await createRuntimeFacade(rt, { entry: ENTRY, isCanonical });
+    const diagnostics = [
+      'name', 'capabilities', 'config', 'completion', 'credentials',
+      'agentProcess', 'getBaseUrl', 'healthCheck', 'activeDialect',
+    ];
+    for (const key of diagnostics) {
+      expect(facade[key]).toBeUndefined();
+      expect(key in facade).toBe(false);
+      expect(Object.keys(facade)).not.toContain(key);
+    }
+  });
+
+  it('keeps RuntimeAccess backed by the raw runtime after narrowing', async () => {
+    const raw: any = {
+      name: 'fake',
+      capabilities: { sessionApi: true, diffApi: true },
+      session: { async diff() { return []; } },
+    };
+    const facade = await createRuntimeFacade(raw, { entry: ENTRY, isCanonical });
+    // 诊断字段不可见，但 surface 门仍从内部 raw 读取能力。
+    expect((facade as any).capabilities).toBeUndefined();
+    expect(facade.access.can('branch.diff')).toBe(true);
+    expect(facade.access.can('process.getBaseUrl')).toBe(false);
+  });
+
   it('drops malformed/native envelopes that survived the translator boundary', async () => {
     const queue: any[] = [];
     let wake: (() => void) | null = null;

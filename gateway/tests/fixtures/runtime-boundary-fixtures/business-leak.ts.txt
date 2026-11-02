@@ -1,0 +1,29 @@
+// 反向 fixture：业务模块不得出现的 runtime 私有知识（架构守卫必须抓到这里）。
+// 本文件不会被编译/执行，只被 architecture-boundaries.test.ts 当普通文本扫描。
+import type { RuntimeFacade } from '../../src/runtime/runtime-facade';
+
+export function businessLeak(runtime: RuntimeFacade, facade: any) {
+  const wantsDiff = runtime?.capabilities?.diffApi;
+  const wantsTree = (runtime as any)['capabilities'].worktreeApi;
+  const isPi = (runtime as any).name === 'pi';
+  const isClaude = runtime.name === 'claude';
+  const label = runtime?.activeDialect;
+  const completion = (runtime as any).completion;
+  const credentials = runtime.credentials;
+  const spawn = runtime.agentProcess.spawnServe;
+  const baseUrl = runtime.getBaseUrl();
+  const healthy = runtime.healthCheck();
+  const cfg = runtime.config.get();
+
+  // 组合根不允许的 getter 形态：把诊断字段重新挂回门面。
+  Object.defineProperty(facade, 'capabilities', { get: () => runtime.capabilities });
+
+  // runtime 私有存储布局。
+  const snapshotRoot = `${process.env.HOME}/.local/share/opencode/snapshot`;
+
+  return { wantsDiff, wantsTree, isPi, isClaude, label, completion, credentials, spawn, baseUrl, healthy, cfg, snapshotRoot };
+}
+
+export function runtimeNameBranch(runtimeName: string) {
+  return runtimeName === 'pi' ? 'in-process' : 'serve';
+}

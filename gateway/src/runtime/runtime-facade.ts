@@ -6,18 +6,42 @@
  * 任何 __mafw* wiring、resolveEventEntry 或 RawRuntime 原型都不会暴露。
  */
 import type { EventMappingEntry, TranslationHooks } from './event-mapper';
-import type { AgentRuntime } from './contract';
+import type { AgentRuntime, BusinessRuntime } from './contract';
 import { wrapDialectEventStream } from './event-stream-wiring';
 import { normalizeFacadeHistory } from './normalize-messages';
 import { RuntimeAccess } from './runtime-access';
 
 export const RUNTIME_FACADE: unique symbol = Symbol('mafw.runtimeFacade');
 
-export interface RuntimeFacade extends AgentRuntime {
+/**
+ * 业务可见门面：只有通道、语义与 `access`。诊断字段（name/capabilities/
+ * config/completion/credentials/agentProcess/getBaseUrl/healthCheck/
+ * activeDialect）不再复制到 facade —— 组合根改持 RuntimeHost，业务核心只经
+ * RuntimeAccess 判定能力（设计 §7.1）。
+ */
+export type RuntimeFacade = BusinessRuntime & {
   readonly [RUNTIME_FACADE]: true;
   readonly access: RuntimeAccess;
   rewireEvents(): Promise<string>;
-}
+};
+
+/**
+ * 组合根（index.ts）持有的进程/诊断窄面：raw runtime 上不属于业务面的字段。
+ * 组合根在创建 facade 前保存它，业务模块永远拿不到。
+ */
+export type RuntimeHost = Pick<
+  AgentRuntime,
+  | 'name'
+  | 'capabilities'
+  | 'activeDialect'
+  | 'external'
+  | 'config'
+  | 'completion'
+  | 'credentials'
+  | 'getBaseUrl'
+  | 'healthCheck'
+  | 'agentProcess'
+>;
 
 export interface RuntimeFacadeOptions {
   entry: EventMappingEntry;
@@ -27,9 +51,9 @@ export interface RuntimeFacadeOptions {
 }
 
 const PUBLIC_KEYS = [
-  'name', 'capabilities', 'external', 'session', 'shell', 'pty', 'provider', 'app',
-  'discovery', 'snapshotTree', 'mediaSession', 'mcp', 'config', 'tools', 'completion',
-  'credentials', 'agents', 'getBaseUrl', 'healthCheck', 'agentProcess', 'semantics', 'dispose',
+  'external', 'session', 'shell', 'pty', 'provider', 'app',
+  'discovery', 'snapshotTree', 'mediaSession', 'mcp', 'tools',
+  'agents', 'semantics', 'dispose',
 ] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -70,10 +94,6 @@ export async function createRuntimeFacade(
     facade[key] = cloneChannel(value);
   }
 
-  Object.defineProperty(facade, 'activeDialect', {
-    enumerable: true,
-    get: () => (raw as any).activeDialect,
-  });
   if (hasEventStream) {
     facade.global = {
       event: async () => {

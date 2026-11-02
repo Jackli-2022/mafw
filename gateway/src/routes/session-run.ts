@@ -8,13 +8,13 @@
  * 返回 handled=false 交给后续路由（对齐 session-checkpoints 约定）。
  */
 import * as http from 'http';
-import type { AgentRuntime } from '../runtime/contract';
-import { RuntimeAccess } from '../runtime/runtime-access';
+import type { BusinessRuntime } from '../runtime/contract';
+import type { RuntimeAccess } from '../runtime/runtime-access';
 import { RunStateError } from '../core/run/run-state-service';
 import type { RunCoordinator } from '../core/run/run-coordinator';
 
 export interface SessionRunDeps {
-  getRuntime(): AgentRuntime | null;
+  getRuntime(): BusinessRuntime | null;
   getAccess?(): RuntimeAccess | null;
   run?: RunCoordinator | null;
 }
@@ -51,7 +51,8 @@ export async function handleSessionRun(
   if (resume && req.method !== 'POST') return false;
 
   const rt = deps.getRuntime();
-  const access = deps.getAccess?.() ?? (rt ? new RuntimeAccess(rt) : null);
+  // 能力门只经注入的 RuntimeAccess（facade 的 access）。
+  const access = deps.getAccess?.() ?? null;
   const run = deps.run;
   // GET /run 与 discard 不需要 runtime（能力热切换后仍可清理暂停）；suspend/resume 需要。
   const needsRuntime = Boolean(suspend || resume);

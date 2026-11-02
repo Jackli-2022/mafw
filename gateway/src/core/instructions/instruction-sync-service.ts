@@ -11,12 +11,12 @@
  * never `capabilities.instructionsApi` or method presence.
  */
 import { InstructionBlocks, INSTRUCTION_KEYS } from '../../recall/instruction-blocks';
-import type { AgentRuntime } from '../../runtime/contract';
+import type { BusinessRuntime } from '../../runtime/contract';
 import type { RuntimeAccess } from '../../runtime/runtime-access';
 
 export interface InstructionSyncDeps {
   render(signal?: AbortSignal): Promise<InstructionBlocks>;
-  getRuntime(): AgentRuntime | null;
+  getRuntime(): BusinessRuntime | null;
   /** surface 门；缺失 access 视为不可用（不做「默认允许」猜测）。 */
   getAccess(): Pick<RuntimeAccess, 'can'> | null | undefined;
   isEnabled(): boolean;
@@ -211,7 +211,7 @@ export class InstructionSyncService {
     };
   }
 
-  private async runSync(sessionID: string, rt: AgentRuntime): Promise<InstructionSyncResult> {
+  private async runSync(sessionID: string, rt: BusinessRuntime): Promise<InstructionSyncResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.syncTimeoutMs);
     const api = this.instructionsOf(rt);
@@ -310,11 +310,11 @@ export class InstructionSyncService {
     return { managed: false, missing: [...ALL_KEYS], staleKeys: [], erroredKeys: [], reason };
   }
 
-  private canManage(rt: AgentRuntime | null): rt is AgentRuntime {
+  private canManage(rt: BusinessRuntime | null): rt is BusinessRuntime {
     return canInstructionSync(this.deps.getAccess()) && !!(rt as any)?.session?.instructions;
   }
 
-  private instructionsOf(rt: AgentRuntime): NonNullable<AgentRuntime['session']['instructions']> {
+  private instructionsOf(rt: BusinessRuntime): NonNullable<BusinessRuntime['session']['instructions']> {
     const api = (rt as any).session?.instructions;
     if (!api) throw new Error('instruction entries API not available');
     return api;

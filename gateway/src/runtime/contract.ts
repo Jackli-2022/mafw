@@ -614,6 +614,27 @@ export interface RuntimeClient {
   };
 }
 
+/**
+ * 诊断字段（设计 §7.1）：只有组合根的诊断视图与 Admin 出口可以读取，
+ * 业务核心一律经 RuntimeAccess surface / Experience / View DTO。
+ */
+export type RuntimeDiagnosticKey =
+  | 'name'
+  | 'capabilities'
+  | 'config'
+  | 'completion'
+  | 'credentials'
+  | 'agentProcess'
+  | 'getBaseUrl'
+  | 'healthCheck'
+  | 'activeDialect';
+
+/**
+ * 业务可见 runtime 面：只剩通道与语义。身份、能力位、进程原语、凭据与
+ * 无状态补全通道都在 RuntimeHost / RuntimeDiagnostics 上，业务部分不得回读。
+ */
+export type BusinessRuntime = Omit<AgentRuntime, RuntimeDiagnosticKey>;
+
 export interface AgentRuntime extends RuntimeClient {
   /** runtime 标识，如 'opencode' */
   readonly name: string;

@@ -28,8 +28,8 @@ function mockReq(method: string, body?: any): http.IncomingMessage {
   return req as http.IncomingMessage;
 }
 
-function depsWith(runtime: any, service: any) {
-  return { getRuntime: () => runtime, checkpoints: service as any };
+function depsWith(runtime: any, service: any, access: any = { can: () => true, semantics: () => ({}) }) {
+  return { getRuntime: () => runtime, getAccess: () => access, checkpoints: service as any };
 }
 
 const caps = { capabilities: { checkpointApi: true } };
@@ -43,7 +43,7 @@ describe('session checkpoint routes', () => {
     ] as const) {
       const res = mockRes();
       const handled = await handleSessionCheckpoints(mockReq(method, {}), res, url,
-        depsWith({ capabilities: {} }, {}));
+        depsWith({ capabilities: {} }, {}, { can: () => false }));
       expect(handled).toBe(true);
       expect(res.status).toBe(503);
     }
@@ -128,7 +128,7 @@ describe('session checkpoint routes', () => {
     const res = mockRes();
     const handled = await handleSessionCheckpoints(mockReq('POST', {}), res,
       '/api/sessions/s1/checkpoint',
-      { getRuntime: () => caps, checkpoints: { createManual } as any, isBusy: () => true });
+      { getRuntime: () => caps, getAccess: () => ({ can: () => true, semantics: () => ({}) }), checkpoints: { createManual } as any, isBusy: () => true });
     expect(handled).toBe(true);
     expect(res.status).toBe(409);
     expect(createManual).not.toHaveBeenCalled();

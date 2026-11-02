@@ -7,7 +7,7 @@ describe('runtime server root wiring', () => {
       url: 'http://127.0.0.1:4096',
       close: jest.fn(),
     }));
-    (scheduler as any).runtime = { agentProcess: { spawnServe } };
+    (scheduler as any).runtimeHost = { agentProcess: { spawnServe } };
 
     await (scheduler as any).startServe();
 

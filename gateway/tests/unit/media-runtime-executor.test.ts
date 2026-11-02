@@ -13,21 +13,19 @@ function fakeAccess(over: Record<string, boolean> = {}) {
 }
 
 describe('MediaRuntimeExecutor default completeFn', () => {
-  it('routes video/audio through rt.completion when completion.channel is available', async () => {
+  it('routes video/audio through the injected completion channel when the surface is available', async () => {
     const completeCalls: any[] = [];
-    const fakeRt: any = {
-      capabilities: { completionApi: true },
-      completion: {
-        complete: async (req: any) => {
-          completeCalls.push(req);
-          return { text: 'a cat jumps' };
-        },
+    const complete = {
+      complete: async (req: any) => {
+        completeCalls.push(req);
+        return { text: 'a cat jumps' };
       },
-      session: {},
     };
+    const fakeRt: any = { session: {} };
     const executor = createMediaRuntimeExecutor(fakeRt, {
       projectDir: '/tmp/proj',
       access: fakeAccess({ 'completion.channel': true }),
+      completion: () => complete,
     });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('a cat jumps');
@@ -39,24 +37,23 @@ describe('MediaRuntimeExecutor default completeFn', () => {
   });
 
   it('denied completion.channel never calls completion and falls back', async () => {
-    const complete = jest.fn(async () => ({ text: 'must not be used' }));
-    const fakeRt: any = {
-      capabilities: { completionApi: true },
-      completion: { complete },
-      session: {},
+    const complete = {
+      complete: jest.fn(async () => ({ text: 'must not be used' })),
     };
+    const fakeRt: any = { session: {} };
     const executor = createMediaRuntimeExecutor(fakeRt, {
       projectDir: '/tmp/proj',
       access: fakeAccess({ 'completion.channel': false }),
+      completion: () => complete,
       completeFn: async () => 'legacy adapter result',
     });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('legacy adapter result');
-    expect(complete).not.toHaveBeenCalled();
+    expect(complete.complete).not.toHaveBeenCalled();
   });
 
   it('falls back to opts.completeFn when no access/surface is wired', async () => {
-    const fakeRt: any = { capabilities: {}, session: {} };
+    const fakeRt: any = { session: {} };
     const executor = createMediaRuntimeExecutor(fakeRt, {
       projectDir: '/tmp/proj',
       completeFn: async () => 'legacy adapter result',
@@ -65,19 +62,27 @@ describe('MediaRuntimeExecutor default completeFn', () => {
     expect(out).toBe('legacy adapter result');
   });
 
-  it('falls back to opts.completeFn when rt.completion throws', async () => {
-    const fakeRt: any = {
-      capabilities: { completionApi: true },
-      completion: { complete: async () => { throw new Error('boom'); } },
-      session: {},
-    };
+  it('falls back to opts.completeFn when the completion channel throws', async () => {
+    const fakeRt: any = { session: {} };
     const executor = createMediaRuntimeExecutor(fakeRt, {
       projectDir: '/tmp/proj',
       access: fakeAccess({ 'completion.channel': true }),
+      completion: () => ({ complete: async () => { throw new Error('boom'); } }),
       completeFn: async () => 'fallback result',
     });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('fallback result');
+  });
+
+  it('falls back when the surface is present but the channel is not wired', async () => {
+    const fakeRt: any = { session: {} };
+    const executor = createMediaRuntimeExecutor(fakeRt, {
+      projectDir: '/tmp/proj',
+      access: fakeAccess({ 'completion.channel': true }),
+      completeFn: async () => 'no channel result',
+    });
+    const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
+    expect(out).toBe('no channel result');
   });
 
   it('image 路径：从 flat 历史（canonical v3，含 reasoning part）提取最后 assistant 文本', async () => {

@@ -44,12 +44,12 @@ describe('wave1 attach: runtime is a live reference (getter), not a snapshot', (
     attachWave1Handlers(registry, gw);
 
     // attach 之后（模拟启动顺序：startApiServer 先于 runtime 初始化）
+    // facade 只暴露通道 + access（诊断字段归组合根）。
     state.runtime = {
-      name: 'opencode',
-      capabilities: { sessionBranchApi: true },
       session: {
         fork: async () => ({ id: 'forked-1' }),
       },
+      access: { can: () => true },
     } as unknown as AgentRuntime;
 
     const matched = registry.match('POST', '/api/sessions/s1/fork');

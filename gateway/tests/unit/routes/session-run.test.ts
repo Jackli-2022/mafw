@@ -29,8 +29,8 @@ function mockReq(method: string, body?: any): http.IncomingMessage {
 
 const rt = { capabilities: { runStateApi: true }, name: 'opencode' };
 
-function deps(run: any, runtime: any = rt) {
-  return { getRuntime: () => runtime, run };
+function deps(run: any, runtime: any = rt, access: { can(id: string): boolean } = { can: () => true }) {
+  return { getRuntime: () => runtime, getAccess: () => access, run };
 }
 
 const runDto = { id: 'run_1', sessionID: 's1', status: 'suspended' };
@@ -42,7 +42,7 @@ describe('session run routes', () => {
       ['POST', '/api/sessions/s1/resume'],
     ] as const) {
       const res = mockRes();
-      const handled = await handleSessionRun(mockReq(method, {}), res, url, deps({}, { capabilities: {} }));
+      const handled = await handleSessionRun(mockReq(method, {}), res, url, deps({}, { capabilities: {} }, { can: () => false }));
       expect(handled).toBe(true);
       expect(res.status).toBe(503);
     }

@@ -3,11 +3,11 @@
  * 校验/承载/持久化由 DataPartService 承担；本层只做信封与错误映射。
  */
 import * as http from 'http';
-import type { AgentRuntime } from '../runtime/contract';
+import type { BusinessRuntime } from '../runtime/contract';
 import { DataPartError, type DataPartService } from '../core/data-parts/data-part-service';
 
 export interface SessionDataDeps {
-  getRuntime(): AgentRuntime | null;
+  getRuntime(): BusinessRuntime | null;
   data?: DataPartService | null;
 }
 

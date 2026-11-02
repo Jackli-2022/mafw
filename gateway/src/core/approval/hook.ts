@@ -2,7 +2,7 @@
 // → auto 路径 fire-and-forget permissionReply（失败 warn 不重试，桌面 5s 对账兜底）。
 // 调用点必须在 internal 过滤（memoryWorker drop）之前 —— 内部会话 deny 先于事件丢弃。
 
-import { AgentRuntime } from '../../runtime/contract';
+import type { BusinessRuntime } from '../../runtime/contract';
 import { ApprovalFacet } from '../../runtime/normalize';
 import { log } from '../../core/utils/logger';
 import { ApprovalPolicyService } from './policy-service';
@@ -10,7 +10,7 @@ import { appendApprovalRecord } from './decision-log';
 
 export function applyApprovalPolicy(
   policy: ApprovalPolicyService,
-  runtime: AgentRuntime | null,
+  runtime: BusinessRuntime | null,
   facet: ApprovalFacet,
   sessionID: string,
   props: Record<string, any>,

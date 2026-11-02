@@ -273,13 +273,12 @@ describe('runtime diagnostics view', () => {
   it('reflects an adaptive dialect probe that lands after facade creation', async () => {
     const raw: any = { name: 'adaptive', capabilities: { sessionApi: true }, session: {} };
     const facade = await createRuntimeFacade(raw, { entry: {}, isCanonical: () => false });
-    const view = buildRuntimeDiagnostics(facade)!;
-    // 探测前：/api/runtime 不再读到快照里的 null。
+    // 组合根持有 raw/host；业务门面不再复制诊断字段。
+    const view = buildRuntimeDiagnostics(raw)!;
     expect(view.activeDialect).toBeUndefined();
     raw.activeDialect = 'v21'; // resolveEventEntry / rewire 之后写入
     expect(view.activeDialect).toBe('v21');
-    // facade 自身也保持同一实时值（诊断视图经 getter 读取）。
-    expect(facade.activeDialect).toBe('v21');
+    expect((facade as any).activeDialect).toBeUndefined();
   });
 
   it('capabilities are read live (post-activation downgrade is visible)', () => {

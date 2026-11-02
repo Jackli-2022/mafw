@@ -19,6 +19,8 @@ function fakeReq(body: any) {
 }
 
 function makeDeps() {
+  // 组合根诊断视图：createRuntime 成功后 runtimeName/runtimeCaps 指向新 runtime。
+  const state = { name: 'pi', caps: {} as any };
   return {
     loader: {
       get: (n: string) => (n === 'opencode'
@@ -28,10 +30,10 @@ function makeDeps() {
     },
     persist: () => ({ changed: [] }),
     getCurrent: () => null,
-    runtimeName: () => 'pi',
-    runtimeCaps: () => ({}),
+    runtimeName: () => state.name,
+    runtimeCaps: () => state.caps,
     envOverride: () => false,
-    createRuntime: async () => ({ name: 'opencode', capabilities: {} }),
+    createRuntime: async () => { state.name = 'opencode'; return { name: 'opencode', capabilities: {} }; },
     onSwitched: async () => {},
   } as any;
 }

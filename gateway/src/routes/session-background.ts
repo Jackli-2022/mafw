@@ -1,9 +1,9 @@
 import * as http from 'http';
-import type { AgentRuntime } from '../runtime/contract';
+import type { BusinessRuntime } from '../runtime/contract';
 import type { RuntimeAccess } from '../runtime/runtime-access';
 
 export interface SessionBackgroundDeps {
-  getRuntime(): AgentRuntime | null;
+  getRuntime(): BusinessRuntime | null;
   getAccess(): RuntimeAccess | null;
 }
 

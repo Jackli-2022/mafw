@@ -21,16 +21,26 @@ const FILES = [{ file: 'x.txt', patch: '@@ -1 +1 @@\n-a\n+b', additions: 1, dele
 
 function makeDeps(overrides: Partial<SessionDiffDeps> = {}) {
   const calls: any[] = [];
+  const runtime = overrides.runtime !== undefined ? overrides.runtime : {
+    session: {
+      diff: async (o: any) => { calls.push(['diff', o]); return FILES; },
+      get: async (o: any) => { calls.push(['get', o]); return { id: 's1', location: { directory: '/tmp/proj' } }; },
+    },
+    // 回合 diff 依赖 adapter 的快照原语（surface session.snapshotTree）。
+    snapshotTree: { locate: async () => '/tmp/snap/repo' },
+  } as any;
+  // 能力门由注入的 RuntimeAccess 提供（业务不构造 raw access）。测试里按
+  // runtime 实际通道推导，保持「缺面 = 503」的语义。
+  const access = overrides.access !== undefined ? overrides.access : {
+    can: (id: string) => {
+      if (id === 'branch.diff') return typeof (runtime as any)?.session?.diff === 'function';
+      if (id === 'session.snapshotTree') return typeof (runtime as any)?.snapshotTree?.locate === 'function';
+      return false;
+    },
+  };
   const deps: SessionDiffDeps = {
-    runtime: {
-      capabilities: { diffApi: true },
-      session: {
-        diff: async (o: any) => { calls.push(['diff', o]); return FILES; },
-        get: async (o: any) => { calls.push(['get', o]); return { id: 's1', location: { directory: '/tmp/proj' } }; },
-      },
-      // 回合 diff 依赖 adapter 的快照原语（surface session.snapshotTree）。
-      snapshotTree: { locate: async () => '/tmp/snap/repo' },
-    } as any,
+    runtime,
+    access,
     applyPatch: async (o: any) => { calls.push(['apply', o]); return { code: 0, stderr: '' }; },
     ...overrides,
   };

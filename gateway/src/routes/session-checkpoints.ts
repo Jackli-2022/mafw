@@ -7,8 +7,8 @@
  * 返回 handled=false 表示路径不匹配，交给后续路由（对齐 session-branch 约定）。
  */
 import * as http from 'http';
-import type { AgentRuntime } from '../runtime/contract';
-import { RuntimeAccess } from '../runtime/runtime-access';
+import type { BusinessRuntime } from '../runtime/contract';
+import type { RuntimeAccess } from '../runtime/runtime-access';
 import {
   CheckpointRestoreError,
   type CheckpointScope,
@@ -17,7 +17,7 @@ import {
 import { projectCheckpointActions, type CheckpointActionInput } from '../core/checkpoint/checkpoint-actions';
 
 export interface SessionCheckpointDeps {
-  getRuntime(): AgentRuntime | null;
+  getRuntime(): BusinessRuntime | null;
   getAccess?(): RuntimeAccess | null;
   checkpoints?: CheckpointService;
   /** 回合进行中禁止 restore/create（gateway-side files apply 没有 serve 的 busy 保护）。 */
@@ -56,7 +56,8 @@ export async function handleSessionCheckpoints(
   if (create && req.method !== 'POST') return false;
 
   const rt = deps.getRuntime();
-  const access = deps.getAccess?.() ?? (rt ? new RuntimeAccess(rt) : null);
+  // 能力门只经注入的 RuntimeAccess（facade 的 access）。
+  const access = deps.getAccess?.() ?? null;
   if (!access?.can('branch.checkpoint')) {
     json(res, 503, { error: "runtime surface 'branch.checkpoint' is not available" });
     return true;

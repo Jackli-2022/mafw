@@ -1,11 +1,12 @@
 import * as http from 'http';
-import type { AgentRuntime } from '../runtime/contract';
-import { RuntimeAccess, surfaceUnavailableMessage } from '../runtime/runtime-access';
+import type { BusinessRuntime } from '../runtime/contract';
+import { surfaceUnavailableMessage } from '../runtime/runtime-access';
+import type { RuntimeAccess } from '../runtime/runtime-access';
 
 export interface SessionSummarizeDeps {
-  getRuntime(): AgentRuntime | null;
-  /** surface 门（缺省由 runtime 现场构造 RuntimeAccess）。 */
-  getAccess?(): RuntimeAccess | null;
+  getRuntime(): BusinessRuntime | null;
+  /** surface 门：注入 facade 的 RuntimeAccess（业务不构造 raw access）。 */
+  getAccess?(): Pick<RuntimeAccess, 'can'> | null;
 }
 
 function readBody(req: http.IncomingMessage): Promise<any> {
@@ -38,7 +39,7 @@ export async function handleSessionSummarize(
   const sessionID = m[1];
 
   const rt = deps.getRuntime();
-  const access = deps.getAccess?.() ?? (rt ? new RuntimeAccess(rt) : null);
+  const access = deps.getAccess?.() ?? null;
   if (!rt || !access?.can('session.summarize')) {
     json(res, 503, { error: surfaceUnavailableMessage('session.summarize') });
     return true;

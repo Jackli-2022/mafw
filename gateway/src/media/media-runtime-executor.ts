@@ -1,9 +1,12 @@
 import { createHash } from 'crypto';
 import type { PromptFn, PromptPart, PromptOptions } from './media-service';
-import type { AgentRuntime } from '../runtime/contract';
+import type { AgentRuntime, BusinessRuntime, CompletionChannel } from '../runtime/contract';
 import type { RuntimeAccess } from '../runtime/runtime-access';
 import { fixMediaPayload } from './pi-adapter';
 import { log } from '../core/utils/logger';
+
+/** 媒体执行器只需要会话通道（业务面；诊断/补全通道由组合根注入）。 */
+export type MediaRuntimeClient = Pick<BusinessRuntime, 'session'> & Pick<AgentRuntime, 'mediaSession'>;
 
 /**
  * Media analysis needs a runtime that can host a dedicated session for the
@@ -35,6 +38,8 @@ export interface MediaRuntimeExecutorOptions {
   projectDir: string;
   /** surface 门（completion.channel）；缺省 = 不尝试契约补全（不猜能力位）。 */
   access?: Pick<RuntimeAccess, 'can'> | null;
+  /** 契约补全通道（组合根注入；facade 不暴露 completion）。缺省 = 只走回退。 */
+  completion?: () => CompletionChannel | undefined;
 }
 
 interface SessionEntry {
@@ -57,7 +62,7 @@ export class MediaRuntimeExecutor {
   private readonly timeoutMs: number;
 
   constructor(
-    private readonly rt: AgentRuntime,
+    private readonly rt: MediaRuntimeClient,
     private readonly opts: MediaRuntimeExecutorOptions,
     private readonly completeFn: (parts: PromptPart[], opts: PromptOptions) => Promise<string>,
   ) {
@@ -219,16 +224,16 @@ export class MediaRuntimeExecutor {
 }
 
 export function createMediaRuntimeExecutor(
-  rt: AgentRuntime,
+  rt: MediaRuntimeClient,
   opts: MediaRuntimeExecutorOptions,
 ): MediaRuntimeExecutor {
-  // Contract path: stateless single-shot completion over rt.completion, gated by
-  // the `completion.channel` surface (not capabilities.completionApi). Media parts
-  // ride the contract's image carrier; wire-format rewriting (video_url/input_audio)
-  // is the implementing runtime's internal concern (pi: fixMediaPayload via onPayload).
+  // Contract path: stateless single-shot completion over the injected channel,
+  // gated by the `completion.channel` surface (not capabilities.completionApi).
+  // Media parts ride the contract's image carrier; wire-format rewriting
+  // (video_url/input_audio) is the implementing runtime's internal concern.
   const contractComplete = async (parts: PromptPart[], po: PromptOptions): Promise<string> => {
     if (!canCompletionChannel(opts.access)) throw new Error('runtime does not support completion.channel');
-    const channel = rt.completion;
+    const channel = opts.completion?.();
     if (typeof channel?.complete !== 'function') throw new Error('no completion channel');
     const filePart = parts.find((p) => p.type === 'file');
     const textPart = parts.find((p) => p.type === 'text');

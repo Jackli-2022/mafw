@@ -116,11 +116,14 @@ export async function handleRuntimeSwitch(
     const prev = deps.getCurrent();
     const rt = await deps.createRuntime();
     await deps.onSwitched(rt, prev);
-    log.info(`[Runtime] switched to '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
+    // 切换后诊断视图已指向新 runtime（不再经 facade 回读 identity/capabilities）。
+    const name = deps.runtimeName();
+    const capabilities = deps.runtimeCaps();
+    log.info(`[Runtime] switched to '${name}' (capabilities: ${JSON.stringify(capabilities)})`);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       success: true,
-      active: { name: rt.name, capabilities: rt.capabilities },
+      active: { name, capabilities },
       envOverride: deps.envOverride(),
     }));
   } catch (err: any) {

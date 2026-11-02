@@ -1,5 +1,5 @@
 import * as http from 'http';
-import { AgentRuntime } from '../runtime/contract';
+import type { BusinessRuntime } from '../runtime/contract';
 import type { RuntimeAccess } from '../runtime/runtime-access';
 import { surfaceUnavailableMessage } from '../runtime/runtime-access';
 import { deriveAlwaysRule } from '../core/approval/rules-store';
@@ -46,7 +46,7 @@ function persistRule(body: any, deps: PermissionReplyDeps | undefined, found: an
  * 能力门：approval.permissionReply surface。
  */
 export async function handlePermissionReply(
-  runtime: AgentRuntime | null,
+  runtime: BusinessRuntime | null,
   req: http.IncomingMessage,
   res: http.ServerResponse,
   sessionID: string,
@@ -98,7 +98,7 @@ export async function handlePermissionReply(
 }
 
 export interface PermissionReplyByIdDeps {
-  runtime: AgentRuntime | null;
+  runtime: BusinessRuntime | null;
   access: RuntimeAccess | null;
   /** 'always' 持久规则库（缺省只回复不沉淀）。 */
   rules?: PersistAlwaysDeps['rules'];

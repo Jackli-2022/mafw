@@ -43,14 +43,16 @@ function makeRuntime(name: string) {
 
 function makeDeps(overrides: any = {}) {
   const rt = makeRuntime('pi');
+  // runtimeName 在组合根里由诊断视图派生：createRuntime 成功后指向新 runtime。
+  const state = { name: 'opencode' };
   return {
     loader: { get: jest.fn((n: string) => (n === 'pi' ? {} : undefined)), getState: jest.fn(() => [{ file: 'builtin:pi', name: 'pi', status: 'ok' }]) },
     persist: jest.fn().mockReturnValue({ changed: ['runtime'] }),
     getCurrent: jest.fn(() => makeRuntime('opencode')),
-    runtimeName: jest.fn(() => 'opencode'),
+    runtimeName: jest.fn(() => state.name),
     runtimeCaps: jest.fn(() => ({ eventStream: true })),
     envOverride: jest.fn(() => false),
-    createRuntime: jest.fn().mockResolvedValue(rt),
+    createRuntime: jest.fn(async () => { state.name = 'pi'; return rt; }),
     onSwitched: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };

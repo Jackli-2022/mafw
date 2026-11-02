@@ -7,8 +7,9 @@
 // 能力门：runtime 缺 branch.diff surface → 中性 503（不再读 capabilities.diffApi）；
 // apply 失败 → 502 带原始错误消息（不静默）。
 import * as http from 'http';
-import { AgentRuntime } from '../runtime/contract';
-import { RuntimeAccess, surfaceUnavailableMessage } from '../runtime/runtime-access';
+import type { BusinessRuntime } from '../runtime/contract';
+import type { RuntimeAccess } from '../runtime/runtime-access';
+import { surfaceUnavailableMessage } from '../runtime/runtime-access';
 import { buildRevertPatch } from '../core/diff/hunk-patch';
 import { applyPatchToWorktree } from '../core/diff/apply-patch';
 import {
@@ -33,12 +34,12 @@ function json(res: http.ServerResponse, status: number, payload: any): void {
 }
 
 export interface SessionDiffDeps {
-  runtime: AgentRuntime | null;
-  /** surface 门（缺省由 runtime 现场构造 RuntimeAccess）。 */
-  access?: RuntimeAccess | null;
+  runtime: BusinessRuntime | null;
+  /** surface 门：注入 facade 的 RuntimeAccess（业务不构造 raw access）。 */
+  access?: Pick<RuntimeAccess, 'can'> | null;
   /** Test seam; production resolves the user turn from live snapshots. */
   turnDiff?: (args: {
-    runtime: AgentRuntime;
+    runtime: BusinessRuntime;
     sessionID: string;
     messageID: string;
   }) => Promise<FileDiffInfo[]>;
@@ -47,8 +48,8 @@ export interface SessionDiffDeps {
   git?: import('../core/diff/turn-diff').GitRunner;
 }
 
-function accessOf(deps: SessionDiffDeps): RuntimeAccess | null {
-  return deps.access ?? (deps.runtime ? new RuntimeAccess(deps.runtime) : null);
+function accessOf(deps: SessionDiffDeps): Pick<RuntimeAccess, 'can'> | null {
+  return deps.access ?? null;
 }
 
 function gateSurface(res: http.ServerResponse, deps: SessionDiffDeps, surface: string): boolean {

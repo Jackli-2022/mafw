@@ -23,8 +23,8 @@ function mockReq(method: string, body?: any): http.IncomingMessage {
   return req as http.IncomingMessage;
 }
 
-function depsWith(runtime: any) {
-  return { getRuntime: () => runtime };
+function depsWith(runtime: any, access: { can(id: string): boolean } = { can: () => true }) {
+  return { getRuntime: () => runtime, getAccess: () => access };
 }
 
 describe('session-summarize route', () => {

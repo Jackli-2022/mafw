@@ -23,8 +23,8 @@ function mockReq(method: string, body?: any): http.IncomingMessage {
   return req as http.IncomingMessage;
 }
 
-function depsWith(runtime: any) {
-  return { getRuntime: () => runtime };
+function depsWith(runtime: any, access: { can(id: string): boolean } = { can: () => true }) {
+  return { getRuntime: () => runtime, getAccess: () => access };
 }
 
 describe('session-branch routes', () => {
@@ -51,7 +51,8 @@ describe('session-branch routes', () => {
     await handleSessionBranch(mockReq('POST', {}), res400, '/api/sessions/s1/revert', depsWith(rt));
     expect((res400 as any).status).toBe(400);
     const res404 = mockRes();
-    await handleSessionBranch(mockReq('POST', {}), res404, '/api/sessions/s1/unrevert', depsWith(rt));
+    await handleSessionBranch(mockReq('POST', {}), res404, '/api/sessions/s1/unrevert',
+      depsWith(rt, { can: (id: string) => id !== 'branch.unrevert' }));
     expect((res404 as any).status).toBe(404);
   });
 

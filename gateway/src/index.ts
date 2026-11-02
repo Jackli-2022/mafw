@@ -223,7 +223,7 @@ function wirePiPermissionEvaluator(runtime: AgentRuntime, policy: ApprovalPolicy
   }
 }
 
-import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
+import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials, type CompletionChannel } from './runtime/contract';
 import { validateRuntime, RuntimeValidation } from './runtime/validate';
 import { buildRuntimeContractManifest } from './runtime/contract-manifest';
 import { type ContractSubject, type RuntimeCoverage } from './runtime/coverage';
@@ -237,7 +237,7 @@ import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MA
 import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './runtime/opencode-21-events';
 import { injectServeAuth } from './runtime/proxy-auth';
 import { serveAuthHeaders } from './runtime/serve-sidecar';
-import { createRuntimeFacade, type RuntimeFacade } from './runtime/runtime-facade';
+import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
 import { buildRuntimeDiagnostics, type RuntimeDiagnosticsView } from './runtime/runtime-diagnostics';
 import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
@@ -533,6 +533,14 @@ class MafwScheduler {
   private runtimeName = 'opencode';
   /** 组合根持有的诊断视图（业务核心只读 access/Experience；本视图供 /api/runtime 等 Admin 面）。 */
   private runtimeDiagnostics: RuntimeDiagnosticsView | null = null;
+  /**
+   * 组合根持有的进程/诊断窄面（name/capabilities/config/completion/credentials/
+   * agentProcess/getBaseUrl/healthCheck/activeDialect）。RuntimeFacade 不再复制这些
+   * 字段（设计 §7.1）——业务模块拿不到，组合根经此单一入口使用。
+   */
+  private runtimeHost: RuntimeHost | null = null;
+  /** 组合根内部：热切换时记录切换前的 runtime 名（广播用，不进入业务面）。 */
+  private runtimeNameBeforeSwitch: string | null = null;
   private runtimeLoader?: RuntimePluginLoader;
   /** 未知事件遥测（L1）：per-source（runtime 名 / 'api'）per-type 计数。 */
   private unknownEventTracker = new UnknownEventTracker();
@@ -627,18 +635,18 @@ class MafwScheduler {
     this.registryPath = config.paths.registryFile;
     this.chatSessions = new ChatSessionManager();
     this.serveSupervisor = createServeSupervisor({
-      // 全部经 runtime 契约且 late-bound（runtime 可热切换）：
+      // 全部经组合根 RuntimeHost（facade 不再暴露进程原语）且 late-bound（runtime 可热切换）：
       // managed = runtime 是否持有启停原语；health = 契约 healthCheck；
       // baseUrl/killServe = runtime 自报地址与清场原语；spawn 不传 host/port。
-      managed: () => !!this.runtime?.agentProcess?.spawnServe,
+      managed: () => !!this.runtimeHost?.agentProcess?.spawnServe,
       health: async () => {
-        try { return (await this.runtime?.healthCheck?.()) ?? false; }
+        try { return (await this.runtimeHost?.healthCheck?.()) ?? false; }
         catch { return false; }
       },
-      baseUrl: () => this.runtime?.getBaseUrl?.() ?? this.serveUrl,
-      killServe: () => this.runtime?.agentProcess?.killServe?.(),
+      baseUrl: () => this.runtimeHost?.getBaseUrl?.() ?? this.serveUrl,
+      killServe: () => this.runtimeHost?.agentProcess?.killServe?.(),
       spawn: async (opts) => {
-        const spawnServe = this.runtime?.agentProcess?.spawnServe;
+        const spawnServe = this.runtimeHost?.agentProcess?.spawnServe;
         if (!spawnServe) {
           throw new Error('active runtime does not own a server process (agentProcess.spawnServe missing)');
         }
@@ -814,7 +822,8 @@ class MafwScheduler {
     });
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;
-    this.setRuntimeDiagnostics(runtime);
+    this.setRuntimeDiagnostics();
+    this.runtimeNameBeforeSwitch = null;
     try { await this.taskService.start(); } catch (err: any) {
       log.warn(`[Tasks] start failed (non-fatal): ${err?.message ?? err}`);
     }
@@ -843,7 +852,7 @@ class MafwScheduler {
       } else {
         log.info('OpenCode Serve not reachable, checking for stale process...');
         // 清场原语归 runtime（serve 端口是实现细节；无原语的 runtime 无从清场）
-        this.runtime?.agentProcess?.killServe?.();
+        this.runtimeHost?.agentProcess?.killServe?.();
         try {
           await this.startServe();
           serveReady = !!this.serveInstance;
@@ -1205,12 +1214,13 @@ class MafwScheduler {
             }
               const runtime = await this.createRuntime(sdkConfig);
               this.runtime = runtime;
-              this.setRuntimeDiagnostics(runtime);
+              this.setRuntimeDiagnostics();
+              this.runtimeNameBeforeSwitch = null;
               // Re-materialize identities on the new runtime (fire-and-forget).
               void this.materializeIdentities().catch(() => {});
               // Same serve-ensure rationale as runtimeDeps.onSwitched: the config
               // hot-reload path can switch onto opencode from a serve-less start.
-              if ((runtime as any).agentProcess?.spawnServe) {
+              if (this.runtimeHost?.agentProcess?.spawnServe) {
                 await ensureServeForBuiltinRuntime(this.serveSupervisor, { startWatchdog: () => this.startServeWatchdog() }, log);
               }
               this.sdkSession.setClient(this.runtime);
@@ -1219,7 +1229,7 @@ class MafwScheduler {
               await this.resubscribeEvents(`config hot-reload runtime plugin changed to '${newPlugin ?? 'builtin'}'`);
               // Same desktop hint as the route path: hand-edited config.yaml
               // switches must also refresh the renderer (menus/tabs/manager kv).
-              this.broadcast({ type: 'runtime_switched', runtime: runtime.name, previous: prevPlugin ?? null });
+              this.broadcast({ type: 'runtime_switched', runtime: this.runtimeName, previous: prevPlugin ?? null });
               this.discovery?.invalidate();
               void this.discovery?.broadcastKnown('runtime_switched').catch((err: any) => log.warn(`[Discovery] runtime switch broadcast failed: ${err.message}`));
               // Dispose the previous runtime AFTER the new one is fully wired
@@ -1229,7 +1239,7 @@ class MafwScheduler {
                 try { await (prev as any).dispose(); }
                 catch (err: any) { log.warn(`[Scheduler] dispose previous runtime failed: ${err.message}`); }
               }
-              log.info(`[Scheduler] Runtime hot-switched to '${runtime.name}'`);
+              log.info(`[Scheduler] Runtime hot-switched to '${this.runtimeName}'`);
             } catch (err: any) {
               log.warn(`[Scheduler] Runtime hot-switch failed (non-fatal): ${err.message}`);
             } finally {
@@ -1721,13 +1731,33 @@ class MafwScheduler {
 
   /**
    * 组合根诊断快照：唯一允许读取 runtime.name / capabilities 的位置（设计 §7.1）。
-   * runtimeName/runtimeCaps 由它派生，业务模块不直接读 facade 上的这两个字段。
+   * 诊断视图从组合根持有的 RuntimeHost 构建（facade 不再暴露这些字段）；
+   * 业务模块不直接读门面上的身份/能力。
    */
-  private setRuntimeDiagnostics(rt: RuntimeFacade | null): void {
-    this.runtimeDiagnostics = buildRuntimeDiagnostics(rt);
+  private adoptRuntimeHost(host: RuntimeHost, facade: RuntimeFacade): RuntimeFacade {
+    // 记录切换前的 runtime 名（热切换广播用；诊断视图随即指向新 host）。
+    this.runtimeNameBeforeSwitch = this.runtimeDiagnostics?.name ?? null;
+    this.runtimeHost = host;
+    this.runtimeDiagnostics = buildRuntimeDiagnostics(host);
+    if (this.runtimeDiagnostics) this.runtimeName = this.runtimeDiagnostics.name;
+    return facade;
+  }
+
+  private setRuntimeDiagnostics(): void {
+    this.runtimeDiagnostics = this.runtimeHost ? buildRuntimeDiagnostics(this.runtimeHost) : null;
     if (this.runtimeDiagnostics) {
       this.runtimeName = this.runtimeDiagnostics.name;
     }
+  }
+
+  /**
+   * 契约无状态补全通道（surface 门 `process.completion`；thunk 现读，热切换安全）。
+   * 业务/管线不得直接读 capabilities.completionApi —— 统一经 RuntimeAccess。
+   */
+  private runtimeCompletionChannel(): CompletionChannel | undefined {
+    const runtime = this.runtime;
+    if (!runtime?.access.can('process.completion')) return undefined;
+    return this.runtimeHost?.completion;
   }
 
   /**
@@ -1766,7 +1796,7 @@ class MafwScheduler {
     });
     await activateRuntimeTools(fallbackRt, 'builtin:opencode(direct)', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
     const wrappedFallback = this.wrapRuntimeIdentity(fallbackRt);
-    return createRuntimeFacade(wrappedFallback, {
+    const fallbackFacade = await createRuntimeFacade(wrappedFallback, {
       entry: {
         eventSource: OPENCODE_EVENT_SOURCE,
         eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
@@ -1780,6 +1810,7 @@ class MafwScheduler {
       },
       onHistoryViolation: (reason) => this.recordTranslationError('opencode', 'normalizeMessages', reason),
     });
+    return this.adoptRuntimeHost(wrappedFallback, fallbackFacade);
   }
 
   /** 单激活路径（D 收敛）：plugin/builtin/package 同一序列。fatal=true 时校验失败抛错触发回退。 */
@@ -1789,30 +1820,30 @@ class MafwScheduler {
     try {
       // builtin opencode 无凭据需求；插件走当前 runtime 凭据链（pi 认证消费）
       const creds = name === 'opencode' ? undefined : await this.runtimeCredentialsForPlugin();
-      const rt = await plugin.createRuntime(createRuntimePluginContext(creds, {
+      const rawRuntime = await plugin.createRuntime(createRuntimePluginContext(creds, {
         projectDir: this.resolvedProjectDir(),
         rootDir: this.ensureRuntimeRootDir(),
         gatewayPort: config.server.apiPort,
       }));
       // 能力声明单源（G3）：module.exports.capabilities 为准；实例若自带且不一致 →
       // log.error 后仍以模块声明覆盖（普通可写赋值，激活期降级路径继续可写）。
-      const capabilityMismatch = stampDeclaredCapabilities(rt, plugin.capabilities);
+      const capabilityMismatch = stampDeclaredCapabilities(rawRuntime, plugin.capabilities);
       if (capabilityMismatch) {
-        log.error(`[Runtime] '${rt.name}': ${capabilityMismatch}`);
+        log.error(`[Runtime] '${rawRuntime.name}': ${capabilityMismatch}`);
         this.runtimeLoader?.markError(name, capabilityMismatch);
       }
       // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径。
       // 必须在 applyRuntimeValidation 之前——否则 coverage 会记录降级前的
       // eventStream=true，与 active.capabilities 自相矛盾。
       // 判定矩阵归 event-declaration 单源（declared / self 逃逸）。
-      const declaration = resolveEventDeclaration(rt.capabilities, plugin);
-      if (!declaration.eventStream) (rt as any).capabilities.eventStream = false;
+      const declaration = resolveEventDeclaration(rawRuntime.capabilities, plugin);
+      if (!declaration.eventStream) (rawRuntime as any).capabilities.eventStream = false;
       for (const issue of declaration.issues) {
-        log.error(`[Runtime] '${rt.name}': ${issue}`);
+        log.error(`[Runtime] '${rawRuntime.name}': ${issue}`);
       }
       // 声明 vs 实现一致性校验：必选面缺失 → 回退（fatal）；能力位虚报 → 强制降级
       // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
-      this.applyRuntimeValidation(rt, name, fatal, {
+      this.applyRuntimeValidation(rawRuntime, name, fatal, {
         declaration: {
           eventSource: plugin.eventSource,
           eventMappings: plugin.eventMappings,
@@ -1825,36 +1856,37 @@ class MafwScheduler {
           external: plugin.external,
           capabilities: plugin.capabilities,
         },
-        dialect: (rt as any).activeDialect,
+        dialect: rawRuntime.activeDialect,
         source: 'active',
         declaredCapabilityKeys: plugin.declaredCapabilityKeys,
       });
       // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
-      await activateRuntimeTools(rt, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
-      log.info(`[Runtime] using runtime '${rt.name}' (${name}, capabilities: ${JSON.stringify(rt.capabilities)})`);
+      await activateRuntimeTools(rawRuntime, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
+      log.info(`[Runtime] using runtime '${rawRuntime.name}' (${name}, capabilities: ${JSON.stringify(rawRuntime.capabilities)})`);
       // 组合根在 facade 创建前完成 runtime 私有宿主接线（pi registry 等）；
       // registry 不进入 facade，业务核心无法触达原生宿主对象。
-      wirePiPermissionEvaluator(rt, this.approvalPolicy);
-      wirePiCognition(rt, this.cognitionGate);
-      const wrapped = this.wrapRuntimeIdentity(rt);
+      wirePiPermissionEvaluator(rawRuntime, this.approvalPolicy);
+      wirePiCognition(rawRuntime, this.cognitionGate);
+      const wrapped = this.wrapRuntimeIdentity(rawRuntime);
       // Runtime Ingress：翻译、合帧与 RawRuntime 全部留在 facade 闭包内；
       // 业务核心从返回值起只看到 canonical 面。
-      return createRuntimeFacade(wrapped, {
+      const facade = await createRuntimeFacade(wrapped, {
         entry: plugin,
         isCanonical: (t) => CANONICAL_TYPE_SET.has(t),
         hooks: {
-          onUnmatched: (t) => this.recordTranslationDrop(rt.name, t, 'unmatched'),
-          onSuppressed: (t) => this.recordTranslationDrop(rt.name, t, 'suppressed'),
-          onTranslationError: (_raw, reason) => this.recordTranslationError(rt.name, 'transformEvent', reason),
+          onUnmatched: (t) => this.recordTranslationDrop(rawRuntime.name, t, 'unmatched'),
+          onSuppressed: (t) => this.recordTranslationDrop(rawRuntime.name, t, 'suppressed'),
+          onTranslationError: (_raw, reason) => this.recordTranslationError(rawRuntime.name, 'transformEvent', reason),
           onNoMappings: () => {
             log.warn(
-              `[Runtime] '${rt.name}' declares no event mappings/transformEvent — ` +
+              `[Runtime] '${rawRuntime.name}' declares no event mappings/transformEvent — ` +
               `eventStream should have been downgraded`,
             );
           },
         },
-        onHistoryViolation: (reason) => this.recordTranslationError(rt.name, 'normalizeMessages', reason),
+        onHistoryViolation: (reason) => this.recordTranslationError(rawRuntime.name, 'normalizeMessages', reason),
       });
+      return this.adoptRuntimeHost(wrapped, facade);
     } catch (err: any) {
       log.warn(`[Runtime] '${name}' createRuntime failed: ${err.message}${fatal ? ' — falling back' : ''}`);
       return null;
@@ -1863,22 +1895,24 @@ class MafwScheduler {
 
   /** 物化循环：遍历注册表 install；成功与否记入 IdentityState（驱动车道选择）。幂等可重跑（热切换后重物化）。 */
   private async materializeIdentities(): Promise<void> {
-    const rt = this.runtime;
-    if (!rt) return;
-    this.identityState.resetMaterialization(rt.name);
-    if (rt.capabilities?.agentConfigApi && rt.agents?.install) {
+    const runtime = this.runtime;
+    const host = this.runtimeHost;
+    if (!runtime || !host) return;
+    this.identityState.resetMaterialization(host.name);
+    // 能力门经 surface（identity.agents.install = agentConfigApi + agents.install）。
+    if (runtime.access.can('identity.agents.install') && runtime.agents?.install) {
       for (const spec of this.identityRegistry.list()) {
         try {
-          await rt.agents.install(spec.name, toAgentDefinition(spec));
-          this.identityState.setMaterialized(rt.name, spec.name, true);
-          log.info(`[Identity] materialized '${spec.name}' on runtime '${rt.name}'`);
+          await runtime.agents.install(spec.name, toAgentDefinition(spec));
+          this.identityState.setMaterialized(host.name, spec.name, true);
+          log.info(`[Identity] materialized '${spec.name}' on runtime '${host.name}'`);
         } catch (err: any) {
-          this.identityState.setMaterialized(rt.name, spec.name, false);
+          this.identityState.setMaterialized(host.name, spec.name, false);
           log.warn(`[Identity] materialize '${spec.name}' failed (non-fatal): ${err.message}`);
         }
       }
     } else {
-      log.info(`[Identity] runtime '${rt.name}' has no agentConfigApi — identities run via gateway policy layer (lane 2/3)`);
+      log.info(`[Identity] runtime '${host.name}' has no agentConfigApi — identities run via gateway policy layer (lane 2/3)`);
     }
   }
 
@@ -1945,24 +1979,24 @@ class MafwScheduler {
   }
 
   /** 包装 runtime 的 prompt 面：按绑定+物化状态注入/剥离 agent 参数（物化车道 1 执行点）。 */
-  private wrapRuntimeIdentity(rt: AgentRuntime): AgentRuntime {
+  private wrapRuntimeIdentity(rawRuntime: AgentRuntime): AgentRuntime {
     // 历史消息归一收口：声明 normalizeMessages 的 runtime 在 session.messages 出口
     // 统一转 opencode {info, parts} DTO（所有消费者形状一致）。必须先于身份包装。
     // 历史归一由 RuntimeFacade 在 Ingress 出口完成；这里不得再包一次，
     // 否则 pi/claude 的声明式 normalizeMessages 会被二次执行并损坏历史。
     this.ensureInstructionSync().reset();
-    const synced = withInstructionSync(rt.session as any, (sid) => this.instructionSync!.sync(sid));
+    const synced = withInstructionSync(rawRuntime.session as any, (sid) => this.instructionSync!.sync(sid));
     const registry = this.identityRegistry;
-    (rt.session as any) = withIdentityPrompt(
+    (rawRuntime.session as any) = withIdentityPrompt(
       synced as any,
       this.identityState,
-      () => rt.name,
+      () => rawRuntime.name,
       (n: string) => !!registry.get(n),
       // 队列拦截咽喉（spec §5.3 v2 Q1）：显式 opt-in——仅 delivery:'queue' 且 busy 时入队，
       // 其余（含 conformance/eval/media harness 的普通调用）零影响。
       (opts: any) => this.interceptQueuePrompt(opts),
     );
-    return rt;
+    return rawRuntime;
   }
 
   /** 队列拦截判定：busy + 显式 queue 交付 → 入队短路；否则 undefined 透传。 */
@@ -2064,16 +2098,16 @@ class MafwScheduler {
     });
   }
 
-  /** 插件 ctx 的凭据来源：当前 opencode runtime 的 credentials（若实现），否则 undefined。 */
+  /** 插件 ctx 的凭据来源：当前 runtime host 的 credentials（若实现），否则 undefined。 */
   private async runtimeCredentialsForPlugin(): Promise<RuntimeCredentials | undefined> {
-    if (this.runtime?.credentials) return this.runtime.credentials;
+    if (this.runtimeHost?.credentials) return this.runtimeHost.credentials;
     return undefined;
   }
 
   /** 凭据单点接线（Plan 3 终审 #10）：active runtime credentials → legacy auth.json → null。
    *  全部消费方构造点的唯一凭据来源——链变更只改这里。 */
   private runtimeGetApiKey(provider: string): string | null {
-    return getProviderApiKey(provider, undefined, this.runtime?.credentials) ?? null;
+    return getProviderApiKey(provider, undefined, this.runtimeHost?.credentials) ?? null;
   }
 
   // ── Memory pipelines (turn compress / reflection) ───────────────────────
@@ -2145,10 +2179,10 @@ class MafwScheduler {
       const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
       // Judge transport: prefer the runtime's stateless completion channel
       // (thunk — resolves inline-defined providers like "gateway" via opencode
-      // provider config, hot-swap safe), fall back to direct HTTP. The thunk is
-      // resolved per call, so do NOT probe it here — this runs before
+      // provider config, hot-swap safe), fall back to direct HTTP. Gated by the
+      // `process.completion` surface; do NOT probe it here — this runs before
       // this.runtime exists.
-      const completion = () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined);
+      const completion = () => this.runtimeCompletionChannel();
       const direct = Boolean(judgeBaseUrl && judgeApiKey);
       // Laya conflict cascade (one-sided v1): spawn sidecar when provisioned;
       // cascade is inert otherwise (fail-open to the LLM judge).
@@ -2369,7 +2403,9 @@ class MafwScheduler {
       },
       onSwitched: async (rt: RuntimeFacade, prev: RuntimeFacade | null) => {
         this.runtime = rt;
-        this.setRuntimeDiagnostics(rt);
+        this.setRuntimeDiagnostics();
+        const previousName = this.runtimeNameBeforeSwitch;
+        this.runtimeNameBeforeSwitch = null;
         // B2/B3：翻译守卫与拦截计数随 runtime 切换清空（per-runtime 快照语义）
         this.translationErrors.clear();
         this.translationDrops.clear();
@@ -2379,17 +2415,17 @@ class MafwScheduler {
         // ensure the sidecar exists — the gateway may have started under an
         // external runtime (pi) that never spawned one. Must run AFTER the
         // assignment above: the supervisor's spawn closure reads
-        // this.runtime to find agentProcess.spawnServe.
-        if ((rt as any).agentProcess?.spawnServe) {
+        // this.runtimeHost to find agentProcess.spawnServe.
+        if (this.runtimeHost?.agentProcess?.spawnServe) {
           await ensureServeForBuiltinRuntime(this.serveSupervisor, { startWatchdog: () => this.startServeWatchdog() }, log);
         }
         this.sdkSession.setClient(this.runtime);
         if (this.trajectoryCollector) this.trajectoryCollector.setRuntime(this.runtime);
         if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
-        await this.resubscribeEvents(`runtime switched to '${rt.name}'`);
+        await this.resubscribeEvents(`runtime switched to '${this.runtimeName}'`);
         // Desktop hint: a runtime switch swaps the session storage backend
         // (opencode SQLite vs pi), so cached session lists are stale.
-        this.broadcast({ type: 'runtime_switched', runtime: rt.name, previous: prev?.name ?? null });
+        this.broadcast({ type: 'runtime_switched', runtime: this.runtimeName, previous: previousName });
         this.discovery?.invalidate();
         void this.discovery?.broadcastKnown('runtime_switched').catch((err: any) => log.warn(`[Discovery] runtime switch broadcast failed: ${err.message}`));
         if (prev && (prev as any).dispose) {
@@ -2752,8 +2788,8 @@ class MafwScheduler {
         this.memoryService.harmonicIndex,
         config.recall.workerModel,
         {
-          credentials: this.runtime?.credentials
-            ? { getApiKey: (p) => this.runtime!.credentials!.getApiKey(p) }
+          credentials: this.runtimeHost?.credentials
+            ? { getApiKey: (p) => this.runtimeHost!.credentials!.getApiKey(p) }
             : undefined,
           baseUrl: (config.recall as any).scanApiUrl || undefined,
           scanEndpoints: (config.recall as any).scanEndpoints || undefined,
@@ -2762,13 +2798,13 @@ class MafwScheduler {
           budget: this.getPipelineBudget(),
           // Runtime 契约的无状态补全通道（thunk 现读，热切换安全）——
           // 提供时 scan 优先走 completion.complete，直连 HTTP 降为回退。
-          completion: () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined),
+          completion: () => this.runtimeCompletionChannel(),
           // Any openai-compatible provider works out of the box: URL and key
           // come from the opencode provider config (inline-defined providers
           // like "gateway" keep their credentials in opencode.jsonc options).
           resolveEndpoint: async (providerID) => {
             try {
-              const cfg: any = await this.runtime?.config.get();
+              const cfg: any = await this.runtimeHost?.config.get();
               const u = readProviderBaseUrlWithPath(cfg, providerID);
               if (u) return u;
             } catch { /* fail-open to the next resolution step */ }
@@ -2780,9 +2816,9 @@ class MafwScheduler {
           },
           resolveApiKey: async (providerID) => {
             try {
-              const viaCreds = this.runtime?.credentials?.getApiKey(providerID);
+              const viaCreds = this.runtimeHost?.credentials?.getApiKey(providerID);
               if (viaCreds) return viaCreds;
-              const cfg: any = await this.runtime?.config.get();
+              const cfg: any = await this.runtimeHost?.config.get();
               const k = readProviderApiKey(cfg, providerID);
               if (k) return k;
             } catch { /* fail-open to the next resolution step */ }
@@ -4004,7 +4040,7 @@ class MafwScheduler {
             llm: judgeBaseUrl && judgeApiKey && modelID
               ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: modelID }
               : undefined,
-            completion: () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined),
+            completion: () => this.runtimeCompletionChannel(),
             model: providerID && modelID ? { providerID, modelID } : undefined,
           });
           if (!v) return null;
@@ -4071,8 +4107,10 @@ class MafwScheduler {
                 this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime, {
                   projectDir: this.resolvedProjectDir(),
                   getApiKey: this.runtimeGetApiKey.bind(this),
-                  // 契约补全通道同样经 surface（不再读 capabilities.completionApi）。
+                  // 契约补全通道同样经 surface（不再读 capabilities.completionApi）；
+                  // 通道本体由组合根注入（facade 不暴露 completion）。
                   access: this.runtime.access,
+                  completion: () => this.runtimeCompletionChannel(),
                 });
                 this.mediaRuntimeExecutorRt = this.runtime;
               }
@@ -4263,7 +4301,7 @@ class MafwScheduler {
         // thunk 惰性求值，runtime 此时尚未初始化也不影响。
         resolveInlineApiKey: async (providerID: string) => {
           try {
-            const cfg: any = await this.runtime?.config.get();
+            const cfg: any = await this.runtimeHost?.config.get();
             return readProviderApiKey(cfg, providerID);
           } catch { return null; }
         },
@@ -4354,9 +4392,9 @@ class MafwScheduler {
   }
 
   private async startServe() {
-    // Serve 拉起原语在 runtime 契约上（agentProcess.spawnServe）——gateway
-    // 只做 bookkeeping（serveInstance/owned/exit 退避），不硬编码 spawn 细节。
-    const spawnServe = this.runtime?.agentProcess?.spawnServe;
+    // Serve 拉起原语在组合根 RuntimeHost 上（agentProcess.spawnServe；facade 不含
+    // 进程原语）——gateway 只做 bookkeeping（serveInstance/owned/exit 退避），不硬编码 spawn 细节。
+    const spawnServe = this.runtimeHost?.agentProcess?.spawnServe;
     if (!spawnServe) {
       log.warn('[Scheduler] active runtime does not own a server process — skipping serve spawn');
       return;
@@ -4394,8 +4432,8 @@ class MafwScheduler {
     // supervisor's kill+spawn path and retry forever (killing whatever listens
     // on the serve port each cycle). A later switch back re-ensures via
     // ensureServeForBuiltinRuntime (probe → adopt or spawn).
-    const rt = this.runtime;
-    if (rt?.external || !rt?.agentProcess?.spawnServe) {
+    const host = this.runtimeHost;
+    if (host?.external || !host?.agentProcess?.spawnServe) {
       this.serveOwned = false;
       log.info('[Scheduler] owned serve exited after runtime switch; recovery skipped (active runtime does not own serve)');
       return;
@@ -4420,9 +4458,9 @@ class MafwScheduler {
   // agentProcess.spawnServe via supervisor.ensureStarted); the gateway only
   // orchestrates and re-subscribes the event stream.
   private async restartAgentOrchestrated(): Promise<{ mode: string }> {
-    const rt = this.runtime;
-    if (rt?.agentProcess?.spawnServe) {
-      await rt.agentProcess.restart();
+    const host = this.runtimeHost;
+    if (host?.agentProcess?.spawnServe) {
+      await host.agentProcess.restart();
       await this.serveSupervisor.ensureStarted();
     } else {
       await this.serveSupervisor.restart();
@@ -4610,7 +4648,7 @@ class MafwScheduler {
     // 健康唯一真相源 = runtime 契约 healthCheck()（serve 型探测 serve，
     // 进程内 runtime 探测自身引擎）；gateway 不自带 HTTP 探测。
     try {
-      return (await this.runtime?.healthCheck?.()) ?? false;
+      return (await this.runtimeHost?.healthCheck?.()) ?? false;
     } catch {
       return false;
     }
@@ -6617,7 +6655,7 @@ class MafwScheduler {
                 scope: s.scope,
                 // 未物化身份不出现在列表（选了也会被 withIdentityPrompt 剥离，
                 // 列出是 UX 谎言）；runtime 无 agentConfigApi 时全部滤出。
-                materialized: this.identityState.isMaterialized(this.runtime!.name, s.name),
+                materialized: this.identityState.isMaterialized(this.runtimeHost?.name ?? this.runtimeName, s.name),
               })),
               Array.isArray(runtimeAgents) ? runtimeAgents : [],
             );
@@ -6637,7 +6675,7 @@ class MafwScheduler {
           if (this.capGuard(res, 'provider.config')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const configData = await this.runtime.config.get();
+            const configData = await this.runtimeHost?.config.get();
             res.end(JSON.stringify({ config: configData ?? {} }));
           } catch (err: any) {
             log.error('[OpenCodeConfig] get error:', err.message);
@@ -6653,7 +6691,7 @@ class MafwScheduler {
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const body = JSON.parse(await readBody(req));
-            const result = await this.runtime.config.update(body);
+            const result = await this.runtimeHost?.config.update(body);
             res.end(JSON.stringify({ status: 'ok', config: result ?? null }));
           } catch (err: any) {
             log.error('[OpenCodeConfig] update error:', err.message);
@@ -7920,7 +7958,7 @@ class MafwScheduler {
 
         // Reverse proxy to the agent backend for non-MAFW routes —
         // target from the runtime contract (getBaseUrl), config 仅 bootstrap 兜底
-        const serveUrl = this.runtime?.getBaseUrl?.() ?? config.server.serveUrl;
+        const serveUrl = this.runtimeHost?.getBaseUrl?.() ?? config.server.serveUrl;
         try {
           const proxyUrl = new URL(req.url || '/', serveUrl);
           const proxyReq = http.request(proxyUrl, {

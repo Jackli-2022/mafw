@@ -33,7 +33,11 @@ describe('session directory wiring', () => {
     expect(src).toContain('directory: opts?.directory ?? this.resolvedProjectDir(),');
   });
 
-  test('media executor is injected with resolvedProjectDir', () => {
-    expect(src).toContain('createMediaRuntimeExecutor(this.runtime, { projectDir: this.resolvedProjectDir(), getApiKey: this.runtimeGetApiKey.bind(this) })');
+  test('media executor is injected with resolvedProjectDir (facade + composition-root channel)', () => {
+    expect(src).toContain('createMediaRuntimeExecutor(this.runtime, {');
+    expect(src).toContain('projectDir: this.resolvedProjectDir(),');
+    expect(src).toContain('getApiKey: this.runtimeGetApiKey.bind(this),');
+    // 补全通道由组合根注入（facade 不再暴露 completion）。
+    expect(src).toContain('completion: () => this.runtimeCompletionChannel(),');
   });
 });

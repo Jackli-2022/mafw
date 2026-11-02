@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { MafwCommandDef } from '../../commands/registry';
-import type { AgentRuntime, RuntimeCommandInfo, RuntimeSkillInfo } from '../../runtime/contract';
+import type { BusinessRuntime, RuntimeCommandInfo, RuntimeSkillInfo } from '../../runtime/contract';
 import type { RuntimeAccess } from '../../runtime/runtime-access';
 import { discoverAgentsFiles } from './agents-files';
 import { computeRevision, mergeCommands, mergeSkills } from './merge';
@@ -33,7 +33,7 @@ export class DiscoveryError extends Error {
 
 export interface DiscoveryServiceDeps {
   /** 通道门面（发现目录的具体读取仍经 RuntimeClient.discovery）。 */
-  getRuntime(): AgentRuntime | null;
+  getRuntime(): BusinessRuntime | null;
   /** surface 门（discovery.list / discovery.loadSkill）；缺失 = 不可用。 */
   getAccess(): Pick<RuntimeAccess, 'can'> | null;
   getMafwCommands(): MafwCommandDef[];

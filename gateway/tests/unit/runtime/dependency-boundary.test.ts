@@ -68,4 +68,27 @@ describe('依赖边界守卫（runtime/ 之外零 SDK import）', () => {
     const violations = importers.filter((f) => !allowed(f));
     expect(violations).toEqual([]);
   });
+
+  it('业务目录不 import adapter 实现（runtime 私有布局/原生 SDK 只属于 adapter）', () => {
+    const BUSINESS_DIRS = ['src/routes/', 'src/core/', 'src/media/', 'src/trajectory/'];
+    const ADAPTER_MODULES = [
+      'opencode-runtime', 'opencode-adapter', 'opencode-snapshot', 'opencode-mcp',
+      'opencode-mcp-config', 'plugins/pi-runtime', 'pi-runtime', 'pi-session',
+      'pi-adapter', 'pi-events', 'pi-approval', 'claude',
+    ];
+    const violations: string[] = [];
+    for (const file of walk(SRC)) {
+      const rel = 'src/' + file.replace(SRC, '').replace(/^[\\/]/, '').replace(/\\/g, '/');
+      if (!BUSINESS_DIRS.some((dir) => rel.startsWith(dir))) continue;
+      for (const line of readFileSync(file, 'utf8').split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('import') && !trimmed.includes('require(') && !trimmed.includes('import(')) continue;
+        if (!/runtime\//.test(trimmed)) continue;
+        for (const mod of ADAPTER_MODULES) {
+          if (trimmed.includes(mod)) violations.push(`${rel}: ${trimmed}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
 });

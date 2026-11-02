@@ -71,23 +71,23 @@ export function mergeCommands(input: {
     for (const alias of def.aliases ?? []) byName.set(alias.toLowerCase(), command);
   }
 
-  for (const runtime of input.runtime) {
-    if (!runtime?.name) continue;
-    const existing = byName.get(runtime.name.toLowerCase());
+  for (const entry of input.runtime) {
+    if (!entry?.name) continue;
+    const existing = byName.get(entry.name.toLowerCase());
     if (existing) {
       if (existing.source === 'runtime') continue; // first runtime entry wins
       existing.runtime = true;
-      if (runtime.agent) existing.agent = runtime.agent;
-      if (runtime.model) existing.model = runtime.model;
-      if (runtime.subtask !== undefined) existing.subtask = runtime.subtask;
+      if (entry.agent) existing.agent = entry.agent;
+      if (entry.model) existing.model = entry.model;
+      if (entry.subtask !== undefined) existing.subtask = entry.subtask;
       continue;
     }
     const command: DiscoveryCommand = {
-      name: runtime.name,
-      ...(runtime.description ? { description: runtime.description } : { description: '' }),
-      ...(runtime.agent ? { agent: runtime.agent } : {}),
-      ...(runtime.model ? { model: runtime.model } : {}),
-      ...(runtime.subtask !== undefined ? { subtask: runtime.subtask } : {}),
+      name: entry.name,
+      ...(entry.description ? { description: entry.description } : { description: '' }),
+      ...(entry.agent ? { agent: entry.agent } : {}),
+      ...(entry.model ? { model: entry.model } : {}),
+      ...(entry.subtask !== undefined ? { subtask: entry.subtask } : {}),
       source: 'runtime',
       scope: 'runtime',
       category: 'runtime',
