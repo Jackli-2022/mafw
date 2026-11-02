@@ -3,6 +3,7 @@
 - 日期：2026-11-02
 - 状态：调研完成（官方仓库文档核对，未改产品代码）
 - 前置：`docs/research/2026-11-02-pod-usage-logic-audit.md`
+- Pod v3 落地后复核：`docs/research/2026-11-02-dsh-superagent-pod-v3-review.md`
 - 对象：<https://github.com/deepseek-ai/dsh-superagent-prototype>
 
 ## 0. 结论
