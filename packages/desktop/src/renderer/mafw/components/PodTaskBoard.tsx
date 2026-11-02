@@ -75,7 +75,15 @@ export function PodGoalQueue(props: {
                 }
               }}
             >
-              <span class={`mafw-pod-goal-status mafw-pod-goal-${goal.status}`}>{goal.stage.owner === "person" ? "需要你" : goal.stage.kind === "ended" ? "已结束" : "进行中"}</span>
+              <span class={`mafw-pod-goal-status mafw-pod-goal-${goal.status}`}>{
+                goal.stage.owner === "person"
+                  ? "需要你"
+                  : goal.stage.kind === "ended"
+                    ? "已结束"
+                    : goal.stage.kind === "queued"
+                      ? (goal.stage.queueReason === "paused" ? "已暂停" : "排队中")
+                      : "进行中"
+              }</span>
               <span class="mafw-pod-goal-title">{goalQueueRow(goal)}</span>
               <Show when={goal.resultReady && props.onOpenResult}>
                 <ButtonV2

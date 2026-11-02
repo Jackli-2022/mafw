@@ -33,6 +33,7 @@ export type ExecutionViewProps = {
   onOpenSubagent: (id: string) => void
   onOpenPodSession: (id: string, title?: string) => void
   onOpenGoal: (goalId: string) => void
+  podPanelRequest?: { tab: "work" | "team" | "memory"; seq: number }
   onOpenSection: (section: ExecutionSection) => void
   trajectoryLive: any[]
   trajectoryTurnLive: any | null
@@ -114,6 +115,7 @@ export function ExecutionView(props: ExecutionViewProps) {
           active={props.section === "pod"}
           onOpenSession={props.onOpenPodSession}
           onOpenGoal={props.onOpenGoal}
+          panelRequest={props.podPanelRequest}
         />
       </div>
 

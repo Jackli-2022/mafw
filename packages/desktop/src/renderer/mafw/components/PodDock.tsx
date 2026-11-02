@@ -30,6 +30,7 @@ export function PodDock(props: {
   active: boolean
   onOpenSession: (sid: string, title?: string) => void
   onOpenGoal: (goalId: string) => void
+  panelRequest?: { tab: "work" | "team" | "memory"; seq: number }
 }) {
   const [transcriptSession, setTranscriptSession] = createSignal<string | null>(null)
   const [tab, setTab] = createSignal<"work" | "team" | "memory">("work")
@@ -40,6 +41,23 @@ export function PodDock(props: {
     acceptance?: string[]
   } | undefined>(undefined)
   let transcriptPodId: string | null = null
+
+  // Shell 的「邮箱/待办」入口通过 request 指定要打开的 tab；切换后再滚动到
+  // 对应分区（tab 未渲染时滚动会找不到目标）。
+  createEffect(() => {
+    const request = props.panelRequest
+    if (!request) return
+    setTab(request.tab)
+    if (request.seq <= 0) return
+    setTimeout(() => {
+      const selector = request.tab === "team"
+        ? ".mafw-pod-inbox"
+        : request.tab === "work"
+          ? ".mafw-pod-board-wrap"
+          : null
+      if (selector) document.querySelector(selector)?.scrollIntoView({ block: "start" })
+    }, 0)
+  })
 
   // 首次加载归 shell（常驻订阅）；这里只在面板被打开时补一次刷新。
   // 必须用 on()：refresh() 同步读 detail()/refreshing()，裸 effect 会订阅它们，

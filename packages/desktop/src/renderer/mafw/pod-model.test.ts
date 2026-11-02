@@ -222,6 +222,8 @@ describe("pod-model", () => {
     assert.equal(goalQueueRow({ title: "Fix Pod", verdict: "MAX_RETRIES", stage: { owner: "system", kind: "ended" } }), "Fix Pod · 达到轮次上限")
     assert.equal(goalQueueRow({ title: "Bad", verdict: "FAIL", stage: { owner: "system", kind: "ended" } }), "Bad · 未通过")
     assert.doesNotMatch(goalQueueRow({ title: "Bad", verdict: "FAIL", stage: { owner: "system", kind: "ended" } }), /完成/)
+    assert.equal(goalQueueRow({ title: "Queued", verdict: null, stage: { owner: "team", kind: "queued", queueReason: "paused" } }), "Queued · 已暂停，等待恢复")
+    assert.equal(goalQueueRow({ title: "Queued", verdict: null, stage: { owner: "team", kind: "queued" } }), "Queued · 排队中")
   })
 
   test("attention count excludes unread and result-ready", () => {

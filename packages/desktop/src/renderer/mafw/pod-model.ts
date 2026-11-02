@@ -230,13 +230,9 @@ export function podGoalResultLabel(verdict: PodGoalVerdict | null): string {
 }
 
 export function goalQueueRow(goal: Pick<PodGoal, "title" | "verdict" | "stage">): string {
-  const status = goal.stage.kind === "queued"
-    ? "排队中"
-    : goal.stage.kind === "working"
-      ? "团队工作中"
-      : goal.verdict
-        ? podGoalResultLabel(goal.verdict)
-        : podStageLabel(goal.stage)
+  const status = goal.stage.kind === "ended" && goal.verdict
+    ? podGoalResultLabel(goal.verdict)
+    : podStageLabel(goal.stage)
   return `${goal.title} · ${status}`
 }
 

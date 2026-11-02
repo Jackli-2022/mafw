@@ -8687,15 +8687,42 @@ class MafwScheduler {
     return null;
   }
 
+  private findGoalRequestDir(goalId: string): string | null {
+    for (const [, info] of this.registeredProjects) {
+      if (fs.existsSync(path.join(info.mafwDir, 'requests', `${goalId}.json`))) {
+        return info.mafwDir;
+      }
+    }
+    return null;
+  }
+
   private describePodGoal(goalId: string): PodGoalDescription | null {
     const found = this.findGoalStatePath(goalId);
-    if (!found) return null;
-    const state = loadGoalState(found.info.mafwDir, goalId);
-    if (!state) return null;
+    const mafwDir = found?.info.mafwDir ?? this.findGoalRequestDir(goalId);
+    if (!mafwDir) return null;
     let request: any = null;
     try {
-      request = JSON.parse(fs.readFileSync(path.join(found.info.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
+      request = JSON.parse(fs.readFileSync(path.join(mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
     } catch { /* legacy goals may have no request */ }
+    const state = found ? loadGoalState(found.info.mafwDir, goalId) : null;
+    if (!state) {
+      // Queued goals have an intake request but no state file yet. Their title
+      // and stage still come from the request; only an active goal with no
+      // state is a real inconsistency (stateMissing → blocked).
+      return {
+        title: typeof request?.title === 'string' && request.title.trim() ? request.title : '',
+        phase: null,
+        nextAction: '',
+        terminal: false,
+        verdict: null,
+        hasResultEvidence: false,
+        planApproval: null,
+        pendingQuestion: null,
+        nodeSession: null,
+        lastError: null,
+        stateMissing: true,
+      };
+    }
     const terminal = isTerminalState(state);
     const verdict = goalVerdictFromState(state);
     return {

@@ -1767,17 +1767,22 @@ export function MafwShell() {
   const podBadgeCount = () => podRailBadge({
     attention: podStore.detail()?.attention ?? [],
   })
+  const [podPanelRequest, setPodPanelRequest] = createSignal<{
+    tab: "work" | "team" | "memory"
+    seq: number
+  }>({ tab: "work", seq: 0 })
   const openPodPanel = (panel: "tasks" | "inbox") => {
     closeLeftDockIfOverlay()
     setShowConfig(false)
     setActiveTab("chat")
     setShowWelcome(false)
     openWorkbench("execution", "pod")
-    // 右侧鲸群是单列滚动面板：按计数条选中的分区滚过去，而不是忽略参数。
-    queueMicrotask(() => {
-      const selector = panel === "inbox" ? ".mafw-pod-inbox" : ".mafw-pod-board-wrap"
-      document.querySelector(selector)?.scrollIntoView({ block: "start" })
-    })
+    // The Pod dock is tabbed now; ask it to select and then scroll to the
+    // requested section instead of assuming a single flat column.
+    setPodPanelRequest((prev) => ({
+      tab: panel === "inbox" ? "team" : "work",
+      seq: prev.seq + 1,
+    }))
   }
   const podSessionTitleOf = (sessionId: string) =>
     store.session.find((s: any) => s.id === sessionId)?.title ?? null
@@ -2492,6 +2497,7 @@ export function MafwShell() {
                       onOpenSubagent={(id) => void openSubagentSession(id)}
                       onOpenPodSession={(sid, title) => openSessionTab(sid, title)}
                       onOpenGoal={(id) => setPodGoalId(id)}
+                      podPanelRequest={podPanelRequest()}
                       onOpenSection={applyExecutionSection}
                       trajectoryLive={trajectoryLive()[currentSessionID()] || []}
                       trajectoryTurnLive={trajectoryTurnLive()[currentSessionID()] || null}

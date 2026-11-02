@@ -64,4 +64,15 @@ describe('buildPodGoalView', () => {
     expect(buildPodGoalView(queued, { ...desc, title: 'Queued goal', nodeSession: null }, 'active_goal'))
       .toMatchObject({ title: 'Queued goal', stage: { kind: 'queued', queueReason: 'active_goal' } });
   });
+
+  test('a request-only queued goal keeps its intake title and stays queued', () => {
+    const queued: PodGoalRow = { ...row, status: 'queued', startedAt: null, endedAt: null };
+    const intakeOnly: PodGoalDescription = {
+      ...desc, title: 'Intake title', phase: null, nextAction: '', nodeSession: null, stateMissing: true,
+    };
+    expect(buildPodGoalView(queued, intakeOnly, 'paused'))
+      .toMatchObject({ title: 'Intake title', stage: { kind: 'queued', queueReason: 'paused' } });
+    expect(buildPodGoalView(row, intakeOnly, undefined))
+      .toMatchObject({ title: 'Intake title', stage: { kind: 'blocked' } });
+  });
 });

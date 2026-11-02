@@ -26,6 +26,8 @@ export interface PodGoalDescription {
   } | null;
   nodeSession: unknown | null;
   lastError: string | null;
+  /** No state file yet (queued goal, or an active goal whose state vanished). */
+  stateMissing?: boolean;
 }
 
 export interface PodGoalView {
@@ -88,7 +90,7 @@ export function buildPodGoalView(
     planApproval: description?.planApproval ?? null,
     pendingQuestion: description?.pendingQuestion ?? null,
     nodeSession: description?.nodeSession ?? null,
-    stateMissing: row.status === 'active' && !description,
+    stateMissing: row.status === 'active' && (!!description?.stateMissing || !description),
     ...(queueReason ? { queueReason } : {}),
   });
 
