@@ -162,7 +162,7 @@ describe('pod routes', () => {
     });
     expect(direct.res.status).toBe(200);
     expect(direct.json.delivery).toBe('delivered');
-    expect((deps as any).delivery.deliver).toHaveBeenCalledWith('m1', { force: true });
+    expect((deps as any).delivery.deliver).toHaveBeenCalledWith('m1', { force: false });
 
     const plain = await call('POST', '/api/pods/pod_1/messages', deps, {
       fromMemberId: 'm_lead', kind: 'note', body: 'fyi',
