@@ -19,6 +19,7 @@ export function attachPodHandlers(registry: RouteRegistry, deps: PodRouteDeps): 
     'pods.sleep',
     'pods.cost',
     'pods.goals',
+    'pods.goals.create',
     'pods.transcript',
     'pods.memory.get',
     'pods.memory.write',

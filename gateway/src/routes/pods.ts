@@ -5,18 +5,29 @@ import type { PodMemoryService } from '../core/pod/pod-memory-service';
 import type { PodMessageService } from '../core/pod/pod-message-service';
 import type { PodService } from '../core/pod/pod-service';
 import type { PodTaskService } from '../core/pod/pod-task-service';
+import type { GoalIntakeInput, GoalIntakeResult } from '../core/goal/goal-intake';
+import { makePodGoalId } from '../core/goal/goal-intake';
+import type { PodEnqueueResult } from '../core/pod/pod-goal-service';
+import type { PodAttentionItem, PodGoalView } from '../core/pod/pod-view';
 
 export interface PodRouteDeps {
   pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus' | 'lookup'>;
   tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask' | 'editPlanTask' | 'addPlanTask' | 'deleteTask'>;
   messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
-  goals: Pick<PodGoalService, 'list' | 'promote'>;
+  goals: Pick<PodGoalService, 'list' | 'promote'> & Partial<Pick<
+    PodGoalService,
+    'enqueueGoal' | 'views' | 'attention'
+  >>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
   access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
   delivery?: { deliver(messageId: string, opts?: { force?: boolean }): Promise<'delivered' | 'pending' | 'skipped'> };
+  intake?: { create(input: GoalIntakeInput): GoalIntakeResult };
+  newGoalId?(): string;
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>;
   transcript(podId: string, sessionId: string): Promise<unknown>;
 }
+
+type PodEnqueueFn = (goalId: string, projectDir?: string) => Promise<PodEnqueueResult>;
 
 const POD_STATUSES = new Set(['active', 'idle', 'paused', 'archived']);
 const MESSAGE_KINDS = new Set(['note', 'request', 'review', 'decision', 'escalation']);
@@ -38,7 +49,8 @@ export async function handlePods(
       const detail = deps.pods.lookup(decode(lookupPath[1]));
       if (!detail) throw new PodError(404, 'pod not found');
       const member = readMember(deps, url, detail.pod.id);
-      sendJson(res, 200, member && member.role !== 'lead' ? { ...detail, sessions: [] } : detail);
+      const view = enrichPodDetail(deps, detail);
+      sendJson(res, 200, member && member.role !== 'lead' ? { ...view, sessions: [] } : view);
       return true;
     }
 
@@ -50,12 +62,14 @@ export async function handlePods(
           const detail = deps.pods.lookup(decode(projectPod[1]));
           if (!detail) throw new PodError(404, 'pod not found');
           const member = readMember(deps, url, detail.pod.id);
-          sendJson(res, 200, member && member.role !== 'lead' ? { ...detail, sessions: [] } : detail);
+          const view = enrichPodDetail(deps, detail);
+          sendJson(res, 200, member && member.role !== 'lead' ? { ...view, sessions: [] } : view);
           return true;
         }
         const detail = await deps.pods.ensure(decode(projectPod[1]));
         const member = readMember(deps, url, detail.pod.id);
-        sendJson(res, 200, member && member.role !== 'lead' ? { ...detail, sessions: [] } : detail);
+        const view = enrichPodDetail(deps, detail);
+        sendJson(res, 200, member && member.role !== 'lead' ? { ...view, sessions: [] } : view);
         return true;
       }
       return false;
@@ -200,7 +214,7 @@ export async function handlePods(
       requirePod(deps, podId);
       const detail = deps.pods.updateStatus(podId, wake[2] === 'wake' ? 'active' : 'idle');
       if (wake[2] === 'wake') await deps.goals.promote(podId);
-      sendJson(res, 200, detail);
+      sendJson(res, 200, enrichPodDetail(deps, detail));
       return true;
     }
 
@@ -216,11 +230,57 @@ export async function handlePods(
 
     const goals = pathname.match(/^\/api\/pods\/([^/]+)\/goals$/);
     if (goals) {
-      if (method !== 'GET') return false;
       const podId = decode(goals[1]);
       requirePod(deps, podId);
-      readMember(deps, url, podId);
-      sendJson(res, 200, { items: deps.goals.list(podId) });
+      if (method === 'GET') {
+        readMember(deps, url, podId);
+        const items: PodGoalView[] = deps.goals.views
+          ? deps.goals.views(podId)
+          : deps.goals.list(podId).map((row) => ({ ...row, title: row.goalId, phase: null, stage: { owner: 'system', kind: 'waiting' }, resultReady: false }));
+        sendJson(res, 200, { items });
+        return true;
+      }
+      if (method !== 'POST') return false;
+
+      const body = await readJson(req);
+      if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
+        assertAccess(deps, body, ['lead'], podId);
+      }
+      const title = String(body?.title ?? '').trim();
+      const objective = String(body?.objective ?? '').trim();
+      const charter = String(body?.charter ?? '').trim();
+      if (!title) throw new PodError(400, 'title is required');
+      if (!objective && !charter) throw new PodError(400, 'objective or charter is required');
+      if (!deps.intake) throw new PodError(503, 'goal intake unavailable');
+
+      const detail = deps.pods.get(podId);
+      if (!detail) throw new PodError(404, `pod not found: ${podId}`);
+      const goalId = deps.newGoalId?.() ?? makePodGoalId(new Date().toISOString(), Math.random);
+      const created = deps.intake.create({
+        goalId,
+        title,
+        objective: objective || undefined,
+        charter: charter || undefined,
+        acceptance: Array.isArray(body.acceptance) ? body.acceptance : undefined,
+        boundaries: Array.isArray(body.boundaries) ? body.boundaries : undefined,
+        planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
+        projectDir: detail.pod.projectDir,
+        authorization: { source: 'desktop', requestMode: 'explicit' },
+      });
+      if (!deps.goals.enqueueGoal) throw new PodError(503, 'goal queue unavailable');
+      const enqueue = await (deps.goals.enqueueGoal as PodEnqueueFn)(created.goalId, detail.pod.projectDir);
+      const view = deps.goals.views?.(podId).find((item) => item.goalId === created.goalId)
+        ?? {
+          id: created.goalId, podId, goalId: created.goalId, status: enqueue.status === 'started' ? 'active' : 'queued',
+          title, phase: null, verdict: null, stage: enqueue.status === 'started' ? { owner: 'team', kind: 'working' } : { owner: 'team', kind: 'queued' },
+          resultReady: false, enqueuedAt: new Date().toISOString(), startedAt: null, endedAt: null,
+        };
+      sendJson(res, 200, {
+        goalId: created.goalId,
+        status: enqueue.status,
+        queueReason: enqueue.queueReason,
+        goal: view,
+      });
       return true;
     }
 
@@ -272,14 +332,15 @@ export async function handlePods(
         requirePod(deps, podId);
         const detail = deps.pods.get(podId)!;
         const member = readMember(deps, url, podId);
-        sendJson(res, 200, member && member.role !== 'lead' ? { ...detail, sessions: [] } : detail);
+        const view = enrichPodDetail(deps, detail);
+        sendJson(res, 200, member && member.role !== 'lead' ? { ...view, sessions: [] } : view);
         return true;
       }
       if (method === 'PATCH') {
         requirePod(deps, podId);
         const body = await readJson(req);
         if (!POD_STATUSES.has(String(body.status))) throw new PodError(400, 'invalid pod status');
-        sendJson(res, 200, deps.pods.updateStatus(podId, body.status));
+        sendJson(res, 200, enrichPodDetail(deps, deps.pods.updateStatus(podId, body.status)));
         return true;
       }
       return false;
@@ -291,6 +352,17 @@ export async function handlePods(
     sendJson(res, status, { error: err?.message ?? String(err) });
     return true;
   }
+}
+
+function enrichPodDetail<T extends { pod: { id: string }; goals: unknown[] }>(
+  deps: PodRouteDeps,
+  detail: T,
+): T & { goals: PodGoalView[]; attention: PodAttentionItem[] } {
+  const goals = deps.goals.views
+    ? deps.goals.views(detail.pod.id)
+    : detail.goals as PodGoalView[];
+  const attention = deps.goals.attention ? deps.goals.attention(detail.pod.id) : [];
+  return { ...detail, goals, attention };
 }
 
 function decode(value: string): string {

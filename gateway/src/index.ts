@@ -38,6 +38,8 @@ import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
 import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
+import type { PodGoalDescription } from './core/pod/pod-view';
+import { createGoalIntake, makePodGoalId } from './core/goal/goal-intake';
 import { PodAccess } from './core/pod/pod-access';
 import { PodBudget } from './core/pod/pod-budget';
 import { PodMessageDelivery } from './core/pod/pod-message-delivery';
@@ -3741,6 +3743,7 @@ class MafwScheduler {
             ?? (state.nextAction === 'COMPLETED' ? 'PASS' : state.nextAction === 'CANCELLED' ? 'CANCELLED' : 'FAIL'),
         } : null;
       },
+      describeGoal: (goalId) => this.describePodGoal(goalId),
       listInFlightGoals: (projectDir) => this.listGoalStates()
         .filter((entry) => canonicalProjectDir(entry.projectDir) === projectDir)
         .map((entry) => loadGoalState(entry.mafwDir, entry.goalId))
@@ -4585,6 +4588,19 @@ class MafwScheduler {
         memory: this.podMemoryService,
         access: this.podAccess,
         delivery: this.podMessageDelivery,
+        intake: {
+          create: (input) => createGoalIntake(input, {
+            resolveProject: (requested) => {
+              const canonical = canonicalProjectDir(requested || this.resolvedProjectDir());
+              const hit = Array.from(this.registeredProjects.entries())
+                .find(([dir]) => canonicalProjectDir(dir) === canonical);
+              return hit ? { projectDir: hit[0], mafwDir: hit[1].mafwDir } : null;
+            },
+            now: () => new Date().toISOString(),
+            emitGoalCreated: (event) => eventBus.emit('goal_created', event as any),
+          }),
+        },
+        newGoalId: () => makePodGoalId(new Date().toISOString(), Math.random),
         cost: async (podId) => this.podCost(podId),
         transcript: async (podId, sessionId) => this.podTranscript(podId, sessionId),
       });
@@ -8571,6 +8587,43 @@ class MafwScheduler {
       }
     }
     return null;
+  }
+
+  private describePodGoal(goalId: string): PodGoalDescription | null {
+    const found = this.findGoalStatePath(goalId);
+    if (!found) return null;
+    const state = loadGoalState(found.info.mafwDir, goalId);
+    if (!state) return null;
+    let request: any = null;
+    try {
+      request = JSON.parse(fs.readFileSync(path.join(found.info.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
+    } catch { /* legacy goals may have no request */ }
+    const terminal = isTerminalState(state);
+    const verdict = state.reviewVerdict
+      ?? (state.nextAction === 'COMPLETED' ? 'PASS' : state.nextAction === 'CANCELLED' ? 'CANCELLED' : terminal ? 'FAIL' : null);
+    return {
+      title: typeof request?.title === 'string' && request.title.trim() ? request.title : goalId,
+      phase: state.phase ?? null,
+      nextAction: state.nextAction,
+      terminal,
+      verdict: verdict as any,
+      hasResultEvidence: !!(
+        state.receiptPath
+        || state.reviewReportPath
+        || Object.keys(state.artifacts ?? {}).length > 0
+        || state.reviewVerdict
+      ),
+      planApproval: (state.planApproval ?? null) as any,
+      pendingQuestion: state.pendingQuestion
+        ? {
+          questionId: state.pendingQuestion.questionId,
+          node: state.pendingQuestion.node,
+          questions: state.pendingQuestion.questions,
+        }
+        : null,
+      nodeSession: state.nodeSession,
+      lastError: state.lastError,
+    };
   }
 
   private async handleValidate(goalId: string, data?: { projectDir?: string }): Promise<any> {

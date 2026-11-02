@@ -1,6 +1,6 @@
-import * as fs from "fs";
 import * as path from "path";
 import { ToolHandler } from "../../types";
+import { createGoalIntake } from "../../core/goal/goal-intake";
 import { eventBus } from "../../event-bus";
 
 export const handleCreateGoal: ToolHandler = async (args, services) => {
@@ -8,76 +8,58 @@ export const handleCreateGoal: ToolHandler = async (args, services) => {
     const requestedProjectDir = args.projectDir as string | undefined;
     const listProjects = (services as any)?.listProjects as
       (() => Array<{ projectDir: string; mafwDir: string }>) | undefined;
-    let projectDir: string;
-    let mafwDir: string;
-    if (requestedProjectDir && listProjects) {
-      const hit = listProjects().find((p) => p.projectDir === path.resolve(requestedProjectDir));
-      if (!hit) {
-        const available = listProjects().map((p) => p.projectDir).join(', ');
-        return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `projectDir not registered: ${requestedProjectDir}. Available: ${available || '(none)'}` }) }], isError: true };
-      }
-      projectDir = hit.projectDir;
-      mafwDir = hit.mafwDir;
-    } else {
-      // 调用时读取（非模块顶层）：测试需要按用例隔离 MAFW_PROJECT_DIR
-      projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
-      mafwDir = path.join(projectDir, ".mafw");
-    }
-    const goalId = args.goalId as string;
-    const title = args.title as string;
-    const charter = args.charter as string;
-    const source = (args.source as string) || "user";
-    const metrics = (args.metrics as Record<string, { target: number; unit: string }>) || {};
-    const boundaries = (args.boundaries as string[]) || [];
-    const priority = (args.priority as string) || "medium";
-    const maxLoops = (args.maxLoops as number) || 5;
-    const budget = (args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined);
-    const hasBudget = !!budget && (typeof budget.maxTurns === 'number' || typeof budget.maxCostUsd === 'number');
-    // D4b: optional task type (validated against the canonical enum; plan node
-    // may refine it later — its waves.taskType write-back wins).
-    const taskType = args.taskType as string | undefined;
-    const { isTaskType } = await import("../../orchestration/capability-ledger.js");
-    if (taskType !== undefined && !isTaskType(taskType)) {
-      return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `invalid taskType: ${taskType} (feature|bugfix|refactor|research|docs|test|other)` }) }], isError: true };
-    }
-    // W1: optional plan review mode (manual = plan 完成驻留待批；缺省 auto)。
-    const planReview = args.planReview as string | undefined;
-    if (planReview !== undefined && planReview !== 'auto' && planReview !== 'manual') {
-      return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `invalid planReview: ${planReview} (auto|manual)` }) }], isError: true };
-    }
 
-    const goalsDir = path.join(mafwDir, "goals");
-    const requestsDir = path.join(mafwDir, "requests");
-    fs.mkdirSync(goalsDir, { recursive: true });
-    fs.mkdirSync(requestsDir, { recursive: true });
-
-    const charterPath = path.join(goalsDir, `${goalId}.md`);
-    if (fs.existsSync(charterPath)) {
-      return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Goal ${goalId} already exists` }) }], isError: true };
-    }
-
-    fs.writeFileSync(charterPath, charter, "utf-8");
-
-    const request = {
-      version: "2", goalId, title, state: "draft",
-      createdAt: new Date().toISOString(), confirmedAt: new Date().toISOString(),
-      source, projectDir, mafwDir, goalCharter: charterPath,
-      metrics, boundaries, priority, maxLoops, parallel: false,
-      degradeOnLoop: Math.ceil(maxLoops * 0.6),
-      ...(hasBudget ? { budget } : {}),
-      ...(taskType ? { taskType } : {}),
-      ...(planReview ? { planReview } : {}),
-    };
-
-    const requestPath = path.join(requestsDir, `${goalId}.json`);
-    fs.writeFileSync(requestPath, JSON.stringify(request, null, 2), "utf-8");
-
-    eventBus.emit("goal_created", { type: "goal_created", goalId, projectDir });
+    const result = createGoalIntake({
+      goalId: args.goalId as string,
+      title: args.title as string,
+      charter: args.charter as string,
+      projectDir: requestedProjectDir,
+      acceptance: Array.isArray(args.acceptance) ? args.acceptance : undefined,
+      boundaries: Array.isArray(args.boundaries) ? args.boundaries : undefined,
+      metrics: (args.metrics as Record<string, { target?: number; unit?: string }>) || {},
+      priority: args.priority as any,
+      maxLoops: args.maxLoops as number | undefined,
+      budget: args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined,
+      taskType: args.taskType as any,
+      planReview: args.planReview as any,
+      source: (args.source as string) || "user",
+      authorization: {
+        source: normalizeSource(args.source),
+        requestMode: "explicit",
+      },
+    }, {
+      resolveProject: (requested) => {
+        if (requested && listProjects) {
+          const hit = listProjects().find((p) => p.projectDir === path.resolve(requested));
+          if (!hit) return null;
+          return { projectDir: hit.projectDir, mafwDir: hit.mafwDir };
+        }
+        // 调用时读取（非模块顶层）：测试需要按用例隔离 MAFW_PROJECT_DIR
+        const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
+        return { projectDir, mafwDir: path.join(projectDir, ".mafw") };
+      },
+      now: () => new Date().toISOString(),
+      emitGoalCreated: (event) => eventBus.emit("goal_created", event as any),
+    });
 
     return {
-      content: [{ type: "text", text: JSON.stringify({ success: true, goalId, charterPath, requestPath }) }],
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: true,
+          goalId: result.goalId,
+          charterPath: result.charterPath,
+          requestPath: result.requestPath,
+        }),
+      }],
     };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ success: false, error: err.message }) }], isError: true };
   }
 };
+
+function normalizeSource(value: unknown): 'desktop' | 'lead' | 'a2a' | 'automation' | 'user' {
+  return value === 'desktop' || value === 'lead' || value === 'a2a' || value === 'automation' || value === 'user'
+    ? value
+    : 'user';
+}
