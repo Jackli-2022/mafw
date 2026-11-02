@@ -1,4 +1,4 @@
-import type { PodGoalRow } from './pod-store';
+import type { PodGoalRow, PodMessageDeliveryRow } from './pod-store';
 import type { PodDetail } from './pod-service';
 import {
   projectPodAttention,
@@ -46,6 +46,7 @@ export interface PodGoalView {
 export interface PodDetailView extends PodDetail {
   goals: PodGoalView[];
   attention: PodAttentionItem[];
+  messageHealth: PodMessageDeliveryRow[];
 }
 
 export function buildPodGoalView(

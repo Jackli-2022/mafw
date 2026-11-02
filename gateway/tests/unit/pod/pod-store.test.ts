@@ -312,4 +312,32 @@ describe('PodStore', () => {
     expect(migrated.listMessages('p')).toEqual([]);
     oldDb.close();
   });
+
+  test('legacy delivered broadcast does not replay after migration', () => {
+    const now = '2026-10-30T00:00:00.000Z';
+    store.ensurePod({ id: 'pod_1', projectDir: '/p', name: 'P', now });
+    const builder = store.upsertMember({
+      id: 'm_builder', podId: 'pod_1', role: 'builder', displayName: 'B', agentName: 'mafw-execute',
+      modelProvider: null, modelId: null, status: 'available', configJson: null, now,
+    });
+    const reviewer = store.upsertMember({
+      id: 'm_reviewer', podId: 'pod_1', role: 'reviewer', displayName: 'R', agentName: 'mafw-review',
+      modelProvider: null, modelId: null, status: 'available', configJson: null, now,
+    });
+    store.insertSession({
+      id: 'ps1', podId: 'pod_1', memberId: builder.id, goalId: null, node: 'execute',
+      sessionId: 'ses_builder', status: 'active', transcriptRef: null, now,
+    });
+    const msg = store.insertMessage({
+      id: 'm1', podId: 'pod_1', fromMemberId: 'm_builder', toMemberId: null,
+      kind: 'note', body: 'legacy', protocol: null, externalMessageId: null, now,
+    });
+    db.prepare('UPDATE pod_messages SET delivered_at = ?, delivered_session_id = ? WHERE id = ?')
+      .run(now, 'ses_builder', msg.id);
+
+    // Opening the store runs the additive delivery migration.
+    const reopened = new PodStore(db);
+    expect(reopened.listPendingMessages('pod_1', reviewer.id)).toEqual([]);
+    expect(reopened.listDeliveryFailures('pod_1')).toEqual([]);
+  });
 });

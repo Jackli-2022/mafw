@@ -20,7 +20,10 @@ export interface PodRouteDeps {
   >>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
   access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
-  delivery?: { deliver(messageId: string, opts?: { force?: boolean }): Promise<'delivered' | 'pending' | 'skipped'> };
+  delivery?: {
+    deliver(messageId: string, opts?: { force?: boolean }): Promise<'delivered' | 'pending' | 'skipped'>;
+    listFailures?(podId: string): import('../core/pod/pod-store').PodMessageDeliveryRow[];
+  };
   intake?: { create(input: GoalIntakeInput): GoalIntakeResult };
   newGoalId?(): string;
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>;
@@ -396,7 +399,8 @@ function enrichPodDetail<T extends { pod: { id: string }; goals: unknown[]; task
     : detail.goals as PodGoalView[];
   const attention = deps.goals.attention ? deps.goals.attention(detail.pod.id) : [];
   const tasks = deps.tasks.list(detail.pod.id);
-  return { ...detail, goals, tasks, attention };
+  const messageHealth = deps.delivery?.listFailures?.(detail.pod.id) ?? [];
+  return { ...detail, goals, tasks, attention, messageHealth };
 }
 
 function decode(value: string): string {

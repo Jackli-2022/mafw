@@ -33,15 +33,17 @@ export class PodMessageDelivery {
     return member?.status === 'sleeping' || member?.status === 'retired';
   }
 
-  async deliver(messageId: string, opts: { force?: boolean } = {}): Promise<'delivered' | 'pending' | 'skipped'> {
+  async deliver(messageId: string, _opts: { force?: boolean } = {}): Promise<'delivered' | 'pending' | 'skipped'> {
     const message = this.findMessage(messageId);
     if (!message) return 'skipped';
-    if (message.deliveredAt) return 'skipped';
-    if (message.toMemberId && this.memberBlockedForPush(message.podId, message.toMemberId)) return 'pending';
-    const decision = this.decide(messageId);
-    if (decision !== 'push' && !opts.force) return 'pending';
+    if (!message.toMemberId) return 'skipped';
+    if (this.deps.store.hasDelivery(message.id, message.toMemberId)) return 'skipped';
+    if (this.memberBlockedForPush(message.podId, message.toMemberId)) return 'pending';
+    // `force` is retained for API compatibility, but it never converts a
+    // pull-by-design node handoff into an immediate push.
+    if (this.decide(messageId) !== 'push') return 'pending';
 
-    const session = activeSessionForMember(this.deps.store, message.podId, message.toMemberId!);
+    const session = activeSessionForMember(this.deps.store, message.podId, message.toMemberId);
     if (!session) return 'pending';
     try {
       await this.deps.promptAsync({
@@ -49,10 +51,12 @@ export class PodMessageDelivery {
         message: this.render(message),
         delivery: 'queue',
       });
+      this.deps.store.markDeliveryDelivered(message.id, message.toMemberId, session.sessionId, this.now());
       this.deps.store.markMessageDelivered(message.id, session.sessionId, this.now());
       this.deps.notify?.(message.podId);
       return 'delivered';
     } catch (err: any) {
+      this.deps.store.markDeliveryFailed(message.id, message.toMemberId, String(err?.message ?? err), this.now());
       this.deps.log?.(`[PodDelivery] push failed for ${message.id}: ${err?.message ?? err}`);
       return 'pending';
     }
@@ -74,12 +78,16 @@ export class PodMessageDelivery {
   }
 
   commitDelivered(ids: string[], sessionId: string): void {
+    const member = this.deps.store.getMemberBySession(sessionId);
+    if (!member) return;
     const now = this.now();
     let podId: string | null = null;
     for (const id of ids) {
       const message = this.deps.store.getMessage(id);
       if (!message) continue;
-      this.deps.store.markMessageDelivered(id, sessionId, now);
+      this.deps.store.markDeliveryDelivered(id, member.id, sessionId, now);
+      // Preserve the legacy direct-message display for one recipient only.
+      if (message.toMemberId) this.deps.store.markMessageDelivered(id, sessionId, now);
       podId = message.podId;
     }
     if (podId) this.deps.notify?.(podId);
@@ -90,6 +98,10 @@ export class PodMessageDelivery {
     if (!claim) return null;
     this.commitDelivered(claim.ids, sessionId);
     return claim.block;
+  }
+
+  listFailures(podId: string) {
+    return this.deps.store.listDeliveryFailures(podId);
   }
 
   render(message: PodMessageRow): string {

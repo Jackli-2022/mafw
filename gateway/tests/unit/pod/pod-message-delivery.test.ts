@@ -14,6 +14,7 @@ function makeDelivery(opts: { node: string | null; sessionId?: string; notify?: 
   const pod = store.ensurePod({ id: 'pod_1', projectDir: '/p', name: 'P', now: NOW });
   const lead = store.upsertMember({ id: 'm_lead', podId: pod.id, role: 'lead', displayName: 'Lead', agentName: 'manager', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
   const builder = store.upsertMember({ id: 'm_builder', podId: pod.id, role: 'builder', displayName: 'Builder', agentName: 'mafw-execute', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
+  const reviewer = store.upsertMember({ id: 'm_reviewer', podId: pod.id, role: 'reviewer', displayName: 'Reviewer', agentName: 'mafw-review', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
   const sessionId = opts.sessionId ?? 'ses_builder';
   if (opts.node !== null) {
     store.insertSession({
@@ -21,6 +22,10 @@ function makeDelivery(opts: { node: string | null; sessionId?: string; notify?: 
       sessionId, status: 'active', transcriptRef: null, now: NOW,
     });
   }
+  store.insertSession({
+    id: 'ps2', podId: pod.id, memberId: reviewer.id, goalId: 'g1', node: opts.node ?? 'review',
+    sessionId: 'ses_reviewer', status: 'active', transcriptRef: null, now: NOW,
+  });
   const message = store.insertMessage({
     id: 'm1', podId: pod.id, fromMemberId: lead.id, toMemberId: builder.id,
     kind: 'request', body: 'do it', protocol: 'a2a', externalMessageId: 'msg_1', now: NOW,
@@ -31,7 +36,7 @@ function makeDelivery(opts: { node: string | null; sessionId?: string; notify?: 
     promptAsync: async (input) => { prompts.push(input); },
     notify: opts.notify,
   });
-  return { dir, db, store, pod, builder, message, prompts, delivery };
+  return { dir, db, store, pod, lead, builder, reviewer, message, prompts, delivery };
 }
 
 describe('PodMessageDelivery', () => {
@@ -69,13 +74,27 @@ describe('PodMessageDelivery', () => {
     fs.rmSync(h.dir, { recursive: true, force: true });
   });
 
-  test('force pushes a handoff into a goal-node session', async () => {
+  test('force cannot push a handoff into a goal-node session', async () => {
     const h = makeDelivery({ node: 'execute' });
     expect(await h.delivery.deliver(h.message.id)).toBe('pending');
-    expect(await h.delivery.deliver(h.message.id, { force: true })).toBe('delivered');
-    expect(h.prompts).toHaveLength(1);
-    expect(h.prompts[0]).toMatchObject({ sessionID: 'ses_builder', delivery: 'queue' });
-    expect(h.store.listMessages(h.pod.id)[0].deliveredAt).toBeTruthy();
+    expect(await h.delivery.deliver(h.message.id, { force: true })).toBe('pending');
+    expect(h.prompts).toHaveLength(0);
+    expect(h.store.hasDelivery(h.message.id, h.builder.id)).toBe(false);
+    h.db.close();
+    fs.rmSync(h.dir, { recursive: true, force: true });
+  });
+
+  test('a broadcast is delivered independently to all members', async () => {
+    const h = makeDelivery({ node: 'execute' });
+    const msg = h.store.insertMessage({
+      id: 'm_all', podId: h.pod.id, fromMemberId: h.lead.id, toMemberId: null,
+      kind: 'note', body: 'all', protocol: null, externalMessageId: null, now: NOW,
+    });
+    expect(await h.delivery.pendingForSession('ses_builder')).toContain('all');
+    expect(h.store.hasDelivery(msg.id, h.builder.id)).toBe(true);
+    expect(h.store.hasDelivery(msg.id, h.reviewer.id)).toBe(false);
+    expect(await h.delivery.pendingForSession('ses_reviewer')).toContain('all');
+    expect(h.store.hasDelivery(msg.id, h.reviewer.id)).toBe(true);
     h.db.close();
     fs.rmSync(h.dir, { recursive: true, force: true });
   });

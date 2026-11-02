@@ -84,6 +84,18 @@ export interface PodMessageRow {
   deliveredSessionId: string | null;
 }
 
+export interface PodMessageDeliveryRow {
+  messageId: string;
+  podId: string;
+  memberId: string;
+  deliveredAt: string | null;
+  deliveredSessionId: string | null;
+  status: 'pending' | 'delivered' | 'failed';
+  attempts: number;
+  lastError: string | null;
+  nextRetryAt: string | null;
+}
+
 export interface PodA2ALinkRow {
   id: string;
   podId: string;
@@ -191,6 +203,20 @@ function messageFromRow(row: any): PodMessageRow {
     partsJson: row.parts_json ?? null,
     deliveredAt: row.delivered_at ?? null,
     deliveredSessionId: row.delivered_session_id ?? null,
+  };
+}
+
+function deliveryFromRow(row: any): PodMessageDeliveryRow {
+  return {
+    messageId: row.message_id,
+    podId: row.pod_id,
+    memberId: row.member_id,
+    deliveredAt: row.delivered_at ?? null,
+    deliveredSessionId: row.delivered_session_id ?? null,
+    status: row.status ?? 'pending',
+    attempts: Number(row.attempts ?? 0),
+    lastError: row.last_error ?? null,
+    nextRetryAt: row.next_retry_at ?? null,
   };
 }
 
@@ -305,6 +331,20 @@ export class PodStore {
       );
       CREATE INDEX IF NOT EXISTS idx_pod_messages_pod ON pod_messages(pod_id, created_at);
 
+      CREATE TABLE IF NOT EXISTS pod_message_deliveries (
+        message_id TEXT NOT NULL,
+        pod_id TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        delivered_at TEXT,
+        delivered_session_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        next_retry_at TEXT,
+        PRIMARY KEY (message_id, member_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pod_deliveries_pod ON pod_message_deliveries(pod_id, status);
+
       CREATE TABLE IF NOT EXISTS pod_a2a_links (
         id TEXT PRIMARY KEY,
         pod_id TEXT NOT NULL,
@@ -359,6 +399,32 @@ export class PodStore {
         ON pod_messages(pod_id, external_message_id)
         WHERE external_message_id IS NOT NULL;
     `);
+    this.backfillLegacyDeliveries();
+  }
+
+  private backfillLegacyDeliveries(): void {
+    // Direct legacy delivery: the delivered session identifies the member.
+    this.db.prepare(`
+      INSERT OR IGNORE INTO pod_message_deliveries (
+        message_id, pod_id, member_id, delivered_at, delivered_session_id, status, attempts
+      )
+      SELECT m.id, m.pod_id, s.member_id, m.delivered_at, m.delivered_session_id, 'delivered', 0
+      FROM pod_messages m
+      JOIN pod_member_sessions s ON s.session_id = m.delivered_session_id
+      WHERE m.delivered_at IS NOT NULL AND m.to_member_id IS NOT NULL
+    `).run();
+
+    // Legacy broadcast delivery had one global stamp. Treat it as delivered to
+    // the roster at upgrade time so old broadcasts do not replay.
+    this.db.prepare(`
+      INSERT OR IGNORE INTO pod_message_deliveries (
+        message_id, pod_id, member_id, delivered_at, delivered_session_id, status, attempts
+      )
+      SELECT m.id, m.pod_id, member.id, m.delivered_at, m.delivered_session_id, 'delivered', 0
+      FROM pod_messages m
+      JOIN pod_members member ON member.pod_id = m.pod_id
+      WHERE m.delivered_at IS NOT NULL AND m.to_member_id IS NULL
+    `).run();
   }
 
   private ensureColumn(table: string, column: string, ddl: string): void {
@@ -611,6 +677,80 @@ export class PodStore {
     ).run(now, sessionId, id);
   }
 
+  hasDelivery(messageId: string, memberId: string): boolean {
+    const row = this.db.prepare(
+      "SELECT 1 FROM pod_message_deliveries WHERE message_id = ? AND member_id = ? AND status = 'delivered' AND delivered_at IS NOT NULL",
+    ).get(messageId, memberId);
+    return !!row;
+  }
+
+  markDeliveryDelivered(messageId: string, memberId: string, sessionId: string, now: string): void {
+    this.upsertDelivery(messageId, memberId, {
+      deliveredAt: now,
+      deliveredSessionId: sessionId,
+      status: 'delivered',
+      lastError: null,
+      nextRetryAt: null,
+    });
+  }
+
+  markDeliveryFailed(messageId: string, memberId: string, error: string, now: string): void {
+    const message = this.getMessage(messageId);
+    if (!message) return;
+    const current = this.db.prepare(
+      'SELECT * FROM pod_message_deliveries WHERE message_id = ? AND member_id = ?',
+    ).get(messageId, memberId) as any;
+    const attempts = Number(current?.attempts ?? 0) + 1;
+    this.upsertDelivery(messageId, memberId, {
+      deliveredAt: null,
+      deliveredSessionId: null,
+      status: 'failed',
+      attempts,
+      lastError: error.slice(0, 500),
+      nextRetryAt: now,
+    }, message.podId);
+  }
+
+  listDeliveryFailures(podId: string): PodMessageDeliveryRow[] {
+    return (this.db.prepare(
+      "SELECT * FROM pod_message_deliveries WHERE pod_id = ? AND status = 'failed' ORDER BY next_retry_at ASC, message_id ASC",
+    ).all(podId) as any[]).map(deliveryFromRow);
+  }
+
+  private upsertDelivery(
+    messageId: string,
+    memberId: string,
+    patch: {
+      deliveredAt: string | null;
+      deliveredSessionId: string | null;
+      status: PodMessageDeliveryRow['status'];
+      attempts?: number;
+      lastError: string | null;
+      nextRetryAt: string | null;
+    },
+    podId?: string,
+  ): void {
+    const message = podId ? null : this.getMessage(messageId);
+    const resolvedPodId = podId ?? message?.podId;
+    if (!resolvedPodId) return;
+    this.db.prepare(`
+      INSERT INTO pod_message_deliveries (
+        message_id, pod_id, member_id, delivered_at, delivered_session_id,
+        status, attempts, last_error, next_retry_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(message_id, member_id) DO UPDATE SET
+        delivered_at = excluded.delivered_at,
+        delivered_session_id = excluded.delivered_session_id,
+        status = excluded.status,
+        attempts = COALESCE(excluded.attempts, pod_message_deliveries.attempts),
+        last_error = excluded.last_error,
+        next_retry_at = excluded.next_retry_at
+    `).run(
+      messageId, resolvedPodId, memberId, patch.deliveredAt, patch.deliveredSessionId,
+      patch.status, patch.attempts ?? 0, patch.lastError, patch.nextRetryAt,
+    );
+  }
+
   linkA2A(input: {
     id: string;
     podId: string;
@@ -678,11 +818,13 @@ export class PodStore {
 
   listPendingMessages(podId: string, memberId: string): PodMessageRow[] {
     return (this.db.prepare(`
-      SELECT * FROM pod_messages
-      WHERE pod_id = ? AND delivered_at IS NULL
-        AND (to_member_id = ? OR to_member_id IS NULL)
-      ORDER BY created_at ASC, rowid ASC
-    `).all(podId, memberId) as any[]).map(messageFromRow);
+      SELECT m.* FROM pod_messages m
+      LEFT JOIN pod_message_deliveries d
+        ON d.message_id = m.id AND d.member_id = ? AND d.status = 'delivered' AND d.delivered_at IS NOT NULL
+      WHERE m.pod_id = ? AND d.message_id IS NULL
+        AND (m.to_member_id = ? OR m.to_member_id IS NULL)
+      ORDER BY m.created_at ASC, m.rowid ASC
+    `).all(memberId, podId, memberId) as any[]).map(messageFromRow);
   }
 
   markMessageRead(id: string, now: string): void {
