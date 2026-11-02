@@ -578,17 +578,26 @@ function readConfigPages(
     const saveAction = readActionRef(item.saveAction, `${pageLabel} saveAction`, actionNames, errors)
     const reloadOnSave = optionalBoolean(item.reloadOnSave, `${pageLabel} reloadOnSave`, errors)
 
+    let pageSchema: PluginJsonSchema = { type: "object", properties: {} }
     if (item.schema === undefined) {
       addError(errors, `${pageLabel} schema must be an object`)
-    } else {
-      if (isPlainObject(item.schema)) {
-        const schemaSize = jsonByteLength(item.schema)
-        if (schemaSize === null) {
+    } else if (isPlainObject(item.schema)) {
+      const schemaSize = jsonByteLength(item.schema)
+      if (schemaSize === null) {
+        addError(errors, `${pageLabel} schema must be JSON-serializable`)
+      } else if (schemaSize > PLUGIN_UI_LIMITS.maxActionPayloadBytes) {
+        addError(errors, `${pageLabel} schema exceeds ${PLUGIN_UI_LIMITS.maxActionPayloadBytes} bytes`)
+      } else {
+        try {
+          pageSchema = cloneJson(item.schema) as PluginJsonSchema
+        } catch {
           addError(errors, `${pageLabel} schema must be JSON-serializable`)
-        } else if (schemaSize > PLUGIN_UI_LIMITS.maxActionPayloadBytes) {
-          addError(errors, `${pageLabel} schema exceeds ${PLUGIN_UI_LIMITS.maxActionPayloadBytes} bytes`)
+        }
+        for (const schemaError of validateConfigFormSchema(item.schema as PluginJsonSchema)) {
+          addError(errors, `${pageLabel}: ${schemaError}`)
         }
       }
+    } else {
       for (const schemaError of validateConfigFormSchema(item.schema as PluginJsonSchema)) {
         addError(errors, `${pageLabel}: ${schemaError}`)
       }
@@ -597,7 +606,7 @@ function readConfigPages(
     const page: PluginConfigPageDescriptor = {
       id,
       title: title ?? "",
-      schema: isPlainObject(item.schema) ? (cloneJson(item.schema) as PluginJsonSchema) : { type: "object", properties: {} },
+      schema: pageSchema,
       loadAction: loadAction ?? "",
       saveAction: saveAction ?? "",
     }

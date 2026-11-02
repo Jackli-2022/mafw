@@ -7,7 +7,7 @@ import {
   validateClientDescriptor,
   validateConfigFormSchema,
 } from "./index.ts"
-import type { PluginClientDescriptor, PluginJsonSchema } from "./index.ts"
+import type { PluginClientDescriptor, PluginDescriptorValidation, PluginJsonSchema } from "./index.ts"
 
 const SAMPLE_SCHEMA: PluginJsonSchema = {
   type: "object",
@@ -235,6 +235,37 @@ test("rejects invalid config field kinds", () => {
   assert.equal(result.ok, false)
   if (result.ok) return
   assert.match(result.error, /config page "settings"/i)
+})
+
+test("fails closed on a circular config page schema instead of throwing", () => {
+  const circularSchema: Record<string, unknown> = { type: "object", properties: {} }
+  ;(circularSchema.properties as Record<string, unknown>).loop = circularSchema
+  const descriptor = validDescriptor()
+  descriptor.ui.configPages![0]!.schema = circularSchema as unknown as PluginJsonSchema
+
+  let result: PluginDescriptorValidation | undefined
+  assert.doesNotThrow(() => {
+    result = validateClientDescriptor(descriptor)
+  })
+  assert.ok(result)
+  assert.equal(result.ok, false)
+  if (!result.ok) assert.match(result.error, /JSON-serializable/i)
+})
+
+test("fails closed on a BigInt-bearing config page schema instead of throwing", () => {
+  const descriptor = validDescriptor()
+  descriptor.ui.configPages![0]!.schema = {
+    type: "object",
+    properties: { retries: { type: "number", default: 3n } },
+  }
+
+  let result: PluginDescriptorValidation | undefined
+  assert.doesNotThrow(() => {
+    result = validateClientDescriptor(descriptor)
+  })
+  assert.ok(result)
+  assert.equal(result.ok, false)
+  if (!result.ok) assert.match(result.error, /JSON-serializable/i)
 })
 
 test("rejects secret/format fields in config forms", () => {
