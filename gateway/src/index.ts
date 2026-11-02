@@ -771,6 +771,11 @@ class MafwScheduler {
         projectDir: this.projectDir,
         gatewayPort: config.server.apiPort,
         emit: (event) => this.broadcast(event),
+        // 包只能改 plugins.<package>.config——context 负责收敛命名空间与
+        // 补丁安全校验，这里只透传到既有的 config.persistOverrides。
+        persistConfig: (overrides) => {
+          config.persistOverrides(overrides as unknown as Parameters<typeof config.persistOverrides>[0]);
+        },
       }),
     );
     this.pluginHost.bindRuntime((entries) => this.runtimeLoader?.setPackageEntries(entries));

@@ -19,6 +19,7 @@
     "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@opencode-ai/sdk": "^1.18.21",
+    "ajv": "^8.20.0",
     "better-sqlite3": "^12.11.1",
     "bonjour-service": "^1.4.4",
     "cron": "^3.1.7",

@@ -2,6 +2,12 @@ import type { log } from '../core/utils/logger';
 import type { PromptFn } from '../media/media-service';
 import type { AgentRuntime, RuntimeCapabilities, RuntimeCredentials } from '../runtime/contract';
 import type { UsageStatsProvider } from '../usage/plugin-context';
+import type {
+  PluginActionDescriptor,
+  PluginEventDescriptor,
+  PluginJsonSchema,
+  PluginUiContribution,
+} from '@mafw/plugin-contract';
 
 /** 统一插件包上下文 —— 三个 legacy ctx（usage/media/runtime）的超集。 */
 export interface PluginPackageContext {
@@ -12,13 +18,29 @@ export interface PluginPackageContext {
   apiKey: (provider: string) => string | null;
   /** plugins.<name>.config；缺省回退 legacy 三段 pluginConfig（usage→media→runtime），全缺省 {} */
   pluginConfig: () => Record<string, any>;
+  /** 包自身的配置写入口（仅能写 plugins.<package>.config）。 */
+  config: PluginPackageConfigApi;
   credentials?: RuntimeCredentials;
   projectDir: string;
   gatewayPort: number;
   usage: UsageStatsProvider;
-  /** 向全部 UI 通道（SSE/WS/推送）广播自定义事件。type 建议命名空间
+  /** 向全部 UI 通道（SSE/WS/推送）广播自定义事件。type 必须是本包已注册的
    *  'plugin:<name>:<event>'；消费方对未知 type 忽略（SSE 通知语义，无注册制）。 */
   emit: (event: { type: string; [key: string]: any }) => void;
+}
+
+/** 只允许改自己命名空间的配置 API（Host 注入 config.persistOverrides）。 */
+export interface PluginPackageConfigApi {
+  /**
+   * 浅合并写入 `plugins.<package>.config.<key>`。
+   *
+   * 补丁本身永远落在包命名空间之下——传入 `{ server: ... }` 只会得到
+   * `plugins.<package>.config.server`，不可能改到顶层配置键。
+   *
+   * @throws TypeError 补丁不是纯对象、含原型污染键、循环引用或非 JSON 值。
+   * @throws Error 宿主未提供配置持久化能力。
+   */
+  update: (patch: Record<string, unknown>) => void;
 }
 
 export interface MediaContributionSpec {
@@ -55,6 +77,84 @@ export interface PluginContributions {
   tts?: TtsContributionSpec;
   /** v1 仅登记展示，不激活（desktop 进程侧加载不变） */
   uiTools?: Record<string, unknown>;
+}
+
+/**
+ * Host-side action declaration (never serialized to Desktop).
+ *
+ * `handler` stays in the gateway process; only `inputSchema` / `outputSchema` /
+ * metadata are projected into the client descriptor.
+ */
+export interface PluginActionDeclaration {
+  title?: string;
+  description?: string;
+  /** 标准 JSON Schema（2020-12，无远程 $ref），调用前校验 input。 */
+  inputSchema?: PluginJsonSchema;
+  /** 标准 JSON Schema（2020-12，无远程 $ref），返回后校验 output。 */
+  outputSchema?: PluginJsonSchema;
+  /** 缺省 PLUGIN_UI_LIMITS.defaultActionTimeoutMs，上限 maxActionTimeoutMs。 */
+  timeoutMs?: number;
+  handler: (
+    input: unknown,
+    call: { sessionID?: string; signal: AbortSignal },
+  ) => unknown;
+}
+
+/**
+ * Host-side event declaration.
+ *
+ * `schema` is the same field name the client descriptor uses for the event
+ * payload schema: one concept, not two. The design document's `payloadSchema`
+ * spelling is accepted as an input alias and normalized into `schema`.
+ */
+export interface PluginEventDeclaration {
+  /** 必须是 `plugin:<package>:<event>`；canonical 事件名一律拒绝。 */
+  type: string;
+  title?: string;
+  description?: string;
+  /** event.properties 的 JSON Schema（2020-12，无远程 $ref）。 */
+  schema?: PluginJsonSchema;
+  /** @deprecated 设计文档拼写别名；等价于 `schema`，两者不可同时声明。 */
+  payloadSchema?: PluginJsonSchema;
+  scope?: 'global' | 'session';
+}
+
+/** `activate()` 的完整返回形状：legacy 贡献 + 统一声明式贡献。 */
+export interface UnifiedPluginContributions extends PluginContributions {
+  /** 声明式 UI 贡献；纯 Host 包可省略。 */
+  ui?: PluginUiContribution;
+  /** action 名（包内唯一，不含 `:`）→ Host 声明。 */
+  actions?: Record<string, PluginActionDeclaration>;
+  /** 本包 `plugin:<package>:*` 事件声明。 */
+  events?: PluginEventDeclaration[];
+}
+
+/** 校验并投影后的单个 action。 */
+export interface ActivatedAction {
+  name: string;
+  /** 可序列化 DTO（无 handler）。 */
+  descriptor: PluginActionDescriptor;
+  /** Host 声明（含 handler）。 */
+  declaration: PluginActionDeclaration;
+}
+
+/** 校验并投影后的单个事件。 */
+export interface ActivatedEvent {
+  /** 可序列化 DTO。 */
+  descriptor: PluginEventDescriptor;
+  declaration: PluginEventDeclaration;
+}
+
+/**
+ * `activate()` 返回值的规范化结果：legacy 贡献原样保留，统一贡献被拆成
+ * 「可下发给 Desktop 的 DTO」与「仅留在 gateway 的声明」两半。
+ */
+export interface ActivatedContributions {
+  ui: PluginUiContribution;
+  actions: ActivatedAction[];
+  events: ActivatedEvent[];
+  /** usage/media/runtime/tts/uiTools 原对象（PluginHost 负责各自校验）。 */
+  legacy: PluginContributions;
 }
 
 export interface RuntimePackageEntry {
