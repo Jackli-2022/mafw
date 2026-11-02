@@ -108,7 +108,7 @@ export const IGNORED_AT_SHELL = [
   "memory_written", "memory_energy_changed", "memory_distillation_complete",
   "automation_triggered", "automation_completed",
   "mafw_commands_changed", "session.compacting", "usage.updated",
-  "session.config", "session.commands", "plugins.changed",
+  "session.config", "session.commands",
 ] as const
 
 /** onmessage 尾部合法放行：else-if 链处理（分支不 return 落到尾部）的类型。 */
@@ -117,8 +117,8 @@ const TAIL_ACCOUNTED_TYPES = new Set<string>([
   "turn.completed", "turn.failed", "turn.aborted",
 ])
 
-/** onmessage 尾部合法放行的前缀类（plugin 自定义命名空间）。 */
-const TAIL_ACCOUNTED_PREFIXES = ["plugin:", "cognition_"]
+/** onmessage 尾部合法放行的前缀类（cognition_ 宿主旁路）。 */
+const TAIL_ACCOUNTED_PREFIXES = ["cognition_"]
 
 /** 尾部未见过的类型 = 漏接线（返回 false）。显式忽略清单并入合法放行。 */
 export function isTailAccountedAtShell(type: string | undefined): boolean {
@@ -145,6 +145,7 @@ type ShellHandledType =
   | "session.checkpoint"
   | "pod.updated"
   | "background.job.updated"
+  | "plugins.changed"
 
 /**
  * 类型级穷尽检查（永不抛错，编译失败即守卫生效）：
@@ -161,6 +162,8 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "goal_created":
     case "phase_transition":
     case "connected":
+    // ---- Task 7：统一插件修订 / 包事件（sid 分发前消费） ----
+    case "plugins.changed":
     // ---- session lifecycle ----
     case "session.created":
     case "session.updated":
@@ -209,8 +212,6 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "session.commands":
     case "task.updated":
     case "pod.updated":
-    // Task 7 owns the refresh router; Task 6 registers the event only.
-    case "plugins.changed":
       return
     default: {
       // 残余必须恰好是 plugin:* 模板；出现任何其他字面量 = 有事件未归类。

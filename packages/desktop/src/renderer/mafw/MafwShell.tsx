@@ -53,6 +53,7 @@ import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore } from "./pod-store"
+import { ingestPluginEvent, ingestPluginsChanged, refreshPluginClient } from "./plugins/plugin-store"
 import { podRailBadge } from "./pod-rail-badge"
 import { podRoleForSession } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
@@ -1168,6 +1169,12 @@ export function MafwShell() {
     pod: {
       onEvent: (event) => ingestPodEvent(event),
     },
+    // 统一插件包（Task 7）：修订通知 → 重拉 committed descriptors；
+    // 已注册包事件 → 事件 hub（只做数据投递，绝不执行插件代码）。
+    plugins: {
+      onChanged: (event) => { void ingestPluginsChanged(event) },
+      onEvent: (event) => { ingestPluginEvent(event) },
+    },
   }
 
   async function connectSse() {
@@ -1197,6 +1204,9 @@ export function MafwShell() {
       void reconcileSubagents()
       resetBackgroundCapability()
       void reconcileBackground()
+      // Task 7：重连是唯一可靠的「gateway 可能重启过」信号（同一端口），
+      // client revision 的 bootId 会变化 → 必须重拉 committed descriptors。
+      void refreshPluginClient()
     }
     source.onerror = () => {
       console.log("[mafw] SSE error (will auto-reconnect)")
@@ -1229,6 +1239,9 @@ export function MafwShell() {
   // only becomes available after this window loaded.
   onMount(() => {
     const reconcileTimer = setInterval(reconcileFlowCards, 60000)
+    // Task 7：committed plugin descriptors 的初始拉取（重连时 onopen 再拉一次，
+    // 两次并发由 refreshPluginClient 的 in-flight 合并）。
+    void refreshPluginClient()
     // 子代理 + 后台任务终态通知（spec §4.5/§6.3）：toast 恒发；OS 通知共享同一个
     // 10s 全局门（两类合计限频，防 #11716 洪泛）
     const bgWorkNotifyGate = createNotifyGate(10_000)
