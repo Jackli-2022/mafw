@@ -5,10 +5,10 @@
 // escaped by JSX, markdown is HTML-escaped before parsing, links and images are
 // protocol-restricted, and unknown widget types degrade to readable text.
 import { For, Show, type JSX } from "solid-js"
-import { marked } from "marked"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { PluginView, Widget } from "@mafw/plugin-contract"
 import { openImageLightbox } from "../image-lightbox"
+import { renderPluginMarkdown } from "./plugin-markdown"
 import {
   actionWidgetInvocation,
   safePluginImageDataUrl,
@@ -130,15 +130,10 @@ function WidgetNode(props: { widget: Widget; onAction: PluginViewActionHandler }
         </a>
       )
     }
-    case "markdown": {
-      // Escape raw HTML first, then let marked apply markdown syntax only.
-      const escaped = widget.text.replace(
-        /[&<>]/g,
-        (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[char] as string,
-      )
-      const html = marked.parse(escaped, { async: false }) as string
-      return <div class="mafw-plugin-markdown" innerHTML={html} />
-    }
+    case "markdown":
+      // Raw HTML is escaped, link/image syntax obeys the Widget policy, and
+      // session-ui's DOMPurify pass removes anything still unexpected.
+      return <div class="mafw-plugin-markdown" innerHTML={renderPluginMarkdown(widget.text)} />
     case "progress": {
       const value = Math.max(0, Math.min(100, widget.value))
       return (

@@ -1,30 +1,24 @@
 // Task 8: one dynamic workbench L2 surface backed by a package `viewAction`.
 //
 // Fetch contract:
-//   - capture the plugin generation + a local request id before awaiting;
-//   - discard responses whose request id or generation is stale;
+//   - capture the plugin generation + a plain request counter before awaiting;
+//   - discard responses whose counter or generation is stale;
 //   - subscribe only to the panel's declared `refreshOn` events;
 //   - keep the last good view on failures.
 // Action widgets invoke the current package action through the preload API:
 // a valid PluginView replaces the view, other JSON is shown and triggers a
 // refetch, errors keep the last good view.
-import { Show, createEffect, createSignal, onCleanup } from "solid-js"
+import { Show, createEffect, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import type { PluginClientDescriptor, PluginPanelDescriptor } from "@mafw/plugin-contract"
 import { isPluginGenerationCurrent, pluginGeneration, subscribePluginEvent } from "./plugin-store"
+import { createPluginPanelLoader } from "./plugin-panel-loader"
 import {
-  EMPTY_PLUGIN_PANEL_VIEW_STATE,
-  beginPanelViewRequest,
   classifyPanelActionOutput,
-  failPanelView,
-  panelRequestStillCurrent,
-  panelRequestToken,
   pluginPanelRefreshesOn,
   replacePanelView,
   setPanelActionOutput,
-  settlePanelView,
-  type PluginPanelViewState,
 } from "./plugin-view-model"
 import { PluginViewRenderer } from "./PluginViewRenderer"
 
@@ -33,32 +27,22 @@ export function PluginPanelSurface(props: {
   panel: PluginPanelDescriptor
   sessionID: string | null
 }) {
-  const [state, setState] = createSignal<PluginPanelViewState>(EMPTY_PLUGIN_PANEL_VIEW_STATE)
-  let disposed = false
-
-  const load = async () => {
-    if (disposed) return
-    setState((current) => beginPanelViewRequest(current, pluginGeneration()))
-    const token = panelRequestToken(state())
-    if (!token) return
-    try {
-      const raw = await window.api.mafw.plugins.invoke(
+  const loader = createPluginPanelLoader({
+    invoke: () =>
+      window.api.mafw.plugins.invoke(
         props.descriptor.name,
         props.panel.viewAction,
         { input: {}, sessionID: props.sessionID ?? undefined },
         props.sessionID ?? undefined,
-      )
-      if (disposed) return
-      if (!panelRequestStillCurrent(state(), token, pluginGeneration())) return
-      setState((current) => settlePanelView(current, token.requestId, raw))
-    } catch (err) {
-      if (disposed) return
-      if (!panelRequestStillCurrent(state(), token, pluginGeneration())) return
-      setState((current) => failPanelView(current, token.requestId, messageOf(err)))
-    }
-  }
+      ),
+    generation: () => pluginGeneration(),
+    isGenerationCurrent: (generation) => isPluginGenerationCurrent(generation),
+  })
+  const state = loader.state
 
-  // Initial load + descriptor/panel/session identity changes.
+  // Initial load + descriptor/panel/session identity changes. Request
+  // bookkeeping inside `load` is non-reactive, so settling the view cannot
+  // re-trigger this effect (no fetch loop).
   createEffect(() => {
     // Track the inputs explicitly: descriptor objects may be recreated without
     // changing the panel, and the revision proves the package content changed.
@@ -67,7 +51,7 @@ export function PluginPanelSurface(props: {
     props.panel.id
     props.panel.viewAction
     props.sessionID
-    void load()
+    void loader.load()
   })
 
   // Refresh only when the package emits an event this panel subscribed to.
@@ -78,7 +62,7 @@ export function PluginPanelSurface(props: {
     const unsubscribes = refreshOn.map((eventType) =>
       subscribePluginEvent(eventType, (notice) => {
         if (!pluginPanelRefreshesOn(props.panel, packageName, notice.type)) return
-        void load()
+        void loader.load()
       }),
     )
     onCleanup(() => {
@@ -95,28 +79,26 @@ export function PluginPanelSurface(props: {
         input,
         props.sessionID ?? undefined,
       )
-      if (disposed || !isPluginGenerationCurrent(generation)) return
+      if (!isPluginGenerationCurrent(generation)) return
       const outcome = classifyPanelActionOutput(raw)
       if (outcome.kind === "view") {
         // A valid PluginView replaces the current view; no refetch is needed.
-        setState((current) => replacePanelView(current, outcome.view))
+        loader.applyView(outcome.view)
         return
       }
       if (outcome.kind === "result") {
-        setState((current) => setPanelActionOutput(current, outcome.text))
+        loader.setActionOutput(outcome.text)
       }
       // JSON result or undefined → show whatever arrived and refetch fresh state.
-      void load()
+      void loader.load()
     } catch (err) {
-      if (disposed || !isPluginGenerationCurrent(generation)) return
       // Keep the last good view; surface the action failure as a banner.
-      setState((current) => ({ ...current, error: `插件操作失败：${messageOf(err)}` }))
+      if (!isPluginGenerationCurrent(generation)) return
+      loader.setActionError(`插件操作失败：${messageOf(err)}`)
     }
   }
 
-  onCleanup(() => {
-    disposed = true
-  })
+  onCleanup(() => loader.dispose())
 
   return (
     <div
@@ -142,7 +124,7 @@ export function PluginPanelSurface(props: {
                 <Show when={state().error}>
                   <div style={{ "font-size": "12px", color: "var(--text-weak)" }}>{state().error}</div>
                 </Show>
-                <ButtonV2 variant="outline" size="small" onClick={() => void load()}>
+                <ButtonV2 variant="outline" size="small" onClick={() => void loader.load()}>
                   重试
                 </ButtonV2>
               </div>

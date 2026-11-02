@@ -40,6 +40,53 @@ export interface PluginTabPlan {
   overflow: PluginSurface[]
 }
 
+/** L2 strip layout estimate: 3 built-in tabs (+gaps) then ~96px per plugin tab. */
+export const PLUGIN_TAB_LAYOUT = {
+  builtinReservedPx: 240,
+  tabEstimatePx: 96,
+} as const
+
+export function pluginTabCapacityForWidth(width: number): number {
+  if (!Number.isFinite(width)) return 0
+  const free = Math.max(0, width - PLUGIN_TAB_LAYOUT.builtinReservedPx)
+  return Math.max(0, Math.floor(free / PLUGIN_TAB_LAYOUT.tabEstimatePx))
+}
+
+export interface PluginTabWidthSource {
+  readonly clientWidth: number
+}
+
+export interface PluginTabWidthObserver {
+  observe(element: PluginTabWidthSource): void
+  disconnect(): void
+}
+
+export type PluginTabObserverFactory = (
+  onResize: () => void,
+) => PluginTabWidthObserver | null
+
+/**
+ * Measure the L2 strip and keep the plugin-tab capacity current.
+ *
+ * Measurement happens immediately when an element is supplied (the ref may be
+ * attached long after mount, e.g. the workbench boots in `review` view where
+ * the L2 strip is not rendered) and on every observer resize notification.
+ * Returns a disposer; a missing element or unavailable observer is fail-open.
+ */
+export function observePluginTabCapacity(
+  element: PluginTabWidthSource | null | undefined,
+  onChange: (capacity: number) => void,
+  createObserver: PluginTabObserverFactory,
+): () => void {
+  if (!element) return () => {}
+  const measure = () => onChange(pluginTabCapacityForWidth(element.clientWidth))
+  measure()
+  const observer = createObserver(measure)
+  if (!observer) return () => {}
+  observer.observe(element)
+  return () => observer.disconnect()
+}
+
 const ACTION_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const SAFE_LINK_PATTERN = /^(?:https?:|mailto:|tel:)/i
 const IMAGE_DATA_URL_PATTERN = /^data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,/i

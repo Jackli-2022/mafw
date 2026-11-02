@@ -22,6 +22,8 @@ import {
   pluginPanelRefreshesOn,
   pluginSurfaceIssues,
   pluginSurfaces,
+  pluginTabCapacityForWidth,
+  observePluginTabCapacity,
   planPluginTabs,
   replacePanelView,
   resolveActiveSurface,
@@ -303,6 +305,65 @@ describe("panel view request state machine", () => {
     const withOutput = setPanelActionOutput(shown, "result text")
     expect(withOutput.actionOutput).toBe("result text")
     expect(setPanelActionOutput(withOutput, null).actionOutput).toBeNull()
+  })
+})
+
+describe("plugin tab capacity", () => {
+  test("width maps to a conservative capacity, invalid widths clamp to zero", () => {
+    expect(pluginTabCapacityForWidth(0)).toBe(0)
+    expect(pluginTabCapacityForWidth(240)).toBe(0)
+    expect(pluginTabCapacityForWidth(240 + 96 * 3)).toBe(3)
+    expect(pluginTabCapacityForWidth(240 + 96 * 3 + 95)).toBe(3)
+    expect(pluginTabCapacityForWidth(Number.NaN)).toBe(0)
+    expect(pluginTabCapacityForWidth(Number.POSITIVE_INFINITY)).toBe(0)
+  })
+
+  test("observer measures immediately when the ref attaches and on resize", () => {
+    const element = { clientWidth: 240 + 96 * 2 }
+    const seen: number[] = []
+    let notify: (() => void) | null = null
+    let observed: unknown = null
+    let disconnected = false
+
+    const cleanup = observePluginTabCapacity(
+      element,
+      (capacity) => seen.push(capacity),
+      (onResize) => {
+        notify = onResize
+        return {
+          observe: (target) => {
+            observed = target
+          },
+          disconnect: () => {
+            disconnected = true
+          },
+        }
+      },
+    )
+
+    // Lazy mount in `review` view: the first measurement happens on attach,
+    // not on a component onMount that already ran.
+    expect(seen).toEqual([2])
+    expect(observed).toBe(element)
+
+    element.clientWidth = 240 + 96 * 4
+    notify?.()
+    expect(seen).toEqual([2, 4])
+
+    cleanup()
+    expect(disconnected).toBe(true)
+  })
+
+  test("missing element and missing observer fail open", () => {
+    let calls = 0
+    const cleanupMissingElement = observePluginTabCapacity(null, () => calls++, () => null)
+    expect(calls).toBe(0)
+    cleanupMissingElement()
+
+    const element = { clientWidth: 240 + 96 }
+    const missingObserver = observePluginTabCapacity(element, () => calls++, () => null)
+    expect(calls).toBe(1)
+    missingObserver()
   })
 })
 

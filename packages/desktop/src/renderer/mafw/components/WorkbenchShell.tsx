@@ -1,6 +1,6 @@
 // B1 右工作台壳：一级「工作台 / 执行 / 审阅」+ 二级上下文条 + 终端 L2 surface。
 // 工作台 › 文件/浏览器/终端；执行 › 固定下拉（概览/待办/子代理/后台/轨迹）；审阅无二级。
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
@@ -15,7 +15,7 @@ import {
   type WorkbenchSurface,
   type WorkbenchView,
 } from "../workbench-views"
-import { planPluginTabs, type PluginSurface } from "../plugins/plugin-view-model"
+import { observePluginTabCapacity, planPluginTabs, type PluginSurface } from "../plugins/plugin-view-model"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
@@ -45,10 +45,6 @@ export type WorkbenchShellProps = {
   renderPluginSurface: (id: string) => JSX.Element
 }
 
-/** 3 built-in L2 tabs + gaps, reserved before counting plugin tabs. */
-const BUILTIN_TABS_RESERVED_PX = 240
-const PLUGIN_TAB_ESTIMATE_PX = 96
-
 export function WorkbenchShell(props: WorkbenchShellProps) {
   const surfaceTabClass = (id: string) =>
     `mafw-rw-l2-tab-${id.replace(/[^A-Za-z0-9_-]/g, "_")}`
@@ -60,19 +56,32 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   }
 
   // Plugin tabs overflow when the L2 strip runs out of horizontal room. The
-  // estimate is deliberately conservative; the overflow menu always lists the
-  // hidden tabs and keeps the active surface visible (planPluginTabs).
+  // observer is attached lazily from the L2 ref: the workbench may mount in
+  // `review` view where the strip does not exist yet, so an onMount observer
+  // would never measure (capacity stuck at the initial value and overflowing
+  // the widest detent).
   const [pluginTabCapacity, setPluginTabCapacity] = createSignal(6)
-  let l2Element: HTMLDivElement | undefined
-  onMount(() => {
-    const element = l2Element
-    if (!element || typeof ResizeObserver === "undefined") return
-    const observer = new ResizeObserver(() => {
-      const free = Math.max(0, element.clientWidth - BUILTIN_TABS_RESERVED_PX)
-      setPluginTabCapacity(Math.max(0, Math.floor(free / PLUGIN_TAB_ESTIMATE_PX)))
+  let disposeCapacity: (() => void) | null = null
+  const attachCapacityObserver = (element: HTMLDivElement | null) => {
+    disposeCapacity?.()
+    disposeCapacity = null
+    if (!element) return
+    disposeCapacity = observePluginTabCapacity(element, setPluginTabCapacity, (notify) => {
+      if (typeof ResizeObserver === "undefined") return null
+      const observer = new ResizeObserver(notify)
+      return {
+        observe: (target) => observer.observe(target as unknown as Element),
+        disconnect: () => observer.disconnect(),
+      }
     })
-    observer.observe(element)
-    onCleanup(() => observer.disconnect())
+  }
+  // The strip unmounts in `review` view; drop the observer with it.
+  createEffect(() => {
+    if (props.view === "review") attachCapacityObserver(null)
+  })
+  onCleanup(() => {
+    disposeCapacity?.()
+    disposeCapacity = null
   })
   const pluginTabs = createMemo(() =>
     planPluginTabs(props.pluginSurfaces, {
@@ -145,7 +154,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         <div
           class="mafw-rw-l2"
           ref={(element) => {
-            l2Element = element
+            attachCapacityObserver(element)
           }}
           role={props.view === "workbench" ? "tablist" : undefined}
           aria-label={props.view === "workbench" ? "工作台视图" : undefined}
