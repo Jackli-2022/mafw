@@ -727,9 +727,11 @@ export class NodeDriver {
       await this.failNode(goalId, sessionID, 'artifact_missing', `expected ${artifactPath}`, 'artifact');
       return;
     }
-    // 结构化交卷优先时把结果落成同一份文件产物：下一个节点（execute/review）
-    // 仍按文件路径读取；已有文件不覆盖（模型写的更详细版本优先）。
-    if (submitted && !fs.existsSync(artifactPath)) {
+    // 结构化交卷是本节点的权威内容：plan 必须落盘——已有文件可能是同 revision
+    // 上一版计划（驳回重规划/重试），不覆盖会让「disk / hash / GET / approve」看到
+    // 不同内容（首屏 stale、首次 approve 409）。execute/review 保持原规则
+    // （模型写的更详细版本优先）。
+    if (submitted && (node === 'plan' || !fs.existsSync(artifactPath))) {
       fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
       fs.writeFileSync(artifactPath, JSON.stringify(submitted, null, 2), 'utf-8');
     }
@@ -753,7 +755,9 @@ export class NodeDriver {
     let approvalHashes: PlanApprovalHashes | null = null;
     try {
       if (node === 'plan') {
-        const planDoc: any = submitted ?? JSON.parse(fs.readFileSync(a.waves, 'utf-8'));
+        // 只读**最终落盘版**（含 ensureWaveTaskIds 补齐的稳定 taskId）：结构化交卷与
+        // 文件产物从此是同一份内容，hash 也只对这份内容做。
+        const planDoc: any = JSON.parse(fs.readFileSync(a.waves, 'utf-8'));
         if (planDoc.status === 'need_clarification') {
           patch = {
             pendingQuestion: {
@@ -777,8 +781,14 @@ export class NodeDriver {
             if (existing.error) throw new Error(existing.error);
             goalEval = existing.goalEval;
           }
-          approvalHashes = {
-            planHash: safeWavesHash(pkg ? pkg.waves : planDoc.waves),
+          // 哈希只从**最终落盘的 PlanPackage** 铸（与 GET /plan / approve 完全同一份读取路径），
+          // 不再从内存里的 submitted 算——否则磁盘被 ensureWaveTaskIds 改写后两边不一致。
+          approvalHashes = this.readPlanHashes(
+            { ...state, wavePlanPath: a.waves } as GoalStateV3,
+            goalId,
+            revision,
+          ) ?? {
+            planHash: safeWavesHash(planDoc.waves),
             evalHash: safeGoalEvalHash(goalEval),
           };
           // D4b: the planner read charter + repo — its taskType judgement wins

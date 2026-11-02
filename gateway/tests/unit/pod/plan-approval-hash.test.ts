@@ -212,6 +212,46 @@ describe('GET/POST /api/goals/:id/plan with content hashes', () => {
     expect(out.body.stale).toBe(false);
   });
 
+  it('plans from a structured submission: minted hashes equal GET /plan and the first approve succeeds', async () => {
+    const doc = planDoc();
+    const h = makeHarness({ structured: async () => doc });
+    seedGoal(h, 'g1', { patch: { planReview: 'manual' } });
+    // 上一版计划还留在磁盘上（驳回重规划/重试）：结构化交卷必须覆盖它，否则
+    // disk / hash / GET / approve 看到四份不同内容。
+    writePlan(h, 'g1', planDoc('上一版标题'));
+    await h.driver.advance('g1');
+    const sid = h.load('g1')!.nodeSession.id;
+    await h.fireIdle(sid);
+
+    const st = h.load('g1')!;
+    expect(st.planApproval?.status).toBe('pending');
+    const onDisk = JSON.parse(fs.readFileSync(st.wavePlanPath!, 'utf-8'));
+    expect(onDisk.waves[0].tasks[0].title).toBe('按项目保存标签'); // submitted 已落盘
+    expect(st.planApproval?.planHash).toBe(hashesOf(onDisk).planHash);
+    expect(st.planApproval?.evalHash).toBe(hashesOf(onDisk).evalHash);
+
+    const read = makeRes();
+    await handleGoalPlan({ method: 'GET' } as http.IncomingMessage, read.res, '/api/goals/g1/plan', deps(h) as any);
+    expect(read.out.body.stale).toBe(false);
+    expect(read.out.body.planHash).toBe(st.planApproval?.planHash);
+    expect(read.out.body.evalHash).toBe(st.planApproval?.evalHash);
+
+    const first = makeRes();
+    await handleGoalPlan(
+      { method: 'POST' } as http.IncomingMessage,
+      first.res,
+      '/api/goals/g1/plan-approval',
+      deps(h, {
+        approve: true,
+        approvalId: st.planApproval!.id,
+        planHash: read.out.body.planHash,
+        evalHash: read.out.body.evalHash,
+      }) as any,
+    );
+    expect(first.out.status).toBe(200);
+    expect(h.load('g1')!.planApproval?.status).toBe('approved');
+  });
+
   it('flags stale after the plan artifact is rewritten, and 409s a stale approve', async () => {
     const h = makeHarness();
     await parkPlan(h);
