@@ -1,4 +1,4 @@
-import { PodError, PodStore, type PodGoalRow, type PodRow } from './pod-store';
+import { PodError, PodStore, isTerminalGoalRevisionStatus, type PodGoalRow, type PodRow } from './pod-store';
 import type { PodService } from './pod-service';
 import { canonicalProjectDir } from './pod-identity';
 import {
@@ -126,7 +126,8 @@ export class PodGoalService {
     const pod = this.deps.store.getPod(podId);
     if (!pod || pod.status === 'paused' || pod.status === 'archived') return false;
     if (this.deps.store.getActiveGoal(podId)) return false;
-    const next = this.deps.store.listGoals(podId).find((candidate) => candidate.status === 'queued');
+    const next = this.deps.store.listGoals(podId)
+      .find((candidate) => candidate.status === 'queued' && this.isStartable(candidate.goalId));
     if (!next) return false;
     const budget = this.deps.budget?.canStart(podId);
     if (budget && !budget.ok) return false;
@@ -135,12 +136,33 @@ export class PodGoalService {
     return true;
   }
 
+  /**
+   * 讨论中的 Goal（revision discussing / direction_review）绝不能进入 NodeDriver：
+   * 只有 direction `clear`/`decided` 把 revision 推到 planning 后，方向工具才会
+   * 显式调用 starter。没有 revision 行的 legacy Goal 保持可启动。
+   */
+  isStartable(goalId: string): boolean {
+    const goal = this.deps.store.getGoalByGoalId(goalId);
+    if (!goal) return true;
+    const revision = this.deps.store.getGoalRevision(goal.podId, goal.goalId, goal.activeRevision);
+    if (!revision) return true;
+    return revision.status !== 'discussing'
+      && revision.status !== 'direction_review'
+      && !isTerminalGoalRevisionStatus(revision.status);
+  }
+
   private async startQueued(
     rowId: string,
     podId: string,
     goalId: string,
     projectDir: string,
   ): Promise<void> {
+    if (!this.isStartable(goalId)) {
+      this.deps.log?.(
+        `[Pod] refusing to start discussing goal ${goalId} before a direction decision`,
+      );
+      return;
+    }
     this.deps.store.setGoalStatus(rowId, 'active', { startedAt: this.deps.now() });
     this.deps.store.updatePod(podId, {
       status: 'active',
@@ -227,6 +249,7 @@ export class PodGoalService {
       const inFlight = this.deps.listInFlightGoals?.(pod.projectDir) ?? [];
       const next = inFlight.find((goalId) => {
         if (this.deps.store.getGoalByGoalId(goalId)) return false;
+        if (!this.isStartable(goalId)) return false;
         const state = this.deps.goalState?.(goalId);
         return !state || !state.terminal;
       });
@@ -260,7 +283,13 @@ export class PodGoalService {
 
     const active = this.deps.store.getActiveGoal(podId);
     if (active) {
-      await this.deps.advanceGoal?.(active.goalId);
+      if (this.isStartable(active.goalId)) {
+        await this.deps.advanceGoal?.(active.goalId);
+      } else {
+        this.deps.log?.(
+          `[Pod] resume kept discussing goal ${active.goalId} parked until a direction decision`,
+        );
+      }
       this.deps.notify(podId);
       return true;
     }

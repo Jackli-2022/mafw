@@ -141,6 +141,43 @@ describe('mafw_create_goal routed through the Tech Lead', () => {
     });
   });
 
+  test('a Pod project without a caller session is rejected instead of falling back to legacy', async () => {
+    const techLead = {
+      isLeadSession: jest.fn(() => false),
+      hasPod: jest.fn(() => true),
+      createGoal: jest.fn(),
+    };
+    const intake = jest.fn(intakeResult);
+    const tool = createCreateGoalTool({ techLead, intake, now: () => NOW });
+
+    const result = await tool.execute({
+      title: 'New work', objective: 'x', projectDir: PROJECT,
+    }, {});
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ success: false, status: 400 });
+    expect(techLead.createGoal).not.toHaveBeenCalled();
+    expect(intake).not.toHaveBeenCalled();
+  });
+
+  test('a non-Lead session in a Pod project is rejected, never routed to legacy', async () => {
+    const techLead = {
+      isLeadSession: jest.fn(() => false),
+      hasPod: jest.fn(() => true),
+      createGoal: jest.fn(),
+    };
+    const intake = jest.fn(intakeResult);
+    const tool = createCreateGoalTool({ techLead, intake, now: () => NOW });
+
+    const result = await tool.execute({
+      goalId: 'g1', title: 'Fix', charter: '# Fix', projectDir: PROJECT,
+    }, { sessionID: 'ses_builder' });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ success: false, status: 403 });
+    expect(intake).not.toHaveBeenCalled();
+  });
+
   test('Tech Lead failures return an error payload, not a silent fallback', async () => {
     const techLead = {
       isLeadSession: jest.fn(() => true),

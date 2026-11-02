@@ -6,6 +6,7 @@ import {
   type GoalIntakeResult,
 } from "../../core/goal/goal-intake";
 import { eventBus } from "../../event-bus";
+import { PodError } from "../../core/pod/pod-store";
 import type {
   PodTechLeadGoalInput,
   PodTechLeadService,
@@ -20,7 +21,7 @@ export interface CreateGoalToolDeps {
    * 组合根注入的 Tech Lead 服务。Lead 调用 `mafw_create_goal` 时 Goal 直接进入
    * discussing（隐藏 Tech Lead 会话 + ContextManifest），**不**启动 NodeDriver。
    */
-  techLead?: Pick<PodTechLeadService, 'isLeadSession' | 'createGoal'> | null;
+  techLead?: Pick<PodTechLeadService, 'isLeadSession' | 'hasPod' | 'createGoal'> | null;
   intake?: typeof createGoalIntake;
   emitGoalCreated?(event: unknown): void;
   listProjects?(): Array<{ projectDir: string; mafwDir: string }>;
@@ -75,45 +76,63 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
       const title = clean(args?.title);
       const objective = typeof args?.objective === "string" ? args.objective : "";
       const charter = typeof args?.charter === "string" ? args.charter : "";
+      const targetProjectDir = requestedProjectDir
+        ?? process.env.MAFW_PROJECT_DIR
+        ?? process.cwd();
 
-      if (deps.techLead && sessionID) {
-        let isLead = false;
+      if (deps.techLead) {
+        let hasPod = false;
         try {
-          isLead = deps.techLead.isLeadSession(sessionID);
+          hasPod = deps.techLead.hasPod?.(targetProjectDir) ?? false;
         } catch (error: any) {
-          deps.log?.(`[Goal] Lead lookup failed for ${sessionID}: ${error?.message ?? error}`);
-          isLead = false;
+          deps.log?.(`[Goal] pod lookup failed for ${targetProjectDir}: ${error?.message ?? error}`);
         }
-        if (isLead) {
+        if (!sessionID) {
+          // A Pod project must never silently take the legacy auto-start path just
+          // because the caller forgot to pass its session id.
+          if (hasPod || args.source === "lead") {
+            return fail(new PodError(400, 'sessionID is required to create a goal in a Pod project'));
+          }
+        } else {
+          let isLead = false;
           try {
-            const created = await deps.techLead.createGoal({
-              projectDir: requestedProjectDir
-                ?? process.env.MAFW_PROJECT_DIR
-                ?? process.cwd(),
-              title,
-              objective: objective || undefined,
-              charter: charter || undefined,
-              acceptance: Array.isArray(args.acceptance) ? args.acceptance as string[] : undefined,
-              boundaries: Array.isArray(args.boundaries) ? args.boundaries as string[] : undefined,
-              metrics: (args.metrics as Record<string, { target?: number; unit?: string }>) || undefined,
-              priority: args.priority as PodTechLeadGoalInput['priority'],
-              maxLoops: args.maxLoops as number | undefined,
-              budget: args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined,
-              taskType: args.taskType as PodTechLeadGoalInput['taskType'],
-              planReview: (args.planReview === "manual" || args.planReview === "auto")
-                ? args.planReview
-                : undefined,
-              goalId: clean(args.goalId) || undefined,
-              authorization: {
-                source: "lead",
-                requestMode: "explicit",
-                scope: requestedProjectDir,
-              },
-              createdBy: sessionID,
-            });
-            return ok({ success: true, routedTo: "tech_lead", ...created });
-          } catch (error) {
-            return fail(error);
+            isLead = deps.techLead.isLeadSession(sessionID);
+          } catch (error: any) {
+            deps.log?.(`[Goal] Lead lookup failed for ${sessionID}: ${error?.message ?? error}`);
+          }
+          if (!isLead) {
+            if (hasPod) {
+              return fail(new PodError(403, 'only the project Lead can create a Pod goal'));
+            }
+          } else {
+            try {
+              const created = await deps.techLead.createGoal({
+                projectDir: targetProjectDir,
+                title,
+                objective: objective || undefined,
+                charter: charter || undefined,
+                acceptance: Array.isArray(args.acceptance) ? args.acceptance as string[] : undefined,
+                boundaries: Array.isArray(args.boundaries) ? args.boundaries as string[] : undefined,
+                metrics: (args.metrics as Record<string, { target?: number; unit?: string }>) || undefined,
+                priority: args.priority as PodTechLeadGoalInput['priority'],
+                maxLoops: args.maxLoops as number | undefined,
+                budget: args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined,
+                taskType: args.taskType as PodTechLeadGoalInput['taskType'],
+                planReview: (args.planReview === "manual" || args.planReview === "auto")
+                  ? args.planReview
+                  : undefined,
+                goalId: clean(args.goalId) || undefined,
+                authorization: {
+                  source: "lead",
+                  requestMode: "explicit",
+                  scope: requestedProjectDir,
+                },
+                createdBy: sessionID,
+              });
+              return ok({ success: true, routedTo: "tech_lead", ...created });
+            } catch (error) {
+              return fail(error);
+            }
           }
         }
       }

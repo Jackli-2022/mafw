@@ -14,6 +14,7 @@ import {
   type GoalIntakeInput,
   type GoalIntakeResult,
 } from '../goal/goal-intake';
+import * as fs from 'fs';
 import {
   buildContextManifest,
   renderContextManifest,
@@ -27,6 +28,7 @@ import {
   type PodStore,
 } from './pod-store';
 import type { PodDetail, PodService } from './pod-service';
+import { canonicalProjectDir } from './pod-identity';
 import type { PodSessionLease, PodSessionScope, PodSessionSupervisor } from './pod-session-supervisor';
 
 /** Tech Lead 身份（IdentityRegistry 内置物化名）。 */
@@ -224,16 +226,25 @@ export class PodTechLeadService {
       goalId,
       now,
     });
-    const revision = this.ensureDiscussionRevision(detail.pod.id, goalId, now);
-    // A discussing goal is the Pod's current goal but has no NodeDriver run. Marking it
-    // active (instead of queued) is what keeps Pod scheduling from promoting it into
-    // execute/plan before the direction tool explicitly starts planning.
-    if (detail.pod.status !== 'paused' && detail.pod.status !== 'archived') {
-      this.deps.store.setGoalStatus(goalRow.id, 'active', { startedAt: now });
-      this.deps.store.updatePod(detail.pod.id, {
-        status: 'active',
-        activeGoalId: goalId,
-      }, now);
+    let revision: number;
+    try {
+      revision = this.ensureDiscussionRevision(detail.pod.id, goalId, now);
+      // A discussing goal is the Pod's current goal but has no NodeDriver run. Marking it
+      // active (instead of queued) is what keeps Pod scheduling from promoting it into
+      // execute/plan before the direction tool explicitly starts planning.
+      if (detail.pod.status !== 'paused' && detail.pod.status !== 'archived') {
+        this.deps.store.setGoalStatus(goalRow.id, 'active', { startedAt: now });
+        this.deps.store.updatePod(detail.pod.id, {
+          status: 'active',
+          activeGoalId: goalId,
+        }, now);
+      }
+    } catch (err) {
+      // Do not leave discussion files for a Goal that never became a revision.
+      if (intake.goalDir) {
+        try { fs.rmSync(intake.goalDir, { recursive: true, force: true }); } catch { /* best effort */ }
+      }
+      throw err;
     }
     this.deps.notify?.(detail.pod.id, 'goal');
 
@@ -359,6 +370,15 @@ export class PodTechLeadService {
     const caller = clean(sessionID);
     if (!caller) return false;
     return this.deps.store.getMemberBySession(caller)?.role === 'lead';
+  }
+
+  /** 该项目是否已经有 Pod（用于拒绝「Lead 无 sessionID」的静默 legacy 回退）。 */
+  hasPod(projectDir?: string): boolean {
+    const resolved = this.deps.resolveProject(projectDir);
+    if (!resolved) return false;
+    const canonical = canonicalProjectDir(resolved.projectDir);
+    return this.deps.store.listPods()
+      .some((pod) => canonicalProjectDir(pod.projectDir) === canonical);
   }
 
   private async ensureScopedSession(

@@ -124,14 +124,18 @@ export function createPodGoalDirectionTool(deps: PodGoalDirectionDeps) {
 
       const userWords = typeof args?.userWords === 'string' ? args.userWords : '';
       const optionId = clean(args?.optionId) || null;
-      if (!userWords.trim() && !optionId) {
+      const rationale = clean(args?.reason);
+      // A Tech Lead may declare "direction is clear" with only a rationale;
+      // user-supplied decisions (`decided`) still require words or an option.
+      const effectiveWords = mode === 'clear' ? (userWords || rationale) : userWords;
+      if (!effectiveWords.trim() && !optionId) {
         throw new PodError(400, `${mode} requires userWords or optionId`);
       }
       const result = deps.direction.decide({
         goalId,
         revision: bound.revision,
         decision: {
-          userWords,
+          userWords: effectiveWords,
           optionId,
           reason: args?.reason ?? null,
           source: mode === 'clear' ? 'tech_lead_clear' : 'user',

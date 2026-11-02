@@ -46,9 +46,18 @@ import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
 import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
+import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
+import { PodDirectionService } from './core/pod/pod-direction-service';
+import { PodTechLeadService } from './core/pod/pod-tech-lead-service';
 import { goalVerdictFromState, type PodGoalDescription } from './core/pod/pod-view';
 import { buildPodGoalResult } from './core/pod/pod-result';
-import { createGoalIntake, makePodGoalId } from './core/goal/goal-intake';
+import {
+  createGoalIntake,
+  findGoalRequestPath,
+  makePodGoalId,
+  readGoalRequest,
+  shouldAutoStartGoalEvent,
+} from './core/goal/goal-intake';
 import { PodAccess } from './core/pod/pod-access';
 import { PodBudget } from './core/pod/pod-budget';
 import { PodMessageDelivery } from './core/pod/pod-message-delivery';
@@ -591,6 +600,9 @@ class MafwScheduler {
   private podMessageService!: PodMessageService;
   private podMemoryService!: PodMemoryService;
   private podGoalService!: PodGoalService;
+  private podSessionSupervisor!: PodSessionSupervisor;
+  private podDirectionService!: PodDirectionService;
+  private podTechLeadService!: PodTechLeadService;
   private podAccess!: PodAccess;
   private podBudget!: PodBudget;
   private podMessageDelivery!: PodMessageDelivery;
@@ -3887,7 +3899,7 @@ class MafwScheduler {
         const projects = Array.from(this.registeredProjects.entries())
           .map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir }));
         return resolveGoalDir(projects, undefined, (mafwDir) =>
-          fs.existsSync(path.join(mafwDir, 'requests', `${goalId}.json`)))?.projectDir ?? null;
+          !!findGoalRequestPath(mafwDir, goalId))?.projectDir ?? null;
       },
       now: () => new Date().toISOString(),
       newId: () => `podgoal_${randomUUID()}`,
@@ -3911,6 +3923,64 @@ class MafwScheduler {
         .map((state) => state.goalId),
       listRegisteredProjectDirs: () => Array.from(this.registeredProjects.keys()),
       finalizeGoal: (goalId, outcome) => this.finishPodGoal(goalId, outcome as any),
+      log: (message) => log.info(message),
+    });
+
+    this.podSessionSupervisor = new PodSessionSupervisor({
+      store: this.podStore,
+      now: () => new Date().toISOString(),
+      newId: () => `podsess_${randomUUID()}`,
+      isAlive: async (sessionId) => {
+        // Throwing is fail-open (treated alive) inside the supervisor; only an
+        // explicit false retires and rebuilds the lease.
+        const info = await this.runtime!.session.get({ sessionID: sessionId });
+        return !!info;
+      },
+      dispose: async (sessionId) => {
+        try {
+          await this.runtime!.session.delete({ sessionID: sessionId });
+        } catch { /* best effort: lease row was never written */ }
+      },
+      broadcast: (event) => this.broadcast(event as any),
+      log: (message) => log.info(message),
+    });
+    this.podDirectionService = new PodDirectionService({
+      store: this.podStore,
+      resolveMafwDir: (goalId) => this.findGoalMafwDir(goalId),
+      now: () => new Date().toISOString(),
+      newId: () => `dirreq_${randomUUID()}`,
+      notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'direction' } }),
+      log: (message) => log.info(message),
+    });
+    this.podTechLeadService = new PodTechLeadService({
+      store: this.podStore,
+      pods: this.podService,
+      sessions: this.podSessionSupervisor,
+      runtime: {
+        createSession: async ({ projectDir }) => {
+          const created = await this.runtime!.session.create({ directory: projectDir });
+          return created.id;
+        },
+        promptAsync: (opts) => this.runtime!.session.promptAsync(opts as any),
+        messages: async ({ sessionID, limit }) => {
+          const page: any = await this.runtime!.session.messages({ sessionID, limit });
+          return { data: page?.data ?? [], nextCursor: page?.nextCursor };
+        },
+      },
+      resolveProject: (requested) => {
+        const canonical = canonicalProjectDir(requested || this.resolvedProjectDir());
+        const hit = Array.from(this.registeredProjects.entries())
+          .find(([dir]) => canonicalProjectDir(dir) === canonical);
+        return hit ? { projectDir: hit[0], mafwDir: hit[1].mafwDir } : null;
+      },
+      now: () => new Date().toISOString(),
+      newId: () => `podgoal_${randomUUID()}`,
+      newGoalId: () => makePodGoalId(new Date().toISOString(), Math.random),
+      registerInternalSession: (sessionId, role, identity) => {
+        this.registerInternalSession(sessionId, role, identity);
+      },
+      emitGoalCreated: (event) => eventBus.emit('goal_created', event as any),
+      notify: (podId, kind = 'goal') => this.broadcast({ type: 'pod.updated', properties: { podId, kind } }),
       log: (message) => log.info(message),
     });
 
@@ -4280,6 +4350,14 @@ class MafwScheduler {
       ledger: this.ledger,
       mafwDir,
       listProjects: () => Array.from(this.registeredProjects.entries()).map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir })),
+      podTechLead: this.podTechLeadService,
+      podDirection: this.podDirectionService,
+      podGoalDirection: {
+        techLead: this.podTechLeadService,
+        direction: this.podDirectionService,
+        startPlanning: (goalId: string) => this.startGoalDirect(goalId),
+        log: (message: string) => log.info(message),
+      },
       desktop: desktopClient || undefined,
       restartAgent: async () => {
         if (!this.runtime?.access?.can('process.restart')) {
@@ -4414,7 +4492,7 @@ class MafwScheduler {
       eventBus.on(name, (data: any) => this.broadcast(emit(data)));
     }
     eventBus.on("goal_created", (data: any) => {
-      if (data?.goalId) setImmediate(() => void this.startGoal(data.goalId, data.projectDir));
+      if (shouldAutoStartGoalEvent(data)) setImmediate(() => void this.startGoal(data.goalId, data.projectDir));
     });
     eventBus.on("state_change", (data: any) => {
       // legacy /goal skill 链唤醒——driver.advance 幂等（在飞即短路）
@@ -8686,21 +8764,23 @@ class MafwScheduler {
 
   private findGoalRequestDir(goalId: string): string | null {
     for (const [, info] of this.registeredProjects) {
-      if (fs.existsSync(path.join(info.mafwDir, 'requests', `${goalId}.json`))) {
+      if (findGoalRequestPath(info.mafwDir, goalId)) {
         return info.mafwDir;
       }
     }
     return null;
   }
 
+  /** Goal 的 mafw 目录：优先 state，其次两种 request 布局。 */
+  private findGoalMafwDir(goalId: string): string | null {
+    return this.findGoalStatePath(goalId)?.info.mafwDir ?? this.findGoalRequestDir(goalId);
+  }
+
   private describePodGoal(goalId: string): PodGoalDescription | null {
     const found = this.findGoalStatePath(goalId);
     const mafwDir = found?.info.mafwDir ?? this.findGoalRequestDir(goalId);
     if (!mafwDir) return null;
-    let request: any = null;
-    try {
-      request = JSON.parse(fs.readFileSync(path.join(mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
-    } catch { /* legacy goals may have no request */ }
+    const request: any = readGoalRequest(mafwDir, goalId);
     const state = found ? loadGoalState(found.info.mafwDir, goalId) : null;
     if (!state) {
       // Queued goals have an intake request but no state file yet. Their title
@@ -8752,10 +8832,7 @@ class MafwScheduler {
     if (!found) return null;
     const state = loadGoalState(found.info.mafwDir, goalId);
     if (!state) return null;
-    let request: Record<string, unknown> | null = null;
-    try {
-      request = JSON.parse(fs.readFileSync(path.join(found.info.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
-    } catch { /* legacy goal */ }
+    const request = readGoalRequest(found.info.mafwDir, goalId);
     return buildPodGoalResult({
       goalId,
       state,
@@ -8782,34 +8859,35 @@ class MafwScheduler {
 
   /** Goal starter（spec §4）：定位目标项目 → ensureState(v3) → NodeDriver.advance。 */
   private async startGoalDirect(goalId: string, projectDirHint?: string): Promise<void> {
+    // 讨论中的 Goal 只有方向工具把 revision 推到 planning 后才能启动；paused/resume、
+    // 队列提升或任何重试路径都不能绕过这道门。
+    if (!this.podGoalService.isStartable(goalId)) {
+      log.warn(`[Goal] ${goalId}: refusing to start before a direction decision`);
+      return;
+    }
     const projects = Array.from(this.registeredProjects.entries())
       .map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir }));
     const found = resolveGoalDir(projects, projectDirHint, (mafwDir) =>
-      fs.existsSync(path.join(mafwDir, 'requests', `${goalId}.json`)));
+      !!findGoalRequestPath(mafwDir, goalId));
     if (!found) { log.warn(`[Goal] ${goalId}: no project dir resolved — skipping`); throw new Error(`no project dir resolved for goal ${goalId}`); }
+    const requestPath = findGoalRequestPath(found.mafwDir, goalId);
+    const request = readGoalRequest(found.mafwDir, goalId);
     this.goalDriverMafwDirCache.set(goalId, found.mafwDir);
     this.goalDriver?.registerGoalDir(goalId, found.mafwDir);
     ensureGoalState(found.mafwDir, goalId, {
       projectDir: found.projectDir,
       maxRounds: config.loop.maxRounds,
       // W1: creation-time plan review mode (validated enum; absent = auto).
-      planReview: (() => {
-        try {
-          const req = JSON.parse(fs.readFileSync(path.join(found.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
-          return req?.planReview === 'manual' ? 'manual' : (req?.planReview === 'auto' ? 'auto' : undefined);
-        } catch { return undefined; }
-      })(),
+      planReview: request?.planReview === 'manual'
+        ? 'manual'
+        : (request?.planReview === 'auto' ? 'auto' : undefined),
       policySnapshot: mergeBudgetIntoSnapshot(
         (() => { try { return getActivePolicy(config.resolvePath()); } catch { return { version: 'builtin-v1', proposalId: null }; } })(),
-        path.join(found.mafwDir, 'requests', `${goalId}.json`),
+        // goal-dir 布局的 request 与 legacy 同源解析（budget 不能丢）。
+        requestPath ?? path.join(found.mafwDir, 'requests', `${goalId}.json`),
       ),
       // D4b: creation-time task type declaration (plan node write-back wins).
-      taskType: (() => {
-        try {
-          const req = JSON.parse(fs.readFileSync(path.join(found.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
-          return isTaskType(req?.taskType) ? req.taskType : undefined;
-        } catch { return undefined; }
-      })(),
+      taskType: isTaskType(request?.taskType) ? (request!.taskType as any) : undefined,
     });
     this.activeGoals.set(goalId, loadGoalState(found.mafwDir, goalId) as any);
     await this.goalDriver?.advance(goalId);
@@ -8884,11 +8962,9 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   private async loadRequest(goalId: string): Promise<any> {
-    for (const [projectDir, info] of this.registeredProjects) {
-      const reqPath = path.join(info.mafwDir, 'requests', `${goalId}.json`);
-      if (fs.existsSync(reqPath)) {
-        return JSON.parse(fs.readFileSync(reqPath, 'utf-8'));
-      }
+    for (const [, info] of this.registeredProjects) {
+      const request = readGoalRequest(info.mafwDir, goalId);
+      if (request) return request;
     }
     return null;
   }

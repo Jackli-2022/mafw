@@ -82,6 +82,24 @@ describe('mafw_pod_goal_direction', () => {
     expect(result.structuredContent.review).toBeUndefined();
   });
 
+  test('clear may use the reason when no user words/option are supplied', async () => {
+    const result = await tool.execute(
+      { goalId: 'g1', mode: 'clear', reason: 'Tech Lead 判断方向已唯一' },
+      { sessionID: 'ses_tl' },
+    );
+
+    expect(direction.decide).toHaveBeenCalledWith(expect.objectContaining({
+      goalId: 'g1',
+      decision: expect.objectContaining({
+        userWords: 'Tech Lead 判断方向已唯一',
+        reason: 'Tech Lead 判断方向已唯一',
+        source: 'tech_lead_clear',
+      }),
+    }));
+    expect(startPlanning).toHaveBeenCalledWith('g1');
+    expect(result.structuredContent).toMatchObject({ success: true, mode: 'clear' });
+  });
+
   test('decided records the user-supplied direction and starts planning', async () => {
     const result = await tool.execute(
       { goalId: 'g1', mode: 'decided', userWords: '用户补充：采用 B', optionId: 'B' },

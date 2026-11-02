@@ -141,6 +141,40 @@ export function shouldAutoStartGoalEvent(event: unknown): boolean {
   return true;
 }
 
+/** 协作 Goal 工作区内的 request.json 路径。 */
+export function goalDirRequestPath(mafwDir: string, goalId: string): string {
+  return path.join(mafwDir, 'goals', goalId, 'request.json');
+}
+
+/** 历史 request 路径（legacy 布局）。 */
+export function legacyGoalRequestPath(mafwDir: string, goalId: string): string {
+  return path.join(mafwDir, 'requests', `${goalId}.json`);
+}
+
+/**
+ * 一个 Goal 的 request 实际位置：`goal-dir` 布局优先，其次 legacy。
+ * starter / describe / direction 必须共用此解析，否则直接创建的 Goal 在
+ * 启动规划时会读不到 request（planReview/taskType 丢失或直接找不到项目）。
+ */
+export function findGoalRequestPath(mafwDir: string, goalId: string): string | null {
+  for (const candidate of [goalDirRequestPath(mafwDir, goalId), legacyGoalRequestPath(mafwDir, goalId)]) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** 读取 Goal request（两种布局通用）；坏 JSON 按不存在处理（fail-open）。 */
+export function readGoalRequest(mafwDir: string, goalId: string): Record<string, unknown> | null {
+  const target = findGoalRequestPath(mafwDir, goalId);
+  if (!target) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(target, 'utf-8'));
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createGoalIntake(input: GoalIntakeInput, deps: GoalIntakeDeps): GoalIntakeResult {
   const goalId = String(input.goalId ?? '').trim();
   const title = String(input.title ?? '').trim();

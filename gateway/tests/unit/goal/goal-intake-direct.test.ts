@@ -4,6 +4,8 @@ import * as path from 'path';
 import {
   GoalConflictError,
   createGoalIntake,
+  findGoalRequestPath,
+  readGoalRequest,
   shouldAutoStartGoalEvent,
   type GoalIntakeDeps,
 } from '../../../src/core/goal/goal-intake';
@@ -110,6 +112,38 @@ describe('goal intake: direct discussion layout', () => {
       }, deps())).toThrow(/goal id/i);
     }
     expect(fs.existsSync(path.join(mafwDir, 'goals'))).toBe(false);
+  });
+
+  test('starter can resolve the goal-dir request and keeps planReview/taskType', () => {
+    const result = createGoalIntake({
+      goalId: 'goal-dir-start',
+      title: 'Start me',
+      objective: 'x',
+      projectDir: dir,
+      layout: 'goal-dir',
+      discussion: true,
+      planReview: 'manual',
+      taskType: 'research',
+      authorization: { source: 'lead', requestMode: 'explicit' },
+    }, deps());
+
+    expect(findGoalRequestPath(mafwDir, 'goal-dir-start')).toBe(result.requestPath);
+    expect(readGoalRequest(mafwDir, 'goal-dir-start')).toMatchObject({
+      planReview: 'manual',
+      taskType: 'research',
+      layout: 'goal-dir',
+    });
+
+    // Legacy callers keep resolving through the legacy path.
+    const legacy = createGoalIntake({
+      goalId: 'legacy-start',
+      title: 'Legacy',
+      charter: '# Legacy',
+      projectDir: dir,
+      authorization: { source: 'user', requestMode: 'explicit' },
+    }, deps());
+    expect(findGoalRequestPath(mafwDir, 'legacy-start')).toBe(legacy.requestPath);
+    expect(readGoalRequest(mafwDir, 'legacy-start')).toMatchObject({ goalId: 'legacy-start' });
   });
 
   test('goal-dir layout reports duplicates through the shared conflict error', () => {
