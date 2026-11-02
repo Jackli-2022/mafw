@@ -1,18 +1,15 @@
-// Task 10: unified declarative tool-card proxy.
+// Task 10: unified declarative tool-card proxy (Solid binding).
 //
-// Registration mirrors `UserPluginCards` (restore-original + proxy + fail-open)
-// and runs after the built-in MAFW cards so it can capture them:
-//   - only `override: true` may replace an occupied (built-in/legacy) card;
-//   - unified cards claim their targets so an async legacy rescan cannot
-//     silently overwrite them (and a removed descriptor releases the claim);
-//   - every plugin revision re-applies the proxy set (removal restores the
-//     original card).
+// Registration/restore/claim logic lives in the Solid-free, injectable
+// `plugin-tool-card-registry.ts`; this file only supplies the JSX proxy and the
+// concrete ports (ToolRegistry, legacy cards, plugin store).
 //
-// Rendering keeps the default chain while the tool part is pending/running and
-// invokes the package `viewAction` exactly once when it settles
-// (completed/error). The neutral ToolCardModel is sent as the raw action input.
-// Invalid output, action failures and stale plugin generations fall back to the
-// original card; plugin code never runs in the renderer.
+// While a tool part is pending/running the original card renders. When it
+// settles (completed/error) the package `viewAction` runs exactly once with the
+// neutral ToolCardModel as its raw input. Invalid output, failures and stale
+// plugin generations fall back to the original card; plugin code never runs in
+// the renderer. The proxy opts into error rendering (`handlesError`) so error
+// parts reach the package card instead of the generic ToolErrorCard.
 import { Show, createEffect, createResource, createRoot, createSignal } from "solid-js"
 import { GenericTool } from "@mafw/session-ui/basic-tool"
 import {
@@ -30,13 +27,12 @@ import {
   pluginGeneration,
 } from "./plugin-store"
 import {
-  effectiveToolCardTargets,
   planToolCardInvocation,
   toolCardModel,
   toolCardResponseCurrent,
   toolCardViewOf,
-  type LegacyToolCardEntry,
 } from "./plugin-tool-card-model"
+import { createUnifiedToolCardController } from "./plugin-tool-card-registry"
 import { PluginViewRenderer } from "./PluginViewRenderer"
 import { classifyPanelActionOutput } from "./plugin-view-model"
 
@@ -156,61 +152,40 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-const proxies = new Map<string, UnifiedCardBinding>()
-
-/**
- * Rebuild the unified proxy set from the committed client snapshot.
- *
- * Stale responses (a newer revision arrived while the legacy list was in flight)
- * are discarded. The claim set is swapped before registration so a concurrent
- * legacy rescan skips taken tools; removed descriptors restore the original
- * card and release claims, then legacy cards are re-listed.
- */
-export async function applyUnifiedToolCards(): Promise<void> {
-  const generation = pluginGeneration()
-  const descriptors = pluginDescriptors()
-
-  let legacyEntries: LegacyToolCardEntry[] = []
-  try {
-    legacyEntries = await window.api.mafw.uiPlugins.list()
-  } catch {
-    legacyEntries = []
-  }
-  if (!isPluginGenerationCurrent(generation)) return
-
-  const next = effectiveToolCardTargets(descriptors, legacyEntries, {
-    // Currently registered unified proxies are handled by the restore below,
-    // so only externally owned keys count as occupied.
-    isOccupied: (target) => !proxies.has(target) && ToolRegistry.render(target) !== undefined,
-  })
-  setUnifiedToolCardClaims(next.map((entry) => entry.target))
-
-  // Restore every card replaced by the previous revision before registering the
-  // new set; `ToolRegistry.register` is overwrite semantics.
-  for (const [target, binding] of [...proxies]) {
-    ToolRegistry.register({ name: target, render: binding.original })
-  }
-  proxies.clear()
-
-  for (const entry of next) {
-    // `override: true` may take a slot from a legacy card. Releasing also
-    // prevents a later legacy rescan from reclaiming the tool.
-    if (entry.card.override === true) releaseLegacyToolCard(entry.target)
+const controller = createUnifiedToolCardController<ToolComponent>({
+  descriptors: () => pluginDescriptors(),
+  generation: () => pluginGeneration(),
+  isGenerationCurrent: (generation) => isPluginGenerationCurrent(generation),
+  listLegacy: () => window.api.mafw.uiPlugins.list(),
+  registry: {
+    render: (target) => ToolRegistry.render(target),
+    register: (target, card) => ToolRegistry.register({ name: target, render: card }),
+  },
+  releaseLegacy: (target) => releaseLegacyToolCard(target),
+  reapplyLegacy: () => reapplyUserPluginCards(),
+  setClaims: (targets) => setUnifiedToolCardClaims(targets),
+  bind: (entry, fallback) => {
     const binding: UnifiedCardBinding = {
       packageName: entry.descriptor.name,
       viewAction: entry.card.viewAction,
-      original: ToolRegistry.render(entry.target),
+      original: fallback,
     }
-    proxies.set(entry.target, binding)
     ToolRegistry.register({
       name: entry.target,
+      handlesError: true,
       render: (props: ToolProps) => <UnifiedToolCardProxy {...props} unified={binding} />,
     })
-  }
+  },
+})
 
-  // Bring back legacy cards on tools that are no longer claimed (removed
-  // descriptor, or a legacy card released by an earlier override).
-  reapplyUserPluginCards()
+/** Apply the committed snapshot (exported for tests / later management UI). */
+export function applyUnifiedToolCards(): Promise<boolean> {
+  return controller.apply()
+}
+
+/** Targets currently bound to unified proxies. */
+export function unifiedToolCardTargets(): string[] {
+  return controller.targets()
 }
 
 let disposeRegistration: (() => void) | undefined
@@ -226,7 +201,7 @@ export function registerUnifiedToolCards(): void {
     createEffect(() => {
       // Track the committed revision; descriptor identity changes with it.
       pluginClientRevision()
-      void applyUnifiedToolCards().catch(() => {
+      void controller.apply().catch(() => {
         // Fail-open: registration never breaks the transcript.
       })
     })
@@ -236,11 +211,7 @@ export function registerUnifiedToolCards(): void {
 
 /** Test/dev teardown: restores originals and drops claims. */
 export function resetUnifiedToolCards(): void {
-  for (const [target, binding] of [...proxies]) {
-    ToolRegistry.register({ name: target, render: binding.original })
-  }
-  proxies.clear()
-  setUnifiedToolCardClaims([])
+  controller.reset()
   disposeRegistration?.()
   disposeRegistration = undefined
 }

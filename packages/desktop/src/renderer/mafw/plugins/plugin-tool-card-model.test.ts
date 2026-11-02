@@ -65,6 +65,12 @@ function request(over: Partial<ToolCardRenderRequest> = {}): ToolCardRenderReque
   }
 }
 
+/** Actual serialized JSON byte length (independent of the model's helper). */
+function jsonBytes(value: unknown): number {
+  if (value === undefined) return 0
+  return Buffer.byteLength(JSON.stringify(value) ?? "", "utf8")
+}
+
 // ---------------------------------------------------------------------------
 // Alias / canonical matching
 // ---------------------------------------------------------------------------
@@ -176,6 +182,67 @@ describe("toolCardModel: 256 KiB payload cap", () => {
     expect(toolCardPayloadBytes(model.input)).toBe(LIMIT)
     expect(model.truncated).toBe(false)
   })
+
+  test("newline-heavy output is capped by its escaped JSON length", () => {
+    const model = toolCardModel(
+      request({ input: { q: "tiny" }, output: "\n".repeat(LIMIT), metadata: undefined }),
+    )
+    expect(model.truncated).toBe(true)
+    expect(jsonBytes(model.output)).toBeLessThanOrEqual(LIMIT)
+    expect(jsonBytes(model.input) + jsonBytes(model.output)).toBeLessThanOrEqual(LIMIT)
+    // Newlines escape to two bytes each, so the retained text is ~half the cap.
+    expect(String(model.output).length).toBeGreaterThan(LIMIT / 4)
+  })
+
+  test("quote- and backslash-heavy output is capped by its escaped JSON length", () => {
+    const model = toolCardModel(
+      request({
+        input: { q: "tiny" },
+        output: '"\u005c'.repeat(LIMIT),
+        metadata: undefined,
+      }),
+    )
+    expect(model.truncated).toBe(true)
+    expect(jsonBytes(model.input) + jsonBytes(model.output)).toBeLessThanOrEqual(LIMIT)
+    expect(String(model.output).length).toBeGreaterThan(LIMIT / 4)
+  })
+
+  test("a huge nested field is truncated in place instead of being dropped whole", () => {
+    const deep = "x".repeat(LIMIT * 2)
+    const model = toolCardModel(
+      request({ input: { nested: { deep, other: 1 } }, output: undefined, metadata: undefined }),
+    )
+    expect(model.truncated).toBe(true)
+    expect(jsonBytes(model.input)).toBeLessThanOrEqual(LIMIT)
+    const nested = (model.input as { nested?: { deep?: unknown } }).nested
+    expect(typeof nested?.deep).toBe("string")
+    expect((nested?.deep as string).startsWith("x")).toBe(true)
+    expect((nested?.deep as string).length).toBeLessThan(deep.length)
+  })
+
+  test("a huge nested field survives together with input+output sharing the cap", () => {
+    const model = toolCardModel(
+      request({
+        input: { nested: { deep: "x".repeat(LIMIT) } },
+        output: "y".repeat(LIMIT),
+        metadata: undefined,
+      }),
+    )
+    expect(model.truncated).toBe(true)
+    expect(jsonBytes(model.input) + jsonBytes(model.output)).toBeLessThanOrEqual(LIMIT)
+    const nested = (model.input as { nested?: { deep?: unknown } }).nested
+    expect(typeof nested?.deep).toBe("string")
+  })
+
+  test("mixed escape-heavy containers still land under the cap", () => {
+    const input = Array.from({ length: 200 }, (_, index) => ({
+      [`key${index}`]: "\n\"\u005c".repeat(500),
+    }))
+    const output = "\u0001".repeat(LIMIT) // control chars escape to six bytes each
+    const model = toolCardModel(request({ input, output, metadata: undefined }))
+    expect(model.truncated).toBe(true)
+    expect(jsonBytes(model.input) + jsonBytes(model.output)).toBeLessThanOrEqual(LIMIT)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -239,6 +306,14 @@ describe("effectiveToolCardTargets: occupancy and conflicts", () => {
       isOccupied: (target) => target === "bash",
     })
     expect(occupied).not.toContain("bash")
+  })
+
+  test("one occupied alias blocks the whole logical tool group", () => {
+    const targets = targetsOf([descriptor("acme", [card({ tools: ["bash"] })])], [], {
+      isOccupied: (target) => target === "bash",
+    })
+    // `shell` / `mafw_*` must not stay bound when the built-in `bash` is kept.
+    expect(targets).toEqual([])
   })
 
   test("override:true may replace a built-in card", () => {

@@ -1,23 +1,12 @@
 // canonical 翻译层消费面（A 切片）：渲染四级解析 + read 域多 key + class 家族兜底。
 // 纯逻辑轻依赖（tool-registry / parts-rules / basic-tool），bun test 可直接导入；
 // gateway enrich 的 additive 字段 part.canonicalTool / part.toolClass 在此消费。
-import { displayToolOf, TOOL_NAME_ALIASES } from "./parts-rules"
+import { CLASS_FAMILY, displayToolOf, TOOL_NAME_ALIASES } from "./parts-rules"
 import { ToolRegistry } from "./tool-registry"
 import { GenericTool } from "./basic-tool"
 import type { ToolComponent } from "./tool-registry"
 
-export { TOOL_NAME_ALIASES } from "./parts-rules"
-
-/** toolClass → 代表内建卡名（未注册名按语义家族兜底渲染）。 */
-export const CLASS_FAMILY: Record<string, string> = {
-  shell: "bash",
-  readonly: "read",
-  search: "grep",
-  "file-edit": "edit",
-  subagent: "task",
-  web: "webfetch",
-  plan: "todowrite",
-}
+export { CLASS_FAMILY, TOOL_NAME_ALIASES } from "./parts-rules"
 
 /** task/subagent part 判定（身份别名属 canonical 层，不是 wire 多形状）。 */
 export function isTaskPart(part: any): boolean {

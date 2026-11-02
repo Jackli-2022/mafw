@@ -34,8 +34,10 @@ describe("task card + v2.1.0 tool identity wiring", () => {
     expect(part).toContain("onNavigate={")
     const canonical = read("../session-ui/src/components/tool-canonical.ts")
     expect(canonical).toContain("isTaskPart")
-    expect(canonical).toContain('subagent: "task"')
-    expect(canonical).toContain('shell: "bash"')
+    expect(canonical).toContain("TOOL_NAME_ALIASES")
+    const rules = read("../session-ui/src/components/parts-rules.ts")
+    expect(rules).toContain('subagent: "task"')
+    expect(rules).toContain('shell: "bash"')
   })
 
   test("failed task card wires onNavigate", () => {

@@ -110,12 +110,16 @@ export function effectiveToolCardTargets(
       if (!Array.isArray(card.tools)) continue
       for (const tool of card.tools) {
         if (typeof tool !== "string" || tool.length === 0) continue
+        // One declared logical tool owns its whole alias group or nothing: a
+        // partially occupied group (e.g. built-in `bash` while `shell` is free)
+        // must not leave aliases bound after an `override` is revoked.
         const keys = toolCardKeys(tool)
+        if (keys.some((key) => claimed.has(key))) continue
+        const occupied = keys.some(
+          (key) => occupiedByLegacy.has(key) || isOccupied(key),
+        )
+        if (occupied && card.override !== true) continue
         for (const key of keys) {
-          if (claimed.has(key)) continue
-          const isLegacy = occupiedByLegacy.has(key)
-          const isBuiltIn = !isLegacy && isOccupied(key)
-          if ((isLegacy || isBuiltIn) && card.override !== true) continue
           claimed.add(key)
           targets.push({
             target: key,
@@ -235,16 +239,29 @@ function capPayloads(
 
   // The tool result (output) yields first so structured arguments survive.
   const outputBudget = Math.max(0, limit - Math.min(inputBytes, limit))
-  const nextOutput = output === undefined ? undefined : shrinkValue(output, outputBudget)
-  const inputBudget = Math.max(0, limit - toolCardPayloadBytes(nextOutput))
-  const nextInput = shrinkValue(input, inputBudget)
+  let nextOutput = output === undefined ? undefined : shrinkValue(output, outputBudget)
+  let inputBudget = Math.max(0, limit - toolCardPayloadBytes(nextOutput))
+  let nextInput = shrinkValue(input, inputBudget)
+
+  // Escape-aware slicing is exact per string, but object/array punctuation and
+  // JSON.stringify edge cases (custom toJSON, lone surrogates) can still leave
+  // us a few bytes over. Re-measure the serialized result and shave again; the
+  // loop is bounded and each pass only shrinks.
+  for (let pass = 0; pass < 6; pass += 1) {
+    const total = toolCardPayloadBytes(nextInput) + toolCardPayloadBytes(nextOutput)
+    if (total <= limit) break
+    const outBudget = Math.max(0, limit - Math.min(toolCardPayloadBytes(nextInput), limit))
+    nextOutput = nextOutput === undefined ? undefined : shrinkValue(nextOutput, outBudget)
+    inputBudget = Math.max(0, limit - toolCardPayloadBytes(nextOutput))
+    nextInput = shrinkValue(nextInput, inputBudget)
+  }
   return { input: nextInput, output: nextOutput, truncated: true }
 }
 
 function shrinkValue(value: unknown, maxBytes: number): unknown {
   if (maxBytes <= 0) return undefined
   if (toolCardPayloadBytes(value) <= maxBytes) return value
-  if (typeof value === "string") return sliceUtf8(value, Math.max(0, maxBytes - 2))
+  if (typeof value === "string") return sliceJsonString(value, maxBytes)
   if (Array.isArray(value)) {
     const out: unknown[] = []
     let used = 2 // []
@@ -308,27 +325,34 @@ function utf8Length(value: string): number {
   return bytes
 }
 
-/** Cut a string to at most `maxBytes` UTF-8 bytes without splitting a pair. */
-function sliceUtf8(text: string, maxBytes: number): string {
-  if (maxBytes <= 0) return ""
-  let bytes = 0
+/** Cut a string so its complete JSON encoding (quotes + escapes) fits `maxBytes`. */
+function sliceJsonString(text: string, maxBytes: number): string {
+  if (maxBytes <= 2) return ""
+  let bytes = 2 // surrounding quotes
   let end = 0
   while (end < text.length) {
     const code = text.charCodeAt(end)
     let size: number
     let step = 1
-    if (code < 0x80) {
-      size = 1
-    } else if (code < 0x800) {
-      size = 2
+    if (code === 0x22 || code === 0x5c) {
+      size = 2 // \" and \\
+    } else if (code < 0x20) {
+      // \b \t \n \f \r are two bytes; other control chars use \u00XX (6 bytes).
+      size = code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 2 : 6
     } else if (code >= 0xd800 && code <= 0xdbff && end + 1 < text.length) {
       const next = text.charCodeAt(end + 1)
       if (next >= 0xdc00 && next <= 0xdfff) {
         size = 4
         step = 2
       } else {
-        size = 3
+        size = 6 // lone high surrogate → \uXXXX
       }
+    } else if (code >= 0xd800 && code <= 0xdfff) {
+      size = 6 // lone low surrogate → \uXXXX
+    } else if (code < 0x80) {
+      size = 1
+    } else if (code < 0x800) {
+      size = 2
     } else {
       size = 3
     }

@@ -26,6 +26,17 @@ export const TOOL_NAME_ALIASES: Record<string, string> = {
   shell: "bash",
 }
 
+/** toolClass → 代表内建卡名（未注册名按语义家族兜底渲染）。 */
+export const CLASS_FAMILY: Record<string, string> = {
+  shell: "bash",
+  readonly: "read",
+  search: "grep",
+  "file-edit": "edit",
+  subagent: "task",
+  web: "webfetch",
+  plan: "todowrite",
+}
+
 /** canonical 翻译层（gateway enrich 的 additive 字段）：显示/分组/聚合统一用解析名。 */
 export function displayToolOf(part: PartLike): string {
   return typeof part.canonicalTool === "string" && part.canonicalTool ? part.canonicalTool : part.tool ?? ""

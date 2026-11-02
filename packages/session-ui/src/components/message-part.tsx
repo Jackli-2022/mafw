@@ -1578,6 +1578,7 @@ export { resolveToolRender, CLASS_FAMILY, readPathInput, TOOL_NAME_ALIASES } fro
 import { ToolRegistry } from "./tool-registry"
 import { resolveToolRender, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { isTaskPart } from "./tool-canonical"
+import { shouldRenderToolError } from "./tool-render-routing"
 import { displayToolOf } from "./parts-rules"
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
@@ -1653,9 +1654,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     <Show when={!hideQuestion()}>
       <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
         <Switch>
-          <Match when={part().state.status === "error" && part().state.error}>
-            {(error) => {
-              const cleaned = errorText(error()).replace(/^Error: /, "")
+          <Match when={shouldRenderToolError(part())}>
+            {(_matched) => {
+              const error = () => errorText(part().state.error)
+              const cleaned = error().replace(/^Error: /, "")
               if (part().tool === "question" && cleaned.includes("dismissed this question")) {
                 return (
                   <div style="width: 100%; display: flex; justify-content: flex-end;">
