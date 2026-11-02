@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ConnectionStore } from '../src/store/connection.ts'
+import { ConnectionStore, KNOWN_EVENTS } from '../src/store/connection.ts'
 
 function harness() {
   const timers: { fn: () => void; ms: number }[] = []
@@ -33,6 +33,7 @@ function harness() {
     states,
     received,
     emit: (type: string, data: any) => listeners.get(type)?.(data),
+    subscribed: () => [...listeners.keys()],
     setConnected: (v: boolean) => { connected = v },
     get subscribes() { return subscribes },
   }
@@ -97,6 +98,17 @@ test('events forwarded via onEvent; stop unsubscribes', async () => {
   h.store.stop()
   h.emit('turn.completed', {})
   assert.equal(h.received.length, 1, 'stop 后不再转发')
+})
+
+test('只订阅白名单事件（无死订阅 / 无 `*` 兜底转发）', async () => {
+  const h = harness()
+  h.store.start()
+  await settle()
+  assert.deepEqual(h.subscribed().sort(), [...KNOWN_EVENTS].sort())
+  h.emit('session.config', { type: 'session.config' })
+  h.emit('run.updated', { type: 'run.updated' })
+  assert.equal(h.received.length, 0, '无消费者的 canonical 事件不再订阅')
+  h.store.stop()
 })
 
 test('subscribe rejection reports down state', async () => {

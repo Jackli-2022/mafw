@@ -2,9 +2,9 @@ import {
   Container, Text, SelectList, matchesKey, Key, truncateToWidth,
   type Component, type TUI, type OverlayHandle,
 } from '@earendil-works/pi-tui'
-import type { MafwClient, GoalSessionInfo } from '@mafw/sdk'
+import type { MafwClient, GoalSessionInfo, MafwMessage } from '@mafw/sdk'
 import { GoalsStore } from '../store/goals-store.ts'
-import { historyItemsToTurns } from '../store/chat-store.ts'
+import { historyToTurns } from '../store/chat-store.ts'
 import { turnToLines } from './message-blocks.ts'
 import { theme } from '../theme.ts'
 import { selectListTheme } from './chat-tab.ts'
@@ -171,17 +171,17 @@ export class GoalsTab implements Component {
     list.onCancel = close
   }
 
-  /** 只读 transcript overlay（最近 50 条消息）。 */
+  /** 只读 transcript overlay（最近 50 条消息；flat View DTO）。 */
   async openTranscript(sessionID: string): Promise<void> {
-    let messages: any[]
+    let messages: MafwMessage[]
     try {
-      const res = await this.deps.client.session.messages({ path: { id: sessionID }, query: { limit: 50 } })
+      const res = await this.deps.client.session.history({ sessionID, limit: 50 })
       messages = res.data ?? []
     } catch (e: any) {
       this.deps.setStatus({ hint: theme.err(`transcript 获取失败: ${String(e?.message ?? e).slice(0, 60)}`) })
       return
     }
-    const turns = historyItemsToTurns(messages)
+    const turns = historyToTurns(messages)
     const lines = turns.flatMap((t) => turnToLines(t, 76))
     const body = lines.length > 0 ? lines.join('\n') : theme.dim('（空会话）')
     const overlay = showModal(this.deps.tui,

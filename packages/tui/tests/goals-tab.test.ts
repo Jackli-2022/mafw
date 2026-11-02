@@ -1,13 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { GoalsTab, formatGoalSessions } from '../src/ui/goals-tab.ts'
-import { historyItemsToTurns } from '../src/store/chat-store.ts'
+import { historyToTurns } from '../src/store/chat-store.ts'
 import type { GoalsStore } from '../src/store/goals-store.ts'
 
-test('historyItemsToTurns maps wire items to renderable turns', () => {
-  const turns = historyItemsToTurns([
-    { info: { id: 'm1', role: 'user', time: { created: 1 } }, parts: [{ id: 'p1', messageID: 'm1', type: 'text', text: '问' }] },
-    { info: { id: 'm2', role: 'assistant' }, parts: [{ id: 'p2', messageID: 'm2', type: 'text', text: '答' }] },
+test('historyToTurns maps flat view DTO to renderable turns', () => {
+  const turns = historyToTurns([
+    { id: 'm1', sessionID: 's', role: 'user', time: { created: 1 }, content: [{ id: 'p1', messageID: 'm1', type: 'text', text: '问' }] },
+    { id: 'm2', sessionID: 's', role: 'assistant', content: [{ id: 'p2', messageID: 'm2', type: 'text', text: '答' }] },
   ])
   assert.equal(turns.length, 2)
   assert.equal(turns[0].role, 'user')
@@ -58,11 +58,11 @@ function fakeClient() {
     },
     questions: { reply: async () => {}, reject: async () => {} },
     session: {
-      messages: async (p: any) => {
-        calls.push(`messages:${p.path.id}`)
+      history: async (p: any) => {
+        calls.push(`messages:${p.sessionID}`)
         return {
           data: [
-            { info: { id: 'm1', role: 'user' }, parts: [{ id: 'p1', messageID: 'm1', type: 'text', text: '计划内容' }] },
+            { id: 'm1', sessionID: p.sessionID, role: 'user', content: [{ id: 'p1', messageID: 'm1', type: 'text', text: '计划内容' }] },
           ],
           nextCursor: null,
         }

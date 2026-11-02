@@ -38,6 +38,13 @@ import { MemoryTab } from './memory-tab.ts'
 import { TriageStore } from '../store/triage-store.ts'
 import { TriageTab } from './triage-tab.ts'
 import { PermissionModeStore } from '../store/permission-mode.ts'
+import { TuiExperienceStore } from '../store/experience-store.ts'
+import {
+  normalizeAgents,
+  normalizePermissionRequest,
+  providerDefaultModelLabel,
+  providerModelOptions,
+} from '../store/dto.ts'
 import { theme } from '../theme.ts'
 
 export type Retriever = 'bm25' | 'hybrid'
@@ -86,12 +93,11 @@ export async function runApp(opts: AppOptions): Promise<void> {
 
   // ── 模型选择（/model；null = 会话默认）──
   let modelSelection: { providerID: string; modelID: string } | null = null
-  let defaultModelLabel = ''
+  let defaultModelText = ''
   void client.providers.list().then((p) => {
-    const d: any = (p as any)?.default
-    if (d?.modelID) {
-      defaultModelLabel = String(d.modelID)
-      setStatus({ usage: { ...(status.usage ?? {}), model: defaultModelLabel } })
+    defaultModelText = providerDefaultModelLabel(p)
+    if (defaultModelText) {
+      setStatus({ usage: { ...(status.usage ?? {}), model: defaultModelText } })
     }
   }).catch(() => {})
 
@@ -106,6 +112,9 @@ export async function runApp(opts: AppOptions): Promise<void> {
     setStatus({ hint: theme.ok(name ? `Agent: ${name}（作用于后续消息）` : 'Agent: 默认（runtime 默认）') })
   }
 
+  // ── Experience 动作面（Task 12）：fork/compact/undo/redo/model/agent/permission 的唯一门 ──
+  const experience = new TuiExperienceStore(client)
+
   // ── Chat tab ──
   const interaction = new InteractionStateMachine()
   const chatStore = new ChatStore({
@@ -115,7 +124,10 @@ export async function runApp(opts: AppOptions): Promise<void> {
     onError: (message) => setStatus({ hint: theme.err(`⚠ ${message.slice(0, 60)}`) }),
     getModel: () => modelSelection,
     getAgent: () => agentSelection,
+    gate: (id) => experience.gate(id),
+    busyDelivery: () => (experience.enabled('prompt.steer') ? 'steer' : 'queue'),
   })
+  if (managerSessionID) void experience.load(managerSessionID)
   // 审批模式（gateway kv 真相源；SSE permission_mode 驱动 🛡 徽标）
   const permStore = new PermissionModeStore(client)
   if (managerSessionID) {
@@ -209,7 +221,12 @@ export async function runApp(opts: AppOptions): Promise<void> {
       onState: (s) => {
         setStatus({ conn: s })
         tabStrip.setConnected(s === 'ok')
-        if (s === 'ok') void refreshGatewayQueue(chatStore.sessionID)
+        if (s === 'ok') {
+          // SSE 重连：动作面可能因 runtime 切换/网关重启变化，按作用域失效后重载
+          experience.invalidate()
+          void experience.load(chatStore.sessionID === 'none' ? null : chatStore.sessionID)
+          void refreshGatewayQueue(chatStore.sessionID)
+        }
       },
     })
     conn.start()
@@ -232,6 +249,8 @@ export async function runApp(opts: AppOptions): Promise<void> {
     chatTab.rebuild()
     ensureConn(sessionID)
     setStatus({ session: sessionID })
+    experience.invalidate()
+    void experience.load(sessionID)
     void refreshUsage()
     void refreshGatewayQueue(sessionID)
   }
@@ -270,18 +289,10 @@ export async function runApp(opts: AppOptions): Promise<void> {
     list.onCancel = close
   }
 
-  // ── 模型选择（/model）──
+  // ── 模型选择（/model；中性 MafwProvider/MafwModel）──
   async function showModelPicker(): Promise<void> {
     const p = await client.providers.list().catch(() => null)
-    const all: any[] = p?.all ?? []
-    const connected = new Set<string>(p?.connected ?? [])
-    const items: SelectItem[] = []
-    for (const prov of all) {
-      if (connected.size > 0 && !connected.has(prov.id)) continue
-      for (const [mid, m] of Object.entries<any>(prov.models ?? {})) {
-        items.push({ value: `${prov.id}/${mid}`, label: m?.name || mid, description: prov.id })
-      }
-    }
+    const items: SelectItem[] = providerModelOptions(p)
     if (items.length === 0) {
       setStatus({ hint: theme.dim('（无可用模型——检查 provider 连接）') })
       return
@@ -317,13 +328,12 @@ export async function runApp(opts: AppOptions): Promise<void> {
     return '执行模式：完整工具集（/plan 切回规划）'
   }
   async function showAgentPicker(): Promise<string | null> {
-    let agents: any[] = []
+    let agents: ReturnType<typeof normalizeAgents> = []
     try {
       const r = await client.agents.list()
-      agents = (r as any)?.items ?? []
+      agents = normalizeAgents((r as any)?.items ?? [])
     } catch { return '无法获取 agent 列表' }
     const items: SelectItem[] = [{ value: '__default__', label: '默认', description: 'runtime 默认 agent' }]
-    // 2.1.0：value 用稳定 id（Build→build），label 显示 name
     for (const it of agentSelectItems(agents)) {
       items.push({ value: it.value, label: it.label, description: it.description })
     }
@@ -355,7 +365,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       const total = t.totalTokens.input + t.totalTokens.output + t.totalTokens.reasoning
       setStatus({
         usage: {
-          model: modelSelection?.modelID ?? defaultModelLabel,
+          model: modelSelection?.modelID ?? defaultModelText,
           tokens: total,
           costUsd: t.totalCost ?? null,
           promptMs: promptStart !== null ? Date.now() - promptStart : lastPromptMs,
@@ -620,24 +630,46 @@ export async function runApp(opts: AppOptions): Promise<void> {
   ]))
 
   // ── 连接监督 + SSE 事件分发 ──
+  // ── 后台作业计数（canonical background.job.updated 的唯一消费者）──
+  const runningJobs = new Set<string>()
+  function trackBackgroundJob(raw: unknown): void {
+    const props = (raw as any)?.properties ?? raw
+    const job = (props as any)?.job ?? props
+    if (!job || typeof job.id !== 'string') return
+    if (job.status === 'running' || job.status === 'input_required') runningJobs.add(job.id)
+    else runningJobs.delete(job.id)
+    setStatus({ background: runningJobs.size })
+  }
+
+  async function handlePermissionAsked(raw: unknown): Promise<void> {
+    const dto = normalizePermissionRequest(raw)
+    if (!dto) return
+    // 只对「确定性不支持」阻断（gateway 已经发来请求，说明审批通道存在）：
+    // loading/error/unavailable 不伪造「不支持」，也不激活旧推导路径。
+    const blocked = await experience.gate('approval.permission')
+    if (experience.status === 'ready' && !experience.supported('approval.permission')) {
+      setStatus({ hint: theme.warn(blocked ?? '审批回复不支持') })
+      setTimeout(() => setStatus({ hint: undefined }), 3000)
+      return
+    }
+    if (shouldShowOverlay(dto)) {
+      showPermissionOverlay(tui, dto, (r) => {
+        if (r === 'persist') return client.permissions.reply(dto.id, 'always', undefined, 'prefix')
+        if (r === 'persist-tool') return client.permissions.reply(dto.id, 'always', undefined, 'tool')
+        return client.permissions.reply(dto.id, r)
+      })
+      return
+    }
+    // gateway 已自动放行/拒绝 —— 状态栏短提示，不弹 overlay
+    const policy = dto.extensions?.mafwPolicy as { action?: string } | undefined
+    const label = policy?.action === 'auto-approve' ? '已自动放行' : '已自动拒绝(内部)'
+    setStatus({ hint: `${label}: ${dto.kind} (gateway policy)` })
+    setTimeout(() => setStatus({ hint: undefined }), 3000)
+  }
+
   const onEvent = (type: string, data: any) => {
     if (type === 'permission.asked') {
-      const req: any = data?.properties ?? data
-      if (req?.id) {
-        if (shouldShowOverlay(req)) {
-          showPermissionOverlay(tui, req, (r) => {
-            if (r === 'persist') return client.permissions.reply(req.id, 'always', undefined, 'prefix')
-            if (r === 'persist-tool') return client.permissions.reply(req.id, 'always', undefined, 'tool')
-            return client.permissions.reply(req.id, r)
-          })
-        } else {
-          // gateway 已自动放行/拒绝 —— 状态栏短提示，不弹 overlay
-          const label = req.mafwPolicy?.action === 'auto-approve' ? '已自动放行' : '已自动拒绝(内部)'
-          const tool = req.permission ?? req.toolName ?? 'tool'
-          setStatus({ hint: `${label}: ${tool} (gateway policy)` })
-          setTimeout(() => setStatus({ hint: undefined }), 3000)
-        }
-      }
+      void handlePermissionAsked(data?.properties ?? data)
     } else if (type === 'permission_mode') {
       // gateway 审批模式变更（🛡 toggle / 预算回落广播；未知值 store 内归一化 read-only）
       const sid = data?.sessionID ?? data?.properties?.sessionID
@@ -652,6 +684,12 @@ export async function runApp(opts: AppOptions): Promise<void> {
       if (!Array.isArray(p?.items)) return
       if (sid && sid !== chatStore.sessionID) return
       setStatus({ gatewayQueued: p.items.length })
+    } else if (type === 'background.job.updated') {
+      trackBackgroundJob(data)
+    } else if (type === 'runtime_switched') {
+      // 运行时热切换：动作面按需失效并重载（不读 runtime 名/裸能力）
+      experience.invalidate()
+      void experience.load(chatStore.sessionID === 'none' ? null : chatStore.sessionID)
     } else if (type === 'turn.completed') {
       void refreshUsage()
     }

@@ -61,6 +61,15 @@ test('status bar shows gateway inbox count', () => {
   assert.ok(clean.includes('inbox 3'), 'gateway queue count')
 })
 
+test('status bar shows running background jobs (canonical job event consumer)', () => {
+  const bar = new StatusBar()
+  bar.setState({ project: 'demo', session: 's', conn: 'ok', background: 2 })
+  const clean = bar.render(120)[0].replace(/\x1b\[[0-9;]*m/g, '')
+  assert.ok(clean.includes('⚙ 2'), '后台作业计数')
+  bar.setState({ project: 'demo', session: 's', conn: 'ok', background: 0 })
+  assert.ok(!bar.render(120)[0].includes('⚙'), '零个时不渲染')
+})
+
 test('status bar shows queued count, stash badge, and per-prompt timer', () => {
   const bar = new StatusBar()
   bar.setState({

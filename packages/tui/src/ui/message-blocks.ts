@@ -47,7 +47,7 @@ export function turnToLines(turn: ChatTurn, width: number): string[] {
         : part.state === 'error' ? theme.err('✗') : theme.warn('…')
       const firstLine = stripAnsi(part.text).split('\n')[0] ?? ''
       lines.push(truncateToWidth(
-        `${theme.dim('▸ ')}${theme.accent(part.toolName ?? 'tool')} ${icon} ${theme.dim(firstLine)}`,
+        `${theme.dim('▸ ')}${theme.accent(part.tool ?? 'tool')} ${icon} ${theme.dim(firstLine)}`,
         width,
       ))
       if (part.state !== 'running') {

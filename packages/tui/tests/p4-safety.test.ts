@@ -62,9 +62,9 @@ const TURNS: ChatTurn[] = [
   { messageID: 'm1', role: 'user', parts: [{ id: 'a', type: 'text', text: '跑一下测试', state: 'completed' }], done: true },
   {
     messageID: 'm2', role: 'assistant', done: true, parts: [
-      { id: 'b1', type: 'tool', toolName: 'bash', state: 'completed', text: 'npm test' },
-      { id: 'b2', type: 'tool', toolName: 'bash', state: 'completed', text: 'npm run build' },
-      { id: 'b3', type: 'tool', toolName: 'read', state: 'completed', text: 'src/a.ts' },
+      { id: 'b1', type: 'tool', tool: 'bash', state: 'completed', text: 'npm test' },
+      { id: 'b2', type: 'tool', tool: 'bash', state: 'completed', text: 'npm run build' },
+      { id: 'b3', type: 'tool', tool: 'read', state: 'completed', text: 'src/a.ts' },
       { id: 'b4', type: 'text', text: '全部通过', state: 'completed' },
     ],
   },

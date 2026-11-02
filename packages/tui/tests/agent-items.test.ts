@@ -1,12 +1,13 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
 import { agentSelectItems } from "../src/ui/agent-items.ts"
+import { normalizeAgents } from "../src/store/dto.ts"
 
-describe("agentSelectItems (opencode 2.1.0 id/name split)", () => {
-  test("运行时 agent：value=id，label=显示名", () => {
+describe("agentSelectItems（MafwAgent 中性 DTO）", () => {
+  test("selectable 才进列表：value=id，label=label", () => {
     const items = agentSelectItems([
-      { id: "build", name: "Build", mode: "primary", description: "默认执行" },
-      { id: "plan", name: "Plan", mode: "primary" },
+      { id: "build", label: "Build", source: "runtime", selectable: true, description: "默认执行" },
+      { id: "plan", label: "Plan", source: "runtime", selectable: true, mode: "primary" },
     ])
     assert.deepEqual(items, [
       { value: "build", label: "Build", description: "默认执行" },
@@ -14,16 +15,19 @@ describe("agentSelectItems (opencode 2.1.0 id/name split)", () => {
     ])
   })
 
-  test("MAFW 注册表身份只有 name：value 回退 name", () => {
-    const items = agentSelectItems([{ name: "manager", mode: "primary" }])
-    assert.deepEqual(items, [{ value: "manager", label: "manager", description: "primary" }])
+  test("不可选（subagent / 未物化）被过滤", () => {
+    const items = agentSelectItems(normalizeAgents([
+      { id: "build", name: "Build", mode: "primary" },
+      { id: "compaction", name: "Compaction", hidden: true },
+      { name: "mafw-plan", scope: "global", materialized: false },
+    ]))
+    assert.deepEqual(items.map((x) => x.value), ["build"])
   })
 
-  test("hidden 与空行被过滤", () => {
+  test("id 为空的行被过滤（不伪造 value）", () => {
     const items = agentSelectItems([
-      { id: "compaction", name: "Compaction", hidden: true },
-      { id: "", name: "" },
-      { id: "explore", name: "Explore" },
+      { id: "", label: "空", source: "runtime", selectable: true },
+      { id: "explore", label: "Explore", source: "runtime", selectable: true },
     ])
     assert.deepEqual(items.map((x) => x.value), ["explore"])
   })

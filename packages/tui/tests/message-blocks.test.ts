@@ -18,7 +18,7 @@ test('user turn renders with > prefix and text', () => {
 test('running tool part renders one-line summary without output', () => {
   const turn: ChatTurn = {
     messageID: 'm2', role: 'assistant', done: false,
-    parts: [{ id: 'pt', type: 'tool', toolName: 'bash', state: 'running', text: 'npm test' }],
+    parts: [{ id: 'pt', type: 'tool', tool: 'bash', state: 'running', text: 'npm test' }],
   }
   const lines = turnToLines(turn, 80)
   const clean = lines.map(l => l.replace(/\x1b\[[0-9;]*m/g, ''))
@@ -31,7 +31,7 @@ test('running tool part renders one-line summary without output', () => {
 test('completed tool part renders summary + output lines', () => {
   const turn: ChatTurn = {
     messageID: 'm2', role: 'assistant', done: true,
-    parts: [{ id: 'pt', type: 'tool', toolName: 'bash', state: 'completed', text: 'npm test\nok 12 passed' }],
+    parts: [{ id: 'pt', type: 'tool', tool: 'bash', state: 'completed', text: 'npm test\nok 12 passed' }],
   }
   const lines = turnToLines(turn, 80)
   const clean = lines.map(l => l.replace(/\x1b\[[0-9;]*m/g, '')).join('\n')
@@ -108,7 +108,7 @@ test('queued user turn renders with pending marker and dim', () => {
 test('diff-style tool output colors +/- lines', () => {
   const turn: ChatTurn = {
     messageID: 'm9', role: 'assistant', done: true,
-    parts: [{ id: 'pt', type: 'tool', toolName: 'edit', state: 'completed', text: 'file.ts\n+added line\n-removed line\n@@ hunk @@' }],
+    parts: [{ id: 'pt', type: 'tool', tool: 'edit', state: 'completed', text: 'file.ts\n+added line\n-removed line\n@@ hunk @@' }],
   }
   const lines = turnToLines(turn, 80)
   const raw = lines.join('\n')

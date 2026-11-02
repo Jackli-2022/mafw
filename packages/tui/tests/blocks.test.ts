@@ -18,7 +18,7 @@ function makeSettings(over: Partial<DisplaySettings> = {}): DisplaySettings {
 
 function toolPart(over: Partial<ChatPart> = {}): ChatPart {
   return {
-    id: 'pt', type: 'tool', toolName: 'bash', state: 'completed',
+    id: 'pt', type: 'tool', tool: 'bash', state: 'completed',
     text: 'npm test\nok 12 passed\n+added line', ...over,
   } as ChatPart
 }

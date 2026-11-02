@@ -34,7 +34,7 @@ export function computeRecap(turns: ChatTurn[]): SessionRecap {
       for (const p of t.parts) {
         if (p.type !== 'tool') continue
         toolCalls++
-        const name = p.toolName ?? 'tool'
+        const name = p.tool ?? 'tool'
         toolCounts.set(name, (toolCounts.get(name) ?? 0) + 1)
       }
     }

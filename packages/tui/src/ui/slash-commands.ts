@@ -1,9 +1,28 @@
 /** Chat slash 命令派发（app.ts 注入实现，此处纯逻辑可单测）。
  * 命令表与别名解析收敛在 command-registry.ts（COMMAND_REGISTRY 单表驱动补全/help/派发）。 */
+import type { ExperienceActionId } from '@mafw/sdk'
 import { COMMAND_REGISTRY, resolveCommand } from './command-registry.ts'
 
 /** 兼容导出：命令表真源在 command-registry.ts。 */
 export const SLASH_COMMANDS = COMMAND_REGISTRY
+
+/**
+ * 受控命令 → Experience action（Task 12）。
+ *
+ * 不支持/暂不可用的 action 一律在派发前拦截：**不得先发请求再看错误**。
+ * 未列出的命令（help/status/diff/queue/...）是本地只读或纯 UI 动作，不需要门。
+ */
+export const COMMAND_EXPERIENCE_ACTIONS: Partial<Record<string, ExperienceActionId>> = {
+  fork: 'branch.fork',
+  compact: 'session.summarize',
+  undo: 'branch.revert',
+  redo: 'branch.unrevert',
+  model: 'session.switch-model',
+  agent: 'session.switch-agent',
+  plan: 'session.switch-agent',
+  build: 'session.switch-agent',
+  permissions: 'approval.permission',
+}
 
 export interface SlashDeps {
   loadOlder(): Promise<void>
@@ -60,12 +79,19 @@ export interface SlashDeps {
   quitApp(): void
   /** /usage：用量概览 overlay；返回错误文本或 null。 */
   showUsage(): Promise<string | null>
+  /** Experience 门（Task 12）：null = 允许，字符串 = 中性不可用文案（命令不得发请求）。 */
+  gate?(id: ExperienceActionId): Promise<string | null>
 }
 
 
 export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string) => Promise<string | null> {
   return async (rawCmd: string, args: string): Promise<string | null> => {
     const cmd = resolveCommand(rawCmd) ?? rawCmd
+    const actionId = COMMAND_EXPERIENCE_ACTIONS[cmd]
+    if (actionId && deps.gate) {
+      const blocked = await deps.gate(actionId)
+      if (blocked) return blocked
+    }
     switch (cmd) {
       case 'help':
         deps.toggleHelp()

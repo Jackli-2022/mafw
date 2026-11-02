@@ -2,22 +2,25 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ChatStore } from '../src/store/chat-store.ts'
 
-// wire 形态（对齐 desktop loadOlder / gateway index.ts:4196）：
-//   { data: [{ info: { id, role, time }, parts: [...] }], nextCursor }
-function historyItem(id: string, role: 'user' | 'assistant', parts: any[]) {
-  return { info: { id, role, time: { created: 1 } }, parts }
+// Task 12：历史只读 flat MAFW View DTO（`content`），不再有 `{info,parts}` 双形状。
+function flatMessage(id: string, role: 'user' | 'assistant', content: any[] = []) {
+  return { id, sessionID: 's', role, time: { created: 1 }, content }
+}
+
+function textPart(id: string, messageID: string, text: string) {
+  return { id, messageID, sessionID: 's', type: 'text', text }
 }
 
 function fakeSession(over: Record<string, any> = {}) {
-  const calls: Record<string, any> = { promptAsync: [], abort: 0, messages: [] }
+  const calls: Record<string, any> = { promptAsync: [], abort: 0, history: [] }
   return {
     calls,
-    async messages(p: any) {
-      calls.messages.push(p)
+    async history(p: any) {
+      calls.history.push(p)
       return {
         data: [
-          historyItem('m1', 'user', [{ id: 'p1', messageID: 'm1', type: 'text', text: '你好' }]),
-          historyItem('m2', 'assistant', [{ id: 'p2', messageID: 'm2', type: 'text', text: '你好！有什么可以帮你？' }]),
+          flatMessage('m1', 'user', [textPart('p1', 'm1', '你好')]),
+          flatMessage('m2', 'assistant', [textPart('p2', 'm2', '你好！有什么可以帮你？')]),
         ],
         nextCursor: 'cursor-1',
       }
@@ -30,7 +33,7 @@ function fakeSession(over: Record<string, any> = {}) {
 
 async function settle() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() }
 
-test('loadHistory maps {info,parts} items to turns with roles', async () => {
+test('loadHistory reads flat content only (no info/parts)', async () => {
   const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
   await s.loadHistory()
   assert.equal(s.turns.length, 2)
@@ -38,6 +41,35 @@ test('loadHistory maps {info,parts} items to turns with roles', async () => {
   assert.equal(s.turns[1].role, 'assistant')
   assert.equal(s.turns[0].parts[0].text, '你好')
   assert.ok(s.turns.every(t => t.done))
+})
+
+test('uses session.history (flat) with limit instead of wire messages', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
+  await s.loadHistory(20)
+  assert.deepEqual(fx.calls.history[0], { sessionID: 's', limit: 20 })
+})
+
+test('tool part fallback uses canonical fields (canonicalTool ?? tool)', async () => {
+  const fx = fakeSession({
+    async history() {
+      return {
+        data: [
+          flatMessage('m1', 'assistant', [{
+            id: 'pt', messageID: 'm1', type: 'tool', callID: 'c1',
+            tool: 'command_execution', canonicalTool: 'bash',
+            state: { status: 'completed', input: { command: 'npm test' }, output: 'ok' },
+          }]),
+        ],
+        nextCursor: null,
+      }
+    },
+  })
+  const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
+  await s.loadHistory()
+  assert.equal(s.turns[0].parts[0].type, 'tool')
+  assert.equal(s.turns[0].parts[0].tool, 'bash')
+  assert.ok(s.turns[0].parts[0].text.includes('ok'))
 })
 
 test('send appends user turn and calls promptAsync with parts', async () => {
@@ -54,8 +86,11 @@ test('send appends user turn and calls promptAsync with parts', async () => {
 test('part.updated snapshot-replaces per partID; turn.completed finalizes', async () => {
   const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
   await s.send('q')
-  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hel' } } })
-  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hello' } } })
+  const part = (text: string) => ({
+    id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text,
+  })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: part('Hel') } })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: part('Hello') } })
   assert.equal(s.streaming, true)
   const t = s.turns.at(-1)!
   assert.equal(t.role, 'assistant')
@@ -76,12 +111,16 @@ test('ignores parts from other sessions', async () => {
 test('tool part running until terminal status; output only when completed', async () => {
   const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
   await s.send('q')
-  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pt', messageID: 'ma', sessionID: 's', type: 'tool', tool: 'bash', state: { status: 'running', input: { command: 'npm test' } } } } })
+  const toolPart = (status: string, output?: string) => ({
+    id: 'pt', messageID: 'ma', sessionID: 's', type: 'tool', callID: 'c1', tool: 'bash',
+    state: { status, input: { command: 'npm test' }, ...(output ? { output } : {}) },
+  })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: toolPart('running') } })
   let part = s.turns.at(-1)!.parts[0]
   assert.equal(part.state, 'running')
   assert.ok(part.text.includes('npm test'))
   assert.equal(part.text, 'npm test', 'running 不含输出')
-  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pt', messageID: 'ma', sessionID: 's', type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'npm test' }, output: 'ok 12 passed' } } } })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: toolPart('completed', 'ok 12 passed') } })
   part = s.turns.at(-1)!.parts[0]
   assert.equal(part.state, 'completed')
   assert.ok(part.text.includes('ok 12 passed'))
@@ -107,17 +146,12 @@ test('send failure clears streaming and surfaces error', async () => {
 })
 
 test('loadOlder uses cursor and prepends; returns 0 when no cursor', async () => {
-  let call = 0
   const fx = fakeSession({
-    async messages({ query }: any) {
-      call++
-      if (query?.before === 'cursor-1') {
-        return { data: [historyItem('m0', 'user', [{ id: 'p0', messageID: 'm0', type: 'text', text: '更早' }])], nextCursor: null }
+    async history({ before }: any) {
+      if (before === 'cursor-1') {
+        return { data: [flatMessage('m0', 'user', [textPart('p0', 'm0', '更早')])], nextCursor: null }
       }
-      return {
-        data: [historyItem('m1', 'user', [{ id: 'p1', messageID: 'm1', type: 'text', text: '你好' }])],
-        nextCursor: 'cursor-1',
-      }
+      return { data: [flatMessage('m1', 'user', [textPart('p1', 'm1', '你好')])], nextCursor: 'cursor-1' }
     },
   })
   const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
@@ -131,7 +165,7 @@ test('loadOlder uses cursor and prepends; returns 0 when no cursor', async () =>
 test('loadHistory failure reports error and keeps empty turns', async () => {
   const errors: string[] = []
   const s = new ChatStore({
-    session: fakeSession({ async messages() { throw new Error('boom') } }) as any,
+    session: fakeSession({ async history() { throw new Error('boom') } }) as any,
     sessionID: 's',
     onChange: () => {},
     onError: (e) => errors.push(e),
@@ -143,14 +177,14 @@ test('loadHistory failure reports error and keeps empty turns', async () => {
 
 test('loadHistory filters injected blocks (recall/note-board/goal-snapshot)', async () => {
   const fx = fakeSession({
-    async messages() {
+    async history() {
       return {
         data: [
-          historyItem('m1', 'assistant', [
-            { id: 'p1', messageID: 'm1', type: 'text', text: '正常回复' },
-            { id: 'p2', messageID: 'm1', type: 'text', text: '<recall>\n[联想线索]\n  - #mem-xxx [semantic] ...' },
-            { id: 'p3', messageID: 'm1', type: 'text', text: '<note-board>\n[用户叮嘱 · 到期自动下架]' },
-            { id: 'p4', messageID: 'm1', type: 'text', text: '<goal-snapshot>\n<goal id="g1">...' },
+          flatMessage('m1', 'assistant', [
+            textPart('p1', 'm1', '正常回复'),
+            textPart('p2', 'm1', '<recall>\n[联想线索]\n  - #mem-xxx [semantic] ...'),
+            textPart('p3', 'm1', '<note-board>\n[用户叮嘱 · 到期自动下架]'),
+            textPart('p4', 'm1', '<goal-snapshot>\n<goal id="g1">...'),
           ]),
         ],
         nextCursor: null,
@@ -186,6 +220,35 @@ test('busy sends are queued (turn flagged queued) and flushed on idle in order',
   assert.equal(s.turns.filter(t => t.queued).length, 0)
 })
 
+test('busy steer: prompt.steer 支持时立即发 delivery=steer（不写本地队列）', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({
+    session: fx as any, sessionID: 's', onChange: () => {},
+    busyDelivery: () => 'steer',
+  })
+  await s.send('first')
+  await s.send('插一句')
+  assert.equal(fx.calls.promptAsync.length, 2, 'steer 立即投递')
+  assert.equal(fx.calls.promptAsync[1].body.delivery, 'steer')
+  assert.equal(s.queuedCount, 0, 'steer 不占本地队列')
+  const steered = s.turns.filter(t => t.parts[0]?.text === '插一句')
+  assert.equal(steered.length, 1)
+  assert.equal(steered[0].queued, undefined)
+})
+
+test('busy fallback: 无 steer 时保持本地队列语义', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({
+    session: fx as any, sessionID: 's', onChange: () => {},
+    busyDelivery: () => 'queue',
+  })
+  await s.send('first')
+  await s.send('later')
+  assert.equal(fx.calls.promptAsync.length, 1)
+  assert.equal(s.queuedCount, 1)
+  assert.equal(fx.calls.promptAsync[0].body.delivery, undefined)
+})
+
 test('turn.completed (v2 回合终态) finalizes turn and flushes queue', async () => {
   const fx = fakeSession()
   const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
@@ -193,7 +256,6 @@ test('turn.completed (v2 回合终态) finalizes turn and flushes queue', async 
   await s.send('queued-msg')
   s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hi' } } })
   assert.equal(s.streaming, true)
-  // v2 wire 形状：{ type: 'turn.completed', sessionID }
   s.applyEvent('turn.completed', { type: 'turn.completed', sessionID: 's' })
   await settle()
   assert.equal(fx.calls.promptAsync.length, 2, 'turn.completed → flush 排队')
@@ -261,7 +323,7 @@ test('switchSession reloads history for the new session id', async () => {
   assert.equal(s.sessionID, 's1')
   await s.switchSession('s2')
   assert.equal(s.sessionID, 's2')
-  assert.deepEqual(fx.calls.messages.at(-1).path, { id: 's2' })
+  assert.equal(fx.calls.history.at(-1).sessionID, 's2')
 })
 
 test('undo reverts to last user message and reloads; redo calls unrevert', async () => {
@@ -275,7 +337,7 @@ test('undo reverts to last user message and reloads; redo calls unrevert', async
   await s.undo()
   assert.equal(calls[0][0], 'revert')
   assert.equal(calls[0][1].body.messageID, 'm1', 'revert 到最后一条 user 消息')
-  assert.deepEqual(fx.calls.messages.at(-1).path, { id: 's' }, 'undo 后重载历史')
+  assert.equal(fx.calls.history.at(-1).sessionID, 's', 'undo 后重载历史')
   await s.redo()
   assert.equal(calls[1][0], 'unrevert')
 })

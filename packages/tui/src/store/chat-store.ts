@@ -1,9 +1,12 @@
+import type { ExperienceActionId, MafwMessage, MafwPart } from '@mafw/sdk'
+
 export interface ChatPart {
   id: string
   type: string
   text: string
   state?: 'running' | 'completed' | 'error'
-  toolName?: string
+  /** 工具规范名（`canonicalTool ?? tool`）：跨 runtime 聚合与渲染的稳定身份。 */
+  tool?: string
 }
 
 export interface ChatTurn {
@@ -15,23 +18,29 @@ export interface ChatTurn {
   queued?: boolean
 }
 
+/**
+ * 会话历史契约（Task 12）：只消费 MAFW flat View DTO。
+ *
+ * `history` = `GET /api/sessions/:id/messages?format=flat`（SDK `session.history`）；
+ * 不再有 `{info,parts}` 双形状，也不做 wire→flat 的客户端兜底。
+ */
 export interface SessionApi {
-  messages(p: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{
-    data: HistoryItem[]
+  history(p: { sessionID: string; limit?: number; before?: string }): Promise<{
+    data: MafwMessage[]
     nextCursor: string | null
   }>
-  promptAsync(p: { path: { id: string }; body: { parts: Record<string, unknown>[]; model?: { providerID: string; modelID: string }; agent?: string } }): Promise<void>
+  promptAsync(p: {
+    path: { id: string }
+    body: {
+      parts: Record<string, unknown>[]
+      model?: { providerID: string; modelID: string }
+      agent?: string
+      delivery?: 'queue' | 'steer' | 'followup'
+    }
+  }): Promise<void>
   abort(p: { path: { id: string } }): Promise<void>
-  revert?(p: { path: { id: string }; body: { messageID: string; partID?: string } }): Promise<void>
-  unrevert?(p: { path: { id: string } }): Promise<void>
-}
-
-/** GET /api/sessions/:id/messages 的 item 形态（gateway index.ts:4196 / desktop loadOlder 同源）。 */
-export interface HistoryItem {
-  info?: { id?: string; role?: string; time?: { created?: number } }
-  role?: string
-  id?: string
-  parts?: any[]
+  revert(p: { path: { id: string }; body: { messageID: string; partID?: string } }): Promise<void>
+  unrevert(p: { path: { id: string } }): Promise<void>
 }
 
 export interface ChatStoreDeps {
@@ -43,6 +52,10 @@ export interface ChatStoreDeps {
   getModel?: () => { providerID: string; modelID: string } | null | undefined
   /** /plan /build /agent 选择结果；返回 null/undefined 用 runtime 默认 agent（切片 3）。 */
   getAgent?: () => string | null | undefined
+  /** Experience 门（Task 12）：null = 允许，字符串 = 中性不可用文案（不发请求）。 */
+  gate?: (id: ExperienceActionId) => Promise<string | null>
+  /** busy 投递语义（与 desktop 同一套 steer/queue/fallback）；缺省 = 本地队列。 */
+  busyDelivery?: () => 'steer' | 'queue'
 }
 
 export class ChatStore {
@@ -65,12 +78,12 @@ export class ChatStore {
 
   async loadHistory(limit = 50): Promise<void> {
     try {
-      const res = await this.deps.session.messages({ path: { id: this._sessionID }, query: { limit } })
+      const res = await this.deps.session.history({ sessionID: this._sessionID, limit })
       this.cursor = res.nextCursor ?? null
       this.turns.length = 0
       this.byMessage.clear()
       this.queuedTurns = []
-      for (const item of res.data ?? []) this.appendHistoryItem(item)
+      for (const message of res.data ?? []) this.appendMessage(message)
       this.deps.onChange()
     } catch (err: any) {
       this.deps.onError?.(err?.message ?? String(err))
@@ -93,29 +106,34 @@ export class ChatStore {
   async loadOlder(): Promise<number> {
     if (!this.cursor) return 0
     try {
-      const res = await this.deps.session.messages({
-        path: { id: this._sessionID },
-        query: { limit: 50, before: this.cursor },
+      const res = await this.deps.session.history({
+        sessionID: this._sessionID,
+        limit: 50,
+        before: this.cursor,
       })
       this.cursor = res.nextCursor ?? null
       const older: ChatTurn[] = []
       const map = new Map<string, ChatTurn>()
-      for (const item of res.data ?? []) {
-        const info = item.info ?? item
-        const mid = info.id ?? `older-${older.length}`
-        let t = map.get(mid)
-        if (!t) {
-          t = { messageID: mid, role: info.role === 'user' ? 'user' : 'assistant', parts: [], done: true }
-          map.set(mid, t)
-          older.push(t)
+      for (const message of res.data ?? []) {
+        const mid = message.id ?? `older-${older.length}`
+        let turn = map.get(mid)
+        if (!turn) {
+          turn = {
+            messageID: mid,
+            role: message.role === 'user' ? 'user' : 'assistant',
+            parts: [],
+            done: true,
+          }
+          map.set(mid, turn)
+          older.push(turn)
         }
-        for (const p of item.parts ?? []) {
-          const hp = historyPart(p)
-          if (hp) t.parts.push(hp)
+        for (const part of message.content ?? []) {
+          const hp = historyPart(part)
+          if (hp) turn.parts.push(hp)
         }
       }
       this.turns.unshift(...older)
-      for (const t of older) this.byMessage.set(t.messageID, t)
+      for (const turn of older) this.byMessage.set(turn.messageID, turn)
       this.deps.onChange()
       return older.length
     } catch (err: any) {
@@ -128,6 +146,11 @@ export class ChatStore {
     const trimmed = text.trim()
     if (!trimmed) return
     if (this.streaming) {
+      // busy 语义与 desktop 一致：Experience 支持 steer 时直接插话，否则本地队列兜底。
+      if (this.deps.busyDelivery?.() === 'steer') {
+        await this.deliver(trimmed, undefined, 'steer')
+        return
+      }
       const turn: ChatTurn = {
         messageID: `queued-${Date.now()}-${this.queuedTurns.length}`,
         role: 'user',
@@ -143,8 +166,12 @@ export class ChatStore {
     await this.deliver(trimmed)
   }
 
-  private async deliver(text: string, reuseTurn?: ChatTurn): Promise<void> {
-    const mid = reuseTurn?.messageID ?? `local-${Date.now()}`
+  private async deliver(
+    text: string,
+    reuseTurn?: ChatTurn,
+    delivery?: 'steer',
+  ): Promise<void> {
+    const mid = reuseTurn?.messageID ?? `${delivery === 'steer' ? 'steer' : 'local'}-${Date.now()}`
     let turn = reuseTurn
     if (turn) {
       turn.queued = undefined
@@ -165,7 +192,12 @@ export class ChatStore {
       const agent = this.deps.getAgent?.() || undefined
       await this.deps.session.promptAsync({
         path: { id: this._sessionID },
-        body: { parts: [{ type: 'text', text }], ...(model ? { model } : {}), ...(agent ? { agent } : {}) },
+        body: {
+          parts: [{ type: 'text', text }],
+          ...(model ? { model } : {}),
+          ...(agent ? { agent } : {}),
+          ...(delivery ? { delivery } : {}),
+        },
       })
     } catch (err: any) {
       this.streaming = false
@@ -220,12 +252,12 @@ export class ChatStore {
     this.deps.onChange()
   }
 
-  /** /undo：回退到最后一条已持久化的 user 消息（连带其后的回复）。 */
+  /** /undo：回退到最后一条已持久化的 user 消息（连带其后的回复）。Experience 门在前。 */
   async undo(): Promise<string | null> {
-    const lastUser = [...this.turns].reverse().find((t) =>
-      t.role === 'user' && !t.queued && !t.messageID.startsWith('local-') && !t.messageID.startsWith('queued-'))
+    const lastUser = [...this.turns].reverse().find((t) => t.role === 'user' && !isTransientTurn(t))
     if (!lastUser) return '没有可回退的消息（本地未持久化的消息不算）'
-    if (!this.deps.session.revert) return '当前 runtime 不支持 revert'
+    const blocked = await this.deps.gate?.('branch.revert')
+    if (blocked) return blocked
     try {
       await this.deps.session.revert({ path: { id: this._sessionID }, body: { messageID: lastUser.messageID } })
       await this.loadHistory()
@@ -235,9 +267,10 @@ export class ChatStore {
     }
   }
 
-  /** /redo：恢复上一次 revert（opencode-only；pi runtime 无 unrevert）。 */
+  /** /redo：恢复上一次回退。Experience 门（branch.unrevert）在前。 */
   async redo(): Promise<string | null> {
-    if (!this.deps.session.unrevert) return '当前 runtime 不支持 unrevert'
+    const blocked = await this.deps.gate?.('branch.unrevert')
+    if (blocked) return blocked
     try {
       await this.deps.session.unrevert({ path: { id: this._sessionID } })
       await this.loadHistory()
@@ -269,13 +302,13 @@ export class ChatStore {
     this.flushQueue()
   }
 
-  private applyPart(part: any): void {
+  private applyPart(part: MafwPart): void {
     const cp = livePart(part)
     if (!cp) return
-    let turn = this.byMessage.get(part.messageID)
+    let turn = this.byMessage.get(part.messageID ?? '')
     if (!turn) {
-      turn = { messageID: part.messageID, role: 'assistant', parts: [], done: false }
-      this.byMessage.set(part.messageID, turn)
+      turn = { messageID: part.messageID ?? `live-${part.id}`, role: 'assistant', parts: [], done: false }
+      this.byMessage.set(turn.messageID, turn)
       this.turns.push(turn)
     }
     const idx = turn.parts.findIndex((p) => p.id === cp.id)
@@ -283,15 +316,14 @@ export class ChatStore {
     else turn.parts.push(cp)
   }
 
-  private appendHistoryItem(item: HistoryItem): void {
-    const info = item.info ?? item
-    const mid = info.id ?? `hist-${this.turns.length}`
-    const parts = (item.parts ?? [])
+  private appendMessage(message: MafwMessage): void {
+    const mid = message.id ?? `hist-${this.turns.length}`
+    const parts = (message.content ?? [])
       .map(historyPart)
       .filter((p): p is ChatPart => p !== null)
     const turn: ChatTurn = {
       messageID: mid,
-      role: info.role === 'user' ? 'user' : 'assistant',
+      role: message.role === 'user' ? 'user' : 'assistant',
       parts,
       done: true,
     }
@@ -300,22 +332,26 @@ export class ChatStore {
   }
 }
 
-/** wire 历史消息 → 渲染用 turns（goal transcript 下钻复用；过滤注入块）。 */
-export function historyItemsToTurns(items: HistoryItem[]): ChatTurn[] {
+/** flat 历史消息 → 渲染用 turns（goal transcript 下钻复用；过滤注入块）。 */
+export function historyToTurns(messages: MafwMessage[]): ChatTurn[] {
   const turns: ChatTurn[] = []
   const byId = new Map<string, ChatTurn>()
-  for (const item of items ?? []) {
-    const info = item.info ?? item
-    const mid = info.id ?? `t-${turns.length}`
-    let t = byId.get(mid)
-    if (!t) {
-      t = { messageID: mid, role: info.role === 'user' ? 'user' : 'assistant', parts: [], done: true }
-      byId.set(mid, t)
-      turns.push(t)
+  for (const message of messages ?? []) {
+    const mid = message.id ?? `t-${turns.length}`
+    let turn = byId.get(mid)
+    if (!turn) {
+      turn = {
+        messageID: mid,
+        role: message.role === 'user' ? 'user' : 'assistant',
+        parts: [],
+        done: true,
+      }
+      byId.set(mid, turn)
+      turns.push(turn)
     }
-    for (const p of item.parts ?? []) {
-      const hp = historyPart(p)
-      if (hp) t.parts.push(hp)
+    for (const part of message.content ?? []) {
+      const hp = historyPart(part)
+      if (hp) turn.parts.push(hp)
     }
   }
   return turns
@@ -328,38 +364,66 @@ function isInjectionBlock(text: string): boolean {
   return INJECTION_TAGS.some((tag) => t.startsWith(tag))
 }
 
-export function historyPart(p: any): ChatPart | null {
-  if (p.type === 'tool') {
-    const st = p.state?.status
-    const cmd = String(p.state?.input?.command ?? p.state?.input?.description ?? p.tool ?? '')
-    const out = st === 'running' ? '' : String(p.state?.output ?? '')
-    return {
-      id: p.id,
-      type: 'tool',
-      toolName: p.canonicalTool ?? p.tool,
-      state: st === 'completed' ? 'completed' : st === 'error' ? 'error' : st === 'running' ? 'running' : 'completed',
-      text: out ? `${cmd}\n${out}` : cmd,
-    }
-  }
-  const text = String(p.text ?? '')
-  if (isInjectionBlock(text)) return null
-  return { id: p.id, type: p.type ?? 'text', text, state: 'completed' }
+/** 本地未持久化的 user turn（乐观/排队/插话）不参与 /undo 回退目标。 */
+function isTransientTurn(turn: ChatTurn): boolean {
+  return turn.queued === true || /^(local|queued|steer)-/.test(turn.messageID)
 }
 
-export function livePart(part: any): ChatPart | null {
+function toolIdentity(part: Record<string, any>): string {
+  return String(part.canonicalTool ?? part.tool ?? 'tool')
+}
+
+function toolSummary(part: Record<string, any>): string {
+  const state = part.state ?? {}
+  const input = state.input && typeof state.input === 'object' ? state.input : {}
+  return String(input.command ?? input.description ?? part.tool ?? '')
+}
+
+function toolState(status: unknown, fallback: ChatPart['state']): ChatPart['state'] {
+  if (status === 'completed') return 'completed'
+  if (status === 'error') return 'error'
+  if (status === 'running') return 'running'
+  if (status === 'pending') return 'running'
+  return fallback
+}
+
+export function historyPart(p: MafwPart | Record<string, any>): ChatPart | null {
+  const part = p as Record<string, any>
   if (part.type === 'tool') {
-    const st = part.state?.status
-    const cmd = String(part.state?.input?.command ?? part.state?.input?.description ?? part.tool ?? '')
-    const out = st === 'completed' || st === 'error' ? String(part.state?.output ?? '') : ''
+    const status = part.state?.status
+    const summary = toolSummary(part)
+    const output = status === 'running' || status === 'pending'
+      ? ''
+      : String(part.state?.output ?? part.state?.error ?? '')
     return {
-      id: part.id,
+      id: String(part.id),
       type: 'tool',
-      toolName: part.canonicalTool ?? part.tool,
-      state: st === 'completed' ? 'completed' : st === 'error' ? 'error' : 'running',
-      text: out ? `${cmd}\n${out}` : cmd,
+      tool: toolIdentity(part),
+      state: toolState(status, 'completed'),
+      text: output ? `${summary}\n${output}` : summary,
     }
   }
   const text = String(part.text ?? '')
   if (isInjectionBlock(text)) return null
-  return { id: part.id, type: part.type ?? 'text', text }
+  return { id: String(part.id), type: part.type ?? 'text', text, state: 'completed' }
+}
+
+export function livePart(part: MafwPart | Record<string, any>): ChatPart | null {
+  const p = part as Record<string, any>
+  if (p.type === 'tool') {
+    const summary = toolSummary(p)
+    const output = p.state?.status === 'completed' || p.state?.status === 'error'
+      ? String(p.state?.output ?? p.state?.error ?? '')
+      : ''
+    return {
+      id: String(p.id),
+      type: 'tool',
+      tool: toolIdentity(p),
+      state: toolState(p.state?.status, 'running'),
+      text: output ? `${summary}\n${output}` : summary,
+    }
+  }
+  const text = String(p.text ?? '')
+  if (isInjectionBlock(text)) return null
+  return { id: String(p.id), type: p.type ?? 'text', text }
 }

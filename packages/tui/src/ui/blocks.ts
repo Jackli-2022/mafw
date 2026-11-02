@@ -129,13 +129,13 @@ export class ToolBlock implements UpdatableBlock {
 
   private renderInner(width: number): string[] {
     if (this.settings.focus) {
-      return [truncateToWidth(theme.dim(`  ⋯ ${this.part.toolName ?? 'tool'} 输出隐藏（/focus off 显示）`), width)]
+      return [truncateToWidth(theme.dim(`  ⋯ ${this.part.tool ?? 'tool'} 输出隐藏（/focus off 显示）`), width)]
     }
     const icon = this.part.state === 'completed' ? theme.ok('✓')
       : this.part.state === 'error' ? theme.err('✗') : theme.warn('…')
     const firstLine = stripAnsi(this.part.text).split('\n')[0] ?? ''
     const summary = truncateToWidth(
-      `${theme.dim('▸ ')}${theme.accent(this.part.toolName ?? 'tool')} ${icon} ${theme.dim(firstLine)}`,
+      `${theme.dim('▸ ')}${theme.accent(this.part.tool ?? 'tool')} ${icon} ${theme.dim(firstLine)}`,
       width,
     )
     if (!this.expanded || this.part.state === 'running') return [summary]

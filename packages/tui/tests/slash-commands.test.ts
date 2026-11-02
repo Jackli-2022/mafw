@@ -4,6 +4,7 @@ import { createSlashHandler, SLASH_COMMANDS } from '../src/ui/slash-commands.ts'
 
 function harness(over: Partial<Record<string, any>> = {}) {
   const calls: string[] = []
+  const gates: string[] = []
   const deps = {
     loadOlder: async () => { calls.push('older') },
     toggleHelp: () => { calls.push('help') },
@@ -12,6 +13,9 @@ function harness(over: Partial<Record<string, any>> = {}) {
     showSessionPicker: async () => { calls.push('sessions') },
     showQueueManager: async () => { calls.push('queue') },
     showModelPicker: async () => { calls.push('model') },
+    setPlanMode: () => { calls.push('plan'); return 'plan' },
+    setBuildMode: () => { calls.push('build'); return 'build' },
+    showAgentPicker: async () => { calls.push('agent'); return null },
     compact: async () => { calls.push('compact'); return null },
     undo: async () => { calls.push('undo'); return null },
     redo: async () => { calls.push('redo'); return null },
@@ -22,6 +26,7 @@ function harness(over: Partial<Record<string, any>> = {}) {
     rename: async (args: string) => { calls.push(`rename:${args}`); return null },
     fork: async () => { calls.push('fork'); return null },
     showStatusRecap: () => { calls.push('status') },
+    togglePermissionMode: async () => { calls.push('permissions'); return 'ok' },
     waitwhat: async () => { calls.push('waitwhat'); return null },
     runGatewayCommand: async (name: string, args: string) => { calls.push(`gw:${name}:${args}`); return null },
     gatewayCommands: () => [],
@@ -29,9 +34,10 @@ function harness(over: Partial<Record<string, any>> = {}) {
     exportChat: async () => { calls.push('export'); return null },
     copyReply: (n: number) => { calls.push(`copy:${n}`); return 'ok' },
     showUsage: async () => { calls.push('usage'); return null },
+    gate: async (id: string) => { gates.push(id); return null },
     ...over,
   }
-  return { calls, deps, handler: createSlashHandler(deps as any) }
+  return { calls, gates, deps, handler: createSlashHandler(deps as any) }
 }
 
 test('existing commands keep working: help/older/new/btw', async () => {
@@ -142,4 +148,30 @@ test('usage/copy/export dispatch to their deps', async () => {
 test('SLASH_COMMANDS covers the full command surface', () => {
   const names = SLASH_COMMANDS.map((c) => c.name).sort()
   assert.deepEqual(names, ['agent', 'btw', 'build', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'permissions', 'plan', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
+})
+
+test('受控命令先过 Experience gate（映射见 COMMAND_EXPERIENCE_ACTIONS）', async () => {
+  const h = harness()
+  await h.handler('fork', '')
+  await h.handler('compact', '')
+  await h.handler('undo', '')
+  await h.handler('redo', '')
+  await h.handler('model', '')
+  await h.handler('agent', '')
+  await h.handler('plan', '')
+  await h.handler('build', '')
+  await h.handler('permissions', '')
+  assert.deepEqual(h.gates, [
+    'branch.fork', 'session.summarize', 'branch.revert', 'branch.unrevert',
+    'session.switch-model', 'session.switch-agent', 'session.switch-agent',
+    'session.switch-agent', 'approval.permission',
+  ])
+})
+
+test('未映射的命令不触达 Experience gate（本地只读命令）', async () => {
+  const h = harness()
+  await h.handler('help', '')
+  await h.handler('status', '')
+  await h.handler('diff', '')
+  assert.deepEqual(h.gates, [])
 })

@@ -140,7 +140,7 @@ test('display settings: toggleFocus hides tool output with ⋯ marker; off resto
     {
       messageID: 'm1', role: 'assistant', done: true,
       parts: [
-        { id: 'pt', type: 'tool', toolName: 'bash', state: 'completed', text: 'npm test\nok 12 passed' },
+        { id: 'pt', type: 'tool', tool: 'bash', state: 'completed', text: 'npm test\nok 12 passed' },
         { id: 'p2', type: 'text', text: '结论' },
       ],
     },
@@ -161,7 +161,7 @@ test('display settings: cycleVerbosity collapses tool output by default', () => 
   ;(store as any).turns = [
     {
       messageID: 'm1', role: 'assistant', done: true,
-      parts: [{ id: 'pt', type: 'tool', toolName: 'bash', state: 'completed', text: 'npm test\nok 12 passed' }],
+      parts: [{ id: 'pt', type: 'tool', tool: 'bash', state: 'completed', text: 'npm test\nok 12 passed' }],
     },
   ]
   tab.rebuild()
@@ -178,13 +178,13 @@ test('streaming: parts append blocks incrementally; pending dots removed when do
   tab.rebuild()
   turn.parts.push({ id: 'p1', type: 'text', text: 'Hel' })
   tab.refreshTranscript()
-  turn.parts.push({ id: 'pt', type: 'tool', toolName: 'bash', state: 'running', text: 'npm test' })
+  turn.parts.push({ id: 'pt', type: 'tool', tool: 'bash', state: 'running', text: 'npm test' })
   tab.refreshTranscript()
   const mid = transcriptClean(tab)
   assert.ok(mid.includes('Hel'))
   assert.ok(mid.includes('bash'))
   turn.done = true
-  turn.parts[1] = { id: 'pt', type: 'tool', toolName: 'bash', state: 'completed', text: 'npm test\nok 12 passed' }
+  turn.parts[1] = { id: 'pt', type: 'tool', tool: 'bash', state: 'completed', text: 'npm test\nok 12 passed' }
   tab.refreshTranscript()
   const done = transcriptClean(tab)
   assert.ok(done.includes('ok 12 passed'), '快照替换后显示输出')

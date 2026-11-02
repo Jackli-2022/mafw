@@ -1,13 +1,20 @@
 import { Text, SelectList, type TUI, type OverlayHandle, type SelectItem } from '@earendil-works/pi-tui'
-import type { PermissionRequest } from '@mafw/sdk'
+import type { MafwPermissionRequest } from '@mafw/sdk'
 import { theme } from '../theme.ts'
+import { normalizePermissionRequest } from '../store/dto.ts'
 import { selectListTheme } from './chat-tab.ts'
 import { HeaderSelectOverlay } from './clickable-select-list.ts'
 import { showModal } from './overlay-surface.ts'
 
-export function permissionSummary(req: PermissionRequest): string {
-  const patterns = req.patterns.length > 0 ? req.patterns.join(', ') : '(无 patterns)'
-  return `${req.permission}: ${patterns}`
+/**
+ * 权限请求摘要（Task 12）：接受中性 DTO（或尚未归一的原生载荷，内部归一）。
+ * 不直接读 opencode `patterns` / pi `toolName`。
+ */
+export function permissionSummary(req: MafwPermissionRequest | Record<string, unknown>): string {
+  const dto = normalizePermissionRequest(req)
+  if (!dto) return '权限请求'
+  const targets = dto.targets.length > 0 ? dto.targets.join(', ') : '（无目标）'
+  return `${dto.kind}: ${targets}`
 }
 
 export function permissionToItems(): SelectItem[] {
@@ -21,8 +28,12 @@ export function permissionToItems(): SelectItem[] {
 }
 
 /** gateway 已自动答复（mafwPolicy.action !== 'human'）的 asked 不弹 overlay。 */
-export function shouldShowOverlay(req: { mafwPolicy?: { action?: string } }): boolean {
-  const action = req.mafwPolicy?.action
+export function shouldShowOverlay(req: MafwPermissionRequest | Record<string, unknown>): boolean {
+  const dto = normalizePermissionRequest(req)
+  // 归一后富化在 extensions；未归一的原始载荷仍可能带顶层 mafwPolicy（客户端摄取边界）。
+  const policy = (dto?.extensions?.mafwPolicy
+    ?? (req as Record<string, unknown>)?.mafwPolicy) as { action?: string } | undefined
+  const action = policy?.action
   return !action || action === 'human'
 }
 
@@ -30,7 +41,7 @@ export function shouldShowOverlay(req: { mafwPolicy?: { action?: string } }): bo
  *  （支持鼠标点击行；persist = always + persist:'prefix'，persist-tool = persist:'tool'）。 */
 export function showPermissionOverlay(
   tui: TUI,
-  req: PermissionRequest,
+  req: MafwPermissionRequest,
   reply: (r: 'once' | 'always' | 'persist' | 'persist-tool' | 'reject') => Promise<void>,
 ): OverlayHandle {
   const list = new SelectList(permissionToItems(), 5, selectListTheme)
