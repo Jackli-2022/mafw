@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { countUnread, formatRailBadge, podRailBadge } from "./pod-rail-badge"
+import { countUnread, formatRailBadge, podRailBadge, podResultBadge } from "./pod-rail-badge"
 
 const msg = (over: Partial<{ readAt: string | null; fromMemberId: string; toMemberId: string | null }>) => ({
   readAt: null,
@@ -25,6 +25,9 @@ test("badge = human attention only, never unread or result-ready", () => {
   ]
   assert.equal(podRailBadge({ attention }), 2)
   assert.equal(podRailBadge({ attention: [] }), 0)
+  // Task 21：未读消息与「有新结果」都不是人类阻塞点，数字徽标不掺入。
+  assert.equal(podRailBadge({ attention: [], unread: 7, resultReady: true }), 0)
+  assert.equal(podRailBadge({ attention, unread: 7, resultReady: true }), 2)
 })
 
 test("badge caps rendering at 9+", () => {
@@ -32,4 +35,9 @@ test("badge caps rendering at 9+", () => {
   assert.equal(formatRailBadge(3), "3")
   assert.equal(formatRailBadge(9), "9")
   assert.equal(formatRailBadge(10), "9+")
+})
+
+test("result badge is a separate unviewed marker (not a count)", () => {
+  assert.equal(podResultBadge({ resultReady: true, viewed: false }), "result")
+  assert.equal(podResultBadge({ resultReady: true, viewed: true }), null)
 })

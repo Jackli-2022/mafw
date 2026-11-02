@@ -1,6 +1,8 @@
 import type {
   PodDetail,
   PodGoal,
+  PodGoalRevision,
+  PodGoalRevisionStatus,
   PodGoalStage,
   PodGoalStatus,
   PodGoalVerdict,
@@ -12,6 +14,7 @@ import type {
   PodTask,
   PodTaskStatus,
 } from "@mafw/sdk"
+import { podResultBadge, resultViewedKey } from "./pod-rail-badge"
 
 export type PodTaskLane = "todo" | "in_progress" | "review" | "done" | "skipped" | "failed"
 
@@ -435,4 +438,163 @@ export function podOutgoingDelivery(
   if (message.toMemberId === null) return null
   if (message.deliveredAt === undefined) return null
   return message.deliveredAt ? "已送达" : "待送达"
+}
+
+// ── Task 21：结果通知 / 打回 / revision 历史 ─────────────────────────────────
+
+const REVISION_STATUS_LABEL: Record<PodGoalRevisionStatus, string> = {
+  discussing: "讨论中",
+  direction_review: "方向待裁定",
+  planning: "规划中",
+  plan_review: "计划待批准",
+  queued: "排队中",
+  implementing: "实施中",
+  reviewing: "验收中",
+  completed: "已完成",
+  aborted: "已中止",
+  discarded: "已丢弃",
+}
+
+export function revisionStatusLabel(status: string | null | undefined): string {
+  if (!status) return ""
+  return REVISION_STATUS_LABEL[status as PodGoalRevisionStatus] ?? status
+}
+
+/** 结果标题：带 revision 前缀，旧版结果不会冒充当前版。 */
+export function resultStatus(input: {
+  verdict?: PodGoalVerdict | null
+  revision?: number | null
+}): string {
+  const label = podResultVerdictLabel(input.verdict ?? null)
+  const revision = input.revision
+  return typeof revision === "number" && Number.isFinite(revision) && revision > 0
+    ? `revision ${Math.floor(revision)} · ${label}`
+    : label
+}
+
+/** 结果 verdict 文案（与 Goal 卡片的「已完成」不同：结果讲通过/未通过）。 */
+const RESULT_VERDICT_LABEL: Record<PodGoalVerdict, string> = {
+  PASS: "已通过",
+  FAIL: "未通过",
+  MAX_RETRIES: "达到轮次上限",
+  ERROR: "技术失败",
+  CANCELLED: "已取消",
+}
+
+export function podResultVerdictLabel(verdict: PodGoalVerdict | null): string {
+  return verdict ? RESULT_VERDICT_LABEL[verdict] ?? verdict : "已结束"
+}
+
+/** 只有已收尾的 revision 可以打回（正在规划/实施/验收时打回会抢跑并发状态）。 */
+const REJECTABLE_REVISION_STATUSES = new Set<string>(["completed", "aborted"])
+
+export function rejectButtonLabel(input: { status: string | null | undefined }): string | null {
+  return input.status && REJECTABLE_REVISION_STATUSES.has(input.status)
+    ? "打回并继续讨论"
+    : null
+}
+
+/** 打回失败的可读原因（HTTP 状态 → 文案；未知一律通用文案）。 */
+export function rejectErrorMessage(status: number | null): string {
+  if (status === 400) return "请填写打回原因（会作为下一版讨论的输入）"
+  if (status === 409) return "这一版结果已收尾或正在处理，无法打回；请刷新后再试"
+  if (status === 404) return "结果不存在或已被清理"
+  if (status === 503) return "当前 gateway 不支持打回，请升级"
+  return "打回失败，请稍后重试"
+}
+
+export type PodRevisionHistoryRow = {
+  revision: number
+  status: PodGoalRevisionStatus | string
+  statusLabel: string
+  verdictLabel: string | null
+  feedback: string | null
+  current: boolean
+  enqueuedAt: string
+  endedAt: string | null
+}
+
+/**
+ * 版本历史（新→旧）：旧 revision 的 verdict/feedback 永不丢。
+ * `activeRevision` 缺省时以最大 revision 为当前版（与 gateway 指针一致）。
+ */
+export function revisionHistory(
+  revisions: Array<Pick<PodGoalRevision, "revision" | "status" | "verdict" | "feedback" | "enqueuedAt" | "endedAt">> | null | undefined,
+  activeRevision: number | null,
+): PodRevisionHistoryRow[] {
+  const list = Array.isArray(revisions) ? revisions : []
+  const active = activeRevision
+    ?? (list.length > 0 ? Math.max(...list.map((item) => item.revision)) : null)
+  return [...list]
+    .sort((a, b) => b.revision - a.revision)
+    .map((item) => ({
+      revision: item.revision,
+      status: item.status,
+      statusLabel: revisionStatusLabel(item.status),
+      verdictLabel: item.verdict ? podResultVerdictLabel(item.verdict) : null,
+      feedback: item.feedback?.trim() || null,
+      current: active != null && item.revision === active,
+      enqueuedAt: item.enqueuedAt,
+      endedAt: item.endedAt,
+    }))
+}
+
+/** Goal 当前 revision（gateway 运行时字段；旧 gateway 缺省 → null）。 */
+export function goalRevisionOf(goal: object | null | undefined): number | null {
+  const revision = (goal as { revision?: unknown } | null | undefined)?.revision
+  return typeof revision === "number" && Number.isFinite(revision) && revision > 0
+    ? Math.floor(revision)
+    : null
+}
+
+/**
+ * 最新的未查看结果（通知/结果点用）：
+ * 只看 resultReady，不把未读消息或仍在跑的 Goal 算进来。
+ */
+export function latestUnviewedResult<T extends {
+  goalId: string
+  resultReady?: boolean | null
+  revision?: number | null
+  endedAt?: string | null
+  enqueuedAt?: string
+}>(
+  goals: T[],
+  opts: { podId: string; viewed: (key: string) => boolean },
+): T | null {
+  const ready = goals
+    .filter((goal) => !!goal.resultReady)
+    .filter((goal) => {
+      const revision = goalRevisionOf(goal) ?? 1
+      return podResultBadge({
+        resultReady: true,
+        viewed: opts.viewed(resultViewedKey(opts.podId, goal.goalId, revision)),
+      }) === "result"
+    })
+    .sort((a, b) => (b.endedAt ?? b.enqueuedAt ?? "").localeCompare(a.endedAt ?? a.enqueuedAt ?? ""))
+  return ready[0] ?? null
+}
+
+/** `pod.updated` 的结果通知事件（kind=result；goalId 可选）。 */
+export function podResultEvent(event: unknown): { podId: string; goalId: string | null } | null {
+  const raw = event as any
+  if (raw?.type !== "pod.updated") return null
+  const props = raw.properties
+  if (!props || props.kind !== "result") return null
+  const podId = typeof props.podId === "string" ? props.podId : ""
+  if (!podId) return null
+  const goalId = typeof props.goalId === "string" && props.goalId ? props.goalId : null
+  return { podId, goalId }
+}
+
+/** OS 通知文案（标题固定，正文含 Goal + revision + 结果；标题截断防溢出）。 */
+export function podResultNotice(input: {
+  title?: string | null
+  verdict?: PodGoalVerdict | null
+  revision?: number | null
+}): { title: string; body: string } {
+  const title = (input.title ?? "").trim().slice(0, 80) || "未命名目标"
+  return {
+    title: "MAFW：鲸群结果",
+    body: `${title} · ${resultStatus({ verdict: input.verdict ?? null, revision: input.revision ?? null })}`,
+  }
 }

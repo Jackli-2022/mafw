@@ -6,7 +6,10 @@ const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "u
 
 test("shell routes pod.updated, project scope, sessions, goals, and badges", () => {
   const shell = read("src/renderer/mafw/MafwShell.tsx")
-  assert.match(shell, /pod:\s*\{\s*onEvent:\s*\(event\)\s*=>\s*ingestPodEvent/)
+  // Task 21：结果事件先走结果处理（刷新后通知/记录待打开），其余仍由 ingestPodEvent
+  // 负责通用刷新；两者都在 pod:onEvent 内，别的接线点零改动。
+  assert.match(shell, /pod:\s*\{[\s\S]{0,600}?ingestPodEvent\(event\)/)
+  assert.match(shell, /podResultEvent\(event\)/)
   assert.match(shell, /projectDir=\{benchRoot\(\)/)
   assert.match(shell, /onOpenPodSession=\{\(sid, title\) => openPodSession\(sid, title\)\}/)
   assert.match(shell, /podRoleOf=\{/)

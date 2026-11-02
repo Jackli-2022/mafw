@@ -15,6 +15,15 @@ import type { PodGoalResult } from "@mafw/sdk"
 import { podStore } from "../pod-store"
 import { deliveryToast } from "../pod-rail-face-model"
 import {
+  goalRevisionOf,
+  rejectErrorMessage,
+} from "../pod-model"
+import {
+  markPodResultViewed,
+  podResultOpenRequest,
+  requestPodTechLeadOpen,
+} from "../pod-result-store"
+import {
   formatPodCost,
   memberOpenTarget,
   podActiveGoalId,
@@ -65,6 +74,24 @@ export function PodDock(props: {
   createEffect(on(() => props.active, (active) => {
     if (active) void podStore.refresh()
   }))
+
+  // Task 21：结果打开请求来自 shell（通知回窗 / rail「有新结果」点）。
+  // seq 让同一 Goal 再次触发也能被消费（signal 对象每次都换新）。
+  createEffect(on(() => podResultOpenRequest(), (request) => {
+    if (!request) return
+    setTab("work")
+    setResultGoalId(request.goalId)
+  }))
+
+  // 打开结果即标记已查看（持久化，按 pod/goal/revision）：rail 上的结果点随之消失。
+  // 这是「查看」而不是「验收」——不需要用户再点一次通过。
+  createEffect(() => {
+    const goalId = resultGoalId()
+    const detail = podStore.detail()
+    if (!goalId || !detail) return
+    const goal = detail.goals.find((item) => item.goalId === goalId)
+    markPodResultViewed(detail.pod.id, goalId, goalRevisionOf(goal) ?? 1)
+  })
 
   createEffect(() => {
     const currentPodId = podStore.detail()?.pod.id ?? null
@@ -142,6 +169,35 @@ export function PodDock(props: {
     })
     setResultGoalId(null)
     setTab("work")
+  }
+
+  /**
+   * 打回（Task 21）：同一 Goal 开下一个 revision（旧版结果保留），并打开该 Goal 的
+   * Tech Lead 讨论——新 revision 从 discussing 开始，用户可以直接补充要求。
+   */
+  const rejectResult = async (goalId: string, feedback: string): Promise<boolean> => {
+    const detail = podStore.detail()
+    if (!detail) return false
+    try {
+      const result = await window.api.mafw.pod.rejectResult(detail.pod.id, goalId, feedback)
+      showToastV2({
+        description: `已打回：进入 revision ${result?.revision ?? "?"}，正在打开 Tech Lead 讨论`,
+        variant: "success",
+        duration: 3200,
+      } as any)
+      await podStore.refresh()
+      setResultGoalId(null)
+      setTab("work")
+      requestPodTechLeadOpen(goalId, typeof result?.revision === "number" ? result.revision : null)
+      return true
+    } catch (err: any) {
+      showToastV2({
+        description: rejectErrorMessage(podHttpStatus(err)),
+        variant: "error",
+        duration: 3200,
+      } as any)
+      return false
+    }
   }
 
   const retryDelivery = async (messageId: string) => {
@@ -386,6 +442,7 @@ export function PodDock(props: {
                         goalId={goalId()}
                         onClose={() => setResultGoalId(null)}
                         onResubmit={resubmit}
+                        onReject={(feedback) => rejectResult(goalId(), feedback)}
                       />
                     )}
                   </Show>

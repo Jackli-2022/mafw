@@ -53,8 +53,23 @@ import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore, resolvePodDetailCached, techLeadInvite, techLeadTabTitle } from "./pod-store"
-import { podRailBadge } from "./pod-rail-badge"
-import { podRoleForSession, podSessionRoute, techLeadSendGate } from "./pod-model"
+import { podRailBadge, podResultBadge } from "./pod-rail-badge"
+import {
+  isPodResultViewed,
+  podTechLeadOpenRequest,
+  podViewedResultKeys,
+  requestPodResultOpen,
+} from "./pod-result-store"
+import {
+  goalRevisionOf,
+  latestUnviewedResult,
+  podResultEvent,
+  podResultNotice,
+  podRoleForSession,
+  podSessionRoute,
+  resultStatus,
+  techLeadSendGate,
+} from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
 import { retitleTab } from "./session-tab-title"
 import { isLeadSessionRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./manager-session"
@@ -1179,7 +1194,14 @@ export function MafwShell() {
       onEvent: (run) => setRun(run as any),
     },
     pod: {
-      onEvent: (event) => ingestPodEvent(event),
+      onEvent: (event) => {
+        // Task 21：结果事件要「先刷新再看结果」——通知文案需要 Goal 标题/verdict。
+        if (podResultEvent(event)) {
+          void handlePodResultEvent(event)
+          return
+        }
+        ingestPodEvent(event)
+      },
     },
   }
 
@@ -1278,8 +1300,11 @@ export function MafwShell() {
       }
     }
     window.addEventListener("keydown", onInspectorKey)
+    // Task 21：通知点击 → main show/focus → 窗口可见；此时打开待查看的结果。
+    document.addEventListener("visibilitychange", openPendingResult)
     onCleanup(() => {
       window.removeEventListener("keydown", onInspectorKey)
+      document.removeEventListener("visibilitychange", openPendingResult)
       clearInterval(reconcileTimer)
       clearInterval(subagentTimer)
       clearInterval(backgroundTimer)
@@ -1816,6 +1841,54 @@ export function MafwShell() {
   const podBadgeCount = () => podRailBadge({
     attention: podStore.detail()?.attention ?? [],
   })
+  // Task 21：未查看结果 + 隐藏时 OS 通知。结果不是人类阻塞点（不进 podBadgeCount）。
+  const podResultDot = () => {
+    const detail = podStore.detail()
+    if (!detail) return false
+    return detail.goals.some((goal) => podResultBadge({
+      resultReady: goal.resultReady,
+      viewed: isPodResultViewed(detail.pod.id, goal.goalId, goalRevisionOf(goal) ?? 1),
+    }) === "result")
+  }
+  // 通知点击 = 窗口重新可见（main 的 Notification click 只负责 show/focus）。
+  // 这里记住待打开的结果，回到窗口后打开；已查看/已删的 Goal 不打开。
+  let pendingResultGoalId: string | null = null
+  const handlePodResultEvent = async (event: unknown) => {
+    const info = podResultEvent(event)
+    if (!info) return
+    const dir = benchRoot() ?? currentProject()
+    if (dir) await podStore.open(dir)
+    await podStore.refresh()
+    const detail = podStore.detail()
+    if (!detail || detail.pod.id !== info.podId) return
+    const goal = info.goalId
+      ? detail.goals.find((item) => item.goalId === info.goalId) ?? null
+      : latestUnviewedResult(detail.goals, {
+          podId: detail.pod.id,
+          viewed: (key) => podViewedResultKeys().includes(key),
+        })
+    if (!goal) return
+    const revision = goalRevisionOf(goal) ?? 1
+    if (isPodResultViewed(detail.pod.id, goal.goalId, revision)) return
+    showToastV2({
+      description: `鲸群结果：${goal.title} · ${resultStatus({ verdict: goal.verdict, revision })}`,
+      duration: 4200,
+    } as any)
+    const notice = podResultNotice({ title: goal.title, verdict: goal.verdict, revision })
+    notifyIfHidden(notice.title, notice.body)
+    pendingResultGoalId = goal.goalId
+  }
+  const openPendingResult = () => {
+    if (document.hidden || !pendingResultGoalId) return
+    const goalId = pendingResultGoalId
+    pendingResultGoalId = null
+    const detail = podStore.detail()
+    const goal = detail?.goals.find((item) => item.goalId === goalId)
+    if (!detail || !goal) return
+    if (isPodResultViewed(detail.pod.id, goalId, goalRevisionOf(goal) ?? 1)) return
+    openPodPanel("tasks")
+    requestPodResultOpen(goalId)
+  }
   const [podPanelRequest, setPodPanelRequest] = createSignal<{
     tab: "work" | "team" | "memory"
     seq: number
@@ -1856,7 +1929,6 @@ export function MafwShell() {
   // 标题派生，runtime session id 不出现在任何用户可见文案里（spec §3.2）。
   const openTechLead = async (goalId: string): Promise<void> => {
     const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
-    const title = techLeadTabTitle(goal?.title)
     try {
       const history = await podStore.techLead(goalId)
       if (!history?.sessionID) {
@@ -1866,11 +1938,20 @@ export function MafwShell() {
       // Task 20：记住这个隐藏会话讨论的是哪个 Goal——发送必须经 sendTechLeadMessage，
       // 由 gateway 注入 Tech Lead 身份和当前 revision 的 ContextManifest。
       techLeadGoalBySession[history.sessionID] = goalId
+      // Task 21：打回后打开的是新 revision（标题带 rev N，讨论会话由 gateway 确保）。
+      const title = techLeadTabTitle(goal?.title, history.revision)
       openSessionTab(history.sessionID, title, false, { mafw: { role: "tech_lead" } })
     } catch (e: any) {
       showToastV2({ description: `打开 Tech Lead 失败: ${e?.message || e}`, duration: 4000 } as any)
     }
   }
+  // Task 21：打回成功后 PodDock 请求打开同一 Goal 的 Tech Lead 讨论。gateway 的 GET
+  // techLead 会确保「新 revision」的隐藏讨论会话存在（旧 revision 会话不复活）。
+  createEffect(on(() => podTechLeadOpenRequest(), (request) => {
+    if (!request) return
+    void openTechLead(request.goalId)
+  }))
+
   // Tech Lead tab 的发送目标（当前会话 → Goal → Pod）。优先用本次打开时记录的映射；
   // 其余入口（PodDock / 左栏鲸群面 / Goal 详情会话）从 Pod 成员+作用域反推。
   // 发送时按项目目录解析 Pod（store 未加载/跨项目时 fail-open 到 lookup），不信任旧 detail。
@@ -2264,6 +2345,7 @@ export function MafwShell() {
           worktreeEnabled={worktreeEnabled()}
           approvals={pendingPermissionCount()}
           podBadge={podBadgeCount()}
+          podResultDot={podResultDot()}
           connPhase={connPhaseLabel()}
           gatewayState={gwStatus()?.state ?? null}
           dashboardActive={activeTab() === "goals" && !showConfig()}

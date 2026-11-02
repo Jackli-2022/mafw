@@ -3036,6 +3036,18 @@ html[data-theme="light"] body {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+/* 未查看结果：独立圆点，不是 attention 数字徽标（不吃 danger 色、不进 aria 计数）。
+   放左上角避开右上角的 attention 数字徽标。 */
+.mafw-icon-rail-result-dot {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--bg-base);
+}
 .mafw-icon-rail-conn-dot {
   position: absolute;
   bottom: 2px;
@@ -6335,6 +6347,30 @@ html[data-theme="light"] body {
 .mafw-pod-result-task-evidence { color: var(--text-2); overflow-wrap: anywhere; }
 .mafw-pod-result-feedback { font-size: 12px; color: var(--text-2); white-space: pre-wrap; }
 .mafw-pod-result-error { font-size: 12px; color: var(--red-9); }
+/* Task 21：revision 历史（新→旧；当前版高亮，旧版 feedback 仍可读） */
+.mafw-pod-result-revisions { display: flex; flex-direction: column; gap: 2px; }
+.mafw-pod-result-revision {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 2px 0;
+}
+.mafw-pod-result-revision.is-current { color: var(--text-1); }
+.mafw-pod-result-revision-id { font-family: var(--font-data); color: var(--text-4); }
+.mafw-pod-result-revision.is-current .mafw-pod-result-revision-id { color: var(--accent-text); }
+.mafw-pod-result-revision-verdict { color: var(--accent-text); }
+.mafw-pod-result-revision-feedback { grid-column: 1 / -1; color: var(--text-3); overflow-wrap: anywhere; }
+.mafw-pod-result-reject {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+.mafw-pod-revisions { margin: 8px 0; }
 
 .mafw-pod-composer {
   display: flex;

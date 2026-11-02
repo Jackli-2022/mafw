@@ -1,6 +1,6 @@
 // Goal 详情：泳道（阶段 × loop）+ 点格子内联明细 + goal_node SSE 实时刷新。
 // 数据源：window.api.mafw.goals.timeline（P1 gateway API）；会话下钻经 onOpenSession。
-import { createSignal, createEffect, Show, onMount, onCleanup } from "solid-js"
+import { createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
@@ -11,7 +11,7 @@ import { PodDirectionPanel } from "./PodDirectionPanel"
 import { PodProbePanel } from "./PodProbePanel"
 import { buildGoalLanes, formatDuration } from "../goal-timeline"
 import { createPodIdResolver, podStore } from "../pod-store"
-import { podStageLabel } from "../pod-model"
+import { podStageLabel, revisionHistory, revisionStatusLabel } from "../pod-model"
 import { goalsRev } from "../goals-rev"
 
 const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
@@ -205,6 +205,8 @@ export function GoalDetailOverlay(props: {
     if (target == null) return list[list.length - 1]
     return list.find((item) => item.revision === target) ?? null
   }
+  // Task 21：版本历史（新→旧）。旧 revision 的 verdict/feedback 是审计事实，永不丢。
+  const revisionRows = () => revisionHistory(revisions(), activeRevision())
   const directionState = (): PodDirectionState | null => {
     const revision = currentRevision()
     const parsed = parseDirectionState(revision?.directionJson, revision?.revision ?? null)
@@ -289,7 +291,10 @@ export function GoalDetailOverlay(props: {
                 <span class="mafw-card-meta">{stageText()}</span>
               </Show>
               <Show when={activeRevision() != null}>
-                <span class="mafw-card-meta">revision {activeRevision()}</span>
+                <span class="mafw-card-meta">
+                  revision {activeRevision()}
+                  {currentRevision() ? ` · ${revisionStatusLabel(currentRevision()!.status)}` : ""}
+                </span>
               </Show>
               <span class="mafw-card-meta">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
               <Show when={elapsed() != null}><span class="mafw-card-meta">已用 {formatDuration(elapsed())}</span></Show>
@@ -300,6 +305,29 @@ export function GoalDetailOverlay(props: {
                 </ButtonV2>
               </Show>
             </div>
+
+            <Show when={revisionRows().length > 0}>
+              <div class="mafw-pod-revisions">
+                <div class="mafw-pod-section-head">
+                  <span>版本历史</span>
+                  <span class="mafw-pod-section-count">{revisionRows().length} 版</span>
+                </div>
+                <For each={revisionRows()}>
+                  {(row) => (
+                    <div class="mafw-pod-result-revision" classList={{ "is-current": row.current }}>
+                      <span class="mafw-pod-result-revision-id">revision {row.revision}</span>
+                      <span class="mafw-pod-result-revision-status">{row.statusLabel}</span>
+                      <Show when={row.verdictLabel}>
+                        <span class="mafw-pod-result-revision-verdict">{row.verdictLabel}</span>
+                      </Show>
+                      <Show when={row.feedback}>
+                        <span class="mafw-pod-result-revision-feedback">{row.feedback}</span>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
 
             <Show when={showDirection()}>
               <PodDirectionPanel

@@ -6,6 +6,7 @@ import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import {
   canEditPlanTask,
   formatAcceptanceLines,
+  goalRevisionOf,
   groupPodTasks,
   goalQueueRow,
   parseAcceptanceLines,
@@ -85,6 +86,9 @@ export function PodGoalQueue(props: {
                       : "进行中"
               }</span>
               <span class="mafw-pod-goal-title">{goalQueueRow(goal)}</span>
+              <Show when={goalRevisionOf(goal) != null}>
+                <span class="mafw-pod-section-count">rev {goalRevisionOf(goal)}</span>
+              </Show>
               <Show when={goal.resultReady && props.onOpenResult}>
                 <ButtonV2
                   variant="ghost"

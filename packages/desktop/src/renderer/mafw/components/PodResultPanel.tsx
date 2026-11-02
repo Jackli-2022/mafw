@@ -1,36 +1,95 @@
 import { For, Show, createEffect, createSignal } from "solid-js"
-import type { PodGoalResult } from "@mafw/sdk"
+import type { PodGoalResult, PodGoalRevision } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
-import { podGoalResultLabel } from "../pod-model"
+import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
+import {
+  podHttpStatus,
+  rejectButtonLabel,
+  rejectErrorMessage,
+  resultStatus,
+  revisionHistory,
+} from "../pod-model"
 
 const TASK_RESULT_LABEL = { pass: "通过", fail: "失败", skipped: "跳过" } as const
 const artifactName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() ?? value
 
+/**
+ * 结果面板（Task 21）：
+ * - 当前 revision 的结果 + Goal 验收条件 + 逐任务证据；
+ * - 版本历史（新→旧，旧版本 verdict/feedback 永不丢）；
+ * - 已收尾的版本可打回（反馈必填），成功后由 PodDock 打开同一 Goal 的 Tech Lead 讨论。
+ */
 export function PodResultPanel(props: {
   podId: string
   goalId: string
   onClose: () => void
   onResubmit: (result: PodGoalResult) => void
+  /** 打回这一版（反馈作为下一版讨论的输入）；成功后 PodDock 关闭结果并打开 Tech Lead。 */
+  onReject: (feedback: string) => Promise<boolean>
 }) {
   const [result, setResult] = createSignal<PodGoalResult | null>(null)
+  const [revisions, setRevisions] = createSignal<PodGoalRevision[]>([])
   const [error, setError] = createSignal<string | null>(null)
   const [loading, setLoading] = createSignal(false)
+  const [feedback, setFeedback] = createSignal("")
+  const [rejecting, setRejecting] = createSignal(false)
+  const [rejectError, setRejectError] = createSignal<string | null>(null)
 
+  let loadSeq = 0
   createEffect(() => {
     const goalId = props.goalId
     const podId = props.podId
+    const my = ++loadSeq
     setLoading(true)
     setError(null)
-    void window.api.mafw.pod.result(podId, goalId)
-      .then((next) => setResult(next))
-      .catch((err: any) => setError(String(err?.message ?? err)))
-      .finally(() => setLoading(false))
+    setResult(null)
+    setRevisions([])
+    setFeedback("")
+    setRejectError(null)
+    // revisions 失败（旧 gateway / 无权限）不影响结果本身：fail-open 空历史。
+    void Promise.allSettled([
+      window.api.mafw.pod.result(podId, goalId),
+      window.api.mafw.pod.revisions(podId, goalId),
+    ])
+      .then(([resultRes, revisionRes]) => {
+        if (my !== loadSeq) return
+        if (resultRes.status === "fulfilled") setResult(resultRes.value)
+        else setError(String((resultRes.reason as any)?.message ?? resultRes.reason))
+        if (revisionRes.status === "fulfilled") {
+          setRevisions(Array.isArray(revisionRes.value?.items) ? revisionRes.value.items : [])
+        }
+      })
+      .finally(() => {
+        if (my === loadSeq) setLoading(false)
+      })
   })
 
   const failed = () => {
     const verdict = result()?.verdict
     return verdict === "FAIL" || verdict === "MAX_RETRIES" || verdict === "ERROR"
+  }
+
+  const activeRevision = () => {
+    const list = revisions()
+    return list.length > 0 ? Math.max(...list.map((item) => item.revision)) : null
+  }
+  const revisionRows = () => revisionHistory(revisions(), activeRevision())
+  const currentStatus = () => revisionRows().find((row) => row.current)?.status ?? null
+  const rejectLabel = () => rejectButtonLabel({ status: currentStatus() })
+
+  const submitReject = async () => {
+    const text = feedback().trim()
+    if (!text || rejecting()) return
+    setRejecting(true)
+    setRejectError(null)
+    try {
+      if (await props.onReject(text)) setFeedback("")
+    } catch (err: any) {
+      setRejectError(rejectErrorMessage(podHttpStatus(err)))
+    } finally {
+      setRejecting(false)
+    }
   }
 
   return (
@@ -49,10 +108,31 @@ export function PodResultPanel(props: {
         {(value) => (
           <>
             <div class="mafw-pod-result-verdict" classList={{ failed: failed() }}>
-              {podGoalResultLabel(value().verdict)}
+              {resultStatus({ verdict: value().verdict, revision: activeRevision() })}
             </div>
+
+            <Show when={revisionRows().length > 0}>
+              <div class="mafw-pod-result-label">版本历史</div>
+              <div class="mafw-pod-result-revisions">
+                <For each={revisionRows()}>
+                  {(row) => (
+                    <div class="mafw-pod-result-revision" classList={{ "is-current": row.current }}>
+                      <span class="mafw-pod-result-revision-id">revision {row.revision}</span>
+                      <span class="mafw-pod-result-revision-status">{row.statusLabel}</span>
+                      <Show when={row.verdictLabel}>
+                        <span class="mafw-pod-result-revision-verdict">{row.verdictLabel}</span>
+                      </Show>
+                      <Show when={row.feedback}>
+                        <span class="mafw-pod-result-revision-feedback">{row.feedback}</span>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+
             <Show when={value().goalAcceptance.length > 0}>
-              <div class="mafw-pod-result-label">目标验收</div>
+              <div class="mafw-pod-result-label">Goal 条件与验收</div>
               <ul class="mafw-pod-result-list">
                 <For each={value().goalAcceptance}>{(item) => <li>{item}</li>}</For>
               </ul>
@@ -83,6 +163,31 @@ export function PodResultPanel(props: {
               <ButtonV2 variant="outline" size="small" onClick={() => props.onResubmit(value())}>
                 基于失败反馈重新提交
               </ButtonV2>
+            </Show>
+
+            <Show when={rejectLabel()}>
+              {(label) => (
+                <div class="mafw-pod-result-reject">
+                  <div class="mafw-pod-result-label">打回这一版（会开下一个 revision，旧版结果保留）</div>
+                  <TextareaV2
+                    rows={3}
+                    value={feedback()}
+                    placeholder="写清楚哪里不达标、下一版要改什么"
+                    onInput={(event) => setFeedback(event.currentTarget.value)}
+                  />
+                  <Show when={rejectError()}>
+                    <div class="mafw-pod-result-error">{rejectError()}</div>
+                  </Show>
+                  <ButtonV2
+                    variant="outline"
+                    size="small"
+                    disabled={!feedback().trim() || rejecting()}
+                    onClick={() => void submitReject()}
+                  >
+                    {rejecting() ? "打回中…" : label()}
+                  </ButtonV2>
+                </div>
+              )}
             </Show>
           </>
         )}

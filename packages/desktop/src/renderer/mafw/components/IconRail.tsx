@@ -21,8 +21,10 @@ export type IconRailProps = {
   onNewWorktreeSession?: () => void
   worktreeEnabled?: boolean
   approvals: number
-  /** 鲸群：待审 + 未读（spec 2026-10-30-pod-left-rail §4.3） */
+  /** 鲸群：人类阻塞 attention 数字（spec 2026-10-30-pod-left-rail §4.3） */
   podBadge?: number
+  /** 鲸群：有未查看的结果（Task 21）——独立圆点，不计入 attention 数字。 */
+  podResultDot?: boolean
   connPhase: string // connected | reconnecting | down | initial
   gatewayState?: string | null // stopped | starting | ready | failed（stopped 用中性色，不报红）
   dashboardActive?: boolean
@@ -38,6 +40,8 @@ type RailItem = {
   badge?: number
   /** 覆盖 badge 的显示文案（如 9+）；aria 仍用数字 badge。 */
   badgeLabel?: string
+  /** 未查看结果圆点（与数字 badge 视觉/语义分开）。 */
+  resultDot?: boolean
   connDot?: boolean
 }
 
@@ -59,6 +63,7 @@ export function IconRail(props: IconRailProps) {
       active: props.face === "pod",
       badge: props.podBadge,
       badgeLabel: formatRailBadge(props.podBadge ?? 0) || undefined,
+      resultDot: !!props.podResultDot,
     },
   ]
   const metaItems = (): RailItem[] => [
@@ -73,13 +78,16 @@ export function IconRail(props: IconRailProps) {
         size="small"
         class="mafw-icon-rail-icon"
         classList={{ active: !!item.active }}
-        aria-label={railAriaLabel(item.label, item.badge)}
+        aria-label={item.resultDot ? `${railAriaLabel(item.label, item.badge)}（有新结果）` : railAriaLabel(item.label, item.badge)}
         aria-pressed={item.active}
         onClick={item.onClick}
       >
         <Icon name={item.icon} size="small" />
         <Show when={(item.badge ?? 0) > 0}>
           <span class="mafw-icon-rail-badge">{item.badgeLabel ?? item.badge}</span>
+        </Show>
+        <Show when={item.resultDot}>
+          <span class="mafw-icon-rail-result-dot" aria-hidden="true" />
         </Show>
         <Show when={item.connDot}>
           <span class="mafw-icon-rail-conn-dot" classList={{ [connClass()]: true }} />

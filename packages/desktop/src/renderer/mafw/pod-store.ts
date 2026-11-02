@@ -37,10 +37,14 @@ export function techLeadInvite(
   return { goalId: goalID, label: TECH_LEAD_INVITE_LABEL }
 }
 
-/** Tech Lead tab 标题：由 Goal 标题派生，绝不含 runtime session id。 */
-export function techLeadTabTitle(title?: string | null): string {
+/** Tech Lead tab 标题：由 Goal 标题派生，绝不含 runtime session id。
+ *  新 revision（打回后的讨论）在标题上带 `rev N`，让用户知道在讨论哪一版。 */
+export function techLeadTabTitle(title?: string | null, revision?: number | null): string {
   const goalTitle = (title ?? "").trim()
-  return `Tech Lead · ${goalTitle || "未命名目标"}`
+  const suffix = typeof revision === "number" && Number.isFinite(revision) && revision > 1
+    ? ` · rev ${Math.floor(revision)}`
+    : ""
+  return `Tech Lead · ${goalTitle || "未命名目标"}${suffix}`
 }
 
 /**
