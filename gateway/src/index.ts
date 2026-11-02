@@ -9414,7 +9414,7 @@ if (require.main === module) {
   });
 
   scheduler.start().catch(err => {
-    log.error('[Scheduler] Fatal error:', err);
+    log.error('[Scheduler] Fatal error:', (err && (err.stack || err.message)) || err);
     process.exit(1);
   });
 }

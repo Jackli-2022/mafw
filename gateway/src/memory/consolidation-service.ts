@@ -17,6 +17,7 @@
 
 import { log } from '../core/utils/logger';
 import { HarmonicUnit, higherAuthority } from '../core/memory/harmonic-types';
+import { JUDGE_MAX_TOKENS, JUDGE_SYSTEM } from './judge-prompt';
 import { MemoryVectorStore, EmbeddingIndexer } from './vector-store';
 import { EmbeddingProvider } from './embedding-provider';
 import type { CompletionChannel } from '../runtime/contract';
@@ -108,15 +109,6 @@ interface JudgeVerdict {
   /** For `separate`: the disambiguating keyword distinguishing this entry. */
   distinction?: string;
 }
-
-const JUDGE_SYSTEM = `You are a memory management assistant. Given a NEW memory entry and similar existing entries, decide how the new entry relates to them.
-
-Rules:
-- UPDATE when the new entry describes the SAME underlying subject/entity/topic as an existing entry with overlapping or complementary details (e.g. evolving state of the same project, an updated preference value, a new fact about the same person). Pick the single best target.
-- SEPARATE when the new entry is highly similar in wording/structure but refers to a DIFFERENT entity or instance (e.g. "deploy to us-east-1" vs "deploy to eu-west-1", two distinct people, two distinct services). Keep both, disambiguated.
-- CREATE when the entries are only superficially similar and unrelated in subject.
-Respond with ONLY a JSON object:
-{"action":"update","target_id":"<id>"} or {"action":"separate","target_id":"<id>","distinction":"<short disambiguating keyword>"} or {"action":"create"}`;
 
 export class ConsolidationService {
   private store: ConsolidationDeps['store'];
@@ -437,7 +429,7 @@ export async function consolidationJudge(
           system: [{ text: JUDGE_SYSTEM }],
           user: [{ type: 'text', text: user }],
           temperature: 0,
-          maxTokens: 200,
+          maxTokens: JUDGE_MAX_TOKENS,
         });
         return parseJudgeVerdict(res?.text ?? '');
       } catch (err: any) {
@@ -461,7 +453,7 @@ export async function consolidationJudge(
             { role: 'user', content: user },
           ],
           temperature: 0,
-          max_tokens: 200,
+          max_tokens: JUDGE_MAX_TOKENS,
         }),
       }),
       new Promise<never>((_, reject) => {
@@ -479,14 +471,22 @@ export async function consolidationJudge(
   }
 }
 
-/** Parse a judge reply into a verdict. No braces → create; malformed JSON →
- *  null (judge failure, fail-open skip); unknown action → create. */
+/** Parse a judge reply into a verdict. Empty content is a FAILURE (the reply
+ *  was truncated before the answer — reasoning models burn the token budget
+ *  first); prose without braces means create; malformed JSON → null; unknown
+ *  action → create. */
 export function parseJudgeVerdict(content: string): JudgeVerdict | null {
   const jsonText = String(content ?? '').replace(/```json|```/g, '').trim();
+  if (!jsonText) return null;
   const start = jsonText.indexOf('{');
   const end = jsonText.lastIndexOf('}');
   if (start === -1 || end === -1) return { action: 'create' };
-  const parsed = JSON.parse(jsonText.slice(start, end + 1));
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonText.slice(start, end + 1));
+  } catch {
+    return null;
+  }
   if (parsed?.action !== 'update' && parsed?.action !== 'create' && parsed?.action !== 'separate') {
     return { action: 'create' };
   }
