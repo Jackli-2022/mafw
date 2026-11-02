@@ -72,8 +72,8 @@ export class MafwCommandRegistry {
 
 /** 内置命令元数据（handler 由 builtin-handlers.ts 绑定）。 */
 export const BUILTIN_COMMAND_DEFS: MafwCommandDef[] = [
-  { name: 'goal', description: '提交新 Goal 给 Manager', argumentHint: '<目标描述>', category: 'goals', kind: 'builtin' },
-  { name: 'new-topic', aliases: ['new'], description: '开新话题（当前 Manager 会话归档）', category: 'session', destructive: true, kind: 'builtin' },
+  { name: 'goal', description: '提交新 Goal 给 Lead', argumentHint: '<目标描述>', category: 'goals', kind: 'builtin' },
+  { name: 'new-topic', aliases: ['new'], description: '开新话题（当前 Lead 会话归档）', category: 'session', destructive: true, kind: 'builtin' },
   { name: 'btw', description: '支线问答（一次性会话，不污染主线）', argumentHint: '<问题>', category: 'session', kind: 'builtin' },
   { name: 'waitwhat', description: '没听懂：用简明语言+项目术语重述上一条回复', category: 'session', kind: 'builtin' },
   { name: 'status', description: 'MAFW 状态（活跃 Goal 摘要）', category: 'goals', kind: 'builtin' },

@@ -47,6 +47,11 @@ describe('MafwCommandRegistry', () => {
     expect(names).toEqual(['btw', 'goal', 'merge-memory', 'new-topic', 'status', 'waitwhat']);
     const nt = BUILTIN_COMMAND_DEFS.find((d) => d.name === 'new-topic');
     expect(nt?.aliases).toContain('new');
+    // Task 19：Manager 已退役，命令文案只称 Lead（列表覆盖本地默认标题）
+    const goal = BUILTIN_COMMAND_DEFS.find((d) => d.name === 'goal');
+    expect(goal?.description).toBe('提交新 Goal 给 Lead');
+    expect(nt?.description).toBe('开新话题（当前 Lead 会话归档）');
+    for (const d of BUILTIN_COMMAND_DEFS) expect(d.description).not.toContain('Manager');
     const btw = BUILTIN_COMMAND_DEFS.find((d) => d.name === 'btw');
     expect(btw?.argumentHint).toBe('<问题>');
     const mm = BUILTIN_COMMAND_DEFS.find((d) => d.name === 'merge-memory');
