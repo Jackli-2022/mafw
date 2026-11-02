@@ -52,6 +52,8 @@ describe('index.ts cognition 接线', () => {
 const desktopSrc = readFileSync(join(__dirname, '../../../../packages/desktop/src/renderer/mafw/session-events.ts'), 'utf8');
 describe('desktop cognition_gate 消费（builder check D 裁定；终审 #1 修正为 cognition_ 前缀）', () => {
   it('TAIL_ACCOUNTED_PREFIXES 含 cognition_ 前缀（匹配 cognition_gate 事件类型）', () => {
-    expect(desktopSrc).toMatch(/TAIL_ACCOUNTED_PREFIXES = \["plugin:", "cognition_"\]/);
+    // `plugin:*` moved to an explicit dispatcher branch (Task 7), so the tail
+    // prefix list may contain only the cognition host bypass.
+    expect(desktopSrc).toMatch(/TAIL_ACCOUNTED_PREFIXES = \[(?:"plugin:", )?"cognition_"\]/);
   });
 });
