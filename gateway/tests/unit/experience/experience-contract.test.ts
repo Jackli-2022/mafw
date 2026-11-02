@@ -17,8 +17,8 @@ import * as http from 'http';
 /** 当前 manifest 的真实 surface 集合：fake 不得凭空点亮未声明的 surface。 */
 const MANIFEST_SURFACES = new Set(buildRuntimeContractManifest().surfaces.map((s) => s.id));
 
-/** 中性 PTY surface 由 terminal 任务加入 manifest；在此之前 attach 必须 unsupported。 */
-const PENDING_SURFACES = new Set(['terminal.pty']);
+/** 中性 PTY surface 由 terminal 任务加入 manifest；`terminal.attach` 随之点亮。 */
+const PENDING_SURFACES = new Set<string>();
 
 function semanticsOf(access: any, id: string): Record<string, unknown> {
   return (access.semantics?.(id) ?? {}) as Record<string, unknown>;
@@ -249,9 +249,22 @@ describe('Experience contract', () => {
     expect(childrenOnly.semantics?.sources).toEqual(['mafw-task', 'subagent']);
   });
 
-  it('never fakes a terminal when no neutral PTY surface exists', () => {
+  it('lights up terminal attach only from the neutral PTY surface', () => {
     const actions = projectExperienceActions(fakeAccessAll(), {});
-    expect(actions['terminal.attach']).toEqual({ supported: false, enabled: false, reason: 'unsupported' });
+    expect(actions['terminal.attach']).toEqual({ supported: true, enabled: true });
+
+    const withSemantics = {
+      can: (id: string) => id === 'terminal.pty',
+      semantics: (id: string) =>
+        id === 'terminal.pty' ? { persistent: true, protocol: 'mafw-terminal/1' } : {},
+    } as any;
+    expect(projectExperienceActions(withSemantics, {})['terminal.attach']).toEqual({
+      supported: true,
+      enabled: true,
+      semantics: { persistent: true, protocol: 'mafw-terminal/1' },
+    });
+    expect(projectExperienceActions(fakeAccess({ 'terminal.pty': false }), {})['terminal.attach'])
+      .toEqual({ supported: false, enabled: false, reason: 'unsupported' });
   });
 
   it('only references declared runtime surfaces (pending protocol excepted)', () => {

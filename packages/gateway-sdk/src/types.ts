@@ -1045,6 +1045,52 @@ export interface BackgroundNamespace {
   jobs: BackgroundJobsNamespace
 }
 
+// ============================================================
+// Terminal (neutral PTY, mafw-terminal/1)
+// ============================================================
+
+export interface TerminalSessionDto {
+  id: string
+  directory: string
+  title?: string
+  status: 'running' | 'exited' | 'unknown'
+  cwd?: string
+}
+
+export interface TerminalSessionList {
+  protocol: string
+  supported: boolean
+  sessions: TerminalSessionDto[]
+}
+
+export interface TerminalSessionCreateInput {
+  directory: string
+  cwd?: string
+  cols?: number
+  rows?: number
+  title?: string
+}
+
+export interface TerminalConnectTicket {
+  protocol: string
+  /** MAFW 不透明票据（单次使用、短 TTL、绑定 pty id + directory）。 */
+  ticket: string
+  /** 相对路径 + ticket query；客户端与 gateway base 拼接后升级为 ws(s)。 */
+  url: string
+  expiresAt: number
+}
+
+export interface TerminalNamespace {
+  /** 列出目录下活动 PTY（runtime 不支持时 supported:false + 空列表）。 */
+  list(opts?: { directory?: string }): Promise<TerminalSessionList>
+  /** 创建 PTY（不支持时抛 HTTP 503）。 */
+  create(opts: TerminalSessionCreateInput): Promise<{ protocol: string; id: string }>
+  /** 关闭并删除 PTY。 */
+  remove(id: string, opts?: { directory?: string }): Promise<{ ok: boolean }>
+  /** 签发一次性连接票据（loopback-only）。 */
+  connectTicket(id: string, opts: { directory: string }): Promise<TerminalConnectTicket>
+}
+
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived'
 export type PodMemberRole = 'lead' | 'builder' | 'reviewer' | 'curator'
 export type PodMemberStatus = 'available' | 'working' | 'waiting' | 'sleeping' | 'retired'
@@ -1297,6 +1343,7 @@ export interface MafwClient {
   tasks: TasksNamespace
   /** Task 3：三源统一的后台作业 façade（`background.jobs.list/output/cancel`）。 */
   background: BackgroundNamespace
+  terminal: TerminalNamespace
   pod: PodNamespace
   permissions: PermissionsNamespace
   providers: ProvidersNamespace

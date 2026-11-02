@@ -28,7 +28,8 @@ export type ContractDomain =
   | 'provider'
   | 'cognition'
   | 'media'
-  | 'usage';
+  | 'usage'
+  | 'terminal';
 
 export type CapabilityKind = 'feature' | 'transport' | 'strategy' | 'trust' | 'informational';
 

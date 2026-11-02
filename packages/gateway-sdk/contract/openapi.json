@@ -1204,6 +1204,76 @@
         }
       }
     },
+    "/api/terminal/sessions": {
+      "get": {
+        "operationId": "terminal.list",
+        "tags": [
+          "terminal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "terminal.create",
+        "tags": [
+          "terminal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/terminal/sessions/{id}": {
+      "delete": {
+        "operationId": "terminal.remove",
+        "tags": [
+          "terminal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/terminal/sessions/{id}/connect-ticket": {
+      "post": {
+        "operationId": "terminal.connectTicket",
+        "tags": [
+          "terminal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/usage": {
       "get": {
         "operationId": "session.usage",

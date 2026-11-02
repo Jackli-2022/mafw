@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { AgentRuntime, SessionInfo, fullCapabilities, CompletionRequest, CompletionResult } from './contract';
+import { MAFW_TERMINAL_PROTOCOL } from './pty';
 import { AgentDefinition } from './agent-definition';
 import { startServeSidecar, killServePort, resolveServePassword, serveAuthHeaders, resolveOpencodeBin } from './serve-sidecar';
 import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime-root';
@@ -279,6 +280,7 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
       'prompt.delivery.steer': { boundary: 'after-turn' },
       'branch.revert': { files: true, undo: false },
       'mcp.list': { authCommandTemplate: 'opencode mcp auth {name}' },
+      'terminal.pty': { persistent: true, protocol: MAFW_TERMINAL_PROTOCOL },
     },
     capabilities: caps,
     external: isExternal,

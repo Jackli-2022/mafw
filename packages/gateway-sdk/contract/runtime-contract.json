@@ -16,6 +16,11 @@
       "description": ""
     },
     {
+      "id": "terminal",
+      "title": "内嵌终端（PTY）",
+      "description": ""
+    },
+    {
       "id": "branch",
       "title": "分支/回滚/检查点",
       "description": ""
@@ -593,6 +598,37 @@
       ],
       "consumer": "background shell",
       "impact": "后台 shell 不可用",
+      "presets": []
+    },
+    {
+      "direction": "gateway->runtime",
+      "id": "terminal.pty",
+      "title": "neutral PTY channel",
+      "domain": "terminal",
+      "obligation": "optional",
+      "verification": "presence",
+      "implementation": "pty.{create,connect,resize,remove}",
+      "probe": [
+        "pty",
+        "connect"
+      ],
+      "consumer": "TerminalService / Experience terminal.attach",
+      "impact": "内嵌终端不可用（不伪造 PTY，客户端显示不可用原因）",
+      "semantics": {
+        "persistent": {
+          "description": "PTY survives client disconnect/reconnect",
+          "values": [
+            "true",
+            "false"
+          ]
+        },
+        "protocol": {
+          "description": "MAFW terminal frame protocol version",
+          "values": [
+            "mafw-terminal/1"
+          ]
+        }
+      },
       "presets": []
     },
     {

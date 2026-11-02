@@ -27,7 +27,7 @@ export interface RuntimeFacadeOptions {
 }
 
 const PUBLIC_KEYS = [
-  'name', 'capabilities', 'external', 'session', 'shell', 'provider', 'app',
+  'name', 'capabilities', 'external', 'session', 'shell', 'pty', 'provider', 'app',
   'discovery', 'mcp', 'config', 'tools', 'completion', 'credentials', 'agents',
   'getBaseUrl', 'healthCheck', 'agentProcess', 'semantics', 'dispose',
 ] as const;

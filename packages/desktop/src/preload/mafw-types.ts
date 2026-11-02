@@ -6,6 +6,7 @@ import type {
   QuestionRequest, PermissionRequest,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
   MafwBackgroundJob, MafwBackgroundOutput,
+  TerminalNamespace,
   PodNamespace,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
@@ -233,6 +234,10 @@ export type MafwAPI = {
       cancel: (sessionID: string, id: string) => Promise<MafwBackgroundJob>
     }
   }
+
+  /** Task 4：中性 terminal PTY（mafw-terminal/1；runtime 不支持时 supported:false）。
+   *  与工作台 `terminal`（Electron 本地/SSH IPC）区分：此面走 gateway runtime 契约。 */
+  terminalPty: TerminalNamespace
 
   pod: PodNamespace
 

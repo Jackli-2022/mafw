@@ -16,7 +16,7 @@ export interface ExperienceProjectionContext {
  *
  * 这张表是「动作面 ↔ capability」的唯一映射：路由/前端都不得再用 runtime 名或
  * 方法存在性自行推导。新增动作先补 manifest surface，再改这里。
- * `terminal.pty` 由中性 PTY 协议任务加入 manifest；在此之前 attach 恒 unsupported。
+ * `terminal.pty` 是中性 PTY 协议 surface（本批加入 manifest）。
  */
 export const EXPERIENCE_ACTION_SURFACES: Record<ExperienceActionId, readonly string[]> = {
   'checkpoint.restore': ['branch.checkpoint'],

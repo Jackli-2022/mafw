@@ -5,6 +5,7 @@
  * 反向索引（Task 4 会做双向一致性校验）。
  */
 import type { ContractSurface, PresetId } from './contract-manifest-types';
+import { MAFW_TERMINAL_PROTOCOL } from './pty';
 
 const ALL: PresetId[] = ['core', 'conversation', 'autonomous', 'desktop'];
 const CONV: PresetId[] = ['conversation', 'autonomous', 'desktop'];
@@ -157,6 +158,18 @@ export const CORE_SURFACES: ContractSurface[] = [
     id: 'session.shell', title: 'session.shell', domain: 'session',
     obligation: 'optional', verification: 'presence', implementation: 'shell.{create,get,output,remove}',
     probe: ['shell', 'create'], consumer: 'background shell', impact: '后台 shell 不可用', presets: NONE,
+  }),
+  row({
+    id: 'terminal.pty', title: 'neutral PTY channel', domain: 'terminal',
+    obligation: 'optional', verification: 'presence',
+    implementation: 'pty.{create,connect,resize,remove}', probe: ['pty', 'connect'],
+    consumer: 'TerminalService / Experience terminal.attach',
+    impact: '内嵌终端不可用（不伪造 PTY，客户端显示不可用原因）',
+    semantics: {
+      persistent: { description: 'PTY survives client disconnect/reconnect', values: ['true', 'false'] },
+      protocol: { description: 'MAFW terminal frame protocol version', values: [MAFW_TERMINAL_PROTOCOL] },
+    },
+    presets: NONE,
   }),
   row({
     id: 'session.instructions.list', title: 'session.instructions.list', domain: 'session',

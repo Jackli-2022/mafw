@@ -74,6 +74,11 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/background/jobs', operationId: 'background.jobs.list', tags: ['background'] },
   { method: 'GET', path: '/api/background/jobs/:id/output', operationId: 'background.jobs.output', tags: ['background'] },
   { method: 'POST', path: '/api/background/jobs/:id/cancel', operationId: 'background.jobs.cancel', tags: ['background'] },
+  // Task 4：中性 terminal PTY（mafw-terminal/1；WS 升级不登记，同 /api/ws）
+  { method: 'GET', path: '/api/terminal/sessions', operationId: 'terminal.list', tags: ['terminal'] },
+  { method: 'POST', path: '/api/terminal/sessions', operationId: 'terminal.create', tags: ['terminal'] },
+  { method: 'DELETE', path: '/api/terminal/sessions/:id', operationId: 'terminal.remove', tags: ['terminal'] },
+  { method: 'POST', path: '/api/terminal/sessions/:id/connect-ticket', operationId: 'terminal.connectTicket', tags: ['terminal'] },
   { method: 'GET', path: '/api/usage', operationId: 'session.usage', tags: ['session'] },
   { method: 'GET', path: '/api/usage/summary', operationId: 'session.usageSummary', tags: ['session'] },
   { method: 'GET', path: '/api/usage/plugins', operationId: 'session.usagePluginsList', tags: ['session'] },

@@ -11,6 +11,7 @@ import {
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
   MafwBackgroundOutput, BackgroundNamespace,
+  TerminalNamespace, TerminalSessionList, TerminalConnectTicket, TerminalSessionCreateInput,
   PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus, PodDeliveryState,
   PodCreateGoalInput, PodCreateGoalResult, PodGoalResult,
   SessionConfigState, SessionConfigCategory,
@@ -1254,6 +1255,35 @@ export class MafwClient implements IMafwClient {
     },
   }
 
+  // ── Neutral terminal PTY (Task 4: mafw-terminal/1) ───────────────────────
+  // gateway 拥有 CRUD + ticket + WS；原生 /api/pty 与 connect-token 不出口。
+
+  terminal: TerminalNamespace = {
+    list: async (opts?: { directory?: string }): Promise<TerminalSessionList> => {
+      const q = opts?.directory ? `?directory=${encodeURIComponent(opts.directory)}` : ''
+      return this.request<TerminalSessionList>(`/api/terminal/sessions${q}`)
+    },
+
+    create: async (opts: TerminalSessionCreateInput): Promise<{ protocol: string; id: string }> => {
+      return this.request<{ protocol: string; id: string }>('/api/terminal/sessions', {
+        method: 'POST',
+        body: JSON.stringify(opts),
+      })
+    },
+
+    remove: async (id: string, opts?: { directory?: string }): Promise<{ ok: boolean }> => {
+      const q = opts?.directory ? `?directory=${encodeURIComponent(opts.directory)}` : ''
+      return this.request<{ ok: boolean }>(`/api/terminal/sessions/${encodeURIComponent(id)}${q}`, { method: 'DELETE' })
+    },
+
+    connectTicket: async (id: string, opts: { directory: string }): Promise<TerminalConnectTicket> => {
+      return this.request<TerminalConnectTicket>(
+        `/api/terminal/sessions/${encodeURIComponent(id)}/connect-ticket`,
+        { method: 'POST', body: JSON.stringify({ directory: opts.directory }) },
+      )
+    },
+  }
+
   // 鈹€鈹€ Permissions (PermissionCard 鈥?proxies the native opencode Permission API) 鈹€鈹€
 
   // ── Project Pod Lite ─────────────────────────────────────────────────────
@@ -1340,6 +1370,8 @@ export class MafwClient implements IMafwClient {
       this.request<{ message: PodMessage }>(`/api/pods/${encodeURIComponent(podID)}/messages/${encodeURIComponent(messageID)}/read`, {
         method: 'POST',
       }),
+
+
 
     wake: async (podID: string): Promise<PodDetail> =>
       this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}/wake`, { method: 'POST' }),

@@ -21,6 +21,9 @@ import { handleGoalPlan } from './routes/goal-plan';
 import { handleNodeRetry } from './routes/goal-node-retry';
 import { handleMcp } from './routes/mcp';
 import { handleMcpConfig } from './routes/mcp-config';
+import { handleTerminal } from './routes/terminal';
+import { TerminalService } from './terminal/terminal-service';
+import { matchTerminalConnectUrl } from './terminal/terminal-protocol';
 import { handleSkillContent } from './routes/skill-content';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
@@ -590,6 +593,8 @@ class MafwScheduler {
   private voiceWss?: WebSocketServer;
   private voiceStartBlockedUntil = 0;
   private voiceStartError = '';
+  private terminalService?: TerminalService;
+  private terminalWss?: WebSocketServer;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
   private ledger?: SchedulerLedger;
@@ -2310,6 +2315,17 @@ class MafwScheduler {
           .map((s) => s.name as string),
       isCanonicalType: (t: string) => CANONICAL_TYPE_SET.has(t),
     };
+  }
+
+  /**
+   * 中性 terminal service：只持有 ticket/会话台账，runtime 每次现读（热切换安全）。
+   * 原生 PTY 细节在 runtime adapter，此处不感知。
+   */
+  private getTerminalService(): TerminalService {
+    if (!this.terminalService) {
+      this.terminalService = new TerminalService({ getRuntime: () => this.runtime });
+    }
+    return this.terminalService;
   }
 
   /** P5 Wave 2：/api/runtime 路由 deps（自内联块上移，行为逐字节等价）。 */
@@ -5840,6 +5856,15 @@ class MafwScheduler {
           })) return;
         }
 
+        // Neutral terminal PTY façade（terminal.pty）：CRUD + connect-ticket。
+        // 原生 /api/pty、connect-token 与原生帧只在 runtime adapter。
+        if (req.url?.startsWith('/api/terminal/sessions')) {
+          if (await handleTerminal(req, res, req.url!, {
+            service: this.getTerminalService(),
+            access: this.runtime?.access ?? null,
+          })) return;
+        }
+
         // MCP 管理门面（runtime-neutral）：gateway 只做能力门 + 契约调用；
         // opencode 的 v2 HTTP / CLI / 配置文档细节在 runtime/opencode-mcp.ts。
         if (req.url?.match(/^\/api\/mcp\//)) {
@@ -7969,12 +7994,14 @@ class MafwScheduler {
         log.info(`[Scheduler]  - POST /api/media/analyze-audio (structured audio understanding)`);
         log.info(`[Scheduler]  - GET  /api/tts/voices (TTS voices)`);
         log.info(`[Scheduler]  - WS   /api/ws        (mobile client events + send)`);
+        log.info(`[Scheduler]  - GET/POST /api/terminal/sessions  (mafw-terminal/1; WS .../:id/connect?ticket=)`);
         log.info(`[Scheduler]  - GET  /              (Dashboard SPA)`);
 
         // WebSocket endpoint for mobile/remote clients: same event stream as
         // SSE (/api/events) plus an upstream `send` command.
         const wss = new WebSocketServer({ noServer: true });
         this.voiceWss = new WebSocketServer({ noServer: true });
+        this.terminalWss = new WebSocketServer({ noServer: true });
         wss.on('connection', (ws) => {
           this.wsClients.add(ws);
           (ws as any).isAlive = true;
@@ -8058,6 +8085,24 @@ class MafwScheduler {
                   (m) => ws.send(JSON.stringify(m)),
                 ),
               });
+            });
+            return;
+          }
+
+          const terminalRequest = matchTerminalConnectUrl(url);
+          if (terminalRequest) {
+            // 中性终端 WS：loopback-only + 一次性 ticket（ticket 自带目录绑定）。
+            if (!isLoopbackAddr(rawAddr)) {
+              socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+              socket.destroy();
+              return;
+            }
+            this.terminalWss!.handleUpgrade(req, socket, head, (ws) => {
+              void this.getTerminalService()
+                .bridge({ socket: ws as any, id: terminalRequest.id, ticket: terminalRequest.ticket })
+                .catch(() => {
+                  try { ws.close(4502, 'terminal bridge failed'); } catch { /* already closed */ }
+                });
             });
             return;
           }

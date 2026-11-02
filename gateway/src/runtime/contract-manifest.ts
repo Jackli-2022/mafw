@@ -31,6 +31,7 @@ const DOMAIN_TITLES: Record<ContractDomain, string> = {
   cognition: '认知面（runtime -> gateway）',
   media: '媒体',
   usage: '用量',
+  terminal: '内嵌终端（PTY）',
 };
 
 function buildDomains(surfaces: RuntimeContractManifest['surfaces']): RuntimeContractManifest['domains'] {

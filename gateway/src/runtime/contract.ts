@@ -23,6 +23,7 @@ import type { TOOL_CLASS } from './tool-classes';
 import type { MafwMessage } from './canonical-types';
 import type { EventMappingEntry } from './event-mapper';
 import type { OutputSchemaSpec } from './structured-output';
+import type { RuntimePtyChannel } from './pty';
 
 export interface RuntimeCapabilities {
   /** session.create/prompt/promptAsync/messages/... 全套会话 API */
@@ -553,6 +554,12 @@ export interface RuntimeClient {
     }): Promise<any>;
     remove(opts: { shellID: string; directory?: string }): Promise<void>;
   };
+  /**
+   * 中性 PTY 通道（terminal.pty surface）。缺实现 = 不支持内嵌终端
+   * （gateway 返回中性 503 / supported:false，绝不伪造 PTY）。
+   * 原生 PTY URL / 票据 / 帧格式只存在于适配器。
+   */
+  pty?: RuntimePtyChannel;
   global: {
     event(): Promise<any>;
   };

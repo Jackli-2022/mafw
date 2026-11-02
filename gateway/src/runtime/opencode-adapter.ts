@@ -24,6 +24,7 @@ import type {
   RuntimeSkillInfo,
   RuntimeDiscoveryResult,
 } from './contract';
+import type { RuntimePtyInbound, RuntimePtyInfo } from './pty';
 export type {
   SessionCreateOpts,
   SessionPromptOpts,
@@ -177,6 +178,51 @@ function mapRuntimeSkill(s: any): RuntimeSkillInfo {
     slash: !!s?.slash,
     ...((s?.path ?? s?.location) ? { location: String(s.path ?? s.location) } : {}),
     contentLength: typeof s?.content === 'string' ? s.content.length : 0,
+  };
+}
+
+// ── 原生 PTY 帧翻译（opencode 专属；gateway 只消费中性事件） ──────────────
+
+function ptyBytes(data: unknown): Uint8Array | null {
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  return null;
+}
+
+/**
+ * opencode PTY WS 出站载荷：原始文本是 stdout；`0x00` 前缀是 JSON meta 帧
+ * （2.1.0 实证：replay 后发 `{cursor}`）。0x00 前缀一律不当作输出——即使 JSON
+ * 非法也只消费、绝不把控制字节泄漏给客户端。
+ */
+function decodeOpencodePtyChunk(data: unknown): RuntimePtyInbound[] {
+  if (typeof data === 'string') return [{ kind: 'output', data }];
+  const bytes = ptyBytes(data);
+  if (!bytes) return [];
+  if (bytes.byteLength > 0 && bytes[0] === 0) {
+    try {
+      const parsed = JSON.parse(new TextDecoder().decode(bytes.subarray(1)));
+      if (typeof parsed?.cursor === 'number') {
+        return [{ kind: 'meta', event: 'cursor', payload: { cursor: parsed.cursor } }];
+      }
+      return [{ kind: 'meta', event: 'runtime', payload: parsed ?? null }];
+    } catch {
+      return [];
+    }
+  }
+  return [{ kind: 'output', data: new TextDecoder().decode(bytes) }];
+}
+
+function mapPtyInfo(raw: any): RuntimePtyInfo | null {
+  if (!raw || typeof raw.id !== 'string' || !raw.id) return null;
+  const status = raw.status === 'running' || raw.status === 'exited' ? raw.status : 'unknown';
+  return {
+    id: raw.id,
+    ...(typeof raw.title === 'string' && raw.title ? { title: raw.title } : {}),
+    status,
+    ...(typeof raw.cwd === 'string' && raw.cwd ? { cwd: raw.cwd } : {}),
   };
 }
 
@@ -661,6 +707,71 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
       async remove(opts: { shellID: string; directory?: string }) {
         await directNative(`/shell/${encodeURIComponent(opts.shellID)}`, 'DELETE', undefined, opts.directory);
+      },
+    },
+
+    // 原生 PTY（terminal.pty）：/api/pty CRUD + connect-token + 原生 WS 全在本
+    // 适配器内；gateway 只看到中性 URL/headers 与 decodeInbound/encodeInput。
+    pty: {
+      async create(opts) {
+        const body = await directNative('/pty', 'POST', {
+          cwd: opts.cwd ?? opts.directory,
+          ...(opts.title ? { title: opts.title } : {}),
+          size: { cols: opts.cols ?? 120, rows: opts.rows ?? 30 },
+        }, opts.directory);
+        const pty = unwrapNative<any>(body);
+        if (!pty?.id) throw new Error('native PTY create returned no id');
+        return { id: String(pty.id) };
+      },
+
+      async connect(opts) {
+        // 原生票据：POST /api/pty/:id/connect-token + x-opencode-ticket: 1。
+        const sep = '?';
+        const url = `${config.baseUrl.replace(/\/+$/, '')}/api/pty/${encodeURIComponent(opts.id)}/connect-token`
+          + (opts.directory ? `${sep}directory=${encodeURIComponent(opts.directory)}` : '');
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            ...serveAuthHeaders(),
+            ...(config.headers ?? {}),
+            'x-opencode-ticket': '1',
+            ...(opts.directory ? { 'x-opencode-directory': encodeURIComponent(opts.directory) } : {}),
+          },
+          signal: AbortSignal.timeout(10_000),
+        } as any);
+        if (!res.ok) {
+          const err: any = new Error(`native pty connect-token failed: ${res.status}`);
+          err.status = res.status;
+          throw err;
+        }
+        const body = await res.json().catch(() => null);
+        const ticket = unwrapNative<any>(body)?.ticket;
+        if (typeof ticket !== 'string' || !ticket) throw new Error('native pty connect-token returned no ticket');
+        const wsUrl = `${config.baseUrl.replace(/^http/, 'ws').replace(/\/+$/, '')}/api/pty/${encodeURIComponent(opts.id)}/connect?ticket=${encodeURIComponent(ticket)}`;
+        return { url: wsUrl, headers: { ...serveAuthHeaders(), ...(config.headers ?? {}) } };
+      },
+
+      async resize(opts) {
+        await directNative(`/pty/${encodeURIComponent(opts.id)}`, 'PUT', {
+          size: { cols: opts.cols, rows: opts.rows },
+        }, opts.directory);
+      },
+
+      async remove(opts) {
+        await directNative(`/pty/${encodeURIComponent(opts.id)}`, 'DELETE', undefined, opts.directory);
+      },
+
+      async list(opts) {
+        const body = await directNative('/pty', 'GET', undefined, opts?.directory);
+        const rows = unwrapNative<any[]>(body);
+        return Array.isArray(rows) ? rows.map(mapPtyInfo).filter((row): row is RuntimePtyInfo => row !== null) : [];
+      },
+
+      decodeInbound: decodeOpencodePtyChunk,
+
+      // 输入恒等透传（xterm 已把 Enter 编码为 \r；不得改写为 \n）。
+      encodeInput(data: string) {
+        return data;
       },
     },
 
