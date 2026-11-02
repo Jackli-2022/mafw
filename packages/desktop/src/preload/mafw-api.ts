@@ -253,6 +253,13 @@ export function createMafwApi(): MafwAPI {
       readMemory: (podID, node) => invoke("pod", "readMemory", podID, node),
       readMemoryFile: (podID, file) => invoke("pod", "readMemoryFile", podID, file),
       writeMemory: (podID, body) => invoke("pod", "writeMemory", podID, body),
+      techLead: (podID, goalID, limit) => invoke("pod", "techLead", podID, goalID, limit),
+      sendTechLeadMessage: (podID, goalID, text, body) => invoke("pod", "sendTechLeadMessage", podID, goalID, text, body),
+      directionDecision: (podID, goalID, body) => invoke("pod", "directionDecision", podID, goalID, body),
+      probes: (podID, goalID, filter) => invoke("pod", "probes", podID, goalID, filter),
+      createProbe: (podID, goalID, body) => invoke("pod", "createProbe", podID, goalID, body),
+      rejectResult: (podID, goalID, feedback, body) => invoke("pod", "rejectResult", podID, goalID, feedback, body),
+      revisions: (podID, goalID) => invoke("pod", "revisions", podID, goalID),
     },
 
     permissions: {

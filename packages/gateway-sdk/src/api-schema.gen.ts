@@ -2588,6 +2588,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pods/{podId}/goals/{goalId}/tech-lead": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["pods.goals.techLead"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/goals/{goalId}/tech-lead/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.goals.techLead.messages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/goals/{goalId}/direction-decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.goals.direction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/goals/{goalId}/probes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["pods.goals.probes"];
+        put?: never;
+        post: operations["pods.goals.probes.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/goals/{goalId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.goals.reject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/goals/{goalId}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["pods.goals.revisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/a2a/pods/{podId}": {
         parameters: {
             query?: never;
@@ -7186,6 +7282,153 @@ export interface operations {
             header?: never;
             path: {
                 podId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.techLead": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.techLead.messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.direction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.probes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.probes.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                goalId: string;
             };
             cookie?: never;
         };

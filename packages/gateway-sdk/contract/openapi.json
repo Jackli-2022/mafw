@@ -4169,6 +4169,221 @@
         }
       }
     },
+    "/api/pods/{podId}/goals/{goalId}/tech-lead": {
+      "get": {
+        "operationId": "pods.goals.techLead",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/tech-lead/messages": {
+      "post": {
+        "operationId": "pods.goals.techLead.messages",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/direction-decision": {
+      "post": {
+        "operationId": "pods.goals.direction",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/probes": {
+      "get": {
+        "operationId": "pods.goals.probes",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "pods.goals.probes.create",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/reject": {
+      "post": {
+        "operationId": "pods.goals.reject",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/goals/{goalId}/revisions": {
+      "get": {
+        "operationId": "pods.goals.revisions",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/a2a/pods/{podId}": {
       "post": {
         "operationId": "pods.a2a",

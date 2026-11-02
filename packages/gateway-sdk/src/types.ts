@@ -1219,16 +1219,33 @@ export interface PodGoalResult {
 
 export interface PodCreateGoalInput {
   title: string
-  objective: string
+  objective?: string
+  /** Goal 章程（objective 的替代或补充；二者至少一个）。 */
+  charter?: string
   acceptance?: string[]
   boundaries?: string[]
+  metrics?: Record<string, { target?: number; unit?: string }>
+  priority?: 'low' | 'medium' | 'high' | 'critical'
+  maxLoops?: number
+  budget?: { maxTurns?: number; maxCostUsd?: number }
+  taskType?: 'feature' | 'bugfix' | 'refactor' | 'research' | 'docs' | 'test' | 'other'
   planReview?: 'auto' | 'manual'
+  /** 调用者会话（提供时必须是该项目 Lead）。 */
+  actorSessionID?: string
 }
 
 export interface PodCreateGoalResult {
   goalId: string
-  status: 'started' | 'queued'
+  /** `discussing` = 直接讨论 Goal（Tech Lead 会话已启动，NodeDriver 尚未运行）。 */
+  status: 'started' | 'queued' | 'discussing'
   queueReason: PodQueueReason | null
+  /** 讨论 Goal 的 revision（缺省 1）。 */
+  revision?: number
+  stage?: 'discussing'
+  /** Tech Lead 隐藏会话 id（会话建立失败时为 null）。 */
+  sessionID?: string | null
+  sessionError?: string
+  promptError?: string
   goal: PodGoal
 }
 
@@ -1246,6 +1263,216 @@ export interface PodDetail {
 
 /** Delivery outcome reported by `POST /api/pods/:podId/messages` when `notify` is set. */
 export type PodDeliveryState = 'delivered' | 'pending' | 'disabled'
+
+// ── Task 18: collaboration DTOs (Tech Lead discussion / direction / probes / revisions) ──
+
+/** Goal revision lifecycle (append-only reject loop). */
+export type PodGoalRevisionStatus =
+  | 'discussing'
+  | 'direction_review'
+  | 'planning'
+  | 'plan_review'
+  | 'queued'
+  | 'implementing'
+  | 'reviewing'
+  | 'completed'
+  | 'aborted'
+  | 'discarded'
+
+export type PodGoalDirectionStatus = 'none' | 'pending' | 'decided'
+
+/** A single Goal revision row (old revisions are never rewritten). */
+export interface PodGoalRevision {
+  id: string
+  podId: string
+  goalId: string
+  revision: number
+  status: PodGoalRevisionStatus
+  verdict: PodGoalVerdict | null
+  directionStatus: PodGoalDirectionStatus
+  directionJson: string | null
+  planHash: string | null
+  evalHash: string | null
+  feedback: string | null
+  priority: number
+  enqueuedAt: string
+  startedAt: string | null
+  endedAt: string | null
+}
+
+export interface PodDirectionOption {
+  id: string
+  title: string
+  summary: string | null
+  risks: string[]
+}
+
+/** A user/Tech Lead direction decision (append-only; user words are preserved verbatim). */
+export interface PodDirectionDecision {
+  id: string
+  optionId: string | null
+  userWords: string
+  reason: string | null
+  source: string
+  revision: number | null
+  decidedAt: string
+  options: PodDirectionOption[]
+}
+
+export interface PodDirectionReviewRequest {
+  id: string
+  options: PodDirectionOption[]
+  reason: string | null
+  requestedAt: string
+  requestedBy: string | null
+  revision: number | null
+}
+
+export interface PodDirectionState {
+  version: number
+  goalId: string
+  revision: number
+  status: PodGoalDirectionStatus
+  options: PodDirectionOption[]
+  requests: PodDirectionReviewRequest[]
+  decisions: PodDirectionDecision[]
+  updatedAt: string | null
+}
+
+/** `POST /api/pods/:podId/goals/:goalId/direction-decision` body. */
+export interface PodDirectionDecisionInput {
+  /** `decided` (user words) | `clear` (direction is unambiguous) | `needs_user` (real divergence). */
+  mode?: 'decided' | 'clear' | 'needs_user'
+  userWords?: string
+  optionId?: string
+  options?: Array<{ id: string; title: string; summary?: string | null; risks?: string[] }>
+  reason?: string
+  revision?: number
+  actorSessionID?: string
+}
+
+export interface PodDirectionResult {
+  podId: string
+  goalId: string
+  revision: number
+  revisionStatus: PodGoalRevisionStatus
+  directionStatus: PodGoalDirectionStatus
+  state: PodDirectionState
+  decision: PodDirectionDecision | null
+  artifactPath: string
+  /** `decided`/`clear` 后是否成功启动了规划（needs_user 恒 false）。 */
+  planningStarted?: boolean
+  planningError?: string
+}
+
+/** Tech Lead discussion history for the active revision. */
+export interface PodTechLeadHistory {
+  goalId: string
+  revision: number
+  sessionID: string | null
+  messages: unknown[]
+  nextCursor?: string
+  sessionError?: string
+}
+
+export interface PodTechLeadPrompt {
+  goalId: string
+  revision: number
+  sessionID: string
+  /** 实际发送的正文（ContextManifest + 用户文本）。 */
+  text: string
+}
+
+export type PodProbeStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type PodProbeConclusion = 'supports' | 'refutes' | 'inconclusive'
+
+export interface PodProbeScope {
+  /** 相对隔离工作区根的允许路径；`.` = 整个工作区。 */
+  paths: string[]
+  /** 允许的命令类别（read/build/test/format/install/shell）。 */
+  commandClasses: string[]
+  network: boolean
+  credentials: string[]
+}
+
+export interface PodProbeBudget {
+  maxMinutes: number
+  maxUsd: number
+}
+
+export interface PodProbeAffects {
+  planAssertions?: string[]
+  evalMethods?: string[]
+  options?: string[]
+}
+
+export interface PodProbeRequest {
+  id: string
+  podId: string
+  goalId: string
+  revision: number
+  question: string
+  hypothesis: string
+  scope: PodProbeScope
+  budget: PodProbeBudget
+  evidenceRequired: string[]
+  affects: PodProbeAffects
+}
+
+export interface PodProbeReport {
+  probeId: string
+  conclusion: PodProbeConclusion
+  commands: string[]
+  keyOutput: string
+  repro: string[]
+  remainingAssumptions: string[]
+  impact: { plan?: string; goalEval?: string }
+}
+
+/** Persisted Spike probe (request/report + scheduling state). */
+export interface PodProbe {
+  id: string
+  podId: string
+  goalId: string
+  revision: number
+  status: PodProbeStatus
+  request: PodProbeRequest
+  report: PodProbeReport | null
+  error: string | null
+  requestPath: string
+  reportPath: string | null
+  createdAt: string
+  startedAt: string | null
+  endedAt: string | null
+}
+
+/** `POST /api/pods/:podId/goals/:goalId/probes` item (single or `{ probes: [...] }`). */
+export interface PodProbeInput {
+  revision?: number
+  question: string
+  hypothesis: string
+  scope: PodProbeScope
+  budget: PodProbeBudget
+  evidenceRequired: string[]
+  affects?: PodProbeAffects
+  actorSessionID?: string
+}
+
+/** Reject result: the same Goal reopened as revision N+1 (discussing). */
+export interface PodRejectResult {
+  podId: string
+  goalId: string
+  revision: number
+  status: PodGoalRevisionStatus
+  priority: number
+  feedback: string
+  archivedState: string | null
+  previous: { revision: number; closed: boolean; alreadyTerminal: boolean; missing: boolean }
+  /** 恢复/重建的 Tech Lead 讨论会话。 */
+  sessionID: string | null
+  sessionError?: string
+}
+
 
 export interface PodNamespace {
   ensure(projectID: string): Promise<PodDetail>
@@ -1275,6 +1502,14 @@ export interface PodNamespace {
   readMemory(podID: string, node?: 'plan' | 'execute' | 'review'): Promise<{ context: string | null }>
   readMemoryFile(podID: string, file: 'POD' | 'MEMORY' | 'GLOSSARY'): Promise<{ content: string | null }>
   writeMemory(podID: string, body: { file: 'POD' | 'MEMORY' | 'GLOSSARY'; content: string; actorSessionID?: string }): Promise<{ path: string }>
+  /** Tech Lead discussion for the active revision (GET ensures the hidden session exists). */
+  techLead(podID: string, goalID: string, limit?: number): Promise<PodTechLeadHistory>
+  sendTechLeadMessage(podID: string, goalID: string, text: string, body?: { actorSessionID?: string }): Promise<PodTechLeadPrompt>
+  directionDecision(podID: string, goalID: string, body: PodDirectionDecisionInput): Promise<PodDirectionResult>
+  probes(podID: string, goalID: string, filter?: { revision?: number; status?: PodProbeStatus }): Promise<{ items: PodProbe[] }>
+  createProbe(podID: string, goalID: string, body: PodProbeInput | PodProbeInput[]): Promise<{ items: PodProbe[] }>
+  rejectResult(podID: string, goalID: string, feedback: string, body?: { actorSessionID?: string }): Promise<PodRejectResult>
+  revisions(podID: string, goalID: string): Promise<{ items: PodGoalRevision[] }>
 }
 
 /** 持久审批规则（切片 1：~/.mafw/permission-rules.json）。 */

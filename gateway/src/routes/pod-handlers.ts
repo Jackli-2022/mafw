@@ -1,7 +1,24 @@
+import type * as http from 'http';
 import type { RouteRegistry } from './registry';
 import { handlePods, type PodRouteDeps } from './pods';
+import { handlePodCollaboration, type PodCollaborationDeps } from './pod-collaboration';
 
-export function attachPodHandlers(registry: RouteRegistry, deps: PodRouteDeps): void {
+/** Task 18：协作面（Tech Lead 讨论 / 方向 / 探针 / 打回 / revision 历史）。 */
+const COLLABORATION_OPERATION_IDS = [
+  'pods.goals.techLead',
+  'pods.goals.techLead.messages',
+  'pods.goals.direction',
+  'pods.goals.probes',
+  'pods.goals.probes.create',
+  'pods.goals.reject',
+  'pods.goals.revisions',
+];
+
+export function attachPodHandlers(
+  registry: RouteRegistry,
+  deps: PodRouteDeps,
+  collaboration?: PodCollaborationDeps,
+): void {
   const operationIds = [
     'pods.ensure',
     'pods.lookup',
@@ -31,5 +48,16 @@ export function attachPodHandlers(registry: RouteRegistry, deps: PodRouteDeps): 
   for (const operationId of operationIds) {
     registry.attachHandler(operationId, async (req, res) =>
       handlePods(req, res, req.url || '', deps));
+  }
+  // 协作面始终登记 handler（catalog 覆盖率守卫要求），缺 deps 时中性 503。
+  for (const operationId of COLLABORATION_OPERATION_IDS) {
+    registry.attachHandler(operationId, async (req: http.IncomingMessage, res: http.ServerResponse) => {
+      if (!collaboration) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'pod collaboration unavailable' }));
+        return true;
+      }
+      return handlePodCollaboration(req, res, req.url || '', collaboration);
+    });
   }
 }

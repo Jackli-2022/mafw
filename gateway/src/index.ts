@@ -4917,9 +4917,23 @@ class MafwScheduler {
           }),
         },
         newGoalId: () => makePodGoalId(new Date().toISOString(), Math.random),
+        // Task 18: POST /goals creates a direct discussion Goal via the Tech Lead.
+        techLead: this.podTechLeadService,
         cost: async (podId) => this.podCost(podId),
         transcript: async (podId, sessionId) => this.podTranscript(podId, sessionId),
+      }, {
+        // Task 18: collaboration surface (Tech Lead discussion / direction / probes /
+        // reject / revisions). Services are constructed above, so plain references.
+        pods: this.podService,
+        goals: this.podGoalService,
+        techLead: this.podTechLeadService,
+        directions: this.podDirectionService,
+        probes: this.podProbeService,
+        revisions: { list: (podId, goalId) => this.podStore.listGoalRevisions(podId, goalId) },
+        startPlanning: (goalId) => this.startGoalDirect(goalId),
+        access: this.podAccess,
       });
+
       attachPodA2ARoutes(this.routeRegistry, {
         getAgent: (podId) => this.podA2AAgent(podId),
       });

@@ -218,6 +218,14 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/pods/:podId/sessions/:sessionId/transcript', operationId: 'pods.transcript', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/memory', operationId: 'pods.memory.get', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/memory', operationId: 'pods.memory.write', tags: ['pods'] },
+  // Task 18：直接讨论 Goal 的协作面（Tech Lead 会话 / 方向裁定 / Spike / 打回 / revision）
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/tech-lead', operationId: 'pods.goals.techLead', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/tech-lead/messages', operationId: 'pods.goals.techLead.messages', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/direction-decision', operationId: 'pods.goals.direction', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/probes', operationId: 'pods.goals.probes', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/probes', operationId: 'pods.goals.probes.create', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/goals/:goalId/reject', operationId: 'pods.goals.reject', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/revisions', operationId: 'pods.goals.revisions', tags: ['pods'] },
 ];
 
 /** 非 SDK 端点补充登记（desktop/TUI/worker/dashboard 专用面），operationId 自拟，tags 'internal'。 */

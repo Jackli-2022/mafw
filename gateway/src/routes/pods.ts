@@ -6,6 +6,7 @@ import type { PodMemoryService } from '../core/pod/pod-memory-service';
 import type { PodMessageService } from '../core/pod/pod-message-service';
 import type { PodService } from '../core/pod/pod-service';
 import type { PodTaskService } from '../core/pod/pod-task-service';
+import type { PodTechLeadService } from '../core/pod/pod-tech-lead-service';
 import type { GoalIntakeInput, GoalIntakeResult } from '../core/goal/goal-intake';
 import { GoalConflictError, makePodGoalId } from '../core/goal/goal-intake';
 import type { PodEnqueueResult } from '../core/pod/pod-goal-service';
@@ -28,6 +29,8 @@ export interface PodRouteDeps {
     dismissFailure?(messageId: string, memberId: string): boolean;
   };
   intake?: { create(input: GoalIntakeInput): GoalIntakeResult };
+  /** Task 18: POST /goals creates a direct discussion Goal (Tech Lead session + revision 1 discussing). */
+  techLead?: Pick<PodTechLeadService, 'createGoal'>;
   newGoalId?(): string;
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>;
   transcript(podId: string, sessionId: string): Promise<unknown>;
@@ -319,18 +322,64 @@ export async function handlePods(
       if (method !== 'POST') return false;
 
       const body = await readJson(req);
-      if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
-        assertAccess(deps, body, ['lead'], podId);
-      }
+      const actor = typeof body?.actorSessionID === 'string' && body.actorSessionID
+        ? assertAccess(deps, body, ['lead'], podId)
+        : null;
       const title = String(body?.title ?? '').trim();
       const objective = String(body?.objective ?? '').trim();
       const charter = String(body?.charter ?? '').trim();
       if (!title) throw new PodError(400, 'title is required');
       if (!objective && !charter) throw new PodError(400, 'objective or charter is required');
-      if (!deps.intake) throw new PodError(503, 'goal intake unavailable');
 
       const detail = deps.pods.get(podId);
       if (!detail) throw new PodError(404, `pod not found: ${podId}`);
+
+      // Task 18: a Pod Goal is created as a direct discussion Goal - the Tech Lead
+      // session starts discussing revision 1 and the NodeDriver only starts after an
+      // explicit direction decision. The intake/enqueue path stays as the legacy
+      // fallback for compositions without the Tech Lead service.
+      if (deps.techLead) {
+        const created = await deps.techLead.createGoal({
+          podId,
+          projectDir: detail.pod.projectDir,
+          title,
+          objective: objective || undefined,
+          charter: charter || undefined,
+          acceptance: Array.isArray(body.acceptance) ? body.acceptance : undefined,
+          boundaries: Array.isArray(body.boundaries) ? body.boundaries : undefined,
+          metrics: isPlainObject(body.metrics) ? body.metrics : undefined,
+          priority: isGoalPriority(body.priority) ? body.priority : undefined,
+          maxLoops: positiveInteger(body.maxLoops),
+          budget: isPlainObject(body.budget) ? body.budget : undefined,
+          taskType: isGoalTaskType(body.taskType) ? body.taskType : undefined,
+          planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
+          source: typeof body.source === 'string' && body.source.trim() ? body.source.trim() : 'desktop',
+          authorization: { source: 'desktop', requestMode: 'explicit' },
+          ...(actor && typeof body.actorSessionID === 'string' ? { createdBy: body.actorSessionID } : {}),
+        });
+        const view = deps.goals.views?.(podId).find((item) => item.goalId === created.goalId)
+          ?? {
+            id: created.goalId, podId, goalId: created.goalId, status: 'active',
+            title, phase: null, verdict: null, stage: { owner: 'team', kind: 'working' },
+            resultReady: false, activeRevision: created.revision, revision: created.revision,
+            priority: 0, enqueuedAt: new Date().toISOString(), startedAt: null, endedAt: null,
+          };
+        sendJson(res, 200, {
+          podId,
+          goalId: created.goalId,
+          status: created.status,
+          revision: created.revision,
+          stage: created.stage,
+          queueReason: null,
+          sessionID: created.sessionID,
+          goal: view,
+          ...(created.sessionError ? { sessionError: created.sessionError } : {}),
+          ...(created.promptError ? { promptError: created.promptError } : {}),
+        });
+        return true;
+      }
+
+      if (!deps.intake) throw new PodError(503, 'goal intake unavailable');
       const goalId = deps.newGoalId?.() ?? makePodGoalId(new Date().toISOString(), Math.random);
       let created: GoalIntakeResult;
       try {
@@ -471,6 +520,23 @@ function enrichPodDetail<T extends { pod: { id: string }; goals: unknown[]; task
 
 function decode(value: string): string {
   return decodeURIComponent(value);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isGoalPriority(value: unknown): value is GoalIntakeInput['priority'] {
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'critical';
+}
+
+function isGoalTaskType(value: unknown): value is GoalIntakeInput['taskType'] {
+  return value === 'feature' || value === 'bugfix' || value === 'refactor'
+    || value === 'research' || value === 'docs' || value === 'test' || value === 'other';
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 function requirePod(deps: PodRouteDeps, podId: string): void {

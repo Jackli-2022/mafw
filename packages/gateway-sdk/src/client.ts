@@ -14,6 +14,8 @@ import {
   TerminalNamespace, TerminalSessionList, TerminalConnectTicket, TerminalSessionCreateInput,
   PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus, PodDeliveryState,
   PodCreateGoalInput, PodCreateGoalResult, PodGoalResult,
+  PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
+  PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
   MethodNotSupportedError,
 } from './types'
@@ -1299,6 +1301,75 @@ export class MafwClient implements IMafwClient {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+
+    // ── Task 18: collaboration surface ──
+
+    techLead: async (podID: string, goalID: string, limit?: number): Promise<PodTechLeadHistory> => {
+      // Keep the template on the same line as the call: the contract drift guard
+      // discovers (method, path) from that literal.
+      const q = limit ? `?limit=${encodeURIComponent(String(limit))}` : ''
+      return this.request<PodTechLeadHistory>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/tech-lead${q}`)
+    },
+
+    sendTechLeadMessage: async (
+      podID: string,
+      goalID: string,
+      text: string,
+      body: { actorSessionID?: string } = {},
+    ): Promise<PodTechLeadPrompt> =>
+      this.request<PodTechLeadPrompt>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/tech-lead/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ text, ...body }),
+      }),
+
+    directionDecision: async (
+      podID: string,
+      goalID: string,
+      body: PodDirectionDecisionInput,
+    ): Promise<PodDirectionResult> =>
+      this.request<PodDirectionResult>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/direction-decision`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    probes: async (
+      podID: string,
+      goalID: string,
+      filter: { revision?: number; status?: PodProbeStatus } = {},
+    ): Promise<{ items: PodProbe[] }> => {
+      const q = new URLSearchParams()
+      if (filter.revision) q.set('revision', String(filter.revision))
+      if (filter.status) q.set('status', filter.status)
+      const qs = q.toString()
+      if (qs) {
+        return this.request<{ items: PodProbe[] }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/probes?${qs}`)
+      }
+      return this.request<{ items: PodProbe[] }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/probes`)
+    },
+
+    createProbe: async (
+      podID: string,
+      goalID: string,
+      body: PodProbeInput | PodProbeInput[],
+    ): Promise<{ items: PodProbe[] }> =>
+      this.request<{ items: PodProbe[] }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/probes`, {
+        method: 'POST',
+        body: JSON.stringify(Array.isArray(body) ? { probes: body } : body),
+      }),
+
+    rejectResult: async (
+      podID: string,
+      goalID: string,
+      feedback: string,
+      body: { actorSessionID?: string } = {},
+    ): Promise<PodRejectResult> =>
+      this.request<PodRejectResult>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ feedback, ...body }),
+      }),
+
+    revisions: async (podID: string, goalID: string): Promise<{ items: PodGoalRevision[] }> =>
+      this.request<{ items: PodGoalRevision[] }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/revisions`),
   }
 
   permissions = {
