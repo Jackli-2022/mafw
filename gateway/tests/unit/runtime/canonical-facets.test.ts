@@ -26,6 +26,17 @@ test('chatSignal: delta 双路径（part.text 优先于 delta；空串不算）'
   expect(ev('part.updated', { part: {} }, undefined).chatSignal).toBeNull();
 });
 
+test('chatSignal: part.delta（opencode ≥1.18 / pi 流式增量）→ delta 信号（Mode B）', () => {
+  const r = ev('part.delta', { messageID: 'm1', partID: 'm1_t1', field: 'text', delta: 'he' }, 's1');
+  expect(r.chatSignal).toBe('delta');
+  expect(r.deltaText).toBe('he');
+  // reasoning 增量同样上报
+  expect(ev('part.delta', { field: 'reasoning', delta: 'hmm' }, 's1').deltaText).toBe('hmm');
+  // 空 delta / 缺 delta / 非增量事件 → 无信号
+  expect(ev('part.delta', { messageID: 'm1', delta: '' }, 's1').chatSignal).toBeNull();
+  expect(ev('part.delta', { messageID: 'm1' }, 's1').chatSignal).toBeNull();
+});
+
 test('chatSignal: turn 三元组终态（v2：broadcast 切面已删除）', () => {
   expect(ev('turn.completed', {}, 's1')).toMatchObject({ chatSignal: 'complete' });
   expect(ev('turn.failed', { error: 'x' }, 's1')).toMatchObject({ chatSignal: 'error', chatError: 'x' });

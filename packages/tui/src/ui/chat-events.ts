@@ -6,6 +6,7 @@
  * 只能等历史重载才出现。
  */
 export const CHAT_EVENT_TYPES = [
+  'message.updated',
   'part.updated',
   'part.delta',
   'turn.completed',

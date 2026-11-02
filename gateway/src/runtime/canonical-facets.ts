@@ -36,6 +36,9 @@ export const CANONICAL_FACET_RULES: FacetRule[] = [
   // chatSignal（delta 双路径：part.text 优先）
   { type: 'part.updated', when: [{ path: '$.part.text', exists: true }], chatSignal: 'delta', deltaText: '$.part.text' },
   { type: 'part.updated', when: [{ path: '$.delta', exists: true }], chatSignal: 'delta', deltaText: '$.delta' },
+  // part.delta：v2 流式主链（opencode ≥1.18 / pi message_update）——Mode B 广播 delta，
+  // 空 delta 不算（when exists 为真值语义，空串被跳过 → 无信号）。
+  { type: 'part.delta', when: [{ path: '$.delta', exists: true }], chatSignal: 'delta', deltaText: '$.delta' },
   { type: 'turn.completed', chatSignal: 'complete' },
   { type: 'message.updated', chatSignal: 'complete' },
   { type: 'turn.failed', chatSignal: 'error', chatError: '$.error' },

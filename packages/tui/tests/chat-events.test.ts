@@ -74,7 +74,6 @@ test('dispatchChatEvent: 非 chat 事件不触碰 store', () => {
   assert.equal(store.turns.length, 0)
   assert.equal(store.streaming, false)
 })
-
 test('dispatchChatEvent: part.delta 累积成 assistant turn（无 message_start 也能建 turn）', () => {
   const store = makeStore()
   const delta = (delta: string, field = 'text', partID = 'pia_1_t1', messageID = 'pia_1') =>
@@ -106,9 +105,42 @@ test('dispatchChatEvent: part.delta 忽略畸形/他会话/空增量', () => {
   assert.equal(store.turns.length, 0, '没有任何无效增量建成 turn')
 })
 
-test('CHAT_EVENT_TYPES 覆盖 chat 白名单（part/turn 三元组）', () => {
-  assert.deepEqual([...CHAT_EVENT_TYPES], ['part.updated', 'part.delta', 'turn.completed', 'turn.failed', 'turn.aborted'])
+test('dispatchChatEvent: message.updated assistant 快照覆盖 delta 累积（同 id 替换，不重复）', () => {
+  const store = makeStore()
+  const delta = (d: string) => ({ type: 'part.delta', properties: { sessionID: 's', messageID: 'pia_1', partID: 'pia_1_t1', field: 'text', delta: d } })
+  dispatchChatEvent(store, 'part.delta', delta('Hel'))
+  dispatchChatEvent(store, 'part.delta', delta('lo'))
+  assert.equal(store.turns.length, 1)
+  assert.equal(store.turns[0].parts[0].text, 'Hello')
+
+  assert.equal(dispatchChatEvent(store, 'message.updated', {
+    type: 'message.updated', sessionID: 's',
+    properties: {
+      sessionID: 's',
+      message: {
+        id: 'pia_1', role: 'assistant', sessionID: 's', stopReason: 'end_turn',
+        content: [{ id: 'pia_1_t1', type: 'text', text: 'Hello!' }],
+      },
+    },
+  }), true)
+  assert.equal(store.turns.length, 1, '快照合并同一 messageID 的 turn')
+  assert.equal(store.turns[0].parts.length, 1, '同 partID 替换而非追加')
+  assert.equal(store.turns[0].parts[0].text, 'Hello!')
+})
+
+test('dispatchChatEvent: message.updated user 不建 turn（user 回合由本地乐观 turn 承担）', () => {
+  const store = makeStore()
+  dispatchChatEvent(store, 'message.updated', {
+    type: 'message.updated', sessionID: 's',
+    properties: { sessionID: 's', message: { id: 'piu_1', role: 'user', sessionID: 's', content: [{ id: 'piu_1_t', type: 'text', text: 'hi' }] } },
+  })
+  assert.equal(store.turns.length, 0)
+})
+
+test('CHAT_EVENT_TYPES 覆盖 chat 白名单（message/part/turn）', () => {
+  assert.deepEqual([...CHAT_EVENT_TYPES], ['message.updated', 'part.updated', 'part.delta', 'turn.completed', 'turn.failed', 'turn.aborted'])
   assert.equal(isChatEvent('part.updated'), true)
+  assert.equal(isChatEvent('message.updated'), true)
   assert.equal(isChatEvent('part.delta'), true)
   assert.equal(isChatEvent('turn.failed'), true)
   assert.equal(isChatEvent('session.config'), false)

@@ -15,7 +15,8 @@ const HEALTH_TICK_MS = 1000
 /**
  * TUI 精确订阅的白名单（Task 12：**只有真实消费者**的事件才订阅）。
  *
- * - `part.updated` / `part.delta` / `turn.*`：ChatStore 回合渲染、流式增量累积与终态
+ * - `message.updated` / `part.updated` / `part.delta` / `turn.*`：ChatStore 回合渲染、
+ *   终态快照合并、流式增量累积与回合收尾
  * - `permission.asked` / `permission_mode`：审批 overlay 与 🛡 状态
  * - `queue.updated`：gateway inbox 计数
  * - `background.job.updated`：状态栏后台作业计数（MafwBackgroundJob）
@@ -27,6 +28,7 @@ const HEALTH_TICK_MS = 1000
  * tests/event-coverage.test.ts 与 @mafw/sdk 事件 union 交叉校验。
  */
 export const KNOWN_EVENTS = [
+  'message.updated',
   'part.updated',
   'part.delta',
   'turn.completed',

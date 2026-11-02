@@ -46,9 +46,9 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   'session.compacting':   R(['compaction'], 'passthrough', 'ignore', 'ignore', '仅 pi 发；gateway 触发 turnCompress flush'),
   'session.compacted':    R(['compaction'], 'passthrough', 'handled', 'ignore', 'desktop 记录 compactionMarks'),
   // ---- 消息/part 流 ----
-  'message.updated':      R(['step', 'chatSignal'], 'passthrough', 'handled', 'ignore', 'desktop 建消息骨架/替换乐观 user 消息'),
+  'message.updated':      R(['step', 'chatSignal'], 'passthrough', 'handled', 'handled', 'desktop 建消息骨架/替换乐观 user 消息；TUI 合并 assistant 终态快照'),
   'part.updated':         R(['step', 'chatSignal', 'toolCommand'], 'passthrough', 'handled', 'handled', '原 message.part.updated；最高频事件；toolCommand 载体（tool part 快照 state.input.command）'),
-  'part.delta':           R([], 'passthrough', 'handled', 'handled', '原 message.part.delta；opencode ≥1.18 / pi 流式增量（TUI 按 messageID 累积文本+推理）'),
+  'part.delta':           R(['chatSignal'], 'passthrough', 'handled', 'handled', '原 message.part.delta；opencode ≥1.18 / pi 流式增量（Mode B delta 信号；TUI 按 messageID 累积文本+推理）'),
   'part.complete':        R([], 'passthrough', 'handled', 'ignore', '原 message.part.complete'),
   // ---- 问答/审批 ----
   'question.asked':       R([], 'passthrough', 'handled', 'ignore', 'desktop flow card'),

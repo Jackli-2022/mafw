@@ -244,6 +244,14 @@ describe('pi message identity live ⇄ 历史（message_start / message_update /
     expect(message.sessionID).toBe('pi_x');
   });
 
+  it('message_start user 不发（message_end 已完整落一次，避免重复帧）', () => {
+    expect(translatePiEvent({ type: 'message_start', message: { role: 'user', content: 'hi', timestamp: T } }, 'pi_x')).toBeNull();
+    // 但 message_end 照常发（user 回合的唯一 live 帧）
+    const end = translatePiEvent({ type: 'message_end', message: { role: 'user', content: 'hi', timestamp: T } }, 'pi_x');
+    expect(end?.payload.type).toBe('message.updated');
+    expect(end?.payload.properties.message.id).toBe(`piu_${T}`);
+  });
+
   it('message_update text_delta → part.delta（partID 与历史同编号）', () => {
     const out = update({ type: 'text_delta', contentIndex: 0, delta: 'Hel' });
     expect(out?.payload.type).toBe('part.delta');
@@ -267,6 +275,14 @@ describe('pi message identity live ⇄ 历史（message_start / message_update /
     expect(update({ type: 'text_end', contentIndex: 0, content: 'Hel' })).toBeNull();
     expect(update({ type: 'toolcall_delta', contentIndex: 0, delta: '{}' })).toBeNull();
     expect(update({ type: 'start' })).toBeNull();
+  });
+
+  it('contentIndex 非整数 / 缺失 → 无输出（partID 不能是 NaN/小数）', () => {
+    expect(update({ type: 'text_delta', contentIndex: 0.5, delta: 'x' })).toBeNull();
+    expect(update({ type: 'text_delta', contentIndex: Number.NaN, delta: 'x' })).toBeNull();
+    expect(update({ type: 'text_delta', contentIndex: '0', delta: 'x' })).toBeNull();
+    expect(update({ type: 'text_delta', delta: 'x' })).toBeNull();
+    expect(update({ type: 'text_delta', contentIndex: -1, delta: 'x' })).toBeNull();
   });
 
   it('message_end user → message.updated user（id piu_<ts>，text part piu_<ts>_t）', () => {

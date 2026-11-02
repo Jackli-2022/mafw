@@ -1335,10 +1335,12 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
   215 paths）。
 - **登记缺口**：claude 历史无时间戳（`time` 可选缺失）；
   adapter 内部 native 翻译（opencode `/command`、`/skill`、history normalize）按 spec §9.2 保留。
-  pi 的 live 消息身份缺口已闭合（2026-11-03）：`message_start`/`message_end` →
-  `message.updated` 带 `message.id`（`piu_<timestamp>` / `pia_<timestamp>`，与
-  `normalizePiMessages` 同一套），`message_update`（`text_delta`/`thinking_delta`）→
-  `part.delta`（partID `<msgId>_t<n>`/`_r<n>` 跟 contentIndex）；无 timestamp 的 live 消息丢弃。
+  pi 的 live 消息身份缺口已闭合（2026-11-03）：`message_start`（仅 assistant，骨架让
+  `part.delta` 有承载）/`message_end`（user+assistant）→ `message.updated` 带 `message.id`
+  （`piu_<timestamp>` / `pia_<timestamp>`，与 `normalizePiMessages` 同一套），
+  `message_update`（`text_delta`/`thinking_delta`）→ `part.delta`（partID
+  `<msgId>_t<n>`/`_r<n>` 跟 contentIndex；facet 侧同样出 `chatSignal: delta`）；
+  无 timestamp 的 live 消息丢弃；user 的 `message_start` 刻意不发（`message_end` 已完整落一次）。
 - **验证**：gateway **4002/4002（534 suites，含并行 user 测试）**、SDK **180/180**、session-ui **133/133**、TUI
   **284 pass/1 skip（285）**、desktop **2253/2253**、mobile **86/86**、adapters/claude **21/21**；
   `tsc`/`tsgo -p tsconfig.json`/`electron-vite build`/根 build/`flutter analyze`+`flutter test` rc=0。

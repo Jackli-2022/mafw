@@ -298,6 +298,12 @@ export class ChatStore {
       if (typeof props.delta !== 'string' || !props.delta) return
       this.applyDelta(props.messageID, props.partID, props.delta, field)
       this.deps.onChange()
+    } else if (type === 'message.updated') {
+      // 消息快照（pi message_start/message_end、opencode message.updated）：
+      // assistant 用终态 content 覆盖流式累积（text/reasoning 同 id 替换，不追加）；
+      // user 回合由本地乐观 turn / 历史承担，不在此重复建 turn。
+      const message = data?.properties?.message
+      if (this.applyMessageSnapshot(message)) this.deps.onChange()
     } else if (type === 'turn.completed' || type === 'turn.failed' || type === 'turn.aborted') {
       // v2：回合终态三元组（原 session.idle/message.complete 双轨合并；Mode A 改写已删）
       const sid = data?.sessionID
@@ -307,13 +313,45 @@ export class ChatStore {
 
   private finalizeTurn(): void {
     this.streaming = false
-    const last = this.turns.at(-1)
-    if (last && last.role === 'assistant') last.done = true
+    // 终态结束的是「最后一个 assistant 回合」——排队中的本地 user turn 可能排在其后，
+    // 只认 turns.at(-1) 会让真正在跑的 assistant turn 永远停在 pending。
+    for (let i = this.turns.length - 1; i >= 0; i--) {
+      const t = this.turns[i]
+      if (t.role !== 'assistant') continue
+      t.done = true
+      break
+    }
     this.deps.onChange()
     this.flushQueue()
   }
 
+  /**
+   * message.updated → turn 快照合并（只认 assistant）：content 非空时按 part 列表
+   * 覆盖（历史/终态是权威，流式累积只补空白），空骨架（message_start）不建空 part。
+   * 返回 true = 有变化（调用方触发 onChange）。
+   */
+  private applyMessageSnapshot(message: any): boolean {
+    if (!message || message.role !== 'assistant') return false
+    if (typeof message.id !== 'string' || !message.id) return false
+    if (message.sessionID && message.sessionID !== this._sessionID) return false
+    const parts = (Array.isArray(message.content) ? message.content : [])
+      .map(historyPart)
+      .filter((p: ChatPart | null): p is ChatPart => p !== null)
+    let turn = this.byMessage.get(message.id)
+    if (!turn) {
+      turn = { messageID: message.id, role: 'assistant', parts: [], done: false }
+      this.byMessage.set(message.id, turn)
+      this.turns.push(turn)
+    }
+    if (parts.length > 0) turn.parts = parts
+    return true
+  }
+
   private applyPart(part: MafwPart): void {
+    // 非渲染 part（step 边界/压缩标记/data-* 带外数据）不建回合：pi/opencode 的
+    // step-start/step-finish 无文本，建 turn 会得到幽灵 pending 回合并把真正在流的
+    // assistant turn 挤出 last 位置。
+    if (NON_RENDERABLE_PART_TYPES.has(part.type) || String(part.type).startsWith('data-')) return
     const cp = livePart(part)
     if (!cp) return
     let turn = this.byMessage.get(part.messageID ?? '')
@@ -391,6 +429,9 @@ export function historyToTurns(messages: MafwMessage[]): ChatTurn[] {
 
 /** 系统注入块（boundary recall / 便签板 / goal 快照等）会在 manager 会话历史里持久化，渲染时过滤。 */
 const INJECTION_TAGS = ['<recall>', '<note-board>', '<goal-snapshot>', '<user-profile>', '<memory-guide>']
+
+/** 不承载可渲染内容的 part 类型（step 边界 / 压缩标记）；data-* 另行按前缀跳过。 */
+const NON_RENDERABLE_PART_TYPES = new Set(['step-start', 'step-finish', 'compaction'])
 function isInjectionBlock(text: string): boolean {
   const t = text.trimStart()
   return INJECTION_TAGS.some((tag) => t.startsWith(tag))

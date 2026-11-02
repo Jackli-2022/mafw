@@ -249,6 +249,9 @@ export class ChatTab extends VStack implements Focusable {
       this.transcript.addChild(b)
       if (entry.pending) this.transcript.addChild(entry.pending)
     }
+    // 终态快照可能合并/裁掉流式 part（如 reasoning 被折叠进 text）：块数变少时
+    // 增量替换无法收敛，整段重建（罕见路径，只在 message.updated 快照收缩时发生）。
+    if (entry.blocks.length > last.parts.length) { this.rebuild(); return }
     for (let j = 0; j < entry.blocks.length; j++) entry.blocks[j].update(last.parts[j])
     if (entry.pending && last.done) {
       this.transcript.removeChild(entry.pending)

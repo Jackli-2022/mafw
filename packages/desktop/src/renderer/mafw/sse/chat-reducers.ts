@@ -10,6 +10,14 @@ export type ChatStoreState = {
   part: Record<string, any[]>
 }
 
+/** 乐观 part 与已落库真实 part 的内容同一性（同类型 + 同文本/同文件 url）。 */
+function samePartContent(a: any, b: any): boolean {
+  if (!a || !b || a.type !== b.type) return false
+  if (a.type === "text" || a.type === "reasoning") return (a.text ?? "") === (b.text ?? "")
+  if (a.type === "file") return (a.url ?? "") === (b.url ?? "")
+  return false
+}
+
 /** message.updated user 分支：乐观 user 消息（id `user-...`）替换为真实 id。 */
 export function applyUserMessageArrival(
   state: ChatStoreState,
@@ -38,7 +46,13 @@ export function applyUserMessageArrival(
     msgs[sid] = sessionMsgs
     const parts = { ...state.part }
     if (parts[opt.id]) {
-      parts[msgId] = (parts[msgId] || []).concat(parts[opt.id].map(p => ({ ...p, sessionID: sid, messageID: msgId })))
+      // gateway 的 message.updated 通常已先落真实 content parts（pi/opencode 同一帧携带）。
+      // 迁移乐观 parts 时必须跳过内容重复项，否则用户气泡渲染两份相同文本。
+      const target = parts[msgId] || []
+      const migrated = parts[opt.id]
+        .filter(p => !target.some(existing => samePartContent(existing, p)))
+        .map(p => ({ ...p, sessionID: sid, messageID: msgId }))
+      parts[msgId] = target.concat(migrated)
       delete parts[opt.id]
     }
     return { message: msgs, part: parts }

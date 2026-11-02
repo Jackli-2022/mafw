@@ -86,10 +86,20 @@ export function setPiUnknownRecorder(fn: ((type: string) => void) | undefined): 
 export const piTransformEvent: TransformEventFn = (event: any): RawRuntimeEvent | null => {
   const t = event?.type ?? event?.payload?.type;
   // 消息身份/流式（本批）：pi 的 message 对象只有 timestamp 没有 id。
-  //  - message_start / message_end：全会话消息骨架 / 终态快照（同 id，客户端 upsert 去重）；
+  //  - message_start（仅 assistant）：骨架先到，后续 part.delta 才有承载消息；
+  //  - message_end（user + assistant）：终态快照（与 start 同 id，客户端 upsert 去重）。
   //  - message_update：assistantMessageEvent 的 text_delta/thinking_delta → part.delta。
+  // user 的 message_start 刻意不发：user 消息在 message_end 已完整落一次，start 只会
+  // 重复 message.updated（以及一次聊天通道 complete 信号），并让 trajectory 在消息尚未
+  // 持久化时白跑一趟历史回查。
   // 无 timestamp 的消息一律不产（不造假 id），toolResult/未知角色不产 chat 消息。
-  if (t === 'message_start' || t === 'message_end') {
+  if (t === 'message_start') {
+    if (event?.message?.role !== 'assistant') return null;
+    const message = normalizePiLiveMessage(event?.message);
+    if (!message) return null;
+    return messageEnvelope('message.updated', event?.sessionID, message as unknown as Record<string, any>);
+  }
+  if (t === 'message_end') {
     const message = normalizePiLiveMessage(event?.message);
     if (!message) return null;
     return messageEnvelope('message.updated', event?.sessionID, message as unknown as Record<string, any>);
@@ -98,10 +108,10 @@ export const piTransformEvent: TransformEventFn = (event: any): RawRuntimeEvent 
     const ame = event?.assistantMessageEvent;
     const kind = ame?.type === 'text_delta' ? 'text' : ame?.type === 'thinking_delta' ? 'reasoning' : null;
     const delta = typeof ame?.delta === 'string' ? ame.delta : '';
-    const index = typeof ame?.contentIndex === 'number' ? ame.contentIndex : -1;
+    const index = ame?.contentIndex;
     // 空增量不发 part（旧映射的 `part.text: ''` 会造空 part 并把回合钉在 busy）；
     // 其余 update（*_start/*_end/toolcall_*/start/done）不上行——toolCall 由三原语承载。
-    if (!kind || !delta || index < 0) return null;
+    if (!kind || !delta || !Number.isInteger(index) || index < 0) return null;
     const messageID = piMessageIdentity(event?.message);
     if (!messageID) return null;
     const sid = event?.sessionID;
@@ -111,7 +121,7 @@ export const piTransformEvent: TransformEventFn = (event: any): RawRuntimeEvent 
         properties: {
           ...(sid ? { sessionID: sid } : {}),
           messageID,
-          partID: piPartId(messageID, kind, index + 1),
+          partID: piPartId(messageID, kind, (index as number) + 1),
           field: kind,
           delta,
         },

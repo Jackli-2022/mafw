@@ -372,3 +372,35 @@ test('part.delta 累积后 part.updated 终态快照替换同一 part（不重�
   assert.equal(s.turns[0].parts.length, 1)
   assert.equal(s.turns[0].parts[0].text, 'Hello!')
 })
+
+test('step 边界 / data-* part 不建幽灵回合（pi/opencode step-start、step-finish）', () => {
+  const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
+  for (const [id, type] of [['x1', 'step-start'], ['x2', 'step-finish'], ['x3', 'data-x'], ['x4', 'compaction']] as const) {
+    s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id, type, messageID: 'pi_step_s', sessionID: 's' } } })
+  }
+  assert.equal(s.turns.length, 0)
+})
+
+test('message.updated 终态快照合并 + turn.completed 收尾 assistant（无幽灵 pending 回合）', async () => {
+  const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
+  await s.send('q')
+  s.applyEvent('part.delta', { type: 'part.delta', properties: { sessionID: 's', messageID: 'pia_1', partID: 'pia_1_t1', field: 'text', delta: 'Hel' } })
+  s.applyEvent('message.updated', { type: 'message.updated', properties: { sessionID: 's', message: { id: 'pia_1', role: 'assistant', sessionID: 's', stopReason: 'end_turn', content: [{ id: 'pia_1_t1', type: 'text', text: 'Hello' }] } } })
+  const assistant = s.turns.find(t => t.messageID === 'pia_1')!
+  assert.equal(assistant.parts.length, 1)
+  assert.equal(assistant.parts[0].text, 'Hello')
+  assert.equal(assistant.done, false, '快照不自行收尾（终态由 turn.* 负责）')
+  s.applyEvent('turn.completed', { type: 'turn.completed', sessionID: 's' })
+  assert.equal(assistant.done, true)
+  assert.equal(s.turns.filter(t => t.role === 'assistant').length, 1, '没有幽灵 assistant 回合')
+})
+
+test('turn.completed 收尾最后一个 assistant 回合（排队 user turn 排在其后也不误判）', async () => {
+  const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
+  await s.send('first')
+  s.applyEvent('part.delta', { type: 'part.delta', properties: { sessionID: 's', messageID: 'pia_2', partID: 'pia_2_t1', field: 'text', delta: 'hi' } })
+  await s.send('second')
+  assert.equal(s.turns.at(-1)!.role, 'user', '排队 user turn 在 assistant 之后')
+  s.applyEvent('turn.completed', { type: 'turn.completed', sessionID: 's' })
+  assert.equal(s.turns.find(t => t.messageID === 'pia_2')!.done, true)
+})

@@ -29,6 +29,29 @@ describe("applyUserMessageArrival", () => {
     const out = applyUserMessageArrival(state as any, "s1", { id: "m1", role: "user" })!
     expect(out.message.s1).toHaveLength(1)
   })
+
+  test("already-ingested real parts are not duplicated by optimistic migration (pi live 顺序)", () => {
+    const state = {
+      message: { s1: [{ id: "user-1", role: "user" }] },
+      part: { "user-1": [{ id: "user-1-text", type: "text", text: "hi" }] },
+    }
+    // chat-stream 顺序：先落真实 content part（id = <messageID>_t），再迁移乐观消息
+    const withReal = applyPartUpsert(state as any, "s1", { id: "piu_5_t", type: "text", text: "hi", sessionID: "s1", messageID: "piu_5" })
+    const out = applyUserMessageArrival({ ...state, part: withReal.part } as any, "s1", { id: "piu_5", role: "user", time: { created: 5 } })!
+    expect(out.part["piu_5"]).toHaveLength(1)
+    expect(out.part["piu_5"][0]).toMatchObject({ id: "piu_5_t", type: "text", text: "hi" })
+    expect(out.part["user-1"]).toBeUndefined()
+  })
+
+  test("distinct optimistic parts still migrate (dedupe is content-scoped)", () => {
+    const state = {
+      message: { s1: [{ id: "user-1", role: "user" }] },
+      part: { "user-1": [{ id: "user-1-file", type: "file", url: "data:image/png;base64,AAA", mime: "image/png" }] },
+    }
+    const out = applyUserMessageArrival({ ...state, part: { ...state.part } } as any, "s1", { id: "piu_6", role: "user", time: { created: 6 } })!
+    expect(out.part["piu_6"]).toHaveLength(1)
+    expect(out.part["piu_6"][0]).toMatchObject({ type: "file", messageID: "piu_6" })
+  })
 })
 
 describe("applyAssistantMessage", () => {
