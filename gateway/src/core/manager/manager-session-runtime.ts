@@ -64,9 +64,54 @@ export function resolveManagerRuntime(slot: { runtime?: string; id?: string; ses
 }
 
 /**
+ * One-time backfill for entries written before runtime tagging existed.
+ *
+ * Ruling（review I3）：单 runtime 时代的 legacy writer 只会是 opencode，所以
+ * 「从未带过 tag」的 legacy 行可以被**一次性**归到 `byRuntime.opencode`。这不是
+ * 读路径的归属推断——`readManagerSlot` 仍然只认显式 tag，本函数只在启动时跑一次，
+ * 把存量行补齐成 v2（幂等：已带 tag 的值原样返回）。
+ *
+ * 触发形态：
+ *  - v1 `{sessionId, createdAt?}`（无 byRuntime / 无 runtime tag）→ opencode slot
+ *  - v1 `{sessionId, runtime: 'pi'}`（带 tag 的旧行）→ 该 runtime 的 slot
+ *  - v2 `{byRuntime, unattributed}` 且 opencode slot 缺失 → 把 unattributed 提升为
+ *    opencode slot（旧迁移写的就是 untagged 行，`writeManagerSlot` 会把它存成
+ *    unattributed，于是永远读不到 = 新会话替换旧 topic 后旧 topic 又"复活"）；
+ *    已有 opencode slot 时保持 unattributed 不动（不覆盖真实状态）。
+ */
+export function backfillManagerSlot(value: unknown): { value: unknown; changed: boolean } {
+  if (!value || typeof value !== 'object') return { value, changed: false };
+  const v = value as {
+    byRuntime?: Record<string, ManagerSlot>;
+    unattributed?: ManagerSlot;
+    sessionId?: string;
+    createdAt?: string | null;
+    runtime?: string;
+  };
+  const hasSession = typeof v.sessionId === 'string' && v.sessionId.length > 0;
+
+  if (v.byRuntime && typeof v.byRuntime === 'object') {
+    if (v.unattributed?.sessionId && !v.byRuntime.opencode) {
+      const { unattributed, ...rest } = v;
+      return {
+        value: { ...rest, byRuntime: { ...v.byRuntime, opencode: { ...unattributed } } },
+        changed: true,
+      };
+    }
+    return { value, changed: false };
+  }
+
+  if (!hasSession) return { value, changed: false };
+  const slot: ManagerSlot = { sessionId: v.sessionId as string, ...(v.createdAt ? { createdAt: v.createdAt } : {}) };
+  const owner = resolveManagerRuntime(v) ?? 'opencode';
+  return { value: { byRuntime: { [owner]: slot } }, changed: true };
+}
+
+/**
  * Read the slot for `currentRuntime`.
  * v2 value → byRuntime[currentRuntime]; tagged v1 legacy → its explicit slot
- * when it matches; untagged v1 → null (dormant, never guessed).
+ * when it matches; untagged v1 → null (dormant, never guessed at read time —
+ * `backfillManagerSlot` tags it once at startup instead).
  */
 export function readManagerSlot(
   value: unknown,

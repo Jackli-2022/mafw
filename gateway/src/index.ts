@@ -370,7 +370,7 @@ async function isPortHealthy(port: number): Promise<boolean> {
   }
 }
 
-import { readManagerSlot, writeManagerSlot, projectLeadSessionMetadata } from './core/manager/manager-session-runtime';
+import { readManagerSlot, writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot } from './core/manager/manager-session-runtime';
 
 const INTERNAL_SESSION_TTL_DAYS = 7;
 
@@ -949,6 +949,8 @@ class MafwScheduler {
           `[Scheduler] gateway-db migrate: renamed=${res.renamed} managerSessions=${res.managerSessions} cursor=${res.cursorImported} registrySnapshot=${res.registrySnapshot}`,
         );
       }
+      // I3：迁移之后补齐存量 untagged manager-session 行（一次性打标，幂等）。
+      this.backfillManagerSessionSlots();
     } catch (err: any) {
       log.warn(`[Scheduler] gateway-db migration failed (non-fatal): ${err.message}`);
     }

@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
 import { GatewayDatabase } from '../memory/gateway-db';
+import { writeManagerSlot } from '../core/manager/manager-session-runtime';
 
 export interface GatewayDbMigrateResult {
   renamed: boolean;
@@ -65,10 +66,15 @@ export function migrateGatewayDb(
         }
         const data = JSON.parse(fs.readFileSync(ms.filePath, 'utf-8'));
         if (!data?.sessionId) continue;
-        db.kvSet('manager-session', ms.projectDir, {
+        // Ruling（review I3）：legacy manager-session.json 由**单 runtime 时代的
+        // opencode writer** 写，从不带 tag。导入时按 opencode 槽位打标（一次性），
+        // 否则 `readManagerSlot` 永远读不到 = 新会话顶掉旧 topic 后旧 topic 复活。
+        // 读路径不做归属推断，只有这里的迁移可以声明「旧 writer 是 opencode」。
+        const existing = db.kvGet('manager-session', ms.projectDir);
+        db.kvSet('manager-session', ms.projectDir, writeManagerSlot(existing, 'opencode', {
           sessionId: data.sessionId,
           createdAt: data.createdAt || null,
-        });
+        }));
         fs.rmSync(ms.filePath, { force: true });
         result.managerSessions++;
       } catch (err: any) {

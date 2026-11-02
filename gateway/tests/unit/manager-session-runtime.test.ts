@@ -3,6 +3,7 @@ import {
   readManagerSlot,
   writeManagerSlot,
   resolveManagerRuntime,
+  backfillManagerSlot,
 } from '../../src/core/manager/manager-session-runtime';
 
 const OC = { sessionId: 'ses_f60d', createdAt: '2026-09-14T09:07:10.054Z' };
@@ -80,8 +81,74 @@ describe('manager-session per-runtime slots', () => {
 // Task 2（spec 2026-11-02-pod-collaborative-goal-loop §3.1）：Manager 的 kv 槽位名保留
 // （`manager-session` / readManagerSlot），但会话对外的身份是 Lead——元数据写 `role:'lead'`，
 // 老的 `manager` / `manager-archived` 行只作为兼容读取路径存在。
-describe('projectLeadSessionMetadata', () => {
-  it('marks the coordination session as the Lead, pinned and lifecycle-exempt', () => {
+// Review I3：单 runtime 时代的 legacy 行没有 tag，读路径（正确地）不猜归属——
+// 于是迁移进来的行永远休眠，新会话顶掉旧 topic 后旧 topic 又"复活"。
+// 一次性 backfill 把存量行按「旧 writer = opencode」打标；读路径规则不变。
+describe('backfillManagerSlot（一次性归属补齐）', () => {
+  it('untagged v1（迁移写下的形状）→ byRuntime.opencode（读得到，不再休眠）', () => {
+    const out = backfillManagerSlot({ sessionId: 'ses_f60d', createdAt: OC.createdAt });
+    expect(out.changed).toBe(true);
+    expect(out.value).toEqual({ byRuntime: { opencode: OC } });
+    expect(readManagerSlot(out.value, 'opencode')).toEqual(OC);
+    // 其他 runtime 仍然读不到（没有伪造归属）
+    expect(readManagerSlot(out.value, 'pi')).toBeNull();
+  });
+
+  it('v2 的 unattributed（旧 write 保留下来的行）→ 提升为 opencode slot', () => {
+    const out = backfillManagerSlot({ byRuntime: { pi: PI }, unattributed: OC });
+    expect(out.changed).toBe(true);
+    expect(out.value).toEqual({ byRuntime: { opencode: OC, pi: PI } });
+    expect(readManagerSlot(out.value, 'opencode')).toEqual(OC);
+    expect(readManagerSlot(out.value, 'pi')).toEqual(PI);
+  });
+
+  it('已有 opencode slot 时不覆盖真实状态（unattributed 原样保留）', () => {
+    const existing = { byRuntime: { opencode: PI }, unattributed: OC };
+    const out = backfillManagerSlot(existing);
+    expect(out.changed).toBe(false);
+    expect(out.value).toBe(existing);
+  });
+
+  it('tagged v1 归一到自己的 runtime 槽位', () => {
+    const out = backfillManagerSlot({ sessionId: 'pi_9f2c', runtime: 'pi', createdAt: PI.createdAt });
+    expect(out.changed).toBe(true);
+    expect(out.value).toEqual({ byRuntime: { pi: PI } });
+  });
+
+  it('幂等：补齐后的值再跑一次不变；空/坏值原样返回', () => {
+    const once = backfillManagerSlot({ sessionId: 'ses_x' }).value;
+    expect(backfillManagerSlot(once)).toEqual({ value: once, changed: false });
+    expect(backfillManagerSlot(null)).toEqual({ value: null, changed: false });
+    expect(backfillManagerSlot({})).toEqual({ value: {}, changed: false });
+    expect(backfillManagerSlot({ byRuntime: { opencode: OC } })).toEqual({
+      value: { byRuntime: { opencode: OC } },
+      changed: false,
+    });
+  });
+});
+
+// 迁移与启动兜底都必须走显式打标（不是读路径推断）
+describe('migration wiring（legacy 文件导入按 opencode 打标）', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const migrateSrc = fs.readFileSync(
+    path.join(__dirname, '../../src/recall/gateway-db-migrate.ts'),
+    'utf-8',
+  );
+  const indexSrc = fs.readFileSync(path.join(__dirname, '../../src/index.ts'), 'utf-8');
+
+  it('gateway-db-migrate 用 writeManagerSlot(..., "opencode", ...) 打标', () => {
+    expect(migrateSrc).toContain("writeManagerSlot(existing, 'opencode', {");
+    expect(migrateSrc).not.toMatch(/kvSet\('manager-session', ms\.projectDir, \{\s*sessionId:/);
+  });
+
+  it('启动时对存量 untagged 行做一次 backfill（fail-open）', () => {
+    expect(indexSrc).toContain('this.backfillManagerSessionSlots()');
+    expect(indexSrc).toContain('backfillManagerSlot(row.value)');
+  });
+});
+
+describe('projectLeadSessionMetadata', () => {  it('marks the coordination session as the Lead, pinned and lifecycle-exempt', () => {
     expect(projectLeadSessionMetadata()).toMatchObject({ mafw: { role: 'lead', pinned: true } });
   });
 
