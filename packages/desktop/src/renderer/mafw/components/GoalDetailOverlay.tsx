@@ -10,7 +10,7 @@ import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { PodDirectionPanel } from "./PodDirectionPanel"
 import { PodProbePanel } from "./PodProbePanel"
 import { buildGoalLanes, formatDuration } from "../goal-timeline"
-import { podStore, resolvePodId } from "../pod-store"
+import { podResolveKey, podStore, resolvePodId } from "../pod-store"
 import { podStageLabel } from "../pod-model"
 import { goalsRev } from "../goals-rev"
 
@@ -53,7 +53,7 @@ export function GoalDetailOverlay(props: {
   const [error, setError] = createSignal<string | null>(null)
   const [retrying, setRetrying] = createSignal(false)
   const [planOpen, setPlanOpen] = createSignal(false)
-  let resolvedPodId: string | null = null
+  let podCache: { key: string; id: string | null } | null = null
 
   async function load(id: string) {
     setLoading(true); setError(null)
@@ -67,15 +67,23 @@ export function GoalDetailOverlay(props: {
   }
 
   // 显式 podId → 已加载的 Pod store → 按项目目录 lookup（Pod 面板没开也能拿到证据）。
+  // 缓存按项目/显式 podId/已加载 Pod 的键失效，绝不跨项目复用。
   async function resolvePod(): Promise<string | null> {
-    if (resolvedPodId) return resolvedPodId
-    resolvedPodId = await resolvePodId({
+    const key = podResolveKey({
+      podId: props.podId,
+      projectDir: props.projectDir,
+      loadedProjectDir: podStore.projectDir(),
+      loadedPodId: podStore.detail()?.pod.id,
+    })
+    if (podCache?.key === key) return podCache.id
+    const id = await resolvePodId({
       podId: props.podId,
       loadedPodId: podStore.detail()?.pod.id,
       projectDir: props.projectDir,
       lookup: (dir) => window.api.mafw.pod.lookup(dir),
     })
-    return resolvedPodId
+    podCache = { key, id }
+    return id
   }
 
   // Task 20：方向裁定与 Spike 证据是 Goal 级协作事实（pod.updated / 项目切换后重拉）。
@@ -233,7 +241,7 @@ export function GoalDetailOverlay(props: {
   }
 
   async function decideDirection(input: { userWords: string; optionId?: string }): Promise<boolean> {
-    const podId = podStore.detail()?.pod.id
+    const podId = await resolvePod()
     const id = props.goalId
     if (!podId || !id) {
       showToastV2({ description: "当前项目还没有鲸群，无法记录方向", duration: 3000 })

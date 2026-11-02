@@ -59,6 +59,37 @@ export function techLeadSendTarget(
 }
 
 /**
+ * 完整 Pod 详情解析（发送守卫/方向裁定用）：跨项目时不信任 store 里的旧 detail。
+ * 显式 loaded detail 优先；否则按项目目录 lookup；失败 fail-open（null）。
+ */
+export async function resolvePodDetail(options: {
+  loaded?: PodDetail | null
+  projectDir?: string | null
+  lookup?: (projectDir: string) => Promise<PodDetail>
+}): Promise<PodDetail | null> {
+  if (options.loaded) return options.loaded
+  const dir = (options.projectDir ?? "").trim()
+  if (!dir || !options.lookup) return null
+  try {
+    return await options.lookup(dir)
+  } catch {
+    return null
+  }
+}
+
+/** 解析缓存键：项目/显式 podId/已加载 Pod 任一变化都必须重新解析（不跨项目复用）。 */
+export function podResolveKey(input: {
+  podId?: string | null
+  projectDir?: string | null
+  loadedProjectDir?: string | null
+  loadedPodId?: string | null
+}): string {
+  return [input.podId ?? "", input.projectDir ?? "", input.loadedProjectDir ?? "", input.loadedPodId ?? ""]
+    .map((part) => part.trim())
+    .join("|")
+}
+
+/**
  * Pod id 解析（Task 20 review #3）：显式 prop → 已加载的 Pod store → 按项目目录
  * `pod.lookup`。这样 Goal 详情/计划审阅在 Pod 面板未打开时也能拿到 Spike 证据。
  */

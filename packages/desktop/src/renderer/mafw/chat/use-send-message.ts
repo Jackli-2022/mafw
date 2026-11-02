@@ -91,9 +91,9 @@ export interface SendMessageDeps {
    * 命中时发送必须走 `pod.sendTechLeadMessage`（保留 Tech Lead 身份与当前 revision
    * ContextManifest），普通会话 prompt 会丢掉这两者。
    */
-  techLeadTarget?: () => { podId: string; goalId: string } | null
+  techLeadTarget?: () => { podId: string; goalId: string } | null | Promise<{ podId: string; goalId: string } | null>
   /** Task 20 review：命中的会话不允许直接发送时返回提示（如 Tech Lead 节点会话）。 */
-  sendBlocked?: () => string | null
+  sendBlocked?: () => string | null | Promise<string | null>
 }
 
 /**
@@ -141,7 +141,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     const captureCount = sidProp() && pendingCaptureCount ? pendingCaptureCount(sidProp()) : 0
     if (!text.trim() && atts.length === 0 && pendingCount === 0 && captureCount === 0) return
     // Task 20 review：非讨论的 Tech Lead 节点会话不能静默走普通 prompt；保留草稿并提示。
-    const blocked = deps.sendBlocked?.() ?? null
+    const blocked = (await deps.sendBlocked?.()) ?? null
     if (blocked) {
       showToastV2({ description: blocked, duration: 4000 })
       return
@@ -168,7 +168,7 @@ export function useSendMessage(deps: SendMessageDeps) {
         // W5a：steer / 网关队列优先；带媒体或 runtime 不支持时回落本地 turn-queue。
         // Task 20：Tech Lead 讨论只能经 sendTechLeadMessage 发送（保留身份/ContextManifest），
         // 忙时一律本地排队，等 idle 后由 sendMessage 走同一条通道。
-        const techLeadBusy = !!deps.techLeadTarget?.()
+        const techLeadBusy = !!(await deps.techLeadTarget?.())
         const deliveryKind = techLeadBusy ? "local-queue" : decideBusyDelivery({
           mode,
           steerSupported: deps.steerSupported ? deps.steerSupported() === true : false,
@@ -380,7 +380,7 @@ export function useSendMessage(deps: SendMessageDeps) {
 
     console.log("[mafw] sendMessage", sid)
     try {
-      const techLead = deps.techLeadTarget?.() ?? null
+      const techLead = (await deps.techLeadTarget?.()) ?? null
       if (techLead) {
         // Tech Lead 讨论：身份 + ContextManifest 由 gateway 注入，附件以名称/路径文本
         // 说明随消息带上（媒体附件已在上方转成 A2A 指针，Tech Lead 可用 mafw_media_ask）。

@@ -9,7 +9,7 @@ import { Markdown } from "@mafw/session-ui/markdown"
 import { AnnotationSheet } from "./AnnotationSheet"
 import { renderPlanPackage } from "./plan-render"
 import { planReviewViewModel, buildRejectFeedback, type PlanAnnotationDraft } from "./plan-review-model"
-import { podStore, resolvePodId } from "../pod-store"
+import { podResolveKey, podStore, resolvePodId } from "../pod-store"
 import type { PodProbe } from "@mafw/sdk"
 import type { BoxRect } from "../annotation-placement"
 
@@ -37,17 +37,24 @@ export function PlanReviewOverlay(props: {
   const [drafts, setDrafts] = createSignal<PlanAnnotationDraft[]>([])
   const [sheet, setSheet] = createSignal<{ anchor: BoxRect; quote: string } | null>(null)
   let bodyEl: HTMLDivElement | undefined
-  let resolvedPodId: string | null = null
+  let podCache: { key: string; id: string | null } | null = null
 
   async function resolvePod(): Promise<string | null> {
-    if (resolvedPodId) return resolvedPodId
-    resolvedPodId = await resolvePodId({
+    const key = podResolveKey({
+      podId: props.podId,
+      projectDir: props.projectDir,
+      loadedProjectDir: podStore.projectDir(),
+      loadedPodId: podStore.detail()?.pod.id,
+    })
+    if (podCache?.key === key) return podCache.id
+    const id = await resolvePodId({
       podId: props.podId,
       loadedPodId: podStore.detail()?.pod.id,
       projectDir: props.projectDir,
       lookup: (dir) => window.api.mafw.pod.lookup(dir),
     })
-    return resolvedPodId
+    podCache = { key, id }
+    return id
   }
 
   async function load() {

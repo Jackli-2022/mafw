@@ -200,9 +200,9 @@ export type ChatPaneProps = {
   /** 打开 Goal 的 Tech Lead 隐藏会话（Goal 标题作用域的 tab）。 */
   onOpenTechLead?: (goalId: string) => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
-  techLeadTarget?: () => { podId: string; goalId: string } | null
+  techLeadTarget?: () => { podId: string; goalId: string } | null | Promise<{ podId: string; goalId: string } | null>
   /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
-  sendBlocked?: () => string | null
+  sendBlocked?: () => string | null | Promise<string | null>
   onCreateSession: () => Promise<string | null>
   onSetUserMsgId: (sid: string, userMsgId: string) => void
   onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void

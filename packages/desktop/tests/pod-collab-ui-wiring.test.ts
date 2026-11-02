@@ -10,7 +10,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { resolvePodId, techLeadSendTarget } from "../src/renderer/mafw/pod-store"
+import { podResolveKey, resolvePodDetail, resolvePodId, techLeadSendTarget } from "../src/renderer/mafw/pod-store"
 import { podSessionRoute, techLeadRouteForSession, techLeadSendBlockedReason } from "../src/renderer/mafw/pod-model"
 import { useSendMessage } from "../src/renderer/mafw/chat/use-send-message"
 import { createInputHistory } from "../src/renderer/mafw/components/input-history"
@@ -380,4 +380,94 @@ test("方向/探针/变更警示样式存在且选中态可见", () => {
   assert.match(cssBlock(".mafw-pod-probe-badge.is-supports {"), /var\(--accent-soft\)/)
   assert.match(cssBlock(".mafw-plan-stale {"), /var\(--warning\)/)
   assert.match(cssBlock(".mafw-plan-stale {"), /border:/)
+})
+
+// ── Residual fixes (2026-11-03) ───────────────────────────────────────────
+
+test("发送守卫用 resolvePodDetail（跨项目不信任旧 store，未加载时 lookup）", () => {
+  assert.match(shell, /const resolveSendPod = async/)
+  assert.match(shell, /resolvePodDetail\(\{/)
+  assert.match(shell, /sameProject/)
+  assert.match(shell, /const activeTechLeadTarget = async/)
+  assert.match(shell, /const activeTechLeadBlocked = async/)
+  assert.match(shell, /mappedGoal && detail\.goals\?\.some/)
+})
+
+test("方向裁定在 Dashboard 也能解析 Pod（不读 podStore.detail）", () => {
+  assert.match(goalDetail, /const podId = await resolvePod\(\)/)
+  assert.doesNotMatch(goalDetail, /async function decideDirection[\s\S]{0,200}podStore\.detail\(\)\?\.pod\.id/)
+})
+
+test("Pod 解析缓存按项目/podId/已加载 Pod 失效", () => {
+  const base = { podId: "pod_1", projectDir: "/a", loadedProjectDir: "/a", loadedPodId: "pod_1" }
+  assert.equal(podResolveKey(base), podResolveKey({ ...base }))
+  assert.notEqual(podResolveKey(base), podResolveKey({ ...base, projectDir: "/b" }))
+  assert.notEqual(podResolveKey(base), podResolveKey({ ...base, podId: "pod_2" }))
+  assert.notEqual(podResolveKey(base), podResolveKey({ ...base, loadedPodId: "pod_2" }))
+  assert.notEqual(podResolveKey(base), podResolveKey({ ...base, loadedProjectDir: "/b" }))
+  assert.match(goalDetail, /podResolveKey\(/)
+  assert.match(planReview, /podResolveKey\(/)
+})
+
+test("resolvePodDetail：已加载优先、失败 fail-open", async () => {
+  const loaded = { pod: { id: "pod_loaded" } } as any
+  assert.equal(await resolvePodDetail({ loaded, projectDir: "/a" }), loaded)
+  assert.equal(
+    (await resolvePodDetail({ projectDir: "/a", lookup: async () => ({ pod: { id: "pod_lookup" } }) as any }))?.pod.id,
+    "pod_lookup",
+  )
+  assert.equal(await resolvePodDetail({ projectDir: "/a", lookup: async () => { throw new Error("404") } }), null)
+  assert.equal(await resolvePodDetail({}), null)
+})
+
+test("异步发送守卫/路由：promise 版 sendBlocked 与 techLeadTarget 均生效", async () => {
+  const calls: any[] = []
+  ;(globalThis as any).window = {
+    api: {
+      mafw: {
+        chat: { sendEnriched: async (req: any) => { calls.push(["chat", req]); return { sessionID: "s1" } } },
+        pod: { sendTechLeadMessage: async (...args: any[]) => { calls.push(["pod", ...args]); return { revision: 1 } } },
+      },
+    },
+  }
+  const history = createInputHistory()
+  const deps = (over: any) => ({
+    sid: () => "s1",
+    onCreateSession: async () => null,
+    onSetUserMsgId: () => {},
+    input: () => "继续",
+    setInput: () => {},
+    sending: () => false,
+    setSending: () => {},
+    setPhase: () => {},
+    attachments: () => [],
+    setAttachments: () => {},
+    mentionedAgents: () => [],
+    setMentionedAgents: () => {},
+    mentionedFiles: () => [],
+    setMentionedFiles: () => {},
+    queuedItems: () => [],
+    setQueuedItems: () => {},
+    textareaEl: () => null,
+    history,
+    clearDraft: () => {},
+    matchSlash: () => null,
+    agentSel: () => null,
+    model: () => null,
+    setStore: () => {},
+    forceAnchor: () => {},
+    imageToDataUrl: async () => undefined,
+    uploadMediaBinary: async () => "",
+    encodeFilePath: (p: string) => p,
+    ...over,
+  })
+  try {
+    await useSendMessage(deps({ sendBlocked: async () => "节点会话禁止发送" }) as any).sendMessage()
+    assert.equal(calls.length, 0)
+    await useSendMessage(deps({ techLeadTarget: async () => ({ podId: "pod_1", goalId: "g1" }) }) as any).sendMessage()
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0][0], "pod")
+  } finally {
+    delete (globalThis as any).window
+  }
 })
