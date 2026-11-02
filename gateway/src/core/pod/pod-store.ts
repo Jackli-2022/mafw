@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import type { PodGoalVerdict } from './pod-stage';
 
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived';
 export type PodMemberRole = 'lead' | 'builder' | 'reviewer' | 'curator';
@@ -43,6 +44,7 @@ export interface PodGoalRow {
   podId: string;
   goalId: string;
   status: PodGoalStatus;
+  verdict: PodGoalVerdict | null;
   enqueuedAt: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -148,6 +150,7 @@ function goalFromRow(row: any): PodGoalRow {
     podId: row.pod_id,
     goalId: row.goal_id,
     status: row.status,
+    verdict: row.verdict ?? null,
     enqueuedAt: row.enqueued_at,
     startedAt: row.started_at ?? null,
     endedAt: row.ended_at ?? null,
@@ -257,6 +260,7 @@ export class PodStore {
         pod_id TEXT NOT NULL,
         goal_id TEXT NOT NULL,
         status TEXT NOT NULL,
+        verdict TEXT,
         enqueued_at TEXT NOT NULL,
         started_at TEXT,
         ended_at TEXT,
@@ -348,6 +352,7 @@ export class PodStore {
     this.ensureColumn('pod_messages', 'delivered_at', 'delivered_at TEXT');
     this.ensureColumn('pod_messages', 'delivered_session_id', 'delivered_session_id TEXT');
     this.ensureColumn('pod_a2a_links', 'state', 'state TEXT');
+    this.ensureColumn('pod_goals', 'verdict', 'verdict TEXT');
     this.ensureColumn('pod_tasks', 'acceptance_json', 'acceptance_json TEXT');
     this.db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
@@ -488,15 +493,16 @@ export class PodStore {
   setGoalStatus(
     id: string,
     status: PodGoalStatus,
-    patch: { startedAt?: string; endedAt?: string },
+    patch: { startedAt?: string; endedAt?: string; verdict?: string | null },
   ): void {
     this.db.prepare(`
       UPDATE pod_goals SET
         status = ?,
+        verdict = COALESCE(?, verdict),
         started_at = COALESCE(?, started_at),
         ended_at = COALESCE(?, ended_at)
       WHERE id = ?
-    `).run(status, patch.startedAt ?? null, patch.endedAt ?? null, id);
+    `).run(status, patch.verdict ?? null, patch.startedAt ?? null, patch.endedAt ?? null, id);
   }
 
   upsertTask(

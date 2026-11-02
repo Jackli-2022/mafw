@@ -1,6 +1,19 @@
 import { PodError, PodStore, type PodGoalRow, type PodRow } from './pod-store';
 import type { PodService } from './pod-service';
 import { canonicalProjectDir } from './pod-identity';
+import {
+  buildPodAttention,
+  buildPodGoalView,
+  type PodGoalDescription,
+  type PodGoalView,
+} from './pod-view';
+import type { PodAttentionItem, PodGoalVerdict, PodQueueReason } from './pod-stage';
+
+export interface PodEnqueueResult {
+  status: 'started' | 'queued';
+  podId: string;
+  queueReason: PodQueueReason | null;
+}
 
 export interface PodGoalServiceDeps {
   store: PodStore;
@@ -12,6 +25,7 @@ export interface PodGoalServiceDeps {
   notify(podId: string): void;
   budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } };
   goalState?(goalId: string): { terminal: boolean; verdict?: string } | null;
+  describeGoal?(goalId: string): PodGoalDescription | null;
   listInFlightGoals?(projectDir: string): string[];
   listRegisteredProjectDirs?(): string[];
   finalizeGoal?(goalId: string, outcome?: { verdict?: string }): Promise<void>;
@@ -24,22 +38,26 @@ export class PodGoalService {
   async enqueueGoal(
     goalId: string,
     projectDirHint?: string,
-  ): Promise<{ status: 'started' | 'queued'; podId: string }> {
+  ): Promise<PodEnqueueResult> {
     const projectDir = projectDirHint ?? this.deps.resolveProjectDir(goalId);
     if (!projectDir) throw new PodError(400, `project not resolved for goal: ${goalId}`);
     const detail = await this.deps.pods.ensure(projectDir);
     const pod = detail.pod;
     const existing = this.deps.store.getGoal(pod.id, goalId);
     if (existing) {
-      if (existing.status === 'active') return { status: 'started', podId: pod.id };
+      if (existing.status === 'active') return { status: 'started', podId: pod.id, queueReason: null };
       if (existing.status === 'queued' && !this.deps.store.getActiveGoal(pod.id)
         && pod.status !== 'paused' && pod.status !== 'archived') {
         const budget = this.deps.budget?.canStart(pod.id);
         if (!budget || budget.ok) await this.promote(pod.id);
         const current = this.deps.store.getGoal(pod.id, goalId);
-        return { status: current?.status === 'active' ? 'started' : 'queued', podId: pod.id };
+        return {
+          status: current?.status === 'active' ? 'started' : 'queued',
+          podId: pod.id,
+          queueReason: current?.status === 'active' ? null : (this.queueReasonFor(pod, current!) ?? null),
+        };
       }
-      return { status: 'queued', podId: pod.id };
+      return { status: 'queued', podId: pod.id, queueReason: this.queueReasonFor(pod, existing) ?? null };
     }
 
     const row = this.deps.store.enqueueGoal({
@@ -54,17 +72,17 @@ export class PodGoalService {
     const budget = this.deps.budget?.canStart(pod.id);
     if (pod.status === 'paused' || pod.status === 'archived' || !!active || (budget && !budget.ok)) {
       this.deps.notify(pod.id);
-      return { status: 'queued', podId: pod.id };
+      return { status: 'queued', podId: pod.id, queueReason: this.queueReasonFor(pod, row) ?? null };
     }
     if (olderQueued) {
       await this.promote(pod.id);
       this.deps.notify(pod.id);
-      return { status: 'queued', podId: pod.id };
+      return { status: 'queued', podId: pod.id, queueReason: 'active_goal' };
     }
 
-    await this.startQueued(row.id, pod.id, goalId, pod.projectDir, false);
+    await this.startQueued(row.id, pod.id, goalId, pod.projectDir);
     this.deps.notify(pod.id);
-    return { status: 'started', podId: pod.id };
+    return { status: 'started', podId: pod.id, queueReason: null };
   }
 
   async onGoalArchived(
@@ -78,8 +96,12 @@ export class PodGoalService {
     if (!pod) return;
 
     const wasActive = pod.activeGoalId === goal.goalId;
-    const nextStatus = outcome?.verdict === 'CANCELLED' ? 'aborted' : 'done';
-    this.deps.store.setGoalStatus(goal.id, nextStatus, { endedAt: this.deps.now() });
+    const verdict = normalizeVerdict(outcome?.verdict);
+    const nextStatus = verdict === 'CANCELLED' ? 'aborted' : 'done';
+    this.deps.store.setGoalStatus(goal.id, nextStatus, {
+      endedAt: this.deps.now(),
+      ...(verdict ? { verdict } : {}),
+    });
     if (!wasActive) {
       this.deps.notify(pod.id);
       return;
@@ -105,7 +127,7 @@ export class PodGoalService {
     if (!next) return false;
     const budget = this.deps.budget?.canStart(podId);
     if (budget && !budget.ok) return false;
-    await this.startQueued(next.id, podId, next.goalId, pod.projectDir, false);
+    await this.startQueued(next.id, podId, next.goalId, pod.projectDir);
     this.deps.notify(podId);
     return true;
   }
@@ -115,11 +137,10 @@ export class PodGoalService {
     podId: string,
     goalId: string,
     projectDir: string,
-    paused: boolean,
   ): Promise<void> {
     this.deps.store.setGoalStatus(rowId, 'active', { startedAt: this.deps.now() });
     this.deps.store.updatePod(podId, {
-      status: paused ? 'paused' : 'active',
+      status: 'active',
       activeGoalId: goalId,
     }, this.deps.now());
     try {
@@ -127,7 +148,7 @@ export class PodGoalService {
     } catch (err) {
       this.deps.store.setGoalStatus(rowId, 'queued', {});
       this.deps.store.updatePod(podId, {
-        status: paused ? 'paused' : 'idle',
+        status: 'idle',
         activeGoalId: null,
       }, this.deps.now());
       throw err;
@@ -219,7 +240,44 @@ export class PodGoalService {
     }
   }
 
+  describeGoal(goalId: string): PodGoalDescription | null {
+    return this.deps.describeGoal?.(goalId) ?? null;
+  }
+
+  views(podId: string): PodGoalView[] {
+    const pod = this.deps.store.getPod(podId);
+    if (!pod) return [];
+    return this.deps.store.listGoals(podId).map((row) => buildPodGoalView(
+      row,
+      this.describeGoal(row.goalId),
+      this.queueReasonFor(pod, row),
+    ));
+  }
+
+  attention(podId: string): PodAttentionItem[] {
+    return buildPodAttention(this.views(podId));
+  }
+
   list(podId: string): PodGoalRow[] {
     return this.deps.store.listGoals(podId);
   }
+
+  private queueReasonFor(pod: PodRow, row: PodGoalRow): PodQueueReason | undefined {
+    if (pod.status === 'paused') return 'paused';
+    if (pod.status === 'archived') return 'archived';
+
+    const budget = this.deps.budget?.canStart(pod.id);
+    if (budget && !budget.ok) return 'budget';
+    if (row.status === 'queued') {
+      return this.deps.store.getActiveGoal(pod.id) ? 'active_goal' : undefined;
+    }
+    return undefined;
+  }
+}
+
+function normalizeVerdict(value: string | undefined): PodGoalVerdict | undefined {
+  if (value === 'PASS' || value === 'FAIL' || value === 'MAX_RETRIES' || value === 'ERROR' || value === 'CANCELLED') {
+    return value;
+  }
+  return undefined;
 }

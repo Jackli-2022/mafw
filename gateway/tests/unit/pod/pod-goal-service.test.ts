@@ -204,6 +204,68 @@ describe('PodGoalService', () => {
     expect(startGoal).toHaveBeenLastCalledWith('g2', path.resolve(projectDir));
   });
 
+  test('archive preserves MAX_RETRIES instead of done/PASS', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.onGoalArchived('g1', { verdict: 'MAX_RETRIES' });
+    expect(store.getGoalByGoalId('g1')).toMatchObject({ status: 'done', verdict: 'MAX_RETRIES' });
+    expect(first.podId).toBeTruthy();
+  });
+
+  test('views carry titles, queue reasons and real terminal verdicts', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+    service = makeService(undefined, {
+      describeGoal: (goalId) => ({
+        title: goalId === 'g1' ? 'First goal' : 'Second goal',
+        phase: 'PLANNING',
+        nextAction: goalId === 'g1' ? 'RUNNING_plan' : 'NEXT_plan',
+        terminal: false,
+        verdict: null,
+        hasResultEvidence: false,
+        nodeSession: goalId === 'g1' ? { id: 's1' } : null,
+        lastError: null,
+      }),
+    });
+
+    const views = service.views(first.podId);
+    expect(views[0]).toMatchObject({ title: 'First goal', stage: { kind: 'working' } });
+    expect(views[1]).toMatchObject({ title: 'Second goal', stage: { kind: 'queued', queueReason: 'active_goal' } });
+  });
+
+  test('paused queue reason and plan approval attention are server-projected', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+    store.updatePod(first.podId, { status: 'paused' }, '2026-10-29T00:00:00.000Z');
+    service = makeService(undefined, {
+      describeGoal: (goalId) => ({
+        title: goalId === 'g1' ? 'First goal' : 'Second goal',
+        phase: goalId === 'g1' ? 'PLANNING' : null,
+        nextAction: goalId === 'g1' ? 'AWAIT_PLAN_APPROVAL' : 'NEXT_plan',
+        terminal: false,
+        verdict: null,
+        hasResultEvidence: false,
+        planApproval: goalId === 'g1' ? { status: 'pending' } : null,
+        pendingQuestion: null,
+        nodeSession: null,
+        lastError: null,
+      }),
+    });
+
+    expect(service.views(first.podId)[1].stage.queueReason).toBe('paused');
+    expect(service.attention(first.podId)).toEqual([
+      expect.objectContaining({ goalId: 'g1', kind: 'plan_approval', title: 'First goal' }),
+    ]);
+  });
+
+  test('missing active state becomes a person-blocked view', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    service = makeService(undefined, { describeGoal: () => null });
+    expect(service.views(first.podId)[0]).toMatchObject({
+      title: 'g1',
+      stage: { owner: 'person', kind: 'blocked' },
+    });
+  });
+
   test('reconcile passes a terminal verdict to finalizeGoal', async () => {
     const first = await service.enqueueGoal('g1', projectDir);
     const finalizeGoal = jest.fn(async () => {});
