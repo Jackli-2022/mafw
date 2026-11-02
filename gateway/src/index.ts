@@ -164,6 +164,7 @@ const QUEUE_ITEM_TTL_MS = 24 * 3600_000;
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const isThinkingLevel = (v: unknown): v is string => typeof v === 'string' && THINKING_LEVELS.has(v);
 import { EventStore } from './events/event-store';
+import { migrateEventLogInfoToMessage } from './events/event-log-migrate';
 import { enrichBroadcastFrame } from './events/broadcast-frame';
 import { parseSince, attachGlobalSse } from './events/sse-attach';
 import { ApprovalPolicyService } from './core/approval/policy-service';
@@ -418,6 +419,17 @@ class MafwScheduler {
       if (config.events.persist) {
         try {
           this.eventStore = new EventStore(this.gatewayDbInstance.getStore());
+          // Task 14：升级前写入的 message.updated 旧帧（properties.info）在
+          // API/SSE 开放前一次性迁移为 canonical properties.message——replay
+          // 出口不保留兼容读取。幂等 + 备份失败安全（模块内 fail-safe，永不抛）。
+          const migrated = migrateEventLogInfoToMessage(this.gatewayDbInstance.getStore(), {
+            log: (m) => log.warn(m),
+          });
+          if (migrated.migrated > 0) {
+            log.info(
+              `[Events] migrated ${migrated.migrated}/${migrated.scanned} legacy message.updated frame(s) to properties.message`,
+            );
+          }
         } catch (err: any) {
           log.warn(`[Events] EventStore init failed (replay disabled, non-fatal): ${err.message}`);
         }

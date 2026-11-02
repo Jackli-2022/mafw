@@ -24,6 +24,15 @@ describe('checkEventFields', () => {
     expect(w.some((x) => x.includes('info'))).toBe(true);
   });
 
+  it('message.updated accepts canonical properties.message', () => {
+    expect(checkEventFields({ type: 'message.updated', properties: { message: { id: 'm1', role: 'user' } } })).toEqual([]);
+  });
+
+  it('message.updated with legacy properties.info warns (Task 14: egress is message-only)', () => {
+    const w = checkEventFields({ type: 'message.updated', properties: { info: { id: 'm1', role: 'user' } } });
+    expect(w.some((x) => x.includes('properties.info'))).toBe(true);
+  });
+
   it('permission.asked without requestId/toolName warns', () => {
     const w = checkEventFields({ type: 'permission.asked', properties: { sessionID: 's1' } });
     expect(w.some((x) => x.includes('requestId'))).toBe(true);

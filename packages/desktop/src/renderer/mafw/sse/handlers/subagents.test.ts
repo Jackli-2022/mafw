@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mapSubagentToolPart } from "./subagents"
+import { mapSessionLifecycleEvent, mapSubagentToolPart } from "./subagents"
 
 const partEvent = (tool: string, state: any) => ({
   type: "part.updated",
@@ -38,5 +38,25 @@ describe("mapSubagentToolPart", () => {
       input: { description: "x" },
       metadata: { sessionId: "child2" },
     }))).toMatchObject({ kind: "session-created", info: { id: "child2", parentID: "parent1" } })
+  })
+})
+
+describe("mapSessionLifecycleEvent", () => {
+  test("session.* 仍读 wire info（本任务只翻转 message.updated）", () => {
+    expect(mapSessionLifecycleEvent({
+      type: "session.created",
+      properties: { info: { id: "c1", parentID: "p1", title: "t" } },
+    })).toEqual({ kind: "session-created", info: { id: "c1", parentID: "p1", title: "t" } })
+  })
+
+  test("message.updated 不产生 subagent 事件（不依赖 message 载荷）", () => {
+    expect(mapSessionLifecycleEvent({
+      type: "message.updated",
+      properties: { message: { id: "m1", role: "assistant" } },
+    })).toBeNull()
+    expect(mapSessionLifecycleEvent({
+      type: "message.updated",
+      properties: { info: { id: "m1", role: "assistant" } },
+    })).toBeNull()
   })
 })

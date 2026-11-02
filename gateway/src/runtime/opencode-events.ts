@@ -212,7 +212,8 @@ export const OPENCODE_V2_EVENT_MAPPINGS: EventMapping[] = [
  * 原生载荷 `{info: {...}}` → canonical `{message: {...}}`（零换名信封搬移——
  * info 字段全量展开为 message 值；spread 未来防漏，字段枚举不可维护）。
  * identity 行已排除 message.updated（映射优先级在前会拦截 transform）。
- * SSE wire 出口经 event-broadcast → toWireEventPayload 还原 {info}（桌面零改动）。
+ * SSE 出口直接广播 canonical `{message}`（Task 14 翻转，桌面读 properties.message；
+ * 升级前持久化的旧 `{info}` 帧由 events/event-log-migrate 一次性迁移）。
  *
  * Task 3 追加：`session.next.synthetic` 的 shell/subagent 生命周期 → canonical
  * `background.job.updated`（job 快照），不再以 chat message 形态出现。

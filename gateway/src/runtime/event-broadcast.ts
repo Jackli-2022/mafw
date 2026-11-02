@@ -10,8 +10,11 @@
  *
  * 规则：可选字段缺失时不得出现在 data 上（key 稳定性，消费方用
  * `'x' in data` 判定时不受缺省值污染）。
+ *
+ * Task 14（spec 2026-11-02 §9.1）：`message.updated` 的 properties 即 canonical
+ * `{ message }`——SSE 出口不再投影 wire `{info}`（零事件载荷转换点）。升级前
+ * 已持久化的旧帧由 `events/event-log-migrate.ts` 在 API/SSE 开放前一次性迁移。
  */
-import { toWireEventPayload } from './wire-compat';
 
 export interface MafwEventBroadcast {
   type: 'mafw_event';
@@ -44,16 +47,12 @@ export function mafwBroadcast(data: BroadcastEventData, internal?: boolean): Maf
       `— downstream (desktop/TUI) will ignore this event`,
     );
   }
-  // 事件级 egress（canonical v3 / Plan 2）：内部 message.updated 载荷为
-  // {message}（flat），wire 出口还原 {info}——唯一事件载荷转换点，其余零改写。
-  const properties = (data.type === 'message.updated' && data.properties && typeof data.properties === 'object')
-    ? toWireEventPayload(data.type, data.properties as Record<string, unknown>)
-    : data.properties;
+  // Task 14：所有事件载荷原样透传（canonical properties.message）。
+  // 事件级 egress 转换点已删除——replay 与直播同形，消费者只认 message。
   return {
     type: 'mafw_event',
     data: {
       ...data,
-      ...(properties !== undefined ? { properties } : {}),
       ...(data.directory === undefined ? {} : { directory: data.directory }),
       ...(internal ? { internal: true } : {}),
     },

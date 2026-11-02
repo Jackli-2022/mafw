@@ -76,11 +76,18 @@ describe('flat-emit-registry（v2 发射注册表）', () => {
   });
 });
 
-describe('mafwBroadcast message.updated egress (Plan 2 Task 6)', () => {
-  it('message.updated payload {message} -> {info} at the wire boundary (sole event egress)', () => {
+describe('mafwBroadcast message.updated egress (Task 14: canonical properties.message)', () => {
+  it('message.updated broadcasts properties.message verbatim — never projects wire info', () => {
     const message = { id: 'm1', sessionID: 's1', role: 'user', modelID: 'glm-5.3' };
     const out = mafwBroadcast({ type: 'message.updated', properties: { message, sessionID: 's1' }, sessionID: 's1' });
-    expect(out.data.properties).toEqual({ info: message, sessionID: 's1' });
+    expect(out.data.properties).toEqual({ message, sessionID: 's1' });
+    expect('info' in (out.data.properties as Record<string, unknown>)).toBe(false);
+  });
+
+  it('legacy properties.info is no longer rewritten at egress (zero conversion point)', () => {
+    const props = { info: { id: 'm1', role: 'user' } };
+    const out = mafwBroadcast({ type: 'message.updated', properties: props, sessionID: 's1' });
+    expect(out.data.properties).toBe(props); // 引用直通：消费者只认 message
   });
 
   it('non-message.updated payloads pass through untouched (reference)', () => {

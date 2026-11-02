@@ -6,6 +6,9 @@
  *   ① SSE 广播出口（message.updated 载荷，Plan 2 接线）
  *   ② 历史 serving 出口（/api/sessions/:id/messages，Plan 1 Task 4 接线）
  *
+ * Task 14 起 ① 已翻转：SSE 直接广播 canonical `{message}`，`toWireEventPayload`
+ * 无生产消费者（仅测试保留），Task 15 随 wire-compat 一并物理删除。
+ *
  * 不变量：
  *  - **零换名**（ledger Task 4 修正裁决）：flat ↔ wire 是纯信封搬移——info
  *    字段全量同名透传（含 UserMessage.model 对象 / AssistantMessage.modelID

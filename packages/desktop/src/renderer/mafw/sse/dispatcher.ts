@@ -95,6 +95,7 @@ export function sessionIdOf(event: any): string {
   return event?.sessionID
     || event?.properties?.sessionID
     || event?.properties?.part?.sessionID
+    || event?.properties?.message?.sessionID
     || event?.properties?.info?.sessionID
     || ""
 }

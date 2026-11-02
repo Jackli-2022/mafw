@@ -83,7 +83,7 @@ export class ToolPartAssembler {
     if (s.lastAssistantMessageID) return { messageID: s.lastAssistantMessageID, pre: [] };
     if (!s.syntheticAnchorID) {
       s.syntheticAnchorID = `asst_${sessionID}_synth`;
-      // canonical v3：合成锚 flat {message}（桌面经 SSE egress 的 toWireEventPayload 还原 {info}）
+      // canonical v3：合成锚 flat {message}（SSE 直接广播 properties.message，Task 14）
       const message = { id: s.syntheticAnchorID, role: 'assistant', sessionID, parentID: null, time: { created: this.now() } };
       return { messageID: s.syntheticAnchorID, pre: [{ payload: { type: MAFW.messageUpdated, properties: { message } }, sessionID } as any] };
     }

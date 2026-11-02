@@ -162,13 +162,14 @@ export function ensureAssistantMessage(
   return { message: msgs }
 }
 
-/** mafw_media_speak 参数提取：input（opencode tool part 标准字段）优先，args 兼容；兜底读 store tool part。 */
+/** mafw_media_speak 参数提取：input（opencode tool part 标准字段）优先，args 兼容；
+ *  message 承载 canonical 载荷（Task 14：不再读旧 wire `info`）；兜底读 store tool part。 */
 export function extractMediaSpeak(
   event: any,
   storeParts: Record<string, any[]>,
 ): { text: string; voice?: string } | null {
-  const propsArgs = event.properties?.input || event.properties?.info?.input || event.properties?.part?.input
-    || event.properties?.args || event.properties?.info?.args || event.info?.args
+  const propsArgs = event.properties?.input || event.properties?.message?.input || event.properties?.part?.input
+    || event.properties?.args || event.properties?.message?.args
   let text = typeof propsArgs?.text === "string" ? propsArgs.text : ""
   let voice = typeof propsArgs?.voice === "string" ? propsArgs.voice : undefined
   if (!text) {

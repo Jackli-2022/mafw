@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { dispatchShellEvent, type ShellEventDeps } from "./dispatcher"
+import { dispatchShellEvent, sessionIdOf, type ShellEventDeps } from "./dispatcher"
 
 function makeDeps() {
   const calls: { name: string; args: unknown[] }[] = []
@@ -319,7 +319,7 @@ describe("dispatchShellEvent: background 组（canonical jobs）", () => {
     const { deps, backgroundEvents } = makeDeps()
     const bgPart = { type: "tool", tool: "shell", state: { status: "completed", metadata: { status: "running", shellID: "sh1" }, input: { command: "npm run dev" } } }
     dispatchShellEvent({ type: "part.updated", sessionID: "s1", properties: { part: { ...bgPart, messageID: "m1", sessionID: "s1" } } }, deps)
-    dispatchShellEvent({ type: "message.updated", sessionID: "s1", properties: { info: { id: "m1", type: "synthetic", metadata: { source: "shell", shellID: "sh1" } } } }, deps)
+    dispatchShellEvent({ type: "message.updated", sessionID: "s1", properties: { message: { id: "m1", type: "synthetic", metadata: { source: "shell", shellID: "sh1" } } } }, deps)
     dispatchShellEvent({ type: "turn.completed", properties: { sessionID: "child1" } }, deps)
     expect(backgroundEvents).toEqual([])
   })
@@ -328,5 +328,20 @@ describe("dispatchShellEvent: background 组（canonical jobs）", () => {
     const { deps, backgroundEvents } = makeDeps()
     dispatchShellEvent({ type: "background.job.updated", sessionID: "s1", properties: {} }, deps)
     expect(backgroundEvents).toEqual([])
+  })
+})
+
+describe("sessionIdOf", () => {
+  test("message.updated canonical payload resolves sid from properties.message (Task 14)", () => {
+    expect(sessionIdOf({ type: "message.updated", properties: { message: { id: "m1", sessionID: "s9" } } })).toBe("s9")
+  })
+
+  test("prefers top-level / properties sessionID over message fallback", () => {
+    expect(sessionIdOf({ sessionID: "top", properties: { sessionID: "prop", message: { sessionID: "m" } } })).toBe("top")
+    expect(sessionIdOf({ properties: { sessionID: "prop", message: { sessionID: "m" } } })).toBe("prop")
+  })
+
+  test("session lifecycle wire info fallback retained (properties.info.sessionID)", () => {
+    expect(sessionIdOf({ type: "session.updated", properties: { info: { id: "s1", sessionID: "s1" } } })).toBe("s1")
   })
 })

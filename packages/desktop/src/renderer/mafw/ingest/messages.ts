@@ -148,8 +148,9 @@ export function ingestHistoryPage(items: unknown, opts: IngestMessageOptions = {
 }
 
 /**
- * live `message.updated`（gateway canonical `properties.message` / 过渡期 wire
- * `properties.info`）→ 规范消息。与历史共用同一归一器，live/history 同形。
+ * live `message.updated`（gateway canonical `properties.message`）→ 规范消息。
+ * 与历史共用同一归一器，live/history 同形。Task 14 起不再接受旧 wire
+ * `properties.info`（event_log 旧帧已一次性迁移，出口无兼容层）。
  */
 export function ingestLiveMessage(
   payload: any,

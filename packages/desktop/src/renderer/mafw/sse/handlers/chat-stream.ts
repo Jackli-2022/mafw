@@ -46,9 +46,10 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   const d = deps.chat
   if (event.type === "message.updated") {
     d.trace(event, "chat:message")
-    // 规范词汇 v2 用 properties.message；过渡期 gateway 仍投影 wire properties.info。
-    // 两者都先经摄取层归一（错误 {name,data.message} → {kind,message}）。
-    const ingested = ingestLiveMessage(event.properties?.message ?? event.properties?.info, { sessionID: sid })
+    // Task 14（spec 2026-11-02 §9.1）：gateway SSE 出口只发 canonical
+    // properties.message。旧 wire `properties.info` 已由 event_log 一次性
+    // 迁移，出口不保留兼容读取（info-only 帧在此丢弃）。
+    const ingested = ingestLiveMessage(event.properties?.message, { sessionID: sid })
     if (!ingested) return true
     const info = ingested.message
     if (!info?.id || !info?.role) return true
@@ -150,7 +151,9 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
  *  原语义：所有落到 onmessage 尾部的事件都检查 toolName）。 */
 export const handleMediaSpeakEvent: SidHandler = (event, sid, deps) => {
   const d = deps.chat
-  const toolName = event.properties?.tool || event.properties?.info?.tool || event.info?.tool || (event.properties?.part as any)?.tool
+  // Task 14：canonical 载荷（properties.message）与 tool part 快照双形态；
+  // 旧 wire `properties.info` 已随 egress 翻转退役。
+  const toolName = event.properties?.tool || event.properties?.message?.tool || (event.properties?.part as any)?.tool
   if (toolName !== "mafw_media_speak") return false
   const speak = extractMediaSpeak(event, d.getStore().part)
   if (speak) d.mediaSpeak(sid, speak.text, speak.voice)

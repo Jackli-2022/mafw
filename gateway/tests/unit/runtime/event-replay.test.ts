@@ -51,6 +51,16 @@ describe('event replay (golden, v2 pipeline: opencode raw → translate → norm
     expect('internal' in env.data).toBe(false);
   });
 
+  it('SSE egress golden: message.updated carries properties.message, never info (Task 14)', () => {
+    const msg = canonical.find((e: any) => e.payload.type === 'message.updated') as any;
+    expect(msg).toBeTruthy();
+    const env = mafwBroadcast({ ...msg.payload, sessionID: msg.sessionID });
+    const props = env.data.properties as Record<string, any>;
+    expect(props.message).toBeTruthy();
+    expect(props.message.id).toBeTruthy();
+    expect('info' in props).toBe(false);
+  });
+
   it('Mode A rewrite is gone: turn.completed broadcasts as itself (passthrough)', () => {
     // v2：session.idle→message.complete 改写 hack 已删除——翻译层直接产 turn.completed
     const facets = normalizeOpencodeEvent({ type: 'turn.completed', properties: { sessionID: 's1' } });

@@ -26,10 +26,18 @@ function makeDeps(store: any = { message: {}, part: {}, session_status: {} }) {
 describe("handleChatStreamEvent", () => {
   test("message.updated user → patchStore + setUserMsgId (consumed)", () => {
     const { deps, calls } = makeDeps()
-    const ok = handleChatStreamEvent({ type: "message.updated", sessionID: "s1", properties: { info: { id: "m1", role: "user" } } }, "s1", deps)
+    const ok = handleChatStreamEvent({ type: "message.updated", sessionID: "s1", properties: { message: { id: "m1", role: "user" } } }, "s1", deps)
     expect(ok).toBe(true)
     expect(calls.map(c => c.name)).toContain("patchStore")
     expect(calls.find(c => c.name === "setUserMsgId")!.args).toEqual(["s1", "m1"])
+  })
+
+  test("legacy properties.info ignored（Task 14：gateway 只发 properties.message）", () => {
+    const { deps, calls } = makeDeps()
+    const ok = handleChatStreamEvent({ type: "message.updated", sessionID: "s1", properties: { info: { id: "m1", role: "user" } } }, "s1", deps)
+    expect(ok).toBe(true)
+    expect(calls.some(c => c.name === "patchStore")).toBe(false)
+    expect(calls.some(c => c.name === "setUserMsgId")).toBe(false)
   })
 
   test("part.delta → busy + phase(writing) + patchStore (consumed)", () => {

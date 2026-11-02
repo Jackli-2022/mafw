@@ -59,10 +59,15 @@ export function checkEventFields(evt: RawEvt | null | undefined): string[] {
       break;
     }
     case 'message.updated': {
-      // canonical v3：flat {message}（legacy {info} 双读兜底）
-      const message = props?.message ?? props?.info;
+      // Task 14：canonical 载荷只有 properties.message；旧 wire info 是违例
+      // （升级前持久帧另经 event-log-migrate 一次性迁移，不在出口兼容）。
+      const message = props?.message;
       if (!message) {
-        warnings.push('message.updated without properties.message — no message skeleton on desktop, no step settlement');
+        warnings.push(
+          props?.info
+            ? 'message.updated carries legacy properties.info — canonical payload is properties.message'
+            : 'message.updated without properties.message — no message skeleton on desktop, no step settlement',
+        );
       } else if (!message.id) {
         warnings.push('message.updated without message.id — desktop cannot dedupe message skeleton');
       }

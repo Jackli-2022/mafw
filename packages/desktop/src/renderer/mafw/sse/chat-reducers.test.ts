@@ -177,6 +177,11 @@ describe("extractMediaSpeak", () => {
   test("reads text from properties.input", () => {
     expect(extractMediaSpeak({ properties: { input: { text: "说", voice: "茉莉" } } }, {})).toEqual({ text: "说", voice: "茉莉" })
   })
+  test("reads tool args from canonical properties.message (Task 14: no info fallback)", () => {
+    const event = { properties: { message: { input: { text: "读", voice: "白桦" } } } }
+    expect(extractMediaSpeak(event, {})).toEqual({ text: "读", voice: "白桦" })
+    expect(extractMediaSpeak({ properties: { info: { input: { text: "旧" } } } }, {})).toBeNull()
+  })
   test("falls back to store tool part", () => {
     const out = extractMediaSpeak({ assistantMessageID: "a1", properties: {} }, { a1: [{ type: "tool", tool: "mafw_media_speak", input: { text: "嗨" } }] })
     expect(out).toEqual({ text: "嗨", voice: undefined })
