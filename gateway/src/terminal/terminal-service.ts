@@ -248,6 +248,9 @@ export class TerminalService {
 
   /** 单次消费；id 不匹配/过期/不存在 → null。 */
   consumeTicket(ticket: string, opts: { id: string }): { directory: string } | null {
+    // 顺手清过期票据：签发点之外的第二次清扫（客户端可能签发后从不连接，
+    // 只靠 issueTicket 触发会让 tickets 无界增长）。
+    this.pruneExpired();
     const grant = this.tickets.get(ticket);
     if (!grant) return null;
     if (grant.expiresAt <= this.now()) {
