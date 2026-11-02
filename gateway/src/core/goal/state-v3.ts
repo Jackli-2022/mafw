@@ -35,6 +35,10 @@ export interface UserResponse {
 export interface GoalStateV3 {
   version: '3';
   goalId: string;
+  /** Goal revision（1 起；normalize/ensure 保证存在，旧 v3 状态读侧补 1）。
+   *  每个 revision 独立跑完整 loop；上一个 revision 的 state 归档在
+   *  `state/revisions/<goalId>/rev-<n>.json`，append-only 永不重写。 */
+  revision?: number;
   projectDir: string;
   mafwDir: string;
   phase: string;
@@ -101,6 +105,26 @@ export function statePathFor(mafwDir: string, goalId: string): string {
   return path.join(mafwDir, 'state', `${goalId}.json`);
 }
 
+/** revision 快照目录（`state/revisions/<goalId>/`）。 */
+export function revisionStateDirFor(mafwDir: string, goalId: string): string {
+  return path.join(mafwDir, 'state', 'revisions', goalId);
+}
+
+/** 归档的 revision state 路径（`state/revisions/<goalId>/rev-<n>.json`）。 */
+export function revisionStatePathFor(mafwDir: string, goalId: string, revision: number): string {
+  return path.join(revisionStateDirFor(mafwDir, goalId), `rev-${normalizeRevision(revision)}.json`);
+}
+
+function normalizeRevision(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+}
+
+/** 读取侧 revision（旧状态缺字段 → 1）。 */
+export function effectiveRevision(s: { revision?: number }): number {
+  return normalizeRevision(s.revision);
+}
+
 export function effectiveRound(s: { round?: number; loop?: number }): number {
   return s.round ?? s.loop ?? 0;
 }
@@ -126,6 +150,7 @@ function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
   return {
     version: '3',
     goalId: raw.goalId ?? goalId,
+    revision: normalizeRevision(raw.revision),
     projectDir: raw.projectDir ?? '',
     mafwDir: raw.mafwDir ?? mafwDir,
     phase: raw.phase ?? null,
@@ -200,16 +225,49 @@ export function writeGoalState(
   return next;
 }
 
-/** starter 用：无 state 则建（含 policySnapshot），有则原样返回（幂等）。 */
-export function ensureGoalState(
+export interface EnsureGoalStateInit {
+  /** 目标 revision（缺省/≤当前 → 幂等返回现有 state；更高 → 归档旧 revision 并重建）。 */
+  revision?: number;
+  projectDir: string;
+  maxRounds: number;
+  policySnapshot?: GoalStateV3['policySnapshot'];
+  taskType?: string;
+  planReview?: 'auto' | 'manual';
+}
+
+/**
+ * 把当前 active state 归档到 `state/revisions/<goalId>/rev-<n>.json`。
+ *
+ * - `revision` 缺省 = active state 自身的 revision（旧状态 → 1）。
+ * - **append-only**：目标文件已存在时原样保留，绝不重写（旧 revision 的快照
+ *   必须一直等于它收尾时的样子）。返回归档路径；无 active state 时返回 null。
+ */
+export function archiveGoalStateForRevision(
   mafwDir: string,
   goalId: string,
-  init: { projectDir: string; maxRounds: number; policySnapshot?: GoalStateV3['policySnapshot']; taskType?: string; planReview?: 'auto' | 'manual' },
-): GoalStateV3 {
-  const existing = loadGoalState(mafwDir, goalId);
-  if (existing) return existing;
-  const s: GoalStateV3 = {
-    version: '3', goalId,
+  revision?: number,
+): string | null {
+  const activePath = statePathFor(mafwDir, goalId);
+  if (!fs.existsSync(activePath)) return null;
+  let raw: any;
+  try {
+    raw = JSON.parse(fs.readFileSync(activePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+  const target = revisionStatePathFor(mafwDir, goalId, revision ?? normalizeRevision(raw?.revision));
+  if (fs.existsSync(target)) return target;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const tmp = `${target}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ ...raw, revision: normalizeRevision(revision ?? raw?.revision) }, null, 2), 'utf-8');
+  fs.renameSync(tmp, target);
+  return target;
+}
+
+/** 新 revision 的干净 state（旧 revision 的进度绝不带过来）。 */
+function freshState(mafwDir: string, goalId: string, revision: number, init: EnsureGoalStateInit): GoalStateV3 {
+  return {
+    version: '3', goalId, revision,
     projectDir: init.projectDir, mafwDir,
     phase: 'PLANNING', round: 1, loop: 1, maxRounds: init.maxRounds,
     reviewVerdict: null, reviewReportPath: null, reviewFeedback: '',
@@ -223,8 +281,32 @@ export function ensureGoalState(
     ...(init.planReview ? { planReview: init.planReview } : {}),
     updatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * starter 用：无 state 则建（含 policySnapshot），同一 revision 幂等返回现有 state。
+ *
+ * 传入更高的 `revision` = 开启新 revision：先把旧 active state 归档（幂等、
+ * 不覆盖已有快照），再在 `state/<goalId>.json` 重建干净 state——归档文件与
+ * 更高 revision 的进度完全隔离；传入更低/相同的 revision 绝不降级、不改写。
+ */
+export function ensureGoalState(
+  mafwDir: string,
+  goalId: string,
+  init: EnsureGoalStateInit,
+): GoalStateV3 {
+  const targetRevision = normalizeRevision(init.revision);
+  const existing = loadGoalState(mafwDir, goalId);
+  if (existing) {
+    const currentRevision = effectiveRevision(existing);
+    if (targetRevision <= currentRevision) return existing;
+    archiveGoalStateForRevision(mafwDir, goalId, currentRevision);
+  }
+  const s = freshState(mafwDir, goalId, targetRevision, init);
   const p = statePathFor(mafwDir, goalId);
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(s, null, 2), 'utf-8');
+  const tmp = `${p}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(s, null, 2), 'utf-8');
+  fs.renameSync(tmp, p);
   return s;
 }
