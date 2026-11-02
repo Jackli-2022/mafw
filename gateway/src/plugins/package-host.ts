@@ -196,6 +196,10 @@ export class PluginHost {
       const active = this.active.get(name);
       const pending = this.pending.get(name);
       const failure = this.failures.get(name);
+      // A failed pending candidate is the only record left on later scans (the
+      // `failures` map is rebuilt per scan), so it must own the error too —
+      // otherwise the Hub would show "ok" while `getPending` still reports it.
+      const error = failure?.error ?? pending?.error;
       const source = active?.descriptor.mainFile
         ?? pending?.descriptor.mainFile
         ?? failure?.source
@@ -203,7 +207,7 @@ export class PluginHost {
       const state: PackageState = {
         name,
         source,
-        status: failure ? 'error' : 'ok',
+        status: error ? 'error' : 'ok',
         contributions: active?.contributions ?? pending?.activation?.contributions ?? [],
         version: active?.version
           ?? pending?.activation?.version
@@ -213,7 +217,7 @@ export class PluginHost {
         pendingRevision: pending?.revision,
         fingerprint: active?.fingerprint,
       };
-      if (failure) state.error = failure.error;
+      if (error) state.error = error;
       out.push(state);
     }
     return out.sort((a, b) => a.name.localeCompare(b.name));

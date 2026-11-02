@@ -360,6 +360,86 @@ module.exports = { name: 'viewer', async activate() {
     expect(host.getClientSnapshot()).toBe(before);
   });
 
+  it('keeps a failed pending candidate visible in package state across scans', async () => {
+    const file = path.join(dir, 'rt.js');
+    fs.writeFileSync(file, RUNTIME('rt'));
+    host = mkHost(dir, { createBag, activeRuntime: () => 'rt' });
+    await host.init();
+    const before = host.getClientSnapshot();
+
+    (globalThis as any).__mafwFail = 'rt';
+    fs.appendFileSync(file, '\n// v2\n');
+    await host.reload();
+    expect(host.getState().find((entry) => entry.name === 'rt')).toMatchObject({ status: 'error', error: 'boom' });
+
+    // Same files scanned again: the candidate is reused, not re-activated, and
+    // the Hub must keep showing the failure instead of falling back to "ok".
+    await host.reload();
+    expect(host.getState().find((entry) => entry.name === 'rt')).toMatchObject({
+      status: 'error',
+      error: 'boom',
+      revision: before.plugins[0].revision,
+    });
+    expect(host.getPending('rt')?.error).toMatch(/boom/);
+    expect((globalThis as any).__mafwActivations).toBe(2);
+
+    // An unrelated commit in the same scan must not erase the pending error.
+    fs.writeFileSync(path.join(dir, 'other.js'), DECLARATIVE('other', 'Other'));
+    await host.reload();
+    expect(host.getClientSnapshot().plugins.map((plugin) => plugin.name)).toEqual(['other', 'rt']);
+    expect(host.getState().find((entry) => entry.name === 'rt')).toMatchObject({
+      status: 'error',
+      error: 'boom',
+      pendingRevision: expect.any(String),
+    });
+    expect(host.getState().find((entry) => entry.name === 'other')).toMatchObject({ status: 'ok' });
+    expect(host.getClientSnapshot().plugins[1].revision).toBe(before.plugins[0].revision);
+  });
+
+  it('evicts only the changed package local module cache', async () => {
+    const packageBody = (name: string) => `
+const helper = require('./lib/helper');
+module.exports = { name: '${name}', async activate() {
+  return { usage: { name: '${name}', type: 'api', plan: String(helper.version), async fetch() { return null; } } };
+} };
+`;
+    const roots: Record<string, string> = { alpha: path.join(dir, 'alpha'), beta: path.join(dir, 'beta') };
+    for (const [name, root] of Object.entries(roots)) {
+      fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'plugin.json'), JSON.stringify({ name, version: '1.0.0' }));
+      fs.writeFileSync(path.join(root, 'lib', 'helper.js'), 'module.exports = { version: 1 };\n');
+      fs.writeFileSync(path.join(root, 'index.js'), packageBody(name));
+    }
+
+    host = mkHost(dir, { createBag });
+    await host.init();
+
+    const alphaProbe = path.join(roots.alpha, 'lib', 'cached-probe.js');
+    const betaProbe = path.join(roots.beta, 'lib', 'cached-probe.js');
+    const stub = (id: string) => ({ id, filename: id, loaded: true, exports: {} }) as any;
+    require.cache[alphaProbe] = stub(alphaProbe);
+    require.cache[betaProbe] = stub(betaProbe);
+    const betaEntry = require.cache[betaProbe];
+    const hostModule = require.resolve('../../../src/plugins/package-host');
+    expect(require.cache[hostModule]).toBeDefined();
+
+    const before = new Map(host.getClientSnapshot().plugins.map((plugin) => [plugin.name, plugin.revision]));
+    fs.appendFileSync(path.join(roots.alpha, 'lib', 'helper.js'), '\n// v2\n');
+    await host.reload();
+
+    // Changed package subtree: gone. Sibling package + gateway module: untouched.
+    expect(require.cache[alphaProbe]).toBeUndefined();
+    expect(require.cache[betaProbe]).toBe(betaEntry);
+    expect(require.cache[hostModule]).toBeDefined();
+
+    const after = new Map(host.getClientSnapshot().plugins.map((plugin) => [plugin.name, plugin.revision]));
+    expect(after.get('alpha')).not.toBe(before.get('alpha'));
+    expect(after.get('beta')).toBe(before.get('beta'));
+
+    delete require.cache[alphaProbe];
+    delete require.cache[betaProbe];
+  });
+
   it('keeps the last active descriptor when a package directory becomes unreadable', async () => {
     const root = path.join(dir, 'big');
     fs.mkdirSync(root);
