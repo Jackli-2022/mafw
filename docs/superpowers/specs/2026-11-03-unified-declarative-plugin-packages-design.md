@@ -1,7 +1,8 @@
 # 统一 Gateway 插件包 + 声明式 Desktop UI 设计
 
-日期：2026-11-03  
-状态：Draft（builder check 已完成，待用户批准）  
+日期：2026-11-03
+状态：已批准（设计）
+实现计划：`docs/superpowers/plans/2026-11-03-unified-declarative-plugin-packages.md`、`docs/superpowers/plans/2026-11-03-agent-create-mode.md`
 参考：DeepSeek Harness 的统一 bundle、Plugin Manager、UI slots、HMR 与 Creator 工作流；不引入 Cordis，不执行插件 Client 代码。
 
 ## 1. 意图与 Why
@@ -314,6 +315,7 @@ plugin:* SSE
 - `POST /api/plugins/packages/install`：body 为 `{path, overwrite?}`，从本机绝对目录安装目录包。gateway 验证 source/plugin.json 后以临时目录 + rename 原子复制到 `~/.mafw/plugins/<name>`；Desktop 通过原生目录选择器获得路径，不开放通用文件系统 API。第二阶段 Agent Create 使用同一接口安装草稿目录。现有 raw octet-stream install 继续用于单文件包，不增加 zip 上传面。
 - `POST /api/plugins/check`：body 为 `{path}`，加载并激活一个 candidate、校验全部贡献后随即 dispose，不发布任何 registry/revision；它运行的是本机可信 Host 代码，不是安全沙箱。CLI 与后续 Agent Create 复用同一检查实现。
 - `POST /api/plugins/:name/apply`：应用该包的 pendingRevision；内部复用既有 runtime switch/安全点编排，不要求 Desktop 构造 runtime 名或调用“切换到同名 runtime”。
+- `POST /api/plugins/:name/reload`：显式重新扫描单个包，用于 `reloadOnSave:true` 与插件中心“重新加载”；与文件 watcher 共用同一 staging/commit，不绕过 pending 规则。
 - 现有 enable/disable/delete 复用并按**包名**寻址统一包。禁用状态由 Manager 写入独立、原子持久化的 `~/.mafw/plugin-package-state.json`，不改 plugin.json、不重命名目录；delete 先 dispose，再对经 realpath/containment 验证的 `~/.mafw/plugins/<name>` 做递归删除，绝不按调用方任意路径删除。
 - 成功应用后更新 client revision。`plugins.changed` 在 active、pending、enabled 或诊断状态变化时发出，携带当前全局 revision；Desktop Plugins/Hub 重拉 `/api/plugins`，Client SlotHost 重拉 `/api/plugins/client`。pending 出现时不要求 active client revision 改变。
 - 所有路由进入 route catalog/OpenAPI/SDK contract；preload 增加静态 `plugins.client/invoke/check/installPackage/apply` 方法，renderer 不使用通用字符串 IPC。
