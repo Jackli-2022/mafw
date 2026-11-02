@@ -20,7 +20,7 @@ import {
   OPENCODE_EVENT_SOURCE,
   OPENCODE_TRANSFORM_EVENT,
 } from '../../../src/runtime/opencode-events';
-import { toWireInfo } from '../../../src/runtime/wire-compat';
+import { toWireEventPayload, toWireInfo } from '../../../src/runtime/wire-compat';
 
 const V1_ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,
@@ -125,6 +125,8 @@ describe('history：assistant 规范字段生产者', () => {
     expect(twice.error).toEqual({ kind: 'abort', message: 'Interrupted by user' });
     expect(twice.stopReason).toBe('cancelled');
     expect(twice.model).toEqual({ providerID: 'gateway', modelID: 'glm-5.3', variant: 'max' });
+    // 零拷贝不变量：字段值已等价 → 原对象引用（不重复分配）
+    expect(twice).toBe(once);
   });
 
   it('只有错误类名（无 data.message）时也产出非空规范 message', () => {
@@ -212,3 +214,100 @@ describe('live：opencode 2.1 方言规范字段', () => {
     expect(evt.payload.properties.part.state.output).toBe('out-1out-2');
   });
 });
+
+/**
+ * 2.1 的回合终态原本只有 turn 三元组（turn.completed/failed/aborted），
+ * message 级规范字段（`stopReason` / `error{kind,message}`）没有生产者，
+ * session-ui 的中止分隔条与非正常停止提示在 live 下永不出现。
+ *
+ * 现在：终态额外在**已存在的 assistant 锚点**上补一帧 `message.updated`
+ * （id 来自本次 turn 的 step/tool/text 事件；无锚点则不伪造消息，只保留
+ * turn 语义）。桌面按 id 合并，不产生重复气泡。
+ */
+describe('live：2.1 执行终态补 message 级规范字段', () => {
+  function terminal(type: string, data: Record<string, unknown>) {
+    return applyEventMappings({ type, data, created: 9 }, ENTRY_21, isCanonical) as any[];
+  }
+
+  function startStep(sessionID: string, assistantMessageID: string) {
+    terminal('session.step.started', { sessionID, assistantMessageID, started: 1 });
+  }
+
+  it('succeeded：锚点消息补 stopReason（finish→canonical），无 error', () => {
+    const sid = 's-live-ok';
+    startStep(sid, 'ma_ok');
+    const events = terminal('session.execution.succeeded', { sessionID: sid, finish: 'length' });
+
+    expect(events.map((e) => e.payload.type)).toEqual(['turn.completed', 'message.updated']);
+    const message = events[1].payload.properties.message;
+    expect(message).toMatchObject({ id: 'ma_ok', sessionID: sid, role: 'assistant', stopReason: 'max_tokens' });
+    expect(message).not.toHaveProperty('error');
+    // turn 语义保持不变
+    expect(events[0].payload.properties).toMatchObject({ sessionID: sid, stopReason: 'max_tokens', finish: 'length' });
+  });
+
+  it('failed：锚点消息补 stopReason=error 与 error{kind,message}（保留 provider 文本）', () => {
+    const sid = 's-live-fail';
+    startStep(sid, 'ma_fail');
+    const events = terminal('session.execution.failed', {
+      sessionID: sid,
+      error: { type: 'provider.auth', message: 'Consumer is forbidden.' },
+    });
+
+    expect(events.map((e) => e.payload.type)).toEqual(['turn.failed', 'message.updated']);
+    expect(events[1].payload.properties.message).toMatchObject({
+      id: 'ma_fail', role: 'assistant', stopReason: 'error',
+      error: { kind: 'provider', message: 'Consumer is forbidden.' },
+    });
+    // turn 载荷零回归
+    expect(events[0].payload.properties).toMatchObject({
+      error: 'Consumer is forbidden.', errorCode: 'provider.auth', stopReason: 'error',
+    });
+  });
+
+  it('interrupted：锚点消息补 stopReason=cancelled 与 error{kind:abort}', () => {
+    const sid = 's-live-abort';
+    startStep(sid, 'ma_abort');
+    const events = terminal('session.execution.interrupted', { sessionID: sid });
+
+    expect(events.map((e) => e.payload.type)).toEqual(['turn.aborted', 'message.updated']);
+    expect(events[1].payload.properties.message).toMatchObject({
+      id: 'ma_abort', role: 'assistant', stopReason: 'cancelled',
+      error: { kind: 'abort', message: 'Interrupted' },
+    });
+
+    // SSE egress：旧客户端仍收到 {info} + 原生 error 名（桌面无重复气泡，按 id 合并）
+    const wire: any = toWireEventPayload('message.updated', events[1].payload.properties);
+    expect(wire.info).toMatchObject({ id: 'ma_abort', role: 'assistant', stopReason: 'cancelled' });
+    expect(wire.info.error).toEqual({ name: 'MessageAbortedError', data: { message: 'Interrupted' } });
+    expect('message' in wire).toBe(false);
+  });
+
+  it('无锚点（本回合没有任何 step/tool/text 事件）→ 不伪造消息，只保留 turn 事件', () => {
+    const events = terminal('session.execution.interrupted', { sessionID: 's-live-no-anchor' });
+    expect(events.map((e) => e.payload.type)).toEqual(['turn.aborted']);
+  });
+
+  it('history 与 live 的规范字段一致（中止 / 截断）', () => {
+    const [historyAbort]: any = normalizeOpencodeHistory([abortedAssistantWire]);
+    startStep('s-parity-abort', 'ma_parity');
+    const liveAbort = terminal('session.execution.interrupted', { sessionID: 's-parity-abort' })[1].payload.properties
+      .message;
+
+    expect(liveAbort.stopReason).toBe(historyAbort.stopReason); // cancelled
+    expect(liveAbort.error.kind).toBe(historyAbort.error.kind); // abort
+    expect(typeof liveAbort.error.message).toBe('string');
+    expect(liveAbort.error.message.length).toBeGreaterThan(0);
+
+    const [historyLength]: any = normalizeOpencodeHistory([
+      { info: { id: 'ma_h', role: 'assistant', finish: 'length' }, parts: [] },
+    ]);
+    startStep('s-parity-len', 'ma_len');
+    const liveLen = terminal('session.execution.succeeded', { sessionID: 's-parity-len', finish: 'length' })[1].payload
+      .properties.message;
+
+    expect(liveLen.stopReason).toBe(historyLength.stopReason); // max_tokens
+    expect(historyLength.stopReason).toBe('max_tokens');
+  });
+});
+

@@ -28,7 +28,7 @@
 import { MAFW } from './mafw-vocabulary';
 import { stopReasonOf } from './contract';
 import { formToQuestion } from './form-question';
-import { canonicalMessage } from './opencode-canonical';
+import { canonicalError, canonicalMessage, errorTextOf } from './opencode-canonical';
 import { backgroundJobFromSynthetic } from '../core/background/background-jobs';
 import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
 import type { RawRuntimeEvent } from './normalize';
@@ -128,6 +128,46 @@ const TOOL_STATE_CAP = 500;
 /** per-session last step finish：execution.succeeded 事件本身未必带 finish。 */
 const lastFinish = new Map<string, string>();
 
+/**
+ * per-session 最近出现的 assistant 消息 id：执行终态在这一锚点上补
+ * `message.updated`（`stopReason` / `error{kind,message}`），使 live 与历史的
+ * 规范形一致。**无锚点时不伪造消息**（只保留 turn 语义）。
+ */
+const lastAssistant = new Map<string, string>();
+const LAST_ASSISTANT_CAP = 200;
+
+function rememberAssistant(data: any) {
+  const sid = typeof data?.sessionID === 'string' ? data.sessionID : '';
+  const id = typeof data?.assistantMessageID === 'string' ? data.assistantMessageID : '';
+  if (!sid || !id) return;
+  lastAssistant.set(sid, id);
+  if (lastAssistant.size > LAST_ASSISTANT_CAP) {
+    const first = lastAssistant.keys().next().value;
+    if (first) lastAssistant.delete(first);
+  }
+}
+
+/** 终态锚点（一次性）：本回合已有 assistant 消息才产出 message 级更新。 */
+function terminalAnchor(data: any): { id: string; sessionID: string; role: 'assistant' } | undefined {
+  const sid = typeof data?.sessionID === 'string' ? data.sessionID : '';
+  if (!sid) return undefined;
+  const explicit = typeof data?.assistantMessageID === 'string' ? data.assistantMessageID : '';
+  const id = explicit || lastAssistant.get(sid);
+  if (!id) return undefined;
+  // 终态消费一次：后续「没有 step 的终态」不得挂到上一回合的旧锚点
+  lastAssistant.delete(sid);
+  return { id, sessionID: sid, role: 'assistant' };
+}
+
+/** 锚点消息更新（canonical `{message}`；SSE egress 统一还原 `{info}`）。 */
+function terminalMessage(raw: any, data: any, fields: Record<string, unknown>): RawRuntimeEvent | undefined {
+  const anchor = terminalAnchor(data);
+  if (!anchor) return undefined;
+  return eventOf(raw, MAFW.messageUpdated, {
+    message: canonicalMessage({ ...anchor, ...fields }),
+  });
+}
+
 function rememberTool(id: string, patch: { name?: string; input?: any; started?: number }) {
   if (!id) return;
   const cur = toolState.get(id) ?? {};
@@ -164,6 +204,8 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
   const type = typeof raw?.type === 'string' ? raw.type : '';
   const data: any = raw?.data ?? {};
   if (!type) return raw;
+  // 锚点学习：所有携带 assistantMessageID 的 2.1 事件（step/tool/text/reasoning）
+  rememberAssistant(data);
 
   switch (type) {
     case 'session.next.synthetic': {
@@ -182,28 +224,44 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
     case 'session.execution.succeeded': {
       const finish = typeof data.finish === 'string' ? data.finish : lastFinish.get(data.sessionID);
       if (data.sessionID) lastFinish.delete(data.sessionID);
-      return eventOf(raw, MAFW.turnCompleted, {
+      const turn = eventOf(raw, MAFW.turnCompleted, {
         sessionID: data.sessionID,
         stopReason: stopReasonOf(finish),
         ...(finish ? { finish } : {}),
       });
+      // 规范形对齐历史：锚点消息补 stopReason（成功不写 error）
+      const message = terminalMessage(raw, data, { stopReason: stopReasonOf(finish) });
+      return message ? [turn, message] : turn;
     }
 
     case 'session.execution.failed': {
       if (data.sessionID) lastFinish.delete(data.sessionID);
-      return eventOf(raw, MAFW.turnFailed, {
+      const turn = eventOf(raw, MAFW.turnFailed, {
         sessionID: data.sessionID,
         error: data.error?.message ?? 'turn failed',
         errorCode: data.error?.type ?? 'unknown',
         stopReason: 'error',
       });
+      // 规范形对齐历史：stopReason=error + 中性 error{kind,message}
+      const message = terminalMessage(raw, data, {
+        stopReason: 'error',
+        error: canonicalError(data.error) ?? { kind: 'unknown', message: errorTextOf(data.error) || 'turn failed' },
+      });
+      return message ? [turn, message] : turn;
     }
 
-    case 'session.execution.interrupted':
-      return eventOf(raw, MAFW.turnAborted, {
+    case 'session.execution.interrupted': {
+      const turn = eventOf(raw, MAFW.turnAborted, {
         sessionID: data.sessionID,
         stopReason: 'cancelled',
       });
+      // 规范形对齐历史：stopReason=cancelled + error{kind:abort}
+      const message = terminalMessage(raw, data, {
+        stopReason: 'cancelled',
+        error: { kind: 'abort', message: errorTextOf(data.error) || 'Interrupted' },
+      });
+      return message ? [turn, message] : turn;
+    }
 
     case 'session.diff':
       return eventOf(raw, MAFW.sessionDiff, {

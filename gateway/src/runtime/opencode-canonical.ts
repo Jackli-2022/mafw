@@ -15,7 +15,8 @@
  *    在兼容窗口内原样保留（wire egress 仍需要它们；Task 15 删除 wire 时清理）。
  *  - `error` 是唯一被替换的键（原生与规范不能共存）：规范形写入 flat，
  *    egress 侧由 `wire-compat.toWireInfo` 投影回原生形状。
- *  - 无改动时返回**原对象/原数组引用**（历史零拷贝不变量、避免热路径分配）。
+ *  - 零拷贝：部件列表只在工具部件真正补齐时新建；消息字段值已等价时返回
+ *    **原对象引用**（重复归一不产生新对象——见 `canonicalMessage`）。
  */
 import { stopReasonOf } from './contract';
 import type { MafwMessageError, MafwModelRef, StopReason } from './canonical-types';
@@ -138,18 +139,38 @@ export function canonicalParts(parts: any): any {
 
 /**
  * 消息规范形（history / live 共用）：补 assistant 规范字段 + 工具 output。
- * 无改动时返回原对象引用。
+ *
+ * 零拷贝：字段值已等价时不重写（`stopReason` 值比较、`model`/`error` 逐字段
+ * 比较），零件无变化时保留原数组引用；两者都无变化 → 返回**原对象引用**
+ * （重复归一 / facade 救回路径不产生新对象）。
  */
+function sameModelRef(a: any, b: MafwModelRef | undefined): boolean {
+  if (!b) return true;
+  return a?.providerID === b.providerID && a?.modelID === b.modelID && (a?.variant ?? '') === (b.variant ?? '');
+}
+
+function sameMessageError(a: any, b: MafwMessageError | undefined): boolean {
+  if (!b) return true;
+  return a?.kind === b.kind && a?.message === b.message;
+}
+
+function hasSameFields(message: any, fields: CanonicalMessageFields): boolean {
+  if (!sameModelRef(message.model, fields.model)) return false;
+  if (fields.stopReason && message.stopReason !== fields.stopReason) return false;
+  if (!sameMessageError(message.error, fields.error)) return false;
+  return true;
+}
+
 export function canonicalMessage(message: any): any {
   if (!message || typeof message !== 'object') return message;
   const fields = canonicalMessageFields(message);
   const content = canonicalParts(message.content);
-  const hasFields = Object.keys(fields).length > 0;
   const contentChanged = content !== message.content;
-  if (!hasFields && !contentChanged) return message;
+  const fieldsChanged = !hasSameFields(message, fields);
+  if (!fieldsChanged && !contentChanged) return message;
   return {
     ...message,
-    ...fields,
+    ...(fieldsChanged ? fields : {}),
     ...(contentChanged ? { content } : {}),
   };
 }
