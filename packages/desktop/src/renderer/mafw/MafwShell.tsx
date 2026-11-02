@@ -53,7 +53,9 @@ import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore } from "./pod-store"
-import { ingestPluginEvent, ingestPluginsChanged, refreshPluginClient } from "./plugins/plugin-store"
+import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
+import { pluginSurfaceIssues, pluginSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
+import { PluginSurfaceHost } from "./plugins/PluginSurfaceHost"
 import { podRailBadge } from "./pod-rail-badge"
 import { podRoleForSession } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
@@ -1688,7 +1690,7 @@ export function MafwShell() {
   const [workbenchView, setWorkbenchView] = createSignal<WorkbenchView>(bootView.view)
   const [workbenchSurface, setWorkbenchSurface] = createSignal<WorkbenchSurface>(bootView.surface)
   const [previousSurface, setPreviousSurface] = createSignal<"code" | "browser">(
-    bootView.surface === "terminal" ? "code" : bootView.surface,
+    bootView.surface === "browser" ? "browser" : "code",
   )
   const [executionSection, setExecutionSection] = createSignal<ExecutionSection>(bootView.executionSection)
   try {
@@ -1761,11 +1763,35 @@ export function MafwShell() {
     try { localStorage.setItem("mafw-workbench-view", view) } catch { /* ignore */ }
   }
   const applyWorkbenchSurface = (surface: WorkbenchSurface) => {
-    if (surface !== "terminal") setPreviousSurface(surface)
+    if (surface === "code" || surface === "browser") setPreviousSurface(surface)
     setWorkbenchSurface(surface)
     applyWorkbenchView("workbench")
     try { localStorage.setItem("mafw-workbench-surface", surface) } catch { /* ignore */ }
   }
+
+  // Task 8：插件面板 tab 由 committed descriptors 投影，Desktop 只消费数据。
+  const pluginSurfaceList = createMemo(() => pluginSurfaces(pluginDescriptors()))
+  const reportedPluginIssues = new Set<string>()
+  createEffect(() => {
+    for (const issue of pluginSurfaceIssues(pluginDescriptors())) {
+      const key = `${issue.code}|${issue.package}|${issue.panel}`
+      if (reportedPluginIssues.has(key)) continue
+      reportedPluginIssues.add(key)
+      console.warn(`[plugins] ${issue.message}`)
+    }
+  })
+  // 包/面板被删除后，活动 surface 若已消失则回退到内置「文件」；不打断执行/审阅视图。
+  createEffect(() => {
+    const current = workbenchSurface()
+    const resolved = resolveActiveSurface(
+      current,
+      pluginSurfaceList().map((surface) => surface.id),
+      pluginClientRevision() !== "",
+    )
+    if (resolved === current) return
+    setWorkbenchSurface(resolved)
+    try { localStorage.setItem("mafw-workbench-surface", resolved) } catch { /* ignore */ }
+  })
   const applyExecutionSection = (section: ExecutionSection) => {
     setExecutionSection(section)
     applyWorkbenchView("execution")
@@ -2570,6 +2596,14 @@ export function MafwShell() {
                       }}
                     />
                   }
+                  pluginSurfaces={pluginSurfaceList()}
+                  renderPluginSurface={(id) => (
+                    <PluginSurfaceHost
+                      id={id}
+                      surfaces={pluginSurfaceList()}
+                      sessionID={currentSessionID() || null}
+                    />
+                  )}
                 />
               </div>
             )}

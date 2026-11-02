@@ -114,6 +114,14 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     publicDir: "../../public",
     root: "src/renderer",
     resolve: {
+      // `@mafw/plugin-contract` ships CommonJS for gateway/runtime consumers.
+      // The renderer bundles the workspace TypeScript source instead so Rollup
+      // sees real ESM named exports (`normalizePluginView`, types are erased).
+      alias: {
+        "@mafw/plugin-contract": fileURLToPath(
+          new URL("../plugin-contract/src/index.ts", import.meta.url),
+        ),
+      },
       // Solid's context/owner state is runtime-global: two physical copies of
       // solid-js (e.g. version-skewed npm hoisting across workspace packages)
       // silently break every useContext lookup. Force single instances.

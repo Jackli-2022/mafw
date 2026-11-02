@@ -1,8 +1,33 @@
 // B1 右工作台视图状态（2026-10-26 agent-workbench-layout-ia spec）。
 // 一级决定“看什么”，二级决定“当前这一类”；执行二级固定下拉。
+//
+// Task 8：L2 surface 从封闭三值扩展为「内置三值 + 插件面板动态 tab」。
+// 插件 surface id 固定为 `plugin:<package>:<panel>`，与插件包/面板 id 的
+// 字符集（NAME_PATTERN）一致，因此可直接持久化到 localStorage。
+export type BuiltinWorkbenchSurface = "code" | "browser" | "terminal"
+export type PluginSurfaceId = `plugin:${string}`
+export type WorkbenchSurface = BuiltinWorkbenchSurface | PluginSurfaceId
 export type WorkbenchView = "workbench" | "execution" | "review"
-export type WorkbenchSurface = "code" | "browser" | "terminal"
 export type ExecutionSection = "overview" | "pod" | "todos" | "subagents" | "background" | "trajectory"
+
+const PLUGIN_SURFACE_PATTERN = /^plugin:([A-Za-z0-9][A-Za-z0-9._-]*):([A-Za-z0-9][A-Za-z0-9._-]*)$/
+
+export function pluginSurfaceId(packageName: string, panelId: string): PluginSurfaceId {
+  return `plugin:${packageName}:${panelId}`
+}
+
+export function parsePluginSurfaceId(
+  value: string | null | undefined,
+): { package: string; panel: string } | null {
+  if (typeof value !== "string") return null
+  const match = PLUGIN_SURFACE_PATTERN.exec(value)
+  if (!match) return null
+  return { package: match[1] as string, panel: match[2] as string }
+}
+
+export function isPluginSurfaceId(value: string | null | undefined): value is PluginSurfaceId {
+  return parsePluginSurfaceId(value) !== null
+}
 
 export type WorkbenchState = {
   view: WorkbenchView
@@ -22,7 +47,7 @@ export const WORKBENCH_VIEWS: readonly { id: WorkbenchView; label: string }[] = 
   { id: "review", label: "审阅" },
 ]
 
-export const WORKBENCH_SURFACES: readonly { id: WorkbenchSurface; label: string }[] = [
+export const WORKBENCH_SURFACES: readonly { id: BuiltinWorkbenchSurface; label: string }[] = [
   { id: "code", label: "文件" },
   { id: "browser", label: "浏览器" },
   { id: "terminal", label: "终端" },
@@ -38,7 +63,7 @@ export const EXECUTION_SECTIONS: readonly { id: ExecutionSection; label: string 
 ]
 
 const VIEW_IDS = new Set<WorkbenchView>(WORKBENCH_VIEWS.map((v) => v.id))
-const SURFACE_IDS = new Set<WorkbenchSurface>(WORKBENCH_SURFACES.map((v) => v.id))
+const SURFACE_IDS = new Set<string>(WORKBENCH_SURFACES.map((v) => v.id))
 const SECTION_IDS = new Set<ExecutionSection>(EXECUTION_SECTIONS.map((v) => v.id))
 
 export function normalizeWorkbenchView(v: string | null | undefined): WorkbenchView {
@@ -46,7 +71,8 @@ export function normalizeWorkbenchView(v: string | null | undefined): WorkbenchV
 }
 
 export function normalizeWorkbenchSurface(v: string | null | undefined): WorkbenchSurface {
-  return v && SURFACE_IDS.has(v as WorkbenchSurface) ? (v as WorkbenchSurface) : "code"
+  if (isPluginSurfaceId(v)) return v
+  return v && SURFACE_IDS.has(v) ? (v as BuiltinWorkbenchSurface) : "code"
 }
 
 export function normalizeExecutionSection(v: string | null | undefined): ExecutionSection {
@@ -99,13 +125,18 @@ export function terminalSurfaceHotkeyAction(s: TerminalSurfaceHotkeyState): Term
   return { openDock: true, view: "workbench", surface: "terminal" }
 }
 
-export function nextWorkbenchSurface(current: WorkbenchSurface, key: string): WorkbenchSurface | null {
-  const order = WORKBENCH_SURFACES.map((v) => v.id)
+export function nextWorkbenchSurface(
+  current: WorkbenchSurface,
+  key: string,
+  pluginSurfaces: readonly string[] = [],
+): WorkbenchSurface | null {
+  const order: readonly string[] = [...WORKBENCH_SURFACES.map((v) => v.id), ...pluginSurfaces]
   const index = order.indexOf(current)
-  if (key === "ArrowRight") return order[index + 1] ?? null
-  if (key === "ArrowLeft") return order[index - 1] ?? null
-  if (key === "Home") return order[0]
-  if (key === "End") return order[order.length - 1]
+  if (index < 0) return null
+  if (key === "ArrowRight") return (order[index + 1] as WorkbenchSurface | undefined) ?? null
+  if (key === "ArrowLeft") return (order[index - 1] as WorkbenchSurface | undefined) ?? null
+  if (key === "Home") return order[0] as WorkbenchSurface
+  if (key === "End") return order[order.length - 1] as WorkbenchSurface
   return null
 }
 
