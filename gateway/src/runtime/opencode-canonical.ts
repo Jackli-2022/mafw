@@ -46,11 +46,18 @@ export function errorKindOf(error: unknown): MafwErrorKind {
   // 已是规范形（重复归一 / normalizeFacadeHistory 救回路径）→ 保持
   if (e.kind === 'abort' || e.kind === 'rate-limit' || e.kind === 'provider' || e.kind === 'unknown') return e.kind;
   const name = asString(e.name) || asString(e.type) || asString(e.code);
+  // 显式中止（类名/type 带 abort|interrupt）优先级最高：即使文案里提到 provider 也
+  // 是用户中止（与 desktop `ingest/errors.ts` 的 precedence 一致）。
   if (/abort|interrupt/i.test(name)) return 'abort';
   const status = typeof e.status === 'number' ? e.status : undefined;
   const text = errorTextOf(error);
   if (status === 429 || /rate[-\s]?limit|quota|too many requests/i.test(`${name} ${text}`)) return 'rate-limit';
-  if (/provider|auth|api|overflow|filter/i.test(name)) return 'provider';
+  // provider 信号（name 直接命中 / 文案里的凭据与鉴权词）先于 cancel：上游取消
+  // 请求不是用户中止，否则 UI 会把 provider 故障显示成「已中止」。
+  if (/provider|auth|overflow|filter|unauthor|forbidden/i.test(name)) return 'provider';
+  if (/api key|apikey|provider|unauthor|forbidden|403/i.test(text)) return 'provider';
+  // 兜底：文案级 cancel（错误对象丢了原生类名时仍是中止，不落 unknown）。
+  if (/cancel|stopped by user/i.test(`${name} ${text}`)) return 'abort';
   return 'unknown';
 }
 

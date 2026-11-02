@@ -10,6 +10,7 @@
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 import { normalizeOpencodeHistory } from '../../../src/runtime/opencode-history';
+import { errorKindOf } from '../../../src/runtime/opencode-canonical';
 import {
   OPENCODE_21_EVENT_MAPPINGS,
   OPENCODE_21_EVENT_SOURCE,
@@ -62,6 +63,19 @@ const providerErrorWire = {
   },
   parts: [],
 };
+
+describe('error kind precedence（provider-cancel vs user abort）', () => {
+  it('provider 取消/中断文案不被判成用户中止（abort 需要显式类名）', () => {
+    expect(errorKindOf({ name: 'ProviderError', message: 'request cancelled by provider' })).toBe('provider');
+    expect(errorKindOf({ name: 'GenericError', message: 'request cancelled by provider' })).toBe('provider');
+    expect(errorKindOf({ name: 'GenericError', message: 'Provider cancelled request after 403' })).toBe('provider');
+    // 显式中止类名优先：文案提到 provider 也仍是用户中止
+    expect(errorKindOf({ name: 'MessageAbortedError', message: 'interrupted by provider timeout' })).toBe('abort');
+    // 错误对象丢了类名时的文案级 cancel 兜底（不落 unknown）
+    expect(errorKindOf({ name: 'GenericError', message: 'Operation cancelled' })).toBe('abort');
+    expect(errorKindOf({ message: 'stopped by user' })).toBe('abort');
+  });
+});
 
 describe('history：assistant 规范字段生产者', () => {
   it('abort 回合：model / stopReason / error{kind:abort,message} / tool output 全部补齐', () => {
