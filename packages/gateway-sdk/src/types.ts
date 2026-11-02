@@ -342,6 +342,10 @@ export interface SessionNamespace {
   messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }>
   /** 规范 flat 历史（MAFW View DTO）。迁移期固定 `?format=flat`；Task 15 后成为唯一形状。 */
   history(params: { sessionID: string; limit?: number; before?: string }): Promise<{ data: MafwMessage[]; nextCursor: string | null }>
+  /** 认知门（spec 2026-10-22-cognition-gate-rewrite）：POST /api/cognition/gate */
+  cognitionGate(params: { body: Record<string, unknown> }): Promise<unknown>
+  cognitionRewrite(params: { body: Record<string, unknown> }): Promise<{ content: unknown[] }>
+  cognitionRules(): Promise<{ rules: unknown[]; errors: string[] }>
   todo(params: { path: { id: string } }): Promise<{ data: Todo[] }>
   children(params: { path: { id: string } }): Promise<any[]>
   structured(params: { path: { id: string } }): Promise<any>
@@ -385,6 +389,36 @@ export interface SessionNamespace {
   data(params: { path: { id: string }; body: { name: string; id?: string; data: unknown; transient?: boolean; messageID?: string } }): Promise<{ part: DataPart }>
   /** 手动压缩会话（TUI /compact；runtime summarize 薄代理）。 */
   summarize(params: { path: { id: string }; body?: { providerID?: string; modelID?: string } }): Promise<void>
+  /** 会话 token/成本汇总（GET /api/sessions/:id/token-summary）。 */
+  tokenSummary(params: { path: { id: string } }): Promise<{
+    totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+    totalCost: number
+    turnCount: number
+    avgTokensPerTurn: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+  }>
+  /** 会话/项目/全局用量汇总（GET /api/usage/summary）。 */
+  usageSummary(params: { query?: { sessionID?: string; projectID?: string } }): Promise<{
+    session: { totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }; totalCost: number; turnCount: number; avgTokensPerTurn: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } } | null
+    project: { totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }; totalCost: number; turnCount: number; sessionCount: number } | null
+    global: { totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }; totalCost: number; turnCount: number; sessionCount: number } | null
+  }>
+  /** 用量 dashboard（GET /api/usage；分模型窗口见 modelStats）。 */
+  usage(params?: { sessionID?: string; projectID?: string }): Promise<{
+    summary: any
+    memory: any
+    providers: any[]
+    modelStats?: { windows: ModelUsageWindows }
+    updatedAt: number
+  }>
+  usagePlugins(): Promise<{ plugins: { file: string; name?: string; status: string; error?: string; overridden: boolean }[] }>
+  usagePluginsReload(): Promise<{ ok: boolean; plugins: any[] }>
+  usagePluginsCreate(body: { template?: string; values?: Record<string, any>; name?: string; source?: string }): Promise<{ ok: boolean; name?: string; error?: string; plugins?: any[] }>
+  usagePluginSource(name: string): Promise<{ source?: string; origin?: string; builtin?: boolean; error?: string }>
+  usagePluginSourceSave(name: string, source: string): Promise<{ ok: boolean; error?: string }>
+  usagePluginDelete(name: string): Promise<{ ok: boolean; error?: string }>
+  usagePluginTest(name: string): Promise<{ ok: boolean; result?: any; error?: string }>
+  /** 把当前回合的工具执行转为后台任务（v2 反代；transport 直连）。 */
+  background(params: { path: { id: string } }): Promise<void>
 }
 
 /** 会话文件变更条目（opencode SnapshotFileDiff 归一化）。 */

@@ -14,7 +14,7 @@ import {
   TerminalNamespace, TerminalSessionList, TerminalConnectTicket, TerminalSessionCreateInput,
   PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus, PodDeliveryState,
   PodCreateGoalInput, PodCreateGoalResult, PodGoalResult,
-  SessionConfigState, SessionConfigCategory,
+  SessionConfigState, SessionConfigCategory, SessionNamespace,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -124,7 +124,12 @@ export class MafwClient implements IMafwClient {
 
   // 鈹€鈹€ Session 鈹€鈹€
 
-  session = {
+  /**
+   * 显式命名空间注解：导出的 `MafwClient.session` 类型 = `SessionNamespace`
+   * （含 `messages` 重载与 `history` flat 返回），而不是从对象字面量推断出的
+   * `Promise<any>` 实现签名。
+   */
+  session: SessionNamespace = {
     create: async (
       params?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string },
     ): Promise<Session & { worktree?: { dir: string; branch: string } }> => {

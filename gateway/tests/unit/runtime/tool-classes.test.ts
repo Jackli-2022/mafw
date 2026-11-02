@@ -167,6 +167,42 @@ describe('A canonical 翻译层', () => {
     expect(enrichHistoryParts(undefined as any)).toBeUndefined(); // 非数组不抛
   });
 
+  it('enrichHistoryParts：flat content + wire parts 双载体、幂等、已设值不覆写（Task 8）', () => {
+    const msgs: any[] = [
+      {
+        id: 'm1',
+        role: 'assistant',
+        content: [
+          { id: 'p1', type: 'tool', tool: 'shell', state: { status: 'completed' } },
+          { id: 'p2', type: 'text', text: 'flat text' },
+          { id: 'p3', type: 'tool', tool: 'ls', toolClass: 'file-edit', canonicalTool: 'keep' },
+        ],
+        parts: [
+          { id: 'w1', type: 'tool', tool: 'command_execution' },
+          { id: 'w2', type: 'text', text: 'wire text' },
+        ],
+      },
+      { info: { id: 'm2' }, parts: [{ type: 'tool', tool: 'find' }] },
+      { id: 'm3', role: 'user', content: [{ id: 'p4', type: 'tool', tool: 'read' }] },
+    ];
+    enrichHistoryParts(msgs);
+
+    // flat content 载体
+    expect(msgs[0].content[0]).toMatchObject({ toolClass: 'shell', canonicalTool: 'bash' });
+    expect(msgs[0].content[1].toolClass).toBeUndefined();
+    expect(msgs[0].content[2]).toMatchObject({ toolClass: 'file-edit', canonicalTool: 'keep' });
+    // 旧 wire parts 载体（生产默认路径仍走此形状）
+    expect(msgs[0].parts[0]).toMatchObject({ toolClass: 'shell', canonicalTool: 'bash' });
+    expect(msgs[0].parts[1].toolClass).toBeUndefined();
+    expect(msgs[1].parts[0]).toMatchObject({ toolClass: 'search', canonicalTool: 'glob' });
+    expect(msgs[2].content[0]).toMatchObject({ toolClass: 'readonly', canonicalTool: 'read' });
+
+    // 幂等：重复执行不改变任何字段（含已设值）
+    const snapshot = JSON.stringify(msgs);
+    enrichHistoryParts(msgs);
+    expect(JSON.stringify(msgs)).toBe(snapshot);
+  });
+
   it('setToolClassOverlay 接受 canonical 声明（非法 canonical 忽略并报 invalid）', () => {
     const { applied, invalid } = setToolClassOverlay([
       { name: 'ls', toolClass: 'search', canonical: 'list' },

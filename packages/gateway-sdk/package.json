@@ -9,7 +9,7 @@
     "gen:api": "node scripts/merge-contract.mjs && openapi-typescript contract/openapi.json -o src/api-schema.gen.ts",
     "emit:view-dto": "node --import tsx scripts/emit-view-dto.ts",
     "test": "node --import tsx --require ../../packages/test-shim/require-hook.cjs --test \"src/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit -p tsconfig.probes.json"
   },
   "devDependencies": {
     "@mafw/test-shim": "*",
