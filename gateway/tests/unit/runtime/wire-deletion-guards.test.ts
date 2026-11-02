@@ -158,7 +158,9 @@ describe('wire / legacy surfaces are physically gone', () => {
 
   test('gateway source and smoke scripts do not speak deleted routes or old history shapes', () => {
     const srcFiles = walk(join(GATEWAY, 'src'), (f) => f.endsWith('.ts'));
-    const scriptFiles = walk(join(GATEWAY, 'scripts'), (f) => f.endsWith('.mjs'));
+    // script 层同时收 .mjs（smoke）与 .ts（emit/calibrate/deploy 辅助）——Task 15 minor 收口。
+    const scriptFiles = walk(join(GATEWAY, 'scripts'), (f) => f.endsWith('.mjs') || f.endsWith('.ts'));
+    expect(scriptFiles.some((file) => file.endsWith('.ts'))).toBe(true);
     expect(violationsIn(srcFiles, LEGACY_ROUTE_PATTERN)).toEqual([]);
     expect(violationsIn(scriptFiles, LEGACY_ROUTE_PATTERN)).toEqual([]);
     // 旧历史双形状只允许出现在 adapter 原生翻译（NATIVE_TRANSLATION_FILES）。

@@ -361,3 +361,31 @@ Provider、agent、message 等主要是数据，不为了形式统一强做成�
 - **synthetic shell 消息**：本设计决定翻译为 `background.job.updated`，不扩充聊天 message role。
 - **worktree 归属**：本设计决定归为 gateway git 能力 + session directory 契约，不以 opencode 能力位限制其他 runtime。
 - **mobile 验证**：本设计决定把 focused Flutter analyze/test/golden 纳入 CI；完整安装包构建留在发布门禁。
+
+## 16. 实现偏差记录（2026-11-02 验收批）
+
+实现阶段与设计文本的差异，逐条登记（设计面未变的项不在此列）：
+
+1. **`session.background` 路由漏登记（真实契约洞）**：`POST /api/session/:id/background`
+   自 Task 3 起在 SDK（`sessions.background`）与 index dispatch 中存在，但未进
+   `routes/route-catalog.ts`，因此不在 `openapi.json` / 契约产物里。Task 16 的
+   route→surface 守卫首次把它抓出，本批补登记并重生成契约产物
+   （`emit:openapi` 241 operations / 215 paths）。
+2. **守卫的扫描范围口径**：桌面/TUI/session-ui 扫描器排除 `*.test.ts(x)` 与 `*.stories.tsx`
+   （它们本身就是反向 fixture 与 wire 样本）；desktop 的 `history-wire-shape` 规则限定接收者
+   （`item.info` / `msg.parts`），避免把 turn-queue 的 prompt `parts` 误判为 wire 历史。
+3. **`properties.info` 例外清单**：Task 14 只翻转 `message.updated`，session 生命周期
+   （`session.created/updated/deleted`）仍是 wire `properties.info`。因此 desktop 守卫把它
+   列为**逐文件例外**（`session-events.ts`、`sse/dispatcher.ts`、`sse/handlers/subagents.ts`），
+   而不是全域禁令。
+4. **组合根例外按「规则 + 访问形态」登记**（8 条，含 `this.runtimeHost` 诊断窄面、
+   `plugin.capabilities` 声明、激活期 `rawRuntime/fallbackRt`）。守卫反向断言每条登记都仍被
+   使用（无死豁免），并拒绝任何未登记形态。
+5. **pi live `message.updated` 缺 `message.id`**：Task 12 已登记的映射缺口，本批不修
+   （映射行只带 role/finish）；SSE golden 把它钉成显式期望：桌面按「无 id 的 live
+   message.updated 丢弃」处理，历史 id 由 `normalizePiMessages` 提供。
+6. **claude 历史无时间戳**：`normalizeClaudeHistory` 不产出 `time`（SDK 消息无时间字段），
+   View DTO 的 `time` 为可选，golden 显式断言该缺口。
+7. **`session-ui` 的架构守卫文件位置**为 `src/architecture.test.ts`（brief 指定）；
+   纯逻辑守卫导出 `scanSessionUiSource/scanSessionUiFixture` 供后续复用。
+

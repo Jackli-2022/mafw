@@ -323,7 +323,7 @@ async createRuntime(ctx) {
 | type | 必需 properties | 提取结果 | 缺字段后果 |
 |---|---|---|---|
 | `part.updated` | `part.{sessionID,type:'text',text}` 或 `delta` | step（step-finish part 结算）+ chatSignal:'delta' + deltaText；tool part 快照 → toolCommand | 无 delta 文本则仅 step 判定 |
-| `message.updated` | `info.{sessionID,role:'assistant',...完成消息}` | step（completed message）+ chatSignal:'complete' | 缺 info → 无 step |
+| `message.updated` | `message.{id,role:'assistant',...完成消息}`（**canonical 载荷**；旧 wire `info` 已删除，见 §3.3） | step（completed message）+ chatSignal:'complete' | 缺 message.id → 桌面丢弃该帧（无法去重骨架） |
 | `turn.completed` | `sessionID` | chatSignal:'complete' → goalDriver/记忆 drain/回合收束 | 缺 sessionID → 不触发记忆注入 drain |
 | `turn.failed` | `error`（可序列化） | chatSignal:'error' | error 缺省为 'Unknown error' |
 | `turn.aborted` | `sessionID` | 回合中止（无 chatSignal） | — |
@@ -346,7 +346,7 @@ async createRuntime(ctx) {
 | `turn.completed`（type） | Mode A + Trajectory | 回合聚合（trajectory.turn + usage.updated 合成）→ mafw_event 信封 passthrough 广播（v2：Mode A 改写已删除） |
 | `toolCommand` | 自更新定位 | 含 `pending-restart` 的命令钉住写令牌的会话 |
 
-### 3.3 Mode A wire 契约（→ desktop / TUI）
+### 3.3 canonical envelope 契约（→ desktop / TUI）
 
 广播信封（`event-broadcast.ts` 固化；v2 信封名 `mafw_event`）：
 
@@ -354,6 +354,9 @@ async createRuntime(ctx) {
 { "type": "mafw_event", "data": { "type": "...", "properties": {...}, "sessionID": "...", "directory": "...", "internal": true? } }
 ```
 
+- **`message.updated` 的 properties 只有 `message`**（2026-11-02 第二批翻转）：旧 wire
+  `properties.info` 在 SSE 出口删除，`event_log` 由 gateway 启动时一次性幂等迁移
+  （`info` → `message`）。`session.created/updated/deleted` 仍是 wire `properties.info`。
 - **可选字段缺失时不得出现在 data 上**（key 稳定性——消费方用 `'x' in data` 判定）
 - 顶层非 `mafw_event` 广播（如 `runtime_switched`、`project_registered`、`user_question`、插件自定义事件）**必须扁平无 `data` 键**——desktop 剥壳 `event = raw?.data || raw` 会把 `data` 当内层载荷吞掉 `type`
 - 信封出口有形状守卫：`data.type` 非字符串 → console.error 诊断（fail-open 照发）
@@ -372,13 +375,15 @@ async createRuntime(ctx) {
 | `user_question` | AskCard 弹卡 + 通知 | goalId, questionId, question |
 | `project_registered` | Rail 项目列表刷新 | projectDir |
 | `runtime_switched` | invalidate 会话缓存 + 刷新菜单 + 重置工作区 | runtime |
-| `session.created`/`updated`/`deleted` | `planSessionEvent` → Rail 缓存 invalidate/patch/remove | `properties.info`（见 3.1 契约表；`parentID` 或 legacy worker 标题前缀 → 隐藏会话判 none） |
+| `session.created`/`updated`/`deleted` | `planSessionEvent` → Rail 缓存 invalidate/patch/remove | `properties.info`（仅 session 生命周期；`parentID` 或 legacy worker 标题前缀 → 隐藏会话判 none） |
 | `question.asked` / `permission.asked` | FlowCard（AskCard/PermissionCard） | requestId, toolName, args |
 | `question.replied`/`rejected`、`permission.replied` | FlowCard 收卡 | requestId, decision |
 | `session.compacted` | 触发历史重拉 | sessionID |
 | `trajectory.event` / `trajectory.turn` | RightDock 任务/轨迹 | (turnID, seq) 去重 |
 | `turn.completed` / `turn.failed` / `turn.aborted` | ChatPane 回合收尾 | sessionID, error? |
 | `part.updated` / `part.delta` | 流式渲染 + 工具卡 | part / delta |
+| `message.updated` | 消息骨架（user 乐观替换 / assistant 合并） | `properties.message.{id,role}`（无 id 帧被丢弃） |
+| `background.job.updated` | 工作台后台任务列表 | `properties.job` |
 | `plan.updated` | TaskList 实时刷新 | sessionID, todo |
 
 ### 3.5 TUI 如何消费
@@ -393,13 +398,45 @@ TUI 是**订阅白名单**模式（`connection.ts` 的 `KNOWN_EVENTS`，v2：`pa
 ### 3.7 事件发布检查清单
 
 - [ ] 信封形状 A 或 B 之一；至少有非空 `type`
-- [ ] 需要 desktop 有反应 → 对照 3.4 契约表选 type 并给全必需字段（尤其 `sessionID` 与 `properties.info`）
+- [ ] 需要 desktop 有反应 → 对照 3.4 契约表选 type 并给全必需字段（`sessionID`；
+      `message.updated` 给 `properties.message.id/role`；`session.*` 生命周期给 `properties.info`）
 - [ ] 需要 ChatPane/TUI 跟随流式输出 → 必须产出 `part.updated`（`part.text` 或 `delta`）与 `turn.completed`
+- [ ] 历史出口是 flat View DTO（`{ info, parts }` 已删除；见 3.8）
 - [ ] 新 type 用 `plugin:<name>:<event>` 命名空间；消费端（你自己的 renderer 逻辑）负责分发
 - [ ] 事件样本过一遍试衣间：`curl -X POST http://localhost:3000/api/runtime/dry-event -H 'Content-Type: application/json' -d '{"event": {...}}'` → 响应 `warnings` 为空
 - [ ] 用 `ctx.events.make()` 构造事件（未知 type 在构造点即打 warn，第一时间可见）
 - [ ] 端到端验证：`mafw plugin-test`（两场景 PASS；会消耗一次真实 LLM 往返）
 - [ ] 不要依赖事件顺序（SSE 无序保证）；不要在事件里放大数据载荷（走 API 拉取）
+
+### 3.8 历史出口与 Experience（2026-11-02 第二批，破坏性）
+
+**历史只认 flat**：`GET /api/sessions/:id/messages` → `{ data: MafwMessage[], nextCursor }`。
+没有 session.history、没有 `?format=` 开关；旧 wire `{ info, parts }` 在 facade 层 fail-closed
+丢弃。声明 `normalizeMessages` 时必须直接产出 flat，工具 part id 用 `toolpart_<callID>`
+（与 live assembler 同 id，历史/live 天然去重）。opencode 保留 serve 原生 part id。
+
+**客户端不再读 capabilities / runtime 名**：业务 UI 只消费 `GET /api/experience/actions`：
+
+| 字段 | 语义 |
+|---|---|
+| `supported` | 该 runtime 有没有这个面（静态事实） |
+| `enabled` | 当前上下文能不能用（busy / 数据缺失 / patch 不可逆时为 false） |
+| `reason` | 中性词汇：`unsupported` / `busy` / `missing-data` / `not-invertible-patch` / `disabled` |
+
+gateway 侧对应 `RuntimeAccess.can(<surface>)`；缺能力回 **中性 503**
+（`runtime does not support <surface>`，不含 runtime 名与 capability flag 名）。
+`branch.unrevert` 这类「原语不存在」用 404；worktree 目录不支持用 409。
+
+**删除面**（旧客户端不能连新 gateway）：session.history、`shells`、`requestRuntime`、
+`command`、`skill`、`opencodeConfig` 六个 SDK namespace/别名，以及 `GET /command`、
+`GET /skill`、`GET /api/skill/content`、`GET|PATCH /api/opencode-config`。
+替代：`session.messages`、`background.*`、`runtime.restartAgent`、`discovery.*`、
+`runtimeConfig`。
+
+**守卫**（新增 runtime 会被这些测试拦住的地方）：历史/SSE golden
+（`gateway/tests/unit/runtime/history-exit-golden.test.ts`）、route→surface catalog、
+gateway 业务边界扫描、desktop/TUI/session-ui 边界扫描。详见
+`docs/guides/runtime-plugin-authoring.md` §9.7。
 
 ## 第四步：接入记忆系统
 
@@ -512,7 +549,7 @@ tools: {
 2. **gateway 合成 opt-in**（无事件映射的 in-process runtime）：`wrapRegistrationsWithEvents(regs, sessionId, emit)` 包装 factory 注册项，emit 接你 `global.event()` 流——两帧自动广播
 3. **out-of-process 自动**：`POST /api/tools/execute` 自动合成两帧（running→completed/error）经全管线广播；**调用方 = 放弃自发 canonical 工具事件**（防双卡，conformance 校验）
 
-历史渲染：不实现 `session.normalizeMessages` 则历史消息里的工具块不渲染（契约可选方法，pi 有参考实现）。
+历史渲染：不实现 `session.normalizeMessages` 则历史消息里的工具块不渲染（契约可选方法，pi 有参考实现）。**输出必须是 flat `MafwMessage[]`**（旧 wire 形状已被 facade 丢弃；工具 part id = `toolpart_<callID>`）。
 验证：`POST /api/runtime/conformance {"scenarios":["tool-visibility"]}`。
 
 ## 第五步：激活与测试
@@ -1055,8 +1092,9 @@ curl http://localhost:3000/api/runtime
 - **memory-guide 文案（宿主 system 注入用）**：`src/hooks/memory-guide.ts`
 - **参考实现**：`gateway/src/runtime/opencode-runtime.ts`
 - **Agent 定义模型**：`gateway/src/runtime/agent-definition.ts`
-- **Gateway 激活逻辑**：`gateway/src/index.ts:814`（`createRuntime()` 方法）
-- **能力守卫**：`gateway/src/index.ts:800`（`capGuard()` 方法）
+- **Gateway 激活逻辑**：`gateway/src/index.ts`（`createRuntime()` / `adoptRuntimeHost()`）
+- **能力守卫**：业务面只经 `RuntimeAccess.can(<surface>)`（`gateway/src/runtime/runtime-access.ts`）签名 → `gateway/src/runtime/contract-surfaces-*.ts` → `scripts/emit-runtime-contract.ts` 生成 `runtime-contract.json`）；组合根诊断只读 `RuntimeHost`（`runtime/runtime-diagnostics.ts`）
+- **架构守卫**：`gateway/tests/unit/runtime/{architecture-boundaries,route-surface-catalog,history-exit-golden,wire-deletion-guards}.test.ts`；前端 `packages/{desktop,tui,session-ui}` 对应 `experience-boundaries` / `architecture` 测试
 
 ## 总结
 

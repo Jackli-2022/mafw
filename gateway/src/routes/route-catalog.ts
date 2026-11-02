@@ -68,6 +68,9 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/session/:id/summarize', operationId: 'session.summarize', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/prompt', operationId: 'session.prompt', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/promptAsync', operationId: 'session.promptAsync', tags: ['session'] },
+  // Task 16：SDK `sessions.background` 一直在调这个端点，但 catalog 漏登记（route→surface
+  // 守卫在验收批暴露的契约洞）。surface = session.background。
+  { method: 'POST', path: '/api/session/:id/background', operationId: 'session.background', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/command', operationId: 'session.command', tags: ['session'] },
   { method: 'GET', path: '/api/experience/actions', operationId: 'experience.actions', tags: ['experience'] },
   // Task 3：三源统一的后台作业 façade（MafwBackgroundJob / MafwBackgroundOutput）

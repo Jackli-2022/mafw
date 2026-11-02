@@ -1292,6 +1292,56 @@ goal ç¼–æ’ä»ã€Œè£…é…å®Œæˆæœªæ¥çº¿ã€æ­£å¼å¯ç”¨ï¼š**langgraph ä¸‰ä»¶å¥—ï¼ˆ
 - **D4b åäº‹å®æ¨¡æ‹Ÿï¼ˆ2026-10-09ï¿½?*ï¼šgoal ï¿½?**taskType ç»´åº¦**ï¼ˆ`TASK_TYPES` ä¸ƒå€¼æšä¸¾ï¼›åˆ›å»ºæ—¶å£°æ˜ï¼ˆ`mafw_create_goal`/`mafw_set_goal` å‚æ•°ï¼‰â†’ plan èŠ‚ç‚¹ `waves.taskType` å›å†™**ä¼˜å…ˆ**ï¼ˆè§„åˆ’è€…åˆ¤æ–­æ›´å‡†ï¼Œ`completeNode` æ ¡éªŒå›å†™ state v3ï¼‰ï¼›`goal_outcomes` ï¿½?`task_type` åˆ—ï¼ˆå¹‚ç­‰ ALTERï¼Œlegacy NULL ï¿½?other æ± ï¼‰ï¼‰ã€‚L1 è´¦æœ¬ï¿½?`byTaskType` èšåˆ + `ledgerForTaskType`ï¼ˆåŒç±»å‹ ï¿½? æ ·æœ¬æ‰åˆ†æ¡¶ï¼Œå°æ ·æœ¬é€€å…¨å±€é˜²å¤–æ¨ï¼‰ã€‚plan prompt æ³¨å…¥ **`counterfactualBlock` pre-mortem**ï¼ˆåŒç±»ä»»åŠ¡å¤±è´¥ç‡/æœ€å¸¸è§ failure_kind/å¹³å‡æŸå¤± + L2 è¸©å‘å¯¹ç…§ + ï¿½?wave `riskNote` è¦æ±‚â€”â€”è¦æ±‚æœ¬èº«ä¸ä¾èµ–å†å²æ•°æ®ï¼‰ã€‚`DriverDeps.capabilityPrior` ç­¾åï¿½?`(goalId)`ï¼Œæ–°ï¿½?`counterfactualPrior`ã€‚spec `docs/superpowers/specs/2026-10-09-d4b-counterfactual-design.md`ï¿½?
 - **A5 æŠ½è±¡å†™å› schemaï¿½?026-10-09ï¿½?*ï¼š`HarmonicUnit.distilled_by`ï¼ˆgist æŒ‡é’ˆæ•°ç»„ï¿½?*ï¿½?supersede**â€”â€”æˆå‘˜ä¿ç•™å¯æ£€ç´¢ï¼Œï¿½?gist å…±äº«æˆå‘˜ï¼›ä¸ D1b é™èƒ½åŒè¶Ÿå…±å­˜ï¼‰ã€‚å†™å…¥ï¼šreflection è’¸é¦æˆåŠŸ ï¿½?`HarmonicUnitFileStore.stampDistilled(episodeIds, gistId)`ï¿½?*ç›´å†™ OKF é•œåƒ setSticky æ¨¡å¼ï¼Œä¸ï¿½?store.write ï¿½?MinHash è‡ªåˆï¿½?*ï¼›è¿½åŠ å»ï¿½?cap 3ï¼Œfail-openï¼‰ã€‚è¯»å‡ºï¼šè¾¹ç•Œ recall æŒ‡é’ˆè¡Œå°¾ `ï¿½?gist å·²è’¸é¦ï¼š<id ï¿½?6>` æç¤ºï¼ˆget_memory æŒ‰éœ€å–ï¼Œä¸å é¢„ç®—ï¼‰ï¼›`RecallMemory`/`MemoryUnit` é€ä¼ å­—æ®µã€‚consolidation merge ï¿½?stampï¼ˆ`merged_from` ç­‰ä»·ï¼‰ã€‚spec `docs/superpowers/specs/2026-10-09-a5-schema-writeback-design.md`ï¿½?
 
+### 5.24 Runtime Experience È«Á¿Ç¨ÒÆÓë¼Ü¹¹ÊØÎÀ£¨2026-11-02 µÚ¶şÅú£©
+
+µÚ¶şÅúÊÕ¿Ú£ºgateway ÒµÎñºËĞÄÓë**È«²¿¿Í»§¶Ë**Ö»Ïû·Ñ MAFW View DTO + Experience Contract£¬
+¿Í»§¶Ë¼æÈİ²ãÎïÀíÉ¾³ı£»ÊØÎÀ¡¢×÷ÕßÎÄµµÓëÆõÔ¼²úÎïÍ¬ÅúÓ²»¯¡£spec
+`docs/superpowers/specs/2026-11-02-runtime-experience-full-migration-design.md`£¨¡ì16 ÊµÏÖÆ«²î£©£¬
+²Ù×÷ÊÖ²á `docs/guides/runtime-plugin-authoring.md` ¡ì9.7¡£
+
+- **ÀúÊ·³ö¿ÚÖ»ÓĞ flat**£º`GET /api/sessions/:id/messages` Î¨Ò»ÏìÓ¦ `{ data: MafwMessage[], nextCursor }`£»
+  `wire-compat.ts`£¨`toWireHistory/toWireInfo/toWireEventPayload`£©¡¢`?format=` ·ÖÖ§¡¢facade µÄ
+  wire¡úflat ¶ş´Î·­ÒëÈ«²¿É¾³ı£»adapter ±ØĞëÖ±½Ó½»¸¶ flat£¬Î¥Àı fail-closed
+  £¨`normalizeMessages produced a non-flat member - dropped`£©¡£SDK/preload µÄ `session.history`
+  ±ğÃûÉ¾³ı£¬desktop/TUI/mobile Ò»ÂÉ `session.messages`¡£
+- **SSE ³ö¿Ú canonical**£º`message.updated` Ö»´ø `properties.message`£»gateway Æô¶¯Ê±¶Ô `event_log`
+  ×öÒ»´ÎĞÔÃİµÈÇ¨ÒÆ£¨`events/event-log-migrate.ts`£¬±¸·İ `~/.mafw/logs/event-log-message-migration-<ts>.jsonl`£¬
+  ±¸·İÊ§°ÜÔòÖĞÖ¹Ç¨ÒÆ£©¡£`session.created/updated/deleted` ÈÔÊÇ wire `properties.info`
+  £¨desktop ½öÕâ 3 Àà¶ÁÈ¡£»`event-field-contract` ¶ÔÆäÓà info ÔØºÉ¸æ¾¯£©¡£
+- **Experience ÓëÖĞĞÔÃÅ**£ºÒµÎñ UI Ö»Ïû·Ñ `GET /api/experience/actions`
+  £¨`supported` = Ãæ´æÔÚ¡¢`enabled` = ÉÏÏÂÎÄ¿ÉÓÃ¡¢`reason` ÎªÖĞĞÔ´Ê»ã£©£»ÒµÎñºËĞÄÖ»¾­
+  `RuntimeAccess.can(surface)`£¬È±ÄÜÁ¦»ØÖĞĞÔ 503£¨`runtime does not support <surface>`£¬²»º¬
+  runtime ÃûÓë capability flag Ãû£©£»`branch.unrevert` ÓÃ 404¡¢worktree Ä¿Â¼²»Ö§³ÖÓÃ 409¡£
+  Ç°¶Ë `runtimeCaps`/`runtimeName` props È«É¾£¨desktop Config ÊÇÎ¨Ò» Diagnostics Ãû³ÆÀıÍâ£©¡£
+- **ÖĞĞÔ facade**£ºbackground ÈıÔ´Í³Ò»£¨`/api/background/jobs*` + `background.job.updated`£¬
+  `POST /api/session/:id/background` ±í´ï¡¸×ªºóÌ¨¡¹¶¯×÷£¬Task 16 ²¹µÇ¼Ç½ø route catalog£©£»
+  terminal ×ß `mafw-terminal/1`£¨`/api/terminal/*` + connect-ticket£¬Ô­ÉúÖ¡Ö»ÔÚ adapter ·­Òë£©£»
+  worktree ¹é gateway git + session directory ÆõÔ¼£¨ÄÜÁ¦Î»ÍËÒÛ£©¡£
+- **É¾³ıÃæ£¨ÆÆ»µĞÔ£©**£ºSDK `session.history`/`shells`/`requestRuntime`/`command`/`skill`/
+  `opencodeConfig`£»HTTP `GET /command`¡¢`GET /skill`¡¢`GET /api/skill/content`¡¢
+  `GET|PATCH /api/opencode-config`£»preload Í¨ÓÃ `invoke(ns, method, ...)`¡£¾É desktop/TUI/mobile
+  ÎŞ·¨Á¬ĞÂ gateway£¬ĞèĞ­µ÷·¢²¼¡£
+- **¼Ü¹¹ÊØÎÀ£¨·´Ïò fixture È«ÂÌ²ÅÍ¨¹ı£©**£º`gateway/tests/unit/runtime/architecture-boundaries.test.ts`
+  £¨routes/core/media/trajectory + ³é³öµÄ `experience/events/terminal` + ¶¥²ãÒµÎñÎÄ¼ş£»×éºÏ¸ù
+  `index.ts` µÄÕï¶ÏÀıÍâ°´¡¸¹æÔò + ·ÃÎÊĞÎÌ¬¡¹µÇ¼Ç 8 Ìõ£¬²¢ÓĞ·´Ïò¶ÏÑÔ·ÀËÀ»íÃâ£©¡¢
+  `route-surface-catalog.test.ts`£¨31 ¸ö gated op£ºmanifest surface + catalog operation + ÖĞĞÔ
+  503/404£©¡¢`history-exit-golden.test.ts`£¨opencode/pi/claude ÈıÖÖ native ÊäÈë ¡ú Í¬Ò» flat ³ö¿Ú +
+  Í¬Ò» canonical `message.updated`£»¹¤¾ß part id Óë live assembler Í¬·½°¸ `toolpart_<callID>`£©¡¢
+  `wire-deletion-guards.test.ts`£»desktop `experience-boundaries.test.ts`£¨`src/` È«Óò£¬Config
+  Ãû³ÆÀıÍâ£¬`properties.info` ½ö 3 ¸ö session ÉúÃüÖÜÆÚÎÄ¼ş£©¡¢TUI `tests/experience-boundaries.test.ts`¡¢
+  session-ui `src/architecture.test.ts`¡£
+- **ÆõÔ¼²¹¶´**£º`POST /api/session/:id/background`£¨SDK `sessions.background` Ò»Ö±ÔÚµ÷£©´ËÇ°Â©µÇ¼Ç
+  catalog£¬µ¼ÖÂ²»ÔÚ openapi/ÆõÔ¼²úÎïÀï£»±¾Åú²¹µÇ¼Ç²¢ÖØÉú³É£¨`emit:openapi` 241 operations /
+  215 paths£©¡£
+- **µÇ¼ÇÈ±¿Ú**£ºpi `message_end ¡ú message.updated` ²»´ø `message.id`£¨×ÀÃæ°´¡¸ÎŞ id Ö¡¶ªÆú¡¹´¦Àí£¬
+  ÀúÊ· id ÓÉ `normalizePiMessages` Ìá¹©£©£»claude ÀúÊ·ÎŞÊ±¼ä´Á£¨`time` ¿ÉÑ¡È±Ê§£©£»
+  adapter ÄÚ²¿ native ·­Òë£¨opencode `/command`¡¢`/skill`¡¢history normalize£©°´ spec ¡ì9.2 ±£Áô¡£
+- **ÑéÖ¤**£ºgateway **3922/3922£¨528 suites£©**¡¢SDK **180/180**¡¢session-ui **133/133**¡¢TUI
+  **284 pass/1 skip£¨285£©**¡¢desktop **2253/2253**¡¢mobile **86/86**¡¢adapters/claude **21/21**£»
+  `tsc`/`tsgo -p tsconfig.json`/`electron-vite build`/¸ù build/`flutter analyze`+`flutter test` rc=0¡£
+  ÆõÔ¼²úÎïĞÂÏÊ¶ÈÓÉ `api-contract.test.ts` Óë `contract-manifest-freshness.test.ts` °ÑÊØ¡£
+  Õæ»ú GUI/mobile Ã°ÑÌÓÉ¿ØÖÆ¶ËÔÚ²¿ÊğºóÖ´ĞĞ£¨±¾Åú²»ÖØÆôÏßÉÏ gateway£©¡£
+
 ## 6. Gateway è¿ç»´
 
 ### 6.1 CLI å‘½ä»¤

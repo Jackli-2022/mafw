@@ -696,6 +696,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/{id}/background": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["session.background"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session/{id}/command": {
         parameters: {
             query?: never;
@@ -4440,6 +4456,26 @@ export interface operations {
         };
     };
     "session.promptAsync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "session.background": {
         parameters: {
             query?: never;
             header?: never;

@@ -251,8 +251,8 @@ transformEvent(raw) { return null; },
 | `turn.started` / `turn.completed` / `turn.failed` / `turn.aborted` | `sessionID` | UI 永远 busy；记忆 drain 不触发 |
 | `part.updated`（text） | `part.text` 或 `delta` | 不流式渲染 |
 | `part.updated`（tool） | `part.state.input/output/error` | 工具卡空 |
-| `message.updated` | `message.id` | 无法去重消息骨架 |
-| `session.created/updated` | `info.id` | Rails 列表不刷新 |
+| `message.updated` | `message.id`（+ `message.role`） | 无法去重消息骨架（**wire `info` 已删除**，见 §9.7(b)） |
+| `session.created/updated` | `info.id`（session 生命周期仍是 wire `info`） | Rails 列表不刷新 |
 | `session.deleted` | `sessionID` | 桌面不删 |
 | `permission.asked` / `question.asked` | `requestId` + `sessionID` | FlowCard 无法关联 |
 
@@ -314,7 +314,8 @@ tools: {
 ```
 
 - `parameters` 是 JSON Schema；目标 SDK 不认 JSON Schema 时自行翻译。
-- 历史工具卡不渲染 → 实现 `normalizeMessages`（把原生历史转 flat `MafwMessage[]`）。
+- 历史工具卡不渲染 → 实现 `normalizeMessages`（把原生历史转 **flat `MafwMessage[]`**，
+  工具 part id 用 `toolpart_<callID>`；§9.7(a)）。
 - 进程外 runtime：`GET /api/tools` 取 spec，`POST /api/tools/execute` 执行；gateway 自动合成两帧 tool part，**不要**再自发工具事件。
 - 工具注解（readOnly/destructive/…）与结构化结果能填就填；不填只影响审批/UI 提示，不影响执行。
 
@@ -413,6 +414,82 @@ curl -X POST http://127.0.0.1:3000/api/runtime/conformance \
 - 取消/中止、切换模型/agent、时间线 fork/revert（如果实现）。
 - 重启 gateway 后会话列表/历史仍在。
 
+### 9.7 第二批破坏性迁移（2026-11-02）——写插件前必须先读
+
+第二批把「gateway 业务核心 / 全部客户端」收敛到 MAFW View DTO + Experience Contract，
+并删除了客户端兼容层。**新插件与旧插件的行为差异全部在这一节**：
+
+#### (a) 历史出口只有 flat，没有开关
+
+- `GET /api/sessions/:id/messages` 唯一响应：`{ data: MafwMessage[], nextCursor }`。
+  需要历史基线的 profile 调 `session.messages(<sessionID>)`；没有 session.history 方法，
+  也没有 `?format=flat|wire` 参数（旧参数被忽略，不再改变形状）。
+- `MafwMessage` = `{ id, sessionID?, role, content: MafwPart[], time?, parentID?, model?, finish?, tokens?, cost?, error? }`；
+  `MafwPart` 覆盖 `text / reasoning / tool / file / agent / compaction / step-* / data-*`。
+  **旧 wire 信封 `{ info, parts }` 已删除**：adapter 直接返回 flat，facade 对非 flat 成员
+  fail-closed 丢弃并记录 `normalizeMessages produced a non-flat member — dropped`。
+- 声明 `normalizeMessages` 的 runtime：签名不变（`(raw) => MafwMessage[]`），但**输出必须是
+  flat**——不会再有一条「wire→flat 二次翻译」的救援通道。
+- 工具 part id 方案（历史与 live 必须同 id，否则 upsert 双卡）：`toolpart_<callID>`。
+  pi / claude 已按此实现；opencode 用 serve 原生 part id（历史与 live 本来就同源）。
+
+#### (b) SSE `message.updated` 只携带 `properties.message`
+
+- 事件载荷：`{ type: 'message.updated', properties: { message: {...}, sessionID? } }`，不再是 `properties.info`。
+- 升级后 gateway 启动时对 `event_log` 做**一次性幂等迁移**（`info` → `message`，备份
+  `~/.mafw/logs/event-log-message-migration-<ts>.jsonl`）；replay 与直播逐字节同形。
+- `session.created/updated/deleted` 仍是 wire `properties.info`（本批未翻转）。desktop 只在这三个
+  事件上读 `info`；其余事件读 `info` 属于违例，`event-field-contract` 会告警。
+- 已登记的 live 缺口：pi 的 `message_end → message.updated` 映射不带 `message.id`，桌面按
+  「无 id 的 live message.updated 丢弃」处理（历史 id 由 `normalizePiMessages` 提供）。
+
+#### (c) 删除的 SDK / HTTP 面（旧客户端无法连新 gateway）
+
+| 已删除 | 替代 |
+|---|---|
+| session.history / `?format=flat` | `session.messages`（恒 flat） |
+| `shells`、`requestRuntime`、`command`、`skill`（含 `skill.content`）、`opencodeConfig` | `background.*`、`runtime.*`、`discovery.*`、`runtimeConfig` |
+| `GET /command`、`GET /skill`、`GET /api/skill/content`、`GET|PATCH /api/opencode-config` | `GET /api/sessions/:id/discovery`、`GET .../discovery/skills/:key`、`GET /api/runtime-config` |
+| 通用 preload `window.api.mafw.invoke(ns, method, ...)` | 每个 namespace 的 typed 方法 |
+
+这是**有意 breaking change**：新版 desktop/TUI/mobile 与 gateway 需协调发布。
+
+#### (d) Experience Contract：客户端不再读 capabilities / runtime 名称
+
+- 业务 UI 只看 `GET /api/experience/actions`（版本化 Action Descriptor）：
+  `supported` = 该 runtime 有这个面；`enabled` = 当前上下文可用（busy/数据缺失时为 false）；
+  `reason` 用中性词汇（`unsupported | busy | missing-data | not-invertible-patch | disabled`）。
+- 后端只经 `RuntimeAccess.can(<surface>)` 做门：缺能力 = 中性 `503`（`runtime does not support <surface>`），
+  文案不得出现 runtime 名或 capability flag 名。`402/404` 只能用于「语义上不存在该原语」
+  （例：`branch.unrevert`）。
+- worktree 归 **gateway git + session directory 契约**，不再是某个 runtime 的能力位；
+  目录不支持时 `409`（不是 503）。
+
+#### (e) background / terminal 的中性协议
+
+- background 三源统一：`GET /api/background/jobs?sessionID=`、`GET .../jobs/:id/output?cursor=`、
+  `POST .../jobs/:id/cancel`；DTO = `MafwBackgroundJob` / `MafwBackgroundOutput`；
+  实时更新走 SSE `background.job.updated`（`properties.job`）。`POST /api/session/:id/background`
+  仍独立表达「把阻塞回复转后台」动作（surface `session.background`）。
+- terminal 走 MAFW 中性协议（`mafw-terminal/1`）：`GET/POST/DELETE /api/terminal/sessions`、
+  `POST .../connect-ticket`（loopback-only）、WS 帧格式由 gateway 定义（adapter 负责翻译原生帧）；
+  `GET /api/terminal/sessions` 在缺能力时仍 200 但 `supported:false`（不是空列表假象）。
+
+#### (f) 架构守卫（改代码前先知道哪条会红）
+
+| 守卫 | 位置 | 约束 |
+|---|---|---|
+| gateway 业务边界 | `gateway/tests/unit/runtime/architecture-boundaries.test.ts` | `routes/core/media/trajectory` + 抽出的 `experience/events/terminal` 与顶层业务文件不得读 runtime 名称/裸能力/诊断字段/私有路径；组合根 `index.ts` 的诊断例外**逐形态登记**（8 条），新增形态会让测试变红 |
+| route → surface | `gateway/tests/unit/runtime/route-surface-catalog.test.ts` | 每个 gated route 的 operationId 必须在 catalog、surface 必须在 manifest、拒绝时中性 503/404（列表类 `supported:false`） |
+| 历史 / SSE golden | `gateway/tests/unit/runtime/history-exit-golden.test.ts` | opencode/pi/claude 三种 native 输入 → 同一 flat 出口、同一 canonical `message.updated`；工具 id 与 live assembler 一致 |
+| 删除面回归锁 | `gateway/tests/unit/runtime/wire-deletion-guards.test.ts` | wire-compat / legacy 路由 / 旧 SDK namespace 不得复活 |
+| desktop | `packages/desktop/src/renderer/mafw/experience-boundaries.test.ts` | `src/` 全域（除测试/故事）：无 runtime 名称/能力位/wire 形状/runtime SDK；Config 是唯一名称例外；`properties.info` 仅 3 个 session 生命周期文件 |
+| TUI | `packages/tui/tests/experience-boundaries.test.ts` | 同一套边界 + 只走 `session.messages` |
+| session-ui | `packages/session-ui/src/architecture.test.ts` | 渲染层不得出现 runtime 身份/能力位/wire 形状/runtime SDK；无例外清单 |
+
+新增 runtime 时的最小自检顺序：`mafw plugin-check` → `mafw plugin-test`（conformance）→
+本表 3 条 golden/守卫测试 → desktop/TUI 冒烟。
+
 ## 10. Definition of Done
 
 - [ ] `name` / `createRuntime` / `capabilities` 正确导出，`external: true`；capabilities 只在模块侧声明一次。
@@ -423,7 +500,8 @@ curl -X POST http://127.0.0.1:3000/api/runtime/conformance \
 - [ ] `tools.registerTools` + `tools.nativeTools` 已实现；工具事件可见（或走 out-of-process）。
 - [ ] 认知面四动词已接（目标 preset 为 conversation 及以上）；时延/ fail-open 符合预算。
 - [ ] `nativeApprovals` / `questionApi` / `providerConfigApi` 声明与实现一致；没有虚报。
-- [ ] `normalizeMessages`（如目标 SDK 历史形状不同）已实现。
+- [ ] `normalizeMessages`（如目标 SDK 历史形状不同）已实现，且输出是 **flat** `MafwMessage[]`
+      （无 `{info, parts}`；工具 part id = `toolpart_<callID>`；§9.7(a)）。
 - [ ] `POST /api/runtime/conformance` 目标场景 PASS；`/api/runtime` 无新 hard/downgrade。
 - [ ] 桌面/TUI 冒烟通过。
 

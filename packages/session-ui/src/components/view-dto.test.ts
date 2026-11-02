@@ -39,7 +39,7 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
-const files = walk(SRC)
+const files = walk(SRC).filter((file) => !/\.test\.(ts|tsx)$/.test(file))
 
 function hits(pattern: RegExp) {
   return files
