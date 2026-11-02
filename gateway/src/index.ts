@@ -268,6 +268,7 @@ import type { DryEventDeps } from './routes/dry-event';
 import { PluginHost } from './plugins/package-host';
 import { PackageStateStore } from './plugins/package-state-store';
 import { PackageManager } from './plugins/package-manager';
+import { mergePackageInventory } from './plugins/package-inventory';
 import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
 import type { UsageStatsProvider } from './usage/plugin-context';
@@ -2540,22 +2541,10 @@ class MafwScheduler {
    * 合并回来，否则用户无法在管理界面重新启用。
    */
   private pluginPackageInventory(): PluginsPackageEntry[] {
-    const disabled = new Set(this.packageStateStore?.read().disabled ?? []);
-    const out = new Map<string, PluginsPackageEntry>();
-    for (const state of this.pluginHost?.getState() ?? []) {
-      const isDisabled = disabled.has(state.name);
-      out.set(state.name, {
-        ...state,
-        status: isDisabled ? 'disabled' : state.status,
-        enabled: !isDisabled,
-        contributions: isDisabled ? [] : state.contributions,
-      });
-    }
-    for (const name of disabled) {
-      if (out.has(name)) continue;
-      out.set(name, { name, source: '', status: 'disabled', enabled: false, contributions: [] });
-    }
-    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return mergePackageInventory(
+      this.pluginHost?.getState() ?? [],
+      this.packageStateStore?.read().disabled ?? [],
+    );
   }
 
   /** P5 Wave 2：/api/plugins* deps（Plugin Hub 四类型统一面）。 */

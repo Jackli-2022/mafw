@@ -2,7 +2,7 @@ import * as http from 'http';
 import { log } from '../core/utils/logger';
 import { HubDeps, HubError, PluginType, listPlugins, installPlugin, setPluginEnabled, deletePlugin } from '../plugins/hub';
 import { PackageManager, PackageManagerError } from '../plugins/package-manager';
-import type { PackageState } from '../plugins/package-types';
+import type { PackageInventoryEntry } from '../plugins/package-inventory';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -52,10 +52,7 @@ async function guarded(res: http.ServerResponse, fn: () => Promise<unknown>): Pr
  * Host state omits disabled packages entirely (they are skipped during scans),
  * so the gateway merges the manager's persisted disabled names into this view.
  */
-export interface PluginsPackageEntry extends Omit<PackageState, 'status'> {
-  status: PackageState['status'] | 'disabled';
-  enabled: boolean;
-}
+export type PluginsPackageEntry = PackageInventoryEntry;
 
 export interface PluginsRouteDeps {
   hub: HubDeps;
