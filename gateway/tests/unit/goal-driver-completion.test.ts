@@ -4,6 +4,17 @@ import { makeHarness, seedGoal } from './helpers/goal-driver-harness';
 import { nodeArtifactPaths } from '../../src/core/goal/node-prompts';
 
 describe('completeNode 产物双门', () => {
+  it('plan prompt reads Goal acceptance from request.json', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9');
+    fs.writeFileSync(path.join(h.mafwDir, 'requests', 'g9.json'), JSON.stringify({
+      title: 'T', acceptance: ['status is truthful'],
+    }), 'utf-8');
+    await h.driver.advance('g9');
+    const prompt = h.calls.find((c) => c.op === 'promptAsync')?.parts?.[0]?.text ?? '';
+    expect(prompt).toContain('status is truthful');
+  });
+
   it('paused Pod does not create the next node', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9');

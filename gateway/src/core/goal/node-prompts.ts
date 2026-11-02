@@ -23,7 +23,27 @@ const PLAN_OUTPUT_SCHEMA = {
             properties: {
               id: { type: 'string' },
               title: { type: 'string' },
-              tasks: { type: 'array', items: { type: 'string' } },
+              tasks: {
+                type: 'array',
+                items: {
+                  anyOf: [
+                    { type: 'string' },
+                    {
+                      type: 'object',
+                      required: ['title'],
+                      properties: {
+                        title: { type: 'string' },
+                        acceptance: {
+                          type: 'array',
+                          maxItems: 20,
+                          items: { type: 'string', maxLength: 500 },
+                        },
+                        taskId: { type: 'string' },
+                      },
+                    },
+                  ],
+                },
+              },
               riskNote: { type: 'string' },
             },
           },
@@ -40,6 +60,10 @@ const PLAN_OUTPUT_SCHEMA = {
     },
   ],
 } as const;
+
+export function planOutputSchema(): Record<string, unknown> {
+  return PLAN_OUTPUT_SCHEMA as unknown as Record<string, unknown>;
+}
 
 const EXECUTE_OUTPUT_SCHEMA = {
   type: 'object',
@@ -132,6 +156,8 @@ export interface NodePromptCtx {
   fixPreviousReceipt?: string;
   /** 任务验收标准（review 节点按它判定；缺省则该任务自证）。 */
   acceptance?: Record<string, string[]>;
+  /** Goal 级期望结果（request.acceptance）；plan 必须分解到 wave task acceptance。 */
+  goalAcceptance?: string[];
 }
 
 export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodePromptCtx): string {
@@ -143,6 +169,9 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
   if (node === 'plan') {
     return [
       head, docs, '',
+      ctx.goalAcceptance?.length
+        ? `Goal acceptance（必须在 wave task acceptance 中 decompose，不能只复述）：\n${ctx.goalAcceptance.map((item) => `- ${item}`).join('\n')}`
+        : '',
       ctx.priorBlock || '',
       ctx.counterfactualBlock || '',
       ctx.planFeedback

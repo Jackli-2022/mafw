@@ -194,6 +194,14 @@ export class NodeDriver {
       requestPath: path.join(mafwDir, 'requests', `${goalId}.json`),
       reviewFeedback: state.reviewFeedback || undefined,
       planFeedback: state.planFeedback || undefined,
+      goalAcceptance: node === 'plan' ? (() => {
+        try {
+          const req = JSON.parse(fs.readFileSync(path.join(mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
+          return Array.isArray(req?.acceptance)
+            ? req.acceptance.map((item: unknown) => String(item).trim()).filter(Boolean)
+            : undefined;
+        } catch { return undefined; }
+      })() : undefined,
       priorBlock: this.deps.capabilityPrior?.(goalId) ?? undefined,
       counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
       acceptance: node === 'review' ? acceptance : undefined,
