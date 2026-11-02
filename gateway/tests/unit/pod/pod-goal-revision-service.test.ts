@@ -178,6 +178,80 @@ describe('PodGoalRevisionService', () => {
     });
   });
 
+  test('a replayed reject is a no-op and never writes a fake snapshot (I-1)', async () => {
+    seedGoal();
+    seedRevision(1, 'completed', { verdict: 'PASS' });
+    seedState(1);
+    writeGoalState(mafwDir, 'g1', { nextAction: 'COMPLETED', phase: 'COMPLETED', reviewVerdict: 'PASS' });
+
+    const first = await service.openNextRevision('g1', '返工', { expectedRevision: 1 });
+    expect(first).toMatchObject({ opened: true, revision: 2, status: 'discussing' });
+    const rev1Archive = fs.readFileSync(revisionStatePathFor(mafwDir, 'g1', 1), 'utf-8');
+
+    const replay = await service.openNextRevision('g1', '返工', { expectedRevision: 1 });
+
+    expect(replay).toMatchObject({
+      opened: false,
+      staleReason: 'expected_revision_mismatch',
+      revision: 2,
+      archivedState: null,
+    });
+    expect(replay.previous).toMatchObject({ revision: 2, closed: false });
+    expect(store.listGoalRevisions('pod_1', 'g1').map((row) => row.revision)).toEqual([1, 2]);
+    expect(store.getGoal('pod_1', 'g1')?.activeRevision).toBe(2);
+    expect(store.getGoalRevision('pod_1', 'g1', 2)).toMatchObject({
+      status: 'discussing',
+      endedAt: null,
+      verdict: null,
+    });
+    // The freshly opened revision must not be "completed" by the replay, and no
+    // rev-2 snapshot of the empty rebuilt state may exist.
+    expect(fs.existsSync(revisionStatePathFor(mafwDir, 'g1', 2))).toBe(false);
+    expect(fs.readFileSync(revisionStatePathFor(mafwDir, 'g1', 1), 'utf-8')).toBe(rev1Archive);
+    expect(loadGoalState(mafwDir, 'g1')?.revision).toBe(2);
+  });
+
+  test('a repeat call without expectedRevision also leaves the untouched revision alone (I-1)', async () => {
+    seedGoal();
+    seedRevision(1, 'implementing');
+    seedState(1);
+    writeGoalState(mafwDir, 'g1', { nextAction: 'COMPLETED', phase: 'COMPLETED', reviewVerdict: 'PASS' });
+
+    const first = await service.openNextRevision('g1', '返工');
+    expect(first).toMatchObject({ opened: true, revision: 2 });
+
+    const replay = await service.openNextRevision('g1', '返工');
+
+    expect(replay).toMatchObject({
+      opened: false,
+      staleReason: 'pristine_revision',
+      revision: 2,
+      archivedState: null,
+    });
+    expect(store.listGoalRevisions('pod_1', 'g1').map((row) => row.revision)).toEqual([1, 2]);
+    expect(store.getGoal('pod_1', 'g1')?.activeRevision).toBe(2);
+    expect(store.getGoalRevision('pod_1', 'g1', 2)).toMatchObject({
+      status: 'discussing',
+      endedAt: null,
+    });
+    expect(fs.existsSync(revisionStatePathFor(mafwDir, 'g1', 2))).toBe(false);
+  });
+
+  test('an explicit abort may still close a pristine discussing revision (I-1 guard scope)', async () => {
+    seedGoal();
+    seedRevision(1, 'discussing');
+    seedState(1);
+
+    const result = await service.openNextRevision('g1', '方向作废', { closeAs: 'aborted' });
+
+    expect(result).toMatchObject({ opened: true, revision: 2, status: 'discussing' });
+    expect(store.getGoalRevision('pod_1', 'g1', 1)).toMatchObject({
+      status: 'aborted',
+      endedAt: LATER,
+    });
+    expect(result.previous).toMatchObject({ revision: 1, closed: true });
+  });
+
   test('previous archives stay byte-identical after later revisions make progress', async () => {
     seedGoal();
     seedRevision(1, 'implementing');
@@ -188,9 +262,12 @@ describe('PodGoalRevisionService', () => {
     const rev1Archive = fs.readFileSync(revisionStatePathFor(mafwDir, 'g1', 1), 'utf-8');
 
     writeGoalState(mafwDir, 'g1', { nextAction: 'COMPLETED', phase: 'COMPLETED', reviewVerdict: 'FAIL' });
+    // Revision 2 must produce a real result before it can be rejected again.
+    expect(service.finishRevision('g1', { status: 'completed', verdict: 'FAIL' }))
+      .toMatchObject({ applied: true, reason: 'applied' });
     const second = await service.openNextRevision('g1', 'second reject');
 
-    expect(second).toMatchObject({ revision: 3, status: 'discussing' });
+    expect(second).toMatchObject({ opened: true, revision: 3, status: 'discussing' });
     expect(store.listGoalRevisions('pod_1', 'g1').map((row) => row.revision)).toEqual([1, 2, 3]);
     expect(store.getGoal('pod_1', 'g1')?.activeRevision).toBe(3);
     expect(fs.readFileSync(revisionStatePathFor(mafwDir, 'g1', 1), 'utf-8')).toBe(rev1Archive);

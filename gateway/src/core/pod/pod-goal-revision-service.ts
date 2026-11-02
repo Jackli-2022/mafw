@@ -29,6 +29,12 @@ export interface PodGoalRevisionServiceDeps {
 }
 
 export interface OpenNextRevisionOptions {
+  /**
+   * 调用方认为「当前」的 revision（乐观并发 / 防重放）。与 `goal.activeRevision`
+   * 不一致时整个操作 no-op（`opened:false, staleReason:'expected_revision_mismatch'`），
+   * 在任何 DB / 文件写入之前返回——重试同一次 reject 不会烧掉一个 revision。
+   */
+  expectedRevision?: number;
   /** 新 revision 的调度优先级；缺省 = 有打回反馈时 REJECT_REVISION_PRIORITY，否则 0。 */
   priority?: number;
   /** 旧 revision 的收尾状态；缺省 completed。 */
@@ -41,6 +47,9 @@ export interface OpenNextRevisionOptions {
   feedback?: string | null;
 }
 
+/** no-op 原因：重放/过期的 expectedRevision，或当前 revision 还没产出可打回的结果。 */
+export type OpenNextRevisionStaleReason = 'expected_revision_mismatch' | 'pristine_revision';
+
 export interface RevisionCloseOutcome {
   revision: number;
   /** setGoalRevisionStatus 真的改了行。 */
@@ -52,12 +61,16 @@ export interface RevisionCloseOutcome {
 }
 
 export interface OpenNextRevisionResult {
+  /** true = 新建并激活了 N+1；false = 前置条件不满足（重放/无结果可打回），未做任何写入。 */
+  opened: boolean;
+  staleReason?: OpenNextRevisionStaleReason;
   podId: string;
   goalId: string;
+  /** opened：新 revision；no-op：仍是当前 active revision。 */
   revision: number;
   status: PodGoalRevisionStatus;
   priority: number;
-  /** 旧 revision state 的归档路径；无 active state 时为 null。 */
+  /** 旧 revision state 的归档路径；无 active state（或 no-op）时为 null。 */
   archivedState: string | null;
   previous: RevisionCloseOutcome;
 }
@@ -139,6 +152,14 @@ export class PodGoalRevisionService {
    * 打回/重开：收尾当前 revision → 归档其 state → 建 N+1（discussing + 优先级）
    * → 重建 active state（新 revision）→ 切 root `active_revision`。
    *
+   * 幂等/防重放（任何 DB 或文件写入之前判定）：
+   * - `expectedRevision` 与当前 active revision 不一致 → no-op
+   *   （`staleReason:'expected_revision_mismatch'`）：重试同一次 reject 不会再开一版；
+   * - 当前 revision 仍是「刚开、未产出任何东西」的 discussing 版（无 started/ended/
+   *   verdict/hash/direction）且要求按 completed 收尾 → no-op（`pristine_revision`）：
+   *   不会把一个空 revision 标成 completed 再归档假快照。显式 `closeAs:'aborted'`
+   *   仍可放弃这样的 revision。
+   *
    * 旧的 revision 行与 `rev-<n>.json` 快照都保持原样；即使当前 revision 已终态
    * （Task 3 返回 false）也照样开下一版，只是 `previous.closed = false`。
    */
@@ -148,6 +169,26 @@ export class PodGoalRevisionService {
     opts: OpenNextRevisionOptions = {},
   ): Promise<OpenNextRevisionResult> {
     const goal = this.requireGoal(goalId);
+    const currentRow = this.deps.store.getGoalRevision(goal.podId, goalId, goal.activeRevision);
+
+    if (opts.expectedRevision !== undefined && opts.expectedRevision !== goal.activeRevision) {
+      this.deps.log?.(
+        `[Pod] openNextRevision stale goal=${goalId} expected=${opts.expectedRevision}`
+        + ` active=${goal.activeRevision}`,
+      );
+      return this.staleResult(goal, currentRow, 'expected_revision_mismatch');
+    }
+    if (
+      currentRow
+      && (opts.closeAs ?? 'completed') === 'completed'
+      && isPristineRevision(currentRow)
+    ) {
+      this.deps.log?.(
+        `[Pod] openNextRevision stale goal=${goalId} active=${goal.activeRevision} (pristine revision)`,
+      );
+      return this.staleResult(goal, currentRow, 'pristine_revision');
+    }
+
     const pod = this.deps.store.getPod(goal.podId);
     if (!pod) throw new PodError(404, `pod not found: ${goal.podId}`);
     const mafwDir = this.deps.resolveMafwDir(goalId);
@@ -159,11 +200,10 @@ export class PodGoalRevisionService {
     const reason = (opts.feedback ?? feedback ?? '').toString().trim();
     const priority = opts.priority ?? (reason ? REJECT_REVISION_PRIORITY : 0);
     const status: PodGoalRevisionStatus = opts.status ?? 'discussing';
-    const wantedRevision = this.deps.store.nextGoalRevision(goal.podId, goalId);
     const row = this.deps.store.createGoalRevision({
       podId: goal.podId,
       goalId,
-      revision: wantedRevision,
+      revision: this.deps.store.nextGoalRevision(goal.podId, goalId),
       status,
       priority,
       feedback: reason ? reason : null,
@@ -171,11 +211,6 @@ export class PodGoalRevisionService {
     });
     // createGoalRevision 幂等：并发打开同一版时以数据库既有行为准。
     const openedRevision = row.revision;
-    if (openedRevision !== wantedRevision) {
-      this.deps.log?.(
-        `[Pod] openNextRevision reused goal=${goalId} rev=${openedRevision} (wanted ${wantedRevision})`,
-      );
-    }
 
     const previousState = loadGoalState(mafwDir, goalId);
     const archivedState = archiveGoalStateForRevision(
@@ -197,6 +232,7 @@ export class PodGoalRevisionService {
     this.deps.notify?.(goal.podId);
 
     return {
+      opened: true,
       podId: goal.podId,
       goalId,
       revision: openedRevision,
@@ -204,6 +240,30 @@ export class PodGoalRevisionService {
       priority: row.priority,
       archivedState,
       previous,
+    };
+  }
+
+  /** no-op 结果：完全不触碰 DB / 文件，调用方可按 `opened === false` 幂等处理。 */
+  private staleResult(
+    goal: PodGoalRow,
+    row: PodGoalRevisionRow | null,
+    staleReason: OpenNextRevisionStaleReason,
+  ): OpenNextRevisionResult {
+    return {
+      opened: false,
+      staleReason,
+      podId: goal.podId,
+      goalId: goal.goalId,
+      revision: goal.activeRevision,
+      status: row?.status ?? 'discussing',
+      priority: row?.priority ?? goal.priority,
+      archivedState: null,
+      previous: {
+        revision: goal.activeRevision,
+        closed: false,
+        alreadyTerminal: !!row && isTerminalGoalRevisionStatus(row.status),
+        missing: !row,
+      },
     };
   }
 
@@ -251,4 +311,20 @@ export class PodGoalRevisionService {
   private now(): string {
     return this.deps.now?.() ?? new Date().toISOString();
   }
+}
+
+/**
+ * 「刚开出来、还没产出任何东西」的 revision：没有 started/ended 戳、没有 verdict、
+ * 没有 plan/eval hash、没有 direction 决策。这种 revision 不是可打回的结果——
+ * 对它按 completed 收尾只会在 append-only 历史里留下一个假的 completed 快照
+ * （重放同一次 reject 正是这样烧掉一版的）。
+ */
+function isPristineRevision(row: PodGoalRevisionRow): boolean {
+  return row.status === 'discussing'
+    && row.startedAt == null
+    && row.endedAt == null
+    && row.verdict == null
+    && row.planHash == null
+    && row.evalHash == null
+    && row.directionStatus === 'none';
 }

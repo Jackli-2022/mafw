@@ -10,6 +10,7 @@ import {
   statePathFor,
   writeGoalState,
 } from '../../../src/core/goal/state-v3';
+import { milestoneDedupeKey } from '../../../src/core/manager/milestone-push';
 
 describe('state-v3 goal revisions', () => {
   let mafwDir: string;
@@ -145,6 +146,38 @@ describe('state-v3 goal revisions', () => {
     const downgrade = ensureGoalState(mafwDir, 'g1', { revision: 1, projectDir: '/proj/a', maxRounds: 3 });
     expect(downgrade.revision).toBe(2);
     expect(loadGoalState(mafwDir, 'g1')?.revision).toBe(2);
+  });
+
+  test('stateVersion stays monotonic across revisions so milestone keys never collide (I-2)', () => {
+    init(1);
+    let rev1 = init(1);
+    for (let i = 0; i < 3; i += 1) {
+      rev1 = writeGoalState(mafwDir, 'g1', { nextAction: 'RUNNING_plan' }, { bumpVersion: true });
+    }
+    expect(rev1.stateVersion).toBe(3);
+
+    const rev2 = ensureGoalState(mafwDir, 'g1', {
+      revision: 2,
+      projectDir: '/proj/a',
+      maxRounds: 3,
+    });
+    expect(rev2.stateVersion).toBe(4);
+
+    // milestone-notified 的键是 goalId:phase:stateVersion（不含 revision）——
+    // 新 revision 必须继续往上走，否则会命中旧 revision 的键并被静默去重。
+    expect(milestoneDedupeKey('g1', 'PLANNING_COMPLETE', rev2.stateVersion))
+      .not.toBe(milestoneDedupeKey('g1', 'PLANNING_COMPLETE', rev1.stateVersion));
+    expect(milestoneDedupeKey('g1', 'ARCHIVED:PASS', rev2.stateVersion))
+      .not.toBe(milestoneDedupeKey('g1', 'ARCHIVED:PASS', rev1.stateVersion));
+
+    const rev3 = ensureGoalState(mafwDir, 'g1', {
+      revision: 3,
+      projectDir: '/proj/a',
+      maxRounds: 3,
+    });
+    expect(rev3.stateVersion).toBe(rev2.stateVersion + 1);
+    expect(milestoneDedupeKey('g1', 'PLANNING_COMPLETE', rev3.stateVersion))
+      .not.toBe(milestoneDedupeKey('g1', 'PLANNING_COMPLETE', rev2.stateVersion));
   });
 
   test('each new revision appends its snapshot without touching earlier archives', () => {

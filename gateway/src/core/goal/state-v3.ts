@@ -264,8 +264,14 @@ export function archiveGoalStateForRevision(
   return target;
 }
 
-/** 新 revision 的干净 state（旧 revision 的进度绝不带过来）。 */
-function freshState(mafwDir: string, goalId: string, revision: number, init: EnsureGoalStateInit): GoalStateV3 {
+/** 新 revision 的干净 state（旧 revision 的进度绝不带过来；stateVersion 跨 revision 单调）。 */
+function freshState(
+  mafwDir: string,
+  goalId: string,
+  revision: number,
+  init: EnsureGoalStateInit,
+  stateVersion: number,
+): GoalStateV3 {
   return {
     version: '3', goalId, revision,
     projectDir: init.projectDir, mafwDir,
@@ -273,7 +279,7 @@ function freshState(mafwDir: string, goalId: string, revision: number, init: Ens
     reviewVerdict: null, reviewReportPath: null, reviewFeedback: '',
     wavePlanPath: null, receiptPath: null, lastError: null,
     nodeSession: null, pendingQuestion: null, userResponse: null,
-    sameSigCount: 0, stateVersion: 0,
+    sameSigCount: 0, stateVersion,
     nextNode: 'plan', nextAction: 'RUNNING_plan',
     artifacts: {}, currentWave: 0, totalWaves: null, sessions: {},
     ...(init.policySnapshot ? { policySnapshot: init.policySnapshot } : {}),
@@ -289,6 +295,8 @@ function freshState(mafwDir: string, goalId: string, revision: number, init: Ens
  * 传入更高的 `revision` = 开启新 revision：先把旧 active state 归档（幂等、
  * 不覆盖已有快照），再在 `state/<goalId>.json` 重建干净 state——归档文件与
  * 更高 revision 的进度完全隔离；传入更低/相同的 revision 绝不降级、不改写。
+ * 新 revision 的 `stateVersion` 从旧 revision 的末值 +1 起算（跨 revision 单调，
+ * 保证 milestone 去重键不碰撞）。
  */
 export function ensureGoalState(
   mafwDir: string,
@@ -297,12 +305,17 @@ export function ensureGoalState(
 ): GoalStateV3 {
   const targetRevision = normalizeRevision(init.revision);
   const existing = loadGoalState(mafwDir, goalId);
+  let stateVersion = 0;
   if (existing) {
     const currentRevision = effectiveRevision(existing);
     if (targetRevision <= currentRevision) return existing;
     archiveGoalStateForRevision(mafwDir, goalId, currentRevision);
+    // milestone 去重键 = `<goalId>:<phase>:<stateVersion>`（不含 revision）：
+    // stateVersion 必须跨 revision 单调递增，否则新 revision 从 0 开始会命中旧
+    // revision 的键，manager 里程碑通知被静默吞掉。
+    stateVersion = (existing.stateVersion ?? 0) + 1;
   }
-  const s = freshState(mafwDir, goalId, targetRevision, init);
+  const s = freshState(mafwDir, goalId, targetRevision, init, stateVersion);
   const p = statePathFor(mafwDir, goalId);
   fs.mkdirSync(path.dirname(p), { recursive: true });
   const tmp = `${p}.tmp`;
