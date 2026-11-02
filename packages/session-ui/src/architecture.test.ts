@@ -64,6 +64,8 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
+// 只排除测试文件（它们本身就是反向 fixture）；**stories 也在扫描面内**——
+// 演示组件同样应只消费 View DTO，发现旧格式应改写 fixture，而不是加豁免。
 const SOURCE_FILES = walk(SRC).filter((file) => !/\.test\.(ts|tsx)$/.test(file))
 
 describe("session-ui architecture: View DTO only", () => {

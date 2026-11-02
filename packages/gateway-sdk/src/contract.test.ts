@@ -38,13 +38,11 @@ function isInternal(path: string): boolean {
 }
 
 /**
- * 运行时透传路径豁免：`/api/session/:id/background` 由 gateway 兜底反代直通 v2
- * runtime，不属于 MAFW OpenAPI contract（`session.background` 是 Experience
- * 动作面）。响应形状由 wire probe 钉扎，不走 contract 漂移守卫。
+ * 运行时透传路径豁免（历史上 `/api/session/:id/background` 曾在此：它直通 v2 runtime、
+ * 不在 OpenAPI contract 里）。Task 16 已把该路由登记进 `routes/route-catalog.ts` 并重生成
+ * 契约产物，因此豁免表被清空——新增豁免必须显式加回并说明为何不能进 contract。
  */
-const RUNTIME_PROXY_EXEMPT = new Set([
-  "/api/session/{}/background",
-])
+const RUNTIME_PROXY_EXEMPT = new Set<string>([])
 
 /**
  * 模板串内容 → 归一化路径。

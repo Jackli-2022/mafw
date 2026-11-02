@@ -334,6 +334,147 @@ export const GATED_ROUTES: GatedRoute[] = [
   },
 ];
 
+// ─── 反向覆盖：源码里出现的门必须被登记（新门不能逃逸） ──────────────────────
+
+/**
+ * 非主门 / 组合根 inline 门：无法作为独立 route 探测，逐条登记 surface + 源标记。
+ * 反向断言「登记项仍然存在于源码」，防止门被搬家后豁免表变成僵尸。
+ */
+interface NonPrimaryGate {
+  surface: string;
+  file: string;
+  marker: string;
+  why: string;
+}
+
+export const NON_PRIMARY_GATES: NonPrimaryGate[] = [
+  {
+    surface: 'approval.permissionList',
+    file: 'src/routes/permission.ts',
+    marker: "access.can('approval.permissionList')",
+    why: 'permissions.reply 的第二道门（反查 pending 列表）；由专门用例断言中性 503',
+  },
+  {
+    surface: 'session.snapshotTree',
+    file: 'src/routes/session-diff.ts',
+    marker: "gateSurface(res, deps, 'session.snapshotTree')",
+    why: 'per-turn diff 的第二道门（需要 adapter 快照树原语），缺时长中性 503',
+  },
+  {
+    surface: 'session.worktree',
+    file: 'src/index.ts',
+    marker: "can('session.worktree')",
+    why: 'POST /api/session 的 worktree 开口径（gateway git + directory 契约）；由专门用例断言',
+  },
+  {
+    surface: 'approval.question.list',
+    file: 'src/index.ts',
+    marker: "can('approval.question.list')",
+    why: '原生 question 通道的 inline 门（无独立 MAFW route）',
+  },
+  {
+    surface: 'process.completion',
+    file: 'src/index.ts',
+    marker: "can('process.completion')",
+    why: 'completion 通道门（index-scan/consolidation 内部通道，非 HTTP route）',
+  },
+  {
+    surface: 'identity.agents.install',
+    file: 'src/index.ts',
+    marker: "can('identity.agents.install')",
+    why: '身份物化门（无独立 route）',
+  },
+  {
+    surface: 'session.shell',
+    file: 'src/index.ts',
+    marker: "can('session.shell')",
+    why: 'inline /api/shell route',
+  },
+  {
+    surface: 'session.abort',
+    file: 'src/index.ts',
+    marker: "can('session.abort')",
+    why: 'inline /api/session/:id/abort route',
+  },
+  {
+    surface: 'media.session',
+    file: 'src/index.ts',
+    marker: "can('media.session')",
+    why: '媒体会话门（A2A / media runtime 内部）',
+  },
+  {
+    surface: 'provider.list',
+    file: 'src/index.ts',
+    marker: "capGuard(res, 'provider.list')",
+    why: 'inline provider route（capGuard 统一中性 503）',
+  },
+  {
+    surface: 'provider.app.agents',
+    file: 'src/index.ts',
+    marker: "capGuard(res, 'provider.app.agents')",
+    why: 'inline provider route',
+  },
+  {
+    surface: 'provider.config',
+    file: 'src/index.ts',
+    marker: "capGuard(res, 'provider.config')",
+    why: 'inline provider route',
+  },
+  {
+    surface: 'provider.config.update',
+    file: 'src/index.ts',
+    marker: "capGuard(res, 'provider.config.update')",
+    why: 'inline provider route',
+  },
+];
+
+const GATE_PATTERNS: Array<{ kind: string; pattern: RegExp }> = [
+  { kind: 'can', pattern: /\.can\(\s*['"]([^'"]+)['"]\s*\)/g },
+  { kind: 'capGuard', pattern: /capGuard\(\s*[^,]+,\s*['"]([^'"]+)['"]\s*\)/g },
+  { kind: 'gateSurface', pattern: /gateSurface\([^)]*?['"]([^'"]+)['"]\s*\)/g },
+  { kind: 'surfaceMessage', pattern: /surfaceUnavailableMessage\(\s*['"]([^'"]+)['"]\s*\)/g },
+];
+
+/** 从单个源码文件里收集「作为门出现」的 surface id（含 `const surface = a ? 'x' : 'y'` 形态）。 */
+export function gatedSurfacesFrom(text: string): string[] {
+  const found = new Set<string>();
+  for (const { pattern } of GATE_PATTERNS) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) found.add(match[1]);
+  }
+  for (const line of text.split(/\r?\n/)) {
+    if (!/const surface =|surface = action/.test(line)) continue;
+    for (const match of line.matchAll(/'([a-z][A-Za-z0-9-]*(?:\.[a-z][A-Za-z0-9-]*)+)'/g)) found.add(match[1]);
+  }
+  return [...found];
+}
+
+/** 扫描 src/routes/** 与 src/index.ts（有 HTTP 门的两处），返回 surface → 命中位置。 */
+function scanGatedSurfaces(): Map<string, string[]> {
+  const files = [
+    ...walkTs(path.join(GATEWAY_ROOT, 'src', 'routes')),
+    path.join(GATEWAY_ROOT, 'src', 'index.ts'),
+  ];
+  const out = new Map<string, string[]>();
+  for (const file of files) {
+    const rel = path.relative(GATEWAY_ROOT, file).replace(/\\/g, '/');
+    for (const surface of gatedSurfacesFrom(fs.readFileSync(file, 'utf8'))) {
+      if (!out.has(surface)) out.set(surface, []);
+      out.get(surface)!.push(rel);
+    }
+  }
+  return out;
+}
+
+function walkTs(dir: string, out: string[] = []): string[] {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walkTs(full, out);
+    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) out.push(full);
+  }
+  return out;
+}
+
 // ─── 各 handler 的拒绝探测 ────────────────────────────────────────────────────
 
 async function branchProbe(action: 'fork' | 'revert' | 'unrevert'): Promise<ProbeResult> {
@@ -505,6 +646,42 @@ describe('route → surface catalog', () => {
     const create = fs.readFileSync(path.join(GATEWAY_ROOT, 'src/routes/session-create.ts'), 'utf8');
     expect(create).toContain('WorktreeUnavailableError');
     expect(create).toContain('409');
+  });
+
+  it('reverse coverage: every gate in src/routes + index is catalogued', () => {
+    const detected = scanGatedSurfaces();
+    expect(detected.size).toBeGreaterThan(25);
+    const catalogued = new Set([
+      ...GATED_ROUTES.map((route) => route.surface),
+      ...NON_PRIMARY_GATES.map((gate) => gate.surface),
+    ]);
+    const escaped = [...detected]
+      .filter(([surface]) => !catalogued.has(surface))
+      .map(([surface, where]) => `${surface} (${[...new Set(where)].join(', ')})`);
+    expect(escaped).toEqual([]);
+  });
+
+  it('non-primary gate register stays live (no zombie exemptions)', () => {
+    const detected = scanGatedSurfaces();
+    const stale: string[] = [];
+    const missingMarker: string[] = [];
+    for (const gate of NON_PRIMARY_GATES) {
+      if (!detected.has(gate.surface)) stale.push(`${gate.surface}: not gated anywhere any more`);
+      const text = fs.readFileSync(path.join(GATEWAY_ROOT, gate.file), 'utf8');
+      if (!text.includes(gate.marker)) missingMarker.push(`${gate.surface}: marker ${gate.marker} not in ${gate.file}`);
+      if (!gate.why.trim()) stale.push(`${gate.surface}: missing rationale`);
+    }
+    expect({ stale, missingMarker }).toEqual({ stale: [], missingMarker: [] });
+  });
+
+  it('gate scanner catches a brand-new gate (reverse fixture)', () => {
+    expect(gatedSurfacesFrom("if (!access?.can('session.brandNew')) return;")).toEqual(['session.brandNew']);
+    expect(gatedSurfacesFrom("if (this.capGuard(res, 'provider.brandNew')) return;")).toEqual(['provider.brandNew']);
+    expect(gatedSurfacesFrom("const surface = kind === 'x' ? 'session.brandNew' : 'session.otherNew';"))
+      .toEqual(['session.brandNew', 'session.otherNew']);
+    // 未登记的新门会被反向覆盖断言拒绝（这里直接演示判定）。
+    const catalogued = new Set(GATED_ROUTES.map((route) => route.surface));
+    expect(catalogued.has('session.brandNew')).toBe(false);
   });
 
   it('reverse fixture: leaking or wrong-surface gate text fails the neutral check', () => {

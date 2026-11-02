@@ -421,7 +421,11 @@ TUI 是**订阅白名单**模式（`connection.ts` 的 `KNOWN_EVENTS`，v2：`pa
 |---|---|
 | `supported` | 该 runtime 有没有这个面（静态事实） |
 | `enabled` | 当前上下文能不能用（busy / 数据缺失 / patch 不可逆时为 false） |
-| `reason` | 中性词汇：`unsupported` / `busy` / `missing-data` / `not-invertible-patch` / `disabled` |
+| `reason` | 固定枚举：`unsupported` / `busy` / `missing-data` / `non-invertible-patch` / `unsafe` |
+
+`MafwMessage` 权威字段表见 `packages/gateway-sdk/contract/view-dto.json`：`role` 必填，
+其余可选（`id/sessionID/parentID/content/time/model/agent/stopReason/summary/error/extensions`）；
+`content` 可缺省，**没有** `finish`/`tokens`/`cost` 这类原生字段（原生值归 adapter，出口只发规范形）。
 
 gateway 侧对应 `RuntimeAccess.can(<surface>)`；缺能力回 **中性 503**
 （`runtime does not support <surface>`，不含 runtime 名与 capability flag 名）。

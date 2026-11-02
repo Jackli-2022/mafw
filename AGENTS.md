@@ -1292,55 +1292,55 @@ goal ç¼–æ’ä»ã€Œè£…é…å®Œæˆæœªæ¥çº¿ã€æ­£å¼å¯ç”¨ï¼š**langgraph ä¸‰ä»¶å¥—ï¼ˆ
 - **D4b åäº‹å®æ¨¡æ‹Ÿï¼ˆ2026-10-09ï¿½?*ï¼šgoal ï¿½?**taskType ç»´åº¦**ï¼ˆ`TASK_TYPES` ä¸ƒå€¼æšä¸¾ï¼›åˆ›å»ºæ—¶å£°æ˜ï¼ˆ`mafw_create_goal`/`mafw_set_goal` å‚æ•°ï¼‰â†’ plan èŠ‚ç‚¹ `waves.taskType` å›å†™**ä¼˜å…ˆ**ï¼ˆè§„åˆ’è€…åˆ¤æ–­æ›´å‡†ï¼Œ`completeNode` æ ¡éªŒå›å†™ state v3ï¼‰ï¼›`goal_outcomes` ï¿½?`task_type` åˆ—ï¼ˆå¹‚ç­‰ ALTERï¼Œlegacy NULL ï¿½?other æ± ï¼‰ï¼‰ã€‚L1 è´¦æœ¬ï¿½?`byTaskType` èšåˆ + `ledgerForTaskType`ï¼ˆåŒç±»å‹ ï¿½? æ ·æœ¬æ‰åˆ†æ¡¶ï¼Œå°æ ·æœ¬é€€å…¨å±€é˜²å¤–æ¨ï¼‰ã€‚plan prompt æ³¨å…¥ **`counterfactualBlock` pre-mortem**ï¼ˆåŒç±»ä»»åŠ¡å¤±è´¥ç‡/æœ€å¸¸è§ failure_kind/å¹³å‡æŸå¤± + L2 è¸©å‘å¯¹ç…§ + ï¿½?wave `riskNote` è¦æ±‚â€”â€”è¦æ±‚æœ¬èº«ä¸ä¾èµ–å†å²æ•°æ®ï¼‰ã€‚`DriverDeps.capabilityPrior` ç­¾åï¿½?`(goalId)`ï¼Œæ–°ï¿½?`counterfactualPrior`ã€‚spec `docs/superpowers/specs/2026-10-09-d4b-counterfactual-design.md`ï¿½?
 - **A5 æŠ½è±¡å†™å› schemaï¿½?026-10-09ï¿½?*ï¼š`HarmonicUnit.distilled_by`ï¼ˆgist æŒ‡é’ˆæ•°ç»„ï¿½?*ï¿½?supersede**â€”â€”æˆå‘˜ä¿ç•™å¯æ£€ç´¢ï¼Œï¿½?gist å…±äº«æˆå‘˜ï¼›ä¸ D1b é™èƒ½åŒè¶Ÿå…±å­˜ï¼‰ã€‚å†™å…¥ï¼šreflection è’¸é¦æˆåŠŸ ï¿½?`HarmonicUnitFileStore.stampDistilled(episodeIds, gistId)`ï¿½?*ç›´å†™ OKF é•œåƒ setSticky æ¨¡å¼ï¼Œä¸ï¿½?store.write ï¿½?MinHash è‡ªåˆï¿½?*ï¼›è¿½åŠ å»ï¿½?cap 3ï¼Œfail-openï¼‰ã€‚è¯»å‡ºï¼šè¾¹ç•Œ recall æŒ‡é’ˆè¡Œå°¾ `ï¿½?gist å·²è’¸é¦ï¼š<id ï¿½?6>` æç¤ºï¼ˆget_memory æŒ‰éœ€å–ï¼Œä¸å é¢„ç®—ï¼‰ï¼›`RecallMemory`/`MemoryUnit` é€ä¼ å­—æ®µã€‚consolidation merge ï¿½?stampï¼ˆ`merged_from` ç­‰ä»·ï¼‰ã€‚spec `docs/superpowers/specs/2026-10-09-a5-schema-writeback-design.md`ï¿½?
 
-### 5.24 Runtime Experience È«Á¿Ç¨ÒÆÓë¼Ü¹¹ÊØÎÀ£¨2026-11-02 µÚ¶şÅú£©
+### 5.24 Runtime Experience å…¨é‡è¿ç§»ä¸æ¶æ„å®ˆå«ï¼ˆ2026-11-02 ç¬¬äºŒæ‰¹ï¼‰
 
-µÚ¶şÅúÊÕ¿Ú£ºgateway ÒµÎñºËĞÄÓë**È«²¿¿Í»§¶Ë**Ö»Ïû·Ñ MAFW View DTO + Experience Contract£¬
-¿Í»§¶Ë¼æÈİ²ãÎïÀíÉ¾³ı£»ÊØÎÀ¡¢×÷ÕßÎÄµµÓëÆõÔ¼²úÎïÍ¬ÅúÓ²»¯¡£spec
-`docs/superpowers/specs/2026-11-02-runtime-experience-full-migration-design.md`£¨¡ì16 ÊµÏÖÆ«²î£©£¬
-²Ù×÷ÊÖ²á `docs/guides/runtime-plugin-authoring.md` ¡ì9.7¡£
+ç¬¬äºŒæ‰¹æ”¶å£ï¼šgateway ä¸šåŠ¡æ ¸å¿ƒä¸**å…¨éƒ¨å®¢æˆ·ç«¯**åªæ¶ˆè´¹ MAFW View DTO + Experience Contractï¼Œ
+å®¢æˆ·ç«¯å…¼å®¹å±‚ç‰©ç†åˆ é™¤ï¼›å®ˆå«ã€ä½œè€…æ–‡æ¡£ä¸å¥‘çº¦äº§ç‰©åŒæ‰¹ç¡¬åŒ–ã€‚spec
+`docs/superpowers/specs/2026-11-02-runtime-experience-full-migration-design.md`ï¼ˆÂ§16 å®ç°åå·®ï¼‰ï¼Œ
+æ“ä½œæ‰‹å†Œ `docs/guides/runtime-plugin-authoring.md` Â§9.7ã€‚
 
-- **ÀúÊ·³ö¿ÚÖ»ÓĞ flat**£º`GET /api/sessions/:id/messages` Î¨Ò»ÏìÓ¦ `{ data: MafwMessage[], nextCursor }`£»
-  `wire-compat.ts`£¨`toWireHistory/toWireInfo/toWireEventPayload`£©¡¢`?format=` ·ÖÖ§¡¢facade µÄ
-  wire¡úflat ¶ş´Î·­ÒëÈ«²¿É¾³ı£»adapter ±ØĞëÖ±½Ó½»¸¶ flat£¬Î¥Àı fail-closed
-  £¨`normalizeMessages produced a non-flat member - dropped`£©¡£SDK/preload µÄ `session.history`
-  ±ğÃûÉ¾³ı£¬desktop/TUI/mobile Ò»ÂÉ `session.messages`¡£
-- **SSE ³ö¿Ú canonical**£º`message.updated` Ö»´ø `properties.message`£»gateway Æô¶¯Ê±¶Ô `event_log`
-  ×öÒ»´ÎĞÔÃİµÈÇ¨ÒÆ£¨`events/event-log-migrate.ts`£¬±¸·İ `~/.mafw/logs/event-log-message-migration-<ts>.jsonl`£¬
-  ±¸·İÊ§°ÜÔòÖĞÖ¹Ç¨ÒÆ£©¡£`session.created/updated/deleted` ÈÔÊÇ wire `properties.info`
-  £¨desktop ½öÕâ 3 Àà¶ÁÈ¡£»`event-field-contract` ¶ÔÆäÓà info ÔØºÉ¸æ¾¯£©¡£
-- **Experience ÓëÖĞĞÔÃÅ**£ºÒµÎñ UI Ö»Ïû·Ñ `GET /api/experience/actions`
-  £¨`supported` = Ãæ´æÔÚ¡¢`enabled` = ÉÏÏÂÎÄ¿ÉÓÃ¡¢`reason` ÎªÖĞĞÔ´Ê»ã£©£»ÒµÎñºËĞÄÖ»¾­
-  `RuntimeAccess.can(surface)`£¬È±ÄÜÁ¦»ØÖĞĞÔ 503£¨`runtime does not support <surface>`£¬²»º¬
-  runtime ÃûÓë capability flag Ãû£©£»`branch.unrevert` ÓÃ 404¡¢worktree Ä¿Â¼²»Ö§³ÖÓÃ 409¡£
-  Ç°¶Ë `runtimeCaps`/`runtimeName` props È«É¾£¨desktop Config ÊÇÎ¨Ò» Diagnostics Ãû³ÆÀıÍâ£©¡£
-- **ÖĞĞÔ facade**£ºbackground ÈıÔ´Í³Ò»£¨`/api/background/jobs*` + `background.job.updated`£¬
-  `POST /api/session/:id/background` ±í´ï¡¸×ªºóÌ¨¡¹¶¯×÷£¬Task 16 ²¹µÇ¼Ç½ø route catalog£©£»
-  terminal ×ß `mafw-terminal/1`£¨`/api/terminal/*` + connect-ticket£¬Ô­ÉúÖ¡Ö»ÔÚ adapter ·­Òë£©£»
-  worktree ¹é gateway git + session directory ÆõÔ¼£¨ÄÜÁ¦Î»ÍËÒÛ£©¡£
-- **É¾³ıÃæ£¨ÆÆ»µĞÔ£©**£ºSDK `session.history`/`shells`/`requestRuntime`/`command`/`skill`/
-  `opencodeConfig`£»HTTP `GET /command`¡¢`GET /skill`¡¢`GET /api/skill/content`¡¢
-  `GET|PATCH /api/opencode-config`£»preload Í¨ÓÃ `invoke(ns, method, ...)`¡£¾É desktop/TUI/mobile
-  ÎŞ·¨Á¬ĞÂ gateway£¬ĞèĞ­µ÷·¢²¼¡£
-- **¼Ü¹¹ÊØÎÀ£¨·´Ïò fixture È«ÂÌ²ÅÍ¨¹ı£©**£º`gateway/tests/unit/runtime/architecture-boundaries.test.ts`
-  £¨routes/core/media/trajectory + ³é³öµÄ `experience/events/terminal` + ¶¥²ãÒµÎñÎÄ¼ş£»×éºÏ¸ù
-  `index.ts` µÄÕï¶ÏÀıÍâ°´¡¸¹æÔò + ·ÃÎÊĞÎÌ¬¡¹µÇ¼Ç 8 Ìõ£¬²¢ÓĞ·´Ïò¶ÏÑÔ·ÀËÀ»íÃâ£©¡¢
-  `route-surface-catalog.test.ts`£¨31 ¸ö gated op£ºmanifest surface + catalog operation + ÖĞĞÔ
-  503/404£©¡¢`history-exit-golden.test.ts`£¨opencode/pi/claude ÈıÖÖ native ÊäÈë ¡ú Í¬Ò» flat ³ö¿Ú +
-  Í¬Ò» canonical `message.updated`£»¹¤¾ß part id Óë live assembler Í¬·½°¸ `toolpart_<callID>`£©¡¢
-  `wire-deletion-guards.test.ts`£»desktop `experience-boundaries.test.ts`£¨`src/` È«Óò£¬Config
-  Ãû³ÆÀıÍâ£¬`properties.info` ½ö 3 ¸ö session ÉúÃüÖÜÆÚÎÄ¼ş£©¡¢TUI `tests/experience-boundaries.test.ts`¡¢
-  session-ui `src/architecture.test.ts`¡£
-- **ÆõÔ¼²¹¶´**£º`POST /api/session/:id/background`£¨SDK `sessions.background` Ò»Ö±ÔÚµ÷£©´ËÇ°Â©µÇ¼Ç
-  catalog£¬µ¼ÖÂ²»ÔÚ openapi/ÆõÔ¼²úÎïÀï£»±¾Åú²¹µÇ¼Ç²¢ÖØÉú³É£¨`emit:openapi` 241 operations /
-  215 paths£©¡£
-- **µÇ¼ÇÈ±¿Ú**£ºpi `message_end ¡ú message.updated` ²»´ø `message.id`£¨×ÀÃæ°´¡¸ÎŞ id Ö¡¶ªÆú¡¹´¦Àí£¬
-  ÀúÊ· id ÓÉ `normalizePiMessages` Ìá¹©£©£»claude ÀúÊ·ÎŞÊ±¼ä´Á£¨`time` ¿ÉÑ¡È±Ê§£©£»
-  adapter ÄÚ²¿ native ·­Òë£¨opencode `/command`¡¢`/skill`¡¢history normalize£©°´ spec ¡ì9.2 ±£Áô¡£
-- **ÑéÖ¤**£ºgateway **3922/3922£¨528 suites£©**¡¢SDK **180/180**¡¢session-ui **133/133**¡¢TUI
-  **284 pass/1 skip£¨285£©**¡¢desktop **2253/2253**¡¢mobile **86/86**¡¢adapters/claude **21/21**£»
-  `tsc`/`tsgo -p tsconfig.json`/`electron-vite build`/¸ù build/`flutter analyze`+`flutter test` rc=0¡£
-  ÆõÔ¼²úÎïĞÂÏÊ¶ÈÓÉ `api-contract.test.ts` Óë `contract-manifest-freshness.test.ts` °ÑÊØ¡£
-  Õæ»ú GUI/mobile Ã°ÑÌÓÉ¿ØÖÆ¶ËÔÚ²¿ÊğºóÖ´ĞĞ£¨±¾Åú²»ÖØÆôÏßÉÏ gateway£©¡£
+- **å†å²å‡ºå£åªæœ‰ flat**ï¼š`GET /api/sessions/:id/messages` å”¯ä¸€å“åº” `{ data: MafwMessage[], nextCursor }`ï¼›
+  `wire-compat.ts`ï¼ˆ`toWireHistory/toWireInfo/toWireEventPayload`ï¼‰ã€`?format=` åˆ†æ”¯ã€facade çš„
+  wireâ†’flat äºŒæ¬¡ç¿»è¯‘å…¨éƒ¨åˆ é™¤ï¼›adapter å¿…é¡»ç›´æ¥äº¤ä»˜ flatï¼Œè¿ä¾‹ fail-closed
+  ï¼ˆ`normalizeMessages produced a non-flat member - dropped`ï¼‰ã€‚SDK/preload çš„ `session.history`
+  åˆ«ååˆ é™¤ï¼Œdesktop/TUI/mobile ä¸€å¾‹ `session.messages`ã€‚
+- **SSE å‡ºå£ canonical**ï¼š`message.updated` åªå¸¦ `properties.message`ï¼›gateway å¯åŠ¨æ—¶å¯¹ `event_log`
+  åšä¸€æ¬¡æ€§å¹‚ç­‰è¿ç§»ï¼ˆ`events/event-log-migrate.ts`ï¼Œå¤‡ä»½ `~/.mafw/logs/event-log-message-migration-<ts>.jsonl`ï¼Œ
+  å¤‡ä»½å¤±è´¥åˆ™ä¸­æ­¢è¿ç§»ï¼‰ã€‚`session.created/updated/deleted` ä»æ˜¯ wire `properties.info`
+  ï¼ˆdesktop ä»…è¿™ 3 ç±»è¯»å–ï¼›`event-field-contract` å¯¹å…¶ä½™ info è½½è·å‘Šè­¦ï¼‰ã€‚
+- **Experience ä¸ä¸­æ€§é—¨**ï¼šä¸šåŠ¡ UI åªæ¶ˆè´¹ `GET /api/experience/actions`
+  ï¼ˆ`supported` = é¢å­˜åœ¨ã€`enabled` = ä¸Šä¸‹æ–‡å¯ç”¨ã€`reason` ä¸ºä¸­æ€§è¯æ±‡ï¼‰ï¼›ä¸šåŠ¡æ ¸å¿ƒåªç»
+  `RuntimeAccess.can(surface)`ï¼Œç¼ºèƒ½åŠ›å›ä¸­æ€§ 503ï¼ˆ`runtime does not support <surface>`ï¼Œä¸å«
+  runtime åä¸ capability flag åï¼‰ï¼›`branch.unrevert` ç”¨ 404ã€worktree ç›®å½•ä¸æ”¯æŒç”¨ 409ã€‚
+  å‰ç«¯ `runtimeCaps`/`runtimeName` props å…¨åˆ ï¼ˆdesktop Config æ˜¯å”¯ä¸€ Diagnostics åç§°ä¾‹å¤–ï¼‰ã€‚
+- **ä¸­æ€§ facade**ï¼šbackground ä¸‰æºç»Ÿä¸€ï¼ˆ`/api/background/jobs*` + `background.job.updated`ï¼Œ
+  `POST /api/session/:id/background` è¡¨è¾¾ã€Œè½¬åå°ã€åŠ¨ä½œï¼ŒTask 16 è¡¥ç™»è®°è¿› route catalogï¼‰ï¼›
+  terminal èµ° `mafw-terminal/1`ï¼ˆ`/api/terminal/*` + connect-ticketï¼ŒåŸç”Ÿå¸§åªåœ¨ adapter ç¿»è¯‘ï¼‰ï¼›
+  worktree å½’ gateway git + session directory å¥‘çº¦ï¼ˆèƒ½åŠ›ä½é€€å½¹ï¼‰ã€‚
+- **åˆ é™¤é¢ï¼ˆç ´åæ€§ï¼‰**ï¼šSDK `session.history`/`shells`/`requestRuntime`/`command`/`skill`/
+  `opencodeConfig`ï¼›HTTP `GET /command`ã€`GET /skill`ã€`GET /api/skill/content`ã€
+  `GET|PATCH /api/opencode-config`ï¼›preload é€šç”¨ `invoke(ns, method, ...)`ã€‚æ—§ desktop/TUI/mobile
+  æ— æ³•è¿æ–° gatewayï¼Œéœ€åè°ƒå‘å¸ƒã€‚
+- **æ¶æ„å®ˆå«ï¼ˆåå‘ fixture å…¨ç»¿æ‰é€šè¿‡ï¼‰**ï¼š`gateway/tests/unit/runtime/architecture-boundaries.test.ts`
+  ï¼ˆroutes/core/media/trajectory + æŠ½å‡ºçš„ `experience/events/terminal` + é¡¶å±‚ä¸šåŠ¡æ–‡ä»¶ï¼›ç»„åˆæ ¹
+  `index.ts` çš„è¯Šæ–­ä¾‹å¤–æŒ‰ã€Œè§„åˆ™ + è®¿é—®å½¢æ€ã€ç™»è®° 8 æ¡ï¼Œå¹¶æœ‰åå‘æ–­è¨€é˜²æ­»è±å…ï¼‰ã€
+  `route-surface-catalog.test.ts`ï¼ˆ31 ä¸ª gated opï¼šmanifest surface + catalog operation + ä¸­æ€§
+  503/404ï¼‰ã€`history-exit-golden.test.ts`ï¼ˆopencode/pi/claude ä¸‰ç§ native è¾“å…¥ â†’ åŒä¸€ flat å‡ºå£ +
+  åŒä¸€ canonical `message.updated`ï¼›å·¥å…· part id ä¸ live assembler åŒæ–¹æ¡ˆ `toolpart_<callID>`ï¼‰ã€
+  `wire-deletion-guards.test.ts`ï¼›desktop `experience-boundaries.test.ts`ï¼ˆ`src/` å…¨åŸŸï¼ŒConfig
+  åç§°ä¾‹å¤–ï¼Œ`properties.info` ä»… 3 ä¸ª session ç”Ÿå‘½å‘¨æœŸæ–‡ä»¶ï¼‰ã€TUI `tests/experience-boundaries.test.ts`ã€
+  session-ui `src/architecture.test.ts`ã€‚
+- **å¥‘çº¦è¡¥æ´**ï¼š`POST /api/session/:id/background`ï¼ˆSDK `sessions.background` ä¸€ç›´åœ¨è°ƒï¼‰æ­¤å‰æ¼ç™»è®°
+  catalogï¼Œå¯¼è‡´ä¸åœ¨ openapi/å¥‘çº¦äº§ç‰©é‡Œï¼›æœ¬æ‰¹è¡¥ç™»è®°å¹¶é‡ç”Ÿæˆï¼ˆ`emit:openapi` 241 operations /
+  215 pathsï¼‰ã€‚
+- **ç™»è®°ç¼ºå£**ï¼špi `message_end â†’ message.updated` ä¸å¸¦ `message.id`ï¼ˆæ¡Œé¢æŒ‰ã€Œæ—  id å¸§ä¸¢å¼ƒã€å¤„ç†ï¼Œ
+  å†å² id ç”± `normalizePiMessages` æä¾›ï¼‰ï¼›claude å†å²æ— æ—¶é—´æˆ³ï¼ˆ`time` å¯é€‰ç¼ºå¤±ï¼‰ï¼›
+  adapter å†…éƒ¨ native ç¿»è¯‘ï¼ˆopencode `/command`ã€`/skill`ã€history normalizeï¼‰æŒ‰ spec Â§9.2 ä¿ç•™ã€‚
+- **éªŒè¯**ï¼šgateway **4002/4002ï¼ˆ534 suitesï¼Œå«å¹¶è¡Œ user æµ‹è¯•ï¼‰**ã€SDK **180/180**ã€session-ui **133/133**ã€TUI
+  **284 pass/1 skipï¼ˆ285ï¼‰**ã€desktop **2253/2253**ã€mobile **86/86**ã€adapters/claude **21/21**ï¼›
+  `tsc`/`tsgo -p tsconfig.json`/`electron-vite build`/æ ¹ build/`flutter analyze`+`flutter test` rc=0ã€‚
+  å¥‘çº¦äº§ç‰©æ–°é²œåº¦ç”± `api-contract.test.ts` ä¸ `contract-manifest-freshness.test.ts` æŠŠå®ˆã€‚
+  çŠ¶æ€ï¼šä»£ç å®Œæˆï¼ŒçœŸæœº GUI/mobile å†’çƒŸå¾…æ§åˆ¶ç«¯æ‰§è¡Œï¼ˆæœ¬æ‰¹ä¸é‡å¯çº¿ä¸Š gatewayï¼›æœªå‘ç‰ˆï¼‰ã€‚
 
 ## 6. Gateway è¿ç»´
 

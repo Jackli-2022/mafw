@@ -1,10 +1,16 @@
 /**
  * P4-B Shadow Route Catalog —— gateway 全量 HTTP 端点的声明式登记（无 handler）。
  *
+ * 单一事实源是**本文件**：`scripts/emit-openapi.ts` 把 catalog 投影成
+ * `packages/gateway-sdk/contract/gateway-paths.json`，再由 SDK `gen:api`
+ * 合并 overrides 生成 `openapi.json` / `api-schema.gen.ts`。新增/修改路由的正确顺序是
+ * 「改这里 → (gateway) emit:openapi → (sdk) gen:api」，不要手改生成物
+ * （`api-contract.test.ts` 的新鲜度与 phantom 扫描会打红）。
+ *
  * 两个来源：
- *  - SDK_FACING_ROUTES：机械转录自 packages/gateway-sdk/contract/openapi.json
- *    （path+method+operationId+tags 与 openapi 逐字一致，'{param}' → ':param'），
- *    漂移由 gateway-sdk/src/contract.test.ts 与 tests/unit/api-contract.test.ts 双向锁定。
+ *  - SDK_FACING_ROUTES：`@mafw/sdk` 直接调用的端点（path+method+operationId+tags；
+ *    `:param` 是 catalog 形态，emit 时转成 `{param}`）。漂移由
+ *    gateway-sdk/src/contract.test.ts 与 tests/unit/api-contract.test.ts 双向锁定。
  *  - NON_SDK_ROUTES：非 SDK 暴露面的补充登记（desktop/TUI/worker/dashboard 专用端点），
  *    operationId 自拟（ns.action 风格），tags 统一 'internal'。
  *
@@ -18,7 +24,10 @@
 
 import type { RouteDef } from './registry';
 
-/** SDK-facing 端点（openapi.json 全量 94 条 operation，权威转录，勿手改——改请先改 openapi.json 再同步）。 */
+/**
+ * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
+ * `emit:openapi` + `gen:api`，不要反向手改 openapi.json）。
+ */
 const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'] },
   { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'] },

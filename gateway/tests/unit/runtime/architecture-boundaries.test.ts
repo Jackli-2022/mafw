@@ -100,6 +100,8 @@ const RULES: RuleSpec[] = [
     rule: 'facade-diagnostics',
     patterns: [
       // 进程/凭据/补全诊断字段：任意接收者（别名、解构链、调用结果都算）。
+      // 业务域同名例外（如 ProbeRequest.scope 的凭据允许清单）不走放宽规则，
+      // 而是逐条登记在 BUSINESS_EXCERPT_EXCEPTIONS（文件 + 摘录形态，含死例外检测）。
       anyReceiverFieldPattern(['completion', 'credentials', 'agentProcess', 'getBaseUrl', 'healthCheck']),
       // `.config` 例外：业务自有配置对象/加载器极常见，只在 runtime 接收者上判泄漏。
       fieldPattern(['config']),
@@ -337,11 +339,47 @@ function readSource(file: string): string {
   return fs.readFileSync(path.join(ROOT, file), 'utf8');
 }
 
+/**
+ * 业务域的「命名碰撞」例外：域字段名恰好叫 `credentials`（例：goal probe 的 scope
+ * 允许的凭据名列表），不是 RuntimeHost 回读。逐条精确登记（文件 + 摘录形态），
+ * 并有死例外检测；**不提供文件级/目录级豁免**（同文件其它形态照样变红）。
+ */
+interface BusinessExcerptException {
+  file: string;
+  excerpt: RegExp;
+  why: string;
+}
+
+export const BUSINESS_EXCERPT_EXCEPTIONS: BusinessExcerptException[] = [
+  {
+    file: 'src/core/goal/probe.ts',
+    excerpt: /credentials: normalizeCredentials\(input\.scope\.credentials\)/,
+    why: 'goal probe scope 的域字段（允许的凭据名列表），非 runtime 门面凭据通道',
+  },
+];
+
+function exceptionFor(file: string, excerpt: string): boolean {
+  return BUSINESS_EXCERPT_EXCEPTIONS.some(
+    (exception) => exception.file === file && exception.excerpt.test(excerpt),
+  );
+}
+
+function rawLeaksFor(file: string): BoundaryLeak[] {
+  return scanSource(readSource(file));
+}
+
 function scanFile(file: string): BoundaryLeak[] {
-  return scanSource(readSource(file)).map((leak) => ({
-    ...leak,
-    excerpt: `${file}:${leak.line}: ${leak.excerpt}`,
-  }));
+  return rawLeaksFor(file)
+    .filter((leak) => !exceptionFor(file, leak.excerpt))
+    .map((leak) => ({
+      ...leak,
+      excerpt: `${file}:${leak.line}: ${leak.excerpt}`,
+    }));
+}
+
+/** fixture 用：对任意文本套用同一套例外过滤（证明例外是精确形态，不是文件豁免）。 */
+function violationsFor(file: string, text: string): BoundaryLeak[] {
+  return scanSource(text).filter((leak) => !exceptionFor(file, leak.excerpt));
 }
 
 function filesUnder(dir: string): string[] {
@@ -561,6 +599,24 @@ describe('runtime isolation architecture boundaries', () => {
       .replace(/^\s*\/\/.*$/gm, '');
     expect(code).toContain("access.can('process.completion')");
     expect(code).not.toMatch(/capabilities\??\.completionApi/);
+  });
+
+  it('business excerpt exceptions are exact, live, and cannot mask runtime reads', () => {
+    // 每条例外都必须在当前源码里真的命中（防止代码搬走后留下文件级豁免）。
+    // 文件可能来自并行 user WIP（存在时才需要例外；不存在则例外自然失效）。
+    const dead = BUSINESS_EXCERPT_EXCEPTIONS.filter((exception) => {
+      if (!fs.existsSync(path.join(ROOT, exception.file))) return false;
+      return !rawLeaksFor(exception.file).some((leak) => exception.excerpt.test(leak.excerpt));
+    }).map((exception) => `${exception.file}: ${exception.excerpt}`);
+    expect(dead).toEqual([]);
+    // 同一文件里的 runtime 回读形态不会被例外放行（例外按摘录形态匹配，不是按文件）。
+    const file = 'src/core/goal/probe.ts';
+    expect(violationsFor(file, 'const c = client.credentials;')).toHaveLength(1);
+    expect(violationsFor(file, 'const c = runtime?.credentials;')).toHaveLength(1);
+    // 合法域字段形态被放行。
+    expect(
+      violationsFor(file, 'const out = { credentials: normalizeCredentials(input.scope.credentials) };'),
+    ).toHaveLength(0);
   });
 });
 

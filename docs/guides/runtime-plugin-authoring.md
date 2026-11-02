@@ -424,8 +424,12 @@ curl -X POST http://127.0.0.1:3000/api/runtime/conformance \
 - `GET /api/sessions/:id/messages` 唯一响应：`{ data: MafwMessage[], nextCursor }`。
   需要历史基线的 profile 调 `session.messages(<sessionID>)`；没有 session.history 方法，
   也没有 `?format=flat|wire` 参数（旧参数被忽略，不再改变形状）。
-- `MafwMessage` = `{ id, sessionID?, role, content: MafwPart[], time?, parentID?, model?, finish?, tokens?, cost?, error? }`；
+- `MafwMessage` = `{ role, id?, sessionID?, parentID?, content?: MafwPart[], time?, model?, agent?,
+  stopReason?, summary?, error?, extensions? }`（`role` 必填，其余可选；`model` = `{ providerID,
+  modelID, variant? }`，`stopReason` = 规范枚举 `end_turn | max_tokens | tool_use | aborted |
+  error | unknown`，`error` = `{ kind, message }`；**没有** `finish`/`tokens`/`cost` 这类原生字段）。
   `MafwPart` 覆盖 `text / reasoning / tool / file / agent / compaction / step-* / data-*`。
+  权威字段表：`packages/gateway-sdk/contract/view-dto.json` 的 `message` / `part`。
   **旧 wire 信封 `{ info, parts }` 已删除**：adapter 直接返回 flat，facade 对非 flat 成员
   fail-closed 丢弃并记录 `normalizeMessages produced a non-flat member — dropped`。
 - 声明 `normalizeMessages` 的 runtime：签名不变（`(raw) => MafwMessage[]`），但**输出必须是
@@ -458,9 +462,10 @@ curl -X POST http://127.0.0.1:3000/api/runtime/conformance \
 
 - 业务 UI 只看 `GET /api/experience/actions`（版本化 Action Descriptor）：
   `supported` = 该 runtime 有这个面；`enabled` = 当前上下文可用（busy/数据缺失时为 false）；
-  `reason` 用中性词汇（`unsupported | busy | missing-data | not-invertible-patch | disabled`）。
+  `reason` 取固定枚举 `unsupported | busy | missing-data | non-invertible-patch | unsafe`
+  （`ACTION_UNAVAILABLE_REASONS`，`gateway/src/experience/experience-contract.ts`）。
 - 后端只经 `RuntimeAccess.can(<surface>)` 做门：缺能力 = 中性 `503`（`runtime does not support <surface>`），
-  文案不得出现 runtime 名或 capability flag 名。`402/404` 只能用于「语义上不存在该原语」
+  文案不得出现 runtime 名或 capability flag 名。`404` 只能用于「语义上不存在该原语」
   （例：`branch.unrevert`）。
 - worktree 归 **gateway git + session directory 契约**，不再是某个 runtime 的能力位；
   目录不支持时 `409`（不是 503）。

@@ -318,14 +318,25 @@ describe('SSE exit golden: canonical message.updated across opencode / pi / clau
     expect([...new Set(unknown)]).toEqual([]);
   });
 
-  it('reverse fixture: a wire-shaped message.updated is not accepted silently', () => {
-    // 旧 wire 帧（只有 properties.info）经 claude/pi 声明表不会被当作已翻译载荷。
+  it('reverse fixture: a wire-shaped message.updated is rejected explicitly', () => {
+    // 旧 wire 帧（只有 properties.info）在 claude 方言里不是合法原生类型：default-deny
+    // 必须**真的**返回空数组并走 unmatched 钩子，而不是「碰巧没有 message 字段」。
     const wire = { type: 'message.updated', properties: { info: { id: 'm1', role: 'assistant' } } };
-    const out = applyEventMappings(wire, CLAUDE_ENTRY, IS_CANONICAL);
-    // 无原生 typePath 可解析 → canonical 信封放行（继续走 passthrough），但出口投影
-    // 只认 properties.message：这里证明 wire 形状不会被「翻译成」canonical message。
-    for (const event of out) {
-      expect(event.payload?.properties?.message).toBeUndefined();
-    }
+    const suppressed: string[] = [];
+    const unmatched: string[] = [];
+    const out = applyEventMappings(wire, CLAUDE_ENTRY, IS_CANONICAL, {
+      onSuppressed: (type) => suppressed.push(type),
+      onUnmatched: (type) => unmatched.push(type),
+    });
+    expect(out).toEqual([]);
+    // claude 方言带 transformEvent：未知原生类型走显式 null → onSuppressed（不是静默落空）。
+    expect(suppressed).toEqual(['message.updated']);
+    expect(unmatched).toEqual([]);
+    // 对照：真正的 claude 原生 assistant 事件会被翻译出 message.updated（证明上一条不是「全拒」）。
+    const ok = claudeCanonical([{
+      type: 'assistant', session_id: SID, uuid: 'a9',
+      message: { id: 'm9', role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+    }]);
+    expect(ok.some((event) => event.payload.type === 'message.updated')).toBe(true);
   });
 });
