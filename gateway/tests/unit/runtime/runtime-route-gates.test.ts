@@ -3,7 +3,9 @@
 // 断言两件事：
 //   1. 每个 gated route 只认 surface，不看裸 capabilities 或方法存在性；
 //   2. 缺 surface 的 503 文案中性，不泄漏 runtime 名或 capability flag。
+import * as fs from 'fs';
 import * as http from 'http';
+import * as path from 'path';
 import { Readable } from 'node:stream';
 import { handleSessionDiff, handleSessionDiffRevert } from '../../../src/routes/session-diff';
 import { handleSessionSummarize } from '../../../src/routes/session-summarize';
@@ -217,5 +219,34 @@ describe('worktree availability', () => {
     expect(
       resolveWorktreeAvailability({ directory: '/tmp', directorySupported: true, gitAvailable: false }),
     ).toEqual({ supported: false, reason: 'missing-data' });
+  });
+});
+
+// 源码守卫：POST /api/session 的 worktree 门必须留在 index.ts 接线里（gateway git +
+// session.create({directory}) 契约），且 409 映射留在被抽出的 route 中。防止后续重构
+// 把门拆掉或退回 worktreeApi。
+describe('POST /api/session worktree gate wiring', () => {
+  const SRC = path.resolve(__dirname, '../../../src');
+  const indexSrc = fs.readFileSync(path.join(SRC, 'index.ts'), 'utf8');
+  const createRouteSrc = fs.readFileSync(path.join(SRC, 'routes', 'session-create.ts'), 'utf8');
+
+  it('index.ts delegates to the gated route with the production availability probe', () => {
+    expect(indexSrc).toContain("import { handleSessionCreate } from './routes/session-create';");
+    expect(indexSrc).not.toContain("import { createSessionWithWorktree");
+    const start = indexSrc.indexOf('await handleSessionCreate(req, res, {');
+    expect(start).toBeGreaterThan(-1);
+    const call = indexSrc.slice(start, start + 1200);
+    expect(call).toContain('worktreeAvailability:');
+    expect(call).toContain("access?.can('session.worktree')");
+    expect(call).toContain('resolveWorktreeAvailability({');
+    expect(call).toContain('probeGitWorktreeSupport(directory)');
+  });
+
+  it('the route maps an unavailable worktree to 409 before creating anything', () => {
+    expect(createRouteSrc).toContain('createSessionWithWorktree(deps, opts)');
+    expect(createRouteSrc).toContain('WorktreeUnavailableError');
+    expect(createRouteSrc).toContain(
+      "json(res, 409, { error: 'worktree sessions are not available', reason: err.reason })",
+    );
   });
 });
