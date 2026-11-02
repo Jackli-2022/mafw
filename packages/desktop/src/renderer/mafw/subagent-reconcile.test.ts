@@ -32,10 +32,10 @@ describe("reconcileSubagentsOnce（对账编排，fetch 注入）", () => {
     const seen: any[] = []
     await reconcileSubagentsOnce({
       activeSessionId: null, runningChildIDs: ["c1"],
-      fetchers: fetchers({ messages: async () => ({ data: [{ info: { role: "assistant", time: { completed: 5 }, error: { name: "MessageAbortedError" } } }] }) }),
+      fetchers: fetchers({ messages: async () => ({ data: [{ role: "assistant", time: { completed: 5 }, error: { name: "MessageAbortedError" } }] }) }),
       ingest: (ev) => seen.push(ev),
     })
-    expect(seen).toEqual([{ kind: "child-last-message", childID: "c1", message: { role: "assistant", time: { completed: 5 }, error: { name: "MessageAbortedError" } } }])
+    expect(seen).toEqual([{ kind: "child-last-message", childID: "c1", message: { role: "assistant", time: { completed: 5 }, error: { kind: "abort", message: "MessageAbortedError" } } }])
   })
   test("空历史 + session.get 明确 not-found → 收敛 session-deleted（reviewer Imp3）", async () => {
     const seen: any[] = []

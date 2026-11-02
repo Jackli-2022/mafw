@@ -1,11 +1,11 @@
-// opencode AssistantMessage carries the model at the TOP LEVEL (modelID /
-// providerID); the nested `model` object only exists on request payloads and
-// local echo placeholders. Normalize both shapes so readers of store messages
-// get a consistent { providerID, modelID } (null when absent/empty).
+// 消息模型归属：只读 MAFW 规范 `model`（摄取层已把 opencode 顶层
+// modelID/providerID 与 pi 的原生形状折叠成 { providerID, modelID }）。
+// 渲染/标题栏/上下文用量共用同一取法，缺省返回 null。
 export function messageModel(info: any): { providerID: string; modelID: string } | null {
-  const providerID = info?.providerID ?? info?.model?.providerID
-  const modelID = info?.modelID ?? info?.model?.modelID
-  if (!providerID || !modelID) return null
+  const model = info?.model
+  const providerID = model?.providerID
+  const modelID = model?.modelID
+  if (typeof providerID !== "string" || typeof modelID !== "string" || !providerID || !modelID) return null
   return { providerID, modelID }
 }
 

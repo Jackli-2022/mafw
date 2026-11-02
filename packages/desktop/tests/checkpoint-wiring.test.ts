@@ -15,16 +15,28 @@ describe("checkpoint wiring", () => {
     expect(pane).toContain("isInvertiblePatch")
     expect(pane).not.toContain("sessions.diff")
     expect(pane).toContain("revertWarning")
-    expect(pane).toContain("runtimeCaps")
-    expect(pane).toContain("runtimeName")
+    expect(pane).toContain('experienceStore.action("checkpoint.restore")')
     expect(pane).toContain("时间线")
     expect(pane).toContain("sessions.revertDiff")
+    // Task 10：runtime 名称/裸能力不得再进聊天业务组件。
+    expect(pane).not.toContain("runtimeCaps")
+    expect(pane).not.toContain("runtimeName")
   })
 
-  test("MafwShell supplies runtime name and capabilities", () => {
+  test("MafwShell supplies Experience actions instead of runtime name/capabilities", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect(shell).toContain("rtName")
-    expect(shell).toContain("runtimeName={rtName()}")
-    expect(shell).toContain("runtimeCaps={rtCaps()}")
+    expect(shell).not.toContain("rtName")
+    expect(shell).not.toContain("rtCaps")
+    expect(shell).toContain("experienceStore.supported(\"branch.fork\")")
+    expect(shell).toContain('revertUndoEnabled={revertUndoEnabled()}')
+    expect(shell).toContain("experienceStore.semantics(\"checkpoint.restore\")")
+  })
+
+  test("CheckpointOverlay decides server mode from supported/sessionBacked", () => {
+    const overlay = read("src/renderer/mafw/components/CheckpointOverlay.tsx")
+    expect(overlay).toContain("resolveServerMode")
+    expect(overlay).not.toContain("checkpointAction?.enabled === true ||")
+    const server = read("src/renderer/mafw/components/server-checkpoints.ts")
+    expect(server).toContain("semantics?.sessionBacked === true")
   })
 })

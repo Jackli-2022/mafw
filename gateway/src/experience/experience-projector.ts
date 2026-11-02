@@ -6,9 +6,34 @@ import {
   type ExperienceActionId,
 } from './experience-contract';
 
+export interface ExperienceProjectionWorktree {
+  supported: boolean;
+  reason?: 'unsupported' | 'missing-data';
+}
+
 export interface ExperienceProjectionContext {
   sessionID?: string;
   busy?: boolean;
+  /**
+   * 目录级 worktree 可用性（git 工作区 + `session.create({directory})` 契约）。
+   * 缺省 = 未解析目录（只按 runtime surface 判断）；desktop 在会话上下文里恒传。
+   */
+  worktree?: ExperienceProjectionWorktree;
+}
+
+/** worktree 动作的目录级判定：surface 可用 + 本地 git 事实，不再用 runtime 能力位。 */
+function worktreeDescriptor(
+  ctx: ExperienceProjectionContext,
+  surfaceOk: boolean,
+): { supported: boolean; enabled: boolean; reason?: 'missing-data' } {
+  if (!surfaceOk) return { supported: false, enabled: false };
+  if (!ctx.worktree) return { supported: true, enabled: true };
+  if (ctx.worktree.supported) return { supported: true, enabled: true };
+  // 目录不是 git 工作区 = 对象/环境级缺失数据，功能面仍在（换项目即可用）。
+  if (ctx.worktree.reason === 'missing-data') {
+    return { supported: true, enabled: false, reason: 'missing-data' };
+  }
+  return { supported: false, enabled: false };
 }
 
 /**
@@ -151,14 +176,20 @@ export function projectExperienceActions(
   const busy = ctx.busy === true;
   const actions = {} as Record<ExperienceActionId, ActionDescriptor>;
   for (const id of EXPERIENCE_ACTION_IDS) {
-    const supported = surfacesAvailable(access, EXPERIENCE_ACTION_SURFACES[id]);
-    const enabled = supported && !(busy && BUSY_BLOCKED.has(id));
-    actions[id] = action(
-      supported,
-      enabled,
-      enabled ? undefined : supported ? 'busy' : 'unsupported',
-      semanticsFor(id, access, supported),
-    );
+    const surfaceOk = surfacesAvailable(access, EXPERIENCE_ACTION_SURFACES[id]);
+    const worktree = id === 'session.worktree' ? worktreeDescriptor(ctx, surfaceOk) : null;
+    const supported = worktree ? worktree.supported : surfaceOk;
+    const environmentBlocked = worktree ? !worktree.enabled : false;
+    const busyBlocked = supported && busy && BUSY_BLOCKED.has(id);
+    const enabled = supported && !environmentBlocked && !busyBlocked;
+    const reason = enabled
+      ? undefined
+      : !supported
+        ? 'unsupported'
+        : environmentBlocked
+          ? worktree?.reason ?? 'missing-data'
+          : 'busy';
+    actions[id] = action(supported, enabled, reason, semanticsFor(id, access, supported));
   }
   return actions;
 }

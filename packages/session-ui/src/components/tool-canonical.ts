@@ -23,6 +23,12 @@ export const TOOL_NAME_ALIASES: Record<string, string> = {
   shell: "bash",
 }
 
+/** task/subagent part 判定（身份别名属 canonical 层，不是 wire 多形状）。 */
+export function isTaskPart(part: any): boolean {
+  const tool = typeof part?.tool === "string" ? part.tool : ""
+  return tool === "task" || TOOL_NAME_ALIASES[tool] === "task"
+}
+
 function toolClassOfPart(part: any): string | undefined {
   const v = part?.toolClass
   return typeof v === "string" && v ? v : undefined

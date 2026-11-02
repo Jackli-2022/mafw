@@ -23,10 +23,10 @@ describe("session workspace", () => {
 
   test("store mutation via setStore (Solid createStore semantics)", () => {
     const ws = createSessionWorkspace()
-    ws.setStore("session_status", "s1", { type: "busy" })
-    expect(ws.store.session_status.s1.type).toBe("busy")
-    ws.setStore("session_status", "s1", { type: "idle" })
-    expect(ws.store.session_status.s1.type).toBe("idle")
+    ws.setStore("session_status", "s1", "busy")
+    expect(ws.store.session_status.s1).toBe("busy")
+    ws.setStore("session_status", "s1", "idle")
+    expect(ws.store.session_status.s1).toBe("idle")
   })
 
   test("registry register/call/unregister", () => {

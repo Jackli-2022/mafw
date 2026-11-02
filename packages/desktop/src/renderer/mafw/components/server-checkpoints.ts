@@ -1,5 +1,5 @@
 // T2-1 Task 9: 服务端检查点 → 时间线行纯逻辑（overlay 服务端模式的数据面）。
-import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
+import type { ActionDescriptor, CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
 import { warningText } from "./experience-copy"
 
 export interface ServerCheckpointRow {
@@ -12,8 +12,21 @@ export interface ServerCheckpointRow {
   actions: NonNullable<SessionCheckpoint["actions"]>
 }
 
-function timeLabelOf(iso: string): string {
-  const t = Date.parse(iso)
+/**
+ * 服务端检查点模式：由 Experience `checkpoint.restore` 显式 semantics（sessionBacked）
+ * 或已加载的 server rows 决定。**不得**用 `enabled` 推断——busy 时 enabled=false
+ * 但服务端列表仍应可读（只读浏览）。
+ */
+export function serverMode(input: {
+  checkpointAction?: ActionDescriptor
+  serverCheckpoints?: SessionCheckpoint[]
+}): boolean {
+  const action = input.checkpointAction
+  const serverBacked = action?.supported === true && action.semantics?.sessionBacked === true
+  return serverBacked || (input.serverCheckpoints?.length ?? 0) > 0
+}
+
+function timeLabelOf(iso: string): string {  const t = Date.parse(iso)
   if (!Number.isFinite(t)) return "时间未知"
   return new Date(t).toLocaleString(undefined, {
     month: "2-digit",

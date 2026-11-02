@@ -12,6 +12,7 @@ import type {
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   ExperienceActionsResponse,
+  MafwMessage, DiscoverySnapshot, DiscoverySkillContent,
 } from "@mafw/sdk"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 import type { TerminalEvent, TerminalProbe, TerminalSessionInfo } from "../shared/terminal-session"
@@ -71,6 +72,8 @@ export type MafwAPI = {
     create: (opts?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string }) => Promise<Session & { worktree?: { dir: string; branch: string } }>
     get: (id: string) => Promise<Session | null>
     messages: (sessionID: string, limit?: number, before?: string) => Promise<any>
+    /** 规范 flat 历史（`?format=flat` → MAFW View DTO）。 */
+    history: (sessionID: string, limit?: number, before?: string) => Promise<{ data: MafwMessage[]; nextCursor: string | null }>
     todo: (sessionID: string) => Promise<{ data: any[] }>
     children: (sessionID: string) => Promise<any[]>
     switchAgent: (id: string, agent: string) => Promise<void>
@@ -135,6 +138,13 @@ export type MafwAPI = {
     list: (directory?: string) => Promise<any[]>
     /** W4 v1：技能详情（SKILL.md 内容）。 */
     content: (id: string, directory?: string) => Promise<{ id: string; name: string; location: string; content: string }>
+  }
+
+  /** T2-5 能力发现（commands/skills/AGENTS 单一来源；替代 legacy command/skill namespace）。 */
+  discovery: {
+    get: (sessionID: string, opts?: { directory?: string; force?: boolean }) => Promise<DiscoverySnapshot>
+    refresh: (sessionID: string, opts?: { directory?: string }) => Promise<DiscoverySnapshot>
+    skill: (sessionID: string, key: string, opts?: { directory?: string; force?: boolean }) => Promise<DiscoverySkillContent>
   }
 
   /** W4 v1：MCP 服务器状态（runtime 合并后的中立 DTO）。 */
@@ -326,7 +336,7 @@ export type MafwAPI = {
     restartAgent: () => Promise<{ success: boolean; mode: string }>
   }
   experience: {
-    actions: (sessionID?: string) => Promise<ExperienceActionsResponse>
+    actions: (sessionID?: string, opts?: { directory?: string }) => Promise<ExperienceActionsResponse>
   }
 
   /** opencode v2 原生 shell 命令（/api/shell*，经 gateway 兜底反代；location-scoped，不可达时抛错） */

@@ -30,7 +30,7 @@ interface ConfigSection {
 export { isNavKey }
 export type { NavKey }
 
-export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void; projectDir?: string; runtimeCaps?: Record<string, boolean> }) {
+export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void; projectDir?: string; sessionID?: string }) {
   const [activeNav, setActiveNav] = createSignal<NavKey>(isNavKey(props.initialSection) ? props.initialSection : "gateway")
 
   // ── MAFW raw config ──
@@ -548,10 +548,25 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   const [skillContent, setSkillContent] = createSignal<Record<string, string>>({})
   const [skillContentErr, setSkillContentErr] = createSignal("")
 
+  // Discovery DTO 是技能/命令的单一来源（legacy `command`/`skill` namespace
+  // 在 Task 15 删除；这里不再直连）。
+  const discoveryScope = () => (props.projectDir ? { directory: props.projectDir } : {})
+  async function loadDiscoverySkills(): Promise<any[]> {
+    const sid = props.sessionID
+    if (!sid) throw new Error("打开一个会话后可浏览技能")
+    const snapshot = await window.api.mafw.discovery.get(sid, discoveryScope())
+    return Array.isArray(snapshot?.skills) ? snapshot.skills : []
+  }
+  async function loadDiscoverySkill(id: string): Promise<{ content: string }> {
+    const sid = props.sessionID
+    if (!sid) throw new Error("打开一个会话后可浏览技能")
+    return window.api.mafw.discovery.skill(sid, id, discoveryScope())
+  }
+
   async function loadSkills() {
     setSkillsErr("")
     try {
-      const list = await window.api.mafw.skill.list(props.projectDir)
+      const list = await loadDiscoverySkills()
       setSkills(Array.isArray(list) ? list : [])
     } catch (err: any) {
       setSkillsErr(err.message)
@@ -565,7 +580,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     setSkillContentErr("")
     if (skillContent()[id]) return
     try {
-      const r = await window.api.mafw.skill.content(id, props.projectDir)
+      const r = await loadDiscoverySkill(id)
       setSkillContent(prev => ({ ...prev, [id]: r?.content ?? "" }))
     } catch (err: any) {
       setSkillContentErr(`${id}: ${err.message}`)

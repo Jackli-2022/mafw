@@ -3,14 +3,11 @@
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { Checkpoint, CheckpointFile } from "./checkpoint-model"
 import { isLocalMessageId } from "../chat/local-id"
+import { normalizeSessionDiffs } from "../ingest/diffs"
 
 export interface TurnDiffCandidate {
   messageID: string
   snapshotKey: string
-}
-
-function unwrap(item: any): any {
-  return item && typeof item === "object" && item.info ? item.info : item
 }
 
 function roleOf(message: any): string | undefined {
@@ -27,7 +24,6 @@ function createdOf(message: any): number {
 
 function chronological(messages: any[]): any[] {
   return (Array.isArray(messages) ? messages : [])
-    .map(unwrap)
     .filter((message) => message && typeof message === "object")
     .map((message, index) => ({ message, index }))
     .sort((a, b) => createdOf(a.message) - createdOf(b.message) || a.index - b.index)
@@ -99,7 +95,7 @@ export async function loadTurnDiffs(
       const candidate = candidates[cursor++]
       try {
         const response = await fetchDiff(sessionID, candidate.messageID)
-        result[candidate.messageID] = Array.isArray(response?.files) ? response.files : []
+        result[candidate.messageID] = normalizeSessionDiffs(response?.files)
       } catch {
         result[candidate.messageID] = null
       }
@@ -157,11 +153,11 @@ export function shouldFetchSessionDiff(hasDiffs: boolean, allowSessionFallback =
   return allowSessionFallback && !hasDiffs
 }
 
-/** Stable request key for the runtime/session/candidate snapshot set. */
+/** Stable request key for the session/candidate snapshot set（不含 runtime 名：
+ *  能力变化由 experience generation 驱动失效）。 */
 export function turnDiffRequestKey(
-  runtimeName: string,
   sessionID: string,
   candidates: TurnDiffCandidate[],
 ): string {
-  return `${runtimeName}|${sessionID}|${candidates.map((c) => `${c.messageID}:${c.snapshotKey}`).join(",")}`
+  return `${sessionID}|${candidates.map((c) => `${c.messageID}:${c.snapshotKey}`).join(",")}`
 }

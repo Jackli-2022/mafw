@@ -4,6 +4,7 @@ import assert from "node:assert/strict"
 import {
   leftoverNotice,
   restoreWarning,
+  serverMode,
   toServerRows,
 } from "./server-checkpoints"
 
@@ -70,6 +71,24 @@ test("restoreWarning uses scope and Experience warning keys", () => {
 
   const undoable = restoreWarning("both", true, "restore-conversation-files-undoable")
   assert.match(undoable, /撤销回滚/)
+})
+
+test("serverMode uses supported+sessionBacked and stays server-backed while busy", () => {
+  const busy = {
+    supported: true,
+    enabled: false,
+    reason: "busy" as const,
+    semantics: { sessionBacked: true },
+  }
+  assert.equal(serverMode({ checkpointAction: busy, serverCheckpoints: [] }), true)
+  // loading / unsupported 不是服务端模式（不得伪造）。
+  assert.equal(serverMode({ checkpointAction: { supported: false, enabled: false }, serverCheckpoints: [] }), false)
+  assert.equal(serverMode({ checkpointAction: undefined, serverCheckpoints: [] }), false)
+  // 已加载的 server rows 是独立证据（旧 gateway 无 action 时仍然只读展示）。
+  assert.equal(
+    serverMode({ serverCheckpoints: [{ ...base, id: "ckpt_1", snapshotTree: null, createdAt: "2026-10-26T00:00:00Z" }] }),
+    true,
+  )
 })
 
 test("leftoverNotice lists untracked leftovers only when present", () => {

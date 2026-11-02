@@ -62,8 +62,10 @@ test("canRewindCode requires known, complete, invertible turn data", () => {
   expect(canRewindCode([cp("d", true, [])], "d")).toBe(false)
 })
 
-test("revertWarning is runtime-aware", () => {
-  expect(revertWarning(false, false)).toContain("不可撤销")
-  expect(revertWarning(false, true)).toContain("回滚文件")
-  expect(revertWarning(true, true)).toContain("撤销回滚")
+test("revertWarning consumes descriptor semantics only", () => {
+  expect(revertWarning(undefined)).toContain("不可撤销")
+  expect(revertWarning({ files: false })).not.toContain("回滚文件")
+  expect(revertWarning({ files: true })).toContain("回滚文件")
+  expect(revertWarning({ undo: true, files: true })).toContain("撤销回滚")
+  expect(revertWarning({ files: true }, "restore-conversation-files-undoable")).toContain("撤销回滚")
 })

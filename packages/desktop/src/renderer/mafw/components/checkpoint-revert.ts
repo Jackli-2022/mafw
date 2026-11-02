@@ -59,14 +59,20 @@ export function canRewindCode(checkpoints: Checkpoint[], targetMessageID: string
   return any
 }
 
-/** 回滚确认文案：只消费语义位，不识别 runtime 名称。 */
+/** 回滚确认文案：只消费 Experience descriptor semantics，不识别 runtime 名称。 */
+export interface RevertDescriptorSemantics {
+  /** 撤回后可撤销（opencode 2.1 commit 不可逆 → false）。 */
+  undo?: boolean
+  /** revert 是否同时回滚文件（branch.revert semantics.files）。 */
+  files?: boolean
+}
+
 export function revertWarning(
-  undoable: boolean,
-  diffApi: boolean,
+  semantics: RevertDescriptorSemantics | undefined,
   warningKey?: string,
 ): string {
-  if (warningKey === 'restore-conversation-files-undoable' || undoable) {
+  if (warningKey === 'restore-conversation-files-undoable' || semantics?.undo === true) {
     return '撤回这条消息及其后内容并回滚文件；可通过撤销回滚恢复对话。'
   }
-  return `撤回这条消息及其后内容${diffApi ? '并回滚文件' : ''}；该操作不可撤销，请确认已提交或备份。`
+  return `撤回这条消息及其后内容${semantics?.files === true ? '并回滚文件' : ''}；该操作不可撤销，请确认已提交或备份。`
 }

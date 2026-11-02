@@ -1,6 +1,7 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
 import { createSessionTurnDiffsStore } from "./session-turn-diffs"
+import { turnDiffRequestKey } from "./components/turn-diffs"
 
 const user = (id: string, created: number) => ({ id, role: "user", time: { created } })
 const asst = (id: string, created: number, snapshot: any) => ({ id, role: "assistant", time: { created }, snapshot })
@@ -18,12 +19,12 @@ describe("session-turn-diffs store", () => {
       user("u0", 1), asst("a0", 2, { start: "s0", end: "e0" }),
       user("u1", 3), asst("a1", 4, { start: "s1", end: "e1" }),
     ]
-    store.ensure({ sid: "s", messages: m1, runtimeName: "opencode", busy: true, diffApi: true })
+    store.ensure({ sid: "s", messages: m1, diffSupported: true, busy: true })
     await tick()
     assert.deepEqual(called, ["u0"], "在飞回合（最后 user）不请求")
     assert.equal(store.count("s", m1), 1)
 
-    store.ensure({ sid: "s", messages: m1, runtimeName: "opencode", busy: false, diffApi: true })
+    store.ensure({ sid: "s", messages: m1, diffSupported: true, busy: false })
     await tick()
     assert.deepEqual([...new Set(called)].sort(), ["u0", "u1"])
     assert.equal(store.count("s", m1), 2, "badge 用合并后的 per-turn 数")
@@ -36,11 +37,11 @@ describe("session-turn-diffs store", () => {
       throw new Error("404")
     })
     const msgs = [user("u1", 1), asst("a1", 2, { start: "s1", end: "e1" })]
-    store.ensure({ sid: "s", messages: msgs, runtimeName: "opencode", busy: false, diffApi: true })
+    store.ensure({ sid: "s", messages: msgs, diffSupported: true, busy: false })
     await tick()
     assert.equal(calls, 1)
     assert.equal(store.count("s", msgs), 0)
-    store.ensure({ sid: "s", messages: msgs, runtimeName: "opencode", busy: false, diffApi: true })
+    store.ensure({ sid: "s", messages: msgs, diffSupported: true, busy: false })
     await tick()
     assert.equal(calls, 2, "失败后同 key 允许重试")
   })
@@ -53,8 +54,10 @@ describe("session-turn-diffs store", () => {
       pending[idx] = (file) => resolve({ files: [{ file, patch: PATCH }] })
     }))
     const msgs = [user("u1", 1), asst("a1", 2, { start: "s1", end: "e1" })]
-    store.ensure({ sid: "s", messages: msgs, runtimeName: "a", busy: false, diffApi: true })
-    store.ensure({ sid: "s", messages: msgs, runtimeName: "b", busy: false, diffApi: true })
+    store.ensure({ sid: "s", messages: msgs, diffSupported: true, busy: false })
+    // 第二轮 snapshotKey 变化 → 新请求 key（同一会话的代际守卫）。
+    const refreshed = [user("u1", 1), asst("a1", 2, { start: "s1", end: "e2" })]
+    store.ensure({ sid: "s", messages: refreshed, diffSupported: true, busy: false })
     assert.equal(n, 2)
 
     pending[1]("new.txt")
@@ -66,13 +69,20 @@ describe("session-turn-diffs store", () => {
     assert.equal(store.perTurn("s").u1?.[0]?.file, "new.txt", "旧代际必须被丢弃")
   })
 
-  test("diffApi 关闭 / 无候选 → 不请求", async () => {
+  test("diff 不支持 / 无候选 → 不请求", async () => {
     let calls = 0
     const store = createSessionTurnDiffsStore(async () => { calls++; return { files: [] } })
     const noSnapshot = [user("u1", 1), asst("a1", 2, {})]
-    store.ensure({ sid: "s", messages: noSnapshot, runtimeName: "opencode", busy: false, diffApi: true })
-    store.ensure({ sid: "s", messages: noSnapshot, runtimeName: "opencode", busy: false, diffApi: false })
+    store.ensure({ sid: "s", messages: noSnapshot, diffSupported: true, busy: false })
+    store.ensure({ sid: "s", messages: noSnapshot, diffSupported: false, busy: false })
     await tick()
     assert.equal(calls, 0)
+  })
+
+  test("request key 只含 session+candidates（无 runtime 名）", () => {
+    const key = turnDiffRequestKey("s1", [{ messageID: "u1", snapshotKey: "a:b:1" }])
+    assert.equal(key, "s1|u1:a:b:1")
+    assert.ok(!key.includes("opencode"))
+    assert.ok(!key.includes("pi"))
   })
 })

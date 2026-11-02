@@ -84,7 +84,7 @@ export interface SendMessageDeps {
   takeCaptures?: (sid: string) => PendingCapture[]
   formatCaptures?: (items: PendingCapture[]) => string
   /** W5a：runtime 是否接受 delivery:'steer'（opencode 2.1 实测为「回合结束后送达」）。 */
-  steerApi?: () => boolean
+  steerSupported?: () => boolean
   steerBoundary?: () => "after-turn" | "tool" | "unspecified" | undefined
 }
 
@@ -103,10 +103,10 @@ export function steerDeliveryHint(boundary?: string): string {
   if (boundary === "after-turn") return "已插话：本轮结束后优先送达"
   return "已插话：稍后送达"
 }
-export function decideBusyDelivery(opts: { mode: "send" | "queue"; steerApi: boolean; hasMedia: boolean }): BusyDelivery {
+export function decideBusyDelivery(opts: { mode: "send" | "queue"; steerSupported: boolean; hasMedia: boolean }): BusyDelivery {
   if (opts.hasMedia) return "local-queue"
   if (opts.mode === "queue") return "gateway-queue"
-  return opts.steerApi ? "steer" : "local-queue"
+  return opts.steerSupported ? "steer" : "local-queue"
 }
 
 export function useSendMessage(deps: SendMessageDeps) {
@@ -154,7 +154,7 @@ export function useSendMessage(deps: SendMessageDeps) {
         // W5a：steer / 网关队列优先；带媒体或 runtime 不支持时回落本地 turn-queue。
         const deliveryKind = decideBusyDelivery({
           mode,
-          steerApi: deps.steerApi ? deps.steerApi() === true : false,
+          steerSupported: deps.steerSupported ? deps.steerSupported() === true : false,
           hasMedia: atts.length > 0 || queuedAnnotationImages.length > 0,
         })
         const finishBusySend = () => {

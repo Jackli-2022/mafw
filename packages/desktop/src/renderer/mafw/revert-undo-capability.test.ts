@@ -8,8 +8,8 @@ describe("revert undo capability wiring", () => {
   const shell = readFileSync(join(import.meta.dirname, "MafwShell.tsx"), "utf8")
   const pane = readFileSync(join(import.meta.dirname, "components/ChatPane.tsx"), "utf8")
 
-  test("MafwShell 从 Experience checkpoint action 推导并下传", () => {
-    expect(shell).toContain("experienceStore.action(\"checkpoint.restore\")?.semantics?.undo")
+  test("MafwShell 从 Experience checkpoint semantics 推导并下传", () => {
+    expect(shell).toContain('experienceStore.semantics("checkpoint.restore")?.undo')
     expect(shell).toContain("revertUndoEnabled={revertUndoEnabled()}")
   })
 

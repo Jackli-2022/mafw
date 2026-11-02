@@ -329,18 +329,11 @@ export function SessionTurn(
     return unwrap(msg)
   })
 
-  // 回合终态：MAFW `stopReason` 优先，历史 step-finish.reason 兜底。
+  // 回合终态：只读摄取层产出的规范 `stopReason`（历史 step-finish 已在摄取层折算）。
   const stopReason = createMemo(() => {
     const messages = assistantMessages()
     const last = messages[messages.length - 1]
-    if (!last) return ""
-    if (last.stopReason) return last.stopReason
-    const parts = list(data.store.part?.[last.id], emptyParts)
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const part = parts[i]
-      if (part?.type === "step-finish" && part.reason) return part.reason
-    }
-    return ""
+    return last?.stopReason ?? ""
   })
   const stopHint = createMemo(() => {
     const reason = stopReason()

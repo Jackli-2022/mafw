@@ -821,11 +821,15 @@ export class MafwClient implements IMafwClient {
 
   experience = {
     /** Versioned front-end action descriptor; never raw runtime capabilities. */
-    actions: async (sessionID?: string): Promise<import('./experience-contract').ExperienceActionsResponse> => {
-      if (sessionID) {
-        return this.request(`/api/experience/actions?sessionID=${encodeURIComponent(sessionID)}`);
-      }
-      return this.request('/api/experience/actions');
+    actions: async (
+      sessionID?: string,
+      params?: { directory?: string },
+    ): Promise<import('./experience-contract').ExperienceActionsResponse> => {
+      const qs = new URLSearchParams()
+      if (sessionID) qs.set('sessionID', sessionID)
+      if (params?.directory) qs.set('directory', params.directory)
+      const q = qs.toString()
+      return this.request(`/api/experience/actions${q ? `?${q}` : ''}`);
     },
   }
 

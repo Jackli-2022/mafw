@@ -96,11 +96,12 @@ export function applySubagentEvent(rows: SubagentRow[], ev: TrackerEvent, now: n
       const msg = ev.message
       if (!msg || msg.role !== "assistant") return rows
       const completed = msg.time?.completed
-      const errName = typeof (msg.error as any)?.name === "string" ? (msg.error as any).name : undefined
+      // 摄取层已把 wire 错误归一为 {kind,message}；中止判定只认 kind==='abort'。
+      const errKind = typeof (msg.error as any)?.kind === "string" ? (msg.error as any).kind : undefined
       // 中止类错误静默落 aborted（spec §4.5）：即使缺 time.completed 也收敛
       // （opencode 的 abort 消息常无 completed 且被 sealUnfinishedAssistantMessages
       // 才补章——probe 不能依赖它，reviewer Imp2）。
-      const aborted = errName === "MessageAbortedError" || errName === "Aborted"
+      const aborted = errKind === "abort"
       let terminal: SubagentStatus
       let endedAt: number
       if (aborted) {

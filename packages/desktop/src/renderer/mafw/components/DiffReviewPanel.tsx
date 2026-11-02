@@ -7,6 +7,7 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, lineNewNumber, buildLineCommentPrompt, type DiffHunk } from "./diff-hunks"
 import { isFileRevertible } from "./checkpoint-revert"
 import { shouldFetchSessionDiff } from "./turn-diffs"
+import { normalizeSessionDiffs } from "../ingest/diffs"
 import type { FileDiffInfo } from "@mafw/sdk"
 
 export interface FileDiffEntry {
@@ -70,7 +71,7 @@ export function DiffReviewPanel(props: {
     }
     setLoading(true)
     window.api.mafw.sessions.diff(props.sessionID)
-      .then((r) => setFetched((r as any)?.files ?? []))
+      .then((r) => setFetched(normalizeSessionDiffs(r)))
       .catch(() => { /* fail-open：面板保持空态 */ })
       .finally(() => setLoading(false))
   }

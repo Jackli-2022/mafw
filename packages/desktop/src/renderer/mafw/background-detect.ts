@@ -65,20 +65,20 @@ export function detectSyntheticTerminal(info: any, sessionID: string): Backgroun
 }
 
 /**
- * 历史水合回放：items=[{info, parts}]（可乱序）→ 按 time.created 升序的事件流。
+ * 历史水合回放：flat 消息 `[{...info, content: parts}]`（可乱序）→ 按 time.created
+ * 升序的事件流。摄取层已展开 wire 信封，这里不再读 `item.info/item.parts`。
  * 与 live 事件幂等（tracker 的重复观察/终态不回退规则兜底）。
  */
 export function scanHistoryForBackground(items: any[], sessionID: string): BackgroundEvent[] {
   if (!Array.isArray(items)) return []
-  const ordered = [...items].sort((a, b) =>
-    (a?.info?.time?.created ?? 0) - (b?.info?.time?.created ?? 0))
+  const ordered = [...items].sort((a, b) => (a?.time?.created ?? 0) - (b?.time?.created ?? 0))
   const out: BackgroundEvent[] = []
-  for (const item of ordered) {
-    for (const part of item?.parts ?? []) {
+  for (const message of ordered) {
+    for (const part of message?.content ?? []) {
       const ev = detectBackgroundPart(part, sessionID)
       if (ev) out.push(ev)
     }
-    const done = detectSyntheticTerminal(item?.info, sessionID)
+    const done = detectSyntheticTerminal(message, sessionID)
     if (done) out.push(done)
   }
   return out

@@ -36,8 +36,8 @@ test("excludeLastTurn：在飞回合不参与候选，step 快照变化不改变
   // 在飞回合每完成一个 assistant step，snapshot end/files 都会变；
   // 排除最后回合后 key 必须稳定（否则每次 step 全量重拉 = refetch storm）。
   const a2nextStep = asst("a3", 5, { start: "s3", end: "e3", files: ["x"] })
-  const k1 = turnDiffRequestKey("opencode", "s", collectTurnDiffCandidates(msgs, { excludeLastTurn: true }))
-  const k2 = turnDiffRequestKey("opencode", "s", collectTurnDiffCandidates([...msgs, a2nextStep], { excludeLastTurn: true }))
+  const k1 = turnDiffRequestKey("s", collectTurnDiffCandidates(msgs, { excludeLastTurn: true }))
+  const k2 = turnDiffRequestKey("s", collectTurnDiffCandidates([...msgs, a2nextStep], { excludeLastTurn: true }))
   expect(k1).toBe(k2)
 
   // 最后一个 user 还没有任何 assistant 快照时，excludeLastTurn 仍保留更早回合
@@ -101,5 +101,5 @@ test("session fallback and request key", () => {
   expect(shouldFetchSessionDiff(false, false)).toBe(false)
   expect(shouldFetchSessionDiff(true, true)).toBe(false)
   expect(shouldFetchSessionDiff(false, true)).toBe(true)
-  expect(turnDiffRequestKey("opencode", "s", [{ messageID: "u", snapshotKey: "a" }])).toBe("opencode|s|u:a")
+  expect(turnDiffRequestKey("s", [{ messageID: "u", snapshotKey: "a" }])).toBe("s|u:a")
 })

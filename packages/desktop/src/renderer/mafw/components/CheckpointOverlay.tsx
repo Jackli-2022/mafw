@@ -6,7 +6,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { ActionDescriptor, CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
 import { checkpointsWithTurnDiffs, type Checkpoint } from "./checkpoint-model"
 import { canRewindCode, checkpointsToRewind, revertWarning } from "./checkpoint-revert"
-import { leftoverNotice, restoreWarning, toServerRows } from "./server-checkpoints"
+import { leftoverNotice, restoreWarning, serverMode as resolveServerMode, toServerRows } from "./server-checkpoints"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import { collectTurnDiffCandidates, loadTurnDiffs } from "./turn-diffs"
 
@@ -31,7 +31,10 @@ export function CheckpointOverlay(props: {
   const checkpoints = createMemo(() =>
     checkpointsWithTurnDiffs(props.messages, props.parts, Date.now(), turnFiles()),
   )
-  const serverMode = () => props.checkpointAction?.enabled === true || (props.serverCheckpoints?.length ?? 0) > 0
+  const serverMode = () => resolveServerMode({
+    checkpointAction: props.checkpointAction,
+    serverCheckpoints: props.serverCheckpoints,
+  })
   const serverRows = createMemo(() => toServerRows(props.serverCheckpoints ?? []))
   const [confirming, setConfirming] = createSignal<{ mode: "revert" | "code"; messageID: string } | null>(null)
   const [working, setWorking] = createSignal(false)
@@ -294,7 +297,7 @@ export function CheckpointOverlay(props: {
                           <div class="mafw-checkpoint-confirm">
                             <div class="mafw-checkpoint-confirm-text">
                               {mode() === "revert"
-                                ? revertWarning(false, true)
+                                ? revertWarning(props.checkpointAction?.semantics as { undo?: boolean; files?: boolean } | undefined)
                                 : `将撤销这条消息所在的回合及之后 ${checkpointsToRewind(checkpoints(), cp.messageID).length} 个回合的文件改动；对话保留。不可自动撤销；patch 冲突时可能停在中间态。`}
                             </div>
                             <div class="mafw-checkpoint-confirm-actions">

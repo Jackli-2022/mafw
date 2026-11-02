@@ -10,8 +10,8 @@ import { displayToolOf } from "./parts-rules"
  *
  * session-ui 是前端公共渲染层：只消费 MAFW View DTO，不得 import runtime SDK，
  * 也不得读取 runtime wire 形状（`{info, parts}` 历史信封、`info?` 事件载荷、
- * `parts ?? content` 双形状兜底）。渲染组件只读规范形，多形状读取收敛到
- * 客户端摄取层（file-diff-shape / tool-output / task-session）。
+ * `parts ?? content` 双形状兜底）。渲染组件只读规范形；多形状读取收敛在各客户端
+ * 摄取层（desktop `renderer/mafw/ingest/*`）。
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url))

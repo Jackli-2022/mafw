@@ -2,18 +2,20 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-// B1 子代理跳转 + v2.1.0 tool 名称归一化接线契约（source-level）。
+// B1 子代理跳转 + v2.1.0 工具身份归一化接线契约（source-level）。
+// Task 10：多形状读取收敛到摄取层（desktop ingest/*），渲染只读规范形。
 const root = join(import.meta.dirname, "..")
 const read = (p: string) => readFileSync(join(root, p), "utf8")
 
 describe("task card + v2.1.0 tool identity wiring", () => {
-  test("desktop 归一化模块存在且被 live/history 入口调用", () => {
-    const toolPart = read("src/renderer/mafw/tool-part.ts")
-    expect(toolPart).toContain("normalizeToolPart")
-    expect(toolPart).toContain("toolNameOf")
+  test("ingestion owns tool normalization for history and live", () => {
+    const parts = read("src/renderer/mafw/ingest/parts.ts")
+    expect(parts).toContain("canonicalToolPart")
+    expect(parts).toContain("toolNameOf")
     expect(read("src/renderer/mafw/sse/chat-reducers.ts")).toContain("normalizeToolPart")
-    expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("normalizeToolPart(")
-    expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("normalizeToolPart(")
+    expect(read("src/renderer/mafw/ingest/messages.ts")).toContain("canonicalToolPart")
+    expect(read("src/renderer/mafw/sse/handlers/chat-stream.ts")).toContain("ingestLivePart")
+    expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("ingestHistoryPage")
   })
 
   test("background detection reads name fallback", () => {
@@ -22,19 +24,18 @@ describe("task card + v2.1.0 tool identity wiring", () => {
     expect(bg).toContain('"task"')
   })
 
-  test("session-ui task card accepts sessionID metadata + aliases subagent/shell", () => {
+  test("session-ui task card reads canonical metadata/agent fields + aliases", () => {
     const part = read("../session-ui/src/components/message-part.tsx")
-    expect(part).toContain("taskChildSessionID(partMetadata())")
-    expect(part).toContain("isTaskTool(part().tool)")
-    expect(part).toContain("taskChildID() ?")
-    expect(part).toContain("taskChildSessionID(props.metadata)")
+    expect(part).toContain("partMetadata().sessionID")
+    expect(part).toContain("isTaskPart(part())")
+    expect(part).toContain("props.metadata.sessionID")
+    expect(part).toContain("input.agent")
     expect(part).toContain("TOOL_NAME_ALIASES")
     expect(part).toContain("onNavigate={")
     const canonical = read("../session-ui/src/components/tool-canonical.ts")
-    expect(canonical).toContain("TOOL_NAME_ALIASES")
-    expect(canonical).toContain("subagent: \"task\"")
-    expect(canonical).toContain("shell: \"bash\"")
-    expect(part).toContain("taskAgentName")
+    expect(canonical).toContain("isTaskPart")
+    expect(canonical).toContain('subagent: "task"')
+    expect(canonical).toContain('shell: "bash"')
   })
 
   test("failed task card wires onNavigate", () => {

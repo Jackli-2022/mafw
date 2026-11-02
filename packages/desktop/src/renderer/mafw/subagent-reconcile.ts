@@ -7,6 +7,7 @@
 // - 空历史时用 session.get 甄别"刚创建尚无消息" vs "已删除"——只有服务端
 //   明确 error（not-found 形状 {error:'not found'}）才收敛为 aborted（静默）。
 import type { TrackerEvent } from "./subagent-tracker"
+import { ingestHistoryPage } from "./ingest/messages"
 
 export interface ReconcileFetchers {
   children(parentID: string): Promise<any>
@@ -33,10 +34,10 @@ export async function reconcileSubagentsOnce(opts: {
     try {
       const data: any = await fetchers.messages(childID, 1)
       const items = Array.isArray(data) ? data : data?.data
-      const last = Array.isArray(items) ? items[items.length - 1] : undefined
-      const info = last?.info || last
-      if (info) {
-        ingest({ kind: "child-last-message", childID, message: { role: info.role, time: info.time, error: info.error } })
+      const page = ingestHistoryPage(Array.isArray(items) ? items : [], { sessionID: childID })
+      const last = page.messages[page.messages.length - 1]
+      if (last) {
+        ingest({ kind: "child-last-message", childID, message: { role: last.role, time: last.time, error: last.error } })
         continue
       }
       const s: any = await fetchers.getSession(childID)

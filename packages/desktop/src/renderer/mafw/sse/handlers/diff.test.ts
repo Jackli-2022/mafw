@@ -14,13 +14,13 @@ describe("handleDiffEvent", () => {
     const { deps, calls } = makeDeps()
     const ok = handleDiffEvent({ type: "session.diff", sessionID: "s1", properties: { diff: [{ file: "x.txt" }] } }, "s1", deps)
     expect(ok).toBe(true)
-    expect(calls.find(c => c.name === "setSessionDiff")!.args).toEqual(["s1", [{ file: "x.txt" }]])
+    expect(calls.find(c => c.name === "setSessionDiff")!.args).toEqual(["s1", [{ file: "x.txt", additions: 0, deletions: 0 }]])
   })
 
   test("顶层 diff 形态（无 properties 壳）也可取", () => {
     const { deps, calls } = makeDeps()
     handleDiffEvent({ type: "session.diff", sessionID: "s1", diff: [{ file: "y.txt" }] }, "s1", deps)
-    expect(calls.find(c => c.name === "setSessionDiff")!.args[1]).toEqual([{ file: "y.txt" }])
+    expect(calls.find(c => c.name === "setSessionDiff")!.args[1]).toEqual([{ file: "y.txt", additions: 0, deletions: 0 }])
   })
 
   test("非数组 → 空数组兜底，仍消费", () => {

@@ -99,8 +99,8 @@ describe("detectSyntheticTerminal", () => {
 describe("scanHistoryForBackground / findBlockingWork", () => {
   test("hydration replay: parts → observed, synthetic → terminal, ascending by created time", () => {
     const items = [
-      { info: { id: "m2", type: "synthetic", time: { created: 200 }, metadata: { source: "shell", shellID: "sh1" } }, parts: [] },
-      { info: { id: "m1", role: "assistant", time: { created: 100 } }, parts: [bgShellPart] },
+      { id: "m2", type: "synthetic", time: { created: 200 }, metadata: { source: "shell", shellID: "sh1" }, content: [] },
+      { id: "m1", role: "assistant", time: { created: 100 }, content: [bgShellPart] },
     ]
     expect(scanHistoryForBackground(items, "s1").map(e => e.kind)).toEqual(["bg-observed", "bg-terminal"])
   })

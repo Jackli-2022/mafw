@@ -15,8 +15,10 @@ import {
   applyPartUpsert, extractMediaSpeak,
   sealUnfinishedAssistantMessages,
 } from "../chat-reducers"
+import type { MafwSessionStatus } from "@mafw/sdk"
 import type { SidHandler, ShellEventDeps } from "../dispatcher"
 import { markResponded, noteTurnActivity } from "../../annotation-marks"
+import { ingestLiveMessage, ingestLivePart } from "../../ingest/messages"
 
 export interface ChatDeps {
   trace(event: { type?: string }, channel: string): void
@@ -28,7 +30,7 @@ export interface ChatDeps {
   applyToolPart?(part: any, sessionID: string): void
   /** 回合/part 落帧前冲刷合并队列（可选）。 */
   flushToolParts?(): void
-  setSessionStatus(sid: string, status: { type: "busy" | "idle" }): void
+  setSessionStatus(sid: string, status: MafwSessionStatus): void
   markSessionDone(sid: string): void
   setUserMsgId(sid: string, msgId: string): void
   parentFallback(sid: string): string | null
@@ -44,9 +46,16 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   const d = deps.chat
   if (event.type === "message.updated") {
     d.trace(event, "chat:message")
-    const info = event.properties?.info
+    // 规范词汇 v2 用 properties.message；过渡期 gateway 仍投影 wire properties.info。
+    // 两者都先经摄取层归一（错误 {name,data.message} → {kind,message}）。
+    const ingested = ingestLiveMessage(event.properties?.message ?? event.properties?.info, { sessionID: sid })
+    if (!ingested) return true
+    const info = ingested.message
     if (!info?.id || !info?.role) return true
     const msgId = info.id
+    if (ingested.parts.length > 0) {
+      for (const part of ingested.parts) d.patchStore(applyPartUpsert(d.getStore(), sid, part))
+    }
     if (info.role === "user") {
       // Replace the optimistic user message (id `user-...`) with the real
       // opencode message id so the turn anchor matches assistant parentIDs
@@ -74,7 +83,7 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
     if (!delta) return true
     d.phase(sid, "writing")
     // turn.started 可能没看到（中途进入会话）：delta 本身就是“正在跑”的证据。
-    d.setSessionStatus(sid, { type: "busy" })
+    d.setSessionStatus(sid, "busy")
     const out = applyPartDelta(d.getStore(), sid, msgId, partID, delta, field)
     if (out) d.patchStore(out)
     return true
@@ -85,7 +94,7 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   if (event.type === "turn.started") {
     d.trace(event, "chat:turn-start")
     d.phase(sid, "writing")
-    d.setSessionStatus(sid, { type: "busy" })
+    d.setSessionStatus(sid, "busy")
     noteTurnActivity(sid)
     return true
   }
@@ -110,23 +119,23 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
       const dataPart = typeof part.type === "string" && part.type.startsWith("data-")
       if (!dataPart) {
         d.phase(sid, "writing")
-        d.setSessionStatus(sid, { type: "busy" })
+        d.setSessionStatus(sid, "busy")
       }
-      if (part.type === "tool" && d.applyToolPart) d.applyToolPart(part, sid)
-      else d.patchStore(applyPartUpsert(d.getStore(), sid, part))
+      if (part.type === "tool" && d.applyToolPart) d.applyToolPart(ingestLivePart(part, sid), sid)
+      else d.patchStore(applyPartUpsert(d.getStore(), sid, ingestLivePart(part, sid)))
     }
   } else if (event.type === "turn.completed") {
-    d.setSessionStatus(sid, { type: "idle" })
+    d.setSessionStatus(sid, "idle")
     d.markSessionDone(sid)
     d.onTurnSettled(sid, { expireCards: true })
     d.notifyIdle(sid)
     markResponded(sid)
   } else if (event.type === "part.complete") {
-    d.setSessionStatus(sid, { type: "idle" })
+    d.setSessionStatus(sid, "idle")
     d.markSessionDone(sid)
     d.onTurnSettled(sid, { expireCards: false })
   } else if (event.type === "turn.failed" || event.type === "turn.aborted") {
-    d.setSessionStatus(sid, { type: "idle" })
+    d.setSessionStatus(sid, "idle")
     d.onTurnSettled(sid, { expireCards: true })
   }
 

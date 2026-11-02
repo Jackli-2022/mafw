@@ -37,7 +37,7 @@ describe("handleChatStreamEvent", () => {
     const ok = handleChatStreamEvent({ type: "part.delta", sessionID: "s1", properties: { messageID: "m1", partID: "p1", field: "text", delta: "hi" } }, "s1", deps)
     expect(ok).toBe(true)
     expect(calls.find(c => c.name === "phase")!.args).toEqual(["s1", "writing"])
-    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", { type: "busy" }])
+    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", "busy"])
     expect(calls.map(c => c.name)).toContain("patchStore")
   })
 
@@ -45,7 +45,7 @@ describe("handleChatStreamEvent", () => {
     const { deps, calls } = makeDeps()
     const ok = handleChatStreamEvent({ type: "turn.started", sessionID: "s1", properties: { sessionID: "s1" } }, "s1", deps)
     expect(ok).toBe(true)
-    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", { type: "busy" }])
+    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", "busy"])
     expect(calls.find(c => c.name === "phase")!.args).toEqual(["s1", "writing"])
     expect(calls.map(c => c.name)).not.toContain("markSessionDone")
     expect(calls.map(c => c.name)).not.toContain("onTurnSettled")
@@ -62,7 +62,7 @@ describe("handleChatStreamEvent", () => {
     const { deps, calls } = makeDeps()
     const ok = handleChatStreamEvent({ type: "part.updated", sessionID: "s1", properties: { part: { id: "p1", type: "text", text: "x", messageID: "m1" } } }, "s1", deps)
     expect(ok).toBe(false)
-    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", { type: "busy" }])
+    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", "busy"])
     expect(calls.map(c => c.name)).toContain("patchStore")
   })
 
@@ -80,7 +80,7 @@ describe("handleChatStreamEvent", () => {
     const part = { id: "call_1", type: "tool", tool: "execute", messageID: "m1", state: { status: "running" } }
     const ok = handleChatStreamEvent({ type: "part.updated", sessionID: "s1", properties: { part } }, "s1", deps)
     expect(ok).toBe(false)
-    expect(calls.find(c => c.name === "applyToolPart")!.args).toEqual([part, "s1"])
+    expect(calls.find(c => c.name === "applyToolPart")!.args).toEqual([{ ...part, sessionID: "s1" }, "s1"])
     expect(calls.some(c => c.name === "patchStore")).toBe(false)
   })
 
@@ -88,7 +88,7 @@ describe("handleChatStreamEvent", () => {
     const { deps, calls } = makeDeps()
     const part = { id: "call_1", type: "tool", tool: "execute", messageID: "m1", state: { status: "completed", output: "ok" } }
     handleChatStreamEvent({ type: "part.updated", sessionID: "s1", properties: { part } }, "s1", deps)
-    expect(calls.find(c => c.name === "applyToolPart")!.args).toEqual([part, "s1"])
+    expect(calls.find(c => c.name === "applyToolPart")!.args).toEqual([{ ...part, sessionID: "s1" }, "s1"])
   })
 
   test("turn.completed → 先 flushToolParts 再 settle", () => {
@@ -108,7 +108,7 @@ describe("handleChatStreamEvent", () => {
   test("turn.completed → idle + done + onTurnSettled(expireCards: true) + notifyIdle", () => {
     const { deps, calls } = makeDeps()
     handleChatStreamEvent({ type: "turn.completed", sessionID: "s1" }, "s1", deps)
-    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", { type: "idle" }])
+    expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", "idle"])
     expect(calls.map(c => c.name)).toContain("markSessionDone")
     expect(calls.map(c => c.name)).toContain("notifyIdle")
     expect(calls.find(c => c.name === "onTurnSettled")!.args[1]).toEqual({ expireCards: true })

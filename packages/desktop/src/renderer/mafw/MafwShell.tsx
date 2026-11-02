@@ -17,7 +17,6 @@ import { LeftDock } from "./components/LeftDock"
 import { MenuHost } from "./context-menu/MenuHost"
 import { TextMenuBridge } from "./context-menu/TextMenuBridge"
 import { menuController } from "./context-menu/controller"
-import { branchActionsVisible } from "./components/branch-actions"
 import { experienceStore } from "./experience-store"
 import { formatRailTitle } from "./components/rail-display"
 import { clampLeftDockWidth, closeLeftDockState, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleLeftDockState, type LeftDockFace } from "./left-dock"
@@ -37,8 +36,8 @@ import { matchesCombo } from "./keybindings"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
 import { backgroundRows, ingestBackgroundEvent, ingestHydratedBackgroundEvents, onBackgroundTerminal } from "./background-store"
 import { backgroundRestAvailable, resetBackgroundCapability } from "./background-capability"
-import { normalizeToolPart } from "./tool-part"
 import { scanHistoryForBackground } from "./background-detect"
+import { ingestHistoryPage } from "./ingest/messages"
 import { reconcileBackgroundOnce } from "./background-reconcile"
 import { buildBackgroundNotice } from "./background-notify"
 import { childrenNeedingProbe, isTrackedChildSession } from "./subagent-tracker"
@@ -224,7 +223,7 @@ export function MafwShell() {
           session: prev.session.some(x => x.id === childID)
             ? prev.session.map(x => x.id === childID ? { ...x, title: s.title || x.title, parentID: s.parentID } : x)
             : [...prev.session, { ...s, directory: s.directory || ".", projectID: s.projectID || "." }],
-          session_status: { ...prev.session_status, [childID]: { type: "idle" } },
+          session_status: { ...prev.session_status, [childID]: "idle" },
           message: prev.message[childID] ? prev.message : { ...prev.message, [childID]: [] },
         }))
       }
@@ -349,7 +348,7 @@ export function MafwShell() {
       setStore(prev => ({
         ...prev,
         session: [...prev.session, { id: sid, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
-        session_status: { ...prev.session_status, [sid]: { type: "idle" } },
+        session_status: { ...prev.session_status, [sid]: "idle" },
         message: { ...prev.message, [sid]: [] },
       }))
     }
@@ -811,7 +810,7 @@ export function MafwShell() {
       runningChildIDs: childrenNeedingProbe(subagentRows()),
       fetchers: {
         children: (parentID) => window.api.mafw.sessions.children(parentID),
-        messages: (childID, limit) => window.api.mafw.sessions.messages(childID, limit),
+        messages: (childID, limit) => window.api.mafw.sessions.history(childID, limit),
         getSession: (childID) => window.api.mafw.sessions.get(childID),
       },
       ingest: (ev) => ingestSubagentEvent(ev),
@@ -987,21 +986,20 @@ export function MafwShell() {
   const connPhase = useConnPhase()
   const connDown = () => connPhase() === "down"
   const [showInspector, setShowInspector] = createSignal(false)
-  // worktree 并行隔离（切片 4）：runtime 能力缓存 + 创建入口
-  const [rtCaps, setRtCaps] = createSignal<Record<string, boolean>>({})
-  const [rtName, setRtName] = createSignal("")
-  const loadRuntimeInfo = () => {
-    void window.api.mafw.runtime.get().then((r: any) => {
-      setRtCaps(r?.active?.capabilities ?? {})
-      setRtName(r?.active?.name ?? "")
-    }).catch(() => {})
+  // worktree / fork / diff / run 等业务动作全部读 Experience（不再缓存 runtime 能力）。
+  // 目录随当前会话/项目传给 gateway：worktree supported/enabled 由本地 git +
+  // session.create({directory}) 契约共同决定（设计 2026-11-02 §7.1）。
+  const experienceDirectory = () => {
+    const sid = currentSessionID()
+    const fromSession = sid
+      ? (store.session.find((s: any) => s.id === sid)?.directory as string | undefined)
+      : undefined
+    return fromSession && fromSession !== "." ? fromSession : currentProject() ?? undefined
   }
-  createEffect(() => {
-    if (gwStatus()?.state !== "ready") return
-    loadRuntimeInfo()
-  })
-  const worktreeEnabled = () => rtCaps().worktreeApi === true
-  const revertUndoEnabled = () => experienceStore.action("checkpoint.restore")?.semantics?.undo === true
+  const worktreeEnabled = () =>
+    experienceStore.enabled("session.worktree") && experienceStore.state().directory === experienceDirectory()
+  const revertUndoEnabled = () =>
+    experienceStore.supported("checkpoint.restore") && experienceStore.semantics("checkpoint.restore")?.undo === true
   const createWorktreeSession = () => {
     const dir = currentProject()
     if (!dir) { showToastV2({ description: "未选择项目，无法开并行任务", duration: 2500 }); return }
@@ -1051,7 +1049,7 @@ export function MafwShell() {
         void refreshMenus()
         resetChatWorkspace()
         resetBackgroundCapability()
-        loadRuntimeInfo()
+        void experienceStore.load(currentSessionID() || undefined, { directory: experienceDirectory() })
         if (currentProject()) reloadManagerSession(currentProject()!)
       },
     },
@@ -1161,7 +1159,7 @@ export function MafwShell() {
       // signal that the cached session list is stale.
       sessionStore.invalidate()
       experienceStore.invalidate()
-      void experienceStore.load(currentSessionID() || undefined)
+      void experienceStore.load(currentSessionID() || undefined, { directory: experienceDirectory() })
       reconcileFlowCards()
       void reconcileSubagents()
       resetBackgroundCapability()
@@ -1266,7 +1264,7 @@ export function MafwShell() {
     console.log("[mafw] loadSessionHistory", sessionID)
     try {
       const [data, sessionData] = await Promise.all([
-        window.api.mafw.sessions.messages(sessionID, 100) as any, // [perf] first paint: newest 100 raw; backfill loop below tops up to ≥10 user turns; scroll-up pages older via pageState.cursor
+        window.api.mafw.sessions.history(sessionID, 100) as any, // 规范 flat：content = 部件数组（无 {info,parts} 信封）
         window.api.mafw.sessions.get(sessionID).catch(() => null),
       ]) as [any, any]
       // Fetch the todo list for the TaskList (also updated live via SSE)
@@ -1285,25 +1283,25 @@ export function MafwShell() {
       // <For>-keyed SessionTurn list doesn't fully remount on reload; avoids clobbering
       // live SSE / optimistic messages that arrived while the fetch was in flight).
       const mergeRaw = (pageItems: any[]) => {
+        // 摄取层统一规范形：wire error→{kind,message}、工具输出/文件 diff/task 子会话、
+        // step-finish→stopReason（渲染层只读规范视图）。
+        const page = ingestHistoryPage(pageItems, { sessionID })
         // 水合摄取（spec §5 双摄取点）：历史 parts/synthetic → 后台任务 tracker。
         // 回放期间静默（不因历史完成发通知）；tracker 幂等，与 live SSE 竞争安全。
-        ingestHydratedBackgroundEvents(scanHistoryForBackground(pageItems, sessionID))
+        ingestHydratedBackgroundEvents(scanHistoryForBackground(page.messages, sessionID))
         const rawExisting = store.message[sessionID]
         const existing = Array.isArray(rawExisting) ? rawExisting : []
         if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
         const existingById = new Map(existing.map(m => [m.id, m]))
         const msgs: any[] = [...existing]
         const parts: Record<string, any[]> = {}
-        for (const item of pageItems) {
-          const info = item.info || item
-          const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
-          if (existingById.has(msgId)) continue
-          // Preserve all API fields — spread entire info object
-          const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
-          msgs.push(msg)
-          let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
+        for (const message of page.messages) {
+          const msgId = message.id
+          if (!msgId || existingById.has(msgId)) continue
+          msgs.push(message)
+          const itemParts = page.parts[msgId]
           if (Array.isArray(itemParts) && itemParts.length > 0) {
-            parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => normalizeToolPart({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
+            parts[msgId] = mergeLocalParts(store.part[msgId], itemParts)
           }
         }
         if (msgs.length > 0) {
@@ -1346,7 +1344,7 @@ export function MafwShell() {
       // 这里后台继续按 user turn 补齐（≤4 页封顶），密度无关（mem_1789616908701）。
       let pageCount = 1
       while (shouldKeepPaging({ collected: countUserTurns(store.message[sessionID] || []), target: 10, nextCursor, pageCount, maxPages: 4 })) {
-        const data2 = await window.api.mafw.sessions.messages(sessionID, 100, nextCursor ?? undefined) as any
+        const data2 = await window.api.mafw.sessions.history(sessionID, 100, nextCursor ?? undefined) as any
         const items2 = Array.isArray(data2) ? data2 : data2?.data
         nextCursor = data2?.nextCursor ?? null
         pageCount++
@@ -1379,7 +1377,7 @@ export function MafwShell() {
       setStore(prev => ({
         ...prev,
         session: [...prev.session, { id, title: sess.title, directory: ".", time: { created: Date.now() }, projectID: "." }],
-        session_status: { ...prev.session_status, [id]: { type: "idle" } },
+        session_status: { ...prev.session_status, [id]: "idle" },
         message: { ...prev.message, [id]: [] },
       }))
       sessionStore.invalidate()
@@ -1427,9 +1425,10 @@ export function MafwShell() {
   const currentSessionID = () => active()?.id || ""
   createEffect(() => {
     const sid = currentSessionID()
+    const directory = experienceDirectory()
     if (gwStatus()?.state !== "ready") return
     experienceStore.invalidate()
-    void experienceStore.load(sid || undefined)
+    void experienceStore.load(sid || undefined, { directory })
   })
 
   // Composer menus: agents (@ mention) + providers/models (model pill)
@@ -1683,7 +1682,7 @@ export function MafwShell() {
   const sessionMessages = createMemo(() => (store.message as any)[currentSessionID()] || [])
   const sessionBusy = () => {
     const sid = currentSessionID()
-    return !!(sid && store.session_status?.[sid]?.type === "busy")
+    return !!(sid && store.session_status?.[sid] === "busy")
   }
   const mergedSessionDiffs = createMemo(() =>
     getSessionTurnDiffs().entries(currentSessionID() || "", sessionMessages()),
@@ -1695,9 +1694,8 @@ export function MafwShell() {
     getSessionTurnDiffs().ensure({
       sid,
       messages: sessionMessages(),
-      runtimeName: rtName(),
       busy: sessionBusy(),
-      diffApi: rtCaps().diffApi === true,
+      diffSupported: experienceStore.supported("branch.diff"),
     })
   })
   const welcomeFull = () => activeTab() === "chat" && !showConfig() && (showWelcome() || !activeSessionId())
@@ -1986,7 +1984,7 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  const subagentRunning = (id: string) => store.session_status[id]?.type === "busy"
+  const subagentRunning = (id: string) => store.session_status[id] === "busy"
 
   const onModelSelect = (m: ModelEntry, sid?: string) => {
     const target = sid || currentSessionID()
@@ -2159,7 +2157,7 @@ export function MafwShell() {
           onCopyId={copyText}
           onNew={createSession}
           podRoleOf={(id) => podRoleForSession(podStore.detail(), id)}
-          forkEnabled={branchActionsVisible(rtCaps())}
+          forkEnabled={experienceStore.supported("branch.fork")}
           onFork={(id) => void forkSessionFromMenu(id)}
           onHome={() => {
             closeLeftDockIfOverlay()
@@ -2204,7 +2202,7 @@ export function MafwShell() {
             onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
             onSelectSession={openSessionTab}
             onSessionDeleted={closeSession}
-            forkEnabled={branchActionsVisible(rtCaps())}
+            forkEnabled={experienceStore.supported("branch.fork")}
             onForkSession={(id) => void forkSessionFromMenu(id)}
             onExportSession={(id) => void exportSession(id)}
             podDetail={podStore.detail()}
@@ -2227,7 +2225,7 @@ export function MafwShell() {
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
             {showConfig() ? (
-              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme() ?? undefined} onToggleTheme={toggleTheme} projectDir={(store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined) as string | undefined} runtimeCaps={rtCaps()} />
+              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme() ?? undefined} onToggleTheme={toggleTheme} projectDir={(store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined) as string | undefined} sessionID={currentSessionID() || undefined} />
             ) : connDown() && activeTab() !== "chat" ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : activeTab() === "chat" ? (
@@ -2282,8 +2280,6 @@ export function MafwShell() {
                           onOpenDiffReview={() => openWorkbench("review")}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
-                          runtimeName={rtName()}
-                          runtimeCaps={rtCaps()}
                           onCreateWorktreeSession={createWorktreeSession}
                           projectDirectory={currentProject()}
                           onPlanBuildToggle={(next) => {

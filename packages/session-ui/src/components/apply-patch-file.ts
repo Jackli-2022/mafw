@@ -1,78 +1,54 @@
-import { normalize, type ViewDiff } from "./session-diff"
-
-type Kind = "add" | "update" | "delete" | "move"
-
-type Raw = {
-  filePath?: string
-  relativePath?: string
-  type?: Kind
-  patch?: string
-  diff?: string
-  before?: string
-  after?: string
-  additions?: number
-  deletions?: number
-  movePath?: string
-}
+// apply_patch 卡片只读规范形：摄取层已把 metadata.files 归一为
+// `{file, patch?, before?, after?, additions, deletions, status}`（MafwDiff + 内容）。
+// 这里不再识别 filePath/relativePath/type/diff 等历史字段。
+import { normalize, type ViewDiff, type ViewDiffStatus } from "./session-diff"
 
 export type ApplyPatchFile = {
-  filePath: string
-  relativePath: string
-  type: Kind
+  file: string
+  status: ViewDiffStatus
   additions: number
   deletions: number
   movePath?: string
   view: ViewDiff
 }
 
-function kind(value: unknown) {
-  if (value === "add" || value === "update" || value === "delete" || value === "move") return value
-}
-
-function status(type: Kind): "added" | "deleted" | "modified" {
-  if (type === "add") return "added"
-  if (type === "delete") return "deleted"
+function viewStatus(value: unknown): ViewDiffStatus {
+  if (value === "added" || value === "deleted" || value === "renamed") {
+    return value === "renamed" ? "modified" : value
+  }
   return "modified"
 }
 
 export function patchFile(raw: unknown): ApplyPatchFile | undefined {
-  if (!raw || typeof raw !== "object") return
-
-  const value = raw as Raw
-  const type = kind(value.type)
-  const filePath = typeof value.filePath === "string" ? value.filePath : undefined
-  const relativePath = typeof value.relativePath === "string" ? value.relativePath : filePath
-  const patch = typeof value.patch === "string" ? value.patch : typeof value.diff === "string" ? value.diff : undefined
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return
+  const value = raw as Record<string, unknown>
+  const file = typeof value.file === "string" ? value.file : undefined
+  if (!file) return
+  const patch = typeof value.patch === "string" ? value.patch : undefined
   const before = typeof value.before === "string" ? value.before : undefined
   const after = typeof value.after === "string" ? value.after : undefined
-
-  if (!type || !filePath || !relativePath) return
-  if (!patch && before === undefined && after === undefined) return
-
+  if (!patch && before === undefined && after === undefined && typeof value.movePath !== "string") return
   const additions = typeof value.additions === "number" ? value.additions : 0
   const deletions = typeof value.deletions === "number" ? value.deletions : 0
-  const movePath = typeof value.movePath === "string" ? value.movePath : undefined
-
   return {
-    filePath,
-    relativePath,
-    type,
+    file,
+    status: viewStatus(value.status),
     additions,
     deletions,
-    movePath,
+    ...(typeof value.movePath === "string" ? { movePath: value.movePath } : {}),
     view: normalize({
-      file: relativePath,
+      file,
       patch,
       before,
       after,
       additions,
       deletions,
-      status: status(type),
+      status: value.status as any,
     }),
   }
 }
 
-export function patchFiles(raw: unknown) {
+export function patchFiles(raw: unknown): ApplyPatchFile[] {
   if (!Array.isArray(raw)) return []
   return raw.map(patchFile).filter((file): file is ApplyPatchFile => !!file)
 }

@@ -216,6 +216,27 @@ describe('Experience contract', () => {
     });
   });
 
+  it('reflects directory-level worktree availability from git facts', () => {
+    const access = fakeAccess({ 'session.worktree': true });
+    expect(projectExperienceActions(access, { worktree: { supported: true } })['session.worktree'])
+      .toEqual({ supported: true, enabled: true });
+    // 目录不是 git 工作区：功能面仍在（换项目可用），当前不可执行。
+    expect(projectExperienceActions(access, { worktree: { supported: false, reason: 'missing-data' } })['session.worktree'])
+      .toEqual({ supported: true, enabled: false, reason: 'missing-data' });
+    // runtime 不满足目录会话契约：功能面不存在。
+    expect(projectExperienceActions(access, { worktree: { supported: false, reason: 'unsupported' } })['session.worktree'])
+      .toEqual({ supported: false, enabled: false, reason: 'unsupported' });
+    // 未解析目录 / 无 session.create surface 时不伪造支持。
+    expect(projectExperienceActions(fakeAccess(), { worktree: { supported: true } })['session.worktree'])
+      .toEqual({ supported: false, enabled: false, reason: 'unsupported' });
+  });
+
+  it('does not turn worktree availability into a busy reason', () => {
+    const access = fakeAccess({ 'session.worktree': true });
+    const actions = projectExperienceActions(access, { busy: true, worktree: { supported: false, reason: 'missing-data' } });
+    expect(actions['session.worktree'].reason).toBe('missing-data');
+  });
+
   it('projects discovery, worktree and checkpoint create from their own surfaces', () => {
     const only = (id: string) => fakeAccess({ [id]: true });
     expect(projectExperienceActions(only('discovery.list'), {})['session.discovery'].supported).toBe(true);
@@ -341,5 +362,51 @@ describe('GET /api/experience/actions', () => {
       expect(out.body.actions[id]).toHaveProperty('supported');
       expect(out.body.actions[id]).toHaveProperty('enabled');
     }
+  });
+
+  it('passes the directory to worktree availability and projects the result', async () => {
+    const seen: string[] = [];
+    const out: any = { status: 0, body: null };
+    const res = {
+      writeHead(status: number) { out.status = status; },
+      end(body: string) { out.body = JSON.parse(body); },
+    } as unknown as http.ServerResponse;
+    const handled = await handleExperienceActions(
+      { method: 'GET' } as http.IncomingMessage,
+      res,
+      '/api/experience/actions?sessionID=s1&directory=%2Frepo',
+      {
+        project: (ctx) => projectExperienceActions(fakeAccessAll(), ctx),
+        worktreeAvailability: async (directory) => {
+          seen.push(directory);
+          return { supported: false, reason: 'missing-data' };
+        },
+      },
+    );
+    expect(handled).toBe(true);
+    expect(seen).toEqual(['/repo']);
+    expect(out.body.actions['session.worktree']).toEqual({
+      supported: true,
+      enabled: false,
+      reason: 'missing-data',
+    });
+  });
+
+  it('does not probe worktree availability without a directory', async () => {
+    let calls = 0;
+    const res = {
+      writeHead() {},
+      end() {},
+    } as unknown as http.ServerResponse;
+    await handleExperienceActions(
+      { method: 'GET' } as http.IncomingMessage,
+      res,
+      '/api/experience/actions?sessionID=s1',
+      {
+        project: (ctx) => projectExperienceActions(fakeAccessAll(), ctx),
+        worktreeAvailability: async () => { calls++; return { supported: true }; },
+      },
+    );
+    expect(calls).toBe(0);
   });
 });

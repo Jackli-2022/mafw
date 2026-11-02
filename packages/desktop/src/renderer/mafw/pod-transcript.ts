@@ -11,14 +11,6 @@ function textOf(value: unknown): string {
 
 function textOfMessage(message: any): string {
   if (!message || typeof message !== "object") return ""
-  if (Array.isArray(message.parts)) {
-    const text = message.parts
-      .filter((part: any) => part?.type === "text" || (part?.type === undefined && typeof part?.text === "string"))
-      .map((part: any) => String(part.text ?? ""))
-      .filter(Boolean)
-      .join("\n")
-    if (text) return text
-  }
   if (message.content !== undefined) {
     const text = textOf(message.content)
     if (text) return text
@@ -27,8 +19,21 @@ function textOfMessage(message: any): string {
 }
 
 function roleOf(message: any): PodTranscriptTurn["role"] {
-  const role = message?.info?.role ?? message?.role
+  const role = message?.role
   return role === "user" || role === "assistant" ? role : "other"
+}
+
+/** 快照摄取：旧 `{info,parts}` 信封只在这里展开，渲染函数只读 flat。 */
+function flatTranscriptMessage(message: any): any {
+  if (!message || typeof message !== "object") return message
+  if (message.info && typeof message.info === "object") {
+    const content = Array.isArray(message.parts) ? message.parts : message.info.parts
+    return content ? { ...message.info, content } : { ...message.info }
+  }
+  if (message.content === undefined && Array.isArray(message.parts)) {
+    return { ...message, content: message.parts }
+  }
+  return message
 }
 
 export function transcriptTurns(snapshot: unknown): PodTranscriptTurn[] {
@@ -38,7 +43,8 @@ export function transcriptTurns(snapshot: unknown): PodTranscriptTurn[] {
       ? (snapshot as any).messages
       : []
   const turns: PodTranscriptTurn[] = []
-  for (const message of messages) {
+  for (const raw of messages) {
+    const message = flatTranscriptMessage(raw)
     const text = textOfMessage(message).trim()
     if (!text) continue
     turns.push({ role: roleOf(message), text })

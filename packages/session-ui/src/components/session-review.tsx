@@ -87,12 +87,10 @@ function diff(value: unknown): value is ReviewDiff {
   )
 }
 
+/** 摄取层保证数组形；这里只做元素形状守卫（不再接受单对象/映射）。 */
 function list(value: unknown): ReviewDiff[] {
-  if (Array.isArray(value) && value.every(diff)) return value
-  if (Array.isArray(value)) return value.filter(diff)
-  if (diff(value)) return [value]
-  if (!value || typeof value !== "object") return []
-  return Object.values(value).filter(diff)
+  if (!Array.isArray(value)) return []
+  return value.filter(diff)
 }
 
 export interface SessionReviewProps {

@@ -69,7 +69,6 @@ import { loadInputHistory, saveInputHistory } from "./input-history-persist"
 import { applyReadlineKey } from "./composer-readline"
 import { shouldFocusComposerFromClick } from "./composer-focus"
 import { appendQuote, formatQuote } from "./quote-format"
-import { branchActionsVisible } from "./branch-actions"
 import { experienceStore } from "../experience-store"
 import { QuoteToolbar, type QuoteAnchor } from "./QuoteToolbar"
 import { ScreenshotCropper, type CaptureShot } from "./ScreenshotCropper"
@@ -92,7 +91,7 @@ import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
 import { createFocusScheduler } from "./composer-focus-scheduler"
 import { computeContextUsage, formatContextUsage } from "../context-usage"
-import { normalizeToolPart } from "../tool-part"
+import { ingestHistoryPage } from "../ingest/messages"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
 import { fuzzyMatchFiles } from "./file-fuzzy"
@@ -169,14 +168,10 @@ export type ChatPaneProps = {
   onOpenUsage?: () => void
   /** plan/build 模式三态循环（切片 3；'default' = 清除 picks 回 runtime 默认） */
   onPlanBuildToggle?: (next: "plan" | "build" | "default") => void
-  /** worktree 并行隔离（切片 4）：能力门由 MafwShell 传（runtime worktreeApi） */
+  /** worktree 并行隔离（切片 4）：能力门 = Experience `session.worktree`（目录级 git 事实） */
   worktreeEnabled?: boolean
-  /** revert 后可撤销能力（opencode 2.1 commit 不可逆 → false，隐藏 undo 入口） */
+  /** revert 后可撤销能力（Experience checkpoint.restore semantics.undo） */
   revertUndoEnabled?: boolean
-  /** 当前 runtime 名称（checkpoint 文案） */
-  runtimeName?: string
-  /** 当前 runtime 能力（checkpoint 门控） */
-  runtimeCaps?: Record<string, boolean>
   onCreateWorktreeSession?: () => void
   /** 当前项目主目录（worktree 徽标判定的对照基准） */
   projectDirectory?: string | null
@@ -421,7 +416,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     props.setPageState(sidProp(), { cursor: null, hasMore: true, loading: false })
   }
 
-  // ── T2-1 服务端检查点（caps.checkpointApi=true 的 runtime）──────────
+  // ── T2-1 服务端检查点（Experience checkpoint.restore semantics.sessionBacked）──
   const loadServerCheckpoints = async () => {
     const sid = sidProp()
     if (!sid) return
@@ -570,7 +565,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       const text = parts.length > 0 ? textFromParts(parts) : messageEl.innerText.trim()
       const markdown = parts.length > 0 ? markdownFromParts(parts) : text
       const messageID = role === "user" ? (messageEl.getAttribute("data-message-id") ?? ids) : ids
-      const canFork = role === "user" && branchActionsVisible(props.runtimeCaps)
+      const canFork = role === "user" && experienceStore.supported("branch.fork")
       menuController.request(
         buildMessageMenu,
         {
@@ -605,10 +600,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   const userActions = () => {
-    // W0-2：sessionBranchApi=false 的 runtime 不渲染 fork/revert（隐藏而非失败 toast）。
-    const branch = branchActionsVisible(props.runtimeCaps)
+    // 分支动作按 Experience 支持面显隐（不支持时隐藏而非失败 toast）。
+    const canForkAction = experienceStore.supported("branch.fork")
+    const canRevertAction = experienceStore.supported("branch.revert")
     return {
-    ...(branch ? {
+    ...(canForkAction ? {
     fork: async ({ sessionID, messageID }: { sessionID: string; messageID: string }) => {
       try {
         const out: any = await window.api.mafw.sessions.fork(sessionID, messageID)
@@ -618,6 +614,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         showToastV2({ title: "分叉失败", description: String(e?.message || e), variant: "error" } as any)
       }
     },
+    } : {}),
+    ...(canRevertAction ? {
     revert: async ({ messageID }: { sessionID: string; messageID: string }) => {
       setRevertConfirm({ messageID })
     },
@@ -629,7 +627,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const revertTo = async (messageID: string): Promise<boolean> => {
     const sid = sidProp()
     if (!sid) return false
-    if (sending() || store.session_status[sid]?.type === "busy") {
+    if (sending() || store.session_status[sid] === "busy") {
       showToastV2({ title: "会话运行中", description: "结束后再回滚", variant: "error", duration: 2500 } as any)
       return false
     }
@@ -655,7 +653,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const revertCodeTo = async (targets: Checkpoint[]): Promise<boolean> => {
     const sid = sidProp()
     if (!sid || targets.length === 0) return false
-    if (props.runtimeCaps?.diffApi !== true) {
+    if (!experienceStore.supported("branch.diff")) {
       showToastV2({ title: "代码回滚不可用", description: "当前 runtime 不提供文件回滚。", variant: "error", duration: 3000 } as any)
       return false
     }
@@ -928,7 +926,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     imageToDataUrl,
     uploadMediaBinary,
     encodeFilePath,
-    steerApi: () => experienceStore.isEnabled('prompt.steer'),
+    steerSupported: () => experienceStore.enabled('prompt.steer'),
     steerBoundary: () => experienceStore.action('prompt.steer')?.semantics?.boundary as any,
     pendingAnnotationCount: (sid) => pendingFor(sid).length,
     takeAnnotations: (sid) => takeForSend(sid),
@@ -1014,7 +1012,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       const out = clearTransientDataParts(prev, sid)
       return out ? { ...prev, ...out } : prev
     })
-    if (props.runtimeCaps?.runStateApi !== true) { clearRun(sid); return }
+    if (!experienceStore.supported("run.control")) { clearRun(sid); return }
     window.api.mafw.sessions.run(sid)
       .then((r) => {
         if (sidProp() !== sid) return
@@ -1198,28 +1196,33 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return [...local, ...mafw, ...custom]
   }
 
-  // Fetch opencode commands+skills once per pane (refreshed when the panel is
-  // opened again after an error).
+  // Fetch commands+skills once per pane via the discovery DTO (single source;
+  // legacy `command`/`skill` namespaces are removed in Task 15).
   const loadCustomCommands = async () => {
     if (cmdLoading()) return
     setCmdLoading(true)
     try {
+      const sid = sidProp()
       const dir = props.currentProject || undefined
-      const [cmds, skills, remoteMafw] = await Promise.all([
-        window.api.mafw.command.list(dir).catch(() => []),
-        window.api.mafw.skill.list(dir).catch(() => []),
+      const [snapshot, remoteMafw] = await Promise.all([
+        sid
+          ? window.api.mafw.discovery.get(sid, dir ? { directory: dir } : {}).catch(() => null)
+          : Promise.resolve(null),
         window.api.mafw.mafwCommands.list?.().catch(() => []),
       ])
       if (Array.isArray(remoteMafw)) setMafwRemote(mergeRemoteCommands(remoteMafw))
       const seen = new Set<string>()
       const merged: { name: string; source: string }[] = []
-      for (const c of Array.isArray(cmds) ? cmds : []) {
+      for (const c of snapshot?.commands ?? []) {
+        // MAFW commands come from mafwCommands.list()（/api/mafw-commands 契约）；
+        // discovery 的 source==='mafw' 行不重复进 custom 组。
+        if (c?.source === "mafw") continue
         const name = c?.name
         if (!name || seen.has(name)) continue
         seen.add(name)
-        merged.push({ name, source: c?.source || "command" })
+        merged.push({ name, source: c.source === "runtime" ? "command" : c.source })
       }
-      for (const s of Array.isArray(skills) ? skills : []) {
+      for (const s of snapshot?.skills ?? []) {
         const name = s?.name
         if (!name || seen.has(name)) continue
         seen.add(name)
@@ -1350,7 +1353,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setPickerOpen(null)
   }
 
-  const busy = () => store.session_status[sidProp()]?.type === "busy"
+  const busy = () => store.session_status[sidProp()] === "busy"
 
   // composer 元数据（v6 §3）：streaming 时逐秒跳（reduced-motion 下环境不宜逐秒亦无害），
   // 空闲时只显示冻结的 token 数。数据面复用 taskMetrics（无新增请求）。
@@ -1468,28 +1471,27 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         collected: countUserTurns(Array.isArray(store.message[sessionID]) ? store.message[sessionID] : []) - baseCount,
         target: 10, nextCursor: cursor, pageCount, maxPages: 4,
       })) {
-        const data = await window.api.mafw.sessions.messages(sessionID, 100, cursor) as any
+        const data = await window.api.mafw.sessions.history(sessionID, 100, cursor) as any
         const rawItems = Array.isArray(data) ? data : data?.data
         nextCursor = data?.nextCursor ?? null
         pageCount++
         if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
+          const page = ingestHistoryPage(rawItems, { sessionID })
           // 水合摄取（P0-3 后台任务，reviewer Minor 12：loadOlder 是第二条历史入口）
-          ingestHydratedBackgroundEvents(scanHistoryForBackground(rawItems, sessionID))
+          ingestHydratedBackgroundEvents(scanHistoryForBackground(page.messages, sessionID))
           const rawExisting = store.message[sessionID]
           const existing = Array.isArray(rawExisting) ? rawExisting : []
           if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
           const existingById = new Map(existing.map(m => [m.id, m]))
           const msgs: any[] = [...existing]
           const parts: Record<string, any[]> = {}
-          for (const item of rawItems) {
-            const info = item.info || item
-            const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
-            if (existingById.has(msgId)) continue
-            const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
-            msgs.push(msg)
-            let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
+          for (const message of page.messages) {
+            const msgId = message.id
+            if (!msgId || existingById.has(msgId)) continue
+            msgs.push(message)
+            const itemParts = page.parts[msgId]
             if (Array.isArray(itemParts) && itemParts.length > 0) {
-              parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => normalizeToolPart({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
+              parts[msgId] = mergeLocalParts(store.part[msgId], itemParts)
             }
           }
           if (msgs.length > 0) {
@@ -1641,9 +1643,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     getSessionTurnDiffs().ensure({
       sid,
       messages: (store.message as any)[sid] || [],
-      runtimeName: props.runtimeName ?? "",
-      busy: store.session_status[sid]?.type === "busy",
-      diffApi: props.runtimeCaps?.diffApi === true,
+      busy: store.session_status[sid] === "busy",
+      diffSupported: experienceStore.supported("branch.diff"),
     })
   })
 
@@ -1759,7 +1760,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   onHoverOpen={() => props.onTaskHoverOpen(titlebarEl, sidProp())}
                   onHoverLeave={props.onTaskHoverLeave}
                 />
-                <Show when={store.session_status[sidProp()]?.type === "busy"}>
+                <Show when={store.session_status[sidProp()] === "busy"}>
                   <span class="mafw-session-status">
                     <span class="mafw-session-status-dot" />
                     Running
@@ -2355,7 +2356,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   </Show>
                 </span>
               </TooltipV2>
-              <Show when={sessionBusy() && props.runtimeCaps?.runStateApi === true}>
+              <Show when={sessionBusy() && experienceStore.supported("run.control")}>
                 <TooltipV2 value="暂停当前回合并保存续跑摘要" openDelay={300}>
                   <ButtonV2
                     variant="ghost"
@@ -2398,7 +2399,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void captureScreen() }}>
                 <Icon name="photo" size="small" /><span>截屏批注</span>
               </ButtonV2>
-              <Show when={sessionBusy() && props.runtimeCaps?.runStateApi === true}>
+              <Show when={sessionBusy() && experienceStore.supported("run.control")}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void pauseSession() }}>
                   <Icon name="stop" size="small" /><span>暂停回合</span>
                 </ButtonV2>
@@ -2511,7 +2512,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             parts={store.part}
 
             checkpointAction={experienceStore.action("checkpoint.restore")}
-            busy={sending() || store.session_status[sidProp()]?.type === "busy"}
+            busy={sending() || store.session_status[sidProp()] === "busy"}
             onClose={() => setCheckpointsOpen(false)}
             onRevert={revertTo}
             onRevertCode={revertCodeTo}
@@ -2525,10 +2526,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           <div class="mafw-confirm-backdrop">
             <div class="mafw-confirm">
               <div class="mafw-confirm-title">确认回滚？</div>
-              <div class="mafw-confirm-text">{revertWarning(false, true)}</div>
+              <div class="mafw-confirm-text">{revertWarning(experienceStore.semantics("branch.revert"))}</div>
               <div class="mafw-confirm-actions">
                 <ButtonV2 variant="ghost" size="small" onClick={() => setRevertConfirm(null)}>取消</ButtonV2>
-                <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" disabled={sending() || store.session_status[sidProp()]?.type === "busy"} onClick={doRevert}>确认回滚</ButtonV2>
+                <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" disabled={sending() || store.session_status[sidProp()] === "busy"} onClick={doRevert}>确认回滚</ButtonV2>
               </div>
             </div>
           </div>

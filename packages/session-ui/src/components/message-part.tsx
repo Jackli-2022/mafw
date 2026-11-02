@@ -1,4 +1,4 @@
-﻿import {
+import {
   Component,
   createEffect,
   createMemo,
@@ -52,9 +52,14 @@ import { patchFiles } from "./apply-patch-file"
 import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind, typeLabel, type MafwFilePart } from "./message-file"
-import { partOutputText } from "./tool-output"
-import { normalizeFileDiffs } from "./file-diff-shape"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
+
+/** 摄取层契约：`metadata.files` 已是规范文件 diff 数组（renderer 不再猜形状）。 */
+export function canonicalMetadataFiles(metadata: any): Array<{ file: string; patch?: string; before?: string; after?: string; additions: number; deletions: number; status?: string }> {
+  const files = metadata?.files
+  if (!Array.isArray(files)) return []
+  return files.filter((f: any) => f && typeof f === "object" && typeof f.file === "string" && f.file)
+}
 
 // ---- MAFW View DTO 变体别名 -------------------------------------------------
 // 渲染层只读规范形：part 变体由判别字段收窄，消息身份由 UiMessage 收窄。
@@ -531,7 +536,7 @@ export function getToolInfo(
         subtitle: input.query,
       }
     case "task": {
-      const raw = taskAgentName(input)
+      const raw = typeof input.agent === "string" ? input.agent : undefined
       const type = raw ? raw[0]!.toUpperCase() + raw.slice(1) : undefined
       return {
         icon: "task",
@@ -624,7 +629,7 @@ function taskSession(
   const parentID = currentSession(path)
   if (!parentID) return
   const description = typeof input.description === "string" ? input.description : ""
-  const agent = taskAgent(taskAgentName(input), agents).name
+  const agent = taskAgent(typeof input.agent === "string" ? input.agent : undefined, agents).name
   // MafwSession 不建模 runtime 的 archived 标记（会话可见性由 gateway 出口过滤），
   // 子会话定位只依赖 parentID + 标题匹配。
   return (sessions ?? [])
@@ -1572,8 +1577,8 @@ export { registerTool, getTool, ToolRegistry } from "./tool-registry"
 export { resolveToolRender, CLASS_FAMILY, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { ToolRegistry } from "./tool-registry"
 import { resolveToolRender, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
+import { isTaskPart } from "./tool-canonical"
 import { displayToolOf } from "./parts-rules"
-import { taskChildSessionID, taskAgentName, isTaskTool } from "./task-session"
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
   const value = createMemo(() => props.path || "tool-file")
@@ -1626,15 +1631,15 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const input = () => readInput(part().state.input)
   const partMetadata = () => part().state.metadata ?? emptyMetadata
   const taskChildID = createMemo(() => {
-    if (!isTaskTool(part().tool)) return
-    return taskChildSessionID(partMetadata())
+    if (!isTaskPart(part())) return
+    return partMetadata().sessionID as string | undefined
   })
   const taskHref = createMemo(() => {
-    if (!isTaskTool(part().tool)) return
+    if (!isTaskPart(part())) return
     return sessionLink(taskChildID(), useLocation().pathname, data.sessionHref)
   })
   const taskSubtitle = createMemo(() => {
-    if (!isTaskTool(part().tool)) return undefined
+    if (!isTaskPart(part())) return undefined
     const value = input().description
     if (typeof value === "string" && value) return value
     return taskChildID()
@@ -1682,7 +1687,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               tool={TOOL_NAME_ALIASES[part().tool] ?? part().tool}
               sessionID={part().sessionID}
               metadata={partMetadata()}
-              output={partOutputText(part().state)}
+              output={part().state.output}
               status={part().state.status}
               hideDetails={props.hideDetails}
               defaultOpen={props.defaultOpen}
@@ -2111,10 +2116,10 @@ ToolRegistry.register({
     const i18n = useI18n()
     const location = useLocation()
     const childSessionId = createMemo(() => {
-      return taskChildSessionID(props.metadata)
+      return props.metadata.sessionID as string | undefined
         ?? taskSession(props.input, location.pathname, data.store.session, data.store.agent)
     })
-    const agent = createMemo(() => taskAgent(taskAgentName(props.input), data.store.agent))
+    const agent = createMemo(() => taskAgent(typeof props.input.agent === "string" ? props.input.agent : undefined, data.store.agent))
     const title = createMemo(() => agent().name ?? i18n.t("ui.tool.agent.default"))
     const tone = createMemo(() => agent().color)
     const v2Tone = createMemo(() => agent().v2Color)
@@ -2292,7 +2297,7 @@ ToolRegistry.register({
     const fileComponent = useFileComponent()
     const filePath = createMemo(() => readPathInput(props.input))
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, filePath()))
-    const diffs = createMemo(() => normalizeFileDiffs(props.metadata, filePath()))
+    const diffs = createMemo(() => canonicalMetadataFiles(props.metadata))
     const primary = createMemo(() => diffs()[0])
     const path = createMemo(() => primary()?.file || filePath() || "")
     const filename = () => getFilename(path() ?? "")
@@ -2401,7 +2406,7 @@ ToolRegistry.register({
     const fileComponent = useFileComponent()
     const filePath = createMemo(() => readPathInput(props.input))
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, filePath()))
-    const path = createMemo(() => filePath() || normalizeFileDiffs(props.metadata, filePath())[0]?.file || "")
+    const path = createMemo(() => filePath() || canonicalMetadataFiles(props.metadata)[0]?.file || "")
     const filename = () => getFilename(path() ?? "")
     const pending = () => props.status === "pending" || props.status === "running"
     return (
@@ -2475,7 +2480,7 @@ ToolRegistry.register({
       if (list.length === 0) return
       if (seeded) return
       seeded = true
-      setExpanded(list.filter((f) => f.type !== "delete").map((f) => f.filePath))
+      setExpanded(list.filter((f) => f.status !== "deleted").map((f) => f.file))
     })
 
     const subtitle = createMemo(() => {
@@ -2508,7 +2513,7 @@ ToolRegistry.register({
                 >
                   <For each={files()}>
                     {(file) => {
-                      const active = createMemo(() => expanded().includes(file.filePath))
+                      const active = createMemo(() => expanded().includes(file.file))
                       const [visible, setVisible] = createSignal(false)
 
                       createEffect(() => {
@@ -2524,32 +2529,32 @@ ToolRegistry.register({
                       })
 
                       return (
-                        <Accordion.Item value={file.filePath} data-type={file.type}>
+                        <Accordion.Item value={file.file} data-type={file.status === "added" ? "add" : file.status === "deleted" ? "delete" : file.movePath ? "move" : "update"}>
                           <StickyAccordionHeader>
                             <Accordion.Trigger>
                               <div data-slot="apply-patch-trigger-content">
                                 <div data-slot="apply-patch-file-info">
-                                  <FileIcon node={{ path: file.relativePath, type: "file" }} />
+                                  <FileIcon node={{ path: file.file, type: "file" }} />
                                   <div data-slot="apply-patch-file-name-container">
-                                    <Show when={file.relativePath.includes("/")}>
-                                      <span data-slot="apply-patch-directory">{`\u202A${getDirectory(file.relativePath)}\u202C`}</span>
+                                    <Show when={file.file.includes("/")}>
+                                      <span data-slot="apply-patch-directory">{`\u202A${getDirectory(file.file)}\u202C`}</span>
                                     </Show>
-                                    <span data-slot="apply-patch-filename">{getFilename(file.relativePath)}</span>
+                                    <span data-slot="apply-patch-filename">{getFilename(file.file)}</span>
                                   </div>
                                 </div>
                                 <div data-slot="apply-patch-trigger-actions">
                                   <Switch>
-                                    <Match when={file.type === "add"}>
+                                    <Match when={file.status === "added"}>
                                       <span data-slot="apply-patch-change" data-type="added">
                                         {i18n.t("ui.patch.action.created")}
                                       </span>
                                     </Match>
-                                    <Match when={file.type === "delete"}>
+                                    <Match when={file.status === "deleted"}>
                                       <span data-slot="apply-patch-change" data-type="removed">
                                         {i18n.t("ui.patch.action.deleted")}
                                       </span>
                                     </Match>
-                                    <Match when={file.type === "move"}>
+                                    <Match when={!!file.movePath}>
                                       <span data-slot="apply-patch-change" data-type="modified">
                                         {i18n.t("ui.patch.action.moved")}
                                       </span>
@@ -2587,7 +2592,7 @@ ToolRegistry.register({
           </div>
         }
       >
-        <div data-component="apply-patch-tool" data-file-path={single()!.relativePath}>
+        <div data-component="apply-patch-tool" data-file-path={single()!.file}>
           <BasicTool
             {...props}
             icon="code-lines"
@@ -2600,12 +2605,12 @@ ToolRegistry.register({
                       <TextShimmer text={i18n.t("ui.tool.patch")} active={pending()} />
                     </span>
                     <Show when={!pending()}>
-                      <span data-slot="message-part-title-filename">{getFilename(single()!.relativePath)}</span>
+                      <span data-slot="message-part-title-filename">{getFilename(single()!.file)}</span>
                     </Show>
                   </div>
-                  <Show when={!pending() && single()!.relativePath.includes("/")}>
+                  <Show when={!pending() && single()!.file.includes("/")}>
                     <div data-slot="message-part-path">
-                      <span data-slot="message-part-directory">{getDirectory(single()!.relativePath)}</span>
+                      <span data-slot="message-part-directory">{getDirectory(single()!.file)}</span>
                     </div>
                   </Show>
                 </div>
@@ -2618,20 +2623,20 @@ ToolRegistry.register({
             }
           >
             <ToolFileAccordion
-              path={single()!.relativePath}
+              path={single()!.file}
               actions={
                 <Switch>
-                  <Match when={single()!.type === "add"}>
+                  <Match when={single()!.status === "added"}>
                     <span data-slot="apply-patch-change" data-type="added">
                       {i18n.t("ui.patch.action.created")}
                     </span>
                   </Match>
-                  <Match when={single()!.type === "delete"}>
+                  <Match when={single()!.status === "deleted"}>
                     <span data-slot="apply-patch-change" data-type="removed">
                       {i18n.t("ui.patch.action.deleted")}
                     </span>
                   </Match>
-                  <Match when={single()!.type === "move"}>
+                  <Match when={!!single()!.movePath}>
                     <span data-slot="apply-patch-change" data-type="modified">
                       {i18n.t("ui.patch.action.moved")}
                     </span>

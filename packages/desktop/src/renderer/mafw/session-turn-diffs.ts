@@ -17,9 +17,9 @@ type PerTurnMap = Record<string, FileDiffEntry[] | null>
 type EnsureInput = {
   sid: string
   messages: any[]
-  runtimeName: string
+  /** Experience `branch.diff` supported（不再读 runtime capabilities）。 */
+  diffSupported: boolean
   busy: boolean
-  diffApi: boolean
 }
 
 export function createSessionTurnDiffsStore(fetchDiff: DiffFetcher) {
@@ -28,10 +28,10 @@ export function createSessionTurnDiffsStore(fetchDiff: DiffFetcher) {
   const generations = new Map<string, number>()
 
   function ensure(input: EnsureInput): void {
-    if (!input.sid || !input.diffApi) return
+    if (!input.sid || !input.diffSupported) return
     const candidates = collectTurnDiffCandidates(input.messages, { excludeLastTurn: input.busy })
     if (!candidates.length) return
-    const key = turnDiffRequestKey(input.runtimeName, input.sid, candidates)
+    const key = turnDiffRequestKey(input.sid, candidates)
     if (requested.has(key)) return
     requested.add(key)
     if (requested.size > 50) {

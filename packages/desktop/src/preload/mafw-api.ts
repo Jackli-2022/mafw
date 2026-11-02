@@ -91,6 +91,7 @@ export function createMafwApi(): MafwAPI {
       create: (opts?) => invoke("session", "create", opts || {}),
       get: (id) => invoke("session", "get", { path: { id } }),
       messages: (sessionID, limit?, before?) => invoke("session", "messages", { path: { id: sessionID }, query: { limit, before } }),
+      history: (sessionID, limit?, before?) => invoke("session", "history", { sessionID, limit, before }),
       todo: (sessionID) => invoke("session", "todo", { path: { id: sessionID } }),
       children: (sessionID) => invoke("session", "children", { path: { id: sessionID } }),
       switchAgent: (id, agent) => invoke("session", "switchAgent", { path: { id }, body: { agent } }),
@@ -142,6 +143,12 @@ export function createMafwApi(): MafwAPI {
     skill: {
       list: (directory?) => invoke("skill", "list", directory),
       content: (id, directory?) => invoke("skill", "content", id, directory),
+    },
+
+    discovery: {
+      get: (sessionID, opts?) => invoke("discovery", "get", sessionID, opts || {}),
+      refresh: (sessionID, opts?) => invoke("discovery", "refresh", sessionID, opts || {}),
+      skill: (sessionID, key, opts?) => invoke("discovery", "skill", sessionID, key, opts || {}),
     },
 
     // W4 v1：MCP 服务器状态（CLI 解析）
@@ -357,7 +364,7 @@ export function createMafwApi(): MafwAPI {
     },
 
     experience: {
-      actions: (sessionID?: string) => invoke("experience", "actions", sessionID),
+      actions: (sessionID?: string, opts?: { directory?: string }) => invoke("experience", "actions", sessionID, opts || {}),
     },
 
     // opencode v2 原生 shell 命令（经 gateway 兜底反代；location-scoped，不可达时调用方 fail-open）

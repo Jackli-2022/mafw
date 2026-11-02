@@ -47,6 +47,7 @@ import {
 import { handleSessionSummarize } from './session-summarize';
 import { handleExperienceActions } from './experience-actions';
 import { projectExperienceActions } from '../experience/experience-projector';
+import { resolveWorktreeAvailability, probeGitWorktreeSupport } from '../core/worktree/worktree-availability';
 import { handleEventPublish } from './event-publish';
 import { handleMediaSwitch } from './media-switch';
 import {
@@ -253,6 +254,13 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     handleExperienceActions(req, res, req.url || '', {
       project: (ctx) => projectExperienceActions(gw.runtime?.access ?? null, ctx),
       isBusy: (sid) => gw.isCheckpointBusy?.(sid) ?? false,
+      // worktree 归属（设计 §7.1）：gateway git 能力 + runtime 目录会话契约，
+      // 不再是 `worktreeApi`。目录不可用 → 动作显式禁用（不先试请求再报错）。
+      worktreeAvailability: async (directory) => resolveWorktreeAvailability({
+        directory,
+        directorySupported: gw.runtime?.access?.can('session.worktree') === true,
+        gitAvailable: await probeGitWorktreeSupport(directory),
+      }),
     })));
 
   registry.attachHandler('event.publish', H(async (req, res) =>
