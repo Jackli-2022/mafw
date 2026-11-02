@@ -6,6 +6,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PluginClientDescriptor, PluginJsonSchema } from "@mafw/plugin-contract"
 import {
+  configFormLoadedFor,
   createPluginConfigController,
   formFields,
   initialFormValues,
@@ -266,6 +267,102 @@ describe("plugin config controller", () => {
     expect(controller.state().status).toBe("ready")
     expect(controller.state().values).toEqual(defaults())
     expect(controller.state().stale).toBe(false)
+    expect(configFormLoadedFor(controller.state(), "rev-1", "settings")).toBe(true)
+  })
+
+  test("a failed load with no required fields cannot be saved", async () => {
+    const optionalSchema: PluginJsonSchema = {
+      type: "object",
+      properties: { theme: { type: "string", default: "light" } },
+    }
+    const h = harness({
+      schema: () => optionalSchema,
+      load: async () => {
+        throw new Error("boom")
+      },
+    })
+    const controller = createPluginConfigController(h.deps)
+
+    await controller.load()
+    expect(controller.state().status).toBe("ready")
+    expect(controller.state().error).toContain("加载失败")
+
+    const outcome = await controller.save()
+    expect(outcome).toBe("not-loaded")
+    expect(h.saves).toEqual([])
+    expect(controller.state().error).toContain("尚未成功加载")
+  })
+
+  test("a successful retry load unlocks saving", async () => {
+    const optionalSchema: PluginJsonSchema = {
+      type: "object",
+      properties: { theme: { type: "string", default: "light" } },
+    }
+    let fail = true
+    const h = harness({
+      schema: () => optionalSchema,
+      load: async () => {
+        if (fail) throw new Error("boom")
+        return { theme: "dark" }
+      },
+    })
+    const controller = createPluginConfigController(h.deps)
+
+    await controller.load()
+    expect(await controller.save()).toBe("not-loaded")
+    expect(h.saves).toEqual([])
+
+    fail = false
+    await controller.load()
+    expect(configFormLoadedFor(controller.state(), "rev-1", "settings")).toBe(true)
+    expect(await controller.save()).toBe("saved")
+    expect(h.saves).toEqual([{ theme: "dark" }])
+  })
+
+  test("a revision change resets the load gate even after a successful save", async () => {
+    let identity = { revision: "rev-1", pageId: "settings" }
+    let fail = false
+    const h = harness({
+      identity: () => identity,
+      load: async () => {
+        if (fail) throw new Error("boom")
+        return defaults()
+      },
+    })
+    const controller = createPluginConfigController(h.deps)
+
+    await controller.load()
+    await controller.save()
+    expect(h.saves).toHaveLength(1)
+
+    identity = { revision: "rev-2", pageId: "settings" }
+    fail = true
+    controller.checkIdentity("rev-2", "settings")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.state().loadedRevision).toBe("")
+    expect(controller.state().loadedPageId).toBe("")
+    expect(await controller.save()).toBe("not-loaded")
+    expect(h.saves).toHaveLength(1)
+  })
+
+  test("a failed reload under the same identity keeps the previous valid load", async () => {
+    const h = harness()
+    const controller = createPluginConfigController(h.deps)
+
+    await controller.load()
+    await controller.save()
+    expect(h.saves).toHaveLength(1)
+
+    h.deps.load = async () => {
+      throw new Error("boom")
+    }
+    await controller.reload()
+    expect(controller.state().error).toContain("加载失败")
+    expect(configFormLoadedFor(controller.state(), "rev-1", "settings")).toBe(true)
+
+    expect(await controller.save()).toBe("saved")
+    expect(h.saves).toHaveLength(2)
   })
 
   test("save success submits current values and updates the baseline", async () => {

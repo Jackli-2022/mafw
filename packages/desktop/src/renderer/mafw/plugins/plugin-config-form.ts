@@ -290,6 +290,9 @@ export interface PluginConfigFormState {
   errors: string[]
   error: string | null
   stale: boolean
+  /** Identity of the last successfully loaded data; also gates save. */
+  loadedRevision: string
+  loadedPageId: string
   revision: string
   pageId: string
   requestId: number
@@ -302,12 +305,14 @@ export const EMPTY_PLUGIN_CONFIG_FORM_STATE: PluginConfigFormState = Object.free
   errors: [],
   error: null,
   stale: false,
+  loadedRevision: "",
+  loadedPageId: "",
   revision: "",
   pageId: "",
   requestId: 0,
 })
 
-export type ConfigSaveOutcome = "saved" | "invalid" | "failed" | "stale" | "busy"
+export type ConfigSaveOutcome = "saved" | "invalid" | "failed" | "stale" | "busy" | "not-loaded"
 
 export interface PluginConfigControllerDeps {
   schema: () => PluginJsonSchema
@@ -357,8 +362,23 @@ export function configFormDirty(state: PluginConfigFormState): boolean {
   return !sameValues(state.values, state.baseline)
 }
 
+/**
+ * True only when data for this exact descriptor/page identity loaded
+ * successfully. A failed load (or a revision change) leaves the form
+ * unsaveable: an empty/default draft must never overwrite stored config.
+ */
+export function configFormLoadedFor(
+  state: PluginConfigFormState,
+  revision: string,
+  pageId: string,
+): boolean {
+  if (revision.length === 0 || pageId.length === 0) return false
+  return state.loadedRevision === revision && state.loadedPageId === pageId
+}
+
 const STALE_DRAFT_MESSAGE = "插件已更新，当前草稿基于旧配置，请重新加载后再保存"
 const STALE_LOAD_MESSAGE = "插件已更新，请重新加载配置"
+const NOT_LOADED_MESSAGE = "配置尚未成功加载，请先重新加载后再保存"
 
 /**
  * Save output may be the persisted values, an arbitrary result object or
@@ -438,6 +458,8 @@ export function createPluginConfigController(
         errors: [],
         error: null,
         stale: false,
+        loadedRevision: identity.revision,
+        loadedPageId: identity.pageId,
         revision: identity.revision,
         pageId: identity.pageId,
         requestId,
@@ -481,6 +503,14 @@ export function createPluginConfigController(
       return "stale"
     }
 
+    const identity = runtime.untrack(() => deps.identity())
+    if (!configFormLoadedFor(current, identity.revision, identity.pageId)) {
+      // Never let an empty/default draft overwrite stored config after a
+      // failed or not-yet-completed load for this identity.
+      setState((value) => ({ ...value, errors: [], error: NOT_LOADED_MESSAGE }))
+      return "not-loaded"
+    }
+
     const schema = runtime.untrack(() => deps.schema())
     const errors = validateFormValues(schema, current.values)
     if (errors.length > 0) {
@@ -490,7 +520,6 @@ export function createPluginConfigController(
 
     const requestId = ++requestSeq
     const generation = runtime.untrack(() => deps.generation())
-    const identity = runtime.untrack(() => deps.identity())
     const submitted = { ...current.values }
     setState((value) => ({
       ...value,
@@ -504,11 +533,9 @@ export function createPluginConfigController(
       const raw = await deps.save(submitted)
       if (disposed || requestId !== requestSeq) return "failed"
       const currentIdentity = deps.identity()
-      if (
-        !deps.isGenerationCurrent(generation) ||
-        currentIdentity.revision !== identity.revision ||
-        currentIdentity.pageId !== identity.pageId
-      ) {
+      const identityChanged =
+        currentIdentity.revision !== identity.revision || currentIdentity.pageId !== identity.pageId
+      if (!deps.isGenerationCurrent(generation) || identityChanged) {
         // The package changed while saving: keep the draft, but never pretend
         // it was persisted under the new revision.
         setState((value) => ({
@@ -516,6 +543,8 @@ export function createPluginConfigController(
           status: "ready",
           stale: true,
           error: STALE_DRAFT_MESSAGE,
+          loadedRevision: identityChanged ? "" : value.loadedRevision,
+          loadedPageId: identityChanged ? "" : value.loadedPageId,
           requestId,
         }))
         return "stale"
@@ -590,10 +619,16 @@ export function createPluginConfigController(
     if (current.status === "loading" || current.status === "saving") return
     if (current.revision === revision && current.pageId === pageId) return
 
-    if (configFormDirty(current)) {
-      setState((value) => ({ ...value, stale: true, error: STALE_DRAFT_MESSAGE }))
-      return
-    }
+    const dirty = configFormDirty(current)
+    // A revision/page change invalidates the previous load gate. Only a fresh
+    // successful load (or dirty-draft reload) may re-enable saving.
+    setState((value) => ({
+      ...value,
+      loadedRevision: "",
+      loadedPageId: "",
+      ...(dirty ? { stale: true, error: STALE_DRAFT_MESSAGE } : {}),
+    }))
+    if (dirty) return
     void load()
   }
 

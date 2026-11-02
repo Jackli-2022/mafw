@@ -21,6 +21,7 @@ import type {
 } from "@mafw/plugin-contract"
 import { isPluginGenerationCurrent, pluginGeneration } from "./plugin-store"
 import {
+  configFormLoadedFor,
   createPluginConfigController,
   formFields,
   type ConfigField,
@@ -61,7 +62,11 @@ export function PluginConfigPage(props: {
   const state = controller.state
   const fields = createMemo(() => formFields(props.page.schema))
   const pending = () => state().status === "loading" || state().status === "saving"
-  const saveDisabled = () => pending() || state().stale || fields().length === 0
+  const saveDisabled = () =>
+    pending() ||
+    state().stale ||
+    fields().length === 0 ||
+    !configFormLoadedFor(state(), props.descriptor.revision, props.page.id)
 
   // Identity effect: only descriptor revision + page id are tracked. Controller
   // bookkeeping is untracked, so settling state never re-triggers this effect.
