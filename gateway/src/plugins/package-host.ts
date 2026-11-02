@@ -22,6 +22,9 @@ import { createPiPromptAdapter } from '../media/pi-adapter';
 import { buildClientDescriptor, buildClientSnapshot, type PluginClientSnapshot } from './client-descriptor';
 import { fingerprintPackage } from './package-fingerprint';
 import { buildActivatedContributions } from './package-validator';
+import { withPluginEmit } from './package-context';
+import { PluginActionRegistry, type PluginActionInvokeOptions } from './plugin-actions';
+import { PluginEventRegistry, type PluginEventFrame } from './plugin-events';
 import { createRegistrationBag, type RegistrationBag } from './registration-bag';
 import type {
   ActivatedContributions,
@@ -56,6 +59,16 @@ export interface PluginHostOptions {
   activeRuntime?: () => string | null | undefined;
   /** RegistrationBag factory (diagnostics/tests may inject a tracking bag). */
   createBag?: () => RegistrationBag;
+  /**
+   * Gateway-wide flat broadcast (SSE + WS + mobile push). Used for registered
+   * package events and the `plugins.changed` commit notification; absent in
+   * headless/tests, where events are accepted but not delivered.
+   */
+  broadcast?: (event: PluginEventFrame) => void;
+  /** Injected action registry (defaults to a fresh one owned by this host). */
+  actionRegistry?: PluginActionRegistry;
+  /** Injected event registry (defaults to one bound to `canonicalTypes`). */
+  eventRegistry?: PluginEventRegistry;
 }
 
 export interface PluginPendingState {
@@ -84,6 +97,11 @@ interface ActivationResult {
   /** Client-safe DTOs + Host declarations of the same `activate()` result. */
   activated: ActivatedContributions;
   entries: PackageEntries;
+  /**
+   * Identity of this activation as seen by `ctx.emit`. Registration at commit
+   * adopts it, so a late emit from a superseded activation is dropped.
+   */
+  emitterToken: object;
 }
 
 interface PackageActivation extends ActivationResult {
@@ -149,6 +167,9 @@ export class PluginHost {
   private lastUsage: UsagePackageEntry[] = [];
   private readonly createBag: () => RegistrationBag;
   private readonly canonicalTypes: ReadonlySet<string>;
+  private readonly broadcast?: PluginHostOptions['broadcast'];
+  private readonly actions: PluginActionRegistry;
+  private readonly events: PluginEventRegistry;
 
   constructor(
     private dir: string,
@@ -158,6 +179,15 @@ export class PluginHost {
     this.bootId = options.bootId ?? randomBytes(8).toString('hex');
     this.canonicalTypes = options.canonicalTypes ?? EMPTY_CANONICAL_TYPES;
     this.createBag = options.createBag ?? createRegistrationBag;
+    this.broadcast = options.broadcast;
+    this.actions = options.actionRegistry ?? new PluginActionRegistry({
+      onDiagnostic: (diagnostic) => log.warn(`[PluginHost] ${diagnostic.packageName} ${diagnostic.code}: ${diagnostic.message}`),
+    });
+    this.events = options.eventRegistry ?? new PluginEventRegistry({
+      canonicalTypes: this.canonicalTypes,
+      broadcast: this.broadcast ? (frame) => this.broadcast?.(frame) : undefined,
+      onDiagnostic: (diagnostic) => log.warn(`[PluginHost] ${diagnostic.packageName} ${diagnostic.code}: ${diagnostic.message}`),
+    });
     this.snapshot = buildClientSnapshot(this.currentToken(), []);
     this.lastStateSignature = JSON.stringify(this.getState());
   }
@@ -184,6 +214,27 @@ export class PluginHost {
 
   /** Immutable client-visible projection (active packages only). */
   getClientSnapshot(): PluginClientSnapshot { return this.snapshot; }
+
+  /** Committed action registry (REST/SDK invoke through `invokeAction`). */
+  getActionRegistry(): PluginActionRegistry { return this.actions; }
+
+  /** Committed event registry (diagnostics + manual emits). */
+  getEventRegistry(): PluginEventRegistry { return this.events; }
+
+  /**
+   * Invokes one action of a committed package.
+   *
+   * Pending candidates are not registered, so their actions answer 404 here
+   * until `applyPending` commits them.
+   */
+  invokeAction(
+    packageName: string,
+    action: string,
+    input: unknown,
+    options: PluginActionInvokeOptions = {},
+  ): Promise<unknown> {
+    return this.actions.invoke(packageName, action, input, options);
+  }
 
   getState(): PackageState[] {
     const names = new Set<string>([
@@ -408,8 +459,13 @@ export class PluginHost {
 
     if (snapshotChanged) {
       this.snapshot = this.buildSnapshot(revision);
+      for (const staged of toCommit) {
+        const committed = nextActive.get(staged.descriptor.name);
+        if (committed) this.registerDeclarativeContributions(committed);
+      }
       this.publishEntries();
       this.snapshotCb?.(this.snapshot);
+      this.broadcastPluginsChanged(revision);
     }
     this.notifyStateChanged();
     this.refreshDirWatchers();
@@ -434,10 +490,49 @@ export class PluginHost {
     this.active = nextActive;
     this.pending = nextPending;
     this.snapshot = this.buildSnapshot(revision);
+    const applied = nextActive.get(name);
+    if (applied) this.registerDeclarativeContributions(applied);
     this.publishEntries();
     this.snapshotCb?.(this.snapshot);
+    this.broadcastPluginsChanged(revision);
     this.notifyStateChanged();
     return { applied: true, revision };
+  }
+
+  /**
+   * Attaches a committed package's actions/events to its bag.
+   *
+   * Only called from the commit path: a staged candidate's registrations must
+   * not be reachable before the loader/snapshot switch. Registration cleanup is
+   * owned by the same bag, so a delete/replace aborts in-flight actions and
+   * makes late emits no-ops.
+   */
+  private registerDeclarativeContributions(record: ActivePackage): void {
+    const name = record.descriptor.name;
+    // Registration diagnostics are already emitted through the registries'
+    // `onDiagnostic` hook (host logging); the return values stay available for
+    // callers that inspect them (tests/future Hub diagnostics).
+    this.actions.register(name, record.activated.actions, record.bag, undefined, {
+      revision: record.revision,
+    });
+    this.events.register(name, record.activated.events, record.bag, {
+      revision: record.revision,
+      token: record.emitterToken,
+    });
+  }
+
+  /**
+   * Publishes the gateway flat `plugins.changed` event once per committed
+   * snapshot. Activation staging, failed candidates and unchanged rescans do
+   * not reach this point, so clients only re-pull on a real revision change.
+   */
+  private broadcastPluginsChanged(revision: string): void {
+    if (!this.broadcast) return;
+    try {
+      this.broadcast({ type: 'plugins.changed', properties: { revision } });
+    } catch (err) {
+      log.warn(`[PluginHost] plugins.changed broadcast failed: ${describeError(err)}`);
+    }
   }
 
   private buildSnapshot(revision: string): PluginClientSnapshot {
@@ -573,16 +668,22 @@ export class PluginHost {
   }
 
   private async activate(desc: PackageDescriptor, bag: RegistrationBag): Promise<ActivationResult> {
-    // One activate() result = one bag = one revision. The bag is empty until the
-    // action/event registries attach their cleanups, so the per-package lifecycle
-    // has exactly one owner from the first scan onwards.
+    // One activate() result = one bag = one revision. Action/event registries
+    // attach their cleanups to this bag at commit time
+    // (registerDeclarativeContributions), so the per-package lifecycle has
+    // exactly one owner from the first scan onwards.
     void bag;
     this.invalidatePackageCache(desc);
     const mod = require(desc.mainFile);
     const modName = mod?.name;
     if (typeof modName !== 'string' || !modName) throw new Error('missing name');
     if (modName !== desc.name) throw new Error(`name mismatch: exports '${modName}', package '${desc.name}'`);
-    const ctx = this.createContext(modName);
+    // `ctx.emit` is package-scoped: it can only publish events this package
+    // registered (the emitter token ties the closure to this activation).
+    const emitterToken = {};
+    const ctx = withPluginEmit(this.createContext(modName), (event) => {
+      this.events.emitFrom(modName, emitterToken, event);
+    });
     const raw: UnifiedPluginContributions =
       typeof mod.activate === 'function' ? ((await mod.activate(ctx)) ?? {}) : pickContributions(mod);
 
@@ -674,6 +775,7 @@ export class PluginHost {
       contributions: kinds,
       activated,
       entries: { runtime, media, tts, usage },
+      emitterToken,
     };
   }
 

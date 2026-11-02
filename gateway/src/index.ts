@@ -785,6 +785,8 @@ class MafwScheduler {
         activeRuntime: () => this.runtimeName,
         // 包事件不得冒充 canonical 事件。
         canonicalTypes: CANONICAL_TYPE_SET,
+        // 包事件 + 提交后的 plugins.changed 走 gateway 既有扁平广播通道。
+        broadcast: (event) => this.broadcast(event as any),
       },
     );
     this.pluginHost.bindRuntime((entries) => this.runtimeLoader?.setPackageEntries(entries));

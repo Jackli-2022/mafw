@@ -25,8 +25,20 @@ export interface PluginPackageContext {
   gatewayPort: number;
   usage: UsageStatsProvider;
   /** 向全部 UI 通道（SSE/WS/推送）广播自定义事件。type 必须是本包已注册的
-   *  'plugin:<name>:<event>'；消费方对未知 type 忽略（SSE 通知语义，无注册制）。 */
-  emit: (event: { type: string; [key: string]: any }) => void;
+   *  'plugin:<name>:<event>'；未注册/canonical/外命名空间/schema 失败的发射
+   *  一律丢弃并记诊断（Host 包装，见 package-context.withPluginEmit）。 */
+  emit: (event: PluginEmitEvent) => void;
+}
+
+/**
+ * `ctx.emit` 的中性信封：`properties` 是 event.properties（经声明 schema 校验），
+ * `sessionID` 可选。`properties` 缺省时其余顶层键按旧扁平形态收作 properties。
+ */
+export interface PluginEmitEvent {
+  type: string;
+  properties?: Record<string, unknown>;
+  sessionID?: string;
+  [key: string]: unknown;
 }
 
 /** 只允许改自己命名空间的配置 API（Host 注入 config.persistOverrides）。 */

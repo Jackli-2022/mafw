@@ -1,7 +1,7 @@
 import { config } from '../config';
 import { log } from '../core/utils/logger';
 import type { UsageStatsProvider } from '../usage/plugin-context';
-import type { PluginPackageContext } from './package-types';
+import type { PluginEmitEvent, PluginPackageContext } from './package-types';
 
 export interface PackageContextDeps {
   /** thunk 惰性求值（host 初始化时 runtime/trajStore 可能尚未就绪） */
@@ -101,4 +101,20 @@ export function createPluginPackageContext(name: string, deps: PackageContextDep
     usage: deps.usageStats?.() ?? EMPTY_USAGE,
     emit: (event) => deps.emit?.(event),
   };
+}
+
+/**
+ * Replaces `ctx.emit` with the package-scoped, registry-backed emitter.
+ *
+ * The raw broadcast (`deps.emit`) is a gateway-wide sink: a package must not be
+ * able to publish canonical runtime events or another package's namespace
+ * through it. The PluginHost therefore wraps every candidate context so that
+ * `ctx.emit` lands in `PluginEventRegistry.emitFrom`, which only forwards
+ * events registered by this package in the committed revision.
+ */
+export function withPluginEmit(
+  ctx: PluginPackageContext,
+  emit: (event: PluginEmitEvent) => void,
+): PluginPackageContext {
+  return { ...ctx, emit };
 }
