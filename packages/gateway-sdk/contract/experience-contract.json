@@ -1,10 +1,86 @@
 {
-  "experienceVersion": "2026.11.0",
+  "experienceVersion": "2026.11.1",
+  "minClientVersion": "2026.11.0",
   "actions": [
     {
       "id": "checkpoint.restore",
       "scope": "checkpoint",
-      "description": "Restore a server checkpoint"
+      "description": "Restore a server checkpoint (conversation, files or both)"
+    },
+    {
+      "id": "checkpoint.create",
+      "scope": "checkpoint",
+      "description": "Create a manual checkpoint for the session"
+    },
+    {
+      "id": "branch.fork",
+      "scope": "branch",
+      "description": "Fork a session from a message"
+    },
+    {
+      "id": "branch.revert",
+      "scope": "branch",
+      "description": "Revert a session to a message"
+    },
+    {
+      "id": "branch.unrevert",
+      "scope": "branch",
+      "description": "Undo the last revert"
+    },
+    {
+      "id": "branch.diff",
+      "scope": "branch",
+      "description": "Read session or per-turn diffs and revert selected hunks"
+    },
+    {
+      "id": "run.control",
+      "scope": "run",
+      "description": "Suspend, resume or discard a turn-level run state"
+    },
+    {
+      "id": "session.worktree",
+      "scope": "session",
+      "description": "Create a session in an isolated worktree directory"
+    },
+    {
+      "id": "session.summarize",
+      "scope": "session",
+      "description": "Compact the session history"
+    },
+    {
+      "id": "session.switch-agent",
+      "scope": "session",
+      "description": "Switch the session agent"
+    },
+    {
+      "id": "session.switch-model",
+      "scope": "session",
+      "description": "Switch the session model"
+    },
+    {
+      "id": "session.discovery",
+      "scope": "session",
+      "description": "Read commands, skills and AGENTS sources"
+    },
+    {
+      "id": "approval.permission",
+      "scope": "approval",
+      "description": "List and reply to permission requests"
+    },
+    {
+      "id": "approval.question",
+      "scope": "approval",
+      "description": "List, reply to and reject questions"
+    },
+    {
+      "id": "background.jobs",
+      "scope": "background",
+      "description": "List, read output and cancel background jobs"
+    },
+    {
+      "id": "terminal.attach",
+      "scope": "terminal",
+      "description": "Attach to a session terminal over the neutral PTY protocol"
     },
     {
       "id": "prompt.steer",

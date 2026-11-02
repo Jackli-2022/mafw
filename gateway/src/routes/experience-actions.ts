@@ -1,6 +1,7 @@
 import * as http from 'http';
 import {
   EXPERIENCE_VERSION,
+  MIN_CLIENT_EXPERIENCE_VERSION,
   type ActionDescriptor,
   type ExperienceActionId,
 } from '../experience/experience-contract';
@@ -29,6 +30,11 @@ export async function handleExperienceActions(
     sessionID,
     busy: sessionID ? deps.isBusy?.(sessionID) === true : false,
   });
-  json(res, 200, { experienceVersion: EXPERIENCE_VERSION, ...(sessionID ? { sessionID } : {}), actions });
+  json(res, 200, {
+    experienceVersion: EXPERIENCE_VERSION,
+    minClientVersion: MIN_CLIENT_EXPERIENCE_VERSION,
+    ...(sessionID ? { sessionID } : {}),
+    actions,
+  });
   return true;
 }

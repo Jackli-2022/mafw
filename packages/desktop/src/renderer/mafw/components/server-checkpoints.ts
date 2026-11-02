@@ -31,9 +31,18 @@ export function toServerRows(checkpoints: SessionCheckpoint[]): ServerCheckpoint
       const snapshotFiles = typeof checkpoint.snapshotTree === "string" && checkpoint.snapshotTree.length > 0
       const manual = checkpoint.kind === "manual"
       const actions: NonNullable<SessionCheckpoint["actions"]> = checkpoint.actions ?? {
-        restoreConversation: { enabled: !manual },
-        restoreFiles: { enabled: snapshotFiles },
-        restoreBoth: { enabled: !manual && snapshotFiles },
+        // Experience v2：supported 描述功能面，enabled 只描述此刻可执行性。
+        restoreConversation: manual
+          ? { supported: false, enabled: false, reason: "unsupported" }
+          : { supported: true, enabled: true },
+        restoreFiles: snapshotFiles
+          ? { supported: true, enabled: true }
+          : { supported: true, enabled: false, reason: "missing-data" },
+        restoreBoth: manual
+          ? { supported: false, enabled: false, reason: "unsupported" }
+          : snapshotFiles
+            ? { supported: true, enabled: true }
+            : { supported: true, enabled: false, reason: "missing-data" },
       }
       const filesAvailable = actions.restoreFiles.enabled
       return {

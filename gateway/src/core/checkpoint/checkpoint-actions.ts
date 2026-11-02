@@ -1,5 +1,5 @@
 import type { RuntimeAccess } from '../../runtime/runtime-access';
-import type { ActionDescriptor } from '../../experience/experience-contract';
+import { action, type ActionDescriptor } from '../../experience/experience-contract';
 
 export interface CheckpointActionInput {
   id: string;
@@ -26,7 +26,8 @@ function invertible(patch: string | undefined): boolean {
 
 function fileState(targets: CheckpointActionInput[], access: RuntimeAccess): ActionDescriptor {
   const revert = access.semantics<{ files?: boolean; undo?: boolean }>('branch.revert');
-  if (revert.files === false) return { enabled: false, reason: 'unsupported' };
+  // 适配器根本无法恢复文件 → 功能面不存在；数据缺失则是对象级不可用。
+  if (revert.files === false) return action(false, false);
   let sawFiles = false;
   for (const cp of targets) {
     if (typeof cp.snapshotTree === 'string' && cp.snapshotTree.length > 0) {
@@ -36,14 +37,14 @@ function fileState(targets: CheckpointActionInput[], access: RuntimeAccess): Act
     if (cp.filesKnown === true && Array.isArray(cp.files)) {
       sawFiles = true;
       if (!cp.files.every((f) => invertible(f.patch))) {
-        return { enabled: false, reason: 'non-invertible-patch' };
+        return action(true, false, 'non-invertible-patch');
       }
       continue;
     }
-    return { enabled: false, reason: 'missing-data' };
+    return action(true, false, 'missing-data');
   }
-  if (!sawFiles) return { enabled: false, reason: 'missing-data' };
-  return { enabled: true };
+  if (!sawFiles) return action(true, false, 'missing-data');
+  return action(true, true);
 }
 
 export function projectCheckpointActions(
@@ -51,7 +52,8 @@ export function projectCheckpointActions(
   ctx: { access: RuntimeAccess; busy: boolean; targets: CheckpointActionInput[] },
 ): CheckpointActions {
   if (ctx.busy) {
-    const busy = { enabled: false, reason: 'busy' as const };
+    // busy 是暂时限制：功能面仍存在，只是此刻不可执行。
+    const busy = action(true, false, 'busy');
     return { restoreConversation: busy, restoreFiles: busy, restoreBoth: busy };
   }
 
@@ -65,17 +67,18 @@ export function projectCheckpointActions(
 
   if (checkpoint.kind === 'manual') {
     return {
-      restoreConversation: { enabled: false, reason: 'unsupported' },
+      restoreConversation: action(false, false),
       restoreFiles: file,
-      restoreBoth: { enabled: false, reason: 'unsupported' },
+      restoreBoth: action(false, false),
     };
   }
   return {
-    restoreConversation: { enabled: true },
+    restoreConversation: action(true, true),
     restoreFiles: file,
     restoreBoth: {
-      enabled: file.enabled,
-      ...(file.enabled ? {} : { reason: file.reason }),
+      ...(file.supported
+        ? action(true, file.enabled, file.enabled ? undefined : file.reason)
+        : action(false, false)),
       warningKey,
     },
   };

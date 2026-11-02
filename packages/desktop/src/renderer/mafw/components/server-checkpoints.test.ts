@@ -36,6 +36,26 @@ test("toServerRows tolerates empty collections", () => {
   assert.deepEqual(toServerRows([]), [])
 })
 
+test("toServerRows fallback descriptors separate support from availability", () => {
+  const rows = toServerRows([
+    { ...base, id: "ckpt_auto", snapshotTree: null, createdAt: "2026-10-26T00:00:00Z" },
+    { ...base, id: "ckpt_manual", snapshotTree: "a".repeat(40), createdAt: "2026-10-26T02:00:00Z", kind: "manual" },
+  ])
+  const [manual, auto] = rows
+  // 自动检查点：会话恢复存在但文件数据缺失 → supported 但不可执行。
+  assert.equal(auto.actions.restoreConversation.supported, true)
+  assert.equal(auto.actions.restoreConversation.enabled, true)
+  assert.equal(auto.actions.restoreFiles.supported, true)
+  assert.equal(auto.actions.restoreFiles.enabled, false)
+  assert.equal(auto.actions.restoreFiles.reason, "missing-data")
+  // 手动检查点：会话恢复功能面不存在（只做代码恢复）。
+  assert.equal(manual.actions.restoreConversation.supported, false)
+  assert.equal(manual.actions.restoreConversation.enabled, false)
+  assert.equal(manual.actions.restoreConversation.reason, "unsupported")
+  assert.equal(manual.actions.restoreFiles.supported, true)
+  assert.equal(manual.actions.restoreFiles.enabled, true)
+})
+
 test("restoreWarning uses scope and Experience warning keys", () => {
   const session = restoreWarning("session", false)
   assert.match(session, /撤回该消息及其后内容/)
