@@ -126,6 +126,29 @@ export function PodDock(props: {
     setTab("work")
   }
 
+  const retryDelivery = async (messageId: string) => {
+    const podId = podStore.detail()?.pod.id
+    if (!podId) return
+    try {
+      const result = await window.api.mafw.pod.retryDelivery(podId, messageId)
+      showToastV2({ description: result.delivery === "delivered" ? "已重新投递" : "仍待对方下次派活", variant: "success", duration: 2600 } as any)
+      await podStore.refresh()
+    } catch (err: any) {
+      showToastV2({ description: `重试失败：${String(err?.message ?? err).slice(0, 80)}`, variant: "error", duration: 3000 } as any)
+    }
+  }
+
+  const dismissDelivery = async (messageId: string, memberId: string) => {
+    const podId = podStore.detail()?.pod.id
+    if (!podId) return
+    try {
+      await window.api.mafw.pod.dismissDelivery(podId, messageId, memberId)
+      await podStore.refresh()
+    } catch (err: any) {
+      showToastV2({ description: `忽略失败：${String(err?.message ?? err).slice(0, 80)}`, variant: "error", duration: 3000 } as any)
+    }
+  }
+
   const cancelQueued = async (goalId: string): Promise<boolean> => {
     try {
       await podStore.cancelGoal(goalId)
@@ -178,6 +201,19 @@ export function PodDock(props: {
       return true
     } catch (err: any) {
       showToastV2({ description: `加入计划失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
+      return false
+    }
+  }
+
+  const renameNote = async (taskId: string, title: string): Promise<boolean> => {
+    const podId = podStore.detail()?.pod.id
+    if (!podId) return false
+    try {
+      await window.api.mafw.pod.updateTask(podId, taskId, { title })
+      await podStore.refresh()
+      return true
+    } catch (err: any) {
+      showToastV2({ description: `改名失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
       return false
     }
   }
@@ -293,6 +329,7 @@ export function PodDock(props: {
                   <PodGoalComposer
                     busy={podStore.busy()}
                     activeGoalId={activeGoalId()}
+                    autofocus={detail().goals.length === 0}
                     initial={composerInitial()}
                     onCreate={createGoal}
                   />
@@ -320,6 +357,7 @@ export function PodDock(props: {
                     onCreate={createTask}
                     onCreatePlan={createPlanTask}
                     onEdit={editTask}
+                    onRenameNote={renameNote}
                     onDelete={deleteTask}
                     onOpenGoal={props.onOpenGoal}
                   />
@@ -368,17 +406,28 @@ export function PodDock(props: {
                       }}
                     </For>
                   </div>
-                  <Show when={detail().messageHealth.length > 0}>
+                  <Show when={detail().messageHealth.filter((item) => item.attempts >= 3).length > 0}>
                     <div class="mafw-pod-message-health">
-                      <div class="mafw-pod-section-head"><span>投递问题</span><span>{detail().messageHealth.length}</span></div>
-                      <For each={detail().messageHealth}>
-                        {(item) => (
-                          <div class="mafw-pod-message-health-row">
-                            <span>{item.memberId}</span>
-                            <span>{item.lastError ?? "投递失败"}</span>
-                            <span>{item.attempts} 次</span>
-                          </div>
-                        )}
+                      <div class="mafw-pod-section-head">
+                        <span>投递问题</span>
+                        <span>{detail().messageHealth.filter((item) => item.attempts >= 3).length}</span>
+                      </div>
+                      <For each={detail().messageHealth.filter((item) => item.attempts >= 3)}>
+                        {(item) => {
+                          const message = () => podStore.messages().find((row) => row.id === item.messageId)
+                          const member = () => detail().members.find((row) => row.id === item.memberId)
+                          return (
+                            <div class="mafw-pod-message-health-row">
+                              <span>{member()?.displayName ?? "成员"}</span>
+                              <span>{item.lastError ?? "投递失败"}</span>
+                              <span>{item.attempts} 次</span>
+                              <Show when={message()?.toMemberId}>
+                                <ButtonV2 variant="ghost" size="small" onClick={() => void retryDelivery(item.messageId)}>重试</ButtonV2>
+                              </Show>
+                              <ButtonV2 variant="ghost" size="small" onClick={() => void dismissDelivery(item.messageId, item.memberId)}>忽略</ButtonV2>
+                            </div>
+                          )
+                        }}
                       </For>
                     </div>
                   </Show>

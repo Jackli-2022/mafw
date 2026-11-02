@@ -1,5 +1,9 @@
 import { Readable } from 'stream';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { handlePods } from '../../../src/routes/pods';
+import { GoalConflictError } from '../../../src/core/goal/goal-intake';
 
 function makeRes() {
   const out = { status: 0, body: '' };
@@ -81,8 +85,43 @@ describe('Pod Goal create and detail views', () => {
       goalId: 'goal-generated',
       projectDir: 'C:/project',
       authorization: { source: 'desktop', requestMode: 'explicit' },
+      autoStart: false,
     });
     expect(calls.enqueue).toEqual([{ goalId: 'goal-generated', projectDir: 'C:/project' }]);
+  });
+
+  test('a duplicate goal is a 409, not a 500', async () => {
+    const { deps, calls } = makeDeps({
+      intake: {
+        create: () => { throw new GoalConflictError('goal-generated'); },
+      },
+    });
+    const out = await send(deps, '/api/pods/pod_1/goals', { title: 'Dup', objective: 'x' }, 'POST');
+    expect(out.status).toBe(409);
+    expect(calls.enqueue).toHaveLength(0);
+  });
+
+  test('a failed enqueue removes the intake files it just created', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-goal-orphan-'));
+    const charterPath = path.join(dir, 'goal.md');
+    const requestPath = path.join(dir, 'goal.json');
+    fs.writeFileSync(charterPath, 'charter');
+    fs.writeFileSync(requestPath, '{}');
+    const { deps } = makeDeps({
+      intake: {
+        create: (input: any) => ({ goalId: input.goalId, charterPath, requestPath, projectDir: input.projectDir }),
+      },
+      goals: {
+        views: () => [],
+        attention: () => [],
+        enqueueGoal: async () => { throw new Error('queue offline'); },
+      },
+    });
+    const out = await send(deps, '/api/pods/pod_1/goals', { title: 'Orphan', objective: 'x' }, 'POST');
+    expect(out.status).toBe(500);
+    expect(fs.existsSync(charterPath)).toBe(false);
+    expect(fs.existsSync(requestPath)).toBe(false);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   test('GET detail exposes goal views and attention precisely once', async () => {

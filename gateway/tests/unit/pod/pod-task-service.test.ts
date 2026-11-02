@@ -21,6 +21,17 @@ describe('PodTaskService', () => {
     expect(service.list('pod_1', 'g1').find((t) => t.id === tasks[0].id)?.status).toBe('skipped');
   });
 
+  test('notes can be renamed, external requests cannot', () => {
+    const note = service.createManual('pod_1', null, 'old note');
+    expect(service.editTitle('pod_1', note.id, 'new note').title).toBe('new note');
+    const external = store.upsertTask({
+      id: 'external_1', podId: 'pod_1', goalId: 'g1', sourceKey: 'a2a:m1', externalTaskId: null,
+      title: 'external', description: null, ownerMemberId: null, status: 'pending',
+      dependenciesJson: null, artifactRefsJson: null, now: '2026-10-29T00:00:00.000Z',
+    });
+    expect(() => service.editTitle('pod_1', external.id, 'nope')).toThrow(/external requests/);
+  });
+
   test('derives plan, note and external request kinds', () => {
     expect(podTaskKindOf({ sourceKey: 'manual:x', goalId: null, externalTaskId: null })).toBe('note');
     expect(podTaskKindOf({ sourceKey: 'wave:w1:task:w1-t1', goalId: 'g1', externalTaskId: 'w1-t1' })).toBe('plan');
@@ -148,7 +159,7 @@ describe('PodTaskService', () => {
     expect(() => service.updateTask('pod_1', task.id, { status: 'pending' })).toThrow(PodError);
   });
 
-  test('reopenForReview reopens in-progress and done tasks', () => {
+  test('reopenForReview does not erase already-done evidence', () => {
     const tasks = service.projectWaves('pod_1', 'g1', plan);
     service.updateTask('pod_1', tasks[0].id, { status: 'in_progress' });
     service.updateTask('pod_1', tasks[1].id, { status: 'in_progress' });
@@ -156,7 +167,8 @@ describe('PodTaskService', () => {
 
     const reopened = service.reopenForReview('pod_1', 'g1');
 
-    expect(reopened.map((t) => t.status)).toEqual(['reopened', 'reopened']);
+    expect(reopened.map((t) => t.status)).toEqual(['reopened']);
+    expect(service.list('pod_1', 'g1').find((t) => t.id === tasks[1].id)?.status).toBe('done');
     expect(notifications).toContain('pod_1');
   });
 

@@ -83,6 +83,22 @@ describe('projectPodGoalStage', () => {
     })).toMatchObject({ owner: 'person', kind: 'blocked' });
   });
 
+  test('a paused Pod with a live node is still team-working', () => {
+    expect(projectPodGoalStage({
+      ...base,
+      queueReason: 'paused',
+      nodeSession: { id: 's1', phase: 'execute' },
+    })).toMatchObject({ owner: 'team', kind: 'working' })
+  })
+
+  test('state_error queue reason is person-blocked, not a fabricated queue', () => {
+    expect(projectPodGoalStage({
+      ...base,
+      goalStatus: 'queued',
+      queueReason: 'state_error',
+    })).toMatchObject({ owner: 'person', kind: 'blocked' })
+  })
+
   test('an active goal with no node is waiting without inventing a person action', () => {
     expect(projectPodGoalStage({
       ...base,

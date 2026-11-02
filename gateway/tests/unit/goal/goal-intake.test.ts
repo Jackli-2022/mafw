@@ -4,6 +4,7 @@ import * as path from 'path';
 import {
   buildGoalCharter,
   createGoalIntake,
+  GoalConflictError,
   makePodGoalId,
   type GoalIntakeDeps,
 } from '../../../src/core/goal/goal-intake';
@@ -75,8 +76,13 @@ describe('goal intake', () => {
     const first = createGoalIntake({ ...base, goalId: 'g-dup' }, deps());
     const before = fs.readFileSync(first.charterPath, 'utf8');
     expect(() => createGoalIntake({ ...base, goalId: 'g-dup', title: 'Changed' }, deps()))
-      .toThrow(/already exists/);
+      .toThrow(GoalConflictError);
     expect(fs.readFileSync(first.charterPath, 'utf8')).toBe(before);
+  });
+
+  test('autoStart false leaves starting to the caller', () => {
+    createGoalIntake({ ...base, goalId: 'g-deferred', autoStart: false }, deps());
+    expect(events).toHaveLength(0);
   });
 
   test('goal ids are stable for a given timestamp and random source', () => {

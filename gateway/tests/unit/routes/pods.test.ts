@@ -170,6 +170,30 @@ describe('pod routes', () => {
     expect(plain.json.delivery).toBeUndefined();
   });
 
+  it('retries and dismisses failed deliveries through their own routes', async () => {
+    const deps = makeDeps();
+    (deps as any).delivery = {
+      deliver: jest.fn(async () => 'pending'),
+      retryFailure: jest.fn(async () => 'delivered'),
+      dismissFailure: jest.fn(() => true),
+    };
+
+    const retry = await call('POST', '/api/pods/pod_1/messages/m1/delivery/retry', deps, {});
+    expect(retry.res.status).toBe(200);
+    expect(retry.json.delivery).toBe('delivered');
+    expect((deps as any).delivery.retryFailure).toHaveBeenCalledWith('m1');
+
+    const missingMember = await call('POST', '/api/pods/pod_1/messages/m1/delivery/dismiss', deps, {});
+    expect(missingMember.res.status).toBe(400);
+
+    const dismiss = await call('POST', '/api/pods/pod_1/messages/m1/delivery/dismiss', deps, {
+      memberId: 'm_builder',
+    });
+    expect(dismiss.res.status).toBe(200);
+    expect(dismiss.json.dismissed).toBe(true);
+    expect((deps as any).delivery.dismissFailure).toHaveBeenCalledWith('m1', 'm_builder');
+  });
+
   it('lookup reads a pod without ensuring one', async () => {
     const deps = makeDeps();
     const found = await call('GET', '/api/projects/p1/pod/lookup', deps);

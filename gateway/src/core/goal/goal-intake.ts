@@ -5,6 +5,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+/** Duplicate goal ids are a client conflict, not a server failure. */
+export class GoalConflictError extends Error {
+  constructor(goalId: string) {
+    super(`Goal ${goalId} already exists`);
+    this.name = 'GoalConflictError';
+  }
+}
+
 export type GoalAuthorization = {
   source: 'desktop' | 'lead' | 'a2a' | 'automation' | 'user';
   requestMode: 'explicit' | 'inferred';
@@ -27,6 +35,8 @@ export interface GoalIntakeInput {
   projectDir?: string;
   source?: string;
   authorization: GoalAuthorization;
+  /** Set false when the caller starts the goal itself (Pod route enqueues explicitly). */
+  autoStart?: boolean;
 }
 
 export interface GoalIntakeResult {
@@ -120,11 +130,18 @@ export function createGoalIntake(input: GoalIntakeInput, deps: GoalIntakeDeps): 
   fs.mkdirSync(goalsDir, { recursive: true });
   fs.mkdirSync(requestsDir, { recursive: true });
   if (fs.existsSync(charterPath) || fs.existsSync(requestPath)) {
-    throw new Error(`Goal ${goalId} already exists`);
+    throw new GoalConflictError(goalId);
   }
 
   const body = charter || buildGoalCharter({ title, objective: objective || undefined, acceptance: input.acceptance, boundaries: input.boundaries });
-  fs.writeFileSync(charterPath, body, 'utf-8');
+  // `wx` claims the name atomically; two concurrent intakes cannot both pass
+  // the existence check and clobber each other's files.
+  try {
+    fs.writeFileSync(charterPath, body, { encoding: 'utf-8', flag: 'wx' });
+  } catch (err: any) {
+    if (err?.code === 'EEXIST') throw new GoalConflictError(goalId);
+    throw err;
+  }
 
   const now = deps.now();
   const acceptance = cleanLines(input.acceptance);
@@ -155,8 +172,17 @@ export function createGoalIntake(input: GoalIntakeInput, deps: GoalIntakeDeps): 
     ...(input.planReview ? { planReview: input.planReview } : {}),
     authorization: input.authorization,
   };
-  fs.writeFileSync(requestPath, JSON.stringify(request, null, 2), 'utf-8');
-  deps.emitGoalCreated({ type: 'goal_created', goalId, projectDir });
+  try {
+    fs.writeFileSync(requestPath, JSON.stringify(request, null, 2), { encoding: 'utf-8', flag: 'wx' });
+  } catch (err: any) {
+    // Never leave a charter without its request.
+    try { fs.unlinkSync(charterPath); } catch { /* best effort */ }
+    if (err?.code === 'EEXIST') throw new GoalConflictError(goalId);
+    throw err;
+  }
+  if (input.autoStart !== false) {
+    deps.emitGoalCreated({ type: 'goal_created', goalId, projectDir });
+  }
 
   return { goalId, charterPath, requestPath, projectDir };
 }

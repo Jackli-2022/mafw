@@ -36,6 +36,14 @@ describe('NodeDriver advance（启动侧）', () => {
     expect(h.calls).toHaveLength(0);
   });
 
+  it('legacy per-goal PAUSED state does not create a node', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g1', { patch: { nextAction: 'PAUSED', nextNode: 'plan' } });
+    await h.driver.advance('g1');
+    expect(h.calls).toHaveLength(0);
+    expect(h.load('g1')!.nextAction).toBe('PAUSED');
+  });
+
   it('promptAsync 抛错 → failNode：lastError + archive_fail', async () => {
     const h = makeHarness({ promptAsyncThrows: true });
     seedGoal(h, 'g1');

@@ -31,6 +31,9 @@ describe('goalVerdictFromState', () => {
     expect(goalVerdictFromState({ reviewVerdict: 'PASS', nextAction: 'COMPLETED' })).toBe('PASS')
     expect(goalVerdictFromState({ reviewVerdict: null, nextAction: 'CANCELLED' })).toBe('CANCELLED')
     expect(goalVerdictFromState({ reviewVerdict: 'ERROR', nextAction: 'FAILED' })).toBe('ERROR')
+    expect(goalVerdictFromState({
+      reviewVerdict: 'FAIL', nextAction: 'FAILED', round: 3, maxRounds: 3,
+    })).toBe('MAX_RETRIES')
   })
 })
 
@@ -51,7 +54,7 @@ describe('buildPodGoalView', () => {
 
   test('missing description falls back to the id only as folded title and reports blocked', () => {
     expect(buildPodGoalView(row, null, undefined)).toMatchObject({
-      title: 'g1',
+      title: '未命名目标',
       stage: { owner: 'person', kind: 'blocked' },
     });
   });

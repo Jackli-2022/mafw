@@ -25,7 +25,7 @@ export function PodAttentionList(props: {
               variant="ghost"
               size="small"
               class="mafw-pod-attention-row"
-              onClick={() => props.onOpenGoal(item.goalId)}
+              onClick={() => props.onOpenGoal(item.action.goalId)}
             >
               <span class={`mafw-pod-attention-kind is-${item.kind}`}>{KIND_LABEL[item.kind]}</span>
               <span class="mafw-pod-attention-title">{item.title}</span>

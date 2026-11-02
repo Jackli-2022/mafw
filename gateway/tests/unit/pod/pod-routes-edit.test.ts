@@ -20,19 +20,24 @@ function makeReq(body: unknown, method = 'PATCH'): any {
 function makeDeps(overrides: any = {}) {
   const calls = {
     edit: [] as any[],
+    rename: [] as any[],
     update: [] as any[],
     add: [] as any[],
     remove: [] as any[],
     manual: [] as any[],
     allowed: [] as string[][],
   };
+  const tasks = [
+    { id: 't1', kind: 'plan', title: 'plan task' },
+    { id: 'note1', kind: 'note', title: 'note' },
+  ];
   const deps: any = {
     pods: {
       get: () => ({ pod: { id: 'pod_1' } }),
       ensure: jest.fn(), updateStatus: jest.fn(), lookup: jest.fn(),
     },
     tasks: {
-      list: () => [],
+      list: () => tasks,
       createManual: (_podId: string, goalId: string | null, title: string, ownerMemberId?: string) => {
         calls.manual.push({ goalId, title, ownerMemberId });
         return { id: 'manual_1', title, goalId };
@@ -40,6 +45,10 @@ function makeDeps(overrides: any = {}) {
       updateTask: (_podId: string, taskId: string, patch: any) => {
         calls.update.push({ taskId, patch });
         return { id: taskId, title: 't', status: patch.status ?? 'pending' };
+      },
+      editTitle: (_podId: string, taskId: string, title: string) => {
+        calls.rename.push({ taskId, title });
+        return { id: taskId, title, kind: tasks.find((t) => t.id === taskId)?.kind ?? 'note' };
       },
       editPlanTask: (_podId: string, taskId: string, patch: any) => {
         calls.edit.push({ taskId, patch });
@@ -94,6 +103,22 @@ describe('PATCH /api/pods/:podId/tasks/:taskId', () => {
     expect(out.status).toBe(200);
     expect(calls.edit).toHaveLength(0);
     expect(calls.update).toEqual([{ taskId: 't1', patch: { status: 'in_progress', ownerMemberId: 'm_builder' } }]);
+  });
+
+  test('a note can be renamed without the Lead plan gate', async () => {
+    const { deps, calls } = makeDeps({
+      access: {
+        requireMember: (_sid: string, allowed: string[]) => {
+          calls.allowed.push(allowed);
+          return { id: 'm_builder', role: 'builder' };
+        },
+      },
+    });
+    const { res, out } = makeRes();
+    await handlePods(makeReq({ title: '新备注', actorSessionID: 'ses_builder' }, 'PATCH'), res, '/api/pods/pod_1/tasks/note1', deps);
+    expect(out.status).toBe(200);
+    expect(calls.rename).toEqual([{ taskId: 'note1', title: '新备注' }]);
+    expect(calls.allowed).toEqual([['lead', 'builder', 'reviewer']]);
   });
 
   test('mixing plan fields with status is rejected', async () => {

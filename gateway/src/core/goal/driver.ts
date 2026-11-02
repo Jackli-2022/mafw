@@ -151,6 +151,9 @@ export class NodeDriver {
     const { mafwDir } = found;
     const state = loadGoalState(mafwDir, goalId)!;
     if (isTerminalState(state)) return;
+    // Legacy per-goal PAUSE control lands as nextAction=PAUSED; resume rewrites
+    // nextAction through the control path.
+    if (state.nextAction === 'PAUSED') return;
     // W1 批准门驻留：仅 approvePlan/rejectPlan 解锁；stray advance（legacy 唤醒/
     // 幂等重放/watchdog !ns 分支）不得越门推进 execute。
     if (state.nextAction === 'AWAIT_PLAN_APPROVAL') return;

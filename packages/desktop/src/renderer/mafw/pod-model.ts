@@ -13,7 +13,7 @@ import type {
   PodTaskStatus,
 } from "@mafw/sdk"
 
-export type PodTaskLane = "todo" | "in_progress" | "review" | "done" | "failed"
+export type PodTaskLane = "todo" | "in_progress" | "review" | "done" | "skipped" | "failed"
 
 export const POD_TASK_LANES: readonly {
   id: PodTaskLane
@@ -24,6 +24,7 @@ export const POD_TASK_LANES: readonly {
   { id: "in_progress", label: "进行中", statuses: ["in_progress", "blocked"] },
   { id: "review", label: "待审", statuses: ["review"] },
   { id: "done", label: "完成", statuses: ["done"] },
+  { id: "skipped", label: "已跳过", statuses: ["skipped"] },
   { id: "failed", label: "失败", statuses: ["failed"] },
 ]
 

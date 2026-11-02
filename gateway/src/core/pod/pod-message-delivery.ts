@@ -104,6 +104,14 @@ export class PodMessageDelivery {
     return this.deps.store.listDeliveryFailures(podId);
   }
 
+  retryFailure(messageId: string): Promise<'delivered' | 'pending' | 'skipped'> {
+    return this.deliver(messageId);
+  }
+
+  dismissFailure(messageId: string, memberId: string): boolean {
+    return this.deps.store.dismissDeliveryFailure(messageId, memberId);
+  }
+
   render(message: PodMessageRow): string {
     let data: any = {};
     try {

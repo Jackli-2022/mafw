@@ -1279,6 +1279,8 @@ export interface PodNamespace {
   listMessages(podID: string): Promise<{ items: PodMessage[] }>
   sendMessage(podID: string, body: { fromMemberId?: string; toMemberId?: string; kind: 'note'|'request'|'review'|'decision'|'escalation'; body: string; actorSessionID?: string; notify?: boolean }): Promise<{ message: PodMessage; delivery?: PodDeliveryState }>
   markRead(podID: string, messageID: string): Promise<{ message: PodMessage }>
+  retryDelivery(podID: string, messageID: string): Promise<{ delivery: PodDeliveryState }>
+  dismissDelivery(podID: string, messageID: string, memberID: string): Promise<{ dismissed: boolean }>
   wake(podID: string): Promise<PodDetail>
   sleep(podID: string): Promise<PodDetail>
   cost(podID: string): Promise<{ spentUsd: number; limitUsd: number }>

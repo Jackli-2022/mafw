@@ -199,6 +199,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/pods/:podId/messages', operationId: 'pods.messages.list', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/messages', operationId: 'pods.messages.create', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/messages/:messageId/read', operationId: 'pods.messages.read', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/messages/:messageId/delivery/retry', operationId: 'pods.messages.delivery.retry', tags: ['pods'] },
+  { method: 'POST', path: '/api/pods/:podId/messages/:messageId/delivery/dismiss', operationId: 'pods.messages.delivery.dismiss', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/wake', operationId: 'pods.wake', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/sleep', operationId: 'pods.sleep', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/cost', operationId: 'pods.cost', tags: ['pods'] },

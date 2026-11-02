@@ -1251,6 +1251,22 @@ test("pod.markRead posts to the read route", async () => {
   expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/messages/m1/read", expect.objectContaining({ method: "POST" }))
 })
 
+test("pod.retryDelivery/dismissDelivery hit the delivery routes", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await c.pod.retryDelivery("pod_1", "m1")
+  expect(fetchMock).toHaveBeenLastCalledWith(
+    "http://gw:3000/api/pods/pod_1/messages/m1/delivery/retry",
+    expect.objectContaining({ method: "POST" }),
+  )
+  await c.pod.dismissDelivery("pod_1", "m1", "m_builder")
+  expect(fetchMock).toHaveBeenLastCalledWith(
+    "http://gw:3000/api/pods/pod_1/messages/m1/delivery/dismiss",
+    expect.objectContaining({ method: "POST" }),
+  )
+  expect(JSON.parse((fetchMock.mock.calls.at(-1)! as any[])[1].body)).toEqual({ memberId: "m_builder" })
+})
+
 test("pod.get/update/listTasks/createTask/updateTask hit pod routes", async () => {
   const c = new MafwClient("http://gw:3000")
   fetchMock.mockResolvedValue(okJson({}))

@@ -4,6 +4,9 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { podGoalResultLabel } from "../pod-model"
 
+const TASK_RESULT_LABEL = { pass: "通过", fail: "失败", skipped: "跳过" } as const
+const artifactName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() ?? value
+
 export function PodResultPanel(props: {
   podId: string
   goalId: string
@@ -59,7 +62,7 @@ export function PodResultPanel(props: {
               <For each={value().tasks}>
                 {(task) => (
                   <div class="mafw-pod-result-task">
-                    <span class={`mafw-pod-result-task-state is-${task.result}`}>{task.result}</span>
+                    <span class={`mafw-pod-result-task-state is-${task.result}`}>{TASK_RESULT_LABEL[task.result]}</span>
                     <span class="mafw-pod-result-task-id">{task.taskId}</span>
                     <span class="mafw-pod-result-task-evidence">{task.evidence}</span>
                   </div>
@@ -73,7 +76,7 @@ export function PodResultPanel(props: {
             <Show when={value().artifacts.length > 0}>
               <div class="mafw-pod-result-label">产物</div>
               <ul class="mafw-pod-result-list">
-                <For each={value().artifacts}>{(item) => <li><code>{item}</code></li>}</For>
+                <For each={value().artifacts}>{(item) => <li><code>{artifactName(item)}</code></li>}</For>
               </ul>
             </Show>
             <Show when={failed()}>

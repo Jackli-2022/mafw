@@ -1766,7 +1766,6 @@ export function MafwShell() {
   const podSelfMemberId = () => podStore.detail()?.members.find((m) => m.role === "lead")?.id ?? null
   const podBadgeCount = () => podRailBadge({
     attention: podStore.detail()?.attention ?? [],
-    unread: podStore.messages().filter((message) => !message.readAt).length,
   })
   const openPodPanel = (panel: "tasks" | "inbox") => {
     closeLeftDockIfOverlay()

@@ -52,9 +52,19 @@ export interface PodDetailView extends PodDetail {
 export function goalVerdictFromState(state: {
   reviewVerdict?: PodGoalVerdict | string | null
   nextAction?: string | null
+  round?: number | null
+  maxRounds?: number | null
 }): PodGoalVerdict | null {
   const verdict = state.reviewVerdict;
   if (verdict === 'PASS' || verdict === 'FAIL' || verdict === 'MAX_RETRIES' || verdict === 'ERROR' || verdict === 'CANCELLED') {
+    // A FAILED state at the round ceiling is the autonomous-exhaustion path.
+    if (verdict === 'FAIL'
+      && state.nextAction === 'FAILED'
+      && typeof state.round === 'number'
+      && typeof state.maxRounds === 'number'
+      && state.round >= state.maxRounds) {
+      return 'MAX_RETRIES';
+    }
     return verdict;
   }
   if (state.nextAction === 'CANCELLED') return 'CANCELLED';
@@ -87,7 +97,7 @@ export function buildPodGoalView(
     podId: row.podId,
     goalId: row.goalId,
     status: row.status,
-    title: description?.title?.trim() || row.goalId,
+    title: description?.title?.trim() || '未命名目标',
     phase: description?.phase ?? null,
     verdict,
     stage,

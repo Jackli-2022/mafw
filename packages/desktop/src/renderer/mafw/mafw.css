@@ -6280,6 +6280,7 @@ html[data-theme="light"] body {
 .mafw-pod-goal-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-pod-notes { margin-top: 12px; }
 .mafw-pod-note-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; padding: 4px 0; }
+.mafw-pod-note-actions { display: flex; gap: 2px; flex: 0 0 auto; }
 .mafw-pod-message-health { margin: 10px 0; font-size: 12px; }
 .mafw-pod-message-health-row { display: flex; gap: 8px; color: var(--text-3); padding: 2px 0; }
 .mafw-pod-result {

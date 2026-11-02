@@ -8,6 +8,7 @@ import { parseAcceptanceLines } from "../pod-model"
 export function PodGoalComposer(props: {
   busy: boolean
   activeGoalId: string | null
+  autofocus?: boolean
   initial?: { title: string; objective?: string; acceptance?: string[] }
   onCreate(input: {
     title: string
@@ -31,6 +32,7 @@ export function PodGoalComposer(props: {
     setTitle(initial.title)
     setObjective(initial.objective ?? "")
     setAcceptance((initial.acceptance ?? []).join("\n"))
+    setManual(false)
   })
 
   const canSubmit = () =>
@@ -74,6 +76,7 @@ export function PodGoalComposer(props: {
       </div>
       <TextInputV2
         value={title()}
+        autofocus={props.autofocus}
         placeholder="目标标题（必填）"
         onInput={(event) => setTitle(event.currentTarget.value)}
       />

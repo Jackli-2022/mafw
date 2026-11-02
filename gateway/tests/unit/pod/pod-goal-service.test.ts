@@ -304,7 +304,7 @@ describe('PodGoalService', () => {
     const first = await service.enqueueGoal('g1', projectDir);
     service = makeService(undefined, { describeGoal: () => null });
     expect(service.views(first.podId)[0]).toMatchObject({
-      title: 'g1',
+      title: '未命名目标',
       stage: { owner: 'person', kind: 'blocked' },
     });
   });
@@ -321,6 +321,19 @@ describe('PodGoalService', () => {
 
     expect(finalizeGoal).toHaveBeenCalledWith('g1', { verdict: 'PASS' });
     expect(first.podId).toBeTruthy();
+  });
+
+  test('reconcile leaves an unreadable active state alone instead of inventing CANCELLED', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    const finalizeGoal = jest.fn(async () => {});
+    service = makeService(undefined, {
+      goalState: () => null,
+      finalizeGoal,
+      listRegisteredProjectDirs: () => [path.resolve(projectDir)],
+    });
+    await service.reconcile();
+    expect(finalizeGoal).not.toHaveBeenCalled();
+    expect(store.getActiveGoal(first.podId)?.goalId).toBe('g1');
   });
 
   test('reconcile adopts an in-flight pre-feature goal without starting it again', async () => {

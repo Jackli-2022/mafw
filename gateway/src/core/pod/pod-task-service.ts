@@ -170,6 +170,23 @@ export class PodTaskService {
     return withKind(task);
   }
 
+  /** Rename a note, or route a plan task rename through the wave plan. */
+  editTitle(podId: string, taskId: string, title: string): PodTaskView {
+    const value = String(title ?? '').trim();
+    if (!value) throw new PodError(400, 'task title is required');
+    const task = this.deps.store.getTask(taskId);
+    if (!task || task.podId !== podId) throw new PodError(404, `task not found: ${taskId}`);
+    if (podTaskKindOf(task) === 'plan') {
+      return this.editPlanTask(podId, taskId, { title: value });
+    }
+    if (podTaskKindOf(task) !== 'note') {
+      throw new PodError(400, 'external requests cannot be renamed');
+    }
+    this.deps.store.updateTask(taskId, { title: value }, this.deps.now());
+    this.deps.notify(podId);
+    return withKind(this.deps.store.getTask(taskId)!);
+  }
+
   updateTask(
     podId: string,
     taskId: string,
@@ -332,7 +349,7 @@ export class PodTaskService {
 
   reopenForReview(podId: string, goalId: string): PodTaskView[] {
     const tasks = this.deps.store.listTasks(podId, goalId)
-      .filter((task) => task.status === 'in_progress' || task.status === 'review' || task.status === 'done');
+      .filter((task) => task.status === 'in_progress' || task.status === 'review');
     for (const task of tasks) {
       this.deps.store.updateTask(task.id, { status: 'reopened' }, this.deps.now());
     }

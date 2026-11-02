@@ -89,6 +89,10 @@ export function projectPodGoalStage(input: PodGoalStageInput): PodGoalStage {
     };
   }
 
+  if (input.queueReason === 'state_error') {
+    return { owner: 'person', kind: 'blocked', action: action('open_goal') };
+  }
+
   if (input.goalStatus === 'queued') {
     return {
       owner: 'team',
@@ -97,12 +101,12 @@ export function projectPodGoalStage(input: PodGoalStageInput): PodGoalStage {
     };
   }
 
-  if (input.queueReason === 'paused' || input.queueReason === 'archived') {
-    return { owner: 'system', kind: 'waiting', queueReason: input.queueReason };
-  }
-
   if (input.nodeSession || /^RUNNING_/i.test(input.nextAction) || /^NEXT_/i.test(input.nextAction)) {
     return { owner: 'team', kind: 'working' };
+  }
+
+  if (input.queueReason === 'paused' || input.queueReason === 'archived') {
+    return { owner: 'system', kind: 'waiting', queueReason: input.queueReason };
   }
 
   return { owner: 'system', kind: 'waiting' };

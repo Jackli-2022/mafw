@@ -15,6 +15,8 @@ export function attachPodHandlers(registry: RouteRegistry, deps: PodRouteDeps): 
     'pods.messages.list',
     'pods.messages.create',
     'pods.messages.read',
+    'pods.messages.delivery.retry',
+    'pods.messages.delivery.dismiss',
     'pods.wake',
     'pods.sleep',
     'pods.cost',

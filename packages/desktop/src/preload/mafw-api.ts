@@ -255,6 +255,8 @@ export function createMafwApi(): MafwAPI {
       listMessages: (podID) => invoke("pod", "listMessages", podID),
       sendMessage: (podID, body) => invoke("pod", "sendMessage", podID, body),
       markRead: (podID, messageID) => invoke("pod", "markRead", podID, messageID),
+      retryDelivery: (podID, messageID) => invoke("pod", "retryDelivery", podID, messageID),
+      dismissDelivery: (podID, messageID, memberID) => invoke("pod", "dismissDelivery", podID, messageID, memberID),
       wake: (podID) => invoke("pod", "wake", podID),
       sleep: (podID) => invoke("pod", "sleep", podID),
       cost: (podID) => invoke("pod", "cost", podID),

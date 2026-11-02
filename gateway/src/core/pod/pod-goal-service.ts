@@ -190,8 +190,9 @@ export class PodGoalService {
         this.deps.store.updatePod(pod.id, { activeGoalId: active.goalId }, this.deps.now());
       }
       const state = this.deps.goalState?.(active.goalId);
-      if (this.deps.goalState && (!state || state.terminal)) {
-        const outcome = state ? { verdict: state.verdict } : { verdict: 'CANCELLED' };
+      if (this.deps.goalState && !state) return; // unreadable state stays blocked, never invented CANCELLED
+      if (this.deps.goalState && state?.terminal) {
+        const outcome = { verdict: state.verdict };
         if (this.deps.finalizeGoal) await this.deps.finalizeGoal(active.goalId, outcome);
         else await this.onGoalArchived(active.goalId, outcome);
         return;
@@ -202,7 +203,8 @@ export class PodGoalService {
     const unstartable = pod.status === 'paused' || pod.status === 'archived';
     if (pod.activeGoalId) {
       const state = this.deps.goalState?.(pod.activeGoalId);
-      if (this.deps.goalState && (!state || state.terminal)) {
+      if (this.deps.goalState && !state) return;
+      if (this.deps.goalState && state?.terminal) {
         this.deps.store.updatePod(pod.id, {
           activeGoalId: null,
           status: unstartable ? pod.status : 'idle',

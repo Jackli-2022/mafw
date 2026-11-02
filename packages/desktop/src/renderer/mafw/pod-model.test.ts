@@ -78,9 +78,10 @@ describe("pod-model", () => {
       task("d", "done"),
       task("e", "failed"),
       task("f", "reopened"),
+      task("g", "skipped"),
     ])
-    assert.deepEqual(lanes.map((lane) => lane.id), ["todo", "in_progress", "review", "done", "failed"])
-    assert.deepEqual(lanes.map((lane) => lane.tasks.map((t) => t.id)), [["a", "f"], ["b"], ["c"], ["d"], ["e"]])
+    assert.deepEqual(lanes.map((lane) => lane.id), ["todo", "in_progress", "review", "done", "skipped", "failed"])
+    assert.deepEqual(lanes.map((lane) => lane.tasks.map((t) => t.id)), [["a", "f"], ["b"], ["c"], ["d"], ["g"], ["e"]])
   })
 
   test("event action refreshes a matching pod, looks up when empty, ignores without project", () => {

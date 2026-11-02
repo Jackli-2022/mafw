@@ -712,6 +712,12 @@ export class PodStore {
     }, message.podId);
   }
 
+  dismissDeliveryFailure(messageId: string, memberId: string): boolean {
+    return this.db.prepare(
+      "DELETE FROM pod_message_deliveries WHERE message_id = ? AND member_id = ? AND status = 'failed'",
+    ).run(messageId, memberId).changes > 0;
+  }
+
   listDeliveryFailures(podId: string): PodMessageDeliveryRow[] {
     return (this.db.prepare(
       "SELECT * FROM pod_message_deliveries WHERE pod_id = ? AND status = 'failed' ORDER BY next_retry_at ASC, message_id ASC",

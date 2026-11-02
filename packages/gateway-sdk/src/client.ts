@@ -1371,7 +1371,16 @@ export class MafwClient implements IMafwClient {
         method: 'POST',
       }),
 
+    retryDelivery: async (podID: string, messageID: string): Promise<{ delivery: PodDeliveryState }> =>
+      this.request<{ delivery: PodDeliveryState }>(`/api/pods/${encodeURIComponent(podID)}/messages/${encodeURIComponent(messageID)}/delivery/retry`, {
+        method: 'POST',
+      }),
 
+    dismissDelivery: async (podID: string, messageID: string, memberID: string): Promise<{ dismissed: boolean }> =>
+      this.request<{ dismissed: boolean }>(`/api/pods/${encodeURIComponent(podID)}/messages/${encodeURIComponent(messageID)}/delivery/dismiss`, {
+        method: 'POST',
+        body: JSON.stringify({ memberId: memberID }),
+      }),
 
     wake: async (podID: string): Promise<PodDetail> =>
       this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}/wake`, { method: 'POST' }),

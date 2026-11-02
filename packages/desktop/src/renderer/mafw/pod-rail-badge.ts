@@ -1,4 +1,4 @@
-// 鲸群 rail 徽标：待审任务 + 未读消息（spec 2026-10-30-pod-left-rail §4.3）。
+// 鲸群 rail 徽标：只计人类 attention；未读与可查看结果分开显示。
 // 纯函数，无 Solid 依赖。
 
 export type PodUnreadMessage = {
@@ -18,7 +18,6 @@ export function countUnread(messages: PodUnreadMessage[], selfMemberId: string |
 
 export function podRailBadge(input: {
   attention: Array<unknown>
-  unread: number
 }): number {
   // Unread is deliberately not added: the badge means "the team cannot move
   // without you", not "something happened".

@@ -120,6 +120,7 @@ export function PodTaskBoard(props: {
   onCreate: (title: string) => Promise<boolean>
   onCreatePlan: (title: string) => Promise<boolean>
   onEdit: (taskId: string, patch: { title: string; acceptance: string[] }) => Promise<boolean>
+  onRenameNote: (taskId: string, title: string) => Promise<boolean>
   onDelete: (taskId: string) => Promise<boolean>
   onOpenGoal: (goalId: string) => void
 }) {
@@ -133,6 +134,20 @@ export function PodTaskBoard(props: {
   const [saving, setSaving] = createSignal(false)
   const [deletingId, setDeletingId] = createSignal<string | null>(null)
   const [deleting, setDeleting] = createSignal(false)
+  const [renamingId, setRenamingId] = createSignal<string | null>(null)
+  const [renameTitle, setRenameTitle] = createSignal("")
+  const [renaming, setRenaming] = createSignal(false)
+
+  const saveNote = async (taskId: string) => {
+    const value = renameTitle().trim()
+    if (!value || renaming()) return
+    setRenaming(true)
+    try {
+      if (await props.onRenameNote(taskId, value)) setRenamingId(null)
+    } finally {
+      setRenaming(false)
+    }
+  }
 
   const startEdit = (task: PodTask) => {
     setCreating(false)
@@ -174,8 +189,8 @@ export function PodTaskBoard(props: {
   const submit = async () => {
     const value = title().trim()
     if (!value || submitting() || props.busy) return
-    if (createMode() === "plan" && !props.planGoalId) return
-    const plan = createMode() === "plan" && !!props.planGoalId
+    if (createMode() === "plan" && (!props.planGoalId || !props.planEditable)) return
+    const plan = createMode() === "plan" && !!props.planGoalId && props.planEditable
     setSubmitting(true)
     try {
       const ok = plan ? await props.onCreatePlan(value) : await props.onCreate(value)
@@ -198,7 +213,7 @@ export function PodTaskBoard(props: {
 
       <Show when={creating()}>
         <div class="mafw-pod-task-create">
-          <Show when={props.planGoalId}>
+          <Show when={props.planGoalId && props.planEditable}>
             <div class="mafw-pod-task-create-mode">
               <ButtonV2
                 variant="ghost"
@@ -220,7 +235,7 @@ export function PodTaskBoard(props: {
           </Show>
           <TextInputV2
             value={title()}
-            placeholder={createMode() === "plan" ? "追加到计划最后一个 wave" : "备注（不会自动执行）"}
+            placeholder={createMode() === "plan" && props.planEditable ? "追加到计划最后一个 wave" : "备注（不会自动执行）"}
             onInput={(event) => setTitle(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") void submit()
@@ -387,15 +402,30 @@ export function PodTaskBoard(props: {
           <For each={noteTasksOnly(props.tasks)}>
             {(task) => (
               <div class="mafw-pod-note-row">
-                <span>{task.title}</span>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  disabled={props.busy}
-                  onClick={() => void props.onDelete(task.id)}
+                <Show
+                  when={renamingId() === task.id}
+                  fallback={<span>{task.title}</span>}
                 >
-                  删除
-                </ButtonV2>
+                  <TextInputV2
+                    value={renameTitle()}
+                    onInput={(event) => setRenameTitle(event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void saveNote(task.id)
+                      if (event.key === "Escape") setRenamingId(null)
+                    }}
+                  />
+                </Show>
+                <Show
+                  when={renamingId() === task.id}
+                  fallback={
+                    <div class="mafw-pod-note-actions">
+                      <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => { setRenamingId(task.id); setRenameTitle(task.title) }}>改名</ButtonV2>
+                      <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => void props.onDelete(task.id)}>删除</ButtonV2>
+                    </div>
+                  }
+                >
+                  <ButtonV2 variant="contrast" size="small" disabled={renaming() || !renameTitle().trim()} onClick={() => void saveNote(task.id)}>保存</ButtonV2>
+                </Show>
               </div>
             )}
           </For>

@@ -23,8 +23,8 @@ test("badge = human attention only, never unread or result-ready", () => {
     { id: "a", goalId: "g1", kind: "plan_approval" as const, title: "Plan", action: { type: "open_plan_review" as const, goalId: "g1" } },
     { id: "b", goalId: "g1", kind: "question" as const, title: "Question", action: { type: "open_question" as const, goalId: "g1", questionId: "q1" } },
   ]
-  assert.equal(podRailBadge({ attention, unread: 5 }), 2)
-  assert.equal(podRailBadge({ attention: [], unread: 5 }), 0)
+  assert.equal(podRailBadge({ attention }), 2)
+  assert.equal(podRailBadge({ attention: [] }), 0)
 })
 
 test("badge caps rendering at 9+", () => {

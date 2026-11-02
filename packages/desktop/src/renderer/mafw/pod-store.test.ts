@@ -138,7 +138,7 @@ describe("pod-store", () => {
     assert.deepEqual(store.detail()?.attention, [])
     assert.deepEqual(store.detail()?.messageHealth, [])
     assert.equal(store.detail()?.tasks[0]?.kind, "note")
-    assert.equal(store.detail()?.goals[0]?.title, "g1")
+    assert.equal(store.detail()?.goals[0]?.title, "未命名目标")
     assert.equal(store.detail()?.goals[0]?.stage?.kind, "waiting")
   })
 

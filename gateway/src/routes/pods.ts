@@ -1,4 +1,5 @@
 import type * as http from 'http';
+import * as fs from 'fs';
 import { PodError, type PodMemberRole, type PodMemberRow } from '../core/pod/pod-store';
 import type { PodGoalService } from '../core/pod/pod-goal-service';
 import type { PodMemoryService } from '../core/pod/pod-memory-service';
@@ -6,13 +7,13 @@ import type { PodMessageService } from '../core/pod/pod-message-service';
 import type { PodService } from '../core/pod/pod-service';
 import type { PodTaskService } from '../core/pod/pod-task-service';
 import type { GoalIntakeInput, GoalIntakeResult } from '../core/goal/goal-intake';
-import { makePodGoalId } from '../core/goal/goal-intake';
+import { GoalConflictError, makePodGoalId } from '../core/goal/goal-intake';
 import type { PodEnqueueResult } from '../core/pod/pod-goal-service';
 import type { PodAttentionItem, PodGoalView } from '../core/pod/pod-view';
 
 export interface PodRouteDeps {
   pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus' | 'lookup'>;
-  tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask' | 'editPlanTask' | 'addPlanTask' | 'deleteTask'>;
+  tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask' | 'editTitle' | 'editPlanTask' | 'addPlanTask' | 'deleteTask'>;
   messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
   goals: Pick<PodGoalService, 'list' | 'promote'> & Partial<Pick<
     PodGoalService,
@@ -23,6 +24,8 @@ export interface PodRouteDeps {
   delivery?: {
     deliver(messageId: string, opts?: { force?: boolean }): Promise<'delivered' | 'pending' | 'skipped'>;
     listFailures?(podId: string): import('../core/pod/pod-store').PodMessageDeliveryRow[];
+    retryFailure?(messageId: string): Promise<'delivered' | 'pending' | 'skipped'>;
+    dismissFailure?(messageId: string, memberId: string): boolean;
   };
   intake?: { create(input: GoalIntakeInput): GoalIntakeResult };
   newGoalId?(): string;
@@ -93,7 +96,15 @@ export async function handlePods(
       const podId = decode(task[1]);
       requirePod(deps, podId);
       const body = await readJson(req);
-      const editsPlan = body?.title !== undefined || body?.acceptance !== undefined;
+      const targetTaskId = decode(task[2]);
+      const onlyTitle = body?.title !== undefined && body?.acceptance === undefined;
+      // A title-only edit of a note is not a plan change; only plan tasks need
+      // the Lead gate. Unknown ids fall through to the service's 404.
+      const target = onlyTitle
+        ? deps.tasks.list(podId).find((row) => row.id === targetTaskId)
+        : undefined;
+      const editsPlan = body?.acceptance !== undefined
+        || (onlyTitle && target?.kind !== 'note');
       const editsState = body?.status !== undefined || body?.ownerMemberId !== undefined;
       if (editsPlan && editsState) {
         throw new PodError(400, 'plan fields (title/acceptance) cannot be mixed with status/owner');
@@ -101,15 +112,22 @@ export async function handlePods(
       if (editsPlan) {
         // 计划变更属 Lead 职责：有 actor 时只允许 Lead；人类操作不带 actor。
         assertAccess(deps, body, ['lead'], podId);
-        const updated = deps.tasks.editPlanTask(podId, decode(task[2]), {
-          ...(body.title !== undefined ? { title: body.title } : {}),
-          ...(body.acceptance !== undefined ? { acceptance: body.acceptance } : {}),
-        });
+        const updated = body.acceptance === undefined
+          ? deps.tasks.editTitle(podId, targetTaskId, String(body.title ?? ''))
+          : deps.tasks.editPlanTask(podId, targetTaskId, {
+            ...(body.title !== undefined ? { title: body.title } : {}),
+            acceptance: body.acceptance,
+          });
         sendJson(res, 200, { task: updated });
         return true;
       }
+      if (onlyTitle) {
+        assertAccess(deps, body, ['lead', 'builder', 'reviewer'], podId);
+        sendJson(res, 200, { task: deps.tasks.editTitle(podId, targetTaskId, String(body.title ?? '')) });
+        return true;
+      }
       assertAccess(deps, body, ['lead', 'builder', 'reviewer'], podId);
-      const updated = deps.tasks.updateTask(podId, decode(task[2]), {
+      const updated = deps.tasks.updateTask(podId, targetTaskId, {
         ...(body.status ? { status: body.status } : {}),
         ...(body.ownerMemberId !== undefined ? { ownerMemberId: body.ownerMemberId } : {}),
       });
@@ -210,6 +228,28 @@ export async function handlePods(
       return true;
     }
 
+    const deliveryAction = pathname.match(/^\/api\/pods\/([^/]+)\/messages\/([^/]+)\/delivery\/(retry|dismiss)$/);
+    if (deliveryAction) {
+      if (method !== 'POST') return false;
+      const podId = decode(deliveryAction[1]);
+      requirePod(deps, podId);
+      const body = await readJson(req);
+      if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
+        assertAccess(deps, body, ['lead'], podId);
+      }
+      const messageId = decode(deliveryAction[2]);
+      if (deliveryAction[3] === 'retry') {
+        if (!deps.delivery?.retryFailure) throw new PodError(503, 'delivery retry unavailable');
+        sendJson(res, 200, { delivery: await deps.delivery.retryFailure(messageId) });
+      } else {
+        if (!deps.delivery?.dismissFailure) throw new PodError(503, 'delivery dismiss unavailable');
+        const memberId = String(body?.memberId ?? '');
+        if (!memberId) throw new PodError(400, 'memberId is required');
+        sendJson(res, 200, { dismissed: deps.delivery.dismissFailure(messageId, memberId) });
+      }
+      return true;
+    }
+
     const wake = pathname.match(/^\/api\/pods\/([^/]+)\/(wake|sleep)$/);
     if (wake) {
       if (method !== 'POST') return false;
@@ -285,19 +325,38 @@ export async function handlePods(
       const detail = deps.pods.get(podId);
       if (!detail) throw new PodError(404, `pod not found: ${podId}`);
       const goalId = deps.newGoalId?.() ?? makePodGoalId(new Date().toISOString(), Math.random);
-      const created = deps.intake.create({
-        goalId,
-        title,
-        objective: objective || undefined,
-        charter: charter || undefined,
-        acceptance: Array.isArray(body.acceptance) ? body.acceptance : undefined,
-        boundaries: Array.isArray(body.boundaries) ? body.boundaries : undefined,
-        planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
-        projectDir: detail.pod.projectDir,
-        authorization: { source: 'desktop', requestMode: 'explicit' },
-      });
+      let created: GoalIntakeResult;
+      try {
+        created = deps.intake.create({
+          goalId,
+          title,
+          objective: objective || undefined,
+          charter: charter || undefined,
+          acceptance: Array.isArray(body.acceptance) ? body.acceptance : undefined,
+          boundaries: Array.isArray(body.boundaries) ? body.boundaries : undefined,
+          planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
+          projectDir: detail.pod.projectDir,
+          authorization: { source: 'desktop', requestMode: 'explicit' },
+          // This route enqueues explicitly below; the intake must not emit
+          // goal_created as well or the same goal would be started twice.
+          autoStart: false,
+        });
+      } catch (err) {
+        if (err instanceof GoalConflictError) throw new PodError(409, err.message);
+        throw err;
+      }
       if (!deps.goals.enqueueGoal) throw new PodError(503, 'goal queue unavailable');
-      const enqueue = await (deps.goals.enqueueGoal as PodEnqueueFn)(created.goalId, detail.pod.projectDir);
+      let enqueue: PodEnqueueResult;
+      try {
+        enqueue = await (deps.goals.enqueueGoal as PodEnqueueFn)(created.goalId, detail.pod.projectDir);
+      } catch (err) {
+        // The intake files are only useful once the goal is queued; a failed
+        // enqueue must not leave an orphan goal behind.
+        for (const target of [created.charterPath, created.requestPath]) {
+          try { fs.unlinkSync(target); } catch { /* best effort */ }
+        }
+        throw err;
+      }
       const view = deps.goals.views?.(podId).find((item) => item.goalId === created.goalId)
         ?? {
           id: created.goalId, podId, goalId: created.goalId, status: enqueue.status === 'started' ? 'active' : 'queued',

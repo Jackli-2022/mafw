@@ -139,7 +139,7 @@ export function PodRailFace(props: {
           <div class="mafw-pod-rail-attention">
             <For each={props.detail!.attention}>
               {(item) => (
-                <ButtonV2 variant="ghost" size="small" class="mafw-pod-rail-attention-row" onClick={() => props.onOpenGoal(item.goalId)}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-pod-rail-attention-row" onClick={() => props.onOpenGoal(item.action.goalId)}>
                   {item.kind === "plan_approval" ? "计划待批准" : item.kind === "question" ? "等待回答" : "需要处理"} · {item.title}
                 </ButtonV2>
               )}

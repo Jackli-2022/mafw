@@ -95,7 +95,7 @@ export function createPodStore(
     const stageSupported = Array.isArray((next as any).attention) && rawGoals.every((goal) => !!goal.stage)
     const goals = rawGoals.map((goal) => ({
       ...goal,
-      title: goal.title || goal.goalId,
+      title: goal.title || "未命名目标",
       phase: goal.phase ?? null,
       verdict: goal.verdict ?? null,
       stage: goal.stage ?? { owner: "system" as const, kind: "waiting" as const },
