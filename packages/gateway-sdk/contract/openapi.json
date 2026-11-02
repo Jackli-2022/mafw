@@ -326,6 +326,7 @@
         "tags": [
           "session"
         ],
+        "summary": "Session message history (default wire; ?format=flat returns MAFW flat DTO)",
         "parameters": [
           {
             "name": "id",
@@ -338,9 +339,80 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "info": {
+                                "type": "object",
+                                "additionalProperties": true
+                              },
+                              "parts": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                }
+                              }
+                            },
+                            "required": [
+                              "info",
+                              "parts"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "user",
+                                  "assistant"
+                                ]
+                              },
+                              "content": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                }
+                              }
+                            },
+                            "required": [
+                              "role"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           }
-        }
+        },
+        "description": "Default response is the legacy wire envelope {info,parts}; ?format=flat returns the canonical MAFW flat DTO {id,role,content,...}. Task 15 flips the default to flat."
       }
     },
     "/api/sessions/{id}/todo": {

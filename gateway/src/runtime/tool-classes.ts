@@ -206,16 +206,23 @@ export function enrichToolIdentity(evt: { type?: string; payload?: { type?: stri
   if (part.canonicalTool === undefined) part.canonicalTool = canonicalToolOf(part.tool);
 }
 
-/** 历史 enrich（messages 路由出口，全 runtime）：tool parts 补两字段，幂等，fail-open 由调用方包裹。 */
+/**
+ * 历史 enrich（messages 路由出口，全 runtime）：tool parts 补
+ * `toolClass` / `canonicalTool`，幂等，fail-open 由调用方包裹。
+ *
+ * 迁移期同时接受 flat `content` 与旧的 wire `parts` 两种载体（Task 8）；
+ * Task 15 删除 wire 分支后只保留 `content`。
+ */
 export function enrichHistoryParts(messages: any[]): void {
   if (!Array.isArray(messages)) return;
   for (const m of messages) {
-    const parts = m?.parts;
-    if (!Array.isArray(parts)) continue;
-    for (const part of parts) {
-      if (part?.type !== 'tool') continue;
-      if (part.toolClass === undefined) part.toolClass = toolClassOf(part.tool);
-      if (part.canonicalTool === undefined) part.canonicalTool = canonicalToolOf(part.tool);
+    for (const parts of [m?.content, m?.parts]) {
+      if (!Array.isArray(parts)) continue;
+      for (const part of parts) {
+        if (part?.type !== 'tool') continue;
+        if (part.toolClass === undefined) part.toolClass = toolClassOf(part.tool);
+        if (part.canonicalTool === undefined) part.canonicalTool = canonicalToolOf(part.tool);
+      }
     }
   }
 }

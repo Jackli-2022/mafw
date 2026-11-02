@@ -64,6 +64,7 @@ test("SessionNamespace interface has correct methods", () => {
   expect(typeof c.session.list).toBe("function")
   expect(typeof c.session.delete).toBe("function")
   expect(typeof c.session.messages).toBe("function")
+  expect(typeof c.session.history).toBe("function")
   expect(typeof c.session.prompt).toBe("function")
   expect(typeof c.session.promptAsync).toBe("function")
   expect(typeof c.session.events).toBe("function")

@@ -3,7 +3,7 @@
 // ============================================================
 
 // Task 3：background jobs 复用 Task 1 的 View DTO（单一事实源在 view-dto.ts）
-import type { MafwBackgroundJob } from './view-dto'
+import type { MafwBackgroundJob, MafwMessage } from './view-dto'
 
 export interface Session {
   id: string
@@ -338,7 +338,10 @@ export interface SessionNamespace {
   list(params?: { query?: { projectID?: string } }): Promise<Session[]>
   delete(params: { path: { id: string } }): Promise<void>
   rename(params: { path: { id: string }; body: { title: string } }): Promise<void>
+  messages(params: { path: { id: string }; query: { format: 'flat'; limit?: number; before?: string } }): Promise<{ data: MafwMessage[]; nextCursor: string | null }>
   messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }>
+  /** 规范 flat 历史（MAFW View DTO）。迁移期固定 `?format=flat`；Task 15 后成为唯一形状。 */
+  history(params: { sessionID: string; limit?: number; before?: string }): Promise<{ data: MafwMessage[]; nextCursor: string | null }>
   todo(params: { path: { id: string } }): Promise<{ data: Todo[] }>
   children(params: { path: { id: string } }): Promise<any[]>
   structured(params: { path: { id: string } }): Promise<any>

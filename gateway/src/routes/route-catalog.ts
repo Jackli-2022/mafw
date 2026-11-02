@@ -33,7 +33,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/sessions/:id', operationId: 'session.get', tags: ['session'] },
   { method: 'DELETE', path: '/api/sessions/:id', operationId: 'session.delete', tags: ['session'] },
   { method: 'PATCH', path: '/api/sessions/:id', operationId: 'session.rename', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions/:id/messages', operationId: 'session.messages', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/messages', operationId: 'session.messages', summary: 'Session message history (default wire; ?format=flat returns MAFW flat DTO)', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/todo', operationId: 'session.todo', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/children', operationId: 'session.children', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/structured', operationId: 'session.structured', tags: ['session'] },

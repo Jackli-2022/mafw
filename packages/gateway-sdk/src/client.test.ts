@@ -147,6 +147,36 @@ test("session.messages omits optional query params when absent", async () => {
   expect(url).toBe("http://gw:3000/api/sessions/s1/messages?")
 })
 
+test("session.messages forwards format=flat", async () => {
+  fetchMock.mockResolvedValue(okJson({ data: [], nextCursor: null }))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.messages({ path: { id: "s1" }, query: { format: "flat", limit: 5 } })
+  const url = (fetchMock as any).mock.calls[0][0] as string
+  expect(url).toContain("/api/sessions/s1/messages?")
+  expect(url).toContain("format=flat")
+  expect(url).toContain("limit=5")
+})
+
+test("session.history always calls format=flat", async () => {
+  fetchMock.mockResolvedValue(okJson({ data: [], nextCursor: null }))
+  const c = new MafwClient("http://gw:3000")
+  const out = await c.session.history({ sessionID: "ses_1" })
+  const url = (fetchMock as any).mock.calls[0][0] as string
+  expect(url).toContain("/api/sessions/ses_1/messages?format=flat")
+  expect(out).toEqual({ data: [], nextCursor: null })
+})
+
+test("session.history forwards pagination without dropping format=flat", async () => {
+  fetchMock.mockResolvedValue(okJson({ data: [], nextCursor: "c2" }))
+  const c = new MafwClient("http://gw:3000")
+  const out = await c.session.history({ sessionID: "ses_1", limit: 20, before: "c1" })
+  const url = (fetchMock as any).mock.calls[0][0] as string
+  expect(url).toContain("format=flat")
+  expect(url).toContain("limit=20")
+  expect(url).toContain("before=c1")
+  expect(out.nextCursor).toBe("c2")
+})
+
 test("session.fork sends POST /api/sessions/:id/fork with messageID", async () => {
   fetchMock.mockResolvedValue(okJson({ session: { id: "s_forked" } }))
   const c = new MafwClient("http://gw:3000")

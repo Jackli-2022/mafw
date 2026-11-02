@@ -218,6 +218,7 @@
         "tags": [
           "session"
         ],
+        "summary": "Session message history (default wire; ?format=flat returns MAFW flat DTO)",
         "parameters": [
           {
             "name": "id",

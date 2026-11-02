@@ -19,7 +19,7 @@ import {
 } from './types'
 import { SSEConnection } from './sse'
 import type { ApiPath } from './api-path'
-import type { MafwBackgroundJob } from './view-dto'
+import type { MafwBackgroundJob, MafwMessage } from './view-dto'
 
 /** opencode v2 Shell.Info（/api/shell* 响应 data 的按需子集；形状见 wire probe 文档）。 */
 export interface ShellInfo {
@@ -180,12 +180,26 @@ export class MafwClient implements IMafwClient {
     },
 
     messages: async (
-      params: { path: { id: string }; query?: { limit?: number; before?: string } },
-    ): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }> => {
+      params: { path: { id: string }; query?: { limit?: number; before?: string; format?: 'flat' } },
+    ): Promise<any> => {
       const q = new URLSearchParams()
       if (params.query?.limit) q.set('limit', String(params.query.limit))
       if (params.query?.before) q.set('before', params.query.before)
-      return this.request<{ data: SessionMessagePart[]; nextCursor: string | null }>(`/api/sessions/${params.path.id}/messages?${q}`)
+      if (params.query?.format) q.set('format', params.query.format)
+      return this.request<{ data: SessionMessagePart[] | MafwMessage[]; nextCursor: string | null }>(`/api/sessions/${params.path.id}/messages?${q}`)
+    },
+
+    /**
+     * 规范 flat 历史：始终 `?format=flat`，返回 MAFW View DTO（迁移期与
+     * `messages` 默认 wire 形状并存；Task 15 后 `messages` 也会收敛到此形状）。
+     */
+    history: async (
+      params: { sessionID: string; limit?: number; before?: string },
+    ): Promise<any> => {
+      const q = new URLSearchParams({ format: 'flat' })
+      if (params.limit) q.set('limit', String(params.limit))
+      if (params.before) q.set('before', params.before)
+      return this.request<{ data: MafwMessage[]; nextCursor: string | null }>(`/api/sessions/${params.sessionID}/messages?${q}`)
     },
 
     todo: async (params: { path: { id: string } }): Promise<{ data: Todo[] }> => {

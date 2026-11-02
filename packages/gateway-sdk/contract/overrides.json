@@ -100,6 +100,75 @@
         ]
       }
     },
+    "session.messages": {
+      "description": "Default response is the legacy wire envelope {info,parts}; ?format=flat returns the canonical MAFW flat DTO {id,role,content,...}. Task 15 flips the default to flat.",
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "info": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "parts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "info",
+                    "parts"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ]
+                    },
+                    "content": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ]
+                }
+              ]
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      }
+    },
     "goals.list": {
       "responseSchema": {
         "type": "object",

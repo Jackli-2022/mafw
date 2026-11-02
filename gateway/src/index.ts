@@ -187,6 +187,7 @@ import { RunStateService } from './core/run/run-state-service';
 import { RunCoordinator } from './core/run/run-coordinator';
 import { DataPartService } from './core/data-parts/data-part-service';
 import { mergeDataPartsIntoWire } from './core/data-parts/merge';
+import { handleSessionHistoryFlat } from './routes/session-history-flat';
 import { defaultGit } from './core/diff/turn-diff';
 import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
@@ -7270,6 +7271,18 @@ class MafwScheduler {
               return;
             }
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+            const format = parsedUrl.searchParams.get('format');
+            // Task 8：迁移期显式 flat 出口（默认 wire 不变，Task 15 翻默认）。
+            // flat 路径不得经过 toWireHistory；语义（enrich/overlay/nextCursor）对齐。
+            if (format === 'flat') {
+              const handled = await handleSessionHistoryFlat(req, res, req.url!, {
+                getRuntime: () => this.runtime,
+                listDataParts: (sessionID, messageIds) =>
+                  this.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
+                warn: (message) => log.warn(message),
+              });
+              if (handled) return;
+            }
             const limit = parseInt(parsedUrl.searchParams.get('limit') || '100', 10);
             const before = parsedUrl.searchParams.get('before') || undefined;
             const result = await this.runtime.session.messages({

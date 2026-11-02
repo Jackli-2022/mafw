@@ -155,6 +155,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Session message history (default wire; ?format=flat returns MAFW flat DTO)
+         * @description Default response is the legacy wire envelope {info,parts}; ?format=flat returns the canonical MAFW flat DTO {id,role,content,...}. Task 15 flips the default to flat.
+         */
         get: operations["session.messages"];
         put?: never;
         post?: never;
@@ -3827,7 +3831,26 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        data: ({
+                            info: {
+                                [key: string]: unknown;
+                            };
+                            parts: {
+                                [key: string]: unknown;
+                            }[];
+                        } | {
+                            id?: string;
+                            /** @enum {string} */
+                            role: "user" | "assistant";
+                            content?: {
+                                [key: string]: unknown;
+                            }[];
+                        })[];
+                        nextCursor?: string | null;
+                    };
+                };
             };
         };
     };
