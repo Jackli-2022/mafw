@@ -161,7 +161,11 @@ export class PodDirectionService {
     const goal = this.requireGoal(input.goalId);
     const revision = input.revision ?? goal.activeRevision;
     const row = this.requireRevision(goal, revision);
-    this.ensureMutable(goal, revision, row);
+    // Terminal rows are immutable; later stages (planning/implementing/reviewing)
+    // must never be pulled back to planning by a late decision.
+    if (isTerminalGoalRevisionStatus(row.status)) {
+      throw new PodError(409, `revision ${revision} is terminal (${row.status})`);
+    }
     const mafwDir = this.requireMafwDir(goal.goalId);
     const artifact = this.readArtifactStrict(mafwDir, goal.goalId);
     const current = this.currentState(artifact, row, goal.goalId, revision);
@@ -170,10 +174,11 @@ export class PodDirectionService {
 
     const existing = current.decisions.find((item) => item.id === decision.id);
     if (existing) {
-      // 幂等重放：同一条决定不重复追加，也不回退阶段。
-      this.persist(goal, revision, current, 'planning', 'decided');
+      // 幂等重放：同一条决定不重复追加、**绝不**改写 revision 阶段（迟到重试不能把
+      // 正在实施/验收的 revision 拉回 planning）。
       return this.result(goal, revision, current, existing, mafwDir);
     }
+    this.ensureDirectionStage(revision, row);
 
     const state: DirectionState = {
       ...current,
@@ -193,7 +198,9 @@ export class PodDirectionService {
     const goal = this.requireGoal(input.goalId);
     const revision = input.revision ?? goal.activeRevision;
     const row = this.requireRevision(goal, revision);
-    this.ensureMutable(goal, revision, row);
+    if (isTerminalGoalRevisionStatus(row.status)) {
+      throw new PodError(409, `revision ${revision} is terminal (${row.status})`);
+    }
     const mafwDir = this.requireMafwDir(goal.goalId);
     const artifact = this.readArtifactStrict(mafwDir, goal.goalId);
     const current = this.currentState(artifact, row, goal.goalId, revision);
@@ -209,9 +216,10 @@ export class PodDirectionService {
 
     const existing = current.decisions.find((item) => item.id === decision.id);
     if (existing) {
-      this.persist(goal, revision, current, 'planning', 'decided');
+      // 幂等重放：只返回既有决定，绝不改写 revision 阶段。
       return this.result(goal, revision, current, existing, mafwDir);
     }
+    this.ensureDirectionStage(revision, row);
 
     const state: DirectionState = {
       ...current,
@@ -294,6 +302,21 @@ export class PodDirectionService {
     }
     // 没有 mafw 目录就没有权威方向文件：在写任何东西之前失败（不产生半持久化）。
     this.requireMafwDir(goal.goalId);
+  }
+
+  /**
+   * 方向决定只能写在讨论/方向审阅/规划阶段：implementing/reviewing 等后段由规划推进
+   * 而来，迟到 decide/clear 若被接受会把 revision 状态回滚成 planning（计划与审批门
+   * 丢失）。planning 只允许追加决定，不回退也不重写阶段。
+   */
+  private ensureDirectionStage(revision: number, row: PodGoalRevisionRow): void {
+    if (row.status === 'discussing' || row.status === 'direction_review' || row.status === 'planning') {
+      return;
+    }
+    throw new PodError(
+      409,
+      `direction decision not allowed in revision status: ${row.status} (revision ${revision})`,
+    );
   }
 
   private requireMafwDir(goalId: string): string {

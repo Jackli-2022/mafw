@@ -14,7 +14,8 @@ export class GoalConflictError extends Error {
 }
 
 export type GoalAuthorization = {
-  source: 'desktop' | 'lead' | 'a2a' | 'automation' | 'user';
+  /** Entry point that authorized the Goal (persisted verbatim in request.json). */
+  source: 'desktop' | 'lead' | 'a2a' | 'automation' | 'user' | 'tui' | 'agent';
   requestMode: 'explicit' | 'inferred';
   scope?: string;
 };

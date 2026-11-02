@@ -213,6 +213,11 @@ describe('pod collaboration routes (Task 18)', () => {
       directions,
       probes,
       revisions: { list: (id, goalId) => store.listGoalRevisions(id, goalId) },
+      revisionStatus: (id, goalId, revision) => {
+        const goal = store.getGoal(id, goalId);
+        if (!goal) return null;
+        return store.getGoalRevision(id, goalId, revision ?? goal.activeRevision)?.status ?? null;
+      },
       startPlanning: (goalId) => { planning.push(goalId); },
       access,
     };
@@ -323,12 +328,82 @@ describe('pod collaboration routes (Task 18)', () => {
     expect(planning).toEqual([goalId]);
     expect(store.getGoalRevision(podId, goalId, 1)?.status).toBe('planning');
 
-    // 幂等重放：同一条决定不重复追加。
+    // Review fix: once the revision left the discussion stage, decide/clear must 409
+    // instead of rolling the status back to planning (replay included).
     const replay = await call('POST', `/api/pods/${podId}/goals/${goalId}/direction-decision`, {
       mode: 'decided',
       userWords: '先做讨论界面',
     });
-    expect(replay.json.state.decisions).toHaveLength(1);
+    expect(replay.res.status).toBe(409);
+
+    store.setGoalRevisionStatus({
+      podId,
+      goalId,
+      revision: 1,
+      status: 'implementing',
+      now,
+    });
+    const lateDecide = await call('POST', `/api/pods/${podId}/goals/${goalId}/direction-decision`, {
+      mode: 'decided',
+      userWords: '换一条路线',
+    });
+    expect(lateDecide.res.status).toBe(409);
+    const lateClear = await call('POST', `/api/pods/${podId}/goals/${goalId}/direction-decision`, {
+      mode: 'clear',
+      userWords: '方向已明确',
+    });
+    expect(lateClear.res.status).toBe(409);
+    expect(store.getGoalRevision(podId, goalId, 1)?.status).toBe('implementing');
+    expect(planning).toEqual([goalId]);
+  });
+
+  test('POST /goals persists the actual authorized source (validated)', async () => {
+    const created = await callPods('POST', `/api/pods/${podId}/goals`, {
+      title: 'From TUI',
+      objective: '由 TUI 创建',
+      source: 'tui',
+    });
+    expect(created.res.status).toBe(200);
+    const requestPath = path.join(mafwDir, 'goals', created.json.goalId, 'request.json');
+    const request = JSON.parse(fs.readFileSync(requestPath, 'utf-8'));
+    expect(request.source).toBe('tui');
+    expect(request.authorization).toMatchObject({ source: 'tui', requestMode: 'explicit' });
+
+    const agent = await callPods('POST', `/api/pods/${podId}/goals`, {
+      title: 'From agent',
+      objective: '由 agent 创建',
+      source: 'agent',
+    });
+    expect(agent.res.status).toBe(200);
+    const agentRequest = JSON.parse(fs.readFileSync(
+      path.join(mafwDir, 'goals', agent.json.goalId, 'request.json'),
+      'utf-8',
+    ));
+    expect(agentRequest.source).toBe('agent');
+    expect(agentRequest.authorization.source).toBe('agent');
+
+    // Omitted source keeps the desktop default (backward compatible).
+    const desktop = await callPods('POST', `/api/pods/${podId}/goals`, {
+      title: 'From desktop',
+      objective: '默认来源',
+    });
+    const desktopRequest = JSON.parse(fs.readFileSync(
+      path.join(mafwDir, 'goals', desktop.json.goalId, 'request.json'),
+      'utf-8',
+    ));
+    expect(desktopRequest.source).toBe('desktop');
+    expect(desktopRequest.authorization.source).toBe('desktop');
+
+    // Unknown sources are rejected before any file is written.
+    const goalsDir = path.join(mafwDir, 'goals');
+    const before = fs.readdirSync(goalsDir).sort();
+    const invalid = await callPods('POST', `/api/pods/${podId}/goals`, {
+      title: 'Invalid',
+      objective: '非法来源',
+      source: 'rogue',
+    });
+    expect(invalid.res.status).toBe(400);
+    expect(fs.readdirSync(goalsDir).sort()).toEqual(before);
   });
 
   test('probes are requestable, listable and validated', async () => {

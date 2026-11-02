@@ -1230,6 +1230,8 @@ export interface PodCreateGoalInput {
   budget?: { maxTurns?: number; maxCostUsd?: number }
   taskType?: 'feature' | 'bugfix' | 'refactor' | 'research' | 'docs' | 'test' | 'other'
   planReview?: 'auto' | 'manual'
+  /** 入口来源（request.json 的 source/authorization.source 原样持久化；缺省 desktop）。 */
+  source?: 'desktop' | 'lead' | 'a2a' | 'automation' | 'user' | 'tui' | 'agent'
   /** 调用者会话（提供时必须是该项目 Lead）。 */
   actorSessionID?: string
 }

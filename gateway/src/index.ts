@@ -4930,6 +4930,11 @@ class MafwScheduler {
         directions: this.podDirectionService,
         probes: this.podProbeService,
         revisions: { list: (podId, goalId) => this.podStore.listGoalRevisions(podId, goalId) },
+        revisionStatus: (podId, goalId, revision) => {
+          const goal = this.podStore.getGoal(podId, goalId);
+          if (!goal) return null;
+          return this.podStore.getGoalRevision(podId, goalId, revision ?? goal.activeRevision)?.status ?? null;
+        },
         startPlanning: (goalId) => this.startGoalDirect(goalId),
         access: this.podAccess,
       });

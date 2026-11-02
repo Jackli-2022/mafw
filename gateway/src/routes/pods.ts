@@ -7,7 +7,7 @@ import type { PodMessageService } from '../core/pod/pod-message-service';
 import type { PodService } from '../core/pod/pod-service';
 import type { PodTaskService } from '../core/pod/pod-task-service';
 import type { PodTechLeadService } from '../core/pod/pod-tech-lead-service';
-import type { GoalIntakeInput, GoalIntakeResult } from '../core/goal/goal-intake';
+import type { GoalAuthorization, GoalIntakeInput, GoalIntakeResult } from '../core/goal/goal-intake';
 import { GoalConflictError, makePodGoalId } from '../core/goal/goal-intake';
 import type { PodEnqueueResult } from '../core/pod/pod-goal-service';
 import type { PodAttentionItem, PodGoalView } from '../core/pod/pod-view';
@@ -330,6 +330,9 @@ export async function handlePods(
       const charter = String(body?.charter ?? '').trim();
       if (!title) throw new PodError(400, 'title is required');
       if (!objective && !charter) throw new PodError(400, 'objective or charter is required');
+      // Persist the real entry point (desktop/tui/agent/...) instead of hardcoding
+      // desktop; unknown values are rejected so request.json stays trustworthy.
+      const source = normalizeGoalSource(body?.source);
 
       const detail = deps.pods.get(podId);
       if (!detail) throw new PodError(404, `pod not found: ${podId}`);
@@ -353,8 +356,8 @@ export async function handlePods(
           budget: isPlainObject(body.budget) ? body.budget : undefined,
           taskType: isGoalTaskType(body.taskType) ? body.taskType : undefined,
           planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
-          source: typeof body.source === 'string' && body.source.trim() ? body.source.trim() : 'desktop',
-          authorization: { source: 'desktop', requestMode: 'explicit' },
+          source,
+          authorization: { source, requestMode: 'explicit', scope: detail.pod.projectDir },
           ...(actor && typeof body.actorSessionID === 'string' ? { createdBy: body.actorSessionID } : {}),
         });
         const view = deps.goals.views?.(podId).find((item) => item.goalId === created.goalId)
@@ -392,7 +395,8 @@ export async function handlePods(
           boundaries: Array.isArray(body.boundaries) ? body.boundaries : undefined,
           planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
           projectDir: detail.pod.projectDir,
-          authorization: { source: 'desktop', requestMode: 'explicit' },
+          source,
+          authorization: { source, requestMode: 'explicit' },
           // This route enqueues explicitly below; the intake must not emit
           // goal_created as well or the same goal would be started twice.
           autoStart: false,
@@ -524,6 +528,20 @@ function decode(value: string): string {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+const GOAL_SOURCES: ReadonlySet<GoalAuthorization['source']> = new Set([
+  'desktop', 'lead', 'a2a', 'automation', 'user', 'tui', 'agent',
+]);
+
+/** 入口来源白名单：未知值 400（请求文件里的 source 必须可信，不能静默落 desktop）。 */
+function normalizeGoalSource(value: unknown): GoalAuthorization['source'] {
+  if (value === undefined || value === null || value === '') return 'desktop';
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || !GOAL_SOURCES.has(text as GoalAuthorization['source'])) {
+    throw new PodError(400, `invalid goal source: ${String(value)}`);
+  }
+  return text as GoalAuthorization['source'];
 }
 
 function isGoalPriority(value: unknown): value is GoalIntakeInput['priority'] {

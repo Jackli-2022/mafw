@@ -5,7 +5,7 @@
 // 权限模型与 pods.ts 一致：本地信任模型下 `actorSessionID` 是审计提示而非认证边界；
 // 提供 actor 时按成员角色校验（Lead 才能改方向/打回/提探针）。
 import type * as http from 'http';
-import { PodError, type PodGoalRevisionRow, type PodMemberRole, type PodMemberRow } from '../core/pod/pod-store';
+import { PodError, type PodGoalRevisionRow, type PodGoalRevisionStatus, type PodMemberRole, type PodMemberRow } from '../core/pod/pod-store';
 import type { PodGoalService } from '../core/pod/pod-goal-service';
 import type { PodService } from '../core/pod/pod-service';
 import type { PodTechLeadService } from '../core/pod/pod-tech-lead-service';
@@ -21,6 +21,8 @@ export interface PodCollaborationDeps {
   directions?: Pick<PodDirectionService, 'request' | 'decide' | 'markClear'>;
   probes?: Pick<PodProbeService, 'list' | 'request' | 'requestMany'>;
   revisions?: { list(podId: string, goalId: string): PodGoalRevisionRow[] };
+  /** 当前 revision 状态（方向决定门：只有讨论/方向审阅可写）。 */
+  revisionStatus?(podId: string, goalId: string, revision?: number): PodGoalRevisionStatus | null;
   /** 方向决定（decided/clear）后启动规划；needs_user 绝不调用。 */
   startPlanning?(goalId: string): Promise<void> | void;
   access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
@@ -90,6 +92,15 @@ export async function handlePodCollaboration(
       assertAccess(deps, body, ['lead'], podId);
       const mode = normalizeDirectionMode(body?.mode, body);
       const revision = optionalRevision(body?.revision);
+      // Route-level gate (review): a decision may only be written while the revision is
+      // still in discussion; anything past that (planning/implementing/reviewing) would
+      // roll the stage back to planning.
+      if (mode !== 'needs_user' && deps.revisionStatus) {
+        const status = deps.revisionStatus(podId, goalId, revision);
+        if (status && status !== 'discussing' && status !== 'direction_review') {
+          throw new PodError(409, `direction decision not allowed in revision status: ${status}`);
+        }
+      }
       const reason = stringOrNull(body?.reason);
       const userWords = typeof body?.userWords === 'string' ? body.userWords : '';
       const optionId = stringOrNull(body?.optionId);

@@ -39,6 +39,10 @@ test("pod.createGoal posts the direct discussion Goal and reports discussing", a
   expect(JSON.parse(lastCall()[1].body)).toMatchObject({ title: "Loop", objective: "实现" })
   expect(res.status).toBe("discussing")
   expect(res.revision).toBe(1)
+
+  // The entry point travels with the request so the gateway persists the real source.
+  await c.pod.createGoal("pod_1", { title: "Loop", source: "tui" })
+  expect(JSON.parse(lastCall()[1].body)).toMatchObject({ source: "tui" })
 })
 
 test("pod.techLead hits the discussion route with an optional limit", async () => {
