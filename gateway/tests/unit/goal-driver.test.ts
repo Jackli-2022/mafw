@@ -46,7 +46,7 @@ describe('NodeDriver advance（启动侧）', () => {
     expect(st.lastError).toContain('boom');
     expect(st.nextAction).toBe('FAILED');
     expect(h.nodeRuns[0].status).toBe('failed');
-    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'FAIL' });
+    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'ERROR' });
   });
 
   it('nextNode=execute 时直接启动 execute（绑 mafw-execute）', async () => {

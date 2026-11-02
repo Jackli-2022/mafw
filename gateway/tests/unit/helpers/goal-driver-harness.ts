@@ -19,7 +19,7 @@ export interface Harness {
   charter(goalId: string): void;
   startAndIdle(goalId: string): Promise<string>;  // advance → 返回在飞 sessionId
   fireIdle(sessionId?: string): Promise<void>;    // 触发 idle + 等 microtask
-  fireError(sessionId: string, msg: string): Promise<void>;
+  fireError(sessionId: string, msg: string, code?: string): Promise<void>;
   load(goalId: string): any;
   write(goalId: string, patch: any): void;
 }
@@ -84,8 +84,8 @@ export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: numbe
       driver.onSessionIdle(sid ?? currentSession!);
       await settle();
     },
-    async fireError(sid: string, msg: string) {
-      driver.onSessionError(sid, msg);
+    async fireError(sid: string, msg: string, code?: string) {
+      driver.onSessionError(sid, msg, code);
       await settle();
     },
     load: (goalId) => loadGoalState(mafwDir, goalId),

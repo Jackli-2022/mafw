@@ -3,6 +3,7 @@
 // 角色纪律在身份 systemPrompt（Task 4）；这里只注入每 goal/loop 的实例上下文与产物契约。
 import * as path from 'path';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
+import type { FailureClass } from './failure-class';
 
 const TASK_TYPES = ['feature', 'bugfix', 'refactor', 'research', 'docs', 'test', 'other'] as const;
 
@@ -158,6 +159,16 @@ export interface NodePromptCtx {
   acceptance?: Record<string, string[]>;
   /** Goal 级期望结果（request.acceptance）；plan 必须分解到 wave task acceptance。 */
   goalAcceptance?: string[];
+  attempt?: number;
+  maxAttempts?: number;
+  lastFailure?: {
+    class: FailureClass;
+    code: string;
+    message: string;
+    node: 'plan' | 'execute' | 'review';
+    attempt: number;
+    at: string;
+  } | null;
 }
 
 export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodePromptCtx): string {
@@ -165,10 +176,16 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
   const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round, { fix: isFixPass });
   const head = `【MAFW Goal ${ctx.goalId} · loop ${ctx.round}/${ctx.maxRounds}】`;
   const docs = `charter: ${ctx.charterPath}\nrequest: ${ctx.requestPath}`;
+  const retryContext = [
+    ctx.attempt && ctx.maxAttempts ? `Retry context: attempt ${ctx.attempt}/${ctx.maxAttempts}.` : '',
+    ctx.lastFailure
+      ? `Last failure [${ctx.lastFailure.class}/${ctx.lastFailure.code}]: ${ctx.lastFailure.message}. Inspect existing artifacts/worktree before repeating work; do not assume prior side effects were rolled back.`
+      : '',
+  ].filter(Boolean).join('\n');
 
   if (node === 'plan') {
     return [
-      head, docs, '',
+      head, docs, retryContext, '',
       ctx.goalAcceptance?.length
         ? `Goal acceptance（必须在 wave task acceptance 中 decompose，不能只复述）：\n${ctx.goalAcceptance.map((item) => `- ${item}`).join('\n')}`
         : '',
@@ -193,7 +210,7 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
     if (isFixPass) {
       const failed = (ctx.fixTasks ?? []).map((task) => `- ${task.taskId}：${task.evidence || "（reviewer 未给证据）"}`).join('\n');
       return [
-        head, docs, '',
+        head, docs, retryContext, '',
         `任务：**同轮复核修复**。上一轮 review 判定以下任务未通过，只修这些，不要扩大范围：`,
         failed,
         ctx.reviewFeedback ? `reviewer 总结：${ctx.reviewFeedback}` : '',
@@ -206,7 +223,7 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
       ].filter(Boolean).join('\n');
     }
     return [
-      head, docs, '',
+      head, docs, retryContext, '',
       `任务：读 ${a.waves}，逐 wave 执行。每完成一个任务把回执写入 ${a.receipt}（写完整个 JSON，覆盖式更新）。`,
       '',
       `产物契约（写入 ${a.receipt}）：`,
@@ -220,7 +237,7 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
     .map(([taskId, items]) => `- ${taskId}：${items.join(' / ')}`);
 
   return [
-    head, docs, '',
+    head, docs, retryContext, '',
     `任务：独立验证本轮执行结果。读 charter、${a.waves}、回执 ${a.receipt}，用只读工具与测试命令复核（不信任回执自述）。`,
     ctx.reviewFeedback ? `上轮 review 参考：${ctx.reviewFeedback}` : '',
     acceptanceLines.length > 0 ? `任务验收标准（判定依据，不要另立口径）：\n${acceptanceLines.join('\n')}` : '',

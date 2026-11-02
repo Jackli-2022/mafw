@@ -14,6 +14,7 @@ import { parseReviewRubric, taskAcceptanceFromWavePlan, taskIdsFromWavePlan } fr
 import { ensureWaveTaskIds } from './wave-plan-edit';
 import { matchesSignature } from '../langgraph/signature-detector';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
+import { classifyNodeFailure } from './failure-class';
 
 /** 从 waves.json 收集 taskId（与 PodTaskService 的 `${wave.id}-t${i+1}` 一致）。
  *  文件缺失/非法 → 返回 []（旧 goal 兼容：review 仍按 verdict 判定）。 */
@@ -86,7 +87,11 @@ const NODE_PHASE: Record<'plan' | 'execute' | 'review', { running: string; compl
 
 export class NodeDriver {
   private mutex = new Map<string, Promise<void>>();
-  private listeners = new Map<string, (ev: 'idle' | 'error', errorMsg?: string) => void>();
+  private listeners = new Map<string, (ev: 'idle' | 'error', failure?: {
+    message: string;
+    code: string;
+    source: 'runtime' | 'artifact';
+  }) => void>();
   private stateDirs = new Map<string, string>(); // goalId → mafwDir
 
   constructor(private deps: DriverDeps) {}
@@ -102,10 +107,17 @@ export class NodeDriver {
     if (h) { this.listeners.delete(sessionID); h('idle'); }
   }
 
-  /** handleOpencodeEvent 分发入口（error）。 */
-  onSessionError(sessionID: string, errorMsg: string): void {
+  /** handleOpencodeEvent 分发入口（error）。code 缺省时按未知运行时错误 fail-closed。 */
+  onSessionError(sessionID: string, errorMsg: string, errorCode?: string): void {
     const h = this.listeners.get(sessionID);
-    if (h) { this.listeners.delete(sessionID); h('error', errorMsg); }
+    if (h) {
+      this.listeners.delete(sessionID);
+      h('error', {
+        message: errorMsg,
+        code: errorCode || 'session_error',
+        source: 'runtime',
+      });
+    }
   }
 
   /** 推进 goal（幂等、互斥）。所有入口（starter/完成回调/应答/恢复/watchdog）都走这里。 */
@@ -194,6 +206,9 @@ export class NodeDriver {
       requestPath: path.join(mafwDir, 'requests', `${goalId}.json`),
       reviewFeedback: state.reviewFeedback || undefined,
       planFeedback: state.planFeedback || undefined,
+      attempt,
+      maxAttempts: this.deps.maxAttempts,
+      lastFailure: state.lastFailure ?? null,
       goalAcceptance: node === 'plan' ? (() => {
         try {
           const req = JSON.parse(fs.readFileSync(path.join(mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
@@ -226,9 +241,15 @@ export class NodeDriver {
       nodeSession: { id: sessionId, phase: node, startedAt: new Date().toISOString(), attempt, runId },
     });
 
-    this.listeners.set(sessionId, (ev, errorMsg) => {
+    this.listeners.set(sessionId, (ev, failure) => {
       if (ev === 'idle') void this.completeNode(goalId, sessionId);
-      else void this.failNode(goalId, sessionId, 'session_error', errorMsg ?? 'session error');
+      else void this.failNode(
+        goalId,
+        sessionId,
+        failure?.code ?? 'session_error',
+        failure?.message ?? 'session error',
+        failure?.source ?? 'runtime',
+      );
     });
 
     this.deps.emitNodeEvent({
@@ -263,7 +284,9 @@ export class NodeDriver {
       ? { verdict: 'PASS', phase: 'ARCHIVED', nextAction: 'COMPLETED' }
       : node === 'archive_max_retries'
         ? { verdict: 'MAX_RETRIES', phase: 'FAILED', nextAction: 'FAILED' }
-        : { verdict: 'FAIL', phase: 'FAILED', nextAction: 'FAILED' };
+        : state.reviewVerdict === 'ERROR'
+          ? { verdict: 'ERROR', phase: 'FAILED', nextAction: 'FAILED' }
+          : { verdict: 'FAIL', phase: 'FAILED', nextAction: 'FAILED' };
     // review 完成时 round 已 +1 → PASS 归档报实际完成的 loop 数（round-1）
     const rounds = (node === 'archive_success' && state.reviewVerdict === 'PASS')
       ? Math.max(1, round - 1) : round;
@@ -276,12 +299,34 @@ export class NodeDriver {
   }
 
   /** 节点失败（error/timeout/artifact 缺失或非法）。 */
-  private async failNode(goalId: string, sessionID: string, kind: string, message: string): Promise<void> {
+  private async failNode(
+    goalId: string,
+    sessionID: string,
+    kind: string,
+    message: string,
+    source: 'runtime' | 'artifact' = 'runtime',
+  ): Promise<void> {
     const found = this.findState(goalId);
     if (!found) return;
     const { mafwDir } = found;
     const state = loadGoalState(mafwDir, goalId)!;
     const ns = state.nodeSession;
+    const failureClass = classifyNodeFailure({
+      code: kind,
+      node: ns?.phase ?? 'execute',
+      source,
+    });
+    const attempt = ns?.attempt ?? 1;
+    const retryable = failureClass === 'retryable_environment' && attempt < this.deps.maxAttempts;
+    const lastFailure = {
+      class: failureClass,
+      code: kind,
+      message,
+      node: (ns?.phase ?? 'execute') as 'plan' | 'execute' | 'review',
+      attempt,
+      at: new Date().toISOString(),
+    };
+
     if (ns && ns.id === sessionID) {
       this.deps.db.finishNodeRun(ns.runId, {
         status: kind === 'timeout' ? 'timeout' : 'failed',
@@ -294,8 +339,22 @@ export class NodeDriver {
       });
     }
     try { await this.deps.client.delete(sessionID); } catch { /* fail-open */ }
+
+    if (retryable) {
+      writeGoalState(mafwDir, goalId, {
+        nodeSession: null,
+        lastFailure,
+        lastError: `${kind}: ${message}`,
+      });
+      await this.advance(goalId);
+      return;
+    }
+
     writeGoalState(mafwDir, goalId, {
-      nodeSession: null, lastError: `${kind}: ${message}`, reviewVerdict: 'ERROR',
+      nodeSession: null,
+      lastFailure,
+      lastError: `${kind}: ${message}`,
+      reviewVerdict: 'ERROR',
       nextNode: 'archive_fail',
     });
     await this.advance(goalId);
@@ -320,7 +379,7 @@ export class NodeDriver {
     const submitted = await this.deps.client.structured?.(sessionID) ?? null;
     const artifactPath = node === 'plan' ? a.waves : node === 'execute' ? a.receipt : a.review;
     if (!submitted && !fs.existsSync(artifactPath)) {
-      await this.failNode(goalId, sessionID, 'artifact_missing', `expected ${artifactPath}`);
+      await this.failNode(goalId, sessionID, 'artifact_missing', `expected ${artifactPath}`, 'artifact');
       return;
     }
     // 结构化交卷优先时把结果落成同一份文件产物：下一个节点（execute/review）
@@ -413,11 +472,12 @@ export class NodeDriver {
         outcome = verdict.verdict;
       }
     } catch (err: any) {
-      await this.failNode(goalId, sessionID, 'artifact_invalid', `${artifactPath}: ${err.message}`);
+      await this.failNode(goalId, sessionID, 'artifact_invalid', `${artifactPath}: ${err.message}`, 'artifact');
       return;
     }
 
     try { await this.deps.client.delete(sessionID); } catch { /* fail-open */ }
+    patch = { ...patch, lastFailure: null };
 
     const phaseNames = NODE_PHASE[node];
     const nextRound = patch.round ?? round;

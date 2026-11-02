@@ -101,6 +101,30 @@ describe('completeNode 产物双门', () => {
     expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
   });
 
+  it('retryable runtime failure starts the next attempt without changing round', async () => {
+    const h = makeHarness({ maxAttempts: 2 });
+    seedGoal(h, 'g9');
+    const sid = await h.startAndIdle('g9');
+    await h.fireError(sid, 'provider overloaded', '429');
+    const st = h.load('g9')!;
+    expect(st.round).toBe(1);
+    expect(st.lastFailure).toMatchObject({ class: 'retryable_environment', code: '429', attempt: 1 });
+    expect(st.nodeSession).toMatchObject({ phase: 'plan', attempt: 2 });
+    expect(h.calls.filter((c) => c.op === 'create')).toHaveLength(2);
+    expect(h.calls.some((c) => c.op === 'archiveGoal')).toBe(false);
+  });
+
+  it('unknown runtime failure terminates with ERROR and preserved code', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9');
+    const sid = await h.startAndIdle('g9');
+    await h.fireError(sid, 'weird failure', 'weird_runtime_code');
+    expect(h.load('g9')!.lastFailure).toMatchObject({
+      class: 'terminal_session', code: 'weird_runtime_code', attempt: 1,
+    });
+    expect(h.calls.find((c) => c.op === 'archiveGoal')?.verdict).toBe('ERROR');
+  });
+
   it('idle 但产物缺失 → artifact_missing → archive_fail', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9');
@@ -109,7 +133,7 @@ describe('completeNode 产物双门', () => {
     const st = h.load('g9')!;
     expect(st.lastError).toContain('artifact_missing');
     expect(h.nodeRuns[0].status).toBe('failed');
-    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'FAIL' });
+    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'ERROR' });
   });
 
   it('产物非法 JSON → artifact_invalid', async () => {

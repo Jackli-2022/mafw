@@ -1460,7 +1460,14 @@ class MafwScheduler {
     if (sessionID) {
       if (type === MAFW.turnCompleted) this.goalDriver?.onSessionIdle(sessionID);
       if (type === MAFW.turnFailed) {
-        this.goalDriver?.onSessionError(sessionID, String(props?.error ?? 'session error'));
+        const rawError = (props as any)?.error;
+        const code = typeof rawError === 'object' && rawError
+          ? String(rawError.type ?? rawError.code ?? 'session_error')
+          : String((props as any)?.errorCode ?? 'session_error');
+        const message = typeof rawError === 'object' && rawError
+          ? String(rawError.message ?? rawError.type ?? 'session error')
+          : String(rawError ?? 'session error');
+        this.goalDriver?.onSessionError(sessionID, message, code);
       }
       // busy 追踪（spec 2026-10-22-session-queue-inbox §5.1 v2）：turn.started 置位；
       // 本词汇的首个消费者——配对可靠性由 15min TTL 清扫兜底（防楔死，v2 Q2）。

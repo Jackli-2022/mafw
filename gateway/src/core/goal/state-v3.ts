@@ -3,6 +3,7 @@
 // 写入方：NodeDriver（唯一）；读取方：驱动器/timeline/dashboard（双读兼容 round/loop）。
 import * as fs from 'fs';
 import * as path from 'path';
+import type { FailureClass } from './failure-class';
 
 export interface NodeSessionRef {
   id: string;
@@ -41,6 +42,14 @@ export interface GoalStateV3 {
   wavePlanPath: string | null;
   receiptPath: string | null;
   lastError: string | null;
+  lastFailure?: {
+    class: FailureClass;
+    code: string;
+    message: string;
+    node: 'plan' | 'execute' | 'review';
+    attempt: number;
+    at: string;
+  } | null;
   nodeSession: NodeSessionRef | null;
   pendingQuestion: PendingQuestion | null;
   userResponse: UserResponse | null;
@@ -120,6 +129,7 @@ function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
     wavePlanPath: raw.wavePlanPath ?? null,
     receiptPath: raw.receiptPath ?? null,
     lastError: raw.lastError ?? raw.error ?? null,
+    lastFailure: raw.lastFailure ?? null,
     nodeSession: raw.nodeSession ?? null,
     pendingQuestion: raw.pendingQuestion ?? null,
     userResponse: raw.userResponse ?? null,
