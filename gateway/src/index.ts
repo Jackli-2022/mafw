@@ -136,7 +136,7 @@ import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
-import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/identity-registry';
+import { createBuiltinIdentityRegistry, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { withInstructionSync } from './runtime/instruction-wrapper';
 import { InstructionSyncService } from './core/instructions/instruction-sync-service';
@@ -363,7 +363,7 @@ async function isPortHealthy(port: number): Promise<boolean> {
   }
 }
 
-import { readManagerSlot, writeManagerSlot } from './core/manager/manager-session-runtime';
+import { readManagerSlot, writeManagerSlot, projectLeadSessionMetadata } from './core/manager/manager-session-runtime';
 
 const INTERNAL_SESSION_TTL_DAYS = 7;
 
@@ -4550,8 +4550,18 @@ class MafwScheduler {
     // catch the pre-registry stragglers (their titles are the first line of
     // the pipeline prompt, e.g. "# Memory Index..." / '{"relevant_ids":...}');
     // agent='memory-curator' survives the internal-session kv TTL prune.
+    // Pod 协作循环（Task 2）：Lead / Tech Lead session 也隐藏——它们的本地 metadata
+    // （`metadata.mafw.role`）是唯一稳定的判定面（runtime 的 `agent` 字段要等首次
+    // prompt 才翻成 'lead'），所以本地存储必须先加载、过滤先于合并。
+    let localSessions: any[] = [];
+    try {
+      localSessions = (await this.sdkSession.list()) as any[];
+    } catch { localSessions = []; }
+    const localMap = new Map<string, any>(localSessions.map((s: any) => [s.id, s]));
+    const withLocalMetadata = (s: any): any =>
+      s?.metadata ? s : { ...s, metadata: s?.id ? localMap.get(s.id)?.metadata : undefined };
     const isHidden = (s: any): boolean =>
-      isHiddenSession(s, (id) => this.internalSessionRoles.get(id));
+      isHiddenSession(withLocalMetadata(s), (id) => this.internalSessionRoles.get(id));
 
     // Try SDK first (opencode server), fall back to local store
     const fromServe: any[] = [];
@@ -4614,19 +4624,16 @@ class MafwScheduler {
     }
 
     if (merged.length > 0) {
-      // Enrich sessions with local metadata (manager session markers, etc.).
-      const localSessions = await this.sdkSession.list();
-      const localMap = new Map(localSessions.map(s => [s.id, s]));
+      // Enrich sessions with local metadata (Lead session markers, etc.).
       const enriched = merged.map((s: any) => {
         const local = localMap.get(s.id);
         return local?.metadata ? { ...s, metadata: local.metadata } : s;
       });
-      // Also include local-only sessions (e.g. Manager session registered via
+      // Also include local-only sessions (e.g. the Lead session registered via
       // registerExternal) that the opencode server doesn't know about — but only
-      // those belonging to the queried project, so switching projects shows only
-      // that project's manager session.
+      // those belonging to the queried project, and never internal ones.
       const sdkIds = new Set<string>(merged.map((s: any) => s.id));
-      const missingLocal = localSessions.filter(s => s.metadata && !sdkIds.has(s.id));
+      const missingLocal = localSessions.filter(s => s.metadata && !sdkIds.has(s.id) && !isHidden(s));
       if (missingLocal.length > 0) {
         const targetDir = projectID ? normalizeDir(projectID) : null;
         enriched.push(...missingLocal
@@ -4643,7 +4650,8 @@ class MafwScheduler {
       return enriched;
     }
 
-    return projectID ? await this.sdkSession.listByProject(projectID) : await this.sdkSession.list();
+    const fallback = projectID ? await this.sdkSession.listByProject(projectID) : await this.sdkSession.list();
+    return (fallback as any[]).filter((s: any) => !isHidden(s));
   }
 
   private async isServeHealthy(): Promise<boolean> {
@@ -9228,11 +9236,11 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     // project-directory churn and never gets orphaned by directory moves.
     const existing = this.readManagerSessionEntry(projectDir);
     if (existing?.sessionId) {
-      await this.sdkSession.registerExternal(existing.sessionId, projectDir, {
-        mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
-      }).catch(() => {});
-      this.registerInternalSession(existing.sessionId, 'manager', 'manager');
-      log.info(`[Scheduler] Manager session already exists: ${existing.sessionId}`);
+      await this.sdkSession.registerExternal(existing.sessionId, projectDir, projectLeadSessionMetadata()).catch(() => {});
+      // 既有 manager 会话按 Lead 语义继续工作：内部角色/身份都走 Lead（`manager` 是
+      // deprecated 别名，见 identity-registry.resolveIdentityAlias）。
+      this.registerInternalSession(existing.sessionId, 'lead', resolveIdentityAlias('manager'));
+      log.info(`[Scheduler] Lead session already exists: ${existing.sessionId}`);
       await this.syncPodLead(projectDir, existing.sessionId);
       return existing.sessionId;
     }
@@ -9241,22 +9249,20 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
     const sessionId = session.id;
     if (!sessionId) {
-      log.error(`[Scheduler] Manager session create returned no id (directory=${projectDir})`);
-      throw new Error('Failed to create manager session: no id returned');
+      log.error(`[Scheduler] Lead session create returned no id (directory=${projectDir})`);
+      throw new Error('Failed to create lead session: no id returned');
     }
     const createdAt = new Date().toISOString();
 
     this.getGatewayDb().kvSet('manager-session', projectDir, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName, { sessionId, createdAt }));
-    this.registerInternalSession(sessionId, 'manager', 'manager');
+    this.registerInternalSession(sessionId, 'lead', resolveIdentityAlias('manager'));
 
     try {
-      await this.sdkSession.registerExternal(sessionId, projectDir, {
-        mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
-      });
+      await this.sdkSession.registerExternal(sessionId, projectDir, projectLeadSessionMetadata());
     } catch (err: any) {
-      log.warn(`[Scheduler] Manager session local register failed: ${err.message} (non-fatal)`);
+      log.warn(`[Scheduler] Lead session local register failed: ${err.message} (non-fatal)`);
     }
-    log.info(`[Scheduler] Manager session created: ${sessionId}`);
+    log.info(`[Scheduler] Lead session created: ${sessionId}`);
 
     await this.syncPodLead(projectDir, sessionId);
     return sessionId;
@@ -9458,12 +9464,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     if (!this.runtime) throw new Error('runtime not available');
     const session = await this.runtime.session.create({ directory: projectDir });
     const sessionId = session.id;
-    if (!sessionId) throw new Error('Failed to create manager session: no id returned');
+    if (!sessionId) throw new Error('Failed to create lead session: no id returned');
     this.getGatewayDb().kvSet('manager-session', projectDir, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName, { sessionId, createdAt: new Date().toISOString() }));
-    this.registerInternalSession(sessionId, 'manager', 'manager');
-    await this.sdkSession.registerExternal(sessionId, projectDir, {
-      mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
-    }).catch(() => {});
+    this.registerInternalSession(sessionId, 'lead', resolveIdentityAlias('manager'));
+    await this.sdkSession.registerExternal(sessionId, projectDir, projectLeadSessionMetadata()).catch(() => {});
     await this.syncPodLead(projectDir, sessionId);
     return sessionId;
   }

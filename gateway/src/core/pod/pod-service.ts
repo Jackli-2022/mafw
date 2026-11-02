@@ -42,7 +42,7 @@ export interface PodServiceDeps {
 }
 
 const MEMBER_SPECS: Array<{ role: PodMemberRole; displayName: string; agentName: string }> = [
-  { role: 'lead', displayName: 'Lead', agentName: 'manager' },
+  { role: 'lead', displayName: 'Lead', agentName: 'lead' },
   { role: 'tech_lead', displayName: 'Tech Lead', agentName: 'mafw-tech-lead' },
   { role: 'builder', displayName: 'Builder', agentName: 'mafw-execute' },
   { role: 'reviewer', displayName: 'Reviewer', agentName: 'mafw-review' },

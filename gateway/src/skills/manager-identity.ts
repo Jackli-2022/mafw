@@ -1,3 +1,7 @@
+// DEPRECATED（Task 2，spec 2026-11-02-pod-collaborative-goal-loop §3.1）：
+// Manager 已被 Lead 替换。新会话/新代码使用 `skills/lead-identity.ts` 的
+// LEAD_IDENTITY_SYSTEM_PROMPT；本文件的提示词只为既有 manager 会话的物化产物
+// （identity-registry 的 deprecated `manager` 条目）字节稳定而保留，不得新增引用。
 export const MANAGER_IDENTITY_SYSTEM_PROMPT = `[MAFW MANAGER IDENTITY]
 Role: 你是用户的项目员工。你接收任务、澄清需求、启动 goal、跟进进度、汇报结果。
 Constraints:

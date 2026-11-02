@@ -69,7 +69,7 @@ describe('PodService', () => {
 
     expect(second.pod.id).toBe(first.pod.id);
     expect(first.members.map((m) => m.role)).toEqual(['lead', 'tech_lead', 'builder', 'reviewer']);
-    expect(first.members.find((m) => m.role === 'lead')?.agentName).toBe('manager');
+    expect(first.members.find((m) => m.role === 'lead')?.agentName).toBe('lead');
     expect(first.members.find((m) => m.role === 'tech_lead')?.agentName).toBe('mafw-tech-lead');
     expect(first.members.find((m) => m.role === 'builder')?.agentName).toBe('mafw-execute');
     expect(first.members.find((m) => m.role === 'reviewer')?.agentName).toBe('mafw-review');

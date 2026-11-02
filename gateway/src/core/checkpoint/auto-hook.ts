@@ -48,18 +48,22 @@ export async function runAutoCheckpoint(
   const access = deps.access();
   if (!access?.can('branch.checkpoint')) return null;
 
-  // 内部 worker（turnCompress / curator / btw / media）不记录；**manager 是可见会话**，
-  // 照常记录（设计明确）。历史 kv 角色表里的 manager 同样放行。
+  // 内部 worker（turnCompress / curator / btw / media）不记录；**协调会话（manager / Lead）
+  // 是用户可见对话**——虽然它们不再出现在会话列表里（Task 2 起 Lead 是内部会话），
+  // 时间线/回滚仍需要本回合检查点，照常记录。历史 kv 角色表里的 manager 同样放行。
   const role = deps.internalRoleOf(sessionID);
-  if (role && role !== 'manager') return null;
+  const coordinator = role === 'manager' || role === 'lead';
+  if (role && !coordinator) return null;
 
   const info = await rt.session.get({ sessionID });
   if (!info) return null;
 
   let hidden = false;
-  try {
-    hidden = deps.isHidden(info, (id) => deps.internalRoleOf(id));
-  } catch { hidden = false; }
+  if (!coordinator) {
+    try {
+      hidden = deps.isHidden(info, (id) => deps.internalRoleOf(id));
+    } catch { hidden = false; }
+  }
   if (hidden) return null;
 
   const projectDir = info.directory ?? info.location?.directory;

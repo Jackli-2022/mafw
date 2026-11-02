@@ -13,6 +13,36 @@ export interface ManagerSlot {
   createdAt?: string | null;
 }
 
+/**
+ * 协调会话（kv 槽位 `manager-session`）的 session metadata。
+ *
+ * Task 2（spec 2026-11-02-pod-collaborative-goal-loop §3.1）：Manager 被 Lead 替换——
+ * kv 键名与 `readManagerSlot`/`writeManagerSlot` 保留（既有行兼容），但会话对外的身份
+ * 是 Lead：`role:'lead'`。生命周期豁免（trim/evict/archive）与 pinned 不变：协调会话
+ * 仍是 per-project 单例常驻会话。
+ *
+ * `manager` / `manager-archived` 只作为历史行的读取兼容，不再由新写入产生。
+ */
+export function projectLeadSessionMetadata(): {
+  mafw: {
+    role: 'lead';
+    pinned: true;
+    exemptFromTrim: true;
+    exemptFromEvict: true;
+    exemptFromArchive: true;
+  };
+} {
+  return {
+    mafw: {
+      role: 'lead',
+      pinned: true,
+      exemptFromTrim: true,
+      exemptFromEvict: true,
+      exemptFromArchive: true,
+    },
+  };
+}
+
 export interface ManagerSessionValueV2 {
   byRuntime: Record<string, ManagerSlot>;
   /**

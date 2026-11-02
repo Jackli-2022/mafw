@@ -1,4 +1,7 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import {
+  projectLeadSessionMetadata,
   readManagerSlot,
   writeManagerSlot,
   resolveManagerRuntime,
@@ -73,5 +76,50 @@ describe('manager-session per-runtime slots', () => {
   it('writeManagerSlot: fresh entry (no existing value) creates a single slot', () => {
     const out = writeManagerSlot(null, 'opencode', OC);
     expect(out.byRuntime).toEqual({ opencode: OC });
+  });
+});
+
+// Task 2（spec 2026-11-02-pod-collaborative-goal-loop §3.1）：Manager 的 kv 槽位名保留
+// （`manager-session` / readManagerSlot），但会话对外的身份是 Lead——元数据写 `role:'lead'`，
+// 老的 `manager` / `manager-archived` 行只作为兼容读取路径存在。
+describe('projectLeadSessionMetadata', () => {
+  it('marks the coordination session as the Lead, pinned and lifecycle-exempt', () => {
+    expect(projectLeadSessionMetadata()).toMatchObject({ mafw: { role: 'lead', pinned: true } });
+  });
+
+  it('keeps the exemption flags the manager session always had', () => {
+    expect(projectLeadSessionMetadata().mafw).toMatchObject({
+      exemptFromTrim: true,
+      exemptFromEvict: true,
+      exemptFromArchive: true,
+    });
+  });
+
+  it('is a fresh object per call (metadata is handed to the session store)', () => {
+    expect(projectLeadSessionMetadata()).not.toBe(projectLeadSessionMetadata());
+    expect(projectLeadSessionMetadata()).toEqual(projectLeadSessionMetadata());
+  });
+
+  it('never labels the session with the deprecated manager role', () => {
+    expect(projectLeadSessionMetadata().mafw.role).not.toBe('manager');
+  });
+});
+
+describe('manager/Lead session wiring (index.ts)', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../../src/index.ts'), 'utf-8');
+
+  it('writes the Lead metadata instead of an inline manager role', () => {
+    expect(source).toContain('projectLeadSessionMetadata()');
+    expect(source).not.toMatch(/mafw: \{ role: 'manager', pinned/);
+  });
+
+  it('registers the coordination session as the internal `lead` role bound to the Lead identity', () => {
+    expect(source).toMatch(/registerInternalSession\([^)]*'lead'/);
+  });
+
+  it('keeps the manager-session kv key and the legacy archived role for compatibility', () => {
+    expect(source).toContain("'manager-session'");
+    expect(source).toContain("readManagerSlot");
+    expect(source).toContain("role: 'manager-archived'");
   });
 });

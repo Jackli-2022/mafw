@@ -106,6 +106,21 @@ describe('runAutoCheckpoint', () => {
     expect(h.calls.get).toEqual(['s1']);
   });
 
+  it('records for Lead sessions even though they are hidden from session lists (Task 2)', async () => {
+    // Lead 是内部会话（不出现在会话列表），但它是用户实际对话的协调会话，
+    // 时间线/回滚仍需要检查点——隐藏口径不得顺手掐掉记录。
+    const h = harness({ role: 'lead' });
+    const cp = await runAutoCheckpoint(h.deps, 's1');
+    expect(cp).toEqual(h.created);
+    expect(h.calls.get).toEqual(['s1']);
+  });
+
+  it('skips Tech Lead sessions (internal worker, hidden)', async () => {
+    const h = harness({ role: 'tech-lead' });
+    expect(await runAutoCheckpoint(h.deps, 's1')).toBeNull();
+    expect(h.calls.get).toEqual([]);
+  });
+
   it('reads a 200-message window (long agentic turns must still find the anchor)', async () => {
     const h = harness();
     await runAutoCheckpoint(h.deps, 's1');

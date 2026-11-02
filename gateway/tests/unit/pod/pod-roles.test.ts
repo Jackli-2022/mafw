@@ -36,7 +36,7 @@ describe('pod four-role vocabulary', () => {
         ['reviewer', 'mafw-review'],
         ['builder', 'mafw-execute'],
         ['tech_lead', 'mafw-tech-lead'],
-        ['lead', 'manager'],
+        ['lead', 'lead'],
       ] as const) {
         store.upsertMember({
           id: `m_${role}`,
