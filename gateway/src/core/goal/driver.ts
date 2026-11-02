@@ -13,7 +13,8 @@ import {
   renderNodePrompt, nodeArtifactPaths, nodeOutputSchema, goalEvalArtifactPath, readGoalEvalArtifact,
 } from './node-prompts';
 import type { NodeSessionRef } from './state-v3';
-import { computeGoalEvalHash, computeWavesHash, validatePlanPackage } from './plan-package';
+import { computeGoalEvalHash, computePlanPackageHash, computeWavesHash, evaluateProbeContinuation, probeContinuationRules, validateContinuationRules, validatePlanPackage } from './plan-package';
+import type { PlanApprovalMode, ProbeContinuation, ProbeContinuationRules } from './plan-package';
 import { requiredConditionIds } from './goal-eval';
 import type { GoalEval } from './goal-eval';
 import { ExecutableGoalNode, goalAgentName, isExecutableGoalNode } from './node-names';
@@ -23,6 +24,7 @@ import {
   validateProbeRequest,
   type ProbeAffects,
   type ProbeBudget,
+  type ProbeConclusion,
   type ProbeReport,
   type ProbeRequest,
   type ProbeScope,
@@ -67,7 +69,33 @@ export class StalePlanError extends Error {
 export interface PlanApprovalHashes {
   planHash: string | null;
   evalHash: string | null;
+  /** Task 15：full_chain 的整包哈希（waves + eval + approvalMode + continuation）。 */
+  packageHash?: string | null;
 }
+
+/** 已解析的探针结论（整链判定输入；写入 state 供 timeline/排错）。 */
+export interface PlanProbeDecision {
+  conclusion: ProbeConclusion;
+  /** null = 没有规则覆盖（未预期结果）。 */
+  decision: ProbeContinuation | null;
+}
+
+/**
+ * Task 15：full_chain 批准在 `state.planApproval` 上的附加字段。
+ * `state-v3.normalize()` 对 planApproval 原样透传，因此新增字段无需迁移；
+ * 旧状态缺字段 = 两段式（two_stage）。
+ */
+export interface FullChainApprovalState {
+  approvalMode?: PlanApprovalMode;
+  /** 批准绑定的整包哈希（任一字段改动都会 stale）。 */
+  packageHash?: string | null;
+  /** 已兑现探针的结论与规则命中（按 probeId）。 */
+  probeDecisions?: Record<string, PlanProbeDecision>;
+  /** 首次失效原因（整链一旦失效不会被后续 continue 洗白）。 */
+  invalidated?: { reason: string; probeId?: string; at: string } | null;
+}
+
+type PlanApprovalState = NonNullable<GoalStateV3['planApproval']> & FullChainApprovalState;
 
 /** waves 规范化哈希；非法 waves（旧计划/半截产物）返回 null，绝不抛。 */
 function safeWavesHash(waves: unknown): string | null {
@@ -77,6 +105,18 @@ function safeWavesHash(waves: unknown): string | null {
 function safeGoalEvalHash(goalEval: GoalEval | null): string | null {
   if (!goalEval) return null;
   try { return computeGoalEvalHash(goalEval); } catch { return null; }
+}
+
+/** Task 15：full_chain 整包哈希（计划/规则任一改动都会改变它）；非法产物 → null。 */
+function safePackageHash(planDoc: any, goalEval: GoalEval | null): string | null {
+  try {
+    return computePlanPackageHash({
+      waves: planDoc?.waves,
+      goalEval: goalEval ?? undefined,
+      approvalMode: planDoc?.approvalMode,
+      continuation: planDoc?.continuation,
+    });
+  } catch { return null; }
 }
 
 /** 原子写 Goal Eval（.tmp + rename；坏中间态不会被评审读到）。 */
@@ -760,7 +800,60 @@ export class NodeDriver {
     this.probeAttempts.delete(probeId);
     const refs = Array.from(new Set([...(state.probeRefs ?? []), probeId]));
     const remaining = (state.probeQueue ?? []).filter((id) => id !== probeId);
-    const nextNode: GoalNodeName = remaining.length ? 'probe' : 'plan';
+    let nextNode: GoalNodeName = remaining.length ? 'probe' : 'plan';
+    // Task 15：full_chain 整链判定（只在批准过整包时生效）。
+    let approvalPatch: PlanApprovalState | null = null;
+    let planFeedback: string | null = null;
+    const approval = state.planApproval as PlanApprovalState | undefined;
+    if (approval?.approvalMode === 'full_chain') {
+      const rules = this.readContinuationRules(state, goalId, revision);
+      const decisions: Record<string, PlanProbeDecision> = { ...(approval.probeDecisions ?? {}) };
+      decisions[probeId] = {
+        conclusion: report.conclusion,
+        decision: probeContinuationRules(rules, probeId, report.conclusion),
+      };
+      const verdict = approval.invalidated
+        // 整链一旦失效就不能被后续 continue 洗白：直接按作废收尾。
+        ? {
+          status: 'reapprove' as const,
+          reason: approval.invalidated.reason,
+          ...(approval.invalidated.probeId ? { probeId: approval.invalidated.probeId } : {}),
+        }
+        : evaluateProbeContinuation({
+          rules,
+          results: Object.entries(decisions).map(([id, record]) => ({
+            probeId: id,
+            conclusion: record.conclusion,
+          })),
+          packageHash: approval.packageHash ?? null,
+          currentPackageHash: this.readPlanHashes(state, goalId, revision)?.packageHash ?? null,
+        });
+      if (verdict.status === 'continue') {
+        approvalPatch = { ...approval, probeDecisions: decisions };
+        // 全部结论都允许继续 → 直接实施（没有第二次计划门）。
+        nextNode = remaining.length ? 'probe' : 'execute';
+      } else {
+        const at = new Date().toISOString();
+        approvalPatch = {
+          ...approval,
+          // 批准作废：pending + 清决定时间（id 保留供审计；回 planning 后不可再批）。
+          status: 'pending',
+          decidedAt: undefined,
+          probeDecisions: decisions,
+          invalidated: approval.invalidated ?? {
+            reason: verdict.reason,
+            ...(verdict.probeId ? { probeId: verdict.probeId } : {}),
+            at,
+          },
+        };
+        if (remaining.length) {
+          nextNode = 'probe';
+        } else {
+          nextNode = 'plan';
+          planFeedback = `探针结论要求重新批准计划：${verdict.reason}。修订计划后重新提交批准。`;
+        }
+      }
+    }
 
     if (meta.sessionId) await this.releaseSession(meta.sessionId);
     if (meta.runId) {
@@ -778,6 +871,8 @@ export class NodeDriver {
       nodeSession: null, probeRefs: refs, probeQueue: remaining,
       nextNode, nextAction: `NEXT_${nextNode}`, phase: NODE_PHASE.probe.complete,
       lastFailure: null, lastError: null,
+      ...(planFeedback ? { planFeedback } : {}),
+      ...(approvalPatch ? { planApproval: approvalPatch } : {}),
     });
     if (meta.runId) this.emitFinished(goalId, state.projectDir, effectiveRound(state), 'probe', `probe=${probeId}`, meta.attempt ?? 1, revision);
     if (meta.advance !== false) await this.advance(goalId);
@@ -924,7 +1019,18 @@ export class NodeDriver {
     return {
       planHash: safeWavesHash(planDoc.waves),
       evalHash: safeGoalEvalHash(read.goalEval),
+      // Task 15：只有 full_chain 才绑定整包哈希（two_stage 的批准语义保持不变）。
+      packageHash: planDoc.approvalMode === 'full_chain'
+        ? safePackageHash(planDoc, read.goalEval)
+        : null,
     };
+  }
+
+  /** Task 15：当前 revision 的 continuation 规则（来自产物 = 批准哈希绑定的那一份）。 */
+  private readContinuationRules(state: GoalStateV3, goalId: string, revision: number): ProbeContinuationRules | undefined {
+    const planDoc = this.readPlanDoc(state, goalId, revision);
+    if (!planDoc) return undefined;
+    try { return validateContinuationRules(planDoc.continuation); } catch { return undefined; }
   }
 
   /** 在飞节点应落地的产物路径（完成判定与 idle 宽容共用，防两处漂移）。 */
@@ -1019,21 +1125,31 @@ export class NodeDriver {
     const current: PlanApprovalHashes = {
       planHash: content?.planHash ?? null,
       evalHash: content?.evalHash ?? null,
+      packageHash: content?.packageHash ?? null,
     };
     const mismatches: string[] = [];
-    const check = (label: 'plan' | 'goal eval', expected: string | null | undefined, actual: string | null) => {
+    const check = (label: 'plan' | 'goal eval' | 'plan package', expected: string | null | undefined, actual: string | null) => {
       if (expected == null) return; // 旧版批准没有绑定 / 调用方没给：不参与判定
       if (expected !== actual) mismatches.push(label);
     };
     check('plan', approval.planHash, current.planHash);
     check('goal eval', approval.evalHash, current.evalHash);
+    // Task 15：full_chain 还绑定整包（approvalMode + continuation）。
+    check('plan package', (approval as PlanApprovalState).packageHash, current.packageHash ?? null);
     check('plan', opts?.planHash, current.planHash);
     check('goal eval', opts?.evalHash, current.evalHash);
     if (mismatches.length === 0) return;
 
     if (content) {
       writeGoalState(mafwDir, goalId, {
-        planApproval: { ...approval, planHash: current.planHash, evalHash: current.evalHash },
+        planApproval: {
+          ...approval,
+          planHash: current.planHash,
+          evalHash: current.evalHash,
+          ...((approval as PlanApprovalState).packageHash != null
+            ? { packageHash: current.packageHash ?? null }
+            : {}),
+        } as PlanApprovalState,
       });
     }
     throw new StalePlanError(
@@ -1060,11 +1176,16 @@ export class NodeDriver {
     if (!content) return false;
 
     const approved = approval.status === 'approved';
-    const next: NonNullable<GoalStateV3['planApproval']> = {
-      ...approval,
+    const previous = approval as PlanApprovalState;
+    const next: PlanApprovalState = {
+      ...previous,
       status: 'pending',
       planHash: content.planHash,
       evalHash: content.evalHash,
+      // Task 15：整包哈希一起刷新，否则改写后的 full_chain 计划会永远 stale。
+      ...(previous.packageHash != null || previous.approvalMode === 'full_chain'
+        ? { packageHash: content.packageHash ?? null }
+        : {}),
     };
     if (approved) {
       // 已批准的批准不得继续生效：换 id、清决定时间、重新驻留批准门。
@@ -1256,6 +1377,8 @@ export class NodeDriver {
     let outcome: string;
     /** plan 交卷的内容哈希：批准门用它绑定"用户实际看到的这一版"。 */
     let approvalHashes: PlanApprovalHashes | null = null;
+    /** Task 15：full_chain 待批记录（探针先于实施，但批准发生在探针之前）。 */
+    let fullChainApproval: PlanApprovalState | null = null;
     try {
       if (node === 'plan') {
         // 只读**最终落盘版**（含 ensureWaveTaskIds 补齐的稳定 taskId）：结构化交卷与
@@ -1286,6 +1409,24 @@ export class NodeDriver {
               `${refs.length} reported, ${queued.length} queued, ${drafts.length} requested)`,
             );
           }
+          // Task 15：full_chain —— 计划同时给出实施计划与探针，用户**一次批准整条链**。
+          // 只在人工审阅门下成立（没有人工门就不存在"整链批准"这回事）。
+          const fullChain = planDoc.approvalMode === 'full_chain'
+            && (state.planReview ?? 'auto') === 'manual';
+          // 批准后不再有第二次计划门 → 实施部分与规则必须在入队前就合法
+          // （失败不留下任何已入队探针的副作用）。
+          let fullChainPkg: ReturnType<typeof validatePlanPackage> | null = null;
+          if (fullChain) {
+            fullChainPkg = validatePlanPackage({
+              waves: planDoc.waves,
+              goalEval: planDoc.goalEval,
+              approvalMode: 'full_chain',
+              continuation: planDoc.continuation,
+            });
+            if (!fullChainPkg.continuation) {
+              throw new Error('full_chain plan requires continuation rules (probe id or "default" → continue|reapprove)');
+            }
+          }
           const ids = port.enqueue({ podId, goalId, revision, drafts });
           patch = {
             nextNode: 'probe',
@@ -1296,6 +1437,32 @@ export class NodeDriver {
             probeQueue: [...queued, ...ids],
           };
           outcome = `need_probe=${ids.length}`;
+          if (fullChain && fullChainPkg) {
+            writeGoalEvalFile(goalEvalArtifactPath(mafwDir, goalId, revision), fullChainPkg.goalEval);
+            approvalHashes = this.readPlanHashes(
+              { ...state, wavePlanPath: a.waves } as GoalStateV3,
+              goalId,
+              revision,
+            );
+            if (!approvalHashes?.packageHash) {
+              throw new Error('full_chain plan package is not hashable');
+            }
+            fullChainApproval = {
+              id: this.deps.newApprovalId(),
+              status: 'pending',
+              round,
+              revision,
+              planHash: approvalHashes.planHash,
+              evalHash: approvalHashes.evalHash,
+              approvalMode: 'full_chain',
+              packageHash: approvalHashes.packageHash,
+              probeDecisions: {},
+              invalidated: null,
+            };
+            patch.wavePlanPath = a.waves;
+            if (isTaskType(planDoc.taskType)) patch.taskType = planDoc.taskType;
+            outcome = `need_probe=${ids.length} full_chain`;
+          }
         } else {
           // Task 7/13：waves + goalEval 是同一份 PlanPackage。校验走 Task 7 的
           // 规范化边界，然后把 eval 落到本 revision 的独立产物（评审按它判定）。
@@ -1449,7 +1616,9 @@ export class NodeDriver {
     });
 
     // W1 批准门：manual plan 成功 → 驻留待批（合法 parked 态），不 advance。
-    if (node === 'plan' && nextNode === 'await_plan_approval') {
+    // Task 15：full_chain 走同一个驻留门，但待批记录同时绑定整包与探针规则——
+    // 批准后才 claim 探针（nextNode=probe），而不是先跑探针再要批准。
+    if (node === 'plan' && (nextNode === 'await_plan_approval' || fullChainApproval)) {
       this.deps.emitPhaseTransition({
         type: 'phase_transition', goalId, phase: 'PLANNING_AWAIT_APPROVAL',
         loop: nextRound, projectDir: state.projectDir, revision,
@@ -1457,7 +1626,7 @@ export class NodeDriver {
       writeGoalState(mafwDir, goalId, {
         ...patch, nodeSession: null, phase: 'PLANNING',
         nextNode: 'execute', nextAction: 'AWAIT_PLAN_APPROVAL',
-        planApproval: {
+        planApproval: fullChainApproval ?? {
           id: this.deps.newApprovalId(), status: 'pending', round: nextRound, revision,
           planHash: approvalHashes?.planHash ?? null,
           evalHash: approvalHashes?.evalHash ?? null,
@@ -1566,7 +1735,10 @@ export class NodeDriver {
       if (!found) return false;
       const state = loadGoalState(found.mafwDir, goalId)!;
       if (isTerminalState(state) || state.planApproval?.status !== 'pending') return false;
-      const approval = state.planApproval;
+      // pending 只存在于驻留批准门：full_chain 失效后回 planning 的 pending 记录是
+      // 审计留下的证明（"这版批准作废了"），绝不能被再批一次解锁实施。
+      if (state.nextAction !== 'AWAIT_PLAN_APPROVAL') return false;
+      const approval = state.planApproval as PlanApprovalState;
       if (!this.matchesApproval(approval, approvalId)) return false;
       // 批准必须绑定"用户实际看到的这一版"：内容变了就拒绝并对齐哈希。
       const revision = approval.revision ?? effectiveRevision(state);
@@ -1578,9 +1750,13 @@ export class NodeDriver {
         opts,
       );
       const decidedAt = new Date().toISOString();
+      // Task 15：full_chain 的探针还在队列里 → 批准后先跑 Spike（结论 continue 才实施）。
+      const probePending = approval.approvalMode === 'full_chain' && (state.probeQueue?.length ?? 0) > 0;
       writeGoalState(found.mafwDir, goalId, {
-        planApproval: { ...approval, status: 'approved', decidedAt },
-        nextAction: 'NEXT_execute',
+        planApproval: { ...approval, status: 'approved', decidedAt, invalidated: null } as PlanApprovalState,
+        ...(probePending
+          ? { nextNode: 'probe' as GoalNodeName, nextAction: 'NEXT_probe' }
+          : { nextAction: 'NEXT_execute' }),
       });
       this.deps.emitPhaseTransition({
         type: 'phase_transition', goalId, phase: 'PLANNING_APPROVED',

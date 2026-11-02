@@ -84,6 +84,52 @@ const PROBE_DRAFT_SCHEMA = {
   },
 } as const;
 
+/** 计划主体（waves）：ready 与 need_probe（Task 15 full_chain）两种状态共用同一形状。 */
+const WAVES_SCHEMA = {
+  type: 'array',
+  minItems: 1,
+  items: {
+    type: 'object',
+    required: ['id', 'title', 'tasks', 'riskNote'],
+    properties: {
+      id: { type: 'string' },
+      title: { type: 'string' },
+      tasks: {
+        type: 'array',
+        items: {
+          anyOf: [
+            { type: 'string' },
+            {
+              type: 'object',
+              required: ['title'],
+              properties: {
+                title: { type: 'string' },
+                acceptance: {
+                  type: 'array',
+                  maxItems: 20,
+                  items: { type: 'string', maxLength: 500 },
+                },
+                taskId: { type: 'string' },
+              },
+            },
+          ],
+        },
+      },
+      riskNote: { type: 'string' },
+    },
+  },
+} as const;
+
+/** Task 15：探针结论 → 下一步（continue = 直接实施 / reapprove = 重新批准）。 */
+const CONTINUATION_RULE_SCHEMA = {
+  type: 'object',
+  properties: {
+    supports: { type: 'string', enum: ['continue', 'reapprove'] },
+    refutes: { type: 'string', enum: ['continue', 'reapprove'] },
+    inconclusive: { type: 'string', enum: ['continue', 'reapprove'] },
+  },
+} as const;
+
 const PLAN_OUTPUT_SCHEMA = {
   anyOf: [
     {
@@ -92,40 +138,7 @@ const PLAN_OUTPUT_SCHEMA = {
       properties: {
         status: { const: 'ready' },        taskType: { type: 'string', enum: [...TASK_TYPES] },
         goalEval: GOAL_EVAL_SCHEMA,
-        waves: {
-          type: 'array',
-          minItems: 1,
-          items: {
-            type: 'object',
-            required: ['id', 'title', 'tasks', 'riskNote'],
-            properties: {
-              id: { type: 'string' },
-              title: { type: 'string' },
-              tasks: {
-                type: 'array',
-                items: {
-                  anyOf: [
-                    { type: 'string' },
-                    {
-                      type: 'object',
-                      required: ['title'],
-                      properties: {
-                        title: { type: 'string' },
-                        acceptance: {
-                          type: 'array',
-                          maxItems: 20,
-                          items: { type: 'string', maxLength: 500 },
-                        },
-                        taskId: { type: 'string' },
-                      },
-                    },
-                  ],
-                },
-              },
-              riskNote: { type: 'string' },
-            },
-          },
-        },
+        waves: WAVES_SCHEMA,
       },
     },
     {
@@ -139,11 +152,20 @@ const PLAN_OUTPUT_SCHEMA = {
     {
       // Task 14：关键技术假设无法只靠读代码消除 → 先让 Builder 做隔离 Spike，
       // 拿到 ProbeReport 后再提交最终 ready 计划（两段式，spec §6.3）。
+      // Task 15：full_chain —— 同时给出实施计划与规则，用户一次批准整条链。
       type: 'object',
       required: ['status', 'probes'],
       properties: {
         status: { const: 'need_probe' },
         probes: { type: 'array', minItems: 1, maxItems: 4, items: PROBE_DRAFT_SCHEMA },
+        approvalMode: { type: 'string', enum: ['two_stage', 'full_chain'] },
+        taskType: { type: 'string', enum: [...TASK_TYPES] },
+        waves: WAVES_SCHEMA,
+        goalEval: GOAL_EVAL_SCHEMA,
+        continuation: {
+          type: 'object',
+          additionalProperties: CONTINUATION_RULE_SCHEMA,
+        },
       },
     },
   ],
@@ -497,6 +519,14 @@ export function renderNodePrompt(node: ExecutableGoalNode, ctx: NodePromptCtx): 
       '若关键技术假设无法只靠读代码确认（路线不清、风险高、可能改变方案）：先提交两段式验证请求，不要猜：',
       '{"status":"need_probe","probes":[{"question":"要回答的技术问题","hypothesis":"当前假设","scope":{"paths":["相对探针工作区的允许路径"],"commandClasses":["read|search|build|test|lint|format|install|shell"],"network":false,"credentials":[]},"budget":{"maxMinutes":20,"maxUsd":2},"evidenceRequired":["需要看到什么证据"],"affects":{"planAssertions":["受影响的计划断言"]}}]}',
       'need_probe 只申请**隔离、只读**的验证；Builder 会在独立临时目录执行并返回 ProbeReport，之后你要提交最终 ready 计划（证据进入你的下一轮上下文）。',
+      ctx.planReview === 'manual'
+        ? [
+          '整链批准选项（仅当你能同时给出可实施的 waves + goalEval，用户就会一次性批准整条链）：',
+          '{"status":"need_probe","approvalMode":"full_chain","waves":[...],"goalEval":{...},"probes":[...],"continuation":{"default":{"supports":"continue","refutes":"reapprove","inconclusive":"reapprove"}}}',
+          'full_chain 在探针执行**之前**请用户批准整包；探针结论全部解析为 continue 才直接进入实施，不再有第二次计划门。任何 reapprove、没有命中 continuation 规则的结论（未预期结果）或计划内容被改动都会让批准作废并回到规划。',
+          'continuation 必须覆盖每个探针可能给出的结论：用 `default` 兜底所有探针（探针 id 由运行时分发，计划里通常只需 default），必要时再按具体 id 覆盖。规则不确定时用 reapprove——猜错会直接跑错实施。',
+        ].join('\n')
+        : '',
       '若存在无法自行消除的歧义：{"status":"need_clarification","ambiguities":["问题..."]}',
     ].filter(Boolean).join('\n');
   }
