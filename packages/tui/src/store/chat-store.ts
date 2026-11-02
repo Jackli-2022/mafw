@@ -302,8 +302,11 @@ export class ChatStore {
       // 消息快照（pi message_start/message_end、opencode message.updated）：
       // assistant 用终态 content 覆盖流式累积（text/reasoning 同 id 替换，不追加）；
       // user 回合由本地乐观 turn / 历史承担，不在此重复建 turn。
-      const message = data?.properties?.message
-      if (this.applyMessageSnapshot(message)) this.deps.onChange()
+      // 会话作用域与 part.* 同构：信封 sessionID 优先，缺失才回退 message.sessionID。
+      const props = data?.properties ?? {}
+      const sid = props.sessionID ?? data?.sessionID
+      if (sid && sid !== this._sessionID) return
+      if (this.applyMessageSnapshot(props.message)) this.deps.onChange()
     } else if (type === 'turn.completed' || type === 'turn.failed' || type === 'turn.aborted') {
       // v2：回合终态三元组（原 session.idle/message.complete 双轨合并；Mode A 改写已删）
       const sid = data?.sessionID
@@ -327,7 +330,9 @@ export class ChatStore {
 
   /**
    * message.updated → turn 快照合并（只认 assistant）：content 非空时按 part 列表
-   * 覆盖（历史/终态是权威，流式累积只补空白），空骨架（message_start）不建空 part。
+   * 覆盖（历史/终态是权威，流式累积只补空白）。空骨架（message_start）且尚无承载
+   * turn 时不建回合——否则会永久挂一个没有内容的幽灵 pending turn；真正的内容由
+   * `part.delta` / `part.updated` 到达时建 turn。
    * 返回 true = 有变化（调用方触发 onChange）。
    */
   private applyMessageSnapshot(message: any): boolean {
@@ -339,6 +344,7 @@ export class ChatStore {
       .filter((p: ChatPart | null): p is ChatPart => p !== null)
     let turn = this.byMessage.get(message.id)
     if (!turn) {
+      if (parts.length === 0) return false
       turn = { messageID: message.id, role: 'assistant', parts: [], done: false }
       this.byMessage.set(message.id, turn)
       this.turns.push(turn)

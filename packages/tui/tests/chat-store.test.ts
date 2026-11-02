@@ -404,3 +404,28 @@ test('turn.completed 收尾最后一个 assistant 回合（排队 user turn 排�
   s.applyEvent('turn.completed', { type: 'turn.completed', sessionID: 's' })
   assert.equal(s.turns.find(t => t.messageID === 'pia_2')!.done, true)
 })
+
+test('message.updated 会话作用域：他会话快照忽略（信封 sessionID 与 message.sessionID）', () => {
+  const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
+  const content = [{ id: 'pia_9_t1', type: 'text', text: 'foreign' }]
+  // 信封 sessionID（pi/opencode 广播形态）
+  s.applyEvent('message.updated', { type: 'message.updated', sessionID: 'other', properties: { sessionID: 'other', message: { id: 'pia_9', role: 'assistant', content } } })
+  // 仅 message.sessionID 有值
+  s.applyEvent('message.updated', { type: 'message.updated', properties: { message: { id: 'pia_10', role: 'assistant', sessionID: 'other', content } } })
+  assert.equal(s.turns.length, 0, '他会话快照不建 turn')
+  // 本会话同一形态照常合并
+  s.applyEvent('message.updated', { type: 'message.updated', sessionID: 's', properties: { sessionID: 's', message: { id: 'pia_9', role: 'assistant', content } } })
+  assert.equal(s.turns.length, 1)
+})
+
+test('message.updated 空骨架且无承载 turn → 不建幽灵回合（message_start 无 content）', () => {
+  const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
+  s.applyEvent('message.updated', { type: 'message.updated', sessionID: 's', properties: { sessionID: 's', message: { id: 'pia_e', role: 'assistant', content: [] } } })
+  s.applyEvent('message.updated', { type: 'message.updated', sessionID: 's', properties: { sessionID: 's', message: { id: 'pia_n', role: 'assistant' } } })
+  assert.equal(s.turns.length, 0, '空骨架不建 turn')
+  // 已有承载 turn 时，空快照不破坏已有内容
+  s.applyEvent('part.delta', { type: 'part.delta', properties: { sessionID: 's', messageID: 'pia_e', partID: 'pia_e_t1', field: 'text', delta: 'hi' } })
+  s.applyEvent('message.updated', { type: 'message.updated', sessionID: 's', properties: { sessionID: 's', message: { id: 'pia_e', role: 'assistant', content: [] } } })
+  assert.equal(s.turns.length, 1)
+  assert.equal(s.turns[0].parts[0].text, 'hi')
+})
