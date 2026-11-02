@@ -32,12 +32,15 @@ export interface ProbeScopeAction {
   credential?: string;
   /** 探针隔离工作区（用于把绝对路径折算成范围内的相对路径）。 */
   workspaceDir?: string | null;
+  /** 主项目目录（命令里出现它 = 越过隔离边界，deny）。 */
+  projectDir?: string | null;
 }
 
-/** 探针会话的范围绑定：active probe 的请求 + 它的隔离工作区。 */
+/** 探针会话的范围绑定：active probe 的请求 + 它的隔离工作区 + 主项目。 */
 export interface ProbeScopeBinding {
   request: ProbeRequest;
   workspaceDir?: string | null;
+  projectDir?: string | null;
 }
 
 const FILE_TOOLS = new Set([
@@ -154,6 +157,38 @@ function worst(verdicts: ProbeScopeVerdict[]): ProbeScopeVerdict {
   return 'allow';
 }
 
+const DIRECTORY_CHANGE = /(?:^|[;&|(]\s*)(?:cd|pushd|chdir|set-location|sl)\s+("([^"]+)"|'([^']+)'|([^\s;&|)]+))/gi;
+
+/**
+ * 命令级边界：
+ * - 命令文本里出现**主项目绝对路径**（`cd /repo/project`、`cat /repo/project/x`）→ deny：
+ *   隔离 Spike 不能靠 shell 绕开路径范围；
+ * - `cd` 目标是相对 `..` 逃逸 → deny（离开隔离工作区）；
+ * - 其余交给命令类别 / 网络判定。
+ */
+function commandVerdict(command: string, projectDir: string | null | undefined): ProbeScopeVerdict {
+  const text = String(command ?? '');
+  if (!text.trim()) return 'allow';
+  const normalized = normalizePath(text);
+  const fold = (s: string) => (process.platform === 'win32' ? s.toLowerCase() : s);
+  const verdicts: ProbeScopeVerdict[] = [];
+
+  if (projectDir) {
+    const project = normalizePath(projectDir).replace(/\/+$/, '');
+    if (project && fold(normalized).includes(fold(project))) verdicts.push('deny');
+  }
+
+  DIRECTORY_CHANGE.lastIndex = 0;
+  for (let match = DIRECTORY_CHANGE.exec(text); match; match = DIRECTORY_CHANGE.exec(text)) {
+    const target = (match[2] ?? match[3] ?? match[4] ?? '').trim();
+    if (!target || target === '-' || target === '~') continue;
+    const normalizedTarget = normalizePath(target);
+    if (normalizedTarget.split('/').some((segment) => segment === '..')) verdicts.push('deny');
+  }
+
+  return verdicts.length ? worst(verdicts) : 'allow';
+}
+
 /**
  * 判定一次动作是否在声明范围内。
  *
@@ -167,6 +202,7 @@ export const ProbeScopeGuard = {
       : null;
     if (!request || !request.scope) return 'deny';
     const effectiveWorkspace = action.workspaceDir ?? (binding as ProbeScopeBinding)?.workspaceDir ?? null;
+    const effectiveProject = action.projectDir ?? (binding as ProbeScopeBinding)?.projectDir ?? null;
     const verdicts: ProbeScopeVerdict[] = [];
 
     if (action.path !== undefined && action.path !== null) {
@@ -196,6 +232,10 @@ export const ProbeScopeGuard = {
     } else if (action.tool && SHELL_TOOLS.has(action.tool.toLowerCase())) {
       // shell 类工具但看不到命令：无法判范围 → 转人工。
       verdicts.push('ask');
+    }
+    if (command) {
+      // 命令可能绕过路径参数直接操作主项目（`cd <mainProject>` / `cat <mainProject>/x`）。
+      verdicts.push(commandVerdict(command, effectiveProject));
     }
 
     if (verdicts.length === 0) {

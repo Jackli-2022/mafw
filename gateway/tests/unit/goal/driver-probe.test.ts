@@ -216,6 +216,8 @@ describe('two-stage Spike orchestration', () => {
     expect(planPrompt.parts[0].text).toContain('Probe 报告');
     expect(planPrompt.parts[0].text).toContain('tests passed: 12');
     expect(planPrompt.parts[0].text).toContain('只在 node 22 上验证');
+    // minors：探针额度也进计划上下文（模型知道还能申请几次）。
+    expect(planPrompt.parts[0].text).toContain('探针额度');
 
     // 最终 ready 计划才进入批准门。
     const planSid2 = sessionOf(h).id;
@@ -352,8 +354,32 @@ describe('two-stage Spike orchestration', () => {
   });
 });
 
-describe('probe fails without a report', () => {
-  it('fails the probe node when the Builder produces no report and disposes the workspace', async () => {
+describe('probe budget is enforced', () => {
+  it('hard-stops a probe that exceeds maxMinutes and disposes its workspace', async () => {
+    const h = makeHarness({ maxAttempts: 1 });
+    seedGoal(h, 'g1', { patch: { planReview: 'manual' } });
+    const port = makeProbePort(h);
+    attachPort(h, port);
+
+    await h.driver.advance('g1');
+    writePlan(h, 'g1', needProbeDoc([probeDraft({ budget: { maxMinutes: 0.001, maxUsd: 1 } })]));
+    await h.fireIdle(sessionOf(h).id);
+    const probeSid = sessionOf(h).id;
+    expect(probeSid).toBeTruthy();
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const probeRun = h.nodeRuns.find((r: any) => r.node === 'probe')!;
+    expect(probeRun.status).toBe('timeout');
+    expect(probeRun.error).toContain('budget');
+    expect(port.disposed).toHaveLength(1);
+    // 预算耗尽 = 探针失败 → goal 归档失败（不会假装计划已完成）。
+    expect(h.load('g1')!.nextNode).toBe('archive_fail');
+  });
+});
+
+describe('probe fails without a report', () => {  it('fails the probe node when the Builder produces no report and disposes the workspace', async () => {
     const h = makeHarness();
     seedGoal(h, 'g1', { patch: { planReview: 'manual' } });
     const port = makeProbePort(h);

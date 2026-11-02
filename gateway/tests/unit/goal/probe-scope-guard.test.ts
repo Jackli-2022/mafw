@@ -39,7 +39,7 @@ const WORKSPACE = process.platform === 'win32' ? 'C:\\tmp\\mafw-probes\\p1' : '/
 const MAIN_PROJECT = process.platform === 'win32' ? 'C:\\repo\\project' : '/repo/project';
 
 function binding(overrides: Partial<ProbeRequest> = {}) {
-  return { request: probe(overrides), workspaceDir: WORKSPACE };
+  return { request: probe(overrides), workspaceDir: WORKSPACE, projectDir: MAIN_PROJECT };
 }
 
 describe('ProbeScopeGuard.evaluate', () => {
@@ -70,6 +70,22 @@ describe('ProbeScopeGuard.evaluate', () => {
     expect(ProbeScopeGuard.evaluate(binding(), { network: true })).toBe('ask');
     expect(ProbeScopeGuard.evaluate(binding({ scope: { ...probe().scope, network: true } }), { network: true }))
       .toBe('allow');
+  });
+
+  it('denies shell commands that reach the main project or escape the workspace', () => {
+    // 声明了 test/read 也不够：`cd <mainProject>` 是绕过路径参数的隔离突破。
+    expect(ProbeScopeGuard.evaluate(binding(), { command: `cd ${MAIN_PROJECT}` })).toBe('deny');
+    expect(ProbeScopeGuard.evaluate(binding(), { command: `bash -lc "cat ${MAIN_PROJECT}/src/a.ts"` }))
+      .toBe('deny');
+    expect(ProbeScopeGuard.evaluate(binding(), { command: 'cd .. && cat src/a.ts' })).toBe('deny');
+    expect(ProbeScopeGuard.evaluate(binding(), { command: 'cd src && npm test' })).toBe('allow');
+    // Windows 大小写/反斜杠同一判定。
+    expect(ProbeScopeGuard.evaluate(
+      binding(),
+      { command: `cd ${MAIN_PROJECT.replace(/\//g, '\\').toUpperCase()}` },
+    )).toBe('deny');
+    // 没有 projectDir 绑定（旧调用方）时仍按命令类别判定，不误伤普通命令。
+    expect(ProbeScopeGuard.evaluate(probe(), { command: 'npm test' })).toBe('allow');
   });
 
   it('scopes credentials and command classes', () => {
@@ -210,6 +226,26 @@ describe('probe scope is enforced before identity and internal auto-approval', (
       toolName: 'bash', patterns: ['npm test'], metadata: {},
     });
     expect(decision.action).toBe('auto-deny');
+  });
+
+  it('identity deny wins over a probe ask (no human can approve around the identity)', () => {
+    const h = makePolicy({
+      binding: binding(),
+      mode: 'full-access',
+      identity: { name: 'mafw-execute', internal: true },
+      identityPolicy: { deny: ['bash'], allowlist: [] },
+      internalRole: 'worker',
+    });
+    const props: Record<string, any> = {};
+    applyApprovalPolicy(h.policy, h.runtime, {
+      requestId: 'req3', toolName: 'bash', patterns: ['npm install left-pad'], metadata: {},
+    } as any, 'probe_ses', props);
+
+    // 越界（install 未声明 → ask）也没用：身份 deny 先判，直接拒绝、不给人批的机会。
+    expect(props.mafwPolicy.action).toBe('auto-deny');
+    expect(props.probeScope).toMatchObject({ probeId: 'p1', verdict: 'ask' });
+    expect(h.replies).toHaveLength(1);
+    expect(h.replies[0][2]).toBe('reject');
   });
 
   it('auto-approves an in-scope action even for an internal probe session', () => {

@@ -1434,6 +1434,37 @@ export class PodStore {
     }
   }
 
+  /**
+   * 按 id 抢占（调用方已确认它是 Pod-global 排队头）。
+   * 同一事务内复核「Pod 无 running + 该行仍是 queued」——绝不把另一个 goal 的
+   * 探针标成 running 后又丢弃（那会永久占住 Pod 的唯一运行槽）。
+   */
+  claimProbe(id: string, now: string): PodProbeRow | null {
+    const claim = this.db.transaction(() => {
+      const row = this.db.prepare(
+        "SELECT * FROM pod_probes WHERE id = ? AND status = 'queued'",
+      ).get(id) as any;
+      if (!row) return null;
+      const running = this.db.prepare(
+        "SELECT id FROM pod_probes WHERE pod_id = ? AND status = 'running' LIMIT 1",
+      ).get(row.pod_id);
+      if (running) return null;
+      const updated = this.db.prepare(`
+        UPDATE pod_probes SET status = 'running', started_at = ?
+        WHERE id = ? AND status = 'queued'
+        RETURNING *
+      `).get(now, id) as any;
+      return updated ? probeFromRow(updated) : null;
+    });
+    try {
+      return claim();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('UNIQUE') || message.includes('idx_pod_probes_running')) return null;
+      throw error;
+    }
+  }
+
   /** completed：允许对该探针重放报告（A2A 传输重试），不允许覆盖 cancelled。 */
   completeProbe(id: string, input: { reportJson: string; reportPath: string; now: string }): PodProbeRow | null {
     const row = this.db.prepare(`

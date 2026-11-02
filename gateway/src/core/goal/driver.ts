@@ -127,6 +127,8 @@ export interface GoalProbeWorkspace {
 export interface GoalProbeSessionBinding {
   request: ProbeRequest;
   workspaceDir?: string | null;
+  /** 主项目目录：命令里出现它 = 越过隔离边界（deny）。 */
+  projectDir?: string | null;
 }
 
 /**
@@ -223,6 +225,11 @@ export class NodeDriver {
   private probeWorkspaces = new Map<string, GoalProbeWorkspace>();
   /** Task 14：每条探针自己的技术重试计数（attempt 只描述重试，不描述同批第几条）。 */
   private probeAttempts = new Map<string, number>();
+  /** Task 14：每条探针的硬超时定时器（budget.maxMinutes）。 */
+  private probeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** advanceInner 在同一次推进里的递归深度（probe→plan→probe 的正常链也有上限）。 */
+  private advanceDepth = 0;
+  private static readonly MAX_ADVANCE_DEPTH = 8;
 
   constructor(private deps: DriverDeps) {}
 
@@ -295,7 +302,7 @@ export class NodeDriver {
           sessionId: inflight.id, runId: inflight.runId, attempt: inflight.attempt, advance: false,
         });
         // 已在互斥内：直接继续推进（下一条探针 / 重新规划），不要再排队。
-        return this.advanceInner(goalId);
+        return this.continueAdvance(goalId);
       }
       return; // 探针在飞——等 idle / 报告完成
     }
@@ -422,6 +429,12 @@ export class NodeDriver {
       acceptance: node === 'review' ? acceptance : undefined,
       goalConditions: node === 'review' ? (reviewEval?.goalEval?.conditions ?? undefined) : undefined,
       probeReports: node === 'plan' ? this.collectProbeReports(state) : undefined,
+      probeBudget: node === 'plan'
+        ? (() => {
+          const used = (state.probeRefs?.length ?? 0) + (state.probeQueue?.length ?? 0);
+          return { max: MAX_PROBES_PER_REVISION, used, remaining: Math.max(0, MAX_PROBES_PER_REVISION - used) };
+        })()
+        : undefined,
       fixTasks: fixPass ? (state.reviewFix?.tasks ?? []) : undefined,
       fixPreviousReceipt: fixPass ? nodeArtifactPaths(mafwDir, goalId, round, { revision }).receipt : undefined,
     });
@@ -619,7 +632,18 @@ export class NodeDriver {
       probe: { request, workspaceDir: workspace.dir, reportPath: port.reportPath(goalId, probeId) },
       attempt, maxAttempts: this.deps.maxAttempts, lastFailure: state.lastFailure ?? null,
     });
-    try { port.bindSession(sessionId, { request, workspaceDir: workspace.dir }); } catch { /* fail-open */ }
+    try { port.bindSession(sessionId, { request, workspaceDir: workspace.dir, projectDir: state.projectDir }); } catch { /* fail-open */ }
+
+    // 预算硬约束（spec §6.5）：maxMinutes 不是建议值——超时即失败并销毁工作区。
+    const timeoutMs = Math.max(1, Math.round(request.budget.maxMinutes * 60_000));
+    const timer = setTimeout(() => {
+      void this.failNode(
+        goalId, sessionId, 'timeout',
+        `probe ${probeId} exceeded its budget of ${request.budget.maxMinutes} minutes`,
+      );
+    }, timeoutMs);
+    timer.unref?.();
+    this.probeTimers.set(sessionId, timer);
 
     try {
       void this.deps.client.promptAsync({
@@ -771,13 +795,26 @@ export class NodeDriver {
   /**
    * 内部推进：已在该 goal 的互斥内（advanceInner 调用链）→ 直接递归，避免自等；
    * 否则走正常的 advance 排队。probe 节点的多个终止点共用这一条语义。
+   * 递归深度有硬上限：端口的异常行为（报告永远可读 / 队列不前进）不能把栈打穿。
    */
   private async continueAdvance(goalId: string): Promise<void> {
-    if (this.mutex.has(goalId)) {
-      await this.advanceInner(goalId);
+    if (!this.mutex.has(goalId)) {
+      await this.advance(goalId);
       return;
     }
-    await this.advance(goalId);
+    if (this.advanceDepth >= NodeDriver.MAX_ADVANCE_DEPTH) {
+      const mafwDir = this.stateDirs.get(goalId);
+      try {
+        if (mafwDir) {
+          writeGoalState(mafwDir, goalId, {
+            lastError: `driver: advance recursion budget (${NodeDriver.MAX_ADVANCE_DEPTH}) exhausted`,
+          });
+        }
+      } catch { /* last-resort */ }
+      return;
+    }
+    this.advanceDepth += 1;
+    try { await this.advanceInner(goalId); } finally { this.advanceDepth -= 1; }
   }
 
   /** Task 12 hook：复用既有节点会话；缺省/抛错 → null（fail-open，新建会话）。 */
@@ -798,6 +835,11 @@ export class NodeDriver {
   private async releaseSession(sessionId: string): Promise<void> {
     this.reuseIdleGrace.delete(sessionId);
     this.nodeStartArtifacts.delete(sessionId);
+    const timer = this.probeTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.probeTimers.delete(sessionId);
+    }
     // Task 14：探针会话的隔离工作区与范围绑定随会话一起收尾（无论如何都销毁）。
     await this.disposeProbeWorkspace(sessionId);
     try { this.deps.probes?.bindSession(sessionId, null); } catch { /* fail-open */ }

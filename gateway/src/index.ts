@@ -8836,28 +8836,22 @@ class MafwScheduler {
 
     return {
       podIdForGoal: (goalId) => this.podService?.getPodIdForGoal(goalId) ?? null,
-      enqueue: ({ podId, goalId, revision, drafts }) => drafts.map((draft) => this.podProbeService.request({
-        podId, goalId, revision,
-        question: draft.question,
-        hypothesis: draft.hypothesis,
-        scope: draft.scope,
-        budget: draft.budget,
-        evidenceRequired: draft.evidenceRequired,
-        affects: draft.affects,
-      }).id),
+      enqueue: ({ podId, goalId, revision, drafts }) => this.podProbeService.requestMany(
+        drafts.map((draft) => ({
+          podId, goalId, revision,
+          question: draft.question,
+          hypothesis: draft.hypothesis,
+          scope: draft.scope,
+          budget: draft.budget,
+          evidenceRequired: draft.evidenceRequired,
+          affects: draft.affects,
+        })),
+      ).map((probe) => probe.id),
       take: ({ podId, goalId, probeIds }) => {
-        // 会话丢失后的重跑：本 goal 已 claim 的 running 探针可以在新工作区重新执行
-        // （Spike 代码可丢弃，报告才是产物）。
-        const running = this.podProbeService
-          .list(podId, { goalId, status: 'running' })
-          .find((probe) => probeIds.includes(probe.id));
-        if (running) return running.request;
-
-        const head = this.podProbeService.list(podId, { goalId, status: 'queued' })[0];
-        if (!head || !probeIds.includes(head.id)) return null; // Pod 单飞：还没轮到自己
-        const claimed = this.podProbeService.claim(podId);
-        if (!claimed || claimed.goalId !== goalId || !probeIds.includes(claimed.id)) return null;
-        return claimed.request;
+        // Pod-global FIFO 由 PodProbeService.claimForGoal 保证：不是本 goal 的队头
+        // （或别的 goal 正在跑）就返回 null，绝不把别人的探针标成 running 后丢弃。
+        const claimed = this.podProbeService.claimForGoal(podId, goalId, probeIds);
+        return claimed ? claimed.request : null;
       },
       report: (probeId) => {
         const row = this.podStore.getProbe(probeId);

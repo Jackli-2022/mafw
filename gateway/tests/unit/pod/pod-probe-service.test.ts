@@ -232,8 +232,56 @@ describe('PodProbeService', () => {
     expect(store.listProbes('pod_1')).toEqual([]);
   });
 
-  test('claim skips a probe whose goal revision became terminal without running it', () => {
+  test('claimForGoal never steals another goal queue head in a shared pod', () => {
     store.enqueueGoal({ id: 'pg_g4', podId: 'pod_1', goalId: 'g4', now: NOW });
+    seedRevision('g4');
+
+    // g4 的探针先入队（created_at 更早）→ 它是 Pod-global 队头。
+    const g4Probe = service.request(requestInput({ goalId: 'g4' }));
+    const g1Probe = service.request(requestInput({ goalId: 'g1' }));
+
+    // g1 不能抢占 g4 的队头：既不返回，也不能把 g4 的探针标成 running 后丢弃。
+    expect(service.claimForGoal('pod_1', 'g1', [g1Probe.id])).toBeNull();
+    expect(store.getProbe(g4Probe.id)?.status).toBe('queued');
+
+    // g4 跑自己的；期间 g1 仍然拿不到运行槽。
+    expect(service.claimForGoal('pod_1', 'g4', [g4Probe.id])).toMatchObject({
+      id: g4Probe.id, status: 'running',
+    });
+    expect(service.claimForGoal('pod_1', 'g1', [g1Probe.id])).toBeNull();
+
+    // g4 完成后轮到 g1；会话丢失后的重跑拿回同一条 running 探针。
+    service.complete(g4Probe.id, report(g4Probe.id));
+    expect(service.claimForGoal('pod_1', 'g1', [g1Probe.id])).toMatchObject({
+      id: g1Probe.id, status: 'running',
+    });
+    expect(service.claimForGoal('pod_1', 'g1', [g1Probe.id])).toMatchObject({ id: g1Probe.id });
+    // 另一个 goal 不能重跑 g1 的 running 探针。
+    expect(service.claimForGoal('pod_1', 'g4', [])).toBeNull();
+  });
+
+  test('requestMany rolls back partially enqueued probes when a later one fails', () => {
+    const capped = new PodProbeService({
+      store,
+      resolveMafwDir: () => mafwDir,
+      limits: { maxPending: 1, maxMinutes: 10 },
+      now: () => NOW,
+      newId: (() => { let n = 0; return () => `batch_${++n}`; })(),
+    });
+
+    expect(() => capped.requestMany([requestInput(), requestInput()]))
+      .toThrow(expect.objectContaining({ status: 409 }));
+
+    const rows = service.list('pod_1');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'failed' });
+    expect(rows[0].error).toMatch(/rolled back/);
+    // 回滚后排队槽位可用：下一条正常入队并可以被抢占。
+    const next = service.request(requestInput());
+    expect(service.claim('pod_1')).toMatchObject({ id: next.id, status: 'running' });
+  });
+
+  test('claim skips a probe whose goal revision became terminal without running it', () => {    store.enqueueGoal({ id: 'pg_g4', podId: 'pod_1', goalId: 'g4', now: NOW });
     seedRevision('g4');
 
     const stale = service.request(requestInput());

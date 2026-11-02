@@ -265,21 +265,81 @@ export class PodProbeService {
     for (;;) {
       const row = this.deps.store.claimNextProbe(podId, this.now());
       if (!row) return null;
-
-      const revision = this.deps.store.getGoalRevision(row.podId, row.goalId, row.revision);
-      if (!revision || isTerminalGoalRevisionStatus(revision.status)) {
-        const reason = redactProbeText(!revision
-          ? `goal revision is missing: ${row.goalId} r${row.revision}`
-          : `goal revision is terminal: ${row.goalId} r${row.revision} (${revision.status})`);
-        this.deps.store.failProbe(row.id, { error: reason, now: this.now() });
-        this.deps.notify?.(row.podId);
-        this.deps.log?.(`[Pod] probe skipped pod=${row.podId} probe=${row.id} reason=${reason}`);
-        continue;
-      }
-
+      if (!this.claimable(row)) continue;
       this.deps.notify?.(row.podId);
       this.deps.log?.(`[Pod] probe claimed pod=${row.podId} probe=${row.id}`);
       return recordFromRow(row);
+    }
+  }
+
+  /**
+   * 抢占**指定 goal** 的下一条探针（driver 用）：
+   * - 已有别的 goal 的 running 探针 → null（绝不抢占别人的运行槽）；
+   * - 本 goal 已 claim 的 running 探针 → 原样返回（会话丢失后的重跑）；
+   * - Pod-global 排队头不是本 goal 的探针 → null（FIFO，先来先跑）；
+   * - 否则按 id 抢占（`claimProbe` 事务内复核，不会把别人的探针标成 running 后丢弃）。
+   */
+  claimForGoal(podId: string, goalId: string, probeIds: string[]): ProbeRecord | null {
+    const wanted = new Set(probeIds ?? []);
+    for (;;) {
+      const running = this.deps.store.getRunningProbe(podId);
+      if (running) {
+        if (running.goalId !== goalId || !wanted.has(running.id)) return null;
+        if (this.claimable(running)) return recordFromRow(running);
+        continue; // 过期探针已被标记 failed，槽位释放
+      }
+
+      const head = this.deps.store.listProbes(podId, { status: 'queued' })[0];
+      if (!head) return null;
+      if (head.goalId !== goalId || !wanted.has(head.id)) return null;
+
+      const claimed = this.deps.store.claimProbe(head.id, this.now());
+      if (!claimed) return null;
+      if (!this.claimable(claimed)) continue;
+      this.deps.notify?.(podId);
+      this.deps.log?.(`[Pod] probe claimed pod=${podId} probe=${claimed.id}`);
+      return recordFromRow(claimed);
+    }
+  }
+
+  /**
+   * 终态复核：Goal/revision 已终态（或 rev 缺失）的探针绝不交给 Builder；
+   * 标记 failed（释放运行/排队槽）并返回 false。
+   */
+  private claimable(row: PodProbeRow): boolean {
+    const revision = this.deps.store.getGoalRevision(row.podId, row.goalId, row.revision);
+    if (revision && !isTerminalGoalRevisionStatus(revision.status)) return true;
+    const reason = redactProbeText(!revision
+      ? `goal revision is missing: ${row.goalId} r${row.revision}`
+      : `goal revision is terminal: ${row.goalId} r${row.revision} (${revision.status})`);
+    this.deps.store.failProbe(row.id, { error: reason, now: this.now() });
+    this.deps.notify?.(row.podId);
+    this.deps.log?.(`[Pod] probe skipped pod=${row.podId} probe=${row.id} reason=${reason}`);
+    return false;
+  }
+
+  /**
+   * 批量入队（driver 的 need_probe 一次申请多条）：任何一条失败时把已创建的
+   * 探针标记 failed（释放排队槽、绝不交给 Builder），然后重新抛出。
+   * 形状/预算先由 driver 预校验；这里防的是 Pod 级限额（队列帽、revision 终态）。
+   */
+  requestMany(inputs: ProbeRequestInput[]): ProbeRecord[] {
+    if (!Array.isArray(inputs) || inputs.length === 0) {
+      throw new PodError(400, 'probe batch is empty');
+    }
+    const created: ProbeRecord[] = [];
+    try {
+      for (const input of inputs) created.push(this.request(input));
+      return created;
+    } catch (error) {
+      for (const record of created) {
+        try {
+          this.deps.store.failProbe(record.id, { error: 'probe batch rolled back', now: this.now() });
+        } catch { /* best effort：不允许回滚失败掩盖原始错误 */ }
+      }
+      if (created.length) this.deps.notify?.(created[0].podId);
+      this.deps.log?.(`[Pod] probe batch rolled back pod=${created[0]?.podId} count=${created.length}`);
+      throw error;
     }
   }
 

@@ -31,16 +31,11 @@ export function applyApprovalPolicy(
     };
     const probe = policy.probeScope(sessionID, candidate);
     if (probe) props.probeScope = probe;
-    const forceHuman = facet.metadata?.forceHuman === true
-      || props?.forceHuman === true
-      || probe?.verdict === 'ask';
+    // 探针的 ask 由 evaluate 返回 human（身份 deny 仍然先判，不能被"问人"绕过）；
+    // 只有认知面 forceHuman 在这里短路政策环。
+    const forceHuman = facet.metadata?.forceHuman === true || props?.forceHuman === true;
     const decision = forceHuman
-      ? {
-        action: 'human' as const,
-        reason: probe?.verdict === 'ask'
-          ? `probe scope (${probe.probeId}) — action outside declared probe scope`
-          : 'cognition rule requested human confirmation',
-      }
+      ? { action: 'human' as const, reason: 'cognition rule requested human confirmation' }
       : policy.evaluate(sessionID, candidate, { probeVerdict: probe?.verdict });
     props.mafwPolicy = decision;
     // P1.5: record the verdict for later offline calibration (fail-open).

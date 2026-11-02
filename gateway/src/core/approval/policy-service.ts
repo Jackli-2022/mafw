@@ -92,10 +92,23 @@ export class ApprovalPolicyService {
     candidate: ApprovalCandidate,
     opts?: { probeVerdict?: ProbeScopeVerdict },
   ): PolicyDecision {
-    // 0. Spike 范围守门（Task 14）：deny/ask 必须先于身份策略与 internal blanket ——
+    // 0. 身份策略（最高优先）：deny 先于一切豁免与探针范围判定——
+    //    否则 probe 的 ask 会把身份禁止的工具交给人批，一次批准就绕过身份边界。
+    const binding = this.deps.getIdentity?.(sessionID);
+    const identityPolicy = binding ? this.deps.getPolicy?.(binding.name) : undefined;
+    const identityDecision = binding && identityPolicy
+      ? policyDecides(identityPolicy, candidate.toolName, (t: string): ToolCategory | null => resolveToolCategory(t))
+      : null;
+    if (identityDecision === 'deny') {
+      return {
+        action: 'auto-deny',
+        verdict: classifySafety(candidate),
+        reason: `identity policy (${binding!.name}) — ${candidate.toolName} not permitted for this identity`,
+      };
+    }
+    // 1. Spike 范围守门（Task 14）：deny/ask 必须先于 internal blanket ——
     //    内部 Session / full-access 身份不得成为越过 ProbeRequest 范围的豁免。
-    //    允许（allow）不越过身份 deny：Builder 身份禁止的工具照旧拒绝，最后才按
-    //    "范围内可自动放行"处理（隔离 Spike 默认不打扰用户）。
+    //    允许（allow）不越过身份 deny（上面已拒绝），最后才按"范围内可自动放行"处理。
     const probeBinding = this.deps.getProbeScope?.(sessionID);
     const probeVerdict: ProbeScopeVerdict | undefined = probeBinding
       ? (opts?.probeVerdict ?? ProbeScopeGuard.evaluate(
@@ -118,29 +131,13 @@ export class ApprovalPolicyService {
         reason: `probe scope (${probeId}) — action outside declared probe scope`,
       };
     }
-    // 1. 身份策略（先于 internal blanket-deny——manager 本身就是 internal 会话）
-    const binding = this.deps.getIdentity?.(sessionID);
-    if (binding) {
-      const policy = this.deps.getPolicy?.(binding.name);
-      if (policy) {
-        const cat = (t: string): ToolCategory | null => resolveToolCategory(t);
-        const decision = policyDecides(policy, candidate.toolName, cat);
-        if (decision === 'deny') {
-          return {
-            action: 'auto-deny',
-            verdict: classifySafety(candidate),
-            reason: `identity policy (${binding.name}) — ${candidate.toolName} not permitted for this identity`,
-          };
-        }
-        if (decision === 'allow' && binding.internal) {
-          return {
-            action: 'auto-approve',
-            verdict: classifySafety(candidate),
-            reason: `identity policy (${binding.name}) — ${candidate.toolName} allowlisted (unattended)`,
-          };
-        }
-        // allow + 非 internal → 落穿（用户档位决定问/不问）；null → 落穿
-      }
+    // 2. 身份放行（internal = 无人值守，可直接批）
+    if (binding && identityPolicy && identityDecision === 'allow' && binding.internal) {
+      return {
+        action: 'auto-approve',
+        verdict: classifySafety(candidate),
+        reason: `identity policy (${binding.name}) — ${candidate.toolName} allowlisted (unattended)`,
+      };
     }
     // Task 14：范围内（allow）且身份策略没有拒绝 → 自动放行。隔离 Spike 默认不打扰
     // 用户（spec §6.3）；internal blanket-deny 不应把探针自己的验证动作挡死。
@@ -151,7 +148,7 @@ export class ApprovalPolicyService {
         reason: `probe scope (${probeId}) — action within declared probe scope`,
       };
     }
-    // 1. 内部会话 fail-safe
+    // 3. 内部会话 fail-safe
     const role = this.deps.getInternalRole(sessionID);
     if (role) {
       return {

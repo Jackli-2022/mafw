@@ -378,6 +378,8 @@ export interface NodePromptCtx {
   };
   /** Task 14：已完成的 ProbeReport（plan 节点注入——探针证据是计划的输入）。 */
   probeReports?: ProbeReport[];
+  /** Task 14：本 revision 的探针额度（plan 节点据此收敛 need_probe 次数）。 */
+  probeBudget?: { max: number; used: number; remaining: number };
   attempt?: number;
   maxAttempts?: number;
   lastFailure?: {
@@ -446,7 +448,7 @@ export function renderNodePrompt(node: ExecutableGoalNode, ctx: NodePromptCtx): 
       `- 命令类别：${scope.commandClasses.join(', ')}`,
       `- 网络：${scope.network ? '允许' : '不允许'}`,
       `- 凭据：${scope.credentials.join(', ') || '（无）'}`,
-      `- 预算：${probe.request.budget.maxMinutes} 分钟 / $${probe.request.budget.maxUsd}`,
+      `- 预算：${probe.request.budget.maxMinutes} 分钟 / $${probe.request.budget.maxUsd}（超过 ${probe.request.budget.maxMinutes} 分钟会被强制终止并记为失败）`,
       `需要的证据：${probe.request.evidenceRequired.join('；')}`,
       probe.request.affects?.planAssertions?.length
         ? `本探针要影响的计划断言：${probe.request.affects.planAssertions.join('；')}`
@@ -472,6 +474,9 @@ export function renderNodePrompt(node: ExecutableGoalNode, ctx: NodePromptCtx): 
         : '',
       ctx.planReview
         ? `Plan review mode: ${ctx.planReview === 'manual' ? 'manual（计划需人工批准后才实施）' : 'auto'}`
+        : '',
+      ctx.probeBudget
+        ? `探针额度：本 revision 最多 ${ctx.probeBudget.max} 条，已用 ${ctx.probeBudget.used} 条（剩余 ${ctx.probeBudget.remaining} 条）。额度耗尽后 need_probe 会被拒绝，必须基于现有证据给出最终计划。`
         : '',
       ctx.priorBlock || '',
       ctx.counterfactualBlock || '',
