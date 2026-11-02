@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import type { ProbeStatus } from '../goal/probe';
 import type { PodGoalVerdict } from './pod-stage';
 
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived';
@@ -118,6 +119,23 @@ export interface PodGoalRevisionRow {
   feedback: string | null;
   priority: number;
   enqueuedAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+/** Spike 探针（spec §6）：请求/报告持久化 + 每 Pod 单运行槽。 */
+export interface PodProbeRow {
+  id: string;
+  podId: string;
+  goalId: string;
+  revision: number;
+  status: ProbeStatus;
+  requestJson: string;
+  reportJson: string | null;
+  requestPath: string;
+  reportPath: string | null;
+  error: string | null;
+  createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
 }
@@ -377,6 +395,24 @@ function a2aLinkFromRow(row: any): PodA2ALinkRow {
   };
 }
 
+function probeFromRow(row: any): PodProbeRow {
+  return {
+    id: row.id,
+    podId: row.pod_id,
+    goalId: row.goal_id,
+    revision: Number(row.revision),
+    status: row.status,
+    requestJson: row.request_json,
+    reportJson: row.report_json ?? null,
+    requestPath: row.request_path,
+    reportPath: row.report_path ?? null,
+    error: row.error ?? null,
+    createdAt: row.created_at,
+    startedAt: row.started_at ?? null,
+    endedAt: row.ended_at ?? null,
+  };
+}
+
 function sessionFromRow(row: any): PodSessionRow {
   return {
     id: row.id,
@@ -562,6 +598,28 @@ export class PodStore {
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_pod_snapshots_pod ON pod_session_snapshots(pod_id);
+
+      CREATE TABLE IF NOT EXISTS pod_probes (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        goal_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        request_json TEXT NOT NULL,
+        report_json TEXT,
+        request_path TEXT NOT NULL,
+        report_path TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        ended_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_pod_probes_pod
+        ON pod_probes(pod_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_pod_probes_goal
+        ON pod_probes(pod_id, goal_id, revision);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_probes_running
+        ON pod_probes(pod_id) WHERE status = 'running';
     `);
 
     this.ensureColumn('pod_messages', 'protocol', 'protocol TEXT');
@@ -1282,6 +1340,128 @@ export class PodStore {
 
   markMessageRead(id: string, now: string): void {
     this.db.prepare('UPDATE pod_messages SET read_at = ? WHERE id = ?').run(now, id);
+  }
+
+  // ── Probes（spike 请求 / 报告 + 每 Pod 单运行槽）─────────────────────────
+
+  insertProbe(input: {
+    id: string;
+    podId: string;
+    goalId: string;
+    revision: number;
+    requestJson: string;
+    requestPath: string;
+    createdAt: string;
+  }): PodProbeRow {
+    try {
+      const row = this.db.prepare(`
+        INSERT INTO pod_probes (
+          id, pod_id, goal_id, revision, status, request_json, request_path, created_at
+        ) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)
+        RETURNING *
+      `).get(
+        input.id, input.podId, input.goalId, input.revision,
+        input.requestJson, input.requestPath, input.createdAt,
+      ) as any;
+      return probeFromRow(row);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('UNIQUE') || message.includes('PRIMARY KEY')) {
+        throw new PodError(409, `probe already exists: ${input.id}`);
+      }
+      throw error;
+    }
+  }
+
+  getProbe(id: string): PodProbeRow | null {
+    const row = this.db.prepare('SELECT * FROM pod_probes WHERE id = ?').get(id) as any;
+    return row ? probeFromRow(row) : null;
+  }
+
+  listProbes(
+    podId: string,
+    filter: { goalId?: string; revision?: number; status?: ProbeStatus } = {},
+  ): PodProbeRow[] {
+    const sets = ['pod_id = ?'];
+    const values: any[] = [podId];
+    if (filter.goalId !== undefined) { sets.push('goal_id = ?'); values.push(filter.goalId); }
+    if (filter.revision !== undefined) { sets.push('revision = ?'); values.push(filter.revision); }
+    if (filter.status !== undefined) { sets.push('status = ?'); values.push(filter.status); }
+    return (this.db.prepare(
+      `SELECT * FROM pod_probes WHERE ${sets.join(' AND ')} ORDER BY created_at ASC, rowid ASC`,
+    ).all(...values) as any[]).map(probeFromRow);
+  }
+
+  getRunningProbe(podId: string): PodProbeRow | null {
+    const row = this.db.prepare(
+      "SELECT * FROM pod_probes WHERE pod_id = ? AND status = 'running'",
+    ).get(podId) as any;
+    return row ? probeFromRow(row) : null;
+  }
+
+  /**
+   * 抢占下一个排队探针（原子）：检查 + 读取 + 置 running 在同一事务内，
+   * 另有唯一部分索引 `idx_pod_probes_running` 兜底跨进程并发。
+   * 已有 running 时返回 null（每 Pod 同时最多一个 Spike，spec §6.5）。
+   */
+  claimNextProbe(podId: string, now: string): PodProbeRow | null {
+    const claim = this.db.transaction(() => {
+      const running = this.db.prepare(
+        "SELECT id FROM pod_probes WHERE pod_id = ? AND status = 'running' LIMIT 1",
+      ).get(podId);
+      if (running) return null;
+      const next = this.db.prepare(`
+        SELECT * FROM pod_probes
+        WHERE pod_id = ? AND status = 'queued'
+        ORDER BY created_at ASC, rowid ASC
+        LIMIT 1
+      `).get(podId) as any;
+      if (!next) return null;
+      const updated = this.db.prepare(`
+        UPDATE pod_probes SET status = 'running', started_at = ?
+        WHERE id = ? AND status = 'queued'
+        RETURNING *
+      `).get(now, next.id) as any;
+      return updated ? probeFromRow(updated) : null;
+    });
+    try {
+      return claim();
+    } catch (error) {
+      // 唯一部分索引兜底跨进程并发：另一个实例先抢到运行槽，本实例视作「已被占用」。
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('UNIQUE') || message.includes('idx_pod_probes_running')) return null;
+      throw error;
+    }
+  }
+
+  /** completed：允许对该探针重放报告（A2A 传输重试），不允许覆盖 cancelled。 */
+  completeProbe(id: string, input: { reportJson: string; reportPath: string; now: string }): PodProbeRow | null {
+    const row = this.db.prepare(`
+      UPDATE pod_probes SET
+        status = 'completed',
+        report_json = ?,
+        report_path = ?,
+        error = NULL,
+        started_at = COALESCE(started_at, ?),
+        ended_at = COALESCE(ended_at, ?)
+      WHERE id = ? AND status IN ('queued', 'running', 'completed', 'failed')
+      RETURNING *
+    `).get(input.reportJson, input.reportPath, input.now, input.now, id) as any;
+    return row ? probeFromRow(row) : null;
+  }
+
+  /** failed：清理运行槽（completed/cancelled 不可再标失败）。 */
+  failProbe(id: string, input: { error: string; now: string }): PodProbeRow | null {
+    const row = this.db.prepare(`
+      UPDATE pod_probes SET
+        status = 'failed',
+        error = ?,
+        started_at = COALESCE(started_at, ?),
+        ended_at = ?
+      WHERE id = ? AND status IN ('queued', 'running', 'failed')
+      RETURNING *
+    `).get(input.error, input.now, input.now, id) as any;
+    return row ? probeFromRow(row) : null;
   }
 
   insertSession(

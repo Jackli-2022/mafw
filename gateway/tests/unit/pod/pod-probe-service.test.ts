@@ -1,0 +1,261 @@
+import Database from 'better-sqlite3';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { PodError, PodStore } from '../../../src/core/pod/pod-store';
+import {
+  PodProbeService,
+  probeReportPath,
+  probeRequestPath,
+  type ProbeRequestInput,
+} from '../../../src/core/pod/pod-probe-service';
+
+const NOW = '2026-11-02T00:00:00.000Z';
+
+function requestInput(overrides: Partial<ProbeRequestInput> = {}): ProbeRequestInput {
+  return {
+    podId: 'pod_1',
+    goalId: 'g1',
+    question: 'Does the index handle prefix queries?',
+    hypothesis: 'The BM25 index is sufficient.',
+    scope: {
+      paths: ['src'],
+      commandClasses: ['read', 'test'],
+      network: false,
+      credentials: [],
+    },
+    budget: { maxMinutes: 10, maxUsd: 0.5 },
+    evidenceRequired: ['p95 timing'],
+    ...overrides,
+  };
+}
+
+function report(probeId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    probeId,
+    conclusion: 'supports' as const,
+    commands: ['npm test -- --runInBand'],
+    keyOutput: 'p95 41ms',
+    repro: ['npm run seed && npm test'],
+    remainingAssumptions: ['production data is larger'],
+    impact: { plan: 'keep BM25', goalEval: 'p95 < 50ms' },
+    ...overrides,
+  };
+}
+
+describe('PodProbeService', () => {
+  let dir: string;
+  let db: Database.Database;
+  let store: PodStore;
+  let mafwDir: string;
+  let service: PodProbeService;
+
+  const seedRevision = (
+    goalId: string,
+    status: 'planning' | 'completed' | 'implementing' = 'planning',
+    revision = 1,
+    podId = 'pod_1',
+  ) => store.createGoalRevision({
+    podId,
+    goalId,
+    revision,
+    status,
+    now: NOW,
+  });
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-probe-'));
+    db = new Database(path.join(dir, 'test.db'));
+    store = new PodStore(db);
+    mafwDir = path.join(dir, 'mafw');
+    store.ensurePod({ id: 'pod_1', projectDir: '/proj/a', name: 'A', now: NOW });
+    store.ensurePod({ id: 'pod_2', projectDir: '/proj/b', name: 'B', now: NOW });
+    store.enqueueGoal({ id: 'pg_g1', podId: 'pod_1', goalId: 'g1', now: NOW });
+    store.enqueueGoal({ id: 'pg_g2', podId: 'pod_1', goalId: 'g2', now: NOW });
+    store.enqueueGoal({ id: 'pg_g3', podId: 'pod_2', goalId: 'g3', now: NOW });
+    seedRevision('g1');
+    seedRevision('g2', 'completed');
+    seedRevision('g3', 'planning', 1, 'pod_2');
+
+    let tick = 0;
+    let ids = 0;
+    service = new PodProbeService({
+      store,
+      resolveMafwDir: () => mafwDir,
+      now: () => new Date(Date.parse(NOW) + tick++ * 60_000).toISOString(),
+      newId: () => `probe_${++ids}`,
+    });
+  });
+
+  afterEach(() => {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('queues probes and runs at most one per pod', () => {
+    const a = service.request(requestInput());
+    const b = service.request(requestInput());
+
+    expect(service.claim('pod_1')).toMatchObject({ id: a.id, status: 'running' });
+    expect(service.claim('pod_1')).toBeNull();
+
+    service.complete(a.id, report(a.id));
+    expect(service.claim('pod_1')).toMatchObject({ id: b.id, status: 'running' });
+
+    // Other pods have their own single running slot.
+    const other = service.request(requestInput({ podId: 'pod_2', goalId: 'g3' }));
+    expect(service.claim('pod_2')).toMatchObject({ id: other.id });
+    expect(service.list('pod_1').map((probe) => probe.status)).toEqual(['completed', 'running']);
+  });
+
+  test('persists the machine-readable request as a file and in the database', () => {
+    const created = service.request(requestInput());
+    const file = probeRequestPath(mafwDir, 'g1', created.id);
+
+    expect(fs.existsSync(file)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(file, 'utf-8'))).toMatchObject({
+      id: created.id,
+      revision: 1,
+      scope: { paths: ['src'], commandClasses: ['read', 'test'], network: false, credentials: [] },
+      budget: { maxMinutes: 10, maxUsd: 0.5 },
+    });
+    expect(store.getProbe(created.id)?.requestJson).toContain('"maxMinutes":10');
+  });
+
+  test('redacts report output before writing the database row and the report file', () => {
+    const created = service.request(requestInput());
+    service.claim('pod_1');
+
+    const returned = service.complete(created.id, report(created.id, {
+      keyOutput: 'token sk-secret leaked',
+      commands: ['curl -H "Authorization: Bearer abcdefghijklmnopqrst"'],
+    }));
+
+    const reportPath = probeReportPath(mafwDir, 'g1', created.id);
+    const fileText = fs.readFileSync(reportPath, 'utf-8');
+    const rowText = store.getProbe(created.id)!.reportJson!;
+
+    expect(returned.keyOutput).not.toContain('sk-secret');
+    for (const text of [fileText, rowText]) {
+      expect(text).not.toContain('sk-secret');
+      expect(text).not.toContain('abcdefghijklmnopqrst');
+      expect(text).toContain('[REDACTED]');
+    }
+  });
+
+  test('completing twice updates the report (transport retry) without duplicating the probe', () => {
+    const created = service.request(requestInput());
+    service.claim('pod_1');
+
+    service.complete(created.id, report(created.id));
+    const updated = service.complete(created.id, report(created.id, { conclusion: 'refutes' }));
+
+    expect(updated.conclusion).toBe('refutes');
+    expect(service.list('pod_1')).toHaveLength(1);
+    expect(store.getProbe(created.id)).toMatchObject({ status: 'completed' });
+    expect(JSON.parse(fs.readFileSync(probeReportPath(mafwDir, 'g1', created.id), 'utf-8')))
+      .toMatchObject({ conclusion: 'refutes' });
+  });
+
+  test('rejects a report for a different probe and unknown probes', () => {
+    const created = service.request(requestInput());
+    service.claim('pod_1');
+
+    expect(() => service.complete(created.id, report('someone_else'))).toThrow(/probeId/);
+    expect(() => service.complete('missing', report('missing'))).toThrow(PodError);
+
+    const invalid = report(created.id, { conclusion: 'probably' });
+    expect(() => service.complete(created.id, invalid as any)).toThrow(/conclusion/);
+  });
+
+  test('fail marks the probe failed, redacts the reason, and frees the slot', () => {
+    const a = service.request(requestInput());
+    const b = service.request(requestInput());
+    service.claim('pod_1');
+
+    const failed = service.fail(a.id, 'timeout with api_key=supersecretvalue');
+
+    expect(failed).toMatchObject({ id: a.id, status: 'failed' });
+    expect(failed.error).not.toContain('supersecretvalue');
+    expect(store.getProbe(a.id)!.reportJson).toBeNull();
+    expect(service.claim('pod_1')).toMatchObject({ id: b.id });
+  });
+
+  test('resolves the revision from the goal and refuses terminal revisions', () => {
+    const created = service.request(requestInput());
+    expect(created.revision).toBe(1);
+
+    expect(() => service.request(requestInput({ goalId: 'g2' })))
+      .toThrow(expect.objectContaining({ status: 409 }));
+    expect(() => service.request(requestInput({ goalId: 'g2', revision: 2 })))
+      .toThrow(expect.objectContaining({ status: 409 }));
+    expect(() => service.request(requestInput({ goalId: 'nope' })))
+      .toThrow(expect.objectContaining({ status: 404 }));
+    expect(() => service.request(requestInput({ goalId: 'g1', revision: 9 })))
+      .toThrow(expect.objectContaining({ status: 404 }));
+
+    // A goal belongs to exactly one pod; other pods cannot probe it.
+    expect(() => service.request(requestInput({ podId: 'pod_2', goalId: 'g1' })))
+      .toThrow(expect.objectContaining({ status: 404 }));
+
+    const otherPod = service.request(requestInput({ podId: 'pod_2', goalId: 'g3' }));
+    expect(otherPod.podId).toBe('pod_2');
+  });
+
+  test('enforces the per-pod pending queue cap', () => {
+    const capped = new PodProbeService({
+      store,
+      resolveMafwDir: () => mafwDir,
+      limits: { maxPending: 1 },
+      now: () => NOW,
+    });
+
+    capped.request(requestInput());
+    expect(() => capped.request(requestInput()))
+      .toThrow(expect.objectContaining({ status: 409 }));
+  });
+
+  test('rejects invalid requests with 400 instead of storing them', () => {
+    expect(() => service.request(requestInput({ budget: { maxMinutes: 999, maxUsd: 0 } })))
+      .toThrow(expect.objectContaining({ status: 400 }));
+    expect(() => service.request(requestInput({ evidenceRequired: [] })))
+      .toThrow(expect.objectContaining({ status: 400 }));
+
+    expect(service.list('pod_1')).toEqual([]);
+  });
+
+  test('requires a resolvable goal directory', () => {
+    const noDir = new PodProbeService({ store, resolveMafwDir: () => null, now: () => NOW });
+    expect(() => noDir.request(requestInput()))
+      .toThrow(expect.objectContaining({ status: 400 }));
+    expect(store.listProbes('pod_1')).toEqual([]);
+  });
+
+  test('list filters by goal, revision, and status in queue order', () => {
+    const a = service.request(requestInput());
+    const b = service.request(requestInput());
+    service.claim('pod_1');
+    service.complete(a.id, report(a.id));
+    service.claim('pod_1');
+
+    expect(service.list('pod_1', { status: 'completed' }).map((probe) => probe.id)).toEqual([a.id]);
+    expect(service.list('pod_1', { status: 'running' }).map((probe) => probe.id)).toEqual([b.id]);
+    expect(service.list('pod_1', { goalId: 'g1', revision: 1 })).toHaveLength(2);
+    expect(service.list('pod_1', { goalId: 'g2' })).toEqual([]);
+    expect(service.list('pod_2')).toEqual([]);
+  });
+
+  test('claim returns null for a pod without queued probes', () => {
+    expect(service.claim('pod_2')).toBeNull();
+  });
+
+  test('fail requires a non-empty reason and refuses completed probes', () => {
+    const created = service.request(requestInput());
+    service.claim('pod_1');
+    service.complete(created.id, report(created.id));
+
+    expect(() => service.fail(created.id, '   ')).toThrow(PodError);
+    expect(() => service.fail(created.id, 'late failure')).toThrow(PodError);
+    expect(() => service.fail('missing', 'reason')).toThrow(expect.objectContaining({ status: 404 }));
+  });
+});
