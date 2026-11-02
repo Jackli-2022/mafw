@@ -1,7 +1,7 @@
 # Pod 协作式 Goal Loop：Lead / Tech Lead / Builder / Reviewer
 
 - 日期：2026-11-02
-- 状态：设计草案，待用户批准；未进入实施计划
+- 状态：**已实施（2026-11-03，Tasks 1-22 完成）**；plan `docs/superpowers/plans/2026-11-02-pod-collaborative-goal-loop.md`，实施 commits `4c5275d6..332a319a` + Task 22 验证提交。端到端验证 `gateway/tests/integration/pod-collaboration-loop.test.ts`（direct Goal→Tech Lead→Probe→Plan/Eval→批准→实施→Review PASS→结果→打回→revision 2 + 迁移检查）。未部署、未发版。
 - 前置调研：
   - `docs/research/2026-11-02-dsh-superagent-pod-v3-review.md`
   - `docs/research/2026-11-02-pod-lead-tech-lead-workflow-survey.md`

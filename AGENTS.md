@@ -1347,6 +1347,83 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
   契约产物新鲜度由 `api-contract.test.ts` 与 `contract-manifest-freshness.test.ts` 把守。
   状态：代码完成，真机 GUI/mobile 冒烟待控制端执行（本批不重启线上 gateway；未发版）。
 
+### 5.25 Pod 协作 Goal Loop：Lead / Tech Lead / Builder / Reviewer（2026-11-03）
+
+spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`，plan
+`docs/superpowers/plans/2026-11-02-pod-collaborative-goal-loop.md`（Tasks 1-22，commits
+`4c5275d6..332a319a` + Task 22 验证提交）。用户可见的协作循环：
+
+```text
+直接建 Goal（discussing）→ Lead→Tech Lead 讨论 →（按需）方向裁定 → plan（可含 Spike）
+→ Plan + Goal Eval 人工批准（绑定 planHash/evalHash）→ Builder 实施
+→ Reviewer 独立 rubric（逐任务 + 必需 Goal 条件）→ Lead 结果通知
+→ 用户打回 → 同一 Goal 的 revision 2 继续讨论 …（append-only）
+```
+
+- **角色与隐藏会话**：Pod roster 固定 `lead / tech_lead / builder / reviewer`（`PodMemberRole`，
+  `core/pod/pod-store.ts`）；`roleForNode()` 映射 plan→tech_lead / execute→builder / review→reviewer。
+  Lead 取代 Manager：`manager-session` kv 槽位、`readManagerSlot`/`writeManagerSlot` 与
+  `GET /api/manager/session` 保留读取兼容，但新写入的身份是 Lead（`projectLeadSessionMetadata()`
+  → `role:'lead'`，`resolveIdentityAlias('manager')==='lead'`）。Lead 与 Tech Lead 的 runtime 会话
+  一律隐藏（`core/session-visibility.ts`：`INTERNAL_SESSION_ROLES` 含 lead/tech-lead/tech_lead，
+  agent `mafw-tech-lead` 也隐藏；旧 `manager`/`manager-archived` 行保持可见 = 兼容层，不再产生）。
+- **直接讨论 Goal**：`PodTechLeadService.createGoal()`（`core/pod/pod-tech-lead-service.ts`）写
+  goal-dir 布局的 `goal.md`/`request.json`（`discussion:true`、`autoStart:false`，**绝不发
+  goal_created、绝不启动 NodeDriver**），建 `pod_goals` root + revision 1 `discussing`，经
+  `PodSessionSupervisor` 取隐藏 Tech Lead 会话（作用域 `(podId, memberId, goalId, revision,
+  'discussion')`，跨重启按 generation 重建），开场 prompt 必带 `[CONTEXT MANIFEST]`。
+  `PodDirectionService`：真正有分歧才 `request` 建 `direction_review` 人类 attention；方向明确时
+  `markClear` 直接记录决定并把 revision 推到 `planning`（不额外要一次确认）。
+- **revision 模型**：`pod_goal_revisions`（`PodGoalRevisionStatus` discussing/direction_review/
+  planning/plan_review/queued/implementing/reviewing/completed/aborted/discarded）append-only；
+  root `pod_goals.active_revision` 是指针（legacy 缺列默认 1，`PodStore` 构造时
+  `backfillLegacyRevisions()` 按 root status 映射 queued/completed/aborted/implementing）；
+  终态行不可改写（`setGoalRevisionStatus` 返回 boolean，`isTerminalGoalRevisionStatus`）；
+  `openNextRevision` 先归档 active state 到 `state/revisions/<goalId>/rev-<n>.json`，再建干净的
+  N+1 state；打回优先级 `REJECT_REVISION_PRIORITY=10`；`nextGoalRevision` 让 legacy goal 从 2 起。
+- **产物按 revision 隔离**：`nodeArtifactPaths(mafwDir, goalId, round, { revision })`（rev1 沿用
+  legacy 根路径，rev≥2 全部在 `revisions/<goalId>/rev-N/`）；`goalEvalArtifactPath`（rev1
+  `goals/<goalId>/goal-eval.json`，rev≥2 与 waves 同目录）。`PodContextSelectionService
+  .renderForNode` 是 driver `contextBlock` 的唯一实现：阶段基线由代码强制（goal.md/request.json/
+  direction.json/waves.json/goal-eval.json），Lead 只能追加可选与跨 Goal 引用（request
+  `contextAllowlist`）；跨 Goal 未授权 400，敏感/路径逃逸/缺失一律 fail-closed（节点
+  `context_invalid`）；清单持久化 `goals/<goalId>/manifests/rev-<n>-<stage>.md` + sha256，
+  prompt 顺序 `[CONTEXT MANIFEST] → [POD HANDOFF] → 节点正文`。
+- **Spike / 探针**：`core/goal/probe.ts`（ProbeRequest/Report 机器可读校验 + 脱敏）+ 
+  `PodProbeService`（单 Pod 单 running、队列上限、revision 非终态、报告原子写
+  `<mafw>/goals/<goalId>/probes/*.json` 并镜像 `pod_probes`）。driver 的 `GoalProbePort` 走真实
+  `PodProbeService`（claimForGoal/report/complete/fail/requeue），探针在**隔离 workspace + Builder
+  会话**执行；模式 A（默认两段式：need_probe → 报告 → 再 plan → 人工批准）与模式 B
+  （`approvalMode:'full_chain'` + continuation rules，只有 manual 审阅门可整链批准；批准绑定
+  packageHash，探针 refutes/未覆盖/计划改写 → 批准作废回 planning）。
+- **Plan + Goal Eval**：`core/goal/plan-package.ts`（waves + goalEval 同一份 PlanPackage）；
+  `planHash=computeWavesHash`、`evalHash=computeGoalEvalHash`、`packageHash=computePlanPackageHash`。
+  `AWAIT_PLAN_APPROVAL` 是合法驻留门，`POST /api/goals/:id/plan-approval` 必须匹配当前 hash
+  （不一致 `stale_plan` → 409 + 当前 hash）；任务板编辑计划（`PodTaskService.invalidatePlanApproval`）
+  自动作废旧批准。Review 走 `core/goal/review-rubric.ts`：逐任务 pass/fail/skipped + 证据，且必须
+  覆盖每条**必需 Goal 条件**；漏项/自相矛盾/证据空 → `artifact_invalid`，绝不 PASS。
+- **结果与打回**：PASS 归档 → `PodGoalService.notifyResult()` 保持真实 verdict，只广播一次
+  `pod.updated {kind:'result', goalId}`，不制造人工 attention；`rejectResult` 必须先读到真实结果
+  证据（result 视图 > revision 行 > goal 根记录），再 `finishRevision(evidence)` +
+  `openNextRevision(expectedRevision)`；旧 revision 行/state 快照/产物永不重写或反归档；新 revision
+  从 `discussing` 开始并恢复 Tech Lead 会话，打回反馈以 `reject_feedback` 方向输入 append-only 记录。
+- **API / SDK / 桌面**：`POST/GET /api/pods/:podId/goals`（直接讨论 Goal / 列表）、
+  `/goals/:goalId/tech-lead(/messages)`、`/direction-decision`、`/probes`、`/revisions`、
+  `/result`、`/reject`；MCP `mafw_pod_goal_direction`（Tech Lead 方向）与
+  `mafw_pod_goal_context`（仅 Lead 可改上下文）；SDK/preload `pod.*` 命名空间；桌面工作台
+  「执行 › 鲸群」+ Tech Lead 页 + PlanReview（Plan/Goal Eval/探针证据/未验证假设）+ 结果/打回页。
+  角色与阶段使用稳定词汇，业务身份不泄漏 runtimeSessionId。
+- **迁移**：旧三成员 Pod 在 `PodService.ensure()` 补 `tech_lead` 成员（旧 lead/builder/reviewer id
+  不动，manager 会话绑定为 Lead）；旧 goal 无 revision 行时由 `PodStore` 构造函数 bootstrap 到
+  revision 1（root status 映射 queued/completed/aborted/implementing）；打回 legacy goal 从 revision 2
+  起，rev1 waves/eval/review 与 state 快照逐字保留；ContextManifest 未授权跨 Goal 引用一律 400。
+- **验证（Task 22）**：`gateway/tests/integration/pod-collaboration-loop.test.ts` —— 1 个端到端场景
+  （direct Goal→Tech Lead→probe→plan/eval→批准→实施→review PASS→result→reject→revision 2，
+  旧证据/产物不变）+ 2 个迁移场景（三成员 Pod/manager 槽位/legacy goal bootstrap；legacy goal
+  打回不重写 rev1）。全量 gateway **4296/4296（558 suites）**、desktop **2371/2371**、SDK **187/187**；
+  `tsc`（gateway，`npx tsc --noEmit -p tsconfig.json`）/`tsgo -p tsconfig.json`/
+  `electron-vite build`/根 `npm run build` rc=0。状态：代码与验证完成，**未部署、未发版**。
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令
