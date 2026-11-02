@@ -2470,7 +2470,6 @@ export function MafwShell() {
                     <ExecutionView
                       section={executionSection()}
                       sessionID={currentSessionID() || null}
-                      sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
                       projectDir={benchRoot() ?? currentProject()}
                       agentLabel={sessionAgent(currentSessionID())?.name ?? "默认 Agent"}
                       modelLabel={sessionModel(currentSessionID() || "")?.label ?? "默认模型"}

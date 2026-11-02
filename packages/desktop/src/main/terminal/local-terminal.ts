@@ -311,9 +311,10 @@ export function createLocalTerminalOps(deps: LocalTerminalDeps): LocalTerminalOp
       if (!s || s.disconnected || s.ws?.readyState !== 1) return
       const size = `${cols}x${rows}`
       if (s.lastSize === size) return
-      s.lastSize = size
       try {
         s.ws.send(encodeTerminalFrame({ v: 1, type: "resize", cols, rows }))
+        // 只有发送成功才记下尺寸：send 抛错时下一次 resize 必须重试（否则终端永久错宽）。
+        s.lastSize = size
       } catch {
         // resize 失败不终止会话（与既有语义一致）
       }

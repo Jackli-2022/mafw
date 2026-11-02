@@ -448,16 +448,24 @@ export function backgroundJobEvent(
  * （子代理 synthetic 终态）。`mafw-task` 不收——TaskService 是其权威来源，
  * 台账镜像只会引入陈旧第二份数据（merge 时 task 行按 id 覆盖）。
  *
+ * **location 不落 DTO**（`MafwBackgroundJob` 无 directory 字段），但 runtime shell
+ * 的 output/cancel 必须 location-scoped；台账在 `apply` 时旁路记住事件携带的
+ * directory（`opencode` 事件的 `location.directory`），供 `rows()` 回填。
+ *
  * 终态不回退：迟到的 started / running 事件不得把已完成的作业变回 running。
  * 这样「事件」与「REST 快照」互相一致：事件先到 → 快照立刻反映；权威来源
  * 有新证据 → 权威行优先（见 `mergeSubagentEvidence`）。
  */
 export class BackgroundJobRegistry {
-  private bySession = new Map<string, Map<string, MafwBackgroundJob>>();
+  private bySession = new Map<string, Map<string, { job: MafwBackgroundJob; directory?: string }>>();
   /** 每会话最多保留的行数（防长跑会话无限增长）。 */
   constructor(private readonly cap = 200) {}
 
-  apply(job: MafwBackgroundJob): boolean {
+  /**
+   * @param opts.directory 事件来源的 location（session 工作目录）；缺省沿用该
+   *   id 上一次记住的值（取消/终态事件通常不再携带，但位置不变）。
+   */
+  apply(job: MafwBackgroundJob, opts: { directory?: string } = {}): boolean {
     if (!job?.id || !job.sessionID) return false;
     const accepted =
       (job.kind === 'shell' && job.source === 'runtime-shell') ||
@@ -469,10 +477,11 @@ export class BackgroundJobRegistry {
       this.bySession.set(job.sessionID, bucket);
     }
     const prev = bucket.get(job.id);
-    if (prev && isTerminalBackgroundStatus(prev.status) && !isTerminalBackgroundStatus(job.status)) {
+    if (prev && isTerminalBackgroundStatus(prev.job.status) && !isTerminalBackgroundStatus(job.status)) {
       return false;
     }
-    bucket.set(job.id, job);
+    const directory = opts.directory ?? prev?.directory;
+    bucket.set(job.id, { job, ...(directory ? { directory } : {}) });
     while (bucket.size > this.cap) {
       const oldest = bucket.keys().next().value;
       if (oldest === undefined) break;
@@ -484,21 +493,32 @@ export class BackgroundJobRegistry {
   list(sessionID: string): MafwBackgroundJob[] {
     const bucket = this.bySession.get(sessionID);
     if (!bucket) return [];
-    return sortBackgroundJobs([...bucket.values()]);
+    return sortBackgroundJobs([...bucket.values()].map((entry) => entry.job));
   }
 
-  /** runtime shell 行（merge 的 runtimeShells 输入）。 */
+  /** runtime shell 行（merge 的 runtimeShells 输入；带 location）。 */
   rows(sessionID: string): RuntimeShellRow[] {
-    return this.list(sessionID)
+    const bucket = this.bySession.get(sessionID);
+    if (!bucket) return [];
+    return this.sorted(sessionID)
       .filter((job) => job.kind === 'shell')
-      .map(shellRowFromJob);
+      .map((job) => ({
+        ...shellRowFromJob(job),
+        ...(bucket.get(job.id)?.directory ? { directory: bucket.get(job.id)!.directory } : {}),
+      }));
   }
 
   /** 子代理证据行（merge 的 subagents 输入；与权威 SubagentService 行合并）。 */
   subagentRows(sessionID: string): BackgroundSubagentRow[] {
-    return this.list(sessionID)
+    return this.sorted(sessionID)
       .filter((job) => job.kind === 'subagent')
-      .map(subagentRowFromJob);
+      .map((job) => subagentRowFromJob(job));
+  }
+
+  private sorted(sessionID: string): MafwBackgroundJob[] {
+    const bucket = this.bySession.get(sessionID);
+    if (!bucket) return [];
+    return sortBackgroundJobs([...bucket.values()].map((entry) => entry.job));
   }
 
   remove(sessionID: string, id: string): void {

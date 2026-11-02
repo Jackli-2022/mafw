@@ -9,12 +9,12 @@
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import type { MafwBackgroundJob } from "@mafw/sdk"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { menuController } from "../context-menu/controller"
 import { buildExecutionRowMenu } from "../context-menu/builders/panel"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { openMenuOnKey } from "../context-menu/menu-key"
+import { cancelJobAndIngest, formatJobOutput } from "../background-actions"
 import { backgroundJobs, ingestBackgroundJob, ingestBackgroundJobs } from "../background-store"
 import { isActiveJobStatus, jobLabel, jobsForSession, type BackgroundJob } from "../background-jobs"
 import { reconcileBackgroundOnce } from "../background-reconcile"
@@ -100,7 +100,7 @@ export function BackgroundDock(props: {
   const refreshOutput = async (job: BackgroundJob) => {
     try {
       const out = await window.api.mafw.background.jobs.output(sid(), job.id)
-      setOutputs((prev) => ({ ...prev, [job.id]: out.data || "(无输出)" }))
+      setOutputs((prev) => ({ ...prev, [job.id]: formatJobOutput(out).text }))
     } catch (e: any) {
       showToastV2({ description: `读取输出失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
     }
@@ -108,8 +108,7 @@ export function BackgroundDock(props: {
 
   const terminate = async (jobId: string) => {
     try {
-      const updated = await window.api.mafw.background.jobs.cancel(sid(), jobId)
-      ingestBackgroundJob(updated as MafwBackgroundJob)
+      await cancelJobAndIngest(window.api.mafw.background.jobs, sid(), jobId, ingestBackgroundJob)
       showToastV2({ description: "已终止后台任务", duration: 2000 } as any)
     } catch (e: any) {
       showToastV2({ description: `终止失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)

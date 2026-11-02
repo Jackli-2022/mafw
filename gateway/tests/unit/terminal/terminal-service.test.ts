@@ -319,6 +319,8 @@ describe('TerminalService', () => {
 
     await service.bridge({ socket, id: 'pty_1', ticket: grant.ticket });
 
+    // bridge 必须把 ticket 绑定的 location 传给 adapter（原生 WS 升级 location-scoped）
+    expect(calls.connected).toEqual([{ id: 'pty_1', directory: DIRECTORY }]);
     expect(opened).toEqual([
       { url: 'ws://127.0.0.1:4096/api/pty/pty_1/connect?ticket=native_secret', headers: { 'x-native': '1' } },
     ]);

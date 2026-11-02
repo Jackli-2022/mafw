@@ -18,7 +18,6 @@ import type { ExecutionSection } from "../workbench-views"
 export type ExecutionViewProps = {
   section: ExecutionSection
   sessionID: string | null
-  sessionDirectory: string | null
   projectDir: string | null
   agentLabel?: string | null
   modelLabel?: string | null

@@ -235,15 +235,6 @@ export function createMafwApi(): MafwAPI {
       },
     },
 
-    // Task 4：中性 terminal PTY（mafw-terminal/1）。原生 /api/pty 不出口。
-    // key 用 terminalPty 避免与工作台本地终端 IPC（terminal）冲突。
-    terminalPty: {
-      list: (opts) => invoke("terminal", "list", opts),
-      create: (opts) => invoke("terminal", "create", opts),
-      remove: (id, opts) => invoke("terminal", "remove", id, opts),
-      connectTicket: (id, opts) => invoke("terminal", "connectTicket", id, opts),
-    },
-
     pod: {
       ensure: (projectID) => invoke("pod", "ensure", projectID),
       lookup: (projectID) => invoke("pod", "lookup", projectID),

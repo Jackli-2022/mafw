@@ -253,4 +253,35 @@ describe("local-terminal (neutral gateway surfaces)", () => {
     assert.equal(last?.type, "status")
     if (last?.type === "status") assert.equal(last.status, "disconnected")
   })
+
+  test("resize retries after a failed send (lastSize only advances on success)", async () => {
+    const f = fakeFetch(baseRoutes([{ id: "t1", status: "running" }]))
+    let failures = 1
+    const sockets: any[] = []
+    const wsFactory = (url: string) => {
+      const ws: any = {
+        url,
+        readyState: 1,
+        binaryType: "arraybuffer",
+        sent: [] as string[],
+        send(d: string) {
+          if (failures > 0) { failures -= 1; throw new Error("socket closing") }
+          ws.sent.push(d)
+        },
+        close() { ws.readyState = 3; ws.onclose?.({ code: 1000 }) },
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+      }
+      sockets.push(ws)
+      return ws
+    }
+    const ops = createLocalTerminalOps({ gatewayBase: () => GW, fetchImpl: f.impl, wsFactory })
+    await ops.attach(D, SID, () => {}, "k")
+    await ops.resize(D, 100, 30) // send throws → must not be remembered as applied
+    await ops.resize(D, 100, 30) // retries the same size
+    assert.equal(sockets[0].sent.filter((s: string) => s.includes('"resize"')).length, 1)
+    await ops.resize(D, 100, 30) // now applied → no duplicate
+    assert.equal(sockets[0].sent.filter((s: string) => s.includes('"resize"')).length, 1)
+  })
 })

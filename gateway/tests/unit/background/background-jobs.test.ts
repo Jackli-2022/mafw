@@ -45,6 +45,8 @@ function shell(over: Partial<RuntimeShellRow>): RuntimeShellRow {
   return { id: 'sh_x', sessionID: 'ses_parent', status: 'running', ...over };
 }
 
+const DIRECTORY = 'C:/work/look';
+
 function session(over: Partial<SessionInfo>): SessionInfo {
   return {
     id: 'ses_x',
@@ -302,6 +304,17 @@ describe('BackgroundJobRegistry', () => {
     expect(reg.apply({ id: 'task_1', source: 'mafw-task', kind: 'shell', status: 'running', sessionID: 'ses_parent' } as any)).toBe(false);
     expect(reg.list('ses_parent')).toEqual([]);
   });
+
+  // ── review Important 1：location 旁路保存（DTO 无 directory 字段） ──
+  it('remembers the event location for runtime shells without leaking it into the DTO', () => {
+    const reg = new BackgroundJobRegistry();
+    reg.apply(jobFromRuntimeShell(shell({ id: 'sh_1' })), { directory: 'C:/work/look' });
+    expect(reg.rows('ses_parent').find((r) => r.id === 'sh_1')?.directory).toBe('C:/work/look');
+    // 终态事件通常不再携带 location → 沿用上一次的值
+    reg.apply(jobFromRuntimeShell(shell({ id: 'sh_1', status: 'exited', exitCode: 0 })));
+    expect(reg.rows('ses_parent')[0]).toMatchObject({ id: 'sh_1', status: 'exited', directory: 'C:/work/look' });
+    expect(reg.list('ses_parent')[0]).not.toHaveProperty('directory');
+  });
 });
 
 describe('event translation → background.job.updated', () => {
@@ -521,6 +534,25 @@ describe('BackgroundJobService', () => {
     expect(job.status).toBe('cancelled');
     expect(registry.list('ses_parent')[0].status).toBe('cancelled');
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ id: 'sh_1', status: 'cancelled' }));
+  });
+
+  // ── review Important 1：output/cancel 必须带 location（runtime shell） ──
+  it('passes the runtime shell location to the output adapter', async () => {
+    const registry = new BackgroundJobRegistry();
+    registry.apply(jobFromRuntimeShell(shell({ id: 'sh_1', status: 'running' })), { directory: DIRECTORY });
+    const outputShell = jest.fn(async () => ({ output: 'hi', cursor: 2, size: 2, truncated: false }));
+    const { svc } = service({ registry, outputShell });
+    await svc.output('ses_parent', 'sh_1');
+    expect(outputShell).toHaveBeenCalledWith(expect.objectContaining({ shellID: 'sh_1', directory: DIRECTORY }));
+  });
+
+  it('passes the runtime shell location to the cancel adapter', async () => {
+    const registry = new BackgroundJobRegistry();
+    registry.apply(jobFromRuntimeShell(shell({ id: 'sh_1', status: 'running' })), { directory: DIRECTORY });
+    const cancelShell = jest.fn(async () => {});
+    const { svc } = service({ registry, cancelShell });
+    await svc.cancel('ses_parent', 'sh_1');
+    expect(cancelShell).toHaveBeenCalledWith({ shellID: 'sh_1', directory: DIRECTORY });
   });
 
   it('cancels a task through TaskService (single source of truth)', async () => {

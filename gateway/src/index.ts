@@ -1517,7 +1517,7 @@ class MafwScheduler {
     if (type === MAFW.backgroundJobUpdated) {
       const job = (props as any)?.job;
       if (job && typeof job === 'object') {
-        try { this.backgroundShells.apply(job as any); } catch { /* fail-open */ }
+        try { this.backgroundShells.apply(job as any, { directory: f.directory }); } catch { /* fail-open */ }
       }
     }
     // Approval policy：asked 事件先于 internal 过滤与 Mode A 广播评估（内部会话

@@ -751,8 +751,20 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         const body = await res.json().catch(() => null);
         const ticket = unwrapNative<any>(body)?.ticket;
         if (typeof ticket !== 'string' || !ticket) throw new Error('native pty connect-token returned no ticket');
+        // WS 升级是 location-scoped 的：serve 按请求 location 鉴权 PTY 归属，
+        // 只带 ticket 会按默认 workspace 解析 → 项目目录的 PTY 被 403 拒绝
+        // （2026-11-02 live A/B 实证：no-location→403；`x-opencode-directory`
+        //  头→open；`?directory=` 查询→401，查询在升级路径反而是错的）。
+        // 因此升级只带头（与 directNative 同编码），**不得**拼 directory 查询。
         const wsUrl = `${config.baseUrl.replace(/^http/, 'ws').replace(/\/+$/, '')}/api/pty/${encodeURIComponent(opts.id)}/connect?ticket=${encodeURIComponent(ticket)}`;
-        return { url: wsUrl, headers: { ...serveAuthHeaders(), ...(config.headers ?? {}) } };
+        return {
+          url: wsUrl,
+          headers: {
+            ...serveAuthHeaders(),
+            ...(config.headers ?? {}),
+            ...(opts.directory ? { 'x-opencode-directory': encodeURIComponent(opts.directory) } : {}),
+          },
+        };
       },
 
       async resize(opts) {

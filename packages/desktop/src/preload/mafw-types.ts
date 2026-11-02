@@ -6,7 +6,6 @@ import type {
   QuestionRequest, PermissionRequest,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
   MafwBackgroundJob, MafwBackgroundOutput,
-  TerminalNamespace,
   PodNamespace,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
@@ -245,9 +244,8 @@ export type MafwAPI = {
     }
   }
 
-  /** Task 4：中性 terminal PTY（mafw-terminal/1；runtime 不支持时 supported:false）。
-   *  与工作台 `terminal`（Electron 本地/SSH IPC）区分：此面走 gateway runtime 契约。 */
-  terminalPty: TerminalNamespace
+  /** 中性 gateway 终端（mafw-terminal/1）不在此暴露：main 进程本地适配器消费
+   *  `/api/terminal/sessions`，renderer 只经工作台 `terminal` IPC 控制会话。 */
 
   pod: PodNamespace
 
@@ -339,7 +337,11 @@ export type MafwAPI = {
     actions: (sessionID?: string, opts?: { directory?: string }) => Promise<ExperienceActionsResponse>
   }
 
-  /** 工作台 L2 终端：本地 PTY + SSH 会话。 */
+  /**
+   * 工作台 L2 终端：本地 PTY + SSH 会话。
+   * 中性 gateway 终端（mafw-terminal/1 CRUD/ticket）由 main 进程本地适配器消费，
+   * 不经 renderer/preload 暴露（避免与工作台终端 IPC 语义混淆）。
+   */
   terminal: {
     probeV2: () => Promise<TerminalProbe>
     sessions: {

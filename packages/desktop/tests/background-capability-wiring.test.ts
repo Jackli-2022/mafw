@@ -27,7 +27,8 @@ describe("background capability wiring (neutral jobs façade)", () => {
     expect(dock).toContain("outputPlaceholder")
     expect(dock).toContain('apiState() === "available"')
     expect(dock).toContain("background.jobs.output")
-    expect(dock).toContain("background.jobs.cancel")
+    expect(dock).toContain("cancelJobAndIngest")
+    expect(dock).toContain("formatJobOutput")
     expect(dock).toContain("background.jobs.list")
     expect(dock).not.toContain("/api/shell")
 

@@ -335,3 +335,60 @@ describe('opencode-adapter permission/question contract surface', () => {
     });
   });
 });
+
+describe('pty.connect native WS upgrade (location forwarding)', () => {
+  let fetchSpy: jest.SpyInstance;
+
+  const mockNative = (ticket = 'native_tk') => {
+    fetchSpy.mockImplementation((async (url: any) => {
+      const u = String(url);
+      if (u.includes('/connect-token')) {
+        return new Response(JSON.stringify({ data: { ticket } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any);
+  };
+
+  beforeEach(() => { fetchSpy = jest.spyOn(global, 'fetch'); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  it('forwards the project directory on the upgrade via the location header — 403 repro', async () => {
+    mockNative();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    const directory = 'C:/work/look';
+    const conn = await rt.pty!.connect({ id: 'pty_1', directory });
+
+    const tokenCall = fetchSpy.mock.calls.find(([u]: any[]) => String(u).includes('/connect-token'))!;
+    expect(String(tokenCall[0])).toContain(`directory=${encodeURIComponent(directory)}`);
+    expect((tokenCall[1].headers as any)['x-opencode-directory']).toBe(encodeURIComponent(directory));
+
+    const ws = new URL(conn.url);
+    expect(ws.protocol).toBe('ws:');
+    expect(ws.pathname).toBe('/api/pty/pty_1/connect');
+    expect(ws.searchParams.get('ticket')).toBe('native_tk');
+    // live A/B：升级路径带 `?directory=` 会被 serve 401；location 只走 header。
+    expect(ws.searchParams.has('directory')).toBe(false);
+    expect((conn.headers as any)['x-opencode-directory']).toBe(encodeURIComponent(directory));
+    expect((conn.headers as any).Authorization).toMatch(/^Basic /);
+  });
+
+  it('keeps the default workspace upgrade unlocated when connect has no directory', async () => {
+    mockNative('tk_default');
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    const conn = await rt.pty!.connect({ id: 'pty_2' });
+    const ws = new URL(conn.url);
+    expect(ws.searchParams.get('ticket')).toBe('tk_default');
+    expect(ws.searchParams.has('directory')).toBe(false);
+    expect((conn.headers as any)['x-opencode-directory']).toBeUndefined();
+  });
+
+  it('fails before the upgrade when the native ticket request is rejected', async () => {
+    fetchSpy.mockResolvedValue(new Response('{"error":"forbidden"}', { status: 403 }));
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await expect(rt.pty!.connect({ id: 'pty_3', directory: 'C:/work/look' }))
+      .rejects.toMatchObject({ status: 403 });
+  });
+});
