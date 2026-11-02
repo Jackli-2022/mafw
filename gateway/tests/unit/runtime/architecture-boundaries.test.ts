@@ -75,10 +75,13 @@ const RULES: RuleSpec[] = [
       fieldPattern(['name', 'activeDialect']),
       // 名称分支：runtimeName === 'pi'
       /\bruntimeName\s*(?:===|!==|==|!=)\s*['"`]/g,
+      // 解构：`const { name } = runtime`
+      /\b(?:const|let|var)\s*\{[^}\n]*\b(?:name|activeDialect)\b[^}\n]*\}\s*=/g,
     ],
     stringPatterns: [
       // 引号比较必须看原文（masked 视图里字符串体已置空，永远匹配不到 —— review #2）。
-      /\bname\s*(?:===|!==)\s*['"`](?:pi|opencode|claude|dsh)/g,
+      // 兼容严格/宽松比较（== / !=）。
+      /\bname\s*(?:===|!==|==|!=)\s*['"`](?:pi|opencode|claude|dsh)/g,
       bracketPattern(['name', 'activeDialect']),
     ],
   },
@@ -88,9 +91,8 @@ const RULES: RuleSpec[] = [
       // 不限制接收者：`client.capabilities` / `deps.getRuntime()?.capabilities` /
       // 模板插值 `${rt.capabilities.x}` 都是同一泄漏形态。
       anyReceiverFieldPattern(['capabilities']),
-      // 解构：`const { capabilities } = rt`
-      /\{\s*capabilities\s*[,}]/g,
-      /\{\s*capabilities\s*:/g,
+      // 解构：`const { capabilities } = rt`（限定声明式，避免对象字面量假阳性）
+      /\b(?:const|let|var)\s*\{[^}\n]*\bcapabilities\b[^}\n]*\}\s*=/g,
     ],
     stringPatterns: [bracketPattern(['capabilities'])],
   },
@@ -101,6 +103,8 @@ const RULES: RuleSpec[] = [
       anyReceiverFieldPattern(['completion', 'credentials', 'agentProcess', 'getBaseUrl', 'healthCheck']),
       // `.config` 例外：业务自有配置对象/加载器极常见，只在 runtime 接收者上判泄漏。
       fieldPattern(['config']),
+      // 声明式解构：`const { completion } = client` / `const { config } = runtime`
+      /\b(?:const|let|var)\s*\{[^}\n]*\b(?:config|completion|credentials|agentProcess|getBaseUrl|healthCheck)\b[^}\n]*\}\s*=/g,
     ],
     stringPatterns: [
       bracketPattern(DIAGNOSTIC_FIELDS),
@@ -147,11 +151,28 @@ export function maskStringsKeepInterpolations(code: string): string {
   const blank = (ch: string) => (ch === '\n' ? '\n' : ' ');
 
   const readQuoted = (quote: string): void => {
+    // 先看当前行内是否存在真正的闭合引号：正则字面量里的 `"` / `'`（例如 /"/g）
+    // 不是字符串起点，跨行吞代码会让后续代码漏扫（review I1 实测 4 文件）。
+    let j = i + 1;
+    let closed = false;
+    while (j < n) {
+      const ch = code[j];
+      if (ch === '\\') { j += 2; continue; }
+      if (ch === '\n') break;
+      if (ch === quote) { closed = true; break; }
+      j++;
+    }
+    if (!closed) {
+      // 未闭合：该引号按代码原样保留（只前进一个字符），后续代码继续正常扫描。
+      out += quote;
+      i++;
+      return;
+    }
     out += quote;
     i++;
     while (i < n) {
       const ch = code[i];
-      if (ch === '\\') { out += ch + (code[i + 1] ?? ''); i += 2; continue; }
+      if (ch === '\\') { out += blank(ch) + blank(code[i + 1] ?? ''); i += 2; continue; }
       if (ch === quote) { out += quote; i++; return; }
       out += blank(ch);
       i++;
@@ -301,6 +322,46 @@ describe('runtime isolation architecture boundaries', () => {
       'raw-capability',
       'runtime-access-construction',
       'runtime-name',
+    ]);
+  });
+
+  it('scanner does not depend on a runtime-ish receiver whitelist', () => {
+    const leaks = scanSource([
+      'const caps = payload.capabilities;',
+      'const creds = svc.credentials;',
+      'const base = cfg.getBaseUrl();',
+    ].join('\n'));
+    expect([...new Set(leaks.map((l) => l.rule))].sort()).toEqual([
+      'facade-diagnostics',
+      'raw-capability',
+    ]);
+  });
+
+  it('scanner catches declaration destructuring for diagnostics, name and config', () => {
+    const leaks = scanSource([
+      'const { completion } = client;',
+      'const { name } = runtime;',
+      'const { config } = runtime;',
+    ].join('\n'));
+    expect([...new Set(leaks.map((l) => l.rule))].sort()).toEqual([
+      'facade-diagnostics',
+      'runtime-name',
+    ]);
+  });
+
+  it('supports loose name comparison (== / !=)', () => {
+    const leaks = scanSource("if (svc.name == 'pi' || svc.name != 'claude') {}");
+    expect([...new Set(leaks.map((l) => l.rule))]).toEqual(['runtime-name']);
+  });
+
+  it('unterminated quotes in regex literals do not swallow following code', () => {
+    const leaks = scanSource([
+      'const a = /"/g; const b = client.capabilities;',
+      "const c = /[\"']?/; const d = payload.credentials;",
+    ].join('\n'));
+    expect([...new Set(leaks.map((l) => l.rule))].sort()).toEqual([
+      'facade-diagnostics',
+      'raw-capability',
     ]);
   });
 

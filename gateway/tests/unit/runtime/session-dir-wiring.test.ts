@@ -37,7 +37,7 @@ describe('session directory wiring', () => {
     expect(src).toContain('createMediaRuntimeExecutor(this.runtime, {');
     expect(src).toContain('projectDir: this.resolvedProjectDir(),');
     expect(src).toContain('getApiKey: this.runtimeGetApiKey.bind(this),');
-    // 补全通道由组合根注入（facade 不再暴露 completion）。
-    expect(src).toContain('completion: () => this.runtimeCompletionChannel(),');
+    // 补全通道由组合根注入（facade 不再暴露 completion）；字段名是 completionChannel。
+    expect(src).toContain('completionChannel: () => this.runtimeCompletionChannel(),');
   });
 });

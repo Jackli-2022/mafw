@@ -40,6 +40,31 @@ export function aliasedLeaks(client: any, runtimeClient: any, deps: any) {
   const viaClientConfig = client.config.get();
   const viaClientCompletion = runtimeClient.completion;
   const isPiByAlias = client.name === 'pi';
+  const isPiLoose = client.name == 'pi';
   const access = new RuntimeAccess(client);
-  return { viaCall, viaClient, viaRuntimeClient, capabilities, inTemplate, viaClientConfig, viaClientCompletion, isPiByAlias, access };
+  return { viaCall, viaClient, viaRuntimeClient, capabilities, inTemplate, viaClientConfig, viaClientCompletion, isPiByAlias, isPiLoose, access };
+}
+
+// 非白名单接收者（review M2）：能力位/诊断字段不限 runtime-ish 名字。
+export function nonWhitelistedReceivers(payload: any, svc: any, cfg: any) {
+  const caps = payload.capabilities;
+  const creds = svc.credentials;
+  const base = cfg.getBaseUrl();
+  return { caps, creds, base };
+}
+
+// 声明式解构（review M3）：diagnostics / name / config。
+export function destructuredLeaks(client: any, runtime: any) {
+  const { completion } = client;
+  const { name } = runtime;
+  const { config } = runtime;
+  return { completion, name, config };
+}
+
+// 正则字面量里的引号不能让扫描器跨行吞代码（review I1）。
+export function regexQuotes(client: any) {
+  const quoteRe = /"/g;
+  const bothRe = /["']?/;
+  const caps = client.capabilities;
+  return { quoteRe, bothRe, caps };
 }
