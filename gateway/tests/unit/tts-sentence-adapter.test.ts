@@ -1,5 +1,5 @@
 import { splitSentences, adaptToStream } from '../../src/tts/sentence-adapter';
-import type { TtsEngine, TtsCapabilities } from '../../src/tts/types';
+import type { TtsEngine, TtsProfile } from '../../src/tts/types';
 
 describe('splitSentences', () => {
   test('splits on Chinese and English sentence punctuation', () => {
@@ -28,7 +28,7 @@ function wavBuffer(pcmBytes: number): Buffer {
   return buf;
 }
 
-const capsNone: TtsCapabilities = {
+const capsNone: TtsProfile = {
   streaming: 'none', voiceCloning: false, styleControl: false, languages: ['zh'], sampleRate: 22050,
 };
 
@@ -36,7 +36,7 @@ describe('adaptToStream', () => {
   test('yields one PCM chunk per sentence with engine sampleRate', async () => {
     const calls: string[] = [];
     const engine: TtsEngine = {
-      name: 'fake', capabilities: capsNone,
+      name: 'fake', profile: capsNone,
       voices: () => [],
       async synthesize(text: string) { calls.push(text); return wavBuffer(100); },
       async *synthesizeStream() { throw new Error('not streaming'); },
@@ -54,7 +54,7 @@ describe('adaptToStream', () => {
   test('stops early when signal aborted', async () => {
     const ctrl = new AbortController();
     const engine: TtsEngine = {
-      name: 'fake', capabilities: capsNone,
+      name: 'fake', profile: capsNone,
       voices: () => [],
       async synthesize() { ctrl.abort(); return wavBuffer(10); },
       async *synthesizeStream() { throw new Error('x'); },

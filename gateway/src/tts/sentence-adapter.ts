@@ -41,6 +41,6 @@ export async function* adaptToStream(
     if (signal.aborted) return;
     const wav = await engine.synthesize(s, opts);
     if (signal.aborted) return;
-    yield { pcm: wavToPcm(wav), sampleRate: engine.capabilities.sampleRate };
+    yield { pcm: wavToPcm(wav), sampleRate: engine.profile.sampleRate };
   }
 }

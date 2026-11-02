@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
-import type { TtsCapabilities, TtsEngine, TtsOpts, TtsVoice, PcmChunk } from './types';
+import type { TtsProfile, TtsEngine, TtsOpts, TtsVoice, PcmChunk } from './types';
 
 export interface TtsPluginState {
   file: string;
@@ -17,7 +17,7 @@ export interface TtsPluginCtx {
   apiKey: (provider: string) => string | null;
 }
 
-const DEFAULT_CAPS: TtsCapabilities = {
+const DEFAULT_PROFILE: TtsProfile = {
   streaming: 'none', voiceCloning: false, styleControl: false, languages: ['zh'], sampleRate: 24000,
 };
 
@@ -84,10 +84,12 @@ export class TtsPluginLoader {
       if (typeof mod.synthesize !== 'function') { this.state.set(file, { file, name, status: 'error', error: 'missing synthesize()' }); return; }
       if (loaded.has(name)) { this.state.set(file, { file, name, status: 'error', error: 'duplicate name' }); return; }
       const ctx = this.opts?.makeCtx?.(name) ?? this.defaultCtx(name);
-      const caps: TtsCapabilities = { ...DEFAULT_CAPS, ...(mod.capabilities ?? {}) };
+      // 引擎档案（profile）：用户插件模块里的键名仍是 `capabilities`（legacy 公开面），
+      // gateway 内部统一叫 `profile`——引擎档案不是 runtime 能力位（见 types.ts）。
+      const profile: TtsProfile = { ...DEFAULT_PROFILE, ...(mod.capabilities ?? {}) };
       const engine: TtsEngine = {
         name,
-        capabilities: caps,
+        profile,
         voices: (): TtsVoice[] => (typeof mod.voices === 'function' ? mod.voices() : []),
         synthesize: (text: string, opts: TtsOpts) => mod.synthesize(text, opts, ctx),
         synthesizeStream: typeof mod.synthesizeStream === 'function'

@@ -29,7 +29,7 @@ describe('TtsPluginLoader', () => {
     const engines = loader.getEngines();
     expect(engines).toHaveLength(1);
     expect(engines[0].name).toBe('fake-tts');
-    expect(engines[0].capabilities.sampleRate).toBe(22050);
+    expect(engines[0].profile.sampleRate).toBe(22050);
     expect(engines[0].voices()[0].id).toBe('a');
   });
 

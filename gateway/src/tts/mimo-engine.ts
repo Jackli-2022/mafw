@@ -15,7 +15,7 @@ export function createMimoEngine(deps: {
   const svc = createTtsService(deps);
   return {
     name: 'mimo',
-    capabilities: {
+    profile: {
       streaming: 'native',
       voiceCloning: true, // mimo-v2.5-tts-voiceclone 模型存在；refAudio 适配后续做
       styleControl: true,

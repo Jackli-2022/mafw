@@ -41,7 +41,7 @@ export interface RuntimeContributionSpec {
 export interface TtsContributionSpec {
   /** 缺省 = 包名 */
   name?: string;
-  capabilities: import('../tts/types').TtsCapabilities;
+  capabilities: import('../tts/types').TtsProfile;
   voices(): import('../tts/types').TtsVoice[];
   synthesize(ctx: PluginPackageContext, text: string, opts: import('../tts/types').TtsOpts): Promise<Buffer>;
   synthesizeStream?(ctx: PluginPackageContext, text: string, opts: import('../tts/types').TtsOpts, signal: AbortSignal): AsyncIterable<import('../tts/types').PcmChunk>;

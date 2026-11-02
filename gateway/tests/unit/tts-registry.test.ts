@@ -1,7 +1,7 @@
 import { TtsEngineRegistry } from '../../src/tts/registry';
-import type { TtsCapabilities, TtsEngine, PcmChunk } from '../../src/tts/types';
+import type { TtsProfile, TtsEngine, PcmChunk } from '../../src/tts/types';
 
-const caps = (over: Partial<TtsCapabilities> = {}): TtsCapabilities => ({
+const caps = (over: Partial<TtsProfile> = {}): TtsProfile => ({
   streaming: 'native', voiceCloning: false, styleControl: false,
   languages: ['zh'], sampleRate: 24000, ...over,
 });
@@ -9,7 +9,7 @@ const caps = (over: Partial<TtsCapabilities> = {}): TtsCapabilities => ({
 function fakeEngine(name: string): TtsEngine {
   return {
     name,
-    capabilities: caps(),
+    profile: caps(),
     voices: () => [{ id: 'v1', label: 'V1', lang: 'zh' }],
     async *synthesizeStream(): AsyncIterable<PcmChunk> { /* empty */ },
     async synthesize(): Promise<Buffer> { return Buffer.from('wav'); },

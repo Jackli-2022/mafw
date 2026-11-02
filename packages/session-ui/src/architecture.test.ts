@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
+import { stripCommentsText, longBlankRuns, stripComments as stripCommentsState } from "../../../packages/test-shim/comment-strip"
 
 /**
  * session-ui 架构守卫（spec 2026-11-02 §8.1 / §11）。
@@ -36,10 +37,8 @@ const RULES: Rule[] = [
 ]
 
 function stripComments(text: string): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/\s\/\/[^\n]*$/gm, "")
+  // 共享状态机（review C1）：正则版会把 `// ... /*` 当块注释开头整段吞掉。
+  return stripCommentsText(text)
 }
 
 export function scanSessionUiSource(text: string, rules: Rule[] = RULES): string[] {
@@ -88,6 +87,29 @@ describe("session-ui architecture: View DTO only", () => {
       for (const rule of scanSessionUiSource(readFileSync(file, "utf8"))) found.push(`${rel}: ${rule}`)
     }
     expect(found).toEqual([])
+  })
+
+  test("comment stripping keeps line parity and never blanks a long run of real source", () => {
+    const mismatched: string[] = []
+    const runaway: string[] = []
+    for (const file of SOURCE_FILES) {
+      const rel = relative(PACKAGE_ROOT, file).replace(/\\/g, "/")
+      const source = readFileSync(file, "utf8")
+      const stripped = stripCommentsState(source)
+      if (stripped.code.split("\n").length !== source.split("\n").length) mismatched.push(rel)
+      for (const run of longBlankRuns(source, stripped)) runaway.push(`${rel}: ${run.start}-${run.end} (${run.count})`)
+    }
+    expect(mismatched).toEqual([])
+    expect(runaway).toEqual([])
+  })
+
+  test("scanner is a state machine, not a regex (C1 reverse fixture)", () => {
+    expect(scanSessionUiFixture([
+      "// 说明里提到 /* 这个写法",
+      "const caps = props.runtimeCaps.diffApi;",
+      "*/",
+      'if (runtimeName === "pi") {}',
+    ].join("\n"))).toEqual(["runtime-caps", "runtime-name"])
   })
 
   test("no exception list: session-ui has no diagnostics surface", () => {

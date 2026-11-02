@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+// 共享注释剥离状态机（review C1：正则把 `// ... /*` 当块注释开头，整段失明）
+import { stripComments as stripCommentsState, longBlankRuns, stripCommentsText } from '../../../../../packages/test-shim/comment-strip'
 
 /**
  * desktop 中立性守卫（spec 2026-11-02 §8 / §11）。
@@ -41,10 +43,7 @@ const BUSINESS_RULES: Rule[] = [
 
 /** 去掉注释再匹配：文档里解释被删除的能力位不算违规。 */
 export function stripComments(text: string): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '')
-    .replace(/\s\/\/[^\n]*$/gm, '')
+  return stripCommentsText(text)
 }
 
 export function scanSource(text: string, rules: Rule[] = BUSINESS_RULES): string[] {
@@ -123,6 +122,34 @@ test('desktop-wide scan: no business file reads runtime identity/capabilities or
   expect(SOURCE_FILES.length).toBeGreaterThan(150)
   const found = SOURCE_FILES.flatMap((file) => violations(file))
   expect(found).toEqual([])
+})
+
+test('comment stripping is a state machine, not a regex (C1)', () => {
+  // 反向 fixture：`/*` 出现在 `//` 行尾注释里时，旧正则吞到下一个 `*/`，
+  // 中间的能力位读取完全不可见（fake-green）。
+  expect(scanDesktopFixture([
+    '// 说明里提到 /* 这个写法',
+    'const caps = props.runtimeCaps.diffApi;',
+    '*/',
+    'if (runtimeName === "pi") {}',
+  ].join('\n'))).toEqual(['runtime-caps', 'runtime-name'])
+  // 字符串 / 模板正文不是注释；模板插值是代码。
+  expect(scanDesktopFixture("const u = 'http://x/*y'; const c = props.runtimeCaps;")).toEqual(['runtime-caps'])
+  expect(scanDesktopFixture('const t = `/* open`; const c = props.runtimeCaps;')).toEqual(['runtime-caps'])
+})
+
+test('scanned desktop files keep line parity and no runaway blanking', () => {
+  const mismatched: string[] = []
+  const runaway: string[] = []
+  for (const file of SOURCE_FILES) {
+    const rel = relative(ROOT, file).replace(/\\/g, '/')
+    const source = readFileSync(file, 'utf8')
+    const stripped = stripCommentsState(source)
+    if (stripped.code.split('\n').length !== source.split('\n').length) mismatched.push(rel)
+    for (const run of longBlankRuns(source, stripped)) runaway.push(`${rel}: ${run.start}-${run.end} (${run.count})`)
+  }
+  expect(mismatched).toEqual([])
+  expect(runaway).toEqual([])
 })
 
 test('exception whitelists stay narrow and pinned', () => {

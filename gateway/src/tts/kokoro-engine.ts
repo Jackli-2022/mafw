@@ -79,7 +79,7 @@ export function createKokoroEngine(deps: {
 
   return {
     name: 'kokoro',
-    capabilities: {
+    profile: {
       streaming: 'none',
       voiceCloning: false,
       styleControl: false,

@@ -16,6 +16,9 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+// 共享注释剥离状态机（review C1：正则把 `// ... /*` 当块注释开头，整段失明）。
+// gateway / desktop / session-ui / TUI 四个守卫共用同一实现。
+import { stripComments, longBlankRuns } from '../../../../packages/test-shim/comment-strip';
 
 const ROOT = process.cwd();
 
@@ -229,10 +232,7 @@ export function maskStringsKeepInterpolations(code: string): string {
  * 每个规则每行最多报一次（保持稳定顺序 = 规则声明顺序）。
  */
 export function scanSource(text: string): BoundaryLeak[] {
-  const code = text
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
-    .replace(/^\s*\/\/.*$/gm, '')
-    .replace(/\s\/\/[^\n]*$/gm, '');
+  const code = stripComments(text).code;
   const masked = maskStringsKeepInterpolations(code);
   const lines = code.split('\n');
   const maskedLines = masked.split('\n');
@@ -393,6 +393,16 @@ function filesUnder(dir: string): string[] {
   return out;
 }
 
+/** 守卫扫描面（业务目录 + 抽出的模块 + 组合根/顶层业务文件）。 */
+function scannedBoundaryFiles(): string[] {
+  return [
+    'src/index.ts',
+    'src/automation-engine.ts',
+    'src/eval-endpoint.ts',
+    ...['src/routes', 'src/core', 'src/media', 'src/trajectory', 'src/experience', 'src/events', 'src/terminal'].flatMap(filesUnder),
+  ];
+}
+
 describe('runtime isolation architecture boundaries', () => {
   it('scanner catches optional-chain and cast capabilities', () => {
     const leaks = scanSource(
@@ -493,6 +503,56 @@ describe('runtime isolation architecture boundaries', () => {
       'const ok = runtime?.session.messages({ sessionID });',
     ].join('\n'));
     expect(leaks).toEqual([]);
+  });
+
+  it('comment stripping is a state machine, not a regex (C1 reverse fixture)', () => {
+    // `/*` 出现在 `//` 行尾注释里时，旧正则把它当块注释开头，一路吞到下一个
+    // `*/`——中间的真实能力位读取因此完全不可见（fake-green）。
+    const leaks = scanSource([
+      '// 说明里提到 /* 这个写法（注释内的 `/*` 不是块注释开头）',
+      'const caps = runtime.capabilities;',
+      '*/', // 旧正则的「块结尾」：修好之后这行只是普通代码
+      'const nm = rt.name;',
+    ].join('\n'));
+    expect([...new Set(leaks.map((l) => l.rule))].sort()).toEqual(['raw-capability', 'runtime-name']);
+    // 字符串 / 模板里的斜杠组合不是注释；注释内部的能力位不算违规。
+    expect(scanSource("const u = 'http://x/*y'; const caps = client.capabilities;")).toHaveLength(1);
+    // 模板正文不是代码（无插值时零命中）；`${...}` 插值是代码（照常命中）。
+    expect(scanSource('const t = `/* rt.name */`; const ok = 1;')).toEqual([]);
+    expect(scanSource('const t = `/* ${rt.name} */`; const c = payload.completion;')).toHaveLength(2);
+    // 未闭合的 `/*` 不得吞掉文件剩余部分。
+    const unterminated = scanSource('const re = /a/*b/; const caps = client.capabilities;');
+    expect(unterminated.map((l) => l.rule)).toEqual(['raw-capability']);
+  });
+
+  it('comment stripping preserves the source line count', () => {
+    const files = scannedBoundaryFiles();
+    expect(files.length).toBeGreaterThan(100);
+    const mismatched = files.filter((file) => {
+      const source = readSource(file);
+      return stripComments(source).code.split('\n').length !== source.split('\n').length;
+    });
+    expect(mismatched).toEqual([]);
+  });
+
+  it('comment stripping never blanks a long run of real source (C1 regression guard)', () => {
+    // 旧正则的失明形态就是「几十上百行被整体置空」；这里把上界钉在 20 行。
+    const runaway = scannedBoundaryFiles().flatMap((file) => {
+      const source = readSource(file);
+      return longBlankRuns(source, stripComments(source)).map(
+        (run) => `${file}: ${run.start}-${run.end} (${run.count} lines)`,
+      );
+    });
+    expect(runaway).toEqual([]);
+  });
+
+  it('long-blank-run guard is not vacuous (a blanked code block is flagged)', () => {
+    const source = Array.from({ length: 30 }, (_, i) => `const v${i} = 1;`).join('\n');
+    const blanked = { code: Array.from({ length: 30 }, () => '   ').join('\n'), lineHasCode: [] };
+    expect(longBlankRuns(source, blanked)).toEqual([{ start: 1, end: 30, count: 30 }]);
+    // 注释行（`//` / `*`）与空行不参与：长注释块不是异常置空。
+    const commentOnly = '// a\n * b\n * c\n\n';
+    expect(longBlankRuns(commentOnly, stripComments(commentOnly))).toEqual([]);
   });
 
   it('reverse fixture is caught (business module leaking runtime identity)', () => {

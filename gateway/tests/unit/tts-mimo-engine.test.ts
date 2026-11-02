@@ -13,9 +13,9 @@ describe('mimo engine', () => {
   test('capabilities declare native streaming at 24kHz with style control', () => {
     const engine = createMimoEngine({ config: () => ({}), getApiKey: (p) => (p === 'xiaomi' ? 'sk-test' : null) });
     expect(engine.name).toBe('mimo');
-    expect(engine.capabilities.streaming).toBe('native');
-    expect(engine.capabilities.sampleRate).toBe(24000);
-    expect(engine.capabilities.styleControl).toBe(true);
+    expect(engine.profile.streaming).toBe('native');
+    expect(engine.profile.sampleRate).toBe(24000);
+    expect(engine.profile.styleControl).toBe(true);
   });
 
   test('synthesizeStream yields PcmChunk buffers decoded from base64 SSE deltas', async () => {

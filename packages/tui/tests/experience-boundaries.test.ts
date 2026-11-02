@@ -8,6 +8,8 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+// 共享注释剥离状态机（review C1：正则把 `// ... /*` 当块注释开头，整段失明）
+import { stripCommentsText, longBlankRuns, stripComments as stripCommentsState } from '../../../packages/test-shim/comment-strip'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const SRC = join(HERE, '..', 'src')
@@ -30,10 +32,8 @@ const RULES: Rule[] = [
 ]
 
 function stripComments(text: string): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '')
-    .replace(/\s\/\/[^\n]*$/gm, '')
+  // 共享状态机（review C1）：正则版会把 `// ... /*` 当块注释开头整段吞掉。
+  return stripCommentsText(text)
 }
 
 export function scanTuiSource(text: string, rules: Rule[] = RULES): string[] {
@@ -67,6 +67,32 @@ test('scanner catches synthetic capability/identity/wire reads (reverse fixtures
   assert.deepEqual(scanTuiFixture('const ok = experience.supported("branch.fork")'), [])
   assert.deepEqual(scanTuiFixture('// 不再读 capabilities\nconst ok = 1;'), [])
 })
+
+test('scanner is a state machine, not a regex (C1 reverse fixture)', () => {
+  // `/*` 出现在 `//` 行尾注释里时，旧正则吞到下一个 `*/`，中间的能力位读取失明。
+  assert.deepEqual(scanTuiFixture([
+    '// 说明里提到 /* 这个写法',
+    'const caps = props.runtimeCaps;',
+    '*/',
+    'if (runtimeName === "pi") {}',
+  ].join('\n')), ['runtime-caps', 'runtime-name'])
+  assert.deepEqual(scanTuiFixture("const u = 'http://x/*y'; const c = props.runtimeCaps;"), ['runtime-caps'])
+})
+
+test('comment stripping preserves line count and never blanks a long run of real source', () => {
+  const mismatched: string[] = []
+  const runaway: string[] = []
+  for (const file of SOURCE_FILES) {
+    const rel = relative(SRC, file).replace(/\\/g, '/')
+    const source = readFileSync(file, 'utf8')
+    const stripped = stripCommentsState(source)
+    if (stripped.code.split('\n').length !== source.split('\n').length) mismatched.push(rel)
+    for (const run of longBlankRuns(source, stripped)) runaway.push(`${rel}: ${run.start}-${run.end} (${run.count})`)
+  }
+  assert.deepEqual(mismatched, [])
+  assert.deepEqual(runaway, [])
+})
+
 
 test('tui-wide scan: no runtime identity, raw capabilities or wire shapes', () => {
   assert.ok(SOURCE_FILES.length > 20, 'expected TUI source files')

@@ -1,5 +1,5 @@
 import { log } from '../core/utils/logger';
-import type { TtsCapabilities, TtsEngine } from './types';
+import type { TtsProfile, TtsEngine } from './types';
 
 export const DEFAULT_ENGINE = 'mimo';
 
@@ -34,13 +34,13 @@ export class TtsEngineRegistry {
     return fallback;
   }
 
-  list(): { name: string; capabilities: TtsCapabilities; source: 'builtin' | 'legacy' | 'package' }[] {
+  list(): { name: string; profile: TtsProfile; source: 'builtin' | 'legacy' | 'package' }[] {
     const merged = new Map<string, { engine: TtsEngine; source: 'builtin' | 'legacy' | 'package' }>();
     for (const [n, e] of this.builtin) merged.set(n, { engine: e, source: 'builtin' });
     for (const [n, e] of this.legacy) merged.set(n, { engine: e, source: 'legacy' });
     for (const [n, e] of this.pkg) merged.set(n, { engine: e, source: 'package' });
     return [...merged.values()].map(({ engine, source }) => ({
-      name: engine.name, capabilities: engine.capabilities, source,
+      name: engine.name, profile: engine.profile, source,
     }));
   }
 }

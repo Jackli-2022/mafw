@@ -4881,7 +4881,8 @@ class MafwScheduler {
             res.end(JSON.stringify({
               voices: engine.voices(),
               engine: engine.name,
-              capabilities: engine.capabilities,
+              // 引擎档案（TTS）≠ runtime 能力位：字段名刻意不同（见 src/tts/types.ts）
+              capabilities: engine.profile,
               engines: this.ttsRegistry.list().map(e => ({ name: e.name, source: e.source })),
               models: [
                 { id: 'mimo-v2.5-tts', description: '预置音色语音合成（支持唱歌模式）' },
@@ -5175,9 +5176,9 @@ class MafwScheduler {
               'Content-Type': 'text/event-stream',
               'Cache-Control': 'no-cache',
               Connection: 'keep-alive',
-              'x-tts-sample-rate': String(ttsEngine.capabilities.sampleRate),
+              'x-tts-sample-rate': String(ttsEngine.profile.sampleRate),
             });
-            const gen = ttsEngine.capabilities.streaming === 'native'
+            const gen = ttsEngine.profile.streaming === 'native'
               ? ttsEngine.synthesizeStream(text, { voice, style }, abort.signal)
               : adaptToStream(ttsEngine, text, { voice, style }, abort.signal);
             for await (const chunk of gen) {
@@ -6598,7 +6599,7 @@ class MafwScheduler {
                 deprecated: s.deprecated,
                 // 未物化身份不出现在列表（选了也会被 withIdentityPrompt 剥离，
                 // 列出是 UX 谎言）；runtime 无 agentConfigApi 时全部滤出。
-                materialized: this.identityState.isMaterialized(this.runtimeHost?.name ?? this.runtimeName, s.name),
+                materialized: this.identityState.isMaterialized(this.runtimeName, s.name),
               })),
               Array.isArray(runtimeAgents) ? runtimeAgents : [],
             );

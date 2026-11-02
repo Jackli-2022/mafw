@@ -202,7 +202,8 @@ export class PluginHost {
       if (!spec.capabilities || typeof spec.capabilities.sampleRate !== 'number') throw new Error('tts: capabilities.sampleRate required');
       const engine: TtsEngine = {
         name: spec.name ?? modName,
-        capabilities: spec.capabilities,
+        // 包贡献面的键名是 `capabilities`（插件公开面），引擎内部叫 `profile`。
+        profile: spec.capabilities,
         voices: () => spec.voices(),
         synthesize: (text: string, opts: TtsOpts) => spec.synthesize(ctx, text, opts),
         synthesizeStream: spec.synthesizeStream
