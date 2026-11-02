@@ -7,9 +7,9 @@
 // 会创建/复用会话、跑 prompt、产出 artifact。
 
 /** 需要 runtime 会话的节点（Task 14 增加 probe）。 */
-export type ExecutableGoalNode = 'plan' | 'execute' | 'review';
+export type ExecutableGoalNode = 'plan' | 'probe' | 'execute' | 'review';
 
-export const EXECUTABLE_GOAL_NODES: readonly ExecutableGoalNode[] = ['plan', 'execute', 'review'];
+export const EXECUTABLE_GOAL_NODES: readonly ExecutableGoalNode[] = ['plan', 'probe', 'execute', 'review'];
 
 /** 全量路由目标（routing.ts 的返回类型）。 */
 export type GoalNodeName =
@@ -23,14 +23,20 @@ export function isExecutableGoalNode(value: unknown): value is ExecutableGoalNod
     && (EXECUTABLE_GOAL_NODES as readonly string[]).includes(value);
 }
 
-/** IdentityRegistry 物化名（`mafw-plan` / `mafw-execute` / `mafw-review`）。 */
+/**
+ * IdentityRegistry 物化名（`mafw-plan` / `mafw-probe` / `mafw-execute` / `mafw-review`）。
+ *
+ * Spike 由 Builder 执行（spec §6：Builder 执行 Probe 并返回 ProbeReport）——probe 节点
+ * 没有独立身份，直接复用 `mafw-execute` 的 Builder 身份与工具权限。
+ */
 export function goalAgentName(node: ExecutableGoalNode): string {
-  return `mafw-${node}`;
+  return node === 'probe' ? 'mafw-execute' : `mafw-${node}`;
 }
 
 /** 执行节点中文标签（timeline / 提示词共用）。 */
 export const GOAL_NODE_LABELS: Record<ExecutableGoalNode, string> = {
   plan: '规划',
+  probe: '验证',
   execute: '执行',
   review: '评审',
 };

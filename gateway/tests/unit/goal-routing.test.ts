@@ -21,6 +21,10 @@ describe('routeAfterPlan', () => {
   it('pendingQuestion 优先于 planReviewGate', () => {
     expect(routeAfterPlan({ ...base, planReviewGate: true, pendingQuestion: { questionId: 'q1' } })).toBe('askUser');
   });
+  it('need_probe → probe（先于批准门，探针报告才是计划输入）', () => {
+    expect(routeAfterPlan({ ...base, probeNeeded: true })).toBe('probe');
+    expect(routeAfterPlan({ ...base, probeNeeded: true, planReviewGate: true })).toBe('probe');
+  });
 });
 
 describe('routeAfterReview（语义逐字移植 graph.ts:4-10）', () => {
@@ -48,6 +52,7 @@ describe('routeAfterReview（语义逐字移植 graph.ts:4-10）', () => {
 describe('routeNext', () => {
   it('stage 决定入口', () => {
     expect(routeNext('after_plan', base)).toBe('execute');
+    expect(routeNext('after_probe', base)).toBe('plan');
     expect(routeNext('after_execute', base)).toBe('review');
     expect(routeNext('after_review', { ...base, reviewVerdict: 'PASS' })).toBe('archive_success');
     expect(routeNext('start', base)).toBe('plan');

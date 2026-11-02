@@ -356,6 +356,16 @@ export const BUSINESS_EXCERPT_EXCEPTIONS: BusinessExcerptException[] = [
     excerpt: /credentials: normalizeCredentials\(input\.scope\.credentials\)/,
     why: 'goal probe scope 的域字段（允许的凭据名列表），非 runtime 门面凭据通道',
   },
+  {
+    file: 'src/core/goal/probe-scope-guard.ts',
+    excerpt: /const declared = \(request\.scope\.credentials/,
+    why: 'ProbeScopeGuard 读取 ProbeRequest.scope 的凭据允许清单（域字段），非 runtime 门面凭据通道',
+  },
+  {
+    file: 'src/core/goal/node-prompts.ts',
+    excerpt: /scope\.credentials\.join\(', '\)/,
+    why: 'probe prompt 渲染 ProbeRequest.scope 的凭据允许清单（域字段），非 runtime 门面凭据通道',
+  },
 ];
 
 function exceptionFor(file: string, excerpt: string): boolean {

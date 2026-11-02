@@ -20,6 +20,14 @@ import { ExecutableGoalNode, goalAgentName, isExecutableGoalNode } from './node-
 import { isTaskType } from '../../orchestration/capability-ledger';
 import { parseReviewRubric, taskAcceptanceFromWavePlan, taskIdsFromWavePlan } from './review-rubric';
 import {
+  validateProbeRequest,
+  type ProbeAffects,
+  type ProbeBudget,
+  type ProbeReport,
+  type ProbeRequest,
+  type ProbeScope,
+} from './probe';
+import {
   findGoalCharterPath,
   findGoalRequestPath,
   legacyGoalCharterPath,
@@ -80,8 +88,7 @@ function writeGoalEvalFile(target: string, goalEval: GoalEval): void {
 }
 
 export interface GoalRuntimeClient {
-  create(directory: string): Promise<{ id: string }>;
-  /**
+  create(directory: string): Promise<{ id: string }>;  /**
    * W1：节点会话建好后按身份绑模型。opencode v2 会话模型与 agent 解耦
    * （agent md 的 model 只对 subagent 工具子会话生效），goal 会话是先
    * create（默认模型）再 promptAsync(agent)——必须显式 switchModel。
@@ -99,6 +106,55 @@ export interface GoalRuntimeClient {
   /** Batch 1：已通过 JSON Schema 校验的交卷（缺省 = 只走文件 fallback）。 */
   structured?(sessionID: string): Promise<unknown | null>;
 }
+
+/** 计划输出的探针申请（id/podId/revision 由 driver 注入，计划模型只声明范围）。 */
+export interface GoalProbeDraft {
+  question: string;
+  hypothesis: string;
+  scope: ProbeScope;
+  budget: ProbeBudget;
+  evidenceRequired: string[];
+  affects?: ProbeAffects;
+}
+
+/** 探针隔离工作区（driver 只要求路径 + 幂等销毁）。 */
+export interface GoalProbeWorkspace {
+  dir: string;
+  dispose(): Promise<void>;
+}
+
+/** 探针会话 → ProbeRequest 绑定（ApprovalPolicyService 的范围守卫据此判定）。 */
+export interface GoalProbeSessionBinding {
+  request: ProbeRequest;
+  workspaceDir?: string | null;
+}
+
+/**
+ * Task 14：Spike 端口。生产实现是 PodProbeService + ProbeWorkspaceFactory（index.ts 接线）；
+ * 测试用内存实现。driver 只依赖这些语义，不直接碰 DB/文件布局。
+ */
+export interface GoalProbePort {
+  /** goal 属于哪个 Pod；不属于 Pod（或 Pod 不存在）→ null。 */
+  podIdForGoal(goalId: string): string | null;
+  /** 入队计划申请的探针，返回持久化 id（顺序与 drafts 一致）。校验失败必须抛错。 */
+  enqueue(input: { podId: string; goalId: string; revision: number; drafts: GoalProbeDraft[] }): string[];
+  /** 取该 goal 下一条**可执行**探针（Pod 内单飞；未轮到本 goal → null）。 */
+  take(input: { podId: string; goalId: string; probeIds: string[] }): ProbeRequest | null;
+  /** 已完成报告；未完成/不存在 → null。 */
+  report(probeId: string): ProbeReport | null;
+  /** 落报告（校验 + 脱敏由实现负责）。同探针重复完成以最新为准。 */
+  complete(probeId: string, report: unknown): ProbeReport;
+  /** 报告产物路径（prompt 告诉 Builder 写哪里）。 */
+  reportPath(goalId: string, probeId: string): string;
+  /** 创建隔离工作区；不可用时 null（fail-closed，driver 会失败该节点）。 */
+  prepareWorkspace(input: { projectDir: string; goalId: string; probeId: string }): Promise<GoalProbeWorkspace | null>;
+  disposeWorkspace(workspace: GoalProbeWorkspace): Promise<void>;
+  /** 绑定/解绑探针会话的范围（sessionID → request），供审批守门消费。 */
+  bindSession(sessionId: string, binding: GoalProbeSessionBinding | null): void;
+}
+
+/** 单个 revision 允许的探针总数上限（防 need_probe ↔ probe 无限循环挤占实施）。 */
+export const MAX_PROBES_PER_REVISION = 4;
 
 export interface DriverDeps {
   client: GoalRuntimeClient;
@@ -138,10 +194,13 @@ export interface DriverDeps {
   onPromptDispatched?: (sessionId: string) => void;
   /** Pod 暂停自动推进：false 时不创建新节点；askUser/archive 仍可执行。 */
   canCreateNode?: (goalId: string) => boolean;
+  /** Task 14：Spike 端口（缺省 = 该 goal 不支持探针；need_probe 计划会失败）。 */
+  probes?: GoalProbePort;
 }
 
 const NODE_PHASE: Record<ExecutableGoalNode, { running: string; complete: string }> = {
   plan: { running: 'PLANNING', complete: 'PLANNING_COMPLETE' },
+  probe: { running: 'PROBING', complete: 'PROBING_COMPLETE' },
   execute: { running: 'EXECUTING', complete: 'EXECUTING_COMPLETE' },
   review: { running: 'REVIEWING', complete: 'REVIEWING_COMPLETE' },
 };
@@ -160,6 +219,10 @@ export class NodeDriver {
   private reuseIdleGrace = new Set<string>();
   /** 复用会话节点启动时的产物指纹（判断 idle 时的产物是不是本次新写的）。 */
   private nodeStartArtifacts = new Map<string, { path: string; digest: string | null }>();
+  /** Task 14：探针会话 → 隔离工作区（完成/失败都必须销毁）。 */
+  private probeWorkspaces = new Map<string, GoalProbeWorkspace>();
+  /** Task 14：每条探针自己的技术重试计数（attempt 只描述重试，不描述同批第几条）。 */
+  private probeAttempts = new Map<string, number>();
 
   constructor(private deps: DriverDeps) {}
 
@@ -222,6 +285,20 @@ export class NodeDriver {
     // W1 批准门驻留：仅 approvePlan/rejectPlan 解锁；stray advance（legacy 唤醒/
     // 幂等重放/watchdog !ns 分支）不得越门推进 execute。
     if (state.nextAction === 'AWAIT_PLAN_APPROVAL') return;
+    // Task 14：探针节点先兑现已完成报告（外部 A2A / 路由可能先落库），再决定下一步。
+    const inflight = state.nodeSession;
+    if (inflight?.phase === 'probe') {
+      const probeId = inflight.probeId;
+      const report = probeId ? (this.deps.probes?.report(probeId) ?? null) : null;
+      if (probeId && report) {
+        await this.settleProbe(goalId, mafwDir, probeId, report, {
+          sessionId: inflight.id, runId: inflight.runId, attempt: inflight.attempt, advance: false,
+        });
+        // 已在互斥内：直接继续推进（下一条探针 / 重新规划），不要再排队。
+        return this.advanceInner(goalId);
+      }
+      return; // 探针在飞——等 idle / 报告完成
+    }
     if (state.nodeSession) return; // 节点在飞——完成回调会再次 advance
 
     const node = state.nextNode as GoalNodeName;
@@ -236,6 +313,11 @@ export class NodeDriver {
   }
 
   private async executeNode(goalId: string, mafwDir: string, node: ExecutableGoalNode): Promise<void> {
+    // Task 14：探针节点有独立的会话目录（隔离工作区）与完成判定（报告产物）。
+    if (node === 'probe') {
+      await this.executeProbeNode(goalId, mafwDir);
+      return;
+    }
     const state = loadGoalState(mafwDir, goalId)!;
     const round = effectiveRound(state);
     const revision = effectiveRevision(state);
@@ -339,6 +421,7 @@ export class NodeDriver {
       counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
       acceptance: node === 'review' ? acceptance : undefined,
       goalConditions: node === 'review' ? (reviewEval?.goalEval?.conditions ?? undefined) : undefined,
+      probeReports: node === 'plan' ? this.collectProbeReports(state) : undefined,
       fixTasks: fixPass ? (state.reviewFix?.tasks ?? []) : undefined,
       fixPreviousReceipt: fixPass ? nodeArtifactPaths(mafwDir, goalId, round, { revision }).receipt : undefined,
     });
@@ -386,6 +469,317 @@ export class NodeDriver {
     });
   }
 
+  // ── Task 14：Spike（probe）节点 ──
+
+  /** 计划申请的探针声明：过 Task 9 的规范化边界（绝对路径 / 逃逸 / 未知类别都拒绝）。 */
+  private validateProbeDrafts(input: unknown, ctx: { goalId: string; revision: number }): GoalProbeDraft[] {
+    if (!Array.isArray(input) || input.length === 0) {
+      throw new Error('need_probe requires at least one probe request');
+    }
+    return input.map((raw, index) => {
+      const draft = (raw && typeof raw === 'object' ? raw : {}) as Record<string, any>;
+      let validated: ProbeRequest;
+      try {
+        validated = validateProbeRequest({
+          id: 'draft',
+          podId: 'pod',
+          goalId: ctx.goalId,
+          revision: ctx.revision,
+          question: draft.question,
+          hypothesis: draft.hypothesis,
+          scope: draft.scope,
+          budget: draft.budget,
+          evidenceRequired: draft.evidenceRequired,
+          affects: draft.affects,
+        });
+      } catch (err: any) {
+        throw new Error(`probe[${index}]: ${err?.message ?? err}`);
+      }
+      return {
+        question: validated.question,
+        hypothesis: validated.hypothesis,
+        scope: validated.scope,
+        budget: validated.budget,
+        evidenceRequired: validated.evidenceRequired,
+        affects: validated.affects,
+      };
+    });
+  }
+
+  /** 计划上下文里的探针证据（plan 节点注入；报告是事实，不因重规划消失）。 */
+  private collectProbeReports(state: GoalStateV3): ProbeReport[] | undefined {
+    const port = this.deps.probes;
+    const ids = state.probeRefs ?? [];
+    if (!port || ids.length === 0) return undefined;
+    const reports: ProbeReport[] = [];
+    for (const id of ids) {
+      try {
+        const report = port.report(id);
+        if (report) reports.push(report);
+      } catch { /* fail-open：读不到的报告只是少了证据，不打断规划 */ }
+    }
+    return reports.length ? reports : undefined;
+  }
+
+  /**
+   * 跑一条 Spike（spec §6.3 模式 A）：
+   * 隔离工作区 + Builder 会话（`mafw-execute` 身份）→ 报告落库 → 销毁工作区 → 回 plan。
+   * 同一 Pod 同时只跑一条（由端口的 take 语义保证）；队列里还有下一条时下一个 advance 继续。
+   */
+  private async executeProbeNode(goalId: string, mafwDir: string): Promise<void> {
+    const state = loadGoalState(mafwDir, goalId)!;
+    const round = effectiveRound(state);
+    const revision = effectiveRevision(state);
+    const port = this.deps.probes;
+    const podId = port?.podIdForGoal(goalId) ?? null;
+    const queue = state.probeQueue ?? [];
+
+    if (!port || !podId) {
+      await this.abortProbeFlow(goalId, mafwDir, 'probe execution is unavailable for this goal');
+      return;
+    }
+    if (queue.length === 0) {
+      // 队列已兑空（恢复/重放路径）：直接回 plan，不留在 probe。
+      writeGoalState(mafwDir, goalId, { nextNode: 'plan', nextAction: 'NEXT_plan' });
+      await this.continueAdvance(goalId);
+      return;
+    }
+
+    // 恢复/重放：队列里可能已有跑完但还没兑现的探针（报告先落库、会话已丢）——
+    // 先按 FIFO 兑现，避免已完成条目永远占着队头。
+    const completedId = queue.find((id) => {
+      try { return !!port.report(id); } catch { return false; }
+    });
+    if (completedId) {
+      const completedReport = port.report(completedId)!;
+      await this.settleProbe(goalId, mafwDir, completedId, completedReport, { advance: false });
+      await this.continueAdvance(goalId);
+      return;
+    }
+
+    let request: ProbeRequest | null;
+    try {
+      request = port.take({ podId, goalId, probeIds: queue });
+    } catch (err: any) {
+      await this.abortProbeFlow(goalId, mafwDir, `probe claim failed: ${err?.message ?? err}`);
+      return;
+    }
+    if (!request) {
+      // 该 Pod 还有别的探针在跑（单飞）或尚未轮到自己：驻留，等报告完成后的 advance。
+      writeGoalState(mafwDir, goalId, { nodeSession: null, nextNode: 'probe', nextAction: 'WAIT_PROBE' });
+      return;
+    }
+    const probeId = request.id;
+
+    const workspace = await port.prepareWorkspace({ projectDir: state.projectDir, goalId, probeId });
+    if (!workspace) {
+      await this.abortProbeFlow(goalId, mafwDir, `probe workspace is unavailable for ${probeId}`);
+      return;
+    }
+    // 报告可能已经在准备阶段完成（外部 A2A / 恢复重放）：不必再开会话。
+    const earlyReport = port.report(probeId);
+    if (earlyReport) {
+      try { await port.disposeWorkspace(workspace); } catch { /* fail-open */ }
+      await this.settleProbe(goalId, mafwDir, probeId, earlyReport, { advance: false });
+      await this.continueAdvance(goalId);
+      return;
+    }
+
+    let sessionId: string;
+    try {
+      sessionId = (await this.deps.client.create(workspace.dir)).id;
+    } catch (err: any) {
+      try { await port.disposeWorkspace(workspace); } catch { /* fail-open */ }
+      await this.abortProbeFlow(goalId, mafwDir, `probe session create failed: ${err?.message ?? err}`);
+      return;
+    }
+    this.probeWorkspaces.set(sessionId, workspace);
+
+    const phaseNames = NODE_PHASE.probe;
+    this.deps.emitPhaseTransition({
+      type: 'phase_transition', goalId, phase: phaseNames.running, loop: round,
+      projectDir: state.projectDir, revision,
+    });
+    const attempt = (this.probeAttempts.get(probeId) ?? 0) + 1;
+    this.probeAttempts.set(probeId, attempt);
+    this.deps.onSessionCreated({ goalId, sessionId, phase: 'probe', loop: round, revision });
+    if (this.deps.client.bindModel) {
+      try { await this.deps.client.bindModel(sessionId, goalAgentName('probe')); } catch { /* fail-open */ }
+    }
+    const runId = this.deps.db.insertNodeRun({
+      goalId, projectId: state.projectDir, loop: round, node: 'probe', attempt, sessionId,
+      startedAt: new Date().toISOString(), revision,
+    });
+
+    const requestPath = findGoalRequestPath(mafwDir, goalId) ?? legacyGoalRequestPath(mafwDir, goalId);
+    const charterPath = findGoalCharterPath(mafwDir, goalId) ?? legacyGoalCharterPath(mafwDir, goalId);
+    const prompt = renderNodePrompt('probe', {
+      goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds, revision,
+      charterPath, requestPath,
+      probe: { request, workspaceDir: workspace.dir, reportPath: port.reportPath(goalId, probeId) },
+      attempt, maxAttempts: this.deps.maxAttempts, lastFailure: state.lastFailure ?? null,
+    });
+    try { port.bindSession(sessionId, { request, workspaceDir: workspace.dir }); } catch { /* fail-open */ }
+
+    try {
+      void this.deps.client.promptAsync({
+        sessionID: sessionId, parts: [{ type: 'text', text: prompt }], agent: goalAgentName('probe'),
+        outputSchema: nodeOutputSchema('probe'),
+      }).then(() => {
+        this.deps.onPromptDispatched?.(sessionId);
+      }).catch((err: any) => {
+        this.onSessionError(sessionId, `promptAsync: ${err?.message ?? err}`);
+      });
+    } catch (err: any) {
+      await this.failNode(goalId, sessionId, 'prompt_failed', `promptAsync: ${err?.message ?? err}`);
+      return;
+    }
+
+    writeGoalState(mafwDir, goalId, {
+      phase: phaseNames.running, nextAction: 'RUNNING_probe', nextNode: 'probe',
+      nodeSession: {
+        id: sessionId, phase: 'probe', startedAt: new Date().toISOString(), attempt, runId, revision,
+        probeId,
+      },
+    });
+
+    this.listeners.set(sessionId, (ev, failure) => {
+      if (ev === 'idle') {
+        void this.completeProbeNode(goalId, sessionId);
+        return false;
+      }
+      void this.failNode(
+        goalId, sessionId, failure?.code ?? 'session_error', failure?.message ?? 'session error',
+        failure?.source ?? 'runtime',
+      );
+      return false;
+    });
+
+    this.deps.emitNodeEvent({
+      type: 'goal_node', goalId, projectDir: state.projectDir, loop: round, node: 'probe', revision,
+      transition: 'started', at: new Date().toISOString(), attempt,
+    });
+  }
+
+  /**
+   * 探针 idle：报告来源三选一——结构化交卷 → 服务已落库报告 → 报告产物文件。
+   * 三者都没有 = artifact_missing（不猜结论）。
+   */
+  private async completeProbeNode(goalId: string, sessionId: string): Promise<void> {
+    const found = this.findState(goalId);
+    if (!found) return;
+    const { mafwDir } = found;
+    const state = loadGoalState(mafwDir, goalId)!;
+    const ns = state.nodeSession;
+    if (!ns || ns.id !== sessionId || ns.phase !== 'probe') return; // stale 事件守卫
+    const port = this.deps.probes;
+    const probeId = ns.probeId;
+    if (!port || !probeId) {
+      await this.failNode(goalId, sessionId, 'artifact_missing', 'probe request binding is missing', 'artifact');
+      return;
+    }
+    const reportPath = port.reportPath(goalId, probeId);
+    let report = port.report(probeId);
+    if (!report) {
+      const submitted = await this.deps.client.structured?.(sessionId) ?? null;
+      if (submitted) {
+        try {
+          report = port.complete(probeId, submitted);
+        } catch (err: any) {
+          await this.failNode(goalId, sessionId, 'artifact_invalid', `${reportPath}: ${err?.message ?? err}`, 'artifact');
+          return;
+        }
+      }
+    }
+    if (!report && fs.existsSync(reportPath)) {
+      try {
+        report = port.complete(probeId, JSON.parse(fs.readFileSync(reportPath, 'utf-8')));
+      } catch (err: any) {
+        await this.failNode(goalId, sessionId, 'artifact_invalid', `${reportPath}: ${err?.message ?? err}`, 'artifact');
+        return;
+      }
+    }
+    if (!report) {
+      await this.failNode(goalId, sessionId, 'artifact_missing', `expected ${reportPath}`, 'artifact');
+      return;
+    }
+    await this.settleProbe(goalId, mafwDir, probeId, report, {
+      sessionId, runId: ns.runId, attempt: ns.attempt,
+    });
+  }
+
+  /**
+   * 兑现一条探针报告：去队列、进 probeRefs、销毁工作区与 Builder 会话，然后
+   * 下一条探针或回 plan（`advance:false` 表示调用方已在互斥内自行继续推进）。
+   */
+  private async settleProbe(
+    goalId: string,
+    mafwDir: string,
+    probeId: string,
+    report: ProbeReport,
+    meta: { sessionId?: string; runId?: number; attempt?: number; advance?: boolean },
+  ): Promise<void> {
+    const state = loadGoalState(mafwDir, goalId);
+    if (!state) return;
+    const revision = effectiveRevision(state);
+    this.probeAttempts.delete(probeId);
+    const refs = Array.from(new Set([...(state.probeRefs ?? []), probeId]));
+    const remaining = (state.probeQueue ?? []).filter((id) => id !== probeId);
+    const nextNode: GoalNodeName = remaining.length ? 'probe' : 'plan';
+
+    if (meta.sessionId) await this.releaseSession(meta.sessionId);
+    if (meta.runId) {
+      this.deps.db.finishNodeRun(meta.runId, {
+        status: 'succeeded', finishedAt: new Date().toISOString(),
+        outcome: `probe=${probeId} ${report.conclusion}`,
+      });
+    }
+
+    this.deps.emitPhaseTransition({
+      type: 'phase_transition', goalId, phase: NODE_PHASE.probe.complete,
+      loop: effectiveRound(state), projectDir: state.projectDir, revision,
+    });
+    writeGoalState(mafwDir, goalId, {
+      nodeSession: null, probeRefs: refs, probeQueue: remaining,
+      nextNode, nextAction: `NEXT_${nextNode}`, phase: NODE_PHASE.probe.complete,
+      lastFailure: null, lastError: null,
+    });
+    if (meta.runId) this.emitFinished(goalId, state.projectDir, effectiveRound(state), 'probe', `probe=${probeId}`, meta.attempt ?? 1, revision);
+    if (meta.advance !== false) await this.advance(goalId);
+  }
+
+  /** 探针无法执行（没有端口 / 工作区不可用）→ 终态失败，绝不装作计划已完成。 */
+  private async abortProbeFlow(goalId: string, mafwDir: string, message: string): Promise<void> {
+    const state = loadGoalState(mafwDir, goalId);
+    if (!state) return;
+    const at = new Date().toISOString();
+    writeGoalState(mafwDir, goalId, {
+      nodeSession: null, probeQueue: [], nextNode: 'archive_fail', reviewVerdict: 'ERROR',
+      lastError: `probe: ${message}`,
+      lastFailure: {
+        class: 'terminal_contract', code: 'probe_unavailable', message,
+        node: 'probe', attempt: 1, at,
+      },
+    });
+    this.deps.emitNodeEvent({
+      type: 'goal_node', goalId, projectDir: state.projectDir, loop: effectiveRound(state),
+      node: 'probe', revision: effectiveRevision(state), transition: 'failed', at, error: message, attempt: 1,
+    });
+    await this.continueAdvance(goalId);
+  }
+
+  /**
+   * 内部推进：已在该 goal 的互斥内（advanceInner 调用链）→ 直接递归，避免自等；
+   * 否则走正常的 advance 排队。probe 节点的多个终止点共用这一条语义。
+   */
+  private async continueAdvance(goalId: string): Promise<void> {
+    if (this.mutex.has(goalId)) {
+      await this.advanceInner(goalId);
+      return;
+    }
+    await this.advance(goalId);
+  }
+
   /** Task 12 hook：复用既有节点会话；缺省/抛错 → null（fail-open，新建会话）。 */
   private resolveExistingSession(
     goalId: string,
@@ -404,8 +798,22 @@ export class NodeDriver {
   private async releaseSession(sessionId: string): Promise<void> {
     this.reuseIdleGrace.delete(sessionId);
     this.nodeStartArtifacts.delete(sessionId);
+    // Task 14：探针会话的隔离工作区与范围绑定随会话一起收尾（无论如何都销毁）。
+    await this.disposeProbeWorkspace(sessionId);
+    try { this.deps.probes?.bindSession(sessionId, null); } catch { /* fail-open */ }
     if (this.reusedSessions.delete(sessionId)) return;
     try { await this.deps.client.delete(sessionId); } catch { /* fail-open */ }
+  }
+
+  /** 销毁探针隔离工作区（幂等；销毁失败不影响报告已落库的事实）。 */
+  private async disposeProbeWorkspace(sessionId: string): Promise<void> {
+    const workspace = this.probeWorkspaces.get(sessionId);
+    if (!workspace) return;
+    this.probeWorkspaces.delete(sessionId);
+    try {
+      if (this.deps.probes) await this.deps.probes.disposeWorkspace(workspace);
+      else await workspace.dispose();
+    } catch { /* fail-open */ }
   }
 
   /** 当前 revision 的 waves 产物原文；缺失/非法 → null。 */
@@ -442,6 +850,10 @@ export class NodeDriver {
     ns: NodeSessionRef,
     revision: number,
   ): string {
+    if (ns.phase === 'probe') {
+      // 探针的权威产物是 ProbeReport（由端口落库）；prompt 里的路径用于落盘。
+      return ns.probeId ? (this.deps.probes?.reportPath(goalId, ns.probeId) ?? '') : '';
+    }
     const round = effectiveRound(state);
     const fixPass = ns.phase === 'execute' && state.reviewFix?.round === round && state.reviewVerdict === 'FAIL';
     const reviewFixPass = ns.phase === 'review' && state.reviewFix?.round === round;
@@ -665,7 +1077,7 @@ export class NodeDriver {
       class: failureClass,
       code: kind,
       message,
-      node: (ns?.phase ?? 'execute') as 'plan' | 'execute' | 'review',
+      node: (ns?.phase ?? 'execute') as ExecutableGoalNode,
       attempt,
       at: new Date().toISOString(),
     };
@@ -766,6 +1178,33 @@ export class NodeDriver {
             },
           };
           outcome = 'need_clarification';
+        } else if (planDoc.status === 'need_probe') {
+          // Task 14 两段式：关键技术假设无法只靠读代码消除 → 先让 Builder 在隔离
+          // 工作区验证，报告落库后再重新规划。绝不能在这一步产生计划批准。
+          const drafts = this.validateProbeDrafts(planDoc.probes, { goalId, revision });
+          const port = this.deps.probes;
+          const podId = port?.podIdForGoal(goalId) ?? null;
+          if (!port || !podId) {
+            throw new Error('plan requested probes but probe execution is unavailable for this goal');
+          }
+          const refs = state.probeRefs ?? [];
+          const queued = state.probeQueue ?? [];
+          if (refs.length + queued.length + drafts.length > MAX_PROBES_PER_REVISION) {
+            throw new Error(
+              `probe budget exhausted (max ${MAX_PROBES_PER_REVISION} probes per revision; ` +
+              `${refs.length} reported, ${queued.length} queued, ${drafts.length} requested)`,
+            );
+          }
+          const ids = port.enqueue({ podId, goalId, revision, drafts });
+          patch = {
+            nextNode: 'probe',
+            pendingQuestion: null,
+            // 探针一入队，本版就不是可实施计划：任何待批/已批状态都必须消失
+            // （批准只属于最终 ready 的 PlanPackage）。
+            planApproval: undefined,
+            probeQueue: [...queued, ...ids],
+          };
+          outcome = `need_probe=${ids.length}`;
         } else {
           // Task 7/13：waves + goalEval 是同一份 PlanPackage。校验走 Task 7 的
           // 规范化边界，然后把 eval 落到本 revision 的独立产物（评审按它判定）。
@@ -868,10 +1307,12 @@ export class NodeDriver {
     patch.noProgressCount = progress.count;
     patch.lastArtifactDigest = { ...(state.lastArtifactDigest ?? {}), [node]: digest };
     if (progress.ask && !patch.pendingQuestion) {
+      // completeNode 只处理 plan/execute/review（probe 有独立的报告门），这里收窄是安全的。
+      const questionNode = node as 'plan' | 'execute' | 'review';
       patch.pendingQuestion = {
         questionId: `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_ok`,
-        node,
-        resumeNode: node,
+        node: questionNode,
+        resumeNode: questionNode,
         loop: round,
         questions: [`No progress: ${node} produced identical output ${progress.count} times. What should change before retrying?`],
         askedAt: new Date().toISOString(),
@@ -900,6 +1341,8 @@ export class NodeDriver {
         pendingQuestion: patch.pendingQuestion ?? null,
         // W1：manual 模式的 plan 成功 → 批准门（pendingQuestion 已在 routing 优先）。
         planReviewGate: node === 'plan' && (state.planReview ?? 'auto') === 'manual',
+        // Task 14：need_probe 的探针队列非空 → 先跑 Spike（probe 优先于批准门）。
+        probeNeeded: !!patch.probeQueue?.length,
         // 同轮复核：只有刚决定"可复核"（patch.reviewFix 落库）时才回 execute 修复
         reviewFixAvailable: !!patch.reviewFix,
       },
@@ -1100,6 +1543,19 @@ export class NodeDriver {
     if (state.nextAction === 'AWAIT_PLAN_APPROVAL') return;
     const ns = state.nodeSession;
     if (!ns) { await this.advance(goalId); return; }
+
+    // Task 14：探针报告可能已由外部落库，先兑现（不必重跑 Builder）。
+    if (ns.phase === 'probe') {
+      const report = ns.probeId ? (this.deps.probes?.report(ns.probeId) ?? null) : null;
+      if (ns.probeId && report) {
+        await this.settleProbe(goalId, mafwDir, ns.probeId, report, {
+          sessionId: ns.id, runId: ns.runId, attempt: ns.attempt, advance: false,
+        });
+        await this.advance(goalId);
+        return;
+      }
+      // 没有报告 → 落穿到会话探测/重试（重跑会在新工作区重新 claim 同一条探针）。
+    }
 
     // ① 产物优先：gateway 死亡期间节点可能已完成——直接走完成判定兑现
     const revision = ns.revision ?? effectiveRevision(state);

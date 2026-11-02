@@ -7,12 +7,14 @@ import type { FailureClass } from './failure-class';
 
 export interface NodeSessionRef {
   id: string;
-  phase: 'plan' | 'execute' | 'review';
+  phase: 'plan' | 'probe' | 'execute' | 'review';
   startedAt: string;
   attempt: number;
   runId: number;
   /** 归属的 Goal revision（旧状态缺字段读侧补 state.revision 或 1）。 */
   revision?: number;
+  /** Task 14：probe 节点正在执行的探针 id（报告完成判定用）。 */
+  probeId?: string;
 }
 
 export interface PendingQuestion {
@@ -57,12 +59,12 @@ export interface GoalStateV3 {
     class: FailureClass;
     code: string;
     message: string;
-    node: 'plan' | 'execute' | 'review';
+    node: 'plan' | 'probe' | 'execute' | 'review';
     attempt: number;
     at: string;
   } | null;
   noProgressCount?: number;
-  lastArtifactDigest?: Partial<Record<'plan' | 'execute' | 'review', string>>;
+  lastArtifactDigest?: Partial<Record<'plan' | 'probe' | 'execute' | 'review', string>>;
   nodeSession: NodeSessionRef | null;
   pendingQuestion: PendingQuestion | null;
   userResponse: UserResponse | null;
@@ -104,6 +106,10 @@ export interface GoalStateV3 {
     tasks: Array<{ taskId: string; evidence: string }>;
     feedback: string;
   } | null;
+  /** Task 14：本 revision 已兑现的 ProbeReport id（报告的权威输入证据）。 */
+  probeRefs?: string[];
+  /** Task 14：已入队、尚未兑现报告的探针 id（FIFO；一个 Pod 同时只跑一条）。 */
+  probeQueue?: string[];
   updatedAt: string;
 }
 
@@ -204,6 +210,8 @@ function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
     planApproval: (raw as any).planApproval ?? undefined,
     planFeedback: (raw as any).planFeedback ?? null,
     reviewFix: (raw as any).reviewFix ?? null,
+    probeRefs: Array.isArray((raw as any).probeRefs) ? (raw as any).probeRefs : [],
+    probeQueue: Array.isArray((raw as any).probeQueue) ? (raw as any).probeQueue : [],
     updatedAt: raw.updatedAt ?? new Date().toISOString(),
   };
 }

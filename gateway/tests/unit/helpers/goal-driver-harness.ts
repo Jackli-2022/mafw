@@ -38,7 +38,12 @@ export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: numbe
   let currentSession: string | null = null;
 
   const client: GoalRuntimeClient = {
-    create: async () => { const id = `ses_${seq++}`; currentSession = id; calls.push({ op: 'create', id }); return { id }; },
+    create: async (directory: string) => {
+      const id = `ses_${seq++}`;
+      currentSession = id;
+      calls.push({ op: 'create', id, directory });
+      return { id };
+    },
     bindModel: async (sessionId: string, agent: string) => { calls.push({ op: 'bindModel', sessionId, agent }); },
     promptAsync: async (o: any) => {
       if (opts?.promptAsyncThrows) throw new Error('boom');

@@ -11,6 +11,12 @@
 
 import { ApprovalCandidate, SafetyVerdict, classifySafety, isReadOnlyTool } from './safety-classifier';
 import { IdentityPolicy, ToolCategory, policyDecides, resolveToolCategory } from '../../runtime/identity-registry';
+import {
+  ProbeScopeGuard,
+  probeActionFromApproval,
+  type ProbeScopeVerdict,
+  type ProbeScopeBinding,
+} from '../goal/probe-scope-guard';
 
 export type SessionPermissionMode = 'read-only' | 'auto' | 'full-access';
 export const AUTO_APPROVE_BUDGET = 25;
@@ -37,6 +43,17 @@ export interface ApprovalPolicyDeps {
   /** 身份层（spec 2026-10-08-runtime-neutral-agent-identity §3.3）：internal = gateway 驱动会话。全部可选。 */
   getIdentity?(sessionID: string): { name: string; internal: boolean } | undefined;
   getPolicy?(name: string): IdentityPolicy | undefined;
+  /**
+   * Task 14：Spike 探针会话 → ProbeRequest 范围绑定。
+   * 有绑定的会话必须先过 ProbeScopeGuard（先于身份与 internal blanket）。
+   */
+  getProbeScope?(sessionID: string): ProbeScopeBinding | undefined;
+}
+
+/** 探针范围裁决（hook 在评估前用它短路；携带 probeId 供 UI/日志展示）。 */
+export interface ProbeScopeDecision {
+  verdict: ProbeScopeVerdict;
+  probeId: string;
 }
 
 export class ApprovalPolicyService {
@@ -59,8 +76,49 @@ export class ApprovalPolicyService {
     return p;
   }
 
-  evaluate(sessionID: string, candidate: ApprovalCandidate): PolicyDecision {
-    // 0. 身份策略（先于 internal blanket-deny——manager 本身就是 internal 会话）
+  /** 探针范围裁决（无绑定 → undefined）：给 hook 在政策环之前短路用。 */
+  probeScope(sessionID: string, candidate: ApprovalCandidate): ProbeScopeDecision | undefined {
+    const binding = this.deps.getProbeScope?.(sessionID);
+    if (!binding) return undefined;
+    const action = probeActionFromApproval(candidate.toolName, candidate.patterns, candidate.metadata);
+    return {
+      verdict: ProbeScopeGuard.evaluate(binding, action),
+      probeId: binding.request?.id ?? 'probe',
+    };
+  }
+
+  evaluate(
+    sessionID: string,
+    candidate: ApprovalCandidate,
+    opts?: { probeVerdict?: ProbeScopeVerdict },
+  ): PolicyDecision {
+    // 0. Spike 范围守门（Task 14）：deny/ask 必须先于身份策略与 internal blanket ——
+    //    内部 Session / full-access 身份不得成为越过 ProbeRequest 范围的豁免。
+    //    允许（allow）不越过身份 deny：Builder 身份禁止的工具照旧拒绝，最后才按
+    //    "范围内可自动放行"处理（隔离 Spike 默认不打扰用户）。
+    const probeBinding = this.deps.getProbeScope?.(sessionID);
+    const probeVerdict: ProbeScopeVerdict | undefined = probeBinding
+      ? (opts?.probeVerdict ?? ProbeScopeGuard.evaluate(
+        probeBinding,
+        probeActionFromApproval(candidate.toolName, candidate.patterns, candidate.metadata),
+      ))
+      : undefined;
+    const probeId = probeBinding?.request?.id ?? 'probe';
+    if (probeVerdict === 'deny') {
+      return {
+        action: 'auto-deny',
+        verdict: classifySafety(candidate),
+        reason: `probe scope (${probeId}) — action outside probe bounds (main workspace / escape)`,
+      };
+    }
+    if (probeVerdict === 'ask') {
+      return {
+        action: 'human',
+        verdict: classifySafety(candidate),
+        reason: `probe scope (${probeId}) — action outside declared probe scope`,
+      };
+    }
+    // 1. 身份策略（先于 internal blanket-deny——manager 本身就是 internal 会话）
     const binding = this.deps.getIdentity?.(sessionID);
     if (binding) {
       const policy = this.deps.getPolicy?.(binding.name);
@@ -83,6 +141,15 @@ export class ApprovalPolicyService {
         }
         // allow + 非 internal → 落穿（用户档位决定问/不问）；null → 落穿
       }
+    }
+    // Task 14：范围内（allow）且身份策略没有拒绝 → 自动放行。隔离 Spike 默认不打扰
+    // 用户（spec §6.3）；internal blanket-deny 不应把探针自己的验证动作挡死。
+    if (probeVerdict === 'allow') {
+      return {
+        action: 'auto-approve',
+        verdict: classifySafety(candidate),
+        reason: `probe scope (${probeId}) — action within declared probe scope`,
+      };
     }
     // 1. 内部会话 fail-safe
     const role = this.deps.getInternalRole(sessionID);

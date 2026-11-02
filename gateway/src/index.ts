@@ -49,6 +49,10 @@ import { PodGoalService } from './core/pod/pod-goal-service';
 import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService } from './core/pod/pod-tech-lead-service';
+import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
+import { ProbeWorkspaceFactory } from './core/pod/pod-probe-workspace';
+import type { GoalProbePort, GoalProbeSessionBinding } from './core/goal/driver';
+import type { ProbeRequest, ProbeReport } from './core/goal/probe';
 import { goalVerdictFromState, type PodGoalDescription } from './core/pod/pod-view';
 import { buildPodGoalResult } from './core/pod/pod-result';
 import {
@@ -604,6 +608,10 @@ class MafwScheduler {
   private podSessionSupervisor!: PodSessionSupervisor;
   private podDirectionService!: PodDirectionService;
   private podTechLeadService!: PodTechLeadService;
+  private podProbeService!: PodProbeService;
+  private podProbeWorkspaces!: ProbeWorkspaceFactory;
+  /** Task 14：探针会话 → ProbeRequest 范围绑定（审批守门在 hook/policy 里同步读取）。 */
+  private readonly probeScopes = new Map<string, GoalProbeSessionBinding>();
   private podAccess!: PodAccess;
   private podBudget!: PodBudget;
   private podMessageDelivery!: PodMessageDelivery;
@@ -1046,7 +1054,7 @@ class MafwScheduler {
       emitPhaseTransition: (p) => eventBus.emit('phase_transition', p),
       onSessionCreated: (info) => {
         recordSessionInDb(this.getGatewayDb(), info);
-        this.podService?.bindSession(info.goalId, info.phase as 'plan' | 'execute' | 'review', info.sessionId);
+        this.podService?.bindSession(info.goalId, info.phase as 'plan' | 'probe' | 'execute' | 'review', info.sessionId);
         const mafwDir = this.goalDriverMafwDirCache.get(info.goalId);
         if (mafwDir) this.attachBudgetGuardForGoal(info.goalId, info.sessionId, mafwDir);
       },
@@ -1121,6 +1129,9 @@ class MafwScheduler {
         });
         return lease?.sessionId ?? null;
       },
+      // Task 14：两段式 Spike。生产实现 = PodProbeService（持久化/单飞/脱敏）+
+      // ProbeWorkspaceFactory（主项目之外的隔离工作区）。
+      probes: this.buildGoalProbePort(),
     });
 
     // 6. 恢复活跃 Goal
@@ -3717,6 +3728,8 @@ class MafwScheduler {
         return { name: b.identity, internal: this.internalSessionRoles.has(sid) };
       },
       getPolicy: (name) => this.identityRegistry.get(name)?.policy,
+      // Task 14：Spike 探针会话必须过 ProbeScopeGuard（先于身份与 internal blanket）。
+      getProbeScope: (sid) => this.probeScopes.get(sid),
     });
 
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
@@ -3844,6 +3857,15 @@ class MafwScheduler {
     });
 
     this.podStore = new PodStore(this.getGatewayDb().getStore());
+    this.podProbeService = new PodProbeService({
+      store: this.podStore,
+      resolveMafwDir: (goalId) => this.findGoalMafwDir(goalId),
+      now: () => new Date().toISOString(),
+      newId: () => `probe_${randomUUID()}`,
+      notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'probe' } }),
+      log: (message) => log.info(message),
+    });
+    this.podProbeWorkspaces = new ProbeWorkspaceFactory();
     this.podMemoryService = new PodMemoryService({
       memoryRoot: path.join(os.homedir(), '.mafw', 'pods'),
       now: () => new Date().toISOString(),
@@ -8796,6 +8818,64 @@ class MafwScheduler {
   /** Goal 的 mafw 目录：优先 state，其次两种 request 布局。 */
   private findGoalMafwDir(goalId: string): string | null {
     return this.findGoalStatePath(goalId)?.info.mafwDir ?? this.findGoalRequestDir(goalId);
+  }
+
+  /**
+   * Task 14：NodeDriver 的 Spike 端口。driver 只知道"入队 / 取一条 / 读报告 / 隔离工作区 /
+   * 会话范围绑定"；持久化、单飞、脱敏全部落在 PodProbeService（Task 9）。
+   */
+  private buildGoalProbePort(): GoalProbePort {
+    const probePath = (goalId: string, probeId: string): string => {
+      const mafwDir = this.findGoalMafwDir(goalId);
+      if (mafwDir) {
+        try { return probeReportPath(mafwDir, goalId, probeId); } catch { /* fall through */ }
+      }
+      // 兜底路径只用于 prompt 展示与 missing 报错，不承担权威写入。
+      return path.join(this.mafwDir ?? config.resolvePath(), 'goals', goalId, 'probes', `${probeId}.report.json`);
+    };
+
+    return {
+      podIdForGoal: (goalId) => this.podService?.getPodIdForGoal(goalId) ?? null,
+      enqueue: ({ podId, goalId, revision, drafts }) => drafts.map((draft) => this.podProbeService.request({
+        podId, goalId, revision,
+        question: draft.question,
+        hypothesis: draft.hypothesis,
+        scope: draft.scope,
+        budget: draft.budget,
+        evidenceRequired: draft.evidenceRequired,
+        affects: draft.affects,
+      }).id),
+      take: ({ podId, goalId, probeIds }) => {
+        // 会话丢失后的重跑：本 goal 已 claim 的 running 探针可以在新工作区重新执行
+        // （Spike 代码可丢弃，报告才是产物）。
+        const running = this.podProbeService
+          .list(podId, { goalId, status: 'running' })
+          .find((probe) => probeIds.includes(probe.id));
+        if (running) return running.request;
+
+        const head = this.podProbeService.list(podId, { goalId, status: 'queued' })[0];
+        if (!head || !probeIds.includes(head.id)) return null; // Pod 单飞：还没轮到自己
+        const claimed = this.podProbeService.claim(podId);
+        if (!claimed || claimed.goalId !== goalId || !probeIds.includes(claimed.id)) return null;
+        return claimed.request;
+      },
+      report: (probeId) => {
+        const row = this.podStore.getProbe(probeId);
+        if (!row || row.status !== 'completed' || !row.reportJson) return null;
+        try { return JSON.parse(row.reportJson) as ProbeReport; } catch { return null; }
+      },
+      complete: (probeId, report) => this.podProbeService.complete(probeId, report) as ProbeReport,
+      reportPath: (goalId, probeId) => probePath(goalId, probeId),
+      prepareWorkspace: async ({ projectDir, goalId, probeId }) => {
+        const workspace = await this.podProbeWorkspaces.prepare(projectDir, goalId, probeId);
+        return { dir: workspace.dir, dispose: () => this.podProbeWorkspaces.dispose(workspace) };
+      },
+      disposeWorkspace: async (workspace) => { await workspace.dispose(); },
+      bindSession: (sessionId, binding) => {
+        if (binding) this.probeScopes.set(sessionId, binding);
+        else this.probeScopes.delete(sessionId);
+      },
+    };
   }
 
   private describePodGoal(goalId: string): PodGoalDescription | null {

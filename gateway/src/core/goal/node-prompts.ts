@@ -7,6 +7,8 @@ import type { OutputSchemaSpec } from '../../runtime/structured-output';
 import type { FailureClass } from './failure-class';
 import type { GoalEval, GoalEvalCondition } from './goal-eval';
 import { validateGoalEval } from './goal-eval';
+import type { ExecutableGoalNode } from './node-names';
+import { PROBE_COMMAND_CLASSES, type ProbeReport, type ProbeRequest } from './probe';
 
 const TASK_TYPES = ['feature', 'bugfix', 'refactor', 'research', 'docs', 'test', 'other'] as const;
 
@@ -38,14 +40,57 @@ const GOAL_EVAL_SCHEMA = {
   },
 } as const;
 
+/**
+ * ProbeRequest 的**可执行范围**（spec §6.5）：路径 / 命令类别 / 网络 / 凭据 / 预算
+ * 必须是机器可读字段。计划模型只提供这些声明，id/podId/revision 由 driver 注入。
+ */
+const PROBE_DRAFT_SCHEMA = {
+  type: 'object',
+  required: ['question', 'hypothesis', 'scope', 'budget', 'evidenceRequired'],
+  properties: {
+    question: { type: 'string', maxLength: 2000 },
+    hypothesis: { type: 'string', maxLength: 2000 },
+    scope: {
+      type: 'object',
+      required: ['paths', 'commandClasses', 'network', 'credentials'],
+      properties: {
+        paths: { type: 'array', items: { type: 'string' }, maxItems: 50 },
+        commandClasses: {
+          type: 'array',
+          minItems: 1,
+          items: { type: 'string', enum: [...PROBE_COMMAND_CLASSES] },
+        },
+        network: { type: 'boolean' },
+        credentials: { type: 'array', items: { type: 'string' }, maxItems: 20 },
+      },
+    },
+    budget: {
+      type: 'object',
+      required: ['maxMinutes', 'maxUsd'],
+      properties: {
+        maxMinutes: { type: 'number', exclusiveMinimum: 0 },
+        maxUsd: { type: 'number', minimum: 0 },
+      },
+    },
+    evidenceRequired: { type: 'array', minItems: 1, items: { type: 'string' } },
+    affects: {
+      type: 'object',
+      properties: {
+        planAssertions: { type: 'array', items: { type: 'string' } },
+        evalMethods: { type: 'array', items: { type: 'string' } },
+        options: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  },
+} as const;
+
 const PLAN_OUTPUT_SCHEMA = {
   anyOf: [
     {
       type: 'object',
       required: ['status', 'taskType', 'waves', 'goalEval'],
       properties: {
-        status: { const: 'ready' },
-        taskType: { type: 'string', enum: [...TASK_TYPES] },
+        status: { const: 'ready' },        taskType: { type: 'string', enum: [...TASK_TYPES] },
         goalEval: GOAL_EVAL_SCHEMA,
         waves: {
           type: 'array',
@@ -89,6 +134,16 @@ const PLAN_OUTPUT_SCHEMA = {
       properties: {
         status: { const: 'need_clarification' },
         ambiguities: { type: 'array', minItems: 1, items: { type: 'string' } },
+      },
+    },
+    {
+      // Task 14：关键技术假设无法只靠读代码消除 → 先让 Builder 做隔离 Spike，
+      // 拿到 ProbeReport 后再提交最终 ready 计划（两段式，spec §6.3）。
+      type: 'object',
+      required: ['status', 'probes'],
+      properties: {
+        status: { const: 'need_probe' },
+        probes: { type: 'array', minItems: 1, maxItems: 4, items: PROBE_DRAFT_SCHEMA },
       },
     },
   ],
@@ -154,9 +209,27 @@ const REVIEW_OUTPUT_SCHEMA = {
   },
 } as const;
 
+const PROBE_OUTPUT_SCHEMA = {
+  type: 'object',
+  required: ['probeId', 'conclusion', 'commands', 'keyOutput', 'repro', 'remainingAssumptions', 'impact'],
+  properties: {
+    probeId: { type: 'string' },
+    conclusion: { type: 'string', enum: ['supports', 'refutes', 'inconclusive'] },
+    commands: { type: 'array', items: { type: 'string' } },
+    keyOutput: { type: 'string' },
+    repro: { type: 'array', items: { type: 'string' } },
+    remainingAssumptions: { type: 'array', items: { type: 'string' } },
+    impact: {
+      type: 'object',
+      properties: { plan: { type: 'string' }, goalEval: { type: 'string' } },
+    },
+  },
+} as const;
+
 /** Goal 节点结构化交卷 schema（与文件产物同字段；structured 优先、文件 fallback）。 */
-export function nodeOutputSchema(node: 'plan' | 'execute' | 'review'): OutputSchemaSpec {
+export function nodeOutputSchema(node: ExecutableGoalNode): OutputSchemaSpec {
   if (node === 'plan') return { name: 'goal.plan', schema: PLAN_OUTPUT_SCHEMA as unknown as Record<string, any> };
+  if (node === 'probe') return { name: 'goal.probe', schema: PROBE_OUTPUT_SCHEMA as unknown as Record<string, any> };
   if (node === 'execute') return { name: 'goal.execute', schema: EXECUTE_OUTPUT_SCHEMA as unknown as Record<string, any> };
   return { name: 'goal.review', schema: REVIEW_OUTPUT_SCHEMA as unknown as Record<string, any> };
 }
@@ -297,13 +370,21 @@ export interface NodePromptCtx {
   goalTaskType?: string;
   /** 计划审阅模式（manual = 人工批准后才实施）。 */
   planReview?: 'auto' | 'manual';
+  /** Task 14：Spike 节点上下文（probe 节点在隔离工作区里跑）。 */
+  probe?: {
+    request: ProbeRequest;
+    workspaceDir: string;
+    reportPath: string;
+  };
+  /** Task 14：已完成的 ProbeReport（plan 节点注入——探针证据是计划的输入）。 */
+  probeReports?: ProbeReport[];
   attempt?: number;
   maxAttempts?: number;
   lastFailure?: {
     class: FailureClass;
     code: string;
     message: string;
-    node: 'plan' | 'execute' | 'review';
+    node: ExecutableGoalNode;
     attempt: number;
     at: string;
   } | null;
@@ -311,7 +392,25 @@ export interface NodePromptCtx {
   userQuestions?: string[];
 }
 
-export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodePromptCtx): string {
+/** 计划上下文里的探针证据块（截断 keyOutput，避免一份报告吃掉整个 prompt）。 */
+export function renderProbeReportBlock(reports: ProbeReport[]): string {
+  if (!reports.length) return '';
+  const lines = reports.map((report) => {
+    const output = String(report.keyOutput ?? '').replace(/\s+/g, ' ').trim();
+    const clipped = output.length > 800 ? `${output.slice(0, 800)}…` : output;
+    const remaining = report.remainingAssumptions?.length
+      ? `；剩余假设：${report.remainingAssumptions.join(' / ')}`
+      : '';
+    const impact = report.impact?.plan ? `；对计划的影响：${report.impact.plan}` : '';
+    return `- ${report.probeId} [${report.conclusion}] 关键输出：${clipped}${remaining}${impact}`;
+  });
+  return [
+    'Probe 报告（Builder 已验证的事实；涉及假设以报告为准，refutes/inconclusive 不得当作已解决）：',
+    ...lines,
+  ].join('\n');
+}
+
+export function renderNodePrompt(node: ExecutableGoalNode, ctx: NodePromptCtx): string {
   const isFixPass = node === 'execute' && !!ctx.fixTasks?.length;
   const revision = normalizeArtifactRevision(ctx.revision);
   const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round, { fix: isFixPass, revision });
@@ -331,6 +430,34 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
       : '',
   ].filter(Boolean).join('\n');
 
+  if (node === 'probe') {
+    const probe = ctx.probe;
+    if (!probe) return [head, docs, retryContext, '', '任务：缺少 ProbeRequest 上下文，无法执行验证。'].filter(Boolean).join('\n');
+    const scope = probe.request.scope;
+    return [
+      head, docs, retryContext, '',
+      `任务：执行一次**技术验证（Spike）**，回答计划里的不确定问题。工作目录是隔离工作区 ${probe.workspaceDir}；`,
+      '主项目只读——不得写入主工作区、不得改动正式实施 diff；验证代码可丢弃。',
+      '',
+      `问题：${probe.request.question}`,
+      `当前假设：${probe.request.hypothesis}`,
+      `允许范围（必须是机器可读声明，越界必须停下并如实报告）：`,
+      `- 路径：${scope.paths.join(', ') || '（无，只推理）'}`,
+      `- 命令类别：${scope.commandClasses.join(', ')}`,
+      `- 网络：${scope.network ? '允许' : '不允许'}`,
+      `- 凭据：${scope.credentials.join(', ') || '（无）'}`,
+      `- 预算：${probe.request.budget.maxMinutes} 分钟 / $${probe.request.budget.maxUsd}`,
+      `需要的证据：${probe.request.evidenceRequired.join('；')}`,
+      probe.request.affects?.planAssertions?.length
+        ? `本探针要影响的计划断言：${probe.request.affects.planAssertions.join('；')}`
+        : '',
+      '',
+      `把报告（合法 JSON）写入 ${probe.reportPath}：`,
+      `{"probeId":"${probe.request.id}","conclusion":"supports|refutes|inconclusive","commands":["实际执行的命令"],"keyOutput":"关键输出（脱敏）","repro":["复现步骤"],"remainingAssumptions":["仍存在的假设"],"impact":{"plan":"对计划的具体影响","goalEval":"对验收方法的具体影响"}}`,
+      '结论必须来自真实执行；做不到就写 inconclusive 并说明卡在哪里，不要编造证据。',
+    ].filter(Boolean).join('\n');
+  }
+
   if (node === 'plan') {
     return [
       head, docs, retryContext, '',
@@ -348,6 +475,7 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
         : '',
       ctx.priorBlock || '',
       ctx.counterfactualBlock || '',
+      renderProbeReportBlock(ctx.probeReports ?? []),
       ctx.planFeedback
         ? `上一版计划被驳回，用户意见（本轮计划必须消化）：\n${ctx.planFeedback}` : '',
       `任务：阅读 charter 与仓库现状，产出 wave 执行计划 + Goal Eval，写入 ${a.waves}。`,
@@ -361,6 +489,9 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
       '每个任务尽量给 `acceptance`（2–4 条、可机械验证，如"npm test -- pod 全绿"、"receipts 含 artifact 路径"）；',
       '字符串形式的任务也接受，但没有 acceptance 时 review 只能自证。',
       '顶层 taskType 与每 wave 的 riskNote 为 D4b 反事实要求（判断任务类型；对照历史失败模式为每个 wave 预设缓解）。',
+      '若关键技术假设无法只靠读代码确认（路线不清、风险高、可能改变方案）：先提交两段式验证请求，不要猜：',
+      '{"status":"need_probe","probes":[{"question":"要回答的技术问题","hypothesis":"当前假设","scope":{"paths":["相对探针工作区的允许路径"],"commandClasses":["read|search|build|test|lint|format|install|shell"],"network":false,"credentials":[]},"budget":{"maxMinutes":20,"maxUsd":2},"evidenceRequired":["需要看到什么证据"],"affects":{"planAssertions":["受影响的计划断言"]}}]}',
+      'need_probe 只申请**隔离、只读**的验证；Builder 会在独立临时目录执行并返回 ProbeReport，之后你要提交最终 ready 计划（证据进入你的下一轮上下文）。',
       '若存在无法自行消除的歧义：{"status":"need_clarification","ambiguities":["问题..."]}',
     ].filter(Boolean).join('\n');
   }

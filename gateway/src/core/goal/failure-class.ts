@@ -12,7 +12,7 @@ const RETRYABLE_CODES = new Set([
 
 export function classifyNodeFailure(input: {
   code: string;
-  node: 'plan' | 'execute' | 'review';
+  node: 'plan' | 'probe' | 'execute' | 'review';
   source: 'runtime' | 'artifact';
 }): FailureClass {
   if (input.source === 'artifact') return 'terminal_contract';
