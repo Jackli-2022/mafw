@@ -30,16 +30,16 @@ export const POD_TASK_LANES: readonly {
 
 const ROLE_LABEL: Record<PodMemberRole, string> = {
   lead: "Lead",
+  tech_lead: "Tech Lead",
   builder: "Builder",
   reviewer: "Reviewer",
-  curator: "Curator",
 }
 
 const ROLE_BADGE: Record<PodMemberRole, string> = {
   lead: "L",
+  tech_lead: "T",
   builder: "B",
   reviewer: "R",
-  curator: "C",
 }
 
 const POD_STATUS_LABEL: Record<PodStatus, string> = {

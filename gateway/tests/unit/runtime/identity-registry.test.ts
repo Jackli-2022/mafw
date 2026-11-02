@@ -1,5 +1,6 @@
 import {
   createBuiltinIdentityRegistry, toAgentDefinition, resolveToolCategory, policyDecides,
+  resolveIdentityAlias,
 } from '../../../src/runtime/identity-registry';
 import { getManagerAgentDefinition } from '../../../src/skills/manager-agent-config';
 import { buildMemoryCuratorDefinition } from '../../../src/skills/memory-curator-agent';
@@ -7,12 +8,16 @@ import { buildMemoryCuratorDefinition } from '../../../src/skills/memory-curator
 const registry = createBuiltinIdentityRegistry();
 const manager = registry.get('manager')!;
 const curator = registry.get('memory-curator')!;
+const lead = registry.get('lead')!;
+const techLead = registry.get('mafw-tech-lead')!;
+const catOf = (t: string) => resolveToolCategory(t, 'opencode');
 
 describe('builtin identities', () => {
-  it('has manager (primary), memory-curator + goal nodes (worker)', () => {
-    expect(registry.list().map((i) => i.name).sort()).toEqual([
-      'mafw-execute', 'mafw-plan', 'mafw-review', 'manager', 'memory-curator',
-    ]);
+  it('has lead (primary), memory-curator + goal nodes (worker)', () => {
+    expect(registry.list().map((i) => i.name)).toEqual(expect.arrayContaining([
+      'lead', 'mafw-tech-lead', 'mafw-execute', 'mafw-plan', 'mafw-review', 'manager', 'memory-curator',
+    ]));
+    expect(lead.scope).toBe('primary');
     expect(manager.scope).toBe('primary');
     expect(curator.scope).toBe('worker');
     expect(manager.systemPrompt).toContain('MAFW MANAGER IDENTITY');
@@ -30,6 +35,50 @@ describe('builtin identities', () => {
     for (const e of ['mafw_add_memory', 'mafw_search_hybrid', 'mafw_supersede_memory', 'readonly']) {
       expect(curator.policy.allowlist).toContain(e);
     }
+  });
+});
+
+describe('lead / tech lead identities (pod collaborative goal loop)', () => {
+  it('lead is the primary identity and reuses the manager permission surface', () => {
+    expect(lead.scope).toBe('primary');
+    expect(lead.policy).toEqual(manager.policy);
+    const def = toAgentDefinition(lead);
+    const mgrDef = getManagerAgentDefinition();
+    expect(def.permissions).toEqual(mgrDef.permissions);
+    expect(def.tools).toEqual(mgrDef.tools);
+    expect(def.mode).toBe('primary');
+  });
+
+  it('manager is a deprecated alias that resolves to lead', () => {
+    expect(registry.get('manager')?.deprecated).toBe(true);
+    expect(lead.deprecated).toBeUndefined();
+    expect(resolveIdentityAlias('manager')).toBe('lead');
+    expect(resolveIdentityAlias('lead')).toBe('lead');
+    expect(resolveIdentityAlias('mafw-tech-lead')).toBe('mafw-tech-lead');
+  });
+
+  it('mafw-tech-lead reads project/web + Pod/memory and can never edit files or run shell', () => {
+    expect(techLead.scope).toBe('worker');
+    expect(techLead.policy.deny).toEqual(expect.arrayContaining(['file-edit', 'shell']));
+    expect(policyDecides(techLead.policy, 'edit', catOf)).toBe('deny');
+    expect(policyDecides(techLead.policy, 'write', catOf)).toBe('deny');
+    expect(policyDecides(techLead.policy, 'bash', catOf)).toBe('deny');
+    expect(policyDecides(techLead.policy, 'read', catOf)).toBe('allow');
+    expect(policyDecides(techLead.policy, 'grep', catOf)).toBe('allow');
+    expect(policyDecides(techLead.policy, 'glob', catOf)).toBe('allow');
+    expect(policyDecides(techLead.policy, 'webfetch', catOf)).toBe('allow');
+    expect(policyDecides(techLead.policy, 'mafw_pod_message', catOf)).toBe('allow');
+    expect(policyDecides(techLead.policy, 'mafw_add_memory', catOf)).toBe('allow');
+    expect(policyDecides(techLead.policy, 'mafw_search_hybrid', catOf)).toBe('allow');
+    // 派生原生权限：edit/bash 硬拒（无 native 逃生舱）
+    const def = toAgentDefinition(techLead);
+    expect(def.mode).toBe('subagent');
+    expect(def.permissions).toEqual({ edit: 'deny', bash: 'deny' });
+  });
+
+  it('mafw-tech-lead prompt states the research/plan boundary', () => {
+    expect(techLead.systemPrompt).toContain('Tech Lead');
+    expect(techLead.systemPrompt).toMatch(/Spike|probe/i);
   });
 });
 

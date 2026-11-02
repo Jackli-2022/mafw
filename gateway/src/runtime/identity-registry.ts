@@ -10,6 +10,8 @@
 import { AgentDefinition, AgentPermissions } from './agent-definition';
 import { getManagerAgentDefinition } from '../skills/manager-agent-config';
 import { buildMemoryCuratorDefinition } from '../skills/memory-curator-agent';
+import { getLeadAgentDefinition } from '../skills/lead-identity';
+import { getTechLeadAgentDefinition } from '../skills/tech-lead-identity';
 
 export interface IdentityPolicy {
   /** 绝对拒绝：类别标签（file-edit/shell/subagent/web/readonly）或工具名 */
@@ -30,11 +32,27 @@ export interface IdentitySpec {
   nativePermissions?: AgentPermissions;
   /** 物化逃生舱：原生 AgentDefinition 顶层 tools 布尔面（opencode '*' 硬禁用） */
   nativeTools?: Record<string, boolean>;
+  /**
+   * 已退役身份：仅为既有会话可读而保留物化（当前唯一成员是 `manager`）。
+   * 新代码不得选择 deprecated 身份——业务解析走 `resolveIdentityAlias()`。
+   */
+  deprecated?: boolean;
 }
 
 export interface IdentityRegistry {
   list(): IdentitySpec[];
   get(name: string): IdentitySpec | undefined;
+}
+
+/**
+ * 已退役身份 → 现行身份。`manager` 是 Lead 的历史名：既有 manager 会话继续可读写，
+ * 但用户界面、Pod roster 与新逻辑只使用 Lead（spec §3.1，不形成第二个协调身份）。
+ */
+const DEPRECATED_IDENTITY_ALIASES: Readonly<Record<string, string>> = { manager: 'lead' };
+
+/** 业务层身份名解析：别名解析到现行身份，其余原样返回。 */
+export function resolveIdentityAlias(name: string): string {
+  return DEPRECATED_IDENTITY_ALIASES[name] ?? name;
 }
 
 export type ToolCategory = 'file-edit' | 'shell' | 'subagent' | 'web' | 'readonly';
@@ -88,20 +106,59 @@ export function policyDecides(
 
 function buildBuiltins(): IdentitySpec[] {
   const mgr = getManagerAgentDefinition();
+  const lead = getLeadAgentDefinition();
   const curator = buildMemoryCuratorDefinition();
+  const techLead = getTechLeadAgentDefinition();
   return [
     {
+      // Lead：用户可感知的唯一协调身份（替换 Manager，spec §3.1）。
+      name: 'lead',
+      description: lead.description,
+      scope: 'primary',
+      systemPrompt: lead.systemPrompt,
+      color: lead.color,
+      policy: {
+        deny: ['file-edit', 'subagent'],
+        allowlist: ['mafw_*', 'question', 'plan_exit', 'shell', 'readonly'],
+      },
+      nativePermissions: lead.permissions,
+      nativeTools: lead.tools,
+    },
+    {
+      // deprecated 别名：既有 manager 会话仍按原样物化与读取，但不再对社会公开。
+      // 业务解析请用 resolveIdentityAlias('manager') → 'lead'。
       name: 'manager',
       description: mgr.description,
       scope: 'primary',
       systemPrompt: mgr.systemPrompt,
       color: mgr.color,
+      deprecated: true,
       policy: {
         deny: ['file-edit', 'subagent'],
         allowlist: ['mafw_*', 'question', 'plan_exit', 'shell', 'readonly'],
       },
       nativePermissions: mgr.permissions,
       nativeTools: mgr.tools,
+    },
+    {
+      name: 'mafw-tech-lead',
+      // Tech Lead：Goal 级调研/规划。只读项目 + web + Pod/记忆；无 file-edit、无 shell
+      // （需要副作用验证时委托 Builder Spike）。模型与 goal 节点身份一致（gateway 钉模型）。
+      description: techLead.description,
+      scope: 'worker',
+      model: { providerID: 'gateway', modelID: 'volcengine/deepseek-v4.1-flash' },
+      systemPrompt: techLead.systemPrompt,
+      policy: {
+        deny: ['file-edit', 'shell'],
+        allowlist: [
+          'readonly', 'web',
+          'mafw_get_goal_status', 'mafw_get_deltas',
+          'mafw_search_hybrid', 'mafw_add_memory', 'mafw_get_memory',
+          'mafw_pin_memory', 'mafw_supersede_memory',
+          'mafw_pod_*',
+        ],
+      },
+      nativePermissions: techLead.permissions,
     },
     {
       name: 'memory-curator',

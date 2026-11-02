@@ -63,13 +63,14 @@ describe('PodService', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  test('ensure creates one pod with three members and does not duplicate the lead session', async () => {
+  test('ensure creates one pod with four roster members and does not duplicate the lead session', async () => {
     const first = await service.ensure(projectDir);
     const second = await service.ensure(projectDir);
 
     expect(second.pod.id).toBe(first.pod.id);
-    expect(first.members.map((m) => m.role)).toEqual(['lead', 'builder', 'reviewer']);
+    expect(first.members.map((m) => m.role)).toEqual(['lead', 'tech_lead', 'builder', 'reviewer']);
     expect(first.members.find((m) => m.role === 'lead')?.agentName).toBe('manager');
+    expect(first.members.find((m) => m.role === 'tech_lead')?.agentName).toBe('mafw-tech-lead');
     expect(first.members.find((m) => m.role === 'builder')?.agentName).toBe('mafw-execute');
     expect(first.members.find((m) => m.role === 'reviewer')?.agentName).toBe('mafw-review');
     expect(managerCalls).toBe(2);
@@ -105,7 +106,7 @@ describe('PodService', () => {
     });
 
     const detail = await failing.ensure(projectDir);
-    expect(detail.members).toHaveLength(3);
+    expect(detail.members).toHaveLength(4);
     expect(detail.sessions.filter((s) => s.node === 'coordination')).toHaveLength(0);
     expect(logs.some((line) => line.includes('lead binding failed'))).toBe(true);
     expect(logs.some((line) => line.includes('memory init failed'))).toBe(true);

@@ -2,7 +2,7 @@ import type { Database } from 'better-sqlite3';
 import type { PodGoalVerdict } from './pod-stage';
 
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived';
-export type PodMemberRole = 'lead' | 'builder' | 'reviewer' | 'curator';
+export type PodMemberRole = 'lead' | 'tech_lead' | 'builder' | 'reviewer';
 export type PodMemberStatus = 'available' | 'working' | 'waiting' | 'sleeping' | 'retired';
 export type PodGoalStatus = 'queued' | 'active' | 'done' | 'aborted';
 export type PodTaskStatus =
@@ -249,7 +249,8 @@ function sessionFromRow(row: any): PodSessionRow {
   };
 }
 
-const ROLE_ORDER = `CASE role WHEN 'lead' THEN 0 WHEN 'builder' THEN 1 WHEN 'reviewer' THEN 2 ELSE 3 END`;
+// 四角色 roster 的规范顺序：Lead → Tech Lead → Builder → Reviewer。
+const ROLE_ORDER = `CASE role WHEN 'lead' THEN 0 WHEN 'tech_lead' THEN 1 WHEN 'builder' THEN 2 WHEN 'reviewer' THEN 3 ELSE 4 END`;
 
 export class PodStore {
   constructor(private readonly db: Database) {

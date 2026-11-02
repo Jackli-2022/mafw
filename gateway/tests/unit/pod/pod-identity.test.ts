@@ -51,7 +51,7 @@ describe('pod identity', () => {
   });
 
   test('roleForNode maps goal nodes to pod roles', () => {
-    expect(roleForNode('plan')).toBe('lead');
+    expect(roleForNode('plan')).toBe('tech_lead');
     expect(roleForNode('execute')).toBe('builder');
     expect(roleForNode('review')).toBe('reviewer');
   });

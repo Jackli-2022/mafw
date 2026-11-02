@@ -10,6 +10,7 @@ import {
   podIsUnsupported,
   podMemberName,
   podRoleBadge,
+  podRoleLabel,
   podRoleForSession,
   podShortTime,
   podTaskArtifacts,
@@ -133,9 +134,13 @@ describe("pod-model", () => {
     assert.equal(podRoleForSession(d, "nope"), null)
     assert.equal(podRoleForSession(null, "live"), null)
     assert.equal(podRoleBadge("lead"), "L")
+    assert.equal(podRoleBadge("tech_lead"), "T")
     assert.equal(podRoleBadge("builder"), "B")
     assert.equal(podRoleBadge("reviewer"), "R")
-    assert.equal(podRoleBadge("curator"), "C")
+    assert.equal(podRoleLabel("lead"), "Lead")
+    assert.equal(podRoleLabel("tech_lead"), "Tech Lead")
+    assert.equal(podRoleLabel("builder"), "Builder")
+    assert.equal(podRoleLabel("reviewer"), "Reviewer")
   })
 
   test("formats cost, time, and task artifacts", () => {

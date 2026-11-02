@@ -1141,7 +1141,7 @@ export interface TerminalNamespace {
 }
 
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived'
-export type PodMemberRole = 'lead' | 'builder' | 'reviewer' | 'curator'
+export type PodMemberRole = 'lead' | 'tech_lead' | 'builder' | 'reviewer'
 export type PodMemberStatus = 'available' | 'working' | 'waiting' | 'sleeping' | 'retired'
 export type PodGoalStatus = 'queued' | 'active' | 'done' | 'aborted'
 export type PodTaskStatus = 'pending' | 'in_progress' | 'blocked' | 'review' | 'done' | 'failed' | 'skipped' | 'reopened'

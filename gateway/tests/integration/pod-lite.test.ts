@@ -77,7 +77,7 @@ describe('Pod Lite backend e2e', () => {
 
   test('runs roster, queue, tasks, mailbox, memory, snapshot, access, and budget together', async () => {
     const detail = await pods.ensure(projectDir);
-    expect(detail.members.map((m) => m.role)).toEqual(['lead', 'builder', 'reviewer']);
+    expect(detail.members.map((m) => m.role)).toEqual(['lead', 'tech_lead', 'builder', 'reviewer']);
 
     const g1 = await goals.enqueueGoal('g1', projectDir);
     const g2 = await goals.enqueueGoal('g2', projectDir);
