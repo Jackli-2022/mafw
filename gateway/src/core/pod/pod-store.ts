@@ -990,10 +990,17 @@ export class PodStore {
     ).all(podId, goalId) as any[]).map(goalRevisionFromRow);
   }
 
-  /** 排队中的 revision：优先级高的先跑，同优先级按入队时间（打回 Goal 抢先）。 */
+  /**
+   * 排队中的 revision：优先级高的先跑，同优先级按入队时间（打回 Goal 抢先）。
+   *
+   * 打回（reject）开出的 revision 仍是 `discussing`——Tech Lead 讨论不占实施槽
+   * （spec §8.3），但它已经带上了打回优先级，必须在同一个调度视图里排在普通
+   * queued revision 之前。没有优先级的讨论版不进入队列（只是普通讨论）。
+   */
   listQueuedGoalRevisions(podId: string): PodGoalRevisionRow[] {
     return (this.db.prepare(
-      `SELECT * FROM pod_goal_revisions WHERE pod_id = ? AND status = 'queued'
+      `SELECT * FROM pod_goal_revisions
+       WHERE pod_id = ? AND (status = 'queued' OR (status = 'discussing' AND priority > 0))
        ORDER BY priority DESC, enqueued_at ASC, revision ASC`,
     ).all(podId) as any[]).map(goalRevisionFromRow);
   }
@@ -1057,6 +1064,48 @@ export class PodStore {
     this.db.prepare(
       'UPDATE pod_goals SET active_revision = ? WHERE pod_id = ? AND goal_id = ?',
     ).run(revision, podId, goalId);
+  }
+
+  /**
+   * 只更新方向镜像，**不改 revision 阶段**（打回反馈这类「方向决定的输入」不能
+   * 把 discussing 推成 planning）。终态 revision 拒绝写入（append-only）。
+   */
+  setGoalRevisionDirection(input: {
+    podId: string;
+    goalId: string;
+    revision: number;
+    directionJson: string;
+    directionStatus?: PodGoalDirectionStatus;
+  }): boolean {
+    const existing = this.getGoalRevision(input.podId, input.goalId, input.revision);
+    if (!existing || isTerminalGoalRevisionStatus(existing.status)) return false;
+    const result = this.db.prepare(`
+      UPDATE pod_goal_revisions SET
+        direction_json = ?,
+        direction_status = COALESCE(?, direction_status)
+      WHERE pod_id = ? AND goal_id = ? AND revision = ?
+    `).run(
+      input.directionJson,
+      input.directionStatus ?? null,
+      input.podId, input.goalId, input.revision,
+    );
+    return result.changes > 0;
+  }
+
+  /**
+   * 打回重开：Goal 根记录回到进行中（清掉旧的终态 verdict / ended_at，否则旧
+   * PASS 会冒充新 revision 的结果），revision 指针由 `setActiveRevision` 先行推进。
+   * 旧 revision 行与 state 快照一律不动——「重开」不是撤销归档。
+   */
+  reopenGoal(podId: string, goalId: string, input: { status: PodGoalStatus; now: string }): void {
+    this.db.prepare(`
+      UPDATE pod_goals SET
+        status = ?,
+        verdict = NULL,
+        ended_at = NULL,
+        started_at = COALESCE(started_at, ?)
+      WHERE pod_id = ? AND goal_id = ?
+    `).run(input.status, input.now, podId, goalId);
   }
 
   /** 下一个 revision 号：max(已有 revision, 根 active_revision) + 1（legacy 从 2 开始）。 */

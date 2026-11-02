@@ -46,6 +46,7 @@ import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
 import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
+import { PodGoalRevisionService } from './core/pod/pod-goal-revision-service';
 import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService } from './core/pod/pod-tech-lead-service';
@@ -605,6 +606,7 @@ class MafwScheduler {
   private podMessageService!: PodMessageService;
   private podMemoryService!: PodMemoryService;
   private podGoalService!: PodGoalService;
+  private podGoalRevisionService!: PodGoalRevisionService;
   private podSessionSupervisor!: PodSessionSupervisor;
   private podDirectionService!: PodDirectionService;
   private podTechLeadService!: PodTechLeadService;
@@ -3934,6 +3936,17 @@ class MafwScheduler {
       dailyUsd: () => Number((config.raw as any)?.pod?.dailyUsd ?? 0),
       nowEpoch: () => Math.floor(Date.now() / 1000),
     });
+    this.podGoalRevisionService = new PodGoalRevisionService({
+      store: this.podStore,
+      resolveMafwDir: (goalId) => this.findGoalMafwDir(goalId),
+      now: () => new Date().toISOString(),
+      resultForGoal: (goalId) => this.readPodGoalResult(goalId),
+      notify: (podId, kind = 'goal', goalId) => this.broadcast({
+        type: 'pod.updated',
+        properties: { podId, kind, ...(goalId ? { goalId } : {}) },
+      }),
+      log: (message) => log.info(message),
+    });
     this.podGoalService = new PodGoalService({
       store: this.podStore,
       pods: this.podService,
@@ -3947,8 +3960,16 @@ class MafwScheduler {
       },
       now: () => new Date().toISOString(),
       newId: () => `podgoal_${randomUUID()}`,
-      notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'goal' } }),
+      notify: (podId, kind = 'goal', goalId) => this.broadcast({
+        type: 'pod.updated',
+        properties: { podId, kind, ...(goalId ? { goalId } : {}) },
+      }),
       budget: this.podBudget,
+      revisions: this.podGoalRevisionService,
+      // 打回需要立刻恢复 Tech Lead 讨论、并把反馈记进方向输入：这两者在本函数稍后
+      // 才构造，因此用惰性适配器（调用时才解析到真实服务）。
+      techLead: { ensureSession: (goalId) => this.podTechLeadService.ensureSession(goalId) },
+      directions: { recordRejectInput: (input) => this.podDirectionService.recordRejectInput(input) },
       goalState: (goalId) => {
         const found = this.findGoalStatePath(goalId);
         if (!found) return null;
@@ -8496,6 +8517,16 @@ class MafwScheduler {
         }
       } catch (err: any) {
         log.warn(`[Pod] decision note failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+      }
+    }
+    // 完成通知（spec §8.1）：Reviewer 判 PASS 后由 Lead 通知用户——revision 保持
+    // 真实完成结果，只广播一条结果事件；不创建人类 attention，也不需要用户再点
+    // 一次「验收通过」。同一 revision 的重复通知由 revision 级去重兜底。
+    if (podId && outcome?.verdict === 'PASS') {
+      try {
+        await this.podGoalService?.notifyResult(podId, goalId);
+      } catch (err: any) {
+        log.warn(`[Pod] result notification failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
       }
     }
     try {

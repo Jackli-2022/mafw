@@ -66,6 +66,16 @@ export interface PodDirectionClearInput {
   revision?: number;
 }
 
+/** 打回反馈记录（Task 16）：作为方向决定的输入，不改变 revision 阶段。 */
+export interface PodDirectionRejectInput {
+  goalId: string;
+  /** 缺省 = goal 的 active revision（打回后即新开的 N+1）。 */
+  revision?: number;
+  feedback: string;
+  /** 缺省 `reject_feedback`。 */
+  source?: string | null;
+}
+
 export interface PodDirectionResult {
   podId: string;
   goalId: string;
@@ -84,6 +94,9 @@ export function directionArtifactPath(mafwDir: string, goalId: string): string {
 }
 
 const CLEAR_SOURCE = 'tech_lead_clear';
+
+/** 打回反馈的决策来源（与真实方向裁定区分：它只是输入，不是阶段推进）。 */
+export const REJECT_FEEDBACK_SOURCE = 'reject_feedback';
 
 function clean(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -207,6 +220,59 @@ export class PodDirectionService {
       updatedAt: now,
     };
     this.persist(goal, revision, state, 'planning', 'decided');
+    return this.result(goal, revision, state, decision, mafwDir);
+  }
+
+  /**
+   * 打回反馈 → 方向决定的**输入**（append-only 记录，原话逐字保留）。
+   *
+   * 与 `decide`/`markClear` 的区别：它不推动 revision 阶段。打回后新 revision 仍是
+   * `discussing`（Tech Lead 与用户重新判断方向/Plan/Eval），绝不把讨论推成 planning，
+   * 也不产生人类 attention；行上的 `direction_status` 保持原值。
+   */
+  recordRejectInput(input: PodDirectionRejectInput): PodDirectionResult {
+    const goal = this.requireGoal(input.goalId);
+    const revision = input.revision ?? goal.activeRevision;
+    const row = this.requireRevision(goal, revision);
+    if (isTerminalGoalRevisionStatus(row.status)) {
+      throw new PodError(409, `revision ${revision} is terminal (${row.status})`);
+    }
+    const userWords = typeof input.feedback === 'string' ? input.feedback : '';
+    if (!userWords.trim()) throw new PodError(400, 'reject feedback is required');
+    const mafwDir = this.requireMafwDir(goal.goalId);
+    const artifact = this.readArtifactStrict(mafwDir, goal.goalId);
+    const current = this.currentState(artifact, row, goal.goalId, revision);
+    const now = this.now();
+    const decision = this.safeDecision({
+      userWords,
+      optionId: null,
+      reason: null,
+      source: input.source ?? REJECT_FEEDBACK_SOURCE,
+      revision,
+      decidedAt: now,
+    }, current, revision, now, REJECT_FEEDBACK_SOURCE);
+
+    const existing = current.decisions.find((item) => item.id === decision.id);
+    if (existing) {
+      return this.result(goal, revision, current, existing, mafwDir);
+    }
+    const state: DirectionState = {
+      ...current,
+      decisions: [...current.decisions, decision],
+      updatedAt: now,
+    };
+    artifact.revisions[String(revision)] = state;
+    this.writeArtifact(mafwDir, goal.goalId, artifact);
+    const applied = this.deps.store.setGoalRevisionDirection({
+      podId: goal.podId,
+      goalId: goal.goalId,
+      revision,
+      directionJson: serializeDirectionState(state),
+    });
+    if (!applied) {
+      throw new PodError(409, `revision ${revision} could not be updated (terminal or missing)`);
+    }
+    this.deps.notify?.(goal.podId);
     return this.result(goal, revision, state, decision, mafwDir);
   }
 

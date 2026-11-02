@@ -15,6 +15,7 @@ import {
   ensureGoalState,
   loadGoalState,
 } from '../goal/state-v3';
+import type { PodGoalResult } from './pod-result';
 
 /** 打回（reject）产生的 revision 默认优先级——直觉上优先于普通 queued Goal。 */
 export const REJECT_REVISION_PRIORITY = 10;
@@ -24,7 +25,9 @@ export interface PodGoalRevisionServiceDeps {
   /** goal 的 mafw 目录（state 归档/重建的落点）；解析不到时 openNextRevision 报 400。 */
   resolveMafwDir(goalId: string): string | null;
   now?(): string;
-  notify?(podId: string): void;
+  notify?(podId: string, kind?: string, goalId?: string): void;
+  /** Task 11 结果视图：打回前必须读到真实结果证据（PASS/FAIL + 结果就绪）。 */
+  resultForGoal?(goalId: string): PodGoalResult | null;
   log?(message: string): void;
 }
 
@@ -96,6 +99,37 @@ export interface FinishRevisionResult {
   revision: PodGoalRevisionRow | null;
 }
 
+/** 打回依据：结果视图 > revision 行 > Goal 根记录（越靠前越权威）。 */
+export interface RejectRevisionEvidence {
+  revision: number;
+  verdict: string | null;
+  resultReady: boolean;
+  source: 'result' | 'revision' | 'goal';
+}
+
+export interface ReopenAfterRejectOptions {
+  /** 调用方认为「当前」的 revision；不一致时 no-op（不写任何东西）。 */
+  expectedRevision?: number;
+  /** 显式 verdict（缺省取证据里的真实 verdict）。 */
+  verdict?: string | null;
+  /** 新 revision 的初始状态；缺省 discussing（Tech Lead 讨论）。 */
+  status?: PodGoalRevisionStatus;
+  /** 新 revision 的调度优先级；缺省 REJECT_REVISION_PRIORITY。 */
+  priority?: number;
+}
+
+export interface RejectRevisionResult extends OpenNextRevisionResult {
+  /** 打回前对当前 revision 的收尾结果（已终态则 applied=false，绝不改写）。 */
+  finish: FinishRevisionResult;
+  evidence: RejectRevisionEvidence;
+}
+
+const REVISION_VERDICTS = new Set(['PASS', 'FAIL', 'MAX_RETRIES', 'ERROR', 'CANCELLED']);
+
+function normalizeRevisionVerdict(value: unknown): string | null {
+  return typeof value === 'string' && REVISION_VERDICTS.has(value) ? value : null;
+}
+
 export class PodGoalRevisionService {
   constructor(private readonly deps: PodGoalRevisionServiceDeps) {}
 
@@ -144,7 +178,7 @@ export class PodGoalRevisionService {
       this.deps.log?.(`[Pod] finishRevision skipped goal=${goalId} rev=${revision} reason=${reason}`);
       return { applied: false, reason, revision: after };
     }
-    this.deps.notify?.(goal.podId);
+    this.deps.notify?.(goal.podId, 'goal', goalId);
     return { applied: true, reason: 'applied', revision: after };
   }
 
@@ -229,7 +263,7 @@ export class PodGoalRevisionService {
 
     this.deps.store.setActiveRevision(goal.podId, goalId, openedRevision);
     if (priority > 0) this.deps.store.setGoalPriority(goal.podId, goalId, priority);
-    this.deps.notify?.(goal.podId);
+    this.deps.notify?.(goal.podId, 'revision', goalId);
 
     return {
       opened: true,
@@ -241,6 +275,91 @@ export class PodGoalRevisionService {
       archivedState,
       previous,
     };
+  }
+
+  /**
+   * 打回 = 先带证据收尾当前 revision，再开 N+1（HARD PREREQUISITE）。
+   *
+   * - 证据从结果视图（Task 11）读：`resultReady` 或真实 verdict 才算有结果可打回；
+   *   没有证据（例如重放同一个打回请求、或新 revision 还没产出结果）→ 409，
+   *   **绝不**伪造一个 completed 快照。
+   * - 收尾只写 DB（真实 verdict），已终态的 revision 原样保留（`applied:false`）；
+   *   `openNextRevision` 随后归档 state 快照、开 N+1、切 active 指针。
+   * - 旧 revision 行与 `rev-<n>.json` 永不重写、永不「反归档」。
+   */
+  async reopenAfterReject(
+    goalId: string,
+    feedback: string,
+    opts: ReopenAfterRejectOptions = {},
+  ): Promise<RejectRevisionResult> {
+    const reason = (feedback ?? '').toString().trim();
+    if (!reason) throw new PodError(400, 'reject feedback is required');
+    const goal = this.requireGoal(goalId);
+    const revision = goal.activeRevision;
+    const row = this.deps.store.getGoalRevision(goal.podId, goalId, revision);
+    const evidence = this.rejectEvidence(goal, row);
+
+    if (opts.expectedRevision !== undefined && opts.expectedRevision !== revision) {
+      this.deps.log?.(
+        `[Pod] reject stale goal=${goalId} expected=${opts.expectedRevision} active=${revision}`,
+      );
+      return {
+        ...this.staleResult(goal, row, 'expected_revision_mismatch'),
+        finish: { applied: false, reason: 'not_found', revision: row },
+        evidence: evidence ?? {
+          revision, verdict: null, resultReady: false, source: 'revision',
+        },
+      };
+    }
+    if (!evidence) {
+      throw new PodError(409, `goal has no result to reject: ${goalId}`);
+    }
+
+    let finish: FinishRevisionResult = { applied: false, reason: 'not_found', revision: row };
+    if (row && !isTerminalGoalRevisionStatus(row.status)) {
+      finish = this.finishRevision(goalId, {
+        revision,
+        status: 'completed',
+        verdict: opts.verdict ?? evidence.verdict,
+      });
+    }
+
+    const opened = await this.openNextRevision(goalId, reason, {
+      // finish 不移动 active 指针：走到这里当前 revision 仍是它；被别人抢开过就 no-op。
+      expectedRevision: revision,
+      closeAs: 'completed',
+      closeVerdict: opts.verdict ?? evidence.verdict,
+      status: opts.status ?? 'discussing',
+      priority: opts.priority ?? REJECT_REVISION_PRIORITY,
+      feedback: reason,
+    });
+    return { ...opened, finish, evidence };
+  }
+
+  /** 结果视图 > revision 行 > Goal 根记录；都没有真实 verdict/结果就返回 null。 */
+  private rejectEvidence(
+    goal: PodGoalRow,
+    row: PodGoalRevisionRow | null,
+  ): RejectRevisionEvidence | null {
+    const result = this.deps.resultForGoal?.(goal.goalId) ?? null;
+    const resultVerdict = normalizeRevisionVerdict(result?.verdict);
+    if (result && (result.resultReady || resultVerdict !== null)) {
+      return {
+        revision: goal.activeRevision,
+        verdict: resultVerdict,
+        resultReady: result.resultReady,
+        source: 'result',
+      };
+    }
+    const rowVerdict = normalizeRevisionVerdict(row?.verdict);
+    if (rowVerdict) {
+      return { revision: goal.activeRevision, verdict: rowVerdict, resultReady: false, source: 'revision' };
+    }
+    const goalVerdict = normalizeRevisionVerdict(goal.verdict);
+    if (goalVerdict) {
+      return { revision: goal.activeRevision, verdict: goalVerdict, resultReady: false, source: 'goal' };
+    }
+    return null;
   }
 
   /** no-op 结果：完全不触碰 DB / 文件，调用方可按 `opened === false` 幂等处理。 */
