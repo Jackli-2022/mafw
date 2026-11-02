@@ -39,6 +39,7 @@ import { PodMessageService } from './core/pod/pod-message-service';
 import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
 import type { PodGoalDescription } from './core/pod/pod-view';
+import { buildPodGoalResult } from './core/pod/pod-result';
 import { createGoalIntake, makePodGoalId } from './core/goal/goal-intake';
 import { PodAccess } from './core/pod/pod-access';
 import { PodBudget } from './core/pod/pod-budget';
@@ -3751,6 +3752,7 @@ class MafwScheduler {
         } : null;
       },
       describeGoal: (goalId) => this.describePodGoal(goalId),
+      resultForGoal: (goalId) => this.readPodGoalResult(goalId),
       listInFlightGoals: (projectDir) => this.listGoalStates()
         .filter((entry) => canonicalProjectDir(entry.projectDir) === projectDir)
         .map((entry) => loadGoalState(entry.mafwDir, entry.goalId))
@@ -8631,6 +8633,25 @@ class MafwScheduler {
       nodeSession: state.nodeSession,
       lastError: state.lastError,
     };
+  }
+
+  private readPodGoalResult(goalId: string) {
+    const found = this.findGoalStatePath(goalId);
+    if (!found) return null;
+    const state = loadGoalState(found.info.mafwDir, goalId);
+    if (!state) return null;
+    let request: Record<string, unknown> | null = null;
+    try {
+      request = JSON.parse(fs.readFileSync(path.join(found.info.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
+    } catch { /* legacy goal */ }
+    return buildPodGoalResult({
+      goalId,
+      state,
+      request,
+      readText: (target) => {
+        try { return fs.existsSync(target) ? fs.readFileSync(target, 'utf-8') : null; } catch { return null; }
+      },
+    });
   }
 
   private async handleValidate(goalId: string, data?: { projectDir?: string }): Promise<any> {

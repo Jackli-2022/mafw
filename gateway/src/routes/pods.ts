@@ -16,7 +16,7 @@ export interface PodRouteDeps {
   messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
   goals: Pick<PodGoalService, 'list' | 'promote'> & Partial<Pick<
     PodGoalService,
-    'enqueueGoal' | 'views' | 'attention' | 'pause' | 'resume' | 'cancelQueued'
+    'enqueueGoal' | 'views' | 'attention' | 'pause' | 'resume' | 'cancelQueued' | 'result'
   >>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
   access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
@@ -243,6 +243,17 @@ export async function handlePods(
       return true;
     }
 
+    const goalResult = pathname.match(/^\/api\/pods\/([^/]+)\/goals\/([^/]+)\/result$/);
+    if (goalResult) {
+      if (method !== 'GET') return false;
+      const podId = decode(goalResult[1]);
+      requirePod(deps, podId);
+      readMember(deps, url, podId);
+      if (!deps.goals.result) throw new PodError(503, 'goal result unavailable');
+      sendJson(res, 200, deps.goals.result(podId, decode(goalResult[2])));
+      return true;
+    }
+
     const goals = pathname.match(/^\/api\/pods\/([^/]+)\/goals$/);
     if (goals) {
       const podId = decode(goals[1]);
@@ -376,7 +387,7 @@ export async function handlePods(
   }
 }
 
-function enrichPodDetail<T extends { pod: { id: string }; goals: unknown[] }>(
+function enrichPodDetail<T extends { pod: { id: string }; goals: unknown[]; tasks: unknown[] }>(
   deps: PodRouteDeps,
   detail: T,
 ): T & { goals: PodGoalView[]; attention: PodAttentionItem[] } {
@@ -384,7 +395,8 @@ function enrichPodDetail<T extends { pod: { id: string }; goals: unknown[] }>(
     ? deps.goals.views(detail.pod.id)
     : detail.goals as PodGoalView[];
   const attention = deps.goals.attention ? deps.goals.attention(detail.pod.id) : [];
-  return { ...detail, goals, attention };
+  const tasks = deps.tasks.list(detail.pod.id);
+  return { ...detail, goals, tasks, attention };
 }
 
 function decode(value: string): string {

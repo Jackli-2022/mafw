@@ -3,9 +3,15 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PodStore, PodError } from '../../../src/core/pod/pod-store';
-import { PodTaskService } from '../../../src/core/pod/pod-task-service';
+import { PodTaskService, podTaskKindOf } from '../../../src/core/pod/pod-task-service';
 
 describe('PodTaskService', () => {
+  test('derives plan, note and external request kinds', () => {
+    expect(podTaskKindOf({ sourceKey: 'manual:x', goalId: null, externalTaskId: null })).toBe('note');
+    expect(podTaskKindOf({ sourceKey: 'wave:w1:task:w1-t1', goalId: 'g1', externalTaskId: 'w1-t1' })).toBe('plan');
+    expect(podTaskKindOf({ sourceKey: 'a2a:m1', goalId: 'g1', externalTaskId: null })).toBe('external_request');
+  });
+
   let dir: string;
   let db: Database.Database;
   let store: PodStore;

@@ -14,6 +14,21 @@ import {
   type PodTaskStatus,
 } from './pod-store';
 
+export type PodTaskKind = 'plan' | 'note' | 'external_request';
+export type PodTaskView = PodTaskRow & { kind: PodTaskKind };
+
+export function podTaskKindOf(
+  task: Pick<PodTaskRow, 'sourceKey' | 'goalId' | 'externalTaskId'>,
+): PodTaskKind {
+  if (task.goalId && task.externalTaskId) return 'plan';
+  if (task.sourceKey.startsWith('manual:')) return 'note';
+  return 'external_request';
+}
+
+function withKind(task: PodTaskRow): PodTaskView {
+  return { ...task, kind: podTaskKindOf(task) };
+}
+
 export interface WavePlan {
   waves: Array<{ id: string; title?: string; tasks: Array<string | { title: string; acceptance?: string[] }> }>;
 }
@@ -57,11 +72,11 @@ const ALLOWED_TRANSITIONS: Record<PodTaskStatus, PodTaskStatus[]> = {
 export class PodTaskService {
   constructor(private readonly deps: PodTaskServiceDeps) {}
 
-  projectWaves(podId: string, goalId: string, plan: WavePlan): PodTaskRow[] {
+  projectWaves(podId: string, goalId: string, plan: WavePlan): PodTaskView[] {
     if (!plan || !Array.isArray(plan.waves)) {
       throw new PodError(400, 'invalid wave plan');
     }
-    const tasks: PodTaskRow[] = [];
+    const tasks: PodTaskView[] = [];
     for (const wave of plan.waves) {
       if (!wave || typeof wave.id !== 'string' || !Array.isArray(wave.tasks)) {
         throw new PodError(400, 'invalid wave');
@@ -96,14 +111,14 @@ export class PodTaskService {
           acceptanceJson: acceptance.length > 0 ? JSON.stringify(acceptance) : null,
           now: this.deps.now(),
         });
-        tasks.push(task);
+        tasks.push(withKind(task));
       });
     }
     if (tasks.length > 0) this.deps.notify(podId);
     return tasks;
   }
 
-  applyReceipt(podId: string, goalId: string, receipt: GoalReceipt): PodTaskRow[] {
+  applyReceipt(podId: string, goalId: string, receipt: GoalReceipt): PodTaskView[] {
     if (!receipt || !Array.isArray(receipt.receipts)) {
       throw new PodError(400, 'invalid goal receipt');
     }
@@ -112,7 +127,7 @@ export class PodTaskService {
         .filter((task) => task.externalTaskId)
         .map((task) => [task.externalTaskId!, task]),
     );
-    const updated: PodTaskRow[] = [];
+    const updated: PodTaskView[] = [];
     for (const item of receipt.receipts) {
       const task = byExternal.get(item.taskId);
       if (!task) continue;
@@ -124,13 +139,13 @@ export class PodTaskService {
         status,
         artifactRefsJson: mergedFiles.length > 0 ? JSON.stringify(mergedFiles) : task.artifactRefsJson,
       }, this.deps.now());
-      updated.push(this.deps.store.getTask(task.id)!);
+      updated.push(withKind(this.deps.store.getTask(task.id)!));
     }
     if (updated.length > 0) this.deps.notify(podId);
     return updated;
   }
 
-  createManual(podId: string, goalId: string | null, title: string, ownerMemberId?: string): PodTaskRow {
+  createManual(podId: string, goalId: string | null, title: string, ownerMemberId?: string): PodTaskView {
     if (!title.trim()) throw new PodError(400, 'manual task title is required');
     const task = this.deps.store.upsertTask({
       id: this.deps.newId(),
@@ -147,14 +162,14 @@ export class PodTaskService {
       now: this.deps.now(),
     });
     this.deps.notify(podId);
-    return task;
+    return withKind(task);
   }
 
   updateTask(
     podId: string,
     taskId: string,
     patch: { status?: PodTaskStatus; ownerMemberId?: string },
-  ): PodTaskRow {
+  ): PodTaskView {
     const task = this.deps.store.getTask(taskId);
     if (!task || task.podId !== podId) throw new PodError(404, `task not found: ${taskId}`);
     if (patch.status && patch.status !== task.status) {
@@ -165,7 +180,7 @@ export class PodTaskService {
     }
     this.deps.store.updateTask(taskId, patch, this.deps.now());
     this.deps.notify(podId);
-    return this.deps.store.getTask(taskId)!;
+    return withKind(this.deps.store.getTask(taskId)!);
   }
 
   /**
@@ -176,7 +191,7 @@ export class PodTaskService {
     podId: string,
     taskId: string,
     patch: { title?: string; acceptance?: string[] },
-  ): PodTaskRow {
+  ): PodTaskView {
     const task = this.deps.store.getTask(taskId);
     if (!task || task.podId !== podId) throw new PodError(404, `task not found: ${taskId}`);
     if (!task.goalId || !task.externalTaskId) {
@@ -199,7 +214,7 @@ export class PodTaskService {
     this.writePlan(wavesPath, next);
     this.projectWaves(podId, task.goalId, next as WavePlan);
     this.deps.notify(podId);
-    return this.deps.store.getTask(taskId)!;
+    return withKind(this.deps.store.getTask(taskId)!);
   }
 
   /**
@@ -212,7 +227,7 @@ export class PodTaskService {
     waveId: string | null,
     title: string,
     acceptance?: string[],
-  ): PodTaskRow {
+  ): PodTaskView {
     if (String(title ?? '').trim() === '') throw new PodError(400, 'task title is required');
     if (acceptance !== undefined && !Array.isArray(acceptance)) {
       throw new PodError(400, 'acceptance must be a string array');
@@ -228,7 +243,7 @@ export class PodTaskService {
     const row = this.deps.store.listTasks(podId, goalId)
       .find((task) => task.externalTaskId === added.taskId);
     if (!row) throw new PodError(500, `projected task missing after add: ${added.taskId}`);
-    return row;
+    return withKind(row);
   }
 
   /** 删除任务：计划任务写回 waves.json（同门）；手工任务只删行。 */
@@ -291,7 +306,7 @@ export class PodTaskService {
     podId: string,
     goalId: string,
     results: Array<{ taskId: string; result: 'pass' | 'fail' | 'skipped' }>,
-  ): PodTaskRow[] {
+  ): PodTaskView[] {
     if (!Array.isArray(results) || results.length === 0) return [];
     const wanted = new Map<string, PodTaskStatus>();
     for (const item of results) {
@@ -299,18 +314,18 @@ export class PodTaskService {
       wanted.set(item.taskId, item.result === 'pass' ? 'done' : item.result === 'fail' ? 'reopened' : 'failed');
     }
     if (wanted.size === 0) return [];
-    const updated: PodTaskRow[] = [];
+    const updated: PodTaskView[] = [];
     for (const task of this.deps.store.listTasks(podId, goalId)) {
       const target = task.externalTaskId ? wanted.get(task.externalTaskId) : undefined;
       if (!target) continue;
       this.deps.store.updateTask(task.id, { status: target }, this.deps.now());
-      updated.push(this.deps.store.getTask(task.id)!);
+      updated.push(withKind(this.deps.store.getTask(task.id)!));
     }
     if (updated.length > 0) this.deps.notify(podId);
     return updated;
   }
 
-  reopenForReview(podId: string, goalId: string): PodTaskRow[] {
+  reopenForReview(podId: string, goalId: string): PodTaskView[] {
     const tasks = this.deps.store.listTasks(podId, goalId)
       .filter((task) => task.status === 'in_progress' || task.status === 'review' || task.status === 'done');
     for (const task of tasks) {
@@ -320,7 +335,7 @@ export class PodTaskService {
     return this.list(podId, goalId).filter((task) => task.status === 'reopened');
   }
 
-  startExecution(podId: string, goalId: string): PodTaskRow[] {
+  startExecution(podId: string, goalId: string): PodTaskView[] {
     const tasks = this.deps.store.listTasks(podId, goalId)
       .filter((task) => task.status === 'pending' || task.status === 'reopened');
     for (const task of tasks) {
@@ -344,8 +359,8 @@ export class PodTaskService {
     if (tasks.length > 0) this.deps.notify(podId);
   }
 
-  list(podId: string, goalId?: string): PodTaskRow[] {
-    return this.deps.store.listTasks(podId, goalId);
+  list(podId: string, goalId?: string): PodTaskView[] {
+    return this.deps.store.listTasks(podId, goalId).map(withKind);
   }
 }
 

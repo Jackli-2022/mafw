@@ -196,6 +196,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/pods/:podId/goals', operationId: 'pods.goals', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/goals', operationId: 'pods.goals.create', tags: ['pods'] },
   { method: 'DELETE', path: '/api/pods/:podId/goals/:goalId', operationId: 'pods.goals.cancel', tags: ['pods'] },
+  { method: 'GET', path: '/api/pods/:podId/goals/:goalId/result', operationId: 'pods.goals.result', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/sessions/:sessionId/transcript', operationId: 'pods.transcript', tags: ['pods'] },
   { method: 'GET', path: '/api/pods/:podId/memory', operationId: 'pods.memory.get', tags: ['pods'] },
   { method: 'POST', path: '/api/pods/:podId/memory', operationId: 'pods.memory.write', tags: ['pods'] },

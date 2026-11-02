@@ -8,6 +8,7 @@ import {
   type PodGoalView,
 } from './pod-view';
 import type { PodAttentionItem, PodGoalVerdict, PodQueueReason } from './pod-stage';
+import type { PodGoalResult } from './pod-result';
 
 export interface PodEnqueueResult {
   status: 'started' | 'queued';
@@ -27,6 +28,7 @@ export interface PodGoalServiceDeps {
   budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } };
   goalState?(goalId: string): { terminal: boolean; verdict?: string } | null;
   describeGoal?(goalId: string): PodGoalDescription | null;
+  resultForGoal?(goalId: string): PodGoalResult | null;
   listInFlightGoals?(projectDir: string): string[];
   listRegisteredProjectDirs?(): string[];
   finalizeGoal?(goalId: string, outcome?: { verdict?: string }): Promise<void>;
@@ -291,6 +293,14 @@ export class PodGoalService {
 
   attention(podId: string): PodAttentionItem[] {
     return buildPodAttention(this.views(podId));
+  }
+
+  result(podId: string, goalId: string): PodGoalResult {
+    const row = this.deps.store.getGoal(podId, goalId);
+    if (!row) throw new PodError(404, `goal not found: ${goalId}`);
+    const result = this.deps.resultForGoal?.(goalId);
+    if (!result) throw new PodError(404, `goal result not found: ${goalId}`);
+    return { ...result, verdict: row.verdict ?? result.verdict };
   }
 
   list(podId: string): PodGoalRow[] {
