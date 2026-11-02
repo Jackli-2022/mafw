@@ -218,6 +218,11 @@ export class NodeDriver {
         && (state.userResponse.resumeNode ?? 'plan') === node
         ? state.userResponse.answer
         : undefined,
+      userQuestions: state.userResponse
+        && !state.userResponse.consumedByRunId
+        && (state.userResponse.resumeNode ?? 'plan') === node
+        ? state.userResponse.questions
+        : undefined,
       goalAcceptance: node === 'plan' ? (() => {
         try {
           const req = JSON.parse(fs.readFileSync(path.join(mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
@@ -513,14 +518,16 @@ export class NodeDriver {
     }
 
     try { await this.deps.client.delete(sessionID); } catch { /* fail-open */ }
-    patch = { ...patch, lastFailure: null };
+    // A valid artifact settles the current node: transient failure text from a
+    // previous attempt must not poison the next review/round.
+    patch = { ...patch, lastFailure: null, lastError: null };
 
     const phaseNames = NODE_PHASE[node];
     const nextRound = patch.round ?? round;
     const routedNode = routeNext(
       node === 'plan' ? 'after_plan' : node === 'execute' ? 'after_execute' : 'after_review',
       {
-        lastError: state.lastError,
+        lastError: null,
         reviewVerdict: (patch.reviewVerdict ?? state.reviewVerdict) as any,
         round: nextRound,
         maxRounds: state.maxRounds,
@@ -591,6 +598,7 @@ export class NodeDriver {
       userResponse: {
         questionId,
         answer,
+        questions: state.pendingQuestion.questions,
         resumeNode,
         respondedAt: new Date().toISOString(),
       },

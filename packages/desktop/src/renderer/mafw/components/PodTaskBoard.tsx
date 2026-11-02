@@ -28,7 +28,19 @@ export function PodGoalQueue(props: {
   goals: PodGoal[]
   onOpenGoal: (goalId: string) => void
   onOpenResult?: (goalId: string) => void
+  onCancelGoal?: (goalId: string) => Promise<boolean>
 }) {
+  const [cancelId, setCancelId] = createSignal<string | null>(null)
+  const [cancelling, setCancelling] = createSignal(false)
+  const cancel = async (goalId: string) => {
+    if (!props.onCancelGoal || cancelling()) return
+    setCancelling(true)
+    try {
+      if (await props.onCancelGoal(goalId)) setCancelId(null)
+    } finally {
+      setCancelling(false)
+    }
+  }
   const visible = () => {
     const sorted = [...props.goals].sort(
       (a, b) => goalOrder(a) - goalOrder(b) || a.enqueuedAt.localeCompare(b.enqueuedAt),
@@ -75,6 +87,20 @@ export function PodGoalQueue(props: {
                   }}
                 >
                   结果
+                </ButtonV2>
+              </Show>
+              <Show when={goal.status === "queued" && props.onCancelGoal}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  disabled={cancelling()}
+                  onClick={(event: MouseEvent) => {
+                    event.stopPropagation()
+                    if (cancelId() === goal.goalId) void cancel(goal.goalId)
+                    else setCancelId(goal.goalId)
+                  }}
+                >
+                  {cancelId() === goal.goalId ? (cancelling() ? "取消中…" : "确认取消") : "取消排队"}
                 </ButtonV2>
               </Show>
             </div>
@@ -208,7 +234,7 @@ export function PodTaskBoard(props: {
       </Show>
 
       <div class="mafw-pod-board">
-        <For each={groupPodTasks(planTaskOnly(props.tasks))}>
+        <For each={groupPodTasks(planTaskOnly(props.tasks).filter((task) => task.goalId === props.planGoalId))}>
           {(lane) => (
             <div class="mafw-pod-lane">
               <div class="mafw-pod-lane-head">
@@ -339,6 +365,18 @@ export function PodTaskBoard(props: {
           )}
         </For>
       </div>
+
+      <Show when={props.tasks.some((task) => task.kind === "external_request")}>
+        <div class="mafw-pod-notes">
+          <div class="mafw-pod-section-head">
+            <span>外部请求（未纳入执行计划）</span>
+            <span class="mafw-pod-section-count">{props.tasks.filter((task) => task.kind === "external_request").length}</span>
+          </div>
+          <For each={props.tasks.filter((task) => task.kind === "external_request")}>
+            {(task) => <div class="mafw-pod-note-row"><span>{task.title}</span></div>}
+          </For>
+        </div>
+      </Show>
 
       <div class="mafw-pod-notes">
         <div class="mafw-pod-section-head">

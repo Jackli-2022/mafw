@@ -1,4 +1,4 @@
-import { buildPodGoalView, type PodGoalDescription } from '../../../src/core/pod/pod-view';
+import { buildPodGoalView, goalVerdictFromState, type PodGoalDescription } from '../../../src/core/pod/pod-view';
 import type { PodGoalRow } from '../../../src/core/pod/pod-store';
 
 const row: PodGoalRow = {
@@ -24,6 +24,15 @@ const desc: PodGoalDescription = {
   nodeSession: { id: 's1' },
   lastError: null,
 };
+
+describe('goalVerdictFromState', () => {
+  test('never infers PASS from legacy COMPLETED without a review verdict', () => {
+    expect(goalVerdictFromState({ reviewVerdict: null, nextAction: 'COMPLETED' })).toBeNull()
+    expect(goalVerdictFromState({ reviewVerdict: 'PASS', nextAction: 'COMPLETED' })).toBe('PASS')
+    expect(goalVerdictFromState({ reviewVerdict: null, nextAction: 'CANCELLED' })).toBe('CANCELLED')
+    expect(goalVerdictFromState({ reviewVerdict: 'ERROR', nextAction: 'FAILED' })).toBe('ERROR')
+  })
+})
 
 describe('buildPodGoalView', () => {
   test('legacy row without verdict remains ended; resultReady requires evidence', () => {

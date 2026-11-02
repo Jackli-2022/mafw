@@ -101,6 +101,30 @@ describe('completeNode 产物双门', () => {
     expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
   });
 
+  it('a transient retry that later passes archives PASS, not a stale FAIL', async () => {
+    const h = makeHarness({ maxAttempts: 2 });
+    const a = nodeArtifactPaths(h.mafwDir, 'g9', 1);
+    seedGoal(h, 'g9', { patch: {
+      nextNode: 'execute', nextAction: 'NEXT_execute', round: 1, loop: 1, wavePlanPath: a.waves,
+    } });
+    fs.writeFileSync(a.waves, JSON.stringify({ waves: [{ id: 'w1', title: 't', tasks: [] }], status: 'ready' }), 'utf-8');
+    const sid = await h.startAndIdle('g9');
+    await h.fireError(sid, 'provider overloaded', '429');
+
+    const retrySid = h.load('g9')!.nodeSession!.id;
+    fs.mkdirSync(path.dirname(a.receipt), { recursive: true });
+    fs.writeFileSync(a.receipt, JSON.stringify({ goalId: 'g9', receipts: [] }), 'utf-8');
+    await h.fireIdle(retrySid);
+
+    const reviewSid = h.load('g9')!.nodeSession!.id;
+    fs.mkdirSync(path.dirname(a.review), { recursive: true });
+    fs.writeFileSync(a.review, '# review\n\n```mafw-review\n{"verdict":"PASS","tasks":[],"feedback":"ok"}\n```\n', 'utf-8');
+    await h.fireIdle(reviewSid);
+
+    expect(h.load('g9')!.lastError).toBeNull();
+    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
+  });
+
   it('retryable runtime failure starts the next attempt without changing round', async () => {
     const h = makeHarness({ maxAttempts: 2 });
     seedGoal(h, 'g9');

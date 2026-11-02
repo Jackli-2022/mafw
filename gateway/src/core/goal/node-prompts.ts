@@ -170,6 +170,7 @@ export interface NodePromptCtx {
     at: string;
   } | null;
   userAnswer?: string;
+  userQuestions?: string[];
 }
 
 export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodePromptCtx): string {
@@ -182,7 +183,9 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
     ctx.lastFailure
       ? `Last failure [${ctx.lastFailure.class}/${ctx.lastFailure.code}]: ${ctx.lastFailure.message}. Inspect existing artifacts/worktree before repeating work; do not assume prior side effects were rolled back.`
       : '',
-    ctx.userAnswer ? `User answer to the previous question: ${ctx.userAnswer}` : '',
+    ctx.userAnswer
+      ? `User answer to the previous question${ctx.userQuestions?.length ? ` (${ctx.userQuestions.join(' | ')})` : ''}: ${ctx.userAnswer}`
+      : '',
   ].filter(Boolean).join('\n');
 
   if (node === 'plan') {

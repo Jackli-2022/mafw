@@ -48,10 +48,11 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
   })
   const markdown = () => renderPlanMarkdown(info()?.waves)
 
-  const approvalId = () => {
+  const approvalId = (): string | undefined => {
     const id = info()?.planApproval?.id
-    if (typeof id !== "string" || !id) throw new Error("计划批准已过期，请刷新后重试")
-    return id
+    // Legacy pre-v3 approvals have no id; the gateway accepts their one-time
+    // goalId+round path. New approvals always carry an id.
+    return typeof id === "string" && id ? id : undefined
   }
 
   async function approve() {

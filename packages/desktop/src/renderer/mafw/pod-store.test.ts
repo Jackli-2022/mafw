@@ -125,6 +125,23 @@ describe("pod-store", () => {
     assert.equal(store.unsupported(), true)
   })
 
+  test("legacy gateway detail is normalized and marked stage-unsupported", async () => {
+    const legacy = {
+      pod: { id: "pod_1", projectDir: "/p", status: "active" },
+      members: [], sessions: [],
+      goals: [{ id: "pg1", podId: "pod_1", goalId: "g1", status: "active", enqueuedAt: "t", startedAt: "t", endedAt: null }],
+      tasks: [{ id: "t1", podId: "pod_1", goalId: null, sourceKey: "manual:t1", externalTaskId: null, title: "note", status: "pending" }],
+    } as any
+    const { store } = harness({ lookup: async () => legacy })
+    await store.open("/p")
+    assert.equal(store.detail()?.stageSupported, false)
+    assert.deepEqual(store.detail()?.attention, [])
+    assert.deepEqual(store.detail()?.messageHealth, [])
+    assert.equal(store.detail()?.tasks[0]?.kind, "note")
+    assert.equal(store.detail()?.goals[0]?.title, "g1")
+    assert.equal(store.detail()?.goals[0]?.stage?.kind, "waiting")
+  })
+
   test("other lookup failures surface as an error, not as an empty pod", async () => {
     const { store } = harness({ lookup: async () => { throw new Error("fetch failed: ECONNREFUSED") } })
     await store.open("/p")

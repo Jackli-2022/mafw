@@ -90,8 +90,39 @@ export function createPodStore(
       })
   }
 
+  const normalizeDetail = (next: PodDetail): PodDetail => {
+    const rawGoals = Array.isArray(next.goals) ? next.goals : []
+    const stageSupported = Array.isArray((next as any).attention) && rawGoals.every((goal) => !!goal.stage)
+    const goals = rawGoals.map((goal) => ({
+      ...goal,
+      title: goal.title || goal.goalId,
+      phase: goal.phase ?? null,
+      verdict: goal.verdict ?? null,
+      stage: goal.stage ?? { owner: "system" as const, kind: "waiting" as const },
+      resultReady: goal.resultReady ?? false,
+    }))
+    const tasks = (Array.isArray(next.tasks) ? next.tasks : []).map((task) => ({
+      ...task,
+      kind: task.kind
+        ?? (task.goalId && task.externalTaskId
+          ? "plan"
+          : (task.sourceKey ?? "").startsWith("manual:")
+            ? "note"
+            : "external_request"),
+    }))
+    return {
+      ...next,
+      stageSupported,
+      goals,
+      tasks,
+      attention: Array.isArray((next as any).attention) ? next.attention : [],
+      messageHealth: Array.isArray((next as any).messageHealth) ? next.messageHealth : [],
+    }
+  }
+
   const applyDetail = (next: PodDetail, my: number) => {
     if (disposed || my !== seq) return
+    next = normalizeDetail(next)
     setDetail(next)
     setError(null)
     loadCost(next.pod.id, my)

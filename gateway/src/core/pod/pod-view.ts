@@ -49,6 +49,19 @@ export interface PodDetailView extends PodDetail {
   messageHealth: PodMessageDeliveryRow[];
 }
 
+export function goalVerdictFromState(state: {
+  reviewVerdict?: PodGoalVerdict | string | null
+  nextAction?: string | null
+}): PodGoalVerdict | null {
+  const verdict = state.reviewVerdict;
+  if (verdict === 'PASS' || verdict === 'FAIL' || verdict === 'MAX_RETRIES' || verdict === 'ERROR' || verdict === 'CANCELLED') {
+    return verdict;
+  }
+  if (state.nextAction === 'CANCELLED') return 'CANCELLED';
+  // Legacy COMPLETED without a review verdict is only "ended"; never invent PASS.
+  return null;
+}
+
 export function buildPodGoalView(
   row: PodGoalRow,
   description: PodGoalDescription | null,

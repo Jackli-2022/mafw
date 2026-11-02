@@ -200,9 +200,15 @@ const STAGE_LABEL: Record<string, string> = {
   ended: "已结束",
 }
 
-export function podStageLabel(stage: Pick<PodGoalStage, "owner" | "kind">): string {
+export function podStageLabel(stage: Pick<PodGoalStage, "owner" | "kind"> & { queueReason?: PodGoalStage["queueReason"] }): string {
   if (stage.owner === "team" && stage.kind === "working") return "团队工作中"
-  if (stage.owner === "team" && stage.kind === "queued") return "排队中"
+  if (stage.owner === "team" && stage.kind === "queued") {
+    if (stage.queueReason === "paused") return "已暂停，等待恢复"
+    if (stage.queueReason === "archived") return "已归档，等待恢复"
+    if (stage.queueReason === "budget") return "等待预算"
+    if (stage.queueReason === "state_error") return "状态异常，需要处理"
+    return "排队中"
+  }
   return STAGE_LABEL[stage.kind] ?? stage.kind
 }
 
@@ -337,10 +343,13 @@ export function podMessageDeliveryLabel(message: { deliveredAt?: string | null }
  * 注意我们只有「已送达」（进入对方会话上下文），没有「已读」——agent 不作已读回执。
  */
 export function podOutgoingDelivery(
-  message: { fromMemberId: string; deliveredAt?: string | null },
+  message: { fromMemberId: string; toMemberId?: string | null; deliveredAt?: string | null },
   selfMemberId: string | null,
 ): "已送达" | "待送达" | null {
   if (!selfMemberId || message.fromMemberId !== selfMemberId) return null
+  // Broadcasts now have per-recipient delivery rows; a single delivered_at no
+  // longer means the whole audience received it.
+  if (message.toMemberId === null) return null
   if (message.deliveredAt === undefined) return null
   return message.deliveredAt ? "已送达" : "待送达"
 }

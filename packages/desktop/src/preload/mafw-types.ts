@@ -5,6 +5,7 @@ import type {
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
+  MafwBackgroundJob, MafwBackgroundOutput,
   PodNamespace,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
@@ -187,8 +188,8 @@ export type MafwAPI = {
     respondQuestion: (goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }) => Promise<{ status: string }>
     timeline: (id: string) => Promise<GoalTimeline>
     plan: (id: string) => Promise<GoalPlanInfo>
-    approvePlan: (goalId: string, approvalId: string) => Promise<{ success: boolean }>
-    rejectPlan: (goalId: string, approvalId: string, feedback: string) => Promise<{ success: boolean }>
+    approvePlan: (goalId: string, approvalId?: string) => Promise<{ success: boolean }>
+    rejectPlan: (goalId: string, approvalId: string | undefined, feedback: string) => Promise<{ success: boolean }>
     retryNode: (goalId: string, runId: number, opts?: { confirm?: boolean }) => Promise<{ success: boolean; runId: number }>
   }
 
@@ -222,6 +223,15 @@ export type MafwAPI = {
     cancel: (id: string) => Promise<TaskEntity>
     message: (id: string, message: string) => Promise<void>
     output: (id: string, query?: { cursor?: number; limit?: number }) => Promise<TaskOutput>
+  }
+
+  /** Task 3：三源统一的后台作业中性面（runtime shell / MAFW task / 子代理）。 */
+  background: {
+    jobs: {
+      list: (sessionID: string) => Promise<MafwBackgroundJob[]>
+      output: (sessionID: string, id: string, cursor?: number) => Promise<MafwBackgroundOutput>
+      cancel: (sessionID: string, id: string) => Promise<MafwBackgroundJob>
+    }
   }
 
   pod: PodNamespace

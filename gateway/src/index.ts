@@ -38,7 +38,7 @@ import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
 import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
-import type { PodGoalDescription } from './core/pod/pod-view';
+import { goalVerdictFromState, type PodGoalDescription } from './core/pod/pod-view';
 import { buildPodGoalResult } from './core/pod/pod-result';
 import { createGoalIntake, makePodGoalId } from './core/goal/goal-intake';
 import { PodAccess } from './core/pod/pod-access';
@@ -3755,8 +3755,7 @@ class MafwScheduler {
         const state = loadGoalState(found.info.mafwDir, goalId);
         return state ? {
           terminal: isTerminalState(state),
-          verdict: state.reviewVerdict
-            ?? (state.nextAction === 'COMPLETED' ? 'PASS' : state.nextAction === 'CANCELLED' ? 'CANCELLED' : 'FAIL'),
+          verdict: goalVerdictFromState(state) ?? undefined,
         } : null;
       },
       describeGoal: (goalId) => this.describePodGoal(goalId),
@@ -8616,14 +8615,13 @@ class MafwScheduler {
       request = JSON.parse(fs.readFileSync(path.join(found.info.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
     } catch { /* legacy goals may have no request */ }
     const terminal = isTerminalState(state);
-    const verdict = state.reviewVerdict
-      ?? (state.nextAction === 'COMPLETED' ? 'PASS' : state.nextAction === 'CANCELLED' ? 'CANCELLED' : terminal ? 'FAIL' : null);
+    const verdict = goalVerdictFromState(state);
     return {
       title: typeof request?.title === 'string' && request.title.trim() ? request.title : goalId,
       phase: state.phase ?? null,
       nextAction: state.nextAction,
       terminal,
-      verdict: verdict as any,
+      verdict,
       hasResultEvidence: !!(
         state.receiptPath
         || state.reviewReportPath

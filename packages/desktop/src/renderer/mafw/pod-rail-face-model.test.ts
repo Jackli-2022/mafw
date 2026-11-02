@@ -123,11 +123,12 @@ test("railView counts equal the filtered plan tasks they expose", () => {
   const view = railView({
     ...detail,
     attention: [{}, {}],
-    goals: [],
+    goals: [{ id: "pg1", podId: "pod_1", goalId: "g1", status: "active", title: "G", phase: null, verdict: null, stage: { owner: "team", kind: "working" }, resultReady: false, enqueuedAt: "t", startedAt: "t", endedAt: null }],
     tasks: [
-      { id: "p1", kind: "plan", status: "pending" },
-      { id: "p2", kind: "plan", status: "in_progress" },
-      { id: "p3", kind: "plan", status: "review" },
+      { id: "p1", goalId: "g1", kind: "plan", status: "pending" },
+      { id: "p2", goalId: "g1", kind: "plan", status: "in_progress" },
+      { id: "p3", goalId: "g1", kind: "plan", status: "review" },
+      { id: "p4", goalId: "old", kind: "plan", status: "pending" },
       { id: "n1", kind: "note", status: "pending" },
     ],
   } as any)

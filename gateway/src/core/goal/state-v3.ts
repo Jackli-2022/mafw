@@ -26,6 +26,7 @@ export interface PendingQuestion {
 export interface UserResponse {
   questionId: string;
   answer: string;
+  questions?: string[];
   resumeNode?: 'plan' | 'execute' | 'review';
   respondedAt: string;
   consumedByRunId?: number;

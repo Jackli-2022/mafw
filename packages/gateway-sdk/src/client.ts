@@ -1038,14 +1038,14 @@ export class MafwClient implements IMafwClient {
       return this.request<GoalPlanInfo>(`/api/goals/${encodeURIComponent(goalId)}/plan`)
     },
 
-    approvePlan: async (goalId: string, approvalId: string): Promise<{ success: boolean }> => {
+    approvePlan: async (goalId: string, approvalId?: string): Promise<{ success: boolean }> => {
       return this.request<{ success: boolean }>(
         `/api/goals/${encodeURIComponent(goalId)}/plan-approval`,
-        { method: 'POST', body: JSON.stringify({ approve: true, approvalId }) },
+        { method: 'POST', body: JSON.stringify({ approve: true, ...(approvalId ? { approvalId } : {}) }) },
       )
     },
 
-    rejectPlan: async (goalId: string, approvalId: string, feedback: string): Promise<{ success: boolean }> => {
+    rejectPlan: async (goalId: string, approvalId: string | undefined, feedback: string): Promise<{ success: boolean }> => {
       return this.request<{ success: boolean }>(
         `/api/goals/${encodeURIComponent(goalId)}/plan-approval`,
         { method: 'POST', body: JSON.stringify({ approve: false, approvalId, feedback }) },

@@ -164,6 +164,7 @@ describe("pod-model", () => {
     assert.equal(podOutgoingDelivery({ fromMemberId: lead, deliveredAt: "2026-10-30T00:00:00.000Z" }, lead), "已送达")
     assert.equal(podOutgoingDelivery({ fromMemberId: "m_builder", deliveredAt: null }, lead), null)
     assert.equal(podOutgoingDelivery({ fromMemberId: lead, deliveredAt: null }, null), null)
+    assert.equal(podOutgoingDelivery({ fromMemberId: lead, toMemberId: null, deliveredAt: null }, lead), null)
   })
 
   test("plan task editing is limited to projected tasks", () => {
@@ -202,6 +203,8 @@ describe("pod-model", () => {
     assert.equal(podStageLabel({ owner: "person", kind: "plan_approval" }), "等待你批准计划")
     assert.equal(podStageLabel({ owner: "team", kind: "working" }), "团队工作中")
     assert.equal(podStageLabel({ owner: "system", kind: "ended" }), "已结束")
+    assert.equal(podStageLabel({ owner: "team", kind: "queued", queueReason: "paused" }), "已暂停，等待恢复")
+    assert.equal(podStageLabel({ owner: "team", kind: "queued", queueReason: "budget" }), "等待预算")
     assert.equal(podStageTone({ owner: "person", kind: "question" }), "person")
   })
 

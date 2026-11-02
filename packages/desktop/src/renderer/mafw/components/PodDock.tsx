@@ -88,10 +88,17 @@ export function PodDock(props: {
         planReview: input.planReview,
       })
       setComposerInitial(undefined)
+      const queuedText = result.queueReason === "paused"
+        ? "已排队：Pod 已暂停，恢复推进后才会开始"
+        : result.queueReason === "archived"
+          ? "已排队：Pod 已归档，恢复后才会开始"
+          : result.queueReason === "budget"
+            ? "已排队：预算不足，等待预算恢复"
+            : "已排队，当前目标结束后自动开始"
       showToastV2({
-        description: result.status === "started" ? "已交给团队" : "已排队，当前目标结束后自动开始",
+        description: result.status === "started" ? "已交给团队" : queuedText,
         variant: "success",
-        duration: 2600,
+        duration: 3000,
       } as any)
       return true
     } catch (err: any) {
@@ -117,6 +124,17 @@ export function PodDock(props: {
     })
     setResultGoalId(null)
     setTab("work")
+  }
+
+  const cancelQueued = async (goalId: string): Promise<boolean> => {
+    try {
+      await podStore.cancelGoal(goalId)
+      showToastV2({ description: "已取消排队", variant: "success", duration: 2200 } as any)
+      return true
+    } catch (err: any) {
+      showToastV2({ description: `取消失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
+      return false
+    }
   }
 
   const createTask = async (title: string): Promise<boolean> => {
@@ -248,6 +266,9 @@ export function PodDock(props: {
                     action={{ label: "重试", onClick: () => void podStore.refresh() }}
                   />
                 </Show>
+                <Show when={detail().stageSupported === false}>
+                  <DockBanner kind="warn" text="当前 gateway 是旧版：阶段/注意力投影不可用，请升级 gateway" />
+                </Show>
 
                 <div class="mafw-pod-status">
                   <span class={`mafw-pod-status-badge mafw-pod-status-${detail().pod.status}`}>
@@ -285,6 +306,7 @@ export function PodDock(props: {
                     goals={detail().goals}
                     onOpenGoal={props.onOpenGoal}
                     onOpenResult={setResultGoalId}
+                    onCancelGoal={cancelQueued}
                   />
                   <PodTaskBoard
                     tasks={detail().tasks}

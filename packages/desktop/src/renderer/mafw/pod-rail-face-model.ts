@@ -126,7 +126,8 @@ export function railView(detail: PodDetail): {
   reviewCount: number
   recentResults: PodGoal[]
 } {
-  const plan = detail.tasks.filter((task) => task.kind === "plan")
+  const activeGoalId = detail.goals.find((goal) => goal.status === "active")?.goalId ?? null
+  const plan = detail.tasks.filter((task) => task.kind === "plan" && (!activeGoalId || task.goalId === activeGoalId))
   const todoItems = plan.filter((task) => TODO_STATUSES.has(task.status))
   const recentResults = [...detail.goals]
     .filter((goal) => goal.status === "done" || goal.status === "aborted")

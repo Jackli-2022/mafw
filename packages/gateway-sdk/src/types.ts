@@ -909,9 +909,9 @@ export interface GoalsNamespace {
   /** W1 计划审阅：当前计划内容 + 审批状态。 */
   plan(goalId: string): Promise<GoalPlanInfo>
   /** W1 批准当前计划（解锁驻留，进 execute）。必须携带当前一次性 approvalId。 */
-  approvePlan(goalId: string, approvalId: string): Promise<{ success: boolean }>
-  /** W1 驳回当前计划（feedback 注入下一版 plan）。必须携带当前一次性 approvalId。 */
-  rejectPlan(goalId: string, approvalId: string, feedback: string): Promise<{ success: boolean }>
+  approvePlan(goalId: string, approvalId?: string): Promise<{ success: boolean }>
+  /** W1 驳回当前计划（feedback 注入下一版 plan）。必须携带当前一次性 approvalId（legacy 记录可省略）。 */
+  rejectPlan(goalId: string, approvalId: string | undefined, feedback: string): Promise<{ success: boolean }>
   /** 节点重跑（execute 需 confirm）。 */
   retryNode(goalId: string, runId: number, opts?: { confirm?: boolean }): Promise<{ success: boolean; runId: number }>
 }
@@ -1203,6 +1203,8 @@ export interface PodNamespace {
   listTasks(podID: string): Promise<{ items: PodTask[] }>
   createTask(podID: string, body: { goalId?: string; title: string; ownerMemberId?: string; actorSessionID?: string; plan?: boolean; waveId?: string; acceptance?: string[] }): Promise<{ task: PodTask }>
   deleteTask(podID: string, taskID: string, body?: { actorSessionID?: string }): Promise<{ deleted: { goalId: string | null; externalTaskId: string | null } }>
+  /** false when an older gateway omits the v3 stage/attention projection. */
+  stageSupported?: boolean
   updateTask(podID: string, taskID: string, body: { status?: PodTaskStatus; ownerMemberId?: string; title?: string; acceptance?: string[]; actorSessionID?: string }): Promise<{ task: PodTask }>
   listMessages(podID: string): Promise<{ items: PodMessage[] }>
   sendMessage(podID: string, body: { fromMemberId?: string; toMemberId?: string; kind: 'note'|'request'|'review'|'decision'|'escalation'; body: string; actorSessionID?: string; notify?: boolean }): Promise<{ message: PodMessage; delivery?: PodDeliveryState }>
