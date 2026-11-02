@@ -305,7 +305,14 @@ export async function handlePods(
         readMember(deps, url, podId);
         const items: PodGoalView[] = deps.goals.views
           ? deps.goals.views(podId)
-          : deps.goals.list(podId).map((row) => ({ ...row, title: row.goalId, phase: null, stage: { owner: 'system', kind: 'waiting' }, resultReady: false }));
+          : deps.goals.list(podId).map((row) => ({
+            ...row,
+            title: row.goalId,
+            phase: null,
+            stage: { owner: 'system', kind: 'waiting' },
+            resultReady: false,
+            revision: row.activeRevision,
+          }));
         sendJson(res, 200, { items });
         return true;
       }

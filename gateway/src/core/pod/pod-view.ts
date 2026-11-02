@@ -1,4 +1,9 @@
-import type { PodGoalRow, PodMessageDeliveryRow } from './pod-store';
+import type {
+  PodGoalDirectionStatus,
+  PodGoalRevisionStatus,
+  PodGoalRow,
+  PodMessageDeliveryRow,
+} from './pod-store';
 import type { PodDetail } from './pod-service';
 import {
   projectPodAttention,
@@ -6,6 +11,7 @@ import {
   type PodAttentionItem,
   type PodGoalStage,
   type PodGoalVerdict,
+  type PodNodeSessionSummary,
   type PodQueueReason,
 } from './pod-stage';
 
@@ -24,10 +30,18 @@ export interface PodGoalDescription {
     node: 'plan' | 'execute' | 'review';
     questions: string[];
   } | null;
-  nodeSession: unknown | null;
+  nodeSession: PodNodeSessionSummary | null;
   lastError: string | null;
   /** No state file yet (queued goal, or an active goal whose state vanished). */
   stateMissing?: boolean;
+  /** 这份描述对应的 revision（GoalStateV3.revision）；缺省 = 存储指针。 */
+  revision?: number;
+  /** 当前 revision 的任务状态（Task 3 行投影）；缺省 = legacy Goal。 */
+  revisionStatus?: PodGoalRevisionStatus | null;
+  /** 方向裁定状态（Task 6）；pending 才算人类 attention。 */
+  directionStatus?: PodGoalDirectionStatus | null;
+  /** 规划期的 Spike 正在运行（Task 9）。 */
+  probeRunning?: boolean;
 }
 
 export interface PodGoalView {
@@ -42,6 +56,11 @@ export interface PodGoalView {
   resultReady: boolean;
   /** 当前 revision（legacy 行为 1）；revision 明细见 pod_goal_revisions。 */
   activeRevision: number;
+  /**
+   * 本视图 stage 所描述的 revision。存储指针（`activeRevision`）是权威：
+   * 描述来自更旧 revision 时不再采信它的阶段快照，两者因此总是相等。
+   */
+  revision: number;
   priority: number;
   enqueuedAt: string;
   startedAt: string | null;
@@ -77,6 +96,10 @@ export function goalVerdictFromState(state: {
   return null;
 }
 
+function positiveRevision(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+}
+
 export function buildPodGoalView(
   row: PodGoalRow,
   description: PodGoalDescription | null,
@@ -84,6 +107,12 @@ export function buildPodGoalView(
 ): PodGoalView {
   const terminal = !!description?.terminal || row.status === 'done' || row.status === 'aborted';
   const verdict = row.verdict ?? description?.verdict ?? null;
+  // 描述里的 revision 只有与存储指针一致时才可信：打回后旧 state 快照的阶段
+  // 不能冒充当前 revision（否则会把已完成的旧版本显示成「结果已通知」）。
+  const describedRevision = positiveRevision(description?.revision);
+  const revisionStatus = describedRevision === null || describedRevision === row.activeRevision
+    ? description?.revisionStatus ?? null
+    : null;
   const stage = projectPodGoalStage({
     goalId: row.goalId,
     goalStatus: row.status,
@@ -95,6 +124,15 @@ export function buildPodGoalView(
     nodeSession: description?.nodeSession ?? null,
     stateMissing: row.status === 'active' && (!!description?.stateMissing || !description),
     ...(queueReason ? { queueReason } : {}),
+    revision: revisionStatus
+      ? {
+        revision: row.activeRevision,
+        status: revisionStatus,
+        directionStatus: description?.directionStatus ?? null,
+      }
+      : null,
+    direction: description?.directionStatus ? { status: description.directionStatus } : null,
+    probeRunning: description?.probeRunning === true,
   });
 
   return {
@@ -108,6 +146,7 @@ export function buildPodGoalView(
     stage,
     resultReady: terminal && !!description?.hasResultEvidence,
     activeRevision: row.activeRevision,
+    revision: row.activeRevision,
     priority: row.priority,
     enqueuedAt: row.enqueuedAt,
     startedAt: row.startedAt,

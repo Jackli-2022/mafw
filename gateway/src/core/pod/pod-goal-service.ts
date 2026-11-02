@@ -1,4 +1,4 @@
-import { PodError, PodStore, isTerminalGoalRevisionStatus, type PodGoalRow, type PodRow } from './pod-store';
+import { PodError, PodStore, isTerminalGoalRevisionStatus, type PodGoalRow, type PodProbeRow, type PodRow } from './pod-store';
 import type { PodService } from './pod-service';
 import { canonicalProjectDir } from './pod-identity';
 import {
@@ -337,11 +337,37 @@ export class PodGoalService {
   views(podId: string): PodGoalView[] {
     const pod = this.deps.store.getPod(podId);
     if (!pod) return [];
+    const runningProbe = this.deps.store.getRunningProbe(podId);
     return this.deps.store.listGoals(podId).map((row) => buildPodGoalView(
       row,
-      this.describeGoal(row.goalId),
+      this.describeWithRevision(row, runningProbe),
       this.queueReasonFor(pod, row),
     ));
+  }
+
+  /**
+   * 把当前 revision 的任务状态与 Spike 运行态并入描述（Task 11 读模型）：
+   * revision 行是「阶段/attention」的权威，state 只提供 blockers 与标题。
+   */
+  private describeWithRevision(
+    row: PodGoalRow,
+    runningProbe: PodProbeRow | null,
+  ): PodGoalDescription | null {
+    const description = this.describeGoal(row.goalId);
+    if (!description) return null;
+    const revision = this.deps.store.getGoalRevision(row.podId, row.goalId, row.activeRevision);
+    return {
+      ...description,
+      ...(revision
+        ? {
+          revisionStatus: revision.status,
+          directionStatus: revision.directionStatus,
+        }
+        : {}),
+      probeRunning: !!runningProbe
+        && runningProbe.goalId === row.goalId
+        && runningProbe.revision === row.activeRevision,
+    };
   }
 
   attention(podId: string): PodAttentionItem[] {
