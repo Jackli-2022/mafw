@@ -21,10 +21,12 @@ export type PluginViewActionHandler = (action: string, input?: unknown) => void
 export function PluginViewRenderer(props: {
   view: PluginView
   onAction: PluginViewActionHandler
+  /** Windows own the heading; suppressing it avoids a duplicate title. */
+  heading?: boolean
 }): JSX.Element {
   return (
     <div class="mafw-plugin-view" style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
-      <Show when={props.view.title || props.view.subtitle}>
+      <Show when={props.heading !== false && (props.view.title || props.view.subtitle)}>
         <div style={{ display: "flex", "flex-direction": "column", gap: "2px" }}>
           <Show when={props.view.title}>
             <div style={{ "font-size": "13px", "font-weight": "600", color: "var(--text-strong)" }}>

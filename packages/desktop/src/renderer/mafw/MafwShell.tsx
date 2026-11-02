@@ -56,6 +56,7 @@ import { ingestPodEvent, podStore } from "./pod-store"
 import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
 import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
 import { PluginSurfaceHost } from "./plugins/PluginSurfaceHost"
+import { PluginWindowHost } from "./plugins/PluginWindowHost"
 import { podRailBadge } from "./pod-rail-badge"
 import { podRoleForSession } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
@@ -2635,6 +2636,8 @@ export function MafwShell() {
         <EventInspector onClose={() => setShowInspector(false)} />
       </Show>
       <ImageLightbox />
+      {/* 统一插件包消息小窗：主窗口 DOM 内 overlay，绝不创建 BrowserWindow。 */}
+      <PluginWindowHost />
     </div>
             </DataProvider>
           </FileComponentProvider>
