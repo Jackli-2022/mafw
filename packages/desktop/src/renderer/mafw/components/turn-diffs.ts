@@ -1,5 +1,6 @@
 // Per-turn diff helpers (B3.1): choose user turns that have assistant
 // snapshots, fetch each turn's diff, and merge it into checkpoints/diffs.
+import type { MafwMessage } from "@mafw/sdk"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { Checkpoint, CheckpointFile } from "./checkpoint-model"
 import { isLocalMessageId } from "../chat/local-id"
@@ -10,19 +11,20 @@ export interface TurnDiffCandidate {
   snapshotKey: string
 }
 
-function roleOf(message: any): string | undefined {
+/** 回合快照是 View DTO 字段（`MafwMessage.snapshot`，只有树 id）；不再读原生 `info.snapshot`。 */
+type Snapshot = NonNullable<MafwMessage["snapshot"]>
+
+function roleOf(message: MafwMessage): string | undefined {
   if (!message || typeof message !== "object") return undefined
-  if (typeof message.role === "string") return message.role
-  if (message.type === "user" || message.type === "assistant") return message.type
-  return undefined
+  return message.role
 }
 
-function createdOf(message: any): number {
+function createdOf(message: MafwMessage): number {
   const value = message?.time?.created
   return typeof value === "number" ? value : Number.MAX_SAFE_INTEGER
 }
 
-function chronological(messages: any[]): any[] {
+function chronological(messages: MafwMessage[]): MafwMessage[] {
   return (Array.isArray(messages) ? messages : [])
     .filter((message) => message && typeof message === "object")
     .map((message, index) => ({ message, index }))
@@ -34,7 +36,7 @@ function chronological(messages: any[]): any[] {
  *  `excludeLastTurn` drops the newest user turn (in-flight): its snapshot key
  *  changes on every assistant step, which would refetch all turns per step. */
 export function collectTurnDiffCandidates(
-  messages: any[],
+  messages: MafwMessage[],
   opts: { excludeLastTurn?: boolean } = {},
 ): TurnDiffCandidate[] {
   const items = chronological(messages)
@@ -60,14 +62,14 @@ export function collectTurnDiffCandidates(
     const snapshots = items
       .slice(i + 1, nextUser)
       .filter((item) => roleOf(item) === "assistant")
-      .map((item) => item?.snapshot)
-      .filter((snapshot) => snapshot && typeof snapshot.start === "string" && snapshot.start)
+      .map((item) => item.snapshot)
+      .filter((snapshot): snapshot is Snapshot => !!snapshot && typeof snapshot.start === "string" && snapshot.start.length > 0)
     if (snapshots.length === 0) continue
 
     const last = snapshots[snapshots.length - 1]
     out.push({
       messageID: id,
-      snapshotKey: `${last.start}:${last.end ?? ""}:${last.files?.length ?? 0}`,
+      snapshotKey: `${last.start}:${last.end ?? ""}:${Array.isArray(last.files) ? last.files.length : 0}`,
     })
   }
   return out
@@ -76,7 +78,7 @@ export function collectTurnDiffCandidates(
 /** Fetch one diff per candidate with bounded concurrency; failures become null. */
 export async function loadTurnDiffs(
   sessionID: string,
-  messages: any[],
+  messages: MafwMessage[],
   fetchDiff: (sessionID: string, messageID: string) => Promise<{ files: FileDiffEntry[] }>,
   concurrency = 4,
   opts: { excludeLastTurn?: boolean } = {},

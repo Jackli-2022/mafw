@@ -58,8 +58,29 @@ describe('normalizeOpencodeHistory', () => {
     expect((flat.content![4] as Record<string, unknown>).custom).toBe('keep'); // 透传部件字段保留
   });
 
-  it('user wire：model 对象/summary 原样透传（零换名）', () => {
-    const [flat] = normalizeOpencodeHistory([userWire]);
+  it('assistant snapshot tree ids survive the flat envelope (per-turn diff source, I4)', () => {
+    const wire = {
+      info: {
+        id: 'ma_2', sessionID: 'ses_1', role: 'assistant', time: { created: 3 },
+        snapshot: {
+          start: 'a'.repeat(40),
+          end: 'b'.repeat(40),
+          files: [{ file: 'src/a.ts', additions: 1, deletions: 0 }],
+        },
+      },
+      parts: [],
+    };
+    const [flat] = normalizeOpencodeHistory([wire]);
+    // View DTO 字段（`MafwMessage.snapshot`）：只有树 id + 文件指针，没有仓库路径
+    expect(flat.snapshot).toEqual(wire.info.snapshot);
+    expect(isMafwMessage(flat)).toBe(true);
+
+    // 无快照的回合不伪造 snapshot
+    const [plain] = normalizeOpencodeHistory([userWire]);
+    expect(plain.snapshot).toBeUndefined();
+  });
+
+  it('user wire：model 对象/summary 原样透传（零换名）', () => {    const [flat] = normalizeOpencodeHistory([userWire]);
     expect(isMafwMessage(flat)).toBe(true);
     expect(flat).toMatchObject({
       id: 'mu_1', role: 'user',

@@ -8,6 +8,7 @@
 // - 单回合失败/整体失败 → 移除请求 key，允许下次重试；
 // - 请求 key 集合上限 50（防长会话无界增长）。
 import { createSignal } from "solid-js"
+import type { MafwMessage } from "@mafw/sdk"
 import type { FileDiffEntry } from "./components/DiffReviewPanel"
 import { aggregateSessionDiffs } from "./components/session-diffs"
 import { collectTurnDiffCandidates, loadTurnDiffs, mergeDiffLists, turnDiffRequestKey } from "./components/turn-diffs"
@@ -16,7 +17,7 @@ export type DiffFetcher = (sessionID: string, messageID: string) => Promise<{ fi
 type PerTurnMap = Record<string, FileDiffEntry[] | null>
 type EnsureInput = {
   sid: string
-  messages: any[]
+  messages: MafwMessage[]
   /** Experience `branch.diff` supported（不再读 runtime capabilities）。 */
   diffSupported: boolean
   busy: boolean
@@ -54,11 +55,11 @@ export function createSessionTurnDiffsStore(fetchDiff: DiffFetcher) {
   }
 
   /** 与 ChangesDock/EditorDock 完全一致的合并结果（summary 打底，per-turn 覆盖）。 */
-  function entries(sid: string, messages: any[]): FileDiffEntry[] {
+  function entries(sid: string, messages: MafwMessage[]): FileDiffEntry[] {
     return mergeDiffLists(aggregateSessionDiffs(messages), perTurn(sid))
   }
 
-  function count(sid: string, messages: any[]): number {
+  function count(sid: string, messages: MafwMessage[]): number {
     return entries(sid, messages).length
   }
 

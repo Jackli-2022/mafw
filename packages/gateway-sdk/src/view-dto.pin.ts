@@ -116,6 +116,8 @@ const _assistantMessage: MafwMessage = {
   model: { providerID: 'pi', modelID: 'm1' },
   agent: 'build',
   stopReason: 'cancelled',
+  // 回合快照树（per-turn diff 依据）：只有树 id 进 DTO，仓库位置留在 adapter。
+  snapshot: { start: 'a'.repeat(40), end: 'b'.repeat(40), files: [{ file: 'a.ts' }] },
   summary: {
     title: 'title',
     diffs: [{ file: 'a.ts', additions: 1, deletions: 0, status: 'modified' }],

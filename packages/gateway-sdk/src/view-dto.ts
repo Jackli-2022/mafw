@@ -178,6 +178,19 @@ export interface MafwDiff {
   status?: MafwDiffStatus
 }
 
+/**
+ * 回合快照引用（git tree id）：per-turn diff 的唯一依据（`session.diff?messageID=`）。
+ * runtime 私有存储位置不入 DTO——只暴露树 id 与文件计数指针。
+ */
+export interface MafwMessageSnapshot {
+  /** 回合起始树（assistant 首步 snapshot.start） */
+  start?: string
+  /** 回合结束树（assistant 末步 snapshot.end） */
+  end?: string
+  /** 该步涉及的文件（存在但 end 缺失 = 未完成快照） */
+  files?: unknown[]
+}
+
 export interface MafwMessage {
   /** 事件载荷形态可缺省（parts 经 part.updated 单独流）；历史形态必有。 */
   id?: string
@@ -194,6 +207,8 @@ export interface MafwMessage {
   stopReason?: StopReason
   summary?: { title?: string; body?: string; diffs?: MafwDiff[] }
   error?: MafwMessageError
+  /** 回合快照树（per-turn diff 依据；只有带快照的 runtime/回合才有）。 */
+  snapshot?: MafwMessageSnapshot
   extensions?: Record<string, unknown>
 }
 
@@ -369,7 +384,7 @@ export const VIEW_DTO_FIELD_INVENTORY = {
     required: ['role'],
     fields: [
       'id', 'sessionID', 'role', 'parentID', 'content', 'time',
-      'model', 'agent', 'stopReason', 'summary', 'error', 'extensions',
+      'model', 'agent', 'stopReason', 'summary', 'error', 'snapshot', 'extensions',
     ],
   },
   part: {

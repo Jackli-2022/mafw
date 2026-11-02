@@ -103,3 +103,27 @@ test("session fallback and request key", () => {
   expect(shouldFetchSessionDiff(false, true)).toBe(true)
   expect(turnDiffRequestKey("s", [{ messageID: "u", snapshotKey: "a" }])).toBe("s|u:a")
 })
+
+test("turn candidates read the View DTO snapshot field only (I4)", () => {
+  // MafwMessage.snapshot（gateway 投影的树 id）；40/64-hex 由 gateway 校验
+  const dto = {
+    id: "u1", role: "user", time: { created: 1 },
+    content: [{ id: "p1", type: "text", text: "hi" }],
+  } as any
+  const asstDto = {
+    id: "a1", role: "assistant", time: { created: 2 },
+    snapshot: { start: "a".repeat(40), end: "b".repeat(40), files: [{ file: "src/a.ts" }] },
+  } as any
+  const out = collectTurnDiffCandidates([dto, asstDto])
+  expect(out).toHaveLength(1)
+  expect(out[0].messageID).toBe("u1")
+  expect(out[0].snapshotKey).toBe(`${"a".repeat(40)}:${"b".repeat(40)}:1`)
+
+  // 原生嵌套形状（info.snapshot）不是 View DTO：不参与候选
+  const nativeShape = { id: "a2", role: "assistant", time: { created: 3 }, info: { snapshot: { start: "c", end: "d" } } } as any
+  expect(collectTurnDiffCandidates([dto, nativeShape])).toEqual([])
+
+  // 缺 end 的快照仍可作为候选（gateway 端判定不完整）
+  const partial = { id: "a3", role: "assistant", time: { created: 4 }, snapshot: { start: "e".repeat(40) } } as any
+  expect(collectTurnDiffCandidates([dto, partial])[0].snapshotKey).toBe(`${"e".repeat(40)}::0`)
+})

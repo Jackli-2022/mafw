@@ -16,6 +16,7 @@
       "stopReason",
       "summary",
       "error",
+      "snapshot",
       "extensions"
     ]
   },

@@ -9,14 +9,18 @@ export interface ToolRegistry {
 export const DEFINITIONS: ToolDefinition[] = [
   {
     name: "mafw_create_goal",
-    description: "Create a new MAFW goal with charter and request files",
+    description: "Create a new MAFW goal. Project Lead: the Goal is created directly in discussion (hidden Tech Lead session, ContextManifest seeded) and never auto-starts NodeDriver. Other callers write a legacy charter/request goal.",
     inputSchema: {
       type: "object",
       properties: {
-        goalId: { type: "string", description: "Unique goal identifier (e.g. 003-foo)" },
+        goalId: { type: "string", description: "Unique goal identifier (generated for Lead-created discussion goals when omitted)" },
         title: { type: "string", description: "Human-readable goal title" },
+        objective: { type: "string", description: "Objective for a Lead-created discussion goal (alternative to charter)" },
         charter: { type: "string", description: "Goal charter content in markdown" },
         source: { type: "string", description: "Source of the goal request", default: "user" },
+        sessionID: { type: "string", description: "Caller session; required for Lead routing through the Tech Lead" },
+        projectDir: { type: "string", description: "Registered project directory (defaults to MAFW_PROJECT_DIR/current)" },
+        planReview: { type: "string", enum: ["auto", "manual"], description: "Plan approval mode (manual = human approves the plan)" },
         metrics: {
           type: "object",
           description: "Success metrics key-value pairs",
@@ -32,7 +36,37 @@ export const DEFINITIONS: ToolDefinition[] = [
         },
         taskType: { type: "string", enum: ["feature", "bugfix", "refactor", "research", "docs", "test", "other"], description: "D4b task type (optional declaration; the plan node's judgement in waves.taskType wins). Powers task-typed capability priors and counterfactual pre-mortem." },
       },
-      required: ["goalId", "title", "charter"],
+      required: ["title"],
+    },
+  },
+  {
+    name: "mafw_pod_goal_direction",
+    description: "Record the Tech Lead direction decision for a discussion Goal. Only the Goal-bound Tech Lead session may call it. clear = direction is unambiguous (no user attention); decided = the user supplied a direction; needs_user = a real ambiguity needs the user to decide (persists attention and does NOT start planning).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string", description: "Goal identifier" },
+        mode: { type: "string", enum: ["clear", "needs_user", "decided"], description: "Direction outcome" },
+        userWords: { type: "string", description: "User words (verbatim) or the clear Tech Lead conclusion" },
+        optionId: { type: "string", description: "Chosen direction option id (when options were offered)" },
+        options: {
+          type: "array",
+          description: "Direction options for needs_user",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              title: { type: "string" },
+              summary: { type: "string" },
+              risks: { type: "array", items: { type: "string" } },
+            },
+            required: ["id", "title"],
+          },
+        },
+        reason: { type: "string", description: "Why the user must decide, or rationale for the decision" },
+        sessionID: { type: "string", description: "Calling Tech Lead session id (MCP does not carry caller identity)" },
+      },
+      required: ["goalId", "mode"],
     },
   },
   {
@@ -607,6 +641,7 @@ for (const def of DEFINITIONS) {
 }
 
 import { handleCreateGoal } from "./handlers/create-goal";
+import { handlePodGoalDirection } from "./handlers/pod-goal-direction";
 import { handleUpdateState } from "./handlers/update-state";
 import { handleSearchHybrid } from "./handlers/search-hybrid";
 import { handleGetDeltas } from "./handlers/get-deltas";
@@ -652,6 +687,7 @@ export function createToolRegistry(): ToolRegistry {
     definitions: DEFINITIONS.map((d) => d.outputSchema ? d : { ...d, outputSchema: genericOutputSchema }),
     handlers: {
       mafw_create_goal: handleCreateGoal,
+      mafw_pod_goal_direction: handlePodGoalDirection,
       mafw_update_state: handleUpdateState,
       mafw_search_hybrid: handleSearchHybrid,
       mafw_get_deltas: handleGetDeltas,
