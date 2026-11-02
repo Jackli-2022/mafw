@@ -35,7 +35,14 @@ function makeFixture(opts: { request?: Record<string, unknown>; activeRevision?:
     JSON.stringify({ title: 'g1', ...(opts.request ?? {}) }),
     'utf-8',
   );
+  fs.writeFileSync(path.join(goalDir, 'direction.json'), JSON.stringify({ decisions: [] }), 'utf-8');
   fs.writeFileSync(path.join(goalDir, 'notes', 'design.md'), '# design', 'utf-8');
+  fs.writeFileSync(path.join(mafwDir, 'waves.json'), JSON.stringify({ waves: [] }), 'utf-8');
+  fs.writeFileSync(path.join(goalDir, 'goal-eval.json'), JSON.stringify({ conditions: [] }), 'utf-8');
+  const revDir = path.join(mafwDir, 'revisions', 'g1', 'rev-2');
+  fs.mkdirSync(revDir, { recursive: true });
+  fs.writeFileSync(path.join(revDir, 'waves.json'), JSON.stringify({ waves: [] }), 'utf-8');
+  fs.writeFileSync(path.join(revDir, 'goal-eval.json'), JSON.stringify({ conditions: [] }), 'utf-8');
 
   const activeRevision = opts.activeRevision ?? 2;
   const revisions = new Map<number, any>([
@@ -220,6 +227,30 @@ describe('PodContextSelectionService', () => {
     );
     const cleared = await f.service.select({ goalId: 'g1', revision: 2, refs: [] }, 'ses_lead');
     expect(cleared.manifest.optional).toEqual([]);
+  });
+
+  test('cross-Goal goal ids are validated (no goals-root escape)', async () => {
+    const f = makeFixture();
+    // 目标文件确实存在（在 goals 根之外），只有 id 校验能挡住它。
+    fs.writeFileSync(path.join(f.mafwDir, 'escape.md'), 'secret', 'utf-8');
+
+    await expect(
+      f.service.select(
+        { goalId: 'g1', revision: 2, refs: [{ goalId: '../../escape', path: 'escape.md' }] },
+        'ses_lead',
+      ),
+    ).rejects.toThrow(/goal id/);
+    expect(selectionFile(f.goalDir)).toBeNull();
+
+    // allowlist 本身也不能携带不安全的 goal id。
+    const badAllowlist = makeFixture({ request: { contextAllowlist: ['../../escape'] } });
+    await expect(
+      badAllowlist.service.select(
+        { goalId: 'g1', revision: 2, refs: [{ path: 'notes/design.md', scope: 'goal' }] },
+        'ses_lead',
+      ),
+    ).rejects.toThrow(/goal id/);
+    expect(selectionFile(badAllowlist.goalDir)).toBeNull();
   });
 
   test('only the active, non-terminal revision can be widened', async () => {

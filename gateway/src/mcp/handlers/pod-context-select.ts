@@ -25,10 +25,11 @@ import {
   type GoalContextNode,
 } from '../../core/goal/context-manifest';
 import {
+  findGoalCharterPath,
   findGoalRequestPath,
   readGoalRequest,
 } from '../../core/goal/goal-intake';
-import { goalArtifactRoot } from '../../core/goal/node-prompts';
+import { goalArtifactRoot, nodeArtifactPaths, goalEvalArtifactPath } from '../../core/goal/node-prompts';
 import {
   PodError,
   isTerminalGoalRevisionStatus,
@@ -51,6 +52,19 @@ const NODE_ROLE: Record<GoalContextNode | 'probe', string> = {
 };
 
 const SAFE_GOAL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** 与 goal-intake 的目录名约束同一形状：不放行 `..`、空段或路径分隔符。 */
+function isSafeGoalId(value: unknown): boolean {
+  const id = clean(value);
+  return !!id && SAFE_GOAL_ID.test(id) && !id.includes('..');
+}
+
+/**
+ * 阶段基线里「该阶段可能尚未产出」的文件：probe 在最终计划之前跑，waves.json 不存在是正常的
+ * （仍然按真实路径列在清单里，供 Builder 知道最终产物会落在哪里）。
+ * 其余基线的缺失一律 fail-closed——基线路径写错时不能靠「跳过检查」变得不可见。
+ */
+const DEFERRED_BASELINE: Record<string, string[]> = { probe: ['waves.json'] };
 
 /**
  * 敏感引用（凭据/密钥/私钥/仓库内部状态）：永远不会被选进 worker 上下文。
@@ -289,8 +303,12 @@ export class PodContextSelectionService {
 
   private assertRefsSafe(refs: ContextRefInput[]): void {
     for (const ref of refs) {
-      const display = clean(ref?.goalId)
-        ? `${clean(ref?.goalId)}/${String(ref?.path ?? '')}`
+      const declaredGoal = clean(ref?.goalId);
+      if (declaredGoal && !isSafeGoalId(declaredGoal)) {
+        throw new PodError(400, `invalid cross-goal goal id: ${declaredGoal}`);
+      }
+      const display = declaredGoal
+        ? `${declaredGoal}/${String(ref?.path ?? '')}`
         : String(ref?.path ?? '');
       if (isSensitivePath(display)) {
         throw new PodError(400, `sensitive context reference rejected: ${display}`);
@@ -328,13 +346,26 @@ export class PodContextSelectionService {
     const raw = (request as any).contextAllowlist ?? (request as any).crossGoalRefs;
     if (!Array.isArray(raw)) return [];
     return raw
-      .map((entry) => (
-        typeof entry === 'string'
-          ? entry
-          : entry && typeof entry === 'object'
-            ? (entry as ContextRefInput)
-            : null
-      ))
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          const text = entry.trim();
+          if (!text) throw new PodError(400, 'cross-goal allowlist entry is required');
+          // `goalId` / `goalId/*` / `goalId/<path>`：首段必须是安全的 Goal id。
+          const goalId = text.split('/')[0];
+          if (!isSafeGoalId(goalId)) {
+            throw new PodError(400, `invalid cross-goal allowlist goal id: ${goalId}`);
+          }
+          return text;
+        }
+        if (entry && typeof entry === 'object') {
+          const ref = entry as ContextRefInput;
+          if (!isSafeGoalId(ref.goalId)) {
+            throw new PodError(400, `invalid cross-goal allowlist goal id: ${String(ref.goalId ?? '')}`);
+          }
+          return ref;
+        }
+        return null;
+      })
       .filter((entry): entry is string | ContextRefInput => entry !== null);
   }
 
@@ -349,20 +380,91 @@ export class PodContextSelectionService {
     } catch (err: any) {
       throw new PodError(400, String(err?.message ?? err));
     }
+    let manifest: ContextManifest;
     try {
-      return buildContextManifest({
+      manifest = buildContextManifest({
         goalId: context.goalId,
         revision: context.revision,
         stage: normalizedStage,
         role: NODE_ROLE[(stage as GoalContextNode | 'probe')] ?? null,
         optional: refs,
         allowedCrossGoalRefs: this.crossGoalAllowlist(context),
-        // 阶段基线由 Goal 生命周期自己产出：尚未写出的基线（如 probe 时的 waves.json）
-        // 仍然列在清单里，但不属于「Lead 选入的失效引用」，不该阻断节点。
+        // 基线在下面单独按真实路径校验/改写（buildContextManifest 只认识逻辑名）。
         exists: (ref) => ref.baseline || this.refExists(ref, context),
       });
     } catch (err: any) {
       throw new PodError(400, String(err?.message ?? err));
+    }
+    // 跨 Goal 的 goalId 也可能是从路径首段推断出来的：统一再校验一次，绝不 join 到 goals 外。
+    for (const ref of [...manifest.optional, ...manifest.crossGoal]) {
+      if (ref.crossGoal && !isSafeGoalId(ref.goalId)) {
+        throw new PodError(400, `invalid cross-goal goal id: ${String(ref.goalId ?? '')}`);
+      }
+    }
+    return this.resolveBaselinePaths(manifest, context, normalizedStage);
+  }
+
+  /**
+   * 基线的逻辑名 → 真实文件路径（并在渲染前校验存在性）。
+   *
+   * 布局差异（Task 12/13 的产物隔离）：
+   * - `goal.md` / `request.json` / `direction.json` → `<mafw>/goals/<goalId>/`
+   * - `waves.json`：rev1 在 `<mafw>/waves.json`，rev≥2 在 `<mafw>/revisions/<goalId>/rev-N/waves.json`
+   * - `goal-eval.json`：rev1 在 `<mafw>/goals/<goalId>/`，rev≥2 与 waves 同目录
+   * 只在 `DEFERRED_BASELINE` 列出的阶段允许「尚未产出」，其它缺失直接拒绝。
+   */
+  private resolveBaselinePaths(
+    manifest: ContextManifest,
+    context: GoalContext,
+    stage: string,
+  ): ContextManifest {
+    const deferred = DEFERRED_BASELINE[stage] ?? [];
+    const missing: string[] = [];
+    const required = manifest.required.map((ref) => {
+      if (!ref.baseline) return ref;
+      const file = this.baselinePath(context, ref.path);
+      const displayPath = this.displayBaselinePath(context, file);
+      const readable = this.isReadableFile(file);
+      if (!readable && !deferred.includes(ref.path)) missing.push(displayPath);
+      return { ...ref, displayPath };
+    });
+    if (missing.length > 0) {
+      throw new PodError(400, `required context missing: ${missing[0]}`);
+    }
+    return { ...manifest, required };
+  }
+
+  private baselinePath(context: GoalContext, name: string): string {
+    switch (name) {
+      case 'goal.md':
+        return findGoalCharterPath(context.mafwDir, context.goalId)
+          ?? path.join(context.goalDir, 'goal.md');
+      case 'request.json':
+        return findGoalRequestPath(context.mafwDir, context.goalId)
+          ?? path.join(context.goalDir, 'request.json');
+      case 'direction.json':
+        return path.join(context.goalDir, 'direction.json');
+      case 'waves.json':
+        return nodeArtifactPaths(context.mafwDir, context.goalId, 1, { revision: context.revision }).waves;
+      case 'goal-eval.json':
+        return goalEvalArtifactPath(context.mafwDir, context.goalId, context.revision);
+      default:
+        return path.join(context.goalDir, name);
+    }
+  }
+
+  /** 渲染用路径：mafw 根内用相对路径（与 OS 无关、可持久化），根外用绝对路径。 */
+  private displayBaselinePath(context: GoalContext, file: string): string {
+    const relative = path.relative(context.mafwDir, file);
+    const inside = !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+    return (inside ? relative : file).replace(/\\/g, '/');
+  }
+
+  private isReadableFile(file: string): boolean {
+    try {
+      return fs.statSync(file).isFile();
+    } catch {
+      return false;
     }
   }
 
@@ -372,6 +474,7 @@ export class PodContextSelectionService {
     if (ref.scope === 'project') {
       if (context.projectDir) candidates.push(path.join(context.projectDir, ref.path));
     } else if (ref.scope === 'cross-goal' && ref.goalId) {
+      if (!isSafeGoalId(ref.goalId)) return false;
       candidates.push(path.join(context.mafwDir, 'goals', ref.goalId, ref.path));
     } else {
       candidates.push(path.join(context.goalDir, ref.path));
@@ -379,9 +482,7 @@ export class PodContextSelectionService {
       candidates.push(path.join(goalArtifactRoot(context.mafwDir, context.goalId, context.revision), ref.path));
     }
     for (const candidate of candidates) {
-      try {
-        if (fs.statSync(candidate).isFile()) return true;
-      } catch { /* 下一个候选 */ }
+      if (this.isReadableFile(candidate)) return true;
     }
     return false;
   }

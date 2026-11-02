@@ -23,7 +23,7 @@ interface Fixture {
   service: PodContextSelectionService;
 }
 
-function makeFixture(opts: { request?: Record<string, unknown>; activeRevision?: number } = {}): Fixture {
+function makeFixture(opts: { request?: Record<string, unknown>; activeRevision?: number; artifacts?: boolean } = {}): Fixture {
   const mafwDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-ctx-wiring-'));
   const goalDir = path.join(mafwDir, 'goals', 'g1');
   fs.mkdirSync(path.join(goalDir, 'notes'), { recursive: true });
@@ -33,7 +33,17 @@ function makeFixture(opts: { request?: Record<string, unknown>; activeRevision?:
     JSON.stringify({ title: 'g1', ...(opts.request ?? {}) }),
     'utf-8',
   );
+  fs.writeFileSync(path.join(goalDir, 'direction.json'), JSON.stringify({ decisions: [] }), 'utf-8');
   fs.writeFileSync(path.join(goalDir, 'notes', 'design.md'), '# design', 'utf-8');
+  // 真实产物布局：rev1 的 waves 在 mafw 根、goal-eval 在 Goal 目录；rev≥2 全部在 revisions/ 下。
+  if (opts.artifacts !== false) {
+    fs.writeFileSync(path.join(mafwDir, 'waves.json'), JSON.stringify({ waves: [] }), 'utf-8');
+    fs.writeFileSync(path.join(goalDir, 'goal-eval.json'), JSON.stringify({ conditions: [] }), 'utf-8');
+    const revDir = path.join(mafwDir, 'revisions', 'g1', 'rev-2');
+    fs.mkdirSync(revDir, { recursive: true });
+    fs.writeFileSync(path.join(revDir, 'waves.json'), JSON.stringify({ waves: [] }), 'utf-8');
+    fs.writeFileSync(path.join(revDir, 'goal-eval.json'), JSON.stringify({ conditions: [] }), 'utf-8');
+  }
 
   const activeRevision = opts.activeRevision ?? 2;
   const store: any = {
@@ -120,6 +130,38 @@ describe('ContextManifest assembly', () => {
     const block = await f.service.renderForNode({ goalId: 'g1', node: 'probe', revision: 2 });
     expect(block).toContain('stage: probe');
     expect(block).toContain('goal.md');
+  });
+
+  test('baseline refs render their real revision paths', async () => {
+    const f = makeFixture();
+
+    const rev1 = await f.service.renderForNode({ goalId: 'g1', node: 'execute', revision: 1 });
+    // rev1：waves 在 mafw 根，goal-eval 在 Goal 目录。
+    expect(rev1).toContain('- waves.json (baseline)');
+    expect(rev1).toContain('- goals/g1/goal-eval.json (baseline)');
+    expect(rev1).toContain('- goals/g1/goal.md (baseline)');
+    expect(rev1).toContain('- goals/g1/request.json (baseline)');
+    expect(rev1).toContain('- goals/g1/direction.json (baseline)');
+
+    const rev2 = await f.service.renderForNode({ goalId: 'g1', node: 'execute', revision: 2 });
+    // rev≥2：产物全部隔离在 revisions/<goal>/rev-N/ 下（旧的 g1/waves.json 不再出现）。
+    expect(rev2).toContain('- revisions/g1/rev-2/waves.json (baseline)');
+    expect(rev2).toContain('- revisions/g1/rev-2/goal-eval.json (baseline)');
+    expect(rev2).not.toContain('- g1/waves.json');
+    expect(rev2).not.toContain('- g1/goal-eval.json');
+  });
+
+  test('missing required baseline fails closed with the resolved path', async () => {
+    const f = makeFixture({ artifacts: false });
+
+    await expect(f.service.renderForNode({ goalId: 'g1', node: 'execute', revision: 1 }))
+      .rejects.toThrow(/required context missing: .*waves\.json/);
+    await expect(f.service.renderForNode({ goalId: 'g1', node: 'execute', revision: 2 }))
+      .rejects.toThrow(/required context missing: .*rev-2\/waves\.json/);
+
+    // probe 的 waves 基线是「计划尚未产出」，不作为硬前置。
+    const probe = await f.service.renderForNode({ goalId: 'g1', node: 'probe', revision: 1 });
+    expect(probe).toContain('- waves.json (baseline)');
   });
 });
 
