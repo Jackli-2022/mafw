@@ -620,7 +620,7 @@ git commit -m "feat(plugins): ship unified declarative plugin example"
 
 - [ ] **Step 1: Run the real Desktop smoke**
 
-Start gateway and Desktop dev app. Install `docs/examples/plugins/service-monitor` through Plugins → install from directory. Verify panel tab, config page, tool card, message window, action callback, registered event refresh, revision update after editing, failed candidate rollback, disable/delete cleanup, and legacy plugin regression.
+Start gateway and Desktop dev app. Install `docs/examples/plugins/service-monitor` through Plugins → install from directory. Verify panel tab, config page, tool card, message window, action callback, registered event refresh, revision update after editing, failed candidate rollback, disable/delete cleanup, and legacy plugin regression. For message windows also verify: a modal window traps Tab/Shift+Tab and restores focus to the previously focused element on close; Esc closes a dismissible modal but is consumed without closing a non-dismissible one; Esc in a modeless window closes only when focus is inside it; with 3+ real-height modeless windows the capped stack scrolls and every close button stays reachable.
 
 - [ ] **Step 2: Record evidence and any defects**
 

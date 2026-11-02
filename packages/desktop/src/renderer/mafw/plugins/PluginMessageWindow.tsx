@@ -19,6 +19,7 @@ import { classifyPanelActionOutput } from "./plugin-view-model"
 import {
   EMPTY_PLUGIN_WINDOW_VIEW_STATE,
   beginWindowViewRequest,
+  decidePluginWindowEscape,
   failWindowView,
   fetchPluginWindowView,
   pluginWindowActionInput,
@@ -26,6 +27,7 @@ import {
   replaceWindowView,
   setWindowActionOutput,
   settleWindowView,
+  shouldShowPluginWindowClose,
   type PluginWindowEntry,
 } from "./plugin-windows"
 import { PluginViewRenderer } from "./PluginViewRenderer"
@@ -117,9 +119,16 @@ export function PluginMessageWindow(props: {
   const heading = () => (props.entry.modal ? "dialog" : "region")
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (props.entry.modal) return
     if (event.key !== "Escape") return
-    if (!props.entry.dismissible) return
+    // Modal Esc is decided by the host (capture phase); this handler only ever
+    // sees modeless cards, and only closes when focus is inside a dismissible
+    // one (the handler itself is proof of the focus context).
+    const action = decidePluginWindowEscape({
+      modalKey: null,
+      entry: props.entry,
+      focusInside: true,
+    })
+    if (action !== "close") return
     event.preventDefault()
     event.stopPropagation()
     props.onClose()
@@ -141,7 +150,7 @@ export function PluginMessageWindow(props: {
     >
       <div class="mafw-plugin-window-head">
         <div class="mafw-plugin-window-title">{title()}</div>
-        <Show when={props.entry.dismissible}>
+        <Show when={shouldShowPluginWindowClose(props.entry)}>
           <ButtonV2
             variant="ghost"
             size="small"

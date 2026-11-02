@@ -12,7 +12,10 @@ import {
   applyWindowRevision,
   closePluginWindow,
   cycleFocusIndex,
+  decidePluginWindowDismiss,
+  decidePluginWindowEscape,
   openPluginWindow,
+  planPluginWindowFocus,
   pluginWindowDeclarations,
   pluginWindowTriggersOn,
   type PluginWindowEntry,
@@ -55,6 +58,18 @@ export function PluginWindowHost() {
     const current = elements.get(key)
     if (!current || !current.isConnected) elements.delete(key)
   }
+
+  // The modeless stack is bottom-anchored: keep the newest card (and its close
+  // button) visible when 3+ windows exceed the capped container height.
+  let modelessStack: HTMLDivElement | undefined
+  createEffect(() => {
+    const count = state().windows.filter((entry) => !entry.modal).length
+    if (count === 0) return
+    queueMicrotask(() => {
+      const stack = modelessStack
+      if (stack) stack.scrollTop = stack.scrollHeight
+    })
+  })
 
   // Committed descriptors drive cleanup/update of open windows. Unchanged
   // windows keep their entry object, so ordinary revisions do not churn them.
@@ -106,20 +121,22 @@ export function PluginWindowHost() {
     const focus = state().focus
     if (focus.token === lastFocusToken) return
     lastFocusToken = focus.token
-    const modalKey = focus.modalKey
+    const plan = planPluginWindowFocus<HTMLElement>({
+      previousKey: lastModalKey,
+      nextKey: focus.modalKey,
+      restoreTarget: restoreElement,
+      activeElement: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    })
+    restoreElement = plan.restoreTarget
+    lastModalKey = focus.modalKey
 
-    if (modalKey && !lastModalKey) {
-      restoreElement =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (plan.restoredTarget) {
+      const target = plan.restoredTarget
+      if (target.isConnected) queueMicrotask(() => target.focus())
     }
-    if (!modalKey && lastModalKey) {
-      const target = restoreElement
-      restoreElement = null
-      if (target && target.isConnected) queueMicrotask(() => target.focus())
-    }
-    lastModalKey = modalKey
+
+    const modalKey = plan.focusKey
     if (!modalKey) return
-
     queueMicrotask(() => {
       if (disposed || state().focus.modalKey !== modalKey) return
       const root = elements.get(modalKey)
@@ -130,8 +147,7 @@ export function PluginWindowHost() {
   const topModalKey = () => state().focus.modalKey
 
   const requestClose = (key: string) => {
-    const entry = entryOf(key)
-    if (!entry || !entry.dismissible) return
+    if (decidePluginWindowDismiss(entryOf(key)) !== "close") return
     setState((previous) => closePluginWindow(previous, key))
   }
 
@@ -145,9 +161,15 @@ export function PluginWindowHost() {
       if (event.key === "Escape") {
         // A modal is blocking: Esc never leaks to the workspace beneath it,
         // and only a dismissible window actually closes.
+        const action = decidePluginWindowEscape({
+          modalKey,
+          entry,
+          focusInside: true,
+        })
+        if (action === "ignore") return
         event.preventDefault()
         event.stopPropagation()
-        if (entry.dismissible) setState((previous) => closePluginWindow(previous, modalKey))
+        if (action === "close") setState((previous) => closePluginWindow(previous, modalKey))
         return
       }
 
@@ -173,7 +195,13 @@ export function PluginWindowHost() {
   return (
     <>
       {/* Modeless: floating, non-blocking, never steals focus. */}
-      <div class="mafw-plugin-windows" aria-live="polite">
+      <div
+        class="mafw-plugin-windows"
+        aria-live="polite"
+        ref={(element) => {
+          modelessStack = element
+        }}
+      >
         <For each={keys()}>
           {(key) => (
             <Show when={modelessEntry(key)}>

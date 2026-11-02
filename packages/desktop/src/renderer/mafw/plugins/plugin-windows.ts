@@ -312,6 +312,93 @@ export function cycleFocusIndex(current: number, count: number, backward: boolea
 }
 
 // ---------------------------------------------------------------------------
+// DOM decision helpers
+// ---------------------------------------------------------------------------
+//
+// The host/component keep only DOM glue (listener registration, focus calls,
+// element lookup). Every close/block/ignore decision lives here so modal Esc,
+// modeless Esc scoping, dismissibility, backdrop clicks and focus restore are
+// unit-testable without a DOM.
+
+export type PluginWindowEscapeAction = "close" | "block" | "ignore"
+
+/**
+ * Decide what an Escape keydown does for the current window stack.
+ *
+ * - a modal is blocking: `close` when dismissible, otherwise merely `block`
+ *   (the event never leaks to the workspace);
+ * - without a modal, only a dismissible modeless window whose focus is inside
+ *   the card closes; everything else is ignored so the composer keeps Esc.
+ */
+export function decidePluginWindowEscape(input: {
+  /** Topmost modal owning focus (`state.focus.modalKey`), null if none. */
+  modalKey: string | null
+  /** The modal owner or the focused modeless window, if any. */
+  entry: Pick<PluginWindowEntry, "modal" | "dismissible"> | null
+  /** True when the keydown target is inside the modeless card. */
+  focusInside: boolean
+}): PluginWindowEscapeAction {
+  if (input.modalKey !== null) {
+    if (!input.entry) return "ignore"
+    return input.entry.dismissible ? "close" : "block"
+  }
+  if (!input.entry || input.entry.modal) return "ignore"
+  if (!input.entry.dismissible || !input.focusInside) return "ignore"
+  return "close"
+}
+
+/** Close button visibility (dismissible windows only). */
+export function shouldShowPluginWindowClose(
+  entry: Pick<PluginWindowEntry, "dismissible"> | null | undefined,
+): boolean {
+  return entry?.dismissible === true
+}
+
+export type PluginWindowDismissAction = "close" | "ignore"
+
+/** Close button / backdrop / explicit close request decision. */
+export function decidePluginWindowDismiss(
+  entry: Pick<PluginWindowEntry, "dismissible"> | null | undefined,
+): PluginWindowDismissAction {
+  return shouldShowPluginWindowClose(entry) ? "close" : "ignore"
+}
+
+export interface PluginWindowFocusPlan<T> {
+  /** Restore target to remember after this transition (null = none). */
+  restoreTarget: T | null
+  /** Modal that should receive focus now (null = no modal). */
+  focusKey: string | null
+  /** Element to focus when the last modal just closed. */
+  restoredTarget: T | null
+}
+
+/**
+ * Plan a focus-ownership transition.
+ *
+ * The first modal captures the previously focused element; opening another
+ * modal while one is open keeps that original target; closing the last modal
+ * returns it for restoration. Modeless windows never appear here.
+ */
+export function planPluginWindowFocus<T>(input: {
+  previousKey: string | null
+  nextKey: string | null
+  restoreTarget: T | null
+  activeElement: T | null
+}): PluginWindowFocusPlan<T> {
+  if (input.nextKey) {
+    return {
+      restoreTarget: input.previousKey ? input.restoreTarget : (input.activeElement ?? null),
+      focusKey: input.nextKey,
+      restoredTarget: null,
+    }
+  }
+  if (!input.previousKey) {
+    return { restoreTarget: null, focusKey: null, restoredTarget: null }
+  }
+  return { restoreTarget: null, focusKey: null, restoredTarget: input.restoreTarget }
+}
+
+// ---------------------------------------------------------------------------
 // View request state machine
 // ---------------------------------------------------------------------------
 

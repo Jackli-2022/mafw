@@ -2131,10 +2131,23 @@ html[data-theme="light"] body {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+  /* At 60vh per window, two real windows can exceed the viewport: cap the
+     stack and make it scroll so every close button stays reachable. */
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   pointer-events: none;
+  padding-top: 4px;
+}
+.mafw-plugin-windows::-webkit-scrollbar { display: none; }
+/* Two full stack entries always fit inside the capped container; 3+ scroll. */
+.mafw-plugin-windows .mafw-plugin-window {
+  max-height: min(60vh, calc((100vh - 40px) / 2));
 }
 .mafw-plugin-window {
   pointer-events: auto;
+  flex: 0 0 auto;
   width: min(380px, calc(100vw - 32px));
   max-height: min(60vh, 520px);
   display: flex;

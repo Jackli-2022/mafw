@@ -18,9 +18,12 @@ import {
   beginWindowViewRequest,
   closePluginWindow,
   cycleFocusIndex,
+  decidePluginWindowDismiss,
+  decidePluginWindowEscape,
   failWindowView,
   fetchPluginWindowView,
   openPluginWindow,
+  planPluginWindowFocus,
   pluginWindowActionInput,
   pluginWindowDeclarations,
   pluginWindowIdentity,
@@ -29,6 +32,7 @@ import {
   replaceWindowView,
   settleWindowView,
   setWindowActionOutput,
+  shouldShowPluginWindowClose,
   type PluginWindowEventPayload,
   type PluginWindowState,
 } from "./plugin-windows"
@@ -357,6 +361,115 @@ describe("descriptor revision cleanup", () => {
     const state = open(EMPTY_PLUGIN_WINDOW_STATE)
     expect(applyWindowRevision(state, null)).toBe(state)
     expect(applyWindowRevision(state, { plugins: "nope" } as any)).toBe(state)
+  })
+})
+
+describe("DOM decision helpers", () => {
+  const modal = (dismissible: boolean) => ({ modal: true, dismissible })
+  const modeless = (dismissible: boolean) => ({ modal: false, dismissible })
+
+  test("modal Esc closes only dismissible windows and always blocks", () => {
+    expect(
+      decidePluginWindowEscape({ modalKey: "acme:notice", entry: modal(true), focusInside: true }),
+    ).toBe("close")
+    // Non-dismissible modals still consume Esc so it cannot close anything
+    // behind the blocking overlay.
+    expect(
+      decidePluginWindowEscape({ modalKey: "acme:notice", entry: modal(false), focusInside: true }),
+    ).toBe("block")
+    // A stale focus owner (window already gone) has nothing to block.
+    expect(
+      decidePluginWindowEscape({ modalKey: "acme:notice", entry: null, focusInside: false }),
+    ).toBe("ignore")
+  })
+
+  test("modeless Esc closes only dismissible windows with focus inside the card", () => {
+    expect(
+      decidePluginWindowEscape({ modalKey: null, entry: modeless(true), focusInside: true }),
+    ).toBe("close")
+    expect(
+      decidePluginWindowEscape({ modalKey: null, entry: modeless(true), focusInside: false }),
+    ).toBe("ignore")
+    expect(
+      decidePluginWindowEscape({ modalKey: null, entry: modeless(false), focusInside: true }),
+    ).toBe("ignore")
+    expect(decidePluginWindowEscape({ modalKey: null, entry: null, focusInside: true })).toBe(
+      "ignore",
+    )
+  })
+
+  test("close button visibility and close/backdrop dismissal follow dismissible", () => {
+    expect(shouldShowPluginWindowClose({ dismissible: true })).toBe(true)
+    expect(shouldShowPluginWindowClose({ dismissible: false })).toBe(false)
+    expect(shouldShowPluginWindowClose(null)).toBe(false)
+    expect(decidePluginWindowDismiss({ dismissible: true })).toBe("close")
+    expect(decidePluginWindowDismiss({ dismissible: false })).toBe("ignore")
+    expect(decidePluginWindowDismiss(null)).toBe("ignore")
+  })
+
+  test("focus plan captures on the first modal and keeps the target while stacking", () => {
+    const first = planPluginWindowFocus<string>({
+      previousKey: null,
+      nextKey: "a",
+      restoreTarget: null,
+      activeElement: "composer",
+    })
+    expect(first).toEqual({ restoreTarget: "composer", focusKey: "a", restoredTarget: null })
+
+    const stacked = planPluginWindowFocus<string>({
+      previousKey: "a",
+      nextKey: "b",
+      restoreTarget: first.restoreTarget,
+      activeElement: "window-a",
+    })
+    // The original target survives opening a second modal.
+    expect(stacked).toEqual({ restoreTarget: "composer", focusKey: "b", restoredTarget: null })
+
+    const backToOne = planPluginWindowFocus<string>({
+      previousKey: "b",
+      nextKey: "a",
+      restoreTarget: stacked.restoreTarget,
+      activeElement: "window-b",
+    })
+    expect(backToOne).toEqual({ restoreTarget: "composer", focusKey: "a", restoredTarget: null })
+
+    const closed = planPluginWindowFocus<string>({
+      previousKey: "a",
+      nextKey: null,
+      restoreTarget: backToOne.restoreTarget,
+      activeElement: "window-a",
+    })
+    expect(closed).toEqual({ restoreTarget: null, focusKey: null, restoredTarget: "composer" })
+  })
+
+  test("focus plan is inert without modals and tolerates a missing active element", () => {
+    expect(
+      planPluginWindowFocus<string>({
+        previousKey: null,
+        nextKey: null,
+        restoreTarget: null,
+        activeElement: "composer",
+      }),
+    ).toEqual({ restoreTarget: null, focusKey: null, restoredTarget: null })
+
+    expect(
+      planPluginWindowFocus<string>({
+        previousKey: null,
+        nextKey: "a",
+        restoreTarget: null,
+        activeElement: null,
+      }),
+    ).toEqual({ restoreTarget: null, focusKey: "a", restoredTarget: null })
+
+    // Closing a modal without a saved target restores nothing.
+    expect(
+      planPluginWindowFocus<string>({
+        previousKey: "a",
+        nextKey: null,
+        restoreTarget: null,
+        activeElement: null,
+      }),
+    ).toEqual({ restoreTarget: null, focusKey: null, restoredTarget: null })
   })
 })
 
