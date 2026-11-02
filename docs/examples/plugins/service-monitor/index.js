@@ -148,7 +148,7 @@ function buildPanelView(config, checks, serviceFilter) {
   if (config.verbose) {
     body.push({
       type: 'markdown',
-      text: '**Verbose mode** is on. Every refresh emits `' + CHANGED_EVENT + '`.',
+      text: '**Verbose mode** is on. Configuration saves emit `' + CHANGED_EVENT + '`.',
     });
   }
   if (serviceFilter) {
@@ -162,7 +162,7 @@ function buildPanelView(config, checks, serviceFilter) {
   };
 }
 
-function buildMessageView(input) {
+function buildMessageView(input, endpoint) {
   const checked = typeof input.checked === 'number' ? input.checked : 0;
   const at = typeof input.at === 'string' ? input.at : 'unknown time';
   const source = typeof input.source === 'string' ? input.source : 'manual';
@@ -179,7 +179,7 @@ function buildMessageView(input) {
         rows: [
           ['Source', source],
           ['At', at],
-          ['Endpoint', DEFAULT_CONFIG.endpoint],
+          ['Endpoint', endpoint],
         ],
       },
       { type: 'action', label: 'Refresh panel', action: 'refresh', style: 'primary' },
@@ -247,7 +247,7 @@ module.exports = {
         {
           type: CHANGED_EVENT,
           title: 'Service status changed',
-          description: 'Emitted after a refresh or a configuration save.',
+          description: 'Emitted after a configuration save (a user action, not the panel viewAction).',
           scope: 'global',
           schema: {
             type: 'object',
@@ -264,7 +264,7 @@ module.exports = {
       actions: {
         refresh: {
           title: 'Refresh service status',
-          description: 'Returns the panel view and emits the changed event.',
+          description: 'Returns the panel view without emitting the changed event.',
           timeoutMs: 5000,
           inputSchema: {
             type: 'object',
@@ -280,9 +280,10 @@ module.exports = {
               input && typeof input.service === 'string' && input.service.length > 0
                 ? input.service
                 : undefined;
-            const view = buildPanelView(readConfig(ctx), checks, serviceFilter);
-            emitChanged('refresh');
-            return view;
+            // This action is the panel's viewAction and the panel refreshes on
+            // CHANGED_EVENT. A viewAction must never emit its own refreshOn
+            // event or Desktop would re-invoke it forever.
+            return buildPanelView(readConfig(ctx), checks, serviceFilter);
           },
         },
         loadConfig: {
@@ -364,7 +365,7 @@ module.exports = {
           },
           outputSchema: VIEW_OUTPUT_SCHEMA,
           handler(input) {
-            return buildMessageView(input || {});
+            return buildMessageView(input || {}, readConfig(ctx).endpoint);
           },
         },
       },

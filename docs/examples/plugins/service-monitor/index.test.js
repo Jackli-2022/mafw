@@ -134,8 +134,12 @@ test("the config schema is the restricted form subset", async () => {
   }
 });
 
-test("refresh returns a view and emits the registered changed event", async () => {
+test("refresh returns a view and does not emit its own refreshOn event", async () => {
   const { contributions, emitted } = await activate();
+  const panel = contributions.ui.panels[0];
+  assert.equal(panel.viewAction, "refresh");
+  assert.deepEqual(panel.refreshOn, [CHANGED_EVENT]);
+
   const view = await contributions.actions.refresh.handler({}, { signal: new AbortController().signal });
   assert.equal(view.title, "Service Monitor");
   assert.ok(view.subtitle.includes("every 60s"));
@@ -143,10 +147,9 @@ test("refresh returns a view and emits the registered changed event", async () =
   const widgets = collectWidgets(view.body);
   assert.ok(widgets.some((widget) => widget.type === "progress"));
   assert.ok(widgets.some((widget) => widget.type === "action" && widget.action === "refresh"));
-  assert.equal(emitted.length, 1);
-  assert.equal(emitted[0].type, CHANGED_EVENT);
-  assert.equal(emitted[0].properties.source, "refresh");
-  assert.equal(emitted[0].properties.checked, 1);
+  // A viewAction that emits its own refreshOn event would make Desktop reload
+  // the panel forever.
+  assert.deepEqual(emitted, []);
 });
 
 test("loadConfig and saveConfig round-trip through ctx.config.update", async () => {
@@ -175,11 +178,22 @@ test("loadConfig and saveConfig round-trip through ctx.config.update", async () 
       },
     },
   }]);
-  assert.equal(emitted.at(-1).type, CHANGED_EVENT);
-  assert.equal(emitted.at(-1).properties.source, "saveConfig");
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].type, CHANGED_EVENT);
+  assert.equal(emitted[0].properties.source, "saveConfig");
 
   const view = await contributions.actions.refresh.handler({}, { signal: new AbortController().signal });
   assert.ok(JSON.stringify(view).includes("15s"));
+  // The panel viewAction never emits the event it refreshes on.
+  assert.equal(emitted.length, 1);
+
+  const message = await contributions.actions.messageView.handler({
+    checked: 1,
+    at: "2026-11-03T00:00:00.000Z",
+    source: "saveConfig",
+  }, { signal: new AbortController().signal });
+  // The message window reads the live config, not the baked default endpoint.
+  assert.ok(JSON.stringify(message.body).includes("https://status.internal"));
 });
 
 test("toolCard renders a neutral tool model and messageView renders an event payload", async () => {

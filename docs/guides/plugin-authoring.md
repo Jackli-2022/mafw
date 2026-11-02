@@ -50,6 +50,13 @@ module.exports = {
   name: 'example',
   async activate(ctx) {
     let count = 0;
+    const view = () => ({
+      title: 'Example',
+      body: [
+        { type: 'text', text: `count=${count}` },
+        { type: 'action', label: 'Increment', action: 'bump' },
+      ],
+    });
     return {
       events: [
         {
@@ -65,8 +72,17 @@ module.exports = {
         },
       ],
       actions: {
+        // viewAction: read-only. It must NOT emit plugin:example:changed.
         refresh: {
           title: 'Refresh',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+          handler() {
+            return view();
+          },
+        },
+        // User action: safe place to emit the event the panel refreshes on.
+        bump: {
+          title: 'Increment',
           inputSchema: { type: 'object', properties: {}, additionalProperties: false },
           handler() {
             count += 1;
@@ -74,7 +90,7 @@ module.exports = {
               type: 'plugin:example:changed',
               properties: { count },
             });
-            return { title: 'Example', body: [{ type: 'text', text: `count=${count}` }] };
+            return { count };
           },
         },
       },
@@ -92,6 +108,8 @@ module.exports = {
   },
 };
 ```
+
+> **反馈环警告**：一个 panel 的 `viewAction` 不得发射该 panel `refreshOn` 中的事件；同理，message window 的 `viewAction` 不得发射它的 `triggerEvent`。Desktop 在收到匹配事件后会重新调用 `viewAction`，如果取视图本身又发同一事件，就会无限重载。通知型事件应由用户操作、config 保存等**非 viewAction** 的 action 发射；`viewAction` 只读渲染。
 
 一次 `activate()` 的返回值共享同一个 candidate context、RegistrationBag 和 revision。`ui` / `actions` / `events` 也可以和 legacy 贡献（`usage` / `media` / `runtime` / `tts`）同时出现。
 
@@ -213,6 +231,7 @@ ui: {
 - 一个 panel 是右工作台「工作台」里的动态 L2 tab；客户端全局 key 为 `<package>:<id>`。
 - 按 `order`、title、包名稳定排序；删除当前 surface 后回退到内置 `code`。
 - 挂载时调用 `viewAction` 取 `PluginView`；`refreshOn` 中的本包事件到达后重取。
+- **`viewAction` 不得发射本 panel 的 `refreshOn` 事件**：每次取视图都触发重取，会形成无限重载。事件应从 config 保存/用户操作等非 viewAction 的 action 发射。
 - `refreshOn` / `viewAction` 必须在同一包内可解析。
 
 ### 6.2 configPages
@@ -281,6 +300,7 @@ ui: {
 - `triggerEvent` 必须引用本包已注册事件。
 - 事件到达时在 MAFW 主窗口打开 `<package>:<id>` 的单例小窗；同 id 后续事件只刷新，不重复堆窗。
 - 中性事件 payload / sessionID 作为 action input 调用 `viewAction`。
+- **`viewAction` 不得发射 `triggerEvent`**：小窗取视图会再次触发事件，形成无限刷新。事件应由其他用户 action 发射。
 - `modal:false` 是不阻断聊天的浮动小窗，不主动抢焦点；`modal:true` 是居中模态层并管理焦点。
 - `dismissible:true` 支持关闭按钮与 Esc。
 - 小窗内按钮仍是 action widget，经本包 action 回调 gateway；action 需要开小窗时，在 action 中发射相应注册事件，不要新增脚本化 UI 命令。

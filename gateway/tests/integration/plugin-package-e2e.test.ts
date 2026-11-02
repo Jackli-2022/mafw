@@ -232,10 +232,8 @@ describe('service-monitor example package (end-to-end)', () => {
     expect(widgets.some((widget) => widget.type === 'progress')).toBe(true);
 
     const changed = frames.filter((frame) => frame.type === CHANGED_EVENT);
-    expect(changed).toHaveLength(1);
-    expect(changed[0].properties).toMatchObject({ checked: 1, source: 'refresh' });
-    expect(typeof changed[0].properties?.at).toBe('string');
-    expect(changed[0].sessionID).toBeUndefined();
+    // The panel viewAction refreshes on CHANGED_EVENT, so it must not emit it.
+    expect(changed).toHaveLength(0);
 
     const loaded = await host.invokeAction('service-monitor', 'loadConfig', {});
     expect(loaded).toEqual({
@@ -270,8 +268,11 @@ describe('service-monitor example package (end-to-end)', () => {
         },
       },
     ]);
-    const savedEvent = frames.filter((frame) => frame.type === CHANGED_EVENT).at(-1);
-    expect(savedEvent?.properties).toMatchObject({ checked: 1, source: 'saveConfig' });
+    const changedAfterSave = frames.filter((frame) => frame.type === CHANGED_EVENT);
+    expect(changedAfterSave).toHaveLength(1);
+    expect(changedAfterSave[0].properties).toMatchObject({ checked: 1, source: 'saveConfig' });
+    expect(typeof changedAfterSave[0].properties?.at).toBe('string');
+    expect(changedAfterSave[0].sessionID).toBeUndefined();
 
     const card = await host.invokeAction('service-monitor', 'toolCard', {
       tool: 'bash',
@@ -286,10 +287,12 @@ describe('service-monitor example package (end-to-end)', () => {
     const message = await host.invokeAction('service-monitor', 'messageView', {
       checked: 2,
       at: '2026-11-03T00:00:00.000Z',
-      source: 'refresh',
+      source: 'saveConfig',
     }) as any;
     expect(message.title).toBe('Service status changed');
     expect(JSON.stringify(message.body)).toContain('2');
+    // The message window reads the current config, not a baked default endpoint.
+    expect(JSON.stringify(message.body)).toContain('https://status.internal');
     expect(collectWidgets(message.body).some((widget) => widget.type === 'markdown')).toBe(true);
 
     // Canonical names, unregistered names and foreign namespaces never reach
@@ -309,6 +312,23 @@ describe('service-monitor example package (end-to-end)', () => {
       error: 'foreign-namespace',
     });
     expect(frames).toHaveLength(before);
+  });
+
+  it('never lets the panel viewAction emit its own refreshOn event', async () => {
+    await host.reload();
+    await manager.installFromPath({ path: EXAMPLE_DIR });
+    const panel = descriptor().ui.panels?.[0];
+    expect(panel).toBeDefined();
+    expect(panel!.viewAction).toBe('refresh');
+    expect(panel!.refreshOn).toEqual([CHANGED_EVENT]);
+
+    const before = frames.length;
+    // Two view loads would already be a visible feedback loop if the viewAction
+    // emitted CHANGED_EVENT (Desktop re-invokes the viewAction per event).
+    await host.invokeAction('service-monitor', panel!.viewAction, {});
+    await host.invokeAction('service-monitor', panel!.viewAction, {});
+    expect(frames).toHaveLength(before);
+    expect(frames.filter((frame) => frame.type === CHANGED_EVENT)).toEqual([]);
   });
 
   it('hot reloads a changed package under a new revision', async () => {
