@@ -1,5 +1,6 @@
 import { buildPodGoalResult, goalEvalPathFor } from '../../../src/core/pod/pod-result';
 import type { GoalStateV3 } from '../../../src/core/goal/state-v3';
+import * as path from 'path';
 
 function state(patch: Partial<GoalStateV3> = {}): GoalStateV3 {
   return {
@@ -208,6 +209,37 @@ describe('buildPodGoalResult — Goal eval results', () => {
     expect(result.verdict).toBe('PASS');
     expect(result.resultReady).toBe(false);
     expect(result.failure).toBe('review_missing');
+  });
+
+  test('readable artifacts cannot make an unverified PASS resultReady', () => {
+    const result = buildPodGoalResult({
+      goalId: 'g1',
+      state: state({
+        receiptPath: null,
+        reviewReportPath: 'C:/p/.mafw/reviews/missing.md',
+        artifacts: { plan: 'C:/p/.mafw/goals/g1/waves.json' },
+      }),
+      request: null,
+      readText: () => null,
+    });
+
+    expect(result.verdict).toBe('PASS');
+    expect(result.failure).toBe('review_missing');
+    expect(result.resultReady).toBe(false);
+    expect(result.artifacts).toEqual(['C:/p/.mafw/goals/g1/waves.json']);
+  });
+
+  test('the Goal Eval path never escapes the goals directory', () => {
+    for (const goalId of ['..', '.', '...', '../etc', 'a/b']) {
+      const target = goalEvalPathFor('C:/p/.mafw', goalId);
+      const segments = target.split(/[\\/]/);
+      expect(segments).not.toContain('..');
+      expect(segments).not.toContain('.');
+      expect(target.startsWith(path.join('C:/p/.mafw', 'goals'))).toBe(true);
+    }
+    expect(goalEvalPathFor('C:/p/.mafw', 'g1')).toBe(
+      path.join('C:/p/.mafw', 'goals', 'g1', 'goal-eval.json'),
+    );
   });
 
   test('legacy state without a revision reads as revision 1 and an explicit revision wins', () => {

@@ -51,7 +51,8 @@ describe('buildPodGoalResult', () => {
     });
     expect(result.verdict).toBe('FAIL');
     expect(result.tasks).toEqual([]);
-    expect(result.resultReady).toBe(true);
+    // 不可解析的 review 不是「结果就绪」：failure 存在时 resultReady 必须为 false。
+    expect(result.resultReady).toBe(false);
   });
 
   test('a terminal outcome without any readable evidence is not resultReady', () => {

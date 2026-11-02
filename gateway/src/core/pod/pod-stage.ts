@@ -134,14 +134,16 @@ function roleForNode(node: string | null | undefined): PodMemberRole | undefined
 }
 
 /**
- * 方向裁定是否仍在等人类：`direction_review` 的 revision 在 `decided` 之前
- * 一律是持久的人类阻塞（进程重启后仍然存在，不依赖瞬时内存状态）。
+ * 方向裁定是否仍在等人类：只认**显式 pending**（写入侧 `PodDirectionService.request`
+ * 一定同时把 revision 置为 `direction_review` + `directionStatus: 'pending'`）。
+ * schema 缺省是 `'none'`——把「没有真实 pending 记录」的 revision 当阻塞会造出
+ * 永不消失的人类 attention。
  */
 function directionPending(input: PodGoalStageInput): boolean {
   const revision = input.revision;
   if (!revision || revision.status !== 'direction_review') return false;
   const status = revision.directionStatus ?? input.direction?.status ?? null;
-  return status !== 'decided';
+  return status === 'pending';
 }
 
 function nodeNameFromNextAction(nextAction: string): string | undefined {

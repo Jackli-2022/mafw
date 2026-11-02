@@ -68,11 +68,24 @@ describe('projectPodGoalStage — revision aware phases', () => {
       role: 'tech_lead',
     });
     expect(attention({ revision: rev('direction_review', 'decided') })).toEqual([]);
-    // A revision row without an explicit direction snapshot still defaults to pending.
-    expect(stage({ revision: rev('direction_review') })).toMatchObject({
-      owner: 'person',
-      kind: 'direction_review',
+  });
+
+  test('a direction_review row without a real pending record is not permanent attention', () => {
+    // schema 缺省是 'none'：没有 DirectionReview（Task 6）就是没有阻塞。
+    expect(stage({ revision: rev('direction_review', 'none') })).toMatchObject({
+      owner: 'team',
+      kind: 'planning',
+      role: 'tech_lead',
     });
+    expect(attention({ revision: rev('direction_review', 'none') })).toEqual([]);
+    // 缺省 directionStatus 也一样，不得凭 status 单独臆造人类阻塞。
+    expect(stage({ revision: rev('direction_review') })).toMatchObject({ owner: 'team' });
+    expect(attention({ revision: rev('direction_review') })).toEqual([]);
+    // 只有显式 pending（或 direction 摘要声明 pending）才是 attention。
+    expect(stage({
+      revision: { revision: 2, status: 'direction_review' },
+      direction: { status: 'pending' },
+    })).toMatchObject({ owner: 'person', kind: 'direction_review', role: 'tech_lead' });
   });
 
   test('planning is Tech Lead work and a running probe surfaces as builder probing', () => {

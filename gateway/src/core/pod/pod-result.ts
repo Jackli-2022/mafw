@@ -43,9 +43,11 @@ export interface PodGoalResult {
   artifacts: string[];
 }
 
-/** Goal Eval 产物路径：`<mafwDir>/goals/<goalId>/goal-eval.json`（goal-dir 布局）。 */
+/** Goal Eval 产物路径：`<mafwDir>/goals/<goalId>/goal-eval.json`（goal-dir 布局）。
+ *  goalId 只保留安全字符；纯 `.`/`..`/标点会被折叠成 `_`（绝不产生 `goals/../…`）。 */
 export function goalEvalPathFor(mafwDir: string, goalId: string): string {
-  const safeGoalId = goalId.replace(/[^A-Za-z0-9._-]/g, '_') || '_';
+  const cleaned = goalId.replace(/[^A-Za-z0-9._-]/g, '_');
+  const safeGoalId = /[A-Za-z0-9]/.test(cleaned) ? cleaned : '_';
   return path.join(mafwDir, 'goals', safeGoalId, 'goal-eval.json');
 }
 
@@ -200,7 +202,8 @@ export function buildPodGoalResult(input: {
     goalId: input.goalId,
     revision,
     verdict,
-    resultReady: isTerminalState(state) && !!(reviewText || receiptText || artifactRefs.size > 0),
+    // 任何不可信分类（review 不可解析 / 缺少证据 / eval 坏了）都不算「结果就绪」。
+    resultReady: !failure && isTerminalState(state) && !!(reviewText || receiptText || artifactRefs.size > 0),
     goalAcceptance,
     goalConditions: goalEval ? goalEval.conditions : [],
     goalResults,
