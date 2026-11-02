@@ -68,8 +68,10 @@ export function canonicalMessage(
 ): { message: any; parts: any[] } | null {
   const flat = raw
   if (!flat || typeof flat !== "object") return null
-  const isSynthetic = flat.type === "synthetic" || (flat.role == null && flat.metadata?.source)
-  if (flat.role !== "user" && flat.role !== "assistant" && !isSynthetic) return null
+  // 只接受有渲染角色的消息：旧的 `synthetic` 终端消息（opencode shell 行）已由
+  // `background.jobs` façade 取代（desktop 不再从历史推导后台行），不再摄取
+  // 无 role 的记录——否则它们会以 role=undefined 进入 store 却无人渲染。
+  if (flat.role !== "user" && flat.role !== "assistant") return null
   const sessionID = typeof flat.sessionID === "string" && flat.sessionID
     ? flat.sessionID
     : (opts.sessionID ?? "")

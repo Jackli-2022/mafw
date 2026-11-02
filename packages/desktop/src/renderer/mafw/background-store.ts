@@ -7,6 +7,7 @@
 import { createSignal } from "solid-js"
 import {
   applyBackgroundJobEvent,
+  clearSessionBackgroundJobs,
   collectNewTerminals,
   type BackgroundJob,
 } from "./background-jobs"
@@ -47,8 +48,18 @@ export function ingestBackgroundJobs(incoming: readonly BackgroundJob[]): void {
   }
 }
 
-/** 终态回调（仅活跃 → 终态的转换；静默与否由通知层按 source/kind 过滤）。返回注销函数。 */
-export function onBackgroundTerminal(cb: (job: BackgroundJob) => void): () => void {
+/**
+ * 权威快照为空 → 清掉该会话的本地行（review minor）：gateway 重启或作业被
+ * 服务端清理后，桌面不能再显示一条不存在的 running。静默（不发终态通知）。
+ */
+export function clearBackgroundJobs(sessionID: string): void {
+  if (!sessionID) return
+  const prev = jobs()
+  const next = clearSessionBackgroundJobs(prev, sessionID)
+  if (next !== prev) setJobs(next)
+}
+
+/** 终态回调（仅活跃 → 终态的转换；静默与否由通知层按 source/kind 过滤）。返回注销函数。 */export function onBackgroundTerminal(cb: (job: BackgroundJob) => void): () => void {
   terminalCallbacks.add(cb)
   return () => { terminalCallbacks.delete(cb) }
 }

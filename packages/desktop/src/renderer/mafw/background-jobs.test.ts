@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   applyBackgroundJobEvent,
+  clearSessionBackgroundJobs,
   collectNewTerminals,
   countRunningJobs,
   isTerminalJobStatus,
@@ -20,6 +21,20 @@ const job = (over: Partial<BackgroundJob> = {}): BackgroundJob => ({
   title: "npm run dev",
   time: { created: 1, updated: 2 },
   ...over,
+})
+
+describe("clearSessionBackgroundJobs（权威空快照）", () => {
+  test("只清目标会话的行，其他会话保留；引用不变时返回原数组", () => {
+    const jobs = [
+      job({ id: "a", sessionID: "s1" }),
+      job({ id: "b", sessionID: "s2" }),
+      job({ id: "c", sessionID: "s1", status: "completed" }),
+    ]
+    const cleared = clearSessionBackgroundJobs(jobs, "s1")
+    expect(cleared.map((j) => j.id)).toEqual(["b"])
+    expect(clearSessionBackgroundJobs(jobs, "s3")).toBe(jobs)
+    expect(clearSessionBackgroundJobs(jobs, "")).toBe(jobs)
+  })
 })
 
 describe("applyBackgroundJobEvent", () => {

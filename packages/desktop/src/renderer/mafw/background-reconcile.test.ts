@@ -53,6 +53,35 @@ describe("reconcileBackgroundOnce（neutral jobs snapshot）", () => {
     expect(seen).toEqual([])
   })
 
+  test("empty snapshot clears that session's tracked rows (but a failed fetch never does)", async () => {
+    const cleared: string[] = []
+    const seen: unknown[] = []
+    await reconcileBackgroundOnce({
+      sessionID: "s1",
+      fetchers: fetchers({ listJobs: async () => [] }),
+      ingest: (jobs) => seen.push(jobs),
+      clear: (sid) => cleared.push(sid),
+    })
+    expect(seen).toEqual([])
+    expect(cleared).toEqual(["s1"])
+
+    // 失败/畸形形状绝不触发 clear（不能把失败当成「没有作业」）
+    const clearedOnError: string[] = []
+    await reconcileBackgroundOnce({
+      sessionID: "s1",
+      fetchers: fetchers({ listJobs: async () => { throw new Error("HTTP 503") } }),
+      ingest: () => {},
+      clear: (sid) => clearedOnError.push(sid),
+    })
+    await reconcileBackgroundOnce({
+      sessionID: "s1",
+      fetchers: fetchers({ listJobs: async () => ({ error: "shape" }) as any }),
+      ingest: () => {},
+      clear: (sid) => clearedOnError.push(sid),
+    })
+    expect(clearedOnError).toEqual([])
+  })
+
   test("no session scope → no request", async () => {
     let calls = 0
     await reconcileBackgroundOnce({

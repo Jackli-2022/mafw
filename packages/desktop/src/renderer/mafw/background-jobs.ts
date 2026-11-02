@@ -61,6 +61,16 @@ export function mergeBackgroundJobs(jobs: BackgroundJob[], incoming: readonly Ba
   return incoming.reduce<BackgroundJob[]>((acc, job) => applyBackgroundJobEvent(acc, job), jobs)
 }
 
+/**
+ * 权威空快照 → 清掉该会话的跟踪行（review minor：gateway 重启/作业被清理后
+ * 本地不能永远显示一条不存在的 running）。只按会话收敛，不碰其他会话。
+ */
+export function clearSessionBackgroundJobs(jobs: BackgroundJob[], sessionID: string): BackgroundJob[] {
+  if (!sessionID) return jobs
+  const next = jobs.filter((job) => job.sessionID !== sessionID)
+  return next.length === jobs.length ? jobs : next
+}
+
 /** 新落终态的行（prev 为活跃、next 终态）；新建行/快照行不计。 */
 export function collectNewTerminals(prev: BackgroundJob[], next: BackgroundJob[]): BackgroundJob[] {
   const prevById = new Map(prev.map((job) => [job.id, job]))

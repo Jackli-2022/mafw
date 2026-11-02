@@ -97,14 +97,12 @@ describe('message ingestion', () => {
     expect(already?.message.model).toEqual({ providerID: 'p', modelID: 'm', variant: 'v' })
   })
 
-  test('keeps synthetic terminal messages for background hydration (no render role)', () => {
+  test('drops the retired synthetic terminal messages (background comes from the jobs façade)', () => {
     const { messages } = ingestHistoryPage(
       [{ id: 'syn1', type: 'synthetic', metadata: { source: 'shell', shellID: 'sh1' }, time: { created: 1 }, content: [] }],
       { sessionID: 's1' },
     )
-    expect(messages).toHaveLength(1)
-    expect(messages[0].type).toBe('synthetic')
-    expect(messages[0].role).toBeUndefined()
+    expect(messages).toEqual([])
   })
 
   test('maps wire errors to canonical before session-ui and derives abort stopReason', () => {
