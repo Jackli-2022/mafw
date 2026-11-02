@@ -287,14 +287,19 @@ function suggestedRuleOf(raw: Rec): MafwSuggestedRule | undefined {
  * 权限请求归一（opencode `{id, permission, patterns, metadata}` /
  * pi `{requestId, toolName, args, risk}` / 已归一 DTO）。
  *
- * 规范字段：`id`（pi 取 requestId —— 历史 bug 就是卡片拿不到 id，答复必定 undefined）、
- * `kind`（canonical 工具名）、`targets`（patterns，pi 从 args 的命令/路径/URL 提取）。
+ * 规范字段：`id`（pi 取 requestId、opencode v2 的 replied 取 requestID —— 历史 bug
+ * 就是卡片拿不到 id，答复必定 undefined）、`kind`（canonical 工具名，缺省 `tool`）、
+ * `targets`（patterns，pi 从 args 的命令/路径/URL 提取）。
  * 原生字段在过渡期保留：出口（REST/SSE）在项目体内不删除原生键。
+ *
+ * 同一投影服务 `permission.asked` 与 `permission.replied`：replied 只带
+ * `{requestId, approved, decision?, message?}`（无 toolName/args），**不得因缺
+ * 工具元数据丢弃**——那会让桌面/远端永远销不掉卡片，只能显示与时序无关的旧态。
  */
 export function projectPermissionRequest(raw: unknown, fallbackSessionID = ''): MafwPermissionRequest | null {
   const request = asRecord(raw);
   if (!request) return null;
-  const id = asString(request.id) || asString(request.requestId);
+  const id = asString(request.id) || asString(request.requestId) || asString(request.requestID);
   if (!id) return null;
   const sessionID = asString(request.sessionID) || fallbackSessionID;
   const rawKind = asString(request.kind) || asString(request.toolName) || asString(request.permission) || 'tool';

@@ -206,6 +206,30 @@ describe('MafwPermissionRequest 投影（I1/I2）', () => {
     expect(props).toMatchObject({ requestId: 'rq_1', toolName: 'shell' });
     expect(props).toMatchObject({ id: 'rq_1', kind: 'bash', targets: ['npm test'], mafwPolicy: { action: 'human' } });
   });
+
+  it('pi 形状 permission.replied（无 toolName/args）→ 仍产出 id/kind，原生答复字段原样保留', () => {
+    // 缺口 2 根因：replied 只走 asked 的富化分支外，卡片拿不到 canonical id →
+    // 桌面/远端永远销不掉卡（pi 答复因此表现为「卡住」）。
+    const props: Record<string, any> = {
+      sessionID: 'ses_pi',
+      requestId: 'rq_replied',
+      approved: false,
+      decision: 'reject',
+      message: 'user said no',
+    };
+    const out = enrichPermissionEvent(props, 'ses_pi');
+    expect(out).toMatchObject({ id: 'rq_replied', sessionID: 'ses_pi', kind: 'tool', targets: [] });
+    // 原生答复字段不改写（approval 语义只在 gateway 策略层，投影不参与）
+    expect(props).toMatchObject({
+      requestId: 'rq_replied', approved: false, decision: 'reject', message: 'user said no',
+    });
+    expect(props).not.toHaveProperty('reply');
+  });
+
+  it('opencode v2 replied（requestID/reply）→ canonical id 取自 requestID', () => {
+    const out = projectPermissionRequest({ sessionID: 'ses_oc', requestID: 'per_2', reply: 'always' });
+    expect(out).toMatchObject({ id: 'per_2', kind: 'tool', targets: [] });
+  });
 });
 
 describe('MafwQuestionRequest 投影', () => {
@@ -251,9 +275,11 @@ describe('出口接线（index.ts）', () => {
     expect(source).toMatch(/JSON\.stringify\(\{ items: projectAgents\(items\) \}\)/);
   });
 
-  it('/api/permissions 与 live permission.asked 共用投影（enrichPermissionEvent）', () => {
+  it('/api/permissions 与 live permission.asked/replied 共用投影（enrichPermissionEvent）', () => {
     expect(source).toMatch(/items: projectPermissionList\(items\)/);
     expect(source).toMatch(/enrichPermissionEvent\(props, sessionID\)/);
+    // 缺口 2：replied 与 asked 同一投影（只富化 asked 时 pi 答复永远销不掉卡）
+    expect(source).toMatch(/MAFW\.permissionAsked \|\| type === MAFW\.permissionReplied/);
   });
 
   it('/api/questions 与 live question.asked 共用 projectQuestionRequest', () => {

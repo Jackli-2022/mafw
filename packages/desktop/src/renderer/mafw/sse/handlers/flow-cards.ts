@@ -77,7 +77,9 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
     const card = mapPermissionCardPure(event.properties || {}, Date.now(), d.agentTitleOf(sid))
     d.upsertCard(sid, { kind: "permission", data: card })
     if (shouldNotify(card)) {
-      d.notify("MAFW：需要权限审批", String(event.properties?.permission?.tool || "工具调用").slice(0, 80))
+      // 通知正文用规范卡片载荷（kind + targets，gateway 投影）；旧 opencode
+      // `properties.permission.tool` 在 pi 下恒缺，曾一律显示「工具调用」。
+      d.notify("MAFW：需要权限审批", String(card.action.payload || "工具调用").slice(0, 80))
     } else {
       // auto 决策兜底：5s 后对账服务端真值（gateway auto-reply 失败时，卡片被
       // reconcile 重新映射回 pending，用户仍可手动答复）。
@@ -118,7 +120,9 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
   if (event.type === "permission.replied") {
     d.trace(event, "card:permission-resolve")
     const props = event.properties || {}
-    const id = props.requestID || props.id
+    // canonical `id` 优先（gateway 对 asked/replied 同一投影：pi requestId、opencode
+    // v2 requestID 都会投影成 id）；`requestID` 兜底老载荷/旧 gateway。
+    const id = props.id || props.requestID
     if (id) {
       const reply = props.reply
       d.resolveCard(sid, id, { status: reply === "always" ? "allowed-always" : reply === "reject" ? "denied" : "allowed-once" })

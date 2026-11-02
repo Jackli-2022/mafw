@@ -1572,10 +1572,14 @@ class MafwScheduler {
     // 三端据此分流（非 human = 直接渲染已决记录，不弹交互卡）。
     if (f.approval && sessionID) {
       applyApprovalPolicy(this.approvalPolicy, this.runtime, f.approval, sessionID, props);
-      // 规范权限字段并入载荷（id/kind/targets/suggestedRule…）：pi 的
-      // `{requestId, toolName, args}` 与 opencode 的 `{id, permission, patterns}`
-      // 在出口收敛成同一张卡片（review I2：pi 卡片曾丢 id、只显示 "shell"）。
-      // 原生键保留（过渡期），客户端只读规范字段。
+    }
+    // 规范权限字段并入载荷（id/kind/targets/suggestedRule…）：asked 与 replied **同一投影**。
+    // pi 的 `{requestId, toolName, args}` 与 opencode 的 `{id, permission, patterns}` 在出口
+    // 收敛成同一张卡片（review I2：pi 卡片曾丢 id、只显示 "shell"）；replied 无工具元数据也
+    // 必须带 canonical id（opencode v2 用 requestID），否则桌面/远端按 `requestID || id` 找
+    // 不到卡、永远销账不掉。原生答复字段（approved/decision/message/reply）原样保留；
+    // 审批策略与答复语义不变——这里只做投影。
+    if ((type === MAFW.permissionAsked || type === MAFW.permissionReplied) && sessionID) {
       try { enrichPermissionEvent(props, sessionID); } catch { /* fail-open：卡片退回客户端兜底 */ }
     }
     // 问题载荷同样补规范字段（`questions[].question/options`）；原生 form 字段保留。
