@@ -339,6 +339,15 @@ function readSource(file: string): string {
   return fs.readFileSync(path.join(ROOT, file), 'utf8');
 }
 
+/** 最后一个非空行（剥离后应与源文件一致——尾部被整段吞掉时立刻失败）。 */
+function lastCodeLine(text: string): string {
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim()) return lines[i].trim();
+  }
+  return '';
+}
+
 /**
  * 业务域的「命名碰撞」例外：域字段名恰好叫 `credentials`（例：goal probe 的 scope
  * 允许的凭据名列表），不是 RuntimeHost 回读。逐条精确登记（文件 + 摘录形态），
@@ -652,9 +661,8 @@ describe('runtime isolation architecture boundaries', () => {
       /this\.runtime!\??\.(?:name|capabilities|config|completion|credentials|agentProcess|getBaseUrl|healthCheck|activeDialect)\b/,
       /\(\s*(?:runtime|rt)\s+as\s+any\s*\)\s*\.\s*(?:name|capabilities|config|completion|credentials|agentProcess|getBaseUrl|healthCheck|activeDialect)\b/,
     ];
-    const code = text
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
+    // 共享注释剥离状态机（正则会把 `// ... /*` 当块注释开头，整段失明）。
+    const code = stripComments(text).code;
     for (const pattern of facadeReads) {
       expect(code).not.toMatch(pattern);
     }
@@ -664,11 +672,26 @@ describe('runtime isolation architecture boundaries', () => {
   });
 
   it('composition root gates the completion channel through RuntimeAccess', () => {
-    const code = readSource('src/index.ts')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
+    const code = stripComments(readSource('src/index.ts')).code;
     expect(code).toContain("access.can('process.completion')");
     expect(code).not.toMatch(/capabilities\??\.completionApi/);
+  });
+
+  it('composition-root comment stripping covers the whole of index.ts (no truncated fake green)', () => {
+    const source = readSource('src/index.ts');
+    const stripped = stripComments(source);
+    // 行结构与源文件逐行对齐（命中行号可直接回源码定位）。
+    expect(stripped.code.split('\n')).toHaveLength(source.split('\n').length);
+    // 没有任何「几十行被整体置空」的失明段（旧正则的典型症状）。
+    expect(longBlankRuns(source, stripped)).toEqual([]);
+    // 文件尾部仍在：整段吞行的症状就是尾部消失，正向断言它没有。
+    expect(lastCodeLine(stripped.code)).toBe(lastCodeLine(source));
+    expect(stripped.code).toContain('export { MafwScheduler }');
+    // 反向：把违规形态追加到**文件尾部**必须被抓到（守卫不是只覆盖前半段）。
+    const tailLeak = compositionRootViolations(`${source}\nconst __tailLeak = this.runtime?.capabilities;\n`);
+    expect(tailLeak.some((leak) => leak.rule === 'raw-capability' && leak.excerpt.includes('__tailLeak'))).toBe(true);
+    // 反向：同样形态写在注释里不算违规（剥离语义没被放宽）。
+    expect(compositionRootViolations(`${source}\n// const __tailLeak = this.runtime?.capabilities;\n`)).toEqual([]);
   });
 
   it('business excerpt exceptions are exact, live, and cannot mask runtime reads', () => {

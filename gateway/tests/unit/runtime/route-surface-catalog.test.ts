@@ -30,9 +30,28 @@ import { handleMcpConfig } from '../../../src/routes/mcp-config';
 import { handleTerminal } from '../../../src/routes/terminal';
 import { handleRestartAgent } from '../../../src/routes/restart-agent';
 import { TerminalService } from '../../../src/terminal/terminal-service';
+// 共享注释剥离状态机（与 architecture-boundaries / core-runtime-neutrality / desktop /
+// session-ui / TUI 同一实现；正则整段吞行的假绿见该模块头部说明）。
+import { stripComments, longBlankRuns } from '../../../../packages/test-shim/comment-strip';
 
 const GATEWAY_ROOT = path.join(__dirname, '..', '..', '..');
 const SECRET_RUNTIME = 'secret-runtime-name';
+
+/** handler 源码里的「裸能力位」判定（唯一的正则消费点，便于反向 fixture 钉扎）。 */
+function handlerGatesOnRawCapability(code: string): boolean {
+  return /capabilities\??\.(?:diffApi|worktreeApi|sessionBranchApi|checkpointApi|runStateApi|mcpApi|instructionsApi|terminalApi)/.test(
+    code,
+  );
+}
+
+/** 最后一个非空行（剥离后应与源文件一致——尾部被整段吞掉时立刻失败）。 */
+function lastCodeLine(text: string): string {
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim()) return lines[i].trim();
+  }
+  return '';
+}
 
 interface ProbeResult { status: number; body: any }
 
@@ -599,17 +618,38 @@ describe('route → surface catalog', () => {
         continue;
       }
       const src = fs.readFileSync(file, 'utf8');
-      const code = src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '')
-        .replace(/\s\/\/[^\n]*$/gm, '');
+      const code = stripComments(src).code;
       const gated = /\.can\(|\baccess\b/.test(src) && /surface|access/.test(src);
       if (!gated) problems.push(`${route.operationId}: ${route.file} has no access gate`);
       // handler 文件里必须出现该 surface 字面量（动态映射文件里也是字面量）。
       if (!src.includes(`'${route.surface}'`)) problems.push(`${route.operationId}: ${route.file} never mentions ${route.surface}`);
-      if (/capabilities\??\.(?:diffApi|worktreeApi|sessionBranchApi|checkpointApi|runStateApi|mcpApi|instructionsApi|terminalApi)/.test(code)) {
+      if (handlerGatesOnRawCapability(code)) {
         problems.push(`${route.operationId}: ${route.file} gates on raw capabilities`);
       }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('handler raw-capability scan is not vacuous (reverse fixture)', () => {
+    // 判定本身必须能抓到真形态，否则上面的「逐 handler 扫描」就是假绿。
+    expect(handlerGatesOnRawCapability('if (rt.capabilities.diffApi) { return; }')).toBe(true);
+    expect(handlerGatesOnRawCapability('if (deps.getRuntime()?.capabilities?.runStateApi) {}')).toBe(true);
+    // 注释里的同一形态在剥离后不可见（作者解释被删掉的旧门是允许的）。
+    expect(
+      handlerGatesOnRawCapability(stripComments('// 旧门：capabilities.diffApi 已退役\nconst ok = 1;').code),
+    ).toBe(false);
+  });
+
+  it('handler comment stripping keeps whole files (line parity, tail intact, no blanked runs)', () => {
+    const problems: string[] = [];
+    for (const file of [...new Set(GATED_ROUTES.map((route) => route.file))]) {
+      const src = fs.readFileSync(path.join(GATEWAY_ROOT, file), 'utf8');
+      const stripped = stripComments(src);
+      if (stripped.code.split('\n').length !== src.split('\n').length) problems.push(`${file}: line count changed`);
+      if (!stripped.code.trim()) problems.push(`${file}: fully blanked`);
+      if (lastCodeLine(stripped.code) !== lastCodeLine(src)) problems.push(`${file}: tail lost`);
+      const runs = longBlankRuns(src, stripped);
+      if (runs.length) problems.push(`${file}: blanked ${runs[0].start}-${runs[0].end} (${runs[0].count} lines)`);
     }
     expect(problems).toEqual([]);
   });

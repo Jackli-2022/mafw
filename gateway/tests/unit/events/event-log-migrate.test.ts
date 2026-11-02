@@ -188,6 +188,160 @@ describe('migrateEventLogInfoToMessage（Task 14：event_log 旧帧迁移）', (
   });
 });
 
+// gap 3：旧帧里的 `message.error` 仍是 opencode 原生形状 `{name,data:{message}}`
+// （canonical 投影之前写入的行）。replay 出口不保留兼容读取，所以迁移期必须归一，
+// 且归一口径与 live/history 完全一致（`runtime/canonical-error.ts`）。
+describe('migrateEventLogInfoToMessage（message.error 规范形归一）', () => {
+  it('中止型原生错误 → {kind:abort, message}（info 迁移同趟完成）', () => {
+    const { db, store } = makeDb();
+    const seq = store.append({
+      type: 'mafw_event',
+      data: {
+        type: 'message.updated',
+        properties: {
+          sessionID: 's1',
+          info: {
+            id: 'a1',
+            role: 'assistant',
+            error: { name: 'MessageAbortedError', data: { message: 'Aborted by user' } },
+          },
+        },
+      },
+    })!;
+
+    expect(migrateEventLogInfoToMessage(db, { backupDir: null }).migrated).toBe(1);
+    const message = envelopeOf(db, seq).data.properties.message;
+    expect(message.error).toEqual({ kind: 'abort', message: 'Aborted by user' });
+    expect(message.id).toBe('a1'); // 其余消息字段原样保留
+    expect(message.role).toBe('assistant');
+  });
+
+  it('provider 型原生错误 → {kind:provider, message}（文案保留原文）', () => {
+    const { db, store } = makeDb();
+    const seq = store.append({
+      type: 'mafw_event',
+      data: {
+        type: 'message.updated',
+        properties: {
+          info: {
+            id: 'a2',
+            role: 'assistant',
+            error: { name: 'ProviderAuthError', data: { message: '401 invalid api key' } },
+          },
+        },
+      },
+    })!;
+
+    expect(migrateEventLogInfoToMessage(db, { backupDir: null }).migrated).toBe(1);
+    expect(envelopeOf(db, seq).data.properties.message.error).toEqual({
+      kind: 'provider',
+      message: '401 invalid api key',
+    });
+  });
+
+  it('已迁移过的行（有 message）但 error 仍是原生形状 → 只归一 error，其余不动', () => {
+    const { db, store } = makeDb();
+    const seq = store.append({
+      type: 'mafw_event',
+      data: {
+        type: 'message.updated',
+        properties: {
+          sessionID: 's1',
+          message: {
+            id: 'a3',
+            role: 'assistant',
+            model: { providerID: 'p', modelID: 'm' },
+            error: { name: 'MessageAbortedError', data: { message: 'Aborted' } },
+          },
+        },
+      },
+    })!;
+
+    expect(migrateEventLogInfoToMessage(db, { backupDir: null }).migrated).toBe(1);
+    const properties = envelopeOf(db, seq).data.properties;
+    expect(properties.message.error).toEqual({ kind: 'abort', message: 'Aborted' });
+    expect(properties.message.model).toEqual({ providerID: 'p', modelID: 'm' });
+    expect(properties.sessionID).toBe('s1');
+    expect('info' in properties).toBe(false);
+  });
+
+  it('已是规范形 → 不改写（第二次运行 migrated = 0，字节不变）', () => {
+    const { db, store } = makeDb();
+    const seq = store.append({
+      type: 'mafw_event',
+      data: {
+        type: 'message.updated',
+        properties: {
+          message: { id: 'a4', role: 'assistant', error: { kind: 'abort', message: 'Aborted' } },
+        },
+      },
+    })!;
+    const before = db.prepare('SELECT envelope FROM event_log WHERE seq = ?').get(seq) as { envelope: string };
+
+    expect(migrateEventLogInfoToMessage(db, { backupDir: null })).toEqual({ scanned: 1, migrated: 0 });
+    const after = db.prepare('SELECT envelope FROM event_log WHERE seq = ?').get(seq) as { envelope: string };
+    expect(after.envelope).toBe(before.envelope);
+  });
+
+  it('坏 message.error 不崩：非对象按 unknown 归一，空对象/null 保持原样', () => {
+    const { db, store } = makeDb();
+    const numeric = store.append({
+      type: 'mafw_event',
+      data: { type: 'message.updated', properties: { message: { id: 'g1', role: 'assistant', error: 42 } } },
+    })!;
+    const empty = store.append({
+      type: 'mafw_event',
+      data: { type: 'message.updated', properties: { message: { id: 'g2', role: 'assistant', error: {} } } },
+    })!;
+    const nil = store.append({
+      type: 'mafw_event',
+      data: { type: 'message.updated', properties: { message: { id: 'g3', role: 'assistant', error: null } } },
+    })!;
+
+    const res = migrateEventLogInfoToMessage(db, { backupDir: null });
+
+    // 只有 `42` 算「有错误但不可分类」——与 live 路径同样回落 unknown，不丢错误。
+    expect(res.migrated).toBe(1);
+    expect(envelopeOf(db, numeric).data.properties.message.error).toEqual({
+      kind: 'unknown',
+      message: 'unknown error',
+    });
+    // 无可信错误内容：不造错误、不改写（null 与 live 路径一致保持原值）。
+    expect(envelopeOf(db, empty).data.properties.message.error).toEqual({});
+    expect(envelopeOf(db, nil).data.properties.message.error).toBeNull();
+  });
+
+  it('无 error 且无 info 的行不迁移（非 error 行不该被顺手改写）', () => {
+    const { db, store } = makeDb();
+    const seq = store.append({
+      type: 'mafw_event',
+      data: { type: 'message.updated', properties: { message: { id: 'a5', role: 'user' } } },
+    })!;
+    const before = db.prepare('SELECT envelope FROM event_log WHERE seq = ?').get(seq) as { envelope: string };
+
+    expect(migrateEventLogInfoToMessage(db, { backupDir: null }).migrated).toBe(0);
+    const after = db.prepare('SELECT envelope FROM event_log WHERE seq = ?').get(seq) as { envelope: string };
+    expect(after.envelope).toBe(before.envelope);
+  });
+
+  it('扁平直发帧的 error 同样归一（无 data 信封）', () => {
+    const { db } = makeDb();
+    const seq = insertRaw(
+      db,
+      JSON.stringify({
+        type: 'message.updated',
+        properties: { message: { id: 'f1', role: 'assistant', error: { name: 'MessageAbortedError', data: { message: 'Aborted' } } } },
+      }),
+      'message.updated',
+    );
+
+    expect(migrateEventLogInfoToMessage(db, { backupDir: null }).migrated).toBe(1);
+    const env = envelopeOf(db, seq);
+    expect(env.type).toBe('message.updated');
+    expect(env.properties.message.error).toEqual({ kind: 'abort', message: 'Aborted' });
+  });
+});
+
 // 接线守卫：迁移必须在 API/SSE 开放前执行（spec §9.1「在 replay 服务开放前完成」）。
 describe('index.ts wiring（迁移先于 API/SSE ready）', () => {
   const idxSrc = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');

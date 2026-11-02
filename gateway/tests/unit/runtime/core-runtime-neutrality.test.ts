@@ -7,6 +7,9 @@
 //   4. 组合根诊断信息由 RuntimeDiagnostics 视图提供。
 import * as fs from 'fs';
 import * as path from 'path';
+// 共享注释剥离状态机（与 architecture-boundaries / desktop / session-ui / TUI 同一实现；
+// 正则整段吞行的假绿见 `packages/test-shim/comment-strip.ts` 头部说明）。
+import { stripComments, longBlankRuns } from '../../../../packages/test-shim/comment-strip';
 import { DiscoveryService } from '../../../src/core/discovery/discovery-service';
 import {
   canInstructionSync,
@@ -46,9 +49,16 @@ function readSource(rel: string): string {
 
 /** 去掉注释再扫（文档允许解释被删掉的旧写法）。 */
 function codeOf(rel: string): string {
-  return readSource(rel)
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+  return stripComments(readSource(rel)).code;
+}
+
+/** 最后一个非空行（剥离后应与源文件一致——尾部被整段吞掉时立刻失败）。 */
+function lastCodeLine(text: string): string {
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim()) return lines[i].trim();
+  }
+  return '';
 }
 
 const H1 = '1'.repeat(40);
@@ -337,5 +347,42 @@ describe('contract surfaces and composition-root wiring', () => {
   it('manager slot helpers do not infer owners from session id prefixes', () => {
     const code = codeOf('src/core/manager/manager-session-runtime.ts');
     expect(code).not.toMatch(/startsWith\('pi_'\)|startsWith\('ses_'\)/);
+  });
+});
+
+// 守卫本身的可信度：`codeOf` 只剥注释、不裁文件——行结构逐行对齐、尾部保留、
+// 没有「几十行被整体置空」的失明段（旧正则的假绿形态）。
+describe('comment stripping keeps every scanned file whole', () => {
+  const FILES = [
+    'src/index.ts',
+    'src/core/diff/turn-diff.ts',
+    'src/core/approval/policy-service.ts',
+    'src/core/manager/manager-session-runtime.ts',
+    'src/runtime/opencode-adapter.ts',
+    'src/runtime/opencode-runtime.ts',
+    'src/runtime/plugins/pi-runtime.ts',
+  ];
+
+  it('line parity, tail intact, no blanked runs', () => {
+    const problems: string[] = [];
+    for (const rel of FILES) {
+      const source = readSource(rel);
+      const stripped = stripComments(source);
+      if (stripped.code.split('\n').length !== source.split('\n').length) problems.push(`${rel}: line count changed`);
+      if (!stripped.code.trim()) problems.push(`${rel}: fully blanked`);
+      if (lastCodeLine(stripped.code) !== lastCodeLine(source)) problems.push(`${rel}: tail lost`);
+      const runs = longBlankRuns(source, stripped);
+      if (runs.length) problems.push(`${rel}: blanked ${runs[0].start}-${runs[0].end} (${runs[0].count} lines)`);
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('index.ts is scanned to the end (no truncated fake green)', () => {
+    const code = codeOf('src/index.ts');
+    expect(code).toContain('export { MafwScheduler }');
+    // 反向：尾部追加的违规形态在剥离后仍然可见（被判据真扫到）。
+    const injected = stripComments(`${readSource('src/index.ts')}\nconst tail = name === 'pi';\n`).code;
+    expect(injected).toMatch(/name\s*===\s*'pi'/);
+    expect(code).not.toMatch(/name\s*===\s*'pi'/);
   });
 });

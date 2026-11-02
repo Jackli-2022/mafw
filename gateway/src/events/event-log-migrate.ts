@@ -10,8 +10,11 @@
  *   {type:'mafw_event', data:{type:'message.updated', properties:{message}}}
  *
  * 不变量：
- * - 只改 `message.updated` 且「有 info、无 message」的行；已 canonical /
- *   双键并存（防复活旧帧）/ 非 message 事件一律不动。
+ * - 只改需要修的 `message.updated` 行：①「有 info、无 message」（旧信封），
+ *   ② `message.error` 仍是原生形状（`{name,data:{message}}` → `{kind,message}`）。
+ *   已 canonical / 双键并存（防复活旧帧）/ 非 message 事件一律不动。
+ * - 错误归一与 live/history 出口同一个实现（`runtime/canonical-error.ts`），
+ *   replay 与 live 的 `error` 形状逐字一致；已是规范形 → 不改写（幂等）。
  * - 幂等：第二次运行 migrated = 0。
  * - 失败安全：先写 JSONL 备份（原始信封可还原）再改；备份失败 = 中止迁移
  *   （没有备份就不改写），异常一律不外抛——启动永不被迁移卡死。
@@ -22,9 +25,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { Database } from 'better-sqlite3';
+import { canonicalError, isCanonicalError } from '../runtime/canonical-error';
 
 export interface EventLogMigrationResult {
-  /** 需要检查的候选行数（SQL 预筛：message.updated + 含 info 字样）。 */
+  /** 需要检查的候选行数（SQL 预筛：message.updated + 含 info/error 字样）。 */
   scanned: number;
   /** 实际改写的行数。 */
   migrated: number;
@@ -87,6 +91,39 @@ function isLegacyInfoPayload(properties: Record<string, unknown>): boolean {
   return 'info' in properties && !('message' in properties);
 }
 
+/**
+ * `message.error` 归一到规范形（与 live/history 出口同一个 `canonicalError`）。
+ * 无需改动（已是规范形 / 没有 error / 无法可信归一）→ 返回**原消息引用**。
+ */
+function withCanonicalError(message: unknown): unknown {
+  if (!isRecord(message)) return message;
+  const error = message.error;
+  if (error === undefined || isCanonicalError(error)) return message;
+  const canonical = canonicalError(error);
+  // `null` / `false` / 空串 / 空对象：canonicalError 认为无可信错误——不造错误、不改写
+  // （与 live 路径一致：`canonicalMessageFields` 也不产出 error）。
+  if (!canonical) return message;
+  return { ...message, error: canonical };
+}
+
+/**
+ * 计算需要写回的新 properties（其余字段浅拷贝保留）；无需改动 → null。
+ *
+ * 两件事，互不干扰：① 旧信封 info → message；② message.error 原生形状 → 规范形
+ * （只做 ① 的行同样要过 ②，因为旧 info 里带的正是原生错误对象）。
+ */
+function rewriteProperties(properties: Record<string, unknown>): Record<string, unknown> | null {
+  let next: Record<string, unknown> | null = null;
+  if (isLegacyInfoPayload(properties)) {
+    next = { ...properties, message: properties.info };
+    delete next.info;
+  }
+  const base = next ?? properties;
+  const message = withCanonicalError(base.message);
+  if (message === base.message) return next;
+  return { ...base, message };
+}
+
 function defaultBackupDir(): string {
   return path.join(os.homedir(), '.mafw', 'logs');
 }
@@ -116,7 +153,9 @@ function writeBackup(dir: string, rows: Array<CandidateRow & { nextEnvelope: str
 }
 
 /**
- * 幂等迁移 event_log 中的旧 `message.updated.properties.info` 帧。
+ * 幂等迁移 event_log 中的旧 `message.updated` 帧：
+ *   ① `properties.info` → `properties.message`；
+ *   ② `message.error` 原生形状（`{name,data:{message}}`）→ 规范 `{kind,message}`。
  * 永不抛：表缺失/读写异常 → 返回已扫描计数 + migrated 0。
  */
 export function migrateEventLogInfoToMessage(
@@ -129,7 +168,8 @@ export function migrateEventLogInfoToMessage(
     rows = db
       .prepare(
         "SELECT seq, ts, type, session_id, envelope FROM event_log " +
-          "WHERE envelope LIKE '%message.updated%' AND envelope LIKE '%\"info\"%' ORDER BY seq ASC",
+          "WHERE envelope LIKE '%message.updated%' " +
+          "AND (envelope LIKE '%\"info\"%' OR envelope LIKE '%\"error\"%') ORDER BY seq ASC",
       )
       .all() as CandidateRow[];
   } catch (err: any) {
@@ -150,9 +190,9 @@ export function migrateEventLogInfoToMessage(
       continue;
     }
     const target = messageUpdatedTarget(parsed);
-    if (!target || !isLegacyInfoPayload(target.properties)) continue;
-    const properties: Record<string, unknown> = { ...target.properties, message: target.properties.info };
-    delete properties.info;
+    if (!target) continue;
+    const properties = rewriteProperties(target.properties);
+    if (!properties) continue;
     pending.push({ ...row, nextEnvelope: JSON.stringify(target.apply(properties)) });
   }
 
