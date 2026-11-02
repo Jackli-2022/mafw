@@ -28,6 +28,8 @@
 - 让控制与状态诚实：**休眠、完成、待审、手工任务必须名实一致**；
 - 先修若干正确性问题，再谈并行和 specialist。
 
+> 增补：DeepSeek 刚开源的 `dsh-superagent-prototype` 与上述方向高度一致，并给出了更具体的 Ticket stage、Router/Executor、Mandate、follow-up ownership、durable effects 与 panel 约束。见 `docs/research/2026-11-02-dsh-superagent-vs-mafw-pod.md`。
+
 ---
 
 ## 1. 审计边界与证据等级
