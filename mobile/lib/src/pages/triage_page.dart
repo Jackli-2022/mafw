@@ -64,7 +64,6 @@ class _TriagePageState extends State<TriagePage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Triage 待决项'),

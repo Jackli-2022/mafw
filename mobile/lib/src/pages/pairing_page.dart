@@ -304,7 +304,7 @@ class _PairingPageState extends State<PairingPage> {
                   right: 0,
                   child: SafeArea(
                     child: Container(
-                      color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
+                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
                       padding: const EdgeInsets.all(12),
                       child: _showManual
                           ? Column(

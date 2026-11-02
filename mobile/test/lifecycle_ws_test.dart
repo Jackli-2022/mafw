@@ -2,6 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mafw_mobile/src/services/lifecycle_ws.dart';
 
 void main() {
+  // LifecycleWsManager reads WidgetsBinding.instance in its constructor.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('LifecycleWsManager', () {
     late LifecycleWsManager manager;
     late int connectCalls;

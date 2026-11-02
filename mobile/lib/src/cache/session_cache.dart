@@ -122,8 +122,12 @@ class SessionCache {
     box.deleteAll(keys);
   }
 
-  void clear() {
-    _ensureBox.clear();
+  /// Clear every cached message.
+  ///
+  /// hive_ce's `Box.clear()` is asynchronous — awaiting it keeps the method's
+  /// post-condition (empty box on return) honest.
+  Future<void> clear() async {
+    await _ensureBox.clear();
   }
 
   int get size => _ensureBox.length;

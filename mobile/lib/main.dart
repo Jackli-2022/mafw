@@ -168,13 +168,6 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _pushService = pushService;
   }
 
-  void _refreshSessionsDebounced() {
-    _sessionsDebounce?.cancel();
-    _sessionsDebounce = Timer(const Duration(milliseconds: 500), _refreshSessions);
-  }
-
-  Timer? _sessionsDebounce;
-
   Future<void> _refreshSessions() async {
     final c = _client;
     if (c == null) return;

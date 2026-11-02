@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -15,6 +14,24 @@ import '../network/ws_client.dart';
 import '../theme.dart';
 
 enum _GenPhase { idle, searching, writing }
+
+/// Canonical part-stream events → 生成中（writing）。
+const Set<String> _kWritingEvents = {'part.updated', 'part.delta'};
+
+/// Canonical turn terminal events → 回合结束。
+const Set<String> _kTurnEndEvents = {'turn.completed', 'turn.failed', 'turn.aborted'};
+
+/// Canonical events that mean this session's history changed.
+const Set<String> _kHistoryRefreshEvents = {
+  'message.updated',
+  'part.updated',
+  'part.delta',
+  'part.complete',
+  'turn.started',
+  'turn.completed',
+  'turn.failed',
+  'turn.aborted',
+};
 
 /// Chat view for one session: message list (live via WS events) + composer.
 class ChatPage extends StatefulWidget {
@@ -157,27 +174,19 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _onEvent(MafwEvent ev) {
-    // Refresh this session's messages when its activity events arrive.
+    // Canonical envelopes only (`mafw_event`). Legacy `opencode_event` /
+    // `message.part.*` / `session.idle` frames are not unpacked any more.
+    if (!ev.isCanonical) return;
     final isSessionEvent = ev.sessionID == null || ev.sessionID == widget.session.id;
-    final propsType = ev.innerType;
-    final interesting = ev.type == 'opencode_event' &&
-        (propsType == 'message.updated' ||
-            propsType == 'message.part.updated' ||
-            propsType == 'message.part.delta' ||
-            propsType == 'message.complete' ||
-            propsType == 'message.error' ||
-            propsType == 'session.idle');
+    if (!isSessionEvent) return;
+    final inner = ev.innerType;
 
-    // Perplexity 式阶段驱动：part 增量 → writing；complete/idle → 完成
-    if (isSessionEvent && _sending) {
-      debugPrint('[MAFW] phase ev: $propsType session=${ev.sessionID} sending=$_sending phase=$_phase');
-      if ((propsType == 'message.part.updated' ||
-              propsType == 'message.part.delta') &&
-          _phase != _GenPhase.writing) {
-        setState(() => _phase = _GenPhase.writing);
-      } else if ((propsType == 'message.complete' ||
-          propsType == 'message.error' ||
-          propsType == 'session.idle')) {
+    // Perplexity 式阶段驱动：part 增量 → writing；回合终态 → 完成
+    if (_sending) {
+      debugPrint('[MAFW] phase ev: $inner session=${ev.sessionID} sending=$_sending phase=$_phase');
+      if (_kWritingEvents.contains(inner)) {
+        if (_phase != _GenPhase.writing) setState(() => _phase = _GenPhase.writing);
+      } else if (_kTurnEndEvents.contains(inner)) {
         setState(() {
           _phase = _GenPhase.idle;
           _sending = false;
@@ -185,7 +194,7 @@ class _ChatPageState extends State<ChatPage> {
       }
     }
 
-    if (isSessionEvent && (interesting || ev.type == 'send_ack')) {
+    if (_kHistoryRefreshEvents.contains(inner)) {
       _refreshDebounce?.cancel();
       _refreshDebounce = Timer(const Duration(milliseconds: 250), _loadHistory);
     }
@@ -531,7 +540,6 @@ class _GenPhaseIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final writing = phase == _GenPhase.writing;
     final label = writing ? '正在生成…' : '正在处理…';
 

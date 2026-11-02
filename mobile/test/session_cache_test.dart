@@ -1,18 +1,34 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:mafw_mobile/src/cache/session_cache.dart';
 
 void main() {
   group('SessionCache', () {
     late SessionCache cache;
+    late Directory hiveDir;
+
+    setUpAll(() async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      hiveDir = await Directory.systemTemp.createTemp('mafw_session_cache_test');
+      Hive.init(hiveDir.path);
+    });
+
+    tearDownAll(() async {
+      await Hive.close();
+      await hiveDir.delete(recursive: true);
+    });
 
     setUp(() async {
-      cache = SessionCache();
+      // One Hive box is shared for the whole file (closing/reopening a named box
+      // in hive_ce leaves a closed notifier behind); clear it per test instead.
+      cache = SessionCache(limitPerSession: 2);
       await cache.init();
+      await cache.clear();
     });
 
-    tearDown(() async {
-      await cache.dispose();
-    });
+    // No per-test dispose: closing the shared box would poison later tests.
 
     test('put and get stores message', () async {
       final msg = CachedMessage(
@@ -106,26 +122,27 @@ void main() {
         id: 'msg-2', sessionID: 'sess-2', role: 'user', text: 'B', timeCreated: now,
       ));
 
-      cache.clear();
+      await cache.clear();
       expect(cache.get('msg-1'), isNull);
       expect(cache.get('msg-2'), isNull);
     });
 
     test('expired entries are evicted on access', () async {
-      final cache = SessionCache(ttl: const Duration(milliseconds: 50));
-      await cache.init();
+      // Shares the file-wide box; a short TTL is the only difference.
+      final shortLived = SessionCache(ttl: const Duration(milliseconds: 50));
+      await shortLived.init();
+      await shortLived.clear();
 
       final now = DateTime.now().millisecondsSinceEpoch;
-      await cache.put(CachedMessage(
+      await shortLived.put(CachedMessage(
         id: 'msg-1', sessionID: 'sess-1', role: 'user', text: 'Hello', timeCreated: now,
       ));
 
-      expect(cache.get('msg-1'), isNotNull);
+      expect(shortLived.get('msg-1'), isNotNull);
 
       await Future.delayed(const Duration(milliseconds: 100));
 
-      expect(cache.get('msg-1'), isNull);
-      await cache.dispose();
+      expect(shortLived.get('msg-1'), isNull);
     });
 
     test('size reports total count', () async {

@@ -166,7 +166,7 @@ class WsClientV2 {
     ch.sink.add(jsonEncode({
       'type': 'send',
       'message': message,
-      if (sessionID != null) 'sessionID': sessionID,
+      'sessionID': ?sessionID,
     }));
   }
 
@@ -222,7 +222,7 @@ class WsError {
   final dynamic originalError;
   final DateTime timestamp;
 
-  const WsError({
+  WsError({
     required this.type,
     required this.message,
     this.originalError,

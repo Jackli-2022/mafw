@@ -19,6 +19,15 @@ import '../config/connection_config.dart';
 import '../models/mafw_models.dart';
 import '../network/ws_client.dart';
 
+/// Canonical events that change the session list (foreground refresh trigger).
+const Set<String> _kSessionRefreshEvents = {
+  'session.created',
+  'session.updated',
+  'session.deleted',
+  'message.updated',
+  'turn.completed',
+};
+
 /// Importance levels for notification channels.
 enum NotificationImportance {
   low,
@@ -110,7 +119,6 @@ class PushService {
   final void Function(String sessionID)? _onNavigateToSession;
 
   String? _currentToken;
-  String? _currentSessionID;
   Timer? _retryTimer;
   Timer? _tokenRefreshTimer;
   bool _disposed = false;
@@ -151,8 +159,11 @@ class PushService {
     Future<void> Function()? onRefreshSessions,
     void Function(String sessionID)? onNavigateToSession,
   })  : _httpClient = httpClient ?? http.Client(),
+        // ignore: prefer_initializing_formals — named params cannot be private
         _ws = ws,
+        // ignore: prefer_initializing_formals
         _onRefreshSessions = onRefreshSessions,
+        // ignore: prefer_initializing_formals
         _onNavigateToSession = onNavigateToSession;
 
   /// Get current FCM token.
@@ -160,8 +171,7 @@ class PushService {
 
   /// Current session being viewed — set by ChatPage enter/exit to suppress
   /// foreground notifications for the active session (spec §6.2).
-  String? get currentSessionID => _currentSessionID;
-  set currentSessionID(String? v) => _currentSessionID = v;
+  String? currentSessionID;
 
   /// Initialize the push service.
   ///
@@ -295,7 +305,7 @@ class PushService {
     final body = jsonEncode({
       'token': token,
       'platform': platform,
-      if (deviceName != null) 'deviceName': deviceName,
+      'deviceName': ?deviceName,
     });
 
     var lastError = -1;
@@ -438,7 +448,7 @@ class PushService {
     final parsed = parseNotificationData(data);
 
     // Spec §6.2: 若正看该 session，仅刷新 WsClient.events，不弹本地通知。
-    if (parsed.sessionID != null && parsed.sessionID == _currentSessionID) {
+    if (parsed.sessionID != null && parsed.sessionID == currentSessionID) {
       _onRefreshSessions?.call();
       return;
     }
@@ -508,11 +518,10 @@ class PushService {
     if (ws == null) return;
 
     _wsEventSub = ws.events.listen((event) {
-      final propsType = event.innerType;
-      if (event.type == 'opencode_event' &&
-          (propsType == 'session.created' ||
-              propsType == 'message.updated' ||
-              propsType == 'session.idle')) {
+      // Canonical envelopes only — legacy opencode_event / message.part.* /
+      // session.idle frames are no longer consumed.
+      if (!event.isCanonical) return;
+      if (_kSessionRefreshEvents.contains(event.innerType)) {
         _onRefreshSessions?.call();
       }
     });

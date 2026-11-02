@@ -4,12 +4,33 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      mobile: ${{ steps.filter.outputs.mobile }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            mobile:
+              - 'mobile/**'
+              - 'packages/gateway-sdk/src/view-dto.ts'
+              - 'packages/gateway-sdk/src/events.ts'
+              - 'packages/gateway-sdk/src/types.ts'
+              - '.github/workflows/ci.yml'
+
   verify:
     name: build + test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -68,3 +89,31 @@ jobs:
 
       - name: Test desktop
         run: npm run test:desktop
+
+  flutter:
+    name: mobile (flutter analyze + test)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned: the flat/canonical goldens use null-aware collection elements (Dart 3.13).
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.0'
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Flutter analyze
+        working-directory: mobile
+        run: flutter analyze
+
+      - name: Flutter test (flat view DTO + canonical event goldens)
+        working-directory: mobile
+        run: flutter test

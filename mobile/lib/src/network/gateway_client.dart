@@ -12,9 +12,9 @@ import '../models/mafw_models.dart';
 
 class GatewayClient {
   final ConnectionConfig config;
-  final http.Client _http = http.Client();
+  final http.Client _http;
 
-  GatewayClient(this.config);
+  GatewayClient(this.config, {http.Client? httpClient}) : _http = httpClient ?? http.Client();
 
   Uri _uri(String path, [Map<String, String>? query]) {
     var u = Uri.parse('${config.normalizedBaseUrl}$path');
@@ -50,20 +50,25 @@ class GatewayClient {
     return list.map((e) => MafwSession.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  /// Flat MAFW View DTO history (`?format=flat`).
+  ///
+  /// Transition period: the gateway default wire shape is still opencode
+  /// `{info,parts}`, so the flat outlet is requested explicitly. Task 15 flips
+  /// the default and this parameter is dropped. Legacy items are never parsed.
   Future<List<MafwMessage>> messages(String sessionID, {int limit = 50}) async {
     final res = await _http.get(
-      _uri('/api/sessions/$sessionID/messages', {'limit': '$limit'}),
+      _uri('/api/sessions/$sessionID/messages', {'limit': '$limit', 'format': 'flat'}),
       headers: _headers,
     );
     if (res.statusCode != 200) throw GatewayException('messages: HTTP ${res.statusCode}');
     final j = jsonDecode(utf8.decode(res.bodyBytes));
-    final raw = j is Map<String, dynamic> ? (j['data'] ?? j['messages']) : j;
+    // Flat envelope: { data: MafwMessage[], nextCursor }
+    final raw = j is Map<String, dynamic> ? j['data'] : null;
     final list = raw is List ? raw : <dynamic>[];
     final out = <MafwMessage>[];
     for (final item in list) {
       if (item is! Map<String, dynamic>) continue;
-      final info = item['info'] is Map<String, dynamic> ? item['info'] as Map<String, dynamic> : item;
-      out.add(MafwMessage.fromJson(info, sessionID: sessionID));
+      out.add(MafwMessage.fromJson(item, sessionID: sessionID));
     }
     return out;
   }
@@ -72,7 +77,7 @@ class GatewayClient {
     final res = await _http.post(
       _uri('/api/session'),
       headers: _headers,
-      body: jsonEncode({if (directory != null) 'directory': directory}),
+      body: jsonEncode({'directory': ?directory}),
     );
     if (res.statusCode != 200) throw GatewayException('createSession: HTTP ${res.statusCode}');
     final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
@@ -87,7 +92,7 @@ class GatewayClient {
       headers: _headers,
       body: jsonEncode({
         'message': message,
-        if (sessionID != null) 'sessionID': sessionID,
+        'sessionID': ?sessionID,
       }),
     );
     if (res.statusCode != 200) throw GatewayException('sendEnriched: HTTP ${res.statusCode}');
@@ -193,8 +198,8 @@ class GatewayClient {
       headers: _headers,
       body: jsonEncode({
         'text': text,
-        if (voice != null) 'voice': voice,
-        if (style != null) 'style': style,
+        'voice': ?voice,
+        'style': ?style,
       }),
     );
     if (res.statusCode != 200) throw GatewayException('ttsSpeak: HTTP ${res.statusCode}');

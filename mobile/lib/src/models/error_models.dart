@@ -4,6 +4,8 @@
 /// Provides error classification, user-friendly messages, and recovery suggestions.
 library;
 
+import 'dart:math';
+
 /// Error types for classification.
 enum ErrorType {
   /// Network connectivity issues (no internet, DNS failure, etc.)

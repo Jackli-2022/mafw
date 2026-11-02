@@ -5,8 +5,6 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 
 import 'package:mafw_mobile/src/config/connection_config.dart';
-import 'package:mafw_mobile/src/models/mafw_models.dart';
-import 'package:mafw_mobile/src/network/ws_client.dart';
 import 'package:mafw_mobile/src/services/push_service.dart';
 
 void main() {

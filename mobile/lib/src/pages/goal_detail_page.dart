@@ -59,7 +59,6 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
     final active = status == 'active' || status == 'in_progress' || status == 'running';
     final description = (g?['description'] ?? g?['goal'] ?? '').toString();
     final progress = g?['progress'] is num ? (g!['progress'] as num).toDouble() : null;
-    final created = g?['created_at'] ?? g?['createdAt'];
     final sessions = g?['sessions'] is List ? g!['sessions'] as List : <dynamic>[];
     final evidence = g?['evidence'] is List ? g!['evidence'] as List : <dynamic>[];
 

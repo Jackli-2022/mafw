@@ -6,7 +6,6 @@ import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
 import '../theme.dart';
 import 'goal_detail_page.dart';
-import 'triage_page.dart';
 
 /// 底部 Tab 导航页（方案 C：AI 紫品牌风，对标豆包 5 Tab）。
 /// Tab：会话 / Goal / 记忆 / 我的。

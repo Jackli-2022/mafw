@@ -41,10 +41,16 @@ class MafwSession {
   }
 }
 
+/// Flat MAFW View DTO message (canonical v3).
+///
+/// Shape: `{id, sessionID, role, parentID, content: MafwPart[], time:{created,...}}`.
+/// Served by `GET /api/sessions/:id/messages?format=flat`; the legacy
+/// `{info, parts}` wire envelope is **not** accepted (no fallback).
+/// Contract source: `packages/gateway-sdk/src/view-dto.ts`.
 class MafwMessage {
   final String id;
   final String sessionID;
-  final String role; // user | assistant | toolResult
+  final String role; // user | assistant
   final String? text;
   final String? parentID;
   final int timeCreated;
@@ -60,25 +66,29 @@ class MafwMessage {
     this.parts = const [],
   });
 
-  factory MafwMessage.fromJson(Map<String, dynamic> info, {required String sessionID}) {
-    final rawParts = info['parts'] as List? ?? const [];
+  factory MafwMessage.fromJson(Map<String, dynamic> j, {required String sessionID}) {
+    final rawParts = j['content'] is List ? j['content'] as List : const [];
+    final parts = <MafwPart>[];
+    for (final p in rawParts) {
+      if (p is Map<String, dynamic>) parts.add(MafwPart.fromJson(p));
+    }
     return MafwMessage(
-      id: (info['id'] ?? '').toString(),
-      sessionID: sessionID,
-      role: (info['role'] ?? '').toString(),
-      text: _firstText(info),
-      parentID: info['parentID'] as String?,
-      timeCreated: _time(info),
-      parts: rawParts.map((p) => MafwPart.fromJson(p)).toList(),
+      id: (j['id'] ?? '').toString(),
+      sessionID: (j['sessionID'] as String?) ?? sessionID,
+      role: (j['role'] ?? '').toString(),
+      text: _firstText(j),
+      parentID: j['parentID'] as String?,
+      timeCreated: _time(j),
+      parts: parts,
     );
   }
 
-  static String? _firstText(Map<String, dynamic> info) {
-    final t = info['text'];
+  static String? _firstText(Map<String, dynamic> j) {
+    final t = j['text'];
     if (t is String && t.isNotEmpty) return t;
-    final parts = info['parts'] as List?;
-    if (parts != null) {
-      for (final p in parts) {
+    final content = j['content'];
+    if (content is List) {
+      for (final p in content) {
         if (p is Map<String, dynamic> && p['type'] == 'text' && p['text'] is String) {
           return p['text'] as String;
         }
@@ -87,8 +97,8 @@ class MafwMessage {
     return null;
   }
 
-  static int _time(Map<String, dynamic> info) {
-    final t = info['time'];
+  static int _time(Map<String, dynamic> j) {
+    final t = j['time'];
     if (t is Map<String, dynamic>) {
       final c = t['created'];
       if (c is num) return c.toInt();
@@ -97,14 +107,29 @@ class MafwMessage {
   }
 }
 
+/// Flat MAFW View DTO part.
+///
+/// Tool parts carry neutral identity: `toolClass` (readonly/search/file-edit/
+/// shell/subagent/web/plan/other) + `canonicalTool` (runtime-neutral name) +
+/// `state {status, input, output, title, error}`.
 class MafwPart {
   final String id;
   final String type; // text | reasoning | tool | file | step-start | ...
   final String? text;
-  final String? tool;
+  final String? tool; // runtime-native tool name
+  final String? toolClass;
+  final String? canonicalTool;
   final Map<String, dynamic>? state;
 
-  MafwPart({required this.id, required this.type, this.text, this.tool, this.state});
+  MafwPart({
+    required this.id,
+    required this.type,
+    this.text,
+    this.tool,
+    this.toolClass,
+    this.canonicalTool,
+    this.state,
+  });
 
   factory MafwPart.fromJson(Map<String, dynamic> j) {
     return MafwPart(
@@ -112,49 +137,136 @@ class MafwPart {
       type: (j['type'] ?? 'text').toString(),
       text: j['text'] as String?,
       tool: j['tool'] as String?,
+      toolClass: j['toolClass'] as String?,
+      canonicalTool: j['canonicalTool'] as String?,
       state: j['state'] is Map<String, dynamic> ? j['state'] as Map<String, dynamic> : null,
     );
   }
 
   bool get isTool => type == 'tool';
   bool get isReasoning => type == 'reasoning';
-  String get toolTitle => state?['title'] as String? ?? tool ?? '';
+
+  /// Runtime-neutral tool name (`canonicalTool` preferred, native name fallback).
+  String get displayTool => canonicalTool ?? tool ?? '';
+
+  String get toolStatus => state?['status'] as String? ?? '';
+  String get toolTitle => state?['title'] as String? ?? displayTool;
   String get toolOutput => state?['output'] as String? ?? '';
 }
 
-/// WS/SSE event (opencode_event wrapper or direct type).
+/// Canonical event envelope name (gateway `mafw_event`).
+const String kMafwEventEnvelope = 'mafw_event';
+
+/// Canonical inner event names owned by MAFW.
+///
+/// Golden mirror of `gateway/src/runtime/mafw-vocabulary.ts` /
+/// `packages/gateway-sdk/src/events.ts`. Legacy names
+/// (`opencode_event`, `message.part.*`, `session.idle`, `message.complete`,
+/// `message.error`) are intentionally absent — they are not translated.
+const Set<String> kMafwCanonicalEventTypes = {
+  // 会话生命周期
+  'session.created',
+  'session.updated',
+  'session.deleted',
+  // 回合生命周期
+  'turn.started',
+  'turn.completed',
+  'turn.failed',
+  'turn.aborted',
+  // 压缩
+  'session.compacting',
+  'session.compacted',
+  // 消息 / part 流
+  'message.updated',
+  'part.updated',
+  'part.delta',
+  'part.complete',
+  // 问答 / 审批
+  'question.asked',
+  'question.replied',
+  'question.rejected',
+  'permission.asked',
+  'permission.replied',
+  // 数据面
+  'plan.updated',
+  'usage.updated',
+  'queue.updated',
+  'task.updated',
+  'background.job.updated',
+  'pod.updated',
+  'session.config',
+  'session.checkpoint',
+  'run.updated',
+  'trajectory.event',
+  'trajectory.turn',
+  'permission_mode',
+  'session.diff',
+  'session.commands',
+};
+
+/// WS/SSE event frame.
+///
+/// Canonical envelopes only: `{type:'mafw_event', data:{type, properties?, sessionID?, directory?}}`.
+/// Flat top-level broadcasts (e.g. `goal_created`) keep their own `type` and are
+/// **not** canonical envelopes (`innerType == ''`). Legacy `opencode_event`
+/// frames are likewise not unpacked.
 class MafwEvent {
+  /// Frame type as received (`mafw_event` for canonical envelopes).
   final String type;
+
+  /// Canonical inner event name; empty when this frame is not a canonical envelope.
+  final String innerType;
+
+  /// Envelope `data` (empty for non-envelope frames).
   final Map<String, dynamic> data;
+
+  /// Envelope `data.properties`.
   final Map<String, dynamic>? properties;
+
+  /// `data.sessionID`, falling back to the canonical `properties.message.sessionID`.
   final String? sessionID;
 
-  MafwEvent({required this.type, this.data = const {}, this.properties, this.sessionID});
+  MafwEvent({
+    required this.type,
+    this.innerType = '',
+    this.data = const {},
+    this.properties,
+    this.sessionID,
+  });
 
-  /// 内层事件类型：网关帧为 `{type:'opencode_event', data:{type:'message.part.delta', properties, sessionID}}`，
-  /// 真正的 subtype（message.part.delta / message.complete / session.idle 等）在 data.type 里。
-  String get innerType {
-    final inner = data['data'];
-    if (inner is Map<String, dynamic>) {
-      final t = inner['type'];
-      if (t is String && t.isNotEmpty) return t;
-    }
-    final direct = data['type'];
-    if (direct is String && direct != 'opencode_event') return direct;
-    return '';
+  bool get isCanonical => innerType.isNotEmpty;
+
+  String? get directory => data['directory'] as String?;
+
+  /// Canonical `message.updated` payload: `properties.message` (flat MafwMessage).
+  Map<String, dynamic>? get message {
+    final m = properties?['message'];
+    return m is Map<String, dynamic> ? m : null;
   }
 
+  String? get messageID => message?['id'] as String?;
+
   factory MafwEvent.fromJson(Map<String, dynamic> j) {
-    final data = j['data'];
-    Map<String, dynamic>? inner;
-    if (data is Map<String, dynamic>) inner = data;
+    final type = (j['type'] ?? '').toString();
+    final rawData = j['data'];
+    final data = rawData is Map<String, dynamic> ? rawData : const <String, dynamic>{};
+    if (type != kMafwEventEnvelope) {
+      return MafwEvent(type: type);
+    }
+
+    final rawInner = (data['type'] ?? '').toString();
+    final inner = kMafwCanonicalEventTypes.contains(rawInner) ? rawInner : '';
+    final rawProps = data['properties'];
+    final properties = rawProps is Map<String, dynamic> ? rawProps : null;
+    final message = properties?['message'];
+
     return MafwEvent(
-      type: (j['type'] ?? '').toString(),
-      data: j,
-      properties: inner?['properties'] is Map<String, dynamic>
-          ? inner!['properties'] as Map<String, dynamic>
-          : (j['properties'] is Map<String, dynamic> ? j['properties'] as Map<String, dynamic> : null),
-      sessionID: inner?['sessionID'] as String? ?? j['sessionID'] as String?,
+      type: type,
+      innerType: inner,
+      data: data,
+      properties: properties,
+      sessionID: (data['sessionID'] as String?) ??
+          (message is Map<String, dynamic> ? message['sessionID'] as String? : null),
     );
   }
 }

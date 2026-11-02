@@ -105,7 +105,7 @@ class WsClient {
     ch.sink.add(jsonEncode({
       'type': 'send',
       'message': message,
-      if (sessionID != null) 'sessionID': sessionID,
+      'sessionID': ?sessionID,
     }));
   }
 
