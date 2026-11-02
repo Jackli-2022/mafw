@@ -15,6 +15,17 @@ export interface PartLike {
 export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
 export const HIDDEN_TOOLS = new Set(["todowrite"])
 
+/**
+ * v2.1.0 runtime 工具名 → MAFW 卡片名（part 只有 name，归一化后 tool 仍是 runtime 名）。
+ *
+ * 纯常量放在渲染规则模块，canonical 解析层与外部消费方（desktop 工具卡槽位
+ * 声明匹配）共用同一份，不镜像第二套别名表。
+ */
+export const TOOL_NAME_ALIASES: Record<string, string> = {
+  subagent: "task",
+  shell: "bash",
+}
+
 /** canonical 翻译层（gateway enrich 的 additive 字段）：显示/分组/聚合统一用解析名。 */
 export function displayToolOf(part: PartLike): string {
   return typeof part.canonicalTool === "string" && part.canonicalTool ? part.canonicalTool : part.tool ?? ""
