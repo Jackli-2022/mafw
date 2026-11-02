@@ -50,9 +50,18 @@
   每个 goal 节点以 `[POD CONTEXT]` 注入（≤4KB）。只服务本项目，不是跨项目知识。
 - **谐波记忆**：跨项目长期记忆，检索式送达（`<recall>` 指针 / pinned / sticky），
   只经显式 `mafw_add_memory` 写入。**任务状态不进这里**（waves/回执/评审、任务板、handoff 消息都不自动沉淀）。
+- **任务入口**：用户可执行的唯一工作单位是 **Goal**（「交给团队一个目标」）；
+  `waves.tasks` 只是 Goal 当前轮内部计划步骤。手工任务在 UI 是**备注（note）**，不自动执行；
+  外部 A2A 请求单独标为 external request，不得伪装成已纳入计划。
 - **任务板**：`waves.json` 的投影 + 状态覆盖层；可从任务板**编辑标题/验收、追加任务、删除任务**
   （写回计划，仅当前轮、goal 无运行中节点时）。任务身份用稳定 `taskId`（legacy 任务回退位置 id），
-  删任务不会让其余任务状态错位；产物文件仍是权威。
+  删任务不会让其余任务状态错位；产物文件仍是权威。`skipped` 是终态，不映射为失败。
+- **人类注意力**：rail badge 与「需要你」只包含真正阻塞工作的事项——计划待批准、待回答、
+  状态损坏；Reviewer 的 `review` 工作属于团队内部流程，未读消息和已完成结果分开显示。
+- **Goal 结果**：真实保留 `PASS / FAIL / MAX_RETRIES / ERROR / CANCELLED`；终态失败归档后队列继续，
+  结果页展示 Goal 验收、逐任务 rubric evidence、产物与 review feedback，可基于失败反馈重新提交新 Goal。
+- **暂停推进**：Pod paused 只阻止新 Goal promote 与新节点创建，当前节点允许完成、允许归档；
+  回答/批准在暂停中照常落库，恢复后继续。它不等同于取消 Goal，也不是「免打扰」。
 - **不是**：k8s 的 Pod（调度单位，ephemeral，共享网络命名空间）、不是 Swarm（无固定角色的大规模短命 worker）、
   不是 Crew（一次性 kickoff）、不是 Session（一次对话）。定义详见
   `docs/research/2026-10-31-pod-definition.md`。
