@@ -426,8 +426,8 @@ curl -X POST http://127.0.0.1:3000/api/runtime/conformance \
   也没有 `?format=flat|wire` 参数（旧参数被忽略，不再改变形状）。
 - `MafwMessage` = `{ role, id?, sessionID?, parentID?, content?: MafwPart[], time?, model?, agent?,
   stopReason?, summary?, error?, extensions? }`（`role` 必填，其余可选；`model` = `{ providerID,
-  modelID, variant? }`，`stopReason` = 规范枚举 `end_turn | max_tokens | tool_use | aborted |
-  error | unknown`，`error` = `{ kind, message }`；**没有** `finish`/`tokens`/`cost` 这类原生字段）。
+  modelID, variant? }`，`stopReason` = 规范枚举 `end_turn | max_tokens | tool_use | refusal |
+  cancelled | error | unknown`，`error` = `{ kind, message }`；**没有** `finish`/`tokens`/`cost` 这类原生字段）。
   `MafwPart` 覆盖 `text / reasoning / tool / file / agent / compaction / step-* / data-*`。
   权威字段表：`packages/gateway-sdk/contract/view-dto.json` 的 `message` / `part`。
   **旧 wire 信封 `{ info, parts }` 已删除**：adapter 直接返回 flat，facade 对非 flat 成员
