@@ -11,8 +11,11 @@ export type CanonicalMessageError = MafwMessageError
 
 function classify(text: string): string {
   const t = text.toLowerCase()
-  if (t.includes("abort") || t.includes("interrupt") || t.includes("cancel")) return "abort"
+  // 明确的 abort/interrupt 优先（即使文案里带 provider）。
+  const explicitAbort = /abort|interrupt/.test(t)
+  if (explicitAbort) return "abort"
   if ((t.includes("rate") && t.includes("limit")) || t.includes("429")) return "rate-limit"
+  // provider/auth 信号先于泛化的 "cancelled"：provider 取消请求不是用户中止。
   if (
     t.includes("auth") ||
     t.includes("api key") ||
@@ -24,6 +27,7 @@ function classify(text: string): string {
   ) {
     return "provider"
   }
+  if (t.includes("cancel") || t.includes("stopped by user")) return "abort"
   return "unknown"
 }
 

@@ -9,6 +9,7 @@ import { canRewindCode, checkpointsToRewind, revertWarning } from "./checkpoint-
 import { leftoverNotice, restoreWarning, serverMode as resolveServerMode, toServerRows } from "./server-checkpoints"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import { collectTurnDiffCandidates, loadTurnDiffs } from "./turn-diffs"
+import { experienceStore } from "../experience-store"
 
 export function CheckpointOverlay(props: {
   sessionID: string
@@ -297,7 +298,7 @@ export function CheckpointOverlay(props: {
                           <div class="mafw-checkpoint-confirm">
                             <div class="mafw-checkpoint-confirm-text">
                               {mode() === "revert"
-                                ? revertWarning(props.checkpointAction?.semantics as { undo?: boolean; files?: boolean } | undefined)
+                                ? revertWarning(experienceStore.semantics("branch.revert") as { undo?: boolean; files?: boolean } | undefined)
                                 : `将撤销这条消息所在的回合及之后 ${checkpointsToRewind(checkpoints(), cp.messageID).length} 个回合的文件改动；对话保留。不可自动撤销；patch 冲突时可能停在中间态。`}
                             </div>
                             <div class="mafw-checkpoint-confirm-actions">

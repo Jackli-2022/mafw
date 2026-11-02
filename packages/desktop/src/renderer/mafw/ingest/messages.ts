@@ -18,6 +18,13 @@ export interface IngestMessageOptions {
   sessionID?: string
   /** 稳定兜底 id（缺省时按时间/序号生成，保证同一页内确定）。 */
   index?: number
+  /**
+   * 是否允许为缺 id 的消息合成兜底 id。
+   * 仅历史分页可开启（同一页内确定性）；live `message.updated` 缺 id 必须丢弃，
+   * 否则 pi 的 user/assistant `message_end` 会塌到同一 `msg_<sid>_0`，assistant
+   * 直接覆盖 user 回合。
+   */
+  allowSyntheticId?: boolean
 }
 
 function fallbackId(prefix: string, opts: IngestMessageOptions): string {
@@ -81,7 +88,10 @@ export function canonicalMessage(
   const sessionID = typeof flat.sessionID === "string" && flat.sessionID
     ? flat.sessionID
     : (opts.sessionID ?? "")
-  const id = typeof flat.id === "string" && flat.id ? flat.id : fallbackId("msg", opts)
+  const hasId = typeof flat.id === "string" && flat.id.length > 0
+  // live 缺 id：丢弃（旧行为会合成共享 id 导致 user 回合被 assistant 覆盖）。
+  if (!hasId && opts.allowSyntheticId === false) return null
+  const id = hasId ? flat.id : fallbackId("msg", opts)
   const rawParts = Array.isArray(flat.content)
     ? flat.content
     : Array.isArray(flat.parts)
@@ -129,7 +139,7 @@ export function ingestHistoryPage(items: unknown, opts: IngestMessageOptions = {
   const parts: Record<string, any[]> = {}
   const list = Array.isArray(items) ? items : []
   list.forEach((item, index) => {
-    const ingested = canonicalMessage(item, { ...opts, index })
+    const ingested = canonicalMessage(item, { ...opts, index, allowSyntheticId: true })
     if (!ingested) return
     messages.push(ingested.message)
     parts[ingested.message.id] = ingested.parts
@@ -145,7 +155,8 @@ export function ingestLiveMessage(
   payload: any,
   opts: { sessionID: string },
 ): { message: any; parts: any[] } | null {
-  return canonicalMessage(payload, { sessionID: opts.sessionID })
+  // Ruling（Task 10 review）：live 无 id = 丢弃；兜底 id 只允许历史分页使用。
+  return canonicalMessage(payload, { sessionID: opts.sessionID, allowSyntheticId: false })
 }
 
 /** live `part.updated` → 规范 part（身份 + 工具形状）。 */

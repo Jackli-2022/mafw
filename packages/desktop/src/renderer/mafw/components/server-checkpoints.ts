@@ -26,7 +26,8 @@ export function serverMode(input: {
   return serverBacked || (input.serverCheckpoints?.length ?? 0) > 0
 }
 
-function timeLabelOf(iso: string): string {  const t = Date.parse(iso)
+function timeLabelOf(iso: string): string {
+  const t = Date.parse(iso)
   if (!Number.isFinite(t)) return "时间未知"
   return new Date(t).toLocaleString(undefined, {
     month: "2-digit",

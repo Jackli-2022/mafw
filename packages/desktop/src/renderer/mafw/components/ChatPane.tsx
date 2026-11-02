@@ -92,7 +92,7 @@ import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot
 import { createFocusScheduler } from "./composer-focus-scheduler"
 import { computeContextUsage, formatContextUsage } from "../context-usage"
 import { ingestHistoryPage } from "../ingest/messages"
-import { mergeRemoteCommands } from "./command-merge"
+import { mergeRemoteCommands, mergeDiscoveryCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
 import { fuzzyMatchFiles } from "./file-fuzzy"
 import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
@@ -1212,20 +1212,19 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       ])
       if (Array.isArray(remoteMafw)) setMafwRemote(mergeRemoteCommands(remoteMafw))
       const seen = new Set<string>()
-      const merged: { name: string; source: string }[] = []
-      for (const c of snapshot?.commands ?? []) {
-        // MAFW commands come from mafwCommands.list()（/api/mafw-commands 契约）；
-        // discovery 的 source==='mafw' 行不重复进 custom 组。
-        if (c?.source === "mafw") continue
-        const name = c?.name
-        if (!name || seen.has(name)) continue
-        seen.add(name)
-        merged.push({ name, source: c.source === "runtime" ? "command" : c.source })
-      }
+      // MAFW custom commands 已在 mafwCommands.list()（mafw 组）出现；这里只收
+      // runtime 命令并按远端名称去重，避免选择器里出现两份自定义命令。
+      const merged: { name: string; source: string }[] = mergeDiscoveryCommands(
+        snapshot?.commands ?? [],
+        mafwRemote().names,
+        seen,
+      )
       for (const s of snapshot?.skills ?? []) {
         const name = s?.name
-        if (!name || seen.has(name)) continue
-        seen.add(name)
+        if (!name) continue
+        const lower = name.toLowerCase()
+        if (seen.has(lower)) continue
+        seen.add(lower)
         merged.push({ name, source: "skill" })
       }
       setCmdCustom(merged)

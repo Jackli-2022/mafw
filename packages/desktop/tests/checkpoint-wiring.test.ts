@@ -36,6 +36,8 @@ describe("checkpoint wiring", () => {
     const overlay = read("src/renderer/mafw/components/CheckpointOverlay.tsx")
     expect(overlay).toContain("resolveServerMode")
     expect(overlay).not.toContain("checkpointAction?.enabled === true ||")
+    // 分支 revert 的确认文案读 branch.revert 语义，不能拿 checkpoint.restore 冒充。
+    expect(overlay).toContain('experienceStore.semantics("branch.revert")')
     const server = read("src/renderer/mafw/components/server-checkpoints.ts")
     expect(server).toContain("semantics?.sessionBacked === true")
   })

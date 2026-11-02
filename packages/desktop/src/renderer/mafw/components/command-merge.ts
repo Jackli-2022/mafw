@@ -35,3 +35,34 @@ export function mergeRemoteCommands(remote: RemoteCommandDef[]): { items: Merged
   }
   return { items, names }
 }
+
+export interface DiscoveryCommandLike {
+  name?: string
+  source?: string
+}
+
+/**
+ * discovery DTO 的 commands → 桌面 custom 组。
+ *
+ * `source: 'mafw' | 'custom'` 都已在 `mafwCommands.list()`（MAFW 命令注册表）里，
+ * 若再进 custom 组会在选择器里出现两份。只收 runtime 命令，并按远端名称/已见
+ * 名称（大小写不敏感）去重。
+ */
+export function mergeDiscoveryCommands(
+  commands: ReadonlyArray<DiscoveryCommandLike | null | undefined> | undefined,
+  reserved: ReadonlySet<string> = new Set(),
+  seen: Set<string> = new Set(),
+): Array<{ name: string; source: string }> {
+  const reservedLower = new Set([...reserved].map((name) => name.toLowerCase()))
+  const out: Array<{ name: string; source: string }> = []
+  for (const command of commands ?? []) {
+    const name = typeof command?.name === 'string' ? command.name : ''
+    if (!name) continue
+    if (command?.source === 'mafw' || command?.source === 'custom') continue
+    const lower = name.toLowerCase()
+    if (reservedLower.has(lower) || seen.has(lower)) continue
+    seen.add(lower)
+    out.push({ name, source: command?.source === 'runtime' ? 'command' : (command?.source || 'command') })
+  }
+  return out
+}

@@ -30,6 +30,23 @@ describe('error ingestion', () => {
     expect(canonicalMessageError({ kind: 'provider' })).toEqual({ kind: 'provider', message: 'provider' })
   })
 
+  test('provider cancel/interrupt wording is not misclassified as user abort', () => {
+    expect(canonicalMessageError({ name: 'ProviderError', message: 'request cancelled by provider' })).toEqual({
+      kind: 'provider',
+      message: 'request cancelled by provider',
+    })
+    expect(canonicalMessageError('Provider cancelled request after 403')).toEqual({
+      kind: 'provider',
+      message: 'Provider cancelled request after 403',
+    })
+    // 明确 interrupt/abort 仍优先（即便带 provider 字样）。
+    expect(canonicalMessageError('interrupted by provider timeout')).toEqual({
+      kind: 'abort',
+      message: 'interrupted by provider timeout',
+    })
+    expect(canonicalMessageError('Operation cancelled')).toEqual({ kind: 'abort', message: 'Operation cancelled' })
+  })
+
   test('ignores empty/malformed payloads so no empty error card renders', () => {
     expect(canonicalMessageError(undefined)).toBeUndefined()
     expect(canonicalMessageError(null)).toBeUndefined()
@@ -121,11 +138,28 @@ describe('message ingestion', () => {
     expect(live?.parts).toEqual([])
   })
 
-  test('generates stable ids for id-less event snapshots', () => {
-    const first = ingestLiveMessage({ role: 'assistant' }, { sessionID: 's1' })
-    const second = ingestLiveMessage({ role: 'assistant' }, { sessionID: 's1' })
-    expect(first?.message.id).toBe('msg-s1-0')
-    expect(second?.message.id).toBe(first?.message.id)
+  test('live message.updated without id is dropped (pi user/assistant cannot collapse)', () => {
+    // pi message_end 形状：flat role 直接由 $.message.role 映射，无 id。
+    const piUser = ingestLiveMessage({ role: 'user', content: 'hi' }, { sessionID: 's1' })
+    const piAssistant = ingestLiveMessage({ role: 'assistant', content: [{ type: 'text', text: 'hello' }] }, { sessionID: 's1' })
+    expect(piUser).toBeNull()
+    expect(piAssistant).toBeNull()
+
+    // 模拟壳 store：用户乐观回合仍在，assistant 不会覆盖它。
+    const store = { message: { s1: [{ id: 'user-local', role: 'user', sessionID: 's1' }] } }
+    for (const ingested of [piUser, piAssistant]) {
+      if (ingested) store.message.s1 = [{ id: ingested.message.id, role: ingested.message.role, sessionID: 's1' }]
+    }
+    expect(store.message.s1).toHaveLength(1)
+    expect(store.message.s1[0].role).toBe('user')
+  })
+
+  test('history pagination may synthesize deterministic ids per page index', () => {
+    const { messages } = ingestHistoryPage(
+      [{ role: 'user', content: [] }, { role: 'assistant', content: [] }],
+      { sessionID: 's1' },
+    )
+    expect(messages.map((m) => m.id)).toEqual(['msg-s1-0', 'msg-s1-1'])
   })
 })
 
