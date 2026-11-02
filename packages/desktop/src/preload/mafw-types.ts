@@ -12,6 +12,7 @@ import type {
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   ExperienceActionsResponse,
   MafwMessage, DiscoverySnapshot, DiscoverySkillContent,
+  MafwAgent, MafwProvider,
 } from "@mafw/sdk"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 import type { TerminalEvent, TerminalProbe, TerminalSessionInfo } from "../shared/terminal-session"
@@ -296,11 +297,11 @@ export type MafwAPI = {
   }
 
   providers: {
-    list: () => Promise<{ all: Record<string, any>[]; default?: Record<string, string>; connected?: string[] } | null>
+    list: () => Promise<{ items: MafwProvider[]; default?: Record<string, string>; connected?: string[] }>
   }
 
   agents: {
-    list: () => Promise<any[]>
+    list: () => Promise<MafwAgent[]>
   }
 
   config: {

@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { mapPermissionCard, nextMode, shouldNotify, autoBadgeText } from "./permission-card-mapping";
+import { mapPermissionCard, nextMode, shouldNotify, autoBadgeText, permissionPayloadOf } from "./permission-card-mapping";
 
+// 规范 `MafwPermissionRequest`（gateway 投影后的形状）：id/kind/targets 是权威字段。
 const baseReq = {
-  id: "r1", sessionID: "s1", permission: "bash", patterns: ["npm test"],
-  metadata: { impact: "run command" },
+  id: "r1",
+  sessionID: "s1",
+  kind: "bash",
+  targets: ["npm test"],
+  extensions: { impact: "run command" },
 };
 
 describe("mapPermissionCard — mafwPolicy 合并", () => {
@@ -34,26 +38,67 @@ describe("mapPermissionCard — mafwPolicy 合并", () => {
 
   test("human + verdict safe → pending + risk medium（即使本地启发式判 high）", () => {
     const c = mapPermissionCard(
-      { ...baseReq, permission: "unlink", patterns: [], mafwPolicy: { action: "human", verdict: "safe", reason: "" } },
+      { ...baseReq, kind: "unlink", targets: [], mafwPolicy: { action: "human", verdict: "safe", reason: "" } },
       1, "Agent",
     );
     expect(c.risk).toBe("medium");
   });
+});
 
-  test("pi 形状（toolName/args）经 mafwPolicy 正常合并", () => {
-    const c = mapPermissionCard(
-      { id: "r2", sessionID: "s1", toolName: "bash", args: { command: "npm test" }, mafwPolicy: { action: "auto-approve", verdict: "safe", reason: "persistent allowlist match" } },
-      1, "Agent",
-    );
-    expect(c.status).toBe("allowed-once");
+describe("mapPermissionCard — 规范字段是唯一来源（review I1/I2）", () => {
+  test("pi 权限请求 fixture：id 取自 requestId、正文展示真实命令（不是 'shell'）", () => {
+    // gateway 投影后的形状（pi 原生 {requestId, toolName:'shell', args:{command}}）
+    const piProjected = {
+      id: "6f1c2a9e-pi-request",
+      sessionID: "s-pi",
+      kind: "bash",
+      targets: ["rm -rf build"],
+      suggestedRule: { scope: "tool", value: "shell" },
+      extensions: { risk: "medium" },
+      mafwPolicy: { action: "human", verdict: "dangerous", reason: "rm pattern" },
+    };
+    const c = mapPermissionCard(piProjected, 7, "Builder");
+    expect(c.id).toBe("6f1c2a9e-pi-request"); // 不再是 undefined（审批答复有 requestId）
+    expect(c.action.type).toBe("shell");
+    expect(c.action.payload).toBe("rm -rf build"); // 不是工具名
+    expect(c.action.dangerousParts).toEqual(["rm -rf build"]);
+    expect(c.risk).toBe("high");
   });
 
-  test("agentTitle 参数化 + tool.messageID/callID 透传", () => {
+  test("opencode 权限请求 fixture：patterns → targets、permission → kind", () => {
+    const c = mapPermissionCard(
+      { id: "perm_1", sessionID: "s1", kind: "edit", targets: ["src/a.ts"], mafwPolicy: { action: "human", verdict: "safe" } },
+      1, "Agent",
+    );
+    expect(c.id).toBe("perm_1");
+    expect(c.action.type).toBe("file-write");
+    expect(c.action.payload).toBe("src/a.ts");
+  });
+
+  test("不读原生 permission/patterns/toolName/args（原生形状不会误配或丢 id）", () => {
+    const c = mapPermissionCard(
+      { permission: "bash", patterns: ["npm test"], toolName: "shell", args: { command: "ls" }, sessionID: "s1" } as any,
+      1, "Agent",
+    );
+    // 没有规范 id → 空串（绝不是 undefined），且不把原始工具名当命令正文
+    expect(c.id).toBe("");
+    expect(c.action.payload).not.toBe("npm test");
+    expect(c.action.payload).not.toBe("ls");
+  });
+
+  test("tool 指针与 createdAt 透传", () => {
     const c = mapPermissionCard({ ...baseReq, tool: { messageID: "m1", callID: "c1" } }, 42, "My Session");
     expect(c.agentName).toBe("My Session");
     expect(c.createdAt).toBe(42);
     expect(c.messageID).toBe("m1");
     expect(c.callID).toBe("c1");
+  });
+
+  test("extension impact 进卡片；targets 空时展示 kind 兜底", () => {
+    const c = mapPermissionCard({ id: "x", sessionID: "s", kind: "webfetch", targets: [], extensions: { impact: "打开网页" } }, 1, "A");
+    expect(c.impact).toBe("打开网页");
+    expect(c.action.payload).toBe("webfetch");
+    expect(permissionPayloadOf("webfetch", ["https://x"])).toBe("https://x");
   });
 });
 

@@ -34,7 +34,7 @@ import { bumpCheckpointRev } from "./checkpoint-rev"
 import { keybindingFor } from "./keybinding-store"
 import { matchesCombo } from "./keybindings"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
-import { backgroundJobs, ingestBackgroundJob, ingestBackgroundJobs, onBackgroundTerminal } from "./background-store"
+import { backgroundJobs, clearBackgroundJobs, ingestBackgroundJob, ingestBackgroundJobs, onBackgroundTerminal } from "./background-store"
 import { backgroundApiAvailable, resetBackgroundCapability } from "./background-capability"
 import { ingestHistoryPage } from "./ingest/messages"
 import { reconcileBackgroundOnce } from "./background-reconcile"
@@ -99,7 +99,7 @@ import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
 import { nextMode as nextPermissionMode } from "./components/permission-card-mapping"
 import { findPendingToolPart } from "./components/flow-card-placement"
 import { saveProjectLayout, loadProjectLayout, migrateLegacyLayout, pruneMissing } from "./layout-persist"
-import { sessionStatusFromInfo } from "./session-status"
+import { isWorkingStatus, sessionStatusFromInfo } from "./session-status"
 import { buildSessionMarkdown, extractExportTurns } from "./export-markdown"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
@@ -117,6 +117,14 @@ import { countUserTurns, shouldKeepPaging } from "./components/history-paging"
 
 type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
+import type { MafwAgent, MafwProvider } from "@mafw/sdk"
+
+/** `/api/provider` 信封：规范 `items` + 默认模型/连接列表（composer 初值用）。 */
+type ProvidersEnvelope = {
+  items: MafwProvider[]
+  default?: { providerID?: string; modelID?: string }
+  connected?: string[]
+}
 import "./mafw.css"
 
 export function MafwShell() {
@@ -859,6 +867,7 @@ export function MafwShell() {
   // ── Background reconcile（Task 11）：中性 `background.jobs.list` 快照 ──
   // gateway 三源合并后的列表就是权威快照（含终态行）；失败/旧 gateway 整轮
   // fail-open（不建假行、不误杀）。快照摄取静默（历史完成不弹通知）。
+  // 成功返回空数组 = 该会话没有作业 → 清掉本地残留行（review minor）。
   async function reconcileBackground(): Promise<void> {
     const sid = activeSessionId()
     if (!sid) return
@@ -866,6 +875,7 @@ export function MafwShell() {
       sessionID: sid,
       fetchers: { listJobs: (sessionID) => window.api.mafw.background.jobs.list(sessionID) },
       ingest: (jobs) => ingestBackgroundJobs(jobs),
+      clear: (sessionID) => clearBackgroundJobs(sessionID),
     })
   }
 
@@ -1353,8 +1363,8 @@ export function MafwShell() {
             session: sessionData ? [...prev.session.filter(s => s.id !== sessionID), sessionData] : prev.session,
             message: { ...prev.message, [sessionID]: msgs },
             part: { ...prev.part, ...parts },
-            // 中途进入运行中的会话：time.busy > time.idle → busy；本地已有
-            // 状态优先（live SSE 比取回的快照新），不再无条件写 idle。
+            // 中途进入运行中的会话：规范 status（gateway 已按 time.busy > time.idle 投影）
+            // → busy/retry；本地已存状态优先（live SSE 比取回的快照新），不无条件写 idle。
             session_status: { ...prev.session_status, [sessionID]: sessionStatusFromInfo(sessionData, prev.session_status[sessionID]) },
           }))
         }
@@ -1464,16 +1474,18 @@ export function MafwShell() {
 
   // Composer menus: agents (@ mention) + providers/models (model pill)
   const gwReadyForMenus = createMemo(() => gwStatus()?.state === "ready")
-  const [agentsData, setAgentsData] = createSignal<any[]>([])
-  const [providersData, setProvidersData] = createSignal<any>(null)
+  const [agentsData, setAgentsData] = createSignal<MafwAgent[]>([])
+  const [providersData, setProvidersData] = createSignal<ProvidersEnvelope | null>(null)
   const [providersRetry, setProvidersRetry] = createSignal(0)
   let providersRetryTimer: ReturnType<typeof setTimeout> | null = null
   onCleanup(() => { if (providersRetryTimer) clearTimeout(providersRetryTimer) })
   const refreshMenus = () => {
-    window.api.mafw.agents.list().then((list: any[]) => {
+    // 规范 DTO：`MafwAgent[]`（id/label/selectable/source）与 `{items: MafwProvider[]}`
+    // （models 恒为数组）。不再读 runtime 原生 `{name, mode, hidden}` / `{all, models:{}}`。
+    window.api.mafw.agents.list().then((list: MafwAgent[]) => {
       setAgentsData(Array.isArray(list) ? list : [])
     }).catch(e => console.warn("[mafw] agents.list:", e))
-    window.api.mafw.providers.list().then((p: any) => {
+    window.api.mafw.providers.list().then((p: ProvidersEnvelope) => {
       setProvidersData(p)
       // Default the model pill to the most recently used model (first entry of
       // localStorage mafw-recent-models) — only when we have no default yet.
@@ -1482,8 +1494,8 @@ export function MafwShell() {
           const recent: string[] = JSON.parse(localStorage.getItem("mafw-recent-models") || "[]")
           const first = recent[0]
           if (first) {
-            const findModel = (prov: any, mid: string) => {
-              const m: any = prov.models?.[mid]
+            const findModel = (prov: MafwProvider, mid: string) => {
+              const m = prov.models.find((model) => model.id === mid)
               return m ? { providerID: prov.id, modelID: mid, label: m.name || mid } : null
             }
             let found: { providerID: string; modelID: string; label: string } | null = null
@@ -1492,11 +1504,11 @@ export function MafwShell() {
               // Composite key: providerID/modelID
               const pid = first.slice(0, slash)
               const mid = first.slice(slash + 1)
-              const prov = (p?.all || []).find((x: any) => x.id === pid)
+              const prov = (p?.items || []).find((x) => x.id === pid)
               found = prov ? findModel(prov, mid) : null
             } else {
               // Legacy plain id: match the first provider that has it
-              for (const prov of p?.all || []) {
+              for (const prov of p?.items || []) {
                 found = findModel(prov, first)
                 if (found) break
               }
@@ -1552,31 +1564,36 @@ export function MafwShell() {
     setAgentPicks(reconcile({}))
   }
 
-  // Primary agents (switchable driver) vs subagent agents (mentionable too).
-  // The `manager` primary agent ships with the gateway install (global opencode
-  // config), so it appears here as a regular primary agent.
+  // Agent 列表来自 `MafwAgent[]`（规范 DTO）：`selectable` 表达可切换（primary），
+  // `mode` 仍用于 mention 面的 subagent 分组；不再读 runtime 原生 `hidden`/`mode === 'primary'`。
+  const agentEntryOf = (a: MafwAgent): AgentEntry => ({
+    id: a.id,
+    name: a.label || a.id,
+    description: a.description,
+    mode: a.mode,
+    source: a.source,
+  })
   const primaryAgents = createMemo(() =>
-    (agentsData() || []).filter((a: any) => !a.hidden && a.mode === "primary")
+    (agentsData() || []).filter((a) => a.selectable).map(agentEntryOf),
   )
   const subagentAgents = createMemo(() =>
-    (agentsData() || []).filter((a: any) => !a.hidden && a.mode === "subagent")
+    (agentsData() || []).filter((a) => !a.selectable && a.mode === "subagent").map(agentEntryOf),
   )
 
   const modelGroups = createMemo(() => {
     const p = providersData()
-    const all = p?.all || []
-    const connected = new Set(p?.connected || [])
     const groups: { provider: string; providerID: string; models: ModelEntry[] }[] = []
-    for (const prov of all) {
-      if (!connected.has(prov.id)) continue
-      const models: ModelEntry[] = Object.values(prov.models || {}).map((m: any) => ({
+    for (const prov of p?.items || []) {
+      // `connected === false` = gateway 明确报未连接；undefined = 未知（照常展示）
+      if (prov.connected === false) continue
+      const models: ModelEntry[] = (prov.models || []).map((m) => ({
         id: m.id,
         name: m.name || m.id,
         providerID: prov.id,
         provider: prov.name || prov.id,
-        contextK: m.limit?.context ? Math.round(m.limit.context / 1000) : undefined,
-        vision: !!(m.capabilities?.input?.image || m.capabilities?.output?.image),
-        thinking: !!m.capabilities?.reasoning,
+        contextK: m.contextLimit ? Math.round(m.contextLimit / 1000) : undefined,
+        vision: m.extensions?.vision === true,
+        thinking: m.extensions?.thinking === true,
       }))
       if (models.length === 0) continue
       groups.push({ provider: prov.name || prov.id, providerID: prov.id, models })
@@ -1713,7 +1730,7 @@ export function MafwShell() {
   const sessionMessages = createMemo(() => (store.message as any)[currentSessionID()] || [])
   const sessionBusy = () => {
     const sid = currentSessionID()
-    return !!(sid && store.session_status?.[sid] === "busy")
+    return !!(sid && isWorkingStatus(store.session_status?.[sid]))
   }
   const mergedSessionDiffs = createMemo(() =>
     getSessionTurnDiffs().entries(currentSessionID() || "", sessionMessages()),
@@ -2015,7 +2032,7 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  const subagentRunning = (id: string) => store.session_status[id] === "busy"
+  const subagentRunning = (id: string) => isWorkingStatus(store.session_status[id])
 
   const onModelSelect = (m: ModelEntry, sid?: string) => {
     const target = sid || currentSessionID()

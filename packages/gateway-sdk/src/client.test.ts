@@ -735,16 +735,25 @@ test("chat.sendEnriched forwards parts/agent/model", async () => {
 })
 
 test("providers.list + agents.list hit their routes", async () => {
-  fetchMock.mockResolvedValue(okJson({ items: { all: [], connected: [] } }))
+  fetchMock.mockResolvedValue(okJson({
+    items: [{ id: "xiaomi", name: "Xiaomi", models: [{ id: "m1", name: "M1", providerID: "xiaomi" }], connected: true }],
+    default: { providerID: "xiaomi", modelID: "m1" },
+    connected: ["xiaomi"],
+  }))
   const c = new MafwClient()
   const p = await c.providers.list()
   expect((fetchMock as any).mock.calls[0][0]).toContain("/api/provider")
-  expect(p).toEqual({ all: [], connected: [] })
+  // 规范信封：items 恒为数组，models 恒为数组（不再是 {all} + 对象映射）
+  expect(p.items).toHaveLength(1)
+  expect(Array.isArray(p.items[0].models)).toBe(true)
+  expect(p.items[0].models[0]).toMatchObject({ id: "m1", providerID: "xiaomi" })
+  expect(p.default).toEqual({ providerID: "xiaomi", modelID: "m1" })
 
-  fetchMock.mockResolvedValue(okJson({ items: [{ name: "explore" }] }))
+  fetchMock.mockResolvedValue(okJson({ items: [{ id: "explore", label: "Explore", source: "runtime", selectable: true }] }))
   const a = await c.agents.list()
   expect((fetchMock as any).mock.calls[1][0]).toContain("/api/agents")
   expect(a).toHaveLength(1)
+  expect(a[0]).toMatchObject({ id: "explore", label: "Explore", selectable: true })
 })
 
 // ── Config ──

@@ -1,6 +1,7 @@
 import { createSignal, createMemo, createEffect, on, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { shouldAnimateTail, tailIdOf } from "../chat/turn-enter"
+import { isWorkingStatus } from "../session-status"
 import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
@@ -398,12 +399,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     }
   })
 
-  // 会话 reverted 态探测（session info 的 revert 字段，opencode 专属；pi 无）
+  // 会话 reverted 态探测（规范字段 `MafwSession.reverted`；原生 `revert` 已退役）
   onMount(async () => {
     if (!sidProp()) return
     try {
       const info: any = await window.api.mafw.sessions.get(sidProp())
-      setCanUnrevert(props.revertUndoEnabled === true && !!info?.revert)
+      setCanUnrevert(props.revertUndoEnabled === true && !!info?.reverted)
     } catch { /* fail-open */ }
   })
 
@@ -627,7 +628,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const revertTo = async (messageID: string): Promise<boolean> => {
     const sid = sidProp()
     if (!sid) return false
-    if (sending() || store.session_status[sid] === "busy") {
+    if (sending() || isWorkingStatus(store.session_status[sid])) {
       showToastV2({ title: "会话运行中", description: "结束后再回滚", variant: "error", duration: 2500 } as any)
       return false
     }
@@ -1352,7 +1353,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setPickerOpen(null)
   }
 
-  const busy = () => store.session_status[sidProp()] === "busy"
+  const busy = () => isWorkingStatus(store.session_status[sidProp()])
 
   // composer 元数据（v6 §3）：streaming 时逐秒跳（reduced-motion 下环境不宜逐秒亦无害），
   // 空闲时只显示冻结的 token 数。数据面复用 taskMetrics（无新增请求）。
@@ -1640,7 +1641,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     getSessionTurnDiffs().ensure({
       sid,
       messages: (store.message as any)[sid] || [],
-      busy: store.session_status[sid] === "busy",
+      busy: isWorkingStatus(store.session_status[sid]),
       diffSupported: experienceStore.supported("branch.diff"),
     })
   })
@@ -1757,7 +1758,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   onHoverOpen={() => props.onTaskHoverOpen(titlebarEl, sidProp())}
                   onHoverLeave={props.onTaskHoverLeave}
                 />
-                <Show when={store.session_status[sidProp()] === "busy"}>
+                <Show when={isWorkingStatus(store.session_status[sidProp()])}>
                   <span class="mafw-session-status">
                     <span class="mafw-session-status-dot" />
                     Running
@@ -2509,7 +2510,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             parts={store.part}
 
             checkpointAction={experienceStore.action("checkpoint.restore")}
-            busy={sending() || store.session_status[sidProp()] === "busy"}
+            busy={sending() || isWorkingStatus(store.session_status[sidProp()])}
             onClose={() => setCheckpointsOpen(false)}
             onRevert={revertTo}
             onRevertCode={revertCodeTo}
@@ -2526,7 +2527,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <div class="mafw-confirm-text">{revertWarning(experienceStore.semantics("branch.revert"))}</div>
               <div class="mafw-confirm-actions">
                 <ButtonV2 variant="ghost" size="small" onClick={() => setRevertConfirm(null)}>取消</ButtonV2>
-                <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" disabled={sending() || store.session_status[sidProp()] === "busy"} onClick={doRevert}>确认回滚</ButtonV2>
+                <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" disabled={sending() || isWorkingStatus(store.session_status[sidProp()])} onClick={doRevert}>确认回滚</ButtonV2>
               </div>
             </div>
           </div>

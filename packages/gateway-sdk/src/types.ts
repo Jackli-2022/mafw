@@ -5,6 +5,11 @@
 // Task 3：background jobs 复用 Task 1 的 View DTO（单一事实源在 view-dto.ts）
 import type { MafwBackgroundJob, MafwMessage } from './view-dto'
 
+/**
+ * 会话列表/详情条目。
+ * 规范字段（`status` / `reverted` / `model`）来自 gateway 的 `MafwSession` 投影，
+ * 是客户端唯一权威；`title`/`time`/`projectID` 等中性字段保留。
+ */
 export interface Session {
   id: string
   projectID: string
@@ -12,6 +17,12 @@ export interface Session {
   title: string
   time: { created: number; updated: number }
   parentID?: string
+  /** 规范运行态（opencode: time.busy > time.idle / 原生 status；pi: unknown）。 */
+  status?: import('./view-dto').MafwSessionStatus
+  /** 规范回退状态（原生 `revert` 不再由客户端读取）。 */
+  reverted?: import('./view-dto').MafwSessionRevert
+  model?: import('./view-dto').MafwModelRef
+  agent?: string
 }
 
 export interface Project {
@@ -791,11 +802,17 @@ export interface ChatNamespace {
 }
 
 export interface ProvidersNamespace {
-  list(): Promise<{ all: Record<string, any>[]; default?: Record<string, string>; connected?: string[] } | null>
+  /** 规范 provider 列表（`models` 恒为数组）；`default`/`connected` 为信封附加信息。 */
+  list(): Promise<{
+    items: import('./view-dto').MafwProvider[]
+    default?: Record<string, string>
+    connected?: string[]
+  }>
 }
 
 export interface AgentsNamespace {
-  list(): Promise<any[]>
+  /** 规范 agent 列表（`MafwAgent`）。 */
+  list(): Promise<import('./view-dto').MafwAgent[]>
 }
 
 export interface GoalSessionInfo {

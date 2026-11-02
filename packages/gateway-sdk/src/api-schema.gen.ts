@@ -3689,6 +3689,26 @@ export interface operations {
                                 updated: number;
                             };
                             parentID?: string;
+                            /** @enum {string} */
+                            status?: "idle" | "busy" | "retry" | "unknown";
+                            reverted?: {
+                                messageID: string;
+                                partID?: string;
+                                diffs?: {
+                                    file: string;
+                                    patch?: string;
+                                    additions?: number;
+                                    deletions?: number;
+                                    /** @enum {string} */
+                                    status?: "added" | "modified" | "deleted" | "renamed" | "unknown";
+                                }[];
+                            };
+                            model?: {
+                                providerID: string;
+                                modelID: string;
+                                variant?: string;
+                            };
+                            agent?: string;
                         }[];
                     };
                 };
@@ -3722,6 +3742,26 @@ export interface operations {
                             updated: number;
                         };
                         parentID?: string;
+                        /** @enum {string} */
+                        status?: "idle" | "busy" | "retry" | "unknown";
+                        reverted?: {
+                            messageID: string;
+                            partID?: string;
+                            diffs?: {
+                                file: string;
+                                patch?: string;
+                                additions?: number;
+                                deletions?: number;
+                                /** @enum {string} */
+                                status?: "added" | "modified" | "deleted" | "renamed" | "unknown";
+                            }[];
+                        };
+                        model?: {
+                            providerID: string;
+                            modelID: string;
+                            variant?: string;
+                        };
+                        agent?: string;
                     };
                 };
             };

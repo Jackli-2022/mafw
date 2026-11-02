@@ -187,6 +187,83 @@
                           },
                           "parentID": {
                             "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "idle",
+                              "busy",
+                              "retry",
+                              "unknown"
+                            ]
+                          },
+                          "reverted": {
+                            "type": "object",
+                            "properties": {
+                              "messageID": {
+                                "type": "string"
+                              },
+                              "partID": {
+                                "type": "string"
+                              },
+                              "diffs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "file": {
+                                      "type": "string"
+                                    },
+                                    "patch": {
+                                      "type": "string"
+                                    },
+                                    "additions": {
+                                      "type": "number"
+                                    },
+                                    "deletions": {
+                                      "type": "number"
+                                    },
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "added",
+                                        "modified",
+                                        "deleted",
+                                        "renamed",
+                                        "unknown"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "file"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "messageID"
+                            ]
+                          },
+                          "model": {
+                            "type": "object",
+                            "properties": {
+                              "providerID": {
+                                "type": "string"
+                              },
+                              "modelID": {
+                                "type": "string"
+                              },
+                              "variant": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "providerID",
+                              "modelID"
+                            ]
+                          },
+                          "agent": {
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -261,6 +338,83 @@
                       ]
                     },
                     "parentID": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "idle",
+                        "busy",
+                        "retry",
+                        "unknown"
+                      ]
+                    },
+                    "reverted": {
+                      "type": "object",
+                      "properties": {
+                        "messageID": {
+                          "type": "string"
+                        },
+                        "partID": {
+                          "type": "string"
+                        },
+                        "diffs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "file": {
+                                "type": "string"
+                              },
+                              "patch": {
+                                "type": "string"
+                              },
+                              "additions": {
+                                "type": "number"
+                              },
+                              "deletions": {
+                                "type": "number"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "added",
+                                  "modified",
+                                  "deleted",
+                                  "renamed",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "file"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "messageID"
+                      ]
+                    },
+                    "model": {
+                      "type": "object",
+                      "properties": {
+                        "providerID": {
+                          "type": "string"
+                        },
+                        "modelID": {
+                          "type": "string"
+                        },
+                        "variant": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "providerID",
+                        "modelID"
+                      ]
+                    },
+                    "agent": {
                       "type": "string"
                     }
                   },

@@ -13,6 +13,8 @@
 export type AgentLike = {
   id?: string
   name?: string
+  /** 规范 `MafwAgent.label`（展示名）；旧形状用 name 兼作展示名。 */
+  label?: string
   mode?: string
   hidden?: boolean
   source?: string
@@ -26,7 +28,7 @@ export function agentKey(a: AgentLike | null | undefined): string {
 }
 
 export function agentLabel(a: AgentLike | null | undefined): string {
-  return a?.name || a?.id || ""
+  return a?.label || a?.name || a?.id || ""
 }
 
 export function isAgentKey(a: AgentLike | null | undefined, key: string): boolean {

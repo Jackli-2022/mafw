@@ -1602,16 +1602,21 @@ export class MafwClient implements IMafwClient {
   // 鈹€鈹€ Providers & Agents (composer model pill / @agent mention) 鈹€鈹€
 
   providers = {
-    list: async (): Promise<{ all: Record<string, any>[]; default?: Record<string, string>; connected?: string[] } | null> => {
-      const data = await this.request<{ items: any }>('/api/provider')
-      return data.items
+    /**
+     * 规范 provider 列表：`items` 的 `models` **恒为数组**（opencode 对象映射 / pi 数组
+     * 已在 gateway 投影）。`default`/`connected` 是信封附加信息（composer 初值可用）。
+     */
+    list: async (): Promise<{ items: import('./view-dto').MafwProvider[]; default?: Record<string, string>; connected?: string[] }> => {
+      const data = await this.request<{ items: import('./view-dto').MafwProvider[]; default?: Record<string, string>; connected?: string[] }>('/api/provider')
+      return { ...data, items: Array.isArray(data.items) ? data.items : [] }
     },
   }
 
   agents = {
-    list: async (): Promise<any[]> => {
-      const data = await this.request<{ items: any[] }>('/api/agents')
-      return data.items || []
+    /** 规范 agent 列表（`MafwAgent`：id/label/selectable/source）。 */
+    list: async (): Promise<import('./view-dto').MafwAgent[]> => {
+      const data = await this.request<{ items: import('./view-dto').MafwAgent[] }>('/api/agents')
+      return Array.isArray(data.items) ? data.items : []
     },
   }
 

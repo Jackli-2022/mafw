@@ -238,6 +238,15 @@ import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode
 import { injectServeAuth } from './runtime/proxy-auth';
 import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
+import {
+  enrichPermissionEvent,
+  projectAgents,
+  projectPermissionList,
+  projectProviderEnvelope,
+  projectQuestionRequest,
+  projectSession,
+  projectSessions,
+} from './runtime/view-projections';
 import { buildRuntimeDiagnostics, type RuntimeDiagnosticsView } from './runtime/runtime-diagnostics';
 import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
@@ -1534,6 +1543,18 @@ class MafwScheduler {
     // 三端据此分流（非 human = 直接渲染已决记录，不弹交互卡）。
     if (f.approval && sessionID) {
       applyApprovalPolicy(this.approvalPolicy, this.runtime, f.approval, sessionID, props);
+      // 规范权限字段并入载荷（id/kind/targets/suggestedRule…）：pi 的
+      // `{requestId, toolName, args}` 与 opencode 的 `{id, permission, patterns}`
+      // 在出口收敛成同一张卡片（review I2：pi 卡片曾丢 id、只显示 "shell"）。
+      // 原生键保留（过渡期），客户端只读规范字段。
+      try { enrichPermissionEvent(props, sessionID); } catch { /* fail-open：卡片退回客户端兜底 */ }
+    }
+    // 问题载荷同样补规范字段（`questions[].question/options`）；原生 form 字段保留。
+    if (type === 'question.asked' && sessionID) {
+      try {
+        const projected = projectQuestionRequest(props, sessionID);
+        if (projected && typeof projected === 'object') Object.assign(props, projected);
+      } catch { /* fail-open */ }
     }
     // Turn-level identity binding cleanup: a user-picked identity lasts one turn.
     if (type === MAFW.turnCompleted && sessionID) this.identityState.clearTurnBindings(sessionID);
@@ -6460,7 +6481,7 @@ class MafwScheduler {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
             const question = this.runtime?.session?.question;
             const items = question ? await question.list(dir ? { directory: dir } : undefined) : [];
-            res.end(JSON.stringify({ items: items ?? [] }));
+            res.end(JSON.stringify({ items: (items ?? []).map((item: any) => projectQuestionRequest(item)) }));
           } catch (err: any) {
             log.error('[Question] list error:', err.message);
             res.end(JSON.stringify({ items: [] }));
@@ -6536,7 +6557,7 @@ class MafwScheduler {
             const items = this.runtime?.session?.permissionList
               ? await this.runtime.session.permissionList(dir ? { directory: dir } : undefined)
               : [];
-            res.end(JSON.stringify({ items: items ?? [] }));
+            res.end(JSON.stringify({ items: projectPermissionList(items) }));
           } catch (err: any) {
             log.error('[Permission] list error:', err.message);
             res.end(JSON.stringify({ items: [] }));
@@ -6574,7 +6595,7 @@ class MafwScheduler {
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const result = await this.runtime.provider.list();
-            res.end(JSON.stringify({ items: result ?? null }));
+            res.end(JSON.stringify(projectProviderEnvelope(result ?? null)));
           } catch (err: any) {
             log.error('[Provider] list error:', err.message);
             res.writeHead(500);
@@ -6603,7 +6624,7 @@ class MafwScheduler {
               })),
               Array.isArray(runtimeAgents) ? runtimeAgents : [],
             );
-            res.end(JSON.stringify({ items }));
+            res.end(JSON.stringify({ items: projectAgents(items) }));
           } catch (err: any) {
             log.error('[Agents] list error:', err.message);
             res.writeHead(500);
@@ -7155,7 +7176,7 @@ class MafwScheduler {
             const projectID = parsedUrl.searchParams.get('projectID');
             const sessions = await this.listSessions(projectID);
             res.writeHead(200);
-            res.end(JSON.stringify({ sessions }));
+            res.end(JSON.stringify({ sessions: projectSessions(sessions) }));
           } catch (err: any) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
@@ -7189,12 +7210,12 @@ class MafwScheduler {
             if (this.runtime) {
               try {
                 const session = await this.runtime.session.get({ sessionID: id });
-                if (session) { res.writeHead(200); res.end(JSON.stringify(session)); return; }
+                if (session) { res.writeHead(200); res.end(JSON.stringify(projectSession(session))); return; }
               } catch {}
             }
             const session = await this.sdkSession.get(id);
             res.writeHead(200);
-            res.end(JSON.stringify(session || { error: 'not found' }));
+            res.end(JSON.stringify(session ? projectSession(session) : { error: 'not found' }));
           } catch (err: any) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
@@ -9083,11 +9104,34 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   // Slot-based read of a manager-session kv entry: each runtime owns a slot
   // in the value (byRuntime), so switching runtimes never drops a topic —
-  // switching back resumes the previous manager. Legacy v1 entries are
-  // inferred by session id prefix and only surface under their own runtime.
+  // switching back resumes the previous manager. Ownership is explicit: reads
+  // only honour the persisted `runtime` tag (untagged legacy rows are tagged
+  // once at startup by `backfillManagerSessionSlots`).
   // See manager-session-runtime.ts.
   private readManagerSessionEntry(projectDir: string): { sessionId: string; createdAt?: string | null } | null {
     return readManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName);
+  }
+
+  /**
+   * 一次性归属补齐（review I3）：单 runtime 时代写的 legacy 行没有 runtime tag，
+   * `readManagerSlot`（正确地）不猜归属 → 行永远休眠，新会话顶掉旧 topic 后旧 topic
+   * 又"复活"。迁移时已经把 legacy 文件标成 opencode；这里兜存量 DB 里的 untagged 行。
+   * 幂等；任何失败 fail-open（保留原值）。
+   */
+  private backfillManagerSessionSlots(): void {
+    try {
+      const rows = this.getGatewayDb().kvAll<unknown>('manager-session');
+      let changed = 0;
+      for (const row of rows) {
+        const next = backfillManagerSlot(row.value);
+        if (!next.changed) continue;
+        this.getGatewayDb().kvSet('manager-session', row.key, next.value);
+        changed++;
+      }
+      if (changed > 0) log.info(`[Scheduler] manager-session backfill: ${changed} legacy rows tagged`);
+    } catch (err: any) {
+      log.warn(`[Scheduler] manager-session backfill failed (non-fatal): ${err.message}`);
+    }
   }
 
   // Serialized rotate: joins any in-flight ensure/create for the same project

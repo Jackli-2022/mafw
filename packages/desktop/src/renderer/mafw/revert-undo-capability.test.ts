@@ -16,6 +16,8 @@ describe("revert undo capability wiring", () => {
   test("ChatPane 仅在能力为 true 时展示 undo，revert 后不无条件点亮", () => {
     expect(pane).toContain("props.revertUndoEnabled === true && canUnrevert()")
     expect(pane).toContain("setCanUnrevert(props.revertUndoEnabled === true)")
-    expect(pane).toContain("props.revertUndoEnabled === true && !!info?.revert")
+    // 规范字段 `reverted`（MafwSession）；原生 `info.revert` 不再被读取
+    expect(pane).toContain("props.revertUndoEnabled === true && !!info?.reverted")
+    expect(pane).not.toContain("!!info?.revert)")
   })
 })
