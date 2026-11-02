@@ -34,7 +34,7 @@ MAFW 当前已有 runtime/media/tts/usage 插件、统一插件包雏形，以�
 ### 3.1 目标
 
 - G1：统一 `~/.mafw/plugins/` 包可以贡献现有 runtime/media/tts/usage 能力，以及新的 actions、plugin events、declarative UI。
-- G2：Desktop 无需重新构建即可显示插件工作台面板、配置页和工具卡。
+- G2：Desktop 无需重新构建即可显示插件工作台面板、配置页、工具卡和主窗口内消息小窗。
 - G3：声明式 UI 可以通过受控 action 调回对应 gateway 插件，并按注册的插件事件刷新。
 - G4：包变更可以热重载；成功时双端切换到同一 revision，失败时保留旧 active revision。
 - G5：安装、启停、删除、检查、descriptor 获取和 action 调用复用一个 Plugin Manager、REST/SDK/preload 面。
@@ -50,6 +50,7 @@ MAFW 当前已有 runtime/media/tts/usage 插件、统一插件包雏形，以�
 - N5：不重写现有 runtime adapter 的 native→canonical 翻译机制。
 - N6：不承诺 active runtime 在有工作运行时无中断替换；这类变更显式进入 pending/安全点流程。
 - N7：不建立第二套通用 HTTP 路由注册器；插件交互走命名空间化 action。
+- N8：消息小窗只存在 MAFW 主窗口文档内，不创建独立 Electron BrowserWindow，不支持系统级置顶、跨桌面悬浮或全局快捷键。
 
 ### 3.3 反目标
 
@@ -260,6 +261,14 @@ type UiContribution = {
     saveAction: string
     reloadOnSave?: boolean
   }>
+  messageWindows?: Array<{
+    id: string
+    title: string
+    triggerEvent: string
+    viewAction: string
+    modal?: boolean
+    dismissible?: boolean        // 缺省 true
+  }>
 }
 ```
 
@@ -268,6 +277,7 @@ type UiContribution = {
 - **panels**：每个 panel 是右工作台“工作台”的一个动态 L2 tab，surface id 为 `plugin:<package>:<panel>`；按 `order`、title、包名稳定排序，空间不足进入「⋯」溢出菜单。挂载时调用 `viewAction` 获取 PluginView，`refreshOn` 事件到达后重取。删除当前 surface 后回退到内置 `code`，键盘导航与溢出菜单使用同一排序。
 - **toolCards**：插件声明逻辑工具名，Desktop 复用现有 alias/canonical-tool 解析（包括 `mafw_*` 与 MCP 双前缀），不要求作者逐字列 wire 别名。Desktop 将中性 ToolCardModel（tool/input/output/metadata/status）作为 action input 发给 gateway，不依赖 runtime 私有历史存储，因此历史回放缓存也能渲染。input/output 有统一字节上限与显式 truncated 标记；running 阶段保持默认卡，completed/error 才请求插件视图，避免流式 O(n²) 请求。
 - **configPages**：Desktop 根据受限 JSON Schema 生成表单；load/save 只走声明的 actions。首版字段限 text/number/boolean/select，不提供 secret 字段或 secret 回显。统一包 ctx 新增只允许写 `plugins.<package>.config` 的 `config.update()`，经 `config.persistOverrides` 原子落盘；`pluginConfig()` 改为每次调用现读。保存默认不重载包，`reloadOnSave:true` 时在保存成功后走同一 candidate/reload 流程。
+- **messageWindows**：`triggerEvent` 必须引用本包已注册事件。事件到达时在 MAFW 主窗口内打开 `<package>:<id>` 对应的单例小窗，并把中性事件 payload/sessionID 作为输入调用 `viewAction`；同 id 的后续事件只刷新，不重复堆窗。`modal:false` 为不阻断聊天的浮动小窗且不主动抢焦点，`modal:true` 为主窗口内居中模态层并管理焦点；dismissible 时支持关闭按钮与 Esc。内部按钮仍是 ActionWidget，经本包 action 回调 gateway。面板 action 需要开小窗时，由 Host 在 action 中发射相应注册事件，不新增脚本化 UI 命令。
 - slot id、action 名和 event 引用必须在同一包内可解析，否则 candidate 校验失败。
 - panel id 在包内唯一；客户端全局 key 为 `<package>:<id>`，避免跨包冲突。
 
@@ -279,11 +289,13 @@ GET Plugin Client Descriptor
   → SlotHost
       ├─ Workbench panel → viewAction → PluginView → WidgetRenderer
       ├─ Tool card       → viewAction → PluginView → ToolRegistry 代理
-      └─ Config page     → schema form → load/save actions
+      ├─ Config page     → schema form → load/save actions
+      └─ Message window  → viewAction → PluginView → 主窗口内小窗
 
 plugin:* SSE
   → 核心 dispatcher 后的 PluginEventRouter
-  → 仅按 descriptor.refreshOn 失效对应 panel/view
+  → 按 descriptor.refreshOn 失效对应 panel/view
+  → 按 descriptor.messageWindows.triggerEvent 打开或刷新对应小窗
   → 未注册事件记录 miss/diagnostic，不执行插件代码
 ```
 
@@ -353,7 +365,8 @@ fs.watch / 手动 reload / install / enable / disable / delete
 - revision 是不透明字符串 `<gatewayBootId>:<counter>`，不是可能跨重启回退的持久整数。每次 gateway 启动生成新 bootId；每次全局可见 client 变化推进 counter。每包 activeRevision 是该包最后 commit 时的全局 token，pendingRevision 同理指向 candidate。
 - Desktop 同时比较 bootId 与 counter；gateway 重启后即使计数相同也视为新代际。
 - 每个 view/action 请求带发起时的包 revision 与 bootId；旧 revision 的迟到响应丢弃。
-- 全局 revision 改变后拉取 descriptor 并按包 diff：只重建新增/变更/删除包的声明式注册，无关包的 panel 状态、滚动位置和未保存配置草稿保留。变更包的旧草稿标记 stale，不允许静默提交到新 schema。
+- 全局 revision 改变后拉取 descriptor 并按包 diff：只重建新增/变更/删除包的声明式注册，无关包的 panel 状态、滚动位置、小窗和未保存配置草稿保留。变更包的旧草稿标记 stale，不允许静默提交到新 schema。
+- 变更包已打开的小窗在新 descriptor 仍兼容时按新 viewAction 重取；declaration 消失或包 disable/delete 时立即关闭并释放其焦点/在途请求。
 - 新 descriptor 校验失败时保留该包旧 Client DTO，并显示插件诊断。
 - legacy `mafw-ui-plugins-changed` 仅服务 legacy UI 适配；unified 包以 gateway revision 为准。
 
@@ -373,15 +386,16 @@ fs.watch / 手动 reload / install / enable / disable / delete
 - 启动时坏包进入 error 状态且不激活；Desktop Plugins 页和 CLI 可禁用它。
 - action/emit 的输入输出有大小限制；日志脱敏沿用 gateway 现有红线。
 - unified Client 不接触文件系统、Node、Electron 任意 IPC、shell 或 pnpm。
+- messageWindow 只是主窗口 DOM 内的受控 overlay/floating view，不创建 BrowserWindow、不更改窗口置顶/焦点策略；modal 的焦点陷阱与 Esc 遵循现有 UI 组件约定。
 - 本阶段不承诺从 `process.exit()`、同步死循环等恶意/严重 Host 错误中无感恢复；后续可用独立 staging gateway/Host 加强，但不能把它写成已有安全保证。
 
 ## 13. 验收场景
 
 至少用一个真实 example 包验证完整闭环：
 
-1. 安装含一个工作台 panel、一个配置页、一个工具卡、一个 action、一个注册事件的统一包。
+1. 安装含一个工作台 panel、一个配置页、一个工具卡、一个主窗口内 messageWindow、一个 action、一个注册事件的统一包。
 2. Desktop 不重启即可看到 panel；action 能更新 Host 状态并返回新 PluginView。
-3. 注册事件到达后仅刷新订阅它的 panel；未注册事件和 canonical 伪造被 gateway 丢弃并留诊断。
+3. 注册事件到达后仅刷新订阅它的 panel；messageWindow 的 triggerEvent 能打开/刷新单例小窗，内部 action 可调回 Host，Esc/关闭/卸载能正确清理；未注册事件和 canonical 伪造被 gateway 丢弃并留诊断。
 4. 修改包内 UI、action 和事件声明后，双端进入同一新 revision；旧请求响应不会覆盖新视图。
 5. candidate 校验/activate 失败时旧 active revision 继续可用，Hub 显示新错误。
 6. disable/delete 后 action 不可调、事件不再发、panel/config/toolCard 全部撤销，timer/listener 被清理。
@@ -393,10 +407,10 @@ fs.watch / 手动 reload / install / enable / disable / delete
 - `packages/plugin-contract`：DTO/schema/Widget/大小深度/危险输入验证。
 - gateway：包扫描、唯一 activate、action/event 注册、命名空间、schema、RegistrationBag、staging/commit、失败保留、缓存清理、revision、active-runtime pending、REST 契约。
 - SDK：client descriptor/action 方法、事件 union 与契约新鲜度。
-- Desktop：plugin-store revision、PluginEventRouter、panel/config/toolCard slots、action widget、旧响应丢弃、卸载恢复内置卡、legacy 冲突。
+- Desktop：plugin-store revision、PluginEventRouter、panel/config/toolCard/messageWindow slots、action widget、消息小窗单例/焦点/Esc/卸载、旧响应丢弃、卸载恢复内置卡、legacy 冲突。
 - 架构测试：renderer 不加载 Host 代码；业务 UI 不读取 runtimeName/runtimeCaps；路由均登记 catalog。
 - 全量运行 gateway、desktop、SDK、session-ui 及受影响包测试与 typecheck/build；交付时报告新增测试数与全量通过数。
-- GUI 冒烟：真实 example 包的安装、panel/config/toolCard、action/event、热重载、失败回退与删除。
+- GUI 冒烟：真实 example 包的安装、panel/config/toolCard/messageWindow、action/event、热重载、失败回退与删除。
 
 ## 15. 后续 Agent Create 复用点
 
