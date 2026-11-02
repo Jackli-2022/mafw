@@ -4,7 +4,7 @@ export const handleRestartAgent: ToolHandler = async (_args, { restartAgent }) =
   try {
     if (!restartAgent) {
       return {
-        content: [{ type: "text", text: JSON.stringify({ error: "Agent restart not available (runtime does not support agentProcessApi)" }) }],
+        content: [{ type: "text", text: JSON.stringify({ error: "Agent restart not available (runtime does not support process.restart)" }) }],
         isError: true,
       };
     }

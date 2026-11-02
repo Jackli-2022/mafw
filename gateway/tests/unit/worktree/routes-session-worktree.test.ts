@@ -4,15 +4,7 @@ import { execSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import { createSessionWithWorktree, cleanupWorktreeForSession, WorktreeSessionDeps } from '../../../src/routes/session-worktree';
-
-function tmpRepo(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-wt-'));
-  execSync('git init -b main', { cwd: dir, stdio: 'ignore' });
-  execSync('git config user.email t@t && git config user.name t', { cwd: dir, stdio: 'ignore' });
-  fs.writeFileSync(path.join(dir, 'a.txt'), 'hello\n');
-  execSync('git add . && git commit -m init', { cwd: dir, stdio: 'ignore' });
-  return dir;
-}
+import { tmpGitRepo } from './tmp-git';
 
 function makeDeps() {
   const kv = new Map<string, any>();
@@ -32,7 +24,7 @@ function makeDeps() {
 
 describe('createSessionWithWorktree', () => {
   test('creates git worktree + session with worktree directory + kv mapping', async () => {
-    const repo = tmpRepo();
+    const repo = tmpGitRepo();
     const { deps, created, kv } = makeDeps();
     const r = await createSessionWithWorktree(deps, { directory: repo, worktree: true });
     expect(created).toHaveLength(1);
@@ -44,14 +36,14 @@ describe('createSessionWithWorktree', () => {
   });
 
   test('worktree: "<slug>" custom slug honored', async () => {
-    const repo = tmpRepo();
+    const repo = tmpGitRepo();
     const { deps } = makeDeps();
     const r = await createSessionWithWorktree(deps, { directory: repo, worktree: 'fix-api' });
     expect(r.worktree?.branch).toBe('mafw/fix-api');
   });
 
   test('no worktree flag → plain create with original directory, no kv', async () => {
-    const repo = tmpRepo();
+    const repo = tmpGitRepo();
     const { deps, created, kv } = makeDeps();
     const r = await createSessionWithWorktree(deps, { directory: repo });
     expect(r.worktree).toBeUndefined();
@@ -60,7 +52,7 @@ describe('createSessionWithWorktree', () => {
   });
 
   test('availability unsupported → throws before creating anything', async () => {
-    const repo = tmpRepo();
+    const repo = tmpGitRepo();
     const { deps, created, kv } = makeDeps();
     deps.worktreeAvailability = () => ({ supported: false, reason: 'unsupported' });
     await expect(
@@ -73,7 +65,7 @@ describe('createSessionWithWorktree', () => {
   });
 
   test('availability missing-data → throws with reason', async () => {
-    const repo = tmpRepo();
+    const repo = tmpGitRepo();
     const { deps, created } = makeDeps();
     deps.worktreeAvailability = () => ({ supported: false, reason: 'missing-data' });
     await expect(
@@ -83,7 +75,7 @@ describe('createSessionWithWorktree', () => {
   });
 
   test('availability supported → creates worktree', async () => {
-    const repo = tmpRepo();
+    const repo = tmpGitRepo();
     const { deps } = makeDeps();
     const seen: string[] = [];
     deps.worktreeAvailability = (directory) => {
@@ -98,7 +90,7 @@ describe('createSessionWithWorktree', () => {
 
 describe('cleanupWorktreeForSession', () => {
   test('deletes mapping and removes worktree + branch (best-effort)', async () => {
-    const repo = tmpRepo();
+    const repo = tmpGitRepo();
     const { deps, kv } = makeDeps();
     const r = await createSessionWithWorktree(deps, { directory: repo, worktree: 'cleanup-me' });
     expect(fs.existsSync(r.worktree!.dir)).toBe(true);
@@ -116,7 +108,7 @@ describe('cleanupWorktreeForSession', () => {
   });
 
   test('worktree remove failure → fail-open (mapping still cleaned)', async () => {
-    const repo = tmpRepo();
+    const repo = tmpGitRepo();
     const { deps, kv } = makeDeps();
     await createSessionWithWorktree(deps, { directory: repo, worktree: 'boom' });
     // 破坏：把映射指向不存在的 worktree 目录

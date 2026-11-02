@@ -257,8 +257,8 @@ import { surfaceUnavailableMessage } from './runtime/runtime-access';
 import { handleSessionBackground } from './routes/session-background';
 import { attachBackgroundJobHandlers } from './routes/background-jobs';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
-import { createSessionWithWorktree, cleanupWorktreeForSession } from './routes/session-worktree';
-import { resolveWorktreeAvailability, probeGitWorktreeSupport, WorktreeUnavailableError } from './core/worktree/worktree-availability';
+import { handleSessionCreate } from './routes/session-create';
+import { resolveWorktreeAvailability, probeGitWorktreeSupport } from './core/worktree/worktree-availability';
 import { handleApprovalsRespond } from './routes/approvals-respond';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
@@ -6917,48 +6917,28 @@ class MafwScheduler {
 
         // 鈹€鈹€ SdkSessionResource REST endpoints 鈹€鈹€
 
-        // POST /api/session — create a session
+        // POST /api/session — create a session（worktree 归属门在 routes/session-create.ts）
         if (req.url === '/api/session' && req.method === 'POST') {
-          try {
-            const body = await readBody(req);
-            const opts = body ? JSON.parse(body) : {};
-            // 切片 4：worktree 参数 → git worktree add + 会话绑定 worktree 目录 + kv 映射。
-            // 返回形状保持向后兼容：SessionRecord 平铺（顶层 id）+ 可选 worktree 字段——
-            // desktop createSession() 读 r.id，包信封会破坏所有既有创建入口。
-            const result = await createSessionWithWorktree(
-              {
-                kvGet: (key, id) => this.getGatewayDb().kvGet<any>(key, id),
-                kvSet: (key, id, v) => this.getGatewayDb().kvSet(key, id, v),
-                kvDel: (key, id) => this.getGatewayDb().kvDelete(key, id),
-                // 目录必填：缺省时回退到 gateway 的单点解析（绝对路径）
-                createSession: (directory, metadata) => this.sdkSession.create(directory ?? this.resolvedProjectDir(), metadata),
-                // worktree 归属（设计 §7.1）：gateway git + session.create({directory}) 契约，
-                // 不再按 runtime 私有 worktreeApi 能力位拒绝支持的 runtime。
-                worktreeAvailability: async (directory) => {
-                  let directorySupported = false;
-                  try {
-                    directorySupported = this.runtime?.access?.can('session.worktree') === true;
-                  } catch { /* unknown surface → unsupported */ }
-                  return resolveWorktreeAvailability({
-                    directory,
-                    directorySupported,
-                    gitAvailable: await probeGitWorktreeSupport(directory),
-                  });
-                },
-              },
-              opts,
-            );
-            res.writeHead(200);
-            res.end(JSON.stringify({ ...result.session, worktree: result.worktree }));
-          } catch (err: any) {
-            if (err instanceof WorktreeUnavailableError) {
-              res.writeHead(409, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: 'worktree sessions are not available', reason: err.reason }));
-              return;
-            }
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
+          await handleSessionCreate(req, res, {
+            kvGet: (key, id) => this.getGatewayDb().kvGet<any>(key, id),
+            kvSet: (key, id, v) => this.getGatewayDb().kvSet(key, id, v),
+            kvDel: (key, id) => this.getGatewayDb().kvDelete(key, id),
+            // 目录必填：缺省时回退到 gateway 的单点解析（绝对路径）
+            createSession: (directory, metadata) => this.sdkSession.create(directory ?? this.resolvedProjectDir(), metadata),
+            // worktree 归属（设计 §7.1）：gateway git + session.create({directory}) 契约，
+            // 不再按 runtime 私有 worktreeApi 能力位拒绝支持的 runtime。
+            worktreeAvailability: async (directory) => {
+              let directorySupported = false;
+              try {
+                directorySupported = this.runtime?.access?.can('session.worktree') === true;
+              } catch { /* unknown surface → unsupported */ }
+              return resolveWorktreeAvailability({
+                directory,
+                directorySupported,
+                gitAvailable: await probeGitWorktreeSupport(directory),
+              });
+            },
+          });
           return;
         }
 
@@ -8707,15 +8687,42 @@ class MafwScheduler {
     return null;
   }
 
+  private findGoalRequestDir(goalId: string): string | null {
+    for (const [, info] of this.registeredProjects) {
+      if (fs.existsSync(path.join(info.mafwDir, 'requests', `${goalId}.json`))) {
+        return info.mafwDir;
+      }
+    }
+    return null;
+  }
+
   private describePodGoal(goalId: string): PodGoalDescription | null {
     const found = this.findGoalStatePath(goalId);
-    if (!found) return null;
-    const state = loadGoalState(found.info.mafwDir, goalId);
-    if (!state) return null;
+    const mafwDir = found?.info.mafwDir ?? this.findGoalRequestDir(goalId);
+    if (!mafwDir) return null;
     let request: any = null;
     try {
-      request = JSON.parse(fs.readFileSync(path.join(found.info.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
+      request = JSON.parse(fs.readFileSync(path.join(mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
     } catch { /* legacy goals may have no request */ }
+    const state = found ? loadGoalState(found.info.mafwDir, goalId) : null;
+    if (!state) {
+      // Queued goals have an intake request but no state file yet. Their title
+      // and stage still come from the request; only an active goal with no
+      // state is a real inconsistency (stateMissing → blocked).
+      return {
+        title: typeof request?.title === 'string' && request.title.trim() ? request.title : '',
+        phase: null,
+        nextAction: '',
+        terminal: false,
+        verdict: null,
+        hasResultEvidence: false,
+        planApproval: null,
+        pendingQuestion: null,
+        nodeSession: null,
+        lastError: null,
+        stateMissing: true,
+      };
+    }
     const terminal = isTerminalState(state);
     const verdict = goalVerdictFromState(state);
     return {
