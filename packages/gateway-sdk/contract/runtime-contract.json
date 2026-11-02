@@ -1437,7 +1437,7 @@
       "conformance": [
         "chat-roundtrip"
       ],
-      "consumer": "ChatPane / TUI",
+      "consumer": "ChatPane (part.updated/part.delta) / TUI (part.updated)",
       "impact": "不能流式渲染",
       "presets": [
         "conversation",

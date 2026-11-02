@@ -53,10 +53,6 @@ export function roleOf(message: any): string | undefined {
   return undefined;
 }
 
-export function unwrapMessage(item: any): any {
-  return item && typeof item === 'object' && item.info ? item.info : item;
-}
-
 export function createdOf(message: any): number {
   const value = message?.time?.created;
   return typeof value === 'number' ? value : Number.MAX_SAFE_INTEGER;
@@ -68,7 +64,6 @@ export function selectTurnSnapshot(
   messageID: string,
 ): { start: string; end: string } {
   const normalized = (Array.isArray(messages) ? messages : [])
-    .map(unwrapMessage)
     .filter((message) => message && typeof message === 'object')
     .map((message, index) => ({ message, index }))
     .sort((a, b) => createdOf(a.message) - createdOf(b.message) || a.index - b.index)

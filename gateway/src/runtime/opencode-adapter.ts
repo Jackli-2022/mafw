@@ -405,8 +405,8 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
           ? raw
               .map((item: any) => {
                 if (!item || typeof item !== 'object') return item;
-                // SDK v2 已把历史包成 wire {info, parts}；adapter 出口约定 flat。
-                // parts → content（toWireHistory 在 HTTP 出口再还原 parts）。
+                // SDK v2 已把历史包成 wire {info, parts}；adapter 出口约定 flat
+                // （parts → content；HTTP 出口不再还原 wire）。
                 const wireInfo = item.info && typeof item.info === 'object' ? item.info : null;
                 const base = wireInfo
                   ? {

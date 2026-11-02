@@ -8,8 +8,8 @@ import type { RunStateRow } from '../../../src/memory/gateway-db';
 const T = (n: number) => ({ created: 1_000 + n });
 const text = (s: string) => ({ type: 'text', text: s });
 const messages = [
-  { info: { id: 'u1', role: 'user', time: T(1) }, parts: [text('long task')] },
-  { info: { id: 'a1', role: 'assistant', time: T(2) }, parts: [text('step 1 done')] },
+  { id: 'u1', role: 'user', time: T(1), content: [text('long task')] },
+  { id: 'a1', role: 'assistant', time: T(2), content: [text('step 1 done')] },
 ];
 
 function harness(opts: {
@@ -156,7 +156,7 @@ describe('suspend', () => {
   });
 
   it('does not abort when there is no user anchor to resume from', async () => {
-    const h = harness({ messagesSeq: [[{ info: { id: 'a1', role: 'assistant', time: T(1) }, parts: [text('x')] }]] });
+    const h = harness({ messagesSeq: [[{ id: 'a1', role: 'assistant', time: T(1), content: [text('x')] }]] });
     await expect(h.coord.suspend('s1')).rejects.toMatchObject({ status: 409 });
     expect(h.calls.abort).toBe(0);
   });

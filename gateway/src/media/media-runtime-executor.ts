@@ -147,13 +147,14 @@ export class MediaRuntimeExecutor {
   private async fetchLatestAssistant(sessionID: string): Promise<string> {
     return this.withTimeout('fetch latest assistant message', async () => {
       const { data } = await this.rt.session.messages({ sessionID });
-      const latest = [...data].reverse().find((m: any) => (m?.info ?? m)?.role === 'assistant');
-      // canonical v3：flat content 优先（content 即 parts 数组，走同一 type 过滤防
-      // reasoning 泄漏）；legacy {info,parts} 双读兜底；原始 pi content 块保底。
-      const parts = (latest?.content ?? latest?.parts ?? latest?.info?.parts ?? []) as any[];
-      const text = parts.length
-        ? parts.filter((p: any) => p?.type === 'text').map((p: any) => p?.text ?? '').join('\n').trim()
-        : ((latest as any)?.content || []).map((c: any) => c?.text ?? '').join('\n').trim();
+      const latest = [...data].reverse().find((m: any) => m?.role === 'assistant');
+      // MAFW flat：content 即 parts 数组，走同一 type 过滤防 reasoning 泄漏。
+      const parts = (latest?.content ?? []) as any[];
+      const text = parts
+        .filter((p: any) => p?.type === 'text')
+        .map((p: any) => p?.text ?? '')
+        .join('\n')
+        .trim();
       return text || '（无文本输出）';
     });
   }

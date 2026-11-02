@@ -19,13 +19,13 @@ export interface ChatTurn {
 }
 
 /**
- * 会话历史契约（Task 12）：只消费 MAFW flat View DTO。
+ * 会话历史契约（Task 15）：只消费 MAFW flat View DTO。
  *
- * `history` = `GET /api/sessions/:id/messages?format=flat`（SDK `session.history`）；
+ * `messages` = `GET /api/sessions/:id/messages`（SDK `session.messages`）；
  * 不再有 `{info,parts}` 双形状，也不做 wire→flat 的客户端兜底。
  */
 export interface SessionApi {
-  history(p: { sessionID: string; limit?: number; before?: string }): Promise<{
+  messages(p: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{
     data: MafwMessage[]
     nextCursor: string | null
   }>
@@ -78,7 +78,7 @@ export class ChatStore {
 
   async loadHistory(limit = 50): Promise<void> {
     try {
-      const res = await this.deps.session.history({ sessionID: this._sessionID, limit })
+      const res = await this.deps.session.messages({ path: { id: this._sessionID }, query: { limit } })
       this.cursor = res.nextCursor ?? null
       this.turns.length = 0
       this.byMessage.clear()
@@ -106,10 +106,9 @@ export class ChatStore {
   async loadOlder(): Promise<number> {
     if (!this.cursor) return 0
     try {
-      const res = await this.deps.session.history({
-        sessionID: this._sessionID,
-        limit: 50,
-        before: this.cursor,
+      const res = await this.deps.session.messages({
+        path: { id: this._sessionID },
+        query: { limit: 50, before: this.cursor },
       })
       this.cursor = res.nextCursor ?? null
       const older: ChatTurn[] = []

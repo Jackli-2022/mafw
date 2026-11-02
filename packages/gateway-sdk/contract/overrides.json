@@ -101,59 +101,35 @@
       }
     },
     "session.messages": {
-      "description": "Default response is the legacy wire envelope {info,parts}; ?format=flat returns the canonical MAFW flat DTO {id,role,content,...}. Task 15 flips the default to flat.",
+      "description": "Session history as MAFW View DTO (flat MafwMessage: {id,role,content,...}). The legacy {info,parts} envelope and the format opt-in were removed in Task 15.",
       "responseSchema": {
         "type": "object",
         "properties": {
           "data": {
             "type": "array",
             "items": {
-              "oneOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "info": {
-                      "type": "object",
-                      "additionalProperties": true
-                    },
-                    "parts": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                      }
-                    }
-                  },
-                  "required": [
-                    "info",
-                    "parts"
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
                   ]
                 },
-                {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "role": {
-                      "type": "string",
-                      "enum": [
-                        "user",
-                        "assistant"
-                      ]
-                    },
-                    "content": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                      }
-                    }
-                  },
-                  "required": [
-                    "role"
-                  ]
+                "content": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
                 }
+              },
+              "required": [
+                "role"
               ]
             }
           },

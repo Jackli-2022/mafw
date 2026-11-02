@@ -4,9 +4,9 @@ import {
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline, GoalPlanInfo,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
-  CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
+  MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   DiscoverySnapshot, DiscoverySkillContent,
-  Approval, TriageItem, AutomationRule, SessionMessageWire, Todo,
+  Approval, TriageItem, AutomationRule, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
@@ -21,30 +21,8 @@ import { SSEConnection } from './sse'
 import type { ApiPath } from './api-path'
 import type { MafwBackgroundJob, MafwMessage } from './view-dto'
 
-/** opencode v2 Shell.Info（/api/shell* 响应 data 的按需子集；形状见 wire probe 文档）。 */
-export interface ShellInfo {
-  id: string
-  /** v2 状态枚举（bundle 实证）：running | exited | timeout | killed */
-  status: 'running' | 'exited' | 'timeout' | 'killed'
-  command: string
-  cwd?: string
-  exit?: number
-  signal?: string
-  metadata?: { sessionID?: string } & Record<string, unknown>
-  time?: { started?: number; completed?: number }
-}
-
-/** v2 反代路径的 404 判定（requestRuntime 的错误格式：`HTTP 404: ...`）。 */
-function isHttp404(e: unknown): boolean {
-  return /^HTTP 404\b/.test(String((e as any)?.message ?? ''))
-}
-
-function shellQuery(params?: { directory?: string }): string {
-  return params?.directory ? `?directory=${encodeURIComponent(params.directory)}` : ''
-}
-
 /** 非 2xx → Error：优先 surface gateway 的 JSON `error`/`message`（桌面 toast
- *  的可操作文案），读不到 body 时回退 statusText。`isHttp404` 依赖 `HTTP <n>` 前缀。 */
+ *  的可操作文案），读不到 body 时回退 statusText。 */
 async function httpError(res: Response): Promise<Error> {
   let detail = ''
   try {
@@ -62,12 +40,6 @@ async function httpError(res: Response): Promise<Error> {
   } catch { /* body unreadable → status only */ }
   const suffix = detail ? `: ${detail}` : `: ${res.statusText}`
   return new Error(`HTTP ${res.status}${suffix}`.slice(0, 500))
-}
-
-/** /api/shell* 的统一信封（v2 实证：{location, data}）。 */
-interface Envelope<T> {
-  location?: { directory: string }
-  data?: T
 }
 
 export class MafwClient implements IMafwClient {
@@ -107,27 +79,8 @@ export class MafwClient implements IMafwClient {
   }
 
   /**
-   * 运行时透传出口（gateway 兜底反代）：不属于 MAFW OpenAPI 契约的原生 v2 路由
-   * （/api/shell*、/api/session/:id/background）走此处，不参与 ApiPath 漂移守卫。
-   * 非 2xx 一律抛错，由调用方 fail-open（后台面板的 REST 三件是可选能力）。
-   */
-  private async requestRuntime<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      ...init,
-    })
-    if (!res.ok) throw await httpError(res)
-    const ct = (res.headers as any)?.get?.('content-type') ?? ''
-    if (ct.includes('text/html')) throw new Error(`Received HTML instead of JSON from ${path}`)
-    return res.json()
-  }
-
-  // 鈹€鈹€ Session 鈹€鈹€
-
-  /**
    * 显式命名空间注解：导出的 `MafwClient.session` 类型 = `SessionNamespace`
-   * （含 `messages` 重载与 `history` flat 返回），而不是从对象字面量推断出的
-   * `Promise<any>` 实现签名。
+   * （含 `messages` flat 返回），而不是从对象字面量推断出的 `Promise<any>` 实现签名。
    */
   session: SessionNamespace = {
     create: async (
@@ -185,26 +138,12 @@ export class MafwClient implements IMafwClient {
     },
 
     messages: async (
-      params: { path: { id: string }; query?: { limit?: number; before?: string; format?: 'flat' } },
-    ): Promise<any> => {
+      params: { path: { id: string }; query?: { limit?: number; before?: string } },
+    ): Promise<{ data: MafwMessage[]; nextCursor: string | null }> => {
       const q = new URLSearchParams()
       if (params.query?.limit) q.set('limit', String(params.query.limit))
       if (params.query?.before) q.set('before', params.query.before)
-      if (params.query?.format) q.set('format', params.query.format)
-      return this.request<{ data: SessionMessageWire[] | MafwMessage[]; nextCursor: string | null }>(`/api/sessions/${params.path.id}/messages?${q}`)
-    },
-
-    /**
-     * 规范 flat 历史：始终 `?format=flat`，返回 MAFW View DTO（迁移期与
-     * `messages` 默认 wire 形状并存；Task 15 后 `messages` 也会收敛到此形状）。
-     */
-    history: async (
-      params: { sessionID: string; limit?: number; before?: string },
-    ): Promise<any> => {
-      const q = new URLSearchParams({ format: 'flat' })
-      if (params.limit) q.set('limit', String(params.limit))
-      if (params.before) q.set('before', params.before)
-      return this.request<{ data: MafwMessage[]; nextCursor: string | null }>(`/api/sessions/${params.sessionID}/messages?${q}`)
+      return this.request<{ data: MafwMessage[]; nextCursor: string | null }>(`/api/sessions/${params.path.id}/messages?${q}`)
     },
 
     todo: async (params: { path: { id: string } }): Promise<{ data: Todo[] }> => {
@@ -545,80 +484,6 @@ export class MafwClient implements IMafwClient {
     background: async (params: { path: { id: string } }): Promise<void> => {
       const res = await this.fetchPath(`/api/session/${params.path.id}/background`, { method: 'POST' })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-    },
-  }
-
-  // ── Runtime shell commands (opencode v2 /api/shell*, proxied by the gateway) ──
-  // 非 MAFW OpenAPI 契约路径：走 requestRuntime 旁路（不可达时抛错，调用方 fail-open）。
-  // 响应形状已实证（docs/research/2026-10-22-background-wire-probe.md）：{location,data}
-
-  shells = {
-    /** 运行中列表（location-scoped：directory 缺省 = serve 默认位置）。形状不符 → 抛错（fail-open 由调用方处理）。 */
-    list: async (params?: { directory?: string }): Promise<ShellInfo[]> => {
-      const body = await this.requestRuntime<Envelope<ShellInfo[]>>(`/api/shell${shellQuery(params)}`)
-      if (!Array.isArray(body?.data)) throw new Error('Unexpected /api/shell response shape')
-      return body.data
-    },
-    /** 单个 shell；**404 → null**（已删除/不存在——对账把 null 映射为 cancelled）。 */
-    get: async (params: { path: { id: string }; directory?: string }): Promise<ShellInfo | null> => {
-      try {
-        const body = await this.requestRuntime<Envelope<ShellInfo>>(`/api/shell/${encodeURIComponent(params.path.id)}${shellQuery(params)}`)
-        return body?.data ?? null
-      } catch (e) {
-        if (isHttp404(e)) return null
-        throw e
-      }
-    },
-    /** 输出分页：默认返回头 64KB；用 cursor/limit 取尾巴（对账/预览）。 */
-    output: async (params: {
-      path: { id: string }; directory?: string; cursor?: number; limit?: number
-    }): Promise<{ output: string; cursor?: number; size?: number; truncated?: boolean }> => {
-      const qs: string[] = []
-      if (params.directory) qs.push(`directory=${encodeURIComponent(params.directory)}`)
-      if (typeof params.cursor === 'number') qs.push(`cursor=${params.cursor}`)
-      if (typeof params.limit === 'number') qs.push(`limit=${params.limit}`)
-      const q = qs.length ? `?${qs.join('&')}` : ''
-      const body = await this.requestRuntime<Envelope<{ output?: string; cursor?: number; size?: number; truncated?: boolean }>>(
-        `/api/shell/${encodeURIComponent(params.path.id)}/output${q}`)
-      const d = body?.data ?? {}
-      return {
-        output: typeof d.output === 'string' ? d.output : '',
-        cursor: d.cursor,
-        size: d.size,
-        truncated: d.truncated,
-      }
-    },
-    /** 终止；404 = 已不存在 → 幂等成功。 */
-    remove: async (params: { path: { id: string }; directory?: string }): Promise<void> => {
-      const res = await this.fetchImpl(`${this.baseUrl}/api/shell/${encodeURIComponent(params.path.id)}${shellQuery(params)}`, { method: 'DELETE' })
-      if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-    },
-  }
-
-  // 鈹€鈹€ Commands & skills (opencode serve, proxied by the gateway) 鈹€鈹€
-
-  command = {
-    list: async (directory?: string): Promise<CommandInfo[]> => {
-      const query = directory ? `?directory=${encodeURIComponent(directory)}` : ''
-      const data = await this.request<CommandInfo[] | { items?: CommandInfo[]; commands?: CommandInfo[] }>(`/command${query}`)
-      if (Array.isArray(data)) return data
-      return (data as any).items || (data as any).commands || []
-    },
-  }
-
-  skill = {
-    list: async (directory?: string): Promise<SkillInfo[]> => {
-      const query = directory ? `?directory=${encodeURIComponent(directory)}` : ''
-      const data = await this.request<SkillInfo[] | { items?: SkillInfo[]; skills?: SkillInfo[] }>(`/skill${query}`)
-      if (Array.isArray(data)) return data
-      return (data as any).items || (data as any).skills || []
-    },
-    /** W4 v1：读 SKILL.md 内容（服务端白名单校验 id）。 */
-    content: async (id: string, directory?: string): Promise<import('./types').SkillContent> => {
-      const qs = new URLSearchParams()
-      qs.set('id', id)
-      if (directory) qs.set('directory', directory)
-      return this.request<import('./types').SkillContent>(`/api/skill/content?${qs.toString()}`)
     },
   }
 
@@ -991,9 +856,9 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // 鈹€鈹€ OpenCode config (native opencode /config) 鈹€鈹€
+  // ── Runtime config (runtime-neutral /config surface) ──
 
-  /** runtime 中立的运行时配置读写（旧名 opencodeConfig 保留为 deprecated 别名）。 */
+  /** runtime 中立的运行时配置读写。 */
   runtimeConfig = {
     get: async (): Promise<any> => {
       const data = await this.request<{ config: any }>('/api/runtime-config')
@@ -1011,8 +876,6 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  /** @deprecated 使用 runtimeConfig（仅保留调用别名，避免旧代码破坏）。 */
-  opencodeConfig = this.runtimeConfig
 
   // 鈹€鈹€ Goals 鈹€鈹€
 

@@ -9,11 +9,10 @@
  * immediate-delivery / queue flush 下下一个 user 可能已持久化——所以定位
  * 以「末尾最后一条 assistant」为基准反向找 user，而不是「最后一条 user」。
  */
-import { createdOf, isSnapshotId, roleOf, unwrapMessage } from '../diff/turn-diff';
+import { createdOf, isSnapshotId, roleOf } from '../diff/turn-diff';
 
 function normalize(messages: any[]): any[] {
   return (Array.isArray(messages) ? messages : [])
-    .map(unwrapMessage)
     .filter((m) => m && typeof m === 'object')
     .map((m, index) => ({ m, index }))
     .sort((x, y) => createdOf(x.m) - createdOf(y.m) || x.index - y.index)

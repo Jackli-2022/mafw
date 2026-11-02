@@ -193,7 +193,7 @@ export function canonicalToolOf(toolName: string | undefined | null): string | u
 }
 
 /**
- * wire enrich（additive）：tool part 快照补 `part.toolClass` + `part.canonicalTool`。
+ * live enrich（additive）：tool part 快照补 `part.toolClass` + `part.canonicalTool`。
  * 纯函数（原地补缺省 key，已有值不覆写）——handleOpencodeEvent 单点调用；
  * opencode 路径 passProperties 深拷贝 / pi 路径 assembler 新建对象，无 aliasing。
  */
@@ -209,20 +209,16 @@ export function enrichToolIdentity(evt: { type?: string; payload?: { type?: stri
 /**
  * 历史 enrich（messages 路由出口，全 runtime）：tool parts 补
  * `toolClass` / `canonicalTool`，幂等，fail-open 由调用方包裹。
- *
- * 迁移期同时接受 flat `content` 与旧的 wire `parts` 两种载体（Task 8）；
- * Task 15 删除 wire 分支后只保留 `content`。
  */
 export function enrichHistoryParts(messages: any[]): void {
   if (!Array.isArray(messages)) return;
   for (const m of messages) {
-    for (const parts of [m?.content, m?.parts]) {
-      if (!Array.isArray(parts)) continue;
-      for (const part of parts) {
-        if (part?.type !== 'tool') continue;
-        if (part.toolClass === undefined) part.toolClass = toolClassOf(part.tool);
-        if (part.canonicalTool === undefined) part.canonicalTool = canonicalToolOf(part.tool);
-      }
+    const parts = m?.content;
+    if (!Array.isArray(parts)) continue;
+    for (const part of parts) {
+      if (part?.type !== 'tool') continue;
+      if (part.toolClass === undefined) part.toolClass = toolClassOf(part.tool);
+      if (part.canonicalTool === undefined) part.canonicalTool = canonicalToolOf(part.tool);
     }
   }
 }

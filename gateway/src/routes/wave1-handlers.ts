@@ -23,8 +23,6 @@ import { handleSessionCheckpoints } from './session-checkpoints';
 import { handleSessionRun } from './session-run';
 import { handleSessionData } from './session-data';
 import {
-  handleLegacyCommand,
-  handleLegacySkill,
   handleSessionDiscovery,
   handleSessionDiscoveryRefresh,
   handleSessionDiscoverySkill,
@@ -165,11 +163,6 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
       return handleSessionDiscoverySkill(req, res, params, deps);
     }));
   }
-  registry.attachHandler('command.list', H(async (req, res) =>
-    handleLegacyCommand(req, res, { discovery: gw.discovery ?? null })));
-  registry.attachHandler('skill.list', H(async (req, res) =>
-    handleLegacySkill(req, res, { discovery: gw.discovery ?? null })));
-
   registry.attachHandler('session.delete', H(async (req, res) =>
     handleSessionMutations(req, res, {
       getRuntime: () => (gw.runtime ?? null) as any,

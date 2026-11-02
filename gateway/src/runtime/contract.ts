@@ -481,8 +481,8 @@ export interface RuntimeClient {
     promptAsync(opts: SessionPromptOpts): Promise<{ error?: any; response?: any } | void>;
     prompt(opts: SessionPromptOpts): Promise<PromptResultEnvelope & { [k: string]: any }>;
     messages(opts: SessionMessagesOpts): Promise<{ data: any[]; nextCursor?: string }>;
-    /** 可选：原生历史消息 → flat MafwMessage[]（canonical v3；缺省走默认 wire→flat
-     *  翻译 normalizeOpencodeHistory——出口形状恒 flat，egress 出口经 wire-compat 还原）。 */
+    /** 可选：原生历史消息 → flat MafwMessage[]（MAFW View DTO；缺省表示 adapter
+     *  自身已产出 flat，facade 直接校验；违例 fail-closed）。 */
     normalizeMessages?(raw: any[]): MafwMessage[];
     get(opts: { sessionID: string }): Promise<any>;
     delete(opts: { sessionID: string }): Promise<void>;

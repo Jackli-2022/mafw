@@ -74,9 +74,8 @@ function textOfMessages(result: any): string {
   const list = Array.isArray(result) ? result : (result?.data ?? []);
   for (let i = list.length - 1; i >= 0; i--) {
     const m = list[i];
-    const info = m?.info ?? m;
-    if ((info?.role ?? info?.type) !== 'assistant') continue;
-    const parts = Array.isArray(m?.parts) ? m.parts : (Array.isArray(m?.content) ? m.content : []);
+    if (m?.role !== 'assistant') continue;
+    const parts = Array.isArray(m?.content) ? m.content : [];
     const text = parts
       .filter((p: any) => p?.type === 'text' && typeof p.text === 'string')
       .map((p: any) => p.text)

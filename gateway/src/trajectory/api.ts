@@ -33,12 +33,12 @@ function rebuildFromMessages(
   const events: TrajectoryEvent[] = [];
   let seq = 0;
 
-  const userMessages = messages.filter((m: any) => m?.info?.role === 'user' || m?.role === 'user');
+  const userMessages = messages.filter((m: any) => m?.role === 'user');
   if (userMessages.length === 0) return { turns: [], events: [] };
 
   for (let idx = 0; idx < userMessages.length; idx++) {
     const um = userMessages[idx];
-    const info = um.info || um;
+    const info = um;
     const turnID = idx + 1;
     const startMs = info?.time?.created || Date.now();
     const agent = info?.agent || null;
@@ -55,7 +55,7 @@ function rebuildFromMessages(
 
     const parentID = info.id || um.id;
     const assistantMessages = messages.filter(
-      (m: any) => (m?.info?.role === 'assistant' && m?.info?.parentID === parentID) || (m?.role === 'assistant' && m?.parentID === parentID),
+      (m: any) => m?.role === 'assistant' && m?.parentID === parentID,
     );
     let toolCount = 0;
     let toolErrorCount = 0;
@@ -68,14 +68,14 @@ function rebuildFromMessages(
     let userText = '';
 
     // user text
-    const userPart = (um?.content ?? um?.parts ?? um?.info?.parts ?? []).find((p: any) => p.type === 'text' && typeof p.text === 'string');
+    const userPart = (um?.content ?? []).find((p: any) => p.type === 'text' && typeof p.text === 'string');
     if (userPart) userText = String(userPart.text).slice(0, 300);
     if (!userText && info?.summary?.body) userText = String(info.summary.body).slice(0, 300);
 
     for (const am of assistantMessages) {
-      const ai = am.info || am;
-      const parts = (am?.content ?? am?.parts ?? ai?.parts ?? []) as any[];
-      model = ai?.modelID || model;
+      const ai = am;
+      const parts = (am?.content ?? []) as any[];
+      model = ai?.model?.modelID || model;
       if (ai?.tokens) {
         tokens.input += ai.tokens.input || 0;
         tokens.output += ai.tokens.output || 0;

@@ -1,6 +1,5 @@
 /**
- * /api/runtime-config 路由（Plan 3 Task 6）——旧名 /api/opencode-config 兼容别名。
- * 行为与原路由逐字节等价（同一 handler 双路由名）；旧名保留两个 minor 后移除。
+ * /api/runtime-config 路由（runtime 中立的运行时配置读写）。
  */
 import http from 'http';
 
@@ -36,10 +35,10 @@ export async function handleRuntimeConfigPatch(
   res.end(JSON.stringify(result));
 }
 
-/** 路由匹配：新名 + 旧名别名（同一 handler）。 */
+/** 路由匹配：/api/runtime-config（旧别名 /api/opencode-config 已删除）。 */
 export function matchRuntimeConfigRoute(url: string | undefined, method: string): 'get' | 'patch' | null {
   if (!url) return null;
-  const m = url.match(/^\/api\/(?:runtime-config|opencode-config)(?:\?|$)/);
+  const m = url.match(/^\/api\/runtime-config(?:\?|$)/);
   if (!m) return null;
   if (method === 'GET') return 'get';
   if (method === 'PATCH') return 'patch';

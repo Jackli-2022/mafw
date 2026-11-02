@@ -134,8 +134,8 @@ describe('SubagentService ownership/message/cancel/result', () => {
     const { service, deps, sessions } = makeService();
     sessions.set('c1', { id: 'c1', parentID: 'p1', time: { created: 1, updated: 1, idle: 2 }, outcome: 'succeeded' });
     deps.messages.mockResolvedValueOnce({ data: [
-      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'old' }] },
-      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'child-ok' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'old' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'child-ok' }] },
     ] });
     expect(await service.result('p1', 'c1')).toEqual({ status: 'completed', text: 'child-ok' });
   });

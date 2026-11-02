@@ -156,18 +156,18 @@ describe('A canonical 翻译层', () => {
 
   it('enrichHistoryParts：历史消息 tool parts 补两字段（幂等、非 tool 跳过）', () => {
     const msgs: any[] = [
-      { info: { id: 'm1' }, parts: [{ type: 'tool', tool: 'ls', state: { input: { path: '/x' } } }, { type: 'text', text: 'hi' }] },
+      { id: 'm1', role: 'assistant', content: [{ id: 'p1', type: 'tool', tool: 'ls', state: { input: { path: '/x' } } }, { id: 'p2', type: 'text', text: 'hi' }] },
     ];
     enrichHistoryParts(msgs);
-    expect(msgs[0].parts[0].toolClass).toBe('search');
-    expect(msgs[0].parts[0].canonicalTool).toBe('list');
-    expect(msgs[0].parts[1].toolClass).toBeUndefined();
+    expect(msgs[0].content[0].toolClass).toBe('search');
+    expect(msgs[0].content[0].canonicalTool).toBe('list');
+    expect(msgs[0].content[1].toolClass).toBeUndefined();
     enrichHistoryParts(msgs); // 幂等
-    expect(msgs[0].parts[0].canonicalTool).toBe('list');
+    expect(msgs[0].content[0].canonicalTool).toBe('list');
     expect(enrichHistoryParts(undefined as any)).toBeUndefined(); // 非数组不抛
   });
 
-  it('enrichHistoryParts：flat content + wire parts 双载体、幂等、已设值不覆写（Task 8）', () => {
+  it('enrichHistoryParts：只读 flat content；wire parts 载体不再识别（Task 15）', () => {
     const msgs: any[] = [
       {
         id: 'm1',
@@ -191,10 +191,9 @@ describe('A canonical 翻译层', () => {
     expect(msgs[0].content[0]).toMatchObject({ toolClass: 'shell', canonicalTool: 'bash' });
     expect(msgs[0].content[1].toolClass).toBeUndefined();
     expect(msgs[0].content[2]).toMatchObject({ toolClass: 'file-edit', canonicalTool: 'keep' });
-    // 旧 wire parts 载体（生产默认路径仍走此形状）
-    expect(msgs[0].parts[0]).toMatchObject({ toolClass: 'shell', canonicalTool: 'bash' });
-    expect(msgs[0].parts[1].toolClass).toBeUndefined();
-    expect(msgs[1].parts[0]).toMatchObject({ toolClass: 'search', canonicalTool: 'glob' });
+    // wire parts 载体被忽略（没有 content 的消息不会被补字段）
+    expect(msgs[0].parts[0].toolClass).toBeUndefined();
+    expect(msgs[1].parts[0].toolClass).toBeUndefined();
     expect(msgs[2].content[0]).toMatchObject({ toolClass: 'readonly', canonicalTool: 'read' });
 
     // 幂等：重复执行不改变任何字段（含已设值）

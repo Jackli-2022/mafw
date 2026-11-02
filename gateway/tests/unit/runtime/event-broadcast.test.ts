@@ -1,4 +1,4 @@
-// Wire-contract tests for the Mode A SSE broadcast envelope builders used by
+// Envelope contract tests for the Mode A SSE broadcast envelope builders used by
 // MafwScheduler. The desktop renderer / TUI parse `data` — shape changes here
 // are breaking changes for every SSE consumer.
 // v2（2026-10-12）：信封名 mafw_event（原 opencode_event）。

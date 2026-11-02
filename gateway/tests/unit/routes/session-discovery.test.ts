@@ -1,8 +1,6 @@
 import * as http from 'http';
 import { DiscoveryError } from '../../../src/core/discovery/discovery-service';
 import {
-  handleLegacyCommand,
-  handleLegacySkill,
   handleSessionDiscovery,
   handleSessionDiscoveryRefresh,
   handleSessionDiscoverySkill,
@@ -27,16 +25,6 @@ function fakeService(over: any = {}) {
     get: jest.fn(async () => snapshot),
     refresh: jest.fn(async () => snapshot),
     loadSkill: jest.fn(async () => ({ ...skill, content: '# x' })),
-    getLegacyCommands: jest.fn(async () => ({
-      commands: [{ name: 'init', source: 'command' as const }],
-      location: { directory: '/proj' },
-      warnings: [],
-    })),
-    getLegacySkills: jest.fn(async () => ({
-      skills: [skill],
-      location: { directory: '/proj' },
-      warnings: [],
-    })),
     ...over,
   };
 }
@@ -117,34 +105,5 @@ describe('session discovery routes', () => {
       { discovery: null },
     );
     expect(out.status).toBe(503);
-  });
-
-  it('legacy /command returns JSON commands and delegates directory', async () => {
-    const discovery = fakeService();
-    const { res, out } = mockRes();
-    await handleLegacyCommand(
-      { method: 'GET', url: '/command?directory=%2Fproj&force=1' } as any,
-      res,
-      { discovery: discovery as any },
-    );
-
-    expect(discovery.getLegacyCommands).toHaveBeenCalledWith('/proj', { force: true });
-    expect(out.status).toBe(200);
-    expect(out.contentType).toBe('application/json');
-    expect(JSON.parse(out.body).commands[0].name).toBe('init');
-  });
-
-  it('legacy /skill returns JSON skill metadata', async () => {
-    const discovery = fakeService();
-    const { res, out } = mockRes();
-    await handleLegacySkill(
-      { method: 'GET', url: '/skill?directory=%2Fproj' } as any,
-      res,
-      { discovery: discovery as any },
-    );
-
-    expect(discovery.getLegacySkills).toHaveBeenCalledWith('/proj', { force: false });
-    expect(out.status).toBe(200);
-    expect(JSON.parse(out.body).skills[0].id).toBe('mafw-plan');
   });
 });

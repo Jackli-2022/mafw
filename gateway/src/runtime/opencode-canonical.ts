@@ -12,9 +12,8 @@
  *
  * 约定：
  *  - 只**补齐**规范字段，原生字段（`modelID`/`providerID`/`finish`/`state.content`）
- *    在兼容窗口内原样保留（wire egress 仍需要它们；Task 15 删除 wire 时清理）。
- *  - `error` 是唯一被替换的键（原生与规范不能共存）：规范形写入 flat，
- *    egress 侧由 `wire-compat.toWireInfo` 投影回原生形状。
+ *    在过渡期原样保留（诊断与 trajectory 仍读取；不属于 wire 兼容 shim）。
+ *  - `error` 是唯一被替换的键（原生与规范不能共存）：规范形写入 flat。
  *  - 零拷贝：部件列表只在工具部件真正补齐时新建；消息字段值已等价时返回
  *    **原对象引用**（重复归一不产生新对象——见 `canonicalMessage`）。
  */

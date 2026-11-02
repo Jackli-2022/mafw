@@ -49,13 +49,13 @@ describe('planAutoCheckpoint', () => {
     expect(planAutoCheckpoint(messages)).toEqual({ anchorMessageID: 'u1', snapshotTree: S1 });
   });
 
-  it('unwraps {info} envelopes (opencode message list shape)', () => {
+  it('ignores {info} envelopes (wire unwrapping deleted in Task 15)', () => {
     const messages = [
       { info: u('u1', 1) },
       { info: a('a1', 2, S1, S2) },
       { info: u('u2', 3) },
     ];
-    expect(planAutoCheckpoint(messages)).toEqual({ anchorMessageID: 'u1', snapshotTree: S1 });
+    expect(planAutoCheckpoint(messages)).toBeNull();
   });
 
   it('pure chat turn (assistant without snapshot) yields null tree but keeps anchor', () => {

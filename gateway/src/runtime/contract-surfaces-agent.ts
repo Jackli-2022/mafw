@@ -121,7 +121,7 @@ export const AGENT_SURFACES: ContractSurface[] = [
   row({
     id: 'events.part.text', title: 'text part stream', domain: 'events',
     obligation: 'optional', verification: 'conformance', implementation: 'part.updated / part.delta (text)',
-    conformance: ['chat-roundtrip'], consumer: 'ChatPane / TUI', impact: '不能流式渲染', presets: CONV,
+    conformance: ['chat-roundtrip'], consumer: 'ChatPane (part.updated/part.delta) / TUI (part.updated)', impact: '不能流式渲染', presets: CONV,
   }),
   row({
     id: 'events.part.tool', title: 'tool part stream', domain: 'events',

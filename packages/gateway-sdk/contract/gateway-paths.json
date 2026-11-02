@@ -218,7 +218,7 @@
         "tags": [
           "session"
         ],
-        "summary": "Session message history (default wire; ?format=flat returns MAFW flat DTO)",
+        "summary": "Session message history (MAFW flat DTO)",
         "parameters": [
           {
             "name": "id",
@@ -1322,45 +1322,6 @@
         }
       }
     },
-    "/command": {
-      "get": {
-        "operationId": "command.list",
-        "tags": [
-          "command"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/skill": {
-      "get": {
-        "operationId": "skill.list",
-        "tags": [
-          "skill"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/skill/content": {
-      "get": {
-        "operationId": "skill.content",
-        "tags": [
-          "skill"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/mcp/servers": {
       "get": {
         "operationId": "mcp.servers",
@@ -1806,30 +1767,6 @@
         "operationId": "runtime.config.update",
         "tags": [
           "runtime"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/opencode-config": {
-      "get": {
-        "operationId": "opencodeConfig.get",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "patch": {
-        "operationId": "opencodeConfig.update",
-        "tags": [
-          "internal"
         ],
         "responses": {
           "200": {

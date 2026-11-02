@@ -156,8 +156,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Session message history (default wire; ?format=flat returns MAFW flat DTO)
-         * @description Default response is the legacy wire envelope {info,parts}; ?format=flat returns the canonical MAFW flat DTO {id,role,content,...}. Task 15 flips the default to flat.
+         * Session message history (MAFW flat DTO)
+         * @description Session history as MAFW View DTO (flat MafwMessage: {id,role,content,...}). The legacy {info,parts} envelope and the format opt-in were removed in Task 15.
          */
         get: operations["session.messages"];
         put?: never;
@@ -952,54 +952,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/command": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["command.list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/skill": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["skill.list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/skill/content": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["skill.content"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/mcp/servers": {
         parameters: {
             query?: never;
@@ -1486,22 +1438,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["runtime.config.update"];
-        trace?: never;
-    };
-    "/api/opencode-config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["opencodeConfig.get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["opencodeConfig.update"];
         trace?: never;
     };
     "/api/goals": {
@@ -3833,21 +3769,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: ({
-                            info: {
-                                [key: string]: unknown;
-                            };
-                            parts: {
-                                [key: string]: unknown;
-                            }[];
-                        } | {
+                        data: {
                             id?: string;
                             /** @enum {string} */
                             role: "user" | "assistant";
                             content?: {
                                 [key: string]: unknown;
                             }[];
-                        })[];
+                        }[];
                         nextCursor?: string | null;
                     };
                 };
@@ -4872,60 +4801,6 @@ export interface operations {
             };
         };
     };
-    "command.list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    "skill.list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    "skill.content": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     "mcp.servers": {
         parameters: {
             query?: never;
@@ -5509,42 +5384,6 @@ export interface operations {
         };
     };
     "runtime.config.update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    "opencodeConfig.get": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    "opencodeConfig.update": {
         parameters: {
             query?: never;
             header?: never;

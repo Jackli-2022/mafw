@@ -175,7 +175,7 @@ export class GoalsTab implements Component {
   async openTranscript(sessionID: string): Promise<void> {
     let messages: MafwMessage[]
     try {
-      const res = await this.deps.client.session.history({ sessionID, limit: 50 })
+      const res = await this.deps.client.session.messages({ path: { id: sessionID }, query: { limit: 50 } })
       messages = res.data ?? []
     } catch (e: any) {
       this.deps.setStatus({ hint: theme.err(`transcript 获取失败: ${String(e?.message ?? e).slice(0, 60)}`) })

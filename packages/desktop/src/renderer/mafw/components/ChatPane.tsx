@@ -1470,7 +1470,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         collected: countUserTurns(Array.isArray(store.message[sessionID]) ? store.message[sessionID] : []) - baseCount,
         target: 10, nextCursor: cursor, pageCount, maxPages: 4,
       })) {
-        const data = await window.api.mafw.sessions.history(sessionID, 100, cursor) as any
+        const data = await window.api.mafw.sessions.messages(sessionID, 100, cursor) as any
         const rawItems = Array.isArray(data) ? data : data?.data
         nextCursor = data?.nextCursor ?? null
         pageCount++

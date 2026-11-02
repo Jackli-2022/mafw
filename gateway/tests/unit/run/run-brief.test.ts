@@ -11,10 +11,10 @@ const t = (n: number) => ({ created: 1_000 + n });
 const text = (s: string) => ({ type: 'text', text: s });
 
 function u(id: string, n: number, ...texts: string[]) {
-  return { info: { id, role: 'user', time: t(n) }, parts: texts.map(text) };
+  return { id, role: 'user', time: t(n), content: texts.map(text) };
 }
 function a(id: string, n: number, ...texts: string[]) {
-  return { info: { id, role: 'assistant', time: t(n) }, parts: texts.map(text) };
+  return { id, role: 'assistant', time: t(n), content: texts.map(text) };
 }
 
 describe('buildResumeBrief', () => {
@@ -76,24 +76,15 @@ describe('buildResumeBrief', () => {
     expect(brief!.lastAssistantTail).toBe('tail');
   });
 
-  it('handles bare messages (no info envelope)', () => {
+  it('handles flat bare messages (MAFW View DTO)', () => {
     const brief = buildResumeBrief(
-      [{ id: 'u1', role: 'user', time: t(1), parts: [text('bare')] }],
+      [{ id: 'u1', role: 'user', time: t(1), content: [text('bare')] }],
       0,
     );
     expect(brief!.lastUserText).toBe('bare');
   });
 
-  it('handles runtime flat messages with content parts (opencode 2.1 normalized)', () => {
-    const brief = buildResumeBrief([
-      { id: 'u1', role: 'user', time: t(1), content: [text('flat request')] },
-      { id: 'a1', role: 'assistant', time: t(2), content: [text('flat output')] },
-    ], 0);
-    expect(brief!.lastUserText).toBe('flat request');
-    expect(brief!.lastAssistantTail).toBe('flat output');
-  });
-
-  it('falls back to message.text when there are no parts', () => {
+  it('falls back to message.text when there are no content parts', () => {
     const brief = buildResumeBrief([
       { id: 'u1', role: 'user', time: t(1), text: 'text-only' },
     ], 0);

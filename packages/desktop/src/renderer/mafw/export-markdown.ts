@@ -7,7 +7,7 @@ export type ExportTurn = { role: string; text: string; time?: number }
 export function extractExportTurns(messages: Array<any>): ExportTurn[] {
   return (messages || []).map((m) => ({
     role: m.role || "user",
-    text: [m.text, ...((m.parts || []).map((p: any) => (typeof p.text === "string" ? p.text : "")))].join(" "),
+    text: [m.text, ...((Array.isArray(m.content) ? m.content : []).map((p: any) => (typeof p.text === "string" ? p.text : "")))].join(" "),
     time: m.time?.created,
   }))
 }

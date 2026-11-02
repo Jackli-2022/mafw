@@ -15,15 +15,6 @@ import type {
   DiscoveryWarning,
 } from './types';
 
-export interface LegacyCommandInfo {
-  name: string;
-  description?: string;
-  source: 'command';
-  agent?: string;
-  model?: { id: string; providerID: string; variant?: string };
-  subtask?: boolean;
-}
-
 export class DiscoveryError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -150,41 +141,6 @@ export class DiscoveryService {
       throw new DiscoveryError(413, 'skill content too large');
     }
     return { ...skill, content: loaded.content };
-  }
-
-  async getLegacyCommands(
-    directory?: string,
-    opts: { force?: boolean } = {},
-  ): Promise<{ commands: LegacyCommandInfo[]; location: { directory: string }; warnings: DiscoveryWarning[] }> {
-    const dir = await this.resolveDefaultDirectory(directory);
-    const base = await this.baseFor(dir, opts.force === true);
-    const mafwNames = new Set<string>();
-    try {
-      for (const def of this.deps.getMafwCommands()) {
-        mafwNames.add(def.name.toLowerCase());
-        for (const alias of def.aliases ?? []) mafwNames.add(alias.toLowerCase());
-      }
-    } catch { /* warning already surfaced by buildBase */ }
-    const commands = base.commands
-      .filter((c) => c.source === 'runtime' && !mafwNames.has(c.name.toLowerCase()))
-      .map((c): LegacyCommandInfo => ({
-        name: c.name,
-        ...(c.description ? { description: c.description } : {}),
-        source: 'command',
-        ...(c.agent ? { agent: c.agent } : {}),
-        ...(c.model ? { model: c.model } : {}),
-        ...(c.subtask !== undefined ? { subtask: c.subtask } : {}),
-      }));
-    return { commands, location: { directory: dir }, warnings: base.warnings };
-  }
-
-  async getLegacySkills(
-    directory?: string,
-    opts: { force?: boolean } = {},
-  ): Promise<{ skills: DiscoverySkill[]; location: { directory: string }; warnings: DiscoveryWarning[] }> {
-    const dir = await this.resolveDefaultDirectory(directory);
-    const base = await this.baseFor(dir, opts.force === true);
-    return { skills: base.skills, location: { directory: dir }, warnings: base.warnings };
   }
 
   invalidate(): void {

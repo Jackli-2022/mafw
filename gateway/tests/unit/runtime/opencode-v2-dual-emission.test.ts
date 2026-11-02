@@ -17,7 +17,6 @@ import {
 } from '../../../src/runtime/opencode-events';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 import { TOOL_PRIMITIVE_TYPES, ToolPartAssembler } from '../../../src/runtime/tool-part-assembler';
-import { toWireEventPayload } from '../../../src/runtime/wire-compat';
 
 const isCanonicalAll = (t: string) => !!EVENT_FLOW_MATRIX[t] || TOOL_PRIMITIVE_TYPES.has(t);
 
@@ -132,10 +131,9 @@ describe('@v2 双发零双计快照（设计 §6③ 验收线）', () => {
     }
   });
 
-  it('① 补：SSE egress 后 message.updated wire 载荷为 {info}（桌面零改动闭环）', () => {
+  it('① 补：SSE egress 保持 canonical message（不再投影 wire {info}）', () => {
     const msg = canonical.find((e) => e.payload.type === 'message.updated')!;
-    const wire = toWireEventPayload('message.updated', msg.payload.properties);
-    expect(wire.info).toMatchObject({ id: 'mu_1', role: 'user' });
-    expect('message' in wire).toBe(false);
+    expect(msg.payload.properties.message).toMatchObject({ id: 'mu_1', role: 'user' });
+    expect('info' in msg.payload.properties).toBe(false);
   });
 });

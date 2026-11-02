@@ -12,11 +12,11 @@ function textPart(id: string, messageID: string, text: string) {
 }
 
 function fakeSession(over: Record<string, any> = {}) {
-  const calls: Record<string, any> = { promptAsync: [], abort: 0, history: [] }
+  const calls: Record<string, any> = { promptAsync: [], abort: 0, messages: [] }
   return {
     calls,
-    async history(p: any) {
-      calls.history.push(p)
+    async messages(p: any) {
+      calls.messages.push(p)
       return {
         data: [
           flatMessage('m1', 'user', [textPart('p1', 'm1', '你好')]),
@@ -43,16 +43,16 @@ test('loadHistory reads flat content only (no info/parts)', async () => {
   assert.ok(s.turns.every(t => t.done))
 })
 
-test('uses session.history (flat) with limit instead of wire messages', async () => {
+test('uses session.messages (flat) with limit instead of a legacy history helper', async () => {
   const fx = fakeSession()
   const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
   await s.loadHistory(20)
-  assert.deepEqual(fx.calls.history[0], { sessionID: 's', limit: 20 })
+  assert.deepEqual(fx.calls.messages[0], { path: { id: 's' }, query: { limit: 20 } })
 })
 
 test('tool part fallback uses canonical fields (canonicalTool ?? tool)', async () => {
   const fx = fakeSession({
-    async history() {
+    async messages() {
       return {
         data: [
           flatMessage('m1', 'assistant', [{
@@ -147,8 +147,8 @@ test('send failure clears streaming and surfaces error', async () => {
 
 test('loadOlder uses cursor and prepends; returns 0 when no cursor', async () => {
   const fx = fakeSession({
-    async history({ before }: any) {
-      if (before === 'cursor-1') {
+    async messages({ query }: any) {
+      if (query?.before === 'cursor-1') {
         return { data: [flatMessage('m0', 'user', [textPart('p0', 'm0', '更早')])], nextCursor: null }
       }
       return { data: [flatMessage('m1', 'user', [textPart('p1', 'm1', '你好')])], nextCursor: 'cursor-1' }
@@ -165,7 +165,7 @@ test('loadOlder uses cursor and prepends; returns 0 when no cursor', async () =>
 test('loadHistory failure reports error and keeps empty turns', async () => {
   const errors: string[] = []
   const s = new ChatStore({
-    session: fakeSession({ async history() { throw new Error('boom') } }) as any,
+    session: fakeSession({ async messages() { throw new Error('boom') } }) as any,
     sessionID: 's',
     onChange: () => {},
     onError: (e) => errors.push(e),
@@ -177,7 +177,7 @@ test('loadHistory failure reports error and keeps empty turns', async () => {
 
 test('loadHistory filters injected blocks (recall/note-board/goal-snapshot)', async () => {
   const fx = fakeSession({
-    async history() {
+    async messages() {
       return {
         data: [
           flatMessage('m1', 'assistant', [
@@ -323,7 +323,7 @@ test('switchSession reloads history for the new session id', async () => {
   assert.equal(s.sessionID, 's1')
   await s.switchSession('s2')
   assert.equal(s.sessionID, 's2')
-  assert.equal(fx.calls.history.at(-1).sessionID, 's2')
+  assert.equal(fx.calls.messages.at(-1).path.id, 's2')
 })
 
 test('undo reverts to last user message and reloads; redo calls unrevert', async () => {
@@ -337,7 +337,7 @@ test('undo reverts to last user message and reloads; redo calls unrevert', async
   await s.undo()
   assert.equal(calls[0][0], 'revert')
   assert.equal(calls[0][1].body.messageID, 'm1', 'revert 到最后一条 user 消息')
-  assert.equal(fx.calls.history.at(-1).sessionID, 's', 'undo 后重载历史')
+  assert.equal(fx.calls.messages.at(-1).path.id, 's', 'undo 后重载历史')
   await s.redo()
   assert.equal(calls[1][0], 'unrevert')
 })

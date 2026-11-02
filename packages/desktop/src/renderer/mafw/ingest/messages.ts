@@ -1,9 +1,8 @@
 // 摄取层：flat 历史/SSE 消息 → 桌面 store 的规范记录。
 //
 // 输入只认 MAFW flat `MafwMessage`（`content: MafwPart[]`）；旧 `{info,parts}`
-// 信封仅在此处兼容展开（渲染层永远看不到 `info`/`parts`）。所有多形状
-// （错误、工具输出、文件 diff、task 子会话、step-finish→stopReason）在这里
-// 收敛，session-ui 只读规范形。
+// 信封已在 Task 15 删除（不展开、不回落）。所有多形状（错误、工具输出、文件
+// diff、task 子会话、step-finish→stopReason）在这里收敛，session-ui 只读规范形。
 import { canonicalMessageError, type CanonicalMessageError } from "./errors"
 import { canonicalToolPart } from "./parts"
 
@@ -29,20 +28,6 @@ export interface IngestMessageOptions {
 
 function fallbackId(prefix: string, opts: IngestMessageOptions): string {
   return `${prefix}-${opts.sessionID ?? "session"}-${opts.index ?? 0}`
-}
-
-/** 旧 wire 信封（{info,parts}）→ flat 形状；flat 原样返回。 */
-function flatMessage(raw: any): any {
-  if (!raw || typeof raw !== "object") return raw
-  if (raw.info && typeof raw.info === "object") {
-    const parts = Array.isArray(raw.parts)
-      ? raw.parts
-      : Array.isArray(raw.info.parts)
-        ? raw.info.parts
-        : undefined
-    return parts ? { ...raw.info, content: parts } : { ...raw.info }
-  }
-  return raw
 }
 
 function lastStepFinishReason(parts: any[]): string | undefined {
@@ -81,7 +66,7 @@ export function canonicalMessage(
   raw: any,
   opts: IngestMessageOptions = {},
 ): { message: any; parts: any[] } | null {
-  const flat = flatMessage(raw)
+  const flat = raw
   if (!flat || typeof flat !== "object") return null
   const isSynthetic = flat.type === "synthetic" || (flat.role == null && flat.metadata?.source)
   if (flat.role !== "user" && flat.role !== "assistant" && !isSynthetic) return null
@@ -94,17 +79,13 @@ export function canonicalMessage(
   const id = hasId ? flat.id : fallbackId("msg", opts)
   const rawParts = Array.isArray(flat.content)
     ? flat.content
-    : Array.isArray(flat.parts)
-      ? flat.parts
-      : []
+    : []
   const parts = canonicalParts(rawParts, { sessionID, messageID: id })
   const error: CanonicalMessageError | undefined = canonicalMessageError(flat.error)
   const nativeModel =
     flat.model && typeof flat.model === "object"
       ? flat.model
-      : typeof flat.modelID === "string" && typeof flat.providerID === "string"
-        ? { providerID: flat.providerID, modelID: flat.modelID }
-        : undefined
+      : undefined
   const model =
     nativeModel && typeof nativeModel.modelID === "string" && typeof nativeModel.providerID === "string"
       ? {
@@ -133,7 +114,7 @@ export function canonicalMessage(
   return { message, parts }
 }
 
-/** 历史页（`session.history` 的 `data`）→ store 可写的消息 + parts 索引。 */
+/** 历史页（`session.messages` 的 `data`）→ store 可写的消息 + parts 索引。 */
 export function ingestHistoryPage(items: unknown, opts: IngestMessageOptions = {}): IngestedHistoryPage {
   const messages: any[] = []
   const parts: Record<string, any[]> = {}

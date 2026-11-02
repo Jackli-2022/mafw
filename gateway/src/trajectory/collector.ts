@@ -319,12 +319,9 @@ export class TrajectoryCollector {
       });
       const data = result?.data || [];
       const messages = Array.isArray(data) ? data : [];
-      const msg = messages.find((m: any) => {
-        const info = m.info || m;
-        return info.id === messageID;
-      });
+      const msg = messages.find((m: any) => m?.id === messageID);
       if (!msg) return;
-      const parts = (msg?.content ?? msg?.parts ?? msg?.info?.parts ?? []) as any[];
+      const parts = (msg?.content ?? []) as any[];
       const textPart = parts.find((p: any) => p.type === 'text' && typeof p.text === 'string');
       if (textPart && !s.userText) {
         s.userText = truncate(textPart.text, USER_TEXT_MAX) || '';

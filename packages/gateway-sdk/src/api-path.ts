@@ -27,6 +27,5 @@ const regressionPaths: readonly ApiPath[] = [
   '/api/usage?window=7d',
   '/api/media/upload-and-create?type=image/png',
   '/a2a/artifacts/art-1',
-  '/command?dir=x',
 ]
 export const API_PATH_REGRESSION_CHECKS = regressionPaths

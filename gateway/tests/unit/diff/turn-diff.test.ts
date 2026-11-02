@@ -65,13 +65,21 @@ describe('selectTurnSnapshot', () => {
     expect(() => selectTurnSnapshot([user('u1', 1), asst('a1', 2, { start: H1, end: H2 })], 'a1')).toThrow(TurnDiffUnavailableError);
   });
 
-  it('handles wrapped items and unsorted input', () => {
+  it('handles unsorted flat input (wire envelopes are no longer unwrapped)', () => {
+    const messages = [
+      asst('a2', 12, { start: H2, end: H3 }),
+      user('u1', 10),
+      asst('a1', 11, { start: H1, end: H2 }),
+    ];
+    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: H1, end: H3 });
+  });
+
+  it('ignores wire-wrapped items (no info unwrapping after Task 15)', () => {
     const messages = [
       { info: asst('a2', 12, { start: H2, end: H3 }) },
       { info: user('u1', 10) },
-      { info: asst('a1', 11, { start: H1, end: H2 }) },
     ];
-    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: H1, end: H3 });
+    expect(() => selectTurnSnapshot(messages as any[], 'u1')).toThrow(TurnDiffUnavailableError);
   });
 });
 

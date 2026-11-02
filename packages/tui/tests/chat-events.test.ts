@@ -5,7 +5,7 @@ import { CHAT_EVENT_TYPES, dispatchChatEvent, isChatEvent } from '../src/ui/chat
 
 function fakeSession() {
   return {
-    async history() { return { data: [], nextCursor: null } },
+    async messages() { return { data: [], nextCursor: null } },
     async promptAsync() {},
     async abort() {},
     async revert() {},

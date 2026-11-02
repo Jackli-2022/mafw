@@ -1,7 +1,7 @@
 /// MAFW View DTO golden — flat history shapes only.
 ///
 /// Contract source: `packages/gateway-sdk/src/view-dto.ts` (MAFW View DTO) served by
-/// `GET /api/sessions/:id/messages?format=flat`. There is **no** legacy fallback:
+/// `GET /api/sessions/:id/messages`. There is **no** legacy fallback:
 /// a `{info, parts}` wire item must not be parsed.
 library;
 
@@ -116,7 +116,7 @@ void main() {
   });
 
   group('GatewayClient flat history', () {
-    test('requests format=flat and parses the flat data envelope', () async {
+    test('requests the flat history endpoint without a format opt-in', () async {
       late http.Request captured;
       final mockClient = http_testing.MockClient((request) async {
         captured = request;
@@ -148,7 +148,7 @@ void main() {
       final messages = await client.messages('s1', limit: 10);
 
       expect(captured.url.path, '/api/sessions/s1/messages');
-      expect(captured.url.queryParameters['format'], 'flat');
+      expect(captured.url.queryParameters.containsKey('format'), isFalse);
       expect(captured.url.queryParameters['limit'], '10');
       expect(messages.single.id, 'm1');
       expect(messages.single.text, 'hello');
@@ -184,7 +184,7 @@ void main() {
           isA<GatewayException>().having(
             (e) => e.message,
             'message',
-            contains('gateway does not serve format=flat history — upgrade gateway'),
+            contains('gateway did not return the MAFW flat history contract — upgrade gateway'),
           ),
         ),
       );

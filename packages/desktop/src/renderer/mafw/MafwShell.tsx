@@ -849,7 +849,7 @@ export function MafwShell() {
       runningChildIDs: childrenNeedingProbe(subagentRows()),
       fetchers: {
         children: (parentID) => window.api.mafw.sessions.children(parentID),
-        messages: (childID, limit) => window.api.mafw.sessions.history(childID, limit),
+        messages: (childID, limit) => window.api.mafw.sessions.messages(childID, limit),
         getSession: (childID) => window.api.mafw.sessions.get(childID),
       },
       ingest: (ev) => ingestSubagentEvent(ev),
@@ -1298,7 +1298,7 @@ export function MafwShell() {
     console.log("[mafw] loadSessionHistory", sessionID)
     try {
       const [data, sessionData] = await Promise.all([
-        window.api.mafw.sessions.history(sessionID, 100) as any, // 规范 flat：content = 部件数组（无 {info,parts} 信封）
+        window.api.mafw.sessions.messages(sessionID, 100) as any, // MAFW flat：content = 部件数组（无 {info,parts} 信封）
         window.api.mafw.sessions.get(sessionID).catch(() => null),
       ]) as [any, any]
       // Fetch the todo list for the TaskList (also updated live via SSE)
@@ -1375,7 +1375,7 @@ export function MafwShell() {
       // 这里后台继续按 user turn 补齐（≤4 页封顶），密度无关（mem_1789616908701）。
       let pageCount = 1
       while (shouldKeepPaging({ collected: countUserTurns(store.message[sessionID] || []), target: 10, nextCursor, pageCount, maxPages: 4 })) {
-        const data2 = await window.api.mafw.sessions.history(sessionID, 100, nextCursor ?? undefined) as any
+        const data2 = await window.api.mafw.sessions.messages(sessionID, 100, nextCursor ?? undefined) as any
         const items2 = Array.isArray(data2) ? data2 : data2?.data
         nextCursor = data2?.nextCursor ?? null
         pageCount++

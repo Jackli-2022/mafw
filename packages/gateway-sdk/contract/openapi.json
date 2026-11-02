@@ -326,7 +326,7 @@
         "tags": [
           "session"
         ],
-        "summary": "Session message history (default wire; ?format=flat returns MAFW flat DTO)",
+        "summary": "Session message history (MAFW flat DTO)",
         "parameters": [
           {
             "name": "id",
@@ -348,52 +348,28 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "oneOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "info": {
-                                "type": "object",
-                                "additionalProperties": true
-                              },
-                              "parts": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "additionalProperties": true
-                                }
-                              }
-                            },
-                            "required": [
-                              "info",
-                              "parts"
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "user",
+                              "assistant"
                             ]
                           },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "string"
-                              },
-                              "role": {
-                                "type": "string",
-                                "enum": [
-                                  "user",
-                                  "assistant"
-                                ]
-                              },
-                              "content": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "additionalProperties": true
-                                }
-                              }
-                            },
-                            "required": [
-                              "role"
-                            ]
+                          "content": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": true
+                            }
                           }
+                        },
+                        "required": [
+                          "role"
                         ]
                       }
                     },
@@ -412,7 +388,7 @@
             }
           }
         },
-        "description": "Default response is the legacy wire envelope {info,parts}; ?format=flat returns the canonical MAFW flat DTO {id,role,content,...}. Task 15 flips the default to flat."
+        "description": "Session history as MAFW View DTO (flat MafwMessage: {id,role,content,...}). The legacy {info,parts} envelope and the format opt-in were removed in Task 15."
       }
     },
     "/api/sessions/{id}/todo": {
@@ -1501,45 +1477,6 @@
         }
       }
     },
-    "/command": {
-      "get": {
-        "operationId": "command.list",
-        "tags": [
-          "command"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/skill": {
-      "get": {
-        "operationId": "skill.list",
-        "tags": [
-          "skill"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/skill/content": {
-      "get": {
-        "operationId": "skill.content",
-        "tags": [
-          "skill"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/mcp/servers": {
       "get": {
         "operationId": "mcp.servers",
@@ -1989,30 +1926,6 @@
         "operationId": "runtime.config.update",
         "tags": [
           "runtime"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/opencode-config": {
-      "get": {
-        "operationId": "opencodeConfig.get",
-        "tags": [
-          "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "patch": {
-        "operationId": "opencodeConfig.update",
-        "tags": [
-          "internal"
         ],
         "responses": {
           "200": {

@@ -44,7 +44,7 @@ class MafwSession {
 /// Flat MAFW View DTO message (canonical v3).
 ///
 /// Shape: `{id, sessionID, role, parentID, content: MafwPart[], time:{created,...}}`.
-/// Served by `GET /api/sessions/:id/messages?format=flat`; the legacy
+/// Served by `GET /api/sessions/:id/messages`; the legacy
 /// `{info, parts}` wire envelope is **not** accepted (no fallback).
 /// Contract source: `packages/gateway-sdk/src/view-dto.ts`.
 class MafwMessage {

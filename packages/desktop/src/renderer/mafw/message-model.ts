@@ -32,5 +32,5 @@ export function mergeAssistantMessage(
     return msgs
   }
   const pm = info.parentID || opts.parentFallback
-  return [...sessionMsgs, { ...info, id: msgId, sessionID: opts.sid, parentID: pm, time: info.time || { created: Date.now() }, parts: [] }]
+  return [...sessionMsgs, { ...info, id: msgId, sessionID: opts.sid, parentID: pm, time: info.time || { created: Date.now() } }]
 }

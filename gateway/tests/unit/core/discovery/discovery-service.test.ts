@@ -132,26 +132,6 @@ describe('DiscoveryService', () => {
     expect(snap.warnings.some((w) => w.source === 'commands')).toBe(true);
   });
 
-  it('legacy /command excludes foreign MAFW custom names from the full registry', async () => {
-    const dir = tempDir();
-    const rt = fakeRuntime();
-    rt.discovery.list.mockResolvedValue({
-      commands: [{ name: 'foreign' }, { name: 'init' }],
-      skills: [],
-      warnings: [],
-    });
-    const svc = new DiscoveryService(deps({
-      runtime: rt,
-      getMafwCommands: () => [{
-        name: 'foreign', description: 'f', category: 'custom', kind: 'custom',
-        source: path.join(path.resolve('other'), '.mafw/commands/f.md'),
-      } as any],
-      gatewayProjectDir: dir,
-    }));
-    const commands = await svc.getLegacyCommands(dir);
-    expect(commands.commands.map((c) => c.name)).toEqual(['init']);
-  });
-
   it('loadSkill maps 404 / 409 / 413 / 503', async () => {
     const dir = tempDir();
     const rt = fakeRuntime();
@@ -177,22 +157,6 @@ describe('DiscoveryService', () => {
 
     const noRuntime = new DiscoveryService(deps({ runtime: fakeRuntime({ capabilities: { discoveryApi: false }, discovery: undefined }) }));
     await expect(noRuntime.loadSkill('s1', 'a', { directory: dir })).rejects.toMatchObject({ status: 503 });
-  });
-
-  it('legacy commands are runtime-only and exclude MAFW names/aliases', async () => {
-    const dir = tempDir();
-    const rt = fakeRuntime();
-    rt.discovery.list.mockResolvedValue({
-      commands: [{ name: 'goal' }, { name: 'init', description: 'i' }],
-      skills: [{ id: 'a', name: 'A', location: path.join(dir, 'a/SKILL.md'), contentLength: 2 }],
-      warnings: [],
-    });
-    const svc = new DiscoveryService(deps({ runtime: rt }));
-
-    const commands = await svc.getLegacyCommands(dir);
-    expect(commands.commands).toEqual([{ name: 'init', description: 'i', source: 'command' }]);
-    const skills = await svc.getLegacySkills(dir);
-    expect(skills.skills[0]).toMatchObject({ id: 'a', name: 'A', scope: 'project' });
   });
 
   it('broadcastKnown emits session.commands with commands only and forget removes the session', async () => {

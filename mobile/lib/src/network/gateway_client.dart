@@ -50,19 +50,18 @@ class GatewayClient {
     return list.map((e) => MafwSession.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  /// Flat MAFW View DTO history (`?format=flat`).
+  /// MAFW flat View DTO history (`GET /api/sessions/:id/messages`).
   ///
-  /// Transition period: the gateway default wire shape is still opencode
-  /// `{info,parts}`, so the flat outlet is requested explicitly. Task 15 flips
-  /// the default and this parameter is dropped. Legacy items are never parsed.
+  /// The response is always `{ data: MafwMessage[], nextCursor }`; the legacy
+  /// `{info,parts}` wire envelope is never parsed and there is no fallback.
   ///
   /// **Detection (not a fallback):** if a non-empty page parses to only invalid
-  /// items (no `id` and no `content`), the gateway did not honour `format=flat`
-  /// — throw an actionable [GatewayException] instead of rendering empty
-  /// bubbles.
+  /// items (no `id` and no `content`), the gateway did not return the MAFW
+  /// contract — throw an actionable [GatewayException] instead of rendering
+  /// empty bubbles.
   Future<List<MafwMessage>> messages(String sessionID, {int limit = 50}) async {
     final res = await _http.get(
-      _uri('/api/sessions/$sessionID/messages', {'limit': '$limit', 'format': 'flat'}),
+      _uri('/api/sessions/$sessionID/messages', {'limit': '$limit'}),
       headers: _headers,
     );
     if (res.statusCode != 200) throw GatewayException('messages: HTTP ${res.statusCode}');
@@ -77,7 +76,7 @@ class GatewayClient {
     }
     if (out.isNotEmpty && out.every((m) => m.id.isEmpty && m.parts.isEmpty)) {
       throw GatewayException(
-        'gateway does not serve format=flat history — upgrade gateway',
+        'gateway did not return the MAFW flat history contract — upgrade gateway',
       );
     }
     return out;

@@ -13,7 +13,6 @@ import { handleSessionMutations } from '../../../src/routes/session-mutations';
 import { handleSessionSwitch } from '../../../src/routes/session-switch';
 import { handleRestartAgent } from '../../../src/routes/restart-agent';
 import { handlePermissionReply, handlePermissionReplyById } from '../../../src/routes/permission';
-import { handleSkillContent } from '../../../src/routes/skill-content';
 import { resolveWorktreeAvailability } from '../../../src/core/worktree/worktree-availability';
 
 const RUNTIME_NAME = 'secret-runtime-name';
@@ -172,42 +171,6 @@ describe('route surface gates', () => {
       rules: { add: () => ({ ok: true }) },
     });
     expectNeutral503(direct.out, 'approval.permissionReply');
-  });
-
-  it('skill content only uses the runtime channel when discovery.loadSkill is available', async () => {
-    const loaded: string[] = [];
-    const denied = makeRes();
-    await handleSkillContent(
-      makeReq('GET', undefined, '/api/skill/content?directory=D%3A%5Cp&id=vision-tools'),
-      denied.res,
-      '/api/skill/content?directory=D%3A%5Cp&id=vision-tools',
-      {
-        getAccess: () => accessDenying('discovery.loadSkill') as any,
-        loadSkill: async (opts) => {
-          loaded.push(opts.key);
-          return { id: opts.key, name: opts.key, content: 'RUNTIME' };
-        },
-        listSkills: async () => [{ id: 'vision-tools', location: 'C:/skills/vision-tools/SKILL.md' }],
-        readFile: () => 'FALLBACK',
-      },
-    );
-    expect(loaded).toEqual([]);
-    expect(denied.out.status).toBe(200);
-    expect(denied.out.body.content).toBe('FALLBACK');
-
-    const allowed = makeRes();
-    await handleSkillContent(
-      makeReq('GET', undefined, '/api/skill/content?directory=D%3A%5Cp&id=vision-tools'),
-      allowed.res,
-      '/api/skill/content?directory=D%3A%5Cp&id=vision-tools',
-      {
-        getAccess: () => accessAllowing(['discovery.loadSkill']) as any,
-        loadSkill: async (opts) => ({ id: opts.key, name: opts.key, content: 'RUNTIME' }),
-        listSkills: async () => [],
-        readFile: () => 'FALLBACK',
-      },
-    );
-    expect(allowed.out.body.content).toBe('RUNTIME');
   });
 });
 

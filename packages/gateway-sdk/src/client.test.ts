@@ -129,14 +129,16 @@ test("session.structured / submitStructured hit their routes", async () => {
   )
 })
 
-test("session.messages sends GET with query params", async () => {
-  fetchMock.mockResolvedValue(okJson({ data: [] }))
+test("session.messages is flat-only and forwards pagination", async () => {
+  fetchMock.mockResolvedValue(okJson({ data: [], nextCursor: null }))
   const c = new MafwClient("http://gw:3000")
-  await c.session.messages({ path: { id: "s1" }, query: { limit: 50, before: "abc" } })
+  const out = await c.session.messages({ path: { id: "s1" }, query: { limit: 50, before: "abc" } })
   const url = (fetchMock as any).mock.calls[0][0] as string
   expect(url).toContain("/api/sessions/s1/messages?")
   expect(url).toContain("limit=50")
   expect(url).toContain("before=abc")
+  expect(url).not.toContain("format=")
+  expect(out).toEqual({ data: [], nextCursor: null })
 })
 
 test("session.messages omits optional query params when absent", async () => {
@@ -147,34 +149,13 @@ test("session.messages omits optional query params when absent", async () => {
   expect(url).toBe("http://gw:3000/api/sessions/s1/messages?")
 })
 
-test("session.messages forwards format=flat", async () => {
-  fetchMock.mockResolvedValue(okJson({ data: [], nextCursor: null }))
+test("legacy history / shells / command / skill namespaces are gone", () => {
   const c = new MafwClient("http://gw:3000")
-  await c.session.messages({ path: { id: "s1" }, query: { format: "flat", limit: 5 } })
-  const url = (fetchMock as any).mock.calls[0][0] as string
-  expect(url).toContain("/api/sessions/s1/messages?")
-  expect(url).toContain("format=flat")
-  expect(url).toContain("limit=5")
-})
-
-test("session.history always calls format=flat", async () => {
-  fetchMock.mockResolvedValue(okJson({ data: [], nextCursor: null }))
-  const c = new MafwClient("http://gw:3000")
-  const out = await c.session.history({ sessionID: "ses_1" })
-  const url = (fetchMock as any).mock.calls[0][0] as string
-  expect(url).toContain("/api/sessions/ses_1/messages?format=flat")
-  expect(out).toEqual({ data: [], nextCursor: null })
-})
-
-test("session.history forwards pagination without dropping format=flat", async () => {
-  fetchMock.mockResolvedValue(okJson({ data: [], nextCursor: "c2" }))
-  const c = new MafwClient("http://gw:3000")
-  const out = await c.session.history({ sessionID: "ses_1", limit: 20, before: "c1" })
-  const url = (fetchMock as any).mock.calls[0][0] as string
-  expect(url).toContain("format=flat")
-  expect(url).toContain("limit=20")
-  expect(url).toContain("before=c1")
-  expect(out.nextCursor).toBe("c2")
+  expect((c.session as any).history).toBeUndefined()
+  expect((c as any).shells).toBeUndefined()
+  expect((c as any).command).toBeUndefined()
+  expect((c as any).skill).toBeUndefined()
+  expect((c as any).opencodeConfig).toBeUndefined()
 })
 
 test("session.fork sends POST /api/sessions/:id/fork with messageID", async () => {
@@ -1216,6 +1197,16 @@ test("background.jobs namespace hits list/output/cancel with session scoping", a
   expect(cancelCall?.[1]).toEqual(expect.objectContaining({ method: "POST" }))
 })
 
+test("session.background POSTs the neutral transfer-to-background action", async () => {
+  fetchMock.mockResolvedValue({ ok: true, text: async () => "", json: async () => ({}) } as any)
+  const c = new MafwClient("http://gw:3000")
+  await c.session.background({ path: { id: "s1" } })
+  expect(fetchMock).toHaveBeenCalledWith(
+    "http://gw:3000/api/session/s1/background",
+    expect.objectContaining({ method: "POST" }),
+  )
+})
+
 // ── Discovery ──
 
 test("discovery.get sends session/directory/force and returns snapshot", async () => {
@@ -1243,18 +1234,6 @@ test("discovery.refresh POSTs and discovery.skill encodes the key", async () => 
   expect(calls[0][0]).toBe("http://gw:3000/api/sessions/s1/discovery/refresh?directory=%2Fp")
   expect(calls[0][1].method).toBe("POST")
   expect(calls[1][0]).toBe("http://gw:3000/api/sessions/s1/discovery/skills/mafw%20plan?directory=%2Fp&force=1")
-})
-
-test("command.list/skill.list hit legacy endpoints and parse envelopes", async () => {
-  fetchMock
-    .mockResolvedValueOnce(okJson({ commands: [{ name: "init", description: "i" }] }))
-    .mockResolvedValueOnce(okJson({ skills: [{ id: "a", name: "A", contentLength: 2 }] }))
-  const c = new MafwClient("http://gw:3000")
-  expect(await c.command.list("/p")).toEqual([{ name: "init", description: "i" }])
-  expect(await c.skill.list("/p")).toEqual([{ id: "a", name: "A", contentLength: 2 }])
-  const urls = (fetchMock as any).mock.calls.map((x: any) => x[0])
-  expect(urls[0]).toBe("http://gw:3000/command?directory=%2Fp")
-  expect(urls[1]).toBe("http://gw:3000/skill?directory=%2Fp")
 })
 
 // -- Pod --

@@ -1,15 +1,14 @@
 /**
- * 迁移期可选出口：`GET /api/sessions/:id/messages?format=flat`。
+ * `GET /api/sessions/:id/messages` —— MAFW flat 历史的唯一出口。
  *
- * 默认出口在 Task 15 之前仍输出 opencode wire `{info, parts}`；本模块是显式
- * flat 出口的唯一实现，**不得调用 `toWireHistory`**。它与默认出口保持同等语义：
+ * 默认且唯一输出 `{ data: MafwMessage[], nextCursor }`（spec 2026-11-02 §9.1）：
  *  - limit/before 原样转发给 runtime；
  *  - tool part enrich（`toolClass` / `canonicalTool`）经 `enrichHistoryParts`；
  *  - data-part overlay 经 `mergeDataPartsIntoFlat` 并入本页现存消息；
  *  - `nextCursor` 原样回传。
  *
- * 返回 `false` = 路径/查询不匹配（或不是 flat 请求），交回 legacy 链，默认
- * wire 行为零变化。
+ * 不存在 wire `{info, parts}` 分支，也不接受 `format` 参数；返回 `false` 仅表示
+ * 路径/方法不匹配（调用方已按 GET 路由匹配，正常路径恒 `true`）。
  */
 import * as http from 'http';
 import type { BusinessRuntime } from '../runtime/contract';
@@ -18,7 +17,7 @@ import type { SessionDataPartRow } from '../memory/gateway-db';
 import { enrichHistoryParts } from '../runtime/tool-classes';
 import { mergeDataPartsIntoFlat } from '../core/data-parts/merge-flat';
 
-export interface SessionHistoryFlatDeps {
+export interface SessionHistoryDeps {
   getRuntime(): BusinessRuntime | null;
   /** 只返回本页消息 id 的 overlay 行；缺省表示无 overlay。 */
   listDataParts?(sessionID: string, messageIds: string[]): SessionDataPartRow[];
@@ -35,18 +34,16 @@ function emptyEnvelope(res: http.ServerResponse): void {
   json(res, 200, { data: [], nextCursor: null });
 }
 
-export async function handleSessionHistoryFlat(
+export async function handleSessionHistory(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   url: string,
-  deps: SessionHistoryFlatDeps,
+  deps: SessionHistoryDeps,
 ): Promise<boolean> {
   const match = url.match(/^\/api\/sessions\/([^/]+)\/messages(?:\?|$)/);
   if (!match || req.method !== 'GET') return false;
 
   const parsed = new URL(url, `http://${req.headers?.host || 'localhost'}`);
-  if (parsed.searchParams.get('format') !== 'flat') return false;
-
   const sessionID = match[1];
   const limit = parseInt(parsed.searchParams.get('limit') || '100', 10);
   const before = parsed.searchParams.get('before') || undefined;
@@ -82,7 +79,7 @@ export async function handleSessionHistoryFlat(
 
     json(res, 200, { data: messages, nextCursor });
   } catch (err: any) {
-    deps.warn?.(`[SessionHistoryFlat] failed to fetch messages: ${err?.message ?? String(err)}`);
+    deps.warn?.(`[SessionHistory] failed to fetch messages: ${err?.message ?? String(err)}`);
     emptyEnvelope(res);
   }
   return true;

@@ -74,22 +74,25 @@ describe('message ingestion', () => {
     expect(parts.m1[0].id).toBe('part_1')
   })
 
-  test('expands transitional wire envelopes inside ingestion only', () => {
+  test('ignores legacy wire envelopes (no info/parts expansion after Task 15)', () => {
     const { messages } = ingestHistoryPage(
       [{ info: { id: 'm2', sessionID: 's1', role: 'assistant', time: { created: 2 } }, parts: [{ id: 'p2', type: 'text', text: 'x' }] }],
       { sessionID: 's1' },
     )
-    expect(messages[0].id).toBe('m2')
-    expect((messages[0] as any).info).toBeUndefined()
-    expect(messages[0].content[0].id).toBe('p2')
+    expect(messages).toEqual([])
   })
 
-  test('canonicalizes native model fields into model and drops double-shape reads', () => {
+  test('uses only the canonical model field (native modelID/providerID are not read)', () => {
     const { messages } = ingestHistoryPage(
-      [{ ...flatMessage(), modelID: 'glm-5.3', providerID: 'zhipu' }],
+      [{ ...flatMessage(), model: { providerID: 'zhipu', modelID: 'glm-5.3' } }],
       { sessionID: 's1' },
     )
     expect(messages[0].model).toEqual({ providerID: 'zhipu', modelID: 'glm-5.3' })
+    const nativeOnly = ingestHistoryPage(
+      [{ ...flatMessage(), modelID: 'glm-5.3', providerID: 'zhipu' }],
+      { sessionID: 's1' },
+    )
+    expect(nativeOnly.messages[0].model).toBeUndefined()
     const already = canonicalMessage({ ...flatMessage(), model: { providerID: 'p', modelID: 'm', variant: 'v' } }, { sessionID: 's1' })
     expect(already?.message.model).toEqual({ providerID: 'p', modelID: 'm', variant: 'v' })
   })

@@ -58,11 +58,11 @@ function fakeClient() {
     },
     questions: { reply: async () => {}, reject: async () => {} },
     session: {
-      history: async (p: any) => {
-        calls.push(`messages:${p.sessionID}`)
+      messages: async (p: any) => {
+        calls.push(`messages:${p.path.id}`)
         return {
           data: [
-            { id: 'm1', sessionID: p.sessionID, role: 'user', content: [{ id: 'p1', messageID: 'm1', type: 'text', text: '计划内容' }] },
+            { id: 'm1', sessionID: p.path.id, role: 'user', content: [{ id: 'p1', messageID: 'm1', type: 'text', text: '计划内容' }] },
           ],
           nextCursor: null,
         }

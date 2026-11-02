@@ -1,15 +1,14 @@
 /**
- * 历史 round-trip golden —— canonical v3 flat 化后 wire 输出语义不变的可执行证明。
+ * 历史 flat golden —— adapter 原生历史 → MAFW View DTO 的回归底线。
  *
  * ① opencode 链：wire {info,parts} → normalizeOpencodeHistory → flat
- *    → toWireHistory → deep-equal 原 wire（零换名 = 恒等的构造性证明）
- * ② pi 链：pi 原始消息 → normalizePiMessages（新 flat）→ toWireHistory
- *    → deep-equal 旧实现（{info,parts} 时代）的 golden 输出——回归底线：
- *    桌面在 flat 化前后收到逐字段相同的数据。
+ *    （部件引用直通、规范 model/stopReason 补齐）。
+ * ② pi 链：pi 原始消息 → normalizePiMessages（flat）→ 与冻结 golden 逐字段相同。
+ *
+ * Task 15 删除 wire egress 后，本文件不再做 flat→wire round-trip。
  */
 import { normalizeOpencodeHistory } from '../../../src/runtime/opencode-history';
 import { normalizePiMessages } from '../../../src/runtime/pi/pi-message-normalize';
-import { toWireHistory } from '../../../src/runtime/wire-compat';
 
 const T = 1_700_000_000_000;
 
@@ -53,34 +52,44 @@ const opencodeWire = [
   { info: { id: 'mu_2', role: 'user' }, parts: [{ id: 'q2', type: 'text', text: '继续' }] }, // 最小 info
 ];
 
-describe('① opencode 历史 round-trip（flat 化后 wire 恒等）', () => {
-  it('原生字段零丢失 + 规范字段 additive（dual-write，Task 9 review）', () => {
-    const round = toWireHistory(normalizeOpencodeHistory(opencodeWire) as any);
+describe('① opencode 历史 → flat（部件引用直通 + 规范字段）', () => {
+  it('原生字段保留 + 规范字段 additive（model/stopReason）', () => {
+    const flat = normalizeOpencodeHistory(opencodeWire) as any[];
 
-    // user / 最小消息：规范字段已存在或无可补字段 → 字节级恒等
-    expect(round[0]).toEqual(opencodeWire[0]);
-    expect(round[2]).toEqual(opencodeWire[2]);
-    expect(round[3]).toEqual(opencodeWire[3]);
+    // user / 最小消息：身份与内容直通
+    expect(flat[0]).toMatchObject({ id: 'mu_1', role: 'user', sessionID: 'ses_1' });
+    expect(flat[0].content).toBe(opencodeWire[0].parts);
+    expect(flat[2].id).toBe('ma_2');
+    expect(flat[2].content).toEqual([]);
+    expect(flat[3]).toMatchObject({ id: 'mu_2', role: 'user' });
 
-    // assistant：原生字段全保留（旧 wire 消费者零回归），规范字段 additive
-    const assistant = round[1] as any;
-    expect(assistant.info).toMatchObject(opencodeWire[1].info);
-    expect(assistant.info.model).toEqual({ providerID: 'gateway', modelID: 'glm-5.3' });
-    expect(assistant.info.stopReason).toBe('end_turn');
-    expect(assistant.parts).toBe(opencodeWire[1].parts); // 部件引用直通（零拷贝）
+    // assistant：规范 model/stopReason，原生透传字段保留
+    const assistant = flat[1];
+    expect(assistant).toMatchObject({
+      id: 'ma_1', role: 'assistant', modelID: 'glm-5.3', providerID: 'gateway',
+      finish: 'stop', parentID: 'mu_1',
+    });
+    expect(assistant.model).toEqual({ providerID: 'gateway', modelID: 'glm-5.3' });
+    expect(assistant.stopReason).toBe('end_turn');
+    expect(assistant.content).toBe(opencodeWire[1].parts); // 部件引用直通（零拷贝）
   });
 
-  it('往返后 parts 数组项身份保持（零拷贝链路）', () => {
-    const flat = normalizeOpencodeHistory(opencodeWire);
-    const round = toWireHistory(flat as any);
-    expect((round[1] as any).parts[6]).toBe(opencodeWire[1].parts[6]); // compaction 透传部件
+  it('透传部件身份保持（compaction 等未知扩展不被重写）', () => {
+    const flat = normalizeOpencodeHistory(opencodeWire) as any[];
+    expect(flat[1].content[6]).toBe(opencodeWire[1].parts[6]);
+  });
+
+  it('已是 flat 的数据幂等（重复归一不产生新对象）', () => {
+    const once = normalizeOpencodeHistory(opencodeWire) as any[];
+    const twice = normalizeOpencodeHistory(once) as any[];
+    expect(twice[1]).toBe(once[1]);
   });
 });
 
 // ---------------------------------------------------------------- ② pi golden
 
-describe('② pi 历史 flat 化与旧实现等价（golden 回归底线）', () => {
-  it('user + assistant + toolCall/result 全链：新旧 wire 输出逐字段相同', () => {
+describe('② pi 历史 flat golden（adapter 输出契约）', () => {
+  it('user + assistant + toolCall/result 全链逐字段稳定', () => {
     const raw = [
       { role: 'user', content: 'hi', timestamp: T },
       {
@@ -92,15 +101,14 @@ describe('② pi 历史 flat 化与旧实现等价（golden 回归底线）', ()
       },
       { role: 'toolResult', toolCallId: 'tc1', toolName: 'bash', content: [{ type: 'text', text: 'file.txt' }], isError: false, timestamp: T + 5 },
     ];
-    // 旧实现（{info,parts} 时代，2026-10-21 前 main）的确定输出：
-    const legacyGolden = [
+    const golden = [
       {
-        info: { id: `piu_${T}_1`, role: 'user', time: { created: T } },
-        parts: [{ id: `piu_${T}_1_t`, type: 'text', text: 'hi' }],
+        id: `piu_${T}_1`, role: 'user', time: { created: T },
+        content: [{ id: `piu_${T}_1_t`, type: 'text', text: 'hi' }],
       },
       {
-        info: { id: `pia_${T + 1}_2`, role: 'assistant', time: { created: T + 1, completed: T + 1 } },
-        parts: [
+        id: `pia_${T + 1}_2`, role: 'assistant', time: { created: T + 1, completed: T + 1 },
+        content: [
           { id: `pia_${T + 1}_2_r1`, type: 'reasoning', text: 'hmm' },
           { id: `pia_${T + 1}_2_t2`, type: 'text', text: '看一下' },
           {
@@ -110,26 +118,25 @@ describe('② pi 历史 flat 化与旧实现等价（golden 回归底线）', ()
         ],
       },
     ];
-    const round = toWireHistory(normalizePiMessages(raw));
-    expect(round).toEqual(legacyGolden);
+    expect(normalizePiMessages(raw)).toEqual(golden);
   });
 
-  it('running 半截 + isError 误差路径等价', () => {
+  it('running 半截 + isError 误差路径稳定', () => {
     const raw = [
       { role: 'assistant', timestamp: T, content: [{ type: 'toolCall', id: 'r1', name: 'read', arguments: {} }] },
       { role: 'assistant', timestamp: T + 2, content: [{ type: 'toolCall', id: 'e1', name: 'bash', arguments: {} }] },
       { role: 'toolResult', toolCallId: 'e1', toolName: 'bash', content: [{ type: 'text', text: 'boom' }], isError: true, timestamp: T + 3 },
     ];
-    const legacyGolden = [
+    const golden = [
       {
-        info: { id: `pia_${T}_1`, role: 'assistant', time: { created: T, completed: T } },
-        parts: [{ id: 'toolpart_r1', type: 'tool', tool: 'read', callID: 'r1', state: { status: 'running', input: {}, time: { start: T } } }],
+        id: `pia_${T}_1`, role: 'assistant', time: { created: T, completed: T },
+        content: [{ id: 'toolpart_r1', type: 'tool', tool: 'read', callID: 'r1', state: { status: 'running', input: {}, time: { start: T } } }],
       },
       {
-        info: { id: `pia_${T + 2}_2`, role: 'assistant', time: { created: T + 2, completed: T + 2 } },
-        parts: [{ id: 'toolpart_e1', type: 'tool', tool: 'bash', callID: 'e1', state: { status: 'error', input: {}, error: 'boom', time: { start: T + 2, end: T + 3 } } }],
+        id: `pia_${T + 2}_2`, role: 'assistant', time: { created: T + 2, completed: T + 2 },
+        content: [{ id: 'toolpart_e1', type: 'tool', tool: 'bash', callID: 'e1', state: { status: 'error', input: {}, error: 'boom', time: { start: T + 2, end: T + 3 } } }],
       },
     ];
-    expect(toWireHistory(normalizePiMessages(raw))).toEqual(legacyGolden);
+    expect(normalizePiMessages(raw)).toEqual(golden);
   });
 });

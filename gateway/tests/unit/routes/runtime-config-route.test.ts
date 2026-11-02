@@ -1,5 +1,5 @@
 /**
- * /api/runtime-config 路由契约测试（Plan 3 Task 6）——新旧双名等价。
+ * /api/runtime-config 路由契约测试——旧别名 /api/opencode-config 已删除（Task 15）。
  */
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { AddressInfo } from 'net';
@@ -22,20 +22,20 @@ async function get(port: number, path: string): Promise<{ status: number; body: 
   return { status: res.status, body: await res.text() };
 }
 
-describe('matchRuntimeConfigRoute（双名匹配）', () => {
-  it('新名 runtime-config 与旧名 opencode-config 均命中（GET/PATCH）', () => {
+describe('matchRuntimeConfigRoute（仅 runtime-config）', () => {
+  it('runtime-config 命中 GET/PATCH；旧 opencode-config 别名不再命中', () => {
     expect(matchRuntimeConfigRoute('/api/runtime-config', 'GET')).toBe('get');
     expect(matchRuntimeConfigRoute('/api/runtime-config?x=1', 'GET')).toBe('get');
-    expect(matchRuntimeConfigRoute('/api/opencode-config', 'GET')).toBe('get');
+    expect(matchRuntimeConfigRoute('/api/opencode-config', 'GET')).toBeNull();
     expect(matchRuntimeConfigRoute('/api/runtime-config', 'PATCH')).toBe('patch');
-    expect(matchRuntimeConfigRoute('/api/opencode-config', 'PATCH')).toBe('patch');
+    expect(matchRuntimeConfigRoute('/api/opencode-config', 'PATCH')).toBeNull();
     expect(matchRuntimeConfigRoute('/api/other', 'GET')).toBeNull();
     expect(matchRuntimeConfigRoute('/api/runtime-config', 'POST')).toBeNull();
   });
 });
 
-describe('handlers（行为等价）', () => {
-  it('GET 返回 config；PATCH 合并返回结果', async () => {
+describe('handlers（行为）', () => {
+  it('GET 返回 config；PATCH 合并返回结果；旧别名 404', async () => {
     const port = await listen((req, res) => {
       const kind = matchRuntimeConfigRoute(req.url, req.method ?? '');
       if (kind === 'get') void handleRuntimeConfigGet(req, res, deps);
@@ -46,7 +46,7 @@ describe('handlers（行为等价）', () => {
     expect(got.status).toBe(200);
     expect(JSON.parse(got.body)).toEqual({ theme: 'dark' });
     const legacy = await get(port, '/api/opencode-config');
-    expect(JSON.parse(legacy.body)).toEqual({ theme: 'dark' }); // 旧名同 handler
+    expect(legacy.status).toBe(404);
 
     const patchRes = await fetch(`http://127.0.0.1:${port}/api/runtime-config`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"a":1}',

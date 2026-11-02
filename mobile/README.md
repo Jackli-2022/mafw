@@ -33,11 +33,11 @@ The client speaks **MAFW View DTO + canonical events** only. There is no
 legacy-shape fallback; the gateway is the source of truth for both contracts
 (`packages/gateway-sdk/src/view-dto.ts`, `packages/gateway-sdk/src/events.ts`).
 
-- **History** — `GatewayClient.messages` requests
-  `GET /api/sessions/:id/messages?format=flat` and parses flat
+- **History** — `GatewayClient.messages` calls
+  `GET /api/sessions/:id/messages` (the default and only shape) and parses flat
   `{ id, sessionID, role, content: MafwPart[], time }`. The opencode wire
-  envelope `{info, parts}` is **not** parsed. `format=flat` is explicit only
-  during the transition; it disappears when the gateway default flips.
+  envelope `{info, parts}` is **not** parsed; the `format` opt-in no longer
+  exists.
 - **Parts** — tool parts carry neutral identity: `toolClass`
   (readonly/search/file-edit/shell/subagent/web/plan/other) +
   `canonicalTool` (runtime-neutral name) + `state {status, input, output, …}`.
@@ -54,4 +54,4 @@ legacy-shape fallback; the gateway is the source of truth for both contracts
   changes. Building an AAB stays a release gate, not a per-commit requirement.
 
 Upgrading an installed app: this build requires a gateway that serves the flat
-`format=flat` outlet and canonical `mafw_event` frames.
+history contract and canonical `mafw_event` frames.

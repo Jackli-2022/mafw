@@ -1,7 +1,7 @@
 import { runWaitwhat, buildWaitwhatPrompt, WaitwhatDeps } from '../../src/routes/waitwhat-command';
 
 function msg(role: string, ...texts: string[]) {
-  return { info: { role }, parts: texts.map((t) => ({ type: 'text', text: t })) };
+  return { role, content: texts.map((t) => ({ type: 'text', text: t })) };
 }
 
 function harness(messages: any[]) {
@@ -57,7 +57,7 @@ describe('runWaitwhat', () => {
   });
 
   it('ignores non-text parts (tool calls) when collecting the original text', async () => {
-    const toolPart = { info: { role: 'assistant' }, parts: [{ type: 'tool', tool: 'bash' }, { type: 'text', text: '真正的解释' }] };
+    const toolPart = { role: 'assistant', content: [{ type: 'tool', tool: 'bash' }, { type: 'text', text: '真正的解释' }] };
     const { calls, deps } = harness([toolPart]);
     const result = await runWaitwhat('s1', deps);
     expect(result.ok).toBe(true);

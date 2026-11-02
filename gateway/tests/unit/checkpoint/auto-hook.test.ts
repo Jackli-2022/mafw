@@ -11,8 +11,8 @@ const T2 = 'b'.repeat(40);
 
 function assistantTurn() {
   return [
-    { info: { id: 'u1', role: 'user', time: { created: 1 } } },
-    { info: { id: 'a1', role: 'assistant', time: { created: 2 }, snapshot: { start: T1, end: T2 } } },
+    { id: 'u1', role: 'user', time: { created: 1 } },
+    { id: 'a1', role: 'assistant', time: { created: 2 }, snapshot: { start: T1, end: T2 } },
   ];
 }
 
@@ -145,7 +145,7 @@ describe('runAutoCheckpoint', () => {
   });
 
   it('skips when the message window has no complete turn', async () => {
-    const h = harness({ messages: [{ info: { id: 'u1', role: 'user', time: { created: 1 } } }] });
+    const h = harness({ messages: [{ id: 'u1', role: 'user', time: { created: 1 } }] });
     expect(await runAutoCheckpoint(h.deps, 's1')).toBeNull();
     expect(h.calls.create).toEqual([]);
     expect(h.calls.messages).toHaveLength(8); // 8 次有界重试后放弃
@@ -155,7 +155,7 @@ describe('runAutoCheckpoint', () => {
     // 第一次只看到 user（assistant 尚未可见），第二次完整回合 → 仍能记录
     const h = harness({
       messagesSeq: [
-        [{ info: { id: 'u1', role: 'user', time: { created: 1 } } }],
+        [{ id: 'u1', role: 'user', time: { created: 1 } }],
         assistantTurn(),
       ],
     });
@@ -175,8 +175,8 @@ describe('runAutoCheckpoint', () => {
   it('keeps the anchor when the turn is pure chat (no snapshot tree)', async () => {
     const h = harness({
       messages: [
-        { info: { id: 'u1', role: 'user', time: { created: 1 } } },
-        { info: { id: 'a1', role: 'assistant', time: { created: 2 } } },
+        { id: 'u1', role: 'user', time: { created: 1 } },
+        { id: 'a1', role: 'assistant', time: { created: 2 } },
       ],
     });
     await runAutoCheckpoint(h.deps, 's1');

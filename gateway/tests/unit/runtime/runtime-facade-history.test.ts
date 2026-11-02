@@ -3,30 +3,25 @@ import { normalizeFacadeHistory } from '../../../src/runtime/normalize-messages'
 
 const flatUser = { id: 'm1', sessionID: 's1', role: 'user', content: [{ id: 'p1', type: 'text', text: 'hi' }] };
 
-function wireUser(id = 'legacy'): any {
-  return {
-    info: { id, sessionID: 's1', role: 'user', time: { created: 1 } },
-    parts: [{ id: `${id}_p`, sessionID: 's1', messageID: id, type: 'text', text: 'legacy' }],
-  };
-}
-
 describe('normalizeFacadeHistory', () => {
   it('passes flat canonical messages through', () => {
     expect(normalizeFacadeHistory({ session: {} } as any, [flatUser])).toEqual([flatUser]);
   });
 
-  it('rescues legacy {info,parts} output through the second-chance translator', () => {
+  it('drops legacy {info,parts} members instead of rescuing them', () => {
     const violations: string[] = [];
-    const out = normalizeFacadeHistory({ session: {} } as any, [wireUser()], (r) => violations.push(r));
-    expect(out).toHaveLength(1);
-    expect(out[0].id).toBe('legacy');
-    expect(out[0].role).toBe('user');
-    expect(violations.join(' ')).toContain('legacy');
+    const legacy = {
+      info: { id: 'legacy', sessionID: 's1', role: 'user', time: { created: 1 } },
+      parts: [{ id: 'legacy_p', sessionID: 's1', messageID: 'legacy', type: 'text', text: 'legacy' }],
+    };
+    const out = normalizeFacadeHistory({ session: {} } as any, [legacy], (r) => violations.push(r));
+    expect(out).toEqual([]);
+    expect(violations.join(' ')).toContain('non-flat');
   });
 
   it('keeps only valid members from a mixed array', () => {
-    const out = normalizeFacadeHistory({ session: {} } as any, [flatUser, { bogus: true }, wireUser('w1')]);
-    expect(out.map((m) => m.id)).toEqual(['m1', 'w1']);
+    const out = normalizeFacadeHistory({ session: {} } as any, [flatUser, { bogus: true }]);
+    expect(out.map((m) => m.id)).toEqual(['m1']);
   });
 
   it('returns [] for non-array input instead of raw fallback', () => {

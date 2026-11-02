@@ -194,8 +194,8 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       const { data } = await registry.messages(opts.sessionID);
       return { data, nextCursor: undefined };
     },
-    // 原生 pi 消息 → opencode {info, parts} DTO（gateway messages 路由经
-    // applyNormalizeMessages 应用；直接消费者拿到原始 pi 形状）。
+    // 原生 pi 消息 → MAFW flat View DTO（facade 在 session.messages 出口应用；
+    // 非法成员 fail-closed 丢弃）。
     normalizeMessages: (raw: any[]) => normalizePiMessages(raw),
     get: async (opts: { sessionID: string }) => registry.get(opts.sessionID),
     setThinkingLevel: async (opts: { sessionID: string; level: ThinkingLevel }) => registry.setThinkingLevel(opts.sessionID, opts.level),

@@ -77,7 +77,7 @@ test('shell no longer forwards runtime props to chat/config', () => {
   expect(shell).not.toContain('runtimeCaps={')
   expect(shell).not.toContain('runtimeName={')
   expect(shell).toContain('experienceStore.supported("branch.fork")')
-  expect(shell).toContain('sessions.history(')
+  expect(shell).toContain('sessions.messages(')
 })
 
 test('desktop history ingestion accepts flat messages and canonical errors', () => {

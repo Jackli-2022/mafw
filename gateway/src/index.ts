@@ -24,7 +24,6 @@ import { handleMcpConfig } from './routes/mcp-config';
 import { handleTerminal } from './routes/terminal';
 import { TerminalService } from './terminal/terminal-service';
 import { matchTerminalConnectUrl } from './terminal/terminal-protocol';
-import { handleSkillContent } from './routes/skill-content';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
@@ -149,7 +148,7 @@ import { MAFW } from './runtime/mafw-vocabulary';
 import { activateRuntimeTools, buildMafwToolFactory } from './runtime/mafw-tools';
 import { handleToolsList, handleToolsExecute } from './routes/tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
-import { enrichToolIdentity, enrichHistoryParts } from './runtime/tool-classes';
+import { enrichToolIdentity } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
 import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
 import { SessionQueue } from './core/session-queue';
@@ -187,8 +186,7 @@ import { handleFileHistoryRoutes } from './routes/file-history';
 import { RunStateService } from './core/run/run-state-service';
 import { RunCoordinator } from './core/run/run-coordinator';
 import { DataPartService } from './core/data-parts/data-part-service';
-import { mergeDataPartsIntoWire } from './core/data-parts/merge';
-import { handleSessionHistoryFlat } from './routes/session-history-flat';
+import { handleSessionHistory } from './routes/session-history';
 import { defaultGit } from './core/diff/turn-diff';
 import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
@@ -254,7 +252,6 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
   ...TOOL_PRIMITIVE_TYPES,
 ]);
 
-import { toWireHistory } from './runtime/wire-compat';
 import { handlePermissionReply, handlePermissionReplyById } from './routes/permission';
 import { surfaceUnavailableMessage } from './runtime/runtime-access';
 import { handleSessionBackground } from './routes/session-background';
@@ -419,8 +416,8 @@ class MafwScheduler {
       if (config.events.persist) {
         try {
           this.eventStore = new EventStore(this.gatewayDbInstance.getStore());
-          // Task 14：升级前写入的 message.updated 旧帧（properties.info）在
-          // API/SSE 开放前一次性迁移为 canonical properties.message——replay
+          // Task 14：升级前写入的 message.updated 旧帧（info 载荷）在
+          // API/SSE 开放前一次性迁移为 canonical message 载荷——replay
           // 出口不保留兼容读取。幂等 + 备份失败安全（模块内 fail-safe，永不抛）。
           const migrated = migrateEventLogInfoToMessage(this.gatewayDbInstance.getStore(), {
             log: (m) => log.warn(m),
@@ -1994,7 +1991,7 @@ class MafwScheduler {
   /** 包装 runtime 的 prompt 面：按绑定+物化状态注入/剥离 agent 参数（物化车道 1 执行点）。 */
   private wrapRuntimeIdentity(rawRuntime: AgentRuntime): AgentRuntime {
     // 历史消息归一收口：声明 normalizeMessages 的 runtime 在 session.messages 出口
-    // 统一转 opencode {info, parts} DTO（所有消费者形状一致）。必须先于身份包装。
+    // 统一转 MAFW flat DTO（所有消费者形状一致）。必须先于身份包装。
     // 历史归一由 RuntimeFacade 在 Ingress 出口完成；这里不得再包一次，
     // 否则 pi/claude 的声明式 normalizeMessages 会被二次执行并损坏历史。
     this.ensureInstructionSync().reset();
@@ -5922,26 +5919,6 @@ class MafwScheduler {
           })) return;
         }
 
-        // B3（W4 v1）：技能详情——优先走 runtime discovery 通道（契约），
-        // MAFW 本地技能回退白名单文件读取。
-        if (req.url?.match(/^\/api\/skill\/content(?:\?|$)/)) {
-          if (await handleSkillContent(req, res, req.url!, {
-            getAccess: () => this.runtime?.access ?? null,
-            loadSkill: async (opts) => {
-              try {
-                return (await this.runtime?.discovery?.loadSkill?.(opts)) ?? null;
-              } catch {
-                return null;
-              }
-            },
-            listSkills: async (dir) => {
-              const r = await this.getDiscoveryService().getLegacySkills(dir);
-              return Array.isArray(r?.skills) ? r.skills : [];
-            },
-            readFile: (p) => fs.readFileSync(p, 'utf-8'),
-          })) return;
-        }
-
         // Dashboard API
         if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
           res.setHeader("Content-Type", "application/json");
@@ -6634,9 +6611,9 @@ class MafwScheduler {
           return;
         }
 
-        // 鈹€鈹€ OpenCode config (Settings page 鈹€ proxy to native opencode /config) 鈹€鈹€
+        // ── Runtime config (Settings page — runtime-neutral config surface) ──
 
-        // GET /api/opencode-config 鈹€ return the effective opencode Config
+        // GET /api/runtime-config — return the effective runtime Config
         if (matchRuntimeConfigRoute(req.url, 'GET') && req.method === 'GET') {
           if (this.capGuard(res, 'provider.config')) return;
           try {
@@ -6651,7 +6628,7 @@ class MafwScheduler {
           return;
         }
 
-        // PATCH /api/opencode-config 鈹€ merge-update the opencode Config (native merge semantics)
+        // PATCH /api/runtime-config — merge-update the runtime Config (native merge semantics)
         if (matchRuntimeConfigRoute(req.url, 'PATCH') && req.method === 'PATCH') {
           if (this.capGuard(res, 'provider.config.update')) return;
           try {
@@ -7224,64 +7201,15 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/sessions/{id}/messages — fetch session message history via SDK
+        // GET /api/sessions/{id}/messages — flat MAFW history（默认且唯一出口）
         const messagesMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/messages(?:\?|$)/);
         if (messagesMatch && req.method === 'GET') {
-          try {
-            const id = messagesMatch[1];
-            if (!this.runtime) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ data: [] }));
-              return;
-            }
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const format = parsedUrl.searchParams.get('format');
-            // Task 8：迁移期显式 flat 出口（默认 wire 不变，Task 15 翻默认）。
-            // flat 路径不得经过 toWireHistory；语义（enrich/overlay/nextCursor）对齐。
-            if (format === 'flat') {
-              const handled = await handleSessionHistoryFlat(req, res, req.url!, {
-                getRuntime: () => this.runtime,
-                listDataParts: (sessionID, messageIds) =>
-                  this.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
-                warn: (message) => log.warn(message),
-              });
-              if (handled) return;
-            }
-            const limit = parseInt(parsedUrl.searchParams.get('limit') || '100', 10);
-            const before = parsedUrl.searchParams.get('before') || undefined;
-            const result = await this.runtime.session.messages({
-              sessionID: id,
-              limit,
-              ...(before ? { before } : {}),
-            });
-            const flatData = result.data || [];
-            const nextCursor = result.nextCursor || null;
-            // canonical v3：历史管线内部恒 flat（wrap 默认归一），egress 出口
-            // 还原 wire {info, parts}——shim 是唯一转换点（B2 违例回退的原文
-            // 经 shim 的 wire 形状放行防御原样通过）
-            const wireData = toWireHistory(flatData as any);
-            // A 切片历史 enrich：全 runtime 的 tool parts 补 toolClass/canonicalTool
-            //（与 live 的 enrichToolIdentity 同单源；幂等，fail-open）
-            try { enrichHistoryParts(wireData); } catch { /* fail-open：历史 enrich 不阻断加载 */ }
-            // T2-3：data part overlay 合并（只并入本页现存消息；runtime 同 id 优先）
-            try {
-              const messageIds = (wireData as any[])
-                .map((m) => m?.info?.id)
-                .filter((x): x is string => typeof x === 'string' && !!x);
-              if (messageIds.length > 0) {
-                mergeDataPartsIntoWire(
-                  wireData as any,
-                  this.getGatewayDb().listSessionDataParts(id, { messageIds }),
-                );
-              }
-            } catch { /* fail-open：data part 合并不阻断历史 */ }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: Array.isArray(wireData) ? wireData : [], nextCursor }));
-          } catch (err: any) {
-            log.warn(`[Scheduler] Failed to fetch messages (serve may not be ready): ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: [] }));
-          }
+          await handleSessionHistory(req, res, req.url!, {
+            getRuntime: () => this.runtime,
+            listDataParts: (sessionID, messageIds) =>
+              this.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
+            warn: (message) => log.warn(message),
+          });
           return;
         }
 

@@ -64,7 +64,7 @@ describe('builtin handlers', () => {
   test('waitwhat prompts re-pitch into same session', async () => {
     const sent: string[] = [];
     const deps = makeDeps({
-      listMessages: async () => [{ info: { role: 'assistant' }, parts: [{ type: 'text', text: '原回复' }] }],
+      listMessages: async () => [{ role: 'assistant', content: [{ type: 'text', text: '原回复' }] }],
       promptAsync: async (_sid, text) => { sent.push(text); },
     });
     const r = await buildBuiltinHandlers(deps).get('waitwhat')!({ args: '', projectDir: '/p', sessionID: 's1' });

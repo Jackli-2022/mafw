@@ -15,12 +15,7 @@ import {
   OPENCODE_21_EVENT_SOURCE,
   translateOpencode21Event,
 } from '../../../src/runtime/opencode-21-events';
-import {
-  OPENCODE_EVENT_MAPPINGS,
-  OPENCODE_EVENT_SOURCE,
-  OPENCODE_TRANSFORM_EVENT,
-} from '../../../src/runtime/opencode-events';
-import { toWireEventPayload, toWireInfo } from '../../../src/runtime/wire-compat';
+import { OPENCODE_EVENT_MAPPINGS, OPENCODE_EVENT_SOURCE, OPENCODE_TRANSFORM_EVENT } from '../../../src/runtime/opencode-events';
 
 const V1_ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,
@@ -168,11 +163,12 @@ describe('live：opencode @v1 message.updated 规范字段', () => {
     expect(message.modelID).toBe('glm-5.3');
   });
 
-  it('wire egress 把规范 error 投影回原生形状（旧客户端 abort 判定不回归）', () => {
+  it('wire egress 已删除：规范 error 直接留在 canonical message', () => {
     const [evt]: any[] = applyEventMappings(raw, V1_ENTRY, isCanonical);
-    const info: any = toWireInfo(evt.payload.properties.message);
+    const message: any = evt.payload.properties.message;
 
-    expect(info.error).toEqual({ name: 'MessageAbortedError', data: { message: 'Interrupted by user' } });
+    expect(message.error).toEqual({ kind: 'abort', message: 'Interrupted by user' });
+    expect(message.error.name).toBeUndefined();
   });
 });
 
@@ -276,11 +272,12 @@ describe('live：2.1 执行终态补 message 级规范字段', () => {
       error: { kind: 'abort', message: 'Interrupted' },
     });
 
-    // SSE egress：旧客户端仍收到 {info} + 原生 error 名（桌面无重复气泡，按 id 合并）
-    const wire: any = toWireEventPayload('message.updated', events[1].payload.properties);
-    expect(wire.info).toMatchObject({ id: 'ma_abort', role: 'assistant', stopReason: 'cancelled' });
-    expect(wire.info.error).toEqual({ name: 'MessageAbortedError', data: { message: 'Interrupted' } });
-    expect('message' in wire).toBe(false);
+    // SSE egress：canonical message 原样广播（Task 15 删除 wire 投影）
+    expect(events[1].payload.properties.message).toMatchObject({
+      id: 'ma_abort', role: 'assistant', stopReason: 'cancelled',
+      error: { kind: 'abort', message: 'Interrupted' },
+    });
+    expect(events[1].payload.properties.info).toBeUndefined();
   });
 
   it('无锚点（本回合没有任何 step/tool/text 事件）→ 不伪造消息，只保留 turn 事件', () => {

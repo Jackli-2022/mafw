@@ -143,7 +143,7 @@ test('busy 的 fork 不发请求（先门控后执行）', async () => {
 test('ChatStore.undo/redo 也走 Experience 门（不靠方法存在性）', async () => {
   const calls: string[] = []
   const session = {
-    async history() {
+    async messages() {
       return {
         data: [
           { id: 'm1', sessionID: 's', role: 'user', content: [{ id: 'p1', type: 'text', text: '你好' }] },

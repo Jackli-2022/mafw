@@ -1,8 +1,8 @@
 /**
  * event_log 旧帧迁移（Task 14，spec 2026-11-02-runtime-experience-full-migration §9.1）。
  *
- * 升级前 gateway 的 SSE egress 把 canonical `message.updated.properties.message`
- * 投影回 wire `properties.info`（wire-compat 兼容窗口）。这些帧已持久化在
+ * 升级前 gateway 的 SSE egress 曾把 canonical `message.updated.properties.message`
+ * 投影回旧 `properties.info` 载荷（已删除的 wire 兼容窗口）。这些帧已持久化在
  * `event_log` 里，重连客户端会经 replay 再次收到旧形状。本模块在 API/SSE
  * 开放前做**一次性幂等**存储迁移：
  *

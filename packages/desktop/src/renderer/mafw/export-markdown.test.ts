@@ -5,7 +5,7 @@ describe("extractExportTurns（C1 导出/复制共用）", () => {
   test("消息+part 文本拼接、role/time 透传", () => {
     const turns = extractExportTurns([
       { role: "user", text: "你好", id: "m1", time: { created: 123 } },
-      { role: "assistant", text: "", id: "m2", parts: [{ type: "text", text: "回答A" }, { type: "reasoning", text: "内部" }] },
+      { role: "assistant", id: "m2", content: [{ type: "text", text: "回答A" }, { type: "reasoning", text: "内部" }] },
     ] as any)
     expect(turns).toHaveLength(2)
     expect(turns[0]).toEqual({ role: "user", text: "你好", time: 123 })

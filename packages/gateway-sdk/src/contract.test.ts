@@ -38,17 +38,11 @@ function isInternal(path: string): boolean {
 }
 
 /**
- * 运行时透传路径豁免：`/api/shell*` 与 `/api/session/:id/background` 由 gateway
- * 兜底反代直通 v2 runtime，不属于 MAFW OpenAPI contract（后台面板 Gate Ruling A：
- * REST 面是可选能力）。响应形状由 wire probe 钉扎
- * （docs/research/2026-10-22-background-wire-probe.md），不走 contract 漂移守卫。
+ * 运行时透传路径豁免：`/api/session/:id/background` 由 gateway 兜底反代直通 v2
+ * runtime，不属于 MAFW OpenAPI contract（`session.background` 是 Experience
+ * 动作面）。响应形状由 wire probe 钉扎，不走 contract 漂移守卫。
  */
 const RUNTIME_PROXY_EXEMPT = new Set([
-  "/api/shell",
-  "/api/shell{}",
-  "/api/shell/{}",
-  "/api/shell/{}{}",
-  "/api/shell/{}/output",
   "/api/session/{}/background",
 ])
 

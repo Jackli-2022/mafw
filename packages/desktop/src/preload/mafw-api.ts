@@ -91,7 +91,6 @@ export function createMafwApi(): MafwAPI {
       create: (opts?) => invoke("session", "create", opts || {}),
       get: (id) => invoke("session", "get", { path: { id } }),
       messages: (sessionID, limit?, before?) => invoke("session", "messages", { path: { id: sessionID }, query: { limit, before } }),
-      history: (sessionID, limit?, before?) => invoke("session", "history", { sessionID, limit, before }),
       todo: (sessionID) => invoke("session", "todo", { path: { id: sessionID } }),
       children: (sessionID) => invoke("session", "children", { path: { id: sessionID } }),
       switchAgent: (id, agent) => invoke("session", "switchAgent", { path: { id }, body: { agent } }),
@@ -134,15 +133,6 @@ export function createMafwApi(): MafwAPI {
       openUsagePluginsDir: () => ipcRenderer.invoke("mafw-openUsagePluginsDir"),
       promptAsync: ({ sessionID, message, parts, agent, model, delivery, idempotencyKey, expectReply, thinkingLevel, variant }) => invoke("session", "promptAsync", { path: { id: sessionID }, body: { message, parts, agent, model, delivery, idempotencyKey, expectReply, thinkingLevel, variant } }),
       command: ({ sessionID, command, arguments: args, agent, model }) => invoke("session", "command", { path: { id: sessionID }, body: { command, arguments: args, agent, model } }),
-    },
-
-    command: {
-      list: (directory?) => invoke("command", "list", directory),
-    },
-
-    skill: {
-      list: (directory?) => invoke("skill", "list", directory),
-      content: (id, directory?) => invoke("skill", "content", id, directory),
     },
 
     discovery: {
@@ -367,11 +357,6 @@ export function createMafwApi(): MafwAPI {
     },
 
     runtimeConfig: {
-      get: () => invoke("runtimeConfig", "get"),
-      update: (config) => invoke("runtimeConfig", "update", config),
-    },
-    /** @deprecated 使用 runtimeConfig */
-    opencodeConfig: {
       get: () => invoke("runtimeConfig", "get"),
       update: (config) => invoke("runtimeConfig", "update", config),
     },

@@ -97,8 +97,8 @@ function extractText(content: string | Array<Record<string, any>>): { text: stri
 function assistantText(messages: any[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if ((msg?.info ?? msg)?.role !== 'assistant') continue;
-    const parts: any[] = msg?.content ?? msg?.parts ?? msg?.info?.parts ?? [];
+    if (msg?.role !== 'assistant') continue;
+    const parts: any[] = msg?.content ?? [];
     const text = parts
       .filter((p: any) => p?.type === 'text' && typeof p.text === 'string')
       .map((p: any) => p.text)

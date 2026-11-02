@@ -215,38 +215,7 @@ export interface AutomationRule {
   action?: { type: string }
 }
 
-export interface SessionMessageInfo {
-  id: string
-  sessionID: string
-  role: 'user' | 'assistant'
-  parentID?: string
-  time: { created: number; updated?: number }
-}
-
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-
-export interface SessionMessagePart {
-  id: string
-  messageID: string
-  sessionID: string
-  type: string
-  text?: string
-  /** Reasoning/tool signature (runtime/provider opaque; display only). */
-  signature?: string
-  /** Runtime-native opaque payload when present. */
-  native?: Record<string, unknown>
-}
-
-/**
- * v1 wire 历史消息（`session.messages` 默认出口，Task 15 前）。
- *
- * 与 flat `MafwMessage` 互斥：消息身份在 `info`，内容在 `parts`。`format=flat`
- * 或 `session.history` 返回 `MafwMessage[]`（`content`）。
- */
-export interface SessionMessageWire {
-  info: SessionMessageInfo
-  parts: SessionMessagePart[]
-}
 
 export interface Todo {
   id: string
@@ -349,10 +318,8 @@ export interface SessionNamespace {
   list(params?: { query?: { projectID?: string } }): Promise<Session[]>
   delete(params: { path: { id: string } }): Promise<void>
   rename(params: { path: { id: string }; body: { title: string } }): Promise<void>
-  messages(params: { path: { id: string }; query: { format: 'flat'; limit?: number; before?: string } }): Promise<{ data: MafwMessage[]; nextCursor: string | null }>
-  messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: SessionMessageWire[]; nextCursor: string | null }>
-  /** 规范 flat 历史（MAFW View DTO）。迁移期固定 `?format=flat`；Task 15 后成为唯一形状。 */
-  history(params: { sessionID: string; limit?: number; before?: string }): Promise<{ data: MafwMessage[]; nextCursor: string | null }>
+  /** MAFW flat 历史（View DTO `{id,role,content,...}`）；默认且唯一形状。 */
+  messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: MafwMessage[]; nextCursor: string | null }>
   /** 认知门（spec 2026-10-22-cognition-gate-rewrite）：POST /api/cognition/gate */
   cognitionGate(params: { body: Record<string, unknown> }): Promise<unknown>
   cognitionRewrite(params: { body: Record<string, unknown> }): Promise<{ content: unknown[] }>
@@ -513,46 +480,6 @@ export interface DataPart {
   native?: Record<string, unknown>
 }
 
-// ── Commands & skills (opencode serve shapes) ──
-
-export interface CommandInfo {
-  name: string
-  description?: string
-  agent?: string
-  model?: string | { id: string; providerID: string; variant?: string }
-  source?: "command" | "mcp" | "skill" | "builtin"
-  template?: string
-  subtask?: boolean
-  hints?: Record<string, unknown>
-}
-
-export interface SkillInfo {
-  id?: string
-  name: string
-  description?: string
-  slash?: boolean
-  /** W4 v1：来源范围（user / project）。 */
-  scope?: string
-  location?: string
-  path?: string
-  contentLength?: number
-  content?: string
-}
-
-/** W4 v1：技能详情（SKILL.md 内容，白名单读取）。 */
-export interface SkillContent {
-  id: string
-  name: string
-  location: string
-  content: string
-}
-
-export interface SkillNamespace {
-  list(directory?: string): Promise<SkillInfo[]>
-  /** W4 v1：读 SKILL.md 内容（id 必须命中列表）。 */
-  content(id: string, directory?: string): Promise<SkillContent>
-}
-
 // ── MCP status (W4 v1, CLI-backed) ──
 export type McpServerState = 'connected' | 'disabled' | 'failed' | 'needs_auth' | 'unknown'
 export interface McpServerEntry {
@@ -608,10 +535,6 @@ export interface McpConfigResult {
   runtimeApplied: boolean
   backup?: string
   error?: string
-}
-
-export interface CommandNamespace {
-  list(directory?: string): Promise<CommandInfo[]>
 }
 
 // ── Discovery (T2-5 capability discovery) ──
@@ -773,9 +696,6 @@ export interface RuntimeConfigNamespace {
   get(): Promise<any>
   update(config: Record<string, unknown>): Promise<any>
 }
-
-/** @deprecated 使用 RuntimeConfigNamespace（旧名保留一个周期）。 */
-export type OpenCodeConfigNamespace = RuntimeConfigNamespace
 
 export interface ModelRef {
   providerID: string
@@ -1382,8 +1302,6 @@ export interface MafwClient {
   }
   config: ConfigNamespace
   runtimeConfig: RuntimeConfigNamespace
-  /** @deprecated 使用 runtimeConfig */
-  opencodeConfig: RuntimeConfigNamespace
   models: ModelConfigNamespace
   embedding: EmbeddingConfigNamespace
   chat: ChatNamespace
@@ -1404,8 +1322,6 @@ export interface MafwClient {
   media: MediaNamespace
   tts: TtsNamespace
   voice: VoiceNamespace
-  command: CommandNamespace
-  skill: SkillNamespace
   discovery: DiscoveryNamespace
   mafwCommands: MafwCommandsNamespace
   manager: ManagerNamespace

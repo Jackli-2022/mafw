@@ -70,9 +70,8 @@ export type MafwAPI = {
     list: (projectID?: string) => Promise<Session[]>
     create: (opts?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string }) => Promise<Session & { worktree?: { dir: string; branch: string } }>
     get: (id: string) => Promise<Session | null>
-    messages: (sessionID: string, limit?: number, before?: string) => Promise<any>
-    /** 规范 flat 历史（`?format=flat` → MAFW View DTO）。 */
-    history: (sessionID: string, limit?: number, before?: string) => Promise<{ data: MafwMessage[]; nextCursor: string | null }>
+    /** MAFW flat 历史（View DTO：content = 部件数组，无 {info,parts} 信封）。 */
+    messages: (sessionID: string, limit?: number, before?: string) => Promise<{ data: MafwMessage[]; nextCursor: string | null }>
     todo: (sessionID: string) => Promise<{ data: any[] }>
     children: (sessionID: string) => Promise<any[]>
     switchAgent: (id: string, agent: string) => Promise<void>
@@ -129,17 +128,7 @@ export type MafwAPI = {
     command: (opts: { sessionID: string; command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
   }
 
-  command: {
-    list: (directory?: string) => Promise<any[]>
-  }
-
-  skill: {
-    list: (directory?: string) => Promise<any[]>
-    /** W4 v1：技能详情（SKILL.md 内容）。 */
-    content: (id: string, directory?: string) => Promise<{ id: string; name: string; location: string; content: string }>
-  }
-
-  /** T2-5 能力发现（commands/skills/AGENTS 单一来源；替代 legacy command/skill namespace）。 */
+  /** T2-5 能力发现（commands/skills/AGENTS 单一来源；唯一命令/技能读取面）。 */
   discovery: {
     get: (sessionID: string, opts?: { directory?: string; force?: boolean }) => Promise<DiscoverySnapshot>
     refresh: (sessionID: string, opts?: { directory?: string }) => Promise<DiscoverySnapshot>
@@ -390,12 +379,6 @@ export type MafwAPI = {
   }
 
   runtimeConfig: {
-    get: () => Promise<any>
-    update: (config: Record<string, unknown>) => Promise<any>
-  }
-
-  /** @deprecated 使用 runtimeConfig */
-  opencodeConfig: {
     get: () => Promise<any>
     update: (config: Record<string, unknown>) => Promise<any>
   }
