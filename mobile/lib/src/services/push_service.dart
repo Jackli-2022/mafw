@@ -16,17 +16,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../config/connection_config.dart';
+import '../models/event_effects.dart';
 import '../models/mafw_models.dart';
 import '../network/ws_client.dart';
-
-/// Canonical events that change the session list (foreground refresh trigger).
-const Set<String> _kSessionRefreshEvents = {
-  'session.created',
-  'session.updated',
-  'session.deleted',
-  'message.updated',
-  'turn.completed',
-};
 
 /// Importance levels for notification channels.
 enum NotificationImportance {
@@ -521,7 +513,7 @@ class PushService {
       // Canonical envelopes only — legacy opencode_event / message.part.* /
       // session.idle frames are no longer consumed.
       if (!event.isCanonical) return;
-      if (_kSessionRefreshEvents.contains(event.innerType)) {
+      if (shouldRefreshSessions(event.innerType)) {
         _onRefreshSessions?.call();
       }
     });

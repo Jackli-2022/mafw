@@ -154,7 +154,7 @@ void main() {
       expect(messages.single.text, 'hello');
     });
 
-    test('does not fall back to legacy wire items inside data', () async {
+    test('throws an actionable error when the page is all legacy wire items', () async {
       final mockClient = http_testing.MockClient((request) async {
         return http.Response(
           jsonEncode({
@@ -178,9 +178,68 @@ void main() {
         httpClient: mockClient,
       );
 
+      expect(
+        client.messages('s1'),
+        throwsA(
+          isA<GatewayException>().having(
+            (e) => e.message,
+            'message',
+            contains('gateway does not serve format=flat history — upgrade gateway'),
+          ),
+        ),
+      );
+    });
+
+    test('keeps valid messages when only some items are unparseable', () async {
+      final mockClient = http_testing.MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'data': [
+              {
+                'info': {'id': 'wire-1', 'role': 'assistant'},
+                'parts': const [],
+              },
+              {
+                'id': 'm1',
+                'sessionID': 's1',
+                'role': 'assistant',
+                'content': [
+                  {'id': 'p1', 'type': 'text', 'text': 'flat'},
+                ],
+              },
+            ],
+            'nextCursor': null,
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final client = GatewayClient(
+        const ConnectionConfig(baseUrl: 'http://localhost:3000', apiToken: 't'),
+        httpClient: mockClient,
+      );
+
       final messages = await client.messages('s1');
-      expect(messages.single.id, isEmpty);
-      expect(messages.single.text, isNull);
+      expect(messages.length, 2);
+      expect(messages.last.text, 'flat');
+    });
+
+    test('empty history is not treated as a contract violation', () async {
+      final mockClient = http_testing.MockClient((request) async {
+        return http.Response(
+          jsonEncode({'data': const [], 'nextCursor': null}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final client = GatewayClient(
+        const ConnectionConfig(baseUrl: 'http://localhost:3000', apiToken: 't'),
+        httpClient: mockClient,
+      );
+
+      expect(await client.messages('s1'), isEmpty);
     });
   });
 }

@@ -159,10 +159,15 @@ const String kMafwEventEnvelope = 'mafw_event';
 
 /// Canonical inner event names owned by MAFW.
 ///
-/// Golden mirror of `gateway/src/runtime/mafw-vocabulary.ts` /
-/// `packages/gateway-sdk/src/events.ts`. Legacy names
-/// (`opencode_event`, `message.part.*`, `session.idle`, `message.complete`,
-/// `message.error`) are intentionally absent — they are not translated.
+/// Golden mirror of `packages/gateway-sdk/src/events.ts` `RUNTIME_EVENT_TYPES`
+/// (the single source of truth). **Set and order are pinned** by
+/// `test/vocabulary_parity_test.dart`, which parses that file — do not reorder
+/// or hand-add entries without updating the contract.
+///
+/// Legacy names (`opencode_event`, `message.part.*`, `session.idle`,
+/// `message.complete`, `message.error`) are intentionally absent — they are not
+/// translated. `plugin:<name>:<event>` namespaced events are valid per the
+/// contract (see [canonicalEventTypeOf]) but carry no mobile consumer.
 const Set<String> kMafwCanonicalEventTypes = {
   // 会话生命周期
   'session.created',
@@ -197,12 +202,24 @@ const Set<String> kMafwCanonicalEventTypes = {
   'session.config',
   'session.checkpoint',
   'run.updated',
+  'session.commands',
   'trajectory.event',
   'trajectory.turn',
   'permission_mode',
   'session.diff',
-  'session.commands',
 };
+
+/// Resolve an envelope inner `data.type` to a canonical name, or `''`.
+///
+/// Valid inputs mirror the gateway contract union
+/// (`RuntimeEventType | plugin:${string}`). Anything else — including legacy
+/// `message.part.*` / `session.idle` names — resolves to `''` (ignored).
+String canonicalEventTypeOf(String rawType) {
+  if (rawType.isEmpty) return '';
+  if (kMafwCanonicalEventTypes.contains(rawType)) return rawType;
+  if (rawType.startsWith('plugin:')) return rawType;
+  return '';
+}
 
 /// WS/SSE event frame.
 ///
@@ -255,7 +272,7 @@ class MafwEvent {
     }
 
     final rawInner = (data['type'] ?? '').toString();
-    final inner = kMafwCanonicalEventTypes.contains(rawInner) ? rawInner : '';
+    final inner = canonicalEventTypeOf(rawInner);
     final rawProps = data['properties'];
     final properties = rawProps is Map<String, dynamic> ? rawProps : null;
     final message = properties?['message'];

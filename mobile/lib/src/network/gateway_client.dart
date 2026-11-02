@@ -55,6 +55,11 @@ class GatewayClient {
   /// Transition period: the gateway default wire shape is still opencode
   /// `{info,parts}`, so the flat outlet is requested explicitly. Task 15 flips
   /// the default and this parameter is dropped. Legacy items are never parsed.
+  ///
+  /// **Detection (not a fallback):** if a non-empty page parses to only invalid
+  /// items (no `id` and no `content`), the gateway did not honour `format=flat`
+  /// — throw an actionable [GatewayException] instead of rendering empty
+  /// bubbles.
   Future<List<MafwMessage>> messages(String sessionID, {int limit = 50}) async {
     final res = await _http.get(
       _uri('/api/sessions/$sessionID/messages', {'limit': '$limit', 'format': 'flat'}),
@@ -69,6 +74,11 @@ class GatewayClient {
     for (final item in list) {
       if (item is! Map<String, dynamic>) continue;
       out.add(MafwMessage.fromJson(item, sessionID: sessionID));
+    }
+    if (out.isNotEmpty && out.every((m) => m.id.isEmpty && m.parts.isEmpty)) {
+      throw GatewayException(
+        'gateway does not serve format=flat history — upgrade gateway',
+      );
     }
     return out;
   }

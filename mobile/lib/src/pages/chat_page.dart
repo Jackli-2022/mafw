@@ -8,30 +8,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import '../cache/session_cache.dart';
+import '../models/event_effects.dart';
 import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
 import '../network/ws_client.dart';
 import '../theme.dart';
 
 enum _GenPhase { idle, searching, writing }
-
-/// Canonical part-stream events → 生成中（writing）。
-const Set<String> _kWritingEvents = {'part.updated', 'part.delta'};
-
-/// Canonical turn terminal events → 回合结束。
-const Set<String> _kTurnEndEvents = {'turn.completed', 'turn.failed', 'turn.aborted'};
-
-/// Canonical events that mean this session's history changed.
-const Set<String> _kHistoryRefreshEvents = {
-  'message.updated',
-  'part.updated',
-  'part.delta',
-  'part.complete',
-  'turn.started',
-  'turn.completed',
-  'turn.failed',
-  'turn.aborted',
-};
 
 /// Chat view for one session: message list (live via WS events) + composer.
 class ChatPage extends StatefulWidget {
@@ -179,14 +162,17 @@ class _ChatPageState extends State<ChatPage> {
     if (!ev.isCanonical) return;
     final isSessionEvent = ev.sessionID == null || ev.sessionID == widget.session.id;
     if (!isSessionEvent) return;
-    final inner = ev.innerType;
+
+    // 事件语义查表（`models/event_effects.dart`，表驱动测试覆盖全词表）。
+    final effects = chatEventEffects(ev.innerType);
 
     // Perplexity 式阶段驱动：part 增量 → writing；回合终态 → 完成
     if (_sending) {
-      debugPrint('[MAFW] phase ev: $inner session=${ev.sessionID} sending=$_sending phase=$_phase');
-      if (_kWritingEvents.contains(inner)) {
+      debugPrint('[MAFW] phase ev: ${ev.innerType} session=${ev.sessionID} '
+          'sending=$_sending phase=$_phase');
+      if (effects.writing) {
         if (_phase != _GenPhase.writing) setState(() => _phase = _GenPhase.writing);
-      } else if (_kTurnEndEvents.contains(inner)) {
+      } else if (effects.turnEnd) {
         setState(() {
           _phase = _GenPhase.idle;
           _sending = false;
@@ -194,7 +180,7 @@ class _ChatPageState extends State<ChatPage> {
       }
     }
 
-    if (_kHistoryRefreshEvents.contains(inner)) {
+    if (effects.refresh) {
       _refreshDebounce?.cancel();
       _refreshDebounce = Timer(const Duration(milliseconds: 250), _loadHistory);
     }
