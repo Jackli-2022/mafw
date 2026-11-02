@@ -7,7 +7,7 @@ import { basename } from 'node:path'
 import { TabStrip, TABS, type TabId } from './tab-strip.ts'
 import { StatusBar, type StatusState } from './status-bar.ts'
 import { AppModel } from './app-model.ts'
-import { agentSelectItems } from './agent-items.ts'
+import { showAgentPickerWith } from './agent-items.ts'
 import { ConnectionStore, type ConnState } from '../store/connection.ts'
 import { ChatStore } from '../store/chat-store.ts'
 import { ChatTab, selectListTheme } from './chat-tab.ts'
@@ -40,11 +40,11 @@ import { TriageTab } from './triage-tab.ts'
 import { PermissionModeStore } from '../store/permission-mode.ts'
 import { TuiExperienceStore } from '../store/experience-store.ts'
 import {
-  normalizeAgents,
   normalizePermissionRequest,
   providerDefaultModelLabel,
   providerModelOptions,
 } from '../store/dto.ts'
+import { dispatchChatEvent } from './chat-events.ts'
 import { theme } from '../theme.ts'
 
 export type Retriever = 'bm25' | 'hybrid'
@@ -328,30 +328,25 @@ export async function runApp(opts: AppOptions): Promise<void> {
     return '执行模式：完整工具集（/plan 切回规划）'
   }
   async function showAgentPicker(): Promise<string | null> {
-    let agents: ReturnType<typeof normalizeAgents> = []
-    try {
-      const r = await client.agents.list()
-      agents = normalizeAgents((r as any)?.items ?? [])
-    } catch { return '无法获取 agent 列表' }
-    const items: SelectItem[] = [{ value: '__default__', label: '默认', description: 'runtime 默认 agent' }]
-    for (const it of agentSelectItems(agents)) {
-      items.push({ value: it.value, label: it.label, description: it.description })
-    }
-    if (items.length === 1) return '无可用 agent（runtime 未提供）'
-    const list = new SelectList(items, 10, selectListTheme)
-    const handle = showModal(tui, new ClickableSelectList(list), { width: '60%', maxHeight: 16, anchor: 'center' })
-    const close = () => { off(); handle.hide() }
-    const off = tui.addInputListener((data) => {
-      if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
-      return undefined
+    return showAgentPickerWith({
+      // client.agents.list() 已是数组（Task 12 review I1：不要再读 .items）
+      load: () => client.agents.list(),
+      pick: (items) => {
+        const list = new SelectList(items, 10, selectListTheme)
+        const handle = showModal(tui, new ClickableSelectList(list), { width: '60%', maxHeight: 16, anchor: 'center' })
+        const close = () => { off(); handle.hide() }
+        const off = tui.addInputListener((data) => {
+          if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
+          return undefined
+        })
+        list.onSelect = (item) => {
+          close()
+          if (item.value === '__default__') setAgentSelection(null)
+          else setAgentSelection(String(item.value))
+        }
+        list.onCancel = close
+      },
     })
-    list.onSelect = (item) => {
-      close()
-      if (item.value === '__default__') setAgentSelection(null)
-      else setAgentSelection(String(item.value))
-    }
-    list.onCancel = close
-    return null
   }
 
   // ── 用量轮询（模型/token/成本/时长 → 状态栏）──
@@ -644,14 +639,9 @@ export async function runApp(opts: AppOptions): Promise<void> {
   async function handlePermissionAsked(raw: unknown): Promise<void> {
     const dto = normalizePermissionRequest(raw)
     if (!dto) return
-    // 只对「确定性不支持」阻断（gateway 已经发来请求，说明审批通道存在）：
-    // loading/error/unavailable 不伪造「不支持」，也不激活旧推导路径。
-    const blocked = await experience.gate('approval.permission')
-    if (experience.status === 'ready' && !experience.supported('approval.permission')) {
-      setStatus({ hint: theme.warn(blocked ?? '审批回复不支持') })
-      setTimeout(() => setStatus({ hint: undefined }), 3000)
-      return
-    }
+    // 审批回复是 gateway 主动发起的（请求已到达 = 回复通道存在）。`approval.permission`
+    // 聚合了 list+reply 两个 surface，缺 list 不应阻断 reply（review cheap fix）：
+    // 这里不读 Experience，也不做旧推导，直接按中性的 mafwPolicy/overlay 语义处理。
     if (shouldShowOverlay(dto)) {
       showPermissionOverlay(tui, dto, (r) => {
         if (r === 'persist') return client.permissions.reply(dto.id, 'always', undefined, 'prefix')
@@ -668,6 +658,11 @@ export async function runApp(opts: AppOptions): Promise<void> {
   }
 
   const onEvent = (type: string, data: any) => {
+    // chat 域（流式 part / 回合终态）先喂给 ChatStore；此前无生产调用方（review I2）
+    if (dispatchChatEvent(chatStore, type, data)) {
+      if (type === 'turn.completed') void refreshUsage()
+      return
+    }
     if (type === 'permission.asked') {
       void handlePermissionAsked(data?.properties ?? data)
     } else if (type === 'permission_mode') {
@@ -690,8 +685,6 @@ export async function runApp(opts: AppOptions): Promise<void> {
       // 运行时热切换：动作面按需失效并重载（不读 runtime 名/裸能力）
       experience.invalidate()
       void experience.load(chatStore.sessionID === 'none' ? null : chatStore.sessionID)
-    } else if (type === 'turn.completed') {
-      void refreshUsage()
     }
   }
   if (managerSessionID) ensureConn(managerSessionID)
