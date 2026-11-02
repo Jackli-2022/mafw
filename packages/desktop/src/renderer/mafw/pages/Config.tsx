@@ -20,6 +20,7 @@ import { UsageProviders } from "../components/UsageProviders"
 import { ApprovalsSection } from "../components/ApprovalsSection"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
 import { KeybindingsSection } from "./KeybindingsSection"
+import { PluginPackagesSection } from "./PluginPackagesSection"
 
 interface ConfigSection {
   key: string
@@ -972,6 +973,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
           {/* ═══ Plugins ═══*/}
           <Show when={activeNav() === "plugins"}>
+            <PluginPackagesSection sessionID={props.sessionID} />
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
                 <span class="mafw-config-section-icon">🧩</span>

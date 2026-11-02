@@ -351,6 +351,7 @@ export function createMafwApi(): MafwAPI {
     plugins: {
       list: () => invoke("plugins", "list"),
       client: () => invoke("plugins", "client"),
+      chooseDirectory: () => ipcRenderer.invoke("mafw-plugins-choose-directory") as Promise<{ path: string | null; error?: string }>,
       installPackage: (input) => invoke("plugins", "installPackage", input),
       check: (input) => invoke("plugins", "check", input),
       apply: (name) => invoke("plugins", "apply", name),

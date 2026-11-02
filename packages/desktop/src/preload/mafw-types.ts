@@ -367,6 +367,8 @@ export type MafwAPI = {
   plugins: {
     list(): Promise<PluginsListResult>
     client(): Promise<PluginClientSnapshot>
+    /** Native directory picker for package install (main owns the dialog). */
+    chooseDirectory(): Promise<{ path: string | null; error?: string }>
     installPackage(input: { path: string; overwrite?: boolean; requestId?: string }): Promise<PluginPackageInstallResult>
     check(input: { path: string }): Promise<PluginCheckResult>
     apply(name: string): Promise<PluginPackageUpdateResult>
