@@ -19,13 +19,13 @@ async function j(url, opts) {
 const post = (p, b) => j(`${BASE}${p}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b ?? {}) });
 async function messages(sid) {
   const r = await j(`${BASE}/api/sessions/${sid}/messages?limit=50`);
-  return (r.body?.data ?? []).map((m) => ({ info: m.info ?? m, parts: Array.isArray(m.parts) ? m.parts : [] }));
+  return r.body?.data ?? [];
 }
 async function waitAssistant(sid, minCount = 1) {
   for (let i = 0; i < 90; i++) {
     await sleep(1000);
     const msgs = await messages(sid);
-    const assistants = msgs.filter((m) => m.info.role === 'assistant' && m.info?.time?.completed);
+    const assistants = msgs.filter((m) => m.role === 'assistant' && m.time?.completed);
     if (assistants.length >= minCount) return assistants;
   }
   throw new Error('assistant timeout');
@@ -61,7 +61,7 @@ const check = (name, cond, extra = '') => {
 
     await post(`/api/session/${sid}/promptAsync`, { message: 'Reply with exactly: one' });
     const [a1] = await waitAssistant(sid, 1);
-    check('first assistant message exists', !!a1?.info?.id, a1?.info?.id);
+    check('first assistant message exists', !!a1?.id, a1?.id);
 
     const first = await post(`/api/sessions/${sid}/data`, {
       name: 'probe', id: 'job', data: { v: 1 },
@@ -69,39 +69,39 @@ const check = (name, cond, extra = '') => {
     check('inject persistent data part => 200', first.status === 200, JSON.stringify(first.body).slice(0, 160));
     const part = first.body?.part;
     check('part shape: data_ id / data-probe / assistant-bound', !!part
-      && part.id.startsWith('data_') && part.type === 'data-probe' && part.messageID === a1.info.id,
+      && part.id.startsWith('data_') && part.type === 'data-probe' && part.messageID === a1.id,
       JSON.stringify(part).slice(0, 160));
 
     let msgs = await messages(sid);
-    const merged = msgs.find((m) => m.info.id === a1.info.id)?.parts?.find((p) => p.id === part.id);
+    const merged = msgs.find((m) => m.id === a1.id)?.content?.find((p) => p.id === part.id);
     check('persistent part merged into history', !!merged && merged.data?.v === 1, JSON.stringify(merged).slice(0, 120));
 
     const second = await post(`/api/sessions/${sid}/data`, {
       name: 'probe', id: 'job', data: { v: 2 },
     });
     msgs = await messages(sid);
-    const parts = msgs.find((m) => m.info.id === a1.info.id)?.parts ?? [];
+    const parts = msgs.find((m) => m.id === a1.id)?.content ?? [];
     const same = parts.filter((p) => p.id === second.body?.part?.id);
     check('same id updates in place (one part, v2)', same.length === 1 && same[0].data?.v === 2,
       `count=${same.length} data=${JSON.stringify(same[0]?.data)}`);
 
     await post(`/api/session/${sid}/promptAsync`, { message: 'Reply with exactly: two' });
     const assistants = await waitAssistant(sid, 2);
-    const a2 = assistants.find((m) => m.info.id !== a1.info.id);
+    const a2 = assistants.find((m) => m.id !== a1.id);
     const moved = await post(`/api/sessions/${sid}/data`, {
-      name: 'probe', id: 'job', data: { v: 3 }, messageID: a2.info.id,
+      name: 'probe', id: 'job', data: { v: 3 }, messageID: a2.id,
     });
     check('same id cross-message => 409', moved.status === 409, `status=${moved.status}`);
 
     const transient = await post(`/api/sessions/${sid}/data`, {
-      name: 'live', id: 'live-1', data: { pulse: 1 }, transient: true, messageID: a2.info.id,
+      name: 'live', id: 'live-1', data: { pulse: 1 }, transient: true, messageID: a2.id,
     });
     check('transient injection => 200 + transient flag', transient.status === 200 && transient.body?.part?.transient === true);
     msgs = await messages(sid);
-    const allParts = msgs.flatMap((m) => m.parts);
+    const allParts = msgs.flatMap((m) => m.content ?? []);
     check('transient not in history', !allParts.some((p) => p.id === transient.body?.part?.id));
 
-    const userMsg = msgs.find((m) => m.info.role === 'user')?.info?.id;
+    const userMsg = msgs.find((m) => m.role === 'user')?.id;
     const onUser = await post(`/api/sessions/${sid}/data`, { name: 'probe', id: 'u', data: {}, messageID: userMsg });
     check('user message target => 400', onUser.status === 400, `status=${onUser.status}`);
 

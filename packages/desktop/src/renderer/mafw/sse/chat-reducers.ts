@@ -43,7 +43,7 @@ export function applyUserMessageArrival(
     }
     return { message: msgs, part: parts }
   }
-  sessionMsgs.push({ ...info, id: msgId, sessionID: sid, time: info.time || { created: Date.now() }, parts: [] })
+  sessionMsgs.push({ ...info, id: msgId, sessionID: sid, time: info.time || { created: Date.now() } })
   msgs[sid] = sessionMsgs
   return { message: msgs, part: state.part }
 }
@@ -157,7 +157,7 @@ export function ensureAssistantMessage(
   const msgs = { ...state.message }
   const sessionMsgs = [...(msgs[sid] || [])]
   if (sessionMsgs.find(m => m.id === msgId)) return null
-  sessionMsgs.push({ id: msgId, sessionID: sid, role: "assistant", parentID: parentId, time: { created: Date.now() }, parts: [] })
+  sessionMsgs.push({ id: msgId, sessionID: sid, role: "assistant", parentID: parentId, time: { created: Date.now() } })
   msgs[sid] = sessionMsgs
   return { message: msgs }
 }

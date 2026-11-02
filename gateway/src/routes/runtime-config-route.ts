@@ -35,7 +35,7 @@ export async function handleRuntimeConfigPatch(
   res.end(JSON.stringify(result));
 }
 
-/** 路由匹配：/api/runtime-config（旧别名 /api/opencode-config 已删除）。 */
+/** 路由匹配：/api/runtime-config（旧别名已删除）。 */
 export function matchRuntimeConfigRoute(url: string | undefined, method: string): 'get' | 'patch' | null {
   if (!url) return null;
   const m = url.match(/^\/api\/runtime-config(?:\?|$)/);

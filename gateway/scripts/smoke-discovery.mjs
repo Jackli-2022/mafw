@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 /**
- * T2-5 live smoke: discovery snapshot, skill load, legacy endpoints,
- * directory scoping, and the session.commands SSE broadcast.
+ * T2-5 live smoke: discovery snapshot, skill load, session directory scoping,
+ * and the session.commands SSE broadcast.
  *
  * Run from the repo root with a live gateway + opencode serve:
  *   node gateway/scripts/smoke-discovery.mjs
  */
-import { existsSync } from 'fs';
 import * as path from 'path';
 
 const BASE = process.env.MAFW_SMOKE_BASE || 'http://localhost:3000';
@@ -17,13 +16,10 @@ let fail = 0;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Serve may still be loading plugin commands/skills right after a restart. */
-async function waitForRuntimeDiscovery(directory) {
+async function waitForRuntimeDiscovery(sessionID) {
   for (let i = 0; i < 30; i++) {
-    const [cmd, skill] = await Promise.all([
-      req('GET', `/api/command?directory=${encodeURIComponent(directory)}`),
-      req('GET', `/api/skill?directory=${encodeURIComponent(directory)}`),
-    ]);
-    if ((cmd.json?.data || []).length > 0 && (skill.json?.data || []).length > 0) return true;
+    const snap = await req('GET', `/api/sessions/${encodeURIComponent(sessionID)}/discovery?force=1`);
+    if ((snap.json?.commands || []).length > 0 && (snap.json?.skills || []).length > 0) return true;
     await sleep(500);
   }
   return false;
@@ -57,7 +53,7 @@ try {
   sessionID = created.json?.id || created.json?.sessionID || '';
   check(created.status === 200 && !!sessionID, 'session created', sessionID || `status=${created.status}`);
 
-  const ready = await waitForRuntimeDiscovery(repo);
+  const ready = await waitForRuntimeDiscovery(sessionID);
   check(ready, 'runtime command/skill catalog ready', repo);
 
   const first = await req('GET', `/api/sessions/${encodeURIComponent(sessionID)}/discovery?force=1`);
@@ -70,6 +66,7 @@ try {
   check((snap.instructions || []).some((i) => /AGENTS\.md$/i.test(i.path)), 'AGENTS.md source discovered', String((snap.instructions || []).length));
   check(typeof snap.revision === 'string' && /^[0-9a-f]{64}$/.test(snap.revision), 'revision is sha256', snap.revision);
   check(snap.degraded === false, 'snapshot is not degraded', JSON.stringify(snap.degradedReason || null));
+  check(path.resolve(String(snap.directory || '')) === repo, 'snapshot is scoped to the session directory', String(snap.directory));
 
   const second = await req('GET', `/api/sessions/${encodeURIComponent(sessionID)}/discovery`);
   check(second.json?.revision === snap.revision, 'second read keeps revision', second.json?.revision || '');
@@ -78,28 +75,6 @@ try {
   check(skill.status === 200 && String(skill.json?.content || '').length > 100, 'skill content loads', `status=${skill.status} len=${String(skill.json?.content || '').length}`);
   const missingSkill = await req('GET', `/api/sessions/${encodeURIComponent(sessionID)}/discovery/skills/__missing__`);
   check(missingSkill.status === 404, 'unknown skill is 404', `status=${missingSkill.status}`);
-
-  const commands = await req('GET', `/command?directory=${encodeURIComponent(repo)}`);
-  const commandList = commands.json?.commands || [];
-  check(commands.status === 200 && commands.contentType.includes('application/json'), 'legacy /command is JSON', commands.contentType);
-  check(commandList.length >= 1, 'legacy /command has runtime commands', String(commandList.length));
-  check(!commandList.some((c) => c.name === 'goal'), 'legacy /command excludes MAFW goal', commandList.map((c) => c.name).join(','));
-
-  const skills = await req('GET', `/skill?directory=${encodeURIComponent(repo)}`);
-  check(skills.status === 200 && skills.contentType.includes('application/json'), 'legacy /skill is JSON', skills.contentType);
-  check((skills.json?.skills || []).length >= 1, 'legacy /skill has skills', String((skills.json?.skills || []).length));
-
-  const other = path.resolve(repo, '..');
-  if (existsSync(other)) {
-    const scoped = await req('GET', `/skill?directory=${encodeURIComponent(other)}`);
-    check(
-      scoped.json?.location?.directory && path.resolve(scoped.json.location.directory) === other,
-      'legacy /skill respects directory',
-      `${scoped.json?.location?.directory} vs ${other}`,
-    );
-  } else {
-    check(true, 'legacy /skill directory scoping skipped (directory absent)', other);
-  }
 
   const controller = new AbortController();
   const events = await fetch(`${BASE}/api/events`, { signal: controller.signal });

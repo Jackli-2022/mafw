@@ -7,7 +7,7 @@
  *
  * 双发布形态：
  * - 顶层扁平：{ type: 'plugin:<name>:<event>', ...payload } → 原样广播
- *   （与 runtime_switched / project_registered 同 wire 约定，桌面剥壳 raw?.data || raw）
+ *   （与 runtime_switched / project_registered 同信封约定，桌面剥壳 raw?.data || raw）
  * - mafw_event 信封：{ type: 'mafw_event', data: { type, ... } } → data
  *   经 mafwBroadcast 形状守卫（畸形 data.type 打诊断日志后照发）
  */

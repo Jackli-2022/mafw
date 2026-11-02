@@ -1,7 +1,7 @@
 /**
  * Mode A 全局广播信封构造器（MafwScheduler.broadcast 的载荷形状）。
  *
- * wire 契约（桌面 renderer / TUI 均按此解析；v2 词汇：事件信封与载荷均为 MAFW 自有契约）：
+ * 事件信封契约（桌面 renderer / TUI 均按此解析；v2 词汇：信封与载荷均为 MAFW 自有契约）：
  *   { type: 'mafw_event', data: { type, properties?, sessionID?, directory?, error?, internal? } }
  *
  * v2（2026-10-12）：信封名 opencode_event → mafw_event（词汇所有权归 MAFW，

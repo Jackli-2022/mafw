@@ -21,7 +21,7 @@ async function waitIdle(sid, minMessages) {
   for (let i = 0; i < 120; i++) {
     await sleep(1000);
     const r = await j(`${BASE}/api/sessions/${sid}/messages?limit=50`);
-    const msgs = (r.body?.data ?? []).map((m) => m.info ?? m);
+    const msgs = r.body?.data ?? [];
     const assistants = msgs.filter((m) => m.role === 'assistant');
     if (msgs.length >= minMessages && assistants.length > 0 && assistants.every((m) => m?.time?.completed)) return msgs;
   }

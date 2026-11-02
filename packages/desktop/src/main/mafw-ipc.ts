@@ -294,6 +294,9 @@ export function registerMafwIpcHandlers() {
     }
   })
 
+  // Internal transport for the typed preload namespaces (window.api.mafw.*).
+  // The renderer has no generic invoke surface anymore — only the named methods
+  // declared in preload/mafw-types.ts reach this handler.
   ipcMain.handle("mafw-invoke", async (_event: IpcMainInvokeEvent, namespace: string, method: string, ...args: unknown[]) => {
     console.log(`[mafw] IPC invoke: ${namespace}.${method}`, args.length > 0 ? JSON.stringify(args).slice(0, 100) : '')
     if (!mafwClient) throw new Error("MAFW Gateway not ready")

@@ -382,7 +382,4 @@ export type MafwAPI = {
     get: () => Promise<any>
     update: (config: Record<string, unknown>) => Promise<any>
   }
-
-  /** @deprecated Use typed methods above instead. */
-  invoke: (namespace: string, method: string, ...args: unknown[]) => Promise<unknown>
 }

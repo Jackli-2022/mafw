@@ -4,7 +4,7 @@
  * 这些断言不是"helper 存在"，而是反向守卫——任何人把 shim 加回来（或生成物
  * 重新引入旧 operation）都会在这里变红。spec 2026-11-02 §9.1 / §11。
  */
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import * as http from 'http';
 import { handleSessionHistory } from '../../../src/routes/session-history';
@@ -16,6 +16,49 @@ function read(...parts: string[]): string {
   return readFileSync(join(...parts), 'utf-8');
 }
 
+/** 递归列出目录下匹配后缀的文件（守卫扫描用）。 */
+function walk(dir: string, match: (file: string) => boolean): string[] {
+  const out: string[] = [];
+  if (!existsSync(dir)) return out;
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) out.push(...walk(full, match));
+    else if (match(name)) out.push(full);
+  }
+  return out;
+}
+
+/**
+ * 旧 wire / legacy 路由字符串（客户端或脚本不得再碰）。只匹配「作为 URL 使用」
+ * 的形态：引号/模板紧邻的 `/command`、`/skill`，以及 `/api/command`、`/api/skill`、
+ * `/api/skill/content`、`/api/opencode-config`、`format=flat`。prompt 文本里的
+ * `/skill mafw-*` 指令与 `/api/session/:id/command` 不属于删除面。
+ */
+const LEGACY_ROUTE_PATTERN = /['"`]\/(?:command|skill)(?:\?|['"`])|\/api\/(?:command|skill)\b(?:\?|['"`])|\/api\/(?:skill\/content|opencode-config)\b|format=flat/;
+/** 旧历史双形状读取（仅用于消息消费文件；原生协议 parts 不在扫描面）。 */
+const LEGACY_SHAPE_PATTERN = /\.info\s*\?\?|\.info\s*\|\|\s*[A-Za-z_$]|\.parts\s*\?\?|\bm\??\.parts\b|\bmsg\??\.parts\b|Array\.isArray\(\s*m\??\.parts\s*\)/;
+/**
+ * adapter 内部 native 翻译 + A2A/media 协议载体（spec §9.2 保留）：它们接触的是
+ * 运行时原生协议或 Agent2Agent 消息，不是客户端历史兼容面。
+ */
+const NATIVE_PROTOCOL_FILES = new Set([
+  join(GATEWAY, 'src', 'runtime', 'opencode-adapter.ts'),
+  join(GATEWAY, 'src', 'runtime', 'opencode-history.ts'),
+  join(GATEWAY, 'src', 'runtime', 'opencode-events.ts'),
+  join(GATEWAY, 'src', 'runtime', 'host-adapter.ts'),
+  join(GATEWAY, 'src', 'core', 'pod', 'pod-a2a-bridge.ts'),
+  join(GATEWAY, 'src', 'core', 'pod', 'pod-a2a-mapping.ts'),
+  join(GATEWAY, 'src', 'media', 'media-agent.ts'),
+]);
+
+function violationsIn(files: string[], pattern: RegExp): string[] {
+  return files
+    .filter((file) => !NATIVE_PROTOCOL_FILES.has(file))
+    .filter((file) => pattern.test(readFileSync(file, 'utf-8')))
+    .map((file) => file.slice(REPO.length + 1));
+}
+
+
 describe('wire / legacy surfaces are physically gone', () => {
   test('wire-compat module and its contract test are deleted', () => {
     expect(existsSync(join(GATEWAY, 'src', 'runtime', 'wire-compat.ts'))).toBe(false);
@@ -24,9 +67,11 @@ describe('wire / legacy surfaces are physically gone', () => {
 
   test('index.ts has no wire egress, no flat opt-in and no info payload reference', () => {
     const src = read(GATEWAY, 'src', 'index.ts');
-    expect(src).not.toMatch(/toWireHistory|toWireInfo/);
+    expect(src).not.toMatch(/toWireHistory|toWireInfo|handleSessionHistoryFlat/);
     expect(src).not.toMatch(/properties\.info/);
     expect(src).not.toMatch(/format\s*===\s*'flat'/);
+    // 唯一历史出口必须是 flat handler（不是内联 wire 分支）。
+    expect(src).toContain('handleSessionHistory(');
   });
 
   test('normalize-messages has no zero-consumer legacy channels', () => {
@@ -69,16 +114,25 @@ describe('wire / legacy surfaces are physically gone', () => {
     expect(client).not.toMatch(/\bhistory\s*:/);
     const types = read(REPO, 'packages', 'gateway-sdk', 'src', 'types.ts');
     expect(types).not.toMatch(/SessionMessageWire|SessionMessageInfo|SessionMessagePart/);
-    expect(types).not.toMatch(/opencodeConfig|format:\s*'flat'/);
+    expect(types).not.toMatch(/opencodeConfig/);
+    // format 的必填/可选两种写法都不得残留（`format: 'flat'` / `format?: 'flat'`）。
+    for (const src of [client, types]) {
+      expect(src).not.toMatch(/format\s*\??:\s*['"]flat['"]/);
+      expect(src).not.toMatch(/\bformat\b\s*\??:/);
+      expect(src).not.toMatch(/searchParams\.get\(\s*['"]format['"]\s*\)/);
+    }
     expect(existsSync(join(REPO, 'packages', 'gateway-sdk', 'src', 'message-history.probe.ts'))).toBe(false);
   });
 
   test('generated contract no longer advertises legacy operations or wire history', () => {
-    for (const file of ['openapi.json', 'gateway-paths.json']) {
+    for (const file of ['openapi.json', 'gateway-paths.json', 'runtime-contract.json']) {
       const contract = read(REPO, 'packages', 'gateway-sdk', 'contract', file);
       expect(contract).not.toMatch(/opencodeConfig|command\.list|skill\.list|skill\.content/);
       expect(contract).not.toMatch(/format=flat|legacy wire envelope/);
     }
+    const gen = read(REPO, 'packages', 'gateway-sdk', 'src', 'api-schema.gen.ts');
+    expect(gen).not.toMatch(/opencodeConfig|command\.list|skill\.list|skill\.content/);
+    expect(gen).not.toMatch(/format=flat|legacy wire envelope|Default response is the legacy wire/);
   });
 
   test('preload aliases and history helper are removed', () => {
@@ -90,6 +144,31 @@ describe('wire / legacy surfaces are physically gone', () => {
       expect(src).not.toMatch(/^\s*command:\s*\{/m);
       expect(src).not.toMatch(/^\s*skill:\s*\{/m);
     }
+  });
+
+  test('preload has no generic invoke escape hatch', () => {
+    const api = read(REPO, 'packages', 'desktop', 'src', 'preload', 'mafw-api.ts');
+    const types = read(REPO, 'packages', 'desktop', 'src', 'preload', 'mafw-types.ts');
+    expect(api).not.toMatch(/^\s*invoke:\s*\(namespace/m);
+    expect(types).not.toMatch(/^\s*invoke:\s*\(namespace/m);
+    const rendererFiles = walk(join(REPO, 'packages', 'desktop', 'src', 'renderer'), (f) => f.endsWith('.ts') || f.endsWith('.tsx'));
+    const hits = rendererFiles.filter((file) => /window\.api\.mafw\.invoke\s*\(/.test(readFileSync(file, 'utf-8')));
+    expect(hits).toEqual([]);
+  });
+
+  test('gateway source and smoke scripts do not speak deleted routes or old history shapes', () => {
+    const srcFiles = walk(join(GATEWAY, 'src'), (f) => f.endsWith('.ts'));
+    const scriptFiles = walk(join(GATEWAY, 'scripts'), (f) => f.endsWith('.mjs'));
+    expect(violationsIn(srcFiles, LEGACY_ROUTE_PATTERN)).toEqual([]);
+    expect(violationsIn(scriptFiles, LEGACY_ROUTE_PATTERN)).toEqual([]);
+    // 旧历史双形状只允许出现在 adapter 原生翻译（NATIVE_TRANSLATION_FILES）。
+    expect(violationsIn(srcFiles, LEGACY_SHAPE_PATTERN)).toEqual([]);
+    expect(violationsIn(scriptFiles, LEGACY_SHAPE_PATTERN)).toEqual([]);
+    // 反向 fixture：扫描器本身必须能抓到旧形状/路由（防假绿）。
+    expect(LEGACY_ROUTE_PATTERN.test("fetch('/command')")).toBe(true);
+    expect(LEGACY_ROUTE_PATTERN.test("fetch('/api/sessions/s/messages?format=flat')")).toBe(true);
+    expect(LEGACY_SHAPE_PATTERN.test('const m = list.map((x) => x.info ?? x)')).toBe(true);
+    expect(LEGACY_SHAPE_PATTERN.test('const p = Array.isArray(m.parts) ? m.parts : []')).toBe(true);
   });
 
   test('desktop history consumers use session.messages only', () => {

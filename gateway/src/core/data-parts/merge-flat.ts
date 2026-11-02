@@ -2,12 +2,13 @@
  * T2-3 / canonical v3 历史合并（flat）：把 session_data_parts overlay 行追加进
  * MAFW flat 消息的 `content`。
  *
- * 规则与 wire 版（`merge.ts`）逐条对齐：
+ * MAFW flat 消息的 `content` 唯一 overlay 实现（旧 wire 版已删除）。
+ * 规则：
  *  - 只合并本页现存消息；runtime 同 id 优先；坏 JSON 跳过；
  *  - 顺序按 created_at asc；不合成消息、不改其他字段。
  *
- * 差异：flat 消息的身份在 `message.id`，内容在 `content`；采用 copy-on-write——
- * 有 overlay 的消息/内容数组新建，未命中的消息按引用放行（不污染 runtime 返回值）。
+ * 消息身份在 `message.id`，内容在 `content`；采用 copy-on-write——有 overlay 的
+ * 消息/内容数组新建，未命中的消息按引用放行（不污染 runtime 返回值）。
  */
 import type { SessionDataPartRow } from '../../memory/gateway-db';
 import type { MafwMessage, MafwPart } from '../../runtime/canonical-types';

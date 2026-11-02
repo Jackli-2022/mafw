@@ -419,7 +419,5 @@ export function createMafwApi(): MafwAPI {
         }
       },
     },
-
-    invoke: (namespace, method, ...args) => invoke(namespace, method, ...args),
   }
 }

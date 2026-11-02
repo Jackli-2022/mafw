@@ -33,7 +33,13 @@ const check = (name, cond, extra = '') => {
 
 async function messages(sid) {
   const r = await j(`${BASE}/api/sessions/${sid}/messages?limit=100`);
-  return (r.body?.data ?? []).map((m) => m.info ?? m);
+  return r.body?.data ?? [];
+}
+
+/** 消息文本：MAFW flat `content` parts（无 wire {info,parts}）。 */
+function textOf(m) {
+  const parts = Array.isArray(m?.content) ? m.content : [];
+  return [typeof m.text === 'string' ? m.text : '', ...parts.filter((p) => p?.type === 'text').map((p) => String(p.text ?? ''))].join('\n');
 }
 
 /** 发起长回合并轮询 suspend，直到成功或回合结束。 */
@@ -48,7 +54,7 @@ async function suspendDuringTurn(sid, prompt, attempts = 3) {
     await post(`/api/sessions/${sid}/abort`, {}).catch(() => {});
     await sleep(1500);
     const msgs = await messages(sid);
-    const tail = msgs.slice(-2).map((m) => `${m.role}:${(m.parts ?? []).filter((p) => p.type === 'text').map((p) => p.text).join(' ').slice(0, 90)}`);
+    const tail = msgs.slice(-2).map((m) => `${m.role}:${textOf(m).slice(0, 90)}`);
     console.log(`[run-smoke] (retry ${a + 1}: turn finished before suspend)`, tail.join(' | '));
   }
   return null;
@@ -116,11 +122,7 @@ async function suspendDuringTurn(sid, prompt, attempts = 3) {
     for (let i = 0; i < 120; i++) {
       await sleep(1000);
       const msgs = await messages(sid);
-      if (msgs.some((m) => {
-        const parts = Array.isArray(m.parts) ? m.parts : [];
-        const text = [typeof m.text === 'string' ? m.text : '', ...parts.filter((p) => p?.type === 'text').map((p) => String(p.text ?? ''))].join('\n');
-        return text.includes('[MAFW 续跑]');
-      })) sawResumePrompt = true;
+      if (msgs.some((m) => textOf(m).includes('[MAFW 续跑]'))) sawResumePrompt = true;
       const r = await j(`${BASE}/api/sessions/${sid}/run`);
       active = r.body?.run ?? null;
       if (!active && sawResumePrompt) break;
@@ -142,11 +144,7 @@ async function suspendDuringTurn(sid, prompt, attempts = 3) {
     for (let i = 0; i < 30; i++) {
       await sleep(500);
       const msgs = await messages(sid2);
-      if (msgs.some((m) => {
-        const parts = Array.isArray(m.parts) ? m.parts : [];
-        const text = [typeof m.text === 'string' ? m.text : '', ...parts.filter((p) => p?.type === 'text').map((p) => String(p.text ?? ''))].join('\n');
-        return text.includes('deliver after discard');
-      })) {
+      if (msgs.some((m) => textOf(m).includes('deliver after discard'))) {
         flushed = true;
         break;
       }

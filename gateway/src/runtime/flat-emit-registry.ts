@@ -2,7 +2,7 @@
  * eventBus → 顶层扁平广播的发射注册表（v2：发射侧注册表化，替换 index.ts
  * setupEventBus 的硬编码 if 链）。
  *
- * wire 契约：顶层广播必须扁平（无 `data` 键）——desktop 剥壳 `raw?.data || raw`
+ * 事件信封契约：顶层广播必须扁平（无 `data` 键）——desktop 剥壳 `raw?.data || raw`
  * 会把 `data` 当作 mafw_event 内层载荷吞掉 `type`（见 event-broadcast.ts 注释）。
  *
  * 特殊消费者（goal 编排启动 / goalDriver 唤醒 / milestone 推送）不在此表——

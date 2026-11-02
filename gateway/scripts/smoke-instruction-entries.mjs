@@ -166,7 +166,7 @@ function readEntryTimes(sid) {
     // Fork copies entries (opencode owns this; the smoke pins the behavior we rely on).
     const msgs = await get(`/api/sessions/${sid}/messages?limit=20`);
     const list = Array.isArray(msgs.body?.data) ? msgs.body.data : [];
-    const userMsg = list.map((m) => m.info ?? m).find((m) => m?.role === 'user' || m?.type === 'user');
+    const userMsg = list.find((m) => m?.role === 'user');
     const fork = await post(`/api/sessions/${sid}/fork`, userMsg?.id ? { messageID: userMsg.id } : {});
     forkId = fork.body?.session?.id ?? fork.body?.id ?? null;
     check('fork created', typeof forkId === 'string' && forkId.startsWith('ses_'), String(forkId));

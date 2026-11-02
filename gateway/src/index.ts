@@ -1018,7 +1018,7 @@ class MafwScheduler {
       emitNodeEvent: (p) => {
         this.broadcast(p as any);
         this.onPodGoalNode(p as any);
-      }, // 扁平顶层广播（wire 契约 §5.6）
+      }, // 扁平顶层广播（事件信封契约 §5.6）
       emitPhaseTransition: (p) => eventBus.emit('phase_transition', p),
       onSessionCreated: (info) => {
         recordSessionInDb(this.getGatewayDb(), info);
