@@ -21,6 +21,7 @@ import { TerminalStatusBar } from "./TerminalStatusBar"
 export function TerminalSurface(props: { directory: string | null; active: boolean }) {
   const store = terminalStore()
   const [ready, setReady] = createSignal(false)
+  const [localAvailable, setLocalAvailable] = createSignal<boolean | null>(null)
   const [sizes, setSizes] = createSignal<Record<string, { cols: number; rows: number }>>({})
 
   const activeSession = (): TerminalSessionInfo | null => {
@@ -103,6 +104,10 @@ export function TerminalSurface(props: { directory: string | null; active: boole
       showToastV2({ description: `终端初始化失败：${err?.message ?? err}`, duration: 3200 })
       setReady(true)
     })
+    // 中性能力探针（Experience `terminal.attach`）：决定空态引导文案，不伪造可用。
+    void window.api.mafw.terminal.probeV2()
+      .then((probe) => setLocalAvailable(probe.localAvailable))
+      .catch(() => setLocalAvailable(null))
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
       if (store.hostKey()) {
@@ -232,10 +237,10 @@ export function TerminalSurface(props: { directory: string | null; active: boole
               <DockEmpty
                 icon="console"
                 text="还没有终端会话"
-                hint="本地终端跟随当前目录；SSH 会话独立于目录。"
+                hint={localAvailable() === false ? "当前 runtime 不支持内嵌终端，可用外部终端。" : "本地终端跟随当前目录；SSH 会话独立于目录。"}
               />
               <div class="mafw-terminal-empty-actions">
-                <ButtonV2 variant="outline" size="small" icon="plus" onClick={() => store.openLocal()}>
+                <ButtonV2 variant="outline" size="small" icon="plus" disabled={localAvailable() === false} onClick={() => store.openLocal()}>
                   打开本地终端
                 </ButtonV2>
                 <ButtonV2 variant="contrast" size="small" icon="server" onClick={() => store.openHostDialog(null)}>

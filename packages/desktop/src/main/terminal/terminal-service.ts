@@ -1,4 +1,8 @@
 // Terminal domain service: host profiles, encrypted secrets, known hosts, hub.
+//
+// Local sessions go through `LocalTerminalOps`, which talks to the gateway's
+// neutral terminal surface (`/api/terminal/sessions` + `mafw-terminal/1` frames).
+// No runtime-native PTY knowledge lives here or in the adapter.
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"

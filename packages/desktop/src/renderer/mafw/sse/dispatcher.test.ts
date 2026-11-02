@@ -299,29 +299,34 @@ describe("dispatchShellEvent: subagents 组", () => {
   })
 })
 
-describe("dispatchShellEvent: background 组", () => {
-  const bgPart = { type: "tool", tool: "shell", state: { status: "completed", metadata: { status: "running", shellID: "sh1" }, input: { command: "npm run dev" } } }
+describe("dispatchShellEvent: background 组（canonical jobs）", () => {
+  const job = {
+    id: "sh1",
+    source: "runtime-shell" as const,
+    kind: "shell" as const,
+    status: "running" as const,
+    sessionID: "s1",
+    command: "npm run dev",
+  }
 
-  test("part.updated 后台 shell part → 转发 bg-observed", () => {
+  test("background.job.updated → 转发中性 job（dedupe 由 store 负责）", () => {
     const { deps, backgroundEvents } = makeDeps()
+    dispatchShellEvent({ type: "background.job.updated", sessionID: "s1", properties: { job } }, deps)
+    expect(backgroundEvents).toEqual([job])
+  })
+
+  test("旧推导路径退役：part 元数据 / synthetic 消息 / turn 都不再自建后台行", () => {
+    const { deps, backgroundEvents } = makeDeps()
+    const bgPart = { type: "tool", tool: "shell", state: { status: "completed", metadata: { status: "running", shellID: "sh1" }, input: { command: "npm run dev" } } }
     dispatchShellEvent({ type: "part.updated", sessionID: "s1", properties: { part: { ...bgPart, messageID: "m1", sessionID: "s1" } } }, deps)
-    expect(backgroundEvents).toEqual([{ kind: "bg-observed", row: { id: "sh1", type: "shell", sessionID: "s1", label: "npm run dev" } }])
-  })
-  test("synthetic message.updated（无 role）→ 转发 bg-terminal；chat-stream 既有消费逻辑不炸", () => {
-    const { deps, backgroundEvents, calls } = makeDeps()
-    dispatchShellEvent({ type: "message.updated", sessionID: "s1", properties: { info: { id: "m1", type: "synthetic", metadata: { source: "shell", shellID: "sh1", command: "npm run dev" } } } }, deps)
-    expect(backgroundEvents).toHaveLength(1)
-    expect(backgroundEvents[0]).toMatchObject({ kind: "bg-terminal", id: "sh1", terminal: "completed" })
-    expect(calls.some(c => c.name === "trace")).toBe(true)
-  })
-  test("turn.completed（sid=child1）→ 转发 turn 来源终态", () => {
-    const { deps, backgroundEvents } = makeDeps()
+    dispatchShellEvent({ type: "message.updated", sessionID: "s1", properties: { info: { id: "m1", type: "synthetic", metadata: { source: "shell", shellID: "sh1" } } } }, deps)
     dispatchShellEvent({ type: "turn.completed", properties: { sessionID: "child1" } }, deps)
-    expect(backgroundEvents).toEqual([{ kind: "bg-terminal", id: "child1", terminal: "completed", source: "turn" }])
+    expect(backgroundEvents).toEqual([])
   })
-  test("普通 part.updated（非后台工具）→ 零转发", () => {
+
+  test("background.job.updated 缺 job → 不转发、不崩", () => {
     const { deps, backgroundEvents } = makeDeps()
-    dispatchShellEvent({ type: "part.updated", sessionID: "s1", properties: { part: { type: "tool", tool: "edit", state: { status: "running" }, messageID: "m1" } } }, deps)
+    dispatchShellEvent({ type: "background.job.updated", sessionID: "s1", properties: {} }, deps)
     expect(backgroundEvents).toEqual([])
   })
 })

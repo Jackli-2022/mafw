@@ -367,14 +367,6 @@ export function createMafwApi(): MafwAPI {
       actions: (sessionID?: string, opts?: { directory?: string }) => invoke("experience", "actions", sessionID, opts || {}),
     },
 
-    // opencode v2 原生 shell 命令（经 gateway 兜底反代；location-scoped，不可达时调用方 fail-open）
-    shells: {
-      list: (directory?: string) => invoke("shells", "list", { ...(directory ? { directory } : {}) }),
-      get: (id: string, directory?: string) => invoke("shells", "get", { path: { id }, ...(directory ? { directory } : {}) }),
-      output: (id: string, opts?: { directory?: string; cursor?: number; limit?: number }) => invoke("shells", "output", { path: { id }, ...(opts || {}) }),
-      remove: (id: string, directory?: string) => invoke("shells", "remove", { path: { id }, ...(directory ? { directory } : {}) }),
-    },
-
     plugins: {
       list: () => invoke("plugins", "list"),
       install: (input) => invoke("plugins", "install", input),

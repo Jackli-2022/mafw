@@ -34,9 +34,8 @@ import { bumpCheckpointRev } from "./checkpoint-rev"
 import { keybindingFor } from "./keybinding-store"
 import { matchesCombo } from "./keybindings"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
-import { backgroundRows, ingestBackgroundEvent, ingestHydratedBackgroundEvents, onBackgroundTerminal } from "./background-store"
-import { backgroundRestAvailable, resetBackgroundCapability } from "./background-capability"
-import { scanHistoryForBackground } from "./background-detect"
+import { backgroundJobs, ingestBackgroundJob, ingestBackgroundJobs, onBackgroundTerminal } from "./background-store"
+import { backgroundApiAvailable, resetBackgroundCapability } from "./background-capability"
 import { ingestHistoryPage } from "./ingest/messages"
 import { reconcileBackgroundOnce } from "./background-reconcile"
 import { buildBackgroundNotice } from "./background-notify"
@@ -817,22 +816,16 @@ export function MafwShell() {
     })
   }
 
-  // ── Background reconcile（spec §5）：REST 三件是可选能力（Gate Ruling A）——
-  // /api/shell 经 gateway 反代，401/不可达时整轮 fail-open（不建假行、不误杀）。
-  // location-scoped：探针带当前会话 directory，只收敛该会话的行（reviewer Important 5）。
+  // ── Background reconcile（Task 11）：中性 `background.jobs.list` 快照 ──
+  // gateway 三源合并后的列表就是权威快照（含终态行）；失败/旧 gateway 整轮
+  // fail-open（不建假行、不误杀）。快照摄取静默（历史完成不弹通知）。
   async function reconcileBackground(): Promise<void> {
     const sid = activeSessionId()
-    const directory = store.session.find((s: any) => s.id === sid)?.directory
+    if (!sid) return
     await reconcileBackgroundOnce({
-      fetchers: {
-        listShells: (dir) => window.api.mafw.shells.list(dir),
-        getShell: (id, dir) => window.api.mafw.shells.get(id, dir),
-      },
-      directory,
-      trackedRunningShellIds: () => backgroundRows()
-        .filter(r => r.type === "shell" && r.status === "running" && r.sessionID === sid)
-        .map(r => r.id),
-      ingest: (ev) => ingestBackgroundEvent(ev),
+      sessionID: sid,
+      fetchers: { listJobs: (sessionID) => window.api.mafw.background.jobs.list(sessionID) },
+      ingest: (jobs) => ingestBackgroundJobs(jobs),
     })
   }
 
@@ -1119,9 +1112,9 @@ export function MafwShell() {
     subagents: {
       onEvent: (ev) => ingestSubagentEvent(ev),
     },
-    // 后台任务 tracker：既有事件旁路入 store（work bar / dock / 通知消费）。
+    // 后台作业：canonical `background.job.updated` 旁路入 jobs store。
     background: {
-      onEvent: (ev) => ingestBackgroundEvent(ev),
+      onEvent: (job) => ingestBackgroundJob(job),
     },
     tasks: {
       onEvent: (task) => ingestTask(task as any),
@@ -1206,9 +1199,10 @@ export function MafwShell() {
       if (notice.os && bgWorkNotifyGate(Date.now())) notifyIfHidden(notice.os.title, notice.os.body)
     })
     // 后台任务终态通知：只发 shell 类——subagent 终态归 P0-1 子代理通道（防双响）
-    const offBackgroundNotify = onBackgroundTerminal((row) => {
-      if (row.type !== "shell") return
-      const notice = buildBackgroundNotice(row, { hidden: document.hidden })
+    const offBackgroundNotify = onBackgroundTerminal((job) => {
+      // runtime-shell only：subagent 归 P0-1，mafw-task 有任务通道（防双响）。
+      if (job.kind !== "shell" || job.source !== "runtime-shell") return
+      const notice = buildBackgroundNotice(job, { hidden: document.hidden })
       if (!notice) return
       showToastV2({ description: notice.toast, duration: 3000 })
       if (notice.os && bgWorkNotifyGate(Date.now())) notifyIfHidden(notice.os.title, notice.os.body)
@@ -1217,11 +1211,11 @@ export function MafwShell() {
     const subagentTimer = setInterval(() => {
       if ((workbenchView() === "execution" && executionSection() === "subagents") || subagentRows().some(r => r.status === "running")) void reconcileSubagents()
     }, 15_000)
-    // 后台任务对账轮询（spec §5）：后台 tab 开着或 shell 行还在跑才跑；
-    // REST 不可达（Gate Ruling A）时跳过，不空转打网关（reviewer Important 6）
+    // 后台作业对账轮询：后台 tab 开着或有活跃作业才跑；快照失败由对账层 fail-open。
     const backgroundTimer = setInterval(() => {
-      if (!((workbenchView() === "execution" && executionSection() === "background") || backgroundRows().some(r => r.type === "shell" && r.status === "running"))) return
-      void backgroundRestAvailable().then(ok => { if (ok) void reconcileBackground() })
+      const busy = backgroundJobs().some(j => j.sessionID === activeSessionId() && (j.status === "running" || j.status === "input_required"))
+      if (!((workbenchView() === "execution" && executionSection() === "background") || busy)) return
+      void backgroundApiAvailable().then(ok => { if (ok) void reconcileBackground() })
     }, 15_000)
     // Dev 事件检查器开关：Ctrl+Shift+E（SSE trace 浮层，漏接线事件红色高亮）
     const onInspectorKey = (ev: KeyboardEvent) => {
@@ -1286,9 +1280,6 @@ export function MafwShell() {
         // 摄取层统一规范形：wire error→{kind,message}、工具输出/文件 diff/task 子会话、
         // step-finish→stopReason（渲染层只读规范视图）。
         const page = ingestHistoryPage(pageItems, { sessionID })
-        // 水合摄取（spec §5 双摄取点）：历史 parts/synthetic → 后台任务 tracker。
-        // 回放期间静默（不因历史完成发通知）；tracker 幂等，与 live SSE 竞争安全。
-        ingestHydratedBackgroundEvents(scanHistoryForBackground(page.messages, sessionID))
         const rawExisting = store.message[sessionID]
         const existing = Array.isArray(rawExisting) ? rawExisting : []
         if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)

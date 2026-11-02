@@ -10,7 +10,7 @@ import { handleQueueEvent } from "./handlers/queue"
 import { handleSubagentEvent, mapSessionLifecycleEvent } from "./handlers/subagents"
 import { handleBackgroundEvent } from "./handlers/background"
 import type { TrackerEvent } from "../subagent-tracker"
-import type { BackgroundEvent } from "../background-tracker"
+import type { BackgroundJob } from "../background-jobs"
 
 export interface CoreDeps {
   trace(event: { type?: string }, channel: string): void
@@ -39,9 +39,9 @@ export interface SubagentDeps {
   onEvent(ev: TrackerEvent): void
 }
 
-/** 后台任务 tracker 旁路（spec §5）：消费既有事件，零词汇改动。 */
+/** 后台作业（Task 3 三源统一）：canonical `background.job.updated` 旁路入 store。 */
 export interface BackgroundDeps {
-  onEvent(ev: BackgroundEvent): void
+  onEvent(job: BackgroundJob): void
 }
 
 /** Durable task 事件（Batch 4）：task.updated 顶层广播。 */
@@ -83,7 +83,7 @@ export type SidHandler = (event: any, sid: string, deps: ShellEventDeps) => bool
 export const EXTRA_HANDLERS: SidHandler[] = []
 EXTRA_HANDLERS.push(handleFlowCardEvent)
 EXTRA_HANDLERS.push(handleDockEvent)
-EXTRA_HANDLERS.push(handleBackgroundEvent) // 必须在 chat-stream 之前（message.updated 会被它消费）
+EXTRA_HANDLERS.push(handleBackgroundEvent)
 EXTRA_HANDLERS.push(handleSubagentEvent) // 必须在 chat-stream 之前：part.updated 会被 chat-stream 消费；本 handler 恒 return false
 EXTRA_HANDLERS.push(handleChatStreamEvent)
 EXTRA_HANDLERS.push(handleMediaSpeakEvent)

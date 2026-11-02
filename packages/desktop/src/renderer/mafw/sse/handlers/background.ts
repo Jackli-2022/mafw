@@ -1,31 +1,14 @@
-// SSE background 处理器：把既有事件旁路给后台任务 tracker（spec §5）。
+// SSE background handler：canonical `background.job.updated` → 中性 jobs store。
 //
-// 恒不消费（return false）：part.updated/turn.* 本就不被其他 handler 消费；
-// message.updated 会被 chat-stream 提前消费（synthetic 消息在它那里被静默
-// 丢弃——既有行为），因此本 handler 必须排在 chat-stream 之前先观察。
+// Task 3 起 gateway 把 runtime shell / MAFW 持久任务 / 子代理三源统一投影为
+// `MafwBackgroundJob` 并广播本事件；desktop 不再解析 tool part 元数据或 synthetic
+// 消息自行推导后台行（spec §7.3 / §8.2）。
 import type { SidHandler } from "../dispatcher"
-import { detectBackgroundPart, detectSyntheticTerminal } from "../../background-detect"
+import type { BackgroundJob } from "../../background-jobs"
 
-export const handleBackgroundEvent: SidHandler = (event, sid, deps) => {
-  if (event.type === "part.updated") {
-    const part = event.payload?.part || event.properties?.part
-    const ev = part ? detectBackgroundPart(part, sid) : null
-    if (ev) deps.background.onEvent(ev)
-    return false
-  }
-  if (event.type === "message.updated") {
-    const info = event.properties?.info
-    const ev = info ? detectSyntheticTerminal(info, sid) : null
-    if (ev) deps.background.onEvent(ev)
-    return false
-  }
-  if (event.type === "turn.completed" || event.type === "turn.failed" || event.type === "turn.aborted") {
-    deps.background.onEvent({
-      kind: "bg-terminal",
-      id: sid,
-      terminal: event.type === "turn.completed" ? "completed" : event.type === "turn.failed" ? "failed" : "cancelled",
-      source: "turn",
-    })
-  }
-  return false
+export const handleBackgroundEvent: SidHandler = (event, _sid, deps) => {
+  if (event.type !== "background.job.updated") return false
+  const job: BackgroundJob | undefined = event.properties?.job ?? event.job
+  if (job) deps.background.onEvent(job)
+  return true
 }

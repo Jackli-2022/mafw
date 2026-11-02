@@ -126,8 +126,8 @@ async function openExternalTerminal(directory: string): Promise<void> {
 export function registerMafwIpcHandlers() {
   // G1 截屏（spec 2026-10-26）：整屏捕获 → renderer 裁剪浮层。
   installCaptureIpc(ipcMain)
-  // 内嵌终端（spec 2026-10-26）：目录级 persistent PTY；HTTP 经 gateway 反代、
-  // WS 由 main 持有（窗口只经 preload 订阅）。gateway 未就绪时端口回落默认 3000。
+  // 内嵌终端（Task 11）：gateway 中性 terminal 面（CRUD + ticket + mafw-terminal/1
+  // 帧）；main 持有 WS，窗口只经 preload 订阅。gateway 未就绪时端口回落默认 3000。
   // Terminal service (local + SSH) backs the workbench L2 terminal surface.
   installTerminalServiceIpc(ipcMain, {
     dataDir: join(app.getPath("userData"), "terminal"),

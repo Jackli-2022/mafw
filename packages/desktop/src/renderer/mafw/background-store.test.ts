@@ -1,45 +1,70 @@
-import { describe, expect, test, beforeEach } from "bun:test"
-import { backgroundRows, ingestBackgroundEvent, ingestHydratedBackgroundEvents, onBackgroundTerminal, resetBackgroundStore } from "./background-store"
+import { beforeEach, describe, expect, test } from "bun:test"
+import {
+  backgroundJobs,
+  ingestBackgroundJob,
+  ingestBackgroundJobs,
+  onBackgroundTerminal,
+  resetBackgroundStore,
+} from "./background-store"
+import type { BackgroundJob } from "./background-jobs"
+
+const job = (over: Partial<BackgroundJob> = {}): BackgroundJob => ({
+  id: "sh1",
+  source: "runtime-shell",
+  kind: "shell",
+  status: "running",
+  sessionID: "s1",
+  title: "npm run dev",
+  time: { created: 1, updated: 2 },
+  ...over,
+})
 
 beforeEach(() => resetBackgroundStore())
 
-describe("background store", () => {
-  test("ingest 应用到 rows 并触发一次终态回调（幂等不回退不再触发）", () => {
+describe("background job store", () => {
+  test("canonical events dedupe by id and only fire one terminal callback", () => {
     const seen: string[] = []
-    const off = onBackgroundTerminal(r => seen.push(`${r.id}:${r.status}`))
-    ingestBackgroundEvent({ kind: "bg-observed", row: { id: "sh1", type: "shell", sessionID: "s1", label: "t" } }, 1)
-    ingestBackgroundEvent({ kind: "bg-terminal", id: "sh1", terminal: "completed", source: "synthetic" }, 2)
-    ingestBackgroundEvent({ kind: "bg-terminal", id: "sh1", terminal: "failed", source: "probe" }, 3) // 幂等不回退 → 不再触发
+    const off = onBackgroundTerminal((j) => seen.push(`${j.id}:${j.status}`))
+    ingestBackgroundJob(job())
+    ingestBackgroundJob(job({ status: "completed", time: { created: 1, updated: 3 } }))
+    ingestBackgroundJob(job({ status: "failed", time: { created: 1, updated: 4 } }))
     expect(seen).toEqual(["sh1:completed"])
-    expect(backgroundRows()[0]!.status).toBe("completed")
+    expect(backgroundJobs()).toHaveLength(1)
+    // 终态→终态允许权威更正，但不再触发通知（只有 running→终态才算新终态）。
+    expect(backgroundJobs()[0].status).toBe("failed")
     off()
-    ingestBackgroundEvent({ kind: "bg-observed", row: { id: "sh2", type: "shell", sessionID: "s1", label: "u" } }, 4)
-    ingestBackgroundEvent({ kind: "bg-terminal", id: "sh2", terminal: "failed", source: "synthetic" }, 5)
-    expect(seen.length).toBe(1) // 注销后不再收
+    ingestBackgroundJob(job({ id: "sh2" }))
+    ingestBackgroundJob(job({ id: "sh2", status: "failed" }))
+    expect(seen).toHaveLength(1)
   })
-  test("snapshot 补行不触发回调", () => {
+
+  test("snapshot ingestion is silent (history/reconcile must not toast)", () => {
     const seen: string[] = []
-    onBackgroundTerminal(r => seen.push(r.id))
-    ingestBackgroundEvent({ kind: "bg-snapshot", shells: [{ id: "sh9", command: "old", sessionID: "s1" }] }, 1)
+    onBackgroundTerminal((j) => seen.push(j.id))
+    ingestBackgroundJobs([
+      job({ id: "old", status: "completed" }),
+      job({ id: "live", status: "running" }),
+    ])
     expect(seen).toEqual([])
-    expect(backgroundRows()[0]).toMatchObject({ id: "sh9", status: "running" })
+    expect(backgroundJobs().map((j) => j.id).sort()).toEqual(["live", "old"])
   })
-  test("对账收敛（source: probe）落终态但不触发回调（静默，spec §5.1）", () => {
+
+  test("snapshot still applies terminal state (silent) and later live terminal notifies", () => {
     const seen: string[] = []
-    onBackgroundTerminal(r => seen.push(r.id))
-    ingestBackgroundEvent({ kind: "bg-observed", row: { id: "sh1", type: "shell", sessionID: "s1", label: "t" } }, 1)
-    ingestBackgroundEvent({ kind: "bg-terminal", id: "sh1", terminal: "completed", source: "probe" }, 2)
-    expect(backgroundRows()[0]!.status).toBe("completed")
+    onBackgroundTerminal((j) => seen.push(`${j.id}:${j.status}`))
+    ingestBackgroundJobs([job()])
+    ingestBackgroundJobs([job({ status: "completed" })])
+    expect(backgroundJobs()[0].status).toBe("completed")
     expect(seen).toEqual([])
+
+    ingestBackgroundJob(job({ id: "sh9" }))
+    ingestBackgroundJob(job({ id: "sh9", status: "failed" }))
+    expect(seen).toEqual(["sh9:failed"])
   })
-  test("水合回放（observed+synthetic 同批）→ 行落终态但零通知（reviewer Critical 2）", () => {
-    const seen: string[] = []
-    onBackgroundTerminal(r => seen.push(r.id))
-    ingestHydratedBackgroundEvents([
-      { kind: "bg-observed", row: { id: "sh1", type: "shell", sessionID: "s1", label: "npm run dev" } },
-      { kind: "bg-terminal", id: "sh1", terminal: "completed", at: 5, source: "synthetic", meta: { type: "shell", sessionID: "s1", label: "npm run dev" } },
-    ] as any, 10)
-    expect(backgroundRows()[0]).toMatchObject({ id: "sh1", status: "completed" })
-    expect(seen).toEqual([])
+
+  test("ignore malformed snapshot payloads", () => {
+    ingestBackgroundJobs(null as any)
+    ingestBackgroundJobs({ items: [] } as any)
+    expect(backgroundJobs()).toEqual([])
   })
 })

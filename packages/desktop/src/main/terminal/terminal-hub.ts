@@ -137,8 +137,8 @@ export function createTerminalHub(deps: TerminalHubDeps): TerminalHub {
           existing.info.status = result.reason === "unavailable" ? "error" : "disconnected"
           existing.info.error =
             result.reason === "unavailable"
-              ? "当前 runtime 不支持本地终端"
-              : "终端已随服务重启关闭"
+              ? "当前 runtime 不支持内嵌终端"
+              : "终端会话已结束，可重新打开"
         } else if (existing.info.status !== "connected") {
           existing.info.status = "connected"
           existing.info.connectedAt = now()
@@ -160,8 +160,8 @@ export function createTerminalHub(deps: TerminalHubDeps): TerminalHub {
       const result = await deps.local.attach(directory, id, sub, "hub")
       if (!result.ok) {
         info.status = result.reason === "unavailable" ? "error" : "disconnected"
-        if (result.reason === "gone") info.error = "终端已随服务重启关闭"
-        if (result.reason === "unavailable") info.error = "当前 runtime 不支持本地终端"
+        if (result.reason === "gone") info.error = "终端会话已结束，可重新打开"
+        if (result.reason === "unavailable") info.error = "当前 runtime 不支持内嵌终端"
       }
       return { ...info }
     },

@@ -35,7 +35,7 @@ class FakeLocal implements LocalTerminalOps {
     this.attachCalls++
     this.sub = sub
     sub({ type: "status", sessionId, status: "connected", connectedAt: 1000 })
-    return { ok: true as const, ptyId: "p1", replayed: false }
+    return { ok: true as const, terminalId: "t1", replayed: false }
   }
   detach() { this.detachCalls++ }
   input(_directory: string, data: string) { this.inputCalls.push(data) }

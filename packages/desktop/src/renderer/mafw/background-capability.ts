@@ -1,33 +1,31 @@
-// 后台任务 REST 能力探测（Gate Ruling A：REST 面是可选能力）。
+// 后台作业能力探测（Experience 驱动，不再探测 `/api/shell` REST）。
 //
 // 两个门：
-// - backgroundRest：`GET /api/shell` 可达（v2 鉴权桥就绪）→
-//   终止按钮 / 对账轮询可用；
-// - canUseBackgroundApi：当前 runtime 为 opencode（`/api/runtime`）→
-//   「全部转后台」端点存在（pi 无 session.background）。
-//
-// REST 探测是三态（checking / available / unavailable）：组件首帧不能用
-// `false` 冒充「不可用」（会闪提示），且失败后必须能被 60s 重探/SSE 重连
-// reset 点亮，而不是永远停在启动竞态。
+// - backgroundApi：Experience `background.jobs`（gateway 三源 jobs façade）——
+//   列表/输出/终止可用；三态（checking/available/unavailable）供 UI 区分
+//   「还在探测」与「明确不可用」，失败 60s 重探、runtime 切换/SSE 重连 reset；
+// - canUseBackgroundApi：Experience `session.background`（把阻塞工具转后台）——
+//   独立动作，不与 jobs 查询合并（spec §7.3）。
+import { experienceStore } from "./experience-store"
 
-export type BackgroundRestState = "checking" | "available" | "unavailable"
+export type BackgroundApiState = "checking" | "available" | "unavailable"
 
 const RETRY_MS = 60_000
 
-export function createRestProbe(
+export function createAvailabilityProbe(
   probe: () => Promise<unknown>,
   now: () => number = Date.now,
 ): {
-  state(): BackgroundRestState
-  probe(): Promise<BackgroundRestState>
+  state(): BackgroundApiState
+  probe(): Promise<BackgroundApiState>
   reset(): void
 } {
-  let state: BackgroundRestState = "checking"
+  let state: BackgroundApiState = "checking"
   let at = 0
-  let inflight: Promise<BackgroundRestState> | null = null
+  let inflight: Promise<BackgroundApiState> | null = null
   let generation = 0
 
-  const run = (): Promise<BackgroundRestState> => {
+  const run = (): Promise<BackgroundApiState> => {
     if (inflight) return inflight
     const gen = generation
     const started = now()
@@ -62,31 +60,40 @@ export function createRestProbe(
   }
 }
 
-const restProbe = createRestProbe(() => window.api.mafw.shells.list())
-
-export function backgroundRestState(): BackgroundRestState {
-  return restProbe.state()
+async function experienceAction(id: "background.jobs" | "session.background") {
+  if (experienceStore.state().status === "idle") await experienceStore.load()
+  await experienceStore.whenReady()
+  return experienceStore.action(id)
 }
 
-export function probeBackgroundRest(): Promise<BackgroundRestState> {
-  return restProbe.probe()
+const jobsProbe = createAvailabilityProbe(async () => {
+  const action = await experienceAction("background.jobs")
+  if (action?.supported !== true) throw new Error("background jobs not supported")
+  return action
+})
+
+export function backgroundApiState(): BackgroundApiState {
+  return jobsProbe.state()
 }
 
-/** 兼容旧调用：布尔形态（state === "available"）。 */
-export function backgroundRestAvailable(): Promise<boolean> {
-  return probeBackgroundRest().then((s) => s === "available")
+export function probeBackgroundApi(): Promise<BackgroundApiState> {
+  return jobsProbe.probe()
 }
 
-export function shouldShowRestUnavailableHint(state: BackgroundRestState, hasShellRows: boolean): boolean {
-  return state === "unavailable" && hasShellRows
+export function backgroundApiAvailable(): Promise<boolean> {
+  return probeBackgroundApi().then((state) => state === "available")
 }
 
-/** 输出预览占位文案：REST 不可用时不要提示用户点一个已隐藏的按钮。 */
-export function outputPlaceholder(state: BackgroundRestState): string {
-  return state === "available" ? "（点「刷新」拉取输出）" : "（REST 不可用，无法拉取输出）"
+export function shouldShowBackgroundUnavailableHint(state: BackgroundApiState, hasJobRows: boolean): boolean {
+  return state === "unavailable" && hasJobRows
 }
 
-// ── runtime（opencode?）探测：沿用既有缓存语义 ──────────────────────────
+/** 输出预览占位文案：接口不可用时不要提示用户点一个已隐藏的按钮。 */
+export function outputPlaceholder(state: BackgroundApiState): string {
+  return state === "available" ? "（点「刷新」拉取输出）" : "（后台作业接口不可用，无法拉取输出）"
+}
+
+// ── `session.background` 动作探测（沿用既有缓存语义） ─────────────────────
 
 export interface BackgroundActionInfo {
   enabled?: boolean
@@ -138,13 +145,7 @@ export function createActionProbe(
   }
 }
 
-import { experienceStore } from "./experience-store"
-
-const actionProbe = createActionProbe(async () => {
-  if (experienceStore.state().status === "idle") await experienceStore.load()
-  await experienceStore.whenReady()
-  return experienceStore.action("session.background")
-})
+const actionProbe = createActionProbe(() => experienceAction("session.background"))
 
 export function canUseBackgroundApi(): Promise<boolean> {
   return actionProbe.available()
@@ -152,6 +153,6 @@ export function canUseBackgroundApi(): Promise<boolean> {
 
 /** runtime 热切换 / SSE 重连 / 测试后重置探测缓存。 */
 export function resetBackgroundCapability(): void {
-  restProbe.reset()
+  jobsProbe.reset()
   actionProbe.reset()
 }

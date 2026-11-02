@@ -64,6 +64,7 @@ export function installTerminalServiceIpc(ipcMain: any, deps: TerminalServiceIpc
   }
 
   ipcMain.handle("mafw-terminal-v2-probe", async () => {
+    // 中性探针：Experience `terminal.attach`（不再读 /api/info 的 persistentPty）。
     const probe = await local.probe()
     return {
       localAvailable: probe.available,

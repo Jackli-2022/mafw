@@ -22,8 +22,8 @@ const base: SshHostProfileInput = {
 }
 
 const fakeLocal: LocalTerminalOps = {
-  async probe() { return { available: true, serveUrl: "http://127.0.0.1:4096" } },
-  async attach() { return { ok: true, ptyId: "p1", replayed: false } },
+  async probe() { return { available: true } },
+  async attach() { return { ok: true, terminalId: "t1", replayed: false } },
   detach() {},
   input() {},
   async resize() {},

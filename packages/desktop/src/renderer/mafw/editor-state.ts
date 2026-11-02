@@ -1,4 +1,4 @@
-// 编辑器状态机（纯不可变 reducer，与 background-tracker 同风格）。
+// 编辑器状态机（纯不可变 reducer）。
 //
 // 核心语义（spec §5.2 + 调研 §3）：
 // - dirty 期间收到外部改动（典型：agent 刚写了同一文件）→ conflict，**绝不静默覆盖**；

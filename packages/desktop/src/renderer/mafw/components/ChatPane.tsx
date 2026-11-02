@@ -10,8 +10,6 @@ import { SessionTurn } from "@mafw/session-ui/session-turn"
 import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
 import { TaskBar } from "./TaskBar"
 import { BackgroundWorkBar } from "./BackgroundWorkBar"
-import { scanHistoryForBackground } from "../background-detect"
-import { ingestHydratedBackgroundEvents } from "../background-store"
 import { runForSession, setRun as setRunStore, clearRun } from "../run-store"
 import { runBanner } from "../run-banner"
 import { clearTransientDataParts } from "../sse/chat-reducers"
@@ -1476,8 +1474,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         pageCount++
         if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
           const page = ingestHistoryPage(rawItems, { sessionID })
-          // 水合摄取（P0-3 后台任务，reviewer Minor 12：loadOlder 是第二条历史入口）
-          ingestHydratedBackgroundEvents(scanHistoryForBackground(page.messages, sessionID))
           const rawExisting = store.message[sessionID]
           const existing = Array.isArray(rawExisting) ? rawExisting : []
           if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)

@@ -339,14 +339,6 @@ export type MafwAPI = {
     actions: (sessionID?: string, opts?: { directory?: string }) => Promise<ExperienceActionsResponse>
   }
 
-  /** opencode v2 原生 shell 命令（/api/shell*，经 gateway 兜底反代；location-scoped，不可达时抛错） */
-  shells: {
-    list: (directory?: string) => Promise<Array<{ id: string; status: string; command: string; metadata?: { sessionID?: string } }>>
-    get: (id: string, directory?: string) => Promise<{ id: string; status: string; command: string; exit?: number; metadata?: { sessionID?: string } } | null>
-    output: (id: string, opts?: { directory?: string; cursor?: number; limit?: number }) => Promise<{ output: string; cursor?: number; size?: number; truncated?: boolean }>
-    remove: (id: string, directory?: string) => Promise<void>
-  }
-
   /** 工作台 L2 终端：本地 PTY + SSH 会话。 */
   terminal: {
     probeV2: () => Promise<TerminalProbe>

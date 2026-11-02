@@ -6,9 +6,8 @@ import { Icon } from "@mafw/ui/icon"
 import { summarizeExecution } from "../execution-summary"
 import { descendantRows } from "../subagent-tree"
 import { subagentRows } from "../subagent-store"
-import { backgroundRows } from "../background-store"
-import { rowsForSession } from "../background-tracker"
-import { taskRows } from "../task-store"
+import { backgroundJobs } from "../background-store"
+import { jobsForSession } from "../background-jobs"
 import { TaskList } from "./TaskList"
 import { SubagentDock } from "./SubagentDock"
 import { BackgroundDock } from "./BackgroundDock"
@@ -42,16 +41,12 @@ export type ExecutionViewProps = {
 
 export function ExecutionView(props: ExecutionViewProps) {
   const subagents = createMemo(() => descendantRows(subagentRows(), props.sessionID ?? ""))
-  const background = createMemo(() => rowsForSession(backgroundRows(), props.sessionID ?? ""))
-  const tasks = createMemo(() =>
-    taskRows().filter((t) => !props.sessionID || t.parentSessionID === props.sessionID),
-  )
+  const background = createMemo(() => jobsForSession(backgroundJobs(), props.sessionID ?? ""))
   const summary = createMemo(() =>
     summarizeExecution({
       subagents: subagents(),
       background: background(),
       todos: props.todos,
-      tasks: tasks(),
     }),
   )
 
@@ -139,7 +134,6 @@ export function ExecutionView(props: ExecutionViewProps) {
       <div class="mafw-rw-exec-section" classList={{ "is-active": props.section === "background" }}>
         <BackgroundDock
           activeSessionId={props.sessionID}
-          sessionDirectory={props.sessionDirectory}
           onOpenSession={props.onOpenSubagent}
         />
       </div>
