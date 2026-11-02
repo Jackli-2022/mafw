@@ -11,6 +11,8 @@ export interface NodeSessionRef {
   startedAt: string;
   attempt: number;
   runId: number;
+  /** 归属的 Goal revision（旧状态缺字段读侧补 state.revision 或 1）。 */
+  revision?: number;
 }
 
 export interface PendingQuestion {
@@ -86,6 +88,8 @@ export interface GoalStateV3 {
     feedback?: string;
     decidedAt?: string;
     round: number;
+    /** 产生该计划的 Goal revision（旧状态缺字段 → effectiveRevision(state)）。 */
+    revision?: number;
   };
   /** W1 最近一次驳回反馈——注入下一版 plan prompt；plan 成功兑现时清除。 */
   planFeedback?: string | null;
@@ -166,7 +170,9 @@ function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
     lastFailure: raw.lastFailure ?? null,
     noProgressCount: raw.noProgressCount ?? 0,
     lastArtifactDigest: raw.lastArtifactDigest ?? {},
-    nodeSession: raw.nodeSession ?? null,
+    nodeSession: raw.nodeSession
+      ? { ...raw.nodeSession, revision: normalizeRevision(raw.nodeSession.revision ?? raw.revision) }
+      : null,
     pendingQuestion: raw.pendingQuestion
       ? {
         ...raw.pendingQuestion,

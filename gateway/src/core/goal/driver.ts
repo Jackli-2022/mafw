@@ -6,10 +6,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import {
-  GoalStateV3, loadGoalState, writeGoalState, isTerminalState, effectiveRound,
+  GoalStateV3, loadGoalState, writeGoalState, isTerminalState, effectiveRound, effectiveRevision,
 } from './state-v3';
 import { routeNext, GoalNodeName } from './routing';
 import { renderNodePrompt, nodeArtifactPaths, nodeOutputSchema } from './node-prompts';
+import { ExecutableGoalNode, goalAgentName, isExecutableGoalNode } from './node-names';
 import { isTaskType } from '../../orchestration/capability-ledger';
 import { parseReviewRubric, taskAcceptanceFromWavePlan, taskIdsFromWavePlan } from './review-rubric';
 import {
@@ -60,7 +61,7 @@ export interface GoalRuntimeClient {
 export interface DriverDeps {
   client: GoalRuntimeClient;
   db: {
-    insertNodeRun(i: { goalId: string; projectId: string; loop: number; node: string; attempt: number; sessionId: string | null; startedAt: string }): number;
+    insertNodeRun(i: { goalId: string; projectId: string; loop: number; node: string; attempt: number; sessionId: string | null; startedAt: string; revision?: number }): number;
     finishNodeRun(id: number, p: { status: string; finishedAt: string; outcome?: string | null; error?: string | null; tokensInput?: number | null; tokensOutput?: number | null; costUsd?: number | null }): void;
     listNodeRuns(goalId: string): any[];
     latestNodeAttempt(goalId: string, revision: number, loop: number, node: string): any | null;
@@ -70,13 +71,20 @@ export interface DriverDeps {
     getQuestionState(questionId: string): string | null;
   };
   emitNodeEvent(p: Record<string, unknown>): void;
-  emitPhaseTransition(p: { type: 'phase_transition'; goalId: string; phase: string; loop: number; projectDir: string }): void;
-  onSessionCreated(info: { goalId: string; sessionId: string; phase: string; loop: number }): void;
+  emitPhaseTransition(p: { type: 'phase_transition'; goalId: string; phase: string; loop: number; projectDir: string; revision?: number }): void;
+  onSessionCreated(info: { goalId: string; sessionId: string; phase: string; loop: number; revision?: number }): void;
   archiveGoal(goalId: string, opts: { verdict: string; rounds: number; lastError?: string | null; reviewFeedback?: string }): Promise<void>;
   nodeTimeoutMs: number;
   maxAttempts: number;
   /** Random one-time token for each manual plan approval. */
   newApprovalId(): string;
+  /**
+   * Task 12：复用**既有**节点会话（如 Tech Lead 讨论会话）而不是新建 runtime 会话。
+   * 返回 sessionID 表示复用；null/缺省 = 走原来的 create。抛错按 fail-open 视为不复用。
+   * 复用的会话由它自己的 owner（如 Tech Lead supervisor）管理生命周期——driver 完成
+   * 节点后不会 delete 它，以保证跨 revision 的讨论连续性。
+   */
+  existingNodeSession?(goalId: string, node: ExecutableGoalNode, revision: number): string | null;
   /** W4：能力账本 + 失败谱块（plan 节点先验），缺省不注入。fail-open。
    *  D4b 起签名带 goalId（读 state.taskType 做同类任务先验）。 */
   capabilityPrior?: (goalId: string) => string | null;
@@ -90,7 +98,7 @@ export interface DriverDeps {
   canCreateNode?: (goalId: string) => boolean;
 }
 
-const NODE_PHASE: Record<'plan' | 'execute' | 'review', { running: string; complete: string }> = {
+const NODE_PHASE: Record<ExecutableGoalNode, { running: string; complete: string }> = {
   plan: { running: 'PLANNING', complete: 'PLANNING_COMPLETE' },
   execute: { running: 'EXECUTING', complete: 'EXECUTING_COMPLETE' },
   review: { running: 'REVIEWING', complete: 'REVIEWING_COMPLETE' },
@@ -104,6 +112,8 @@ export class NodeDriver {
     source: 'runtime' | 'artifact';
   }) => void>();
   private stateDirs = new Map<string, string>(); // goalId → mafwDir
+  /** 复用的会话（Tech Lead 讨论会话等）：完成/失败都不 delete，owner 管生命周期。 */
+  private reusedSessions = new Set<string>();
 
   constructor(private deps: DriverDeps) {}
 
@@ -167,7 +177,7 @@ export class NodeDriver {
     if (state.nodeSession) return; // 节点在飞——完成回调会再次 advance
 
     const node = state.nextNode as GoalNodeName;
-    if (node === 'plan' || node === 'execute' || node === 'review') {
+    if (isExecutableGoalNode(node)) {
       if (this.deps.canCreateNode && !this.deps.canCreateNode(goalId)) return;
       await this.executeNode(goalId, mafwDir, node);
     } else if (node === 'askUser') {
@@ -177,32 +187,45 @@ export class NodeDriver {
     }
   }
 
-  private async executeNode(goalId: string, mafwDir: string, node: 'plan' | 'execute' | 'review'): Promise<void> {
+  private async executeNode(goalId: string, mafwDir: string, node: ExecutableGoalNode): Promise<void> {
     const state = loadGoalState(mafwDir, goalId)!;
     const round = effectiveRound(state);
+    const revision = effectiveRevision(state);
     const phaseNames = NODE_PHASE[node];
 
-    // phase 广播（payload 形状与旧 syncToFile 一致——milestone-push 零迁移）
-    this.deps.emitPhaseTransition({ type: 'phase_transition', goalId, phase: phaseNames.running, loop: round, projectDir: state.projectDir });
+    // phase 广播（payload 形状与旧 syncToFile 一致——milestone-push 零迁移；
+    // revision additive，旧消费方忽略即可）
+    this.deps.emitPhaseTransition({
+      type: 'phase_transition', goalId, phase: phaseNames.running, loop: round,
+      projectDir: state.projectDir, revision,
+    });
 
     // attempt 语义：同 (goal, revision, round, node) 既有行存在即 max+1——含驳回重跑
     // （上一行 succeeded）与失败重试两类（W1 修正：不再按状态过滤）。
-    // revision 显式传 1：driver 尚未 revision 化（Task 12 接 state.revision）。
-    const prevRun = this.deps.db.latestNodeAttempt(goalId, 1, round, node);
+    const prevRun = this.deps.db.latestNodeAttempt(goalId, revision, round, node);
     const attempt = prevRun ? prevRun.attempt + 1 : 1;
 
-    const session = await this.deps.client.create(state.projectDir);
-    const sessionId = session.id;
-    this.deps.onSessionCreated({ goalId, sessionId, phase: node, loop: round });
+    // revision ≥ 2 的隔离产物目录首次使用时并不存在；先建好，模型写产物不应因缺目录失败。
+    this.ensureArtifactDirs(mafwDir, goalId, round, revision);
 
-    // W1：身份绑模型（fail-open——适配器无实现/运行时不支持时跳过）
-    if (this.deps.client.bindModel) {
-      try { await this.deps.client.bindModel(sessionId, `mafw-${node}`); } catch { /* fail-open */ }
+    // Task 12：plan 可复用 Tech Lead 讨论会话（同一 revision 的讨论 → 计划连续性）。
+    // 复用时不建 runtime 会话，但仍登记 goal_sessions 绑定（onSessionCreated）。
+    const reusedSessionId = this.resolveExistingSession(goalId, node, revision);
+    const sessionId = reusedSessionId
+      ?? (await this.deps.client.create(state.projectDir)).id;
+    if (reusedSessionId) this.reusedSessions.add(reusedSessionId);
+
+    this.deps.onSessionCreated({ goalId, sessionId, phase: node, loop: round, revision });
+
+    // W1：身份绑模型（fail-open——适配器无实现/运行时不支持时跳过）。
+    // 复用会话不重绑：讨论会话有自己的模型/身份，改绑会静默改变它的行为。
+    if (!reusedSessionId && this.deps.client.bindModel) {
+      try { await this.deps.client.bindModel(sessionId, goalAgentName(node)); } catch { /* fail-open */ }
     }
 
     const runId = this.deps.db.insertNodeRun({
       goalId, projectId: state.projectDir, loop: round, node, attempt, sessionId,
-      startedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(), revision,
     });
 
     const fixPass = node === 'execute' && state.reviewFix?.round === round && state.reviewVerdict === 'FAIL';
@@ -233,6 +256,7 @@ export class NodeDriver {
 
     const basePrompt = renderNodePrompt(node, {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds,
+      revision,
       charterPath,
       requestPath,
       reviewFeedback: state.reviewFeedback || undefined,
@@ -258,14 +282,14 @@ export class NodeDriver {
       counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
       acceptance: node === 'review' ? acceptance : undefined,
       fixTasks: fixPass ? (state.reviewFix?.tasks ?? []) : undefined,
-      fixPreviousReceipt: fixPass ? nodeArtifactPaths(mafwDir, goalId, round).receipt : undefined,
+      fixPreviousReceipt: fixPass ? nodeArtifactPaths(mafwDir, goalId, round, { revision }).receipt : undefined,
     });
     const podBlock = this.deps.podContext?.(goalId, node, sessionId) ?? null;
     const prompt = podBlock ? `${podBlock}\n\n${basePrompt}` : basePrompt;
 
     // 不 await——pi 的 promptAsync 在 idle 会话阻塞到回合结束，await 会卡死 advance（spec §7）
     void this.deps.client.promptAsync({
-      sessionID: sessionId, parts: [{ type: 'text', text: prompt }], agent: `mafw-${node}`,
+      sessionID: sessionId, parts: [{ type: 'text', text: prompt }], agent: goalAgentName(node),
       outputSchema: nodeOutputSchema(node),
     }).then(() => {
       this.deps.onPromptDispatched?.(sessionId);
@@ -275,7 +299,9 @@ export class NodeDriver {
 
     writeGoalState(mafwDir, goalId, {
       phase: phaseNames.running, nextAction: `RUNNING_${node}`,
-      nodeSession: { id: sessionId, phase: node, startedAt: new Date().toISOString(), attempt, runId },
+      nodeSession: {
+        id: sessionId, phase: node, startedAt: new Date().toISOString(), attempt, runId, revision,
+      },
     });
 
     this.listeners.set(sessionId, (ev, failure) => {
@@ -290,9 +316,44 @@ export class NodeDriver {
     });
 
     this.deps.emitNodeEvent({
-      type: 'goal_node', goalId, projectDir: state.projectDir, loop: round, node,
+      type: 'goal_node', goalId, projectDir: state.projectDir, loop: round, node, revision,
       transition: 'started', at: new Date().toISOString(), attempt,
     });
+  }
+
+  /** Task 12 hook：复用既有节点会话；缺省/抛错 → null（fail-open，新建会话）。 */
+  private resolveExistingSession(
+    goalId: string,
+    node: ExecutableGoalNode,
+    revision: number,
+  ): string | null {
+    const hook = this.deps.existingNodeSession;
+    if (!hook) return null;
+    try {
+      const sessionId = hook(goalId, node, revision);
+      return typeof sessionId === 'string' && sessionId.trim() ? sessionId : null;
+    } catch { return null; }
+  }
+
+  /** 释放节点会话：复用会话归 owner 管（Tech Lead 连续性），只删除 driver 自己建的。 */
+  private async releaseSession(sessionId: string): Promise<void> {
+    if (this.reusedSessions.delete(sessionId)) return;
+    try { await this.deps.client.delete(sessionId); } catch { /* fail-open */ }
+  }
+
+  /** 产物目录预建（幂等、fail-open）：waves 同目录 + receipts/ + reviews/。 */
+  private ensureArtifactDirs(
+    mafwDir: string,
+    goalId: string,
+    round: number,
+    revision: number,
+  ): void {
+    try {
+      const a = nodeArtifactPaths(mafwDir, goalId, round, { revision });
+      for (const p of [a.waves, a.receipt, a.review]) {
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+      }
+    } catch { /* fail-open：模型通常会自建目录，写失败由 artifact 门判定 */ }
   }
 
   private executeAskUser(goalId: string, mafwDir: string): void {
@@ -309,7 +370,8 @@ export class NodeDriver {
       questions: q.questions, askedAt: q.askedAt,
     });
     this.deps.emitPhaseTransition({
-      type: 'phase_transition', goalId, phase: 'ASKING_USER', loop: effectiveRound(state), projectDir: state.projectDir,
+      type: 'phase_transition', goalId, phase: 'ASKING_USER', loop: effectiveRound(state),
+      projectDir: state.projectDir, revision: effectiveRevision(state),
     });
     writeGoalState(mafwDir, goalId, { phase: 'ASKING_USER', nextAction: 'WAIT_USER_ANSWER' });
   }
@@ -327,7 +389,10 @@ export class NodeDriver {
     // review 完成时 round 已 +1 → PASS 归档报实际完成的 loop 数（round-1）
     const rounds = (node === 'archive_success' && state.reviewVerdict === 'PASS')
       ? Math.max(1, round - 1) : round;
-    this.deps.emitPhaseTransition({ type: 'phase_transition', goalId, phase: v.phase, loop: round, projectDir: state.projectDir });
+    this.deps.emitPhaseTransition({
+      type: 'phase_transition', goalId, phase: v.phase, loop: round,
+      projectDir: state.projectDir, revision: effectiveRevision(state),
+    });
     writeGoalState(mafwDir, goalId, { phase: v.phase, nextAction: v.nextAction, nodeSession: null });
     await this.deps.archiveGoal(goalId, {
       verdict: v.verdict, rounds,
@@ -348,6 +413,7 @@ export class NodeDriver {
     const { mafwDir } = found;
     const state = loadGoalState(mafwDir, goalId)!;
     const ns = state.nodeSession;
+    const revision = ns?.revision ?? effectiveRevision(state);
     const failureClass = classifyNodeFailure({
       code: kind,
       node: ns?.phase ?? 'execute',
@@ -372,10 +438,10 @@ export class NodeDriver {
       this.deps.emitNodeEvent({
         type: 'goal_node', goalId, projectDir: state.projectDir, loop: effectiveRound(state),
         node: ns.phase, transition: kind === 'timeout' ? 'timeout' : 'failed',
-        at: new Date().toISOString(), error: message, attempt: ns.attempt,
+        at: new Date().toISOString(), error: message, attempt: ns.attempt, revision,
       });
     }
-    try { await this.deps.client.delete(sessionID); } catch { /* fail-open */ }
+    await this.releaseSession(sessionID);
 
     if (retryable) {
       writeGoalState(mafwDir, goalId, {
@@ -408,9 +474,11 @@ export class NodeDriver {
 
     const node = ns.phase;
     const round = effectiveRound(state);
+    // 在飞节点属于它启动时的 revision（state.revision 可能已被打回/新 revision 覆盖）。
+    const revision = ns.revision ?? effectiveRevision(state);
     const fixPass = node === 'execute' && state.reviewFix?.round === round && state.reviewVerdict === 'FAIL';
     const reviewIsFixPass = node === 'review' && state.reviewFix?.round === round;
-    const a = nodeArtifactPaths(mafwDir, goalId, round, { fix: fixPass || reviewIsFixPass });
+    const a = nodeArtifactPaths(mafwDir, goalId, round, { fix: fixPass || reviewIsFixPass, revision });
 
     // —— Batch 1：已校验的结构化交卷优先；文件产物 fallback ——
     const submitted = await this.deps.client.structured?.(sessionID) ?? null;
@@ -540,7 +608,7 @@ export class NodeDriver {
       patch.userResponse = { ...state.userResponse, consumedByRunId: ns.runId };
     }
 
-    try { await this.deps.client.delete(sessionID); } catch { /* fail-open */ }
+    try { await this.releaseSession(sessionID); } catch { /* fail-open */ }
     // A valid artifact settles the current node: transient failure text from a
     // previous attempt must not poison the next review/round.
     patch = { ...patch, lastFailure: null, lastError: null };
@@ -566,27 +634,30 @@ export class NodeDriver {
     this.deps.db.finishNodeRun(ns.runId, {
       status: 'succeeded', finishedAt: new Date().toISOString(), outcome,
     });
-    this.deps.emitPhaseTransition({ type: 'phase_transition', goalId, phase: phaseNames.complete, loop: nextRound, projectDir: state.projectDir });
+    this.deps.emitPhaseTransition({
+      type: 'phase_transition', goalId, phase: phaseNames.complete, loop: nextRound,
+      projectDir: state.projectDir, revision,
+    });
 
     // W1 批准门：manual plan 成功 → 驻留待批（合法 parked 态），不 advance。
     if (node === 'plan' && nextNode === 'await_plan_approval') {
       this.deps.emitPhaseTransition({
         type: 'phase_transition', goalId, phase: 'PLANNING_AWAIT_APPROVAL',
-        loop: nextRound, projectDir: state.projectDir,
+        loop: nextRound, projectDir: state.projectDir, revision,
       });
       writeGoalState(mafwDir, goalId, {
         ...patch, nodeSession: null, phase: 'PLANNING',
         nextNode: 'execute', nextAction: 'AWAIT_PLAN_APPROVAL',
-        planApproval: { id: this.deps.newApprovalId(), status: 'pending', round: nextRound },
+        planApproval: { id: this.deps.newApprovalId(), status: 'pending', round: nextRound, revision },
       });
-      this.emitFinished(goalId, state.projectDir, round, node, outcome, ns.attempt);
+      this.emitFinished(goalId, state.projectDir, round, node, outcome, ns.attempt, revision);
       return;
     }
 
     writeGoalState(mafwDir, goalId, {
       ...patch, nodeSession: null, phase: phaseNames.complete, nextNode, nextAction: `NEXT_${nextNode}`,
     }, { bumpVersion: node === 'review' });
-    this.emitFinished(goalId, state.projectDir, round, node, outcome, ns.attempt);
+    this.emitFinished(goalId, state.projectDir, round, node, outcome, ns.attempt, revision);
     await this.advance(goalId);
   }
 
@@ -594,12 +665,13 @@ export class NodeDriver {
     goalId: string,
     projectDir: string,
     round: number,
-    node: 'plan' | 'execute' | 'review',
+    node: ExecutableGoalNode,
     outcome: string | undefined,
     attempt: number,
+    revision: number,
   ): void {
     this.deps.emitNodeEvent({
-      type: 'goal_node', goalId, projectDir, loop: round, node,
+      type: 'goal_node', goalId, projectDir, loop: round, node, revision,
       transition: 'finished', at: new Date().toISOString(), outcome, attempt,
     });
   }
@@ -682,7 +754,7 @@ export class NodeDriver {
       });
       this.deps.emitPhaseTransition({
         type: 'phase_transition', goalId, phase: 'PLANNING_APPROVED',
-        loop: effectiveRound(state), projectDir: state.projectDir,
+        loop: effectiveRound(state), projectDir: state.projectDir, revision: effectiveRevision(state),
       });
       await this.advanceInner(goalId);
       return true;
@@ -706,7 +778,7 @@ export class NodeDriver {
       });
       this.deps.emitPhaseTransition({
         type: 'phase_transition', goalId, phase: 'PLANNING_REJECTED',
-        loop: round, projectDir: state.projectDir,
+        loop: round, projectDir: state.projectDir, revision: effectiveRevision(state),
       });
       await this.advanceInner(goalId);
       return true;
@@ -735,7 +807,8 @@ export class NodeDriver {
 
     // ① 产物优先：gateway 死亡期间节点可能已完成——直接走完成判定兑现
     const round = effectiveRound(state);
-    const a = nodeArtifactPaths(mafwDir, goalId, round);
+    const revision = ns.revision ?? effectiveRevision(state);
+    const a = nodeArtifactPaths(mafwDir, goalId, round, { revision });
     const artifact = ns.phase === 'plan' ? a.waves : ns.phase === 'execute' ? a.receipt : a.review;
     if (fs.existsSync(artifact)) {
       await this.completeNode(goalId, ns.id);
@@ -778,7 +851,7 @@ export class NodeDriver {
     }
     writeGoalState(mafwDir, goalId, { nodeSession: null, nextNode: run.node, nextAction: `RUNNING_${run.node}` });
     await this.advance(goalId);
-    const latest = this.deps.db.latestNodeAttempt(goalId, 1, run.loop, run.node);
+    const latest = this.deps.db.latestNodeAttempt(goalId, run.revision ?? effectiveRevision(state), run.loop, run.node);
     return { runId: latest?.id ?? runId };
   }
 }

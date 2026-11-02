@@ -1,10 +1,9 @@
 // gateway/src/core/goal/routing.ts
 // 路由纯函数——从 core/langgraph/graph.ts:4-15 移植（langgraph 退役，语义逐字保留）。
+// 节点词汇见 node-names.ts（`GoalNodeName` 在此 re-export，保持既有 import 兼容）。
+import type { GoalNodeName } from './node-names';
 
-export type GoalNodeName =
-  | 'plan' | 'execute' | 'review' | 'askUser'
-  | 'await_plan_approval'
-  | 'archive_success' | 'archive_fail' | 'archive_max_retries';
+export type { GoalNodeName } from './node-names';
 
 export interface RouteState {
   lastError: string | null;

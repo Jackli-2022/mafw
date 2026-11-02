@@ -136,17 +136,42 @@ export interface NodeArtifactPaths {
   review: string;
 }
 
+/** revision 归一（缺省/非法 → 1，与 state-v3 的 effectiveRevision 同语义）。 */
+export function normalizeArtifactRevision(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+}
+
+/**
+ * 产物根目录：revision 1 沿用旧布局（`<mafw>/waves.json` 等，legacy 零迁移）；
+ * revision ≥ 2 完全隔离在 `<mafw>/revisions/<goalId>/rev-<n>/` 下——同一 Goal
+ * 的每个 revision 拥有独立的 Plan / Receipt / Review，互不覆盖。
+ */
+export function goalArtifactRoot(mafwDir: string, goalId: string, revision?: number): string {
+  const rev = normalizeArtifactRevision(revision);
+  return rev <= 1 ? mafwDir : path.join(mafwDir, 'revisions', goalId, `rev-${rev}`);
+}
+
 export function nodeArtifactPaths(
   mafwDir: string,
   goalId: string,
   round: number,
-  opts: { fix?: boolean } = {},
+  opts: { fix?: boolean; revision?: number } = {},
 ): NodeArtifactPaths {
   const suffix = opts.fix ? '-fix' : '';
+  const rev = normalizeArtifactRevision(opts.revision);
+  if (rev <= 1) {
+    return {
+      waves: path.join(mafwDir, 'waves.json'),
+      receipt: path.join(mafwDir, 'receipts', goalId, `loop-${round}${suffix}-receipt.json`),
+      review: path.join(mafwDir, 'reviews', `${goalId}-loop${round}${suffix}.md`),
+    };
+  }
+  const base = goalArtifactRoot(mafwDir, goalId, rev);
   return {
-    waves: path.join(mafwDir, 'waves.json'),
-    receipt: path.join(mafwDir, 'receipts', goalId, `loop-${round}${suffix}-receipt.json`),
-    review: path.join(mafwDir, 'reviews', `${goalId}-loop${round}${suffix}.md`),
+    waves: path.join(base, 'waves.json'),
+    receipt: path.join(base, 'receipts', `loop-${round}${suffix}-receipt.json`),
+    review: path.join(base, 'reviews', `loop${round}${suffix}.md`),
   };
 }
 
@@ -156,6 +181,8 @@ export interface NodePromptCtx {
   mafwDir: string;
   round: number;
   maxRounds: number;
+  /** Goal revision（缺省 1）：产物路径与 prompt 头部据此隔离。 */
+  revision?: number;
   charterPath: string;
   requestPath: string;
   reviewFeedback?: string;
@@ -197,8 +224,13 @@ export interface NodePromptCtx {
 
 export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodePromptCtx): string {
   const isFixPass = node === 'execute' && !!ctx.fixTasks?.length;
-  const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round, { fix: isFixPass });
-  const head = `【MAFW Goal ${ctx.goalId} · loop ${ctx.round}/${ctx.maxRounds}】`;
+  const revision = normalizeArtifactRevision(ctx.revision);
+  const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round, { fix: isFixPass, revision });
+  // revision 1 保持旧头部（legacy prompt 断言零迁移）；更高 revision 显式标注，
+  // 让模型知道自己在第几版目标下工作、产物落在隔离目录。
+  const head = revision > 1
+    ? `【MAFW Goal ${ctx.goalId} · rev ${revision} · loop ${ctx.round}/${ctx.maxRounds}】`
+    : `【MAFW Goal ${ctx.goalId} · loop ${ctx.round}/${ctx.maxRounds}】`;
   const docs = `charter: ${ctx.charterPath}\nrequest: ${ctx.requestPath}`;
   const retryContext = [
     ctx.attempt && ctx.maxAttempts ? `Retry context: attempt ${ctx.attempt}/${ctx.maxAttempts}.` : '',
