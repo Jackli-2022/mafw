@@ -21,6 +21,7 @@ import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
 import { agentKey, isAgentKey } from "../agent-identity"
+import { isLeadSessionRole } from "../manager-session"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply, cachedArtifactUrl } from "./AudioReply"
@@ -245,7 +246,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const store = workspace.store
   const setStore = workspace.setStore as unknown as (fn: (prev: typeof store) => typeof store) => typeof store
   // accessor 保持响应式（sessions 变化即重算；split view 各 pane 各自查）
-  const isManager = () => workspace.sessionRole(sidProp()) === "manager"
+  // 协调会话 = Lead（metadata.role 为 lead；历史 manager 同义，见 manager-session.ts）
+  const isLead = () => isLeadSessionRole(workspace.sessionRole(sidProp()))
   const connPhase = useConnPhase()
 
   // ── Composer state (per pane) ──
@@ -463,7 +465,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // 能力门：primaryAgents 列表内容含 plan/build 才启用（pi 列表恒空 → 自动隐藏）；
   // manager 会话锁不适用。
   const planBuildGate = () =>
-    !isManager() && (props.primaryAgents() || []).some((a: any) => isAgentKey(a, "plan") || isAgentKey(a, "build"))
+    !isLead() && (props.primaryAgents() || []).some((a: any) => isAgentKey(a, "plan") || isAgentKey(a, "build"))
   const planBuildState = (): "plan" | "build" | "default" => {
     const n = agentKey(props.agentSel())
     return n === "plan" || n === "build" ? n : "default"
@@ -1621,7 +1623,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const unplacedCards = (): FlowCardRecord[] =>
     unplacedCardsSlot(flowSlotCards(), store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
 
-  const agentSelName = () => props.agentSel()?.name || "manager"
+  const agentSelName = () => props.agentSel()?.name || "lead"
 
   // 会话改动文件数（message.summary.diffs 聚合，含 patch）——composer 审阅按钮的常驻计数徽标
   const diffCount = () => {
@@ -1761,7 +1763,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     Running
                   </span>
                 </Show>
-                <Show when={isManager() && props.onNewTopic}>
+                <Show when={isLead() && props.onNewTopic}>
                   <TooltipV2 value="开新话题（当前会话归档为历史）" openDelay={300}>
                     <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onNewTopic?.() }}>新话题</ButtonV2>
                   </TooltipV2>
@@ -2300,7 +2302,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <Show when={composerMeta()}>
                 <span class="mafw-composer-meta">{composerMeta()}</span>
               </Show>
-              <Show when={(props.primaryAgents() || []).length > 0 || isManager()}>
+              <Show when={(props.primaryAgents() || []).length > 0 || isLead()}>
                 <TooltipV2 value="切换 Agent" openDelay={300}>
                   <ButtonV2
                     variant="ghost"
@@ -2421,7 +2423,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               }}>
                 <Icon name={voiceRecording() ? "stop" : "microphone"} size="small" /><span>{voiceRecording() ? "停止录音" : "语音输入"}</span>
               </ButtonV2>
-              <Show when={(props.primaryAgents() || []).length > 0 || isManager()}>
+              <Show when={(props.primaryAgents() || []).length > 0 || isLead()}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-switch"); refreshSubagents() }}>
                   <Icon name="task" size="small" /><span>切换 Agent</span>
                 </ButtonV2>
@@ -2454,7 +2456,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           subagentAgents={props.subagentAgents()}
           subagents={subagents()}
           isRunning={props.subagentRunning}
-          lockedManager={isManager()}
+          lockedLead={isLead()}
           currentName={agentKey(props.agentSel())}
           onSelect={(a) => {
             if (pickerOpen() === "agent-mention") {

@@ -6,6 +6,7 @@ import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { formatRailTitle } from "./rail-display"
+import { isLeadSessionRole } from "../manager-session"
 
 /**
  * Startup welcome pane ("今天要做什么？"). Rendered when the app launches
@@ -19,7 +20,7 @@ export function WelcomeHome(props: {
   projects: WelcomeProject[]
   currentProject: string | null
   onSelectProject: (worktree: string) => void
-  openSessions: { id: string; title?: string }[]
+  openSessions: { id: string; title?: string; metadata?: { mafw?: { role?: string } } }[]
   historySessions: { id: string; title?: string; time?: { updated?: number }; metadata?: { mafw?: { role?: string } } }[]
   onSelect: (sid: string) => void
   onCreate: () => void
@@ -82,13 +83,14 @@ export function WelcomeHome(props: {
     const merged: { id: string; title: string; time?: number }[] = []
     for (const s of props.openSessions) {
       if (!s?.id || seen.has(s.id)) continue
-      if ((s as any)?.metadata?.mafw?.role === "manager") continue
+      // 协调会话（Lead，历史值 manager）不作为"最近会话"重复出现
+      if (isLeadSessionRole(s.metadata?.mafw?.role)) continue
       seen.add(s.id)
       merged.push({ id: s.id, title: formatRailTitle(s.title) })
     }
     for (const s of props.historySessions) {
       if (!s?.id || seen.has(s.id)) continue
-      if ((s as any)?.metadata?.mafw?.role === "manager") continue
+      if (isLeadSessionRole(s.metadata?.mafw?.role)) continue
       seen.add(s.id)
       merged.push({ id: s.id, title: formatRailTitle(s.title), time: s.time?.updated })
     }
@@ -101,7 +103,7 @@ export function WelcomeHome(props: {
     setGoalSubmitting(true)
     setGoalError("")
     const ok = await props.onNewGoal(desc, { planReview: planReview() })
-    if (!ok) setGoalError("未找到 Manager 会话，已跳转到 Goals 页；可稍后手动创建。")
+    if (!ok) setGoalError("未找到 Lead 会话，已跳转到 Goals 页；可稍后手动创建。")
     setGoalSubmitting(false)
   }
 
@@ -151,7 +153,7 @@ export function WelcomeHome(props: {
             先规划，再执行
           </ButtonV2>
         </Show>
-        <ButtonV2 variant="outline" icon="user" onClick={() => void props.onOpenManager()}>Manager 会话</ButtonV2>
+        <ButtonV2 variant="outline" icon="user" onClick={() => void props.onOpenManager()}>Lead 会话</ButtonV2>
         <ButtonV2 variant="outline" icon="target" onClick={() => { setGoalInputOpen(o => !o) }}>新建 Goal</ButtonV2>
         <ButtonV2 variant="outline" icon="check" onClick={() => props.onNavigate("approvals")}>
           待审批{`${pendingApprovals() > 0 ? ` (${pendingApprovals()})` : ""}`}
@@ -169,7 +171,7 @@ export function WelcomeHome(props: {
             onKeyDown={(e) => { if (e.key === "Enter") void submitGoal() }}
           />
           <div class="mafw-welcome-goal-input-actions">
-            <span class="mafw-welcome-plan-review" title="规划完成后 manager 会先用 mafw_ask_user 把方案发给你确认，经确认后才开始执行（Cowork 式 review-then-run）">
+            <span class="mafw-welcome-plan-review" title="规划完成后 Lead 会先用 mafw_ask_user 把方案发给你确认，经确认后才开始执行（Cowork 式 review-then-run）">
               <SwitchV2 checked={planReview()} onChange={(v: boolean) => setPlanReview(v)} size="small" />
               <span style={{ "font-size": "11px", color: "var(--text-base)" }}>规划完成后先经我确认再执行</span>
             </span>

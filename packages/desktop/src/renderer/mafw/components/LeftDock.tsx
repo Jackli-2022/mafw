@@ -58,7 +58,7 @@ type Props = {
   managerSessionId?: string | null
   projectsRev?: () => number
   onNewSession: () => void
-  onSelectSession: (id: string, title?: string, manager?: boolean) => void
+  onSelectSession: (id: string, title?: string, manager?: boolean, metadata?: { mafw?: { role?: string } }) => void
   onSessionDeleted?: (id: string) => void
   forkEnabled?: boolean
   onForkSession?: (id: string) => void

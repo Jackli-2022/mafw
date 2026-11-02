@@ -2,6 +2,9 @@ import { createSignal, createEffect, Show, For } from "solid-js"
 import { PopoverShell } from "./PopoverShell"
 import { agentKey, isAgentKey } from "../../agent-identity"
 
+/** 协调身份：`lead` 现行，`manager` 历史别名（旧 gateway 仍可能只报它）。 */
+const COORDINATOR_AGENT_KEYS = ["lead", "manager"] as const
+
 export type AgentEntry = {
   /** opencode 2.1.0 稳定 id（build/plan/…）；MAFW 注册表身份只有 name */
   id?: string
@@ -32,7 +35,7 @@ export function AgentPicker(props: {
   subagentAgents: AgentEntry[]
   subagents: { id: string; title: string }[]
   isRunning: (sessionID: string) => boolean
-  lockedManager?: boolean
+  lockedLead?: boolean
   currentName?: string
   onSelect: (a: AgentEntry) => void
   onSubagentClick: (s: { id: string; title: string }) => void
@@ -41,9 +44,10 @@ export function AgentPicker(props: {
   const [hi, setHi] = createSignal(0)
 
   const selectableRows = () => {
-    if (props.mode === "switch" && props.lockedManager) {
-      // Manager sessions can only use the manager agent.
-      return props.primaryAgents.filter(a => isAgentKey(a, "manager"))
+    if (props.mode === "switch" && props.lockedLead) {
+      // Lead 会话只能使用 Lead agent。`manager` 是历史身份（已被 /api/agents 隐藏），
+      // 仍接受它只是为了旧 gateway / 旧会话快照不至于把列表清空。
+      return props.primaryAgents.filter(a => COORDINATOR_AGENT_KEYS.some(k => isAgentKey(a, k)))
     }
     if (props.mode === "switch") return props.primaryAgents
     return [...props.primaryAgents, ...props.subagentAgents]
@@ -96,8 +100,8 @@ export function AgentPicker(props: {
             )}
           </For>
         </Show>
-        <Show when={props.mode === "switch" && props.lockedManager}>
-          <div class="mafw-picker-lock-hint">Manager 会话仅使用 manager agent</div>
+        <Show when={props.mode === "switch" && props.lockedLead}>
+          <div class="mafw-picker-lock-hint">Lead 会话仅使用 Lead agent</div>
         </Show>
         <Show when={readonlyRows().length > 0}>
           <div class="mafw-picker-group-label">子代理（本次运行）</div>
@@ -124,7 +128,7 @@ export function AgentPicker(props: {
           </For>
         </Show>
         <Show when={selectableRows().length === 0 && readonlyRows().length === 0}>
-          <div class="mafw-picker-empty">{props.mode === "switch" ? "仅 Manager 可用" : "无可引用 Agent"}</div>
+          <div class="mafw-picker-empty">{props.mode === "switch" ? "仅 Lead 可用" : "无可引用 Agent"}</div>
         </Show>
       </div>
       <div class="mafw-picker-hint">↑↓ 选择 · Enter 确认 · Esc 关闭</div>

@@ -57,6 +57,7 @@ import { podRailBadge } from "./pod-rail-badge"
 import { podRoleForSession } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
 import { retitleTab } from "./session-tab-title"
+import { isLeadSessionRole, leadTabMetadata, resolveLeadSession } from "./manager-session"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { fetchTasks, ingestTask } from "./task-store"
@@ -263,8 +264,9 @@ export function MafwShell() {
   // fetches (here + Rail) refetch when a new project registers.
   const [projectsRev, setProjectsRev] = createSignal(0)
 
-  // Authoritative per-project manager session (from the gateway DB kv store).
-  // Orphan/stale role=manager sessions from the pre-fix era are ignored.
+  // Authoritative per-project coordination session id (kv `manager-session`, served
+  // as Lead). This id is the only way to open Lead: the gateway hides the session
+  // from /api/sessions (spec 2026-11-02 §3.1).
   const [managerSessionId, setManagerSessionId] = createSignal<string | null>(null)
   // Re-fetchable: the kv entry is invalidated by the gateway on runtime
   // switch (session ids belong to the active runtime's storage), so the SSE
@@ -361,13 +363,11 @@ export function MafwShell() {
     closeLeftDockIfOverlay()
   }
 
-  // Single resolution path for the manager session: authoritative gateway DB
-  // id first, role fallback only when the authoritative id is missing.
-  const resolveManager = () => {
-    const authId = managerSessionId()
-    return (authId && historySessions().find(s => s.id === authId))
-      || historySessions().find((s: any) => s?.metadata?.mafw?.role === "manager")
-  }
+  // Single resolution path for the coordination session (Lead): authoritative
+  // gateway DB id first (the hidden Lead is usually absent from the history
+  // list — see manager-session.ts), legacy role metadata only as a fallback.
+  const resolveManager = () =>
+    resolveLeadSession({ managerSessionId: managerSessionId(), historySessions: historySessions() })
 
   const handleOpenManager = async (): Promise<boolean> => {
     const manager = resolveManager()
@@ -375,7 +375,7 @@ export function MafwShell() {
       setActiveTab("goals")
       return false
     }
-    openSessionTab(manager.id, manager.title || "Manager", true, manager.metadata)
+    openSessionTab(manager.id, manager.title, manager.manager, manager.metadata)
     return true
   }
   // "新建 Goal": jump to the manager session and send a create-goal message.
@@ -416,7 +416,7 @@ export function MafwShell() {
     if (!pd) return
     setConfirmReq({
       title: "开新话题？",
-      message: "当前 manager 会话将归档为历史会话，新会话成为活跃 manager。",
+      message: "当前 Lead 会话将归档为历史会话，新会话成为活跃 Lead。",
       confirmLabel: "开新话题",
       onConfirm: () => void doRotateTopic(pd),
     })
@@ -646,9 +646,13 @@ export function MafwShell() {
       return
     }
     const byId = new Map(history.map(s => [s.id, s]))
+    // 持久化布局只存 {id,title}：隐藏的 Lead 会话不在 history 里，角色标记会丢，
+    // 靠 kv 权威 id 认回来（否则恢复后新话题/agent 锁失效）。
+    const leadId = managerSessionId()
     for (const t of pruned.tabs) {
       const info = byId.get(t.id)
-      openSessionTab(t.id, t.title || info?.title, info?.metadata?.mafw?.role === "manager")
+      const lead = (!!leadId && t.id === leadId) || isLeadSessionRole(info?.metadata?.mafw?.role)
+      openSessionTab(t.id, t.title || info?.title, lead, info?.metadata ?? (lead ? leadTabMetadata() : undefined))
     }
     const active = pruned.activeViewId && pruned.tabs.some(t => t.id === pruned.activeViewId)
       ? pruned.activeViewId
@@ -1744,7 +1748,7 @@ export function MafwShell() {
     onCleanup(off)
   })
   // 文件/编辑器根：会话目录属于项目（含 worktree）才采用，否则回退项目目录
-  // （manager 会话的 directory 可能指向 home 等外部目录，实证 2026-10-22）
+  // （协调会话（Lead/历史 manager）的 directory 可能指向 home 等外部目录，实证 2026-10-22）
   // memo：sessions 数组在回合开始/结束会被替换（setUserMsgId/markSessionDone），
   // 裸函数会让每个读它的消费者重跑（文件树清空重载、Office 预览重解析白帧）。
   const benchRoot = createMemo(() =>
@@ -1992,9 +1996,9 @@ export function MafwShell() {
     })
   }
 
-  // Manager sessions are locked to the manager agent — switching to another
+  // Lead sessions are locked to the Lead agent — switching to another
   // primary agent is not allowed there.
-  // isManager 判定已收敛进 ChatPane（workspace.sessionRole per-session）
+  // 判定已收敛进 ChatPane（workspace.sessionRole per-session，lead/manager 同义）
 
   const applyAgentSwitch = (a: AgentEntry, sidOverride?: string) => {
     const sid = sidOverride ?? currentSessionID()

@@ -142,7 +142,7 @@ import { withInstructionSync } from './runtime/instruction-wrapper';
 import { InstructionSyncService } from './core/instructions/instruction-sync-service';
 import { DiscoveryService } from './core/discovery/discovery-service';
 import { renderInstructionBlocks, type InstructionBlocks } from './recall/instruction-blocks';
-import { isHiddenSession } from './core/session-visibility';
+import { isHiddenSession, selectVisibleSessions } from './core/session-visibility';
 
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { MAFW } from './runtime/mafw-vocabulary';
@@ -4544,24 +4544,19 @@ class MafwScheduler {
 
   private async listSessions(projectID: string | null): Promise<any[]> {
     // Sessions that are infrastructure, never shown in the desktop session
-    // list: memory-system workers (index-scan / extract / reflect) and
-    // Task-tool subagent children (they have a parent session). The role
-    // registry covers workers created after its introduction; title patterns
-    // catch the pre-registry stragglers (their titles are the first line of
-    // the pipeline prompt, e.g. "# Memory Index..." / '{"relevant_ids":...}');
-    // agent='memory-curator' survives the internal-session kv TTL prune.
-    // Pod 协作循环（Task 2）：Lead / Tech Lead session 也隐藏——它们的本地 metadata
-    // （`metadata.mafw.role`）是唯一稳定的判定面（runtime 的 `agent` 字段要等首次
-    // prompt 才翻成 'lead'），所以本地存储必须先加载、过滤先于合并。
+    // list: memory-system workers (index-scan / extract / reflect), Task-tool
+    // subagent children, and (Pod collaboration loop) the Lead / Tech Lead
+    // sessions. The merge + hidden filter lives in `selectVisibleSessions`
+    // (core/session-visibility.ts) so it is unit-testable.
+    const roleFor = (id: string) => this.internalSessionRoles.get(id);
+
+    // Local session store first: it is the authority for `metadata.mafw.role`
+    // (the Lead session's runtime `agent` only flips to 'lead' on its first
+    // prompt), so the hidden filter must see it before merging.
     let localSessions: any[] = [];
     try {
       localSessions = (await this.sdkSession.list()) as any[];
     } catch { localSessions = []; }
-    const localMap = new Map<string, any>(localSessions.map((s: any) => [s.id, s]));
-    const withLocalMetadata = (s: any): any =>
-      s?.metadata ? s : { ...s, metadata: s?.id ? localMap.get(s.id)?.metadata : undefined };
-    const isHidden = (s: any): boolean =>
-      isHiddenSession(withLocalMetadata(s), (id) => this.internalSessionRoles.get(id));
 
     // Try SDK first (opencode server), fall back to local store
     const fromServe: any[] = [];
@@ -4573,20 +4568,14 @@ class MafwScheduler {
       } catch {}
     }
 
-    // The serve API's session shape omits parentID, so subagent children that
-    // appear in BOTH sources would leak through the serve copy. Collect child
-    // ids from the SQLite window first and filter both merge loops by them.
-    const childSessionIds = new Set<string>();
-
     // Merge server-known sessions with the opencode database so sessions that
     // belong to this project but are hidden by serve's project resolution
     // (serve resolves the project to `global` and lists only those) still show
-    // up. Server entries win on id collision (fresher in-memory state).
-    const merged: any[] = [];
-    const seen = new Set<string>();
+    // up. The serve shape omits parentID, so the database window seeds the
+    // child-session set.
+    let dbSessions: any[] = [];
     try {
       if (projectID && this.runtime) {
-        let dbSessions: any[] = [];
         if (this.runtimeCaps.sessionStorageApi && this.runtime.session.listByDirectory) {
           // Effectively unbounded window: memory-worker sessions (index-scan
           // retries etc.) flood the recent head of the table, so any small
@@ -4601,57 +4590,10 @@ class MafwScheduler {
             return d === target || d.startsWith(target + '/');
           });
         }
-        for (const s of dbSessions) {
-          if (s?.parentID) childSessionIds.add(s.id);
-          if (!seen.has(s.id)) {
-            if (isHidden(s)) continue;
-            merged.push(s);
-            seen.add(s.id);
-          }
-        }
       }
     } catch {}
-    for (const s of fromServe) {
-      if (isHidden(s) || (s?.id && childSessionIds.has(s.id))) continue;
-      if (s?.id && seen.has(s.id)) {
-        // Server state is fresher — replace the SQLite copy in place.
-        const idx = merged.findIndex(m => m.id === s.id);
-        if (idx >= 0) merged[idx] = s;
-        continue;
-      }
-      merged.push(s);
-      if (s?.id) seen.add(s.id);
-    }
 
-    if (merged.length > 0) {
-      // Enrich sessions with local metadata (Lead session markers, etc.).
-      const enriched = merged.map((s: any) => {
-        const local = localMap.get(s.id);
-        return local?.metadata ? { ...s, metadata: local.metadata } : s;
-      });
-      // Also include local-only sessions (e.g. the Lead session registered via
-      // registerExternal) that the opencode server doesn't know about — but only
-      // those belonging to the queried project, and never internal ones.
-      const sdkIds = new Set<string>(merged.map((s: any) => s.id));
-      const missingLocal = localSessions.filter(s => s.metadata && !sdkIds.has(s.id) && !isHidden(s));
-      if (missingLocal.length > 0) {
-        const targetDir = projectID ? normalizeDir(projectID) : null;
-        enriched.push(...missingLocal
-          .filter(s => !targetDir || normalizeDir(s.directory || s.projectID || '') === targetDir)
-          .map(s => ({
-            id: s.id,
-            projectID: s.projectID,
-            directory: s.directory,
-            title: s.title,
-            metadata: s.metadata,
-            time: s.time,
-          })));
-      }
-      return enriched;
-    }
-
-    const fallback = projectID ? await this.sdkSession.listByProject(projectID) : await this.sdkSession.list();
-    return (fallback as any[]).filter((s: any) => !isHidden(s));
+    return selectVisibleSessions({ fromServe, dbSessions, localSessions, projectID, roleFor });
   }
 
   private async isServeHealthy(): Promise<boolean> {

@@ -1,5 +1,3 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import {
   projectLeadSessionMetadata,
   readManagerSlot,
@@ -105,21 +103,8 @@ describe('projectLeadSessionMetadata', () => {
   });
 });
 
-describe('manager/Lead session wiring (index.ts)', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../../src/index.ts'), 'utf-8');
-
-  it('writes the Lead metadata instead of an inline manager role', () => {
-    expect(source).toContain('projectLeadSessionMetadata()');
-    expect(source).not.toMatch(/mafw: \{ role: 'manager', pinned/);
-  });
-
-  it('registers the coordination session as the internal `lead` role bound to the Lead identity', () => {
-    expect(source).toMatch(/registerInternalSession\([^)]*'lead'/);
-  });
-
-  it('keeps the manager-session kv key and the legacy archived role for compatibility', () => {
-    expect(source).toContain("'manager-session'");
-    expect(source).toContain("readManagerSlot");
-    expect(source).toContain("role: 'manager-archived'");
-  });
-});
+// 注：原「读 src/index.ts 做源码正则」的接线断言已被行为测试取代——
+// `listSessions` 的合并/隐藏口径现在由纯函数 `selectVisibleSessions` 承担，
+// 四条路径（serve metadata / 本地独有 / 空合并回退 / 普通会话）见
+// tests/unit/session-list-selection.test.ts。kv 键名与 readManagerSlot 的兼容性
+// 由上面的槽位测试 + `writeManagerSlot` 用例钉住。

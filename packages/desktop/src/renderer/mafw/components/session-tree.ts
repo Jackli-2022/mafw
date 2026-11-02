@@ -1,7 +1,8 @@
 // session-tree：多项目懒加载会话树的纯逻辑（Rail 重构 v6 §0b）。
-// manager 置顶，普通会话按日期分组（沿用 Rail 现有 groupLabel 语义），
-// worktree 徽标复用 worktree-label 的判定（<base>-wt-<slug>）。
+// 协调会话（Lead，历史值 manager）置顶，普通会话按日期分组（沿用 Rail 现有
+// groupLabel 语义），worktree 徽标复用 worktree-label 的判定（<base>-wt-<slug>）。
 import { worktreeBadge } from "./worktree-label"
+import { isLeadSessionRole } from "../manager-session"
 
 type SessionInfo = {
   id: string
@@ -82,7 +83,8 @@ export function buildSessionTree(
     const sorted = [...list].sort(
       (a, b) => (b.time?.updated || b.time?.created || 0) - (a.time?.updated || a.time?.created || 0),
     )
-    const mgr = sorted.find((s) => s.metadata?.mafw?.role === "manager") ?? null
+    // 协调会话（Lead；`manager` 是历史值）置顶——见 manager-session.ts。
+    const mgr = sorted.find((s) => isLeadSessionRole(s.metadata?.mafw?.role)) ?? null
     const rest = sorted.filter((s) => s !== mgr)
     const groups: { label: string; items: SessionNode[] }[] = []
     for (const s of rest) {

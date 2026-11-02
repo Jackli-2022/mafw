@@ -3,6 +3,7 @@
 // 跨组件共享单一所有权；MafwShell 以别名引用，既有调用点零改动。
 import { createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
+import { tabSessionRole } from "../manager-session"
 
 /** 打开的会话 tab（原 MafwShell 局部 interface，逐字迁移）。 */
 export interface ChatSession {
@@ -68,9 +69,13 @@ export function createSessionWorkspace() {
       records[kind][sid]?.(...args)
     },
     records,
-    /** per-session 角色判定（split view 下各 pane 各自查，不再共享全局标记）。 */
+    /**
+     * per-session 角色判定（split view 下各 pane 各自查，不再共享全局标记）。
+     * 协调会话的角色由 manager-session.ts 归一：`lead` 是现行值，历史 `manager`
+     * 与只有 manager 标记的旧 tab 同义（否则 Lead 会话会被当成普通会话）。
+     */
     sessionRole(sid: string): string | undefined {
-      return sessions().find((s) => s.id === sid)?.metadata?.mafw?.role
+      return tabSessionRole(sessions().find((s) => s.id === sid))
     },
   }
 }
