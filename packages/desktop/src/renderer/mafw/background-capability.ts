@@ -142,6 +142,7 @@ import { experienceStore } from "./experience-store"
 
 const actionProbe = createActionProbe(async () => {
   if (experienceStore.state().status === "idle") await experienceStore.load()
+  await experienceStore.whenReady()
   return experienceStore.action("session.background")
 })
 

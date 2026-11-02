@@ -18,6 +18,8 @@ export interface ExperienceState {
 export interface ExperienceStore {
   state(): ExperienceState
   load(sessionID?: string): Promise<void>
+  /** 等待进行中的 load；无 in-flight 时立即完成。 */
+  whenReady(): Promise<void>
   invalidate(): void
   isEnabled(id: ExperienceActionId): boolean
   action(id: ExperienceActionId): ActionDescriptor | undefined
@@ -28,30 +30,39 @@ export function createExperienceStore(
 ): ExperienceStore {
   const [current, setCurrent] = createSignal<ExperienceState>({ status: 'idle', actions: {} })
   let generation = 0
+  let inflight: Promise<void> | null = null
 
   return {
     state: () => current(),
-    async load(sessionID?: string) {
+    load(sessionID?: string) {
       const gen = ++generation
       setCurrent({ ...current(), status: 'loading', sessionID, error: undefined })
-      try {
-        const result = await loader(sessionID)
-        if (gen !== generation) return
-        setCurrent({
-          status: 'ready',
-          version: result.experienceVersion,
-          sessionID: result.sessionID ?? sessionID,
-          actions: result.actions ?? {},
-        })
-      } catch (err: any) {
-        if (gen !== generation) return
-        setCurrent({
-          status: err?.status === 404 || /\b404\b|not found/i.test(String(err?.message ?? '')) ? 'unavailable' : 'error',
-          sessionID,
-          actions: {},
-          error: err?.message ?? String(err),
-        })
-      }
+      const run = (async () => {
+        try {
+          const result = await loader(sessionID)
+          if (gen !== generation) return
+          setCurrent({
+            status: 'ready',
+            version: result.experienceVersion,
+            sessionID: result.sessionID ?? sessionID,
+            actions: result.actions ?? {},
+          })
+        } catch (err: any) {
+          if (gen !== generation) return
+          setCurrent({
+            status: err?.status === 404 || /\b404\b|not found/i.test(String(err?.message ?? '')) ? 'unavailable' : 'error',
+            sessionID,
+            actions: {},
+            error: err?.message ?? String(err),
+          })
+        }
+      })()
+      inflight = run
+      void run.finally(() => { if (inflight === run) inflight = null })
+      return run
+    },
+    whenReady() {
+      return inflight ?? Promise.resolve()
     },
     invalidate() {
       generation++

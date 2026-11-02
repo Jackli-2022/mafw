@@ -18,6 +18,18 @@ describe('experience store', () => {
     expect(store.isEnabled('prompt.steer')).toBe(true);
   });
 
+  test('whenReady waits for an in-flight load instead of treating it as unavailable', async () => {
+    let release: (value: any) => void = () => {};
+    const store = createExperienceStore(() => new Promise((resolve) => { release = resolve; }));
+    const load = store.load('s1');
+    const ready = store.whenReady();
+    release(response({ 'session.background': { enabled: true } }));
+    await ready;
+    await load;
+    expect(store.state().status).toBe('ready');
+    expect(store.isEnabled('session.background')).toBe(true);
+  });
+
   test('old gateway 404 becomes unavailable compatibility state', async () => {
     const store = createExperienceStore(async () => { throw Object.assign(new Error('not found'), { status: 404 }); });
     await store.load('s1');
