@@ -52,9 +52,9 @@ import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
-import { ingestPodEvent, podStore, resolvePodDetailCached, techLeadInvite, techLeadSendTarget, techLeadTabTitle } from "./pod-store"
+import { ingestPodEvent, podStore, resolvePodDetailCached, techLeadInvite, techLeadTabTitle } from "./pod-store"
 import { podRailBadge } from "./pod-rail-badge"
-import { podRoleForSession, podSessionRoute, techLeadRouteForSession, techLeadSendBlockedReason } from "./pod-model"
+import { podRoleForSession, podSessionRoute, techLeadSendGate } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
 import { retitleTab } from "./session-tab-title"
 import { isLeadSessionRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./manager-session"
@@ -1885,35 +1885,23 @@ export function MafwShell() {
       lookup: (projectDir) => window.api.mafw.pod.lookup(projectDir),
     })
   }
-  const activeTechLeadTarget = async (): Promise<{ podId: string; goalId: string } | null> => {
+  const activeTechLeadGate = async () => {
     const sid = activeSessionId()
-    if (!sid) return null
+    if (!sid) return { target: null, blocked: null }
     const detail = await resolveSendPod()
-    if (!detail) return null
-    const mappedGoal = techLeadGoalBySession[sid]
-    // 映射只在目标 Pod 确实拥有该 Goal 时生效（防项目/Pod 切换后串线）。
-    const mapped = mappedGoal && detail.goals?.some((goal) => goal.goalId === mappedGoal)
-      ? techLeadSendTarget(mappedGoal, detail.pod.id)
-      : null
-    return mapped ?? techLeadRouteForSession(detail, sid)
+    return techLeadSendGate({
+      detail,
+      sessionID: sid,
+      mappedGoalId: techLeadGoalBySession[sid],
+      role: tabSessionRole(sessions().find((session) => session.id === sid)),
+    })
   }
-  /** 非讨论的 Tech Lead 节点会话：发送必须被拦住并给出指引（不能静默走普通 prompt）。 */
+  const activeTechLeadTarget = async (): Promise<{ podId: string; goalId: string } | null> => {
+    return (await activeTechLeadGate()).target
+  }
+  /** 非讨论的 Tech Lead 节点会话 / Pod 不可解析：发送必须被拦住并给出指引。 */
   const activeTechLeadBlocked = async (): Promise<string | null> => {
-    const sid = activeSessionId()
-    if (!sid) return null
-    const detail = await resolveSendPod()
-    const mappedGoal = techLeadGoalBySession[sid]
-    if (detail && mappedGoal && detail.goals?.some((goal) => goal.goalId === mappedGoal)) {
-      return null
-    }
-    const reason = detail ? techLeadSendBlockedReason(detail, sid) : null
-    if (reason) return reason
-    // fail-closed：tab 明确标着 tech_lead 但 Pod 解析不出来（未加载/不可用/跨项目）时
-    // 绝不能把讨论消息降级成普通 session prompt。
-    if (tabSessionRole(sessions().find((session) => session.id === sid)) === "tech_lead" && !mappedGoal) {
-      return "无法确认该 Tech Lead 会话所属 Goal（Pod 未加载或不可用）；请从 Goal 的「Tech Lead 讨论」入口打开后再发送。"
-    }
-    return null
+    return (await activeTechLeadGate()).blocked
   }
   // Pod 会话统一入口：Tech Lead 会话带上角色/Goal（供发送通道与 tab 语义使用），
   // PodDock 成员会话、左栏鲸群面、Goal 时间线全部走这里。

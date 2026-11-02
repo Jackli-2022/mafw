@@ -208,6 +208,39 @@ export function techLeadSendBlockedReason(detail: PodDetail | null, sessionID: s
   return "这是 Tech Lead 的节点会话；请打开该 Goal 的「Tech Lead 讨论」后再发送。"
 }
 
+/** Pod 解析不出来时的 fail-closed 指引（绝不降级成普通 session prompt）。 */
+export const TECH_LEAD_UNRESOLVED_GUIDANCE =
+  "无法确认该 Tech Lead 会话所属 Goal（Pod 未加载或不可用）；请从 Goal 的「Tech Lead 讨论」入口打开后再发送。"
+
+/**
+ * Tech Lead 发送策略（纯函数）：目标 / 拦截二选一。优先本次打开时记录的 Goal 映射
+ * （仍要校验 Pod 拥有该 Goal），其次从 Pod 成员+作用域推断；Pod 解析失败时，只要
+ * tab 是 Tech Lead 或带着映射 Goal，就 fail-closed 返回指引。
+ */
+export function techLeadSendGate(input: {
+  detail: PodDetail | null
+  sessionID: string
+  mappedGoalId?: string | null
+  role?: string | null
+}): { target: { podId: string; goalId: string } | null; blocked: string | null } {
+  const detail = input.detail
+  const mappedGoal = (input.mappedGoalId ?? "").trim()
+  if (detail) {
+    if (mappedGoal && detail.goals?.some((goal) => goal.goalId === mappedGoal)) {
+      return { target: { podId: detail.pod.id, goalId: mappedGoal }, blocked: null }
+    }
+    const inferred = techLeadRouteForSession(detail, input.sessionID)
+    if (inferred) return { target: inferred, blocked: null }
+    const reason = techLeadSendBlockedReason(detail, input.sessionID)
+    if (reason) return { target: null, blocked: reason }
+  }
+  // Pod 不可解析（或会话已不在 Pod 记录里）：Tech Lead 语义下必须 fail-closed。
+  if (input.role === "tech_lead" || mappedGoal) {
+    return { target: null, blocked: TECH_LEAD_UNRESOLVED_GUIDANCE }
+  }
+  return { target: null, blocked: null }
+}
+
 export function podMemberName(detail: { members: PodMember[] }, memberId: string | null): string {
   if (!memberId) return "系统"
   return detail.members.find((member) => member.id === memberId)?.displayName ?? memberId

@@ -19,7 +19,7 @@ import {
   resolvePodId,
   techLeadSendTarget,
 } from "../src/renderer/mafw/pod-store"
-import { podSessionRoute, techLeadRouteForSession, techLeadSendBlockedReason } from "../src/renderer/mafw/pod-model"
+import { podSessionRoute, techLeadRouteForSession, techLeadSendBlockedReason, techLeadSendGate, TECH_LEAD_UNRESOLVED_GUIDANCE } from "../src/renderer/mafw/pod-model"
 import { useSendMessage } from "../src/renderer/mafw/chat/use-send-message"
 import { createInputHistory } from "../src/renderer/mafw/components/input-history"
 
@@ -116,7 +116,7 @@ test("Tech Lead tab 发送走 pod.sendTechLeadMessage（保留身份/ContextMani
   assert.match(sendHook, /pod\.sendTechLeadMessage\(/)
   assert.match(chatPane, /techLeadTarget/)
   assert.match(shell, /techLeadTarget=\{/)
-  assert.match(shell, /techLeadSendTarget\(/)
+  assert.match(shell, /techLeadSendGate\(/)
   // 必须真的调用发送通道，而不是继续走普通会话 prompt
   const it = sendHook.indexOf("sendTechLeadMessage")
   const enriched = sendHook.indexOf("chat.sendEnriched")
@@ -398,15 +398,28 @@ test("发送守卫用 resolvePodDetailCached（跨项目不信任旧 store，TTL
   assert.match(shell, /const resolveSendPod = async/)
   assert.match(shell, /resolvePodDetailCached\(\{/)
   assert.match(shell, /sameProject/)
-  assert.match(shell, /const activeTechLeadTarget = async/)
-  assert.match(shell, /const activeTechLeadBlocked = async/)
-  assert.match(shell, /mappedGoal && detail\.goals\?\.some/)
+  assert.match(shell, /const activeTechLeadGate = async/)
+  assert.match(shell, /techLeadSendGate\(\{/)
+  assert.match(podModel, /function techLeadSendGate/)
+  assert.match(podModel, /mappedGoal && detail\.goals\?\.some/)
 })
 
-test("送守卫 fail-closed：tab 是 tech_lead 但 Pod 不可解析 → 指引而非普通 prompt", () => {
-  assert.match(shell, /tabSessionRole\(sessions\(\)\.find/)
-  assert.match(shell, /无法确认该 Tech Lead 会话所属 Goal/)
-  assert.match(shell, /if \(tabSessionRole/)
+test("送守卫 fail-closed：tech_lead 或映射 Goal 存在但 Pod 不可解析 → 指引", () => {
+  assert.match(shell, /role: tabSessionRole\(sessions\(\)\.find/)
+  assert.match(podModel, /TECH_LEAD_UNRESOLVED_GUIDANCE/)
+  const blocked = techLeadSendGate({ detail: null, sessionID: "ses_1", mappedGoalId: "g1", role: "tech_lead" })
+  assert.equal(blocked.target, null)
+  assert.equal(blocked.blocked, TECH_LEAD_UNRESOLVED_GUIDANCE)
+  assert.equal(
+    techLeadSendGate({ detail: null, sessionID: "ses_1", role: "tech_lead" }).blocked,
+    TECH_LEAD_UNRESOLVED_GUIDANCE,
+  )
+  assert.deepEqual(techLeadSendGate({ detail: null, sessionID: "ses_1" }), { target: null, blocked: null })
+  assert.deepEqual(techLeadSendGate({ detail: POD_DETAIL, sessionID: "ses_disc" }), {
+    target: { podId: "pod_1", goalId: "g1" },
+    blocked: null,
+  })
+  assert.match(techLeadSendGate({ detail: POD_DETAIL, sessionID: "ses_plan" }).blocked ?? "", /Tech Lead 讨论/)
 })
 
 test("方向裁定在 Dashboard 也能解析 Pod（不读 podStore.detail）", () => {
