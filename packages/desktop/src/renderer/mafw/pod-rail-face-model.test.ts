@@ -15,21 +15,22 @@ const detail = {
     { id: "m_b", role: "builder", displayName: "Builder", agentName: "mafw-execute", status: "available" },
     { id: "m_l", role: "lead", displayName: "Lead", agentName: "manager", status: "working" },
     { id: "m_r", role: "reviewer", displayName: "Reviewer", agentName: "mafw-review", status: "sleeping" },
+    { id: "m_t", role: "tech_lead", displayName: "Tech Lead", agentName: "mafw-tech-lead", status: "available" },
   ],
   sessions: [{ memberId: "m_l", sessionId: "ses_1", endedAt: null }],
   tasks: [{ status: "review" }, { status: "pending" }, { status: "done" }],
 } as any
 
-test("member rows keep lead → builder → reviewer order and resolve the current action", () => {
+test("member rows keep lead → tech lead → builder → reviewer order and resolve the current action", () => {
   const rows = buildMemberRows(detail, (id) => (id === "ses_1" ? "Pod 收尾" : null))
-  assert.deepEqual(rows.map((row) => row.id), ["m_l", "m_b", "m_r"])
+  assert.deepEqual(rows.map((row) => row.id), ["m_l", "m_t", "m_b", "m_r"])
   assert.equal(rows[0].action, "会话中 · Pod 收尾")
   assert.equal(rows[0].dotClass, "working")
   assert.equal(rows[0].sessionId, "ses_1")
   assert.equal(rows[1].sessionId, null)
-  assert.equal(rows[1].action, "待命")
-  assert.equal(rows[2].dotClass, "sleeping")
-  assert.equal(rows[2].action, "休眠")
+  assert.equal(rows[2].action, "待命")
+  assert.equal(rows[3].dotClass, "sleeping")
+  assert.equal(rows[3].action, "休眠")
 })
 
 test("ended sessions and missing titles fall back honestly", () => {
@@ -51,14 +52,14 @@ test("the newest open session wins by createdAt, not by id", () => {
 })
 
 test("unknown roles sort after the reviewer instead of before the lead", () => {
-  const withCurator = {
+  const withGhost = {
     ...detail,
     members: [
-      { id: "m_c", role: "curator", displayName: "Curator", agentName: "memory-curator", status: "available" },
+      { id: "m_g", role: "ghost", displayName: "Ghost", agentName: "ghost", status: "available" },
       ...detail.members,
     ],
   } as any
-  assert.deepEqual(buildMemberRows(withCurator, () => null).map((row) => row.id), ["m_l", "m_b", "m_r", "m_c"])
+  assert.deepEqual(buildMemberRows(withGhost, () => null).map((row) => row.id), ["m_l", "m_t", "m_b", "m_r", "m_g"])
 })
 
 test("member rows carry their open task count", () => {

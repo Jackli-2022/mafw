@@ -100,3 +100,58 @@ test('A2A handoff end-to-end: create, deliver, pull, cancel', async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('A2A actor gate admits a Tech Lead session and rejects a non-roster role', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-a2a-roster-'));
+  const db = new Database(path.join(dir, 'test.db'));
+  const store = new PodStore(db);
+  let seq = 0;
+  const newId = () => `id_${++seq}`;
+  const pod = store.ensurePod({ id: 'pod_2', projectDir: '/p2', name: 'P2', now: NOW });
+  store.upsertMember({ id: 'm_lead', podId: pod.id, role: 'lead', displayName: 'Lead', agentName: 'manager', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
+  const techLead = store.upsertMember({ id: 'm_tl', podId: pod.id, role: 'tech_lead', displayName: 'Tech Lead', agentName: 'mafw-tech-lead', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
+  const builder = store.upsertMember({ id: 'm_builder', podId: pod.id, role: 'builder', displayName: 'Builder', agentName: 'mafw-execute', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
+  store.insertSession({ id: 'ps_tl', podId: pod.id, memberId: techLead.id, goalId: 'g1', node: 'discussion', sessionId: 'ses_tl', status: 'active', transcriptRef: null, now: NOW });
+  // 非 roster 角色（旧库残留）不获得成员通道
+  store.upsertMember({ id: 'm_ghost', podId: pod.id, role: 'ghost' as any, displayName: 'Ghost', agentName: 'ghost', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
+  store.insertSession({ id: 'ps_ghost', podId: pod.id, memberId: 'm_ghost', goalId: 'g1', node: 'discussion', sessionId: 'ses_ghost', status: 'active', transcriptRef: null, now: NOW });
+
+  const access = new PodAccess(store);
+  const bridge = new PodA2ABridge({
+    store,
+    access,
+    delivery: new PodMessageDelivery({
+      store,
+      getSession: async () => ({}),
+      promptAsync: async () => {},
+    }),
+    now: () => NOW,
+    newId,
+    notify: () => {},
+  });
+
+  const messageFromTechLead = buildA2AMessage({
+    messageId: 'msg_tl',
+    contextId: 'pod:pod_2:goal:g1',
+    text: 'probe the cache layer',
+    data: { kind: 'request', taskId: 't_tl', goalId: 'g1', title: 'Probe', expectedOutput: 'evidence' },
+    metadata: { podId: pod.id, toMemberId: builder.id },
+  });
+  const sent = await bridge.sendMessage(pod.id, messageFromTechLead, { actorSessionID: 'ses_tl' });
+  expect((sent as any).status.state).toBe(TaskState.TASK_STATE_SUBMITTED);
+  expect(store.listMessages(pod.id).find((m) => m.externalMessageId === 'msg_tl')?.fromMemberId).toBe(techLead.id);
+
+  const ghostMessage = buildA2AMessage({
+    messageId: 'msg_ghost',
+    contextId: 'pod:pod_2:goal:g1',
+    text: 'ghost cannot send',
+    data: { kind: 'request', taskId: 't_ghost', goalId: 'g1', title: 'Ghost' },
+    metadata: { podId: pod.id, toMemberId: builder.id },
+  });
+  await expect(
+    bridge.sendMessage(pod.id, ghostMessage, { actorSessionID: 'ses_ghost' }),
+  ).rejects.toThrow(/is not allowed for this action/);
+
+  db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+

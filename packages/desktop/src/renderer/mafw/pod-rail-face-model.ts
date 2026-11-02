@@ -4,7 +4,7 @@ import type { PodDetail, PodGoal, PodTask } from "@mafw/sdk"
 import { countUnread, type PodUnreadMessage } from "./pod-rail-badge"
 import { podShortTime } from "./pod-model"
 
-const ROLE_ORDER = ["lead", "builder", "reviewer"] as const
+const ROLE_ORDER = ["lead", "tech_lead", "builder", "reviewer"] as const
 
 const STATUS_LABEL: Record<string, string> = {
   working: "工作中",
@@ -38,7 +38,7 @@ function activeSessionOf(sessions: SessionLike[], memberId: string): SessionLike
 
 function roleRank(role: string): number {
   const index = ROLE_ORDER.indexOf(role as any)
-  // 未知角色（如 curator）排在三名班底之后，而不是 index === -1 排到最前。
+  // 未知角色（如旧库残留）排在四名班底之后，而不是 index === -1 排到最前。
   return index === -1 ? ROLE_ORDER.length : index
 }
 

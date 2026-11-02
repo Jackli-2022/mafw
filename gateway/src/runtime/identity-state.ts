@@ -103,12 +103,21 @@ export function withIdentityPrompt<
 
 /** GET /api/agents 合并：注册表身份在前（source: 'mafw'），runtime 原生在后（source: 'runtime'），同名去重。
  *  materialized === false 的注册表身份被滤出（当前 runtime 上 agent 参数会被剥离，
- *  列出它是 UX 谎言）；被滤出的名字不占去重——runtime 侧同名条目以 source:'runtime' 落穿。 */
+ *  列出它是 UX 谎言）；被滤出的名字不占去重——runtime 侧同名条目以 source:'runtime' 落穿。
+ *  deprecated 身份（`manager` 是 Lead 的历史别名）同样不出现在列表里，且**两个分支都过滤**：
+ *  它仍会被物化给既有会话读取，runtime 列表里也有它，绝不能因此变成第二个可选协调身份。 */
 export function mergeAgentLists(
-  registryItems: Array<{ name: string; description: string; scope: string; materialized?: boolean }>,
+  registryItems: Array<{
+    name: string;
+    description: string;
+    scope: string;
+    materialized?: boolean;
+    deprecated?: boolean;
+  }>,
   runtimeAgents: any[],
 ): any[] {
-  const visible = registryItems.filter((i) => i.materialized !== false);
+  const deprecated = new Set(registryItems.filter((i) => i.deprecated).map((i) => i.name));
+  const visible = registryItems.filter((i) => i.materialized !== false && !i.deprecated);
   const out: any[] = visible.map((i) => ({
     name: i.name,
     description: i.description,
@@ -117,7 +126,7 @@ export function mergeAgentLists(
   }));
   const seen = new Set(visible.map((i) => i.name));
   for (const a of Array.isArray(runtimeAgents) ? runtimeAgents : []) {
-    if (a && typeof a.name === 'string' && !seen.has(a.name)) {
+    if (a && typeof a.name === 'string' && !seen.has(a.name) && !deprecated.has(a.name)) {
       seen.add(a.name);
       out.push({ ...a, source: 'runtime' });
     }

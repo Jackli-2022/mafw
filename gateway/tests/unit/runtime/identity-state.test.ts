@@ -169,4 +169,28 @@ describe('mergeAgentLists', () => {
     );
     expect(out).toHaveLength(1);
   });
+
+  it('hides deprecated registry identities (manager alias) from the picker', () => {
+    const out = mergeAgentLists(
+      [
+        { name: 'lead', description: 'Lead', scope: 'primary' },
+        { name: 'manager', description: 'deprecated alias', scope: 'primary', deprecated: true },
+      ],
+      [{ name: 'build', description: 'x' }],
+    );
+    expect(out.map((a: any) => a.name)).toEqual(['lead', 'build']);
+  });
+
+  it('a deprecated identity never leaks back through the runtime branch', () => {
+    // manager 仍会物化（既有会话可读），runtime 的 agent 列表里也有它——但它不能
+    // 因此变成第二个可选的协调者。
+    const out = mergeAgentLists(
+      [
+        { name: 'lead', description: 'Lead', scope: 'primary' },
+        { name: 'manager', description: 'deprecated alias', scope: 'primary', deprecated: true },
+      ],
+      [{ name: 'manager', description: 'materialized legacy agent' }, { name: 'build', description: 'x' }],
+    );
+    expect(out.map((a: any) => a.name)).toEqual(['lead', 'build']);
+  });
 });

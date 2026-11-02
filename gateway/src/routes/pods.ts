@@ -1,6 +1,6 @@
 import type * as http from 'http';
 import * as fs from 'fs';
-import { PodError, type PodMemberRole, type PodMemberRow } from '../core/pod/pod-store';
+import { PodError, POD_ROSTER_ROLES, type PodMemberRole, type PodMemberRow } from '../core/pod/pod-store';
 import type { PodGoalService } from '../core/pod/pod-goal-service';
 import type { PodMemoryService } from '../core/pod/pod-memory-service';
 import type { PodMessageService } from '../core/pod/pod-message-service';
@@ -122,11 +122,11 @@ export async function handlePods(
         return true;
       }
       if (onlyTitle) {
-        assertAccess(deps, body, ['lead', 'builder', 'reviewer'], podId);
+        assertAccess(deps, body, [...POD_ROSTER_ROLES], podId);
         sendJson(res, 200, { task: deps.tasks.editTitle(podId, targetTaskId, String(body.title ?? '')) });
         return true;
       }
-      assertAccess(deps, body, ['lead', 'builder', 'reviewer'], podId);
+      assertAccess(deps, body, [...POD_ROSTER_ROLES], podId);
       const updated = deps.tasks.updateTask(podId, targetTaskId, {
         ...(body.status ? { status: body.status } : {}),
         ...(body.ownerMemberId !== undefined ? { ownerMemberId: body.ownerMemberId } : {}),
@@ -186,7 +186,7 @@ export async function handlePods(
       }
       if (method === 'POST') {
         const body = await readJson(req);
-        const member = assertAccess(deps, body, ['lead', 'builder', 'reviewer'], podId);
+        const member = assertAccess(deps, body, [...POD_ROSTER_ROLES], podId);
         if (member && body.fromMemberId && body.fromMemberId !== member.id) {
           throw new PodError(403, 'fromMemberId does not match authenticated actor');
         }
@@ -485,7 +485,7 @@ function readMember(deps: PodRouteDeps, url: string, podId: string): PodMemberRo
   const actor = new URL(url, 'http://localhost').searchParams.get('actorSessionID');
   if (!actor) return null;
   if (!deps.access) throw new PodError(503, 'pod access checks unavailable');
-  return deps.access.requireMember(actor, ['lead', 'builder', 'reviewer'], podId);
+  return deps.access.requireMember(actor, [...POD_ROSTER_ROLES], podId);
 }
 
 function readJson(req: http.IncomingMessage): Promise<any> {

@@ -1,6 +1,6 @@
 ﻿import type { Message, Task } from '@a2a-js/sdk';
 import { Part, TaskState } from '@a2a-js/sdk';
-import { PodError, type PodStore, type PodTaskRow } from './pod-store';
+import { POD_ROSTER_ROLES, PodError, type PodStore, type PodTaskRow } from './pod-store';
 import { redactSecrets } from '../../recall/redact';
 import type { PodAccess } from './pod-access';
 import type { PodA2AArtifactSummary } from './pod-a2a-artifacts';
@@ -51,7 +51,7 @@ export class PodA2ABridge {
     if (opts.actorSessionID) {
       const actor = this.deps.access?.requireMember(
         opts.actorSessionID,
-        ['lead', 'builder', 'reviewer'],
+        [...POD_ROSTER_ROLES],
         podId,
       );
       if (actor) {

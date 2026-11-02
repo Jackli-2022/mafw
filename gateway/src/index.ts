@@ -6655,6 +6655,8 @@ class MafwScheduler {
                 name: s.name,
                 description: s.description,
                 scope: s.scope,
+                // deprecated 身份（manager）只保留给既有会话读取，不进可选列表。
+                deprecated: s.deprecated,
                 // 未物化身份不出现在列表（选了也会被 withIdentityPrompt 剥离，
                 // 列出是 UX 谎言）；runtime 无 agentConfigApi 时全部滤出。
                 materialized: this.identityState.isMaterialized(this.runtimeHost?.name ?? this.runtimeName, s.name),

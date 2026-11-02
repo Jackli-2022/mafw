@@ -3,6 +3,11 @@ import type { PodGoalVerdict } from './pod-stage';
 
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived';
 export type PodMemberRole = 'lead' | 'tech_lead' | 'builder' | 'reviewer';
+/**
+ * 四角色 roster 全集（roster 级访问检查的唯一来源）：任何成员都通过的通道用它；
+ * Lead 专属动作（计划编辑、Goal 建立、投递重试）仍显式用 `['lead']`。
+ */
+export const POD_ROSTER_ROLES = ['lead', 'tech_lead', 'builder', 'reviewer'] as const;
 export type PodMemberStatus = 'available' | 'working' | 'waiting' | 'sleeping' | 'retired';
 export type PodGoalStatus = 'queued' | 'active' | 'done' | 'aborted';
 export type PodTaskStatus =

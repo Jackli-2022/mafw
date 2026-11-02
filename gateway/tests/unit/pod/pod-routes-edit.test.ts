@@ -118,7 +118,7 @@ describe('PATCH /api/pods/:podId/tasks/:taskId', () => {
     await handlePods(makeReq({ title: '新备注', actorSessionID: 'ses_builder' }, 'PATCH'), res, '/api/pods/pod_1/tasks/note1', deps);
     expect(out.status).toBe(200);
     expect(calls.rename).toEqual([{ taskId: 'note1', title: '新备注' }]);
-    expect(calls.allowed).toEqual([['lead', 'builder', 'reviewer']]);
+    expect(calls.allowed).toEqual([['lead', 'tech_lead', 'builder', 'reviewer']]);
   });
 
   test('mixing plan fields with status is rejected', async () => {
@@ -148,7 +148,7 @@ describe('PATCH /api/pods/:podId/tasks/:taskId', () => {
     });
     const out = await patch(deps, { status: 'in_progress', actorSessionID: 'ses_builder' });
     expect(out.status).toBe(200);
-    expect(calls.allowed).toEqual([['lead', 'builder', 'reviewer']]);
+    expect(calls.allowed).toEqual([['lead', 'tech_lead', 'builder', 'reviewer']]);
   });
 
   test('DELETE removes a task and requires Lead when an actor is present', async () => {
@@ -213,5 +213,76 @@ describe('PATCH /api/pods/:podId/tasks/:taskId', () => {
     expect(out.status).toBe(200);
     expect(calls.manual).toEqual([{ goalId: null, title: '手工', ownerMemberId: undefined }]);
     expect(calls.add).toHaveLength(0);
+  });
+});
+
+describe('roster-wide Pod access includes the Tech Lead', () => {
+  // 四角色 roster：lead / tech_lead / builder / reviewer 都是「成员」，roster 级通道
+  // 必须放行；Lead 专属动作（计划编辑、Goal 建立）仍只允许 lead。
+  const rosterAccess = (calls: any, roles: Record<string, string>) => ({
+    requireMember: (sid: string, allowed: string[]) => {
+      calls.allowed.push(allowed);
+      const role = roles[sid];
+      if (!role || !allowed.includes(role)) throw new PodError(403, 'actor is not allowed');
+      return { id: `m_${role}`, role };
+    },
+  });
+
+  test('a tech lead session may update task status (roster-wide)', async () => {
+    const { deps, calls } = makeDeps();
+    deps.access = rosterAccess(calls, { ses_tl: 'tech_lead' });
+    const out = await patch(deps, { status: 'in_progress', actorSessionID: 'ses_tl' });
+    expect(out.status).toBe(200);
+    expect(calls.allowed).toEqual([['lead', 'tech_lead', 'builder', 'reviewer']]);
+    expect(calls.update).toEqual([{ taskId: 't1', patch: { status: 'in_progress' } }]);
+  });
+
+  test('a tech lead session may send a Pod message', async () => {
+    const { deps, calls } = makeDeps();
+    const sent: any[] = [];
+    deps.access = rosterAccess(calls, { ses_tl: 'tech_lead' });
+    deps.messages = {
+      list: () => [],
+      send: (input: any) => { sent.push(input); return { id: 'msg_tl', ...input }; },
+      markRead: jest.fn(),
+    };
+    const { res, out } = makeRes();
+    await handlePods(makeReq({
+      actorSessionID: 'ses_tl', fromMemberId: 'm_tech_lead', kind: 'request', body: 'probe this', toMemberId: 'm_builder',
+    }, 'POST'), res, '/api/pods/pod_1/messages', deps);
+    expect(out.status).toBe(200);
+    expect(calls.allowed).toEqual([['lead', 'tech_lead', 'builder', 'reviewer']]);
+    expect(sent[0]).toMatchObject({ fromMemberId: 'm_tech_lead', body: 'probe this' });
+  });
+
+  test('a tech lead session may read the Pod (GET roster-wide)', async () => {
+    const { deps, calls } = makeDeps();
+    deps.access = rosterAccess(calls, { ses_tl: 'tech_lead' });
+    const { res, out } = makeRes();
+    await handlePods(
+      { method: 'GET' } as any,
+      res,
+      '/api/pods/pod_1/messages?actorSessionID=ses_tl',
+      deps,
+    );
+    expect(out.status).toBe(200);
+    expect(calls.allowed).toEqual([['lead', 'tech_lead', 'builder', 'reviewer']]);
+  });
+
+  test('a non-roster role is still rejected by the roster-wide gate', async () => {
+    const { deps, calls } = makeDeps();
+    deps.access = rosterAccess(calls, { ses_ghost: 'ghost' });
+    const out = await patch(deps, { status: 'in_progress', actorSessionID: 'ses_ghost' });
+    expect(out.status).toBe(403);
+    expect(calls.update).toHaveLength(0);
+  });
+
+  test('Lead-only plan edits stay Lead-only', async () => {
+    const { deps, calls } = makeDeps();
+    deps.access = rosterAccess(calls, { ses_tl: 'tech_lead' });
+    const out = await patch(deps, { acceptance: ['a'], actorSessionID: 'ses_tl' });
+    expect(out.status).toBe(403);
+    expect(calls.allowed).toEqual([['lead']]);
+    expect(calls.edit).toHaveLength(0);
   });
 });
