@@ -124,8 +124,13 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
     // v2 requestID 都会投影成 id）；`requestID` 兜底老载荷/旧 gateway。
     const id = props.id || props.requestID
     if (id) {
-      const reply = props.reply
-      d.resolveCard(sid, id, { status: reply === "always" ? "allowed-always" : reply === "reject" ? "denied" : "allowed-once" })
+      // review I1：pi 的 replied 用 `approved/decision`，opencode 用 `reply`——
+      // 只读 reply 会把 pi 的 reject 显示成 allowed-once。判定链：
+      // reply ?? decision ?? (approved === false ? 'reject' : undefined)。
+      const verdict = props.reply ?? props.decision
+        ?? (props.approved === false ? "reject" : undefined)
+      const status = verdict === "always" ? "allowed-always" : verdict === "reject" ? "denied" : "allowed-once"
+      d.resolveCard(sid, id, { status })
     }
     return true
   }

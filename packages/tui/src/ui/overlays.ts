@@ -38,11 +38,13 @@ export function shouldShowOverlay(req: MafwPermissionRequest | Record<string, un
 }
 
 /** permission.asked 弹窗：SelectList once/always/persist/persist-tool/reject → permissions.reply
- *  （支持鼠标点击行；persist = always + persist:'prefix'，persist-tool = persist:'tool'）。 */
+ *  （支持鼠标点击行；persist = always + persist:'prefix'，persist-tool = persist:'tool'）。
+ *  `onClose` 在弹窗收起（答复/取消）后调用——app 用它清掉待决追踪。 */
 export function showPermissionOverlay(
   tui: TUI,
   req: MafwPermissionRequest,
   reply: (r: 'once' | 'always' | 'persist' | 'persist-tool' | 'reject') => Promise<void>,
+  onClose?: () => void,
 ): OverlayHandle {
   const list = new SelectList(permissionToItems(), 5, selectListTheme)
   const overlay = new HeaderSelectOverlay(
@@ -50,7 +52,10 @@ export function showPermissionOverlay(
     list,
   )
   const handle = showModal(tui, overlay, { width: '70%', maxHeight: 10, anchor: 'center' })
-  const done = () => handle.hide()
+  const done = () => {
+    handle.hide()
+    onClose?.()
+  }
   list.onSelect = (item) => {
     void reply(item.value as 'once' | 'always' | 'persist' | 'persist-tool' | 'reject')
       .catch(() => {})

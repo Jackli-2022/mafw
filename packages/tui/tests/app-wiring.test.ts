@@ -23,3 +23,9 @@ test('wiring: permission.asked 不因 approval.permission（含 list surface）�
     /async function handlePermissionAsked[\s\S]{0,900}?experience\.gate\('approval\.permission'\)/,
   )
 })
+
+test('wiring: permission.replied 用 canonical id 收起待决审批弹窗（review I1）', () => {
+  // asked 时登记待决 overlay，replied 时按 canonical id resolve
+  assert.match(appSource, /pendingPermissions\.track\(dto\.id,/)
+  assert.match(appSource, /type === 'permission\.replied'[\s\S]{0,400}?pendingPermissions\.resolve\(permissionRepliedId\(p\)\)/)
+})

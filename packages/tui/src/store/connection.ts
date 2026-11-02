@@ -17,7 +17,8 @@ const HEALTH_TICK_MS = 1000
  *
  * - `message.updated` / `part.updated` / `part.delta` / `turn.*`：ChatStore 回合渲染、
  *   终态快照合并、流式增量累积与回合收尾
- * - `permission.asked` / `permission_mode`：审批 overlay 与 🛡 状态
+ * - `permission.asked` / `permission.replied` / `permission_mode`：审批 overlay（含外部
+ *   销账收起，review I1）与 🛡 状态
  * - `queue.updated`：gateway inbox 计数
  * - `background.job.updated`：状态栏后台作业计数（MafwBackgroundJob）
  * - `runtime_switched`：Experience 动作面失效（运行时热切换）
@@ -35,6 +36,7 @@ export const KNOWN_EVENTS = [
   'turn.failed',
   'turn.aborted',
   'permission.asked',
+  'permission.replied',
   'permission_mode',
   'queue.updated',
   'background.job.updated',

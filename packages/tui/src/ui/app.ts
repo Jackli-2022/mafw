@@ -38,6 +38,7 @@ import { MemoryTab } from './memory-tab.ts'
 import { TriageStore } from '../store/triage-store.ts'
 import { TriageTab } from './triage-tab.ts'
 import { PermissionModeStore } from '../store/permission-mode.ts'
+import { PendingPermissionStore, permissionRepliedId } from '../store/pending-permission.ts'
 import { TuiExperienceStore } from '../store/experience-store.ts'
 import {
   normalizePermissionRequest,
@@ -636,6 +637,10 @@ export async function runApp(opts: AppOptions): Promise<void> {
     setStatus({ background: runningJobs.size })
   }
 
+  // 待决审批 overlay（canonical id 键控）：别处已答复（桌面 / 另一 TUI / agent 自动决策）
+  // 时 gateway 广播 permission.replied，本端必须收起弹窗，否则会对已决请求再答一次。
+  const pendingPermissions = new PendingPermissionStore()
+
   async function handlePermissionAsked(raw: unknown): Promise<void> {
     const dto = normalizePermissionRequest(raw)
     if (!dto) return
@@ -643,11 +648,12 @@ export async function runApp(opts: AppOptions): Promise<void> {
     // 聚合了 list+reply 两个 surface，缺 list 不应阻断 reply（review cheap fix）：
     // 这里不读 Experience，也不做旧推导，直接按中性的 mafwPolicy/overlay 语义处理。
     if (shouldShowOverlay(dto)) {
-      showPermissionOverlay(tui, dto, (r) => {
+      const handle = showPermissionOverlay(tui, dto, (r) => {
         if (r === 'persist') return client.permissions.reply(dto.id, 'always', undefined, 'prefix')
         if (r === 'persist-tool') return client.permissions.reply(dto.id, 'always', undefined, 'tool')
         return client.permissions.reply(dto.id, r)
-      })
+      }, () => pendingPermissions.clear(dto.id))
+      pendingPermissions.track(dto.id, () => handle.hide())
       return
     }
     // gateway 已自动放行/拒绝 —— 状态栏短提示，不弹 overlay
@@ -665,6 +671,13 @@ export async function runApp(opts: AppOptions): Promise<void> {
     }
     if (type === 'permission.asked') {
       void handlePermissionAsked(data?.properties ?? data)
+    } else if (type === 'permission.replied') {
+      // 外部销账：canonical id 命中待决弹窗 → 收起（本端答复时 overlay 已自行关闭并清空）。
+      const p = data?.properties ?? data
+      if (pendingPermissions.resolve(permissionRepliedId(p))) {
+        setStatus({ hint: '该审批已在别处处理' })
+        setTimeout(() => setStatus({ hint: undefined }), 3000)
+      }
     } else if (type === 'permission_mode') {
       // gateway 审批模式变更（🛡 toggle / 预算回落广播；未知值 store 内归一化 read-only）
       const sid = data?.sessionID ?? data?.properties?.sessionID

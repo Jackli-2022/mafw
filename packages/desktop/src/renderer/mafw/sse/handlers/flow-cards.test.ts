@@ -71,6 +71,25 @@ describe("handleFlowCardEvent", () => {
     expect(resolve.args[2]).toEqual({ status: "allowed-once" })
   })
 
+  test("permission.replied verdict：reply ?? decision ?? approved===false（review I1）", () => {
+    const statusOf = (properties: Record<string, unknown>) => {
+      const d = makeDeps()
+      handleFlowCardEvent({ type: "permission.replied", properties }, "s1", d.deps)
+      return d.calls.find(c => c.name === "resolveCard")!.args[2]
+    }
+    // pi 形状：decision:'reject' + approved:false → denied（旧实现只看 reply，会显示 allowed-once）
+    expect(statusOf({ id: "p1", approved: false, decision: "reject" })).toEqual({ status: "denied" })
+    // pi 形状：decision:'always' → allowed-always（decision 优先于 approved）
+    expect(statusOf({ id: "p2", approved: true, decision: "always" })).toEqual({ status: "allowed-always" })
+    // 只有 approved:false（无 decision）→ 仍判拒
+    expect(statusOf({ id: "p3", approved: false })).toEqual({ status: "denied" })
+    // 只有 approved:true → 单次放行
+    expect(statusOf({ id: "p4", approved: true })).toEqual({ status: "allowed-once" })
+    // opencode 形状：reply 保持不变
+    expect(statusOf({ id: "p5", reply: "reject" })).toEqual({ status: "denied" })
+    expect(statusOf({ id: "p6", reply: "once" })).toEqual({ status: "allowed-once" })
+  })
+
   test("permission.replied canonical id 优先；旧 requestID 仍兜底（旧 gateway 载荷）", () => {
     const d1 = makeDeps()
     handleFlowCardEvent(
