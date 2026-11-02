@@ -61,6 +61,31 @@ describe('PodMemoryService', () => {
     expect(first).toBe(second);
   });
 
+  test('unused decisions reserve returns to stable files', () => {
+    service.ensurePodMemory('pod_1', 'Project Alpha');
+    service.writeMemory('pod_1', 'POD', `# Pod\n${'p'.repeat(3000)}`);
+    service.writeMemory('pod_1', 'MEMORY', `# Memory\n${'m'.repeat(3000)}`);
+    const block = service.renderContext('pod_1', 'plan')!;
+    expect(block.length).toBeLessThanOrEqual(4096);
+    expect(block.length).toBeGreaterThan(2600);
+    expect(block).toContain('## POD.md');
+    expect(block).toContain('## POD_MEMORY.md');
+  });
+
+  test('recent decisions are retained when stable files are oversized', () => {
+    service.ensurePodMemory('pod_1', 'Project Alpha');
+    service.writeMemory('pod_1', 'POD', `# Pod\n${'p'.repeat(5000)}`);
+    service.captureGoal('pod_1', {
+      goalId: 'g1',
+      ok: false,
+      reviewFeedback: `important recent decision ${'d'.repeat(300)}`,
+    });
+    const block = service.renderContext('pod_1', 'plan')!;
+    expect(block.length).toBeLessThanOrEqual(4096);
+    expect(block).toContain('important recent decision');
+    expect(block).toContain('[truncated]');
+  });
+
   test('captureGoal writes a decision record and returns its path', () => {
     service.ensurePodMemory('pod_1', 'Project Alpha');
     const file = service.captureGoal('pod_1', {

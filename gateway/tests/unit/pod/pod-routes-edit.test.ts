@@ -162,6 +162,25 @@ describe('PATCH /api/pods/:podId/tasks/:taskId', () => {
     expect(missingGoal.status).toBe(400);
   });
 
+  test('notify never forces delivery into a running node', async () => {
+    const delivery = { deliver: jest.fn(async () => 'pending') };
+    const { deps } = makeDeps({
+      messages: {
+        list: () => [],
+        send: () => ({ id: 'm1' }),
+        markRead: jest.fn(),
+      },
+      delivery,
+      access: { requireMember: () => ({ id: 'm_lead', role: 'lead' }) },
+    });
+    const { res, out } = makeRes();
+    await handlePods(makeReq({
+      fromMemberId: 'm_lead', toMemberId: 'm_builder', kind: 'request', body: 'work', notify: true,
+    }, 'POST'), res, '/api/pods/pod_1/messages', deps);
+    expect(out.status).toBe(200);
+    expect(delivery.deliver).toHaveBeenCalledWith('m1', { force: false });
+  });
+
   test('POST without plan stays a manual task', async () => {
     const { deps, calls } = makeDeps();
     const { res, out } = makeRes();

@@ -66,6 +66,7 @@ const ALLOWED_TRANSITIONS: Record<PodTaskStatus, PodTaskStatus[]> = {
   review: ['done', 'reopened'],
   reopened: ['in_progress', 'failed'],
   done: [],
+  skipped: [],
   failed: [],
 };
 
@@ -131,7 +132,11 @@ export class PodTaskService {
     for (const item of receipt.receipts) {
       const task = byExternal.get(item.taskId);
       if (!task) continue;
-      const status: PodTaskStatus = item.status === 'done' ? 'review' : 'failed';
+      const status: PodTaskStatus = item.status === 'done'
+        ? 'review'
+        : item.status === 'skipped'
+          ? 'skipped'
+          : 'failed';
       const files = item.files ?? [];
       const existingFiles = parseStringArray(task.artifactRefsJson);
       const mergedFiles = Array.from(new Set([...existingFiles, ...files]));
@@ -311,7 +316,7 @@ export class PodTaskService {
     const wanted = new Map<string, PodTaskStatus>();
     for (const item of results) {
       if (!item || typeof item.taskId !== 'string') continue;
-      wanted.set(item.taskId, item.result === 'pass' ? 'done' : item.result === 'fail' ? 'reopened' : 'failed');
+      wanted.set(item.taskId, item.result === 'pass' ? 'done' : item.result === 'fail' ? 'reopened' : 'skipped');
     }
     if (wanted.size === 0) return [];
     const updated: PodTaskView[] = [];

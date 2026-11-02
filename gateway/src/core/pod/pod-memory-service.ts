@@ -57,14 +57,30 @@ export class PodMemoryService {
     const dir = this.memoryDir(podId);
     const files = ['POD.md', 'POD_MEMORY.md', 'glossary.md'];
     const sections: string[] = [];
-    for (const file of files) {
-      const target = path.join(dir, file);
-      if (!fs.existsSync(target)) continue;
-      const content = fs.readFileSync(target, 'utf-8').trim();
-      if (!content) continue;
-      sections.push(`## ${file}\n${content}`);
-    }
+    const header = `[POD CONTEXT]\nNode: ${node}\n`;
+    let remaining = MAX_CONTEXT_CHARS - header.length;
 
+    const append = (title: string, raw: string, limit: number): void => {
+      if (remaining <= 0) return;
+      const content = raw.trim();
+      if (!content) return;
+      const prefix = `\n## ${title}\n`;
+      const room = Math.min(remaining, limit);
+      if (room <= prefix.length) return;
+      const bodyRoom = room - prefix.length;
+      if (content.length <= bodyRoom) {
+        sections.push(`${prefix}${content}`);
+        remaining -= prefix.length + content.length;
+      } else {
+        const marker = '…[truncated]';
+        const take = Math.max(0, bodyRoom - marker.length);
+        sections.push(`${prefix}${content.slice(0, take)}${marker}`);
+        remaining -= prefix.length + take + marker.length;
+      }
+    };
+
+    // Recent decisions have reserved priority over stable project files.
+    let decisionBudget = Math.min(1600, remaining);
     const decisionsDir = path.join(dir, 'decisions');
     if (fs.existsSync(decisionsDir)) {
       const recent = fs.readdirSync(decisionsDir)
@@ -73,16 +89,26 @@ export class PodMemoryService {
         .reverse()
         .slice(0, 3);
       for (const name of recent) {
+        if (decisionBudget <= 0) break;
         const target = path.join(decisionsDir, name);
         const content = fs.readFileSync(target, 'utf-8').trim();
-        if (content) sections.push(`## decision:${name}\n${content}`);
+        if (!content) continue;
+        const before = remaining;
+        append(`decision:${name}`, content, decisionBudget);
+        decisionBudget -= Math.max(0, before - remaining);
       }
     }
 
-    if (sections.length === 0) return null;
+    // Unused decision budget is returned to POD.md / POD_MEMORY.md / glossary.
+    for (const file of files) {
+      if (remaining <= 0) break;
+      const target = path.join(dir, file);
+      if (!fs.existsSync(target)) continue;
+      append(file, fs.readFileSync(target, 'utf-8'), remaining);
+    }
 
-    const block = `[POD CONTEXT]\nNode: ${node}\n\n${sections.join('\n\n')}`;
-    return block.length <= MAX_CONTEXT_CHARS ? block : block.slice(0, MAX_CONTEXT_CHARS);
+    if (sections.length === 0) return null;
+    return `${header}${sections.join('')}`;
   }
 
   captureGoal(

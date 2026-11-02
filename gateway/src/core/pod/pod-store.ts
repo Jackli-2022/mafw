@@ -12,6 +12,7 @@ export type PodTaskStatus =
   | 'review'
   | 'done'
   | 'failed'
+  | 'skipped'
   | 'reopened';
 
 export interface PodRow {

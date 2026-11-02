@@ -6,6 +6,21 @@ import { PodStore, PodError } from '../../../src/core/pod/pod-store';
 import { PodTaskService, podTaskKindOf } from '../../../src/core/pod/pod-task-service';
 
 describe('PodTaskService', () => {
+  test('skipped is terminal and survives PASS archive', () => {
+    const tasks = service.projectWaves('pod_1', 'g1', plan);
+    service.applyReviewResults('pod_1', 'g1', [{ taskId: 'w1-t1', result: 'skipped' }]);
+    service.reconcileArchive('pod_1', 'g1', true);
+    expect(service.list('pod_1', 'g1').find((t) => t.id === tasks[0].id)?.status).toBe('skipped');
+  });
+
+  test('skipped receipt is not converted to failed', () => {
+    const tasks = service.projectWaves('pod_1', 'g1', plan);
+    service.applyReceipt('pod_1', 'g1', {
+      receipts: [{ taskId: 'w1-t1', status: 'skipped', summary: 'not needed' }],
+    });
+    expect(service.list('pod_1', 'g1').find((t) => t.id === tasks[0].id)?.status).toBe('skipped');
+  });
+
   test('derives plan, note and external request kinds', () => {
     expect(podTaskKindOf({ sourceKey: 'manual:x', goalId: null, externalTaskId: null })).toBe('note');
     expect(podTaskKindOf({ sourceKey: 'wave:w1:task:w1-t1', goalId: 'g1', externalTaskId: 'w1-t1' })).toBe('plan');
@@ -196,7 +211,7 @@ describe('PodTaskService', () => {
     const byExternal = () => new Map(service.list('pod_1', 'g1').map((t) => [t.externalTaskId, t.status]));
     expect(byExternal().get('w1-t1')).toBe('done');
     expect(byExternal().get('w1-t2')).toBe('reopened');
-    expect(byExternal().get('w2-t1')).toBe('failed');
+    expect(byExternal().get('w2-t1')).toBe('skipped');
     expect(updated).toHaveLength(3);
 
     // 幂等：重复同一结果不再变更

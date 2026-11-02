@@ -190,7 +190,7 @@ export async function handlePods(
           sendJson(res, 200, { message });
           return true;
         }
-        const result = deps.delivery ? await deps.delivery.deliver(message.id, { force: true }) : 'skipped';
+        const result = deps.delivery ? await deps.delivery.deliver(message.id, { force: false }) : 'skipped';
         sendJson(res, 200, { message, delivery: result === 'skipped' ? 'disabled' : result });
         return true;
       }
