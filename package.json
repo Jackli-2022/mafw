@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "npm run build -w @mafw/plugin-contract && tsc && cd gateway && npm run build && cd .. && npm run build -w @mafw/sdk && npm run build -w @mafw/tui",
-    "postinstall": "node -e \"var p=require('path'),f=require('fs'),d=p.join(__dirname,'gateway'),ts=p.join(d,'node_modules','typescript','bin','tsc');if(f.existsSync(d)){if(f.existsSync(ts)){console.log('[mafw] gateway dev deps present, skip prod install')}else{require('child_process').execSync('npm install --omit=dev --no-audit --no-fund --loglevel=error',{cwd:d,stdio:'inherit'})}}\"",
+    "postinstall": "node -e \"var p=require('path'),f=require('fs'),d=p.join(__dirname,'gateway'),ts=p.join(d,'node_modules','typescript','bin','tsc');if(f.existsSync(d)){if(f.existsSync(ts)){console.log('[mafw] gateway dev deps present, skip prod install')}else{require('child_process').execSync('npm install --omit=dev --no-audit --no-fund --loglevel=error',{cwd:d,stdio:'inherit'})}}\" && node scripts/stage-plugin-contract.mjs --allow-missing",
     "prepare": "node -e \"var p=require('path'),f=require('fs'),ts=p.join(__dirname,'gateway','node_modules','typescript','bin','tsc');if(!f.existsSync(ts)){console.log('[mafw] gateway dev deps missing, skip prepare build (fresh CI install)');process.exit(0)}require('child_process').execSync('npm run build',{cwd:__dirname,stdio:'inherit'})\"",
     "pack:install": "npm run build && npm pack && npm install -g jack200714-mafw-*.tgz && mafw version",
     "version:set": "node scripts/bump-version.mjs",
@@ -26,13 +26,17 @@
     "test:unit": "npm test --prefix gateway",
     "test:tui": "node --test packages/tui/tests/*.test.ts",
     "test:kit": "node --test \"packages/runtime-kit/src/*.test.ts\"",
-    "test:desktop": "npm test -w @mafw/desktop"
+    "test:desktop": "npm test -w @mafw/desktop",
+    "test:plugin-contract": "npm test -w @mafw/plugin-contract",
+    "test:plugin-example": "node --test docs/examples/plugins/service-monitor/index.test.js",
+    "verify:plugin-contract": "node scripts/stage-plugin-contract.mjs --selftest"
   },
   "files": [
     "gateway/dist/",
     "gateway/package.json",
     "gateway/scripts/setup-pykernel.mjs",
     "gateway/scripts/office/",
+    "scripts/stage-plugin-contract.mjs",
     "skills/",
     "bin/",
     "dist/",

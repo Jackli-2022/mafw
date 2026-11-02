@@ -42,5 +42,10 @@
   },
   "optionalDependencies": {
     "kokoro-js": "^1.2.1"
+  },
+  "mafw": {
+    "bundledPackages": {
+      "@mafw/plugin-contract": "../packages/plugin-contract"
+    }
   }
 }
