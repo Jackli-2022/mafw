@@ -300,6 +300,14 @@ export const CORE_SURFACES: ContractSurface[] = [
     consumer: 'index-scan / media', impact: '无状态补全通道降级', presets: DESK,
   }),
   row({
+    // Presence-only 视图：调用方（media）只关心「通道是否存在」，不把
+    // completionApi 能力位当作第二套能力模型（设计 §7.1）。
+    id: 'completion.channel', title: 'stateless completion channel', domain: 'process',
+    obligation: 'optional', verification: 'presence',
+    implementation: 'completion.complete', probe: ['completion', 'complete'],
+    consumer: 'MediaRuntimeExecutor', impact: '媒体单次分析回退 HTTP 适配器（无契约通道）', presets: NONE,
+  }),
+  row({
     id: 'process.credentials', title: 'credentials.getApiKey', domain: 'process',
     obligation: 'optional', verification: 'presence', implementation: 'credentials.getApiKey',
     probe: ['credentials', 'getApiKey'], consumer: 'media/auth', impact: '凭据回退 auth.json', presets: NONE,

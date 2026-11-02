@@ -990,6 +990,22 @@
     },
     {
       "direction": "gateway->runtime",
+      "id": "completion.channel",
+      "title": "stateless completion channel",
+      "domain": "process",
+      "obligation": "optional",
+      "verification": "presence",
+      "implementation": "completion.complete",
+      "probe": [
+        "completion",
+        "complete"
+      ],
+      "consumer": "MediaRuntimeExecutor",
+      "impact": "媒体单次分析回退 HTTP 适配器（无契约通道）",
+      "presets": []
+    },
+    {
+      "direction": "gateway->runtime",
       "id": "process.credentials",
       "title": "credentials.getApiKey",
       "domain": "process",

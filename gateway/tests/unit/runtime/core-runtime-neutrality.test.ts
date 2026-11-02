@@ -14,6 +14,7 @@ import {
 } from '../../../src/core/instructions/instruction-sync-service';
 import { canDiscovery } from '../../../src/core/discovery/discovery-service';
 import {
+  canCompletionChannel,
   canMediaSession,
   createMediaRuntimeExecutor,
 } from '../../../src/media/media-runtime-executor';
@@ -30,6 +31,7 @@ import {
 } from '../../../src/core/diff/turn-diff';
 import { buildRuntimeContractManifest } from '../../../src/runtime/contract-manifest';
 import { buildRuntimeDiagnostics } from '../../../src/runtime/runtime-diagnostics';
+import { createRuntimeFacade } from '../../../src/runtime/runtime-facade';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 
@@ -76,6 +78,7 @@ describe('core capability gates use RuntimeAccess surfaces', () => {
     expect(canDiscovery(denied)).toBe(false);
     expect(canInstructionSync(denied)).toBe(false);
     expect(canMediaSession(denied)).toBe(false);
+    expect(canCompletionChannel(denied)).toBe(false);
 
     const allowed = fakeAccess({
       'discovery.list': true,
@@ -87,6 +90,7 @@ describe('core capability gates use RuntimeAccess surfaces', () => {
     expect(canDiscovery(allowed)).toBe(true);
     expect(canInstructionSync(allowed)).toBe(true);
     expect(canMediaSession(allowed)).toBe(true);
+    expect(canCompletionChannel(fakeAccess({ 'completion.channel': true }))).toBe(true);
 
     // 缺任一条写面都不算可同步（服务确实会 list + put + remove）。
     expect(canInstructionSync(fakeAccess({
@@ -98,6 +102,7 @@ describe('core capability gates use RuntimeAccess surfaces', () => {
     expect(canDiscovery(null)).toBe(false);
     expect(canInstructionSync(undefined)).toBe(false);
     expect(canMediaSession(null)).toBe(false);
+    expect(canCompletionChannel(undefined)).toBe(false);
   });
 
   it('discovery service degrades honestly when discovery.list is denied (no runtime call)', async () => {
@@ -264,6 +269,27 @@ describe('runtime diagnostics view', () => {
     expect(view.capabilities).not.toBe(caps); // copy, not a live alias
     expect(buildRuntimeDiagnostics(null)).toBeNull();
   });
+
+  it('reflects an adaptive dialect probe that lands after facade creation', async () => {
+    const raw: any = { name: 'adaptive', capabilities: { sessionApi: true }, session: {} };
+    const facade = await createRuntimeFacade(raw, { entry: {}, isCanonical: () => false });
+    const view = buildRuntimeDiagnostics(facade)!;
+    // 探测前：/api/runtime 不再读到快照里的 null。
+    expect(view.activeDialect).toBeUndefined();
+    raw.activeDialect = 'v21'; // resolveEventEntry / rewire 之后写入
+    expect(view.activeDialect).toBe('v21');
+    // facade 自身也保持同一实时值（诊断视图经 getter 读取）。
+    expect(facade.activeDialect).toBe('v21');
+  });
+
+  it('capabilities are read live (post-activation downgrade is visible)', () => {
+    const caps: any = { sessionApi: true, completionApi: true };
+    const view = buildRuntimeDiagnostics({ name: 'any-runtime', capabilities: caps })!;
+    expect(view.capabilities.completionApi).toBe(true);
+    caps.completionApi = false; // 激活期能力降级写回
+    expect(view.capabilities.completionApi).toBe(false);
+    expect(view.capabilities).not.toBe(caps); // still a copy per read
+  });
 });
 
 describe('contract surfaces and composition-root wiring', () => {
@@ -284,6 +310,18 @@ describe('contract surfaces and composition-root wiring', () => {
       verification: 'presence',
       probe: ['snapshotTree', 'locate'],
     });
+    expect(surface('completion.channel')).toMatchObject({
+      domain: 'process',
+      obligation: 'optional',
+      verification: 'presence',
+      probe: ['completion', 'complete'],
+    });
+  });
+
+  it('only pi declares the media.session carrier (opencode keeps stateless completion)', () => {
+    expect(codeOf('src/runtime/opencode-adapter.ts')).not.toContain('mediaSession');
+    expect(codeOf('src/runtime/opencode-runtime.ts')).not.toContain('mediaSession');
+    expect(codeOf('src/runtime/plugins/pi-runtime.ts')).toContain('mediaSession');
   });
 
   it('index.ts picks the media executor by surface, not by runtime name', () => {

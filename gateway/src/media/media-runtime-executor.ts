@@ -14,6 +14,14 @@ export function canMediaSession(access: Pick<RuntimeAccess, 'can'> | null | unde
   return access?.can('media.session') === true;
 }
 
+/**
+ * Stateless completion channel gate (surface `completion.channel`).
+ * Presence only: the adapter either exposes `completion.complete` or it does not.
+ */
+export function canCompletionChannel(access: Pick<RuntimeAccess, 'can'> | null | undefined): boolean {
+  return access?.can('completion.channel') === true;
+}
+
 export interface MediaRuntimeExecutorOptions {
   /** 会话 TTL（默认 24h） */
   sessionTtlMs?: number;
@@ -25,6 +33,8 @@ export interface MediaRuntimeExecutorOptions {
   getApiKey?: (provider: string) => string | null;
   /** 会话工作目录（绝对路径，必填；gateway 注入 resolvedProjectDir()）。 */
   projectDir: string;
+  /** surface 门（completion.channel）；缺省 = 不尝试契约补全（不猜能力位）。 */
+  access?: Pick<RuntimeAccess, 'can'> | null;
 }
 
 interface SessionEntry {
@@ -212,13 +222,14 @@ export function createMediaRuntimeExecutor(
   rt: AgentRuntime,
   opts: MediaRuntimeExecutorOptions,
 ): MediaRuntimeExecutor {
-    // Contract path: stateless single-shot completion over rt.completion
-  // (completionApi capability). Media parts ride the contract's image carrier;
-  // wire-format rewriting (video_url/input_audio) is the implementing
-  // runtime's internal concern (pi: fixMediaPayload via onPayload).
+  // Contract path: stateless single-shot completion over rt.completion, gated by
+  // the `completion.channel` surface (not capabilities.completionApi). Media parts
+  // ride the contract's image carrier; wire-format rewriting (video_url/input_audio)
+  // is the implementing runtime's internal concern (pi: fixMediaPayload via onPayload).
   const contractComplete = async (parts: PromptPart[], po: PromptOptions): Promise<string> => {
-    const channel = rt.capabilities?.completionApi ? rt.completion : undefined;
-    if (!channel) throw new Error('no completion channel');
+    if (!canCompletionChannel(opts.access)) throw new Error('runtime does not support completion.channel');
+    const channel = rt.completion;
+    if (typeof channel?.complete !== 'function') throw new Error('no completion channel');
     const filePart = parts.find((p) => p.type === 'file');
     const textPart = parts.find((p) => p.type === 'text');
     const dataUrl = String(filePart?.url ?? '');

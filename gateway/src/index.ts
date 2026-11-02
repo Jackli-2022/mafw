@@ -525,7 +525,11 @@ class MafwScheduler {
    * 未 attach 的 shadow 条目自然落回 legacy 内联链。
    */
   private routeRegistry: RouteRegistry = new RouteRegistry().register(...buildRouteCatalog());
-  private runtimeCaps: RuntimeCapabilities = minimalCapabilities();
+  /** 无 runtime 时的保守能力集；有诊断视图时实时读视图（能力可能随探测/降级变化）。 */
+  private runtimeCapsFallback: RuntimeCapabilities = minimalCapabilities();
+  private get runtimeCaps(): RuntimeCapabilities {
+    return this.runtimeDiagnostics?.capabilities ?? this.runtimeCapsFallback;
+  }
   private runtimeName = 'opencode';
   /** 组合根持有的诊断视图（业务核心只读 access/Experience；本视图供 /api/runtime 等 Admin 面）。 */
   private runtimeDiagnostics: RuntimeDiagnosticsView | null = null;
@@ -1723,7 +1727,6 @@ class MafwScheduler {
     this.runtimeDiagnostics = buildRuntimeDiagnostics(rt);
     if (this.runtimeDiagnostics) {
       this.runtimeName = this.runtimeDiagnostics.name;
-      this.runtimeCaps = this.runtimeDiagnostics.capabilities;
     }
   }
 
@@ -4065,7 +4068,12 @@ class MafwScheduler {
               // runtime 引用，必须重建（dispose 尽力而为，不阻塞 prompt）。
               if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.runtime) {
                 void this.mediaRuntimeExecutor?.dispose().catch(() => {});
-                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime, { projectDir: this.resolvedProjectDir(), getApiKey: this.runtimeGetApiKey.bind(this) });
+                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime, {
+                  projectDir: this.resolvedProjectDir(),
+                  getApiKey: this.runtimeGetApiKey.bind(this),
+                  // 契约补全通道同样经 surface（不再读 capabilities.completionApi）。
+                  access: this.runtime.access,
+                });
                 this.mediaRuntimeExecutorRt = this.runtime;
               }
               return this.mediaRuntimeExecutor.prompt;

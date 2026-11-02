@@ -7,8 +7,13 @@ jest.mock('../../src/core/utils/logger', () => ({
 const videoPart = { type: 'file', url: 'data:video/mp4;base64,AAAA', mime: 'video/mp4' };
 const textPart = { type: 'text', text: 'what happens?' };
 
+/** access 的 can() 子集：未列出 = false（与 RuntimeAccess 的缺失面一致）。 */
+function fakeAccess(over: Record<string, boolean> = {}) {
+  return { can: (id: string) => over[id] ?? false };
+}
+
 describe('MediaRuntimeExecutor default completeFn', () => {
-  it('routes video/audio through rt.completion when completionApi is declared', async () => {
+  it('routes video/audio through rt.completion when completion.channel is available', async () => {
     const completeCalls: any[] = [];
     const fakeRt: any = {
       capabilities: { completionApi: true },
@@ -20,7 +25,10 @@ describe('MediaRuntimeExecutor default completeFn', () => {
       },
       session: {},
     };
-    const executor = createMediaRuntimeExecutor(fakeRt, { projectDir: '/tmp/proj' });
+    const executor = createMediaRuntimeExecutor(fakeRt, {
+      projectDir: '/tmp/proj',
+      access: fakeAccess({ 'completion.channel': true }),
+    });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('a cat jumps');
     expect(completeCalls.length).toBe(1);
@@ -30,7 +38,24 @@ describe('MediaRuntimeExecutor default completeFn', () => {
     ]);
   });
 
-  it('falls back to opts.completeFn when the runtime lacks completionApi', async () => {
+  it('denied completion.channel never calls completion and falls back', async () => {
+    const complete = jest.fn(async () => ({ text: 'must not be used' }));
+    const fakeRt: any = {
+      capabilities: { completionApi: true },
+      completion: { complete },
+      session: {},
+    };
+    const executor = createMediaRuntimeExecutor(fakeRt, {
+      projectDir: '/tmp/proj',
+      access: fakeAccess({ 'completion.channel': false }),
+      completeFn: async () => 'legacy adapter result',
+    });
+    const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
+    expect(out).toBe('legacy adapter result');
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('falls back to opts.completeFn when no access/surface is wired', async () => {
     const fakeRt: any = { capabilities: {}, session: {} };
     const executor = createMediaRuntimeExecutor(fakeRt, {
       projectDir: '/tmp/proj',
@@ -48,6 +73,7 @@ describe('MediaRuntimeExecutor default completeFn', () => {
     };
     const executor = createMediaRuntimeExecutor(fakeRt, {
       projectDir: '/tmp/proj',
+      access: fakeAccess({ 'completion.channel': true }),
       completeFn: async () => 'fallback result',
     });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
