@@ -11,6 +11,13 @@ export interface PlanReviewInfo {
   planReview?: "auto" | "manual"
   planApproval?: PlanApproval | null
   waves?: unknown
+  /** Task 13/20：Goal Eval 与版本绑定（缺省 = 旧 gateway，只渲染 waves）。 */
+  goalEval?: unknown
+  planHash?: string | null
+  evalHash?: string | null
+  revision?: number | null
+  /** 批准后计划内容被改写：旧批准已失效。 */
+  stale?: boolean
   terminal?: boolean
 }
 
@@ -19,6 +26,7 @@ export interface PlanReviewViewModel {
   showActions: boolean
   badge: string
   empty: boolean
+  stale: boolean
 }
 
 export function planReviewViewModel(info: PlanReviewInfo): PlanReviewViewModel {
@@ -33,8 +41,14 @@ export function planReviewViewModel(info: PlanReviewInfo): PlanReviewViewModel {
     : status === "approved" ? "已批准"
     : status === "rejected" ? "已驳回"
     : "自动模式"
-  const empty = !info.waves || (typeof info.waves === "object" && !("waves" in (info.waves as object)) && !("ambiguities" in (info.waves as object)))
-  return { status, showActions, badge, empty }
+  const waves = info.waves
+  const hasWaves = !!waves
+    && typeof waves === "object"
+    && ("waves" in (waves as object) || "ambiguities" in (waves as object))
+  // Task 20：Goal Eval 是一等产物——只有 eval、还没 waves 时不能算空计划。
+  const hasEval = !!info.goalEval && typeof info.goalEval === "object"
+  const empty = !hasWaves && !hasEval
+  return { status, showActions, badge, empty, stale: info.stale === true }
 }
 
 // ── W1 Task 4：批注草稿（引文 + 意见）→ 驳回反馈打包 ──────────────────────

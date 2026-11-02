@@ -4,15 +4,45 @@ import { createSignal, createEffect, Show, onMount, onCleanup } from "solid-js"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import type { PodDirectionState, PodGoalRevision, PodProbe } from "@mafw/sdk"
 import { GoalTimelineLane } from "./GoalTimelineLane"
 import { PlanReviewOverlay } from "./PlanReviewOverlay"
+import { PodDirectionPanel } from "./PodDirectionPanel"
+import { PodProbePanel } from "./PodProbePanel"
 import { buildGoalLanes, formatDuration } from "../goal-timeline"
+import { podStore } from "../pod-store"
+import { podStageLabel } from "../pod-model"
 import { goalsRev } from "../goals-rev"
 
 const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
 
+/** revision.directionJson 是 DirectionState 的镜像；坏 JSON 只当没有（fail-open）。 */
+function parseDirectionState(json: string | null | undefined, revision: number | null): PodDirectionState | null {
+  if (!json) return null
+  try {
+    const parsed = JSON.parse(json)
+    if (!parsed || typeof parsed !== "object") return null
+    const state = parsed as PodDirectionState
+    return {
+      version: typeof state.version === "number" ? state.version : 1,
+      goalId: typeof state.goalId === "string" ? state.goalId : "",
+      revision: typeof state.revision === "number" ? state.revision : (revision ?? 1),
+      status: state.status === "pending" || state.status === "decided" ? state.status : "none",
+      options: Array.isArray(state.options) ? state.options : [],
+      requests: Array.isArray(state.requests) ? state.requests : [],
+      decisions: Array.isArray(state.decisions) ? state.decisions : [],
+      updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : null,
+    }
+  } catch {
+    return null
+  }
+}
+
 export function GoalDetailOverlay(props: { goalId: string | null; onClose: () => void; onOpenSession: (sid: string) => void }) {
   const [timeline, setTimeline] = createSignal<any>(null)
+  const [revisions, setRevisions] = createSignal<PodGoalRevision[]>([])
+  const [probes, setProbes] = createSignal<PodProbe[]>([])
+  const [directionBusy, setDirectionBusy] = createSignal(false)
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [retrying, setRetrying] = createSignal(false)
@@ -27,14 +57,35 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
       setError(e?.message || String(e))
     }
     setLoading(false)
+    await loadCollaboration(id)
+  }
+
+  // Task 20：方向裁定与 Spike 证据是 Goal 级协作事实（pod.updated / 项目切换后重拉）。
+  async function loadCollaboration(id: string) {
+    const podId = podStore.detail()?.pod.id
+    if (!podId) { setRevisions([]); setProbes([]); return }
+    const [revResult, probeResult] = await Promise.allSettled([
+      window.api.mafw.pod.revisions(podId, id),
+      window.api.mafw.pod.probes(podId, id),
+    ])
+    setRevisions(revResult.status === "fulfilled" && Array.isArray(revResult.value?.items) ? revResult.value.items : [])
+    setProbes(probeResult.status === "fulfilled" && Array.isArray(probeResult.value?.items) ? probeResult.value.items : [])
   }
 
   // 实时：goalId 或 goalsRev（SSE goal_node bump）变化 → 重拉
   createEffect(() => {
     const id = props.goalId
     void goalsRev() // 订阅信号
-    if (!id) { setTimeline(null); setError(null); return }
+    if (!id) { setTimeline(null); setError(null); setRevisions([]); setProbes([]); return }
     void load(id)
+  })
+
+  // pod.updated（Pod store 刷新）→ 重新读取方向/探针。
+  createEffect(() => {
+    const podId = podStore.detail()?.pod.id
+    const id = props.goalId
+    if (!podId || !id) return
+    void loadCollaboration(id)
   })
   // 慢轮询兜底
   createEffect(() => {
@@ -101,8 +152,87 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
   }
   const goalTerminal = () => TERMINAL_ACTIONS.has(timeline()?.goal?.nextAction)
 
+  // ── Task 20：方向裁定 / Spike / 阶段 ─────────────────────────────────────
+  const podGoal = () => {
+    const id = props.goalId
+    if (!id) return null
+    return (podStore.detail()?.goals ?? []).find((goal) => goal.goalId === id) ?? null
+  }
+  const stageText = () => {
+    const goal = podGoal()
+    if (goal) return podStageLabel(goal.stage)
+    const phase = timeline()?.goal?.phase
+    return typeof phase === "string" ? phase : null
+  }
+  const activeRevision = () => {
+    const goal = podGoal() as any
+    if (typeof goal?.activeRevision === "number") return goal.activeRevision
+    if (typeof goal?.revision === "number") return goal.revision
+    const list = revisions()
+    return list.length > 0 ? Math.max(...list.map((item) => item.revision)) : null
+  }
+  const currentRevision = () => {
+    const target = activeRevision()
+    const list = revisions()
+    if (list.length === 0) return null
+    if (target == null) return list[list.length - 1]
+    return list.find((item) => item.revision === target) ?? null
+  }
+  const directionState = (): PodDirectionState | null => {
+    const revision = currentRevision()
+    const parsed = parseDirectionState(revision?.directionJson, revision?.revision ?? null)
+    if (parsed) return parsed
+    const status = revision?.directionStatus
+    if (status === "pending" || status === "decided") {
+      return {
+        version: 1,
+        goalId: props.goalId ?? "",
+        revision: revision?.revision ?? 1,
+        status,
+        options: [],
+        requests: [],
+        decisions: [],
+        updatedAt: null,
+      }
+    }
+    return null
+  }
+  const showDirection = () => {
+    const state = directionState()
+    if (!state) return false
+    return state.status === "pending"
+      || state.status === "decided"
+      || (state.decisions?.length ?? 0) > 0
+  }
+
+  async function decideDirection(input: { userWords: string; optionId?: string }) {
+    const podId = podStore.detail()?.pod.id
+    const id = props.goalId
+    if (!podId || !id) {
+      showToastV2({ description: "当前项目还没有鲸群，无法记录方向", duration: 3000 })
+      return
+    }
+    setDirectionBusy(true)
+    try {
+      const result = await window.api.mafw.pod.directionDecision(podId, id, {
+        mode: "decided",
+        userWords: input.userWords,
+        optionId: input.optionId,
+      })
+      showToastV2({
+        description: result?.planningStarted ? "已记录方向，Tech Lead 开始规划" : "已记录方向",
+        duration: 2500,
+      })
+      await load(id)
+      void podStore.refresh()
+    } catch (e: any) {
+      showToastV2({ description: `记录方向失败：${String(e?.message || e).slice(0, 120)}`, duration: 3500 })
+    }
+    setDirectionBusy(false)
+  }
+
   return (
-    <Show when={props.goalId}>
+    <Show when={props.goalId} keyed>
       <div class="mafw-goal-overlay" onClick={e => { if (e.target === e.currentTarget) props.onClose() }}>
         <div class="mafw-goal-panel">
           <div class="mafw-goal-head">
@@ -123,8 +253,14 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
                   <LoaderV2 width={16} height={16} />
                 </div>
           }>
-            <div class="mafw-goal-meta">
+            <div class="mafw-goal-meta" style={{ "flex-wrap": "wrap", "row-gap": "6px" }}>
               <span class={`mafw-phase-badge ${phaseBadge()}`}>{timeline()?.goal?.phase}</span>
+              <Show when={stageText()}>
+                <span class="mafw-card-meta">{stageText()}</span>
+              </Show>
+              <Show when={activeRevision() != null}>
+                <span class="mafw-card-meta">revision {activeRevision()}</span>
+              </Show>
               <span class="mafw-card-meta">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
               <Show when={elapsed() != null}><span class="mafw-card-meta">已用 {formatDuration(elapsed())}</span></Show>
               <Show when={timeline()?.goal?.verdict}><span class="mafw-card-meta">verdict {timeline()?.goal?.verdict}</span></Show>
@@ -134,6 +270,24 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
                 </ButtonV2>
               </Show>
             </div>
+
+            <Show when={showDirection()}>
+              <PodDirectionPanel
+                state={directionState()}
+                revision={activeRevision()}
+                busy={directionBusy()}
+                onDecide={(input) => void decideDirection(input)}
+              />
+            </Show>
+
+            <Show when={probes().length > 0}>
+              <PodProbePanel
+                probes={probes()}
+                revision={activeRevision()}
+                busy={directionBusy()}
+                onOpenPlan={planEntry() ? () => setPlanOpen(true) : undefined}
+              />
+            </Show>
 
             <Show when={(timeline()?.nodes || []).length} fallback={<div class="mafw-empty">尚未开始执行</div>}>
               <GoalTimelineLane

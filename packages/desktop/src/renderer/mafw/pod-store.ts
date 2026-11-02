@@ -43,6 +43,21 @@ export function techLeadTabTitle(title?: string | null): string {
   return `Tech Lead · ${goalTitle || "未命名目标"}`
 }
 
+/**
+ * Tech Lead 讨论的发送目标（Task 20）：只有当前 tab 确实绑定到某个 Goal、且 Pod
+ * 已知时才返回。发送必须经 `pod.sendTechLeadMessage`——它注入 Tech Lead agent 身份与
+ * 当前 revision 的 ContextManifest；普通 `sessions.promptAsync` 会丢掉这两者。
+ */
+export function techLeadSendTarget(
+  goalId: string | null | undefined,
+  podId: string | null | undefined,
+): { podId: string; goalId: string } | null {
+  const goal = (goalId ?? "").trim()
+  const pod = (podId ?? "").trim()
+  if (!goal || !pod) return null
+  return { podId: pod, goalId: goal }
+}
+
 export type PodStoreApi = {
   lookup(projectDir: string): Promise<PodDetail>
   ensure(projectDir: string): Promise<PodDetail>

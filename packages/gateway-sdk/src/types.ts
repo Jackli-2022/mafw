@@ -1087,14 +1087,35 @@ export type PodQueueReason = 'active_goal' | 'paused' | 'archived' | 'budget' | 
 export type PodTaskKind = 'plan' | 'note' | 'external_request'
 export type PodGoalStageOwner = 'person' | 'team' | 'system'
 export type PodGoalStageKind =
-  | 'plan_approval' | 'question' | 'blocked' | 'queued'
-  | 'working' | 'waiting' | 'ended'
+  | 'plan_approval'
+  | 'direction_review'
+  | 'question'
+  | 'blocked'
+  | 'queued'
+  | 'discussing'
+  | 'planning'
+  | 'probing'
+  | 'implementing'
+  | 'reviewing'
+  | 'result_notified'
+  | 'working'
+  | 'waiting'
+  | 'ended'
+export type PodGoalStageActionType =
+  | 'open_plan_review'
+  | 'open_direction_review'
+  | 'open_question'
+  | 'open_discussion'
+  | 'open_goal'
+  | 'open_result'
 export interface PodGoalStage {
   owner: PodGoalStageOwner
   kind: PodGoalStageKind
+  /** 这一步由哪个 Pod 角色负责（person 阶段 = 提交产物/被审阅的角色）。 */
+  role?: PodMemberRole
   queueReason?: PodQueueReason
   action?: {
-    type: 'open_plan_review' | 'open_question' | 'open_goal' | 'open_result'
+    type: PodGoalStageActionType
     goalId: string
     questionId?: string
   }
@@ -1102,7 +1123,7 @@ export interface PodGoalStage {
 export interface PodAttentionItem {
   id: string
   goalId: string
-  kind: 'plan_approval' | 'question' | 'blocked'
+  kind: 'plan_approval' | 'direction_review' | 'question' | 'blocked'
   title: string
   action: NonNullable<PodGoalStage['action']>
 }

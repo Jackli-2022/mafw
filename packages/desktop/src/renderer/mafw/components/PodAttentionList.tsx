@@ -4,8 +4,14 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 
 const KIND_LABEL: Record<PodAttentionItem["kind"], string> = {
   plan_approval: "计划待批准",
+  direction_review: "方向待裁定",
   question: "等待回答",
   blocked: "需要处理",
+}
+
+/** attention 类型 → 人类可读标签（方向裁定与计划批准都是真正的人类阻塞）。 */
+export function attentionKindLabel(kind: PodAttentionItem["kind"] | string): string {
+  return KIND_LABEL[kind as PodAttentionItem["kind"]] ?? String(kind)
 }
 
 export function PodAttentionList(props: {
@@ -27,7 +33,7 @@ export function PodAttentionList(props: {
               class="mafw-pod-attention-row"
               onClick={() => props.onOpenGoal(item.action.goalId)}
             >
-              <span class={`mafw-pod-attention-kind is-${item.kind}`}>{KIND_LABEL[item.kind]}</span>
+              <span class={`mafw-pod-attention-kind is-${item.kind}`}>{attentionKindLabel(item.kind)}</span>
               <span class="mafw-pod-attention-title">{item.title}</span>
             </ButtonV2>
           )}

@@ -3,15 +3,25 @@
 import { createSignal, createEffect, Show, onMount, onCleanup, For } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { Markdown } from "@mafw/session-ui/markdown"
 import { AnnotationSheet } from "./AnnotationSheet"
-import { renderPlanMarkdown } from "./plan-render"
+import { renderPlanPackage } from "./plan-render"
 import { planReviewViewModel, buildRejectFeedback, type PlanAnnotationDraft } from "./plan-review-model"
+import { podStore } from "../pod-store"
+import type { PodProbe } from "@mafw/sdk"
 import type { BoxRect } from "../annotation-placement"
+
+/** 哈希在审阅头部只占一行：保留前 12 位（完整值仍在 API/产物里）。 */
+function shortHash(hash: string | null | undefined): string {
+  const text = typeof hash === "string" ? hash.trim() : ""
+  return text ? text.slice(0, 12) : "—"
+}
 
 export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; onClose: () => void }) {
   const [info, setInfo] = createSignal<any>(null)
+  const [probes, setProbes] = createSignal<PodProbe[]>([])
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [acting, setActing] = createSignal(false)
@@ -30,9 +40,29 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
       setError(e?.message || String(e))
     }
     setLoading(false)
+    await loadProbes()
+  }
+
+  // Task 20：Spike 证据是计划审阅的一等输入（与 Goal Eval 的 mapping.probes 对齐）。
+  async function loadProbes() {
+    const podId = podStore.detail()?.pod.id
+    if (!podId) { setProbes([]); return }
+    try {
+      const result = await window.api.mafw.pod.probes(podId, props.goalId)
+      setProbes(Array.isArray(result?.items) ? result.items : [])
+    } catch {
+      setProbes([])
+    }
   }
 
   createEffect(() => { void load() })
+
+  // pod.updated / 项目切换后 Pod 变化：重新拉取当前 Goal 的 Spike 记录。
+  createEffect(() => {
+    const podId = podStore.detail()?.pod.id
+    if (!podId || !props.goalId) return
+    void loadProbes()
+  })
 
   onMount(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !rejectOpen()) props.onClose() }
@@ -44,9 +74,11 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
     planReview: info()?.planReview,
     planApproval: info()?.planApproval,
     waves: info()?.waves,
+    goalEval: info()?.goalEval,
+    stale: info()?.stale,
     terminal: props.terminal,
   })
-  const markdown = () => renderPlanMarkdown(info()?.waves)
+  const markdown = () => renderPlanPackage({ ...(info() ?? {}), probes: probes() })
 
   const approvalId = (): string | undefined => {
     const id = info()?.planApproval?.id
@@ -134,11 +166,20 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
         <div class="mafw-goal-head">
           <div style={{ "min-width": 0 }}>
             <div class="mafw-card-title">计划审阅 · Loop {info()?.round ?? "—"}</div>
-            <div class="mafw-card-meta">{props.goalId}</div>
+            <div class="mafw-card-meta">
+              {props.goalId} · revision {info()?.revision ?? "—"} · Plan {shortHash(info()?.planHash)} · Eval {shortHash(info()?.evalHash)}
+            </div>
           </div>
           <span class={`mafw-phase-badge ${vm().status === "pending" ? "mafw-phase-badge-run" : "mafw-phase-badge-ok"}`}>{vm().badge}</span>
           <ButtonV2 variant="ghost" size="small" onClick={props.onClose} aria-label="关闭计划">✕</ButtonV2>
         </div>
+
+        <Show when={vm().stale}>
+          <div class="mafw-plan-stale">计划内容已变更：旧批准已失效，请重新审阅后再批准。</div>
+        </Show>
+        <Show when={info()?.goalEvalError}>
+          <div class="mafw-plan-stale">Goal Eval 不可解析：{String(info()?.goalEvalError).slice(0, 160)}</div>
+        </Show>
 
         <Show when={!loading() && !error()} fallback={
           error()
@@ -151,8 +192,8 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
               </div>
         }>
           <div class="mafw-plan-body" ref={bodyEl} onMouseUp={captureSelection}>
-            <Show when={!vm().empty} fallback={<div class="mafw-empty">暂无计划内容（plan 尚未产出 waves.json）</div>}>
-              <Markdown text={markdown()} cacheKey={`plan:${props.goalId}:${markdown().length}`} streaming={false} />
+            <Show when={!vm().empty} fallback={<div class="mafw-empty">暂无计划内容（plan 尚未产出 PlanPackage）</div>}>
+              <Markdown text={markdown()} cacheKey={`plan:${props.goalId}:${markdown().length}:${probes().length}`} streaming={false} />
             </Show>
             <Show when={sheet()}>
               <AnnotationSheet
@@ -191,7 +232,7 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
             <div class="mafw-plan-actions">
               <Show when={!rejectOpen()} fallback={
                 <div class="mafw-plan-reject">
-                  <textarea
+                  <TextareaV2
                     class="mafw-plan-reject-input"
                     rows={3}
                     placeholder="驳回意见（批注草稿将一并打包；也可只留批注）"

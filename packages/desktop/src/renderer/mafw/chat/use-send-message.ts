@@ -86,6 +86,12 @@ export interface SendMessageDeps {
   /** W5a：runtime 是否接受 delivery:'steer'（opencode 2.1 实测为「回合结束后送达」）。 */
   steerSupported?: () => boolean
   steerBoundary?: () => "after-turn" | "tool" | "unspecified" | undefined
+  /**
+   * Task 20：当前会话是某个 Goal 的 Tech Lead 讨论 tab 时返回其 Pod/Goal。
+   * 命中时发送必须走 `pod.sendTechLeadMessage`（保留 Tech Lead 身份与当前 revision
+   * ContextManifest），普通会话 prompt 会丢掉这两者。
+   */
+  techLeadTarget?: () => { podId: string; goalId: string } | null
 }
 
 /**
@@ -152,7 +158,10 @@ export function useSendMessage(deps: SendMessageDeps) {
           .filter(a => a.imageDataUrl)
           .map((a, i) => ({ name: `annotation-${i + 1}.png`, mime: "image/png", dataUrl: a.imageDataUrl }))
         // W5a：steer / 网关队列优先；带媒体或 runtime 不支持时回落本地 turn-queue。
-        const deliveryKind = decideBusyDelivery({
+        // Task 20：Tech Lead 讨论只能经 sendTechLeadMessage 发送（保留身份/ContextManifest），
+        // 忙时一律本地排队，等 idle 后由 sendMessage 走同一条通道。
+        const techLeadBusy = !!deps.techLeadTarget?.()
+        const deliveryKind = techLeadBusy ? "local-queue" : decideBusyDelivery({
           mode,
           steerSupported: deps.steerSupported ? deps.steerSupported() === true : false,
           hasMedia: atts.length > 0 || queuedAnnotationImages.length > 0,
@@ -363,21 +372,33 @@ export function useSendMessage(deps: SendMessageDeps) {
 
     console.log("[mafw] sendMessage", sid)
     try {
-      const result = await window.api.mafw.chat.sendEnriched({
-        message: [filePrefix, text.trim(), annotationBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
-        sessionID: sid,
-        parts: visionParts.length || fileParts.length || agentParts.length ? [...visionParts, ...fileParts, ...agentParts] : undefined,
-        agent: agentKey(agentSel()) === "manager" ? undefined : (agentKey(agentSel()) || undefined),
-        model: model() ? { providerID: model()!.providerID, modelID: model()!.modelID } : undefined,
-      }) as any
-      if (result?.sessionID) {
-        console.log("[mafw] sendEnriched result: session", result.sessionID)
+      const techLead = deps.techLeadTarget?.() ?? null
+      if (techLead) {
+        // Tech Lead 讨论：身份 + ContextManifest 由 gateway 注入，附件以名称/路径文本
+        // 说明随消息带上（媒体附件已在上方转成 A2A 指针，Tech Lead 可用 mafw_media_ask）。
+        const attachmentNote = atts.length > 0
+          ? `[随消息附件: ${atts.map(a => a.name).join("、")}]`
+          : ""
+        const techLeadText = [bodyMessage, attachmentNote].filter(Boolean).join("\n\n")
+        const sent = await window.api.mafw.pod.sendTechLeadMessage(techLead.podId, techLead.goalId, techLeadText)
+        console.log("[mafw] sendTechLeadMessage", techLead.goalId, "revision", sent?.revision)
       } else {
-        const errMsg = result?.error || 'no session ID returned'
-        console.warn("[mafw] sendEnriched failed:", errMsg)
-        showToastV2({ description: `Chat failed: ${errMsg}`, duration: 5000 })
-        setSending(false)
-        setPhase('idle')
+        const result = await window.api.mafw.chat.sendEnriched({
+          message: [filePrefix, text.trim(), annotationBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
+          sessionID: sid,
+          parts: visionParts.length || fileParts.length || agentParts.length ? [...visionParts, ...fileParts, ...agentParts] : undefined,
+          agent: agentKey(agentSel()) === "manager" ? undefined : (agentKey(agentSel()) || undefined),
+          model: model() ? { providerID: model()!.providerID, modelID: model()!.modelID } : undefined,
+        }) as any
+        if (result?.sessionID) {
+          console.log("[mafw] sendEnriched result: session", result.sessionID)
+        } else {
+          const errMsg = result?.error || 'no session ID returned'
+          console.warn("[mafw] sendEnriched failed:", errMsg)
+          showToastV2({ description: `Chat failed: ${errMsg}`, duration: 5000 })
+          setSending(false)
+          setPhase('idle')
+        }
       }
     } catch (err: any) {
       console.warn("[mafw] sendEnriched error:", err.message)

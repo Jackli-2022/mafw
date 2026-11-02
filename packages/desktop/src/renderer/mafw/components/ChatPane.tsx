@@ -199,6 +199,8 @@ export type ChatPaneProps = {
   techLeadInvite?: () => { goalId: string; title: string } | null
   /** 打开 Goal 的 Tech Lead 隐藏会话（Goal 标题作用域的 tab）。 */
   onOpenTechLead?: (goalId: string) => void
+  /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
+  techLeadTarget?: () => { podId: string; goalId: string } | null
   onCreateSession: () => Promise<string | null>
   onSetUserMsgId: (sid: string, userMsgId: string) => void
   onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void
@@ -938,6 +940,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     encodeFilePath,
     steerSupported: () => experienceStore.enabled('prompt.steer'),
     steerBoundary: () => experienceStore.action('prompt.steer')?.semantics?.boundary as any,
+    techLeadTarget: () => props.techLeadTarget?.() ?? null,
     pendingAnnotationCount: (sid) => pendingFor(sid).length,
     takeAnnotations: (sid) => takeForSend(sid),
     formatAnnotations: (items) => buildAnnotationBatch(items),

@@ -193,9 +193,16 @@ export function podGoalStatusLabel(status: string): string {
 
 const STAGE_LABEL: Record<string, string> = {
   plan_approval: "等待你批准计划",
+  direction_review: "等待你裁定方向",
   question: "等待你回答",
   blocked: "需要处理",
   queued: "排队中",
+  discussing: "Tech Lead 讨论中",
+  planning: "Tech Lead 规划中",
+  probing: "Spike 验证中",
+  implementing: "Builder 实施中",
+  reviewing: "Reviewer 验收中",
+  result_notified: "结果已通知",
   working: "团队工作中",
   waiting: "等待触发",
   ended: "已结束",

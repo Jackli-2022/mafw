@@ -52,7 +52,7 @@ import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
-import { ingestPodEvent, podStore, techLeadInvite, techLeadTabTitle } from "./pod-store"
+import { ingestPodEvent, podStore, techLeadInvite, techLeadSendTarget, techLeadTabTitle } from "./pod-store"
 import { podRailBadge } from "./pod-rail-badge"
 import { podRoleForSession } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
@@ -255,6 +255,9 @@ export function MafwShell() {
   // All project sessions. Served by the shared session store
   // (cached, invalidated on SSE reconnect / mutations).
   const [historySessions, setHistorySessions] = createSignal<{ id: string; title?: string; agent?: string; time?: { updated?: number }; metadata?: { mafw?: { role?: string } } }[]>([])
+  // Task 20：Tech Lead 隐藏会话 → 它讨论的 Goal（只覆盖本次打开；会话本身保持隐藏，
+  // reload 后 tab 已被 prune，不需要持久化）。
+  const techLeadGoalBySession: Record<string, string> = {}
   createEffect(() => {
     const pd = currentProject()
     if (gwStatus()?.state !== "ready") return
@@ -1860,10 +1863,20 @@ export function MafwShell() {
         showToastV2({ description: "Tech Lead 会话暂不可用", duration: 3000 } as any)
         return
       }
+      // Task 20：记住这个隐藏会话讨论的是哪个 Goal——发送必须经 sendTechLeadMessage，
+      // 由 gateway 注入 Tech Lead 身份和当前 revision 的 ContextManifest。
+      techLeadGoalBySession[history.sessionID] = goalId
       openSessionTab(history.sessionID, title, false, { mafw: { role: "tech_lead" } })
     } catch (e: any) {
       showToastV2({ description: `打开 Tech Lead 失败: ${e?.message || e}`, duration: 4000 } as any)
     }
+  }
+  // Tech Lead tab 的发送目标（当前会话 → Goal → Pod）。映射只覆盖本次打开的隐藏会话；
+  // 普通会话/Lead 会话返回 null（照旧走 sessions prompt）。
+  const activeTechLeadTarget = (): { podId: string; goalId: string } | null => {
+    const sid = activeSessionId()
+    if (!sid) return null
+    return techLeadSendTarget(techLeadGoalBySession[sid], podStore.detail()?.pod.id)
   }
   const onPodOpenMessage = (messageId: string) => {
     void podStore.markRead(messageId)
@@ -2360,6 +2373,7 @@ export function MafwShell() {
                           onRecordPodNote={recordPodNote}
                           techLeadInvite={activeLeadGoalInvite}
                           onOpenTechLead={(goalId) => void openTechLead(goalId)}
+                          techLeadTarget={activeTechLeadTarget}
                           onOpenDiffReview={() => openWorkbench("review")}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
@@ -2615,7 +2629,7 @@ export function MafwShell() {
           </Show>
         </div>
       </div>
-      <Show when={podGoalId()}>
+      <Show when={podGoalId()} keyed>
         <GoalDetailOverlay
           goalId={podGoalId()}
           onClose={() => setPodGoalId(null)}
