@@ -1,4 +1,5 @@
 import * as http from 'http';
+import { RuntimeAccess, surfaceUnavailableMessage } from '../runtime/runtime-access';
 
 export interface SessionClientLike {
   session: {
@@ -10,8 +11,9 @@ export interface SessionClientLike {
 }
 
 export interface SessionMutationDeps {
-  getCapabilities: () => { sessionApi?: boolean };
-  getClient: () => SessionClientLike | null;
+  getRuntime: () => SessionClientLike | null;
+  /** surface 门（缺省由 runtime 现场构造 RuntimeAccess）。 */
+  getAccess?: () => RuntimeAccess | null;
   /** 切片 4：session 删除成功后的 worktree 联动清理（fail-open；缺省跳过）。 */
   cleanupWorktree?: (sessionID: string) => Promise<void>;
   /** Pod Lite：删除前抓取 transcript（fail-open；缺省跳过）。 */
@@ -30,6 +32,7 @@ export interface SessionMutationDeps {
  * (the legacy /api/session/:id path is an SPA-fallback that answers 200 without
  * deleting anything).
  * PATCH /api/sessions/:id { title } — forward to serve's session update.
+ * 能力门：session.delete / session.update surface（不读裸 capabilities，也不靠方法存在性）。
  * Returns true when the request was handled (response already written).
  */
 export async function handleSessionMutations(
@@ -46,13 +49,11 @@ export async function handleSessionMutations(
     res.end(JSON.stringify(body));
   };
   const sessionID = (deleteMatch || patchMatch)![1];
-  if (deps.getCapabilities().sessionApi !== true) {
-    json(503, { error: 'runtime does not expose the session API (sessionApi=false)' });
-    return true;
-  }
-  const client = deps.getClient();
-  if (!client) {
-    json(503, { error: 'LLM client not available' });
+  const client = deps.getRuntime();
+  const access = deps.getAccess?.() ?? (client ? new RuntimeAccess(client as any) : null);
+  const surface = deleteMatch ? 'session.delete' : 'session.update';
+  if (!client || !access?.can(surface)) {
+    json(503, { error: surfaceUnavailableMessage(surface) });
     return true;
   }
   try {
@@ -96,11 +97,7 @@ export async function handleSessionMutations(
       json(400, { error: 'title is required' });
       return true;
     }
-    if (typeof client.session.update !== 'function') {
-      json(503, { error: `runtime does not implement session.update (rename unsupported)` });
-      return true;
-    }
-    await client.session.update({ sessionID, title: title.trim() });
+    await client.session.update!({ sessionID, title: title.trim() });
     json(200, { ok: true });
   } catch (err: any) {
     json(500, { error: err.message });

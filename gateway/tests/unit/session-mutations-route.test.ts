@@ -1,16 +1,18 @@
 import * as http from 'http';
 import { handleSessionMutations } from '../../src/routes/session-mutations';
 
+const allowAll = { can: (_id: string) => true } as any;
+
 function createServer(deps: {
-  getCapabilities: jest.Mock;
-  getClient: jest.Mock;
+  getRuntime: jest.Mock;
+  getAccess?: jest.Mock;
   forgetDiscovery?: jest.Mock;
   beforeDelete?: jest.Mock;
 }): http.Server {
   return http.createServer(async (req, res) => {
     const handled = await handleSessionMutations(req, res, {
-      getCapabilities: deps.getCapabilities,
-      getClient: deps.getClient,
+      getRuntime: deps.getRuntime,
+      getAccess: deps.getAccess ?? (() => allowAll),
       forgetDiscovery: deps.forgetDiscovery,
       beforeDelete: deps.beforeDelete,
     });
@@ -49,8 +51,8 @@ describe('handleSessionMutations', () => {
   let server: http.Server;
 
   const okDeps = () => ({
-    getCapabilities: jest.fn().mockReturnValue({ sessionApi: true }),
-    getClient: jest.fn().mockReturnValue({ session: { delete: jest.fn(), update: jest.fn() } }),
+    getRuntime: jest.fn().mockReturnValue({ session: { delete: jest.fn(), update: jest.fn() } }),
+    getAccess: jest.fn().mockReturnValue(allowAll),
   });
 
   afterEach((done) => {
@@ -61,7 +63,7 @@ describe('handleSessionMutations', () => {
   it('DELETE /api/sessions/:id calls session.delete and returns 200', async () => {
     const del = jest.fn().mockResolvedValue(undefined);
     const deps = okDeps();
-    deps.getClient.mockReturnValue({ session: { delete: del, update: jest.fn() } });
+    deps.getRuntime.mockReturnValue({ session: { delete: del, update: jest.fn() } });
     server = createServer(deps);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
@@ -76,7 +78,7 @@ describe('handleSessionMutations', () => {
     const del = jest.fn(async () => { order.push('delete'); });
     const beforeDelete = jest.fn(async () => { order.push('snapshot'); });
     const deps = okDeps();
-    deps.getClient.mockReturnValue({ session: { delete: del, update: jest.fn() } });
+    deps.getRuntime.mockReturnValue({ session: { delete: del, update: jest.fn() } });
     server = createServer({ ...deps, beforeDelete });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
@@ -90,7 +92,7 @@ describe('handleSessionMutations', () => {
   it('DELETE forgets discovery state for the deleted session', async () => {
     const forgetDiscovery = jest.fn();
     const deps = okDeps();
-    deps.getClient.mockReturnValue({ session: { delete: jest.fn().mockResolvedValue(undefined), update: jest.fn() } });
+    deps.getRuntime.mockReturnValue({ session: { delete: jest.fn().mockResolvedValue(undefined), update: jest.fn() } });
     server = createServer({ ...deps, forgetDiscovery });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
@@ -102,7 +104,7 @@ describe('handleSessionMutations', () => {
   it('PATCH /api/sessions/:id with title calls session.update with flat args and returns 200', async () => {
     const update = jest.fn().mockResolvedValue({});
     const deps = okDeps();
-    deps.getClient.mockReturnValue({ session: { delete: jest.fn(), update } });
+    deps.getRuntime.mockReturnValue({ session: { delete: jest.fn(), update } });
     server = createServer(deps);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
@@ -115,7 +117,7 @@ describe('handleSessionMutations', () => {
   it('PATCH with empty/missing title returns 400', async () => {
     const update = jest.fn();
     const deps = okDeps();
-    deps.getClient.mockReturnValue({ session: { delete: jest.fn(), update } });
+    deps.getRuntime.mockReturnValue({ session: { delete: jest.fn(), update } });
     server = createServer(deps);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
@@ -124,28 +126,33 @@ describe('handleSessionMutations', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('returns 503 when sessionApi capability is missing', async () => {
-    server = createServer({ getCapabilities: jest.fn().mockReturnValue({ sessionApi: false }), getClient: jest.fn() });
+  it('returns neutral 503 when the session.delete surface is missing', async () => {
+    server = createServer({
+      getRuntime: jest.fn().mockReturnValue({ session: { delete: jest.fn(), update: jest.fn() } }),
+      getAccess: jest.fn().mockReturnValue({ can: (id: string) => id !== 'session.delete' }),
+    });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await send(server, 'DELETE', '/api/sessions/ses_1');
     expect(res.status).toBe(503);
+    expect(res.body.error).toBe('runtime does not support session.delete');
   });
 
-  it('returns 503 when client is unavailable', async () => {
-    server = createServer({ getCapabilities: jest.fn().mockReturnValue({ sessionApi: true }), getClient: jest.fn().mockReturnValue(null) });
+  it('returns 503 when the runtime is unavailable', async () => {
+    server = createServer({ getRuntime: jest.fn().mockReturnValue(null) });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await send(server, 'DELETE', '/api/sessions/ses_1');
     expect(res.status).toBe(503);
+    expect(res.body.error).toBe('runtime does not support session.delete');
   });
 
   it('returns 500 when serve call rejects', async () => {
     server = createServer({
-      getCapabilities: jest.fn().mockReturnValue({ sessionApi: true }),
-      getClient: jest.fn().mockReturnValue({
+      getRuntime: jest.fn().mockReturnValue({
         session: { delete: jest.fn().mockRejectedValue(new Error('not found')), update: jest.fn() },
       }),
+      getAccess: jest.fn().mockReturnValue(allowAll),
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
@@ -154,19 +161,20 @@ describe('handleSessionMutations', () => {
     expect(res.body.error).toBe('not found');
   });
 
-  it('returns 503 when runtime lacks session.update (declared sessionApi but method absent)', async () => {
+  it('returns 503 when the session.update surface is missing', async () => {
     const deps = okDeps();
-    deps.getClient.mockReturnValue({ session: { delete: jest.fn() } }); // 无 update
+    deps.getRuntime.mockReturnValue({ session: { delete: jest.fn() } }); // 无 update
+    deps.getAccess.mockReturnValue({ can: (id: string) => id !== 'session.update' });
     server = createServer(deps);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await send(server, 'PATCH', '/api/sessions/ses_1', { title: 'x' });
     expect(res.status).toBe(503);
-    expect(res.body.error).toMatch(/update/);
+    expect(res.body.error).toBe('runtime does not support session.update');
   });
 
   it('returns false for unrelated routes', async () => {
-    server = createServer({ getCapabilities: jest.fn(), getClient: jest.fn() });
+    server = createServer({ getRuntime: jest.fn(), getAccess: jest.fn() });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await send(server, 'GET', '/api/sessions');

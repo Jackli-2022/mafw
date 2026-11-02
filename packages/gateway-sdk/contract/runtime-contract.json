@@ -499,12 +499,12 @@
       "id": "session.worktree",
       "title": "session.worktree (directory-scoped)",
       "domain": "session",
-      "obligation": "gated",
-      "capability": "worktreeApi",
-      "verification": "conformance",
+      "obligation": "optional",
+      "verification": "presence",
       "implementation": "session.create({ directory })",
-      "conformance": [
-        "session-lifecycle"
+      "probe": [
+        "session",
+        "create"
       ],
       "consumer": "worktree sessions",
       "impact": "worktree 并行会话隔离失效",
@@ -2413,15 +2413,11 @@
       "id": "worktreeApi",
       "title": "directory-scoped sessions",
       "domain": "session",
-      "kind": "feature",
+      "kind": "informational",
       "default": false,
-      "requires": [
-        "session.worktree"
-      ],
-      "unlocks": [
-        "session.worktree"
-      ],
-      "degrade": "worktree 并行隔离失效"
+      "requires": [],
+      "unlocks": [],
+      "degrade": "无（worktree 可用性由 gateway git + session.create 契约决定）"
     },
     {
       "degradeRule": "any-requires-missing",

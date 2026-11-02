@@ -3,6 +3,10 @@
 // session 删除链路调 cleanupWorktreeForSession（fail-open，不阻塞删除）。
 import * as path from 'path';
 import { SessionWorktreeManager } from '../core/engine/session-worktree-manager';
+import {
+  WorktreeUnavailableError,
+  type WorktreeAvailability,
+} from '../core/worktree/worktree-availability';
 
 export interface WorktreeSessionDeps {
   kvGet(key: string, id: string): any;
@@ -11,6 +15,11 @@ export interface WorktreeSessionDeps {
   createSession(directory?: string, metadata?: Record<string, unknown>): Promise<{ id: string }>;
   /** 仅测试注入：覆盖 manager 工厂（默认 new SessionWorktreeManager(projectDir)）。 */
   managerFactory?: (projectDir: string) => SessionWorktreeManager;
+  /**
+   * worktree 可用性（gateway git + session.create({directory}) 契约）。
+   * 缺省视为可用（保持旧调用方行为）；supported=false 时不创建 worktree/会话。
+   */
+  worktreeAvailability?: (directory: string) => Promise<WorktreeAvailability> | WorktreeAvailability;
 }
 
 export interface WorktreeSessionResult {
@@ -29,6 +38,13 @@ export async function createSessionWithWorktree(
     return { session };
   }
   const projectDir = path.resolve(opts.directory ?? '.');
+  // 归属门：worktree 是 gateway 的 git 能力，不受 runtime 私有能力位限制。
+  if (deps.worktreeAvailability) {
+    const availability = await deps.worktreeAvailability(projectDir);
+    if (!availability.supported) {
+      throw new WorktreeUnavailableError(availability.reason ?? 'unsupported');
+    }
+  }
   const slug = typeof opts.worktree === 'string' ? opts.worktree : undefined;
   const manager = deps.managerFactory?.(projectDir) ?? new SessionWorktreeManager(projectDir);
   const wt = await manager.create(slug);

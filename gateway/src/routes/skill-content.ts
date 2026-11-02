@@ -9,12 +9,15 @@
 //      以及 runtime 未提供 loadSkill 的情况）。不存在 → 404，绝不按任意路径读盘。
 import * as http from 'http';
 import type { RuntimeSkillContent } from '../runtime/contract';
+import type { RuntimeAccess } from '../runtime/runtime-access';
 
 export const SKILL_CONTENT_MAX_BYTES = 256 * 1024;
 
 export interface SkillContentDeps {
   /** 可选：runtime discovery 通道（缺失/false → 回退文件读取）。 */
   loadSkill?(opts: { directory: string; key: string }): Promise<RuntimeSkillContent | null>;
+  /** surface 门：discovery.loadSkill 不可用时不走 runtime 通道（本地技能仍可读）。 */
+  getAccess?(): RuntimeAccess | null;
   listSkills(directory?: string): Promise<Array<{ id: string; name?: string; location?: string; contentLength?: number }>>;
   readFile(path: string): string;
 }
@@ -41,8 +44,9 @@ export async function handleSkillContent(
   const directory = u.searchParams.get('directory') ?? undefined;
   if (!id) { json(res, 400, { error: 'id is required' }); return true; }
   try {
-    // 1) runtime 通道（需要 directory 才能定位技能域）
-    if (deps.loadSkill && directory) {
+    // 1) runtime 通道（需要 directory 才能定位技能域；surface 门 discovery.loadSkill）
+    const runtimeChannelOpen = !deps.getAccess || deps.getAccess()?.can('discovery.loadSkill') === true;
+    if (deps.loadSkill && directory && runtimeChannelOpen) {
       try {
         const viaRuntime = await deps.loadSkill({ directory, key: id });
         if (viaRuntime?.content) {

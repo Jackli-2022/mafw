@@ -1,7 +1,10 @@
 import * as http from 'http';
+import type { RuntimeAccess } from '../runtime/runtime-access';
+import { surfaceUnavailableMessage } from '../runtime/runtime-access';
 
 export interface RestartAgentDeps {
-  capabilities: () => { agentProcessApi?: boolean };
+  /** surface 门（process.restart = agentProcessApi + agentProcess.restart presence）。 */
+  getAccess: () => RuntimeAccess | null;
   isRecovering: () => boolean;
   isSwitching: () => boolean;
   begin: () => void;
@@ -18,8 +21,8 @@ export async function handleRestartAgent(
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
   };
-  if (deps.capabilities().agentProcessApi !== true) {
-    json(503, { error: 'runtime does not own the agent process (external or in-process runtime)' });
+  if (!deps.getAccess()?.can('process.restart')) {
+    json(503, { error: surfaceUnavailableMessage('process.restart') });
     return;
   }
   if (deps.isRecovering() || deps.isSwitching()) {

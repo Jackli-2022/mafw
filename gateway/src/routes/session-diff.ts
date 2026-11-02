@@ -4,9 +4,11 @@
 // POST /api/sessions/:sid/diff/revert → buildRevertPatch（选中 hunk 反转）→ gateway-side git apply
 //   （2026-10-26 实证：serve 2.1 无 /api/vcs/apply，SDK vcs.apply 静默吞 404；
 //    改由 gateway 在会话目录直接 git apply，见 core/diff/apply-patch.ts）
-// 能力门：runtime 缺 diffApi → 503；apply 失败 → 502 带原始错误消息（不静默）。
+// 能力门：runtime 缺 branch.diff surface → 中性 503（不再读 capabilities.diffApi）；
+// apply 失败 → 502 带原始错误消息（不静默）。
 import * as http from 'http';
 import { AgentRuntime } from '../runtime/contract';
+import { RuntimeAccess, surfaceUnavailableMessage } from '../runtime/runtime-access';
 import { buildRevertPatch } from '../core/diff/hunk-patch';
 import { applyPatchToWorktree } from '../core/diff/apply-patch';
 import {
@@ -32,6 +34,8 @@ function json(res: http.ServerResponse, status: number, payload: any): void {
 
 export interface SessionDiffDeps {
   runtime: AgentRuntime | null;
+  /** surface 门（缺省由 runtime 现场构造 RuntimeAccess）。 */
+  access?: RuntimeAccess | null;
   /** Test seam; production resolves the user turn from live snapshots. */
   turnDiff?: (args: {
     runtime: AgentRuntime;
@@ -43,8 +47,13 @@ export interface SessionDiffDeps {
   git?: import('../core/diff/turn-diff').GitRunner;
 }
 
-function hasDiffApi(rt: SessionDiffDeps['runtime']): boolean {
-  return !!(rt?.capabilities as any)?.diffApi;
+function gateDiff(res: http.ServerResponse, deps: SessionDiffDeps): boolean {
+  const access = deps.access ?? (deps.runtime ? new RuntimeAccess(deps.runtime) : null);
+  if (!access?.can('branch.diff')) {
+    json(res, 503, { error: surfaceUnavailableMessage('branch.diff') });
+    return true;
+  }
+  return false;
 }
 
 export async function handleSessionDiff(
@@ -53,10 +62,7 @@ export async function handleSessionDiff(
   messageID: string | undefined,
   deps: SessionDiffDeps,
 ): Promise<void> {
-  if (!hasDiffApi(deps.runtime)) {
-    json(res, 503, { error: "capability 'diffApi' not available on this runtime" });
-    return;
-  }
+  if (gateDiff(res, deps)) return;
   if (messageID !== undefined) {
     const run = deps.turnDiff
       ?? ((args) => computeTurnDiffForRuntime(args.runtime, args.sessionID, args.messageID));
@@ -110,10 +116,7 @@ export async function handleSessionDiffRevert(
   sessionID: string,
   deps: SessionDiffDeps,
 ): Promise<void> {
-  if (!hasDiffApi(deps.runtime)) {
-    json(res, 503, { error: "capability 'diffApi' not available on this runtime" });
-    return;
-  }
+  if (gateDiff(res, deps)) return;
   let body: any;
   try {
     body = JSON.parse(await readBody(req) || '{}');

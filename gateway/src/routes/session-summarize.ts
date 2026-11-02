@@ -1,8 +1,11 @@
 import * as http from 'http';
 import type { AgentRuntime } from '../runtime/contract';
+import { RuntimeAccess, surfaceUnavailableMessage } from '../runtime/runtime-access';
 
 export interface SessionSummarizeDeps {
   getRuntime(): AgentRuntime | null;
+  /** surface 门（缺省由 runtime 现场构造 RuntimeAccess）。 */
+  getAccess?(): RuntimeAccess | null;
 }
 
 function readBody(req: http.IncomingMessage): Promise<any> {
@@ -35,8 +38,9 @@ export async function handleSessionSummarize(
   const sessionID = m[1];
 
   const rt = deps.getRuntime();
-  if (!rt?.session?.summarize) {
-    json(res, 503, { error: `runtime '${rt?.name ?? 'none'}' does not implement session.summarize` });
+  const access = deps.getAccess?.() ?? (rt ? new RuntimeAccess(rt) : null);
+  if (!rt || !access?.can('session.summarize')) {
+    json(res, 503, { error: surfaceUnavailableMessage('session.summarize') });
     return true;
   }
   try {

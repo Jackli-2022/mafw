@@ -1,4 +1,5 @@
 import * as http from 'http';
+import { RuntimeAccess, surfaceUnavailableMessage } from '../runtime/runtime-access';
 
 export type SessionSwitchKind = 'agent' | 'model';
 
@@ -14,7 +15,9 @@ export interface SessionSwitchClientLike {
 }
 
 export interface SessionSwitchDeps {
-  getClient: () => SessionSwitchClientLike | null;
+  getRuntime: () => SessionSwitchClientLike | null;
+  /** surface 门（缺省由 runtime 现场构造 RuntimeAccess）。 */
+  getAccess?: () => RuntimeAccess | null;
 }
 
 class SwitchError extends Error {
@@ -38,7 +41,7 @@ export async function applySessionSwitch(
 ): Promise<void> {
   if (kind === 'agent') {
     if (typeof client.session.switchAgent !== 'function') {
-      throw new SwitchError(503, 'runtime does not implement session.switchAgent');
+      throw new SwitchError(503, surfaceUnavailableMessage('session.switchAgent'));
     }
     if (typeof body?.agent !== 'string' || !body.agent.trim()) {
       throw new SwitchError(400, 'agent is required');
@@ -48,7 +51,7 @@ export async function applySessionSwitch(
   }
 
   if (typeof client.session.switchModel !== 'function') {
-    throw new SwitchError(503, 'runtime does not implement session.switchModel');
+    throw new SwitchError(503, surfaceUnavailableMessage('session.switchModel'));
   }
   const model = body?.model;
   if (typeof model?.providerID !== 'string' || typeof model?.modelID !== 'string') {
@@ -64,6 +67,7 @@ export async function applySessionSwitch(
 /**
  * POST /api/sessions/:id/agent {agent}
  * POST /api/sessions/:id/model {model:{providerID,modelID}, variant?}
+ * 能力门：session.switchAgent / session.switchModel surface。
  * 统一返回 200 {ok:true}（SDK request 恒解析 JSON；204 会炸）。
  */
 export async function handleSessionSwitch(
@@ -77,9 +81,11 @@ export async function handleSessionSwitch(
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
   };
-  const client = deps.getClient();
-  if (!client) {
-    json(503, { error: 'LLM client not available' });
+  const client = deps.getRuntime();
+  const access = deps.getAccess?.() ?? (client ? new RuntimeAccess(client as any) : null);
+  const surface = kind === 'agent' ? 'session.switchAgent' : 'session.switchModel';
+  if (!client || !access?.can(surface)) {
+    json(503, { error: surfaceUnavailableMessage(surface) });
     return;
   }
   let body: any;

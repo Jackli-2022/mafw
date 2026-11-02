@@ -130,8 +130,11 @@ export const CORE_SURFACES: ContractSurface[] = [
   }),
   row({
     id: 'session.worktree', title: 'session.worktree (directory-scoped)', domain: 'session',
-    obligation: 'gated', capability: 'worktreeApi', verification: 'conformance',
-    implementation: 'session.create({ directory })', conformance: ['session-lifecycle'],
+    // 归属：gateway 自己的 git 工作区能力，可用性 = 本地 git + runtime 的
+    // session.create({ directory }) 契约（设计 2026-11-02 §7.1）。不再绑定 runtime
+    // 私有的 worktreeApi 能力位——支持目录会话的 pi/claude 不能被误判为不支持。
+    obligation: 'optional', verification: 'presence',
+    implementation: 'session.create({ directory })', probe: ['session', 'create'],
     consumer: 'worktree sessions', impact: 'worktree 并行会话隔离失效', presets: DESK,
   }),
   row({

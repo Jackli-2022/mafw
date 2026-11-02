@@ -7,7 +7,7 @@ function makeDeps(overrides: Partial<RestartAgentDeps> = {}): { deps: RestartAge
   return {
     calls,
     deps: {
-      capabilities: () => ({ agentProcessApi: true }),
+      getAccess: () => ({ can: () => true }) as any,
       isRecovering: () => false,
       isSwitching: () => false,
       begin: () => calls.push('begin'),
@@ -67,13 +67,13 @@ describe('POST /api/runtime/restart-agent', () => {
     expect(calls).toEqual(['begin', 'restart', 'end']);
   });
 
-  it('503 when capability absent (external / in-process runtime)', async () => {
-    const { deps, calls } = makeDeps({ capabilities: () => ({ agentProcessApi: false }) });
+  it('503 when the process.restart surface is absent (external / in-process runtime)', async () => {
+    const { deps, calls } = makeDeps({ getAccess: () => ({ can: () => false }) as any });
     server = createServer(deps);
     await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
     const res = await post(server);
     expect(res.status).toBe(503);
-    expect(res.body.error).toMatch(/does not own the agent process/);
+    expect(res.body.error).toBe('runtime does not support process.restart');
     expect(calls).toEqual([]);
   });
 

@@ -10,6 +10,14 @@ import { buildRuntimeContractManifest } from './contract-manifest';
 import type { ContractSurface, RuntimeContractManifest } from './contract-manifest-types';
 import { probePasses, type ContractSubject } from './coverage';
 
+/**
+ * 缺 surface 时的 HTTP 错误文案单一来源：中性、只含 surface id。
+ * 业务路由不得把 runtime 名 / capability flag 拼进 503。
+ */
+export function surfaceUnavailableMessage(surface: string): string {
+  return `runtime does not support ${surface}`;
+}
+
 export class RuntimeSurfaceError extends Error {
   readonly code = 'runtime.surface.unavailable' as const;
   readonly surface: string;

@@ -20,7 +20,7 @@ describe('handleSessionSwitch', () => {
     const calls: any[] = [];
     const res = fakeRes();
     await handleSessionSwitch(fakeReq({ agent: 'plan' }), res, 's1', 'agent', {
-      getClient: () => ({ session: { switchAgent: async (o: any) => calls.push(o) } }) as any,
+      getRuntime: () => ({ session: { switchAgent: async (o: any) => calls.push(o) } }) as any,
     });
     expect(calls).toEqual([{ sessionID: 's1', agent: 'plan' }]);
     expect(res.status).toBe(200);
@@ -31,7 +31,7 @@ describe('handleSessionSwitch', () => {
     const calls: any[] = [];
     const res = fakeRes();
     await handleSessionSwitch(fakeReq({ model: { providerID: 'gateway', modelID: 'deepseek-v4-flash' }, variant: 'fast' }), res, 's1', 'model', {
-      getClient: () => ({ session: { switchModel: async (o: any) => calls.push(o) } }) as any,
+      getRuntime: () => ({ session: { switchModel: async (o: any) => calls.push(o) } }) as any,
     });
     expect(calls).toEqual([{
       sessionID: 's1',
@@ -44,22 +44,24 @@ describe('handleSessionSwitch', () => {
   it('missing agent → 400', async () => {
     const res = fakeRes();
     await handleSessionSwitch(fakeReq({}), res, 's1', 'agent', {
-      getClient: () => ({ session: { switchAgent: async () => {} } }) as any,
+      getRuntime: () => ({ session: { switchAgent: async () => {} } }) as any,
     });
     expect(res.status).toBe(400);
   });
 
-  it('runtime without switchAgent → 503', async () => {
+  it('missing switchAgent surface → neutral 503', async () => {
     const res = fakeRes();
     await handleSessionSwitch(fakeReq({ agent: 'plan' }), res, 's1', 'agent', {
-      getClient: () => ({ session: {} }) as any,
+      getRuntime: () => ({ session: {} }) as any,
+      getAccess: () => ({ can: (id: string) => id !== 'session.switchAgent' }) as any,
     });
     expect(res.status).toBe(503);
+    expect(JSON.parse(res.body).error).toBe('runtime does not support session.switchAgent');
   });
 
-  it('no client → 503', async () => {
+  it('no runtime → 503', async () => {
     const res = fakeRes();
-    await handleSessionSwitch(fakeReq({ agent: 'plan' }), res, 's1', 'agent', { getClient: () => null });
+    await handleSessionSwitch(fakeReq({ agent: 'plan' }), res, 's1', 'agent', { getRuntime: () => null });
     expect(res.status).toBe(503);
   });
 });

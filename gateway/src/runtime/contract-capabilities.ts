@@ -112,9 +112,12 @@ export const CONTRACT_CAPABILITIES: ContractCapability[] = [
     degrade: '审阅改动/工作区 patch 不可用',
   }),
   cap({
-    id: 'worktreeApi', title: 'directory-scoped sessions', domain: 'session', kind: 'feature', default: false,
-    requires: ['session.worktree'], unlocks: ['session.worktree'],
-    degrade: 'worktree 并行隔离失效',
+    id: 'worktreeApi', title: 'directory-scoped sessions', domain: 'session', kind: 'informational', default: false,
+    // 兼容诊断位（设计 2026-11-02 §7.1）：worktree 路由的可用性由 gateway git +
+    // session.create({directory}) 决定，本能力不再门控任何 surface，也不再由 presence
+    // 反向推导（requires 为空 = 只信作者声明）。保留键名供旧客户端诊断读取。
+    requires: [], unlocks: [],
+    degrade: '无（worktree 可用性由 gateway git + session.create 契约决定）',
   }),
   cap({
     id: 'instructionsApi', title: 'per-session instruction entries', domain: 'session', kind: 'transport', default: false,

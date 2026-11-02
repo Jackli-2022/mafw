@@ -58,6 +58,42 @@ describe('createSessionWithWorktree', () => {
     expect(path.resolve(created[0].directory)).toBe(path.resolve(repo));
     expect([...kv.keys()]).toEqual([]);
   });
+
+  test('availability unsupported → throws before creating anything', async () => {
+    const repo = tmpRepo();
+    const { deps, created, kv } = makeDeps();
+    deps.worktreeAvailability = () => ({ supported: false, reason: 'unsupported' });
+    await expect(
+      createSessionWithWorktree(deps, { directory: repo, worktree: true }),
+    ).rejects.toMatchObject({ code: 'worktree.unavailable', reason: 'unsupported' });
+    expect(created).toHaveLength(0);
+    expect([...kv.keys()]).toEqual([]);
+    // 没有产生 worktree 目录
+    expect(execSync('git branch --list mafw/*', { cwd: repo }).toString()).toBe('');
+  });
+
+  test('availability missing-data → throws with reason', async () => {
+    const repo = tmpRepo();
+    const { deps, created } = makeDeps();
+    deps.worktreeAvailability = () => ({ supported: false, reason: 'missing-data' });
+    await expect(
+      createSessionWithWorktree(deps, { directory: repo, worktree: 'x' }),
+    ).rejects.toMatchObject({ reason: 'missing-data' });
+    expect(created).toHaveLength(0);
+  });
+
+  test('availability supported → creates worktree', async () => {
+    const repo = tmpRepo();
+    const { deps } = makeDeps();
+    const seen: string[] = [];
+    deps.worktreeAvailability = (directory) => {
+      seen.push(directory);
+      return { supported: true };
+    };
+    const r = await createSessionWithWorktree(deps, { directory: repo, worktree: 'ok' });
+    expect(seen).toEqual([path.resolve(repo)]);
+    expect(r.worktree?.branch).toBe('mafw/ok');
+  });
 });
 
 describe('cleanupWorktreeForSession', () => {

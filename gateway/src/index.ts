@@ -252,12 +252,13 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
 ]);
 
 import { toWireHistory } from './runtime/wire-compat';
-import { handlePermissionReply } from './routes/permission';
+import { handlePermissionReply, handlePermissionReplyById } from './routes/permission';
+import { surfaceUnavailableMessage } from './runtime/runtime-access';
 import { handleSessionBackground } from './routes/session-background';
 import { attachBackgroundJobHandlers } from './routes/background-jobs';
-import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
 import { createSessionWithWorktree, cleanupWorktreeForSession } from './routes/session-worktree';
+import { resolveWorktreeAvailability, probeGitWorktreeSupport, WorktreeUnavailableError } from './core/worktree/worktree-availability';
 import { handleApprovalsRespond } from './routes/approvals-respond';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
@@ -2396,10 +2397,10 @@ class MafwScheduler {
     };
   }
 
-  /** P5 Wave 2：/api/runtime/restart-agent deps。 */
+  /** P5 Wave 2：/api/runtime/restart-agent deps（surface 门 process.restart）。 */
   private restartAgentDeps(): RestartAgentDeps {
     return {
-      capabilities: () => this.runtimeCaps,
+      getAccess: () => this.runtime?.access ?? null,
       isRecovering: () => this.serveRecovering,
       isSwitching: () => this.switchingRuntime,
       begin: () => { this.serveRecovering = true; },
@@ -4180,8 +4181,8 @@ class MafwScheduler {
       listProjects: () => Array.from(this.registeredProjects.entries()).map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir })),
       desktop: desktopClient || undefined,
       restartAgent: async () => {
-        if (!this.runtimeCaps.agentProcessApi) {
-          throw new Error(`Runtime '${this.runtimeName}' does not support agent process restart (agentProcessApi=false)`);
+        if (!this.runtime?.access?.can('process.restart')) {
+          throw new Error(surfaceUnavailableMessage('process.restart'));
         }
         if (this.serveRecovering) throw new Error('Agent restart already in progress');
         await this.recoverServe();
@@ -4665,7 +4666,6 @@ class MafwScheduler {
         pluginLoader: this.pluginLoader,
         mediaPluginLoader: this.mediaPluginLoader,
         broadcast: (e) => this.broadcast(e),
-        get runtimeCaps() { return gwSelf.runtimeCaps; },
         get taskService() { return gwSelf.taskService; },
         get sessionConfig() { return gwSelf.sessionConfigService; },
         get checkpointService() { return gwSelf.checkpointService; },
@@ -5895,6 +5895,7 @@ class MafwScheduler {
         // MAFW 本地技能回退白名单文件读取。
         if (req.url?.match(/^\/api\/skill\/content(?:\?|$)/)) {
           if (await handleSkillContent(req, res, req.url!, {
+            getAccess: () => this.runtime?.access ?? null,
             loadSkill: async (opts) => {
               try {
                 return (await this.runtime?.discovery?.loadSkill?.(opts)) ?? null;
@@ -6664,52 +6665,14 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/permissions/{id}/reply ── { reply, message?, persist? }（契约：列表反查 sessionID → permissionReply）
+        // POST /api/permissions/{id}/reply — { reply, message?, persist? }（列表反查 sessionID → permissionReply）
         const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
         if (pReplyMatch && req.method === 'POST') {
-          if (this.capGuard(res, 'approval.permissionReply')) return;
-          const runtime = this.runtime;
-          if (!runtime?.session?.permissionList || !runtime?.session?.permissionReply) {
-            res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'permission API not available on this runtime' })); return;
-          }
-          try {
-            const body = JSON.parse(await readBody(req));
-            const reply = body.reply;
-            if (reply !== 'once' && reply !== 'always' && reply !== 'reject') {
-              res.writeHead(400); res.end(JSON.stringify({ status: 'error', error: "reply must be 'once'|'always'|'reject'" })); return;
-            }
-            // 反查 sessionID：pending 列表项携带（跨 runtime 形状一致）
-            const pending = await runtime.session.permissionList!();
-            const found = (Array.isArray(pending) ? pending : []).find((p: any) => p?.id === pReplyMatch[1]);
-            if (!found?.sessionID) {
-              res.writeHead(404); res.end(JSON.stringify({ status: 'error', error: 'permission request not found' })); return;
-            }
-            const ok = await runtime.session.permissionReply!(found.sessionID, pReplyMatch[1], reply, body.message);
-            if (!ok) {
-              res.writeHead(404); res.end(JSON.stringify({ status: 'error', error: 'permission request not found' })); return;
-            }
-            // P1.5: record the human's reply (joins the eval record by requestId).
-            try {
-              const { appendApprovalRecord } = require('./core/approval/decision-log');
-              appendApprovalRecord({ e: 'reply', requestId: pReplyMatch[1], sessionID: found.sessionID, reply, ts: Date.now() });
-            } catch { /* fail-open */ }
-            // always：回复成功后沉淀持久规则（spec 切片 1；scope 由 persist 参数控制，
-            // 缺省 true = prefix 优先自动推导；fail-open 不阻塞回复）
-            if (reply === 'always') {
-              try {
-                const scope = body.persist === 'tool' ? 'tool' : body.persist === 'prefix' ? 'prefix' : true;
-                const rule = deriveAlwaysRule(found, scope);
-                if (rule) this.permissionRules.add(rule);
-              } catch (persistErr: any) {
-                log.warn(`[Permission] persist always rule failed (non-fatal): ${persistErr.message}`);
-              }
-            }
-            res.end(JSON.stringify({ status: 'ok' }));
-          } catch (err: any) {
-            log.error('[Permission] reply error:', err.message);
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'error', error: err.message }));
-          }
+          await handlePermissionReplyById(req, res, pReplyMatch[1], {
+            runtime: this.runtime,
+            access: this.runtime?.access ?? null,
+            rules: this.permissionRules,
+          });
           return;
         }
 
@@ -6969,12 +6932,30 @@ class MafwScheduler {
                 kvDel: (key, id) => this.getGatewayDb().kvDelete(key, id),
                 // 目录必填：缺省时回退到 gateway 的单点解析（绝对路径）
                 createSession: (directory, metadata) => this.sdkSession.create(directory ?? this.resolvedProjectDir(), metadata),
+                // worktree 归属（设计 §7.1）：gateway git + session.create({directory}) 契约，
+                // 不再按 runtime 私有 worktreeApi 能力位拒绝支持的 runtime。
+                worktreeAvailability: async (directory) => {
+                  let directorySupported = false;
+                  try {
+                    directorySupported = this.runtime?.access?.can('session.worktree') === true;
+                  } catch { /* unknown surface → unsupported */ }
+                  return resolveWorktreeAvailability({
+                    directory,
+                    directorySupported,
+                    gitAvailable: await probeGitWorktreeSupport(directory),
+                  });
+                },
               },
               opts,
             );
             res.writeHead(200);
             res.end(JSON.stringify({ ...result.session, worktree: result.worktree }));
           } catch (err: any) {
+            if (err instanceof WorktreeUnavailableError) {
+              res.writeHead(409, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'worktree sessions are not available', reason: err.reason }));
+              return;
+            }
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
@@ -7196,6 +7177,7 @@ class MafwScheduler {
         if (permMatch && req.method === 'POST') {
           // 直连路由与主 reply 路由对称：always 也沉淀持久规则（反查失败 fail-open）
           await handlePermissionReply(this.runtime, req, res, permMatch[1], permMatch[2], {
+            access: this.runtime?.access ?? null,
             rules: this.permissionRules,
             findRequest: async () => {
               try {

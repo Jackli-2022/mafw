@@ -1,6 +1,8 @@
 import { handlePermissionReply } from '../../src/routes/permission';
 import * as http from 'http';
 
+const allowReply = { can: (id: string) => id === 'approval.permissionReply' } as any;
+
 function mockRes() {
   const res: any = { status: 0, body: '', writeHead(s: number) { this.status = s; }, end(b?: string) { this.body = b ?? ''; } };
   return res as http.ServerResponse & { status: number; body: string };
@@ -21,7 +23,7 @@ describe('permission route tri-state body', () => {
     const res = mockRes();
     await handlePermissionReply(
       { capabilities: {}, session: { permissionReply } } as any,
-      mockReq({ reply: 'always', message: 'ok' }), res, 's1', 'r1',
+      mockReq({ reply: 'always', message: 'ok' }), res, 's1', 'r1', { access: allowReply },
     );
     expect(permissionReply).toHaveBeenCalledWith('s1', 'r1', 'always', 'ok');
     expect(res.status).toBe(200);
@@ -32,7 +34,7 @@ describe('permission route tri-state body', () => {
     const res = mockRes();
     await handlePermissionReply(
       { capabilities: {}, session: { permissionReply } } as any,
-      mockReq({ approved: false }), res, 's1', 'r2',
+      mockReq({ approved: false }), res, 's1', 'r2', { access: allowReply },
     );
     expect(permissionReply).toHaveBeenCalledWith('s1', 'r2', 'reject', undefined);
   });
@@ -42,15 +44,18 @@ describe('permission route tri-state body', () => {
     const res = mockRes();
     await handlePermissionReply(
       { capabilities: {}, session: { permissionReply } } as any,
-      mockReq({ reply: 'forever' }), res, 's1', 'r3',
+      mockReq({ reply: 'forever' }), res, 's1', 'r3', { access: allowReply },
     );
     expect(res.status).toBe(400);
     expect(permissionReply).not.toHaveBeenCalled();
   });
 
-  it('503 when runtime lacks permissionReply', async () => {
+  it('503 when the approval.permissionReply surface is missing', async () => {
     const res = mockRes();
-    await handlePermissionReply({ capabilities: {}, session: {} } as any, mockReq({ reply: 'once' }), res, 's1', 'r4');
+    await handlePermissionReply({ capabilities: {}, session: {} } as any, mockReq({ reply: 'once' }), res, 's1', 'r4', {
+      access: { can: () => false } as any,
+    });
     expect(res.status).toBe(503);
+    expect(JSON.parse((res as any).body).error).toBe('runtime does not support approval.permissionReply');
   });
 });

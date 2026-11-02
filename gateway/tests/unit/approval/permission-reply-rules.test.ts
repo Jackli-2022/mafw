@@ -30,6 +30,7 @@ function makeRulesDeps() {
   return {
     added,
     deps: {
+      access: { can: () => true } as any,
       rules: { add: (r: any) => { added.push(r); return { ok: true, rules: [r] }; } },
       findRequest: async () => ({ permission: 'bash', patterns: ['git status*'] }),
     },

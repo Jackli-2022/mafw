@@ -1,5 +1,7 @@
 import { handlePermissionReply } from '../../src/routes/permission';
 
+const allowReply = { can: (id: string) => id === 'approval.permissionReply' } as any;
+
 // Mock req/res factories — no HTTP server needed
 function createMockReq(body: any): any {
   const data = JSON.stringify(body);
@@ -32,7 +34,7 @@ describe('handlePermissionReply', () => {
     const req = createMockReq({ approved: true });
     const res = createMockRes();
 
-    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1');
+    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1', { access: allowReply });
 
     expect(res._status).toBe(200);
     expect(JSON.parse(res._body)).toEqual({ success: true });
@@ -45,31 +47,34 @@ describe('handlePermissionReply', () => {
     const req = createMockReq({ approved: false });
     const res = createMockRes();
 
-    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1');
+    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1', { access: allowReply });
 
     expect(res._status).toBe(404);
     expect(JSON.parse(res._body)).toEqual({ error: 'Permission request not found' });
   });
 
-  it('should return 503 when runtime does not support permissionReply', async () => {
-    const runtime = { session: {} };
+  it('should return a neutral 503 when the approval.permissionReply surface is missing', async () => {
+    const runtime = { name: 'secret-runtime', session: {} };
     const req = createMockReq({ approved: true });
     const res = createMockRes();
 
-    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1');
+    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1', {
+      access: { can: () => false } as any,
+    });
 
     expect(res._status).toBe(503);
-    expect(JSON.parse(res._body)).toEqual({ error: 'Runtime does not support permissionReply' });
+    expect(JSON.parse(res._body)).toEqual({ error: 'runtime does not support approval.permissionReply' });
+    expect(res._body).not.toContain('secret-runtime');
   });
 
   it('should return 503 when runtime is null', async () => {
     const req = createMockReq({ approved: true });
     const res = createMockRes();
 
-    await handlePermissionReply(null, req, res, 'session-1', 'req-1');
+    await handlePermissionReply(null, req, res, 'session-1', 'req-1', { access: allowReply });
 
     expect(res._status).toBe(503);
-    expect(JSON.parse(res._body)).toEqual({ error: 'Runtime does not support permissionReply' });
+    expect(JSON.parse(res._body)).toEqual({ error: 'runtime does not support approval.permissionReply' });
   });
 
   it('should return 400 when approved is not a boolean', async () => {
@@ -78,7 +83,7 @@ describe('handlePermissionReply', () => {
     const req = createMockReq({ approved: 'yes' });
     const res = createMockRes();
 
-    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1');
+    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1', { access: allowReply });
 
     expect(res._status).toBe(400);
     expect(JSON.parse(res._body)).toEqual({ error: "reply must be 'once'|'always'|'reject'" });
@@ -91,7 +96,7 @@ describe('handlePermissionReply', () => {
     const req = createMockReq({ approved: true });
     const res = createMockRes();
 
-    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1');
+    await handlePermissionReply(runtime, req, res, 'session-1', 'req-1', { access: allowReply });
 
     expect(res._status).toBe(500);
     expect(JSON.parse(res._body)).toEqual({ error: 'internal failure' });

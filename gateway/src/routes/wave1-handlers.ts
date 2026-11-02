@@ -32,7 +32,7 @@ import {
 import type { DiscoveryService } from '../core/discovery/discovery-service';
 import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
 import { cleanupWorktreeForSession } from './session-worktree';
-import { handleSessionMutations, type SessionMutationDeps } from './session-mutations';
+import { handleSessionMutations } from './session-mutations';
 import { handleSessionSwitch } from './session-switch';
 import { handleStructuredGet, handleStructuredSubmit } from './structured';
 import { structuredOutput } from '../runtime/structured-output';
@@ -70,7 +70,6 @@ export interface Wave1Gateway {
   broadcast(event: { type: string; [key: string]: any }): void;
   /** 未知事件遥测（扁平非 plugin:* 发布；缺省不采集）。 */
   recordUnknownEvent?(type: string): void;
-  runtimeCaps: SessionMutationDeps['getCapabilities'] extends () => infer C ? C : never;
   taskService?: TaskService | null;
   sessionConfig?: SessionConfigService | null;
   checkpointService?: import('../core/checkpoint/checkpoint-service').CheckpointService | null;
@@ -121,10 +120,16 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
 
   registry.attachHandler('session.diff', H(async (req, res, params) => {
     const u = new URL(req.url || '/', 'http://x');
-    await handleSessionDiff(res, params.id, u.searchParams.get('messageID') ?? undefined, { runtime: gw.runtime });
+    await handleSessionDiff(res, params.id, u.searchParams.get('messageID') ?? undefined, {
+      runtime: gw.runtime,
+      access: gw.runtime?.access ?? null,
+    });
   }));
   registry.attachHandler('session.revertDiff', H(async (req, res, params) =>
-    handleSessionDiffRevert(req, res, params.id, { runtime: gw.runtime })));
+    handleSessionDiffRevert(req, res, params.id, {
+      runtime: gw.runtime,
+      access: gw.runtime?.access ?? null,
+    })));
 
   for (const op of ['session.checkpoint', 'session.checkpoints', 'session.restoreCheckpoint'] as const) {
     registry.attachHandler(op, H(async (req, res) =>
@@ -166,8 +171,8 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
 
   registry.attachHandler('session.delete', H(async (req, res) =>
     handleSessionMutations(req, res, {
-      getCapabilities: () => gw.runtimeCaps,
-      getClient: () => (gw.runtime ?? null) as any,
+      getRuntime: () => (gw.runtime ?? null) as any,
+      getAccess: () => gw.runtime?.access ?? null,
       cleanupWorktree: (sid) => {
         const db = (gw as any).getGatewayDb?.();
         if (!db) return Promise.resolve();
@@ -193,18 +198,20 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     })));
   registry.attachHandler('session.rename', H(async (req, res) =>
     handleSessionMutations(req, res, {
-      getCapabilities: () => gw.runtimeCaps,
-      getClient: () => (gw.runtime ?? null) as any,
+      getRuntime: () => (gw.runtime ?? null) as any,
+      getAccess: () => gw.runtime?.access ?? null,
     })));
 
   registry.attachHandler('session.switchAgent', H(async (req, res, params) =>
     handleSessionSwitch(req, res, params.id, 'agent', {
-      getClient: () => (gw.runtime ?? null) as any,
+      getRuntime: () => (gw.runtime ?? null) as any,
+      getAccess: () => gw.runtime?.access ?? null,
     })));
 
   registry.attachHandler('session.switchModel', H(async (req, res, params) =>
     handleSessionSwitch(req, res, params.id, 'model', {
-      getClient: () => (gw.runtime ?? null) as any,
+      getRuntime: () => (gw.runtime ?? null) as any,
+      getAccess: () => gw.runtime?.access ?? null,
     })));
 
   registry.attachHandler('structured.submit', H(async (req, res) =>
@@ -237,7 +244,10 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     handleSessionConfigSet(req, res, params.id, configDeps())));
 
   registry.attachHandler('session.summarize', H(async (req, res) =>
-    handleSessionSummarize(req, res, req.url || '', { getRuntime: () => gw.runtime })));
+    handleSessionSummarize(req, res, req.url || '', {
+      getRuntime: () => gw.runtime,
+      getAccess: () => gw.runtime?.access ?? null,
+    })));
 
   registry.attachHandler('experience.actions', H(async (req, res) =>
     handleExperienceActions(req, res, req.url || '', {

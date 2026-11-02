@@ -85,11 +85,12 @@ describe('GET /api/sessions/:sid/diff', () => {
     expect(JSON.parse((r2 as any).body).error).toContain('git failed');
   });
 
-  it('diffApi 能力缺失 → 503', async () => {
+  it('缺少 branch.diff surface → 中性 503', async () => {
     const { deps } = makeDeps({ runtime: { capabilities: {} } as any });
     const res = makeRes();
     await handleSessionDiff(res, 's1', undefined, deps);
     expect(res.statusCode).toBe(503);
+    expect(JSON.parse((res as any).body).error).toBe('runtime does not support branch.diff');
   });
 
   it('runtime diff 抛错 → 502', async () => {
@@ -141,7 +142,7 @@ describe('POST /api/sessions/:sid/diff/revert', () => {
     const d3 = makeDeps({
       runtime: {
         capabilities: { diffApi: true },
-        session: { get: async () => ({ id: 's1' }) },
+        session: { diff: async () => [], get: async () => ({ id: 's1' }) },
       } as any,
     });
     const res3 = makeRes();
