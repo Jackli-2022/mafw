@@ -68,6 +68,7 @@ export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: numbe
     archiveGoal: async (goalId: string, o: any) => { calls.push({ op: 'archiveGoal', goalId, ...o }); },
     nodeTimeoutMs: opts?.nodeTimeoutMs ?? 30 * 60_000,
     maxAttempts: opts?.maxAttempts ?? 2,
+    newApprovalId: (() => { let n = 0; return () => `pa_test_${++n}`; })(),
   };
 
   const driver = new NodeDriver(deps);

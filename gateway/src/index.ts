@@ -985,6 +985,7 @@ class MafwScheduler {
       archiveGoal: (goalId, opts) => this.archiveGoal(goalId, opts as any),
       nodeTimeoutMs: (config as any).goal?.nodeTimeoutMs ?? 30 * 60_000,
       maxAttempts: 2,
+      newApprovalId: () => `pa_${randomUUID()}`,
       canCreateNode: (goalId: string) => {
         const podId = this.podService?.getPodIdForGoal(goalId);
         if (!podId) return true;
@@ -5752,8 +5753,8 @@ class MafwScheduler {
                 ?? this.findGoalStatePath(goalId)?.info.mafwDir;
               return mafwDir ? loadGoalState(mafwDir, goalId) : null;
             },
-            approvePlan: (g) => this.goalDriver!.approvePlan(g),
-            rejectPlan: (g, feedback) => this.goalDriver!.rejectPlan(g, feedback),
+            approvePlan: (g, approvalId) => this.goalDriver!.approvePlan(g, approvalId),
+            rejectPlan: (g, feedback, approvalId) => this.goalDriver!.rejectPlan(g, feedback, approvalId),
           })) return;
         }
 

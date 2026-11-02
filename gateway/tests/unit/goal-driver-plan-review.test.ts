@@ -83,7 +83,8 @@ describe('W1 plan-review gate: approve / reject', () => {
   it('approvePlan → approved + 启动 execute', async () => {
     const h = makeHarness();
     await park(h);
-    const ok = await h.driver.approvePlan('g1');
+    const approvalId = h.load('g1')!.planApproval!.id;
+    const ok = await h.driver.approvePlan('g1', approvalId);
     expect(ok).toBe(true);
     const st = h.load('g1')!;
     expect(st.planApproval?.status).toBe('approved');
@@ -94,7 +95,8 @@ describe('W1 plan-review gate: approve / reject', () => {
   it('rejectPlan → planFeedback + 同 round 重跑 plan（attempt 修正 = 2）', async () => {
     const h = makeHarness();
     await park(h);
-    const ok = await h.driver.rejectPlan('g1', 'wave 1 拆太粗');
+    const approvalId = h.load('g1')!.planApproval!.id;
+    const ok = await h.driver.rejectPlan('g1', 'wave 1 拆太粗', approvalId);
     expect(ok).toBe(true);
     const st = h.load('g1')!;
     expect(st.planApproval?.status).toBe('rejected');
@@ -112,9 +114,10 @@ describe('W1 plan-review gate: approve / reject', () => {
     const sid = await h.startAndIdle('g1');
     writeReadyWaves(h, 'g1');
     await h.fireIdle(sid);
-    await h.driver.approvePlan('g1');
-    const ok1 = await h.driver.approvePlan('g1');
-    const ok2 = await h.driver.rejectPlan('g1', 'x');
+    const approvalId = h.load('g1')!.planApproval!.id;
+    await h.driver.approvePlan('g1', approvalId);
+    const ok1 = await h.driver.approvePlan('g1', approvalId);
+    const ok2 = await h.driver.rejectPlan('g1', 'x', approvalId);
     expect(ok1).toBe(false);
     expect(ok2).toBe(false);
     expect(h.load('g1')!.planApproval?.status).toBe('approved');

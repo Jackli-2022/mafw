@@ -4,6 +4,7 @@
 // langgraph 三件套（graph/checkpointer/interrupt）退役；路由用 routing.ts 纯函数。
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import {
   GoalStateV3, loadGoalState, writeGoalState, isTerminalState, effectiveRound,
 } from './state-v3';
@@ -15,6 +16,7 @@ import { ensureWaveTaskIds } from './wave-plan-edit';
 import { matchesSignature } from '../langgraph/signature-detector';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
 import { classifyNodeFailure } from './failure-class';
+import { nextNoProgress } from './no-progress';
 
 /** 从 waves.json 收集 taskId（与 PodTaskService 的 `${wave.id}-t${i+1}` 一致）。
  *  文件缺失/非法 → 返回 []（旧 goal 兼容：review 仍按 verdict 判定）。 */
@@ -66,6 +68,8 @@ export interface DriverDeps {
   archiveGoal(goalId: string, opts: { verdict: string; rounds: number; lastError?: string | null; reviewFeedback?: string }): Promise<void>;
   nodeTimeoutMs: number;
   maxAttempts: number;
+  /** Random one-time token for each manual plan approval. */
+  newApprovalId(): string;
   /** W4：能力账本 + 失败谱块（plan 节点先验），缺省不注入。fail-open。
    *  D4b 起签名带 goalId（读 state.taskType 做同类任务先验）。 */
   capabilityPrior?: (goalId: string) => string | null;
@@ -209,6 +213,11 @@ export class NodeDriver {
       attempt,
       maxAttempts: this.deps.maxAttempts,
       lastFailure: state.lastFailure ?? null,
+      userAnswer: state.userResponse
+        && !state.userResponse.consumedByRunId
+        && (state.userResponse.resumeNode ?? 'plan') === node
+        ? state.userResponse.answer
+        : undefined,
       goalAcceptance: node === 'plan' ? (() => {
         try {
           const req = JSON.parse(fs.readFileSync(path.join(mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
@@ -476,12 +485,39 @@ export class NodeDriver {
       return;
     }
 
+    const digestSource = fs.existsSync(artifactPath)
+      ? fs.readFileSync(artifactPath, 'utf-8')
+      : JSON.stringify(submitted ?? null);
+    const digest = createHash('sha1').update(digestSource).digest('hex');
+    const progress = nextNoProgress({
+      previousDigest: state.lastArtifactDigest?.[node],
+      previousCount: state.noProgressCount ?? 0,
+      digest,
+    });
+    patch.noProgressCount = progress.count;
+    patch.lastArtifactDigest = { ...(state.lastArtifactDigest ?? {}), [node]: digest };
+    if (progress.ask && !patch.pendingQuestion) {
+      patch.pendingQuestion = {
+        questionId: `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_ok`,
+        node,
+        resumeNode: node,
+        loop: round,
+        questions: [`No progress: ${node} produced identical output ${progress.count} times. What should change before retrying?`],
+        askedAt: new Date().toISOString(),
+      };
+    }
+    if (state.userResponse
+      && !state.userResponse.consumedByRunId
+      && (state.userResponse.resumeNode ?? 'plan') === node) {
+      patch.userResponse = { ...state.userResponse, consumedByRunId: ns.runId };
+    }
+
     try { await this.deps.client.delete(sessionID); } catch { /* fail-open */ }
     patch = { ...patch, lastFailure: null };
 
     const phaseNames = NODE_PHASE[node];
     const nextRound = patch.round ?? round;
-    const nextNode = routeNext(
+    const routedNode = routeNext(
       node === 'plan' ? 'after_plan' : node === 'execute' ? 'after_execute' : 'after_review',
       {
         lastError: state.lastError,
@@ -495,6 +531,7 @@ export class NodeDriver {
         reviewFixAvailable: !!patch.reviewFix,
       },
     );
+    const nextNode = progress.ask && patch.pendingQuestion ? 'askUser' : routedNode;
 
     this.deps.db.finishNodeRun(ns.runId, {
       status: 'succeeded', finishedAt: new Date().toISOString(), outcome,
@@ -510,7 +547,7 @@ export class NodeDriver {
       writeGoalState(mafwDir, goalId, {
         ...patch, nodeSession: null, phase: 'PLANNING',
         nextNode: 'execute', nextAction: 'AWAIT_PLAN_APPROVAL',
-        planApproval: { status: 'pending', round: nextRound },
+        planApproval: { id: this.deps.newApprovalId(), status: 'pending', round: nextRound },
       });
       this.emitFinished(goalId, state.projectDir, round, node, outcome, ns.attempt);
       return;
@@ -547,10 +584,18 @@ export class NodeDriver {
     this.deps.ledger.appendQuestionEvent({
       type: 'answered', questionId, goalId, answer, answeredAt: new Date().toISOString(),
     });
+    const resumeNode = state.pendingQuestion.resumeNode
+      ?? (state.pendingQuestion.node === 'review' ? 'plan' : state.pendingQuestion.node);
     writeGoalState(mafwDir, goalId, {
       pendingQuestion: null,
-      userResponse: { questionId, answer, respondedAt: new Date().toISOString() },
-      nextNode: 'plan',
+      userResponse: {
+        questionId,
+        answer,
+        resumeNode,
+        respondedAt: new Date().toISOString(),
+      },
+      nextNode: resumeNode,
+      noProgressCount: 0,
     });
     void this.advance(goalId);
     return true;
@@ -576,6 +621,14 @@ export class NodeDriver {
 
   // ── W1 计划批准门：approve / reject（HTTP 路由调入；走 advance 同款互斥） ──
 
+  private matchesApproval(
+    approval: { id?: string; status: 'pending' | 'approved' | 'rejected'; round: number },
+    approvalId?: string,
+  ): boolean {
+    if (!approval.id) return approvalId === undefined;
+    return approvalId === approval.id;
+  }
+
   private async withGoalMutex<T>(goalId: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.mutex.get(goalId) ?? Promise.resolve();
     const next = prev.then(fn, fn);
@@ -584,12 +637,13 @@ export class NodeDriver {
   }
 
   /** 批准当前计划 → 解锁驻留，启动 execute。false = 非 pending / 终态 / 未知 goal。 */
-  async approvePlan(goalId: string): Promise<boolean> {
+  async approvePlan(goalId: string, approvalId?: string): Promise<boolean> {
     return this.withGoalMutex(goalId, async () => {
       const found = this.findState(goalId);
       if (!found) return false;
       const state = loadGoalState(found.mafwDir, goalId)!;
       if (isTerminalState(state) || state.planApproval?.status !== 'pending') return false;
+      if (!this.matchesApproval(state.planApproval, approvalId)) return false;
       const decidedAt = new Date().toISOString();
       writeGoalState(found.mafwDir, goalId, {
         planApproval: { ...state.planApproval, status: 'approved', decidedAt },
@@ -605,12 +659,13 @@ export class NodeDriver {
   }
 
   /** 驳回当前计划 → planFeedback 注入，同 round 重跑 plan（attempt+1）。 */
-  async rejectPlan(goalId: string, feedback: string): Promise<boolean> {
+  async rejectPlan(goalId: string, feedback: string, approvalId?: string): Promise<boolean> {
     return this.withGoalMutex(goalId, async () => {
       const found = this.findState(goalId);
       if (!found) return false;
       const state = loadGoalState(found.mafwDir, goalId)!;
       if (isTerminalState(state) || state.planApproval?.status !== 'pending') return false;
+      if (!this.matchesApproval(state.planApproval, approvalId)) return false;
       const round = effectiveRound(state);
       const decidedAt = new Date().toISOString();
       writeGoalState(found.mafwDir, goalId, {

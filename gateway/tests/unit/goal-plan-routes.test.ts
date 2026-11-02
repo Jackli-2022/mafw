@@ -28,10 +28,10 @@ function makeDeps(opts?: { approveResult?: boolean; rejectResult?: boolean }) {
     loadState: (goalId: string) => {
       if (goalId !== 'g1') return null;
       const s = ensureGoalState(mafwDir, 'g1', { projectDir: 'C:/p', maxRounds: 3 });
-      return { ...s, wavePlanPath: wavesPath, planReview: 'manual' as const, planApproval: { status: 'pending' as const, round: 1 }, mafwDir };
+      return { ...s, wavePlanPath: wavesPath, planReview: 'manual' as const, planApproval: { id: 'pa_1', status: 'pending' as const, round: 1 }, mafwDir };
     },
-    approvePlan: async () => { calls.push('approve'); return opts?.approveResult ?? true; },
-    rejectPlan: async (goalId: string, feedback: string) => { calls.push({ reject: feedback }); return opts?.rejectResult ?? true; },
+    approvePlan: async (_goalId: string, approvalId?: string) => { calls.push({ approve: approvalId }); return opts?.approveResult ?? true; },
+    rejectPlan: async (_goalId: string, feedback: string, approvalId?: string) => { calls.push({ reject: feedback, approvalId }); return opts?.rejectResult ?? true; },
   };
   return { mafwDir, wavesPath, calls, deps };
 }
@@ -81,19 +81,26 @@ describe('POST /api/goals/:id/plan-approval', () => {
     return { handled, out };
   }
 
-  it('approve: pending → 200 且调 approvePlan', async () => {
+  it('approve: pending → 200 且调 approvePlan with id', async () => {
     const { deps, calls } = makeDeps();
-    const { out } = await post({ approve: true }, deps);
+    const { out } = await post({ approve: true, approvalId: 'pa_1' }, deps);
     expect(out.status).toBe(200);
     expect(out.body.success).toBe(true);
-    expect(calls).toContain('approve');
+    expect(calls).toEqual([{ approve: 'pa_1' }]);
+  });
+
+  it('approve without id when pending has one → 409', async () => {
+    const { deps, calls } = makeDeps();
+    const { out } = await post({ approve: true }, deps);
+    expect(out.status).toBe(409);
+    expect(calls).toEqual([]);
   });
 
   it('reject: feedback 非空 → 200 且调 rejectPlan', async () => {
     const { deps, calls } = makeDeps();
-    const { out } = await post({ approve: false, feedback: '拆太粗' }, deps);
+    const { out } = await post({ approve: false, approvalId: 'pa_1', feedback: '拆太粗' }, deps);
     expect(out.status).toBe(200);
-    expect(calls).toEqual([{ reject: '拆太粗' }]);
+    expect(calls).toEqual([{ reject: '拆太粗', approvalId: 'pa_1' }]);
   });
 
   it('reject 无 feedback → 400', async () => {
@@ -104,7 +111,7 @@ describe('POST /api/goals/:id/plan-approval', () => {
 
   it('driver 返回 false（非 pending/终态）→ 409', async () => {
     const { deps } = makeDeps({ approveResult: false });
-    const { out } = await post({ approve: true }, deps);
+    const { out } = await post({ approve: true, approvalId: 'pa_1' }, deps);
     expect(out.status).toBe(409);
   });
 

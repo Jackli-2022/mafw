@@ -6,10 +6,10 @@ import * as fs from 'fs';
 import { GoalStateV3 } from '../core/goal/state-v3';
 
 export interface GoalPlanDeps {
-  body?: { approve?: boolean; feedback?: string };
+  body?: { approve?: boolean; feedback?: string; approvalId?: string };
   loadState(goalId: string): GoalStateV3 | null;
-  approvePlan(goalId: string): Promise<boolean>;
-  rejectPlan(goalId: string, feedback: string): Promise<boolean>;
+  approvePlan(goalId: string, approvalId?: string): Promise<boolean>;
+  rejectPlan(goalId: string, feedback: string, approvalId?: string): Promise<boolean>;
 }
 
 function json(res: http.ServerResponse, status: number, payload: any): void {
@@ -57,13 +57,28 @@ export async function handleGoalPlan(
       if (!state) { json(res, 404, { error: 'goal state not found' }); return true; }
       const approve = deps.body?.approve === true;
       const feedback = typeof deps.body?.feedback === 'string' ? deps.body.feedback.trim() : '';
+      const approvalId = typeof deps.body?.approvalId === 'string' ? deps.body.approvalId : undefined;
+      const current = state.planApproval;
+      if (current?.status !== 'pending') {
+        json(res, 409, { error: 'plan approval is not pending (or goal is terminal)' });
+        return true;
+      }
+      if (!approve && !feedback) {
+        json(res, 400, { error: 'reject requires feedback' });
+        return true;
+      }
+      // A new plan always carries a random id. Missing/stale ids never fall
+      // through to the legacy path when the stored approval has an id.
+      if (current.id && approvalId !== current.id) {
+        json(res, 409, { error: 'stale or missing approvalId' });
+        return true;
+      }
       if (approve) {
-        const ok = await deps.approvePlan(goalId);
+        const ok = await deps.approvePlan(goalId, approvalId);
         if (!ok) { json(res, 409, { error: 'plan approval is not pending (or goal is terminal)' }); return true; }
         json(res, 200, { success: true });
       } else {
-        if (!feedback) { json(res, 400, { error: 'reject requires feedback' }); return true; }
-        const ok = await deps.rejectPlan(goalId, feedback);
+        const ok = await deps.rejectPlan(goalId, feedback, approvalId);
         if (!ok) { json(res, 409, { error: 'plan approval is not pending (or goal is terminal)' }); return true; }
         json(res, 200, { success: true });
       }

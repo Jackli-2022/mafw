@@ -15,7 +15,9 @@ export interface NodeSessionRef {
 
 export interface PendingQuestion {
   questionId: string;
-  node: 'plan' | 'review';
+  node: 'plan' | 'execute' | 'review';
+  /** Node that must consume the answer; legacy defaults to plan. */
+  resumeNode?: 'plan' | 'execute' | 'review';
   loop: number;
   questions: string[];
   askedAt: string;
@@ -24,7 +26,9 @@ export interface PendingQuestion {
 export interface UserResponse {
   questionId: string;
   answer: string;
+  resumeNode?: 'plan' | 'execute' | 'review';
   respondedAt: string;
+  consumedByRunId?: number;
 }
 
 export interface GoalStateV3 {
@@ -50,6 +54,8 @@ export interface GoalStateV3 {
     attempt: number;
     at: string;
   } | null;
+  noProgressCount?: number;
+  lastArtifactDigest?: Partial<Record<'plan' | 'execute' | 'review', string>>;
   nodeSession: NodeSessionRef | null;
   pendingQuestion: PendingQuestion | null;
   userResponse: UserResponse | null;
@@ -69,6 +75,8 @@ export interface GoalStateV3 {
   planReview?: 'auto' | 'manual';
   /** W1 批准门运行态：pending = 驳留在 AWAIT_PLAN_APPROVAL。 */
   planApproval?: {
+    /** Random one-time id; absent only for approvals created before v3. */
+    id?: string;
     status: 'pending' | 'approved' | 'rejected';
     feedback?: string;
     decidedAt?: string;
@@ -130,9 +138,22 @@ function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
     receiptPath: raw.receiptPath ?? null,
     lastError: raw.lastError ?? raw.error ?? null,
     lastFailure: raw.lastFailure ?? null,
+    noProgressCount: raw.noProgressCount ?? 0,
+    lastArtifactDigest: raw.lastArtifactDigest ?? {},
     nodeSession: raw.nodeSession ?? null,
-    pendingQuestion: raw.pendingQuestion ?? null,
-    userResponse: raw.userResponse ?? null,
+    pendingQuestion: raw.pendingQuestion
+      ? {
+        ...raw.pendingQuestion,
+        resumeNode: raw.pendingQuestion.resumeNode
+          ?? (raw.pendingQuestion.node === 'review' ? 'plan' : raw.pendingQuestion.node ?? 'plan'),
+      }
+      : null,
+    userResponse: raw.userResponse
+      ? {
+        ...raw.userResponse,
+        resumeNode: raw.userResponse.resumeNode ?? 'plan',
+      }
+      : null,
     sameSigCount: raw.sameSigCount ?? 0,
     stateVersion: raw.stateVersion ?? 0,
     nextNode: raw.nextNode ?? 'plan',
