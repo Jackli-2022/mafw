@@ -19,6 +19,7 @@ import { AgentDefinition } from './agent-definition';
 import { startServeSidecar, killServePort, resolveServePassword, serveAuthHeaders, resolveOpencodeBin } from './serve-sidecar';
 import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime-root';
 import { createOpencodeAdapter } from './opencode-adapter';
+import { readProviderApiKey, readProviderBaseUrlWithPath, readProviderTransportFromList } from './provider-settings';
 import { createOpencodeMcpChannel, resolveMcpListCommand } from './opencode-mcp';
 import { createOpencodeMcpConfigChannel } from './opencode-mcp-config';
 import { execFile } from 'child_process';
@@ -357,9 +358,13 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
         resolveEndpoint: async (providerID) => {
           try {
             const cfg: any = await client.config.get();
-            const base = cfg?.provider?.[providerID]?.options?.baseURL;
-            if (typeof base === 'string' && base) return `${base.replace(/\/+$/, '')}/chat/completions`;
+            const base = readProviderBaseUrlWithPath(cfg, providerID);
+            if (base) return base;
           } catch { /* fail-open to the next resolution step */ }
+          try {
+            const list: any = await rt.provider?.list?.();
+            return readProviderTransportFromList(list, providerID).baseUrl;
+          } catch { /* fail-open */ }
           return null;
         },
         resolveApiKey: async (providerID) => {
@@ -367,9 +372,13 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
             const viaAuth = getProviderApiKey(providerID);
             if (viaAuth) return viaAuth;
             const cfg: any = await client.config.get();
-            const key = cfg?.provider?.[providerID]?.options?.apiKey;
-            if (typeof key === 'string' && key) return key;
+            const key = readProviderApiKey(cfg, providerID);
+            if (key) return key;
           } catch { /* fail-open to the next resolution step */ }
+          try {
+            const list: any = await rt.provider?.list?.();
+            return readProviderTransportFromList(list, providerID).apiKey;
+          } catch { /* fail-open */ }
           return null;
         },
       });

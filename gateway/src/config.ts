@@ -319,6 +319,11 @@ export interface GatewayConfig {
     reflectThresholdEpisodic: number;
     maxEpisodicPerReflect: number;
     workerModel: { providerID: string; modelID: string };
+    /** Write-path judge model (consolidation + route-write). Falls back to
+     *  workerModel when absent. Must be a provider the stateless completion
+     *  channel can resolve (baseURL + API key); free-tier providers whose
+     *  quota is session-bound fail there. */
+    judgeModel?: { providerID: string; modelID: string };
     workerCompactIdleMs: number;
     /** providerID → OpenAI-compatible chat-completions URL overrides for the direct-HTTP index scan. */
     scanEndpoints?: Record<string, string>;

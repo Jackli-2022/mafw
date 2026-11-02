@@ -83,12 +83,14 @@ import { scanCommandDirs, watchCommandDirs, type CommandDir } from "./commands/c
 import { registerCustomCommands } from "./commands/custom-exec";
 import { exec } from "child_process";
 import { ConsolidationService, consolidationJudge } from "./memory/consolidation-service";
+import { resolveJudgeModel } from "./memory/judge-model";
 import { LayaConflictClient } from "./memory/laya-client";
 import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite, getRouteStats } from "./memory/route-write";
 import { obsSalience } from "./recall/obs-salience";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
 import { getProviderApiKey } from "./runtime/auth";
+import { readProviderApiKey, readProviderBaseUrlWithPath, readProviderTransportFromList } from "./runtime/provider-settings";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
@@ -2107,10 +2109,14 @@ class MafwScheduler {
     if (!embeddingRuntime) return;
 
     // P2: Memora-style consolidation (embedding recall + LLM UPDATE/CREATE).
-    // Judge reuses the worker-model transport; unresolvable → skip path.
+    // Judge model: `recall.judgeModel` (falls back to workerModel). It must be
+    // a provider the stateless completion channel can resolve — a baseURL plus
+    // an API key in auth.json. `opencode/*-free` has neither (its quota is
+    // session-bound), which silently killed the judge for two weeks.
     if (config.memory.embedding.consolidation) {
-      const providerID = config.recall.workerModel?.providerID;
-      const modelID = config.recall.workerModel?.modelID;
+      const judgeModel = resolveJudgeModel(config.recall);
+      const providerID = judgeModel?.providerID;
+      const modelID = judgeModel?.modelID;
       const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
       const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
       // Judge transport: prefer the runtime's stateless completion channel
@@ -2148,7 +2154,7 @@ class MafwScheduler {
         vectors: embeddingRuntime.vectors,
         provider: embeddingRuntime.provider,
         llm: judgeBaseUrl && judgeApiKey
-          ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: config.recall.workerModel.modelID }
+          ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: modelID! }
           : undefined,
         completion,
         model: providerID && modelID ? { providerID, modelID } : undefined,
@@ -2729,9 +2735,13 @@ class MafwScheduler {
           resolveEndpoint: async (providerID) => {
             try {
               const cfg: any = await this.runtime?.config.get();
-              const base = cfg?.provider?.[providerID]?.options?.baseURL;
-              if (typeof base === 'string' && base) return `${base.replace(/\/+$/, '')}/chat/completions`;
+              const u = readProviderBaseUrlWithPath(cfg, providerID);
+              if (u) return u;
             } catch { /* fail-open to the next resolution step */ }
+            try {
+              const list: any = await this.runtime?.provider?.list?.();
+              return readProviderTransportFromList(list, providerID).baseUrl;
+            } catch { /* fail-open */ }
             return null;
           },
           resolveApiKey: async (providerID) => {
@@ -2739,9 +2749,13 @@ class MafwScheduler {
               const viaCreds = this.runtime?.credentials?.getApiKey(providerID);
               if (viaCreds) return viaCreds;
               const cfg: any = await this.runtime?.config.get();
-              const key = cfg?.provider?.[providerID]?.options?.apiKey;
-              if (typeof key === 'string' && key) return key;
+              const k = readProviderApiKey(cfg, providerID);
+              if (k) return k;
             } catch { /* fail-open to the next resolution step */ }
+            try {
+              const list: any = await this.runtime?.provider?.list?.();
+              return readProviderTransportFromList(list, providerID).apiKey;
+            } catch { /* fail-open */ }
             return null;
           },
           recordUsage: (u) => {
@@ -3935,8 +3949,9 @@ class MafwScheduler {
     const routeRt = getEmbeddingRuntime();
     if (routeRt && this.memoryService) {
       const judgeStore = new HarmonicUnitFileStore(mafwDir, this.memoryService.harmonicIndex);
-      const providerID = config.recall.workerModel?.providerID;
-      const modelID = config.recall.workerModel?.modelID;
+      const judgeModel = resolveJudgeModel(config.recall);
+      const providerID = judgeModel?.providerID;
+      const modelID = judgeModel?.modelID;
       const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
       const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
       setRouteWriteDeps({
@@ -4203,8 +4218,7 @@ class MafwScheduler {
         resolveInlineApiKey: async (providerID: string) => {
           try {
             const cfg: any = await this.runtime?.config.get();
-            const key = cfg?.provider?.[providerID]?.options?.apiKey;
-            return typeof key === 'string' && key ? key : null;
+            return readProviderApiKey(cfg, providerID);
           } catch { return null; }
         },
       });
@@ -8678,7 +8692,7 @@ class MafwScheduler {
     const terminal = isTerminalState(state);
     const verdict = goalVerdictFromState(state);
     return {
-      title: typeof request?.title === 'string' && request.title.trim() ? request.title : goalId,
+      title: typeof request?.title === 'string' && request.title.trim() ? request.title : '',
       phase: state.phase ?? null,
       nextAction: state.nextAction,
       terminal,
