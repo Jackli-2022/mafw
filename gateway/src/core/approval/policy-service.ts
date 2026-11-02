@@ -37,7 +37,6 @@ export interface ApprovalPolicyDeps {
   /** 身份层（spec 2026-10-08-runtime-neutral-agent-identity §3.3）：internal = gateway 驱动会话。全部可选。 */
   getIdentity?(sessionID: string): { name: string; internal: boolean } | undefined;
   getPolicy?(name: string): IdentityPolicy | undefined;
-  runtimeName?(): string;
 }
 
 export class ApprovalPolicyService {
@@ -66,8 +65,7 @@ export class ApprovalPolicyService {
     if (binding) {
       const policy = this.deps.getPolicy?.(binding.name);
       if (policy) {
-        const cat = (t: string): ToolCategory | null =>
-          resolveToolCategory(t, this.deps.runtimeName?.() ?? 'opencode');
+        const cat = (t: string): ToolCategory | null => resolveToolCategory(t);
         const decision = policyDecides(policy, candidate.toolName, cat);
         if (decision === 'deny') {
           return {

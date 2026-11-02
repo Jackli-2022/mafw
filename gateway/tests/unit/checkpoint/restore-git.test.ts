@@ -13,6 +13,7 @@ import {
   type CheckpointServiceDeps,
 } from '../../../src/core/checkpoint/checkpoint-service';
 import { defaultGit } from '../../../src/core/diff/turn-diff';
+import { findOpenCodeSnapshotRepo } from '../../../src/runtime/opencode-snapshot';
 import type { SessionCheckpointRow } from '../../../src/memory/gateway-db';
 
 const exec = promisify(execFile);
@@ -110,7 +111,7 @@ function harness(fx: Fixture, checkpointTree: string | null, untracked: string[]
       if (tree) workspaceTrees.set(sid, tree);
       else workspaceTrees.delete(sid);
     },
-    snapshotRoot: fx.root,
+    locateSnapshotTree: (o) => findOpenCodeSnapshotRepo({ root: fx.root, ...o, git: defaultGit }),
     broadcast: () => {},
     now: () => '2026-10-26T01:00:00Z',
     newId: () => `ckpt_pre_${Math.random().toString(36).slice(2, 8)}`,

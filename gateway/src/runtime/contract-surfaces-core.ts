@@ -223,6 +223,15 @@ export const CORE_SURFACES: ContractSurface[] = [
     consumer: 'ChangesDock / per-turn diff', impact: '审阅改动不可用', presets: DESK,
   }),
   row({
+    id: 'session.snapshotTree', title: 'snapshot tree primitives', domain: 'branch',
+    // 快照存储布局属于 adapter 私有知识（设计 §7.2）：core 只拿到「定位结果」，
+    // 不知道 ~/.local/share/opencode/snapshot 之类的路径。
+    obligation: 'optional', verification: 'presence',
+    implementation: 'snapshotTree.locate', probe: ['snapshotTree', 'locate'],
+    consumer: 'per-turn diff / checkpoint files restore',
+    impact: '回合 diff 与文件级检查点恢复不可用（中性降级）', presets: NONE,
+  }),
+  row({
     id: 'branch.vcs', title: 'vcs.diff / vcs.apply', domain: 'branch',
     obligation: 'gated', capability: 'diffApi', verification: 'presence',
     implementation: 'session.vcs.diff / session.vcs.apply', probe: ['session', 'vcs', 'apply'],

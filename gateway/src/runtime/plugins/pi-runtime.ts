@@ -246,6 +246,13 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     capabilities: PI_CAPABILITIES,
     external: true,
     session: sessionAPI,
+    // 专用媒体分析会话（media.session）：pi 能在进程内承载会话，图片追问复用
+    // 同一会话（真多轮记忆）。opencode 不声明该通道，媒体走无状态补全。
+    mediaSession: {
+      async create(opts: { directory: string }) {
+        return sessionAPI.create({ directory: opts.directory });
+      },
+    },
     global: { event: () => Promise.resolve({ stream: eventStream.stream() }) },
     provider: { list: () => modelRuntime().then((mr) => translateProviders(mr)) },
     app: { agents: () => translateAgents() },

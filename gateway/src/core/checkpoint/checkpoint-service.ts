@@ -11,8 +11,6 @@ import * as path from 'path';
 
 import type { SessionCheckpointRow } from '../../memory/gateway-db';
 import {
-  defaultSnapshotRoot,
-  findSnapshotRepo,
   isSnapshotId,
   type GitRunner,
 } from '../diff/turn-diff';
@@ -72,6 +70,10 @@ export interface CheckpointServiceDeps {
       messages(opts: { sessionID: string; limit?: number }): Promise<{ data: any[] }>;
       revert(opts: { sessionID: string; messageID: string; files?: boolean }): Promise<void>;
     };
+    /** adapter 的快照原语（session.snapshotTree）；缺省 = 文件恢复不可用。 */
+    snapshotTree?: {
+      locate(opts: { projectID?: string; start: string; end: string }): Promise<string | null>;
+    };
   };
   git: GitRunner;
   /** `git status --porcelain` 原文（注入以便测试；生产走 simple-git）。 */
@@ -80,7 +82,8 @@ export interface CheckpointServiceDeps {
    *  下一次恢复（含后悔药）必须以此为补丁基线；新回合/全量恢复时清空。 */
   readWorkspaceTree(sessionID: string): string | null;
   writeWorkspaceTree(sessionID: string, tree: string | null): void;
-  snapshotRoot?: string;
+  /** 显式覆盖快照定位（测试用）；缺省走 runtime.snapshotTree。 */
+  locateSnapshotTree?(opts: { projectID?: string; start: string; end: string }): Promise<string | null>;
   broadcast(event: { type: string; [key: string]: any }): void;
   now(): string;
   newId(): string;
@@ -267,12 +270,14 @@ export class CheckpointService {
     }
 
     const session = await this.deps.runtime.session.get({ sessionID: ckpt.sessionID });
-    const repo = await findSnapshotRepo({
-      root: this.deps.snapshotRoot ?? defaultSnapshotRoot(),
+    const locate = this.deps.locateSnapshotTree ?? this.deps.runtime.snapshotTree?.locate;
+    if (!locate) {
+      throw new CheckpointRestoreError(503, 'runtime does not support session.snapshotTree');
+    }
+    const repo = await locate({
       projectID: session?.projectID,
       start: tree,
       end: base,
-      git: this.deps.git,
     });
     if (!repo) {
       throw new CheckpointRestoreError(404, 'snapshot trees not found (pruned?)');

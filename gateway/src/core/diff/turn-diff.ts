@@ -1,14 +1,11 @@
-// Per-turn diff from opencode snapshot trees (B3.1).
+// Per-turn diff from runtime snapshot trees (B3.1).
 //
 // Assistant messages carry `snapshot.start` / `snapshot.end` git tree ids.
 // The user turn's diff is the tree diff from the first assistant start to the
-// last assistant end. Snapshot repos live under
-// ~/.local/share/opencode/snapshot/<projectID>/<repoDir> and are plain git
-// dirs (HEAD/objects directly, no .git subdirectory).
+// last assistant end. WHERE those snapshot repos live is runtime-private:
+// this module only asks the adapter's `session.snapshotTree` channel
+// (RuntimeSnapshotTreeChannel.locate) for the repo containing the two trees.
 import { execFile } from 'child_process';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 
 export interface FileDiffInfo {
   file?: string;
@@ -243,16 +240,6 @@ export function parseGitDiff(patchText: string): FileDiffInfo[] {
   return files;
 }
 
-function defaultSnapshotRoot(): string {
-  const override = process.env.MAFW_OPENCODE_SNAPSHOT_ROOT;
-  if (override) return override;
-  const xdg = process.env.XDG_DATA_HOME;
-  if (xdg) return path.join(xdg, 'opencode', 'snapshot');
-  return path.join(os.homedir(), '.local', 'share', 'opencode', 'snapshot');
-}
-
-export { defaultSnapshotRoot };
-
 export const defaultGit: GitRunner = {
   run(args, opts) {
     return new Promise((resolve, reject) => {
@@ -287,88 +274,23 @@ export const defaultGit: GitRunner = {
   },
 };
 
-function listDirectories(dir: string): string[] {
-  try {
-    return fs.readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(dir, entry.name));
-  } catch {
-    return [];
-  }
-}
-
-async function hasTrees(
-  repo: string,
-  start: string,
-  end: string,
-  git: GitRunner,
-): Promise<boolean> {
-  try {
-    const startResult = await git.run(['--git-dir', repo, 'cat-file', '-t', start]);
-    if (startResult.code !== 0 || startResult.stdout.trim() !== 'tree') return false;
-    const endResult = await git.run(['--git-dir', repo, 'cat-file', '-t', end]);
-    return endResult.code === 0 && endResult.stdout.trim() === 'tree';
-  } catch {
-    return false;
-  }
-}
-
-/** Locate the snapshot git dir containing both tree ids. */
-export async function findSnapshotRepo(opts: {
-  root: string;
-  projectID?: string;
-  start: string;
-  end: string;
-  git: GitRunner;
-}): Promise<string | null> {
-  const { root, projectID, start, end, git } = opts;
-  const safeProjectID = projectID
-    && !path.isAbsolute(projectID)
-    && !projectID.includes('/')
-    && !projectID.includes('\\')
-    && !projectID.includes('..')
-    ? projectID
-    : null;
-
-  const candidates: string[] = [];
-  if (safeProjectID) {
-    for (const repo of listDirectories(path.join(root, safeProjectID))) {
-      candidates.push(repo);
-    }
-  }
-  for (const projectDir of listDirectories(root)) {
-    if (safeProjectID && path.basename(projectDir) === safeProjectID) continue;
-    for (const repo of listDirectories(projectDir)) {
-      candidates.push(repo);
-    }
-  }
-
-  for (const repo of candidates) {
-    if (await hasTrees(repo, start, end, git)) return repo;
-  }
-  return null;
-}
-
-/** Compute the diff for one user turn from its snapshot tree range. */
+/**
+ * Compute the diff for one user turn from its snapshot tree range.
+ * `locate` is the adapter's session.snapshotTree primitive — this module never
+ * knows where snapshot repos live.
+ */
 export async function computeTurnDiff(opts: {
   messages: any[];
   messageID: string;
   projectID?: string;
-  snapshotRoot?: string;
+  locate(opts: { projectID?: string; start: string; end: string }): Promise<string | null>;
   git?: GitRunner;
 }): Promise<FileDiffInfo[]> {
   const { start, end } = selectTurnSnapshot(opts.messages, opts.messageID);
   if (start === end) return [];
 
-  const root = opts.snapshotRoot ?? defaultSnapshotRoot();
   const git = opts.git ?? defaultGit;
-  const repo = await findSnapshotRepo({
-    root,
-    projectID: opts.projectID,
-    start,
-    end,
-    git,
-  });
+  const repo = await opts.locate({ projectID: opts.projectID, start, end });
   if (!repo) {
     throw new TurnDiffUnavailableError(
       `snapshot trees ${start.slice(0, 8)}..${end.slice(0, 8)} not found`,
@@ -406,17 +328,24 @@ export async function computeTurnDiffForRuntime(
       get(opts: { sessionID: string }): Promise<any>;
       messages(opts: { sessionID: string; limit?: number }): Promise<{ data: any[] }>;
     };
+    /** adapter 提供的快照原语；缺省 = 该 runtime 无回合快照（中性 unavailable）。 */
+    snapshotTree?: { locate(opts: { projectID?: string; start: string; end: string }): Promise<string | null> };
   },
   sessionID: string,
   messageID: string,
-  opts?: { snapshotRoot?: string; git?: GitRunner },
+  opts?: { git?: GitRunner },
 ): Promise<FileDiffInfo[]> {
+  const locate = runtime.snapshotTree?.locate;
+  if (!locate) {
+    throw new TurnDiffUnavailableError('runtime does not support session.snapshotTree');
+  }
   const session = await runtime.session.get({ sessionID });
   const result = await runtime.session.messages({ sessionID, limit: 200 });
   return computeTurnDiff({
     messages: Array.isArray(result?.data) ? result.data : [],
     messageID,
     projectID: session?.projectID,
-    ...opts,
+    locate: (args) => locate(args),
+    ...(opts?.git ? { git: opts.git } : {}),
   });
 }

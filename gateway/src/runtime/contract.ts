@@ -376,6 +376,28 @@ export interface RuntimeDiscoveryChannel {
   loadSkill(opts: { directory: string; key: string }): Promise<RuntimeSkillContent | null>;
 }
 
+// ── 快照树（session.snapshotTree；存储布局只存在于 adapter） ──────────────
+
+/**
+ * 回合级文件快照原语。gateway 只知道「两个树 id」，不知道快照仓库在哪、
+ * 如何布局（opencode：~/.local/share/opencode/snapshot/<projectID>/<repo>）。
+ * 缺通道 = 不支持 per-turn diff / 文件级检查点恢复（调用方中性降级）。
+ */
+export interface RuntimeSnapshotTreeChannel {
+  /** 定位同时包含两棵树的快照 git dir；空/已 prune 返回 null。 */
+  locate(opts: { projectID?: string; start: string; end: string }): Promise<string | null>;
+}
+
+// ── 媒体分析会话（media.session；是否可用由 adapter 声明） ────────────────
+
+/**
+ * 以专用会话做多轮媒体分析（图片追问复用同一会话）。通道存在 = 该 runtime
+ * 支持这种会话承载；gateway 的 MediaRuntimeExecutor 只在 surface 放行时构造。
+ */
+export interface RuntimeMediaSessionChannel {
+  create(opts: { directory: string }): Promise<{ id: string }>;
+}
+
 // ── MCP 运行时管理（mcpApi；gateway 不感知具体 runtime 的 API/CLI 形态） ──
 
 export type RuntimeMcpStatus = 'connected' | 'disabled' | 'failed' | 'needs_auth' | 'unknown';
@@ -571,6 +593,10 @@ export interface RuntimeClient {
   };
   /** runtime 原生命令/技能目录（discoveryApi 能力）。 */
   discovery?: RuntimeDiscoveryChannel;
+  /** 回合级快照树定位（session.snapshotTree）；私有存储布局只在本通道之后。 */
+  snapshotTree?: RuntimeSnapshotTreeChannel;
+  /** 专用媒体分析会话（media.session）；缺省 = 无会话承载的媒体分析。 */
+  mediaSession?: RuntimeMediaSessionChannel;
   /** MCP 运行时管理（mcpApi 能力）。runtime 拥有列表/连接/断开的实现细节。 */
   mcp?: RuntimeMcpChannel & { config?: RuntimeMcpConfigChannel };
   config: {

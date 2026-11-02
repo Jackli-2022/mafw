@@ -13,6 +13,7 @@
 import { serveAuthHeaders } from './serve-sidecar';
 import { stopReasonOf } from './contract';
 import { formToQuestion, formAnswerOf } from './form-question';
+import { createOpenCodeSnapshotTreeChannel } from './opencode-snapshot';
 import type {
   RuntimeClient,
   SessionCreateOpts,
@@ -892,6 +893,10 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         return { ...mapRuntimeSkill(rawHit), content: String(rawHit.content ?? '') };
       },
     },
+
+    // 回合快照树原语：snapshot 根目录与 <projectID>/<repo> 布局只在这里。
+    // gateway core 仅拿到「包含两棵树的 git dir」。
+    snapshotTree: createOpenCodeSnapshotTreeChannel(),
 
     config: {
       async get() {

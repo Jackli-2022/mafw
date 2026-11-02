@@ -57,10 +57,14 @@ describe('MediaRuntimeExecutor default completeFn', () => {
   it('image 路径：从 flat 历史（canonical v3，含 reasoning part）提取最后 assistant 文本', async () => {
     const imagePart = { type: 'file', url: 'data:image/png;base64,AAAA', mime: 'image/png' };
     const created: any[] = [];
+    const sessionCreate = jest.fn(async () => ({ id: 'wrong' }));
     const fakeRt: any = {
       capabilities: {},
-      session: {
+      mediaSession: {
         create: async (opts: any) => { created.push(opts); return { id: 's1' }; },
+      },
+      session: {
+        create: sessionCreate,
         promptAsync: async () => {},
         messages: async () => ({
           data: [
@@ -73,7 +77,8 @@ describe('MediaRuntimeExecutor default completeFn', () => {
     const executor = createMediaRuntimeExecutor(fakeRt, { projectDir: '/tmp/proj' });
     const out = await executor.prompt([imagePart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('a cat'); // reasoning 不泄漏（type==='text' 过滤必须作用于 flat content）
-    // 会话创建必须带显式目录（此前是 { directory: undefined }）
+    // 会话必须经 media.session 通道创建（带显式目录），不走裸 session.create
     expect(created).toEqual([{ directory: '/tmp/proj' }]);
+    expect(sessionCreate).not.toHaveBeenCalled();
   });
 });

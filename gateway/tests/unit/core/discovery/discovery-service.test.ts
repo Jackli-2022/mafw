@@ -19,12 +19,19 @@ function fakeRuntime(over: any = {}) {
   };
 }
 
+function fakeAccess(over: Record<string, boolean> = {}) {
+  return {
+    can: (id: string) => over[id] ?? (id === 'discovery.list' || id === 'discovery.loadSkill'),
+  };
+}
+
 function deps(over: Partial<DiscoveryServiceDeps> & { runtime?: any; discoverAgents?: any; now?: () => number } = {}): DiscoveryServiceDeps {
   const dir = tempDir();
   const mafwDir = path.join(dir, '.mafw');
   const runtime = over.runtime ?? fakeRuntime();
   return {
     getRuntime: () => runtime,
+    getAccess: () => fakeAccess(),
     getMafwCommands: () => [{ name: 'goal', description: 'g', category: 'goals', kind: 'builtin' } as any],
     resolveDirectory: async (_sessionID, provided) => provided ?? dir,
     broadcast: jest.fn(),
@@ -66,12 +73,18 @@ describe('DiscoveryService', () => {
     expect(snap.warnings.some((w) => w.source === 'skills')).toBe(true);
   });
 
-  it('pi capability absence is degraded but cached 30s (no 5s rescan)', async () => {
+  it('discovery surface absence is degraded but cached 30s (no 5s rescan)', async () => {
     const dir = tempDir();
     let now = 0;
     const discoverAgents = jest.fn(() => ({ instructions: [], warnings: [] }));
     const rt = fakeRuntime({ capabilities: { discoveryApi: false }, discovery: undefined });
-    const svc = new DiscoveryService(deps({ runtime: rt, discoverAgents, now: () => now, resolveDirectory: async () => dir }));
+    const svc = new DiscoveryService(deps({
+      runtime: rt,
+      discoverAgents,
+      now: () => now,
+      resolveDirectory: async () => dir,
+      getAccess: () => ({ can: () => false }),
+    }));
 
     const a = await svc.get('s1');
     expect(a.degradedReason).toBe('capability_absent');

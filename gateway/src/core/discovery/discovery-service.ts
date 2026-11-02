@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { MafwCommandDef } from '../../commands/registry';
 import type { AgentRuntime, RuntimeCommandInfo, RuntimeSkillInfo } from '../../runtime/contract';
+import type { RuntimeAccess } from '../../runtime/runtime-access';
 import { discoverAgentsFiles } from './agents-files';
 import { computeRevision, mergeCommands, mergeSkills } from './merge';
 import type {
@@ -31,7 +32,10 @@ export class DiscoveryError extends Error {
 }
 
 export interface DiscoveryServiceDeps {
+  /** 通道门面（发现目录的具体读取仍经 RuntimeClient.discovery）。 */
   getRuntime(): AgentRuntime | null;
+  /** surface 门（discovery.list / discovery.loadSkill）；缺失 = 不可用。 */
+  getAccess(): Pick<RuntimeAccess, 'can'> | null;
   getMafwCommands(): MafwCommandDef[];
   resolveDirectory(sessionID: string, provided?: string): Promise<string | null>;
   broadcast(event: { type: string; sessionID?: string; properties?: unknown }): void;
@@ -61,6 +65,19 @@ interface BaseSnapshot {
 }
 
 const MAX_SKILL_BYTES = 512 * 1024;
+
+/**
+ * Runtime discovery catalog gate (surface `discovery.list`).
+ * Business core reads RuntimeAccess, never `capabilities.discoveryApi`.
+ */
+export function canDiscovery(access: Pick<RuntimeAccess, 'can'> | null | undefined): boolean {
+  return access?.can('discovery.list') === true;
+}
+
+/** Skill body gate (surface `discovery.loadSkill`). */
+export function canLoadSkill(access: Pick<RuntimeAccess, 'can'> | null | undefined): boolean {
+  return access?.can('discovery.loadSkill') === true;
+}
 
 function realOrResolve(p: string): string {
   try {
@@ -108,8 +125,9 @@ export class DiscoveryService {
     const directory = await this.resolveDirectory(sessionID, opts.directory);
     this.knownSessions.set(sessionID, directory);
     const base = await this.baseFor(directory, opts.force === true);
+    const access = this.deps.getAccess();
     const rt = this.deps.getRuntime();
-    if (!rt?.capabilities?.discoveryApi || !rt.discovery?.loadSkill || base.skillsFailed) {
+    if (!canLoadSkill(access) || !rt?.discovery?.loadSkill || base.skillsFailed) {
       throw new DiscoveryError(503, 'skill catalog unavailable');
     }
 
@@ -259,11 +277,12 @@ export class DiscoveryService {
     }
 
     const rt = this.deps.getRuntime();
+    const discoveryAvailable = canDiscovery(this.deps.getAccess()) && !!rt?.discovery;
     let runtimeCommands: RuntimeCommandInfo[] = [];
     let runtimeSkills: RuntimeSkillInfo[] = [];
-    if (rt?.capabilities?.discoveryApi && rt.discovery) {
+    if (rt && discoveryAvailable) {
       try {
-        const found = await rt.discovery.list({ directory });
+        const found = await rt.discovery!.list({ directory });
         runtimeCommands = found.commands;
         runtimeSkills = found.skills;
         for (const warning of found.warnings) warnings.push(warning);
@@ -288,7 +307,7 @@ export class DiscoveryService {
       degraded = true;
       degradedReason = 'capability_absent';
       skillsFailed = true;
-      warnings.push({ source: 'skills', message: 'runtime does not expose discoveryApi' });
+      warnings.push({ source: 'skills', message: 'runtime does not support discovery.list' });
     } else {
       degraded = true;
       degradedReason = 'capability_absent';

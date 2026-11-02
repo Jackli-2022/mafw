@@ -7,7 +7,7 @@
  * 成功但什么都没改」。改为 gateway 自己跑 `git apply`：
  *   git -C <projectDir> [--git-dir <snapshotRepo>] apply [--check] <patchFile>
  * 文本补丁只需 projectDir；含 binary 的补丁把 snapshotRepo 作为对象库传入
- * （两者对象库不同，见 turn-diff 的 findSnapshotRepo）。
+ * （两者对象库不同，见 runtime/opencode-snapshot 的 findOpenCodeSnapshotRepo）。
  */
 import * as fs from 'fs';
 import * as os from 'os';

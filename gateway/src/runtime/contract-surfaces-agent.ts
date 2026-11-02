@@ -330,6 +330,14 @@ export const AGENT_SURFACES: ContractSurface[] = [
 
   // ── media / usage ────────────────────────────────────────────────────
   row({
+    id: 'media.session', title: 'session-backed media analysis', domain: 'media',
+    // 只有能承载「专用分析会话」的 runtime 声明此通道（pi）。opencode 走无状态
+    // completion：不为了对齐而伪造会话，也不按 runtime 名分支。
+    obligation: 'optional', verification: 'presence',
+    implementation: 'mediaSession.create', probe: ['mediaSession', 'create'],
+    consumer: 'MediaRuntimeExecutor', impact: '媒体追问回退为单次补全（无会话记忆）', presets: NONE,
+  }),
+  row({
     id: 'media.tools', title: 'mafw_media_* via registerTools', domain: 'media',
     obligation: 'optional', verification: 'conformance', implementation: 'mafw_media_* via registerTools',
     conformance: ['tool-visibility'], consumer: 'media agent', impact: '媒体工具不可达', presets: DESK,

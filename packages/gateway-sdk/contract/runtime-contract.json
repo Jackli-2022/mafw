@@ -785,6 +785,22 @@
     },
     {
       "direction": "gateway->runtime",
+      "id": "session.snapshotTree",
+      "title": "snapshot tree primitives",
+      "domain": "branch",
+      "obligation": "optional",
+      "verification": "presence",
+      "implementation": "snapshotTree.locate",
+      "probe": [
+        "snapshotTree",
+        "locate"
+      ],
+      "consumer": "per-turn diff / checkpoint files restore",
+      "impact": "回合 diff 与文件级检查点恢复不可用（中性降级）",
+      "presets": []
+    },
+    {
+      "direction": "gateway->runtime",
       "id": "branch.vcs",
       "title": "vcs.diff / vcs.apply",
       "domain": "branch",
@@ -2057,6 +2073,22 @@
       ],
       "consumer": "tool output rewrite",
       "impact": "无输出改写",
+      "presets": []
+    },
+    {
+      "direction": "gateway->runtime",
+      "id": "media.session",
+      "title": "session-backed media analysis",
+      "domain": "media",
+      "obligation": "optional",
+      "verification": "presence",
+      "implementation": "mediaSession.create",
+      "probe": [
+        "mediaSession",
+        "create"
+      ],
+      "consumer": "MediaRuntimeExecutor",
+      "impact": "媒体追问回退为单次补全（无会话记忆）",
       "presets": []
     },
     {

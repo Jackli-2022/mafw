@@ -238,6 +238,7 @@ import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode
 import { injectServeAuth } from './runtime/proxy-auth';
 import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { createRuntimeFacade, type RuntimeFacade } from './runtime/runtime-facade';
+import { buildRuntimeDiagnostics, type RuntimeDiagnosticsView } from './runtime/runtime-diagnostics';
 import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 
@@ -526,6 +527,8 @@ class MafwScheduler {
   private routeRegistry: RouteRegistry = new RouteRegistry().register(...buildRouteCatalog());
   private runtimeCaps: RuntimeCapabilities = minimalCapabilities();
   private runtimeName = 'opencode';
+  /** 组合根持有的诊断视图（业务核心只读 access/Experience；本视图供 /api/runtime 等 Admin 面）。 */
+  private runtimeDiagnostics: RuntimeDiagnosticsView | null = null;
   private runtimeLoader?: RuntimePluginLoader;
   /** 未知事件遥测（L1）：per-source（runtime 名 / 'api'）per-type 计数。 */
   private unknownEventTracker = new UnknownEventTracker();
@@ -807,11 +810,10 @@ class MafwScheduler {
     });
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;
-    this.runtimeCaps = runtime.capabilities;
+    this.setRuntimeDiagnostics(runtime);
     try { await this.taskService.start(); } catch (err: any) {
       log.warn(`[Tasks] start failed (non-fatal): ${err?.message ?? err}`);
     }
-    this.runtimeName = runtime.name;
     this.sdkSession.setClient(this.runtime);
     if (this.trajectoryCollector) {
       this.trajectoryCollector.setRuntime(this.runtime);
@@ -819,7 +821,7 @@ class MafwScheduler {
     if (this.automationEngine) {
       this.automationEngine.setRuntimeClient(runtime);
     }
-    log.info(`Runtime initialized: ${runtime.name} (capabilities: ${JSON.stringify(runtime.capabilities)})`);
+    log.info(`Runtime initialized: ${this.runtimeName} (capabilities: ${JSON.stringify(this.runtimeCaps)})`);
 
     // 3. Background: connect to OpenCode server
     const isExternal = !!runtime.external;
@@ -1199,8 +1201,7 @@ class MafwScheduler {
             }
               const runtime = await this.createRuntime(sdkConfig);
               this.runtime = runtime;
-              this.runtimeCaps = runtime.capabilities;
-              this.runtimeName = runtime.name;
+              this.setRuntimeDiagnostics(runtime);
               // Re-materialize identities on the new runtime (fire-and-forget).
               void this.materializeIdentities().catch(() => {});
               // Same serve-ensure rationale as runtimeDeps.onSwitched: the config
@@ -1715,6 +1716,18 @@ class MafwScheduler {
   }
 
   /**
+   * 组合根诊断快照：唯一允许读取 runtime.name / capabilities 的位置（设计 §7.1）。
+   * runtimeName/runtimeCaps 由它派生，业务模块不直接读 facade 上的这两个字段。
+   */
+  private setRuntimeDiagnostics(rt: RuntimeFacade | null): void {
+    this.runtimeDiagnostics = buildRuntimeDiagnostics(rt);
+    if (this.runtimeDiagnostics) {
+      this.runtimeName = this.runtimeDiagnostics.name;
+      this.runtimeCaps = this.runtimeDiagnostics.capabilities;
+    }
+  }
+
+  /**
    * Runtime 选择（D 收敛）：单查找路径——config.runtime.plugin 缺省 'opencode'
    * （loader 注册表成员，文件>包>内置统一优先级）；失败/缺失回退 opencode；
    * loader 未注册 opencode 时 direct import 安全网（不应发生）。
@@ -1897,6 +1910,7 @@ class MafwScheduler {
       this.instructionSync = new InstructionSyncService({
         render: () => this.buildInstructionBlocks(),
         getRuntime: () => this.runtime,
+        getAccess: () => this.runtime?.access ?? null,
         isEnabled: () => config.recall.instructions?.enabled !== false,
         log: { info: (msg) => log.info(msg), warn: (msg) => log.warn(msg) },
       });
@@ -1908,6 +1922,7 @@ class MafwScheduler {
     if (!this.discovery) {
       this.discovery = new DiscoveryService({
         getRuntime: () => this.runtime,
+        getAccess: () => this.runtime?.access ?? null,
         getMafwCommands: () => this.getMafwCommandRegistry().list(),
         resolveDirectory: async (sessionID, provided) => {
           if (provided) return provided;
@@ -2351,8 +2366,7 @@ class MafwScheduler {
       },
       onSwitched: async (rt: RuntimeFacade, prev: RuntimeFacade | null) => {
         this.runtime = rt;
-        this.runtimeCaps = rt.capabilities;
-        this.runtimeName = rt.name;
+        this.setRuntimeDiagnostics(rt);
         // B2/B3：翻译守卫与拦截计数随 runtime 切换清空（per-runtime 快照语义）
         this.translationErrors.clear();
         this.translationDrops.clear();
@@ -2385,9 +2399,9 @@ class MafwScheduler {
       translationErrors: () => Object.fromEntries(this.translationErrors),
       translationDrops: () => Object.fromEntries(this.translationDrops),
       activeDialect: () => {
-        const name = this.runtimeName;
+        const name = this.runtimeDiagnostics?.name ?? this.runtimeName;
         if (name.includes('@')) return name.split('@')[1]; // 钉死方言名（opencode@v2 → 'v2'）
-        return (this.runtime as any)?.activeDialect ?? null; // 自适应探测结果
+        return this.runtimeDiagnostics?.activeDialect ?? null; // 自适应探测结果
       },
       contractCoverage: () => this.runtimeCoverage,
       contract: () => ({
@@ -3600,7 +3614,6 @@ class MafwScheduler {
         return { name: b.identity, internal: this.internalSessionRoles.has(sid) };
       },
       getPolicy: (name) => this.identityRegistry.get(name)?.policy,
-      runtimeName: () => this.runtime?.name ?? 'opencode',
     });
 
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
@@ -3652,6 +3665,14 @@ class MafwScheduler {
             const fn = this.runtime?.session.revert;
             if (!fn) throw new Error('runtime does not implement session.revert');
             return fn(o);
+          },
+        },
+        // 快照树定位归 adapter（session.snapshotTree）；缺失时 restore 显式 503。
+        snapshotTree: {
+          locate: async (o) => {
+            const channel = this.runtime?.snapshotTree;
+            if (!channel) throw new Error('runtime does not support session.snapshotTree');
+            return channel.locate(o);
           },
         },
       },
@@ -4037,9 +4058,9 @@ class MafwScheduler {
         return resolveMediaPrompt(engineName, kind, {
           engines: this.mediaPluginLoader?.getEngines() ?? new Map(),
           builtinPi: () => {
-            // pi runtime 激活时：图片走 AgentRuntime 会话（MediaRuntimeExecutor），
-            // video/audio 由 executor 内部回退到 complete 路径
-            if (this.runtime?.name === 'pi') {
+            // 会话承载的媒体分析由 surface media.session 选择（不再按 runtime 名
+            // 分支）：声明该通道的 runtime 用 MediaRuntimeExecutor，其余落无状态补全。
+            if (this.runtime?.access?.can('media.session')) {
               // runtime 热切换后 runtime 实例更换——旧 executor 持有 stale
               // runtime 引用，必须重建（dispose 尽力而为，不阻塞 prompt）。
               if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.runtime) {

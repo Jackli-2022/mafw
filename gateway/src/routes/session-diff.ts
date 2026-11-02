@@ -47,13 +47,20 @@ export interface SessionDiffDeps {
   git?: import('../core/diff/turn-diff').GitRunner;
 }
 
-function gateDiff(res: http.ServerResponse, deps: SessionDiffDeps): boolean {
-  const access = deps.access ?? (deps.runtime ? new RuntimeAccess(deps.runtime) : null);
-  if (!access?.can('branch.diff')) {
-    json(res, 503, { error: surfaceUnavailableMessage('branch.diff') });
+function accessOf(deps: SessionDiffDeps): RuntimeAccess | null {
+  return deps.access ?? (deps.runtime ? new RuntimeAccess(deps.runtime) : null);
+}
+
+function gateSurface(res: http.ServerResponse, deps: SessionDiffDeps, surface: string): boolean {
+  if (!accessOf(deps)?.can(surface)) {
+    json(res, 503, { error: surfaceUnavailableMessage(surface) });
     return true;
   }
   return false;
+}
+
+function gateDiff(res: http.ServerResponse, deps: SessionDiffDeps): boolean {
+  return gateSurface(res, deps, 'branch.diff');
 }
 
 export async function handleSessionDiff(
@@ -64,6 +71,9 @@ export async function handleSessionDiff(
 ): Promise<void> {
   if (gateDiff(res, deps)) return;
   if (messageID !== undefined) {
+    // 回合 diff 依赖 adapter 的快照树原语（存储布局在 adapter 内）；缺通道
+    // 显式中性 503，不退回会话级 diff（那会展示整会话改动，属于伪造语义）。
+    if (gateSurface(res, deps, 'session.snapshotTree')) return;
     const run = deps.turnDiff
       ?? ((args) => computeTurnDiffForRuntime(args.runtime, args.sessionID, args.messageID));
     try {

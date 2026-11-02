@@ -37,12 +37,23 @@ function makeRt(store = new Map<string, unknown>(), over: any = {}) {
   return { rt, calls, store, instructions };
 }
 
+function fakeAccess(over: Record<string, boolean> = {}) {
+  return {
+    can: (id: string) => over[id] ?? (
+      id === 'session.instructions.list'
+      || id === 'session.instructions.put'
+      || id === 'session.instructions.remove'
+    ),
+  };
+}
+
 function makeSvc(rt: any, over: any = {}) {
   let now = 1000;
   const rendered = jest.fn(async () => blocks());
   const svc = new InstructionSyncService({
     render: rendered,
     getRuntime: () => rt,
+    getAccess: () => fakeAccess(),
     isEnabled: () => true,
     now: () => now,
     log: { info: jest.fn(), warn: jest.fn() },
@@ -290,7 +301,7 @@ describe('InstructionSyncService.inspect', () => {
   it('capability absent -> unmanaged, all keys missing', async () => {
     const { rt } = makeRt(new Map());
     rt.capabilities.instructionsApi = false;
-    const { svc } = makeSvc(rt);
+    const { svc } = makeSvc(rt, { getAccess: () => ({ can: () => false }) });
     const r = await svc.inspect('s1', blocks());
     expect(r.managed).toBe(false);
     expect(r.missing).toEqual([

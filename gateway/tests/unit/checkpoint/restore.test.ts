@@ -11,6 +11,7 @@ import {
   type CheckpointServiceDeps,
 } from '../../../src/core/checkpoint/checkpoint-service';
 import type { SessionCheckpointRow } from '../../../src/memory/gateway-db';
+import { findOpenCodeSnapshotRepo } from '../../../src/runtime/opencode-snapshot';
 
 const T1 = 'a'.repeat(40);
 const T2 = 'b'.repeat(40);
@@ -141,7 +142,7 @@ function harness(opts: {
       if (tree) workspaceTrees.set(sid, tree);
       else workspaceTrees.delete(sid);
     },
-    snapshotRoot: root,
+    locateSnapshotTree: (o) => findOpenCodeSnapshotRepo({ root, ...o, git }),
     broadcast: (event) => { log.push('broadcast'); calls.broadcasts.push(event); },
     now: () => '2026-10-26T01:00:00Z',
     newId: () => `ckpt_new_${++seq}`,

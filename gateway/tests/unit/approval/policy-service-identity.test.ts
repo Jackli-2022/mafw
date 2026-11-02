@@ -10,7 +10,6 @@ function makePolicy(
     getInternalRole: (sid) => (sid === 'sess-1' ? opts.internalRole : undefined),
     getIdentity: (sid) => (sid === 'sess-1' ? opts.identity : undefined),
     getPolicy: (name) => registry.get(name)?.policy,
-    runtimeName: () => 'opencode',
     allowlistMatches: () => false,
     loadMode: async () => 'read-only',
     saveMode: async () => {},

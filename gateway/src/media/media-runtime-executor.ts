@@ -1,8 +1,18 @@
 import { createHash } from 'crypto';
 import type { PromptFn, PromptPart, PromptOptions } from './media-service';
 import type { AgentRuntime } from '../runtime/contract';
+import type { RuntimeAccess } from '../runtime/runtime-access';
 import { fixMediaPayload } from './pi-adapter';
 import { log } from '../core/utils/logger';
+
+/**
+ * Media analysis needs a runtime that can host a dedicated session for the
+ * media (image follow-ups reuse it). Surface `media.session`; absence means
+ * the stateless completion path is used instead — never a fabricated session.
+ */
+export function canMediaSession(access: Pick<RuntimeAccess, 'can'> | null | undefined): boolean {
+  return access?.can('media.session') === true;
+}
 
 export interface MediaRuntimeExecutorOptions {
   /** 会话 TTL（默认 24h） */
@@ -72,7 +82,12 @@ export class MediaRuntimeExecutor {
     this.inflight.add(key);
     try {
       if (!entry) {
-        const { id } = await this.rt.session.create({ directory: this.opts.projectDir });
+        // 会话必须由 media.session 通道创建：缺通道 = 该 runtime 不支持会话承载
+        // （gateway 侧已按 surface 选择执行器，这里 fail-loud 而不是悄悄换成
+        // session.create 的伪语义）。
+        const channel = this.rt.mediaSession;
+        if (!channel) throw new Error('runtime does not support media.session');
+        const { id } = await channel.create({ directory: this.opts.projectDir });
         entry = { sessionID: id, kind, dataUrl, providerID: opts.providerID, modelID: opts.modelID, createdAt: Date.now() };
         this.sessions.set(key, entry);
         await this.rt.session.promptAsync({

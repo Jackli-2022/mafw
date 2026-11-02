@@ -1,24 +1,38 @@
 /**
- * T2-4: prompt-time sync of MAFW instruction blocks into opencode 2.1
- * per-session instruction entries.
+ * T2-4: prompt-time sync of MAFW instruction blocks into per-session
+ * instruction entries (opencode 2.1 experimental surfaces).
  *
  * The service owns change detection (content compare), the 250ms whole-sync
  * budget, single-flight per session, and a 60s breaker for the experimental
  * API. It never blocks a prompt: every failure returns `managed:false` and the
  * caller's prompt proceeds; the plugin/pi fallback covers the model.
+ *
+ * Capability gate: RuntimeAccess surfaces (`session.instructions.list/put/remove`),
+ * never `capabilities.instructionsApi` or method presence.
  */
 import { InstructionBlocks, INSTRUCTION_KEYS } from '../../recall/instruction-blocks';
 import type { AgentRuntime } from '../../runtime/contract';
+import type { RuntimeAccess } from '../../runtime/runtime-access';
 
 export interface InstructionSyncDeps {
   render(signal?: AbortSignal): Promise<InstructionBlocks>;
   getRuntime(): AgentRuntime | null;
+  /** surface 门；缺失 access 视为不可用（不做「默认允许」猜测）。 */
+  getAccess(): Pick<RuntimeAccess, 'can'> | null | undefined;
   isEnabled(): boolean;
   now?: () => number;
   log?: { info(msg: string): void; warn(msg: string): void };
   syncTimeoutMs?: number;
   disabledCooldownMs?: number;
   maxBlockBytes?: number;
+}
+
+/** The sync writes list/put/remove — all three surfaces must be usable. */
+export function canInstructionSync(access: Pick<RuntimeAccess, 'can'> | null | undefined): boolean {
+  if (!access) return false;
+  return access.can('session.instructions.list') === true
+    && access.can('session.instructions.put') === true
+    && access.can('session.instructions.remove') === true;
 }
 
 export interface InstructionSyncResult {
@@ -297,7 +311,7 @@ export class InstructionSyncService {
   }
 
   private canManage(rt: AgentRuntime | null): rt is AgentRuntime {
-    return !!rt?.capabilities?.instructionsApi && !!(rt as any).session?.instructions;
+    return canInstructionSync(this.deps.getAccess()) && !!(rt as any)?.session?.instructions;
   }
 
   private instructionsOf(rt: AgentRuntime): NonNullable<AgentRuntime['session']['instructions']> {

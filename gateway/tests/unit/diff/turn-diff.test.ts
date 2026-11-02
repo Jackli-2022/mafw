@@ -6,12 +6,13 @@ import * as path from 'path';
 import {
   computeTurnDiff,
   computeTurnDiffForRuntime,
-  findSnapshotRepo,
+  defaultGit,
   GitRunner,
   parseGitDiff,
   selectTurnSnapshot,
   TurnDiffUnavailableError,
 } from '../../../src/core/diff/turn-diff';
+import { findOpenCodeSnapshotRepo } from '../../../src/runtime/opencode-snapshot';
 
 const user = (id: string, created: number) => ({ id, role: 'user', time: { created } });
 const asst = (id: string, created: number, snapshot: any) => ({ id, role: 'assistant', time: { created }, snapshot });
@@ -94,8 +95,12 @@ describe('parseGitDiff', () => {
   });
 });
 
-it('returns [] for a same-tree turn without invoking git', async () => {
+it('returns [] for a same-tree turn without locating or invoking git', async () => {
   let called = false;
+  const locate = jest.fn(async () => {
+    called = true;
+    return null;
+  });
   const git: GitRunner = { async run() {
     called = true;
     return { code: 0, stdout: '', stderr: '' };
@@ -103,14 +108,14 @@ it('returns [] for a same-tree turn without invoking git', async () => {
   const files = await computeTurnDiff({
     messages: [user('u1', 1), asst('a1', 2, { start: H1, end: H1 })],
     messageID: 'u1',
-    snapshotRoot: path.join(os.tmpdir(), 'mafw-turn-diff-unused'),
+    locate,
     git,
   });
   expect(files).toEqual([]);
   expect(called).toBe(false);
 });
 
-it('findSnapshotRepo scans other project dirs and returns null for non-trees', async () => {
+it('findOpenCodeSnapshotRepo scans other project dirs and returns null for non-trees', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-snapshot-scan-'));
   fs.mkdirSync(path.join(root, 'other', 'repo'), { recursive: true });
   const treeGit: GitRunner = { async run(args) {
@@ -118,11 +123,11 @@ it('findSnapshotRepo scans other project dirs and returns null for non-trees', a
       ? { code: 0, stdout: 'tree\n', stderr: '' }
       : { code: 0, stdout: PATCH, stderr: '' };
   } };
-  const found = await findSnapshotRepo({ root, projectID: 'stale', start: 's', end: 'e', git: treeGit });
+  const found = await findOpenCodeSnapshotRepo({ root, projectID: 'stale', start: 's', end: 'e', git: treeGit });
   expect(found).toBe(path.join(root, 'other', 'repo'));
 
   const blobGit: GitRunner = { async run() { return { code: 0, stdout: 'blob\n', stderr: '' }; } };
-  expect(await findSnapshotRepo({ root, projectID: 'stale', start: 's', end: 'e', git: blobGit })).toBeNull();
+  expect(await findOpenCodeSnapshotRepo({ root, projectID: 'stale', start: 's', end: 'e', git: blobGit })).toBeNull();
 });
 
 it('computes a real tree diff from a separate-git-dir repo', async () => {
@@ -139,7 +144,9 @@ it('computes a real tree diff from a separate-git-dir repo', async () => {
   git(['add', '-A']); const end = git(['write-tree']);
   const files = await computeTurnDiff({
     messages: [user('u1', 1), asst('a1', 2, { start, end })],
-    messageID: 'u1', projectID: 'proj', snapshotRoot: root,
+    messageID: 'u1',
+    projectID: 'proj',
+    locate: ({ projectID, start: s, end: e }) => findOpenCodeSnapshotRepo({ root, projectID, start: s, end: e, git: defaultGit }),
   });
   expect(files).toEqual([{ file: 'x.txt', patch: expect.stringContaining('@@'), additions: 1, deletions: 1, status: 'modified' }]);
 });
@@ -148,6 +155,7 @@ it('computeTurnDiffForRuntime fetches limit 200 and passes projectID', async () 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-turn-diff-runtime-'));
   fs.mkdirSync(path.join(root, 'p', 'r'), { recursive: true });
   let limit = -1;
+  let locatedProjectID: string | undefined;
   const git: GitRunner = { async run(args) {
     if (args.includes('cat-file')) return { code: 0, stdout: 'tree\n', stderr: '' };
     return { code: 0, stdout: PATCH, stderr: '' };
@@ -157,9 +165,16 @@ it('computeTurnDiffForRuntime fetches limit 200 and passes projectID', async () 
       get: async () => ({ projectID: 'p' }),
       messages: async (o: { limit?: number }) => { limit = o.limit ?? -1; return { data: [user('u1', 1), asst('a1', 2, { start: H1, end: H2 })] }; },
     },
+    snapshotTree: {
+      locate: async (o: { projectID?: string; start: string; end: string }) => {
+        locatedProjectID = o.projectID;
+        return findOpenCodeSnapshotRepo({ root, ...o, git });
+      },
+    },
   };
-  const files = await computeTurnDiffForRuntime(runtime as any, 's1', 'u1', { snapshotRoot: root, git });
+  const files = await computeTurnDiffForRuntime(runtime as any, 's1', 'u1', { git });
   expect(limit).toBe(200);
+  expect(locatedProjectID).toBe('p');
   expect(files[0].file).toBe('x.txt');
 });
 
@@ -210,11 +225,11 @@ describe('parseGitDiff quoted paths', () => {
   });
 });
 
-it('findSnapshotRepo returns null when the trees are missing (pruned snapshot)', async () => {
+it('findOpenCodeSnapshotRepo returns null when the trees are missing (pruned snapshot)', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-turn-diff-missing-'));
   fs.mkdirSync(path.join(root, 'p', 'r'), { recursive: true });
   const git: GitRunner = { async run() { return { code: 1, stdout: '', stderr: 'missing' }; } };
-  expect(await findSnapshotRepo({ root, projectID: 'p', start: hex(1), end: hex(2), git })).toBeNull();
+  expect(await findOpenCodeSnapshotRepo({ root, projectID: 'p', start: hex(1), end: hex(2), git })).toBeNull();
 });
 
 it('computeTurnDiff throws unavailable when snapshot trees are missing', async () => {
@@ -225,7 +240,7 @@ it('computeTurnDiff throws unavailable when snapshot trees are missing', async (
     messages: [user('u1', 1), asst('a1', 2, { start: hex(1), end: hex(2) })],
     messageID: 'u1',
     projectID: 'p',
-    snapshotRoot: root,
+    locate: (o) => findOpenCodeSnapshotRepo({ root, ...o, git }),
     git,
   })).rejects.toBeInstanceOf(TurnDiffUnavailableError);
 });

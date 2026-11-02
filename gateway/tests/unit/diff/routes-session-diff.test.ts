@@ -28,6 +28,8 @@ function makeDeps(overrides: Partial<SessionDiffDeps> = {}) {
         diff: async (o: any) => { calls.push(['diff', o]); return FILES; },
         get: async (o: any) => { calls.push(['get', o]); return { id: 's1', location: { directory: '/tmp/proj' } }; },
       },
+      // 回合 diff 依赖 adapter 的快照原语（surface session.snapshotTree）。
+      snapshotTree: { locate: async () => '/tmp/snap/repo' },
     } as any,
     applyPatch: async (o: any) => { calls.push(['apply', o]); return { code: 0, stderr: '' }; },
     ...overrides,
@@ -91,6 +93,19 @@ describe('GET /api/sessions/:sid/diff', () => {
     await handleSessionDiff(res, 's1', undefined, deps);
     expect(res.statusCode).toBe(503);
     expect(JSON.parse((res as any).body).error).toBe('runtime does not support branch.diff');
+  });
+
+  it('缺少 session.snapshotTree surface → 中性 503（不退回会话级 diff）', async () => {
+    const { deps } = makeDeps({
+      runtime: {
+        capabilities: { diffApi: true },
+        session: { diff: async () => FILES, get: async () => ({ id: 's1' }) },
+      } as any,
+    });
+    const res = makeRes();
+    await handleSessionDiff(res, 's1', 'm1', deps);
+    expect(res.statusCode).toBe(503);
+    expect(JSON.parse((res as any).body).error).toBe('runtime does not support session.snapshotTree');
   });
 
   it('runtime diff 抛错 → 502', async () => {
