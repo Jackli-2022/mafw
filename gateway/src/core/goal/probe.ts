@@ -321,7 +321,8 @@ const EXTRA_SECRET_PATTERNS: RegExp[] = [
   /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{4,}\b/g,
 ];
 
-function redactText(text: string): string {
+/** 探针文本脱敏（报告与失败原因共用；短 token 前缀也在覆盖范围内）。 */
+export function redactProbeText(text: string): string {
   let out = redactSecrets(text);
   for (const pattern of EXTRA_SECRET_PATTERNS) out = out.replace(pattern, '[REDACTED]');
   return out;
@@ -333,15 +334,15 @@ function redactText(text: string): string {
  */
 export function redactProbeReport(report: ProbeReport): ProbeReport {
   const impact: ProbeImpact = {};
-  if (report.impact.plan) impact.plan = redactText(report.impact.plan);
-  if (report.impact.goalEval) impact.goalEval = redactText(report.impact.goalEval);
+  if (report.impact.plan) impact.plan = redactProbeText(report.impact.plan);
+  if (report.impact.goalEval) impact.goalEval = redactProbeText(report.impact.goalEval);
   return {
     probeId: report.probeId,
     conclusion: report.conclusion,
-    commands: report.commands.map(redactText),
-    keyOutput: redactText(report.keyOutput),
-    repro: report.repro.map(redactText),
-    remainingAssumptions: report.remainingAssumptions.map(redactText),
+    commands: report.commands.map(redactProbeText),
+    keyOutput: redactProbeText(report.keyOutput),
+    repro: report.repro.map(redactProbeText),
+    remainingAssumptions: report.remainingAssumptions.map(redactProbeText),
     impact,
   };
 }

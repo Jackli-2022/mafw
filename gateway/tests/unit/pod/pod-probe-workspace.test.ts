@@ -64,6 +64,16 @@ describe('ProbeWorkspaceFactory', () => {
       .toEqual([]);
   });
 
+  test('refuses to dispose a directory outside the factory base dir', async () => {
+    const forged = path.join(root, 'forged');
+    fs.mkdirSync(forged, { recursive: true });
+    fs.writeFileSync(path.join(forged, 'keep.txt'), 'keep', 'utf-8');
+
+    await expect(workspaces.dispose({ dir: forged, projectDir, goalId: 'g1', probeId: 'p1' }))
+      .rejects.toThrow(/refusing to dispose/);
+    expect(fs.readFileSync(path.join(forged, 'keep.txt'), 'utf-8')).toBe('keep');
+  });
+
   test('refuses to dispose a directory inside the main project', async () => {
     const workspace = {
       dir: path.join(projectDir, 'src'),

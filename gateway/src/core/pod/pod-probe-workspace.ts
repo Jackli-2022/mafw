@@ -120,16 +120,24 @@ export class ProbeWorkspaceFactory {
   }
 
   /**
-   * 删除隔离工作区。幂等；拒绝删除主项目本身或其内部任何路径。
-   * 只信任 `workspace.dir`/`workspace.projectDir` 的显式字段，不猜项目根。
+   * 删除隔离工作区。幂等；拒绝删除主项目、主项目内部，或工厂 baseDir 之外的任何路径
+   * （伪造 workspace 对象 / 路径穿越都不能把 `rm -rf` 指向任意目录）。
+   * realpath 解析符号链接后再判断：base 内的链接若指向 base 外，同样拒绝。
    */
   async dispose(workspace: ProbeWorkspace): Promise<void> {
     if (!workspace || typeof workspace.dir !== 'string' || !workspace.dir.trim()) return;
     const project = path.resolve(workspace.projectDir);
     const dir = path.resolve(workspace.dir);
+    const base = resolveReal(this.baseDir);
+    const target = resolveReal(dir);
 
     if (samePath(dir, project) || isPathInside(dir, project)) {
       throw new Error(`refusing to dispose a probe workspace inside the main project: ${dir}`);
+    }
+    if (samePath(target, base) || !isPathInside(target, base)) {
+      throw new Error(
+        `refusing to dispose a probe workspace outside the factory base directory: ${dir}`,
+      );
     }
     this.io.rmSync(dir, { recursive: true, force: true });
   }

@@ -13,10 +13,10 @@
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { redactSecrets } from '../../recall/redact';
 import {
   DEFAULT_PROBE_LIMITS,
   redactProbeReport,
+  redactProbeText,
   validateProbeReport,
   validateProbeRequest,
   type ProbeAffects,
@@ -35,7 +35,16 @@ import {
 /** 默认每 Pod 活跃（queued + running）探针上限。 */
 export const DEFAULT_MAX_PENDING_PROBES = 8;
 
-const SAFE_SEGMENT = /[^A-Za-z0-9._-]/g;
+const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/** 路径构建器的标识符闸门：`.`/`..`/分隔符一律拒绝（不做字符替换，避免歧义路径）。 */
+function safeSegment(value: string, field: string): string {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!SAFE_IDENTIFIER.test(text)) {
+    throw new Error(`probe ${field} must be a safe identifier`);
+  }
+  return text;
+}
 
 export interface PodProbeServiceDeps {
   store: PodStore;
@@ -90,22 +99,23 @@ export interface ProbeListFilter {
   status?: PodProbeRow['status'];
 }
 
-function segment(value: string): string {
-  const text = (value ?? '').replace(SAFE_SEGMENT, '_');
-  return text || '_';
-}
-
 /** `<mafwDir>/goals/<goalId>/probes`（探针产物的唯一落点）。 */
 export function probeArtifactDir(mafwDir: string, goalId: string): string {
-  return path.join(mafwDir, 'goals', segment(goalId), 'probes');
+  return path.join(mafwDir, 'goals', safeSegment(goalId, 'goalId'), 'probes');
 }
 
 export function probeRequestPath(mafwDir: string, goalId: string, probeId: string): string {
-  return path.join(probeArtifactDir(mafwDir, goalId), `${segment(probeId)}.request.json`);
+  return path.join(
+    probeArtifactDir(mafwDir, goalId),
+    `${safeSegment(probeId, 'probeId')}.request.json`,
+  );
 }
 
 export function probeReportPath(mafwDir: string, goalId: string, probeId: string): string {
-  return path.join(probeArtifactDir(mafwDir, goalId), `${segment(probeId)}.report.json`);
+  return path.join(
+    probeArtifactDir(mafwDir, goalId),
+    `${safeSegment(probeId, 'probeId')}.report.json`,
+  );
 }
 
 function writeJsonAtomic(file: string, value: unknown): void {
@@ -244,15 +254,33 @@ export class PodProbeService {
   }
 
   /**
-   * 抢占该 Pod 的下一条排队探针；已有 running 或队列为空时返回 null。
-   * 调用方负责创建隔离工作区并把探针会话的 cwd 指向它（Task 14）。
+   * 抢占该 Pod 的下一条**有效**排队探针；已有 running、队列为空或排队后 Goal
+   * 已终态（完成/中止/丢弃）时返回 null。
+   *
+   * 终态复核放在 claim 而不是只在 request：请求入队后 Goal 随时可能被人中止，
+   * 过期探针绝不交给 Builder（否则会白烧预算并产出无主报告）。过期探针标记 failed
+   * 以释放运行槽，然后继续看下一条。
    */
   claim(podId: string): ProbeRecord | null {
-    const row = this.deps.store.claimNextProbe(podId, this.now());
-    if (!row) return null;
-    this.deps.notify?.(row.podId);
-    this.deps.log?.(`[Pod] probe claimed pod=${row.podId} probe=${row.id}`);
-    return recordFromRow(row);
+    for (;;) {
+      const row = this.deps.store.claimNextProbe(podId, this.now());
+      if (!row) return null;
+
+      const revision = this.deps.store.getGoalRevision(row.podId, row.goalId, row.revision);
+      if (!revision || isTerminalGoalRevisionStatus(revision.status)) {
+        const reason = redactProbeText(!revision
+          ? `goal revision is missing: ${row.goalId} r${row.revision}`
+          : `goal revision is terminal: ${row.goalId} r${row.revision} (${revision.status})`);
+        this.deps.store.failProbe(row.id, { error: reason, now: this.now() });
+        this.deps.notify?.(row.podId);
+        this.deps.log?.(`[Pod] probe skipped pod=${row.podId} probe=${row.id} reason=${reason}`);
+        continue;
+      }
+
+      this.deps.notify?.(row.podId);
+      this.deps.log?.(`[Pod] probe claimed pod=${row.podId} probe=${row.id}`);
+      return recordFromRow(row);
+    }
   }
 
   /**
@@ -285,7 +313,7 @@ export class PodProbeService {
     const mafwDir = this.deps.resolveMafwDir(row.goalId);
     const reportPath = mafwDir
       ? probeReportPath(mafwDir, row.goalId, probeId)
-      : path.join(path.dirname(row.requestPath), `${segment(probeId)}.report.json`);
+      : path.join(path.dirname(row.requestPath), `${safeSegment(probeId, 'probeId')}.report.json`);
     writeJsonAtomic(reportPath, redacted);
 
     const updated = this.deps.store.completeProbe(probeId, {
@@ -312,7 +340,7 @@ export class PodProbeService {
     const message = typeof reason === 'string' ? reason.trim() : '';
     if (!message) throw new PodError(400, 'probe failure reason is required');
 
-    const redacted = redactSecrets(message);
+    const redacted = redactProbeText(message);
     const updated = this.deps.store.failProbe(probeId, { error: redacted, now: this.now() });
     if (!updated) throw new PodError(409, `probe cannot fail in status: ${row.status}`);
 

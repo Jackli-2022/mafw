@@ -2,6 +2,7 @@ import {
   DEFAULT_PROBE_LIMITS,
   PROBE_COMMAND_CLASSES,
   redactProbeReport,
+  redactProbeText,
   validateProbeReport,
   validateProbeRequest,
 } from '../../../src/core/goal/probe';
@@ -277,5 +278,17 @@ describe('redactProbeReport', () => {
 
     expect(redactProbeReport(report).keyOutput)
       .toBe('the token budget is 4k; the secret sauce is caching');
+  });
+
+  test('exposes the same redaction for free-form failure text', () => {
+    const redacted = redactProbeText(
+      'probe failed: token sk-secret / ghp_abcdef and api_key=supersecretvalue',
+    );
+
+    expect(redacted).not.toContain('sk-secret');
+    expect(redacted).not.toContain('ghp_abcdef');
+    expect(redacted).not.toContain('supersecretvalue');
+    expect(redacted).toContain('[REDACTED]');
+    expect(redactProbeText('timed out after 60s')).toBe('timed out after 60s');
   });
 });

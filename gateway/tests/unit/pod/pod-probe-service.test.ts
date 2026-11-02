@@ -5,6 +5,7 @@ import * as path from 'path';
 import { PodError, PodStore } from '../../../src/core/pod/pod-store';
 import {
   PodProbeService,
+  probeArtifactDir,
   probeReportPath,
   probeRequestPath,
   type ProbeRequestInput,
@@ -229,6 +230,68 @@ describe('PodProbeService', () => {
     expect(() => noDir.request(requestInput()))
       .toThrow(expect.objectContaining({ status: 400 }));
     expect(store.listProbes('pod_1')).toEqual([]);
+  });
+
+  test('claim skips a probe whose goal revision became terminal without running it', () => {
+    store.enqueueGoal({ id: 'pg_g4', podId: 'pod_1', goalId: 'g4', now: NOW });
+    seedRevision('g4');
+
+    const stale = service.request(requestInput());
+    const fresh = service.request(requestInput({ goalId: 'g4' }));
+
+    // The Goal is aborted after the probe was queued: claim must not hand it out.
+    store.setGoalRevisionStatus({
+      podId: 'pod_1',
+      goalId: 'g1',
+      revision: 1,
+      status: 'completed',
+      now: NOW,
+    });
+
+    expect(service.claim('pod_1')).toMatchObject({ id: fresh.id, status: 'running' });
+
+    const staleRecord = service.list('pod_1').find((probe) => probe.id === stale.id)!;
+    expect(staleRecord.status).toBe('failed');
+    expect(staleRecord.error).toMatch(/terminal/);
+    expect(staleRecord.report).toBeNull();
+
+    // A pod whose only queued probes are stale yields no claim.
+    service.fail(fresh.id, 'done for this test');
+    const another = service.request(requestInput({ goalId: 'g4' }));
+    store.setGoalRevisionStatus({
+      podId: 'pod_1',
+      goalId: 'g4',
+      revision: 1,
+      status: 'aborted',
+      now: NOW,
+    });
+    expect(service.claim('pod_1')).toBeNull();
+    expect(service.list('pod_1').find((probe) => probe.id === another.id)?.status).toBe('failed');
+  });
+
+  test('path builders reject unsafe goal/probe identifiers instead of sanitizing them', () => {
+    expect(() => probeArtifactDir(mafwDir, '.')).toThrow(/safe identifier/);
+    expect(() => probeArtifactDir(mafwDir, '..')).toThrow(/safe identifier/);
+    expect(() => probeRequestPath(mafwDir, 'g1', '..')).toThrow(/safe identifier/);
+    expect(() => probeRequestPath(mafwDir, '..', 'p1')).toThrow(/safe identifier/);
+    expect(() => probeReportPath(mafwDir, 'g1', '../p1')).toThrow(/safe identifier/);
+    expect(() => probeReportPath(mafwDir, 'g 1', 'p1')).toThrow(/safe identifier/);
+
+    // Safe identifiers still resolve under the goal probe directory.
+    expect(probeReportPath(mafwDir, 'g1', 'p1'))
+      .toBe(path.join(mafwDir, 'goals', 'g1', 'probes', 'p1.report.json'));
+  });
+
+  test('fail redacts short probe-grade tokens, not only long API keys', () => {
+    const created = service.request(requestInput());
+    service.claim('pod_1');
+
+    const failed = service.fail(created.id, 'crashed: token sk-secret / ghp_abcdef');
+
+    expect(failed.error).not.toContain('sk-secret');
+    expect(failed.error).not.toContain('ghp_abcdef');
+    expect(failed.error).toContain('[REDACTED]');
+    expect(store.getProbe(created.id)!.error).toBe(failed.error);
   });
 
   test('list filters by goal, revision, and status in queue order', () => {
