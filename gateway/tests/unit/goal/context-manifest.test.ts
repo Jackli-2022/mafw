@@ -147,6 +147,21 @@ describe('buildContextManifest scope validation', () => {
     expect(projectRef?.crossGoal).toBe(false);
   });
 
+  test('an explicit goal scope cannot bypass cross-Goal isolation without a current Goal id', () => {
+    // 即使 allowlist 写了该路径，`scope:'goal'` 也不能把别的 Goal 文件伪装成 in-Goal。
+    expect(() => buildContextManifest({
+      optional: [ref('other-goal/secret.md', { scope: 'goal' })],
+      allowedCrossGoalRefs: ['other-goal/secret.md'],
+    })).toThrow('goal scope requires a goal id: other-goal/secret.md');
+  });
+
+  test('a declared external goal stays cross-Goal even when the manifest has no current Goal id', () => {
+    expect(() => buildContextManifest({
+      optional: [ref('secret.md', { goalId: 'other-goal' })],
+      allowedCrossGoalRefs: [],
+    })).toThrow('cross-goal reference not allowed: other-goal/secret.md');
+  });
+
   test('rejects path traversal, absolute paths, and NUL bytes', () => {
     expect(() => buildContextManifest({ goalId: 'g1', required: [ref('../escape.md')] }))
       .toThrow('context reference escapes goal root');

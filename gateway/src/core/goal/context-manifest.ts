@@ -229,7 +229,23 @@ function buildRef(
   }
 
   let crossGoal = raw?.crossGoal === true || raw?.scope === 'cross-goal';
-  if (declaredGoal && ctx.goalId && declaredGoal !== ctx.goalId) crossGoal = true;
+  if (declaredGoal) {
+    // 没有当前 Goal id 时无法证明「归属就是我」——任何显式 goalId 都按跨 Goal 处理，
+    // 否则 `{ goalId: 'other-goal', path: 'secret.md' }` 会绕过 allowlist 变成 in-Goal 引用。
+    if (!ctx.goalId || declaredGoal !== ctx.goalId) crossGoal = true;
+  }
+
+  if (
+    !crossGoal
+    && raw?.scope === 'goal'
+    && !ctx.goalId
+    && !declaredGoal
+    && segments.length > 1
+  ) {
+    // 显式 goal scope 会关闭路径形状推断；没有当前 Goal id 时多段路径无法证明未逃逸，
+    // 绝不能把 `other-goal/secret.md` 当成当前 Goal 文件（fail-closed）。
+    throw new Error(`goal scope requires a goal id: ${path}`);
+  }
 
   if (!crossGoal && !declaredScope && !declaredGoal) {
     // 无显式声明时按路径形状推断：单段=本 Goal，`<current>/...`=本 Goal，其它首段=跨 Goal。
