@@ -3127,6 +3127,68 @@
         }
       }
     },
+    "/api/pods/{podId}/messages/{messageId}/delivery/retry": {
+      "post": {
+        "operationId": "pods.messages.delivery.retry",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/messages/{messageId}/delivery/dismiss": {
+      "post": {
+        "operationId": "pods.messages.delivery.dismiss",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/pods/{podId}/wake": {
       "post": {
         "operationId": "pods.wake",

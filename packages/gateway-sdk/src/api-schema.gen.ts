@@ -2472,6 +2472,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pods/{podId}/messages/{messageId}/delivery/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.messages.delivery.retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pods/{podId}/messages/{messageId}/delivery/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.messages.delivery.dismiss"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pods/{podId}/wake": {
         parameters: {
             query?: never;
@@ -6965,6 +6997,48 @@ export interface operations {
         };
     };
     "pods.messages.read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.messages.delivery.retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.messages.delivery.dismiss": {
         parameters: {
             query?: never;
             header?: never;
