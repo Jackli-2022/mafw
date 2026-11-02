@@ -262,7 +262,8 @@ import { resolveWorktreeAvailability, probeGitWorktreeSupport } from './core/wor
 import { handleApprovalsRespond } from './routes/approvals-respond';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
-import type { PluginsRouteDeps } from './routes/plugins';
+import type { PluginsRouteDeps, PluginsPackageEntry } from './routes/plugins';
+import type { PluginPackagesRouteDeps } from './routes/plugin-packages';
 import type { DryEventDeps } from './routes/dry-event';
 import { PluginHost } from './plugins/package-host';
 import { PackageStateStore } from './plugins/package-state-store';
@@ -2518,6 +2519,45 @@ class MafwScheduler {
     return this.packageManager;
   }
 
+  /** Task 6：/api/plugins/client + manager/action 路由 deps。 */
+  private pluginPackagesDeps(): PluginPackagesRouteDeps {
+    const host = this.pluginHost;
+    return {
+      manager: () => this.packageManager,
+      snapshot: () => this.getPluginClientSnapshot(),
+      // Before host init no package can be known: omit the invoker so the
+      // action route answers the registry's neutral 404 instead of a 500.
+      ...(host
+        ? { invokeAction: (name, action, input, options) => host.invokeAction(name, action, input, options) }
+        : {}),
+    };
+  }
+
+  /**
+   * GET /api/plugins 的统一包清单：宿主状态 + manager 持久化的禁用名。
+   *
+   * 宿主在扫描时跳过禁用包，所以 `getState()` 里没有它们；Hub 必须从状态存储
+   * 合并回来，否则用户无法在管理界面重新启用。
+   */
+  private pluginPackageInventory(): PluginsPackageEntry[] {
+    const disabled = new Set(this.packageStateStore?.read().disabled ?? []);
+    const out = new Map<string, PluginsPackageEntry>();
+    for (const state of this.pluginHost?.getState() ?? []) {
+      const isDisabled = disabled.has(state.name);
+      out.set(state.name, {
+        ...state,
+        status: isDisabled ? 'disabled' : state.status,
+        enabled: !isDisabled,
+        contributions: isDisabled ? [] : state.contributions,
+      });
+    }
+    for (const name of disabled) {
+      if (out.has(name)) continue;
+      out.set(name, { name, source: '', status: 'disabled', enabled: false, contributions: [] });
+    }
+    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   /** P5 Wave 2：/api/plugins* deps（Plugin Hub 四类型统一面）。 */
   private pluginHubDeps(): PluginsRouteDeps {
     return {
@@ -2559,8 +2599,10 @@ class MafwScheduler {
           else if (type === 'usage') await this.pluginLoader?.reload();
           // ui: desktop main fs.watch picks it up automatically
         },
-        getPackages: () => this.pluginHost?.getState() ?? [],
       } as any,
+      packages: () => this.pluginPackageInventory(),
+      packageRevision: () => this.getPluginClientSnapshot().revision,
+      getManager: () => this.packageManager,
     };
   }
 
@@ -4753,6 +4795,7 @@ class MafwScheduler {
         runtimeDeps: () => this.runtimeDeps(),
         restartAgentDeps: () => this.restartAgentDeps(),
         pluginHubDeps: () => this.pluginHubDeps(),
+        pluginPackageDeps: () => this.pluginPackagesDeps(),
         conformanceDeps: () => this.conformanceDeps(),
         dryEventDeps: () => this.dryEventDeps(),
         runtimeSwitchBlocked: () => this.serveRecovering || this.switchingRuntime,

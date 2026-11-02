@@ -1857,9 +1857,48 @@
         }
       }
     },
+    "/api/plugins/client": {
+      "get": {
+        "operationId": "plugins.client",
+        "tags": [
+          "plugins"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/plugins/install": {
       "post": {
         "operationId": "plugins.install",
+        "tags": [
+          "plugins"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/packages/install": {
+      "post": {
+        "operationId": "plugins.installPackage",
+        "tags": [
+          "plugins"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/check": {
+      "post": {
+        "operationId": "plugins.check",
         "tags": [
           "plugins"
         ],
@@ -1901,6 +1940,83 @@
         "operationId": "plugins.delete",
         "tags": [
           "plugins"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/apply": {
+      "post": {
+        "operationId": "plugins.apply",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/reload": {
+      "post": {
+        "operationId": "plugins.reload",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/actions/{action}": {
+      "post": {
+        "operationId": "plugins.invoke",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {

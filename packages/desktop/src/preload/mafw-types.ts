@@ -12,6 +12,8 @@ import type {
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   ExperienceActionsResponse,
   MafwMessage, DiscoverySnapshot, DiscoverySkillContent,
+  PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
+  PluginCheckResult,
 } from "@mafw/sdk"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 import type { TerminalEvent, TerminalProbe, TerminalSessionInfo } from "../shared/terminal-session"
@@ -363,7 +365,16 @@ export type MafwAPI = {
   }
 
   plugins: {
-    list(): Promise<{ plugins: { type: 'runtime' | 'media' | 'usage' | 'ui'; name: string; file: string; status: 'enabled' | 'disabled' | 'error' | 'config-disabled'; error?: string; size: number; mtime: string; builtin?: boolean; overridden?: boolean; pluginType?: string }[] }>
+    list(): Promise<PluginsListResult>
+    client(): Promise<PluginClientSnapshot>
+    installPackage(input: { path: string; overwrite?: boolean; requestId?: string }): Promise<PluginPackageInstallResult>
+    check(input: { path: string }): Promise<PluginCheckResult>
+    apply(name: string): Promise<PluginPackageUpdateResult>
+    reload(name: string): Promise<PluginPackageUpdateResult>
+    invoke(name: string, action: string, input?: unknown, sessionID?: string): Promise<unknown>
+    enablePackage(name: string): Promise<PluginPackageUpdateResult>
+    disablePackage(name: string): Promise<PluginPackageUpdateResult>
+    removePackage(name: string): Promise<PluginPackageUpdateResult>
     install(input: { filename: string; type?: 'runtime' | 'media' | 'usage' | 'ui'; bytes: Uint8Array; overwrite?: boolean }): Promise<any>
     enable(type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any>
     disable(type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any>

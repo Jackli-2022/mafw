@@ -64,5 +64,5 @@ export const MAFW_FLAT_EVENT_NAMES: readonly string[] = [
   'user_question', 'user_feedback', 'goal_created', 'state_change', 'phase_transition',
   'memory_written', 'memory_energy_changed', 'memory_distillation_complete',
   'automation_triggered', 'automation_completed', 'project_registered',
-  'runtime_switched', 'mafw_commands_changed', 'goal_node', 'connected',
+  'runtime_switched', 'mafw_commands_changed', 'goal_node', 'connected', 'plugins.changed',
 ];
