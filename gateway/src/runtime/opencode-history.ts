@@ -13,14 +13,17 @@
  * 形状的项逐项原样放行（已是 flat 或异形数据，交 B2 守卫判定）。
  */
 import { MafwMessage } from './canonical-types';
+import { canonicalMessage } from './opencode-canonical';
 
 export function normalizeOpencodeHistory(raw: any[]): MafwMessage[] {
   if (!Array.isArray(raw)) return raw;
   return raw.map((m: any) => {
     if (m && typeof m === 'object' && 'info' in m && 'parts' in m) {
       // 纯信封搬移：{info: {...}, parts: [...]} → {...info 字段, content: parts}
-      return { ...m.info, content: m.parts } as MafwMessage;
+      // 之后补 MAFW 规范字段（model/stopReason/error/工具 output）——见
+      // opencode-canonical（原生字段保留在兼容窗口）。
+      return canonicalMessage({ ...m.info, content: m.parts }) as MafwMessage;
     }
-    return m as MafwMessage;
+    return canonicalMessage(m) as MafwMessage;
   });
 }

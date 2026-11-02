@@ -56,6 +56,23 @@ describe('wire-compat egress 转换（零换名）', () => {
     expect((toWireInfo(msg) as Record<string, unknown>).retries).toBe(2);
   });
 
+  it('规范 error {kind,message} 投影回旧 wire 形状（abort 判定兼容窗口）', () => {
+    const aborted = { role: 'assistant', error: { kind: 'abort', message: 'Interrupted by user' } } as unknown as MafwMessage;
+    expect(toWireInfo(aborted).error).toEqual({
+      name: 'MessageAbortedError', data: { message: 'Interrupted by user' },
+    });
+
+    const provider = { role: 'assistant', error: { kind: 'provider', message: 'invalid api key' } } as unknown as MafwMessage;
+    expect(toWireInfo(provider).error).toEqual({
+      name: 'ProviderAuthError', data: { message: 'invalid api key' },
+    });
+  });
+
+  it('原生 error（兼容期回退路径）原样透传，不二次包装', () => {
+    const native = { role: 'assistant', error: { name: 'MessageAbortedError', data: { message: 'x' } } } as unknown as MafwMessage;
+    expect(toWireInfo(native).error).toEqual({ name: 'MessageAbortedError', data: { message: 'x' } });
+  });
+
   it('空 content → parts: [] 不炸（Review Focus 1）', () => {
     expect(toWireHistory([{ id: 'm2', role: 'assistant', content: [] }]))
       .toEqual([{ info: { id: 'm2', role: 'assistant' }, parts: [] }]);

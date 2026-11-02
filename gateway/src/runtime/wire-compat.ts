@@ -15,14 +15,38 @@
  *    判定 = info 与 parts 键共存（flat 消息不含这两个键）。
  *  - 字段零丢失：undefined 值跳过（缺省字段不输出键）、不造 id。
  */
-import { MafwMessage } from './canonical-types';
+import { MafwMessage, MafwMessageError } from './canonical-types';
 
-/** flat 消息 → v1 wire info（全字段同名拷贝；content 不进 info）。 */
+/** 规范错误 `{kind,message}` → 旧 wire error 的 name（abort 判定被旧客户端依赖）。 */
+const WIRE_ERROR_NAME: Record<string, string> = {
+  abort: 'MessageAbortedError',
+  'rate-limit': 'ApiError',
+  provider: 'ProviderAuthError',
+  unknown: 'UnknownError',
+};
+
+function isCanonicalMessageError(value: unknown): value is MafwMessageError {
+  return !!value
+    && typeof value === 'object'
+    && typeof (value as MafwMessageError).kind === 'string'
+    && typeof (value as MafwMessageError).message === 'string'
+    && !('name' in (value as Record<string, unknown>));
+}
+
+/** flat 消息 → v1 wire info（全字段同名拷贝；content 不进 info）。
+ *
+ *  唯一例外：规范 `error {kind,message}`（MAFW View DTO）投影回旧 wire 的
+ *  `{name, data:{message}}`——兼容窗口内旧客户端（桌面 abort 判定）仍按 name
+ *  读取；Task 15 删除 wire-compat 时一并移除。 */
 export function toWireInfo(msg: MafwMessage): Record<string, unknown> {
   const info: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(msg)) {
     if (value === undefined) continue;
     if (key === 'content') continue; // content → parts，由 toWireHistory 处理
+    if (key === 'error' && isCanonicalMessageError(value)) {
+      info.error = { name: WIRE_ERROR_NAME[value.kind] ?? 'UnknownError', data: { message: value.message } };
+      continue;
+    }
     info[key] = value;
   }
   return info;
@@ -56,7 +80,8 @@ export function toWireEventPayload(
     && properties && typeof properties === 'object'
     && 'message' in properties && !('info' in properties)) {
     const { message, ...rest } = properties as { message?: unknown } & Record<string, unknown>;
-    return { ...rest, info: message };
+    // 同一 wire 投影（规范 error → 原生 error）——SSE 消费者与历史出口一致
+    return { ...rest, info: message && typeof message === 'object' ? toWireInfo(message as MafwMessage) : message };
   }
   return properties;
 }

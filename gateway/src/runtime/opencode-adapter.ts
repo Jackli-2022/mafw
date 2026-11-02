@@ -13,6 +13,7 @@
 import { serveAuthHeaders } from './serve-sidecar';
 import { stopReasonOf } from './contract';
 import { formToQuestion, formAnswerOf } from './form-question';
+import { canonicalMessage } from './opencode-canonical';
 import { createOpenCodeSnapshotTreeChannel } from './opencode-snapshot';
 import type {
   RuntimeClient,
@@ -419,7 +420,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
                   : (base.type === 'user' || base.type === 'assistant' ? { ...base, role: base.type } : base);
                 // 2.1.0 用户消息正文在 text（parts 空）→ 合成 content text part；
                 // canonical flat 契约：part 必须有 id（2.1.0 text/reasoning 部件无 id）
-                return ensurePartIds(ensureUserTextPart(withRole));
+                return canonicalMessage(ensurePartIds(ensureUserTextPart(withRole)));
               })
               // canonical 历史只允许 user|assistant：2.1.0 会混入 idle/synthetic 等
               // 非对话标记，混入会让 normalizeMessages 的 flat 守卫整体回退。

@@ -28,6 +28,7 @@
 import { MAFW } from './mafw-vocabulary';
 import { stopReasonOf } from './contract';
 import { formToQuestion } from './form-question';
+import { canonicalMessage } from './opencode-canonical';
 import { backgroundJobFromSynthetic } from '../core/background/background-jobs';
 import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
 import type { RawRuntimeEvent } from './normalize';
@@ -220,7 +221,7 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
 
     case 'session.retry.scheduled':
       return eventOf(raw, MAFW.messageUpdated, {
-        info: {
+        message: canonicalMessage({
           id: data.assistantMessageID ?? data.messageID,
           sessionID: data.sessionID,
           role: 'assistant',
@@ -229,7 +230,7 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
             at: data.at ?? raw.created,
             error: data.error,
           },
-        },
+        }),
       });
 
     case 'session.inbox.enqueued':
@@ -259,7 +260,7 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
 
     case 'session.step.started':
       return eventOf(raw, MAFW.messageUpdated, {
-        info: {
+        message: canonicalMessage({
           id: data.assistantMessageID,
           sessionID: data.sessionID,
           role: 'assistant',
@@ -268,7 +269,7 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
             ? { model: { providerID: data.model.providerID, modelID: data.model.id ?? data.model.modelID, ...(data.model.variant ? { variant: data.model.variant } : {}) } }
             : {}),
           time: { created: data.started ?? raw.created ?? Date.now() },
-        },
+        }),
       });
 
     case 'session.step.ended':

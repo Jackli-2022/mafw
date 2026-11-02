@@ -54,9 +54,20 @@ const opencodeWire = [
 ];
 
 describe('① opencode 历史 round-trip（flat 化后 wire 恒等）', () => {
-  it('全量字段 deep-equal 往返（user model 对象 / assistant modelID / cost(number) / 透传部件）', () => {
+  it('原生字段零丢失 + 规范字段 additive（dual-write，Task 9 review）', () => {
     const round = toWireHistory(normalizeOpencodeHistory(opencodeWire) as any);
-    expect(round).toEqual(opencodeWire);
+
+    // user / 最小消息：规范字段已存在或无可补字段 → 字节级恒等
+    expect(round[0]).toEqual(opencodeWire[0]);
+    expect(round[2]).toEqual(opencodeWire[2]);
+    expect(round[3]).toEqual(opencodeWire[3]);
+
+    // assistant：原生字段全保留（旧 wire 消费者零回归），规范字段 additive
+    const assistant = round[1] as any;
+    expect(assistant.info).toMatchObject(opencodeWire[1].info);
+    expect(assistant.info.model).toEqual({ providerID: 'gateway', modelID: 'glm-5.3' });
+    expect(assistant.info.stopReason).toBe('end_turn');
+    expect(assistant.parts).toBe(opencodeWire[1].parts); // 部件引用直通（零拷贝）
   });
 
   it('往返后 parts 数组项身份保持（零拷贝链路）', () => {

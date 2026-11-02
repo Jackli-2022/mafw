@@ -131,7 +131,7 @@ describe('@2.1 step 与工具卡', () => {
       assistantMessageID: 'm1', started: 2000,
     }))[0].payload;
     expect(out.type).toBe('message.updated');
-    expect(out.properties.info).toMatchObject({
+    expect(out.properties.message).toMatchObject({
       id: 'm1', sessionID: 's1', role: 'assistant', agent: 'plan',
       model: { providerID: 'opencode-go', modelID: 'deepseek-v4.1-flash', variant: 'default' },
       time: { created: 2000 },
@@ -294,7 +294,7 @@ describe('@2.1 终态 stopReason 与补漏事件', () => {
     }))[0].payload;
     expect(retry).toMatchObject({
       type: 'message.updated',
-      properties: { info: { id: 'm1', sessionID: 's1', retry: { attempt: 2, at: 123 } } },
+      properties: { message: { id: 'm1', sessionID: 's1', retry: { attempt: 2, at: 123 } } },
     });
 
     const queue = apply(evt('session.inbox.enqueued', {

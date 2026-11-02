@@ -21,6 +21,7 @@
 import { canonicalIdentity } from './event-mapper';
 import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
 import { backgroundJobEvent, backgroundJobFromSynthetic } from '../core/background/background-jobs';
+import { canonicalMessage } from './opencode-canonical';
 import type { RawRuntimeEvent } from './normalize';
 
 /** opencode 原生事件信封：GlobalEvent { directory, payload: { type, properties, sessionID? } } */
@@ -233,10 +234,13 @@ export const OPENCODE_TRANSFORM_EVENT: TransformEventFn = (event: any) => {
   // transform 输出不经 mapper 的 sessionID 注入（映射行专用）——自行提取
   // （与 eventSource.sessionIdPath 同路径集：payload 顶层 / properties）
   const sid = event?.sessionID ?? event?.payload?.sessionID ?? props?.sessionID;
+  // Task 9 review：landing 消息载荷补 MAFW 规范字段（model/stopReason/
+  // error{kind,message}）——session-ui 只读规范形，原生字段保留为兼容透传。
+  const message = canonicalMessage(props?.info ?? {});
   return {
     payload: {
       type: 'message.updated',
-      properties: { ...(sid ? { sessionID: sid } : {}), message: props?.info ?? {} },
+      properties: { ...(sid ? { sessionID: sid } : {}), message },
     },
     ...(sid ? { sessionID: sid } : {}),
     ...(event?.directory !== undefined ? { directory: event.directory } : {}),

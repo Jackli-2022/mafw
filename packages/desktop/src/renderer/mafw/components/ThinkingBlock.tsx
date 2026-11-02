@@ -20,7 +20,9 @@ export function ThinkingBlock(props: { part: any; message: any }) {
     return parts.at(-1)?.id === part().id
   })
   const streaming = createMemo(() => isTailPart() && reasoningStreaming(props.message, part().time))
-  const text = createMemo(() => readPartText(data.store.part_text_accum_delta, part()))
+  // 规范形直读：reasoning part 的正文在 part.text（`part_text_accum_delta` 死通道
+  // 已在 Task 9 从 session-ui Data 删除；本行 Task 10 迁移 flat 摄取时统一收口）
+  const text = createMemo(() => readPartText(undefined, part()))
   const [open, setOpen] = createSignal(false)
 
   // 活动计时：streaming 期间每秒驱动 tick；frozenSec 保留最后一次 tick 值，
