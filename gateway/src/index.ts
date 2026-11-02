@@ -1622,9 +1622,9 @@ class MafwScheduler {
   /** Question 通道门：兼容仅声明 legacy nativeApprovals 的 runtime。 */
   private capGuardQuestion(res: http.ServerResponse): boolean {
     const legacyQuestion = this.runtimeCaps.questionApi === undefined && !!this.runtimeCaps.nativeApprovals;
-    if (this.runtime?.access.can('question.list') || legacyQuestion) return false;
+    if (this.runtime?.access.can('approval.question.list') || legacyQuestion) return false;
     res.writeHead(503);
-    res.end(JSON.stringify({ error: "runtime surface 'question.list' is not available" }));
+    res.end(JSON.stringify({ error: "runtime surface 'approval.question.list' is not available" }));
     return true;
   }
 

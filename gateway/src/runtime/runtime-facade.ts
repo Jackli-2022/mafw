@@ -76,7 +76,22 @@ export async function createRuntimeFacade(
   });
   if (hasEventStream) {
     facade.global = {
-      event: () => (raw as any).global.event(),
+      event: async () => {
+        const result = await (raw as any).global.event();
+        const source = result?.stream ?? result;
+        if (!source || typeof source[Symbol.asyncIterator] !== 'function') return result;
+        const stream = (async function* () {
+          for await (const evt of source) {
+            const type = evt?.payload?.type ?? evt?.type;
+            if (typeof type !== 'string' || !options.isCanonical(type)) {
+              options.hooks?.onUnmatched?.(typeof type === 'string' ? type : 'malformed');
+              continue;
+            }
+            yield evt;
+          }
+        })();
+        return result?.stream ? { ...result, stream } : stream;
+      },
     };
   }
   if (typeof facade.session?.messages === 'function') {

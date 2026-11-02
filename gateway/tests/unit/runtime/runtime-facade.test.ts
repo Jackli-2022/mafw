@@ -81,6 +81,38 @@ describe('RuntimeFacade', () => {
     expect(Object.getPrototypeOf(facade)).toBe(Object.prototype);
   });
 
+  it('drops malformed/native envelopes that survived the translator boundary', async () => {
+    const queue: any[] = [];
+    let wake: (() => void) | null = null;
+    const stream = {
+      async *[Symbol.asyncIterator]() {
+        for (;;) {
+          if (queue.length > 0) { yield queue.shift(); continue; }
+          await new Promise<void>((resolve) => { wake = resolve; });
+        }
+      },
+    };
+    const raw: any = {
+      name: 'fake',
+      capabilities: { eventStream: true },
+      session: {},
+      global: { event: async () => ({ stream }) },
+      getBaseUrl: () => 'http://127.0.0.1:1',
+    };
+    const unmatched: string[] = [];
+    const facade = await createRuntimeFacade(raw, {
+      entry: { eventSource: { typePath: '$.payload.type' }, eventMappings: [{ from: 'turn.completed', to: 'turn.completed', passProperties: '$.payload.properties' }] },
+      isCanonical: (t) => t === 'turn.completed',
+      hooks: { onUnmatched: (t) => unmatched.push(t) },
+    });
+    const pending = nextEvent(facade);
+    queue.push({ type: 'config.updated', data: { key: 'x' } });
+    queue.push({ payload: { type: 'turn.completed', properties: { sessionID: 's1' } } });
+    const event = await pending;
+    expect(event.payload.type).toBe('turn.completed');
+    expect(unmatched).toContain('config.updated');
+  });
+
   it('rewireEvents keeps a single translation path', async () => {
     const { rt, push } = makeRawRuntime();
     const facade = await createRuntimeFacade(rt, { entry: ENTRY, isCanonical });
