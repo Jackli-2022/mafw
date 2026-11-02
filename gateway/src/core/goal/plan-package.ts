@@ -66,21 +66,37 @@ export function validatePlanPackage(input: unknown): PlanPackage {
   return { waves, goalEval };
 }
 
-/** waves 部分的规范化哈希（planApproval.planHash 用）。 */
+/**
+ * waves 部分的规范化哈希（planApproval.planHash 用）。
+ * 规范化边界：先过 `normalizeWaves`，因此哈希只取决于合法 waves 的内容。
+ */
 export function computeWavesHash(waves: unknown): string {
-  return sha256({ kind: 'plan-waves', waves });
+  return sha256({ kind: 'plan-waves', waves: normalizeWaves(waves) });
 }
 
-/** GoalEval 部分的规范化哈希（planApproval.evalHash 用）。 */
+/**
+ * GoalEval 部分的规范化哈希（planApproval.evalHash 用）。
+ * 规范化边界：先过 `validateGoalEval`（trim / 去重 / mapping 按条件顺序重建），
+ * 因此 `computeGoalEvalHash(raw)` === `computeGoalEvalHash(validateGoalEval(raw))`；
+ * 非法 eval 直接抛错，绝不把「未规范化」的形态算进权威哈希。
+ */
 export function computeGoalEvalHash(goalEval: GoalEval | unknown): string {
-  return sha256({ kind: 'goal-eval', goalEval });
+  return sha256({ kind: 'goal-eval', goalEval: validateGoalEval(goalEval) });
 }
 
 /**
  * 整包哈希：只取 `waves` 与 `goalEval` 两个字段，其余顶层字段（status / taskType /
  * revision …）不参与——计划产物整体可以原样传入。
+ *
+ * 规范化边界：内部走 `validatePlanPackage`，所以
+ * `computePlanPackageHash(raw)` === `computePlanPackageHash(validatePlanPackage(raw))`。
+ * 批准绑定用同一个边界重算，就不会因为「存的是规范化产物、算的是原始输入」而误判 stale。
  */
 export function computePlanPackageHash(pkg: PlanPackage | Record<string, unknown>): string {
-  const source = (pkg ?? {}) as Record<string, unknown>;
-  return sha256({ kind: 'plan-package', waves: source.waves, goalEval: source.goalEval });
+  const normalized = validatePlanPackage(pkg);
+  return sha256({
+    kind: 'plan-package',
+    waves: normalized.waves,
+    goalEval: normalized.goalEval,
+  });
 }

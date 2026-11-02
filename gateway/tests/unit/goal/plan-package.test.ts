@@ -151,6 +151,39 @@ describe('computePlanPackageHash', () => {
     expect(computePlanPackageHash(changedFailure)).not.toBe(baseHash);
   });
 
+  test('raw and validated input hash identically (canonical boundary)', () => {
+    const rawEval = {
+      outcome: '  用户可以按项目切换会话标签  ',
+      conditions: [
+        {
+          id: ' g1 ',
+          statement: ' 标签按项目恢复 ',
+          required: true,
+          evidence: ' 桌面冒烟截图 + 单测 ',
+          method: ' npm test -- desktop ',
+        },
+        {
+          id: 'g2',
+          statement: '未加载过的项目显示空列表',
+          required: false,
+          evidence: ' session-store 单测 ',
+          method: 'node --test',
+        },
+      ],
+      failureConditions: [' 刷新后标签丢失 ', '刷新后标签丢失', ''],
+      // mapping 键顺序与条件顺序相反，含空数组与重复项
+      mapping: {
+        g2: { tasks: [' w1-t2 ', 'w1-t2'] },
+        g1: { artifacts: [], probes: [' p1 '], tasks: [' w1-t1 '] },
+      },
+    };
+    const rawPkg = { waves: baseWaves(), goalEval: rawEval, status: 'ready' };
+    const validated = validatePlanPackage(rawPkg);
+
+    expect(computePlanPackageHash(rawPkg as any)).toBe(computePlanPackageHash(validated));
+    expect(computeGoalEvalHash(rawEval)).toBe(computeGoalEvalHash(validated.goalEval));
+  });
+
   test('separates plan hash and eval hash', () => {
     const pkg = basePackage();
     expect(computeGoalEvalHash(pkg.goalEval)).toMatch(/^[0-9a-f]{64}$/);
