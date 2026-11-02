@@ -98,7 +98,7 @@ describe('Experience contract', () => {
       if (!a.supported) expect(a.enabled).toBe(false);
       if (a.enabled) expect(a.supported).toBe(true);
     }
-    expect(actions['run.control']).toMatchObject({ supported: true, enabled: false, reason: 'busy' });
+    expect(actions['run.control']).toMatchObject({ supported: true, enabled: true });
     expect(actions['branch.fork'].supported).toBe(true);
     expect(actions['branch.fork'].enabled).toBe(false);
   });
@@ -125,6 +125,7 @@ describe('Experience contract', () => {
     const actions = projectExperienceActions(fakeAccessAll(), { sessionID: 's1', busy: true });
     for (const id of [
       'branch.diff',
+      'run.control',
       'session.discovery',
       'session.switch-agent',
       'session.switch-model',
@@ -151,11 +152,13 @@ describe('Experience contract', () => {
       'branch.fork',
       'branch.revert',
       'branch.unrevert',
-      'run.control',
       'session.summarize',
     ] as ExperienceActionId[]) {
       expect(actions[id]).toMatchObject({ supported: true, enabled: false, reason: 'busy' });
     }
+    // run.control 的 suspend 正是 busy-only：busy 时禁用等于删掉暂停按钮。
+    expect(actions['run.control']).toMatchObject({ supported: true, enabled: true });
+    expect(actions['run.control'].reason).toBeUndefined();
   });
 
   it('marks checkpoint restore busy but keeps server-backed semantics', () => {
@@ -178,12 +181,38 @@ describe('Experience contract', () => {
     });
   });
 
-  it('projects run control verbs and requires busy for suspend', () => {
-    const actions = projectExperienceActions(fakeAccessAll(), {});
-    expect(actions['run.control']).toEqual({
+  it('projects run control verbs without fabricating adapter semantics', () => {
+    const noDeclaration = { can: (id: string) => id === 'branch.runState', semantics: () => ({}) } as any;
+    const idle = projectExperienceActions(noDeclaration, {})['run.control'];
+    expect(idle).toEqual({
+      supported: true,
+      enabled: true,
+      semantics: { suspend: true, resume: true, discard: true },
+    });
+    // 适配器没声明 requireBusy 时不得凭空注入（opencode 不声明，行程由服务端 409 兜底）。
+    expect(idle.semantics).not.toHaveProperty('requireBusy');
+  });
+
+  it('passed-through adapter run semantics win over projected defaults', () => {
+    const pi = {
+      can: (id: string) => id === 'branch.runState',
+      semantics: (id: string) => (id === 'branch.runState' ? { requireBusy: true } : {}),
+    } as any;
+    expect(projectExperienceActions(pi, { busy: true })['run.control']).toEqual({
       supported: true,
       enabled: true,
       semantics: { suspend: true, resume: true, discard: true, requireBusy: true },
+    });
+
+    const restricting = {
+      can: (id: string) => id === 'branch.runState',
+      semantics: (id: string) => (id === 'branch.runState' ? { suspend: false, requireBusy: false } : {}),
+    } as any;
+    expect(projectExperienceActions(restricting, {})['run.control'].semantics).toEqual({
+      suspend: false,
+      resume: true,
+      discard: true,
+      requireBusy: false,
     });
   });
 

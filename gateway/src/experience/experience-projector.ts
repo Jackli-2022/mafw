@@ -43,7 +43,8 @@ export const EXPERIENCE_ACTION_SURFACES: Record<ExperienceActionId, readonly str
 
 /**
  * 回合进行中（busy）不得进入的动作——它们要么会改写会话历史/工作区，要么要求稳定状态。
- * 纯查询（diff/discovery/switch/MCP/approval）与 busy-only 动作（steer）不受限。
+ * 纯查询（diff/discovery/switch/MCP/approval）与 busy-only 动作（steer / run.control 的
+ * suspend）不受限：busy-only 动作正是只在运行中的回合里有意义，禁用它们等于把功能删掉。
  */
 const BUSY_BLOCKED: ReadonlySet<ExperienceActionId> = new Set<ExperienceActionId>([
   'checkpoint.restore',
@@ -51,7 +52,6 @@ const BUSY_BLOCKED: ReadonlySet<ExperienceActionId> = new Set<ExperienceActionId
   'branch.fork',
   'branch.revert',
   'branch.unrevert',
-  'run.control',
   'session.summarize',
 ]);
 
@@ -103,10 +103,12 @@ function semanticsFor(
       const revert = revertSemantics(access);
       return { files: revert.files !== false, undo: revert.undo === true };
     }
-    case 'run.control':
-      // suspend 只对运行中的回合有意义（requireBusy），而 resume/discard 需要稳定状态；
-      // descriptor 的 enabled 表示「当前可进入 run 状态变更」，客户端按 verb 读取 semantics。
-      return { suspend: true, resume: true, discard: true, requireBusy: true };
+    case 'run.control': {
+      // 适配器声明的语义（如 pi 的 requireBusy）原样透传，投影不得覆盖；这里只补
+      // gateway run 路由确实提供、投影确实掌握的 verb（surface 可用即 suspend/resume/discard 全在）。
+      const declared = surfaceSemantics(access, 'branch.runState');
+      return { suspend: true, resume: true, discard: true, ...declared };
+    }
     case 'prompt.steer':
       return {
         boundary: (surfaceSemantics(access, 'prompt.delivery.steer').boundary as string) ?? 'unspecified',
