@@ -4,6 +4,7 @@
 import * as path from 'path';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
 import type { FailureClass } from './failure-class';
+import type { GoalEvalCondition } from './goal-eval';
 
 const TASK_TYPES = ['feature', 'bugfix', 'refactor', 'research', 'docs', 'test', 'other'] as const;
 
@@ -105,6 +106,19 @@ const REVIEW_OUTPUT_SCHEMA = {
         },
       },
     },
+    // Goal 级验收条件（spec §7.2）：可选字段保持旧评审文件兼容；解析器按 required 条件强制覆盖。
+    goalResults: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['conditionId', 'result', 'evidence'],
+        properties: {
+          conditionId: { type: 'string' },
+          result: { type: 'string', enum: ['pass', 'fail', 'skipped'] },
+          evidence: { type: 'string' },
+        },
+      },
+    },
     feedback: { type: 'string' },
   },
 } as const;
@@ -157,6 +171,8 @@ export interface NodePromptCtx {
   fixPreviousReceipt?: string;
   /** 任务验收标准（review 节点按它判定；缺省则该任务自证）。 */
   acceptance?: Record<string, string[]>;
+  /** Goal 级验收条件（review 节点必须逐条判定，task 全绿不能代替）。 */
+  goalConditions?: GoalEvalCondition[];
   /** Goal 级期望结果（request.acceptance）；plan 必须分解到 wave task acceptance。 */
   goalAcceptance?: string[];
   attempt?: number;
@@ -241,11 +257,18 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
     .filter(([, items]) => Array.isArray(items) && items.length > 0)
     .map(([taskId, items]) => `- ${taskId}：${items.join(' / ')}`);
 
+  const goalLines = (ctx.goalConditions ?? [])
+    .filter((condition) => condition && typeof condition.id === 'string' && condition.id)
+    .map((condition) => `- ${condition.id}${condition.required ? '（必需）' : ''}：${condition.statement}（证据：${condition.evidence}；方法：${condition.method}）`);
+
   return [
     head, docs, retryContext, '',
     `任务：独立验证本轮执行结果。读 charter、${a.waves}、回执 ${a.receipt}，用只读工具与测试命令复核（不信任回执自述）。`,
     ctx.reviewFeedback ? `上轮 review 参考：${ctx.reviewFeedback}` : '',
     acceptanceLines.length > 0 ? `任务验收标准（判定依据，不要另立口径）：\n${acceptanceLines.join('\n')}` : '',
+    goalLines.length > 0
+      ? `Goal 验收条件（逐条判定，任务全部通过不能代替）：\n${goalLines.join('\n')}`
+      : '',
     '',
     `把评审报告（markdown）写入 ${a.review}，文件末尾必须包含：`,
     '```mafw-review',
@@ -253,6 +276,9 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
     '```',
     '`tasks` 必须覆盖 waves.json 里的**每一个** taskId（缺一个即判为无效评审）；',
     '`evidence` 写可复现的验证依据（命令 + 结果摘要或文件路径），不要写"看起来没问题"。',
+    goalLines.length > 0
+      ? `在 JSON 中追加 \`"goalResults":[{"conditionId":"g1","result":"pass|fail|skipped","evidence":"..."}]\`，覆盖**每一条必需的** Goal 条件（缺一条即判为无效评审）；必需条件 fail 或缺证据时 verdict 必须是 FAIL。`
+      : '',
     '只要有一个任务 fail，verdict 必须是 FAIL。',
   ].filter(Boolean).join('\n');
 }
