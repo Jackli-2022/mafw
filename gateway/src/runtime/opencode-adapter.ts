@@ -197,7 +197,7 @@ function ptyBytes(data: unknown): Uint8Array | null {
  * （2.1.0 实证：replay 后发 `{cursor}`）。0x00 前缀一律不当作输出——即使 JSON
  * 非法也只消费、绝不把控制字节泄漏给客户端。
  */
-function decodeOpencodePtyChunk(data: unknown): RuntimePtyInbound[] {
+export function decodeOpencodePtyChunk(data: unknown): RuntimePtyInbound[] {
   if (typeof data === 'string') return [{ kind: 'output', data }];
   const bytes = ptyBytes(data);
   if (!bytes) return [];
@@ -207,7 +207,9 @@ function decodeOpencodePtyChunk(data: unknown): RuntimePtyInbound[] {
       if (typeof parsed?.cursor === 'number') {
         return [{ kind: 'meta', event: 'cursor', payload: { cursor: parsed.cursor } }];
       }
-      return [{ kind: 'meta', event: 'runtime', payload: parsed ?? null }];
+      // 只映射显式中立字段；未知原生 meta 直接丢弃（不得把任意原生 JSON
+      // 原样塞进 payload 泄漏到客户端）。
+      return [];
     } catch {
       return [];
     }

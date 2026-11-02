@@ -1051,7 +1051,8 @@ export interface BackgroundNamespace {
 
 export interface TerminalSessionDto {
   id: string
-  directory: string
+  /** 归属仅在已知时给出（本进程/运行时明确），未知时省略。 */
+  directory?: string
   title?: string
   status: 'running' | 'exited' | 'unknown'
   cwd?: string

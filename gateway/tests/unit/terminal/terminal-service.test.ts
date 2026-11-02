@@ -7,9 +7,11 @@
  *  - ticket：随机、短 TTL、绑定 ptyId + directory、单次使用。
  */
 import type { RuntimePtyChannel, RuntimePtyInbound } from '../../../src/runtime/pty';
+import { decodeOpencodePtyChunk } from '../../../src/runtime/opencode-adapter';
 import { RuntimeAccess } from '../../../src/runtime/runtime-access';
 import { projectExperienceActions } from '../../../src/experience/experience-projector';
 import { MAFW_TERMINAL_PROTOCOL, TERMINAL_CLOSE_CODES } from '../../../src/terminal/terminal-protocol';
+import { WebSocketServer } from 'ws';
 import {
   TerminalService,
   TerminalTicketError,
@@ -45,6 +47,7 @@ class FakeSocket implements TerminalSocket {
 }
 
 class FakeNative implements TerminalNativeSocket {
+  readyState = 1;
   sent: unknown[] = [];
   closed: Array<{ code?: number; reason?: string }> = [];
   private handlers = new Map<string, Array<(...args: any[]) => void>>();
@@ -57,10 +60,44 @@ class FakeNative implements TerminalNativeSocket {
     this.closed.push({ code, reason });
   }
 
-  on(event: 'message' | 'close' | 'error', cb: (...args: any[]) => void): void {
+  on(event: 'open' | 'message' | 'close' | 'error', cb: (...args: any[]) => void): void {
     const list = this.handlers.get(event) ?? [];
     list.push(cb);
     this.handlers.set(event, list);
+  }
+
+  emit(event: string, ...args: any[]): void {
+    for (const cb of this.handlers.get(event) ?? []) cb(...args);
+  }
+}
+
+/** 真实 ws 语义：CONNECTING 时 send 抛错，只有 open 后才能写。 */
+class ConnectingNative implements TerminalNativeSocket {
+  readyState = 0;
+  sent: unknown[] = [];
+  closed: Array<{ code?: number; reason?: string }> = [];
+  sendAttempts = 0;
+  private handlers = new Map<string, Array<(...args: any[]) => void>>();
+
+  send(data: unknown): void {
+    this.sendAttempts += 1;
+    if (this.readyState !== 1) throw new Error('WebSocket is not open: readyState 0 (CONNECTING)');
+    this.sent.push(data);
+  }
+
+  close(code?: number, reason?: string): void {
+    this.closed.push({ code, reason });
+  }
+
+  on(event: 'open' | 'message' | 'close' | 'error', cb: (...args: any[]) => void): void {
+    const list = this.handlers.get(event) ?? [];
+    list.push(cb);
+    this.handlers.set(event, list);
+  }
+
+  open(): void {
+    this.readyState = 1;
+    this.emit('open');
   }
 
   emit(event: string, ...args: any[]): void {
@@ -113,6 +150,26 @@ function serviceWith(runtime: { pty?: RuntimePtyChannel } | null, extra: Partial
     ...extra,
   });
   return { service, natives, opened };
+}
+
+function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const tick = () => {
+      if (predicate()) return resolve();
+      if (Date.now() - started > timeoutMs) return reject(new Error('waitFor timeout'));
+      setTimeout(tick, 10);
+    };
+    tick();
+  });
+}
+
+function nativeMeta(value: unknown): Uint8Array {
+  const json = new TextEncoder().encode(JSON.stringify(value));
+  const out = new Uint8Array(json.length + 1);
+  out[0] = 0;
+  out.set(json, 1);
+  return out;
 }
 
 describe('TerminalService', () => {
@@ -176,8 +233,47 @@ describe('TerminalService', () => {
     expect(await second.list({ directory: DIRECTORY })).toEqual({
       protocol: MAFW_TERMINAL_PROTOCOL,
       supported: true,
-      sessions: [{ id: 'pty_9', directory: DIRECTORY, title: 'old', status: 'exited' }],
+      sessions: [{ id: 'pty_9', title: 'old', status: 'exited' }],
     });
+  });
+
+  it('never fabricates a directory for untracked runtime list rows', async () => {
+    const listed = fakePtyRuntime({
+      async list() {
+        return [
+          { id: 'pty_9', status: 'running' as const },
+          { id: 'pty_1', status: 'running' as const },
+        ];
+      },
+    });
+    const { service } = serviceWith(listed.runtime);
+    await service.create({ directory: DIRECTORY, title: 'MAFW' });
+
+    // 无 directory 查询：已知归属用真值，未知归属省略字段。
+    const all = await service.list();
+    expect(all.sessions).toEqual([
+      { id: 'pty_9', status: 'running' },
+      { id: 'pty_1', directory: DIRECTORY, status: 'running' },
+    ]);
+
+    // 查询目录不是归属证据：pty_1 的目录来自台账，pty_9 仍然没有归属。
+    const mismatched = await service.list({ directory: 'C:/other' });
+    expect(mismatched.sessions).toEqual([
+      { id: 'pty_9', status: 'running' },
+      { id: 'pty_1', directory: DIRECTORY, status: 'running' },
+    ]);
+    expect(JSON.stringify(mismatched)).not.toContain('C:/other');
+  });
+
+  it('filters the local ledger by directory and keeps known ownership without a filter', async () => {
+    const { runtime } = fakePtyRuntime();
+    const { service } = serviceWith(runtime);
+    await service.create({ directory: DIRECTORY, title: 'MAFW' });
+
+    expect((await service.list()).sessions).toEqual([
+      { id: 'pty_1', directory: DIRECTORY, title: 'MAFW', status: 'running' },
+    ]);
+    expect((await service.list({ directory: 'C:/other' })).sessions).toEqual([]);
   });
 
   it('issues single-use tickets bound to pty id and directory with a short TTL', async () => {
@@ -262,6 +358,42 @@ describe('TerminalService', () => {
 
     expect(natives[0]!.sent).toEqual(['echo']);
     expect(calls.resized).toEqual([{ id: 'pty_1', directory: DIRECTORY, cols: 90, rows: 20 }]);
+  });
+
+  it('never writes to a CONNECTING native socket; flushes queued input on open', async () => {
+    const { runtime, calls } = fakePtyRuntime();
+    const connecting = new ConnectingNative();
+    const { service } = serviceWith(runtime, { openNative: () => connecting });
+    const grant = service.issueTicket({ id: 'pty_1', directory: DIRECTORY });
+    const socket = new FakeSocket();
+
+    await service.bridge({ socket, id: 'pty_1', ticket: grant.ticket });
+    socket.emit('message', '{"v":1,"type":"input","data":"ls\\r"}');
+    socket.emit('message', '{"v":1,"type":"resize","cols":111,"rows":33}');
+
+    // CONNECTING 阶段既不写（不触发 ws 抛错），也不关闭会话。
+    expect(connecting.sendAttempts).toBe(0);
+    expect(connecting.sent).toEqual([]);
+    expect(connecting.closed).toEqual([]);
+    expect(socket.closed).toEqual([]);
+    expect(calls.resized).toEqual([{ id: 'pty_1', directory: DIRECTORY, cols: 111, rows: 33 }]);
+
+    connecting.open();
+    expect(connecting.sent).toEqual(['ls\r']);
+    expect(connecting.closed).toEqual([]);
+    expect(socket.closed).toEqual([]);
+  });
+
+  it('closes both sides when a native inbound close event arrives', async () => {
+    const { runtime } = fakePtyRuntime({ decodeInbound: () => [{ kind: 'close', code: 1004, reason: 'meta close' }] });
+    const { service, natives } = serviceWith(runtime);
+    const grant = service.issueTicket({ id: 'pty_1', directory: DIRECTORY });
+    const socket = new FakeSocket();
+    await service.bridge({ socket, id: 'pty_1', ticket: grant.ticket });
+
+    natives[0]!.emit('message', 'native-close');
+    expect(socket.sent).toEqual([{ v: 1, type: 'close', code: 1004, reason: 'meta close' }]);
+    expect(natives[0]!.closed).toEqual([{ code: 1004, reason: 'meta close' }]);
   });
 
   it('closes the client socket with a neutral code when the ticket is invalid', async () => {
@@ -369,4 +501,73 @@ describe('TerminalService remove', () => {
     const { service } = serviceWith(runtime);
     await expect(service.remove('', DIRECTORY)).rejects.toBeInstanceOf(TerminalTicketError);
   });
+});
+
+describe('opencode native PTY framing', () => {
+  it('maps the replay cursor and drops unknown native meta payloads', () => {
+    expect(decodeOpencodePtyChunk(nativeMeta({ cursor: 7 }))).toEqual([
+      { kind: 'meta', event: 'cursor', payload: { cursor: 7 } },
+    ]);
+    // 未知原生 meta 不转发 payload：任意原生 JSON 不得泄漏到客户端。
+    expect(decodeOpencodePtyChunk(nativeMeta({ secret: 'native-only', token: 'x' }))).toEqual([]);
+    expect(decodeOpencodePtyChunk(nativeMeta(null))).toEqual([]);
+    expect(decodeOpencodePtyChunk(nativeMeta([1, 2, 3]))).toEqual([]);
+    expect(decodeOpencodePtyChunk(new Uint8Array([0, 123, 111, 111]))).toEqual([]); // invalid JSON after 0x00
+  });
+
+  it('keeps plain text/binary payloads as output', () => {
+    expect(decodeOpencodePtyChunk('plain output')).toEqual([{ kind: 'output', data: 'plain output' }]);
+    expect(decodeOpencodePtyChunk(new TextEncoder().encode('bytes'))).toEqual([
+      { kind: 'output', data: 'bytes' },
+    ]);
+  });
+});
+
+describe('real ws bridge (default transport)', () => {
+  it('opens a real WebSocket, streams output, forwards input and maps close', async () => {
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    expect(port).toBeGreaterThan(0);
+
+    const received: string[] = [];
+    let serverSocket: any;
+    server.on('connection', (ws) => {
+      serverSocket = ws;
+      ws.send('boot');
+      ws.on('message', (data) => {
+        received.push(data.toString());
+        ws.send(`echo:${data.toString()}`);
+      });
+    });
+
+    const channel: RuntimePtyChannel = {
+      async create() { return { id: 'pty_1' }; },
+      async connect() { return { url: `ws://127.0.0.1:${port}` }; },
+      async resize() { /* noop */ },
+      async remove() { /* noop */ },
+    };
+    const service = new TerminalService({ getRuntime: () => ({ pty: channel }) });
+    const socket = new FakeSocket();
+
+    try {
+      const grant = service.issueTicket({ id: 'pty_1', directory: DIRECTORY });
+      await service.bridge({ socket, id: 'pty_1', ticket: grant.ticket });
+
+      await waitFor(() => socket.sent.some((f) => f.type === 'output' && f.data === 'boot'));
+      socket.emit('message', '{"v":1,"type":"input","data":"ls\\r"}');
+      await waitFor(() => socket.sent.some((f) => f.type === 'output' && f.data === 'echo:ls\r'));
+      expect(received).toEqual(['ls\r']);
+
+      serverSocket.close(1000, 'bye');
+      await waitFor(() => socket.sent.some((f) => f.type === 'close'));
+      expect(socket.sent.find((f) => f.type === 'close')).toMatchObject({ code: 1000, reason: 'bye' });
+    } finally {
+      for (const client of server.clients) {
+        try { client.terminate(); } catch { /* already closed */ }
+      }
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }, 20_000);
 });

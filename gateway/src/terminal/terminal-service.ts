@@ -32,7 +32,8 @@ export interface TerminalCreateOpts {
 
 export interface TerminalSessionView {
   id: string;
-  directory: string;
+  /** 仅在归属已知（本进程创建/列表带来）时给出；未知时省略，不伪造。 */
+  directory?: string;
   title?: string;
   status: 'running' | 'exited' | 'unknown';
   cwd?: string;
@@ -68,10 +69,15 @@ export interface TerminalSocket {
 
 /** 上游（runtime 原生）socket 的最小面。 */
 export interface TerminalNativeSocket {
+  /** 原生 socket 状态（ws：0=CONNECTING / 1=OPEN）；缺省视为未就绪，等 `open` 事件。 */
+  readyState?: number;
   send(data: unknown): void;
   close(code?: number, reason?: string): void;
-  on(event: 'message' | 'close' | 'error', cb: (...args: any[]) => void): void;
+  on(event: 'open' | 'message' | 'close' | 'error', cb: (...args: any[]) => void): void;
 }
+
+/** ws 常量：readyState === 1 表示 OPEN（测试与实现共用）。 */
+export const NATIVE_PTY_OPEN = 1;
 
 export interface TerminalServiceOptions {
   /** 热切换安全：每次调用现读 runtime（不得缓存 adapter 实例）。 */
@@ -189,13 +195,18 @@ export class TerminalService {
         supported: true,
         sessions: rows
           .filter((row) => !!row?.id)
-          .map((row) => ({
-            id: String(row.id),
-            directory: directory ?? '',
-            ...(row.title ? { title: row.title } : {}),
-            status: row.status ?? 'unknown',
-            ...(row.cwd ? { cwd: row.cwd } : {}),
-          })),
+          .map((row) => {
+            // 目录只信「本进程创建时记录」的真值；请求 query 是过滤条件，不是归属证据。
+            // 未知归属时省略 directory，绝不编造。
+            const known = this.sessions.get(String(row.id))?.directory;
+            return {
+              id: String(row.id),
+              ...(known ? { directory: known } : {}),
+              ...(row.title ? { title: row.title } : {}),
+              status: row.status ?? 'unknown',
+              ...(row.cwd ? { cwd: row.cwd } : {}),
+            };
+          }),
       };
     }
     const tracked = [...this.sessions.values()].filter((s) => !directory || s.directory === directory);
@@ -274,7 +285,8 @@ export class TerminalService {
     }
     let closed = false;
     let native: TerminalNativeSocket | null = null;
-    const pending: TerminalFrame[] = [];
+    let nativeReady = false;
+    const outbox: unknown[] = [];
     const closeClient = (code: number, reason: string) => {
       if (closed) return;
       closed = true;
@@ -282,7 +294,32 @@ export class TerminalService {
       try { native?.close(code, reason); } catch { /* already closed */ }
     };
 
-    // 先挂客户端监听：`connect` 往返期间到达的 input/resize 排队，连上后按序回放。
+    const sendNow = (payload: unknown): void => {
+      if (!native) return;
+      try {
+        native.send(payload);
+      } catch {
+        closeClient(TERMINAL_CLOSE_CODES.upstream, 'terminal upstream unavailable');
+      }
+    };
+
+    /** 原生 socket 未 OPEN 前一律排队（ws 在 CONNECTING 发消息会抛错 → 不能断会话）。 */
+    const sendOrQueue = (payload: unknown): void => {
+      if (!native || !nativeReady) {
+        outbox.push(payload);
+        return;
+      }
+      sendNow(payload);
+    };
+
+    const flushOutbox = (): void => {
+      if (!native || !nativeReady) return;
+      while (outbox.length > 0 && !closed) {
+        sendNow(outbox.shift());
+      }
+    };
+
+    // 先挂客户端监听：`connect` 往返期间到达的 input 排队、resize 直接走 HTTP 原语。
     socket.on('message', (raw: unknown) => {
       if (closed) return;
       const frame = decodeTerminalFrame(raw);
@@ -290,11 +327,7 @@ export class TerminalService {
         closeClient(TERMINAL_CLOSE_CODES.badFrame, 'invalid terminal frame');
         return;
       }
-      if (!native) {
-        pending.push(frame);
-        return;
-      }
-      this.handleClientFrame(channel, native, grant.directory, id, frame, closeClient);
+      this.handleClientFrame(channel, grant.directory, id, frame, closeClient, sendOrQueue);
     });
     socket.on('close', () => {
       closed = true;
@@ -327,7 +360,12 @@ export class TerminalService {
     }
     native = opened;
 
-    native.on('message', (data: unknown) => {
+    opened.on('open', () => {
+      if (closed) return;
+      nativeReady = true;
+      flushOutbox();
+    });
+    opened.on('message', (data: unknown) => {
       if (closed) return;
       for (const event of this.inboundEvents(channel, data)) {
         if (event.kind === 'output') socket.send(encodeTerminalFrame({ v: 1, type: 'output', data: event.data }));
@@ -339,26 +377,29 @@ export class TerminalService {
             ...(event.payload !== undefined ? { payload: event.payload } : {}),
           }));
         } else if (event.kind === 'close') {
-          this.closeClient(socket, event.code ?? 1000, event.reason ?? 'terminal closed');
+          // 原生 meta/close 与 WS close 同义：必须真正收口上下游状态。
+          closeClient(event.code ?? 1000, event.reason ?? 'terminal closed');
         }
       }
     });
-    native.on('close', (code?: number, reason?: unknown) => {
+    opened.on('close', (code?: number, reason?: unknown) => {
       if (closed) return;
       closed = true;
+      const reasonText = decodeBytes(reason) ?? '';
       this.closeClient(
         socket,
         typeof code === 'number' && code > 0 ? code : 1000,
-        typeof reason === 'string' && reason ? reason : 'terminal upstream closed',
+        reasonText || 'terminal upstream closed',
       );
     });
-    native.on('error', () => {
+    opened.on('error', () => {
       closeClient(TERMINAL_CLOSE_CODES.upstream, 'terminal upstream error');
     });
 
-    for (const frame of pending.splice(0)) {
-      if (closed) return;
-      this.handleClientFrame(channel, native, grant.directory, id, frame, closeClient);
+    // 已 OPEN 的注入式 tunnel（或无 open 事件的 fake）立即放行队列。
+    if (opened.readyState === NATIVE_PTY_OPEN) {
+      nativeReady = true;
+      flushOutbox();
     }
   }
 
@@ -377,19 +418,15 @@ export class TerminalService {
 
   private handleClientFrame(
     channel: RuntimePtyChannel,
-    native: TerminalNativeSocket,
     directory: string,
     id: string,
     frame: TerminalFrame,
     close: (code: number, reason: string) => void,
+    sendInput: (payload: unknown) => void,
   ): void {
     switch (frame.type) {
       case 'input': {
-        try {
-          native.send(typeof channel.encodeInput === 'function' ? channel.encodeInput(frame.data) : frame.data);
-        } catch {
-          close(TERMINAL_CLOSE_CODES.upstream, 'terminal upstream unavailable');
-        }
+        sendInput(typeof channel.encodeInput === 'function' ? channel.encodeInput(frame.data) : frame.data);
         return;
       }
       case 'resize': {
