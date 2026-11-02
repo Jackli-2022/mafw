@@ -7,6 +7,7 @@
 import * as contractModule from "@mafw/plugin-contract"
 import type {
   PluginClientDescriptor,
+  PluginConfigPageDescriptor,
   PluginPanelDescriptor,
   PluginView,
 } from "@mafw/plugin-contract"
@@ -20,11 +21,28 @@ import type { PluginGeneration } from "./plugin-client"
 const contract =
   (contractModule as unknown as { default?: typeof contractModule }).default ?? contractModule
 
-export interface PluginSurface {
+/** Common shape of every dynamic workbench L2 tab. */
+export interface PluginTabSurface {
   id: PluginSurfaceId
   label: string
-  panel: PluginPanelDescriptor
   descriptor: PluginClientDescriptor
+}
+
+export interface PluginSurface extends PluginTabSurface {
+  panel: PluginPanelDescriptor
+}
+
+/** Task 9: a config page exposed as an L2 tab (schema-driven form). */
+export interface PluginConfigSurface extends PluginTabSurface {
+  page: PluginConfigPageDescriptor
+}
+
+/** Config surfaces are namespaced so a page id may equal a panel id. */
+export function pluginConfigSurfaceId(
+  packageName: string,
+  pageId: string,
+): PluginSurfaceId {
+  return pluginSurfaceId(packageName, `config.${pageId}`)
 }
 
 export interface PluginSurfaceIssue {
@@ -33,11 +51,6 @@ export interface PluginSurfaceIssue {
   package: string
   panel: string
   message: string
-}
-
-export interface PluginTabPlan {
-  visible: PluginSurface[]
-  overflow: PluginSurface[]
 }
 
 /** L2 strip layout estimate: 3 built-in tabs (+gaps) then ~96px per plugin tab. */
@@ -111,10 +124,49 @@ export function pluginSurfaceIssues(
   return collectSurfaces(descriptors).issues
 }
 
-export function planPluginTabs(
-  surfaces: readonly PluginSurface[],
+/**
+ * Valid, ordered config-page surfaces.
+ *
+ * A page is only projected when both referenced actions are declared: invoking
+ * an undeclared action can only fail at the gateway. Pages share the panel
+ * ordering rules and use a `config.<id>` surface suffix, so panel ids and page
+ * ids never collide.
+ */
+export function pluginConfigSurfaces(
+  descriptors: readonly PluginClientDescriptor[],
+): PluginConfigSurface[] {
+  const surfaces: PluginConfigSurface[] = []
+  for (const descriptor of descriptors) {
+    for (const page of descriptor.ui?.configPages ?? []) {
+      if (!page || typeof page !== "object") continue
+      if (typeof page.id !== "string" || page.id.length === 0) continue
+      if (typeof page.loadAction !== "string" || typeof page.saveAction !== "string") continue
+      const actions = descriptor.actions ?? []
+      const declared = (name: string) =>
+        ACTION_NAME_PATTERN.test(name) && actions.some((candidate) => candidate?.name === name)
+      if (!declared(page.loadAction) || !declared(page.saveAction)) continue
+      surfaces.push({
+        id: pluginConfigSurfaceId(descriptor.name, page.id),
+        label: typeof page.title === "string" && page.title.length > 0 ? page.title : page.id,
+        page,
+        descriptor,
+      })
+    }
+  }
+  surfaces.sort((a, b) => {
+    if (a.label !== b.label) return a.label < b.label ? -1 : 1
+    if (a.descriptor.name !== b.descriptor.name) {
+      return a.descriptor.name < b.descriptor.name ? -1 : 1
+    }
+    return a.id < b.id ? -1 : a.id === b.id ? 0 : 1
+  })
+  return surfaces
+}
+
+export function planPluginTabs<T extends PluginTabSurface>(
+  surfaces: readonly T[],
   options: { activeId?: string | null; capacity: number },
-): PluginTabPlan {
+): { visible: T[]; overflow: T[] } {
   const capacity = Number.isFinite(options.capacity)
     ? Math.max(0, Math.floor(options.capacity))
     : 0
@@ -130,8 +182,8 @@ export function planPluginTabs(
   // Never hide the surface the user is looking at: swap it into the last
   // visible slot and let the displaced tab join the overflow menu.
   if (activeIndex >= 0 && capacity > 0) {
-    const active = overflow[activeIndex] as PluginSurface
-    const displaced = visible[capacity - 1] as PluginSurface
+    const active = overflow[activeIndex] as T
+    const displaced = visible[capacity - 1] as T
     visible[capacity - 1] = active
     overflow[activeIndex] = displaced
   }

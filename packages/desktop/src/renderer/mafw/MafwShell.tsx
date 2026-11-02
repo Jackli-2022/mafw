@@ -54,7 +54,7 @@ import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore } from "./pod-store"
 import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
-import { pluginSurfaceIssues, pluginSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
+import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
 import { PluginSurfaceHost } from "./plugins/PluginSurfaceHost"
 import { podRailBadge } from "./pod-rail-badge"
 import { podRoleForSession } from "./pod-model"
@@ -1769,8 +1769,13 @@ export function MafwShell() {
     try { localStorage.setItem("mafw-workbench-surface", surface) } catch { /* ignore */ }
   }
 
-  // Task 8：插件面板 tab 由 committed descriptors 投影，Desktop 只消费数据。
+  // Task 8/9：插件面板与配置页 tab 由 committed descriptors 投影，Desktop 只消费数据。
   const pluginSurfaceList = createMemo(() => pluginSurfaces(pluginDescriptors()))
+  const pluginConfigSurfaceList = createMemo(() => pluginConfigSurfaces(pluginDescriptors()))
+  const pluginTabList = createMemo(() => [
+    ...pluginSurfaceList(),
+    ...pluginConfigSurfaceList(),
+  ])
   const reportedPluginIssues = new Set<string>()
   createEffect(() => {
     for (const issue of pluginSurfaceIssues(pluginDescriptors())) {
@@ -1780,12 +1785,12 @@ export function MafwShell() {
       console.warn(`[plugins] ${issue.message}`)
     }
   })
-  // 包/面板被删除后，活动 surface 若已消失则回退到内置「文件」；不打断执行/审阅视图。
+  // 包/面板/配置页被删除后，活动 surface 若已消失则回退到内置「文件」；不打断执行/审阅视图。
   createEffect(() => {
     const current = workbenchSurface()
     const resolved = resolveActiveSurface(
       current,
-      pluginSurfaceList().map((surface) => surface.id),
+      pluginTabList().map((surface) => surface.id),
       pluginClientRevision() !== "",
     )
     if (resolved === current) return
@@ -2596,11 +2601,12 @@ export function MafwShell() {
                       }}
                     />
                   }
-                  pluginSurfaces={pluginSurfaceList()}
+                  pluginSurfaces={pluginTabList()}
                   renderPluginSurface={(id) => (
                     <PluginSurfaceHost
                       id={id}
                       surfaces={pluginSurfaceList()}
+                      configSurfaces={pluginConfigSurfaceList()}
                       sessionID={currentSessionID() || null}
                     />
                   )}

@@ -15,7 +15,7 @@ import {
   type WorkbenchSurface,
   type WorkbenchView,
 } from "../workbench-views"
-import { observePluginTabCapacity, planPluginTabs, type PluginSurface } from "../plugins/plugin-view-model"
+import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from "../plugins/plugin-view-model"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
@@ -40,7 +40,7 @@ export type WorkbenchShellProps = {
   executionView: JSX.Element
   reviewView: JSX.Element
   /** Dynamic L2 tabs contributed by unified plugin packages. */
-  pluginSurfaces: PluginSurface[]
+  pluginSurfaces: PluginTabSurface[]
   /** Mounts one plugin surface (MafwShell owns descriptor resolution). */
   renderPluginSurface: (id: string) => JSX.Element
 }
