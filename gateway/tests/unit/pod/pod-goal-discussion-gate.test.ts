@@ -113,6 +113,33 @@ describe('PodGoalService discussion start gate', () => {
     expect(service.isStartable('g1')).toBe(false);
   });
 
+  test('enqueueGoal reports discussing, not started, for an active Tech Lead Goal', async () => {
+    seedGoal('active');
+
+    const result = await service.enqueueGoal('g1', projectDir);
+    expect(result.status).toBe('discussing');
+    expect(startGoal).not.toHaveBeenCalled();
+    expect(advanceGoal).not.toHaveBeenCalled();
+
+    store.setGoalRevisionStatus({
+      podId: 'pod_1', goalId: 'g1', revision: 1, status: 'direction_review',
+      directionStatus: 'pending', now: NOW,
+    });
+    const review = await service.enqueueGoal('g1', projectDir);
+    expect(review.status).toBe('queued');
+    expect(startGoal).not.toHaveBeenCalled();
+  });
+
+  test('enqueueGoal reports started for an active Goal that is already startable', async () => {
+    seedGoal('active');
+    store.setGoalRevisionStatus({
+      podId: 'pod_1', goalId: 'g1', revision: 1, status: 'planning', now: NOW,
+    });
+
+    const result = await service.enqueueGoal('g1', projectDir);
+    expect(result.status).toBe('started');
+  });
+
   test('enqueueGoal reports queued when startQueued refuses a discussing Goal', async () => {
     // Revision exists before the root row (direct Goal intake creates both).
     store.createGoalRevision({

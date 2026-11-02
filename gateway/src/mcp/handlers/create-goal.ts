@@ -99,10 +99,9 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
           }
         }
         // Local single-user gateway ruling: no transport caller identity on an existing
-        // Pod project is treated as the local user/Lead. It must create a discussing
-        // Goal (never the legacy auto-start path). A resolved Lead of a not-yet-created
-        // Pod routes the same way (Pod ensure creates it).
-        const routeToTechLead = !!deps.techLead && (hasPod || isLead);
+        // Pod project is treated as the local user/Lead. A Lead source also routes here
+        // even before the Pod exists: createGoal ensures the Pod, so no dead legacy Goal.
+        const routeToTechLead = hasPod || isLead || args.source === 'lead';
         if (routeToTechLead) {
           try {
             const created = await deps.techLead.createGoal({

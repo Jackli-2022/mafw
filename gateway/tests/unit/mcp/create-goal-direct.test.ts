@@ -187,30 +187,43 @@ describe('mafw_create_goal routed through the Tech Lead', () => {
     });
   });
 
-  test('a Lead source outside a Pod stays legacy but does not auto-start', async () => {
+  test('a Lead source without a Pod creates one and routes to Tech Lead discussion', async () => {
     const techLead = {
       isLeadSession: jest.fn(() => false),
       hasPod: jest.fn(() => false),
-      createGoal: jest.fn(),
+      createGoal: jest.fn(async () => ({
+        podId: 'pod_new',
+        goalId: 'goal-lead-new',
+        revision: 1,
+        stage: 'discussing' as const,
+        status: 'discussing' as const,
+        sessionID: 'ses_tl',
+        projectDir: PROJECT,
+        goalDir: '/repo/project/.mafw/goals/goal-lead-new',
+        charterPath: '/repo/project/.mafw/goals/goal-lead-new/goal.md',
+        requestPath: '/repo/project/.mafw/goals/goal-lead-new/request.json',
+      })),
     };
+    const intake = jest.fn(intakeResult);
     const emitGoalCreated = jest.fn();
-    const intake = jest.fn((input: any, deps: any) => {
-      if (input.autoStart !== false) deps.emitGoalCreated({ type: 'goal_created', goalId: input.goalId });
-      return intakeResult(input);
-    });
     const tool = createCreateGoalTool({ techLead, intake, emitGoalCreated, now: () => NOW });
 
     const result = await tool.execute({
-      goalId: 'g-lead', title: 'Lead work', charter: '# Lead', source: 'lead', projectDir: PROJECT,
+      title: 'Lead work', objective: '# Lead', source: 'lead', projectDir: PROJECT,
     }, {});
 
-    expect(techLead.createGoal).not.toHaveBeenCalled();
-    expect(intake).toHaveBeenCalledWith(expect.objectContaining({
-      authorization: expect.objectContaining({ source: 'lead' }),
-      autoStart: false,
-    }), expect.anything());
+    expect(techLead.createGoal).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Lead work', objective: '# Lead', projectDir: PROJECT,
+    }));
+    expect(intake).not.toHaveBeenCalled();
     expect(emitGoalCreated).not.toHaveBeenCalled();
-    expect(result.structuredContent).toMatchObject({ success: true, routedTo: 'legacy' });
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      routedTo: 'tech_lead',
+      goalId: 'goal-lead-new',
+      revision: 1,
+      stage: 'discussing',
+    });
   });
 
   test('a non-Lead session in a Pod project is rejected, never routed to legacy', async () => {

@@ -11,7 +11,8 @@ import type { PodAttentionItem, PodGoalVerdict, PodQueueReason } from './pod-sta
 import type { PodGoalResult } from './pod-result';
 
 export interface PodEnqueueResult {
-  status: 'started' | 'queued';
+  /** discussing = Tech Lead discussion Goal (active but no NodeDriver run). */
+  status: 'started' | 'queued' | 'discussing';
   podId: string;
   queueReason: PodQueueReason | null;
 }
@@ -48,7 +49,23 @@ export class PodGoalService {
     const pod = detail.pod;
     const existing = this.deps.store.getGoal(pod.id, goalId);
     if (existing) {
-      if (existing.status === 'active') return { status: 'started', podId: pod.id, queueReason: null };
+      if (existing.status === 'active') {
+        // An active row is not necessarily a running NodeDriver: a discussion Goal
+        // is active by design but must report discussing/queued, never started.
+        if (this.isStartable(existing.goalId)) {
+          return { status: 'started', podId: pod.id, queueReason: null };
+        }
+        const revision = this.deps.store.getGoalRevision(
+          pod.id,
+          existing.goalId,
+          existing.activeRevision,
+        );
+        return {
+          status: revision?.status === 'direction_review' ? 'queued' : 'discussing',
+          podId: pod.id,
+          queueReason: null,
+        };
+      }
       if (existing.status === 'queued' && !this.deps.store.getActiveGoal(pod.id)
         && pod.status !== 'paused' && pod.status !== 'archived') {
         const budget = this.deps.budget?.canStart(pod.id);
