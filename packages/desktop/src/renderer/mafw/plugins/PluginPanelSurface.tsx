@@ -14,6 +14,7 @@ import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import type { PluginClientDescriptor, PluginPanelDescriptor } from "@mafw/plugin-contract"
 import { isPluginGenerationCurrent, pluginGeneration, subscribePluginEvent } from "./plugin-store"
 import { createPluginPanelLoader } from "./plugin-panel-loader"
+import { invokePanelViewAction } from "./plugin-panel-invoke"
 import {
   classifyPanelActionOutput,
   pluginPanelRefreshesOn,
@@ -29,11 +30,11 @@ export function PluginPanelSurface(props: {
 }) {
   const loader = createPluginPanelLoader({
     invoke: () =>
-      window.api.mafw.plugins.invoke(
+      invokePanelViewAction(
+        (...args) => window.api.mafw.plugins.invoke(...args),
         props.descriptor.name,
         props.panel.viewAction,
-        { input: {}, sessionID: props.sessionID ?? undefined },
-        props.sessionID ?? undefined,
+        props.sessionID,
       ),
     generation: () => pluginGeneration(),
     isGenerationCurrent: (generation) => isPluginGenerationCurrent(generation),
