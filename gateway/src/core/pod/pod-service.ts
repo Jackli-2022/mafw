@@ -234,10 +234,11 @@ export class PodService {
     for (const pod of this.deps.store.listPods()) {
       for (const session of this.deps.store.listActiveSessions(pod.id)) {
         if (session.node === 'coordination') continue;
-        // Session Supervisor 租约（scope_kind 非空）不按回合 idle 收尾：idle 只表示
-        // 「本轮结束」，被 reconcile 快照/结束会让存活复用失效并每轮抬 generation。
-        // 它们的生命周期交给 PodSessionSupervisor（isAlive=false 才作废重建）。
-        if (session.scopeKind) continue;
+        // Session Supervisor 租约（scope_kind 非空）只豁免「回合 idle」这一种收尾：
+        // idle 只表示本轮结束，快照/结束会让存活复用失效并每轮抬 generation。
+        // 真正的 runtime 会话消失（null / not found）仍必须最终化，否则作用域行会
+        // 永远 active、transcript 缺失、成员卡在 working（review I-2）。
+        const isScoped = !!session.scopeKind;
         try {
           const info = await this.deps.getSession(session.sessionId);
           if (!info) {
@@ -248,7 +249,7 @@ export class PodService {
             }
             continue;
           }
-          if (info.time?.idle || info.time?.completed) {
+          if (!isScoped && (info.time?.idle || info.time?.completed)) {
             try {
               await this.snapshotSession(session.sessionId);
             } catch (err: any) {

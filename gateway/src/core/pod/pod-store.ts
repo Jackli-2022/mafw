@@ -584,11 +584,80 @@ export class PodStore {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
         ON pod_messages(pod_id, external_message_id)
         WHERE external_message_id IS NOT NULL;
-      CREATE INDEX IF NOT EXISTS idx_pod_member_sessions_scope
-        ON pod_member_sessions(pod_id, member_id, goal_id, revision, scope_kind);
     `);
+    this.ensureScopeIndexes();
     this.backfillLegacyDeliveries();
     this.backfillLegacyRevisions();
+  }
+
+  /**
+   * 作用域租约索引（I-1）：
+   * - `idx_pod_member_sessions_scope_key`：普通查找索引（含已结束行，世代计算要用）；
+   * - `idx_pod_member_sessions_active_scope`：**唯一**部分索引，保证一个精确作用域
+   *   最多只有一条活跃租约（单飞只在进程内，这里才是跨实例/跨进程的防线）。
+   *
+   * 表达式必须与查询谓词逐字一致（COALESCE），否则 SQLite 不会命中索引；
+   * `goal_id`/`revision` 为 NULL 时也要能判重，故不能直接用裸列（唯一索引视 NULL 互异）。
+   */
+  private ensureScopeIndexes(): void {
+    // 上一版 Task 5 的裸列普通索引已被表达式索引取代（旧库可能已存在）。
+    this.db.exec('DROP INDEX IF EXISTS idx_pod_member_sessions_scope');
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_pod_member_sessions_scope_key
+        ON pod_member_sessions(
+          pod_id, member_id, COALESCE(goal_id, ''), COALESCE(revision, -1), scope_kind
+        )
+    `);
+    const unique = `
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_member_sessions_active_scope
+        ON pod_member_sessions(
+          pod_id, member_id, COALESCE(goal_id, ''), COALESCE(revision, -1), scope_kind
+        )
+        WHERE ended_at IS NULL
+    `;
+    try {
+      this.db.exec(unique);
+    } catch {
+      // 旧库可能已有同作用域的多条活跃租约（索引建立前写入/手工数据）：
+      // 保留最高世代、其余收尾后重建，避免 PodStore 构造直接失败。
+      this.endDuplicateActiveScopes();
+      this.db.exec(unique);
+    }
+  }
+
+  /** 每个作用域只保留最高世代的活跃租约，其余标记结束（含 ended_at 兜底）。 */
+  private endDuplicateActiveScopes(): void {
+    this.db.prepare(`
+      UPDATE pod_member_sessions
+      SET status = 'ended',
+          ended_at = COALESCE(ended_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      WHERE ended_at IS NULL
+        AND scope_kind IS NOT NULL
+        AND rowid NOT IN (
+          SELECT rowid FROM (
+            SELECT rowid,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY pod_id, member_id,
+                       COALESCE(goal_id, ''), COALESCE(revision, -1), scope_kind
+                     ORDER BY generation DESC, created_at DESC, rowid DESC
+                   ) AS rank
+            FROM pod_member_sessions
+            WHERE ended_at IS NULL AND scope_kind IS NOT NULL
+          )
+          WHERE rank = 1
+        )
+    `).run();
+  }
+
+  /** 作用域谓词参数（goal_id/revision 未传按 NULL 归一，M6）。 */
+  private scopeParams(scope: PodSessionScopeKey): [string, string, string | null, number | null, string] {
+    return [
+      scope.podId,
+      scope.memberId,
+      scope.goalId ?? null,
+      scope.revision ?? null,
+      scope.kind,
+    ];
   }
 
   /**
@@ -1239,44 +1308,75 @@ export class PodStore {
       input.generation ?? 1, input.lastActiveAt ?? null, input.now,
     );
     const row = this.db.prepare('SELECT * FROM pod_member_sessions WHERE session_id = ?').get(input.sessionId) as any;
+    if (!row) {
+      // INSERT OR IGNORE 吞掉了约束（例如作用域唯一索引/其它冲突）且没有本行：
+      // 明确报错，别把 undefined 当行返回（review I-1）。
+      throw new PodError(409, `session insert was ignored: ${input.sessionId}`);
+    }
     return sessionFromRow(row);
   }
 
   /**
+   * 原子租约插入（review I-1）：世代读取 + INSERT 在同一事务里，跨实例并发时由
+   * 唯一活跃作用域索引兜底——冲突会抛 SQLite 约束错误，调用方重读赢家后复用。
+   */
+  leaseScopedSession(input: {
+    id: string;
+    scope: PodSessionScopeKey;
+    sessionId: string;
+    now: string;
+  }): PodSessionRow {
+    const lease = this.db.transaction(() => {
+      const generation = this.getScopedGeneration(input.scope) + 1;
+      const [podId, memberId, goalId, revision, kind] = this.scopeParams(input.scope);
+      const row = this.db.prepare(`
+        INSERT INTO pod_member_sessions (
+          id, pod_id, member_id, goal_id, node, session_id, status, transcript_ref,
+          scope_kind, revision, generation, last_active_at, created_at
+        ) VALUES (?, ?, ?, ?, NULL, ?, 'active', NULL, ?, ?, ?, ?, ?)
+        RETURNING *
+      `).get(
+        input.id, podId, memberId, goalId, input.sessionId,
+        kind, revision, generation, input.now, input.now,
+      ) as any;
+      return sessionFromRow(row);
+    });
+    return lease();
+  }
+
+  /**
    * 精确作用域的活跃租约（null goal/revision 按 NULL 匹配）。
-   * 多行同时活跃（异常/并发）时取最高世代。
+   * 查询谓词与 `idx_pod_member_sessions_active_scope` 表达式逐字一致（索引可用）。
    */
   getActiveScopedSession(scope: PodSessionScopeKey): PodSessionRow | null {
+    const [podId, memberId, goalId, revision, kind] = this.scopeParams(scope);
     const row = this.db.prepare(`
       SELECT * FROM pod_member_sessions
       WHERE pod_id = ? AND member_id = ?
         AND COALESCE(goal_id, '') = COALESCE(?, '')
-        AND revision IS ?
+        AND COALESCE(revision, -1) = COALESCE(?, -1)
         AND scope_kind = ?
         AND ended_at IS NULL
       ORDER BY generation DESC, created_at DESC
       LIMIT 1
-    `).get(
-      scope.podId, scope.memberId, scope.goalId, scope.revision, scope.kind,
-    ) as any;
+    `).get(podId, memberId, goalId, revision, kind) as any;
     return row ? sessionFromRow(row) : null;
   }
 
   /** 该作用域已用过的最高世代（含已结束行）；0 = 从未建过。 */
   getScopedGeneration(scope: PodSessionScopeKey): number {
+    const [podId, memberId, goalId, revision, kind] = this.scopeParams(scope);
     const row = this.db.prepare(`
       SELECT COALESCE(MAX(generation), 0) AS max_generation FROM pod_member_sessions
       WHERE pod_id = ? AND member_id = ?
         AND COALESCE(goal_id, '') = COALESCE(?, '')
-        AND revision IS ?
+        AND COALESCE(revision, -1) = COALESCE(?, -1)
         AND scope_kind = ?
-    `).get(
-      scope.podId, scope.memberId, scope.goalId, scope.revision, scope.kind,
-    ) as { max_generation?: number } | undefined;
+    `).get(podId, memberId, goalId, revision, kind) as { max_generation?: number } | undefined;
     return Number(row?.max_generation ?? 0);
   }
 
-  /** 活跃确认（ensure/current 命中存活租约时盖时间戳；只动这一行）。 */
+  /** 存活确认：只有 `ensure` 命中存活租约时盖时间戳（`current` 只读不盖，M4）。 */
   touchSession(sessionId: string, now: string): void {
     this.db.prepare(
       'UPDATE pod_member_sessions SET last_active_at = ? WHERE session_id = ? AND ended_at IS NULL',
