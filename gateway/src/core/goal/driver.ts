@@ -9,7 +9,13 @@ import {
   GoalStateV3, loadGoalState, writeGoalState, isTerminalState, effectiveRound, effectiveRevision,
 } from './state-v3';
 import { routeNext, GoalNodeName } from './routing';
-import { renderNodePrompt, nodeArtifactPaths, nodeOutputSchema } from './node-prompts';
+import {
+  renderNodePrompt, nodeArtifactPaths, nodeOutputSchema, goalEvalArtifactPath, readGoalEvalArtifact,
+} from './node-prompts';
+import type { NodeSessionRef } from './state-v3';
+import { computeGoalEvalHash, computeWavesHash, validatePlanPackage } from './plan-package';
+import { requiredConditionIds } from './goal-eval';
+import type { GoalEval } from './goal-eval';
 import { ExecutableGoalNode, goalAgentName, isExecutableGoalNode } from './node-names';
 import { isTaskType } from '../../orchestration/capability-ledger';
 import { parseReviewRubric, taskAcceptanceFromWavePlan, taskIdsFromWavePlan } from './review-rubric';
@@ -35,6 +41,42 @@ function readWaveTaskIds(wavesPath: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * 计划批准绑定的内容版本已过期（waves 或 GoalEval 在请求批准后被改写）。
+ * HTTP 层据此回 409 + `code: 'stale_plan'`，并带上当前内容哈希供客户端刷新后重批。
+ */
+export class StalePlanError extends Error {
+  readonly code = 'stale_plan';
+
+  constructor(message: string, readonly hashes: { planHash: string | null; evalHash: string | null }) {
+    super(message);
+    this.name = 'StalePlanError';
+  }
+}
+
+export interface PlanApprovalHashes {
+  planHash: string | null;
+  evalHash: string | null;
+}
+
+/** waves 规范化哈希；非法 waves（旧计划/半截产物）返回 null，绝不抛。 */
+function safeWavesHash(waves: unknown): string | null {
+  try { return computeWavesHash(waves); } catch { return null; }
+}
+
+function safeGoalEvalHash(goalEval: GoalEval | null): string | null {
+  if (!goalEval) return null;
+  try { return computeGoalEvalHash(goalEval); } catch { return null; }
+}
+
+/** 原子写 Goal Eval（.tmp + rename；坏中间态不会被评审读到）。 */
+function writeGoalEvalFile(target: string, goalEval: GoalEval): void {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const tmp = `${target}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(goalEval, null, 2), 'utf-8');
+  fs.renameSync(tmp, target);
 }
 
 export interface GoalRuntimeClient {
@@ -110,10 +152,14 @@ export class NodeDriver {
     message: string;
     code: string;
     source: 'runtime' | 'artifact';
-  }) => void>();
+  }) => boolean | void>();
   private stateDirs = new Map<string, string>(); // goalId → mafwDir
   /** 复用的会话（Tech Lead 讨论会话等）：完成/失败都不 delete，owner 管生命周期。 */
   private reusedSessions = new Set<string>();
+  /** 复用会话的"无产物 idle"宽容：讨论回合的 idle 会与本节点的 prompt 竞态。 */
+  private reuseIdleGrace = new Set<string>();
+  /** 复用会话节点启动时的产物指纹（判断 idle 时的产物是不是本次新写的）。 */
+  private nodeStartArtifacts = new Map<string, { path: string; digest: string | null }>();
 
   constructor(private deps: DriverDeps) {}
 
@@ -122,10 +168,12 @@ export class NodeDriver {
     this.stateDirs.set(goalId, mafwDir);
   }
 
-  /** handleOpencodeEvent 分发入口（idle）。 */
+  /** handleOpencodeEvent 分发入口（idle）。处理器返回 true = 继续监听（暂存 idle）。 */
   onSessionIdle(sessionID: string): void {
     const h = this.listeners.get(sessionID);
-    if (h) { this.listeners.delete(sessionID); h('idle'); }
+    if (!h) return;
+    const keep = h('idle');
+    if (keep !== true) this.listeners.delete(sessionID);
   }
 
   /** handleOpencodeEvent 分发入口（error）。code 缺省时按未知运行时错误 fail-closed。 */
@@ -214,6 +262,10 @@ export class NodeDriver {
     const sessionId = reusedSessionId
       ?? (await this.deps.client.create(state.projectDir)).id;
     if (reusedSessionId) this.reusedSessions.add(reusedSessionId);
+    // 复用会话：记下节点启动时产物已有的内容指纹（idle 竞态判定"是不是本次写的"）。
+    if (reusedSessionId) {
+      this.captureNodeStartArtifact(reusedSessionId, mafwDir, goalId, node, round, revision);
+    }
 
     this.deps.onSessionCreated({ goalId, sessionId, phase: node, loop: round, revision });
 
@@ -253,6 +305,11 @@ export class NodeDriver {
       ? request.taskType
       : undefined;
     const planReview = node === 'plan' ? state.planReview : undefined;
+    // Task 13/8：review 的必需 Goal 条件来自计划产物（waves 同版本的 Goal Eval），
+    // prompt 与 rubric 判定共用同一份条件集。
+    const reviewEval = node === 'review'
+      ? readGoalEvalArtifact(mafwDir, goalId, revision, this.readPlanDoc(state, goalId, revision))
+      : null;
 
     const basePrompt = renderNodePrompt(node, {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds,
@@ -281,6 +338,7 @@ export class NodeDriver {
       priorBlock: this.deps.capabilityPrior?.(goalId) ?? undefined,
       counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
       acceptance: node === 'review' ? acceptance : undefined,
+      goalConditions: node === 'review' ? (reviewEval?.goalEval?.conditions ?? undefined) : undefined,
       fixTasks: fixPass ? (state.reviewFix?.tasks ?? []) : undefined,
       fixPreviousReceipt: fixPass ? nodeArtifactPaths(mafwDir, goalId, round, { revision }).receipt : undefined,
     });
@@ -305,14 +363,21 @@ export class NodeDriver {
     });
 
     this.listeners.set(sessionId, (ev, failure) => {
-      if (ev === 'idle') void this.completeNode(goalId, sessionId);
-      else void this.failNode(
+      if (ev === 'idle') {
+        // 复用会话的 idle 竞态：讨论回合结束的 idle 可能晚于本节点的 prompt 到达。
+        // 产物还没写（或还是上一版）时先宽容一次，第二次才按 artifact_missing 判定。
+        if (this.isStaleReuseIdle(mafwDir, goalId, sessionId)) return true;
+        void this.completeNode(goalId, sessionId);
+        return false;
+      }
+      void this.failNode(
         goalId,
         sessionId,
         failure?.code ?? 'session_error',
         failure?.message ?? 'session error',
         failure?.source ?? 'runtime',
       );
+      return false;
     });
 
     this.deps.emitNodeEvent({
@@ -337,8 +402,183 @@ export class NodeDriver {
 
   /** 释放节点会话：复用会话归 owner 管（Tech Lead 连续性），只删除 driver 自己建的。 */
   private async releaseSession(sessionId: string): Promise<void> {
+    this.reuseIdleGrace.delete(sessionId);
+    this.nodeStartArtifacts.delete(sessionId);
     if (this.reusedSessions.delete(sessionId)) return;
     try { await this.deps.client.delete(sessionId); } catch { /* fail-open */ }
+  }
+
+  /** 当前 revision 的 waves 产物原文；缺失/非法 → null。 */
+  private readPlanDoc(state: GoalStateV3, goalId: string, revision: number): any | null {
+    const wavesPath = state.wavePlanPath
+      ?? nodeArtifactPaths(state.mafwDir, goalId, effectiveRound(state), { revision }).waves;
+    try {
+      if (!fs.existsSync(wavesPath)) return null;
+      const parsed = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch { return null; }
+  }
+
+  /**
+   * 计划内容哈希（批准绑定的唯一来源）。
+   * 规范化边界与 Task 7 一致：hash 只取决于合法内容，因此「存的是原文、算的是规范化」
+   * 不会误判 stale。
+   */
+  private readPlanHashes(state: GoalStateV3, goalId: string, revision: number): PlanApprovalHashes | null {
+    const planDoc = this.readPlanDoc(state, goalId, revision);
+    if (!planDoc) return null;
+    const read = readGoalEvalArtifact(state.mafwDir, goalId, revision, planDoc);
+    return {
+      planHash: safeWavesHash(planDoc.waves),
+      evalHash: safeGoalEvalHash(read.goalEval),
+    };
+  }
+
+  /** 在飞节点应落地的产物路径（完成判定与 idle 宽容共用，防两处漂移）。 */
+  private inflightArtifactPath(
+    mafwDir: string,
+    goalId: string,
+    state: GoalStateV3,
+    ns: NodeSessionRef,
+    revision: number,
+  ): string {
+    const round = effectiveRound(state);
+    const fixPass = ns.phase === 'execute' && state.reviewFix?.round === round && state.reviewVerdict === 'FAIL';
+    const reviewFixPass = ns.phase === 'review' && state.reviewFix?.round === round;
+    const a = nodeArtifactPaths(mafwDir, goalId, round, { fix: fixPass || reviewFixPass, revision });
+    return ns.phase === 'plan' ? a.waves : ns.phase === 'execute' ? a.receipt : a.review;
+  }
+
+  /**
+   * 复用会话（Tech Lead 讨论会话）的 idle 竞态：讨论回合结束时 runtime 也会发 idle，
+   * 它可能排在本节点 prompt 之后到达。判断依据是**产物是否在节点启动后被重写**：
+   * - 产物不存在 → 暂存；
+   * - 产物内容与节点启动时不同 → 真正的完成；
+   * - 内容相同但 mtime 晚于启动时间 → 同内容重写，也算完成；
+   * - 内容与 mtime 都是节点启动前的旧值（同 revision 上一版计划）→ 暂存。
+   * 暂存只宽容**一次**，第二个 idle 仍按 artifact_missing 判定（避免真的卡死）。
+   */
+  private isStaleReuseIdle(mafwDir: string, goalId: string, sessionId: string): boolean {
+    if (!this.reusedSessions.has(sessionId)) return false;
+    if (this.reuseIdleGrace.has(sessionId)) return false;
+    const state = loadGoalState(mafwDir, goalId);
+    const ns = state?.nodeSession;
+    if (!state || !ns || ns.id !== sessionId) return false;
+    const revision = ns.revision ?? effectiveRevision(state);
+    const artifact = this.inflightArtifactPath(mafwDir, goalId, state, ns, revision);
+    const snapshot = this.nodeStartArtifacts.get(sessionId);
+    let exists = false;
+    let digest: string | null = null;
+    let mtimeMs = 0;
+    try {
+      if (fs.existsSync(artifact)) {
+        exists = true;
+        digest = createHash('sha1').update(fs.readFileSync(artifact)).digest('hex');
+        mtimeMs = fs.statSync(artifact).mtimeMs;
+      }
+    } catch { exists = false; }
+    if (exists) {
+      const identical = !!snapshot && snapshot.path === artifact && snapshot.digest === digest;
+      const startedMs = Date.parse(ns.startedAt);
+      const rewritten = Number.isFinite(startedMs) && mtimeMs > startedMs;
+      if (!identical || rewritten) return false; // 真完成
+    }
+    this.reuseIdleGrace.add(sessionId);
+    return true;
+  }
+
+  /** 记录节点启动时该节点产物已有的内容指纹（复用会话的 idle 竞态判定基准）。 */
+  private captureNodeStartArtifact(
+    sessionId: string,
+    mafwDir: string,
+    goalId: string,
+    node: ExecutableGoalNode,
+    round: number,
+    revision: number,
+  ): void {
+    const a = nodeArtifactPaths(mafwDir, goalId, round, { revision });
+    const target = node === 'plan' ? a.waves : node === 'execute' ? a.receipt : a.review;
+    let digest: string | null = null;
+    try {
+      if (fs.existsSync(target)) {
+        digest = createHash('sha1').update(fs.readFileSync(target)).digest('hex');
+      }
+    } catch { digest = null; }
+    this.nodeStartArtifacts.set(sessionId, { path: target, digest });
+  }
+
+  /**
+   * 批准前复核内容版本：stored hash / 调用方给的 hash 都必须等于当前内容哈希。
+   * 不一致 → 刷新 pending 批准的 hash（客户端重新读取后可以批新内容）并抛
+   * `stale_plan`。读不到内容时保持原 hash 并抛错（不能批准看不见的计划）。
+   */
+  private assertApprovalFresh(
+    mafwDir: string,
+    goalId: string,
+    approval: NonNullable<GoalStateV3['planApproval']>,
+    content: PlanApprovalHashes | null,
+    opts?: { planHash?: string; evalHash?: string },
+  ): void {
+    const current: PlanApprovalHashes = {
+      planHash: content?.planHash ?? null,
+      evalHash: content?.evalHash ?? null,
+    };
+    const mismatches: string[] = [];
+    const check = (label: 'plan' | 'goal eval', expected: string | null | undefined, actual: string | null) => {
+      if (expected == null) return; // 旧版批准没有绑定 / 调用方没给：不参与判定
+      if (expected !== actual) mismatches.push(label);
+    };
+    check('plan', approval.planHash, current.planHash);
+    check('goal eval', approval.evalHash, current.evalHash);
+    check('plan', opts?.planHash, current.planHash);
+    check('goal eval', opts?.evalHash, current.evalHash);
+    if (mismatches.length === 0) return;
+
+    if (content) {
+      writeGoalState(mafwDir, goalId, {
+        planApproval: { ...approval, planHash: current.planHash, evalHash: current.evalHash },
+      });
+    }
+    throw new StalePlanError(
+      `plan content changed since approval was requested (${Array.from(new Set(mismatches)).join(', ')})`,
+      current,
+    );
+  }
+
+  /**
+   * 计划内容被改写（任务编辑/新增/删除 → waves.json，或 eval 文件被替换）：
+   * - pending：刷新 hash（同一 approvalId，客户端重新读取后可批新内容）；
+   * - approved：旧批准失效，回 pending（新 approvalId、清 decidedAt）并重新驻留批准门。
+   * 读不到内容 → 不动批准（approve 侧会 fail closed）。
+   */
+  refreshPlanApproval(goalId: string): boolean {
+    const found = this.findState(goalId);
+    if (!found) return false;
+    const state = loadGoalState(found.mafwDir, goalId);
+    if (!state || isTerminalState(state)) return false;
+    const approval = state.planApproval;
+    if (!approval || approval.status === 'rejected') return false;
+    const revision = approval.revision ?? effectiveRevision(state);
+    const content = this.readPlanHashes(state, goalId, revision);
+    if (!content) return false;
+
+    const approved = approval.status === 'approved';
+    const next: NonNullable<GoalStateV3['planApproval']> = {
+      ...approval,
+      status: 'pending',
+      planHash: content.planHash,
+      evalHash: content.evalHash,
+    };
+    if (approved) {
+      // 已批准的批准不得继续生效：换 id、清决定时间、重新驻留批准门。
+      delete next.decidedAt;
+      next.id = this.deps.newApprovalId();
+    }
+    writeGoalState(found.mafwDir, goalId, {
+      planApproval: next,
+      ...(approved ? { nextAction: 'AWAIT_PLAN_APPROVAL', phase: 'PLANNING' } : {}),
+    });
+    return true;
   }
 
   /** 产物目录预建（幂等、fail-open）：waves 同目录 + receipts/ + reviews/。 */
@@ -482,7 +722,7 @@ export class NodeDriver {
 
     // —— Batch 1：已校验的结构化交卷优先；文件产物 fallback ——
     const submitted = await this.deps.client.structured?.(sessionID) ?? null;
-    const artifactPath = node === 'plan' ? a.waves : node === 'execute' ? a.receipt : a.review;
+    const artifactPath = this.inflightArtifactPath(mafwDir, goalId, state, ns, revision);
     if (!submitted && !fs.existsSync(artifactPath)) {
       await this.failNode(goalId, sessionID, 'artifact_missing', `expected ${artifactPath}`, 'artifact');
       return;
@@ -509,27 +749,47 @@ export class NodeDriver {
     // —— 解析（移植 NODE_CONFIGS.parseResult + plan.node/review.node 语义）——
     let patch: Partial<GoalStateV3>;
     let outcome: string;
+    /** plan 交卷的内容哈希：批准门用它绑定"用户实际看到的这一版"。 */
+    let approvalHashes: PlanApprovalHashes | null = null;
     try {
       if (node === 'plan') {
-        const waves: any = submitted ?? JSON.parse(fs.readFileSync(a.waves, 'utf-8'));
-        if (waves.status === 'need_clarification') {
+        const planDoc: any = submitted ?? JSON.parse(fs.readFileSync(a.waves, 'utf-8'));
+        if (planDoc.status === 'need_clarification') {
           patch = {
             pendingQuestion: {
               questionId: `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_ok`,
-              node: 'plan', loop: round, questions: waves.ambiguities || [], askedAt: new Date().toISOString(),
+              node: 'plan', loop: round, questions: planDoc.ambiguities || [], askedAt: new Date().toISOString(),
             },
           };
           outcome = 'need_clarification';
         } else {
+          // Task 7/13：waves + goalEval 是同一份 PlanPackage。校验走 Task 7 的
+          // 规范化边界，然后把 eval 落到本 revision 的独立产物（评审按它判定）。
+          const pkg = planDoc.goalEval !== undefined
+            ? validatePlanPackage({ waves: planDoc.waves, goalEval: planDoc.goalEval })
+            : null;
+          let goalEval: GoalEval | null = pkg ? pkg.goalEval : null;
+          if (pkg) {
+            writeGoalEvalFile(goalEvalArtifactPath(mafwDir, goalId, revision), pkg.goalEval);
+          } else {
+            // legacy：计划里没有 eval，但旁文件存在时也必须可解析（坏 eval 不放行）。
+            const existing = readGoalEvalArtifact(mafwDir, goalId, revision, planDoc);
+            if (existing.error) throw new Error(existing.error);
+            goalEval = existing.goalEval;
+          }
+          approvalHashes = {
+            planHash: safeWavesHash(pkg ? pkg.waves : planDoc.waves),
+            evalHash: safeGoalEvalHash(goalEval),
+          };
           // D4b: the planner read charter + repo — its taskType judgement wins
           // over the creation-time declaration. Validated; absent/invalid ignored.
           // W1: plan 成功即清 planFeedback（清除点——防上一轮驳回意见泄漏进
           // review-FAIL 触发的后续轮次）。
           patch = {
             wavePlanPath: a.waves, pendingQuestion: null, planFeedback: null,
-            ...(isTaskType(waves.taskType) ? { taskType: waves.taskType } : {}),
+            ...(isTaskType(planDoc.taskType) ? { taskType: planDoc.taskType } : {}),
           };
-          outcome = `waves=${(waves.waves || []).length}${isTaskType(waves.taskType) ? ` taskType=${waves.taskType}` : ''}`;
+          outcome = `waves=${(planDoc.waves || []).length}${isTaskType(planDoc.taskType) ? ` taskType=${planDoc.taskType}` : ''}`;
         }
       } else if (node === 'execute') {
         const receipt: any = submitted ?? JSON.parse(fs.readFileSync(a.receipt, 'utf-8'));
@@ -539,7 +799,12 @@ export class NodeDriver {
         const source = submitted
           ? JSON.stringify(submitted)
           : fs.readFileSync(a.review, 'utf-8');
-        const verdict = parseReviewRubric(source, readWaveTaskIds(a.waves));
+        // Task 8/13：必需 Goal 条件 id 来自本 revision 的计划产物；eval 坏了不放行
+        // （否则必需条件门会被静默绕过——宁可 artifact_invalid）。
+        const evalRead = readGoalEvalArtifact(mafwDir, goalId, revision, this.readPlanDoc(state, goalId, revision));
+        if (evalRead.error) throw new Error(evalRead.error);
+        const requiredIds = evalRead.goalEval ? requiredConditionIds(evalRead.goalEval) : [];
+        const verdict = parseReviewRubric(source, readWaveTaskIds(a.waves), requiredIds);
         // 同轮复核：FAIL 且本轮还没用过 → 保留 round（不 +1），把失败项写进 state 供
         // execute 修复模式使用；FAIL 且已用过 → 清空 reviewFix，走原 round+1。
         const fixAvailable = verdict.verdict === 'FAIL'
@@ -648,7 +913,11 @@ export class NodeDriver {
       writeGoalState(mafwDir, goalId, {
         ...patch, nodeSession: null, phase: 'PLANNING',
         nextNode: 'execute', nextAction: 'AWAIT_PLAN_APPROVAL',
-        planApproval: { id: this.deps.newApprovalId(), status: 'pending', round: nextRound, revision },
+        planApproval: {
+          id: this.deps.newApprovalId(), status: 'pending', round: nextRound, revision,
+          planHash: approvalHashes?.planHash ?? null,
+          evalHash: approvalHashes?.evalHash ?? null,
+        },
       });
       this.emitFinished(goalId, state.projectDir, round, node, outcome, ns.attempt, revision);
       return;
@@ -739,17 +1008,34 @@ export class NodeDriver {
     try { return await next; } finally { if (this.mutex.get(goalId) === next) this.mutex.delete(goalId); }
   }
 
-  /** 批准当前计划 → 解锁驻留，启动 execute。false = 非 pending / 终态 / 未知 goal。 */
-  async approvePlan(goalId: string, approvalId?: string): Promise<boolean> {
+  /**
+   * 批准当前计划 → 解锁驻留，启动 execute。false = 非 pending / 终态 / 未知 goal。
+   * 内容已变（waves 或 GoalEval 被改写）→ 抛 `StalePlanError`（HTTP 409 stale_plan）。
+   */
+  async approvePlan(
+    goalId: string,
+    approvalId?: string,
+    opts?: { planHash?: string; evalHash?: string },
+  ): Promise<boolean> {
     return this.withGoalMutex(goalId, async () => {
       const found = this.findState(goalId);
       if (!found) return false;
       const state = loadGoalState(found.mafwDir, goalId)!;
       if (isTerminalState(state) || state.planApproval?.status !== 'pending') return false;
-      if (!this.matchesApproval(state.planApproval, approvalId)) return false;
+      const approval = state.planApproval;
+      if (!this.matchesApproval(approval, approvalId)) return false;
+      // 批准必须绑定"用户实际看到的这一版"：内容变了就拒绝并对齐哈希。
+      const revision = approval.revision ?? effectiveRevision(state);
+      this.assertApprovalFresh(
+        found.mafwDir,
+        goalId,
+        approval,
+        this.readPlanHashes(state, goalId, revision),
+        opts,
+      );
       const decidedAt = new Date().toISOString();
       writeGoalState(found.mafwDir, goalId, {
-        planApproval: { ...state.planApproval, status: 'approved', decidedAt },
+        planApproval: { ...approval, status: 'approved', decidedAt },
         nextAction: 'NEXT_execute',
       });
       this.deps.emitPhaseTransition({
@@ -806,10 +1092,8 @@ export class NodeDriver {
     if (!ns) { await this.advance(goalId); return; }
 
     // ① 产物优先：gateway 死亡期间节点可能已完成——直接走完成判定兑现
-    const round = effectiveRound(state);
     const revision = ns.revision ?? effectiveRevision(state);
-    const a = nodeArtifactPaths(mafwDir, goalId, round, { revision });
-    const artifact = ns.phase === 'plan' ? a.waves : ns.phase === 'execute' ? a.receipt : a.review;
+    const artifact = this.inflightArtifactPath(mafwDir, goalId, state, ns, revision);
     if (fs.existsSync(artifact)) {
       await this.completeNode(goalId, ns.id);
       return;

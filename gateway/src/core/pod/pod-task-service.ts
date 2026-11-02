@@ -55,6 +55,11 @@ export interface PodTaskServiceDeps {
   notify(podId: string): void;
   /** 计划文件定位（编辑计划任务用）；缺省时 editPlanTask 全部 404。 */
   resolveGoalPlan?(goalId: string): PodGoalPlanRef | null;
+  /**
+   * Task 13：计划内容被改写（编辑/新增/删除）→ 刷新或失效 planApproval 的绑定哈希。
+   * 缺省不接线；approve 侧仍会按 hash 复核，所以这里 fail-open 不会放过旧批准。
+   */
+  invalidatePlanApproval?(goalId: string): void;
 }
 
 const TERMINAL_ACTIONS = new Set(['COMPLETED', 'FAILED', 'CANCELLED', 'ARCHIVED']);
@@ -234,6 +239,7 @@ export class PodTaskService {
     if (!next) throw new PodError(404, `task ${task.externalTaskId} not found in plan`);
 
     this.writePlan(wavesPath, next);
+    this.invalidatePlanApproval(task.goalId);
     this.projectWaves(podId, task.goalId, next as WavePlan);
     this.deps.notify(podId);
     return withKind(this.deps.store.getTask(taskId)!);
@@ -259,6 +265,7 @@ export class PodTaskService {
     if (!added) throw new PodError(404, `wave not found or plan empty: ${waveId ?? '(last)'}`);
 
     this.writePlan(wavesPath, added.plan);
+    this.invalidatePlanApproval(goalId);
     this.migrateLegacyTaskKeys(podId, goalId);
     this.projectWaves(podId, goalId, added.plan as WavePlan);
     this.deps.notify(podId);
@@ -283,6 +290,7 @@ export class PodTaskService {
     if (!deleted) throw new PodError(404, `task ${task.externalTaskId} not found in plan`);
 
     this.writePlan(wavesPath, deleted.plan);
+    this.invalidatePlanApproval(task.goalId);
     this.migrateLegacyTaskKeys(podId, task.goalId);
     this.projectWaves(podId, task.goalId, deleted.plan as WavePlan);
     this.deps.store.deleteTask(taskId);
@@ -308,6 +316,12 @@ export class PodTaskService {
     const tmp = `${wavesPath}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(plan, null, 2), 'utf-8');
     fs.renameSync(tmp, wavesPath);
+  }
+
+  /** Task 13：计划改写后让批准绑定失效（fail-open——approve 侧还会按 hash 复核）。 */
+  private invalidatePlanApproval(goalId: string | null): void {
+    if (!goalId) return;
+    try { this.deps.invalidatePlanApproval?.(goalId); } catch { /* fail-open */ }
   }
 
   /** legacy 投影 key（`wave:<id>:task:<index>`）→ 稳定 id key；幂等。 */

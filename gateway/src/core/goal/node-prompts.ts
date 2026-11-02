@@ -1,21 +1,52 @@
 // gateway/src/core/goal/node-prompts.ts
 // 节点用户 prompt 模板——替换旧 '/skill mafw-*' 裸文本（opencode 无对应物）。
 // 角色纪律在身份 systemPrompt（Task 4）；这里只注入每 goal/loop 的实例上下文与产物契约。
+import * as fs from 'fs';
 import * as path from 'path';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
 import type { FailureClass } from './failure-class';
-import type { GoalEvalCondition } from './goal-eval';
+import type { GoalEval, GoalEvalCondition } from './goal-eval';
+import { validateGoalEval } from './goal-eval';
 
 const TASK_TYPES = ['feature', 'bugfix', 'refactor', 'research', 'docs', 'test', 'other'] as const;
+
+/** Goal Eval（spec §7.1）：Plan 的第二条腿，和 waves 同属一个 PlanPackage。 */
+const GOAL_EVAL_SCHEMA = {
+  type: 'object',
+  required: ['outcome', 'conditions'],
+  properties: {
+    outcome: { type: 'string' },
+    conditions: {
+      type: 'array',
+      minItems: 1,
+      items: {
+        type: 'object',
+        required: ['id', 'statement', 'required', 'evidence', 'method'],
+        properties: {
+          id: { type: 'string' },
+          statement: { type: 'string' },
+          required: { type: 'boolean' },
+          evidence: { type: 'string' },
+          method: { type: 'string' },
+        },
+      },
+    },
+    failureConditions: { type: 'array', items: { type: 'string' } },
+    constraints: { type: 'array', items: { type: 'string' } },
+    nonGoals: { type: 'array', items: { type: 'string' } },
+    mapping: { type: 'object' },
+  },
+} as const;
 
 const PLAN_OUTPUT_SCHEMA = {
   anyOf: [
     {
       type: 'object',
-      required: ['status', 'taskType', 'waves'],
+      required: ['status', 'taskType', 'waves', 'goalEval'],
       properties: {
         status: { const: 'ready' },
         taskType: { type: 'string', enum: [...TASK_TYPES] },
+        goalEval: GOAL_EVAL_SCHEMA,
         waves: {
           type: 'array',
           minItems: 1,
@@ -175,6 +206,64 @@ export function nodeArtifactPaths(
   };
 }
 
+/**
+ * Goal Eval 产物路径（PlanPackage 的第二条腿，与 waves 同一 revision）：
+ * - revision 1：`<mafw>/goals/<goalId>/goal-eval.json`（goal-dir 工作区约定，
+ *   与 `pod-result.goalEvalPathFor` / ContextManifest 的清单一致）；
+ * - revision ≥ 2：`<mafw>/revisions/<goalId>/rev-<n>/goal-eval.json`（与 waves 同目录，
+ *   每个 revision 的评估契约互不覆盖）。
+ */
+export function goalEvalArtifactPath(mafwDir: string, goalId: string, revision?: number): string {
+  const rev = normalizeArtifactRevision(revision);
+  if (rev > 1) return path.join(goalArtifactRoot(mafwDir, goalId, rev), 'goal-eval.json');
+  // goalId 直接成为目录名：拒绝 `..`/分隔符，标点折叠为 `_`。
+  const cleaned = String(goalId ?? '').replace(/[^A-Za-z0-9._-]/g, '_');
+  const safe = /[A-Za-z0-9]/.test(cleaned) ? cleaned : '_';
+  return path.join(mafwDir, 'goals', safe, 'goal-eval.json');
+}
+
+export interface GoalEvalArtifactRead {
+  /** 合法且已规范化的 Goal Eval；缺失或非法时为 null。 */
+  goalEval: GoalEval | null;
+  /** 产物存在但不可解析/不合法时的原因（消费方据此 fail closed，绝不静默当没有）。 */
+  error: string | null;
+  /** 权威路径（GET /plan 展示与排错用）。 */
+  path: string;
+}
+
+/**
+ * 读取某个 revision 的 Goal Eval：**旁文件优先**（评审/结果页读的就是它），
+ * 文件不存在时回退到 waves 产物里内嵌的 `goalEval`（计划刚交卷、driver 还没落盘时）。
+ * 存在但非法一律返回 error——绝不退化成"没有 eval"（否则必需条件门会被静默绕过）。
+ */
+export function readGoalEvalArtifact(
+  mafwDir: string,
+  goalId: string,
+  revision?: number,
+  planDoc?: unknown,
+): GoalEvalArtifactRead {
+  const target = goalEvalArtifactPath(mafwDir, goalId, revision);
+  let raw: unknown;
+  let present = false;
+  if (fs.existsSync(target)) {
+    present = true;
+    try {
+      raw = JSON.parse(fs.readFileSync(target, 'utf-8'));
+    } catch {
+      return { goalEval: null, error: `goal eval is not valid JSON: ${target}`, path: target };
+    }
+  } else if (planDoc && typeof planDoc === 'object' && (planDoc as any).goalEval !== undefined) {
+    present = true;
+    raw = (planDoc as any).goalEval;
+  }
+  if (!present) return { goalEval: null, error: null, path: target };
+  try {
+    return { goalEval: validateGoalEval(raw), error: null, path: target };
+  } catch (err: any) {
+    return { goalEval: null, error: `goal eval is invalid: ${err?.message ?? err}`, path: target };
+  }
+}
+
 export interface NodePromptCtx {
   goalId: string;
   projectDir: string;
@@ -261,12 +350,14 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
       ctx.counterfactualBlock || '',
       ctx.planFeedback
         ? `上一版计划被驳回，用户意见（本轮计划必须消化）：\n${ctx.planFeedback}` : '',
-      `任务：阅读 charter 与仓库现状，产出 wave 执行计划，写入 ${a.waves}。`,
+      `任务：阅读 charter 与仓库现状，产出 wave 执行计划 + Goal Eval，写入 ${a.waves}。`,
       ctx.round > 1 && ctx.reviewFeedback
         ? `上一轮 review 指出的问题（本轮计划必须消化）：\n${ctx.reviewFeedback}` : '',
       '',
       `产物契约（必须是合法 JSON，写入 ${a.waves}）：`,
-      '{"taskType":"feature|bugfix|refactor|research|docs|test|other","waves":[{"id":"w1","title":"...","tasks":[{"title":"...","acceptance":["可验证标准 1","可验证标准 2"]}],"riskNote":"此 wave 最可能的失败 + 对应缓解"}],"status":"ready"}',
+      '{"taskType":"feature|bugfix|refactor|research|docs|test|other","waves":[{"id":"w1","title":"...","tasks":[{"title":"...","acceptance":["可验证标准 1","可验证标准 2"]}],"riskNote":"此 wave 最可能的失败 + 对应缓解"}],"goalEval":{"outcome":"...","conditions":[{"id":"g1","statement":"...","required":true,"evidence":"证据形态","method":"怎么验"}],"failureConditions":["..."],"constraints":["..."],"nonGoals":["..."],"mapping":{"g1":{"tasks":["w1-t1"],"probes":[],"artifacts":["路径"]}}},"status":"ready"}',
+      `Goal Eval 回答"怎样证明做对了"，和 waves 同属一份计划产物（driver 会把它写到 ${goalEvalArtifactPath(ctx.mafwDir, ctx.goalId, revision)}，评审按它判定）。`,
+      '至少一条 required 条件；每条条件必须有 evidence 与 method；mapping 只能引用真实条件 id，任务只能映射到本计划里存在的 taskId。',
       '每个任务尽量给 `acceptance`（2–4 条、可机械验证，如"npm test -- pod 全绿"、"receipts 含 artifact 路径"）；',
       '字符串形式的任务也接受，但没有 acceptance 时 review 只能自证。',
       '顶层 taskType 与每 wave 的 riskNote 为 D4b 反事实要求（判断任务类型；对照历史失败模式为每个 wave 预设缓解）。',

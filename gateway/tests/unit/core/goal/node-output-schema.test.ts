@@ -1,6 +1,18 @@
 import { nodeOutputSchema } from '../../../../src/core/goal/node-prompts';
 import { validateJsonSchema } from '../../../../src/runtime/json-schema';
 
+/** Task 13：plan 交卷是 PlanPackage（waves + goalEval）。 */
+function goalEval() {
+  return {
+    outcome: 'goal met',
+    conditions: [{ id: 'g1', statement: 'works', required: true, evidence: 'tests', method: 'npm test' }],
+    failureConditions: [],
+    constraints: [],
+    nonGoals: [],
+    mapping: { g1: { tasks: ['w1-t1'] } },
+  };
+}
+
 describe('nodeOutputSchema', () => {
   it('plan ready passes', () => {
     const spec = nodeOutputSchema('plan');
@@ -8,7 +20,17 @@ describe('nodeOutputSchema', () => {
     expect(validateJsonSchema(spec.schema, {
       status: 'ready', taskType: 'feature',
       waves: [{ id: 'w1', title: 't', tasks: ['a'], riskNote: 'r' }],
+      goalEval: goalEval(),
     })).toEqual([]);
+  });
+
+  it('plan ready without goalEval is rejected', () => {
+    const spec = nodeOutputSchema('plan');
+    const errs = validateJsonSchema(spec.schema, {
+      status: 'ready', taskType: 'feature',
+      waves: [{ id: 'w1', title: 't', tasks: ['a'], riskNote: 'r' }],
+    });
+    expect(errs.some((e) => e.path.includes('goalEval'))).toBe(true);
   });
 
   it('plan need_clarification passes', () => {
@@ -21,6 +43,7 @@ describe('nodeOutputSchema', () => {
     const errs = validateJsonSchema(spec.schema, {
       status: 'ready', taskType: 'feature',
       waves: [{ id: 'w1', title: 't', tasks: [] }],
+      goalEval: goalEval(),
     });
     expect(errs.some((e) => e.path.includes('riskNote'))).toBe(true);
     expect(validateJsonSchema(spec.schema, { status: 'need_clarification', ambiguities: [] }).length).toBeGreaterThan(0);

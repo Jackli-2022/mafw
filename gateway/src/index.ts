@@ -12,7 +12,7 @@ import { log } from './core/utils/logger';
 import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
 import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
-import { ensureGoalState, isTerminalState, loadGoalState } from './core/goal/state-v3';
+import { ensureGoalState, effectiveRevision, isTerminalState, loadGoalState } from './core/goal/state-v3';
 import { isTaskType } from './orchestration/capability-ledger';
 import { resolveGoalDir } from './core/goal/starter';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
@@ -185,6 +185,7 @@ import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permi
 import { SessionConfigService, SessionConfigError } from './core/session-config';
 import { archiveWorktree } from './core/tools/archive-worktree.js';
 import { resolveNodeModel } from './core/goal/node-model';
+import { nodeArtifactPaths } from './core/goal/node-prompts';
 import { CheckpointService } from './core/checkpoint/checkpoint-service';
 import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { FileHistoryService } from './core/file-history/file-history-service';
@@ -1105,6 +1106,20 @@ class MafwScheduler {
         if (!ids) return;
         this.podMessageDelivery?.commitDelivered(ids, sessionId);
         this.podPendingHandoffs.delete(sessionId);
+      },
+      // Task 12/13：plan 复用 Tech Lead 讨论会话（同一 revision 的讨论 → 计划连续性）。
+      // 同步、非创建式查找——只有当前 revision 已有活跃讨论租约才命中；讨论回合与
+      // 计划回合的 idle 竞态由 driver 的 reuse idle 宽容兜底。
+      existingNodeSession: (goalId: string, node: 'plan' | 'execute' | 'review', revision: number) => {
+        if (node !== 'plan') return null;
+        const podId = this.podService?.getPodIdForGoal(goalId);
+        if (!podId) return null;
+        const member = this.podStore?.getMemberByRole(podId, 'tech_lead');
+        if (!member) return null;
+        const lease = this.podStore?.getActiveScopedSession({
+          podId, memberId: member.id, goalId, revision, kind: 'discussion',
+        });
+        return lease?.sessionId ?? null;
       },
     });
 
@@ -3860,11 +3875,14 @@ class MafwScheduler {
         const state = loadGoalState(found.info.mafwDir, goalId);
         if (!state) return null;
         return {
-          wavesPath: state.wavePlanPath ?? path.join(found.info.mafwDir, 'waves.json'),
+          wavesPath: state.wavePlanPath
+            ?? nodeArtifactPaths(found.info.mafwDir, goalId, state.round, { revision: effectiveRevision(state) }).waves,
           nextAction: state.nextAction,
           nodeSession: state.nodeSession,
         };
       },
+      // Task 13：计划任务被编辑/新增/删除 → 批准绑定的内容版本失效。
+      invalidatePlanApproval: (goalId) => { this.goalDriver?.refreshPlanApproval(goalId); },
     });
     this.podMessageService = new PodMessageService({
       store: this.podStore,
@@ -5973,7 +5991,7 @@ class MafwScheduler {
                 ?? this.findGoalStatePath(goalId)?.info.mafwDir;
               return mafwDir ? loadGoalState(mafwDir, goalId) : null;
             },
-            approvePlan: (g, approvalId) => this.goalDriver!.approvePlan(g, approvalId),
+            approvePlan: (g, approvalId, opts) => this.goalDriver!.approvePlan(g, approvalId, opts),
             rejectPlan: (g, feedback, approvalId) => this.goalDriver!.rejectPlan(g, feedback, approvalId),
           })) return;
         }

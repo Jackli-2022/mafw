@@ -90,6 +90,10 @@ export interface GoalStateV3 {
     round: number;
     /** 产生该计划的 Goal revision（旧状态缺字段 → effectiveRevision(state)）。 */
     revision?: number;
+    /** Task 13 内容绑定：批准时 waves 的规范化哈希（缺省 = 旧版计划，未绑定内容）。 */
+    planHash?: string | null;
+    /** Task 13 内容绑定：GoalEval 的规范化哈希；旧版计划没有 eval → null。 */
+    evalHash?: string | null;
   };
   /** W1 最近一次驳回反馈——注入下一版 plan prompt；plan 成功兑现时清除。 */
   planFeedback?: string | null;

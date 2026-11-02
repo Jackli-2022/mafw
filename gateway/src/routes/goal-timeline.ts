@@ -1,7 +1,7 @@
 // gateway/src/routes/goal-timeline.ts
 import * as http from 'http';
 import * as path from 'path';
-import { GoalStateV3 } from '../core/goal/state-v3';
+import { GoalStateV3, effectiveRevision } from '../core/goal/state-v3';
 import { nodeArtifactPaths } from '../core/goal/node-prompts';
 
 export interface TimelineDeps {
@@ -33,7 +33,9 @@ export async function handleGoalTimeline(
     const state = deps.loadState(goalId);
     if (!state) { json(res, 404, { error: 'goal state not found' }); return true; }
     const request = deps.loadRequest(goalId);
-    const a = nodeArtifactPaths(state.mafwDir, goalId, state.round);
+    // Task 13 prerequisite：产物路径必须带 revision（rev ≥ 2 在隔离目录，否则 chip 指向旧版）。
+    const revision = effectiveRevision(state);
+    const a = nodeArtifactPaths(state.mafwDir, goalId, state.round, { revision });
     const nodes = (deps.listNodeRuns(goalId) ?? []).map((r) => ({
       runId: r.id, loop: r.loop, node: r.node, attempt: r.attempt, status: r.status,
       sessionId: r.session_id, startedAt: r.started_at, finishedAt: r.finished_at,
