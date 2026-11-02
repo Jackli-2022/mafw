@@ -6,17 +6,21 @@
  * 约定：
  *  - 本文件是唯一事实源；gateway 侧镜像由 `npm run sync:view-dto` 生成到
  *    `gateway/src/runtime/view-dto.generated.ts`（禁止手改镜像）。
+ *  - `contract/view-dto.json` 是**生成物**：唯一写入入口是
+ *    `npm run emit:view-dto`（`packages/gateway-sdk/scripts/emit-view-dto.ts`），
+ *    数据来自本文件的 `VIEW_DTO_FIELD_INVENTORY`，字段与接口的对应关系由
+ *    `view-dto.pin.ts` 在编译期钉扎。
  *  - 只承载中性字段：runtime 原生形状由 Ingress 翻译，客户端不读原生字段
  *    （不读 opencode `{info,parts}` / `patterns` / `info.revert`，也不读 pi 的
  *    `toolName` / `stopReason` 原生枚举）。
  *  - `native` 不作为通用原生载荷穿过 View DTO；确需 opaque 扩展时走受控的
- *    `extensions` 槽，并列入 `contract/view-dto.json`。
- *  - 守卫刻意宽松（结构校验，非语义校验）：部件只要求 id+type 为 string，消息
- *    只要求 role 合法 + content（若存在）为部件数组——未知 part 类型仍可透传，
- *    语义由生产方（各家 Ingress 翻译）保证，守卫只防形状漂移。
+ *    `extensions` 槽，并列入 `VIEW_DTO_FIELD_INVENTORY`。
+ *  - 守卫诚实：`isMafwPart` / `isMafwMessage` 只证明边界形状
+ *    （`MafwPartShape` / `MafwMessageShape`），不谎称已收窄到已知变体联合；
+ *    需要已知变体语义时显式调用 `narrowMafwPart` / `narrowMafwMessage`。
  */
 
-/** 契约版本（与 `contract/view-dto.json` 的 contractVersion 保持一致）。 */
+/** 契约版本（与生成的 `contract/view-dto.json` 的 contractVersion 保持一致）。 */
 export const VIEW_DTO_CONTRACT_VERSION = '2026.11.0' as const
 
 /** 回合终态（MAFW 中性词汇；与 session-ui `util/stop-reason.ts` 同源）。 */
@@ -101,8 +105,8 @@ export interface MafwPartBase {
 /**
  * 消息部件判别联合（现役 part 全覆盖）。
  *
- * 未知 part 类型不入联合——边界守卫仍放行（见文件头注释），消费方按
- * `default` 分支兜底；新增现役 part 时扩展本联合，不改守卫语义。
+ * 未知 part 类型不入联合——边界守卫仍放行（`isMafwPart` 只证明形状），
+ * 消费方要已知变体语义时用 `narrowMafwPart` 显式收窄。
  */
 export type MafwPart =
   | (MafwPartBase & {
@@ -221,6 +225,25 @@ export interface MafwSession {
   extensions?: Record<string, unknown>
 }
 
+/**
+ * 检查点只读视图（spec §5.1）。
+ *
+ * 只暴露中性事实：`filesAvailable` 表达该边界是否存在文件快照（UI 不用
+ * `snapshotTree`/`kind` 反推动作），对象级恢复动作由 Experience 给出。
+ */
+export interface MafwCheckpoint {
+  id: string
+  sessionID: string
+  /** 历史保留边界（含该消息）。 */
+  anchorMessageID: string
+  kind: 'auto' | 'manual'
+  createdAt: string
+  /** 该边界是否存在文件快照（false = 只能恢复对话）。 */
+  filesAvailable: boolean
+  /** 创建时不在版本控制内的文件数量（restore 残留报告基线；不暴露路径）。 */
+  untrackedCount?: number
+}
+
 export interface MafwModel {
   id: string
   name: string
@@ -327,29 +350,158 @@ export interface MafwBackgroundJob {
   extensions?: Record<string, unknown>
 }
 
-/** 契约必填字段清单（`contract/view-dto.json` 的 TypeScript 投影）。 */
-export const VIEW_DTO_REQUIRED_FIELDS: Record<string, readonly string[]> = {
-  message: ['role'],
-  part: ['id', 'type'],
-  model: ['id', 'name'],
-  session: ['id', 'status'],
-  diff: ['file'],
-  provider: ['id', 'name', 'models'],
-  agent: ['id', 'label', 'source', 'selectable'],
-  permission: ['id', 'sessionID', 'kind', 'targets'],
-  question: ['id', 'sessionID', 'questions'],
-  background: ['id', 'source', 'kind', 'status', 'sessionID'],
+/**
+ * 单类 DTO 的字段清单。
+ *
+ * `required` 是 `VIEW_DTO_REQUIRED_FIELDS` 的数据来源；`fields` 是全部顶层
+ * 字段（含可选，用于 golden/契约消费方）；`variants` 只用于判别联合
+ * （部件各变体自己的字段）。
+ */
+export interface ViewDtoFieldSpec {
+  readonly required: readonly string[]
+  readonly fields: readonly string[]
+  readonly variants?: Record<string, readonly string[]>
 }
 
-/** 部件结构守卫：id 与 type 均为 string 即视为合法（透传语义，见文件头注释）。 */
-export function isMafwPart(v: unknown): v is MafwPart {
+/** 契约字段清单（`contract/view-dto.json` 的唯一数据源）。 */
+export const VIEW_DTO_FIELD_INVENTORY = {
+  message: {
+    required: ['role'],
+    fields: [
+      'id', 'sessionID', 'role', 'parentID', 'content', 'time',
+      'model', 'agent', 'stopReason', 'summary', 'error', 'extensions',
+    ],
+  },
+  part: {
+    required: ['id', 'type'],
+    fields: ['id', 'sessionID', 'messageID', 'signature', 'extensions', 'type'],
+    variants: {
+      text: ['text', 'synthetic', 'time'],
+      reasoning: ['text', 'synthetic', 'time'],
+      tool: ['callID', 'tool', 'toolClass', 'canonicalTool', 'state'],
+      file: ['mime', 'url', 'filename', 'source'],
+      'step-start': ['time'],
+      'step-finish': ['reason', 'cost', 'tokens', 'time'],
+      compaction: ['auto', 'overflow'],
+      agent: ['name', 'source'],
+      'data-*': ['data', 'transient'],
+    },
+  },
+  model: {
+    required: ['id', 'name'],
+    fields: ['id', 'name', 'providerID', 'contextLimit', 'outputLimit', 'extensions'],
+  },
+  session: {
+    required: ['id', 'status'],
+    fields: [
+      'id', 'status', 'title', 'projectID', 'directory', 'parentID', 'depth',
+      'agent', 'model', 'time', 'reverted', 'summary', 'extensions',
+    ],
+  },
+  checkpoint: {
+    required: ['id', 'sessionID', 'anchorMessageID', 'kind', 'createdAt', 'filesAvailable'],
+    fields: [
+      'id', 'sessionID', 'anchorMessageID', 'kind', 'createdAt',
+      'filesAvailable', 'untrackedCount',
+    ],
+  },
+  diff: {
+    required: ['file'],
+    fields: ['file', 'patch', 'additions', 'deletions', 'status'],
+  },
+  provider: {
+    required: ['id', 'name', 'models'],
+    fields: ['id', 'name', 'models', 'connected', 'extensions'],
+  },
+  agent: {
+    required: ['id', 'label', 'source', 'selectable'],
+    fields: [
+      'id', 'label', 'description', 'source', 'selectable', 'mode',
+      'model', 'extensions',
+    ],
+  },
+  permission: {
+    required: ['id', 'sessionID', 'kind', 'targets'],
+    fields: [
+      'id', 'sessionID', 'kind', 'targets', 'suggestedRule', 'tool',
+      'time', 'extensions',
+    ],
+  },
+  question: {
+    required: ['id', 'sessionID', 'questions'],
+    fields: ['id', 'sessionID', 'questions', 'tool', 'time', 'extensions'],
+  },
+  background: {
+    required: ['id', 'source', 'kind', 'status', 'sessionID'],
+    fields: [
+      'id', 'source', 'kind', 'status', 'sessionID', 'title', 'command',
+      'runtimeShellID', 'taskID', 'childSessionID', 'time', 'cursor',
+      'exitCode', 'extensions',
+    ],
+  },
+} as const satisfies Record<string, ViewDtoFieldSpec>
+
+/** 契约必填字段清单（`VIEW_DTO_FIELD_INVENTORY.required` 的 TypeScript 投影）。 */
+export const VIEW_DTO_REQUIRED_FIELDS: Record<string, readonly string[]> = Object.fromEntries(
+  Object.entries(VIEW_DTO_FIELD_INVENTORY).map(
+    ([name, spec]) => [name, spec.required] as [string, readonly string[]],
+  ),
+)
+
+/**
+ * 契约 JSON 数据源（`npm run emit:view-dto` 用它写出
+ * `packages/gateway-sdk/contract/view-dto.json`；测试用它做 freshness 对比）。
+ */
+export function viewDtoContract(): {
+  contractVersion: string
+} & typeof VIEW_DTO_FIELD_INVENTORY {
+  return { contractVersion: VIEW_DTO_CONTRACT_VERSION, ...VIEW_DTO_FIELD_INVENTORY }
+}
+
+/**
+ * 部件边界形状：守卫能证明的最小事实（`id`/`type` 为 string），其余字段未知。
+ *
+ * 额外字段用索引签名诚实表达（不是声明 `native` 作为契约字段——那是被禁止的
+ * 通用原生载荷；这里只是承认「未知字段可能存在，消费方不得直接信任」）。
+ */
+export interface MafwPartShape {
+  id: string
+  type: string
+  sessionID?: string
+  messageID?: string
+  signature?: string
+  extensions?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+/** 消息边界形状：`role` 合法、`content`（若存在）由合法部件形状组成。 */
+export interface MafwMessageShape {
+  role: 'user' | 'assistant'
+  content?: MafwPartShape[]
+  id?: string
+  sessionID?: string
+  [key: string]: unknown
+}
+
+const PART_STATUSES: ReadonlySet<string> = new Set([
+  'pending',
+  'running',
+  'completed',
+  'error',
+])
+
+/**
+ * 部件结构守卫：只证明边界形状（`MafwPartShape`），不谎称收窄到 `MafwPart`。
+ * 已知变体语义（tool 的 callID/state 等）用 `narrowMafwPart` 显式校验。
+ */
+export function isMafwPart(v: unknown): v is MafwPartShape {
   if (v === null || typeof v !== 'object') return false
   const p = v as Record<string, unknown>
   return typeof p.id === 'string' && typeof p.type === 'string'
 }
 
-/** 消息结构守卫：role ∈ user|assistant；content（若存在）为部件数组。 */
-export function isMafwMessage(v: unknown): v is MafwMessage {
+/** 消息结构守卫：`role ∈ user|assistant`；`content`（若存在）为合法部件形状。 */
+export function isMafwMessage(v: unknown): v is MafwMessageShape {
   if (v === null || typeof v !== 'object') return false
   const m = v as Record<string, unknown>
   if (m.role !== 'user' && m.role !== 'assistant') return false
@@ -358,4 +510,61 @@ export function isMafwMessage(v: unknown): v is MafwMessage {
     if (!(m.content as unknown[]).every((p) => isMafwPart(p))) return false
   }
   return true
+}
+
+/**
+ * 显式收窄到已知部件变体（校验该变体的判别字段）。
+ *
+ * 未知类型（`retry` / `snapshot` / `patch` / `subtask` / 插件自定义 …）返回
+ * `null`——调用方决定丢弃、映射或按形状兜底渲染，而不是被守卫骗成已知变体。
+ * 可选展示字段（`synthetic` / `time` / `metadata` …）不做深度校验：它们不改变
+ * 变体判别，生产方由 Ingress 归一。
+ */
+export function narrowMafwPart(v: unknown): MafwPart | null {
+  if (!isMafwPart(v)) return null
+  const p = v
+  switch (p.type) {
+    case 'text':
+    case 'reasoning':
+      return typeof p.text === 'string' ? (p as unknown as MafwPart) : null
+    case 'tool': {
+      if (typeof p.callID !== 'string' || typeof p.tool !== 'string') return null
+      const state = p.state
+      if (state === null || typeof state !== 'object') return null
+      const status = (state as Record<string, unknown>).status
+      if (typeof status !== 'string' || !PART_STATUSES.has(status)) return null
+      return p as unknown as MafwPart
+    }
+    case 'file':
+      return typeof p.mime === 'string' && typeof p.url === 'string'
+        ? (p as unknown as MafwPart)
+        : null
+    case 'step-start':
+    case 'step-finish':
+    case 'compaction':
+      return p as unknown as MafwPart
+    case 'agent':
+      return typeof p.name === 'string' ? (p as unknown as MafwPart) : null
+    default:
+      return p.type.startsWith('data-') && 'data' in p
+        ? (p as unknown as MafwPart)
+        : null
+  }
+}
+
+/**
+ * 显式收窄到 `MafwMessage`：消息形状合法，且**全部**部件都能收窄到已知变体。
+ * 含未知部件类型的消息返回 `null`（调用方保留形状、逐部件处理）。
+ */
+export function narrowMafwMessage(v: unknown): MafwMessage | null {
+  if (!isMafwMessage(v)) return null
+  const m = v
+  if (m.content === undefined) return m as unknown as MafwMessage
+  const parts: MafwPart[] = []
+  for (const part of m.content) {
+    const known = narrowMafwPart(part)
+    if (!known) return null
+    parts.push(known)
+  }
+  return { ...(m as Record<string, unknown>), content: parts } as unknown as MafwMessage
 }

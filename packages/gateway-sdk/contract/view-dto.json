@@ -1,13 +1,238 @@
 {
   "contractVersion": "2026.11.0",
-  "messages": ["role"],
-  "parts": ["id", "type"],
-  "model": ["id", "name"],
-  "session": ["id", "status"],
-  "diff": ["file"],
-  "provider": ["id", "name", "models"],
-  "agent": ["id", "label", "source", "selectable"],
-  "permission": ["id", "sessionID", "kind", "targets"],
-  "question": ["id", "sessionID", "questions"],
-  "background": ["id", "source", "kind", "status", "sessionID"]
+  "message": {
+    "required": [
+      "role"
+    ],
+    "fields": [
+      "id",
+      "sessionID",
+      "role",
+      "parentID",
+      "content",
+      "time",
+      "model",
+      "agent",
+      "stopReason",
+      "summary",
+      "error",
+      "extensions"
+    ]
+  },
+  "part": {
+    "required": [
+      "id",
+      "type"
+    ],
+    "fields": [
+      "id",
+      "sessionID",
+      "messageID",
+      "signature",
+      "extensions",
+      "type"
+    ],
+    "variants": {
+      "text": [
+        "text",
+        "synthetic",
+        "time"
+      ],
+      "reasoning": [
+        "text",
+        "synthetic",
+        "time"
+      ],
+      "tool": [
+        "callID",
+        "tool",
+        "toolClass",
+        "canonicalTool",
+        "state"
+      ],
+      "file": [
+        "mime",
+        "url",
+        "filename",
+        "source"
+      ],
+      "step-start": [
+        "time"
+      ],
+      "step-finish": [
+        "reason",
+        "cost",
+        "tokens",
+        "time"
+      ],
+      "compaction": [
+        "auto",
+        "overflow"
+      ],
+      "agent": [
+        "name",
+        "source"
+      ],
+      "data-*": [
+        "data",
+        "transient"
+      ]
+    }
+  },
+  "model": {
+    "required": [
+      "id",
+      "name"
+    ],
+    "fields": [
+      "id",
+      "name",
+      "providerID",
+      "contextLimit",
+      "outputLimit",
+      "extensions"
+    ]
+  },
+  "session": {
+    "required": [
+      "id",
+      "status"
+    ],
+    "fields": [
+      "id",
+      "status",
+      "title",
+      "projectID",
+      "directory",
+      "parentID",
+      "depth",
+      "agent",
+      "model",
+      "time",
+      "reverted",
+      "summary",
+      "extensions"
+    ]
+  },
+  "checkpoint": {
+    "required": [
+      "id",
+      "sessionID",
+      "anchorMessageID",
+      "kind",
+      "createdAt",
+      "filesAvailable"
+    ],
+    "fields": [
+      "id",
+      "sessionID",
+      "anchorMessageID",
+      "kind",
+      "createdAt",
+      "filesAvailable",
+      "untrackedCount"
+    ]
+  },
+  "diff": {
+    "required": [
+      "file"
+    ],
+    "fields": [
+      "file",
+      "patch",
+      "additions",
+      "deletions",
+      "status"
+    ]
+  },
+  "provider": {
+    "required": [
+      "id",
+      "name",
+      "models"
+    ],
+    "fields": [
+      "id",
+      "name",
+      "models",
+      "connected",
+      "extensions"
+    ]
+  },
+  "agent": {
+    "required": [
+      "id",
+      "label",
+      "source",
+      "selectable"
+    ],
+    "fields": [
+      "id",
+      "label",
+      "description",
+      "source",
+      "selectable",
+      "mode",
+      "model",
+      "extensions"
+    ]
+  },
+  "permission": {
+    "required": [
+      "id",
+      "sessionID",
+      "kind",
+      "targets"
+    ],
+    "fields": [
+      "id",
+      "sessionID",
+      "kind",
+      "targets",
+      "suggestedRule",
+      "tool",
+      "time",
+      "extensions"
+    ]
+  },
+  "question": {
+    "required": [
+      "id",
+      "sessionID",
+      "questions"
+    ],
+    "fields": [
+      "id",
+      "sessionID",
+      "questions",
+      "tool",
+      "time",
+      "extensions"
+    ]
+  },
+  "background": {
+    "required": [
+      "id",
+      "source",
+      "kind",
+      "status",
+      "sessionID"
+    ],
+    "fields": [
+      "id",
+      "source",
+      "kind",
+      "status",
+      "sessionID",
+      "title",
+      "command",
+      "runtimeShellID",
+      "taskID",
+      "childSessionID",
+      "time",
+      "cursor",
+      "exitCode",
+      "extensions"
+    ]
+  }
 }
