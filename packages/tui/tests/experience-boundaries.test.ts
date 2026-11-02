@@ -9,7 +9,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // 共享注释剥离状态机（review C1：正则把 `// ... /*` 当块注释开头，整段失明）
-import { stripCommentsText, longBlankRuns, stripComments as stripCommentsState } from '../../../packages/test-shim/comment-strip'
+import { stripCommentsText, longBlankRuns, stripComments as stripCommentsState } from '../../../packages/test-shim/comment-strip.ts'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const SRC = join(HERE, '..', 'src')
