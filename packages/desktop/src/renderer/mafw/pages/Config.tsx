@@ -1535,7 +1535,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                                 </div>
                               </div>
                               <div class="mafw-ext-actions">
-                                <Show when={st === "needs_auth"}>
+                                <Show when={st === "needs_auth" && !!authCommandFor(experienceStore.state().actions, srv.name)}>
                                   <ButtonV2 variant="outline" size="small" onClick={() => void copyMcpAuthCommand(srv.name)}>复制认证命令</ButtonV2>
                                 </Show>
                                 <Show

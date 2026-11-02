@@ -792,6 +792,15 @@
       "verification": "attested",
       "implementation": "session.abort + messages",
       "consumer": "RunCoordinator",
+      "semantics": {
+        "requireBusy": {
+          "description": "abort swallows idle errors, so busy gate is required",
+          "values": [
+            "true",
+            "false"
+          ]
+        }
+      },
       "impact": "回合软暂停不可用",
       "presets": [
         "desktop"

@@ -22,7 +22,13 @@ export function projectExperienceActions(
 
   // 首批切片在后续任务点亮；这里保留唯一投影入口，避免前端自行推导。
   if (access?.can('branch.checkpoint')) {
-    actions['checkpoint.restore'] = { enabled: true };
+    const revert = access.semantics<{ files?: boolean; undo?: boolean }>('branch.revert');
+    actions['checkpoint.restore'] = _ctx.busy
+      ? { enabled: false, reason: 'busy' }
+      : {
+          enabled: true,
+          semantics: { files: revert.files !== false, undo: revert.undo === true },
+        };
   }
   if (access?.can('session.background')) {
     actions['session.background'] = { enabled: true };

@@ -241,6 +241,7 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     semantics: {
       'prompt.delivery.steer': { boundary: 'tool' },
       'branch.revert': { files: false, undo: false },
+      'branch.runState': { requireBusy: true },
     },
     capabilities: PI_CAPABILITIES,
     external: true,

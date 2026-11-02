@@ -21,14 +21,17 @@ export class RuntimeSurfaceError extends Error {
   }
 }
 
+const runtimeRefs = new WeakMap<RuntimeAccess, AgentRuntime>();
+
 export class RuntimeAccess {
   private readonly byId: Map<string, ContractSurface>;
   private readonly subject: ContractSubject;
 
   constructor(
-    private readonly rt: AgentRuntime,
+    rt: AgentRuntime,
     manifest: RuntimeContractManifest = buildRuntimeContractManifest(),
   ) {
+    runtimeRefs.set(this, rt);
     this.byId = new Map(manifest.surfaces.map((s) => [s.id, s]));
     this.subject = { rt, source: 'active' };
   }
@@ -36,7 +39,7 @@ export class RuntimeAccess {
   can(surfaceId: string): boolean {
     const surface = this.byId.get(surfaceId);
     if (!surface) throw new RuntimeSurfaceError(surfaceId, 'unknown surface');
-    const caps = (this.rt.capabilities ?? {}) as unknown as Record<string, unknown>;
+    const caps = (runtimeRefs.get(this)!.capabilities ?? {}) as unknown as Record<string, unknown>;
     if (surface.capability && !caps[surface.capability]) {
       return false;
     }
@@ -55,6 +58,13 @@ export class RuntimeAccess {
   }
 
   semantics<T = Record<string, unknown>>(surfaceId: string): T {
-    return ((this.rt.semantics?.[surfaceId] ?? {}) as T);
+    const surface = this.byId.get(surfaceId);
+    const raw = { ...((runtimeRefs.get(this)!.semantics?.[surfaceId] ?? {}) as Record<string, unknown>) };
+    // 激活期按 manifest 的允许值过滤；adapter 写错值不得进入前端。
+    for (const [key, value] of Object.entries(raw)) {
+      const allowed = surface?.semantics?.[key]?.values;
+      if (allowed && !allowed.includes(String(value))) delete raw[key];
+    }
+    return raw as T;
   }
 }

@@ -222,6 +222,9 @@ export const CORE_SURFACES: ContractSurface[] = [
     id: 'branch.runState', title: 'runState', domain: 'branch',
     obligation: 'gated', capability: 'runStateApi', verification: 'attested',
     implementation: 'session.abort + messages', consumer: 'RunCoordinator',
+    semantics: {
+      requireBusy: { description: 'abort swallows idle errors, so busy gate is required', values: ['true', 'false'] },
+    },
     impact: '回合软暂停不可用', presets: DESK,
   }),
 

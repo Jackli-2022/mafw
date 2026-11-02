@@ -85,6 +85,7 @@ export interface SendMessageDeps {
   formatCaptures?: (items: PendingCapture[]) => string
   /** W5a：runtime 是否接受 delivery:'steer'（opencode 2.1 实测为「回合结束后送达」）。 */
   steerApi?: () => boolean
+  steerBoundary?: () => "after-turn" | "tool" | "unspecified" | undefined
 }
 
 /**
@@ -95,6 +96,13 @@ export interface SendMessageDeps {
  * - runtime 不支持 steer → 本地队列（现状回归）。
  */
 export type BusyDelivery = "steer" | "gateway-queue" | "local-queue"
+
+/** 只按 Experience boundary 生成提示，不承诺打断。 */
+export function steerDeliveryHint(boundary?: string): string {
+  if (boundary === "tool") return "已插话：当前工具执行后优先送达"
+  if (boundary === "after-turn") return "已插话：本轮结束后优先送达"
+  return "已插话：稍后送达"
+}
 export function decideBusyDelivery(opts: { mode: "send" | "queue"; steerApi: boolean; hasMedia: boolean }): BusyDelivery {
   if (opts.hasMedia) return "local-queue"
   if (opts.mode === "queue") return "gateway-queue"
@@ -169,7 +177,9 @@ export function useSendMessage(deps: SendMessageDeps) {
             finishBusySend()
             // steer wire probe 实证：opencode 的 steer = 回合结束后优先送达——文案不承诺打断。
             showToastV2({
-              description: deliveryKind === "steer" ? "已插话：本轮结束后优先送达" : "已加入队列：本轮结束后发送",
+              description: deliveryKind === "steer"
+                ? steerDeliveryHint(deps.steerBoundary?.())
+                : "已加入队列：本轮结束后发送",
               duration: 2500,
             })
             return

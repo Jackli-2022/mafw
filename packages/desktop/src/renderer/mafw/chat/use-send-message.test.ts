@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { parseSlashShape, buildOptimisticParts, useSendMessage, decideBusyDelivery } from "./use-send-message"
+import { parseSlashShape, buildOptimisticParts, useSendMessage, decideBusyDelivery, steerDeliveryHint } from "./use-send-message"
 import { createInputHistory } from "../components/input-history"
+
+describe("steerDeliveryHint（Experience boundary）", () => {
+  test("after-turn 与 tool 使用不同提示，不承诺打断", () => {
+    expect(steerDeliveryHint("after-turn")).toContain("本轮结束后")
+    expect(steerDeliveryHint("tool")).toContain("工具")
+    expect(steerDeliveryHint(undefined)).toContain("稍后")
+  })
+})
 
 describe("decideBusyDelivery（W5a steer 语义选择）", () => {
   test("steer 支持 + 无媒体 + Enter → steer", () => {

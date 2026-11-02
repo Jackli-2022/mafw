@@ -929,6 +929,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     uploadMediaBinary,
     encodeFilePath,
     steerApi: () => experienceStore.isEnabled('prompt.steer'),
+    steerBoundary: () => experienceStore.action('prompt.steer')?.semantics?.boundary as any,
     pendingAnnotationCount: (sid) => pendingFor(sid).length,
     takeAnnotations: (sid) => takeForSend(sid),
     formatAnnotations: (items) => buildAnnotationBatch(items),
@@ -2509,7 +2510,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             messages={store.message[sidProp()] || []}
             parts={store.part}
 
-            caps={props.runtimeCaps}
+            checkpointAction={experienceStore.action("checkpoint.restore")}
             busy={sending() || store.session_status[sidProp()]?.type === "busy"}
             onClose={() => setCheckpointsOpen(false)}
             onRevert={revertTo}
@@ -2524,7 +2525,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           <div class="mafw-confirm-backdrop">
             <div class="mafw-confirm">
               <div class="mafw-confirm-title">确认回滚？</div>
-              <div class="mafw-confirm-text">{revertWarning(props.revertUndoEnabled === true, props.runtimeCaps?.diffApi === true)}</div>
+              <div class="mafw-confirm-text">{revertWarning(false, true)}</div>
               <div class="mafw-confirm-actions">
                 <ButtonV2 variant="ghost" size="small" onClick={() => setRevertConfirm(null)}>取消</ButtonV2>
                 <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" disabled={sending() || store.session_status[sidProp()]?.type === "busy"} onClick={doRevert}>确认回滚</ButtonV2>

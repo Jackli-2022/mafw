@@ -29,8 +29,8 @@ export async function handleSessionBackground(
   try {
     await rt.session.background({ sessionID: match[1] });
     json(res, 200, {});
-  } catch (err: any) {
-    json(res, 500, { error: err?.message ?? String(err) });
+  } catch {
+    json(res, 500, { error: 'background request failed' });
   }
   return true;
 }

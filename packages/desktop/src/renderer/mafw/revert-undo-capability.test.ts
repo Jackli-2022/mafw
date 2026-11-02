@@ -2,14 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-// opencode 2.1 的 revert 是 stage+commit，commit 后不可逆（无 unrevert）：
-// 能力位 revertUndoApi=false 时桌面不得再展示「撤销回滚」。
+// revert undo 语义由 Experience checkpoint action 提供；
+// 前端不得再直接读 runtime capabilities。
 describe("revert undo capability wiring", () => {
   const shell = readFileSync(join(import.meta.dirname, "MafwShell.tsx"), "utf8")
   const pane = readFileSync(join(import.meta.dirname, "components/ChatPane.tsx"), "utf8")
 
-  test("MafwShell 从 /api/runtime capabilities 推导并下传", () => {
-    expect(shell).toContain("rtCaps().revertUndoApi === true")
+  test("MafwShell 从 Experience checkpoint action 推导并下传", () => {
+    expect(shell).toContain("experienceStore.action(\"checkpoint.restore\")?.semantics?.undo")
     expect(shell).toContain("revertUndoEnabled={revertUndoEnabled()}")
   })
 

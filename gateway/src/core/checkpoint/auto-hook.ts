@@ -10,6 +10,7 @@
  */
 import type { SessionCheckpoint } from './checkpoint-service';
 import { parseUntrackedLines, planAutoCheckpoint } from './auto-recorder';
+import { RuntimeAccess } from '../../runtime/runtime-access';
 
 export interface AutoCheckpointHookDeps {
   runtime(): {
@@ -39,7 +40,9 @@ export async function runAutoCheckpoint(
   sessionID: string,
 ): Promise<SessionCheckpoint | null> {
   const rt = deps.runtime();
-  if (rt?.capabilities?.checkpointApi !== true) return null;
+  if (!rt) return null;
+  const access = (rt as any).access ?? new RuntimeAccess(rt as any);
+  if (!access.can('branch.checkpoint')) return null;
 
   // 内部 worker（turnCompress / curator / btw / media）不记录；**manager 是可见会话**，
   // 照常记录（设计明确）。历史 kv 角色表里的 manager 同样放行。

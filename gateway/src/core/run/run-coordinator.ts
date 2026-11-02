@@ -9,6 +9,7 @@
  */
 import { buildResumeBrief, composeResumePrompt } from './run-brief';
 import { RunStateError, type RunState, type RunStateService } from './run-state-service';
+import { RuntimeAccess } from '../../runtime/runtime-access';
 
 export interface RunCoordinatorDeps {
   runtime(): {
@@ -64,8 +65,10 @@ export class RunCoordinator {
 
   async suspend(sessionID: string, reason?: string): Promise<RunState> {
     const rt = this.deps.runtime();
-    if (!rt?.capabilities?.runStateApi || typeof rt.session.abort !== 'function') {
-      throw new RunStateError(503, "capability 'runStateApi' not available on this runtime");
+    if (!rt) throw new RunStateError(503, "runtime surface 'branch.runState' is not available");
+    const access: RuntimeAccess = (rt as any).access ?? new RuntimeAccess(rt as any);
+    if (!access.can('branch.runState') || typeof rt.session.abort !== 'function') {
+      throw new RunStateError(503, "runtime surface 'branch.runState' is not available");
     }
     if (this.pendingSuspend.has(sessionID)) {
       throw new RunStateError(409, 'suspend already in progress for this session');
@@ -73,9 +76,10 @@ export class RunCoordinator {
     if (this.deps.service.active(sessionID)) {
       throw new RunStateError(409, 'run already active for this session');
     }
-    // pi 的 abort 吞掉一切错误（pi-session.ts）——不能靠 abort 抛错区分"空闲"；
-    // pi 必须由 busy 事件闸门判定，否则空闲暂停会造出挂起 run（review #1）。
-    if (rt.name === 'pi' && !this.deps.isBusy(sessionID)) {
+    // 某些 runtime 的 abort 吞掉空闲错误，必须由 adapter 的语义声明
+    // requireBusy 决定是否用 busy 事件闸门，不能靠 runtime 名称分支。
+    const requireBusy = access.semantics<{ requireBusy?: boolean }>('branch.runState').requireBusy === true;
+    if (requireBusy && !this.deps.isBusy(sessionID)) {
       throw new RunStateError(409, 'session is not running');
     }
 

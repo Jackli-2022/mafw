@@ -1,5 +1,7 @@
 import { test, expect, mock, beforeEach } from 'bun:test';
 import { MafwClient } from './client';
+import { EXPERIENCE_VERSION } from './experience-contract';
+import { readFileSync } from 'node:fs';
 
 let fetchMock: ReturnType<typeof mock>;
 
@@ -19,6 +21,11 @@ test('experience.actions GETs the session-scoped action descriptor', async () =>
   expect(fetchMock.mock.calls[0][0]).toBe('http://gw:3000/api/experience/actions?sessionID=s1');
   expect(result.experienceVersion).toBe('2026.11.0');
   expect(result.sessionID).toBe('s1');
+});
+
+test('SDK version stays in sync with the generated contract', () => {
+  const file = new URL('../contract/experience-contract.json', import.meta.url);
+  expect(EXPERIENCE_VERSION).toBe(JSON.parse(readFileSync(file, 'utf8')).experienceVersion);
 });
 
 test('experience.actions without session omits the query string', async () => {

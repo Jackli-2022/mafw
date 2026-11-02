@@ -1001,7 +1001,7 @@ export function MafwShell() {
     loadRuntimeInfo()
   })
   const worktreeEnabled = () => rtCaps().worktreeApi === true
-  const revertUndoEnabled = () => rtCaps().revertUndoApi === true
+  const revertUndoEnabled = () => experienceStore.action("checkpoint.restore")?.semantics?.undo === true
   const createWorktreeSession = () => {
     const dir = currentProject()
     if (!dir) { showToastV2({ description: "未选择项目，无法开并行任务", duration: 2500 }); return }
@@ -1160,6 +1160,8 @@ export function MafwShell() {
       // Gateway restarts keep the same port; reconnect is the only reliable
       // signal that the cached session list is stale.
       sessionStore.invalidate()
+      experienceStore.invalidate()
+      void experienceStore.load(currentSessionID() || undefined)
       reconcileFlowCards()
       void reconcileSubagents()
       resetBackgroundCapability()

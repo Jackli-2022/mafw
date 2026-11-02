@@ -70,4 +70,17 @@ describe('RuntimeAccess', () => {
     expect(access.semantics('prompt.delivery.steer')).toEqual({ boundary: 'tool' });
     expect(access.semantics('branch.revert')).toEqual({});
   });
+
+  it('drops semantic values outside the manifest domain and keeps the raw runtime private', () => {
+    const rt = runtime({
+      semantics: {
+        'prompt.delivery.steer': { boundary: 'immediate' },
+        'branch.revert': { files: true, undo: 'no' },
+      },
+    });
+    const access = new RuntimeAccess(rt);
+    expect(access.semantics('prompt.delivery.steer')).toEqual({});
+    expect(access.semantics('branch.revert')).toEqual({ files: true });
+    expect((access as any).rt).toBeUndefined();
+  });
 });

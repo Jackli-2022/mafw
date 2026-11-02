@@ -26,6 +26,12 @@ describe('Experience contract', () => {
     }
   });
 
+  it('marks checkpoint restore busy when the session is running', () => {
+    const access = { can: (id: string) => id === 'branch.checkpoint', semantics: () => ({}) } as any;
+    const actions = projectExperienceActions(access, { sessionID: 's1', busy: true });
+    expect(actions['checkpoint.restore']).toMatchObject({ enabled: false, reason: 'busy' });
+  });
+
   it('projects MCP actions only when all required surfaces exist', () => {
     const access = {
       can: (id: string) => ['mcp.list', 'mcp.connect', 'mcp.disconnect', 'mcp.config.preview', 'mcp.config.apply', 'mcp.config.remove', 'mcp.config.restore'].includes(id),

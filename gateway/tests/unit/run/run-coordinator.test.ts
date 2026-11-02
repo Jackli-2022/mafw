@@ -58,6 +58,7 @@ function harness(opts: {
     runtime: () => ({
       name: opts.runtimeName ?? 'opencode',
       capabilities: opts.capabilities ?? { runStateApi: true },
+      semantics: opts.runtimeName === 'pi' ? { 'branch.runState': { requireBusy: true } } : undefined,
       session: {
         abort: async () => {
           calls.abort++;

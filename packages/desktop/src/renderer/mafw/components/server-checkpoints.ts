@@ -1,5 +1,6 @@
 // T2-1 Task 9: 服务端检查点 → 时间线行纯逻辑（overlay 服务端模式的数据面）。
 import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
+import { warningText } from "./experience-copy"
 
 export interface ServerCheckpointRow {
   checkpoint: SessionCheckpoint
@@ -8,6 +9,7 @@ export interface ServerCheckpointRow {
   filesAvailable: boolean
   filesLabel: "代码+对话" | "仅对话" | "仅代码"
   warningKey?: string
+  actions: NonNullable<SessionCheckpoint["actions"]>
 }
 
 function timeLabelOf(iso: string): string {
@@ -26,15 +28,21 @@ export function toServerRows(checkpoints: SessionCheckpoint[]): ServerCheckpoint
   return [...(checkpoints ?? [])]
     .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
     .map((checkpoint) => {
-      const filesAvailable = checkpoint.actions?.restoreFiles?.enabled
-        ?? (typeof checkpoint.snapshotTree === "string" && checkpoint.snapshotTree.length > 0)
+      const snapshotFiles = typeof checkpoint.snapshotTree === "string" && checkpoint.snapshotTree.length > 0
       const manual = checkpoint.kind === "manual"
+      const actions: NonNullable<SessionCheckpoint["actions"]> = checkpoint.actions ?? {
+        restoreConversation: { enabled: !manual },
+        restoreFiles: { enabled: snapshotFiles },
+        restoreBoth: { enabled: !manual && snapshotFiles },
+      }
+      const filesAvailable = actions.restoreFiles.enabled
       return {
         checkpoint,
         timeLabel: timeLabelOf(checkpoint.createdAt),
         kindBadge: manual ? "手动" : "自动",
         filesAvailable,
-        warningKey: checkpoint.actions?.restoreBoth?.warningKey,
+        warningKey: actions.restoreBoth.warningKey,
+        actions,
         // 手动检查点 = 当前文件状态快照（anchor 是末尾消息，opencode revert 会
         // 删掉它——不存在「回到现在」的会话恢复）→ 只提供代码恢复。
         filesLabel: manual ? "仅代码" : filesAvailable ? "代码+对话" : "仅对话",
@@ -54,9 +62,7 @@ export function restoreWarning(
   if (scope === "files") {
     return "只回滚文件到该检查点状态，对话保留；若工作区存在回合外手工修改，恢复会整体拒绝（不部分应用）。"
   }
-  return warningKey === "restore-conversation-files-undoable"
-    ? "截断对话并回滚文件；可通过撤销回滚恢复对话。"
-    : "撤回该消息及其后内容并回滚文件；该操作不可撤销，请确认已提交或备份。"
+  return warningText(warningKey, scope)
 }
 
 /** restore 响应 → overlay 顶部 notice 行；无残留且未降级 → null。 */

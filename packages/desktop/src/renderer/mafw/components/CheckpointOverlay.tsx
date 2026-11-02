@@ -3,7 +3,7 @@
 // 代码回滚仅在 runtime 提供完整、可安全反转的回合级 patch 时出现（2.1 从 snapshot 树计算）。
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
+import type { ActionDescriptor, CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
 import { checkpointsWithTurnDiffs, type Checkpoint } from "./checkpoint-model"
 import { canRewindCode, checkpointsToRewind, revertWarning } from "./checkpoint-revert"
 import { leftoverNotice, restoreWarning, toServerRows } from "./server-checkpoints"
@@ -14,12 +14,12 @@ export function CheckpointOverlay(props: {
   sessionID: string
   messages: any[]
   parts: Record<string, any[]>
-  caps?: Record<string, boolean>
+  checkpointAction?: ActionDescriptor
   busy?: boolean
   onClose: () => void
   onRevert: (messageID: string) => Promise<boolean>
   onRevertCode: (targets: Checkpoint[]) => Promise<boolean>
-  /** T2-1：服务端检查点模式（caps.checkpointApi=true 时启用）。 */
+  /** 服务端检查点模式由 Experience checkpoint action 或已加载的 server rows 决定。 */
   serverCheckpoints?: SessionCheckpoint[]
   onRestoreCheckpoint?: (checkpointId: string, scope: CheckpointScope) => Promise<CheckpointRestoreResult | null>
   onCreateCheckpoint?: () => Promise<boolean>
@@ -31,7 +31,7 @@ export function CheckpointOverlay(props: {
   const checkpoints = createMemo(() =>
     checkpointsWithTurnDiffs(props.messages, props.parts, Date.now(), turnFiles()),
   )
-  const serverMode = () => props.caps?.checkpointApi === true
+  const serverMode = () => props.checkpointAction?.enabled === true || (props.serverCheckpoints?.length ?? 0) > 0
   const serverRows = createMemo(() => toServerRows(props.serverCheckpoints ?? []))
   const [confirming, setConfirming] = createSignal<{ mode: "revert" | "code"; messageID: string } | null>(null)
   const [working, setWorking] = createSignal(false)
@@ -46,7 +46,7 @@ export function CheckpointOverlay(props: {
       setLoadingTurnFiles(false)
       return
     }
-    if (props.caps?.diffApi !== true) return
+
     // busy 时排除最后一个（在飞）回合：其 snapshot 每 step 变化会导致全量重拉。
     const candidates = collectTurnDiffCandidates(props.messages, { excludeLastTurn: props.busy === true })
     if (candidates.length === 0) {
@@ -70,9 +70,9 @@ export function CheckpointOverlay(props: {
   onCleanup(() => { disposed = true })
 
   const busy = () => props.busy === true || working()
-  const conversationAvailable = () => props.caps?.sessionBranchApi !== false
+  const conversationAvailable = () => true
   const filesDataAvailable = () => checkpoints().some((cp) => cp.filesKnown)
-  const canCode = (cp: Checkpoint) => props.caps?.diffApi === true && canRewindCode(checkpoints(), cp.messageID)
+  const canCode = (cp: Checkpoint) => canRewindCode(checkpoints(), cp.messageID)
   const modeOf = (messageID: string) => {
     const c = confirming()
     return c && c.messageID === messageID ? c.mode : null
@@ -198,17 +198,11 @@ export function CheckpointOverlay(props: {
           </div>
         </div>
 
-        <Show when={props.caps && props.caps.diffApi === false}>
-          <div class="mafw-checkpoint-note">当前 runtime 的回滚只影响对话，不改文件。</div>
-        </Show>
         <Show when={!serverMode() && loadingTurnFiles()}>
           <div class="mafw-checkpoint-note">正在加载回合级文件数据…</div>
         </Show>
-        <Show when={!serverMode() && !loadingTurnFiles() && props.caps?.diffApi === true && !filesDataAvailable()}>
+        <Show when={!serverMode() && !loadingTurnFiles() && !filesDataAvailable()}>
           <div class="mafw-checkpoint-note">当前会话没有可用的回合级文件数据（需要 git 仓库快照）。</div>
-        </Show>
-        <Show when={!serverMode() && !conversationAvailable() && props.caps?.diffApi !== true}>
-          <div class="mafw-checkpoint-note">当前 runtime 不支持回滚。</div>
         </Show>
         <Show when={props.busy}>
           <div class="mafw-checkpoint-note">会话运行中，结束后可回滚。</div>
@@ -300,7 +294,7 @@ export function CheckpointOverlay(props: {
                           <div class="mafw-checkpoint-confirm">
                             <div class="mafw-checkpoint-confirm-text">
                               {mode() === "revert"
-                                ? revertWarning(props.caps?.revertUndoApi === true, props.caps?.diffApi === true)
+                                ? revertWarning(false, true)
                                 : `将撤销这条消息所在的回合及之后 ${checkpointsToRewind(checkpoints(), cp.messageID).length} 个回合的文件改动；对话保留。不可自动撤销；patch 冲突时可能停在中间态。`}
                             </div>
                             <div class="mafw-checkpoint-confirm-actions">
@@ -336,16 +330,13 @@ export function CheckpointOverlay(props: {
                       检查点 {row.checkpoint.id.slice(-6)} · {row.filesLabel}
                     </div>
                     <div class="mafw-checkpoint-actions">
-                      <Show when={conversationAvailable() && row.checkpoint.kind !== "manual"}>
+                      <Show when={row.actions.restoreConversation.enabled}>
                         <ScopeButton checkpointId={row.checkpoint.id} scope="session" label="只回对话" />
                       </Show>
-                      <ScopeButton
-                        checkpointId={row.checkpoint.id}
-                        scope="files"
-                        label="只回代码"
-                        disabled={!row.filesAvailable}
-                      />
-                      <Show when={conversationAvailable() && row.checkpoint.kind !== "manual"}>
+                      <Show when={row.actions.restoreFiles.enabled}>
+                        <ScopeButton checkpointId={row.checkpoint.id} scope="files" label="只回代码" />
+                      </Show>
+                      <Show when={row.actions.restoreBoth.enabled}>
                         <ScopeButton checkpointId={row.checkpoint.id} scope="both" label="全部恢复" />
                       </Show>
                     </div>
@@ -355,7 +346,7 @@ export function CheckpointOverlay(props: {
                           <div class="mafw-checkpoint-confirm-text">
                             {restoreWarning(
                               current().scope,
-                              props.caps?.revertUndoApi === true,
+                              false,
                               serverRows().find((r) => r.checkpoint.id === current().checkpointId)?.warningKey,
                             )}
                           </div>

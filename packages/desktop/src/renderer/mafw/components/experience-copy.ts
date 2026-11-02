@@ -14,5 +14,5 @@ export function warningText(key: string | undefined, scope: CheckpointScope): st
   if (key && WARNINGS[key]) return WARNINGS[key]
   if (scope === 'files') return '只回滚文件到该检查点状态，对话保留。'
   if (scope === 'session') return '撤回该消息及其后内容，不动文件。'
-  return '将截断对话并回滚文件；请确认已备份。'
+  return '将截断对话并回滚文件；该操作不可撤销，请确认已备份。'
 }
