@@ -47,6 +47,17 @@ describe('SubagentService.spawn', () => {
     expect(rec).toMatchObject({ id: 'c1', status: 'failed', error: 'provider down' });
   });
 
+  // N1（spawn 侧同源）：刷新查询瞬时失败不得把刚起的子代理写成 aborted
+  it('does not mark a freshly spawned child aborted when the post-spawn lookup fails', async () => {
+    const { service, deps, sessions } = makeService();
+    deps.getSession.mockImplementation(async (sid: string) => {
+      if (sid === 'c1') throw new Error('serve restarting');
+      return sessions.get(sid) ?? null;
+    });
+    const rec = await service.spawn({ parentID: 'p1', prompt: 'x' });
+    expect(rec).toMatchObject({ id: 'c1', status: 'running' });
+  });
+
   it('404 when parent is missing; 400 without prompt', async () => {
     const { service } = makeService();
     await expect(service.spawn({ parentID: 'nope', prompt: 'x' })).rejects.toMatchObject({ status: 404 });
@@ -62,6 +73,28 @@ describe('SubagentService.list/depth', () => {
     const rows = await service.list('p1');
     expect(rows).toEqual([expect.objectContaining({ id: 'native1', parentID: 'p1', depth: 1, status: 'completed' })]);
     expect(await service.depthOf('native1')).toBe(1);
+  });
+
+  // N1：瞬时查询失败 = 运行时暂时不可达，绝不能把在跑的子代理说成 aborted/cancelled
+  it('keeps a running child running when the lookup fails transiently', async () => {
+    const { service, deps, sessions } = makeService();
+    const spawned = await service.spawn({ parentID: 'p1', prompt: 'x' });
+    expect(spawned.status).toBe('running');
+
+    deps.getSession.mockRejectedValueOnce(new Error('serve restarting'));
+    expect(await service.list('p1')).toEqual([expect.objectContaining({ id: 'c1', status: 'running' })]);
+
+    // 再次成功且确有 idle ⇒ 正常报告终态（失败只暂停刷新，不冻结）
+    sessions.set('c1', { id: 'c1', parentID: 'p1', time: { created: 1, updated: 5, idle: 5 }, outcome: 'succeeded' });
+    expect(await service.list('p1')).toEqual([expect.objectContaining({ id: 'c1', status: 'completed' })]);
+  });
+
+  it('still reports aborted when the lookup succeeds and the session is genuinely gone', async () => {
+    const { service, deps } = makeService();
+    await service.spawn({ parentID: 'p1', prompt: 'x' });
+    // 查询成功但会话已不存在（runtime 明确说没有）→ aborted 仍是合法结论
+    deps.getSession.mockResolvedValueOnce(null);
+    expect(await service.list('p1')).toEqual([expect.objectContaining({ id: 'c1', status: 'aborted' })]);
   });
 
   it('walks parent chains and caps at 32', async () => {

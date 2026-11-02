@@ -10,6 +10,7 @@
 import { OPENCODE_TRANSFORM_EVENT } from '../../../src/runtime/opencode-events';
 import { translateOpencode21Event } from '../../../src/runtime/opencode-21-events';
 import type { SessionInfo } from '../../../src/runtime/contract';
+import { SubagentService } from '../../../src/runtime/subagent-service';
 import type { TaskEntity } from '../../../src/runtime/task-service';
 import {
   BackgroundJobError,
@@ -476,6 +477,38 @@ describe('BackgroundJobService', () => {
     expect(cancelSubagent).toHaveBeenCalledWith({ parentSessionID: 'ses_parent', childSessionID: 'ses_child' });
     expect(job.status).toBe('cancelled');
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ id: 'ses_child', status: 'cancelled' }));
+  });
+
+  // N1：权威链路上的瞬时查询失败不得把在跑子代理翻成 cancelled
+  it('keeps a running child running when the SubagentService lookup fails transiently', async () => {
+    const sessions = new Map<string, any>([
+      ['ses_parent', { id: 'ses_parent', directory: 'C:/work', title: 'parent', time: { created: 1, updated: 1 } }],
+    ]);
+    let lookupFails = false;
+    const subagents = new SubagentService({
+      createSession: async ({ parentID }: any) => {
+        sessions.set('ses_child', { id: 'ses_child', parentID, title: 'child', time: { created: 2, updated: 2 } });
+        return { id: 'ses_child' };
+      },
+      getSession: async (sid: string) => {
+        if (lookupFails) throw new Error('serve restarting');
+        return sessions.get(sid) ?? null;
+      },
+      children: async () => [],
+      promptChild: async () => {},
+      messageChild: async () => {},
+      abortChild: async () => {},
+      messages: async () => ({ data: [] }),
+      submitted: () => undefined,
+      broadcast: () => {},
+    });
+    expect((await subagents.spawn({ parentID: 'ses_parent', prompt: 'x' })).status).toBe('running');
+
+    const { svc } = service({ tasks: { list: () => [] }, listSubagents: (sid) => subagents.list(sid) });
+    lookupFails = true;
+    const jobs = await svc.list('ses_parent');
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ id: 'ses_child', source: 'subagent', status: 'running' });
   });
 
   it('cancels a runtime shell through the injected shell surface and broadcasts', async () => {

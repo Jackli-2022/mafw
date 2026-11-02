@@ -62,6 +62,14 @@ function statusOf(info: any): SubagentStatus {
   return 'running';
 }
 
+/**
+ * 会话查询结果：区分**运行时暂时不可达**（ok:false，serve 重启/网络抖动）与
+ * **查询成功但会话确实不存在**（ok:true, info:null）。只有后者可以推 aborted——
+ * 把瞬时失败当「不存在」会让在跑的子代理被报成 aborted/cancelled（background
+ * jobs 以此为准时就是假终态）。
+ */
+type SessionLookup = { ok: true; info: any } | { ok: false };
+
 function textOfMessages(result: any): string {
   const list = Array.isArray(result) ? result : (result?.data ?? []);
   for (let i = list.length - 1; i >= 0; i--) {
@@ -149,10 +157,11 @@ export class SubagentService {
       return record;
     }
 
-    const info = await this.deps.getSession(child.id).catch(() => null);
-    record.status = statusOf(info);
+    const lookup = await this.lookupSession(child.id);
+    // 瞬时失败：只保留 'running'（刚起、尚未观测到任何终态证据）
+    if (lookup.ok) record.status = statusOf(lookup.info);
     record.updatedAt = Date.now();
-    this.emitCreated(record, info, directory);
+    this.emitCreated(record, lookup.ok ? lookup.info : null, directory);
     return record;
   }
 
@@ -160,9 +169,12 @@ export class SubagentService {
     const rows = new Map<string, SubagentRecord>();
     for (const record of this.records.values()) {
       if (record.parentID !== parentID) continue;
-      const info = await this.deps.getSession(record.id).catch(() => null);
-      record.status = statusOf(info);
-      record.updatedAt = Date.now();
+      const lookup = await this.lookupSession(record.id);
+      // 瞬时查询失败（serve 重启等）：保留最后已知状态，绝不伪造成 aborted。
+      if (lookup.ok) {
+        record.status = statusOf(lookup.info);
+        record.updatedAt = Date.now();
+      }
       rows.set(record.id, { ...record });
     }
 
@@ -170,7 +182,9 @@ export class SubagentService {
     const parentDepth = await this.depthOf(parentID);
     for (const child of Array.isArray(children) ? children : []) {
       if (!child?.id || rows.has(child.id)) continue;
-      const info = await this.deps.getSession(child.id).catch(() => child);
+      const lookup = await this.lookupSession(child.id);
+      // 瞬时失败 → 用 children 快照（advisory）；只有「查询成功且为空」才算确实不存在
+      const info = lookup.ok ? lookup.info : child;
       rows.set(child.id, {
         id: child.id,
         parentID,
@@ -211,6 +225,15 @@ export class SubagentService {
     if (structured !== undefined) return { status, structured };
     const messages = await this.deps.messages(childID, 5).catch(() => null);
     return { status, text: textOfMessages(messages) };
+  }
+
+  /** 区分「暂时不可达」与「确实不存在」——终态推断只能基于后者。 */
+  private async lookupSession(sessionID: string): Promise<SessionLookup> {
+    try {
+      return { ok: true, info: await this.deps.getSession(sessionID) };
+    } catch {
+      return { ok: false };
+    }
   }
 
   private async assertOwnership(parentID: string, childID: string): Promise<void> {
