@@ -59,6 +59,22 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
+ * 唯一约束冲突归因（决定能不能回收会话）：
+ * - `session_id`：runtime 会话在本次调用**之前**就已登记（别的作用域/节点持有），
+ *   绝不能 dispose——那会删掉另一个 agent 的活会话与 transcript；
+ * - `active_scope`：本次新建的会话在作用域竞争里输了，可以回收；
+ * - `unique_unknown`：未知唯一约束，保守按「可能已存在」处理（只报错不回收）；
+ * - `other`：非唯一约束错误（本次建的行/会话可回收）。
+ */
+function leaseConflictKind(err: unknown): 'session_id' | 'active_scope' | 'unique_unknown' | 'other' {
+  if (!isUniqueViolation(err)) return 'other';
+  const message = String((err as any)?.message ?? err);
+  if (/pod_member_sessions\.session_id/.test(message)) return 'session_id';
+  if (message.includes('idx_pod_member_sessions_active_scope')) return 'active_scope';
+  return 'unique_unknown';
+}
+
+/**
  * 作用域会话管理员：按 `(podId, memberId, goalId, revision, kind)` 查找、复用、
  * 重建和退休内部会话。
  *
@@ -139,15 +155,17 @@ export class PodSessionSupervisor {
     const sessionId = await create();
     const claimed = this.deps.store.getSessionBySessionId(sessionId);
     if (claimed) {
-      // runtime 返回了一个已登记给别的会话的行：拒绝静默复用（否则租约指向
-      // 错作用域，后续查找永远 miss 并不断重建）。I-3：先回收刚建的会话再报错。
-      await this.releaseUnleased(
+      // runtime 返回了一个**本调用之前**就已登记给别的会话的行：拒绝静默复用
+      // （否则租约指向错作用域，后续查找永远 miss 并不断重建）。
+      // 这个会话不属于我们：只记结构化告警并报 409，**绝不 dispose**（I-3 round 2）。
+      const owner = claimed.scopeKind ?? claimed.node ?? 'unknown';
+      this.warnExistingSession(
         sessionId,
-        `already bound to ${claimed.scopeKind ?? claimed.node ?? 'unknown'} (${claimed.podId})`,
+        `already bound to ${owner} (${claimed.podId}), scope ${claimed.goalId ?? '-'}/${claimed.revision ?? '-'}`,
       );
       throw new PodError(
         409,
-        `session ${sessionId} already bound to ${claimed.scopeKind ?? claimed.node ?? 'unknown'} `
+        `session ${sessionId} already bound to ${owner} `
         + `(${claimed.podId}); cannot lease it as ${scope.kind}`,
       );
     }
@@ -162,7 +180,17 @@ export class PodSessionSupervisor {
         now,
       });
     } catch (err) {
-      if (isUniqueViolation(err)) {
+      const conflict = leaseConflictKind(err);
+      if (conflict === 'session_id' || conflict === 'unique_unknown') {
+        // 会话 id 已在别处登记（或无法归因的唯一约束）：同 claimed-guard，
+        // 该 runtime 会话可能早于本调用存在 → 只告警 + 409，不 dispose。
+        this.warnExistingSession(sessionId, `insert rejected by unique constraint: ${String((err as any)?.message ?? err)}`);
+        throw new PodError(
+          409,
+          `session ${sessionId} already bound elsewhere; cannot lease it as ${scope.kind}`,
+        );
+      }
+      if (conflict === 'active_scope') {
         // 输给并发实例：它已写入该作用域的活跃租约，我们复用赢家并回收自己刚建的会话。
         const winner = this.deps.store.getActiveScopedSession(scope);
         if (winner) {
@@ -192,8 +220,17 @@ export class PodSessionSupervisor {
   }
 
   /**
-   * 回收没被任何租约接住的 runtime 会话（I-3）：best-effort，删不掉也不掩盖原错误；
-   * 无论 dispose 是否存在都留结构化日志，避免运行资源静默泄漏。
+   * 已存在的 runtime 会话只告警不回收（I-3 round 2）：dispose 接线到
+   * `runtime.session.delete` 后，误删别的作用域/节点的活会话（含 transcript）
+   * 是不可逆的破坏，宁可让它留着由原持有者管理。
+   */
+  private warnExistingSession(sessionId: string, reason: string): void {
+    this.deps.log?.(`[Pod] refusing to lease existing session ${sessionId}: ${reason}`);
+  }
+
+  /**
+   * 回收**本次调用新建**、但没被任何租约接住的 runtime 会话（I-3）：best-effort，
+   * 删不掉也不掩盖原错误；无论 dispose 是否存在都留结构化日志，避免运行资源静默泄漏。
    */
   private async releaseUnleased(sessionId: string, reason: string): Promise<void> {
     this.deps.log?.(`[Pod] releasing unleased session ${sessionId}: ${reason}`);

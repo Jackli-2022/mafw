@@ -470,7 +470,7 @@ describe('PodSessionSupervisor', () => {
     fs.rmSync(dupDir, { recursive: true, force: true });
   });
 
-  test('a claimed runtime session is disposed before the guard throws (I-3)', async () => {
+  test('a claimed runtime session is never disposed: 409 + structured warning only (I-3 round 2)', async () => {
     seedSession('ses_taken', { node: 'execute' });
     const disposed: string[] = [];
     const logs: string[] = [];
@@ -485,26 +485,69 @@ describe('PodSessionSupervisor', () => {
       status: 409,
     });
 
-    expect(disposed).toEqual(['ses_taken']);
-    expect(logs.some((line) => line.includes('releasing unleased session ses_taken'))).toBe(true);
+    // 这行会话在本次调用之前就存在（别的作用域/节点持有）：一旦接线
+    // runtime.session.delete，dispose 会删掉别人的活会话与 transcript。
+    expect(disposed).toEqual([]);
+    expect(logs.some((line) => line.includes('refusing to lease existing session ses_taken'))).toBe(true);
+    expect(logs.some((line) => line.includes('releasing unleased session'))).toBe(false);
     // 被拒的会话不产生租约行，作用域保持不变。
     expect(store.getActiveScopedSession(scope())).toBeNull();
     expect(store.getScopedGeneration(scope())).toBe(0);
+    // 原会话保持完好。
+    expect(store.getSessionBySessionId('ses_taken')?.endedAt).toBeNull();
   });
 
-  test('a failing dispose is logged and never masks the lease error (I-3)', async () => {
-    seedSession('ses_taken', { node: 'execute' });
+  test('a session_id unique collision is classified as pre-existing: no dispose (I-3 round 2)', async () => {
+    const disposed: string[] = [];
     const logs: string[] = [];
     const guarded = build({
+      dispose: async (sessionId) => {
+        disposed.push(sessionId);
+      },
+      log: (message) => logs.push(message),
+    });
+    // 模拟「claimed 检查之后、INSERT 之前」另一实例抢占了同一 runtime 会话 id：
+    // SQLite 对该列报 `UNIQUE constraint failed: pod_member_sessions.session_id`。
+    const insert = jest.spyOn(store, 'leaseScopedSession').mockImplementation(() => {
+      throw new Error('UNIQUE constraint failed: pod_member_sessions.session_id');
+    });
+
+    try {
+      await expect(guarded.ensure(scope(), async () => 'ses_foreign')).rejects.toMatchObject({
+        status: 409,
+      });
+    } finally {
+      insert.mockRestore();
+    }
+
+    expect(disposed).toEqual([]);
+    expect(logs.some((line) => line.includes('refusing to lease existing session ses_foreign'))).toBe(true);
+    expect(store.getActiveScopedSession(scope())).toBeNull();
+  });
+
+  test('a failing dispose on the race path is logged and never masks the reuse (I-3 round 2)', async () => {
+    const logs: string[] = [];
+    const racer = build({
       dispose: async () => {
         throw new Error('runtime refusing');
       },
       log: (message) => logs.push(message),
     });
 
-    await expect(guarded.ensure(scope(), async () => 'ses_taken')).rejects.toThrow(/already bound/);
-    expect(logs.some((line) => line.includes('dispose failed for unleased session ses_taken'))).toBe(true);
-    expect(store.getActiveScopedSession(scope())).toBeNull();
+    const lease = await racer.ensure(scope(), async () => {
+      // 竞争实例在 create 期间抢先写入同一作用域的活跃租约。
+      db.prepare(`
+        INSERT INTO pod_member_sessions (
+          id, pod_id, member_id, goal_id, node, session_id, status,
+          scope_kind, revision, generation, created_at
+        ) VALUES ('ps_winner', 'pod_1', 'm_builder', 'g1', NULL, 'ses_winner', 'active', 'discussion', 1, 1, ?)
+      `).run(NOW);
+      return 'ses_late';
+    });
+
+    expect(lease).toEqual({ sessionId: 'ses_winner', generation: 1, reused: true });
+    expect(logs.some((line) => line.includes('dispose failed for unleased session ses_late'))).toBe(true);
+    expect(store.listActiveSessions('pod_1').filter((row) => row.scopeKind === 'discussion')).toHaveLength(1);
   });
 
   test('undefined goalId/revision normalize to null across ensure/current/retire (M6)', async () => {
