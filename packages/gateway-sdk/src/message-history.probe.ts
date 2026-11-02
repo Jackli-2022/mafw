@@ -10,7 +10,7 @@
  * 阻止 `session` 退回对象字面量推断出的 `Promise<any>` 实现签名。
  */
 import type { MafwClient } from './client'
-import type { SessionMessagePart } from './types'
+import type { SessionMessageWire } from './types'
 import type { MafwMessage } from './view-dto'
 
 type IsAny<T> = 0 extends 1 & T ? true : false
@@ -24,7 +24,7 @@ export type HistoryDataIsFlatDto = Expect<Equal<HistoryReturn['data'], MafwMessa
 
 /** flat 与 wire 形状互斥（若返回是 any/wire，Extract 不会得到 never）。 */
 export type FlatMessageIsNotWirePart = Expect<
-  Equal<Extract<HistoryReturn['data'][number], SessionMessagePart>, never>
+  Equal<Extract<HistoryReturn['data'][number], SessionMessageWire>, never>
 >
 
 declare const client: MafwClient
@@ -33,10 +33,10 @@ declare const client: MafwClient
 export async function probeSessionHistoryTypes(): Promise<void> {
   const history = await client.session.history({ sessionID: 'ses_1' })
   const flat: MafwMessage[] = history.data
-  // @ts-expect-error flat 历史不能当成 wire part 使用
-  const wrongHistory: SessionMessagePart[] = history.data
-  // @ts-expect-error flat 消息有 content，没有 wire parts
-  void history.data[0]?.parts
+  // @ts-expect-error flat 历史不能当成 wire 消息使用
+  const wrongHistory: SessionMessageWire[] = history.data
+  // @ts-expect-error flat 消息有 content，没有 wire info/parts
+  void history.data[0]?.info
 
   const flatMessages = await client.session.messages({
     path: { id: 'ses_1' },
@@ -44,10 +44,17 @@ export async function probeSessionHistoryTypes(): Promise<void> {
   })
   const flatTyped: MafwMessage[] = flatMessages.data
   // @ts-expect-error format=flat 响应不是 wire
-  const wrongFlatMessages: SessionMessagePart[] = flatMessages.data
+  const wrongFlatMessages: SessionMessageWire[] = flatMessages.data
 
   const wireMessages = await client.session.messages({ path: { id: 'ses_1' } })
-  const wireTyped: SessionMessagePart[] = wireMessages.data
+  // 正向：默认 wire 出口必须能读 info.id 与 parts（旧类型把它说成 part[] 是谎报）
+  const wireTyped: SessionMessageWire[] = wireMessages.data
+  const wireID: string = wireMessages.data[0].info.id
+  const wireParts: SessionMessageWire['parts'] = wireMessages.data[0].parts
+  // @ts-expect-error wire 消息是信封，part 字段只在 info/parts 内
+  void wireMessages.data[0].type
+  // @ts-expect-error wire 消息没有 flat content
+  void wireMessages.data[0].content
   // @ts-expect-error 默认 wire 响应不是 flat DTO
   const wrongWireMessages: MafwMessage[] = wireMessages.data
 
@@ -56,5 +63,7 @@ export async function probeSessionHistoryTypes(): Promise<void> {
   void flatTyped
   void wrongFlatMessages
   void wireTyped
+  void wireID
+  void wireParts
   void wrongWireMessages
 }

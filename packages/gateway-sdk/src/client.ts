@@ -6,7 +6,7 @@ import {
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   DiscoverySnapshot, DiscoverySkillContent,
-  Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
+  Approval, TriageItem, AutomationRule, SessionMessageWire, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
@@ -191,7 +191,7 @@ export class MafwClient implements IMafwClient {
       if (params.query?.limit) q.set('limit', String(params.query.limit))
       if (params.query?.before) q.set('before', params.query.before)
       if (params.query?.format) q.set('format', params.query.format)
-      return this.request<{ data: SessionMessagePart[] | MafwMessage[]; nextCursor: string | null }>(`/api/sessions/${params.path.id}/messages?${q}`)
+      return this.request<{ data: SessionMessageWire[] | MafwMessage[]; nextCursor: string | null }>(`/api/sessions/${params.path.id}/messages?${q}`)
     },
 
     /**

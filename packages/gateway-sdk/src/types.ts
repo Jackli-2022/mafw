@@ -237,6 +237,17 @@ export interface SessionMessagePart {
   native?: Record<string, unknown>
 }
 
+/**
+ * v1 wire 历史消息（`session.messages` 默认出口，Task 15 前）。
+ *
+ * 与 flat `MafwMessage` 互斥：消息身份在 `info`，内容在 `parts`。`format=flat`
+ * 或 `session.history` 返回 `MafwMessage[]`（`content`）。
+ */
+export interface SessionMessageWire {
+  info: SessionMessageInfo
+  parts: SessionMessagePart[]
+}
+
 export interface Todo {
   id: string
   content: string
@@ -339,7 +350,7 @@ export interface SessionNamespace {
   delete(params: { path: { id: string } }): Promise<void>
   rename(params: { path: { id: string }; body: { title: string } }): Promise<void>
   messages(params: { path: { id: string }; query: { format: 'flat'; limit?: number; before?: string } }): Promise<{ data: MafwMessage[]; nextCursor: string | null }>
-  messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }>
+  messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: SessionMessageWire[]; nextCursor: string | null }>
   /** 规范 flat 历史（MAFW View DTO）。迁移期固定 `?format=flat`；Task 15 后成为唯一形状。 */
   history(params: { sessionID: string; limit?: number; before?: string }): Promise<{ data: MafwMessage[]; nextCursor: string | null }>
   /** 认知门（spec 2026-10-22-cognition-gate-rewrite）：POST /api/cognition/gate */
