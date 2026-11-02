@@ -8,7 +8,10 @@ import { PodGoalQueue, PodTaskBoard } from "./PodTaskBoard"
 import { PodInbox } from "./PodInbox"
 import { PodMemoryPanel } from "./PodMemoryPanel"
 import { PodGoalComposer } from "./PodGoalComposer"
+import { PodAttentionList } from "./PodAttentionList"
+import { PodResultPanel } from "./PodResultPanel"
 import { PodTranscriptOverlay } from "./PodTranscriptOverlay"
+import type { PodGoalResult } from "@mafw/sdk"
 import { podStore } from "../pod-store"
 import { deliveryToast } from "../pod-rail-face-model"
 import {
@@ -29,6 +32,13 @@ export function PodDock(props: {
   onOpenGoal: (goalId: string) => void
 }) {
   const [transcriptSession, setTranscriptSession] = createSignal<string | null>(null)
+  const [tab, setTab] = createSignal<"work" | "team" | "memory">("work")
+  const [resultGoalId, setResultGoalId] = createSignal<string | null>(null)
+  const [composerInitial, setComposerInitial] = createSignal<{
+    title: string
+    objective?: string
+    acceptance?: string[]
+  } | undefined>(undefined)
   let transcriptPodId: string | null = null
 
   // 首次加载归 shell（常驻订阅）；这里只在面板被打开时补一次刷新。
@@ -77,6 +87,7 @@ export function PodDock(props: {
         boundaries: input.boundaries.length > 0 ? input.boundaries : undefined,
         planReview: input.planReview,
       })
+      setComposerInitial(undefined)
       showToastV2({
         description: result.status === "started" ? "已交给团队" : "已排队，当前目标结束后自动开始",
         variant: "success",
@@ -91,6 +102,21 @@ export function PodDock(props: {
       } as any)
       return false
     }
+  }
+
+  const resubmit = (result: PodGoalResult) => {
+    const goal = podStore.detail()?.goals.find((item) => item.goalId === result.goalId)
+    setComposerInitial({
+      title: `重试：${goal?.title ?? result.goalId}`,
+      objective: [
+        "上一轮未达成。基于以下证据重新提交目标，不要复活旧 Goal。",
+        result.reviewFeedback ? `Review feedback: ${result.reviewFeedback}` : "",
+        ...result.tasks.filter((task) => task.result !== "pass").map((task) => `${task.taskId}: ${task.evidence}`),
+      ].filter(Boolean).join("\n"),
+      acceptance: result.goalAcceptance,
+    })
+    setResultGoalId(null)
+    setTab("work")
   }
 
   const createTask = async (title: string): Promise<boolean> => {
@@ -227,8 +253,8 @@ export function PodDock(props: {
                   <span class={`mafw-pod-status-badge mafw-pod-status-${detail().pod.status}`}>
                     {podStatusLabel(detail().pod.status)}
                   </span>
-                  <Show when={detail().pod.activeGoalId}>
-                    <span class="mafw-pod-status-goal">{detail().pod.activeGoalId}</span>
+                  <Show when={detail().goals.find((goal) => goal.status === "active")}>
+                    {(goal) => <span class="mafw-pod-status-goal">{goal().title}</span>}
                   </Show>
                   <span class="mafw-pod-status-queue">
                     {detail().goals.filter((goal) => goal.status === "queued").length} 排队
@@ -236,67 +262,116 @@ export function PodDock(props: {
                   <span class="mafw-pod-status-cost">{formatPodCost(podStore.cost())}</span>
                 </div>
 
-                <PodGoalComposer
-                  busy={podStore.busy()}
-                  activeGoalId={activeGoalId()}
-                  onCreate={createGoal}
-                />
-
-                <div class="mafw-pod-members">
-                  <For each={detail().members}>
-                    {(member) => {
-                      const target = () => memberOpenTarget(detail(), member.id)
-                      const count = () => memberTaskCount(detail(), member.id)
-                      return (
-                        <div
-                          class="mafw-pod-member"
-                          classList={{ "is-open": !!target() }}
-                          role={target() ? "button" : undefined}
-                          tabIndex={target() ? 0 : undefined}
-                          onClick={() => openMember(detail(), member.id)}
-                          onKeyDown={(event) => {
-                            if (!target()) return
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault()
-                              openMember(detail(), member.id)
-                            }
-                          }}
-                        >
-                          <span class="mafw-pod-member-role">{podRoleLabel(member.role)}</span>
-                          <span class="mafw-pod-member-name">{member.displayName}</span>
-                          <span class="mafw-pod-member-agent">{member.agentName}</span>
-                          <span class={`mafw-pod-member-status mafw-pod-member-${member.status}`}>
-                            {podMemberStatusLabel(member.status)}
-                          </span>
-                          <span class="mafw-pod-member-count">
-                            {count() > 0 ? `${count()} 任务` : target() ? (target()!.kind === "session" ? "打开会话" : "查看快照") : "空闲"}
-                          </span>
-                        </div>
-                      )
-                    }}
-                  </For>
+                <div class="mafw-pod-tabs" role="tablist" aria-label="鲸群视图">
+                  <ButtonV2 variant="ghost" size="small" aria-selected={tab() === "work"} onClick={() => setTab("work")}>工作</ButtonV2>
+                  <ButtonV2 variant="ghost" size="small" aria-selected={tab() === "team"} onClick={() => setTab("team")}>团队</ButtonV2>
+                  <ButtonV2 variant="ghost" size="small" aria-selected={tab() === "memory"} onClick={() => setTab("memory")}>记忆</ButtonV2>
                 </div>
 
-                <PodGoalQueue goals={detail().goals} onOpenGoal={props.onOpenGoal} />
-                <PodTaskBoard
-                  tasks={detail().tasks}
-                  members={detail().members}
-                  busy={podStore.busy()}
-                  planGoalId={activeGoalId()}
-                  onCreate={createTask}
-                  onCreatePlan={createPlanTask}
-                  onEdit={editTask}
-                  onDelete={deleteTask}
-                  onOpenGoal={props.onOpenGoal}
-                />
-                <PodInbox
-                  detail={detail()}
-                  messages={podStore.messages()}
-                  busy={podStore.busy()}
-                  onSend={sendMessage}
-                  onRead={(id) => { void podStore.markRead(id) }}
-                />
-                <PodMemoryPanel podId={detail().pod.id} />
+                <Show when={tab() === "work"}>
+                  <PodGoalComposer
+                    busy={podStore.busy()}
+                    activeGoalId={activeGoalId()}
+                    initial={composerInitial()}
+                    onCreate={createGoal}
+                  />
+
+                  <PodAttentionList
+                    items={detail().attention}
+                    onOpenGoal={props.onOpenGoal}
+                  />
+
+                  <PodGoalQueue
+                    goals={detail().goals}
+                    onOpenGoal={props.onOpenGoal}
+                    onOpenResult={setResultGoalId}
+                  />
+                  <PodTaskBoard
+                    tasks={detail().tasks}
+                    members={detail().members}
+                    busy={podStore.busy()}
+                    planGoalId={activeGoalId()}
+                    planEditable={(() => {
+                      const stage = podStore.detail()?.goals.find((goal) => goal.status === "active")?.stage
+                      return !!stage && stage.kind !== "working" && stage.kind !== "queued" && stage.kind !== "ended"
+                    })()}
+                    onCreate={createTask}
+                    onCreatePlan={createPlanTask}
+                    onEdit={editTask}
+                    onDelete={deleteTask}
+                    onOpenGoal={props.onOpenGoal}
+                  />
+                  <Show when={resultGoalId()}>
+                    {(goalId) => (
+                      <PodResultPanel
+                        podId={detail().pod.id}
+                        goalId={goalId()}
+                        onClose={() => setResultGoalId(null)}
+                        onResubmit={resubmit}
+                      />
+                    )}
+                  </Show>
+                </Show>
+
+                <Show when={tab() === "team"}>
+                  <div class="mafw-pod-members">
+                    <For each={detail().members}>
+                      {(member) => {
+                        const target = () => memberOpenTarget(detail(), member.id)
+                        return (
+                          <div
+                            class="mafw-pod-member"
+                            classList={{ "is-open": !!target() }}
+                            role={target() ? "button" : undefined}
+                            tabIndex={target() ? 0 : undefined}
+                            onClick={() => openMember(detail(), member.id)}
+                            onKeyDown={(event) => {
+                              if (!target()) return
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault()
+                                openMember(detail(), member.id)
+                              }
+                            }}
+                          >
+                            <span class="mafw-pod-member-role">{podRoleLabel(member.role)}</span>
+                            <span class="mafw-pod-member-name">{member.displayName}</span>
+                            <span class={`mafw-pod-member-status mafw-pod-member-${member.status}`}>
+                              {podMemberStatusLabel(member.status)}
+                            </span>
+                            <span class="mafw-pod-member-count">
+                              {target() ? (target()!.kind === "session" ? "打开会话" : "查看快照") : "空闲"}
+                            </span>
+                          </div>
+                        )
+                      }}
+                    </For>
+                  </div>
+                  <Show when={detail().messageHealth.length > 0}>
+                    <div class="mafw-pod-message-health">
+                      <div class="mafw-pod-section-head"><span>投递问题</span><span>{detail().messageHealth.length}</span></div>
+                      <For each={detail().messageHealth}>
+                        {(item) => (
+                          <div class="mafw-pod-message-health-row">
+                            <span>{item.memberId}</span>
+                            <span>{item.lastError ?? "投递失败"}</span>
+                            <span>{item.attempts} 次</span>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                  <PodInbox
+                    detail={detail()}
+                    messages={podStore.messages()}
+                    busy={podStore.busy()}
+                    onSend={sendMessage}
+                    onRead={(id) => { void podStore.markRead(id) }}
+                  />
+                </Show>
+
+                <Show when={tab() === "memory"}>
+                  <PodMemoryPanel podId={detail().pod.id} />
+                </Show>
               </>
             )}
           </Show>

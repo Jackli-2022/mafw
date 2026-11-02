@@ -7,6 +7,7 @@ import {
   deliveryToast,
   podCounts,
   podEmptyState,
+  railView,
 } from "./pod-rail-face-model"
 
 const detail = {
@@ -116,6 +117,24 @@ test("delivery toast never promises a push it cannot confirm", () => {
   assert.equal(deliveryToast("pending"), "已发送，对方下次派活时送达")
   assert.equal(deliveryToast("disabled"), "已发送（投递状态未知）")
   assert.equal(deliveryToast(undefined), "已发送（投递状态未知）")
+})
+
+test("railView counts equal the filtered plan tasks they expose", () => {
+  const view = railView({
+    ...detail,
+    attention: [{}, {}],
+    goals: [],
+    tasks: [
+      { id: "p1", kind: "plan", status: "pending" },
+      { id: "p2", kind: "plan", status: "in_progress" },
+      { id: "p3", kind: "plan", status: "review" },
+      { id: "n1", kind: "note", status: "pending" },
+    ],
+  } as any)
+  assert.equal(view.todoCount, view.todoItems.length)
+  assert.equal(view.todoCount, 2)
+  assert.equal(view.reviewCount, 1)
+  assert.deepEqual(view.todoItems.map((t: any) => t.id), ["p1", "p2"])
 })
 
 test("empty state prefers unsupported over worktree over create", () => {

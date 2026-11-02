@@ -7,8 +7,10 @@ import {
   canEditPlanTask,
   formatAcceptanceLines,
   groupPodTasks,
+  goalQueueRow,
   parseAcceptanceLines,
-  podGoalStatusLabel,
+  planTaskOnly,
+  noteTasksOnly,
   podMemberName,
   podTaskAcceptance,
   podTaskArtifacts,
@@ -22,7 +24,11 @@ function goalOrder(goal: PodGoal): number {
   return 2
 }
 
-export function PodGoalQueue(props: { goals: PodGoal[]; onOpenGoal: (goalId: string) => void }) {
+export function PodGoalQueue(props: {
+  goals: PodGoal[]
+  onOpenGoal: (goalId: string) => void
+  onOpenResult?: (goalId: string) => void
+}) {
   const visible = () => {
     const sorted = [...props.goals].sort(
       (a, b) => goalOrder(a) - goalOrder(b) || a.enqueuedAt.localeCompare(b.enqueuedAt),
@@ -57,8 +63,20 @@ export function PodGoalQueue(props: { goals: PodGoal[]; onOpenGoal: (goalId: str
                 }
               }}
             >
-              <span class={`mafw-pod-goal-status mafw-pod-goal-${goal.status}`}>{podGoalStatusLabel(goal.status)}</span>
-              <span class="mafw-pod-goal-id">{goal.goalId}</span>
+              <span class={`mafw-pod-goal-status mafw-pod-goal-${goal.status}`}>{goal.stage.owner === "person" ? "需要你" : goal.stage.kind === "ended" ? "已结束" : "进行中"}</span>
+              <span class="mafw-pod-goal-title">{goalQueueRow(goal)}</span>
+              <Show when={goal.resultReady && props.onOpenResult}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  onClick={(event: MouseEvent) => {
+                    event.stopPropagation()
+                    props.onOpenResult!(goal.goalId)
+                  }}
+                >
+                  结果
+                </ButtonV2>
+              </Show>
             </div>
           )}
         </For>
@@ -72,6 +90,7 @@ export function PodTaskBoard(props: {
   members: PodMember[]
   busy: boolean
   planGoalId: string | null
+  planEditable: boolean
   onCreate: (title: string) => Promise<boolean>
   onCreatePlan: (title: string) => Promise<boolean>
   onEdit: (taskId: string, patch: { title: string; acceptance: string[] }) => Promise<boolean>
@@ -129,6 +148,7 @@ export function PodTaskBoard(props: {
   const submit = async () => {
     const value = title().trim()
     if (!value || submitting() || props.busy) return
+    if (createMode() === "plan" && !props.planGoalId) return
     const plan = createMode() === "plan" && !!props.planGoalId
     setSubmitting(true)
     try {
@@ -160,7 +180,7 @@ export function PodTaskBoard(props: {
                 aria-pressed={createMode() === "manual"}
                 onClick={() => setCreateMode("manual")}
               >
-                手工任务
+                备注
               </ButtonV2>
               <ButtonV2
                 variant="ghost"
@@ -174,7 +194,7 @@ export function PodTaskBoard(props: {
           </Show>
           <TextInputV2
             value={title()}
-            placeholder={createMode() === "plan" ? "追加到计划最后一个 wave" : "手工任务标题"}
+            placeholder={createMode() === "plan" ? "追加到计划最后一个 wave" : "备注（不会自动执行）"}
             onInput={(event) => setTitle(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") void submit()
@@ -188,7 +208,7 @@ export function PodTaskBoard(props: {
       </Show>
 
       <div class="mafw-pod-board">
-        <For each={groupPodTasks(props.tasks)}>
+        <For each={groupPodTasks(planTaskOnly(props.tasks))}>
           {(lane) => (
             <div class="mafw-pod-lane">
               <div class="mafw-pod-lane-head">
@@ -199,7 +219,7 @@ export function PodTaskBoard(props: {
                 {(task) => {
                   const artifacts = () => podTaskArtifacts(task)
                   const acceptanceCount = () => podTaskAcceptance(task).length
-                  const editable = () => canEditPlanTask(task)
+                  const editable = () => props.planEditable && canEditPlanTask(task)
                   const open = () => {
                     if (task.goalId) props.onOpenGoal(task.goalId)
                   }
@@ -318,6 +338,30 @@ export function PodTaskBoard(props: {
             </div>
           )}
         </For>
+      </div>
+
+      <div class="mafw-pod-notes">
+        <div class="mafw-pod-section-head">
+          <span>备注</span>
+          <span class="mafw-pod-section-count">{noteTasksOnly(props.tasks).length}</span>
+        </div>
+        <Show when={noteTasksOnly(props.tasks).length > 0} fallback={<div class="mafw-pod-empty-line">没有备注</div>}>
+          <For each={noteTasksOnly(props.tasks)}>
+            {(task) => (
+              <div class="mafw-pod-note-row">
+                <span>{task.title}</span>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  disabled={props.busy}
+                  onClick={() => void props.onDelete(task.id)}
+                >
+                  删除
+                </ButtonV2>
+              </div>
+            )}
+          </For>
+        </Show>
       </div>
     </div>
   )

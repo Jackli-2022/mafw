@@ -1765,9 +1765,8 @@ export function MafwShell() {
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
   const podSelfMemberId = () => podStore.detail()?.members.find((m) => m.role === "lead")?.id ?? null
   const podBadgeCount = () => podRailBadge({
-    tasks: podStore.detail()?.tasks ?? [],
-    messages: podStore.messages(),
-    selfMemberId: podSelfMemberId(),
+    attention: podStore.detail()?.attention ?? [],
+    unread: podStore.messages().filter((message) => !message.readAt).length,
   })
   const openPodPanel = (panel: "tasks" | "inbox") => {
     closeLeftDockIfOverlay()

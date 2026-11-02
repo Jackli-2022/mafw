@@ -18,10 +18,13 @@ test("unread counts only messages addressed to me or broadcast, not mine, not re
   assert.equal(countUnread([msg({})], null), 0)
 })
 
-test("badge = review tasks + unread messages", () => {
-  const tasks = [{ status: "review" }, { status: "review" }, { status: "in_progress" }, { status: "done" }]
-  assert.equal(podRailBadge({ tasks, messages: [msg({})], selfMemberId: "m_lead" }), 3)
-  assert.equal(podRailBadge({ tasks: [], messages: [], selfMemberId: "m_lead" }), 0)
+test("badge = human attention only, never unread or result-ready", () => {
+  const attention = [
+    { id: "a", goalId: "g1", kind: "plan_approval" as const, title: "Plan", action: { type: "open_plan_review" as const, goalId: "g1" } },
+    { id: "b", goalId: "g1", kind: "question" as const, title: "Question", action: { type: "open_question" as const, goalId: "g1", questionId: "q1" } },
+  ]
+  assert.equal(podRailBadge({ attention, unread: 5 }), 2)
+  assert.equal(podRailBadge({ attention: [], unread: 5 }), 0)
 })
 
 test("badge caps rendering at 9+", () => {

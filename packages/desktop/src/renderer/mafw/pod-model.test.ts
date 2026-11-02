@@ -29,6 +29,7 @@ import {
   attentionCount,
   planTaskOnly,
   noteTasksOnly,
+  goalQueueRow,
 } from "./pod-model"
 
 const task = (id: string, status: PodTaskStatus, extra: Partial<PodTask> = {}): PodTask => ({
@@ -211,6 +212,12 @@ describe("pod-model", () => {
     assert.equal(podGoalResultLabel("ERROR"), "技术失败")
     assert.equal(podGoalResultLabel("CANCELLED"), "已取消")
     assert.equal(podGoalResultLabel(null), "已结束")
+  })
+
+  test("goal queue renders title and true verdicts", () => {
+    assert.equal(goalQueueRow({ title: "Fix Pod", verdict: "MAX_RETRIES", stage: { owner: "system", kind: "ended" } }), "Fix Pod · 达到轮次上限")
+    assert.equal(goalQueueRow({ title: "Bad", verdict: "FAIL", stage: { owner: "system", kind: "ended" } }), "Bad · 未通过")
+    assert.doesNotMatch(goalQueueRow({ title: "Bad", verdict: "FAIL", stage: { owner: "system", kind: "ended" } }), /完成/)
   })
 
   test("attention count excludes unread and result-ready", () => {

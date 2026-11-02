@@ -10,9 +10,10 @@ import {
   buildRecentMessages,
   podCounts,
   podEmptyState,
+  railView,
   type PodEmptyState,
 } from "../pod-rail-face-model"
-import { podStatusLabel } from "../pod-model"
+import { podGoalResultLabel, podStageLabel, podStatusLabel } from "../pod-model"
 
 export function PodRailFace(props: {
   detail: PodDetail | null
@@ -42,6 +43,7 @@ export function PodRailFace(props: {
     ? podCounts(props.detail, props.messages, props.selfMemberId)
     : { review: 0, todo: 0, inbox: 0 }))
   const activeGoal = createMemo(() => props.detail?.goals.find((goal) => goal.status === "active") ?? null)
+  const view = createMemo(() => (props.detail ? railView(props.detail) : { todoCount: 0, todoItems: [], reviewCount: 0, recentResults: [] }))
   const recent = createMemo(() => (props.detail
     ? buildRecentMessages(props.detail, props.messages, props.selfMemberId, props.nowMs ?? Date.now(), 5)
     : []))
@@ -97,26 +99,30 @@ export function PodRailFace(props: {
       </Show>
 
       <Show when={emptyState() === "ready"}>
-        <div class="mafw-pod-rail-label">待我处理</div>
+        <div class="mafw-pod-rail-label">需要你</div>
         <div class="mafw-pod-rail-counts">
           <ButtonV2
             variant="ghost"
             size="small"
             class="mafw-pod-rail-count"
-            classList={{ hot: counts().review > 0 }}
-            aria-label={`待审 ${counts().review} 项`}
-            onClick={() => props.onOpenPanel("tasks")}
+            classList={{ hot: (props.detail?.attention.length ?? 0) > 0 }}
+            aria-label={`需要你 ${props.detail?.attention.length ?? 0} 项`}
+            onClick={() => {
+              const first = props.detail?.attention[0]
+              if (first) props.onOpenGoal(first.goalId)
+              else props.onOpenPanel("tasks")
+            }}
           >
-            待审 <b>{counts().review}</b>
+            需要你 <b>{props.detail?.attention.length ?? 0}</b>
           </ButtonV2>
           <ButtonV2
             variant="ghost"
             size="small"
             class="mafw-pod-rail-count"
-            aria-label={`待办 ${counts().todo} 项`}
+            aria-label={`待办 ${view().todoCount} 项`}
             onClick={() => props.onOpenPanel("tasks")}
           >
-            待办 <b>{counts().todo}</b>
+            待办 <b>{view().todoCount}</b>
           </ButtonV2>
           <ButtonV2
             variant="ghost"
@@ -129,6 +135,17 @@ export function PodRailFace(props: {
             邮箱 <b>{counts().inbox}</b>
           </ButtonV2>
         </div>
+        <Show when={(props.detail?.attention.length ?? 0) > 0}>
+          <div class="mafw-pod-rail-attention">
+            <For each={props.detail!.attention}>
+              {(item) => (
+                <ButtonV2 variant="ghost" size="small" class="mafw-pod-rail-attention-row" onClick={() => props.onOpenGoal(item.goalId)}>
+                  {item.kind === "plan_approval" ? "计划待批准" : item.kind === "question" ? "等待回答" : "需要处理"} · {item.title}
+                </ButtonV2>
+              )}
+            </For>
+          </div>
+        </Show>
 
         <div class="mafw-pod-rail-label">班底</div>
         <div class="mafw-pod-rail-members">
@@ -152,13 +169,9 @@ export function PodRailFace(props: {
                 <div class="mafw-pod-rail-member-main">
                   <div class="mafw-pod-rail-member-top">
                     <span class="mafw-pod-rail-member-name">{row.displayName}</span>
-                    <span class="mafw-pod-rail-member-agent">{row.agentName}</span>
                   </div>
                   <div class="mafw-pod-rail-member-action">{row.action}</div>
                 </div>
-                <span class="mafw-pod-rail-member-count" aria-label={`${row.openTasks} 项未完成`}>
-                  {row.openTasks > 0 ? row.openTasks : "—"}
-                </span>
                 <ButtonV2
                   variant="ghost"
                   size="small"
@@ -181,18 +194,35 @@ export function PodRailFace(props: {
               variant="ghost"
               size="small"
               class="mafw-pod-rail-goal"
-              aria-label={`打开 goal ${goal().goalId}`}
+              aria-label={`打开当前目标 ${goal().title}`}
               onClick={() => props.onOpenGoal(goal().goalId)}
             >
-              <span class="mafw-pod-rail-goal-label">goal</span>
-              <span class="mafw-pod-rail-goal-id">{goal().goalId.slice(0, 14)}</span>
-              <span class="mafw-pod-rail-goal-state">{goal().status}</span>
+              <span class="mafw-pod-rail-goal-label">当前目标</span>
+              <span class="mafw-pod-rail-goal-id">{goal().title}</span>
+              <span class="mafw-pod-rail-goal-state">{podStageLabel(goal().stage)}</span>
             </ButtonV2>
           )}
         </Show>
 
+        <Show when={view().recentResults.length > 0}>
+          <div class="mafw-pod-rail-label">最近结果</div>
+          <For each={view().recentResults}>
+            {(goal) => (
+              <ButtonV2
+                variant="ghost"
+                size="small"
+                class="mafw-pod-rail-result"
+                onClick={() => props.onOpenGoal(goal.goalId)}
+              >
+                <span>{goal.title}</span>
+                <span>{podGoalResultLabel(goal.verdict)}</span>
+              </ButtonV2>
+            )}
+          </For>
+        </Show>
+
         <div class="mafw-pod-rail-label-row">
-          <span class="mafw-pod-rail-label">最近</span>
+          <span class="mafw-pod-rail-label">最近消息</span>
           <ButtonV2
             variant="ghost"
             size="small"

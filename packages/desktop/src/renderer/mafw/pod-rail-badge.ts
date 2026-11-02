@@ -17,12 +17,12 @@ export function countUnread(messages: PodUnreadMessage[], selfMemberId: string |
 }
 
 export function podRailBadge(input: {
-  tasks: Array<{ status: string }>
-  messages: PodUnreadMessage[]
-  selfMemberId: string | null
+  attention: Array<unknown>
+  unread: number
 }): number {
-  const review = input.tasks.filter((task) => task.status === "review").length
-  return review + countUnread(input.messages, input.selfMemberId)
+  // Unread is deliberately not added: the badge means "the team cannot move
+  // without you", not "something happened".
+  return input.attention.length
 }
 
 /** 徽标文案：0 不显示，>9 收敛为 9+。 */

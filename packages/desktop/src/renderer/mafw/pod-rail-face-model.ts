@@ -1,5 +1,6 @@
 // 左 dock 鲸群面的行模型（纯函数，无 Solid 依赖）。
 // spec: docs/superpowers/specs/2026-10-30-pod-left-rail-design.md §3.2
+import type { PodDetail, PodGoal, PodTask } from "@mafw/sdk"
 import { countUnread, type PodUnreadMessage } from "./pod-rail-badge"
 import { podShortTime } from "./pod-model"
 
@@ -118,6 +119,26 @@ export function buildRecentMessages(
 const OPEN_TASK_STATUSES = new Set(["pending", "in_progress", "blocked", "review", "reopened"])
 
 const TODO_STATUSES = new Set(["pending", "in_progress", "blocked", "reopened"])
+
+export function railView(detail: PodDetail): {
+  todoCount: number
+  todoItems: PodTask[]
+  reviewCount: number
+  recentResults: PodGoal[]
+} {
+  const plan = detail.tasks.filter((task) => task.kind === "plan")
+  const todoItems = plan.filter((task) => TODO_STATUSES.has(task.status))
+  const recentResults = [...detail.goals]
+    .filter((goal) => goal.status === "done" || goal.status === "aborted")
+    .sort((a, b) => (b.endedAt ?? b.enqueuedAt).localeCompare(a.endedAt ?? a.enqueuedAt))
+    .slice(0, 3)
+  return {
+    todoCount: todoItems.length,
+    todoItems,
+    reviewCount: plan.filter((task) => task.status === "review").length,
+    recentResults,
+  }
+}
 
 export function podCounts(
   detail: { tasks: Array<{ status: string }> },
