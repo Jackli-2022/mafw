@@ -4,6 +4,7 @@ import * as yaml from 'js-yaml';
 import { config as gatewayConfig } from '../config';
 import { IncomingMessage, ServerResponse } from 'http';
 import { SchedulerState } from './types';
+import { findGoalRequestPath, readGoalRequest } from '../core/goal/goal-intake';
 
 export class DashboardAPI {
   private projectDir: string;
@@ -416,8 +417,8 @@ export class DashboardAPI {
 
     if (goalId) {
       // Try to read goal-specific weights from state or request
-      const requestPath = path.join(this.mafwDir, 'requests', `${goalId}.json`);
-      if (fs.existsSync(requestPath)) {
+      const requestPath = findGoalRequestPath(this.mafwDir, goalId);
+      if (requestPath) {
         try {
           const req = JSON.parse(fs.readFileSync(requestPath, 'utf-8'));
           const p = req.priority || 'normal';
@@ -545,11 +546,10 @@ export class DashboardAPI {
 
   private async getGoalDetail(goalId: string): Promise<any> {
     const stateDir = path.join(this.mafwDir, 'state');
-    const requestsDir = path.join(this.mafwDir, 'requests');
     const wavesPath = path.join(this.mafwDir, 'waves.json');
 
     const statePath = path.join(stateDir, `${goalId}.json`);
-    const requestPath = path.join(requestsDir, `${goalId}.json`);
+    const requestPath = findGoalRequestPath(this.mafwDir, goalId);
 
     const detail: any = { goalId };
 
@@ -557,8 +557,9 @@ export class DashboardAPI {
       detail.state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
     }
 
-    if (fs.existsSync(requestPath)) {
-      detail.request = JSON.parse(fs.readFileSync(requestPath, 'utf-8'));
+    if (requestPath) {
+      const request = readGoalRequest(this.mafwDir, goalId);
+      if (request) detail.request = request;
     }
 
     if (fs.existsSync(wavesPath)) {

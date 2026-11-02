@@ -85,7 +85,12 @@ export class PodGoalService {
 
     await this.startQueued(row.id, pod.id, goalId, pod.projectDir);
     this.deps.notify(pod.id);
-    return { status: 'started', podId: pod.id, queueReason: null };
+    const afterStart = this.deps.store.getGoal(pod.id, goalId) ?? row;
+    return {
+      status: afterStart.status === 'active' ? 'started' : 'queued',
+      podId: pod.id,
+      queueReason: afterStart.status === 'active' ? null : (this.queueReasonFor(pod, afterStart) ?? null),
+    };
   }
 
   async onGoalArchived(

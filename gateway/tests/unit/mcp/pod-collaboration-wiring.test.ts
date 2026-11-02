@@ -25,4 +25,14 @@ describe('Pod collaboration MCP wiring gate', () => {
     expect(source).toContain("request?.planReview === 'manual'");
     expect(source).toContain('isTaskType(request?.taskType)');
   });
+
+  test('the Lead prompt tells the Lead how to create a discussing Goal', () => {
+    const leadPrompt = fs.readFileSync(
+      path.join(process.cwd(), 'src', 'skills', 'lead-identity.ts'),
+      'utf-8',
+    );
+    expect(leadPrompt).toContain('objective');
+    expect(leadPrompt).toContain('source: "lead"');
+    expect(leadPrompt).toContain('不会立刻开始执行');
+  });
 });

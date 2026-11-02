@@ -141,6 +141,24 @@ export function shouldAutoStartGoalEvent(event: unknown): boolean {
   return true;
 }
 
+/** 协作 Goal 工作区内的 goal.md 路径。 */
+export function goalDirCharterPath(mafwDir: string, goalId: string): string {
+  return path.join(mafwDir, 'goals', goalId, 'goal.md');
+}
+
+/** 历史 charter 路径（legacy 布局）。 */
+export function legacyGoalCharterPath(mafwDir: string, goalId: string): string {
+  return path.join(mafwDir, 'goals', `${goalId}.md`);
+}
+
+/** 一个 Goal 的 charter 实际位置：goal-dir 布局优先，其次 legacy。 */
+export function findGoalCharterPath(mafwDir: string, goalId: string): string | null {
+  for (const candidate of [goalDirCharterPath(mafwDir, goalId), legacyGoalCharterPath(mafwDir, goalId)]) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 /** 协作 Goal 工作区内的 request.json 路径。 */
 export function goalDirRequestPath(mafwDir: string, goalId: string): string {
   return path.join(mafwDir, 'goals', goalId, 'request.json');

@@ -87,52 +87,50 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
         } catch (error: any) {
           deps.log?.(`[Goal] pod lookup failed for ${targetProjectDir}: ${error?.message ?? error}`);
         }
-        if (!sessionID) {
-          // A Pod project must never silently take the legacy auto-start path just
-          // because the caller forgot to pass its session id.
-          if (hasPod || args.source === "lead") {
-            return fail(new PodError(400, 'sessionID is required to create a goal in a Pod project'));
-          }
-        } else {
-          let isLead = false;
+        let isLead = false;
+        if (sessionID) {
           try {
             isLead = deps.techLead.isLeadSession(sessionID);
           } catch (error: any) {
             deps.log?.(`[Goal] Lead lookup failed for ${sessionID}: ${error?.message ?? error}`);
           }
-          if (!isLead) {
-            if (hasPod) {
-              return fail(new PodError(403, 'only the project Lead can create a Pod goal'));
-            }
-          } else {
-            try {
-              const created = await deps.techLead.createGoal({
-                projectDir: targetProjectDir,
-                title,
-                objective: objective || undefined,
-                charter: charter || undefined,
-                acceptance: Array.isArray(args.acceptance) ? args.acceptance as string[] : undefined,
-                boundaries: Array.isArray(args.boundaries) ? args.boundaries as string[] : undefined,
-                metrics: (args.metrics as Record<string, { target?: number; unit?: string }>) || undefined,
-                priority: args.priority as PodTechLeadGoalInput['priority'],
-                maxLoops: args.maxLoops as number | undefined,
-                budget: args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined,
-                taskType: args.taskType as PodTechLeadGoalInput['taskType'],
-                planReview: (args.planReview === "manual" || args.planReview === "auto")
-                  ? args.planReview
-                  : undefined,
-                goalId: clean(args.goalId) || undefined,
-                authorization: {
-                  source: "lead",
-                  requestMode: "explicit",
-                  scope: requestedProjectDir,
-                },
-                createdBy: sessionID,
-              });
-              return ok({ success: true, routedTo: "tech_lead", ...created });
-            } catch (error) {
-              return fail(error);
-            }
+          if (!isLead && hasPod) {
+            return fail(new PodError(403, 'only the project Lead can create a Pod goal'));
+          }
+        }
+        // Local single-user gateway ruling: no transport caller identity on an existing
+        // Pod project is treated as the local user/Lead. It must create a discussing
+        // Goal (never the legacy auto-start path). A resolved Lead of a not-yet-created
+        // Pod routes the same way (Pod ensure creates it).
+        const routeToTechLead = !!deps.techLead && (hasPod || isLead);
+        if (routeToTechLead) {
+          try {
+            const created = await deps.techLead.createGoal({
+              projectDir: targetProjectDir,
+              title,
+              objective: objective || undefined,
+              charter: charter || undefined,
+              acceptance: Array.isArray(args.acceptance) ? args.acceptance as string[] : undefined,
+              boundaries: Array.isArray(args.boundaries) ? args.boundaries as string[] : undefined,
+              metrics: (args.metrics as Record<string, { target?: number; unit?: string }>) || undefined,
+              priority: args.priority as PodTechLeadGoalInput['priority'],
+              maxLoops: args.maxLoops as number | undefined,
+              budget: args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined,
+              taskType: args.taskType as PodTechLeadGoalInput['taskType'],
+              planReview: (args.planReview === "manual" || args.planReview === "auto")
+                ? args.planReview
+                : undefined,
+              goalId: clean(args.goalId) || undefined,
+              authorization: {
+                source: isLead || !sessionID ? "lead" : "user",
+                requestMode: "explicit",
+                scope: requestedProjectDir,
+              },
+              ...(sessionID ? { createdBy: sessionID } : {}),
+            });
+            return ok({ success: true, routedTo: "tech_lead", ...created });
+          } catch (error) {
+            return fail(error);
           }
         }
       }
@@ -157,6 +155,8 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
             source: normalizeSource(args.source),
             requestMode: "explicit",
           },
+          // Lead-created goals outside a Pod must not auto-start NodeDriver either.
+          ...(args.source === 'lead' ? { autoStart: false } : {}),
         }, {
           resolveProject: (requested) => resolveIntakeProject(
             requested,

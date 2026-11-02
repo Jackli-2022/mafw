@@ -12,6 +12,13 @@ import { routeNext, GoalNodeName } from './routing';
 import { renderNodePrompt, nodeArtifactPaths, nodeOutputSchema } from './node-prompts';
 import { isTaskType } from '../../orchestration/capability-ledger';
 import { parseReviewRubric, taskAcceptanceFromWavePlan, taskIdsFromWavePlan } from './review-rubric';
+import {
+  findGoalCharterPath,
+  findGoalRequestPath,
+  legacyGoalCharterPath,
+  legacyGoalRequestPath,
+  readGoalRequest,
+} from './goal-intake';
 import { ensureWaveTaskIds } from './wave-plan-edit';
 import { matchesSignature } from '../langgraph/signature-detector';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
@@ -208,10 +215,26 @@ export class NodeDriver {
       } catch { return undefined; }
     })();
 
+    const requestPath = findGoalRequestPath(mafwDir, goalId)
+      ?? legacyGoalRequestPath(mafwDir, goalId);
+    const charterPath = findGoalCharterPath(mafwDir, goalId)
+      ?? legacyGoalCharterPath(mafwDir, goalId);
+    const request = readGoalRequest(mafwDir, goalId);
+    const goalAcceptance = node === 'plan' && Array.isArray(request?.acceptance)
+      ? request!.acceptance.map((item: unknown) => String(item).trim()).filter(Boolean)
+      : undefined;
+    const goalBoundaries = node === 'plan' && Array.isArray(request?.boundaries)
+      ? request!.boundaries.map((item: unknown) => String(item).trim()).filter(Boolean)
+      : undefined;
+    const goalTaskType = node === 'plan' && typeof request?.taskType === 'string'
+      ? request.taskType
+      : undefined;
+    const planReview = node === 'plan' ? state.planReview : undefined;
+
     const basePrompt = renderNodePrompt(node, {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds,
-      charterPath: path.join(mafwDir, 'goals', `${goalId}.md`),
-      requestPath: path.join(mafwDir, 'requests', `${goalId}.json`),
+      charterPath,
+      requestPath,
       reviewFeedback: state.reviewFeedback || undefined,
       planFeedback: state.planFeedback || undefined,
       attempt,
@@ -227,14 +250,10 @@ export class NodeDriver {
         && (state.userResponse.resumeNode ?? 'plan') === node
         ? state.userResponse.questions
         : undefined,
-      goalAcceptance: node === 'plan' ? (() => {
-        try {
-          const req = JSON.parse(fs.readFileSync(path.join(mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
-          return Array.isArray(req?.acceptance)
-            ? req.acceptance.map((item: unknown) => String(item).trim()).filter(Boolean)
-            : undefined;
-        } catch { return undefined; }
-      })() : undefined,
+      goalAcceptance: node === 'plan' ? goalAcceptance : undefined,
+      goalBoundaries: node === 'plan' ? goalBoundaries : undefined,
+      goalTaskType: node === 'plan' ? goalTaskType : undefined,
+      planReview: node === 'plan' ? planReview : undefined,
       priorBlock: this.deps.capabilityPrior?.(goalId) ?? undefined,
       counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
       acceptance: node === 'review' ? acceptance : undefined,

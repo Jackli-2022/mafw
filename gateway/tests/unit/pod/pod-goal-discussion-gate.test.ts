@@ -113,6 +113,20 @@ describe('PodGoalService discussion start gate', () => {
     expect(service.isStartable('g1')).toBe(false);
   });
 
+  test('enqueueGoal reports queued when startQueued refuses a discussing Goal', async () => {
+    // Revision exists before the root row (direct Goal intake creates both).
+    store.createGoalRevision({
+      podId: 'pod_1', goalId: 'g-discuss', revision: 1, status: 'discussing', now: NOW,
+    });
+
+    const result = await service.enqueueGoal('g-discuss', projectDir);
+
+    expect(result.status).toBe('queued');
+    expect(startGoal).not.toHaveBeenCalled();
+    expect(store.getGoal('pod_1', 'g-discuss')?.status).toBe('queued');
+    expect(store.getActiveGoal('pod_1')).toBeNull();
+  });
+
   test('legacy Goals without a revision row remain startable', () => {
     store.enqueueGoal({ id: 'pg_legacy', podId: 'pod_1', goalId: 'legacy', now: NOW });
     expect(service.isStartable('legacy')).toBe(true);

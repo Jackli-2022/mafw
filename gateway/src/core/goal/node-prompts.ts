@@ -175,6 +175,12 @@ export interface NodePromptCtx {
   goalConditions?: GoalEvalCondition[];
   /** Goal 级期望结果（request.acceptance）；plan 必须分解到 wave task acceptance。 */
   goalAcceptance?: string[];
+  /** Goal 级边界（request.boundaries）；plan 不能越界。 */
+  goalBoundaries?: string[];
+  /** 创建时声明的任务类型（plan 判断可修正，waves.taskType 为准）。 */
+  goalTaskType?: string;
+  /** 计划审阅模式（manual = 人工批准后才实施）。 */
+  planReview?: 'auto' | 'manual';
   attempt?: number;
   maxAttempts?: number;
   lastFailure?: {
@@ -209,6 +215,15 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
       head, docs, retryContext, '',
       ctx.goalAcceptance?.length
         ? `Goal acceptance（必须在 wave task acceptance 中 decompose，不能只复述）：\n${ctx.goalAcceptance.map((item) => `- ${item}`).join('\n')}`
+        : '',
+      ctx.goalBoundaries?.length
+        ? `Goal boundaries（不得越界）：\n${ctx.goalBoundaries.map((item) => `- ${item}`).join('\n')}`
+        : '',
+      ctx.goalTaskType
+        ? `Declared task type: ${ctx.goalTaskType}（可修正，最终以 waves.taskType 为准）`
+        : '',
+      ctx.planReview
+        ? `Plan review mode: ${ctx.planReview === 'manual' ? 'manual（计划需人工批准后才实施）' : 'auto'}`
         : '',
       ctx.priorBlock || '',
       ctx.counterfactualBlock || '',

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { GatewayDatabase, GoalOutcome } from '../memory/gateway-db';
 import { getActivePolicy } from './policy';
 import { log } from '../core/utils/logger';
+import { readGoalRequest } from '../core/goal/goal-intake';
 
 export type GoalVerdict = 'PASS' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED';
 
@@ -125,10 +126,8 @@ function aggregateFeedback(projectDir: string, goalId: string): { thumbs_up: num
 
 function readRequestSnapshot(mafwDir: string, goalId: string): { createdAt?: string } {
   try {
-    const p = path.join(mafwDir, 'requests', `${goalId}.json`);
-    if (!fs.existsSync(p)) return {};
-    const req = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    return { createdAt: req.createdAt };
+    const req = readGoalRequest(mafwDir, goalId);
+    return req?.createdAt ? { createdAt: String(req.createdAt) } : {};
   } catch { return {}; }
 }
 
