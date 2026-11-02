@@ -1,26 +1,23 @@
 import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs"
 import { parsePatch } from "diff"
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { MafwDiff, MafwDiffStatus } from "@mafw/sdk"
 
-type LegacyDiff = {
-  file: string
-  patch?: string
+/** 审阅 diff 的读入形状：MAFW diff 视图 + 可选的整文件前后内容。 */
+export type ReviewDiffSource = MafwDiff & {
   before?: string
   after?: string
-  additions: number
-  deletions: number
-  status?: "added" | "deleted" | "modified"
 }
 
-type SnapshotDiff = SnapshotFileDiff & { file: string }
-type ReviewDiff = SnapshotDiff | VcsFileDiff | LegacyDiff
-export type DiffSource = Pick<LegacyDiff, "file" | "patch" | "before" | "after">
+export type DiffSource = Pick<ReviewDiffSource, "file" | "patch" | "before" | "after">
+
+/** 渲染层的三态变更（MAFW 的 renamed/unknown 在展示上折叠）。 */
+export type ViewDiffStatus = "added" | "deleted" | "modified"
 
 export type ViewDiff = {
   file: string
   additions: number
   deletions: number
-  status?: "added" | "deleted" | "modified"
+  status?: ViewDiffStatus
   fileDiff: FileDiffMetadata
 }
 
@@ -36,12 +33,18 @@ export function resolveFileDiff(diff: DiffSource) {
   )
 }
 
-export function normalize(diff: ReviewDiff): ViewDiff {
+function viewStatus(status: MafwDiffStatus | undefined): ViewDiffStatus | undefined {
+  if (status === "added" || status === "deleted" || status === "modified") return status
+  if (status === "renamed") return "modified"
+  return undefined
+}
+
+export function normalize(diff: ReviewDiffSource): ViewDiff {
   return {
     file: diff.file,
-    additions: diff.additions,
-    deletions: diff.deletions,
-    status: diff.status,
+    additions: diff.additions ?? 0,
+    deletions: diff.deletions ?? 0,
+    status: viewStatus(diff.status),
     fileDiff: resolveFileDiff(diff),
   }
 }

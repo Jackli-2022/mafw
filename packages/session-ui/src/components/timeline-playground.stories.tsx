@@ -1,20 +1,19 @@
-﻿// @ts-nocheck
-import { createSignal, createMemo, createEffect, on, For, Show, batch } from "solid-js"
+﻿import { createSignal, createMemo, createEffect, on, For, Show, batch } from "solid-js"
 import { createStore, produce } from "solid-js/store"
-import type {
-  Message,
-  UserMessage,
-  AssistantMessage,
-  Part,
-  TextPart,
-  ReasoningPart,
-  ToolPart,
-  FilePart,
-  AgentPart,
-} from "@opencode-ai/sdk/v2"
+import type { MafwPart, MafwSession } from "@mafw/sdk"
+import type { UiAssistantMessage, UiMessage, UiUserMessage } from "../context/data"
 import { DataProvider } from "../context/data"
 import { FileComponentProvider } from "@mafw/ui/context/file"
 import { SessionTurn } from "./session-turn"
+
+// ---- MAFW View DTO 变体别名（故事数据按规范形构造，不再用 runtime SDK 类型） ----
+type Part = MafwPart
+type UiSession = MafwSession
+type TextPart = Extract<MafwPart, { type: "text" }>
+type ReasoningPart = Extract<MafwPart, { type: "reasoning" }>
+type ToolPart = Extract<MafwPart, { type: "tool" }>
+type FilePart = Extract<MafwPart, { type: "file" }>
+type AgentPart = Extract<MafwPart, { type: "agent" }>
 
 // ---------------------------------------------------------------------------
 // ID helpers
@@ -72,10 +71,9 @@ Please also add appropriate CSS containment hints and make sure we don't break t
           filename: "session-turn.tsx",
           url: "src/components/session-turn.tsx",
           source: {
-            type: "file",
+            kind: "file",
             path: "src/components/session-turn.tsx",
             text: {
-              value: "@src/components/session-turn.tsx",
               start: 7,
               end: 38,
             },
@@ -159,9 +157,9 @@ Please also add appropriate CSS containment hints and make sure we don't break t
           filename: "session-turn.tsx",
           url: "src/components/session-turn.tsx",
           source: {
-            type: "file",
+            kind: "file",
             path: "src/components/session-turn.tsx",
-            text: { value: "@src/components/session-turn.tsx", start: 0, end: 0 },
+            text: { start: 0, end: 0 },
           },
         } as FilePart,
       ]
@@ -452,13 +450,19 @@ const TOOL_SAMPLES = {
 // Fake data generators
 // ---------------------------------------------------------------------------
 const SESSION_ID = "playground-session"
-const DEFAULT_SESSION = { id: SESSION_ID, title: "Timeline Playground" }
+const DEFAULT_SESSION: UiSession = { id: SESSION_ID, title: "Timeline Playground", status: "idle" }
 
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
-function normalize(raw: unknown) {
+/**
+ * `opencode export` JSON 摄取 → MAFW flat 历史（消息 + 按消息归组的 parts）。
+ *
+ * 故事只做一次性导入：这里的 wire 读取属于客户端摄取层，渲染链路一律走
+ * flat `MafwMessage`/`MafwPart`。
+ */
+function normalize(raw: unknown): { info: Record<string, unknown>; messages: UiMessage[]; parts: Map<string, Part[]> } {
   if (Array.isArray(raw)) {
     const info = raw.find((row) => record(row) && row.type === "session" && record(row.data))?.data
     if (!record(info) || typeof info.id !== "string") {
@@ -470,37 +474,32 @@ function normalize(raw: unknown) {
       if (!record(row) || !record(row.data)) return []
       if (row.type === "part" && typeof row.data.messageID === "string") {
         const list = part.get(row.data.messageID) ?? []
-        list.push(row.data as Part)
+        list.push(row.data as unknown as Part)
         part.set(row.data.messageID, list)
         return []
       }
       if (row.type !== "message" || typeof row.data.id !== "string") return []
-      return [{ info: row.data as Message, parts: [] as Part[] }]
+      return [row.data as unknown as UiMessage]
     })
 
-    return {
-      info,
-      messages: messages.map((msg) => ({
-        info: msg.info,
-        parts: part.get(msg.info.id) ?? [],
-      })),
-    }
+    return { info, messages, parts: part }
   }
 
   if (!record(raw) || !record(raw.info) || typeof raw.info.id !== "string" || !Array.isArray(raw.messages)) {
     throw new Error("Expected an `opencode export` JSON file")
   }
 
-  return {
-    info: raw.info,
-    messages: raw.messages.flatMap((row) => {
-      if (!record(row) || !record(row.info) || typeof row.info.id !== "string") return []
-      return [{ info: row.info as Message, parts: Array.isArray(row.parts) ? (row.parts as Part[]) : [] }]
-    }),
-  }
+  const part = new Map<string, Part[]>()
+  const messages = raw.messages.flatMap((row) => {
+    if (!record(row) || !record(row.info) || typeof row.info.id !== "string") return []
+    part.set(row.info.id, Array.isArray(row.parts) ? (row.parts as Part[]) : [])
+    return [row.info as unknown as UiMessage]
+  })
+
+  return { info: raw.info, messages, parts: part }
 }
 
-function mkUser(text: string, extra: Part[] = [], sessionID = SESSION_ID): { message: UserMessage; parts: Part[] } {
+function mkUser(text: string, extra: Part[] = [], sessionID = SESSION_ID): { message: UiUserMessage; parts: Part[] } {
   const id = uid()
   return {
     message: {
@@ -510,38 +509,33 @@ function mkUser(text: string, extra: Part[] = [], sessionID = SESSION_ID): { mes
       time: { created: Date.now() },
       agent: "code",
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" },
-    } as UserMessage,
+    },
     parts: [
-      { id: uid(), type: "text", text, time: { created: Date.now() } } as TextPart,
+      { id: uid(), type: "text", text, time: { start: Date.now() } },
       // Clone extra parts with fresh ids so each user message owns unique part instances
       ...extra.map((p) => ({ ...p, id: uid() })),
     ],
   }
 }
 
-function mkAssistant(parentID: string, sessionID = SESSION_ID): AssistantMessage {
+function mkAssistant(parentID: string, sessionID = SESSION_ID): UiAssistantMessage {
   return {
     id: uid(),
     sessionID,
     role: "assistant",
     time: { created: Date.now(), completed: Date.now() + 3000 },
     parentID,
-    modelID: "claude-sonnet-4-20250514",
-    providerID: "anthropic",
-    mode: "default",
+    model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" },
     agent: "code",
-    path: { cwd: "/project", root: "/project" },
-    cost: 0.003,
-    tokens: { input: 1200, output: 800, reasoning: 200, cache: { read: 0, write: 0 } },
-  } as AssistantMessage
+  }
 }
 
 function textPart(text: string): TextPart {
-  return { id: uid(), type: "text", text, time: { created: Date.now() } } as TextPart
+  return { id: uid(), type: "text", text, time: { start: Date.now() } }
 }
 
 function reasoningPart(text: string): ReasoningPart {
-  return { id: uid(), type: "reasoning", text, time: { start: Date.now(), end: Date.now() + 500 } } as ReasoningPart
+  return { id: uid(), type: "reasoning", text, time: { start: Date.now(), end: Date.now() + 500 } }
 }
 
 function toolPart(sample: (typeof TOOL_SAMPLES)[keyof typeof TOOL_SAMPLES], status = "completed"): ToolPart {
@@ -1160,7 +1154,7 @@ function FileStub() {
 function Playground() {
   // ---- Messages & parts state ----
   const [state, setState] = createStore<{
-    messages: Message[]
+    messages: UiMessage[]
     parts: Record<string, Part[]>
   }>({
     messages: [],
@@ -1240,7 +1234,7 @@ function Playground() {
   }
 
   // ---- Derived ----
-  const userMessages = createMemo(() => state.messages.filter((m): m is UserMessage => m.role === "user"))
+  const userMessages = createMemo(() => state.messages.filter((m): m is UiUserMessage => m.role === "user"))
 
   const data = createMemo(() => ({
     session: [session()],
@@ -1251,7 +1245,14 @@ function Playground() {
     part: state.parts,
     provider: {
       all: new Map([
-        ["anthropic", { id: "anthropic", models: { "claude-sonnet-4-20250514": { name: "Claude Sonnet" } } }],
+        [
+          "anthropic",
+          {
+            id: "anthropic",
+            name: "Anthropic",
+            models: [{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet" }],
+          },
+        ],
       ]),
       connected: ["anthropic"],
       default: {},
@@ -1417,19 +1418,19 @@ function Playground() {
     setState(
       produce((draft) => {
         const msg = draft.messages.findLast(
-          (item): item is AssistantMessage => item.role === "assistant" && item.parentID === user.id,
+          (item): item is UiAssistantMessage => item.role === "assistant" && item.parentID === user.id,
         )
 
         if (msg) {
           const time = msg.time ?? { created: now }
           msg.time = { ...time, completed: time.completed ?? now }
-          msg.error = { name: "MessageAbortedError", message: "Interrupted" }
+          msg.error = { kind: "abort", message: "Interrupted" }
           return
         }
 
         const asst = mkAssistant(user.id, session().id)
         asst.time = { created: now, completed: now }
-        asst.error = { name: "MessageAbortedError", message: "Interrupted" }
+        asst.error = { kind: "abort", message: "Interrupted" }
         draft.messages.push(asst)
         draft.parts[asst.id] = []
       }),
@@ -1440,27 +1441,23 @@ function Playground() {
     const next = normalize(raw)
     const id = typeof next.info.id === "string" && next.info.id ? next.info.id : SESSION_ID
     const messages = next.messages.map((msg) => ({
-      ...msg.info,
-      sessionID: typeof msg.info.sessionID === "string" ? msg.info.sessionID : id,
+      ...msg,
+      sessionID: typeof msg.sessionID === "string" && msg.sessionID ? msg.sessionID : id,
     }))
     const parts = Object.fromEntries(
-      next.messages.map((msg, idx) => {
-        const info = messages[idx]
-        return [
-          info.id,
-          msg.parts.map((part) => ({
-            ...part,
-            messageID: typeof part.messageID === "string" ? part.messageID : info.id,
-            sessionID: typeof part.sessionID === "string" ? part.sessionID : info.sessionID,
-          })),
-        ]
-      }),
+      messages.map((info) => [
+        info.id,
+        (next.parts.get(info.id) ?? []).map((part) => ({
+          ...part,
+          messageID: typeof part.messageID === "string" ? part.messageID : info.id,
+          sessionID: typeof part.sessionID === "string" ? part.sessionID : info.sessionID,
+        })),
+      ]),
     )
 
     batch(() => {
       setSession({
         ...DEFAULT_SESSION,
-        ...next.info,
         id,
         title: typeof next.info.title === "string" && next.info.title ? next.info.title : name,
       })

@@ -1,17 +1,20 @@
 ﻿import { bundledLanguagesInfo } from "shiki"
 import { getFilename } from "../util/path"
-import type { FilePart } from "@opencode-ai/sdk/v2"
+import type { MafwPart } from "@mafw/sdk"
 
-export function attached(part: FilePart) {
+/** 文件 part（MAFW View DTO 的 `file` 变体）。 */
+export type MafwFilePart = Extract<MafwPart, { type: "file" }>
+
+export function attached(part: MafwFilePart) {
   return part.url.startsWith("data:")
 }
 
-export function inline(part: FilePart) {
+export function inline(part: MafwFilePart) {
   if (attached(part)) return false
   return part.source?.text?.start !== undefined && part.source?.text?.end !== undefined
 }
 
-export function kind(part: FilePart) {
+export function kind(part: MafwFilePart) {
   return part.mime.startsWith("image/") ? "image" : "file"
 }
 

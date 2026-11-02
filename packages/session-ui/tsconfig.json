@@ -13,7 +13,7 @@
     "noEmit": true,
     "lib": ["es2023", "dom", "dom.iterable"],
     "strict": true,
-    "types": ["vite/client"],
+    "types": ["vite/client", "node"],
     "paths": {
       "bun:test": ["../../packages/test-shim/bun-test.d.ts"]
     }

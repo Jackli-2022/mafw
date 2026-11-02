@@ -118,6 +118,18 @@ describe("session diff", () => {
     expect(text(view, "additions")).toBe("two\n")
   })
 
+  test("defaults missing diff stats and folds renamed status", () => {
+    const view = normalize({ file: "a.ts", patch: "@@ -1 +1 @@\n-old\n+new\n", status: "renamed" })
+
+    expect(view.additions).toBe(0)
+    expect(view.deletions).toBe(0)
+    expect(view.status).toBe("modified")
+  })
+
+  test("keeps unknown diff status out of the three-state view", () => {
+    expect(normalize({ file: "a.ts" }).status).toBeUndefined()
+  })
+
   test("ignores malformed persisted patches", () => {
     const diff = {
       file: "a.ts",

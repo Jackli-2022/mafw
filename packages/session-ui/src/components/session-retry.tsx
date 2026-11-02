@@ -1,16 +1,26 @@
 ﻿import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useI18n } from "@mafw/ui/context/i18n"
 import { Card } from "@mafw/ui/card"
 import { Tooltip } from "@mafw/ui/tooltip"
 import { Spinner } from "@mafw/ui/spinner"
 
-export function SessionRetry(props: { status: SessionStatus; show?: boolean }) {
+/**
+ * 重试展示信息。
+ *
+ * 会话状态本身是 MAFW View DTO 的 `MafwSessionStatus`（`'retry'` 只是枚举值），
+ * 重试次数/原因/下次时间属于传输层元数据，单独传入，不还原 runtime 原生
+ * `SessionStatus` 对象形状。
+ */
+export interface SessionRetryInfo {
+  attempt: number
+  message: string
+  /** 下一次重试的时间戳（毫秒）。 */
+  next?: number
+}
+
+export function SessionRetry(props: { retry?: SessionRetryInfo; show?: boolean }) {
   const i18n = useI18n()
-  const retry = createMemo(() => {
-    if (props.status.type !== "retry") return
-    return props.status
-  })
+  const retry = createMemo(() => props.retry)
   const [seconds, setSeconds] = createSignal(0)
   createEffect(
     on(retry, (current) => {

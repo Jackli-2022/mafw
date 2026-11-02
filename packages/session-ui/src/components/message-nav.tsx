@@ -1,23 +1,29 @@
-﻿import { UserMessage } from "@opencode-ai/sdk/v2"
+﻿import type { MafwDiff } from "@mafw/sdk"
+import type { UiUserMessage } from "../context"
 import { HoverCard } from "@kobalte/core/hover-card"
 import { ComponentProps, For, Match, Show, createSignal, splitProps, Switch } from "solid-js"
 import { DiffChanges } from "@mafw/ui/diff-changes"
 import { useI18n } from "@mafw/ui/context/i18n"
 
+/** View DTO 的 diff 统计字段可缺省；DiffChanges 需要确定的数字。 */
+function diffChanges(diffs: MafwDiff[] | undefined) {
+  return (diffs ?? []).map((diff) => ({ additions: diff.additions ?? 0, deletions: diff.deletions ?? 0 }))
+}
+
 export function MessageNav(
   props: ComponentProps<"ul"> & {
-    messages: UserMessage[]
-    current?: UserMessage
+    messages: UiUserMessage[]
+    current?: UiUserMessage
     size: "normal" | "compact"
-    onMessageSelect: (message: UserMessage) => void
-    getLabel?: (message: UserMessage) => string | undefined
+    onMessageSelect: (message: UiUserMessage) => void
+    getLabel?: (message: UiUserMessage) => string | undefined
   },
 ) {
   const i18n = useI18n()
   const [local, others] = splitProps(props, ["messages", "current", "size", "onMessageSelect", "getLabel", "class"])
   const [hovercardOpen, setHovercardOpen] = createSignal(false)
 
-  const selectMessage = (message: UserMessage) => {
+  const selectMessage = (message: UiUserMessage) => {
     setHovercardOpen(false)
     local.onMessageSelect(message)
   }
@@ -51,7 +57,7 @@ export function MessageNav(
                 </Match>
                 <Match when={local.size === "normal"}>
                   <button data-slot="message-nav-message-button" onClick={handleClick} onKeyDown={handleKeyPress}>
-                    <DiffChanges changes={message.summary?.diffs ?? []} variant="bars" />
+                    <DiffChanges changes={diffChanges(message.summary?.diffs)} variant="bars" />
                     <div
                       data-slot="message-nav-title-preview"
                       data-active={message.id === local.current?.id || undefined}

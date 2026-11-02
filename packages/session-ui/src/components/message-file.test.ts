@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { FilePart } from "@opencode-ai/sdk/v2"
-import { attached, inline, kind, typeLabel } from "./message-file"
+import { attached, inline, kind, typeLabel, type MafwFilePart } from "./message-file"
 
-function file(part: Partial<FilePart> = {}): FilePart {
+function file(part: Partial<MafwFilePart> = {}): MafwFilePart {
   return {
     id: "part_1",
     sessionID: "ses_1",
@@ -26,9 +25,9 @@ describe("message-file", () => {
       inline(
         file({
           source: {
-            type: "file",
+            kind: "file",
             path: "/repo/README.txt",
-            text: { value: "@README.txt", start: 0, end: 11 },
+            text: { start: 0, end: 11 },
           },
         }),
       ),
@@ -39,9 +38,9 @@ describe("message-file", () => {
         file({
           url: "data:text/plain;base64,SGVsbG8=",
           source: {
-            type: "file",
+            kind: "file",
             path: "/repo/README.txt",
-            text: { value: "@README.txt", start: 0, end: 11 },
+            text: { start: 0, end: 11 },
           },
         }),
       ),

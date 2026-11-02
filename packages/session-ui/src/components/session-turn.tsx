@@ -1,11 +1,5 @@
-﻿import {
-  AssistantMessage,
-  type SnapshotFileDiff,
-  Message as MessageType,
-  Part as PartType,
-} from "@opencode-ai/sdk/v2/client"
-import type { SessionStatus } from "@opencode-ai/sdk/v2"
-import { useData } from "../context"
+﻿import type { MafwDiff, MafwPart, MafwSessionStatus } from "@mafw/sdk"
+import { useData, type UiAssistantMessage, type UiMessage } from "../context"
 import { useFileComponent } from "@mafw/ui/context/file"
 
 import { Binary } from "../util/binary"
@@ -22,7 +16,7 @@ import { StickyAccordionHeader } from "@mafw/ui/sticky-accordion-header"
 import { DiffChanges } from "@mafw/ui/diff-changes"
 import { Icon } from "@mafw/ui/icon"
 import { TextShimmer } from "@mafw/ui/text-shimmer"
-import { SessionRetry } from "./session-retry"
+import { SessionRetry, type SessionRetryInfo } from "./session-retry"
 import { TextReveal } from "@mafw/ui/text-reveal"
 import { createAutoScroll } from "@mafw/ui/hooks"
 import { useI18n } from "@mafw/ui/context/i18n"
@@ -92,15 +86,19 @@ function list<T>(value: T[] | undefined | null, fallback: T[]) {
   return fallback
 }
 
-type SummaryDiff = SnapshotFileDiff & { file: string }
+type SummaryDiff = MafwDiff
 
-function summaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
-  return typeof value.file === "string"
+/** View DTO 的 diff 统计字段可缺省；DiffChanges 需要确定的数字。 */
+function diffChanges(diffs: MafwDiff | MafwDiff[]) {
+  if (Array.isArray(diffs)) {
+    return diffs.map((diff) => ({ additions: diff.additions ?? 0, deletions: diff.deletions ?? 0 }))
+  }
+  return { additions: diffs.additions ?? 0, deletions: diffs.deletions ?? 0 }
 }
 
 const hidden = new Set(["todowrite"])
 
-function partState(part: PartType, showReasoningSummaries: boolean) {
+function partState(part: MafwPart, showReasoningSummaries: boolean) {
   if (part.type === "tool") {
     if (hidden.has(part.tool)) return
     if (part.tool === "question" && (part.state.status === "pending" || part.state.status === "running")) return
@@ -156,7 +154,7 @@ export function SessionTurn(
   props: ParentProps<{
     sessionID: string
     messageID: string
-    messages?: MessageType[]
+    messages?: UiMessage[]
     actions?: UserActions
     assistantActions?: AssistantActions
     showReasoningSummaries?: boolean
@@ -166,9 +164,11 @@ export function SessionTurn(
      * 顶层 part 条目渲染后追加内容的钩子（如权限卡内联到发起它的工具卡后面）。
      * 只对渲染为顶层「part」条目的 part 触发（context 组工具/隐藏工具不触发）。
      */
-    renderAfterPart?: (part: PartType, message: MessageType) => JSX.Element
+    renderAfterPart?: (part: MafwPart, message: UiMessage) => JSX.Element
     active?: boolean
-    status?: SessionStatus
+    status?: MafwSessionStatus
+    /** 会话处于 retry 时的展示元数据（次数/原因/下次时间）。 */
+    retry?: SessionRetryInfo
     onUserInteracted?: () => void
     classes?: {
       root?: string
@@ -181,11 +181,11 @@ export function SessionTurn(
   const i18n = useI18n()
   const fileComponent = useFileComponent()
 
-  const emptyMessages: MessageType[] = []
-  const emptyParts: PartType[] = []
-  const emptyAssistant: AssistantMessage[] = []
+  const emptyMessages: UiMessage[] = []
+  const emptyParts: MafwPart[] = []
+  const emptyAssistant: UiAssistantMessage[] = []
   const emptyDiffs: SummaryDiff[] = []
-  const idle = { type: "idle" as const }
+  const idle: MafwSessionStatus = "idle"
 
   const allMessages = createMemo(() => props.messages ?? list(data.store.message?.[props.sessionID], emptyMessages))
 
@@ -217,7 +217,7 @@ export function SessionTurn(
     if (typeof props.active === "boolean") return
     const messages = allMessages() ?? emptyMessages
     return messages.findLast(
-      (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
+      (item): item is UiAssistantMessage => item.role === "assistant" && typeof item.time?.completed !== "number",
     )
   })
 
@@ -254,7 +254,6 @@ export function SessionTurn(
     const seen = new Set<string>()
     return files
       .reduceRight<SummaryDiff[]>((result, diff) => {
-        if (!summaryDiff(diff)) return result
         if (seen.has(diff.file)) return result
         seen.add(diff.file)
         result.push(diff)
@@ -285,11 +284,11 @@ export function SessionTurn(
       const messages = allMessages() ?? emptyMessages
       if (messageIndex() < 0) return emptyAssistant
 
-      const result: AssistantMessage[] = []
+      const result: UiAssistantMessage[] = []
       for (let i = 0; i < messages.length; i++) {
         const item = messages[i]
         if (!item) continue
-        if (item.role === "assistant" && item.parentID === msg.id) result.push(item as AssistantMessage)
+        if (item.role === "assistant" && item.parentID === msg.id) result.push(item as UiAssistantMessage)
       }
       return result
     },
@@ -297,15 +296,13 @@ export function SessionTurn(
     { equals: same },
   )
 
-  const interrupted = createMemo(() => assistantMessages().some((m) => m.error?.name === "MessageAbortedError"))
+  const interrupted = createMemo(() => assistantMessages().some((m) => m.error?.kind === "abort"))
   const divider = createMemo(() => {
     if (compaction()) return i18n.t("ui.messagePart.compaction")
     if (interrupted()) return i18n.t("ui.message.interrupted")
     return ""
   })
-  const error = createMemo(
-    () => assistantMessages().find((m) => m.error && m.error.name !== "MessageAbortedError")?.error,
-  )
+  const error = createMemo(() => assistantMessages().find((m) => m.error && m.error.kind !== "abort")?.error)
   const showAssistantCopyPartID = createMemo(() => {
     const messages = assistantMessages()
 
@@ -324,26 +321,21 @@ export function SessionTurn(
     return undefined
   })
   const errorText = createMemo(() => {
-    const msg = error()?.data?.message
-    if (typeof msg === "string") return unwrap(msg)
-    if (msg === undefined || msg === null) return ""
-    // oxlint-disable-next-line no-base-to-string -- msg is unknown from error data, coercion is intentional
-    return unwrap(String(msg))
+    const msg = error()?.message
+    if (!msg) return ""
+    return unwrap(msg)
   })
 
-  // 2.1 的 stop reason：历史 message.finish 与 live step-finish.reason 都可能是来源。
+  // 回合终态：MAFW `stopReason` 优先，历史 step-finish.reason 兜底。
   const stopReason = createMemo(() => {
     const messages = assistantMessages()
     const last = messages[messages.length - 1]
     if (!last) return ""
-    const direct = (last as any).stopReason ?? (last as any).finish
-    if (typeof direct === "string" && direct) return direct
+    if (last.stopReason) return last.stopReason
     const parts = list(data.store.part?.[last.id], emptyParts)
     for (let i = parts.length - 1; i >= 0; i--) {
       const part = parts[i]
-      if (part?.type === "step-finish" && typeof (part as any).reason === "string") {
-        return (part as any).reason
-      }
+      if (part?.type === "step-finish" && part.reason) return part.reason
     }
     return ""
   })
@@ -355,12 +347,12 @@ export function SessionTurn(
     return stopReasonLabel(reason)
   })
 
-  const status = createMemo(() => {
+  const status = createMemo<MafwSessionStatus>(() => {
     if (props.status !== undefined) return props.status
     if (typeof props.active === "boolean" && !props.active) return idle
     return data.store.session_status[props.sessionID] ?? idle
   })
-  const working = createMemo(() => status().type !== "idle" && active())
+  const working = createMemo(() => status() !== "idle" && status() !== "unknown" && active())
   const showReasoningSummaries = createMemo(() => props.showReasoningSummaries ?? true)
 
   const assistantCopyPartID = createMemo(() => {
@@ -368,11 +360,11 @@ export function SessionTurn(
     return showAssistantCopyPartID() ?? null
   })
   const turnDurationMs = createMemo(() => {
-    const start = message()?.time.created
+    const start = message()?.time?.created
     if (typeof start !== "number") return undefined
 
     const end = assistantMessages().reduce<number | undefined>((max, item) => {
-      const completed = item.time.completed
+      const completed = item.time?.completed
       if (typeof completed !== "number") return max
       if (max === undefined) return completed
       return Math.max(max, completed)
@@ -403,7 +395,7 @@ export function SessionTurn(
   const reasoningHeading = createMemo(() => assistantDerived().reason)
   const showThinking = createMemo(() => {
     if (!working() || !!error()) return false
-    if (status().type === "retry") return false
+    if (status() === "retry") return false
     if (showReasoningSummaries()) return assistantVisible() === 0
     return true
   })
@@ -476,7 +468,7 @@ export function SessionTurn(
                   </Show>
                 </div>
               </Show>
-              <SessionRetry status={status()} show={active()} />
+              <SessionRetry retry={props.retry} show={active()} />
               <Show when={edited() > 0 && !working()}>
                 <div
                   data-slot="session-turn-diffs"
@@ -490,7 +482,7 @@ export function SessionTurn(
                         { count: String(edited()) },
                       )}
                     </span>
-                    <DiffChanges changes={diffs()} />
+                    <DiffChanges changes={diffChanges(diffs())} />
                     <Show when={overflow() > 0}>
                       <span data-slot="session-turn-diffs-toggle" onClick={toggleAll}>
                         {showAll() ? i18n.t("ui.sessionTurn.diffs.showLess") : i18n.t("ui.sessionTurn.diffs.showAll")}
@@ -543,7 +535,7 @@ export function SessionTurn(
                                     </span>
                                     <div data-slot="session-turn-diff-meta">
                                       <span data-slot="session-turn-diff-changes">
-                                        <DiffChanges changes={diff} />
+                                        <DiffChanges changes={diffChanges(diff)} />
                                       </span>
                                       <span data-slot="session-turn-diff-chevron">
                                         <Icon name="chevron-down" size="small" />

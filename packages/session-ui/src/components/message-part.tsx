@@ -16,22 +16,8 @@
 import { createStore } from "solid-js/store"
 import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
-import {
-  AgentPart,
-  AssistantMessage,
-  FilePart,
-  Message as MessageType,
-  Part as PartType,
-  ReasoningPart,
-  Session,
-  TextPart,
-  ToolPart,
-  UserMessage,
-  Todo,
-  QuestionAnswer,
-  QuestionInfo,
-} from "@opencode-ai/sdk/v2"
-import { useData } from "../context"
+import type { MafwPart, MafwQuestionInfo, MafwSession } from "@mafw/sdk"
+import { useData, type UiAssistantMessage, type UiMessage, type UiUserMessage } from "../context"
 import { shouldShowStreamingCaret } from "./streaming-caret"
 import { useFileComponent } from "@mafw/ui/context/file"
 import { useDialog } from "@mafw/ui/context/dialog"
@@ -65,11 +51,26 @@ import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
 import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
-import { attached, inline, kind, typeLabel } from "./message-file"
-import { readPartText } from "./message-part-text"
+import { attached, inline, kind, typeLabel, type MafwFilePart } from "./message-file"
 import { partOutputText } from "./tool-output"
 import { normalizeFileDiffs } from "./file-diff-shape"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
+
+// ---- MAFW View DTO 变体别名 -------------------------------------------------
+// 渲染层只读规范形：part 变体由判别字段收窄，消息身份由 UiMessage 收窄。
+type PartType = MafwPart
+type TextPart = Extract<MafwPart, { type: "text" }>
+type ReasoningPart = Extract<MafwPart, { type: "reasoning" }>
+type ToolPart = Extract<MafwPart, { type: "tool" }>
+type AgentPart = Extract<MafwPart, { type: "agent" }>
+type FilePart = MafwFilePart
+type MessageType = UiMessage
+type AssistantMessage = UiAssistantMessage
+type UserMessage = UiUserMessage
+type Session = MafwSession
+type QuestionInfo = MafwQuestionInfo
+type QuestionAnswer = string[]
+type Todo = { content?: string; status?: string }
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -385,6 +386,7 @@ function getDirectory(path: string | undefined) {
 
 import type { IconProps } from "@mafw/ui/icon"
 import { normalize, resolveFileDiff } from "./session-diff"
+import { modelName } from "../util/model-name"
 
 export type ToolInfo = {
   icon: IconProps["name"]
@@ -623,11 +625,13 @@ function taskSession(
   if (!parentID) return
   const description = typeof input.description === "string" ? input.description : ""
   const agent = taskAgent(taskAgentName(input), agents).name
+  // MafwSession 不建模 runtime 的 archived 标记（会话可见性由 gateway 出口过滤），
+  // 子会话定位只依赖 parentID + 标题匹配。
   return (sessions ?? [])
-    .filter((session) => session.parentID === parentID && !session.time?.archived)
-    .filter((session) => (description ? session.title.startsWith(description) : true))
-    .filter((session) => (agent ? session.title.includes(`@${agent}`) : true))
-    .sort((a, b) => (b.time.created ?? 0) - (a.time.created ?? 0))[0]?.id
+    .filter((session) => session.parentID === parentID)
+    .filter((session) => (description ? (session.title ?? "").startsWith(description) : true))
+    .filter((session) => (agent ? (session.title ?? "").includes(`@${agent}`) : true))
+    .sort((a, b) => (b.time?.created ?? 0) - (a.time?.created ?? 0))[0]?.id
 }
 
 import { CONTEXT_GROUP_TOOLS, HIDDEN_TOOLS, renderable as renderableCore } from "./parts-rules"
@@ -869,23 +873,29 @@ function isContextGroupTool(part: PartType): part is ToolPart {
   return part.type === "tool" && CONTEXT_GROUP_TOOLS.has(displayToolOf(part))
 }
 
+/** 工具入参：View DTO 里是 `unknown`（runtime 归一后的对象/标量），渲染层按记录读取。 */
+function readInput(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : {}
+}
+
+/** part 文本：View DTO 的 `text`（text/reasoning 变体）是唯一来源。 */
+function partText(part: { text?: string }): string {
+  return part.text?.trim() ?? ""
+}
+
 function contextToolDetail(part: ToolPart): string | undefined {
-  const info = getToolInfo(
-    part.tool,
-    part.state.input ?? {},
-    "metadata" in part.state ? part.state.metadata : undefined,
-  )
+  const info = getToolInfo(part.tool, readInput(part.state.input), part.state.metadata)
   if (info.subtitle) return info.subtitle
   if (part.state.status === "error") return part.state.error
   if ((part.state.status === "running" || part.state.status === "completed") && part.state.title)
     return part.state.title
-  const description = part.state.input?.description
+  const description = readInput(part.state.input).description
   if (typeof description === "string") return description
   return undefined
 }
 
 function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
-  const input = (part.state.input ?? {}) as Record<string, unknown>
+  const input = readInput(part.state.input)
   const path = typeof input.path === "string" ? input.path : "/"
   const filePath = readPathInput(input)
   const pattern = typeof input.pattern === "string" ? input.pattern : undefined
@@ -1260,13 +1270,7 @@ export function UserMessageDisplay(props: {
 
   const agents = createMemo(() => (props.parts?.filter((p) => p.type === "agent") as AgentPart[]) ?? [])
 
-  const model = createMemo(() => {
-    const providerID = props.message.model?.providerID
-    const modelID = props.message.model?.modelID
-    if (!providerID || !modelID) return ""
-    const match = data.store.provider?.all?.get(providerID)
-    return match?.models?.[modelID]?.name ?? modelID
-  })
+  const model = createMemo(() => modelName(data.store.provider?.all, props.message.model))
   const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.locale(), { timeStyle: "short" }))
 
   const stamp = createMemo(() => {
@@ -1477,14 +1481,20 @@ function HighlightedText(props: { text: string; references: FilePart[]; agents: 
   const segments = createMemo(() => {
     const text = props.text
 
-    const allRefs: { start: number; end: number; type: "file" | "agent" }[] = [
-      ...props.references
-        .filter((r) => r.source?.text?.start !== undefined && r.source?.text?.end !== undefined)
-        .map((r) => ({ start: r.source!.text!.start, end: r.source!.text!.end, type: "file" as const })),
-      ...props.agents
-        .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
-        .map((a) => ({ start: a.source!.start, end: a.source!.end, type: "agent" as const })),
-    ].sort((a, b) => a.start - b.start)
+    const allRefs: { start: number; end: number; type: "file" | "agent" }[] = []
+    for (const reference of props.references) {
+      const start = reference.source?.text?.start
+      const end = reference.source?.text?.end
+      if (typeof start !== "number" || typeof end !== "number") continue
+      allRefs.push({ start, end, type: "file" })
+    }
+    for (const agent of props.agents) {
+      const start = agent.source?.start
+      const end = agent.source?.end
+      if (typeof start !== "number" || typeof end !== "number") continue
+      allRefs.push({ start, end, type: "agent" })
+    }
+    allRefs.sort((a, b) => a.start - b.start)
 
     const result: HighlightSegment[] = []
     let lastIndex = 0
@@ -1611,12 +1621,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     () => part().tool === "question" && (part().state.status === "pending" || part().state.status === "running"),
   )
 
-  const emptyInput: Record<string, any> = {}
   const emptyMetadata: Record<string, any> = {}
 
-  const input = () => part().state?.input ?? emptyInput
-  // @ts-expect-error
-  const partMetadata = () => part().state?.metadata ?? emptyMetadata
+  const input = () => readInput(part().state.input)
+  const partMetadata = () => part().state.metadata ?? emptyMetadata
   const taskChildID = createMemo(() => {
     if (!isTaskTool(part().tool)) return
     return taskChildSessionID(partMetadata())
@@ -1640,7 +1648,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     <Show when={!hideQuestion()}>
       <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
         <Switch>
-          <Match when={part().state.status === "error" && (part().state as any).error}>
+          <Match when={part().state.status === "error" && part().state.error}>
             {(error) => {
               const cleaned = errorText(error()).replace(/^Error: /, "")
               if (part().tool === "question" && cleaned.includes("dismissed this question")) {
@@ -1716,26 +1724,24 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const numfmt = createMemo(() => new Intl.NumberFormat(i18n.locale()))
   const part = () => props.part as TextPart
   const interrupted = createMemo(
-    () =>
-      props.message.role === "assistant" && (props.message as AssistantMessage).error?.name === "MessageAbortedError",
+    () => props.message.role === "assistant" && (props.message as AssistantMessage).error?.kind === "abort",
   )
 
   const model = createMemo(() => {
     if (props.message.role !== "assistant") return ""
-    const message = props.message as AssistantMessage
-    const match = data.store.provider?.all?.get(message.providerID)
-    return match?.models?.[message.modelID]?.name ?? message.modelID
+    return modelName(data.store.provider?.all, (props.message as AssistantMessage).model)
   })
 
   const duration = createMemo(() => {
     if (props.message.role !== "assistant") return ""
     const message = props.message as AssistantMessage
-    const completed = message.time.completed
+    const completed = message.time?.completed
+    const created = message.time?.created
     const ms =
       typeof props.turnDurationMs === "number"
         ? props.turnDurationMs
-        : typeof completed === "number"
-          ? completed - message.time.created
+        : typeof completed === "number" && typeof created === "number"
+          ? completed - created
           : -1
     if (!(ms >= 0)) return ""
     const total = Math.round(ms / 1000)
@@ -1779,7 +1785,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       isTailPart: isTailPart(),
     }),
   )
-  const text = () => readPartText(data.store.part_text_accum_delta, part())
+  const text = () => partText(part())
   const isLastTextPart = createMemo(() => {
     const last = (data.store.part?.[props.message.id] ?? [])
       .filter((item): item is TextPart => item?.type === "text" && !!item.text?.trim())
@@ -1883,7 +1889,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
       isTailPart: isTailPart(),
     }),
   )
-  const text = () => readPartText(data.store.part_text_accum_delta, part())
+  const text = () => partText(part())
 
   return (
     <Show when={text()}>
