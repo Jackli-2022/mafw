@@ -779,25 +779,19 @@ export class GatewayDatabase {
   /**
    * 同 (goal, revision, loop, node) 的最新一次 attempt。
    *
-   * 两种调用形态并存（Task 3 契约 + 旧调用方兼容）：
-   * - `latestNodeAttempt(goalId, revision, loop, node)` —— revision 维度过滤
-   * - `latestNodeAttempt(goalId, loop, node)` —— legacy 三参，等价 revision 1
+   * revision 必填（I-1）：旧的三参隐式形态会静默钉在 revision 1，打回后的
+   * revision 2 永远算错 attempt。三参调用在运行时直接抛错（未类型化调用方）
+   * 并在类型层编译失败（TS 已无三参重载）。
    */
-  latestNodeAttempt(goalId: string, revision: number, loop: number, node: string): NodeRunRow | null;
-  latestNodeAttempt(goalId: string, loop: number, node: string): NodeRunRow | null;
-  latestNodeAttempt(
-    goalId: string,
-    revisionOrLoop: number,
-    loopOrNode: number | string,
-    node?: string,
-  ): NodeRunRow | null {
-    const legacyCall = node === undefined;
-    const revision = legacyCall ? 1 : revisionOrLoop;
-    const loop = legacyCall ? revisionOrLoop : (loopOrNode as number);
-    const nodeName = legacyCall ? (loopOrNode as string) : node;
+  latestNodeAttempt(goalId: string, revision: number, loop: number, node: string): NodeRunRow | null {
+    if (node === undefined) {
+      throw new TypeError(
+        'latestNodeAttempt requires (goalId, revision, loop, node); pass revision 1 for legacy callers',
+      );
+    }
     const row = this.db.prepare(
       'SELECT * FROM goal_node_runs WHERE goal_id = ? AND revision = ? AND loop = ? AND node = ? ORDER BY id DESC LIMIT 1',
-    ).get(goalId, revision, loop, nodeName) as NodeRunRow | undefined;
+    ).get(goalId, revision, loop, node) as NodeRunRow | undefined;
     return row ?? null;
   }
 

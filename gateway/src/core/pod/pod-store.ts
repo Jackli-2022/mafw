@@ -27,6 +27,32 @@ export type PodGoalRevisionStatus =
   | 'aborted'
   | 'discarded';
 export type PodGoalDirectionStatus = 'none' | 'pending' | 'decided';
+
+/** 终态 revision：完成/中止/丢弃后不可再改写（打回只能追加下一 revision）。 */
+export const TERMINAL_GOAL_REVISION_STATUSES = ['completed', 'aborted', 'discarded'] as const;
+
+export function isTerminalGoalRevisionStatus(status: PodGoalRevisionStatus): boolean {
+  return (TERMINAL_GOAL_REVISION_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * 旧 Goal 根状态 → revision 状态的一次性映射（历史数据没有阶段信息）：
+ * queued→queued、active→implementing（在飞循环）、done→completed、aborted→aborted。
+ */
+export function revisionStatusFromGoalStatus(status: PodGoalStatus): PodGoalRevisionStatus {
+  switch (status) {
+    case 'queued':
+      return 'queued';
+    case 'active':
+      return 'implementing';
+    case 'done':
+      return 'completed';
+    case 'aborted':
+      return 'aborted';
+    default:
+      return 'queued';
+  }
+}
 export type PodTaskStatus =
   | 'pending'
   | 'in_progress'
@@ -497,6 +523,52 @@ export class PodStore {
         WHERE external_message_id IS NOT NULL;
     `);
     this.backfillLegacyDeliveries();
+    this.backfillLegacyRevisions();
+  }
+
+  /**
+   * I-3：历史 Goal（Task 3 之前入库）没有 revision 行，Task 4 关闭当前 revision
+   * 会静默 no-op、历史从 2 开始。这里一次性补齐：每个根 Goal 若缺少
+   * `active_revision` 对应的行，就按根 status/verdict/时间戳插入一条（幂等）。
+   *
+   * 只处理**已存在**的根行；`enqueueGoal` 新建的 Goal 由 intake（后续 Task）
+   * 显式创建 revision 1（discussing），避免这里把新 Goal 钉成 queued/implementing。
+   */
+  private backfillLegacyRevisions(): void {
+    const missing = this.db.prepare(`
+      SELECT g.* FROM pod_goals g
+      LEFT JOIN pod_goal_revisions r
+        ON r.pod_id = g.pod_id AND r.goal_id = g.goal_id AND r.revision = g.active_revision
+      WHERE r.id IS NULL
+    `).all() as any[];
+    if (missing.length === 0) return;
+
+    const insert = this.db.prepare(`
+      INSERT INTO pod_goal_revisions (
+        id, pod_id, goal_id, revision, status, verdict,
+        direction_status, direction_json, plan_hash, eval_hash, feedback,
+        priority, enqueued_at, started_at, ended_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'none', NULL, NULL, NULL, NULL, ?, ?, ?, ?)
+      ON CONFLICT DO NOTHING
+    `);
+    const runAll = this.db.transaction((rows: any[]) => {
+      for (const row of rows) {
+        const goal = goalFromRow(row);
+        insert.run(
+          `goalrev_${goal.goalId}_${goal.activeRevision}`,
+          goal.podId,
+          goal.goalId,
+          goal.activeRevision,
+          revisionStatusFromGoalStatus(goal.status),
+          goal.verdict,
+          goal.priority,
+          goal.enqueuedAt,
+          goal.startedAt,
+          goal.endedAt,
+        );
+      }
+    });
+    runAll(missing);
   }
 
   private backfillLegacyDeliveries(): void {
@@ -737,6 +809,11 @@ export class PodStore {
   /**
    * 更新 revision 阶段。COALESCE 语义：未传的字段保持原值（含旧 verdict）；
    * 进入 implementing/reviewing 首次盖章 started_at，终态盖章 ended_at。
+   *
+   * 终态（completed / aborted / discarded）**不可改写**：review 打回必须走
+   * `createGoalRevision` 追加下一 revision，绝不能把已 PASS 的 revision 改回
+   * queued/FAIL（旧 revision 永远保持真实 verdict）。被拒绝或 revision 不存在
+   * 时返回 `false`，调用方（Task 4 finishRevision）应视为「未变更」。
    */
   setGoalRevisionStatus(input: {
     podId: string;
@@ -750,12 +827,13 @@ export class PodStore {
     planHash?: string | null;
     evalHash?: string | null;
     feedback?: string | null;
-  }): void {
+  }): boolean {
+    const existing = this.getGoalRevision(input.podId, input.goalId, input.revision);
+    if (!existing) return false;
+    if (isTerminalGoalRevisionStatus(existing.status)) return false;
     const startsWork = input.status === 'implementing' || input.status === 'reviewing';
-    const isTerminal = input.status === 'completed'
-      || input.status === 'aborted'
-      || input.status === 'discarded';
-    this.db.prepare(`
+    const isTerminal = isTerminalGoalRevisionStatus(input.status);
+    const result = this.db.prepare(`
       UPDATE pod_goal_revisions SET
         status = ?,
         verdict = COALESCE(?, verdict),
@@ -779,6 +857,7 @@ export class PodStore {
       isTerminal ? input.now : null,
       input.podId, input.goalId, input.revision,
     );
+    return result.changes > 0;
   }
 
   /** 把 Goal 根指针切到指定 revision（旧 revision 行原样保留）。 */

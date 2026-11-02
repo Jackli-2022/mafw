@@ -56,7 +56,7 @@ export interface DriverDeps {
     insertNodeRun(i: { goalId: string; projectId: string; loop: number; node: string; attempt: number; sessionId: string | null; startedAt: string }): number;
     finishNodeRun(id: number, p: { status: string; finishedAt: string; outcome?: string | null; error?: string | null; tokensInput?: number | null; tokensOutput?: number | null; costUsd?: number | null }): void;
     listNodeRuns(goalId: string): any[];
-    latestNodeAttempt(goalId: string, loop: number, node: string): any | null;
+    latestNodeAttempt(goalId: string, revision: number, loop: number, node: string): any | null;
   };
   ledger: {
     appendQuestionEvent(e: any): void;
@@ -178,9 +178,10 @@ export class NodeDriver {
     // phase 广播（payload 形状与旧 syncToFile 一致——milestone-push 零迁移）
     this.deps.emitPhaseTransition({ type: 'phase_transition', goalId, phase: phaseNames.running, loop: round, projectDir: state.projectDir });
 
-    // attempt 语义：同 (goal, round, node) 既有行存在即 max+1——含驳回重跑
+    // attempt 语义：同 (goal, revision, round, node) 既有行存在即 max+1——含驳回重跑
     // （上一行 succeeded）与失败重试两类（W1 修正：不再按状态过滤）。
-    const prevRun = this.deps.db.latestNodeAttempt(goalId, round, node);
+    // revision 显式传 1：driver 尚未 revision 化（Task 12 接 state.revision）。
+    const prevRun = this.deps.db.latestNodeAttempt(goalId, 1, round, node);
     const attempt = prevRun ? prevRun.attempt + 1 : 1;
 
     const session = await this.deps.client.create(state.projectDir);
@@ -758,7 +759,7 @@ export class NodeDriver {
     }
     writeGoalState(mafwDir, goalId, { nodeSession: null, nextNode: run.node, nextAction: `RUNNING_${run.node}` });
     await this.advance(goalId);
-    const latest = this.deps.db.latestNodeAttempt(goalId, run.loop, run.node);
+    const latest = this.deps.db.latestNodeAttempt(goalId, 1, run.loop, run.node);
     return { runId: latest?.id ?? runId };
   }
 }

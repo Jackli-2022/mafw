@@ -48,12 +48,22 @@ describe('goal_node_runs revision', () => {
     expect(db.latestNodeAttempt('g1', 3, 1, 'plan')).toBeNull();
   });
 
-  test('defaults a missing revision to 1 and keeps the legacy three-argument call working', () => {
+  test('defaults a missing revision to 1', () => {
     const runId = insertRun();
 
     expect(db.listNodeRuns('g1')[0].revision).toBe(1);
-    expect(db.latestNodeAttempt('g1', 1, 'plan')?.id).toBe(runId);
     expect(db.latestNodeAttempt('g1', 1, 1, 'plan')?.id).toBe(runId);
+  });
+
+  test('the removed three-argument arity fails loudly instead of pinning revision 1 (I-1)', () => {
+    insertRun({ revision: 2 });
+
+    // 旧调用方 (goalId, loop, node) 曾静默按 revision 1 查找——现在必须报错。
+    expect(() => (db as any).latestNodeAttempt('g1', 1, 'plan'))
+      .toThrow(/latestNodeAttempt requires \(goalId, revision, loop, node\)/);
+    // revision 显式传入才拿得到 revision 2 的行。
+    expect(db.listNodeRuns('g1')).toHaveLength(1);
+    expect(db.latestNodeAttempt('g1', 2, 1, 'plan')?.revision).toBe(2);
   });
 
   test('rows written without a revision value read back as revision 1', () => {

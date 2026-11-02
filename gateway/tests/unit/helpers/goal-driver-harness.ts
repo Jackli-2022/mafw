@@ -52,11 +52,14 @@ export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: numbe
   const deps: DriverDeps = {
     client,
     db: {
-      insertNodeRun: (i: any) => { const id = seq++; nodeRuns.push({ id, status: 'running', ...i }); return id; },
+      insertNodeRun: (i: any) => { const id = seq++; nodeRuns.push({ id, status: 'running', revision: 1, ...i }); return id; },
       finishNodeRun: (id: number, p: any) => { const r = nodeRuns.find((x) => x.id === id); if (r) Object.assign(r, p); },
       listNodeRuns: (g: string) => nodeRuns.filter((r) => r.goalId === g),
-      latestNodeAttempt: (g: string, l: number, n: string) =>
-        [...nodeRuns].reverse().find((r) => r.goalId === g && r.loop === l && r.node === n) ?? null,
+      latestNodeAttempt: (g: string, revision: number, l: number, n: string) =>
+        [...nodeRuns]
+          .reverse()
+          .find((r) => r.goalId === g && (r.revision ?? 1) === revision && r.loop === l && r.node === n)
+          ?? null,
     },
     ledger: {
       appendQuestionEvent: (e: any) => ledgerEvents.push(e),

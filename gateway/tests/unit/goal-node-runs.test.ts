@@ -49,10 +49,11 @@ describe('goal_node_runs', () => {
     expect(rows.filter((r) => r.status === 'timeout')).toHaveLength(1);
   });
 
-  it('latestNodeAttempt 取该 (goal,loop,node) 最新行', () => {
+  it('latestNodeAttempt 取该 (goal,revision,loop,node) 最新行', () => {
     db.insertNodeRun({ goalId: 'g1', projectId: 'C:/p', loop: 1, node: 'execute', attempt: 1, sessionId: 's1', startedAt: 't1' });
     db.insertNodeRun({ goalId: 'g1', projectId: 'C:/p', loop: 1, node: 'execute', attempt: 2, sessionId: 's2', startedAt: 't2' });
-    expect(db.latestNodeAttempt('g1', 1, 'execute')!.attempt).toBe(2);
-    expect(db.latestNodeAttempt('g1', 1, 'plan')).toBeNull();
+    expect(db.latestNodeAttempt('g1', 1, 1, 'execute')!.attempt).toBe(2);
+    expect(db.latestNodeAttempt('g1', 1, 1, 'plan')).toBeNull();
+    expect(db.latestNodeAttempt('g1', 2, 1, 'execute')).toBeNull();
   });
 });

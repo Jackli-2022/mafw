@@ -1015,7 +1015,7 @@ class MafwScheduler {
         insertNodeRun: (i) => this.getGatewayDb().insertNodeRun(i),
         finishNodeRun: (id, p) => this.getGatewayDb().finishNodeRun(id, p),
         listNodeRuns: (g) => this.getGatewayDb().listNodeRuns(g),
-        latestNodeAttempt: (g, l, n) => this.getGatewayDb().latestNodeAttempt(g, l, n),
+        latestNodeAttempt: (g, r, l, n) => this.getGatewayDb().latestNodeAttempt(g, r, l, n),
       },
       ledger: new QuestionLedger(this.mafwDir),
       emitNodeEvent: (p) => {

@@ -186,7 +186,7 @@ describe('PodStore goal revisions', () => {
     expect(store.listGoalRevisions('pod_1', 'g1')).toEqual([]);
   });
 
-  test('a legacy pod_goals table is migrated in place', () => {
+  test('a legacy pod_goals table is migrated in place and bootstrapped with its revision row', () => {
     const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-legacy-'));
     const legacyDb = new Database(path.join(legacyDir, 'legacy.db'));
     legacyDb.exec(`
@@ -212,9 +212,147 @@ describe('PodStore goal revisions', () => {
       activeRevision: 1,
       priority: 0,
     });
-    expect(migrated.listGoalRevisions('pod_1', 'g_old')).toEqual([]);
+    expect(migrated.listGoalRevisions('pod_1', 'g_old')).toEqual([
+      expect.objectContaining({
+        id: 'goalrev_g_old_1',
+        podId: 'pod_1',
+        goalId: 'g_old',
+        revision: 1,
+        status: 'completed',
+        verdict: null,
+        directionStatus: 'none',
+        priority: 0,
+        enqueuedAt: NOW,
+        startedAt: null,
+        endedAt: null,
+      }),
+    ]);
 
     legacyDb.close();
     fs.rmSync(legacyDir, { recursive: true, force: true });
+  });
+
+  test('legacy bootstrap maps root status/verdict/priority/timestamps and is idempotent (I-3)', () => {
+    const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-legacy-status-'));
+    const legacyPath = path.join(legacyDir, 'legacy.db');
+    const legacyDb = new Database(legacyPath);
+    legacyDb.exec(`
+      CREATE TABLE pod_goals (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        goal_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        verdict TEXT,
+        active_revision INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 0,
+        enqueued_at TEXT NOT NULL,
+        started_at TEXT,
+        ended_at TEXT,
+        UNIQUE(pod_id, goal_id)
+      );
+    `);
+    const insert = legacyDb.prepare(`
+      INSERT INTO pod_goals (id, pod_id, goal_id, status, verdict, active_revision, priority, enqueued_at, started_at, ended_at)
+      VALUES (?, 'pod_1', ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insert.run('pg_a', 'g_active', 'active', null, 1, 3, NOW, LATER, null);
+    insert.run('pg_q', 'g_queued', 'queued', null, 1, 0, NOW, null, null);
+    insert.run('pg_d', 'g_done', 'done', 'PASS', 2, 1, NOW, LATER, '2026-11-02T00:30:00.000Z');
+    insert.run('pg_x', 'g_aborted', 'aborted', 'CANCELLED', 1, 0, NOW, LATER, '2026-11-02T00:40:00.000Z');
+    legacyDb.close();
+
+    const firstDb = new Database(legacyPath);
+    const migrated = new PodStore(firstDb);
+    expect(migrated.getGoalRevision('pod_1', 'g_active', 1)).toMatchObject({
+      status: 'implementing', priority: 3, startedAt: LATER,
+    });
+    expect(migrated.getGoalRevision('pod_1', 'g_queued', 1)).toMatchObject({
+      status: 'queued', priority: 0, startedAt: null,
+    });
+    // 根指针在 revision 2 的历史 Goal：补的是 active_revision 那条，历史从 2 起；
+    // 旧 revision 1 没有信息可还原，不伪造。
+    expect(migrated.listGoalRevisions('pod_1', 'g_done').map((row) => row.revision)).toEqual([2]);
+    expect(migrated.getGoalRevision('pod_1', 'g_done', 2)).toMatchObject({
+      status: 'completed', verdict: 'PASS', endedAt: '2026-11-02T00:30:00.000Z',
+    });
+    expect(migrated.getGoalRevision('pod_1', 'g_aborted', 1)).toMatchObject({
+      status: 'aborted', verdict: 'CANCELLED', endedAt: '2026-11-02T00:40:00.000Z',
+    });
+    firstDb.close();
+
+    // 幂等：第二次打开同一个库不重复插入、也不改写已有 revision。
+    const secondDb = new Database(legacyPath);
+    const reopened = new PodStore(secondDb);
+    expect(reopened.listGoalRevisions('pod_1', 'g_done')).toHaveLength(1);
+    expect(reopened.listGoalRevisions('pod_1', 'g_active')).toHaveLength(1);
+    expect(reopened.listGoalRevisions('pod_1', 'g_queued')).toHaveLength(1);
+    expect(reopened.listGoalRevisions('pod_1', 'g_aborted')).toHaveLength(1);
+    secondDb.close();
+
+    fs.rmSync(legacyDir, { recursive: true, force: true });
+  });
+
+  test('goals created after initialization get no bootstrap row (intake owns revision 1)', () => {
+    seedGoal();
+    expect(store.listGoalRevisions('pod_1', 'g1')).toEqual([]);
+    expect(store.nextGoalRevision('pod_1', 'g1')).toBe(2);
+  });
+
+  test('terminal revisions are immutable (I-2)', () => {
+    seedGoal();
+    store.createGoalRevision({
+      podId: 'pod_1', goalId: 'g1', revision: 1, status: 'queued',
+      priority: 0, now: NOW,
+    });
+    expect(store.setGoalRevisionStatus({
+      podId: 'pod_1', goalId: 'g1', revision: 1, status: 'implementing', now: NOW,
+    })).toBe(true);
+    expect(store.setGoalRevisionStatus({
+      podId: 'pod_1', goalId: 'g1', revision: 1, status: 'completed', now: LATER, verdict: 'PASS',
+    })).toBe(true);
+
+    const completed = store.getGoalRevision('pod_1', 'g1', 1);
+
+    // 打回不能把已完成的 revision 改回 queued……
+    expect(store.setGoalRevisionStatus({
+      podId: 'pod_1', goalId: 'g1', revision: 1, status: 'queued', now: '2026-11-02T01:00:00.000Z',
+    })).toBe(false);
+    // ……也不能把它改判 FAIL。
+    expect(store.setGoalRevisionStatus({
+      podId: 'pod_1', goalId: 'g1', revision: 1, status: 'completed',
+      now: '2026-11-02T01:00:00.000Z', verdict: 'FAIL',
+    })).toBe(false);
+
+    const after = store.getGoalRevision('pod_1', 'g1', 1);
+    expect(after).toMatchObject({
+      status: 'completed',
+      verdict: 'PASS',
+      startedAt: NOW,
+      endedAt: LATER,
+    });
+    expect(after).toEqual(completed);
+  });
+
+  test('aborted and discarded revisions are immutable too (I-2)', () => {
+    seedGoal();
+    store.createGoalRevision({ podId: 'pod_1', goalId: 'g1', revision: 1, status: 'aborted', now: NOW });
+    store.createGoalRevision({ podId: 'pod_1', goalId: 'g1', revision: 2, status: 'discarded', now: NOW });
+
+    expect(store.setGoalRevisionStatus({
+      podId: 'pod_1', goalId: 'g1', revision: 1, status: 'implementing', now: LATER,
+    })).toBe(false);
+    expect(store.setGoalRevisionStatus({
+      podId: 'pod_1', goalId: 'g1', revision: 2, status: 'queued', now: LATER,
+    })).toBe(false);
+    expect(store.getGoalRevision('pod_1', 'g1', 1)?.status).toBe('aborted');
+    expect(store.getGoalRevision('pod_1', 'g1', 2)?.status).toBe('discarded');
+  });
+
+  test('setGoalRevisionStatus reports false for a revision that does not exist (I-2)', () => {
+    seedGoal();
+    expect(store.setGoalRevisionStatus({
+      podId: 'pod_1', goalId: 'g1', revision: 9, status: 'planning', now: NOW,
+    })).toBe(false);
+    expect(store.listGoalRevisions('pod_1', 'g1')).toEqual([]);
   });
 });
