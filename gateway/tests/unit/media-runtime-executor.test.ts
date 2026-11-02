@@ -25,7 +25,7 @@ describe('MediaRuntimeExecutor default completeFn', () => {
     const executor = createMediaRuntimeExecutor(fakeRt, {
       projectDir: '/tmp/proj',
       access: fakeAccess({ 'completion.channel': true }),
-      completion: () => complete,
+      completionChannel: () => complete,
     });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('a cat jumps');
@@ -44,7 +44,7 @@ describe('MediaRuntimeExecutor default completeFn', () => {
     const executor = createMediaRuntimeExecutor(fakeRt, {
       projectDir: '/tmp/proj',
       access: fakeAccess({ 'completion.channel': false }),
-      completion: () => complete,
+      completionChannel: () => complete,
       completeFn: async () => 'legacy adapter result',
     });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
@@ -67,7 +67,7 @@ describe('MediaRuntimeExecutor default completeFn', () => {
     const executor = createMediaRuntimeExecutor(fakeRt, {
       projectDir: '/tmp/proj',
       access: fakeAccess({ 'completion.channel': true }),
-      completion: () => ({ complete: async () => { throw new Error('boom'); } }),
+      completionChannel: () => ({ complete: async () => { throw new Error('boom'); } }),
       completeFn: async () => 'fallback result',
     });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });

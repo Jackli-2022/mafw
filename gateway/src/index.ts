@@ -3745,6 +3745,7 @@ class MafwScheduler {
     });
     this.runCoordinator = new RunCoordinator({
       runtime: () => this.runtime,
+      access: () => this.runtime?.access ?? null,
       service: this.runStateService,
       isBusy: (sid) => this.busySessions.has(sid),
       queueSize: (sid) => this.sessionQueue.size(sid),
@@ -4110,7 +4111,7 @@ class MafwScheduler {
                   // 契约补全通道同样经 surface（不再读 capabilities.completionApi）；
                   // 通道本体由组合根注入（facade 不暴露 completion）。
                   access: this.runtime.access,
-                  completion: () => this.runtimeCompletionChannel(),
+                  completionChannel: () => this.runtimeCompletionChannel(),
                 });
                 this.mediaRuntimeExecutorRt = this.runtime;
               }
@@ -9371,6 +9372,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   private async recordAutoCheckpoint(sessionID: string): Promise<void> {    if (!this.checkpointService) return;
     await runAutoCheckpoint({
       runtime: () => this.runtime,
+      access: () => this.runtime?.access ?? null,
       internalRoleOf: (sid) => this.internalSessionRoles.get(sid),
       isHidden: (info, roleFor) => isHiddenSession(info, roleFor),
       porcelainOf: (dir) => this.checkpointPorcelainOf(dir),

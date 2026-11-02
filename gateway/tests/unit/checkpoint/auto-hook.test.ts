@@ -38,7 +38,6 @@ function harness(opts: {
 
   const deps: AutoCheckpointHookDeps = {
     runtime: () => ({
-      capabilities: opts.capabilities ?? { checkpointApi: true },
       session: {
         get: async ({ sessionID }) => {
           calls.get.push(sessionID);
@@ -54,6 +53,10 @@ function harness(opts: {
           return { data: opts.messages ?? assistantTurn() };
         },
       },
+    }),
+    // facade.access 的替身：capability 决定 branch.checkpoint 门。
+    access: () => ({
+      can: (id: string) => id === 'branch.checkpoint' && (opts.capabilities ?? { checkpointApi: true }).checkpointApi === true,
     }),
     internalRoleOf: () => opts.role,
     isHidden: isHiddenSession,

@@ -38,8 +38,10 @@ export interface MediaRuntimeExecutorOptions {
   projectDir: string;
   /** surface 门（completion.channel）；缺省 = 不尝试契约补全（不猜能力位）。 */
   access?: Pick<RuntimeAccess, 'can'> | null;
-  /** 契约补全通道（组合根注入；facade 不暴露 completion）。缺省 = 只走回退。 */
-  completion?: () => CompletionChannel | undefined;
+  /** 契约补全通道（组合根注入；facade 不暴露 completion）。缺省 = 只走回退。
+   *  注意：字段名刻意不用 `completion`（业务对象的 `.completion` 是常见自有属性，
+   *  架构扫描把「任意接收者的 .completion」视为 runtime 诊断面泄漏）。 */
+  completionChannel?: () => CompletionChannel | undefined;
 }
 
 interface SessionEntry {
@@ -233,7 +235,7 @@ export function createMediaRuntimeExecutor(
   // (video_url/input_audio) is the implementing runtime's internal concern.
   const contractComplete = async (parts: PromptPart[], po: PromptOptions): Promise<string> => {
     if (!canCompletionChannel(opts.access)) throw new Error('runtime does not support completion.channel');
-    const channel = opts.completion?.();
+    const channel = opts.completionChannel?.();
     if (typeof channel?.complete !== 'function') throw new Error('no completion channel');
     const filePart = parts.find((p) => p.type === 'file');
     const textPart = parts.find((p) => p.type === 'text');

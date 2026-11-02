@@ -56,9 +56,6 @@ function harness(opts: {
 
   const deps: RunCoordinatorDeps = {
     runtime: () => ({
-      name: opts.runtimeName ?? 'opencode',
-      capabilities: opts.capabilities ?? { runStateApi: true },
-      semantics: opts.runtimeName === 'pi' ? { 'branch.runState': { requireBusy: true } } : undefined,
       session: {
         abort: async () => {
           calls.abort++;
@@ -81,6 +78,16 @@ function harness(opts: {
         get: async () => ({ id: 's1', directory: '/tmp/p' }),
       },
     }),
+    // facade.access 的替身：capability 决定 surface 门，pi 声明 requireBusy 语义。
+    access: () => {
+      const caps = opts.capabilities ?? { runStateApi: true };
+      return {
+        can: (id: string) => (id === 'branch.runState' ? caps.runStateApi === true : false),
+        semantics: (_id: string) => ((opts.runtimeName === 'pi'
+          ? { requireBusy: true }
+          : {}) as any),
+      };
+    },
     service,
     isBusy: () => busy,
     queueSize: () => 2,

@@ -1,5 +1,7 @@
 // 反向 fixture：业务模块不得出现的 runtime 私有知识（架构守卫必须抓到这里）。
 // 本文件不会被编译/执行，只被 architecture-boundaries.test.ts 当普通文本扫描。
+// 同时覆盖 review 指出的漏网形态：别名接收者、解构、模板插值、引号比较、
+// 业务侧现场构造 RuntimeAccess。
 import type { RuntimeFacade } from '../../src/runtime/runtime-facade';
 
 export function businessLeak(runtime: RuntimeFacade, facade: any) {
@@ -26,4 +28,18 @@ export function businessLeak(runtime: RuntimeFacade, facade: any) {
 
 export function runtimeNameBranch(runtimeName: string) {
   return runtimeName === 'pi' ? 'in-process' : 'serve';
+}
+
+// ── review 漏网形态（别名 / 解构 / 插值 / 引号比较 / 现场构造 access）──
+export function aliasedLeaks(client: any, runtimeClient: any, deps: any) {
+  const viaCall = deps.getRuntime()?.capabilities;
+  const viaClient = client.capabilities;
+  const viaRuntimeClient = runtimeClient.capabilities;
+  const { capabilities } = client;
+  const inTemplate = `${client.capabilities.diffApi}`;
+  const viaClientConfig = client.config.get();
+  const viaClientCompletion = runtimeClient.completion;
+  const isPiByAlias = client.name === 'pi';
+  const access = new RuntimeAccess(client);
+  return { viaCall, viaClient, viaRuntimeClient, capabilities, inTemplate, viaClientConfig, viaClientCompletion, isPiByAlias, access };
 }

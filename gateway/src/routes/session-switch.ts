@@ -1,5 +1,6 @@
 import * as http from 'http';
-import { RuntimeAccess, surfaceUnavailableMessage } from '../runtime/runtime-access';
+import type { RuntimeAccess } from '../runtime/runtime-access';
+import { surfaceUnavailableMessage } from '../runtime/runtime-access';
 
 export type SessionSwitchKind = 'agent' | 'model';
 
@@ -16,8 +17,8 @@ export interface SessionSwitchClientLike {
 
 export interface SessionSwitchDeps {
   getRuntime: () => SessionSwitchClientLike | null;
-  /** surface 门（缺省由 runtime 现场构造 RuntimeAccess）。 */
-  getAccess?: () => RuntimeAccess | null;
+  /** surface 门：注入 facade 的 RuntimeAccess（业务不构造 raw access）。 */
+  getAccess?: () => Pick<RuntimeAccess, 'can'> | null;
 }
 
 class SwitchError extends Error {
@@ -82,7 +83,8 @@ export async function handleSessionSwitch(
     res.end(JSON.stringify(body));
   };
   const client = deps.getRuntime();
-  const access = deps.getAccess?.() ?? (client ? new RuntimeAccess(client as any) : null);
+  // 能力门只经注入的 RuntimeAccess（facade 的 access）；业务不构造 raw access。
+  const access = deps.getAccess?.() ?? null;
   const surface = kind === 'agent' ? 'session.switchAgent' : 'session.switchModel';
   if (!client || !access?.can(surface)) {
     json(503, { error: surfaceUnavailableMessage(surface) });

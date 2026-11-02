@@ -21,6 +21,7 @@ describe('handleSessionSwitch', () => {
     const res = fakeRes();
     await handleSessionSwitch(fakeReq({ agent: 'plan' }), res, 's1', 'agent', {
       getRuntime: () => ({ session: { switchAgent: async (o: any) => calls.push(o) } }) as any,
+      getAccess: () => ({ can: () => true }),
     });
     expect(calls).toEqual([{ sessionID: 's1', agent: 'plan' }]);
     expect(res.status).toBe(200);
@@ -32,6 +33,7 @@ describe('handleSessionSwitch', () => {
     const res = fakeRes();
     await handleSessionSwitch(fakeReq({ model: { providerID: 'gateway', modelID: 'deepseek-v4-flash' }, variant: 'fast' }), res, 's1', 'model', {
       getRuntime: () => ({ session: { switchModel: async (o: any) => calls.push(o) } }) as any,
+      getAccess: () => ({ can: () => true }),
     });
     expect(calls).toEqual([{
       sessionID: 's1',
@@ -45,6 +47,7 @@ describe('handleSessionSwitch', () => {
     const res = fakeRes();
     await handleSessionSwitch(fakeReq({}), res, 's1', 'agent', {
       getRuntime: () => ({ session: { switchAgent: async () => {} } }) as any,
+      getAccess: () => ({ can: () => true }),
     });
     expect(res.status).toBe(400);
   });

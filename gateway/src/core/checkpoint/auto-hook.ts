@@ -10,16 +10,20 @@
  */
 import type { SessionCheckpoint } from './checkpoint-service';
 import { parseUntrackedLines, planAutoCheckpoint } from './auto-recorder';
-import { RuntimeAccess } from '../../runtime/runtime-access';
+import type { RuntimeAccess } from '../../runtime/runtime-access';
+
+/** 业务只见 facade 的 access 通道（surface 门），不构造 raw access。 */
+export type AutoCheckpointAccessLike = Pick<RuntimeAccess, 'can'>;
 
 export interface AutoCheckpointHookDeps {
   runtime(): {
-    capabilities?: { checkpointApi?: boolean };
     session: {
       get(opts: { sessionID: string }): Promise<any>;
       messages(opts: { sessionID: string; limit?: number }): Promise<{ data: any[] }>;
     };
   } | null;
+  /** surface 门（branch.checkpoint）：组合根注入 facade.access。 */
+  access(): AutoCheckpointAccessLike | null;
   internalRoleOf(sessionID: string): string | undefined;
   isHidden(info: any, roleFor: (id: string) => string | undefined): boolean;
   porcelainOf(projectDir: string): Promise<string>;
@@ -41,8 +45,8 @@ export async function runAutoCheckpoint(
 ): Promise<SessionCheckpoint | null> {
   const rt = deps.runtime();
   if (!rt) return null;
-  const access = (rt as any).access ?? new RuntimeAccess(rt as any);
-  if (!access.can('branch.checkpoint')) return null;
+  const access = deps.access();
+  if (!access?.can('branch.checkpoint')) return null;
 
   // 内部 worker（turnCompress / curator / btw / media）不记录；**manager 是可见会话**，
   // 照常记录（设计明确）。历史 kv 角色表里的 manager 同样放行。

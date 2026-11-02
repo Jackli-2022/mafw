@@ -1,5 +1,6 @@
 import * as http from 'http';
-import { RuntimeAccess, surfaceUnavailableMessage } from '../runtime/runtime-access';
+import type { RuntimeAccess } from '../runtime/runtime-access';
+import { surfaceUnavailableMessage } from '../runtime/runtime-access';
 
 export interface SessionClientLike {
   session: {
@@ -12,8 +13,8 @@ export interface SessionClientLike {
 
 export interface SessionMutationDeps {
   getRuntime: () => SessionClientLike | null;
-  /** surface 门（缺省由 runtime 现场构造 RuntimeAccess）。 */
-  getAccess?: () => RuntimeAccess | null;
+  /** surface 门：注入 facade 的 RuntimeAccess（业务不构造 raw access）。 */
+  getAccess?: () => Pick<RuntimeAccess, 'can'> | null;
   /** 切片 4：session 删除成功后的 worktree 联动清理（fail-open；缺省跳过）。 */
   cleanupWorktree?: (sessionID: string) => Promise<void>;
   /** Pod Lite：删除前抓取 transcript（fail-open；缺省跳过）。 */
@@ -50,7 +51,8 @@ export async function handleSessionMutations(
   };
   const sessionID = (deleteMatch || patchMatch)![1];
   const client = deps.getRuntime();
-  const access = deps.getAccess?.() ?? (client ? new RuntimeAccess(client as any) : null);
+  // 能力门只经注入的 RuntimeAccess（facade 的 access）；业务不构造 raw access。
+  const access = deps.getAccess?.() ?? null;
   const surface = deleteMatch ? 'session.delete' : 'session.update';
   if (!client || !access?.can(surface)) {
     json(503, { error: surfaceUnavailableMessage(surface) });

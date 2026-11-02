@@ -9,12 +9,13 @@
  */
 import { buildResumeBrief, composeResumePrompt } from './run-brief';
 import { RunStateError, type RunState, type RunStateService } from './run-state-service';
-import { RuntimeAccess } from '../../runtime/runtime-access';
+import type { RuntimeAccess } from '../../runtime/runtime-access';
+
+/** 业务只见 facade 的 access 通道（surface 门 + 语义），不构造 raw access。 */
+export type RunAccessLike = Pick<RuntimeAccess, 'can' | 'semantics'>;
 
 export interface RunCoordinatorDeps {
   runtime(): {
-    name?: string;
-    capabilities?: { runStateApi?: boolean };
     session: {
       abort(opts: { sessionID: string }): Promise<void>;
       messages(opts: { sessionID: string; limit?: number }): Promise<{ data: any[] }>;
@@ -22,6 +23,8 @@ export interface RunCoordinatorDeps {
       get(opts: { sessionID: string }): Promise<any>;
     };
   } | null;
+  /** surface 门（branch.runState）：组合根注入 facade.access。 */
+  access(): RunAccessLike | null;
   service: RunStateService;
   isBusy(sessionID: string): boolean;
   queueSize(sessionID: string): number;
@@ -66,8 +69,8 @@ export class RunCoordinator {
   async suspend(sessionID: string, reason?: string): Promise<RunState> {
     const rt = this.deps.runtime();
     if (!rt) throw new RunStateError(503, "runtime surface 'branch.runState' is not available");
-    const access: RuntimeAccess = (rt as any).access ?? new RuntimeAccess(rt as any);
-    if (!access.can('branch.runState') || typeof rt.session.abort !== 'function') {
+    const access = this.deps.access();
+    if (!access?.can('branch.runState') || typeof rt.session.abort !== 'function') {
       throw new RunStateError(503, "runtime surface 'branch.runState' is not available");
     }
     if (this.pendingSuspend.has(sessionID)) {
