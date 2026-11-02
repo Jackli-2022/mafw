@@ -10,7 +10,15 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { podResolveKey, resolvePodDetail, resolvePodId, techLeadSendTarget } from "../src/renderer/mafw/pod-store"
+import {
+  createPodIdResolver,
+  podResolveKey,
+  resetPodDetailCache,
+  resolvePodDetail,
+  resolvePodDetailCached,
+  resolvePodId,
+  techLeadSendTarget,
+} from "../src/renderer/mafw/pod-store"
 import { podSessionRoute, techLeadRouteForSession, techLeadSendBlockedReason } from "../src/renderer/mafw/pod-model"
 import { useSendMessage } from "../src/renderer/mafw/chat/use-send-message"
 import { createInputHistory } from "../src/renderer/mafw/components/input-history"
@@ -361,11 +369,13 @@ test("resolvePodId：显式 → 已加载 → 按目录 lookup；失败 fail-ope
 })
 
 test("Goal 详情/计划审阅在 Pod 未加载时也能解析 Pod 并过滤 revision", () => {
-  assert.match(goalDetail, /resolvePodId\(/)
+  assert.match(goalDetail, /createPodIdResolver\(/)
+  assert.match(goalDetail, /resolvePodIdForGoal\(/)
   assert.match(goalDetail, /props\.podId/)
   assert.match(goalDetail, /props\.projectDir/)
   assert.match(goalDetail, /probe\.revision === target/)
-  assert.match(planReview, /resolvePodId\(/)
+  assert.match(planReview, /createPodIdResolver\(/)
+  assert.match(planReview, /resolvePodIdForPlan\(/)
   assert.match(planReview, /props\.podId/)
   assert.match(planReview, /probe\.revision === revision/)
 })
@@ -384,29 +394,90 @@ test("方向/探针/变更警示样式存在且选中态可见", () => {
 
 // ── Residual fixes (2026-11-03) ───────────────────────────────────────────
 
-test("发送守卫用 resolvePodDetail（跨项目不信任旧 store，未加载时 lookup）", () => {
+test("发送守卫用 resolvePodDetailCached（跨项目不信任旧 store，TTL 去重）", () => {
   assert.match(shell, /const resolveSendPod = async/)
-  assert.match(shell, /resolvePodDetail\(\{/)
+  assert.match(shell, /resolvePodDetailCached\(\{/)
   assert.match(shell, /sameProject/)
   assert.match(shell, /const activeTechLeadTarget = async/)
   assert.match(shell, /const activeTechLeadBlocked = async/)
   assert.match(shell, /mappedGoal && detail\.goals\?\.some/)
 })
 
+test("送守卫 fail-closed：tab 是 tech_lead 但 Pod 不可解析 → 指引而非普通 prompt", () => {
+  assert.match(shell, /tabSessionRole\(sessions\(\)\.find/)
+  assert.match(shell, /无法确认该 Tech Lead 会话所属 Goal/)
+  assert.match(shell, /if \(tabSessionRole/)
+})
+
 test("方向裁定在 Dashboard 也能解析 Pod（不读 podStore.detail）", () => {
-  assert.match(goalDetail, /const podId = await resolvePod\(\)/)
+  assert.match(goalDetail, /const podId = await resolvePodIdForGoal\(\)/)
   assert.doesNotMatch(goalDetail, /async function decideDirection[\s\S]{0,200}podStore\.detail\(\)\?\.pod\.id/)
 })
 
-test("Pod 解析缓存按项目/podId/已加载 Pod 失效", () => {
+test("Pod 解析缓存按项目/podId/已加载 Pod 失效，且不缓存 null", () => {
   const base = { podId: "pod_1", projectDir: "/a", loadedProjectDir: "/a", loadedPodId: "pod_1" }
   assert.equal(podResolveKey(base), podResolveKey({ ...base }))
   assert.notEqual(podResolveKey(base), podResolveKey({ ...base, projectDir: "/b" }))
   assert.notEqual(podResolveKey(base), podResolveKey({ ...base, podId: "pod_2" }))
   assert.notEqual(podResolveKey(base), podResolveKey({ ...base, loadedPodId: "pod_2" }))
   assert.notEqual(podResolveKey(base), podResolveKey({ ...base, loadedProjectDir: "/b" }))
-  assert.match(goalDetail, /podResolveKey\(/)
-  assert.match(planReview, /podResolveKey\(/)
+  assert.match(goalDetail, /createPodIdResolver\(/)
+  assert.match(planReview, /createPodIdResolver\(/)
+  assert.doesNotMatch(goalDetail, /podCache = \{ key, id \}/)
+  assert.doesNotMatch(planReview, /podCache = \{ key, id \}/)
+})
+
+test("resolvePodDetailCached：null 只短期缓存（TTL 后重探）+ 并发去重", async () => {
+  resetPodDetailCache()
+  let calls = 0
+  let clock = 1000
+  const lookup = async () => { calls++; return null }
+  try {
+    assert.equal(await resolvePodDetailCached({ projectDir: "/p", lookup, now: () => clock, ttlMs: 5000 }), null)
+    assert.equal(await resolvePodDetailCached({ projectDir: "/p", lookup, now: () => clock, ttlMs: 5000 }), null)
+    assert.equal(calls, 1, "TTL 内的 null 命中缓存")
+    clock += 6000
+    assert.equal(await resolvePodDetailCached({ projectDir: "/p", lookup, now: () => clock, ttlMs: 5000 }), null)
+    assert.equal(calls, 2, "TTL 过期后重新探测（不永久缓存 null）")
+    resetPodDetailCache()
+    let inflight = 0
+    const slow = async () => { inflight++; return { pod: { id: "pod_1" } } as any }
+    const [a, b] = await Promise.all([
+      resolvePodDetailCached({ projectDir: "/q", lookup: slow }),
+      resolvePodDetailCached({ projectDir: "/q", lookup: slow }),
+    ])
+    assert.equal(inflight, 1, "同一 key 并发只 lookup 一次")
+    assert.equal(a?.pod.id, "pod_1")
+    assert.equal(b?.pod.id, "pod_1")
+  } finally {
+    resetPodDetailCache()
+  }
+})
+
+test("createPodIdResolver：只缓存命中，null 不缓存，并在飞请求去重", async () => {
+  let calls = 0
+  const resolver = createPodIdResolver({ lookup: async () => { calls++; return { pod: { id: "pod_hit" } } } })
+  const missResolver = createPodIdResolver({ lookup: async () => { calls++; return { pod: { id: "" } } } })
+  assert.equal(await resolver({ projectDir: "/a" }), "pod_hit")
+  assert.equal(await resolver({ projectDir: "/a" }), "pod_hit")
+  assert.equal(calls, 1, "命中只 lookup 一次")
+  const before = calls
+  assert.equal(await missResolver({ projectDir: "/b" }), null)
+  assert.equal(await missResolver({ projectDir: "/b" }), null)
+  assert.equal(calls, before + 2, "null 不缓存（每次重新探测）")
+  let inflight = 0
+  const slow = createPodIdResolver({ lookup: async () => { inflight++; return { pod: { id: "pod_slow" } } } })
+  const [a, b] = await Promise.all([slow({ projectDir: "/c" }), slow({ projectDir: "/c" })])
+  assert.equal(inflight, 1, "并发解析共享 in-flight")
+  assert.equal(a, "pod_slow")
+  assert.equal(b, "pod_slow")
+})
+
+test("PlanReview 刷新不依赖「已加载 pod id」前提（store 加载/项目变化会重跑）", () => {
+  assert.match(planReview, /void podStore\.projectDir\(\)/)
+  assert.match(planReview, /void podStore\.detail\(\)/)
+  assert.match(planReview, /void loadProbes\(\)/)
+  assert.doesNotMatch(planReview, /const podId = podStore\.detail\(\)\?\.pod\.id[\s\S]{0,40}if \(!podId/)
 })
 
 test("resolvePodDetail：已加载优先、失败 fail-open", async () => {

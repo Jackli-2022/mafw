@@ -77,6 +77,100 @@ export async function resolvePodDetail(options: {
   }
 }
 
+/**
+ * 短 TTL 的 Pod 详情解析（发送路径用）：同一次发送的 target/blocked 两次调用只
+ * lookup 一次；并发调用共享同一个 in-flight promise。null 结果只在 TTL 内复用
+ * （不是永久缓存），TTL 过后重新探测。
+ */
+const POD_DETAIL_TTL_MS = 5_000
+let podDetailCache: { key: string; at: number; detail: PodDetail | null } | null = null
+let podDetailInflight: { key: string; promise: Promise<PodDetail | null> } | null = null
+
+export function resetPodDetailCache(): void {
+  podDetailCache = null
+  podDetailInflight = null
+}
+
+export async function resolvePodDetailCached(options: {
+  loaded?: PodDetail | null
+  projectDir?: string | null
+  lookup?: (projectDir: string) => Promise<PodDetail>
+  now?: () => number
+  ttlMs?: number
+  /** 缓存键（缺省 = 项目目录）；项目切换/Pod 身份变化时应不同。 */
+  key?: string
+}): Promise<PodDetail | null> {
+  if (options.loaded) return options.loaded
+  const dir = (options.projectDir ?? "").trim()
+  if (!dir || !options.lookup) return null
+  const key = (options.key ?? dir).trim()
+  const now = options.now ? options.now() : Date.now()
+  const ttl = options.ttlMs ?? POD_DETAIL_TTL_MS
+  if (podDetailCache?.key === key && now - podDetailCache.at < ttl) return podDetailCache.detail
+  if (podDetailInflight?.key === key) return podDetailInflight.promise
+  const lookup = options.lookup
+  const promise = (async (): Promise<PodDetail | null> => {
+    try {
+      return await lookup(dir)
+    } catch {
+      return null
+    } finally {
+      if (podDetailInflight?.key === key) podDetailInflight = null
+    }
+  })()
+  podDetailInflight = { key, promise }
+  const detail = await promise
+  podDetailCache = { key, at: now, detail }
+  return detail
+}
+
+/**
+ * 组件级 Pod id 解析器（Goal 详情 / 计划审阅）：只缓存**命中**，null 每次重新探测；
+ * 同一 key 的并发调用共享 in-flight promise（不会重复 lookup）。
+ */
+export function createPodIdResolver(deps: {
+  lookup: (projectDir: string) => Promise<{ pod: { id: string } }>
+}) {
+  const hits = new Map<string, string>()
+  const inflight = new Map<string, Promise<string | null>>()
+  return async function resolve(options: {
+    podId?: string | null
+    loadedPodId?: string | null
+    projectDir?: string | null
+  }): Promise<string | null> {
+    const explicit = (options.podId ?? "").trim()
+    if (explicit) return explicit
+    const loaded = (options.loadedPodId ?? "").trim()
+    if (loaded) return loaded
+    const dir = (options.projectDir ?? "").trim()
+    if (!dir) return null
+    const key = podResolveKey({
+      podId: explicit,
+      projectDir: dir,
+      loadedPodId: loaded,
+    })
+    const hit = hits.get(key)
+    if (hit) return hit
+    const pending = inflight.get(key)
+    if (pending) return pending
+    const promise = (async (): Promise<string | null> => {
+      try {
+        const detail = await deps.lookup(dir)
+        const id = detail?.pod?.id?.trim() || null
+        // 只缓存命中：Pod 未建立时后续调用必须能重新探测。
+        if (id) hits.set(key, id)
+        return id
+      } catch {
+        return null
+      } finally {
+        inflight.delete(key)
+      }
+    })()
+    inflight.set(key, promise)
+    return promise
+  }
+}
+
 /** 解析缓存键：项目/显式 podId/已加载 Pod 任一变化都必须重新解析（不跨项目复用）。 */
 export function podResolveKey(input: {
   podId?: string | null

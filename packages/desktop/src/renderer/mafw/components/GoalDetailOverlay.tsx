@@ -10,7 +10,7 @@ import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { PodDirectionPanel } from "./PodDirectionPanel"
 import { PodProbePanel } from "./PodProbePanel"
 import { buildGoalLanes, formatDuration } from "../goal-timeline"
-import { podResolveKey, podStore, resolvePodId } from "../pod-store"
+import { createPodIdResolver, podStore } from "../pod-store"
 import { podStageLabel } from "../pod-model"
 import { goalsRev } from "../goals-rev"
 
@@ -53,7 +53,6 @@ export function GoalDetailOverlay(props: {
   const [error, setError] = createSignal<string | null>(null)
   const [retrying, setRetrying] = createSignal(false)
   const [planOpen, setPlanOpen] = createSignal(false)
-  let podCache: { key: string; id: string | null } | null = null
 
   async function load(id: string) {
     setLoading(true); setError(null)
@@ -67,28 +66,19 @@ export function GoalDetailOverlay(props: {
   }
 
   // 显式 podId → 已加载的 Pod store → 按项目目录 lookup（Pod 面板没开也能拿到证据）。
-  // 缓存按项目/显式 podId/已加载 Pod 的键失效，绝不跨项目复用。
-  async function resolvePod(): Promise<string | null> {
-    const key = podResolveKey({
-      podId: props.podId,
-      projectDir: props.projectDir,
-      loadedProjectDir: podStore.projectDir(),
-      loadedPodId: podStore.detail()?.pod.id,
-    })
-    if (podCache?.key === key) return podCache.id
-    const id = await resolvePodId({
+  // 只缓存命中 + in-flight 去重；Pod 未建立时不会把 null 永久钉住。
+  const resolvePod = createPodIdResolver({ lookup: (dir) => window.api.mafw.pod.lookup(dir) })
+  async function resolvePodIdForGoal(): Promise<string | null> {
+    return resolvePod({
       podId: props.podId,
       loadedPodId: podStore.detail()?.pod.id,
       projectDir: props.projectDir,
-      lookup: (dir) => window.api.mafw.pod.lookup(dir),
     })
-    podCache = { key, id }
-    return id
   }
 
   // Task 20：方向裁定与 Spike 证据是 Goal 级协作事实（pod.updated / 项目切换后重拉）。
   async function loadCollaboration(id: string) {
-    const podId = await resolvePod()
+    const podId = await resolvePodIdForGoal()
     if (!podId) { setRevisions([]); setProbes([]); return }
     const [revResult, probeResult] = await Promise.allSettled([
       window.api.mafw.pod.revisions(podId, id),
@@ -114,11 +104,13 @@ export function GoalDetailOverlay(props: {
     void load(id)
   })
 
-  // podId / 当前 revision 变化 → 重新读取方向/探针（Pod store 刷新也会触发）。
+  // podId / 项目 / Pod store 变化 → 重新读取方向/探针（Pod 尚未加载时也会在加载后刷新）。
   createEffect(() => {
     const id = props.goalId
     if (!id) return
     void props.podId
+    void props.projectDir
+    void podStore.projectDir()
     void podStore.detail()
     void loadCollaboration(id)
   })
@@ -241,7 +233,7 @@ export function GoalDetailOverlay(props: {
   }
 
   async function decideDirection(input: { userWords: string; optionId?: string }): Promise<boolean> {
-    const podId = await resolvePod()
+    const podId = await resolvePodIdForGoal()
     const id = props.goalId
     if (!podId || !id) {
       showToastV2({ description: "当前项目还没有鲸群，无法记录方向", duration: 3000 })

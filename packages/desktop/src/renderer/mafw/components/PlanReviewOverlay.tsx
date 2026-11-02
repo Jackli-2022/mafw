@@ -9,7 +9,7 @@ import { Markdown } from "@mafw/session-ui/markdown"
 import { AnnotationSheet } from "./AnnotationSheet"
 import { renderPlanPackage } from "./plan-render"
 import { planReviewViewModel, buildRejectFeedback, type PlanAnnotationDraft } from "./plan-review-model"
-import { podResolveKey, podStore, resolvePodId } from "../pod-store"
+import { createPodIdResolver, podStore } from "../pod-store"
 import type { PodProbe } from "@mafw/sdk"
 import type { BoxRect } from "../annotation-placement"
 
@@ -37,24 +37,15 @@ export function PlanReviewOverlay(props: {
   const [drafts, setDrafts] = createSignal<PlanAnnotationDraft[]>([])
   const [sheet, setSheet] = createSignal<{ anchor: BoxRect; quote: string } | null>(null)
   let bodyEl: HTMLDivElement | undefined
-  let podCache: { key: string; id: string | null } | null = null
+  // 只缓存命中 + in-flight 去重；Pod 未建立时 null 不会被永久缓存。
+  const resolvePod = createPodIdResolver({ lookup: (dir) => window.api.mafw.pod.lookup(dir) })
 
-  async function resolvePod(): Promise<string | null> {
-    const key = podResolveKey({
-      podId: props.podId,
-      projectDir: props.projectDir,
-      loadedProjectDir: podStore.projectDir(),
-      loadedPodId: podStore.detail()?.pod.id,
-    })
-    if (podCache?.key === key) return podCache.id
-    const id = await resolvePodId({
+  async function resolvePodIdForPlan(): Promise<string | null> {
+    return resolvePod({
       podId: props.podId,
       loadedPodId: podStore.detail()?.pod.id,
       projectDir: props.projectDir,
-      lookup: (dir) => window.api.mafw.pod.lookup(dir),
     })
-    podCache = { key, id }
-    return id
   }
 
   async function load() {
@@ -71,7 +62,7 @@ export function PlanReviewOverlay(props: {
   // Task 20：Spike 证据是计划审阅的一等输入（与 Goal Eval 的 mapping.probes 对齐）。
   // Pod 面板未打开时按 Goal/项目解析 Pod，不能因 store 为空就显示成「无证据」。
   async function loadProbes() {
-    const podId = await resolvePod()
+    const podId = await resolvePodIdForPlan()
     if (!podId) { setProbes([]); return }
     try {
       const result = await window.api.mafw.pod.probes(podId, props.goalId)
@@ -86,10 +77,13 @@ export function PlanReviewOverlay(props: {
   createEffect(() => { void load() })
 
   // pod.updated / 项目切换后 Pod 变化：重新拉取当前 Goal 的 Spike 记录。
+  // 不依赖「已加载 pod id」作为前提：Pod store 稍后加载/切换时 effect 也会重跑。
   createEffect(() => {
     void props.podId
-    const podId = podStore.detail()?.pod.id
-    if (!podId || !props.goalId) return
+    void props.projectDir
+    void podStore.projectDir()
+    void podStore.detail()
+    if (!props.goalId) return
     void loadProbes()
   })
 
