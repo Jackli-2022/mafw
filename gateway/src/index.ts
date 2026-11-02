@@ -34,8 +34,8 @@ import { SubagentService } from './runtime/subagent-service';
 import { TaskService, TaskError } from './runtime/task-service';
 import {
   BackgroundJobError,
+  BackgroundJobRegistry,
   BackgroundJobService,
-  RuntimeShellRegistry,
   jobFromTask,
 } from './core/background/background-jobs';
 import { PodStore } from './core/pod/pod-store';
@@ -558,8 +558,8 @@ class MafwScheduler {
   private readonly podA2AAgents = new Map<string, PodA2AAgent>();
   private readonly podPendingHandoffs = new Map<string, string[]>();
   private taskService!: TaskService;
-  /** Task 3：runtime shell 事件台账（background.job.updated 驱动，终态不回退）。 */
-  private readonly backgroundShells = new RuntimeShellRegistry();
+  /** Task 3：事件驱动的作业台账（background.job.updated；shell + subagent 证据，终态不回退）。 */
+  private readonly backgroundShells = new BackgroundJobRegistry();
   /** Task 3：三源统一的后台作业服务（REST 面唯一实现）。 */
   private backgroundJobs!: BackgroundJobService;
   private sessionConfigService!: SessionConfigService;
@@ -3866,10 +3866,8 @@ class MafwScheduler {
     this.backgroundJobs = new BackgroundJobService({
       tasks: this.taskService,
       registry: this.backgroundShells,
-      listSubagents: async (sessionID) => {
-        const rows = await this.runtime?.session.children({ sessionID }) ?? [];
-        return Array.isArray(rows) ? rows : [];
-      },
+      // 权威子代理来源（SubagentService 状态机：running/completed/failed/aborted）
+      listSubagents: (sessionID) => this.subagentService.list(sessionID),
       outputShell: async (opts) => {
         if (!this.runtime?.access.can('session.shell')) {
           throw new BackgroundJobError(503, 'runtime shell output is not available on this runtime');
@@ -3882,11 +3880,12 @@ class MafwScheduler {
         }
         await this.runtime!.shell!.remove(opts);
       },
-      cancelSubagent: async ({ sessionID }) => {
+      cancelSubagent: async ({ parentSessionID, childSessionID }) => {
         if (!this.runtime?.access.can('session.abort')) {
           throw new BackgroundJobError(503, 'subagent cancel is not available on this runtime');
         }
-        await this.runtime!.session.abort({ sessionID });
+        // 归属校验（父会话必须拥有该子会话）由 SubagentService.cancel 负责 → 404
+        await this.subagentService.cancel(parentSessionID, childSessionID);
       },
       broadcast: (job) => this.broadcast(mafwBroadcast({
         type: MAFW.backgroundJobUpdated,

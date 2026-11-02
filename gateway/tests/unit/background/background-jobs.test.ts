@@ -3,7 +3,7 @@
  *
  * 责任边界：
  *  - `mergeBackgroundJobs` 纯函数（同 id 去重、状态映射、稳定排序）
- *  - `RuntimeShellRegistry` 事件驱动的 runtime shell 台账（终态不回退）
+ *  - `BackgroundJobRegistry` 事件驱动的 runtime shell 台账（终态不回退）
  *  - 事件翻译（@2.1 与 @v1/@v2 方言）：synthetic shell/subagent → `background.job.updated`
  *  - `BackgroundJobService`（REST 语义：list/output/cancel）
  */
@@ -14,7 +14,7 @@ import type { TaskEntity } from '../../../src/runtime/task-service';
 import {
   BackgroundJobError,
   BackgroundJobService,
-  RuntimeShellRegistry,
+  BackgroundJobRegistry,
   backgroundJobStatusOfShell,
   backgroundJobStatusOfTask,
   backgroundJobEvent,
@@ -23,6 +23,7 @@ import {
   jobFromTask,
   mergeBackgroundJobs,
   runtimeShellRowFromSynthetic,
+  toBackgroundOutput,
   type RuntimeShellRow,
 } from '../../../src/core/background/background-jobs';
 
@@ -51,6 +52,18 @@ function session(over: Partial<SessionInfo>): SessionInfo {
     title: 'child',
     time: { created: 1000, updated: 2000 },
     ...over,
+  };
+}
+
+/** 事件形态的子代理 job（registry 记账用）。 */
+function subagentJob(id: string, status: 'running' | 'completed' | 'failed' | 'cancelled') {
+  return {
+    id,
+    source: 'subagent' as const,
+    kind: 'subagent' as const,
+    status,
+    sessionID: 'ses_parent',
+    childSessionID: id,
   };
 }
 
@@ -198,9 +211,33 @@ describe('row/job builders', () => {
   });
 });
 
-describe('RuntimeShellRegistry', () => {
+describe('MafwBackgroundOutput cursor（UTF-8 字节）', () => {
+  it('advances by UTF-8 byte length, not UTF-16 code units', () => {
+    // '你好' = 6 bytes / 2 UTF-16 units；'🙂' = 4 bytes / 2 UTF-16 units
+    expect(toBackgroundOutput({ output: '你好', cursor: 0, size: 6 })).toEqual({ cursor: 6, data: '你好', truncated: false });
+    expect(toBackgroundOutput({ output: '🙂', cursor: 0, size: 4 }).cursor).toBe(4);
+    expect(toBackgroundOutput({ output: '🙂', cursor: 6, size: 10 }).cursor).toBe(10);
+  });
+
+  it('pages CJK output without skipping or stalling (runtime cursor is bytes)', () => {
+    const page1 = toBackgroundOutput({ output: '你好', cursor: 0, size: 9, truncated: true });
+    const page2 = toBackgroundOutput({ output: '世', cursor: page1.cursor, size: 9, truncated: false });
+    expect(page1.cursor).toBe(6);
+    expect(page2.cursor).toBe(9);
+    expect(`${page1.data}${page2.data}`).toBe('你好世');
+  });
+
+  it('never runs past the reported size (frozen snapshot semantics)', () => {
+    // 冻结快照：cursor 已是「下一次起点」，size 与内容同长 → 不得按字节再加一次
+    expect(toBackgroundOutput({ output: 'abc', cursor: 3, size: 3 }).cursor).toBe(3);
+    // size 缺失：按数据字节数推进
+    expect(toBackgroundOutput({ output: 'abc' }).cursor).toBe(3);
+  });
+});
+
+describe('BackgroundJobRegistry', () => {
   it('upserts by id and never regresses a terminal shell back to running', () => {
-    const reg = new RuntimeShellRegistry();
+    const reg = new BackgroundJobRegistry();
     const running = jobFromRuntimeShell(shell({ id: 'sh_1', status: 'running' }));
     expect(reg.apply(running)).toBe(true);
     const done = jobFromRuntimeShell(shell({ id: 'sh_1', status: 'exited', exitCode: 0 }));
@@ -213,13 +250,56 @@ describe('RuntimeShellRegistry', () => {
   });
 
   it('answers per session and keeps newest shells first', () => {
-    const reg = new RuntimeShellRegistry();
+    const reg = new BackgroundJobRegistry();
     reg.apply(jobFromRuntimeShell(shell({ id: 'sh_old', time: { updated: 100 } })));
     reg.apply(jobFromRuntimeShell(shell({ id: 'sh_new', time: { updated: 300 } })));
     reg.apply(jobFromRuntimeShell(shell({ id: 'sh_other', sessionID: 'ses_other', time: { updated: 900 } })));
     expect(reg.list('ses_parent').map((j) => j.id)).toEqual(['sh_new', 'sh_old']);
     expect(reg.rows('ses_parent').map((r) => r.id)).toEqual(['sh_new', 'sh_old']);
     expect(reg.list('ses_other')).toHaveLength(1);
+  });
+
+  // ── review Important 3：事件与 REST 快照必须一致（子代理也记账） ──
+  it('records subagent events so the snapshot agrees with the event', async () => {
+    const reg = new BackgroundJobRegistry();
+    expect(reg.apply(subagentJob('ses_child', 'failed'))).toBe(true);
+    expect(reg.subagentRows('ses_parent')).toHaveLength(1);
+
+    const { svc } = service({ registry: reg, tasks: { list: () => [] }, listSubagents: async () => [] });
+    const jobs = await svc.list('ses_parent');
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ id: 'ses_child', source: 'subagent', status: 'failed' });
+  });
+
+  it('terminal event upgrades a still-running authoritative subagent row', async () => {
+    const reg = new BackgroundJobRegistry();
+    reg.apply(subagentJob('ses_child', 'cancelled'));
+    const { svc } = service({
+      registry: reg,
+      tasks: { list: () => [] },
+      listSubagents: async () => [{ id: 'ses_child', parentID: 'ses_parent', status: 'running' }],
+    });
+    const jobs = await svc.list('ses_parent');
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].status).toBe('cancelled');
+  });
+
+  it('keeps the authoritative terminal status over a stale event', async () => {
+    const reg = new BackgroundJobRegistry();
+    reg.apply(subagentJob('ses_child', 'completed'));
+    const { svc } = service({
+      registry: reg,
+      tasks: { list: () => [] },
+      listSubagents: async () => [{ id: 'ses_child', parentID: 'ses_parent', status: 'failed' }],
+    });
+    const jobs = await svc.list('ses_parent');
+    expect(jobs[0].status).toBe('failed');
+  });
+
+  it('does not mirror mafw-task jobs into the event registry (TaskService is authoritative)', () => {
+    const reg = new BackgroundJobRegistry();
+    expect(reg.apply({ id: 'task_1', source: 'mafw-task', kind: 'shell', status: 'running', sessionID: 'ses_parent' } as any)).toBe(false);
+    expect(reg.list('ses_parent')).toEqual([]);
   });
 });
 
@@ -272,27 +352,28 @@ describe('event translation → background.job.updated', () => {
   });
 });
 
-describe('BackgroundJobService', () => {
-  function service(over: any = {}) {
-    const registry = over.registry ?? new RuntimeShellRegistry();
-    const broadcast = over.broadcast ?? jest.fn();
-    const svc = new BackgroundJobService({
-      tasks: over.tasks ?? {
-        list: jest.fn(() => []),
-        get: jest.fn(),
-        cancel: jest.fn(),
-        output: jest.fn(async () => ({ output: '', cursor: 0, size: 0, truncated: false })),
-      },
-      registry,
-      listSubagents: over.listSubagents ?? (async () => []),
-      outputShell: over.outputShell,
-      cancelShell: over.cancelShell,
-      cancelSubagent: over.cancelSubagent,
-      broadcast,
-    });
-    return { svc, registry, broadcast };
-  }
+/** 服务装配（模块级：registry 一致性用例也要用）。 */
+function service(over: any = {}) {
+  const registry = over.registry ?? new BackgroundJobRegistry();
+  const broadcast = over.broadcast ?? jest.fn();
+  const svc = new BackgroundJobService({
+    tasks: over.tasks ?? {
+      list: jest.fn(() => []),
+      get: jest.fn(),
+      cancel: jest.fn(),
+      output: jest.fn(async () => ({ output: '', cursor: 0, size: 0, truncated: false })),
+    },
+    registry,
+    listSubagents: over.listSubagents ?? (async () => []),
+    outputShell: over.outputShell,
+    cancelShell: over.cancelShell,
+    cancelSubagent: over.cancelSubagent,
+    broadcast,
+  });
+  return { svc, registry, broadcast };
+}
 
+describe('BackgroundJobService', () => {
   it('merges the three sources into one neutral list', async () => {
     const { svc } = service({
       tasks: { list: () => [task({ id: 'task_1', kind: 'shell', shellID: 'sh_1' })] },
@@ -317,7 +398,7 @@ describe('BackgroundJobService', () => {
   });
 
   it('reads shell output with a next cursor and never exposes raw runtime DTOs', async () => {
-    const registry = new RuntimeShellRegistry();
+    const registry = new BackgroundJobRegistry();
     registry.apply(jobFromRuntimeShell(shell({ id: 'sh_1', status: 'exited', exitCode: 0 })));
     const outputShell = jest.fn(async () => ({ output: 'hello', cursor: 10, size: 15, truncated: true }));
     const { svc } = service({ registry, outputShell });
@@ -357,8 +438,48 @@ describe('BackgroundJobService', () => {
     expect(tasks.output).not.toHaveBeenCalled();
   });
 
+  // ── review Important 1：子代理状态取 SubagentService 权威值 ──
+  it('uses authoritative SubagentService status (failed child stays failed)', async () => {
+    const { svc } = service({
+      tasks: { list: () => [] },
+      // SubagentService.list 形状：id/parentID/status/description/createdAt/updatedAt
+      listSubagents: async () => [{
+        id: 'ses_child', parentID: 'ses_parent',
+        description: 'explore', status: 'failed', createdAt: 10, updatedAt: 20,
+      }],
+    });
+    const jobs = await svc.list('ses_parent');
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      id: 'ses_child', source: 'subagent', kind: 'subagent', status: 'failed',
+      sessionID: 'ses_parent', childSessionID: 'ses_child', title: 'explore',
+    });
+  });
+
+  it('maps every SubagentService status onto the MAFW state machine', () => {
+    const row = (status: any) => ({ id: 'ses_child', parentID: 'ses_parent', status });
+    expect(jobFromSubagent(row('running')).status).toBe('running');
+    expect(jobFromSubagent(row('input_required')).status).toBe('running');
+    expect(jobFromSubagent(row('completed')).status).toBe('completed');
+    expect(jobFromSubagent(row('failed')).status).toBe('failed');
+    expect(jobFromSubagent(row('aborted')).status).toBe('cancelled');
+  });
+
+  it('cancels a subagent through the injected ownership-checked canceller', async () => {
+    const cancelSubagent = jest.fn(async () => {});
+    const { svc, broadcast } = service({
+      tasks: { list: () => [] },
+      listSubagents: async () => [{ id: 'ses_child', parentID: 'ses_parent', status: 'running' }],
+      cancelSubagent,
+    });
+    const job = await svc.cancel('ses_parent', 'ses_child');
+    expect(cancelSubagent).toHaveBeenCalledWith({ parentSessionID: 'ses_parent', childSessionID: 'ses_child' });
+    expect(job.status).toBe('cancelled');
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ id: 'ses_child', status: 'cancelled' }));
+  });
+
   it('cancels a runtime shell through the injected shell surface and broadcasts', async () => {
-    const registry = new RuntimeShellRegistry();
+    const registry = new BackgroundJobRegistry();
     registry.apply(jobFromRuntimeShell(shell({ id: 'sh_1', status: 'running' })));
     const cancelShell = jest.fn(async () => {});
     const { svc, broadcast } = service({ registry, cancelShell });
@@ -397,7 +518,7 @@ describe('BackgroundJobService', () => {
   });
 
   it('reports 503 when the runtime shell surface is missing', async () => {
-    const registry = new RuntimeShellRegistry();
+    const registry = new BackgroundJobRegistry();
     registry.apply(jobFromRuntimeShell(shell({ id: 'sh_1' })));
     const { svc } = service({ registry });
     await expect(svc.output('ses_parent', 'sh_1')).rejects.toMatchObject({ status: 503 });

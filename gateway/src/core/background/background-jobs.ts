@@ -6,13 +6,16 @@
  *  - 状态机、输出游标、取消语义由 MAFW 定义；runtime 原生 shell DTO 不外泄。
  *  - 同一作业跨源合并按**稳定 id**（task id / shell id / 子会话 id），task 行优先
  *    （task 拥有更完整的生命周期与输出），并保留 `runtimeShellID` / `childSessionID` 定位信息。
+ *  - 子代理状态取 `SubagentService` 权威值（failed→failed / aborted→cancelled），
+ *    不自行从会话时间推算终态；事件证据只用于补「权威仍未终态」的终态。
+ *  - 输出游标与 runtime 对齐为 **UTF-8 字节**（不是 UTF-16 code unit）。
  *  - `session.background`（把阻塞工具转后台）仍是独立动作，不与本查询合并。
  *
  * 事件侧：runtime 的 synthetic shell/subagent 生命周期（旧实现伪装成 user/assistant
- * 消息）经 Ingress 翻译为 canonical `background.job.updated`，由 `RuntimeShellRegistry`
- * 记账（终态不回退），REST 快照仍是对账权威。
+ * 消息）经 Ingress 翻译为 canonical `background.job.updated`，由 `BackgroundJobRegistry`
+ * 记账（终态不回退），REST 快照仍是对账权威——子代理终态同时接受
+ * `SubagentService.list()` 权威行与事件证据（见 `mergeSubagentEvidence`）。
  */
-import type { SessionInfo } from '../../runtime/contract';
 import { MAFW } from '../../runtime/mafw-vocabulary';
 import type { MafwBackgroundJob, MafwBackgroundJobStatus } from '../../runtime/canonical-types';
 import type { TaskEntity, TaskService, TaskStatus } from '../../runtime/task-service';
@@ -47,8 +50,35 @@ export interface RuntimeShellRow {
 export interface BackgroundRows {
   tasks: TaskEntity[]
   runtimeShells: RuntimeShellRow[]
-  subagents: SessionInfo[]
+  subagents: BackgroundSubagentRow[]
 }
+
+/**
+ * 子代理行（聚合输入）。
+ *
+ * 权威形态来自 `SubagentService.list()`（`id/parentID/description/status/createdAt/
+ * updatedAt`）——`status` 是唯一可信来源，聚合器不再自行从会话时间推算终态。
+ * 纯 `SessionInfo` 行（无 status）仅作回退：以 `time.completed` 判断终态。
+ */
+export interface BackgroundSubagentRow {
+  id: string
+  parentID?: string
+  title?: string
+  description?: string
+  /** SubagentService 状态（running | completed | failed | aborted | input_required）。 */
+  status?: BackgroundSubagentStatus
+  createdAt?: number
+  updatedAt?: number
+  time?: { created?: number; updated?: number; completed?: number }
+}
+
+/** SubagentService 状态 + DTO 已有的等待态（input_required 归一为 running）。 */
+export type BackgroundSubagentStatus =
+  | 'running'
+  | 'input_required'
+  | 'completed'
+  | 'failed'
+  | 'aborted'
 
 const ACTIVE_STATUSES: ReadonlySet<MafwBackgroundJobStatus> = new Set(['running', 'input_required']);
 
@@ -160,24 +190,83 @@ export function jobFromRuntimeShell(row: RuntimeShellRow): MafwBackgroundJob {
   };
 }
 
-function subagentCompletedAt(info: SessionInfo): number | undefined {
-  const time = info.time as { completed?: number; idle?: number } | undefined;
-  const at = time?.completed ?? time?.idle;
-  return Number.isFinite(at) ? at : undefined;
+/**
+ * 子代理状态（SubagentService 权威值）→ MAFW 状态机。
+ *
+ * `aborted` = 用户/父会话主动中止 → `cancelled`；`input_required` 与 `running`
+ * 同属「活跃」（brief：两者归 `running`）。缺 status 的纯会话行回退到
+ * `time.completed` 推断（仅兜底，不再作为主路径）。
+ */
+export function backgroundJobStatusOfSubagent(
+  status: BackgroundSubagentStatus | undefined,
+  hasCompletedTime = false,
+): MafwBackgroundJobStatus {
+  switch (status) {
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'aborted':
+      return 'cancelled';
+    case 'running':
+    case 'input_required':
+      return 'running';
+    default:
+      return hasCompletedTime ? 'completed' : 'running';
+  }
 }
 
-export function jobFromSubagent(info: SessionInfo, ownerSessionID?: string): MafwBackgroundJob {
-  const completed = subagentCompletedAt(info);
-  const time = optionalTime({ created: info.time?.created, updated: info.time?.updated, completed });
+/** 反向映射（registry 行化用；保证子代理行↔job 往返不改变状态）。 */
+function subagentStatusOfJob(job: MafwBackgroundJob): BackgroundSubagentStatus {
+  switch (job.status) {
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'cancelled':
+      return 'aborted';
+    case 'input_required':
+      return 'input_required';
+    default:
+      return 'running';
+  }
+}
+
+export function jobFromSubagent(row: BackgroundSubagentRow, ownerSessionID?: string): MafwBackgroundJob {
+  const completedTime = Number.isFinite(row.time?.completed) ? row.time!.completed : undefined;
+  const status = backgroundJobStatusOfSubagent(row.status, completedTime !== undefined);
+  const terminal = isTerminalBackgroundStatus(status);
+  const created = row.createdAt ?? row.time?.created;
+  const updated = row.updatedAt ?? row.time?.updated ?? completedTime;
+  const time = optionalTime({
+    created,
+    updated,
+    completed: terminal ? (row.updatedAt ?? completedTime ?? updated) : undefined,
+  });
+  const title = row.title ?? row.description;
   return {
-    id: info.id,
+    id: row.id,
     source: 'subagent',
     kind: 'subagent',
-    status: completed !== undefined ? 'completed' : 'running',
-    sessionID: ownerSessionID ?? info.parentID ?? info.id,
-    childSessionID: info.id,
-    ...(info.title ? { title: info.title } : {}),
+    status,
+    sessionID: ownerSessionID ?? row.parentID ?? row.id,
+    childSessionID: row.id,
+    ...(title ? { title } : {}),
     ...(time ? { time } : {}),
+  };
+}
+
+/** registry job → 子代理行（merge 输入；状态往返保持）。 */
+export function subagentRowFromJob(job: MafwBackgroundJob): BackgroundSubagentRow {
+  return {
+    id: job.childSessionID ?? job.id,
+    parentID: job.sessionID,
+    ...(job.title ? { title: job.title } : {}),
+    status: subagentStatusOfJob(job),
+    ...(Number.isFinite(job.time?.created) ? { createdAt: job.time!.created } : {}),
+    ...(Number.isFinite(job.time?.updated ?? job.time?.completed)
+      ? { updatedAt: job.time?.updated ?? job.time?.completed }
+      : {}),
   };
 }
 
@@ -353,18 +442,27 @@ export function backgroundJobEvent(
 }
 
 /**
- * runtime shell 台账（事件驱动）。
+ * 事件驱动的作业台账（`background.job.updated` → 快照）。
  *
- * 只收 `kind: 'shell'` 的 job（subagent / task 由 TaskService 与会话列表权威提供）。
- * 终态不回退：迟到的 started 事件不得把已完成的 shell 变回 running。
+ * 收 **runtime 证据行**：`runtime-shell`（shell 生命周期）与 `subagent`
+ * （子代理 synthetic 终态）。`mafw-task` 不收——TaskService 是其权威来源，
+ * 台账镜像只会引入陈旧第二份数据（merge 时 task 行按 id 覆盖）。
+ *
+ * 终态不回退：迟到的 started / running 事件不得把已完成的作业变回 running。
+ * 这样「事件」与「REST 快照」互相一致：事件先到 → 快照立刻反映；权威来源
+ * 有新证据 → 权威行优先（见 `mergeSubagentEvidence`）。
  */
-export class RuntimeShellRegistry {
+export class BackgroundJobRegistry {
   private bySession = new Map<string, Map<string, MafwBackgroundJob>>();
   /** 每会话最多保留的行数（防长跑会话无限增长）。 */
   constructor(private readonly cap = 200) {}
 
   apply(job: MafwBackgroundJob): boolean {
-    if (!job?.id || !job.sessionID || job.kind !== 'shell') return false;
+    if (!job?.id || !job.sessionID) return false;
+    const accepted =
+      (job.kind === 'shell' && job.source === 'runtime-shell') ||
+      (job.kind === 'subagent' && job.source === 'subagent');
+    if (!accepted) return false;
     let bucket = this.bySession.get(job.sessionID);
     if (!bucket) {
       bucket = new Map();
@@ -389,8 +487,18 @@ export class RuntimeShellRegistry {
     return sortBackgroundJobs([...bucket.values()]);
   }
 
+  /** runtime shell 行（merge 的 runtimeShells 输入）。 */
   rows(sessionID: string): RuntimeShellRow[] {
-    return this.list(sessionID).map(shellRowFromJob);
+    return this.list(sessionID)
+      .filter((job) => job.kind === 'shell')
+      .map(shellRowFromJob);
+  }
+
+  /** 子代理证据行（merge 的 subagents 输入；与权威 SubagentService 行合并）。 */
+  subagentRows(sessionID: string): BackgroundSubagentRow[] {
+    return this.list(sessionID)
+      .filter((job) => job.kind === 'subagent')
+      .map(subagentRowFromJob);
   }
 
   remove(sessionID: string, id: string): void {
@@ -406,15 +514,18 @@ export class RuntimeShellRegistry {
 /** REST/服务依赖面（index.ts 注入；测试可全量替换）。 */
 export interface BackgroundJobServiceDeps {
   tasks?: Pick<TaskService, 'list' | 'get' | 'cancel' | 'output'> | null;
-  registry?: RuntimeShellRegistry | null;
-  /** 子代理来源（runtime.session.children；缺失/失败按空列表 fail-open）。 */
-  listSubagents?(sessionID: string): Promise<SessionInfo[]> | SessionInfo[];
+  registry?: BackgroundJobRegistry | null;
+  /**
+   * 子代理来源 = `SubagentService.list(parentID)`（权威状态：running/completed/
+   * failed/aborted）。缺失/失败按空列表 fail-open。
+   */
+  listSubagents?(sessionID: string): Promise<BackgroundSubagentRow[]> | BackgroundSubagentRow[];
   /** runtime shell 输出（经 RuntimeAccess 的 session.shell 门）。 */
   outputShell?(opts: { shellID: string; cursor?: number; limit?: number; directory?: string }): Promise<any>;
   /** runtime shell 终止（DELETE /shell/:id 语义）。 */
   cancelShell?(opts: { shellID: string; directory?: string }): Promise<void>;
-  /** 松散子代理终止（session.abort 语义）。 */
-  cancelSubagent?(opts: { sessionID: string }): Promise<void>;
+  /** 子代理终止 = `SubagentService.cancel(parent, child)`（含归属校验）。 */
+  cancelSubagent?(opts: { parentSessionID: string; childSessionID: string }): Promise<void>;
   broadcast?(job: MafwBackgroundJob): void;
   now?(): number;
 }
@@ -429,22 +540,23 @@ interface ResolvedJob {
  * 所有方法都要求显式 sessionID —— 作业归属是权限与定位的共同前提。
  */
 export class BackgroundJobService {
-  private readonly registry: RuntimeShellRegistry;
+  private readonly registry: BackgroundJobRegistry;
   private readonly now: () => number;
 
   constructor(private readonly deps: BackgroundJobServiceDeps = {}) {
-    this.registry = deps.registry ?? new RuntimeShellRegistry();
+    this.registry = deps.registry ?? new BackgroundJobRegistry();
     this.now = deps.now ?? Date.now;
   }
 
   async list(sessionID: string): Promise<MafwBackgroundJob[]> {
     requireSession(sessionID);
     const tasks = this.deps.tasks?.list({ parentSessionID: sessionID }) ?? [];
-    const subagents = await this.subagentRows(sessionID);
+    const authoritative = await this.subagentRows(sessionID);
     return mergeBackgroundJobs(sessionID, {
       tasks: [...tasks],
       runtimeShells: this.registry.rows(sessionID),
-      subagents,
+      // 权威行 + 事件证据：事件只补「权威仍未终态」时的终态，权威终态永不被旧事件覆盖
+      subagents: mergeSubagentEvidence(authoritative, this.registry.subagentRows(sessionID)),
     });
   }
 
@@ -495,7 +607,11 @@ export class BackgroundJobService {
     }
 
     if (!this.deps.cancelSubagent) throw new BackgroundJobError(503, 'subagent cancel is not available on this runtime');
-    await this.deps.cancelSubagent({ sessionID: job.childSessionID ?? job.id });
+    // 归属校验由 SubagentService.cancel 负责（非本会话子代理 → 404）
+    await this.deps.cancelSubagent({
+      parentSessionID: sessionID,
+      childSessionID: job.childSessionID ?? job.id,
+    });
     return this.publish(this.cancelledJob(job));
   }
 
@@ -520,7 +636,8 @@ export class BackgroundJobService {
   }
 
   private publish(job: MafwBackgroundJob): MafwBackgroundJob {
-    if (job.kind === 'shell' && job.source === 'runtime-shell') this.registry.apply(job);
+    // 事件台账同步（shell/subagent 证据行；task 由 TaskService 权威提供）
+    this.registry.apply(job);
     try {
       this.deps.broadcast?.(job);
     } catch {
@@ -529,7 +646,7 @@ export class BackgroundJobService {
     return job;
   }
 
-  private async subagentRows(sessionID: string): Promise<SessionInfo[]> {
+  private async subagentRows(sessionID: string): Promise<BackgroundSubagentRow[]> {
     if (!this.deps.listSubagents) return [];
     try {
       const rows = await this.deps.listSubagents(sessionID);
@@ -545,12 +662,61 @@ function requireSession(sessionID: string | undefined): void {
   if (!sessionID) throw new BackgroundJobError(400, 'sessionID is required');
 }
 
-/** runtime 原生 output → 中性游标式结果（`cursor` = 下一次读取的起点）。 */
+/**
+ * 子代理证据合并：权威行（SubagentService）优先，事件只补终态。
+ *
+ * - 事件行没有权威对应行 → 直接采用（例：子会话已被清理，但完成事件仍在）
+ * - 权威行仍未终态 + 事件行终态 → 采用事件的终态（事件是「终态已发生」的证据）
+ * - 权威行已终态 → 权威胜（失败/中止不会被旧 completed 事件洗白）
+ */
+export function mergeSubagentEvidence(
+  authoritative: BackgroundSubagentRow[],
+  eventRows: BackgroundSubagentRow[],
+): BackgroundSubagentRow[] {
+  const byId = new Map<string, BackgroundSubagentRow>();
+  for (const row of authoritative) {
+    if (row?.id) byId.set(row.id, row);
+  }
+  for (const evidence of eventRows) {
+    if (!evidence?.id) continue;
+    const current = byId.get(evidence.id);
+    if (!current) {
+      byId.set(evidence.id, evidence);
+      continue;
+    }
+    const currentStatus = backgroundJobStatusOfSubagent(
+      current.status,
+      Number.isFinite(current.time?.completed),
+    );
+    const evidenceStatus = backgroundJobStatusOfSubagent(
+      evidence.status,
+      Number.isFinite(evidence.time?.completed),
+    );
+    if (isTerminalBackgroundStatus(evidenceStatus) && !isTerminalBackgroundStatus(currentStatus)) {
+      byId.set(evidence.id, {
+        ...current,
+        status: evidence.status,
+        ...(evidence.updatedAt !== undefined
+          ? { updatedAt: evidence.updatedAt }
+          : current.updatedAt !== undefined ? { updatedAt: current.updatedAt } : {}),
+        ...(evidence.time?.completed !== undefined
+          ? { time: { ...(current.time ?? {}), completed: evidence.time.completed } }
+          : {}),
+      });
+    }
+  }
+  return [...byId.values()];
+}
+
+/** runtime 原生 output → 中性游标式结果（`cursor` = 下一次读取的起点，UTF-8 字节）。 */
 export function toBackgroundOutput(raw: any): MafwBackgroundOutput {
   const data = typeof raw?.output === 'string' ? raw.output : '';
   const start = Number(raw?.cursor);
   const size = Number(raw?.size);
-  let cursor = Number.isFinite(start) ? start + data.length : data.length;
+  // runtime 的 cursor/size 都是**字节**（wire probe：cursor=<起始字节>, size=<总字节>）。
+  // 用 UTF-16 length 会在 CJK/emoji 上多跳（`'你好'.length===2` vs 6 字节）→ 漏读与错页。
+  const bytes = Buffer.byteLength(data, 'utf8');
+  let cursor = Number.isFinite(start) ? start + bytes : bytes;
   if (Number.isFinite(size) && size >= 0 && cursor > size) cursor = size;
   return { cursor, data, truncated: raw?.truncated === true };
 }
