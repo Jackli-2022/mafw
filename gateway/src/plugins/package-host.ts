@@ -1,22 +1,137 @@
 /**
  * 统一插件包宿主 —— 扫 ~/.mafw/plugins/（单文件包 *.js / 目录包 plugin.json+入口），
- * 激活后把贡献分发给三个 legacy loader（setPackageEntries）。fail-open。
+ * 激活后把贡献分发给四个 legacy loader（setPackageEntries），并向客户端发布
+ * 一个可序列化的 revision 快照。fail-open。
+ *
+ * 提交模型（spec §10.2）：
+ *   scan → 内容指纹 → 只为新增/变化的包激活 candidate（私有 RegistrationBag）
+ *   → 全部 candidate 处理完 → 一次性提交（先 dispose 被替换的旧包，再推 loader）
+ *   → 发布新的 `<bootId>:<counter>` 快照。
+ *
+ * 指纹未变的包完全复用旧实例：不重新 activate、不清 timer/cache、不改 revision。
+ * 失败 candidate 只记诊断，旧 active descriptor 继续可用。
+ * 变更包若拥有当前 active runtime，则整包进入 pending，等显式 applyPending。
+ *
  * 优先级（同名）：包 > legacy 目录文件 > 内置。
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomBytes } from 'crypto';
 import { log } from '../core/utils/logger';
 import { createPiPromptAdapter } from '../media/pi-adapter';
+import { buildClientDescriptor, buildClientSnapshot, type PluginClientSnapshot } from './client-descriptor';
+import { fingerprintPackage } from './package-fingerprint';
+import { buildActivatedContributions } from './package-validator';
+import { createRegistrationBag, type RegistrationBag } from './registration-bag';
 import type {
-  MediaPackageEntry, PackageDescriptor, PackageManifest, PackageState,
-  PluginContributions, PluginPackageContext, RuntimePackageEntry, TtsPackageEntry, UsagePackageEntry,
+  ActivatedContributions,
+  MediaPackageEntry,
+  PackageDescriptor,
+  PackageManifest,
+  PackageState,
+  PluginContributions,
+  PluginPackageContext,
+  RuntimePackageEntry,
+  TtsPackageEntry,
+  UnifiedPluginContributions,
+  UsagePackageEntry,
 } from './package-types';
 import type { PcmChunk, TtsEngine, TtsOpts } from '../tts/types';
 
 const VALID_MODALITIES = new Set(['image', 'video', 'audio']);
+const EMPTY_CANONICAL_TYPES: ReadonlySet<string> = new Set();
+
+export interface PluginHostOptions {
+  /**
+   * Opaque gateway boot id used in revision tokens. Generated per host instance
+   * by default; a new instance always means a new generation.
+   */
+  bootId?: string;
+  /** Canonical runtime event vocabulary rejected in package event declarations. */
+  canonicalTypes?: ReadonlySet<string>;
+  /**
+   * Name of the runtime currently in use (thunk, read on every scan). A changed
+   * package that owns it is staged as pending instead of interrupting work.
+   */
+  activeRuntime?: () => string | null | undefined;
+  /** RegistrationBag factory (diagnostics/tests may inject a tracking bag). */
+  createBag?: () => RegistrationBag;
+}
+
+export interface PluginPendingState {
+  /** Pending candidate token (`<bootId>:<counter>`); not client-visible yet. */
+  revision: string;
+  /** Set when the pending candidate could not be activated. */
+  error?: string;
+}
+
+export interface PluginApplyResult {
+  applied: boolean;
+  revision?: string;
+  error?: string;
+}
+
+interface PackageEntries {
+  runtime?: RuntimePackageEntry;
+  media?: MediaPackageEntry;
+  tts?: TtsPackageEntry;
+  usage?: UsagePackageEntry;
+}
+
+interface ActivationResult {
+  version?: string;
+  contributions: string[];
+  /** Client-safe DTOs + Host declarations of the same `activate()` result. */
+  activated: ActivatedContributions;
+  entries: PackageEntries;
+}
+
+interface PackageActivation extends ActivationResult {
+  descriptor: PackageDescriptor;
+  fingerprint: string;
+  bag: RegistrationBag;
+}
+
+interface ActivePackage extends PackageActivation {
+  /** Committed token shared by every package committed in the same snapshot. */
+  revision: string;
+}
+
+interface PendingPackage {
+  descriptor: PackageDescriptor;
+  fingerprint: string;
+  /** Token allocated when the candidate was staged. */
+  revision: string;
+  /** Absent when activation/validation failed; the error is kept for the Hub. */
+  activation?: PackageActivation;
+  error?: string;
+}
+
+interface PackageFailure {
+  source: string;
+  error: string;
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message || err.name;
+  return String(err);
+}
+
+function hasUiSlots(ui: ActivatedContributions['ui']): boolean {
+  return Object.values(ui).some((slot) => Array.isArray(slot) && slot.length > 0);
+}
 
 export class PluginHost {
-  private state = new Map<string, PackageState>();
+  private active = new Map<string, ActivePackage>();
+  private pending = new Map<string, PendingPackage>();
+  private failures = new Map<string, PackageFailure>();
+  private snapshot: PluginClientSnapshot;
+  private readonly bootId: string;
+  private counter = 0;
+  /** Serializes scans and pending applies so two watcher bursts cannot interleave. */
+  private queue: Promise<unknown> = Promise.resolve();
+  private lastStateSignature: string;
+  private stopped = false;
   private watcher?: fs.FSWatcher;
   private dirWatchers = new Map<string, fs.FSWatcher>();
   private debounce?: NodeJS.Timeout;
@@ -26,20 +141,40 @@ export class PluginHost {
   private mediaCb?: (entries: MediaPackageEntry[]) => void;
   private ttsCb?: (entries: TtsPackageEntry[]) => void;
   private usageCb?: (entries: UsagePackageEntry[]) => void;
+  private snapshotCb?: (snapshot: PluginClientSnapshot) => void;
+  private stateCb?: () => void;
   private lastRuntime: RuntimePackageEntry[] = [];
   private lastMedia: MediaPackageEntry[] = [];
   private lastTts: TtsPackageEntry[] = [];
   private lastUsage: UsagePackageEntry[] = [];
+  private readonly createBag: () => RegistrationBag;
+  private readonly canonicalTypes: ReadonlySet<string>;
 
   constructor(
     private dir: string,
     private createContext: (name: string) => PluginPackageContext,
-  ) {}
+    private options: PluginHostOptions = {},
+  ) {
+    this.bootId = options.bootId ?? randomBytes(8).toString('hex');
+    this.canonicalTypes = options.canonicalTypes ?? EMPTY_CANONICAL_TYPES;
+    this.createBag = options.createBag ?? createRegistrationBag;
+    this.snapshot = buildClientSnapshot(this.currentToken(), []);
+    this.lastStateSignature = JSON.stringify(this.getState());
+  }
 
   bindRuntime(cb: (entries: RuntimePackageEntry[]) => void): void { this.runtimeCb = cb; cb(this.lastRuntime); }
   bindMedia(cb: (entries: MediaPackageEntry[]) => void): void { this.mediaCb = cb; cb(this.lastMedia); }
   bindTts(cb: (entries: TtsPackageEntry[]) => void): void { this.ttsCb = cb; cb(this.lastTts); }
   bindUsage(cb: (entries: UsagePackageEntry[]) => void): void { this.usageCb = cb; cb(this.lastUsage); }
+
+  /** Client snapshot subscriber; replays the current snapshot immediately. */
+  onSnapshot(cb: (snapshot: PluginClientSnapshot) => void): void {
+    this.snapshotCb = cb;
+    cb(this.snapshot);
+  }
+
+  /** Hub/SSE subscriber; fires whenever the visible package state changes. */
+  onStateChanged(cb: () => void): void { this.stateCb = cb; }
 
   async init(): Promise<void> {
     this.ensureDir();
@@ -47,15 +182,96 @@ export class PluginHost {
     this.startWatch();
   }
 
+  /** Immutable client-visible projection (active packages only). */
+  getClientSnapshot(): PluginClientSnapshot { return this.snapshot; }
+
   getState(): PackageState[] {
-    return [...this.state.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const names = new Set<string>([
+      ...this.active.keys(),
+      ...this.pending.keys(),
+      ...this.failures.keys(),
+    ]);
+    const out: PackageState[] = [];
+    for (const name of names) {
+      const active = this.active.get(name);
+      const pending = this.pending.get(name);
+      const failure = this.failures.get(name);
+      const source = active?.descriptor.mainFile
+        ?? pending?.descriptor.mainFile
+        ?? failure?.source
+        ?? '';
+      const state: PackageState = {
+        name,
+        source,
+        status: failure ? 'error' : 'ok',
+        contributions: active?.contributions ?? pending?.activation?.contributions ?? [],
+        version: active?.version
+          ?? pending?.activation?.version
+          ?? active?.descriptor.manifest?.version
+          ?? pending?.descriptor.manifest?.version,
+        revision: active?.revision,
+        pendingRevision: pending?.revision,
+        fingerprint: active?.fingerprint,
+      };
+      if (failure) state.error = failure.error;
+      out.push(state);
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  getPending(name: string): PluginPendingState | null {
+    const pending = this.pending.get(name);
+    if (!pending) return null;
+    return pending.error === undefined
+      ? { revision: pending.revision }
+      : { revision: pending.revision, error: pending.error };
+  }
+
+  /**
+   * Commits the staged candidate of `name`.
+   *
+   * Only this package's revision moves; the rest of the snapshot is republished
+   * unchanged. A failed pending candidate stays pending (its error is returned)
+   * so the Hub keeps showing the problem until the files change again.
+   */
+  applyPending(name: string): Promise<PluginApplyResult> {
+    return this.enqueue(() => this.runApplyPending(name));
+  }
+
+  /** Full rescan; unchanged packages are carried forward by fingerprint. */
+  reload(): Promise<void> {
+    return this.enqueue(() => this.runReload());
   }
 
   stop(): void {
+    this.stopped = true;
     this.watcher?.close();
+    this.watcher = undefined;
     for (const w of this.dirWatchers.values()) w.close();
     this.dirWatchers.clear();
     if (this.debounce) clearTimeout(this.debounce);
+    const bags: RegistrationBag[] = [];
+    for (const record of this.active.values()) bags.push(record.bag);
+    for (const pending of this.pending.values()) {
+      if (pending.activation) bags.push(pending.activation.bag);
+    }
+    this.active.clear();
+    this.pending.clear();
+    this.failures.clear();
+    void this.disposeBags(bags);
+  }
+
+  private currentToken(): string { return `${this.bootId}:${this.counter}`; }
+
+  private nextToken(): string {
+    this.counter += 1;
+    return this.currentToken();
+  }
+
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(task);
+    this.queue = run.then(() => undefined, () => undefined);
+    return run;
   }
 
   private ensureDir(): void {
@@ -66,33 +282,185 @@ export class PluginHost {
     }
   }
 
-  /** 全量重扫 + 重新激活 + 一次性推送（跨面原子：先全部激活完再推各 loader）。 */
-  async reload(): Promise<void> {
-    const next = new Map<string, PackageState>();
+  /** 全量重扫：staging 全部 candidate 后再一次性提交。 */
+  private async runReload(): Promise<void> {
+    if (this.stopped) return;
+    const nextActive = new Map<string, ActivePackage>();
+    const nextPending = new Map<string, PendingPackage>();
+    const nextFailures = new Map<string, PackageFailure>();
+    const toDispose: RegistrationBag[] = [];
+    const toCommit: PackageActivation[] = [];
+    const pkgDirs: string[] = [];
+    const scanErrors = new Map<string, PackageFailure>();
+
+    for (const desc of this.scanDescriptors(scanErrors)) {
+      if (desc.pkgDir) pkgDirs.push(desc.pkgDir);
+      const existing = this.active.get(desc.name);
+
+      let fingerprint: string;
+      try {
+        fingerprint = fingerprintPackage(desc.mainFile, desc.pkgDir ? { rootDir: desc.pkgDir } : {});
+      } catch (err) {
+        const message = describeError(err);
+        nextFailures.set(desc.name, { source: desc.mainFile, error: message });
+        if (existing) nextActive.set(desc.name, existing);
+        log.warn(`[PluginHost] ${desc.name} fingerprint error: ${message}`);
+        continue;
+      }
+
+      if (existing && existing.fingerprint === fingerprint) {
+        // Unchanged: reuse instance + bag + revision. A pending candidate for the
+        // same name is dropped by the final pending sweep (the file reverted).
+        nextActive.set(desc.name, existing);
+        continue;
+      }
+
+      const previousPending = this.pending.get(desc.name);
+      if (previousPending && previousPending.fingerprint === fingerprint) {
+        // The staged candidate did not change either: keep it without reactivating.
+        if (existing) nextActive.set(desc.name, existing);
+        nextPending.set(desc.name, previousPending);
+        continue;
+      }
+
+      const bag = this.createBag();
+      try {
+        const activation = await this.activate(desc, bag);
+        const staged: PackageActivation = { descriptor: desc, fingerprint, bag, ...activation };
+        if (previousPending?.activation) toDispose.push(previousPending.activation.bag);
+        if (existing && this.ownsActiveRuntime(activation, existing)) {
+          // Active-runtime change: keep the old package live until applyPending.
+          nextActive.set(desc.name, existing);
+          nextPending.set(desc.name, {
+            descriptor: desc,
+            fingerprint,
+            revision: this.nextToken(),
+            activation: staged,
+          });
+        } else {
+          toCommit.push(staged);
+        }
+      } catch (err) {
+        toDispose.push(bag);
+        const message = describeError(err);
+        nextFailures.set(desc.name, { source: desc.mainFile, error: message });
+        if (existing) nextActive.set(desc.name, existing);
+        if (previousPending?.activation) toDispose.push(previousPending.activation.bag);
+        if (existing && this.ownsActiveRuntime(undefined, existing)) {
+          nextPending.set(desc.name, {
+            descriptor: desc,
+            fingerprint,
+            revision: this.nextToken(),
+            error: message,
+          });
+        }
+        log.warn(`[PluginHost] ${desc.name} activate error: ${message}`);
+      }
+    }
+
+    // Scan failures (bad manifest / missing main) keep the previous activation.
+    for (const [name, failure] of scanErrors) {
+      // A directory whose manifest became unreadable is keyed by its folder name,
+      // which may differ from the manifest name of the running package. Map the
+      // failure back onto the active package so the old descriptor stays usable.
+      const existing = this.active.get(name) ?? this.activeBySource(failure.source);
+      const stateName = existing?.descriptor.name ?? name;
+      nextFailures.set(stateName, failure);
+      if (existing) nextActive.set(stateName, existing);
+    }
+
+    const committing = new Set(toCommit.map((staged) => staged.descriptor.name));
+    const removed: ActivePackage[] = [];
+    for (const [name, record] of this.active) {
+      if (nextActive.has(name) || nextFailures.has(name) || committing.has(name)) continue;
+      removed.push(record);
+    }
+
+    // Pending candidates whose package disappeared (or reverted) go away.
+    for (const [name, pending] of this.pending) {
+      if (nextPending.has(name)) continue;
+      if (pending.activation) toDispose.push(pending.activation.bag);
+    }
+
+    const snapshotChanged = toCommit.length > 0 || removed.length > 0;
+    let revision = this.snapshot.revision;
+    if (snapshotChanged) {
+      revision = this.nextToken();
+      for (const staged of toCommit) {
+        nextActive.set(staged.descriptor.name, { ...staged, revision });
+        const replaced = this.active.get(staged.descriptor.name);
+        if (replaced) toDispose.push(replaced.bag);
+      }
+      for (const record of removed) toDispose.push(record.bag);
+    }
+
+    // Commit: release replaced packages first, then publish everything at once.
+    await this.disposeBags(toDispose);
+
+    this.active = nextActive;
+    this.pending = nextPending;
+    this.failures = nextFailures;
+    this.pkgDirs = pkgDirs;
+
+    if (snapshotChanged) {
+      this.snapshot = this.buildSnapshot(revision);
+      this.publishEntries();
+      this.snapshotCb?.(this.snapshot);
+    }
+    this.notifyStateChanged();
+    this.refreshDirWatchers();
+  }
+
+  private async runApplyPending(name: string): Promise<PluginApplyResult> {
+    const pending = this.pending.get(name);
+    if (!pending) return { applied: false, error: `no pending revision for "${name}"` };
+    if (!pending.activation) {
+      return { applied: false, error: pending.error ?? `pending revision for "${name}" is invalid` };
+    }
+
+    const revision = this.nextToken();
+    const replaced = this.active.get(name);
+    if (replaced) await this.disposeBags([replaced.bag]);
+
+    const nextActive = new Map(this.active);
+    nextActive.set(name, { ...pending.activation, revision });
+    const nextPending = new Map(this.pending);
+    nextPending.delete(name);
+
+    this.active = nextActive;
+    this.pending = nextPending;
+    this.snapshot = this.buildSnapshot(revision);
+    this.publishEntries();
+    this.snapshotCb?.(this.snapshot);
+    this.notifyStateChanged();
+    return { applied: true, revision };
+  }
+
+  private buildSnapshot(revision: string): PluginClientSnapshot {
+    const plugins = [...this.active.values()]
+      .sort((a, b) => a.descriptor.name.localeCompare(b.descriptor.name))
+      .map((record) => buildClientDescriptor({
+        name: record.descriptor.name,
+        version: record.version ?? record.descriptor.manifest?.version,
+        revision: record.revision,
+        activated: record.activated,
+      }));
+    return buildClientSnapshot(revision, plugins);
+  }
+
+  private publishEntries(): void {
     const runtime: RuntimePackageEntry[] = [];
     const media: MediaPackageEntry[] = [];
     const tts: TtsPackageEntry[] = [];
     const usage: UsagePackageEntry[] = [];
-    const pkgDirs: string[] = [];
-    for (const desc of this.scanDescriptors(next)) {
-      if (desc.pkgDir) pkgDirs.push(desc.pkgDir);
-      try {
-        const c = await this.activate(desc);
-        if (c.runtime) runtime.push(c.runtime);
-        if (c.media) media.push(c.media);
-        if (c.tts) tts.push(c.tts);
-        if (c.usage) usage.push(c.usage);
-        next.set(desc.name, {
-          name: desc.name, source: desc.mainFile, status: 'ok',
-          contributions: c.contributions, version: desc.manifest?.version,
-        });
-      } catch (err: any) {
-        next.set(desc.name, { name: desc.name, source: desc.mainFile, status: 'error', error: err.message, contributions: [] });
-        log.warn(`[PluginHost] ${desc.name} activate error: ${err.message}`);
-      }
+    const records = [...this.active.values()].sort((a, b) => a.descriptor.name.localeCompare(b.descriptor.name));
+    for (const record of records) {
+      const entries = record.entries;
+      if (entries.runtime) runtime.push(entries.runtime);
+      if (entries.media) media.push(entries.media);
+      if (entries.tts) tts.push(entries.tts);
+      if (entries.usage) usage.push(entries.usage);
     }
-    this.state = next;
-    this.pkgDirs = pkgDirs;
     this.lastRuntime = runtime;
     this.lastMedia = media;
     this.lastTts = tts;
@@ -101,12 +469,59 @@ export class PluginHost {
     this.mediaCb?.(media);
     this.ttsCb?.(tts);
     this.usageCb?.(usage);
-    this.refreshDirWatchers();
+  }
+
+  private notifyStateChanged(): void {
+    const signature = JSON.stringify(this.getState());
+    if (signature === this.lastStateSignature) return;
+    this.lastStateSignature = signature;
+    this.stateCb?.();
+  }
+
+  private async disposeBags(bags: RegistrationBag[]): Promise<void> {
+    for (const bag of bags) {
+      const diagnostics = await bag.dispose();
+      for (const diagnostic of diagnostics) {
+        log.warn(`[PluginHost] dispose "${diagnostic.name}" failed: ${diagnostic.message}`);
+      }
+    }
+  }
+
+  private activeRuntimeName(): string | null {
+    try {
+      const name = this.options.activeRuntime?.();
+      return typeof name === 'string' && name.length > 0 ? name : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Does this change touch the runtime the gateway is currently using? */
+  private ownsActiveRuntime(activation: ActivationResult | undefined, existing: ActivePackage): boolean {
+    const active = this.activeRuntimeName();
+    if (!active) return false;
+    const candidate = activation?.entries.runtime?.name;
+    const current = existing.entries.runtime?.name;
+    return candidate === active || current === active;
+  }
+
+  /** Finds an active package by its on-disk root (used when a scan fails). */
+  private activeBySource(source: string): ActivePackage | undefined {
+    const normalize = (value: string): string => {
+      const resolved = path.resolve(value);
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    const wanted = normalize(source);
+    for (const record of this.active.values()) {
+      const root = record.descriptor.pkgDir ?? record.descriptor.mainFile;
+      if (normalize(root) === wanted) return record;
+    }
+    return undefined;
   }
 
   /** 每个目录包一个 watcher（跨平台——不用 recursive）。reload 后按当前包集合增删。 */
   private refreshDirWatchers(): void {
-    if (!this.watcher) return; // 顶层 watch 未建立（init 前手动 reload）则不建
+    if (this.stopped || !this.watcher) return; // 顶层 watch 未建立（init 前手动 reload）则不建
     const wanted = new Set(this.pkgDirs);
     for (const [dir, w] of this.dirWatchers) {
       if (!wanted.has(dir)) { w.close(); this.dirWatchers.delete(dir); }
@@ -126,7 +541,7 @@ export class PluginHost {
   }
 
   /** 枚举候选包；逐条错误记入 errorStates（不抛出）。 */
-  private scanDescriptors(errorStates: Map<string, PackageState>): PackageDescriptor[] {
+  private scanDescriptors(errorStates: Map<string, PackageFailure>): PackageDescriptor[] {
     const out: PackageDescriptor[] = [];
     if (!fs.existsSync(this.dir)) return out;
     const entries = fs.readdirSync(this.dir, { withFileTypes: true })
@@ -147,27 +562,33 @@ export class PluginHost {
           out.push({ name: manifest?.name ?? entry.name, mainFile, manifest, pkgDir });
         }
       } catch (err: any) {
-        errorStates.set(entry.name, { name: entry.name, source: path.join(this.dir, entry.name), status: 'error', error: err.message, contributions: [] });
+        errorStates.set(entry.name, { source: path.join(this.dir, entry.name), error: err.message });
       }
     }
     return out;
   }
 
-  private async activate(desc: PackageDescriptor): Promise<{
-    contributions: string[];
-    runtime?: RuntimePackageEntry;
-    media?: MediaPackageEntry;
-    tts?: TtsPackageEntry;
-    usage?: UsagePackageEntry;
-  }> {
-    try { delete require.cache[require.resolve(desc.mainFile)]; } catch { /* first load */ }
+  private async activate(desc: PackageDescriptor, bag: RegistrationBag): Promise<ActivationResult> {
+    // One activate() result = one bag = one revision. The bag is empty until the
+    // action/event registries attach their cleanups, so the per-package lifecycle
+    // has exactly one owner from the first scan onwards.
+    void bag;
+    this.invalidatePackageCache(desc);
     const mod = require(desc.mainFile);
     const modName = mod?.name;
     if (typeof modName !== 'string' || !modName) throw new Error('missing name');
     if (modName !== desc.name) throw new Error(`name mismatch: exports '${modName}', package '${desc.name}'`);
     const ctx = this.createContext(modName);
-    const contribs: PluginContributions =
+    const raw: UnifiedPluginContributions =
       typeof mod.activate === 'function' ? ((await mod.activate(ctx)) ?? {}) : pickContributions(mod);
+
+    // Declarative half is validated before anything is published; legacy
+    // contributions are the same object with `ui`/`actions`/`events` removed.
+    const built = buildActivatedContributions(modName, raw, this.canonicalTypes);
+    if (!built.ok) throw new Error(`invalid contributions: ${built.errors.join('; ')}`);
+    const activated = built.value;
+    const contribs: PluginContributions = activated.legacy;
+
     const kinds: string[] = [];
     let runtime: RuntimePackageEntry | undefined;
     let media: MediaPackageEntry | undefined;
@@ -237,8 +658,45 @@ export class PluginHost {
       }
       kinds.push('uiTools');
     }
-    if (kinds.length === 0) throw new Error('no contributions (usage/media/runtime/tts/uiTools)');
-    return { contributions: kinds, runtime, media, tts, usage };
+
+    if (activated.actions.length > 0) kinds.push('actions');
+    if (activated.events.length > 0) kinds.push('events');
+    if (hasUiSlots(activated.ui)) kinds.push('ui');
+
+    if (kinds.length === 0) throw new Error('no contributions (usage/media/runtime/tts/uiTools/ui/actions/events)');
+
+    return {
+      version: desc.manifest?.version,
+      contributions: kinds,
+      activated,
+      entries: { runtime, media, tts, usage },
+    };
+  }
+
+  /**
+   * Drops the cached modules of this package's local subtree only.
+   *
+   * A single-file package is exactly one module; a directory package covers
+   * every module below its root (nested `lib/`, bundled deps) while sibling
+   * packages and gateway modules stay cached.
+   */
+  private invalidatePackageCache(desc: PackageDescriptor): void {
+    const main = path.resolve(desc.mainFile);
+    const root = desc.pkgDir ? path.resolve(desc.pkgDir) : null;
+    const normalize = (value: string): string => (process.platform === 'win32' ? value.toLowerCase() : value);
+    const normalizedMain = normalize(main);
+    const normalizedRoot = root ? normalize(root) : null;
+    for (const key of Object.keys(require.cache)) {
+      const resolved = normalize(path.resolve(key));
+      if (resolved === normalizedMain) {
+        delete require.cache[key];
+        continue;
+      }
+      if (!normalizedRoot) continue;
+      const relative = path.relative(normalizedRoot, resolved);
+      if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) continue;
+      delete require.cache[key];
+    }
   }
 
   private startWatch(): void {
@@ -273,6 +731,7 @@ function pickContributions(mod: any): PluginContributions {
 const README_CONTENT = `# MAFW Plugin Packages
 
 一个插件包可以同时贡献多种能力（usage 配额 / media 引擎 / runtime / UI 工具卡）。
+包内容变化按内容指纹热重载：未变的包不会重新激活。
 
 ## 形态
 
@@ -301,5 +760,5 @@ module.exports = {
 ## 优先级
 
 同名时：**包 > legacy 目录文件（usage-plugins/ media-plugins/ runtime-plugins/）> 内置**。
-legacy 目录行为不变。reload 只清主文件的 require.cache——改包内 lib/ 共享代码需 \`mafw restart\`。
+legacy 目录行为不变。reload 清变更包的本地模块子树；改动会按内容指纹自动热重载。
 `;

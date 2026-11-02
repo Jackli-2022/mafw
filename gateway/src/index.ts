@@ -265,6 +265,7 @@ import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps } from './routes/plugins';
 import type { DryEventDeps } from './routes/dry-event';
 import { PluginHost } from './plugins/package-host';
+import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
 import type { UsageStatsProvider } from './usage/plugin-context';
 import { cleanupExamples } from './plugins/hub';
@@ -606,6 +607,8 @@ class MafwScheduler {
   private mediaRuntimeExecutor?: MediaRuntimeExecutor;
   private mediaRuntimeExecutorRt?: unknown;
   private pluginHost?: PluginHost;
+  /** 最近一次已提交的统一插件包 client 快照（Task 6 的 /api/plugins/client 直接读）。 */
+  private pluginClientSnapshot?: PluginClientSnapshot;
   private usageStatsProvider?: UsageStatsProvider;
   private ttsService?: ReturnType<typeof createTtsService>;
   private ttsRegistry = new TtsEngineRegistry();
@@ -777,8 +780,16 @@ class MafwScheduler {
           config.persistOverrides(overrides as unknown as Parameters<typeof config.persistOverrides>[0]);
         },
       }),
+      {
+        // 变更包若拥有当前 active runtime → 整包 pending，不打断正在使用的工作。
+        activeRuntime: () => this.runtimeName,
+        // 包事件不得冒充 canonical 事件。
+        canonicalTypes: CANONICAL_TYPE_SET,
+      },
     );
     this.pluginHost.bindRuntime((entries) => this.runtimeLoader?.setPackageEntries(entries));
+    // 客户端快照只在 commit 后替换；handler/源码永不下发。
+    this.pluginHost.onSnapshot((snapshot) => { this.pluginClientSnapshot = snapshot; });
     await this.pluginHost.init();
 
     // 3. 创建 SDK 客户端（auth），用于健康检查和后续通信
@@ -2475,6 +2486,14 @@ class MafwScheduler {
       end: () => { this.serveRecovering = false; },
       restartAgent: () => this.restartAgentOrchestrated(),
     };
+  }
+
+  /**
+   * 统一插件包的客户端快照（序列化 DTO only）。
+   * 正式 REST 出口由 Task 6 的 `/api/plugins/client` 复用；这里只保存最近一次 commit。
+   */
+  getPluginClientSnapshot(): PluginClientSnapshot {
+    return this.pluginClientSnapshot ?? this.pluginHost?.getClientSnapshot() ?? { revision: '0:0', plugins: [] };
   }
 
   /** P5 Wave 2：/api/plugins* deps（Plugin Hub 四类型统一面）。 */

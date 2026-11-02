@@ -204,4 +204,16 @@ export interface PackageState {
   error?: string;
   contributions: string[];
   version?: string;
+  /**
+   * Revision token (`<gatewayBootId>:<counter>`) of the committed activation.
+   * Absent when the package never committed (first load failed).
+   */
+  revision?: string;
+  /**
+   * Pending candidate revision. Present while a changed package that owns the
+   * active runtime waits for an explicit apply; the old revision stays active.
+   */
+  pendingRevision?: string;
+  /** Content fingerprint of the committed activation (Host diagnostics). */
+  fingerprint?: string;
 }
