@@ -139,8 +139,9 @@ describe('message ingestion', () => {
     expect(live?.parts).toEqual([])
   })
 
-  test('live message.updated without id is dropped (pi user/assistant cannot collapse)', () => {
-    // pi message_end 形状：flat role 直接由 $.message.role 映射，无 id。
+  test('live message.updated without id is dropped (user/assistant cannot collapse)', () => {
+    // 护栏：runtime 未给 id 的 live 帧一律丢弃（pi 侧的 id 由翻译层按 role+timestamp
+    // 产出，见 gateway pi-events / pi-message-normalize）。
     const piUser = ingestLiveMessage({ role: 'user', content: 'hi' }, { sessionID: 's1' })
     const piAssistant = ingestLiveMessage({ role: 'assistant', content: [{ type: 'text', text: 'hello' }] }, { sessionID: 's1' })
     expect(piUser).toBeNull()

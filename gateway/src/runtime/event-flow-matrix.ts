@@ -48,7 +48,7 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   // ---- 消息/part 流 ----
   'message.updated':      R(['step', 'chatSignal'], 'passthrough', 'handled', 'ignore', 'desktop 建消息骨架/替换乐观 user 消息'),
   'part.updated':         R(['step', 'chatSignal', 'toolCommand'], 'passthrough', 'handled', 'handled', '原 message.part.updated；最高频事件；toolCommand 载体（tool part 快照 state.input.command）'),
-  'part.delta':           R([], 'passthrough', 'handled', 'ignore', '原 message.part.delta；opencode ≥1.18 流式增量'),
+  'part.delta':           R([], 'passthrough', 'handled', 'handled', '原 message.part.delta；opencode ≥1.18 / pi 流式增量（TUI 按 messageID 累积文本+推理）'),
   'part.complete':        R([], 'passthrough', 'handled', 'ignore', '原 message.part.complete'),
   // ---- 问答/审批 ----
   'question.asked':       R([], 'passthrough', 'handled', 'ignore', 'desktop flow card'),

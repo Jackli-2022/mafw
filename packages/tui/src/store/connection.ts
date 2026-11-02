@@ -15,19 +15,20 @@ const HEALTH_TICK_MS = 1000
 /**
  * TUI 精确订阅的白名单（Task 12：**只有真实消费者**的事件才订阅）。
  *
- * - `part.updated` / `turn.*`：ChatStore 回合渲染与终态
+ * - `part.updated` / `part.delta` / `turn.*`：ChatStore 回合渲染、流式增量累积与终态
  * - `permission.asked` / `permission_mode`：审批 overlay 与 🛡 状态
  * - `queue.updated`：gateway inbox 计数
  * - `background.job.updated`：状态栏后台作业计数（MafwBackgroundJob）
  * - `runtime_switched`：Experience 动作面失效（运行时热切换）
  *
- * 其余 canonical 事件（part.delta / question.asked / session.config /
- * session.checkpoint / run.updated …）TUI 没有消费者，不再订阅；
+ * 其余 canonical 事件（question.asked / session.config / session.checkpoint /
+ * run.updated …）TUI 没有消费者，不再订阅；
  * 也不再保留 `'*'` 兜底转发（死订阅会让白名单失去约束力）。
  * tests/event-coverage.test.ts 与 @mafw/sdk 事件 union 交叉校验。
  */
 export const KNOWN_EVENTS = [
   'part.updated',
+  'part.delta',
   'turn.completed',
   'turn.failed',
   'turn.aborted',

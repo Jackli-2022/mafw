@@ -257,20 +257,21 @@ describe('SSE exit golden: canonical message.updated across opencode / pi / clau
     expect('info' in properties).toBe(false);
   });
 
-  it('pi: message_end yields properties.message (id is a carried live-mapping gap)', () => {
+  it('pi: message_end yields properties.message with stable id + role (live/history 同 id)', () => {
     const events = piCanonical([{
       type: 'message_end', sessionID: SID,
-      message: { id: 'pia_1', role: 'assistant', stopReason: 'end_turn' },
+      message: { role: 'assistant', timestamp: 1_700_000_000_000, content: [{ type: 'text', text: '好' }], stopReason: 'stop' },
     }]);
     const update = events.find((event) => event.payload.type === 'message.updated')!;
     const envelope = mafwBroadcast({ ...update.payload, sessionID: SID });
     const message = envelope.data.properties.message;
+    expect(message.id).toBe('pia_1700000000000');
     expect(message.role).toBe('assistant');
-    expect(message.finish).toBe('end_turn');
+    expect(message.stopReason).toBe('end_turn');
+    // live 形态不写 time.completed（pi step 结算单载体 = turn_end → step-finish）
+    expect(message.time).toEqual({ created: 1_700_000_000_000 });
+    expect(message.content.map((p: any) => p.id)).toEqual(['pia_1700000000000_t1']);
     expect('info' in envelope.data.properties).toBe(false);
-    // 已登记的 pi live 映射缺口（Task 12/16 债）：映射行不带 message.id，桌面按
-    // 「无 id 的 live message.updated 丢弃」处理（history 侧 id 由 normalizePiMessages 提供）。
-    expect(message.id).toBeUndefined();
   });
 
   it('claude: assistant event yields properties.message with id + tool primitive on one scheme', () => {

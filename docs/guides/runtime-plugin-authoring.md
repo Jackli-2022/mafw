@@ -444,8 +444,13 @@ curl -X POST http://127.0.0.1:3000/api/runtime/conformance \
   `~/.mafw/logs/event-log-message-migration-<ts>.jsonl`）；replay 与直播逐字节同形。
 - `session.created/updated/deleted` 仍是 wire `properties.info`（本批未翻转）。desktop 只在这三个
   事件上读 `info`；其余事件读 `info` 属于违例，`event-field-contract` 会告警。
-- 已登记的 live 缺口：pi 的 `message_end → message.updated` 映射不带 `message.id`，桌面按
-  「无 id 的 live message.updated 丢弃」处理（历史 id 由 `normalizePiMessages` 提供）。
+- ~~已登记的 live 缺口：pi 的 `message_end → message.updated` 映射不带 `message.id`，桌面按
+  「无 id 的 live message.updated 丢弃」处理（历史 id 由 `normalizePiMessages` 提供）。~~
+  **已闭合（2026-11-03）**：pi `message_start`/`message_end` → `message.updated` 带
+  `message.id`（`piu_<timestamp>` / `pia_<timestamp>`，与 `normalizePiMessages` 同一套身份），
+  `message_update` 的 `text_delta`/`thinking_delta` → `part.delta`（partID
+  `<msgId>_t<n>` / `<msgId>_r<n>`，n = contentIndex + 1）；无 `timestamp` 的 live 消息直接丢弃
+  （不造假 id）。「无 id 的 live message.updated 丢弃」仍是客户端的护栏。
 
 #### (c) 删除的 SDK / HTTP 面（旧客户端无法连新 gateway）
 

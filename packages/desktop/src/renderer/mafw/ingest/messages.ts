@@ -20,8 +20,8 @@ export interface IngestMessageOptions {
   /**
    * 是否允许为缺 id 的消息合成兜底 id。
    * 仅历史分页可开启（同一页内确定性）；live `message.updated` 缺 id 必须丢弃，
-   * 否则 pi 的 user/assistant `message_end` 会塌到同一 `msg_<sid>_0`，assistant
-   * 直接覆盖 user 回合。
+   * 否则无 id 的 user/assistant 帧会塌到同一 `msg_<sid>_0`，assistant 直接覆盖
+   * user 回合（pi 的 id 由 gateway 翻译层按 role+timestamp 产出）。
    */
   allowSyntheticId?: boolean
 }

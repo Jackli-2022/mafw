@@ -230,3 +230,34 @@ describe("applyPartUpsert data parts", () => {
     expect(clearTransientDataParts({ part: out.part } as any, "s1")).toBeNull()
   })
 })
+
+// pi live 序列 fixture：message_start → part.delta ×2 → message_end（与历史同 id）
+describe("pi live identity fixture", () => {
+  const T = 1_700_000_123_456
+  const msgId = `pia_${T}`
+
+  test("start/delta/end 同 id → 单条 assistant 消息 + 单个 text part（delta 与终态快照合并，无重复）", () => {
+    let state: any = { message: { s1: [] }, part: {} }
+    const apply = (patch: any) => {
+      if (!patch) return
+      if (patch.message) state.message = patch.message
+      if (patch.part) state.part = patch.part
+    }
+    // message_start 骨架（content: []）
+    apply(applyAssistantMessage(state, "s1", { id: msgId, role: "assistant", time: { created: T }, content: [] }, "u1"))
+    // 流式增量（part id = <msgId>_t<contentIndex+1>）
+    apply(applyPartDelta(state, "s1", msgId, `${msgId}_t1`, "Hel"))
+    apply(applyPartDelta(state, "s1", msgId, `${msgId}_t1`, "lo"))
+    // message_end 全量快照（同一 part id）
+    for (const part of [{ id: `${msgId}_t1`, type: "text", text: "Hello", sessionID: "s1", messageID: msgId }]) {
+      apply(applyPartUpsert(state, "s1", part))
+    }
+    apply(applyAssistantMessage(state, "s1", { id: msgId, role: "assistant", time: { created: T }, stopReason: "end_turn" }, "u1"))
+
+    expect(state.message.s1).toHaveLength(1)
+    expect(state.message.s1[0].id).toBe(msgId)
+    expect(state.message.s1[0].stopReason).toBe("end_turn")
+    expect(state.part[msgId]).toHaveLength(1)
+    expect(state.part[msgId][0]).toMatchObject({ id: `${msgId}_t1`, type: "text", text: "Hello" })
+  })
+})

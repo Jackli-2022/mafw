@@ -75,9 +75,41 @@ test('dispatchChatEvent: 非 chat 事件不触碰 store', () => {
   assert.equal(store.streaming, false)
 })
 
+test('dispatchChatEvent: part.delta 累积成 assistant turn（无 message_start 也能建 turn）', () => {
+  const store = makeStore()
+  const delta = (delta: string, field = 'text', partID = 'pia_1_t1', messageID = 'pia_1') =>
+    ({ type: 'part.delta', sessionID: 's', properties: { sessionID: 's', messageID, partID, field, delta } })
+  assert.equal(dispatchChatEvent(store, 'part.delta', delta('Hel')), true)
+  assert.equal(store.turns.length, 1, 'delta 自带身份 → 按 messageID 建 assistant turn')
+  assert.equal(store.turns[0].messageID, 'pia_1')
+  assert.equal(store.turns[0].role, 'assistant')
+  assert.equal(store.turns[0].done, false)
+  assert.equal(store.turns[0].parts[0].text, 'Hel')
+  dispatchChatEvent(store, 'part.delta', delta('lo'))
+  assert.equal(store.turns[0].parts.length, 1, '同一 partID 累积到同一 part')
+  assert.equal(store.turns[0].parts[0].text, 'Hello')
+  // reasoning 另一条流：type 是身份的一部分
+  dispatchChatEvent(store, 'part.delta', delta('hmm', 'reasoning', 'pia_1_r2'))
+  assert.deepEqual(store.turns[0].parts.map((p) => [p.id, p.type, p.text]), [
+    ['pia_1_t1', 'text', 'Hello'],
+    ['pia_1_r2', 'reasoning', 'hmm'],
+  ])
+})
+
+test('dispatchChatEvent: part.delta 忽略畸形/他会话/空增量', () => {
+  const store = makeStore()
+  const base = { type: 'part.delta', sessionID: 's', properties: { sessionID: 's', messageID: 'm', partID: 'p', field: 'text', delta: 'x' } }
+  assert.equal(dispatchChatEvent(store, 'part.delta', { ...base, properties: { ...base.properties, delta: '' } }), true)
+  dispatchChatEvent(store, 'part.delta', { ...base, sessionID: 'other', properties: { ...base.properties, sessionID: 'other' } })
+  dispatchChatEvent(store, 'part.delta', { ...base, properties: { ...base.properties, field: 'tool' } })
+  dispatchChatEvent(store, 'part.delta', { ...base, properties: { ...base.properties, partID: undefined } })
+  assert.equal(store.turns.length, 0, '没有任何无效增量建成 turn')
+})
+
 test('CHAT_EVENT_TYPES 覆盖 chat 白名单（part/turn 三元组）', () => {
-  assert.deepEqual([...CHAT_EVENT_TYPES], ['part.updated', 'turn.completed', 'turn.failed', 'turn.aborted'])
+  assert.deepEqual([...CHAT_EVENT_TYPES], ['part.updated', 'part.delta', 'turn.completed', 'turn.failed', 'turn.aborted'])
   assert.equal(isChatEvent('part.updated'), true)
+  assert.equal(isChatEvent('part.delta'), true)
   assert.equal(isChatEvent('turn.failed'), true)
   assert.equal(isChatEvent('session.config'), false)
 })

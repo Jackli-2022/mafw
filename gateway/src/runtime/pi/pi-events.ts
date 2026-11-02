@@ -2,6 +2,7 @@ import type { RawRuntimeEvent } from '../normalize';
 import { applyEventMappings, EventMapping, EventSourceShape, TransformEventFn } from '../event-mapper';
 import { EVENT_FLOW_MATRIX } from '../event-flow-matrix';
 import { TOOL_PRIMITIVE_TYPES } from '../tool-part-assembler';
+import { normalizePiLiveMessage, piMessageIdentity, piPartId } from './pi-message-normalize';
 
 /** pi 原生事件源形状：session.subscribe 事件顶层 type；sessionID 由 PiEventStream 解析后附上。 */
 export const PI_EVENT_SOURCE: EventSourceShape = { typePath: '$.type', sessionIdPath: '$.sessionID' };
@@ -26,19 +27,12 @@ export const PI_EVENT_MAPPINGS: EventMapping[] = [
   // F8（Plan 2）：agent_start 每 prompt 触发（agent-loop.js:43-56）→ 回合起始
   // （原映 session.updated 为 per-turn 空壳，桌面 planner 本就忽略——撤壳）
   { from: 'agent_start', to: 'turn.started' },
-  { from: ['message_start', 'message_update'], to: 'part.updated',
-    fields: { 'part.type': { const: 'text' }, 'part.text': { path: '$.delta', default: '' } } },
-  // N2（Plan 2）：角色从 $.message.role 取值（原 const 'assistant' 把 user 消息
-  // 也误标——trajectory turn_start 对 pi 从不触发，audit N2）。
-  // Task 6：载荷 flat——message.* 顶层字段。
-  // 注意：不带 time.completed（终审 Minor #8 裁决）——pi 的 step 结算保持
-  // turn_end step-finish 单载体（Plan 2 前即如此），防止 BudgetGuard 步数翻倍；
-  // finish 照常到达（step_finish 的 info.finish 消费路径）。opencode 的
-  // message.updated+step-finish 双载体是否双计是既有问题，不在本期裁决。
-  { from: 'message_end', to: 'message.updated', fields: {
-      'message.role': { path: '$.message.role' },
-      'message.finish': { path: '$.message.stopReason' },
-    } },
+  // 迁往 piTransformEvent（表表达不了的派生逻辑，见下方 handler）：
+  //  - agent_end / agent_settled：按最后 assistant 消息 stopReason 三分类终态（F1）；
+  //  - message_start / message_update / message_end：消息身份（role+timestamp）+ part id
+  //    （contentIndex）派生。旧行要么写出 `part.text: ''` 的空 part（字段路径本应是
+  //    `$.assistantMessageEvent.delta`），要么丢 message.id（桌面按「无 id 的 live
+  //    message.updated 丢弃」处理 → pi 会话从不流式渲染）。
   // N1（Plan 2）：live 流真事件（session.subscribe 可达）→ 工具三原语，
   // 经 gateway 侧 assembler 合帧——pi live 工具卡此前从不渲染的根因修复
   { from: 'tool_execution_start', to: 'tool.call',
@@ -55,11 +49,24 @@ export const PI_EVENT_MAPPINGS: EventMapping[] = [
   { from: 'turn_start', to: 'part.updated', fields: { 'part.type': { const: 'step-start' } } },
   { from: 'turn_end', to: 'part.updated',
     fields: { 'part.type': { const: 'step-finish' }, 'part.messageID': { template: 'pi_step_{$.sessionID}' } } },
-  // F1（Plan 2）：agent_end/agent_settled 迁往 piTransformEvent——事件自带
-  // messages 数组，按最后 assistant 消息的 stopReason 三分类（error→turn.failed
-  // / aborted→turn.aborted / 其余→turn.completed）；此前无条件映 turn.completed
-  // 导致 pi 引擎错误被误归因为 artifact_missing（audit F1）。
 ];
+
+/**
+ * 消息事件信封：sessionID 同时写 properties 与 message（facet 提取链读
+ * `properties.message.sessionID`，desktop 摄取读 properties.message）。
+ */
+function messageEnvelope(type: string, sid: string | undefined, message: Record<string, any>): RawRuntimeEvent {
+  return {
+    payload: {
+      type,
+      properties: {
+        ...(sid ? { sessionID: sid } : {}),
+        message: sid ? { ...message, sessionID: sid } : message,
+      },
+    },
+    ...(sid ? { sessionID: sid } : {}),
+  };
+}
 
 /**
  * pi 未知原生事件遥测：translatePiEvent 的丢弃路径（transformEvent fallthrough）
@@ -78,6 +85,40 @@ export function setPiUnknownRecorder(fn: ((type: string) => void) | undefined): 
  */
 export const piTransformEvent: TransformEventFn = (event: any): RawRuntimeEvent | null => {
   const t = event?.type ?? event?.payload?.type;
+  // 消息身份/流式（本批）：pi 的 message 对象只有 timestamp 没有 id。
+  //  - message_start / message_end：全会话消息骨架 / 终态快照（同 id，客户端 upsert 去重）；
+  //  - message_update：assistantMessageEvent 的 text_delta/thinking_delta → part.delta。
+  // 无 timestamp 的消息一律不产（不造假 id），toolResult/未知角色不产 chat 消息。
+  if (t === 'message_start' || t === 'message_end') {
+    const message = normalizePiLiveMessage(event?.message);
+    if (!message) return null;
+    return messageEnvelope('message.updated', event?.sessionID, message as unknown as Record<string, any>);
+  }
+  if (t === 'message_update') {
+    const ame = event?.assistantMessageEvent;
+    const kind = ame?.type === 'text_delta' ? 'text' : ame?.type === 'thinking_delta' ? 'reasoning' : null;
+    const delta = typeof ame?.delta === 'string' ? ame.delta : '';
+    const index = typeof ame?.contentIndex === 'number' ? ame.contentIndex : -1;
+    // 空增量不发 part（旧映射的 `part.text: ''` 会造空 part 并把回合钉在 busy）；
+    // 其余 update（*_start/*_end/toolcall_*/start/done）不上行——toolCall 由三原语承载。
+    if (!kind || !delta || index < 0) return null;
+    const messageID = piMessageIdentity(event?.message);
+    if (!messageID) return null;
+    const sid = event?.sessionID;
+    return {
+      payload: {
+        type: 'part.delta',
+        properties: {
+          ...(sid ? { sessionID: sid } : {}),
+          messageID,
+          partID: piPartId(messageID, kind, index + 1),
+          field: kind,
+          delta,
+        },
+      },
+      ...(sid ? { sessionID: sid } : {}),
+    };
+  }
   // F1（Plan 2）：回合终态三分类——agent_end 自带 messages 数组
   // （pi-agent-core types.d.ts:377-379），最后 assistant 消息的 stopReason 判别；
   // 总是返回终态（不落 fallthrough 的 null——那是 suppressed 语义）。

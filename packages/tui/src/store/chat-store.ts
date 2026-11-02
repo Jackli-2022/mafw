@@ -286,6 +286,18 @@ export class ChatStore {
       if (part.sessionID && part.sessionID !== this._sessionID) return
       this.applyPart(part)
       this.deps.onChange()
+    } else if (type === 'part.delta') {
+      // 流式增量（opencode ≥1.18 / pi）：{messageID, partID, field:'text'|'reasoning', delta}
+      const props = data?.properties ?? {}
+      const sid = props.sessionID ?? data?.sessionID
+      if (sid && sid !== this._sessionID) return
+      const field = props.field
+      if (field !== 'text' && field !== 'reasoning') return
+      if (typeof props.messageID !== 'string' || !props.messageID) return
+      if (typeof props.partID !== 'string' || !props.partID) return
+      if (typeof props.delta !== 'string' || !props.delta) return
+      this.applyDelta(props.messageID, props.partID, props.delta, field)
+      this.deps.onChange()
     } else if (type === 'turn.completed' || type === 'turn.failed' || type === 'turn.aborted') {
       // v2：回合终态三元组（原 session.idle/message.complete 双轨合并；Mode A 改写已删）
       const sid = data?.sessionID
@@ -313,6 +325,27 @@ export class ChatStore {
     const idx = turn.parts.findIndex((p) => p.id === cp.id)
     if (idx >= 0) turn.parts[idx] = cp
     else turn.parts.push(cp)
+  }
+
+  /**
+   * 流式增量累积（part.delta）：按 messageID 建/取 turn，按 partID+类型累积文本。
+   * type 是身份的一部分（同一 partID 可能被 text/reasoning 两条流复用，
+   * 只按 id 合并会把答案追加进折叠的推理块——与 desktop `applyPartDelta` 同语义）。
+   */
+  private applyDelta(messageID: string, partID: string, delta: string, field: 'text' | 'reasoning'): void {
+    let turn = this.byMessage.get(messageID)
+    if (!turn) {
+      turn = { messageID, role: 'assistant', parts: [], done: false }
+      this.byMessage.set(messageID, turn)
+      this.turns.push(turn)
+    }
+    const idx = turn.parts.findIndex((p) => p.id === partID && p.type === field)
+    if (idx >= 0) {
+      const cur = turn.parts[idx]
+      turn.parts[idx] = { ...cur, text: cur.text + delta }
+    } else {
+      turn.parts.push({ id: partID, type: field, text: delta })
+    }
   }
 
   private appendMessage(message: MafwMessage): void {

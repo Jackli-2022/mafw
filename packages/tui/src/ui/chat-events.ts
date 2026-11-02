@@ -7,6 +7,7 @@
  */
 export const CHAT_EVENT_TYPES = [
   'part.updated',
+  'part.delta',
   'turn.completed',
   'turn.failed',
   'turn.aborted',

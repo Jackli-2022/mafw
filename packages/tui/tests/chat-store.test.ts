@@ -360,3 +360,15 @@ test('queue management: queuedCount / takeBackAll / dropQueuedAt', async () => {
   assert.deepEqual(s.takeBackAll(), [])
   assert.equal(s.dropQueuedAt(0), null)
 })
+test('part.delta 累积后 part.updated 终态快照替换同一 part（不重复）', () => {
+  const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
+  const delta = (text: string) => ({ type: 'part.delta', properties: { sessionID: 's', messageID: 'pia_9', partID: 'pia_9_t1', field: 'text', delta: text } })
+  s.applyEvent('part.delta', delta('Hel'))
+  s.applyEvent('part.delta', delta('lo'))
+  assert.equal(s.turns.length, 1)
+  assert.equal(s.turns[0].parts[0].text, 'Hello')
+  // message_end 全量快照（同一 part id）→ 替换而非追加
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pia_9_t1', messageID: 'pia_9', sessionID: 's', type: 'text', text: 'Hello!' } } })
+  assert.equal(s.turns[0].parts.length, 1)
+  assert.equal(s.turns[0].parts[0].text, 'Hello!')
+})

@@ -1333,9 +1333,12 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
 - **契约补洞**：`POST /api/session/:id/background`（SDK `sessions.background` 一直在调）此前漏登记
   catalog，导致不在 openapi/契约产物里；本批补登记并重生成（`emit:openapi` 241 operations /
   215 paths）。
-- **登记缺口**：pi `message_end → message.updated` 不带 `message.id`（桌面按「无 id 帧丢弃」处理，
-  历史 id 由 `normalizePiMessages` 提供）；claude 历史无时间戳（`time` 可选缺失）；
+- **登记缺口**：claude 历史无时间戳（`time` 可选缺失）；
   adapter 内部 native 翻译（opencode `/command`、`/skill`、history normalize）按 spec §9.2 保留。
+  pi 的 live 消息身份缺口已闭合（2026-11-03）：`message_start`/`message_end` →
+  `message.updated` 带 `message.id`（`piu_<timestamp>` / `pia_<timestamp>`，与
+  `normalizePiMessages` 同一套），`message_update`（`text_delta`/`thinking_delta`）→
+  `part.delta`（partID `<msgId>_t<n>`/`_r<n>` 跟 contentIndex）；无 timestamp 的 live 消息丢弃。
 - **验证**：gateway **4002/4002（534 suites，含并行 user 测试）**、SDK **180/180**、session-ui **133/133**、TUI
   **284 pass/1 skip（285）**、desktop **2253/2253**、mobile **86/86**、adapters/claude **21/21**；
   `tsc`/`tsgo -p tsconfig.json`/`electron-vite build`/根 build/`flutter analyze`+`flutter test` rc=0。

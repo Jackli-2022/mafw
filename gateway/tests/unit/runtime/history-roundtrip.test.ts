@@ -103,14 +103,14 @@ describe('② pi 历史 flat golden（adapter 输出契约）', () => {
     ];
     const golden = [
       {
-        id: `piu_${T}_1`, role: 'user', time: { created: T },
-        content: [{ id: `piu_${T}_1_t`, type: 'text', text: 'hi' }],
+        id: `piu_${T}`, role: 'user', time: { created: T },
+        content: [{ id: `piu_${T}_t`, type: 'text', text: 'hi' }],
       },
       {
-        id: `pia_${T + 1}_2`, role: 'assistant', time: { created: T + 1, completed: T + 1 },
+        id: `pia_${T + 1}`, role: 'assistant', time: { created: T + 1, completed: T + 1 },
         content: [
-          { id: `pia_${T + 1}_2_r1`, type: 'reasoning', text: 'hmm' },
-          { id: `pia_${T + 1}_2_t2`, type: 'text', text: '看一下' },
+          { id: `pia_${T + 1}_r1`, type: 'reasoning', text: 'hmm' },
+          { id: `pia_${T + 1}_t2`, type: 'text', text: '看一下' },
           {
             id: 'toolpart_tc1', type: 'tool', tool: 'bash', callID: 'tc1',
             state: { status: 'completed', input: { command: 'ls' }, output: 'file.txt', title: 'bash', metadata: {}, time: { start: T + 1, end: T + 5 } },
@@ -129,11 +129,11 @@ describe('② pi 历史 flat golden（adapter 输出契约）', () => {
     ];
     const golden = [
       {
-        id: `pia_${T}_1`, role: 'assistant', time: { created: T, completed: T },
+        id: `pia_${T}`, role: 'assistant', time: { created: T, completed: T },
         content: [{ id: 'toolpart_r1', type: 'tool', tool: 'read', callID: 'r1', state: { status: 'running', input: {}, time: { start: T } } }],
       },
       {
-        id: `pia_${T + 2}_2`, role: 'assistant', time: { created: T + 2, completed: T + 2 },
+        id: `pia_${T + 2}`, role: 'assistant', time: { created: T + 2, completed: T + 2 },
         content: [{ id: 'toolpart_e1', type: 'tool', tool: 'bash', callID: 'e1', state: { status: 'error', input: {}, error: 'boom', time: { start: T + 2, end: T + 3 } } }],
       },
     ];
