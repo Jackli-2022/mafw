@@ -1,8 +1,47 @@
 import { createSignal } from "solid-js"
 import type {
   PodCreateGoalInput, PodCreateGoalResult, PodDetail, PodGoal, PodGoalResult, PodMessage, PodStatus,
+  PodTechLeadHistory,
 } from "@mafw/sdk"
 import { podEventAction, podIsUnsupported, podRouteMissing } from "./pod-model"
+
+// ── Task 19：Lead 入口与 Tech Lead 讨论入口的纯逻辑 ──
+// 这里只放判定/文案（可单测、不读写 signal）；tab 打开与隐藏会话生命周期归 MafwShell。
+
+/** 用户可见的协调入口文案。Manager 已退役（kv/API 名保持内部兼容），界面只称 Lead。 */
+export function leadEntryLabel(): "Lead" {
+  return "Lead"
+}
+
+/** 邀请卡动作文案：单源，测试钉死字面量。 */
+export const TECH_LEAD_INVITE_LABEL = "与 Tech Lead 讨论"
+
+/** Goal stage 的宽松形状（网关已投影 role；旧 gateway 可能缺 stage/role）。 */
+export type TechLeadStageLike = { kind?: string | null; role?: string | null } | null | undefined
+
+/**
+ * Lead 会话里的 Tech Lead 入口判定。
+ *
+ * 只有 `discussing` 阶段的 Goal 才需要「去和 Tech Lead 讨论」——这时 NodeDriver 还没
+ * 开始跑，Lead 不负责技术方案讨论（spec §3.1）。其他阶段/角色一律不提示，避免把用户
+ * 引回已经进入规划/执行/审阅的 Goal。
+ */
+export function techLeadInvite(
+  goal: { stage?: TechLeadStageLike } | null | undefined,
+  goalID: string,
+): { goalId: string; label: string } | null {
+  if (!goalID) return null
+  const stage = goal?.stage
+  if (!stage || stage.kind !== "discussing") return null
+  if (stage.role && stage.role !== "tech_lead") return null
+  return { goalId: goalID, label: TECH_LEAD_INVITE_LABEL }
+}
+
+/** Tech Lead tab 标题：由 Goal 标题派生，绝不含 runtime session id。 */
+export function techLeadTabTitle(title?: string | null): string {
+  const goalTitle = (title ?? "").trim()
+  return `Tech Lead · ${goalTitle || "未命名目标"}`
+}
 
 export type PodStoreApi = {
   lookup(projectDir: string): Promise<PodDetail>
@@ -19,6 +58,8 @@ export type PodStoreApi = {
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>
   listMessages(podId: string): Promise<{ items: PodMessage[] }>
   markRead(podId: string, messageId: string): Promise<{ message: PodMessage }>
+  /** Task 18：Goal 的 Tech Lead 讨论历史（GET 会确保隐藏会话存在）。 */
+  techLead(podID: string, goalID: string, limit?: number): Promise<PodTechLeadHistory>
 }
 
 export type PodStoreTimers = {
@@ -275,6 +316,14 @@ export function createPodStore(
     }
   }
 
+  async function techLead(goalID: string): Promise<PodTechLeadHistory> {
+    const current = detail()
+    if (!current || disposed) throw new Error("pod unavailable")
+    // 隐藏会话 id 只在调用方（MafwShell）短暂持有并用于打开 tab，不缓存进 store——
+    // 它不是可枚举的 Pod 会话，缓存会让「已关闭/已重建」的旧 id 复活。
+    return api.techLead(current.pod.id, goalID)
+  }
+
   function ingest(event: unknown): void {
     if (disposed) return
     const action = podEventAction({
@@ -307,6 +356,7 @@ export function createPodStore(
     result,
     cancelGoal,
     markRead,
+    techLead,
     ingest,
     dispose,
     detail,
@@ -336,6 +386,7 @@ const defaultApi: PodStoreApi = {
   cost: (podId) => window.api.mafw.pod.cost(podId),
   listMessages: (podId) => window.api.mafw.pod.listMessages(podId),
   markRead: (podId, messageId) => window.api.mafw.pod.markRead(podId, messageId),
+  techLead: (podID, goalID, limit) => window.api.mafw.pod.techLead(podID, goalID, limit),
 }
 
 export const podStore = createPodStore(defaultApi)

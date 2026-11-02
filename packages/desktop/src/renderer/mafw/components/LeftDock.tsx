@@ -427,6 +427,8 @@ export function LeftDock(props: Props) {
       </Show>
 
       <Show when={props.face === "sessions"}>
+        {/* 固定的 Lead 入口：Lead 是隐藏会话（不在 /api/sessions 里），不能只靠会话
+            列表渲染；kv 的 managerSessionId（展示名 Lead）是它的唯一权威来源。 */}
         <ManagerCard
           managerSessionId={managerRow()?.id ?? props.managerSessionId ?? null}
           managerUpdatedAt={managerRow()?.updated}

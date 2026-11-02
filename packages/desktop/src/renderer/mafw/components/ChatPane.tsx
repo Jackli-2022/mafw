@@ -100,6 +100,8 @@ import { TranscriptSearchOverlay } from "./TranscriptSearchOverlay"
 import { CompressionDivider } from "./CompressionDivider"
 import { useVoiceBinding, extractVoiceReplies } from "../chat/use-voice-binding"
 import { workspace } from "../workspace/session-workspace"
+import { PodTechLeadInvite } from "./PodTechLeadInvite"
+import { leadEntryLabel } from "../pod-store"
 
 export type FlowCardRecord =
   | { kind: "ask"; data: AskCardData }
@@ -190,6 +192,13 @@ export type ChatPaneProps = {
     role: "user" | "assistant"
     text: string
   }) => Promise<void>
+  /**
+   * Task 19：当前会话是项目 Lead、且有 Goal 处于 `discussing` 时，composer 上方的
+   * 「与 Tech Lead 讨论」入口。由 shell 计算（Pod 状态 + Lead 判定都在那边）。
+   */
+  techLeadInvite?: () => { goalId: string; title: string } | null
+  /** 打开 Goal 的 Tech Lead 隐藏会话（Goal 标题作用域的 tab）。 */
+  onOpenTechLead?: (goalId: string) => void
   onCreateSession: () => Promise<string | null>
   onSetUserMsgId: (sid: string, userMsgId: string) => void
   onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void
@@ -1148,10 +1157,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // ── Slash command system (/ panel) ──
   // mafw 组从 gateway 命令注册表动态拉取（P0 收敛）；拉取失败回退内置 6 条。
   const MAFW_FALLBACK_COMMANDS: CommandItem[] = [
-    { id: "mafw-goal", trigger: "/goal", title: "新建 Goal", description: "提交 Goal 给 Manager", group: "mafw" },
+    { id: "mafw-goal", trigger: "/goal", title: "新建 Goal", description: `提交 Goal 给 ${leadEntryLabel()}`, group: "mafw" },
     { id: "mafw-status", trigger: "/status", title: "MAFW 状态", description: "查看当前状态", group: "mafw" },
     { id: "mafw-merge", trigger: "/merge-memory", title: "记忆融合", description: "合并 worktree 记忆", group: "mafw" },
-    { id: "mafw-new-topic", trigger: "/new-topic", title: "新话题", description: "开新话题（当前 Manager 会话归档）", group: "mafw" },
+    { id: "mafw-new-topic", trigger: "/new-topic", title: "新话题", description: `开新话题（当前 ${leadEntryLabel()} 会话归档）`, group: "mafw" },
     { id: "mafw-btw", trigger: "/btw", title: "支线问答", description: "一次性会话回答支线问题，不污染主线", group: "mafw" },
     { id: "mafw-waitwhat", trigger: "/waitwhat", title: "没听懂，重述", description: "用简明语言+项目术语重述上一条回复", group: "mafw" },
   ]
@@ -2060,6 +2069,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </For>
             <ButtonV2 variant="ghost" size="small" onClick={() => setQueuedItems([])}>清空</ButtonV2>
           </div>
+        </Show>
+        <Show when={props.techLeadInvite?.()}>
+          {(invite) => (
+            <PodTechLeadInvite
+              goalId={invite().goalId}
+              title={invite().title}
+              onOpen={(goalId) => props.onOpenTechLead?.(goalId)}
+            />
+          )}
         </Show>
         <div
           class="mafw-composer"

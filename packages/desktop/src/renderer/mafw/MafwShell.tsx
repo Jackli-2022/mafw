@@ -52,12 +52,12 @@ import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
-import { ingestPodEvent, podStore } from "./pod-store"
+import { ingestPodEvent, podStore, techLeadInvite, techLeadTabTitle } from "./pod-store"
 import { podRailBadge } from "./pod-rail-badge"
 import { podRoleForSession } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
 import { retitleTab } from "./session-tab-title"
-import { isLeadSessionRole, leadTabMetadata, resolveLeadSession } from "./manager-session"
+import { isLeadSessionRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./manager-session"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { fetchTasks, ingestTask } from "./task-store"
@@ -1832,6 +1832,39 @@ export function MafwShell() {
   }
   const podSessionTitleOf = (sessionId: string) =>
     store.session.find((s: any) => s.id === sessionId)?.title ?? null
+
+  // Task 19：Lead 只做协调，不讨论技术方案（spec §3.1）。有 Goal 处于 `discussing`
+  // 时，在 Lead 的 composer 上方开一个入口，把用户送到该 Goal 的 Tech Lead 隐藏会话。
+  // 判定口径：会话是当前项目的 Lead（kv 权威 id 或 tab 的 lead/manager 角色）。
+  const activeSessionIsLead = (): boolean => {
+    const sid = activeSessionId()
+    if (!sid) return false
+    const pd = currentProject()
+    if (pd && leadIdFor(pd) === sid) return true
+    return isLeadSessionRole(tabSessionRole(sessions().find((s) => s.id === sid)))
+  }
+  const activeLeadGoalInvite = (): { goalId: string; title: string } | null => {
+    if (!activeSessionIsLead()) return null
+    const goal = (podStore.detail()?.goals ?? []).find((item) => !!techLeadInvite(item, item.goalId))
+    if (!goal) return null
+    return { goalId: goal.goalId, title: goal.title || "未命名目标" }
+  }
+  // 打开 Goal 的 Tech Lead 讨论：`pod.techLead` 确保隐藏会话存在；tab 标题只由 Goal
+  // 标题派生，runtime session id 不出现在任何用户可见文案里（spec §3.2）。
+  const openTechLead = async (goalId: string): Promise<void> => {
+    const goal = podStore.detail()?.goals.find((item) => item.goalId === goalId)
+    const title = techLeadTabTitle(goal?.title)
+    try {
+      const history = await podStore.techLead(goalId)
+      if (!history?.sessionID) {
+        showToastV2({ description: "Tech Lead 会话暂不可用", duration: 3000 } as any)
+        return
+      }
+      openSessionTab(history.sessionID, title, false, { mafw: { role: "tech_lead" } })
+    } catch (e: any) {
+      showToastV2({ description: `打开 Tech Lead 失败: ${e?.message || e}`, duration: 4000 } as any)
+    }
+  }
   const onPodOpenMessage = (messageId: string) => {
     void podStore.markRead(messageId)
     openPodPanel("inbox")
@@ -2325,6 +2358,8 @@ export function MafwShell() {
                           onFocus={() => { setShowConfig(false); setActiveTab("chat") }}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
                           onRecordPodNote={recordPodNote}
+                          techLeadInvite={activeLeadGoalInvite}
+                          onOpenTechLead={(goalId) => void openTechLead(goalId)}
                           onOpenDiffReview={() => openWorkbench("review")}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
