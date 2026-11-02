@@ -10,11 +10,28 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { techLeadSendTarget } from "../src/renderer/mafw/pod-store"
+import { resolvePodId, techLeadSendTarget } from "../src/renderer/mafw/pod-store"
+import { podSessionRoute, techLeadRouteForSession, techLeadSendBlockedReason } from "../src/renderer/mafw/pod-model"
 import { useSendMessage } from "../src/renderer/mafw/chat/use-send-message"
 import { createInputHistory } from "../src/renderer/mafw/components/input-history"
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8")
+const css = read("../src/renderer/mafw/mafw.css")
+
+/** 取选择器（首次出现）的规则体；找不到返回空串。 */
+function cssBlock(selector: string): string {
+  const start = css.indexOf(selector)
+  if (start === -1) return ""
+  const open = css.indexOf("{", start)
+  let depth = 1
+  let i = open + 1
+  while (i < css.length && depth > 0) {
+    if (css[i] === "{") depth++
+    if (css[i] === "}") depth--
+    i++
+  }
+  return css.slice(open + 1, i - 1)
+}
 
 const planReview = read("../src/renderer/mafw/components/PlanReviewOverlay.tsx")
 const planRender = read("../src/renderer/mafw/components/plan-render.ts")
@@ -228,4 +245,139 @@ test("新面板符合设计契约（无裸 button/input/title）", () => {
     assert.doesNotMatch(src, /\stitle=/, `${name} 不得用裸 title`)
   }
   assert.match(directionPanel, /TextInputV2|TextareaV2/)
+})
+
+// ── Review fixes (2026-11-03) ─────────────────────────────────────────────
+
+const POD_DETAIL = {
+  pod: { id: "pod_1" },
+  members: [
+    { id: "m_lead", role: "lead" },
+    { id: "m_t", role: "tech_lead" },
+    { id: "m_b", role: "builder" },
+  ],
+  sessions: [
+    { sessionId: "ses_disc", memberId: "m_t", goalId: "g1", node: null, scopeKind: "discussion" },
+    { sessionId: "ses_plan", memberId: "m_t", goalId: "g1", node: "plan", scopeKind: null },
+    { sessionId: "ses_build", memberId: "m_b", goalId: "g1", node: "execute", scopeKind: "implementation" },
+  ],
+  goals: [{ goalId: "g1", title: "Pod loop" }],
+} as any
+
+test("所有 Pod 会话入口都经 openPodSession（Tech Lead 讨论可推断）", () => {
+  assert.match(shell, /const openPodSession = \(sid: string, title\?: string\)/)
+  assert.match(shell, /onPodOpenSession=\{\(sid\) => openPodSession\(sid\)\}/)
+  assert.match(shell, /onOpenPodSession=\{\(sid, title\) => openPodSession\(sid, title\)\}/)
+  assert.match(shell, /<DashboardPage onOpenSession=\{openPodSession\}/)
+  assert.match(shell, /onOpenSession=\{\(sid\) => openPodSession\(sid\)\}/)
+  assert.match(shell, /activeTechLeadBlocked/)
+  assert.match(shell, /sendBlocked=\{activeTechLeadBlocked\}/)
+  assert.match(chatPane, /sendBlocked/)
+})
+
+test("techLeadRouteForSession：讨论会话可路由，plan 节点会话被拦", () => {
+  assert.deepEqual(techLeadRouteForSession(POD_DETAIL, "ses_disc"), { podId: "pod_1", goalId: "g1" })
+  assert.equal(techLeadRouteForSession(POD_DETAIL, "ses_plan"), null)
+  assert.equal(techLeadRouteForSession(POD_DETAIL, "ses_build"), null)
+  assert.equal(techLeadRouteForSession(POD_DETAIL, "ses_unknown"), null)
+  assert.match(techLeadSendBlockedReason(POD_DETAIL, "ses_plan") ?? "", /Tech Lead 讨论/)
+  assert.equal(techLeadSendBlockedReason(POD_DETAIL, "ses_disc"), null)
+  assert.equal(techLeadSendBlockedReason(POD_DETAIL, "ses_build"), null)
+})
+
+test("podSessionRoute 容忍旧 gateway（无 sessions/scopeKind）", () => {
+  assert.equal(podSessionRoute(null, "ses_disc"), null)
+  assert.equal(podSessionRoute({ ...POD_DETAIL, sessions: undefined } as any, "ses_disc"), null)
+  const legacy = { pod: { id: "pod_1" }, members: [{ id: "m_t", role: "tech_lead" }], sessions: [{ sessionId: "s", memberId: "m_t", goalId: "g1", node: "discussion" }] } as any
+  assert.equal(podSessionRoute(legacy, "s")?.isDiscussion, true)
+})
+
+test("sendBlocked：Tech Lead 节点会话保留草稿且不发任何请求", async () => {
+  const calls: any[] = []
+  ;(globalThis as any).window = {
+    api: {
+      mafw: {
+        chat: { sendEnriched: async (req: any) => { calls.push(["chat", req]); return { sessionID: "s1" } } },
+        pod: { sendTechLeadMessage: async (...args: any[]) => { calls.push(["pod", ...args]); return { sessionID: "s1" } } },
+      },
+    },
+  }
+  try {
+    let input = "这条消息不该发出去"
+    const history = createInputHistory()
+    const { sendMessage } = useSendMessage({
+      sid: () => "s1",
+      onCreateSession: async () => null,
+      onSetUserMsgId: () => {},
+      input: () => input,
+      setInput: (v: string) => { input = v },
+      sending: () => false,
+      setSending: () => {},
+      setPhase: () => {},
+      attachments: () => [],
+      setAttachments: () => {},
+      mentionedAgents: () => [],
+      setMentionedAgents: () => {},
+      mentionedFiles: () => [],
+      setMentionedFiles: () => {},
+      queuedItems: () => [],
+      setQueuedItems: () => {},
+      textareaEl: () => null,
+      history,
+      clearDraft: () => {},
+      matchSlash: () => null,
+      agentSel: () => null,
+      model: () => null,
+      setStore: () => {},
+      forceAnchor: () => {},
+      imageToDataUrl: async () => undefined,
+      uploadMediaBinary: async () => "",
+      encodeFilePath: (p: string) => p,
+      sendBlocked: () => "这是 Tech Lead 的节点会话；请打开该 Goal 的「Tech Lead 讨论」后再发送。",
+    } as any)
+    await sendMessage()
+    assert.equal(calls.length, 0)
+    assert.equal(input, "这条消息不该发出去")
+    assert.equal(history.up(""), null)
+  } finally {
+    delete (globalThis as any).window
+  }
+})
+
+test("resolvePodId：显式 → 已加载 → 按目录 lookup；失败 fail-open", async () => {
+  const lookups: string[] = []
+  assert.equal(await resolvePodId({ podId: "pod_x", loadedPodId: "pod_y" }), "pod_x")
+  assert.equal(await resolvePodId({ loadedPodId: "pod_y", projectDir: "/p" }), "pod_y")
+  assert.equal(
+    await resolvePodId({
+      projectDir: "/p",
+      lookup: async (dir) => { lookups.push(dir); return { pod: { id: "pod_z" } } },
+    }),
+    "pod_z",
+  )
+  assert.deepEqual(lookups, ["/p"])
+  assert.equal(await resolvePodId({ projectDir: "/p", lookup: async () => { throw new Error("404") } }), null)
+  assert.equal(await resolvePodId({}), null)
+})
+
+test("Goal 详情/计划审阅在 Pod 未加载时也能解析 Pod 并过滤 revision", () => {
+  assert.match(goalDetail, /resolvePodId\(/)
+  assert.match(goalDetail, /props\.podId/)
+  assert.match(goalDetail, /props\.projectDir/)
+  assert.match(goalDetail, /probe\.revision === target/)
+  assert.match(planReview, /resolvePodId\(/)
+  assert.match(planReview, /props\.podId/)
+  assert.match(planReview, /probe\.revision === revision/)
+})
+
+test("方向/探针/变更警示样式存在且选中态可见", () => {
+  assert.match(cssBlock(".mafw-pod-direction, .mafw-pod-probes {"), /display:\s*flex/)
+  assert.match(cssBlock(".mafw-pod-direction-badge.is-attention {"), /var\(--warning\)/)
+  assert.match(cssBlock('.mafw-pod-direction .mafw-pod-direction-option[aria-pressed="true"] {'), /var\(--accent-soft\)/)
+  assert.match(cssBlock('.mafw-pod-direction .mafw-pod-direction-option[aria-pressed="true"] {'), /var\(--accent-border\)/)
+  assert.match(cssBlock(".mafw-pod-probe-card {"), /display:\s*flex/)
+  assert.match(cssBlock(".mafw-pod-probe-badge.is-refutes {"), /var\(--danger-dim\)/)
+  assert.match(cssBlock(".mafw-pod-probe-badge.is-supports {"), /var\(--accent-soft\)/)
+  assert.match(cssBlock(".mafw-plan-stale {"), /var\(--warning\)/)
+  assert.match(cssBlock(".mafw-plan-stale {"), /border:/)
 })

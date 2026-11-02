@@ -1211,6 +1211,8 @@ export interface PodSession {
   sessionId: string
   status: string
   transcriptRef: string | null
+  /** Supervisor 作用域（旧 gateway 缺省）：discussion = Tech Lead 讨论会话。 */
+  scopeKind?: 'project' | 'discussion' | 'probe' | 'implementation' | 'review' | null
   createdAt: string
   endedAt: string | null
 }

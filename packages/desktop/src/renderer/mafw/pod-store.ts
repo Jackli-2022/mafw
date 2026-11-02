@@ -58,6 +58,30 @@ export function techLeadSendTarget(
   return { podId: pod, goalId: goal }
 }
 
+/**
+ * Pod id 解析（Task 20 review #3）：显式 prop → 已加载的 Pod store → 按项目目录
+ * `pod.lookup`。这样 Goal 详情/计划审阅在 Pod 面板未打开时也能拿到 Spike 证据。
+ */
+export async function resolvePodId(options: {
+  podId?: string | null
+  loadedPodId?: string | null
+  projectDir?: string | null
+  lookup?: (projectDir: string) => Promise<{ pod: { id: string } }>
+}): Promise<string | null> {
+  const explicit = (options.podId ?? "").trim()
+  if (explicit) return explicit
+  const loaded = (options.loadedPodId ?? "").trim()
+  if (loaded) return loaded
+  const dir = (options.projectDir ?? "").trim()
+  if (!dir || !options.lookup) return null
+  try {
+    const detail = await options.lookup(dir)
+    return detail?.pod?.id ?? null
+  } catch {
+    return null
+  }
+}
+
 export type PodStoreApi = {
   lookup(projectDir: string): Promise<PodDetail>
   ensure(projectDir: string): Promise<PodDetail>

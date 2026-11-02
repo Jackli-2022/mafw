@@ -14,7 +14,7 @@ import { goalsRev } from "../goals-rev"
 import { PAGE_LINKS } from "../page-links"
 import type { NavTab } from "../components/nav-tab"
 
-export function DashboardPage(props: { onOpenSession?: (sid: string) => void; onNavigate?: (tab: NavTab) => void }) {
+export function DashboardPage(props: { onOpenSession?: (sid: string) => void; projectDir?: string | null; onNavigate?: (tab: NavTab) => void }) {
   const [goals, setGoals] = createSignal<any[]>([])
   const [loading, setLoading] = createSignal(true)
   const [detailGoalId, setDetailGoalId] = createSignal<string | null>(null)
@@ -130,6 +130,7 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void; on
       />
       <GoalDetailOverlay
         goalId={detailGoalId()}
+        projectDir={props.projectDir ?? null}
         onClose={() => setDetailGoalId(null)}
         onOpenSession={(sid) => { setDetailGoalId(null); props.onOpenSession?.(sid) }}
       />

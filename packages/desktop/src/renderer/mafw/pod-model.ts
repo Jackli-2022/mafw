@@ -162,6 +162,52 @@ export function podRoleForSession(detail: PodDetail | null, sessionID: string): 
   return detail.members.find((member) => member.id === session.memberId)?.role ?? null
 }
 
+/** Pod 会话的归属（Tab 推理用）：谁、哪个 Goal、什么作用域。 */
+export interface PodSessionRoute {
+  role: PodMemberRole | null
+  goalId: string | null
+  node: string | null
+  scopeKind: string | null
+  /** Tech Lead 讨论会话（唯一允许经 sendTechLeadMessage 复用的作用域）。 */
+  isDiscussion: boolean
+}
+
+/** 会话 → Pod 归属（旧 gateway 可能没有 sessions/scopeKind，返回 null 而不是猜）。 */
+export function podSessionRoute(detail: PodDetail | null, sessionID: string): PodSessionRoute | null {
+  if (!detail || !sessionID) return null
+  const session = (detail.sessions ?? []).find((item) => item.sessionId === sessionID)
+  if (!session) return null
+  const role = detail.members.find((member) => member.id === session.memberId)?.role ?? null
+  const scopeKind = (session as PodSession & { scopeKind?: string | null }).scopeKind ?? null
+  const isDiscussion = scopeKind === "discussion" || session.node === "discussion"
+  return { role, goalId: session.goalId ?? null, node: session.node ?? null, scopeKind, isDiscussion }
+}
+
+/**
+ * Tech Lead 讨论 tab 的发送目标（Task 20 review）：不从 tab metadata 猜，而是用
+ * Pod 成员/会话归属反推——PodDock / PodRailFace / Goal 详情等所有入口都能命中。
+ */
+export function techLeadRouteForSession(
+  detail: PodDetail | null,
+  sessionID: string,
+): { podId: string; goalId: string } | null {
+  if (!detail) return null
+  const route = podSessionRoute(detail, sessionID)
+  if (!route || route.role !== "tech_lead" || !route.goalId || !route.isDiscussion) return null
+  return { podId: detail.pod.id, goalId: route.goalId }
+}
+
+/**
+ * 非讨论的 Tech Lead 会话（plan/节点会话）禁止在 tab 里直接发送：普通 prompt 会绕过
+ * 身份/ContextManifest，而改投讨论会话又会让用户的消息出现在另一个会话里。给出明确
+ * 指引而不是静默走错通道。
+ */
+export function techLeadSendBlockedReason(detail: PodDetail | null, sessionID: string): string | null {
+  const route = podSessionRoute(detail, sessionID)
+  if (!route || route.role !== "tech_lead" || !route.goalId || route.isDiscussion) return null
+  return "这是 Tech Lead 的节点会话；请打开该 Goal 的「Tech Lead 讨论」后再发送。"
+}
+
 export function podMemberName(detail: { members: PodMember[] }, memberId: string | null): string {
   if (!memberId) return "系统"
   return detail.members.find((member) => member.id === memberId)?.displayName ?? memberId

@@ -54,7 +54,7 @@ import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore, techLeadInvite, techLeadSendTarget, techLeadTabTitle } from "./pod-store"
 import { podRailBadge } from "./pod-rail-badge"
-import { podRoleForSession } from "./pod-model"
+import { podRoleForSession, podSessionRoute, techLeadRouteForSession, techLeadSendBlockedReason } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
 import { retitleTab } from "./session-tab-title"
 import { isLeadSessionRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./manager-session"
@@ -1871,12 +1871,38 @@ export function MafwShell() {
       showToastV2({ description: `打开 Tech Lead 失败: ${e?.message || e}`, duration: 4000 } as any)
     }
   }
-  // Tech Lead tab 的发送目标（当前会话 → Goal → Pod）。映射只覆盖本次打开的隐藏会话；
-  // 普通会话/Lead 会话返回 null（照旧走 sessions prompt）。
+  // Tech Lead tab 的发送目标（当前会话 → Goal → Pod）。优先用本次打开时记录的映射；
+  // 其余入口（PodDock / 左栏鲸群面 / Goal 详情会话）从 Pod 成员+作用域反推。
   const activeTechLeadTarget = (): { podId: string; goalId: string } | null => {
     const sid = activeSessionId()
     if (!sid) return null
-    return techLeadSendTarget(techLeadGoalBySession[sid], podStore.detail()?.pod.id)
+    const mapped = techLeadSendTarget(techLeadGoalBySession[sid], podStore.detail()?.pod.id)
+    return mapped ?? techLeadRouteForSession(podStore.detail(), sid)
+  }
+  /** 非讨论的 Tech Lead 节点会话：发送必须被拦住并给出指引（不能静默走普通 prompt）。 */
+  const activeTechLeadBlocked = (): string | null => {
+    const sid = activeSessionId()
+    if (!sid) return null
+    if (techLeadGoalBySession[sid]) return null
+    return techLeadSendBlockedReason(podStore.detail(), sid)
+  }
+  // Pod 会话统一入口：Tech Lead 会话带上角色/Goal（供发送通道与 tab 语义使用），
+  // PodDock 成员会话、左栏鲸群面、Goal 时间线全部走这里。
+  const openPodSession = (sid: string, title?: string) => {
+    const detail = podStore.detail()
+    const route = podSessionRoute(detail, sid)
+    if (route?.role === "tech_lead" && route.goalId) {
+      const goal = detail?.goals.find((item) => item.goalId === route.goalId)
+      if (route.isDiscussion) techLeadGoalBySession[sid] = route.goalId
+      openSessionTab(
+        sid,
+        title ?? (route.isDiscussion ? techLeadTabTitle(goal?.title) : undefined),
+        false,
+        { mafw: { role: "tech_lead" } },
+      )
+      return
+    }
+    openSessionTab(sid, title)
   }
   const onPodOpenMessage = (messageId: string) => {
     void podStore.markRead(messageId)
@@ -2308,7 +2334,7 @@ export function MafwShell() {
             podSelfMemberId={podSelfMemberId()}
             podSessionTitleOf={podSessionTitleOf}
             onPodRefresh={() => { void podStore.refresh() }}
-            onPodOpenSession={(sid) => openSessionTab(sid)}
+            onPodOpenSession={(sid) => openPodSession(sid)}
             onPodOpenGoal={(goalId) => setPodGoalId(goalId)}
             onPodOpenPanel={openPodPanel}
             onPodOpenMessage={onPodOpenMessage}
@@ -2374,6 +2400,7 @@ export function MafwShell() {
                           techLeadInvite={activeLeadGoalInvite}
                           onOpenTechLead={(goalId) => void openTechLead(goalId)}
                           techLeadTarget={activeTechLeadTarget}
+                          sendBlocked={activeTechLeadBlocked}
                           onOpenDiffReview={() => openWorkbench("review")}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
@@ -2461,7 +2488,7 @@ export function MafwShell() {
                 </Show>
               </div>
             ) : activeTab() === "goals" ? (
-              <DashboardPage onOpenSession={openSessionTab} onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }} />
+              <DashboardPage onOpenSession={openPodSession} projectDir={currentProject()} onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }} />
             ) : activeTab() === "memory" ? (
               <MemoryPage />
             ) : activeTab() === "approvals" ? (
@@ -2587,7 +2614,7 @@ export function MafwShell() {
                       onClearHidden={() => clearHiddenTodos(currentSessionID())}
                       onClosePanel={() => applyRightDock(false)}
                       onOpenSubagent={(id) => void openSubagentSession(id)}
-                      onOpenPodSession={(sid, title) => openSessionTab(sid, title)}
+                      onOpenPodSession={(sid, title) => openPodSession(sid, title)}
                       onOpenGoal={(id) => setPodGoalId(id)}
                       podPanelRequest={podPanelRequest()}
                       onOpenSection={applyExecutionSection}
@@ -2632,8 +2659,10 @@ export function MafwShell() {
       <Show when={podGoalId()} keyed>
         <GoalDetailOverlay
           goalId={podGoalId()}
+          projectDir={currentProject()}
+          podId={podStore.detail()?.pod.id ?? null}
           onClose={() => setPodGoalId(null)}
-          onOpenSession={(sid) => openSessionTab(sid)}
+          onOpenSession={(sid) => openPodSession(sid)}
         />
       </Show>
       <Show when={activeQuestion()}>

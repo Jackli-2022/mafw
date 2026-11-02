@@ -104,7 +104,8 @@ export function PodDirectionPanel(props: {
   state: PodDirectionState | null
   revision?: number | null
   busy?: boolean
-  onDecide?: (input: { userWords: string; optionId?: string }) => void | Promise<void>
+  /** 返回 false = 写入失败（保留草稿）；true/undefined = 成功。 */
+  onDecide?: (input: { userWords: string; optionId?: string }) => boolean | void | Promise<boolean | void>
 }) {
   const [selectedId, setSelectedId] = createSignal<string | null>(null)
   const [words, setWords] = createSignal("")
@@ -117,10 +118,12 @@ export function PodDirectionPanel(props: {
   const canRecord = () => !props.busy && (!!selectedId() || words().trim().length > 0)
   const decisions = () => props.state?.decisions ?? []
 
-  const record = () => {
+  // 只有写入成功才清空输入：失败时用户的原话不能丢。
+  const record = async () => {
     if (!canRecord()) return
     const optionId = selectedId() ?? undefined
-    void props.onDecide?.({ userWords: words().trim(), optionId })
+    const result = await props.onDecide?.({ userWords: words().trim(), optionId })
+    if (result === false) return
     setWords("")
     setSelectedId(null)
   }
@@ -180,7 +183,7 @@ export function PodDirectionPanel(props: {
           onInput={(e) => setWords(e.currentTarget.value)}
         />
         <div class="mafw-pod-direction-actions">
-          <ButtonV2 variant="contrast" size="small" disabled={!canRecord()} onClick={record}>
+          <ButtonV2 variant="contrast" size="small" disabled={!canRecord()} onClick={() => void record()}>
             记录方向决定
           </ButtonV2>
         </div>

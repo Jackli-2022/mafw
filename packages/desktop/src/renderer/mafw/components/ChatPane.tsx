@@ -201,6 +201,8 @@ export type ChatPaneProps = {
   onOpenTechLead?: (goalId: string) => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
   techLeadTarget?: () => { podId: string; goalId: string } | null
+  /** Task 20 review：非讨论的 Tech Lead 节点会话禁止直接发送，返回原因（保留草稿）。 */
+  sendBlocked?: () => string | null
   onCreateSession: () => Promise<string | null>
   onSetUserMsgId: (sid: string, userMsgId: string) => void
   onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void
@@ -941,6 +943,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     steerSupported: () => experienceStore.enabled('prompt.steer'),
     steerBoundary: () => experienceStore.action('prompt.steer')?.semantics?.boundary as any,
     techLeadTarget: () => props.techLeadTarget?.() ?? null,
+    sendBlocked: () => props.sendBlocked?.() ?? null,
     pendingAnnotationCount: (sid) => pendingFor(sid).length,
     takeAnnotations: (sid) => takeForSend(sid),
     formatAnnotations: (items) => buildAnnotationBatch(items),

@@ -92,6 +92,8 @@ export interface SendMessageDeps {
    * ContextManifest），普通会话 prompt 会丢掉这两者。
    */
   techLeadTarget?: () => { podId: string; goalId: string } | null
+  /** Task 20 review：命中的会话不允许直接发送时返回提示（如 Tech Lead 节点会话）。 */
+  sendBlocked?: () => string | null
 }
 
 /**
@@ -138,6 +140,12 @@ export function useSendMessage(deps: SendMessageDeps) {
     const pendingCount = sidProp() ? pendingAnnotationCount(sidProp()) : 0
     const captureCount = sidProp() && pendingCaptureCount ? pendingCaptureCount(sidProp()) : 0
     if (!text.trim() && atts.length === 0 && pendingCount === 0 && captureCount === 0) return
+    // Task 20 review：非讨论的 Tech Lead 节点会话不能静默走普通 prompt；保留草稿并提示。
+    const blocked = deps.sendBlocked?.() ?? null
+    if (blocked) {
+      showToastV2({ description: blocked, duration: 4000 })
+      return
+    }
     let sid: string | null = sidProp()
     if (!sid) { sid = await deps.onCreateSession(); if (!sid) return }
     const hasVoice = atts.some(a => a.name?.startsWith("voice-"))

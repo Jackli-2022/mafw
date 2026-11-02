@@ -10,7 +10,7 @@ import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { PodDirectionPanel } from "./PodDirectionPanel"
 import { PodProbePanel } from "./PodProbePanel"
 import { buildGoalLanes, formatDuration } from "../goal-timeline"
-import { podStore } from "../pod-store"
+import { podStore, resolvePodId } from "../pod-store"
 import { podStageLabel } from "../pod-model"
 import { goalsRev } from "../goals-rev"
 
@@ -38,7 +38,13 @@ function parseDirectionState(json: string | null | undefined, revision: number |
   }
 }
 
-export function GoalDetailOverlay(props: { goalId: string | null; onClose: () => void; onOpenSession: (sid: string) => void }) {
+export function GoalDetailOverlay(props: {
+  goalId: string | null
+  projectDir?: string | null
+  podId?: string | null
+  onClose: () => void
+  onOpenSession: (sid: string) => void
+}) {
   const [timeline, setTimeline] = createSignal<any>(null)
   const [revisions, setRevisions] = createSignal<PodGoalRevision[]>([])
   const [probes, setProbes] = createSignal<PodProbe[]>([])
@@ -47,6 +53,7 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
   const [error, setError] = createSignal<string | null>(null)
   const [retrying, setRetrying] = createSignal(false)
   const [planOpen, setPlanOpen] = createSignal(false)
+  let resolvedPodId: string | null = null
 
   async function load(id: string) {
     setLoading(true); setError(null)
@@ -57,22 +64,41 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
       setError(e?.message || String(e))
     }
     setLoading(false)
-    await loadCollaboration(id)
+  }
+
+  // 显式 podId → 已加载的 Pod store → 按项目目录 lookup（Pod 面板没开也能拿到证据）。
+  async function resolvePod(): Promise<string | null> {
+    if (resolvedPodId) return resolvedPodId
+    resolvedPodId = await resolvePodId({
+      podId: props.podId,
+      loadedPodId: podStore.detail()?.pod.id,
+      projectDir: props.projectDir,
+      lookup: (dir) => window.api.mafw.pod.lookup(dir),
+    })
+    return resolvedPodId
   }
 
   // Task 20：方向裁定与 Spike 证据是 Goal 级协作事实（pod.updated / 项目切换后重拉）。
   async function loadCollaboration(id: string) {
-    const podId = podStore.detail()?.pod.id
+    const podId = await resolvePod()
     if (!podId) { setRevisions([]); setProbes([]); return }
     const [revResult, probeResult] = await Promise.allSettled([
       window.api.mafw.pod.revisions(podId, id),
       window.api.mafw.pod.probes(podId, id),
     ])
-    setRevisions(revResult.status === "fulfilled" && Array.isArray(revResult.value?.items) ? revResult.value.items : [])
-    setProbes(probeResult.status === "fulfilled" && Array.isArray(probeResult.value?.items) ? probeResult.value.items : [])
+    const revs = revResult.status === "fulfilled" && Array.isArray(revResult.value?.items) ? revResult.value.items : []
+    setRevisions(revs)
+    // 只展示当前 revision 的证据（打回后旧 revision 的 Spike 不冒充本轮事实）。
+    const goal: any = podGoal()
+    const target = typeof goal?.activeRevision === "number"
+      ? goal.activeRevision
+      : (revs.length > 0 ? Math.max(...revs.map((item) => item.revision)) : null)
+    const items = probeResult.status === "fulfilled" && Array.isArray(probeResult.value?.items) ? probeResult.value.items : []
+    setProbes(target == null ? items : items.filter((probe) => probe.revision === target))
   }
 
-  // 实时：goalId 或 goalsRev（SSE goal_node bump）变化 → 重拉
+  // 实时：goalId 或 goalsRev（SSE goal_node bump）变化 → 重拉。
+  // 协作数据由下面 pod 绑定的 effect 单点加载（避免 mount 时双请求）。
   createEffect(() => {
     const id = props.goalId
     void goalsRev() // 订阅信号
@@ -80,11 +106,12 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
     void load(id)
   })
 
-  // pod.updated（Pod store 刷新）→ 重新读取方向/探针。
+  // podId / 当前 revision 变化 → 重新读取方向/探针（Pod store 刷新也会触发）。
   createEffect(() => {
-    const podId = podStore.detail()?.pod.id
     const id = props.goalId
-    if (!podId || !id) return
+    if (!id) return
+    void props.podId
+    void podStore.detail()
     void loadCollaboration(id)
   })
   // 慢轮询兜底
@@ -205,12 +232,12 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
       || (state.decisions?.length ?? 0) > 0
   }
 
-  async function decideDirection(input: { userWords: string; optionId?: string }) {
+  async function decideDirection(input: { userWords: string; optionId?: string }): Promise<boolean> {
     const podId = podStore.detail()?.pod.id
     const id = props.goalId
     if (!podId || !id) {
       showToastV2({ description: "当前项目还没有鲸群，无法记录方向", duration: 3000 })
-      return
+      return false
     }
     setDirectionBusy(true)
     try {
@@ -225,10 +252,13 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
       })
       await load(id)
       void podStore.refresh()
+      return true
     } catch (e: any) {
       showToastV2({ description: `记录方向失败：${String(e?.message || e).slice(0, 120)}`, duration: 3500 })
+      return false
+    } finally {
+      setDirectionBusy(false)
     }
-    setDirectionBusy(false)
   }
 
   return (
@@ -276,7 +306,7 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
                 state={directionState()}
                 revision={activeRevision()}
                 busy={directionBusy()}
-                onDecide={(input) => void decideDirection(input)}
+                onDecide={(input) => decideDirection(input)}
               />
             </Show>
 
@@ -312,7 +342,13 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
         </div>
       </div>
       <Show when={planOpen()}>
-        <PlanReviewOverlay goalId={props.goalId!} terminal={goalTerminal()} onClose={() => setPlanOpen(false)} />
+        <PlanReviewOverlay
+          goalId={props.goalId!}
+          terminal={goalTerminal()}
+          projectDir={props.projectDir}
+          podId={props.podId}
+          onClose={() => setPlanOpen(false)}
+        />
       </Show>
     </Show>
   )

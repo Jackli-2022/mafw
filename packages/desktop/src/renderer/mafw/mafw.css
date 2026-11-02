@@ -5416,6 +5416,37 @@ html[data-theme="light"] body {
 .mafw-plan-reject-input:focus { outline: none; border-color: var(--accent-border); }
 .mafw-plan-reject-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .mafw-plan-terminal-note { padding: 8px 4px; font-size: 12px; color: var(--text-4); }
+/* Task 20：Plan/Eval 变更警示（旧批准失效的可见信号） */
+.mafw-plan-stale { margin: 8px 0; padding: 8px 10px; font-size: 12px; color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent); border-radius: var(--r-md); }
+/* Task 20：方向裁定面板 */
+.mafw-pod-direction, .mafw-pod-probes { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; padding: 12px; }
+.mafw-pod-direction .mafw-pod-section-head, .mafw-pod-probes .mafw-pod-section-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mafw-pod-direction-badge { font-size: 11px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: var(--bg-inset); color: var(--text-3); }
+.mafw-pod-direction-badge.is-attention { color: var(--warning); background: color-mix(in srgb, var(--warning) 16%, transparent); }
+.mafw-pod-direction-badge.is-done { color: var(--accent-text); background: var(--accent-soft); }
+.mafw-pod-direction-reason { font-size: 12px; color: var(--text-3); }
+.mafw-pod-direction-options { display: flex; flex-direction: column; gap: 6px; }
+.mafw-pod-direction .mafw-pod-direction-option { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; height: auto; padding: 8px 10px; text-align: left; background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: var(--r-md); }
+.mafw-pod-direction .mafw-pod-direction-option[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-border); box-shadow: inset 0 0 0 1px var(--accent-border); }
+.mafw-pod-direction-option-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.mafw-pod-direction-option-summary { font-size: 12px; color: var(--text-3); }
+.mafw-pod-direction-option-risks { font-size: 11px; color: var(--warning); }
+.mafw-pod-direction-input { width: 100%; }
+.mafw-pod-direction-actions { display: flex; justify-content: flex-end; }
+.mafw-pod-direction-history { display: flex; flex-direction: column; gap: 6px; }
+.mafw-pod-direction-decision { padding: 8px 10px; background: var(--bg-inset); border-left: 2px solid var(--accent-border); border-radius: var(--r-sm); }
+.mafw-pod-direction-words { font-size: 13px; color: var(--text-1); white-space: pre-wrap; }
+/* Task 20：Spike / Probe 报告卡 */
+.mafw-pod-probes { gap: 6px; }
+.mafw-pod-probe-card { display: flex; flex-direction: column; gap: 4px; padding: 10px; }
+.mafw-pod-probe-head { display: flex; align-items: center; gap: 8px; }
+.mafw-pod-probe-title { flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-pod-probe-badge { flex: 0 0 auto; font-size: 11px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: var(--bg-inset); color: var(--text-3); }
+.mafw-pod-probe-badge.is-supports { color: var(--accent-text); background: var(--accent-soft); }
+.mafw-pod-probe-badge.is-refutes { color: var(--danger-text); background: var(--danger-dim); }
+.mafw-pod-probe-badge.is-inconclusive { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+.mafw-pod-probe-output { padding: 6px 8px; font-family: var(--font-data); font-size: 12px; color: var(--text-2); background: var(--bg-inset); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; }
+.mafw-pod-probe-error { font-size: 12px; color: var(--danger-text); }
 /* C3 快捷键节 */
 .mafw-kb-row { display: flex; align-items: center; gap: 10px; }
 .mafw-kb-row.conflict { border-color: var(--red-9); }
