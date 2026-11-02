@@ -19,6 +19,7 @@ export interface PodGoalServiceDeps {
   store: PodStore;
   pods: PodService;
   startGoal(goalId: string, projectDirHint?: string): Promise<void>;
+  advanceGoal?(goalId: string): Promise<void>;
   resolveProjectDir(goalId: string): string | null;
   now(): string;
   newId(): string;
@@ -238,6 +239,40 @@ export class PodGoalService {
       }
       await this.promote(pod.id);
     }
+  }
+
+  async pause(podId: string): Promise<void> {
+    const pod = this.deps.store.getPod(podId);
+    if (!pod) throw new PodError(404, `pod not found: ${podId}`);
+    this.deps.store.updatePod(podId, { status: 'paused' }, this.deps.now());
+    this.deps.notify(podId);
+  }
+
+  async resume(podId: string): Promise<boolean> {
+    const pod = this.deps.store.getPod(podId);
+    if (!pod) throw new PodError(404, `pod not found: ${podId}`);
+    if (pod.status === 'archived') throw new PodError(409, 'archived pod cannot resume');
+    this.deps.store.updatePod(podId, { status: 'active' }, this.deps.now());
+
+    const active = this.deps.store.getActiveGoal(podId);
+    if (active) {
+      await this.deps.advanceGoal?.(active.goalId);
+      this.deps.notify(podId);
+      return true;
+    }
+    return this.promote(podId);
+  }
+
+  cancelQueued(podId: string, goalId: string): PodGoalRow {
+    const row = this.deps.store.getGoal(podId, goalId);
+    if (!row) throw new PodError(404, `goal not found: ${goalId}`);
+    if (row.status !== 'queued') throw new PodError(409, `goal is not queued: ${goalId}`);
+    this.deps.store.setGoalStatus(row.id, 'aborted', {
+      endedAt: this.deps.now(),
+      verdict: 'CANCELLED',
+    });
+    this.deps.notify(podId);
+    return this.deps.store.getGoal(podId, goalId)!;
   }
 
   describeGoal(goalId: string): PodGoalDescription | null {

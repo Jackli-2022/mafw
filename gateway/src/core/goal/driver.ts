@@ -74,6 +74,8 @@ export interface DriverDeps {
   podContext?: (goalId: string, node: 'plan' | 'execute' | 'review', sessionId: string) => string | null;
   /** Pod handoff：promptAsync 被接受后提交 pending 投递状态。 */
   onPromptDispatched?: (sessionId: string) => void;
+  /** Pod 暂停自动推进：false 时不创建新节点；askUser/archive 仍可执行。 */
+  canCreateNode?: (goalId: string) => boolean;
 }
 
 const NODE_PHASE: Record<'plan' | 'execute' | 'review', { running: string; complete: string }> = {
@@ -140,6 +142,7 @@ export class NodeDriver {
 
     const node = state.nextNode as GoalNodeName;
     if (node === 'plan' || node === 'execute' || node === 'review') {
+      if (this.deps.canCreateNode && !this.deps.canCreateNode(goalId)) return;
       await this.executeNode(goalId, mafwDir, node);
     } else if (node === 'askUser') {
       this.executeAskUser(goalId, mafwDir);

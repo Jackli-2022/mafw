@@ -20,6 +20,7 @@ export function attachPodHandlers(registry: RouteRegistry, deps: PodRouteDeps): 
     'pods.cost',
     'pods.goals',
     'pods.goals.create',
+    'pods.goals.cancel',
     'pods.transcript',
     'pods.memory.get',
     'pods.memory.write',

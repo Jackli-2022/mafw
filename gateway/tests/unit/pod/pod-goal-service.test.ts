@@ -11,6 +11,7 @@ describe('PodGoalService', () => {
   let db: Database.Database;
   let store: PodStore;
   let startGoal: jest.Mock;
+  let advanceGoal: jest.Mock;
   let notifications: string[];
   let projectDir: string;
   let service: PodGoalService;
@@ -46,6 +47,7 @@ describe('PodGoalService', () => {
       store,
       pods,
       startGoal,
+      advanceGoal,
       resolveProjectDir: () => projectDir,
       now: () => '2026-10-29T00:00:00.000Z',
       newId: () => `pg_${Math.random().toString(36).slice(2, 8)}`,
@@ -62,6 +64,7 @@ describe('PodGoalService', () => {
     projectDir = path.join(dir, 'project');
     fs.mkdirSync(projectDir, { recursive: true });
     startGoal = jest.fn(async () => {});
+    advanceGoal = jest.fn(async () => {});
     notifications = [];
     service = makeService();
   });
@@ -151,6 +154,46 @@ describe('PodGoalService', () => {
     expect(store.getActiveGoal(first.podId)?.goalId).toBe('g1');
     expect(store.getGoalByGoalId('g2')?.status).toBe('aborted');
     expect(startGoal).toHaveBeenCalledTimes(1);
+  });
+
+  test('queued cancel never creates state or starts a goal', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+    const row = service.cancelQueued(first.podId, 'g2');
+    expect(row).toMatchObject({ status: 'aborted', verdict: 'CANCELLED' });
+    expect(store.getGoalByGoalId('g2')?.status).toBe('aborted');
+    expect(startGoal).not.toHaveBeenCalledWith('g2', expect.anything());
+    expect(startGoal).toHaveBeenCalledTimes(1);
+  });
+
+  test('cancelling an active or unknown goal is rejected', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+    expect(() => service.cancelQueued(first.podId, 'g1')).toThrow(/queued/i);
+    expect(() => service.cancelQueued(first.podId, 'missing')).toThrow(/not found/i);
+  });
+
+  test('pause and resume advance an active goal exactly once', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.pause(first.podId);
+    expect(store.getPod(first.podId)?.status).toBe('paused');
+    expect(await service.resume(first.podId)).toBe(true);
+    expect(store.getPod(first.podId)?.status).toBe('active');
+    expect(advanceGoal).toHaveBeenCalledTimes(1);
+    expect(advanceGoal).toHaveBeenCalledWith('g1');
+  });
+
+  test('resume without an active goal promotes the FIFO goal once', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    const second = await service.enqueueGoal('g2', projectDir);
+    await service.pause(first.podId);
+    await service.onGoalArchived('g1');
+    expect(store.getActiveGoal(first.podId)).toBeNull();
+    expect(second.status).toBe('queued');
+    expect(await service.resume(first.podId)).toBe(true);
+    expect(store.getActiveGoal(first.podId)?.goalId).toBe('g2');
+    expect(advanceGoal).not.toHaveBeenCalled();
+    expect(startGoal).toHaveBeenLastCalledWith('g2', path.resolve(projectDir));
   });
 
   test('failed start rolls the active slot back to queued', async () => {

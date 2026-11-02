@@ -984,6 +984,12 @@ class MafwScheduler {
       archiveGoal: (goalId, opts) => this.archiveGoal(goalId, opts as any),
       nodeTimeoutMs: (config as any).goal?.nodeTimeoutMs ?? 30 * 60_000,
       maxAttempts: 2,
+      canCreateNode: (goalId: string) => {
+        const podId = this.podService?.getPodIdForGoal(goalId);
+        if (!podId) return true;
+        const pod = this.podStore?.getPod(podId);
+        return !pod || pod.status === 'active' || pod.status === 'idle';
+      },
       // W4: plan 节点注入 L1 能力账本 + L2 失败谱（自我认知闭环），fail-open。
       // D4b: 签名带 goalId——读 state.taskType 做同类任务先验。
       capabilityPrior: (goalId: string) => {
@@ -3723,6 +3729,7 @@ class MafwScheduler {
       store: this.podStore,
       pods: this.podService,
       startGoal: (goalId, projectDirHint) => this.startGoalDirect(goalId, projectDirHint),
+      advanceGoal: (goalId) => this.goalDriver?.advance(goalId) ?? Promise.resolve(),
       resolveProjectDir: (goalId) => {
         const projects = Array.from(this.registeredProjects.entries())
           .map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir }));

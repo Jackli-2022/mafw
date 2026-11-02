@@ -4,6 +4,24 @@ import { makeHarness, seedGoal } from './helpers/goal-driver-harness';
 import { nodeArtifactPaths } from '../../src/core/goal/node-prompts';
 
 describe('completeNode 产物双门', () => {
+  it('paused Pod does not create the next node', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9');
+    h.deps.canCreateNode = () => false;
+    await h.driver.advance('g9');
+    expect(h.calls.some((c) => c.op === 'create')).toBe(false);
+    expect(h.load('g9')!.nodeSession).toBeNull();
+  });
+
+  it('paused Pod still archives a terminal route without a new session', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9', { patch: { nextNode: 'archive_success', nextAction: 'NEXT_archive_success' } });
+    h.deps.canCreateNode = () => false;
+    await h.driver.advance('g9');
+    expect(h.calls.some((c) => c.op === 'create')).toBe(false);
+    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
+  });
+
   it('plan 完成 + waves ready → nextNode=execute；node_run succeeded', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9');

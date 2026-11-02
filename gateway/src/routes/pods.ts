@@ -16,7 +16,7 @@ export interface PodRouteDeps {
   messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
   goals: Pick<PodGoalService, 'list' | 'promote'> & Partial<Pick<
     PodGoalService,
-    'enqueueGoal' | 'views' | 'attention'
+    'enqueueGoal' | 'views' | 'attention' | 'pause' | 'resume' | 'cancelQueued'
   >>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
   access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
@@ -228,6 +228,21 @@ export async function handlePods(
       return true;
     }
 
+    const goalCancel = pathname.match(/^\/api\/pods\/([^/]+)\/goals\/([^/]+)$/);
+    if (goalCancel) {
+      if (method !== 'DELETE') return false;
+      const podId = decode(goalCancel[1]);
+      requirePod(deps, podId);
+      const body = await readJson(req);
+      if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
+        assertAccess(deps, body, ['lead'], podId);
+      }
+      if (!deps.goals.cancelQueued) throw new PodError(503, 'goal cancellation unavailable');
+      const goal = deps.goals.cancelQueued(podId, decode(goalCancel[2]));
+      sendJson(res, 200, { goal });
+      return true;
+    }
+
     const goals = pathname.match(/^\/api\/pods\/([^/]+)\/goals$/);
     if (goals) {
       const podId = decode(goals[1]);
@@ -340,6 +355,13 @@ export async function handlePods(
         requirePod(deps, podId);
         const body = await readJson(req);
         if (!POD_STATUSES.has(String(body.status))) throw new PodError(400, 'invalid pod status');
+        if (body.status === 'active' && deps.goals.resume) {
+          await deps.goals.resume(podId);
+          const detail = deps.pods.get(podId);
+          if (!detail) throw new PodError(404, `pod not found: ${podId}`);
+          sendJson(res, 200, enrichPodDetail(deps, detail));
+          return true;
+        }
         sendJson(res, 200, enrichPodDetail(deps, deps.pods.updateStatus(podId, body.status)));
         return true;
       }
