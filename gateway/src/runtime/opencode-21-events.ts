@@ -251,6 +251,7 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
     }
 
     case 'session.execution.interrupted': {
+      if (data.sessionID) lastFinish.delete(data.sessionID);
       const turn = eventOf(raw, MAFW.turnAborted, {
         sessionID: data.sessionID,
         stopReason: 'cancelled',

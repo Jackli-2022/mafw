@@ -17,6 +17,7 @@ import { DiffChanges } from "@mafw/ui/diff-changes"
 import { Icon } from "@mafw/ui/icon"
 import { TextShimmer } from "@mafw/ui/text-shimmer"
 import { SessionRetry, type SessionRetryInfo } from "./session-retry"
+import { errorCardText, isAbortMessageError } from "./session-error"
 import { TextReveal } from "@mafw/ui/text-reveal"
 import { createAutoScroll } from "@mafw/ui/hooks"
 import { useI18n } from "@mafw/ui/context/i18n"
@@ -296,13 +297,15 @@ export function SessionTurn(
     { equals: same },
   )
 
-  const interrupted = createMemo(() => assistantMessages().some((m) => m.error?.kind === "abort"))
+  const interrupted = createMemo(() => assistantMessages().some((m) => isAbortMessageError(m.error)))
   const divider = createMemo(() => {
     if (compaction()) return i18n.t("ui.messagePart.compaction")
     if (interrupted()) return i18n.t("ui.message.interrupted")
     return ""
   })
-  const error = createMemo(() => assistantMessages().find((m) => m.error && m.error.kind !== "abort")?.error)
+  // 只认规范 `{kind,message}`：过渡期桌面仍写 wire `{name,data:{message}}`，
+  // 若当真会渲染一张没有文本的红卡（历史与 live 同病）。
+  const error = createMemo(() => assistantMessages().find((m) => errorCardText(m.error))?.error)
   const showAssistantCopyPartID = createMemo(() => {
     const messages = assistantMessages()
 
@@ -321,7 +324,7 @@ export function SessionTurn(
     return undefined
   })
   const errorText = createMemo(() => {
-    const msg = error()?.message
+    const msg = errorCardText(error())
     if (!msg) return ""
     return unwrap(msg)
   })
@@ -564,7 +567,7 @@ export function SessionTurn(
                   </div>
                 </div>
               </Show>
-              <Show when={error()}>
+              <Show when={errorText()}>
                 <Card variant="error" class="error-card">
                   {errorText()}
                 </Card>

@@ -288,6 +288,22 @@ describe('live：2.1 执行终态补 message 级规范字段', () => {
     expect(events.map((e) => e.payload.type)).toEqual(['turn.aborted']);
   });
 
+  it('终态消费锚点：同会话后续无 step 的终态不挂到上一回合的旧锚点', () => {
+    startStep('s-live-leak', 'ma_old');
+    terminal('session.execution.interrupted', { sessionID: 's-live-leak' });
+    const again = terminal('session.execution.interrupted', { sessionID: 's-live-leak' });
+
+    expect(again.map((e) => e.payload.type)).toEqual(['turn.aborted']);
+  });
+
+  it('interrupted 清理 lastFinish（finish 不跨回合冒充）', () => {
+    terminal('session.step.ended', { sessionID: 's-live-finish', assistantMessageID: 'ma_f', finish: 'length' });
+    terminal('session.execution.interrupted', { sessionID: 's-live-finish' });
+
+    const [turn] = terminal('session.execution.succeeded', { sessionID: 's-live-finish' });
+    expect(turn.payload.properties.stopReason).toBe('unknown');
+  });
+
   it('history 与 live 的规范字段一致（中止 / 截断）', () => {
     const [historyAbort]: any = normalizeOpencodeHistory([abortedAssistantWire]);
     startStep('s-parity-abort', 'ma_parity');
