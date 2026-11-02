@@ -70,6 +70,59 @@ export const DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "mafw_pod_goal_context",
+    description: "Lead-only: set the optional and Cross-Goal context refs for the active Goal revision. The stage baseline (goal.md / request.json / direction.json / waves.json / goal-eval.json) is always included by code; every ref passed here must exist, be readable, be non-sensitive, and Cross-Goal refs must be allowlisted by the Goal request. The rendered ContextManifest is persisted with its path + hash and injected into every worker/probe prompt. Tech Lead, Builder and Reviewer cannot widen their own context.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string", description: "Goal identifier" },
+        revision: { type: "number", description: "Goal revision (defaults to the active revision; only the active non-terminal revision can be widened)" },
+        refs: {
+          type: "array",
+          description: "Replace the whole optional selection (empty array clears it)",
+          items: {
+            type: "object",
+            description: "One context reference: in-Goal path, project:<path>, or <otherGoalId>/<path> (Cross-Goal needs the Goal request allowlist)",
+            properties: {
+              path: { type: "string" },
+              scope: { type: "string", enum: ["goal", "project", "cross-goal"] },
+              goalId: { type: "string" },
+              revision: { type: "number" },
+              label: { type: "string" },
+              required: { type: "boolean" },
+              crossGoal: { type: "boolean" },
+            },
+            required: ["path"],
+          },
+        },
+        add: {
+          type: "array",
+          description: "Append optional refs (deduplicated by path); same item shape as refs",
+          items: {
+            type: "object",
+            properties: {
+              path: { type: "string" },
+              scope: { type: "string", enum: ["goal", "project", "cross-goal"] },
+              goalId: { type: "string" },
+              revision: { type: "number" },
+              label: { type: "string" },
+              required: { type: "boolean" },
+              crossGoal: { type: "boolean" },
+            },
+            required: ["path"],
+          },
+        },
+        remove: {
+          type: "array",
+          description: "Remove refs by path, <goalId>/<path>, or display path",
+          items: { type: "string" },
+        },
+        sessionID: { type: "string", description: "Calling Lead session id (MCP does not carry caller identity)" },
+      },
+      required: ["goalId"],
+    },
+  },
+  {
     name: "mafw_update_state",
     description: "Update the state file for a goal",
     inputSchema: {
@@ -642,6 +695,7 @@ for (const def of DEFINITIONS) {
 
 import { handleCreateGoal } from "./handlers/create-goal";
 import { handlePodGoalDirection } from "./handlers/pod-goal-direction";
+import { handlePodGoalContext } from "./handlers/pod-context-select";
 import { handleUpdateState } from "./handlers/update-state";
 import { handleSearchHybrid } from "./handlers/search-hybrid";
 import { handleGetDeltas } from "./handlers/get-deltas";
@@ -688,6 +742,7 @@ export function createToolRegistry(): ToolRegistry {
     handlers: {
       mafw_create_goal: handleCreateGoal,
       mafw_pod_goal_direction: handlePodGoalDirection,
+      mafw_pod_goal_context: handlePodGoalContext,
       mafw_update_state: handleUpdateState,
       mafw_search_hybrid: handleSearchHybrid,
       mafw_get_deltas: handleGetDeltas,

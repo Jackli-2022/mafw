@@ -107,6 +107,7 @@ export const MAFW_TOOL_ANNOTATIONS: Record<string, MafwToolAnnotations> = {
   // 编排触发
   mafw_create_goal: { readOnlyHint: false, destructiveHint: false },
   mafw_pod_goal_direction: { readOnlyHint: false, destructiveHint: false },
+  mafw_pod_goal_context: { readOnlyHint: false, destructiveHint: false },
   mafw_set_goal: { readOnlyHint: false, destructiveHint: false },
   mafw_run_automation: { readOnlyHint: false, destructiveHint: false },
   mafw_ask_user: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },

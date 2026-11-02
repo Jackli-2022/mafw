@@ -367,6 +367,12 @@ export interface NodePromptCtx {
   maxRounds: number;
   /** Goal revision（缺省 1）：产物路径与 prompt 头部据此隔离。 */
   revision?: number;
+  /**
+   * Task 17：确定性的 ContextManifest 块（阶段基线 + Lead 选入的引用）。
+   * 永远渲染在整个 prompt 的最前面——worker 先看到「哪些文件是权威的」，
+   * 再看到任务正文；Pod handoff / 记忆块由 driver 排在它之后。
+   */
+  manifestBlock?: string;
   charterPath: string;
   requestPath: string;
   reviewFeedback?: string;
@@ -435,6 +441,12 @@ export function renderProbeReportBlock(reports: ProbeReport[]): string {
 }
 
 export function renderNodePrompt(node: ExecutableGoalNode, ctx: NodePromptCtx): string {
+  const body = renderNodePromptBody(node, ctx);
+  // ContextManifest 恒在最前（不含记忆/任务板内容）；无 manifest 时保持旧 prompt 零迁移。
+  return ctx.manifestBlock ? `${ctx.manifestBlock}\n\n${body}` : body;
+}
+
+function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): string {
   const isFixPass = node === 'execute' && !!ctx.fixTasks?.length;
   const revision = normalizeArtifactRevision(ctx.revision);
   const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round, { fix: isFixPass, revision });

@@ -51,6 +51,7 @@ import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService } from './core/pod/pod-tech-lead-service';
 import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
+import { PodContextSelectionService } from './mcp/handlers/pod-context-select';
 import { ProbeWorkspaceFactory } from './core/pod/pod-probe-workspace';
 import type { GoalProbePort, GoalProbeSessionBinding } from './core/goal/driver';
 import type { ProbeRequest, ProbeReport } from './core/goal/probe';
@@ -610,6 +611,7 @@ class MafwScheduler {
   private podSessionSupervisor!: PodSessionSupervisor;
   private podDirectionService!: PodDirectionService;
   private podTechLeadService!: PodTechLeadService;
+  private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
   private podProbeWorkspaces!: ProbeWorkspaceFactory;
   /** Task 14：探针会话 → ProbeRequest 范围绑定（审批守门在 hook/policy 里同步读取）。 */
@@ -1110,6 +1112,13 @@ class MafwScheduler {
         } catch {
           return null;
         }
+      },
+      // Task 17：确定性 ContextManifest（阶段基线 + Lead 选入的引用）。legacy/非 Pod Goal
+      // 不注入（旧 prompt 零迁移）；Pod Goal 的缺失/敏感引用 fail-closed（driver 归档该节点）。
+      contextBlock: async (goalId: string, node: 'plan' | 'probe' | 'execute' | 'review', revision: number) => {
+        if (!this.podContextSelectionService) return null;
+        if (!this.podService?.getPodIdForGoal(goalId)) return null;
+        return this.podContextSelectionService.renderForNode({ goalId, node, revision });
       },
       onPromptDispatched: (sessionId: string) => {
         const ids = this.podPendingHandoffs.get(sessionId);
@@ -4048,6 +4057,13 @@ class MafwScheduler {
       notify: (podId, kind = 'goal') => this.broadcast({ type: 'pod.updated', properties: { podId, kind } }),
       log: (message) => log.info(message),
     });
+    // Task 17：Lead 的上下文选择 + 每个节点/探针 prompt 的确定性 ContextManifest。
+    this.podContextSelectionService = new PodContextSelectionService({
+      store: this.podStore,
+      resolveMafwDir: (goalId) => this.findGoalMafwDir(goalId),
+      now: () => new Date().toISOString(),
+      log: (message) => log.info(message),
+    });
 
     this.podMessageDelivery = new PodMessageDelivery({
       store: this.podStore,
@@ -4417,6 +4433,7 @@ class MafwScheduler {
       listProjects: () => Array.from(this.registeredProjects.entries()).map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir })),
       podTechLead: this.podTechLeadService,
       podDirection: this.podDirectionService,
+      podContextSelect: this.podContextSelectionService,
       podGoalDirection: {
         techLead: this.podTechLeadService,
         direction: this.podDirectionService,

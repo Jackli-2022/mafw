@@ -236,6 +236,16 @@ export interface DriverDeps {
   counterfactualPrior?: (goalId: string) => string | null;
   /** Pod Lite：项目级 Pod 上下文块，缺省不注入。fail-open。 */
   podContext?: (goalId: string, node: 'plan' | 'execute' | 'review', sessionId: string) => string | null;
+  /**
+   * Task 17：确定性的 ContextManifest 块（阶段基线 + Lead 选入的可选/跨 Goal 引用）。
+   * 每个节点与探针的 prompt 都会先取它；返回 null = 不注入（如非 Pod 的 legacy Goal）。
+   * 抛错 = fail-closed（缺失/敏感引用）：节点按 artifact 失败归档，绝不无基线上下文照跑。
+   */
+  contextBlock?: (
+    goalId: string,
+    node: ExecutableGoalNode,
+    revision: number,
+  ) => Promise<string | null> | string | null;
   /** Pod handoff：promptAsync 被接受后提交 pending 投递状态。 */
   onPromptDispatched?: (sessionId: string) => void;
   /** Pod 暂停自动推进：false 时不创建新节点；askUser/archive 仍可执行。 */
@@ -315,6 +325,54 @@ export class NodeDriver {
     });
     this.mutex.set(goalId, next);
     try { await next; } finally { if (this.mutex.get(goalId) === next) this.mutex.delete(goalId); }
+  }
+
+  /**
+   * Task 17：构建本节点的 ContextManifest 块。
+   *
+   * 失败 = fail-closed：缺基线/缺 Lead 选入的文件时绝不「没有上下文也照跑」——按 artifact
+   * 失败收口（与 failNode 同一路径，但不能 await failNode：它在互斥内会自等）。
+   * 未接 contextBlock（legacy Goal / 非 Pod）→ 不注入，旧 prompt 零迁移。
+   */
+  private async contextBlockFor(
+    goalId: string,
+    node: ExecutableGoalNode,
+    revision: number,
+    session: { id: string; attempt: number; runId: number; probeId?: string | null },
+  ): Promise<{ block: string | null; failed: boolean }> {
+    const build = this.deps.contextBlock;
+    if (!build) return { block: null, failed: false };
+    try {
+      const block = (await build(goalId, node, revision)) ?? null;
+      return { block: block || null, failed: false };
+    } catch (err: any) {
+      const message = `context manifest unavailable: ${err?.message ?? err}`;
+      const found = this.findState(goalId);
+      if (!found) return { block: null, failed: true };
+      const { mafwDir } = found;
+      const state = loadGoalState(mafwDir, goalId)!;
+      const now = new Date().toISOString();
+      // 与 failNode 同一收口，但不能 await failNode——它在互斥内会自等。
+      this.deps.db.finishNodeRun(session.runId, { status: 'failed', finishedAt: now, error: message });
+      this.deps.emitNodeEvent({
+        type: 'goal_node', goalId, projectDir: state.projectDir, loop: effectiveRound(state),
+        node, transition: 'failed', at: now, error: message, attempt: session.attempt, revision,
+      });
+      await this.releaseSession(session.id);
+      if (session.probeId) this.failProbeRecord(session.probeId, `context_invalid: ${message}`);
+      writeGoalState(mafwDir, goalId, {
+        nodeSession: null,
+        lastFailure: {
+          class: 'terminal_contract', code: 'context_invalid', message,
+          node, attempt: session.attempt, at: now,
+        },
+        lastError: `context_invalid: ${message}`,
+        reviewVerdict: 'ERROR',
+        nextNode: 'archive_fail',
+      });
+      await this.continueAdvance(goalId);
+      return { block: null, failed: true };
+    }
   }
 
   private findState(goalId: string): { mafwDir: string; state: GoalStateV3 } | null {
@@ -482,8 +540,14 @@ export class NodeDriver {
       fixTasks: fixPass ? (state.reviewFix?.tasks ?? []) : undefined,
       fixPreviousReceipt: fixPass ? nodeArtifactPaths(mafwDir, goalId, round, { revision }).receipt : undefined,
     });
+    const context = await this.contextBlockFor(goalId, node, revision, {
+      id: sessionId, attempt, runId,
+    });
+    if (context.failed) return; // 已按 artifact 失败归档（fail-closed）
     const podBlock = this.deps.podContext?.(goalId, node, sessionId) ?? null;
-    const prompt = podBlock ? `${podBlock}\n\n${basePrompt}` : basePrompt;
+    // 顺序契约（Task 17）：manifest → [POD HANDOFF] / Pod 记忆 → 节点任务正文。
+    const withPod = podBlock ? `${podBlock}\n\n${basePrompt}` : basePrompt;
+    const prompt = context.block ? `${context.block}\n\n${withPod}` : withPod;
 
     // 不 await——pi 的 promptAsync 在 idle 会话阻塞到回合结束，await 会卡死 advance（spec §7）
     void this.deps.client.promptAsync({
@@ -677,12 +741,17 @@ export class NodeDriver {
 
     const requestPath = findGoalRequestPath(mafwDir, goalId) ?? legacyGoalRequestPath(mafwDir, goalId);
     const charterPath = findGoalCharterPath(mafwDir, goalId) ?? legacyGoalCharterPath(mafwDir, goalId);
-    const prompt = renderNodePrompt('probe', {
+    const context = await this.contextBlockFor(goalId, 'probe', revision, {
+      id: sessionId, attempt, runId, probeId,
+    });
+    if (context.failed) return; // 已按 artifact 失败归档（工作区随会话销毁）
+    const baseProbePrompt = renderNodePrompt('probe', {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds, revision,
       charterPath, requestPath,
       probe: { request, workspaceDir: workspace.dir, reportPath: port.reportPath(goalId, probeId) },
       attempt, maxAttempts: this.deps.maxAttempts, lastFailure: state.lastFailure ?? null,
     });
+    const prompt = context.block ? `${context.block}\n\n${baseProbePrompt}` : baseProbePrompt;
     try { port.bindSession(sessionId, { request, workspaceDir: workspace.dir, projectDir: state.projectDir }); } catch { /* fail-open */ }
 
     // 预算硬约束（spec §6.5）：maxMinutes 不是建议值——超时即失败并销毁工作区。
