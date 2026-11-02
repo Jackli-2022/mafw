@@ -785,8 +785,6 @@ class MafwScheduler {
     });
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;
-    wirePiPermissionEvaluator(runtime, this.approvalPolicy);
-    wirePiCognition(runtime, this.cognitionGate);
     this.runtimeCaps = runtime.capabilities;
     try { await this.taskService.start(); } catch (err: any) {
       log.warn(`[Tasks] start failed (non-fatal): ${err?.message ?? err}`);
@@ -1172,8 +1170,6 @@ class MafwScheduler {
             }
               const runtime = await this.createRuntime(sdkConfig);
               this.runtime = runtime;
-              wirePiPermissionEvaluator(runtime, this.approvalPolicy);
-              wirePiCognition(runtime, this.cognitionGate);
               this.runtimeCaps = runtime.capabilities;
               this.runtimeName = runtime.name;
               // Re-materialize identities on the new runtime (fire-and-forget).
@@ -1776,6 +1772,10 @@ class MafwScheduler {
       // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
       await activateRuntimeTools(rt, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
       log.info(`[Runtime] using runtime '${rt.name}' (${name}, capabilities: ${JSON.stringify(rt.capabilities)})`);
+      // 组合根在 facade 创建前完成 runtime 私有宿主接线（pi registry 等）；
+      // registry 不进入 facade，业务核心无法触达原生宿主对象。
+      wirePiPermissionEvaluator(rt, this.approvalPolicy);
+      wirePiCognition(rt, this.cognitionGate);
       const wrapped = this.wrapRuntimeIdentity(rt);
       // Runtime Ingress：翻译、合帧与 RawRuntime 全部留在 facade 闭包内；
       // 业务核心从返回值起只看到 canonical 面。
@@ -2292,8 +2292,6 @@ class MafwScheduler {
       },
       onSwitched: async (rt: RuntimeFacade, prev: RuntimeFacade | null) => {
         this.runtime = rt;
-        wirePiPermissionEvaluator(rt, this.approvalPolicy);
-        wirePiCognition(rt, this.cognitionGate);
         this.runtimeCaps = rt.capabilities;
         this.runtimeName = rt.name;
         // B2/B3：翻译守卫与拦截计数随 runtime 切换清空（per-runtime 快照语义）

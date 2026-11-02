@@ -77,6 +77,7 @@ describe('RuntimeFacade', () => {
     expect(facade.__mafwEventWiring).toBeUndefined();
     expect(facade.__mafwActiveEntry).toBeUndefined();
     expect(facade.resolveEventEntry).toBeUndefined();
+    expect(facade.registry).toBeUndefined();
     expect(Object.getPrototypeOf(facade)).toBe(Object.prototype);
   });
 
