@@ -7,6 +7,7 @@ import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import { PodGoalQueue, PodTaskBoard } from "./PodTaskBoard"
 import { PodInbox } from "./PodInbox"
 import { PodMemoryPanel } from "./PodMemoryPanel"
+import { PodGoalComposer } from "./PodGoalComposer"
 import { PodTranscriptOverlay } from "./PodTranscriptOverlay"
 import { podStore } from "../pod-store"
 import { deliveryToast } from "../pod-rail-face-model"
@@ -59,6 +60,37 @@ export function PodDock(props: {
     }
     const member = detail.members.find((item) => item.id === memberId)
     props.onOpenSession(target.sessionId, `Pod · ${podRoleLabel(member?.role ?? "builder")}`)
+  }
+
+  const createGoal = async (input: {
+    title: string
+    objective: string
+    acceptance: string[]
+    boundaries: string[]
+    planReview: "auto" | "manual"
+  }): Promise<boolean> => {
+    try {
+      const result = await podStore.createGoal({
+        title: input.title,
+        objective: input.objective,
+        acceptance: input.acceptance.length > 0 ? input.acceptance : undefined,
+        boundaries: input.boundaries.length > 0 ? input.boundaries : undefined,
+        planReview: input.planReview,
+      })
+      showToastV2({
+        description: result.status === "started" ? "已交给团队" : "已排队，当前目标结束后自动开始",
+        variant: "success",
+        duration: 2600,
+      } as any)
+      return true
+    } catch (err: any) {
+      showToastV2({
+        description: `提交失败：${taskErrorText(err)}`,
+        variant: "error",
+        duration: 3200,
+      } as any)
+      return false
+    }
   }
 
   const createTask = async (title: string): Promise<boolean> => {
@@ -137,8 +169,8 @@ export function PodDock(props: {
 
   const toggleStatus = () => {
     const status = podStore.detail()?.pod.status
-    if (!status) return
-    void podStore.setStatus(status === "active" ? "idle" : "active")
+    if (!status || status === "archived") return
+    void podStore.setStatus(status === "paused" ? "active" : "paused")
   }
 
   return (
@@ -148,9 +180,11 @@ export function PodDock(props: {
           <ButtonV2 variant="ghost" size="small" disabled={podStore.busy()} onClick={() => void podStore.refresh()}>
             刷新
           </ButtonV2>
-          <ButtonV2 variant="ghost" size="small" onClick={toggleStatus}>
-            {podStore.detail()!.pod.status === "active" ? "休眠" : "唤醒"}
-          </ButtonV2>
+          <Show when={podStore.detail()!.pod.status !== "archived"}>
+            <ButtonV2 variant="ghost" size="small" onClick={toggleStatus}>
+              {podStore.detail()!.pod.status === "paused" ? "恢复推进" : "暂停推进"}
+            </ButtonV2>
+          </Show>
         </Show>
       </DockPanelHeader>
 
@@ -165,8 +199,8 @@ export function PodDock(props: {
               <Show when={podStore.error()} fallback={
                 <DockEmpty
                   text="这个项目还没有鲸群"
-                  hint="创建后会有 Lead / Builder / Reviewer 三人班底"
-                  action={{ label: "创建鲸群", onClick: () => void podStore.create() }}
+                  hint="创建后直接交代第一个目标"
+                  action={{ label: "创建鲸群并交代第一个目标", onClick: () => void podStore.create() }}
                 />
               }>
                 <DockBanner
@@ -201,6 +235,12 @@ export function PodDock(props: {
                   </span>
                   <span class="mafw-pod-status-cost">{formatPodCost(podStore.cost())}</span>
                 </div>
+
+                <PodGoalComposer
+                  busy={podStore.busy()}
+                  activeGoalId={activeGoalId()}
+                  onCreate={createGoal}
+                />
 
                 <div class="mafw-pod-members">
                   <For each={detail().members}>

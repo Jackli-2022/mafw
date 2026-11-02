@@ -1,7 +1,9 @@
 import type {
   PodDetail,
   PodGoal,
+  PodGoalStage,
   PodGoalStatus,
+  PodGoalVerdict,
   PodMember,
   PodMemberRole,
   PodMemberStatus,
@@ -61,6 +63,7 @@ const TASK_STATUS_LABEL: Record<PodTaskStatus, string> = {
   review: "待审",
   done: "完成",
   failed: "失败",
+  skipped: "已跳过",
   reopened: "重开",
 }
 
@@ -185,6 +188,50 @@ export function podTaskStatusLabel(status: PodTaskStatus): string {
 
 export function podGoalStatusLabel(status: string): string {
   return GOAL_STATUS_LABEL[status as PodGoalStatus] ?? status
+}
+
+const STAGE_LABEL: Record<string, string> = {
+  plan_approval: "等待你批准计划",
+  question: "等待你回答",
+  blocked: "需要处理",
+  queued: "排队中",
+  working: "团队工作中",
+  waiting: "等待触发",
+  ended: "已结束",
+}
+
+export function podStageLabel(stage: Pick<PodGoalStage, "owner" | "kind">): string {
+  if (stage.owner === "team" && stage.kind === "working") return "团队工作中"
+  if (stage.owner === "team" && stage.kind === "queued") return "排队中"
+  return STAGE_LABEL[stage.kind] ?? stage.kind
+}
+
+export function podStageTone(stage: Pick<PodGoalStage, "owner">): "person" | "team" | "system" {
+  return stage.owner
+}
+
+const GOAL_VERDICT_LABEL: Record<PodGoalVerdict, string> = {
+  PASS: "已完成",
+  FAIL: "未通过",
+  MAX_RETRIES: "达到轮次上限",
+  ERROR: "技术失败",
+  CANCELLED: "已取消",
+}
+
+export function podGoalResultLabel(verdict: PodGoalVerdict | null): string {
+  return verdict ? GOAL_VERDICT_LABEL[verdict] ?? verdict : "已结束"
+}
+
+export function attentionCount(detail: Pick<PodDetail, "attention">): number {
+  return detail.attention.length
+}
+
+export function planTaskOnly(tasks: PodTask[]): PodTask[] {
+  return tasks.filter((task) => task.kind === "plan")
+}
+
+export function noteTasksOnly(tasks: PodTask[]): PodTask[] {
+  return tasks.filter((task) => task.kind === "note")
 }
 
 export function formatPodCost(cost: { spentUsd: number; limitUsd: number } | null): string {

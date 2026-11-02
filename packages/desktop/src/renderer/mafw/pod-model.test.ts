@@ -23,6 +23,12 @@ import {
   podOutgoingDelivery,
   shouldCloseTranscript,
   terminalGoalsNewestFirst,
+  podStageLabel,
+  podStageTone,
+  podGoalResultLabel,
+  attentionCount,
+  planTaskOnly,
+  noteTasksOnly,
 } from "./pod-model"
 
 const task = (id: string, status: PodTaskStatus, extra: Partial<PodTask> = {}): PodTask => ({
@@ -31,6 +37,7 @@ const task = (id: string, status: PodTaskStatus, extra: Partial<PodTask> = {}): 
   goalId: null,
   sourceKey: `manual:${id}`,
   externalTaskId: null,
+  kind: "note",
   title: id,
   description: null,
   ownerMemberId: null,
@@ -52,6 +59,8 @@ const detail = (): PodDetail => ({
     { id: "m_builder", podId: "pod_1", role: "builder", displayName: "Builder", agentName: "mafw-execute", modelProvider: null, modelId: null, status: "working", configJson: null, createdAt: "2026-10-30T00:00:00.000Z", updatedAt: "2026-10-30T00:00:00.000Z" },
   ],
   goals: [],
+  attention: [],
+  messageHealth: [],
   tasks: [],
   sessions: [
     { id: "s_old", podId: "pod_1", memberId: "m_builder", goalId: null, node: "execute", sessionId: "old", status: "ended", transcriptRef: "/old.json", createdAt: "2026-10-30T00:00:00.000Z", endedAt: "2026-10-30T00:00:00.000Z" },
@@ -179,10 +188,39 @@ describe("pod-model", () => {
   test("podActiveGoalId picks the single active goal", () => {
     const goal = (goalId: string, status: "queued" | "active" | "done") => ({
       id: `podgoal_${goalId}`, podId: "pod_1", goalId, status,
+      title: goalId, phase: null, verdict: null,
+      stage: { owner: "team" as const, kind: "working" as const }, resultReady: false,
       enqueuedAt: "2026-10-30T00:00:00.000Z", startedAt: null, endedAt: null,
     })
     assert.equal(podActiveGoalId([goal("q1", "queued"), goal("g1", "active"), goal("d1", "done")]), "g1")
     assert.equal(podActiveGoalId([goal("q1", "queued")]), null)
     assert.equal(podActiveGoalId([]), null)
+  })
+
+  test("stage labels never expose internal goal ids", () => {
+    assert.equal(podStageLabel({ owner: "person", kind: "plan_approval" }), "等待你批准计划")
+    assert.equal(podStageLabel({ owner: "team", kind: "working" }), "团队工作中")
+    assert.equal(podStageLabel({ owner: "system", kind: "ended" }), "已结束")
+    assert.equal(podStageTone({ owner: "person", kind: "question" }), "person")
+  })
+
+  test("goal verdict labels never claim failed work completed", () => {
+    assert.equal(podGoalResultLabel("PASS"), "已完成")
+    assert.equal(podGoalResultLabel("MAX_RETRIES"), "达到轮次上限")
+    assert.equal(podGoalResultLabel("FAIL"), "未通过")
+    assert.equal(podGoalResultLabel("ERROR"), "技术失败")
+    assert.equal(podGoalResultLabel("CANCELLED"), "已取消")
+    assert.equal(podGoalResultLabel(null), "已结束")
+  })
+
+  test("attention count excludes unread and result-ready", () => {
+    assert.equal(attentionCount({ attention: [{ id: "a", goalId: "g", kind: "question", title: "Q", action: { type: "open_question", goalId: "g" } }] }), 1)
+    assert.equal(attentionCount({ attention: [] }), 0)
+  })
+
+  test("notes are not plan tasks", () => {
+    const tasks = [task("a", "pending", { kind: "note" }), task("b", "pending", { kind: "plan", goalId: "g", externalTaskId: "w1-t1" }), task("c", "pending", { kind: "external_request" })]
+    assert.deepEqual(planTaskOnly(tasks).map((t) => t.id), ["b"])
+    assert.deepEqual(noteTasksOnly(tasks).map((t) => t.id), ["a"])
   })
 })

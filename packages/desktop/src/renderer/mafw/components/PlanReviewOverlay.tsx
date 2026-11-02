@@ -48,10 +48,16 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
   })
   const markdown = () => renderPlanMarkdown(info()?.waves)
 
+  const approvalId = () => {
+    const id = info()?.planApproval?.id
+    if (typeof id !== "string" || !id) throw new Error("计划批准已过期，请刷新后重试")
+    return id
+  }
+
   async function approve() {
     setActing(true)
     try {
-      await window.api.mafw.goals.approvePlan(props.goalId)
+      await window.api.mafw.goals.approvePlan(props.goalId, approvalId())
       showToastV2({ title: "已批准计划", description: "goal 将进入 execute" })
       props.onClose()
     } catch (e: any) {
@@ -65,7 +71,7 @@ export function PlanReviewOverlay(props: { goalId: string; terminal: boolean; on
     if (!feedback) return
     setActing(true)
     try {
-      await window.api.mafw.goals.rejectPlan(props.goalId, feedback)
+      await window.api.mafw.goals.rejectPlan(props.goalId, approvalId(), feedback)
       showToastV2({ title: "已驳回并重新规划", description: "plan 将带着你的意见重跑" })
       props.onClose()
     } catch (e: any) {

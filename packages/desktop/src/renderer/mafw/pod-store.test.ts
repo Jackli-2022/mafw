@@ -17,6 +17,11 @@ function harness(overrides: Partial<PodStoreApi> = {}) {
     ensure: async (dir) => { calls.push(`ensure:${dir}`); return detail("pod_1", dir) },
     get: async (id) => { calls.push(`get:${id}`); return detail(id) },
     update: async (id, body) => { calls.push(`update:${id}:${body.status}`); return detail(id) },
+    createGoal: async (id, body) => { calls.push(`createGoal:${id}:${body.title}`); return { goalId: "g1", status: "started", queueReason: null, goal: { goalId: "g1", title: body.title } } as any },
+    result: async (id, goalID) => { calls.push(`result:${id}:${goalID}`); return { goalId: goalID, verdict: "PASS" } as any },
+    cancelGoal: async (id, goalID) => { calls.push(`cancelGoal:${id}:${goalID}`); return { goal: { goalId: goalID } } as any },
+    pause: async (id) => { calls.push(`pause:${id}`); return detail(id) },
+    resume: async (id) => { calls.push(`resume:${id}`); return detail(id) },
     wake: async (id) => { calls.push(`wake:${id}`); return detail(id) },
     sleep: async (id) => { calls.push(`sleep:${id}`); return detail(id) },
     cost: async () => ({ spentUsd: 1, limitUsd: 10 }),
@@ -77,12 +82,21 @@ describe("pod-store", () => {
     assert.equal(store.messages().find((m) => m.id === "m1")?.readAt, null, "rollback on failure")
   })
 
-  test("setStatus uses the wake/sleep control endpoints so the queue promotes", async () => {
+  test("setStatus uses pause/resume and never the legacy idle toggle", async () => {
     const { store, calls } = harness()
     await store.open("/p")
-    await store.setStatus("idle")
+    await store.setStatus("paused")
     await store.setStatus("active")
-    assert.deepEqual(calls, ["lookup:/p", "sleep:pod_1", "wake:pod_1"])
+    assert.deepEqual(calls, ["lookup:/p", "pause:pod_1", "resume:pod_1"])
+  })
+
+  test("goal composer/result/cancel delegate and refresh detail", async () => {
+    const { store, calls } = harness()
+    await store.open("/p")
+    await store.createGoal({ title: "Fix Pod", objective: "Truthful" })
+    await store.result("g1")
+    await store.cancelGoal("g2")
+    assert.deepEqual(calls, ["lookup:/p", "createGoal:pod_1:Fix Pod", "get:pod_1", "result:pod_1:g1", "cancelGoal:pod_1:g2", "get:pod_1"])
   })
 
   test("refresh is single-flight and exposes busy state", async () => {

@@ -1,5 +1,7 @@
 import { createSignal } from "solid-js"
-import type { PodDetail, PodMessage, PodStatus } from "@mafw/sdk"
+import type {
+  PodCreateGoalInput, PodCreateGoalResult, PodDetail, PodGoal, PodGoalResult, PodMessage, PodStatus,
+} from "@mafw/sdk"
 import { podEventAction, podIsUnsupported, podRouteMissing } from "./pod-model"
 
 export type PodStoreApi = {
@@ -7,6 +9,11 @@ export type PodStoreApi = {
   ensure(projectDir: string): Promise<PodDetail>
   get(podId: string): Promise<PodDetail>
   update(podId: string, body: { status: PodStatus }): Promise<PodDetail>
+  createGoal(podID: string, body: PodCreateGoalInput): Promise<PodCreateGoalResult>
+  result(podID: string, goalID: string): Promise<PodGoalResult>
+  cancelGoal(podID: string, goalID: string): Promise<{ goal: PodGoal }>
+  pause(podId: string): Promise<PodDetail>
+  resume(podId: string): Promise<PodDetail>
   wake(podId: string): Promise<PodDetail>
   sleep(podId: string): Promise<PodDetail>
   cost(podId: string): Promise<{ spentUsd: number; limitUsd: number }>
@@ -179,9 +186,9 @@ export function createPodStore(
     setRefreshing(true)
     try {
       const next = status === "active"
-        ? await api.wake(current.pod.id)
-        : status === "idle"
-          ? await api.sleep(current.pod.id)
+        ? await api.resume(current.pod.id)
+        : status === "paused"
+          ? await api.pause(current.pod.id)
           : await api.update(current.pod.id, { status })
       applyDetail(next, my)
     } catch (err) {
@@ -190,6 +197,28 @@ export function createPodStore(
     } finally {
       if (!disposed) setRefreshing(false)
     }
+  }
+
+  async function createGoal(body: PodCreateGoalInput): Promise<PodCreateGoalResult> {
+    const current = detail()
+    if (!current || disposed) throw new Error("pod unavailable")
+    const result = await api.createGoal(current.pod.id, body)
+    await refresh()
+    return result
+  }
+
+  async function result(goalID: string): Promise<PodGoalResult> {
+    const current = detail()
+    if (!current || disposed) throw new Error("pod unavailable")
+    return api.result(current.pod.id, goalID)
+  }
+
+  async function cancelGoal(goalID: string): Promise<{ goal: PodGoal }> {
+    const current = detail()
+    if (!current || disposed) throw new Error("pod unavailable")
+    const result = await api.cancelGoal(current.pod.id, goalID)
+    await refresh()
+    return result
   }
 
   async function markRead(messageId: string): Promise<boolean> {
@@ -243,6 +272,9 @@ export function createPodStore(
     create,
     refresh,
     setStatus,
+    createGoal,
+    result,
+    cancelGoal,
     markRead,
     ingest,
     dispose,
@@ -263,6 +295,11 @@ const defaultApi: PodStoreApi = {
   ensure: (projectDir) => window.api.mafw.pod.ensure(projectDir),
   get: (podId) => window.api.mafw.pod.get(podId),
   update: (podId, body) => window.api.mafw.pod.update(podId, body),
+  createGoal: (podId, body) => window.api.mafw.pod.createGoal(podId, body),
+  result: (podId, goalID) => window.api.mafw.pod.result(podId, goalID),
+  cancelGoal: (podId, goalID) => window.api.mafw.pod.cancelGoal(podId, goalID),
+  pause: (podId) => window.api.mafw.pod.pause(podId),
+  resume: (podId) => window.api.mafw.pod.resume(podId),
   wake: (podId) => window.api.mafw.pod.wake(podId),
   sleep: (podId) => window.api.mafw.pod.sleep(podId),
   cost: (podId) => window.api.mafw.pod.cost(podId),

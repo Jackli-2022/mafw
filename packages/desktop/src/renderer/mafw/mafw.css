@@ -6252,6 +6252,26 @@ html[data-theme="light"] body {
   padding: 20px 0;
 }
 
+.mafw-pod-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-inset);
+}
+.mafw-pod-composer-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.mafw-pod-composer-head > span:first-child { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.mafw-pod-composer-hint { font-size: 11px; color: var(--text-4); }
+.mafw-pod-composer-more { font-size: 12px; color: var(--text-3); }
+.mafw-pod-composer-more summary { cursor: pointer; user-select: none; margin-bottom: 6px; }
+.mafw-pod-composer-more > * + * { margin-top: 6px; }
+.mafw-pod-composer-switch { font-size: 12px; color: var(--text-2); }
+.mafw-pod-composer-error { font-size: 12px; color: var(--red-9); }
+.mafw-pod-composer-actions { display: flex; justify-content: flex-end; }
+
 .mafw-pod-status {
   display: flex;
   flex-wrap: wrap;
