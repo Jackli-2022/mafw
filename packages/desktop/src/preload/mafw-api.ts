@@ -345,7 +345,17 @@ export function createMafwApi(): MafwAPI {
     },
 
     experience: {
-      actions: (sessionID?: string, opts?: { directory?: string }) => invoke("experience", "actions", sessionID, opts || {}),
+      // IPC 边界只传原始字符串（Proxy/函数会触发 “An object could not be cloned”）。
+      actions: (sessionID?: string, opts?: { directory?: string }) => {
+        let directory: string | undefined
+        try {
+          directory = typeof opts?.directory === "string" && opts.directory ? opts.directory : undefined
+        } catch {
+          directory = undefined
+        }
+        const id = typeof sessionID === "string" && sessionID ? sessionID : undefined
+        return invoke("experience", "actions", id, directory ? { directory } : undefined)
+      },
     },
 
     plugins: {

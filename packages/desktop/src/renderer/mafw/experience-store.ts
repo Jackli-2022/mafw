@@ -43,6 +43,41 @@ export type ExperienceLoader = (
   opts?: ExperienceLoadOptions,
 ) => Promise<ExperienceActionsResponse>
 
+/** 只接受实字符串字段；Proxy/getter 抛错一律视为缺省。 */
+function stringField(source: unknown, key: string): string | undefined {
+  try {
+    if (!source || typeof source !== 'object') return undefined
+    const value = (source as Record<string, unknown>)[key]
+    return typeof value === 'string' && value ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export interface NormalizedExperienceRequest {
+  sessionID?: string
+  directory?: string
+}
+
+/**
+ * IPC 边界的纯净化器：只输出可结构化克隆的原始字符串。
+ *
+ * Electron `ipcRenderer.invoke` 遇到 Proxy/函数参数会抛
+ * `An object could not be cloned`（desktop smoke 实测）。store 的调用方可能把
+ * Solid signal/accessor 或带 getter 的对象传进来，所以每层都必须先净化：
+ * sessionID 只认 `typeof === 'string'`，directory 只认 opts 上的字符串原始值。
+ */
+export function normalizeExperienceRequest(
+  sessionID: unknown,
+  opts?: { directory?: unknown } | unknown,
+): NormalizedExperienceRequest {
+  const request: NormalizedExperienceRequest = {}
+  if (typeof sessionID === 'string' && sessionID) request.sessionID = sessionID
+  const directory = stringField(opts, 'directory')
+  if (directory) request.directory = directory
+  return request
+}
+
 /** `2026.11.1` 这类点分数字串比较（段数不同按缺省 0 处理）。 */
 export function compareExperienceVersion(a: string, b: string): number {
   const pa = a.split('.').map((part) => Number.parseInt(part, 10) || 0)
@@ -73,6 +108,30 @@ export function isExperienceIncompatible(
   return compareExperienceVersion(minClientVersion, clientVersion) > 0
 }
 
+function statusOf(err: unknown): number | undefined {
+  try {
+    const status = (err as { status?: unknown } | undefined)?.status
+    return typeof status === 'number' ? status : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 错误值 → 原始字符串；Proxy/getter 抛错时回退固定文案。 */
+function errorMessageOf(err: unknown): string {
+  if (typeof err === 'string') return err
+  try {
+    if (err && typeof err === 'object') {
+      const message = (err as { message?: unknown }).message
+      if (typeof message === 'string') return message
+    }
+    if (typeof err === 'number' || typeof err === 'boolean' || typeof err === 'bigint') return String(err)
+  } catch {
+    /* hostile proxy/getter */
+  }
+  return 'experience request failed'
+}
+
 export function createExperienceStore(loader: ExperienceLoader): ExperienceStore {
   const [current, setCurrent] = createSignal<ExperienceState>({ status: 'idle', actions: {} })
   let generation = 0
@@ -83,18 +142,21 @@ export function createExperienceStore(loader: ExperienceLoader): ExperienceStore
     status: () => current().status,
     load(sessionID?: string, opts?: ExperienceLoadOptions) {
       const gen = ++generation
-      setCurrent({ ...current(), status: 'loading', sessionID, directory: opts?.directory, error: undefined })
+      // IPC 边界：先把实参净化为原始字符串（Proxy/accessor 不得进入 preload）。
+      const request = normalizeExperienceRequest(sessionID, opts)
+      const loaderOpts = request.directory ? { directory: request.directory } : undefined
+      setCurrent({ ...current(), status: 'loading', sessionID: request.sessionID, directory: request.directory, error: undefined })
       const run = (async () => {
         try {
-          const result = await loader(sessionID, opts)
+          const result = await loader(request.sessionID, loaderOpts)
           if (gen !== generation) return
           if (isExperienceIncompatible(result.minClientVersion)) {
             setCurrent({
               status: 'incompatible',
               version: result.experienceVersion,
               minClientVersion: result.minClientVersion,
-              sessionID: result.sessionID ?? sessionID,
-              directory: opts?.directory,
+              sessionID: result.sessionID ?? request.sessionID,
+              directory: request.directory,
               actions: {},
               error: `gateway requires experience ${result.minClientVersion}`,
             })
@@ -104,18 +166,20 @@ export function createExperienceStore(loader: ExperienceLoader): ExperienceStore
             status: 'ready',
             version: result.experienceVersion,
             minClientVersion: result.minClientVersion,
-            sessionID: result.sessionID ?? sessionID,
-            directory: opts?.directory,
+            sessionID: result.sessionID ?? request.sessionID,
+            directory: request.directory,
             actions: result.actions ?? {},
           })
-        } catch (err: any) {
+        } catch (err) {
           if (gen !== generation) return
+          const message = errorMessageOf(err)
+          const unavailable = statusOf(err) === 404 || /^not found$|\b404\b|not found/i.test(message)
           setCurrent({
-            status: err?.status === 404 || /^not found$|\b404\b|not found/i.test(String(err?.message ?? '')) ? 'unavailable' : 'error',
-            sessionID,
-            directory: opts?.directory,
+            status: unavailable ? 'unavailable' : 'error',
+            sessionID: request.sessionID,
+            directory: request.directory,
             actions: {},
-            error: err?.message ?? String(err),
+            error: message,
           })
         }
       })()
@@ -170,7 +234,14 @@ export function createExperienceStore(loader: ExperienceLoader): ExperienceStore
 }
 
 function apiLoader(sessionID?: string, opts?: ExperienceLoadOptions) {
-  return (globalThis as any).window?.api?.mafw?.experience?.actions(sessionID, opts) as Promise<ExperienceActionsResponse>
+  // preload 的 `actions` 直接走 ipcRenderer.invoke：只传可结构化克隆的原始值。
+  const request = normalizeExperienceRequest(sessionID, opts)
+  const payload = request.directory ? { directory: request.directory } : undefined
+  try {
+    return (globalThis as any).window?.api?.mafw?.experience?.actions(request.sessionID, payload) as Promise<ExperienceActionsResponse>
+  } catch (err) {
+    return Promise.reject(err)
+  }
 }
 
 export const experienceStore = createExperienceStore(apiLoader)
