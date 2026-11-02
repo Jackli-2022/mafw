@@ -179,6 +179,48 @@ export interface PodA2ALinkRow {
   createdAt: string;
 }
 
+/**
+ * 隐藏内部会话的作用域类型（Session Supervisor 词汇）：
+ * - project       项目级常驻（Lead / Tech Lead 项目上下文）
+ * - discussion    Goal 内的 Tech Lead 讨论
+ * - probe         Spike 探针（隔离临时会话）
+ * - implementation 按批准 Plan 的实施
+ * - review        某 revision 的独立验收
+ */
+export type PodSessionScopeKind =
+  | 'project'
+  | 'discussion'
+  | 'probe'
+  | 'implementation'
+  | 'review';
+
+const POD_SESSION_SCOPE_KINDS: readonly string[] = [
+  'project',
+  'discussion',
+  'probe',
+  'implementation',
+  'review',
+];
+
+/** 未知/手工写入的 scope_kind 一律按「非 Supervisor 管理」读（fail-closed）。 */
+function scopeKindFromRow(value: unknown): PodSessionScopeKind | null {
+  return typeof value === 'string' && POD_SESSION_SCOPE_KINDS.includes(value)
+    ? (value as PodSessionScopeKind)
+    : null;
+}
+
+/**
+ * 内部会话的稳定身份：(pod, member, goal, revision, kind)。
+ * runtime session id 只是运行资源，可被回收重建（见 `generation`）。
+ */
+export interface PodSessionScopeKey {
+  podId: string;
+  memberId: string;
+  goalId: string | null;
+  revision: number | null;
+  kind: PodSessionScopeKind;
+}
+
 export interface PodSessionRow {
   id: string;
   podId: string;
@@ -188,6 +230,14 @@ export interface PodSessionRow {
   sessionId: string;
   status: string;
   transcriptRef: string | null;
+  /** 作用域类型；null = 历史/节点会话（非 Supervisor 管理）。 */
+  scopeKind: PodSessionScopeKind | null;
+  /** Goal revision（project 作用域为 null）。 */
+  revision: number | null;
+  /** 同一作用域的租约世代：每次重建 +1（存活复用不递增）。 */
+  generation: number;
+  /** 最近一次被 ensure/current 确认存活的时间。 */
+  lastActiveAt: string | null;
   createdAt: string;
   endedAt: string | null;
 }
@@ -337,6 +387,10 @@ function sessionFromRow(row: any): PodSessionRow {
     sessionId: row.session_id,
     status: row.status,
     transcriptRef: row.transcript_ref ?? null,
+    scopeKind: scopeKindFromRow(row.scope_kind),
+    revision: row.revision === null || row.revision === undefined ? null : Number(row.revision),
+    generation: Number(row.generation ?? 1),
+    lastActiveAt: row.last_active_at ?? null,
     createdAt: row.created_at,
     endedAt: row.ended_at ?? null,
   };
@@ -488,6 +542,10 @@ export class PodStore {
         session_id TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL,
         transcript_ref TEXT,
+        scope_kind TEXT,
+        revision INTEGER,
+        generation INTEGER NOT NULL DEFAULT 1,
+        last_active_at TEXT,
         created_at TEXT NOT NULL,
         ended_at TEXT
       );
@@ -517,10 +575,17 @@ export class PodStore {
     this.ensureColumn('pod_goals', 'active_revision', 'active_revision INTEGER NOT NULL DEFAULT 1');
     this.ensureColumn('pod_goals', 'priority', 'priority INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('pod_tasks', 'acceptance_json', 'acceptance_json TEXT');
+    // Task 5：Session Supervisor 作用域元点 + 租约世代（历史行遗留为 null/1）。
+    this.ensureColumn('pod_member_sessions', 'scope_kind', 'scope_kind TEXT');
+    this.ensureColumn('pod_member_sessions', 'revision', 'revision INTEGER');
+    this.ensureColumn('pod_member_sessions', 'generation', 'generation INTEGER NOT NULL DEFAULT 1');
+    this.ensureColumn('pod_member_sessions', 'last_active_at', 'last_active_at TEXT');
     this.db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
         ON pod_messages(pod_id, external_message_id)
         WHERE external_message_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_pod_member_sessions_scope
+        ON pod_member_sessions(pod_id, member_id, goal_id, revision, scope_kind);
     `);
     this.backfillLegacyDeliveries();
     this.backfillLegacyRevisions();
@@ -1150,17 +1215,72 @@ export class PodStore {
     this.db.prepare('UPDATE pod_messages SET read_at = ? WHERE id = ?').run(now, id);
   }
 
-  insertSession(input: Omit<PodSessionRow, 'createdAt' | 'endedAt'> & { now: string }): PodSessionRow {
+  insertSession(
+    input: Omit<
+      PodSessionRow,
+      'createdAt' | 'endedAt' | 'scopeKind' | 'revision' | 'generation' | 'lastActiveAt'
+    > & {
+      scopeKind?: PodSessionScopeKind | null;
+      revision?: number | null;
+      generation?: number;
+      lastActiveAt?: string | null;
+      now: string;
+    },
+  ): PodSessionRow {
     this.db.prepare(`
       INSERT OR IGNORE INTO pod_member_sessions (
-        id, pod_id, member_id, goal_id, node, session_id, status, transcript_ref, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, pod_id, member_id, goal_id, node, session_id, status, transcript_ref,
+        scope_kind, revision, generation, last_active_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.id, input.podId, input.memberId, input.goalId, input.node,
-      input.sessionId, input.status, input.transcriptRef, input.now,
+      input.sessionId, input.status, input.transcriptRef,
+      input.scopeKind ?? null, input.revision ?? null,
+      input.generation ?? 1, input.lastActiveAt ?? null, input.now,
     );
     const row = this.db.prepare('SELECT * FROM pod_member_sessions WHERE session_id = ?').get(input.sessionId) as any;
     return sessionFromRow(row);
+  }
+
+  /**
+   * 精确作用域的活跃租约（null goal/revision 按 NULL 匹配）。
+   * 多行同时活跃（异常/并发）时取最高世代。
+   */
+  getActiveScopedSession(scope: PodSessionScopeKey): PodSessionRow | null {
+    const row = this.db.prepare(`
+      SELECT * FROM pod_member_sessions
+      WHERE pod_id = ? AND member_id = ?
+        AND COALESCE(goal_id, '') = COALESCE(?, '')
+        AND revision IS ?
+        AND scope_kind = ?
+        AND ended_at IS NULL
+      ORDER BY generation DESC, created_at DESC
+      LIMIT 1
+    `).get(
+      scope.podId, scope.memberId, scope.goalId, scope.revision, scope.kind,
+    ) as any;
+    return row ? sessionFromRow(row) : null;
+  }
+
+  /** 该作用域已用过的最高世代（含已结束行）；0 = 从未建过。 */
+  getScopedGeneration(scope: PodSessionScopeKey): number {
+    const row = this.db.prepare(`
+      SELECT COALESCE(MAX(generation), 0) AS max_generation FROM pod_member_sessions
+      WHERE pod_id = ? AND member_id = ?
+        AND COALESCE(goal_id, '') = COALESCE(?, '')
+        AND revision IS ?
+        AND scope_kind = ?
+    `).get(
+      scope.podId, scope.memberId, scope.goalId, scope.revision, scope.kind,
+    ) as { max_generation?: number } | undefined;
+    return Number(row?.max_generation ?? 0);
+  }
+
+  /** 活跃确认（ensure/current 命中存活租约时盖时间戳；只动这一行）。 */
+  touchSession(sessionId: string, now: string): void {
+    this.db.prepare(
+      'UPDATE pod_member_sessions SET last_active_at = ? WHERE session_id = ? AND ended_at IS NULL',
+    ).run(now, sessionId);
   }
 
   listSessions(podId: string): PodSessionRow[] {

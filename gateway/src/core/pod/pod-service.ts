@@ -234,6 +234,10 @@ export class PodService {
     for (const pod of this.deps.store.listPods()) {
       for (const session of this.deps.store.listActiveSessions(pod.id)) {
         if (session.node === 'coordination') continue;
+        // Session Supervisor 租约（scope_kind 非空）不按回合 idle 收尾：idle 只表示
+        // 「本轮结束」，被 reconcile 快照/结束会让存活复用失效并每轮抬 generation。
+        // 它们的生命周期交给 PodSessionSupervisor（isAlive=false 才作废重建）。
+        if (session.scopeKind) continue;
         try {
           const info = await this.deps.getSession(session.sessionId);
           if (!info) {
