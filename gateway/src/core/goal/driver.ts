@@ -1456,6 +1456,9 @@ export class NodeDriver {
         // 只读**最终落盘版**（含 ensureWaveTaskIds 补齐的稳定 taskId）：结构化交卷与
         // 文件产物从此是同一份内容，hash 也只对这份内容做。
         const planDoc: any = JSON.parse(fs.readFileSync(a.waves, 'utf-8'));
+        const manualPlan = (state.planReview ?? 'auto') === 'manual';
+        const requestedQuick = planDoc.strategy === 'quick';
+        const quickPlan = requestedQuick && !manualPlan;
         if (planDoc.status === 'need_clarification') {
           patch = {
             pendingQuestion: {
@@ -1465,6 +1468,9 @@ export class NodeDriver {
           };
           outcome = 'need_clarification';
         } else if (planDoc.status === 'need_probe') {
+          if (quickPlan) {
+            throw new Error('artifact_invalid: quick strategy cannot request probes');
+          }
           // Task 14 两段式：关键技术假设无法只靠读代码消除 → 先让 Builder 在隔离
           // 工作区验证，报告落库后再重新规划。绝不能在这一步产生计划批准。
           const drafts = this.validateProbeDrafts(planDoc.probes, { goalId, revision });
@@ -1536,11 +1542,42 @@ export class NodeDriver {
             if (isTaskType(planDoc.taskType)) patch.taskType = planDoc.taskType;
             outcome = `need_probe=${ids.length} full_chain`;
           }
+        } else if (quickPlan) {
+          const taskIds = taskIdsFromWavePlan(planDoc);
+          if (taskIds.length !== 1) {
+            throw new Error(
+              `artifact_invalid: quick strategy supports exactly one task (received ${taskIds.length})`,
+            );
+          }
+          validatePlanPackage({ strategy: 'quick', waves: planDoc.waves });
+          // A quick revision must not inherit a stale GoalEval from an earlier
+          // collaborative round/revision.
+          try {
+            fs.rmSync(goalEvalArtifactPath(mafwDir, goalId, revision), { force: true });
+          } catch { /* best effort */ }
+          patch = {
+            wavePlanPath: a.waves,
+            pendingQuestion: null,
+            planFeedback: null,
+            planApproval: undefined,
+            strategy: 'quick',
+            assessment: undefined,
+            currentAssignmentId: undefined,
+            ...(isTaskType(planDoc.taskType) ? { taskType: planDoc.taskType } : {}),
+          };
+          outcome = `quick waves=${(planDoc.waves || []).length}${isTaskType(planDoc.taskType) ? ` taskType=${planDoc.taskType}` : ''}`;
         } else {
           // Task 7/13：waves + goalEval 是同一份 PlanPackage。校验走 Task 7 的
           // 规范化边界，然后把 eval 落到本 revision 的独立产物（评审按它判定）。
+          const claimedStrategy = requestedQuick || planDoc.strategy === 'collaborative'
+            ? 'collaborative' as const
+            : undefined;
           const pkg = planDoc.goalEval !== undefined
-            ? validatePlanPackage({ waves: planDoc.waves, goalEval: planDoc.goalEval })
+            ? validatePlanPackage({
+              waves: planDoc.waves,
+              goalEval: planDoc.goalEval,
+              ...(claimedStrategy ? { strategy: claimedStrategy } : {}),
+            })
             : null;
           let goalEval: GoalEval | null = pkg?.goalEval ?? null;
           if (pkg?.goalEval) {
@@ -1567,6 +1604,7 @@ export class NodeDriver {
           // review-FAIL 触发的后续轮次）。
           patch = {
             wavePlanPath: a.waves, pendingQuestion: null, planFeedback: null,
+            ...(claimedStrategy ? { strategy: claimedStrategy } : {}),
             ...(isTaskType(planDoc.taskType) ? { taskType: planDoc.taskType } : {}),
           };
           outcome = `waves=${(planDoc.waves || []).length}${isTaskType(planDoc.taskType) ? ` taskType=${planDoc.taskType}` : ''}`;
@@ -1681,6 +1719,7 @@ export class NodeDriver {
         probeNeeded: !!patch.probeQueue?.length,
         // 同轮复核：只有刚决定"可复核"（patch.reviewFix 落库）时才回 execute 修复
         reviewFixAvailable: !!patch.reviewFix,
+        strategy: patch.strategy ?? state.strategy,
       },
     );
     const nextNode = progress.ask && patch.pendingQuestion ? 'askUser' : routedNode;

@@ -47,6 +47,93 @@ describe('completeNode 产物双门', () => {
     expect(h.nodeRuns[1]?.node).toBe('execute');
   });
 
+  it('Tech Lead quick plan starts exactly one Worker and writes no goal eval', async () => {
+    const quick = {
+      status: 'ready',
+      strategy: 'quick',
+      taskType: 'bugfix',
+      waves: [{
+        id: 'w1',
+        title: 'Small debug',
+        riskNote: 'low',
+        tasks: [{ title: 'fix the log error', acceptance: ['the error is gone'] }],
+      }],
+    };
+    const h = makeHarness({ structured: async () => quick });
+    seedGoal(h, 'gq');
+    const sid = await h.startAndIdle('gq');
+    await h.fireIdle(sid);
+
+    const st = h.load('gq')!;
+    expect(st.strategy).toBe('quick');
+    expect(st.nextNode).toBe('execute');
+    expect(st.nodeSession?.phase).toBe('execute');
+    expect(fs.existsSync(path.join(h.mafwDir, 'goal-eval.json'))).toBe(false);
+    expect(h.nodeRuns[0].status).toBe('succeeded');
+  });
+
+  it('manual plan review forces a quick plan back to collaborative and parks it', async () => {
+    const quick = {
+      status: 'ready',
+      strategy: 'quick',
+      taskType: 'bugfix',
+      waves: [{
+        id: 'w1',
+        title: 'Small debug',
+        riskNote: 'low',
+        tasks: [{ title: 'fix', acceptance: ['works'] }],
+      }],
+    };
+    const h = makeHarness({ structured: async () => quick });
+    seedGoal(h, 'gm', { patch: { planReview: 'manual' } });
+    const sid = await h.startAndIdle('gm');
+    await h.fireIdle(sid);
+
+    const st = h.load('gm')!;
+    expect(st.nextAction).toBe('AWAIT_PLAN_APPROVAL');
+    expect(st.strategy).toBe('collaborative');
+    expect(st.nodeSession).toBeNull();
+  });
+
+  it('quick plan with more than one task is artifact_invalid', async () => {
+    const quick = {
+      status: 'ready',
+      strategy: 'quick',
+      taskType: 'bugfix',
+      waves: [{
+        id: 'w1',
+        title: 'Too much',
+        riskNote: 'medium',
+        tasks: [{ title: 'a' }, { title: 'b' }],
+      }],
+    };
+    const h = makeHarness({ structured: async () => quick });
+    seedGoal(h, 'gq2');
+    const sid = await h.startAndIdle('gq2');
+    await h.fireIdle(sid);
+
+    expect(h.nodeRuns[0].status).toBe('failed');
+    expect(h.nodeRuns[0].error).toContain('artifact_invalid');
+    expect(h.load('gq2')!.strategy ?? null).toBeNull();
+    expect(h.load('gq2')!.nodeSession?.phase).not.toBe('execute');
+  });
+
+  it('quick plan cannot request probes', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'gq3');
+    const sid = await h.startAndIdle('gq3');
+    const a = nodeArtifactPaths(h.mafwDir, 'gq3', 1);
+    fs.writeFileSync(a.waves, JSON.stringify({
+      status: 'need_probe',
+      strategy: 'quick',
+      probes: [{ question: 'q' }],
+    }), 'utf-8');
+    await h.fireIdle(sid);
+
+    expect(h.nodeRuns[0].status).toBe('failed');
+    expect(h.nodeRuns[0].error).toContain('artifact_invalid');
+  });
+
   it('plan 完成时给任务补稳定 taskId（写回 waves.json）', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9');

@@ -529,8 +529,11 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
         ? `Declared task type: ${ctx.goalTaskType}（可修正，最终以 waves.taskType 为准）`
         : '',
       ctx.planReview
-        ? `Plan review mode: ${ctx.planReview === 'manual' ? 'manual（计划需人工批准后才实施）' : 'auto'}`
+        ? `Plan review mode: ${ctx.planReview === 'manual' ? 'manual（计划需人工批准后才实施；该模式下始终使用 collaborative 计划并给出 Goal Eval）' : 'auto'}`
         : '',
+      '执行策略由你选择：范围清晰、低风险、一个 Worker 可完成且只需一个 task 时，可用 quick；否则用 collaborative。quick 不得请求 probe，也不走独立 Reviewer。',
+      'quick 计划示例（不要 goalEval）：{"status":"ready","strategy":"quick","taskType":"bugfix","waves":[{"id":"w1","title":"...","riskNote":"...","tasks":[{"title":"...","acceptance":["可机械验证的结果"]}]}]}',
+      'quick 只有一个 task；如果实际需要多个任务、探针或独立验收，必须改用 collaborative 计划。',
       ctx.probeBudget
         ? `探针额度（第 ${revision} 版）：本版最多 ${ctx.probeBudget.max} 条（已报告 + 排队合计已用 ${ctx.probeBudget.used} 条，剩余 ${ctx.probeBudget.remaining} 条）。额度耗尽后 need_probe 会被拒绝，必须基于现有证据给出最终计划。`
         : '',
