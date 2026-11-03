@@ -4,7 +4,9 @@ import type {
   PodGoalRow,
   PodMessageDeliveryRow,
 } from './pod-store';
+import type { GoalSourceRef } from '../goal/goal-intake';
 import type { PodDetail } from './pod-service';
+import { projectPodWorkBucket, type PodWorkBucket } from './pod-work-stage';
 import {
   projectPodAttention,
   projectPodGoalStage,
@@ -16,6 +18,16 @@ import {
 } from './pod-stage';
 
 export type { PodAttentionItem } from './pod-stage';
+
+export type PodGoalStrategy = 'quick' | 'collaborative';
+export type PodGoalAssessment = 'reviewed' | 'unreviewed';
+
+export interface PodCurrentAssignment {
+  assignmentId: string;
+  role: 'builder' | 'reviewer';
+  taskIds: string[];
+  attempt: number;
+}
 
 export interface PodGoalDescription {
   title: string;
@@ -42,6 +54,14 @@ export interface PodGoalDescription {
   directionStatus?: PodGoalDirectionStatus | null;
   /** 规划期的 Spike 正在运行（Task 9）。 */
   probeRunning?: boolean;
+  /** Free-discussion handoff origin, persisted in request.json. */
+  sourceRef?: GoalSourceRef | null;
+  /** Tech Lead execution choice. */
+  strategy?: PodGoalStrategy | null;
+  /** Whether an independent review actually produced the result. */
+  assessment?: PodGoalAssessment | null;
+  /** Current dispatch summary, projected from assignment file/state. */
+  currentAssignment?: PodCurrentAssignment | null;
 }
 
 export interface PodGoalView {
@@ -53,7 +73,13 @@ export interface PodGoalView {
   phase: string | null;
   verdict: PodGoalVerdict | null;
   stage: PodGoalStage;
+  /** The only list/count bucket exposed to Desktop. */
+  bucket: PodWorkBucket;
   resultReady: boolean;
+  sourceRef: GoalSourceRef | null;
+  strategy: PodGoalStrategy | null;
+  assessment: PodGoalAssessment | null;
+  currentAssignment: PodCurrentAssignment | null;
   /** 当前 revision（legacy 行为 1）；revision 明细见 pod_goal_revisions。 */
   activeRevision: number;
   /**
@@ -136,6 +162,7 @@ export function buildPodGoalView(
   const revisionStatus = describedRevision === null || describedRevision === row.activeRevision
     ? description?.revisionStatus ?? null
     : null;
+  const resultReady = terminal && !!description?.hasResultEvidence;
   const stage = projectPodGoalStage({
     goalId: row.goalId,
     goalStatus: row.status,
@@ -167,7 +194,12 @@ export function buildPodGoalView(
     phase: description?.phase ?? null,
     verdict,
     stage,
-    resultReady: terminal && !!description?.hasResultEvidence,
+    bucket: projectPodWorkBucket({ stage, status: row.status, resultReady }),
+    resultReady,
+    sourceRef: description?.sourceRef ?? null,
+    strategy: description?.strategy ?? null,
+    assessment: description?.assessment ?? null,
+    currentAssignment: description?.currentAssignment ?? null,
     activeRevision: row.activeRevision,
     revision: row.activeRevision,
     priority: row.priority,

@@ -9226,10 +9226,20 @@ class MafwScheduler {
         nodeSession: null,
         lastError: null,
         stateMissing: true,
+        sourceRef: request?.sourceRef ?? null,
+        strategy: null,
+        assessment: null,
+        currentAssignment: null,
       };
     }
     const terminal = isTerminalState(state);
     const verdict = goalVerdictFromState(state);
+    const strategy = (state as any).strategy === 'quick' || (state as any).strategy === 'collaborative'
+      ? (state as any).strategy
+      : null;
+    const assessment = (state as any).assessment === 'reviewed' || (state as any).assessment === 'unreviewed'
+      ? (state as any).assessment
+      : null;
     return {
       title: typeof request?.title === 'string' && request.title.trim() ? request.title : '',
       phase: state.phase ?? null,
@@ -9252,6 +9262,10 @@ class MafwScheduler {
         : null,
       nodeSession: state.nodeSession,
       lastError: state.lastError,
+      sourceRef: request?.sourceRef ?? null,
+      strategy,
+      assessment,
+      currentAssignment: null,
     };
   }
 

@@ -7,6 +7,7 @@ const row: PodGoalRow = {
   goalId: 'g1',
   status: 'active',
   verdict: null,
+  activeRevision: 1,
   enqueuedAt: '2026-11-02T00:00:00.000Z',
   startedAt: '2026-11-02T00:01:00.000Z',
   endedAt: null,
@@ -50,6 +51,56 @@ describe('buildPodGoalView', () => {
     const ended: PodGoalRow = { ...row, status: 'done', verdict: 'MAX_RETRIES', endedAt: '2026-11-02T00:02:00.000Z' };
     const view = buildPodGoalView(ended, { ...desc, terminal: true, verdict: 'MAX_RETRIES', hasResultEvidence: true }, undefined);
     expect(view).toMatchObject({ verdict: 'MAX_RETRIES', resultReady: true, stage: { kind: 'ended' } });
+  });
+
+  test('carries source, strategy, assessment and assignment without inventing old metadata', () => {
+    const sourceRef = {
+      sessionID: 'ses_free',
+      messageID: 'msg_1',
+      snapshot: '按方案 B 执行',
+      capturedAt: '2026-11-03T00:00:00.000Z',
+    };
+    const view = buildPodGoalView(row, {
+      ...desc,
+      revisionStatus: 'implementing',
+      sourceRef,
+      strategy: 'quick',
+      assessment: 'unreviewed',
+      currentAssignment: {
+        assignmentId: 'asg_123',
+        role: 'builder',
+        taskIds: ['w1-t1'],
+        attempt: 1,
+      },
+    }, undefined);
+    expect(view).toMatchObject({
+      sourceRef,
+      strategy: 'quick',
+      assessment: 'unreviewed',
+      currentAssignment: { assignmentId: 'asg_123', attempt: 1 },
+      bucket: 'in_progress',
+    });
+
+    expect(buildPodGoalView(row, desc, undefined)).toMatchObject({
+      sourceRef: null,
+      strategy: null,
+      assessment: null,
+      currentAssignment: null,
+      bucket: 'in_progress',
+    });
+  });
+
+  test('a discussing Goal without state is work in progress, not ended', () => {
+    const view = buildPodGoalView(row, {
+      ...desc,
+      revision: 1,
+      revisionStatus: 'discussing',
+      stateMissing: true,
+      phase: null,
+      nextAction: '',
+    }, undefined);
+    expect(view.stage).toMatchObject({ kind: 'discussing' });
+    expect(view.bucket).toBe('in_progress');
   });
 
   test('missing description falls back to the id only as folded title and reports blocked', () => {
