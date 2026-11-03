@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js"
 import type {
-  PodCreateGoalInput, PodCreateGoalResult, PodDetail, PodGoal, PodGoalResult, PodMessage, PodStatus,
+  PodCreateGoalInput, PodCreateGoalResult, PodDetail, PodGoal, PodGoalResult, PodLeadEnsureResult, PodMessage, PodStatus,
   PodTechLeadHistory,
 } from "@mafw/sdk"
 import { podEventAction, podIsUnsupported, podRouteMissing } from "./pod-model"
@@ -222,6 +222,7 @@ export type PodStoreApi = {
   ensure(projectDir: string): Promise<PodDetail>
   get(podId: string): Promise<PodDetail>
   update(podId: string, body: { status: PodStatus }): Promise<PodDetail>
+  ensureLead(podId: string): Promise<PodLeadEnsureResult>
   createGoal(podID: string, body: PodCreateGoalInput): Promise<PodCreateGoalResult>
   result(podID: string, goalID: string): Promise<PodGoalResult>
   cancelGoal(podID: string, goalID: string): Promise<{ goal: PodGoal }>
@@ -265,6 +266,7 @@ export function createPodStore(
   const [error, setError] = createSignal<string | null>(null)
   const [unsupported, setUnsupported] = createSignal(false)
   const [projectDir, setProjectDir] = createSignal<string | null>(null)
+  const [resolvedDir, setResolvedDir] = createSignal<string | null>(null)
 
   let seq = 0
   let revision = 0
@@ -348,7 +350,10 @@ export function createPodStore(
 
   async function open(dir: string): Promise<void> {
     if (disposed) return
-    if (dir === projectDir() && detail()) return
+    if (dir === projectDir() && detail()) {
+      setResolvedDir(dir)
+      return
+    }
     const switching = dir !== projectDir()
     if (switching) {
       seq++
@@ -360,6 +365,7 @@ export function createPodStore(
       setMessages([])
       setError(null)
       setUnsupported(false)
+      setResolvedDir(null)
     }
     const my = seq
     setLoading(true)
@@ -368,6 +374,7 @@ export function createPodStore(
       if (disposed || my !== seq) return
       setUnsupported(false)
       applyDetail(next, my)
+      setResolvedDir(dir)
     } catch (err) {
       if (disposed || my !== seq) return
       if (podRouteMissing(err)) {
@@ -377,13 +384,17 @@ export function createPodStore(
         setUnsupported(true)
         setError(null)
         revision++
+        setResolvedDir(dir)
       } else if (podIsUnsupported(err) || /pod not found/i.test(errorMessage(err))) {
         setDetail(null)
         setCost(null)
         setMessages([])
         setError(null)
         revision++
+        setResolvedDir(dir)
       } else {
+        // Transport/unknown failure is not a definitive "no Pod": callers
+        // must keep hidden Lead tabs rather than pruning them.
         setError(errorMessage(err))
       }
     } finally {
@@ -411,6 +422,21 @@ export function createPodStore(
       }
     } finally {
       if (!disposed && my === seq) setLoading(false)
+    }
+  }
+
+  async function ensureLead(): Promise<PodLeadEnsureResult> {
+    const current = detail()
+    if (!current || disposed) throw new Error("pod unavailable")
+    const my = seq
+    setRefreshing(true)
+    try {
+      const result = await api.ensureLead(current.pod.id)
+      const next = await api.get(current.pod.id)
+      if (!disposed && my === seq) applyDetail(next, my)
+      return result
+    } finally {
+      if (!disposed) setRefreshing(false)
     }
   }
 
@@ -530,6 +556,8 @@ export function createPodStore(
     open,
     create,
     refresh,
+    ensureLead,
+    resolvedFor: (dir: string) => resolvedDir() === dir,
     setStatus,
     createGoal,
     result,
@@ -557,6 +585,7 @@ const defaultApi: PodStoreApi = {
   ensure: (projectDir) => window.api.mafw.pod.ensure(projectDir),
   get: (podId) => window.api.mafw.pod.get(podId),
   update: (podId, body) => window.api.mafw.pod.update(podId, body),
+  ensureLead: (podId) => window.api.mafw.pod.ensureLead(podId),
   createGoal: (podId, body) => window.api.mafw.pod.createGoal(podId, body),
   result: (podId, goalID) => window.api.mafw.pod.result(podId, goalID),
   cancelGoal: (podId, goalID) => window.api.mafw.pod.cancelGoal(podId, goalID),

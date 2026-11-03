@@ -17,6 +17,10 @@ function harness(overrides: Partial<PodStoreApi> = {}) {
     ensure: async (dir) => { calls.push(`ensure:${dir}`); return detail("pod_1", dir) },
     get: async (id) => { calls.push(`get:${id}`); return detail(id) },
     update: async (id, body) => { calls.push(`update:${id}:${body.status}`); return detail(id) },
+    ensureLead: async (id) => {
+      calls.push(`ensureLead:${id}`)
+      return { podId: id, projectDir: "/p", sessionId: "ses_lead" }
+    },
     createGoal: async (id, body) => { calls.push(`createGoal:${id}:${body.title}`); return { goalId: "g1", status: "started", queueReason: null, goal: { goalId: "g1", title: body.title } } as any },
     result: async (id, goalID) => { calls.push(`result:${id}:${goalID}`); return { goalId: goalID, verdict: "PASS" } as any },
     cancelGoal: async (id, goalID) => { calls.push(`cancelGoal:${id}:${goalID}`); return { goal: { goalId: goalID } } as any },
@@ -43,6 +47,33 @@ describe("pod-store", () => {
     assert.deepEqual(calls, ["lookup:/p"])
     await store.create()
     assert.deepEqual(calls, ["lookup:/p", "ensure:/p"])
+  })
+
+  test("ensureLead explicitly ensures then refreshes the loaded Pod", async () => {
+    const { store, calls } = harness()
+    await store.open("/p")
+    const lead = await store.ensureLead()
+    assert.equal(lead.sessionId, "ses_lead")
+    assert.deepEqual(calls.slice(0, 3), ["lookup:/p", "ensureLead:pod_1", "get:pod_1"])
+  })
+
+  test("resolvedFor is true for a definitive Pod lookup and false on transport errors", async () => {
+    const first = harness()
+    await first.store.open("/p")
+    assert.equal(first.store.resolvedFor("/p"), true)
+
+    const empty = harness({
+      lookup: async () => { throw new Error("pod not found") },
+    })
+    await empty.store.open("/p")
+    assert.equal(empty.store.detail(), null)
+    assert.equal(empty.store.resolvedFor("/p"), true)
+
+    const failing = harness({
+      lookup: async () => { throw new Error("ECONNRESET") },
+    })
+    await failing.store.open("/p")
+    assert.equal(failing.store.resolvedFor("/p"), false)
   })
 
   test("loads the mailbox alongside the detail", async () => {

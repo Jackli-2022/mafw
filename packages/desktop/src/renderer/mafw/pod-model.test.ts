@@ -4,6 +4,7 @@ import type { PodDetail, PodTask, PodTaskStatus } from "@mafw/sdk"
 import {
   formatPodCost,
   groupPodTasks,
+  leadSessionIdFromPod,
   memberOpenTarget,
   podEventAction,
   podEventPodId,
@@ -65,6 +66,8 @@ const detail = (): PodDetail => ({
   messageHealth: [],
   tasks: [],
   sessions: [
+    { id: "s_lead_old", podId: "pod_1", memberId: "m_lead", goalId: null, node: "coordination", sessionId: "lead_old", status: "ended", transcriptRef: "/lead-old.json", createdAt: "2026-10-30T00:00:00.000Z", endedAt: "2026-10-30T00:01:00.000Z" },
+    { id: "s_lead", podId: "pod_1", memberId: "m_lead", goalId: null, node: "coordination", sessionId: "lead_live", status: "active", transcriptRef: null, createdAt: "2026-10-30T00:02:00.000Z", endedAt: null },
     { id: "s_old", podId: "pod_1", memberId: "m_builder", goalId: null, node: "execute", sessionId: "old", status: "ended", transcriptRef: "/old.json", createdAt: "2026-10-30T00:00:00.000Z", endedAt: "2026-10-30T00:00:00.000Z" },
     { id: "s_live", podId: "pod_1", memberId: "m_builder", goalId: null, node: "execute", sessionId: "live", status: "active", transcriptRef: null, createdAt: "2026-10-30T00:01:00.000Z", endedAt: null },
   ],
@@ -120,10 +123,19 @@ describe("pod-model", () => {
   test("prefers a live session, falls back to an ended snapshot", () => {
     const d = detail()
     assert.deepEqual(memberOpenTarget(d, "m_builder"), { kind: "session", sessionId: "live" })
-    d.sessions[1].endedAt = "2026-10-30T00:10:00.000Z"
-    d.sessions[1].transcriptRef = "/live.json"
+    const builderLive = d.sessions.find((session) => session.sessionId === "live")!
+    builderLive.endedAt = "2026-10-30T00:10:00.000Z"
+    builderLive.transcriptRef = "/live.json"
     assert.deepEqual(memberOpenTarget(d, "m_builder"), { kind: "transcript", sessionId: "live" })
-    assert.equal(memberOpenTarget(d, "m_lead"), null)
+    assert.deepEqual(memberOpenTarget(d, "m_lead"), { kind: "session", sessionId: "lead_live" })
+  })
+
+  test("leadSessionIdFromPod only returns the live lead coordination session", () => {
+    const d = detail()
+    assert.equal(leadSessionIdFromPod(d), "lead_live")
+    d.sessions = d.sessions.filter((session) => session.node !== "coordination" || !!session.endedAt)
+    assert.equal(leadSessionIdFromPod(d), null)
+    assert.equal(leadSessionIdFromPod(null), null)
   })
 
   test("resolves member names and role badges for sessions", () => {

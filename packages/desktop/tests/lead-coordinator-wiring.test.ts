@@ -29,18 +29,18 @@ test("ChatPane 的协调会话判定只接受 lead，并继续锁住 agent 切�
 
 test("MafwShell 从显式 Lead id 解析隐藏会话，并把 metadata 传进 tab", () => {
   assert.match(shell, /import \{[^}]*resolveLeadSession[^}]*\} from "\.\/lead-session"/)
-  assert.match(shell, /resolveLeadSession\(\{[\s\S]{0,200}leadSessionId: leadIdFor\(/)
+  assert.match(shell, /resolveLeadSession\(\{[\s\S]{0,200}leadSessionId: currentLeadId\(/)
   assert.match(shell, /openSessionTab\(lead\.id, lead\.title, lead\.lead, lead\.metadata\)/)
   assert.match(shell, /isLeadRole\(info\?\.metadata\?\.mafw\?\.role\)/)
 })
 
-test("恢复布局不把隐藏的 Lead 当成已删除会话（prune 前带上 kv id）", () => {
+test("恢复布局不把隐藏的 Lead 当成已删除会话（prune 前带上 Pod coordination id）", () => {
   // Lead 不在 /api/sessions 里：只按 history 建 keep 集合会在重载/切项目时丢掉 Lead tab。
   assert.match(shell, /pruneMissing\(snap, existing, [^)]*leadId/)
-  assert.match(shell, /const leadId = leadIdFor\(project\)|leadIdFor\(project\)/)
-  // 异步竞态：kv 的 Lead id 落定前不恢复布局（否则先 prune 后 id 才到，仍会丢 tab）
-  assert.match(shell, /managerSessionResolved\(pd\)/)
-  assert.match(shell, /const leadId = await fetchManagerSession\(/)
+  assert.match(shell, /const leadId = currentLeadId\(project\)/)
+  // Pod lookup 未定论前不恢复布局（否则先 prune 后 id 才到，仍会丢 tab）。
+  assert.match(shell, /leadResolvedFor\(pd\)/)
+  assert.doesNotMatch(shell, /fetchManagerSession/)
 })
 
 test("WelcomeHome 用 lead 判定过滤最近会话，错误文案指向 Lead", () => {

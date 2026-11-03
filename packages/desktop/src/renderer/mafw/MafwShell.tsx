@@ -64,6 +64,7 @@ import {
 import {
   goalRevisionOf,
   latestUnviewedResult,
+  leadSessionIdFromPod,
   podResultEvent,
   podResultNotice,
   podRoleForSession,
@@ -291,50 +292,19 @@ export function MafwShell() {
   // fetches (here + Rail) refetch when a new project registers.
   const [projectsRev, setProjectsRev] = createSignal(0)
 
-  // Authoritative per-project coordination session id (kv `manager-session`, served
-  // as Lead). This id is the only way to open Lead: the gateway hides the session
-  // from /api/sessions (spec 2026-11-02 §3.1).
-  const [managerSessionId, setManagerSessionId] = createSignal<string | null>(null)
-  // Which project the id above belongs to (set even when the id is null → "resolved").
-  // 布局恢复必须等它落定：隐藏的 Lead tab 只能靠这个 id 保住，早于它 prune 会把
-  // Lead 当成已删除会话丢掉（重载 / 切项目各一次）。
-  const [managerSessionFor, setManagerSessionFor] = createSignal<string | null>(null)
-  // Re-fetchable: the kv entry is invalidated by the gateway on runtime
-  // switch (session ids belong to the active runtime's storage), so the SSE
-  // runtime_switched handler re-runs this to drop the stale id immediately.
-  // Monotonic token: latest call wins (rapid project switches / SSE refetch
-  // must not be overwritten by an older in-flight response).
-  let managerSessionFetchId = 0
-  const fetchManagerSession = (pd: string): Promise<string | null> => {
-    if (!pd) {
-      setManagerSessionId(null)
-      setManagerSessionFor(pd || null)
-      return Promise.resolve(null)
-    }
-    const fetchId = ++managerSessionFetchId
-    const settle = (id: string | null) => {
-      if (fetchId === managerSessionFetchId) {
-        setManagerSessionId(id)
-        setManagerSessionFor(pd)
-      }
-      return id
-    }
-    return window.api.mafw.manager.session(pd)
-      .then((info: any) => settle(info?.sessionId || null))
-      .catch(() => settle(null))
+  // Lead UI authority is the current Pod's active coordination binding. The
+  // legacy manager-session kv is a gateway recovery detail, never a desktop
+  // fallback. Root can differ from a worktree project, so resolution is scoped
+  // to the currently selected project rather than an id keyed by directory.
+  const podLookupSettled = (): boolean => {
+    const dir = podStore.projectDir()
+    return !!dir && podStore.resolvedFor(dir)
   }
-  const reloadManagerSession = (pd: string): void => { void fetchManagerSession(pd) }
-  /** 该项目的 Lead id（未落定 → null，不参与任何"保活"判定）。 */
-  const leadIdFor = (project: string | null): string | null =>
-    project && managerSessionFor() === project ? managerSessionId() : null
-  /** kv 的 Lead id 是否已经有结论（id 或 "没有"）——布局恢复的前置条件。 */
-  const managerSessionResolved = (project: string | null): boolean =>
-    !!project && managerSessionFor() === project
-  createEffect(() => {
-    const pd = currentProject()
-    if (!pd) { setManagerSessionId(null); setManagerSessionFor(null); return }
-    reloadManagerSession(pd)
-  })
+  const leadResolvedFor = (project: string | null): boolean =>
+    !!project && project === currentProject() && podLookupSettled()
+  /** Current Lead id; null while Pod is loading or when the Pod has no live Lead. */
+  const currentLeadId = (project: string | null): string | null =>
+    leadResolvedFor(project) ? leadSessionIdFromPod(podStore.detail()) : null
   createEffect(() => {
     if (gwStatus()?.state !== "ready") return
     projectsRev() // gateway announces project_registered → refetch the list
@@ -379,9 +349,9 @@ export function MafwShell() {
       const list = await window.api.mafw.sessions.list(worktree).catch(() => [])
       const history = Array.isArray(list) ? list : []
       setHistorySessions(history)
-      // Lead id 必须在 prune 之前到手（隐藏会话只能靠它保活）。
-      const leadId = await fetchManagerSession(worktree)
-      applyProjectLayout(worktree, history, leadId)
+      // Pod resolution must settle before pruning hidden Lead tabs.
+      await podStore.open(worktree).catch(() => {})
+      applyProjectLayout(worktree, history)
       setLayoutProject(worktree)
     } finally {
       switchingProject = false
@@ -403,6 +373,13 @@ export function MafwShell() {
         session_status: { ...prev.session_status, [sid]: "idle" },
         message: { ...prev.message, [sid]: [] },
       }))
+    } else if (lead !== undefined || metadata !== undefined) {
+      // A tab may have been opened earlier without knowing it is Lead (e.g.
+      // from the Pod team row). Upgrade identity in place instead of requiring
+      // close/reopen.
+      setSessions(prev => prev.map(s => s.id === sid
+        ? { ...s, ...(lead !== undefined ? { lead } : {}), ...(metadata !== undefined ? { metadata } : {}) }
+        : s))
     }
     setActiveSessionId(sid)
     setActiveViewId(sid)
@@ -414,11 +391,11 @@ export function MafwShell() {
     closeLeftDockIfOverlay()
   }
 
-  // Single resolution path for the coordination session (Lead): only the
-  // explicit current Lead id (kv until Task 10 switches the UI authority to
-  // Pod coordination). Historical manager metadata is never a fallback.
+  // Single resolution path for the coordination session (Lead): the active
+  // Pod coordination id loaded for the current project. Historical manager
+  // metadata is never a fallback.
   const resolveCurrentLead = () =>
-    resolveLeadSession({ leadSessionId: leadIdFor(currentProject()) })
+    resolveLeadSession({ leadSessionId: currentLeadId(currentProject()) })
 
   const handleOpenManager = async (): Promise<boolean> => {
     const lead = resolveCurrentLead()
@@ -475,10 +452,9 @@ export function MafwShell() {
 
   const doRotateTopic = async (pd: string): Promise<void> => {
     try {
-      const res = await window.api.mafw.manager.rotate(pd)
-      // 轮换后新的 Lead id 属于这个项目（布局保存/恢复都按项目作用域）。
-      setManagerSessionFor(pd)
-      setManagerSessionId(res.sessionId)
+      await window.api.mafw.manager.rotate(pd)
+      await podStore.open(pd)
+      await podStore.refresh()
       const list = await window.api.mafw.sessions.list(pd).catch(() => [])
       setHistorySessions(Array.isArray(list) ? list : [])
       showToastV2({ description: "已开启新话题", duration: 3000 })
@@ -690,14 +666,12 @@ export function MafwShell() {
   const applyProjectLayout = (
     project: string,
     history: LayoutHistorySession[],
-    leadIdOverride?: string | null,
   ) => {
     const snap = loadProjectLayout(layoutIO, project) ?? migrateLegacyLayout(layoutIO, project)
     setSessions([])
-    // Lead 是隐藏会话（不在 /api/sessions 里）：prune 前必须把 kv 权威 id 加进 keep
-    // 集合，否则重载/切项目会把 Lead tab 当成"已删除"丢掉。优先用调用方刚取到的 id
-    // （切项目路径），否则用当前已落定的那个。
-    const leadId = leadIdOverride === undefined ? leadIdFor(project) : leadIdOverride
+    // Lead is a hidden internal session: keep the Pod coordination id during
+    // prune so a reload/project switch cannot mistake it for a deleted session.
+    const leadId = currentLeadId(project)
     const existing = new Set(history.map(s => s.id))
     const pruned = snap ? pruneMissing(snap, existing, leadId ? [leadId] : []) : null
     if (!pruned) {
@@ -737,16 +711,15 @@ export function MafwShell() {
   })
   onCleanup(() => { if (layoutSaveTimer) clearTimeout(layoutSaveTimer) })
 
-  // Initial restore: wait until the project's session list has actually loaded
-  // (an empty list is also a valid loaded state) **and** the kv Lead id has
-  // resolved — the hidden Lead tab is only recognizable through that id, so
-  // pruning before it arrives would silently drop it.
+  // Initial restore waits for the session list and a definitive Pod lookup.
+  // A network/unknown Pod error is not definitive, so the hidden Lead tab is
+  // kept rather than pruned on a transient failure.
   createEffect(() => {
     if (gwStatus()?.state !== "ready") return
     const pd = currentProject()
     if (!pd || layoutProject() === pd || switchingProject) return
     if (!sessionStore.isLoaded(pd)) return
-    if (!managerSessionResolved(pd)) return
+    if (!leadResolvedFor(pd)) return
     const history = sessionStore.sessionsFor(pd) as unknown as LayoutHistorySession[]
     applyProjectLayout(pd, history)
     setLayoutProject(pd)
@@ -1112,7 +1085,7 @@ export function MafwShell() {
         resetChatWorkspace()
         resetBackgroundCapability()
         void experienceStore.load(currentSessionID() || undefined, { directory: experienceDirectory() })
-        if (currentProject()) reloadManagerSession(currentProject()!)
+        void podStore.refresh()
       },
     },
     lifecycle: {
@@ -1918,7 +1891,9 @@ export function MafwShell() {
     }))
   }
   const podSessionTitleOf = (sessionId: string) =>
-    store.session.find((s: any) => s.id === sessionId)?.title ?? null
+    sessionId === currentLeadId(currentProject())
+      ? "Lead"
+      : store.session.find((s: any) => s.id === sessionId)?.title ?? null
 
   // Task 19：Lead 只做协调，不讨论技术方案（spec §3.1）。有 Goal 处于 `discussing`
   // 时，在 Lead 的 composer 上方开一个入口，把用户送到该 Goal 的 Tech Lead 隐藏会话。
@@ -1927,7 +1902,7 @@ export function MafwShell() {
     const sid = activeSessionId()
     if (!sid) return false
     const pd = currentProject()
-    if (pd && leadIdFor(pd) === sid) return true
+    if (pd && currentLeadId(pd) === sid) return true
     return isLeadRole(tabSessionRole(sessions().find((s) => s.id === sid)))
   }
   const activeLeadGoalInvite = (): { goalId: string; title: string } | null => {
@@ -1999,9 +1974,16 @@ export function MafwShell() {
   }
   // Pod 会话统一入口：Tech Lead 会话带上角色/Goal（供发送通道与 tab 语义使用），
   // PodDock 成员会话、左栏鲸群面、Goal 时间线全部走这里。
-  const openPodSession = (sid: string, title?: string) => {
+  const openPodSession = async (sid: string, title?: string) => {
     const detail = podStore.detail()
     const route = podSessionRoute(detail, sid)
+    if (route?.role === "lead") {
+      const ensured = await podStore.ensureLead()
+      await podStore.refresh()
+      const lead = resolveLeadSession({ leadSessionId: ensured.sessionId })
+      if (lead) openSessionTab(lead.id, lead.title, lead.lead, lead.metadata)
+      return
+    }
     if (route?.role === "tech_lead" && route.goalId) {
       const goal = detail?.goals.find((item) => item.goalId === route.goalId)
       if (route.isDiscussion) techLeadGoalBySession[sid] = route.goalId
@@ -2445,7 +2427,7 @@ export function MafwShell() {
             podSelfMemberId={podSelfMemberId()}
             podSessionTitleOf={podSessionTitleOf}
             onPodRefresh={() => { void podStore.refresh() }}
-            onPodOpenSession={(sid) => openPodSession(sid)}
+            onPodOpenSession={(sid) => { void openPodSession(sid) }}
             onPodOpenGoal={(goalId) => setPodGoalId(goalId)}
             onPodOpenPanel={openPodPanel}
             onPodOpenMessage={onPodOpenMessage}
@@ -2599,7 +2581,7 @@ export function MafwShell() {
                 </Show>
               </div>
             ) : activeTab() === "goals" ? (
-              <DashboardPage onOpenSession={openPodSession} projectDir={currentProject()} onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }} />
+              <DashboardPage onOpenSession={(sid) => { void openPodSession(sid) }} projectDir={currentProject()} onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }} />
             ) : activeTab() === "memory" ? (
               <MemoryPage />
             ) : activeTab() === "approvals" ? (
@@ -2725,7 +2707,7 @@ export function MafwShell() {
                       onClearHidden={() => clearHiddenTodos(currentSessionID())}
                       onClosePanel={() => applyRightDock(false)}
                       onOpenSubagent={(id) => void openSubagentSession(id)}
-                      onOpenPodSession={(sid, title) => openPodSession(sid, title)}
+                      onOpenPodSession={(sid, title) => { void openPodSession(sid, title) }}
                       onOpenGoal={(id) => setPodGoalId(id)}
                       podPanelRequest={podPanelRequest()}
                       onOpenSection={applyExecutionSection}
@@ -2773,7 +2755,7 @@ export function MafwShell() {
           projectDir={currentProject()}
           podId={podStore.detail()?.pod.id ?? null}
           onClose={() => setPodGoalId(null)}
-          onOpenSession={(sid) => openPodSession(sid)}
+          onOpenSession={(sid) => { void openPodSession(sid) }}
         />
       </Show>
       <Show when={activeQuestion()}>

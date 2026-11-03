@@ -143,6 +143,17 @@ function memberSessions(detail: PodDetail, memberId: string): PodSession[] {
   return detail.sessions.filter((session) => session.memberId === memberId)
 }
 
+/** The only current Lead session the desktop may use: live coordination row. */
+export function leadSessionIdFromPod(detail: PodDetail | null): string | null {
+  if (!detail) return null
+  const lead = detail.members.find((member) => member.role === "lead")
+  if (!lead) return null
+  const session = detail.sessions
+    .filter((row) => row.memberId === lead.id && row.node === "coordination" && !row.endedAt)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+  return session?.sessionId ?? null
+}
+
 export function memberOpenTarget(
   detail: PodDetail,
   memberId: string,

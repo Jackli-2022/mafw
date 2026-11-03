@@ -273,14 +273,31 @@ const POD_DETAIL = {
 } as any
 
 test("所有 Pod 会话入口都经 openPodSession（Tech Lead 讨论可推断）", () => {
-  assert.match(shell, /const openPodSession = \(sid: string, title\?: string\)/)
-  assert.match(shell, /onPodOpenSession=\{\(sid\) => openPodSession\(sid\)\}/)
-  assert.match(shell, /onOpenPodSession=\{\(sid, title\) => openPodSession\(sid, title\)\}/)
-  assert.match(shell, /<DashboardPage onOpenSession=\{openPodSession\}/)
-  assert.match(shell, /onOpenSession=\{\(sid\) => openPodSession\(sid\)\}/)
+  assert.match(shell, /const openPodSession = async \(sid: string, title\?: string\)/)
+  assert.match(shell, /onPodOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
+  assert.match(shell, /onOpenPodSession=\{\(sid, title\) => \{ void openPodSession\(sid, title\) \}\}/)
+  assert.match(shell, /<DashboardPage onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
+  assert.match(shell, /onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
   assert.match(shell, /activeTechLeadBlocked/)
   assert.match(shell, /sendBlocked=\{activeTechLeadBlocked\}/)
   assert.match(chatPane, /sendBlocked/)
+})
+
+test("Lead 从 Pod 打开前显式 ensure，并升级已有 tab 的 Lead 身份", () => {
+  assert.match(shell, /await podStore\.ensureLead\(\)/)
+  assert.match(shell, /resolveLeadSession\(\{ leadSessionId: ensured\.sessionId \}\)/)
+  assert.match(shell, /leadTabMetadata\(\)/)
+  const openTab = shell.slice(shell.indexOf("const openSessionTab"), shell.indexOf("// Single resolution path"))
+  assert.match(openTab, /else if \(lead !== undefined \|\| metadata !== undefined\)/)
+  assert.match(openTab, /\{\s*\.\.\.s,.*lead.*metadata/s)
+})
+
+test("layout restore waits for Pod resolution and has no manager-session fallback", () => {
+  assert.match(shell, /podStore\.resolvedFor\(/)
+  assert.match(shell, /leadSessionIdFromPod\(/)
+  assert.doesNotMatch(shell, /fetchManagerSession/)
+  assert.doesNotMatch(shell, /leadIdFor/)
+  assert.doesNotMatch(shell, /window\.api\.mafw\.manager\.session/)
 })
 
 test("techLeadRouteForSession：讨论会话可路由，plan 节点会话被拦", () => {
