@@ -17,6 +17,7 @@ import {
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
   PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
+  VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
   PluginCheckResult,
   MethodNotSupportedError,
@@ -1648,12 +1649,14 @@ export class MafwClient implements IMafwClient {
     artifactUrl: (id: string): string => `${this.baseUrl}/a2a/artifacts/${id}`,
   }
 
-  // ── Voice runtime v2 status ──
+  // ── Voice runtime v2 ──
 
   voice = {
-    status: async (): Promise<{ ok: boolean; config: any; engines: any[] }> => {
-      return this.request<{ ok: boolean; config: any; engines: any[] }>('/api/voice/status')
+    status: async (): Promise<VoiceStatusResponse> => {
+      return this.request<VoiceStatusResponse>('/api/voice/status')
     },
+    // 纯函数：http(s) → ws(s)，去掉一个尾部斜杠后再拼固定路径。
+    wsUrl: (): string => `${this.baseUrl.replace(/\/$/, '').replace(/^http/, 'ws')}/ws/voice`,
   }
 
   // 鈹€鈹€ TTS (MiMo-V2.5-TTS speech synthesis) 鈹€鈹€

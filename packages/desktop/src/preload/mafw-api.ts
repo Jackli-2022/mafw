@@ -318,6 +318,12 @@ export function createMafwApi(): MafwAPI {
       interrupt: (sessionId) => invoke("tts", "interrupt", sessionId),
     },
 
+    voice: {
+      status: () => invoke("voice", "status"),
+      // 双工语音流 WS URL（SDK 纯函数，renderer 不拼 gateway URL）。
+      wsUrl: () => invoke("voice", "wsUrl"),
+    },
+
     event: {
       // SSE 端点 URL（带/不带 sessionID），renderer 直连 EventSource 用。
       url: (sessionID?) => invoke("event", "url", sessionID),
