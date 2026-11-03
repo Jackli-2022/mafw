@@ -69,6 +69,7 @@ import {
   readGoalRequest,
   shouldAutoStartGoalEvent,
 } from './core/goal/goal-intake';
+import { currentAssignmentSummary } from './core/goal/assignment';
 import { PodAccess } from './core/pod/pod-access';
 import { PodBudget } from './core/pod/pod-budget';
 import { PodMessageDelivery } from './core/pod/pod-message-delivery';
@@ -9240,6 +9241,14 @@ class MafwScheduler {
     const assessment = (state as any).assessment === 'reviewed' || (state as any).assessment === 'unreviewed'
       ? (state as any).assessment
       : null;
+    const currentAssignment = state.currentAssignmentId
+      ? currentAssignmentSummary(
+        mafwDir,
+        goalId,
+        effectiveRevision(state),
+        state.currentAssignmentId,
+      )
+      : null;
     return {
       title: typeof request?.title === 'string' && request.title.trim() ? request.title : '',
       phase: state.phase ?? null,
@@ -9265,7 +9274,7 @@ class MafwScheduler {
       sourceRef: request?.sourceRef ?? null,
       strategy,
       assessment,
-      currentAssignment: null,
+      currentAssignment,
     };
   }
 

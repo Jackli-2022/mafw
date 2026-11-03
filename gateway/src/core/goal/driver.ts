@@ -37,6 +37,15 @@ import {
   readGoalRequest,
 } from './goal-intake';
 import { ensureWaveTaskIds } from './wave-plan-edit';
+import {
+  createGoalAssignment,
+  goalAssignmentFilePath,
+  readGoalAssignment,
+  renderGoalAssignmentBlock,
+  retryGoalAssignment,
+  writeGoalAssignment,
+  type GoalAssignment,
+} from './assignment';
 import { matchesSignature } from '../langgraph/signature-detector';
 import type { OutputSchemaSpec } from '../../runtime/structured-output';
 import { classifyNodeFailure } from './failure-class';
@@ -503,6 +512,45 @@ export class NodeDriver {
       ? readGoalEvalArtifact(mafwDir, goalId, revision, this.readPlanDoc(state, goalId, revision))
       : null;
 
+    const nodePaths = nodeArtifactPaths(mafwDir, goalId, round, { revision });
+    const assignmentPlan = node === 'execute' || node === 'review'
+      ? this.readPlanDoc(state, goalId, revision)
+      : null;
+    const assignmentTaskIds = assignmentPlan ? taskIdsFromWavePlan(assignmentPlan) : [];
+    let assignment: GoalAssignment | null = null;
+    if (assignmentTaskIds.length > 0) {
+      const strategy = state.strategy ?? 'collaborative';
+      const role = node === 'review' ? 'reviewer' : 'builder';
+      const candidate = createGoalAssignment({
+        goalId,
+        revision,
+        role,
+        strategy,
+        taskIds: assignmentTaskIds,
+        acceptance: acceptance ?? {},
+        contextRefs: [charterPath, requestPath, state.wavePlanPath ?? nodePaths.waves],
+        artifacts: node === 'review'
+          ? { review: nodePaths.review }
+          : { receipt: nodePaths.receipt },
+        instructions: node === 'review'
+          ? 'Independently verify every assigned task and required Goal condition; produce a review report with evidence.'
+          : 'Execute only the assigned tasks and produce a receipt with verifiable evidence.',
+        sessionId,
+        startedAt: new Date().toISOString(),
+        nodeRunId: runId,
+      });
+      const existingPath = goalAssignmentFilePath(mafwDir, goalId, revision, candidate.assignmentId);
+      const existing = readGoalAssignment(existingPath);
+      assignment = existing
+        ? retryGoalAssignment(existing, {
+          sessionId,
+          startedAt: new Date().toISOString(),
+          nodeRunId: runId,
+        })
+        : candidate;
+    }
+    const assignmentBlock = assignment ? renderGoalAssignmentBlock(assignment) : '';
+
     const basePrompt = renderNodePrompt(node, {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds,
       revision,
@@ -548,13 +596,31 @@ export class NodeDriver {
     });
     if (context.failed) return; // 已按 artifact 失败归档（fail-closed）
     const podBlock = this.deps.podContext?.(goalId, node, sessionId) ?? null;
-    // 顺序契约（Task 17）：manifest → [POD HANDOFF] / Pod 记忆 → 节点任务正文。
-    const withPod = podBlock ? `${podBlock}\n\n${basePrompt}` : basePrompt;
+    // 顺序契约：manifest → [POD HANDOFF] / Pod 记忆 → Assignment → 节点任务正文。
+    const bodyWithAssignment = assignmentBlock ? `${assignmentBlock}\n\n${basePrompt}` : basePrompt;
+    const withPod = podBlock ? `${podBlock}\n\n${bodyWithAssignment}` : bodyWithAssignment;
     const prompt = context.block ? `${context.block}\n\n${withPod}` : withPod;
+    let promptForDispatch = prompt;
+
+    if (assignment) {
+      try {
+        writeGoalAssignment({ mafwDir, assignment, fullPrompt: prompt });
+      } catch (err: any) {
+        const message = `assignment_write_failed: ${err?.message ?? err}`;
+        if ((state.strategy ?? 'collaborative') === 'quick') {
+          await this.failNode(goalId, sessionId, 'artifact_invalid', message);
+          return;
+        }
+        console.warn(`[Goal] ${goalId}: Assignment snapshot unavailable, continuing legacy dispatch: ${message}`);
+        assignment = null;
+        const legacyWithPod = podBlock ? `${podBlock}\n\n${basePrompt}` : basePrompt;
+        promptForDispatch = context.block ? `${context.block}\n\n${legacyWithPod}` : legacyWithPod;
+      }
+    }
 
     // 不 await——pi 的 promptAsync 在 idle 会话阻塞到回合结束，await 会卡死 advance（spec §7）
     void this.deps.client.promptAsync({
-      sessionID: sessionId, parts: [{ type: 'text', text: prompt }], agent: goalAgentName(node),
+      sessionID: sessionId, parts: [{ type: 'text', text: promptForDispatch }], agent: goalAgentName(node),
       outputSchema: nodeOutputSchema(node),
     }).then(() => {
       this.deps.onPromptDispatched?.(sessionId);
@@ -564,6 +630,7 @@ export class NodeDriver {
 
     writeGoalState(mafwDir, goalId, {
       phase: phaseNames.running, nextAction: `RUNNING_${node}`,
+      ...(assignment ? { currentAssignmentId: assignment.assignmentId } : {}),
       nodeSession: {
         id: sessionId, phase: node, startedAt: new Date().toISOString(), attempt, runId, revision,
       },
