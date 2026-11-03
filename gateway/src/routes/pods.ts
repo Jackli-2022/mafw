@@ -377,7 +377,12 @@ export async function handlePods(
             title: row.goalId,
             phase: null,
             stage: { owner: 'system', kind: 'waiting' },
+            bucket: row.status === 'queued' ? 'queued' : (row.status === 'done' || row.status === 'aborted') ? 'ended' : 'in_progress',
             resultReady: false,
+            sourceRef: null,
+            strategy: null,
+            assessment: null,
+            currentAssignment: null,
             revision: row.activeRevision,
           }));
         sendJson(res, 200, { items });

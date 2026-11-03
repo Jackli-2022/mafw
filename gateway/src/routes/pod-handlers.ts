@@ -2,6 +2,7 @@ import type * as http from 'http';
 import type { RouteRegistry } from './registry';
 import { handlePods, type PodRouteDeps } from './pods';
 import { handlePodCollaboration, type PodCollaborationDeps } from './pod-collaboration';
+import { handlePodWork } from './pod-work';
 
 /** Task 18：协作面（Tech Lead 讨论 / 方向 / 探针 / 打回 / revision 历史）。 */
 const COLLABORATION_OPERATION_IDS = [
@@ -51,6 +52,17 @@ export function attachPodHandlers(
     registry.attachHandler(operationId, async (req, res) =>
       handlePods(req, res, req.url || '', deps));
   }
+  registry.attachHandler('work.overview', async (req, res) => {
+    if (!deps.goals.views) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'work overview unavailable' }));
+      return true;
+    }
+    return handlePodWork(req, res, req.url || '', {
+      pods: deps.pods,
+      goals: { views: deps.goals.views },
+    });
+  });
   // 协作面始终登记 handler（catalog 覆盖率守卫要求），缺 deps 时中性 503。
   for (const operationId of COLLABORATION_OPERATION_IDS) {
     registry.attachHandler(operationId, async (req: http.IncomingMessage, res: http.ServerResponse) => {

@@ -1375,6 +1375,32 @@ test("pod.lookup uses the non-creating query and readMemoryFile reads one file",
   expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/memory?file=POD", expect.anything())
 })
 
+test("work.overview and pod.handoffGoal expose the project workspace routes", async () => {
+  const c = new MafwClient("http://gw:3000")
+  fetchMock.mockResolvedValue(okJson({ total: 0, groups: {}, counts: {} }))
+  await c.work.overview("proj 1")
+  expect(fetchMock).toHaveBeenLastCalledWith(
+    "http://gw:3000/api/projects/proj%201/work",
+    expect.anything(),
+  )
+
+  const body = {
+    title: "按讨论执行",
+    objective: "实现方案 B",
+    sourceRef: {
+      sessionID: "ses_free",
+      messageID: "m1",
+      snapshot: "按方案 B 执行",
+      capturedAt: "2026-11-03T00:00:00.000Z",
+    },
+  }
+  await c.pod.handoffGoal("pod_1", body)
+  expect(fetchMock).toHaveBeenLastCalledWith(
+    "http://gw:3000/api/pods/pod_1/goals/handoff",
+    expect.objectContaining({ method: "POST", body: JSON.stringify(body) }),
+  )
+})
+
 // ── Voice runtime v2 ──
 
 test("voice.wsUrl converts HTTP schemes to the voice WebSocket endpoint", () => {

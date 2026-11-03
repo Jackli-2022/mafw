@@ -14,7 +14,15 @@ test("preload exposes the pod namespace", () => {
   assert.ok(api.includes('invoke("pod", "readMemoryFile"'))
   assert.ok(api.includes('invoke("pod", "updateTask"'))
   assert.ok(api.includes('invoke("pod", "markRead"'))
+  assert.ok(api.includes('invoke("pod", "handoffGoal"'))
   assert.ok(types.includes("pod: PodNamespace"))
+})
+
+test("preload exposes the complete project work overview", () => {
+  const api = read("src/preload/mafw-api.ts")
+  const types = read("src/preload/mafw-types.ts")
+  assert.ok(api.includes('invoke("work", "overview", projectID)'))
+  assert.ok(types.includes("work: WorkNamespace"))
 })
 
 test("preload wires the Task 18 collaboration methods", () => {

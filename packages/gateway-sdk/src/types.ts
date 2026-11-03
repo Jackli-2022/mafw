@@ -1082,6 +1082,21 @@ export interface TerminalNamespace {
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived'
 export type PodMemberRole = 'lead' | 'tech_lead' | 'builder' | 'reviewer'
 export type PodMemberStatus = 'available' | 'working' | 'waiting' | 'sleeping' | 'retired'
+export interface GoalSourceRef {
+  sessionID?: string
+  messageID?: string
+  snapshot: string
+  capturedAt: string
+}
+export type PodWorkBucket = 'needs_you' | 'queued' | 'in_progress' | 'result_ready' | 'ended'
+export type PodGoalStrategy = 'quick' | 'collaborative'
+export type PodGoalAssessment = 'reviewed' | 'unreviewed'
+export interface PodCurrentAssignment {
+  assignmentId: string
+  role: 'builder' | 'reviewer'
+  taskIds: string[]
+  attempt: number
+}
 export type PodGoalStatus = 'queued' | 'active' | 'done' | 'aborted'
 export type PodTaskStatus = 'pending' | 'in_progress' | 'blocked' | 'review' | 'done' | 'failed' | 'skipped' | 'reopened'
 export type PodGoalVerdict = 'PASS' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED'
@@ -1164,7 +1179,16 @@ export interface PodGoal {
   phase: string | null
   verdict: PodGoalVerdict | null
   stage: PodGoalStage
+  /** Canonical list bucket; absent on pre-v3 gateways. */
+  bucket?: PodWorkBucket
   resultReady: boolean
+  sourceRef?: GoalSourceRef | null
+  strategy?: PodGoalStrategy | null
+  assessment?: PodGoalAssessment | null
+  currentAssignment?: PodCurrentAssignment | null
+  activeRevision?: number
+  revision?: number
+  priority?: number
   enqueuedAt: string
   startedAt: string | null
   endedAt: string | null
@@ -1233,13 +1257,41 @@ export interface PodMessageDelivery {
 
 export interface PodGoalResult {
   goalId: string
+  revision?: number
   verdict: PodGoalVerdict | null
   resultReady: boolean
+  /** false when a quick Goal completed without an independent reviewer. */
+  reviewed?: boolean
+  assessment?: PodGoalAssessment | null
   goalAcceptance: string[]
+  goalConditions?: Array<{ id: string; statement: string; required: boolean }>
+  goalResults?: Array<{ id: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
+  goalEvalValid?: boolean
   tasks: Array<{ taskId: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
   reviewFeedback: string
   receipt: unknown | null
   artifacts: string[]
+  failure?: unknown
+}
+
+export interface PodHandoffGoalInput {
+  title: string
+  objective?: string
+  charter?: string
+  acceptance?: string[]
+  boundaries?: string[]
+  priority?: 'low' | 'medium' | 'high' | 'critical'
+  taskType?: 'feature' | 'bugfix' | 'refactor' | 'research' | 'docs' | 'test' | 'other'
+  planReview?: 'auto' | 'manual'
+  sourceRef: GoalSourceRef
+}
+
+export interface PodWorkOverview {
+  projectDir: string
+  podId: string
+  groups: Record<PodWorkBucket, PodGoal[]>
+  counts: Record<PodWorkBucket, number>
+  total: number
 }
 
 export interface PodCreateGoalInput {
@@ -1257,6 +1309,7 @@ export interface PodCreateGoalInput {
   planReview?: 'auto' | 'manual'
   /** 入口来源（request.json 的 source/authorization.source 原样持久化；缺省 desktop）。 */
   source?: 'desktop' | 'lead' | 'a2a' | 'automation' | 'user' | 'tui' | 'agent'
+  sourceRef?: GoalSourceRef
   /** 调用者会话（提供时必须是该项目 Lead）。 */
   actorSessionID?: string
 }
@@ -1507,6 +1560,11 @@ export interface PodLeadEnsureResult {
   sessionId: string
 }
 
+export interface WorkNamespace {
+  /** Complete, read-only project work overview; never creates a Pod. */
+  overview(projectID: string): Promise<PodWorkOverview>
+}
+
 export interface PodNamespace {
   ensure(projectID: string): Promise<PodDetail>
   lookup(projectID: string): Promise<PodDetail>
@@ -1514,6 +1572,8 @@ export interface PodNamespace {
   get(podID: string): Promise<PodDetail>
   update(podID: string, body: { status: PodStatus }): Promise<PodDetail>
   ensureLead(podID: string): Promise<PodLeadEnsureResult>
+  /** Free discussion -> project Lead handoff; sourceRef.snapshot is required. */
+  handoffGoal(podID: string, body: PodHandoffGoalInput): Promise<PodCreateGoalResult>
   createGoal(podID: string, body: PodCreateGoalInput): Promise<PodCreateGoalResult>
   result(podID: string, goalID: string): Promise<PodGoalResult>
   cancelGoal(podID: string, goalID: string): Promise<{ goal: PodGoal }>
@@ -1600,6 +1660,7 @@ export interface MafwClient {
   background: BackgroundNamespace
   terminal: TerminalNamespace
   pod: PodNamespace
+  work: WorkNamespace
   permissions: PermissionsNamespace
   providers: ProvidersNamespace
   agents: AgentsNamespace

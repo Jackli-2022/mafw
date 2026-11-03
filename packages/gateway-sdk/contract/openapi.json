@@ -3683,6 +3683,29 @@
         }
       }
     },
+    "/api/projects/{projectId}/work": {
+      "get": {
+        "operationId": "work.overview",
+        "tags": [
+          "work"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/pod": {
       "get": {
         "operationId": "pods.ensure",

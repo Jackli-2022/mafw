@@ -200,6 +200,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'PUT', path: '/api/automations/:id', operationId: 'automations.toggle', tags: ['automations'] },
   { method: 'DELETE', path: '/api/automations/:id', operationId: 'automations.remove', tags: ['automations'] },
   { method: 'POST', path: '/api/automations/draft', operationId: 'automations.draft', tags: ['automations'] },
+  { method: 'GET', path: '/api/projects/:projectId/work', operationId: 'work.overview', tags: ['work'] },
   { method: 'GET', path: '/api/projects/:projectId/pod', operationId: 'pods.ensure', tags: ['pods'] },
   { method: 'GET', path: '/api/projects/:projectId/pod/lookup', operationId: 'pods.lookup', tags: ['pods'] },
   { method: 'POST', path: '/api/projects/:projectId/pod', operationId: 'pods.create', tags: ['pods'] },

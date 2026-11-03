@@ -6,7 +6,7 @@ import type {
   QuestionRequest, PermissionRequest,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
   MafwBackgroundJob, MafwBackgroundOutput,
-  PodNamespace,
+  PodNamespace, WorkNamespace,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
@@ -240,6 +240,7 @@ export type MafwAPI = {
   /** 中性 gateway 终端（mafw-terminal/1）不在此暴露：main 进程本地适配器消费
    *  `/api/terminal/sessions`，renderer 只经工作台 `terminal` IPC 控制会话。 */
 
+  work: WorkNamespace
   pod: PodNamespace
 
   permissions: {

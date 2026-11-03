@@ -13,7 +13,8 @@ import {
   MafwBackgroundOutput, BackgroundNamespace,
   TerminalNamespace, TerminalSessionList, TerminalConnectTicket, TerminalSessionCreateInput,
   PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus, PodDeliveryState,
-  PodCreateGoalInput, PodCreateGoalResult, PodLeadEnsureResult, PodGoalResult,
+  PodCreateGoalInput, PodCreateGoalResult, PodHandoffGoalInput, PodLeadEnsureResult, PodGoalResult,
+  PodWorkOverview, WorkNamespace,
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
   PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
@@ -1240,6 +1241,13 @@ export class MafwClient implements IMafwClient {
 
   // 鈹€鈹€ Permissions (PermissionCard 鈥?proxies the native opencode Permission API) 鈹€鈹€
 
+  // ── Project workspace overview ───────────────────────────────────────────
+
+  work: WorkNamespace = {
+    overview: async (projectID: string): Promise<PodWorkOverview> =>
+      this.request<PodWorkOverview>(`/api/projects/${encodeURIComponent(projectID)}/work`),
+  }
+
   // ── Project Pod Lite ─────────────────────────────────────────────────────
 
   pod: PodNamespace = {
@@ -1268,6 +1276,12 @@ export class MafwClient implements IMafwClient {
 
     createGoal: async (podID: string, body: PodCreateGoalInput): Promise<PodCreateGoalResult> =>
       this.request<PodCreateGoalResult>(`/api/pods/${encodeURIComponent(podID)}/goals`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    handoffGoal: async (podID: string, body: PodHandoffGoalInput): Promise<PodCreateGoalResult> =>
+      this.request<PodCreateGoalResult>(`/api/pods/${encodeURIComponent(podID)}/goals/handoff`, {
         method: 'POST',
         body: JSON.stringify(body),
       }),
