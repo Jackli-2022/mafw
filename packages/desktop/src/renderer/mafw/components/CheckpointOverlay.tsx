@@ -83,11 +83,34 @@ export function CheckpointOverlay(props: {
   }
 
   const [preview, setPreview] = createSignal<Checkpoint | null>(null)
+  // 服务端检查点：按 anchorMessageID 拉该回合 diff，复用只读 DiffReviewPanel。
+  const [serverPreview, setServerPreview] = createSignal<{ files: FileDiffEntry[]; label: string } | null>(null)
+  const [serverPreviewLoading, setServerPreviewLoading] = createSignal<string | null>(null)
 
   const close = () => {
     if (working()) return
+    if (serverPreview()) { setServerPreview(null); return }
     if (preview()) { setPreview(null); return }
     props.onClose()
+  }
+
+  const previewServerRow = async (row: { checkpoint: SessionCheckpoint; timeLabel: string; kindBadge: string }) => {
+    if (busy() || serverPreviewLoading()) return
+    setNotices(null)
+    setServerPreviewLoading(row.checkpoint.id)
+    try {
+      const result = await window.api.mafw.sessions.diff(props.sessionID, row.checkpoint.anchorMessageID)
+      const files = ((result as any)?.files ?? []) as FileDiffEntry[]
+      if (files.length === 0) {
+        setNotices(["该检查点没有可预览的文件改动（空回合或快照不可用）。"])
+        return
+      }
+      setServerPreview({ files, label: `${row.timeLabel} · ${row.kindBadge}` })
+    } catch (err: any) {
+      setNotices([`预览加载失败：${String(err?.message ?? err).slice(0, 160)}`])
+    } finally {
+      setServerPreviewLoading(null)
+    }
   }
 
   const timeLabel = (cp: Checkpoint) =>
@@ -237,7 +260,22 @@ export function CheckpointOverlay(props: {
           )}
         </Show>
 
-        <div class="mafw-checkpoint-list" classList={{ "is-hidden": !!preview() }}>
+        <Show when={serverPreview()}>
+          {(p) => (
+            <div class="mafw-checkpoint-preview" aria-label={`检查点预览 ${p().label}`}>
+              <DiffReviewPanel
+                previewOnly
+                sessionID={props.sessionID}
+                diffs={p().files}
+                allowSessionFallback={false}
+                allowNonInvertibleRevert={false}
+                onClose={() => setServerPreview(null)}
+              />
+            </div>
+          )}
+        </Show>
+
+        <div class="mafw-checkpoint-list" classList={{ "is-hidden": !!preview() || !!serverPreview() }}>
           <Show
             when={serverMode() && serverRows().length > 0}
             fallback={
@@ -334,6 +372,14 @@ export function CheckpointOverlay(props: {
                       检查点 {row.checkpoint.id.slice(-6)} · {row.filesLabel}
                     </div>
                     <div class="mafw-checkpoint-actions">
+                      <Show when={row.filesAvailable}>
+                        <ButtonV2
+                          variant="ghost"
+                          size="small"
+                          disabled={busy() || !!serverPreviewLoading()}
+                          onClick={() => void previewServerRow(row)}
+                        >{serverPreviewLoading() === row.checkpoint.id ? "加载中…" : "预览"}</ButtonV2>
+                      </Show>
                       <Show when={row.actions.restoreConversation.enabled}>
                         <ScopeButton checkpointId={row.checkpoint.id} scope="session" label="只回对话" />
                       </Show>

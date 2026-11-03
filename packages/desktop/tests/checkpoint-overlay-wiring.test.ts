@@ -27,6 +27,16 @@ describe("checkpoint overlay wiring", () => {
     expect(src).toContain('role="dialog"')
   })
 
+  test("server checkpoints expose a read-only preview via turn diff", () => {
+    const src = read("src/renderer/mafw/components/CheckpointOverlay.tsx")
+    expect(src).toContain("previewServerRow")
+    expect(src).toContain("serverPreview")
+    expect(src).toContain("serverPreviewLoading")
+    expect(src).toContain("sessions.diff(props.sessionID, row.checkpoint.anchorMessageID)")
+    expect(src).toContain("该检查点没有可预览的文件改动")
+    expect(src).toContain("serverPreviewLoading() === row.checkpoint.id")
+  })
+
   test("embedded docks forbid session fallback and non-invertible revert", () => {
     for (const path of [
       "src/renderer/mafw/components/ChangesDock.tsx",
