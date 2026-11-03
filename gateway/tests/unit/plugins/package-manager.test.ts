@@ -43,11 +43,11 @@ module.exports = { name: '${name}', async activate() {
 } };
 `;
 
-const RUNTIME_MODULE = (name: string) => `
+const RUNTIME_MODULE = (name: string, runtimeName = name) => `
 module.exports = { name: '${name}', async activate() {
   const g = globalThis;
   g.__mafwActivations = (g.__mafwActivations || 0) + 1;
-  return { runtime: { name: '${name}', async createRuntime() { return { name: '${name}', capabilities: {} }; } } };
+  return { runtime: { name: '${runtimeName}', async createRuntime() { return { name: '${runtimeName}', capabilities: {} }; } } };
 } };
 `;
 
@@ -232,8 +232,10 @@ describe('PackageManager filesystem operations', () => {
   });
 
   it('stages a new package that owns the active runtime as pending', async () => {
-    activeRuntime = 'acme-rt';
-    const source = writePackage(sourceDir, 'acme-rt', { module: RUNTIME_MODULE('acme-rt') });
+    // Declared runtime name differs from the package name: the switch target is
+    // the loader key (declared runtime name), so the apply result must carry it.
+    activeRuntime = 'acme-live';
+    const source = writePackage(sourceDir, 'acme-rt', { module: RUNTIME_MODULE('acme-rt', 'acme-live') });
     await host!.init();
     const runtimeEntries: any[] = [];
     host!.bindRuntime((entries) => { runtimeEntries.length = 0; runtimeEntries.push(...entries); });
@@ -255,10 +257,11 @@ describe('PackageManager filesystem operations', () => {
     expect(applied.activeRevision).toBe(host!.getClientSnapshot().revision);
     expect(host!.getClientSnapshot().revision).not.toBe(before);
     expect(host!.getClientSnapshot().plugins.map((plugin) => plugin.name)).toEqual(['acme-rt']);
-    expect(runtimeEntries.map((entry) => entry.name)).toEqual(['acme-rt']);
+    expect(runtimeEntries.map((entry) => entry.name)).toEqual(['acme-live']);
     // Applying the committed package takes over the active runtime name: the
     // route must switch/re-instantiate the runtime afterwards.
     expect(applied.runtimeSwitchRequired).toBe(true);
+    expect(applied.runtimeName).toBe('acme-live');
   });
 
   it('resets directory watchers after copying a package into the plugin root', async () => {

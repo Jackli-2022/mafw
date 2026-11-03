@@ -142,7 +142,7 @@ async activate(ctx) {
 
 - 清理在包被重新加载、替换、禁用、删除（以及离线 `check` 的临时 candidate 释放）时执行；同一包的多个 effect 按注册逆序（LIFO）执行，单个清理抛错只记 diagnostic，不影响其余清理。
 - `activate()` 之外创建的全局副作用不会被 Host 追踪；不要在模块顶层创建长生命周期资源，否则卸载后会泄漏。
-- 回调应幂等：失败重试或手动调用 `check` 可能释放同一 candidate 多次。
+- 释放是幂等的：Host 对同一 candidate 重复调用 `dispose()`（失败重试、手动 `check` 等）是安全的，disposer 只会执行一次，不会重复清理。
 
 `ctx.config.update` 的边界：
 

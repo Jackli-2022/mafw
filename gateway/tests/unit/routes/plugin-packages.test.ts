@@ -264,6 +264,41 @@ describe('plugin package routes', () => {
       expect(res.body).toMatchObject({ runtimeSwitch: 'failed', runtimeError: 'offline' });
     });
 
+    test('reports "failed" (never throws/500) when the switch is blocked by the guard', async () => {
+      const switchRuntime = jest.fn(async () => ({
+        success: false,
+        code: 'blocked',
+        error: 'runtime switch is blocked while the serve sidecar is recovering or another switch is in progress',
+      }));
+      await listen({ ...makeDeps(runtimeManager()), switchRuntime });
+      const res = await request(server, 'POST', '/api/plugins/acme/apply');
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ application: 'applied', runtimeSwitch: 'failed' });
+      expect(res.body.runtimeError).toMatch(/blocked/);
+    });
+
+    test('switches by the declared runtime name, not the package name', async () => {
+      const manager = makeManager();
+      manager.applyPending.mockResolvedValue({
+        name: 'acme', version: '1.0.0', activeRevision: 'boot:3', saved: true,
+        enabled: true, application: 'applied', runtimeSwitchRequired: true, runtimeName: 'acme-rt',
+      });
+      const switchRuntime = jest.fn(async () => ({ success: true, active: { name: 'acme-rt' } }));
+      await listen({ ...makeDeps(manager), switchRuntime });
+      const res = await request(server, 'POST', '/api/plugins/acme/apply');
+      expect(res.status).toBe(200);
+      expect(res.body.runtimeSwitch).toBe('applied');
+      expect(switchRuntime).toHaveBeenCalledWith('acme-rt');
+    });
+
+    test('falls back to the package name when the apply result has no runtime name', async () => {
+      const switchRuntime = jest.fn(async () => ({ success: true, active: { name: 'acme' } }));
+      await listen({ ...makeDeps(runtimeManager()), switchRuntime });
+      const res = await request(server, 'POST', '/api/plugins/acme/apply');
+      expect(res.status).toBe(200);
+      expect(switchRuntime).toHaveBeenCalledWith('acme');
+    });
+
     test('reports "required" (manual signal) when no switcher is wired', async () => {
       await listen(makeDeps(runtimeManager()));
       const res = await request(server, 'POST', '/api/plugins/acme/apply');

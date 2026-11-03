@@ -93,6 +93,12 @@ export interface PluginApplyResult {
    * revision to take effect.
    */
   runtimeSwitchRequired?: boolean;
+  /**
+   * The runtime contribution's declared name (the loader key), which may differ
+   * from the package name. Present when `runtimeSwitchRequired`: it is the name
+   * the caller must switch to.
+   */
+  runtimeName?: string;
 }
 
 /** Result of an offline candidate check (nothing is published). */
@@ -604,7 +610,17 @@ export class PluginHost {
     // broadcast here would be a duplicate. Whether the live runtime still has
     // to be rebuilt is decided against the freshly committed record.
     this.notifyStateChanged(false);
-    return { applied: true, revision, runtimeSwitchRequired: this.packageOwnsActiveRuntime(name) };
+    const runtimeSwitchRequired = this.packageOwnsActiveRuntime(name);
+    // The runtime contribution's declared name is the loader key, which is not
+    // necessarily the package name: report it so the caller switches the right
+    // entry instead of guessing.
+    const runtimeName = runtimeSwitchRequired ? applied?.entries.runtime?.name : undefined;
+    return {
+      applied: true,
+      revision,
+      runtimeSwitchRequired,
+      ...(runtimeName ? { runtimeName } : {}),
+    };
   }
 
   /**

@@ -69,7 +69,7 @@ export type FlatGatewayEvent =
   | { type: "runtime_switched"; runtime: string; previous: string | null }
   | { type: "mafw_commands_changed" }
   | { type: "goal_node"; goalId?: string; projectDir?: string; loop?: number; node?: string; [key: string]: any }
-  | { type: "plugins.changed"; properties?: { revision?: string }; revision?: string }
+  | { type: "plugins.changed"; properties?: { revision?: string; stateChanged?: boolean }; revision?: string; stateChanged?: boolean }
   | { type: "connected"; timestamp?: string; vocab?: string }
   | { type: `plugin:${string}`; [key: string]: any }
 

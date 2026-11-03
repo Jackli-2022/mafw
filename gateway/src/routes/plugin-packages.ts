@@ -195,15 +195,19 @@ export async function handlePluginApply(
     if (!deps.switchRuntime) {
       return { ...result, runtimeSwitch: 'required' as const };
     }
+    // The runtime contribution's declared name is the loader key; it may differ
+    // from the package name. Fall back to the package name only for older hosts
+    // that do not report it.
+    const target = result.runtimeName ?? name;
     try {
-      const switched = await deps.switchRuntime(name);
+      const switched = await deps.switchRuntime(target);
       if (switched?.success) {
         return { ...result, runtimeSwitch: 'applied' as const, active: switched.active };
       }
       return {
         ...result,
         runtimeSwitch: 'failed' as const,
-        runtimeError: switched?.error ?? `runtime switch for "${name}" failed`,
+        runtimeError: switched?.error ?? `runtime switch for "${target}" failed`,
       };
     } catch (err: any) {
       return {

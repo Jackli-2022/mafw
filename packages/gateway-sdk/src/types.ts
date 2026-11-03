@@ -1479,6 +1479,8 @@ export interface PluginPackageUpdateResult extends PluginPackageInstallResult {
    */
   runtimeSwitch?: 'applied' | 'failed' | 'required'
   runtimeError?: string
+  /** `applied` only: the runtime the gateway switched to. */
+  active?: { name: string; capabilities: Record<string, unknown> }
 }
 
 /** `POST /api/plugins/check` — `ok:false` is a diagnostic, not an HTTP error. */

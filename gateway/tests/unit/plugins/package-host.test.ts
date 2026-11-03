@@ -32,6 +32,13 @@ module.exports = { name: '${name}', async activate() {
 } };
 `;
 
+/** A runtime contribution whose declared runtime name differs from the package. */
+const RUNTIME_ALIAS = (name: string, runtimeName: string) => `
+module.exports = { name: '${name}', async activate() {
+  return { runtime: { name: '${runtimeName}', async createRuntime() { return { name: '${runtimeName}', capabilities: {} }; } } };
+} };
+`;
+
 /**
  * Registers a custom cleanup through `ctx.effect`, the package-facing
  * registration hook for timers/listeners that live outside the declared
@@ -552,7 +559,7 @@ module.exports = { name: '${name}', async activate() {
     expect(host.getPending('rt')).not.toBeNull();
 
     const applied = await host.applyPending('rt');
-    expect(applied).toMatchObject({ applied: true, runtimeSwitchRequired: true });
+    expect(applied).toMatchObject({ applied: true, runtimeSwitchRequired: true, runtimeName: 'rt' });
 
     // A candidate staged for a runtime that is no longer active does not need
     // a switch at apply time: the live runtime is someone else's by then.
@@ -561,6 +568,28 @@ module.exports = { name: '${name}', async activate() {
     activeRuntime = 'other';
     const appliedLater = await host.applyPending('rt');
     expect(appliedLater).toMatchObject({ applied: true, runtimeSwitchRequired: false });
+    expect(appliedLater.runtimeName).toBeUndefined();
+  });
+
+  it('reports the declared runtime name when it differs from the package name', async () => {
+    const file = path.join(dir, 'pkg-rt.js');
+    fs.writeFileSync(file, RUNTIME_ALIAS('pkg-rt', 'rt-live'));
+    activeRuntime = 'rt-live';
+    host = mkHost(dir, { createBag, activeRuntime: () => activeRuntime });
+    await host.init();
+
+    fs.appendFileSync(file, '\n// v2\n');
+    await host.reload();
+    expect(host.getPending('pkg-rt')).not.toBeNull();
+
+    // The switch target is the runtime contribution's declared name (what the
+    // loader indexes), never the package directory name.
+    const applied = await host.applyPending('pkg-rt');
+    expect(applied).toMatchObject({
+      applied: true,
+      runtimeSwitchRequired: true,
+      runtimeName: 'rt-live',
+    });
   });
 
   it('broadcasts a state-only plugins.changed for pending candidates without a commit', async () => {

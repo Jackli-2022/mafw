@@ -71,6 +71,12 @@ export interface UpdateResult {
    * used. Route layer turns this into a real switch (or a manual signal).
    */
   runtimeSwitchRequired?: boolean;
+  /**
+   * `applyPending` only, with `runtimeSwitchRequired`: the runtime
+   * contribution's declared name (loader key), which may differ from the
+   * package name.
+   */
+  runtimeName?: string;
 }
 
 export type CheckResult = PluginCheckResult;
@@ -308,6 +314,7 @@ export class PackageManager {
         enabled: true,
         application: 'applied',
         ...(result.runtimeSwitchRequired ? { runtimeSwitchRequired: true } : {}),
+        ...(result.runtimeName ? { runtimeName: result.runtimeName } : {}),
       };
     });
   }

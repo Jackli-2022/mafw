@@ -260,7 +260,7 @@ import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rul
 import { handleSessionCreate } from './routes/session-create';
 import { resolveWorktreeAvailability, probeGitWorktreeSupport } from './core/worktree/worktree-availability';
 import { handleApprovalsRespond } from './routes/approvals-respond';
-import type { RuntimeSwitchDeps } from './routes/runtime-switch';
+import { performRuntimeSwitch, type RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps, PluginsPackageEntry } from './routes/plugins';
 import type { PluginPackagesRouteDeps } from './routes/plugin-packages';
@@ -2535,27 +2535,15 @@ class MafwScheduler {
         ? { invokeAction: (name, action, input, options) => host.invokeAction(name, action, input, options) }
         : {}),
       // Applying a runtime package commits the files, but the live runtime is
-      // still the old instance. Reuse the exact `/api/runtime/switch` path so
-      // event resubscription and identity rematerialization happen once, not in
-      // a second hand-rolled copy.
-      switchRuntime: async (name: string) => {
-        try {
-          const deps = this.runtimeDeps();
-          if (!deps.loader?.get(name)) {
-            return { success: false, error: `runtime plugin "${name}" not found` };
-          }
-          deps.persist({ runtime: { plugin: name } });
-          const prev = deps.getCurrent();
-          const rt = await deps.createRuntime();
-          await deps.onSwitched(rt, prev);
-          return {
-            success: true,
-            active: { name: deps.runtimeName(), capabilities: deps.runtimeCaps() },
-          };
-        } catch (err: any) {
-          return { success: false, error: err?.message ?? String(err) };
-        }
-      },
+      // still the old instance. Reuse the exact `/api/runtime/switch` sequence
+      // (same guard/mutex, event resubscription, identity rematerialization and
+      // fallback detection) instead of a second hand-rolled copy.
+      switchRuntime: (name: string) =>
+        performRuntimeSwitch(this.runtimeDeps(), name, {
+          blocked: () => this.serveRecovering || this.switchingRuntime,
+          begin: () => { this.switchingRuntime = true; },
+          end: () => { this.switchingRuntime = false; },
+        }),
     };
   }
 
