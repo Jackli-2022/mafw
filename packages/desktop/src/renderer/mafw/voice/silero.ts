@@ -1,7 +1,7 @@
 import { MicVAD } from "@ricky0123/vad-web"
 import ortWasmMjs from "../../assets/vad/ort-wasm-simd-threaded.mjs?url"
 import ortWasmBin from "../../assets/vad/ort-wasm-simd-threaded.wasm?url"
-import type { VadAnalyzer, VadEvent, VadParams } from "./types"
+import type { MicInput, VadAnalyzer, VadEvent, VadParams } from "./types"
 
 const SAMPLE_RATE = 16000
 // vite `?url` 构建期给出字符串；bun test 下导入的是模块命名空间 → 守卫后回退空串
@@ -93,5 +93,9 @@ export function createSileroVadAnalyzer(params: VadParams): VadAnalyzer {
       ctx = null
     },
     on: (event, cb) => hub.on(event, cb),
+    getInput(): MicInput | null {
+      if (!stream || !ctx) return null
+      return { stream, context: ctx, sampleRate: SAMPLE_RATE }
+    },
   }
 }
