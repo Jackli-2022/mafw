@@ -133,6 +133,19 @@ const CONTINUATION_RULE_SCHEMA = {
 const PLAN_OUTPUT_SCHEMA = {
   anyOf: [
     {
+      // Tech Lead chooses quick: one Worker, no independent review, no mandatory
+      // Goal Eval. Driver still enforces exactly one task and the manual plan gate.
+      type: 'object',
+      required: ['status', 'taskType', 'strategy', 'waves'],
+      properties: {
+        status: { const: 'ready' },
+        strategy: { const: 'quick' },
+        taskType: { type: 'string', enum: [...TASK_TYPES] },
+        goalEval: GOAL_EVAL_SCHEMA,
+        waves: WAVES_SCHEMA,
+      },
+    },
+    {
       type: 'object',
       required: ['status', 'taskType', 'waves', 'goalEval'],
       properties: {

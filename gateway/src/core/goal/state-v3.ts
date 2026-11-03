@@ -82,6 +82,14 @@ export interface GoalStateV3 {
   taskType?: string;
   /** W1 计划审阅模式：'manual' 时 plan 完成驻留待批；缺省 'auto'（存量零迁移）。 */
   planReview?: 'auto' | 'manual';
+  /** Tech Lead 为当前 revision 选择的执行策略；旧状态缺省 = collaborative。 */
+  strategy?: 'quick' | 'collaborative';
+  /** 结果是否经过独立评审；缺省 = 未声明。 */
+  assessment?: 'reviewed' | 'unreviewed';
+  /** 快速路径在同一 revision 内的机械校验修复次数。 */
+  quickRepairCount?: number;
+  /** 当前派工文件 id（Assignment prompt 审计入口）。 */
+  currentAssignmentId?: string;
   /** W1 批准门运行态：pending = 驳留在 AWAIT_PLAN_APPROVAL。 */
   planApproval?: {
     /** Random one-time id; absent only for approvals created before v3. */
@@ -209,6 +217,16 @@ function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
     policySnapshot: raw.policySnapshot,
     taskType: raw.taskType,
     planReview: (raw as any).planReview === 'manual' ? 'manual' : ((raw as any).planReview === 'auto' ? 'auto' : undefined),
+    strategy: (raw as any).strategy === 'quick' || (raw as any).strategy === 'collaborative'
+      ? (raw as any).strategy
+      : undefined,
+    assessment: (raw as any).assessment === 'reviewed' || (raw as any).assessment === 'unreviewed'
+      ? (raw as any).assessment
+      : undefined,
+    quickRepairCount: typeof (raw as any).quickRepairCount === 'number' ? (raw as any).quickRepairCount : undefined,
+    currentAssignmentId: typeof (raw as any).currentAssignmentId === 'string'
+      ? (raw as any).currentAssignmentId
+      : undefined,
     planApproval: (raw as any).planApproval ?? undefined,
     planFeedback: (raw as any).planFeedback ?? null,
     reviewFix: (raw as any).reviewFix ?? null,

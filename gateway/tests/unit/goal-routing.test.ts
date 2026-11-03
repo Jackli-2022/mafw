@@ -54,6 +54,8 @@ describe('routeNext', () => {
     expect(routeNext('after_plan', base)).toBe('execute');
     expect(routeNext('after_probe', base)).toBe('plan');
     expect(routeNext('after_execute', base)).toBe('review');
+    expect(routeNext('after_execute', { ...base, strategy: 'collaborative' })).toBe('review');
+    expect(routeNext('after_execute', { ...base, strategy: 'quick' })).toBe('archive_unreviewed');
     expect(routeNext('after_review', { ...base, reviewVerdict: 'PASS' })).toBe('archive_success');
     expect(routeNext('start', base)).toBe('plan');
   });

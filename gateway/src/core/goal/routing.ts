@@ -17,6 +17,8 @@ export interface RouteState {
   probeNeeded?: boolean;
   /** 同轮复核：本轮还没用过复核（FAIL 时优先回 execute 修复，而不是下一轮 plan）。 */
   reviewFixAvailable?: boolean;
+  /** Tech Lead strategy; absent preserves the legacy collaborative route. */
+  strategy?: 'quick' | 'collaborative';
 }
 
 export type RouteStage = 'start' | 'after_plan' | 'after_probe' | 'after_execute' | 'after_review';
@@ -27,6 +29,10 @@ export function routeAfterPlan(s: RouteState): GoalNodeName {
   if (s.probeNeeded) return 'probe';
   if (s.planReviewGate) return 'await_plan_approval';
   return 'execute';
+}
+
+export function routeAfterExecute(s: RouteState): GoalNodeName {
+  return s.strategy === 'quick' ? 'archive_unreviewed' : 'review';
 }
 
 export function routeAfterReview(s: RouteState): GoalNodeName {
@@ -45,7 +51,7 @@ export function routeNext(stage: RouteStage, s: RouteState): GoalNodeName {
     case 'after_plan': return routeAfterPlan(s);
     // Spike 报告也是计划输入：验完必须回到 Tech Lead 重新规划（不是直接实施）。
     case 'after_probe': return 'plan';
-    case 'after_execute': return 'review';
+    case 'after_execute': return routeAfterExecute(s);
     case 'after_review': return routeAfterReview(s);
   }
 }

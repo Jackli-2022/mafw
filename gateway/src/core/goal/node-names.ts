@@ -16,7 +16,7 @@ export type GoalNodeName =
   | ExecutableGoalNode
   | 'askUser'
   | 'await_plan_approval'
-  | 'archive_success' | 'archive_fail' | 'archive_max_retries';
+  | 'archive_success' | 'archive_unreviewed' | 'archive_fail' | 'archive_max_retries';
 
 export function isExecutableGoalNode(value: unknown): value is ExecutableGoalNode {
   return typeof value === 'string'

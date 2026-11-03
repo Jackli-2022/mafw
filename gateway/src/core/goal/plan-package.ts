@@ -21,9 +21,14 @@ import { createHash } from 'crypto';
 import { GoalEval, validateGoalEval } from './goal-eval';
 import type { ProbeConclusion } from './probe';
 
+export type PlanStrategy = 'quick' | 'collaborative';
+
 export interface PlanPackage {
   waves: unknown;
-  goalEval: GoalEval;
+  /** Required for collaborative/legacy plans; quick plans may omit it. */
+  goalEval?: GoalEval;
+  /** Tech Lead execution choice; absent means legacy collaborative. */
+  strategy?: PlanStrategy;
   /** Task 15：批准模式；缺省 = two_stage（存量零迁移）。 */
   approvalMode?: PlanApprovalMode;
   /** Task 15：探针结论 → 下一步。键是探针 id，`default` 是所有未点名探针的兜底。 */
@@ -79,6 +84,15 @@ function normalizeWaves(raw: unknown): unknown {
   return raw;
 }
 
+function normalizeStrategy(raw: unknown): PlanStrategy | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const strategy = clean(raw);
+  if (strategy !== 'quick' && strategy !== 'collaborative') {
+    throw new Error(`plan package strategy must be quick|collaborative (got ${JSON.stringify(raw)})`);
+  }
+  return strategy;
+}
+
 function normalizeApprovalMode(raw: unknown): PlanApprovalMode | undefined {
   if (raw === undefined || raw === null) return undefined;
   const mode = clean(raw);
@@ -129,12 +143,19 @@ export function validateContinuationRules(input: unknown): ProbeContinuationRule
 export function validatePlanPackage(input: unknown): PlanPackage {
   if (!isPlainObject(input)) throw new Error('plan package must be an object');
   const waves = normalizeWaves(input.waves);
-  const goalEval = validateGoalEval(input.goalEval);
+  const strategy = normalizeStrategy(input.strategy);
   const approvalMode = normalizeApprovalMode(input.approvalMode);
   const continuation = validateContinuationRules(input.continuation);
+  if (strategy === 'quick' && (approvalMode || continuation)) {
+    throw new Error('quick plan package cannot carry full-chain approval or continuation rules');
+  }
+  const goalEval = strategy === 'quick' && input.goalEval === undefined
+    ? undefined
+    : validateGoalEval(input.goalEval);
   return {
     waves,
-    goalEval,
+    ...(goalEval ? { goalEval } : {}),
+    ...(strategy ? { strategy } : {}),
     ...(approvalMode ? { approvalMode } : {}),
     ...(continuation ? { continuation } : {}),
   };
@@ -176,7 +197,8 @@ export function computePlanPackageHash(pkg: PlanPackage | Record<string, unknown
   return sha256({
     kind: 'plan-package',
     waves: normalized.waves,
-    goalEval: normalized.goalEval,
+    ...(normalized.goalEval ? { goalEval: normalized.goalEval } : {}),
+    ...(normalized.strategy ? { strategy: normalized.strategy } : {}),
     ...(fullChain ? {
       approvalMode: 'full_chain' as const,
       continuation: normalized.continuation ?? {},

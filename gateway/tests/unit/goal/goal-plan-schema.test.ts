@@ -32,7 +32,22 @@ describe('plan output schema', () => {
     expect(ok([{ title: 'fix', acceptance: 'not-array' }]).length).toBeGreaterThan(0);
   });
 
-  test('requires the Goal Eval leg of the plan package', () => {
+  test('accepts a quick plan without Goal Eval', () => {
+    const schema = planOutputSchema();
+    const quick = {
+      status: 'ready',
+      strategy: 'quick',
+      taskType: 'bugfix',
+      waves: [{ id: 'w1', title: 'Debug', riskNote: 'low', tasks: [{ title: 'fix log', acceptance: ['no error'] }] }],
+    };
+    expect(validateJsonSchema(schema as any, quick)).toHaveLength(0);
+    expect(validateJsonSchema(schema as any, {
+      ...quick,
+      waves: [{ id: 'w1', title: 'Debug', riskNote: 'low', tasks: [{ title: 'a' }, { title: 'b' }] }],
+    })).toHaveLength(0);
+  });
+
+  test('legacy ready plans still require Goal Eval', () => {
     const schema = planOutputSchema();
     const withoutEval: any = readyWaves(['legacy']);
     delete withoutEval.goalEval;

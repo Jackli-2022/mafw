@@ -1510,6 +1510,7 @@ export class NodeDriver {
           };
           outcome = `need_probe=${ids.length}`;
           if (fullChain && fullChainPkg) {
+            if (!fullChainPkg.goalEval) throw new Error('full_chain plan package requires goalEval');
             writeGoalEvalFile(goalEvalArtifactPath(mafwDir, goalId, revision), fullChainPkg.goalEval);
             approvalHashes = this.readPlanHashes(
               { ...state, wavePlanPath: a.waves } as GoalStateV3,
@@ -1541,8 +1542,8 @@ export class NodeDriver {
           const pkg = planDoc.goalEval !== undefined
             ? validatePlanPackage({ waves: planDoc.waves, goalEval: planDoc.goalEval })
             : null;
-          let goalEval: GoalEval | null = pkg ? pkg.goalEval : null;
-          if (pkg) {
+          let goalEval: GoalEval | null = pkg?.goalEval ?? null;
+          if (pkg?.goalEval) {
             writeGoalEvalFile(goalEvalArtifactPath(mafwDir, goalId, revision), pkg.goalEval);
           } else {
             // legacy：计划里没有 eval，但旁文件存在时也必须可解析（坏 eval 不放行）。

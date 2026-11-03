@@ -64,6 +64,43 @@ describe('state-v3', () => {
     expect(isTerminalState({ nextAction: 'RUNNING_plan' } as GoalStateV3)).toBe(false);
   });
 
+  it('round-trips strategy/assessment/repair/assignment fields', () => {
+    const dir = tmpMafwDir();
+    ensureGoalState(dir, 'g-quick', { projectDir: 'C:/p', maxRounds: 3 });
+    writeGoalState(dir, 'g-quick', {
+      strategy: 'quick',
+      assessment: 'unreviewed',
+      quickRepairCount: 1,
+      currentAssignmentId: 'asg_1',
+    });
+    const loaded = loadGoalState(dir, 'g-quick')!;
+    expect(loaded).toMatchObject({
+      strategy: 'quick',
+      assessment: 'unreviewed',
+      quickRepairCount: 1,
+      currentAssignmentId: 'asg_1',
+    });
+  });
+
+  it('a fresh revision does not inherit quick-path metadata', () => {
+    const dir = tmpMafwDir();
+    ensureGoalState(dir, 'g-rev', { projectDir: 'C:/p', maxRounds: 3 });
+    writeGoalState(dir, 'g-rev', {
+      strategy: 'quick',
+      assessment: 'unreviewed',
+      quickRepairCount: 1,
+      currentAssignmentId: 'asg_old',
+    });
+    const fresh = ensureGoalState(dir, 'g-rev', {
+      projectDir: 'C:/p', maxRounds: 3, revision: 2,
+    });
+    expect(fresh.revision).toBe(2);
+    expect(fresh.strategy).toBeUndefined();
+    expect(fresh.assessment).toBeUndefined();
+    expect(fresh.quickRepairCount).toBeUndefined();
+    expect(fresh.currentAssignmentId).toBeUndefined();
+  });
+
   it('loadGoalState 读旧 v2（loop 字段）→ effectiveRound 规范化', () => {
     const dir = tmpMafwDir();
     fs.mkdirSync(path.join(dir, 'state'), { recursive: true });
