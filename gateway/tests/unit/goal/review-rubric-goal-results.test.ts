@@ -1,4 +1,4 @@
-import { RubricError, parseReviewRubric } from '../../../src/core/goal/review-rubric';
+import { parseReviewRubric } from '../../../src/core/goal/review-rubric';
 import { nodeArtifactPaths, nodeOutputSchema, renderNodePrompt } from '../../../src/core/goal/node-prompts';
 
 type GoalSpec = { id: string; result?: 'pass' | 'fail' | 'skipped' | string; evidence?: string };
@@ -28,15 +28,12 @@ function markdownWith(
 const required = ['g1', 'g2'];
 
 describe('parseReviewRubric goal results', () => {
-  test('rejects a rubric that misses a required goal condition', () => {
-    expect(() => parseReviewRubric(markdownWith([{ id: 'g1' }]), ['t1'], required))
-      .toThrow(expect.objectContaining({ code: 'missing_goal_conditions' }));
-    try {
-      parseReviewRubric(markdownWith([{ id: 'g1' }]), ['t1'], required);
-    } catch (err: any) {
-      expect(err).toBeInstanceOf(RubricError);
-      expect(err.message).toContain('g2');
-    }
+  test('a rubric missing a required goal condition is a review FAIL, not a broken artifact', () => {
+    const rubric = parseReviewRubric(markdownWith([{ id: 'g1' }]), ['t1'], required);
+    expect(rubric.verdict).toBe('FAIL');
+    expect(rubric.missingGoalConditions).toEqual(['g2']);
+    expect(rubric.feedback).toContain('g2');
+    expect(rubric.omissions?.join(' ')).toContain('g2');
   });
 
   test('parses goal results covering every required condition', () => {
@@ -51,14 +48,14 @@ describe('parseReviewRubric goal results', () => {
     expect(rubric.verdict).toBe('PASS');
   });
 
-  test('rejects a failed goal condition inside a PASS verdict', () => {
-    expect(() => parseReviewRubric(markdownWith([{ id: 'g1' }, { id: 'g2', result: 'fail' }]), ['t1'], required))
-      .toThrow(expect.objectContaining({ code: 'invalid' }));
-  });
+  test('a failed required goal condition inside a PASS verdict downgrades to FAIL', () => {
+    const failed = parseReviewRubric(markdownWith([{ id: 'g1' }, { id: 'g2', result: 'fail' }]), ['t1'], required);
+    expect(failed.verdict).toBe('FAIL');
+    expect(failed.goalResults?.[1]).toMatchObject({ conditionId: 'g2', result: 'fail' });
+    expect(failed.feedback).toContain('g2 fail');
 
-  test('rejects a skipped required goal condition inside a PASS verdict', () => {
-    expect(() => parseReviewRubric(markdownWith([{ id: 'g1' }, { id: 'g2', result: 'skipped' }]), ['t1'], required))
-      .toThrow(expect.objectContaining({ code: 'invalid' }));
+    const skipped = parseReviewRubric(markdownWith([{ id: 'g1' }, { id: 'g2', result: 'skipped' }]), ['t1'], required);
+    expect(skipped.verdict).toBe('FAIL');
   });
 
   test('accepts failed goal conditions when the verdict is FAIL', () => {
@@ -72,17 +69,24 @@ describe('parseReviewRubric goal results', () => {
     expect(rubric.inconsistent).toBeUndefined();
   });
 
-  test('rejects blank evidence even when the condition passed', () => {
-    expect(() => parseReviewRubric(
+  test('blank evidence downgrades the condition to fail and the review to FAIL', () => {
+    const blankPass = parseReviewRubric(
       markdownWith([{ id: 'g1', evidence: '' }, { id: 'g2' }]),
       ['t1'],
       required,
-    )).toThrow(expect.objectContaining({ code: 'invalid' }));
-    expect(() => parseReviewRubric(
+    );
+    expect(blankPass.verdict).toBe('FAIL');
+    expect(blankPass.goalResults?.[0]).toMatchObject({ conditionId: 'g1', result: 'fail' });
+    expect(blankPass.feedback).toContain('g1');
+
+    const blankSkipped = parseReviewRubric(
       markdownWith([{ id: 'g1', result: 'skipped', evidence: '  ' }, { id: 'g2' }], 'FAIL'),
       ['t1'],
       required,
-    )).toThrow(expect.objectContaining({ code: 'invalid' }));
+    );
+    expect(blankSkipped.verdict).toBe('FAIL');
+    expect(blankSkipped.goalResults?.[0]).toMatchObject({ conditionId: 'g1', result: 'skipped' });
+    expect(blankSkipped.omissions?.join(' ')).toContain('g1');
   });
 
   test('rejects invalid results, duplicate and missing condition ids', () => {
@@ -131,11 +135,13 @@ describe('parseReviewRubric goal results', () => {
     );
     expect(rubric.goalResults?.map((goal) => goal.conditionId)).toEqual(['g1', 'g2', 'g3']);
 
-    expect(() => parseReviewRubric(
+    const missing = parseReviewRubric(
       markdownWith([{ id: 'g1' }, { id: 'g3' }], 'FAIL'),
       ['t1'],
       required,
-    )).toThrow(expect.objectContaining({ code: 'missing_goal_conditions' }));
+    );
+    expect(missing.verdict).toBe('FAIL');
+    expect(missing.missingGoalConditions).toEqual(['g2']);
   });
 
   test('deduplicates required condition ids', () => {
@@ -154,26 +160,28 @@ describe('parseReviewRubric goal results', () => {
     expect(withGoals.goalResults).toHaveLength(1);
   });
 
-  test('missing goalResults is rejected only when conditions are required', () => {
+  test('missing goalResults is a review FAIL only when conditions are required', () => {
     const legacy = reviewFile({
       verdict: 'FAIL',
       tasks: [{ taskId: 't1', result: 'pass', evidence: 'ok' }],
       feedback: '',
     });
     expect(parseReviewRubric(legacy, ['t1'], []).goalResults).toEqual([]);
-    expect(() => parseReviewRubric(legacy, ['t1'], ['g1']))
-      .toThrow(expect.objectContaining({ code: 'missing_goal_conditions' }));
+    const missing = parseReviewRubric(legacy, ['t1'], ['g1']);
+    expect(missing.verdict).toBe('FAIL');
+    expect(missing.missingGoalConditions).toEqual(['g1']);
   });
 
-  test('keeps task rubric errors unchanged when goal conditions are supplied', () => {
+  test('task rubric gaps also downgrade to FAIL when goal conditions are supplied', () => {
     const missingTask = reviewFile({
       verdict: 'PASS',
       tasks: [],
       goalResults: [{ conditionId: 'g1', result: 'pass', evidence: 'ok' }],
       feedback: '',
     });
-    expect(() => parseReviewRubric(missingTask, ['t1'], ['g1']))
-      .toThrow(expect.objectContaining({ code: 'missing_tasks' }));
+    const missing = parseReviewRubric(missingTask, ['t1'], ['g1']);
+    expect(missing.verdict).toBe('FAIL');
+    expect(missing.omissions?.join(' ')).toContain('t1');
 
     const taskFail = reviewFile({
       verdict: 'PASS',

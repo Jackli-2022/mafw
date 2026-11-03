@@ -7,6 +7,11 @@
 // - `ask`：超出声明范围（未声明的路径 / 命令类别 / 网络 / 凭据）→ 必须转人工；
 // - `deny`：主工作区写入 / 路径逃逸 / NUL → 结构上不可能授权（人工也不批）。
 //
+// 主项目只读（2026-11-03 修正）：探针 cwd 是空隔离目录，读工具必须能读主项目里
+// **ProbeRequest.scope.paths 声明过的**源码（否则 Spike 只能对着空目录推理）。
+// 因此 READONLY_FILE_TOOLS 对主项目内、落在声明路径下的绝对路径放行；写工具与
+// 一切 shell 命令仍然走原判定（主项目写入 / 命令里出现项目路径 = deny）。
+//
 // 关键不变量：guard 在身份策略与 internal blanket 之前评估，因此
 // **内部 Session / full-access 身份都不能把 ask 变成自动放行**（spec §6.5）。
 //
@@ -50,6 +55,10 @@ const FILE_TOOLS = new Set([
 /** 修改型文件工具：看不到目标路径时不能猜，必须问人。 */
 const MUTATING_FILE_TOOLS = new Set([
   'write', 'edit', 'multiedit', 'patch', 'apply_patch', 'create', 'delete',
+]);
+/** 只读文件工具：可以读主项目内**声明路径**下的源码（写工具永远不行）。 */
+const READONLY_FILE_TOOLS = new Set([
+  'read', 'ls', 'list', 'glob', 'grep', 'find', 'rg', 'view', 'open',
 ]);
 const SHELL_TOOLS = new Set(['bash', 'shell', 'sh', 'command', 'exec', 'run', 'powershell', 'cmd', 'terminal']);
 const NETWORK_TOOLS = new Set(['webfetch', 'websearch', 'fetch', 'http', 'curl', 'wget']);
@@ -108,13 +117,19 @@ function isInside(child: string, parent: string): boolean {
   return t.startsWith(`${b}/`);
 }
 
-/** 绝对路径 → 探针工作区内的相对路径；不在工作区内时 null。 */
-function relativeWithinWorkspace(pathValue: string, workspaceDir: string | null | undefined): string | null {
-  if (!workspaceDir) return null;
-  if (!isInside(pathValue, workspaceDir)) return null;
-  const base = normalizePath(workspaceDir).replace(/\/+$/, '');
+/** 绝对路径 → 目录内的相对路径；不在该目录内时 null。 */
+function relativeWithinDir(pathValue: string, dir: string | null | undefined): string | null {
+  if (!dir) return null;
+  if (!isInside(pathValue, dir)) return null;
+  const base = normalizePath(dir).replace(/\/+$/, '');
   const target = normalizePath(pathValue);
   return target.slice(base.length).replace(/^\/+/, '') || '.';
+}
+
+/** 主项目内的只读访问：只有只读文件工具可以碰（写工具结构性拒绝）。 */
+function isReadOnlyFileTool(tool: string | undefined): boolean {
+  if (!tool) return false;
+  return READONLY_FILE_TOOLS.has(tool.toLowerCase());
 }
 
 function pathVerdict(request: ProbeRequest, action: ProbeScopeAction): ProbeScopeVerdict {
@@ -124,13 +139,18 @@ function pathVerdict(request: ProbeRequest, action: ProbeScopeAction): ProbeScop
 
   let relative: string;
   if (isAbsolutePath(raw)) {
-    // 绝对路径只有一种合法解释：探针工作区内部（折算成相对路径再判范围）。
-    const mapped = relativeWithinWorkspace(raw, action.workspaceDir ?? null);
-    if (mapped === null) {
-      // 主工作区写入 / 任意绝对路径：结构上不可授权（不是"问一下"）。
-      return 'deny';
+    // 绝对路径只有两种合法解释：
+    //   1. 探针工作区内部（折算成相对路径再判范围）；
+    //   2. 主项目内、且由只读工具访问（Spike 读源码）——仍要落在声明路径内。
+    // 其余（主工作区写入 / 任意绝对路径）结构上不可授权，不是"问一下"。
+    const inWorkspace = relativeWithinDir(raw, action.workspaceDir ?? null);
+    if (inWorkspace !== null) {
+      relative = inWorkspace;
+    } else {
+      const inProject = relativeWithinDir(raw, action.projectDir ?? null);
+      if (inProject === null || !isReadOnlyFileTool(action.tool)) return 'deny';
+      relative = inProject;
     }
-    relative = mapped;
   } else {
     relative = normalizePath(raw).replace(/^\.\//, '');
   }
@@ -274,7 +294,9 @@ export const ProbeScopeGuard = {
     const verdicts: ProbeScopeVerdict[] = [];
 
     if (action.path !== undefined && action.path !== null) {
-      verdicts.push(pathVerdict(request, { ...action, workspaceDir: effectiveWorkspace }));
+      verdicts.push(pathVerdict(request, {
+        ...action, workspaceDir: effectiveWorkspace, projectDir: effectiveProject,
+      }));
     } else if (action.tool && MUTATING_FILE_TOOLS.has(action.tool.toLowerCase())) {
       // 修改型工具但看不到目标路径：无法证明在范围内 → 转人工（不猜）。
       verdicts.push('ask');

@@ -44,7 +44,21 @@ function binding(overrides: Partial<ProbeRequest> = {}) {
 }
 
 describe('ProbeScopeGuard.evaluate', () => {
-  it('denies absolute paths into the main workspace (never a write path)', () => {
+  it('allows read-only access to declared project sources but never project writes', () => {
+    // 读工具：主项目内、声明路径内 → 允许（Spike 必须能读真实源码，否则只能对着空目录推理）。
+    expect(ProbeScopeGuard.evaluate(binding(), { tool: 'read', path: `${MAIN_PROJECT}/src/a.ts` }))
+      .toBe('allow');
+    expect(ProbeScopeGuard.evaluate(binding(), { tool: 'grep', path: `${MAIN_PROJECT}/src/deep/b.ts` }))
+      .toBe('allow');
+    // 声明外的项目路径 → 转人工（不是「任意读」）。
+    expect(ProbeScopeGuard.evaluate(binding(), { tool: 'read', path: `${MAIN_PROJECT}/.env` }))
+      .toBe('ask');
+    // 写工具：主项目内仍然结构上拒绝（人工也不批）。
+    expect(ProbeScopeGuard.evaluate(binding(), { tool: 'edit', path: `${MAIN_PROJECT}/src/a.ts` }))
+      .toBe('deny');
+    expect(ProbeScopeGuard.evaluate(binding(), { tool: 'write', path: `${MAIN_PROJECT}/src/a.ts` }))
+      .toBe('deny');
+    // 看不到工具（无法证明是只读）→ 仍然 deny。
     expect(ProbeScopeGuard.evaluate(binding(), { path: `${MAIN_PROJECT}/src/a.ts` })).toBe('deny');
     expect(ProbeScopeGuard.evaluate(binding(), { path: `${MAIN_PROJECT}/src/a.ts`, workspaceDir: WORKSPACE }))
       .toBe('deny');
@@ -210,6 +224,30 @@ describe('probe scope is enforced before identity and internal auto-approval', (
     expect(props.mafwPolicy.action).toBe('human');
     expect(props.probeScope).toMatchObject({ probeId: 'p1', verdict: 'ask' });
     expect(h.replies).toHaveLength(0);
+  });
+
+  it('auto-approves a read of declared project sources and denies project writes', async () => {
+    const h = makePolicy({
+      binding: binding(),
+      mode: 'full-access',
+      identity: { name: 'mafw-execute', internal: true },
+      identityPolicy: expansivePolicy,
+      internalRole: 'worker',
+    });
+
+    // Builder 读主项目里声明的源码：范围内 → 自动放行（不打扰用户）。
+    const readDecision = h.policy.evaluate('probe_ses', {
+      toolName: 'read', patterns: [], metadata: { filePath: `${MAIN_PROJECT}/src/a.ts` },
+    });
+    expect(readDecision.action).toBe('auto-approve');
+
+    // 同一路径的写入仍然结构性拒绝。
+    const props: Record<string, any> = {};
+    applyApprovalPolicy(h.policy, h.runtime, {
+      requestId: 'req-read-write', toolName: 'edit', patterns: [],
+      metadata: { filePath: `${MAIN_PROJECT}/src/a.ts` },
+    } as any, 'probe_ses', props);
+    expect(props.mafwPolicy.action).toBe('auto-deny');
   });
 
   it('denies main-workspace paths regardless of identity (auto reply reject)', async () => {

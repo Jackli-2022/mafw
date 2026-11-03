@@ -41,7 +41,11 @@ export const DEFAULT_PROBE_LIMITS = {
 } as const;
 
 export interface ProbeScope {
-  /** 相对隔离工作区根的允许路径（`src`、`docs/plan.md`；`.` 表示整个工作区）。 */
+  /**
+   * 允许访问的路径（相对路径）；同时按隔离工作区根与主项目根解释：
+   * 探针在工作区里读写这里，读工具也只能读主项目里这些声明路径（写主项目永远拒绝）。
+   * `.` 表示整个根。
+   */
   paths: string[];
   /** 允许执行的命令类别（至少一项）。 */
   commandClasses: ProbeCommandClass[];

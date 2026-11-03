@@ -205,6 +205,9 @@ describe('two-stage Spike orchestration', () => {
     expect(prompt.parts[0].text).toContain(port.created[0].dir);
     expect(prompt.parts[0].text).toContain(port.requests[0].question);
     expect(prompt.parts[0].text).toContain(port.reportPath('g1', 'p1'));
+    // 主项目源码位置必须写进 prompt：探针 cwd 是空隔离目录，读工具只能读声明路径。
+    expect(prompt.parts[0].text).toContain('主项目（只读源码）');
+    expect(prompt.parts[0].text).toContain('src');
     const create = h.calls.filter((c: any) => c.op === 'create').at(-1)!;
     expect(create.directory).toBe(port.created[0].dir);
     expect(port.bindings.at(-1)).toEqual([probeSid, expect.objectContaining({
@@ -410,15 +413,20 @@ describe('probe budget is enforced', () => {
     attachPort(h, port);
 
     await h.driver.advance('g1');
-    writePlan(h, 'g1', needProbeDoc([probeDraft({ budget: { maxMinutes: 0.001, maxUsd: 1 } })]));
+    // 预算给到 ~1.2s：定时器 60ms 时在慢机上会抢在断言前触发，测试本身会变脆。
+    writePlan(h, 'g1', needProbeDoc([probeDraft({ budget: { maxMinutes: 0.02, maxUsd: 1 } })]));
     await h.fireIdle(sessionOf(h).id);
     const probeSid = sessionOf(h).id;
     expect(probeSid).toBeTruthy();
 
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    const probeRunOf = () => h.nodeRuns.find((r: any) => r.node === 'probe');
+    const deadline = Date.now() + 5000;
+    while (probeRunOf()?.status !== 'timeout' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
     await new Promise((resolve) => setImmediate(resolve));
 
-    const probeRun = h.nodeRuns.find((r: any) => r.node === 'probe')!;
+    const probeRun = probeRunOf()!;
     expect(probeRun.status).toBe('timeout');
     expect(probeRun.error).toContain('budget');
     expect(port.disposed).toHaveLength(1);

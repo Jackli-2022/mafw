@@ -261,7 +261,7 @@ describe('review rubric takes its required condition ids from the plan eval', ()
     expect(prompt).toContain('goalResults');
   });
 
-  it('rejects a review that skips a required goal condition (missing_goal_conditions)', async () => {
+  it('turns a review that skips a required goal condition into a review FAIL (retry, not artifact_invalid)', async () => {
     const h = makeHarness();
     const sid = await seedReview(h);
     writeReview(h, {
@@ -271,8 +271,27 @@ describe('review rubric takes its required condition ids from the plan eval', ()
     });
     await h.fireIdle(sid);
 
+    // 评审内容缺必需条件 = 判定 FAIL，进入既有轮次语义；不是终结性的产物错误。
+    expect(h.nodeRuns[0].status).toBe('succeeded');
+    const st = h.load('g1')!;
+    expect(st.reviewVerdict).toBe('FAIL');
+    expect(st.reviewFeedback).toContain('g1');
+    expect(st.nextNode).toBe('plan');
+    expect(st.round).toBe(2);
+    expect(st.lastError).toBeNull();
+    expect(h.calls.find((c: any) => c.op === 'archiveGoal')).toBeUndefined();
+  });
+
+  it('keeps unparseable review JSON as a terminal artifact failure', async () => {
+    const h = makeHarness();
+    const sid = await seedReview(h);
+    const a = nodeArtifactPaths(h.mafwDir, 'g1', 1);
+    fs.mkdirSync(path.dirname(a.review), { recursive: true });
+    fs.writeFileSync(a.review, '```mafw-review\n{ not json\n```\n', 'utf-8');
+    await h.fireIdle(sid);
+
     expect(h.nodeRuns[0].status).toBe('failed');
-    expect(h.nodeRuns[0].error).toContain('missing: g1');
+    expect(h.nodeRuns[0].error).toContain('mafw-review JSON block');
   });
 
   it('accepts a review that covers every required goal condition', async () => {

@@ -12,7 +12,7 @@ import type { PodGoalVerdict } from './pod-stage';
  * 结果不可信的失败分类（fail-closed）。`null` = 结果自洽；其余值说明结果页
  * 只能展示原始证据，不得宣称验收通过：
  * - `review_missing`：终态 PASS 但没有可读的 review 报告（没有证据的 PASS）；
- * - `review_invalid`：review 报告不可解析 / 逐任务或逐条件 rubric 自相矛盾；
+ * - `review_invalid`：review 报告不可解析 / 逐任务或逐条件 rubric 自相矛盾，或 rubric 缺证据；
  * - `goal_conditions_missing`：评审没有覆盖每条必需 Goal 条件；
  * - `goal_eval_invalid`：Goal Eval 产物存在但不可解析（无法判断要求哪些条件）。
  */
@@ -162,6 +162,13 @@ export function buildPodGoalResult(input: {
       tasks = rubric.tasks;
       goalResults = rubric.goalResults;
       reviewFeedback = rubric.feedback;
+      // 评审内容不完整（缺证据 / 漏必需条件）已降级为 FAIL——结果不可宣称通过，
+      // 但要按「评审判定」而不是「产物损坏」分类（驱动侧同样只走重试语义）。
+      if (rubric.missingGoalConditions?.length) {
+        failure = 'goal_conditions_missing';
+      } else if (rubric.omissions?.length) {
+        failure = 'review_invalid';
+      }
     } catch (err: any) {
       // Fail closed: a report that cannot be parsed never becomes a PASS and
       // exposes no invented per-task/per-condition evidence.

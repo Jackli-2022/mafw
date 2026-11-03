@@ -473,12 +473,13 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
     return [
       head, docs, retryContext, '',
       `任务：执行一次**技术验证（Spike）**，回答计划里的不确定问题。工作目录是隔离工作区 ${probe.workspaceDir}；`,
-      '主项目只读——不得写入主工作区、不得改动正式实施 diff；验证代码可丢弃。',
+      `主项目（只读源码）：${ctx.projectDir}——读工具只能读「允许范围 · 路径」声明内的文件（相对主项目根解析，绝对路径也可以）；`,
+      '主项目只读——不得写入主工作区（会被拒绝）、不得改动正式实施 diff；需要写文件时一律写在隔离工作区里，验证代码可丢弃。',
       '',
       `问题：${probe.request.question}`,
       `当前假设：${probe.request.hypothesis}`,
       `允许范围（必须是机器可读声明，越界必须停下并如实报告）：`,
-      `- 路径：${scope.paths.join(', ') || '（无，只推理）'}`,
+      `- 路径：${scope.paths.join(', ') || '（无，只推理）'}（相对隔离工作区与主项目根；主项目内只读）`,
       `- 命令类别：${scope.commandClasses.join(', ')}`,
       `- 网络：${scope.network ? '允许' : '不允许'}`,
       `- 凭据：${scope.credentials.join(', ') || '（无）'}`,
@@ -529,7 +530,7 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
       '字符串形式的任务也接受，但没有 acceptance 时 review 只能自证。',
       '顶层 taskType 与每 wave 的 riskNote 为 D4b 反事实要求（判断任务类型；对照历史失败模式为每个 wave 预设缓解）。',
       '若关键技术假设无法只靠读代码确认（路线不清、风险高、可能改变方案）：先提交两段式验证请求，不要猜：',
-      '{"status":"need_probe","probes":[{"question":"要回答的技术问题","hypothesis":"当前假设","scope":{"paths":["相对探针工作区的允许路径"],"commandClasses":["read|search|build|test|lint|format|install|shell"],"network":false,"credentials":[]},"budget":{"maxMinutes":20,"maxUsd":2},"evidenceRequired":["需要看到什么证据"],"affects":{"planAssertions":["受影响的计划断言"]}}]}',
+      '{"status":"need_probe","probes":[{"question":"要回答的技术问题","hypothesis":"当前假设","scope":{"paths":["允许访问的相对路径（主项目内只读、工作区内可写）"],"commandClasses":["read|search|build|test|lint|format|install|shell"],"network":false,"credentials":[]},"budget":{"maxMinutes":20,"maxUsd":2},"evidenceRequired":["需要看到什么证据"],"affects":{"planAssertions":["受影响的计划断言"]}}]}',
       'need_probe 只申请**隔离、只读**的验证；Builder 会在独立临时目录执行并返回 ProbeReport，之后你要提交最终 ready 计划（证据进入你的下一轮上下文）。',
       ctx.planReview === 'manual'
         ? [

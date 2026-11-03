@@ -28,18 +28,20 @@ describe('parseReviewRubric', () => {
     expect(rubric.inconsistent).toBeUndefined();
   });
 
-  test('rejects a rubric that misses a wave task', () => {
-    expect(() => parseReviewRubric(reviewFile({
+  test('an incomplete task rubric is a review FAIL, not a broken artifact', () => {
+    const missing = parseReviewRubric(reviewFile({
       verdict: 'PASS',
       tasks: [{ taskId: 'w1-t1', result: 'pass', evidence: 'x' }],
       feedback: '',
-    }), ['w1-t1', 'w1-t2'])).toThrow(RubricError);
-    try {
-      parseReviewRubric(reviewFile({ verdict: 'PASS', tasks: [], feedback: '' }), ['w1-t2']);
-    } catch (err: any) {
-      expect(err.code).toBe('missing_tasks');
-      expect(err.message).toContain('w1-t2');
-    }
+    }), ['w1-t1', 'w1-t2']);
+    expect(missing.verdict).toBe('FAIL');
+    expect(missing.omissions?.join(' ')).toContain('w1-t2');
+    expect(missing.feedback).toContain('w1-t2');
+
+    const empty = parseReviewRubric(reviewFile({ verdict: 'PASS', tasks: [], feedback: '' }), ['w1-t2']);
+    expect(empty.verdict).toBe('FAIL');
+    expect(empty.missingGoalConditions).toBeUndefined();
+    expect(empty.feedback).toContain('w1-t2');
   });
 
   test('downgrades PASS to FAIL when a task failed', () => {
@@ -59,7 +61,10 @@ describe('parseReviewRubric', () => {
   test('allows legacy review files without tasks only when waves had no tasks', () => {
     const legacy = reviewFile({ verdict: 'FAIL', feedback: 'needs work' });
     expect(parseReviewRubric(legacy, []).tasks).toEqual([]);
-    expect(() => parseReviewRubric(legacy, ['w1-t1'])).toThrow(RubricError);
+    // 有任务却整段缺失 = 评审不完整 → FAIL（不再是 artifact_invalid）。
+    const legacyWithTasks = parseReviewRubric(legacy, ['w1-t1']);
+    expect(legacyWithTasks.verdict).toBe('FAIL');
+    expect(legacyWithTasks.omissions?.join(' ')).toContain('w1-t1');
   });
 
   test('rejects duplicate task ids and keeps skipped as skipped', () => {
@@ -85,9 +90,13 @@ describe('parseReviewRubric', () => {
   });
 
   test('evidence is required for pass/fail but not for skipped', () => {
-    expect(() => parseReviewRubric(reviewFile({
+    // 缺证据的 pass 不可能通过：降级为 fail 并进入修复/下一轮。
+    const missingEvidence = parseReviewRubric(reviewFile({
       verdict: 'PASS', tasks: [{ taskId: 'w1-t1', result: 'pass', evidence: '' }], feedback: 'ok',
-    }), ['w1-t1'])).toThrow(RubricError);
+    }), ['w1-t1']);
+    expect(missingEvidence.verdict).toBe('FAIL');
+    expect(missingEvidence.tasks[0].result).toBe('fail');
+    expect(missingEvidence.omissions?.join(' ')).toContain('w1-t1');
     expect(parseReviewRubric(reviewFile({
       verdict: 'FAIL', tasks: [{ taskId: 'w1-t1', result: 'skipped', evidence: '' }], feedback: 'blocked',
     }), ['w1-t1']).tasks[0].result).toBe('skipped');
