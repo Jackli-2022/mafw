@@ -1519,6 +1519,12 @@ Tech Lead 在每个 Goal revision 内选择 `quick` / `collaborative`；Desktop 
   右栏布局。**未在 GUI 实测**：quick/collaborative 完整 LLM 闭环、计划批准/Reviewer/结果打回的真实回合、
   OS 级 deep link（解析与路由由单测/接线测试覆盖）。最终实现 commit `2787681e`；本批未 push、
   未 deploy、未发布。
+- **视觉收口（2026-11-04，commit `71f729e8`）**：新增「编辑台式」视觉层（沿用 MAFW 暖中性 token 与
+  `--accent`，不新增第二套色板）：工作空间标题/Lead 卡片（左侧 accent 线 + L monogram）、工作概览
+  （状态点/计数/`rev`/策略/评审 chips、空态图标）、自由讨论（真实相对时间、chevron、细行）、New Goal
+  composer（全宽输入）、项目资源（行内图标/成员头像/悬停 chevron/分区细线）、Goal 详情（GOAL 信头、
+  stage chips、当前行动条、卡片化版本历史/区块）；取消/中止 Goal 不再渲染结果卡或取消按钮。
+  desktop **2714/2714**、`tsgo -p`/`electron-vite build` rc=0；新增 5 个视觉契约用例。
 
 ## 6. Gateway 运维
 
