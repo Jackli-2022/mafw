@@ -137,6 +137,35 @@ describe("toolCardModel: canonicalTool", () => {
 // Payload caps
 // ---------------------------------------------------------------------------
 
+describe("toolCardModel: settled error", () => {
+  test("an error part carries its message to the package view", () => {
+    const model = toolCardModel(request({ status: "error", error: "boom" }))
+    expect(model.status).toBe("error")
+    expect(model.error).toBe("boom")
+  })
+
+  test("missing or empty error is omitted", () => {
+    expect("error" in toolCardModel(request({ error: undefined }))).toBe(false)
+    expect("error" in toolCardModel(request({ error: "" }))).toBe(false)
+  })
+
+  test("an oversized error is truncated within the shared cap, never thrown", () => {
+    const model = toolCardModel(
+      request({
+        status: "error",
+        error: "e".repeat(LIMIT * 2),
+        input: { q: "tiny" },
+        output: undefined,
+        metadata: undefined,
+      }),
+    )
+    expect(model.truncated).toBe(true)
+    expect(typeof model.error).toBe("string")
+    expect(jsonBytes(model.error)).toBeLessThanOrEqual(LIMIT)
+    expect(jsonBytes(model.input) + jsonBytes(model.error)).toBeLessThanOrEqual(LIMIT)
+  })
+})
+
 describe("toolCardModel: 256 KiB payload cap", () => {
   test("small payloads pass through untouched and untruncated (same references)", () => {
     const input = { query: "hello", nested: { n: 1 } }

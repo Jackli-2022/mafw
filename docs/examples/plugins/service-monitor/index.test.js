@@ -96,6 +96,15 @@ test("declares all four UI slots, two required actions and one package event", a
   assert.equal(events[0].type, CHANGED_EVENT);
 });
 
+test("the tool card opts into replacing the built-in bash card", async () => {
+  const { contributions } = await activate();
+  const card = contributions.ui.toolCards[0];
+  // `bash` already has a built-in desktop card; without override the whole
+  // alias group is skipped and the example would never render a card.
+  assert.equal(card.override, true);
+  assert.deepEqual(card.tools, ["bash", "shell"]);
+});
+
 test("every slot reference resolves inside the package", async () => {
   const { contributions } = await activate();
   const actionNames = new Set(Object.keys(contributions.actions));
@@ -188,12 +197,18 @@ test("loadConfig and saveConfig round-trip through ctx.config.update", async () 
   assert.equal(emitted.length, 1);
 
   const message = await contributions.actions.messageView.handler({
-    checked: 1,
-    at: "2026-11-03T00:00:00.000Z",
-    source: "saveConfig",
+    event: {
+      type: CHANGED_EVENT,
+      properties: {
+        checked: 1,
+        at: "2026-11-03T00:00:00.000Z",
+        source: "saveConfig",
+      },
+    },
   }, { signal: new AbortController().signal });
   // The message window reads the live config, not the baked default endpoint.
   assert.ok(JSON.stringify(message.body).includes("https://status.internal"));
+  assert.ok(JSON.stringify(message.body).includes("saveConfig"));
 });
 
 test("toolCard renders a neutral tool model and messageView renders an event payload", async () => {
@@ -209,12 +224,24 @@ test("toolCard renders a neutral tool model and messageView renders an event pay
   assertJsonWidgets(card.body);
 
   const message = await contributions.actions.messageView.handler({
-    checked: 2,
-    at: "2026-11-03T00:00:00.000Z",
-    source: "refresh",
+    event: {
+      type: CHANGED_EVENT,
+      properties: {
+        checked: 3,
+        at: "2026-11-03T12:34:56.000Z",
+        source: "manual",
+      },
+    },
+    sessionID: "ses_example",
   }, { signal: new AbortController().signal });
   assert.equal(message.title, "Service status changed");
-  assert.ok(JSON.stringify(message.body).includes("2"));
+  assert.equal(message.subtitle, "2026-11-03T12:34:56.000Z");
+  const rendered = JSON.stringify(message.body);
+  // Canonical window payload is nested: { event: { type, properties } }.
+  assert.ok(rendered.includes("**3**"), "renders the real check count");
+  assert.ok(rendered.includes("`manual`"), "renders the real source");
+  assert.ok(rendered.includes("2026-11-03T12:34:56.000Z"), "renders the real timestamp");
+  assert.ok(rendered.includes("https://status.example.com"), "renders the endpoint");
   assert.ok(message.body.some((widget) => widget.type === "markdown"));
   assertJsonWidgets(message.body);
 });

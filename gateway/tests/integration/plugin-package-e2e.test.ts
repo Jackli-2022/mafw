@@ -195,7 +195,7 @@ describe('service-monitor example package (end-to-end)', () => {
       'verbose',
     ]);
     expect(plugin.ui.toolCards).toEqual([
-      { id: 'service-tool', tools: ['bash', 'shell'], viewAction: 'toolCard' },
+      { id: 'service-tool', tools: ['bash', 'shell'], override: true, viewAction: 'toolCard' },
     ]);
     expect(plugin.ui.messageWindows?.[0]).toMatchObject({
       id: 'status-change',
@@ -285,12 +285,18 @@ describe('service-monitor example package (end-to-end)', () => {
     expect(collectWidgets(card.body).some((widget) => widget.type === 'code')).toBe(true);
 
     const message = await host.invokeAction('service-monitor', 'messageView', {
-      checked: 2,
-      at: '2026-11-03T00:00:00.000Z',
-      source: 'saveConfig',
+      event: {
+        type: CHANGED_EVENT,
+        properties: {
+          checked: 2,
+          at: '2026-11-03T00:00:00.000Z',
+          source: 'saveConfig',
+        },
+      },
     }) as any;
     expect(message.title).toBe('Service status changed');
-    expect(JSON.stringify(message.body)).toContain('2');
+    expect(JSON.stringify(message.body)).toContain('**2**');
+    expect(JSON.stringify(message.body)).toContain('saveConfig');
     // The message window reads the current config, not a baked default endpoint.
     expect(JSON.stringify(message.body)).toContain('https://status.internal');
     expect(collectWidgets(message.body).some((widget) => widget.type === 'markdown')).toBe(true);

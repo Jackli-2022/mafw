@@ -141,7 +141,12 @@ function buildPanelView(config, checks, serviceFilter) {
       type: 'row',
       children: [
         { type: 'action', label: 'Refresh now', action: 'refresh', style: 'primary' },
-        { type: 'action', label: 'Message preview', action: 'messageView', input: { checked: checks, source: 'manual' } },
+        { type: 'action', label: 'Message preview', action: 'messageView', input: {
+          event: {
+            type: CHANGED_EVENT,
+            properties: { checked: checks, at: new Date().toISOString(), source: 'manual' },
+          },
+        } },
       ],
     },
   ];
@@ -162,10 +167,23 @@ function buildPanelView(config, checks, serviceFilter) {
   };
 }
 
+function messagePayload(input) {
+  // Desktop invokes a message window `viewAction` with the canonical nested
+  // shape `{ event: { type, properties }, sessionID? }`. Older direct widget
+  // calls may still pass the flat properties object, so accept both.
+  const event = input && typeof input.event === 'object' && input.event !== null ? input.event : null;
+  const properties =
+    event && typeof event.properties === 'object' && event.properties !== null
+      ? event.properties
+      : input;
+  return properties && typeof properties === 'object' ? properties : {};
+}
+
 function buildMessageView(input, endpoint) {
-  const checked = typeof input.checked === 'number' ? input.checked : 0;
-  const at = typeof input.at === 'string' ? input.at : 'unknown time';
-  const source = typeof input.source === 'string' ? input.source : 'manual';
+  const payload = messagePayload(input);
+  const checked = typeof payload.checked === 'number' ? payload.checked : 0;
+  const at = typeof payload.at === 'string' ? payload.at : 'unknown time';
+  const source = typeof payload.source === 'string' ? payload.source : 'manual';
   return {
     title: 'Service status changed',
     subtitle: at,
@@ -229,6 +247,10 @@ module.exports = {
           {
             id: 'service-tool',
             tools: ['bash', 'shell'],
+            // `bash` already has a built-in Desktop card. Without `override`
+            // the whole alias group (bash + mafw_bash + shell + mafw_shell) is
+            // skipped, so the example would never render a card.
+            override: true,
             viewAction: 'toolCard',
           },
         ],
@@ -352,13 +374,18 @@ module.exports = {
         },
         messageView: {
           title: 'Render a message window',
-          description: 'Receives the registered event payload (plus sessionID when present).',
+          description: 'Receives the canonical window payload (registered event plus sessionID when present).',
           inputSchema: {
             type: 'object',
             properties: {
-              checked: { type: 'integer' },
-              at: { type: 'string' },
-              source: { type: 'string' },
+              event: {
+                type: 'object',
+                properties: {
+                  type: { type: 'string' },
+                  properties: { type: 'object' },
+                },
+                required: ['type', 'properties'],
+              },
               sessionID: { type: 'string' },
             },
             additionalProperties: true,

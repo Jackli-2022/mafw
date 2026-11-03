@@ -1558,6 +1558,8 @@ export interface ToolProps {
   sessionID?: string
   output?: string
   status?: string
+  /** Normalized settled-part error (`errorText(part.state.error)`). */
+  error?: string
   hideDetails?: boolean
   defaultOpen?: boolean
   open?: boolean
@@ -1691,6 +1693,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               metadata={partMetadata()}
               output={part().state.output}
               status={part().state.status}
+              error={errorText(part().state.error)}
               hideDetails={props.hideDetails}
               defaultOpen={props.defaultOpen}
               open={controlledOpen()}

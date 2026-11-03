@@ -128,6 +128,21 @@ module.exports = {
 | `ctx.gatewayPort` | gateway HTTP 端口 |
 | `ctx.usage.modelStats({sinceMs?, provider?})` | 本地 trajectory 分模型统计 |
 | `ctx.emit(event)` | 只发射本包已注册的 `plugin:<package>:*` 事件（见 §4） |
+| `ctx.effect(dispose)` | 注册本包副作用清理函数（见下） |
+
+`ctx.effect` 是 `activate()` 中创建的 timer / listener / watcher 等副作用的**唯一受支持清理路径**。包必须在创建副作用时立即登记：
+
+```js
+async activate(ctx) {
+  const timer = setInterval(() => { /* … */ }, 60_000);
+  ctx.effect(() => clearInterval(timer));
+  return { /* contributions */ };
+}
+```
+
+- 清理在包被重新加载、替换、禁用、删除（以及离线 `check` 的临时 candidate 释放）时执行；同一包的多个 effect 按注册逆序（LIFO）执行，单个清理抛错只记 diagnostic，不影响其余清理。
+- `activate()` 之外创建的全局副作用不会被 Host 追踪；不要在模块顶层创建长生命周期资源，否则卸载后会泄漏。
+- 回调应幂等：失败重试或手动调用 `check` 可能释放同一 candidate 多次。
 
 `ctx.config.update` 的边界：
 
@@ -271,16 +286,18 @@ ui: {
   toolCards: [{
     id: 'service-tool',
     tools: ['bash', 'shell'],   // 逻辑工具名，Desktop 负责 alias/canonical 解析
+    override: true,             // 必需：bash 已有内置卡
     viewAction: 'toolCard',
-    // override: true 才能替换内置/legacy 卡
   }],
 }
 ```
 
-- Desktop 把中性 ToolCardModel（tool / input / output / metadata / status）作为 action input 发给 gateway。
+- Desktop 把中性 ToolCardModel（`tool` / `canonicalTool` / `input` / `output` / `metadata` / `status` / `error` / `truncated`）作为 action input 发给 gateway。`status` 为 `error` 时 `error` 是归一化后的错误文本；失败部件同样会进入插件卡。
 - running 阶段保持默认卡；completed / error 才请求插件视图，避免流式 O(n²) 请求。
-- input/output 有统一字节上限与显式 truncated 标记，Desktop 不依赖 runtime 私有历史存储。
-- 只有 `override: true` 才允许替换同名内置卡。
+- input/output/error 共享统一 256 KiB 字节上限，超限被结构化截断并置 `truncated:true`，不会抛错。Desktop 不依赖 runtime 私有历史存储。
+- **alias 组是全有或全无**：一个逻辑工具名展开为 `bash` + `mafw_bash` + `shell` + `mafw_shell`（canonical/`mafw_` 前缀/裸名）。组内任一 key 已被内置或 legacy 卡占用，且声明没有 `override:true`，整组都会被跳过（不会出现半绑定的别名）。
+- `bash`、`read`、`grep` 等常用工具**已有内置 session-ui 卡**，想替换必须写 `override:true`。只声明 slot 而不 override，在真实 Desktop 里永远不会渲染插件卡。示例包 `service-monitor` 就依赖这一点。
+- 若包视图不可用、action 失败或 revision 已过期，Desktop 回退到原卡，并在原卡上方显示 `error` 文本（不会静默丢掉失败原因）。
 
 ### 6.4 messageWindows
 
@@ -299,7 +316,46 @@ ui: {
 
 - `triggerEvent` 必须引用本包已注册事件。
 - 事件到达时在 MAFW 主窗口打开 `<package>:<id>` 的单例小窗；同 id 后续事件只刷新，不重复堆窗。
-- 中性事件 payload / sessionID 作为 action input 调用 `viewAction`。
+- **`viewAction` 的 input 是规范嵌套形状**：
+
+  ```ts
+  {
+    event: {
+      type: string,        // 触发事件类型（= triggerEvent）
+      properties: object,  // 注册事件 schema 校验后的 payload
+    },
+    sessionID?: string,    // 事件携带会话时才有
+  }
+  ```
+
+  不要把 `checked` / `at` / `source` 等 payload 字段声明为顶层 input——Desktop 不会发送平铺形状。对应的 `inputSchema` 写成：
+
+  ```js
+  actions: {
+    messageView: {
+      title: 'Render a message window',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          event: {
+            type: 'object',
+            properties: {
+              type: { type: 'string' },
+              properties: { type: 'object' },
+            },
+            required: ['type', 'properties'],
+          },
+          sessionID: { type: 'string' },
+        },
+        additionalProperties: true,
+      },
+      handler(input) {
+        const { checked, at, source } = input.event.properties;
+        return { body: [{ type: 'text', text: `${checked} @ ${at} (${source})` }] };
+      },
+    },
+  },
+  ```
 - **`viewAction` 不得发射 `triggerEvent`**：小窗取视图会再次触发事件，形成无限刷新。事件应由其他用户 action 发射。
 - `modal:false` 是不阻断聊天的浮动小窗，不主动抢焦点；`modal:true` 是居中模态层并管理焦点。
 - `dismissible:true` 支持关闭按钮与 Esc。
@@ -482,10 +538,10 @@ node scripts/stage-plugin-contract.mjs --verify <entry-file>
 - `index.js` — 一次 `activate(ctx)` 返回：
   - `ui.panels`：`Service Monitor` 面板，`viewAction:'refresh'`，`refreshOn` 绑定 `plugin:service-monitor:changed`。
   - `ui.configPages`：endpoint / intervalSeconds / verbose 三字段的受限 schema，`loadConfig` / `saveConfig`。
-  - `ui.toolCards`：`bash` / `shell` 中性工具卡，`viewAction:'toolCard'`。
-  - `ui.messageWindows`：`changed` 事件触发的单例小窗，`viewAction:'messageView'`。
+  - `ui.toolCards`：`bash` / `shell` 中性工具卡，`override:true`（`bash` 已有内置卡，不 override 会被整组跳过），`viewAction:'toolCard'`。
+  - `ui.messageWindows`：`changed` 事件触发的单例小窗，`viewAction:'messageView'`；action input 使用 `{ event: { type, properties }, sessionID? }` 嵌套形状。
   - `actions`：`refresh`、`loadConfig`、`saveConfig`、`toolCard`、`messageView`。
   - `events`：`plugin:service-monitor:changed`（带 payload schema）。
-- `index.test.js` — 零依赖自测：fake ctx 下逐项验证 slot/action/event、配置往返、事件发射与 widget 可序列化。
+- `index.test.js` — 零依赖自测：fake ctx 下逐项验证 slot/action/event、tool card override、配置往返、事件发射、嵌套 message window payload 与 widget 可序列化。
 
 端到端回归：`gateway/tests/integration/plugin-package-e2e.test.ts` 用真实 PackageManager/PluginHost 覆盖 check → install → descriptor → action → event → canonical 伪造 → 热重载 → disable/delete，以及打包后的 contract 解析。

@@ -10,6 +10,9 @@
 // plugin generations fall back to the original card; plugin code never runs in
 // the renderer. The proxy opts into error rendering (`handlesError`) so error
 // parts reach the package card instead of the generic ToolErrorCard.
+// `handlesError: true` suppresses the generic ToolErrorCard, so the fallback
+// (no plugin view / failed action / stale generation) renders the part error
+// above the original card instead of hiding the reason.
 import { Show, createEffect, createResource, createRoot, createSignal } from "solid-js"
 import { GenericTool } from "@mafw/session-ui/basic-tool"
 import {
@@ -68,6 +71,7 @@ function UnifiedToolCardProxy(props: ToolProps & { unified: UnifiedCardBinding }
       output: props.output,
       metadata: props.metadata,
       status: props.status,
+      error: props.error,
       sessionID: props.sessionID,
     })
     try {
@@ -88,7 +92,17 @@ function UnifiedToolCardProxy(props: ToolProps & { unified: UnifiedCardBinding }
 
   const fallback = () => {
     const original = props.unified.original
-    return original ? original(props) : <GenericTool {...props} />
+    // `handlesError: true` suppresses the generic ToolErrorCard, so the fallback
+    // (no plugin view / failed action / stale generation) must show the reason
+    // itself while keeping the original card visible.
+    return (
+      <div class="mafw-plugin-tool-fallback">
+        <Show when={typeof props.error === "string" && props.error.length > 0}>
+          <div class="mafw-plugin-tool-error">{props.error}</div>
+        </Show>
+        {original ? original(props) : <GenericTool {...props} />}
+      </div>
+    )
   }
 
   const runAction = async (action: string, input?: unknown) => {

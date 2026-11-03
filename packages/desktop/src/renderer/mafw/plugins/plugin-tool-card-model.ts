@@ -32,6 +32,8 @@ export interface ToolCardRenderRequest {
   output?: unknown
   metadata?: unknown
   status?: string
+  /** Normalized settled-part error text (`errorText(part.state.error)`). */
+  error?: string
   sessionID?: string
 }
 
@@ -43,7 +45,9 @@ export interface ToolCardModel {
   output?: unknown
   metadata?: unknown
   status: string
-  /** True when input/output were shrunk to fit the shared byte budget. */
+  /** Settled-part error text; omitted for successful parts. */
+  error?: string
+  /** True when input/output/error were shrunk to fit the shared byte budget. */
   truncated: boolean
 }
 
@@ -203,17 +207,28 @@ export function toolCardModel(req: ToolCardRenderRequest): ToolCardModel {
   const input = req.input === undefined ? {} : req.input
   const output = req.output
   const capped = capPayloads(input, output, MAX_TOOL_PAYLOAD_BYTES)
+  const error = typeof req.error === "string" && req.error.length > 0 ? req.error : undefined
+  let nextError: string | undefined
+  let errorTruncated = false
+  if (error !== undefined) {
+    // The error shares the same 256 KiB action-input budget as input/output.
+    const used = toolCardPayloadBytes(capped.input) + toolCardPayloadBytes(capped.output)
+    const shrunk = shrinkValue(error, Math.max(0, MAX_TOOL_PAYLOAD_BYTES - used))
+    if (typeof shrunk === "string" && shrunk.length > 0) nextError = shrunk
+    errorTruncated = nextError !== error
+  }
   const model: ToolCardModel = {
     tool: typeof req.tool === "string" ? req.tool : "",
     input: capped.input,
     status: typeof req.status === "string" && req.status.length > 0 ? req.status : "completed",
-    truncated: capped.truncated,
+    truncated: capped.truncated || errorTruncated,
   }
   if (typeof req.canonicalTool === "string" && req.canonicalTool.length > 0) {
     model.canonicalTool = req.canonicalTool
   }
   if (capped.output !== undefined) model.output = capped.output
   if (req.metadata !== undefined) model.metadata = req.metadata
+  if (nextError !== undefined) model.error = nextError
   return model
 }
 
