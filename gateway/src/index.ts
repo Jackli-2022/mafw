@@ -14,7 +14,11 @@ import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
 import { ensureGoalState, effectiveRevision, isTerminalState, loadGoalState } from './core/goal/state-v3';
 import { isTaskType } from './orchestration/capability-ledger';
-import { resolveGoalDir } from './core/goal/starter';
+import {
+  resolveGoalRefFromEntries,
+  type GoalProjectEntry,
+  type GoalResolution,
+} from './core/goal/goal-identity';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
 import { handleGoalTimeline } from './routes/goal-timeline';
 import { handleGoalPlan } from './routes/goal-plan';
@@ -4173,10 +4177,8 @@ class MafwScheduler {
       startGoal: (goalId, projectDirHint) => this.startGoalDirect(goalId, projectDirHint),
       advanceGoal: (goalId) => this.goalDriver?.advance(goalId) ?? Promise.resolve(),
       resolveProjectDir: (goalId) => {
-        const projects = Array.from(this.registeredProjects.entries())
-          .map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir }));
-        return resolveGoalDir(projects, undefined, (mafwDir) =>
-          !!findGoalRequestPath(mafwDir, goalId))?.projectDir ?? null;
+        const resolution = resolveGoalRefFromEntries(this.registeredGoalEntries(), goalId);
+        return resolution.ok ? resolution.ref.projectDir : null;
       },
       now: () => new Date().toISOString(),
       newId: () => `podgoal_${randomUUID()}`,
@@ -9093,28 +9095,55 @@ class MafwScheduler {
     });
   }
 
+  private registeredGoalEntries(): GoalProjectEntry[] {
+    return Array.from(this.registeredProjects.values())
+      .map((info) => ({ projectDir: info.projectDir, mafwDir: info.mafwDir }));
+  }
+
+  private resolveGoalProject(
+    goalId: string,
+    projectDirHint?: string,
+  ):
+    | { ok: true; projectDir: string; mafwDir: string; info: RegisteredProject }
+    | Extract<GoalResolution, { ok: false }> {
+    const resolution = resolveGoalRefFromEntries(
+      this.registeredGoalEntries(),
+      goalId,
+      projectDirHint ? { projectDir: projectDirHint } : undefined,
+    );
+    if (!resolution.ok) return resolution;
+    const wanted = canonicalProjectDir(resolution.ref.projectDir);
+    const info = Array.from(this.registeredProjects.values())
+      .find((project) => canonicalProjectDir(project.projectDir) === wanted);
+    if (!info) return { ok: false, reason: 'not_found', candidates: [] };
+    return {
+      ok: true,
+      projectDir: resolution.ref.projectDir,
+      mafwDir: resolution.mafwDir,
+      info,
+    };
+  }
+
   private findGoalStatePath(goalId: string): { statePath: string; info: RegisteredProject } | null {
-    for (const [, info] of this.registeredProjects) {
-      const p = path.join(info.mafwDir, 'state', `${goalId}.json`);
-      if (fs.existsSync(p)) {
-        return { statePath: p, info };
-      }
-    }
-    return null;
+    const resolved = this.resolveGoalProject(goalId);
+    if (!resolved.ok || !resolved.info || !resolved.projectDir) return null;
+    const statePath = path.join(resolved.mafwDir, 'state', `${goalId}.json`);
+    return fs.existsSync(statePath)
+      ? { statePath, info: resolved.info }
+      : null;
   }
 
   private findGoalRequestDir(goalId: string): string | null {
-    for (const [, info] of this.registeredProjects) {
-      if (findGoalRequestPath(info.mafwDir, goalId)) {
-        return info.mafwDir;
-      }
-    }
-    return null;
+    const resolved = this.resolveGoalProject(goalId);
+    return resolved.ok && findGoalRequestPath(resolved.mafwDir, goalId)
+      ? resolved.mafwDir
+      : null;
   }
 
-  /** Goal 的 mafw 目录：优先 state，其次两种 request 布局。 */
+  /** Goal 的 mafw 目录：state 与两种 request 布局都由规范身份解析。 */
   private findGoalMafwDir(goalId: string): string | null {
-    return this.findGoalStatePath(goalId)?.info.mafwDir ?? this.findGoalRequestDir(goalId);
+    const resolved = this.resolveGoalProject(goalId);
+    return resolved.ok ? resolved.mafwDir : null;
   }
 
   /**
@@ -9264,11 +9293,15 @@ class MafwScheduler {
       log.warn(`[Goal] ${goalId}: refusing to start before a direction decision`);
       return;
     }
-    const projects = Array.from(this.registeredProjects.entries())
-      .map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir }));
-    const found = resolveGoalDir(projects, projectDirHint, (mafwDir) =>
-      !!findGoalRequestPath(mafwDir, goalId));
-    if (!found) { log.warn(`[Goal] ${goalId}: no project dir resolved — skipping`); throw new Error(`no project dir resolved for goal ${goalId}`); }
+    const resolved = this.resolveGoalProject(goalId, projectDirHint);
+    if (!resolved.ok) {
+      const detail = resolved.reason === 'ambiguous'
+        ? `ambiguous projects: ${resolved.candidates.join(', ')}`
+        : 'no project dir resolved';
+      log.warn(`[Goal] ${goalId}: ${detail} — skipping`);
+      throw new Error(`${detail} for goal ${goalId}`);
+    }
+    const found = { projectDir: resolved.projectDir, mafwDir: resolved.mafwDir };
     const requestPath = findGoalRequestPath(found.mafwDir, goalId);
     const request = readGoalRequest(found.mafwDir, goalId);
     this.goalDriverMafwDirCache.set(goalId, found.mafwDir);
