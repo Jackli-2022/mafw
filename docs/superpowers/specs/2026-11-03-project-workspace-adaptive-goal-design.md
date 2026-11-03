@@ -91,7 +91,7 @@
 
 - 默认属于当前项目，拥有独立话题上下文。
 - 可以提问、探索、讨论方案，不自动产生 Goal，不进入工作计数。
-- 可以归档、恢复、导出；归档或删除讨论不影响由它产生的 Goal。
+- 保留现有重命名、导出、删除等会话管理；删除讨论不影响由它产生的 Goal。本轮不新增跨 runtime 的归档 / 恢复 API。
 - 当用户明确要求执行时，自由 Session 显式 handoff 给 Lead，由 Lead 创建 Goal；自由 Session 自己不能绕过 Lead 创建 Pod Goal。
 - Goal 同时保存来源 Session / message 指针和来源内容的不可变快照摘要。之后删除来源讨论不影响 Goal；原讨论本身保持原样。
 
@@ -310,6 +310,7 @@ Goal 的规范身份是 `(canonicalProjectDir, goalId)`。gateway 可以维护�
 - 不改变进程 PID、gateway.pid、serve sidecar 或 desktop sidecar 的进程管理逻辑。代码里的 `pid` 也可能是 `projectID` / `providerID` 的局部缩写，不属于 Pod / Goal 领域标识。
 - 不在本轮新建跨项目全局 Inbox；先把单项目工作空间与统一 Goal 读模型做正确。
 - 不做视觉风格换新；本轮是信息架构、领域归属和执行逻辑。
+- 不新增自由 Session 的跨 runtime 归档 / 恢复 API；保留当前已有的会话管理能力。
 - 不把自由讨论自动转为 Goal，不让 Tech Lead 代替用户扩大授权。
 
 ## 12. 验收场景
