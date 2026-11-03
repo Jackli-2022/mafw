@@ -1463,9 +1463,9 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
   - GUI 冒烟已验证：工作 rail 无固定 Lead/Manager 行；Pod Lead 无 live session 时仍可点击并
     经 ensure 恢复（`bindLead` 不再被历史同 id 的 ended 行提前短路）；恢复后打开
     `Lead L` tab、accent dot、Lead composer；PodDock 重复打开不新增 tab；Welcome「Lead 会话」
-    进鲸群、「新建 Goal」打开 Pod composer；页面无「新话题」。冒烟补出的 3 个缺口均
+    进鲸群、「新建 Goal」打开 Pod composer；页面无「新话题」。冒烟与终审补出的缺口均
     RED→GREEN：`ensureLead` 跑 roster 迁移、ended coordination 重激活、Lead 行 `canOpen`。
-    最终门禁：gateway **4345/4345（563 suites）**、desktop **2383/2383**、SDK **188/188**、
+    最终门禁：gateway **4346/4346（563 suites）**、desktop **2388/2388**、TUI **306（305 pass/1 skip）**、SDK **188/188**、
     plugin **30/30**、`tsc`/`tsgo -p`/root build/electron-vite build rc=0。桌面 reload 的
     layout 恢复因本地 gateway 在启动期多次健康超时未完成真机复核（自动化 layout 测试通过）。
 
