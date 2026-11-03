@@ -904,6 +904,13 @@ describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接�
     expect(shell).toMatch(/toggleLeftDock\("sessions"\)/)
     expect(shell).toContain("isContentEditable")
   })
+  test("右工作台不再依赖 chat 路由；项目页面保持可见", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).not.toMatch(/chatActive\(\) && rightDockOpen\(\)/)
+    expect(shell).toMatch(/workbenchSplit\(\{ content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
+    expect(shell).toMatch(/workbenchShellHidden\(\{ content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
+    expect(shell).toMatch(/<Show when=\{!showConfig\(\)\}>/)
+  })
   test("CSS：布局开关样式存在，no-drag 由 topstrip button 规则覆盖", () => {
     expect(css).toMatch(/\.mafw-topstrip\s+button[^{]*\{[^}]*-webkit-app-region:\s*no-drag/)
     expect(css).toContain(".mafw-layout-toggle")

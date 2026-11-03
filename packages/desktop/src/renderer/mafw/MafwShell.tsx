@@ -110,7 +110,7 @@ import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
 import { buildMafwFileUrl } from "../../shared/mafw-file"
 import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
-import { migrateDockKeys, workbenchColumns, workbenchShellHidden, formatResizePreview } from "./workbench-layout"
+import { migrateDockKeys, workbenchColumns, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
@@ -1827,7 +1827,8 @@ export function MafwShell() {
   })
   const welcomeFull = () => activeTab() === "chat" && !showConfig() && (showWelcome() || !activeSessionId())
   const chatActive = () => activeTab() === "chat" && !showConfig() && !welcomeFull()
-  const chatSplit = () => chatActive() && rightDockOpen()
+  const workbenchContent = (): WorkbenchContentMode => (showConfig() ? "config" : "project")
+  const chatSplit = () => workbenchSplit({ content: workbenchContent(), open: rightDockOpen() })
   const bodyColumns = () =>
     workbenchColumns({
       leftPx: leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : 0,
@@ -2554,7 +2555,7 @@ export function MafwShell() {
           }}
         />
         <div class="mafw-topstrip-spacer" />
-        <Show when={chatActive()}>
+        <Show when={!showConfig()}>
           <TooltipV2 value={`${rightDockOpen() ? "隐藏" : "显示"}面板 (Ctrl+Alt+B)`} openDelay={300}>
             <ButtonV2
               variant="ghost"
@@ -2821,9 +2822,9 @@ export function MafwShell() {
             {connDown() ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : (
-              <div class="mafw-dock-shell" classList={{ "is-hidden": workbenchShellHidden(chatActive()) }}>
+              <div class="mafw-dock-shell" classList={{ "is-hidden": workbenchShellHidden({ content: workbenchContent(), open: rightDockOpen() }) }}>
                 <WorkbenchShell
-                  open={dockPresent() && chatActive()}
+                  open={dockPresent()}
                   view={workbenchView()}
                   surface={workbenchSurface()}
                   executionSection={executionSection()}

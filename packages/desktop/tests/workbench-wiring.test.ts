@@ -13,9 +13,10 @@ describe("workbench 终审修复接线", () => {
     // openSessionTab 与 topstrip 选中都走同一关闭门
     expect((shell.match(/closeLeftDockIfOverlay\(\)/g) || []).length).toBeGreaterThanOrEqual(3)
   })
-  test("非 chat 视图不渲染工作台（页面整页让位，宽窄一致）", () => {
+  test("项目路由保持右工作台打开（Config 才让位）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect(shell).toMatch(/open=\{dockPresent\(\) && chatActive\(\)\}/)
+    expect(shell).toMatch(/open=\{dockPresent\(\)\}/)
+    expect(shell).not.toMatch(/open=\{dockPresent\(\) && chatActive\(\)\}/)
   })
   test("展开态信号独立于最大化信号（fullscreen 不再冒充 maximized）", () => {
     const main = read("src/main/windows.ts")

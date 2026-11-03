@@ -1,6 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { detentFromLegacy, formatResizePreview, migrateDockKeys, workbenchColumns, workbenchShellHidden } from "./workbench-layout"
+import { detentFromLegacy, formatResizePreview, migrateDockKeys, workbenchColumns, workbenchShellHidden, workbenchSplit } from "./workbench-layout"
 describe("workbench layout pure functions", () => {
   test("workbenchColumns：split 三列 / 关闭两列", () => {
     assert.equal(workbenchColumns({ leftPx: 0, chatPx: 520, split: true }), "0px 520px minmax(0, 1fr)")
@@ -44,9 +44,16 @@ describe("workbench layout pure functions", () => {
     assert.deepEqual(fresh, { detent: 760, terminalOpen: true })
   })
 
-  test("workbenchShellHidden：非 chat 视图隐藏（窄屏 overlay 不得盖住其他页）", () => {
-    assert.equal(workbenchShellHidden(false), true)
-    assert.equal(workbenchShellHidden(true), false)
+  test("workbenchSplit：项目路由保持三列，Config / 手动关闭退位", () => {
+    assert.equal(workbenchSplit({ content: "project", open: true }), true)
+    assert.equal(workbenchSplit({ content: "project", open: false }), false)
+    assert.equal(workbenchSplit({ content: "config", open: true }), false)
+  })
+
+  test("workbenchShellHidden：只隐藏 Config 与手动关闭；项目页面保持可见", () => {
+    assert.equal(workbenchShellHidden({ content: "project", open: true }), false)
+    assert.equal(workbenchShellHidden({ content: "project", open: false }), true)
+    assert.equal(workbenchShellHidden({ content: "config", open: true }), true)
   })
 
   test("formatResizePreview：拖动实时 px + 实际比例", () => {

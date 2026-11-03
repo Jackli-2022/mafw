@@ -13,9 +13,15 @@ export function detentFromLegacy(storedChatWidth: string | null, availableWidth:
   return migrateLegacyChatWidth(Number.isFinite(px) ? px : null, availableWidth)
 }
 
-/** 非 chat 视图隐藏整个 dock 壳（窄屏 overlay 不得盖住 Dashboard/Config 等页）。 */
-export function workbenchShellHidden(chatActive: boolean): boolean {
-  return !chatActive
+/** 右工作台可见性：项目路由（chat/Welcome/全局页面）保持可用；Config 让位、手动关闭退位。 */
+export type WorkbenchContentMode = "project" | "config"
+
+export function workbenchSplit(input: { content: WorkbenchContentMode; open: boolean }): boolean {
+  return input.content === "project" && input.open
+}
+
+export function workbenchShellHidden(input: { content: WorkbenchContentMode; open: boolean }): boolean {
+  return input.content === "config" || !input.open
 }
 
 /** 拖动中的实时提示：px + 当前实际比例（比例是结果，不是定义）。 */
