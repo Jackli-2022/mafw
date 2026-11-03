@@ -1678,6 +1678,12 @@ export class PodStore {
     ).all(podId) as any[]).map(sessionFromRow);
   }
 
+  listActiveScopedSessions(): PodSessionRow[] {
+    return (this.db.prepare(
+      'SELECT * FROM pod_member_sessions WHERE ended_at IS NULL AND scope_kind IS NOT NULL ORDER BY created_at ASC',
+    ).all() as any[]).map(sessionFromRow);
+  }
+
   endSession(sessionId: string, now: string): void {
     this.db.prepare(
       "UPDATE pod_member_sessions SET ended_at = ?, status = 'ended' WHERE session_id = ?",

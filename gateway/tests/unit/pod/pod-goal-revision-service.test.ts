@@ -27,6 +27,7 @@ describe('PodGoalRevisionService', () => {
   let store: PodStore;
   let mafwDir: string;
   let service: PodGoalRevisionService;
+  let revisionClosed: jest.Mock;
 
   const readJson = (file: string) => JSON.parse(fs.readFileSync(file, 'utf-8'));
 
@@ -67,10 +68,12 @@ describe('PodGoalRevisionService', () => {
     store = new PodStore(db);
     mafwDir = path.join(dir, 'mafw');
     store.ensurePod({ id: 'pod_1', projectDir: '/proj/a', name: 'A', now: NOW });
+    revisionClosed = jest.fn(async () => {});
     service = new PodGoalRevisionService({
       store,
       resolveMafwDir: () => mafwDir,
       now: () => LATER,
+      onRevisionClosed: revisionClosed,
     });
   });
 
@@ -93,6 +96,23 @@ describe('PodGoalRevisionService', () => {
     } catch (err) {
       expect((err as PodError).status).toBe(404);
     }
+  });
+
+  test('openNextRevision awaits old revision retirement before creating N+1', async () => {
+    seedGoal();
+    seedRevision(1, 'implementing');
+    seedState(1);
+    let revisionsAtClose: number[] = [];
+    revisionClosed.mockImplementation(async () => {
+      revisionsAtClose = store.listGoalRevisions('pod_1', 'g1').map((row) => row.revision);
+    });
+
+    const result = await service.openNextRevision('g1');
+
+    expect(revisionClosed).toHaveBeenCalledWith('g1', 1);
+    expect(revisionsAtClose).toEqual([1]);
+    expect(result.opened).toBe(true);
+    expect(result.revision).toBe(2);
   });
 
   test('openNextRevision closes the current revision, archives state and activates N+1', async () => {

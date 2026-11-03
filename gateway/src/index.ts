@@ -48,6 +48,7 @@ import { PodMemoryService } from './core/pod/pod-memory-service';
 import { PodGoalService } from './core/pod/pod-goal-service';
 import { PodGoalRevisionService } from './core/pod/pod-goal-revision-service';
 import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
+import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService } from './core/pod/pod-tech-lead-service';
 import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
@@ -612,6 +613,7 @@ class MafwScheduler {
   private podGoalService!: PodGoalService;
   private podGoalRevisionService!: PodGoalRevisionService;
   private podSessionSupervisor!: PodSessionSupervisor;
+  private podSessionLifecycle!: PodSessionLifecycle;
   private podDirectionService!: PodDirectionService;
   private podTechLeadService!: PodTechLeadService;
   private podContextSelectionService!: PodContextSelectionService;
@@ -1160,6 +1162,8 @@ class MafwScheduler {
     await this.recoverState();
     await this.podService?.reconcile().catch((err: any) => log.warn(`[Pod] reconcile failed (non-fatal): ${err?.message ?? err}`));
     await this.podGoalService?.reconcile().catch((err: any) => log.warn(`[Pod] goal reconcile failed (non-fatal): ${err?.message ?? err}`));
+    await this.podSessionLifecycle?.retireStaleDiscussionLeases()
+      .catch((err: any) => log.warn(`[Pod] session lease reconcile failed (non-fatal): ${err?.message ?? err}`));
 
     // 7. Lead 只属于已有 Pod 或仍有 in-flight Goal 的项目；Pod-less registered
     // project 不再预建一个没有用户入口的隐藏会话。
@@ -4039,6 +4043,9 @@ class MafwScheduler {
       resolveMafwDir: (goalId) => this.findGoalMafwDir(goalId),
       now: () => new Date().toISOString(),
       resultForGoal: (goalId) => this.readPodGoalResult(goalId),
+      onRevisionClosed: async (goalId, revision) => {
+        await this.podSessionLifecycle.retireRevision(goalId, revision);
+      },
       notify: (podId, kind = 'goal', goalId) => this.broadcast({
         type: 'pod.updated',
         properties: { podId, kind, ...(goalId ? { goalId } : {}) },
@@ -4064,6 +4071,7 @@ class MafwScheduler {
       }),
       budget: this.podBudget,
       revisions: this.podGoalRevisionService,
+      sessions: { retireRevision: (goalId, revision) => this.podSessionLifecycle.retireRevision(goalId, revision) },
       // 打回需要立刻恢复 Tech Lead 讨论、并把反馈记进方向输入：这两者在本函数稍后
       // 才构造，因此用惰性适配器（调用时才解析到真实服务）。
       techLead: { ensureSession: (goalId) => this.podTechLeadService.ensureSession(goalId) },
@@ -4105,6 +4113,12 @@ class MafwScheduler {
         } catch { /* best effort: lease row was never written */ }
       },
       broadcast: (event) => this.broadcast(event as any),
+      log: (message) => log.info(message),
+    });
+    this.podSessionLifecycle = new PodSessionLifecycle({
+      store: this.podStore,
+      supervisor: this.podSessionSupervisor,
+      snapshotSession: (sessionId) => this.podService.snapshotSession(sessionId),
       log: (message) => log.info(message),
     });
     this.podDirectionService = new PodDirectionService({

@@ -78,6 +78,8 @@ export interface PodGoalServiceDeps {
   finalizeGoal?(goalId: string, outcome?: { verdict?: string }): Promise<void>;
   /** Task 4：revision 收尾 / 打回开下一版。 */
   revisions?: PodRevisionLifecycle;
+  /** Revision session retirement (Tech Lead discussion lease). */
+  sessions?: { retireRevision(goalId: string, revision: number): Promise<boolean> };
   /** Task 10：打回后立即恢复该 Goal 的 Tech Lead 讨论会话。 */
   techLead?: { ensureSession(goalId: string): Promise<string> };
   /** Task 6：打回反馈作为方向决定的输入（append-only，不推动阶段）。 */
@@ -462,11 +464,14 @@ export class PodGoalService {
       throw new PodError(409, `goal has no result to notify: ${goalId}`);
     }
     if (!isTerminalGoalRevisionStatus(revision.status) && this.deps.revisions) {
-      this.deps.revisions.finishRevision(goalId, {
+      const finished = this.deps.revisions.finishRevision(goalId, {
         revision: revision.revision,
         status: 'completed',
         verdict,
       });
+      if (finished.applied) {
+        await this.deps.sessions?.retireRevision(goalId, revision.revision);
+      }
     }
 
     const key = `${podId}/${goalId}#${revision.revision}`;

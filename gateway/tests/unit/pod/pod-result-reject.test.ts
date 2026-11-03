@@ -52,6 +52,7 @@ describe('PodGoal result notification and reject', () => {
   let events: EmittedEvent[];
   let result: PodGoalResult | null;
   let techLead: { ensureSession: jest.Mock };
+  let sessions: { retireRevision: jest.Mock };
   let revisions: PodGoalRevisionService;
   let directions: PodDirectionService;
   let service: PodGoalService;
@@ -127,6 +128,7 @@ describe('PodGoal result notification and reject', () => {
     events = [];
     result = null;
     techLead = { ensureSession: jest.fn(async () => 'sess_tl') };
+    sessions = { retireRevision: jest.fn(async () => true) };
 
     revisions = new PodGoalRevisionService({
       store,
@@ -152,6 +154,7 @@ describe('PodGoal result notification and reject', () => {
       describeGoal: (goalId) => describeGoal(goalId),
       resultForGoal: () => result,
       revisions,
+      sessions,
       techLead: techLead as any,
       directions: directions as any,
     });
@@ -188,6 +191,16 @@ describe('PodGoal result notification and reject', () => {
       verdict: 'PASS',
       endedAt: NOW,
     });
+  });
+
+  test('notifyResult retires the completed revision lease', async () => {
+    seedGoal({ status: 'active' });
+    seedRevision(1, 'reviewing');
+    result = goalResult('PASS');
+
+    await service.notifyResult('pod_1', 'g1');
+
+    expect(sessions.retireRevision).toHaveBeenCalledWith('g1', 1);
   });
 
   test('notifyResult records completion with the evidence verdict for a still-running revision', async () => {

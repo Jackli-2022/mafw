@@ -28,6 +28,8 @@ export interface PodGoalRevisionServiceDeps {
   notify?(podId: string, kind?: string, goalId?: string): void;
   /** Task 11 结果视图：打回前必须读到真实结果证据（PASS/FAIL + 结果就绪）。 */
   resultForGoal?(goalId: string): PodGoalResult | null;
+  /** Retire the closed revision's Tech Lead lease before opening N+1. */
+  onRevisionClosed?(goalId: string, revision: number): Promise<void> | void;
   log?(message: string): void;
 }
 
@@ -230,6 +232,9 @@ export class PodGoalRevisionService {
 
     const now = this.now();
     const previous = this.closeCurrentRevision(goal, opts, now);
+    // Retire the old revision lease before creating the next one so a stale
+    // discussion session can never become the "latest live" Pod member target.
+    await this.deps.onRevisionClosed?.(goalId, previous.revision);
 
     const reason = (opts.feedback ?? feedback ?? '').toString().trim();
     const priority = opts.priority ?? (reason ? REJECT_REVISION_PRIORITY : 0);
