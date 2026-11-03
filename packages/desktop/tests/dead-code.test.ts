@@ -51,9 +51,10 @@ describe("dead code 清理", () => {
     expect(resources).toContain("PAGE_LINKS")
   })
 
-  test("工作空间自身承载 New Goal composer，不再从 PodDock 创建", () => {
-    const workspace = read("src/renderer/mafw/components/WorkspaceHome.tsx")
-    expect(workspace).toContain("PodGoalComposer")
-    expect(workspace).toContain("pod.createGoal")
+  test("ProjectWorkView 承载 New Goal composer，不再从 PodDock 或全页工作空间创建", () => {
+    const work = read("src/renderer/mafw/components/ProjectWorkView.tsx")
+    expect(work).toContain("PodGoalComposer")
+    expect(work).toContain("pod.createGoal")
+    expect(existsSync(join(root, "src/renderer/mafw/components/WorkspaceHome.tsx"))).toBe(false)
   })
 })

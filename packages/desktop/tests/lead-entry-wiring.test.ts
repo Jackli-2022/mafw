@@ -12,7 +12,6 @@ const leftDock = read("../src/renderer/mafw/components/LeftDock.tsx")
 const css = read("../src/renderer/mafw/mafw.css")
 const welcome = read("../src/renderer/mafw/components/WelcomeHome.tsx")
 const chatPane = read("../src/renderer/mafw/components/ChatPane.tsx")
-const workspaceHome = read("../src/renderer/mafw/components/WorkspaceHome.tsx")
 const workOverview = read("../src/renderer/mafw/components/WorkOverview.tsx")
 
 test("工作 rail 不再渲染固定 Lead/Manager 入口", () => {
@@ -29,9 +28,8 @@ test("WelcomeHome 的入口收敛到鲸群与 Pod composer，不再内联创建 
   assert.doesNotMatch(welcome, /goalDraft|goalInputOpen|planReview|submitGoal|onNewGoal/)
 })
 
-test("工作空间空态使用 Lead 文案", () => {
+test("工作概览空态使用 Lead 文案", () => {
   assert.match(workOverview, /向 Lead 交代一件事/)
-  assert.match(workspaceHome, /把工作交代给 Lead/)
   assert.doesNotMatch(workOverview, /让 Manager 为你编排/)
 })
 

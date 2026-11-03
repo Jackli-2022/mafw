@@ -21,7 +21,7 @@ test("automations and triage use their builders", () => {
   expect(read("TriagePage.tsx")).toContain("buildTriageCardMenu")
 })
 
-test("dashboard is retired and the workspace offers no per-Goal resume control", () => {
+test("dashboard and full-page workspace are retired; no per-Goal resume control", () => {
   expect(existsSync(join(import.meta.dirname, "Dashboard.tsx"))).toBe(false)
-  expect(read("../components/WorkspaceHome.tsx")).not.toContain("RESUME")
+  expect(existsSync(join(import.meta.dirname, "../components/WorkspaceHome.tsx"))).toBe(false)
 })

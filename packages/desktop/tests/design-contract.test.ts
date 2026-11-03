@@ -614,9 +614,10 @@ describe("token v5.2 — 组件接线", () => {
     expect(b).toContain("align-items: center")
     expect(read("src/renderer/mafw/components/WelcomeHome.tsx")).not.toContain('class="mafw-welcome mafw-bento"')
   })
-  test("Dashboard 退役，工作空间接管列表与概览", () => {
+  test("Dashboard 与全页工作空间退役，右工作台「工作」接管列表与概览", () => {
     expect(() => read("src/renderer/mafw/pages/Dashboard.tsx")).toThrow()
-    expect(read("src/renderer/mafw/components/WorkspaceHome.tsx")).toContain('class="mafw-workspace"')
+    expect(() => read("src/renderer/mafw/components/WorkspaceHome.tsx")).toThrow()
+    expect(read("src/renderer/mafw/components/ProjectWorkView.tsx")).toContain("mafw-project-work")
     expect(read("src/renderer/mafw/components/WorkOverview.tsx")).toContain("mafw-work-overview")
   })
   test("ChatPane 主区带双栏 hook 属性", () =>

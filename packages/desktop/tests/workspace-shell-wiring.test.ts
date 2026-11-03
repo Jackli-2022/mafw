@@ -4,16 +4,18 @@ import { readFileSync } from "node:fs"
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8")
 
-test("the goals destination renders the project workspace, not the legacy Dashboard", () => {
+test("the goals page is retired and legacy routes redirect to right work", () => {
   const shell = read("../src/renderer/mafw/MafwShell.tsx")
-  const workspace = read("../src/renderer/mafw/components/WorkspaceHome.tsx")
-  assert.match(shell, /import \{ WorkspaceHome \}/)
-  assert.match(shell, /activeTab\(\) === "goals"[\s\S]{0,500}<WorkspaceHome/)
-  assert.doesNotMatch(shell, /<DashboardPage/)
-  assert.match(workspace, /work\.overview\(dir\)/)
-  assert.match(workspace, /<WorkOverview/)
-  assert.match(workspace, />\s*打开 Lead 对话\s*</)
-  assert.match(workspace, />\s*新话题\s*</)
+  const nav = read("../src/renderer/mafw/components/nav-tab.ts")
+  const deepLink = read("../src/renderer/mafw/deep-link.ts")
+
+  assert.doesNotMatch(shell, /import \{ WorkspaceHome \}/)
+  assert.doesNotMatch(shell, /<WorkspaceHome/)
+  assert.doesNotMatch(shell, /activeTab\(\) === "goals" \? \(/)
+  assert.match(shell, /if \(activeTab\(\) === "goals"\) openProjectWork\(\)/)
+  assert.match(shell, /function openProjectWork|const openProjectWork/)
+  assert.doesNotMatch(nav, /id: "goals"/)
+  assert.match(deepLink, /id === "workspace"\) return \{ kind: "tab", id: "goals" \}/)
 })
 
 test("the work overview is the only list projection and is not truncated", () => {
@@ -54,9 +56,4 @@ test("free discussions hand off through the Lead without changing the source ses
   const chat = read("../src/renderer/mafw/components/ChatPane.tsx")
   assert.match(chat, /onHandoffToLead/)
   assert.match(chat, />交给 Lead</)
-})
-
-test("workspace navigation labels the compatibility tab as a workspace", () => {
-  const nav = read("../src/renderer/mafw/components/nav-tab.ts")
-  assert.match(nav, /id: "goals"[^\n]*label: "工作空间"/)
 })

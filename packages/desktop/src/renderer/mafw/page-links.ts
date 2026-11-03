@@ -1,8 +1,8 @@
-// Dashboard 枢纽页的「页面」链接卡（spec 2026-10-22-workbench-layout D6）。
-// 单一来源：NAV_TABS 减 chat（Goals/Memory/Approvals/Triage/Automation）。
+// 项目资源页链接（spec 2026-11-04）：公开页面只保留全局资源；
+// `goals` 是 legacy deep-link 值，不再作为页面入口。
 import { NAV_TABS, type NavTab } from "./components/nav-tab"
 
-export type PageLinkId = Exclude<NavTab, "chat">
+export type PageLinkId = Exclude<NavTab, "chat" | "goals">
 export interface PageLink {
   id: PageLinkId
   icon: string

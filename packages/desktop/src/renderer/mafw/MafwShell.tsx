@@ -120,7 +120,6 @@ import { registerUserPluginCards } from "./components/UserPluginCards"
 import { registerUnifiedToolCards } from "./plugins/PluginToolCard"
 import { registerThinkingBlock } from "./components/ThinkingBlock"
 import { WelcomeHome } from "./components/WelcomeHome"
-import { WorkspaceHome } from "./components/WorkspaceHome"
 import { buildLeadHandoff, isHandoffableRole } from "./lead-handoff"
 import { transcriptTurns } from "./pod-transcript"
 import { parseDeepLink } from "./deep-link"
@@ -447,6 +446,10 @@ export function MafwShell() {
     openProjectWork()
     setGoalComposerRequest((seq) => seq + 1)
   }
+  // 旧 goals / workspace 目的地兼容：不再渲染全页工作空间，统一进右工作台「工作」。
+  createEffect(() => {
+    if (activeTab() === "goals") openProjectWork()
+  })
 
   const activeHandoffRole = (): string | undefined => {
     const sid = activeSessionId()
@@ -2787,26 +2790,6 @@ export function MafwShell() {
                   </PopoverShell>
                 </Show>
               </div>
-            ) : activeTab() === "goals" ? (
-              <WorkspaceHome
-                projectDir={currentProject()}
-                discussions={historySessions()
-                  .filter((s) => isHandoffableRole(s.metadata?.mafw?.role))
-                  .slice(0, 12)
-                  .map((s) => ({ id: s.id, title: s.title, time: s.time }))}
-                composerRequest={goalComposerRequest()}
-                onOpenLead={openLeadEntry}
-                onNewDiscussion={() => void createSession()}
-                onOpenDiscussion={(sid) => {
-                  const item = historySessions().find((s) => s.id === sid)
-                  openSessionTab(sid, item?.title)
-                }}
-                onGoalCreated={(goalId) => openGoalDetail(goalId)}
-                onOpenGoal={(goal, focus) => openGoalDetail(
-                  goal.goalId,
-                  focus ?? (goal.resultReady ? "result" : "timeline"),
-                )}
-              />
             ) : activeTab() === "memory" ? (
               <MemoryPage />
             ) : activeTab() === "approvals" ? (

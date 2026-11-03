@@ -36,7 +36,7 @@ export function ProjectResources(props: {
     ? podCounts(props.detail, props.messages, props.selfMemberId)
     : { review: 0, todo: 0, inbox: 0 }))
   const activeGoal = createMemo(() => props.detail?.goals.find((goal) => goal.status === "active") ?? null)
-  const toolLinks = createMemo(() => PAGE_LINKS.filter((link) => link.id !== "goals"))
+  const toolLinks = createMemo(() => PAGE_LINKS)
 
   return (
     <div class="mafw-resources">

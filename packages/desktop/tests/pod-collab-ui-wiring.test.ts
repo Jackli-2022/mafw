@@ -288,7 +288,7 @@ test("所有 Pod 会话入口都经 openPodSession（Tech Lead 讨论可推断�
   assert.match(shell, /const openPodSession = async \(sid: string, title\?: string\)/)
   assert.match(shell, /onPodOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
   assert.match(shell, /onOpenPodSession=\{\(sid, title\) => \{ void openPodSession\(sid, title\) \}\}/)
-  assert.match(shell, /<WorkspaceHome[\s\S]{0,800}onOpenGoal=/)
+  assert.match(shell, /<ProjectWorkView[\s\S]{0,900}onOpenGoal=/)
   assert.match(shell, /onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
   assert.match(shell, /activeTechLeadBlocked/)
   assert.match(shell, /sendBlocked=\{activeTechLeadBlocked\}/)
