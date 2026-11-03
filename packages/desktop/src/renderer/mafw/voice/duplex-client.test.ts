@@ -70,7 +70,14 @@ const READY = {
 
 const MIC = { sampleRate: 16000 } as unknown as MicInput
 
-function harness(opts: { readyTimeoutMs?: number; input?: MicInput | null } = {}) {
+function harness(opts: {
+  readyTimeoutMs?: number
+  input?: MicInput | null
+  /** Awaited inside `vad.start()` before the mic becomes live. */
+  vadStart?: () => Promise<void>
+  /** Awaited inside `createTap()` before the tap is returned. */
+  tapGate?: () => Promise<void>
+} = {}) {
   const sockets: FakeSocket[] = []
   const states: DuplexClientState[] = []
   const errors: DuplexClientError[] = []
@@ -79,18 +86,27 @@ function harness(opts: { readyTimeoutMs?: number; input?: MicInput | null } = {}
   const vadSubs = new Map<VadEvent, ((a?: Float32Array) => void)[]>()
   const vadCounters = { starts: 0, stops: 0 }
   const taps: { onFrame: (pcm: Int16Array) => void; disposeCalls: number }[] = []
+  // Models the real Silero analyzer: the mic is live only between a resolved
+  // start() and the next stop(); getInput() is null while it is not live.
+  let micLive = false
 
   const vad: VadAnalyzer = {
     start: async () => {
       vadCounters.starts++
+      if (opts.vadStart) await opts.vadStart()
+      micLive = true
     },
     stop: () => {
       vadCounters.stops++
+      micLive = false
     },
     on: (event, cb) => {
       vadSubs.set(event, [...(vadSubs.get(event) ?? []), cb])
     },
-    getInput: () => (opts.input === undefined ? MIC : opts.input),
+    getInput: () => {
+      if (opts.input === null || !micLive) return null
+      return opts.input === undefined ? MIC : opts.input
+    },
   }
 
   const client = createDuplexClient({
@@ -98,6 +114,7 @@ function harness(opts: { readyTimeoutMs?: number; input?: MicInput | null } = {}
     wsUrl: async () => "ws://127.0.0.1:3000/ws/voice",
     vad,
     createTap: async (_input, onFrame) => {
+      if (opts.tapGate) await opts.tapGate()
       const tap = {
         onFrame,
         disposeCalls: 0,
@@ -144,6 +161,7 @@ function harness(opts: { readyTimeoutMs?: number; input?: MicInput | null } = {}
     vadSubs,
     taps,
     emitVad,
+    micLive: () => micLive,
   }
 }
 
@@ -368,4 +386,129 @@ test("missing microphone input fails with voice_mic_unavailable", async () => {
   expect(h.errors[0].code).toBe("voice_mic_unavailable")
   expect(h.client.state()).toBe("error")
   expect(h.taps).toHaveLength(0)
+})
+
+test("stop during vad.start() still releases the microphone", async () => {
+  let releaseStart!: () => void
+  const startGate = new Promise<void>((r) => {
+    releaseStart = r
+  })
+  const h = harness({ vadStart: () => startGate })
+  const started = h.client.start()
+  await flush()
+  h.socket().open()
+  await flush()
+  h.socket().message(READY)
+  await flush()
+  expect(h.vadCounters.starts).toBe(1)
+
+  await h.client.stop()
+  expect(h.vadCounters.stops).toBe(1)
+
+  // Silero's pending getUserMedia resolves after stop and revives the stream.
+  releaseStart()
+  await started
+
+  expect(h.vadCounters.stops).toBe(2)
+  expect(h.micLive()).toBe(false)
+  expect(h.client.state()).toBe("closed")
+  expect(h.errors).toHaveLength(0)
+  expect(h.taps).toHaveLength(0)
+})
+
+test("socket failure during vad.start() still releases the microphone", async () => {
+  let releaseStart!: () => void
+  const startGate = new Promise<void>((r) => {
+    releaseStart = r
+  })
+  const h = harness({ vadStart: () => startGate })
+  const started = h.client.start()
+  await flush()
+  h.socket().open()
+  await flush()
+  h.socket().message(READY)
+  await flush()
+  expect(h.vadCounters.starts).toBe(1)
+
+  h.socket().error()
+  await flush()
+  expect(h.errors).toHaveLength(1)
+  expect(h.errors[0].code).toBe("voice_connection_failed")
+
+  releaseStart()
+  await started
+
+  // The failure already surfaced once; the late mic must not stay alive.
+  expect(h.errors).toHaveLength(1)
+  expect(h.vadCounters.stops).toBe(2)
+  expect(h.micLive()).toBe(false)
+})
+
+test("stop while createTap is pending disposes the late tap and never sends", async () => {
+  let releaseTap!: () => void
+  const tapGate = new Promise<void>((r) => {
+    releaseTap = r
+  })
+  const h = harness({ tapGate: () => tapGate })
+  const started = h.client.start()
+  await flush()
+  h.socket().open()
+  await flush()
+  h.socket().message(READY)
+  await flush()
+  expect(h.taps).toHaveLength(0)
+
+  const socket = h.socket()
+  await h.client.stop()
+  expect(h.vadCounters.stops).toBe(1)
+
+  releaseTap()
+  await started
+
+  expect(h.taps).toHaveLength(1)
+  expect(h.taps[0].disposeCalls).toBe(1)
+  // Final release happens after the late tap is disposed.
+  expect(h.vadCounters.stops).toBe(2)
+  expect(h.micLive()).toBe(false)
+  expect(h.client.state()).toBe("closed")
+  expect(h.errors).toHaveLength(0)
+
+  h.taps[0].onFrame(new Int16Array(320))
+  expect(socket.binaries()).toHaveLength(0)
+  expect(socket.json().filter((m) => m.type === "end_audio")).toHaveLength(0)
+})
+
+test("frames and speech_stopped after stop are dropped", async () => {
+  const h = harness()
+  await listen(h)
+  const socket = h.socket()
+  const onFrame = h.taps[0].onFrame
+
+  await h.client.stop()
+  const sentAfterStop = socket.sent.length
+
+  onFrame(new Int16Array(320))
+  h.emitVad("speech_stopped")
+
+  expect(socket.sent).toHaveLength(sentAfterStop)
+  expect(socket.binaries()).toHaveLength(0)
+  expect(socket.json().filter((m) => m.type === "end_audio")).toHaveLength(0)
+  expect(h.client.state()).toBe("closed")
+})
+
+test("ready timeout racing stop stays silent", async () => {
+  const h = harness({ readyTimeoutMs: 10 })
+  const started = h.client.start()
+  await flush()
+  h.socket().open()
+  await flush()
+
+  await h.client.stop()
+  await started
+  await new Promise<void>((r) => setTimeout(r, 30))
+
+  expect(h.errors).toHaveLength(0)
+  expect(h.states).not.toContain("error")
+  expect(h.client.state()).toBe("closed")
+  expect(h.vadCounters.starts).toBe(0)
 })

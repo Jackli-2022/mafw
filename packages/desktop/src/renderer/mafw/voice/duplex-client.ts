@@ -155,6 +155,20 @@ export function createDuplexClient(deps: DuplexClientDeps): DuplexClient {
   }
 
   /**
+   * Release the microphone. Deliberately not memoized: a `vad.start()` or
+   * `createTap()` that resolves *after* teardown has already run can revive
+   * capture, and only a second release (issued once that work settles) closes
+   * it again.
+   */
+  function releaseMic() {
+    try {
+      deps.vad.stop()
+    } catch (error) {
+      console.warn("[voice] vad stop failed:", error)
+    }
+  }
+
+  /**
    * Release capture resources in a fixed order: the PCM tap must go before
    * `vad.stop()`, because Silero's stop closes the shared AudioContext.
    */
@@ -163,11 +177,7 @@ export function createDuplexClient(deps: DuplexClientDeps): DuplexClient {
     teardownPromise = (async () => {
       await disposeTap()
       if (!micStarted) return
-      try {
-        deps.vad.stop()
-      } catch (error) {
-        console.warn("[voice] vad stop failed:", error)
-      }
+      releaseMic()
     })()
     return teardownPromise
   }
@@ -305,12 +315,34 @@ export function createDuplexClient(deps: DuplexClientDeps): DuplexClient {
     try {
       await deps.vad.start()
     } catch (error) {
+      // A rejected start after stop()/failure is a cancelled mic, not a new
+      // error: Silero may still have created a stream before throwing.
+      if (stopped || failed) {
+        releaseMic()
+        return
+      }
       throw fail(duplexClientError("voice_mic_unavailable", messageOf(error)))
     }
-    if (stopped || failed) return
+    if (stopped || failed) {
+      // `vad.start()` can resolve *after* stop()/failure already ran teardown
+      // (its pending getUserMedia revives the stream), and teardown is
+      // memoized so it will never run again. Release the mic a second time —
+      // this is what guarantees no orphan capture.
+      releaseMic()
+      return
+    }
 
     const input = deps.vad.getInput?.() ?? null
-    if (!input) throw fail(duplexClientError("voice_mic_unavailable", "VAD produced no microphone input"))
+    if (!input) {
+      // A stop/failure that raced the input lookup is a cancelled mic, not a
+      // new error (defensive: also keeps `start()` from rejecting on clean stop
+      // if an await is ever introduced between the start and this check).
+      if (stopped || failed) {
+        releaseMic()
+        return
+      }
+      throw fail(duplexClientError("voice_mic_unavailable", "VAD produced no microphone input"))
+    }
 
     if (!vadSubscribed) {
       vadSubscribed = true
@@ -323,6 +355,10 @@ export function createDuplexClient(deps: DuplexClientDeps): DuplexClient {
     try {
       startedTap = await deps.createTap(input, sendFrame)
     } catch (error) {
+      if (stopped || failed) {
+        releaseMic()
+        return
+      }
       throw fail(duplexClientError("voice_mic_unavailable", `PCM capture unavailable: ${messageOf(error)}`))
     }
     // stop() may have run while the tap was being created; never register it.
@@ -332,6 +368,11 @@ export function createDuplexClient(deps: DuplexClientDeps): DuplexClient {
       } catch (error) {
         console.warn("[voice] pcm tap dispose failed:", error)
       }
+      // Best-effort ordering: the first teardown saw no tap and therefore
+      // stopped the VAD only (nothing existed to dispose), so release again now
+      // that the late tap is disposed — the final release happens with no live
+      // tap, which is the invariant that matters for the shared AudioContext.
+      releaseMic()
       return
     }
     tap = startedTap
