@@ -21,13 +21,17 @@ import {
 } from "./workbench-views"
 
 describe("workbench-views", () => {
-  test("defaults and invalid values normalize to workbench/code/overview", () => {
+  test("defaults and invalid values normalize to work/code/overview", () => {
     assert.deepEqual(DEFAULT_WORKBENCH_STATE, {
-      view: "workbench",
+      view: "work",
       surface: "code",
       executionSection: "overview",
     })
-    assert.equal(normalizeWorkbenchView("bogus"), "workbench")
+    assert.equal(normalizeWorkbenchView("bogus"), "work")
+    assert.equal(normalizeWorkbenchView(null), "work")
+    assert.equal(normalizeWorkbenchView("workbench"), "workbench")
+    assert.equal(normalizeWorkbenchView("execution"), "execution")
+    assert.equal(normalizeWorkbenchView("review"), "review")
     assert.equal(normalizeWorkbenchSurface("bogus"), "code")
     assert.equal(normalizeExecutionSection("bogus"), "overview")
   })
@@ -40,7 +44,8 @@ describe("workbench-views", () => {
   })
 
   test("B1 labels are exact and ordered", () => {
-    assert.deepEqual(WORKBENCH_VIEWS.map((v) => v.label), ["工作台", "执行", "审阅"])
+    assert.deepEqual(WORKBENCH_VIEWS.map((v) => v.label), ["工作", "工作台", "执行", "审阅"])
+    assert.deepEqual(WORKBENCH_VIEWS.map((v) => v.id), ["work", "workbench", "execution", "review"])
     assert.deepEqual(WORKBENCH_SURFACES.map((v) => v.label), ["文件", "浏览器", "终端"])
     assert.deepEqual(
       EXECUTION_SECTIONS.map((s) => s.label),
@@ -53,11 +58,13 @@ describe("workbench-views", () => {
   })
 
   test("keyboard helpers move within L1 and L2 without wrapping", () => {
+    assert.equal(nextWorkbenchView("work", "ArrowRight"), "workbench")
     assert.equal(nextWorkbenchView("workbench", "ArrowRight"), "execution")
     assert.equal(nextWorkbenchView("execution", "ArrowRight"), "review")
     assert.equal(nextWorkbenchView("review", "ArrowRight"), null)
     assert.equal(nextWorkbenchView("review", "ArrowLeft"), "execution")
-    assert.equal(nextWorkbenchView("execution", "Home"), "workbench")
+    assert.equal(nextWorkbenchView("workbench", "ArrowLeft"), "work")
+    assert.equal(nextWorkbenchView("execution", "Home"), "work")
     assert.equal(nextWorkbenchView("workbench", "End"), "review")
     assert.equal(nextWorkbenchSurface("code", "ArrowRight"), "browser")
     assert.equal(nextWorkbenchSurface("browser", "ArrowRight"), "terminal")

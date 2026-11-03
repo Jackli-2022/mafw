@@ -7,6 +7,7 @@ const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "u
 test("right workbench owns L1/L2 and the terminal surface", () => {
   const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
   const code = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
+  const mafwShell = read("src/renderer/mafw/MafwShell.tsx")
 
   assert.match(shell, /WORKBENCH_VIEWS/)
   assert.match(shell, /EXECUTION_SECTIONS/)
@@ -15,6 +16,10 @@ test("right workbench owns L1/L2 and the terminal surface", () => {
   assert.doesNotMatch(shell, /mafw-rw-terminal/)
   assert.match(shell, /executionView/)
   assert.match(shell, /reviewView/)
+  assert.match(shell, /workView: JSX\.Element/)
+  assert.match(shell, /props\.view === "work"/)
+  assert.match(shell, /props\.workView/)
+  assert.match(mafwShell, /workView=\{<div class="mafw-empty">项目工作<\/div>\}/)
   assert.match(shell, /role="tablist"/)
   assert.match(shell, /role="tab"/)
   assert.match(shell, /DropdownMenu\.Trigger as=\{ButtonV2\}/)

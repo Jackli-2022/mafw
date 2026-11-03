@@ -2884,6 +2884,7 @@ export function MafwShell() {
                     showToastV2({ description: "已加入批注", duration: 1600 } as any)
                   }}
                   onOpenReview={() => applyWorkbenchView("review")}
+                  workView={<div class="mafw-empty">项目工作</div>}
                   onSendComment={(sid, text) => {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))

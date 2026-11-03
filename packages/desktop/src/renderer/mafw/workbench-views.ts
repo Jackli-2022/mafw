@@ -7,7 +7,7 @@
 export type BuiltinWorkbenchSurface = "code" | "browser" | "terminal"
 export type PluginSurfaceId = `plugin:${string}`
 export type WorkbenchSurface = BuiltinWorkbenchSurface | PluginSurfaceId
-export type WorkbenchView = "workbench" | "execution" | "review"
+export type WorkbenchView = "work" | "workbench" | "execution" | "review"
 export type ExecutionSection = "overview" | "pod" | "todos" | "subagents" | "background" | "trajectory"
 
 const PLUGIN_SURFACE_PATTERN = /^plugin:([A-Za-z0-9][A-Za-z0-9._-]*):([A-Za-z0-9][A-Za-z0-9._-]*)$/
@@ -36,12 +36,13 @@ export type WorkbenchState = {
 }
 
 export const DEFAULT_WORKBENCH_STATE: WorkbenchState = {
-  view: "workbench",
+  view: "work",
   surface: "code",
   executionSection: "overview",
 }
 
 export const WORKBENCH_VIEWS: readonly { id: WorkbenchView; label: string }[] = [
+  { id: "work", label: "工作" },
   { id: "workbench", label: "工作台" },
   { id: "execution", label: "执行" },
   { id: "review", label: "审阅" },
@@ -66,7 +67,7 @@ const SURFACE_IDS = new Set<string>(WORKBENCH_SURFACES.map((v) => v.id))
 const SECTION_IDS = new Set<ExecutionSection>(EXECUTION_SECTIONS.map((v) => v.id))
 
 export function normalizeWorkbenchView(v: string | null | undefined): WorkbenchView {
-  return v && VIEW_IDS.has(v as WorkbenchView) ? (v as WorkbenchView) : "workbench"
+  return v && VIEW_IDS.has(v as WorkbenchView) ? (v as WorkbenchView) : "work"
 }
 
 export function normalizeWorkbenchSurface(v: string | null | undefined): WorkbenchSurface {

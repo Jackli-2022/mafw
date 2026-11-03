@@ -1,5 +1,5 @@
-// B1 右工作台壳：一级「工作台 / 执行 / 审阅」+ 二级上下文条 + 终端 L2 surface。
-// 工作台 › 文件/浏览器/终端；执行 › 固定下拉（概览/待办/子代理/后台/轨迹）；审阅无二级。
+// B1 右工作台壳：一级「工作 / 工作台 / 执行 / 审阅」+ 二级上下文条 + 终端 L2 surface。
+// 工作 › 项目 Goal 概览；工作台 › 文件/浏览器/终端；执行 › 固定下拉（概览/待办/子代理/后台/轨迹）；工作与审阅无二级。
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
@@ -37,6 +37,7 @@ export type WorkbenchShellProps = {
   onSendComment?: (sid: string, text: string) => void
   /** 批注反馈标记点击 → 切审阅面。 */
   onOpenReview?: () => void
+  workView: JSX.Element
   executionView: JSX.Element
   reviewView: JSX.Element
   /** Dynamic L2 tabs contributed by unified plugin packages. */
@@ -75,9 +76,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       }
     })
   }
-  // The strip unmounts in `review` view; drop the observer with it.
+  // The strip unmounts in `work`/`review` view; drop the observer with it.
   createEffect(() => {
-    if (props.view === "review") attachCapacityObserver(null)
+    if (props.view === "work" || props.view === "review") attachCapacityObserver(null)
   })
   onCleanup(() => {
     disposeCapacity?.()
@@ -141,7 +142,18 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
                 aria-label={item.label}
                 onClick={() => props.onView(item.id)}
               >
-                <Icon name={item.id === "workbench" ? "code" : item.id === "execution" ? "dot-grid" : "review"} size="small" />
+                <Icon
+                  name={
+                    item.id === "work"
+                      ? "layout-grid"
+                      : item.id === "workbench"
+                        ? "code"
+                        : item.id === "execution"
+                          ? "dot-grid"
+                          : "review"
+                  }
+                  size="small"
+                />
                 {item.label}
               </ButtonV2>
             )}
@@ -150,7 +162,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         <div class="mafw-rw-l1-spacer" />
       </div>
 
-      <Show when={props.view !== "review"}>
+      <Show when={props.view === "workbench" || props.view === "execution"}>
         <div
           class="mafw-rw-l2"
           ref={(element) => {
@@ -250,6 +262,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       </Show>
 
       <div class="mafw-rw-content">
+        <div class="mafw-rw-pane" classList={{ "is-active": props.view === "work" }}>
+          {props.workView}
+        </div>
         <div class="mafw-rw-pane" classList={{ "is-active": props.view === "workbench" }}>
           <WorkbenchCodeView
             active={props.open && props.view === "workbench"}
