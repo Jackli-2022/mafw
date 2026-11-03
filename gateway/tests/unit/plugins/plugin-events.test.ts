@@ -306,7 +306,7 @@ module.exports = { name: 'demo', async activate(ctx) {
     expect(delivered.filter((payload) => payload.type === 'plugins.changed')).toHaveLength(1);
   });
 
-  it('does not publish plugins.changed for a failed candidate or a staged pending revision', async () => {
+  it('publishes a state-only plugins.changed for a failed candidate or a staged pending revision', async () => {
     const file = path.join(dir, 'rt.js');
     fs.writeFileSync(file, `
 module.exports = { name: 'rt', async activate() {
@@ -323,24 +323,38 @@ module.exports = { name: 'rt', async activate() {
     );
     await host.init();
 
-    const changeCount = (): number =>
-      broadcast.mock.calls.filter((call) => (call[0] as BroadcastEvent).type === 'plugins.changed').length;
-    const before = changeCount();
+    const changes = (): BroadcastEvent[] =>
+      broadcast.mock.calls
+        .map((call) => call[0] as BroadcastEvent)
+        .filter((payload) => payload.type === 'plugins.changed');
+    const before = changes().length;
+    const committedRevision = host.getClientSnapshot().revision;
 
-    // Failed candidate keeps the active revision: no gateway event.
+    // Failed candidate keeps the active revision: the client is told the Hub
+    // state changed, but the active snapshot (and revision) did not move.
     (globalThis as any).__mafwEventFail = true;
     fs.appendFileSync(file, '\n// broken\n');
     await host.reload();
-    expect(changeCount()).toBe(before);
+    expect(changes()).toHaveLength(before + 1);
+    expect(changes()[before]).toMatchObject({
+      properties: { revision: committedRevision, stateChanged: true },
+    });
 
-    // Staged pending revision: not committed, so no gateway event either.
+    // Staged pending revision: pending is Hub-visible but not committed, so it
+    // gets the same state-only notification, not a revision bump.
     delete (globalThis as any).__mafwEventFail;
     fs.appendFileSync(file, '\n// staged\n');
     await host.reload();
     expect(host.getPending('rt')).not.toBeNull();
-    expect(changeCount()).toBe(before);
+    expect(changes()).toHaveLength(before + 2);
+    expect(changes()[before + 1]).toMatchObject({
+      properties: { revision: committedRevision, stateChanged: true },
+    });
 
+    // Applying commits: exactly one normal event with the new revision.
     await host.applyPending('rt');
-    expect(changeCount()).toBe(before + 1);
+    expect(changes()).toHaveLength(before + 3);
+    expect(changes()[before + 2].properties?.stateChanged).toBeUndefined();
+    expect(changes()[before + 2].properties?.revision).toBe(host.getClientSnapshot().revision);
   });
 });

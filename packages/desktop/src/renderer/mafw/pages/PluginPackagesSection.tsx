@@ -18,6 +18,7 @@ import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { SelectV2 } from "@mafw/ui/v2/select-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
+import { describePackageAction, type PackageActionResultLike } from "../plugins/package-action-feedback"
 import { PluginConfigPage } from "../plugins/PluginConfigPage"
 import {
   pluginClientRevision,
@@ -224,20 +225,21 @@ export function PluginPackagesSection(props: { sessionID?: string }) {
 
   async function runPackageAction(
     key: string,
-    description: string,
-    action: () => Promise<{ application?: string; error?: string } | void>,
+    name: string,
+    verb: string,
+    action: () => Promise<PackageActionResultLike | void>,
   ): Promise<void> {
     if (busy()) return
     setBusy(key)
     try {
       const result = await action()
-      if (result && result.application === "failed") {
-        showToastV2({ description: `${description}失败：${result.error ?? "未知错误"}`, duration: 4000 })
-      } else {
-        showToastV2({ description, duration: 3000 })
-      }
+      const message = describePackageAction(result, verb)
+      showToastV2({
+        description: message.description,
+        duration: message.isError ? 4000 : 3000,
+      })
     } catch (err) {
-      showToastV2({ description: `${description}失败：${errorText(err)}`, duration: 4000 })
+      showToastV2({ description: `${verb} ${name} 失败：${errorText(err)}`, duration: 4000 })
     } finally {
       setBusy(null)
       await refreshAll()
@@ -245,20 +247,20 @@ export function PluginPackagesSection(props: { sessionID?: string }) {
   }
 
   function applyPending(view: PackageRowView): void {
-    void runPackageAction(`apply:${view.name}`, `已应用 ${view.name}`, () =>
+    void runPackageAction(`apply:${view.name}`, view.name, "应用", () =>
       window.api.mafw.plugins.apply(view.name),
     )
   }
 
   function reloadPackage(view: PackageRowView): void {
-    void runPackageAction(`reload:${view.name}`, `已重新加载 ${view.name}`, () =>
+    void runPackageAction(`reload:${view.name}`, view.name, "重新加载", () =>
       window.api.mafw.plugins.reload(view.name),
     )
   }
 
   function requestDisable(view: PackageRowView): void {
     askConfirmation(disableConfirmation(view), () => {
-      void runPackageAction(`disable:${view.name}`, `已停用 ${view.name}`, () =>
+      void runPackageAction(`disable:${view.name}`, view.name, "停用", () =>
         window.api.mafw.plugins.disablePackage(view.name),
       )
     })
@@ -266,7 +268,7 @@ export function PluginPackagesSection(props: { sessionID?: string }) {
 
   function requestEnable(view: PackageRowView): void {
     askConfirmation(enableConfirmation(view), () => {
-      void runPackageAction(`enable:${view.name}`, `已启用 ${view.name}`, () =>
+      void runPackageAction(`enable:${view.name}`, view.name, "启用", () =>
         window.api.mafw.plugins.enablePackage(view.name),
       )
     })
@@ -274,7 +276,7 @@ export function PluginPackagesSection(props: { sessionID?: string }) {
 
   function requestRemove(view: PackageRowView): void {
     askConfirmation(deleteConfirmation(view), () => {
-      void runPackageAction(`remove:${view.name}`, `已删除 ${view.name}`, () =>
+      void runPackageAction(`remove:${view.name}`, view.name, "删除", () =>
         window.api.mafw.plugins.removePackage(view.name),
       )
     })

@@ -65,6 +65,12 @@ export interface UpdateResult {
   enabled: boolean;
   application: 'applied' | 'pending' | 'failed';
   error?: string;
+  /**
+   * `applyPending` only: the committed package owns the active runtime, so the
+   * caller must switch/re-instantiate the runtime for the new revision to be
+   * used. Route layer turns this into a real switch (or a manual signal).
+   */
+  runtimeSwitchRequired?: boolean;
 }
 
 export type CheckResult = PluginCheckResult;
@@ -149,6 +155,11 @@ export class PackageManager {
       const name = this.validatePackageName(manifest.name);
 
       this.copyIntoRoot(source, name, input?.overwrite === true);
+      // Windows overwrite installs rename a new directory over the package
+      // path; the directory watcher from the previous object is dead even though
+      // the path string is unchanged. Rebuild the watchers so hot reload keeps
+      // working. Harmless for a fresh install (there is no watcher yet).
+      this.host.resetWatchers();
 
       // An installed package is enabled: the manager file is the only source
       // of the disabled flag and re-installation is an explicit opt-in.
@@ -296,6 +307,7 @@ export class PackageManager {
         saved: true,
         enabled: true,
         application: 'applied',
+        ...(result.runtimeSwitchRequired ? { runtimeSwitchRequired: true } : {}),
       };
     });
   }

@@ -28,6 +28,18 @@ export interface PluginPackageContext {
    *  'plugin:<name>:<event>'；未注册/canonical/外命名空间/schema 失败的发射
    *  一律丢弃并记诊断（Host 包装，见 package-context.withPluginEmit）。 */
   emit: (event: PluginEmitEvent) => void;
+  /**
+   * 注册本包在 `activate()` 里创建的外部副作用清理（timer / listener /
+   * 自建 watcher / 缓存等）。
+   *
+   * 清理归该 candidate 的 RegistrationBag：reload/replace/disable/delete
+   * 时执行一次，LIFO（最近注册的先执行），单个 disposer 失败只记诊断。
+   * candidate 被丢弃或离线 check 结束时同样执行——`activate()` 里拿到的资源
+   * 必须在这里释放，否则会跟随旧 revision 泄漏。
+   *
+   * @throws Error 宿主未提供 RegistrationBag（非 PluginHost 场景）。
+   */
+  effect: (dispose: () => void | Promise<void>) => void;
 }
 
 /**

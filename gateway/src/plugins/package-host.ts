@@ -87,6 +87,12 @@ export interface PluginApplyResult {
   applied: boolean;
   revision?: string;
   error?: string;
+  /**
+   * True when the committed package owns the runtime the gateway is currently
+   * using: the caller must switch/re-instantiate the runtime for the new
+   * revision to take effect.
+   */
+  runtimeSwitchRequired?: boolean;
 }
 
 /** Result of an offline candidate check (nothing is published). */
@@ -198,7 +204,7 @@ export class PluginHost {
 
   constructor(
     private dir: string,
-    private createContext: (name: string) => PluginPackageContext,
+    private createContext: (name: string, bag?: RegistrationBag) => PluginPackageContext,
     private options: PluginHostOptions = {},
   ) {
     this.bootId = options.bootId ?? randomBytes(8).toString('hex');
@@ -354,6 +360,39 @@ export class PluginHost {
    */
   removePackage(name: string): Promise<PluginRemoveResult> {
     return this.enqueue(() => this.runRemovePackage(name));
+  }
+
+  /**
+   * Does this committed package own the runtime name the gateway is using?
+   *
+   * Read after a commit: a changed runtime package only takes effect once the
+   * runtime is rebuilt, so the caller must treat `true` as "switch required".
+   * A package that is only pending (not committed yet) answers false.
+   */
+  packageOwnsActiveRuntime(name: string): boolean {
+    const record = this.active.get(name);
+    if (!record) return false;
+    return this.ownsActiveRuntime(undefined, record);
+  }
+
+  /**
+   * Recreates every package-directory watcher.
+   *
+   * On Windows an overwrite install replaces the package directory with a new
+   * directory object; a watcher bound to the old handle silently stops firing
+   * even though the path is unchanged. The manager calls this after copying a
+   * package into the root so hot reload keeps working.
+   */
+  resetWatchers(): void {
+    try {
+      for (const watcher of this.dirWatchers.values()) {
+        try { watcher.close(); } catch { /* already closed */ }
+      }
+      this.dirWatchers.clear();
+      this.refreshDirWatchers();
+    } catch (err) {
+      log.warn(`[PluginHost] resetWatchers failed: ${describeError(err)}`);
+    }
   }
 
   stop(): void {
@@ -531,7 +570,9 @@ export class PluginHost {
       this.snapshotCb?.(this.snapshot);
       this.broadcastPluginsChanged(revision);
     }
-    this.notifyStateChanged();
+    // A commit above already broadcast the new revision; only a state-only scan
+    // (pending/error/enabled change) needs its own `plugins.changed`.
+    this.notifyStateChanged(!snapshotChanged);
     this.refreshDirWatchers();
   }
 
@@ -559,8 +600,11 @@ export class PluginHost {
     this.publishEntries();
     this.snapshotCb?.(this.snapshot);
     this.broadcastPluginsChanged(revision);
-    this.notifyStateChanged();
-    return { applied: true, revision };
+    // The commit above already broadcast `plugins.changed`; a state-only
+    // broadcast here would be a duplicate. Whether the live runtime still has
+    // to be rebuilt is decided against the freshly committed record.
+    this.notifyStateChanged(false);
+    return { applied: true, revision, runtimeSwitchRequired: this.packageOwnsActiveRuntime(name) };
   }
 
   /**
@@ -632,8 +676,9 @@ export class PluginHost {
 
     if (!active) {
       // Pending candidates and failures are not client-visible: no snapshot
-      // change, no revision bump, no `plugins.changed`.
-      this.notifyStateChanged();
+      // change and no revision bump. They are, however, Hub-visible: broadcast a
+      // state-only `plugins.changed` so the client re-pulls package state.
+      this.notifyStateChanged(true);
       return { removed: false };
     }
 
@@ -645,7 +690,8 @@ export class PluginHost {
     this.publishEntries();
     this.snapshotCb?.(this.snapshot);
     this.broadcastPluginsChanged(revision);
-    this.notifyStateChanged();
+    // The commit broadcast covers this change.
+    this.notifyStateChanged(false);
     return { removed: true, revision };
   }
 
@@ -720,11 +766,28 @@ export class PluginHost {
     this.usageCb?.(usage);
   }
 
-  private notifyStateChanged(): void {
+  private notifyStateChanged(broadcastChange = true): void {
     const signature = JSON.stringify(this.getState());
     if (signature === this.lastStateSignature) return;
     this.lastStateSignature = signature;
     this.stateCb?.();
+    // Pending candidates, failures and enabled/disabled changes are visible in
+    // the Hub but do not move the active revision. Clients still need a signal:
+    // broadcast the unchanged revision with `stateChanged` so Desktop re-pulls
+    // `/api/plugins` without weakening the stale-revision guard on commits.
+    if (broadcastChange) this.broadcastStateChanged();
+  }
+
+  private broadcastStateChanged(): void {
+    if (!this.broadcast) return;
+    try {
+      this.broadcast({
+        type: 'plugins.changed',
+        properties: { revision: this.snapshot.revision, stateChanged: true },
+      });
+    } catch (err) {
+      log.warn(`[PluginHost] plugins.changed state broadcast failed: ${describeError(err)}`);
+    }
   }
 
   private async disposeBags(bags: RegistrationBag[]): Promise<void> {
@@ -855,7 +918,7 @@ export class PluginHost {
     // `ctx.emit` is package-scoped: it can only publish events this package
     // registered (the emitter token ties the closure to this activation).
     const emitterToken = {};
-    const ctx = withPluginEmit(this.createContext(modName), (event) => {
+    const ctx = withPluginEmit(this.createContext(modName, bag), (event) => {
       this.events.emitFrom(modName, emitterToken, event);
     });
     const raw: UnifiedPluginContributions =
@@ -1034,6 +1097,7 @@ module.exports = {
 ## ctx（三个 legacy ctx 的超集）
 
 - \`ctx.apiKey(provider)\` / \`ctx.fetch(url, opts)\`（60s）/ \`ctx.log\`
+- \`ctx.effect(dispose)\` —— 注册 timer/listener 等清理；包被替换/停用/删除或离线 check 结束时执行（LIFO）
 - \`ctx.pluginConfig()\` —— 读 config.yaml \`plugins.<name>.config\`（回退 legacy 三段 pluginConfig）
 - \`ctx.projectDir\` / \`ctx.gatewayPort\` / \`ctx.usage.modelStats({sinceMs?, provider?})\`
 

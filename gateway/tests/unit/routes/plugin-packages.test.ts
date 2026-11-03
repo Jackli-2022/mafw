@@ -226,6 +226,62 @@ describe('plugin package routes', () => {
     expect(manager.applyPending).toHaveBeenCalledWith('acme');
   });
 
+  describe('runtime switch after applying a runtime package', () => {
+    function runtimeManager() {
+      const manager = makeManager();
+      manager.applyPending.mockResolvedValue({
+        name: 'acme', version: '1.0.0', activeRevision: 'boot:3', saved: true,
+        enabled: true, application: 'applied', runtimeSwitchRequired: true,
+      });
+      return manager;
+    }
+
+    test('reports "applied" when the injected switcher succeeds', async () => {
+      const switchRuntime = jest.fn(async () => ({ success: true, active: { name: 'acme' } }));
+      await listen({ ...makeDeps(runtimeManager()), switchRuntime });
+      const res = await request(server, 'POST', '/api/plugins/acme/apply');
+      expect(res.status).toBe(200);
+      expect(res.body.runtimeSwitch).toBe('applied');
+      expect(res.body.runtimeError).toBeUndefined();
+      expect(switchRuntime).toHaveBeenCalledWith('acme');
+    });
+
+    test('reports "failed" with the switcher error, never as an HTTP error', async () => {
+      const switchRuntime = jest.fn(async () => ({ success: false, error: 'runtime exploded' }));
+      await listen({ ...makeDeps(runtimeManager()), switchRuntime });
+      const res = await request(server, 'POST', '/api/plugins/acme/apply');
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        application: 'applied', runtimeSwitch: 'failed', runtimeError: 'runtime exploded',
+      });
+    });
+
+    test('reports "failed" when the switcher throws', async () => {
+      const switchRuntime = jest.fn(async () => { throw new Error('offline'); });
+      await listen({ ...makeDeps(runtimeManager()), switchRuntime });
+      const res = await request(server, 'POST', '/api/plugins/acme/apply');
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ runtimeSwitch: 'failed', runtimeError: 'offline' });
+    });
+
+    test('reports "required" (manual signal) when no switcher is wired', async () => {
+      await listen(makeDeps(runtimeManager()));
+      const res = await request(server, 'POST', '/api/plugins/acme/apply');
+      expect(res.status).toBe(200);
+      expect(res.body.runtimeSwitch).toBe('required');
+      expect(res.body.runtimeError).toBeUndefined();
+    });
+
+    test('does not mention a runtime switch for a normal package apply', async () => {
+      const switchRuntime = jest.fn(async () => ({ success: true }));
+      await listen({ ...makeDeps(makeManager()), switchRuntime });
+      const res = await request(server, 'POST', '/api/plugins/acme/apply');
+      expect(res.status).toBe(200);
+      expect(res.body.runtimeSwitch).toBeUndefined();
+      expect(switchRuntime).not.toHaveBeenCalled();
+    });
+  });
+
   test('POST /api/plugins/:name/apply maps missing package to 404', async () => {
     const manager = makeManager();
     manager.applyPending.mockRejectedValue(new PackageManagerError(404, 'package not found: nope'));

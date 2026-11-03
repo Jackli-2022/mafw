@@ -256,6 +256,27 @@ describe('PackageManager filesystem operations', () => {
     expect(host!.getClientSnapshot().revision).not.toBe(before);
     expect(host!.getClientSnapshot().plugins.map((plugin) => plugin.name)).toEqual(['acme-rt']);
     expect(runtimeEntries.map((entry) => entry.name)).toEqual(['acme-rt']);
+    // Applying the committed package takes over the active runtime name: the
+    // route must switch/re-instantiate the runtime afterwards.
+    expect(applied.runtimeSwitchRequired).toBe(true);
+  });
+
+  it('resets directory watchers after copying a package into the plugin root', async () => {
+    const source = writePackage(sourceDir, 'acme', { module: DECLARATIVE_MODULE('acme', 'First') });
+    await host!.init();
+    const resetWatchers = jest.spyOn(host!, 'resetWatchers');
+
+    await manager.installFromPath({ path: source });
+    // A new install also resets: harmless, and it guarantees the watcher is
+    // rebuilt on the directory object that now exists.
+    expect(resetWatchers).toHaveBeenCalledTimes(1);
+
+    resetWatchers.mockClear();
+    fs.writeFileSync(path.join(source, 'index.js'), DECLARATIVE_MODULE('acme', 'Second'));
+    await manager.installFromPath({ path: source, overwrite: true });
+    // Rename replacement creates a new directory object; the watcher from the
+    // old one is dead even though the path string is unchanged.
+    expect(resetWatchers).toHaveBeenCalledTimes(1);
   });
 
   it('persists disable state and skips the package until it is enabled', async () => {

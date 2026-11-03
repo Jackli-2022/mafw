@@ -1471,6 +1471,14 @@ export interface PluginPackageInstallResult {
 /** enable/disable/reload/apply result. */
 export interface PluginPackageUpdateResult extends PluginPackageInstallResult {
   enabled: boolean
+  /**
+   * apply only: the committed package owns the active runtime.
+   * - `applied`: the gateway switched/re-instantiated the runtime.
+   * - `failed`: the package applied but the runtime switch failed (`runtimeError`).
+   * - `required`: no switch callback is wired; a manual switch is needed.
+   */
+  runtimeSwitch?: 'applied' | 'failed' | 'required'
+  runtimeError?: string
 }
 
 /** `POST /api/plugins/check` — `ok:false` is a diagnostic, not an HTTP error. */

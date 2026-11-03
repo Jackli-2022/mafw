@@ -778,11 +778,14 @@ class MafwScheduler {
     this.packageStateStore = new PackageStateStore(config.resolvePath());
     this.pluginHost = new PluginHost(
       pluginPackageDir,
-      (name) => createPluginPackageContext(name, {
+      (name, bag) => createPluginPackageContext(name, {
         getApiKey: this.runtimeGetApiKey.bind(this),
         usageStats: () => this.usageStatsProvider,
         projectDir: this.projectDir,
         gatewayPort: config.server.apiPort,
+        // ctx.effect 的清理挂在本 candidate 的 RegistrationBag：reload/replace/
+        // disable/delete/离线 check 时统一执行（LIFO）。
+        bag,
         emit: (event) => this.broadcast(event),
         // 包只能改 plugins.<package>.config——context 负责收敛命名空间与
         // 补丁安全校验，这里只透传到既有的 config.persistOverrides。
@@ -2531,6 +2534,28 @@ class MafwScheduler {
       ...(host
         ? { invokeAction: (name, action, input, options) => host.invokeAction(name, action, input, options) }
         : {}),
+      // Applying a runtime package commits the files, but the live runtime is
+      // still the old instance. Reuse the exact `/api/runtime/switch` path so
+      // event resubscription and identity rematerialization happen once, not in
+      // a second hand-rolled copy.
+      switchRuntime: async (name: string) => {
+        try {
+          const deps = this.runtimeDeps();
+          if (!deps.loader?.get(name)) {
+            return { success: false, error: `runtime plugin "${name}" not found` };
+          }
+          deps.persist({ runtime: { plugin: name } });
+          const prev = deps.getCurrent();
+          const rt = await deps.createRuntime();
+          await deps.onSwitched(rt, prev);
+          return {
+            success: true,
+            active: { name: deps.runtimeName(), capabilities: deps.runtimeCaps() },
+          };
+        } catch (err: any) {
+          return { success: false, error: err?.message ?? String(err) };
+        }
+      },
     };
   }
 

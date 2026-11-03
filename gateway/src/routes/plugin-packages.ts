@@ -40,6 +40,16 @@ export interface PluginPackagesRouteDeps {
     input: unknown,
     options: PluginActionInvokeOptions,
   ) => Promise<unknown>;
+  /**
+   * Switch/re-instantiate the runtime a package contributes.
+   *
+   * Wired to the gateway's existing runtime-switch orchestration (loader/
+   * config/persist + `onSwitched` event resubscription + identity
+   * rematerialization). Absent in headless hosts: the apply response then
+   * reports `runtimeSwitch: 'required'` — an explicit manual signal instead of
+   * a silent no-op.
+   */
+  switchRuntime?: (name: string) => Promise<{ success: boolean; error?: string; active?: unknown }>;
 }
 
 /** 400 for a malformed request body; never leaks parser internals. */
@@ -174,7 +184,35 @@ export async function handlePluginApply(
   deps: PluginPackagesRouteDeps,
   params: PluginPackageParams,
 ): Promise<void> {
-  await guarded(res, async () => requireManager(deps).applyPending(requireName(params)));
+  await guarded(res, async () => {
+    const name = requireName(params);
+    const result = await requireManager(deps).applyPending(name);
+    if (!result.runtimeSwitchRequired) return result;
+
+    // The committed package owns the live runtime: the new revision is not in
+    // use until the runtime is rebuilt. Reuse the gateway's switch path (event
+    // resubscription + identity rematerialization live there, not here).
+    if (!deps.switchRuntime) {
+      return { ...result, runtimeSwitch: 'required' as const };
+    }
+    try {
+      const switched = await deps.switchRuntime(name);
+      if (switched?.success) {
+        return { ...result, runtimeSwitch: 'applied' as const, active: switched.active };
+      }
+      return {
+        ...result,
+        runtimeSwitch: 'failed' as const,
+        runtimeError: switched?.error ?? `runtime switch for "${name}" failed`,
+      };
+    } catch (err: any) {
+      return {
+        ...result,
+        runtimeSwitch: 'failed' as const,
+        runtimeError: err?.message ?? String(err),
+      };
+    }
+  });
 }
 
 /** POST /api/plugins/:name/reload — rescan one package through staging/commit. */

@@ -339,15 +339,21 @@ export function refreshPluginClient(transport?: PluginClientTransport): Promise<
  * Duplicate notifications coalesce with the in-flight refresh; stale (older)
  * revisions never trigger a fetch. When the coalesced response predates the
  * committed revision, one follow-up fetch is issued.
+ *
+ * `properties.stateChanged: true` marks a Hub-visible change that did not move
+ * the active revision (pending candidate, failure, enable/disable). It forces a
+ * refresh even at the current revision; normal commit events keep the strict
+ * stale/duplicate guard.
  */
 export async function ingestPluginsChanged(
   event: unknown,
   transport?: PluginClientTransport,
 ): Promise<boolean> {
   const revision = pluginsChangedRevision(event)
+  const stateChanged = pluginsChangedStateChanged(event)
   const parsed = parsePluginRevision(revision)
   const current = state().generation
-  if (parsed && current) {
+  if (!stateChanged && parsed && current) {
     if (parsed.revision === current.revision) return false
     if (!isNewerPluginGeneration(parsed, current)) return false
   }
@@ -498,6 +504,14 @@ function pluginsChangedRevision(event: unknown): string | undefined {
   const properties = isRecord(raw.properties) ? raw.properties : undefined
   const candidate = properties?.revision ?? raw.revision
   return typeof candidate === "string" && candidate.length > 0 ? candidate : undefined
+}
+
+/** `plugins.changed` state-only flag (pending/failure/enabled-change signal). */
+function pluginsChangedStateChanged(event: unknown): boolean {
+  const raw = event as Record<string, unknown> | null | undefined
+  if (!isRecord(raw)) return false
+  const properties = isRecord(raw.properties) ? raw.properties : undefined
+  return properties?.stateChanged === true || raw.stateChanged === true
 }
 
 function validatePluginDescriptor(value: unknown): PluginClientDescriptor | null {

@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { log } from '../core/utils/logger';
 import type { UsageStatsProvider } from '../usage/plugin-context';
+import type { RegistrationBag } from './registration-bag';
 import type { PluginEmitEvent, PluginPackageContext } from './package-types';
 
 export interface PackageContextDeps {
@@ -16,6 +17,12 @@ export interface PackageContextDeps {
    * `config.persistOverrides`）。缺省时 `ctx.config.update` 抛错而不是静默丢弃。
    */
   persistConfig?: (overrides: Record<string, unknown>) => void;
+  /**
+   * 当前 candidate 的 RegistrationBag（PluginHost 每次激活注入一个）。
+   * `ctx.effect` 把包自己的 timer/listener 清理挂到这里；缺省时抛错而不是
+   * 静默接受一个永远不会执行的清理。
+   */
+  bag?: RegistrationBag;
 }
 
 const EMPTY_USAGE: UsageStatsProvider = { modelStats: () => [] };
@@ -100,6 +107,12 @@ export function createPluginPackageContext(name: string, deps: PackageContextDep
     gatewayPort: deps.gatewayPort,
     usage: deps.usageStats?.() ?? EMPTY_USAGE,
     emit: (event) => deps.emit?.(event),
+    effect: (dispose) => {
+      if (!deps.bag) {
+        throw new Error('ctx.effect is not available: this host did not provide a registration bag');
+      }
+      deps.bag.effect(dispose);
+    },
   };
 }
 

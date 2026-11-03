@@ -32,6 +32,20 @@ module.exports = { name: '${name}', async activate() {
 } };
 `;
 
+/**
+ * Registers a custom cleanup through `ctx.effect`, the package-facing
+ * registration hook for timers/listeners that live outside the declared
+ * contributions.
+ */
+const EFFECTFUL = (name: string) => `
+module.exports = { name: '${name}', async activate(ctx) {
+  const g = globalThis;
+  g.__mafwActivations = (g.__mafwActivations || 0) + 1;
+  ctx.effect(() => { g.__mafwEffectCleanups = (g.__mafwEffectCleanups || 0) + 1; });
+  return { usage: { name: '${name}', type: 'api', async fetch() { return null; } } };
+} };
+`;
+
 interface BagSpy {
   dispose: jest.Mock;
 }
@@ -56,7 +70,7 @@ function trackBags(): { bags: BagSpy[]; createBag: () => RegistrationBag } {
 function mkHost(dir: string, options: PluginHostOptions = {}): PluginHost {
   return new PluginHost(
     dir,
-    (name) => createPluginPackageContext(name, { projectDir: '/p', gatewayPort: 3000 }),
+    (name, bag) => createPluginPackageContext(name, { projectDir: '/p', gatewayPort: 3000, bag }),
     options,
   );
 }
@@ -66,12 +80,15 @@ describe('PluginHost staging, fingerprints and revisions', () => {
   let host: PluginHost | undefined;
   let bags: BagSpy[] = [];
   let createBag: () => RegistrationBag;
+  let activeRuntime: string | null;
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-stage-'));
     ({ bags, createBag } = trackBags());
+    activeRuntime = null;
     delete (globalThis as any).__mafwActivations;
     delete (globalThis as any).__mafwFail;
+    delete (globalThis as any).__mafwEffectCleanups;
   });
 
   afterEach(() => {
@@ -490,5 +507,160 @@ module.exports = { name: '${name}', async activate() {
     await host.reload();
     expect(onStateChanged.mock.calls.length).toBeGreaterThan(changesAfterInit);
     expect(snapshots).toHaveLength(2);
+  });
+
+  it('disposes ctx.effect cleanups on a changed reload, delete and candidate check', async () => {
+    const file = path.join(dir, 'fx.js');
+    fs.writeFileSync(file, EFFECTFUL('fx'));
+    host = mkHost(dir, { createBag });
+    await host.init();
+    expect((globalThis as any).__mafwEffectCleanups).toBeUndefined();
+
+    // Changed package: the replaced activation's cleanup runs with its bag.
+    fs.appendFileSync(file, '\n// v2\n');
+    await host.reload();
+    expect((globalThis as any).__mafwEffectCleanups).toBe(1);
+
+    // Delete: the removed package's cleanup runs too.
+    fs.rmSync(file);
+    await host.reload();
+    expect((globalThis as any).__mafwEffectCleanups).toBe(2);
+
+    // Offline check: the candidate is disposed right after validation.
+    const candidate = path.join(dir, 'candidate');
+    fs.mkdirSync(candidate);
+    fs.writeFileSync(path.join(candidate, 'plugin.json'), JSON.stringify({ name: 'checked' }));
+    fs.writeFileSync(path.join(candidate, 'index.js'), EFFECTFUL('checked'));
+    const checked = await host.checkPackage(candidate);
+    expect(checked).toMatchObject({ ok: true, name: 'checked' });
+    expect((globalThis as any).__mafwEffectCleanups).toBe(3);
+  });
+
+  it('reports whether applying the pending revision must switch the active runtime', async () => {
+    const file = path.join(dir, 'rt.js');
+    fs.writeFileSync(file, RUNTIME('rt'));
+    host = mkHost(dir, { createBag, activeRuntime: () => activeRuntime });
+    await host.init();
+    expect(host.packageOwnsActiveRuntime('rt')).toBe(false);
+
+    activeRuntime = 'rt';
+    expect(host.packageOwnsActiveRuntime('rt')).toBe(true);
+    expect(host.packageOwnsActiveRuntime('other')).toBe(false);
+
+    fs.appendFileSync(file, '\n// v2\n');
+    await host.reload();
+    expect(host.getPending('rt')).not.toBeNull();
+
+    const applied = await host.applyPending('rt');
+    expect(applied).toMatchObject({ applied: true, runtimeSwitchRequired: true });
+
+    // A candidate staged for a runtime that is no longer active does not need
+    // a switch at apply time: the live runtime is someone else's by then.
+    fs.appendFileSync(file, '\n// v3\n');
+    await host.reload();
+    activeRuntime = 'other';
+    const appliedLater = await host.applyPending('rt');
+    expect(appliedLater).toMatchObject({ applied: true, runtimeSwitchRequired: false });
+  });
+
+  it('broadcasts a state-only plugins.changed for pending candidates without a commit', async () => {
+    const frames: Array<{ type: string; properties?: Record<string, unknown> }> = [];
+    const file = path.join(dir, 'rt.js');
+    fs.writeFileSync(file, RUNTIME('rt'));
+    host = mkHost(dir, {
+      createBag,
+      activeRuntime: () => activeRuntime,
+      broadcast: (event) => frames.push(event as any),
+    });
+    await host.init();
+    const committedRevision = host.getClientSnapshot().revision;
+    frames.length = 0;
+
+    activeRuntime = 'rt';
+    fs.appendFileSync(file, '\n// v2\n');
+    await host.reload();
+
+    // Pending appears without a commit: the active snapshot (and revision) is
+    // untouched, but clients must still be told the visible state changed.
+    expect(host.getClientSnapshot().revision).toBe(committedRevision);
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({
+      type: 'plugins.changed',
+      properties: { revision: committedRevision, stateChanged: true },
+    });
+
+    // A failed candidate without a commit is the same kind of state change.
+    frames.length = 0;
+    fs.writeFileSync(path.join(dir, 'bad.js'), `throw new Error('kaboom');`);
+    await host.reload();
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({
+      type: 'plugins.changed',
+      properties: { revision: committedRevision, stateChanged: true },
+    });
+  });
+
+  it('broadcasts exactly one normal plugins.changed per commit', async () => {
+    const frames: Array<{ type: string; properties?: Record<string, unknown> }> = [];
+    const file = path.join(dir, 'acme.js');
+    fs.writeFileSync(file, DECLARATIVE('acme', 'Main'));
+    host = mkHost(dir, {
+      createBag,
+      activeRuntime: () => activeRuntime,
+      broadcast: (event) => frames.push(event as any),
+    });
+    await host.init();
+    frames.length = 0;
+
+    fs.appendFileSync(file, '\n// v2\n');
+    await host.reload();
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0].type).toBe('plugins.changed');
+    expect(frames[0].properties?.stateChanged).toBeUndefined();
+    expect(frames[0].properties?.revision).toBe(host.getClientSnapshot().revision);
+
+    // Applying a pending candidate is a commit: one normal event, no second
+    // state-only duplicate.
+    const rt = path.join(dir, 'rt.js');
+    fs.writeFileSync(rt, RUNTIME('rt'));
+    await host.reload();
+    frames.length = 0;
+    activeRuntime = 'rt';
+    fs.appendFileSync(rt, '\n// v2\n');
+    await host.reload();
+    expect(frames).toHaveLength(1);
+    expect(frames[0].properties?.stateChanged).toBe(true);
+    frames.length = 0;
+
+    await host.applyPending('rt');
+    expect(frames).toHaveLength(1);
+    expect(frames[0].properties?.stateChanged).toBeUndefined();
+    expect(frames[0].properties?.revision).toBe(host.getClientSnapshot().revision);
+  });
+
+  it('resetWatchers closes and recreates directory watchers', async () => {
+    const root = path.join(dir, 'watched');
+    fs.mkdirSync(root);
+    fs.writeFileSync(path.join(root, 'plugin.json'), JSON.stringify({ name: 'watched' }));
+    fs.writeFileSync(path.join(root, 'index.js'), DECLARATIVE('watched', 'Watched'));
+    host = mkHost(dir, { createBag });
+    // Before init there is nothing to reset; must stay fail-open.
+    expect(() => host!.resetWatchers()).not.toThrow();
+    await host.init();
+
+    const watchers = (host as any).dirWatchers as Map<string, { close: () => void }>;
+    expect(watchers.size).toBe(1);
+    const [[watchedDir, oldWatcher]] = [...watchers.entries()];
+    expect(watchedDir).toBe(root);
+    const closeSpy = jest.spyOn(oldWatcher, 'close');
+
+    host.resetWatchers();
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    const next = (host as any).dirWatchers as Map<string, { close: () => void }>;
+    expect(next.size).toBe(1);
+    expect(next.get(watchedDir)).toBeDefined();
+    expect(next.get(watchedDir)).not.toBe(oldWatcher);
   });
 });

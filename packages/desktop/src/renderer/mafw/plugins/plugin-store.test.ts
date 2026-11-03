@@ -253,6 +253,29 @@ describe("ingestPluginsChanged", () => {
     expect(calls.client).toBe(1)
     expect(pluginDescriptorFor("acme")).toBe(next)
   })
+
+  test("a same-revision state-only change refreshes (pending/error transitions)", async () => {
+    applyPluginClientSnapshot(snapshot("boot-a:1", [descriptor("acme")]))
+    const { transport, calls } = makeTransport([snapshot("boot-a:1", [descriptor("acme")])])
+    const applied = await ingestPluginsChanged(
+      { type: "plugins.changed", properties: { revision: "boot-a:1", stateChanged: true } },
+      transport,
+    )
+    // Pending/error transitions do not move the active revision, but the Hub
+    // still needs a fresh `/api/plugins` read.
+    expect(applied).toBe(true)
+    expect(calls.client).toBe(1)
+  })
+
+  test("a normal same-revision commit notification stays deduped", async () => {
+    applyPluginClientSnapshot(snapshot("boot-a:1", [descriptor("acme")]))
+    const { transport, calls } = makeTransport([snapshot("boot-a:1", [descriptor("acme")])])
+    expect(await ingestPluginsChanged(
+      { type: "plugins.changed", properties: { revision: "boot-a:1" } },
+      transport,
+    )).toBe(false)
+    expect(calls.client).toBe(0)
+  })
 })
 
 describe("stale action response guard", () => {
