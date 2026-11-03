@@ -37,14 +37,82 @@ describe("creator entry state", () => {
 })
 
 describe("reusable creator session", () => {
-  test("the active session is reusable only when it has no messages", () => {
-    expect(reusableCreatorSession({ activeSessionID: "s1", messagesBySession: { s1: [] } })).toBe("s1")
-    expect(reusableCreatorSession({ activeSessionID: "s1", messagesBySession: { s1: [{}] } })).toBeNull()
+  const loadedEmpty = { cursor: null, hasMore: false, loading: false }
+
+  test("the active session is reusable only when history finished loading empty", () => {
+    expect(
+      reusableCreatorSession({
+        activeSessionID: "s1",
+        messagesBySession: { s1: [] },
+        pageState: { s1: loadedEmpty },
+      }),
+    ).toBe("s1")
   })
 
-  test("no active session or an unloaded message list is not reusable", () => {
-    expect(reusableCreatorSession({ activeSessionID: null, messagesBySession: {} })).toBeNull()
-    expect(reusableCreatorSession({ activeSessionID: "", messagesBySession: { "": [] } })).toBeNull()
-    expect(reusableCreatorSession({ activeSessionID: "s1", messagesBySession: {} })).toBeNull()
+  test("non-empty messages are never reused", () => {
+    expect(
+      reusableCreatorSession({
+        activeSessionID: "s1",
+        messagesBySession: { s1: [{}] },
+        pageState: { s1: loadedEmpty },
+      }),
+    ).toBeNull()
+  })
+
+  test("a history load still in flight is not confirmation of an empty session", () => {
+    // `openSessionTab` seeds `message[sid] = []`; without a completed page state
+    // that seed must not be trusted (an existing conversation may be loading).
+    expect(
+      reusableCreatorSession({
+        activeSessionID: "s1",
+        messagesBySession: { s1: [] },
+        pageState: {},
+      }),
+    ).toBeNull()
+    expect(
+      reusableCreatorSession({
+        activeSessionID: "s1",
+        messagesBySession: { s1: [] },
+        pageState: { s1: { cursor: null, hasMore: false, loading: true } },
+      }),
+    ).toBeNull()
+    expect(
+      reusableCreatorSession({
+        activeSessionID: "s1",
+        messagesBySession: { s1: [] },
+        pageState: { s1: { cursor: null, hasMore: true, loading: false } },
+      }),
+    ).toBeNull()
+  })
+
+  test("a failed or unset page state is not reusable", () => {
+    // The failure path leaves the seeded `[]` and never writes pageState.
+    expect(
+      reusableCreatorSession({
+        activeSessionID: "s1",
+        messagesBySession: { s1: [] },
+        pageState: {},
+      }),
+    ).toBeNull()
+    expect(
+      reusableCreatorSession({
+        activeSessionID: "s1",
+        messagesBySession: { s1: [] },
+        pageState: { s1: { cursor: "cursor-2", hasMore: false, loading: false } },
+      }),
+    ).toBeNull()
+  })
+
+  test("no active session is not reusable", () => {
+    expect(
+      reusableCreatorSession({ activeSessionID: null, messagesBySession: {}, pageState: {} }),
+    ).toBeNull()
+    expect(
+      reusableCreatorSession({
+        activeSessionID: "",
+        messagesBySession: { "": [] },
+        pageState: { "": loadedEmpty },
+      }),
+    ).toBeNull()
   })
 })

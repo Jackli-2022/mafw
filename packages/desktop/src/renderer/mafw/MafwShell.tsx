@@ -2137,6 +2137,8 @@ export function MafwShell() {
     const reusable = reusableCreatorSession({
       activeSessionID: activeSessionId(),
       messagesBySession: store.message,
+      // Seeded `[]` is not proof of blank: only a completed page load is.
+      pageState,
     })
     const sid = reusable ?? (await createSession({ noReveal: true, requirePersisted: true }))
     if (!sid) return // persisted creation failed (toast already shown)

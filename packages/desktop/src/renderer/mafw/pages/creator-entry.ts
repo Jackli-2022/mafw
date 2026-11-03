@@ -41,20 +41,46 @@ export function creatorEntryReasonText(reason: CreatorEntryReason | undefined): 
   return ""
 }
 
+export interface CreatorPageState {
+  cursor: string | null
+  hasMore: boolean
+  loading: boolean
+}
+
 export interface ReusableCreatorSessionInput {
   activeSessionID: string | null | undefined
   /** Loaded message lists keyed by Session id (`store.message`). */
   messagesBySession: Record<string, readonly unknown[] | undefined>
+  /**
+   * Per-session history load state (`MafwShell.pageState`). Only a completed
+   * page proves that an empty message list means “blank”, because
+   * `openSessionTab` seeds `message[sid] = []` before history arrives.
+   */
+  pageState: Record<string, CreatorPageState | undefined>
 }
 
 /**
- * Reuse the active Session only when it is an ordinary blank one: no active
- * Session, no loaded message list for it, or any message disables reuse. The
- * caller then falls back to a persisted new Session.
+ * Reuse the active Session only when its history actually finished loading and
+ * came back empty:
+ *
+ * - `openSessionTab` seeds `message[sid] = []` for every new tab, and history
+ *   is only merged back when the page has messages, so the empty array alone
+ *   cannot distinguish a blank Session from one whose load is in flight or
+ *   failed;
+ * - `pageState` is written only by a completed page load (`cursor`/`hasMore`),
+ *   and a still-loading page never qualifies;
+ * - any loaded message disables reuse.
+ *
+ * Everything else returns `null`, and the caller creates a fresh persisted
+ * Session instead of hijacking someone's conversation.
  */
 export function reusableCreatorSession(input: ReusableCreatorSessionInput): string | null {
   const sid = input.activeSessionID
   if (!sid) return null
+  const page = input.pageState[sid]
+  if (!page) return null
+  if (page.loading === true) return null
+  if (page.cursor !== null || page.hasMore !== false) return null
   const messages = input.messagesBySession[sid]
   if (!Array.isArray(messages) || messages.length > 0) return null
   return sid
