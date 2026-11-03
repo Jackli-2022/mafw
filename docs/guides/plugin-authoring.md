@@ -4,6 +4,11 @@
 > 参考实现：`docs/examples/plugins/service-monitor/`
 > 共享契约：`packages/plugin-contract/`（`validateClientDescriptor` / `normalizePluginView` / `validateConfigFormSchema` / `PLUGIN_UI_LIMITS`）
 > 设计文档：`docs/superpowers/specs/2026-11-03-unified-declarative-plugin-packages-design.md`
+>
+> **也可以让 Agent 代写**：Desktop `Config → Plugins → 让 Agent 创建插件` 会打开一个带 `mafw-create`
+> 的普通会话，由 Agent 在 `<project>/.mafw/plugin-drafts/<name>/` 生成、检查、测试并请求安装。
+> 入口条件、草稿规则、逐次审批、固定测试命令、pending 与限制见
+> [插件 Creator 指南](./plugin-creator.md)。本指南其余部分仍是**手动 Phase 1 流程**与包契约的权威参考。
 
 ## 0. 先明确边界
 
@@ -13,7 +18,9 @@
 - 包不能做：把 Solid/React 组件、任意 HTML/CSS/JS、事件 handler 或函数传到 Desktop；跨包调用 action；发射 canonical runtime 事件；读写任意配置文件。
 - 这不是安全沙箱：安装包等于在本机 gateway 进程里执行代码。只安装你信任的目录。
 
-第一阶段没有 Creator / Agent 自动生成插件。包安装、热重载与管理都在现有 Plugins 页完成。
+第一阶段没有专用 Creator 会话或第二套安装通道；Agent 创建功能只是在普通空白 Session 里用受限的
+`mafw-create` 身份写项目草稿，检查/测试/安装仍走本文档描述的同一套包契约与 `PackageManager`。
+入口与限制见 [插件 Creator 指南](./plugin-creator.md)。
 
 ## 1. 包布局
 
