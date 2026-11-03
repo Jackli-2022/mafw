@@ -18,6 +18,7 @@
 - `check`, `test`, and mutating manager operations require native per-call approval unless the Session is `full-access`.
 - Approval uses the tool context's awaitable `ask` with `always: []`; no persisted/session-wide grant is added.
 - Creator has no shell, web, subagent, goal, pod, task, python, media, desktop, automation, or restart tools.
+- Creator must be able to load its own `plugin-creator` skill: `skill` is explicitly enabled in `tools` and allowed by policy even though the rest of the surface uses `'*': false`.
 - `check` and `test` execute trusted local draft code; neither is a sandbox. Fixed test command is `node --test`, cwd is the draft, timeout 60s, sanitized env, capped output.
 - A new draft iteration uses a new request id. Never derive idempotency keys from `(operation, draft, overwrite)`.
 - No new Desktop renderer→gateway diagnostics or screenshot channel. Creator reads descriptors and Host/activation diagnostics; visual issues come from the user.
@@ -33,6 +34,7 @@
 - The fixed test runner must not hang, inherit secrets, or return unbounded output; tests live in Task 4.
 - Draft content changing between approval and execution, or a replayed request id hiding a new iteration, must be rejected; tests live in Task 4 and Task 6.
 - Entering Creator from a worktree, with a missing agent, or while preserving another Session's composer draft must not change the normal new-Session default; tests live in Task 5.
+- `tools['*'] = false` must not hide the Creator skill itself; tests live in Task 1.
 
 ---
 
@@ -66,15 +68,19 @@ expect(def.permissions.bash).toBe('deny')
 expect(def.permissions.edit).toBe('ask')
 expect(def.permissions.tools?.mafw_plugin_manager).toBe('ask')
 expect(def.tools?.['*']).toBe(false)
+expect(def.tools?.skill).toBe(true)
 expect(def.tools?.mafw_plugin_inspect).toBe(true)
 expect(def.tools?.mafw_plugin_manager).toBe(true)
 expect(def.tools?.bash).not.toBe(true)
+expect(def.systemPrompt).toContain('plugin-creator')
 expect(def.systemPrompt).toContain('.mafw/plugin-drafts/<packageName>')
-expect(def.systemPrompt).toContain('mafw_plugin_inspect')
+expect(def.systemPrompt).toContain('mafw_plugin_manager')
 expect(def.systemPrompt).toContain('applyPending')
+expect(def.systemPrompt).not.toContain('maxWidgets')
+expect(def.systemPrompt.length).toBeLessThan(1_500)
 ```
 
-Also assert the registry includes `mafw-create` with `scope: 'primary'`, no pinned model, an allowlist containing `mafw_plugin_inspect`/`mafw_plugin_manager`, and denial of `shell`/`web`/`subagent`. Assert `toAgentDefinition(spec)` is byte-shape compatible with `getPluginCreatorAgentDefinition()`.
+Also assert the registry includes `mafw-create` with `scope: 'primary'`, no pinned model, an allowlist containing `skill`/`mafw_plugin_inspect`/`mafw_plugin_manager`, and denial of `shell`/`web`/`subagent`. Assert `toAgentDefinition(spec)` is byte-shape compatible with `getPluginCreatorAgentDefinition()`.
 
 `plugin-creator-skill-install.test.ts` covers install → unchanged → update, missing source fail-open, and a target contained under the supplied skills directory. Existing Office global-skill tests must remain green after the generic extraction.
 
@@ -105,6 +111,7 @@ Extract the atomic write logic from Office into `core/skills/global-skill.ts`; m
   },
   tools: {
     '*': false,
+    skill: true,
     read: true,
     grep: true,
     glob: true,
@@ -122,9 +129,9 @@ Extract the atomic write logic from Office into `core/skills/global-skill.ts`; m
 }
 ```
 
-The system prompt must require this order: inspect public contract → write the minimal package and tests → check/test with approval → install with approval → ask the user to verify real UI → iterate. It must state that `applyPending` is user-only, that drafts live under the project, and that saved/tested/installed/pending are different states.
+`PLUGIN_CREATOR_SYSTEM_PROMPT` is the thin invariant layer only; it must stay under 1,500 characters and avoid package schemas, widget limits, templates, or the full workflow. It requires: load `plugin-creator` before the first inspect/write and stop if unavailable; use project-local drafts; route all mutations through `mafw_plugin_manager`; keep `applyPending` user-only; never conflate saved/tested/installed/active/pending.
 
-Create `skills/plugin-creator/SKILL.md` with sections: package layout, four UI slots, widget/action/event limits, draft location, test-first workflow, approval semantics, verification, and common failures.
+Create `skills/plugin-creator/SKILL.md` as the sole detailed source for: package layout, four UI slots, widget/action/event limits, templates, inspect-first ordering, test-first workflow, approval/fingerprint/requestId semantics, verification, recovery, and common failures. Identity and skill must not both carry the detailed tutorial.
 
 Register the identity in `buildBuiltins()`, and install the skill beside the Office skill before serve startup in `gateway/src/index.ts`.
 
@@ -390,7 +397,7 @@ test('test runner uses node --test and caps oversized output', async () => {
 })
 ```
 
-Additional cases: read-only operations make no approval call; denial/cancel makes no HTTP call; `applyPending` is rejected; missing draft/package names return actionable errors; install with no request id sends no request id; a new iteration can use a new id; check uses `/api/plugins/check`; enable/disable/remove/reload use the existing routes; test failure returns `isError` but does not install; a fake child that never exits is killed at the timeout and returns `timedOut: true`.
+Additional cases: read-only operations make no approval call; each code/mutation operation invokes `ctx.ask` exactly once (no second agent-level prompt); denial/cancel makes no HTTP call; `applyPending` is rejected; missing draft/package names return actionable errors; install with no request id sends no request id; a new iteration can use a new id; check uses `/api/plugins/check`; enable/disable/remove/reload use the existing routes; test failure returns `isError` but does not install; a fake child that never exits is killed at the timeout and returns `timedOut: true`.
 
 - [ ] **Step 2: Run tests to verify failure**
 

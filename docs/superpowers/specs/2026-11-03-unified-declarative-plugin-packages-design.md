@@ -433,16 +433,22 @@ fs.watch / 手动 reload / install / enable / disable / delete
 
 ### 15.2 Creator 身份与开发技能
 
-在 IdentityRegistry 注册 `mafw-create`，其系统提示与随包技能包含：
+在 IdentityRegistry 注册 `mafw-create`，但身份只做**薄权限/preset 壳**，不复制开发教程。Identity 的系统提示只保留：
+
+- 角色定位：统一插件包的 Creator。
+- 第一次 inspect 或写草稿前必须加载 `plugin-creator` skill；skill 不可用时停止并说明，不凭记忆继续生成。
+- 草稿只写项目内 `.mafw/plugin-drafts/<packageName>/`；check/test/install/启停/删除只经 `mafw_plugin_manager`。
+- `applyPending` 仅用户可执行；saved/tested/installed/active/pending 不混称。
+
+`skills/plugin-creator/SKILL.md` 才拥有完整细节：
 
 - 统一包和贡献契约、四类 UI slots、ActionWidget、事件命名空间和 revision 行为。
 - 最小依赖/零依赖模板，以及 panel/config/toolCard/messageWindow 的参考骨架。
-- “先检查可用 API，再写代码；先形成可验证最小版本，再扩展视觉”的工作顺序。
-- 测试先行：为 action 行为、事件 payload、View DTO 和错误路径生成可运行测试；UI 以真实渲染验证为准。
-- 明确区分 draft saved、check passed、installed、activated、pending、failed/disabled；不把写文件成功说成插件已运行。
-- 插件内容已由工作区文件承载时，Agent 的记忆只记路径和 gist；不把生成全文写入长期记忆。
+- inspect → 最小实现 → 测试 → check/test → 安装 → 真实 UI 验证 → 迭代的工作顺序。
+- 测试先行、生命周期状态区分、审批/fingerprint/requestId 说明、常见故障，以及“记忆只记路径和 gist”。
+- 模板与限制的唯一详细来源；identity 不重复这些内容。
 
-Creator 不获得 raw runtime、gateway 内部对象或通用插件管理 HTTP 转发。身份 allowlist 只含 readonly/file-edit、question/todo、`mafw_add_memory`/`mafw_search_hybrid`/`mafw_get_memory`、`mafw_plugin_inspect` 与 `mafw_plugin_manager`；拒绝 shell、web、subagent 以及无关的 goal/pod/task/python/media/desktop/automation/restart 能力。`mafw-create` 与 DSH Creator 一样可出现在普通 primary-agent/preset 选择器，不新增 entry-only 身份机制。
+Creator 不获得 raw runtime、gateway 内部对象或通用插件管理 HTTP 转发。身份 allowlist 含 readonly/file-edit、question/todo、`skill`、`mafw_add_memory`/`mafw_search_hybrid`/`mafw_get_memory`、`mafw_plugin_inspect` 与 `mafw_plugin_manager`；拒绝 shell、web、subagent 以及无关的 goal/pod/task/python/media/desktop/automation/restart 能力。`skill` 工具必须显式启用——使用 `tools['*']=false` 时不能遗漏它，否则 Creator 自己看不到随包技能。`mafw-create` 与 DSH Creator 一样可出现在普通 primary-agent/preset 选择器，不新增 entry-only 身份机制。
 
 本期实现选择是不向 Creator 开放通用 shell；草稿测试由 `mafw_plugin_manager.test` 执行，避免把 shell 当成绕过 Manager 的平行安装通道。通用 file-edit 的路径约束是工作流约定，不宣称它是恶意代码 sandbox；真正的安装边界是 Manager 的来源校验与逐次人工审批。
 
