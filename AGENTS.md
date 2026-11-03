@@ -1483,6 +1483,43 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
     TUI **306（305 pass/1 skip）**、SDK **188/188**、plugin **30/30**，
     `tsc`/`tsgo -p`/root build/electron-vite build rc=0。
 
+### 5.26 项目工作空间与自适应 Goal（2026-11-03）
+
+spec `docs/superpowers/specs/2026-11-03-project-workspace-adaptive-goal-design.md`，plan
+`docs/superpowers/plans/2026-11-03-project-workspace-adaptive-goal.md`。Lead 是所有明确执行请求的唯一入口；
+Tech Lead 在每个 Goal revision 内选择 `quick` / `collaborative`；Desktop 把旧「工作 / 鲸群 / Goals」
+收敛为一个项目工作空间（Lead 对话、工作概览、统一 Goal 详情），鲸群下沉为项目资源。
+
+- **规范身份 / 读模型**：`core/goal/goal-identity.ts` 以 `(canonicalProjectDir, goalId)` 解析，多项目同 id
+  返回 `ambiguous`，绝不回落首个注册项目；canonical-equivalent 重复注册先去重，避免假歧义。
+  `GET /api/projects/:projectId/work` 返回完整五桶（`needs_you/queued/in_progress/result_ready/ended`），
+  counts 与列表同源；`PodGoalView` 增 `bucket/sourceRef/strategy/assessment/currentAssignment`。
+  SDK `work.overview` / `pod.handoffGoal`，preload 同步。
+- **Lead handoff**：`GoalSourceRef`（session/message + 4000 字冻结快照）随 request.json 持久化；
+  `POST /api/pods/:podId/goals/handoff` 先 `ensureLead` 再以 Lead 身份建 Goal；
+  `mafw_create_goal` / `mafw_set_goal` 在 Pod 项目中只走 Lead/Tech Lead，不再写 Pod-less legacy Goal。
+- **自适应执行**：`PlanStrategy`；quick 计划只允许一个 task、可无 goalEval、不进独立 Reviewer，
+  完成走 `archive_unreviewed`，仅 `goal_outcomes` 写 `UNREVIEWED`，Pod 业务 verdict 保持 `null`；
+  `planReview:'manual'` 强制 collaborative 并驻留 `AWAIT_PLAN_APPROVAL`；quick 有 receipt 机械完整性校验、
+  一次 Tech Lead 修复、失败一律 FAIL。
+- **派工审计**：`core/goal/assignment.ts` 写不可变 Assignment JSON + `attempt-N.prompt.md`（不覆盖旧 prompt），
+  prompt 顺序 `CONTEXT MANIFEST → POD HANDOFF → ASSIGNMENT → 节点正文`；修复/复评使用 `-fix` 产物路径。
+- **历史迁移**：`scripts/backfill-pod-goals.ts` 默认 dry-run，仅 request 自身可证明项目归属时导入；
+  `--apply` 才写库（本批未对真实数据执行 apply）。
+- **Desktop**：`WorkspaceHome`（Lead、工作概览、自由讨论、New Goal composer）、统一 `GoalDetailOverlay`
+  （结果/打回 Tech Lead/计划任务/问题回答/方向/时间线）、Goal 感知 Session 标题与 ended transcript、
+  `ProjectResources`（团队/邮箱/Pod 记忆/便签/工具链接）。退役 `Dashboard`、`PodRailFace`、
+  `PodAttentionList`、`PodResultPanel`、`PodGoalQueue`；执行 `pod` 分区隐藏，持久化值一次性迁到资源页。
+- **验证（2026-11-03）**：gateway **4669/4669（591 suites）**、desktop **2709/2709（600 suites）**、
+  SDK **199/199**、TUI **306（305 pass/1 skip）**、root plugin **34/34**；
+  `tsc` / `tsgo --noEmit -p tsconfig.json` / root build / `electron-vite build` rc=0；
+  本批 git diff 统计新增/改写 **99** 个测试用例。GUI 冒烟（dev app + repo gateway，1600/1088）：
+  工作空间空态、New Goal 创建、Goal title/bucket/revision 一致、取消 Goal → 历史、资源页团队/邮箱/
+  Pod 记忆/便签入口、Tech Lead 已结束会话打开 transcript、gateway 重启后 Goal 保留；1366 只覆盖资源/
+  右栏布局。**未在 GUI 实测**：quick/collaborative 完整 LLM 闭环、计划批准/Reviewer/结果打回的真实回合、
+  OS 级 deep link（解析与路由由单测/接线测试覆盖）。最终实现 commit `2787681e`；本批未 push、
+  未 deploy、未发布。
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令
