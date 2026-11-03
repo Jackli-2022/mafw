@@ -9,12 +9,17 @@
 // - stop/cleanup 统一走 teardown()：先 client.stop()（内部按 tap → mic 顺序释放），
 //   再兜底 analyzer.stop()。
 // - createGenerationGuard 保证旧 start 迟到的 socket/VAD 回调写不到新的 start/会话。
-import { createEffect, createSignal, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { createSileroVadAnalyzer } from "../voice/silero"
-import { createVoicePcmTap } from "../voice/pcm-capture"
-import { createDuplexClient, type DuplexClient, type DuplexClientState } from "../voice/duplex-client"
-import { DEFAULT_VAD_PARAMS, type VadAnalyzer } from "../voice/types"
+import { createVoicePcmTap, type VoicePcmTap } from "../voice/pcm-capture"
+import {
+  createDuplexClient,
+  type DuplexClient,
+  type DuplexClientDeps,
+  type DuplexClientState,
+} from "../voice/duplex-client"
+import { DEFAULT_VAD_PARAMS, type MicInput, type VadAnalyzer, type VadParams } from "../voice/types"
 import { createGenerationGuard } from "./duplex-voice-mode"
 
 /** 没有打开会话时的稳定错误码（surface 到 bar，不静默吞掉点击）。 */
@@ -31,7 +36,32 @@ export interface DuplexVoiceController {
   stop: () => Promise<void>
 }
 
-export function useDuplexVoice(sid: () => string, ready: () => boolean): DuplexVoiceController {
+/**
+ * 测试/宿主注入缝（全部可选，生产默认值不变）。
+ *
+ * 只为让编排行为可在无浏览器媒体栈的环境下测：状态读取、分析器、客户端、
+ * PCM 抽头、toast 出口各一个注入点。运行时（ChatPane）不传这个参数。
+ */
+export interface DuplexVoiceDeps {
+  status?: () => Promise<{ config?: { duplexV1?: boolean } } | null | undefined>
+  createAnalyzer?: (params: VadParams) => VadAnalyzer
+  createClient?: (deps: DuplexClientDeps) => DuplexClient
+  createTap?: (input: MicInput, onFrame: (pcm: Int16Array) => void) => Promise<VoicePcmTap>
+  notify?: (options: { description: string; duration: number }) => void
+}
+
+export function useDuplexVoice(
+  sid: () => string,
+  ready: () => boolean,
+  overrides?: DuplexVoiceDeps,
+): DuplexVoiceController {
+  // 默认出口全部惰性求值：`window.api` 只在真正需要时读（例如 gateway ready 后）。
+  const readStatus = overrides?.status ?? (() => window.api.mafw.voice.status())
+  const makeAnalyzer = overrides?.createAnalyzer ?? ((params: VadParams) => createSileroVadAnalyzer(params))
+  const makeClient = overrides?.createClient ?? ((deps: DuplexClientDeps) => createDuplexClient(deps))
+  const makeTap = overrides?.createTap ?? ((input: MicInput, onFrame: (pcm: Int16Array) => void) => createVoicePcmTap(input, onFrame))
+  const notify = overrides?.notify ?? ((options: { description: string; duration: number }) => showToastV2(options))
+
   const [enabled, setEnabled] = createSignal(false)
   const [active, setActive] = createSignal(false)
   const [partial, setPartial] = createSignal("")
@@ -47,7 +77,7 @@ export function useDuplexVoice(sid: () => string, ready: () => boolean): DuplexV
   function reportError(problem: unknown) {
     const message = problem instanceof Error ? problem.message : String(problem)
     setError(message)
-    showToastV2({ description: `语音输入失败: ${message}`, duration: 3000 } as any)
+    notify({ description: `语音输入失败: ${message}`, duration: 3000 })
   }
 
   /** 释放在途 client 与 analyzer（幂等；client.stop 本身 idle-safe）。 */
@@ -70,9 +100,9 @@ export function useDuplexVoice(sid: () => string, ready: () => boolean): DuplexV
     }
   }
 
-  /** flag 由开变关（配置改动/探测失败）时，正在收的音必须先停，别留活 socket 与麦克风。 */
+  /** flag 由开变关（配置改动/探测失败/gateway 掉线）时，正在收的音必须先停。 */
   function applyEnabled(next: boolean) {
-    const was = enabled()
+    const was = untrack(() => enabled())
     setEnabled(next)
     if (was && !next) void stop()
   }
@@ -83,10 +113,11 @@ export function useDuplexVoice(sid: () => string, ready: () => boolean): DuplexV
     const isReady = ready()
     const token = ++statusToken
     if (!isReady) {
-      setEnabled(false)
+      // 走同一条关闭路径：掉线时旧 client 不能被留在 active（否则麦克风/socket 存活）。
+      applyEnabled(false)
       return
     }
-    void window.api.mafw.voice.status().then(
+    void readStatus().then(
       (status) => {
         if (token !== statusToken) return
         const config = status?.config
@@ -108,7 +139,7 @@ export function useDuplexVoice(sid: () => string, ready: () => boolean): DuplexV
     const sessionID = sid()
     if (!sessionID) {
       setError(VOICE_CHAT_SESSION_REQUIRED)
-      showToastV2({ description: "请先打开一个会话再使用语音输入", duration: 3000 } as any)
+      notify({ description: "请先打开一个会话再使用语音输入", duration: 3000 })
       return
     }
     if (starting) return starting
@@ -119,13 +150,13 @@ export function useDuplexVoice(sid: () => string, ready: () => boolean): DuplexV
       await teardown()
       if (!guard.isCurrent(generation)) return
 
-      const nextAnalyzer = createSileroVadAnalyzer({ ...DEFAULT_VAD_PARAMS })
-      const nextClient = createDuplexClient({
+      const nextAnalyzer = makeAnalyzer({ ...DEFAULT_VAD_PARAMS })
+      const nextClient = makeClient({
         chatSessionId: sessionID,
         // preload 返回 Promise；client 在开 socket 前 await 它（renderer 不拼 URL）。
         wsUrl: () => window.api.mafw.voice.wsUrl(),
         vad: nextAnalyzer,
-        createTap: createVoicePcmTap,
+        createTap: makeTap,
         onPartial: (text) => {
           if (!guard.isCurrent(generation)) return
           // 新的 partial = 新一段话开始，上一段 final 到此为止。
@@ -156,9 +187,11 @@ export function useDuplexVoice(sid: () => string, ready: () => boolean): DuplexV
       setFinalText("")
       setActive(true)
 
+      let failedStart = false
       try {
         await nextClient.start()
       } catch (problem) {
+        failedStart = true
         // client 已在 fail() 里回调过 onError（含 toast）；这里只兜底状态，
         // 避免同一错误弹两次。
         if (guard.isCurrent(generation)) {
@@ -166,14 +199,21 @@ export function useDuplexVoice(sid: () => string, ready: () => boolean): DuplexV
           if (!error()) reportError(problem)
         }
       } finally {
-        if (!guard.isCurrent(generation)) {
-          // stop()/切换会话已把这一代作废：迟到的 client 不能继续持有麦克风。
+        // 失败或被 stop() 作废：这一代必须收干净（client.stop 幂等），否则下一次
+        // start 会捡到半个实例，analyzer 也继续占着共享 AudioContext。
+        if (failedStart || !guard.isCurrent(generation)) {
+          if (client === nextClient) client = null
+          if (analyzer === nextAnalyzer) analyzer = null
           try {
             await nextClient.stop()
           } catch (stopProblem) {
             console.warn("[voice] duplex client stop failed:", stopProblem)
           }
-          nextAnalyzer.stop()
+          try {
+            nextAnalyzer.stop()
+          } catch (stopProblem) {
+            console.warn("[voice] duplex vad stop failed:", stopProblem)
+          }
         }
       }
     })()

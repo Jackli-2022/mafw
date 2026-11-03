@@ -37,6 +37,10 @@ describe("duplex voice wiring", () => {
     expect(bar).toContain('aria-live="polite"')
     expect(bar).toContain("mafw-duplex-voice-bar")
     expect(bar).toContain("ButtonV2")
+    // Accessible name must match the visible action (label-in-name): the error
+    // state shows 关闭, the listening state shows 停止.
+    expect(bar).toContain('aria-label={props.error ? "关闭语音输入提示" : "停止语音输入"}')
+    expect(bar).toContain('{props.error ? "关闭" : "停止"}')
     expect(bar).not.toMatch(/<button[\s>]/)
     expect(bar).not.toMatch(/<input[\s>]/)
     expect(bar).not.toMatch(/\stitle=/)

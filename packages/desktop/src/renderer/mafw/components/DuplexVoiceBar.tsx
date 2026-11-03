@@ -43,7 +43,7 @@ export function DuplexVoiceBar(props: DuplexVoiceBarProps) {
         variant="ghost"
         size="small"
         class="mafw-duplex-voice-stop"
-        aria-label="停止语音输入"
+        aria-label={props.error ? "关闭语音输入提示" : "停止语音输入"}
         onClick={() => props.onStop()}
       >
         {props.error ? "关闭" : "停止"}
