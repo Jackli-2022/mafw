@@ -1,8 +1,9 @@
 import { For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { Icon } from "@mafw/ui/icon"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { workspaceSections } from "../workspace-model"
-import { attentionTarget, type GoalDetailFocus } from "../pod-model"
+import { attentionTarget, podStageLabel, type GoalDetailFocus } from "../pod-model"
 
 const LABELS: Record<string, string> = {
   needs_you: "需要你",
@@ -32,15 +33,16 @@ const EMPTY: PodWorkOverview = {
   total: 0,
 }
 
-function goalMeta(goal: PodGoal): string {
-  const revision = typeof goal.revision === "number" ? `rev ${goal.revision}` : ""
-  const strategy = goal.strategy === "quick"
-    ? "快速执行"
-    : goal.strategy === "collaborative"
-      ? "协作"
-      : ""
-  const assessment = goal.assessment === "unreviewed" ? "未独立评审" : ""
-  return [revision, strategy, assessment].filter(Boolean).join(" · ")
+/** 行内只放真实元信息：阶段、revision、执行策略、是否独立评审。 */
+function goalChips(goal: PodGoal): string[] {
+  const chips: string[] = []
+  const stage = podStageLabel(goal.stage)
+  if (stage) chips.push(stage)
+  if (typeof goal.revision === "number") chips.push(`rev ${goal.revision}`)
+  if (goal.strategy === "quick") chips.push("快速执行")
+  else if (goal.strategy === "collaborative") chips.push("协作")
+  if (goal.assessment === "unreviewed") chips.push("未独立评审")
+  return chips
 }
 
 /** One Overview projection: every count is the length of the list below it. */
@@ -55,9 +57,12 @@ export function WorkOverview(props: {
   return (
     <section class="mafw-work-overview" aria-label="工作概览">
       <div class="mafw-work-overview-head">
-        <div>
+        <div class="mafw-work-overview-title">
           <div class="mafw-work-kicker">工作概览</div>
-          <div class="mafw-work-total">{props.overview?.total ?? 0} 项工作</div>
+          <div class="mafw-work-total">
+            <strong>{props.overview?.total ?? 0}</strong>
+            <span>项工作</span>
+          </div>
         </div>
         <Show when={props.onOpenAll}>
           <ButtonV2 variant="ghost" size="small" onClick={() => props.onOpenAll?.()}>全部历史</ButtonV2>
@@ -70,15 +75,24 @@ export function WorkOverview(props: {
         <div class="mafw-work-empty">正在加载工作概览…</div>
       </Show>
       <Show when={!props.error && !props.loading && (props.overview?.total ?? 0) === 0}>
-        <div class="mafw-work-empty">还没有工作项。向 Lead 交代一件事，或用「新话题」先讨论。</div>
+        <div class="mafw-work-empty">
+          <Icon name="layout-grid" size="large" class="mafw-work-empty-icon" />
+          <div>
+            <strong>还没有工作项</strong>
+            <span>向 Lead 交代一件事，或用「新话题」先讨论。</span>
+          </div>
+        </div>
       </Show>
       <For each={sections()}>
         {(section) => (
           <Show when={section.count > 0}>
-            <div class="mafw-work-group">
+            <div class={`mafw-work-group is-${section.bucket}`}>
               <div class="mafw-work-group-head">
-                <span>{LABELS[section.bucket] ?? section.bucket}</span>
-                <span class="mafw-work-count">{section.count}</span>
+                <span class="mafw-work-group-label">
+                  <span class="mafw-work-status-dot" aria-hidden="true" />
+                  {LABELS[section.bucket] ?? section.bucket}
+                </span>
+                <span class="mafw-work-count mafw-work-group-count">{section.count}</span>
               </div>
               <For each={section.goals}>
                 {(goal) => (
@@ -88,8 +102,15 @@ export function WorkOverview(props: {
                     class="mafw-work-item"
                     onClick={() => props.onOpenGoal(goal, attentionTarget(goal.stage.action))}
                   >
-                    <span class="mafw-work-item-title">{goal.title || "未命名目标"}</span>
-                    <span class="mafw-work-item-meta">{goalMeta(goal)}</span>
+                    <span class="mafw-work-item-main">
+                      <span class="mafw-work-item-title">{goal.title || "未命名目标"}</span>
+                      <span class="mafw-work-item-meta">
+                        <For each={goalChips(goal)}>
+                          {(chip) => <span class="mafw-work-chip">{chip}</span>}
+                        </For>
+                      </span>
+                    </span>
+                    <Icon name="chevron-right" size="small" class="mafw-work-item-chevron" />
                   </ButtonV2>
                 )}
               </For>

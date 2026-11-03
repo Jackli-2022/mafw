@@ -3,6 +3,7 @@
 import { For, Show, createMemo } from "solid-js"
 import type { PodDetail, PodMessage } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { Icon } from "@mafw/ui/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { buildMemberRows, podCounts, podEmptyState, type PodEmptyState } from "../pod-rail-face-model"
 import { memberOpenTarget, podStatusLabel } from "../pod-model"
@@ -54,6 +55,7 @@ export function ProjectResources(props: {
           />
         </TooltipV2>
       </div>
+      <div class="mafw-resources-subtitle">团队、邮箱与共享记忆；Goal 工作在工作空间。</div>
 
       <Show when={props.loading && !props.detail}>
         <div class="mafw-pod-rail-empty">加载中…</div>
@@ -80,23 +82,47 @@ export function ProjectResources(props: {
       <Show when={emptyState() === "ready"}>
         <div class="mafw-pod-rail-label">团队与设置</div>
         <div class="mafw-resources-list">
-          <ButtonV2 variant="ghost" size="small" class="mafw-resources-row" onClick={() => props.onOpenPanel("team", "members")}>
-            <span>团队</span>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-resources-row"
+            onClick={() => props.onOpenPanel("team", "members")}
+          >
+            <span class="mafw-resources-leading"><Icon name="team-three" size="small" /><span>团队</span></span>
             <span class="mafw-resources-meta">{rows().length} 人</span>
+            <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
           </ButtonV2>
-          <ButtonV2 variant="ghost" size="small" class="mafw-resources-row" onClick={() => props.onOpenPanel("team", "inbox")}>
-            <span>邮箱</span>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-resources-row"
+            onClick={() => props.onOpenPanel("team", "inbox")}
+          >
+            <span class="mafw-resources-leading"><Icon name="speech-bubble" size="small" /><span>邮箱</span></span>
             <span class="mafw-resources-meta" classList={{ accent: counts().inbox > 0 }}>
               {counts().inbox > 0 ? `${counts().inbox} 条未读` : "协作诊断"}
             </span>
+            <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
           </ButtonV2>
-          <ButtonV2 variant="ghost" size="small" class="mafw-resources-row" onClick={() => props.onOpenPanel("memory")}>
-            <span>Pod 记忆</span>
-            <span class="mafw-resources-meta">POD · MEMORY · GLOSSARY</span>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-resources-row"
+            onClick={() => props.onOpenPanel("memory")}
+          >
+            <span class="mafw-resources-leading"><Icon name="bullet-list" size="small" /><span>Pod 记忆</span></span>
+            <span class="mafw-resources-meta">POD · MEMORY</span>
+            <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
           </ButtonV2>
-          <ButtonV2 variant="ghost" size="small" class="mafw-resources-row" onClick={props.onOpenNotes}>
-            <span>便签</span>
-            <span class="mafw-resources-meta">手工记录，不计入工作</span>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-resources-row"
+            onClick={props.onOpenNotes}
+          >
+            <span class="mafw-resources-leading"><Icon name="sticky-note" size="small" /><span>便签</span></span>
+            <span class="mafw-resources-meta">不计入工作</span>
+            <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
           </ButtonV2>
         </div>
 
@@ -109,8 +135,9 @@ export function ProjectResources(props: {
               aria-label={`打开当前目标 ${goal().title}`}
               onClick={() => props.onOpenGoal(goal().goalId)}
             >
-              <span>当前目标 · {goal().title}</span>
+              <span class="mafw-resources-leading"><Icon name="status" size="small" /><span>当前目标 · {goal().title}</span></span>
               <span class="mafw-resources-meta">打开详情</span>
+              <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
             </ButtonV2>
           )}
         </Show>
@@ -139,6 +166,9 @@ export function ProjectResources(props: {
                     open()
                   }}
                 >
+                  <span class={`mafw-resource-avatar is-${row.role}`} aria-hidden="true">
+                    {row.displayName.charAt(0)}
+                  </span>
                   <span class={`mafw-pod-rail-dot ${row.dotClass}`} aria-hidden="true" />
                   <div class="mafw-pod-rail-member-main">
                     <div class="mafw-pod-rail-member-top">
@@ -173,7 +203,9 @@ export function ProjectResources(props: {
         <For each={toolLinks()}>
           {(link) => (
             <ButtonV2 variant="ghost" size="small" class="mafw-resources-row" onClick={() => props.onNavigate(link.id)}>
-              <span>{link.label}</span>
+              <span class="mafw-resources-leading"><Icon name={link.icon as any} size="small" /><span>{link.label}</span></span>
+              <span class="mafw-resources-meta" />
+              <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
             </ButtonV2>
           )}
         </For>

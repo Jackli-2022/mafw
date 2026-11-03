@@ -35,6 +35,8 @@ test("Goal 详情直接包含结果与打回，不再依赖独立的 Goal 结果
   assert.match(detail, /import \{ PodResultView \}/)
   assert.match(detail, /<PodResultView/)
   assert.match(detail, /rejectResult\(/)
+  // 取消/中止的 Goal 有终态 verdict 但没有结果证据，不能渲染结果卡。
+  assert.match(detail, /goal\.status === "aborted"\) return false/)
   assert.match(resultView, /podResultAssessmentLabel\(/)
   assert.equal(podResultAssessmentLabel({ verdict: null, assessment: "unreviewed" }), "未独立评审")
   assert.equal(podResultAssessmentLabel({ verdict: "PASS", assessment: "reviewed" }), null)

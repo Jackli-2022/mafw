@@ -108,9 +108,14 @@ export function GoalDetailOverlay(props: {
   // 只缓存命中 + in-flight 去重；Pod 未建立时不会把 null 永久钉住。
   const resolvePod = createPodIdResolver({ lookup: (dir) => window.api.mafw.pod.lookup(dir) })
   async function resolvePodIdForGoal(): Promise<string | null> {
+    const loaded = podStore.detail()
+    const loadedFor = podStore.projectDir()
+    const loadedPodId = loaded && (!loadedFor || loadedFor === props.projectDir)
+      ? loaded.pod.id
+      : null
     return resolvePod({
       podId: props.podId,
-      loadedPodId: podStore.detail()?.pod.id,
+      loadedPodId,
       projectDir: props.projectDir,
     })
   }
@@ -337,9 +342,10 @@ export function GoalDetailOverlay(props: {
   const hasResult = () => {
     const goal = podGoal() as any
     if (!goal) return false
+    // Cancelled/aborted Goals have a terminal verdict but no result evidence.
+    if (goal.status === "aborted") return false
     if (goal.resultReady === true) return true
-    if (goal.status !== "done" && goal.status !== "aborted") return false
-    return !!goal.verdict
+    return goal.status === "done" && !!goal.verdict
   }
 
   const planGate = () => planEditGate({
@@ -505,11 +511,18 @@ export function GoalDetailOverlay(props: {
       <div class="mafw-goal-overlay" onClick={e => { if (e.target === e.currentTarget) props.onClose() }}>
         <div class="mafw-goal-panel">
           <div class="mafw-goal-head">
-            <div style={{ "min-width": 0 }}>
+            <div class="mafw-goal-head-main">
+              <div class="mafw-work-kicker">Goal · {stageText() || "工作项"}</div>
               <div class="mafw-card-title">{timeline()?.goal?.title || podGoal()?.title || props.goalId}</div>
-              <div class="mafw-card-meta">{timeline()?.goal?.goalId || props.goalId}</div>
+              <div class="mafw-goal-id">{timeline()?.goal?.goalId || props.goalId}</div>
             </div>
-            <ButtonV2 variant="ghost" size="small" onClick={props.onClose} aria-label="关闭详情">✕</ButtonV2>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              icon="close"
+              onClick={props.onClose}
+              aria-label="关闭详情"
+            />
           </div>
 
           <Show when={!loading() && !error()} fallback={
@@ -524,29 +537,29 @@ export function GoalDetailOverlay(props: {
           }>
             <div class="mafw-goal-meta" style={{ "flex-wrap": "wrap", "row-gap": "6px" }}>
               <Show when={timeline()?.goal?.phase}>
-                <span class={`mafw-phase-badge ${phaseBadge()}`}>{timeline()?.goal?.phase}</span>
+                <span class={`mafw-phase-badge mafw-goal-chip is-phase ${phaseBadge()}`}>{timeline()?.goal?.phase}</span>
               </Show>
               <Show when={stageText()}>
-                <span class="mafw-card-meta">{stageText()}</span>
+                <span class="mafw-card-meta mafw-goal-chip">{stageText()}</span>
               </Show>
               <Show when={activeRevision() != null}>
-                <span class="mafw-card-meta">
+                <span class="mafw-card-meta mafw-goal-chip">
                   revision {activeRevision()}
                   {currentRevision() ? ` · ${revisionStatusLabel(currentRevision()!.status)}` : ""}
                 </span>
               </Show>
               <Show when={podGoal()?.strategy === "quick"}>
-                <span class="mafw-card-meta">快速执行</span>
+                <span class="mafw-card-meta mafw-goal-chip is-accent">快速执行</span>
               </Show>
               <Show when={podGoal()?.assessment === "unreviewed"}>
-                <span class="mafw-card-meta">未独立评审</span>
+                <span class="mafw-card-meta mafw-goal-chip">未独立评审</span>
               </Show>
               <Show when={timeline()?.goal}>
-                <span class="mafw-card-meta">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
+                <span class="mafw-card-meta mafw-goal-chip">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
               </Show>
-              <Show when={elapsed() != null}><span class="mafw-card-meta">已用 {formatDuration(elapsed())}</span></Show>
-              <Show when={timeline()?.goal?.verdict}><span class="mafw-card-meta">verdict {timeline()?.goal?.verdict}</span></Show>
-              <Show when={!timeline()}><span class="mafw-card-meta">尚无执行记录</span></Show>
+              <Show when={elapsed() != null}><span class="mafw-card-meta mafw-goal-chip">已用 {formatDuration(elapsed())}</span></Show>
+              <Show when={timeline()?.goal?.verdict}><span class="mafw-card-meta mafw-goal-chip">verdict {timeline()?.goal?.verdict}</span></Show>
+              <Show when={!timeline()}><span class="mafw-card-meta mafw-goal-chip">尚无执行记录</span></Show>
               <Show when={planEntry()}>
                 <ButtonV2 variant="outline" size="small" onClick={planEntry()!.onOpen}>
                   计划{planEntry()!.badge ? ` · ${planEntry()!.badge}` : ""}
@@ -557,7 +570,10 @@ export function GoalDetailOverlay(props: {
             <Show when={currentAction()}>
               {(action) => (
                 <div class="mafw-goal-current-action">
-                  <span class="mafw-work-kicker">当前行动</span>
+                  <div>
+                    <span class="mafw-work-kicker">当前行动</span>
+                    <div class="mafw-goal-current-hint">处理完这一步，团队才能继续推进。</div>
+                  </div>
                   <ButtonV2 variant="contrast" size="small" onClick={() => action().run()}>
                     {action().label}
                   </ButtonV2>
@@ -668,7 +684,7 @@ export function GoalDetailOverlay(props: {
             </Show>
 
             <Show when={!hasResult() && revisionRows().length > 0}>
-              <div class="mafw-pod-revisions">
+              <div class="mafw-pod-revisions mafw-goal-section">
                 <div class="mafw-pod-section-head">
                   <span>版本历史</span>
                   <span class="mafw-pod-section-count">{revisionRows().length} 版</span>
@@ -697,7 +713,7 @@ export function GoalDetailOverlay(props: {
               </div>
             </Show>
 
-            <Show when={(timeline()?.nodes || []).length} fallback={<div class="mafw-empty">尚未开始执行</div>}>
+            <Show when={(timeline()?.nodes || []).length} fallback={<div class="mafw-goal-empty">尚未开始执行</div>}>
               <GoalTimelineLane
                 goalId={props.goalId!}
                 loops={lanes().loops}
@@ -710,16 +726,18 @@ export function GoalDetailOverlay(props: {
               />
             </Show>
 
-            <div class="mafw-goal-actions">
-              <ButtonV2
-                variant="ghost" size="small"
-                onClick={() => {
-                  if (!window.confirm("取消 Goal 会中止当前工作，旧 revision 结果仍保留。确认取消？")) return
-                  window.api.mafw.goals.control({ goalId: props.goalId!, action: "ABORT" })
-                    .catch((e: any) => console.warn("[mafw]", e))
-                }}
-              >取消 Goal</ButtonV2>
-            </div>
+            <Show when={!goalTerminal() && podGoal()?.status !== "done" && podGoal()?.status !== "aborted"}>
+              <div class="mafw-goal-actions">
+                <ButtonV2
+                  variant="ghost" size="small"
+                  onClick={() => {
+                    if (!window.confirm("取消 Goal 会中止当前工作，旧 revision 结果仍保留。确认取消？")) return
+                    window.api.mafw.goals.control({ goalId: props.goalId!, action: "ABORT" })
+                      .catch((e: any) => console.warn("[mafw]", e))
+                  }}
+                >取消 Goal</ButtonV2>
+              </div>
+            </Show>
           </Show>
         </div>
       </div>

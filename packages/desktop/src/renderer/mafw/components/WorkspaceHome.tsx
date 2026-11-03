@@ -1,17 +1,24 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { Icon } from "@mafw/ui/icon"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { WorkOverview } from "./WorkOverview"
 import { PodGoalComposer } from "./PodGoalComposer"
-import type { GoalDetailFocus } from "../pod-model"
+import { podShortTime, type GoalDetailFocus } from "../pod-model"
 import { formatRailTitle } from "./rail-display"
 
-type Discussion = { id: string; title?: string }
+type Discussion = { id: string; title?: string; time?: { updated?: number } }
 
 function projectName(dir: string | null): string {
   if (!dir) return "当前项目"
   const parts = dir.replace(/\\/g, "/").split("/").filter(Boolean)
   return parts[parts.length - 1] || dir
+}
+
+function discussionTime(time?: { updated?: number }): string {
+  const ms = time?.updated
+  if (typeof ms !== "number" || !Number.isFinite(ms)) return ""
+  return podShortTime(new Date(ms).toISOString(), Date.now())
 }
 
 function friendlyWorkError(error: unknown): string {
@@ -129,13 +136,21 @@ export function WorkspaceHome(props: {
 
       <div class="mafw-workspace-grid">
         <section class="mafw-workspace-lead" aria-label="Lead 项目对话">
-          <div class="mafw-work-kicker">Lead · 项目对话</div>
+          <div class="mafw-workspace-lead-head">
+            <div class="mafw-work-kicker">Lead · 项目对话</div>
+            <span class="mafw-workspace-lead-mark" aria-hidden="true">L</span>
+          </div>
           <h2>把工作交代给 Lead</h2>
           <p>
             讨论方向、补充上下文、接收结果。Lead 会创建 Goal，并交给 Tech Lead 决定如何执行；
             你不需要管理底层会话。
           </p>
-          <ButtonV2 variant="ghost" icon="arrow-right" onClick={() => void props.onOpenLead()}>
+          <ButtonV2
+            variant="ghost"
+            icon="arrow-right"
+            class="mafw-workspace-lead-cta"
+            onClick={() => void props.onOpenLead()}
+          >
             继续项目对话
           </ButtonV2>
         </section>
@@ -162,26 +177,34 @@ export function WorkspaceHome(props: {
 
       <Show when={(props.discussions?.length ?? 0) > 0}>
         <section class="mafw-workspace-discussions" aria-label="自由讨论">
-          <div class="mafw-work-overview-head">
+          <div class="mafw-workspace-section-head">
             <div>
               <div class="mafw-work-kicker">自由讨论</div>
               <div class="mafw-work-total">想聊一个新话题时，不必先创建 Goal</div>
             </div>
             <ButtonV2 variant="ghost" size="small" onClick={() => props.onNewDiscussion()}>新话题</ButtonV2>
           </div>
-          <For each={props.discussions}>
-            {(discussion) => (
-              <ButtonV2
-                variant="ghost"
-                size="small"
-                class="mafw-work-item"
-                onClick={() => props.onOpenDiscussion(discussion.id)}
-              >
-                <span class="mafw-work-item-title">{formatRailTitle(discussion.title)}</span>
-                <span class="mafw-work-item-meta">自由讨论</span>
-              </ButtonV2>
-            )}
-          </For>
+          <div class="mafw-workspace-discussion-list">
+            <For each={props.discussions}>
+              {(discussion) => (
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-workspace-discussion-row"
+                  onClick={() => props.onOpenDiscussion(discussion.id)}
+                >
+                  <span class="mafw-workspace-discussion-mark" aria-hidden="true" />
+                  <span class="mafw-workspace-discussion-main">
+                    <span class="mafw-work-item-title">{formatRailTitle(discussion.title)}</span>
+                  </span>
+                  <Show when={discussionTime(discussion.time)}>
+                    <span class="mafw-workspace-discussion-time">{discussionTime(discussion.time)}</span>
+                  </Show>
+                  <Icon name="chevron-right" size="small" class="mafw-workspace-discussion-chevron" />
+                </ButtonV2>
+              )}
+            </For>
+          </div>
         </section>
       </Show>
     </div>

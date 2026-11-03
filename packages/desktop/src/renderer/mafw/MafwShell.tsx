@@ -2765,7 +2765,7 @@ export function MafwShell() {
                 discussions={historySessions()
                   .filter((s) => isHandoffableRole(s.metadata?.mafw?.role))
                   .slice(0, 12)
-                  .map((s) => ({ id: s.id, title: s.title }))}
+                  .map((s) => ({ id: s.id, title: s.title, time: s.time }))}
                 composerRequest={goalComposerRequest()}
                 onOpenLead={openLeadEntry}
                 onNewDiscussion={() => void createSession()}
@@ -2958,7 +2958,12 @@ export function MafwShell() {
         <GoalDetailOverlay
           goalId={podGoalId()}
           projectDir={currentProject()}
-          podId={podStore.detail()?.pod.id ?? null}
+          podId={(() => {
+            const detail = podStore.detail()
+            if (!detail) return null
+            const loadedFor = podStore.projectDir()
+            return !loadedFor || loadedFor === currentProject() ? detail.pod.id : null
+          })()}
           focus={goalDetailFocus()}
           onClose={() => setPodGoalId(null)}
           onOpenSession={(sid) => { void openPodSession(sid) }}
