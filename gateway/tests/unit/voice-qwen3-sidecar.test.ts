@@ -12,7 +12,10 @@ test('start spawns the sidecar and waits for health', async () => {
   const sidecar = new Qwen3AsrSidecar({
     port: 3911,
     spawnImpl: (() => child) as any,
-    fetchImpl: (async () => ({ ok: true })) as any,
+    fetchImpl: (async () => ({
+      ok: true,
+      json: async () => ({ ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: 0.16 }),
+    })) as any,
     sleepImpl: async () => {},
   });
   await sidecar.start();
@@ -37,7 +40,10 @@ test('stop kills the child and is idempotent', async () => {
   const sidecar = new Qwen3AsrSidecar({
     port: 3913,
     spawnImpl: (() => child) as any,
-    fetchImpl: (async () => ({ ok: true })) as any,
+    fetchImpl: (async () => ({
+      ok: true,
+      json: async () => ({ ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: 0.16 }),
+    })) as any,
     sleepImpl: async () => {},
   });
   await sidecar.start();
@@ -112,7 +118,10 @@ test('stop taskkills the tree before killing the parent', async () => {
     port: 3918,
     spawnImpl: (() => child) as any,
     killTreeImpl: async () => { order.push('tree'); },
-    fetchImpl: (async () => ({ ok: true })) as any,
+    fetchImpl: (async () => ({
+      ok: true,
+      json: async () => ({ ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: 0.16 }),
+    })) as any,
     sleepImpl: async () => {},
   });
   await sidecar.start();
@@ -125,11 +134,130 @@ test('stopSync kills the child without waiting', async () => {
   const sidecar = new Qwen3AsrSidecar({
     port: 3919,
     spawnImpl: (() => child) as any,
-    fetchImpl: (async () => ({ ok: true })) as any,
+    fetchImpl: (async () => ({
+      ok: true,
+      json: async () => ({ ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: 0.16 }),
+    })) as any,
     sleepImpl: async () => {},
   });
   await sidecar.start();
   sidecar.stopSync();
   expect(child.killed).toBe(true);
   expect(sidecar.pid).toBeUndefined();
+});
+
+test('adopts a compatible external sidecar without spawning or killing it', async () => {
+  let spawned = false;
+  const sidecar = new Qwen3AsrSidecar({
+    port: 3920,
+    probePortImpl: async () => true,
+    spawnImpl: (() => { spawned = true; return new FakeChild(); }) as any,
+    fetchImpl: (async () => ({
+      ok: true,
+      json: async () => ({ ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: 0.16 }),
+    })) as any,
+  });
+  await sidecar.start();
+  expect(spawned).toBe(false);
+  expect(sidecar.isExternal()).toBe(true);
+  expect(sidecar.pid).toBeUndefined();
+  await sidecar.stop();
+  expect(sidecar.isExternal()).toBe(true);
+});
+
+test('rejects an unrelated service occupying the sidecar port', async () => {
+  let spawned = false;
+  const sidecar = new Qwen3AsrSidecar({
+    port: 3921,
+    probePortImpl: async () => true,
+    spawnImpl: (() => { spawned = true; return new FakeChild(); }) as any,
+    fetchImpl: (async () => ({ ok: true, json: async () => ({ ok: true }) })) as any,
+  });
+  await expect(sidecar.start()).rejects.toThrow(/sidecar_port_in_use|not a compatible/i);
+  expect(spawned).toBe(false);
+  expect(sidecar.isExternal()).toBe(false);
+});
+
+test('adopted sidecar survives stopSync and repeated stop calls', async () => {
+  const sidecar = new Qwen3AsrSidecar({
+    port: 3922,
+    probePortImpl: async () => true,
+    spawnImpl: (() => new FakeChild()) as any,
+    fetchImpl: (async () => ({
+      ok: true,
+      json: async () => ({ ok: true, model: 'Qwen/Qwen3-ASR-0.6B', chunkSizeSec: 0.08 }),
+    })) as any,
+  });
+  await sidecar.start();
+  sidecar.stopSync();
+  await sidecar.stop();
+  await sidecar.stop();
+  expect(sidecar.isExternal()).toBe(true);
+  expect(sidecar.pid).toBeUndefined();
+});
+
+test('rejects a listener whose health payload is not JSON', async () => {
+  let spawned = false;
+  const sidecar = new Qwen3AsrSidecar({
+    port: 3923,
+    probePortImpl: async () => true,
+    spawnImpl: (() => { spawned = true; return new FakeChild(); }) as any,
+    fetchImpl: (async () => ({
+      ok: true,
+      json: async () => { throw new SyntaxError('Unexpected token <'); },
+    })) as any,
+  });
+  await expect(sidecar.start()).rejects.toThrow(/sidecar_port_in_use|not a compatible/i);
+  expect(spawned).toBe(false);
+});
+
+test('isReady only accepts the compatible health contract', async () => {
+  const compatible = new Qwen3AsrSidecar({
+    port: 3924,
+    fetchImpl: (async () => ({
+      ok: true,
+      json: async () => ({ ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: 0.16 }),
+    })) as any,
+  });
+  expect(await compatible.isReady()).toBe(true);
+
+  const foreign = new Qwen3AsrSidecar({
+    port: 3925,
+    fetchImpl: (async () => ({ ok: true, json: async () => ({ ok: true }) })) as any,
+  });
+  expect(await foreign.isReady()).toBe(false);
+
+  const unreachable = new Qwen3AsrSidecar({
+    port: 3926,
+    fetchImpl: (async () => { throw new Error('ECONNREFUSED'); }) as any,
+  });
+  expect(await unreachable.isReady()).toBe(false);
+});
+
+test('adopting after the owned child died never kills the old child', async () => {
+  let portOpen = false;
+  let treeKills = 0;
+  const child = new FakeChild();
+  const sidecar = new Qwen3AsrSidecar({
+    port: 3927,
+    probePortImpl: async () => portOpen,
+    spawnImpl: (() => child) as any,
+    killTreeImpl: async () => { treeKills += 1; },
+    fetchImpl: (async () => ({
+      ok: true,
+      json: async () => ({ ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: 0.16 }),
+    })) as any,
+    sleepImpl: async () => {},
+  });
+  await sidecar.start();
+  expect(sidecar.isExternal()).toBe(false);
+  child.emit('exit', 0);
+  portOpen = true;
+  await sidecar.start();
+  expect(sidecar.isExternal()).toBe(true);
+  expect(sidecar.pid).toBeUndefined();
+  await sidecar.stop();
+  sidecar.stopSync();
+  expect(treeKills).toBe(0);
+  expect(child.killed).toBe(false);
 });
