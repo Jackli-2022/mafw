@@ -65,4 +65,15 @@ describe('resolveGoalRef', () => {
       candidates: [],
     });
   });
+
+  test('canonical-equivalent duplicate registrations are one project, not ambiguity', () => {
+    const { a } = workspace();
+    writeRequest(a, 'goal-a');
+
+    expect(resolveGoalRef([a, a], 'goal-a')).toMatchObject({
+      ok: true,
+      ref: { projectDir: fs.realpathSync(a), goalId: 'goal-a' },
+    });
+    expect(resolveGoalRef([a, `${a}${path.sep}.`], 'goal-a')).toMatchObject({ ok: true });
+  });
 });

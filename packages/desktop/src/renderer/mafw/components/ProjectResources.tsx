@@ -5,7 +5,7 @@ import type { PodDetail, PodMessage } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { buildMemberRows, podCounts, podEmptyState, type PodEmptyState } from "../pod-rail-face-model"
-import { podStatusLabel } from "../pod-model"
+import { memberOpenTarget, podStatusLabel } from "../pod-model"
 import { PAGE_LINKS } from "../page-links"
 import type { NavTab } from "./nav-tab"
 
@@ -118,41 +118,52 @@ export function ProjectResources(props: {
         <div class="mafw-pod-rail-label">班底</div>
         <div class="mafw-pod-rail-members">
           <For each={rows()}>
-            {(row) => (
-              <div
-                class="mafw-pod-rail-member"
-                classList={{ active: !!row.sessionId }}
-                role={row.canOpen ? "button" : undefined}
-                tabIndex={row.canOpen ? 0 : undefined}
-                aria-label={row.canOpen ? `打开 ${row.displayName} 的会话` : undefined}
-                onClick={() => { if (row.canOpen) props.onOpenSession(row.sessionId ?? "") }}
-                onKeyDown={(event) => {
-                  if (!row.canOpen) return
-                  if (event.key !== "Enter" && event.key !== " ") return
-                  event.preventDefault()
-                  props.onOpenSession(row.sessionId ?? "")
-                }}
-              >
-                <span class={`mafw-pod-rail-dot ${row.dotClass}`} aria-hidden="true" />
-                <div class="mafw-pod-rail-member-main">
-                  <div class="mafw-pod-rail-member-top">
-                    <span class="mafw-pod-rail-member-name">{row.displayName}</span>
-                  </div>
-                  <div class="mafw-pod-rail-member-action">{row.action}</div>
-                </div>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  icon="square-arrow-top-right"
-                  aria-label={`打开 ${row.displayName} 的会话`}
-                  disabled={!row.canOpen}
-                  onClick={(event: MouseEvent) => {
-                    event.stopPropagation()
-                    if (row.canOpen) props.onOpenSession(row.sessionId ?? "")
+            {(row) => {
+              const target = () => (props.detail ? memberOpenTarget(props.detail, row.id) : null)
+              const open = () => {
+                const hit = target()
+                if (hit) props.onOpenSession(hit.sessionId)
+              }
+              return (
+                <div
+                  class="mafw-pod-rail-member"
+                  classList={{ active: !!target() }}
+                  role={target() ? "button" : undefined}
+                  tabIndex={target() ? 0 : undefined}
+                  aria-label={target() ? `打开 ${row.displayName} 的会话` : undefined}
+                  onClick={open}
+                  onKeyDown={(event) => {
+                    if (!target()) return
+                    if (event.key !== "Enter" && event.key !== " ") return
+                    event.preventDefault()
+                    open()
                   }}
-                />
-              </div>
-            )}
+                >
+                  <span class={`mafw-pod-rail-dot ${row.dotClass}`} aria-hidden="true" />
+                  <div class="mafw-pod-rail-member-main">
+                    <div class="mafw-pod-rail-member-top">
+                      <span class="mafw-pod-rail-member-name">{row.displayName}</span>
+                    </div>
+                    <div class="mafw-pod-rail-member-action">
+                      {target()
+                        ? (target()!.kind === "session" ? "打开会话" : "查看快照")
+                        : row.action}
+                    </div>
+                  </div>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    icon="square-arrow-top-right"
+                    aria-label={`打开 ${row.displayName} 的会话`}
+                    disabled={!target()}
+                    onClick={(event: MouseEvent) => {
+                      event.stopPropagation()
+                      open()
+                    }}
+                  />
+                </div>
+              )
+            }}
           </For>
         </div>
       </Show>

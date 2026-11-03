@@ -1999,7 +1999,9 @@ export function MafwShell() {
   const podSessionTitleOf = (sessionId: string) =>
     sessionId === currentLeadId(currentProject())
       ? "Lead"
-      : store.session.find((s: any) => s.id === sessionId)?.title ?? null
+      : goalSessionIdentity(podStore.detail(), sessionId)?.title
+        ?? store.session.find((s: any) => s.id === sessionId)?.title
+        ?? null
 
   // Task 19：Lead 只做协调，不讨论技术方案（spec §3.1）。有 Goal 处于 `discussing`
   // 时，在 Lead 的 composer 上方开一个入口，把用户送到该 Goal 的 Tech Lead 隐藏会话。
@@ -2722,7 +2724,7 @@ export function MafwShell() {
                      historySessions={historySessions()}
                      onSelect={(sid) => { const h = historySessions().find(x => x.id === sid); openSessionTab(sid, h?.title) }}
                      onCreate={() => void createSession()}
-                     onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }}
+                     onNavigate={(t) => { setActiveTab(t); setShowConfig(false); closeLeftDockIfOverlay() }}
                      onOpenLead={openLeadEntry}
                      onOpenGoalComposer={openNewGoalComposer}
                      hasPlanAgent={primaryAgents().some(a => isAgentKey(a, "plan"))}

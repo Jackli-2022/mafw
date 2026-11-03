@@ -105,4 +105,24 @@ describe('GET /api/projects/:projectId/work', () => {
     expect(buildRouteCatalog().some((route) => route.operationId === 'work.overview')).toBe(true);
     expect(ids).toContain('work.overview');
   });
+
+  test('passes the Goal service itself so this-bound views() works', async () => {
+    let handler: ((req: any, res: any) => Promise<boolean>) | null = null;
+    const registry = {
+      attachHandler: (id: string, fn: (req: any, res: any) => Promise<boolean>) => {
+        if (id === 'work.overview') handler = fn;
+      },
+    } as any;
+    const service = {
+      deps: { hits: 0 },
+      views() { this.deps.hits += 1; return []; },
+    };
+    const deps = makeDeps([]);
+    deps.goals = service;
+    attachPodHandlers(registry, deps);
+    const res = mockRes();
+    await handler!({ method: 'GET', url: '/api/projects/project-1/work' } as any, res);
+    expect(res.status).toBe(200);
+    expect(service.deps.hits).toBe(1);
+  });
 });

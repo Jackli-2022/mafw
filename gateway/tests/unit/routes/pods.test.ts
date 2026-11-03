@@ -241,6 +241,7 @@ describe('pod routes', () => {
     const expected = buildRouteCatalog()
       .map((route) => route.operationId)
       .filter((id) => id.startsWith('pods.') && !id.startsWith('pods.a2a'));
+    expected.push('work.overview');
     expect(ids.slice().sort()).toEqual(expected.slice().sort());
   });
 

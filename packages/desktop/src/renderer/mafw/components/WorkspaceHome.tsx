@@ -4,6 +4,7 @@ import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { WorkOverview } from "./WorkOverview"
 import { PodGoalComposer } from "./PodGoalComposer"
 import type { GoalDetailFocus } from "../pod-model"
+import { formatRailTitle } from "./rail-display"
 
 type Discussion = { id: string; title?: string }
 
@@ -176,7 +177,7 @@ export function WorkspaceHome(props: {
                 class="mafw-work-item"
                 onClick={() => props.onOpenDiscussion(discussion.id)}
               >
-                <span class="mafw-work-item-title">{discussion.title || "未命名讨论"}</span>
+                <span class="mafw-work-item-title">{formatRailTitle(discussion.title)}</span>
                 <span class="mafw-work-item-meta">自由讨论</span>
               </ButtonV2>
             )}

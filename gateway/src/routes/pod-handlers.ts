@@ -53,14 +53,16 @@ export function attachPodHandlers(
       handlePods(req, res, req.url || '', deps));
   }
   registry.attachHandler('work.overview', async (req, res) => {
-    if (!deps.goals.views) {
+    const views = deps.goals.views;
+    if (!views) {
       res.writeHead(503, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'work overview unavailable' }));
       return true;
     }
     return handlePodWork(req, res, req.url || '', {
       pods: deps.pods,
-      goals: { views: deps.goals.views },
+      // Preserve the service receiver: views() reads this.deps.store.
+      goals: { views: views.bind(deps.goals) },
     });
   });
   // 协作面始终登记 handler（catalog 覆盖率守卫要求），缺 deps 时中性 503。

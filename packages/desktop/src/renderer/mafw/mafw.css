@@ -7103,7 +7103,11 @@ html[data-theme="light"] body {
   padding: 16px;
 }
 /* 项目资源（团队 / 邮箱 / Pod 记忆 / 便签的唯一入口） */
-.mafw-resources { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; min-height: 0; overflow-y: auto; }
+.mafw-resources { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; min-height: 0; min-width: 0; flex: 1; overflow-y: auto; }
+.mafw-resources .mafw-pod-rail-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mafw-resources .mafw-pod-rail-title { color: var(--text-1); font-size: 12.5px; font-weight: 650; }
+.mafw-resources .mafw-pod-rail-status { color: var(--text-4); font-size: 11px; }
+.mafw-resources .mafw-pod-rail-empty { padding: 10px 2px; }
 .mafw-resources-list { display: flex; flex-direction: column; gap: 2px; }
 .mafw-resources-row {
   width: 100%;

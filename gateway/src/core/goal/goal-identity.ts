@@ -48,11 +48,18 @@ export function resolveGoalRefFromEntries(
 ): GoalResolution {
   if (!isSafeGoalId(goalId)) return { ok: false, reason: 'not_found', candidates: [] };
 
-  let candidates = entries
-    .map((entry) => ({
-      projectDir: canonicalProjectDir(entry.projectDir),
-      mafwDir: path.resolve(entry.mafwDir),
-    }))
+  // Registry can contain canonical-equivalent duplicates (e.g. an escaped path
+  // registered by another client). They are the same project, never ambiguity.
+  const byProject = new Map<string, GoalProjectEntry>();
+  for (const entry of entries) {
+    const projectDir = canonicalProjectDir(entry.projectDir);
+    const key = pathKey(projectDir);
+    if (!byProject.has(key)) {
+      byProject.set(key, { projectDir, mafwDir: path.resolve(entry.mafwDir) });
+    }
+  }
+
+  let candidates = [...byProject.values()]
     .filter((entry) => hasGoalFiles(entry, goalId));
 
   if (opts?.projectDir) {

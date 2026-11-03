@@ -24,13 +24,14 @@ describe('nodeOutputSchema', () => {
     })).toEqual([]);
   });
 
-  it('plan ready without goalEval is rejected', () => {
+  it('plan ready without goalEval is rejected unless the Tech Lead chose quick', () => {
     const spec = nodeOutputSchema('plan');
-    const errs = validateJsonSchema(spec.schema, {
+    const base = {
       status: 'ready', taskType: 'feature',
       waves: [{ id: 'w1', title: 't', tasks: ['a'], riskNote: 'r' }],
-    });
-    expect(errs.some((e) => e.path.includes('goalEval'))).toBe(true);
+    };
+    expect(validateJsonSchema(spec.schema, base).length).toBeGreaterThan(0);
+    expect(validateJsonSchema(spec.schema, { ...base, strategy: 'quick' })).toEqual([]);
   });
 
   it('plan need_clarification passes', () => {

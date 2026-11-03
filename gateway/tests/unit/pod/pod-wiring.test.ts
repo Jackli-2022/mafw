@@ -36,9 +36,10 @@ describe('Pod gateway wiring', () => {
   });
 
   test('reconciles pod tasks on both archive verdicts', () => {
-    // PASS 由 review 节点投影收口；归档兜底必须两种 verdict 都 reconcile，
-    // 否则事件丢失时任务永远停在 review（评审 Important）。
-    expect(source).toContain("reconcileArchive(podId, goalId, outcome.verdict === 'PASS')");
+    // PASS / UNREVIEWED 由 review 节点/快速完成投影收口；归档兜底必须两种成功
+    // verdict 都 reconcile，否则事件丢失时任务永远停在 review（评审 Important）。
+    expect(source).toContain("const successful = outcome.verdict === 'PASS' || outcome.verdict === 'UNREVIEWED'");
+    expect(source).toContain("reconcileArchive(podId, goalId, successful)");
   });
 
   test('projects review rubric onto per-task statuses', () => {

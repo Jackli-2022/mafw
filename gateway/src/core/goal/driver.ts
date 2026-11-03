@@ -513,7 +513,10 @@ export class NodeDriver {
       ? readGoalEvalArtifact(mafwDir, goalId, revision, this.readPlanDoc(state, goalId, revision))
       : null;
 
-    const nodePaths = nodeArtifactPaths(mafwDir, goalId, round, { revision });
+    const nodePaths = nodeArtifactPaths(mafwDir, goalId, round, {
+      fix: fixPass || reviewFixPass,
+      revision,
+    });
     const assignmentPlan = node === 'execute' || node === 'review'
       ? this.readPlanDoc(state, goalId, revision)
       : null;
