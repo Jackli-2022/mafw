@@ -386,6 +386,8 @@ export interface NodePromptCtx {
   fixTasks?: Array<{ taskId: string; evidence: string }>;
   /** 同轮复核：评审内容缺口（缺证据 / 漏任务 / 漏必需条件）——定向修复的额外目标。 */
   fixOmissions?: string[];
+  /** 同轮复核的复评：review 节点也必须写 `-fix` 产物（与 execute 修复同源）。 */
+  reviewFixPass?: boolean;
   /** 同轮复核：上一轮完整回执路径（修复模式要在此基础上保留已通过项）。 */
   fixPreviousReceipt?: string;
   /** 任务验收标准（review 节点按它判定；缺省则该任务自证）。 */
@@ -450,8 +452,12 @@ export function renderNodePrompt(node: ExecutableGoalNode, ctx: NodePromptCtx): 
 
 function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): string {
   const isFixPass = node === 'execute' && (!!ctx.fixTasks?.length || !!ctx.fixOmissions?.length);
+  // 复评必须写 `-fix` 产物：driver 的完成判定（inflightArtifactPath）与消费端
+  // 都以 `state.reviewFix.round === round` 为准，prompt 不能还指向 loop-N.md，
+  // 否则按提示写出的评审会 artifact_missing（final review 实证）。
+  const useFixArtifacts = isFixPass || (node === 'review' && !!ctx.reviewFixPass);
   const revision = normalizeArtifactRevision(ctx.revision);
-  const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round, { fix: isFixPass, revision });
+  const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round, { fix: useFixArtifacts, revision });
   // revision 1 保持旧头部（legacy prompt 断言零迁移）；更高 revision 显式标注，
   // 让模型知道自己在第几版目标下工作、产物落在隔离目录。
   const head = revision > 1
@@ -587,6 +593,9 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
   return [
     head, docs, retryContext, '',
     `任务：独立验证本轮执行结果。读 charter、${a.waves}、回执 ${a.receipt}，用只读工具与测试命令复核（不信任回执自述）。`,
+    ctx.reviewFixPass
+      ? '本轮是**同轮复核（复评）**：只复核上一轮失败项/评审缺口与回归，评审报告必须写到上面的 `-fix` 路径（不要写 loop-N.md）。'
+      : '',
     ctx.reviewFeedback ? `上轮 review 参考：${ctx.reviewFeedback}` : '',
     acceptanceLines.length > 0 ? `任务验收标准（判定依据，不要另立口径）：\n${acceptanceLines.join('\n')}` : '',
     goalLines.length > 0

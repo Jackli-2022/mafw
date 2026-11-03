@@ -334,6 +334,45 @@ describe('completeNode 产物双门', () => {
     expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
   });
 
+  it('复评 prompt 指向 -fix 评审/回执，按提示写入不会 artifact_missing', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9', { patch: { nextNode: 'review', round: 1 } });
+    const sid = await h.startAndIdle('g9');
+    const a = nodeArtifactPaths(h.mafwDir, 'g9', 1);
+    fs.writeFileSync(a.waves, JSON.stringify({
+      waves: [{ id: 'w1', tasks: [{ title: 'a', acceptance: ['npm test 全绿'] }] }], status: 'ready',
+    }), 'utf-8');
+    fs.writeFileSync(a.review, '```mafw-review\n' + JSON.stringify({
+      verdict: 'FAIL', tasks: [{ taskId: 'w1-t1', result: 'fail', evidence: '红' }], feedback: '修',
+    }) + '\n```\n', 'utf-8');
+    const st0 = h.load('g9')!;
+    st0.wavePlanPath = a.waves;
+    fs.writeFileSync(path.join(h.mafwDir, 'state', 'g9.json'), JSON.stringify(st0), 'utf-8');
+
+    await h.fireIdle(sid); // review FAIL → execute 修复
+    const fix = nodeArtifactPaths(h.mafwDir, 'g9', 1, { fix: true });
+    fs.mkdirSync(path.dirname(fix.receipt), { recursive: true });
+    fs.writeFileSync(fix.receipt, JSON.stringify({
+      goalId: 'g9', timestamp: new Date().toISOString(),
+      receipts: [{ taskId: 'w1-t1', status: 'done', summary: 'fix', files: [] }],
+    }), 'utf-8');
+    await h.fireIdle(); // execute 修复完成 → 复评
+
+    const prompt = h.calls.filter((c) => c.op === 'promptAsync').at(-1)?.parts?.[0]?.text ?? '';
+    expect(prompt).toContain(fix.review);
+    expect(prompt).toContain(fix.receipt);
+    expect(prompt).not.toContain(a.review);
+    expect(prompt).toContain('同轮复核');
+
+    // 严格按 prompt 指定的路径写复评（非结构化产物）：完成判定必须认这条路径。
+    fs.writeFileSync(fix.review, '```mafw-review\n' + JSON.stringify({
+      verdict: 'PASS', tasks: [{ taskId: 'w1-t1', result: 'pass', evidence: 'npm test 绿' }], feedback: 'ok',
+    }) + '\n```\n', 'utf-8');
+    await h.fireIdle();
+    expect(h.load('g9')!.lastError).toBeNull();
+    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
+  });
+
   it('review FAIL round+1>=maxRounds → archive_max_retries', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9', { patch: { nextNode: 'review', round: 2, wavePlanPath: 'x' } });

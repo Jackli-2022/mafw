@@ -472,6 +472,7 @@ export class NodeDriver {
     });
 
     const fixPass = node === 'execute' && state.reviewFix?.round === round && state.reviewVerdict === 'FAIL';
+    const reviewFixPass = node === 'review' && state.reviewFix?.round === round;
     const acceptance = (() => {
       try {
         const wavesPath = state.wavePlanPath;
@@ -539,6 +540,7 @@ export class NodeDriver {
         : undefined,
       fixTasks: fixPass ? (state.reviewFix?.tasks ?? []) : undefined,
       fixOmissions: fixPass ? (state.reviewFix?.omissions ?? []) : undefined,
+      reviewFixPass,
       fixPreviousReceipt: fixPass ? nodeArtifactPaths(mafwDir, goalId, round, { revision }).receipt : undefined,
     });
     const context = await this.contextBlockFor(goalId, node, revision, {
