@@ -181,6 +181,16 @@ describe('capabilities, presets, events', () => {
     expect(CONTRACT_CAPABILITIES.find((c) => c.id === 'eventStream')!.requires).toEqual([]);
   });
 
+  it('registers pluginCreatorApi as a declaration-only identity feature', () => {
+    const cap = CONTRACT_CAPABILITIES.find((c) => c.id === 'pluginCreatorApi')!;
+    expect(cap).toBeDefined();
+    expect(cap.domain).toBe('identity');
+    expect(cap.kind).toBe('feature');
+    expect(cap.requires).toEqual([]);
+    expect(cap.unlocks).toEqual([]);
+    expect(cap.degrade.length).toBeGreaterThan(0);
+  });
+
   it('presets reference existing surfaces and declare capabilities', () => {
     const surfaceIds = new Set(buildRuntimeContractManifest().surfaces.map((s) => s.id));
     for (const preset of CONTRACT_PRESETS) {

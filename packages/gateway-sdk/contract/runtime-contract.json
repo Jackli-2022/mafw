@@ -2557,6 +2557,17 @@
         "prompt.delivery.steer"
       ],
       "degrade": "steer 退化为普通消息"
+    },
+    {
+      "degradeRule": "none",
+      "id": "pluginCreatorApi",
+      "title": "plugin creator tools/skill",
+      "domain": "identity",
+      "kind": "feature",
+      "default": false,
+      "requires": [],
+      "unlocks": [],
+      "degrade": "mafw-create 身份不物化（Creator 入口显示无 Agent 状态）"
     }
   ],
   "events": [

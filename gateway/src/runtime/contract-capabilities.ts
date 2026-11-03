@@ -148,4 +148,12 @@ export const CONTRACT_CAPABILITIES: ContractCapability[] = [
     requires: ['prompt.delivery.steer'], unlocks: ['prompt.delivery.steer'],
     degrade: 'steer 退化为普通消息',
   }),
+  cap({
+    id: 'pluginCreatorApi', title: 'plugin creator tools/skill', domain: 'identity', kind: 'feature', default: false,
+    // 纯声明位：Creator 的工具与随包技能由宿主插件提供，没有任何可探测的
+    // surface——只信作者声明（requires 为空，缺省 = 不支持）。
+    requires: [], unlocks: [],
+    degrade: 'mafw-create 身份不物化（Creator 入口显示无 Agent 状态）',
+    degradeRule: 'none',
+  }),
 ];

@@ -135,7 +135,7 @@ import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
-import { createBuiltinIdentityRegistry, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
+import { createBuiltinIdentityRegistry, identityMaterializable, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { withInstructionSync } from './runtime/instruction-wrapper';
 import { InstructionSyncService } from './core/instructions/instruction-sync-service';
@@ -1962,7 +1962,17 @@ class MafwScheduler {
     this.identityState.resetMaterialization(host.name);
     // 能力门经 surface（identity.agents.install = agentConfigApi + agents.install）。
     if (runtime.access.can('identity.agents.install') && runtime.agents?.install) {
+      const caps = this.runtimeCaps;
       for (const spec of this.identityRegistry.list()) {
+        // 身份自身依赖的能力未声明（如 pi 上没有 Creator 的插件工具/技能）：
+        // 不物化并记 false —— /api/agents 过滤它，Desktop 落到中性的无 Agent 态。
+        if (!identityMaterializable(spec, caps)) {
+          this.identityState.setMaterialized(host.name, spec.name, false);
+          log.info(
+            `[Identity] skip '${spec.name}' on runtime '${host.name}' — requires ${spec.requiresCapability}`,
+          );
+          continue;
+        }
         try {
           await runtime.agents.install(spec.name, toAgentDefinition(spec));
           this.identityState.setMaterialized(host.name, spec.name, true);

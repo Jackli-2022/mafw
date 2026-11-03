@@ -29,6 +29,7 @@ describe('runtime contract capabilities', () => {
       mcpApi: true,
       mcpConfigApi: true,
       steerApi: true,
+      pluginCreatorApi: true,
     });
   });
 
@@ -57,6 +58,7 @@ describe('runtime contract capabilities', () => {
       mcpApi: false,
       mcpConfigApi: false,
       steerApi: false,
+      pluginCreatorApi: false,
     });
   });
 

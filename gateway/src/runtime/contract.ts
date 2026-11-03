@@ -72,6 +72,12 @@ export interface RuntimeCapabilities {
   mcpConfigApi?: boolean;
   /** W5a：runtime 接受 delivery:'steer'（opencode 2.1=回合后优先送达；pi=工具间隙注入）。 */
   steerApi?: boolean;
+  /**
+   * 插件 Creator 依赖面：`mafw_plugin_inspect`/`mafw_plugin_manager` 工具与随包
+   * plugin-creator 技能由 OpenCode 插件宿主提供。缺省/非 true = 不物化 `mafw-create`
+   * 身份（列出它会让 agent 无工具可用）。
+   */
+  pluginCreatorApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -104,6 +110,8 @@ export function fullCapabilities(): RuntimeCapabilities {
     mcpConfigApi: true,
     // W5a：opencode 2.1 接受 delivery:'steer'（wire probe 实证=回合结束后优先送达）。
     steerApi: true,
+    // Creator 的 inspect/manager 工具与随包技能由本插件宿主提供（OpenCode-only）。
+    pluginCreatorApi: true,
   };
 }
 
@@ -132,6 +140,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     mcpApi: false,
     mcpConfigApi: false,
     steerApi: false,
+    pluginCreatorApi: false,
   };
 }
 
