@@ -474,7 +474,7 @@ git commit -m "feat(plugins): add approved creator manager tool"
 
 **Interfaces:**
 - Produces: `creatorEntryState({ agentsLoaded, hasCreator, isWorktree }): { available: boolean; reason?: 'loading'|'no-agent'|'worktree' }`.
-- Produces: `reusableCreatorSession({ activeSessionID, messagesBySession }): string | null`; only the active Session with an empty message array is reusable.
+- Produces: `reusableCreatorSession({ activeSessionID, messagesBySession, pageState }): string | null`; only the active Session with a completed page load (`loading === false`, `cursor === null`, `hasMore === false`) and an empty message array is reusable.
 - Consumes: existing `createSession`, `applyAgentSwitch`, `openSessionTab`, `activeSessionId`, `primaryAgents`, `agentsData`, `currentProject`, `benchRoot`, `store.message`.
 - Produces: new Config prop `onCreatePlugin?: () => void` and PluginPackagesSection prop `creatorEntry?: { available; reason?; onCreate }`.
 
@@ -487,8 +487,21 @@ expect(creatorEntryState({ agentsLoaded: true, hasCreator: false, isWorktree: fa
   .toEqual({ available: false, reason: 'no-agent' })
 expect(creatorEntryState({ agentsLoaded: true, hasCreator: true, isWorktree: true }))
   .toEqual({ available: false, reason: 'worktree' })
-expect(reusableCreatorSession({ activeSessionID: 's1', messagesBySession: { s1: [] } })).toBe('s1')
-expect(reusableCreatorSession({ activeSessionID: 's1', messagesBySession: { s1: [{}] } })).toBeNull()
+expect(reusableCreatorSession({
+  activeSessionID: 's1',
+  messagesBySession: { s1: [] },
+  pageState: { s1: { cursor: null, hasMore: false, loading: false } },
+})).toBe('s1')
+expect(reusableCreatorSession({
+  activeSessionID: 's1',
+  messagesBySession: { s1: [{}] },
+  pageState: { s1: { cursor: null, hasMore: false, loading: false } },
+})).toBeNull()
+expect(reusableCreatorSession({
+  activeSessionID: 's1',
+  messagesBySession: { s1: [] },
+  pageState: {},
+})).toBeNull()
 ```
 
 - [ ] **Step 2: Run test to verify failure**
