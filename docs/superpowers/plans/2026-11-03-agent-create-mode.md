@@ -344,7 +344,7 @@ git commit -m "feat(plugins): add native creator approvals"
 **Interfaces:**
 - Consumes: `approveCreatorOperation`, `PluginToolContext`, gateway REST endpoints.
 - Produces: `resolveDraftDirectory(projectDir: string, draft: string): string`.
-- Produces: `fingerprintDraft(directory: string): Promise<string>` (SHA-256 over sorted relative file paths and contents; excludes `.git`, `node_modules`, temporary files; rejects more than 5,000 files or 50 MiB).
+- Produces: `fingerprintDraft(directory: string): Promise<string>` (SHA-256 over every accepted relative file path and contents; accepted set must equal the install copy set; rejects more than 5,000 files or 50 MiB).
 - Produces: `runDraftTests(directory: string, deps?: { spawn?: typeof spawn; timeoutMs?: number; maxBytes?: number }): Promise<{ output: string; truncated: boolean; exitCode: number | null; timedOut: boolean }>`.
 - Produces: `pluginManagerTool` with operations `list|status|descriptor|check|test|install|enable|disable|remove|reload`.
 
@@ -418,6 +418,8 @@ if (!fs.realpathSync(candidate).startsWith(fs.realpathSync(root) + path.sep)) th
 
 Read `plugin.json` and require `manifest.name === draft`; mismatch returns `plugin.json name must equal draft directory`. Use that name in approval patterns and installation payload.
 
+Draft preparation must reject `.git`, `node_modules`, temp/OS droppings (`.tmp`, `.swp`, `.swo`, `*~`, `.DS_Store`, `Thumbs.db`, `desktop.ini`), symlinks, and non-file/non-directory entries before approval or HTTP. The accepted fingerprint set must equal what `PackageManager` copies; do not silently exclude install-only paths.
+
 Approval order for `check`/`test`/`install`:
 
 1. resolve draft and read files;
@@ -438,7 +440,7 @@ HTTP mapping:
 - `reload`: `POST /api/plugins/<encodeURIComponent(packageName)>/reload`.
 - `test`: run the fixed local runner.
 
-`runDraftTests` uses `process.execPath`, args `['--test']`, `shell: false`, cwd draft, and env containing only `PATH`, `Path`, `SystemRoot`, `WINDIR`, `HOME`, `USERPROFILE`, `TMP`, `TEMP`, `NODE_ENV=test`, plus locale variables. Kill the process tree on timeout (Windows `taskkill /F /T`, elsewhere `SIGKILL`) and cap combined stdout/stderr including partial chunks.
+`runDraftTests` uses `process.execPath`, args `['--test']`, `shell: false`, cwd draft, and env containing only `PATH`, `Path`, `SystemRoot`, `WINDIR`, `HOME`, `USERPROFILE`, `TMP`, `TEMP`, `NODE_ENV=test`, plus locale variables. Kill the whole process tree on timeout (Windows `taskkill /F /T`; POSIX spawn `detached: true` and kill the negative PID/process group before the direct child) and cap combined stdout/stderr including partial chunks.
 
 The tool result title and `metadata` include `operation`, package name, application state, revision, and `truncated` when relevant. Never return full test output beyond the cap; write the full log to `<project>/.mafw/plugin-drafts/.logs/<draft>.log` and return that path. `.logs` is outside every package directory and cannot be a valid draft name.
 

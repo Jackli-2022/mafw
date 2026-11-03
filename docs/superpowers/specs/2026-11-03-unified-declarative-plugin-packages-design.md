@@ -470,7 +470,8 @@ Creator 不获得 raw runtime、gateway 内部对象或通用插件管理 HTTP �
 - 草稿只按项目路径和包名管理，不生成 draftId，不写 gateway kv，不记录 creatorSessionID。文件系统是草稿真相源。
 - 草稿随项目文件天然跨 Desktop/gateway 重启保留；任意 Creator 会话可继续编辑，不承诺恢复某个来源会话。
 - 本期不为 worktree 会话提供 Creator 入口；从 Plugins 进入时总是复用/创建主项目中的普通 blank Session，避免草稿随 worktree 清理而消失。
-- Agent 通过 `mafw_plugin_manager.check/test/install` 引用草稿时只传相对包目录名；工具根据真实 session 的项目目录解析，并以 realpath 拒绝符号链接或 `..` 逃逸草稿根。
+- Agent 通过 `mafw_plugin_manager.check/test/install` 引用草稿时只传相对包目录名；工具根据真实 session 的项目目录解析，并以 realpath 拒绝符号链接或 `..` 逃逸草稿根。草稿内的符号链接、`.git`、`node_modules` 和临时/OS 丢弃文件直接拒绝，不进入审批或安装。
+- 审批 fingerprint 覆盖的集合必须等于 `PackageManager` 会复制的集合；不允许“hash 跳过但安装复制”的路径。
 - 安装始终由第一阶段 `PackageManager` 从该草稿目录完成；覆盖已有包必须显式 `overwrite:true` 并逐次审批。
 - 草稿是源，active 包是安装副本；迭代始终先改草稿。remove 只清理安装副本和 active 贡献，默认保留项目内源草稿。
 
@@ -479,7 +480,7 @@ Creator 不获得 raw runtime、gateway 内部对象或通用插件管理 HTTP �
 新增**插件原生**工具 `mafw_plugin_manager`，复用真实工具上下文的 sessionID/callID/abort signal，不使用模型自报 sessionID，不建立无会话的 MCP 旁路：
 
 - 只读：`list`、`status`、`descriptor`。
-- 代码执行：`check({draft})`、`test({draft})`。两者都可能运行草稿代码，不属于只读检查。`test` 固定以草稿为 cwd 运行 `node --test` 发现其中的 `*.test.js`，有 60s 超时、清理环境变量和输出字节帽；不执行 package scripts，不是第三个工具。
+- 代码执行：`check({draft})`、`test({draft})`。两者都可能运行草稿代码，不属于只读检查。`test` 固定以草稿为 cwd 运行 `node --test` 发现其中的 `*.test.js`，有 60s 超时、清理环境变量和输出字节帽；超时必须杀掉整个进程树（Windows `taskkill /F /T`；POSIX detached 进程组），不执行 package scripts，不是第三个工具。
 - 写入：`install({draft, overwrite?, requestId?})`、`enable`、`disable`、`remove`、`reload`。`applyPending` 不暴露给模型，只由用户在 Plugins 页显式执行；Creator 从 `nextStep` 得知应请求用户操作。
 - 所有操作返回结构化 `{saved, application, activeRevision?, pendingRevision?, error?, nextStep}`；拒绝、取消或审批不可用不执行操作。
 - full-access 可按既有策略直接执行；其他模式下，代码执行和写入逐次通过工具上下文的原生 awaitable `ctx.ask` 审批。即使 session 是 `auto` 档，这些操作也强制 human；`ask` 传 `always: []`，所以即使 UI 出现 always 也不会沉淀可放行后续调用的规则。单次批准不提升会话权限，也不建立 draft/session 级永久授权。
