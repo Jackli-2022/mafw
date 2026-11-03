@@ -67,6 +67,71 @@ export function resetPodResultViewed(): void {
   setViewedKeys(readViewedResults())
 }
 
+/**
+ * 结果数据加载成功后才标记已查看（面板打开本身不算）。
+ *
+ * 之前 PodDock 在 `resultGoalId` 一设置就标记，结果接口失败/网关重启时用户什么都没看到，
+ * rail 上的「有新结果」却已消失。这里把口径收敛到「确实拿到结果数据」：
+ * - result 为空（加载失败）→ 不标记，返回 false；
+ * - revision 以结果自带为准，缺失回退 Goal revision；都拿不到就不写（避免误标下一版）。
+ */
+export function markResultViewedAfterLoad(input: {
+  podId: string
+  goalId: string
+  result: { goalId?: string | null; revision?: number | null } | null | undefined
+  fallbackRevision?: number | null
+  mark?: (podId: string, goalId: string, revision: number) => void
+}): boolean {
+  if (!input.result) return false
+  const revision = positiveRevision(input.result.revision) ?? positiveRevision(input.fallbackRevision)
+  if (revision === null) return false
+  const goalId = (input.result.goalId ?? input.goalId ?? "").trim() || input.goalId
+  ;(input.mark ?? markPodResultViewed)(input.podId, goalId, revision)
+  return true
+}
+
+function positiveRevision(value: unknown): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+}
+
+// ── 结果事件队列（final review minor） ─────────────────────────────────────
+// podStore.refresh() 是 single-flight：refresh 忙时直接 return，事件如果此刻处理就会
+// 读到旧 detail 并静默丢弃（不弹 toast / 不发通知）。这里把结果事件排队，**只保留最新
+// 一条**，等 store 空闲（MafwShell 的 effect 调用 drain）后再补处理。
+
+export function createPodResultQueue(deps: {
+  isBusy: () => boolean
+  handle: (event: unknown) => Promise<void>
+}): {
+  push(event: unknown): void
+  drain(): void
+  pending(): boolean
+} {
+  let pending: unknown = null
+  let running = false
+  const run = () => {
+    if (running || deps.isBusy() || pending === null) return
+    const event = pending
+    pending = null
+    running = true
+    void deps.handle(event)
+      .catch(() => { /* 结果通知是 best-effort：失败不阻塞后续事件 */ })
+      .finally(() => {
+        running = false
+        run()
+      })
+  }
+  return {
+    push(event: unknown) {
+      pending = event // 只保留最新一条：旧结果通知没有补发价值
+      run()
+    },
+    drain: run,
+    pending: () => pending !== null,
+  }
+}
+
 // ── 打开请求（SSE/通知侧 → 右栏面板） ─────────────────────────────────────
 
 export type PodResultOpenRequest = { goalId: string; seq: number }

@@ -81,7 +81,7 @@ describe('buildPodGoalResult — Goal eval results', () => {
     expect(result.resultReady).toBe(true);
   });
 
-  test('a PASS that misses a required Goal condition is downgraded to FAIL with the gap named', () => {
+  test('a PASS that misses a required Goal condition is a normal FAIL with the gap named', () => {
     const result = buildPodGoalResult({
       goalId: 'g1',
       state: state(),
@@ -98,13 +98,14 @@ describe('buildPodGoalResult — Goal eval results', () => {
     });
 
     expect(result.verdict).toBe('FAIL');
-    expect(result.failure).toBe('goal_conditions_missing');
+    // omission-only 是评审判定（驱动侧同轮复核修复），不是坏产物。
+    expect(result.failure).toBeNull();
     // 已有的逐条件证据可信（只是不完整）——保留而不是清空。
     expect(result.goalResults).toEqual([
       { conditionId: 'c1', result: 'pass', evidence: 'projection tests pass' },
     ]);
     expect(result.reviewFeedback).toContain('c3');
-    expect(result.resultReady).toBe(false);
+    expect(result.resultReady).toBe(true);
   });
 
   test('a failing required condition inside a PASS verdict is downgraded to FAIL, not softened', () => {
@@ -127,9 +128,9 @@ describe('buildPodGoalResult — Goal eval results', () => {
     });
 
     expect(result.verdict).toBe('FAIL');
-    expect(result.failure).toBe('review_invalid');
+    expect(result.failure).toBeNull();
     expect(result.goalResults).toHaveLength(2);
-    expect(result.resultReady).toBe(false);
+    expect(result.resultReady).toBe(true);
   });
 
   test('a Goal condition without evidence never becomes a pass', () => {
@@ -152,9 +153,9 @@ describe('buildPodGoalResult — Goal eval results', () => {
     });
 
     expect(result.verdict).toBe('FAIL');
-    expect(result.failure).toBe('review_invalid');
+    expect(result.failure).toBeNull();
     expect(result.goalResults?.[0]).toMatchObject({ conditionId: 'c1', result: 'fail' });
-    expect(result.resultReady).toBe(false);
+    expect(result.resultReady).toBe(true);
   });
 
   test('a malformed Goal eval is fail-closed: no conditions, no invented PASS', () => {

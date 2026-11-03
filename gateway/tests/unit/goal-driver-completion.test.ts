@@ -182,7 +182,7 @@ describe('completeNode 产物双门', () => {
     expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
   });
 
-  it('review 缺 tasks 但 waves 有任务 → 评审 FAIL 进入下一轮（不是 artifact_invalid）', async () => {
+  it('review 缺 tasks 但 waves 有任务 → 同轮复核修复（不是 artifact_invalid，也不整轮重规划）', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9', { patch: { nextNode: 'review' } });
     const sid = await h.startAndIdle('g9');
@@ -199,8 +199,46 @@ describe('completeNode 产物双门', () => {
     expect(st.lastError).toBeNull();
     expect(st.reviewVerdict).toBe('FAIL');
     expect(st.reviewFeedback).toContain('w1-t1');
-    expect(st.round).toBe(2);
+    // omission-only 与失败任务同语义：round 不变，进入同轮复核修复。
+    expect(st.round).toBe(1);
+    expect(st.reviewFix).toMatchObject({ round: 1 });
+    expect(st.reviewFix?.tasks).toEqual([]);
+    expect(st.reviewFix?.omissions?.join(' ')).toContain('w1-t1');
+    expect(st.nextNode).toBe('execute');
+    expect(h.nodeRuns.at(-1)?.node).toBe('execute');
+    const prompt = h.calls.filter((c) => c.op === 'promptAsync').at(-1)?.parts?.[0]?.text ?? '';
+    expect(prompt).toContain('同轮复核修复');
+    expect(prompt).toContain('评审缺口');
+    expect(prompt).toContain('w1-t1');
     expect(h.nodeRuns[0].status).toBe('succeeded');
+  });
+
+  it('review 逐任务缺证据（omission-only）→ 同轮复核修复并列出缺口', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g9', { patch: { nextNode: 'review', round: 1 } });
+    const sid = await h.startAndIdle('g9');
+    const a = nodeArtifactPaths(h.mafwDir, 'g9', 1);
+    fs.writeFileSync(a.waves, JSON.stringify({
+      waves: [{ id: 'w1', tasks: [{ title: 'a', acceptance: ['npm test 全绿'] }] }],
+      status: 'ready',
+    }), 'utf-8');
+    fs.writeFileSync(a.review, '```mafw-review\n' + JSON.stringify({
+      verdict: 'PASS',
+      tasks: [{ taskId: 'w1-t1', result: 'pass', evidence: '' }],
+      feedback: '看起来没问题',
+    }) + '\n```\n', 'utf-8');
+    const st0 = h.load('g9')!;
+    st0.wavePlanPath = a.waves;
+    fs.writeFileSync(path.join(h.mafwDir, 'state', 'g9.json'), JSON.stringify(st0), 'utf-8');
+
+    await h.fireIdle(sid);
+
+    const st = h.load('g9')!;
+    expect(st.round).toBe(1);
+    expect(st.reviewVerdict).toBe('FAIL');
+    expect(st.reviewFix?.tasks).toEqual([{ taskId: 'w1-t1', evidence: 'missing verifiable evidence' }]);
+    expect(st.reviewFix?.omissions?.join(' ')).toContain('missing verifiable evidence');
+    expect(st.nextNode).toBe('execute');
   });
 
   it('review 覆盖全部任务 → PASS 正常归档', async () => {

@@ -104,6 +104,8 @@ export interface GoalStateV3 {
   reviewFix?: {
     round: number;
     tasks: Array<{ taskId: string; evidence: string }>;
+    /** 评审内容缺口（缺证据 / 漏任务 / 漏必需 Goal 条件）；与失败任务同语义进入同轮修复。 */
+    omissions?: string[];
     feedback: string;
   } | null;
   /** Task 14：本 revision 已兑现的 ProbeReport id（报告的权威输入证据）。 */

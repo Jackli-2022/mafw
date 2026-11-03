@@ -538,6 +538,7 @@ export class NodeDriver {
         })()
         : undefined,
       fixTasks: fixPass ? (state.reviewFix?.tasks ?? []) : undefined,
+      fixOmissions: fixPass ? (state.reviewFix?.omissions ?? []) : undefined,
       fixPreviousReceipt: fixPass ? nodeArtifactPaths(mafwDir, goalId, round, { revision }).receipt : undefined,
     });
     const context = await this.contextBlockFor(goalId, node, revision, {
@@ -1581,21 +1582,26 @@ export class NodeDriver {
         if (evalRead.error) throw new Error(evalRead.error);
         const requiredIds = evalRead.goalEval ? requiredConditionIds(evalRead.goalEval) : [];
         const verdict = parseReviewRubric(source, readWaveTaskIds(a.waves), requiredIds);
-        // 同轮复核：FAIL 且本轮还没用过 → 保留 round（不 +1），把失败项写进 state 供
-        // execute 修复模式使用；FAIL 且已用过 → 清空 reviewFix，走原 round+1。
-        const fixAvailable = verdict.verdict === 'FAIL'
-          && !(state.reviewFix && state.reviewFix.round === round)
-          && !state.lastError;
-        const failedTasks = verdict.tasks
+        // 同轮复核：FAIL 且本轮还没用过 → 保留 round（不 +1），把失败项/内容缺口写进
+        // state 供 execute 修复模式使用；FAIL 且已用过 → 清空 reviewFix，走原 round+1。
+        // omission-only（缺证据 / 漏任务 / 漏必需条件）与 failed task 同语义：都是评审判定，
+        // 走同轮定向修复，绝不因为"没有 failed task"就整轮重规划。
+        const failures = verdict.tasks
           .filter((task) => task.result === 'fail')
           .map((task) => ({ taskId: task.taskId, evidence: task.evidence }));
+        const omissions = verdict.omissions ?? [];
+        const repairable = failures.length > 0 || omissions.length > 0;
+        const fixAvailable = verdict.verdict === 'FAIL'
+          && repairable
+          && !(state.reviewFix && state.reviewFix.round === round)
+          && !state.lastError;
         const p: Partial<GoalStateV3> = {
           reviewVerdict: verdict.verdict,
           ...(fs.existsSync(a.review) ? { reviewReportPath: a.review } : {}),
           reviewFeedback: verdict.feedback,
-          round: fixAvailable && failedTasks.length > 0 ? round : round + 1,
-          reviewFix: fixAvailable && failedTasks.length > 0
-            ? { round, tasks: failedTasks, feedback: verdict.feedback }
+          round: fixAvailable ? round : round + 1,
+          reviewFix: fixAvailable
+            ? { round, tasks: failures, omissions, feedback: verdict.feedback }
             : null,
         };
         // same-signature 追问（移植 review.node.ts:56-74，上限 3）

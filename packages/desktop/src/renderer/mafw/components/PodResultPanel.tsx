@@ -10,6 +10,7 @@ import {
   resultStatus,
   revisionHistory,
 } from "../pod-model"
+import { markResultViewedAfterLoad } from "../pod-result-store"
 
 const TASK_RESULT_LABEL = { pass: "通过", fail: "失败", skipped: "跳过" } as const
 const artifactName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() ?? value
@@ -54,11 +55,25 @@ export function PodResultPanel(props: {
     ])
       .then(([resultRes, revisionRes]) => {
         if (my !== loadSeq) return
-        if (resultRes.status === "fulfilled") setResult(resultRes.value)
-        else setError(String((resultRes.reason as any)?.message ?? resultRes.reason))
-        if (revisionRes.status === "fulfilled") {
-          setRevisions(Array.isArray(revisionRes.value?.items) ? revisionRes.value.items : [])
+        const revisionItems = revisionRes.status === "fulfilled" && Array.isArray(revisionRes.value?.items)
+          ? revisionRes.value.items
+          : []
+        if (resultRes.status === "fulfilled") {
+          setResult(resultRes.value)
+          // 已查看只在**结果数据真的加载成功**后标记（打开面板本身不算）：
+          // 结果接口失败时 rail 的「有新结果」必须保留，用户可以稍后重试。
+          markResultViewedAfterLoad({
+            podId,
+            goalId,
+            result: resultRes.value as typeof resultRes.value & { revision?: number | null },
+            fallbackRevision: revisionItems.length > 0
+              ? Math.max(...revisionItems.map((item) => item.revision))
+              : null,
+          })
+        } else {
+          setError(String((resultRes.reason as any)?.message ?? resultRes.reason))
         }
+        if (revisionItems.length > 0) setRevisions(revisionItems)
       })
       .finally(() => {
         if (my === loadSeq) setLoading(false)

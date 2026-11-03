@@ -384,6 +384,8 @@ export interface NodePromptCtx {
   counterfactualBlock?: string;
   /** 同轮复核：失败任务 + reviewer 证据（execute 修复模式注入）。 */
   fixTasks?: Array<{ taskId: string; evidence: string }>;
+  /** 同轮复核：评审内容缺口（缺证据 / 漏任务 / 漏必需条件）——定向修复的额外目标。 */
+  fixOmissions?: string[];
   /** 同轮复核：上一轮完整回执路径（修复模式要在此基础上保留已通过项）。 */
   fixPreviousReceipt?: string;
   /** 任务验收标准（review 节点按它判定；缺省则该任务自证）。 */
@@ -447,7 +449,7 @@ export function renderNodePrompt(node: ExecutableGoalNode, ctx: NodePromptCtx): 
 }
 
 function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): string {
-  const isFixPass = node === 'execute' && !!ctx.fixTasks?.length;
+  const isFixPass = node === 'execute' && (!!ctx.fixTasks?.length || !!ctx.fixOmissions?.length);
   const revision = normalizeArtifactRevision(ctx.revision);
   const a = nodeArtifactPaths(ctx.mafwDir, ctx.goalId, ctx.round, { fix: isFixPass, revision });
   // revision 1 保持旧头部（legacy prompt 断言零迁移）；更高 revision 显式标注，
@@ -546,11 +548,15 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
 
   if (node === 'execute') {
     if (isFixPass) {
-      const failed = (ctx.fixTasks ?? []).map((task) => `- ${task.taskId}：${task.evidence || "（reviewer 未给证据）"}`).join('\n');
+      const failed = (ctx.fixTasks ?? [])
+        .map((task) => `- ${task.taskId}：${task.evidence || "（reviewer 未给证据）"}`)
+        .join('\n');
+      const omissions = (ctx.fixOmissions ?? []).map((item) => `- ${item}`).join('\n');
       return [
         head, docs, retryContext, '',
         `任务：**同轮复核修复**。上一轮 review 判定以下任务未通过，只修这些，不要扩大范围：`,
-        failed,
+        failed || '（没有逐任务失败项。）',
+        omissions ? `评审缺口（必须补齐可验证证据，逐条覆盖）：\n${omissions}` : '',
         ctx.reviewFeedback ? `reviewer 总结：${ctx.reviewFeedback}` : '',
         '',
         `先读上一轮完整回执 ${ctx.fixPreviousReceipt ?? a.receipt}：已通过的任务**原样保留**（status/files 不变），

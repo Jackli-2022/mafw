@@ -1,6 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { createPodStore, type PodStoreApi } from "./pod-store"
+import { createPodStore, resetPodDetailCache, resolvePodDetailCached, type PodStoreApi } from "./pod-store"
 
 const detail = (id: string, projectDir = "/p") => ({
   pod: { id, projectDir, status: "active" },
@@ -224,5 +224,39 @@ describe("pod-store", () => {
     resolveA(detail("pod_a", "/a"))
     await opening
     assert.equal(store.detail()?.pod.id, "pod_b")
+  })
+
+  test("cached send-target pod detail is invalidated when the lookup revision changes", async () => {
+    resetPodDetailCache()
+    let podId = "pod_old"
+    let lookups = 0
+    const lookup = async () => { lookups++; return detail(podId) }
+    const first = await resolvePodDetailCached({
+      projectDir: "/p", lookup, revision: 1, now: () => 1_000,
+    })
+    assert.equal(first?.pod.id, "pod_old")
+    assert.equal(lookups, 1)
+
+    // 同一 revision 且 TTL 内：复用缓存（发送路径不该每次 lookup）。
+    const cached = await resolvePodDetailCached({
+      projectDir: "/p", lookup, revision: 1, now: () => 1_500,
+    })
+    assert.equal(cached?.pod.id, "pod_old")
+    assert.equal(lookups, 1)
+
+    // Pod 重建 → revision 递增 → 旧 pod id 不得继续被发送路径复用。
+    podId = "pod_new"
+    const rebuilt = await resolvePodDetailCached({
+      projectDir: "/p", lookup, revision: 2, now: () => 1_600,
+    })
+    assert.equal(rebuilt?.pod.id, "pod_new")
+    assert.equal(lookups, 2)
+
+    // TTL 过期同样重新探测。
+    const expired = await resolvePodDetailCached({
+      projectDir: "/p", lookup, revision: 2, ttlMs: 10, now: () => 5_000,
+    })
+    assert.equal(expired?.pod.id, "pod_new")
+    assert.equal(lookups, 3)
   })
 })

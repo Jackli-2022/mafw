@@ -55,6 +55,7 @@ import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { ingestPodEvent, podStore, resolvePodDetailCached, techLeadInvite, techLeadTabTitle } from "./pod-store"
 import { podRailBadge, podResultBadge } from "./pod-rail-badge"
 import {
+  createPodResultQueue,
   isPodResultViewed,
   podTechLeadOpenRequest,
   podViewedResultKeys,
@@ -1196,8 +1197,9 @@ export function MafwShell() {
     pod: {
       onEvent: (event) => {
         // Task 21：结果事件要「先刷新再看结果」——通知文案需要 Goal 标题/verdict。
+        // refresh 是 single-flight：忙时排队（只留最新一条），空闲后由 effect drain。
         if (podResultEvent(event)) {
-          void handlePodResultEvent(event)
+          podResultQueue.push(event)
           return
         }
         ingestPodEvent(event)
@@ -1878,6 +1880,15 @@ export function MafwShell() {
     notifyIfHidden(notice.title, notice.body)
     pendingResultGoalId = goal.goalId
   }
+  // 结果事件队列：podStore.refresh() 忙时事件不能就地处理（single-flight 会直接返回，
+  // detail 还是旧值 → toast/通知静默丢失）。只保留最新一条，store 空闲后补处理。
+  const podResultQueue = createPodResultQueue({
+    isBusy: () => podStore.busy(),
+    handle: handlePodResultEvent,
+  })
+  createEffect(() => {
+    if (!podStore.busy()) podResultQueue.drain()
+  })
   const openPendingResult = () => {
     if (document.hidden || !pendingResultGoalId) return
     const goalId = pendingResultGoalId
@@ -1963,6 +1974,8 @@ export function MafwShell() {
       loaded: sameProject ? loaded : null,
       projectDir: dir,
       key: `${dir ?? ""}|${sameProject && loaded ? loaded.pod.id : ""}`,
+      // Pod 重建后 store revision 变化：旧 pod id 的缓存 detail 不得继续用于发送。
+      revision: podStore.revision(),
       lookup: (projectDir) => window.api.mafw.pod.lookup(projectDir),
     })
   }

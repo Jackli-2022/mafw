@@ -4,22 +4,37 @@
 //
 // 判决三值（与审批政策对齐）：
 // - `allow`：动作在声明范围内 → 可自动放行（安全、只读、隔离的 Spike 不打扰用户）；
-// - `ask`：超出声明范围（未声明的路径 / 命令类别 / 网络 / 凭据）→ 必须转人工；
-// - `deny`：主工作区写入 / 路径逃逸 / NUL → 结构上不可能授权（人工也不批）。
+// - `ask`：超出声明范围（未声明的路径 / 命令类别 / 网络 / 凭据）或敏感文件 → 必须转人工；
+// - `deny`：主工作区写入 / 路径逃逸 / NUL / `.git` 内部数据 → 结构上不可能授权（人工也不批）。
 //
 // 主项目只读（2026-11-03 修正）：探针 cwd 是空隔离目录，读工具必须能读主项目里
 // **ProbeRequest.scope.paths 声明过的**源码（否则 Spike 只能对着空目录推理）。
 // 因此 READONLY_FILE_TOOLS 对主项目内、落在声明路径下的绝对路径放行；写工具与
 // 一切 shell 命令仍然走原判定（主项目写入 / 命令里出现项目路径 = deny）。
 //
+// 敏感路径与符号链接（2026-11-03 final review）：
+// - `.env*` / 私钥 / 凭据文件即使落在声明范围内也**不自动放行**（ask），
+//   `.git/**` 属于仓库内部数据（deny）——`scope.paths: ['.']` 不等于"整个仓库无秘密"；
+// - 目标路径与声明根都解析 **realpath**：落在声明范围里的符号链接若指向项目外，
+//   realpath 之后不再位于项目/范围内 → deny（词法前缀检查挡不住 symlink 逃逸）。
+//
 // 关键不变量：guard 在身份策略与 internal blanket 之前评估，因此
 // **内部 Session / full-access 身份都不能把 ask 变成自动放行**（spec §6.5）。
 //
-// 这里只做纯判定，不读盘、不调用 LLM——便于在审批热路径上同步执行。
+// 判定保持同步（审批热路径）：只做字符串运算 + 少量 realpath（路径不存在的部分按
+// 最近已存在祖先折叠，失败 fail-open 到词法判定）。
+
+import * as fs from 'fs';
+import * as path from 'path';
 
 import type { ProbeCommandClass, ProbeRequest } from './probe';
 
 export type ProbeScopeVerdict = 'allow' | 'ask' | 'deny';
+
+/** 真实路径解析注入（测试可给假映射；缺省 = fs.realpathSync.native）。 */
+export interface ProbeScopeGuardOptions {
+  realpath?: (absolutePath: string) => string | null;
+}
 
 /** 一次待判定动作（从审批 facet 派生，或测试直接构造）。 */
 export interface ProbeScopeAction {
@@ -132,12 +147,109 @@ function isReadOnlyFileTool(tool: string | undefined): boolean {
   return READONLY_FILE_TOOLS.has(tool.toLowerCase());
 }
 
-function pathVerdict(request: ProbeRequest, action: ProbeScopeAction): ProbeScopeVerdict {
+/**
+ * 敏感路径（相对项目/工作区根）：
+ * - `.git` / `.ssh` 等仓库/凭据内部目录 → deny（不是源码，人也不该拿来当证据）；
+ * - `.env*` / `*.pem` / `*.key` / `credentials*` / `secrets*` → ask（声明范围内也不自动放行）。
+ */
+function sensitivePathVerdict(relative: string): ProbeScopeVerdict | null {
+  const segments = relative.split('/').filter(Boolean).map((segment) => segment.toLowerCase());
+  if (segments.includes('.git') || segments.includes('.ssh')) return 'deny';
+  const base = segments[segments.length - 1] ?? '';
+  if (!base) return null;
+  if (base === '.env' || base.startsWith('.env.')) return 'ask';
+  if (/\.(?:pem|key|p12|pfx|keystore)$/.test(base)) return 'ask';
+  if (/^(?:credentials?|secrets?)(?:\.[a-z0-9_-]+)?$/.test(base)) return 'ask';
+  return null;
+}
+
+function defaultRealpath(value: string): string | null {
+  try { return fs.realpathSync.native(value); } catch { /* 文件可能还不存在 */ }
+  try { return fs.realpathSync(value); } catch { return null; }
+}
+
+/**
+ * 解析真实路径；目标不存在时解析**最近的已存在祖先**再拼回缺失部分
+ * （写新文件也要过 symlink 检查，不能因为"还不存在"就跳过）。
+ */
+function resolveRealPath(value: string, realpath: (absolutePath: string) => string | null): string | null {
+  let current = normalizeResolved(value);
+  const missing: string[] = [];
+  for (let depth = 0; depth < 64; depth++) {
+    const resolved = realpath(current);
+    if (resolved) {
+      const real = normalizeResolved(resolved).replace(/\/+$/, '');
+      if (missing.length === 0) return real || '/';
+      return normalizeResolved(`${real}/${missing.reverse().join('/')}`);
+    }
+    const parent = normalizeResolved(path.dirname(current));
+    if (!parent || parent === current) return null;
+    missing.push(path.basename(current));
+    current = parent;
+  }
+  return null;
+}
+
+function scopeVerdictFor(request: ProbeRequest, relative: string): ProbeScopeVerdict {
+  const scopePaths = (request.scope?.paths ?? []).map((item) => normalizePath(item).replace(/\/+$/, ''));
+  if (scopePaths.length === 0) return 'ask';
+  if (scopePaths.includes('.')) return 'allow';
+  const fold = (s: string) => (process.platform === 'win32' ? s.toLowerCase() : s);
+  const target = fold(relative);
+  const covered = scopePaths.some((scopePath) => {
+    const scope = fold(scopePath || '.');
+    return scope === '.' ? true : target === scope || target.startsWith(`${scope}/`);
+  });
+  return covered ? 'allow' : 'ask';
+}
+
+/**
+ * realpath 边界：目标解析后必须仍在**声明根**内，且仍落在声明路径（真实路径）内。
+ * 无法解析（路径不存在且祖先都解析失败）时返回 allow，交给词法判定。
+ */
+function realPathVerdict(
+  request: ProbeRequest,
+  raw: string,
+  rootDir: string | null,
+  realpath: (absolutePath: string) => string | null,
+): ProbeScopeVerdict {
+  if (!rootDir) return 'allow';
+  const root = normalizePath(rootDir).replace(/\/+$/, '');
+  if (!root) return 'allow';
+  const targetAbs = isAbsolutePath(raw) ? raw : `${root}/${normalizePath(raw)}`;
+  const rootReal = resolveRealPath(root, realpath);
+  const targetReal = resolveRealPath(targetAbs, realpath);
+  if (!rootReal || !targetReal) return 'allow';
+  if (!isInside(targetReal, rootReal)) return 'deny';
+  // 词法名字可以被符号链接掩盖（`src/alias -> .env`）：按真实相对路径再判一次敏感名。
+  const realRelative = relativeWithinDir(targetReal, rootReal);
+  const sensitiveReal = realRelative ? sensitivePathVerdict(realRelative) : null;
+  if (sensitiveReal) return sensitiveReal;
+
+  const scopePaths = (request.scope?.paths ?? []).map((item) => normalizePath(item).replace(/\/+$/, ''));
+  if (scopePaths.length === 0) return 'allow';
+  if (scopePaths.includes('.')) return 'allow';
+  const allowedRoots = scopePaths
+    .map((scopePath) => (scopePath === '.' ? rootReal : resolveRealPath(`${root}/${scopePath}`, realpath)))
+    .filter((value): value is string => !!value);
+  if (allowedRoots.length > 0 && !allowedRoots.some((allowed) => isInside(targetReal, allowed))) {
+    // 真实路径不在声明范围（但仍在项目内）：与词法越界同语义——转人工，不是结构性拒绝。
+    return 'ask';
+  }
+  return 'allow';
+}
+
+function pathVerdict(
+  request: ProbeRequest,
+  action: ProbeScopeAction,
+  realpath: (absolutePath: string) => string | null,
+): ProbeScopeVerdict {
   const raw = String(action.path ?? '');
   if (!raw.trim()) return 'allow';
   if (raw.includes('\0')) return 'deny';
 
   let relative: string;
+  let rootDir: string | null;
   if (isAbsolutePath(raw)) {
     // 绝对路径只有两种合法解释：
     //   1. 探针工作区内部（折算成相对路径再判范围）；
@@ -146,29 +258,29 @@ function pathVerdict(request: ProbeRequest, action: ProbeScopeAction): ProbeScop
     const inWorkspace = relativeWithinDir(raw, action.workspaceDir ?? null);
     if (inWorkspace !== null) {
       relative = inWorkspace;
+      rootDir = action.workspaceDir ?? null;
     } else {
       const inProject = relativeWithinDir(raw, action.projectDir ?? null);
       if (inProject === null || !isReadOnlyFileTool(action.tool)) return 'deny';
       relative = inProject;
+      rootDir = action.projectDir ?? null;
     }
   } else {
     relative = normalizePath(raw).replace(/^\.\//, '');
+    rootDir = action.workspaceDir ?? action.projectDir ?? null;
   }
 
   const segments = relative.split('/').filter((segment) => segment && segment !== '.');
   if (segments.some((segment) => segment === '..')) return 'deny';
   const normalized = segments.length ? segments.join('/') : '.';
 
-  const scopePaths = (request.scope?.paths ?? []).map((item) => normalizePath(item).replace(/\/+$/, ''));
-  if (scopePaths.length === 0) return 'ask';
-  if (scopePaths.includes('.')) return 'allow';
-  const fold = (s: string) => (process.platform === 'win32' ? s.toLowerCase() : s);
-  const target = fold(normalized);
-  const covered = scopePaths.some((scopePath) => {
-    const scope = fold(scopePath || '.');
-    return scope === '.' ? true : target === scope || target.startsWith(`${scope}/`);
-  });
-  return covered ? 'allow' : 'ask';
+  const sensitive = sensitivePathVerdict(normalized);
+  const verdicts: ProbeScopeVerdict[] = [
+    scopeVerdictFor(request, normalized),
+    realPathVerdict(request, raw, rootDir, realpath),
+  ];
+  if (sensitive) verdicts.push(sensitive);
+  return worst(verdicts);
 }
 
 function worst(verdicts: ProbeScopeVerdict[]): ProbeScopeVerdict {
@@ -284,19 +396,24 @@ function commandVerdict(
  * 多字段同时越界时取最严：deny > ask > allow。
  */
 export const ProbeScopeGuard = {
-  evaluate(binding: ProbeScopeBinding | ProbeRequest | null | undefined, action: ProbeScopeAction): ProbeScopeVerdict {
+  evaluate(
+    binding: ProbeScopeBinding | ProbeRequest | null | undefined,
+    action: ProbeScopeAction,
+    options?: ProbeScopeGuardOptions,
+  ): ProbeScopeVerdict {
     const request: ProbeRequest | null = binding
       ? (((binding as ProbeScopeBinding).request ?? (binding as ProbeRequest)) as ProbeRequest)
       : null;
     if (!request || !request.scope) return 'deny';
     const effectiveWorkspace = action.workspaceDir ?? (binding as ProbeScopeBinding)?.workspaceDir ?? null;
     const effectiveProject = action.projectDir ?? (binding as ProbeScopeBinding)?.projectDir ?? null;
+    const realpath = options?.realpath ?? defaultRealpath;
     const verdicts: ProbeScopeVerdict[] = [];
 
     if (action.path !== undefined && action.path !== null) {
       verdicts.push(pathVerdict(request, {
         ...action, workspaceDir: effectiveWorkspace, projectDir: effectiveProject,
-      }));
+      }, realpath));
     } else if (action.tool && MUTATING_FILE_TOOLS.has(action.tool.toLowerCase())) {
       // 修改型工具但看不到目标路径：无法证明在范围内 → 转人工（不猜）。
       verdicts.push('ask');

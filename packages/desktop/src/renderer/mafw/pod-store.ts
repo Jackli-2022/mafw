@@ -103,11 +103,17 @@ export async function resolvePodDetailCached(options: {
   ttlMs?: number
   /** 缓存键（缺省 = 项目目录）；项目切换/Pod 身份变化时应不同。 */
   key?: string
+  /**
+   * 查找版本（Pod 重建 / detail 更新时递增）：与 key 一起构成缓存键。
+   * 只靠 TTL 的话，Pod 被重建后的短暂窗口里发送路径仍会拿到旧 pod id。
+   */
+  revision?: number | string
 }): Promise<PodDetail | null> {
   if (options.loaded) return options.loaded
   const dir = (options.projectDir ?? "").trim()
   if (!dir || !options.lookup) return null
-  const key = (options.key ?? dir).trim()
+  const baseKey = (options.key ?? dir).trim()
+  const key = `${baseKey}|rev:${options.revision ?? 0}`
   const now = options.now ? options.now() : Date.now()
   const ttl = options.ttlMs ?? POD_DETAIL_TTL_MS
   if (podDetailCache?.key === key && now - podDetailCache.at < ttl) return podDetailCache.detail
@@ -261,6 +267,7 @@ export function createPodStore(
   const [projectDir, setProjectDir] = createSignal<string | null>(null)
 
   let seq = 0
+  let revision = 0
   let timer: unknown = null
   let disposed = false
 
@@ -332,6 +339,7 @@ export function createPodStore(
   const applyDetail = (next: PodDetail, my: number) => {
     if (disposed || my !== seq) return
     next = normalizeDetail(next)
+    revision++
     setDetail(next)
     setError(null)
     loadCost(next.pod.id, my)
@@ -345,6 +353,7 @@ export function createPodStore(
     if (switching) {
       seq++
       clearTimer()
+      revision++
       setProjectDir(dir)
       setDetail(null)
       setCost(null)
@@ -367,11 +376,13 @@ export function createPodStore(
         setMessages([])
         setUnsupported(true)
         setError(null)
+        revision++
       } else if (podIsUnsupported(err) || /pod not found/i.test(errorMessage(err))) {
         setDetail(null)
         setCost(null)
         setMessages([])
         setError(null)
+        revision++
       } else {
         setError(errorMessage(err))
       }
@@ -536,6 +547,8 @@ export function createPodStore(
     error,
     unsupported,
     projectDir,
+    /** Pod detail 变化计数（发送路径的缓存失效键；Pod 重建后旧 id 不得复用）。 */
+    revision: () => revision,
   }
 }
 

@@ -3,7 +3,8 @@
 // 关键不变量：
 //   1. 结果事件（pod.updated kind=result）→ 隐藏时 OS 通知 + toast；rail 上出现
 //      「有新结果」点，但不增加 attention 数字徽标。
-//   2. 点通知回到窗口后直接打开该 Goal 的结果面板；打开即标记已查看（持久化）。
+//   2. 点通知回到窗口后直接打开该 Goal 的结果面板；**结果数据加载成功**后才标记已查看
+//      （打开面板本身不算，加载失败要保留「有新结果」点）。
 //   3. 结果面板可打回（反馈必填），成功后打开同一 Goal 的 Tech Lead 讨论（新 revision）。
 //   4. 队列/详情显示 revision；旧 revision 历史（verdict/feedback）永不丢。
 import { test } from "node:test"
@@ -56,6 +57,9 @@ test("打回：反馈必填、按钮文案单一来源、调 pod.rejectResult", 
   assert.match(podDock, /requestPodTechLeadOpen\(/)
   assert.match(shell, /podTechLeadOpenRequest\(\)/)
   assert.match(shell, /openTechLead\(/)
+  // 失败必须冒泡到面板做内联提示：PodDock 不得自己吞掉错误（面板 rejectError 会成死分支）。
+  assert.match(podResultPanel, /setRejectError\(rejectErrorMessage\(podHttpStatus\(err\)\)\)/)
+  assert.doesNotMatch(podDock, /rejectErrorMessage/)
 })
 
 test("结果事件：隐藏时 OS 通知 + 未查看结果点（不掺 attention）", () => {
@@ -78,8 +82,9 @@ test("从通知打开结果：visibilitychange 后请求打开结果面板", () 
   assert.match(podDock, /setResultGoalId\(request\.goalId\)/)
 })
 
-test("查看结果清除未读点（localStorage 持久化，键含 revision）", () => {
-  assert.match(podDock, /markPodResultViewed\(/)
+test("查看结果清除未读点（localStorage 持久化，键含 revision；只在加载成功后标记）", () => {
+  assert.match(podResultPanel, /markResultViewedAfterLoad\(/)
+  assert.doesNotMatch(podDock, /markPodResultViewed\(/, "打开面板不算查看")
   assert.match(resultStore, /mafw-pod-result-viewed/)
   assert.match(resultStore, /addViewedResult/)
   assert.match(resultStore, /resultViewedKey/)

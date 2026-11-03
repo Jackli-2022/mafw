@@ -6,6 +6,8 @@
 // - 声明范围内 allow（安全、隔离的 Spike 默认不打扰用户）；
 // - 越界（未声明的路径 / 命令类别 / 网络 / 凭据）ask —— 转人工；
 // - 内部 Session / full-access 身份不能把 ask 变成自动放行（guard 在政策环之前）。
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { ApprovalPolicyService } from '../../../src/core/approval/policy-service';
 import { applyApprovalPolicy } from '../../../src/core/approval/hook';
@@ -79,6 +81,85 @@ describe('ProbeScopeGuard.evaluate', () => {
     expect(ProbeScopeGuard.evaluate(binding(), { path: '../outside.txt' })).toBe('deny');
     expect(ProbeScopeGuard.evaluate(binding(), { path: 'src/../../etc/passwd' })).toBe('deny');
     expect(ProbeScopeGuard.evaluate(binding(), { path: 'src/a\0.ts' })).toBe('deny');
+  });
+
+  it('never silently exposes secrets even when the scope is the whole project', () => {
+    const whole = binding({ scope: { ...probe().scope, paths: ['.'] } });
+    // `.env*` / 私钥 / 凭据文件即使落在声明范围内也必须转人工（默认不自动放行）。
+    expect(ProbeScopeGuard.evaluate(whole, { tool: 'read', path: '.env' })).toBe('ask');
+    expect(ProbeScopeGuard.evaluate(whole, { tool: 'read', path: `${MAIN_PROJECT}/.env.local` })).toBe('ask');
+    expect(ProbeScopeGuard.evaluate(whole, { tool: 'read', path: 'keys/server.pem' })).toBe('ask');
+    expect(ProbeScopeGuard.evaluate(whole, { tool: 'read', path: 'keys/id.key' })).toBe('ask');
+    expect(ProbeScopeGuard.evaluate(whole, { tool: 'read', path: 'config/credentials.json' })).toBe('ask');
+    expect(ProbeScopeGuard.evaluate(whole, { tool: 'read', path: 'config/secrets' })).toBe('ask');
+    // `.git` 内部数据不是源码：结构上拒绝（人工也不该把它当 Spike 证据）。
+    expect(ProbeScopeGuard.evaluate(whole, { tool: 'read', path: '.git/config' })).toBe('deny');
+    // 普通源码仍自动放行。
+    expect(ProbeScopeGuard.evaluate(whole, { tool: 'read', path: 'src/config.ts' })).toBe('allow');
+  });
+
+  it('rejects symlink/realpath escapes out of the project even inside the declared scope', () => {
+    const whole = binding({ scope: { ...probe().scope, paths: ['.'] } });
+    const link = path.posix.normalize(`${MAIN_PROJECT.replace(/\\/g, '/')}/src/link`);
+    const projectRoot = path.posix.normalize(MAIN_PROJECT.replace(/\\/g, '/'));
+    // 注入式 realpath：模拟 `src/link -> /outside` 与 `src/alias -> .env` 两种符号链接
+    // （Windows 上无需真实 symlink 权限）。
+    const realpath = (value: string): string => {
+      const norm = path.posix.normalize(value.replace(/\\/g, '/'));
+      const lower = norm.toLowerCase();
+      const base = link.toLowerCase();
+      if (lower === `${projectRoot.toLowerCase()}/src/alias`) return `${projectRoot}/.env`;
+      if (lower === base) return '/outside';
+      if (lower.startsWith(`${base}/`)) return `/outside${norm.slice(link.length)}`;
+      return norm;
+    };
+
+    expect(ProbeScopeGuard.evaluate(whole, {
+      tool: 'read',
+      path: `${MAIN_PROJECT}/src/link/secret.txt`,
+    }, { realpath })).toBe('deny');
+    // 项目内符号链接改名为 .env：真实路径仍触发敏感文件门（ask，不自动放行）。
+    expect(ProbeScopeGuard.evaluate(whole, {
+      tool: 'read',
+      path: `${MAIN_PROJECT}/src/alias`,
+    }, { realpath })).toBe('ask');
+    // 同一目录下的真实源码仍允许（不是把整个 scope 关掉）。
+    expect(ProbeScopeGuard.evaluate(whole, {
+      tool: 'read',
+      path: `${MAIN_PROJECT}/src/a.ts`,
+    }, { realpath })).toBe('allow');
+  });
+
+  it('rejects a real symlink that points outside the project', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-probe-guard-'));
+    const project = path.join(root, 'project');
+    const outside = path.join(root, 'outside');
+    const workspace = path.join(root, 'workspace');
+    try {
+      fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+      fs.mkdirSync(outside, { recursive: true });
+      fs.mkdirSync(workspace, { recursive: true });
+      fs.writeFileSync(path.join(project, 'src', 'a.ts'), 'export const a = 1;\n', 'utf-8');
+      fs.writeFileSync(path.join(outside, 'secret.txt'), 'top-secret\n', 'utf-8');
+      try {
+        fs.symlinkSync(outside, path.join(project, 'src', 'link'), 'dir');
+      } catch {
+        return; // Windows 无 symlink 权限：注入式用例已覆盖同一判定。
+      }
+      const local = {
+        request: probe({ scope: { ...probe().scope, paths: ['.'] } }),
+        workspaceDir: workspace,
+        projectDir: project,
+      };
+      expect(ProbeScopeGuard.evaluate(local, {
+        tool: 'read', path: path.join(project, 'src', 'link', 'secret.txt'),
+      })).toBe('deny');
+      expect(ProbeScopeGuard.evaluate(local, {
+        tool: 'read', path: path.join(project, 'src', 'a.ts'),
+      })).toBe('allow');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
   });
 
   it('asks for network when the request did not declare it', () => {
