@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js"
 import type { PodAttentionItem } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { attentionTarget } from "../pod-model"
 
 const KIND_LABEL: Record<PodAttentionItem["kind"], string> = {
   plan_approval: "计划待批准",
@@ -14,9 +15,13 @@ export function attentionKindLabel(kind: PodAttentionItem["kind"] | string): str
   return KIND_LABEL[kind as PodAttentionItem["kind"]] ?? String(kind)
 }
 
+/**
+ * open_plan_review / open_question / open_direction_review / open_result 由
+ * shell 的 attentionTarget 分流到详情里的对应区域；这里只上报动作。
+ */
 export function PodAttentionList(props: {
   items: PodAttentionItem[]
-  onOpenGoal: (goalId: string) => void
+  onOpenAttention: (item: PodAttentionItem) => void
 }) {
   return (
     <div class="mafw-pod-attention">
@@ -31,7 +36,9 @@ export function PodAttentionList(props: {
               variant="ghost"
               size="small"
               class="mafw-pod-attention-row"
-              onClick={() => props.onOpenGoal(item.action.goalId)}
+              data-action={item.action.type}
+              data-focus={attentionTarget(item.action)}
+              onClick={() => props.onOpenAttention(item)}
             >
               <span class={`mafw-pod-attention-kind is-${item.kind}`}>{attentionKindLabel(item.kind)}</span>
               <span class="mafw-pod-attention-title">{item.title}</span>

@@ -21,19 +21,22 @@ import {
 import {
   formatPodCost,
   memberOpenTarget,
+  attentionTarget,
+  planEditGate,
   podActiveGoalId,
   podHttpStatus,
   podMemberStatusLabel,
   podRoleLabel,
   podStatusLabel,
   shouldCloseTranscript,
+  type GoalDetailFocus,
 } from "../pod-model"
 
 export function PodDock(props: {
   projectDir: string | null
   active: boolean
   onOpenSession: (sid: string, title?: string) => void
-  onOpenGoal: (goalId: string) => void
+  onOpenGoal: (goalId: string, focus?: GoalDetailFocus) => void
   panelRequest?: { tab: "work" | "team" | "memory"; seq: number }
 }) {
   const [transcriptSession, setTranscriptSession] = createSignal<string | null>(null)
@@ -389,7 +392,7 @@ export function PodDock(props: {
 
                   <PodAttentionList
                     items={detail().attention}
-                    onOpenGoal={props.onOpenGoal}
+                    onOpenAttention={(item) => props.onOpenGoal(item.action.goalId, attentionTarget(item.action))}
                   />
 
                   <PodGoalQueue
@@ -402,10 +405,13 @@ export function PodDock(props: {
                     tasks={detail().tasks}
                     members={detail().members}
                     busy={podStore.busy()}
-                    planGoalId={activeGoalId()}
+                    goalId={activeGoalId()}
                     planEditable={(() => {
-                      const stage = podStore.detail()?.goals.find((goal) => goal.status === "active")?.stage
-                      return !!stage && stage.kind !== "working" && stage.kind !== "queued" && stage.kind !== "ended"
+                      const goal = podStore.detail()?.goals.find((item) => item.status === "active")
+                      return planEditGate({
+                        terminal: !goal || goal.status === "done" || goal.status === "aborted",
+                        stage: goal?.stage ?? null,
+                      }).editable
                     })()}
                     onCreate={createTask}
                     onCreatePlan={createPlanTask}

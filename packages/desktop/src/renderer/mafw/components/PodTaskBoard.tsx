@@ -127,7 +127,10 @@ export function PodTaskBoard(props: {
   tasks: PodTask[]
   members: PodMember[]
   busy: boolean
-  planGoalId: string | null
+  /** 显式过滤的任务归属 Goal；Goal 详情传当前 Goal，不再依赖 Pod 的全局 active。 */
+  goalId?: string | null
+  /** `plan` = 只展示当前 Goal 的计划任务（Goal 详情内嵌）。 */
+  scope?: "full" | "plan"
   planEditable: boolean
   onCreate: (title: string) => Promise<boolean>
   onCreatePlan: (title: string) => Promise<boolean>
@@ -137,7 +140,9 @@ export function PodTaskBoard(props: {
   onOpenGoal: (goalId: string) => void
 }) {
   const [creating, setCreating] = createSignal(false)
-  const [createMode, setCreateMode] = createSignal<"manual" | "plan">("manual")
+  const [createMode, setCreateMode] = createSignal<"manual" | "plan">(
+    props.scope === "plan" ? "plan" : "manual",
+  )
   const [title, setTitle] = createSignal("")
   const [submitting, setSubmitting] = createSignal(false)
   const [editingId, setEditingId] = createSignal<string | null>(null)
@@ -201,8 +206,9 @@ export function PodTaskBoard(props: {
   const submit = async () => {
     const value = title().trim()
     if (!value || submitting() || props.busy) return
-    if (createMode() === "plan" && (!props.planGoalId || !props.planEditable)) return
-    const plan = createMode() === "plan" && !!props.planGoalId && props.planEditable
+    const planMode = props.scope === "plan" || createMode() === "plan"
+    if (planMode && (!props.goalId || !props.planEditable)) return
+    const plan = planMode && !!props.goalId && props.planEditable
     setSubmitting(true)
     try {
       const ok = plan ? await props.onCreatePlan(value) : await props.onCreate(value)
@@ -214,18 +220,25 @@ export function PodTaskBoard(props: {
     }
   }
 
+  const planTasks = () => planTaskOnly(props.tasks).filter((task) => task.goalId === props.goalId)
+
   return (
     <div class="mafw-pod-board-wrap">
       <div class="mafw-pod-section-head">
-        <span>任务板</span>
-        <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => setCreating((value) => !value)}>
+        <span>{props.scope === "plan" ? "计划任务" : "任务板"}</span>
+        <ButtonV2
+          variant="ghost"
+          size="small"
+          disabled={props.busy || (props.scope === "plan" && !props.planEditable)}
+          onClick={() => setCreating((value) => !value)}
+        >
           {creating() ? "取消" : "新建"}
         </ButtonV2>
       </div>
 
       <Show when={creating()}>
         <div class="mafw-pod-task-create">
-          <Show when={props.planGoalId && props.planEditable}>
+          <Show when={props.scope !== "plan" && props.goalId && props.planEditable}>
             <div class="mafw-pod-task-create-mode">
               <ButtonV2
                 variant="ghost"
@@ -247,7 +260,7 @@ export function PodTaskBoard(props: {
           </Show>
           <TextInputV2
             value={title()}
-            placeholder={createMode() === "plan" && props.planEditable ? "追加到计划最后一个 wave" : "备注（不会自动执行）"}
+            placeholder={props.scope === "plan" || createMode() === "plan" ? "追加到计划最后一个 wave" : "备注（不会自动执行）"}
             onInput={(event) => setTitle(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") void submit()
@@ -261,7 +274,7 @@ export function PodTaskBoard(props: {
       </Show>
 
       <div class="mafw-pod-board">
-        <For each={groupPodTasks(planTaskOnly(props.tasks).filter((task) => task.goalId === props.planGoalId))}>
+        <For each={groupPodTasks(planTasks())}>
           {(lane) => (
             <div class="mafw-pod-lane">
               <div class="mafw-pod-lane-head">
@@ -393,7 +406,7 @@ export function PodTaskBoard(props: {
         </For>
       </div>
 
-      <Show when={props.tasks.some((task) => task.kind === "external_request")}>
+      <Show when={props.scope !== "plan" && props.tasks.some((task) => task.kind === "external_request")}>
         <div class="mafw-pod-notes">
           <div class="mafw-pod-section-head">
             <span>外部请求（未纳入执行计划）</span>
@@ -405,44 +418,46 @@ export function PodTaskBoard(props: {
         </div>
       </Show>
 
-      <div class="mafw-pod-notes">
-        <div class="mafw-pod-section-head">
-          <span>备注</span>
-          <span class="mafw-pod-section-count">{noteTasksOnly(props.tasks).length}</span>
+      <Show when={props.scope !== "plan"}>
+        <div class="mafw-pod-notes">
+          <div class="mafw-pod-section-head">
+            <span>备注</span>
+            <span class="mafw-pod-section-count">{noteTasksOnly(props.tasks).length}</span>
+          </div>
+          <Show when={noteTasksOnly(props.tasks).length > 0} fallback={<div class="mafw-pod-empty-line">没有备注</div>}>
+            <For each={noteTasksOnly(props.tasks)}>
+              {(task) => (
+                <div class="mafw-pod-note-row">
+                  <Show
+                    when={renamingId() === task.id}
+                    fallback={<span>{task.title}</span>}
+                  >
+                    <TextInputV2
+                      value={renameTitle()}
+                      onInput={(event) => setRenameTitle(event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void saveNote(task.id)
+                        if (event.key === "Escape") setRenamingId(null)
+                      }}
+                    />
+                  </Show>
+                  <Show
+                    when={renamingId() === task.id}
+                    fallback={
+                      <div class="mafw-pod-note-actions">
+                        <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => { setRenamingId(task.id); setRenameTitle(task.title) }}>改名</ButtonV2>
+                        <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => void props.onDelete(task.id)}>删除</ButtonV2>
+                      </div>
+                    }
+                  >
+                    <ButtonV2 variant="contrast" size="small" disabled={renaming() || !renameTitle().trim()} onClick={() => void saveNote(task.id)}>保存</ButtonV2>
+                  </Show>
+                </div>
+              )}
+            </For>
+          </Show>
         </div>
-        <Show when={noteTasksOnly(props.tasks).length > 0} fallback={<div class="mafw-pod-empty-line">没有备注</div>}>
-          <For each={noteTasksOnly(props.tasks)}>
-            {(task) => (
-              <div class="mafw-pod-note-row">
-                <Show
-                  when={renamingId() === task.id}
-                  fallback={<span>{task.title}</span>}
-                >
-                  <TextInputV2
-                    value={renameTitle()}
-                    onInput={(event) => setRenameTitle(event.currentTarget.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") void saveNote(task.id)
-                      if (event.key === "Escape") setRenamingId(null)
-                    }}
-                  />
-                </Show>
-                <Show
-                  when={renamingId() === task.id}
-                  fallback={
-                    <div class="mafw-pod-note-actions">
-                      <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => { setRenamingId(task.id); setRenameTitle(task.title) }}>改名</ButtonV2>
-                      <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => void props.onDelete(task.id)}>删除</ButtonV2>
-                    </div>
-                  }
-                >
-                  <ButtonV2 variant="contrast" size="small" disabled={renaming() || !renameTitle().trim()} onClick={() => void saveNote(task.id)}>保存</ButtonV2>
-                </Show>
-              </div>
-            )}
-          </For>
-        </Show>
-      </div>
+      </Show>
     </div>
   )
 }

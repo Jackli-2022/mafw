@@ -62,6 +62,7 @@ import {
   requestPodResultOpen,
 } from "./pod-result-store"
 import {
+  attentionTarget,
   goalRevisionOf,
   latestUnviewedResult,
   leadSessionIdFromPod,
@@ -71,6 +72,7 @@ import {
   podSessionRoute,
   resultStatus,
   techLeadSendGate,
+  type GoalDetailFocus,
 } from "./pod-model"
 import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
 import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
@@ -208,6 +210,12 @@ export function MafwShell() {
   // switches the content pane (no tab change); this map powers the back button.
   const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
   const [podGoalId, setPodGoalId] = createSignal<string | null>(null)
+  const [goalDetailFocus, setGoalDetailFocus] = createSignal<GoalDetailFocus>("timeline")
+  /** 打开统一 Goal 详情，并按 attention action 指定落点（计划/问题/方向/结果）。 */
+  const openGoalDetail = (goalId: string, focus: GoalDetailFocus = "timeline"): void => {
+    setGoalDetailFocus(focus)
+    setPodGoalId(goalId)
+  }
 
   // store.session 的 tab 占位只有 directory "."；权威信息（directory/parentID）来自
   // sessions.get。工作台根（benchRoot）与 worktree 徽标依赖真实 directory——激活时
@@ -483,7 +491,7 @@ export function MafwShell() {
         sourceRef: handoff.sourceRef,
       })
       await podStore.refresh()
-      setPodGoalId(created.goalId)
+      openGoalDetail(created.goalId)
       showToastV2({ description: "已交给 Lead，Goal 已创建", duration: 3000 } as any)
     } catch (err: any) {
       showToastV2({ description: `交给 Lead 失败: ${err?.message || err}`, duration: 4500 } as any)
@@ -2559,7 +2567,7 @@ export function MafwShell() {
             podSessionTitleOf={podSessionTitleOf}
             onPodRefresh={() => { void podStore.refresh() }}
             onPodOpenSession={(sid) => { void openPodSession(sid) }}
-            onPodOpenGoal={(goalId) => setPodGoalId(goalId)}
+            onPodOpenGoal={(goalId) => openGoalDetail(goalId)}
             onPodOpenPanel={openPodPanel}
             onPodOpenMessage={onPodOpenMessage}
             onPodCreate={() => { void podStore.create() }}
@@ -2726,7 +2734,7 @@ export function MafwShell() {
                   openSessionTab(sid, item?.title)
                 }}
                 onNewGoal={openNewGoalComposer}
-                onOpenGoal={(goal) => setPodGoalId(goal.goalId)}
+                onOpenGoal={(goal) => openGoalDetail(goal.goalId, goal.resultReady ? "result" : "timeline")}
               />
             ) : activeTab() === "memory" ? (
               <MemoryPage />
@@ -2854,7 +2862,7 @@ export function MafwShell() {
                       onClosePanel={() => applyRightDock(false)}
                       onOpenSubagent={(id) => void openSubagentSession(id)}
                       onOpenPodSession={(sid, title) => { void openPodSession(sid, title) }}
-                      onOpenGoal={(id) => setPodGoalId(id)}
+                      onOpenGoal={(id, focus) => openGoalDetail(id, focus)}
                       podPanelRequest={podPanelRequest()}
                       onOpenSection={applyExecutionSection}
                       trajectoryLive={trajectoryLive()[currentSessionID()] || []}
@@ -2909,6 +2917,7 @@ export function MafwShell() {
           goalId={podGoalId()}
           projectDir={currentProject()}
           podId={podStore.detail()?.pod.id ?? null}
+          focus={goalDetailFocus()}
           onClose={() => setPodGoalId(null)}
           onOpenSession={(sid) => { void openPodSession(sid) }}
         />

@@ -1,17 +1,27 @@
-// Goal 详情：泳道（阶段 × loop）+ 点格子内联明细 + goal_node SSE 实时刷新。
-// 数据源：window.api.mafw.goals.timeline（P1 gateway API）；会话下钻经 onOpenSession。
-import { createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js"
+// Goal 详情（Task 13 统一实现）：当前行动 + 计划/任务 + 产品产物 + 结果/打回 +
+// 方向/问题 + 次级执行时间线。数据源复用既有 Goal/Pod API，不建第二套状态。
+import { createEffect, createSignal, For, Show, onMount, onCleanup } from "solid-js"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import type { PodDirectionState, PodGoalRevision, PodProbe } from "@mafw/sdk"
+import type { PodDirectionState, PodGoalRevision, PodMember, PodProbe, PodTask } from "@mafw/sdk"
 import { GoalTimelineLane } from "./GoalTimelineLane"
 import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { PodDirectionPanel } from "./PodDirectionPanel"
 import { PodProbePanel } from "./PodProbePanel"
-import { buildGoalLanes, formatDuration, timelineFailure } from "../goal-timeline"
+import { PodResultView } from "./PodResultView"
+import { PodTaskBoard } from "./PodTaskBoard"
+import { buildGoalLanes, formatDuration, hideEmptyReviewLane, timelineFailure } from "../goal-timeline"
 import { createPodIdResolver, podStore } from "../pod-store"
-import { podStageLabel, revisionHistory, revisionStatusLabel } from "../pod-model"
+import {
+  planEditGate,
+  podStageLabel,
+  revisionHistory,
+  revisionStatusLabel,
+  type GoalDetailFocus,
+} from "../pod-model"
+import { requestPodTechLeadOpen } from "../pod-result-store"
 import { goalsRev } from "../goals-rev"
 
 const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
@@ -20,46 +30,67 @@ const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"
 function parseDirectionState(json: string | null | undefined, revision: number | null): PodDirectionState | null {
   if (!json) return null
   try {
-    const parsed = JSON.parse(json)
-    if (!parsed || typeof parsed !== "object") return null
-    const state = parsed as PodDirectionState
+    const state = JSON.parse(json)
+    if (!state || typeof state !== "object") return null
     return {
-      version: typeof state.version === "number" ? state.version : 1,
-      goalId: typeof state.goalId === "string" ? state.goalId : "",
+      version: 1,
+      goalId: String(state.goalId ?? ""),
       revision: typeof state.revision === "number" ? state.revision : (revision ?? 1),
-      status: state.status === "pending" || state.status === "decided" ? state.status : "none",
+      status: state.status === "decided" ? "decided" : "pending",
       options: Array.isArray(state.options) ? state.options : [],
       requests: Array.isArray(state.requests) ? state.requests : [],
       decisions: Array.isArray(state.decisions) ? state.decisions : [],
       updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : null,
-    }
+    } as PodDirectionState
   } catch {
     return null
   }
+}
+
+function artifactName(value: string): string {
+  return value.split(/[\\/]/).filter(Boolean).pop() ?? value
 }
 
 export function GoalDetailOverlay(props: {
   goalId: string | null
   projectDir?: string | null
   podId?: string | null
+  /** shell 打开 attention 时指定要展开/滚动到的区域。 */
+  focus?: GoalDetailFocus | null
   onClose: () => void
   onOpenSession: (sid: string) => void
 }) {
   const [timeline, setTimeline] = createSignal<any>(null)
+  const [podDetail, setPodDetail] = createSignal<any>(null)
+  const [resolvedPodId, setResolvedPodId] = createSignal<string | null>(null)
   const [revisions, setRevisions] = createSignal<PodGoalRevision[]>([])
   const [probes, setProbes] = createSignal<PodProbe[]>([])
+  const [tasks, setTasks] = createSignal<PodTask[]>([])
+  const [members, setMembers] = createSignal<PodMember[]>([])
+  const [pendingQuestions, setPendingQuestions] = createSignal<Array<{ id: string; question: string }>>([])
+  const [questionDrafts, setQuestionDrafts] = createSignal<Record<string, string>>({})
+  const [questionBusy, setQuestionBusy] = createSignal<string | null>(null)
+  const [tableBusy, setTableBusy] = createSignal(false)
   const [directionBusy, setDirectionBusy] = createSignal(false)
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [retrying, setRetrying] = createSignal(false)
   const [planOpen, setPlanOpen] = createSignal(false)
 
+  let questionRef: HTMLDivElement | undefined
+  let directionRef: HTMLDivElement | undefined
+  let resultRef: HTMLDivElement | undefined
+  let disposed = false
+  onCleanup(() => { disposed = true })
+
   async function load(id: string) {
     setLoading(true); setError(null)
     try {
       const t = await window.api.mafw.goals.timeline(id)
+      if (disposed) return
       setTimeline(t)
     } catch (e: any) {
+      if (disposed) return
       const failure = timelineFailure(e)
       if (failure.unavailable) {
         // discussing Goal 还没有 GoalState：timeline 不可用不是页面错误，
@@ -85,15 +116,38 @@ export function GoalDetailOverlay(props: {
   }
 
   // Task 20：方向裁定与 Spike 证据是 Goal 级协作事实（pod.updated / 项目切换后重拉）。
+  // Task 13：同一趟取回当前 Goal 的计划任务与人工作答的问题，不新建第二套详情状态。
   async function loadCollaboration(id: string) {
     const podId = await resolvePodIdForGoal()
-    if (!podId) { setRevisions([]); setProbes([]); return }
-    const [revResult, probeResult] = await Promise.allSettled([
-      window.api.mafw.pod.revisions(podId, id),
-      window.api.mafw.pod.probes(podId, id),
+    if (disposed) return
+    setResolvedPodId(podId ?? null)
+    const [revResult, probeResult, detailResult, approvalsResult] = await Promise.allSettled([
+      podId ? window.api.mafw.pod.revisions(podId, id) : Promise.resolve({ items: [] }),
+      podId ? window.api.mafw.pod.probes(podId, id) : Promise.resolve({ items: [] }),
+      podId ? window.api.mafw.pod.get(podId) : Promise.resolve(null),
+      window.api.mafw.approvals.list(),
     ])
+    if (disposed) return
     const revs = revResult.status === "fulfilled" && Array.isArray(revResult.value?.items) ? revResult.value.items : []
     setRevisions(revs)
+    if (detailResult.status === "fulfilled" && detailResult.value) {
+      setPodDetail(detailResult.value)
+      setTasks(Array.isArray(detailResult.value.tasks) ? detailResult.value.tasks : [])
+      setMembers(Array.isArray(detailResult.value.members) ? detailResult.value.members : [])
+    } else {
+      setPodDetail(null)
+      setTasks([])
+      setMembers([])
+    }
+    if (approvalsResult.status === "fulfilled" && Array.isArray(approvalsResult.value)) {
+      setPendingQuestions(
+        approvalsResult.value
+          .filter((item) => item.goalId === id && item.status === "pending")
+          .map((item) => ({ id: item.id, question: item.question })),
+      )
+    } else {
+      setPendingQuestions([])
+    }
     // 只展示当前 revision 的证据（打回后旧 revision 的 Spike 不冒充本轮事实）。
     const goal: any = podGoal()
     const target = typeof goal?.activeRevision === "number"
@@ -108,11 +162,11 @@ export function GoalDetailOverlay(props: {
   createEffect(() => {
     const id = props.goalId
     void goalsRev() // 订阅信号
-    if (!id) { setTimeline(null); setError(null); setRevisions([]); setProbes([]); return }
+    if (!id) { setTimeline(null); setError(null); setRevisions([]); setProbes([]); setTasks([]); setPendingQuestions([]); return }
     void load(id)
   })
 
-  // podId / 项目 / Pod store 变化 → 重新读取方向/探针（Pod 尚未加载时也会在加载后刷新）。
+  // podId / 项目 / Pod store 变化 → 重新读取方向/探针/任务/问题（Pod 尚未加载时也会在加载后刷新）。
   createEffect(() => {
     const id = props.goalId
     if (!id) return
@@ -126,7 +180,10 @@ export function GoalDetailOverlay(props: {
   createEffect(() => {
     const id = props.goalId
     if (!id) return
-    const t = setInterval(() => void load(id), 15000)
+    const t = setInterval(() => {
+      void load(id)
+      void loadCollaboration(id)
+    }, 15000)
     onCleanup(() => clearInterval(t))
   })
 
@@ -153,7 +210,8 @@ export function GoalDetailOverlay(props: {
   const lanes = () => {
     const t = timeline()
     if (!t) return { loops: [], lanes: [] }
-    return buildGoalLanes(t.nodes || [], t.goal?.maxRounds ?? 3)
+    const built = buildGoalLanes(t.nodes || [], t.goal?.maxRounds ?? 3)
+    return { loops: built.loops, lanes: hideEmptyReviewLane(built.lanes, podGoal()?.strategy) }
   }
   const elapsed = () => {
     const nodes = timeline()?.nodes || []
@@ -191,7 +249,9 @@ export function GoalDetailOverlay(props: {
   const podGoal = () => {
     const id = props.goalId
     if (!id) return null
-    return (podStore.detail()?.goals ?? []).find((goal) => goal.goalId === id) ?? null
+    return (podStore.detail()?.goals ?? []).find((goal) => goal.goalId === id)
+      ?? (podDetail()?.goals ?? []).find((goal: any) => goal.goalId === id)
+      ?? null
   }
   const stageText = () => {
     const goal = podGoal()
@@ -261,6 +321,7 @@ export function GoalDetailOverlay(props: {
         duration: 2500,
       })
       await load(id)
+      void loadCollaboration(id)
       void podStore.refresh()
       return true
     } catch (e: any) {
@@ -271,13 +332,181 @@ export function GoalDetailOverlay(props: {
     }
   }
 
+  // ── Task 13：结果 / 打回 / 计划任务 / 人工作答 ────────────────────────────
+
+  const hasResult = () => {
+    const goal = podGoal() as any
+    if (!goal) return false
+    if (goal.resultReady === true) return true
+    if (goal.status !== "done" && goal.status !== "aborted") return false
+    return !!goal.verdict
+  }
+
+  const planGate = () => planEditGate({
+    terminal: goalTerminal() || podGoal()?.status === "done" || podGoal()?.status === "aborted",
+    stage: podGoal()?.stage ?? null,
+  })
+  const planTaskCount = () => tasks().filter(
+    (task) => task.goalId === props.goalId && task.kind === "plan",
+  ).length
+
+  async function reloadTasks(): Promise<void> {
+    const podId = await resolvePodIdForGoal()
+    if (!podId) return
+    const detail = await window.api.mafw.pod.get(podId)
+    setTasks(Array.isArray(detail?.tasks) ? detail.tasks : [])
+    setMembers(Array.isArray(detail?.members) ? detail.members : [])
+  }
+
+  async function withTableBusy(run: () => Promise<boolean>): Promise<boolean> {
+    if (tableBusy()) return false
+    setTableBusy(true)
+    try {
+      return await run()
+    } catch (err: any) {
+      showToastV2({ description: `计划任务失败：${String(err?.message || err).slice(0, 120)}`, duration: 3500 })
+      return false
+    } finally {
+      setTableBusy(false)
+    }
+  }
+
+  const createPlanTask = (title: string) => withTableBusy(async () => {
+    const podId = await resolvePodIdForGoal()
+    const id = props.goalId
+    if (!podId || !id) return false
+    await window.api.mafw.pod.createTask(podId, { plan: true, goalId: id, title })
+    await reloadTasks()
+    return true
+  })
+
+  const editPlanTask = (taskId: string, patch: { title: string; acceptance: string[] }) => withTableBusy(async () => {
+    const podId = await resolvePodIdForGoal()
+    if (!podId) return false
+    await window.api.mafw.pod.updateTask(podId, taskId, patch)
+    await reloadTasks()
+    return true
+  })
+
+  const deletePlanTask = (taskId: string) => withTableBusy(async () => {
+    const podId = await resolvePodIdForGoal()
+    if (!podId) return false
+    await window.api.mafw.pod.deleteTask(podId, taskId)
+    await reloadTasks()
+    return true
+  })
+
+  const rejectGoal = async (feedback: string): Promise<boolean> => {
+    const podId = await resolvePodIdForGoal()
+    const id = props.goalId
+    if (!podId || !id) {
+      showToastV2({ description: "当前项目还没有鲸群，无法打回", duration: 3000 })
+      return false
+    }
+    const result = await window.api.mafw.pod.rejectResult(podId, id, feedback)
+    showToastV2({
+      description: `已打回：进入 revision ${result?.revision ?? "?"}，正在打开 Tech Lead 讨论`,
+      variant: "success",
+      duration: 3200,
+    } as any)
+    await podStore.refresh()
+    requestPodTechLeadOpen(id, typeof result?.revision === "number" ? result.revision : null)
+    props.onClose()
+    return true
+  }
+
+  async function answerQuestion(questionId: string): Promise<void> {
+    const id = props.goalId
+    const answer = (questionDrafts()[questionId] ?? "").trim()
+    if (!id || !answer || questionBusy()) return
+    setQuestionBusy(questionId)
+    try {
+      await window.api.mafw.goals.respondQuestion(id, questionId, { type: "answer", answer })
+      showToastV2({ description: "已提交回答", duration: 2200 })
+      setQuestionDrafts((drafts) => ({ ...drafts, [questionId]: "" }))
+      await load(id)
+      await loadCollaboration(id)
+    } catch (e: any) {
+      showToastV2({ description: `回答失败：${String(e?.message || e).slice(0, 120)}`, duration: 3500 })
+    } finally {
+      setQuestionBusy(null)
+    }
+  }
+
+  async function cancelQuestion(questionId: string): Promise<void> {
+    const id = props.goalId
+    if (!id || questionBusy()) return
+    setQuestionBusy(questionId)
+    try {
+      await window.api.mafw.goals.respondQuestion(id, questionId, { type: "cancel" })
+      showToastV2({ description: "已取消该提问", duration: 2200 })
+      await load(id)
+      await loadCollaboration(id)
+    } catch (e: any) {
+      showToastV2({ description: `取消失败：${String(e?.message || e).slice(0, 120)}`, duration: 3500 })
+    } finally {
+      setQuestionBusy(null)
+    }
+  }
+
+  // 当前行动：详情打开时先告诉用户「现在要做什么」，而不是让人自己找。
+  const currentAction = () => {
+    if (!podGoal()) return null
+    if (planEntry()?.pending) return { label: "审核计划", run: () => setPlanOpen(true) }
+    if (pendingQuestions().length > 0) {
+      return { label: "回答问题", run: () => questionRef?.scrollIntoView({ block: "start", behavior: "smooth" }) }
+    }
+    if (directionState()?.status === "pending") {
+      return { label: "裁定方向", run: () => directionRef?.scrollIntoView({ block: "start", behavior: "smooth" }) }
+    }
+    if (hasResult()) {
+      return { label: "查看结果", run: () => resultRef?.scrollIntoView({ block: "start", behavior: "smooth" }) }
+    }
+    return null
+  }
+
+  const artifactChips = () => {
+    const artifacts = timeline()?.artifacts
+    if (!artifacts) return [] as string[]
+    const chips: string[] = []
+    if (artifacts.wavesPath) chips.push("waves.json")
+    for (const receipt of artifacts.receipts ?? []) {
+      const name = artifactName(String(receipt ?? ""))
+      if (name) chips.push(name)
+    }
+    if (artifacts.reviewsDir) chips.push("review 报告")
+    return Array.from(new Set(chips))
+  }
+
+  // attention 打开时展开/滚动到 action 对应区域（plan 直接开审阅浮层）。
+  createEffect(() => {
+    const focus = props.focus
+    if (!focus || focus === "timeline") return
+    if (focus === "plan") {
+      if (timeline() && planEntry()) setPlanOpen(true)
+      return
+    }
+    // 任务/问题/方向是异步加载的：订阅信号，等区域存在后再滚动。
+    void pendingQuestions()
+    void directionState()
+    void hasResult()
+    const timer = setTimeout(() => {
+      const target = focus === "question" ? questionRef
+        : focus === "direction" ? directionRef
+        : focus === "result" ? resultRef
+        : undefined
+      target?.scrollIntoView({ block: "start", behavior: "smooth" })
+    }, 30)
+    onCleanup(() => clearTimeout(timer))
+  })
+
   return (
     <Show when={props.goalId} keyed>
       <div class="mafw-goal-overlay" onClick={e => { if (e.target === e.currentTarget) props.onClose() }}>
         <div class="mafw-goal-panel">
           <div class="mafw-goal-head">
             <div style={{ "min-width": 0 }}>
-              <div class="mafw-card-title">{timeline()?.goal?.title || props.goalId}</div>
+              <div class="mafw-card-title">{timeline()?.goal?.title || podGoal()?.title || props.goalId}</div>
               <div class="mafw-card-meta">{timeline()?.goal?.goalId || props.goalId}</div>
             </div>
             <ButtonV2 variant="ghost" size="small" onClick={props.onClose} aria-label="关闭详情">✕</ButtonV2>
@@ -306,6 +535,12 @@ export function GoalDetailOverlay(props: {
                   {currentRevision() ? ` · ${revisionStatusLabel(currentRevision()!.status)}` : ""}
                 </span>
               </Show>
+              <Show when={podGoal()?.strategy === "quick"}>
+                <span class="mafw-card-meta">快速执行</span>
+              </Show>
+              <Show when={podGoal()?.assessment === "unreviewed"}>
+                <span class="mafw-card-meta">未独立评审</span>
+              </Show>
               <Show when={timeline()?.goal}>
                 <span class="mafw-card-meta">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
               </Show>
@@ -319,7 +554,120 @@ export function GoalDetailOverlay(props: {
               </Show>
             </div>
 
-            <Show when={revisionRows().length > 0}>
+            <Show when={currentAction()}>
+              {(action) => (
+                <div class="mafw-goal-current-action">
+                  <span class="mafw-work-kicker">当前行动</span>
+                  <ButtonV2 variant="contrast" size="small" onClick={() => action().run()}>
+                    {action().label}
+                  </ButtonV2>
+                </div>
+              )}
+            </Show>
+
+            <Show when={pendingQuestions().length > 0}>
+              <div class="mafw-goal-section" ref={(el) => { questionRef = el }} data-section="question">
+                <div class="mafw-pod-section-head">
+                  <span>需要你回答</span>
+                  <span class="mafw-pod-section-count">{pendingQuestions().length}</span>
+                </div>
+                <For each={pendingQuestions()}>
+                  {(question) => (
+                    <div class="mafw-goal-question">
+                      <div class="mafw-goal-question-text">{question.question}</div>
+                      <TextInputV2
+                        value={questionDrafts()[question.id] ?? ""}
+                        placeholder="写下你的回答"
+                        onInput={(event) => setQuestionDrafts((drafts) => ({ ...drafts, [question.id]: event.currentTarget.value }))}
+                        onKeyDown={(event) => { if (event.key === "Enter") void answerQuestion(question.id) }}
+                      />
+                      <div class="mafw-goal-question-actions">
+                        <ButtonV2
+                          variant="outline"
+                          size="small"
+                          disabled={!(questionDrafts()[question.id] ?? "").trim() || questionBusy() === question.id}
+                          onClick={() => void answerQuestion(question.id)}
+                        >
+                          {questionBusy() === question.id ? "提交中…" : "回答"}
+                        </ButtonV2>
+                        <ButtonV2
+                          variant="ghost"
+                          size="small"
+                          disabled={questionBusy() === question.id}
+                          onClick={() => void cancelQuestion(question.id)}
+                        >
+                          取消提问
+                        </ButtonV2>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+
+            <Show when={showDirection()}>
+              <div class="mafw-goal-section" ref={(el) => { directionRef = el }} data-section="direction">
+                <PodDirectionPanel
+                  state={directionState()}
+                  revision={activeRevision()}
+                  busy={directionBusy()}
+                  onDecide={(input) => decideDirection(input)}
+                />
+              </div>
+            </Show>
+
+            <Show when={planEntry() || planTaskCount() > 0}>
+              <div class="mafw-goal-section" data-section="plan">
+                <Show when={!planGate().editable && planGate().reason}>
+                  <div class="mafw-goal-hint">{planGate().reason}</div>
+                </Show>
+                <PodTaskBoard
+                  scope="plan"
+                  goalId={props.goalId}
+                  tasks={tasks()}
+                  members={members()}
+                  busy={tableBusy()}
+                  planEditable={planGate().editable}
+                  onCreate={async () => false}
+                  onCreatePlan={createPlanTask}
+                  onEdit={editPlanTask}
+                  onRenameNote={async () => false}
+                  onDelete={deletePlanTask}
+                  onOpenGoal={() => {}}
+                />
+              </div>
+            </Show>
+
+            <Show when={hasResult()}>
+              <div class="mafw-goal-section" ref={(el) => { resultRef = el }} data-section="result">
+                <div class="mafw-pod-section-head">
+                  <span>结果</span>
+                </div>
+                <Show when={resolvedPodId() ?? podStore.detail()?.pod.id} fallback={<div class="mafw-empty">结果需要鲸群上下文</div>}>
+                  {(podId) => (
+                    <PodResultView
+                      podId={podId()}
+                      goalId={props.goalId!}
+                      onResubmit={() => {
+                        showToastV2({ description: "在鲸群「工作」页基于失败反馈重新提交", duration: 3200 })
+                      }}
+                      onReject={rejectGoal}
+                    />
+                  )}
+                </Show>
+              </div>
+            </Show>
+
+            <Show when={probes().length > 0}>
+              <PodProbePanel
+                probes={probes()}
+                revision={activeRevision()}
+                busy={directionBusy()}
+                onOpenPlan={planEntry() ? () => setPlanOpen(true) : undefined}
+              />
+            </Show>
+
+            <Show when={!hasResult() && revisionRows().length > 0}>
               <div class="mafw-pod-revisions">
                 <div class="mafw-pod-section-head">
                   <span>版本历史</span>
@@ -342,22 +690,11 @@ export function GoalDetailOverlay(props: {
               </div>
             </Show>
 
-            <Show when={showDirection()}>
-              <PodDirectionPanel
-                state={directionState()}
-                revision={activeRevision()}
-                busy={directionBusy()}
-                onDecide={(input) => decideDirection(input)}
-              />
-            </Show>
-
-            <Show when={probes().length > 0}>
-              <PodProbePanel
-                probes={probes()}
-                revision={activeRevision()}
-                busy={directionBusy()}
-                onOpenPlan={planEntry() ? () => setPlanOpen(true) : undefined}
-              />
+            <Show when={artifactChips().length > 0}>
+              <div class="mafw-goal-artifacts">
+                <span class="mafw-work-kicker">产物</span>
+                <For each={artifactChips()}>{(name) => <code class="mafw-goal-artifact">{name}</code>}</For>
+              </div>
             </Show>
 
             <Show when={(timeline()?.nodes || []).length} fallback={<div class="mafw-empty">尚未开始执行</div>}>
@@ -376,7 +713,11 @@ export function GoalDetailOverlay(props: {
             <div class="mafw-goal-actions">
               <ButtonV2
                 variant="ghost" size="small"
-                onClick={() => window.api.mafw.goals.control({ goalId: props.goalId!, action: "ABORT" }).catch((e: any) => console.warn("[mafw]", e))}
+                onClick={() => {
+                  if (!window.confirm("取消 Goal 会中止当前工作，旧 revision 结果仍保留。确认取消？")) return
+                  window.api.mafw.goals.control({ goalId: props.goalId!, action: "ABORT" })
+                    .catch((e: any) => console.warn("[mafw]", e))
+                }}
               >取消 Goal</ButtonV2>
             </div>
           </Show>

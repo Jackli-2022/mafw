@@ -84,6 +84,16 @@ test("Goal 详情挂载方向/探针/阶段，并在 stage 变化时刷新", () 
   assert.match(goalDetail, /directionDecision\(/)
 })
 
+test("Goal 详情是统一人工行动面：结果/打回/计划任务/问题回答", () => {
+  assert.match(goalDetail, /<PodResultView/)
+  assert.match(goalDetail, /<PodTaskBoard/)
+  assert.match(goalDetail, /scope="plan"/)
+  assert.match(goalDetail, /goals\.respondQuestion\(/)
+  assert.match(goalDetail, /planEditGate\(/)
+  assert.match(goalDetail, /hideEmptyReviewLane\(/)
+  assert.match(goalDetail, /requestPodTechLeadOpen\(/)
+})
+
 test("方向 attention 使用现有 PodAttentionList 并有人类可读标签", () => {
   assert.match(attention, /direction_review/)
   assert.match(attention, /方向/)
@@ -276,7 +286,7 @@ test("所有 Pod 会话入口都经 openPodSession（Tech Lead 讨论可推断�
   assert.match(shell, /const openPodSession = async \(sid: string, title\?: string\)/)
   assert.match(shell, /onPodOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
   assert.match(shell, /onOpenPodSession=\{\(sid, title\) => \{ void openPodSession\(sid, title\) \}\}/)
-  assert.match(shell, /<DashboardPage onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
+  assert.match(shell, /<WorkspaceHome[\s\S]{0,800}onOpenGoal=/)
   assert.match(shell, /onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
   assert.match(shell, /activeTechLeadBlocked/)
   assert.match(shell, /sendBlocked=\{activeTechLeadBlocked\}/)

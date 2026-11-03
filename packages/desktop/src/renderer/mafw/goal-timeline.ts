@@ -87,6 +87,17 @@ export function buildGoalLanes(nodes: NodeRun[], maxRounds: number): { loops: nu
   return { loops, lanes }
 }
 
+/**
+ * 快速路径没有独立 Reviewer：空 review 泳道会伪造一个「验收阶段」。
+ * 只要历史上真的跑过 review（旧 revision / 打回前），证据泳道仍然保留。
+ */
+export function hideEmptyReviewLane(lanes: Lane[], strategy: string | null | undefined): Lane[] {
+  if (strategy !== "quick") return lanes
+  return lanes.filter(
+    (lane) => lane.node !== "review" || lane.cells.some((cell) => cell.latest !== null),
+  )
+}
+
 /** 产物引用（相对路径，按 P1 命名约定推导；桌面无 mafwDir，故为相对引用）。 */
 export function artifactRef(node: string, goalId: string, loop: number): { label: string; ref: string } | null {
   if (node === "plan") return { label: "waves.json", ref: "waves.json" }

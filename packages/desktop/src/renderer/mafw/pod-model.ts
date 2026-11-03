@@ -479,12 +479,28 @@ export function revisionStatusLabel(status: string | null | undefined): string {
 export function resultStatus(input: {
   verdict?: PodGoalVerdict | null
   revision?: number | null
+  assessment?: "reviewed" | "unreviewed" | null
+  reviewed?: boolean
 }): string {
   const label = podResultVerdictLabel(input.verdict ?? null)
+  const shown = !input.verdict && (input.assessment === "unreviewed" || input.reviewed === false)
+    ? "已完成（未独立评审）"
+    : label
   const revision = input.revision
   return typeof revision === "number" && Number.isFinite(revision) && revision > 0
-    ? `revision ${Math.floor(revision)} · ${label}`
-    : label
+    ? `revision ${Math.floor(revision)} · ${shown}`
+    : shown
+}
+
+/** 快速完成没有独立 Reviewer：显式说明，绝不把「已执行」读成「已验收」。 */
+export function podResultAssessmentLabel(input: {
+  verdict?: PodGoalVerdict | null
+  assessment?: "reviewed" | "unreviewed" | null
+  reviewed?: boolean
+}): string | null {
+  if (input.assessment === "unreviewed") return "未独立评审"
+  if (input.reviewed === false) return "未独立评审"
+  return null
 }
 
 /** 结果 verdict 文案（与 Goal 卡片的「已完成」不同：结果讲通过/未通过）。 */
@@ -516,6 +532,50 @@ export function rejectErrorMessage(status: number | null): string {
   if (status === 404) return "结果不存在或已被清理"
   if (status === 503) return "当前 gateway 不支持打回，请升级"
   return "打回失败，请稍后重试"
+}
+
+// ── Task 13：统一 Goal 详情与人工行动 ───────────────────────────────────────
+
+export type GoalDetailFocus = "timeline" | "plan" | "question" | "direction" | "result"
+
+/**
+ * attention.action.type → 详情里应该展开/滚动到的区域。
+ * 不按类型分流时，计划批准/提问/方向裁定都会落到「无动作的执行时间线」。
+ */
+export function attentionTarget(action: { type?: string | null } | null | undefined): GoalDetailFocus {
+  switch (action?.type) {
+    case "open_plan_review": return "plan"
+    case "open_question": return "question"
+    case "open_direction_review": return "direction"
+    case "open_result": return "result"
+    default: return "timeline"
+  }
+}
+
+export type PlanEditGate = { editable: boolean; reason: string | null }
+
+/**
+ * 与服务端 `PodTaskService.loadEditablePlan` 对齐：节点在跑（任何团队工作阶段）
+ * 或 Goal 已终态时，计划编辑必然 409，UI 不应显示一个注定失败的按钮。
+ */
+export function planEditGate(input: {
+  terminal: boolean
+  stage?: Pick<PodGoalStage, "kind"> | null
+}): PlanEditGate {
+  if (input.terminal) return { editable: false, reason: "Goal 已结束，计划不再可编辑" }
+  const kind = input.stage?.kind
+  if (kind === "plan_approval") return { editable: true, reason: null }
+  if (kind === "question") return { editable: true, reason: null }
+  if (kind === "discussing" || kind === "direction_review") {
+    return { editable: false, reason: "还没有可编辑的执行计划" }
+  }
+  if (
+    kind === "planning" || kind === "probing" || kind === "implementing"
+    || kind === "reviewing" || kind === "working" || kind === "waiting"
+  ) {
+    return { editable: false, reason: "节点正在运行，结束后才能编辑计划" }
+  }
+  return { editable: false, reason: "当前阶段不能编辑计划" }
 }
 
 export type PodRevisionHistoryRow = {
