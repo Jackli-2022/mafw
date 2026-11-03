@@ -63,14 +63,22 @@ const CAPTURE_WORKLET = "/voice/pcm-capture-worklet.js"
 
 /**
  * 共享麦克风流的连续 PCM 抽头：不改动 MediaStream 归属，不关闭共享
- * AudioContext（VAD 与播放器共用）——dispose 只断开自己建的两个节点。
+ * AudioContext（VAD 与播放器共用）——dispose 只断开自己建的节点。
  * 帧回调在主线程按 20ms 步长触发，供 ASR 上行。
+ *
+ * 采样率必须与 16 kHz 契约一致：分帧按计数切（320 = 20ms），换采样率后
+ * 帧长就不再是 20ms，必须在建立图之前显式失败。
  */
 export async function createVoicePcmTap(
   input: MicInput,
   onFrame: (pcm: Int16Array) => void,
 ): Promise<VoicePcmTap> {
   const { stream, context } = input
+  if (context.sampleRate !== PCM_SAMPLE_RATE) {
+    throw new Error(
+      `[voice] pcm tap requires a ${PCM_SAMPLE_RATE} Hz AudioContext, got ${context.sampleRate} Hz`,
+    )
+  }
   await context.audioWorklet.addModule(CAPTURE_WORKLET)
   const source = context.createMediaStreamSource(stream)
   const node = new AudioWorkletNode(context, "pcm-capture", {
@@ -97,9 +105,15 @@ export async function createVoicePcmTap(
     }
   }
 
-  // 无目的地连接（与 vad-web 同构）：MediaStreamAudioSourceNode 供给即可驱动
-  // worklet，避免把麦克风接到 destination 造成回声。
+  // 静默消费端：Chromium 只为「通向 destination 的图」拉取渲染量子，
+  // 无下游的 worklet 可能整条不跑（vad-web ScriptProcessor 路径同样注明
+  // "we need to connect an output or will not work due to chrome bug"）。
+  // 采集 worklet 不写输出，经 gain=0 接 destination 既保证被拉取又无回声。
+  const sink = context.createGain()
+  sink.gain.value = 0
   source.connect(node)
+  node.connect(sink)
+  sink.connect(context.destination)
 
   return {
     async dispose() {
@@ -113,6 +127,9 @@ export async function createVoicePcmTap(
       } catch { /* ignore */ }
       try {
         node.disconnect()
+      } catch { /* ignore */ }
+      try {
+        sink.disconnect()
       } catch { /* ignore */ }
     },
   }
