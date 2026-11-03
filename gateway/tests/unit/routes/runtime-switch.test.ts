@@ -172,4 +172,17 @@ describe('performRuntimeSwitch（共享编排：守卫 + 回退检测）', () =>
     expect(result.success).toBe(true);
     expect((result as any).active.name).toBe('opencode');
   });
+
+  test('文件包 stem 别名（foo.js 声明 name=bar）切换成功不算回退', async () => {
+    const { deps, state } = switchDeps({
+      loader: {
+        get: (n: string) => (n === 'foo' || n === 'bar' ? { createRuntime: async () => ({}) } : undefined),
+        getState: () => [{ name: 'bar', alias: 'foo' }],
+      },
+      createRuntime: async () => { state.name = 'bar'; return { name: 'bar', capabilities: {} } as any; },
+    });
+    const result = await performRuntimeSwitch(deps, 'foo');
+    expect(result.success).toBe(true);
+    expect((result as any).active.name).toBe('bar');
+  });
 });

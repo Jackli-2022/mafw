@@ -114,10 +114,27 @@ export type RuntimeSwitchOutcome =
  * read as a fallback. Anything else that differs means `createRuntime()` fell
  * back to builtin opencode instead of building the requested plugin.
  */
-function runtimeNameMatches(wanted: string, actual: string): boolean {
-  if (actual === wanted) return true;
-  const at = wanted.indexOf('@');
-  return at > 0 && actual === wanted.slice(0, at);
+function bareRuntimeName(name: string): string {
+  const at = name.indexOf('@');
+  return at > 0 ? name.slice(0, at) : name;
+}
+
+function runtimeNameMatches(expected: string, actual: string): boolean {
+  return bareRuntimeName(expected) === bareRuntimeName(actual);
+}
+
+/**
+ * Resolve a plugin-hub stem alias to the runtime's declared module name.
+ * `loader.getState()` keeps `{ name, alias }` for file plugins; the hub
+ * addresses them by filename stem, while the facade identity is the declared
+ * name. Package/builtin entries have no alias and resolve to themselves.
+ */
+function resolveRuntimeName(deps: RuntimeSwitchDeps, wanted: string): string {
+  const states = deps.loader?.getState?.() ?? [];
+  const byName = states.find((state) => state.name === wanted);
+  if (byName?.name) return byName.name;
+  const byAlias = states.find((state) => state.alias === wanted);
+  return byAlias?.name ?? wanted;
 }
 
 /**
@@ -145,11 +162,15 @@ export async function performRuntimeSwitch(
   }
 
   const wanted = typeof plugin === 'string' ? plugin.trim() : '';
+  let expectedName = wanted;
   if (wanted) {
     // D 收敛：opencode 与其他 runtime 同走 loader 校验（注册表成员语义，特判已删）
     if (!deps.loader?.get(wanted)) {
       return { success: false, code: 'not-found', error: `Runtime plugin '${wanted}' not found` };
     }
+    // The hub addresses file plugins by filename stem; the facade identity is
+    // the declared module name. Resolve the alias before fallback detection.
+    expectedName = resolveRuntimeName(deps, wanted);
   }
 
   guard?.begin();
@@ -161,7 +182,7 @@ export async function performRuntimeSwitch(
     // 切换后诊断视图已指向新 runtime（不再经 facade 回读 identity/capabilities）。
     const name = deps.runtimeName();
     const capabilities = deps.runtimeCaps();
-    if (wanted && !runtimeNameMatches(wanted, name)) {
+    if (wanted && !runtimeNameMatches(expectedName, name)) {
       return {
         success: false,
         code: 'failed',
