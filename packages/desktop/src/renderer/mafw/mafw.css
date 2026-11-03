@@ -7231,6 +7231,36 @@ html[data-theme="light"] body {
   box-shadow: var(--elev-soft);
 }
 .mafw-work-overview { padding: 20px; }
+
+/* 右工作台「工作」主面：完整项目工作概览 + 就地新建 Goal */
+.mafw-project-work {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+.mafw-project-work-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mafw-project-work-hint {
+  margin-top: 3px;
+  color: var(--text-4);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.mafw-project-work-composer {
+  padding: 12px;
+  border: 1px solid var(--border-base);
+  border-radius: var(--r-lg);
+  background: var(--bg-raised);
+}
+.mafw-project-work .mafw-work-overview { flex: 0 0 auto; }
 .mafw-work-overview-head {
   align-items: flex-start;
   padding-bottom: 12px;

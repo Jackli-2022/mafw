@@ -29,7 +29,7 @@ import { mergeHiddenTodos } from "./todo-presenter"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { applyPartUpsert } from "./sse/chat-reducers"
 import { createToolPartScheduler } from "./sse/tool-part-scheduler"
-import { bumpGoalsRev } from "./goals-rev"
+import { bumpGoalsRev, goalsRev } from "./goals-rev"
 import { bumpCheckpointRev } from "./checkpoint-rev"
 import { keybindingFor } from "./keybinding-store"
 import { matchesCombo } from "./keybindings"
@@ -50,6 +50,7 @@ import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
+import { ProjectWorkView } from "./components/ProjectWorkView"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
@@ -2884,7 +2885,15 @@ export function MafwShell() {
                     showToastV2({ description: "已加入批注", duration: 1600 } as any)
                   }}
                   onOpenReview={() => applyWorkbenchView("review")}
-                  workView={<div class="mafw-empty">项目工作</div>}
+                  workView={
+                    <ProjectWorkView
+                      projectDir={currentProject()}
+                      refreshTick={() => Math.max(goalsRev(), podStore.revision())}
+                      composerRequest={goalComposerRequest()}
+                      onOpenGoal={(goal, focus) => openGoalDetail(goal.goalId, focus)}
+                      onGoalCreated={(goalId) => openGoalDetail(goalId)}
+                    />
+                  }
                   onSendComment={(sid, text) => {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
