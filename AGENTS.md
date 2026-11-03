@@ -166,7 +166,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 | `mafw_task_cancel` | Batch 4：取消持久任务（幂等�?|
 | `mafw_task_message` | Batch 4：给持久子代理任务续聊（terminal 任务会回�?working�?|
 
-> **插件 dev loop**：本仓库�?opencode �?`.opencode/plugins/mafw-plugin.ts` shim 直连 `../src/plugin`（v1 原生加载 TS，无需 tsc）；改动生效 = `mafw restart-agent`。仓库外项目靠全局 `file:<npm-prefix>/node_modules/@jack200714/mafw` 加载 `dist/plugin.js`（发布后 `npm install -g jack200714-mafw-<ver>.tgz` 更新）。包入口字段：`main` + `opencode.plugin` = `dist/plugin.js`�?026-10-05 修复：此�?tarball 不含 `dist/` 且全局配置指向旧包名路径，仓库外项目冻结在 v4.5.1）�?
+> **插件 dev loop**：本仓库�?opencode �?`.opencode/plugins/mafw-plugin.ts` shim 直连 `../../src/plugin`（原生加载 TS，无需 tsc；插件 import 必须按文件相对路径解析——opencode v2.2.5 起 Bun 严格文件相对解析，2026-11-03 修复 `../src/plugin` 只解析到不存在的 `.opencode/src/plugin`、插件加载必败并静默回退全局安装的 bug，server log ref err_0d1a5d0f，回归测试 `tests/plugin-shim-resolution.test.ts`）；改动生效 = `mafw restart-agent`。仓库外项目靠全局 `file:<npm-prefix>/node_modules/@jack200714/mafw` 加载 `dist/plugin.js`（发布后 `npm install -g jack200714-mafw-<ver>.tgz` 更新）。包入口字段：`main` + `opencode.plugin` = `dist/plugin.js`�?026-10-05 修复：此�?tarball 不含 `dist/` 且全局配置指向旧包名路径，仓库外项目冻结在 v4.5.1）�?
 
 ## 5. v6.8 新增系统
 
