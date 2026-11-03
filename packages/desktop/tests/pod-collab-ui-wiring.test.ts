@@ -297,7 +297,7 @@ test("Lead 从 Pod 打开前显式 ensure，并升级已有 tab 的 Lead 身份"
   assert.match(shell, /await podStore\.ensureLead\(\)/)
   assert.match(shell, /resolveLeadSession\(\{ leadSessionId: ensured\.sessionId \}\)/)
   assert.match(shell, /leadTabMetadata\(\)/)
-  assert.match(shell, /mergeTabIdentity\(prev, sid, lead, metadata\)/)
+  assert.match(shell, /mergeTabIdentity\(prev, sid, lead, metadata, title\)/)
   assert.match(shell, /dropOtherLeadTabs\(prev, sid\)/)
 })
 

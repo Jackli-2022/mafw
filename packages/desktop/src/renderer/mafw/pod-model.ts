@@ -15,6 +15,8 @@ import type {
   PodTaskStatus,
 } from "@mafw/sdk"
 import { podResultBadge, resultViewedKey } from "./pod-rail-badge"
+import { goalSessionTabTitle } from "./goal-session-title"
+import { isGeneratedSessionTitle } from "./session-tab-identity"
 
 export type PodTaskLane = "todo" | "in_progress" | "review" | "done" | "skipped" | "failed"
 
@@ -199,6 +201,79 @@ export function podSessionRoute(detail: PodDetail | null, sessionID: string): Po
   const scopeKind = (session as PodSession & { scopeKind?: string | null }).scopeKind ?? null
   const isDiscussion = scopeKind === "discussion" || session.node === "discussion"
   return { role, goalId: session.goalId ?? null, node: session.node ?? null, scopeKind, isDiscussion }
+}
+
+/** Task 14：Goal 会话的唯一身份（标题/角色/归属/是否已结束）。 */
+export interface GoalSessionIdentity {
+  role: PodMemberRole | null
+  goalId: string | null
+  revision: number | null
+  title: string
+  ended: boolean
+  /** 已结束且存在快照：只能打开 transcript，绝不走 live session。 */
+  transcript: boolean
+}
+
+export function goalSessionIdentity(
+  detail: PodDetail | null,
+  sessionID: string,
+): GoalSessionIdentity | null {
+  if (!detail || !sessionID) return null
+  const session = (detail.sessions ?? []).find((item) => item.sessionId === sessionID)
+  if (!session) return null
+  const route = podSessionRoute(detail, sessionID)
+  const goal = session.goalId
+    ? (detail.goals ?? []).find((item) => item.goalId === session.goalId)
+    : null
+  const revision = typeof goal?.activeRevision === "number"
+    ? goal.activeRevision
+    : (typeof goal?.revision === "number" ? goal.revision : null)
+  const goalTitle = goal?.title ?? ""
+  const role = route?.role ?? null
+  let title: string
+  if (role === "tech_lead" || role === "builder" || role === "reviewer") {
+    title = goalSessionTabTitle({ goalTitle, revision: revision ?? 1, role })
+  } else if (role === "lead") {
+    title = goalTitle ? `Lead · ${goalTitle}` : "Lead"
+  } else {
+    title = goalTitle || "Pod 会话"
+  }
+  const ended = !!session.endedAt
+  return {
+    role,
+    goalId: session.goalId ?? null,
+    revision,
+    title,
+    ended,
+    transcript: ended && !!session.transcriptRef,
+  }
+}
+
+/** 把已打开（含从布局恢复）的 Pod 会话 tab 升级为同一种 Goal 身份。 */
+export function reconcileGoalSessionTabs<T extends {
+  id: string
+  title?: string
+  metadata?: { mafw?: { role?: string } } | null
+}>(
+  tabs: T[],
+  detail: PodDetail | null,
+): T[] {
+  if (!detail) return tabs
+  let changed = false
+  const next = tabs.map((tab) => {
+    const identity = goalSessionIdentity(detail, tab.id)
+    if (!identity || identity.role === "lead") return tab
+    const role = identity.role
+    const nextTitle = isGeneratedSessionTitle(tab.title) ? identity.title : tab.title
+    if (tab.title === nextTitle && tab.metadata?.mafw?.role === role) return tab
+    changed = true
+    return {
+      ...tab,
+      title: nextTitle,
+      metadata: { ...(tab.metadata ?? {}), mafw: { role } },
+    }
+  })
+  return changed ? next : tabs
 }
 
 /**

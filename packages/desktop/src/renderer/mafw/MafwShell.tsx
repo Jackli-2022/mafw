@@ -52,6 +52,7 @@ import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
+import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
 import { ingestPodEvent, podStore, resolvePodDetailCached, techLeadInvite, techLeadTabTitle } from "./pod-store"
 import { podRailBadge, podResultBadge } from "./pod-rail-badge"
 import {
@@ -64,12 +65,14 @@ import {
 import {
   attentionTarget,
   goalRevisionOf,
+  goalSessionIdentity,
   latestUnviewedResult,
   leadSessionIdFromPod,
   podResultEvent,
   podResultNotice,
   podRoleForSession,
   podSessionRoute,
+  reconcileGoalSessionTabs,
   resultStatus,
   techLeadSendGate,
   type GoalDetailFocus,
@@ -398,7 +401,7 @@ export function MafwShell() {
     // A tab may have been opened earlier without knowing its role. Upgrade it
     // in place; opening a new Lead also drops the previous (possibly dead)
     // Lead tab so the strip never contains two "Lead" identities.
-    setSessions(prev => mergeTabIdentity(prev, sid, lead, metadata))
+    setSessions(prev => mergeTabIdentity(prev, sid, lead, metadata, title))
     if (lead === true) setSessions(prev => dropOtherLeadTabs(prev, sid))
     setActiveSessionId(sid)
     setActiveViewId(sid)
@@ -2061,10 +2064,27 @@ export function MafwShell() {
   const activeTechLeadBlocked = async (): Promise<string | null> => {
     return (await activeTechLeadGate()).blocked
   }
+  // 已结束会话：只有快照可读，绝不再走 live open（runtime 会话可能已被销毁）。
+  const [podTranscriptTarget, setPodTranscriptTarget] = createSignal<{ podId: string; sessionId: string } | null>(null)
+  const openPodTranscript = async (sessionId: string): Promise<void> => {
+    const detail = podStore.detail() ?? await resolveSendPod()
+    const podId = detail?.pod.id
+    if (!podId) {
+      showToastV2({ description: "鲸群尚未加载，无法读取会话快照", duration: 3500 } as any)
+      return
+    }
+    setPodTranscriptTarget({ podId, sessionId })
+  }
   // Pod 会话统一入口：Tech Lead 会话带上角色/Goal（供发送通道与 tab 语义使用），
-  // PodDock 成员会话、左栏鲸群面、Goal 时间线全部走这里。
+  // 成员、时间线、通知与历史恢复都从这里拿同一份 Goal/revision/role 身份。
   const openPodSession = async (sid: string, title?: string) => {
-    const detail = podStore.detail()
+    const detail = podStore.detail() ?? (sid ? await resolveSendPod() : null)
+    const identity = goalSessionIdentity(detail, sid)
+    if (sid && identity?.ended) {
+      if (identity.transcript) await openPodTranscript(sid)
+      else showToastV2({ description: "该会话已结束且没有可读快照", duration: 3500 } as any)
+      return
+    }
     const route = podSessionRoute(detail, sid)
     if (!sid || route?.role === "lead") {
       if (!detail) {
@@ -2081,19 +2101,20 @@ export function MafwShell() {
       }
       return
     }
-    if (route?.role === "tech_lead" && route.goalId) {
-      const goal = detail?.goals.find((item) => item.goalId === route.goalId)
-      if (route.isDiscussion) techLeadGoalBySession[sid] = route.goalId
-      openSessionTab(
-        sid,
-        title ?? (route.isDiscussion ? techLeadTabTitle(goal?.title) : undefined),
-        false,
-        { mafw: { role: "tech_lead" } },
-      )
+    if (identity && identity.role && identity.role !== "lead") {
+      if (route?.isDiscussion && identity.goalId) techLeadGoalBySession[sid] = identity.goalId
+      openSessionTab(sid, identity.title, false, { mafw: { role: identity.role } })
       return
     }
     openSessionTab(sid, title)
   }
+  // 已打开的 tab（含布局恢复的 Chat N）在 Pod 详情到达后升级为同一 Goal 身份。
+  createEffect(() => {
+    const detail = podStore.detail()
+    if (!detail) return
+    const next = reconcileGoalSessionTabs(sessions(), detail)
+    if (next !== sessions()) setSessions(next)
+  })
   const onPodOpenMessage = (messageId: string) => {
     void podStore.markRead(messageId)
     openPodPanel("inbox")
@@ -2921,6 +2942,15 @@ export function MafwShell() {
           onClose={() => setPodGoalId(null)}
           onOpenSession={(sid) => { void openPodSession(sid) }}
         />
+      </Show>
+      <Show when={podTranscriptTarget()}>
+        {(target) => (
+          <PodTranscriptOverlay
+            podId={target().podId}
+            sessionId={target().sessionId}
+            onClose={() => setPodTranscriptTarget(null)}
+          />
+        )}
       </Show>
       <Show when={activeQuestion()}>
         <QuestionWidget

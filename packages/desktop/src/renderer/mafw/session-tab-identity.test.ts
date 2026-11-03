@@ -38,3 +38,32 @@ test("replacing Lead drops stale lead tabs so only one remains", () => {
   ]
   assert.deepEqual(dropOtherLeadTabs(tabs, "new").map((tab) => tab.id), ["other"])
 })
+
+test("merging a Goal-aware title upgrades an existing Chat N tab", () => {
+  const tabs = [{ id: "s1", title: "Chat 3" }]
+  assert.deepEqual(mergeTabIdentity(tabs, "s1", false, { mafw: { role: "builder" } }, "Builder · 修复登录 · rev 1"), [{
+    id: "s1",
+    title: "Builder · 修复登录 · rev 1",
+    lead: false,
+    metadata: { mafw: { role: "builder" } },
+  }])
+})
+
+test("merging never erases a title with an empty one", () => {
+  const tabs = [{ id: "s1", title: "Builder · A · rev 1" }]
+  assert.deepEqual(mergeTabIdentity(tabs, "s1", false, undefined, "   "), [{
+    id: "s1",
+    title: "Builder · A · rev 1",
+    lead: false,
+  }])
+})
+
+test("merging never overwrites a user-renamed tab", () => {
+  const tabs = [{ id: "s1", title: "我自己起的名字" }]
+  assert.deepEqual(mergeTabIdentity(tabs, "s1", false, { mafw: { role: "builder" } }, "Builder · A · rev 1"), [{
+    id: "s1",
+    title: "我自己起的名字",
+    lead: false,
+    metadata: { mafw: { role: "builder" } },
+  }])
+})
