@@ -111,3 +111,64 @@ test("stopSpeaking from interrupted state returns to idle", async () => {
   expect(vs.state).toBe("idle")
   vs.dispose()
 })
+
+// ── 播放端背压：SSE 读流在缓冲超水位时暂停，降到低水位后恢复 ──
+// 背景：小米流式 TTS 实测 ~5x 实时速率，无背压时 30s 环形缓冲吃满后
+// worklet 静默丢帧 → 极速乱读。读流按水位暂停 = TCP/流队列蓄水，一帧不丢。
+test("backpressure: SSE reads pause above high-water and resume after playback drains", async () => {
+  const { vad } = fakeVad()
+  const CHUNK_FRAMES = 12000 // 0.5s @24k
+  const TOTAL_CHUNKS = 400 // 200s 音频，远超 12s 高水位
+  const sseChunk = new TextEncoder().encode(
+    `data: ${JSON.stringify({ data: Buffer.alloc(CHUNK_FRAMES * 2, 0).toString("base64"), voice: "茉莉" })}\n\n`,
+  )
+  let pulls = 0
+  const body = new ReadableStream<Uint8Array>({
+    pull(c) {
+      if (pulls >= TOTAL_CHUNKS) { c.close(); return }
+      pulls++
+      c.enqueue(sseChunk.slice())
+    },
+  })
+  let playedMs = 0
+  let fedFrames = 0
+  const registered: string[] = []
+  const player = {
+    feed: mock((pcm: Int16Array) => { fedFrames += pcm.length }),
+    flush: mock(() => {}),
+    get playCursorMs() { return playedMs },
+    on: (event: string, cb: () => void) => {
+      registered.push(event)
+      if (event === "drained") setTimeout(cb, 0) // 红态（无背压跑完整流）也能终止
+    },
+    dispose: async () => {},
+    markEof: mock(() => {}),
+  }
+  const vs = createVoiceSession({
+    ...baseDeps(vad),
+    fetchImpl: (async () => new Response(body, { status: 200, headers: { "x-tts-sample-rate": "24000" } })) as any,
+    _makeCtx: () => fakeCtx() as any,
+    _makePlayer: async () => player as any,
+  } as any)
+  const done = vs.speak("长文本").catch(() => {})
+  try {
+    await new Promise(r => setTimeout(r, 900))
+    const pausedPulls = pulls
+    expect(fedFrames).toBeGreaterThan(0)
+    // 高水位 12s，0.5s/块 → 读到 ~24 块（+ 流预读 1-2 块）即暂停
+    expect(pausedPulls).toBeLessThanOrEqual(30)
+    // 游标冻结（播放未推进）→ 不再读取
+    await new Promise(r => setTimeout(r, 400))
+    expect(pulls).toBe(pausedPulls)
+    // 播放推进到缓冲低于低水位（4s）→ 恢复读流
+    playedMs = (fedFrames / 24000) * 1000 - 2000
+    await new Promise(r => setTimeout(r, 700))
+    expect(pulls).toBeGreaterThan(pausedPulls)
+    // 溢出可观测性：播放器注册了 overflow 监听（不再静默丢帧）
+    expect(registered).toContain("overflow")
+  } finally {
+    vs.stopSpeaking("manual")
+    await done
+    vs.dispose()
+  }
+})

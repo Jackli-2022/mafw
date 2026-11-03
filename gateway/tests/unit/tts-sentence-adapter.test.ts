@@ -1,4 +1,4 @@
-import { splitSentences, adaptToStream } from '../../src/tts/sentence-adapter';
+import { splitSentences, adaptToStream, streamSentences } from '../../src/tts/sentence-adapter';
 import type { TtsEngine, TtsProfile } from '../../src/tts/types';
 
 describe('splitSentences', () => {
@@ -62,5 +62,66 @@ describe('adaptToStream', () => {
     const chunks: unknown[] = [];
     for await (const c of adaptToStream(engine, '一。二。三。', {}, ctrl.signal)) chunks.push(c);
     expect(chunks.length).toBeLessThan(3);
+  });
+});
+
+const capsNative: TtsProfile = {
+  streaming: 'native', voiceCloning: false, styleControl: false, languages: ['zh'], sampleRate: 24000,
+};
+
+describe('streamSentences', () => {
+  test('native engine: splits text per sentence instead of one oversized call', async () => {
+    const calls: string[] = [];
+    const engine: TtsEngine = {
+      name: 'fake-native', profile: capsNative,
+      voices: () => [],
+      async synthesize() { throw new Error('whole-text path should not be used'); },
+      async *synthesizeStream(text: string) {
+        calls.push(text);
+        yield { pcm: Buffer.from(`[${text}]`), sampleRate: 24000 };
+      },
+    };
+    // 250 字无标点长句会被硬切，验证任何单次调用都不超过 maxLen
+    const long = '第一句。' + '啊'.repeat(250) + '！最后一句？';
+    const chunks: { pcm: Buffer; sampleRate: number }[] = [];
+    for await (const c of streamSentences(engine, long, {}, new AbortController().signal)) chunks.push(c);
+    expect(calls[0]).toBe('第一句。');
+    expect(calls[calls.length - 1]).toBe('最后一句？');
+    expect(calls.length).toBeGreaterThanOrEqual(4);
+    expect(calls.every((s) => s.length <= 100)).toBe(true);
+    expect(chunks.map((c) => c.pcm.toString()).join('')).toBe(calls.map((s) => `[${s}]`).join(''));
+  });
+
+  test('native engine: stops between sentences when aborted', async () => {
+    const ctrl = new AbortController();
+    let calls = 0;
+    const engine: TtsEngine = {
+      name: 'fake-native', profile: capsNative,
+      voices: () => [],
+      async synthesize() { throw new Error('x'); },
+      async *synthesizeStream() {
+        calls++;
+        ctrl.abort();
+        yield { pcm: Buffer.alloc(1), sampleRate: 24000 };
+      },
+    };
+    const chunks: unknown[] = [];
+    for await (const c of streamSentences(engine, '一。二。三。', {}, ctrl.signal)) chunks.push(c);
+    expect(calls).toBe(1);
+    expect(chunks).toHaveLength(1);
+  });
+
+  test('non-streaming engine delegates to adaptToStream (per-sentence synthesize)', async () => {
+    const calls: string[] = [];
+    const engine: TtsEngine = {
+      name: 'fake-none', profile: capsNone,
+      voices: () => [],
+      async synthesize(text: string) { calls.push(text); return wavBuffer(8); },
+      async *synthesizeStream() { throw new Error('nope'); },
+    };
+    const chunks: unknown[] = [];
+    for await (const c of streamSentences(engine, '甲。乙。', {}, new AbortController().signal)) chunks.push(c);
+    expect(calls).toEqual(['甲。', '乙。']);
+    expect(chunks).toHaveLength(2);
   });
 });

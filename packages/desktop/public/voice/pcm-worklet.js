@@ -21,12 +21,15 @@ class PcmPlayerProcessor extends AudioWorkletProcessor {
       const msg = e.data
       if (msg.type === 'feed') {
         const pcm = msg.pcm // Int16Array
+        let dropped = 0
         for (let i = 0; i < pcm.length; i++) {
-          if (this.buffered >= this.capacity) break // 满了丢弃（30s 不可能吃满）
+          if (this.buffered >= this.capacity) { dropped = pcm.length - i; break } // 满了丢弃（背压失效时的最后防线）
           this.ring[this.writePos] = pcm[i] / 32768
           this.writePos = (this.writePos + 1) % this.capacity
           this.buffered++
         }
+        // 静默丢帧曾让"极速乱读"藏了数月：溢出必须上报（主线程 console.warn）
+        if (dropped > 0) this.port.postMessage({ type: 'overflow', droppedFrames: dropped })
         if (!this.playing && this.buffered >= this.startupFrames) {
           this.playing = true
           this.port.postMessage({ type: 'started' })

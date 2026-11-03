@@ -1248,6 +1248,9 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 - **许可红线**（内置只从安全档选）：ChatTTS/F5-TTS/Fish S2（非商用/研究许可）、IndexTTS（商用需授权）、edge-tts（微�?ToS）、Piper（GPL�?*不内�?*，仅可作用户自装插件；CosyVoice/GPT-SoVITS 等经 tts-plugins 接入
 - 测试：gateway jest 27 �?TTS 单测（registry/adapter/mimo/interrupt/loader/kokoro）；desktop 12 �?voice 单测（turn/silero hub/pcm-align/session 状态机�?
 
+- **句切分同源化（2026-11-03）**：`streamSentences()` 统一流式入口——native 引擎也按句串流（此前整段直发，>2000 字触发引擎文本上限、长回复整条播不出；切句后单次请求受控且首句即出声）；`/api/tts/stream` 统一走该入口
+- **播放端背压（2026-11-03，修「极速乱读」）**：`voice/backpressure.ts` 水位（high 12s / low 4s / 250ms 轮询）+ `session.ts` 读 SSE 闸门——已投喂未播放超 high 暂停 `reader.read()`（流/TCP 蓄水一帧不丢），降到 low 恢复。实测小米流式 TTS 4.96x 实时吐音频，旧 worklet「满了静默丢弃」令 ~7.2s 后丢 ~49% 帧（时间压缩+爆音）；溢出现在上报 `overflow` + `console.warn`。调研：`docs/research/2026-11-03-moss-live-duplex-research.md`
+
 ### 5.22 Goal 编排 P1：NodeDriver + 节点�?Trace�?026-10-08�?
 
 goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（graph/checkpointer/interrupt/Command-resume）退�?*，换�?state 文件 + 事件驱动�?`NodeDriver`（`gateway/src/core/goal/`）。spec `docs/superpowers/specs/2026-10-08-goal-orchestration-p1-design.md`；plan `docs/superpowers/plans/2026-10-08-goal-orchestration-p1.md`�?

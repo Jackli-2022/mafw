@@ -2222,6 +2222,22 @@ class MafwScheduler {
     if (identity) this.identityState.bind(sessionId, identity, 'session');
   }
 
+  private unregisterInternalSession(sessionId: string): void {
+    this.internalSessionRoles.delete(sessionId);
+    this.getGatewayDb().kvDelete('internal-session', sessionId);
+    this.identityState.unbind(sessionId);
+  }
+
+  /** Retired Leads stay readable as ordinary history, never as current Lead candidates. */
+  private async archiveLeadSession(sessionId: string): Promise<void> {
+    try {
+      await this.sdkSession.updateMetadata(sessionId, { mafw: { role: 'lead-archived' } });
+    } catch (err: any) {
+      log.warn(`[Lead] archived metadata update failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
+    }
+    this.unregisterInternalSession(sessionId);
+  }
+
   private getPool(): SessionWorkerPool {
     if (!this.workerPool) {
       if (!this.runtime) throw new Error('runtime not available');
@@ -3925,7 +3941,7 @@ class MafwScheduler {
         await this.sdkSession.registerExternal(sessionId, dir, projectLeadSessionMetadata())
           .catch((err: any) => log.warn(`[Scheduler] Lead local register failed: ${err?.message ?? err} (non-fatal)`));
       },
-      archiveLead: async () => { /* Task 4 wires archived Lead evidence */ },
+      archiveLead: (sessionId) => this.archiveLeadSession(sessionId),
       bindPodLead: async (podId, sessionId) => {
         await this.podService?.bindLead(podId, sessionId);
       },
@@ -3959,6 +3975,7 @@ class MafwScheduler {
       },
       getSession: (sessionID) => this.runtime!.session.get({ sessionID }),
       messages: (sessionID, limit) => this.runtime!.session.messages({ sessionID, limit }).then((r: any) => r?.data ?? []),
+      archiveLeadSession: (sessionId) => this.archiveLeadSession(sessionId),
       memoryRoot: path.join(os.homedir(), '.mafw', 'pods'),
       listRegisteredProjectDirs: () => Array.from(this.registeredProjects.keys()),
       ensureMemory: (podId, projectName) => this.podMemoryService.ensurePodMemory(podId, projectName),

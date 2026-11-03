@@ -37,6 +37,6 @@ export interface TtsPlayer {
   feed(pcm: Int16Array): void
   flush(): void
   readonly playCursorMs: number
-  on(event: 'started' | 'drained' | 'flushed', cb: () => void): void
+  on(event: 'started' | 'drained' | 'flushed' | 'overflow', cb: () => void): void
   dispose(): Promise<void>
 }

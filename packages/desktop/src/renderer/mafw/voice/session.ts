@@ -1,6 +1,7 @@
 import type { TtsPlayer, VadAnalyzer, VoiceState } from "./types"
 import type { TurnStopStrategy } from "./types"
 import { createAudioWorkletPlayer, alignPcmChunks } from "./worklet-player"
+import { VOICE_BACKPRESSURE, bufferedMsOf } from "./backpressure"
 
 export interface VoiceSessionDeps {
   vad: VadAnalyzer
@@ -167,6 +168,8 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
     const makePlayer = deps._makePlayer ?? createAudioWorkletPlayer
     const player = await makePlayer(activeCtx) as TtsPlayer & { markEof?(): void }
     activePlayer = player
+    // 溢出可观测性：背压正常时永不触发；触发 = 丢帧（曾经的"极速乱读"静默 bug）
+    player.on("overflow", () => console.warn("[voice] player buffer overflow — frames dropped (backpressure failed?)"))
     const t3 = performance.now()
     let firstChunkMs = -1
     let firstFeedMs = -1
@@ -174,12 +177,24 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
       const startedMs = Math.round(performance.now() - t0)
       console.log(`[voice][perf] speaking starts at ${startedMs}ms (streamUrl=${Math.round(t1 - t0)} headers=${Math.round(t2 - t1)} player=${Math.round(t3 - t2)} firstChunk=${Math.round(firstChunkMs - t0)} firstFeed=${Math.round(firstFeedMs - t0)})`)
     })
+    // 播放端背压：已投喂未播放的音频超 highWater 就暂停读 SSE（TCP/流队列蓄水），
+    // 掉到 lowWater 以下恢复。小米 TTS ~5x 实时生成，无此闸门时 worklet 缓冲必溢出丢帧。
+    let fedFrames = 0
+    const awaitDrain = async () => {
+      if (bufferedMsOf(fedFrames, player.playCursorMs ?? 0, sampleRate) <= VOICE_BACKPRESSURE.highWaterMs) return
+      while (!signal.aborted) {
+        if (bufferedMsOf(fedFrames, player.playCursorMs ?? 0, sampleRate) <= VOICE_BACKPRESSURE.lowWaterMs) return
+        await new Promise((r) => setTimeout(r, VOICE_BACKPRESSURE.pollMs))
+      }
+    }
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let remainder = new Uint8Array(0)
     let buf = ""
     try {
       while (true) {
+        await awaitDrain()
+        if (signal.aborted || (activeCtx.state as string) === "closed") throw new DOMException("aborted", "AbortError")
         const { done, value } = await reader.read()
         if (done) break
         if (signal.aborted || activeCtx.state === "closed") throw new DOMException("aborted", "AbortError")
@@ -202,6 +217,7 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
           if (aligned.length === 0) continue
           if (firstChunkMs < 0) firstChunkMs = performance.now()
           player.feed(new Int16Array(aligned.buffer, aligned.byteOffset, aligned.length / 2))
+          fedFrames += aligned.length / 2
           if (firstFeedMs < 0) firstFeedMs = performance.now()
         }
       }
