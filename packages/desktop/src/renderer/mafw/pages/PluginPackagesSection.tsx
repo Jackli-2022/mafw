@@ -19,6 +19,7 @@ import { SelectV2 } from "@mafw/ui/v2/select-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
 import { describePackageAction, type PackageActionResultLike } from "../plugins/package-action-feedback"
+import { creatorEntryReasonText, type CreatorEntryReason } from "./creator-entry"
 import { PluginConfigPage } from "../plugins/PluginConfigPage"
 import {
   pluginClientRevision,
@@ -55,7 +56,13 @@ function pillClass(view: PackageRowView): string {
   return "mafw-hub-pill"
 }
 
-export function PluginPackagesSection(props: { sessionID?: string }) {
+export interface CreatorEntryControl {
+  available: boolean
+  reason?: CreatorEntryReason
+  onCreate: () => void
+}
+
+export function PluginPackagesSection(props: { sessionID?: string; creatorEntry?: CreatorEntryControl }) {
   const [inventory, setInventory] = createSignal<PluginsPackageEntry[]>([])
   const [loading, setLoading] = createSignal(false)
   const [loadError, setLoadError] = createSignal("")
@@ -333,6 +340,31 @@ export function PluginPackagesSection(props: { sessionID?: string }) {
           >
             {pickerBusy() ? "选择中…" : "安装本地目录"}
           </ButtonV2>
+          {/* Creator entry (spec §15.7): opens an ordinary Session whose agent
+              is `mafw-create`. Availability is derived by the shell; the
+              inline reason keeps a disabled button from failing silently. */}
+          <Show when={props.creatorEntry}>
+            {(entry) => (
+              <>
+                <Show when={!entry().available}>
+                  <span
+                    class="mafw-config-hint"
+                    style={{ "margin-top": "0", "white-space": "nowrap" }}
+                  >
+                    {creatorEntryReasonText(entry().reason)}
+                  </span>
+                </Show>
+                <ButtonV2
+                  variant="outline"
+                  size="small"
+                  disabled={!entry().available}
+                  onClick={() => entry().onCreate()}
+                >
+                  让 Agent 创建插件
+                </ButtonV2>
+              </>
+            )}
+          </Show>
         </div>
         <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
           <div class="mafw-config-section-desc">

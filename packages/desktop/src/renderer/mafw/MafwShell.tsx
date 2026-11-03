@@ -111,6 +111,7 @@ import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
 import { AutomationsPage } from "./pages/Automations"
 import { ConfigPage, isNavKey, type NavKey } from "./pages/Config"
+import { creatorEntryState, reusableCreatorSession } from "./pages/creator-entry"
 import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
 import type { AskCardData } from "./components/AskCard"
 import type { PermissionCardData } from "./components/PermissionCard"
@@ -1408,15 +1409,22 @@ export function MafwShell() {
   // Active session
   const active = () => sessions().find(s => s.id === activeSessionId()) || null
 
-  async function createSession(opts?: { noReveal?: boolean }) {
+  async function createSession(opts?: { noReveal?: boolean; requirePersisted?: boolean }) {
     console.log("[mafw] createSession")
-    setShowWelcome(false)
-    setShowConfig(false)
-    setActiveTab("chat")
+    const enterChat = () => {
+      setShowWelcome(false)
+      setShowConfig(false)
+      setActiveTab("chat")
+    }
+    // Persisted-only callers (Creator entry) must leave the current view alone
+    // when the runtime cannot create the Session, so they fail without a fake
+    // `local-` Session and without silently closing Config.
+    if (!opts?.requirePersisted) enterChat()
     try {
       const result = await window.api.mafw.sessions.create() as any
       const id = result.id || result.sessionID || `sess-${Date.now()}`
       console.log("[mafw] createSession result id:", id)
+      if (opts?.requirePersisted) enterChat()
       const userMsgId = `user-${Date.now()}`
       const sess: ChatSession = { id, title: `Chat ${sessions().length + 1}`, userMsgId, assistantMsgId: null, done: false }
       setSessions(prev => [...prev, sess])
@@ -1435,6 +1443,11 @@ export function MafwShell() {
       }
       return id
     } catch {
+      if (opts?.requirePersisted) {
+        showToastV2({ description: "无法创建会话：Gateway 未连接", duration: 4000 })
+        return ""
+      }
+      enterChat()
       const id = `local-${Date.now()}`
       setSessions(prev => [...prev, { id, title: `Chat ${sessions().length + 1}`, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false }])
       setActiveSessionId(id)
@@ -2106,6 +2119,32 @@ export function MafwShell() {
     return primaryAgents().find(a => agentKey(a) === name) ?? null
   }
 
+  // ── Creator entry (spec §15.7) ──────────────────────────────────────────
+  // Ordinary blank Session + `mafw-create` agent switch through the existing
+  // channels: no Creator Session API, draft store or second agent binding.
+  const creatorAgentEntry = () => primaryAgents().find(a => isAgentKey(a, "mafw-create")) ?? null
+  const creatorEntry = createMemo(() =>
+    creatorEntryState({
+      agentsLoaded: agentsData().length > 0,
+      hasCreator: !!creatorAgentEntry(),
+      isWorktree: benchRoot() !== currentProject(),
+    })
+  )
+  const openCreatorSession = async (): Promise<void> => {
+    if (!creatorEntry().available) return
+    const agent = creatorAgentEntry()
+    if (!agent) return
+    const reusable = reusableCreatorSession({
+      activeSessionID: activeSessionId(),
+      messagesBySession: store.message,
+    })
+    const sid = reusable ?? (await createSession({ noReveal: true, requirePersisted: true }))
+    if (!sid) return // persisted creation failed (toast already shown)
+    applyAgentSwitch(agent, sid)
+    setShowConfig(false)
+    openSessionTab(sid)
+  }
+
   // 2.1.0 sticky agent：session.agent 是运行时真值（build/plan/…）——
   // 应用重启后用它把 agent 药丸补回来；本地已有选择时不覆盖
   // （用户刚点的选择先于服务端旧值，直到下一条消息把切换写入会话）。
@@ -2303,7 +2342,7 @@ export function MafwShell() {
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
             {showConfig() ? (
-              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme() ?? undefined} onToggleTheme={toggleTheme} projectDir={(store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined) as string | undefined} sessionID={currentSessionID() || undefined} />
+              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme() ?? undefined} onToggleTheme={toggleTheme} projectDir={(store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined) as string | undefined} sessionID={currentSessionID() || undefined} onCreatePlugin={() => void openCreatorSession()} creatorEntry={creatorEntry()} />
             ) : connDown() && activeTab() !== "chat" ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : activeTab() === "chat" ? (
