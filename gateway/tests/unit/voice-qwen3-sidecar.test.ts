@@ -211,6 +211,54 @@ test('rejects a listener whose health payload is not JSON', async () => {
   expect(spawned).toBe(false);
 });
 
+// Regression guard for the compatibility predicate. Every body below has a
+// valid `model`, so it gets past the model check and can only be rejected by
+// the `ok === true` or `chunkSizeSec` branches.
+const incompatibleHealthBodies: Array<{ port: number; label: string; body: Record<string, unknown> }> = [
+  {
+    port: 3930,
+    label: 'missing chunkSizeSec',
+    body: { ok: true, model: 'Qwen/Qwen3-ASR-1.7B' },
+  },
+  {
+    port: 3931,
+    label: 'string chunkSizeSec',
+    body: { ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: '0.16' },
+  },
+  {
+    port: 3932,
+    label: 'zero chunkSizeSec',
+    body: { ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: 0 },
+  },
+  {
+    port: 3933,
+    label: 'negative chunkSizeSec',
+    body: { ok: true, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: -1 },
+  },
+  {
+    port: 3934,
+    label: 'ok:false with an otherwise full shape',
+    body: { ok: false, model: 'Qwen/Qwen3-ASR-1.7B', chunkSizeSec: 0.16 },
+  },
+];
+
+test.each(incompatibleHealthBodies)(
+  'rejects and never spawns when health is incompatible: $label',
+  async ({ port, body }) => {
+    let spawned = false;
+    const sidecar = new Qwen3AsrSidecar({
+      port,
+      probePortImpl: async () => true,
+      spawnImpl: (() => { spawned = true; return new FakeChild(); }) as any,
+      fetchImpl: (async () => ({ ok: true, json: async () => body })) as any,
+    });
+    await expect(sidecar.start()).rejects.toThrow(/sidecar_port_in_use|not a compatible/i);
+    expect(spawned).toBe(false);
+    expect(sidecar.isExternal()).toBe(false);
+    expect(sidecar.pid).toBeUndefined();
+  },
+);
+
 test('isReady only accepts the compatible health contract', async () => {
   const compatible = new Qwen3AsrSidecar({
     port: 3924,
