@@ -34,10 +34,18 @@ export const INTERNAL_SESSION_ROLES: readonly string[] = [
   'lead',
   'tech-lead',
   'tech_lead',
+  'builder',
+  'reviewer',
+  'probe',
 ];
 
 /** 内部会话的 agent 名（persist 在 session 本体上，kv 剪枝后仍可判定）。 */
-const INTERNAL_SESSION_AGENTS: readonly string[] = ['memory-curator', 'mafw-tech-lead'];
+const INTERNAL_SESSION_AGENTS: readonly string[] = [
+  'memory-curator',
+  'mafw-tech-lead',
+  'mafw-execute',
+  'mafw-review',
+];
 
 /** session metadata 里声明的内部角色（`metadata.mafw.role`）。 */
 const INTERNAL_METADATA_ROLES: readonly string[] = ['lead', 'tech-lead', 'tech_lead'];

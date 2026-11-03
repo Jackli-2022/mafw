@@ -5,6 +5,7 @@ import {
   canonicalProjectDir,
   parentProjectDirForWorktree,
   podIdForProject,
+  podInternalSessionRoleForNode,
   roleForNode,
 } from '../../../src/core/pod/pod-identity';
 
@@ -54,5 +55,12 @@ describe('pod identity', () => {
     expect(roleForNode('plan')).toBe('tech_lead');
     expect(roleForNode('execute')).toBe('builder');
     expect(roleForNode('review')).toBe('reviewer');
+  });
+
+  test('podInternalSessionRoleForNode covers plan/probe/execute/review', () => {
+    expect(podInternalSessionRoleForNode('plan')).toBe('tech_lead');
+    expect(podInternalSessionRoleForNode('probe')).toBe('probe');
+    expect(podInternalSessionRoleForNode('execute')).toBe('builder');
+    expect(podInternalSessionRoleForNode('review')).toBe('reviewer');
   });
 });

@@ -70,7 +70,7 @@ import { PodMessageDelivery } from './core/pod/pod-message-delivery';
 import { PodA2ABridge } from './core/pod/pod-a2a-bridge';
 import { PodA2AAgent } from './core/pod/pod-a2a-agent';
 import { PodA2AArtifactStore } from './core/pod/pod-a2a-artifacts';
-import { canonicalProjectDir } from './core/pod/pod-identity';
+import { canonicalProjectDir, podInternalSessionRoleForNode } from './core/pod/pod-identity';
 import {
   handleSubagentCancel, handleSubagentList, handleSubagentMessage,
   handleSubagentResult, handleSubagentSpawn,
@@ -1062,6 +1062,14 @@ class MafwScheduler {
       onSessionCreated: (info) => {
         recordSessionInDb(this.getGatewayDb(), info);
         this.podService?.bindSession(info.goalId, info.phase as 'plan' | 'probe' | 'execute' | 'review', info.sessionId);
+        // Plan reuses the Tech Lead discussion session, which is already
+        // internal. Probe/execute/review get their own hidden role here.
+        if (info.phase === 'probe' || info.phase === 'execute' || info.phase === 'review') {
+          this.registerInternalSession(
+            info.sessionId,
+            podInternalSessionRoleForNode(info.phase),
+          );
+        }
         const mafwDir = this.goalDriverMafwDirCache.get(info.goalId);
         if (mafwDir) this.attachBudgetGuardForGoal(info.goalId, info.sessionId, mafwDir);
       },

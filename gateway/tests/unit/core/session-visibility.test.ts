@@ -15,9 +15,14 @@ describe('isHiddenSession', () => {
   });
 
   it('hides sessions with internal worker roles', () => {
-    for (const role of ['index-scan', 'extract', 'reflect']) {
+    for (const role of ['index-scan', 'extract', 'reflect', 'builder', 'reviewer', 'probe']) {
       expect(isHiddenSession({ id: 's1', title: 'normal' }, () => role)).toBe(true);
     }
+  });
+
+  it('hides Pod worker agents even when the role registry lost them', () => {
+    expect(isHiddenSession({ id: 'b1', agent: 'mafw-execute', title: 'normal' }, noRole)).toBe(true);
+    expect(isHiddenSession({ id: 'r1', agent: 'mafw-review', title: 'normal' }, noRole)).toBe(true);
   });
 
   it('hides memory-curator agent sessions even when the role registry lost them (kv TTL prune)', () => {

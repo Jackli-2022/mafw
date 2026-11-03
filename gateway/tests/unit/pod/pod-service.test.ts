@@ -77,6 +77,33 @@ describe('PodService', () => {
     expect(store.listSessions(first.pod.id).filter((s) => s.node === 'coordination' && !s.endedAt)).toHaveLength(1);
   });
 
+  test('ensure normalizes a legacy lead roster agentName without changing its id', async () => {
+    const pod = store.ensurePod({
+      id: 'pod_legacy',
+      projectDir: fs.realpathSync(projectDir),
+      name: 'legacy',
+      now: now(),
+    });
+    store.upsertMember({
+      id: 'member_legacy_lead',
+      podId: pod.id,
+      role: 'lead',
+      displayName: 'Lead',
+      agentName: 'manager',
+      modelProvider: null,
+      modelId: null,
+      status: 'available',
+      configJson: null,
+      now: now(),
+    });
+
+    const detail = await service.ensure(projectDir);
+    const lead = detail.members.find((member) => member.role === 'lead');
+
+    expect(lead?.id).toBe('member_legacy_lead');
+    expect(lead?.agentName).toBe('lead');
+  });
+
   test('ensure rebinds Lead when the Manager session rotates', async () => {
     const first = await service.ensure(projectDir);
     expect(store.getMemberBySession('ses_manager')?.role).toBe('lead');

@@ -330,7 +330,15 @@ export class PodService {
 
   private ensureMembers(podId: string): void {
     for (const spec of MEMBER_SPECS) {
-      if (this.deps.store.getMemberByRole(podId, spec.role)) continue;
+      const existing = this.deps.store.getMemberByRole(podId, spec.role);
+      if (existing) {
+        // Legacy Pods stored the Lead identity under the deprecated manager
+        // agent name. Keep the member id/bindings, normalize only the name.
+        if (spec.role === 'lead' && existing.agentName === 'manager') {
+          this.deps.store.upsertMember({ ...existing, agentName: 'lead', now: this.deps.now() });
+        }
+        continue;
+      }
       this.deps.store.upsertMember({
         id: this.deps.newId(),
         podId,

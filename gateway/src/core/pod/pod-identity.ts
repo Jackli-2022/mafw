@@ -39,3 +39,13 @@ export function roleForNode(node: PodNode): PodMemberRole {
   if (node === 'probe' || node === 'execute') return 'builder';
   return 'reviewer';
 }
+
+/** Hidden internal-session vocabulary for a Pod node (probe has its own role). */
+export function podInternalSessionRoleForNode(
+  node: 'plan' | 'probe' | 'execute' | 'review',
+): 'tech_lead' | 'probe' | 'builder' | 'reviewer' {
+  if (node === 'plan') return 'tech_lead';
+  if (node === 'probe') return 'probe';
+  if (node === 'execute') return 'builder';
+  return 'reviewer';
+}
