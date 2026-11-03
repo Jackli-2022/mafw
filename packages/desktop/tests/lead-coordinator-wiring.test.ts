@@ -29,7 +29,7 @@ test("ChatPane 的协调会话判定只接受 lead，并继续锁住 agent 切�
 
 test("MafwShell 从显式 Lead id 解析隐藏会话，并把 metadata 传进 tab", () => {
   assert.match(shell, /import \{[^}]*resolveLeadSession[^}]*\} from "\.\/lead-session"/)
-  assert.match(shell, /resolveLeadSession\(\{[\s\S]{0,200}leadSessionId: currentLeadId\(/)
+  assert.match(shell, /resolveLeadSession\(\{ leadSessionId: ensured\.sessionId \}\)/)
   assert.match(shell, /openSessionTab\(lead\.id, lead\.title, lead\.lead, lead\.metadata\)/)
   assert.match(shell, /isLeadRole\(info\?\.metadata\?\.mafw\?\.role\)/)
 })
@@ -43,10 +43,9 @@ test("恢复布局不把隐藏的 Lead 当成已删除会话（prune 前带上 P
   assert.doesNotMatch(shell, /fetchManagerSession/)
 })
 
-test("WelcomeHome 用 lead 判定过滤最近会话，错误文案指向 Lead", () => {
+test("WelcomeHome 只用 lead 判定过滤最近会话，不保留 manager fallback", () => {
   assert.match(welcome, /isLeadRole\(/)
-  assert.match(welcome, /未找到 Lead 会话/)
-  assert.doesNotMatch(welcome, /未找到 Manager 会话/)
+  assert.doesNotMatch(welcome, /isLeadSessionRole\(/)
   assert.match(welcome, />Lead 会话</)
 })
 

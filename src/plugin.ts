@@ -363,19 +363,6 @@ export default {
       });
 
       editor.add({
-        name: 'new-topic',
-        description: 'Start a new MAFW manager topic (archives the current session to history)',
-        async execute({ sessionID }: any) {
-          try {
-            const result = await gatewayJson({ command: 'new-topic' }, 60000);
-            reply(sessionID, result?.message || JSON.stringify(result));
-          } catch (err: any) {
-            reply(sessionID, `Error: ${err.message}`);
-          }
-        },
-      });
-
-      editor.add({
         name: 'btw',
         description: 'One-off side-question session: answer in a throwaway session, keep the main thread clean',
         async execute({ sessionID, prompt }: any) {

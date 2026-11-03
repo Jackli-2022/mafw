@@ -95,7 +95,7 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void; pr
             <SkeletonRows rows={3} h="52px" />
           </div>
         ) : goals().length === 0 ? (
-          <EmptyState glyph="◎" title="还没有 Goal" hint="让 Manager 为你编排第一个目标，或从欢迎页快速创建" />
+          <EmptyState glyph="◎" title="还没有 Goal" hint="让 Lead 为你编排第一个目标，或从欢迎页快速创建" />
         ) : (
           goals().map(g => (
             <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestGoalMenu(g, event)}>

@@ -148,7 +148,6 @@ export type ChatPaneProps = {
   primaryAgents: () => any[]
   subagentAgents: () => any[]
   subagentRunning: (id: string) => boolean
-  onNewTopic?: () => void
   readOnly?: boolean
   parentID?: string | null
   onBackToParent?: () => void
@@ -1166,7 +1165,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     { id: "mafw-goal", trigger: "/goal", title: "新建 Goal", description: `提交 Goal 给 ${leadEntryLabel()}`, group: "mafw" },
     { id: "mafw-status", trigger: "/status", title: "MAFW 状态", description: "查看当前状态", group: "mafw" },
     { id: "mafw-merge", trigger: "/merge-memory", title: "记忆融合", description: "合并 worktree 记忆", group: "mafw" },
-    { id: "mafw-new-topic", trigger: "/new-topic", title: "新话题", description: `开新话题（当前 ${leadEntryLabel()} 会话归档）`, group: "mafw" },
     { id: "mafw-btw", trigger: "/btw", title: "支线问答", description: "一次性会话回答支线问题，不污染主线", group: "mafw" },
     { id: "mafw-waitwhat", trigger: "/waitwhat", title: "没听懂，重述", description: "用简明语言+项目术语重述上一条回复", group: "mafw" },
   ]
@@ -1778,11 +1776,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     <span class="mafw-session-status-dot" />
                     Running
                   </span>
-                </Show>
-                <Show when={isLead() && props.onNewTopic}>
-                  <TooltipV2 value="开新话题（当前会话归档为历史）" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onNewTopic?.() }}>新话题</ButtonV2>
-                  </TooltipV2>
                 </Show>
                 <Show when={worktreeBadgeOf()}>
                   <TooltipV2 value={`worktree：${sessionDirectory()}`} openDelay={300}>

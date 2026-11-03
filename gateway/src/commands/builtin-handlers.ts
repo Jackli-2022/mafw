@@ -12,9 +12,7 @@ export interface MafwBuiltinDeps {
   createSession(projectDir: string): Promise<string | null>;
   promptAsync(sessionID: string, text: string): Promise<void>;
   listMessages(sessionID: string): Promise<WaitwhatMessage[]>;
-  btwAsk(question: string): Promise<string>;
-  rotateManagerSession(projectDir: string): Promise<Record<string, unknown> & { sessionId: string }>;
-  mergeMemory(sourceWorktree: string, strategy: string): Promise<Record<string, unknown>>;
+  btwAsk(question: string): Promise<string>;  mergeMemory(sourceWorktree: string, strategy: string): Promise<Record<string, unknown>>;
   readStatus(): string;
   llmAvailable(): boolean;
 }
@@ -33,12 +31,6 @@ export function buildBuiltinHandlers(deps: MafwBuiltinDeps): Map<string, MafwCom
     await deps.promptAsync(target, `创建新 Goal：${argStr}`);
     return { ok: true, message: `Goal 已提交：${argStr}`, sessionID: target };
   });
-
-  handlers.set('new-topic', async (ctx) => {
-    const result = await deps.rotateManagerSession(ctx.projectDir);
-    return { ok: true, message: `新话题已开启：${result.sessionId}`, ...result };
-  });
-
   handlers.set('btw', async (ctx) => {
     const q = ctx.args.trim();
     if (!q) return { ok: false, error: 'usage: /btw <question>' };

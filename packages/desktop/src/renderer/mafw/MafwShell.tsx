@@ -391,76 +391,17 @@ export function MafwShell() {
     closeLeftDockIfOverlay()
   }
 
-  // Single resolution path for the coordination session (Lead): the active
-  // Pod coordination id loaded for the current project. Historical manager
-  // metadata is never a fallback.
-  const resolveCurrentLead = () =>
-    resolveLeadSession({ leadSessionId: currentLeadId(currentProject()) })
-
-  const handleOpenManager = async (): Promise<boolean> => {
-    const lead = resolveCurrentLead()
-    if (!lead) {
-      setActiveTab("goals")
-      return false
-    }
-    openSessionTab(lead.id, lead.title, lead.lead, lead.metadata)
+  // Project-level Lead and new work both enter through the Pod surface. No
+  // automatic Pod/Lead creation: a Pod-less project shows the Pod empty state.
+  const openLeadEntry = async (): Promise<boolean> => {
+    setShowConfig(false)
+    setActiveTab("chat")
+    setShowWelcome(false)
+    openLeftDockFace("pod")
     return true
   }
-  // "新建 Goal": jump to the manager session and send a create-goal message.
-  // planReview (default on) asks the manager to pause after planning and
-  // confirm the approach via mafw_ask_user before executing (Cowork-style
-  // review-then-run); the question surfaces in the QuestionWidget overlay.
-  const handleNewGoal = async (description: string, opts?: { planReview?: boolean }): Promise<boolean> => {
-    if (!await handleOpenManager()) return false
-    const lead = resolveCurrentLead()
-    if (!lead) return false
-    const planReview = opts?.planReview !== false
-    const message = planReview
-      ? `创建新 Goal：${description}\n\n（流程要求：完成规划（PLANNING_COMPLETE）后，先用 mafw_ask_user 工具把方案要点（目标、步骤、风险）发给我确认，得到我的确认答复后再开始执行。）`
-      : `创建新 Goal：${description}`
-    // Optimistic insert (matches sendMessage's store pattern).
-    const userMsgId = `user-${Date.now()}`
-    const ts = Date.now()
-    setSessions(prev => prev.map(s => s.id === lead.id ? { ...s, userMsgId } : s))
-    setStore(prev => {
-      const msgs = { ...prev.message }
-      const sessionMsgs = [...(msgs[lead.id] || [])]
-      sessionMsgs.push({ id: userMsgId, sessionID: lead.id, role: "user", parentID: null, time: { created: Date.now() }, text: message, agent: "general", model: { providerID: "opencode", modelID: "" } })
-      msgs[lead.id] = sessionMsgs
-      return { ...prev, message: msgs, part: { ...prev.part, [userMsgId]: [{ type: "text", text: message, id: `${userMsgId}-text`, sessionID: lead.id, messageID: userMsgId }] } }
-    })
-    try {
-      await window.api.mafw.chat.sendEnriched({ message, sessionID: lead.id })
-      return true
-    } catch (e) {
-      console.warn("[mafw] send goal message failed:", e)
-      return true
-    }
-  }
-
-  // "新话题": rotate the manager session (old one sinks into history).
-  const handleNewTopic = async (): Promise<void> => {
-    const pd = currentProject()
-    if (!pd) return
-    setConfirmReq({
-      title: "开新话题？",
-      message: "当前 Lead 会话将归档为历史会话，新会话成为活跃 Lead。",
-      confirmLabel: "开新话题",
-      onConfirm: () => void doRotateTopic(pd),
-    })
-  }
-
-  const doRotateTopic = async (pd: string): Promise<void> => {
-    try {
-      await window.api.mafw.manager.rotate(pd)
-      await podStore.open(pd)
-      await podStore.refresh()
-      const list = await window.api.mafw.sessions.list(pd).catch(() => [])
-      setHistorySessions(Array.isArray(list) ? list : [])
-      showToastV2({ description: "已开启新话题", duration: 3000 })
-    } catch (e: any) {
-      showToastV2({ description: `新话题开启失败: ${e?.message || e}`, duration: 4000 })
-    }
+  const openNewGoalComposer = (): void => {
+    openPodPanel("tasks")
   }
 
   // Lazy-load pagination state per session (older messages via `before` cursor)
@@ -2060,6 +2001,14 @@ export function MafwShell() {
     open: restoreLeftDockOpen(localStorage.getItem("mafw-left-dock-open"), window.innerWidth, initialLeftDockWidth.width),
   })
   const leftDockMode = () => resolveMode(leftDock().open, viewportWidth(), leftDockWidth())
+  const openLeftDockFace = (face: LeftDockFace) => {
+    // Persist before state, same ordering rule as toggle/close.
+    try {
+      localStorage.setItem("mafw-left-dock-open", "1")
+      localStorage.setItem("mafw-left-dock-face", face)
+    } catch { /* ignore */ }
+    setLeftDock({ face, open: true })
+  }
   const toggleLeftDock = (face: LeftDockFace) => {
     // Persist BEFORE setLeftDock: shouldAutoRestoreLeftDock reads localStorage in
     // an effect; if state flips first it sees the old "1" and immediately reopens
@@ -2466,8 +2415,7 @@ export function MafwShell() {
                           primaryAgents={primaryAgents}
                           subagentAgents={subagentAgents}
                           subagentRunning={subagentRunning}
-                          onNewTopic={() => void handleNewTopic()}
-                          readOnly={!!store.session.find((s: any) => s.id === activeSessionId()!)?.parentID}
+                                readOnly={!!store.session.find((s: any) => s.id === activeSessionId()!)?.parentID}
                           parentID={store.session.find((s: any) => s.id === activeSessionId()!)?.parentID ?? null}
                           onBackToParent={() => backToParent(activeSessionId()!)}
                           onOpenSubagent={(id) => void openSubagentSession(id)}
@@ -2546,8 +2494,8 @@ export function MafwShell() {
                      onSelect={(sid) => { const h = historySessions().find(x => x.id === sid); openSessionTab(sid, h?.title) }}
                      onCreate={() => void createSession()}
                      onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }}
-                     onNewGoal={handleNewGoal}
-                     onOpenManager={handleOpenManager}
+                     onOpenLead={openLeadEntry}
+                     onOpenGoalComposer={openNewGoalComposer}
                      hasPlanAgent={primaryAgents().some(a => isAgentKey(a, "plan"))}
                      onStartWithPlan={() => {
                        const planEntry = primaryAgents().find(a => isAgentKey(a, "plan"))

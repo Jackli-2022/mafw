@@ -77,9 +77,8 @@ test("图片拖框批注：region layer + 裁剪 + 发送带图", () => {
   assert.match(editor, /cropImageDataUrl/)
   assert.match(editor, /crossOrigin="anonymous"/)
   assert.match(editor, /imageDataUrl/)
-  const shell = read("src/renderer/mafw/MafwShell.tsx")
-  assert.match(shell, /sendEnriched/)
   const send = read("src/renderer/mafw/chat/use-send-message.ts")
+  assert.match(send, /sendEnriched/)
   assert.match(send, /annotationAtts/)
 })
 

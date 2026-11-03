@@ -9568,7 +9568,6 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         return (r?.data || []) as any;
       },
       btwAsk: (q) => this.btwAsk(q),
-      rotateManagerSession: (projectDir) => this.rotateManagerSessionFor(projectDir) as any,
       mergeMemory: async (sourceWorktree, strategy) => {
         const { handleMergeMemory } = await import('./mcp/handlers/merge-memory.js');
         const result = await handleMergeMemory({ sourceWorktree, resolveStrategy: strategy } as any, {

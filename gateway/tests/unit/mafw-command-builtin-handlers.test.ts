@@ -7,7 +7,6 @@ function makeDeps(overrides: Partial<MafwBuiltinDeps> = {}): MafwBuiltinDeps {
     promptAsync: async () => {},
     listMessages: async () => [],
     btwAsk: async () => '答案',
-    rotateManagerSession: async () => ({ sessionId: 'mgr-2' }),
     mergeMemory: async () => ({ success: true, merged: 3 }),
     readStatus: () => '# STATUS',
     llmAvailable: () => true,
@@ -41,10 +40,8 @@ describe('builtin handlers', () => {
     expect(r2).toMatchObject({ ok: false, error: 'LLM client not available' });
   });
 
-  test('new-topic returns rotate result', async () => {
-    const r = await buildBuiltinHandlers(makeDeps()).get('new-topic')!({ args: '', projectDir: '/p' });
-    expect(r.ok).toBe(true);
-    expect(r.message).toContain('mgr-2');
+  test('new-topic handler is retired', () => {
+    expect(buildBuiltinHandlers(makeDeps()).get('new-topic')).toBeUndefined();
   });
 
   test('btw requires args and returns text', async () => {

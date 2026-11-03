@@ -235,13 +235,13 @@ describe('setup(ctx) registration', () => {
     });
   });
 
-  it('registers the six slash commands', async () => {
+  it('registers five slash commands and retires new-topic', async () => {
     const dir = mkdtempDir();
     global.fetch = makeFetch([]).fetchMock as any;
     const { ctx, regs } = makeCtx(dir);
     await (mafwPlugin as any).setup(ctx);
     const names = regs.commands.map((c) => c.name).sort();
-    expect(names).toEqual(['btw', 'goal', 'merge-memory', 'new-topic', 'status', 'waitwhat']);
+    expect(names).toEqual(['btw', 'goal', 'merge-memory', 'status', 'waitwhat']);
   });
 
   it('returns a cleanup function that aborts the event subscription', async () => {

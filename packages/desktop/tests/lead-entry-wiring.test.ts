@@ -12,6 +12,7 @@ const leftDock = read("../src/renderer/mafw/components/LeftDock.tsx")
 const css = read("../src/renderer/mafw/mafw.css")
 const welcome = read("../src/renderer/mafw/components/WelcomeHome.tsx")
 const chatPane = read("../src/renderer/mafw/components/ChatPane.tsx")
+const dashboard = read("../src/renderer/mafw/pages/Dashboard.tsx")
 
 test("工作 rail 不再渲染固定 Lead/Manager 入口", () => {
   assert.doesNotMatch(leftDock, /<ManagerCard/)
@@ -19,14 +20,22 @@ test("工作 rail 不再渲染固定 Lead/Manager 入口", () => {
   assert.doesNotMatch(css, /\.mafw-manager-row/)
 })
 
-test("WelcomeHome 的协调入口用 Lead 文案", () => {
-  // 既有契约 lead-coordinator-wiring 继续钉字面量；Manager 文案不得回归
+test("WelcomeHome 的入口收敛到鲸群与 Pod composer，不再内联创建 Goal", () => {
   assert.match(welcome, />Lead 会话</)
+  assert.match(welcome, /onOpenLead/)
+  assert.match(welcome, /onOpenGoalComposer/)
   assert.doesNotMatch(welcome, />Manager</)
+  assert.doesNotMatch(welcome, /goalDraft|goalInputOpen|planReview|submitGoal|onNewGoal/)
+})
+
+test("Dashboard 空态使用 Lead 文案", () => {
+  assert.match(dashboard, /让 Lead 为你编排第一个目标/)
+  assert.doesNotMatch(dashboard, /让 Manager 为你编排/)
 })
 
 test("ChatPane 不再向用户暴露 Manager 文案（slash 命令描述也改 Lead）", () => {
   assert.match(chatPane, /leadEntryLabel\(\)/)
   assert.doesNotMatch(chatPane, /提交 Goal 给 Manager/)
   assert.doesNotMatch(chatPane, /当前 Manager 会话归档/)
+  assert.doesNotMatch(chatPane, /mafw-new-topic|onNewTopic/)
 })
