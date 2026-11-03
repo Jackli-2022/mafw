@@ -40,7 +40,7 @@ describe("dead code 清理", () => {
     expect(dock).not.toContain("PodAttentionList")
   })
 
-  test("项目资源是团队/邮箱/Pod 记忆/notes 的唯一入口", () => {
+  test("项目资源是团队/邮箱/Pod 记忆/notes 的唯一入口，不再充当工具目录", () => {
     const resources = read("src/renderer/mafw/components/ProjectResources.tsx")
     expect(resources).toContain("项目资源")
     expect(resources).toContain("团队")
@@ -48,7 +48,8 @@ describe("dead code 清理", () => {
     expect(resources).toContain("Pod 记忆")
     expect(resources).toContain("便签")
     expect(resources).toContain("onOpenPanel")
-    expect(resources).toContain("PAGE_LINKS")
+    expect(resources).not.toContain("PAGE_LINKS")
+    expect(resources).not.toMatch(/>工具</)
   })
 
   test("ProjectWorkView 承载 New Goal composer，不再从 PodDock 或全页工作空间创建", () => {

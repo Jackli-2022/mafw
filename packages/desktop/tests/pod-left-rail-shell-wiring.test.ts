@@ -11,7 +11,7 @@ test("shell owns the pod subscription and feeds the rail badge", () => {
   assert.match(shell, /podStore\.open\(/)
   assert.match(shell, /onPodOpenPanel/)
   assert.match(shell, /onPodOpenNotes/)
-  assert.match(shell, /onPodNavigate/)
+  assert.doesNotMatch(shell, /onPodNavigate/)
   assert.doesNotMatch(shell, /onPodSend/)
   assert.match(shell, /setActiveTab\("chat"\)/)
   assert.match(shell, /openPodPanelTab/)

@@ -1,6 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { detentFromLegacy, formatResizePreview, migrateDockKeys, workbenchColumns, workbenchShellHidden, workbenchSplit } from "./workbench-layout"
+import { detentFromLegacy, formatResizePreview, migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit } from "./workbench-layout"
 describe("workbench layout pure functions", () => {
   test("workbenchColumns：split 三列 / 关闭两列 / Focus 收 chat", () => {
     assert.equal(workbenchColumns({ leftPx: 0, chatPx: 520, split: true, focus: false }), "0px 520px minmax(0, 1fr)")
@@ -44,6 +44,13 @@ describe("workbench layout pure functions", () => {
     assert.equal(migrateDockKeys((k) => m4.get(k) ?? null, (k) => m4.delete(k), 1394).detent, 760)
     const fresh = migrateDockKeys(() => null, () => {}, 1394)
     assert.deepEqual(fresh, { detent: 760, terminalOpen: true })
+  })
+
+  test("workbenchFocusActive：仅项目路由 + dock 打开时允许全宽", () => {
+    assert.equal(workbenchFocusActive({ focus: true, content: "project", open: true }), true)
+    assert.equal(workbenchFocusActive({ focus: true, content: "config", open: true }), false)
+    assert.equal(workbenchFocusActive({ focus: true, content: "project", open: false }), false)
+    assert.equal(workbenchFocusActive({ focus: false, content: "project", open: true }), false)
   })
 
   test("workbenchSplit：项目路由保持三列，Config / 手动关闭退位", () => {

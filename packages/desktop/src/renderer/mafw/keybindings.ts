@@ -7,7 +7,7 @@ export type KeybindingAction =
   | "command-palette"    // Ctrl+P
   | "toggle-leftdock"    // Ctrl+B
   | "toggle-rightdock"   // Ctrl+Alt+B
-  | "toggle-workbench-focus" // Ctrl+Shift+M
+  | "toggle-workbench-focus" // Ctrl+Alt+F（Ctrl+Shift+M 是 main 进程全局 Quick Entry）
   | "open-search"        // Ctrl+K
   | "toggle-details"     // Ctrl+O（ChatPane）
   | "session-search"     // Ctrl+F（ChatPane）
@@ -31,7 +31,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeybindingAction, string> = {
   "command-palette": "ctrl+p",
   "toggle-leftdock": "ctrl+b",
   "toggle-rightdock": "ctrl+alt+b",
-  "toggle-workbench-focus": "ctrl+shift+m",
+  "toggle-workbench-focus": "ctrl+alt+f",
   "open-search": "ctrl+k",
   "toggle-details": "ctrl+o",
   "session-search": "ctrl+f",

@@ -45,7 +45,7 @@ describe("matchesCombo", () => {
 
 describe("resolveKeybindings", () => {
   test("workbench focus has a customizable default", () => {
-    expect(DEFAULT_KEYBINDINGS["toggle-workbench-focus"]).toBe("ctrl+shift+m")
+    expect(DEFAULT_KEYBINDINGS["toggle-workbench-focus"]).toBe("ctrl+alt+f")
     expect(KEYBINDING_LABELS["toggle-workbench-focus"]).toBe("切换工作台全宽")
     expect(isValidCombo(DEFAULT_KEYBINDINGS["toggle-workbench-focus"])).toBe(true)
   })

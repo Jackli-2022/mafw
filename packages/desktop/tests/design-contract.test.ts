@@ -921,6 +921,8 @@ describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接�
     expect(shell).toMatch(/keybindingFor\("toggle-workbench-focus"\)/)
     expect(shell).toMatch(/focus=\{workbenchFocus\(\)\}/)
     expect(shell).toMatch(/onToggleFocus=\{\(\) => setWorkbenchFocus\(\(v\) => !v\)\}/)
+    expect(shell).toMatch(/workbenchFocusActive\(\{ focus: workbenchFocus\(\), content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
+    expect(shell).toMatch(/if \(!open\) setWorkbenchFocus\(false\)/)
     expect(shell).not.toMatch(/mafw-workbench-focus/)
   })
   test("CSS：布局开关样式存在，no-drag 由 topstrip button 规则覆盖", () => {

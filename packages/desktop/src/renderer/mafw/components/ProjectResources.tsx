@@ -1,5 +1,5 @@
-// 项目资源（Task 15）：团队 / 邮箱 / Pod 记忆 / 手工 notes 的唯一入口。
-// 日常 Goal 工作在工作空间；这里只保留协作诊断、团队会话与工具链接。
+// 项目资源：团队 / 邮箱 / Pod 记忆 / 手工 notes 的唯一入口。
+// 日常 Goal 工作在右工作台「工作」；这里不再充当 Memory/Approvals/Triage/Automation 工具目录。
 import { For, Show, createMemo } from "solid-js"
 import type { PodDetail, PodMessage } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
@@ -7,8 +7,6 @@ import { Icon } from "@mafw/ui/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { buildMemberRows, podAttentionRow, podCounts, podEmptyState, podRecentMessages, type PodEmptyState } from "../pod-rail-face-model"
 import { memberOpenTarget, podShortTime, podStatusLabel } from "../pod-model"
-import { PAGE_LINKS } from "../page-links"
-import type { NavTab } from "./nav-tab"
 
 export function ProjectResources(props: {
   detail: PodDetail | null
@@ -25,7 +23,6 @@ export function ProjectResources(props: {
   onOpenWork: () => void
   onOpenPanel: (tab: "team" | "memory", target?: "members" | "inbox") => void
   onOpenNotes: () => void
-  onNavigate: (tab: NavTab) => void
   onCreate: () => void
 }) {
   const emptyState = createMemo<PodEmptyState>(() =>
@@ -43,7 +40,6 @@ export function ProjectResources(props: {
     time: podShortTime(message.createdAt, Date.now()),
     unread: message.readAt === null,
   })))
-  const toolLinks = createMemo(() => PAGE_LINKS)
 
   return (
     <div class="mafw-resources">
@@ -220,19 +216,6 @@ export function ProjectResources(props: {
             </For>
           </div>
         </Show>
-
-        <div class="mafw-pod-rail-label">工具</div>
-      <div class="mafw-resources-list">
-        <For each={toolLinks()}>
-          {(link) => (
-            <ButtonV2 variant="ghost" size="small" class="mafw-resources-row" onClick={() => props.onNavigate(link.id)}>
-              <span class="mafw-resources-leading"><Icon name={link.icon as any} size="small" /><span>{link.label}</span></span>
-              <span class="mafw-resources-meta" />
-              <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
-            </ButtonV2>
-          )}
-        </For>
       </div>
-    </div>
   )
 }

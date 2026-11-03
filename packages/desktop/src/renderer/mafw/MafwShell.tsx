@@ -110,7 +110,7 @@ import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
 import { buildMafwFileUrl } from "../../shared/mafw-file"
 import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
-import { migrateDockKeys, workbenchColumns, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
+import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
@@ -1846,10 +1846,11 @@ export function MafwShell() {
       leftPx: leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : 0,
       chatPx: chatPx(),
       split: chatSplit(),
-      focus: workbenchFocus(),
+      focus: workbenchFocusActive({ focus: workbenchFocus(), content: workbenchContent(), open: rightDockOpen() }),
     })
 
   const applyRightDock = (open: boolean) => {
+    if (!open) setWorkbenchFocus(false)
     setRightDockOpen(open)
     try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch { /* ignore */ }
   }
@@ -2283,7 +2284,8 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // Ctrl+Shift+M：工作台 Focus（全宽 / 恢复 chat 列）。瞬态、不持久化（C3 可自定义）。
+  // Ctrl+Alt+F：工作台 Focus（全宽 / 恢复 chat 列）。瞬态、不持久化（C3 可自定义）；
+  // Ctrl+Shift+M 保留给 main 进程全局 Quick Entry，避免 OS 级快捷键抢占。
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!matchesCombo(e, keybindingFor("toggle-workbench-focus"))) return
@@ -2634,12 +2636,6 @@ export function MafwShell() {
             onPodOpenWork={openProjectWork}
             onPodOpenPanel={(tab, target) => openPodPanelTab(tab, target)}
             onPodOpenNotes={() => openLeftDockFace("notes")}
-            onPodNavigate={(tab) => {
-              setShowConfig(false)
-              setShowWelcome(false)
-              setActiveTab(tab)
-              closeLeftDockIfOverlay()
-            }}
             onPodCreate={() => { void podStore.create() }}
           />
         </Show>

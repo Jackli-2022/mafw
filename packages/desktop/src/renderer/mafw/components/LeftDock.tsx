@@ -25,7 +25,6 @@ import { useConnPhase } from "../connection-state"
 import { ConnBanner } from "./ConnBanner"
 import { buildSessionTree, pageGroups, RAIL_PAGE_SIZE, type SessionNode, type ProjectNode } from "./session-tree"
 import type { LeftDockFace, LeftDockMode } from "../left-dock"
-import type { NavTab } from "./nav-tab"
 
 const copyText = async (text: string) => {
   try {
@@ -77,7 +76,6 @@ type Props = {
   onPodOpenWork?: () => void
   onPodOpenPanel?: (panel: "team" | "memory", target?: "members" | "inbox") => void
   onPodOpenNotes?: () => void
-  onPodNavigate?: (tab: NavTab) => void
   onPodCreate?: () => void
 }
 
@@ -406,7 +404,6 @@ export function LeftDock(props: Props) {
           onOpenWork={() => props.onPodOpenWork?.()}
           onOpenPanel={(panel, target) => props.onPodOpenPanel?.(panel, target)}
           onOpenNotes={() => props.onPodOpenNotes?.()}
-          onNavigate={(tab) => props.onPodNavigate?.(tab)}
           onCreate={() => props.onPodCreate?.()}
         />
       </Show>

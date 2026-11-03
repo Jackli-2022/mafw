@@ -21,6 +21,11 @@ export function workbenchSplit(input: { content: WorkbenchContentMode; open: boo
   return input.content === "project" && input.open
 }
 
+/** Focus 只有在项目路由且右工作台打开时才允许收掉 chat 列；Config / 手动隐藏时不得产生 0px 主列。 */
+export function workbenchFocusActive(input: { focus: boolean; content: WorkbenchContentMode; open: boolean }): boolean {
+  return input.focus && input.content === "project" && input.open
+}
+
 export function workbenchShellHidden(input: { content: WorkbenchContentMode; open: boolean }): boolean {
   return input.content === "config" || !input.open
 }

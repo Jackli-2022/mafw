@@ -27,6 +27,12 @@ test("the active-Goal shortcut is retired from the left Pod face", () => {
   assert.doesNotMatch(resources, /当前目标/)
 })
 
+test("the Pod face is not a global tool catalog", () => {
+  assert.doesNotMatch(resources, /PAGE_LINKS/)
+  assert.doesNotMatch(resources, /onNavigate/)
+  assert.doesNotMatch(resources, />工具</)
+})
+
 test("MafwShell routes Pod attention into the right work face", () => {
   assert.match(shell, /podAttention=\{podBadgeCount\(\)\}/)
   assert.match(shell, /onPodOpenWork=\{openProjectWork\}/)
