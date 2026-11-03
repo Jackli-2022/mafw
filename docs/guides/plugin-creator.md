@@ -38,7 +38,7 @@ Desktop：`Config → Plugins → 让 Agent 创建插件`。
 
 | 原因 | 文案 | 说明 |
 |---|---|---|
-| Agent 列表尚未加载 | 正在加载 Agent 列表… | 保守处理，加载完成前不提供入口 |
+| Agent 列表为空或尚未加载 | 正在加载 Agent 列表… | 代码按列表长度判定（`agentsData().length > 0`），没有独立的 fetched 标志；空列表也归入 loading |
 | 当前 runtime 没有 `mafw-create` | 当前 runtime 未提供 mafw-create | 只有物化了该 primary agent 的 runtime 可用 |
 | 当前是并行 worktree 会话 | 并行 worktree 会话不提供创建入口 | 草稿必须留在项目里，worktree 清理不能带走它 |
 
@@ -104,7 +104,7 @@ Desktop：`Config → Plugins → 让 Agent 创建插件`。
 
 - 读：`read` / `grep` / `glob` / `list`
 - 写草稿：`edit` / `write`（普通编辑审批）
-- 规划与提问：`todowrite` / `question` / `plan_exit`
+- 规划与提问：`todowrite` / `question`
 - Creator：`skill` / `mafw_plugin_inspect` / `mafw_plugin_manager`
 - 记忆：`mafw_add_memory` / `mafw_search_hybrid` / `mafw_get_memory`
 
@@ -134,6 +134,7 @@ Desktop：`Config → Plugins → 让 Agent 创建插件`。
 
 - 网络重试可以复用同一个随机 id（相同 id 会重放第一次结果）；
 - **新的迭代必须用新的 id**，否则会拿回旧结果、revision 不前进；
+- 重放缓存是 **gateway 进程内**的（`PackageManager` 的内存表，最多 50 条）；gateway 重启后同一个 id 不再重放，会重新执行安装；
 - 不要用 `(operation, draft, overwrite)` 的确定性哈希代替随机 id。
 
 ## 6. 固定测试命令
@@ -172,16 +173,16 @@ mafw_plugin_manager({ operation: "install", draft: "acme", overwrite: false, req
 
 - 首次安装不需要 `overwrite`；同名已安装包必须显式 `overwrite: true`。
 - 源是项目草稿，安装是**复制**。之后继续改草稿不会自动更新已安装副本；需要重新 `check` / `test` / `install`。
-- 安装成功会热提交 revision，Desktop 局部更新，不需要重启 Desktop。
+- **非 runtime 包**安装成功会热提交 revision，Desktop 局部更新，不需要重启 Desktop；拥有当前 active runtime 的包不热替换，整包进入 pending（见 §8）。
 - 安装返回的 `activeRevision` / `pendingRevision` 是唯一权威，不要自行推断。
-- `install` 失败时旧 revision 保持不变；首次安装失败则没有 active 残留。
+- `install` 失败时旧 revision 保持不变；**首次安装激活失败时没有 active 残留，但复制到 `~/.mafw/plugins/<name>` 的包目录会留在磁盘**。修复后重试需要 `overwrite: true`，或先 `remove` 再安装。
 
 ## 8. pending：active runtime 包
 
 如果变更包拥有 gateway 当前正在使用的 runtime：
 
 - 整包进入 **pending**；旧 revision 继续服务；
-- 工具只返回 `application: "pending"` 和 `pendingRevision`；
+- 工具返回 `application: "pending"`、`pendingRevision` 与 `nextStep` 等 install 结果字段；被刻意隐藏的是 `applyPending` 操作本身，不是这些结果字段；
 - **模型没有 `applyPending`**。必须由用户在 `Config → Plugins` 对应行点「应用」；
 - 应用时 gateway 会走既有的 runtime switch 编排（事件重订阅、身份重新物化）。失败会报告
   `runtimeSwitch: failed`，旧 revision 仍保留。
@@ -213,7 +214,7 @@ mafw_plugin_manager({ operation: "install", draft: "acme", overwrite: false, req
 | `test` 超时 | 60s 已终止整个进程树；缩小或修复测试 |
 | 审批被拒/取消 | 什么都没执行；说明原因，不要反复重试到通过 |
 | `draft changed during approval` | 停止编辑，重新走一次 `check`/`test`/`install` |
-| `install` 返回 `application:"failed"` | 修草稿，用**新的** `requestId` 重试；旧 revision 保留 |
+| `install` 返回 `application:"failed"` | 修草稿，用**新的** `requestId` 重试；旧 revision 保留。首次安装失败时包目录已在磁盘，重试需 `overwrite: true` 或先 `remove` |
 | 安装显示 pending | 请用户在 Plugins 页点「应用」，不要声称已生效 |
 | 安装后界面没更新 | 检查是否 pending；必要时让用户点「重新加载」或重启 Desktop 后再验证 |
 | 用户 disable/remove | 源草稿仍保留；不要自动重新启用，除非用户明确要求 |
@@ -234,7 +235,7 @@ mafw_plugin_manager({ operation: "install", draft: "acme", overwrite: false, req
 - 安装 = 在 **gateway 进程**里 `require` 并执行 `index.js`；与 gateway 同权限。
 - `check` 会激活 candidate，`test` 会运行草稿里的测试代码；两者都执行**草稿作者写的受信代码**，不是隔离环境。
 - 不要用 Creator 处理来源不可信的目录；只安装你信任、能读懂的草稿。
-- gateway 仍只在本机 loopback 提供这些接口；Creator 没有新增远程入口。
+- 这些接口没有新增远程入口，但 gateway 监听所有接口（`server.listen(apiPort)`），并非只绑定 loopback。默认未配置 `server.apiToken` 时非 loopback 请求一律被拒；配置 token 后，持有 token 的远程客户端也能访问同一组 `/api/plugins/*` 安装/删除接口——**token 等同于安装/删除权限**。
 
 ### 12.2 没有视觉反馈通道
 
