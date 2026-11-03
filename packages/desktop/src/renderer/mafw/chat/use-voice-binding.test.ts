@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { extractVoiceReplies, cleanAssistantText } from "./use-voice-binding"
+import { extractVoiceReplies, cleanAssistantText, markVoiceStatus } from "./use-voice-binding"
 
 describe("extractVoiceReplies", () => {
   test("提取完整标记（artifactId/voice/hash）", () => {
@@ -26,5 +26,25 @@ describe("cleanAssistantText", () => {
   })
   test("无标记原样 trim", () => {
     expect(cleanAssistantText("  正文  ")).toBe("正文")
+  })
+})
+
+describe("markVoiceStatus", () => {
+  test("只更新目标消息，不能被更早的本地消息抢走", () => {
+    const messages = [
+      { id: "user-old", text: "之前的一条本地消息" },
+      { id: "user-voice", text: "[媒体附件 …]", voiceStatus: "analyzing" },
+      { id: "msg-server", text: "服务端消息" },
+    ]
+    const next = markVoiceStatus(messages, "user-voice", "done")
+    expect(next.find((m) => m.id === "user-old")?.voiceStatus).toBeUndefined()
+    expect(next.find((m) => m.id === "user-voice")?.voiceStatus).toBe("done")
+    expect(next.find((m) => m.id === "msg-server")?.voiceStatus).toBeUndefined()
+  })
+
+  test("目标不存在时不改任何消息", () => {
+    const messages = [{ id: "user-old" }, { id: "user-voice", voiceStatus: "analyzing" }]
+    const next = markVoiceStatus(messages, "missing", "failed")
+    expect(next).toEqual(messages)
   })
 })

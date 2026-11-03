@@ -10,8 +10,27 @@ import { DEFAULT_VAD_PARAMS, type VadParams } from "../voice/types"
 import { SilenceTimeoutStrategy } from "../voice/turn"
 import { cachedArtifactUrl } from "../components/AudioReply"
 import { uploadVoiceSegment } from "../voice/upload"
-import { isLocalMessageId } from "./local-id"
 import type { AssistantActions } from "@mafw/session-ui/message-part"
+
+/**
+ * Set `voiceStatus` on exactly one message. The previous implementation used a
+ * findIndex over "any local message that is not done", which could pick an
+ * older local message (no voiceStatus) and leave the current voice bubble
+ * stuck on “正在分析...”.
+ */
+export function markVoiceStatus<T extends { id: string; voiceStatus?: string }>(
+  messages: T[],
+  targetId: string,
+  status: string,
+): T[] {
+  let changed = false
+  const next = messages.map((m) => {
+    if (m.id !== targetId) return m
+    changed = true
+    return { ...m, voiceStatus: status }
+  })
+  return changed ? next : messages
+}
 
 // [语音回复 art:<id> 音色:<voice> h:<hash>]
 const VOICE_REPLY_RE = /\[语音回复\s+art:([a-zA-Z0-9-]+)(?:\s+音色:([^\]]+?))?(?:\s+h:([a-f0-9]{8}))?\]/g
@@ -138,6 +157,8 @@ export function useVoiceBinding(
     const s = sid()
     if (!s) return
     const tempMsgId = `temp-voice-${Date.now()}`
+    // Exact id assigned after upload; never rely on "first local message".
+    let persistedMsgId: string | null = null
 
     // 立即创建本地消息（乐观显示，voiceStatus: "uploading"）
     deps.setStore((prev: any) => {
@@ -172,6 +193,7 @@ export function useVoiceBinding(
         onUploaded: ({ pointerText, partId }) => {
           // 上传完成即显示指针文本（analyzing 态）——发送前保持旧 UI 时序
           const realMsgId = `user-${Date.now()}`
+          persistedMsgId = realMsgId
           deps.setStore((prev: any) => {
             const msgs = { ...prev.message }
             const sessionMsgs = [...(msgs[s] || [])]
@@ -205,23 +227,22 @@ export function useVoiceBinding(
         totalMs: (t2 - t0).toFixed(1),
       })
 
-      // 发送完成：voiceStatus → done
-      deps.setStore((prev: any) => {
-        const msgs = { ...prev.message }
-        const sessionMsgs = [...(msgs[s] || [])]
-        const idx = sessionMsgs.findIndex((m: any) => isLocalMessageId(m.id) && m.voiceStatus !== "done")
-        if (idx >= 0 && sessionMsgs[idx]?.voiceStatus === "analyzing") {
-          sessionMsgs[idx] = { ...sessionMsgs[idx], voiceStatus: "done" }
-        }
-        msgs[s] = sessionMsgs
-        return { ...prev, message: msgs }
-      })
+      // 发送完成：voiceStatus → done（按上传时分配的精确 id 更新）
+      if (persistedMsgId) {
+        const targetId = persistedMsgId
+        deps.setStore((prev: any) => {
+          const msgs = { ...prev.message }
+          msgs[s] = markVoiceStatus(msgs[s] || [], targetId, "done")
+          return { ...prev, message: msgs }
+        })
+      }
     } catch (err: any) {
       console.warn("[voice] upload failed:", err)
+      const targetId = persistedMsgId ?? tempMsgId
       deps.setStore((prev: any) => {
         const msgs = { ...prev.message }
         const sessionMsgs = [...(msgs[s] || [])]
-        const idx = sessionMsgs.findIndex((m: any) => m.id === tempMsgId)
+        const idx = sessionMsgs.findIndex((m: any) => m.id === targetId)
         if (idx >= 0) {
           sessionMsgs[idx] = { ...sessionMsgs[idx], voiceStatus: "failed", error: err.message || String(err) }
         }
