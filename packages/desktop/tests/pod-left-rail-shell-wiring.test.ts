@@ -10,10 +10,12 @@ test("shell owns the pod subscription and feeds the rail badge", () => {
   assert.match(shell, /podBadge=\{/)
   assert.match(shell, /podStore\.open\(/)
   assert.match(shell, /onPodOpenPanel/)
-  assert.match(shell, /onPodOpenMessage/)
+  assert.match(shell, /onPodOpenNotes/)
+  assert.match(shell, /onPodNavigate/)
   assert.doesNotMatch(shell, /onPodSend/)
   assert.match(shell, /setActiveTab\("chat"\)/)
-  assert.match(shell, /panel === "inbox"/)
+  assert.match(shell, /openPodPanelTab/)
+  assert.match(shell, /tab: "team" \| "memory"/)
   assert.doesNotMatch(shell, /void panel/)
   // 两个 shell effect 必须用 on() 隔离依赖，否则 refresh()/open() 的同步 signal
   // 读取会把 effect 绑到 detail/refreshing 上，形成刷新自激。

@@ -7096,6 +7096,26 @@ html[data-theme="light"] body {
 }
 .mafw-work-error { color: var(--red-9); }
 .mafw-workspace-discussions { display: flex; flex-direction: column; }
+.mafw-workspace-composer {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg-raised);
+  padding: 16px;
+}
+/* 项目资源（团队 / 邮箱 / Pod 记忆 / 便签的唯一入口） */
+.mafw-resources { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; min-height: 0; overflow-y: auto; }
+.mafw-resources-list { display: flex; flex-direction: column; gap: 2px; }
+.mafw-resources-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+}
+.mafw-resources-meta { color: var(--text-4); font-size: 11px; white-space: nowrap; }
+.mafw-resources-meta.accent { color: var(--accent); }
+.mafw-resources-goal { margin-top: 6px; }
 @media (max-width: 900px) {
   .mafw-workspace-grid { grid-template-columns: 1fr; }
 }

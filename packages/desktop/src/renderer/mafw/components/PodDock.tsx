@@ -1,68 +1,45 @@
+// 团队与设置（Task 15）：从日常导航退役后，只保留团队会话、协作诊断、
+// 邮箱与 Pod 记忆。Goal 创建/列表/任务板/结果都在项目工作空间与 Goal 详情。
 import { For, Show, createEffect, createSignal, on } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import type { PodDetail } from "@mafw/sdk"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
-import { PodGoalQueue, PodTaskBoard } from "./PodTaskBoard"
 import { PodInbox } from "./PodInbox"
 import { PodMemoryPanel } from "./PodMemoryPanel"
-import { PodGoalComposer } from "./PodGoalComposer"
-import { PodAttentionList } from "./PodAttentionList"
-import { PodResultPanel } from "./PodResultPanel"
 import { PodTranscriptOverlay } from "./PodTranscriptOverlay"
-import type { PodGoalResult } from "@mafw/sdk"
 import { podStore } from "../pod-store"
 import { deliveryToast } from "../pod-rail-face-model"
 import {
-  podResultOpenRequest,
-  requestPodTechLeadOpen,
-} from "../pod-result-store"
-import {
-  formatPodCost,
   memberOpenTarget,
-  attentionTarget,
-  planEditGate,
-  podActiveGoalId,
-  podHttpStatus,
   podMemberStatusLabel,
   podRoleLabel,
   podStatusLabel,
   shouldCloseTranscript,
-  type GoalDetailFocus,
 } from "../pod-model"
 
 export function PodDock(props: {
   projectDir: string | null
   active: boolean
   onOpenSession: (sid: string, title?: string) => void
-  onOpenGoal: (goalId: string, focus?: GoalDetailFocus) => void
-  panelRequest?: { tab: "work" | "team" | "memory"; seq: number }
+  panelRequest?: { tab: "team" | "memory"; seq: number; target?: "members" | "inbox" }
 }) {
   const [transcriptSession, setTranscriptSession] = createSignal<string | null>(null)
-  const [tab, setTab] = createSignal<"work" | "team" | "memory">("work")
-  const [resultGoalId, setResultGoalId] = createSignal<string | null>(null)
-  const [composerInitial, setComposerInitial] = createSignal<{
-    title: string
-    objective?: string
-    acceptance?: string[]
-  } | undefined>(undefined)
+  const [tab, setTab] = createSignal<"team" | "memory">("team")
   let transcriptPodId: string | null = null
 
-  // Shell 的「邮箱/待办」入口通过 request 指定要打开的 tab；切换后再滚动到
-  // 对应分区（tab 未渲染时滚动会找不到目标）。
+  // Shell 的「团队/邮箱/Pod 记忆」入口通过 request 指定要打开的 tab；
+  // 切换后再滚动到对应分区（tab 未渲染时滚动会找不到目标）。
   createEffect(() => {
     const request = props.panelRequest
     if (!request) return
     setTab(request.tab)
     if (request.seq <= 0) return
     setTimeout(() => {
-      const selector = request.tab === "team"
-        ? ".mafw-pod-inbox"
-        : request.tab === "work"
-          ? ".mafw-pod-board-wrap"
-          : null
-      if (selector) document.querySelector(selector)?.scrollIntoView({ block: "start" })
+      if (request.tab !== "team") return
+      const selector = request.target === "inbox" ? ".mafw-pod-inbox" : ".mafw-pod-members"
+      document.querySelector(selector)?.scrollIntoView({ block: "start" })
     }, 0)
   })
 
@@ -73,27 +50,12 @@ export function PodDock(props: {
     if (active) void podStore.refresh()
   }))
 
-  // Task 21：结果打开请求来自 shell（通知回窗 / rail「有新结果」点）。
-  // seq 让同一 Goal 再次触发也能被消费（signal 对象每次都换新）。
-  createEffect(on(() => podResultOpenRequest(), (request) => {
-    if (!request) return
-    setTab("work")
-    setResultGoalId(request.goalId)
-  }))
-
-  // 已查看标记由 PodResultPanel 在**结果数据加载成功**后写入（打开面板本身不算）。
-
   createEffect(() => {
     const currentPodId = podStore.detail()?.pod.id ?? null
     if (!shouldCloseTranscript(transcriptPodId, currentPodId)) return
     transcriptPodId = null
     setTranscriptSession(null)
   })
-
-  const memberTaskCount = (detail: PodDetail, memberId: string) =>
-    detail.tasks.filter(
-      (task) => task.ownerMemberId === memberId && task.status !== "done" && task.status !== "failed",
-    ).length
 
   const openMember = (detail: PodDetail, memberId: string) => {
     const target = memberOpenTarget(detail, memberId)
@@ -103,83 +65,23 @@ export function PodDock(props: {
       setTranscriptSession(target.sessionId)
       return
     }
-    const member = detail.members.find((item) => item.id === memberId)
-    props.onOpenSession(target.sessionId, `Pod · ${podRoleLabel(member?.role ?? "builder")}`)
+    props.onOpenSession(target.sessionId)
   }
 
-  const createGoal = async (input: {
-    title: string
-    objective: string
-    acceptance: string[]
-    boundaries: string[]
-    planReview: "auto" | "manual"
-  }): Promise<boolean> => {
-    try {
-      const result = await podStore.createGoal({
-        title: input.title,
-        objective: input.objective,
-        acceptance: input.acceptance.length > 0 ? input.acceptance : undefined,
-        boundaries: input.boundaries.length > 0 ? input.boundaries : undefined,
-        planReview: input.planReview,
-      })
-      setComposerInitial(undefined)
-      const queuedText = result.queueReason === "paused"
-        ? "已排队：Pod 已暂停，恢复推进后才会开始"
-        : result.queueReason === "archived"
-          ? "已排队：Pod 已归档，恢复后才会开始"
-          : result.queueReason === "budget"
-            ? "已排队：预算不足，等待预算恢复"
-            : "已排队，当前目标结束后自动开始"
-      showToastV2({
-        description: result.status === "started" ? "已交给团队" : queuedText,
-        variant: "success",
-        duration: 3000,
-      } as any)
-      return true
-    } catch (err: any) {
-      showToastV2({
-        description: `提交失败：${taskErrorText(err)}`,
-        variant: "error",
-        duration: 3200,
-      } as any)
-      return false
-    }
-  }
-
-  const resubmit = (result: PodGoalResult) => {
-    const goal = podStore.detail()?.goals.find((item) => item.goalId === result.goalId)
-    setComposerInitial({
-      title: `重试：${goal?.title ?? result.goalId}`,
-      objective: [
-        "上一轮未达成。基于以下证据重新提交目标，不要复活旧 Goal。",
-        result.reviewFeedback ? `Review feedback: ${result.reviewFeedback}` : "",
-        ...result.tasks.filter((task) => task.result !== "pass").map((task) => `${task.taskId}: ${task.evidence}`),
-      ].filter(Boolean).join("\n"),
-      acceptance: result.goalAcceptance,
-    })
-    setResultGoalId(null)
-    setTab("work")
-  }
-
-  /**
-   * 打回（Task 21）：同一 Goal 开下一个 revision（旧版结果保留），并打开该 Goal 的
-   * Tech Lead 讨论——新 revision 从 discussing 开始，用户可以直接补充要求。
-   */
-  const rejectResult = async (goalId: string, feedback: string): Promise<boolean> => {
+  const sendMessage = async (input: { kind: string; toMemberId: string | null; body: string; notify: boolean }): Promise<string> => {
     const detail = podStore.detail()
-    if (!detail) throw new Error("pod unavailable")
-    // 失败必须抛回 PodResultPanel（内联展示原因）；吞掉错误会让面板的 rejectError 变成死分支。
-    const result = await window.api.mafw.pod.rejectResult(detail.pod.id, goalId, feedback)
-    showToastV2({
-      description: `已打回：进入 revision ${result?.revision ?? "?"}，正在打开 Tech Lead 讨论`,
-      variant: "success",
-      duration: 3200,
-    } as any)
+    const podId = detail?.pod.id
+    const lead = detail?.members.find((member) => member.role === "lead")
+    if (!podId || !lead) return "团队未就绪"
+    const res = await window.api.mafw.pod.sendMessage(podId, {
+      fromMemberId: lead.id,
+      toMemberId: input.toMemberId ?? undefined,
+      kind: input.kind as any,
+      body: input.body,
+      notify: input.notify,
+    })
     await podStore.refresh()
-    setResultGoalId(null)
-    setTab("work")
-    requestPodTechLeadOpen(goalId, typeof result?.revision === "number" ? result.revision : null)
-    return true
+    return input.notify ? deliveryToast(res?.delivery) : "已发送"
   }
 
   const retryDelivery = async (messageId: string) => {
@@ -205,104 +107,6 @@ export function PodDock(props: {
     }
   }
 
-  const cancelQueued = async (goalId: string): Promise<boolean> => {
-    try {
-      await podStore.cancelGoal(goalId)
-      showToastV2({ description: "已取消排队", variant: "success", duration: 2200 } as any)
-      return true
-    } catch (err: any) {
-      showToastV2({ description: `取消失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
-      return false
-    }
-  }
-
-  const createTask = async (title: string): Promise<boolean> => {
-    const podId = podStore.detail()?.pod.id
-    if (!podId) return false
-    try {
-      await window.api.mafw.pod.createTask(podId, { title })
-      await podStore.refresh()
-      return true
-    } catch (err: any) {
-      showToastV2({ description: `创建任务失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
-      return false
-    }
-  }
-
-  const editTask = async (
-    taskId: string,
-    patch: { title: string; acceptance: string[] },
-  ): Promise<boolean> => {
-    const podId = podStore.detail()?.pod.id
-    if (!podId) return false
-    try {
-      await window.api.mafw.pod.updateTask(podId, taskId, patch)
-      await podStore.refresh()
-      return true
-    } catch (err: any) {
-      showToastV2({ description: `保存失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
-      return false
-    }
-  }
-
-  const activeGoalId = () => podActiveGoalId(podStore.detail()?.goals ?? [])
-
-  const createPlanTask = async (title: string): Promise<boolean> => {
-    const podId = podStore.detail()?.pod.id
-    const goalId = activeGoalId()
-    if (!podId || !goalId) return false
-    try {
-      await window.api.mafw.pod.createTask(podId, { plan: true, goalId, title })
-      await podStore.refresh()
-      return true
-    } catch (err: any) {
-      showToastV2({ description: `加入计划失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
-      return false
-    }
-  }
-
-  const renameNote = async (taskId: string, title: string): Promise<boolean> => {
-    const podId = podStore.detail()?.pod.id
-    if (!podId) return false
-    try {
-      await window.api.mafw.pod.updateTask(podId, taskId, { title })
-      await podStore.refresh()
-      return true
-    } catch (err: any) {
-      showToastV2({ description: `改名失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
-      return false
-    }
-  }
-
-  const deleteTask = async (taskId: string): Promise<boolean> => {
-    const podId = podStore.detail()?.pod.id
-    if (!podId) return false
-    try {
-      await window.api.mafw.pod.deleteTask(podId, taskId)
-      await podStore.refresh()
-      return true
-    } catch (err: any) {
-      showToastV2({ description: `删除失败：${taskErrorText(err)}`, variant: "error", duration: 3000 } as any)
-      return false
-    }
-  }
-
-  const sendMessage = async (input: { kind: string; toMemberId: string | null; body: string; notify: boolean }): Promise<string> => {
-    const detail = podStore.detail()
-    const podId = detail?.pod.id
-    const lead = detail?.members.find((member) => member.role === "lead")
-    if (!podId || !lead) return "鲸群未就绪"
-    const res = await window.api.mafw.pod.sendMessage(podId, {
-      fromMemberId: lead.id,
-      toMemberId: input.toMemberId ?? undefined,
-      kind: input.kind as any,
-      body: input.body,
-      notify: input.notify,
-    })
-    await podStore.refresh()
-    return input.notify ? deliveryToast(res?.delivery) : "已发送"
-  }
-
   const toggleStatus = () => {
     const status = podStore.detail()?.pod.status
     if (!status || status === "archived") return
@@ -311,7 +115,7 @@ export function PodDock(props: {
 
   return (
     <div class="mafw-pod-dock">
-      <DockPanelHeader title={`鲸群${podStore.detail() ? ` · ${podStore.detail()!.pod.name}` : ""}`}>
+      <DockPanelHeader title={`团队与设置${podStore.detail() ? ` · ${podStore.detail()!.pod.name}` : ""}`}>
         <Show when={podStore.detail()}>
           <ButtonV2 variant="ghost" size="small" disabled={podStore.busy()} onClick={() => void podStore.refresh()}>
             刷新
@@ -325,7 +129,7 @@ export function PodDock(props: {
       </DockPanelHeader>
 
       <Show when={props.projectDir} fallback={
-        <DockEmpty text="先打开一个会话" hint="鲸群跟随当前项目；打开会话后会自动定位" />
+        <DockEmpty text="先打开一个会话" hint="团队跟随当前项目；打开会话后会自动定位" />
       }>
         <Show when={!podStore.unsupported()} fallback={
           <DockBanner kind="warn" text="当前 gateway 不支持 Pod，请更新 gateway" />
@@ -334,9 +138,9 @@ export function PodDock(props: {
             <Show when={podStore.loading()} fallback={
               <Show when={podStore.error()} fallback={
                 <DockEmpty
-                  text="这个项目还没有鲸群"
-                  hint="创建后直接交代第一个目标"
-                  action={{ label: "创建鲸群并交代第一个目标", onClick: () => void podStore.create() }}
+                  text="这个项目还没有团队"
+                  hint="在项目资源里创建团队，然后从工作空间向 Lead 交代工作"
+                  action={{ label: "创建团队", onClick: () => void podStore.create() }}
                 />
               }>
                 <DockBanner
@@ -366,72 +170,15 @@ export function PodDock(props: {
                   <span class={`mafw-pod-status-badge mafw-pod-status-${detail().pod.status}`}>
                     {podStatusLabel(detail().pod.status)}
                   </span>
-                  <Show when={detail().goals.find((goal) => goal.status === "active")}>
-                    {(goal) => <span class="mafw-pod-status-goal">{goal().title}</span>}
-                  </Show>
                   <span class="mafw-pod-status-queue">
-                    {detail().goals.filter((goal) => goal.status === "queued").length} 排队
+                    {detail().goals.filter((goal) => goal.status === "active").length} 进行中
                   </span>
-                  <span class="mafw-pod-status-cost">{formatPodCost(podStore.cost())}</span>
                 </div>
 
-                <div class="mafw-pod-tabs" role="tablist" aria-label="鲸群视图">
-                  <ButtonV2 variant="ghost" size="small" aria-selected={tab() === "work"} onClick={() => setTab("work")}>工作</ButtonV2>
+                <div class="mafw-pod-tabs" role="tablist" aria-label="团队视图">
                   <ButtonV2 variant="ghost" size="small" aria-selected={tab() === "team"} onClick={() => setTab("team")}>团队</ButtonV2>
                   <ButtonV2 variant="ghost" size="small" aria-selected={tab() === "memory"} onClick={() => setTab("memory")}>记忆</ButtonV2>
                 </div>
-
-                <Show when={tab() === "work"}>
-                  <PodGoalComposer
-                    busy={podStore.busy()}
-                    activeGoalId={activeGoalId()}
-                    autofocus={detail().goals.length === 0}
-                    initial={composerInitial()}
-                    onCreate={createGoal}
-                  />
-
-                  <PodAttentionList
-                    items={detail().attention}
-                    onOpenAttention={(item) => props.onOpenGoal(item.action.goalId, attentionTarget(item.action))}
-                  />
-
-                  <PodGoalQueue
-                    goals={detail().goals}
-                    onOpenGoal={props.onOpenGoal}
-                    onOpenResult={setResultGoalId}
-                    onCancelGoal={cancelQueued}
-                  />
-                  <PodTaskBoard
-                    tasks={detail().tasks}
-                    members={detail().members}
-                    busy={podStore.busy()}
-                    goalId={activeGoalId()}
-                    planEditable={(() => {
-                      const goal = podStore.detail()?.goals.find((item) => item.status === "active")
-                      return planEditGate({
-                        terminal: !goal || goal.status === "done" || goal.status === "aborted",
-                        stage: goal?.stage ?? null,
-                      }).editable
-                    })()}
-                    onCreate={createTask}
-                    onCreatePlan={createPlanTask}
-                    onEdit={editTask}
-                    onRenameNote={renameNote}
-                    onDelete={deleteTask}
-                    onOpenGoal={props.onOpenGoal}
-                  />
-                  <Show when={resultGoalId()}>
-                    {(goalId) => (
-                      <PodResultPanel
-                        podId={detail().pod.id}
-                        goalId={goalId()}
-                        onClose={() => setResultGoalId(null)}
-                        onResubmit={resubmit}
-                        onReject={(feedback) => rejectResult(goalId(), feedback)}
-                      />
-                    )}
-                  </Show>
-                </Show>
 
                 <Show when={tab() === "team"}>
                   <div class="mafw-pod-members">
@@ -518,12 +265,4 @@ export function PodDock(props: {
       </Show>
     </div>
   )
-}
-
-function taskErrorText(err: any): string {
-  const status = podHttpStatus(err)
-  if (status === 409) return "goal 正在执行或已结束，暂不能改计划"
-  if (status === 400) return "该任务不能改计划（手工任务或参数不合法）"
-  if (status === 404) return "任务或计划文件不存在"
-  return String(err?.message ?? err).slice(0, 60)
 }

@@ -2,7 +2,7 @@
 // attention 必须按 action.type 分流，不能全部落到无动作的执行时间线。
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import {
   attentionTarget,
   planEditGate,
@@ -15,13 +15,11 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8"
 
 const detail = read("../src/renderer/mafw/components/GoalDetailOverlay.tsx")
 const resultView = read("../src/renderer/mafw/components/PodResultView.tsx")
-const resultPanel = read("../src/renderer/mafw/components/PodResultPanel.tsx")
-const attention = read("../src/renderer/mafw/components/PodAttentionList.tsx")
+const workOverview = read("../src/renderer/mafw/components/WorkOverview.tsx")
 const board = read("../src/renderer/mafw/components/PodTaskBoard.tsx")
-const podDock = read("../src/renderer/mafw/components/PodDock.tsx")
 const shell = read("../src/renderer/mafw/MafwShell.tsx")
 
-test("结果正文只有一个实现：PodResultView，PodResultPanel 只是兼容薄壳", () => {
+test("结果正文只有一个实现：PodResultView", () => {
   assert.match(resultView, /window\.api\.mafw\.pod\.result\(/)
   assert.match(resultView, /revisionHistory\(/)
   assert.match(resultView, /rejectButtonLabel\(/)
@@ -29,10 +27,8 @@ test("结果正文只有一个实现：PodResultView，PodResultPanel 只是兼�
   assert.match(resultView, /TextareaV2/)
   assert.match(resultView, /export function PodResultView/)
 
-  assert.match(resultPanel, /import \{ PodResultView \}/)
-  assert.match(resultPanel, /<PodResultView/)
-  assert.doesNotMatch(resultPanel, /window\.api\.mafw\.pod\.result\(/)
-  assert.doesNotMatch(resultPanel, /revisionHistory\(/)
+  // Task 15：旧的独立结果末端已退役，结果只在统一 Goal 详情里出现。
+  assert.equal(existsSync(new URL("../src/renderer/mafw/components/PodResultPanel.tsx", import.meta.url)), false)
 })
 
 test("Goal 详情直接包含结果与打回，不再依赖独立的 Goal 结果入口", () => {
@@ -59,10 +55,8 @@ test("attention 按 action.type 分流到计划/问题/方向/结果", () => {
   assert.equal(attentionTarget({ type: "open_goal" }), "timeline")
   assert.equal(attentionTarget({ type: "open_discussion" }), "timeline")
 
-  assert.match(attention, /attentionTarget\(/)
-  assert.match(attention, /onOpenAttention/)
-  assert.match(attention, /data-focus=\{attentionTarget\(item\.action\)\}/)
-  assert.match(podDock, /attentionTarget\(item\.action\)/)
+  // needs_you 就是 attention 列表本身；打开时必须带 action 对应的落点。
+  assert.match(workOverview, /attentionTarget\(goal\.stage\.action\)/)
   assert.match(shell, /openGoalDetail\(/)
   assert.match(shell, /focus=\{goalDetailFocus\(\)\}/)
 })

@@ -55,7 +55,6 @@ export const WORKBENCH_SURFACES: readonly { id: BuiltinWorkbenchSurface; label: 
 
 export const EXECUTION_SECTIONS: readonly { id: ExecutionSection; label: string }[] = [
   { id: "overview", label: "概览" },
-  { id: "pod", label: "鲸群" },
   { id: "todos", label: "待办" },
   { id: "subagents", label: "子代理" },
   { id: "background", label: "后台" },
@@ -80,6 +79,8 @@ export function normalizeExecutionSection(v: string | null | undefined): Executi
 }
 
 export function executionSectionLabel(section: ExecutionSection): string {
+  // `pod` 是内部团队资源面（不再出现在日常下拉），仍然需要一个可读标签。
+  if (section === "pod") return "团队"
   return EXECUTION_SECTIONS.find((s) => s.id === section)?.label ?? "概览"
 }
 
@@ -180,4 +181,20 @@ export function workbenchStateFromStorage(read: (key: string) => string | null):
   )
 
   return { view, surface, executionSection }
+}
+
+/**
+ * Task 15：旧的执行分区 `pod` 退役为「项目资源」。读取时一次性标记，
+ * 调用方把左栏面偏好写成 resources 并删除执行分区键；normalize 已回落 overview。
+ */
+export function migrateWorkbenchStorage(read: (key: string) => string | null): {
+  state: WorkbenchState
+  openResources: boolean
+} {
+  const rawExecution = read("mafw-execution-section")
+  const legacyTab = read("mafw-right-dock-tab")
+  return {
+    state: workbenchStateFromStorage(read),
+    openResources: rawExecution === "pod" || legacyTab === "pod",
+  }
 }

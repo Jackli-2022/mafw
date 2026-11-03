@@ -1,7 +1,7 @@
 // Deep link routing for the mafw:// protocol (registered in main, forwarded
 // to the renderer via preload's onDeepLink). Pure parser so routing is
 // testable without Electron.
-const KNOWN_TABS = new Set(["chat", "goals", "memory", "approvals", "triage", "automation"])
+const KNOWN_TABS = new Set(["chat", "goals", "workspace", "memory", "approvals", "triage", "automation"])
 
 export type DeepLink =
   | { kind: "session"; id: string }
@@ -20,6 +20,8 @@ export function parseDeepLink(url: string): DeepLink | null {
   const id = rest.slice(slash + 1)
   if (!id) return null
   if (kind === "session") return { kind: "session", id }
+  // Task 15：旧 Goals 目的地统一落到项目工作空间（兼容 id 仍是 goals）。
+  if (kind === "tab" && id === "workspace") return { kind: "tab", id: "goals" }
   if (kind === "tab" && KNOWN_TABS.has(id)) return { kind: "tab", id }
   return null
 }

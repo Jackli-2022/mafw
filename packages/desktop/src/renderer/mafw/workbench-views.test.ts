@@ -15,6 +15,7 @@ import {
   normalizeWorkbenchView,
   parsePluginSurfaceId,
   pluginSurfaceId,
+  migrateWorkbenchStorage,
   terminalSurfaceHotkeyAction,
   workbenchStateFromStorage,
 } from "./workbench-views"
@@ -43,11 +44,12 @@ describe("workbench-views", () => {
     assert.deepEqual(WORKBENCH_SURFACES.map((v) => v.label), ["文件", "浏览器", "终端"])
     assert.deepEqual(
       EXECUTION_SECTIONS.map((s) => s.label),
-      ["概览", "鲸群", "待办", "子代理", "后台", "轨迹"],
+      ["概览", "待办", "子代理", "后台", "轨迹"],
     )
     assert.equal(executionSectionLabel("background"), "后台")
-    assert.equal(executionSectionLabel("pod"), "鲸群")
-    assert.equal(normalizeExecutionSection("pod"), "pod")
+    // Task 15：鲸群不再是日常执行分区；持久化的 pod 一次性迁到项目资源。
+    assert.equal(executionSectionLabel("pod"), "团队")
+    assert.equal(normalizeExecutionSection("pod"), "overview")
   })
 
   test("keyboard helpers move within L1 and L2 without wrapping", () => {
@@ -66,6 +68,20 @@ describe("workbench-views", () => {
     const keys = new Set(["mafw-right-dock-tab", "mafw-workbench-tab", "mafw-tasks-placement", "keep"])
     clearLegacyWorkbenchKeys((k) => keys.delete(k))
     assert.deepEqual([...keys], ["keep"])
+  })
+
+  test("persisted executionSection=pod migrates to the project resources entry once", () => {
+    const migrated = migrateWorkbenchStorage((key) =>
+      key === "mafw-execution-section" ? "pod" : null,
+    )
+    assert.equal(migrated.openResources, true)
+    assert.equal(migrated.state.executionSection, "overview")
+
+    const normal = migrateWorkbenchStorage((key) =>
+      key === "mafw-execution-section" ? "trajectory" : null,
+    )
+    assert.equal(normal.openResources, false)
+    assert.equal(normal.state.executionSection, "trajectory")
   })
 
   test("legacy right-dock tabs map to B1 state", () => {

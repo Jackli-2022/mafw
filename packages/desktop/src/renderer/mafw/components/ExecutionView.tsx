@@ -14,7 +14,6 @@ import { BackgroundDock } from "./BackgroundDock"
 import { TrajectoryDock } from "./TrajectoryDock"
 import { PodDock } from "./PodDock"
 import type { ExecutionSection } from "../workbench-views"
-import type { GoalDetailFocus } from "../pod-model"
 
 export type ExecutionViewProps = {
   section: ExecutionSection
@@ -31,8 +30,7 @@ export type ExecutionViewProps = {
   onClosePanel: () => void
   onOpenSubagent: (id: string) => void
   onOpenPodSession: (id: string, title?: string) => void
-  onOpenGoal: (goalId: string, focus?: GoalDetailFocus) => void
-  podPanelRequest?: { tab: "work" | "team" | "memory"; seq: number }
+  podPanelRequest?: { tab: "team" | "memory"; seq: number }
   onOpenSection: (section: ExecutionSection) => void
   trajectoryLive: any[]
   trajectoryTurnLive: any | null
@@ -109,7 +107,6 @@ export function ExecutionView(props: ExecutionViewProps) {
           projectDir={props.projectDir}
           active={props.section === "pod"}
           onOpenSession={props.onOpenPodSession}
-          onOpenGoal={props.onOpenGoal}
           panelRequest={props.podPanelRequest}
         />
       </div>

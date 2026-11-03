@@ -614,8 +614,11 @@ describe("token v5.2 — 组件接线", () => {
     expect(b).toContain("align-items: center")
     expect(read("src/renderer/mafw/components/WelcomeHome.tsx")).not.toContain('class="mafw-welcome mafw-bento"')
   })
-  test("Dashboard KPI 行接入 bento", () =>
-    expect(read("src/renderer/mafw/pages/Dashboard.tsx")).toContain('class="mafw-bento"'))
+  test("Dashboard 退役，工作空间接管列表与概览", () => {
+    expect(() => read("src/renderer/mafw/pages/Dashboard.tsx")).toThrow()
+    expect(read("src/renderer/mafw/components/WorkspaceHome.tsx")).toContain('class="mafw-workspace"')
+    expect(read("src/renderer/mafw/components/WorkOverview.tsx")).toContain("mafw-work-overview")
+  })
   test("ChatPane 主区带双栏 hook 属性", () =>
     expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain('data-layout="chat"'))
   test("ChatPane hook grid 等价转换", () => {
@@ -800,9 +803,11 @@ describe("topframe — 顶行框架", () => {
     const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
     const views = read("src/renderer/mafw/workbench-views.ts")
     for (const t of ["workbench", "execution", "review"]) expect(views).toContain(`id: "${t}"`)
-    for (const t of ["overview", "pod", "todos", "subagents", "background", "trajectory"]) {
+    for (const t of ["overview", "todos", "subagents", "background", "trajectory"]) {
       expect(views).toContain(`id: "${t}"`)
     }
+    // Task 15：鲸群从日常执行分区退役，`pod` 只作为内部团队资源面存在。
+    expect(views).not.toContain('{ id: "pod", label: "鲸群" }')
     expect(shell).toContain("DropdownMenu")
     expect(shell).not.toContain("mafw-session-float")
   })

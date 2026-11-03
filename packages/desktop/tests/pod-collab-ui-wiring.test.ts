@@ -44,7 +44,7 @@ function cssBlock(selector: string): string {
 const planReview = read("../src/renderer/mafw/components/PlanReviewOverlay.tsx")
 const planRender = read("../src/renderer/mafw/components/plan-render.ts")
 const goalDetail = read("../src/renderer/mafw/components/GoalDetailOverlay.tsx")
-const attention = read("../src/renderer/mafw/components/PodAttentionList.tsx")
+const workOverview = read("../src/renderer/mafw/components/WorkOverview.tsx")
 const directionPanel = read("../src/renderer/mafw/components/PodDirectionPanel.tsx")
 const probePanel = read("../src/renderer/mafw/components/PodProbePanel.tsx")
 const podModel = read("../src/renderer/mafw/pod-model.ts")
@@ -94,10 +94,12 @@ test("Goal 详情是统一人工行动面：结果/打回/计划任务/问题回
   assert.match(goalDetail, /requestPodTechLeadOpen\(/)
 })
 
-test("方向 attention 使用现有 PodAttentionList 并有人类可读标签", () => {
-  assert.match(attention, /direction_review/)
-  assert.match(attention, /方向/)
-  assert.match(attention, /open_direction_review|onOpenGoal/)
+test("方向 attention 投影到工作概览的 needs_you，并带 action 落点", () => {
+  assert.match(workOverview, /needs_you/)
+  assert.match(workOverview, /attentionTarget/)
+  assert.match(workOverview, /onOpenGoal/)
+  assert.match(podModel, /direction_review/)
+  assert.match(podModel, /open_direction_review/)
 })
 
 test("阶段文案覆盖 discussing / direction_review / planning / probing / implementing / reviewing / result_notified", () => {

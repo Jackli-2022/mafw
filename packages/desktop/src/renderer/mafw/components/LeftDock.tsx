@@ -16,7 +16,7 @@ import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { ResizeHandle } from "@mafw/ui/resize-handle"
 import { NotesDock } from "./NotesDock"
-import { PodRailFace } from "./PodRailFace"
+import { ProjectResources } from "./ProjectResources"
 import type { PodDetail, PodMessage } from "@mafw/sdk"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { formatRailTitle, railProjectName } from "./rail-display"
@@ -25,6 +25,7 @@ import { useConnPhase } from "../connection-state"
 import { ConnBanner } from "./ConnBanner"
 import { buildSessionTree, pageGroups, RAIL_PAGE_SIZE, type SessionNode, type ProjectNode } from "./session-tree"
 import type { LeftDockFace, LeftDockMode } from "../left-dock"
+import type { NavTab } from "./nav-tab"
 
 const copyText = async (text: string) => {
   try {
@@ -73,8 +74,9 @@ type Props = {
   onPodRefresh?: () => void
   onPodOpenSession?: (sessionId: string) => void
   onPodOpenGoal?: (goalId: string) => void
-  onPodOpenPanel?: (panel: "tasks" | "inbox") => void
-  onPodOpenMessage?: (messageId: string) => void
+  onPodOpenPanel?: (panel: "team" | "memory", target?: "members" | "inbox") => void
+  onPodOpenNotes?: () => void
+  onPodNavigate?: (tab: NavTab) => void
   onPodCreate?: () => void
 }
 
@@ -388,7 +390,7 @@ export function LeftDock(props: Props) {
       </Show>
 
       <Show when={props.face === "pod"}>
-        <PodRailFace
+        <ProjectResources
           detail={props.podDetail ?? null}
           messages={props.podMessages ?? []}
           loading={!!props.podLoading}
@@ -400,8 +402,9 @@ export function LeftDock(props: Props) {
           onRefresh={() => props.onPodRefresh?.()}
           onOpenSession={(id) => props.onPodOpenSession?.(id)}
           onOpenGoal={(id) => props.onPodOpenGoal?.(id)}
-          onOpenPanel={(panel) => props.onPodOpenPanel?.(panel)}
-          onOpenMessage={(id) => props.onPodOpenMessage?.(id)}
+          onOpenPanel={(panel, target) => props.onPodOpenPanel?.(panel, target)}
+          onOpenNotes={() => props.onPodOpenNotes?.()}
+          onNavigate={(tab) => props.onPodNavigate?.(tab)}
           onCreate={() => props.onPodCreate?.()}
         />
       </Show>

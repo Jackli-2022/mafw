@@ -16,10 +16,9 @@ import { techLeadTabTitle } from "../src/renderer/mafw/pod-store"
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8")
 
-const podResultPanel = read("../src/renderer/mafw/components/PodResultPanel.tsx")
 const podResultView = read("../src/renderer/mafw/components/PodResultView.tsx")
 const podDock = read("../src/renderer/mafw/components/PodDock.tsx")
-const board = read("../src/renderer/mafw/components/PodTaskBoard.tsx")
+const workOverview = read("../src/renderer/mafw/components/WorkOverview.tsx")
 const goalDetail = read("../src/renderer/mafw/components/GoalDetailOverlay.tsx")
 const rail = read("../src/renderer/mafw/components/IconRail.tsx")
 const shell = read("../src/renderer/mafw/MafwShell.tsx")
@@ -48,20 +47,17 @@ test("结果面板：revision 状态 + Goal 验收/证据 + 版本历史", () =>
   assert.match(podResultView, /逐任务证据/)
   assert.match(podResultView, /版本历史/)
   assert.match(podResultView, /revisionStatusLabel\(|statusLabel/)
-  // 结果正文只有一套实现：兼容面板只渲染 PodResultView。
-  assert.match(podResultPanel, /<PodResultView/)
-  assert.doesNotMatch(podResultPanel, /window\.api\.mafw\.pod\.result\(/)
 })
 
 test("打回：反馈必填、按钮文案单一来源、调 pod.rejectResult", () => {
   assert.match(podResultView, /rejectButtonLabel\(/)
   assert.match(podResultView, /TextareaV2/)
   assert.match(podResultView, /disabled=\{!feedback\(\)\.trim\(\)/)
-  assert.match(podDock, /pod\.rejectResult\(/)
-  assert.match(podDock, /requestPodTechLeadOpen\(/)
+  assert.match(goalDetail, /pod\.rejectResult\(/)
+  assert.match(goalDetail, /requestPodTechLeadOpen\(/)
   assert.match(shell, /podTechLeadOpenRequest\(\)/)
   assert.match(shell, /openTechLead\(/)
-  // 失败必须冒泡到面板做内联提示：PodDock 不得自己吞掉错误（面板 rejectError 会成死分支）。
+  // 失败必须冒泡到面板做内联提示：调用方不得自己吞掉错误（面板 rejectError 会成死分支）。
   assert.match(podResultView, /setRejectError\(rejectErrorMessage\(podHttpStatus\(err\)\)\)/)
   assert.doesNotMatch(podDock, /rejectErrorMessage/)
 })
@@ -79,11 +75,10 @@ test("结果事件：隐藏时 OS 通知 + 未查看结果点（不掺 attention
   assert.equal(podRailBadge({ attention, unread: 4, resultReady: true }), 1)
 })
 
-test("从通知打开结果：visibilitychange 后请求打开结果面板", () => {
+test("从通知打开结果：visibilitychange 后打开统一 Goal 详情", () => {
   assert.match(shell, /visibilitychange/)
-  assert.match(shell, /requestPodResultOpen\(/)
-  assert.match(podDock, /podResultOpenRequest\(\)/)
-  assert.match(podDock, /setResultGoalId\(request\.goalId\)/)
+  assert.match(shell, /openPendingResult/)
+  assert.match(shell, /openGoalDetail\(goalId, "result"\)/)
 })
 
 test("查看结果清除未读点（localStorage 持久化，键含 revision；只在加载成功后标记）", () => {
@@ -95,8 +90,8 @@ test("查看结果清除未读点（localStorage 持久化，键含 revision；�
 })
 
 test("队列/详情显示 revision，旧版本历史保留", () => {
-  assert.match(board, /goalRevisionOf\(/)
-  assert.match(board, /rev \{/)
+  assert.match(workOverview, /rev \$\{goal\.revision\}/)
+  assert.match(workOverview, /goal\.revision/)
   assert.match(goalDetail, /revisionHistory\(/)
   assert.match(goalDetail, /版本历史/)
   assert.match(goalDetail, /revisionStatusLabel\(/)
@@ -121,13 +116,12 @@ test("打回后的 Tech Lead tab 标题带新 revision（rev 1 不啰嗦）", ()
 test("设计契约：结果面板/版本历史无裸 button/input/title", () => {
   for (const [name, src] of [
     ["PodResultView", podResultView],
-    ["PodResultPanel", podResultPanel],
     ["GoalDetailOverlay", goalDetail],
   ] as const) {
     assert.doesNotMatch(src, /<button/, `${name} 不得用裸 button`)
     assert.doesNotMatch(src, /<input/, `${name} 不得用裸 input`)
     assert.doesNotMatch(src, /\stitle=/, `${name} 不得用裸 title`)
   }
-  assert.match(podResultPanel, /ButtonV2/)
+  assert.match(podResultView, /ButtonV2/)
   assert.match(podResultView, /TextareaV2/)
 })

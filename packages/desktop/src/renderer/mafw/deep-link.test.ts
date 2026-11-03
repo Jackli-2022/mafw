@@ -8,6 +8,7 @@ describe("parseDeepLink", () => {
 
   test("parses mafw://tab/<name> for known tabs", () => {
     expect(parseDeepLink("mafw://tab/goals")).toEqual({ kind: "tab", id: "goals" })
+    expect(parseDeepLink("mafw://tab/workspace")).toEqual({ kind: "tab", id: "goals" })
     expect(parseDeepLink("mafw://tab/memory")).toEqual({ kind: "tab", id: "memory" })
   })
 

@@ -60,7 +60,6 @@ import {
   isPodResultViewed,
   podTechLeadOpenRequest,
   podViewedResultKeys,
-  requestPodResultOpen,
 } from "./pod-result-store"
 import {
   attentionTarget,
@@ -99,8 +98,8 @@ import { openExecutionUsage } from "./execution-usage"
 import { defaultDockOpen } from "./workbench-defaults"
 import {
   clearLegacyWorkbenchKeys,
+  migrateWorkbenchStorage,
   terminalSurfaceHotkeyAction,
-  workbenchStateFromStorage,
   type ExecutionSection,
   type WorkbenchSurface,
   type WorkbenchView,
@@ -214,6 +213,7 @@ export function MafwShell() {
   const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
   const [podGoalId, setPodGoalId] = createSignal<string | null>(null)
   const [goalDetailFocus, setGoalDetailFocus] = createSignal<GoalDetailFocus>("timeline")
+  const [goalComposerRequest, setGoalComposerRequest] = createSignal(0)
   /** 打开统一 Goal 详情，并按 attention action 指定落点（计划/问题/方向/结果）。 */
   const openGoalDetail = (goalId: string, focus: GoalDetailFocus = "timeline"): void => {
     setGoalDetailFocus(focus)
@@ -436,7 +436,11 @@ export function MafwShell() {
     }
   }
   const openNewGoalComposer = (): void => {
-    openPodPanel("tasks")
+    closeLeftDockIfOverlay()
+    setShowConfig(false)
+    setActiveTab("goals")
+    setShowWelcome(false)
+    setGoalComposerRequest((seq) => seq + 1)
   }
 
   const activeHandoffRole = (): string | undefined => {
@@ -1752,9 +1756,17 @@ export function MafwShell() {
   )
   try { localStorage.setItem("mafw-workbench-detent", String(workbenchBoot.detent)) } catch { /* ignore */ }
   const [rightDockOpen, setRightDockOpen] = createSignal(defaultDockOpen(localStorage.getItem("mafw-right-dock-open")))
-  const bootView = workbenchStateFromStorage((k) => {
+  const bootWorkbench = migrateWorkbenchStorage((k) => {
     try { return localStorage.getItem(k) } catch { return null }
   })
+  // Task 15：旧「执行 › 鲸群」持久化一次性迁到项目资源；分区键随后删除。
+  if (bootWorkbench.openResources) {
+    try {
+      localStorage.setItem("mafw-left-dock-face", "pod")
+      localStorage.removeItem("mafw-execution-section")
+    } catch { /* ignore */ }
+  }
+  const bootView = bootWorkbench.state
   const [workbenchView, setWorkbenchView] = createSignal<WorkbenchView>(bootView.view)
   const [workbenchSurface, setWorkbenchSurface] = createSignal<WorkbenchSurface>(bootView.surface)
   const [previousSurface, setPreviousSurface] = createSignal<"code" | "browser">(
@@ -1962,14 +1974,15 @@ export function MafwShell() {
     const goal = detail?.goals.find((item) => item.goalId === goalId)
     if (!detail || !goal) return
     if (isPodResultViewed(detail.pod.id, goalId, goalRevisionOf(goal) ?? 1)) return
-    openPodPanel("tasks")
-    requestPodResultOpen(goalId)
+    // Task 15：结果就在统一 Goal 详情里，不再经过右栏「鲸群工作」页。
+    openGoalDetail(goalId, "result")
   }
   const [podPanelRequest, setPodPanelRequest] = createSignal<{
-    tab: "work" | "team" | "memory"
+    tab: "team" | "memory"
     seq: number
-  }>({ tab: "work", seq: 0 })
-  const openPodPanel = (panel: "tasks" | "inbox") => {
+    target?: "members" | "inbox"
+  }>({ tab: "team", seq: 0 })
+  const openPodPanelTab = (tab: "team" | "memory", target?: "members" | "inbox") => {
     closeLeftDockIfOverlay()
     setShowConfig(false)
     setActiveTab("chat")
@@ -1978,7 +1991,8 @@ export function MafwShell() {
     // The Pod dock is tabbed now; ask it to select and then scroll to the
     // requested section instead of assuming a single flat column.
     setPodPanelRequest((prev) => ({
-      tab: panel === "inbox" ? "team" : "work",
+      tab,
+      ...(target ? { target } : {}),
       seq: prev.seq + 1,
     }))
   }
@@ -2115,10 +2129,6 @@ export function MafwShell() {
     const next = reconcileGoalSessionTabs(sessions(), detail)
     if (next !== sessions()) setSessions(next)
   })
-  const onPodOpenMessage = (messageId: string) => {
-    void podStore.markRead(messageId)
-    openPodPanel("inbox")
-  }
   // 「记入鲸群」：chatview 的一条消息 → 一条 Pod note（不自动镜像，见
   // docs/research/2026-10-31-agent-chat-vs-team-log.md）。
   const recordPodNote = async (input: {
@@ -2589,8 +2599,14 @@ export function MafwShell() {
             onPodRefresh={() => { void podStore.refresh() }}
             onPodOpenSession={(sid) => { void openPodSession(sid) }}
             onPodOpenGoal={(goalId) => openGoalDetail(goalId)}
-            onPodOpenPanel={openPodPanel}
-            onPodOpenMessage={onPodOpenMessage}
+            onPodOpenPanel={(tab, target) => openPodPanelTab(tab, target)}
+            onPodOpenNotes={() => openLeftDockFace("notes")}
+            onPodNavigate={(tab) => {
+              setShowConfig(false)
+              setShowWelcome(false)
+              setActiveTab(tab)
+              closeLeftDockIfOverlay()
+            }}
             onPodCreate={() => { void podStore.create() }}
           />
         </Show>
@@ -2748,14 +2764,18 @@ export function MafwShell() {
                   .filter((s) => isHandoffableRole(s.metadata?.mafw?.role))
                   .slice(0, 12)
                   .map((s) => ({ id: s.id, title: s.title }))}
+                composerRequest={goalComposerRequest()}
                 onOpenLead={openLeadEntry}
                 onNewDiscussion={() => void createSession()}
                 onOpenDiscussion={(sid) => {
                   const item = historySessions().find((s) => s.id === sid)
                   openSessionTab(sid, item?.title)
                 }}
-                onNewGoal={openNewGoalComposer}
-                onOpenGoal={(goal) => openGoalDetail(goal.goalId, goal.resultReady ? "result" : "timeline")}
+                onGoalCreated={(goalId) => openGoalDetail(goalId)}
+                onOpenGoal={(goal, focus) => openGoalDetail(
+                  goal.goalId,
+                  focus ?? (goal.resultReady ? "result" : "timeline"),
+                )}
               />
             ) : activeTab() === "memory" ? (
               <MemoryPage />
@@ -2883,7 +2903,6 @@ export function MafwShell() {
                       onClosePanel={() => applyRightDock(false)}
                       onOpenSubagent={(id) => void openSubagentSession(id)}
                       onOpenPodSession={(sid, title) => { void openPodSession(sid, title) }}
-                      onOpenGoal={(id, focus) => openGoalDetail(id, focus)}
                       podPanelRequest={podPanelRequest()}
                       onOpenSection={applyExecutionSection}
                       trajectoryLive={trajectoryLive()[currentSessionID()] || []}

@@ -132,21 +132,7 @@ export function createPodResultQueue(deps: {
   }
 }
 
-// ── 打开请求（SSE/通知侧 → 右栏面板） ─────────────────────────────────────
-
-export type PodResultOpenRequest = { goalId: string; seq: number }
-
-const [resultOpenRequest, setResultOpenRequest] = createSignal<PodResultOpenRequest | null>(null)
-
-export function podResultOpenRequest(): PodResultOpenRequest | null {
-  return resultOpenRequest()
-}
-
-/** 请求打开某个 Goal 的结果面板（seq 保证同一 Goal 再次触发也会被消费）。 */
-export function requestPodResultOpen(goalId: string): void {
-  if (!goalId) return
-  setResultOpenRequest((prev) => ({ goalId, seq: (prev?.seq ?? 0) + 1 }))
-}
+// ── 打开请求（SSE/通知侧 → Tech Lead 讨论） ───────────────────────────────
 
 export type PodTechLeadOpenRequest = { goalId: string; revision: number | null; seq: number }
 

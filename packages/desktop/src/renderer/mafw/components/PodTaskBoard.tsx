@@ -1,14 +1,12 @@
 import { For, Show, createSignal } from "solid-js"
-import type { PodGoal, PodMember, PodTask } from "@mafw/sdk"
+import type { PodMember, PodTask } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import {
   canEditPlanTask,
   formatAcceptanceLines,
-  goalRevisionOf,
   groupPodTasks,
-  goalQueueRow,
   parseAcceptanceLines,
   planTaskOnly,
   noteTasksOnly,
@@ -16,112 +14,7 @@ import {
   podTaskAcceptance,
   podTaskArtifacts,
   podTaskStatusLabel,
-  terminalGoalsNewestFirst,
 } from "../pod-model"
-
-function goalOrder(goal: PodGoal): number {
-  if (goal.status === "active") return 0
-  if (goal.status === "queued") return 1
-  return 2
-}
-
-export function PodGoalQueue(props: {
-  goals: PodGoal[]
-  onOpenGoal: (goalId: string) => void
-  onOpenResult?: (goalId: string) => void
-  onCancelGoal?: (goalId: string) => Promise<boolean>
-}) {
-  const [cancelId, setCancelId] = createSignal<string | null>(null)
-  const [cancelling, setCancelling] = createSignal(false)
-  const cancel = async (goalId: string) => {
-    if (!props.onCancelGoal || cancelling()) return
-    setCancelling(true)
-    try {
-      if (await props.onCancelGoal(goalId)) setCancelId(null)
-    } finally {
-      setCancelling(false)
-    }
-  }
-  const visible = () => {
-    const sorted = [...props.goals].sort(
-      (a, b) => goalOrder(a) - goalOrder(b) || a.enqueuedAt.localeCompare(b.enqueuedAt),
-    )
-    const open = sorted.filter((goal) => goal.status === "active" || goal.status === "queued")
-    const terminal = terminalGoalsNewestFirst(sorted).slice(0, 3)
-    return [...open, ...terminal]
-  }
-
-  const open = (goal: PodGoal) => {
-    if (goal.goalId) props.onOpenGoal(goal.goalId)
-  }
-
-  return (
-    <div class="mafw-pod-goals">
-      <div class="mafw-pod-section-head">
-        <span>队列</span>
-        <span class="mafw-pod-section-count">{props.goals.filter((goal) => goal.status === "queued").length} 排队</span>
-      </div>
-      <Show when={visible().length > 0} fallback={<div class="mafw-pod-empty-line">暂无工单</div>}>
-        <For each={visible()}>
-          {(goal) => (
-            <div
-              class="mafw-pod-goal-row"
-              role="button"
-              tabIndex={0}
-              onClick={() => open(goal)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault()
-                  open(goal)
-                }
-              }}
-            >
-              <span class={`mafw-pod-goal-status mafw-pod-goal-${goal.status}`}>{
-                goal.stage.owner === "person"
-                  ? "需要你"
-                  : goal.stage.kind === "ended"
-                    ? "已结束"
-                    : goal.stage.kind === "queued"
-                      ? (goal.stage.queueReason === "paused" ? "已暂停" : "排队中")
-                      : "进行中"
-              }</span>
-              <span class="mafw-pod-goal-title">{goalQueueRow(goal)}</span>
-              <Show when={goalRevisionOf(goal) != null}>
-                <span class="mafw-pod-section-count">rev {goalRevisionOf(goal)}</span>
-              </Show>
-              <Show when={goal.resultReady && props.onOpenResult}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  onClick={(event: MouseEvent) => {
-                    event.stopPropagation()
-                    props.onOpenResult!(goal.goalId)
-                  }}
-                >
-                  结果
-                </ButtonV2>
-              </Show>
-              <Show when={goal.status === "queued" && props.onCancelGoal}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  disabled={cancelling()}
-                  onClick={(event: MouseEvent) => {
-                    event.stopPropagation()
-                    if (cancelId() === goal.goalId) void cancel(goal.goalId)
-                    else setCancelId(goal.goalId)
-                  }}
-                >
-                  {cancelId() === goal.goalId ? (cancelling() ? "取消中…" : "确认取消") : "取消排队"}
-                </ButtonV2>
-              </Show>
-            </div>
-          )}
-        </For>
-      </Show>
-    </div>
-  )
-}
 
 export function PodTaskBoard(props: {
   tasks: PodTask[]

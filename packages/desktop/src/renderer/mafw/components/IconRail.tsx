@@ -52,13 +52,13 @@ export function IconRail(props: IconRailProps) {
   const connClass = () => connDotState(props.connPhase, props.gatewayState)
 
   const destinationItems = (): RailItem[] => [
-    { key: "sessions", icon: "bubble-5", label: props.face === "sessions" ? "收起工作 (Ctrl+B)" : "工作 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
+    { key: "sessions", icon: "bubble-5", label: props.face === "sessions" ? "收起讨论 (Ctrl+B)" : "讨论 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
     { key: "search", icon: "magnifying-glass", label: props.face === "search" ? "收起搜索" : "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },
     { key: "notes", icon: "sticky-note", label: props.face === "notes" ? "收起便签" : "便签", onClick: () => props.onToggleFace("notes"), active: props.face === "notes" },
     {
       key: "pod",
       icon: "team-three",
-      label: props.face === "pod" ? "收起鲸群" : "鲸群",
+      label: props.face === "pod" ? "收起资源" : "资源",
       onClick: () => props.onToggleFace("pod"),
       active: props.face === "pod",
       badge: props.podBadge,
@@ -67,7 +67,7 @@ export function IconRail(props: IconRailProps) {
     },
   ]
   const metaItems = (): RailItem[] => [
-    { key: "dashboard", icon: "layout-grid", label: "Dashboard", onClick: props.onDashboard, active: props.dashboardActive, badge: props.approvals },
+    { key: "workspace", icon: "layout-grid", label: "工作空间", onClick: props.onDashboard, active: props.dashboardActive, badge: props.approvals },
     { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, active: props.configActive, connDot: true },
   ]
 

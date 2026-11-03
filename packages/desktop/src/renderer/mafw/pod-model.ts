@@ -278,7 +278,7 @@ export function reconcileGoalSessionTabs<T extends {
 
 /**
  * Tech Lead 讨论 tab 的发送目标（Task 20 review）：不从 tab metadata 猜，而是用
- * Pod 成员/会话归属反推——PodDock / PodRailFace / Goal 详情等所有入口都能命中。
+ * Pod 成员/会话归属反推——PodDock / ProjectResources / Goal 详情等所有入口都能命中。
  */
 export function techLeadRouteForSession(
   detail: PodDetail | null,

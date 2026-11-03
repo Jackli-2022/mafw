@@ -2,6 +2,8 @@ import { createEffect, createSignal, For, onCleanup, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { WorkOverview } from "./WorkOverview"
+import { PodGoalComposer } from "./PodGoalComposer"
+import type { GoalDetailFocus } from "../pod-model"
 
 type Discussion = { id: string; title?: string }
 
@@ -23,15 +25,19 @@ function friendlyWorkError(error: unknown): string {
 export function WorkspaceHome(props: {
   projectDir: string | null
   discussions?: Discussion[]
+  /** Welcome / command palette ask for the Goal composer; seq consumes repeats. */
+  composerRequest?: number
   onOpenLead: () => Promise<boolean> | boolean
   onNewDiscussion: () => void
   onOpenDiscussion: (sessionID: string) => void
-  onNewGoal: () => void
-  onOpenGoal: (goal: PodGoal) => void
+  onGoalCreated?: (goalId: string) => void
+  onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
 }) {
   const [overview, setOverview] = createSignal<PodWorkOverview | null>(null)
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
+  const [composerOpen, setComposerOpen] = createSignal(false)
+  const [creating, setCreating] = createSignal(false)
 
   const load = async () => {
     const dir = props.projectDir
@@ -60,6 +66,46 @@ export function WorkspaceHome(props: {
     onCleanup(() => clearInterval(timer))
   })
 
+  createEffect(() => {
+    const request = props.composerRequest ?? 0
+    if (request > 0) setComposerOpen(true)
+  })
+
+  const activeGoalId = () => (
+    overview()?.groups.in_progress.find((goal) => goal.status === "active")?.goalId
+    ?? overview()?.groups.needs_you.find((goal) => goal.status === "active")?.goalId
+    ?? null
+  )
+
+  const createGoal = async (input: {
+    title: string
+    objective: string
+    acceptance: string[]
+    boundaries: string[]
+    planReview: "auto" | "manual"
+  }): Promise<boolean> => {
+    const dir = props.projectDir
+    if (!dir || creating()) return false
+    setCreating(true)
+    try {
+      // 显式点击「新建 Goal」才创建 Pod；工作概览轮询永远不创建。
+      const detail = await window.api.mafw.pod.ensure(dir)
+      const created = await window.api.mafw.pod.createGoal(detail.pod.id, {
+        ...input,
+        source: "desktop",
+      })
+      setComposerOpen(false)
+      await load()
+      props.onGoalCreated?.(created.goalId)
+      return true
+    } catch (err) {
+      setError(friendlyWorkError(err))
+      return false
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div class="mafw-workspace">
       <header class="mafw-workspace-head">
@@ -74,7 +120,7 @@ export function WorkspaceHome(props: {
           <ButtonV2 variant="outline" icon="edit" onClick={() => props.onNewDiscussion()}>
             新话题
           </ButtonV2>
-          <ButtonV2 variant="outline" icon="target" onClick={() => props.onNewGoal()}>
+          <ButtonV2 variant="outline" icon="target" onClick={() => setComposerOpen((open) => !open)}>
             新建 Goal
           </ButtonV2>
         </div>
@@ -97,10 +143,21 @@ export function WorkspaceHome(props: {
           overview={overview()}
           loading={loading()}
           error={error()}
-          onOpenGoal={(goal) => props.onOpenGoal(goal)}
+          onOpenGoal={(goal, focus) => props.onOpenGoal(goal, focus)}
           onOpenAll={() => void load()}
         />
       </div>
+
+      <Show when={composerOpen()}>
+        <section class="mafw-workspace-composer" aria-label="新建 Goal">
+          <PodGoalComposer
+            busy={creating()}
+            activeGoalId={activeGoalId()}
+            autofocus
+            onCreate={createGoal}
+          />
+        </section>
+      </Show>
 
       <Show when={(props.discussions?.length ?? 0) > 0}>
         <section class="mafw-workspace-discussions" aria-label="自由讨论">

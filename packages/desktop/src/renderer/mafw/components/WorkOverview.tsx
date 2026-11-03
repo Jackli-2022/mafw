@@ -2,6 +2,7 @@ import { For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { workspaceSections } from "../workspace-model"
+import { attentionTarget, type GoalDetailFocus } from "../pod-model"
 
 const LABELS: Record<string, string> = {
   needs_you: "需要你",
@@ -47,7 +48,7 @@ export function WorkOverview(props: {
   overview: PodWorkOverview | null
   loading?: boolean
   error?: string | null
-  onOpenGoal: (goal: PodGoal) => void
+  onOpenGoal: (goal: PodGoal, focus: GoalDetailFocus) => void
   onOpenAll?: () => void
 }) {
   const sections = () => workspaceSections(props.overview ?? EMPTY)
@@ -85,7 +86,7 @@ export function WorkOverview(props: {
                     variant="ghost"
                     size="small"
                     class="mafw-work-item"
-                    onClick={() => props.onOpenGoal(goal)}
+                    onClick={() => props.onOpenGoal(goal, attentionTarget(goal.stage.action))}
                   >
                     <span class="mafw-work-item-title">{goal.title || "未命名目标"}</span>
                     <span class="mafw-work-item-meta">{goalMeta(goal)}</span>
