@@ -11,6 +11,9 @@ export interface RemoteCommand {
   kind: 'builtin' | 'custom'
 }
 
+/** User-facing manual Lead rotate is retired; old gateways must not expose it. */
+const RETIRED_REMOTE_COMMANDS = new Set(['new-topic'])
+
 const REMOTE_CATEGORY_MAP: Record<string, CommandCategory> = {
   goals: '会话',
   session: '会话',
@@ -26,6 +29,7 @@ export function mergeCommands(local: CommandDef[], remote: RemoteCommand[]): Com
   }
   const out = [...local]
   for (const r of remote) {
+    if (RETIRED_REMOTE_COMMANDS.has(r.name)) continue
     if (taken.has(r.name) || (r.aliases ?? []).some((a) => taken.has(a))) continue
     out.push({
       name: r.name,

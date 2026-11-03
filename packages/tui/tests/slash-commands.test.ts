@@ -8,7 +8,6 @@ function harness(over: Partial<Record<string, any>> = {}) {
   const deps = {
     loadOlder: async () => { calls.push('older') },
     toggleHelp: () => { calls.push('help') },
-    rotateTopic: async () => { calls.push('new'); return null },
     btw: async (args: string) => { calls.push(`btw:${args}`); return null },
     showSessionPicker: async () => { calls.push('sessions') },
     showQueueManager: async () => { calls.push('queue') },
@@ -40,13 +39,13 @@ function harness(over: Partial<Record<string, any>> = {}) {
   return { calls, gates, deps, handler: createSlashHandler(deps as any) }
 }
 
-test('existing commands keep working: help/older/new/btw', async () => {
+test('existing commands keep working: help/older/btw; /new is retired', async () => {
   const h = harness()
   assert.equal(await h.handler('help', ''), null)
   assert.equal(await h.handler('older', ''), null)
-  assert.equal(await h.handler('new', ''), null)
+  assert.match(await h.handler('new', '') ?? '', /未知命令/)
   assert.equal(await h.handler('btw', 'side question'), null)
-  assert.deepEqual(h.calls, ['help', 'older', 'new', 'btw:side question'])
+  assert.deepEqual(h.calls, ['help', 'older', 'btw:side question'])
 })
 
 test('sessions command and aliases open the session picker', async () => {
@@ -147,7 +146,7 @@ test('usage/copy/export dispatch to their deps', async () => {
 
 test('SLASH_COMMANDS covers the full command surface', () => {
   const names = SLASH_COMMANDS.map((c) => c.name).sort()
-  assert.deepEqual(names, ['agent', 'btw', 'build', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'permissions', 'plan', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
+  assert.deepEqual(names, ['agent', 'btw', 'build', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'older', 'permissions', 'plan', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
 })
 
 test('受控命令先过 Experience gate（映射见 COMMAND_EXPERIENCE_ACTIONS）', async () => {

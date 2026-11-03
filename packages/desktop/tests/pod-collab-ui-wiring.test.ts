@@ -287,9 +287,18 @@ test("Lead 从 Pod 打开前显式 ensure，并升级已有 tab 的 Lead 身份"
   assert.match(shell, /await podStore\.ensureLead\(\)/)
   assert.match(shell, /resolveLeadSession\(\{ leadSessionId: ensured\.sessionId \}\)/)
   assert.match(shell, /leadTabMetadata\(\)/)
-  const openTab = shell.slice(shell.indexOf("const openSessionTab"), shell.indexOf("// Single resolution path"))
-  assert.match(openTab, /else if \(lead !== undefined \|\| metadata !== undefined\)/)
-  assert.match(openTab, /\{\s*\.\.\.s,.*lead.*metadata/s)
+  assert.match(shell, /mergeTabIdentity\(prev, sid, lead, metadata\)/)
+  assert.match(shell, /dropOtherLeadTabs\(prev, sid\)/)
+})
+
+test("Lead 入口失败必须可见，不得静默 unhandled rejection", () => {
+  const start = shell.indexOf("if (!sid || route?.role === \"lead\")")
+  const end = shell.indexOf("if (route?.role === \"tech_lead\"", start)
+  const leadBlock = shell.slice(start, end)
+  assert.match(leadBlock, /try \{/)
+  assert.match(leadBlock, /catch \(err/)
+  assert.match(leadBlock, /showToastV2/)
+  assert.match(leadBlock, /Lead/)
 })
 
 test("layout restore waits for Pod resolution and has no manager-session fallback", () => {
@@ -298,6 +307,17 @@ test("layout restore waits for Pod resolution and has no manager-session fallbac
   assert.doesNotMatch(shell, /fetchManagerSession/)
   assert.doesNotMatch(shell, /leadIdFor/)
   assert.doesNotMatch(shell, /window\.api\.mafw\.manager\.session/)
+})
+
+test("项目切换遇到未定论的 Pod lookup 时不 prune Lead tab", () => {
+  const start = shell.indexOf("const handleSelectProject")
+  const end = shell.indexOf("const layoutIO", start)
+  const block = shell.slice(start, end)
+  assert.match(block, /const podDir = podStore\.projectDir\(\)/)
+  assert.match(block, /if \(!podDir \|\| !podStore\.resolvedFor\(podDir\)\) return/)
+  const applyAt = block.indexOf("applyProjectLayout(worktree, history)")
+  const guardAt = block.indexOf("if (!podDir || !podStore.resolvedFor(podDir)) return")
+  assert.ok(guardAt >= 0 && guardAt < applyAt)
 })
 
 test("techLeadRouteForSession：讨论会话可路由，plan 节点会话被拦", () => {

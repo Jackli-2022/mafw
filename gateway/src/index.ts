@@ -1327,6 +1327,7 @@ class MafwScheduler {
               if (this.trajectoryCollector) this.trajectoryCollector.setRuntime(this.runtime);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(runtime);
               await this.resubscribeEvents(`config hot-reload runtime plugin changed to '${newPlugin ?? 'builtin'}'`);
+              await this.reconcilePodLeads();
               // Same desktop hint as the route path: hand-edited config.yaml
               // switches must also refresh the renderer (menus/tabs/manager kv).
               this.broadcast({ type: 'runtime_switched', runtime: this.runtimeName, previous: prevPlugin ?? null });
@@ -2555,6 +2556,7 @@ class MafwScheduler {
         if (this.trajectoryCollector) this.trajectoryCollector.setRuntime(this.runtime);
         if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
         await this.resubscribeEvents(`runtime switched to '${this.runtimeName}'`);
+        await this.reconcilePodLeads();
         // Desktop hint: a runtime switch swaps the session storage backend
         // (opencode SQLite vs pi), so cached session lists are stale.
         this.broadcast({ type: 'runtime_switched', runtime: this.runtimeName, previous: previousName });
@@ -9514,6 +9516,18 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   private mafwDirFor(projectDir: string): string {
     return this.registeredProjects.get(projectDir)?.mafwDir ?? path.join(projectDir, '.mafw');
+  }
+
+  /** Runtime switch invalidates every runtime session id: recover each Pod Lead once. */
+  private async reconcilePodLeads(): Promise<void> {
+    if (!this.podStore) return;
+    for (const pod of this.podStore.listPods()) {
+      try {
+        await this.ensureManagerSession(pod.projectDir, this.mafwDirFor(pod.projectDir));
+      } catch (err: any) {
+        log.warn(`[Lead] runtime-switch recovery failed for ${pod.projectDir} (non-fatal): ${err?.message ?? err}`);
+      }
+    }
   }
 
   private async syncPodLead(projectDir: string, sessionId: string): Promise<void> {

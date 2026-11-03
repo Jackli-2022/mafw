@@ -23,6 +23,7 @@ import { mergeCommands, type RemoteCommand } from './gateway-commands.ts'
 import { exportChat as exportChatToFile } from './export-chat.ts'
 import { lastAssistantText, copyToClipboard } from './copy-text.ts'
 import { usageLines } from './usage-overlay.ts'
+import { resolveTuiLeadSession } from './lead-session.ts'
 import { QueueOverlay } from './queue-overlay.ts'
 import { TranscriptSearchOverlay } from './transcript-search.ts'
 import { ConfirmOverlay, type ConfirmAnswer } from './confirm-overlay.ts'
@@ -68,20 +69,17 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const statusBar = new StatusBar()
   const appStart = Date.now()
 
-  // manager session 定位（当前项目；拿不到时 chat tab 显示提示）。
-  // --session <id> 显式指定时直接连接该会话。
+  // Lead 定位：显式 --session 优先；否则 Pod 项目显式 ensure 当前 Lead。
+  // Pod-less 项目保持无会话，不隐式创建 Pod/Lead。
   const project = await client.project.current().catch(() => null)
   const projectDir = project?.worktree ?? null
   const projectID = project?.id ?? null
-  const mgr = !opts.sessionID && projectDir
-    ? await client.manager.session(projectDir).catch(() => null)
-    : null
-  const managerSessionID = opts.sessionID ?? mgr?.sessionId ?? null
+  const leadSessionID = await resolveTuiLeadSession(client.pod as any, projectDir, opts.sessionID)
 
   // ── 状态条（单一可变状态源）──
   const status: StatusState = {
     project: projectDir ? basename(projectDir) : undefined,
-    session: managerSessionID ?? undefined,
+    session: leadSessionID ?? undefined,
     conn: 'ok',
   }
   const setStatus = (patch: Partial<StatusState>) => {
@@ -120,7 +118,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const interaction = new InteractionStateMachine()
   const chatStore = new ChatStore({
     session: client.session,
-    sessionID: managerSessionID ?? 'none',
+    sessionID: leadSessionID ?? 'none',
     onChange: () => { tui.requestRender(); syncInteraction() },
     onError: (message) => setStatus({ hint: theme.err(`⚠ ${message.slice(0, 60)}`) }),
     getModel: () => modelSelection,
@@ -128,12 +126,12 @@ export async function runApp(opts: AppOptions): Promise<void> {
     gate: (id) => experience.gate(id),
     busyDelivery: () => (experience.enabled('prompt.steer') ? 'steer' : 'queue'),
   })
-  if (managerSessionID) void experience.load(managerSessionID)
+  if (leadSessionID) void experience.load(leadSessionID)
   // 审批模式（gateway kv 真相源；SSE permission_mode 驱动 🛡 徽标）
   const permStore = new PermissionModeStore(client)
-  if (managerSessionID) {
-    void permStore.load(managerSessionID).then(() => {
-      const m = permStore.get(managerSessionID)
+  if (leadSessionID) {
+    void permStore.load(leadSessionID).then(() => {
+      const m = permStore.get(leadSessionID)
       setStatus({ permAuto: m !== 'read-only', permLabel: m !== 'read-only' ? (m === 'full-access' ? '🛡 全开' : '🛡 auto') : undefined })
     })
   }
@@ -275,7 +273,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       const wt = base.includes('-wt-') ? ` ⎇${base.split('-wt-').pop()}` : ''
       return {
         value: s.id,
-        label: `${s.title || String(s.id).slice(0, 20)}${theme.dim(wt)}${s.id === managerSessionID ? theme.ok(' ★manager') : ''}`,
+        label: `${s.title || String(s.id).slice(0, 20)}${theme.dim(wt)}${s.id === leadSessionID ? theme.ok(' ★lead') : ''}`,
         description: s.time?.updated ? new Date(s.time.updated).toLocaleString() : '',
       }
     })
@@ -474,14 +472,6 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const slashHandler = createSlashHandler({
     loadOlder: () => chatTab.loadOlder(),
     toggleHelp,
-    rotateTopic: async () => {
-      if (!projectDir) return '当前无项目上下文，无法 rotate'
-      const r = await client.manager.rotate(projectDir, 'tui /new').catch((e: any) => ({ error: e.message }))
-      if ('error' in (r as any)) return `rotate 失败: ${(r as any).error}`
-      const next = await client.manager.session(projectDir).catch(() => null)
-      if (next?.sessionId) await switchToSession(next.sessionId)
-      return '已开新话题（manager session 已轮换并切换）'
-    },
     btw: async (args) => {
       if (!args.trim()) return '用法: /btw <问题>'
       const r = await client.mafwCommands.run({ command: 'btw', args }).catch((e: any) => ({ error: e.message }))
@@ -700,8 +690,8 @@ export async function runApp(opts: AppOptions): Promise<void> {
       void experience.load(chatStore.sessionID === 'none' ? null : chatStore.sessionID)
     }
   }
-  if (managerSessionID) ensureConn(managerSessionID)
-  if (managerSessionID) void refreshGatewayQueue(managerSessionID)
+  if (leadSessionID) ensureConn(leadSessionID)
+  if (leadSessionID) void refreshGatewayQueue(leadSessionID)
 
   function applyTab(): void {
     contentHost.removeChild(currentBody)

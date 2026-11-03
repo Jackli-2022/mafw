@@ -27,8 +27,6 @@ export const COMMAND_EXPERIENCE_ACTIONS: Partial<Record<string, ExperienceAction
 export interface SlashDeps {
   loadOlder(): Promise<void>
   toggleHelp(): void
-  /** /new：rotate manager session；返回提示文本或 null。 */
-  rotateTopic(): Promise<string | null>
   /** /btw：支线问答；返回提示文本或 null（回答经 /api/mafw-commands 异步送达）。 */
   btw(args: string): Promise<string | null>
   /** /sessions（别名 /resume /switch）：会话列表切换 picker。 */
@@ -105,8 +103,6 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
         return deps.toggleFocus() ? '静视图已开启（/focus off 恢复）' : '静视图已关闭'
       case 'diff':
         return deps.showDiff(args.trim())
-      case 'new':
-        return deps.rotateTopic()
       case 'btw':
         return deps.btw(args)
       case 'sessions':

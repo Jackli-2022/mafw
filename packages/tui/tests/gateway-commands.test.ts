@@ -19,11 +19,12 @@ test('local wins on name collision (status)', () => {
   assert.equal(merged.find((c) => c.name === 'status')?.description, COMMAND_REGISTRY.find((c) => c.name === 'status')?.description)
 })
 
-test('local wins on alias collision (remote new-topic alias new vs local new)', () => {
+test('retired remote new-topic is filtered even from an old gateway', () => {
   const merged = mergeCommands(COMMAND_REGISTRY, [
     { name: 'new-topic', aliases: ['new'], description: '新话题', category: 'session', kind: 'builtin' },
   ])
   assert.equal(merged.find((c) => c.name === 'new-topic'), undefined)
+  assert.equal(merged.find((c) => c.name === 'new'), undefined)
 })
 
 test('custom commands land in 自定义 category with gateway flag', () => {

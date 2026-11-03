@@ -74,6 +74,7 @@ import {
 } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
 import { retitleTab } from "./session-tab-title"
+import { dropOtherLeadTabs, mergeTabIdentity } from "./session-tab-identity"
 import { isLeadRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./lead-session"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
@@ -349,8 +350,12 @@ export function MafwShell() {
       const list = await window.api.mafw.sessions.list(worktree).catch(() => [])
       const history = Array.isArray(list) ? list : []
       setHistorySessions(history)
-      // Pod resolution must settle before pruning hidden Lead tabs.
+      // Pod resolution must settle before pruning hidden Lead tabs. A
+      // transport/unknown error is not definitive: keep the saved tabs and
+      // let the restore effect apply them once lookup resolves.
       await podStore.open(worktree).catch(() => {})
+      const podDir = podStore.projectDir()
+      if (!podDir || !podStore.resolvedFor(podDir)) return
       applyProjectLayout(worktree, history)
       setLayoutProject(worktree)
     } finally {
@@ -373,14 +378,12 @@ export function MafwShell() {
         session_status: { ...prev.session_status, [sid]: "idle" },
         message: { ...prev.message, [sid]: [] },
       }))
-    } else if (lead !== undefined || metadata !== undefined) {
-      // A tab may have been opened earlier without knowing it is Lead (e.g.
-      // from the Pod team row). Upgrade identity in place instead of requiring
-      // close/reopen.
-      setSessions(prev => prev.map(s => s.id === sid
-        ? { ...s, ...(lead !== undefined ? { lead } : {}), ...(metadata !== undefined ? { metadata } : {}) }
-        : s))
     }
+    // A tab may have been opened earlier without knowing its role. Upgrade it
+    // in place; opening a new Lead also drops the previous (possibly dead)
+    // Lead tab so the strip never contains two "Lead" identities.
+    setSessions(prev => mergeTabIdentity(prev, sid, lead, metadata))
+    if (lead === true) setSessions(prev => dropOtherLeadTabs(prev, sid))
     setActiveSessionId(sid)
     setActiveViewId(sid)
     if (title?.trim()) {
@@ -1919,10 +1922,18 @@ export function MafwShell() {
     const detail = podStore.detail()
     const route = podSessionRoute(detail, sid)
     if (!sid || route?.role === "lead") {
-      const ensured = await podStore.ensureLead()
-      await podStore.refresh()
-      const lead = resolveLeadSession({ leadSessionId: ensured.sessionId })
-      if (lead) openSessionTab(lead.id, lead.title, lead.lead, lead.metadata)
+      if (!detail) {
+        showToastV2({ description: "鲸群尚未加载，无法打开 Lead", duration: 3500 } as any)
+        return
+      }
+      try {
+        const ensured = await podStore.ensureLead()
+        await podStore.refresh()
+        const lead = resolveLeadSession({ leadSessionId: ensured.sessionId })
+        if (lead) openSessionTab(lead.id, lead.title, lead.lead, lead.metadata)
+      } catch (err: any) {
+        showToastV2({ description: `打开 Lead 失败: ${err?.message || err}`, duration: 4500 } as any)
+      }
       return
     }
     if (route?.role === "tech_lead" && route.goalId) {

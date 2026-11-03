@@ -28,7 +28,6 @@ function harness(store: TuiExperienceStore) {
   const deps = {
     loadOlder: async () => {},
     toggleHelp: () => {},
-    rotateTopic: async () => null,
     btw: async () => null,
     showSessionPicker: async () => {},
     showQueueManager: async () => {},

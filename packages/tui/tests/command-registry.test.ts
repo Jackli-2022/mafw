@@ -15,20 +15,20 @@ test('registry has unique names, every command has description + category', () =
 
 test('current command surface is fully covered', () => {
   const names = COMMAND_REGISTRY.map((c) => c.name).sort()
-  assert.deepEqual(names, ['agent', 'btw', 'build', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'permissions', 'plan', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
+  assert.deepEqual(names, ['agent', 'btw', 'build', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'older', 'permissions', 'plan', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
 })
 
 test('resolveCommand resolves aliases and exact names; unknown → null', () => {
   assert.equal(resolveCommand('sessions'), 'sessions')
   assert.equal(resolveCommand('resume'), 'sessions', '别名')
   assert.equal(resolveCommand('switch'), 'sessions')
-  assert.equal(resolveCommand('clear'), 'new')
+  assert.equal(resolveCommand('clear'), null)
   assert.equal(resolveCommand('nope'), null)
 })
 
 test('destructive commands are flagged', () => {
   const destructive = COMMAND_REGISTRY.filter((c) => c.destructive).map((c) => c.name).sort()
-  assert.deepEqual(destructive, ['compact', 'new', 'redo', 'undo'])
+  assert.deepEqual(destructive, ['compact', 'redo', 'undo'])
 })
 
 test('autocompleteItems mirrors registry (name + description)', () => {

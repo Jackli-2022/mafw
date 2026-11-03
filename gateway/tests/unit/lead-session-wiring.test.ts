@@ -38,6 +38,11 @@ describe('Lead lifecycle wiring', () => {
     expect(startup).not.toContain('await this.ensureManagerSession(projectDir, info.mafwDir);');
   });
 
+  test('both runtime switch paths recover Pod Leads onto the new runtime', () => {
+    expect(indexSource.match(/await this\.reconcilePodLeads\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(indexSource).toContain('private async reconcilePodLeads()');
+  });
+
   test('manager session route resolves canonical project keys through the registry', () => {
     const route = section("if (req.url && req.url.startsWith('/api/manager/session')", '// 健康检查');
     expect(route).toContain('this.leadSessionRegistry.current(filter)');
