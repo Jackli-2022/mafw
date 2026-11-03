@@ -44,12 +44,12 @@ gateway/
 │   │   │   ├── node-run-store.ts #   goal_node_runs 表（每次尝试一行）
 │   │   │   └── starter.ts / recovery.ts   # goal_created 定位 + watchdog 恢复
 │   │   │   # 三节点身份（mafw-plan/execute/review）在 runtime/identity-registry.ts 内置
-│   │   ├── manager/              # manager session、goal 快照、里程碑推送、/btw、new-topic
+│   │   ├── manager/              # Lead 生命周期兼容（manager-session slot/registry）、goal 快照、/btw
 │   │   ├── memory/               # harmonic-index、energy-system、retrieval-events…
 │   │   ├── approval/             # 审批三档预设（read-only/auto/full-access）+ 规则沉淀
 │   │   ├── budget-guard.ts       # 回合预算硬停（step 切面计数 + 成本）
 │   │   ├── diff/                 # 会话 diff hunk 级反转（diffApi）
-│   │   └── skills/               # memory-curator agent 定义、manager agent 配置
+│   │   └── skills/               # memory-curator agent 定义、Lead agent 配置（manager 为历史别名）
 │   │
 │   ├── memory/                   # HarmonicUnitFileStore（OKF 读写）、GatewayDatabase、
 │   │                             #   ConsolidationService、嵌入运行时（ONNX/llamacpp）
@@ -176,7 +176,7 @@ activateRuntimeTools()                     registerTools(factory)   ← stash
 （100ms 游标增量）/ injectSystem（150ms）/ tools（六件套）。实现：v1 opencode 插件
 （原生同语义）、pi host extension（消费本核心）、v2 待迁移。
 
-**Agent 身份层（IdentityRegistry）**：manager / memory-curator / mafw-{plan,execute,review}
+**Agent 身份层（IdentityRegistry）**：lead / memory-curator / mafw-{plan,execute,review}（manager 为兼容别名）
 收敛为 gateway 持有的 `IdentitySpec`（systemPrompt + policy 中立类别词汇），物化车道
 （`agents.install` 渲染成原生格式）+ 绑定（回合/会话级）；网关策略层先于 internal
 blanket-deny 评估身份维度（allowlist auto-approve / deny auto-deny）。
@@ -252,7 +252,7 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 | MCP 服务 | `mcp/` | 40 工具；/mcp 双传输（无状态 StreamableHTTP + legacy SSE） |
 | 审批三档 | `core/approval/` | read-only / auto / full-access + 持久规则沉淀（`~/.mafw/permission-rules.json`） |
 | 回合预算 | `core/budget-guard.ts` | step 切面计数 + TrajectoryStore 成本 → 超限 abort + noReply 通知 |
-| Manager 会话 | `core/manager/` | per-project manager、goal 快照、里程碑推送、/btw、new-topic、/waitwhat |
+| Lead 生命周期 | `core/manager/` + `core/pod/` | per-project Lead registry、goal 快照、里程碑推送、/btw、/waitwhat；人工 new-topic 已退役 |
 | Media Agent | `media/` | A2A 协议、四模态、每模态可插拔引擎 |
 | Python 内核 | `python/` | Jupyter wire 协议（ZeroMQ）、Mutex 队列、TTL 回收 |
 | TTS | `tts/` | 引擎注册表（mimo 云流式 / kokoro 本地 ONNX）+ 打断传播 |
@@ -340,7 +340,7 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
 ### Goal 从创建到完成（NodeDriver）
 
 ```
-用户 /goal（或 manager mafw_set_goal）
+用户 /goal（或 Lead mafw_set_goal）
   → goal_created → startGoal → ensureGoalState(v3) → advance
   │
   ▼

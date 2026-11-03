@@ -1436,6 +1436,38 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
   未在 GUI 中走完：真实 Plan/Eval 批准、Spike、Reviewer PASS、结果通知与打回循环（由集成测试覆盖）。
   修复后 gateway **4305/4305（558 suites）**、desktop **2384/2384**、`tsc`/`tsgo -p`/`electron-vite build` rc=0；
   这两个修复**不在 v5.0.0 tag 内**。
+- **Lead 单一展示面与 Session 生命周期（2026-11-03，post-v5.0.0）**：spec
+  `docs/superpowers/specs/2026-11-03-lead-pod-single-surface-lifecycle-design.md`，plan
+  `docs/superpowers/plans/2026-11-03-lead-pod-single-surface-lifecycle.md`。**该节取代前文关于
+  LeftDock 固定 Lead 行、人工 new-topic、Tech Lead 跨 revision 连续性的旧描述**。
+  - 左侧「工作」不再有 `ManagerCard`/`.mafw-manager-row`；历史 `manager`/`manager-archived`
+    会话回到普通时间分组，永不作为当前 Lead。Lead 的项目级入口统一在鲸群；主内容区仍可
+    展示 Lead 对话 tab。
+  - 桌面 Lead UI 权威 = 当前 Pod 的 active `node='coordination'` session；`manager-session`
+    kv 仅 gateway 内部恢复兼容，不再是 desktop fallback。`lead-session.ts` 只认 `lead`。
+  - `POST /api/pods/:podId/lead/ensure`（SDK/preload `pod.ensureLead`）是唯一显式修复入口；
+    GET/lookup/轮询保持只读。启动只为已有 Pod 或 in-flight Goal 的项目 ensure。
+  - gateway `LeadSessionRegistry` 统一 active-runtime slot、Pod coordination、活性探测与
+    canonical project key；替换旧 Lead 先 best-effort snapshot，再降为 `lead-archived`
+    （普通历史可读，不是当前 Lead）。Goal snapshot 用同一 registry 反查，修复 byRuntime 读取。
+  - Lead/Builder/Reviewer/Probe 都是内部 session：roles `builder/reviewer/probe` 与 agents
+    `mafw-execute`/`mafw-review` 隐藏；Pod transcript 仍可读。旧 roster Lead `agentName:
+    manager` 幂等升级为 `lead`。
+  - Tech Lead 正式按 `Goal + revision` 隔离；同 revision plan 复用讨论 session。revision
+    终态与 recovery 校准会 snapshot + retire 旧 discussion lease，不碰 N+1/旧证据。
+  - Welcome「Lead 会话」进鲸群；「新建 Goal」开 Pod composer；无 Pod 显示空态且不自动
+    创建。Welcome 内联 Goal 表单与旧 planReview 开关退役。
+  - 用户人工 rotate 全退：桌面「新话题」、`/new-topic`、插件 `new-topic`、gateway 内置
+    command 均已移除；`POST /api/manager/session/rotate` 与 SDK 仅保留内部兼容。
+  - 本批**不含** `startGoalDirect` 绕过 Pod 单 active execution queue 的调度硬化，另批处理。
+  - GUI 冒烟已验证：工作 rail 无固定 Lead/Manager 行；Pod Lead 无 live session 时仍可点击并
+    经 ensure 恢复（`bindLead` 不再被历史同 id 的 ended 行提前短路）；恢复后打开
+    `Lead L` tab、accent dot、Lead composer；PodDock 重复打开不新增 tab；Welcome「Lead 会话」
+    进鲸群、「新建 Goal」打开 Pod composer；页面无「新话题」。冒烟补出的 3 个缺口均
+    RED→GREEN：`ensureLead` 跑 roster 迁移、ended coordination 重激活、Lead 行 `canOpen`。
+    最终门禁：gateway **4345/4345（563 suites）**、desktop **2383/2383**、SDK **188/188**、
+    plugin **30/30**、`tsc`/`tsgo -p`/root build/electron-vite build rc=0。桌面 reload 的
+    layout 恢复因本地 gateway 在启动期多次健康超时未完成真机复核（自动化 layout 测试通过）。
 
 ## 6. Gateway 运维
 

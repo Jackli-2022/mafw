@@ -6,6 +6,10 @@
   - `docs/research/2026-11-02-dsh-superagent-pod-v3-review.md`
   - `docs/research/2026-11-02-pod-lead-tech-lead-workflow-survey.md`
 - 现有基础：`docs/superpowers/specs/2026-11-02-pod-v3-goal-attention-design.md`
+- 2026-11-03 修订：Lead 单一展示面与 session 生命周期以
+  `docs/superpowers/specs/2026-11-03-lead-pod-single-surface-lifecycle-design.md` 为准；
+  本文中固定 LeftDock Lead 行/人工 rotate 的旧表述已被取代，Tech Lead 作用域改为
+  `Goal + revision`。
 
 ## 1. 意图与为什么
 
@@ -334,7 +338,7 @@ runtimeSessionId 只用于内部接线，不能成为 Goal ownership 或用户�
 | 角色/工作 | 内部作用域 | 管理策略 |
 |---|---|---|
 | Lead | 项目 | 固定逻辑身份；自动唤醒、恢复、压缩和轮换 |
-| Tech Lead | Goal | 每 Goal 独立上下文；同 Goal 跨 revision 延续 |
+| Tech Lead | Goal + revision | 每 Goal revision 独立上下文；同 revision 的讨论与 plan 复用，旧 revision lease 退休（2026-11-03 修订） |
 | Builder Spike | ProbeRequest | 隔离临时 Session/工作区；报告后回收 |
 | Builder 实施 | Assignment | 按批准 Plan 创建；支持失败、重试与恢复 |
 | Reviewer | Goal revision | 新独立上下文，不继承 Builder 的自我判断 |
