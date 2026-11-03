@@ -168,6 +168,10 @@ export function useDuplexVoice(
         createTap: makeTap,
         onPartial: (text) => {
           if (!guard.isCurrent(generation)) return
+          // The gateway opens the next stream with `asr.partial { text: "" }`.
+          // That is not a new utterance: clearing here would wipe the final
+          // subtitle the moment it arrives (real-desktop smoke, Plan 1).
+          if (!text) return
           // 新的 partial = 新一段话开始，上一段 final 到此为止。
           setPartial(text)
           setFinalText("")

@@ -155,6 +155,41 @@ describe("useDuplexVoice", () => {
     expect(h.ctrl.partial()).toBe("")
   })
 
+  test("an empty partial from the next stream does not wipe the final subtitle", async () => {
+    const clients: FakeClient[] = []
+    const h = mount({
+      status: async () => ({ config: { duplexV1: true } }),
+      notify: () => {},
+      createAnalyzer: () => makeAnalyzer(),
+      createClient: (deps) => {
+        const client = makeClient(deps)
+        clients.push(client)
+        return client
+      },
+    })
+
+    h.setReady(true)
+    await tick()
+    await h.ctrl.toggle()
+
+    clients[0].deps.onPartial("你好")
+    clients[0].deps.onFinal("你好，欢迎使用 MAFW。")
+    expect(h.ctrl.partial()).toBe("")
+    expect(h.ctrl.finalText()).toBe("你好，欢迎使用 MAFW。")
+
+    // Real gateway behaviour: after asr.final it starts the next stream and
+    // sends `asr.partial { text: "" }`. That is not a new utterance, so the
+    // finished subtitle must stay on screen until real speech arrives.
+    clients[0].deps.onPartial("")
+    expect(h.ctrl.finalText()).toBe("你好，欢迎使用 MAFW。")
+
+    clients[0].deps.onPartial("下一段")
+    expect(h.ctrl.finalText()).toBe("")
+    expect(h.ctrl.partial()).toBe("下一段")
+
+    await h.ctrl.stop()
+  })
+
   test("losing the gateway stops a live session instead of leaving it active", async () => {
     const clients: FakeClient[] = []
     const analyzers: FakeAnalyzer[] = []
