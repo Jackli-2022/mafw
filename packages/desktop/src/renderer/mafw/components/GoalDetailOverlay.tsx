@@ -9,7 +9,7 @@ import { GoalTimelineLane } from "./GoalTimelineLane"
 import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { PodDirectionPanel } from "./PodDirectionPanel"
 import { PodProbePanel } from "./PodProbePanel"
-import { buildGoalLanes, formatDuration } from "../goal-timeline"
+import { buildGoalLanes, formatDuration, timelineFailure } from "../goal-timeline"
 import { createPodIdResolver, podStore } from "../pod-store"
 import { podStageLabel, revisionHistory, revisionStatusLabel } from "../pod-model"
 import { goalsRev } from "../goals-rev"
@@ -60,7 +60,15 @@ export function GoalDetailOverlay(props: {
       const t = await window.api.mafw.goals.timeline(id)
       setTimeline(t)
     } catch (e: any) {
-      setError(e?.message || String(e))
+      const failure = timelineFailure(e)
+      if (failure.unavailable) {
+        // discussing Goal 还没有 GoalState：timeline 不可用不是页面错误，
+        // 阶段/版本/方向/探针协作面照常渲染。
+        setTimeline(null)
+        setError(null)
+      } else {
+        setError(failure.error)
+      }
     }
     setLoading(false)
   }
@@ -286,7 +294,9 @@ export function GoalDetailOverlay(props: {
                 </div>
           }>
             <div class="mafw-goal-meta" style={{ "flex-wrap": "wrap", "row-gap": "6px" }}>
-              <span class={`mafw-phase-badge ${phaseBadge()}`}>{timeline()?.goal?.phase}</span>
+              <Show when={timeline()?.goal?.phase}>
+                <span class={`mafw-phase-badge ${phaseBadge()}`}>{timeline()?.goal?.phase}</span>
+              </Show>
               <Show when={stageText()}>
                 <span class="mafw-card-meta">{stageText()}</span>
               </Show>
@@ -296,9 +306,12 @@ export function GoalDetailOverlay(props: {
                   {currentRevision() ? ` · ${revisionStatusLabel(currentRevision()!.status)}` : ""}
                 </span>
               </Show>
-              <span class="mafw-card-meta">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
+              <Show when={timeline()?.goal}>
+                <span class="mafw-card-meta">Loop {timeline()?.goal?.round ?? 0}/{timeline()?.goal?.maxRounds ?? "?"}</span>
+              </Show>
               <Show when={elapsed() != null}><span class="mafw-card-meta">已用 {formatDuration(elapsed())}</span></Show>
               <Show when={timeline()?.goal?.verdict}><span class="mafw-card-meta">verdict {timeline()?.goal?.verdict}</span></Show>
+              <Show when={!timeline()}><span class="mafw-card-meta">尚无执行记录</span></Show>
               <Show when={planEntry()}>
                 <ButtonV2 variant="outline" size="small" onClick={planEntry()!.onOpen}>
                   计划{planEntry()!.badge ? ` · ${planEntry()!.badge}` : ""}

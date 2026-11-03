@@ -1,5 +1,17 @@
 import { describe, expect, test } from "bun:test"
-import { buildGoalLanes, cellTone, formatDuration, cellSummary, artifactRef, type NodeRun } from "./goal-timeline"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+import {
+  buildGoalLanes,
+  cellTone,
+  formatDuration,
+  cellSummary,
+  artifactRef,
+  errorText,
+  isMissingGoalStateError,
+  timelineFailure,
+  type NodeRun,
+} from "./goal-timeline"
 
 const node = (p: Partial<NodeRun>): NodeRun => ({
   runId: 1, loop: 1, node: "plan", attempt: 1, status: "succeeded",
@@ -79,5 +91,73 @@ describe("artifactRef", () => {
     expect(artifactRef("execute", "g1", 2)!.ref).toBe("receipts/g1/loop-2-receipt.json")
     expect(artifactRef("review", "g1", 2)!.ref).toBe("reviews/g1-loop2.md")
     expect(artifactRef("askUser", "g1", 1)).toBeNull()
+  })
+})
+
+// ── discussing Goal 没有 GoalState：timeline 只是不可用，不是页面错误 ──────────
+describe("isMissingGoalStateError", () => {
+  test("SDK/网关的 missing-state 404 → true（含 Electron IPC 前缀包裹）", () => {
+    expect(isMissingGoalStateError(new Error("HTTP 404: goal state not found"))).toBe(true)
+    expect(isMissingGoalStateError("HTTP 404: goal state not found")).toBe(true)
+    expect(isMissingGoalStateError(
+      new Error("Error invoking remote method 'mafw-invoke': Error: HTTP 404: goal state not found"),
+    )).toBe(true)
+    expect(isMissingGoalStateError({ status: 404, message: "goal state not found" })).toBe(true)
+    expect(isMissingGoalStateError({ statusCode: 404, message: "goal state not found" })).toBe(true)
+  })
+
+  test("非 missing-state 的 404 / 其它错误 → false（保持页面错误）", () => {
+    expect(isMissingGoalStateError(new Error("HTTP 404: goal not found"))).toBe(false)
+    expect(isMissingGoalStateError(new Error("HTTP 404: Not Found"))).toBe(false)
+    expect(isMissingGoalStateError(new Error("HTTP 500: goal state not found"))).toBe(false)
+    expect(isMissingGoalStateError({ status: 409, message: "goal state not found" })).toBe(false)
+    // 无 404 证据时绝不猜（可能是解析/网络错误恰好带同样文案）
+    expect(isMissingGoalStateError(new Error("goal state not found"))).toBe(false)
+    expect(isMissingGoalStateError(new Error("Failed to fetch"))).toBe(false)
+    expect(isMissingGoalStateError(undefined)).toBe(false)
+    expect(isMissingGoalStateError(null)).toBe(false)
+  })
+})
+
+describe("timelineFailure", () => {
+  test("missing-state 404 → unavailable 且无页面错误", () => {
+    expect(timelineFailure(new Error("HTTP 404: goal state not found")))
+      .toEqual({ unavailable: true, error: null })
+  })
+
+  test("其它错误 → 保留错误文案（页面错误）", () => {
+    expect(timelineFailure(new Error("HTTP 500: boom")))
+      .toEqual({ unavailable: false, error: "HTTP 500: boom" })
+    expect(timelineFailure(new Error("HTTP 404: goal not found")))
+      .toEqual({ unavailable: false, error: "HTTP 404: goal not found" })
+    expect(timelineFailure({ status: 503, message: "gateway down" }).error).toBe("gateway down")
+  })
+
+  test("errorText：message 优先，空值给兜底文案", () => {
+    expect(errorText(new Error("boom"))).toBe("boom")
+    expect(errorText("boom")).toBe("boom")
+    expect(errorText({ message: "" })).toBe("[object Object]")
+    expect(errorText(undefined)).toBe("未知错误")
+    expect(errorText(null)).toBe("未知错误")
+    expect(errorText("")).toBe("未知错误")
+  })
+})
+
+describe("GoalDetailOverlay timeline 加载接线", () => {
+  const src = readFileSync(join(import.meta.dirname, "components/GoalDetailOverlay.tsx"), "utf8")
+  const loadBody = src.slice(src.indexOf("async function load("), src.indexOf("// 显式 podId"))
+
+  test("load 只把 missing-state 404 当 timeline 不可用", () => {
+    expect(loadBody).toContain("timelineFailure(")
+    expect(loadBody).toMatch(/timelineFailure\(e\)/)
+    expect(loadBody).toMatch(/if \(failure\.unavailable\) \{[\s\S]*?setTimeline\(null\)/)
+    expect(loadBody).toContain("setError(failure.error)")
+  })
+
+  test("协作面板（阶段/版本/方向/探针）仍在渲染树内", () => {
+    expect(src).toContain("<PodDirectionPanel")
+    expect(src).toContain("<PodProbePanel")
+    expect(src).toContain("revisionRows()")
+    expect(src).toContain("stageText()")
   })
 })

@@ -94,3 +94,44 @@ export function artifactRef(node: string, goalId: string, loop: number): { label
   if (node === "review") return { label: `${goalId}-loop${loop}.md`, ref: `reviews/${goalId}-loop${loop}.md` }
   return null
 }
+
+// ── timeline 加载失败分类 ────────────────────────────────────────────────────
+// discussing 阶段的 Goal 还没有 GoalState（NodeDriver 尚未启动），gateway 的
+// GET /api/goals/:id/timeline 只能回 404 `goal state not found`。这不是故障：
+// 鲸群协作面（阶段/版本/方向/探针）仍然可用，必须照常渲染。
+// 只认这一个 404——其它 404（goal 不存在）与任意非 404 仍是页面错误。
+
+const MISSING_STATE_404 = /goal state not found/i
+const HTTP_404 = /\bHTTP\s*404\b/i
+
+/** Error.message 优先；空值给可展示的兜底文案（不返回空串）。 */
+export function errorText(err: unknown): string {
+  if (err == null) return "未知错误"
+  if (typeof err === "string") return err || "未知错误"
+  const message = (err as { message?: unknown })?.message
+  if (typeof message === "string" && message) return message
+  return String(err)
+}
+
+/** 仅「404 + goal state not found」为 true；无 404 证据不猜（fail-closed）。 */
+export function isMissingGoalStateError(err: unknown): boolean {
+  const message = errorText(err)
+  if (message === "未知错误") return false
+  if (!MISSING_STATE_404.test(message)) return false
+  if (HTTP_404.test(message)) return true
+  const status = (err as { status?: unknown; statusCode?: unknown })?.status
+    ?? (err as { statusCode?: unknown })?.statusCode
+  return status === 404 || status === "404"
+}
+
+export interface TimelineFailure {
+  /** true = 该 Goal 尚无 GoalState，timeline 不可用但页面仍可用 */
+  unavailable: boolean
+  /** 页面错误文案；unavailable 时为 null */
+  error: string | null
+}
+
+export function timelineFailure(err: unknown): TimelineFailure {
+  if (isMissingGoalStateError(err)) return { unavailable: true, error: null }
+  return { unavailable: false, error: errorText(err) }
+}
