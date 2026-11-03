@@ -131,10 +131,19 @@ async function adaptToolExecute(
   input: any,
   context: any,
 ): Promise<any> {
-  const result = await def.execute(input, {
+  // 原生工具上下文的完整转发：Creator 工具依赖真实 sessionID/directory/agent，
+  // 并通过 `ask` 发起宿主原生审批（`signal` 改名 `abort`）。宿主没有审批通道时
+  // 不伪造一个空的 `ask`——缺省即"无法审批"，由工具 fail closed。
+  const toolCtx = {
     sessionID: context?.sessionID,
     abort: context?.signal,
-  });
+    directory: context?.directory,
+    agent: context?.agent,
+    ...(typeof context?.ask === 'function'
+      ? { ask: (input: any) => context.ask(input) }
+      : {}),
+  };
+  const result = await def.execute(input, toolCtx);
   if (result == null) return { content: '' };
   if (typeof result === 'string') return { content: result };
   const content = result.content ?? result.output ?? result.text ?? JSON.stringify(result);

@@ -1,15 +1,24 @@
 /**
- * Creator tools — read-only plugin contract inspection (Task 2).
+ * Creator tools — read-only plugin contract inspection (Task 2) and the native
+ * approval bridge (Task 3).
  *
  * The Creator agent may be wrong about the host contract: slots, widget names
  * and limits are validated by `@mafw/plugin-contract`, not by memory. These
  * tests pin that `mafw_plugin_inspect` answers from the public snapshot and the
  * three read-only gateway endpoints only — no actions, no writes, no approvals.
+ *
+ * `approveCreatorOperation` is the other half: every Creator code-execution or
+ * write must go through the host's native `ask` unless the session is
+ * `full-access`, and "cannot ask" must fail closed instead of mutating.
  */
 import { PLUGIN_UI_LIMITS } from '@mafw/plugin-contract';
 
 import { pluginInspectTool } from '../src/tools/plugin-inspect';
 import { PLUGIN_PUBLIC_CONTRACT } from '../src/tools/plugin-public-contract';
+import {
+  CREATOR_PERMISSION,
+  approveCreatorOperation,
+} from '../src/tools/plugin-approval';
 import {
   pluginGatewayGet,
   pluginGatewayPost,
@@ -52,6 +61,17 @@ function installFetch(routes: FetchRoutes = {}): { calls: string[] } {
     if (target.includes('/api/plugins')) {
       return jsonResponse(routes.inventory ?? { plugins: [], packages: [], revision: 'boot:1' });
     }
+    return jsonResponse({ error: 'unexpected endpoint' }, 404);
+  }) as any;
+  return { calls };
+}
+
+/** Serves one session-permission mode from `GET /api/session/<id>/config`. */
+function mockSessionMode(mode: string): { calls: Array<{ url: string; init: any }> } {
+  const calls: Array<{ url: string; init: any }> = [];
+  global.fetch = jest.fn(async (url: any, init: any) => {
+    calls.push({ url: String(url), init });
+    if (String(url).includes('/config')) return jsonResponse({ mode });
     return jsonResponse({ error: 'unexpected endpoint' }, 404);
   }) as any;
   return { calls };
@@ -339,6 +359,93 @@ test('inspect only calls the three read-only gateway endpoints and never asks', 
   for (const call of calls) {
     expect(new URL(call).pathname).toMatch(/^\/api\/(plugins(\/client)?|experience\/actions)$/);
   }
+});
+
+// ------------------------------------------------------------- approvals
+
+test('non-full-access asks with always empty', async () => {
+  const ask = jest.fn(async () => undefined);
+  mockSessionMode('read-only');
+  await approveCreatorOperation({ ...ctx, ask }, {
+    operation: 'install',
+    patterns: ['install acme draft=acme overwrite=true fp=abcdef123456'],
+  });
+  expect(ask).toHaveBeenCalledTimes(1);
+  expect(ask).toHaveBeenCalledWith({
+    permission: 'mafw_plugin_manager',
+    patterns: ['install acme draft=acme overwrite=true fp=abcdef123456'],
+    always: [],
+  });
+});
+
+test('full access skips the human prompt', async () => {
+  const { calls } = mockSessionMode('full-access');
+  const ask = jest.fn();
+  await approveCreatorOperation({ ...ctx, ask }, { operation: 'check', patterns: ['check acme'] });
+  expect(ask).not.toHaveBeenCalled();
+  // The bypass still comes from the real session mode, not from guessing.
+  expect(new URL(calls[0].url).pathname).toBe('/api/session/ses_creator/config');
+});
+
+test('unavailable approval fails closed', async () => {
+  mockSessionMode('auto');
+  await expect(approveCreatorOperation(ctx, { operation: 'check', patterns: ['check acme'] }))
+    .rejects.toThrow('native approval unavailable');
+});
+
+test('auto mode still asks a human once with always empty', async () => {
+  const ask = jest.fn(async () => undefined);
+  mockSessionMode('auto');
+  await approveCreatorOperation({ ...ctx, ask }, { operation: 'test', patterns: ['test acme'] });
+  expect(ask).toHaveBeenCalledTimes(1);
+  expect(ask).toHaveBeenCalledWith({
+    permission: CREATOR_PERMISSION,
+    patterns: ['test acme'],
+    always: [],
+  });
+});
+
+test('a rejected native ask propagates and is not retried', async () => {
+  const ask = jest.fn(async () => { throw new Error('rejected by user'); });
+  mockSessionMode('read-only');
+  await expect(
+    approveCreatorOperation({ ...ctx, ask }, { operation: 'install', patterns: ['install acme'] }),
+  ).rejects.toThrow('rejected by user');
+  expect(ask).toHaveBeenCalledTimes(1);
+});
+
+test('a failed mode lookup falls back to asking, not auto-allowing', async () => {
+  const ask = jest.fn(async () => undefined);
+  global.fetch = jest.fn(async () => jsonResponse({ error: 'config unavailable' }, 503)) as any;
+  await approveCreatorOperation({ ...ctx, ask }, { operation: 'check', patterns: ['check acme'] });
+  expect(ask).toHaveBeenCalledWith({
+    permission: 'mafw_plugin_manager',
+    patterns: ['check acme'],
+    always: [],
+  });
+});
+
+test('an unreachable gateway still asks; a missing ask still fails closed', async () => {
+  const ask = jest.fn(async () => undefined);
+  global.fetch = jest.fn(async () => { throw new Error('gateway down'); }) as any;
+  await approveCreatorOperation({ ...ctx, ask }, { operation: 'check', patterns: ['check acme'] });
+  expect(ask).toHaveBeenCalledTimes(1);
+
+  await expect(
+    approveCreatorOperation({ ...ctx, ask: undefined }, { operation: 'check', patterns: ['check acme'] }),
+  ).rejects.toThrow('native approval unavailable');
+});
+
+test('a session without an id still asks instead of skipping approval', async () => {
+  const ask = jest.fn(async () => undefined);
+  const fetchMock = jest.fn(async () => jsonResponse({ mode: 'full-access' }));
+  global.fetch = fetchMock as any;
+  await approveCreatorOperation({ ...ctx, sessionID: '', ask }, {
+    operation: 'check',
+    patterns: ['check acme'],
+  });
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(ask).toHaveBeenCalledTimes(1);
 });
 
 // --------------------------------------------------------- gateway helper

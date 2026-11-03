@@ -13,6 +13,7 @@ import * as path from 'path';
 import { z } from 'zod';
 
 import mafwPlugin from '../src/plugin';
+import { pluginInspectTool } from '../src/tools/plugin-inspect';
 import { zodToJsonSchema, toV1Views, captureAssistantOutput } from '../src/utils/v2-compat';
 
 // ---------------------------------------------------------------- helpers
@@ -202,6 +203,73 @@ describe('setup(ctx) registration', () => {
     expect(calls.some((c) => c.url.includes('/api/memory/add') && c.body?.content === '记住这个')).toBe(true);
     const parsed = JSON.parse((result as any).content);
     expect(parsed.id).toBe('mem_9');
+  });
+
+  it('forwards sessionID, abort, directory, agent and the native ask to the executor', async () => {
+    const dir = mkdtempDir();
+    global.fetch = makeFetch([]).fetchMock as any;
+    const { ctx, regs } = makeCtx(dir);
+    await (mafwPlugin as any).setup(ctx);
+
+    const spy = jest.spyOn(pluginInspectTool, 'execute')
+      .mockResolvedValue({ title: 't', output: '{}' } as any);
+    try {
+      const ask = jest.fn(async () => undefined);
+      const controller = new AbortController();
+      const inspect = regs.tools.find((t) => t.name === 'mafw_plugin_inspect')!;
+      const result = await inspect.execute(
+        { query: 'slots' },
+        {
+          sessionID: 'ses_fwd',
+          signal: controller.signal,
+          directory: dir,
+          agent: 'mafw-create',
+          ask,
+        },
+      );
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      const [args, toolCtx] = spy.mock.calls[0] as [any, any];
+      expect(args).toEqual({ query: 'slots' });
+      expect(toolCtx.sessionID).toBe('ses_fwd');
+      expect(toolCtx.abort).toBe(controller.signal);
+      expect(toolCtx.directory).toBe(dir);
+      expect(toolCtx.agent).toBe('mafw-create');
+      expect(typeof toolCtx.ask).toBe('function');
+
+      // The wrapper must reach the host callback unchanged (one hop, no copies).
+      const permission = { permission: 'mafw_plugin_manager', patterns: ['check acme'], always: [] };
+      await toolCtx.ask(permission);
+      expect(ask).toHaveBeenCalledWith(permission);
+
+      // Result adapter still runs on top of the forwarded context.
+      expect(result).toEqual({ content: '{}' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('omits ask when the host pipeline has no native approval channel', async () => {
+    const dir = mkdtempDir();
+    global.fetch = makeFetch([]).fetchMock as any;
+    const { ctx, regs } = makeCtx(dir);
+    await (mafwPlugin as any).setup(ctx);
+
+    const spy = jest.spyOn(pluginInspectTool, 'execute')
+      .mockResolvedValue({ title: 't', output: '{}' } as any);
+    try {
+      const inspect = regs.tools.find((t) => t.name === 'mafw_plugin_inspect')!;
+      await inspect.execute({ query: 'slots' }, { sessionID: 'ses_no_ask', signal: undefined });
+      const [, toolCtx] = spy.mock.calls[0] as [any, any];
+      // Absence (not a stub that resolves) is what makes approval fail closed.
+      expect(Object.prototype.hasOwnProperty.call(toolCtx, 'ask')).toBe(false);
+      expect(toolCtx.sessionID).toBe('ses_no_ask');
+      expect(toolCtx.abort).toBeUndefined();
+      expect(toolCtx.directory).toBeUndefined();
+      expect(toolCtx.agent).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('registers prompt + context session hooks and the tool execute.after hook', async () => {
