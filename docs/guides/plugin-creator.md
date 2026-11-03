@@ -131,7 +131,8 @@ Desktop：`Config → Plugins → 让 Agent 创建插件`。
 | `install` | 是 | 复制并激活包 |
 | `enable` / `disable` / `remove` / `reload` | 是 | 修改已安装包状态/文件 |
 
-- 审批走宿主原生 `ctx.ask`，权限键是 `mafw_plugin_manager`。
+- 审批走宿主原生权限通道，权限键是 `mafw_plugin_manager`。V2 宿主把它暴露为插件上下文的
+  `ctx.permission.assert`（自定义工具上下文没有 `ctx.ask`）；MAFW 在两者之上包装同一个 awaitable ask。
 - **`always: []`**：一次批准只批准这一次操作。UI 无法把它沉淀成可复用规则，也不会提升会话权限。
 - **`metadata.forceHuman: true`**：审批载荷显式标记为人工决策，gateway 审批钩子
   （`gateway/src/core/approval/hook.ts`）见到该标记就让路——否则 `auto` 档会把权限请求自动答复
@@ -163,7 +164,7 @@ node --test
 
 | 项 | 值 |
 |---|---|
-| 命令 | 当前 gateway 的 `process.execPath --test` |
+| 命令 | 真实 Node 的 `node --test`（`MAFW_NODE_BIN` 可覆盖；Bun 编译宿主里 `process.execPath` 不是 Node） |
 | cwd | 草稿目录 |
 | shell | `false` |
 | 超时 | 60s，超时会杀死整个进程树（Windows `taskkill /F /T`；POSIX 进程组） |
