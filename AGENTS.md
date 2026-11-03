@@ -1485,6 +1485,10 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
 
 ### 5.26 项目工作空间与自适应 Goal（2026-11-03）
 
+> **2026-11-04 supersession note**：本节的 Goal 领域语义、`work.overview` 读模型与 Lead handoff 仍有效；
+> Desktop 信息架构已被 §5.27「右主 Agent 工作台」取代——`WorkspaceHome`/全页 `goals` 路由退役，
+> 项目工作移入右工作台「工作」主面，rail 的 workspace/Dashboard 目的地由独立「审批」入口取代。
+
 spec `docs/superpowers/specs/2026-11-03-project-workspace-adaptive-goal-design.md`，plan
 `docs/superpowers/plans/2026-11-03-project-workspace-adaptive-goal.md`。Lead 是所有明确执行请求的唯一入口；
 Tech Lead 在每个 Goal revision 内选择 `quick` / `collaborative`；Desktop 把旧「工作 / 鲸群 / Goals」
@@ -1525,6 +1529,40 @@ Tech Lead 在每个 Goal revision 内选择 `quick` / `collaborative`；Desktop 
   composer（全宽输入）、项目资源（行内图标/成员头像/悬停 chevron/分区细线）、Goal 详情（GOAL 信头、
   stage chips、当前行动条、卡片化版本历史/区块）；取消/中止 Goal 不再渲染结果卡或取消按钮。
   desktop **2714/2714**、`tsgo -p`/`electron-vite build` rc=0；新增 5 个视觉契约用例。
+
+### 5.27 右主 Agent 工作台（2026-11-04）
+
+spec `docs/superpowers/specs/2026-11-04-agent-workbench-right-primary-design.md`，plan
+`docs/superpowers/plans/2026-11-04-agent-workbench-right-primary.md`。右 dock 成为 Agent 主工作台，
+chatview 是指挥列，左侧 rail 负责导航与团队状态。
+
+- **右工作台四主面**：`工作 / 工作台 / 执行 / 审阅`。`ProjectWorkView` 在「工作」主面承载完整
+  `work.overview` 五桶、就地 `PodGoalComposer` 与统一 Goal 详情入口；插件 surface 仍强制回落
+  `workbench`，不会因默认 `work` 被搁浅。
+- **路由独立**：`workbenchSplit/workbenchShellHidden({content,open})` 取代 `chatActive()` 门控；
+  Memory/Approvals/Triage/Automation 保持右工作台可见，Config 只视觉隐藏不卸载状态。
+- **Focus**：`workbenchFocusActive({focus,content,open})` 只在项目路由 + dock 打开时把 chat 列收为 0；
+  手动隐藏 dock 或项目切换自动退出；不持久化。默认快捷键 `Ctrl+Alt+F`（`Ctrl+Shift+M` 保留给
+  main 进程全局 Quick Entry）。
+- **尺寸与字体**：chat 档位 `520/640/760`、默认/双击 **760**；`WORKBENCH_MIN_WIDTH=720`；
+  `PUSH_PAIR_BUDGET=1490`（默认 dock push 点约 1800）；默认窗口 1720×1000、硬下限 1088×720。
+  chat 作用域 token `--mafw-chat-reading/--mafw-chat-composer: 16px`，composer max-height 220px；
+  全局 UI base font 仍 14px。
+- **入口收敛**：`WorkspaceHome` 与全页 `goals` 路由退役；legacy `goals`/`workspace` deep link 经
+  `openProjectWork()` 重定向到 chat + 右「工作」。rail meta 组为「审批（badge）/Config」，项目工作不再占用
+  全页目的地；`ProjectResources` 只保留团队/邮箱/Pod 记忆/便签/班底/注意力/最近消息，不再充当
+  Memory/Approvals/Triage/Automation 工具目录。
+- **验证**：desktop **2726/2726（600 suites）**（较本批起点净 +12 用例），`tsgo --noEmit -p tsconfig.json`
+  与 `electron-vite build` rc=0。真实 GUI 冒烟通过：1088/1366/1600/1800 宽度、1600 chat=760、
+  1366 chat≈600、1088 chat≈322、1800 非最大化 chat=760/workbench=730；Focus 进 Config 显示 1490px
+  主内容而非 0px；隐藏 dock 自动退出 Focus；`Ctrl+Alt+F` 进出；正文/composer 16px、资源行 12px；
+  存量 detent 640 保留、清键后回 760。截图：`.mafw/qa/right-primary-{1088,1366,1600,1800}.png`
+  及 `right-primary-{1600,1800}-final.png`。
+- **边界**：未 push、未 deploy、未发布。最大化 1800 窗因 8px shell padding，推挤态工作台实测 714px
+  （非最大化 730px）；OS 级 deep link 与 Pod attention>0 未在 GUI 注入实测，由 parser/source/model
+  测试覆盖。已知 deferred minors：ProjectWorkView 常驻 15s 轮询、composer request remount 重开、
+  最近消息 unread 未走 `countUnread`、Focus 中 resize handle 未隐藏、部分旧视觉契约未迁移。
+- **实现与终审修复 commits**：`65ee6344`..`b4c2c61a`（最终代码 `b4c2c61a`）。
 
 ## 6. Gateway 运维
 
