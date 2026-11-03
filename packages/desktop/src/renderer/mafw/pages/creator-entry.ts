@@ -6,6 +6,8 @@
 // Pure data only — no Solid/DOM/Electron imports, so the decision is testable
 // headlessly and MafwShell stays a thin wiring layer.
 
+import { isLeadSessionRole } from "../manager-session"
+
 export type CreatorEntryReason = "loading" | "no-agent" | "worktree"
 
 export interface CreatorEntryState {
@@ -57,6 +59,35 @@ export interface ReusableCreatorSessionInput {
    * `openSessionTab` seeds `message[sid] = []` before history arrives.
    */
   pageState: Record<string, CreatorPageState | undefined>
+  /** Active tab role (`workspace.sessionRole`); Lead/manager tabs are excluded. */
+  activeSessionRole?: string | null
+  /** Authoritative session directory (`store.session[].directory`), not the tab seed. */
+  activeSessionDirectory?: string | null
+  /** Current project root (`currentProject()`). */
+  projectRoot?: string | null
+}
+
+/** Same normalization as `workbench-root.ts` (separators, trailing slash, case). */
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
+}
+
+/**
+ * A session directory may be reused only when it is the project root itself or
+ * lives under it. Lead/manager sessions can be rooted in a hash directory
+ * outside the project, and a worktree sibling (`<project>-wt-<slug>`) is a
+ * different tree — drafts written there would leave the promised project path.
+ */
+export function isProjectSessionDirectory(
+  projectRoot: string | null | undefined,
+  sessionDirectory: string | null | undefined,
+): boolean {
+  if (!projectRoot || !sessionDirectory) return false
+  if (sessionDirectory === ".") return false
+  const root = normalizePath(projectRoot)
+  const dir = normalizePath(sessionDirectory)
+  if (!root || !dir || dir === ".") return false
+  return dir === root || dir.startsWith(root + "/")
 }
 
 /**
@@ -69,7 +100,11 @@ export interface ReusableCreatorSessionInput {
  *   failed;
  * - `pageState` is written only by a completed page load (`cursor`/`hasMore`),
  *   and a still-loading page never qualifies;
- * - any loaded message disables reuse.
+ * - any loaded message disables reuse;
+ * - the tab must not be the Lead/manager session (that conversation is the
+ *   project coordinator, not a blank Creator workspace);
+ * - the row's authoritative directory must live in the project (drafts are
+ *   promised at `<project>/.mafw/plugin-drafts`).
  *
  * Everything else returns `null`, and the caller creates a fresh persisted
  * Session instead of hijacking someone's conversation.
@@ -83,5 +118,7 @@ export function reusableCreatorSession(input: ReusableCreatorSessionInput): stri
   if (page.cursor !== null || page.hasMore !== false) return null
   const messages = input.messagesBySession[sid]
   if (!Array.isArray(messages) || messages.length > 0) return null
+  if (isLeadSessionRole(input.activeSessionRole)) return null
+  if (!isProjectSessionDirectory(input.projectRoot, input.activeSessionDirectory)) return null
   return sid
 }

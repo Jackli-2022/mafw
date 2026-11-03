@@ -2134,11 +2134,17 @@ export function MafwShell() {
     if (!creatorEntry().available) return
     const agent = creatorAgentEntry()
     if (!agent) return
+    const activeSid = activeSessionId()
     const reusable = reusableCreatorSession({
-      activeSessionID: activeSessionId(),
+      activeSessionID: activeSid,
       messagesBySession: store.message,
       // Seeded `[]` is not proof of blank: only a completed page load is.
       pageState,
+      // A Lead/manager tab or a session rooted outside the project must never be
+      // switched to mafw-create (drafts are promised under the project path).
+      activeSessionRole: activeSid ? workspace.sessionRole(activeSid) : undefined,
+      activeSessionDirectory: store.session.find((s: any) => s.id === activeSid)?.directory ?? null,
+      projectRoot: currentProject(),
     })
     const sid = reusable ?? (await createSession({ noReveal: true, requirePersisted: true }))
     if (!sid) return // persisted creation failed (toast already shown)
