@@ -1345,7 +1345,7 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
   **284 pass/1 skip（285）**、desktop **2253/2253**、mobile **86/86**、adapters/claude **21/21**；
   `tsc`/`tsgo -p tsconfig.json`/`electron-vite build`/根 build/`flutter analyze`+`flutter test` rc=0。
   契约产物新鲜度由 `api-contract.test.ts` 与 `contract-manifest-freshness.test.ts` 把守。
-  状态：代码完成，真机 GUI/mobile 冒烟待控制端执行（本批不重启线上 gateway；未发版）。
+  状态：**v5.0.0 已发布**（2026-11-03，tag `v5.0.0`，release commit `49a63ca2`，main/tag 已推送）。
 
 ### 5.25 Pod 协作 Goal Loop：Lead / Tech Lead / Builder / Reviewer（2026-11-03）
 
@@ -1423,7 +1423,7 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
   旧证据/产物不变）+ 2 个迁移场景（三成员 Pod/manager 槽位/legacy goal bootstrap；legacy goal
   打回不重写 rev1）。全量 gateway **4296/4296（558 suites）**、desktop **2371/2371**、SDK **187/187**；
   `tsc`（gateway，`npx tsc --noEmit -p tsconfig.json`）/`tsgo -p tsconfig.json`/
-  `electron-vite build`/根 `npm run build` rc=0。状态：代码与验证完成，**未部署、未发版**。
+  `electron-vite build`/根 `npm run build` rc=0。状态：随 **v5.0.0** 发布（tag `v5.0.0`，release commit `49a63ca2`）。
 
 ## 6. Gateway 运维
 
