@@ -121,7 +121,7 @@ import { createTtsService } from "./media/tts-service";
 import { TtsEngineRegistry } from "./tts/registry";
 import { createMimoEngine } from "./tts/mimo-engine";
 import { createKokoroEngine } from "./tts/kokoro-engine";
-import { adaptToStream } from "./tts/sentence-adapter";
+import { streamSentences } from "./tts/sentence-adapter";
 import { handleTtsInterrupt } from './routes/tts-interrupt';
 import { TtsPluginLoader } from './tts/tts-plugin-loader';
 import { AsrEngineRegistry } from './voice/registry';
@@ -386,7 +386,9 @@ async function isPortHealthy(port: number): Promise<boolean> {
   }
 }
 
-import { readManagerSlot, writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot } from './core/manager/manager-session-runtime';
+import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot } from './core/manager/manager-session-runtime';
+import { LeadSessionRegistry } from './core/manager/lead-session-registry';
+import { shouldEnsureLeadOnStartup } from './core/manager/lead-session-resolution';
 
 const INTERNAL_SESSION_TTL_DAYS = 7;
 
@@ -601,6 +603,7 @@ class MafwScheduler {
   private instructionSync?: InstructionSyncService;
   private discovery?: DiscoveryService;
   private subagentService!: SubagentService;
+  private leadSessionRegistry!: LeadSessionRegistry;
   private podStore!: PodStore;
   private podService!: PodService;
   private podTaskService!: PodTaskService;
@@ -1150,12 +1153,27 @@ class MafwScheduler {
     await this.podService?.reconcile().catch((err: any) => log.warn(`[Pod] reconcile failed (non-fatal): ${err?.message ?? err}`));
     await this.podGoalService?.reconcile().catch((err: any) => log.warn(`[Pod] goal reconcile failed (non-fatal): ${err?.message ?? err}`));
 
-    // 7. 为所有已注册项目初始化 Manager session（不存在则自动创建）
+    // 7. Lead 只属于已有 Pod 或仍有 in-flight Goal 的项目；Pod-less registered
+    // project 不再预建一个没有用户入口的隐藏会话。
+    const inFlightDirs = new Set(
+      Array.from(this.activeGoals.values())
+        .map((state: any) => state?.projectDir)
+        .filter((dir: unknown): dir is string => typeof dir === 'string' && dir.length > 0)
+        .map((dir) => canonicalProjectDir(dir)),
+    );
+    const leadDirs = new Map<string, RegisteredProject>();
     for (const [projectDir, info] of this.registeredProjects) {
+      const canonical = canonicalProjectDir(projectDir);
+      if (leadDirs.has(canonical)) continue;
+      const hasPod = !!this.podStore.getPodByProject(canonical);
+      if (!shouldEnsureLeadOnStartup({ hasPod, hasInFlightGoal: inFlightDirs.has(canonical) })) continue;
+      leadDirs.set(canonical, info);
+    }
+    for (const [canonical, info] of leadDirs) {
       try {
-        await this.ensureManagerSession(projectDir, info.mafwDir);
+        await this.ensureManagerSession(canonical, info.mafwDir);
       } catch (err: any) {
-        log.warn(`[Scheduler] Manager session init failed for ${projectDir}: ${err.message}`);
+        log.warn(`[Scheduler] Lead session init failed for ${canonical}: ${err.message}`);
       }
     }
 
@@ -3868,6 +3886,52 @@ class MafwScheduler {
     });
 
     this.podStore = new PodStore(this.getGatewayDb().getStore());
+    this.leadSessionRegistry = new LeadSessionRegistry({
+      kvGet: (scope, key) => this.getGatewayDb().kvGet(scope, key),
+      kvSet: (scope, key, value) => this.getGatewayDb().kvSet(scope, key, value),
+      kvAll: <T,>(scope: string) => this.getGatewayDb().kvAll<T>(scope),
+      runtimeName: this.runtimeName,
+      podByProject: (dir) => {
+        const pod = this.podStore.getPodByProject(dir);
+        return pod ? { podId: pod.id, projectDir: pod.projectDir } : null;
+      },
+      activePodCoordination: (podId) => {
+        const lead = this.podStore.getMemberByRole(podId, 'lead');
+        if (!lead) return null;
+        const row = this.podStore.listSessions(podId).find((session) =>
+          session.memberId === lead.id
+          && session.node === 'coordination'
+          && !session.endedAt,
+        );
+        return row ? { sessionId: row.sessionId } : null;
+      },
+      createSession: async (dir) => {
+        if (!this.runtime) throw new Error('runtime not available');
+        const created = await this.runtime.session.create({ directory: dir });
+        if (!created.id) throw new Error('Failed to create lead session: no id returned');
+        return created.id;
+      },
+      isAlive: async (sessionId) => {
+        try {
+          return !!(await this.runtime!.session.get({ sessionID: sessionId }));
+        } catch (err: any) {
+          const message = String(err?.message ?? err);
+          if (/not found|404|gone|missing|deleted|no such/i.test(message)) return false;
+          throw err;
+        }
+      },
+      registerLead: async (sessionId, dir) => {
+        this.registerInternalSession(sessionId, 'lead', resolveIdentityAlias('manager'));
+        await this.sdkSession.registerExternal(sessionId, dir, projectLeadSessionMetadata())
+          .catch((err: any) => log.warn(`[Scheduler] Lead local register failed: ${err?.message ?? err} (non-fatal)`));
+      },
+      archiveLead: async () => { /* Task 4 wires archived Lead evidence */ },
+      bindPodLead: async (podId, sessionId) => {
+        await this.podService?.bindLead(podId, sessionId);
+      },
+      now: () => new Date().toISOString(),
+      log: (message) => log.info(message),
+    });
     this.podProbeService = new PodProbeService({
       store: this.podStore,
       resolveMafwDir: (goalId) => this.findGoalMafwDir(goalId),
@@ -5380,9 +5444,7 @@ class MafwScheduler {
               Connection: 'keep-alive',
               'x-tts-sample-rate': String(ttsEngine.profile.sampleRate),
             });
-            const gen = ttsEngine.profile.streaming === 'native'
-              ? ttsEngine.synthesizeStream(text, { voice, style }, abort.signal)
-              : adaptToStream(ttsEngine, text, { voice, style }, abort.signal);
+            const gen = streamSentences(ttsEngine, text, { voice, style }, abort.signal);
             for await (const chunk of gen) {
               if (abort.signal.aborted) break;
               res.write(`data: ${JSON.stringify({ data: chunk.pcm.toString('base64'), voice: voice || ttsCfg.defaultVoice || '茉莉' })}\n\n`);
@@ -6372,16 +6434,9 @@ class MafwScheduler {
           const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
           const filter = parsedUrl.searchParams.get('projectDir') || '';
           try {
-            const all = this.getGatewayDb().kvAll('manager-session');
-            // Per-runtime slots: surface only the ACTIVE runtime's manager
-            // slot per project. Other runtimes' slots stay dormant (resumed
-            // when switching back) — nothing is deleted here.
-            const live = all
-              .map((e) => ({ key: e.key, value: readManagerSlot(e.value, this.runtimeName) }))
-              .filter((e): e is { key: string; value: { sessionId: string; createdAt?: string | null } } => e.value !== null);
             if (filter) {
-              const found = live.find((e) => e.key === filter);
-              if (!found) {
+              const current = this.leadSessionRegistry.current(filter);
+              if (!current) {
                 res.writeHead(404);
                 res.end(JSON.stringify({ error: 'No manager session for project' }));
                 return;
@@ -6389,13 +6444,21 @@ class MafwScheduler {
               res.writeHead(200);
               res.end(
                 JSON.stringify({
-                  projectDir: found.key,
-                  sessionId: found.value.sessionId,
-                  createdAt: found.value.createdAt || null,
+                  projectDir: canonicalProjectDir(filter),
+                  sessionId: current.sessionId,
+                  createdAt: current.createdAt ?? null,
                 }),
               );
               return;
             }
+            // Per-runtime slots: surface only the ACTIVE runtime's Lead per
+            // canonical project. Dormant runtimes and raw-key variants are
+            // resolved through the same lifecycle reader, never duplicated.
+            const all = this.getGatewayDb().kvAll('manager-session');
+            const projectDirs = new Set(all.map((entry) => canonicalProjectDir(entry.key)));
+            const live = Array.from(projectDirs)
+              .map((projectDir) => ({ projectDir, current: this.leadSessionRegistry.current(projectDir) }))
+              .filter((entry): entry is { projectDir: string; current: NonNullable<typeof entry.current> } => !!entry.current);
             if (live.length === 0) {
               res.writeHead(404);
               res.end(JSON.stringify({ error: 'No manager session' }));
@@ -6404,10 +6467,10 @@ class MafwScheduler {
             res.writeHead(200);
             res.end(
               JSON.stringify(
-                live.map((e) => ({
-                  projectDir: e.key,
-                  sessionId: e.value.sessionId,
-                  createdAt: e.value.createdAt || null,
+                live.map((entry) => ({
+                  projectDir: entry.projectDir,
+                  sessionId: entry.current.sessionId,
+                  createdAt: entry.current.createdAt ?? null,
                 })),
               ),
             );
@@ -7666,12 +7729,11 @@ class MafwScheduler {
             // only (kv compare). Compaction-proof goal awareness (spec §3.4①).
             let goalSnap: string | null = null;
             if (sessionID) {
-              const ms = this.getGatewayDb()
-                .kvAll<{ sessionId: string }>('manager-session')
-                .find(e => e.value.sessionId === sessionID);
-              if (ms) {
-                const info = this.registeredProjects.get(ms.key);
-                const mafwDir = info?.mafwDir ?? path.join(ms.key, '.mafw');
+              const lead = this.leadSessionRegistry.findBySessionId(sessionID);
+              if (lead) {
+                const entry = Array.from(this.registeredProjects.entries())
+                  .find(([raw]) => canonicalProjectDir(raw) === lead.projectDir);
+                const mafwDir = entry?.[1].mafwDir ?? path.join(lead.projectDir, '.mafw');
                 try { goalSnap = buildGoalSnapshot(mafwDir); } catch { /* fail-open */ }
               }
             }
@@ -9356,7 +9418,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   // once at startup by `backfillManagerSessionSlots`).
   // See manager-session-runtime.ts.
   private readManagerSessionEntry(projectDir: string): { sessionId: string; createdAt?: string | null } | null {
-    return readManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName);
+    const current = this.leadSessionRegistry.current(projectDir);
+    return current ? { sessionId: current.sessionId, createdAt: current.createdAt } : null;
   }
 
   /**
@@ -9404,42 +9467,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
   }
 
-  private async createManagerSession(projectDir: string, mafwDir: string): Promise<string> {
-    if (!this.runtime) throw new Error('runtime not available');
-    // Manager identity lives in the gateway DB (kv_store), so it survives
-    // project-directory churn and never gets orphaned by directory moves.
-    const existing = this.readManagerSessionEntry(projectDir);
-    if (existing?.sessionId) {
-      await this.sdkSession.registerExternal(existing.sessionId, projectDir, projectLeadSessionMetadata()).catch(() => {});
-      // 既有 manager 会话按 Lead 语义继续工作：内部角色/身份都走 Lead（`manager` 是
-      // deprecated 别名，见 identity-registry.resolveIdentityAlias）。
-      this.registerInternalSession(existing.sessionId, 'lead', resolveIdentityAlias('manager'));
-      log.info(`[Scheduler] Lead session already exists: ${existing.sessionId}`);
-      await this.syncPodLead(projectDir, existing.sessionId);
-      return existing.sessionId;
-    }
-
-    const session = await this.runtime.session.create({ directory: projectDir });
-
-    const sessionId = session.id;
-    if (!sessionId) {
-      log.error(`[Scheduler] Lead session create returned no id (directory=${projectDir})`);
-      throw new Error('Failed to create lead session: no id returned');
-    }
-    const createdAt = new Date().toISOString();
-
-    this.getGatewayDb().kvSet('manager-session', projectDir, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName, { sessionId, createdAt }));
-    this.registerInternalSession(sessionId, 'lead', resolveIdentityAlias('manager'));
-
-    try {
-      await this.sdkSession.registerExternal(sessionId, projectDir, projectLeadSessionMetadata());
-    } catch (err: any) {
-      log.warn(`[Scheduler] Lead session local register failed: ${err.message} (non-fatal)`);
-    }
-    log.info(`[Scheduler] Lead session created: ${sessionId}`);
-
-    await this.syncPodLead(projectDir, sessionId);
-    return sessionId;
+  private async createManagerSession(projectDir: string, _mafwDir: string): Promise<string> {
+    const lead = await this.leadSessionRegistry.ensure(projectDir);
+    log.info(`[Scheduler] Lead session ready: ${lead.sessionId} (${lead.source})`);
+    return lead.sessionId;
   }
 
   private mafwDirFor(projectDir: string): string {
