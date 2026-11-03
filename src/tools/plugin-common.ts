@@ -26,11 +26,17 @@ export function pluginGatewayBaseUrl(): string {
  *
  * `always` is intentionally required: a Creator mutation asks for the exact
  * operation only, never for a reusable allow rule.
+ *
+ * `metadata.forceHuman` is the gateway approval hook's existing contract
+ * (`gateway/src/core/approval/hook.ts`): `auto` mode and internal sessions
+ * auto-answer permission prompts, so a prompt that must reach a human carries
+ * the flag and the policy ring steps aside.
  */
 export interface PluginToolApproval {
   permission: string;
   patterns: string[];
   always: string[];
+  metadata?: { [key: string]: unknown };
 }
 
 /**

@@ -78,6 +78,10 @@ export async function approveCreatorOperation(
     permission: CREATOR_PERMISSION,
     patterns: request.patterns,
     always: [],
+    // The gateway approval hook honors `metadata.forceHuman`: without it, `auto`
+    // mode auto-approves (and internal sessions auto-deny) every prompt, so no
+    // human would ever see a Creator check/test/install/remove.
+    metadata: { forceHuman: true },
   };
   await ask(approval);
 }

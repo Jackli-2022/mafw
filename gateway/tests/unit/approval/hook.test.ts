@@ -86,4 +86,51 @@ describe('applyApprovalPolicy', () => {
     expect(() => applyApprovalPolicy(policy, null, FACET, 's1', props)).not.toThrow();
     expect(props.mafwPolicy.action).toBe('auto-approve');
   });
+
+  // Creator (Phase 2) asks through the host pipeline; every check/test/install/
+  // remove prompt carries `metadata.forceHuman`. Auto mode would otherwise reply
+  // "once" with no human in the loop.
+  const CREATOR_FACET: ApprovalFacet = {
+    requestId: 'req-creator',
+    toolName: 'mafw_plugin_manager',
+    patterns: ['install acme draft=acme'],
+    metadata: { forceHuman: true },
+  };
+
+  it('forceHuman metadata in auto mode → human + no permissionReply', async () => {
+    const policy = makePolicy();
+    await policy.getMode('s1'); // auto (loaded)
+    const { rt, replies } = makeRuntime();
+    const props: any = {};
+    applyApprovalPolicy(policy, rt, CREATOR_FACET, 's1', props);
+    expect(props.mafwPolicy.action).toBe('human');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(replies).toEqual([]);
+
+    // Guard against a vacuous pass: the same facet without the flag is auto-approved.
+    const plain: any = {};
+    applyApprovalPolicy(policy, rt, { ...CREATOR_FACET, metadata: {} }, 's1', plain);
+    expect(plain.mafwPolicy.action).toBe('auto-approve');
+  });
+
+  it('forceHuman wins over an internal-role session (no silent auto-deny)', async () => {
+    const policy = makePolicy({ getInternalRole: () => 'btw' });
+    const { rt, replies } = makeRuntime();
+    const props: any = {};
+    applyApprovalPolicy(policy, rt, CREATOR_FACET, 's1', props);
+    expect(props.mafwPolicy.action).toBe('human');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(replies).toEqual([]);
+  });
+
+  it('forceHuman on the props envelope is honored the same way', async () => {
+    const policy = makePolicy();
+    await policy.getMode('s1');
+    const { rt, replies } = makeRuntime();
+    const props: any = { forceHuman: true };
+    applyApprovalPolicy(policy, rt, { ...FACET, toolName: 'mafw_plugin_manager' }, 's1', props);
+    expect(props.mafwPolicy.action).toBe('human');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(replies).toEqual([]);
+  });
 });

@@ -370,7 +370,7 @@ test('inspect only calls the three read-only gateway endpoints and never asks', 
 
 // ------------------------------------------------------------- approvals
 
-test('non-full-access asks with always empty', async () => {
+test('non-full-access asks with always empty and forceHuman metadata', async () => {
   const ask = jest.fn(async () => undefined);
   mockSessionMode('read-only');
   await approveCreatorOperation({ ...ctx, ask }, {
@@ -378,10 +378,14 @@ test('non-full-access asks with always empty', async () => {
     patterns: ['install acme draft=acme overwrite=true fp=abcdef123456'],
   });
   expect(ask).toHaveBeenCalledTimes(1);
+  // `forceHuman` is the gateway approval hook's existing contract: auto mode and
+  // internal sessions would otherwise auto-answer the prompt, so every Creator
+  // mutation must arrive marked as a human decision.
   expect(ask).toHaveBeenCalledWith({
     permission: 'mafw_plugin_manager',
     patterns: ['install acme draft=acme overwrite=true fp=abcdef123456'],
     always: [],
+    metadata: { forceHuman: true },
   });
 });
 
@@ -409,6 +413,7 @@ test('auto mode still asks a human once with always empty', async () => {
     permission: CREATOR_PERMISSION,
     patterns: ['test acme'],
     always: [],
+    metadata: { forceHuman: true },
   });
 });
 
@@ -429,6 +434,7 @@ test('a failed mode lookup falls back to asking, not auto-allowing', async () =>
     permission: 'mafw_plugin_manager',
     patterns: ['check acme'],
     always: [],
+    metadata: { forceHuman: true },
   });
 });
 
@@ -584,7 +590,12 @@ function managerCtx(project: string, ask?: (input: any) => Promise<void>): Plugi
 
 /** Native ask double that approves; typed so `mock.calls[0][0]` is an approval. */
 function approvingAsk() {
-  return jest.fn(async (_input: { permission: string; patterns: string[]; always: string[] }) => undefined);
+  return jest.fn(async (_input: {
+    permission: string;
+    patterns: string[];
+    always: string[];
+    metadata?: { [key: string]: unknown };
+  }) => undefined);
 }
 
 function defaultInventory(): any {
@@ -933,6 +944,7 @@ test('install asks with package fingerprint and uses the draft path', async () =
 
   expect(ask.mock.calls[0][0].patterns[0]).toMatch(/^install acme draft=acme overwrite=true fp=/);
   expect(ask.mock.calls[0][0].always).toEqual([]);
+  expect(ask.mock.calls[0][0].metadata).toEqual({ forceHuman: true });
   expect(global.fetch).toHaveBeenCalledWith(
     expect.stringContaining('/api/plugins/packages/install'),
     expect.objectContaining({ method: 'POST' }),
@@ -999,8 +1011,30 @@ test('each code-execution and mutation operation asks exactly once', async () =>
         permission: 'mafw_plugin_manager',
         patterns: [`${operation} acme`],
         always: [],
+        metadata: { forceHuman: true },
       });
     }
+  }
+});
+
+test('every Creator prompt is marked forceHuman so policy cannot auto-answer it', async () => {
+  const project = makeProject();
+  writeDraft(project, 'acme', { tests: 'pass' });
+
+  for (const operation of ['check', 'test', 'install', 'enable', 'disable', 'remove', 'reload'] as const) {
+    mockManagerGateway();
+    const ask = approvingAsk();
+    const args: any = ['enable', 'disable', 'remove', 'reload'].includes(operation)
+      ? { operation, packageName: 'acme' }
+      : { operation, draft: 'acme' };
+
+    const result: any = await pluginManagerTool.execute(args, managerCtx(project, ask));
+
+    expect([operation, result.isError ?? false]).toEqual([operation, false]);
+    // The gateway approval hook reads `metadata.forceHuman` and skips its own
+    // auto-approve/auto-deny path; without it, `auto` mode and internal sessions
+    // would answer the prompt with nobody seeing it.
+    expect([operation, ask.mock.calls[0][0].metadata]).toEqual([operation, { forceHuman: true }]);
   }
 });
 
