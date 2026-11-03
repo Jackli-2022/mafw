@@ -14,7 +14,7 @@ type IconName = ComponentProps<typeof Icon>["name"]
 export type IconRailProps = {
   face: LeftDockFace | null
   onToggleFace: (face: LeftDockFace) => void
-  onDashboard: () => void
+  onApprovals: () => void
   onConfig: () => void
   /** 顶部动作：新建会话（单击）；右键菜单含「并行 worktree」 */
   onNewSession: () => void
@@ -27,7 +27,7 @@ export type IconRailProps = {
   podResultDot?: boolean
   connPhase: string // connected | reconnecting | down | initial
   gatewayState?: string | null // stopped | starting | ready | failed（stopped 用中性色，不报红）
-  dashboardActive?: boolean
+  approvalsActive?: boolean
   configActive?: boolean
 }
 
@@ -45,9 +45,9 @@ type RailItem = {
   connDot?: boolean
 }
 
-// 左栏图标轨（spec 2026-10-27 §6.1）：
-// 顶部动作（新建）→ 目的地组连排（工作/搜索/便签）→ spacer → meta 组（Dashboard/Config）。
-// 主题切换已迁 Config（业界六家无一放 rail）。
+// 左栏图标轨（spec 2026-11-04-agent-workbench-right-primary）：
+// 顶部动作（新建）→ 目的地组连排（讨论/搜索/Pod/便签）→ spacer → meta 组（审批/Config）。
+// 主题切换已迁 Config；项目工作由右侧工作台「工作」主面承担。
 export function IconRail(props: IconRailProps) {
   const connClass = () => connDotState(props.connPhase, props.gatewayState)
 
@@ -67,7 +67,7 @@ export function IconRail(props: IconRailProps) {
     },
   ]
   const metaItems = (): RailItem[] => [
-    { key: "workspace", icon: "layout-grid", label: "工作空间", onClick: props.onDashboard, active: props.dashboardActive, badge: props.approvals },
+    { key: "approvals", icon: "checklist", label: "审批", onClick: props.onApprovals, active: props.approvalsActive, badge: props.approvals },
     { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, active: props.configActive, connDot: true },
   ]
 

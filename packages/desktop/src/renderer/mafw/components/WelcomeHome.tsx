@@ -22,8 +22,9 @@ export function WelcomeHome(props: {
   historySessions: { id: string; title?: string; time?: { updated?: number }; metadata?: { mafw?: { role?: string } } }[]
   onSelect: (sid: string) => void
   onCreate: () => void
-  onNavigate: (tab: "chat" | "goals" | "memory" | "approvals" | "triage" | "automation") => void
+  onNavigate: (tab: "chat" | "memory" | "approvals" | "triage" | "automation") => void
   onOpenLead: () => Promise<boolean>
+  onOpenWork: () => void
   onOpenGoalComposer: () => void
   /** plan-first 引导（切片 3）：能力门由 MafwShell 传（primaryAgents 含 plan） */
   hasPlanAgent?: boolean
@@ -131,7 +132,7 @@ export function WelcomeHome(props: {
           </ButtonV2>
         </Show>
         <ButtonV2 variant="outline" icon="user" onClick={() => void props.onOpenLead()}>Lead 会话</ButtonV2>
-        <ButtonV2 variant="outline" icon="layout-grid" onClick={() => props.onNavigate("goals")}>工作空间</ButtonV2>
+        <ButtonV2 variant="outline" icon="layout-grid" onClick={() => props.onOpenWork()}>项目工作</ButtonV2>
         <ButtonV2 variant="outline" icon="target" onClick={() => props.onOpenGoalComposer()}>新建 Goal</ButtonV2>
         <ButtonV2 variant="outline" icon="check" onClick={() => props.onNavigate("approvals")}>
           待审批{`${pendingApprovals() > 0 ? ` (${pendingApprovals()})` : ""}`}

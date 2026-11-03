@@ -436,11 +436,15 @@ export function MafwShell() {
       return false
     }
   }
-  const openNewGoalComposer = (): void => {
+  const openProjectWork = () => {
     closeLeftDockIfOverlay()
     setShowConfig(false)
-    setActiveTab("goals")
-    setShowWelcome(false)
+    setActiveTab("chat")
+    applyRightDock(true)
+    openWorkbench("work")
+  }
+  const openNewGoalComposer = (): void => {
+    openProjectWork()
     setGoalComposerRequest((seq) => seq + 1)
   }
 
@@ -571,7 +575,10 @@ export function MafwShell() {
     })
     return [
       nav("chat", "聊天", "Chat"),
-      nav("goals", "Goals", "编排总览"),
+      {
+        id: "project-work", label: "项目工作", hint: "Work", group: "导航",
+        run: () => openProjectWork(),
+      },
       nav("memory", "记忆", "Memory"),
       nav("approvals", "审批", "Approvals"),
       nav("triage", "分诊", "Triage"),
@@ -2525,7 +2532,7 @@ export function MafwShell() {
         <IconRail
           face={leftDock().open ? leftDock().face : null}
           onToggleFace={toggleLeftDock}
-          onDashboard={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("goals") }}
+          onApprovals={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("approvals") }}
           onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
           onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then((sid: any) => { if (sid) openSessionTab(sid) }) }}
           onNewWorktreeSession={() => createWorktreeSession()}
@@ -2535,7 +2542,7 @@ export function MafwShell() {
           podResultDot={podResultDot()}
           connPhase={connPhaseLabel()}
           gatewayState={gwStatus()?.state ?? null}
-          dashboardActive={activeTab() === "goals" && !showConfig()}
+          approvalsActive={activeTab() === "approvals" && !showConfig()}
           configActive={showConfig()}
         />
       </div>
@@ -2746,6 +2753,7 @@ export function MafwShell() {
                      onCreate={() => void createSession()}
                      onNavigate={(t) => { setActiveTab(t); setShowConfig(false); closeLeftDockIfOverlay() }}
                      onOpenLead={openLeadEntry}
+                     onOpenWork={openProjectWork}
                      onOpenGoalComposer={openNewGoalComposer}
                      hasPlanAgent={primaryAgents().some(a => isAgentKey(a, "plan"))}
                      onStartWithPlan={() => {
@@ -2804,7 +2812,7 @@ export function MafwShell() {
             ) : activeTab() === "approvals" ? (
               <ApprovalsPage permissionCards={pendingPermissionCards} onPermissionReply={permReply} />
             ) : activeTab() === "triage" ? (
-              <TriagePage onOpenGoals={() => { setActiveTab("goals"); closeLeftDockIfOverlay(); setShowConfig(false) }} />
+              <TriagePage onOpenGoals={openProjectWork} />
             ) : activeTab() === "automation" ? (
               <AutomationsPage />
             ) : null}

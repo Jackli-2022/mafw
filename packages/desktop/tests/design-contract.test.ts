@@ -243,7 +243,7 @@ describe("Rail 主导航 + 会话树（v6 §0b）", () => {
     const dock = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "LeftDock.tsx"), "utf8")
     expect(dock).toContain("buildSessionTree")
     const rail = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "IconRail.tsx"), "utf8")
-    expect(rail).toContain("onDashboard")
+    expect(rail).toContain("onApprovals")
   })
   test("MafwShell 不再引用 TabStrip", () => {
     const shell = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "MafwShell.tsx"), "utf8")

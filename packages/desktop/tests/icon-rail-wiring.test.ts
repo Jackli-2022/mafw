@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 
-test("IconRail: six buttons, one family, approved order", () => {
+test("IconRail: seven buttons, one family, approved order", () => {
   const src = read("src/renderer/mafw/components/IconRail.tsx")
   assert.match(src, /onNewSession/)
   assert.doesNotMatch(src, /<svg/) // 内联 SVG 全退役（图标只走 icon 表）
@@ -12,8 +12,9 @@ test("IconRail: six buttons, one family, approved order", () => {
   assert.ok(at('"bubble-5"') > 0, "sessions icon")
   assert.ok(at('"magnifying-glass"') > at('"bubble-5"'), "search after sessions")
   assert.ok(at('"sticky-note"') > at('"magnifying-glass"'), "notes in destination group")
-  assert.ok(at('"layout-grid"') > at('"sticky-note"'), "dashboard after destination spacer")
-  assert.ok(at('"settings-gear"') > at('"layout-grid"'), "config last")
+  assert.ok(at('"checklist"') > at('"sticky-note"'), "approvals after destination group")
+  assert.ok(at('"settings-gear"') > at('"checklist"'), "config last")
+  assert.doesNotMatch(src, /"工作空间"/)
   // 单 spacer：目的地组连排，便签在 spacer 之前
   const spacer = src.indexOf("mafw-icon-rail-spacer")
   assert.ok(at('"sticky-note"') < spacer, "notes before spacer")
@@ -41,6 +42,9 @@ test("MafwShell wires rail actions, drops theme prop", () => {
   assert.match(block, /onNewSession=/)
   assert.match(block, /onNewWorktreeSession=/)
   assert.match(block, /worktreeEnabled=/)
+  assert.match(block, /onApprovals=/)
+  assert.match(block, /approvalsActive=/)
+  assert.doesNotMatch(block, /onDashboard|dashboardActive/)
   assert.doesNotMatch(block, /onToggleTheme|theme=\{theme\(\)\}/)
 })
 

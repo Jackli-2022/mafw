@@ -26,9 +26,22 @@ test("the work overview is the only list projection and is not truncated", () =>
 
 test("Welcome no longer maintains the legacy in-memory Goal list", () => {
   const welcome = read("../src/renderer/mafw/components/WelcomeHome.tsx")
+  const shell = read("../src/renderer/mafw/MafwShell.tsx")
   assert.doesNotMatch(welcome, /goals\.list\(\)/)
   assert.doesNotMatch(welcome, /activeGoals/)
-  assert.match(welcome, /props\.onNavigate\("goals"\)/)
+  assert.doesNotMatch(welcome, /props\.onNavigate\("goals"\)/)
+  assert.match(welcome, /onOpenWork: \(\) => void/)
+  assert.match(welcome, /props\.onOpenWork\(\)/)
+  assert.match(welcome, />项目工作</)
+  assert.match(shell, /onOpenWork=\{openProjectWork\}/)
+})
+
+test("command palette opens project work in the right workbench", () => {
+  const shell = read("../src/renderer/mafw/MafwShell.tsx")
+  assert.match(shell, /id: "project-work", label: "项目工作"/)
+  assert.match(shell, /run: \(\) => openProjectWork\(\)/)
+  assert.match(shell, /onOpenGoals=\{openProjectWork\}/)
+  assert.doesNotMatch(shell, /nav\("goals", "Goals", "编排总览"\)/)
 })
 
 test("free discussions hand off through the Lead without changing the source session", () => {
