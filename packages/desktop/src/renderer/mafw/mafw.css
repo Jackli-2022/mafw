@@ -1436,6 +1436,28 @@ html[data-theme="light"] body {
 .mafw-composer [data-component="button-v2"].mafw-voice-recording {
   color: var(--danger-text, #f7768e);
 }
+
+/* 双工 ASR 字幕条（Task 8）：composer 顶部常驻，只读状态区（aria-live polite）。 */
+.mafw-duplex-voice-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 6px;
+  border-bottom: 0.5px solid var(--border-weak-base, rgba(255, 255, 255, 0.08));
+  font-size: 12px;
+  color: var(--text-2);
+}
+.mafw-duplex-voice-bar .mafw-duplex-voice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mafw-duplex-voice-partial { color: var(--text-3); font-style: italic; }
+.mafw-duplex-voice-listening { color: var(--text-3); }
+.mafw-duplex-voice-bar-error .mafw-duplex-voice-error-text { color: var(--danger-text, #f7768e); }
+.mafw-duplex-voice-bar .mafw-duplex-voice-stop { flex: 0 0 auto; }
 .mafw-composer-divider {
   width: 1px;
   height: 16px;
