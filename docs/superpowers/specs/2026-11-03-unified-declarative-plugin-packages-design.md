@@ -423,7 +423,7 @@ fs.watch / 手动 reload / install / enable / disable / delete
 目标：用户从 Desktop 进入 Creator，通过对话让 Agent 创建、验证、安装并持续迭代一个统一插件包；生成的 panel/config/toolCard/messageWindow 在真实 MAFW 主窗口中立即可见。
 
 - 创建入口位于 **Plugins → Add plugin → 让 Agent 创建插件**。
-- 入口复用当前项目可接收 preset 的 blank Session；需要新会话时走现有普通 Session 创建流程。只有接收会话切换到 `mafw-create`，它仍是普通会话，不是新的 session 类型。
+- 入口复用当前项目可接收 preset 的 blank Session；需要新会话时走现有普通 Session 创建流程。只有接收会话切换到 `mafw-create`，它仍是普通会话，不是新的 session 类型。复用前必须确认历史加载完成且为空、会话不是 Lead/manager/internal 角色、会话真实 directory 属于当前项目；任何不满足项都创建新 Session，绝不改写协调会话或把草稿写到项目外。
 - 进入入口时不自动发送消息、不丢弃任何会话的 composer 未发送草稿、不改变普通新会话的默认 Agent。
 - Agent 只生成 §5 的 `plugin.json + index.js` 统一包，UI 只能生成 §8 的声明式描述。
 - 安装、启停、删除、pending 应用和 revision 全部复用第一阶段 Plugin Manager。
@@ -449,6 +449,8 @@ fs.watch / 手动 reload / install / enable / disable / delete
 - 模板与限制的唯一详细来源；identity 不重复这些内容。
 
 Creator 不获得 raw runtime、gateway 内部对象或通用插件管理 HTTP 转发。身份 allowlist 含 readonly/file-edit、question/todo、`skill`、`mafw_add_memory`/`mafw_search_hybrid`/`mafw_get_memory`、`mafw_plugin_inspect` 与 `mafw_plugin_manager`；拒绝 shell、web、subagent 以及无关的 goal/pod/task/python/media/desktop/automation/restart 能力。`skill` 工具必须显式启用——使用 `tools['*']=false` 时不能遗漏它，否则 Creator 自己看不到随包技能。`mafw-create` 与 DSH Creator 一样可出现在普通 primary-agent/preset 选择器，不新增 entry-only 身份机制。
+
+本期 Creator 工具与随包 skill 是 OpenCode 插件/Host 产品：`mafw-create` 的 IdentitySpec 标记 `requiresCapability: 'pluginCreatorApi'`。只有声明该能力的 runtime 物化并暴露此身份；能力缺失的 runtime（如 pi）不物化、不出现在 `/api/agents`，Desktop 显示中性的无 Agent 原因，而不是提供一个无工具的 Creator。
 
 本期实现选择是不向 Creator 开放通用 shell；草稿测试由 `mafw_plugin_manager.test` 执行，避免把 shell 当成绕过 Manager 的平行安装通道。通用 file-edit 的路径约束是工作流约定，不宣称它是恶意代码 sandbox；真正的安装边界是 Manager 的来源校验与逐次人工审批。
 
@@ -483,7 +485,7 @@ Creator 不获得 raw runtime、gateway 内部对象或通用插件管理 HTTP �
 - 代码执行：`check({draft})`、`test({draft})`。两者都可能运行草稿代码，不属于只读检查。`test` 固定以草稿为 cwd 运行 `node --test` 发现其中的 `*.test.js`，有 60s 超时、清理环境变量和输出字节帽；超时必须杀掉整个进程树（Windows `taskkill /F /T`；POSIX detached 进程组），不执行 package scripts，不是第三个工具。
 - 写入：`install({draft, overwrite?, requestId?})`、`enable`、`disable`、`remove`、`reload`。`applyPending` 不暴露给模型，只由用户在 Plugins 页显式执行；Creator 从 `nextStep` 得知应请求用户操作。
 - 所有操作返回结构化 `{saved, application, activeRevision?, pendingRevision?, error?, nextStep}`；拒绝、取消或审批不可用不执行操作。
-- full-access 可按既有策略直接执行；其他模式下，代码执行和写入逐次通过工具上下文的原生 awaitable `ctx.ask` 审批。即使 session 是 `auto` 档，这些操作也强制 human；`ask` 传 `always: []`，所以即使 UI 出现 always 也不会沉淀可放行后续调用的规则。单次批准不提升会话权限，也不建立 draft/session 级永久授权。
+- full-access 可按既有策略直接执行；其他模式下，代码执行和写入逐次通过工具上下文的原生 awaitable `ctx.ask` 审批。即使 session 是 `auto` 档或内部会话，这些操作也必须强制 human：`ctx.ask` 带 `metadata.forceHuman:true`，让 gateway 审批环跳过 auto-approve/auto-deny 并保留人工等待。`ask` 传 `always: []`，所以即使 UI 出现 always 也不会沉淀可放行后续调用的规则。单次批准不提升会话权限，也不建立 draft/session 级永久授权。
 - 工具不是 Creator-only 授权边界：其他会话若获得该原生工具，也走完全相同的 force-human/full-access 规则；`mafw-create` allowlist 只决定 Creator 自己能调用什么。
 - 实施前先做一个 wire probe，确认原生工具审批能够等待、拒绝和取消，且取消后不会继续执行。运行时不能提供该通道时 Creator 显示中性不可用原因；不以 MCP question 调用冒充等价审批，也不新增异步审批注册表。
 - `requestId` 表示一次真实操作意图：网络重试沿用同一随机 id，新的迭代必须使用新 id；禁止用 operation + draft + overwrite 的确定性哈希代替，否则会重放旧安装结果。进程内缓存不冒充跨重启 exactly-once。

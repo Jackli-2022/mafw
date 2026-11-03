@@ -16,7 +16,7 @@
 - Draft root is `<project>/.mafw/plugin-drafts/<packageName>/`; never rewrite the Session cwd.
 - Only `PackageManager` installs packages. `applyPending` is user-only in the Plugins page and is not a model operation.
 - `check`, `test`, and mutating manager operations require native per-call approval unless the Session is `full-access`.
-- Approval uses the tool context's awaitable `ask` with `always: []`; no persisted/session-wide grant is added.
+- Approval uses the tool context's awaitable `ask` with `always: []` and `metadata.forceHuman: true`; the gateway hook must leave the request for a human even in `auto`/internal sessions.
 - Creator has no shell, web, subagent, goal, pod, task, python, media, desktop, automation, or restart tools.
 - Creator must be able to load its own `plugin-creator` skill: `skill` is explicitly enabled in `tools` and allowed by policy even though the rest of the surface uses `'*': false`.
 - `check` and `test` execute trusted local draft code; neither is a sandbox. Fixed test command is `node --test`, cwd is the draft, timeout 60s, sanitized env, capped output.
@@ -80,7 +80,7 @@ expect(def.systemPrompt).not.toContain('maxWidgets')
 expect(def.systemPrompt.length).toBeLessThan(1_500)
 ```
 
-Also assert the registry includes `mafw-create` with `scope: 'primary'`, no pinned model, an allowlist containing `skill`/`mafw_plugin_inspect`/`mafw_plugin_manager`, and denial of `shell`/`web`/`subagent`. Assert `toAgentDefinition(spec)` is byte-shape compatible with `getPluginCreatorAgentDefinition()`.
+Also assert the registry includes `mafw-create` with `scope: 'primary'`, no pinned model, an allowlist containing `skill`/`mafw_plugin_inspect`/`mafw_plugin_manager`, denial of `shell`/`web`/`subagent`, and `requiresCapability: 'pluginCreatorApi'`. `identityMaterializable` must return true only when that runtime capability is explicitly true. Assert `toAgentDefinition(spec)` is byte-shape compatible with `getPluginCreatorAgentDefinition()`.
 
 `plugin-creator-skill-install.test.ts` covers install → unchanged → update, missing source fail-open, and a target contained under the supplied skills directory. Existing Office global-skill tests must remain green after the generic extraction.
 
@@ -134,6 +134,8 @@ Extract the atomic write logic from Office into `core/skills/global-skill.ts`; m
 Create `skills/plugin-creator/SKILL.md` as the sole detailed source for: package layout, four UI slots, widget/action/event limits, templates, inspect-first ordering, test-first workflow, approval/fingerprint/requestId semantics, verification, recovery, and common failures. Identity and skill must not both carry the detailed tutorial.
 
 Register the identity in `buildBuiltins()`, and install the skill beside the Office skill before serve startup in `gateway/src/index.ts`.
+
+Add `pluginCreatorApi` to `RuntimeCapabilities` and its contract manifest: `fullCapabilities()`/OpenCode = true, `minimalCapabilities()`/pi = false. Give `mafw-create` `requiresCapability: 'pluginCreatorApi'`; `materializeIdentities` must skip it and record materialized=false when the runtime does not explicitly declare the capability, so `/api/agents` hides it and Desktop shows the neutral no-agent reason.
 
 - [ ] **Step 4: Run focused tests and typecheck**
 
@@ -267,6 +269,7 @@ test('non-full-access asks with always empty', async () => {
     permission: 'mafw_plugin_manager',
     patterns: ['install acme draft=acme overwrite=true fp=abcdef123456'],
     always: [],
+    metadata: { forceHuman: true },
   })
 })
 
@@ -313,9 +316,9 @@ const toolCtx = {
 2. If the returned `mode === 'full-access'`, return without asking.
 3. If mode lookup fails, continue to ask (fail closed).
 4. If `ctx.ask` is missing, throw `native approval unavailable`.
-5. Otherwise `await ctx.ask({ permission: CREATOR_PERMISSION, patterns, always: [] })`.
+5. Otherwise `await ctx.ask({ permission: CREATOR_PERMISSION, patterns, always: [], metadata: { forceHuman: true } })`.
 
-Do not use the gateway `ApprovalPolicyService` as a substitute; this tool runs in the host tool pipeline and its native prompt is the contract.
+Do not use the gateway `ApprovalPolicyService` as a substitute; this tool runs in the host tool pipeline. The `forceHuman` metadata is mandatory because the gateway approval hook otherwise auto-approves in `auto` mode and auto-denies internal sessions. Add a gateway hook regression test proving that metadata produces `action:'human'` and no automatic `permissionReply`.
 
 - [ ] **Step 4: Run focused tests and plugin registration tests**
 
@@ -474,7 +477,7 @@ git commit -m "feat(plugins): add approved creator manager tool"
 
 **Interfaces:**
 - Produces: `creatorEntryState({ agentsLoaded, hasCreator, isWorktree }): { available: boolean; reason?: 'loading'|'no-agent'|'worktree' }`.
-- Produces: `reusableCreatorSession({ activeSessionID, messagesBySession, pageState }): string | null`; only the active Session with a completed page load (`loading === false`, `cursor === null`, `hasMore === false`) and an empty message array is reusable.
+- Produces: `reusableCreatorSession({ activeSessionID, messagesBySession, pageState, activeSessionRole, activeSessionDirectory, projectRoot }): string | null`; only the active Session with a completed page load (`loading === false`, `cursor === null`, `hasMore === false`), empty messages, a non-Lead role, and a real directory under the current project root is reusable.
 - Consumes: existing `createSession`, `applyAgentSwitch`, `openSessionTab`, `activeSessionId`, `primaryAgents`, `agentsData`, `currentProject`, `benchRoot`, `store.message`.
 - Produces: new Config prop `onCreatePlugin?: () => void` and PluginPackagesSection prop `creatorEntry?: { available; reason?; onCreate }`.
 
@@ -487,20 +490,38 @@ expect(creatorEntryState({ agentsLoaded: true, hasCreator: false, isWorktree: fa
   .toEqual({ available: false, reason: 'no-agent' })
 expect(creatorEntryState({ agentsLoaded: true, hasCreator: true, isWorktree: true }))
   .toEqual({ available: false, reason: 'worktree' })
+const loaded = { s1: { cursor: null, hasMore: false, loading: false } }
 expect(reusableCreatorSession({
   activeSessionID: 's1',
   messagesBySession: { s1: [] },
-  pageState: { s1: { cursor: null, hasMore: false, loading: false } },
+  pageState: loaded,
+  activeSessionRole: undefined,
+  activeSessionDirectory: 'C:/proj',
+  projectRoot: 'C:/proj',
 })).toBe('s1')
 expect(reusableCreatorSession({
   activeSessionID: 's1',
   messagesBySession: { s1: [{}] },
-  pageState: { s1: { cursor: null, hasMore: false, loading: false } },
+  pageState: loaded,
+  activeSessionRole: undefined,
+  activeSessionDirectory: 'C:/proj',
+  projectRoot: 'C:/proj',
+})).toBeNull()
+expect(reusableCreatorSession({
+  activeSessionID: 's1',
+  messagesBySession: { s1: [] },
+  pageState: loaded,
+  activeSessionRole: 'lead',
+  activeSessionDirectory: 'C:/proj',
+  projectRoot: 'C:/proj',
 })).toBeNull()
 expect(reusableCreatorSession({
   activeSessionID: 's1',
   messagesBySession: { s1: [] },
   pageState: {},
+  activeSessionRole: undefined,
+  activeSessionDirectory: 'C:/proj',
+  projectRoot: 'C:/proj',
 })).toBeNull()
 ```
 
