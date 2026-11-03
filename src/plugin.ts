@@ -49,6 +49,7 @@ import { podTaskUpdateTool } from './tools/pod-task-update';
 import { podMessageTool } from './tools/pod-message';
 import { podMemoryReadTool } from './tools/pod-memory-read';
 import { podMemoryWriteTool } from './tools/pod-memory-write';
+import { pluginInspectTool } from './tools/plugin-inspect';
 import { ensureMcpWiring, resolveGatewayApiUrl } from './utils/self-wiring';
 import {
   zodToJsonSchema,
@@ -121,6 +122,7 @@ const V1_TOOLS: Record<string, { description: string; args: any; execute: (args:
   mafw_pod_message: podMessageTool,
   mafw_pod_memory_read: podMemoryReadTool,
   mafw_pod_memory_write: podMemoryWriteTool,
+  mafw_plugin_inspect: pluginInspectTool,
 };
 
 /** V1 工具结果 → V2 `{ content, metadata }`。 */
