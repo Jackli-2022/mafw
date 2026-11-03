@@ -39,9 +39,19 @@ Desktop：`Config → Plugins → 让 Agent 创建插件`。
 | 原因 | 文案 | 说明 |
 |---|---|---|
 | Agent 列表为空或尚未加载 | 正在加载 Agent 列表… | 代码按列表长度判定（`agentsData().length > 0`），没有独立的 fetched 标志；空列表也归入 loading |
-| 当前 runtime 没有 `mafw-create` | 当前 runtime 未提供 mafw-create | 只有物化了该 primary agent 的 runtime 可用 |
+| 当前 runtime 没有 `mafw-create` | 当前 runtime 未提供 mafw-create | 只有物化了该 primary agent 的 runtime 可用（见下） |
 | 当前是并行 worktree 会话 | 并行 worktree 会话不提供创建入口 | 草稿必须留在项目里，worktree 清理不能带走它 |
 
+> **本阶段仅 OpenCode**：Creator 的 `mafw_plugin_inspect` / `mafw_plugin_manager` 工具与随包
+> `plugin-creator` 技能都由 OpenCode 插件宿主提供，因此 `mafw-create` 只在声明
+> `pluginCreatorApi` 的 runtime（当前=OpenCode）上物化。pi 等 runtime 上该身份不物化，
+> `/api/agents` 不返回它，入口显示中性的「当前 runtime 未提供 mafw-create」而不是给一个
+> 没有工具的空身份。其他 runtime 的支持是后续阶段的事，不要手工切 agent 绕过。
+>
+> **复用空白会话的前置条件**：只有「历史已加载完成且为空」的**普通项目会话**会被复用。
+> Lead/manager 会话（协调对话）与目录不在项目根内的会话一律不复用——后者常见于内部会话的
+> hash 目录，复用会让草稿落到承诺的项目路径之外。
+>
 > **worktree 限制**：`benchRoot()` 与项目根不一致时入口一律禁用。需要 Creator 时请在项目本身的会话里操作。
 > 工具本身仍以会话目录为根；worktree 会话中手工调用会落到 worktree 的 `.mafw`，不受支持。
 
@@ -123,6 +133,9 @@ Desktop：`Config → Plugins → 让 Agent 创建插件`。
 
 - 审批走宿主原生 `ctx.ask`，权限键是 `mafw_plugin_manager`。
 - **`always: []`**：一次批准只批准这一次操作。UI 无法把它沉淀成可复用规则，也不会提升会话权限。
+- **`metadata.forceHuman: true`**：审批载荷显式标记为人工决策，gateway 审批钩子
+  （`gateway/src/core/approval/hook.ts`）见到该标记就让路——否则 `auto` 档会把权限请求自动答复
+  （内部会话则自动拒绝），全程没有人看到。`forceHuman` 是既有契约，不是第二套审批系统。
 - 会话模式为 `full-access` 时按既有策略直接执行；`auto` / `read-only` 仍会要求人工确认。
 - 审批通道不可用、模式读取失败 → **失败关闭**，不会变成隐式批准；不要用 MCP question 冒充。
 - `install` / `overwrite` 的审批文本包含包名、草稿名、`overwrite` 与内容 fingerprint。批准后、执行前会重新计算
