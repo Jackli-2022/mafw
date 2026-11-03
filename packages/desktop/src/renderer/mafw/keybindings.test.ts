@@ -1,7 +1,7 @@
 // C3 自定义快捷键纯模块（W3）：事件→组合键规范化、默认合并、冲突检测、显示格式。
 import { describe, expect, test } from "bun:test"
 import {
-  DEFAULT_KEYBINDINGS, normalizeCombo, matchesCombo, resolveKeybindings,
+  DEFAULT_KEYBINDINGS, KEYBINDING_LABELS, normalizeCombo, matchesCombo, resolveKeybindings,
   findConflicts, formatCombo, isValidCombo,
 } from "./keybindings"
 
@@ -44,6 +44,11 @@ describe("matchesCombo", () => {
 })
 
 describe("resolveKeybindings", () => {
+  test("workbench focus has a customizable default", () => {
+    expect(DEFAULT_KEYBINDINGS["toggle-workbench-focus"]).toBe("ctrl+shift+m")
+    expect(KEYBINDING_LABELS["toggle-workbench-focus"]).toBe("切换工作台全宽")
+    expect(isValidCombo(DEFAULT_KEYBINDINGS["toggle-workbench-focus"])).toBe(true)
+  })
   test("stored 覆盖默认；非法条目丢弃回落默认", () => {
     const resolved = resolveKeybindings({ "toggle-terminal": "ctrl+shift+`", "command-palette": "bogus" } as any)
     expect(resolved["toggle-terminal"]).toBe("ctrl+shift+`")

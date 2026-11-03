@@ -911,6 +911,17 @@ describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接�
     expect(shell).toMatch(/workbenchShellHidden\(\{ content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
     expect(shell).toMatch(/<Show when=\{!showConfig\(\)\}>/)
   })
+  test("Focus 全宽：工作台头部按钮 + 可自定义快捷键 + 不持久化", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    const workbench = read("src/renderer/mafw/components/WorkbenchShell.tsx")
+    expect(workbench).toMatch(/focus\?: boolean/)
+    expect(workbench).toMatch(/onToggleFocus\?: \(\) => void/)
+    expect(workbench).toMatch(/aria-label=\{props\.focus \? "退出工作台全宽" : "工作台全宽"\}/)
+    expect(shell).toMatch(/keybindingFor\("toggle-workbench-focus"\)/)
+    expect(shell).toMatch(/focus=\{workbenchFocus\(\)\}/)
+    expect(shell).toMatch(/onToggleFocus=\{\(\) => setWorkbenchFocus\(\(v\) => !v\)\}/)
+    expect(shell).not.toMatch(/mafw-workbench-focus/)
+  })
   test("CSS：布局开关样式存在，no-drag 由 topstrip button 规则覆盖", () => {
     expect(css).toMatch(/\.mafw-topstrip\s+button[^{]*\{[^}]*-webkit-app-region:\s*no-drag/)
     expect(css).toContain(".mafw-layout-toggle")

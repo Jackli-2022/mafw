@@ -2,8 +2,9 @@
 // 三列：左推挤栏 | 对话列（绝对 px 档位）| 工作台（吃剩余）；工作台关闭/窄屏 overlay 时两列。
 import { migrateLegacyChatWidth, normalizeDetent, ratioPercentFromDrag, type WorkbenchDetent } from "./workbench-detents"
 /** grid-template-columns：split=三列，否则对话满宽 + 0 宽 dock 列。 */
-export function workbenchColumns(input: { leftPx: number; chatPx: number; split: boolean }): string {
+export function workbenchColumns(input: { leftPx: number; chatPx: number; split: boolean; focus: boolean }): string {
   const left = `${input.leftPx}px`
+  if (input.focus) return `${left} 0px minmax(0, 1fr)`
   return input.split ? `${left} ${input.chatPx}px minmax(0, 1fr)` : `${left} minmax(0, 1fr) 0px`
 }
 

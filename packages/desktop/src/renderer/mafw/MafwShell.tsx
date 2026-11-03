@@ -1757,6 +1757,8 @@ export function MafwShell() {
   )
   try { localStorage.setItem("mafw-workbench-detent", String(workbenchBoot.detent)) } catch { /* ignore */ }
   const [rightDockOpen, setRightDockOpen] = createSignal(defaultDockOpen(localStorage.getItem("mafw-right-dock-open")))
+  // Focus 是会话级瞬态：不持久化，项目切换时退出（spec 2026-11-04 §4.2）。
+  const [workbenchFocus, setWorkbenchFocus] = createSignal(false)
   const bootWorkbench = migrateWorkbenchStorage((k) => {
     try { return localStorage.getItem(k) } catch { return null }
   })
@@ -1834,6 +1836,7 @@ export function MafwShell() {
       leftPx: leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : 0,
       chatPx: chatPx(),
       split: chatSplit(),
+      focus: workbenchFocus(),
     })
 
   const applyRightDock = (open: boolean) => {
@@ -2232,7 +2235,8 @@ export function MafwShell() {
   // （spec 2026-10-30-pod-left-rail §4.1）。两个 effect 都用 on() 隔离依赖：
   // open()/refresh() 会同步读 detail()/refreshing()/projectDir()，裸 effect 会把
   // 这些 signal 变成依赖 → 自触发无限刷新（pod listMessages / cost 打屏）。
-  createEffect(on(() => benchRoot() ?? currentProject(), (dir) => {
+  createEffect(on(() => benchRoot() ?? currentProject(), (dir, previous) => {
+    if (previous !== undefined && dir !== previous) setWorkbenchFocus(false)
     if (dir) void podStore.open(dir)
   }))
   createEffect(on(() => connPhaseLabel(), (phase, previous) => {
@@ -2264,6 +2268,20 @@ export function MafwShell() {
       e.preventDefault()
       if (right) applyRightDock(!rightDockOpen())
       else toggleLeftDock("sessions")
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
+  })
+
+  // Ctrl+Shift+M：工作台 Focus（全宽 / 恢复 chat 列）。瞬态、不持久化（C3 可自定义）。
+  createEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!matchesCombo(e, keybindingFor("toggle-workbench-focus"))) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return
+      e.preventDefault()
+      if (!rightDockOpen()) applyRightDock(true)
+      setWorkbenchFocus((focus) => !focus)
     }
     window.addEventListener("keydown", onKey)
     onCleanup(() => window.removeEventListener("keydown", onKey))
@@ -2828,6 +2846,8 @@ export function MafwShell() {
                   view={workbenchView()}
                   surface={workbenchSurface()}
                   executionSection={executionSection()}
+                  focus={workbenchFocus()}
+                  onToggleFocus={() => setWorkbenchFocus((v) => !v)}
                   onView={applyWorkbenchView}
                   onSurface={applyWorkbenchSurface}
                   onExecutionSection={applyExecutionSection}

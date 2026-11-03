@@ -37,6 +37,9 @@ export type WorkbenchShellProps = {
   onSendComment?: (sid: string, text: string) => void
   /** 批注反馈标记点击 → 切审阅面。 */
   onOpenReview?: () => void
+  /** Focus：右工作台占满 chat+workbench 区域（chat 列宽 0，仍保持挂载）。 */
+  focus?: boolean
+  onToggleFocus?: () => void
   workView: JSX.Element
   executionView: JSX.Element
   reviewView: JSX.Element
@@ -160,6 +163,18 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           </For>
         </div>
         <div class="mafw-rw-l1-spacer" />
+        <Show when={props.onToggleFocus}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-rw-focus"
+            aria-label={props.focus ? "退出工作台全宽" : "工作台全宽"}
+            aria-pressed={props.focus}
+            onClick={() => props.onToggleFocus?.()}
+          >
+            <Icon name="layout-right-full" size="small" />
+          </ButtonV2>
+        </Show>
       </div>
 
       <Show when={props.view === "workbench" || props.view === "execution"}>

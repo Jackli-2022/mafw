@@ -2,10 +2,12 @@ import { describe, test } from "node:test"
 import assert from "node:assert/strict"
 import { detentFromLegacy, formatResizePreview, migrateDockKeys, workbenchColumns, workbenchShellHidden, workbenchSplit } from "./workbench-layout"
 describe("workbench layout pure functions", () => {
-  test("workbenchColumns：split 三列 / 关闭两列", () => {
-    assert.equal(workbenchColumns({ leftPx: 0, chatPx: 520, split: true }), "0px 520px minmax(0, 1fr)")
-    assert.equal(workbenchColumns({ leftPx: 180, chatPx: 640, split: true }), "180px 640px minmax(0, 1fr)")
-    assert.equal(workbenchColumns({ leftPx: 0, chatPx: 520, split: false }), "0px minmax(0, 1fr) 0px")
+  test("workbenchColumns：split 三列 / 关闭两列 / Focus 收 chat", () => {
+    assert.equal(workbenchColumns({ leftPx: 0, chatPx: 520, split: true, focus: false }), "0px 520px minmax(0, 1fr)")
+    assert.equal(workbenchColumns({ leftPx: 180, chatPx: 640, split: true, focus: false }), "180px 640px minmax(0, 1fr)")
+    assert.equal(workbenchColumns({ leftPx: 0, chatPx: 520, split: false, focus: false }), "0px minmax(0, 1fr) 0px")
+    assert.equal(workbenchColumns({ leftPx: 46, chatPx: 760, split: true, focus: true }), "46px 0px minmax(0, 1fr)")
+    assert.equal(workbenchColumns({ leftPx: 46, chatPx: 760, split: true, focus: false }), "46px 760px minmax(0, 1fr)")
   })
 
   test("detentFromLegacy：旧 chat 宽度 px → 绝对档位（缺失/非法 → 760）", () => {
