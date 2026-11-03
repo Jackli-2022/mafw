@@ -1401,7 +1401,8 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
   `AWAIT_PLAN_APPROVAL` 是合法驻留门，`POST /api/goals/:id/plan-approval` 必须匹配当前 hash
   （不一致 `stale_plan` → 409 + 当前 hash）；任务板编辑计划（`PodTaskService.invalidatePlanApproval`）
   自动作废旧批准。Review 走 `core/goal/review-rubric.ts`：逐任务 pass/fail/skipped + 证据，且必须
-  覆盖每条**必需 Goal 条件**；漏项/自相矛盾/证据空 → `artifact_invalid`，绝不 PASS。
+  覆盖每条**必需 Goal 条件**；漏项/自相矛盾/证据空 → `verdict:'FAIL'` 进入 reviewFix/round 修复，绝不 PASS；
+  只有 JSON 不可解析或结构非法才走 `artifact_invalid`。
 - **结果与打回**：PASS 归档 → `PodGoalService.notifyResult()` 保持真实 verdict，只广播一次
   `pod.updated {kind:'result', goalId}`，不制造人工 attention；`rejectResult` 必须先读到真实结果
   证据（result 视图 > revision 行 > goal 根记录），再 `finishRevision(evidence)` +
