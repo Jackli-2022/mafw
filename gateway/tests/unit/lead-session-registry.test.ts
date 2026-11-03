@@ -163,6 +163,16 @@ describe('LeadSessionRegistry', () => {
     expect(f.archives.filter((x) => x.sessionId === 'ses_dead')).toHaveLength(1);
   });
 
+  test('registry archives dead kv lead even when no Pod row exists', async () => {
+    const f = fixture();
+    f.writeSlot(f.projectDir, 'ses_dead');
+    const registry = new LeadSessionRegistry(f.deps());
+
+    await registry.ensure(f.projectDir);
+
+    expect(f.archives).toContainEqual({ sessionId: 'ses_dead', projectDir: f.canonical });
+  });
+
   test('multiple canonical-equivalent live keys without Pod conflict and create nothing', async () => {
     const f = fixture();
     const variantA = f.projectDir + path.sep;

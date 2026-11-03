@@ -35,6 +35,8 @@ export interface PodServiceDeps {
   getManagerSession(projectDir: string): Promise<string>;
   getSession(sessionID: string): Promise<{ time?: { idle?: number; completed?: number }; parentID?: string }>;
   messages(sessionID: string, limit: number): Promise<unknown[]>;
+  /** Best-effort archive after a replaced/ended Lead coordination row. */
+  archiveLeadSession?(sessionId: string): Promise<void> | void;
   memoryRoot: string;
   listRegisteredProjectDirs(): string[];
   ensureMemory?(podId: string, projectName: string): void;
@@ -122,7 +124,17 @@ export class PodService {
     );
     if (coordination.some((session) => session.sessionId === managerSessionId)) return;
     for (const session of coordination) {
-      this.deps.store.endSession(session.sessionId, this.deps.now());
+      try {
+        await this.snapshotSession(session.sessionId);
+      } catch (err: any) {
+        this.deps.log?.(`[Pod] replaced Lead snapshot failed for ${session.sessionId} (non-fatal): ${err?.message ?? err}`);
+        this.deps.store.endSession(session.sessionId, this.deps.now());
+      }
+      try {
+        await this.deps.archiveLeadSession?.(session.sessionId);
+      } catch (err: any) {
+        this.deps.log?.(`[Pod] replaced Lead archive failed for ${session.sessionId} (non-fatal): ${err?.message ?? err}`);
+      }
     }
 
     this.deps.store.insertSession({

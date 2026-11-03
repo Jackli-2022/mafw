@@ -31,6 +31,10 @@ describe('isHiddenSession', () => {
     expect(isHiddenSession({ id: 'm1', agent: 'manager', title: 'Manager' }, noRole)).toBe(false);
   });
 
+  it('keeps archived lead sessions visible and never treats them as current lead metadata', () => {
+    expect(isHiddenSession({ id: 'l1', metadata: { mafw: { role: 'lead-archived' } } }, noRole)).toBe(false);
+  });
+
   it('keeps normal user sessions visible', () => {
     expect(isHiddenSession({ id: 'u1', title: 'Fix the bug' }, noRole)).toBe(false);
   });

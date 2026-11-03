@@ -90,6 +90,62 @@ describe('PodService', () => {
     expect(store.getMemberBySession('ses_manager_rotated')?.role).toBe('lead');
   });
 
+  test('bindLead snapshots and archives the replaced coordination session', async () => {
+    const archived: string[] = [];
+    const archiving = new PodService({
+      store,
+      now,
+      newId,
+      broadcast: () => {},
+      getManagerSession: async () => managerSessionId,
+      getSession: (sessionID) => getSessionImpl(sessionID),
+      messages: (sessionID, limit) => messagesImpl(sessionID, limit),
+      memoryRoot,
+      listRegisteredProjectDirs: () => [projectDir],
+      ensureMemory: () => {},
+      archiveLeadSession: async (sessionID) => { archived.push(sessionID); },
+      log: (message) => logs.push(message),
+    });
+    const first = await archiving.ensure(projectDir);
+    managerSessionId = 'ses_manager_rotated';
+
+    await archiving.ensure(projectDir);
+
+    expect(store.getSnapshot('ses_manager')?.path).toBeTruthy();
+    expect(archived).toEqual(['ses_manager']);
+    expect(store.listSessions(first.pod.id).find((s) => s.sessionId === 'ses_manager')?.endedAt).toBeTruthy();
+    expect(store.listSessions(first.pod.id).filter((s) => s.node === 'coordination' && !s.endedAt))
+      .toHaveLength(1);
+  });
+
+  test('bindLead still ends/archives when transcript snapshot fails', async () => {
+    const archived: string[] = [];
+    messagesImpl = async () => { throw new Error('transcript unavailable'); };
+    const archiving = new PodService({
+      store,
+      now,
+      newId,
+      broadcast: () => {},
+      getManagerSession: async () => managerSessionId,
+      getSession: (sessionID) => getSessionImpl(sessionID),
+      messages: (sessionID, limit) => messagesImpl(sessionID, limit),
+      memoryRoot,
+      listRegisteredProjectDirs: () => [projectDir],
+      ensureMemory: () => {},
+      archiveLeadSession: async (sessionID) => { archived.push(sessionID); },
+      log: (message) => logs.push(message),
+    });
+    const first = await archiving.ensure(projectDir);
+    managerSessionId = 'ses_manager_rotated';
+
+    await archiving.ensure(projectDir);
+
+    expect(archived).toEqual(['ses_manager']);
+    expect(store.listSessions(first.pod.id).find((s) => s.sessionId === 'ses_manager')?.endedAt).toBeTruthy();
+    expect(store.listSessions(first.pod.id).filter((s) => s.node === 'coordination' && !s.endedAt))
+      .toHaveLength(1);
+  });
+
   test('ensure stays usable when Manager binding or memory init fails', async () => {
     const failing = new PodService({
       store,
