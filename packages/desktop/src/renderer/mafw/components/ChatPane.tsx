@@ -22,7 +22,7 @@ import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
 import { agentKey, isAgentKey } from "../agent-identity"
-import { isLeadSessionRole } from "../manager-session"
+import { isLeadRole } from "../lead-session"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply, cachedArtifactUrl } from "./AudioReply"
@@ -260,8 +260,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const store = workspace.store
   const setStore = workspace.setStore as unknown as (fn: (prev: typeof store) => typeof store) => typeof store
   // accessor 保持响应式（sessions 变化即重算；split view 各 pane 各自查）
-  // 协调会话 = Lead（metadata.role 为 lead；历史 manager 同义，见 manager-session.ts）
-  const isLead = () => isLeadSessionRole(workspace.sessionRole(sidProp()))
+  // 协调会话 = Lead（只认显式 lead；历史 manager 是普通历史）
+  const isLead = () => isLeadRole(workspace.sessionRole(sidProp()))
   const connPhase = useConnPhase()
 
   // ── Composer state (per pane) ──

@@ -15,7 +15,7 @@ import { podRoleBadge } from "../pod-model"
 import type { PodMemberRole } from "@mafw/sdk"
 
 export function SessionStrip(props: {
-  sessions: () => { id: string; title: string; manager?: boolean }[]
+  sessions: () => { id: string; title: string; lead?: boolean }[]
   activeViewId: () => string | null
   onSelect: (id: string) => void
   onClose: (id: string) => void
@@ -147,7 +147,7 @@ export function SessionStrip(props: {
             onContextMenu={(event) => requestTabMenu(s, event)}
             onKeyDown={(event) => onTabKeyDown(s, event)}
           >
-            <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
+            <span class="mafw-agent-dot" style={{ background: s.lead ? "var(--accent)" : "var(--text-4)" }} />
             <span
               class="mafw-session-title"
               onDblClick={e => { e.stopPropagation(); setRenamingId(s.id); setRenameDraft(s.title || "") }}
@@ -195,7 +195,7 @@ export function SessionStrip(props: {
                 {s => (
                   <DropdownMenu.Item onSelect={() => props.onSelect(s.id)}>
                     <DropdownMenu.ItemLabel class="mafw-session-overflow-item">
-                      <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
+                      <span class="mafw-agent-dot" style={{ background: s.lead ? "var(--accent)" : "var(--text-4)" }} />
                       <span class="mafw-session-overflow-title">{formatRailTitle(s.title)}</span>
                       <Show when={props.activeViewId() === s.id}>
                         <Icon name="check-small" size="small" />

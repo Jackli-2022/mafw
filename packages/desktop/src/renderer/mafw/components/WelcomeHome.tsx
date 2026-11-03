@@ -6,7 +6,7 @@ import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { formatRailTitle } from "./rail-display"
-import { isLeadSessionRole } from "../manager-session"
+import { isLeadRole } from "../lead-session"
 
 /**
  * Startup welcome pane ("今天要做什么？"). Rendered when the app launches
@@ -84,13 +84,13 @@ export function WelcomeHome(props: {
     for (const s of props.openSessions) {
       if (!s?.id || seen.has(s.id)) continue
       // 协调会话（Lead，历史值 manager）不作为"最近会话"重复出现
-      if (isLeadSessionRole(s.metadata?.mafw?.role)) continue
+      if (isLeadRole(s.metadata?.mafw?.role)) continue
       seen.add(s.id)
       merged.push({ id: s.id, title: formatRailTitle(s.title) })
     }
     for (const s of props.historySessions) {
       if (!s?.id || seen.has(s.id)) continue
-      if (isLeadSessionRole(s.metadata?.mafw?.role)) continue
+      if (isLeadRole(s.metadata?.mafw?.role)) continue
       seen.add(s.id)
       merged.push({ id: s.id, title: formatRailTitle(s.title), time: s.time?.updated })
     }

@@ -52,7 +52,7 @@ test("邀请卡符合设计契约（Design system 组件，无裸 button/input/t
 
 test("shell 只在当前会话是 Lead 时计算邀请", () => {
   assert.match(shell, /activeSessionIsLead/)
-  assert.match(shell, /isLeadSessionRole\(tabSessionRole\(/)
+  assert.match(shell, /isLeadRole\(tabSessionRole\(/)
   assert.match(shell, /techLeadInvite=\{activeLeadGoalInvite\}/)
   assert.match(shell, /onOpenTechLead=\{\(goalId\) => void openTechLead\(goalId\)\}/)
 })

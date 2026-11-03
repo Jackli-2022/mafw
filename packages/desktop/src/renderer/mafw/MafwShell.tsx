@@ -73,7 +73,7 @@ import {
 } from "./pod-model"
 import { buildPodNoteBody } from "./pod-note"
 import { retitleTab } from "./session-tab-title"
-import { isLeadSessionRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./manager-session"
+import { isLeadRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./lead-session"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { fetchTasks, ingestTask } from "./task-store"
@@ -390,13 +390,13 @@ export function MafwShell() {
 
   // Open a session as a tab (single pane; v6 removed the split-view model).
   // Welcome-page entries (manager / new session / recent session) go through here.
-  const openSessionTab = (sid: string, title?: string, manager?: boolean, metadata?: any) => {
+  const openSessionTab = (sid: string, title?: string, lead?: boolean, metadata?: any) => {
     setShowConfig(false)
     setActiveTab("chat")
     setShowWelcome(false)
     if (!sessions().some(s => s.id === sid)) {
       const tabTitle = title || `Chat ${sessions().length + 1}`
-      setSessions(prev => [...prev, { id: sid, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager, metadata }])
+      setSessions(prev => [...prev, { id: sid, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, lead, metadata }])
       setStore(prev => ({
         ...prev,
         session: [...prev.session, { id: sid, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
@@ -414,19 +414,19 @@ export function MafwShell() {
     closeLeftDockIfOverlay()
   }
 
-  // Single resolution path for the coordination session (Lead): authoritative
-  // gateway DB id first (the hidden Lead is usually absent from the history
-  // list — see manager-session.ts), legacy role metadata only as a fallback.
-  const resolveManager = () =>
-    resolveLeadSession({ managerSessionId: leadIdFor(currentProject()), historySessions: historySessions() })
+  // Single resolution path for the coordination session (Lead): only the
+  // explicit current Lead id (kv until Task 10 switches the UI authority to
+  // Pod coordination). Historical manager metadata is never a fallback.
+  const resolveCurrentLead = () =>
+    resolveLeadSession({ leadSessionId: leadIdFor(currentProject()) })
 
   const handleOpenManager = async (): Promise<boolean> => {
-    const manager = resolveManager()
-    if (!manager) {
+    const lead = resolveCurrentLead()
+    if (!lead) {
       setActiveTab("goals")
       return false
     }
-    openSessionTab(manager.id, manager.title, manager.manager, manager.metadata)
+    openSessionTab(lead.id, lead.title, lead.lead, lead.metadata)
     return true
   }
   // "新建 Goal": jump to the manager session and send a create-goal message.
@@ -435,8 +435,8 @@ export function MafwShell() {
   // review-then-run); the question surfaces in the QuestionWidget overlay.
   const handleNewGoal = async (description: string, opts?: { planReview?: boolean }): Promise<boolean> => {
     if (!await handleOpenManager()) return false
-    const manager = resolveManager()
-    if (!manager) return false
+    const lead = resolveCurrentLead()
+    if (!lead) return false
     const planReview = opts?.planReview !== false
     const message = planReview
       ? `创建新 Goal：${description}\n\n（流程要求：完成规划（PLANNING_COMPLETE）后，先用 mafw_ask_user 工具把方案要点（目标、步骤、风险）发给我确认，得到我的确认答复后再开始执行。）`
@@ -444,16 +444,16 @@ export function MafwShell() {
     // Optimistic insert (matches sendMessage's store pattern).
     const userMsgId = `user-${Date.now()}`
     const ts = Date.now()
-    setSessions(prev => prev.map(s => s.id === manager.id ? { ...s, userMsgId } : s))
+    setSessions(prev => prev.map(s => s.id === lead.id ? { ...s, userMsgId } : s))
     setStore(prev => {
       const msgs = { ...prev.message }
-      const sessionMsgs = [...(msgs[manager.id] || [])]
-      sessionMsgs.push({ id: userMsgId, sessionID: manager.id, role: "user", parentID: null, time: { created: Date.now() }, text: message, agent: "general", model: { providerID: "opencode", modelID: "" } })
-      msgs[manager.id] = sessionMsgs
-      return { ...prev, message: msgs, part: { ...prev.part, [userMsgId]: [{ type: "text", text: message, id: `${userMsgId}-text`, sessionID: manager.id, messageID: userMsgId }] } }
+      const sessionMsgs = [...(msgs[lead.id] || [])]
+      sessionMsgs.push({ id: userMsgId, sessionID: lead.id, role: "user", parentID: null, time: { created: Date.now() }, text: message, agent: "general", model: { providerID: "opencode", modelID: "" } })
+      msgs[lead.id] = sessionMsgs
+      return { ...prev, message: msgs, part: { ...prev.part, [userMsgId]: [{ type: "text", text: message, id: `${userMsgId}-text`, sessionID: lead.id, messageID: userMsgId }] } }
     })
     try {
-      await window.api.mafw.chat.sendEnriched({ message, sessionID: manager.id })
+      await window.api.mafw.chat.sendEnriched({ message, sessionID: lead.id })
       return true
     } catch (e) {
       console.warn("[mafw] send goal message failed:", e)
@@ -711,7 +711,7 @@ export function MafwShell() {
     // 靠 kv 权威 id 认回来（否则恢复后新话题/agent 锁失效）。
     for (const t of pruned.tabs) {
       const info = byId.get(t.id)
-      const lead = (!!leadId && t.id === leadId) || isLeadSessionRole(info?.metadata?.mafw?.role)
+      const lead = (!!leadId && t.id === leadId) || isLeadRole(info?.metadata?.mafw?.role)
       openSessionTab(t.id, t.title || info?.title, lead, info?.metadata ?? (lead ? leadTabMetadata() : undefined))
     }
     const active = pruned.activeViewId && pruned.tabs.some(t => t.id === pruned.activeViewId)
@@ -1928,7 +1928,7 @@ export function MafwShell() {
     if (!sid) return false
     const pd = currentProject()
     if (pd && leadIdFor(pd) === sid) return true
-    return isLeadSessionRole(tabSessionRole(sessions().find((s) => s.id === sid)))
+    return isLeadRole(tabSessionRole(sessions().find((s) => s.id === sid)))
   }
   const activeLeadGoalInvite = (): { goalId: string; title: string } | null => {
     if (!activeSessionIsLead()) return null
