@@ -1424,6 +1424,15 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
   打回不重写 rev1）。全量 gateway **4296/4296（558 suites）**、desktop **2371/2371**、SDK **187/187**；
   `tsc`（gateway，`npx tsc --noEmit -p tsconfig.json`）/`tsgo -p tsconfig.json`/
   `electron-vite build`/根 `npm run build` rc=0。状态：随 **v5.0.0** 发布（tag `v5.0.0`，release commit `49a63ca2`）。
+- **GUI 冒烟修复（2026-11-03，post-v5.0.0）**：真实 Lead→Tech Lead 冒烟发现两处状态/UI 缺口并修复——① discussing Goal
+  还没有执行 GoalState，`PodGoalView.stateMissing` 误判 person/blocked（`757cc25d`，pre-execution
+  discussing/direction_review 不再 blocked）；② 点击「方向待裁定」时 `goals.timeline` 404 被当成整页失败，
+  GoalDetail 无法渲染方向面板（`ca879fcb`，仅 missing GoalState 404 降级为 timeline unavailable）。
+  冒烟已验证：Lead 直接建 Goal、聊天页入口、隐藏 Tech Lead 会话、`mafw-tech-lead` 专用发送与
+  ContextManifest、方向裁定请求/attention、方向面板选项与原话持久化、进入 planning。
+  未在 GUI 中走完：真实 Plan/Eval 批准、Spike、Reviewer PASS、结果通知与打回循环（由集成测试覆盖）。
+  修复后 gateway **4305/4305（558 suites）**、desktop **2384/2384**、`tsc`/`tsgo -p`/`electron-vite build` rc=0；
+  这两个修复**不在 v5.0.0 tag 内**。
 
 ## 6. Gateway 运维
 
