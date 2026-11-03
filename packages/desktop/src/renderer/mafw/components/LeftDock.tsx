@@ -71,9 +71,10 @@ type Props = {
   podIsWorktree?: boolean
   podSelfMemberId?: string | null
   podSessionTitleOf?: (sessionId: string) => string | null
+  podAttention?: number
   onPodRefresh?: () => void
   onPodOpenSession?: (sessionId: string) => void
-  onPodOpenGoal?: (goalId: string) => void
+  onPodOpenWork?: () => void
   onPodOpenPanel?: (panel: "team" | "memory", target?: "members" | "inbox") => void
   onPodOpenNotes?: () => void
   onPodNavigate?: (tab: NavTab) => void
@@ -399,9 +400,10 @@ export function LeftDock(props: Props) {
           isWorktree={!!props.podIsWorktree}
           selfMemberId={props.podSelfMemberId ?? null}
           sessionTitleOf={props.podSessionTitleOf}
+          attention={props.podAttention ?? 0}
           onRefresh={() => props.onPodRefresh?.()}
           onOpenSession={(id) => props.onPodOpenSession?.(id)}
-          onOpenGoal={(id) => props.onPodOpenGoal?.(id)}
+          onOpenWork={() => props.onPodOpenWork?.()}
           onOpenPanel={(panel, target) => props.onPodOpenPanel?.(panel, target)}
           onOpenNotes={() => props.onPodOpenNotes?.()}
           onNavigate={(tab) => props.onPodNavigate?.(tab)}

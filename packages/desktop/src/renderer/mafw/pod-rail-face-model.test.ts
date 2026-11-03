@@ -5,8 +5,10 @@ import {
   buildRecentMessages,
   canNotify,
   deliveryToast,
+  podAttentionRow,
   podCounts,
   podEmptyState,
+  podRecentMessages,
   railView,
 } from "./pod-rail-face-model"
 
@@ -103,6 +105,17 @@ test("recent messages give route, preview, relative time and unread flag", () =>
   assert.equal(rows[0].time, "8m")
   assert.match(rows[1].route, /广播/)
   assert.equal(rows[1].unread, false)
+})
+
+test("attention row hides zero and labels counts", () => {
+  assert.deepEqual(podAttentionRow(0), { label: "需要你", visible: false })
+  assert.deepEqual(podAttentionRow(2), { label: "需要你 2", visible: true })
+})
+
+test("podRecentMessages returns the last entries in store order", () => {
+  const messages = [{ id: "m1" }, { id: "m2" }, { id: "m3" }, { id: "m4" }, { id: "m5" }] as any[]
+  assert.deepEqual(podRecentMessages(messages, 3).map((m) => m.id), ["m3", "m4", "m5"])
+  assert.deepEqual(podRecentMessages(messages, 0), [])
 })
 
 test("counts split review / todo / unread", () => {  const messages = [

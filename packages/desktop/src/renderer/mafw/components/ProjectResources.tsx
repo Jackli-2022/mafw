@@ -5,8 +5,8 @@ import type { PodDetail, PodMessage } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
-import { buildMemberRows, podCounts, podEmptyState, type PodEmptyState } from "../pod-rail-face-model"
-import { memberOpenTarget, podStatusLabel } from "../pod-model"
+import { buildMemberRows, podAttentionRow, podCounts, podEmptyState, podRecentMessages, type PodEmptyState } from "../pod-rail-face-model"
+import { memberOpenTarget, podShortTime, podStatusLabel } from "../pod-model"
 import { PAGE_LINKS } from "../page-links"
 import type { NavTab } from "./nav-tab"
 
@@ -19,9 +19,10 @@ export function ProjectResources(props: {
   isWorktree: boolean
   selfMemberId: string | null
   sessionTitleOf?: (sessionId: string) => string | null
+  attention: number
   onRefresh: () => void
   onOpenSession: (sessionId: string) => void
-  onOpenGoal: (goalId: string) => void
+  onOpenWork: () => void
   onOpenPanel: (tab: "team" | "memory", target?: "members" | "inbox") => void
   onOpenNotes: () => void
   onNavigate: (tab: NavTab) => void
@@ -35,7 +36,13 @@ export function ProjectResources(props: {
   const counts = createMemo(() => (props.detail
     ? podCounts(props.detail, props.messages, props.selfMemberId)
     : { review: 0, todo: 0, inbox: 0 }))
-  const activeGoal = createMemo(() => props.detail?.goals.find((goal) => goal.status === "active") ?? null)
+  const attention = createMemo(() => podAttentionRow(props.attention))
+  const recentMessages = createMemo(() => podRecentMessages(props.messages, 3).map((message) => ({
+    ...message,
+    preview: message.body.replace(/\s+/g, " ").trim(),
+    time: podShortTime(message.createdAt, Date.now()),
+    unread: message.readAt === null,
+  })))
   const toolLinks = createMemo(() => PAGE_LINKS)
 
   return (
@@ -80,6 +87,18 @@ export function ProjectResources(props: {
       </Show>
 
       <Show when={emptyState() === "ready"}>
+        <Show when={attention().visible}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-resources-row mafw-resources-attention"
+            onClick={() => props.onOpenWork()}
+          >
+            <span class="mafw-resources-leading"><Icon name="status" size="small" /><span>{attention().label}</span></span>
+            <span class="mafw-resources-meta accent">右栏处理</span>
+            <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
+          </ButtonV2>
+        </Show>
         <div class="mafw-pod-rail-label">团队与设置</div>
         <div class="mafw-resources-list">
           <ButtonV2
@@ -125,22 +144,6 @@ export function ProjectResources(props: {
             <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
           </ButtonV2>
         </div>
-
-        <Show when={activeGoal()}>
-          {(goal) => (
-            <ButtonV2
-              variant="ghost"
-              size="small"
-              class="mafw-resources-row mafw-resources-goal"
-              aria-label={`打开当前目标 ${goal().title}`}
-              onClick={() => props.onOpenGoal(goal().goalId)}
-            >
-              <span class="mafw-resources-leading"><Icon name="status" size="small" /><span>当前目标 · {goal().title}</span></span>
-              <span class="mafw-resources-meta">打开详情</span>
-              <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
-            </ButtonV2>
-          )}
-        </Show>
 
         <div class="mafw-pod-rail-label">班底</div>
         <div class="mafw-pod-rail-members">
@@ -198,7 +201,27 @@ export function ProjectResources(props: {
         </div>
       </Show>
 
-      <div class="mafw-pod-rail-label">工具</div>
+        <Show when={recentMessages().length > 0}>
+          <div class="mafw-pod-rail-label">最近消息</div>
+          <div class="mafw-pod-rail-recent">
+            <For each={recentMessages()}>
+              {(message) => (
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-pod-rail-message"
+                  classList={{ unread: message.unread }}
+                  onClick={() => props.onOpenPanel("team", "inbox")}
+                >
+                  <span class="mafw-pod-rail-message-preview">{message.preview || "（空消息）"}</span>
+                  <span class="mafw-pod-rail-message-time">{message.time}</span>
+                </ButtonV2>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        <div class="mafw-pod-rail-label">工具</div>
       <div class="mafw-resources-list">
         <For each={toolLinks()}>
           {(link) => (

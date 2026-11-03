@@ -2628,9 +2628,10 @@ export function MafwShell() {
             podIsWorktree={benchRoot() !== currentProject()}
             podSelfMemberId={podSelfMemberId()}
             podSessionTitleOf={podSessionTitleOf}
+            podAttention={podBadgeCount()}
             onPodRefresh={() => { void podStore.refresh() }}
             onPodOpenSession={(sid) => { void openPodSession(sid) }}
-            onPodOpenGoal={(goalId) => openGoalDetail(goalId)}
+            onPodOpenWork={openProjectWork}
             onPodOpenPanel={(tab, target) => openPodPanelTab(tab, target)}
             onPodOpenNotes={() => openLeftDockFace("notes")}
             onPodNavigate={(tab) => {
