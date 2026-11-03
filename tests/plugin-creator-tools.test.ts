@@ -1180,7 +1180,12 @@ test('test runner uses node --test and caps oversized output', async () => {
   expect(spawn).toHaveBeenCalledWith(
     process.execPath,
     ['--test'],
-    expect.objectContaining({ cwd: draft.dir, shell: false }),
+    expect.objectContaining({
+      cwd: draft.dir,
+      shell: false,
+      // POSIX timeouts kill the process group; Windows uses taskkill /T.
+      detached: process.platform !== 'win32',
+    }),
   );
   expect(run.output.length).toBeLessThanOrEqual(32);
   expect(run.truncated).toBe(true);
@@ -1193,12 +1198,69 @@ test('a fake child that never exits is killed at the timeout', async () => {
   const draft = writeDraft(project, 'acme');
   const child = fakeChild({ hang: true });
   const spawn = jest.fn(() => child);
+  const killGroup = jest.fn();
 
-  const run = await runDraftTests(draft.dir, { spawn: spawn as any, timeoutMs: 20 });
+  const run = await runDraftTests(draft.dir, {
+    spawn: spawn as any,
+    timeoutMs: 20,
+    killGroup,
+  });
 
   expect(run.timedOut).toBe(true);
   expect(run.exitCode).toBeNull();
   expect(child.kill).toHaveBeenCalled();
+  if (process.platform === 'win32') {
+    // Windows tree kill goes through `taskkill /F /T`.
+    expect(spawn.mock.calls.some((call: any[]) => call[0] === 'taskkill')).toBe(true);
+    expect(killGroup).not.toHaveBeenCalled();
+  } else {
+    // POSIX: the detached leader's negative PID reaches node --test children.
+    expect(killGroup).toHaveBeenCalledWith(child.pid);
+  }
+});
+
+test('POSIX timeouts kill the whole detached process group', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  const child = fakeChild({ hang: true });
+  const spawn = jest.fn(() => child);
+  const killGroup = jest.fn();
+
+  // Forced platform: covers the POSIX branch on Windows CI too.
+  const run = await runDraftTests(draft.dir, {
+    spawn: spawn as any,
+    timeoutMs: 20,
+    killGroup,
+    platform: 'linux',
+  });
+
+  expect(run.timedOut).toBe(true);
+  expect(killGroup).toHaveBeenCalledWith(child.pid);
+  expect(child.kill).toHaveBeenCalled();
+  expect(spawn.mock.calls.some((call: any[]) => call[0] === 'taskkill')).toBe(false);
+  expect((spawn.mock.calls[0] as any)[2].detached).toBe(true);
+});
+
+test('Windows timeouts use taskkill /F /T', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  const child = fakeChild({ hang: true });
+  const spawn = jest.fn(() => child);
+  const killGroup = jest.fn();
+
+  // Forced platform: covers the Windows branch on POSIX CI too.
+  const run = await runDraftTests(draft.dir, {
+    spawn: spawn as any,
+    timeoutMs: 20,
+    killGroup,
+    platform: 'win32',
+  });
+
+  expect(run.timedOut).toBe(true);
+  const taskkill = spawn.mock.calls.find((call: any[]) => call[0] === 'taskkill') as any[];
+  expect(taskkill[1]).toEqual(['/pid', String(child.pid), '/F', '/T']);
+  expect(killGroup).not.toHaveBeenCalled();
+  expect((spawn.mock.calls[0] as any)[2].detached).toBe(false);
 });
 
 test('test runner strips secrets from the child environment', async () => {
@@ -1222,7 +1284,7 @@ test('test runner strips secrets from the child environment', async () => {
 
 // ------------------------------------------------------------- fingerprint
 
-test('fingerprintDraft is deterministic and ignores host caches', async () => {
+test('fingerprintDraft is deterministic across projects and creation order', async () => {
   const project = makeProject();
   const draft = writeDraft(project, 'acme');
 
@@ -1234,16 +1296,58 @@ test('fingerprintDraft is deterministic and ignores host caches', async () => {
   const other = writeDraft(makeProject(), 'acme');
   expect(await fingerprintDraft(other.dir)).toBe(first);
 
-  // Host caches and temporary files are not draft content.
-  fs.mkdirSync(path.join(draft.dir, '.git'), { recursive: true });
-  fs.writeFileSync(path.join(draft.dir, '.git', 'config'), 'x');
-  fs.mkdirSync(path.join(draft.dir, 'node_modules', 'dep'), { recursive: true });
-  fs.writeFileSync(path.join(draft.dir, 'node_modules', 'dep', 'index.js'), 'x');
-  fs.writeFileSync(path.join(draft.dir, 'scratch.tmp'), 'x');
+  // Creation order does not matter: remove and re-create the same file.
+  const rewritten = fs.readFileSync(draft.indexPath, 'utf-8');
+  fs.rmSync(draft.indexPath);
+  fs.writeFileSync(draft.indexPath, rewritten);
   expect(await fingerprintDraft(draft.dir)).toBe(first);
 
   fs.writeFileSync(draft.indexPath, 'module.exports = 2;\n');
   expect(await fingerprintDraft(draft.dir)).not.toBe(first);
+});
+
+test('draft entries the install would copy are rejected, not skipped', async () => {
+  const cases: Array<[string, string]> = [
+    ['.git/config', 'x'],
+    ['.git', 'gitdir: ../worktrees/acme'], // worktree-style .git file
+    ['node_modules/dep/index.js', 'x'],
+    ['scratch.tmp', 'x'],
+    ['notes~', 'x'],
+    ['.DS_Store', 'x'],
+  ];
+
+  for (const [rel, content] of cases) {
+    const project = makeProject();
+    const draft = writeDraft(project, 'acme');
+    const target = path.join(draft.dir, rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content);
+
+    // The approval fingerprint must cover exactly what install copies; these
+    // entries are rejected instead of being hashed out of the approved set.
+    await expect(fingerprintDraft(draft.dir))
+      .rejects.toThrow(/not part of the approved install/);
+  }
+});
+
+test('a draft containing install-only paths is rejected before approval or HTTP', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  fs.mkdirSync(path.join(draft.dir, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(draft.dir, '.git', 'config'), 'x');
+
+  const fetchMock = jest.fn();
+  global.fetch = fetchMock as any;
+  const ask = jest.fn();
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'install', draft: 'acme' }, managerCtx(project, ask),
+  );
+
+  expect(result.isError).toBe(true);
+  expect(result.output).toContain('not part of the approved install');
+  expect(ask).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
 test('fingerprintDraft enforces file count and size ceilings', async () => {

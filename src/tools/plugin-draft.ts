@@ -12,7 +12,11 @@
  *
  * `fingerprintDraft` is the change detector used around approval: content is
  * hashed over sorted relative paths, so edits made while the user is deciding
- * are visible as a different value.
+ * are visible as a different value. The hash set is the install copy set —
+ * `PackageManager.installFromPath` copies the whole directory — so anything the
+ * hash cannot represent (symlinks, `.git`, `node_modules`, temp/OS droppings)
+ * is rejected instead of silently skipped. Otherwise draft code could be
+ * installed without appearing in the approved fingerprint.
  */
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -28,11 +32,14 @@ const DRAFT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export const DRAFT_MAX_FILES = 5000;
 export const DRAFT_MAX_BYTES = 50 * 1024 * 1024;
 
-/** Directories that are host caches, never draft source. */
-const IGNORED_DIRS = new Set(['.git', 'node_modules']);
+/**
+ * Names the install copies but the approval fingerprint must not gloss over:
+ * a draft carrying them is rejected, not hashed and not skipped.
+ */
+const REJECTED_NAMES = new Set(['.git', 'node_modules']);
 
-/** Editor/OS scratch files that must not perturb the fingerprint. */
-const IGNORED_FILES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
+/** Editor/OS scratch files that are never draft source either. */
+const REJECTED_FILES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
 
 export interface DraftFingerprintLimits {
   maxFiles?: number;
@@ -167,15 +174,23 @@ function collectDraftFiles(
     if (entry.isSymbolicLink()) {
       // A draft is generated source; symlinks are unsupported so no read can
       // silently follow a link out of the draft (or around a cycle).
-      throw new Error(`draft contains an unsupported symlink: ${rel}`);
+      throw new Error(`draft contains an unsupported symlink: ${rel}; it is not part of the approved install, remove it from the draft`);
+    }
+    if (REJECTED_NAMES.has(entry.name)) {
+      // installFromPath copies these into the installed package; the approved
+      // fingerprint cannot skip them without approving less than what is copied.
+      throw new Error(`draft contains "${entry.name}" at ${rel}; it is not part of the approved install, remove it from the draft`);
     }
     if (entry.isDirectory()) {
-      if (IGNORED_DIRS.has(entry.name)) continue;
       collectDraftFiles(root, abs, out, limits, totals);
       continue;
     }
-    if (!entry.isFile()) continue; // sockets/fifos are not draft source
-    if (IGNORED_FILES.has(entry.name) || isTempFile(entry.name)) continue;
+    if (!entry.isFile()) {
+      throw new Error(`draft contains an unsupported filesystem entry: ${rel}; it is not part of the approved install, remove it from the draft`);
+    }
+    if (REJECTED_FILES.has(entry.name) || isTempFile(entry.name)) {
+      throw new Error(`draft contains a temporary/OS file at ${rel}; it is not part of the approved install, remove it from the draft`);
+    }
 
     const size = fs.statSync(abs).size;
     totals.bytes += size;
@@ -190,10 +205,12 @@ function collectDraftFiles(
 }
 
 /**
- * SHA-256 over sorted relative paths + contents, excluding host caches.
+ * SHA-256 over sorted relative paths + contents of the whole draft.
  *
  * The value is stable across machines and creation order; only draft content
- * (paths, sizes, bytes) contributes.
+ * (paths, sizes, bytes) contributes. Every entry install would copy is hashed:
+ * symlinks, `.git`, `node_modules` and temp/OS files are rejected above rather
+ * than excluded here, so the approval fingerprint set equals the copy set.
  */
 export async function fingerprintDraft(
   directory: string,

@@ -38,6 +38,16 @@ export interface DraftTestDeps {
    * full log while the model only ever sees the capped `output`.
    */
   onChunk?: (chunk: string) => void;
+  /**
+   * POSIX process-group kill seam: defaults to `process.kill(-pid, 'SIGKILL')`.
+   * Tests inject it so a fake child never signals a real process group.
+   */
+  killGroup?: (pid: number) => void;
+  /**
+   * Platform override for tests: selects the tree-kill strategy
+   * (`taskkill /F /T` on win32, negative-PID group kill otherwise).
+   */
+  platform?: NodeJS.Platform;
 }
 
 export interface DraftTestResult {
@@ -80,17 +90,35 @@ function chunkText(chunk: unknown): string {
 }
 
 /** Kills the whole tree; a nested npm/node test process must not survive. */
-function killTree(child: ChildProcess | undefined, spawnFn: typeof spawn): void {
+function killTree(
+  child: ChildProcess | undefined,
+  spawnFn: typeof spawn,
+  killGroup: (pid: number) => void,
+  platform: NodeJS.Platform,
+): void {
   if (!child) return;
-  try { child.kill('SIGKILL'); } catch { /* already gone */ }
-  if (process.platform === 'win32' && typeof child.pid === 'number') {
-    try {
-      spawnFn('taskkill', ['/pid', String(child.pid), '/F', '/T'], {
-        windowsHide: true,
-        stdio: 'ignore',
-      });
-    } catch { /* best effort */ }
+  const pid = typeof child.pid === 'number' ? child.pid : undefined;
+
+  if (platform === 'win32') {
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
+    if (pid !== undefined) {
+      try {
+        spawnFn('taskkill', ['/pid', String(pid), '/F', '/T'], {
+          windowsHide: true,
+          stdio: 'ignore',
+        });
+      } catch { /* best effort */ }
+    }
+    return;
   }
+
+  // POSIX: the child was spawned `detached`, so it leads its own process
+  // group. `node --test` runs each test file in a grandchild; killing only the
+  // direct child would leave that draft code (and anything it spawned) running.
+  if (pid !== undefined) {
+    try { killGroup(pid); } catch { /* group already gone */ }
+  }
+  try { child.kill('SIGKILL'); } catch { /* already gone */ }
 }
 
 /**
@@ -106,6 +134,8 @@ export function runDraftTests(
   const spawnFn = deps.spawn ?? spawn;
   const timeoutMs = deps.timeoutMs ?? DRAFT_TEST_TIMEOUT_MS;
   const maxBytes = deps.maxBytes ?? DRAFT_TEST_MAX_OUTPUT_BYTES;
+  const platform = deps.platform ?? process.platform;
+  const killGroup = deps.killGroup ?? ((pid: number) => { process.kill(-pid, 'SIGKILL'); });
 
   return new Promise<DraftTestResult>((resolve) => {
     let settled = false;
@@ -143,7 +173,7 @@ export function runDraftTests(
 
     const timer = setTimeout(() => {
       timedOut = true;
-      killTree(child, spawnFn);
+      killTree(child, spawnFn, killGroup, platform);
       finish(null);
     }, timeoutMs);
     (timer as any)?.unref?.();
@@ -153,6 +183,9 @@ export function runDraftTests(
         cwd: directory,
         shell: false,
         windowsHide: true,
+        // POSIX: own process group so a timeout can kill the per-file
+        // `node --test` grandchildren too. Windows uses `taskkill /T` instead.
+        detached: platform !== 'win32',
         env: draftTestEnv(),
         stdio: ['ignore', 'pipe', 'pipe'],
       });
