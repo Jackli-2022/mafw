@@ -12,6 +12,7 @@ import { getManagerAgentDefinition } from '../skills/manager-agent-config';
 import { buildMemoryCuratorDefinition } from '../skills/memory-curator-agent';
 import { getLeadAgentDefinition } from '../skills/lead-identity';
 import { getTechLeadAgentDefinition } from '../skills/tech-lead-identity';
+import { getPluginCreatorAgentDefinition } from '../skills/plugin-creator-identity';
 
 export interface IdentityPolicy {
   /** 绝对拒绝：类别标签（file-edit/shell/subagent/web/readonly）或工具名 */
@@ -109,6 +110,7 @@ function buildBuiltins(): IdentitySpec[] {
   const lead = getLeadAgentDefinition();
   const curator = buildMemoryCuratorDefinition();
   const techLead = getTechLeadAgentDefinition();
+  const creator = getPluginCreatorAgentDefinition();
   return [
     {
       // Lead：用户可感知的唯一协调身份（替换 Manager，spec §3.1）。
@@ -139,6 +141,25 @@ function buildBuiltins(): IdentitySpec[] {
       },
       nativePermissions: mgr.permissions,
       nativeTools: mgr.tools,
+    },
+    {
+      // Creator：统一插件包的 primary 身份（spec 2026-11-03 §15.2）。身份只做薄权限壳；
+      // 详细教程在 skills/plugin-creator/SKILL.md。skill 必须显式进 allowlist——原生
+      // tools['*']=false 已禁全部工具，漏掉它 Creator 自己就加载不了随包技能。
+      name: 'mafw-create',
+      description: creator.description,
+      scope: 'primary',
+      systemPrompt: creator.systemPrompt,
+      policy: {
+        deny: ['shell', 'web', 'subagent'],
+        allowlist: [
+          'readonly', 'file-edit', 'skill', 'question', 'plan_exit', 'todowrite',
+          'mafw_plugin_inspect', 'mafw_plugin_manager',
+          'mafw_add_memory', 'mafw_search_hybrid', 'mafw_get_memory',
+        ],
+      },
+      nativePermissions: creator.permissions,
+      nativeTools: creator.tools,
     },
     {
       name: 'mafw-tech-lead',

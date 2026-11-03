@@ -181,6 +181,7 @@ import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { FileHistoryService } from './core/file-history/file-history-service';
 import { sessionDirectoryOf } from './core/file-history/session-directory';
 import { ensureGlobalOfficeSkill } from './core/office/global-skill';
+import { ensurePluginCreatorSkill } from './skills/plugin-creator-skill-install';
 import { ensurePiModels } from './core/media/pi-models';
 import { handleFileHistoryRoutes } from './routes/file-history';
 import { RunStateService } from './core/run/run-state-service';
@@ -735,6 +736,18 @@ class MafwScheduler {
       }
     } catch (err: any) {
       log.warn(`[Office] global skill install failed (non-fatal): ${err?.message ?? err}`);
+    }
+    // The Creator identity requires the shipped plugin-creator skill before its
+    // first inspect/write; install it beside the Office skill (same startup gate).
+    try {
+      const skill = await ensurePluginCreatorSkill();
+      if (skill.ok) {
+        if (skill.action !== 'unchanged') log.info(`[PluginCreator] global skill ${skill.action}: ${skill.target}`);
+      } else {
+        log.warn(`[PluginCreator] global skill not installed (${skill.reason}): ${skill.target}`);
+      }
+    } catch (err: any) {
+      log.warn(`[PluginCreator] global skill install failed (non-fatal): ${err?.message ?? err}`);
     }
     // pi-ai's bundled xiaomi catalog lags the provider (v2.5 removed). Merge the
     // v2.6 ids into pi's models.json before Media Agent resolves a model.
