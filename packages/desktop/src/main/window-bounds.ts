@@ -1,7 +1,8 @@
-/** 主窗口尺寸下限：46 rail + 520 ChatView + 520 右工作台 + 边框。 */
+/** 主窗口尺寸：1088×720 是兼容小屏/缩放的硬下限；1366×720 是右主工作台设计基线。
+ *  默认目标 1720×1000，让 760 chat + ≥720 右工作台在常规桌面宽度下同时成立。 */
 export const MAIN_WINDOW_MIN_WIDTH = 1088
 export const MAIN_WINDOW_MIN_HEIGHT = 720
-export const MAIN_WINDOW_DEFAULT_WIDTH = 1600
+export const MAIN_WINDOW_DEFAULT_WIDTH = 1720
 export const MAIN_WINDOW_DEFAULT_HEIGHT = 1000
 export const MAIN_WINDOW_WORKAREA_MARGIN = 80
 

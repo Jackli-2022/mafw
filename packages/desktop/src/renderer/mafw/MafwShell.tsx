@@ -2793,7 +2793,7 @@ export function MafwShell() {
             <div
               class="mafw-chat-resize-wrap"
               onDblClick={() => applyDetent(WORKBENCH_DEFAULT_DETENT)}
-              title="拖动调宽（松手吸附 520/640/760）；双击回默认档 640"
+              title="拖动调宽（松手吸附 520/640/760）；双击回默认档 760"
             >
               <ResizeHandle
                 direction="horizontal"

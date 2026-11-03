@@ -8,13 +8,13 @@ describe("workbench layout pure functions", () => {
     assert.equal(workbenchColumns({ leftPx: 0, chatPx: 520, split: false }), "0px minmax(0, 1fr) 0px")
   })
 
-  test("detentFromLegacy：旧 chat 宽度 px → 绝对档位（缺失/非法 → 640）", () => {
+  test("detentFromLegacy：旧 chat 宽度 px → 绝对档位（缺失/非法 → 760）", () => {
     assert.equal(detentFromLegacy("417", 1394), 520)
     assert.equal(detentFromLegacy("558", 1394), 520)
-    assert.equal(detentFromLegacy("697", 1394), 640)
+    assert.equal(detentFromLegacy("697", 1394), 760)
     assert.equal(detentFromLegacy("750", 1394), 760)
-    assert.equal(detentFromLegacy(null, 1394), 640)
-    assert.equal(detentFromLegacy("abc", 1394), 640)
+    assert.equal(detentFromLegacy(null, 1394), 760)
+    assert.equal(detentFromLegacy("abc", 1394), 760)
   })
 
   test("migrateDockKeys：一次性迁移（新键优先 / 旧键删除 / 终端默认开）", () => {
@@ -37,11 +37,11 @@ describe("workbench layout pure functions", () => {
     const out2 = migrateDockKeys((k) => m2.get(k) ?? null, (k) => m2.delete(k), 1394)
     assert.deepEqual(out2, { detent: 640, terminalOpen: true })
 
-    // 旧 420 档（新键已存在）→ 新默认 640；无任何存储 → 640 / 终端开
+    // 旧 420 档（新键已存在）→ 新默认 760；无任何存储 → 760 / 终端开
     const m4 = new Map<string, string>([["mafw-workbench-detent", "420"]])
-    assert.equal(migrateDockKeys((k) => m4.get(k) ?? null, (k) => m4.delete(k), 1394).detent, 640)
+    assert.equal(migrateDockKeys((k) => m4.get(k) ?? null, (k) => m4.delete(k), 1394).detent, 760)
     const fresh = migrateDockKeys(() => null, () => {}, 1394)
-    assert.deepEqual(fresh, { detent: 640, terminalOpen: true })
+    assert.deepEqual(fresh, { detent: 760, terminalOpen: true })
   })
 
   test("workbenchShellHidden：非 chat 视图隐藏（窄屏 overlay 不得盖住其他页）", () => {

@@ -42,10 +42,11 @@ export function closeLeftDockState(s: LeftDockState, io: LeftDockStorage): LeftD
   return next
 }
 
-// 宽度决定模态：推挤必须保住默认档 50:50（chat 640 + 工作台 640，spec 2026-10-27 §6.5）。
-// 只保证默认档：chat 拉 520/760 不参与阈值，由 workbench-detents 护栏钳制。
+// 宽度决定模态：推挤必须保住右主工作台的宽屏预算
+//（760 chat 默认档 + 730 工作台，spec 2026-11-04-agent-workbench-right-primary §4.1）。
+// 只保证默认档：chat 拉 520/640 不参与阈值，由 workbench-detents 护栏钳制。
 export const LEFT_RAIL_WIDTH = 46
-export const PUSH_PAIR_BUDGET = 1280 // 640 chat 默认档 + 640 工作台下限
+export const PUSH_PAIR_BUDGET = 1490 // 760 chat 默认档 + 730 工作台保底
 
 /** 推挤预算：窗口宽 ≥ 此值才 push（默认 dock 264 → 1590）。 */
 export function leftDockPushBudget(dockWidth: number): number {
@@ -82,12 +83,13 @@ export function clampLeftDockWidth(w: number): number {
 
 const LEFT_RAIL_WIDTH_LEGACY = 46
 const CORE_CHAT_MIN_WIDTH = 520
-const RIGHT_WORKBENCH_MIN_WIDTH = 520
+const RIGHT_WORKBENCH_MIN_WIDTH = 720
 
-/** 推挤时给 Chat + 右工作台留够最小宽度；新预算规则下 push 恒满足，此处为纵深防御。 */
+/** 推挤时给 Chat + 右工作台留够最小宽度；新预算规则下 push 恒满足，此处为纵深防御。
+ *  视口本身不足时返回可用余量（可为 0），不强制 LEFT_DOCK_WIDTH.min 反向挤爆核心两列。 */
 export function effectiveLeftDockWidth(width: number, viewportWidth: number): number {
   const maxForViewport = viewportWidth - LEFT_RAIL_WIDTH_LEGACY - CORE_CHAT_MIN_WIDTH - RIGHT_WORKBENCH_MIN_WIDTH
-  return Math.min(clampLeftDockWidth(width), clampLeftDockWidth(maxForViewport))
+  return Math.min(clampLeftDockWidth(width), Math.max(0, maxForViewport))
 }
 
 /** 启动时因窄幅被抑制的 open 偏好，在拉宽到推挤预算点后恢复。 */

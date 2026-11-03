@@ -38,14 +38,14 @@ describe("left-dock 状态模型", () => {
     })
   })
 
-  describe("左 dock 推挤预算（默认档 50:50；spec §6.5）", () => {
-    test("leftDockPushBudget = 46 + dockWidth + 1280", () => {
-      expect(leftDockPushBudget(264)).toBe(1590)
-      expect(leftDockPushBudget(400)).toBe(1726)
-      expect(leftDockPushBudget(180)).toBe(1506)
+  describe("左 dock 推挤预算（宽屏才推挤；spec 2026-11-04）", () => {
+    test("leftDockPushBudget = 46 + dockWidth + 1490", () => {
+      expect(leftDockPushBudget(264)).toBe(1800)
+      expect(leftDockPushBudget(400)).toBe(1936)
+      expect(leftDockPushBudget(180)).toBe(1716)
     })
     test("leftDockPushDragMax 钳在预算内", () => {
-      expect(leftDockPushDragMax(1600)).toBe(274) // 1600 − 46 − 1280（plan 初稿误写 264）
+      expect(leftDockPushDragMax(1600)).toBe(180) // 1600 − 46 − 1490 为负，回宽度下限
       expect(leftDockPushDragMax(2048)).toBe(400)
       expect(leftDockPushDragMax(1500)).toBe(180)
     })
@@ -53,12 +53,12 @@ describe("left-dock 状态模型", () => {
 
   describe("resolveMode（宽度驱动的推挤预算；不再看最大化）", () => {
     test("open + 达到预算 → push", () => {
-      expect(resolveMode(true, 1590, 264)).toBe("push")
-      expect(resolveMode(true, 1726, 400)).toBe("push")
+      expect(resolveMode(true, 1800, 264)).toBe("push")
+      expect(resolveMode(true, 1936, 400)).toBe("push")
     })
     test("open + 低于预算 → overlay", () => {
-      expect(resolveMode(true, 1589, 264)).toBe("overlay")
-      expect(resolveMode(true, 1725, 400)).toBe("overlay")
+      expect(resolveMode(true, 1799, 264)).toBe("overlay")
+      expect(resolveMode(true, 1935, 400)).toBe("overlay")
       expect(resolveMode(true, 1390, 264)).toBe("overlay")
     })
     test("closed → closed（无视宽度）", () => {
@@ -69,14 +69,14 @@ describe("left-dock 状态模型", () => {
   describe("restoreLeftDockOpen（启动时浮层态不自动展开）", () => {
     test("存储为 open 且宽度不足 → false", () => {
       expect(restoreLeftDockOpen("1", 1088, 264)).toBe(false)
-      expect(restoreLeftDockOpen("1", 1589, 264)).toBe(false)
+      expect(restoreLeftDockOpen("1", 1799, 264)).toBe(false)
     })
     test("存储为 open 且宽度足够 → true", () => {
-      expect(restoreLeftDockOpen("1", 1590, 264)).toBe(true)
+      expect(restoreLeftDockOpen("1", 1800, 264)).toBe(true)
     })
     test("关闭/非法存储 → false", () => {
-      expect(restoreLeftDockOpen("0", 1600, 264)).toBe(false)
-      expect(restoreLeftDockOpen("bogus", 1600, 264)).toBe(false)
+      expect(restoreLeftDockOpen("0", 1800, 264)).toBe(false)
+      expect(restoreLeftDockOpen("bogus", 1800, 264)).toBe(false)
     })
   })
 
@@ -91,16 +91,17 @@ describe("left-dock 状态模型", () => {
   })
 
   describe("宽度预算与拉宽恢复", () => {
-    test("effectiveLeftDockWidth 纵深防御（旧 1366 数值语义保留）", () => {
-      expect(effectiveLeftDockWidth(400, 1366)).toBe(280)
-      expect(effectiveLeftDockWidth(264, 1366)).toBe(264)
-      expect(effectiveLeftDockWidth(400, 1600)).toBe(400)
+    test("effectiveLeftDockWidth 纵深防御（右工作台下限 720）", () => {
+      expect(effectiveLeftDockWidth(400, 1366)).toBe(80)
+      expect(effectiveLeftDockWidth(264, 1366)).toBe(80)
+      expect(effectiveLeftDockWidth(400, 1600)).toBe(314)
+      expect(effectiveLeftDockWidth(264, 1600)).toBe(264)
     })
     test("启动抑制后拉宽到预算点恢复存储为 open 的左 dock", () => {
-      expect(shouldAutoRestoreLeftDock("1", false, 1590, 264)).toBe(true)
-      expect(shouldAutoRestoreLeftDock("1", true, 1600, 264)).toBe(false)
-      expect(shouldAutoRestoreLeftDock("0", false, 1600, 264)).toBe(false)
-      expect(shouldAutoRestoreLeftDock("1", false, 1589, 264)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("1", false, 1800, 264)).toBe(true)
+      expect(shouldAutoRestoreLeftDock("1", true, 1810, 264)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("0", false, 1810, 264)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("1", false, 1799, 264)).toBe(false)
     })
   })
 
