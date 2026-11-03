@@ -194,6 +194,48 @@ describe("useDuplexVoice", () => {
     expect(analyzers[0].stopCalls).toBeGreaterThanOrEqual(1)
   })
 
+  test("connecting is not reported as listening until the server is ready", async () => {
+    const clients: FakeClient[] = []
+    let releaseStart!: () => void
+    const startGate = new Promise<void>((resolve) => {
+      releaseStart = resolve
+    })
+
+    const h = mount({
+      status: async () => ({ config: { duplexV1: true } }),
+      notify: () => {},
+      createClient: (deps) => {
+        const client = makeClient(deps, () => startGate)
+        clients.push(client)
+        return client
+      },
+    })
+
+    h.setReady(true)
+    await tick()
+    const toggled = h.ctrl.toggle()
+    await tick()
+
+    // Socket opened and `hello` sent: the mic button is live, but the gateway
+    // may still be starting the ASR sidecar, so the UI must not say "listening".
+    expect(h.ctrl.active()).toBe(true)
+    expect(h.ctrl.listening()).toBe(false)
+
+    clients[0].deps.onState("listening")
+    expect(h.ctrl.listening()).toBe(true)
+
+    releaseStart()
+    await toggled
+    expect(h.ctrl.active()).toBe(true)
+    expect(h.ctrl.listening()).toBe(true)
+
+    await h.ctrl.stop()
+    expect(h.ctrl.active()).toBe(false)
+    expect(h.ctrl.listening()).toBe(false)
+
+    h.dispose()
+  })
+
   test("a rejected start surfaces exactly one error and releases client + analyzer", async () => {
     const notified: string[] = []
     const clients: FakeClient[] = []
@@ -227,6 +269,7 @@ describe("useDuplexVoice", () => {
     await h.ctrl.toggle()
 
     expect(h.ctrl.active()).toBe(false)
+    expect(h.ctrl.listening()).toBe(false)
     expect(h.ctrl.error()).toContain("voice_connection_failed")
     expect(notified).toHaveLength(1)
     // Failure path tears the generation down: client stopped once, analyzer released.

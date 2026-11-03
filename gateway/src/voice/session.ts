@@ -85,8 +85,11 @@ export class VoiceSession {
           this.send({ type: 'error', code: 'already_started', message: 'session already started', recoverable: false });
           return;
         }
-        // v1 gates. Both run before createStream() so a rejected hello never
-        // spins up the ASR sidecar.
+        // v1 gates. All of them run before createStream(), so a rejected hello
+        // never opens an ASR stream. This is the whole invariant: it says
+        // nothing about sidecar startup, which the transport already triggered
+        // by creating this session through getVoiceRuntime() before
+        // handleControl() was reached.
         if (!msg.clientVad) {
           this.send({ type: 'error', code: 'client_vad_required', message: 'v1 requires client VAD', recoverable: false });
           return;

@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test"
 import {
   createDuplexClient,
+  DEFAULT_VOICE_READY_TIMEOUT_MS,
   type DuplexClientError,
   type DuplexClientState,
 } from "./duplex-client"
@@ -69,6 +70,16 @@ const READY = {
 }
 
 const MIC = { sampleRate: 16000 } as unknown as MicInput
+
+test("default ready window covers the gateway sidecar cold start", () => {
+  // `gateway/src/voice/sidecar/qwen3-asr-sidecar.ts` starts the Qwen3-ASR
+  // Python sidecar with `startupTimeoutMs = 180_000`, and `/ws/voice` answers
+  // `hello` only after that start (or adopt) resolves. The client window must
+  // therefore cover the same budget, otherwise default first use aborts while
+  // the model is still loading and the user has to retry by hand.
+  expect(DEFAULT_VOICE_READY_TIMEOUT_MS).toBeGreaterThanOrEqual(180_000)
+  expect(DEFAULT_VOICE_READY_TIMEOUT_MS).toBe(180_000)
+})
 
 function harness(opts: {
   readyTimeoutMs?: number

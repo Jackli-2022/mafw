@@ -9,8 +9,21 @@ export type DuplexClientState = "idle" | "connecting" | "listening" | "error" | 
  */
 const WS_OPEN = 1
 
-/** Server must answer `hello` with `ready` within this window. */
-export const DEFAULT_VOICE_READY_TIMEOUT_MS = 20_000
+/**
+ * Server must answer `hello` with `ready` within this window.
+ *
+ * The gateway cannot answer sooner: `/ws/voice` calls `getVoiceRuntime()`
+ * before `handleControl()`, and that starts (or adopts) the Qwen3-ASR Python
+ * sidecar, whose cold-start budget is `startupTimeoutMs = 180_000`
+ * (`gateway/src/voice/sidecar/qwen3-asr-sidecar.ts`). A shorter client window
+ * would abort first use while the model is still loading and force a pointless
+ * retry, so the two budgets are pinned to the same value — do not lower this
+ * without lowering the sidecar budget in the same change.
+ *
+ * `DuplexClientDeps.readyTimeoutMs` remains the injectable override used by
+ * tests and by hosts that pre-warm the sidecar.
+ */
+export const DEFAULT_VOICE_READY_TIMEOUT_MS = 180_000
 
 /** Minimal socket face shared by the browser WebSocket and test doubles. */
 export interface DuplexSocket {

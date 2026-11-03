@@ -7,6 +7,11 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 export interface DuplexVoiceBarProps {
   partial: string
   finalText: string
+  /**
+   * 服务端已回 `ready`（麦克风真正在收音）。false = 还在 connecting，此时
+   * 网关可能正在冷启动 ASR sidecar，文案不得声称「正在听」。
+   */
+  listening: boolean
   error: string
   onStop: () => void
 }
@@ -27,7 +32,11 @@ export function DuplexVoiceBar(props: DuplexVoiceBarProps) {
             fallback={
               <Show
                 when={props.finalText}
-                fallback={<span class="mafw-duplex-voice-text mafw-duplex-voice-listening">正在听…</span>}
+                fallback={
+                  <span class="mafw-duplex-voice-text mafw-duplex-voice-listening">
+                    {props.listening ? "正在听…" : "正在连接语音识别…"}
+                  </span>
+                }
               >
                 <span class="mafw-duplex-voice-text mafw-duplex-voice-final">{props.finalText}</span>
               </Show>

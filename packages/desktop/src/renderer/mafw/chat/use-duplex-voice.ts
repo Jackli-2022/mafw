@@ -28,7 +28,15 @@ export const VOICE_CHAT_SESSION_REQUIRED = "voice_chat_session_required"
 export interface DuplexVoiceController {
   /** `voice.duplexV1 === true` 且 gateway 可用。 */
   enabled: () => boolean
+  /** 麦克风按钮/pressed 语义：连接中与收音中都算「进行中」，用于 toggle 与按压态。 */
   active: () => boolean
+  /**
+   * 服务端已回 `ready`、麦克风真正在收音（`active()` 的子集）。
+   *
+   * 网关要先启动/接管 ASR sidecar 才能回 `ready`（冷启动预算 180s），所以
+   * connecting 阶段可能持续很久；UI 文案必须按这个信号区分，不能提前说「正在听」。
+   */
+  listening: () => boolean
   partial: () => string
   finalText: () => string
   error: () => string
@@ -64,6 +72,7 @@ export function useDuplexVoice(
 
   const [enabled, setEnabled] = createSignal(false)
   const [active, setActive] = createSignal(false)
+  const [listening, setListening] = createSignal(false)
   const [partial, setPartial] = createSignal("")
   const [finalText, setFinalText] = createSignal("")
   const [error, setError] = createSignal("")
@@ -172,10 +181,14 @@ export function useDuplexVoice(
         onState: (state: DuplexClientState) => {
           if (!guard.isCurrent(generation)) return
           setActive(state === "connecting" || state === "listening")
+          // `ready` 之前网关可能还在冷启动 ASR sidecar（最长 180s），此时不能
+          // 让字幕条显示「正在听」。
+          setListening(state === "listening")
         },
         onError: (problem) => {
           if (!guard.isCurrent(generation)) return
           setActive(false)
+          setListening(false)
           reportError(problem)
         },
       })
@@ -186,6 +199,7 @@ export function useDuplexVoice(
       setPartial("")
       setFinalText("")
       setActive(true)
+      setListening(false)
 
       let failedStart = false
       try {
@@ -196,6 +210,7 @@ export function useDuplexVoice(
         // 避免同一错误弹两次。
         if (guard.isCurrent(generation)) {
           setActive(false)
+          setListening(false)
           if (!error()) reportError(problem)
         }
       } finally {
@@ -232,6 +247,7 @@ export function useDuplexVoice(
     // teardown 期间用户可能已重新开始：新一代拥有状态，旧 stop 不得清掉它。
     if (!guard.isCurrent(generation)) return
     setActive(false)
+    setListening(false)
     setPartial("")
     setFinalText("")
     setError("")
@@ -253,6 +269,7 @@ export function useDuplexVoice(
   return {
     enabled,
     active,
+    listening,
     partial,
     finalText,
     error,

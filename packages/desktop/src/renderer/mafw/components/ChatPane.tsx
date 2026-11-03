@@ -2113,6 +2113,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             <DuplexVoiceBar
               partial={duplexVoice.partial()}
               finalText={duplexVoice.finalText()}
+              listening={duplexVoice.listening()}
               error={duplexVoice.error()}
               onStop={() => void duplexVoice.stop()}
             />

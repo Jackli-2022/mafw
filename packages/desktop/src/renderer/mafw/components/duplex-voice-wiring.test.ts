@@ -32,6 +32,16 @@ describe("duplex voice wiring", () => {
     expect(legacyStops.length).toBe(1)
   })
 
+  test("the bar reports connecting and listening as different states", () => {
+    // The gateway cannot answer `ready` until it has started/adopted the ASR
+    // sidecar (`startupTimeoutMs = 180_000`), so the bar must not claim it is
+    // listening during the connecting phase.
+    expect(chatPane).toContain("listening={duplexVoice.listening()}")
+    expect(bar).toMatch(/props\.listening\s*\?\s*"正在听…"\s*:\s*"正在连接语音识别…"/)
+    // 正在听 may only appear inside that guarded branch.
+    expect((bar.match(/正在听…/g) ?? []).length).toBe(1)
+  })
+
   test("the bar is an accessible status region built from v2 components", () => {
     expect(bar).toContain('role="status"')
     expect(bar).toContain('aria-live="polite"')
