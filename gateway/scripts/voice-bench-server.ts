@@ -11,6 +11,8 @@
  */
 import { WebSocketServer } from 'ws';
 import { Qwen3AsrEngine } from '../src/voice/engines/asr/qwen3-vllm';
+import { DEFAULT_VOICE_CONFIG } from '../src/voice/config';
+import { routingForConfig } from '../src/voice/routing';
 import { VoiceSession } from '../src/voice/session';
 import { attachVoiceSocket } from '../src/voice/transport/ws-voice';
 
@@ -32,6 +34,9 @@ wss.on('connection', (ws) => {
     createSession: async () => new VoiceSession({
       asr: engine,
       send: (msg) => ws.send(JSON.stringify(msg)),
+      // The bench server has no gateway config; use the shipped defaults so the
+      // reported routing matches what a default install would resolve.
+      routing: routingForConfig(DEFAULT_VOICE_CONFIG),
     }),
   });
 });

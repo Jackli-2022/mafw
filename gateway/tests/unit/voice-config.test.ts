@@ -24,6 +24,18 @@ test('env overrides win over raw config', () => {
   expect(c.tier).toBe('cloud');
 });
 
+test('duplexV1 defaults off and can be enabled by env', () => {
+  expect(resolveVoiceConfig({}, {}).duplexV1).toBe(false);
+  expect(resolveVoiceConfig({}, { MAFW_VOICE_DUPLEX_V1: 'true' }).duplexV1).toBe(true);
+});
+
+test('duplexV1 reads the voice config block and env wins', () => {
+  expect(resolveVoiceConfig({ voice: { duplexV1: true } }, {}).duplexV1).toBe(true);
+  expect(
+    resolveVoiceConfig({ voice: { duplexV1: true } }, { MAFW_VOICE_DUPLEX_V1: 'false' }).duplexV1,
+  ).toBe(false);
+});
+
 test('modelsDir defaults under ~/.mafw/models/voice', () => {
   expect(DEFAULT_VOICE_CONFIG.modelsDir.replace(/\\/g, '/')).toMatch(/\.mafw\/models\/voice$/);
 });

@@ -12,6 +12,8 @@ export interface VoiceConfig {
   cloudConsent: boolean;
   modelsDir: string;
   sidecarPort: number;
+  /** Duplex v1 ASR feature flag. Off by default; legacy voice path stays intact. */
+  duplexV1: boolean;
 }
 
 const DEFAULT_MODELS_DIR = path.join(os.homedir(), '.mafw', 'models', 'voice');
@@ -24,6 +26,7 @@ export const DEFAULT_VOICE_CONFIG: VoiceConfig = {
   cloudConsent: false,
   modelsDir: DEFAULT_MODELS_DIR,
   sidecarPort: 3911,
+  duplexV1: false,
 };
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -81,6 +84,19 @@ export function resolveVoiceConfig(
     env.MAFW_VOICE_SIDECAR_PORT ?? fromRaw.sidecarPort,
     DEFAULT_VOICE_CONFIG.sidecarPort,
   );
+  const duplexV1 = bool(
+    env.MAFW_VOICE_DUPLEX_V1 ?? fromRaw.duplexV1,
+    DEFAULT_VOICE_CONFIG.duplexV1,
+  );
 
-  return { tier, localTier, asrEngine, ttsEngine, cloudConsent, modelsDir, sidecarPort };
+  return {
+    tier,
+    localTier,
+    asrEngine,
+    ttsEngine,
+    cloudConsent,
+    modelsDir,
+    sidecarPort,
+    duplexV1,
+  };
 }

@@ -1,9 +1,10 @@
 import type { VoiceConfig } from './config';
 import { findVoiceModel } from './catalog';
 import { AsrEngineRegistry } from './registry';
+import { routingForConfig } from './routing';
 import { VoiceSession } from './session';
 import type { AsrEngine } from './types';
-import type { VoiceServerMessage } from './transport/protocol';
+import type { VoiceRouting, VoiceServerMessage } from './transport/protocol';
 
 export interface VoiceRuntimeDeps {
   registry: AsrEngineRegistry;
@@ -34,16 +35,22 @@ export class VoiceRuntime {
       asr = await this.deps.createAsr(engineName);
       this.deps.registry.register(asr);
     }
-    return new VoiceSession({ asr, send });
+    return new VoiceSession({
+      asr,
+      send,
+      routing: routingForConfig(this.deps.config),
+    });
   }
 
   status(): {
     config: VoiceConfig;
     engines: ReturnType<AsrEngineRegistry['list']>;
+    routing: VoiceRouting;
   } {
     return {
       config: this.deps.config,
       engines: this.deps.registry.list(),
+      routing: routingForConfig(this.deps.config),
     };
   }
 }

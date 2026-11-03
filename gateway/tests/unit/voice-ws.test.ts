@@ -12,6 +12,7 @@ function fakeSession(sent: any[]): VoiceSession {
   return new VoiceSession({
     asr: { name:'fake', capabilities:{streaming:'native',languages:['zh'],punctuation:true,timestamps:'none',sampleRate:16000}, isAvailable:async()=>({ok:true}), createStream:()=>({push:()=>{},abort:()=>{},onPartial:()=>{},end:async()=>({text:'x',durationMs:1,engine:'fake',final:true})}), transcribe:async()=>({text:'x',durationMs:1,engine:'fake',final:true}) } as any,
     send: m => sent.push(m),
+    routing: { status: 'local_accelerated' },
   });
 }
 

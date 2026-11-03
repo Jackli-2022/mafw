@@ -5,6 +5,7 @@ import type {
 } from './types';
 import type {
   VoiceClientMessage,
+  VoiceRouting,
   VoiceServerMessage,
 } from './transport/protocol';
 import { supportsLanguage } from './types';
@@ -14,6 +15,11 @@ export type VoiceSessionState = 'idle' | 'listening' | 'processing' | 'closed';
 export interface VoiceSessionDeps {
   asr: AsrEngine;
   send: (msg: VoiceServerMessage) => void;
+  /**
+   * Routing actually in effect for this session. Required on purpose: the
+   * session must report what the runtime resolved, never a hardcoded status.
+   */
+  routing: VoiceRouting;
   now?: () => number;
   /** Deadline for one ASR final; a wedged sidecar must not hang the session. */
   turnTimeoutMs?: number;
@@ -105,7 +111,7 @@ export class VoiceSession {
         this._state = 'listening';
         this.send({
           type: 'ready',
-          routing: { status: 'local_accelerated' },
+          routing: this.deps.routing,
           asr: {
             engine: this.deps.asr.name,
             streaming: this.deps.asr.capabilities.streaming,
@@ -115,6 +121,13 @@ export class VoiceSession {
         return;
       }
       case 'config': {
+        // v1 cannot serve cloud, so a mid-session cloud request must be
+        // rejected instead of quietly continuing on the local path.
+        if (msg.tier === 'cloud') {
+          this.send({ type: 'error', code: 'cloud_not_implemented', message: 'cloud voice is not implemented', recoverable: false });
+          this.close();
+          return;
+        }
         if (msg.language !== undefined) {
           if (!supportsLanguage(this.deps.asr.capabilities, msg.language)) {
             this.send({
