@@ -55,6 +55,40 @@ describe('buildPodGoalResult', () => {
     expect(result.resultReady).toBe(false);
   });
 
+  test('a quick completion is readable without inventing a verdict or reviewer', () => {
+    const result = buildPodGoalResult({
+      goalId: 'g1',
+      state: state({
+        reviewVerdict: null,
+        reviewReportPath: null,
+        reviewFeedback: '',
+        receiptPath: 'C:/p/.mafw/receipts/g1/loop-1-receipt.json',
+        nextNode: 'archive_unreviewed',
+        nextAction: 'COMPLETED',
+        assessment: 'unreviewed',
+      }),
+      request,
+      readText: (p) => {
+        if (p.endsWith('waves.json')) {
+          return JSON.stringify({ waves: [{ id: 'w1', tasks: [{ taskId: 'w1-t1', title: 'x' }] }] });
+        }
+        if (p.endsWith('loop-1-receipt.json')) {
+          return JSON.stringify({ receipts: [{ taskId: 'w1-t1', status: 'done', summary: 'fixed' }] });
+        }
+        return null;
+      },
+    });
+
+    expect(result).toMatchObject({
+      verdict: null,
+      resultReady: true,
+      reviewed: false,
+      assessment: 'unreviewed',
+      failure: null,
+      reviewFeedback: '',
+    });
+  });
+
   test('a terminal outcome without any readable evidence is not resultReady', () => {
     const result = buildPodGoalResult({
       goalId: 'g1',

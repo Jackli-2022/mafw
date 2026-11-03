@@ -241,6 +241,51 @@ export function currentAssignmentSummary(
   };
 }
 
+export type ReceiptIntegrityResult =
+  | { ok: true }
+  | { ok: false; reason: 'failed' | 'missing' | 'incomplete'; detail: string };
+
+/** Mechanical completeness for a quick receipt: no LLM judgement, no invented PASS. */
+export function checkReceiptIntegrity(
+  receipt: unknown,
+  waves: unknown,
+): ReceiptIntegrityResult {
+  const plan = waves && typeof waves === 'object' ? waves as { waves?: unknown } : {};
+  const taskIds: string[] = [];
+  if (Array.isArray(plan.waves)) {
+    for (const wave of plan.waves) {
+      const tasks = wave && typeof wave === 'object' ? (wave as any).tasks : null;
+      if (!Array.isArray(tasks)) continue;
+      for (let index = 0; index < tasks.length; index++) {
+        const raw = tasks[index];
+        const taskId = typeof raw === 'string'
+          ? `${(wave as any).id}-t${index + 1}`
+          : String((raw as any)?.taskId ?? `${(wave as any).id}-t${index + 1}`);
+        taskIds.push(taskId);
+      }
+    }
+  }
+  const receipts = receipt && typeof receipt === 'object' && Array.isArray((receipt as any).receipts)
+    ? (receipt as any).receipts as any[]
+    : [];
+  const byTask = new Map(receipts.map((item) => [String(item?.taskId ?? ''), item]));
+  for (const taskId of taskIds) {
+    const item = byTask.get(taskId);
+    if (!item) {
+      return { ok: false, reason: 'missing', detail: `receipt is missing task ${taskId}` };
+    }
+    if (item.status === 'failed' || item.status === 'skipped') {
+      return { ok: false, reason: 'failed', detail: `task ${taskId} finished ${item.status}` };
+    }
+    const files = Array.isArray(item.files) ? item.files.filter(Boolean) : [];
+    const summary = typeof item.summary === 'string' ? item.summary.trim() : '';
+    if (!files.length && !summary) {
+      return { ok: false, reason: 'incomplete', detail: `task ${taskId} has no receipt evidence` };
+    }
+  }
+  return { ok: true };
+}
+
 export function renderGoalAssignmentBlock(assignment: GoalAssignment): string {
   const acceptance = assignment.taskIds.map((taskId) => {
     const criteria = assignment.acceptance[taskId] ?? [];

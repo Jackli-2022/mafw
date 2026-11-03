@@ -29,6 +29,9 @@ export interface PodGoalResult {
   revision: number;
   verdict: PodGoalVerdict | null;
   resultReady: boolean;
+  /** Whether an independent review actually produced the result. */
+  reviewed: boolean;
+  assessment: 'reviewed' | 'unreviewed' | null;
   /** 申请时的 Goal acceptance（legacy 文本，保留原文）。 */
   goalAcceptance: string[];
   /** Goal Eval 条件（Task 7）；eval 缺失/非法时为空且 goalEvalValid=false。 */
@@ -115,6 +118,8 @@ export function buildPodGoalResult(input: {
       revision,
       verdict: null,
       resultReady: false,
+      reviewed: false,
+      assessment: null,
       goalAcceptance,
       goalConditions: [],
       goalResults: [],
@@ -186,6 +191,11 @@ export function buildPodGoalResult(input: {
     failure = failure ?? 'review_missing';
   }
 
+  const assessment: 'reviewed' | 'unreviewed' | null = state.assessment ?? null;
+  const reviewed = assessment !== null
+    ? assessment === 'reviewed'
+    : !!(reviewText && verdict === 'PASS');
+
   const artifactRefs = new Set<string>();
   for (const value of Object.values(state.artifacts ?? {})) {
     if (typeof value === 'string' && value.trim()) artifactRefs.add(value);
@@ -203,6 +213,8 @@ export function buildPodGoalResult(input: {
     verdict,
     // 任何不可信分类（review 不可解析 / 缺少证据 / eval 坏了）都不算「结果就绪」。
     resultReady: !failure && isTerminalState(state) && !!(reviewText || receiptText || artifactRefs.size > 0),
+    reviewed,
+    assessment,
     goalAcceptance,
     goalConditions: goalEval ? goalEval.conditions : [],
     goalResults,

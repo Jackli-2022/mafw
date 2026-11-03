@@ -38,6 +38,7 @@ import {
 } from './goal-intake';
 import { ensureWaveTaskIds } from './wave-plan-edit';
 import {
+  checkReceiptIntegrity,
   createGoalAssignment,
   goalAssignmentFilePath,
   readGoalAssignment,
@@ -1378,6 +1379,8 @@ export class NodeDriver {
     const round = effectiveRound(state);
     const v = node === 'archive_success'
       ? { verdict: 'PASS', phase: 'ARCHIVED', nextAction: 'COMPLETED' }
+      : node === 'archive_unreviewed'
+        ? { verdict: 'UNREVIEWED', phase: 'ARCHIVED', nextAction: 'COMPLETED' }
       : node === 'archive_max_retries'
         ? { verdict: 'MAX_RETRIES', phase: 'FAILED', nextAction: 'FAILED' }
         : state.reviewVerdict === 'ERROR'
@@ -1390,7 +1393,16 @@ export class NodeDriver {
       type: 'phase_transition', goalId, phase: v.phase, loop: round,
       projectDir: state.projectDir, revision: effectiveRevision(state),
     });
-    writeGoalState(mafwDir, goalId, { phase: v.phase, nextAction: v.nextAction, nodeSession: null });
+    writeGoalState(mafwDir, goalId, {
+      phase: v.phase,
+      nextAction: v.nextAction,
+      nodeSession: null,
+      ...(node === 'archive_unreviewed'
+        ? { assessment: 'unreviewed' as const }
+        : node === 'archive_success'
+          ? { assessment: 'reviewed' as const }
+          : {}),
+    });
     await this.deps.archiveGoal(goalId, {
       verdict: v.verdict, rounds,
       lastError: state.lastError, reviewFeedback: state.reviewFeedback,
@@ -1514,6 +1526,8 @@ export class NodeDriver {
     // —— 解析（移植 NODE_CONFIGS.parseResult + plan.node/review.node 语义）——
     let patch: Partial<GoalStateV3>;
     let outcome: string;
+    let quickRepairNext = false;
+    let quickExecuteFailed = false;
     /** plan 交卷的内容哈希：批准门用它绑定"用户实际看到的这一版"。 */
     let approvalHashes: PlanApprovalHashes | null = null;
     /** Task 15：full_chain 待批记录（探针先于实施，但批准发生在探针之前）。 */
@@ -1680,6 +1694,38 @@ export class NodeDriver {
         const receipt: any = submitted ?? JSON.parse(fs.readFileSync(a.receipt, 'utf-8'));
         patch = { receiptPath: a.receipt };
         outcome = `receipts=${(receipt.receipts || []).length}`;
+        if ((state.strategy ?? 'collaborative') === 'quick') {
+          const integrity = checkReceiptIntegrity(receipt, this.readPlanDoc(state, goalId, revision));
+          if (!integrity.ok) {
+            if (integrity.reason === 'failed') {
+              quickExecuteFailed = true;
+              patch = {
+                ...patch,
+                reviewVerdict: 'FAIL',
+                reviewFeedback: integrity.detail,
+              };
+              outcome = 'quick_receipt_failed';
+            } else if ((state.quickRepairCount ?? 0) < 1) {
+              quickRepairNext = true;
+              patch = {
+                ...patch,
+                quickRepairCount: (state.quickRepairCount ?? 0) + 1,
+                planFeedback: `Quick receipt is incomplete: ${integrity.detail}. Return to Tech Lead for one correction.`,
+                lastFailure: {
+                  class: 'terminal_contract',
+                  code: 'receipt_incomplete',
+                  message: integrity.detail,
+                  node: 'execute',
+                  attempt: ns.attempt,
+                  at: new Date().toISOString(),
+                },
+              };
+              outcome = 'quick_receipt_repair';
+            } else {
+              throw new Error(`artifact_invalid: ${integrity.detail}`);
+            }
+          }
+        }
       } else {
         const source = submitted
           ? JSON.stringify(submitted)
@@ -1787,9 +1833,12 @@ export class NodeDriver {
         // 同轮复核：只有刚决定"可复核"（patch.reviewFix 落库）时才回 execute 修复
         reviewFixAvailable: !!patch.reviewFix,
         strategy: patch.strategy ?? state.strategy,
+        executeFailed: quickExecuteFailed,
       },
     );
-    const nextNode = progress.ask && patch.pendingQuestion ? 'askUser' : routedNode;
+    const nextNode: GoalNodeName = quickRepairNext
+      ? 'plan'
+      : (progress.ask && patch.pendingQuestion ? 'askUser' : routedNode);
 
     this.deps.db.finishNodeRun(ns.runId, {
       status: 'succeeded', finishedAt: new Date().toISOString(), outcome,

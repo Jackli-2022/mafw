@@ -19,6 +19,8 @@ export interface RouteState {
   reviewFixAvailable?: boolean;
   /** Tech Lead strategy; absent preserves the legacy collaborative route. */
   strategy?: 'quick' | 'collaborative';
+  /** Quick receipt failed or was mechanically invalid after its repair chance. */
+  executeFailed?: boolean;
 }
 
 export type RouteStage = 'start' | 'after_plan' | 'after_probe' | 'after_execute' | 'after_review';
@@ -32,6 +34,7 @@ export function routeAfterPlan(s: RouteState): GoalNodeName {
 }
 
 export function routeAfterExecute(s: RouteState): GoalNodeName {
+  if (s.executeFailed) return 'archive_fail';
   return s.strategy === 'quick' ? 'archive_unreviewed' : 'review';
 }
 

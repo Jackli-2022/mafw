@@ -2,6 +2,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { GatewayDatabase } from '../../src/memory/gateway-db';
+import { inferFailureKind } from '../../src/orchestration/outcome-recorder';
+
+describe('Goal outcome failure classification', () => {
+  test('an honest unreviewed completion is not a failure', () => {
+    expect(inferFailureKind({ verdict: 'UNREVIEWED' })).toBeNull();
+    expect(inferFailureKind({ verdict: 'UNREVIEWED', lastError: 'not used' })).toBeNull();
+  });
+});
 
 describe('Goal outcomes', () => {
   let db: GatewayDatabase;

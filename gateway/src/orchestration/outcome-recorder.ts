@@ -5,7 +5,7 @@ import { getActivePolicy } from './policy';
 import { log } from '../core/utils/logger';
 import { readGoalRequest } from '../core/goal/goal-intake';
 
-export type GoalVerdict = 'PASS' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED';
+export type GoalVerdict = 'PASS' | 'UNREVIEWED' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED';
 
 export interface OutcomeInput {
   goalId: string;
@@ -21,7 +21,7 @@ export interface OutcomeInput {
 const EMPTY_TOKENS = { input: 0, output: 0 };
 
 export function inferFailureKind(input: { verdict: string; lastError?: string | null }): string | null {
-  if (input.verdict === 'PASS') return null;
+  if (input.verdict === 'PASS' || input.verdict === 'UNREVIEWED') return null;
   if (input.verdict === 'CANCELLED') return 'user_cancel';
   if (input.verdict === 'MAX_RETRIES') return 'max_retries';
   const err = (input.lastError || '').toLowerCase();

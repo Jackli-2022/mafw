@@ -8643,7 +8643,7 @@ class MafwScheduler {
   // 鈹€鈹€ 6. Archive 鈹€鈹€
 
   private async archiveGoal(goalId: string, outcome?: {
-    verdict: 'PASS' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED';
+    verdict: 'PASS' | 'UNREVIEWED' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED';
     rounds: number;
     lastError?: string | null;
     reviewFeedback?: string | null;
@@ -8747,7 +8747,7 @@ class MafwScheduler {
         const state = mafwDir ? loadGoalState(mafwDir, goalId) : this.activeGoals.get(goalId);
         this.podMemoryService.captureGoal(podId, {
           goalId,
-          ok: outcome?.verdict === 'PASS',
+          ok: outcome?.verdict === 'PASS' || outcome?.verdict === 'UNREVIEWED',
           reviewFeedback: outcome?.reviewFeedback ?? undefined,
           receiptPath: (state as any)?.receiptPath ?? undefined,
         });
@@ -8759,7 +8759,8 @@ class MafwScheduler {
       // 归档路径对两种 verdict 都 reconcile（幂等）：PASS 正常由 review 节点投影收口，
       // 但事件丢失时任务会永远停在 review，这里兜底。
       try {
-        this.podTaskService.reconcileArchive(podId, goalId, outcome.verdict === 'PASS');
+        const successful = outcome.verdict === 'PASS' || outcome.verdict === 'UNREVIEWED';
+        this.podTaskService.reconcileArchive(podId, goalId, successful);
       } catch (err: any) {
         log.warn(`[Pod] archive reconcile failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
       }
@@ -8791,7 +8792,7 @@ class MafwScheduler {
     // 完成通知（spec §8.1）：Reviewer 判 PASS 后由 Lead 通知用户——revision 保持
     // 真实完成结果，只广播一条结果事件；不创建人类 attention，也不需要用户再点
     // 一次「验收通过」。同一 revision 的重复通知由 revision 级去重兜底。
-    if (podId && outcome?.verdict === 'PASS') {
+    if (podId && (outcome?.verdict === 'PASS' || outcome?.verdict === 'UNREVIEWED')) {
       try {
         await this.podGoalService?.notifyResult(podId, goalId);
       } catch (err: any) {

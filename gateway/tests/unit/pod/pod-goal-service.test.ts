@@ -382,6 +382,44 @@ describe('PodGoalService', () => {
     expect(store.getPod(pod.id)?.status).toBe('archived');
   });
 
+  test('notifies an unreviewed quick result without inventing a business verdict', async () => {
+    const created = await service.enqueueGoal('gq', projectDir);
+    const row = store.getGoalByGoalId('gq')!;
+    store.setGoalStatus(row.id, 'active', { startedAt: '2026-10-29T00:00:00.000Z' });
+    store.createGoalRevision({
+      podId: created.podId,
+      goalId: 'gq',
+      revision: 1,
+      status: 'review',
+      now: '2026-10-29T00:00:00.000Z',
+    });
+    const unreviewed = makeService(undefined, {
+      resultForGoal: () => ({
+        goalId: 'gq',
+        revision: 1,
+        verdict: null,
+        resultReady: true,
+        reviewed: false,
+        assessment: 'unreviewed',
+        goalAcceptance: [],
+        goalConditions: [],
+        goalResults: [],
+        goalEvalValid: false,
+        failure: null,
+        tasks: [],
+        reviewFeedback: '',
+        receipt: {},
+        artifacts: [],
+      }),
+    });
+
+    const result = await unreviewed.notifyResult(created.podId, 'gq');
+
+    expect(result).toMatchObject({ notified: true, duplicate: false, verdict: null });
+    expect(store.getGoalByGoalId('gq')?.verdict).toBeNull();
+    expect(notifications).toContain(created.podId);
+  });
+
   test('archiving a goal preserves an archived pod status', async () => {
     const first = await service.enqueueGoal('g1', projectDir);
     store.updatePod(first.podId, { status: 'archived' }, '2026-10-29T00:00:00.000Z');
