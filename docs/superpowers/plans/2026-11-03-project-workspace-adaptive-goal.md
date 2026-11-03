@@ -98,7 +98,8 @@ git commit -m "fix(goal): resolve canonical project identity without fallback"
 - Test: `gateway/tests/unit/goal/goal-intake.test.ts`
 - Test: `gateway/tests/unit/pod/pod-goals-create.test.ts`
 - Test: `gateway/tests/unit/routes/pods.test.ts`
-- Test: `gateway/tests/unit/create-goal.test.ts`
+- Test: `gateway/tests/unit/mcp/create-goal.test.ts`
+- Test: `gateway/tests/unit/mcp/create-goal-direct.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1 的项目归属解析。
@@ -122,7 +123,7 @@ export interface GoalIntakeInput { /* existing fields */ sourceRef?: GoalSourceR
   - 当前所有新执行入口汇入 Lead + 项目 Pod；不再创建 Pod-less Goal。
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd gateway; npx jest tests/unit/goal/goal-intake.test.ts tests/unit/pod/pod-goals-create.test.ts tests/unit/routes/pods.test.ts tests/unit/create-goal.test.ts --runInBand --forceExit`
+Run: `cd gateway; npx jest tests/unit/goal/goal-intake.test.ts tests/unit/pod/pod-goals-create.test.ts tests/unit/routes/pods.test.ts tests/unit/mcp/create-goal.test.ts tests/unit/mcp/create-goal-direct.test.ts tests/unit/mcp/manager-set-goal-techlead.test.ts --runInBand --forceExit`
 Expected: FAIL，缺少 `sourceRef` 与 handoff 路由。
 
 - [ ] **Step 3: Implement source persistence and Lead handoff**
@@ -130,7 +131,7 @@ Expected: FAIL，缺少 `sourceRef` 与 handoff 路由。
   - 在 route catalog 注册 `pods.goals.handoff` 并挂 handler；不要手改生成的 `gateway-paths.json`。
 - [ ] **Step 4: Run tests and regenerate contracts**
 
-Run: `cd gateway; npx jest tests/unit/goal/goal-intake.test.ts tests/unit/pod/pod-goals-create.test.ts tests/unit/routes/pods.test.ts tests/unit/create-goal.test.ts tests/unit/api-contract.test.ts --runInBand --forceExit; npm run emit:openapi`
+Run: `cd gateway; npx jest tests/unit/goal/goal-intake.test.ts tests/unit/pod/pod-goals-create.test.ts tests/unit/routes/pods.test.ts tests/unit/mcp/create-goal.test.ts tests/unit/mcp/create-goal-direct.test.ts tests/unit/mcp/manager-set-goal-techlead.test.ts tests/unit/api-contract.test.ts --runInBand --forceExit; npm run emit:openapi`
 Expected: 测试 PASS，contract 生成成功。
 
 - [ ] **Step 5: Commit**
