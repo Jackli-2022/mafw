@@ -5,6 +5,7 @@ import type {
 } from './types';
 import type {
   VoiceClientMessage,
+  VoiceRouting,
   VoiceServerMessage,
 } from './transport/protocol';
 import { supportsLanguage } from './types';
@@ -14,6 +15,11 @@ export type VoiceSessionState = 'idle' | 'listening' | 'processing' | 'closed';
 export interface VoiceSessionDeps {
   asr: AsrEngine;
   send: (msg: VoiceServerMessage) => void;
+  /**
+   * Routing actually in effect for this session. Required on purpose: the
+   * session must report what the runtime resolved, never a hardcoded status.
+   */
+  routing: VoiceRouting;
   now?: () => number;
   /** Deadline for one ASR final; a wedged sidecar must not hang the session. */
   turnTimeoutMs?: number;
@@ -27,7 +33,8 @@ export interface VoiceSessionDeps {
 export class VoiceSession {
   private _state: VoiceSessionState = 'idle';
   private stream?: AsrStream;
-  private sessionId?: string;
+  private voiceSessionId?: string;
+  private _chatSessionId?: string;
   private language?: string;
   private bytesPushed = 0;
   private generation = 0;
@@ -39,6 +46,14 @@ export class VoiceSession {
     return this._state;
   }
 
+  /**
+   * Target chat session announced in `hello`. Plan 1 only retains it: no chat
+   * session is created, resumed or otherwise touched until the duplex slices.
+   */
+  get chatSessionId(): string | undefined {
+    return this._chatSessionId;
+  }
+
   private send(msg: VoiceServerMessage): void {
     this.deps.send(msg);
   }
@@ -48,10 +63,10 @@ export class VoiceSession {
   }
 
   private startStream(): void {
-    if (!this.sessionId) return;
+    if (!this.voiceSessionId) return;
     const generation = ++this.generation;
     const stream = this.deps.asr.createStream({
-      sessionId: this.sessionId,
+      sessionId: this.voiceSessionId,
       language: this.language,
       sampleRate: this.deps.asr.capabilities.sampleRate,
     });
@@ -70,6 +85,19 @@ export class VoiceSession {
           this.send({ type: 'error', code: 'already_started', message: 'session already started', recoverable: false });
           return;
         }
+        // v1 gates. All of them run before createStream(), so a rejected hello
+        // never opens an ASR stream. This is the whole invariant: it says
+        // nothing about sidecar startup, which the transport already triggered
+        // by creating this session through getVoiceRuntime() before
+        // handleControl() was reached.
+        if (!msg.clientVad) {
+          this.send({ type: 'error', code: 'client_vad_required', message: 'v1 requires client VAD', recoverable: false });
+          return;
+        }
+        if (msg.tier === 'cloud') {
+          this.send({ type: 'error', code: 'cloud_not_implemented', message: 'cloud voice is not implemented', recoverable: false });
+          return;
+        }
         if (!supportsLanguage(this.deps.asr.capabilities, msg.language)) {
           this.send({
             type: 'error',
@@ -79,13 +107,14 @@ export class VoiceSession {
           });
           return;
         }
-        this.sessionId = msg.sessionId;
+        this.voiceSessionId = msg.voiceSessionId;
+        this._chatSessionId = msg.chatSessionId;
         this.language = msg.language;
         this.startStream();
         this._state = 'listening';
         this.send({
           type: 'ready',
-          routing: { status: 'local_accelerated' },
+          routing: this.deps.routing,
           asr: {
             engine: this.deps.asr.name,
             streaming: this.deps.asr.capabilities.streaming,
@@ -95,6 +124,13 @@ export class VoiceSession {
         return;
       }
       case 'config': {
+        // v1 cannot serve cloud, so a mid-session cloud request must be
+        // rejected instead of quietly continuing on the local path.
+        if (msg.tier === 'cloud') {
+          this.send({ type: 'error', code: 'cloud_not_implemented', message: 'cloud voice is not implemented', recoverable: false });
+          this.close();
+          return;
+        }
         if (msg.language !== undefined) {
           if (!supportsLanguage(this.deps.asr.capabilities, msg.language)) {
             this.send({

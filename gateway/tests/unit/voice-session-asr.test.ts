@@ -20,8 +20,8 @@ function fakeAsr() {
 
 test('hello -> partial -> final -> turn.done', async () => {
   const f = fakeAsr();
-  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m) });
-  await s.handleControl({ type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
   f.emitPartial('你');
   s.handleAudio(Buffer.alloc(320));
   await s.handleControl({ type: 'end_audio' });
@@ -32,8 +32,8 @@ test('hello -> partial -> final -> turn.done', async () => {
 
 test('cancel aborts the stream and suppresses a late final', async () => {
   const f = fakeAsr();
-  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m) });
-  await s.handleControl({ type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
   await s.handleControl({ type: 'cancel' });
   expect(f.wasAborted()).toBe(true);
   expect(f.sent.some(m => m.type === 'turn.cancelled')).toBe(true);
@@ -42,22 +42,22 @@ test('cancel aborts the stream and suppresses a late final', async () => {
 
 test('binary before hello is rejected', async () => {
   const f = fakeAsr();
-  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m) });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
   s.handleAudio(Buffer.alloc(320));
   expect(f.sent[0]).toMatchObject({ type: 'error', code: 'hello_required' });
 });
 
 test('unsupported language is rejected before ASR call', async () => {
   const f = fakeAsr();
-  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m) });
-  await s.handleControl({ type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto', language: 'en', format: 'pcm16', clientVad: true });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'en', format: 'pcm16', clientVad: true });
   expect(f.sent[0]).toMatchObject({ type: 'error', code: 'language_unsupported' });
 });
 
 test('end_audio with no audio returns empty_audio', async () => {
   const f = fakeAsr();
-  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m) });
-  await s.handleControl({ type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
   await s.handleControl({ type: 'end_audio' });
   expect(f.sent.some(m => m.code === 'empty_audio')).toBe(true);
 });
@@ -71,8 +71,8 @@ test('cancel during processing suppresses the late final', async () => {
     onPartial: () => {},
     end: () => new Promise((resolve) => { resolvers.push(resolve); }),
   });
-  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m) });
-  await s.handleControl({ type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
   s.handleAudio(Buffer.alloc(320));
   const pending = s.handleControl({ type: 'end_audio' });
   await s.handleControl({ type: 'cancel' });
@@ -89,8 +89,8 @@ test('end_audio while processing returns turn_busy, not silence', async () => {
     push: () => {}, abort: () => {}, onPartial: () => {},
     end: () => new Promise((resolve) => { resolvers.push(resolve); }),
   });
-  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m) });
-  await s.handleControl({ type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
   s.handleAudio(Buffer.alloc(320));
   const pending = s.handleControl({ type: 'end_audio' });
   await s.handleControl({ type: 'end_audio' });
@@ -105,10 +105,83 @@ test('end_audio times out a wedged ASR stream and returns to listening', async (
     push: () => {}, abort: () => {}, onPartial: () => {},
     end: () => new Promise(() => {}),
   });
-  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), turnTimeoutMs: 20 });
-  await s.handleControl({ type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' }, turnTimeoutMs: 20 });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
   s.handleAudio(Buffer.alloc(320));
   await s.handleControl({ type: 'end_audio' });
   expect(s.state).toBe('listening');
   expect(f.sent.some(m => m.type === 'error' && m.code === 'asr_timeout')).toBe(true);
+});
+
+test('rejects clientVad=false before creating ASR stream', async () => {
+  const f = fakeAsr();
+  let creates = 0;
+  f.engine.createStream = () => { creates += 1; return f.engine.createStream; };
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({
+    type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous',
+    tier: 'auto', format: 'pcm16', clientVad: false,
+  });
+  expect(f.sent[0]).toMatchObject({ type: 'error', code: 'client_vad_required' });
+  expect(creates).toBe(0);
+});
+
+test('rejects cloud tier explicitly', async () => {
+  const f = fakeAsr();
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({
+    type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous',
+    tier: 'cloud', format: 'pcm16', clientVad: true,
+  });
+  expect(f.sent[0]).toMatchObject({ type: 'error', code: 'cloud_not_implemented' });
+});
+
+test('keeps chatSessionId for later slices without starting a chat', async () => {
+  const f = fakeAsr();
+  const streamOpts: any[] = [];
+  f.engine.createStream = (opts: any) => {
+    streamOpts.push(opts);
+    return { push: () => {}, abort: () => {}, onPartial: () => {}, end: async () => ({ text: '', durationMs: 0, engine: 'fake', final: true }) };
+  };
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  expect(s.chatSessionId).toBe('c1');
+  expect(streamOpts[0].sessionId).toBe('v1');
+});
+
+test('ready.routing echoes the injected routing instead of a hardcoded status', async () => {
+  const f = fakeAsr();
+  const s = new VoiceSession({
+    asr: f.engine,
+    send: m => f.sent.push(m),
+    routing: { status: 'local_accelerated' },
+  });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  expect(f.sent[0]).toMatchObject({ type: 'ready', routing: { status: 'local_accelerated' } });
+});
+
+test('ready reports local_cpu when the injected routing says so', async () => {
+  const f = fakeAsr();
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  expect(f.sent[0]).toMatchObject({ type: 'ready', routing: { status: 'local_cpu' } });
+});
+
+test('config message switching tier to cloud is rejected, not served locally', async () => {
+  const f = fakeAsr();
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  await s.handleControl({ type: 'config', tier: 'cloud' });
+  const error = f.sent.find(m => m.type === 'error');
+  expect(error).toMatchObject({ code: 'cloud_not_implemented', recoverable: false });
+  expect(s.state).toBe('closed');
+});
+
+test('config message with a language change is still accepted', async () => {
+  const f = fakeAsr();
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), routing: { status: 'local_cpu' } });
+  await s.handleControl({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  await s.handleControl({ type: 'config', tier: 'local', language: 'zh' });
+  expect(f.sent.some(m => m.type === 'error')).toBe(false);
+  expect(s.state).toBe('listening');
 });

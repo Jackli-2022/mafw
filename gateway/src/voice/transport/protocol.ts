@@ -2,7 +2,10 @@ import type { AsrResult, RoutingStatus, VoiceTier } from '../types';
 
 export interface VoiceHelloMessage {
   type: 'hello';
-  sessionId: string;
+  /** Identity of the ASR stream. One per `/ws/voice` connection. */
+  voiceSessionId: string;
+  /** Target chat session. Stored for later slices; Plan 1 never creates or opens it. */
+  chatSessionId: string;
   mode: 'continuous';
   tier: VoiceTier;
   language?: string;
@@ -83,14 +86,16 @@ export function parseClientMessage(raw: string): VoiceClientMessage {
 
   switch (value.type) {
     case 'hello': {
-      const sessionId = requireString(value.sessionId, 'sessionId');
+      const voiceSessionId = requireString(value.voiceSessionId, 'voiceSessionId');
+      const chatSessionId = requireString(value.chatSessionId, 'chatSessionId');
       const tier = requireTier(value.tier, 'tier');
       if (value.mode !== 'continuous') invalid('mode must be continuous');
       if (value.format !== 'pcm16') invalid('format must be pcm16');
       if (typeof value.clientVad !== 'boolean') invalid('clientVad must be boolean');
       return {
         type: 'hello',
-        sessionId,
+        voiceSessionId,
+        chatSessionId,
         mode: 'continuous',
         tier,
         language: optionalString(value.language, 'language'),

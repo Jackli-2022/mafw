@@ -1679,9 +1679,67 @@ export interface TtsResult {
   url: string
 }
 
+export type VoiceRoutingStatus =
+  | 'local_accelerated'
+  | 'local_cpu'
+  | 'cloud'
+  | 'degraded'
+
+/** Honest routing projection: where v1 would run the ASR stream today. */
+export interface VoiceRouting {
+  status: VoiceRoutingStatus
+  reason?: string
+}
+
+/** Resolved gateway voice config (config file + `MAFW_VOICE_*` overrides). */
+export interface VoiceRuntimeConfig {
+  tier: 'auto' | 'local' | 'cloud'
+  localTier: 'dgpu' | 'igpu'
+  /** Catalogue model id, not an engine id. */
+  asrEngine: string
+  /** Catalogue model id, not an engine id. */
+  ttsEngine: string
+  cloudConsent: boolean
+  modelsDir: string
+  sidecarPort: number
+  /** Duplex v1 ASR feature flag; off keeps the legacy voice path intact. */
+  duplexV1: boolean
+}
+
+export interface VoiceAsrCapabilities {
+  /** native = true incremental partials; none = VAD-segmented/offline. */
+  streaming: 'native' | 'none'
+  /** Engine-declared languages; `multi` means open-ended. */
+  languages: string[]
+  punctuation: boolean
+  timestamps: 'word' | 'segment' | 'none'
+  /** Input sample rate the engine expects. */
+  sampleRate: number
+  maxAudioSeconds?: number
+}
+
+/** One registered ASR engine (empty until the sidecar engine is created). */
+export interface VoiceEngineInfo {
+  name: string
+  capabilities: VoiceAsrCapabilities
+  source: 'builtin' | 'plugin'
+}
+
+export interface VoiceStatusResponse {
+  ok: boolean
+  config: VoiceRuntimeConfig
+  engines: VoiceEngineInfo[]
+  routing: VoiceRouting
+}
+
 export interface VoiceNamespace {
-  /** Voice runtime v2 status: config + registered ASR engines. */
-  status: () => Promise<{ ok: boolean; config: any; engines: any[] }>
+  /** Voice runtime v2 status: config + registered ASR engines + routing. */
+  status: () => Promise<VoiceStatusResponse>
+  /**
+   * 双工语音流 WebSocket URL（`/ws/voice`）。renderer 不得自己拼 gateway URL ——
+   * 与 `tts.streamUrl()` 同一定位：契约归 SDK，纯函数同步返回。
+   */
+  wsUrl: () => string
 }
 
 export interface TtsNamespace {

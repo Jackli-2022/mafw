@@ -2,15 +2,27 @@ import { parseClientMessage, serverError } from '../../src/voice/transport/proto
 
 test('parses a valid hello', () => {
   const m = parseClientMessage(JSON.stringify({
-    type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto',
-    language: 'zh', format: 'pcm16', clientVad: true,
+    type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous',
+    tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true,
   }));
-  expect(m).toMatchObject({ type: 'hello', sessionId: 's1', tier: 'auto' });
+  expect(m).toMatchObject({ type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', tier: 'auto' });
 });
 
-test('rejects missing sessionId', () => {
-  expect(() => parseClientMessage(JSON.stringify({ type: 'hello', mode: 'continuous' })))
-    .toThrow(/sessionId/);
+test('hello requires both voiceSessionId and chatSessionId', () => {
+  expect(parseClientMessage(JSON.stringify({
+    type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', mode: 'continuous',
+    tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true,
+  }))).toMatchObject({ voiceSessionId: 'v1', chatSessionId: 'c1' });
+
+  expect(() => parseClientMessage(JSON.stringify({
+    type: 'hello', chatSessionId: 'c1', mode: 'continuous',
+    tier: 'auto', format: 'pcm16', clientVad: true,
+  }))).toThrow(/voiceSessionId/);
+
+  expect(() => parseClientMessage(JSON.stringify({
+    type: 'hello', voiceSessionId: 'v1', mode: 'continuous',
+    tier: 'auto', format: 'pcm16', clientVad: true,
+  }))).toThrow(/chatSessionId/);
 });
 
 test('rejects unknown type', () => {
@@ -18,8 +30,9 @@ test('rejects unknown type', () => {
 });
 
 test('rejects invalid tier', () => {
-  expect(() => parseClientMessage(JSON.stringify({ type: 'hello', sessionId: 's1', tier: 'bogus' })))
-    .toThrow(/tier/);
+  expect(() => parseClientMessage(JSON.stringify({
+    type: 'hello', voiceSessionId: 'v1', chatSessionId: 'c1', tier: 'bogus',
+  }))).toThrow(/tier/);
 });
 
 test('serverError has a stable shape', () => {

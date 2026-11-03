@@ -15,6 +15,7 @@ import type {
   MafwAgent, MafwProvider,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
   PluginCheckResult,
+  VoiceStatusResponse,
 } from "@mafw/sdk"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 import type { TerminalEvent, TerminalProbe, TerminalSessionInfo } from "../shared/terminal-session"
@@ -291,6 +292,13 @@ export type MafwAPI = {
     streamUrl: () => Promise<string>
     /** barge-in 打断：取消该 session 全部在途 TTS 合成。 */
     interrupt: (sessionId: string) => Promise<{ ok: boolean; cancelled: number }>
+  }
+
+  voice: {
+    /** 语音运行时 v2 状态：配置 + 已注册 ASR 引擎 + routing（duplex 开关在 config.duplexV1）。 */
+    status: () => Promise<VoiceStatusResponse>
+    /** 双工语音流 WS URL（renderer 不自己拼 gateway URL）。 */
+    wsUrl: () => Promise<string>
   }
 
   event: {

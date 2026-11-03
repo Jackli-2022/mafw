@@ -72,6 +72,8 @@ export class Qwen3AsrSidecar {
   private child: ChildProcess | null = null;
   private exitCode: number | null = null;
   private stderrLines: string[] = [];
+  /** True when start() adopted a sidecar owned by another process. */
+  private external = false;
   private readonly fetchImpl: typeof fetch;
   private readonly sleepImpl: (ms: number) => Promise<void>;
   private readonly killTree: (pid: number) => Promise<void>;
@@ -114,6 +116,14 @@ export class Qwen3AsrSidecar {
     return this.child?.pid;
   }
 
+  /**
+   * True when this instance adopted an already-running sidecar instead of
+   * spawning one. Adopted processes are never killed by stop()/stopSync().
+   */
+  isExternal(): boolean {
+    return this.external;
+  }
+
   private noteStderr(chunk: Buffer | string): void {
     const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
     for (const line of text.split(/\r?\n/)) {
@@ -129,27 +139,59 @@ export class Qwen3AsrSidecar {
     return this.stderrLines.length ? `: ${this.stderrLines.join(' | ')}` : '';
   }
 
-  private async ping(): Promise<boolean> {
+  /**
+   * Fetch and parse `/health`. Returns null when the endpoint is unreachable,
+   * not ok, not JSON, or not a JSON object. Unrelated services on the same
+   * port therefore never look healthy.
+   */
+  private async readHealth(): Promise<Record<string, unknown> | null> {
     try {
       const res = await this.fetchImpl(`${this.baseUrl}/health`, {
         signal: AbortSignal.timeout(1000),
       } as any);
-      return !!res.ok;
+      if (!res?.ok) return null;
+      if (typeof (res as any).json !== 'function') return null;
+      const body = await (res as any).json();
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+      return body as Record<string, unknown>;
     } catch {
-      return false;
+      return null;
     }
   }
 
+  /**
+   * The Qwen3-ASR sidecar contract: `{ok: true, model: string, chunkSizeSec:
+   * number}`. Anything else on the port is treated as a foreign listener.
+   */
+  private static isCompatibleHealth(health: Record<string, unknown> | null): boolean {
+    if (!health) return false;
+    if (health.ok !== true) return false;
+    if (typeof health.model !== 'string' || !health.model.trim()) return false;
+    const chunk = health.chunkSizeSec;
+    return typeof chunk === 'number' && Number.isFinite(chunk) && chunk > 0;
+  }
+
   async isReady(): Promise<boolean> {
-    return this.ping();
+    // Availability follows the same contract as adoption: a listener that does
+    // not answer the Qwen3-ASR health shape must not look usable.
+    return Qwen3AsrSidecar.isCompatibleHealth(await this.readHealth());
   }
 
   async start(): Promise<void> {
     if (this.child && this.exitCode === null) return;
 
     if (await this.probePort(this.opts.port)) {
+      // Only adopt a listener that answers the Qwen3-ASR health contract;
+      // anything else is a port conflict, never a spawn target.
+      if (Qwen3AsrSidecar.isCompatibleHealth(await this.readHealth())) {
+        this.child = null;
+        this.exitCode = null;
+        this.stderrLines = [];
+        this.external = true;
+        return;
+      }
       throw new Error(
-        `sidecar_port_in_use: 127.0.0.1:${this.opts.port} is already in use`,
+        `sidecar_port_in_use: 127.0.0.1:${this.opts.port} is already in use and is not a compatible Qwen3-ASR sidecar`,
       );
     }
 
@@ -177,6 +219,7 @@ export class Qwen3AsrSidecar {
     this.child = child;
     this.exitCode = null;
     this.stderrLines = [];
+    this.external = false;
     let spawnError: Error | undefined;
     child.on('error', (err: Error) => { spawnError = err; });
     child.stderr?.on('data', (chunk: Buffer | string) => this.noteStderr(chunk));
@@ -201,7 +244,7 @@ export class Qwen3AsrSidecar {
               : message,
           );
         }
-        if (await this.ping()) return;
+        if ((await this.readHealth())?.ok === true) return;
         await this.sleepImpl(500);
       }
 

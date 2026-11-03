@@ -37,6 +37,7 @@
     "gateway/package.json",
     "gateway/scripts/setup-pykernel.mjs",
     "gateway/scripts/office/",
+    "gateway/voice_sidecars/",
     "scripts/stage-plugin-contract.mjs",
     "skills/",
     "bin/",

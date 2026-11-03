@@ -1374,3 +1374,29 @@ test("pod.lookup uses the non-creating query and readMemoryFile reads one file",
   await c.pod.readMemoryFile("pod_1", "POD")
   expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/pods/pod_1/memory?file=POD", expect.anything())
 })
+
+// ── Voice runtime v2 ──
+
+test("voice.wsUrl converts HTTP schemes to the voice WebSocket endpoint", () => {
+  expect(new MafwClient("http://gw:3000").voice.wsUrl()).toBe("ws://gw:3000/ws/voice")
+  expect(new MafwClient("https://gw.example").voice.wsUrl()).toBe("wss://gw.example/ws/voice")
+})
+
+test("voice.wsUrl strips one trailing slash without leaving a double slash", () => {
+  expect(new MafwClient("http://gw:3000/").voice.wsUrl()).toBe("ws://gw:3000/ws/voice")
+  expect(new MafwClient("https://gw.example/").voice.wsUrl()).toBe("wss://gw.example/ws/voice")
+})
+
+test("voice.status returns routing and the duplex flag", async () => {
+  fetchMock.mockResolvedValue(okJson({
+    ok: true,
+    config: { duplexV1: true },
+    engines: [],
+    routing: { status: "local_cpu" },
+  }))
+  const c = new MafwClient("http://gw:3000")
+  const status = await c.voice.status()
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/voice/status", expect.objectContaining({ headers: expect.anything() }))
+  expect(status.routing!.status).toBe("local_cpu")
+  expect(status.config!.duplexV1).toBe(true)
+})

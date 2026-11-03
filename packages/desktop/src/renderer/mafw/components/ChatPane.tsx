@@ -99,6 +99,9 @@ import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
 import { TranscriptSearchOverlay } from "./TranscriptSearchOverlay"
 import { CompressionDivider } from "./CompressionDivider"
 import { useVoiceBinding, extractVoiceReplies } from "../chat/use-voice-binding"
+import { useDuplexVoice } from "../chat/use-duplex-voice"
+import { voiceMicAction } from "../chat/duplex-voice-mode"
+import { DuplexVoiceBar } from "./DuplexVoiceBar"
 import { workspace } from "../workspace/session-workspace"
 import { PodTechLeadInvite } from "./PodTechLeadInvite"
 import { leadEntryLabel } from "../pod-store"
@@ -756,6 +759,27 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     userMessages: () => userMessages(),
     onSpeakingIdle: () => setPreviewing(null),
   })
+
+  // 双工 ASR（Task 8）：`voice.duplexV1` 开启时麦克风走持续 `/ws/voice` 上行，
+  // 字幕显示在 composer 里；关闭时该 hook 完全静默（enabled() === false）。
+  const duplexVoice = useDuplexVoice(() => sidProp(), () => props.gwReady)
+
+  // 麦克风唯一入口：toolbar 与窄屏「更多」菜单都调它，避免两处分支漂移。
+  function handleMicClick() {
+    const action = voiceMicAction({
+      duplexEnabled: duplexVoice.enabled(),
+      duplexActive: duplexVoice.active(),
+      legacyRecording: voiceRecording(),
+    })
+    if (action === "stop_duplex") { void duplexVoice.stop(); return }
+    if (action === "start_duplex") { stopActivePlayback(); void duplexVoice.toggle(); return }
+    if (action === "stop_legacy") { voiceSession.stopRecording(); return }
+    stopActivePlayback()
+    void voiceSession.startRecording()
+  }
+
+  // 麦克风按钮的按压态（duplex 连接/收音 与旧录音共用一套视觉）。
+  const micStopActive = () => voiceRecording() || duplexVoice.active()
 
   // mafw_media_speak 流式：工具事件 → VoiceSession（互斥/barge-in/hash 去重收敛在核心）。
   const handleMediaSpeak = (text: string, voice?: string) => {
@@ -2085,6 +2109,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          <Show when={duplexVoice.enabled() && (duplexVoice.active() || duplexVoice.partial() || duplexVoice.finalText() || duplexVoice.error())}>
+            <DuplexVoiceBar
+              partial={duplexVoice.partial()}
+              finalText={duplexVoice.finalText()}
+              listening={duplexVoice.listening()}
+              error={duplexVoice.error()}
+              onStop={() => void duplexVoice.stop()}
+            />
+          </Show>
           {/* Attachment + @agent chips row */}
           <Show when={attachments().length > 0 || mentionedAgents().length > 0}>
             <div class="mafw-composer-chips">
@@ -2271,20 +2304,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <Icon name="volume" size="small" />
                 </ButtonV2>
               </TooltipV2>
-              <TooltipV2 value={voiceRecording() ? "停止录音" : "语音输入（录音，静音自动分段）"} openDelay={300}>
+              <TooltipV2 value={micStopActive() ? "停止语音输入" : "语音输入（录音，静音自动分段）"} openDelay={300}>
                 <ButtonV2
                   variant="ghost"
                   size="small"
                   class="mafw-composer-icon mafw-composer-optional"
-                  classList={{ "mafw-voice-recording": voiceRecording() }}
+                  classList={{ "mafw-voice-recording": micStopActive() }}
                   aria-label="语音输入"
-                  onClick={() => {
-                    if (voiceRecording()) { voiceSession.stopRecording(); return }
-                    // 手动打断：录音开始前停掉正在播放的语音（AEC 兜底，双击安全）
-                    stopActivePlayback()
-                    void voiceSession.startRecording()
-                  }}
-                ><Icon name={voiceRecording() ? "stop" : "microphone"} size="small" /></ButtonV2>
+                  onClick={handleMicClick}
+                ><Icon name={micStopActive() ? "stop" : "microphone"} size="small" /></ButtonV2>
               </TooltipV2>
               <span class="mafw-composer-divider" />
               <TooltipV2 value={PERMISSION_MODE_HINT[props.permissionMode ?? "read-only"]} openDelay={300}>
@@ -2435,11 +2463,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               </ButtonV2>
               <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => {
                 setMoreOpen(false)
-                if (voiceRecording()) { voiceSession.stopRecording(); return }
-                stopActivePlayback()
-                void voiceSession.startRecording()
+                handleMicClick()
               }}>
-                <Icon name={voiceRecording() ? "stop" : "microphone"} size="small" /><span>{voiceRecording() ? "停止录音" : "语音输入"}</span>
+                <Icon name={micStopActive() ? "stop" : "microphone"} size="small" /><span>{micStopActive() ? "停止语音输入" : "语音输入"}</span>
               </ButtonV2>
               <Show when={(props.primaryAgents() || []).length > 0 || isLead()}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-switch"); refreshSubagents() }}>
