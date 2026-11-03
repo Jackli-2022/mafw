@@ -115,7 +115,9 @@ import { registerUserPluginCards } from "./components/UserPluginCards"
 import { registerUnifiedToolCards } from "./plugins/PluginToolCard"
 import { registerThinkingBlock } from "./components/ThinkingBlock"
 import { WelcomeHome } from "./components/WelcomeHome"
-import { DashboardPage } from "./pages/Dashboard"
+import { WorkspaceHome } from "./components/WorkspaceHome"
+import { buildLeadHandoff, isHandoffableRole } from "./lead-handoff"
+import { transcriptTurns } from "./pod-transcript"
 import { parseDeepLink } from "./deep-link"
 import { ConfirmOverlay } from "./components/ConfirmOverlay"
 import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
@@ -400,17 +402,92 @@ export function MafwShell() {
     closeLeftDockIfOverlay()
   }
 
-  // Project-level Lead and new work both enter through the Pod surface. No
-  // automatic Pod/Lead creation: a Pod-less project shows the Pod empty state.
+  // Project-level Lead is the project conversation. Opening it is the explicit
+  // point where a missing Pod may be created; background polling never creates one.
   const openLeadEntry = async (): Promise<boolean> => {
     setShowConfig(false)
     setActiveTab("chat")
     setShowWelcome(false)
-    openLeftDockFace("pod")
-    return true
+    const project = currentProject()
+    if (!project) {
+      showToastV2({ description: "尚未选择项目", duration: 3000 } as any)
+      return false
+    }
+    try {
+      await podStore.open(project)
+      if (!podStore.detail()) await podStore.create()
+      if (!podStore.detail()) throw new Error("鲸群创建失败")
+      await openPodSession("")
+      return !!currentLeadId(project)
+    } catch (err: any) {
+      showToastV2({ description: `打开 Lead 失败: ${err?.message || err}`, duration: 4500 } as any)
+      return false
+    }
   }
   const openNewGoalComposer = (): void => {
     openPodPanel("tasks")
+  }
+
+  const activeHandoffRole = (): string | undefined => {
+    const sid = activeSessionId()
+    if (!sid) return undefined
+    const tab = store.session.find((item: any) => item.id === sid)
+    return tabSessionRole(tab) ?? sessions().find((item) => item.id === sid)?.metadata?.mafw?.role
+  }
+  const canHandoffActiveSession = (): boolean => isHandoffableRole(activeHandoffRole())
+
+  /**
+   * Free discussion -> Lead handoff. The source session is never modified or
+   * deleted; only an immutable snapshot + pointer travel with the new Goal.
+   */
+  const handoffActiveSessionToLead = async (): Promise<void> => {
+    const sid = activeSessionId()
+    if (!sid) return
+    if (!canHandoffActiveSession()) {
+      showToastV2({ description: "只有自由讨论可以交给 Lead；内部执行会话请直接管理 Goal", duration: 4000 } as any)
+      return
+    }
+    try {
+      const raw = await window.api.mafw.sessions.messages(sid, 100) as any
+      const turns = transcriptTurns(raw)
+      const lastUser = [...turns].reverse().find((turn) => turn.role === "user")
+      const lastAssistant = [...turns].reverse().find((turn) => turn.role === "assistant")
+      const sourceText = [lastUser?.text, lastAssistant?.text].filter(Boolean).join("\n\n")
+      const handoff = buildLeadHandoff({
+        sessionTitle: sessions().find((item) => item.id === sid)?.title
+          ?? historySessions().find((item) => item.id === sid)?.title
+          ?? "未命名讨论",
+        sourceText,
+        sessionID: sid,
+        role: activeHandoffRole(),
+      })
+      if (!handoff) {
+        showToastV2({ description: "当前讨论还没有可交给 Lead 的内容", duration: 3500 } as any)
+        return
+      }
+      const project = currentProject()
+      if (!project) throw new Error("尚未选择项目")
+      let detail = podStore.detail()
+      if (!detail || (podStore.projectDir() && podStore.projectDir() !== project)) {
+        await podStore.open(project)
+        detail = podStore.detail()
+      }
+      if (!detail) {
+        await podStore.create()
+        detail = podStore.detail()
+      }
+      if (!detail) throw new Error("无法解析当前项目的鲸群")
+      const created = await window.api.mafw.pod.handoffGoal(detail.pod.id, {
+        title: handoff.title,
+        objective: handoff.objective,
+        sourceRef: handoff.sourceRef,
+      })
+      await podStore.refresh()
+      setPodGoalId(created.goalId)
+      showToastV2({ description: "已交给 Lead，Goal 已创建", duration: 3000 } as any)
+    } catch (err: any) {
+      showToastV2({ description: `交给 Lead 失败: ${err?.message || err}`, duration: 4500 } as any)
+    }
   }
 
   // Lazy-load pagination state per session (older messages via `before` cursor)
@@ -2543,6 +2620,8 @@ export function MafwShell() {
                           onFocus={() => { setShowConfig(false); setActiveTab("chat") }}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
                           onRecordPodNote={recordPodNote}
+                          onHandoffToLead={() => void handoffActiveSessionToLead()}
+                          handoffEligible={canHandoffActiveSession}
                           techLeadInvite={activeLeadGoalInvite}
                           onOpenTechLead={(goalId) => void openTechLead(goalId)}
                           techLeadTarget={activeTechLeadTarget}
@@ -2634,7 +2713,21 @@ export function MafwShell() {
                 </Show>
               </div>
             ) : activeTab() === "goals" ? (
-              <DashboardPage onOpenSession={(sid) => { void openPodSession(sid) }} projectDir={currentProject()} onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }} />
+              <WorkspaceHome
+                projectDir={currentProject()}
+                discussions={historySessions()
+                  .filter((s) => isHandoffableRole(s.metadata?.mafw?.role))
+                  .slice(0, 12)
+                  .map((s) => ({ id: s.id, title: s.title }))}
+                onOpenLead={openLeadEntry}
+                onNewDiscussion={() => void createSession()}
+                onOpenDiscussion={(sid) => {
+                  const item = historySessions().find((s) => s.id === sid)
+                  openSessionTab(sid, item?.title)
+                }}
+                onNewGoal={openNewGoalComposer}
+                onOpenGoal={(goal) => setPodGoalId(goal.goalId)}
+              />
             ) : activeTab() === "memory" ? (
               <MemoryPage />
             ) : activeTab() === "approvals" ? (

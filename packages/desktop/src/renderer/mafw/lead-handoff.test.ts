@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildLeadHandoff } from "./lead-handoff"
+import { buildLeadHandoff, isHandoffableRole } from "./lead-handoff"
 
 test("buildLeadHandoff captures a free discussion as a bounded Goal source", () => {
   const handoff = buildLeadHandoff({
@@ -44,6 +44,14 @@ test("buildLeadHandoff refuses internal roles and missing source", () => {
   assert.equal(buildLeadHandoff({
     sessionTitle: "no id", sourceText: "do it", sessionID: "",
   }), null)
+})
+
+test("isHandoffableRole allows user/free sessions and blocks internal workers", () => {
+  assert.equal(isHandoffableRole(undefined), true)
+  assert.equal(isHandoffableRole("user"), true)
+  assert.equal(isHandoffableRole("lead"), false)
+  assert.equal(isHandoffableRole("tech-lead"), false)
+  assert.equal(isHandoffableRole("builder"), false)
 })
 
 test("buildLeadHandoff falls back to the session title when the source has no usable heading", () => {

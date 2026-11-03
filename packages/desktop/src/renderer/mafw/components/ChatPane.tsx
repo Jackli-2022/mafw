@@ -194,6 +194,9 @@ export type ChatPaneProps = {
     role: "user" | "assistant"
     text: string
   }) => Promise<void>
+  /** 自由讨论 -> Lead handoff；成功后 Goal 由 Lead 创建，讨论本身不改动。 */
+  onHandoffToLead?: () => void
+  handoffEligible?: () => boolean
   /**
    * Task 19：当前会话是项目 Lead、且有 Goal 处于 `discussing` 时，composer 上方的
    * 「与 Tech Lead 讨论」入口。由 shell 计算（Pod 状态 + Lead 判定都在那边）。
@@ -1809,6 +1812,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 <Show when={props.worktreeEnabled && props.onCreateWorktreeSession}>
                   <TooltipV2 value="在独立 git worktree 中开并行任务（互不踩踏）" openDelay={300}>
                     <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务"><Icon name="branch" size="small" /> 并行</ButtonV2>
+                  </TooltipV2>
+                </Show>
+                <Show when={props.onHandoffToLead && (props.handoffEligible?.() ?? true)}>
+                  <TooltipV2 value="把当前讨论作为来源，交给 Lead 创建 Goal 执行" openDelay={300}>
+                    <ButtonV2
+                      variant="outline"
+                      size="small"
+                      onClick={(e: MouseEvent) => { e.stopPropagation(); props.onHandoffToLead?.() }}
+                    >交给 Lead</ButtonV2>
                   </TooltipV2>
                 </Show>
                 <TooltipV2 value="检查点 / 回滚时间线" openDelay={300}>

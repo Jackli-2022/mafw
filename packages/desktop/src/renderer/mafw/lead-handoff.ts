@@ -16,6 +16,10 @@ function normalizeRole(role: string | undefined): string {
   return String(role ?? "").trim().toLowerCase().replace(/-/g, "_")
 }
 
+export function isHandoffableRole(role: string | undefined): boolean {
+  return !INTERNAL_ROLES.has(normalizeRole(role))
+}
+
 function stripSessionIds(value: string): string {
   return value.replace(/\bses_[A-Za-z0-9_-]+\b/g, "").trim()
 }

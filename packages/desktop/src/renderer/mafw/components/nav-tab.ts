@@ -3,7 +3,7 @@ export type NavTab = "chat" | "goals" | "memory" | "approvals" | "triage" | "aut
 
 export const NAV_TABS: { id: NavTab; icon: string; label: string }[] = [
   { id: "chat", icon: "bubble-5", label: "Chat" },
-  { id: "goals", icon: "status", label: "Goals" },
+  { id: "goals", icon: "layout-grid", label: "工作空间" },
   { id: "memory", icon: "brain", label: "Memory" },
   { id: "approvals", icon: "checklist", label: "Approvals" },
   { id: "triage", icon: "warning", label: "Triage" },

@@ -29,7 +29,6 @@ export function WelcomeHome(props: {
   hasPlanAgent?: boolean
   onStartWithPlan?: () => void
 }) {
-  const [goals, setGoals] = createSignal<any[]>([])
   const [approvals, setApprovals] = createSignal<any[]>([])
   const [triage, setTriage] = createSignal<any[]>([])
   const [automations, setAutomations] = createSignal<any[]>([])
@@ -42,15 +41,13 @@ export function WelcomeHome(props: {
     // explicitly instead (allWithFailureFlag).
     const { values, failed } = await allWithFailureFlag(
       [
-        () => window.api.mafw.goals.list(),
         () => window.api.mafw.approvals.list(),
         () => window.api.mafw.triage.list(),
         () => window.api.mafw.automations.list(),
       ],
       [] as any[],
     )
-    const [g, a, t, auto] = values
-    setGoals(Array.isArray(g) ? g : [])
+    const [a, t, auto] = values
     setApprovals(Array.isArray(a) ? a : [])
     setTriage(Array.isArray(t) ? t : [])
     setAutomations(Array.isArray(auto) ? auto : [])
@@ -64,9 +61,6 @@ export function WelcomeHome(props: {
     onCleanup(() => clearInterval(interval))
   })
 
-  const activeGoals = createMemo(() =>
-    (goals() || []).filter((g) => g?.phase && !["COMPLETED", "FAILED", "ARCHIVED"].includes(g.phase)),
-  )
   const pendingApprovals = createMemo(() => (approvals() || []).filter((a) => a?.status === "pending").length)
   const triageCount = createMemo(() => (triage() || []).length)
   const enabledAutomations = createMemo(() => (automations() || []).filter((a) => a?.enabled).length)
@@ -137,31 +131,13 @@ export function WelcomeHome(props: {
           </ButtonV2>
         </Show>
         <ButtonV2 variant="outline" icon="user" onClick={() => void props.onOpenLead()}>Lead 会话</ButtonV2>
+        <ButtonV2 variant="outline" icon="layout-grid" onClick={() => props.onNavigate("goals")}>工作空间</ButtonV2>
         <ButtonV2 variant="outline" icon="target" onClick={() => props.onOpenGoalComposer()}>新建 Goal</ButtonV2>
         <ButtonV2 variant="outline" icon="check" onClick={() => props.onNavigate("approvals")}>
           待审批{`${pendingApprovals() > 0 ? ` (${pendingApprovals()})` : ""}`}
         </ButtonV2>
         <ButtonV2 variant="outline" icon="database" onClick={() => props.onNavigate("memory")}>记忆回顾</ButtonV2>
       </div>
-
-      {/* Active goals */}
-      <Show when={activeGoals().length > 0}>
-        <section class="mafw-welcome-section">
-          <div class="mafw-welcome-section-title">活跃 Goal</div>
-          <div class="mafw-welcome-goals">
-            <For each={activeGoals()}>
-              {(g) => (
-                <ButtonV2 variant="ghost" size="small" class="mafw-welcome-goal" onClick={() => props.onNavigate("goals")}>
-                  <span class="mafw-welcome-goal-title">{g.title || g.goalId}</span>
-                  <span class="mafw-welcome-goal-meta">
-                    {g.phase} · loop {g.loop || 0}
-                  </span>
-                </ButtonV2>
-              )}
-            </For>
-          </div>
-        </section>
-      </Show>
 
       {/* Pending overview */}
       <Show when={pendingApprovals() > 0 || triageCount() > 0 || enabledAutomations() > 0}>
