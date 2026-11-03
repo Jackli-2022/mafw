@@ -18,15 +18,4 @@ export function railProjectName(raw: string | null | undefined, isCurrent: boole
   return base
 }
 
-const PHASE_LABELS: Record<string, string> = {
-  PLANNING: "规划中",
-  EXECUTING: "执行中",
-  REVIEWING: "审阅中",
-  ASKING_USER: "待提问",
-}
 
-/** goal phase 极简中文化；未知回退原文，null/undefined → 空闲。 */
-export function managerPhaseLabel(phase: string | null | undefined): string {
-  if (!phase) return "空闲"
-  return PHASE_LABELS[phase] ?? phase
-}

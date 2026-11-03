@@ -9,21 +9,14 @@ import { readFileSync } from "node:fs"
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8")
 
 const leftDock = read("../src/renderer/mafw/components/LeftDock.tsx")
-const managerCard = read("../src/renderer/mafw/components/ManagerCard.tsx")
+const css = read("../src/renderer/mafw/mafw.css")
 const welcome = read("../src/renderer/mafw/components/WelcomeHome.tsx")
 const chatPane = read("../src/renderer/mafw/components/ChatPane.tsx")
 
-test("LeftDock 的 Lead 入口是固定的：隐藏会话不在列表里也照样渲染", () => {
-  // 固定入口 = ManagerCard（kv managerSessionId 兜底，不依赖 session-tree 的 manager 行）
-  assert.match(leftDock, /<ManagerCard/)
-  assert.match(leftDock, /managerSessionId=\{managerRow\(\)\?\.id \?\? props\.managerSessionId \?\? null\}/)
-})
-
-test("Lead 入口的实际文案由 ManagerCard 渲染（工厂名不影响用户可见文案）", () => {
-  // 组件文件名保留历史名（kv/API 兼容），但渲染的必须是 Lead
-  assert.match(managerCard, /<span class="mafw-manager-row-name">Lead<\/span>/)
-  assert.match(managerCard, /onSelectSession\(props\.managerSessionId, "Lead", true, \{ mafw: \{ role: "lead" \} \}\)/)
-  assert.doesNotMatch(managerCard, />Manager</)
+test("工作 rail 不再渲染固定 Lead/Manager 入口", () => {
+  assert.doesNotMatch(leftDock, /<ManagerCard/)
+  assert.doesNotMatch(leftDock, /mafw-manager-row/)
+  assert.doesNotMatch(css, /\.mafw-manager-row/)
 })
 
 test("WelcomeHome 的协调入口用 Lead 文案", () => {

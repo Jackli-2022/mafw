@@ -2429,7 +2429,6 @@ export function MafwShell() {
             onClose={closeLeftDock}
             onResize={applyLeftDockWidth}
             activeSessionId={activeSessionId()}
-            managerSessionId={leadIdFor(currentProject())}
             projectsRev={projectsRev}
             onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
             onSelectSession={openSessionTab}

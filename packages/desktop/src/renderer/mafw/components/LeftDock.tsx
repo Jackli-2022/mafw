@@ -15,7 +15,6 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { ResizeHandle } from "@mafw/ui/resize-handle"
-import { ManagerCard } from "./ManagerCard"
 import { NotesDock } from "./NotesDock"
 import { PodRailFace } from "./PodRailFace"
 import type { PodDetail, PodMessage } from "@mafw/sdk"
@@ -55,7 +54,6 @@ type Props = {
   onClose: () => void
   onResize: (w: number) => void
   activeSessionId: string | null
-  managerSessionId?: string | null
   projectsRev?: () => number
   onNewSession: () => void
   onSelectSession: (id: string, title?: string, manager?: boolean, metadata?: { mafw?: { role?: string } }) => void
@@ -180,7 +178,6 @@ export function LeftDock(props: Props) {
   const totalCount = createMemo(() => (projectNode()?.groups ?? []).reduce((n, g) => n + g.items.length, 0))
   const searchTruncated = createMemo(() => searching() && flatResults().length > SEARCH_CAP)
   const offline = createMemo(() => (projectID() ? sessionStore.isOffline(projectID()) : false) || connPhase() === "down")
-  const managerRow = createMemo<SessionNode | null>(() => projectNode()?.manager ?? null)
 
   const onSearchKeyDown = (e: KeyboardEvent) => {
     const list = flatResults().slice(0, SEARCH_CAP)
@@ -188,7 +185,7 @@ export function LeftDock(props: Props) {
     else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
     else if (e.key === "Enter") {
       const s = list[hi()]
-      if (s) { props.onSelectSession(s.id, s.title, s.manager); setQuery(""); setHi(-1) }
+      if (s) { props.onSelectSession(s.id, s.title); setQuery(""); setHi(-1) }
     } else if (e.key === "Escape") { setQuery(""); setHi(-1) }
   }
 
@@ -424,17 +421,6 @@ export function LeftDock(props: Props) {
             autofocus
           />
         </div>
-      </Show>
-
-      <Show when={props.face === "sessions"}>
-        {/* 固定的 Lead 入口：Lead 是隐藏会话（不在 /api/sessions 里），不能只靠会话
-            列表渲染；kv 的 managerSessionId（展示名 Lead）是它的唯一权威来源。 */}
-        <ManagerCard
-          managerSessionId={managerRow()?.id ?? props.managerSessionId ?? null}
-          managerUpdatedAt={managerRow()?.updated}
-          online={gwReady()}
-          onSelectSession={props.onSelectSession}
-        />
       </Show>
 
       <Show when={connPhase() === "down"}><ConnBanner /></Show>

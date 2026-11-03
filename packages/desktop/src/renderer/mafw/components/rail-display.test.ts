@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { formatRailTitle, railProjectName, managerPhaseLabel } from "./rail-display"
+import { formatRailTitle, railProjectName } from "./rail-display"
 
 test("formatRailTitle：ISO 兜底 → 未命名 · 日期段", () => {
   assert.equal(formatRailTitle("New session - 2026-10-13T06:28:19.923Z"), "未命名 · 10月13日")
@@ -28,12 +28,4 @@ test("railProjectName：basename；退化名按 isCurrent 分流", () => {
   assert.equal(railProjectName("C:\\work\\look\\", true), "当前项目")
 })
 
-test("managerPhaseLabel：四映射 + 空闲 + 英文回退", () => {
-  assert.equal(managerPhaseLabel("PLANNING"), "规划中")
-  assert.equal(managerPhaseLabel("EXECUTING"), "执行中")
-  assert.equal(managerPhaseLabel("REVIEWING"), "审阅中")
-  assert.equal(managerPhaseLabel("ASKING_USER"), "待提问")
-  assert.equal(managerPhaseLabel(null), "空闲")
-  assert.equal(managerPhaseLabel(undefined), "空闲")
-  assert.equal(managerPhaseLabel("SOMETHING_ELSE"), "SOMETHING_ELSE")
-})
+

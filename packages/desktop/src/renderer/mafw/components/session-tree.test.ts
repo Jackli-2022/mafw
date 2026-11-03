@@ -27,13 +27,13 @@ describe("buildSessionTree", () => {
     expect(tree[0].current).toBe(false)
   })
 
-  test("manager 会话置顶并从日期组移除", () => {
+  test("历史 manager 会话回到普通日期分组，不再置顶为当前 Lead", () => {
     const tree = buildSessionTree(projects, {
       [P1]: [sess("a", NOW - 3600_000), sess("m", NOW, "manager")],
     }, P1, NOW)
-    const p1 = tree[0]
-    expect(p1.manager?.id).toBe("m")
-    expect(p1.groups.flatMap(g => g.items).map(i => i.id)).toEqual(["a"])
+    const p1 = tree[0] as any
+    expect(p1.manager).toBeUndefined()
+    expect(p1.groups.flatMap(g => g.items).map(i => i.id)).toEqual(["m", "a"])
   })
 
   test("日期分组：今天/昨天/过去 7 天/按月", () => {
@@ -58,7 +58,7 @@ describe("buildSessionTree", () => {
   test("未加载项目（sessionsByProject 缺键）给空组", () => {
     const tree = buildSessionTree(projects, {}, P1, NOW)
     expect(tree[1].groups).toEqual([])
-    expect(tree[1].manager).toBeNull()
+    expect((tree[1] as any).manager).toBeUndefined()
   })
 })
 

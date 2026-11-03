@@ -10,7 +10,6 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8"
 
 const workspace = read("../src/renderer/mafw/workspace/session-workspace.ts")
 const chatPane = read("../src/renderer/mafw/components/ChatPane.tsx")
-const managerCard = read("../src/renderer/mafw/components/ManagerCard.tsx")
 const shell = read("../src/renderer/mafw/MafwShell.tsx")
 const welcome = read("../src/renderer/mafw/components/WelcomeHome.tsx")
 const agentPicker = read("../src/renderer/mafw/components/pickers/AgentPicker.tsx")
@@ -26,13 +25,6 @@ test("ChatPane 的协调会话判定接受 lead，并继续锁住 agent 切换",
   // 旧判定 `=== "manager"` 会把 Lead 会话当成普通会话（新话题按钮消失、plan/build 锁失效）
   assert.doesNotMatch(chatPane, /workspace\.sessionRole\([^)]*\) === "manager"/)
   assert.match(chatPane, /lockedLead=\{isLead\(\)\}/)
-})
-
-test("ManagerCard 打开协调会话时带上 Lead 角色与 Lead 文案", () => {
-  assert.match(managerCard, /onSelectSession: \(id: string, title: string, manager: boolean, metadata\?:/)
-  assert.match(managerCard, /onSelectSession\(props\.managerSessionId, "Lead", true, \{ mafw: \{ role: "lead" \} \}\)/)
-  assert.match(managerCard, />Lead</)
-  assert.doesNotMatch(managerCard, />Manager</)
 })
 
 test("MafwShell 用 kv 权威 id 兜底解析隐藏的 Lead，并把 metadata 传进 tab", () => {
@@ -66,6 +58,6 @@ test("AgentPicker 的锁定过滤同时认 lead 与历史 manager（manager 已�
   assert.match(agentPicker, /Lead 会话仅使用 Lead agent/)
 })
 
-test("LeftDock 的会话打开回调透传 metadata（ManagerCard → openSessionTab）", () => {
+test("LeftDock 的会话打开回调透传 metadata（Pod/tab restore → openSessionTab）", () => {
   assert.match(leftDock, /onSelectSession: \(id: string, title\?: string, manager\?: boolean, metadata\?:/)
 })
