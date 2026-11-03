@@ -2909,6 +2909,29 @@
         }
       }
     },
+    "/api/pods/{podId}/lead/ensure": {
+      "post": {
+        "operationId": "pods.lead.ensure",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/pods/{podId}/tasks": {
       "get": {
         "operationId": "pods.tasks.list",

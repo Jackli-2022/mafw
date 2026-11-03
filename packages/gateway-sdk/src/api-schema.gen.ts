@@ -2364,6 +2364,22 @@ export interface paths {
         patch: operations["pods.update"];
         trace?: never;
     };
+    "/api/pods/{podId}/lead/ensure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.lead.ensure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pods/{podId}/tasks": {
         parameters: {
             query?: never;
@@ -6889,6 +6905,26 @@ export interface operations {
         };
     };
     "pods.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.lead.ensure": {
         parameters: {
             query?: never;
             header?: never;

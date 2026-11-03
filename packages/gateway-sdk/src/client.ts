@@ -13,7 +13,7 @@ import {
   MafwBackgroundOutput, BackgroundNamespace,
   TerminalNamespace, TerminalSessionList, TerminalConnectTicket, TerminalSessionCreateInput,
   PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus, PodDeliveryState,
-  PodCreateGoalInput, PodCreateGoalResult, PodGoalResult,
+  PodCreateGoalInput, PodCreateGoalResult, PodLeadEnsureResult, PodGoalResult,
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
   PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
@@ -1193,6 +1193,11 @@ export class MafwClient implements IMafwClient {
       this.request<PodDetail>(`/api/pods/${encodeURIComponent(podID)}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
+      }),
+
+    ensureLead: async (podID: string): Promise<PodLeadEnsureResult> =>
+      this.request<PodLeadEnsureResult>(`/api/pods/${encodeURIComponent(podID)}/lead/ensure`, {
+        method: 'POST',
       }),
 
     createGoal: async (podID: string, body: PodCreateGoalInput): Promise<PodCreateGoalResult> =>

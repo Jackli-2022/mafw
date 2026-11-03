@@ -231,6 +231,7 @@ export function createMafwApi(): MafwAPI {
       create: (projectID) => invoke("pod", "create", projectID),
       get: (podID) => invoke("pod", "get", podID),
       update: (podID, body) => invoke("pod", "update", podID, body),
+      ensureLead: (podID) => invoke("pod", "ensureLead", podID),
       createGoal: (podID, body) => invoke("pod", "createGoal", podID, body),
       result: (podID, goalID) => invoke("pod", "result", podID, goalID),
       cancelGoal: (podID, goalID) => invoke("pod", "cancelGoal", podID, goalID),

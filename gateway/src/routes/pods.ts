@@ -13,7 +13,7 @@ import type { PodEnqueueResult } from '../core/pod/pod-goal-service';
 import type { PodAttentionItem, PodGoalView } from '../core/pod/pod-view';
 
 export interface PodRouteDeps {
-  pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus' | 'lookup'>;
+  pods: Pick<PodService, 'ensure' | 'get' | 'updateStatus' | 'lookup' | 'ensureLead'>;
   tasks: Pick<PodTaskService, 'list' | 'createManual' | 'updateTask' | 'editTitle' | 'editPlanTask' | 'addPlanTask' | 'deleteTask'>;
   messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
   goals: Pick<PodGoalService, 'list' | 'promote'> & Partial<Pick<
@@ -60,6 +60,14 @@ export async function handlePods(
       const member = readMember(deps, url, detail.pod.id);
       const view = enrichPodDetail(deps, detail);
       sendJson(res, 200, member && member.role !== 'lead' ? { ...view, sessions: [] } : view);
+      return true;
+    }
+
+    const leadEnsure = pathname.match(/^\/api\/pods\/([^/]+)\/lead\/ensure$/);
+    if (leadEnsure) {
+      if (method !== 'POST') return false;
+      const result = await deps.pods.ensureLead(decode(leadEnsure[1]));
+      sendJson(res, 200, result);
       return true;
     }
 

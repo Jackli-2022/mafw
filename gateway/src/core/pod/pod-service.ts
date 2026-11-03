@@ -156,6 +156,14 @@ export class PodService {
     this.emit(podId, 'member');
   }
 
+  async ensureLead(podId: string): Promise<{ podId: string; projectDir: string; sessionId: string }> {
+    const pod = this.deps.store.getPod(podId);
+    if (!pod) throw new PodError(404, `pod not found: ${podId}`);
+    const sessionId = await this.deps.getManagerSession(pod.projectDir);
+    await this.bindLead(pod.id, sessionId);
+    return { podId: pod.id, projectDir: pod.projectDir, sessionId };
+  }
+
   bindSession(goalId: string, node: PodNode, sessionId: string): PodSessionRow | null {
     const podId = this.deps.store.findPodIdByGoal(goalId);
     if (!podId) return null;

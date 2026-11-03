@@ -1254,6 +1254,21 @@ test("pod.ensure sends GET /api/projects/:projectId/pod", async () => {
   expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/projects/p1/pod", expect.anything())
 })
 
+test("pod.ensureLead sends POST /api/pods/:podId/lead/ensure", async () => {
+  fetchMock.mockResolvedValue(okJson({
+    podId: "pod_1",
+    projectDir: "/project",
+    sessionId: "ses_lead",
+  }))
+  const c = new MafwClient("http://gw:3000")
+  const out = await c.pod.ensureLead("pod 1")
+  expect(out.sessionId).toBe("ses_lead")
+  expect(fetchMock).toHaveBeenCalledWith(
+    "http://gw:3000/api/pods/pod%201/lead/ensure",
+    expect.objectContaining({ method: "POST" }),
+  )
+})
+
 test("pod.sendMessage forwards notify and returns the delivery state", async () => {
   fetchMock.mockResolvedValue(okJson({ message: { id: "m1" }, delivery: "delivered" }))
   const c = new MafwClient("http://gw:3000")

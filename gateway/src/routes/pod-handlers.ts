@@ -22,6 +22,7 @@ export function attachPodHandlers(
   const operationIds = [
     'pods.ensure',
     'pods.lookup',
+    'pods.lead.ensure',
     'pods.create',
     'pods.get',
     'pods.update',

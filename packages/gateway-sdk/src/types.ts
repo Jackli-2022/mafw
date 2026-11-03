@@ -1499,12 +1499,19 @@ export interface PodRejectResult {
 }
 
 
+export interface PodLeadEnsureResult {
+  podId: string
+  projectDir: string
+  sessionId: string
+}
+
 export interface PodNamespace {
   ensure(projectID: string): Promise<PodDetail>
   lookup(projectID: string): Promise<PodDetail>
   create(projectID: string): Promise<PodDetail>
   get(podID: string): Promise<PodDetail>
   update(podID: string, body: { status: PodStatus }): Promise<PodDetail>
+  ensureLead(podID: string): Promise<PodLeadEnsureResult>
   createGoal(podID: string, body: PodCreateGoalInput): Promise<PodCreateGoalResult>
   result(podID: string, goalID: string): Promise<PodGoalResult>
   cancelGoal(podID: string, goalID: string): Promise<{ goal: PodGoal }>
