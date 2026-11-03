@@ -20,18 +20,30 @@ import {
   revisionStatePathFor,
   writeGoalState,
 } from '../../../src/core/goal/state-v3';
+import {
+  createGoalAssignment,
+  goalAssignmentFilePath,
+  writeGoalAssignment,
+} from '../../../src/core/goal/assignment';
 
 const NOW = '2026-11-02T00:00:00.000Z';
 const LATER = '2026-11-02T00:15:00.000Z';
 
 type EmittedEvent = { type: string; properties: Record<string, unknown> };
 
-function goalResult(verdict: 'PASS' | 'FAIL' | null, revision = 1, goalId = 'g1'): PodGoalResult {
+function goalResult(
+  verdict: 'PASS' | 'FAIL' | null,
+  revision = 1,
+  goalId = 'g1',
+  patch: Partial<PodGoalResult> = {},
+): PodGoalResult {
   return {
     goalId,
     revision,
     verdict,
     resultReady: verdict !== null,
+    reviewed: verdict === 'PASS',
+    assessment: verdict === 'PASS' ? 'reviewed' : null,
     goalAcceptance: ['the goal works'],
     goalConditions: [],
     goalResults: [],
@@ -41,6 +53,7 @@ function goalResult(verdict: 'PASS' | 'FAIL' | null, revision = 1, goalId = 'g1'
     reviewFeedback: verdict === 'PASS' ? 'all conditions met' : '',
     receipt: null,
     artifacts: [],
+    ...patch,
   };
 }
 
@@ -296,6 +309,68 @@ describe('PodGoal result notification and reject', () => {
       optionId: null,
     });
     expect(store.getGoalRevision('pod_1', 'g1', 2)?.directionStatus).toBe('none');
+  });
+
+  test('a quick UNREVIEWED result can be rejected without rewriting old evidence', async () => {
+    seedGoal({ status: 'done', verdict: null });
+    seedRevision(1, 'completed', { verdict: null, endedAt: NOW });
+    ensureGoalState(mafwDir, 'g1', { projectDir: '/proj/a', maxRounds: 3 });
+    const assignment = createGoalAssignment({
+      goalId: 'g1',
+      revision: 1,
+      role: 'builder',
+      strategy: 'quick',
+      taskIds: ['w1-t1'],
+      acceptance: { 'w1-t1': ['works'] },
+      contextRefs: ['/proj/a/.mafw/waves.json'],
+      artifacts: { receipt: '/proj/a/.mafw/receipts/g1/loop-1-receipt.json' },
+      instructions: 'fix it',
+      sessionId: 'ses_builder',
+      startedAt: NOW,
+    });
+    const files = writeGoalAssignment({ mafwDir, assignment, fullPrompt: 'frozen prompt' });
+    writeGoalState(mafwDir, 'g1', {
+      nextAction: 'COMPLETED',
+      phase: 'ARCHIVED',
+      reviewVerdict: null,
+      strategy: 'quick',
+      assessment: 'unreviewed',
+      quickRepairCount: 1,
+      currentAssignmentId: assignment.assignmentId,
+    });
+    const oldStatePath = revisionStatePathFor(mafwDir, 'g1', 1);
+    result = goalResult(null, 1, 'g1', {
+      resultReady: true,
+      reviewed: false,
+      assessment: 'unreviewed',
+    });
+
+    const rejected = await service.rejectResult('pod_1', 'g1', '这个修法不对，交给 Tech Lead 重做');
+
+    expect(rejected).toMatchObject({ revision: 2, status: 'discussing', sessionID: 'sess_tl' });
+    const oldSnapshot = JSON.parse(fs.readFileSync(oldStatePath, 'utf-8'));
+    expect(oldSnapshot).toMatchObject({
+      strategy: 'quick',
+      assessment: 'unreviewed',
+      currentAssignmentId: assignment.assignmentId,
+    });
+    expect(fs.readFileSync(files.promptPath, 'utf-8')).toBe('frozen prompt');
+    expect(goalAssignmentFilePath(mafwDir, 'g1', 1, assignment.assignmentId)).toBe(files.jsonPath);
+    const fresh = loadGoalState(mafwDir, 'g1')!;
+    expect(fresh.revision).toBe(2);
+    expect(fresh.strategy).toBeUndefined();
+    expect(fresh.assessment).toBeUndefined();
+    expect(fresh.quickRepairCount).toBeUndefined();
+    expect(fresh.currentAssignmentId).toBeUndefined();
+    expect(store.getGoalRevision('pod_1', 'g1', 1)).toMatchObject({
+      status: 'completed',
+      verdict: null,
+      endedAt: NOW,
+    });
+
+    result = null;
+    await expect(service.rejectResult('pod_1', 'g1', '重放')).rejects.toMatchObject({ status: 409 });
+    expect(store.listGoalRevisions('pod_1', 'g1').map((row) => row.revision)).toEqual([1, 2]);
   });
 
   test('rejectResult finishes an in-flight revision with the result evidence first', async () => {
