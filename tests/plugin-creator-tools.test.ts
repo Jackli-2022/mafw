@@ -11,9 +11,16 @@
  * write must go through the host's native `ask` unless the session is
  * `full-access`, and "cannot ask" must fail closed instead of mutating.
  */
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
 import { PLUGIN_UI_LIMITS } from '@mafw/plugin-contract';
 
 import { pluginInspectTool } from '../src/tools/plugin-inspect';
+import { fingerprintDraft } from '../src/tools/plugin-draft';
+import { runDraftTests } from '../src/tools/plugin-test-runner';
+import { pluginManagerTool } from '../src/tools/plugin-manager';
 import { PLUGIN_PUBLIC_CONTRACT } from '../src/tools/plugin-public-contract';
 import {
   CREATOR_PERMISSION,
@@ -525,4 +532,724 @@ test('pluginGatewayPost sends a JSON body and returns the parsed response', asyn
   expect(calls[0].init.method).toBe('POST');
   expect(calls[0].init.headers['Content-Type']).toBe('application/json');
   expect(calls[0].init.body).toBe('{"path":"/tmp/acme"}');
+});
+
+// =====================================================================
+// Creator plugin manager (Task 4)
+// =====================================================================
+
+const tempProjects: string[] = [];
+
+function makeProject(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-creator-'));
+  tempProjects.push(dir);
+  return dir;
+}
+
+interface DraftFixture {
+  project: string;
+  dir: string;
+  indexPath: string;
+}
+
+/** Writes a minimal project-local draft package under `.mafw/plugin-drafts`. */
+function writeDraft(
+  project: string,
+  name: string,
+  opts: { manifestName?: string; tests?: 'pass' | 'fail' } = {},
+): DraftFixture {
+  const dir = path.join(project, '.mafw', 'plugin-drafts', name);
+  fs.mkdirSync(dir, { recursive: true });
+  const indexPath = path.join(dir, 'index.js');
+  fs.writeFileSync(indexPath, `module.exports = { name: ${JSON.stringify(name)} };\n`);
+  fs.writeFileSync(
+    path.join(dir, 'plugin.json'),
+    JSON.stringify({ name: opts.manifestName ?? name, version: '1.0.0' }),
+  );
+  if (opts.tests) {
+    const body = opts.tests === 'pass'
+      ? "test('ok', () => assert.ok(true));\n"
+      : "test('bad', () => assert.equal(1, 2));\n";
+    fs.writeFileSync(
+      path.join(dir, 'draft.test.js'),
+      `const test = require('node:test');\nconst assert = require('node:assert');\n${body}`,
+    );
+  }
+  return { project, dir, indexPath };
+}
+
+function managerCtx(project: string, ask?: (input: any) => Promise<void>): PluginToolContext {
+  return { sessionID: 'ses_creator', directory: project, ...(ask ? { ask } : {}) };
+}
+
+/** Native ask double that approves; typed so `mock.calls[0][0]` is an approval. */
+function approvingAsk() {
+  return jest.fn(async (_input: { permission: string; patterns: string[]; always: string[] }) => undefined);
+}
+
+function defaultInventory(): any {
+  return {
+    plugins: [],
+    packages: [
+      {
+        name: 'acme',
+        version: '1.0.0',
+        status: 'ok',
+        enabled: true,
+        contributions: ['ui'],
+        revision: 'boot:7',
+        source: '/host/plugins/acme',
+        fingerprint: 'deadbeef',
+      },
+      { name: 'other', version: '2.0.0', status: 'ok', enabled: true, contributions: [], revision: 'boot:7' },
+    ],
+    revision: 'boot:7',
+  };
+}
+
+function defaultClientSnapshot(): any {
+  return {
+    revision: 'boot:7',
+    plugins: [{
+      name: 'acme',
+      version: '1.0.0',
+      revision: 'boot:7',
+      title: 'Acme',
+      ui: {
+        panels: [{ id: 'acme.panel', title: 'Acme', viewAction: 'view', secret: 'drop' }],
+        toolCards: [],
+        configPages: [],
+        messageWindows: [],
+      },
+      actions: [{ name: 'view', title: 'View', inputSchema: { type: 'object' }, handler: () => 1 }],
+      events: [{ type: 'plugin:acme:ping', scope: 'session' }],
+      diagnostics: [],
+      // Host-private fields the projection must drop.
+      runtimeName: 'opencode',
+      source: '/host/plugins/acme',
+    }],
+  };
+}
+
+interface GatewayCall {
+  url: string;
+  path: string;
+  method: string;
+  body: any;
+}
+
+interface ManagerGatewayRoutes {
+  mode?: string;
+  inventory?: unknown;
+  client?: unknown;
+  check?: unknown;
+  install?: unknown;
+  enable?: unknown;
+  disable?: unknown;
+  remove?: unknown;
+  reload?: unknown;
+}
+
+/** Serves the manager's gateway surface; records every call. */
+function mockManagerGateway(routes: ManagerGatewayRoutes = {}): { calls: GatewayCall[] } {
+  const calls: GatewayCall[] = [];
+  global.fetch = jest.fn(async (url: any, init: any) => {
+    const target = String(url);
+    const parsed = new URL(target);
+    const body = init?.body ? JSON.parse(init.body) : undefined;
+    calls.push({ url: target, path: parsed.pathname, method: init?.method ?? 'GET', body });
+    if (parsed.pathname.endsWith('/config')) return jsonResponse({ mode: routes.mode ?? 'read-only' });
+    if (parsed.pathname === '/api/plugins/client') {
+      return jsonResponse(routes.client ?? defaultClientSnapshot());
+    }
+    if (parsed.pathname === '/api/plugins') return jsonResponse(routes.inventory ?? defaultInventory());
+    if (parsed.pathname === '/api/plugins/check') {
+      return jsonResponse(routes.check ?? { ok: true, name: 'acme', version: '1.0.0', contributions: ['ui'] });
+    }
+    if (parsed.pathname === '/api/plugins/packages/install') {
+      return jsonResponse(routes.install ?? {
+        name: 'acme', version: '1.0.0', saved: true, application: 'applied', activeRevision: 'boot:8',
+      });
+    }
+    if (parsed.pathname === '/api/plugins/enable') {
+      return jsonResponse(routes.enable ?? {
+        name: 'acme', saved: true, enabled: true, application: 'applied', activeRevision: 'boot:8',
+      });
+    }
+    if (parsed.pathname === '/api/plugins/disable') {
+      return jsonResponse(routes.disable ?? {
+        name: 'acme', saved: true, enabled: false, application: 'applied', activeRevision: 'boot:8',
+      });
+    }
+    if (parsed.pathname === '/api/plugins/delete') {
+      return jsonResponse(routes.remove ?? {
+        name: 'acme', saved: true, enabled: false, application: 'applied', activeRevision: 'boot:8',
+      });
+    }
+    if (parsed.pathname === '/api/plugins/acme/reload') {
+      return jsonResponse(routes.reload ?? {
+        name: 'acme', saved: true, enabled: true, application: 'applied', activeRevision: 'boot:8',
+      });
+    }
+    return jsonResponse({ error: `unexpected ${parsed.pathname}` }, 404);
+  }) as any;
+  return { calls };
+}
+
+/** Minimal ChildProcess double: emits data/close asynchronously, or hangs. */
+function fakeChild(options: { chunks?: string[]; hang?: boolean; code?: number | null } = {}) {
+  const handlers: Record<string, Array<(...args: any[]) => void>> = {};
+  const add = (event: string, cb: (...args: any[]) => void) => {
+    (handlers[event] ??= []).push(cb);
+  };
+  const child: any = {
+    pid: 4242,
+    stdout: { on: (event: string, cb: any) => add(`stdout:${event}`, cb) },
+    stderr: { on: (event: string, cb: any) => add(`stderr:${event}`, cb) },
+    on: (event: string, cb: any) => { add(event, cb); return child; },
+    kill: jest.fn(() => true),
+  };
+  const emit = (event: string, ...args: any[]) => {
+    for (const cb of handlers[event] ?? []) cb(...args);
+  };
+  if (!options.hang) {
+    setTimeout(() => {
+      for (const chunk of options.chunks ?? []) {
+        emit('stdout:data', Buffer.from(chunk));
+        emit('stderr:data', Buffer.from(chunk));
+      }
+      emit('close', options.code === undefined ? 0 : options.code, null);
+    }, 0);
+  }
+  return child;
+}
+
+afterEach(() => {
+  while (tempProjects.length > 0) {
+    const dir = tempProjects.pop()!;
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+});
+
+// -------------------------------------------------------------- read-only
+
+test('read-only operations never ask and read only the inventory endpoints', async () => {
+  const project = makeProject();
+  const { calls } = mockManagerGateway();
+  const ask = jest.fn();
+  const toolCtx = managerCtx(project, ask);
+
+  for (const args of [
+    { operation: 'list' as const },
+    { operation: 'status' as const, packageName: 'acme' },
+    { operation: 'descriptor' as const, packageName: 'acme' },
+  ]) {
+    const result: any = await pluginManagerTool.execute(args, toolCtx);
+    expect(result.isError).not.toBe(true);
+  }
+
+  expect(ask).not.toHaveBeenCalled();
+  expect(calls.map((call) => call.path)).toEqual([
+    '/api/plugins', '/api/plugins', '/api/plugins/client',
+  ]);
+});
+
+test('list and status filter the exact package from the inventory', async () => {
+  const project = makeProject();
+  mockManagerGateway();
+  const toolCtx = managerCtx(project);
+
+  const list = parse(await pluginManagerTool.execute({ operation: 'list' }, toolCtx));
+  expect(list.packages.map((pkg: any) => pkg.name)).toEqual(['acme', 'other']);
+  // Host-private inventory fields stay out of the model context.
+  expect(list.packages[0].source).toBeUndefined();
+  expect(list.packages[0].fingerprint).toBeUndefined();
+  expect(list.packages[0]).toMatchObject({ activeRevision: 'boot:7', enabled: true, status: 'ok' });
+
+  const filtered = parse(await pluginManagerTool.execute(
+    { operation: 'list', packageName: 'acme' }, toolCtx,
+  ));
+  expect(filtered.packages).toHaveLength(1);
+
+  const status = parse(await pluginManagerTool.execute(
+    { operation: 'status', packageName: 'acme' }, toolCtx,
+  ));
+  expect(status.package).toMatchObject({ name: 'acme', activeRevision: 'boot:7' });
+
+  const missing: any = await pluginManagerTool.execute(
+    { operation: 'status', packageName: 'ghost' }, toolCtx,
+  );
+  expect(missing.isError).toBe(true);
+  expect(missing.output).toContain('ghost');
+});
+
+test('descriptor filters the exact package and drops host-private fields', async () => {
+  const project = makeProject();
+  mockManagerGateway();
+  const toolCtx = managerCtx(project);
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'descriptor', packageName: 'acme' }, toolCtx,
+  );
+  const body = parse(result);
+  expect(body.revision).toBe('boot:7');
+  expect(body.package.name).toBe('acme');
+  expect(body.package.ui.panels).toEqual(['acme.panel']);
+  expect(body.package.actions).toEqual(['view']);
+  expect(body.package.events).toEqual(['plugin:acme:ping']);
+  expect(result.output).not.toContain('runtimeName');
+  expect(result.output).not.toContain('handler');
+
+  const missing: any = await pluginManagerTool.execute(
+    { operation: 'descriptor', packageName: 'ghost' }, toolCtx,
+  );
+  expect(missing.isError).toBe(true);
+  expect(missing.output).toContain('ghost');
+});
+
+// ----------------------------------------------------------- draft safety
+
+test('draft traversal is rejected before approval or HTTP', async () => {
+  const project = makeProject();
+  const fetchMock = jest.fn();
+  global.fetch = fetchMock as any;
+  const ask = jest.fn();
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'check', draft: '../outside' }, managerCtx(project, ask),
+  );
+
+  expect(result.isError).toBe(true);
+  expect(result.output).toContain('invalid draft');
+  expect(ask).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('absolute, separator and reserved draft names are rejected before approval', async () => {
+  const project = makeProject();
+  const fetchMock = jest.fn();
+  global.fetch = fetchMock as any;
+  const ask = jest.fn();
+
+  for (const draft of ['C:\\outside', '/etc/acme', 'a/b', '..', '.logs']) {
+    const result: any = await pluginManagerTool.execute(
+      { operation: 'check', draft }, managerCtx(project, ask),
+    );
+    expect([draft, result.isError]).toEqual([draft, true]);
+    expect(result.output).toContain('invalid draft');
+  }
+
+  expect(ask).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('a symlinked draft that escapes the draft root is rejected before approval', async () => {
+  const project = makeProject();
+  const outside = makeProject();
+  fs.mkdirSync(path.join(project, '.mafw', 'plugin-drafts'), { recursive: true });
+  fs.writeFileSync(path.join(outside, 'plugin.json'), JSON.stringify({ name: 'escape' }));
+  fs.symlinkSync(
+    outside,
+    path.join(project, '.mafw', 'plugin-drafts', 'escape'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+
+  const fetchMock = jest.fn();
+  global.fetch = fetchMock as any;
+  const ask = jest.fn();
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'check', draft: 'escape' }, managerCtx(project, ask),
+  );
+
+  expect(result.isError).toBe(true);
+  expect(result.output).toContain('invalid draft');
+  expect(ask).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('a missing draft returns an actionable error', async () => {
+  const project = makeProject();
+  const fetchMock = jest.fn();
+  global.fetch = fetchMock as any;
+  const ask = jest.fn();
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'install', draft: 'ghost' }, managerCtx(project, ask),
+  );
+
+  expect(result.isError).toBe(true);
+  expect(result.output).toContain('draft not found');
+  expect(result.output).toContain('ghost');
+  expect(ask).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('plugin.json name must equal the draft directory', async () => {
+  const project = makeProject();
+  writeDraft(project, 'acme', { manifestName: 'other' });
+  const fetchMock = jest.fn();
+  global.fetch = fetchMock as any;
+  const ask = jest.fn();
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'check', draft: 'acme' }, managerCtx(project, ask),
+  );
+
+  expect(result.isError).toBe(true);
+  expect(result.output).toContain('plugin.json name must equal draft directory');
+  expect(ask).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('changed content between approval and execution aborts the install', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  const { calls } = mockManagerGateway();
+  const ask = jest.fn(async () => {
+    await fs.promises.appendFile(draft.indexPath, '\n// changed\n');
+  });
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'install', draft: 'acme' }, managerCtx(project, ask),
+  );
+
+  expect(result.isError).toBe(true);
+  expect(result.output).toContain('draft changed during approval');
+  expect(calls.filter((call) => call.path === '/api/plugins/packages/install')).toEqual([]);
+});
+
+// -------------------------------------------------------------- approval
+
+test('install asks with package fingerprint and uses the draft path', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  const { calls } = mockManagerGateway();
+  const ask = approvingAsk();
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'install', draft: 'acme', overwrite: true, requestId: 'req-1' },
+    managerCtx(project, ask),
+  );
+
+  expect(ask.mock.calls[0][0].patterns[0]).toMatch(/^install acme draft=acme overwrite=true fp=/);
+  expect(ask.mock.calls[0][0].always).toEqual([]);
+  expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringContaining('/api/plugins/packages/install'),
+    expect.objectContaining({ method: 'POST' }),
+  );
+  expect(result.isError).not.toBe(true);
+
+  const install = calls.find((call) => call.path === '/api/plugins/packages/install')!;
+  expect(install.body).toEqual({
+    path: fs.realpathSync(draft.dir),
+    overwrite: true,
+    requestId: 'req-1',
+  });
+  expect(result.metadata).toMatchObject({
+    operation: 'install',
+    packageName: 'acme',
+    application: 'applied',
+    revision: 'boot:8',
+  });
+  expect(typeof parse(result).nextStep).toBe('string');
+});
+
+test('a pending install reports the user-only applyPending next step', async () => {
+  const project = makeProject();
+  writeDraft(project, 'acme');
+  mockManagerGateway({
+    install: {
+      name: 'acme', saved: true, application: 'pending', activeRevision: 'boot:7', pendingRevision: 'boot:8',
+    },
+  });
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'install', draft: 'acme' }, managerCtx(project, approvingAsk()),
+  );
+
+  expect(result.isError).not.toBe(true);
+  const body = parse(result);
+  expect(body.application).toBe('pending');
+  expect(body.nextStep).toContain('applyPending');
+  expect(result.metadata).toMatchObject({
+    operation: 'install',
+    application: 'pending',
+    revision: 'boot:7',
+    pendingRevision: 'boot:8',
+  });
+});
+
+test('each code-execution and mutation operation asks exactly once', async () => {
+  const project = makeProject();
+  writeDraft(project, 'acme', { tests: 'pass' });
+
+  for (const operation of ['check', 'test', 'install', 'enable', 'disable', 'remove', 'reload'] as const) {
+    mockManagerGateway();
+    const ask = approvingAsk();
+    const args: any = ['enable', 'disable', 'remove', 'reload'].includes(operation)
+      ? { operation, packageName: 'acme' }
+      : { operation, draft: 'acme' };
+
+    const result: any = await pluginManagerTool.execute(args, managerCtx(project, ask));
+
+    expect([operation, result.isError ?? false]).toEqual([operation, false]);
+    expect([operation, ask.mock.calls.length]).toEqual([operation, 1]);
+    if (['enable', 'disable', 'remove', 'reload'].includes(operation)) {
+      expect(ask.mock.calls[0][0]).toEqual({
+        permission: 'mafw_plugin_manager',
+        patterns: [`${operation} acme`],
+        always: [],
+      });
+    }
+  }
+});
+
+test('a denied approval makes no operation HTTP call', async () => {
+  const project = makeProject();
+  writeDraft(project, 'acme');
+  const { calls } = mockManagerGateway();
+  const ask = jest.fn(async (_input: any) => { throw new Error('rejected by user'); });
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'install', draft: 'acme' }, managerCtx(project, ask),
+  );
+
+  expect(result.isError).toBe(true);
+  expect(result.output).toContain('rejected by user');
+  // The only request is the live session-mode lookup that preceded the prompt.
+  expect(calls.filter((call) => !call.path.endsWith('/config'))).toEqual([]);
+});
+
+test('applyPending is rejected and never executed', async () => {
+  const project = makeProject();
+  writeDraft(project, 'acme');
+  const fetchMock = jest.fn();
+  global.fetch = fetchMock as any;
+  const ask = jest.fn();
+
+  const direct: any = await pluginManagerTool.execute(
+    { operation: 'applyPending', draft: 'acme' } as any, managerCtx(project, ask),
+  );
+  expect(direct.isError).toBe(true);
+  expect(direct.output).toContain('applyPending');
+  expect(direct.output).toContain('Plugins');
+
+  const smuggled: any = await pluginManagerTool.execute(
+    { operation: 'install', draft: 'acme', applyPending: true } as any, managerCtx(project, ask),
+  );
+  expect(smuggled.isError).toBe(true);
+  expect(smuggled.output).toContain('applyPending');
+
+  expect(ask).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('missing names return actionable errors', async () => {
+  const project = makeProject();
+  global.fetch = jest.fn() as any;
+  const ask = jest.fn();
+  const toolCtx = managerCtx(project, ask);
+
+  const noDraft: any = await pluginManagerTool.execute({ operation: 'install' }, toolCtx);
+  expect(noDraft.isError).toBe(true);
+  expect(noDraft.output).toContain('draft');
+
+  const noPackage: any = await pluginManagerTool.execute({ operation: 'status' }, toolCtx);
+  expect(noPackage.isError).toBe(true);
+  expect(noPackage.output).toContain('packageName');
+
+  const noPackageOnMutation: any = await pluginManagerTool.execute({ operation: 'enable' }, toolCtx);
+  expect(noPackageOnMutation.isError).toBe(true);
+  expect(noPackageOnMutation.output).toContain('packageName');
+
+  expect(ask).not.toHaveBeenCalled();
+});
+
+// ---------------------------------------------------------------- routing
+
+test('install omits requestId when absent and sends a new one per iteration', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  const { calls } = mockManagerGateway();
+  const toolCtx = managerCtx(project, approvingAsk());
+
+  await pluginManagerTool.execute({ operation: 'install', draft: 'acme' }, toolCtx);
+  await pluginManagerTool.execute({ operation: 'install', draft: 'acme', requestId: 'req-2' }, toolCtx);
+  await pluginManagerTool.execute({ operation: 'install', draft: 'acme', requestId: 'req-3' }, toolCtx);
+
+  const bodies = calls
+    .filter((call) => call.path === '/api/plugins/packages/install')
+    .map((call) => call.body);
+  expect(bodies[0]).toEqual({ path: fs.realpathSync(draft.dir) });
+  expect(bodies[1].requestId).toBe('req-2');
+  expect(bodies[2].requestId).toBe('req-3');
+  expect(bodies[1].requestId).not.toBe(bodies[2].requestId);
+});
+
+test('check posts the draft path to /api/plugins/check', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  const { calls } = mockManagerGateway();
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'check', draft: 'acme' }, managerCtx(project, approvingAsk()),
+  );
+
+  expect(result.isError).not.toBe(true);
+  const check = calls.find((call) => call.path === '/api/plugins/check')!;
+  expect(check.method).toBe('POST');
+  expect(check.body).toEqual({ path: fs.realpathSync(draft.dir) });
+  expect(parse(result).draft).toBe('acme');
+  expect(result.metadata).toMatchObject({ operation: 'check', packageName: 'acme', ok: true });
+});
+
+test('enable, disable, remove and reload use the existing routes', async () => {
+  const project = makeProject();
+  const expectations = [
+    ['enable', '/api/plugins/enable'],
+    ['disable', '/api/plugins/disable'],
+    ['remove', '/api/plugins/delete'],
+    ['reload', '/api/plugins/acme/reload'],
+  ] as const;
+
+  for (const [operation, route] of expectations) {
+    const { calls } = mockManagerGateway();
+    const result: any = await pluginManagerTool.execute(
+      { operation, packageName: 'acme' }, managerCtx(project, approvingAsk()),
+    );
+
+    expect([operation, result.isError ?? false]).toEqual([operation, false]);
+    const call = calls.find((entry) => !entry.path.endsWith('/config'))!;
+    expect([operation, call.path, call.method]).toEqual([operation, route, 'POST']);
+    if (operation === 'reload') expect(call.body).toBeUndefined();
+    else expect(call.body).toEqual({ package: 'acme' });
+    expect(result.metadata).toMatchObject({ operation, packageName: 'acme', application: 'applied' });
+  }
+});
+
+// ------------------------------------------------------------- test runner
+
+test('test runs the fixed runner, writes the full log, and never installs', async () => {
+  const project = makeProject();
+  writeDraft(project, 'acme', { tests: 'pass' });
+  const { calls } = mockManagerGateway();
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'test', draft: 'acme' }, managerCtx(project, approvingAsk()),
+  );
+
+  expect(result.isError).not.toBe(true);
+  const body = parse(result);
+  expect(body.passed).toBe(true);
+  expect(body.exitCode).toBe(0);
+  expect(body.timedOut).toBe(false);
+  expect(body.logPath).toBe(path.join(project, '.mafw', 'plugin-drafts', '.logs', 'acme.log'));
+  expect(fs.existsSync(body.logPath)).toBe(true);
+  expect(fs.readFileSync(body.logPath, 'utf8').length).toBeGreaterThan(0);
+  expect(calls.filter((call) => call.path === '/api/plugins/packages/install')).toEqual([]);
+  expect(result.metadata).toMatchObject({ operation: 'test', packageName: 'acme', timedOut: false });
+});
+
+test('a failing draft test returns an error result without installing', async () => {
+  const project = makeProject();
+  writeDraft(project, 'acme', { tests: 'fail' });
+  const { calls } = mockManagerGateway();
+
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'test', draft: 'acme' }, managerCtx(project, approvingAsk()),
+  );
+
+  expect(result.isError).toBe(true);
+  const body = parse(result);
+  expect(body.passed).toBe(false);
+  expect(body.exitCode).not.toBe(0);
+  expect(calls.filter((call) => call.path === '/api/plugins/packages/install')).toEqual([]);
+});
+
+test('test runner uses node --test and caps oversized output', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  const spawn = jest.fn(() => fakeChild({ chunks: ['x'.repeat(100)] }));
+
+  const run = await runDraftTests(draft.dir, {
+    spawn: spawn as any,
+    timeoutMs: 50,
+    maxBytes: 32,
+  });
+
+  expect(spawn).toHaveBeenCalledWith(
+    process.execPath,
+    ['--test'],
+    expect.objectContaining({ cwd: draft.dir, shell: false }),
+  );
+  expect(run.output.length).toBeLessThanOrEqual(32);
+  expect(run.truncated).toBe(true);
+  expect(run.exitCode).toBe(0);
+  expect(run.timedOut).toBe(false);
+});
+
+test('a fake child that never exits is killed at the timeout', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  const child = fakeChild({ hang: true });
+  const spawn = jest.fn(() => child);
+
+  const run = await runDraftTests(draft.dir, { spawn: spawn as any, timeoutMs: 20 });
+
+  expect(run.timedOut).toBe(true);
+  expect(run.exitCode).toBeNull();
+  expect(child.kill).toHaveBeenCalled();
+});
+
+test('test runner strips secrets from the child environment', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+  const spawn = jest.fn(() => fakeChild({ chunks: [] }));
+  const previous = process.env.MAFW_TEST_SECRET;
+  process.env.MAFW_TEST_SECRET = 'top-secret';
+  try {
+    await runDraftTests(draft.dir, { spawn: spawn as any, timeoutMs: 50 });
+  } finally {
+    if (previous === undefined) delete process.env.MAFW_TEST_SECRET;
+    else process.env.MAFW_TEST_SECRET = previous;
+  }
+
+  const env = (spawn.mock.calls[0] as any)[2].env;
+  expect(env.NODE_ENV).toBe('test');
+  expect(env.MAFW_TEST_SECRET).toBeUndefined();
+  expect(env.PATH ?? env.Path).toBe(process.env.PATH ?? process.env.Path);
+});
+
+// ------------------------------------------------------------- fingerprint
+
+test('fingerprintDraft is deterministic and ignores host caches', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+
+  const first = await fingerprintDraft(draft.dir);
+  expect(first).toMatch(/^[0-9a-f]{64}$/);
+  expect(await fingerprintDraft(draft.dir)).toBe(first);
+
+  // Same relative paths and contents in a different project: same value.
+  const other = writeDraft(makeProject(), 'acme');
+  expect(await fingerprintDraft(other.dir)).toBe(first);
+
+  // Host caches and temporary files are not draft content.
+  fs.mkdirSync(path.join(draft.dir, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(draft.dir, '.git', 'config'), 'x');
+  fs.mkdirSync(path.join(draft.dir, 'node_modules', 'dep'), { recursive: true });
+  fs.writeFileSync(path.join(draft.dir, 'node_modules', 'dep', 'index.js'), 'x');
+  fs.writeFileSync(path.join(draft.dir, 'scratch.tmp'), 'x');
+  expect(await fingerprintDraft(draft.dir)).toBe(first);
+
+  fs.writeFileSync(draft.indexPath, 'module.exports = 2;\n');
+  expect(await fingerprintDraft(draft.dir)).not.toBe(first);
+});
+
+test('fingerprintDraft enforces file count and size ceilings', async () => {
+  const project = makeProject();
+  const draft = writeDraft(project, 'acme');
+
+  await expect(fingerprintDraft(draft.dir, { maxFiles: 1 })).rejects.toThrow(/too many files/);
+  await expect(fingerprintDraft(draft.dir, { maxBytes: 8 })).rejects.toThrow(/too large/);
 });

@@ -175,7 +175,7 @@ describe('toV1Views', () => {
 // ---------------------------------------------------------- setup() wiring
 
 describe('setup(ctx) registration', () => {
-  it('registers the 21 plugin tools with JSON Schema inputs and a result adapter', async () => {
+  it('registers the 22 plugin tools with JSON Schema inputs and a result adapter', async () => {
     const dir = mkdtempDir();
     const { fetchMock, calls } = makeFetch([['/api/memory/add', { success: true, id: 'mem_9' }]]);
     global.fetch = fetchMock as any;
@@ -184,14 +184,15 @@ describe('setup(ctx) registration', () => {
 
     const names = regs.tools.map((t) => t.name).sort();
     expect(names).toContain('mafw_plugin_inspect');
+    expect(names).toContain('mafw_plugin_manager');
     expect(names).toEqual([
       'mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak',
       'mafw_media_upload', 'mafw_message_subagent', 'mafw_plugin_inspect',
-      'mafw_pod_memory_read', 'mafw_pod_memory_write', 'mafw_pod_message',
-      'mafw_pod_status', 'mafw_pod_task_create', 'mafw_pod_task_update',
-      'mafw_python', 'mafw_python_restart', 'mafw_spawn_subagent',
-      'mafw_subagent_result', 'mafw_submit_result', 'mafw_task_cancel',
-      'mafw_task_list', 'mafw_task_message', 'mafw_task_submit',
+      'mafw_plugin_manager', 'mafw_pod_memory_read', 'mafw_pod_memory_write',
+      'mafw_pod_message', 'mafw_pod_status', 'mafw_pod_task_create',
+      'mafw_pod_task_update', 'mafw_python', 'mafw_python_restart',
+      'mafw_spawn_subagent', 'mafw_subagent_result', 'mafw_submit_result',
+      'mafw_task_cancel', 'mafw_task_list', 'mafw_task_message', 'mafw_task_submit',
     ]);
     for (const tool of regs.tools) {
       expect(tool.input.type).toBe('object');
