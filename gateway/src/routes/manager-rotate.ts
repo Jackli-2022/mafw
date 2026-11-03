@@ -8,7 +8,7 @@ export interface ManagerRotateDeps {
   lock: <T>(projectDir: string, fn: () => Promise<T>) => Promise<T>;
   /** Create the first manager session (lazy init path). */
   ensure: (projectDir: string) => Promise<string>;
-  /** Demote old session metadata: role → manager-archived, drop pinned/exempt. */
+  /** Archive the old Lead (snapshot already taken by the caller): visible history, no current-Lead binding. */
   downgrade: (sessionId: string) => Promise<void>;
   /** Force-create a fresh manager session (kv replace + register + identity). */
   create: (projectDir: string) => Promise<string>;

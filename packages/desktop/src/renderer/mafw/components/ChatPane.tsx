@@ -476,7 +476,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // ── plan/build 模式循环（切片 3）──────────────────────────────
   // 能力门：primaryAgents 列表内容含 plan/build 才启用（pi 列表恒空 → 自动隐藏）；
-  // manager 会话锁不适用。
+  // Lead 会话锁不适用。
   const planBuildGate = () =>
     !isLead() && (props.primaryAgents() || []).some((a: any) => isAgentKey(a, "plan") || isAgentKey(a, "build"))
   const planBuildState = (): "plan" | "build" | "default" => {

@@ -163,6 +163,54 @@ describe('LeadSessionRegistry', () => {
     expect(f.archives.filter((x) => x.sessionId === 'ses_dead')).toHaveLength(1);
   });
 
+  test('current picks the newest canonical-equivalent slot instead of disappearing', () => {
+    const f = fixture();
+    const variant = f.projectDir + path.sep;
+    f.kv.set('manager-session\u0000' + variant, writeManagerSlot(undefined, 'opencode', {
+      sessionId: 'ses_old', createdAt: '2026-10-01T00:00:00.000Z',
+    }));
+    f.kv.set('manager-session\u0000' + f.projectDir, writeManagerSlot(undefined, 'opencode', {
+      sessionId: 'ses_new', createdAt: '2026-11-01T00:00:00.000Z',
+    }));
+    const registry = new LeadSessionRegistry(f.deps());
+    expect(registry.current(f.projectDir)?.sessionId).toBe('ses_new');
+  });
+
+  test('concurrent ensure calls from spellings of one canonical project create once', async () => {
+    const f = fixture();
+    let resolveCreate: ((id: string) => void) | null = null;
+    let creations = 0;
+    const base = f.deps();
+    const registry = new LeadSessionRegistry({
+      ...base,
+      createSession: () => {
+        creations++;
+        return new Promise<string>((resolve) => { resolveCreate = resolve; });
+      },
+    });
+
+    const first = registry.ensure(f.projectDir);
+    const second = registry.ensure(f.projectDir + path.sep);
+    for (let i = 0; i < 10 && !resolveCreate; i++) await Promise.resolve();
+    resolveCreate!('ses_one');
+    const [a, b] = await Promise.all([first, second]);
+
+    expect(creations).toBe(1);
+    expect(a.sessionId).toBe('ses_one');
+    expect(b.sessionId).toBe('ses_one');
+  });
+
+  test('dead legacy slot is cleared after archive so later ensure does not re-archive', async () => {
+    const f = fixture();
+    const variant = f.projectDir + path.sep;
+    f.writeSlot(variant, 'ses_dead');
+
+    await new LeadSessionRegistry(f.deps()).ensure(f.projectDir);
+    await new LeadSessionRegistry(f.deps()).ensure(f.projectDir);
+
+    expect(f.archives.filter((x) => x.sessionId === 'ses_dead')).toHaveLength(1);
+  });
+
   test('registry archives dead kv lead even when no Pod row exists', async () => {
     const f = fixture();
     f.writeSlot(f.projectDir, 'ses_dead');

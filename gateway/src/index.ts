@@ -9547,10 +9547,9 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       lock: <T,>(pd: string, fn: () => Promise<T>) => this.runManagerExclusive(pd, fn),
       ensure: (pd) => this.ensureManagerSession(pd, this.mafwDirFor(pd)),
       downgrade: async (sid) => {
-        // Replacing the whole mafw object drops pinned/exempt* flags too —
-        // the archived session returns to the normal session lifecycle.
-        await this.sdkSession.updateMetadata(sid, { mafw: { role: 'manager-archived' } });
-        this.identityState.unbind(sid);
+        // Same archive path as normal Lead replacement: visible history, no
+        // current-Lead/identity binding.
+        await this.archiveLeadSession(sid);
       },
       create: (pd) => this.rotateCreateManagerSession(pd),
     };
@@ -9719,13 +9718,14 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   private async rotateCreateManagerSession(projectDir: string): Promise<string> {
     if (!this.runtime) throw new Error('runtime not available');
-    const session = await this.runtime.session.create({ directory: projectDir });
+    const canonical = canonicalProjectDir(projectDir);
+    const session = await this.runtime.session.create({ directory: canonical });
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create lead session: no id returned');
-    this.getGatewayDb().kvSet('manager-session', projectDir, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName, { sessionId, createdAt: new Date().toISOString() }));
+    this.getGatewayDb().kvSet('manager-session', canonical, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', canonical), this.runtimeName, { sessionId, createdAt: new Date().toISOString() }));
     this.registerInternalSession(sessionId, 'lead', resolveIdentityAlias('manager'));
-    await this.sdkSession.registerExternal(sessionId, projectDir, projectLeadSessionMetadata()).catch(() => {});
-    await this.syncPodLead(projectDir, sessionId);
+    await this.sdkSession.registerExternal(sessionId, canonical, projectLeadSessionMetadata()).catch(() => {});
+    await this.syncPodLead(canonical, sessionId);
     return sessionId;
   }
 }

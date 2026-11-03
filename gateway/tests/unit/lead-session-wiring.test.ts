@@ -43,6 +43,12 @@ describe('Lead lifecycle wiring', () => {
     expect(indexSource).toContain('private async reconcilePodLeads()');
   });
 
+  test('internal rotate archives through the Lead path, not legacy manager metadata', () => {
+    const downgrade = section('downgrade: async (sid) => {', 'create: (pd) => this.rotateCreateManagerSession(pd),');
+    expect(downgrade).toContain('this.archiveLeadSession(sid)');
+    expect(downgrade).not.toContain('manager-archived');
+  });
+
   test('manager session route resolves canonical project keys through the registry', () => {
     const route = section("if (req.url && req.url.startsWith('/api/manager/session')", '// 健康检查');
     expect(route).toContain('this.leadSessionRegistry.current(filter)');

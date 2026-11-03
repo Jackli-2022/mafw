@@ -1,4 +1,5 @@
 import {
+  clearManagerSlot,
   readManagerSlot,
   writeManagerSlot,
 } from './manager-session-runtime';
@@ -52,6 +53,8 @@ interface SlotRow {
  * the only method that can create/replace a runtime session.
  */
 export class LeadSessionRegistry {
+  private readonly ensureInflight = new Map<string, Promise<LeadSessionRecord>>();
+
   constructor(private readonly deps: LeadSessionRegistryDeps) {}
 
   current(projectDir: string): LeadSessionRecord | null {
@@ -62,10 +65,16 @@ export class LeadSessionRegistry {
       return { sessionId: exact.sessionId, createdAt: exact.createdAt, source: 'slot' };
     }
     const distinct = uniqueBySession(rows);
-    if (distinct.length !== 1) return null;
+    if (distinct.length === 0) return null;
+    // Read-only callers cannot probe liveness. For legacy raw-key variants,
+    // choose the newest slot deterministically; ensure() later repairs it with
+    // authoritative liveness/Pod evidence.
+    const newest = [...distinct].sort(
+      (a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''),
+    )[0];
     return {
-      sessionId: distinct[0].sessionId,
-      createdAt: distinct[0].createdAt,
+      sessionId: newest.sessionId,
+      createdAt: newest.createdAt,
       source: 'slot',
     };
   }
@@ -81,6 +90,16 @@ export class LeadSessionRegistry {
 
   async ensure(projectDir: string): Promise<LeadSessionRecord> {
     const canonical = canonicalProjectDir(projectDir);
+    const pending = this.ensureInflight.get(canonical);
+    if (pending) return pending;
+    const promise = this.ensureCanonical(canonical).finally(() => {
+      if (this.ensureInflight.get(canonical) === promise) this.ensureInflight.delete(canonical);
+    });
+    this.ensureInflight.set(canonical, promise);
+    return promise;
+  }
+
+  private async ensureCanonical(canonical: string): Promise<LeadSessionRecord> {
     const rows = this.slotRows(canonical);
     const exact = rows.find((row) => row.key === canonical);
     const probed = await Promise.all(rows.map(async (row) => ({
@@ -181,6 +200,12 @@ export class LeadSessionRegistry {
       seen.add(row.sessionId);
       try {
         await this.deps.archiveLead(row.sessionId, canonical);
+        const existing = this.deps.kvGet('manager-session', row.key);
+        this.deps.kvSet(
+          'manager-session',
+          row.key,
+          clearManagerSlot(existing, this.deps.runtimeName),
+        );
       } catch (err: any) {
         this.deps.log?.(`[Lead] archive failed for ${row.sessionId} (non-fatal): ${err?.message ?? err}`);
       }

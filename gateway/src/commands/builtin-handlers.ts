@@ -12,7 +12,8 @@ export interface MafwBuiltinDeps {
   createSession(projectDir: string): Promise<string | null>;
   promptAsync(sessionID: string, text: string): Promise<void>;
   listMessages(sessionID: string): Promise<WaitwhatMessage[]>;
-  btwAsk(question: string): Promise<string>;  mergeMemory(sourceWorktree: string, strategy: string): Promise<Record<string, unknown>>;
+  btwAsk(question: string): Promise<string>;
+  mergeMemory(sourceWorktree: string, strategy: string): Promise<Record<string, unknown>>;
   readStatus(): string;
   llmAvailable(): boolean;
 }

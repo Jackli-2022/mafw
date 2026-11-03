@@ -1,5 +1,6 @@
 import {
   projectLeadSessionMetadata,
+  clearManagerSlot,
   readManagerSlot,
   writeManagerSlot,
   resolveManagerRuntime,
@@ -18,6 +19,14 @@ describe('manager-session per-runtime slots', () => {
     expect(resolveManagerRuntime({ sessionId: 'weird_1' })).toBeNull();
     expect(resolveManagerRuntime({ runtime: '   ' })).toBeNull();
     expect(resolveManagerRuntime({})).toBeNull();
+  });
+
+  it('clearManagerSlot removes only the active runtime while preserving others', () => {
+    const v2 = { byRuntime: { opencode: OC, pi: PI } };
+    const cleared = clearManagerSlot(v2, 'opencode') as any;
+    expect(cleared.byRuntime).toEqual({ pi: PI });
+    expect(readManagerSlot(cleared, 'opencode')).toBeNull();
+    expect(readManagerSlot(cleared, 'pi')).toEqual(PI);
   });
 
   it('readManagerSlot: v2 returns the active runtime slot', () => {

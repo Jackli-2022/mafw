@@ -54,7 +54,7 @@ export type Retriever = 'bm25' | 'hybrid'
 export interface AppOptions {
   baseUrl: string
   retriever: Retriever
-  /** 启动即连接的会话（`mafw tui --session <id>`）；缺省 = 当前项目 manager session。 */
+  /** 启动即连接的会话（`mafw tui --session <id>`）；缺省 = 当前项目 Lead session。 */
   sessionID?: string
 }
 

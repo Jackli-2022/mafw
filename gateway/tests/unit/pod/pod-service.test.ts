@@ -77,6 +77,29 @@ describe('PodService', () => {
     expect(store.listSessions(first.pod.id).filter((s) => s.node === 'coordination' && !s.endedAt)).toHaveLength(1);
   });
 
+  test('worktree dirs share the parent project Pod even when registered themselves', async () => {
+    const worktreeDir = `${projectDir}-wt-demo`;
+    fs.mkdirSync(worktreeDir, { recursive: true });
+    const parent = await service.ensure(projectDir);
+    const withWorktree = new PodService({
+      store,
+      now,
+      newId,
+      broadcast: () => {},
+      getManagerSession: async () => managerSessionId,
+      getSession: (sessionID) => getSessionImpl(sessionID),
+      messages: (sessionID, limit) => messagesImpl(sessionID, limit),
+      memoryRoot,
+      listRegisteredProjectDirs: () => [projectDir, worktreeDir],
+      ensureMemory: () => {},
+      log: (message) => logs.push(message),
+    });
+
+    expect(withWorktree.lookup(worktreeDir)?.pod.id).toBe(parent.pod.id);
+    expect((await withWorktree.ensure(worktreeDir)).pod.id).toBe(parent.pod.id);
+    expect(store.listPods()).toHaveLength(1);
+  });
+
   test('ensureLead rebinds when history contains an ended row with the same session id', async () => {
     const first = await service.ensure(projectDir);
     const old = store.listSessions(first.pod.id).find((s) => s.node === 'coordination' && !s.endedAt)!;
@@ -90,6 +113,28 @@ describe('PodService', () => {
     expect(active[0].sessionId).toBe(managerSessionId);
     expect(active[0].id).toBe(old.id);
     expect(active[0].endedAt).toBeNull();
+  });
+
+  test('ensureLead cleans extra active coordination rows even when current id already active', async () => {
+    const first = await service.ensure(projectDir);
+    const lead = store.getMemberByRole(first.pod.id, 'lead')!;
+    store.insertSession({
+      id: 'extra_coord',
+      podId: first.pod.id,
+      memberId: lead.id,
+      goalId: null,
+      node: 'coordination',
+      sessionId: 'ses_extra',
+      status: 'active',
+      transcriptRef: null,
+      now: now(),
+    });
+
+    await service.ensureLead(first.pod.id);
+
+    const active = store.listSessions(first.pod.id).filter((s) => s.node === 'coordination' && !s.endedAt);
+    expect(active.map((s) => s.sessionId)).toEqual([managerSessionId]);
+    expect(store.getSessionBySessionId('ses_extra')?.endedAt).toBeTruthy();
   });
 
   test('ensureLead normalizes the legacy lead roster before binding', async () => {

@@ -17,5 +17,3 @@ export function railProjectName(raw: string | null | undefined, isCurrent: boole
   if (!base || base === ".") return isCurrent ? "当前项目" : "未命名项目"
   return base
 }
-
-

@@ -123,8 +123,10 @@ export class PodService {
       (session) => session.memberId === lead.id && session.node === 'coordination',
     );
     const coordination = allCoordination.filter((session) => !session.endedAt);
-    if (coordination.some((session) => session.sessionId === managerSessionId)) return;
-    for (const session of coordination) {
+    const sameActive = coordination.find((session) => session.sessionId === managerSessionId);
+    const extras = coordination.filter((session) => session.sessionId !== managerSessionId);
+    if (sameActive && extras.length === 0) return;
+    for (const session of extras) {
       try {
         await this.snapshotSession(session.sessionId);
       } catch (err: any) {
@@ -136,6 +138,11 @@ export class PodService {
       } catch (err: any) {
         this.deps.log?.(`[Pod] replaced Lead archive failed for ${session.sessionId} (non-fatal): ${err?.message ?? err}`);
       }
+    }
+    if (sameActive) {
+      this.deps.store.upsertMember({ ...lead, status: 'available', now: this.deps.now() });
+      this.emit(podId, 'member');
+      return;
     }
 
     const endedSame = allCoordination.find(
@@ -328,12 +335,21 @@ export class PodService {
   private resolveProjectDir(projectDir: string): string {
     const canonical = canonicalProjectDir(projectDir);
     const registered = this.deps.listRegisteredProjectDirs().map(canonicalProjectDir);
-    if (registered.includes(canonical)) return canonical;
+    // Worktree sessions belong to the parent project's Pod. The runtime can
+    // also list the worktree directory as its own project; that must not make
+    // the Lead/Pod UI lose the parent booking. An existing Pod on the
+    // worktree itself wins so legacy data is never orphaned.
     const parent = parentProjectDirForWorktree(canonical);
-    if (parent) {
-      const canonicalParent = canonicalProjectDir(parent);
-      if (registered.includes(canonicalParent)) return canonicalParent;
+    const canonicalParent = parent ? canonicalProjectDir(parent) : null;
+    if (
+      canonicalParent
+      && registered.includes(canonicalParent)
+      && !this.deps.store.getPodByProject(canonical)
+    ) {
+      return canonicalParent;
     }
+    if (registered.includes(canonical)) return canonical;
+    if (canonicalParent && registered.includes(canonicalParent)) return canonicalParent;
     throw new PodError(404, `project is not registered: ${canonical}`);
   }
 

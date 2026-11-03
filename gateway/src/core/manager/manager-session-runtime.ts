@@ -132,6 +132,29 @@ export function readManagerSlot(
 }
 
 /**
+ * Remove only one runtime's slot while preserving every other runtime and any
+ * unattributed legacy value. Used after a dead Lead is archived so repeated
+ * canonicalized reads cannot re-archive the same runtime session.
+ */
+export function clearManagerSlot(value: unknown, currentRuntime: string): unknown {
+  if (!value || typeof value !== 'object') return value;
+  const v = value as {
+    byRuntime?: Record<string, ManagerSlot>;
+    unattributed?: ManagerSlot;
+    sessionId?: string;
+    createdAt?: string | null;
+    runtime?: string;
+  };
+  if (v.byRuntime && typeof v.byRuntime === 'object') {
+    const byRuntime = { ...v.byRuntime };
+    delete byRuntime[currentRuntime];
+    return { byRuntime, ...(v.unattributed ? { unattributed: v.unattributed } : {}) };
+  }
+  if (resolveManagerRuntime(v) !== currentRuntime) return value;
+  return v.unattributed ? { byRuntime: {}, unattributed: v.unattributed } : { byRuntime: {} };
+}
+
+/**
  * Write the slot for `currentRuntime`, preserving all other runtimes' slots.
  * A tagged v1 legacy entry is migrated into its own slot; an untagged v1 entry
  * is preserved verbatim under `unattributed`.
