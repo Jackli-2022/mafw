@@ -83,6 +83,122 @@ export async function handleRuntimeContract(
 }
 
 // ─── POST /api/runtime/switch ─── hot-swap the active runtime plugin
+
+/** Guard/mutex around a switch (shared by the HTTP route and the apply path). */
+export interface RuntimeSwitchGuard {
+  /** True while the serve sidecar is recovering or another switch is running. */
+  blocked: () => boolean;
+  begin: () => void;
+  end: () => void;
+}
+
+/**
+ * Outcome of one switch attempt. `code` is a machine-readable class so callers
+ * can map it to their own transport (HTTP status vs. an apply result).
+ */
+export type RuntimeSwitchOutcome =
+  | { success: true; active: { name: string; capabilities: any } }
+  | {
+      success: false;
+      code: 'blocked' | 'not-found' | 'failed';
+      error: string;
+      /** Present for `failed` when a runtime was built but is not the wanted one. */
+      active?: { name: string; capabilities: any };
+    };
+
+/**
+ * Does the reached runtime satisfy the requested plugin name?
+ *
+ * `opencode@v2` and friends are pinned *dialects* of the same runtime: the
+ * facade identity is the bare runtime name, so a pinned-dialect request must not
+ * read as a fallback. Anything else that differs means `createRuntime()` fell
+ * back to builtin opencode instead of building the requested plugin.
+ */
+function bareRuntimeName(name: string): string {
+  const at = name.indexOf('@');
+  return at > 0 ? name.slice(0, at) : name;
+}
+
+function runtimeNameMatches(expected: string, actual: string): boolean {
+  return bareRuntimeName(expected) === bareRuntimeName(actual);
+}
+
+/**
+ * Resolve a plugin-hub stem alias to the runtime's declared module name.
+ * `loader.getState()` keeps `{ name, alias }` for file plugins; the hub
+ * addresses them by filename stem, while the facade identity is the declared
+ * name. Package/builtin entries have no alias and resolve to themselves.
+ */
+function resolveRuntimeName(deps: RuntimeSwitchDeps, wanted: string): string {
+  const states = deps.loader?.getState?.() ?? [];
+  const byName = states.find((state) => state.name === wanted);
+  if (byName?.name) return byName.name;
+  const byAlias = states.find((state) => state.alias === wanted);
+  return byAlias?.name ?? wanted;
+}
+
+/**
+ * One orchestration for every runtime switch: `/api/runtime/switch` and the
+ * plugin-package apply path both call this, so the guard/mutex, validation,
+ * persistence, rebuild, event resubscription and fallback detection can never
+ * drift apart.
+ *
+ * Fallback detection: `createRuntime()` silently falls back to builtin opencode
+ * when the wanted plugin fails to build. A resolved facade is therefore not
+ * proof of success — for a named plugin the active runtime name must match
+ * after `onSwitched`.
+ */
+export async function performRuntimeSwitch(
+  deps: RuntimeSwitchDeps,
+  plugin: string,
+  guard?: RuntimeSwitchGuard,
+): Promise<RuntimeSwitchOutcome> {
+  if (guard?.blocked()) {
+    return {
+      success: false,
+      code: 'blocked',
+      error: 'runtime switch is blocked while the serve sidecar is recovering or another switch is in progress',
+    };
+  }
+
+  const wanted = typeof plugin === 'string' ? plugin.trim() : '';
+  let expectedName = wanted;
+  if (wanted) {
+    // D 收敛：opencode 与其他 runtime 同走 loader 校验（注册表成员语义，特判已删）
+    if (!deps.loader?.get(wanted)) {
+      return { success: false, code: 'not-found', error: `Runtime plugin '${wanted}' not found` };
+    }
+    // The hub addresses file plugins by filename stem; the facade identity is
+    // the declared module name. Resolve the alias before fallback detection.
+    expectedName = resolveRuntimeName(deps, wanted);
+  }
+
+  guard?.begin();
+  try {
+    deps.persist({ runtime: { plugin: wanted } });
+    const prev = deps.getCurrent();
+    const rt = await deps.createRuntime();
+    await deps.onSwitched(rt, prev);
+    // 切换后诊断视图已指向新 runtime（不再经 facade 回读 identity/capabilities）。
+    const name = deps.runtimeName();
+    const capabilities = deps.runtimeCaps();
+    if (wanted && !runtimeNameMatches(expectedName, name)) {
+      return {
+        success: false,
+        code: 'failed',
+        error: `runtime "${wanted}" did not activate (active runtime is "${name}")`,
+        active: { name, capabilities },
+      };
+    }
+    log.info(`[Runtime] switched to '${name}' (capabilities: ${JSON.stringify(capabilities)})`);
+    return { success: true, active: { name, capabilities } };
+  } catch (err: any) {
+    return { success: false, code: 'failed', error: err?.message ?? String(err) };
+  } finally {
+    guard?.end();
+  }
+}
+
 export async function handleRuntimeSwitch(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -98,38 +214,31 @@ export async function handleRuntimeSwitch(
   }
 
   const plugin = typeof body?.plugin === 'string' ? body.plugin.trim() : '';
-  if (plugin) {
-    // D 收敛：opencode 与其他 runtime 同走 loader 校验（注册表成员语义，特判已删）
-    const found = deps.loader?.get(plugin);
-    if (!found) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        error: `Runtime plugin '${plugin}' not found`,
-        available: deps.loader?.getState().map(s => s.name).filter(Boolean) ?? [],
-      }));
-      return;
-    }
-  }
+  // The guard/mutex is owned by the route wrapper (`attachWave2Handlers`), so it
+  // is deliberately not passed here: the wrapper already began the switch.
+  const result = await performRuntimeSwitch(deps, plugin);
 
-  try {
-    deps.persist({ runtime: { plugin } });
-    const prev = deps.getCurrent();
-    const rt = await deps.createRuntime();
-    await deps.onSwitched(rt, prev);
-    // 切换后诊断视图已指向新 runtime（不再经 facade 回读 identity/capabilities）。
-    const name = deps.runtimeName();
-    const capabilities = deps.runtimeCaps();
-    log.info(`[Runtime] switched to '${name}' (capabilities: ${JSON.stringify(capabilities)})`);
+  if (result.success) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       success: true,
-      active: { name, capabilities },
+      active: result.active,
       envOverride: deps.envOverride(),
     }));
-  } catch (err: any) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: err.message }));
+    return;
   }
+
+  if (result.code === 'not-found') {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      error: result.error,
+      available: deps.loader?.getState().map(s => s.name).filter(Boolean) ?? [],
+    }));
+    return;
+  }
+
+  res.writeHead(result.code === 'blocked' ? 409 : 500, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: result.error }));
 }
 
 // ─── POST /api/runtime/reload ─── rescan plugins without switching

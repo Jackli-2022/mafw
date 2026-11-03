@@ -11,6 +11,11 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  PACKAGE_NAME as CONTRACT_PACKAGE,
+  resolvePluginContract,
+  stagePluginContract,
+} from "../../scripts/stage-plugin-contract.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const gatewayRoot = path.resolve(here, "..");
@@ -65,4 +70,19 @@ for (const dep of prodDeps) {
   copied++;
   console.log(`[deploy] dep + ${dep}`);
 }
+
+// 2b) 私有 workspace 包按名解析：gateway/dist 运行时 require('@mafw/plugin-contract')。
+// 它不在 npm registry 上，也不是 gateway 的安装依赖，必须在 dist 拷贝后显式
+// stage 到目标 gateway 的 node_modules（workspace symlink 在全局安装里不存在）。
+const bundled = pkg.mafw?.bundledPackages ?? {};
+for (const [dep, relative] of Object.entries(bundled)) {
+  if (dep !== CONTRACT_PACKAGE) continue;
+  stagePluginContract({
+    sourceDir: path.resolve(gatewayRoot, relative),
+    nodeModulesDir: targetModules,
+  });
+}
+const contract = resolvePluginContract(path.join(target, "dist", "index.js"));
+console.log(`[deploy] ${CONTRACT_PACKAGE} resolves from dist → ${contract.resolved}`);
+
 console.log(`[deploy] done (${copied} dependency dirs copied) → ${target}`);

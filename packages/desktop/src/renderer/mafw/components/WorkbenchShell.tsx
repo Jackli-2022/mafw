@@ -1,6 +1,6 @@
 // B1 右工作台壳：一级「工作台 / 执行 / 审阅」+ 二级上下文条 + 终端 L2 surface。
 // 工作台 › 文件/浏览器/终端；执行 › 固定下拉（概览/待办/子代理/后台/轨迹）；审阅无二级。
-import { For, Show, createEffect, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { DropdownMenu } from "@mafw/ui/dropdown-menu"
@@ -15,6 +15,7 @@ import {
   type WorkbenchSurface,
   type WorkbenchView,
 } from "../workbench-views"
+import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from "../plugins/plugin-view-model"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
@@ -38,27 +39,71 @@ export type WorkbenchShellProps = {
   onOpenReview?: () => void
   executionView: JSX.Element
   reviewView: JSX.Element
+  /** Dynamic L2 tabs contributed by unified plugin packages. */
+  pluginSurfaces: PluginTabSurface[]
+  /** Mounts one plugin surface (MafwShell owns descriptor resolution). */
+  renderPluginSurface: (id: string) => JSX.Element
 }
 
 export function WorkbenchShell(props: WorkbenchShellProps) {
+  const surfaceTabClass = (id: string) =>
+    `mafw-rw-l2-tab-${id.replace(/[^A-Za-z0-9_-]/g, "_")}`
+
   const focusTab = (selector: string, id: string) => {
     queueMicrotask(() => {
       (document.querySelector(`${selector}-${id}`) as HTMLElement | null)?.focus()
     })
   }
 
+  // Plugin tabs overflow when the L2 strip runs out of horizontal room. The
+  // observer is attached lazily from the L2 ref: the workbench may mount in
+  // `review` view where the strip does not exist yet, so an onMount observer
+  // would never measure (capacity stuck at the initial value and overflowing
+  // the widest detent).
+  const [pluginTabCapacity, setPluginTabCapacity] = createSignal(6)
+  let disposeCapacity: (() => void) | null = null
+  const attachCapacityObserver = (element: HTMLDivElement | null) => {
+    disposeCapacity?.()
+    disposeCapacity = null
+    if (!element) return
+    disposeCapacity = observePluginTabCapacity(element, setPluginTabCapacity, (notify) => {
+      if (typeof ResizeObserver === "undefined") return null
+      const observer = new ResizeObserver(notify)
+      return {
+        observe: (target) => observer.observe(target as unknown as Element),
+        disconnect: () => observer.disconnect(),
+      }
+    })
+  }
+  // The strip unmounts in `review` view; drop the observer with it.
+  createEffect(() => {
+    if (props.view === "review") attachCapacityObserver(null)
+  })
+  onCleanup(() => {
+    disposeCapacity?.()
+    disposeCapacity = null
+  })
+  const pluginTabs = createMemo(() =>
+    planPluginTabs(props.pluginSurfaces, {
+      activeId: props.surface,
+      capacity: pluginTabCapacity(),
+    }),
+  )
+  const pluginSurfaceIds = () => props.pluginSurfaces.map((surface) => surface.id)
+
   // ButtonV2/Kobalte 不把 data-id/tabIndex 透传到原生 button；用 class 标记并在视图变化后同步 roving tabindex。
   createEffect(() => {
     const view = props.view
     const surface = props.surface
+    const pluginIds = props.pluginSurfaces.map((entry) => entry.id)
     queueMicrotask(() => {
       for (const item of WORKBENCH_VIEWS) {
         const el = document.querySelector(`.mafw-rw-tab-${item.id}`) as HTMLButtonElement | null
         if (el) el.tabIndex = view === item.id ? 0 : -1
       }
-      for (const item of WORKBENCH_SURFACES) {
-        const el = document.querySelector(`.mafw-rw-l2-tab-${item.id}`) as HTMLButtonElement | null
-        if (el) el.tabIndex = surface === item.id ? 0 : -1
+      for (const id of [...WORKBENCH_SURFACES.map((entry) => entry.id), ...pluginIds]) {
+        const el = document.querySelector<HTMLButtonElement>(`.${surfaceTabClass(id)}`)
+        if (el) el.tabIndex = surface === id ? 0 : -1
       }
     })
   })
@@ -72,11 +117,13 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   }
 
   const onL2KeyDown = (e: KeyboardEvent) => {
-    const next = nextWorkbenchSurface(props.surface, e.key)
+    const next = nextWorkbenchSurface(props.surface, e.key, pluginSurfaceIds())
     if (!next) return
     e.preventDefault()
     props.onSurface(next)
-    focusTab(".mafw-rw-l2-tab", next)
+    queueMicrotask(() => {
+      document.querySelector<HTMLElement>(`.${surfaceTabClass(next)}`)?.focus()
+    })
   }
 
   return (
@@ -106,6 +153,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       <Show when={props.view !== "review"}>
         <div
           class="mafw-rw-l2"
+          ref={(element) => {
+            attachCapacityObserver(element)
+          }}
           role={props.view === "workbench" ? "tablist" : undefined}
           aria-label={props.view === "workbench" ? "工作台视图" : undefined}
           onKeyDown={props.view === "workbench" ? onL2KeyDown : undefined}
@@ -140,7 +190,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
                 <ButtonV2
                   variant="ghost"
                   size="small"
-                  class={`mafw-rw-l2-tab mafw-rw-l2-tab-${surface.id}`}
+                  class={`mafw-rw-l2-tab ${surfaceTabClass(surface.id)}`}
                   role="tab"
                   aria-selected={props.surface === surface.id}
                   onClick={() => props.onSurface(surface.id)}
@@ -149,6 +199,52 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
                 </ButtonV2>
               )}
             </For>
+            <For each={pluginTabs().visible}>
+              {(surface) => (
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class={`mafw-rw-l2-tab ${surfaceTabClass(surface.id)}`}
+                  role="tab"
+                  aria-selected={props.surface === surface.id}
+                  aria-label={`${surface.label}（${surface.descriptor.title || surface.descriptor.name}）`}
+                  onClick={() => props.onSurface(surface.id)}
+                >
+                  {surface.label}
+                </ButtonV2>
+              )}
+            </For>
+            <Show when={pluginTabs().overflow.length > 0}>
+              <DropdownMenu>
+                <DropdownMenu.Trigger
+                  as={ButtonV2}
+                  variant="ghost"
+                  size="small"
+                  class="mafw-rw-l2-overflow"
+                  aria-label="更多插件视图"
+                >
+                  <span>更多</span>
+                  <Icon name="chevron-down" size="small" />
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content class="mafw-rw-exec-content">
+                    <For each={pluginTabs().overflow}>
+                      {(surface) => (
+                        <DropdownMenu.Item onSelect={() => props.onSurface(surface.id)}>
+                          <DropdownMenu.ItemLabel>{surface.label}</DropdownMenu.ItemLabel>
+                          <DropdownMenu.ItemDescription>
+                            {surface.descriptor.title || surface.descriptor.name}
+                          </DropdownMenu.ItemDescription>
+                          <Show when={props.surface === surface.id}>
+                            <Icon name="check-small" size="small" class="mafw-rw-check" />
+                          </Show>
+                        </DropdownMenu.Item>
+                      )}
+                    </For>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu>
+            </Show>
           </Show>
         </div>
       </Show>
@@ -166,6 +262,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
             onOpenReview={props.onOpenReview}
+            renderPluginSurface={props.renderPluginSurface}
           />
         </div>
         <div class="mafw-rw-pane" classList={{ "is-active": props.view === "execution" }}>

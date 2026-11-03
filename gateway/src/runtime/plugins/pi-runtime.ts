@@ -26,6 +26,8 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   discoveryApi: false,
   // W5a：pi 原生 streamingBehavior:'steer'（工具调用间隙注入）。
   steerApi: true,
+  // Creator 工具/技能是 OpenCode 插件宿主的产物；pi 上不物化 mafw-create。
+  pluginCreatorApi: false,
 };
 
 /** pi 原生工具清单（pi-coding-agent dist/core/tools：read/grep/find/ls/write/edit/bash）。 */

@@ -144,16 +144,27 @@ describe("shell event coverage guard", () => {
     }
   })
 
-  test("isTailAccountedAtShell: else-if chain types and prefixes accounted", () => {
+  test("isTailAccountedAtShell: else-if chain types are accounted", () => {
     expect(isTailAccountedAtShell("part.updated")).toBe(true)
     expect(isTailAccountedAtShell("part.complete")).toBe(true)
     expect(isTailAccountedAtShell("turn.completed")).toBe(true)
     expect(isTailAccountedAtShell("turn.failed")).toBe(true)
     expect(isTailAccountedAtShell("turn.aborted")).toBe(true)
-    expect(isTailAccountedAtShell("plugin:myplug:done")).toBe(true)
     expect(isTailAccountedAtShell("user_feedback")).toBe(true)
     expect(isTailAccountedAtShell("session.compacting")).toBe(true)
     expect(isTailAccountedAtShell(undefined)).toBe(true)
+  })
+
+  test("plugin:* 已由 dispatcher 前置消费，不再按类尾放行", () => {
+    // Task 7：统一包事件在 sid 分发前路由到插件 hub（未知包/未注册事件由
+    // store 出诊断）。前缀不再进尾部合法放行，handler 若失效会 miss-warn。
+    expect(isTailAccountedAtShell("plugin:myplug:done")).toBe(false)
+    expect(isTailAccountedAtShell("plugin:acme:changed")).toBe(false)
+  })
+
+  test("plugins.changed 由 dispatcher 消费（修订刷新路由），不再显式忽略", () => {
+    expect(IGNORED_AT_SHELL).not.toContain("plugins.changed")
+    expect(isTailAccountedAtShell("plugins.changed")).toBe(false)
   })
 
   test("isTailAccountedAtShell: dispatcher-consumed goal events are no longer tail-accounted", () => {

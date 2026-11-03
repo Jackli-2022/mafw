@@ -1,0 +1,8 @@
+{
+  "name": "service-monitor",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Reference MAFW unified plugin package: declarative panel, config page, tool card, message window, actions and a registered event.",
+  "author": "MAFW",
+  "license": "ISC"
+}

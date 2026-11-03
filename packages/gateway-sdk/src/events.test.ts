@@ -14,7 +14,9 @@ test("runtime event list has no duplicates", () => {
 
 test("flat event list has no duplicates", () => {
   expect(new Set(FLAT_EVENT_TYPES).size).toBe(FLAT_EVENT_TYPES.length)
-  expect(FLAT_EVENT_TYPES.length).toBe(15)
+  // 16 = 15 + plugins.changed（Task 6 unified plugin revisions）
+  expect(FLAT_EVENT_TYPES.length).toBe(16)
+  expect(FLAT_EVENT_TYPES).toContain("plugins.changed")
 })
 
 test("assertNever throws with context", () => {

@@ -2,367 +2,714 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a Desktop Creator flow where `mafw-create` uses read-only inspection and approved plugin-manager tools to author, check, install, verify, and hot-iterate the unified declarative package from Phase 1.
+**Goal:** Add a Creator flow where a normal blank Session bound to `mafw-create` authors a unified plugin package under the current project's `.mafw/plugin-drafts/`, then checks, tests, installs, and iterates it through existing MAFW plugin management with per-call native approval.
 
-**Architecture:** A gateway-owned draft store maps a Creator session to `~/.mafw/plugin-drafts/<draftId>`. The Creator identity can edit only that draft and calls two narrow tools: read-only inspect and approved plugin-manager operations. Installation always goes through Phase 1 `PackageManager`; Desktop only creates/binds the session and observes normal plugin revisions.
+**Architecture:** There is no dedicated Creator session or draft database. The Desktop entry reuses or creates an ordinary Session and switches its agent through the existing `switchAgent`/session-config path. Two plugin-native tools (`mafw_plugin_inspect`, `mafw_plugin_manager`) use the real tool context for `sessionID`/`directory`/`ask`; the manager tool resolves a project-local draft, performs a native approval, and calls the existing package REST endpoints or the fixed draft test runner. Phase 1 `PackageManager` remains the only installer and revision owner.
 
-**Tech Stack:** TypeScript, gateway IdentityRegistry, MCP tools, Jest, SolidJS desktop, Phase 1 plugin contract/manager, `node:test`.
+**Tech Stack:** TypeScript, OpenCode V2 plugin `ctx.tool.transform`, native `ctx.ask`, Gateway identity registry, Jest, SolidJS Desktop, Phase 1 plugin contract/manager, `node:test` fixture.
 
 **Spec:** `docs/superpowers/specs/2026-11-03-unified-declarative-plugin-packages-design.md` §15
 
-**Prerequisite:** Phase 1 plan `docs/superpowers/plans/2026-11-03-unified-declarative-plugin-packages.md` is complete and its acceptance checks pass.
-
 ## Global Constraints
 
-- Creator never writes `~/.mafw/plugins/<name>` directly; only `PackageManager.installFromPath` installs.
-- One draft maps to one Creator session and survives gateway/Desktop restart.
-- Entering Creator does not auto-send a message, clear composer drafts, or change the normal new-session default.
-- `mafw_plugin_inspect` is read-only. `mafw_plugin_manager` writes require per-call approval unless the session is full-access; denial/cancel/unavailable means no mutation.
-- Write operations use idempotency keys and return `{saved, application, activeRevision?, pendingRevision?, error?, nextStep}`.
-- Host code installation remains trusted local code; check is validation, not a security sandbox.
-- Active-runtime changes stay pending and require explicit `applyPending`.
-- Generated packages use only Phase 1 `plugin.json + index.js`, declarative UI, registered `plugin:*` events, and first-phase revisions.
-- Real UI verification must target a connected MAFW page; a mock preview cannot claim activation.
-- Every task ends with focused tests green and a commit. Final delivery reports new tests and full-suite counts.
+- Creator uses a normal blank Session; do not add a Creator Session type, REST/SDK/preload endpoint, draftId, draft↔session binding, or gateway draft kv.
+- Draft root is `<project>/.mafw/plugin-drafts/<packageName>/`; never rewrite the Session cwd.
+- Only `PackageManager` installs packages. `applyPending` is user-only in the Plugins page and is not a model operation.
+- `check`, `test`, and mutating manager operations require native per-call approval unless the Session is `full-access`.
+- Approval uses the tool context's awaitable `ask` with `always: []` and `metadata.forceHuman: true`; the gateway hook must leave the request for a human even in `auto`/internal sessions.
+- Creator has no shell, web, subagent, goal, pod, task, python, media, desktop, automation, or restart tools.
+- Creator must be able to load its own `plugin-creator` skill: `skill` is explicitly enabled in `tools` and allowed by policy even though the rest of the surface uses `'*': false`.
+- `check` and `test` execute trusted local draft code; neither is a sandbox. Fixed test command is `node --test`, cwd is the draft, timeout 60s, sanitized env, capped output.
+- A new draft iteration uses a new request id. Never derive idempotency keys from `(operation, draft, overwrite)`.
+- No new Desktop renderer→gateway diagnostics or screenshot channel. Creator reads descriptors and Host/activation diagnostics; visual issues come from the user.
+- Worktree Sessions do not expose the Creator entry.
+- Every task ends with focused tests green and a commit. Final delivery reports new and full-suite test counts.
+
+**Separate prerequisites (not implemented by this plan):** land the pre-existing registry-dispatch auth-order P0 hotfix before exposing the gateway beyond loopback; land scan/check `main` realpath containment and name-scoped reload before treating generated drafts as broadly distributable. These are tracked Phase 1 debt, not Creator scope.
 
 ## Review Focus
 
-- Creator must not be able to redirect installation/delete paths outside the draft or plugin roots.
-- A lost/retried install request must not create a second activation or duplicate revision.
-- Denied or unavailable approval must leave both the draft and active plugin untouched.
-- A broken first candidate must not leave partial active registrations; a broken update must keep the old active revision.
-- Restarting Gateway/Desktop must recover the Creator session, draft path, and active/pending distinction without replaying writes.
+- Native approval unavailable, rejected, or accidentally bypassed by `auto` mode must never mutate plugins; tests live in Task 3 and Task 4.
+- Draft names containing `..`, absolute paths, separators, or symlink escapes must fail before approval or HTTP; tests live in Task 4.
+- The fixed test runner must not hang, inherit secrets, or return unbounded output; tests live in Task 4.
+- Draft content changing between approval and execution, or a replayed request id hiding a new iteration, must be rejected; tests live in Task 4 and Task 6.
+- Entering Creator from a worktree, with a missing agent, or while preserving another Session's composer draft must not change the normal new-Session default; tests live in Task 5.
+- `tools['*'] = false` must not hide the Creator skill itself; tests live in Task 1.
 
 ---
 
-### Task 1: Persistent Draft Store
+### Task 1: Creator Identity and Shipped Skill
 
 **Files:**
-- Create: `gateway/src/plugins/drafts.ts`
-- Create: `gateway/tests/unit/plugins/drafts.test.ts`
-- Modify: `gateway/src/index.ts` (construct with GatewayDatabase kv and `~/.mafw/plugin-drafts`)
-
-**Interfaces:**
-- Produces: `PluginDraftStore({ rootDir, kvGet, kvSet })`
-- Produces: `create({ creatorSessionID }): PluginDraft`
-- Produces: `get(draftId)`, `getBySession(sessionID)`, `bindSession(draftId, sessionID)`, `setPackageName(draftId, name)`, `setActiveRevision(draftId, revision?)`, `touch(draftId)`
-- Produces: `PluginDraft { draftId; creatorSessionID; packageName?; directory; createdAt; updatedAt; activeRevision? }`
-- Rejects invalid/absolute draft ids and paths outside the draft root.
-
-- [ ] **Step 1: Write failing draft-store tests**
-
-Cover creation under the configured root, opaque id, persistence through a fresh store instance, session lookup, package-name update, traversal/id rejection, and missing-corrupt kv fail-open without escaping root.
-
-- [ ] **Step 2: Run tests and verify failure**
-
-Run in `gateway`: `npx jest --runInBand tests/unit/plugins/drafts.test.ts`
-Expected: FAIL because the module does not exist.
-
-- [ ] **Step 3: Implement the draft store**
-
-Use process-random IDs (`crypto.randomUUID` is acceptable) and `mkdir` with restrictive permissions. Persist metadata in `kv_store` scope `plugin-creator`. Return normalized immutable DTOs. Never delete a draft as part of plugin remove; add no cleanup API in this phase.
-
-- [ ] **Step 4: Verify focused test and typecheck**
-
-Run the Jest file — PASS.
-Run in `gateway`: `npx tsc --noEmit` — exit 0.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add gateway/src/plugins/drafts.ts gateway/tests/unit/plugins/drafts.test.ts gateway/src/index.ts
-git commit -m "feat(plugins): add persistent creator drafts"
-```
-
-### Task 2: Creator Identity, Skill, and Session API
-
-**Files:**
-- Create: `gateway/src/skills/plugin-creator-identity.ts`
+- Create: `gateway/src/core/skills/global-skill.ts`
+- Modify: `gateway/src/core/office/global-skill.ts`
 - Create: `gateway/src/skills/plugin-creator-skill-install.ts`
+- Create: `gateway/src/skills/plugin-creator-identity.ts`
 - Create: `skills/plugin-creator/SKILL.md`
-- Create: `gateway/src/routes/plugin-creator.ts`
-- Create: `gateway/tests/unit/plugins/plugin-creator-identity.test.ts`
-- Create: `gateway/tests/unit/plugins/plugin-creator-skill-install.test.ts`
-- Create: `gateway/tests/unit/routes/plugin-creator.test.ts`
 - Modify: `gateway/src/runtime/identity-registry.ts`
-- Modify: `gateway/src/index.ts` (register identity, install skill, route deps)
-- Modify: `gateway/src/routes/route-catalog.ts`
-- Modify: `gateway/src/routes/wave2-handlers.ts`
+- Modify: `gateway/src/index.ts` (install the skill before serve startup)
+- Create: `gateway/tests/unit/skills/plugin-creator-identity.test.ts`
+- Create: `gateway/tests/unit/skills/plugin-creator-skill-install.test.ts`
 
 **Interfaces:**
-- Produces identity `mafw-create`, scope `primary`, description and system prompt from `plugin-creator-identity.ts`.
-- Produces `ensurePluginCreatorSkill({ sourceDir, targetDir }): Promise<{ installed: boolean; path: string }>`; idempotently copies the packaged skill to `~/.config/opencode/skills/plugin-creator/` before serve startup, matching the existing office-skill installation pattern.
-- Policy allows `readonly`, `file-edit`, `shell`, `mafw_plugin_inspect`, `mafw_plugin_manager`; denies unrelated web/subagent capability. User approval mode still decides mutations.
-- Produces `POST /api/plugins/creator/session` → `{ sessionID, draftId, directory }`; creates a session with `directory = draft.directory`, calls `identityState.bind(sessionID, 'mafw-create', 'session')`, and records the creator binding.
-- Produces `GET /api/plugins/creator/session?sessionID=` → `{ draft, agent: 'mafw-create' }`; re-binds the session identity after gateway restart when the persisted draft still names that session.
-- Reuses existing session creation/permissions; no Creator-only approval bypass.
+- Consumes: existing `AgentDefinition`, `AgentPermissions`, `IdentitySpec`, `toAgentDefinition`.
+- Produces: `getPluginCreatorAgentDefinition(): AgentDefinition`
+- Produces: `ensurePluginCreatorSkill(opts?: { sourceRoot?: string; skillsDir?: string; sourceFile?: string }): Promise<EnsureSkillResult>` with the existing Office result shape.
+- Produces: `ensureGlobalSkill({ skillName, sourceRoot?, skillsDir?, sourceFile? }): Promise<EnsureSkillResult>` and `globalSkillTarget(skillName, skillsDir?)`.
 
-- [ ] **Step 1: Write failing identity and route tests**
+- [ ] **Step 1: Write failing identity and skill tests**
 
-Identity: name/policy registration, no runtime-specific fields, skill includes package contract/four UI slots/test-first workflow. Skill installer: idempotent copy, missing source fail-open with diagnostic, target path contained under the configured skills dir. Route: creates exactly one draft + one session, returns same draft on repeat lookup, unknown session 404, runtime unavailable 503, invalid body 400, and no automatic prompt is sent.
+`plugin-creator-identity.test.ts` asserts the exact boundary:
 
-- [ ] **Step 2: Run tests and verify failure**
+```ts
+const def = getPluginCreatorAgentDefinition()
+expect(def.mode).toBe('primary')
+expect(def.permissions.bash).toBe('deny')
+expect(def.permissions.edit).toBe('ask')
+expect(def.permissions.tools?.mafw_plugin_manager).toBe('ask')
+expect(def.tools?.['*']).toBe(false)
+expect(def.tools?.skill).toBe(true)
+expect(def.tools?.mafw_plugin_inspect).toBe(true)
+expect(def.tools?.mafw_plugin_manager).toBe(true)
+expect(def.tools?.bash).not.toBe(true)
+expect(def.systemPrompt).toContain('plugin-creator')
+expect(def.systemPrompt).toContain('.mafw/plugin-drafts/<packageName>')
+expect(def.systemPrompt).toContain('mafw_plugin_manager')
+expect(def.systemPrompt).toContain('applyPending')
+expect(def.systemPrompt).not.toContain('maxWidgets')
+expect(def.systemPrompt.length).toBeLessThan(1_500)
+```
 
-Run in `gateway`: `npx jest --runInBand tests/unit/plugins/plugin-creator-identity.test.ts tests/unit/routes/plugin-creator.test.ts`
-Expected: FAIL because identity/routes do not exist.
+Also assert the registry includes `mafw-create` with `scope: 'primary'`, no pinned model, an allowlist containing `skill`/`mafw_plugin_inspect`/`mafw_plugin_manager`, denial of `shell`/`web`/`subagent`, and `requiresCapability: 'pluginCreatorApi'`. `identityMaterializable` must return true only when that runtime capability is explicitly true. Assert `toAgentDefinition(spec)` is byte-shape compatible with `getPluginCreatorAgentDefinition()`.
 
-- [ ] **Step 3: Implement identity, skill, and creator session route**
+`plugin-creator-skill-install.test.ts` covers install → unchanged → update, missing source fail-open, and a target contained under the supplied skills directory. Existing Office global-skill tests must remain green after the generic extraction.
 
-Use `IdentityRegistry` built-ins and `toAgentDefinition`; do not add a second materialization path. The Creator route creates the draft first, then the runtime session with the draft directory. If session creation fails, leave the draft unbound or clean only the newly created metadata so retry is deterministic. Register the route through the route catalog/registry dispatch.
+- [ ] **Step 2: Run tests to verify failure**
 
-- [ ] **Step 4: Verify focused tests, identity registry tests, and typecheck**
+Run in `gateway`: `npx jest --runInBand tests/unit/skills/plugin-creator-identity.test.ts tests/unit/skills/plugin-creator-skill-install.test.ts tests/unit/office/global-skill.test.ts`
+Expected: FAIL because the Creator modules do not exist.
 
-Run focused Jest files — PASS.
-Run: `npx jest --runInBand tests/unit/runtime/identity-registry.test.ts` — PASS (or the nearest existing identity tests).
-Run: `npx tsc --noEmit` — exit 0.
+- [ ] **Step 3: Implement generic skill installation and Creator identity**
+
+Extract the atomic write logic from Office into `core/skills/global-skill.ts`; make the Office module delegate without changing its public signatures. Implement the Creator installer with skill name `plugin-creator`.
+
+`getPluginCreatorAgentDefinition()` returns:
+
+```ts
+{
+  description: '创建 MAFW 统一插件包并迭代到真实 Desktop',
+  mode: 'primary',
+  systemPrompt: PLUGIN_CREATOR_SYSTEM_PROMPT,
+  permissions: {
+    edit: 'ask',
+    bash: 'deny',
+    tools: {
+      question: 'allow',
+      plan_exit: 'allow',
+      mafw_plugin_manager: 'ask',
+    },
+  },
+  tools: {
+    '*': false,
+    skill: true,
+    read: true,
+    grep: true,
+    glob: true,
+    list: true,
+    edit: true,
+    write: true,
+    question: true,
+    todowrite: true,
+    mafw_plugin_inspect: true,
+    mafw_plugin_manager: true,
+    mafw_add_memory: true,
+    mafw_search_hybrid: true,
+    mafw_get_memory: true,
+  },
+}
+```
+
+`PLUGIN_CREATOR_SYSTEM_PROMPT` is the thin invariant layer only; it must stay under 1,500 characters and avoid package schemas, widget limits, templates, or the full workflow. It requires: load `plugin-creator` before the first inspect/write and stop if unavailable; use project-local drafts; route all mutations through `mafw_plugin_manager`; keep `applyPending` user-only; never conflate saved/tested/installed/active/pending.
+
+Create `skills/plugin-creator/SKILL.md` as the sole detailed source for: package layout, four UI slots, widget/action/event limits, templates, inspect-first ordering, test-first workflow, approval/fingerprint/requestId semantics, verification, recovery, and common failures. Identity and skill must not both carry the detailed tutorial.
+
+Register the identity in `buildBuiltins()`, and install the skill beside the Office skill before serve startup in `gateway/src/index.ts`.
+
+Add `pluginCreatorApi` to `RuntimeCapabilities` and its contract manifest: `fullCapabilities()`/OpenCode = true, `minimalCapabilities()`/pi = false. Give `mafw-create` `requiresCapability: 'pluginCreatorApi'`; `materializeIdentities` must skip it and record materialized=false when the runtime does not explicitly declare the capability, so `/api/agents` hides it and Desktop shows the neutral no-agent reason.
+
+- [ ] **Step 4: Run focused tests and typecheck**
+
+Run in `gateway`:
+- `npx jest --runInBand tests/unit/skills tests/unit/office/global-skill.test.ts tests/unit/runtime/identity-registry.test.ts`
+- `npx tsc --noEmit`
+
+Expected: PASS and exit 0.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add gateway/src/skills/plugin-creator-identity.ts skills/plugin-creator gateway/src/routes/plugin-creator.ts gateway/tests/unit/plugins gateway/tests/unit/routes gateway/src/runtime/identity-registry.ts gateway/src/index.ts gateway/src/serve-sidecar.ts gateway/src/routes/route-catalog.ts gateway/src/routes/wave2-handlers.ts
-git commit -m "feat(plugins): add creator identity and session"
+git add gateway/src/core/skills/global-skill.ts gateway/src/core/office/global-skill.ts gateway/src/skills/plugin-creator-skill-install.ts gateway/src/skills/plugin-creator-identity.ts skills/plugin-creator/SKILL.md gateway/src/runtime/identity-registry.ts gateway/src/index.ts gateway/tests/unit/skills gateway/tests/unit/office/global-skill.test.ts
+git commit -m "feat(plugins): add creator identity and skill"
 ```
 
-### Task 3: Read-Only Plugin Inspection Tool
+---
+
+### Task 2: Read-Only Plugin Inspection Tool
 
 **Files:**
-- Create: `gateway/src/plugins/plugin-inspect.ts`
-- Create: `gateway/src/mcp/handlers/plugin-inspect.ts`
-- Create: `gateway/tests/unit/plugins/plugin-inspect.test.ts`
-- Modify: `gateway/src/mcp/tool-registry.ts`
-- Modify: `gateway/src/index.ts` (register inspect service in tool services)
-- Modify: `gateway/src/types.ts` (inspect service dependency)
+- Create: `src/tools/plugin-common.ts`
+- Create: `src/tools/plugin-public-contract.ts`
+- Create: `src/tools/plugin-inspect.ts`
+- Modify: `src/plugin.ts` (register `mafw_plugin_inspect`)
+- Create: `tests/plugin-creator-tools.test.ts`
+- Modify: `tests/plugin-v2.test.ts` (tool count and names)
+- Modify: `package.json` (`test:creator`)
+- Modify: `.github/workflows/ci.yml` (run `npm run test:creator`)
 
 **Interfaces:**
-- Produces MCP tool `mafw_plugin_inspect` with input `{ query: 'clientDescriptors'|'actions'|'events'|'slots'|'widgetSchema'|'package'|'experience'; packageName?; draftId? }`.
-- Produces `PluginInspectService.query(input): Promise<Record<string, unknown>>`.
-- Returns sanitized descriptors plus Experience actions only; never runtime name, native SDK object, handler function, or file system contents outside `plugin.json`/manifest metadata.
-- Does not execute plugin actions or business methods.
+- Consumes: existing `GET /api/plugins`, `GET /api/plugins/client`, `GET /api/experience/actions`.
+- Produces: `PluginToolContext` with `sessionID`, optional `abort`, optional `directory`, optional `agent`, optional `ask({ permission, patterns, always }): Promise<void>`.
+- Produces: `pluginGatewayGet(path, ctx): Promise<unknown>` and `pluginGatewayPost(path, body, ctx): Promise<unknown>`.
+- Produces: `PLUGIN_PUBLIC_CONTRACT` containing the four slot names, Widget type names, and exact `PLUGIN_UI_LIMITS` values.
+- Produces: `pluginInspectTool` with args `{ query: 'clientDescriptors'|'actions'|'events'|'slots'|'widgetSchema'|'package'|'experience'; packageName?: string }`.
 
 - [ ] **Step 1: Write failing inspect tests**
 
-Cover each query kind, package filter, unknown query 400, no raw handler leakage, no runtimeName/capability flag leakage, no arbitrary file read via `draftId/packageName`, and stable JSON-serializable output.
+Add to `tests/plugin-creator-tools.test.ts`:
 
-- [ ] **Step 2: Run tests and verify failure**
+```ts
+test('slots and widgetSchema expose the public contract only', async () => {
+  const slots: any = await pluginInspectTool.execute({ query: 'slots' }, ctx)
+  expect(JSON.parse(slots.output).slots).toEqual([
+    'panels', 'toolCards', 'configPages', 'messageWindows',
+  ])
+  const schema: any = await pluginInspectTool.execute({ query: 'widgetSchema' }, ctx)
+  expect(JSON.parse(schema.output).limits.maxWidgets).toBe(256)
+})
 
-Run in `gateway`: `npx jest --runInBand tests/unit/plugins/plugin-inspect.test.ts`
-Expected: FAIL because the tool/service does not exist.
-
-- [ ] **Step 3: Implement inspect service and MCP handler**
-
-Project from Phase 1 client descriptors and package manager. For `experience`, read only the public Experience actions endpoint/service. Validate input before querying. Keep output below the configured tool result cap and return structured content.
-
-- [ ] **Step 4: Verify focused tests, tool registry tests, and typecheck**
-
-Run focused Jest — PASS.
-Run: `npx jest --runInBand tests/unit/mcp/tool-registry.test.ts` — PASS.
-Run: `npx tsc --noEmit` — exit 0.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add gateway/src/plugins/plugin-inspect.ts gateway/src/mcp/handlers/plugin-inspect.ts gateway/src/mcp/tool-registry.ts gateway/src/index.ts gateway/src/types.ts gateway/tests/unit/plugins/plugin-inspect.test.ts
-git commit -m "feat(plugins): add read-only creator inspection"
+test('package projection never leaks runtime names or handlers', async () => {
+  mockPluginFetch({ runtimeName: 'opencode', handler: () => 1, name: 'acme' })
+  const result: any = await pluginInspectTool.execute(
+    { query: 'package', packageName: 'acme' }, ctx,
+  )
+  expect(result.output).toContain('acme')
+  expect(result.output).not.toContain('runtimeName')
+  expect(result.output).not.toContain('handler')
+})
 ```
 
-### Task 4: Approved Plugin Manager Tool with Idempotency
+Also cover every query kind, unknown package, stable JSON serialization, a 128 KiB cap with `truncated: true`, and a contract-sync assertion comparing `PLUGIN_PUBLIC_CONTRACT.limits` with `packages/plugin-contract/src/limits.ts`.
 
-**Files:**
-- Create: `gateway/src/plugins/plugin-manager-tool.ts`
-- Create: `gateway/src/core/approval/plugin-manager-approval.ts`
-- Create: `gateway/src/mcp/handlers/plugin-manager.ts`
-- Create: `gateway/tests/unit/plugins/plugin-manager-tool.test.ts`
-- Create: `gateway/tests/unit/plugins/plugin-manager-approval.test.ts`
-- Modify: `gateway/src/mcp/tool-registry.ts`
-- Modify: `gateway/src/index.ts`
-- Modify: `gateway/src/types.ts`
+- [ ] **Step 2: Run tests to verify failure**
 
-**Interfaces:**
-- Produces MCP tool `mafw_plugin_manager` with operations `list`, `status`, `descriptor` (read-only) and `check`, `install`, `enable`, `disable`, `remove`, `applyPending`, `reload` (write).
-- Input: `{ operation; draftId?; packageName?; overwrite?; requestId? }`.
-- Produces `PluginManagerTool.execute(input, { sessionID }): Promise<PluginManagerResult>`.
-- Produces `PluginManagerApproval.authorize({ sessionID, operation, packageName, overwrite }): Promise<{ allowed: boolean; reason?: string }>`, built on existing approval policy + human question/response path.
-- Maintains an idempotency map keyed by `sessionID:requestId`; completed results return the saved outcome, in-flight duplicate joins the same promise.
+Run: `npx jest tests/plugin-creator-tools.test.ts tests/plugin-v2.test.ts --runInBand`
+Expected: FAIL because the inspect tool is not registered.
 
-- [ ] **Step 1: Write failing tool and approval tests**
+- [ ] **Step 3: Implement the inspect tool and register it**
 
-Tool: read operations bypass write approval; every write asks; denial/cancel/unavailable leaves state unchanged; install only resolves a draft package already present under the draft root; overwrite requires explicit flag; duplicate requestId returns same result; pending result is not reported as applied; missing draft/package returns actionable errors. Approval: full-access auto-allows; read-only/human modes ask; policy deny rejects.
+`pluginGatewayGet` reads the port from `MAFW_SERVER_API_PORT || MAFW_GATEWAY_PORT || '3000'`, adds a 5s abort timeout composed with `ctx.abort`, and throws a readable error for non-2xx bodies.
 
-- [ ] **Step 2: Run tests and verify failure**
+The overlay registers `mafw_plugin_inspect` in `V1_TOOLS`. It projects only public fields:
 
-Run in `gateway`: `npx jest --runInBand tests/unit/plugins/plugin-manager-tool.test.ts tests/unit/plugins/plugin-manager-approval.test.ts`
-Expected: FAIL because the tool and approval gate do not exist.
+- inventory: `name`, `version`, `status`, `contributions`, `activeRevision`, `pendingRevision`, diagnostics;
+- client descriptors: UI/actions/events/config descriptors and diagnostics;
+- package filter: exact `packageName`, missing returns an empty package result;
+- experience: only the public Experience response; strip `runtimeName` recursively.
 
-- [ ] **Step 3: Implement tool, approval adapter, and result DTO**
+Add root script:
 
-Use Phase 1 `PackageManager` and `PluginDraftStore`; do not duplicate install/check/reload logic. Require `draftId` for check/install and resolve its directory through the draft store. Use `requestId` or a deterministic hash of operation + draft + overwrite when absent. Return the spec's five-state result with neutral `nextStep`. Approval implementation uses the existing `ApprovalPolicyService`/question transport; do not create a new permission registry.
+```json
+"test:creator": "jest tests/plugin-creator-tools.test.ts tests/plugin-v2.test.ts --runInBand"
+```
 
-- [ ] **Step 4: Verify focused tests and full plugin suites**
+Update the plugin registration test from 20 tools to 21 and assert `mafw_plugin_inspect` is present; the manager tool raises it to 22 in Task 4.
 
-Run both Jest files — PASS.
-Run: `npx jest --runInBand tests/unit/plugins` — PASS.
-Run: `npx tsc --noEmit` — exit 0.
+- [ ] **Step 4: Run focused tests and build**
+
+Run:
+- `npm run test:creator`
+- `npm run build`
+
+Expected: PASS; build exit 0.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add gateway/src/plugins/plugin-manager-tool.ts gateway/src/core/approval/plugin-manager-approval.ts gateway/src/mcp/handlers/plugin-manager.ts gateway/src/mcp/tool-registry.ts gateway/src/index.ts gateway/src/types.ts gateway/tests/unit/plugins
+git add src/tools/plugin-common.ts src/tools/plugin-public-contract.ts src/tools/plugin-inspect.ts src/plugin.ts tests/plugin-creator-tools.test.ts tests/plugin-v2.test.ts package.json .github/workflows/ci.yml
+git commit -m "feat(plugins): add creator contract inspection"
+```
+
+---
+
+### Task 3: Native Approval Bridge
+
+**Files:**
+- Create: `src/tools/plugin-approval.ts`
+- Modify: `src/plugin.ts` (forward `ask`, `directory`, `agent` through `adaptToolExecute`)
+- Modify: `tests/plugin-creator-tools.test.ts`
+- Modify: `tests/plugin-v2.test.ts` (assert executor context forwarding)
+
+**Interfaces:**
+- Consumes: `PluginToolContext`, `pluginGatewayGet`.
+- Produces: `CREATOR_PERMISSION = 'mafw_plugin_manager'`.
+- Produces: `approveCreatorOperation(ctx, { operation, patterns }): Promise<void>`.
+- Produces: plugin executor context forwarding `sessionID`, `abort`, `directory`, `agent`, and `ask` when present.
+
+- [ ] **Step 1: Write failing approval tests**
+
+```ts
+test('non-full-access asks with always empty', async () => {
+  const ask = jest.fn(async () => undefined)
+  mockSessionMode('read-only')
+  await approveCreatorOperation({ ...ctx, ask }, {
+    operation: 'install',
+    patterns: ['install acme draft=acme overwrite=true fp=abcdef123456'],
+  })
+  expect(ask).toHaveBeenCalledWith({
+    permission: 'mafw_plugin_manager',
+    patterns: ['install acme draft=acme overwrite=true fp=abcdef123456'],
+    always: [],
+    metadata: { forceHuman: true },
+  })
+})
+
+test('full access skips the human prompt', async () => {
+  mockSessionMode('full-access')
+  const ask = jest.fn()
+  await approveCreatorOperation({ ...ctx, ask }, { operation: 'check', patterns: ['check acme'] })
+  expect(ask).not.toHaveBeenCalled()
+})
+
+test('unavailable approval fails closed', async () => {
+  mockSessionMode('auto')
+  await expect(approveCreatorOperation(ctx, { operation: 'check', patterns: ['check acme'] }))
+    .rejects.toThrow('native approval unavailable')
+})
+```
+
+Also test that `auto` mode still asks, a rejected `ask` propagates, and a failed mode lookup falls back to asking, not auto-allowing.
+
+- [ ] **Step 2: Run tests to verify failure**
+
+Run: `npx jest tests/plugin-creator-tools.test.ts --runInBand`
+Expected: FAIL because `approveCreatorOperation` does not exist.
+
+- [ ] **Step 3: Implement approval forwarding and helper**
+
+In `adaptToolExecute`, build:
+
+```ts
+const toolCtx = {
+  sessionID: context?.sessionID,
+  abort: context?.signal,
+  directory: context?.directory,
+  agent: context?.agent,
+  ...(typeof context?.ask === 'function'
+    ? { ask: (input: any) => context.ask(input) }
+    : {}),
+}
+```
+
+`approveCreatorOperation`:
+
+1. GET `/api/session/<sessionID>/config` using `pluginGatewayGet`.
+2. If the returned `mode === 'full-access'`, return without asking.
+3. If mode lookup fails, continue to ask (fail closed).
+4. If `ctx.ask` is missing, throw `native approval unavailable`.
+5. Otherwise `await ctx.ask({ permission: CREATOR_PERMISSION, patterns, always: [], metadata: { forceHuman: true } })`.
+
+Do not use the gateway `ApprovalPolicyService` as a substitute; this tool runs in the host tool pipeline. The `forceHuman` metadata is mandatory because the gateway approval hook otherwise auto-approves in `auto` mode and auto-denies internal sessions. Add a gateway hook regression test proving that metadata produces `action:'human'` and no automatic `permissionReply`.
+
+- [ ] **Step 4: Run focused tests and plugin registration tests**
+
+Run: `npx jest tests/plugin-creator-tools.test.ts tests/plugin-v2.test.ts --runInBand`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/tools/plugin-approval.ts src/plugin.ts tests/plugin-creator-tools.test.ts tests/plugin-v2.test.ts
+git commit -m "feat(plugins): add native creator approvals"
+```
+
+---
+
+### Task 4: Creator Plugin Manager Tool
+
+**Files:**
+- Create: `src/tools/plugin-draft.ts`
+- Create: `src/tools/plugin-test-runner.ts`
+- Create: `src/tools/plugin-manager.ts`
+- Modify: `src/plugin.ts` (register `mafw_plugin_manager`)
+- Modify: `tests/plugin-creator-tools.test.ts`
+- Modify: `tests/plugin-v2.test.ts`
+
+**Interfaces:**
+- Consumes: `approveCreatorOperation`, `PluginToolContext`, gateway REST endpoints.
+- Produces: `resolveDraftDirectory(projectDir: string, draft: string): string`.
+- Produces: `fingerprintDraft(directory: string): Promise<string>` (SHA-256 over every accepted relative file path and contents; accepted set must equal the install copy set; rejects more than 5,000 files or 50 MiB).
+- Produces: `runDraftTests(directory: string, deps?: { spawn?: typeof spawn; timeoutMs?: number; maxBytes?: number }): Promise<{ output: string; truncated: boolean; exitCode: number | null; timedOut: boolean }>`.
+- Produces: `pluginManagerTool` with operations `list|status|descriptor|check|test|install|enable|disable|remove|reload`.
+
+- [ ] **Step 1: Write failing manager tests**
+
+Cover:
+
+```ts
+test('install asks with package fingerprint and uses the draft path', async () => {
+  const ask = jest.fn(async () => undefined)
+  const result: any = await pluginManagerTool.execute(
+    { operation: 'install', draft: 'acme', overwrite: true, requestId: 'req-1' },
+    { ...ctx, ask },
+  )
+  expect(ask.mock.calls[0][0].patterns[0]).toMatch(/^install acme draft=acme overwrite=true fp=/)
+  expect(fetch).toHaveBeenCalledWith(
+    expect.stringContaining('/api/plugins/packages/install'),
+    expect.objectContaining({ method: 'POST' }),
+  )
+  expect(result.isError).not.toBe(true)
+})
+
+test('draft traversal and symlink escapes are rejected before approval', async () => {
+  const ask = jest.fn()
+  const result: any = await pluginManagerTool.execute({ operation: 'check', draft: '../outside' }, { ...ctx, ask })
+  expect(result.isError).toBe(true)
+  expect(result.output).toContain('invalid draft')
+  expect(ask).not.toHaveBeenCalled()
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+test('changed content between approval and execution aborts the install', async () => {
+  const ask = jest.fn(async () => { await appendFile(indexPath, '\n// changed') })
+  const result: any = await pluginManagerTool.execute({ operation: 'install', draft: 'acme' }, { ...ctx, ask })
+  expect(result.isError).toBe(true)
+  expect(result.output).toContain('draft changed during approval')
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+test('test runner uses node --test and caps oversized output', async () => {
+  const spawn = jest.fn(() => fakeChild('x'.repeat(100)))
+  const run = await runDraftTests(draftDir, { spawn, timeoutMs: 50, maxBytes: 32 })
+  expect(spawn).toHaveBeenCalledWith(
+    process.execPath,
+    ['--test'],
+    expect.objectContaining({ cwd: draftDir, shell: false }),
+  )
+  expect(run.output.length).toBeLessThanOrEqual(32)
+  expect(run.truncated).toBe(true)
+})
+```
+
+Additional cases: read-only operations make no approval call; each code/mutation operation invokes `ctx.ask` exactly once (no second agent-level prompt); denial/cancel makes no HTTP call; `applyPending` is rejected; missing draft/package names return actionable errors; install with no request id sends no request id; a new iteration can use a new id; check uses `/api/plugins/check`; enable/disable/remove/reload use the existing routes; test failure returns `isError` but does not install; a fake child that never exits is killed at the timeout and returns `timedOut: true`.
+
+- [ ] **Step 2: Run tests to verify failure**
+
+Run: `npx jest tests/plugin-creator-tools.test.ts --runInBand`
+Expected: FAIL because the manager tool does not exist.
+
+- [ ] **Step 3: Implement draft resolution, fingerprint, test runner, and operations**
+
+Draft resolution:
+
+```ts
+const root = path.resolve(projectDir, '.mafw', 'plugin-drafts')
+if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(draft)) throw new Error('invalid draft')
+const candidate = path.resolve(root, draft)
+if (!isContained(root, candidate)) throw new Error('invalid draft')
+if (!fs.realpathSync(candidate).startsWith(fs.realpathSync(root) + path.sep)) throw new Error('invalid draft')
+```
+
+Read `plugin.json` and require `manifest.name === draft`; mismatch returns `plugin.json name must equal draft directory`. Use that name in approval patterns and installation payload.
+
+Draft preparation must reject `.git`, `node_modules`, temp/OS droppings (`.tmp`, `.swp`, `.swo`, `*~`, `.DS_Store`, `Thumbs.db`, `desktop.ini`), symlinks, and non-file/non-directory entries before approval or HTTP. The accepted fingerprint set must equal what `PackageManager` copies; do not silently exclude install-only paths.
+
+Approval order for `check`/`test`/`install`:
+
+1. resolve draft and read files;
+2. compute fingerprint;
+3. build approval patterns containing operation, draft, package name, overwrite (install only), fingerprint prefix;
+4. await `approveCreatorOperation`;
+5. recompute fingerprint; mismatch → error `draft changed during approval`;
+6. call the REST endpoint or test runner.
+
+HTTP mapping:
+
+- `list`/`status`: `GET /api/plugins`, locally filter exact package when `packageName` is supplied.
+- `descriptor`: `GET /api/plugins/client`, locally filter exact package.
+- `check`: `POST /api/plugins/check { path }`.
+- `install`: `POST /api/plugins/packages/install { path, overwrite?, requestId? }`; include `requestId` only when supplied.
+- `enable`/`disable`: `POST /api/plugins/enable|disable { package: packageName }`.
+- `remove`: `POST /api/plugins/delete { package: packageName }`.
+- `reload`: `POST /api/plugins/<encodeURIComponent(packageName)>/reload`.
+- `test`: run the fixed local runner.
+
+`runDraftTests` uses `process.execPath`, args `['--test']`, `shell: false`, cwd draft, and env containing only `PATH`, `Path`, `SystemRoot`, `WINDIR`, `HOME`, `USERPROFILE`, `TMP`, `TEMP`, `NODE_ENV=test`, plus locale variables. Kill the whole process tree on timeout (Windows `taskkill /F /T`; POSIX spawn `detached: true` and kill the negative PID/process group before the direct child) and cap combined stdout/stderr including partial chunks.
+
+The tool result title and `metadata` include `operation`, package name, application state, revision, and `truncated` when relevant. Never return full test output beyond the cap; write the full log to `<project>/.mafw/plugin-drafts/.logs/<draft>.log` and return that path. `.logs` is outside every package directory and cannot be a valid draft name.
+
+Register `mafw_plugin_manager` in `V1_TOOLS`; the plugin registration test goes from 21 to 22 tools.
+
+- [ ] **Step 4: Run focused tests, plugin tests, and build**
+
+Run:
+- `npx jest tests/plugin-creator-tools.test.ts tests/plugin-v2.test.ts --runInBand`
+- `npm run build`
+
+Expected: PASS; build exit 0.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/tools/plugin-draft.ts src/tools/plugin-test-runner.ts src/tools/plugin-manager.ts src/plugin.ts tests/plugin-creator-tools.test.ts tests/plugin-v2.test.ts
 git commit -m "feat(plugins): add approved creator manager tool"
 ```
 
-### Task 5: Creator API and Desktop Entry
+---
+
+### Task 5: Desktop Creator Entry
 
 **Files:**
-- Create: `packages/desktop/src/renderer/mafw/plugins/creator-entry.ts`
-- Create: `packages/desktop/src/renderer/mafw/plugins/creator-entry.test.ts`
-- Create: `packages/desktop/src/renderer/mafw/pages/CreatorEntryButton.tsx`
-- Modify: `packages/gateway-sdk/src/client.ts`
-- Modify: `packages/gateway-sdk/src/types.ts`
-- Modify: `packages/gateway-sdk/src/client.test.ts`
-- Modify: `packages/desktop/src/preload/mafw-api.ts`
-- Modify: `packages/desktop/src/preload/mafw-types.ts`
+- Create: `packages/desktop/src/renderer/mafw/pages/creator-entry.ts`
+- Create: `packages/desktop/src/renderer/mafw/pages/creator-entry.test.ts`
+- Modify: `packages/desktop/src/renderer/mafw/pages/Config.tsx`
 - Modify: `packages/desktop/src/renderer/mafw/pages/PluginPackagesSection.tsx`
 - Modify: `packages/desktop/src/renderer/mafw/MafwShell.tsx`
 
 **Interfaces:**
-- SDK/preload: `plugins.createCreatorSession(): Promise<{ sessionID; draftId; directory }>` and `plugins.creatorSession(sessionID)`.
-- Produces pure: `shouldEnterCreator({ rosterLoading, creatorAvailable, blankSession, composerText })`
-- Desktop button label: “让 Agent 创建插件”; disabled with reason when unavailable.
-- On click: create/bind blank Creator session, set its agent selection to `mafw-create`, open the session tab, do not send a prompt, do not modify other session drafts/default.
+- Produces: `creatorEntryState({ agentsLoaded, hasCreator, isWorktree }): { available: boolean; reason?: 'loading'|'no-agent'|'worktree' }`.
+- Produces: `reusableCreatorSession({ activeSessionID, messagesBySession, pageState, activeSessionRole, activeSessionDirectory, projectRoot }): string | null`; only the active Session with a completed page load (`loading === false`, `cursor === null`, `hasMore === false`), empty messages, a non-Lead role, and a real directory under the current project root is reusable.
+- Consumes: existing `createSession`, `applyAgentSwitch`, `openSessionTab`, `activeSessionId`, `primaryAgents`, `agentsData`, `currentProject`, `benchRoot`, `store.message`.
+- Produces: new Config prop `onCreatePlugin?: () => void` and PluginPackagesSection prop `creatorEntry?: { available; reason?; onCreate }`.
 
-- [ ] **Step 1: Write failing entry/API tests**
+- [ ] **Step 1: Write failing pure entry tests**
 
-Cover creator available/unavailable/loading states, preserved composer text, no prompt submission, created session opened, repeat click on a bound blank session reuses it, SDK paths/body correct, and default agent unchanged for a later new session.
+```ts
+expect(creatorEntryState({ agentsLoaded: false, hasCreator: false, isWorktree: false }))
+  .toEqual({ available: false, reason: 'loading' })
+expect(creatorEntryState({ agentsLoaded: true, hasCreator: false, isWorktree: false }))
+  .toEqual({ available: false, reason: 'no-agent' })
+expect(creatorEntryState({ agentsLoaded: true, hasCreator: true, isWorktree: true }))
+  .toEqual({ available: false, reason: 'worktree' })
+const loaded = { s1: { cursor: null, hasMore: false, loading: false } }
+expect(reusableCreatorSession({
+  activeSessionID: 's1',
+  messagesBySession: { s1: [] },
+  pageState: loaded,
+  activeSessionRole: undefined,
+  activeSessionDirectory: 'C:/proj',
+  projectRoot: 'C:/proj',
+})).toBe('s1')
+expect(reusableCreatorSession({
+  activeSessionID: 's1',
+  messagesBySession: { s1: [{}] },
+  pageState: loaded,
+  activeSessionRole: undefined,
+  activeSessionDirectory: 'C:/proj',
+  projectRoot: 'C:/proj',
+})).toBeNull()
+expect(reusableCreatorSession({
+  activeSessionID: 's1',
+  messagesBySession: { s1: [] },
+  pageState: loaded,
+  activeSessionRole: 'lead',
+  activeSessionDirectory: 'C:/proj',
+  projectRoot: 'C:/proj',
+})).toBeNull()
+expect(reusableCreatorSession({
+  activeSessionID: 's1',
+  messagesBySession: { s1: [] },
+  pageState: {},
+  activeSessionRole: undefined,
+  activeSessionDirectory: 'C:/proj',
+  projectRoot: 'C:/proj',
+})).toBeNull()
+```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [ ] **Step 2: Run test to verify failure**
 
-Run in `packages/desktop`: focused `creator-entry.test.ts` — FAIL.
-Run in `packages/gateway-sdk`: `node --import tsx --require ../../packages/test-shim/require-hook.cjs --test src/client.test.ts` — FAIL on missing methods.
+Run in `packages/desktop`: `node --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/pages/creator-entry.test.ts`
+Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement SDK/preload entry and Desktop button**
+- [ ] **Step 3: Implement the entry and Session switching**
 
-Add the entry in the existing Plugins add-plugin area. Use existing session creation/open-tab/agent-selection state; do not introduce a second session store. Store the returned draft/session binding in the plugin store for later display. Use `ToastV2` on refusal/failure.
+Add a “让 Agent 创建插件” button next to “安装本地目录”. It is disabled with a neutral inline reason while agents load, when `mafw-create` is absent, or in a worktree.
 
-- [ ] **Step 4: Verify focused tests, typecheck, and build**
+`MafwShell` derives:
 
-Run focused Desktop tests and SDK test — PASS.
-Run: `npx tsgo --noEmit -p tsconfig.json` and `npx electron-vite build` in Desktop — exit 0.
+```ts
+const creatorAgent = primaryAgents().find((a) => isAgentKey(a, 'mafw-create'))
+const entry = creatorEntryState({
+  agentsLoaded: agentsData().length > 0,
+  hasCreator: !!creatorAgent,
+  isWorktree: benchRoot() !== currentProject(),
+})
+```
+
+Handler:
+
+1. verify `entry.available`;
+2. reuse the active blank Session when `reusableCreatorSession` returns one, otherwise call `createSession({ noReveal: true, requirePersisted: true })`;
+3. if persisted creation fails, show a toast and do not open a `local-` Session;
+4. call `applyAgentSwitch(creatorAgent, sid)`;
+5. close Config and open the Session tab;
+6. send no message and do not change `agentPicks` for any other Session.
+
+Extend `createSession` with `requirePersisted?: boolean`; when true, show a failure toast and return `""` instead of the `local-<ts>` fallback, so existing callers' `if (sid)` checks stay safe and no fake Session is opened. Do not alter the normal new-Session default or the welcome-page path.
+
+Pass the callback from `MafwShell` → `ConfigPage` → `PluginPackagesSection`. Keep the existing `components/session-drafts.ts` behavior unchanged; do not add a Creator-specific composer store.
+
+- [ ] **Step 4: Run focused test, Desktop typecheck, and build**
+
+Run in `packages/desktop`:
+- `node --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/pages/creator-entry.test.ts src/renderer/mafw/components/session-drafts.test.ts`
+- `npx tsgo --noEmit -p tsconfig.json`
+- `npx electron-vite build`
+
+Expected: PASS; both commands exit 0.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/desktop/src/renderer/mafw/plugins packages/desktop/src/renderer/mafw/pages/CreatorEntryButton.tsx packages/desktop/src/renderer/mafw/pages/PluginPackagesSection.tsx packages/desktop/src/renderer/mafw/MafwShell.tsx packages/desktop/src/preload packages/gateway-sdk
-git commit -m "feat(desktop): enter creator mode from plugins"
+git add packages/desktop/src/renderer/mafw/pages/creator-entry.ts packages/desktop/src/renderer/mafw/pages/creator-entry.test.ts packages/desktop/src/renderer/mafw/pages/Config.tsx packages/desktop/src/renderer/mafw/pages/PluginPackagesSection.tsx packages/desktop/src/renderer/mafw/MafwShell.tsx
+git commit -m "feat(desktop): enter creator from plugins"
 ```
 
-### Task 6: Draft/Install Status in Plugin Manager UI
+---
 
-**Files:**
-- Create: `packages/desktop/src/renderer/mafw/pages/plugin-creator-status.ts`
-- Create: `packages/desktop/src/renderer/mafw/pages/plugin-creator-status.test.ts`
-- Modify: `packages/desktop/src/renderer/mafw/pages/PluginPackagesSection.tsx`
-- Modify: `packages/desktop/src/renderer/mafw/plugins/plugin-store.ts`
-
-**Interfaces:**
-- Produces pure: `creatorStatusModel({ draft, packageState, creatorSession })` returning status, revision, source session, and allowed actions.
-- UI shows “创建中 / 已保存未安装 / 已安装 / pending / failed / disabled”.
-- “打开创建会话” reopens the bound Creator session; absent session falls back to ordinary package management.
-
-- [ ] **Step 1: Write failing status tests**
-
-Cover all five statuses, failed candidate while old active remains, pending apply display, missing source session fallback, and disabled package with preserved draft.
-
-- [ ] **Step 2: Run tests and verify failure**
-
-Run: `node --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/pages/plugin-creator-status.test.ts`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement status mapping and UI actions**
-
-Merge draft metadata from the creator API with Phase 1 package state. Do not infer activation from filesystem or draft existence. Keep source-session navigation as a normal `openSessionTab` action.
-
-- [ ] **Step 4: Verify tests and typecheck**
-
-Run focused test — PASS.
-Run: `npx tsgo --noEmit -p tsconfig.json` — exit 0.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add packages/desktop/src/renderer/mafw/pages packages/desktop/src/renderer/mafw/plugins/plugin-store.ts
-git commit -m "feat(desktop): show creator draft status"
-```
-
-### Task 7: Deterministic Creator Fixtures and End-to-End Tests
+### Task 6: Deterministic Creator Flow Integration
 
 **Files:**
 - Create: `gateway/tests/integration/plugin-creator-flow.test.ts`
-- Create: `gateway/tests/fixtures/plugin-creator-tools.json`
-- Modify: `gateway/package.json` test fixture copy only if needed
+- Reuse patterns from: `gateway/tests/integration/plugin-package-e2e.test.ts`
+- Create fixtures under: `gateway/tests/fixtures/plugin-creator/`
 
 **Interfaces:**
-- Fixture is an ordered tool-call transcript: inspect → write fixture draft files → check → install → panel/config action → edit title → check → install overwrite → delete.
-- Test uses a fake approval gate returning allow/deny variants and a fake broadcast sink.
-- No live LLM is required for the deterministic test.
+- Consumes: Phase 1 `PluginHost`, `PackageManager`, temp plugin/state roots.
+- Produces: a deterministic fixture package with `plugin.json`, `index.js`, and one `*.test.js` file.
 
-- [ ] **Step 1: Write failing Creator flow integration test**
+- [ ] **Step 1: Write failing integration test**
 
-Cover allow path, denied install path, failed candidate rollback, pending active-runtime path, second iteration revision change, delete cleanup, and restart of the draft store between install steps.
+Test flow:
 
-- [ ] **Step 2: Run test and verify failure**
+1. copy fixture into `<tmp-project>/.mafw/plugin-drafts/acme`;
+2. `manager.installFromPath({ path: draft, requestId: 'creator-install-1' })` and capture revision 1;
+3. assert the draft still exists and active package name is `acme`;
+4. edit the draft title/UI text;
+5. `manager.installFromPath({ path: draft, overwrite: true, requestId: 'creator-install-2' })` and assert revision 2 differs;
+6. run `manager.checkPath(draft)` after corrupting `index.js`; assert `ok:false` while the active revision stays 2;
+7. `manager.remove('acme')`; assert installed directory is gone and the source draft remains;
+8. assert no `creator-session`/draft kv file was created by the flow.
+
+Also assert two installs with the same request id replay the first result (existing Manager semantics) while a new iteration with a new request id can advance the revision.
+
+- [ ] **Step 2: Run test to verify failure**
 
 Run in `gateway`: `npx jest --runInBand tests/integration/plugin-creator-flow.test.ts`
-Expected: FAIL until all Creator services are wired.
+Expected: FAIL until the fixture and helper wiring exist.
 
-- [ ] **Step 3: Implement only the missing wiring/fixture support**
+- [ ] **Step 3: Implement only fixture/helper wiring**
 
-Do not add new production features in this task. Wire the gateway services, deterministic fixture loader, and test helpers. Any production defect discovered must be fixed in a separate failing test first.
+Do not add production features. Use the existing manager/host setup from `plugin-package-e2e.test.ts`; isolate every temp root and clean up in `afterEach`. The fixture package must be a valid Phase 1 package and its test file must pass under `node --test`.
 
-- [ ] **Step 4: Verify integration test and full gateway plugin suites**
+If the flow exposes a production defect, write the focused failing test in the owning task/module before fixing it and do not hide it in this integration test.
 
-Run focused integration test — PASS.
-Run: `npx jest --runInBand tests/unit/plugins tests/integration/plugin-creator-flow.test.ts` — PASS.
+- [ ] **Step 4: Run integration and plugin suites**
+
+Run in `gateway`:
+- `npx jest --runInBand tests/integration/plugin-creator-flow.test.ts`
+- `npx jest --runInBand tests/unit/plugins tests/unit/routes/plugin-packages.test.ts`
+
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add gateway/tests/integration gateway/tests/fixtures gateway/package.json
-git commit -m "test(plugins): cover creator end-to-end flow"
+git add gateway/tests/integration/plugin-creator-flow.test.ts gateway/tests/fixtures/plugin-creator
+git commit -m "test(plugins): cover creator draft lifecycle"
 ```
 
-### Task 8: Live Creator Smoke and Phase-2 Acceptance
+---
+
+### Task 7: Full Verification, Live Smoke, and Guide
 
 **Files:**
 - Create: `docs/guides/plugin-creator.md`
-- No production files unless smoke finds a bug (fix via failing test first)
+- Modify: `docs/guides/plugin-authoring.md` (link to Creator guide; keep Phase 1 manual flow documented)
+- No production files unless the smoke finds a defect; fix test-first.
+
+**Interfaces:**
+- Consumes: all prior tasks.
+- Produces: guide with entry, exact draft path, permissions/approvals, test command, install/overwrite, pending behavior, failure recovery, draft retention, worktree limitation, and trust boundary.
 
 - [ ] **Step 1: Run deterministic full verification**
 
 Run:
-- `npm test --prefix gateway -- --runInBand`
+- `npm test --prefix gateway -- --runInBand --forceExit`
+- `npm run test:creator`
 - `npm test -w @mafw/sdk`
 - `npm test -w @mafw/desktop`
 - `npx tsc --noEmit` in `gateway`
-- `npx tsgo --noEmit -p tsconfig.json` and `npx electron-vite build` in Desktop
-- contract freshness/API contract tests
+- `npx tsgo --noEmit -p tsconfig.json` and `npx electron-vite build` in `packages/desktop`
+- `npm run build` at repo root
+- contract/OpenAPI freshness checks required by the repository
 
 Expected: all pass; record exact new-test and total counts.
 
-- [ ] **Step 2: Run the real model + real Desktop smoke**
+- [ ] **Step 2: Run the real-model + real-Desktop smoke**
 
-Open Plugins → “让 Agent 创建插件”. Confirm no prompt auto-send and prior composer draft unchanged. Ask for a plugin with panel, config page, tool card and message window. Verify inspect is called first, draft files stay under `plugin-drafts/<draftId>`, denied install causes no active mutation, approved install activates, real UI is visible, a second iteration hot-reloads, a broken candidate keeps the old revision, restart recovers the session/draft, and remove cleans active contributions while retaining the draft.
+Before starting, ensure the gateway is reachable only through the intended trust boundary (the pre-existing auth-order P0 is fixed or the gateway is loopback-only). Restart the agent process so the rebuilt plugin tools load.
 
-- [ ] **Step 3: Document setup, approvals, draft location, recovery, and limitations**
+Open Plugins → “让 Agent 创建插件”. Verify:
 
-`docs/guides/plugin-creator.md` must cover Creator entry, required permissions, draft/source location, retry/idempotency, how to disable a broken plugin, how to return to the Creator session, and the explicit non-goals (no arbitrary Client code, no malicious Host sandbox, no permanent approval escalation).
+1. entry opens a normal Session with `mafw-create` and sends no message;
+2. another Session's unsent composer text is still present;
+3. the normal new-Session default is unchanged;
+4. the model calls `mafw_plugin_inspect` before writing;
+5. files appear only under `<project>/.mafw/plugin-drafts/<packageName>/`;
+6. denied `check`/`install` executes nothing and mutates nothing;
+7. approved install activates panel/config/toolCard/messageWindow without a Desktop restart;
+8. a second edit produces a new revision and no stale view;
+9. a broken candidate keeps the prior active revision;
+10. an active-runtime package remains pending until the user applies it in the Plugins page;
+11. restart keeps the draft and installed/pending state; another Creator Session can continue the same folder;
+12. remove cleans active contributions but retains the source draft;
+13. the worktree entry is disabled.
 
-- [ ] **Step 4: Fix any smoke defect test-first, then rerun full verification**
+Record the actual provider/model and commit hash used for the smoke. “No model available” is an explicit skip, not a passing smoke.
 
-Write the failing regression test before the fix. Commit only smoke fixes and the guide.
+- [ ] **Step 3: Document setup, approvals, recovery, and limitations**
+
+Write `docs/guides/plugin-creator.md` with concrete commands and paths. State explicitly:
+
+- native approval `always` does not persist a grant;
+- `check`/`test` run trusted draft code, not a sandbox;
+- no model-visible `applyPending`;
+- no visual screenshot feedback; user reports rendering issues;
+- drafts are not auto-deleted;
+- worktree Creator entry is disabled;
+- source is project files; installed package is a copy.
+
+- [ ] **Step 4: Fix smoke defects test-first and rerun full verification**
+
+Write a failing regression test before each fix, then rerun the complete Step 1 suite. Report both the deterministic result and the live-smoke result separately.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/guides/plugin-creator.md <smoke-fix-files>
-git commit -m "feat(plugins): complete agent create mode"
+git add docs/guides/plugin-creator.md docs/guides/plugin-authoring.md <smoke-fix-files>
+git commit -m "docs(plugins): document agent create workflow"
 ```
+
+---
+
+## Self-Review Checklist
+
+- Spec §15.1 ordinary blank Session: Task 5.
+- §15.2 identity, skill, tool boundary: Task 1.
+- §15.3 read-only inspection: Task 2.
+- §15.4 project drafts, no session binding, worktree limitation: Tasks 4–6.
+- §15.5 native approval, fixed test, operations, fingerprint, request id: Tasks 3–4.
+- §15.6 flow and trusted-code verification: Tasks 4, 6, 7.
+- §15.7 Desktop reuse with no new Creator API: Task 5.
+- §15.8 acceptance 1–8: Tasks 3–6; acceptance 9: Task 7.
+- No task creates a dedicated Creator Session, gateway draft kv, or a second install path.

@@ -9,6 +9,7 @@ import { ToolRegistry, type ToolProps, type ToolComponent } from "@mafw/session-
 import { BasicTool, GenericTool } from "@mafw/session-ui/basic-tool"
 import type { Widget } from "../../../shared/ui-plugins"
 import { openImageLightbox } from "../image-lightbox"
+import { isUnifiedToolCardClaimed } from "./tool-cards/registered-tools"
 
 // original = undefined 表示该工具本来没有注册卡（默认链是 GenericTool）
 const proxied = new Map<string, ToolComponent | undefined>()
@@ -164,6 +165,8 @@ async function applyUserPluginCards() {
   }
   for (const { tool, override } of entries) {
     if (proxied.has(tool)) continue
+    // 统一声明式工具卡已占位：legacy 重扫不得覆盖（Task 10）。
+    if (isUnifiedToolCardClaimed(tool)) continue
     const original = ToolRegistry.render(tool)
     if (original && !override) continue // 不覆盖已注册卡（spec §3）
     proxied.set(tool, original)
@@ -172,6 +175,27 @@ async function applyUserPluginCards() {
       render: (props: ToolProps) => <UserPluginProxy {...props} pluginTool={tool} original={original} />,
     })
   }
+}
+
+/**
+ * Release one tool from the legacy proxy set and restore the card underneath.
+ *
+ * Used by unified tool cards with `override: true`: the slot is taken away from
+ * the legacy card, so a later legacy rescan (which re-lists from IPC) cannot
+ * reclaim it. Returns the restored card for use as the unified fallback.
+ */
+export function releaseLegacyToolCard(tool: string): ToolComponent | undefined {
+  const original = proxied.get(tool)
+  const known = proxied.has(tool)
+  if (!known) return undefined
+  ToolRegistry.register({ name: tool, render: original })
+  proxied.delete(tool)
+  return original
+}
+
+/** Re-run the legacy scan (used after unified tool-card revisions release slots). */
+export function reapplyUserPluginCards(): void {
+  void applyUserPluginCards()
 }
 
 export function registerUserPluginCards() {

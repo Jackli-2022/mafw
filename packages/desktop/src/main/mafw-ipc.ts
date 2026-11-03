@@ -214,6 +214,39 @@ export function registerMafwIpcHandlers() {
     }
   })
 
+  // Unified plugin packages (Task 12): native directory picker for install.
+  // The renderer never gets a generic filesystem API; main validates that the
+  // request comes from the top frame of a real application window before
+  // opening the dialog.
+  ipcMain.handle("mafw-plugins-choose-directory", async (event: IpcMainInvokeEvent) => {
+    try {
+      const { BrowserWindow: BW, dialog } = await import("electron")
+      const win = BW.fromWebContents(event.sender)
+      const trusted =
+        !!win &&
+        !win.isDestroyed() &&
+        win.webContents === event.sender &&
+        event.senderFrame?.parent == null &&
+        event.sender.getType() === "window"
+      if (!trusted) {
+        writeLog("utility", "mafw-plugins-choose-directory rejected sender", {
+          type: event.sender.getType(),
+        }, "warn")
+        return { path: null, error: "sender is not an application window" }
+      }
+      const res = await dialog.showOpenDialog(win!, {
+        title: "选择插件包目录",
+        properties: ["openDirectory"],
+      })
+      if (res.canceled || !res.filePaths?.[0]) return { path: null }
+      writeLog("utility", "mafw-plugins-choose-directory", { path: res.filePaths[0] })
+      return { path: res.filePaths[0] }
+    } catch (err) {
+      writeLog("utility", "mafw-plugins-choose-directory failed", { err: String(err) }, "warn")
+      return { path: null, error: String(err) }
+    }
+  })
+
   // OS-level notification for away-from-window moments (close-to-tray).
   // The renderer decides relevance (document.hidden) and throttling.
   ipcMain.handle("mafw-notify", (_event: IpcMainInvokeEvent, opts: { title: string; body: string }) => {

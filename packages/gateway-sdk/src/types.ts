@@ -4,6 +4,8 @@
 
 // Task 3：background jobs 复用 Task 1 的 View DTO（单一事实源在 view-dto.ts）
 import type { MafwBackgroundJob, MafwMessage } from './view-dto'
+// Task 6：unified plugin package DTOs come from the shared contract package.
+import type { PluginClientDescriptor } from '@mafw/plugin-contract'
 
 /**
  * 会话列表/详情条目。
@@ -1692,3 +1694,85 @@ export interface TtsNamespace {
   /** 流式 TTS 端点 URL（契约归 SDK：IPC 无法克隆 SSE 流，renderer 直连 fetch 时用此构造）。 */
   streamUrl: () => string
 }
+
+// ============================================================
+// Unified plugin packages (Task 6)
+// ============================================================
+
+/** Re-exported so Desktop can consume descriptors without importing the contract package. */
+export type { PluginClientDescriptor } from '@mafw/plugin-contract'
+
+/** `GET /api/plugins/client` — committed packages only (never pending). */
+export interface PluginClientSnapshot {
+  revision: string
+  plugins: PluginClientDescriptor[]
+}
+
+/** One row of the Hub inventory (`GET /api/plugins` packages[]). */
+export interface PluginsPackageEntry {
+  name: string
+  source: string
+  status: 'ok' | 'error' | 'disabled'
+  enabled: boolean
+  error?: string
+  contributions: string[]
+  version?: string
+  /** Committed revision token (`<bootId>:<counter>`). */
+  revision?: string
+  /** Staged candidate revision awaiting `apply`. */
+  pendingRevision?: string
+  fingerprint?: string
+}
+
+export interface PluginsListResult {
+  plugins: Array<{
+    type: 'runtime' | 'media' | 'usage' | 'ui'
+    name: string
+    file: string
+    status: 'enabled' | 'disabled' | 'error' | 'config-disabled'
+    error?: string
+    size: number
+    mtime: string
+    builtin?: boolean
+    overridden?: boolean
+    pluginType?: string
+  }>
+  packages?: PluginsPackageEntry[]
+  revision?: string
+}
+
+/** `POST /api/plugins/packages/install`. */
+export interface PluginPackageInstallResult {
+  name: string
+  version?: string
+  activeRevision?: string
+  pendingRevision?: string
+  saved: boolean
+  application: 'applied' | 'pending' | 'failed'
+  error?: string
+}
+
+/** enable/disable/reload/apply result. */
+export interface PluginPackageUpdateResult extends PluginPackageInstallResult {
+  enabled: boolean
+  /**
+   * apply only: the committed package owns the active runtime.
+   * - `applied`: the gateway switched/re-instantiated the runtime.
+   * - `failed`: the package applied but the runtime switch failed (`runtimeError`).
+   * - `required`: no switch callback is wired; a manual switch is needed.
+   */
+  runtimeSwitch?: 'applied' | 'failed' | 'required'
+  runtimeError?: string
+  /** `applied` only: the runtime the gateway switched to. */
+  active?: { name: string; capabilities: Record<string, unknown> }
+}
+
+/** `POST /api/plugins/check` — `ok:false` is a diagnostic, not an HTTP error. */
+export interface PluginCheckResult {
+  ok: boolean
+  name?: string
+  version?: string
+  contributions?: string[]
+  error?: string
+}
+

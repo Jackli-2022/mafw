@@ -49,6 +49,8 @@ import { podTaskUpdateTool } from './tools/pod-task-update';
 import { podMessageTool } from './tools/pod-message';
 import { podMemoryReadTool } from './tools/pod-memory-read';
 import { podMemoryWriteTool } from './tools/pod-memory-write';
+import { pluginInspectTool } from './tools/plugin-inspect';
+import { pluginManagerTool } from './tools/plugin-manager';
 import { ensureMcpWiring, resolveGatewayApiUrl } from './utils/self-wiring';
 import {
   zodToJsonSchema,
@@ -121,6 +123,8 @@ const V1_TOOLS: Record<string, { description: string; args: any; execute: (args:
   mafw_pod_message: podMessageTool,
   mafw_pod_memory_read: podMemoryReadTool,
   mafw_pod_memory_write: podMemoryWriteTool,
+  mafw_plugin_inspect: pluginInspectTool,
+  mafw_plugin_manager: pluginManagerTool,
 };
 
 /** V1 工具结果 → V2 `{ content, metadata }`。 */
@@ -128,11 +132,53 @@ async function adaptToolExecute(
   def: { execute: (args: any, ctx: any) => any },
   input: any,
   context: any,
+  fallbackDirectory?: string,
+  assertPermission?: (input: any) => Promise<void>,
 ): Promise<any> {
-  const result = await def.execute(input, {
+  // 原生工具上下文的完整转发：Creator 工具依赖真实 sessionID/directory/agent，
+  // 并通过 `ask` 发起宿主原生审批（`signal` 改名 `abort`）。宿主没有审批通道时
+  // 不伪造一个空的 `ask`——缺省即"无法审批"，由工具 fail closed。
+  //
+  // `directory` 回退到 setup 的 location：opencode v2 的工具执行上下文不携带
+  // directory（只有 sessionID），而插件本身按项目 location 加载；不回退会让
+  // Creator 的草稿根解析在所有真实调用里失败（live smoke 实证）。
+  //
+  // 审批双通道：V1 宿主直接给 `context.ask`；V2 宿主把它放在 plugin ctx 的
+  // `permission.assert`（自定义工具上下文没有 ask）。两条都走 same awaitable 语义，
+  // `always/save` 恒为空，不沉淀持久放行。
+  const hostAsk = typeof context?.ask === 'function'
+    ? (input: any) => context.ask(input)
+    : undefined;
+  const ask = hostAsk ?? (assertPermission
+    ? async (input: any) => {
+        await assertPermission({
+          sessionID: context?.sessionID,
+          agent: context?.agent,
+          // V2 工具上下文用 messageID/id；新 API 文档也用过 assistantMessageID/toolCallID。
+          ...(context?.messageID || context?.id || context?.assistantMessageID || context?.toolCallID
+            ? {
+                source: {
+                  type: 'tool',
+                  messageID: context?.messageID ?? context?.assistantMessageID,
+                  id: context?.id ?? context?.toolCallID,
+                },
+              }
+            : {}),
+          action: input?.permission ?? 'mafw_plugin_manager',
+          resources: Array.isArray(input?.patterns) ? input.patterns : [],
+          save: [],
+          ...(input?.metadata ? { metadata: input.metadata } : {}),
+        });
+      }
+    : undefined);
+  const toolCtx = {
     sessionID: context?.sessionID,
     abort: context?.signal,
-  });
+    directory: context?.directory ?? fallbackDirectory,
+    agent: context?.agent,
+    ...(ask ? { ask } : {}),
+  };
+  const result = await def.execute(input, toolCtx);
   if (result == null) return { content: '' };
   if (typeof result === 'string') return { content: result };
   const content = result.content ?? result.output ?? result.text ?? JSON.stringify(result);
@@ -177,6 +223,12 @@ export default {
 
     const gatewayUrl = getGatewayUrl(mafwDir);
 
+    // V2 宿主把审批放在 plugin ctx（permission.assert），工具执行上下文没有 ask。
+    // 捕获并桥接给工具；缺失时工具 fail closed。
+    const permissionAssert = typeof (ctx as any)?.permission?.assert === 'function'
+      ? (input: any) => (ctx as any).permission.assert(input)
+      : undefined;
+
     // ── 工具（V1 tool map → ctx.tool.transform + JSON Schema）───────────────
     await ctx.tool.transform((editor: any) => {
       for (const [name, def] of Object.entries(V1_TOOLS)) {
@@ -184,7 +236,7 @@ export default {
           name,
           description: def.description,
           input: zodToJsonSchema(def.args),
-          execute: (input: any, context: any) => adaptToolExecute(def, input, context),
+          execute: (input: any, context: any) => adaptToolExecute(def, input, context, directory, permissionAssert),
         });
       }
     });

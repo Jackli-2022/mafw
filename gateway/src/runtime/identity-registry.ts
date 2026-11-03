@@ -8,10 +8,12 @@
 // 原生侧（nativePermissions/nativeTools）直接复用既有 builder，保证物化产物与今天
 // 逐字节等价、零漂移；policy 是网关策略层的单一事实源（中立类别词汇）。
 import { AgentDefinition, AgentPermissions } from './agent-definition';
+import type { RuntimeCapabilities } from './contract';
 import { getManagerAgentDefinition } from '../skills/manager-agent-config';
 import { buildMemoryCuratorDefinition } from '../skills/memory-curator-agent';
 import { getLeadAgentDefinition } from '../skills/lead-identity';
 import { getTechLeadAgentDefinition } from '../skills/tech-lead-identity';
+import { getPluginCreatorAgentDefinition } from '../skills/plugin-creator-identity';
 
 export interface IdentityPolicy {
   /** 绝对拒绝：类别标签（file-edit/shell/subagent/web/readonly）或工具名 */
@@ -28,6 +30,12 @@ export interface IdentitySpec {
   color?: string;
   model?: { providerID: string; modelID: string };
   policy: IdentityPolicy;
+  /**
+   * 物化前置能力（纯声明门）：runtime 必须把该能力声明为 true 才物化本身份。
+   * 用于「身份本身可翻译、但它依赖的工具/技能只有某类 runtime 才有」的场景
+   * （`mafw-create` 的 inspect/manager 工具与随包 skill 都是插件宿主产物）。
+   */
+  requiresCapability?: keyof RuntimeCapabilities;
   /** 物化逃生舱：原生 AgentDefinition 的 permissions（含 permissions.tools 规则面） */
   nativePermissions?: AgentPermissions;
   /** 物化逃生舱：原生 AgentDefinition 顶层 tools 布尔面（opencode '*' 硬禁用） */
@@ -109,6 +117,7 @@ function buildBuiltins(): IdentitySpec[] {
   const lead = getLeadAgentDefinition();
   const curator = buildMemoryCuratorDefinition();
   const techLead = getTechLeadAgentDefinition();
+  const creator = getPluginCreatorAgentDefinition();
   return [
     {
       // Lead：用户可感知的唯一协调身份（替换 Manager，spec §3.1）。
@@ -139,6 +148,28 @@ function buildBuiltins(): IdentitySpec[] {
       },
       nativePermissions: mgr.permissions,
       nativeTools: mgr.tools,
+    },
+    {
+      // Creator：统一插件包的 primary 身份（spec 2026-11-03 §15.2）。身份只做薄权限壳；
+      // 详细教程在 skills/plugin-creator/SKILL.md。skill 必须显式进 allowlist——原生
+      // tools['*']=false 已禁全部工具，漏掉它 Creator 自己就加载不了随包技能。
+      name: 'mafw-create',
+      description: creator.description,
+      scope: 'primary',
+      systemPrompt: creator.systemPrompt,
+      // 工具（mafw_plugin_inspect/manager）与随包 plugin-creator 技能都来自
+      // OpenCode 插件宿主；没有它们的 runtime（pi）不物化这个身份。
+      requiresCapability: 'pluginCreatorApi',
+      policy: {
+        deny: ['shell', 'web', 'subagent'],
+        allowlist: [
+          'readonly', 'file-edit', 'skill', 'question', 'plan_exit', 'todowrite',
+          'mafw_plugin_inspect', 'mafw_plugin_manager',
+          'mafw_add_memory', 'mafw_search_hybrid', 'mafw_get_memory',
+        ],
+      },
+      nativePermissions: creator.permissions,
+      nativeTools: creator.tools,
     },
     {
       name: 'mafw-tech-lead',
@@ -240,6 +271,18 @@ export function createBuiltinIdentityRegistry(): IdentityRegistry {
     list: () => builtins.slice(),
     get: (name) => builtins.find((s) => s.name === name),
   };
+}
+
+/**
+ * 物化前置判定（纯函数）：无能力要求 → 可物化；有要求 → runtime 必须显式声明 true。
+ * 缺失声明（旧插件/未知 runtime）按不支持处理，绝不默认放行。
+ */
+export function identityMaterializable(
+  spec: IdentitySpec,
+  capabilities: RuntimeCapabilities,
+): boolean {
+  if (!spec.requiresCapability) return true;
+  return capabilities[spec.requiresCapability] === true;
 }
 
 /** 从注册表条目派生原生 AgentDefinition（物化器输入）——native 逃生舱原样透传，保证字节等价。 */

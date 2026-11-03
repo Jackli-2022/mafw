@@ -416,87 +416,102 @@ fs.watch / 手动 reload / install / enable / disable / delete
 
 ## 15. 第二阶段：Agent Create / Creator 模式
 
-> 本节是正式纳入设计的第二阶段范围，不只是 backlog 提示。实施前提是 §5–§14 的统一包、声明式 UI、Plugin Manager、revision 和热重载已经验收。第二阶段不再设计另一套插件协议。
+> 本节是正式纳入设计的第二阶段范围。实施前提是 §5–§14 的统一包、声明式 UI、Plugin Manager、revision 和热重载已经验收。第二阶段对齐 DSH 当前的“普通 blank Session + workspace 源文件 + 原生审批工具 + Plugin Manager”流程，不建立另一套会话、草稿或插件协议。
 
 ### 15.1 目标与非目标
 
 目标：用户从 Desktop 进入 Creator，通过对话让 Agent 创建、验证、安装并持续迭代一个统一插件包；生成的 panel/config/toolCard/messageWindow 在真实 MAFW 主窗口中立即可见。
 
 - 创建入口位于 **Plugins → Add plugin → 让 Agent 创建插件**。
-- Creator 使用专用 `mafw-create` Agent 身份/preset，打开或绑定一个空白 Creator Session。
-- 进入入口时不自动发送消息、不清空 composer 未发送草稿、不改变普通新会话的默认 Agent；只有目标 Creator Session 绑定 `mafw-create`。
+- 入口复用当前项目可接收 preset 的 blank Session；需要新会话时走现有普通 Session 创建流程。只有接收会话切换到 `mafw-create`，它仍是普通会话，不是新的 session 类型。复用前必须确认历史加载完成且为空、会话不是 Lead/manager/internal 角色、会话真实 directory 属于当前项目；任何不满足项都创建新 Session，绝不改写协调会话或把草稿写到项目外。
+- 进入入口时不自动发送消息、不丢弃任何会话的 composer 未发送草稿、不改变普通新会话的默认 Agent。
 - Agent 只生成 §5 的 `plugin.json + index.js` 统一包，UI 只能生成 §8 的声明式描述。
 - 安装、启停、删除、pending 应用和 revision 全部复用第一阶段 Plugin Manager。
-- 同一会话可以反复“修改草稿 → 检查 → 审批 → 安装/覆盖 → 真实 UI 验证”。
+- 同一草稿可由任意 Creator 会话反复“修改 → 检查/测试 → 审批 → 安装/覆盖 → 真实 UI 验证”，不绑定来源会话。
 
-第二阶段不做：任意可执行 Client bundle、Agent preset 编辑器、插件市场、模型直接 define/run 临时代码、绕过 Plugin Manager 写 active 插件目录、无审批的 Host 代码安装。
+第二阶段不做：专用 Creator Session API、全局 DraftStore 或 draft↔session 绑定、任意可执行 Client bundle、Agent preset 编辑器、插件市场、模型直接 define/run 临时代码、绕过 Plugin Manager 写 active 插件目录、无审批的 Host 代码安装。
 
 ### 15.2 Creator 身份与开发技能
 
-在 IdentityRegistry 注册 `mafw-create`，其系统提示与随包技能包含：
+在 IdentityRegistry 注册 `mafw-create`，但身份只做**薄权限/preset 壳**，不复制开发教程。Identity 的系统提示只保留：
+
+- 角色定位：统一插件包的 Creator。
+- 第一次 inspect 或写草稿前必须加载 `plugin-creator` skill；skill 不可用时停止并说明，不凭记忆继续生成。
+- 草稿只写项目内 `.mafw/plugin-drafts/<packageName>/`；check/test/install/启停/删除只经 `mafw_plugin_manager`。
+- `applyPending` 仅用户可执行；saved/tested/installed/active/pending 不混称。
+
+`skills/plugin-creator/SKILL.md` 才拥有完整细节：
 
 - 统一包和贡献契约、四类 UI slots、ActionWidget、事件命名空间和 revision 行为。
 - 最小依赖/零依赖模板，以及 panel/config/toolCard/messageWindow 的参考骨架。
-- “先检查可用 API，再写代码；先形成可验证最小版本，再扩展视觉”的工作顺序。
-- 测试先行：为 action 行为、事件 payload、View DTO 和错误路径生成可运行测试；UI 以真实渲染验证为准。
-- 明确区分 draft saved、check passed、installed、activated、pending 五种状态，不把写文件成功说成插件已运行。
-- 插件内容已由仓库文件承载时，Agent 的记忆只记路径和 gist；不把生成全文写入长期记忆。
+- inspect → 最小实现 → 测试 → check/test → 安装 → 真实 UI 验证 → 迭代的工作顺序。
+- 测试先行、生命周期状态区分、审批/fingerprint/requestId 说明、常见故障，以及“记忆只记路径和 gist”。
+- 模板与限制的唯一详细来源；identity 不重复这些内容。
 
-Creator 不获得 raw runtime、gateway 内部对象或通用插件管理 HTTP 转发；只能使用以下窄工具和普通工作区工具。
+Creator 不获得 raw runtime、gateway 内部对象或通用插件管理 HTTP 转发。身份 allowlist 含 readonly/file-edit、question/todo、`skill`、`mafw_add_memory`/`mafw_search_hybrid`/`mafw_get_memory`、`mafw_plugin_inspect` 与 `mafw_plugin_manager`；拒绝 shell、web、subagent 以及无关的 goal/pod/task/python/media/desktop/automation/restart 能力。`skill` 工具必须显式启用——使用 `tools['*']=false` 时不能遗漏它，否则 Creator 自己看不到随包技能。`mafw-create` 与 DSH Creator 一样可出现在普通 primary-agent/preset 选择器，不新增 entry-only 身份机制。
+
+本期 Creator 工具与随包 skill 是 OpenCode 插件/Host 产品：`mafw-create` 的 IdentitySpec 标记 `requiresCapability: 'pluginCreatorApi'`。只有声明该能力的 runtime 物化并暴露此身份；能力缺失的 runtime（如 pi）不物化、不出现在 `/api/agents`，Desktop 显示中性的无 Agent 原因，而不是提供一个无工具的 Creator。
+
+本期实现选择是不向 Creator 开放通用 shell；草稿测试由 `mafw_plugin_manager.test` 执行，避免把 shell 当成绕过 Manager 的平行安装通道。通用 file-edit 的路径约束是工作流约定，不宣称它是恶意代码 sandbox；真正的安装边界是 Manager 的来源校验与逐次人工审批。
 
 ### 15.3 只读能力检查
 
-新增模型工具 `mafw_plugin_inspect`，只读查询第一阶段已公开的契约：
+新增**插件原生**模型工具 `mafw_plugin_inspect`，只读查询第一阶段已公开的契约：
 
 - `clientDescriptors`：现有包、版本、active/pending revision、UI slots 和诊断。
 - `actions` / `events`：descriptor 中的名称、schema、scope 和限制。
 - `slots` / `widgetSchema`：当前 Desktop 支持的 slot、Widget 类型、字段和大小限制。
 - `package`：指定包的 descriptor 与公开配置 schema。
-- `runtimeCapabilities`：仅返回 Experience/公开能力描述，不返回 runtimeName、私有对象或原生 SDK 形状。
+- `experience`：仅返回 Experience/公开能力描述，不返回 runtimeName、私有对象或原生 SDK 形状。
 
-检查工具只读，不调用业务 action、不执行插件方法。Creator 先检查再生成，避免凭空猜 API。该工具与 `mafw plugin-check` 的静态/候选检查职责不同：前者回答“宿主支持什么”，后者回答“这个 candidate 是否有效”。
+检查工具只读，不调用业务 action、不执行插件方法。Creator 先检查再生成，避免凭空猜 API。候选包的静态/激活检查由 §15.5 的 `check` 承担，两者不混称。输出必须有明确字节上限与 `truncated` 标记。
 
-### 15.4 草稿工作区与持久状态
+### 15.4 项目内草稿与持久状态
 
-- 每个创建任务使用 `~/.mafw/plugin-drafts/<draftId>/` 作为独立草稿根；会话 cwd 指向草稿根。
-- `draftId` 为不可猜的本地标识；gateway kv 记录 `{draftId, creatorSessionID, packageName?, activeRevision?, updatedAt}`。
-- Agent 的 edit/write 只落在草稿根；不直接写 `~/.mafw/plugins/<name>`。
-- 草稿在 Desktop/gateway 重启后保留，Creator Session 可重新绑定并继续迭代。
-- 安装从草稿路径调用 `POST /api/plugins/packages/install`；覆盖已有包必须显式 `overwrite:true` 并经过审批。
-- 草稿是源，active 包是安装副本；迭代始终先改草稿，避免直接编辑运行副本导致无法回滚。
+- 每个包使用 `<project>/.mafw/plugin-drafts/<packageName>/` 作为源目录；会话 cwd 仍是当前项目，不为 Creator 改写。
+- 草稿只按项目路径和包名管理，不生成 draftId，不写 gateway kv，不记录 creatorSessionID。文件系统是草稿真相源。
+- 草稿随项目文件天然跨 Desktop/gateway 重启保留；任意 Creator 会话可继续编辑，不承诺恢复某个来源会话。
+- 本期不为 worktree 会话提供 Creator 入口；从 Plugins 进入时总是复用/创建主项目中的普通 blank Session，避免草稿随 worktree 清理而消失。
+- Agent 通过 `mafw_plugin_manager.check/test/install` 引用草稿时只传相对包目录名；工具根据真实 session 的项目目录解析，并以 realpath 拒绝符号链接或 `..` 逃逸草稿根。草稿内的符号链接、`.git`、`node_modules` 和临时/OS 丢弃文件直接拒绝，不进入审批或安装。
+- 审批 fingerprint 覆盖的集合必须等于 `PackageManager` 会复制的集合；不允许“hash 跳过但安装复制”的路径。
+- 安装始终由第一阶段 `PackageManager` 从该草稿目录完成；覆盖已有包必须显式 `overwrite:true` 并逐次审批。
+- 草稿是源，active 包是安装副本；迭代始终先改草稿。remove 只清理安装副本和 active 贡献，默认保留项目内源草稿。
 
-### 15.5 模型可见的 Plugin Manager 工具
+### 15.5 原生 Plugin Manager 工具与审批
 
-新增一个命名空间化工具 `mafw_plugin_manager`，操作与第一阶段 REST/SDK 一一对应：
+新增**插件原生**工具 `mafw_plugin_manager`，复用真实工具上下文的 sessionID/callID/abort signal，不使用模型自报 sessionID，不建立无会话的 MCP 旁路：
 
 - 只读：`list`、`status`、`descriptor`。
-- 检查：`check({draftId})`。
-- 写入：`install({draftId, overwrite?})`、`enable`、`disable`、`remove`、`applyPending`。
-- 所有写入返回结构化 `{saved, application, activeRevision?, pendingRevision?, error?, nextStep}`。
-- 每次写入都走现有审批服务：full-access 可按既有策略直接执行，否则逐次 ask；拒绝、取消或审批不可用即不执行。单次批准不提升整个会话权限。
-- 包内依赖安装、构建脚本和原生模块不获得隐式许可，仍需现有包管理/脚本审批；Creator 不修改全局 PATH、registry 或用户包管理配置。
-- 写入操作带 requestId/idempotency key，网络重试不得重复安装或重复激活。
+- 代码执行：`check({draft})`、`test({draft})`。两者都可能运行草稿代码，不属于只读检查。`test` 固定以草稿为 cwd 运行 `node --test` 发现其中的 `*.test.js`，有 60s 超时、清理环境变量和输出字节帽；超时必须杀掉整个进程树（Windows `taskkill /F /T`；POSIX detached 进程组），不执行 package scripts，不是第三个工具。
+- 写入：`install({draft, overwrite?, requestId?})`、`enable`、`disable`、`remove`、`reload`。`applyPending` 不暴露给模型，只由用户在 Plugins 页显式执行；Creator 从 `nextStep` 得知应请求用户操作。
+- 所有操作返回结构化 `{saved, application, activeRevision?, pendingRevision?, error?, nextStep}`；拒绝、取消或审批不可用不执行操作。
+- full-access 可按既有策略直接执行；其他模式下，代码执行和写入逐次通过工具上下文的原生 awaitable `ctx.ask` 审批。即使 session 是 `auto` 档或内部会话，这些操作也必须强制 human：`ctx.ask` 带 `metadata.forceHuman:true`，让 gateway 审批环跳过 auto-approve/auto-deny 并保留人工等待。`ask` 传 `always: []`，所以即使 UI 出现 always 也不会沉淀可放行后续调用的规则。单次批准不提升会话权限，也不建立 draft/session 级永久授权。
+- 工具不是 Creator-only 授权边界：其他会话若获得该原生工具，也走完全相同的 force-human/full-access 规则；`mafw-create` allowlist 只决定 Creator 自己能调用什么。
+- 实施前先做一个 wire probe，确认原生工具审批能够等待、拒绝和取消，且取消后不会继续执行。运行时不能提供该通道时 Creator 显示中性不可用原因；不以 MCP question 调用冒充等价审批，也不新增异步审批注册表。
+- `requestId` 表示一次真实操作意图：网络重试沿用同一随机 id，新的迭代必须使用新 id；禁止用 operation + draft + overwrite 的确定性哈希代替，否则会重放旧安装结果。进程内缓存不冒充跨重启 exactly-once。
+- install/overwrite 的 approval pattern 至少包含 packageName、草稿名、overwrite 和内容 fingerprint；完整贡献摘要来自前一步 check 的对话输出。执行前重新计算 fingerprint，变化则拒绝并要求重新审批。
+- 包内依赖安装、构建脚本和原生模块不获得隐式许可；Creator 不修改全局 PATH、registry 或用户包管理配置。
 
 ### 15.6 创建与迭代流程
 
 ```text
 Plugins → 让 Agent 创建插件
-  → 绑定 mafw-create 的空白 Session（不自动发消息）
+  → 复用/创建当前项目的普通 blank Session（不自动发消息）
+  → 仅该 Session 通过现有 switchAgent/session-config 选择 mafw-create
   → 用户描述需求
   → mafw_plugin_inspect 检查真实宿主契约
-  → 在 plugin-drafts/<draftId> 生成统一包 + 测试
-  → mafw_plugin_manager.check
-  → 展示包/权限/覆盖差异并请求安装审批
+  → 在 <project>/.mafw/plugin-drafts/<packageName>/ 生成统一包 + 测试
+  → mafw_plugin_manager.check/test（逐次代码执行审批）
+  → 展示包/覆盖差异并请求安装审批
   → 第一阶段 install + candidate activate + HMR commit
   → Desktop 收到 revision，真实 panel/config/toolCard/messageWindow 生效
-  → Agent 在真实主窗口验证行为和渲染
-  → 同一会话继续修改草稿并重复上述流程
+  → 同一或另一 Creator 会话继续修改该源草稿并重复上述流程
 ```
 
 验证要求：
 
-- check 通过只表示候选契约与测试通过，不等于恶意代码隔离或所有运行时行为正确。
-- UI 验证必须针对已连接的 MAFW 真实页面；mock preview 不能作为“已装进应用”的证据。
+- check/test 通过只表示候选契约与测试通过，不等于恶意代码隔离或所有运行时行为正确；草稿 Host 与安装后的 Host 都是本机可信代码。
+- UI 验证必须针对已连接的 MAFW 真实页面；mock preview 不能作为“已装进应用”的证据。本期 Creator 能读取 descriptor 与 Host/activation 诊断，但不新增 Desktop renderer→gateway 错误回传或截图通道；视觉问题由用户在对话中反馈，不能声称 Agent 已自动看见渲染结果。
 - 失败时保留旧 active revision；首次安装失败则没有 active 插件，Creator 报告实际状态并修复草稿。
 - 对 active runtime 包的修改按 §10.3 进入 pending；Creator 不得擅自打断工作，必须请求用户执行 applyPending。
 - 用户可随时 disable/remove；Creator 继续编辑草稿不得自动重新启用。
@@ -504,26 +519,29 @@ Plugins → 让 Agent 创建插件
 ### 15.7 Desktop 接线
 
 - Plugins 页新增入口及 Creator 可用/加载/拒绝状态；不可用时显示中性原因，不静默失败。
-- 入口复用现有 Session 创建与 agent 绑定通道，不新建 Desktop 插件管理 IPC。
-- Creator Session 的标题/徽标可标识“创建”，但它仍是正常会话，可使用现有 composer、审批、工作台和消息小窗。
-- 插件 revision 到达时，Creator 无需刷新整个 Desktop；由第一阶段 SlotHost 完成局部更新。
-- Plugins 页可打开当前草稿对应的 Creator Session，或从已安装包回到其来源会话；没有来源会话时只提供普通管理动作。
+- 入口只使用现有 Session 创建、blank Session 复用、`switchAgent` 和 session-config 通道；**不新增 Creator REST/SDK/preload API，不新建 session store**。
+- 现有 sticky agent/session-config 负责重开后的 agent 恢复；不为 Creator 增加第二份身份绑定状态。
+- 复用现有 `components/session-drafts.ts` 的 per-session 内存文本草稿，入口只需保留并测试该行为；不新增 Desktop 重启后的草稿持久化，也不把附件/quote 纳入本期保证。
+- 插件状态继续使用第一阶段 PackageManager/revision 数据；不增加来源会话链接或另一套 Creator 状态面板。
+- 插件 revision 到达时无需刷新整个 Desktop，由第一阶段 SlotHost 局部更新。
 
 ### 15.8 第二阶段验收
 
-1. 从 Plugins 入口进入 Creator，未发送草稿与普通默认 Agent 均不变，空白 Session 正确绑定 `mafw-create`。
-2. 通过对话生成包含四类 UI、action 和注册事件的统一包；模型先调用只读 inspect，再写草稿。
-3. 未批准安装时不触碰 active 插件目录；批准后同一包经第一阶段流程安装并激活。
-4. 不重启 Desktop 即可看到并操作真实 panel/config/toolCard/messageWindow；Agent 能读取真实诊断并修复。
-5. 第二次对话修改同一草稿并覆盖安装，旧 revision 响应不回流，用户看到同一新 revision。
-6. candidate 失败时旧 active 版本保持；首次失败无残留 active 注册。
-7. active runtime candidate 只进入 pending，只有用户批准 applyPending 才切换。
-8. 重启后草稿与来源 Session 可恢复；remove 后草稿默认保留，但 active 贡献全部清理。
-9. 单元/契约测试使用确定性的工具调用 fixture；另做一次真实模型 + 真机 GUI 冒烟，不把 LLM 结果作为唯一自动化门禁。
+1. 从 Plugins 入口复用/创建普通 blank Session，未发送草稿与普通默认 Agent 均不变，只有目标会话选择 `mafw-create`。
+2. 通过对话在项目草稿目录生成包含四类 UI、action 和注册事件的统一包；模型先调用只读 inspect，再写草稿。
+3. 未批准 check/install 时不执行草稿代码、不触碰 active 插件目录；批准后同一包经第一阶段流程检查、安装并激活。
+4. 不重启 Desktop 即可看到并操作真实 panel/config/toolCard/messageWindow；Agent 能读取 descriptor 与 Host/activation 诊断并修复对应草稿，不声称自动获得渲染截图。
+5. 第二次修改同一草稿并以新 requestId 覆盖安装，旧 revision 响应不回流，用户看到同一新 revision。
+6. candidate 失败时旧 active 版本保持；首次失败无残留 active 注册；拒绝/取消审批无后续幽灵执行；auto 模式和既有 always 规则均不能绕过人工审批。
+7. active runtime candidate 只进入 pending；模型工具没有 applyPending，只有用户在 Plugins 页显式执行现有 HTTP 编排与 runtime 切换。
+8. 重启后项目草稿文件和已安装/pending 状态仍在；任意 Creator 会话可继续。remove 后草稿默认保留，active 贡献全部清理。
+9. 单元/契约测试使用确定性的原生工具调用 fixture；另做一次真实模型 + 真机 GUI 冒烟，记录 provider/model 与 commit，不把 LLM 结果作为唯一自动化门禁。
 
-### 15.9 明确不引入的 DSH 旧路径
+### 15.9 DSH 对齐与明确排除的旧路径
 
-DSH 当前 Creator 已转向“持久 bundle + Plugin Manager”；本设计遵循这一方向。MAFW 不引入模型直接调用的 generated-code define/run/stop/undefine，不建立 session-local 临时插件注册表，也不让 Agent 生成代码绕过统一包持久化与审批。这样既保留对话式创建和热迭代，又避免第二套生命周期与重启后语义不一致。
+DSH 当前 Creator 复用普通 blank Session，仅切换 `cordis` preset；Agent 把持久 bundle 写成 workspace 文件，再通过原生 `plugin_manager` 逐次审批安装。MAFW 对齐这些所有权边界，但不照搬其 Cordis/profile 格式，也不照搬“list 也需审批”等局部策略。
+
+MAFW 不引入 generated-code define/run/stop/undefine，不建立 session-local 临时插件注册表、专用 Creator Session 或全局 draft↔session 元数据，也不让 Agent 绕过统一包持久化、来源校验与审批。持久化对象是项目内源文件和 Manager 状态，不是某个会话与插件的专有绑定。
 
 ## 16. 留给 builder 的实现选择
 

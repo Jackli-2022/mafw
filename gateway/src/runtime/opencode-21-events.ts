@@ -85,13 +85,16 @@ export const OPENCODE_21_EVENT_MAPPINGS: EventMapping[] = [
   { from: 'session.compaction.started', to: MAFW.sessionCompacting, passProperties: '$.data' },
   { from: 'session.compaction.ended', to: MAFW.sessionCompacted, passProperties: '$.data' },
   // 审批（v2 形状 {id, action, resources} → canonical {id, permission, patterns}）
-  { from: 'permission.v2.asked', to: MAFW.permissionAsked, passProperties: '$.data',
+  // 2.2 起原生事件名改为 permission.asked/replied（与 canonical 同名但信封仍是
+  // 顶层 type + data）；两条名字都收编，否则事件会落到 translate 兜底并以
+  // 无 sessionID 的裸形状透传（live smoke：审批列表永远为空）。
+  { from: ['permission.v2.asked', 'permission.asked'], to: MAFW.permissionAsked, passProperties: '$.data',
     fields: {
       requestId: { path: '$.data.id' },
       permission: { path: '$.data.action' },
       patterns: { path: '$.data.resources', default: [] },
     } },
-  { from: 'permission.v2.replied', to: MAFW.permissionReplied, passProperties: '$.data',
+  { from: ['permission.v2.replied', 'permission.replied'], to: MAFW.permissionReplied, passProperties: '$.data',
     fields: { requestId: { path: '$.data.requestID' } } },
   // 问询（原生 v2 question；form 载荷走 transform 归一，legacy questions[] 原样透传）
   { from: 'question.v2.replied', to: MAFW.questionReplied, passProperties: '$.data' },

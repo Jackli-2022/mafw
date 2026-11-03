@@ -11,6 +11,9 @@
     "test": "node --import tsx --require ../../packages/test-shim/require-hook.cjs --test \"src/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.probes.json"
   },
+  "dependencies": {
+    "@mafw/plugin-contract": "*"
+  },
   "devDependencies": {
     "@mafw/test-shim": "*",
     "openapi-typescript": "^7.13.0",

@@ -7,11 +7,14 @@ import {
   WORKBENCH_VIEWS,
   clearLegacyWorkbenchKeys,
   executionSectionLabel,
+  isPluginSurfaceId,
   nextWorkbenchSurface,
   nextWorkbenchView,
   normalizeExecutionSection,
   normalizeWorkbenchSurface,
   normalizeWorkbenchView,
+  parsePluginSurfaceId,
+  pluginSurfaceId,
   terminalSurfaceHotkeyAction,
   workbenchStateFromStorage,
 } from "./workbench-views"
@@ -112,6 +115,36 @@ describe("workbench-views", () => {
       return null
     })
     assert.deepEqual(fresh, { view: "review", surface: "code", executionSection: "subagents" })
+  })
+
+  test("dynamic plugin surfaces are valid L2 ids and survive persistence", () => {
+    assert.equal(pluginSurfaceId("acme", "stats"), "plugin:acme:stats")
+    assert.deepEqual(parsePluginSurfaceId("plugin:acme:stats"), { package: "acme", panel: "stats" })
+    assert.equal(isPluginSurfaceId("plugin:acme:stats"), true)
+    assert.equal(isPluginSurfaceId("plugin:acme"), false)
+    assert.equal(isPluginSurfaceId("plugin:"), false)
+    assert.equal(isPluginSurfaceId("plugin:bad name:stats"), false)
+    assert.equal(isPluginSurfaceId("code"), false)
+
+    assert.equal(normalizeWorkbenchSurface("plugin:acme:stats"), "plugin:acme:stats")
+    assert.equal(normalizeWorkbenchSurface("plugin:acme"), "code")
+    assert.equal(normalizeWorkbenchSurface("plugin:bad name:stats"), "code")
+
+    const restored = workbenchStateFromStorage((key) => {
+      if (key === "mafw-workbench-surface") return "plugin:acme:stats"
+      return null
+    })
+    assert.equal(restored.surface, "plugin:acme:stats")
+  })
+
+  test("keyboard navigation includes dynamic plugin surfaces after built-ins", () => {
+    const plugins = ["plugin:acme:stats", "plugin:acme:logs"]
+    assert.equal(nextWorkbenchSurface("terminal", "ArrowRight", plugins), plugins[0])
+    assert.equal(nextWorkbenchSurface(plugins[0]!, "ArrowRight", plugins), plugins[1])
+    assert.equal(nextWorkbenchSurface(plugins[1]!, "ArrowRight", plugins), null)
+    assert.equal(nextWorkbenchSurface(plugins[0]!, "ArrowLeft", plugins), "terminal")
+    assert.equal(nextWorkbenchSurface(plugins[1]!, "Home", plugins), "code")
+    assert.equal(nextWorkbenchSurface(plugins[0]!, "ArrowRight", []), null)
   })
 })
 

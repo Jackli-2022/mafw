@@ -1,6 +1,11 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import * as path from "node:path"
+import {
+  PACKAGE_NAME as PLUGIN_CONTRACT_PACKAGE,
+  resolvePluginContract,
+  stagePluginContract,
+} from "../../../scripts/stage-plugin-contract.mjs"
 import { run } from "./utils"
 
 /**
@@ -59,6 +64,20 @@ await writeFile(path.join(outDir, "package.json"), JSON.stringify(bundlePkg, nul
 
 console.log("[stage-gateway] installing production dependencies (this can take a while)...")
 run("npm", ["install", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: outDir })
+
+// Private workspace packages are resolved by name from gateway/dist. npm cannot
+// fetch them (not published) and npm install in the bundle would otherwise link
+// them to the build machine's workspace, so copy the built package explicitly.
+const bundledPackages: Record<string, string> = gatewayPkg.mafw?.bundledPackages ?? {}
+for (const [name, relative] of Object.entries(bundledPackages)) {
+  if (name !== PLUGIN_CONTRACT_PACKAGE) continue
+  stagePluginContract({
+    sourceDir: path.resolve(gatewayDir, relative),
+    nodeModulesDir: path.join(outDir, "node_modules"),
+  })
+}
+const stagedContract = resolvePluginContract(path.join(outDir, "dist", "index.js"))
+console.log(`[stage-gateway] ${PLUGIN_CONTRACT_PACKAGE} resolves -> ${stagedContract.resolved}`)
 
 // better-sqlite3 must match the Electron ABI: try the published electron
 // prebuild first, then rebuild from source against Electron headers.

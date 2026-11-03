@@ -1,6 +1,10 @@
 // UI 工具卡用户插件共享契约：类型 + 校验纯函数。
 // main（插件 render 出口校验）与 renderer（防御性再校验 + 解释器）共用。
 
+// Task 8：声明式插件视图词表来自统一契约包（不在 Desktop 复制第二套
+// Widget 类型；`action` widget 只在契约包定义）。
+export type { PluginView, Widget as PluginViewWidget } from "@mafw/plugin-contract"
+
 export type Widget =
   | { type: "text"; text: string }
   | { type: "code"; text: string; language?: string }

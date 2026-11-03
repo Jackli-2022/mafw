@@ -1,5 +1,6 @@
 import { config } from '../../src/config';
 import { createPluginPackageContext } from '../../src/plugins/package-context';
+import { createRegistrationBag } from '../../src/plugins/registration-bag';
 
 describe('createPluginPackageContext', () => {
   // config.raw 是只读 getter（返回 this.data）——测试直接换 data 对象再还原
@@ -56,5 +57,28 @@ describe('createPluginPackageContext', () => {
     });
     ctx.emit({ type: 'plugin:foo:x', level: 'warn' });
     expect(seen).toEqual([{ type: 'plugin:foo:x', level: 'warn' }]);
+  });
+
+  it('ctx.effect registers cleanups on the host bag and runs them LIFO exactly once', async () => {
+    (config as any).data = {};
+    const bag = createRegistrationBag();
+    const order: string[] = [];
+    const ctx = createPluginPackageContext('foo', { projectDir: '/p', gatewayPort: 3000, bag });
+    ctx.effect(() => { order.push('first'); });
+    ctx.effect(() => { order.push('second'); });
+    expect(bag.size).toBe(2);
+
+    await bag.dispose();
+    // LIFO: the most recently registered cleanup runs first.
+    expect(order).toEqual(['second', 'first']);
+    await bag.dispose();
+    expect(order).toEqual(['second', 'first']);
+  });
+
+  it('ctx.effect throws a clear error when the host has no registration bag', () => {
+    (config as any).data = {};
+    const ctx = createPluginPackageContext('foo', { projectDir: '/p', gatewayPort: 3000 });
+    expect(() => ctx.effect(() => {})).toThrow(/ctx\.effect/);
+    expect(() => ctx.effect(() => {})).toThrow(/registration bag/);
   });
 });

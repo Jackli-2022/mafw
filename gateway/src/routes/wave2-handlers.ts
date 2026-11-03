@@ -23,6 +23,15 @@ import { handleDryEvent } from './dry-event';
 import type { DryEventDeps } from './dry-event';
 import { handleConformance, type ConformanceDeps } from './conformance';
 import { handlePluginsList, handlePluginsInstall, handlePluginsEnable, handlePluginsDisable, handlePluginsDelete } from './plugins';
+import type { PluginPackagesRouteDeps } from './plugin-packages';
+import {
+  handlePluginClient,
+  handlePluginPackageInstall,
+  handlePluginPackageCheck,
+  handlePluginApply,
+  handlePluginReload,
+  handlePluginInvokeAction,
+} from './plugin-packages';
 import { cleanupExamples } from '../plugins/hub';
 import { log } from '../core/utils/logger';
 
@@ -32,6 +41,7 @@ export interface Wave2Gateway {
   restartAgentDeps(): RestartAgentDeps;
   conformanceDeps(): ConformanceDeps;
   pluginHubDeps(): PluginsRouteDeps;
+  pluginPackageDeps(): PluginPackagesRouteDeps;
   dryEventDeps(): DryEventDeps;
   /** runtime.switch 守卫：serveRecovering || switchingRuntime。 */
   runtimeSwitchBlocked(): boolean;
@@ -97,4 +107,22 @@ export function attachWave2Handlers(registry: RouteRegistry, gw: Wave2Gateway): 
     withCleanup(req, () => handlePluginsDisable(req, res, gw.pluginHubDeps()))));
   registry.attachHandler('plugins.delete', H(async (req, res) =>
     withCleanup(req, () => handlePluginsDelete(req, res, gw.pluginHubDeps()))));
+
+  // Task 6：统一插件包 surface（manager + committed registry）。包路由的副作用
+  // 不涉及 legacy 目录，故不挂 cleanupExamples。
+  registry.attachHandler('plugins.client', H(async (req, res) =>
+    handlePluginClient(req, res, gw.pluginPackageDeps())));
+  registry.attachHandler('plugins.installPackage', H(async (req, res) =>
+    handlePluginPackageInstall(req, res, gw.pluginPackageDeps())));
+  registry.attachHandler('plugins.check', H(async (req, res) =>
+    handlePluginPackageCheck(req, res, gw.pluginPackageDeps())));
+  registry.attachHandler('plugins.apply', H(async (req, res, params) =>
+    handlePluginApply(req, res, gw.pluginPackageDeps(), { name: params.name })));
+  registry.attachHandler('plugins.reload', H(async (req, res, params) =>
+    handlePluginReload(req, res, gw.pluginPackageDeps(), { name: params.name })));
+  registry.attachHandler('plugins.invoke', H(async (req, res, params) =>
+    handlePluginInvokeAction(req, res, gw.pluginPackageDeps(), {
+      name: params.name,
+      action: params.action,
+    })));
 }

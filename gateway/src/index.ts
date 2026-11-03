@@ -151,7 +151,7 @@ import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
-import { createBuiltinIdentityRegistry, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
+import { createBuiltinIdentityRegistry, identityMaterializable, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { withInstructionSync } from './runtime/instruction-wrapper';
 import { InstructionSyncService } from './core/instructions/instruction-sync-service';
@@ -198,6 +198,7 @@ import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { FileHistoryService } from './core/file-history/file-history-service';
 import { sessionDirectoryOf } from './core/file-history/session-directory';
 import { ensureGlobalOfficeSkill } from './core/office/global-skill';
+import { ensurePluginCreatorSkill } from './skills/plugin-creator-skill-install';
 import { ensurePiModels } from './core/media/pi-models';
 import { handleFileHistoryRoutes } from './routes/file-history';
 import { RunStateService } from './core/run/run-state-service';
@@ -278,7 +279,7 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
   ...TOOL_PRIMITIVE_TYPES,
 ]);
 
-import { handlePermissionReply, handlePermissionReplyById } from './routes/permission';
+import { handlePermissionReply, handlePermissionReplyById, resolveApprovalDirectory } from './routes/permission';
 import { surfaceUnavailableMessage } from './runtime/runtime-access';
 import { handleSessionBackground } from './routes/session-background';
 import { attachBackgroundJobHandlers } from './routes/background-jobs';
@@ -286,11 +287,16 @@ import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rul
 import { handleSessionCreate } from './routes/session-create';
 import { resolveWorktreeAvailability, probeGitWorktreeSupport } from './core/worktree/worktree-availability';
 import { handleApprovalsRespond } from './routes/approvals-respond';
-import type { RuntimeSwitchDeps } from './routes/runtime-switch';
+import { performRuntimeSwitch, type RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
-import type { PluginsRouteDeps } from './routes/plugins';
+import type { PluginsRouteDeps, PluginsPackageEntry } from './routes/plugins';
+import type { PluginPackagesRouteDeps } from './routes/plugin-packages';
 import type { DryEventDeps } from './routes/dry-event';
 import { PluginHost } from './plugins/package-host';
+import { PackageStateStore } from './plugins/package-state-store';
+import { PackageManager } from './plugins/package-manager';
+import { mergePackageInventory } from './plugins/package-inventory';
+import type { PluginClientSnapshot } from './plugins/client-descriptor';
 import { createPluginPackageContext } from './plugins/package-context';
 import type { UsageStatsProvider } from './usage/plugin-context';
 import { cleanupExamples } from './plugins/hub';
@@ -645,6 +651,12 @@ class MafwScheduler {
   private mediaRuntimeExecutor?: MediaRuntimeExecutor;
   private mediaRuntimeExecutorRt?: unknown;
   private pluginHost?: PluginHost;
+  /** 统一插件包启用/禁用状态（manager 独立原子持久化）。 */
+  private packageStateStore?: PackageStateStore;
+  /** 统一插件包文件系统操作（Task 6 REST 面直接调用）。 */
+  private packageManager?: PackageManager;
+  /** 最近一次已提交的统一插件包 client 快照（Task 6 的 /api/plugins/client 直接读）。 */
+  private pluginClientSnapshot?: PluginClientSnapshot;
   private usageStatsProvider?: UsageStatsProvider;
   private ttsService?: ReturnType<typeof createTtsService>;
   private ttsRegistry = new TtsEngineRegistry();
@@ -764,6 +776,18 @@ class MafwScheduler {
     } catch (err: any) {
       log.warn(`[Office] global skill install failed (non-fatal): ${err?.message ?? err}`);
     }
+    // The Creator identity requires the shipped plugin-creator skill before its
+    // first inspect/write; install it beside the Office skill (same startup gate).
+    try {
+      const skill = await ensurePluginCreatorSkill();
+      if (skill.ok) {
+        if (skill.action !== 'unchanged') log.info(`[PluginCreator] global skill ${skill.action}: ${skill.target}`);
+      } else {
+        log.warn(`[PluginCreator] global skill not installed (${skill.reason}): ${skill.target}`);
+      }
+    } catch (err: any) {
+      log.warn(`[PluginCreator] global skill install failed (non-fatal): ${err?.message ?? err}`);
+    }
     // pi-ai's bundled xiaomi catalog lags the provider (v2.5 removed). Merge the
     // v2.6 ids into pi's models.json before Media Agent resolves a model.
     try {
@@ -802,17 +826,44 @@ class MafwScheduler {
     setPiUnknownRecorder((t) => { try { this.unknownEventTracker.record('pi', t); } catch { /* fail-open */ } });
 
     // 2b. 统一插件包宿主（必须在 createRuntime 之前 init——包 runtime 贡献要先注册）
+    const pluginPackageDir = process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins');
+    this.packageStateStore = new PackageStateStore(config.resolvePath());
     this.pluginHost = new PluginHost(
-      process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins'),
-      (name) => createPluginPackageContext(name, {
+      pluginPackageDir,
+      (name, bag) => createPluginPackageContext(name, {
         getApiKey: this.runtimeGetApiKey.bind(this),
         usageStats: () => this.usageStatsProvider,
         projectDir: this.projectDir,
         gatewayPort: config.server.apiPort,
+        // ctx.effect 的清理挂在本 candidate 的 RegistrationBag：reload/replace/
+        // disable/delete/离线 check 时统一执行（LIFO）。
+        bag,
         emit: (event) => this.broadcast(event),
+        // 包只能改 plugins.<package>.config——context 负责收敛命名空间与
+        // 补丁安全校验，这里只透传到既有的 config.persistOverrides。
+        persistConfig: (overrides) => {
+          config.persistOverrides(overrides as unknown as Parameters<typeof config.persistOverrides>[0]);
+        },
       }),
+      {
+        // 变更包若拥有当前 active runtime → 整包 pending，不打断正在使用的工作。
+        activeRuntime: () => this.runtimeName,
+        // 管理器独立持久化的禁用状态：包仍在磁盘上，但扫描时跳过。
+        isDisabled: (name) => this.packageStateStore!.isDisabled(name),
+        // 包事件不得冒充 canonical 事件。
+        canonicalTypes: CANONICAL_TYPE_SET,
+        // 包事件 + 提交后的 plugins.changed 走 gateway 既有扁平广播通道。
+        broadcast: (event) => this.broadcast(event as any),
+      },
     );
+    this.packageManager = new PackageManager({
+      pluginDir: pluginPackageDir,
+      host: this.pluginHost,
+      stateStore: this.packageStateStore,
+    });
     this.pluginHost.bindRuntime((entries) => this.runtimeLoader?.setPackageEntries(entries));
+    // 客户端快照只在 commit 后替换；handler/源码永不下发。
+    this.pluginHost.onSnapshot((snapshot) => { this.pluginClientSnapshot = snapshot; });
     await this.pluginHost.init();
 
     // 3. 创建 SDK 客户端（auth），用于健康检查和后续通信
@@ -2018,7 +2069,17 @@ class MafwScheduler {
     this.identityState.resetMaterialization(host.name);
     // 能力门经 surface（identity.agents.install = agentConfigApi + agents.install）。
     if (runtime.access.can('identity.agents.install') && runtime.agents?.install) {
+      const caps = this.runtimeCaps;
       for (const spec of this.identityRegistry.list()) {
+        // 身份自身依赖的能力未声明（如 pi 上没有 Creator 的插件工具/技能）：
+        // 不物化并记 false —— /api/agents 过滤它，Desktop 落到中性的无 Agent 态。
+        if (!identityMaterializable(spec, caps)) {
+          this.identityState.setMaterialized(host.name, spec.name, false);
+          log.info(
+            `[Identity] skip '${spec.name}' on runtime '${host.name}' — requires ${spec.requiresCapability}`,
+          );
+          continue;
+        }
         try {
           await runtime.agents.install(spec.name, toAgentDefinition(spec));
           this.identityState.setMaterialized(host.name, spec.name, true);
@@ -2596,6 +2657,56 @@ class MafwScheduler {
     };
   }
 
+  /**
+   * 统一插件包的客户端快照（序列化 DTO only）。
+   * 正式 REST 出口由 Task 6 的 `/api/plugins/client` 复用；这里只保存最近一次 commit。
+   */
+  getPluginClientSnapshot(): PluginClientSnapshot {
+    return this.pluginClientSnapshot ?? this.pluginHost?.getClientSnapshot() ?? { revision: '0:0', plugins: [] };
+  }
+
+  /** 统一插件包文件系统操作入口（Task 6 REST 路由复用）。 */
+  getPackageManager(): PackageManager | undefined {
+    return this.packageManager;
+  }
+
+  /** Task 6：/api/plugins/client + manager/action 路由 deps。 */
+  private pluginPackagesDeps(): PluginPackagesRouteDeps {
+    const host = this.pluginHost;
+    return {
+      manager: () => this.packageManager,
+      snapshot: () => this.getPluginClientSnapshot(),
+      // Before host init no package can be known: omit the invoker so the
+      // action route answers the registry's neutral 404 instead of a 500.
+      ...(host
+        ? { invokeAction: (name, action, input, options) => host.invokeAction(name, action, input, options) }
+        : {}),
+      // Applying a runtime package commits the files, but the live runtime is
+      // still the old instance. Reuse the exact `/api/runtime/switch` sequence
+      // (same guard/mutex, event resubscription, identity rematerialization and
+      // fallback detection) instead of a second hand-rolled copy.
+      switchRuntime: (name: string) =>
+        performRuntimeSwitch(this.runtimeDeps(), name, {
+          blocked: () => this.serveRecovering || this.switchingRuntime,
+          begin: () => { this.switchingRuntime = true; },
+          end: () => { this.switchingRuntime = false; },
+        }),
+    };
+  }
+
+  /**
+   * GET /api/plugins 的统一包清单：宿主状态 + manager 持久化的禁用名。
+   *
+   * 宿主在扫描时跳过禁用包，所以 `getState()` 里没有它们；Hub 必须从状态存储
+   * 合并回来，否则用户无法在管理界面重新启用。
+   */
+  private pluginPackageInventory(): PluginsPackageEntry[] {
+    return mergePackageInventory(
+      this.pluginHost?.getState() ?? [],
+      this.packageStateStore?.read().disabled ?? [],
+    );
+  }
+
   /** P5 Wave 2：/api/plugins* deps（Plugin Hub 四类型统一面）。 */
   private pluginHubDeps(): PluginsRouteDeps {
     return {
@@ -2637,8 +2748,10 @@ class MafwScheduler {
           else if (type === 'usage') await this.pluginLoader?.reload();
           // ui: desktop main fs.watch picks it up automatically
         },
-        getPackages: () => this.pluginHost?.getState() ?? [],
       } as any,
+      packages: () => this.pluginPackageInventory(),
+      packageRevision: () => this.getPluginClientSnapshot().revision,
+      getManager: () => this.packageManager,
     };
   }
 
@@ -4995,6 +5108,7 @@ class MafwScheduler {
         runtimeDeps: () => this.runtimeDeps(),
         restartAgentDeps: () => this.restartAgentDeps(),
         pluginHubDeps: () => this.pluginHubDeps(),
+        pluginPackageDeps: () => this.pluginPackagesDeps(),
         conformanceDeps: () => this.conformanceDeps(),
         dryEventDeps: () => this.dryEventDeps(),
         runtimeSwitchBlocked: () => this.serveRecovering || this.switchingRuntime,
@@ -6763,7 +6877,11 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/questions(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuardQuestion(res)) return;
           try {
-            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
+            const dir = resolveApprovalDirectory({
+              explicit: new URL(req.url, this.serveUrl).searchParams.get('directory'),
+              currentProjectDir: this.currentProjectDir,
+              projectDir: this.projectDir,
+            });
             const question = this.runtime?.session?.question;
             const items = question ? await question.list(dir ? { directory: dir } : undefined) : [];
             res.end(JSON.stringify({ items: (items ?? []).map((item: any) => projectQuestionRequest(item)) }));
@@ -6838,7 +6956,11 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuard(res, 'approval.permissionList')) return;
           try {
-            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
+            const dir = resolveApprovalDirectory({
+              explicit: new URL(req.url, this.serveUrl).searchParams.get('directory'),
+              currentProjectDir: this.currentProjectDir,
+              projectDir: this.projectDir,
+            });
             const items = this.runtime?.session?.permissionList
               ? await this.runtime.session.permissionList(dir ? { directory: dir } : undefined)
               : [];
@@ -6989,6 +7111,11 @@ class MafwScheduler {
             runtime: this.runtime,
             access: this.runtime?.access ?? null,
             rules: this.permissionRules,
+            directories: () => [
+              this.currentProjectDir ?? undefined,
+              this.projectDir || undefined,
+              ...this.registeredProjects.keys(),
+            ],
           });
           return;
         }

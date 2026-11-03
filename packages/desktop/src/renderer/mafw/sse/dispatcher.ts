@@ -9,6 +9,7 @@ import { handleDiffEvent, type DiffDeps } from "./handlers/diff"
 import { handleQueueEvent } from "./handlers/queue"
 import { handleSubagentEvent, mapSessionLifecycleEvent } from "./handlers/subagents"
 import { handleBackgroundEvent } from "./handlers/background"
+import { handlePluginSseEvent } from "./handlers/plugins"
 import type { TrackerEvent } from "../subagent-tracker"
 import type { BackgroundJob } from "../background-jobs"
 
@@ -63,6 +64,14 @@ export interface PodDeps {
   onEvent(event: unknown): void
 }
 
+/** Task 7: unified plugin package revision + registered package events. */
+export interface PluginDeps {
+  /** `plugins.changed` → refresh the committed client snapshot once. */
+  onChanged(event: unknown): void
+  /** `plugin:<package>:<event>` → registered event hub. */
+  onEvent(event: unknown): void
+}
+
 export interface ShellEventDeps {
   core: CoreDeps
   lifecycle: LifecycleDeps
@@ -76,6 +85,7 @@ export interface ShellEventDeps {
   queue: QueueDeps
   run: RunDeps
   pod: PodDeps
+  plugins: PluginDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */
@@ -124,6 +134,11 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
     deps.core.trace(event, "conn:greeting")
     return
   }
+
+  // Task 7：统一插件修订 + 包事件（全局帧，常无 sessionID）。必须在 sid
+  // 分发前消费，否则全局 plugin 事件会落到尾部 missTrace、plugins.changed
+  // 会按类静默忽略。
+  if (handlePluginSseEvent(event, deps)) return
 
   if (event.type === "user_question") {
     deps.core.trace(event, "notify:question")

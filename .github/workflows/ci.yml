@@ -68,6 +68,18 @@ jobs:
       - name: Build (plugin + gateway + tui)
         run: npm run build
 
+      - name: Test plugin contract
+        run: npm run test:plugin-contract
+
+      - name: Test plugin example
+        run: npm run test:plugin-example
+
+      - name: Test plugin creator tools
+        run: npm run test:creator
+
+      - name: Verify bundled plugin contract resolution
+        run: npm run verify:plugin-contract
+
       - name: Test gateway
         run: npm test --prefix gateway -- --forceExit
 

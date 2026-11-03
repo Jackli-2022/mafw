@@ -10,6 +10,8 @@ function makeDeps() {
   const queueEvents: unknown[] = []
   const runEvents: unknown[] = []
   const podEvents: unknown[] = []
+  const pluginChanges: unknown[] = []
+  const pluginEvents: unknown[] = []
   const deps: ShellEventDeps = {
     core: {
       trace: rec("trace"),
@@ -81,8 +83,12 @@ function makeDeps() {
     pod: {
       onEvent: (event: unknown) => { podEvents.push(event) },
     },
+    plugins: {
+      onChanged: (event: unknown) => { pluginChanges.push(event) },
+      onEvent: (event: unknown) => { pluginEvents.push(event) },
+    },
   }
-  return { deps, calls, subagentEvents, backgroundEvents, taskEvents, queueEvents, runEvents, podEvents }
+  return { deps, calls, subagentEvents, backgroundEvents, taskEvents, queueEvents, runEvents, podEvents, pluginChanges, pluginEvents }
 }
 
 describe("dispatchShellEvent: core events", () => {
@@ -328,6 +334,33 @@ describe("dispatchShellEvent: background 组（canonical jobs）", () => {
     const { deps, backgroundEvents } = makeDeps()
     dispatchShellEvent({ type: "background.job.updated", sessionID: "s1", properties: {} }, deps)
     expect(backgroundEvents).toEqual([])
+  })
+})
+
+describe("dispatchShellEvent: unified plugin router (Task 7)", () => {
+  test("plugins.changed is consumed before session-id routing", () => {
+    const { deps, calls, pluginChanges } = makeDeps()
+    const event = { type: "plugins.changed", sessionID: "s1", properties: { revision: "boot-a:2" } }
+    dispatchShellEvent(event, deps)
+    expect(pluginChanges).toEqual([event])
+    expect(calls.map((c) => c.name)).toEqual(["trace"])
+    expect(calls[0].args[1]).toBe("plugins:changed")
+  })
+
+  test("global plugin event (no sessionID) reaches the hub instead of missTrace", () => {
+    const { deps, calls, pluginEvents } = makeDeps()
+    const event = { type: "plugin:acme:changed", properties: { value: 1 } }
+    dispatchShellEvent(event, deps)
+    expect(pluginEvents).toEqual([event])
+    expect(calls.some((c) => c.name === "warn")).toBe(false)
+    expect(calls.find((c) => c.name === "trace")!.args[1]).toBe("plugins:event")
+  })
+
+  test("session-scoped plugin event also bypasses session handlers", () => {
+    const { deps, pluginEvents } = makeDeps()
+    const event = { type: "plugin:acme:changed", sessionID: "s1", properties: {} }
+    dispatchShellEvent(event, deps)
+    expect(pluginEvents).toEqual([event])
   })
 })
 

@@ -19,6 +19,22 @@ function json(res: http.ServerResponse, status: number, payload: any): void {
   res.end(JSON.stringify(payload));
 }
 
+/**
+ * 审批/问答列表的默认目录：显式 query > 当前项目 > gateway 启动项目。
+ *
+ * `projectDir` 是 gateway 进程的启动目录，桌面切换项目后不会跟着变；只回退
+ * 到它会让切到其他项目的审批列表永远为空（live smoke：Creator 的 check
+ * 审批在运行时可查，但 /api/permissions 无 query 时返回 []）。
+ */
+export function resolveApprovalDirectory(opts: {
+  explicit?: string | null;
+  currentProjectDir?: string | null;
+  projectDir?: string | null;
+}): string | undefined {
+  const pick = (v?: string | null) => (typeof v === 'string' && v.trim() ? v : undefined);
+  return pick(opts.explicit) ?? pick(opts.currentProjectDir) ?? pick(opts.projectDir);
+}
+
 /** 'always' 回复沉淀持久规则的反查依赖（findRequest 反查审批请求以取 tool/patterns）。 */
 export interface PersistAlwaysDeps {
   rules: { add(rule: { tool: string; pattern?: string; action: 'allow' }): { ok: boolean } };
@@ -104,6 +120,24 @@ export interface PermissionReplyByIdDeps {
   rules?: PersistAlwaysDeps['rules'];
   /** Test seam（缺省写 decision log）。 */
   appendRecord?: typeof appendApprovalRecord;
+  /**
+   * 待审批列表的目录回退链。缺省只查 runtime 默认 location；桌面切换项目后
+   * 默认 location 不包含目标审批，必须由调用方给出当前项目与注册项目。
+   */
+  directories?: () => Array<string | undefined>;
+}
+
+/** Deduplicate non-blank directories while preserving order. */
+function uniqueDirectories(dirs: Array<string | undefined>): Array<string | undefined> {
+  const seen = new Set<string>();
+  const out: Array<string | undefined> = [];
+  for (const dir of dirs) {
+    const key = dir ?? '';
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(dir);
+  }
+  return out;
 }
 
 /**
@@ -132,9 +166,16 @@ export async function handlePermissionReplyById(
       json(res, 400, { status: 'error', error: "reply must be 'once'|'always'|'reject'" });
       return;
     }
-    // 反查 sessionID：pending 列表项携带（与 runtime 形状一致）
-    const pending = await runtime.session.permissionList!();
-    const found = (Array.isArray(pending) ? pending : []).find((p: any) => p?.id === requestId);
+    // 反查 sessionID：pending 列表项携带（与 runtime 形状一致）。默认 location
+    // 通常不含桌面当前项目的审批（切换项目后 gateway 启动目录不再变化），所以
+    // 按目录回退链逐个查询；同一 requestId 只会在一个目录里。
+    const dirs = uniqueDirectories(deps.directories?.() ?? [undefined]);
+    let found: any = null;
+    for (const dir of dirs) {
+      const pending = await runtime.session.permissionList!(dir ? { directory: dir } : undefined);
+      found = (Array.isArray(pending) ? pending : []).find((p: any) => p?.id === requestId);
+      if (found?.sessionID) break;
+    }
     if (!found?.sessionID) {
       json(res, 404, { status: 'error', error: 'permission request not found' });
       return;

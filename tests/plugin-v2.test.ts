@@ -13,6 +13,8 @@ import * as path from 'path';
 import { z } from 'zod';
 
 import mafwPlugin from '../src/plugin';
+import { pluginInspectTool } from '../src/tools/plugin-inspect';
+import { pluginManagerTool } from '../src/tools/plugin-manager';
 import { zodToJsonSchema, toV1Views, captureAssistantOutput } from '../src/utils/v2-compat';
 
 // ---------------------------------------------------------------- helpers
@@ -174,7 +176,7 @@ describe('toV1Views', () => {
 // ---------------------------------------------------------- setup() wiring
 
 describe('setup(ctx) registration', () => {
-  it('registers the 20 plugin tools with JSON Schema inputs and a result adapter', async () => {
+  it('registers the 22 plugin tools with JSON Schema inputs and a result adapter', async () => {
     const dir = mkdtempDir();
     const { fetchMock, calls } = makeFetch([['/api/memory/add', { success: true, id: 'mem_9' }]]);
     global.fetch = fetchMock as any;
@@ -182,14 +184,16 @@ describe('setup(ctx) registration', () => {
     await (mafwPlugin as any).setup(ctx);
 
     const names = regs.tools.map((t) => t.name).sort();
+    expect(names).toContain('mafw_plugin_inspect');
+    expect(names).toContain('mafw_plugin_manager');
     expect(names).toEqual([
       'mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak',
-      'mafw_media_upload', 'mafw_message_subagent', 'mafw_pod_memory_read',
-      'mafw_pod_memory_write', 'mafw_pod_message', 'mafw_pod_status',
-      'mafw_pod_task_create', 'mafw_pod_task_update', 'mafw_python',
-      'mafw_python_restart', 'mafw_spawn_subagent', 'mafw_subagent_result',
-      'mafw_submit_result', 'mafw_task_cancel', 'mafw_task_list',
-      'mafw_task_message', 'mafw_task_submit',
+      'mafw_media_upload', 'mafw_message_subagent', 'mafw_plugin_inspect',
+      'mafw_plugin_manager', 'mafw_pod_memory_read', 'mafw_pod_memory_write',
+      'mafw_pod_message', 'mafw_pod_status', 'mafw_pod_task_create',
+      'mafw_pod_task_update', 'mafw_python', 'mafw_python_restart',
+      'mafw_spawn_subagent', 'mafw_subagent_result', 'mafw_submit_result',
+      'mafw_task_cancel', 'mafw_task_list', 'mafw_task_message', 'mafw_task_submit',
     ]);
     for (const tool of regs.tools) {
       expect(tool.input.type).toBe('object');
@@ -202,6 +206,143 @@ describe('setup(ctx) registration', () => {
     const parsed = JSON.parse((result as any).content);
     expect(parsed.id).toBe('mem_9');
   });
+
+  it('forwards sessionID, abort, directory, agent and the native ask to the executor', async () => {
+    const dir = mkdtempDir();
+    global.fetch = makeFetch([]).fetchMock as any;
+    const { ctx, regs } = makeCtx(dir);
+    await (mafwPlugin as any).setup(ctx);
+
+    const spy = jest.spyOn(pluginInspectTool, 'execute')
+      .mockResolvedValue({ title: 't', output: '{}' } as any);
+    try {
+      const ask = jest.fn(async () => undefined);
+      const controller = new AbortController();
+      const inspect = regs.tools.find((t) => t.name === 'mafw_plugin_inspect')!;
+      const result = await inspect.execute(
+        { query: 'slots' },
+        {
+          sessionID: 'ses_fwd',
+          signal: controller.signal,
+          directory: dir,
+          agent: 'mafw-create',
+          ask,
+        },
+      );
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      const [args, toolCtx] = spy.mock.calls[0] as [any, any];
+      expect(args).toEqual({ query: 'slots' });
+      expect(toolCtx.sessionID).toBe('ses_fwd');
+      expect(toolCtx.abort).toBe(controller.signal);
+      expect(toolCtx.directory).toBe(dir);
+      expect(toolCtx.agent).toBe('mafw-create');
+      expect(typeof toolCtx.ask).toBe('function');
+
+      // The wrapper must reach the host callback unchanged (one hop, no copies).
+      const permission = { permission: 'mafw_plugin_manager', patterns: ['check acme'], always: [] };
+      await toolCtx.ask(permission);
+      expect(ask).toHaveBeenCalledWith(permission);
+
+      // Result adapter still runs on top of the forwarded context.
+      expect(result).toEqual({ content: '{}' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('omits ask when the host pipeline has no native approval channel', async () => {
+    const dir = mkdtempDir();
+    global.fetch = makeFetch([]).fetchMock as any;
+    const { ctx, regs } = makeCtx(dir);
+    await (mafwPlugin as any).setup(ctx);
+
+    const spy = jest.spyOn(pluginInspectTool, 'execute')
+      .mockResolvedValue({ title: 't', output: '{}' } as any);
+    try {
+      const inspect = regs.tools.find((t) => t.name === 'mafw_plugin_inspect')!;
+      await inspect.execute({ query: 'slots' }, { sessionID: 'ses_no_ask', signal: undefined });
+      const [, toolCtx] = spy.mock.calls[0] as [any, any];
+      // Absence (not a stub that resolves) is what makes approval fail closed.
+      expect(Object.prototype.hasOwnProperty.call(toolCtx, 'ask')).toBe(false);
+      expect(toolCtx.sessionID).toBe('ses_no_ask');
+      expect(toolCtx.abort).toBeUndefined();
+      // opencode v2 的工具上下文不带 directory；必须回退到 setup 的 location，
+      // 否则 Creator 的草稿根解析在真实调用里永远失败。
+      expect(toolCtx.directory).toBe(dir);
+      expect(toolCtx.agent).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('falls back to the setup location for tools whose host context omits directory', async () => {
+    // 回归：live smoke 里 opencode v2 的 tool context 只有 sessionID，Creator 的
+    // mafw_plugin_manager 因此拿不到草稿根。插件按项目 location 加载，setup 的
+    // directory 必须作为 fallback 传给工具；显式 context.directory 仍优先。
+    const dir = mkdtempDir()
+    global.fetch = makeFetch([]).fetchMock as any
+    const { ctx, regs } = makeCtx(dir)
+    await (mafwPlugin as any).setup(ctx)
+
+    const spy = jest.spyOn(pluginManagerTool, 'execute')
+      .mockResolvedValue({ title: 't', output: '{}' } as any)
+    try {
+      const manager = regs.tools.find((t) => t.name === 'mafw_plugin_manager')!
+      await manager.execute({ operation: 'list' }, { sessionID: 'ses_fallback' })
+      const [, fallbackCtx] = spy.mock.calls[0] as [any, any]
+      expect(fallbackCtx.directory).toBe(dir)
+
+      const explicit = mkdtempDir()
+      await manager.execute({ operation: 'list' }, { sessionID: 'ses_fallback', directory: explicit })
+      const [, explicitCtx] = spy.mock.calls[1] as [any, any]
+      expect(explicitCtx.directory).toBe(explicit)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('bridges V2 plugin permission.assert into the Creator tool ask channel', async () => {
+    // opencode v2 的自定义工具上下文没有 ask；审批入口在 plugin ctx 的
+    // permission.assert。桥接后 Creator 的 check/test/install 才能拿到人工决定，
+    // 且 save 恒为空（不沉淀持久放行）。
+    const dir = mkdtempDir()
+    const assert = jest.fn(async () => undefined)
+    global.fetch = makeFetch([]).fetchMock as any
+    const { ctx, regs } = makeCtx(dir)
+    ;(ctx as any).permission = { assert }
+    await (mafwPlugin as any).setup(ctx)
+
+    const spy = jest.spyOn(pluginManagerTool, 'execute')
+      .mockResolvedValue({ title: 't', output: '{}' } as any)
+    try {
+      const manager = regs.tools.find((t) => t.name === 'mafw_plugin_manager')!
+      await manager.execute(
+        { operation: 'list' },
+        { sessionID: 'ses_assert', agent: 'mafw-create', messageID: 'msg_1', id: 'call_1' },
+      )
+      const [, toolCtx] = spy.mock.calls[0] as [any, any]
+      expect(typeof toolCtx.ask).toBe('function')
+
+      await toolCtx.ask({
+        permission: 'mafw_plugin_manager',
+        patterns: ['test acme'],
+        always: [],
+        metadata: { forceHuman: true },
+      })
+      expect(assert).toHaveBeenCalledWith({
+        sessionID: 'ses_assert',
+        agent: 'mafw-create',
+        source: { type: 'tool', messageID: 'msg_1', id: 'call_1' },
+        action: 'mafw_plugin_manager',
+        resources: ['test acme'],
+        save: [],
+        metadata: { forceHuman: true },
+      })
+    } finally {
+      spy.mockRestore()
+    }
+  })
 
   it('registers prompt + context session hooks and the tool execute.after hook', async () => {
     const dir = mkdtempDir();

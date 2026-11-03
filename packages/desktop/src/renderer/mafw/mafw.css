@@ -2106,6 +2106,112 @@ html[data-theme="light"] body {
 .mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--accent-text); transition: width var(--dur-4) var(--ease); }
 .mafw-plugin-progress-label { font-size: 11px; color: var(--text-base); white-space: nowrap; }
 
+/* ── Declarative plugin message windows (Task 11) ──
+   Controlled overlays inside the main-window document: modeless windows float
+   bottom-right without a backdrop, modals center with a scrim. */
+.mafw-plugin-windows {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 230;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  /* At 60vh per window, two real windows can exceed the viewport: cap the
+     stack and make it scroll so every close button stays reachable. */
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  pointer-events: none;
+  padding-top: 4px;
+}
+.mafw-plugin-windows::-webkit-scrollbar { display: none; }
+/* Two full stack entries always fit inside the capped container; 3+ scroll. */
+.mafw-plugin-windows .mafw-plugin-window {
+  max-height: min(60vh, calc((100vh - 40px) / 2));
+}
+.mafw-plugin-window {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(60vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+  animation: mafw-modal-in var(--dur-surface) var(--ease-surface);
+}
+.mafw-plugin-window:focus-visible { outline: none; }
+.mafw-plugin-window-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 9px 10px 9px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mafw-plugin-window-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mafw-plugin-window-close { flex: 0 0 auto; }
+.mafw-plugin-window-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mafw-plugin-window-fallback { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.mafw-plugin-window-error {
+  font-size: 12px;
+  color: var(--text-weak);
+  border-left: 2px solid var(--danger, #e5484d);
+  padding-left: 8px;
+  line-height: 1.5;
+}
+.mafw-plugin-tool-fallback { display: flex; flex-direction: column; gap: 6px; }
+.mafw-plugin-tool-error {
+  font-size: 12px;
+  color: var(--danger-text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.mafw-plugin-window-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .45);
+}
+.mafw-plugin-window-backdrop .mafw-plugin-window {
+  width: min(520px, 100%);
+  max-height: min(80vh, 640px);
+}
+.mafw-plugin-window.is-under { visibility: hidden; }
+.mafw-plugin-window-backdrop.is-under { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .mafw-plugin-window { animation: none; }
+}
+
 /* ── Question Widget（业界 question 模式：问题焦点 + 全宽选项行 + 数字快选）── */
 .mafw-question-overlay {
   position: fixed;

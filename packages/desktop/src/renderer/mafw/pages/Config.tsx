@@ -20,6 +20,8 @@ import { UsageProviders } from "../components/UsageProviders"
 import { ApprovalsSection } from "../components/ApprovalsSection"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
 import { KeybindingsSection } from "./KeybindingsSection"
+import { PluginPackagesSection } from "./PluginPackagesSection"
+import type { CreatorEntryReason } from "./creator-entry"
 
 interface ConfigSection {
   key: string
@@ -30,7 +32,7 @@ interface ConfigSection {
 export { isNavKey }
 export type { NavKey }
 
-export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void; projectDir?: string; sessionID?: string }) {
+export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void; projectDir?: string; sessionID?: string; onCreatePlugin?: () => void; creatorEntry?: { available: boolean; reason?: CreatorEntryReason } }) {
   const [activeNav, setActiveNav] = createSignal<NavKey>(isNavKey(props.initialSection) ? props.initialSection : "gateway")
 
   // ── MAFW raw config ──
@@ -972,6 +974,14 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
           {/* ═══ Plugins ═══*/}
           <Show when={activeNav() === "plugins"}>
+            <PluginPackagesSection
+              sessionID={props.sessionID}
+              creatorEntry={
+                props.creatorEntry
+                  ? { ...props.creatorEntry, onCreate: () => props.onCreatePlugin?.() }
+                  : undefined
+              }
+            />
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
                 <span class="mafw-config-section-icon">🧩</span>

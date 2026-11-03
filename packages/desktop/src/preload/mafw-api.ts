@@ -368,6 +368,16 @@ export function createMafwApi(): MafwAPI {
 
     plugins: {
       list: () => invoke("plugins", "list"),
+      client: () => invoke("plugins", "client"),
+      chooseDirectory: () => ipcRenderer.invoke("mafw-plugins-choose-directory") as Promise<{ path: string | null; error?: string }>,
+      installPackage: (input) => invoke("plugins", "installPackage", input),
+      check: (input) => invoke("plugins", "check", input),
+      apply: (name) => invoke("plugins", "apply", name),
+      reload: (name) => invoke("plugins", "reload", name),
+      invoke: (name, action, input, sessionID) => invoke("plugins", "invoke", name, action, input, sessionID),
+      enablePackage: (name) => invoke("plugins", "enablePackage", name),
+      disablePackage: (name) => invoke("plugins", "disablePackage", name),
+      removePackage: (name) => invoke("plugins", "removePackage", name),
       install: (input) => invoke("plugins", "install", input),
       enable: (type, filename) => invoke("plugins", "enable", type, filename),
       disable: (type, filename) => invoke("plugins", "disable", type, filename),

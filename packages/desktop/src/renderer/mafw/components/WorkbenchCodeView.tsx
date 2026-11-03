@@ -1,6 +1,6 @@
 // 右工作台 › 工作台：文件树 + 编辑器/浏览器。
 // 文件树在窄内容宽（<600px）由 CSS 收为抽屉；宽屏始终作为左列。
-import { Show, createSignal } from "solid-js"
+import { Show, createSignal, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
@@ -9,7 +9,7 @@ import { EditorDock } from "./EditorDock"
 import { BrowserDock } from "./BrowserDock"
 import { TerminalSurface } from "./TerminalSurface"
 import type { FileDiffEntry } from "./DiffReviewPanel"
-import type { WorkbenchSurface } from "../workbench-views"
+import { isPluginSurfaceId, type WorkbenchSurface } from "../workbench-views"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
 export function WorkbenchCodeView(props: {
@@ -23,6 +23,8 @@ export function WorkbenchCodeView(props: {
   onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
   onSendComment?: (sid: string, text: string) => void
   onOpenReview?: () => void
+  /** Task 8: mount the active `plugin:<package>:<panel>` surface. */
+  renderPluginSurface?: (id: string) => JSX.Element
 }) {
   const [filesOpen, setFilesOpen] = createSignal(false)
   const openFile = (rel: string) => {
@@ -70,6 +72,11 @@ export function WorkbenchCodeView(props: {
             active={props.active && props.surface === "terminal"}
           />
         </div>
+        <Show when={isPluginSurfaceId(props.surface)}>
+          <div class="mafw-rw-code-pane" style={{ display: "contents" }}>
+            {props.renderPluginSurface?.(props.surface)}
+          </div>
+        </Show>
       </div>
     </div>
   )

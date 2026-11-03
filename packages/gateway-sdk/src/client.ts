@@ -17,6 +17,8 @@ import {
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
   PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
+  PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
+  PluginCheckResult,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -767,9 +769,72 @@ export class MafwClient implements IMafwClient {
   // 鈹€鈹€ Plugins Hub 鈹€鈹€
 
   plugins = {
-    list: async (): Promise<{
-      plugins: { type: 'runtime' | 'media' | 'usage' | 'ui'; name: string; file: string; status: 'enabled' | 'disabled' | 'error' | 'config-disabled'; error?: string; size: number; mtime: string; builtin?: boolean; overridden?: boolean; pluginType?: string }[];
-    }> => this.request('/api/plugins'),
+    list: async (): Promise<PluginsListResult> => this.request('/api/plugins'),
+
+    /** Committed package revision + descriptors (never pending candidates). */
+    client: async (): Promise<PluginClientSnapshot> => this.request('/api/plugins/client'),
+
+    /** Install an absolute local package directory into `~/.mafw/plugins`. */
+    installPackage: async (input: { path: string; overwrite?: boolean; requestId?: string }): Promise<PluginPackageInstallResult> => {
+      return this.request('/api/plugins/packages/install', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+    },
+
+    /** Validate a candidate directory without publishing it (`ok:false` = diagnostic). */
+    check: async (input: { path: string }): Promise<PluginCheckResult> => {
+      return this.request('/api/plugins/check', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+    },
+
+    /** Commit the staged pending candidate of one package. */
+    apply: async (name: string): Promise<PluginPackageUpdateResult> => {
+      return this.request(`/api/plugins/${encodeURIComponent(name)}/apply`, { method: 'POST' })
+    },
+
+    /** Rescan one package through the normal staging/commit flow. */
+    reload: async (name: string): Promise<PluginPackageUpdateResult> => {
+      return this.request(`/api/plugins/${encodeURIComponent(name)}/reload`, { method: 'POST' })
+    },
+
+    /** Invoke one committed package action; returns the action output. */
+    invoke: async (name: string, action: string, input?: unknown, sessionID?: string): Promise<unknown> => {
+      const res = await this.fetchPath(
+        `/api/plugins/${encodeURIComponent(name)}/actions/${encodeURIComponent(action)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input, ...(sessionID ? { sessionID } : {}) }),
+        },
+      )
+      if (!res.ok) throw await httpError(res)
+      const body = await res.json() as { output?: unknown }
+      return body?.output
+    },
+
+    enablePackage: async (name: string): Promise<PluginPackageUpdateResult> => {
+      return this.request('/api/plugins/enable', {
+        method: 'POST',
+        body: JSON.stringify({ package: name }),
+      })
+    },
+
+    disablePackage: async (name: string): Promise<PluginPackageUpdateResult> => {
+      return this.request('/api/plugins/disable', {
+        method: 'POST',
+        body: JSON.stringify({ package: name }),
+      })
+    },
+
+    removePackage: async (name: string): Promise<PluginPackageUpdateResult> => {
+      return this.request('/api/plugins/delete', {
+        method: 'POST',
+        body: JSON.stringify({ package: name }),
+      })
+    },
 
     install: async (input: { filename: string; type?: 'runtime' | 'media' | 'usage' | 'ui'; bytes: Uint8Array; overwrite?: boolean }): Promise<any> => {
       const params = new URLSearchParams({ filename: input.filename });

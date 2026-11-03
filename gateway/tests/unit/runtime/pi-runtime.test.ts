@@ -77,6 +77,7 @@ describe('pi-runtime', () => {
       sessionApi: true, promptWhileBusy: true, eventStream: true,
       nativeApprovals: true, providerConfigApi: true, perLlmCallTransform: true,
       sessionStorageApi: true, agentConfigApi: true, discoveryApi: false, steerApi: true,
+      pluginCreatorApi: false,
     });
   });
 

@@ -1,7 +1,8 @@
 import {
   createBuiltinIdentityRegistry, toAgentDefinition, resolveToolCategory, policyDecides,
-  resolveIdentityAlias,
+  resolveIdentityAlias, identityMaterializable,
 } from '../../../src/runtime/identity-registry';
+import { fullCapabilities, minimalCapabilities } from '../../../src/runtime/contract';
 import { getManagerAgentDefinition } from '../../../src/skills/manager-agent-config';
 import { buildMemoryCuratorDefinition } from '../../../src/skills/memory-curator-agent';
 
@@ -155,6 +156,32 @@ describe('resolveToolCategory', () => {
     // plan/other 落穿（由裸名/前缀规则裁决）
     expect(resolveToolCategory('todowrite', 'opencode')).toBeNull();
     expect(resolveToolCategory('some_mcp_tool', 'pi')).toBeNull();
+  });
+});
+
+describe('identity materialization gate (runtime capability)', () => {
+  it('materializes a spec without a required capability', () => {
+    expect(identityMaterializable(lead, fullCapabilities())).toBe(true);
+    expect(identityMaterializable(lead, minimalCapabilities())).toBe(true);
+  });
+
+  it('skips a spec whose required capability is not declared true', () => {
+    const creator = registry.get('mafw-create')!;
+    expect(identityMaterializable(creator, fullCapabilities())).toBe(true);
+    expect(identityMaterializable(creator, { ...fullCapabilities(), pluginCreatorApi: false })).toBe(false);
+    expect(identityMaterializable(creator, minimalCapabilities())).toBe(false);
+    // Missing declaration (older plugin) is treated as unsupported, not true.
+    const caps = fullCapabilities() as any;
+    delete caps.pluginCreatorApi;
+    expect(identityMaterializable(creator, caps)).toBe(false);
+  });
+
+  it('mafw-create declares pluginCreatorApi as its requirement', () => {
+    expect(registry.get('mafw-create')!.requiresCapability).toBe('pluginCreatorApi');
+    // The gate is the only spec that needs a plugin-only capability.
+    for (const spec of registry.list()) {
+      if (spec.name !== 'mafw-create') expect(spec.requiresCapability).toBeUndefined();
+    }
   });
 });
 

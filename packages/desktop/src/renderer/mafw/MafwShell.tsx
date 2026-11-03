@@ -72,6 +72,10 @@ import {
   resultStatus,
   techLeadSendGate,
 } from "./pod-model"
+import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
+import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
+import { PluginSurfaceHost } from "./plugins/PluginSurfaceHost"
+import { PluginWindowHost } from "./plugins/PluginWindowHost"
 import { buildPodNoteBody } from "./pod-note"
 import { retitleTab } from "./session-tab-title"
 import { dropOtherLeadTabs, mergeTabIdentity } from "./session-tab-identity"
@@ -108,6 +112,7 @@ import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
 import { registerMafwToolCards } from "./components/tool-cards"
 import { registerUserPluginCards } from "./components/UserPluginCards"
+import { registerUnifiedToolCards } from "./plugins/PluginToolCard"
 import { registerThinkingBlock } from "./components/ThinkingBlock"
 import { WelcomeHome } from "./components/WelcomeHome"
 import { DashboardPage } from "./pages/Dashboard"
@@ -124,6 +129,7 @@ import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
 import { AutomationsPage } from "./pages/Automations"
 import { ConfigPage, isNavKey, type NavKey } from "./pages/Config"
+import { creatorEntryState, reusableCreatorSession } from "./pages/creator-entry"
 import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
 import type { AskCardData } from "./components/AskCard"
 import type { PermissionCardData } from "./components/PermissionCard"
@@ -905,6 +911,7 @@ export function MafwShell() {
   onMount(() => {
     registerMafwToolCards()
     registerUserPluginCards() // 必须在 registerMafwToolCards 之后（捕获 original）
+    registerUnifiedToolCards() // 统一声明式工具卡：在内置与 legacy 之后占位/覆盖
     registerThinkingBlock()   // reasoning part → dsh 式可折叠思考块
     // Use the modern session-ui rendering branch (rounded bubbles, v2 tokens).
     document.body.setAttribute("data-new-layout", "")
@@ -1122,6 +1129,12 @@ export function MafwShell() {
         ingestPodEvent(event)
       },
     },
+    // 统一插件包（Task 7）：修订通知 → 重拉 committed descriptors；
+    // 已注册包事件 → 事件 hub（只做数据投递，绝不执行插件代码）。
+    plugins: {
+      onChanged: (event) => { void ingestPluginsChanged(event) },
+      onEvent: (event) => { ingestPluginEvent(event) },
+    },
   }
 
   async function connectSse() {
@@ -1151,6 +1164,9 @@ export function MafwShell() {
       void reconcileSubagents()
       resetBackgroundCapability()
       void reconcileBackground()
+      // Task 7：重连是唯一可靠的「gateway 可能重启过」信号（同一端口），
+      // client revision 的 bootId 会变化 → 必须重拉 committed descriptors。
+      void refreshPluginClient()
     }
     source.onerror = () => {
       console.log("[mafw] SSE error (will auto-reconnect)")
@@ -1183,6 +1199,9 @@ export function MafwShell() {
   // only becomes available after this window loaded.
   onMount(() => {
     const reconcileTimer = setInterval(reconcileFlowCards, 60000)
+    // Task 7：committed plugin descriptors 的初始拉取（重连时 onopen 再拉一次，
+    // 两次并发由 refreshPluginClient 的 in-flight 合并）。
+    void refreshPluginClient()
     // 子代理 + 后台任务终态通知（spec §4.5/§6.3）：toast 恒发；OS 通知共享同一个
     // 10s 全局门（两类合计限频，防 #11716 洪泛）
     const bgWorkNotifyGate = createNotifyGate(10_000)
@@ -1347,15 +1366,22 @@ export function MafwShell() {
   // Active session
   const active = () => sessions().find(s => s.id === activeSessionId()) || null
 
-  async function createSession(opts?: { noReveal?: boolean }) {
+  async function createSession(opts?: { noReveal?: boolean; requirePersisted?: boolean }) {
     console.log("[mafw] createSession")
-    setShowWelcome(false)
-    setShowConfig(false)
-    setActiveTab("chat")
+    const enterChat = () => {
+      setShowWelcome(false)
+      setShowConfig(false)
+      setActiveTab("chat")
+    }
+    // Persisted-only callers (Creator entry) must leave the current view alone
+    // when the runtime cannot create the Session, so they fail without a fake
+    // `local-` Session and without silently closing Config.
+    if (!opts?.requirePersisted) enterChat()
     try {
       const result = await window.api.mafw.sessions.create() as any
       const id = result.id || result.sessionID || `sess-${Date.now()}`
       console.log("[mafw] createSession result id:", id)
+      if (opts?.requirePersisted) enterChat()
       const userMsgId = `user-${Date.now()}`
       const sess: ChatSession = { id, title: `Chat ${sessions().length + 1}`, userMsgId, assistantMsgId: null, done: false }
       setSessions(prev => [...prev, sess])
@@ -1374,6 +1400,11 @@ export function MafwShell() {
       }
       return id
     } catch {
+      if (opts?.requirePersisted) {
+        showToastV2({ description: "无法创建会话：Gateway 未连接", duration: 4000 })
+        return ""
+      }
+      enterChat()
       const id = `local-${Date.now()}`
       setSessions(prev => [...prev, { id, title: `Chat ${sessions().length + 1}`, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false }])
       setActiveSessionId(id)
@@ -1639,7 +1670,7 @@ export function MafwShell() {
   const [workbenchView, setWorkbenchView] = createSignal<WorkbenchView>(bootView.view)
   const [workbenchSurface, setWorkbenchSurface] = createSignal<WorkbenchSurface>(bootView.surface)
   const [previousSurface, setPreviousSurface] = createSignal<"code" | "browser">(
-    bootView.surface === "terminal" ? "code" : bootView.surface,
+    bootView.surface === "browser" ? "browser" : "code",
   )
   const [executionSection, setExecutionSection] = createSignal<ExecutionSection>(bootView.executionSection)
   try {
@@ -1712,11 +1743,40 @@ export function MafwShell() {
     try { localStorage.setItem("mafw-workbench-view", view) } catch { /* ignore */ }
   }
   const applyWorkbenchSurface = (surface: WorkbenchSurface) => {
-    if (surface !== "terminal") setPreviousSurface(surface)
+    if (surface === "code" || surface === "browser") setPreviousSurface(surface)
     setWorkbenchSurface(surface)
     applyWorkbenchView("workbench")
     try { localStorage.setItem("mafw-workbench-surface", surface) } catch { /* ignore */ }
   }
+
+  // Task 8/9：插件面板与配置页 tab 由 committed descriptors 投影，Desktop 只消费数据。
+  const pluginSurfaceList = createMemo(() => pluginSurfaces(pluginDescriptors()))
+  const pluginConfigSurfaceList = createMemo(() => pluginConfigSurfaces(pluginDescriptors()))
+  const pluginTabList = createMemo(() => [
+    ...pluginSurfaceList(),
+    ...pluginConfigSurfaceList(),
+  ])
+  const reportedPluginIssues = new Set<string>()
+  createEffect(() => {
+    for (const issue of pluginSurfaceIssues(pluginDescriptors())) {
+      const key = `${issue.code}|${issue.package}|${issue.panel}`
+      if (reportedPluginIssues.has(key)) continue
+      reportedPluginIssues.add(key)
+      console.warn(`[plugins] ${issue.message}`)
+    }
+  })
+  // 包/面板/配置页被删除后，活动 surface 若已消失则回退到内置「文件」；不打断执行/审阅视图。
+  createEffect(() => {
+    const current = workbenchSurface()
+    const resolved = resolveActiveSurface(
+      current,
+      pluginTabList().map((surface) => surface.id),
+      pluginClientRevision() !== "",
+    )
+    if (resolved === current) return
+    setWorkbenchSurface(resolved)
+    try { localStorage.setItem("mafw-workbench-surface", resolved) } catch { /* ignore */ }
+  })
   const applyExecutionSection = (section: ExecutionSection) => {
     setExecutionSection(section)
     applyWorkbenchView("execution")
@@ -2201,6 +2261,40 @@ export function MafwShell() {
     return primaryAgents().find(a => agentKey(a) === name) ?? null
   }
 
+  // ── Creator entry (spec §15.7) ──────────────────────────────────────────
+  // Ordinary blank Session + `mafw-create` agent switch through the existing
+  // channels: no Creator Session API, draft store or second agent binding.
+  const creatorAgentEntry = () => primaryAgents().find(a => isAgentKey(a, "mafw-create")) ?? null
+  const creatorEntry = createMemo(() =>
+    creatorEntryState({
+      agentsLoaded: agentsData().length > 0,
+      hasCreator: !!creatorAgentEntry(),
+      isWorktree: benchRoot() !== currentProject(),
+    })
+  )
+  const openCreatorSession = async (): Promise<void> => {
+    if (!creatorEntry().available) return
+    const agent = creatorAgentEntry()
+    if (!agent) return
+    const activeSid = activeSessionId()
+    const reusable = reusableCreatorSession({
+      activeSessionID: activeSid,
+      messagesBySession: store.message,
+      // Seeded `[]` is not proof of blank: only a completed page load is.
+      pageState,
+      // A Lead/manager tab or a session rooted outside the project must never be
+      // switched to mafw-create (drafts are promised under the project path).
+      activeSessionRole: activeSid ? workspace.sessionRole(activeSid) : undefined,
+      activeSessionDirectory: store.session.find((s: any) => s.id === activeSid)?.directory ?? null,
+      projectRoot: currentProject(),
+    })
+    const sid = reusable ?? (await createSession({ noReveal: true, requirePersisted: true }))
+    if (!sid) return // persisted creation failed (toast already shown)
+    applyAgentSwitch(agent, sid)
+    setShowConfig(false)
+    openSessionTab(sid)
+  }
+
   // 2.1.0 sticky agent：session.agent 是运行时真值（build/plan/…）——
   // 应用重启后用它把 agent 药丸补回来；本地已有选择时不覆盖
   // （用户刚点的选择先于服务端旧值，直到下一条消息把切换写入会话）。
@@ -2398,7 +2492,7 @@ export function MafwShell() {
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
             {showConfig() ? (
-              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme() ?? undefined} onToggleTheme={toggleTheme} projectDir={(store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined) as string | undefined} sessionID={currentSessionID() || undefined} />
+              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme() ?? undefined} onToggleTheme={toggleTheme} projectDir={(store.session.find((s: any) => s.id === currentSessionID())?.directory ?? currentProject() ?? undefined) as string | undefined} sessionID={currentSessionID() || undefined} onCreatePlugin={() => void openCreatorSession()} creatorEntry={creatorEntry()} />
             ) : connDown() && activeTab() !== "chat" ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : activeTab() === "chat" ? (
@@ -2702,6 +2796,15 @@ export function MafwShell() {
                       }}
                     />
                   }
+                  pluginSurfaces={pluginTabList()}
+                  renderPluginSurface={(id) => (
+                    <PluginSurfaceHost
+                      id={id}
+                      surfaces={pluginSurfaceList()}
+                      configSurfaces={pluginConfigSurfaceList()}
+                      sessionID={currentSessionID() || null}
+                    />
+                  )}
                 />
               </div>
             )}
@@ -2727,6 +2830,8 @@ export function MafwShell() {
         <EventInspector onClose={() => setShowInspector(false)} />
       </Show>
       <ImageLightbox />
+      {/* 统一插件包消息小窗：主窗口 DOM 内 overlay，绝不创建 BrowserWindow。 */}
+      <PluginWindowHost />
     </div>
             </DataProvider>
           </FileComponentProvider>
