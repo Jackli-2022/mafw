@@ -48,6 +48,8 @@ const pkgRoot = path.dirname(target);
 const assets = [
   [path.join(gatewayRoot, "scripts", "setup-pykernel.mjs"), path.join(target, "scripts", "setup-pykernel.mjs")],
   [path.join(gatewayRoot, "scripts", "office"), path.join(target, "scripts", "office")],
+  // ASR sidecar sources: compiled code resolves `<gateway>/voice_sidecars/qwen3_asr_server.py`.
+  [path.join(gatewayRoot, "voice_sidecars"), path.join(target, "voice_sidecars")],
   [path.join(gatewayRoot, "..", "skills"), path.join(pkgRoot, "skills")],
 ];
 for (const [src, dst] of assets) {

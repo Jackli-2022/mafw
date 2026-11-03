@@ -47,6 +47,16 @@ await mkdir(outDir, { recursive: true })
 // Copy compiled output.
 await cp(gatewayDist, path.join(outDir, "dist"), { recursive: true })
 
+// Python sidecar sources ship next to dist: compiled voice code resolves
+// `<gateway>/voice_sidecars/qwen3_asr_server.py`, which in the bundle is
+// `gateway-bundle/voice_sidecars`.
+const voiceSidecars = path.join(gatewayDir, "voice_sidecars")
+if (!existsSync(voiceSidecars)) {
+  throw new Error(`${voiceSidecars} missing — ASR sidecar sources must ship with the gateway`)
+}
+await cp(voiceSidecars, path.join(outDir, "voice_sidecars"), { recursive: true })
+console.log(`[stage-gateway] voice_sidecars -> ${path.join(outDir, "voice_sidecars")}`)
+
 // Minimal manifest: production dependencies only.
 // Version label comes from the ROOT package.json — the single version source
 // (scripts/bump-version.mjs only syncs packages/* workspaces, so
