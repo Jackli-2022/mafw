@@ -100,6 +100,29 @@ function positiveRevision(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 
+/**
+ * Pre-execution revisions live before the Goal has any GoalState file: the
+ * hidden Tech Lead session owns discussing/direction_review. An absent state
+ * file there is the designed shape, not a corrupted Goal — only revisions that
+ * must have started a node (planning/implementing/...) treat it as damage.
+ */
+const PRE_EXECUTION_REVISION_STATUSES: ReadonlySet<PodGoalRevisionStatus> = new Set([
+  'discussing',
+  'direction_review',
+]);
+
+function stateIsMissing(
+  row: PodGoalRow,
+  description: PodGoalDescription | null,
+  revisionStatus: PodGoalRevisionStatus | null,
+): boolean {
+  if (row.status !== 'active') return false;
+  const absent = !!description?.stateMissing || !description;
+  if (!absent) return false;
+  if (revisionStatus && PRE_EXECUTION_REVISION_STATUSES.has(revisionStatus)) return false;
+  return true;
+}
+
 export function buildPodGoalView(
   row: PodGoalRow,
   description: PodGoalDescription | null,
@@ -122,7 +145,7 @@ export function buildPodGoalView(
     planApproval: description?.planApproval ?? null,
     pendingQuestion: description?.pendingQuestion ?? null,
     nodeSession: description?.nodeSession ?? null,
-    stateMissing: row.status === 'active' && (!!description?.stateMissing || !description),
+    stateMissing: stateIsMissing(row, description, revisionStatus),
     ...(queueReason ? { queueReason } : {}),
     revision: revisionStatus
       ? {

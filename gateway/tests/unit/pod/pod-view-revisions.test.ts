@@ -61,6 +61,59 @@ describe('buildPodGoalView — revision aware', () => {
     expect(buildPodAttention([view])).toEqual([]);
   });
 
+  test('a pre-execution revision without a state file discusses instead of reporting a broken state', () => {
+    // Discussing/direction_review live before any GoalState file exists by design:
+    // an absent state file there is the normal shape, not a corrupted Goal.
+    const discussing = buildPodGoalView(
+      row({ activeRevision: 2 }),
+      desc({ revision: 2, revisionStatus: 'discussing', stateMissing: true, phase: null, nextAction: '' }),
+      null,
+    );
+    expect(discussing.stage).toMatchObject({ owner: 'team', kind: 'discussing', role: 'tech_lead' });
+    expect(buildPodAttention([discussing])).toEqual([]);
+
+    // A pending direction review stays the real human gate in that window.
+    const pending = buildPodGoalView(
+      row({ activeRevision: 2 }),
+      desc({
+        revision: 2,
+        revisionStatus: 'direction_review',
+        directionStatus: 'pending',
+        stateMissing: true,
+        phase: null,
+        nextAction: '',
+      }),
+      null,
+    );
+    expect(pending.stage).toMatchObject({ owner: 'person', kind: 'direction_review', role: 'tech_lead' });
+
+    // Once the decision is recorded the same revision continues as Tech Lead work.
+    const decided = buildPodGoalView(
+      row({ activeRevision: 2 }),
+      desc({
+        revision: 2,
+        revisionStatus: 'direction_review',
+        directionStatus: 'decided',
+        stateMissing: true,
+        phase: null,
+        nextAction: '',
+      }),
+      null,
+    );
+    expect(decided.stage).toMatchObject({ owner: 'team', kind: 'planning', role: 'tech_lead' });
+  });
+
+  test('a missing state file stays a blocker for revisions that must have one', () => {
+    for (const revisionStatus of ['planning', 'plan_review', 'implementing', 'reviewing'] as const) {
+      const view = buildPodGoalView(
+        row({ activeRevision: 2 }),
+        desc({ revision: 2, revisionStatus, stateMissing: true, phase: null, nextAction: '' }),
+        null,
+      );
+      expect(view.stage).toMatchObject({ owner: 'person', kind: 'blocked' });
+    }
+  });
+
   test('a stale description from an older revision never claims another revision stage', () => {
     const view = buildPodGoalView(
       row({ activeRevision: 2 }),
@@ -148,7 +201,7 @@ describe('buildPodGoalView — revision aware', () => {
 describe('PodGoalService.views — revision wiring', () => {
   const now = '2026-11-02T00:00:00.000Z';
 
-  function makeService() {
+  function makeService(stateMissing = false) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-view-rev-'));
     const db = new Database(path.join(dir, 'test.db'));
     const store = new PodStore(db);
@@ -175,10 +228,26 @@ describe('PodGoalService.views — revision wiring', () => {
         pendingQuestion: null,
         nodeSession: null,
         lastError: null,
+        ...(stateMissing ? { stateMissing: true } : {}),
       }),
     });
     return { dir, db, store, pod, service };
   }
+
+  test('a fresh discussion Goal without a state file keeps the discussing stage', () => {
+    const { dir, db, store, pod, service } = makeService(true);
+    try {
+      expect(service.views(pod.id)[0].stage).toMatchObject({
+        owner: 'team',
+        kind: 'discussing',
+        role: 'tech_lead',
+      });
+      expect(service.attention(pod.id)).toEqual([]);
+    } finally {
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   test('projects the persisted revision status and direction attention', () => {
     const { dir, db, store, pod, service } = makeService();
