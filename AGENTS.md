@@ -666,13 +666,13 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
   - `registry/snapshot`（注册表快照，权威仍�?`scheduler/registered-projects.json`�?
 - �?t1.db / manager-session.json / recall-reflect-cursor.json 启动时自动回填并入库后删除（`gateway/src/recall/gateway-db-migrate.ts`，幂等）
 - `GET /api/manager/session` 返回全部项目�?manager session 列表（`?projectDir=` 过滤单条�?
-- `POST /api/manager/session/rotate`（`{projectDir, reason?}`，`routes/manager-rotate.ts`）：**开新话�?*——旧 session metadata 降级 `role: 'manager-archived'`（去 pinned/exempt，回归普通生命周期，自动出现在桌面历史列表），强创建�?session 替换 kv 并重跑身份注入；�?`ensureManagerSession` �?`managerSessionInflight` 互斥。MCP `mafw_new_topic` 复用同一 flow
+- `POST /api/manager/session/rotate`（`{projectDir, reason?}`，`routes/manager-rotate.ts`）：**开新话�?*——旧 session metadata 降级 `role: 'manager-archived'`（去 pinned/exempt，回归普通生命周期，自动出现在桌面历史列表），强创建�?session 替换 kv 并重跑身份注入；�?`ensureManagerSession` �?`managerSessionInflight` 互斥。MCP `mafw_new_topic` 已退役；HTTP/SDK rotate 仅内部兼容
 
 **Manager 常驻目标感知�?026-09-03�?*�?
 - **每轮 goal 快照**：`GET /api/recall/context` 识别活跃 manager session（kv sessionId 比对）后�?recall 块尾部追�?`<goal-snapshot>`（`core/manager/goal-snapshot.ts` 确定性聚合，�?0 �?500 字符，compaction 免疫）；�?manager session 不受影响�?*按名引用渲染**�?026-09-15，wayfinder 约定）：`标题 (goalId) [phase=…]`——标题在前、id 在括号里，不用裸 id 刷屏
 - **Charter 决策地图五段约定**�?026-09-15，借鉴 mattpocock wayfinder，`skills/manager-identity.ts` 系统提示）：Destination / Plan / Decisions so far（决策索引：一�?gist + 记忆 id，不复制详情�? Not yet specified（fog，已知的未知，frontier 推进后毕业）/ Out of scope（排除项）；决策本体�?`mafw_add_memory`（semantic，cueAnchors �?goalId）记录，charter �?state 只存指针——记忆可跨会话检索，state 只是索引
 - **里程碑推�?*：`core/manager/milestone-push.ts` �?`eventBus("phase_transition")`（PLANNING_COMPLETE/REVIEWING_COMPLETE/ASKING_USER�? `archiveGoal()`（completed/failed/cancelled），per-project 合并队列�?s），持久化去重键 `milestone-notified/{goalId}:{phase}:{stateVersion}`，`promptAsync(noReply: true)` 硬免回复（消息落历史不触�?LLM；pi runtime busy 分支会丢 noReply 语义——已知限制）
-- **/btw 支线问答**：用户直发指令（桌面 `/btw` slash 命令 / 插件 `/btw` command �?`/api/mafw-commands/run`），spawn 一次�?session（registerInternal 'btw'，不回流 T1），prompt 一次拿回答即删；`new-topic`/`btw` 均为**用户指令驱动**（UI-driven, not LLM-driven），刻意不暴�?MCP 工具�?agent
+- **/btw 支线问答**：用户直发指令（桌面 `/btw` slash 命令 / 插件 `/btw` command �?`/api/mafw-commands/run`），spawn 一次�?session（registerInternal 'btw'，不回流 T1），prompt 一次拿回答即删；`btw` 为用户指令驱动（`new-topic` 已退役）（UI-driven, not LLM-driven），刻意不暴�?MCP 工具�?agent
 - **/waitwhat 重述**�?026-09-15，借鉴 mattpocock wait-what）：用户�?没听�?�?gateway 取当前会话最后一�?assistant 文本，promptAsync 回同一会话要求"简明语言（STE100 风格�? CONTEXT.md 术语重述，不新增内容"（`routes/waitwhat-command.ts`，deps 注入可单测；回答�?SSE 三端同见）；接线：桌�?ChatPane mafw 命令�?+ 插件 `waitwhat` command + TUI `/waitwhat`（immediate�?
 - 旧三�?`manager-report-*` 自动化规则已退役（wake 链路读已删除�?legacy 文件 + 事件无人 emit，整链死代码），`ensureManagerRules` 启动时清理规则文�?
 
@@ -693,7 +693,7 @@ post-task curator 只看轨迹会记下错误答�?过度泛化/过期知识�
 
 `/api/mafw-commands/run` 由硬编码 if 链收敛为注册表（`gateway/src/commands/`）：
 
-- **registry.ts**：`MafwCommandDef`（name/aliases/description/argumentHint/category/destructive/kind�? `MafwCommandRegistry`（别名解析、重注册覆盖）；6 条内置元数据�?`BUILTIN_COMMAND_DEFS`（new-topic 别名 `new`�?
+- **registry.ts**：`MafwCommandDef`（name/aliases/description/argumentHint/category/destructive/kind�? `MafwCommandRegistry`（别名解析、重注册覆盖）；5 条内置元数据�?`BUILTIN_COMMAND_DEFS`（new-topic 别名 `new`�?
 - **builtin-handlers.ts**�? 条内�?handler（deps 注入可单测），语义与�?if 链逐字一致；**custom-exec.ts**：自定义命令执行 = 渲染模板 �?promptAsync �?sessionID（缺�?manager session 兜底�?
 - **custom-commands.ts**：用户自定义命令——`~/.mafw/commands/`（用户级�? `<project>/.mafw/commands/`（项目级，同名覆盖用户级），markdown + frontmatter（description/argument-hint），子目录即命名空间（`git/commit.md`→`git:commit`）；模板语法 `$ARGUMENTS`/`$1..$N`/`` !`shell` ``（块内参�?shell 转义防注入，cwd=projectDir�?0s 超时�?MB cap�?`@file`（≤100KB，相�?projectDir，防路径逃逸）；`fs.watch` 300ms 防抖热重载，变更广播 `mafw_commands_changed`（扁平顶层事件）
 - **GET /api/mafw-commands**：元数据清单（SDK `mafwCommands.list()`）；TUI/Desktop 拉取合并—�?*本地命令优先**（远�?name/alias 撞本�?name/alias 时隐藏远端，�?TUI `/new` 与远�?`new-topic` 不双显、远�?`status` �?TUI 隐藏让位本地 recap）；TUI 未命中本地时 fallback �?`mafwCommands.run` 派发，远�?destructive 命令同样过确认门
