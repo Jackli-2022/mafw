@@ -542,6 +542,9 @@ html[data-theme="light"] body {
   overflow: hidden;
   background: var(--bg-base);
   box-shadow: none;
+  /* å¯¹è¯é˜…è¯»/è¾“å…¥ä¸“å±å­—å·ï¼šä¸šç•Œ 16pxï¼Œä½†ä¸æ”¾å¤§å…¨å±€ UI baseï¼ˆspec 2026-11-04 Â§5.1ï¼‰ã€‚ */
+  --mafw-chat-reading: 16px;
+  --mafw-chat-composer: 16px;
 }
 
 .mafw-titlebar-dot {
@@ -1109,7 +1112,7 @@ html[data-theme="light"] body {
   border: 1px solid var(--accent-border);
   padding: 10px 14px;
   font-family: var(--font-ui);
-  font-size: 16px;
+  font-size: var(--mafw-chat-reading, 16px);
   line-height: 1.7;
   color: var(--text-1);
 }
@@ -1122,7 +1125,7 @@ html[data-theme="light"] body {
 
 /* v5.1 æ¶ˆæ¯æ­£æ–‡ï¼š16px/1.7ï¼ˆä¸šç•Œ AI å¯¹è¯æ ‡å‡†ï¼‰ï¼Œä»… assistant text partï¼›reasoning å—ä¸æ³¢åŠ */
 .mafw-shell [data-component="text-part"] [data-component="markdown"] {
-  font-size: 16px;
+  font-size: var(--mafw-chat-reading, 16px);
   line-height: 1.7;
 }
 
@@ -1371,8 +1374,8 @@ html[data-theme="light"] body {
 .mafw-composer .mafw-input [data-slot="textarea-v2-textarea"] {
   box-sizing: border-box;
   min-height: 52px;
-  max-height: 200px;
-  font-size: 14px;
+  max-height: 220px;
+  font-size: var(--mafw-chat-composer, 16px);
   line-height: 1.5;
   color: var(--text-1);
   padding: 14px 16px 0;
@@ -7125,11 +7128,11 @@ html[data-theme="light"] body {
 }
 
 
-/* ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-   Editorial workspace polish£¨2026-11-04£©
-   ÑØÓÃ MAFW Å¯ÖĞĞÔ token£»ÓÃÏ¸Ïß¡¢×´Ì¬µã¡¢mono Êı×ÖºÍµ¥Ò»ÂÌÉ« accent
-   Í³Ò»¹¤×÷¿Õ¼ä / Goal ÏêÇé / ÏîÄ¿×ÊÔ´£¬²»ĞÂÔöµÚ¶şÌ×É«°å¡£
-   ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T */
+/* ï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½T
+   Editorial workspace polishï¿½ï¿½2026-11-04ï¿½ï¿½
+   ï¿½ï¿½ï¿½ï¿½ MAFW Å¯ï¿½ï¿½ï¿½ï¿½ tokenï¿½ï¿½ï¿½ï¿½Ï¸ï¿½ß¡ï¿½×´Ì¬ï¿½ã¡¢mono ï¿½ï¿½ï¿½ÖºÍµï¿½Ò»ï¿½ï¿½É« accent
+   Í³Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Õ¼ï¿½ / Goal ï¿½ï¿½ï¿½ï¿½ / ï¿½ï¿½Ä¿ï¿½ï¿½Ô´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú¶ï¿½ï¿½ï¿½É«ï¿½å¡£
+   ï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½T */
 .mafw-workspace {
   gap: 18px;
   padding: clamp(24px, 3.4vw, 44px) clamp(20px, 4vw, 56px) 48px;
@@ -7169,7 +7172,7 @@ html[data-theme="light"] body {
 }
 .mafw-workspace-actions { align-items: center; }
 
-/* Lead ¿¨Æ¬£ºÏñÒ»·âĞÅµÄÌ§Í·£¬¶ø²»ÊÇÆÕÍ¨Õ¼Î»¿¨ */
+/* Lead ï¿½ï¿½Æ¬ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Åµï¿½Ì§Í·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¨Õ¼Î»ï¿½ï¿½ */
 .mafw-workspace-lead {
   position: relative;
   overflow: hidden;
@@ -7218,7 +7221,7 @@ html[data-theme="light"] body {
 }
 .mafw-workspace-lead-cta { padding-left: 0; color: var(--accent-text); }
 
-/* ¹¤×÷¸ÅÀÀ£º·Ö×éÊÇÕË±¾ĞĞ£¬×´Ì¬µã + ¼ÆÊı + chips */
+/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë±ï¿½ï¿½Ğ£ï¿½×´Ì¬ï¿½ï¿½ + ï¿½ï¿½ï¿½ï¿½ + chips */
 .mafw-work-overview,
 .mafw-workspace-discussions,
 .mafw-workspace-composer {
@@ -7325,7 +7328,7 @@ html[data-theme="light"] body {
 .mafw-work-empty span { display: block; font-size: 11.5px; line-height: 1.6; }
 .mafw-work-error { padding: 12px; border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: var(--r-md); background: var(--danger-dim); color: var(--danger-text); font-size: 12px; }
 
-/* ×ÔÓÉÌÖÂÛ£ºÏ¸ĞĞ + Ê±¼ä + chevron£¬²»ÔÙÃ¿ĞĞÖØ¸´¡¸×ÔÓÉÌÖÂÛ¡¹ */
+/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Û£ï¿½Ï¸ï¿½ï¿½ + Ê±ï¿½ï¿½ + chevronï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã¿ï¿½ï¿½ï¿½Ø¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Û¡ï¿½ */
 .mafw-workspace-discussions { padding: 18px 20px 14px; }
 .mafw-workspace-section-head {
   display: flex;
@@ -7361,14 +7364,14 @@ html[data-theme="light"] body {
 .mafw-workspace-discussion-chevron { flex: 0 0 auto; color: var(--text-5); opacity: 0; transition: opacity var(--dur-fast) var(--ease-standard); }
 .mafw-workspace-discussion-row:hover .mafw-workspace-discussion-chevron { opacity: 1; }
 
-/* ĞÂ½¨ Goal£º¿¨Æ¬»¯£¬Óë¸ÅÀÀÍ¬Ò»²ã¼¶ */
+/* ï¿½Â½ï¿½ Goalï¿½ï¿½ï¿½ï¿½Æ¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¬Ò»ï¿½ã¼¶ */
 .mafw-workspace-composer {
   padding: 18px 20px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg-raised) 92%, var(--accent) 8%), var(--bg-raised) 120px);
 }
 
-/* ÏîÄ¿×ÊÔ´£ºÍ¼±ê + Í·Ïñ + ĞĞÄÚ chevron */
+/* ï¿½ï¿½Ä¿ï¿½ï¿½Ô´ï¿½ï¿½Í¼ï¿½ï¿½ + Í·ï¿½ï¿½ + ï¿½ï¿½ï¿½ï¿½ chevron */
 .mafw-resources { gap: 8px; padding: 10px 12px 14px; }
 .mafw-resources-subtitle { margin: -2px 2px 2px; color: var(--text-4); font-size: 10.5px; line-height: 1.55; }
 .mafw-resources .mafw-pod-rail-head { padding-bottom: 2px; }
@@ -7429,7 +7432,7 @@ html[data-theme="light"] body {
 .mafw-pod-rail-member:hover { background: var(--bg-hover); }
 .mafw-pod-rail-member .mafw-pod-rail-dot { margin-left: -2px; }
 
-/* Goal ÏêÇé£ºĞÅÍ· + ×´Ì¬ chips + ¿¨Æ¬»¯Çø¿é */
+/* Goal ï¿½ï¿½ï¿½é£ºï¿½ï¿½Í· + ×´Ì¬ chips + ï¿½ï¿½Æ¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
 .mafw-goal-overlay { background: color-mix(in srgb, #000 52%, transparent); backdrop-filter: blur(2px); }
 .mafw-goal-panel {
   width: min(920px, 94vw);
