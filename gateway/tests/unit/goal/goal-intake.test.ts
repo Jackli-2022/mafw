@@ -80,6 +80,27 @@ describe('goal intake', () => {
     expect(fs.readFileSync(first.charterPath, 'utf8')).toBe(before);
   });
 
+  test('persists a bounded immutable source snapshot for handoff-created goals', () => {
+    const snapshot = 'x'.repeat(4500);
+    const result = createGoalIntake({
+      ...base,
+      goalId: 'g-source',
+      sourceRef: {
+        sessionID: 'ses_free',
+        messageID: 'msg_1',
+        snapshot,
+        capturedAt: '2026-11-03T00:00:00.000Z',
+      },
+    }, deps());
+
+    expect(JSON.parse(fs.readFileSync(result.requestPath, 'utf8')).sourceRef).toEqual({
+      sessionID: 'ses_free',
+      messageID: 'msg_1',
+      snapshot: 'x'.repeat(4000),
+      capturedAt: '2026-11-03T00:00:00.000Z',
+    });
+  });
+
   test('autoStart false leaves starting to the caller', () => {
     createGoalIntake({ ...base, goalId: 'g-deferred', autoStart: false }, deps());
     expect(events).toHaveLength(0);

@@ -8,7 +8,11 @@ import type { PodService } from '../core/pod/pod-service';
 import type { PodTaskService } from '../core/pod/pod-task-service';
 import type { PodTechLeadService } from '../core/pod/pod-tech-lead-service';
 import type { GoalAuthorization, GoalIntakeInput, GoalIntakeResult } from '../core/goal/goal-intake';
-import { GoalConflictError, makePodGoalId } from '../core/goal/goal-intake';
+import {
+  GoalConflictError,
+  makePodGoalId,
+  normalizeGoalSourceRef,
+} from '../core/goal/goal-intake';
 import type { PodEnqueueResult } from '../core/pod/pod-goal-service';
 import type { PodAttentionItem, PodGoalView } from '../core/pod/pod-view';
 
@@ -283,8 +287,7 @@ export async function handlePods(
     }
 
     const goalCancel = pathname.match(/^\/api\/pods\/([^/]+)\/goals\/([^/]+)$/);
-    if (goalCancel) {
-      if (method !== 'DELETE') return false;
+    if (goalCancel && method === 'DELETE') {
       const podId = decode(goalCancel[1]);
       requirePod(deps, podId);
       const body = await readJson(req);
@@ -305,6 +308,59 @@ export async function handlePods(
       readMember(deps, url, podId);
       if (!deps.goals.result) throw new PodError(503, 'goal result unavailable');
       sendJson(res, 200, deps.goals.result(podId, decode(goalResult[2])));
+      return true;
+    }
+
+    const handoff = pathname.match(/^\/api\/pods\/([^/]+)\/goals\/handoff$/);
+    if (handoff) {
+      if (method !== 'POST') return false;
+      const podId = decode(handoff[1]);
+      requirePod(deps, podId);
+      if (!deps.techLead) throw new PodError(503, 'tech lead unavailable');
+      const body = await readJson(req);
+      const title = String(body?.title ?? '').trim();
+      const objective = String(body?.objective ?? '').trim();
+      const charter = String(body?.charter ?? '').trim();
+      if (!title) throw new PodError(400, 'title is required');
+      if (!objective && !charter) throw new PodError(400, 'objective or charter is required');
+      const sourceRef = normalizeGoalSourceRef(body?.sourceRef, new Date().toISOString());
+      if (!sourceRef?.snapshot) throw new PodError(400, 'sourceRef.snapshot is required');
+      const lead = await deps.pods.ensureLead(podId);
+      const created = await deps.techLead.createGoal({
+        podId,
+        projectDir: lead.projectDir,
+        title,
+        objective: objective || undefined,
+        charter: charter || undefined,
+        acceptance: Array.isArray(body.acceptance) ? body.acceptance : undefined,
+        boundaries: Array.isArray(body.boundaries) ? body.boundaries : undefined,
+        priority: isGoalPriority(body.priority) ? body.priority : undefined,
+        taskType: isGoalTaskType(body.taskType) ? body.taskType : undefined,
+        planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
+        source: 'lead',
+        sourceRef,
+        authorization: { source: 'lead', requestMode: 'explicit', scope: lead.projectDir },
+        createdBy: lead.sessionId,
+      });
+      const view = deps.goals.views?.(podId).find((item) => item.goalId === created.goalId)
+        ?? {
+          id: created.goalId, podId, goalId: created.goalId, status: 'active',
+          title, phase: null, verdict: null, stage: { owner: 'team', kind: 'working' },
+          resultReady: false, activeRevision: created.revision, revision: created.revision,
+          priority: 0, enqueuedAt: new Date().toISOString(), startedAt: null, endedAt: null,
+        };
+      sendJson(res, 200, {
+        podId,
+        goalId: created.goalId,
+        status: created.status,
+        revision: created.revision,
+        stage: created.stage,
+        queueReason: null,
+        sessionID: created.sessionID,
+        goal: view,
+        ...(created.sessionError ? { sessionError: created.sessionError } : {}),
+        ...(created.promptError ? { promptError: created.promptError } : {}),
+      });
       return true;
     }
 
@@ -341,6 +397,7 @@ export async function handlePods(
       // Persist the real entry point (desktop/tui/agent/...) instead of hardcoding
       // desktop; unknown values are rejected so request.json stays trustworthy.
       const source = normalizeGoalSource(body?.source);
+      const sourceRef = normalizeGoalSourceRef(body?.sourceRef, new Date().toISOString());
 
       const detail = deps.pods.get(podId);
       if (!detail) throw new PodError(404, `pod not found: ${podId}`);
@@ -365,6 +422,7 @@ export async function handlePods(
           taskType: isGoalTaskType(body.taskType) ? body.taskType : undefined,
           planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
           source,
+          sourceRef,
           authorization: { source, requestMode: 'explicit', scope: detail.pod.projectDir },
           ...(actor && typeof body.actorSessionID === 'string' ? { createdBy: body.actorSessionID } : {}),
         });
@@ -404,6 +462,7 @@ export async function handlePods(
           planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
           projectDir: detail.pod.projectDir,
           source,
+          sourceRef,
           authorization: { source, requestMode: 'explicit' },
           // This route enqueues explicitly below; the intake must not emit
           // goal_created as well or the same goal would be started twice.

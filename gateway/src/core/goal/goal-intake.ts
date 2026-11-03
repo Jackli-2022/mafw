@@ -28,6 +28,40 @@ export type GoalAuthorization = {
  */
 export type GoalIntakeLayout = 'legacy' | 'goal-dir';
 
+export interface GoalSourceRef {
+  sessionID?: string;
+  messageID?: string;
+  /** Immutable excerpt captured at handoff time; capped at 4000 chars. */
+  snapshot: string;
+  capturedAt: string;
+}
+
+export const GOAL_SOURCE_SNAPSHOT_MAX = 4000;
+
+/** Defensive normalization for both HTTP and MCP callers. */
+export function normalizeGoalSourceRef(
+  value: unknown,
+  fallbackCapturedAt: string,
+): GoalSourceRef | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const sessionID = typeof raw.sessionID === 'string' ? raw.sessionID.trim() : '';
+  const messageID = typeof raw.messageID === 'string' ? raw.messageID.trim() : '';
+  const snapshot = typeof raw.snapshot === 'string'
+    ? raw.snapshot.replace(/\r\n/g, '\n').trim().slice(0, GOAL_SOURCE_SNAPSHOT_MAX)
+    : '';
+  if (!snapshot && !sessionID && !messageID) return undefined;
+  const capturedAt = typeof raw.capturedAt === 'string' && raw.capturedAt.trim()
+    ? raw.capturedAt
+    : fallbackCapturedAt;
+  return {
+    ...(sessionID ? { sessionID } : {}),
+    ...(messageID ? { messageID } : {}),
+    snapshot,
+    capturedAt,
+  };
+}
+
 export interface GoalIntakeInput {
   goalId: string;
   title: string;
@@ -44,6 +78,8 @@ export interface GoalIntakeInput {
   projectDir?: string;
   source?: string;
   authorization: GoalAuthorization;
+  /** Explicit origin of a Goal handed off from a free discussion. */
+  sourceRef?: GoalSourceRef;
   /** Set false when the caller starts the goal itself (Pod route enqueues explicitly). */
   autoStart?: boolean;
   /** Selects the Goal workspace layout (default `legacy`). */
@@ -257,6 +293,7 @@ export function createGoalIntake(input: GoalIntakeInput, deps: GoalIntakeDeps): 
   }
 
   const now = deps.now();
+  const sourceRef = normalizeGoalSourceRef(input.sourceRef, now);
   const acceptance = cleanLines(input.acceptance);
   const boundaries = cleanLines(input.boundaries);
   const maxLoops = input.maxLoops ?? 5;
@@ -285,6 +322,7 @@ export function createGoalIntake(input: GoalIntakeInput, deps: GoalIntakeDeps): 
     ...(hasBudget ? { budget: input.budget } : {}),
     ...(input.taskType ? { taskType: input.taskType } : {}),
     ...(input.planReview ? { planReview: input.planReview } : {}),
+    ...(sourceRef ? { sourceRef } : {}),
     authorization: input.authorization,
   };
   try {

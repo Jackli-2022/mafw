@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ToolHandler } from '../../types';
 import { eventBus } from '../../event-bus';
+import { normalizeGoalSourceRef } from '../../core/goal/goal-intake';
 
 export const handleManagerSetGoal: ToolHandler = async (args, services) => {
   try {
@@ -44,6 +45,33 @@ export const handleManagerSetGoal: ToolHandler = async (args, services) => {
       mafwDir = services.mafwDir ?? (process.env.MAFW_PROJECT_DIR ? path.join(process.env.MAFW_PROJECT_DIR, '.mafw') : undefined) ?? path.join(process.cwd(), '.mafw');
       projectDir = path.resolve(mafwDir, '..');
     }
+    const techLead = (services as any)?.podTechLead ?? (services as any)?.podCollaboration?.techLead;
+    if (techLead?.createGoal) {
+      const created = await techLead.createGoal({
+        projectDir,
+        goalId: String(goalId),
+        title: String(title),
+        charter: String(charter ?? ''),
+        acceptance: Array.isArray(args.acceptance) ? args.acceptance as string[] : undefined,
+        boundaries: Array.isArray(boundaries) ? boundaries : undefined,
+        metrics,
+        priority,
+        maxLoops,
+        budget,
+        taskType,
+        planReview,
+        source: 'lead',
+        sourceRef: normalizeGoalSourceRef(args.sourceRef, new Date().toISOString()),
+        authorization: { source: 'lead', requestMode: 'explicit', scope: projectDir },
+      });
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ success: true, routedTo: 'tech_lead', ...created }),
+        }],
+      };
+    }
+
     const goalsDir = path.join(mafwDir, 'goals');
     const requestsDir = path.join(mafwDir, 'requests');
     fs.mkdirSync(goalsDir, { recursive: true });

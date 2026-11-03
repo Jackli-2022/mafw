@@ -46,10 +46,17 @@ describe('mafw_create_goal routed through the Tech Lead', () => {
       now: () => NOW,
     });
 
+    const sourceRef = {
+      sessionID: 'ses_free',
+      messageID: 'msg_1',
+      snapshot: '按方案 B 执行',
+      capturedAt: NOW,
+    };
     const result = await tool.execute({
       title: 'New work',
       objective: '调研方向',
       projectDir: PROJECT,
+      sourceRef,
     }, { sessionID: 'ses_lead' });
 
     expect(techLead.isLeadSession).toHaveBeenCalledWith('ses_lead');
@@ -58,6 +65,7 @@ describe('mafw_create_goal routed through the Tech Lead', () => {
       title: 'New work',
       objective: '调研方向',
       createdBy: 'ses_lead',
+      sourceRef,
       authorization: expect.objectContaining({ source: 'lead' }),
     }));
     expect(intake).not.toHaveBeenCalled();
@@ -72,16 +80,14 @@ describe('mafw_create_goal routed through the Tech Lead', () => {
     });
   });
 
-  test('a non-Lead or absent session keeps the legacy intake path', async () => {
+  test('a non-Lead caller is rejected even before a Pod exists', async () => {
     const techLead = {
       isLeadSession: jest.fn(() => false),
+      hasPod: jest.fn(() => false),
       createGoal: jest.fn(),
     };
     const emitGoalCreated = jest.fn();
-    const intake = jest.fn((input: any, deps: any) => {
-      deps.emitGoalCreated({ type: 'goal_created', goalId: input.goalId, projectDir: PROJECT });
-      return intakeResult(input);
-    });
+    const intake = jest.fn(intakeResult);
     const tool = createCreateGoalTool({
       techLead,
       intake,
@@ -97,13 +103,9 @@ describe('mafw_create_goal routed through the Tech Lead', () => {
     }, { sessionID: 'ses_builder' });
 
     expect(techLead.createGoal).not.toHaveBeenCalled();
-    expect(intake).toHaveBeenCalledWith(expect.objectContaining({
-      goalId: 'g1',
-      title: 'Fix',
-      projectDir: PROJECT,
-    }), expect.anything());
-    expect(emitGoalCreated).toHaveBeenCalledWith(expect.objectContaining({ goalId: 'g1' }));
-    expect(result.structuredContent).toMatchObject({ success: true, routedTo: 'legacy' });
+    expect(intake).not.toHaveBeenCalled();
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ success: false, status: 403 });
   });
 
   test('handleCreateGoal uses the wired Tech Lead service from MCP services', async () => {

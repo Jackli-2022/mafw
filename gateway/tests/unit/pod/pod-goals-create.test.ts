@@ -35,7 +35,13 @@ function makeDeps(overrides: any = {}) {
     attention: [{ id: 'g1:plan_approval', goalId: 'g1', kind: 'plan_approval', title: 'Fix Pod', action: goalView.stage.action }],
   };
   const deps: any = {
-    pods: { get: () => detail, lookup: () => detail, ensure: async () => detail, updateStatus: () => detail },
+    pods: {
+      get: () => detail,
+      lookup: () => detail,
+      ensure: async () => detail,
+      updateStatus: () => detail,
+      ensureLead: jest.fn(async () => ({ podId: 'pod_1', projectDir: 'C:/project', sessionId: 'ses_lead' })),
+    },
     tasks: { list: () => [] },
     messages: { list: () => [], send: jest.fn(), markRead: jest.fn() },
     goals: {
@@ -88,6 +94,54 @@ describe('Pod Goal create and detail views', () => {
       autoStart: false,
     });
     expect(calls.enqueue).toEqual([{ goalId: 'goal-generated', projectDir: 'C:/project' }]);
+  });
+
+  test('POST handoff ensures Lead and creates the Goal as the Lead with source snapshot', async () => {
+    const createGoal = jest.fn(async () => ({
+      podId: 'pod_1',
+      goalId: 'goal-handoff',
+      revision: 1,
+      stage: 'discussing' as const,
+      status: 'discussing' as const,
+      sessionID: 'ses_tech_lead',
+      projectDir: 'C:/project',
+      goalDir: 'C:/project/.mafw/goals/goal-handoff',
+      charterPath: 'C:/project/.mafw/goals/goal-handoff/goal.md',
+      requestPath: 'C:/project/.mafw/goals/goal-handoff/request.json',
+    }));
+    const { deps } = makeDeps({ techLead: { createGoal } });
+    const sourceRef = {
+      sessionID: 'ses_free',
+      messageID: 'msg_1',
+      snapshot: '讨论后决定按方案 B 执行',
+      capturedAt: '2026-11-03T00:00:00.000Z',
+    };
+
+    const out = await send(deps, '/api/pods/pod_1/goals/handoff', {
+      title: '方案 B',
+      objective: '按讨论结论执行',
+      sourceRef,
+    }, 'POST');
+
+    expect(out.status).toBe(200);
+    expect(deps.pods.ensureLead).toHaveBeenCalledWith('pod_1');
+    expect(createGoal).toHaveBeenCalledWith(expect.objectContaining({
+      podId: 'pod_1',
+      projectDir: 'C:/project',
+      createdBy: 'ses_lead',
+      source: 'lead',
+      sourceRef,
+      authorization: expect.objectContaining({ source: 'lead', requestMode: 'explicit' }),
+    }));
+    expect(JSON.parse(out.body)).toMatchObject({ goalId: 'goal-handoff', revision: 1 });
+  });
+
+  test('POST handoff rejects an empty source snapshot', async () => {
+    const { deps } = makeDeps({ techLead: { createGoal: jest.fn() } });
+    const out = await send(deps, '/api/pods/pod_1/goals/handoff', {
+      title: 'No source', objective: 'x',
+    }, 'POST');
+    expect(out.status).toBe(400);
   });
 
   test('a duplicate goal is a 409, not a 500', async () => {

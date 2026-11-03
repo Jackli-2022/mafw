@@ -2636,6 +2636,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pods/{podId}/goals/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pods.goals.handoff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pods/{podId}/goals/{goalId}": {
         parameters: {
             query?: never;
@@ -7421,6 +7437,26 @@ export interface operations {
         };
     };
     "pods.goals.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                podId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "pods.goals.handoff": {
         parameters: {
             query?: never;
             header?: never;

@@ -3,6 +3,7 @@ import { ToolHandler } from "../../types";
 import {
   createGoalIntake,
   GoalConflictError,
+  normalizeGoalSourceRef,
   type GoalIntakeResult,
 } from "../../core/goal/goal-intake";
 import { eventBus } from "../../event-bus";
@@ -76,17 +77,12 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
       const title = clean(args?.title);
       const objective = typeof args?.objective === "string" ? args.objective : "";
       const charter = typeof args?.charter === "string" ? args.charter : "";
+      const sourceRef = normalizeGoalSourceRef(args?.sourceRef, now());
       const targetProjectDir = requestedProjectDir
         ?? process.env.MAFW_PROJECT_DIR
         ?? process.cwd();
 
       if (deps.techLead) {
-        let hasPod = false;
-        try {
-          hasPod = deps.techLead.hasPod?.(targetProjectDir) ?? false;
-        } catch (error: any) {
-          deps.log?.(`[Goal] pod lookup failed for ${targetProjectDir}: ${error?.message ?? error}`);
-        }
         let isLead = false;
         if (sessionID) {
           try {
@@ -94,43 +90,42 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
           } catch (error: any) {
             deps.log?.(`[Goal] Lead lookup failed for ${sessionID}: ${error?.message ?? error}`);
           }
-          if (!isLead && hasPod) {
+          // Every explicit execution request enters through the project Lead. A
+          // free discussion must hand off rather than minting a Pod Goal itself,
+          // even when the project has no Pod yet.
+          if (!isLead) {
             return fail(new PodError(403, 'only the project Lead can create a Pod goal'));
           }
         }
-        // Local single-user gateway ruling: no transport caller identity on an existing
-        // Pod project is treated as the local user/Lead. A Lead source also routes here
-        // even before the Pod exists: createGoal ensures the Pod, so no dead legacy Goal.
-        const routeToTechLead = hasPod || isLead || args.source === 'lead';
-        if (routeToTechLead) {
-          try {
-            const created = await deps.techLead.createGoal({
-              projectDir: targetProjectDir,
-              title,
-              objective: objective || undefined,
-              charter: charter || undefined,
-              acceptance: Array.isArray(args.acceptance) ? args.acceptance as string[] : undefined,
-              boundaries: Array.isArray(args.boundaries) ? args.boundaries as string[] : undefined,
-              metrics: (args.metrics as Record<string, { target?: number; unit?: string }>) || undefined,
-              priority: args.priority as PodTechLeadGoalInput['priority'],
-              maxLoops: args.maxLoops as number | undefined,
-              budget: args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined,
-              taskType: args.taskType as PodTechLeadGoalInput['taskType'],
-              planReview: (args.planReview === "manual" || args.planReview === "auto")
-                ? args.planReview
-                : undefined,
-              goalId: clean(args.goalId) || undefined,
-              authorization: {
-                source: isLead || !sessionID ? "lead" : "user",
-                requestMode: "explicit",
-                scope: requestedProjectDir,
-              },
-              ...(sessionID ? { createdBy: sessionID } : {}),
-            });
-            return ok({ success: true, routedTo: "tech_lead", ...created });
-          } catch (error) {
-            return fail(error);
-          }
+        try {
+          const created = await deps.techLead.createGoal({
+            projectDir: targetProjectDir,
+            title,
+            objective: objective || undefined,
+            charter: charter || undefined,
+            acceptance: Array.isArray(args.acceptance) ? args.acceptance as string[] : undefined,
+            boundaries: Array.isArray(args.boundaries) ? args.boundaries as string[] : undefined,
+            metrics: (args.metrics as Record<string, { target?: number; unit?: string }>) || undefined,
+            priority: args.priority as PodTechLeadGoalInput['priority'],
+            maxLoops: args.maxLoops as number | undefined,
+            budget: args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined,
+            taskType: args.taskType as PodTechLeadGoalInput['taskType'],
+            planReview: (args.planReview === "manual" || args.planReview === "auto")
+              ? args.planReview
+              : undefined,
+            goalId: clean(args.goalId) || undefined,
+            source: 'lead',
+            sourceRef,
+            authorization: {
+              source: "lead",
+              requestMode: "explicit",
+              scope: requestedProjectDir,
+            },
+            ...(sessionID ? { createdBy: sessionID } : {}),
+          });
+          return ok({ success: true, routedTo: "tech_lead", ...created });
+        } catch (error) {
+          return fail(error);
         }
       }
 
@@ -150,6 +145,7 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
           taskType: args.taskType as any,
           planReview: args.planReview as any,
           source: (args.source as string) || "user",
+          sourceRef,
           authorization: {
             source: normalizeSource(args.source),
             requestMode: "explicit",

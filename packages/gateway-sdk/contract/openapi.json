@@ -4171,6 +4171,29 @@
         }
       }
     },
+    "/api/pods/{podId}/goals/handoff": {
+      "post": {
+        "operationId": "pods.goals.handoff",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/pods/{podId}/goals/{goalId}": {
       "delete": {
         "operationId": "pods.goals.cancel",

@@ -13,6 +13,7 @@ import {
   type GoalAuthorization,
   type GoalIntakeInput,
   type GoalIntakeResult,
+  type GoalSourceRef,
 } from '../goal/goal-intake';
 import * as fs from 'fs';
 import {
@@ -84,6 +85,7 @@ export interface PodTechLeadGoalInput {
   taskType?: GoalIntakeInput['taskType'];
   planReview?: GoalIntakeInput['planReview'];
   source?: string;
+  sourceRef?: GoalSourceRef;
   authorization?: GoalAuthorization;
   /** 调用者会话；提供时必须已绑定为 Lead。 */
   createdBy?: string;
@@ -204,6 +206,7 @@ export class PodTechLeadService {
         planReview: input.planReview,
         projectDir,
         source: input.source || 'lead',
+        sourceRef: input.sourceRef,
         authorization: input.authorization
           ?? { source: 'lead', requestMode: 'explicit', scope: projectDir },
         // Discussion goals must never reach the goal_created listener.
