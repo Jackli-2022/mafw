@@ -253,7 +253,7 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
   ...TOOL_PRIMITIVE_TYPES,
 ]);
 
-import { handlePermissionReply, handlePermissionReplyById } from './routes/permission';
+import { handlePermissionReply, handlePermissionReplyById, resolveApprovalDirectory } from './routes/permission';
 import { surfaceUnavailableMessage } from './runtime/runtime-access';
 import { handleSessionBackground } from './routes/session-background';
 import { attachBackgroundJobHandlers } from './routes/background-jobs';
@@ -6570,7 +6570,11 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/questions(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuardQuestion(res)) return;
           try {
-            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
+            const dir = resolveApprovalDirectory({
+              explicit: new URL(req.url, this.serveUrl).searchParams.get('directory'),
+              currentProjectDir: this.currentProjectDir,
+              projectDir: this.projectDir,
+            });
             const question = this.runtime?.session?.question;
             const items = question ? await question.list(dir ? { directory: dir } : undefined) : [];
             res.end(JSON.stringify({ items: items ?? [] }));
@@ -6645,7 +6649,11 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuard(res, 'approval.permissionList')) return;
           try {
-            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
+            const dir = resolveApprovalDirectory({
+              explicit: new URL(req.url, this.serveUrl).searchParams.get('directory'),
+              currentProjectDir: this.currentProjectDir,
+              projectDir: this.projectDir,
+            });
             const items = this.runtime?.session?.permissionList
               ? await this.runtime.session.permissionList(dir ? { directory: dir } : undefined)
               : [];
@@ -6796,6 +6804,11 @@ class MafwScheduler {
             runtime: this.runtime,
             access: this.runtime?.access ?? null,
             rules: this.permissionRules,
+            directories: () => [
+              this.currentProjectDir ?? undefined,
+              this.projectDir || undefined,
+              ...this.registeredProjects.keys(),
+            ],
           });
           return;
         }

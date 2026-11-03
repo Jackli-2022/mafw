@@ -87,6 +87,26 @@ describe('@2.1 审批（v2 形状 → canonical permission.asked）', () => {
     expect(out.type).toBe('permission.replied');
     expect(out.properties.requestId).toBe('per_1');
   });
+
+  test('2.2 native permission.asked/replied aliases keep sessionID and fields', () => {
+    // opencode 2.2 把 v2 名改成 permission.asked，但信封仍是顶层 type + data。
+    // 不别名会以无 sessionID 的裸形状透传，gateway /api/permissions 永远为空。
+    const asked = apply(evt('permission.asked', {
+      id: 'per_2', sessionID: 's2', action: 'mafw_plugin_manager',
+      resources: ['test demo-card'], save: [], metadata: { forceHuman: true },
+    }))[0];
+    expect(asked.payload.type).toBe('permission.asked');
+    expect(asked.payload.properties).toMatchObject({
+      id: 'per_2', sessionID: 's2', requestId: 'per_2',
+      permission: 'mafw_plugin_manager', patterns: ['test demo-card'],
+    });
+    expect(asked.sessionID).toBe('s2');
+
+    const replied = apply(evt('permission.replied', { sessionID: 's2', requestID: 'per_2', reply: 'once' }))[0];
+    expect(replied.payload.type).toBe('permission.replied');
+    expect(replied.payload.properties.requestId).toBe('per_2');
+    expect(replied.sessionID).toBe('s2');
+  });
 });
 
 describe('@2.1 流式文本/推理', () => {

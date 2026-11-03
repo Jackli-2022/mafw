@@ -13,6 +13,8 @@
  * cannot flood the model context.
  */
 import { spawn, type ChildProcess } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /** Hard default wall-clock limit for one draft test run. */
 export const DRAFT_TEST_TIMEOUT_MS = 60_000;
@@ -48,6 +50,8 @@ export interface DraftTestDeps {
    * (`taskkill /F /T` on win32, negative-PID group kill otherwise).
    */
   platform?: NodeJS.Platform;
+  /** Node executable override (tests); defaults to `resolveNodeBinary()`. */
+  nodeBin?: string;
 }
 
 export interface DraftTestResult {
@@ -122,6 +126,47 @@ function killTree(
 }
 
 /**
+ * Resolves the real Node executable.
+ *
+ * `process.execPath` is only Node when the host itself runs on Node. The
+ * opencode serve binary is Bun-compiled, so `process.execPath` points at
+ * `opencode` there — `process.execPath --test` becomes `opencode --test`
+ * (live smoke: `Unrecognized flag: --test`). Prefer an explicit
+ * `MAFW_NODE_BIN`, then PATH's `node`, and use `process.execPath` only when it
+ * really is a Node binary.
+ */
+export function resolveNodeBinary(opts: {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  execPath?: string;
+} = {}): string {
+  const platform = opts.platform ?? process.platform;
+  const env = opts.env ?? process.env;
+  const execPath = opts.execPath ?? process.execPath;
+
+  const explicit = (env.MAFW_NODE_BIN ?? '').trim();
+  if (explicit) return explicit;
+
+  const base = path.basename(execPath).toLowerCase();
+  if (base === 'node' || base === 'node.exe') return execPath;
+
+  const names = platform === 'win32' ? ['node.exe'] : ['node'];
+  const searchPath = env.PATH ?? env.Path ?? '';
+  for (const dir of searchPath.split(path.delimiter)) {
+    if (!dir) continue;
+    for (const name of names) {
+      const candidate = path.join(dir, name);
+      try {
+        if (fs.statSync(candidate).isFile()) return candidate;
+      } catch { /* not here */ }
+    }
+  }
+  // Let spawn resolve PATH as a last resort; a genuinely missing node surfaces
+  // as `spawn error` instead of silently running the host binary.
+  return 'node';
+}
+
+/**
  * Runs `node --test` in the draft directory.
  *
  * Resolves (never rejects) with the capped output and how the run ended; a
@@ -135,6 +180,7 @@ export function runDraftTests(
   const timeoutMs = deps.timeoutMs ?? DRAFT_TEST_TIMEOUT_MS;
   const maxBytes = deps.maxBytes ?? DRAFT_TEST_MAX_OUTPUT_BYTES;
   const platform = deps.platform ?? process.platform;
+  const nodeBin = deps.nodeBin ?? resolveNodeBinary({ platform });
   const killGroup = deps.killGroup ?? ((pid: number) => { process.kill(-pid, 'SIGKILL'); });
 
   return new Promise<DraftTestResult>((resolve) => {
@@ -179,7 +225,7 @@ export function runDraftTests(
     (timer as any)?.unref?.();
 
     try {
-      child = spawnFn(process.execPath, ['--test'], {
+      child = spawnFn(nodeBin, ['--test'], {
         cwd: directory,
         shell: false,
         windowsHide: true,

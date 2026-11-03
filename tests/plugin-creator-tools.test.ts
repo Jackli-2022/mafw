@@ -19,7 +19,7 @@ import { PLUGIN_UI_LIMITS } from '@mafw/plugin-contract';
 
 import { pluginInspectTool } from '../src/tools/plugin-inspect';
 import { fingerprintDraft } from '../src/tools/plugin-draft';
-import { runDraftTests } from '../src/tools/plugin-test-runner';
+import { resolveNodeBinary, runDraftTests } from '../src/tools/plugin-test-runner';
 import { pluginManagerTool } from '../src/tools/plugin-manager';
 import { PLUGIN_PUBLIC_CONTRACT } from '../src/tools/plugin-public-contract';
 import {
@@ -1209,10 +1209,11 @@ test('test runner uses node --test and caps oversized output', async () => {
     spawn: spawn as any,
     timeoutMs: 50,
     maxBytes: 32,
+    nodeBin: 'C:/custom/node.exe',
   });
 
   expect(spawn).toHaveBeenCalledWith(
-    process.execPath,
+    'C:/custom/node.exe',
     ['--test'],
     expect.objectContaining({
       cwd: draft.dir,
@@ -1225,6 +1226,34 @@ test('test runner uses node --test and caps oversized output', async () => {
   expect(run.truncated).toBe(true);
   expect(run.exitCode).toBe(0);
   expect(run.timedOut).toBe(false);
+});
+
+test('resolveNodeBinary never runs the Bun host binary as node', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-node-bin-'));
+  try {
+    const candidate = path.join(dir, 'node.exe');
+    fs.writeFileSync(candidate, '');
+    // Bun-compiled opencode: execPath is the opencode binary, not node.
+    expect(resolveNodeBinary({
+      platform: 'win32',
+      execPath: 'C:/opencode/opencode.exe',
+      env: { Path: dir },
+    })).toBe(candidate);
+    // Explicit override wins.
+    expect(resolveNodeBinary({
+      platform: 'win32',
+      execPath: 'C:/opencode/opencode.exe',
+      env: { MAFW_NODE_BIN: 'C:/real/node.exe' },
+    })).toBe('C:/real/node.exe');
+    // A real Node execPath is used directly.
+    expect(resolveNodeBinary({
+      platform: 'linux',
+      execPath: '/usr/bin/node',
+      env: {},
+    })).toBe('/usr/bin/node');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a fake child that never exits is killed at the timeout', async () => {
