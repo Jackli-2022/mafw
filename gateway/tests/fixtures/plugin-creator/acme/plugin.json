@@ -1,0 +1,8 @@
+{
+  "name": "acme",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Deterministic Creator fixture: one panel backed by one declarative action.",
+  "author": "MAFW",
+  "license": "ISC"
+}
