@@ -1918,7 +1918,7 @@ export function MafwShell() {
   const openPodSession = async (sid: string, title?: string) => {
     const detail = podStore.detail()
     const route = podSessionRoute(detail, sid)
-    if (route?.role === "lead") {
+    if (!sid || route?.role === "lead") {
       const ensured = await podStore.ensureLead()
       await podStore.refresh()
       const lead = resolveLeadSession({ leadSessionId: ensured.sessionId })

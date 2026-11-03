@@ -22,6 +22,8 @@ export type PodMemberRow = {
   statusLabel: string
   dotClass: "working" | "available" | "sleeping" | "waiting"
   sessionId: string | null
+  /** Lead can always be opened: the shell explicitly ensures a coordination session. */
+  canOpen: boolean
   action: string
   openTasks: number
 }
@@ -68,7 +70,8 @@ export function buildMemberRows(
       agentName: member.agentName,
       statusLabel,
       dotClass: dotOf(member.status),
-      sessionId: session?.sessionId ?? null,
+      sessionId: session?.sessionId ?? (member.role === "lead" ? "" : null),
+      canOpen: !!session || member.role === "lead",
       action,
       openTasks: tasks.filter((task) => task.ownerMemberId === member.id && OPEN_TASK_STATUSES.has(task.status)).length,
     }

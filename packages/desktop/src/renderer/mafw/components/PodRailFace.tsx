@@ -154,15 +154,15 @@ export function PodRailFace(props: {
               <div
                 class="mafw-pod-rail-member"
                 classList={{ active: !!row.sessionId }}
-                role={row.sessionId ? "button" : undefined}
-                tabIndex={row.sessionId ? 0 : undefined}
-                aria-label={row.sessionId ? `打开 ${row.displayName} 的会话` : undefined}
-                onClick={() => { if (row.sessionId) props.onOpenSession(row.sessionId) }}
+                role={row.canOpen ? "button" : undefined}
+                tabIndex={row.canOpen ? 0 : undefined}
+                aria-label={row.canOpen ? `打开 ${row.displayName} 的会话` : undefined}
+                onClick={() => { if (row.canOpen) props.onOpenSession(row.sessionId ?? "") }}
                 onKeyDown={(event) => {
-                  if (!row.sessionId) return
+                  if (!row.canOpen) return
                   if (event.key !== "Enter" && event.key !== " ") return
                   event.preventDefault()
-                  props.onOpenSession(row.sessionId)
+                  props.onOpenSession(row.sessionId ?? "")
                 }}
               >
                 <span class={`mafw-pod-rail-dot ${row.dotClass}`} aria-hidden="true" />
@@ -177,10 +177,10 @@ export function PodRailFace(props: {
                   size="small"
                   icon="square-arrow-top-right"
                   aria-label={`打开 ${row.displayName} 的会话`}
-                  disabled={!row.sessionId}
+                  disabled={!row.canOpen}
                   onClick={(event: MouseEvent) => {
                     event.stopPropagation()
-                    if (row.sessionId) props.onOpenSession(row.sessionId)
+                    if (row.canOpen) props.onOpenSession(row.sessionId ?? "")
                   }}
                 />
               </div>

@@ -163,6 +163,10 @@ export function memberOpenTarget(
     .filter((session) => !session.endedAt)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
   if (live) return { kind: "session", sessionId: live.sessionId }
+  // Lead is an identity, not a fixed runtime id: an empty id asks the shell to
+  // call lead/ensure and open the resulting coordination session.
+  const member = detail.members.find((item) => item.id === memberId)
+  if (member?.role === "lead") return { kind: "session", sessionId: "" }
   const ended = sessions
     .filter((session) => !!session.endedAt && !!session.transcriptRef)
     .sort((a, b) => (b.endedAt ?? "").localeCompare(a.endedAt ?? "") || b.createdAt.localeCompare(a.createdAt))[0]

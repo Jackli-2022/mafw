@@ -136,6 +136,7 @@ describe("pod-model", () => {
     d.sessions = d.sessions.filter((session) => session.node !== "coordination" || !!session.endedAt)
     assert.equal(leadSessionIdFromPod(d), null)
     assert.equal(leadSessionIdFromPod(null), null)
+    assert.deepEqual(memberOpenTarget(d, "m_lead"), { kind: "session", sessionId: "" })
   })
 
   test("resolves member names and role badges for sessions", () => {

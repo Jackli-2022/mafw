@@ -27,7 +27,9 @@ test("member rows keep lead → tech lead → builder → reviewer order and res
   assert.equal(rows[0].action, "会话中 · Pod 收尾")
   assert.equal(rows[0].dotClass, "working")
   assert.equal(rows[0].sessionId, "ses_1")
+  assert.equal(rows[0].canOpen, true)
   assert.equal(rows[1].sessionId, null)
+  assert.equal(rows[1].canOpen, false)
   assert.equal(rows[2].action, "待命")
   assert.equal(rows[3].dotClass, "sleeping")
   assert.equal(rows[3].action, "休眠")
@@ -35,7 +37,10 @@ test("member rows keep lead → tech lead → builder → reviewer order and res
 
 test("ended sessions and missing titles fall back honestly", () => {
   const stale = { ...detail, sessions: [{ memberId: "m_l", sessionId: "ses_9", endedAt: "2026-10-30T00:00:00.000Z" }] } as any
-  assert.equal(buildMemberRows(stale, () => "x")[0].sessionId, null)
+  const lead = buildMemberRows(stale, () => "x")[0]
+  assert.equal(lead.sessionId, "")
+  assert.equal(lead.canOpen, true)
+  assert.equal(lead.action, "工作中")
   const titled = { ...detail, sessions: [{ memberId: "m_l", sessionId: "ses_9", endedAt: null }] } as any
   assert.equal(buildMemberRows(titled, () => null)[0].action, "会话中 · 会话中")
 })

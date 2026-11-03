@@ -119,9 +119,10 @@ export class PodService {
     if (!pod) throw new PodError(404, `pod not found: ${podId}`);
     const lead = this.deps.store.getMemberByRole(podId, 'lead');
     if (!lead) throw new PodError(404, `pod lead not found: ${podId}`);
-    const coordination = this.deps.store.listSessions(podId).filter(
-      (session) => session.memberId === lead.id && session.node === 'coordination' && !session.endedAt,
+    const allCoordination = this.deps.store.listSessions(podId).filter(
+      (session) => session.memberId === lead.id && session.node === 'coordination',
     );
+    const coordination = allCoordination.filter((session) => !session.endedAt);
     if (coordination.some((session) => session.sessionId === managerSessionId)) return;
     for (const session of coordination) {
       try {
@@ -137,17 +138,24 @@ export class PodService {
       }
     }
 
-    this.deps.store.insertSession({
-      id: this.deps.newId(),
-      podId,
-      memberId: lead.id,
-      goalId: null,
-      node: 'coordination',
-      sessionId: managerSessionId,
-      status: 'active',
-      transcriptRef: null,
-      now: this.deps.now(),
-    });
+    const endedSame = allCoordination.find(
+      (session) => session.sessionId === managerSessionId && !!session.endedAt,
+    );
+    if (endedSame) {
+      this.deps.store.reactivateSession(managerSessionId, this.deps.now());
+    } else {
+      this.deps.store.insertSession({
+        id: this.deps.newId(),
+        podId,
+        memberId: lead.id,
+        goalId: null,
+        node: 'coordination',
+        sessionId: managerSessionId,
+        status: 'active',
+        transcriptRef: null,
+        now: this.deps.now(),
+      });
+    }
     this.deps.store.upsertMember({
       ...lead,
       status: 'available',
@@ -159,6 +167,7 @@ export class PodService {
   async ensureLead(podId: string): Promise<{ podId: string; projectDir: string; sessionId: string }> {
     const pod = this.deps.store.getPod(podId);
     if (!pod) throw new PodError(404, `pod not found: ${podId}`);
+    this.ensureMembers(pod.id);
     const sessionId = await this.deps.getManagerSession(pod.projectDir);
     await this.bindLead(pod.id, sessionId);
     return { podId: pod.id, projectDir: pod.projectDir, sessionId };

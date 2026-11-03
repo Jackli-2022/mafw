@@ -69,7 +69,7 @@ describe('custom command execution via registry', () => {
     const list = handleMafwCommandList({ registry, resolveProjectDir: () => '/p' }).body.commands;
     const d = list.find((c: any) => c.name === 'deploy');
     expect(d).toMatchObject({ kind: 'custom', category: 'custom', source: '/home/u/.mafw/commands/deploy.md' });
-    expect(list.filter((c: any) => c.kind === 'builtin')).toHaveLength(6);
+    expect(list.filter((c: any) => c.kind === 'builtin')).toHaveLength(5);
   });
 
   test('re-register replaces old custom commands (hot reload semantics)', async () => {

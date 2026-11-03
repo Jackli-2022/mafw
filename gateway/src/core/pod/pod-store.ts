@@ -1690,6 +1690,18 @@ export class PodStore {
     ).run(now, sessionId);
   }
 
+  /** Reuse the same runtime session id after its previous Pod binding ended. */
+  reactivateSession(sessionId: string, now: string): PodSessionRow | null {
+    this.db.prepare(`
+      UPDATE pod_member_sessions
+      SET ended_at = NULL, status = 'active', last_active_at = ?
+      WHERE session_id = ?
+      RETURNING *
+    `).run(now, sessionId);
+    const row = this.db.prepare('SELECT * FROM pod_member_sessions WHERE session_id = ?').get(sessionId) as any;
+    return row ? sessionFromRow(row) : null;
+  }
+
   setSessionTranscriptRef(sessionId: string, path: string, _now: string): void {
     this.db.prepare(
       'UPDATE pod_member_sessions SET transcript_ref = ? WHERE session_id = ?',
