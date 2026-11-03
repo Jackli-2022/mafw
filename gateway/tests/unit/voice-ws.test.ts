@@ -21,7 +21,7 @@ test('socket routes hello into the session', async () => {
   const socket = { send: (d: any) => sent.push(d), close: () => {}, on: (e: string, cb: Function) => handlers.set(e, cb) } as any;
   const session = fakeSession(sent);
   attachVoiceSocket(socket, { createSession: async () => session });
-  handlers.get('message')!(Buffer.from(JSON.stringify({type:'hello',sessionId:'s1',mode:'continuous',tier:'auto',language:'zh',format:'pcm16',clientVad:true})), false);
+  handlers.get('message')!(Buffer.from(JSON.stringify({type:'hello',voiceSessionId:'v1',chatSessionId:'c1',mode:'continuous',tier:'auto',language:'zh',format:'pcm16',clientVad:true})), false);
   await new Promise(r => setTimeout(r, 0));
   expect(sent[0]).toMatchObject({ type: 'ready' });
 });
@@ -32,7 +32,7 @@ test('socket error closes the session', async () => {
   const socket = { send: (d: any) => sent.push(d), close: () => {}, on: (e: string, cb: Function) => handlers.set(e, cb) } as any;
   const session = fakeSession(sent);
   attachVoiceSocket(socket, { createSession: async () => session });
-  handlers.get('message')!(Buffer.from(JSON.stringify({type:'hello',sessionId:'s1',mode:'continuous',tier:'auto',language:'zh',format:'pcm16',clientVad:true})), false);
+  handlers.get('message')!(Buffer.from(JSON.stringify({type:'hello',voiceSessionId:'v1',chatSessionId:'c1',mode:'continuous',tier:'auto',language:'zh',format:'pcm16',clientVad:true})), false);
   await new Promise(r => setTimeout(r, 0));
   handlers.get('error')!(new Error('tcp reset'));
   expect(session.state).toBe('closed');
@@ -45,7 +45,7 @@ test('close during sidecar startup closes the late session', async () => {
   let resolveSession: ((s: VoiceSession) => void) | undefined;
   const created = new Promise<VoiceSession>((resolve) => { resolveSession = resolve; });
   attachVoiceSocket(socket, { createSession: () => created });
-  handlers.get('message')!(Buffer.from(JSON.stringify({type:'hello',sessionId:'s1',mode:'continuous',tier:'auto',language:'zh',format:'pcm16',clientVad:true})), false);
+  handlers.get('message')!(Buffer.from(JSON.stringify({type:'hello',voiceSessionId:'v1',chatSessionId:'c1',mode:'continuous',tier:'auto',language:'zh',format:'pcm16',clientVad:true})), false);
   handlers.get('close')!();
   const session = fakeSession(sent);
   resolveSession!(session);

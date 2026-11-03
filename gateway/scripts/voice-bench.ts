@@ -140,8 +140,8 @@ export async function runOnce(url: string, pcm: Buffer): Promise<BenchSample> {
 
     ws.on('open', () => {
       ws.send(JSON.stringify({
-        type: 'hello', sessionId: `bench-${Date.now()}`, mode: 'continuous',
-        tier: 'local', language: 'zh', format: 'pcm16', clientVad: true,
+        type: 'hello', voiceSessionId: `bench-${Date.now()}`, chatSessionId: 'bench-chat',
+        mode: 'continuous', tier: 'local', language: 'zh', format: 'pcm16', clientVad: true,
       }));
     });
 
