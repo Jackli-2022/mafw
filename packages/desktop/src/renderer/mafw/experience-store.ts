@@ -4,7 +4,7 @@
  * `supported`（功能性存在）与 `enabled`（此刻可执行）来自 gateway 的 ActionDescriptor，
  * 前端不得再用 runtime 名称/裸 capabilities 推导。
  */
-import { createSignal } from 'solid-js'
+import { createSignal, untrack } from 'solid-js'
 import type { ActionDescriptor, ExperienceActionId, ExperienceActionsResponse } from '@mafw/sdk'
 
 export type ExperienceStatus = 'idle' | 'loading' | 'ready' | 'unavailable' | 'incompatible' | 'error'
@@ -145,7 +145,13 @@ export function createExperienceStore(loader: ExperienceLoader): ExperienceStore
       // IPC 边界：先把实参净化为原始字符串（Proxy/accessor 不得进入 preload）。
       const request = normalizeExperienceRequest(sessionID, opts)
       const loaderOpts = request.directory ? { directory: request.directory } : undefined
-      setCurrent({ ...current(), status: 'loading', sessionID: request.sessionID, directory: request.directory, error: undefined })
+      // Read the previous state without subscribing the caller: load() is often
+      // called from createEffect (MafwShell session/directory effect,
+      // BackgroundDock probe). A tracked read here makes that effect depend on
+      // the very signal load() writes -> effect re-enters before the promise is
+      // assigned -> stack overflow + thousands of IPC calls on every start.
+      const previous = untrack(current)
+      setCurrent({ ...previous, status: 'loading', sessionID: request.sessionID, directory: request.directory, error: undefined })
       const run = (async () => {
         try {
           const result = await loader(request.sessionID, loaderOpts)

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { createEffect, createRoot } from 'solid-js';
 import { EXPERIENCE_VERSION } from '@mafw/sdk';
 import { CLIENT_EXPERIENCE_VERSION, createExperienceStore, normalizeExperienceRequest } from './experience-store';
 
@@ -171,5 +172,29 @@ describe('experience store', () => {
     });
     await store.load('s1', { directory: '/repo' });
     expect(seen).toEqual([{ sessionID: 's1', directory: '/repo' }]);
+  });
+
+  test('load does not subscribe its caller (effect re-entry storm)', async () => {
+    // Regression (2026-11-03): load() read the state signal inside the caller's
+    // reactive scope, so an effect that started a load re-ran on the write it
+    // had just made (status: loading) and recursed until the stack blew —
+    // 2822 IPC calls + RangeError on every Desktop start.
+    let calls = 0;
+    const store = createExperienceStore(async () => {
+      calls++;
+      return response({ 'branch.fork': supported() });
+    });
+    let dispose = () => {};
+    createRoot((d) => {
+      dispose = d;
+      createEffect(() => {
+        void store.load('s1', { directory: '/repo' });
+      });
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    dispose();
+    expect(calls).toBe(1);
+    expect(store.status()).toBe('ready');
+    expect(store.supported('branch.fork')).toBe(true);
   });
 });

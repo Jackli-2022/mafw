@@ -6,6 +6,7 @@
 //   「还在探测」与「明确不可用」，失败 60s 重探、runtime 切换/SSE 重连 reset；
 // - canUseBackgroundApi：Experience `session.background`（把阻塞工具转后台）——
 //   独立动作，不与 jobs 查询合并（spec §7.3）。
+import { untrack } from "solid-js"
 import { experienceStore } from "./experience-store"
 
 export type BackgroundApiState = "checking" | "available" | "unavailable"
@@ -61,9 +62,16 @@ export function createAvailabilityProbe(
 }
 
 async function experienceAction(id: "background.jobs" | "session.background") {
-  if (experienceStore.state().status === "idle") await experienceStore.load()
+  // Probes are called from component effects (BackgroundDock / BackgroundWorkBar).
+  // Reading the store directly would subscribe that effect to every experience
+  // state write; load() writes `loading` synchronously, so the probe re-enters
+  // before its in-flight promise is assigned and recurses until the stack blows
+  // (2832 IPC calls + RangeError on every Desktop start). Keep the read
+  // untracked: the probe owns its own (non-reactive) state machine.
+  const status = untrack(() => experienceStore.state().status)
+  if (status === "idle") await experienceStore.load()
   await experienceStore.whenReady()
-  return experienceStore.action(id)
+  return untrack(() => experienceStore.action(id))
 }
 
 const jobsProbe = createAvailabilityProbe(async () => {

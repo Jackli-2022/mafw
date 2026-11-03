@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsgo -b",
-    "test": "node --import tsx --import ../../packages/test-shim/register.mjs --test \"src/**/*.test.ts\" \"tests/*.test.ts\" \"electron-builder.config.test.ts\" \"electron-builder.resources.test.ts\" \"gateway-update/*.test.ts\"",
+    "test": "node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test \"src/**/*.test.ts\" \"tests/*.test.ts\" \"electron-builder.config.test.ts\" \"electron-builder.resources.test.ts\" \"gateway-update/*.test.ts\"",
     "predev": "node --import tsx ./scripts/predev.ts",
     "dev": "electron-vite dev",
     "prebuild": "node --import tsx ./scripts/prebuild.ts",
