@@ -672,7 +672,7 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - **每轮 goal 快照**：`GET /api/recall/context` 识别活跃 manager session（kv sessionId 比对）后�?recall 块尾部追�?`<goal-snapshot>`（`core/manager/goal-snapshot.ts` 确定性聚合，�?0 �?500 字符，compaction 免疫）；�?manager session 不受影响�?*按名引用渲染**�?026-09-15，wayfinder 约定）：`标题 (goalId) [phase=…]`——标题在前、id 在括号里，不用裸 id 刷屏
 - **Charter 决策地图五段约定**�?026-09-15，借鉴 mattpocock wayfinder，`skills/manager-identity.ts` 系统提示）：Destination / Plan / Decisions so far（决策索引：一�?gist + 记忆 id，不复制详情�? Not yet specified（fog，已知的未知，frontier 推进后毕业）/ Out of scope（排除项）；决策本体�?`mafw_add_memory`（semantic，cueAnchors �?goalId）记录，charter �?state 只存指针——记忆可跨会话检索，state 只是索引
 - **里程碑推�?*：`core/manager/milestone-push.ts` �?`eventBus("phase_transition")`（PLANNING_COMPLETE/REVIEWING_COMPLETE/ASKING_USER�? `archiveGoal()`（completed/failed/cancelled），per-project 合并队列�?s），持久化去重键 `milestone-notified/{goalId}:{phase}:{stateVersion}`，`promptAsync(noReply: true)` 硬免回复（消息落历史不触�?LLM；pi runtime busy 分支会丢 noReply 语义——已知限制）
-- **/btw 支线问答**：用户直发指令（桌面 `/btw` slash 命令 / 插件 `/btw` command �?`/api/mafw-commands/run`），spawn 一次�?session（registerInternal 'btw'，不回流 T1），prompt 一次拿回答即删；`btw` 为用户指令驱动（`new-topic` 已退役）（UI-driven, not LLM-driven），刻意不暴�?MCP 工具�?agent
+- **/btw 支线问答**：用户直发指令（桌面 `/btw` slash 命令 / 插件 `/btw` command �?`/api/mafw-commands/run`），spawn 一次�?session（registerInternal 'btw'，不回流 T1），prompt 一次拿回答即删；`btw` 为用户指令驱动（UI-driven, not LLM-driven），刻意不暴�?MCP 工具�?agent
 - **/waitwhat 重述**�?026-09-15，借鉴 mattpocock wait-what）：用户�?没听�?�?gateway 取当前会话最后一�?assistant 文本，promptAsync 回同一会话要求"简明语言（STE100 风格�? CONTEXT.md 术语重述，不新增内容"（`routes/waitwhat-command.ts`，deps 注入可单测；回答�?SSE 三端同见）；接线：桌�?ChatPane mafw 命令�?+ 插件 `waitwhat` command + TUI `/waitwhat`（immediate�?
 - 旧三�?`manager-report-*` 自动化规则已退役（wake 链路读已删除�?legacy 文件 + 事件无人 emit，整链死代码），`ensureManagerRules` 启动时清理规则文�?
 
@@ -693,11 +693,11 @@ post-task curator 只看轨迹会记下错误答�?过度泛化/过期知识�
 
 `/api/mafw-commands/run` 由硬编码 if 链收敛为注册表（`gateway/src/commands/`）：
 
-- **registry.ts**：`MafwCommandDef`（name/aliases/description/argumentHint/category/destructive/kind�? `MafwCommandRegistry`（别名解析、重注册覆盖）；5 条内置元数据�?`BUILTIN_COMMAND_DEFS`（new-topic 别名 `new`�?
+- **registry.ts**：`MafwCommandDef`（name/aliases/description/argumentHint/category/destructive/kind�? `MafwCommandRegistry`（别名解析、重注册覆盖）；5 条内置元数据�?`BUILTIN_COMMAND_DEFS`（new-topic 已退役）
 - **builtin-handlers.ts**�? 条内�?handler（deps 注入可单测），语义与�?if 链逐字一致；**custom-exec.ts**：自定义命令执行 = 渲染模板 �?promptAsync �?sessionID（缺�?manager session 兜底�?
 - **custom-commands.ts**：用户自定义命令——`~/.mafw/commands/`（用户级�? `<project>/.mafw/commands/`（项目级，同名覆盖用户级），markdown + frontmatter（description/argument-hint），子目录即命名空间（`git/commit.md`→`git:commit`）；模板语法 `$ARGUMENTS`/`$1..$N`/`` !`shell` ``（块内参�?shell 转义防注入，cwd=projectDir�?0s 超时�?MB cap�?`@file`（≤100KB，相�?projectDir，防路径逃逸）；`fs.watch` 300ms 防抖热重载，变更广播 `mafw_commands_changed`（扁平顶层事件）
-- **GET /api/mafw-commands**：元数据清单（SDK `mafwCommands.list()`）；TUI/Desktop 拉取合并—�?*本地命令优先**（远�?name/alias 撞本�?name/alias 时隐藏远端，�?TUI `/new` 与远�?`new-topic` 不双显、远�?`status` �?TUI 隐藏让位本地 recap）；TUI 未命中本地时 fallback �?`mafwCommands.run` 派发，远�?destructive 命令同样过确认门
-- 插件�?6 �?opencode command 维持静态注册（`/goal` 插件�?requests 文件 skill 流程，与 gateway goal �?manager-prompt 语义不同——刻意保留两条路径）
+- **GET /api/mafw-commands**：元数据清单（SDK `mafwCommands.list()`）；TUI/Desktop 拉取合并—�?*本地命令优先**（远�?name/alias 撞本�?name/alias 时隐藏远端，远端 `new-topic` 一律过滤、远端 `status` 在 TUI 隐藏让位本地 recap）；TUI 未命中本地时 fallback �?`mafwCommands.run` 派发，远�?destructive 命令同样过确认门
+- 插件�?5 个 opencode command 维持静态注册（`/goal` 插件�?requests 文件 skill 流程，与 gateway goal �?manager-prompt 语义不同——刻意保留两条路径）
 
 ### api/recall/context endpoint
 
@@ -1465,9 +1465,20 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
     `Lead L` tab、accent dot、Lead composer；PodDock 重复打开不新增 tab；Welcome「Lead 会话」
     进鲸群、「新建 Goal」打开 Pod composer；页面无「新话题」。冒烟与终审补出的缺口均
     RED→GREEN：`ensureLead` 跑 roster 迁移、ended coordination 重激活、Lead 行 `canOpen`。
-    最终门禁：gateway **4346/4346（563 suites）**、desktop **2388/2388**、TUI **306（305 pass/1 skip）**、SDK **188/188**、
+    最终门禁：gateway **4353/4353（563 suites）**、desktop **2388/2388**、TUI **306（305 pass/1 skip）**、SDK **188/188**、
     plugin **30/30**、`tsc`/`tsgo -p`/root build/electron-vite build rc=0。桌面 reload 的
     layout 恢复因本地 gateway 在启动期多次健康超时未完成真机复核（自动化 layout 测试通过）。
+  - **Deferred minors 收口（2026-11-03，commit `02a9a382`）**：final review 的 8 个 Minor 全部
+    处理：`bindLead` 清理多余 active coordination 行（同 id 已 active 时也清理）；`current()`
+    对 canonical-equivalent 多 key 选最新（不再返回 null）；`ensure` 按 canonical key 单飞；
+    dead legacy slot archive 后用 `clearManagerSlot` 只摘当前 runtime 槽（不重复 archive）；
+    内部 rotate 走 canonical key + `archiveLeadSession`（`lead-archived`，不再是
+    `manager-archived`）；Pod lookup/ensure 对 worktree 目录（即使 worktree 自身已注册）优先
+    映射到父项目 Pod（worktree 已有自有 Pod 时保留，防旧数据孤儿）；格式/文档残留清理
+    （`builtin-handlers` 空格、Manager CSS 注释、TUI/AGENTS 文案）。新增 7 个回归用例；
+    复跑全量门禁：gateway **4353/4353（563 suites）**、desktop **2388/2388**、
+    TUI **306（305 pass/1 skip）**、SDK **188/188**、plugin **30/30**，
+    `tsc`/`tsgo -p`/root build/electron-vite build rc=0。
 
 ## 6. Gateway 运维
 
