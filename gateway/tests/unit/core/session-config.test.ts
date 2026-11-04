@@ -51,6 +51,13 @@ describe('SessionConfigService', () => {
     expect(calls).toContainEqual(['model', { providerID: 'p', modelID: 'm' }, 'fast']);
   });
 
+  it('get reports thinkingLevelSupported from runtime capability', async () => {
+    const { svc, deps } = make();
+    expect((await svc.get('s1')).thinkingLevelSupported).toBe(true);
+    deps.setThinkingLevel = undefined;
+    expect((await svc.get('s1')).thinkingLevelSupported).toBe(false);
+  });
+
   it('rejects invalid category/values and unsupported thought level', async () => {
     const { svc, deps } = make();
     await expect(svc.set('s1', 'nope', 1)).rejects.toMatchObject({ status: 400 });

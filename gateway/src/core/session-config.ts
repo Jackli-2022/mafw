@@ -9,6 +9,8 @@ export interface SessionConfigState {
   model?: { providerID: string; modelID: string };
   variant?: string;
   thinkingLevel?: ThinkingLevel;
+  /** runtime 是否支持 thought_level（桌面会话菜单的 Thinking 行据此渲染禁用态）。 */
+  thinkingLevelSupported: boolean;
 }
 
 export interface SessionConfigStored {
@@ -61,6 +63,7 @@ export class SessionConfigService {
       ...(model ? { model } : {}),
       ...(stored.variant ? { variant: stored.variant } : {}),
       ...(stored.thinkingLevel ? { thinkingLevel: stored.thinkingLevel } : {}),
+      thinkingLevelSupported: typeof this.deps.setThinkingLevel === 'function',
     };
   }
 

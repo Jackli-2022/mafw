@@ -322,6 +322,8 @@ export interface SessionConfigState {
   model?: { providerID: string; modelID: string }
   variant?: string
   thinkingLevel?: ThinkingLevel
+  /** runtime 是否支持 thought_level（桌面菜单 Thinking 行渲染禁用态）。 */
+  thinkingLevelSupported?: boolean
 }
 
 export interface SessionNamespace {
