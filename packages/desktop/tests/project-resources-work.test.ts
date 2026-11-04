@@ -41,3 +41,10 @@ test("MafwShell routes Pod attention into the right work face", () => {
   assert.match(leftDock, /attention=\{props\.podAttention \?\? 0\}/)
   assert.match(leftDock, /onOpenWork=\{\(\) => props\.onPodOpenWork\?\.\(\)\}/)
 })
+
+test("Pod resources copy points at the right workbench, not the retired workspace", () => {
+  assert.match(resources, /团队、邮箱与共享记忆；Goal 工作在右侧工作台「工作」/)
+  assert.match(resources, /工作台处理/)
+  assert.doesNotMatch(resources, /工作空间/)
+  assert.doesNotMatch(resources, /右栏处理/)
+})

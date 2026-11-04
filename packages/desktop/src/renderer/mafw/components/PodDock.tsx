@@ -139,7 +139,7 @@ export function PodDock(props: {
               <Show when={podStore.error()} fallback={
                 <DockEmpty
                   text="这个项目还没有团队"
-                  hint="在项目资源里创建团队，然后从工作空间向 Lead 交代工作"
+                  hint="在项目资源里创建团队，然后从右工作台「工作」向 Lead 交代工作"
                   action={{ label: "创建团队", onClick: () => void podStore.create() }}
                 />
               }>

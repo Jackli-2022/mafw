@@ -55,7 +55,7 @@ export function ProjectResources(props: {
           />
         </TooltipV2>
       </div>
-      <div class="mafw-resources-subtitle">团队、邮箱与共享记忆；Goal 工作在工作空间。</div>
+      <div class="mafw-resources-subtitle">团队、邮箱与共享记忆；Goal 工作在右侧工作台「工作」。</div>
 
       <Show when={props.loading && !props.detail}>
         <div class="mafw-pod-rail-empty">加载中…</div>
@@ -88,7 +88,7 @@ export function ProjectResources(props: {
             onClick={() => props.onOpenWork()}
           >
             <span class="mafw-resources-leading"><Icon name="status" size="small" /><span>{attention().label}</span></span>
-            <span class="mafw-resources-meta accent">右栏处理</span>
+            <span class="mafw-resources-meta accent">工作台处理</span>
             <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
           </ButtonV2>
         </Show>

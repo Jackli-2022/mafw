@@ -10,7 +10,7 @@ let lastConsumedComposerRequest = 0
 
 function friendlyWorkError(error: unknown): string {
   const text = String((error as any)?.message ?? error ?? "")
-  if (/404|pod not found|没有鲸群/i.test(text)) {
+  if (/pod not found|没有鲸群|no pod/i.test(text)) {
     return "这个项目还没有鲸群。打开 Lead 或把讨论交给 Lead 执行时会创建。"
   }
   return text || "工作概览加载失败"
