@@ -5151,7 +5151,7 @@ html[data-theme="light"] body {
   gap: 18px;
   border-left: 3px solid var(--warning);
 }
-/* ���� Approvals�������־ð������༭�������� */
+/* Approvals：允许列表的添加与编辑 */
 .mafw-allowlist-add { display: flex; align-items: flex-end; gap: 10px; margin: 14px 0 18px; }
 .mafw-allowlist-add-fields { display: flex; gap: 10px; flex: 1; min-width: 0; }
 .mafw-allowlist-add-fields > * { min-width: 0; }
@@ -7129,11 +7129,11 @@ html[data-theme="light"] body {
 }
 
 
-/* �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-   Editorial workspace polish��2026-11-04��
-   ���� MAFW ů���� token����ϸ�ߡ�״̬�㡢mono ���ֺ͵�һ��ɫ accent
-   ͳһ�����ռ� / Goal ���� / ��Ŀ��Դ���������ڶ���ɫ�塣
-   �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T */
+/* ---------------------------------------------------------------------------
+   Editorial workspace polish（2026-11-04）
+   沿用 MAFW 暖中性 token：细线、状态点、mono 数字和单一强调色 accent
+   统一工作 / Goal 详情 / 项目资源，不引入第二套色板。
+   --------------------------------------------------------------------------- */
 .mafw-workspace {
   gap: 18px;
   padding: clamp(24px, 3.4vw, 44px) clamp(20px, 4vw, 56px) 48px;
@@ -7173,7 +7173,7 @@ html[data-theme="light"] body {
 }
 .mafw-workspace-actions { align-items: center; }
 
-/* Lead ��Ƭ����һ���ŵ�̧ͷ����������ͨռλ�� */
+/* Lead 卡片：左侧一道细 accent 线抬起头，而不是普通占位卡 */
 .mafw-workspace-lead {
   position: relative;
   overflow: hidden;
@@ -7222,7 +7222,7 @@ html[data-theme="light"] body {
 }
 .mafw-workspace-lead-cta { padding-left: 0; color: var(--accent-text); }
 
-/* �����������������˱��У�״̬�� + ���� + chips */
+/* 工作概览 / 自由讨论 / 新建 Goal 共用卡片层级（状态点 + 计数 + chips） */
 .mafw-work-overview,
 .mafw-workspace-discussions,
 .mafw-workspace-composer {
@@ -7359,7 +7359,7 @@ html[data-theme="light"] body {
 .mafw-work-empty span { display: block; font-size: 11.5px; line-height: 1.6; }
 .mafw-work-error { padding: 12px; border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: var(--r-md); background: var(--danger-dim); color: var(--danger-text); font-size: 12px; }
 
-/* �������ۣ�ϸ�� + ʱ�� + chevron������ÿ���ظ����������ۡ� */
+/* 自由讨论：细行 + 时间 + chevron，不再重复「自由讨论」标题 */
 .mafw-workspace-discussions { padding: 18px 20px 14px; }
 .mafw-workspace-section-head {
   display: flex;
@@ -7395,14 +7395,14 @@ html[data-theme="light"] body {
 .mafw-workspace-discussion-chevron { flex: 0 0 auto; color: var(--text-5); opacity: 0; transition: opacity var(--dur-fast) var(--ease-standard); }
 .mafw-workspace-discussion-row:hover .mafw-workspace-discussion-chevron { opacity: 1; }
 
-/* �½� Goal����Ƭ���������ͬһ�㼶 */
+/* 新建 Goal：卡片与概览同一层级 */
 .mafw-workspace-composer {
   padding: 18px 20px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg-raised) 92%, var(--accent) 8%), var(--bg-raised) 120px);
 }
 
-/* ��Ŀ��Դ��ͼ�� + ͷ�� + ���� chevron */
+/* 项目资源：图标 + 头像 + 悬停 chevron */
 .mafw-resources { gap: 8px; padding: 10px 12px 14px; }
 .mafw-resources-subtitle { margin: -2px 2px 2px; color: var(--text-4); font-size: 10.5px; line-height: 1.55; }
 .mafw-resources .mafw-pod-rail-head { padding-bottom: 2px; }
@@ -7463,7 +7463,7 @@ html[data-theme="light"] body {
 .mafw-pod-rail-member:hover { background: var(--bg-hover); }
 .mafw-pod-rail-member .mafw-pod-rail-dot { margin-left: -2px; }
 
-/* Goal ���飺��ͷ + ״̬ chips + ��Ƭ������ */
+/* Goal 详情：信头 + 状态 chips + 卡片层级 */
 .mafw-goal-overlay { background: color-mix(in srgb, #000 52%, transparent); backdrop-filter: blur(2px); }
 .mafw-goal-panel {
   width: min(920px, 94vw);
