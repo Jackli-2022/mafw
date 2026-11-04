@@ -11,7 +11,8 @@ const bar = readFileSync(new URL("./DuplexVoiceBar.tsx", import.meta.url), "utf8
 
 describe("duplex voice wiring", () => {
   test("ChatPane gates duplex through the hook and renders the partial bar", () => {
-    expect(chatPane).toContain("useDuplexVoice(() => sidProp(), () => props.gwReady)")
+    // Plan 2 起第三参注入 onFinal（final → 自动发送控制器）。
+    expect(chatPane).toContain("useDuplexVoice(() => sidProp(), () => props.gwReady, {")
     expect(chatPane).toContain("voiceMicAction")
     expect(chatPane).toContain("<DuplexVoiceBar")
   })
@@ -54,5 +55,34 @@ describe("duplex voice wiring", () => {
     expect(bar).not.toMatch(/<button[\s>]/)
     expect(bar).not.toMatch(/<input[\s>]/)
     expect(bar).not.toMatch(/\stitle=/)
+  })
+})
+
+describe("duplex voice auto-send wiring（Plan 2）", () => {
+  test("ChatPane wires the auto-send controller with the config gate", () => {
+    expect(chatPane).toContain("createDuplexAutoSendController")
+    expect(chatPane).toContain("voice.duplexAutoSend")
+    expect(chatPane).toContain("onFinal: (text) => voiceAutoSend.handleFinal(text)")
+    expect(chatPane).toContain('sendMessage("send", { voiceOrigin: true })')
+  })
+
+  test("partial / manual input / TTS playback cancel the pending auto-send", () => {
+    expect(chatPane).toContain("voiceAutoSend.handlePartial()")
+    expect(chatPane).toContain("voiceAutoSend.handleManualInput()")
+    expect(chatPane).toMatch(/ttsSpeaking\(\)\) voiceAutoSend\.handleStop/)
+  })
+
+  test("stopping duplex shares one path that also stops TTS playback (D6)", () => {
+    expect(chatPane).toContain("function stopDuplexVoice()")
+    // 定义 + 麦克风入口 + 字幕条「停止」至少三处引用
+    const refs = chatPane.match(/stopDuplexVoice\(\)/g) ?? []
+    expect(refs.length).toBeGreaterThanOrEqual(3)
+    expect(chatPane).toMatch(/function stopDuplexVoice\(\)[\s\S]{0,200}stopActivePlayback\(\)/)
+  })
+
+  test("the bar exposes the pending-send hint (D2 文本可见窗口)", () => {
+    expect(chatPane).toContain("pendingSend={voicePendingSend()}")
+    expect(bar).toContain("pendingSend")
+    expect(bar).toContain("将自动发送")
   })
 })

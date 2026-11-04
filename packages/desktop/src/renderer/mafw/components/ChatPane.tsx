@@ -100,6 +100,7 @@ import { TranscriptSearchOverlay } from "./TranscriptSearchOverlay"
 import { CompressionDivider } from "./CompressionDivider"
 import { useVoiceBinding, extractVoiceReplies } from "../chat/use-voice-binding"
 import { useDuplexVoice } from "../chat/use-duplex-voice"
+import { createDuplexAutoSendController } from "../chat/duplex-auto-send"
 import { voiceMicAction } from "../chat/duplex-voice-mode"
 import { DuplexVoiceBar } from "./DuplexVoiceBar"
 import { workspace } from "../workspace/session-workspace"
@@ -765,7 +766,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // 双工 ASR（Task 8）：`voice.duplexV1` 开启时麦克风走持续 `/ws/voice` 上行，
   // 字幕显示在 composer 里；关闭时该 hook 完全静默（enabled() === false）。
-  const duplexVoice = useDuplexVoice(() => sidProp(), () => props.gwReady)
+  // Plan 2 D1：非空 final 经 onFinal 恰好回调一次 → 自动发送控制器。
+  const duplexVoice = useDuplexVoice(() => sidProp(), () => props.gwReady, {
+    onFinal: (text) => voiceAutoSend.handleFinal(text),
+  })
 
   // 麦克风唯一入口：toolbar 与窄屏「更多」菜单都调它，避免两处分支漂移。
   function handleMicClick() {
@@ -774,7 +778,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       duplexActive: duplexVoice.active(),
       legacyRecording: voiceRecording(),
     })
-    if (action === "stop_duplex") { void duplexVoice.stop(); return }
+    if (action === "stop_duplex") { stopDuplexVoice(); return }
     if (action === "start_duplex") { stopActivePlayback(); void duplexVoice.toggle(); return }
     if (action === "stop_legacy") { voiceSession.stopRecording(); return }
     stopActivePlayback()
@@ -977,6 +981,37 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     takeCaptures: (sid) => getPendingCaptures().take(sid),
     formatCaptures: (items) => formatCaptureBatch(items),
   })
+
+  // ── Plan 2：duplex final → 输入栏 → 自动发送（语音来源标记随行）──
+  const [voicePendingSend, setVoicePendingSend] = createSignal(false)
+  let duplexAutoSendEnabled = true
+  const voiceAutoSend = createDuplexAutoSendController({
+    autoSendEnabled: () => duplexAutoSendEnabled,
+    // 回声防线输入：TTS 播放中的 ASR final 大概率是 agent 自己的声音。
+    isSpeaking: () => ttsSpeaking(),
+    appendFinal: (text) => setInput(prev => prev ? `${prev}\n${text}` : text),
+    send: () => { void sendMessage("send", { voiceOrigin: true }) },
+    onArmedChange: setVoicePendingSend,
+  })
+  // `voice.duplexAutoSend`（缺省 true；显式 false = 只填输入栏、手动发送）。读不到 fail-open。
+  void (async () => {
+    try {
+      const cfg = await window.api.mafw.config.get("voice.duplexAutoSend")
+      duplexAutoSendEnabled = cfg !== false
+    } catch { /* fail-open 默认开 */ }
+  })()
+  // 新 partial = 用户还在说：取消挂起的自动发送（文本保留，等下一段 final 续接）。
+  createEffect(() => { if (duplexVoice.partial()) voiceAutoSend.handlePartial() })
+  // TTS 开始播放：取消挂起的自动发送（spec D2）；final 到达时的丢弃由控制器防线负责。
+  createEffect(() => { if (ttsSpeaking()) voiceAutoSend.handleStop() })
+  onCleanup(() => voiceAutoSend.dispose())
+
+  // 停止 duplex 的唯一路径：停收音 + 停 TTS 播放（D6）+ 取消挂起自动发送（文本保留）。
+  function stopDuplexVoice() {
+    stopActivePlayback()
+    voiceAutoSend.handleStop()
+    void duplexVoice.stop()
+  }
 
   // 批注草稿：会话首次打开时从磁盘水合（重启不丢）
   createEffect(() => {
@@ -2127,7 +2162,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               finalText={duplexVoice.finalText()}
               listening={duplexVoice.listening()}
               error={duplexVoice.error()}
-              onStop={() => void duplexVoice.stop()}
+              pendingSend={voicePendingSend()}
+              onStop={() => stopDuplexVoice()}
             />
           </Show>
           {/* Attachment + @agent chips row */}
@@ -2171,6 +2207,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               setInput(v)
               autoGrow(e.currentTarget)
               setDraft(sidProp(), v)
+              // Plan 2：用户手动敲键盘 = 在编辑语音填入的文本 → 取消挂起的自动发送。
+              voiceAutoSend.handleManualInput()
               if (/^\/(\S*)$/.test(v) && pickerOpen() !== "command") openCommandPicker()
               else if (!v.startsWith("/") && pickerOpen() === "command") closeCommandPicker()
               // "@query" at the caret opens the file/agent mention picker.

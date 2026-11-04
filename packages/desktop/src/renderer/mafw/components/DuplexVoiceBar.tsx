@@ -1,5 +1,6 @@
 // 双工 ASR 字幕条（Task 8）：partial 边听边出，final 保留到下一段话。
-// 只做字幕（Plan 1 不把 final 自动发给 agent）；错误在条内显示并可停止。
+// Plan 2 D2：final 已落入输入栏并挂起自动发送时显示「将自动发送…」提示
+// （文本可见窗口——继续说话或手动编辑都会取消）。错误在条内显示并可停止。
 // 设计契约：只用 @mafw/ui/v2 组件（ButtonV2），不出现原生 button/input/title。
 import { Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
@@ -13,6 +14,8 @@ export interface DuplexVoiceBarProps {
    */
   listening: boolean
   error: string
+  /** Plan 2：自动发送计时已挂起（说话继续/手动编辑可取消）。 */
+  pendingSend?: boolean
   onStop: () => void
 }
 
@@ -39,6 +42,9 @@ export function DuplexVoiceBar(props: DuplexVoiceBarProps) {
                 }
               >
                 <span class="mafw-duplex-voice-text mafw-duplex-voice-final">{props.finalText}</span>
+                <Show when={props.pendingSend}>
+                  <span class="mafw-duplex-voice-pending">将自动发送…</span>
+                </Show>
               </Show>
             }
           >

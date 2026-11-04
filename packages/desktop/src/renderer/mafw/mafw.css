@@ -1459,6 +1459,7 @@ html[data-theme="light"] body {
 }
 .mafw-duplex-voice-partial { color: var(--text-3); font-style: italic; }
 .mafw-duplex-voice-listening { color: var(--text-3); }
+.mafw-duplex-voice-pending { color: var(--text-4); font-size: 11px; flex: 0 0 auto; }
 .mafw-duplex-voice-bar-error .mafw-duplex-voice-error-text { color: var(--danger-text, #f7768e); }
 .mafw-duplex-voice-bar .mafw-duplex-voice-stop { flex: 0 0 auto; }
 .mafw-composer-divider {
