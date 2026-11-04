@@ -35,8 +35,11 @@ Lead 建完 Goal 说「交给 Tech Lead 了」之后，用户找不到与 Tech L
 ### 3.2 入口 B：Goal 详情头部按钮（`GoalDetailOverlay.tsx`）
 
 - 位置：meta chips 行（现有「计划」按钮旁），`ButtonV2 variant="outline"`。
-- 非终态：文案「与 Tech Lead 讨论」；终态（`podGoal().endedAt`）：「查看 Tech Lead 讨论」（只读——发送由服务端终态门禁拦截）。
-- 点击：`requestPodTechLeadOpen(goalId, revision)`（revision = `activeRevision ?? revision ?? null`）+ `props.onClose()`——复用既有 shell effect（MafwShell:2106）→ `openTechLead` → `ensureSession`。**gateway / SDK 零改动。**
+- 非终态：文案「与 Tech Lead 讨论」；终态（`podGoal().endedAt`）：「查看 Tech Lead 讨论」。
+- 点击分两支（`techLeadEntryMode` 纯函数）：
+  - 非终态 → `requestPodTechLeadOpen(goalId, activeRevision())` + `props.onClose()`——复用既有 shell effect（MafwShell:2106）→ `openTechLead` → `ensureSession`；
+  - 终态 → 从 Pod detail 找该 Goal 已归档的 Tech Lead discussion 会话（`endedAt && transcriptRef`）→ `props.onOpenSession(sessionId)` 打开 transcript；无快照给「讨论已归档（无快照）」提示。**不走 ensure**——`GET tech-lead` 对终态 revision 返回 409（revision is terminal，复审 C1 实证）。
+- **gateway / SDK 零改动。**
 
 ### 3.3 班底焦点行：`memberFocus`（新纯函数，`pod-model.ts`）
 
