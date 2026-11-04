@@ -1586,6 +1586,39 @@ chatview 是指挥列，左侧 rail 负责导航与团队状态。
   两入口均汇到既有 `openTechLead` → `ensureSession` 通路；**gateway / SDK / 运行时契约零改动**，成员消息维持邮箱 + A2A。业界依据：Devin（任务为中心/一步可达）、Claude Code Agent View（roster）、Naive 公司板、aweb 焦点、Jira/Elixion 任务挂人（详见 deck）。commits `1a759b1e`/`62812009`/`1c3b4259`/`57b85245`/`145342ef`/`4535df25`/`a8415a29`/`6707c681`/`1350602f`；desktop **2809/2809（617 suites，本批净 +18）**、`tsgo --noEmit -p tsconfig.json` rc=0、`electron-vite build` rc=0。终审（deepseek-v4.1-flash）：1 Critical（终态入口走 ensure 必 409）已修——`techLeadEntryMode` 分支 + `techLeadTranscript` 走已归档 discussion transcript（无快照给诚实提示）；1 Important（班底 live 会话挂终态 Goal 仍走 ensure）已修（memberFocus 只认非终态 Goal）；另 1 Important（入口 B 契约测试抓不到分支回归）已由 `techLeadEntryMode` 纯函数单测补上。
   **真机冒烟（2026-11-04，dev app + CDP 9222，截图 `.mafw/qa/techlead-entry-resources*.png`）**：终态 Goal 入口 B →「查看 Tech Lead 讨论」→ 打开归档 transcript（无 409）；新建 discussing Goal 后：入口 A 邀请条带阶段标签「Tech Lead 讨论中」、入口 B 按钮「与 Tech Lead 讨论」→ 点击关浮层 + 打开「Tech Lead · <Goal 标题>」tab、班底 Tech Lead 行「讨论「<Goal 标题>」」点击进同一 tab——全部通过。冒烟抓到并修复：① 真实讨论会话用 `scopeKind:"discussion"` 标记（node 为空），焦点词表只认 node → 显示成「工作」；已与 `podSessionRoute` 同口径（commit `1350602f`）。② 用户报「项目资源页按钮全是加号」根因 = `@mafw/ui/v2` 图标注册表缺 `refresh`/`square-arrow-top-right`/`layout-grid`，`ButtonV2 icon=` 未知名静默回退 `plus`；补三个字形（路径取自 v1）+ 新增 `icon-registry-coverage.test.ts` 扫描全部 ButtonV2/IconButtonV2 用法（commit `6707c681`）。**冒烟发现的产品缺口（非本批引入，未修）**：`取消 Goal`（goals.control ABORT）对 discussing 阶段是 no-op——讨论中的 Goal 无法取消，冒烟 Goal 留在项目「进行中」。**方向裁定选项 B 追加点验（2026-11-04，用户拍板）**：goal 进入 planning 后 Lead 邀请条仍显示且阶段标签变为「Tech Lead 规划中」，点击打开同一 Tech Lead 讨论 tab（未新建）——跨阶段持续与验收 1 通过；冒烟 Goal 的 Tech Lead 还抓到 Lead 焦点行「协调「未命名目标」」编造标题（协调会话 goalId 为空），已修（无 Goal 归属时显示「协调中」，`8a6b63dd`，+2 用例）。desktop 最终 **2810/2810（617 suites，本批净 +19）**、`tsgo -p` rc=0、`electron-vite build` rc=0。**冒烟暴露 goal driver 缺口并已修（2026-11-04，commit `4a6d6cbb`）**：plan 节点复用 Tech Lead 讨论会话时，若模型走结构化交卷（`mafw_submit_result`）而不写 `waves.json`，唯一的完成 idle 会被「复用会话陈旧 idle 宽容」吞掉 → 节点卡在 running 直到 30 分钟 watchdog（真机：attempt 1 卡死，retry attempt 2 才走通）。修复：宽容分支先查结构化交卷（有交卷即按完成收账）+ grace 改为每个节点派发独享（派发时清除）。TDD：`plan-package-driver` 新增无文件产物 + 结构化交卷用例（无修复 RED → 修复 GREEN），goal 套件 **407/407（51 suites）**、gateway `tsc` rc=0。**运行中的 gateway 未重启，修复待部署生效**（冒烟 Goal 已用 retry 解开并进入 execute）。
 
+### 5.28 Composer 会话配置菜单 + switchAgent 门 + rail 视觉精修（2026-11-04）
+
+spec `docs/superpowers/specs/2026-11-04-inputbar-rail-attention-redesign-design.md`，plan
+`docs/superpowers/plans/2026-11-04-inputbar-rail-attention-redesign.md`。注意：本批为**收窄后范围**——
+attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-design.md`（用户裁决「以他们为准」），
+本批**不产生**任何 `pod.updated {kind:'attention'}` / toast / OS 通知 / 托盘改动，也不动 result 通知链。
+
+- **Composer 收敛（B 方案）**：常态 17 → 7（`＋` 附件菜单 / `⋯` 更多 / `🛡` 审批 / `🎤` / 上下文微标 /
+  **模型名「会话配置」pill** / 发送 + busy 暂停）；删 agent pill、plan/build 三态 pill、`/` 与 `@` 按钮、
+  keyhint 浮层（教学并入 placeholder `输入消息…（/ 命令 · @ 引用）`）。会话菜单（`SessionConfigMenu`）三行：
+  Agent（默认/plan/build 内联展开；Lead 锁定）、模型（转开 ModelPicker）、Thinking（七档；
+  runtime 不支持时禁用 `—`）。pill 默认显示模型名，**偏差才出小徽标**（`plan`/`lead`/`create`/`⚡ level`）。
+  键位零变化（Tab 三态循环、`/`、`@`、Ctrl+Enter、↑↓ 全保留）。窄窗档位 4→2（≤620 藏上下文微标；
+  ≤520 藏 `＋`，附件/截屏/引用在 `⋯` 菜单仍可达）。
+- **Thinking 管道**：`SessionConfigService.get` additive `thinkingLevelSupported`（`typeof setThinkingLevel === 'function'`）
+  + SDK 类型；桌面 `session.config` 从 `IGNORED_AT_SHELL` 移出、flow-cards 分支消费 → `sessionConfigs` store；
+  打开会话拉 `sessions.config`（fail-open），设置走 `sessions.setConfig({category:'thought_level'})` 乐观+回滚。
+- **switchAgent 双向门**（网关）：`POST /api/sessions/:id/agent` 非 coordination 会话切到 lead/manager → 403；
+  coordination 绑定会话切离 lead → 403；worker 注册表身份 → 403；`mafw-create` 与 runtime 原生（build/plan）放行；
+  `lead-archived`（已解绑）不受限。`SessionSwitchDeps.isCoordinationSession/isRegistryIdentity` 由 Wave1Gateway
+  注入（`leadSessionRegistry.findBySessionId` / `identityRegistry.get`）。
+- **Rail 视觉精修（46px 布局零变化）**：`bubble-5`/`magnifying-glass`/`sticky-note`/`team-three` 四枚字形按
+  1.3px 线宽重描（弃粗体气泡/放大镜）；`new-action` 去虚线改实心 accent 14% tint；gap 5→8px、padding 8→10px。
+- **测试**：新增 `composer-session-menu-wiring`（6 例）、`session-config-menu-model`（4 例）、
+  session-switch gate（7 例）、session-config supported（1 例）、flow-cards session.config（2 例）、
+  session-events 覆盖保持；更新 `design-contract`/`composer-toolbar-css`/`agent-identity`/`lead-coordinator-wiring`/
+  `duplex-voice-wiring`（麦克风单入口 3→2）。desktop **2821/2821**（617 suites，较批前 2810 净 +11）、
+  gateway **4678/4678（591 suites）**、SDK **199/199**；`tsgo --noEmit -p tsconfig.json` / gateway `tsc` /
+  `electron-vite build` rc=0。
+- **已知边界**：GUI 冒烟未跑（清单见 plan Task 7：会话菜单三态 / Lead 锁定 / Thinking 禁用态 / 窄窗两档 /
+  rail 视觉对照 / switchAgent 403 curl）；attention 通知链与托盘 presence 归 pod-event-layer 批次
+  （其设计已评审、未实现、无 plan）。
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令
