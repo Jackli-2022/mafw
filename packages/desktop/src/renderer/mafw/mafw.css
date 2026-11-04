@@ -1400,8 +1400,7 @@ html[data-theme="light"] body {
 /* 左侧可收缩（空间不足时裁切自身，绝不外溢到输入框外）；右侧（含发送）恒完整可见 */
 .mafw-composer-left { flex: 1 1 auto; overflow: hidden; position: relative; }
 .mafw-composer-right { flex: 0 0 auto; }
-/* 窄 composer：次要动作收进「更多」菜单（≤720 显示入口；≤620 隐藏命令/引用按钮） */
-.mafw-composer-more { display: none; }
+/* 更多菜单常显（审阅/播报/暂停 + 窄窗附件入口的归宿） */
 .mafw-composer-more-menu {
   position: absolute;
   left: 10px;
@@ -1494,34 +1493,33 @@ html[data-theme="light"] body {
 }
 .mafw-model-chevron { font-size: 9px; opacity: 0.6; }
 .mafw-model-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 窄 composer：按优先级逐档隐藏（先次要图标 → 分隔线/meta → 上下文 pill），pill 文本截断——对齐桌面共识 */
+/* 会话配置 pill：模型名前的小徽标（agent 偏差 / thinking 偏差） */
+.mafw-composer-session-badge {
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-text);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+  font-weight: 500;
+}
+/* 会话配置菜单：子行缩进（复用 picker-row 基础样式） */
+.mafw-config-subrow { padding-left: 22px; }
+/* 窄 composer：按优先级逐档隐藏（上下文 pill → ＋ 入口 → 缩 pill 文本）——对齐桌面共识 */
 .mafw-input-area { container-type: inline-size; }
-@container (max-width: 720px) {
-  .mafw-composer-optional { display: none; }
-  /* Tooltip 包装层仍是 flex item（0 宽但吃 gap）——按子按钮状态把整层隐藏 */
-  .mafw-composer-left [data-component="tooltip-v2-trigger"]:has(.mafw-composer-optional) { display: none; }
+@container (max-width: 620px) {
+  .mafw-context-pill { display: none; }
   .mafw-composer-meta { display: none; }
-  .mafw-composer-more { display: inline-flex; }
+  .mafw-composer .mafw-mode-pill > span { display: none; }
   .mafw-model-name { max-width: 120px; }
 }
-@container (max-width: 620px) {
-  .mafw-composer-divider { display: none; }
-  .mafw-composer-collapse { display: none; }
-  .mafw-composer-left [data-component="tooltip-v2-trigger"]:has(.mafw-composer-collapse) { display: none; }
-  .mafw-composer .mafw-mode-pill > span { display: none; }
-  .mafw-model-name { max-width: 96px; }
-}
 @container (max-width: 520px) {
-  .mafw-context-pill { display: none; }
-  .mafw-composer-agent-pill { display: none; }
-  .mafw-model-pill { padding: 0 8px; }
+  .mafw-composer-attach { display: none; }
+  /* Tooltip 包装层仍是 flex item（0 宽但吃 gap）——按子按钮状态把整层隐藏 */
+  .mafw-composer-left [data-component="tooltip-v2-trigger"]:has(.mafw-composer-attach) { display: none; }
   .mafw-model-name { max-width: 72px; }
-}
-@container (max-width: 420px) {
-  .mafw-composer-left { gap: 4px; }
-  .mafw-composer-right { gap: 4px; }
-  .mafw-composer-model-pill { display: none; }
-  .mafw-model-name { max-width: 48px; }
 }
 .mafw-context-pill {
   display: inline-flex;
@@ -5387,7 +5385,7 @@ html[data-theme="light"] body {
 .mafw-diff-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(720px, 55%); z-index: 60; display: flex; flex-direction: column; background: var(--bg-base); border-left: 1px solid var(--border-base); box-shadow: var(--elev-panel); animation: mafw-drawer-in var(--dur-surface) var(--ease-surface); }
 @keyframes mafw-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 /* composer 按钮改动计数徽标（审阅改动常驻入口，对齐 Amp Changes pane 常驻可见性） */
-.mafw-composer-badge { position: absolute; top: -4px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 9px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
+
 /* ── ChangesDock（改动列表常驻入口，文件级；hunk 级在抽屉） ── */
 .mafw-changes-dock { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .mafw-changes-dock-stats { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }

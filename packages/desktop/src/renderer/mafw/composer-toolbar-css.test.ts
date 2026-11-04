@@ -14,12 +14,11 @@ describe("composer toolbar overflow guards", () => {
 
   test("tiered container queries hide low-priority items before high-priority ones", () => {
     const tiers = [...css.matchAll(/@container \(max-width:\s*(\d+)px\)/g)].map((m) => Number(m[1]))
-    expect(tiers).toContain(720)
     expect(tiers).toContain(620)
     expect(tiers).toContain(520)
-    // 720 档先隐藏次要图标与 meta
-    expect(css).toMatch(/@container \(max-width:\s*720px\)\s*\{[^@]*\.mafw-composer-optional/)
-    // 520 档收掉上下文 pill
-    expect(css).toMatch(/@container \(max-width:\s*520px\)\s*\{[^@]*\.mafw-context-pill/)
+    // 620 档先收上下文 pill（状态指示优先级最低）
+    expect(css).toMatch(/@container \(max-width:\s*620px\)\s*\{[^@]*\.mafw-context-pill/)
+    // 520 档收掉 ＋（附件/截屏/引用入口在 ⋯ 菜单里仍有）
+    expect(css).toMatch(/@container \(max-width:\s*520px\)\s*\{[^@]*\.mafw-composer-attach/)
   })
 })

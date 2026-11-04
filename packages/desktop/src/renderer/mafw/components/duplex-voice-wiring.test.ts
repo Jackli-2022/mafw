@@ -21,11 +21,12 @@ describe("duplex voice wiring", () => {
     expect(hook).toMatch(/config\?\.duplexV1\s*===\s*true/)
   })
 
-  test("both microphone entry points share one handler", () => {
+  test("microphone entry point uses the shared handler", () => {
     expect(chatPane).toContain("function handleMicClick()")
-    // definition + toolbar `onClick={handleMicClick}` + "more" menu item
+    // 收敛后的 composer 只在右组保留一个 🎤 入口（＋ definition = 2 处）；
+    // 「更多」菜单不再复制麦克风分支（单一入口，无重复逻辑）。
     const refs = chatPane.match(/handleMicClick/g) ?? []
-    expect(refs.length).toBeGreaterThanOrEqual(3)
+    expect(refs.length).toBe(2)
     // no duplicated legacy branch logic outside the shared handler
     const legacyStarts = chatPane.match(/voiceSession\.startRecording\(\)/g) ?? []
     expect(legacyStarts.length).toBe(1)

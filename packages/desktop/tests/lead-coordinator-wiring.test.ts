@@ -24,7 +24,8 @@ test("sessionRole 只从 lead-session 解析，manager 是普通历史", () => {
 test("ChatPane 的协调会话判定只接受 lead，并继续锁住 agent 切换", () => {
   assert.match(chatPane, /isLeadRole\(workspace\.sessionRole\(/)
   assert.doesNotMatch(chatPane, /workspace\.sessionRole\([^)]*\) === "manager"/)
-  assert.match(chatPane, /lockedLead=\{isLead\(\)\}/)
+  // 锁定迁移到会话配置菜单的 Agent 行（agent pill 已收敛进菜单）。
+  assert.match(chatPane, /agentLocked=\{isLead\(\)\}/)
 })
 
 test("MafwShell 从显式 Lead id 解析隐藏会话，并把 metadata 传进 tab", () => {

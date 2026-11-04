@@ -650,13 +650,10 @@ describe("DiffReviewPanel 接线", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
     expect(src).toContain('openWorkbench("review")')
   })
-  test("ChatPane：composer 审阅按钮带改动计数徽标", () => {
+  test("ChatPane：审阅改动（⋯ 菜单）带改动计数", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
-    expect(src).toContain("mafw-composer-badge")
+    expect(src).toContain("审阅改动")
     expect(src).toContain("diffCount")
-  })
-  test("徽标样式存在", () => {
-    expect(cssBlock(".mafw-composer-badge {")).toContain("position: absolute")
   })
 })
 
@@ -1041,24 +1038,20 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
 
 describe("窄 composer：更多菜单 + 断点收拢（最小宽度不裁切）", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("更多菜单入口 + 菜单项（截屏/命令/引用/审阅/语音/Agent/模型）", () => {
+  test("更多菜单入口 + 菜单项（附件/截屏/引用/审阅/语音/暂停）", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
     expect(src).toContain("mafw-composer-more")
     expect(src).toContain("mafw-composer-more-menu")
-    for (const label of ["截屏批注", "命令", "引用 Agent", "审阅改动", "语音播报", "语音输入", "切换 Agent", "切换模型"]) {
+    for (const label of ["附件", "截屏批注", "引用 Agent", "审阅改动", "语音播报", "暂停回合"]) {
       expect(src).toContain(label)
     }
   })
-  test("断点：≤720 显示更多入口；≤620 收命令/引用、模式 pill 图标化；≤520 收 Agent；≤420 收模型", () => {
-    expect(css).toMatch(/@container \(max-width: 720px\)[\s\S]*?\.mafw-composer-more \{ display: inline-flex/)
-    expect(css).toMatch(/@container \(max-width: 620px\)[\s\S]*?\.mafw-composer-collapse \{ display: none/)
-    expect(css).toMatch(/@container \(max-width: 620px\)[\s\S]*?\.mafw-mode-pill > span \{ display: none/)
-    expect(css).toMatch(/@container \(max-width: 520px\)[\s\S]*?\.mafw-composer-agent-pill \{ display: none/)
-    expect(css).toMatch(/@container \(max-width: 420px\)[\s\S]*?\.mafw-composer-model-pill \{ display: none/)
+  test("断点：≤620 藏上下文 pill；≤520 藏 ＋（附件入口仍在 ⋯）；更多菜单常显", () => {
+    expect(css).toMatch(/@container \(max-width: 620px\)[\s\S]*?\.mafw-context-pill \{ display: none/)
+    expect(css).toMatch(/@container \(max-width: 520px\)[\s\S]*?\.mafw-composer-attach \{ display: none/)
     expect(cssBlock(".mafw-composer-more-menu {")).toContain("position: absolute")
-    // 菜单挂在 composer 上而不是 overflow:hidden 的左组里；Tooltip 包装层按子按钮状态整层隐藏（不吃 gap）
-    expect(css).toMatch(/@container \(max-width: 720px\)[\s\S]*?tooltip-v2-trigger[^\n]*:has\(\.mafw-composer-optional\)/)
-    expect(css).toMatch(/@container \(max-width: 620px\)[\s\S]*?tooltip-v2-trigger[^\n]*:has\(\.mafw-composer-collapse\)/)
+    // 更多菜单常显（不再按 ≤720 才出现）
+    expect(css).not.toContain(".mafw-composer-more { display: none")
   })
   test("右工作台不再按窄屏自动 overlay（只有显式开关）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")

@@ -43,13 +43,10 @@ describe("agent identity (opencode 2.1.0 id/name split)", () => {
     expect(src).toContain("isAgentKey(a, \"plan\")")
   })
 
-  test("发送链用 id 而非显示名；agent 药丸当前项按 key 比较", () => {
+  test("发送链用 id 而非显示名；会话菜单 Agent 行按稳定键比较", () => {
     const send = readFileSync(join(import.meta.dirname, "chat/use-send-message.ts"), "utf8")
     expect(send).toContain("agentKey(agentSel())")
     const pane = readFileSync(join(import.meta.dirname, "components/ChatPane.tsx"), "utf8")
     expect(pane).toContain("isAgentKey(a, \"plan\")")
-    expect(pane).toContain("currentName={agentKey(props.agentSel())}")
-    const picker = readFileSync(join(import.meta.dirname, "components/pickers/AgentPicker.tsx"), "utf8")
-    expect(picker).toContain("agentKey(a) === props.currentName")
   })
 })

@@ -8,7 +8,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { SessionTurn } from "@mafw/session-ui/session-turn"
-import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
+import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint, ThinkingLevel } from "@mafw/sdk"
 import { TaskBar } from "./TaskBar"
 import { BackgroundWorkBar } from "./BackgroundWorkBar"
 import { runForSession, setRun as setRunStore, clearRun } from "../run-store"
@@ -17,6 +17,8 @@ import { clearTransientDataParts } from "../sse/chat-reducers"
 import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
+import { SessionConfigMenu } from "./pickers/SessionConfigMenu"
+import { AGENT_SWITCH_OPTIONS, agentBadge, thinkingBadge } from "../session-config-menu-model"
 import { formatRailTitle } from "./rail-display"
 import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
@@ -161,6 +163,11 @@ export type ChatPaneProps = {
   onToggleTheme?: () => void
   onOpenSettings?: () => void
   onModelSelect: (m: ModelEntry, sid?: string) => void
+  /** 会话菜单 Thinking 行：当前档位（null = 默认）。 */
+  thinkingLevel: () => ThinkingLevel | null
+  /** runtime 是否支持 thought_level（false = 菜单行禁用）。 */
+  thinkingSupported: () => boolean
+  onThinkingSelect: (level: ThinkingLevel) => void
   onApplyAgentSwitch: (a: AgentEntry) => void
   onPermReply: (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean | "tool" | "prefix") => void
   onAskSubmit: (card: AskCardData, answers: Record<string, string[]>, custom: Record<string, string>) => void
@@ -281,7 +288,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     handlePaste, handleDragOver, handleDragLeave, handleDrop, uploadMediaBinary, imageToDataUrl,
   } = useAttachments()
   const [mentionedAgents, setMentionedAgents] = createSignal<{ name: string }[]>([])
-  const [pickerOpen, setPickerOpen] = createSignal<"model" | "agent-switch" | "agent-mention" | "command" | "tts" | "file" | null>(null)
+  const [pickerOpen, setPickerOpen] = createSignal<"model" | "session-config" | "agent-mention" | "command" | "tts" | "file" | null>(null)
   // 细节档位（v6 追加，行业对齐）：全部展开工具卡/编辑卡；Ctrl+O 切换，持久化。
   const [detailsMode, setDetailsMode] = createSignal(localStorage.getItem("mafw-chat-details") === "1")
   const toggleDetails = () => setDetailsMode(v => {
@@ -304,9 +311,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [ttsVoiceSel, setTtsVoiceSel] = createSignal<string | null>(null)
   const [ttsEngine, setTtsEngine] = createSignal<string>("mimo")
   const [pickerTrigger, setPickerTrigger] = createSignal<HTMLElement | null>(null)
-  /** 窄 composer 的「更多」菜单（截屏/命令/引用/审阅/语音/切换 Agent）。 */
+  /** 窄 composer 的「更多」菜单（附件/截屏/引用/审阅/语音/暂停）。 */
   const [moreOpen, setMoreOpen] = createSignal(false)
   let moreBtnEl: HTMLElement | undefined
+  const [attachOpen, setAttachOpen] = createSignal(false)
+  let attachBtnEl: HTMLElement | undefined
+  let attachMenuEl: HTMLElement | undefined
   let moreMenuEl: HTMLElement | undefined
   /** G1 截屏：待裁剪的整屏图（null = 浮层关闭） */
   const [shot, setShot] = createSignal<CaptureShot | null>(null)
@@ -494,21 +504,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const cyclePlanBuild = () => {
     const cur = planBuildState()
     props.onPlanBuildToggle?.(cur === "plan" ? "build" : cur === "build" ? "default" : "plan")
-  }
-  const PLAN_BUILD_LABEL: Record<"plan" | "build" | "default", string> = {
-    plan: "plan",
-    build: "build",
-    default: "默认",
-  }
-  const PLAN_BUILD_ICON: Record<"plan" | "build" | "default", "bullet-list" | "terminal" | "sliders"> = {
-    plan: "bullet-list",
-    build: "terminal",
-    default: "sliders",
-  }
-  const PLAN_BUILD_HINT: Record<"plan" | "build" | "default", string> = {
-    plan: "规划模式：只读 agent 出方案，不改文件。点击/Tab 切到 build",
-    build: "执行模式：完整工具集执行改动。点击/Tab 切回默认",
-    default: "默认模式：runtime 默认 agent。点击/Tab 切到 plan",
   }
 
   // ── worktree 并行隔离（切片 4）：当前会话的 directory 与徽标 ──
@@ -1071,6 +1066,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       window.removeEventListener("keydown", onKey)
     })
   })
+  // 「＋」附件菜单：点外部/Esc 关闭（与「更多」同款）
+  createEffect(() => {
+    if (!attachOpen()) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (attachMenuEl?.contains(t) || attachBtnEl?.contains(t)) return
+      setAttachOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setAttachOpen(false) }
+    document.addEventListener("mousedown", onDown)
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => {
+      document.removeEventListener("mousedown", onDown)
+      window.removeEventListener("keydown", onKey)
+    })
+  })
   /** 可发送内容：文本 / 附件 / 代码批注 / capture 草稿任一存在（G2 无图也要能发）。 */
   const hasSendableContent = () => {
     if (input().trim() || attachments().length > 0) return true
@@ -1259,7 +1270,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const buildCommands = (): CommandItem[] => {
     const local: CommandItem[] = [
       { id: "new", trigger: "/new", title: "新建会话", description: "创建新会话", group: "local", source: "builtin", run: () => { closeCommandPicker(); void props.onCreateSession() } },
-      { id: "agent", trigger: "/agent", title: "切换 Agent", description: "切换会话 Agent", group: "local", source: "builtin", run: () => { closeCommandPicker(); setPickerTrigger(textareaEl()); setPickerOpen("agent-switch") } },
+      { id: "agent", trigger: "/agent", title: "会话配置", description: "选择执行身份 / 模型 / 思考档位", group: "local", source: "builtin", run: () => { closeCommandPicker(); setPickerTrigger(textareaEl()); setPickerOpen("session-config") } },
       { id: "model", trigger: "/model", title: "切换模型", description: "选择模型", group: "local", source: "builtin", run: () => { closeCommandPicker(); setPickerTrigger(textareaEl()); setPickerOpen("model") } },
       { id: "theme", trigger: "/theme", title: "切换主题", description: "明暗主题", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onToggleTheme?.() } },
       { id: "settings", trigger: "/settings", title: "打开设置", description: "MAFW 配置", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onOpenSettings?.() } },
@@ -1459,13 +1470,19 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return formatComposerMeta({ elapsedMs, tokens: m.tokens || null, streaming })
   }
 
-  const onAgentSelect = (a: AgentEntry) => {
+  const onSessionAgentSelect = (id: "default" | "plan" | "build") => {
     setPickerOpen(null)
-    if (busy()) {
-      setSwitchConfirm(a)
+    if (id === "default") {
+      props.onPlanBuildToggle?.("default")
       return
     }
-    props.onApplyAgentSwitch(a)
+    const entry = (props.primaryAgents() || []).find((a: any) => agentKey(a) === id) as AgentEntry | undefined
+    if (!entry) return
+    if (busy()) {
+      setSwitchConfirm(entry)
+      return
+    }
+    props.onApplyAgentSwitch(entry)
   }
 
   // Scroll container: the outer .mafw-session-turn-container is the single
@@ -1711,7 +1728,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const unplacedCards = (): FlowCardRecord[] =>
     unplacedCardsSlot(flowSlotCards(), store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
 
-  const agentSelName = () => props.agentSel()?.name || "lead"
+  // agent 解析后的显示名（Lead 会话固定 lead；会话菜单与切换确认共用）。
 
   // 会话改动文件数（message.summary.diffs 聚合，含 patch）——composer 审阅按钮的常驻计数徽标
   const diffCount = () => {
@@ -2305,16 +2322,23 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             }}
             onPaste={handlePaste}
             ref={setTextareaEl}
-            placeholder={props.gwReady ? "输入消息…（/ 打开命令）" : "重新连接中…"}
+            placeholder={props.gwReady ? "输入消息…（/ 命令 · @ 引用）" : "重新连接中…"}
             disabled={!props.gwReady}
             class="mafw-input"
           />
-          <span class="mafw-keyhint">↑ 历史 · Enter 发送 · Shift+Enter 换行 · @ 引用文件</span>
           <div class="mafw-composer-toolbar">
             <div class="mafw-composer-left">
-              <TooltipV2 value="附件" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={addAttachments} aria-label="附件">
-                  <Icon name="paperclip" size="small" />
+              <TooltipV2 value="附件与引用" openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-composer-icon mafw-composer-attach"
+                  aria-label="附件与引用"
+                  aria-expanded={attachOpen()}
+                  ref={(el: any) => { attachBtnEl = el }}
+                  onClick={() => { setMoreOpen(false); setAttachOpen(o => !o) }}
+                >
+                  <Icon name="plus-small" size="small" />
                 </ButtonV2>
               </TooltipV2>
               <TooltipV2 value="更多" openDelay={300}>
@@ -2325,57 +2349,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   aria-label="更多"
                   aria-expanded={moreOpen()}
                   ref={(el: any) => { moreBtnEl = el }}
-                  onClick={() => setMoreOpen(o => !o)}
+                  onClick={() => { setAttachOpen(false); setMoreOpen(o => !o) }}
                 >
                   <IconV2 name="outline-dots" size="small" />
                 </ButtonV2>
-              </TooltipV2>
-              <TooltipV2 value="截屏批注" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon mafw-composer-optional" aria-label="截屏批注" onClick={() => void captureScreen()}>
-                  <Icon name="photo" size="small" />
-                </ButtonV2>
-              </TooltipV2>
-              <TooltipV2 value="命令 (/)" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon mafw-composer-collapse" aria-label="命令" onClick={() => { if (input() === "") setInput("/"); openCommandPicker() }}>
-                  <Icon name="console" size="small" />
-                </ButtonV2>
-              </TooltipV2>
-              <TooltipV2 value="引用 Agent" openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-composer-icon mafw-composer-collapse"
-                  aria-label="引用 Agent"
-                  ref={(el: any) => { if (pickerOpen() === "agent-mention") setPickerTrigger(el) }}
-                  onClick={() => { setPickerTrigger(document.activeElement as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}
-                ><Icon name="subagent" size="small" /></ButtonV2>
-              </TooltipV2>
-              <TooltipV2 value={diffCount() > 0 ? `审阅改动（${diffCount()} 个文件，逐 hunk 保留 / 回退）` : "审阅改动（逐 hunk 保留 / 回退）"} openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-composer-icon mafw-composer-optional"
-                  aria-label="审阅改动"
-                  style={{ position: "relative" }}
-                  onClick={() => props.onOpenDiffReview?.()}
-                ><Icon name="review" size="small" />
-                  <Show when={diffCount() > 0}><span class="mafw-composer-badge">{diffCount()}</span></Show>
-                </ButtonV2>
-              </TooltipV2>
-              <TooltipV2 value="语音（音色选择 / 播报）" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon mafw-composer-optional" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
-                  <Icon name="volume" size="small" />
-                </ButtonV2>
-              </TooltipV2>
-              <TooltipV2 value={micStopActive() ? "停止语音输入" : "语音输入（录音，静音自动分段）"} openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-composer-icon mafw-composer-optional"
-                  classList={{ "mafw-voice-recording": micStopActive() }}
-                  aria-label="语音输入"
-                  onClick={handleMicClick}
-                ><Icon name={micStopActive() ? "stop" : "microphone"} size="small" /></ButtonV2>
               </TooltipV2>
               <span class="mafw-composer-divider" />
               <TooltipV2 value={PERMISSION_MODE_HINT[props.permissionMode ?? "read-only"]} openDelay={300}>
@@ -2391,51 +2368,20 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <span>{PERMISSION_MODE_LABEL[props.permissionMode ?? "read-only"]}</span>
                 </ButtonV2>
               </TooltipV2>
-              <Show when={planBuildGate()}>
-                <TooltipV2 value={PLAN_BUILD_HINT[planBuildState()]} openDelay={300}>
-                  <ButtonV2
-                    variant="ghost"
-                    size="small"
-                    class="mafw-mode-pill"
-                    classList={{ "mafw-perm-mode-auto": planBuildState() !== "default" }}
-                    aria-label="plan/build 模式循环（Tab）"
-                    onClick={() => cyclePlanBuild()}
-                  >
-                    <Icon name={PLAN_BUILD_ICON[planBuildState()]} size="small" />
-                    <span>{PLAN_BUILD_LABEL[planBuildState()]}</span>
-                  </ButtonV2>
-                </TooltipV2>
-              </Show>
             </div>
             <div class="mafw-composer-right">
               <Show when={composerMeta()}>
                 <span class="mafw-composer-meta">{composerMeta()}</span>
               </Show>
-              <Show when={(props.primaryAgents() || []).length > 0 || isLead()}>
-                <TooltipV2 value="切换 Agent" openDelay={300}>
-                  <ButtonV2
-                    variant="ghost"
-                    size="small"
-                    class="mafw-model-pill mafw-composer-agent-pill"
-                    aria-label="切换 Agent"
-                    ref={(el: any) => { if (pickerOpen() === "agent-switch") setPickerTrigger(el) }}
-                    onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("agent-switch"); refreshSubagents() }}
-                  >
-                    <span class="mafw-model-name">{agentSelName()}</span><span class="mafw-model-chevron">▾</span>
-                  </ButtonV2>
-                </TooltipV2>
-              </Show>
-              <TooltipV2 value="模型" openDelay={300}>
+              <TooltipV2 value={micStopActive() ? "停止语音输入" : "语音输入（录音，静音自动分段）"} openDelay={300}>
                 <ButtonV2
                   variant="ghost"
                   size="small"
-                  class="mafw-model-pill mafw-composer-model-pill"
-                  aria-label="模型"
-                  ref={(el: any) => { if (pickerOpen() === "model") setPickerTrigger(el) }}
-                  onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("model") }}
-                >
-                  <span class="mafw-model-name">{currentModelLabel()}</span><span class="mafw-model-chevron">▾</span>
-                </ButtonV2>
+                  class="mafw-composer-icon"
+                  classList={{ "mafw-voice-recording": micStopActive() }}
+                  aria-label="语音输入"
+                  onClick={handleMicClick}
+                ><Icon name={micStopActive() ? "stop" : "microphone"} size="small" /></ButtonV2>
               </TooltipV2>
               <TooltipV2 value={contextTooltip()} openDelay={300}>
                 <span
@@ -2461,6 +2407,24 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     <span class="mafw-context-cost">${sessionTokenSummary().cost.toFixed(2)}</span>
                   </Show>
                 </span>
+              </TooltipV2>
+              <TooltipV2 value="会话配置（Agent / 模型 / 思考档位）" openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-model-pill mafw-composer-session-pill"
+                  aria-label="会话配置"
+                  aria-expanded={pickerOpen() === "session-config"}
+                  onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("session-config") }}
+                >
+                  <Show when={agentBadge(props.agentSel()?.name ?? null)}>
+                    <span class="mafw-composer-session-badge">{agentBadge(props.agentSel()?.name ?? null)}</span>
+                  </Show>
+                  <Show when={thinkingBadge(props.thinkingLevel())}>
+                    <span class="mafw-composer-session-badge">{thinkingBadge(props.thinkingLevel())}</span>
+                  </Show>
+                  <span class="mafw-model-name">{currentModelLabel()}</span><span class="mafw-model-chevron">▾</span>
+                </ButtonV2>
               </TooltipV2>
               <Show when={sessionBusy() && experienceStore.supported("run.control")}>
                 <TooltipV2 value="暂停当前回合并保存续跑摘要" openDelay={300}>
@@ -2500,18 +2464,26 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               </Show>
             </div>
           </div>
-          <Show when={moreOpen()}>
-            <div class="mafw-composer-more-menu" ref={(el) => { moreMenuEl = el }} role="menu">
-              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void captureScreen() }}>
+          <Show when={attachOpen()}>
+            <div class="mafw-composer-more-menu mafw-composer-attach-menu" ref={(el) => { attachMenuEl = el }} role="menu">
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setAttachOpen(false); addAttachments() }}>
+                <Icon name="paperclip" size="small" /><span>附件</span>
+              </ButtonV2>
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setAttachOpen(false); void captureScreen() }}>
                 <Icon name="photo" size="small" /><span>截屏批注</span>
               </ButtonV2>
-              <Show when={sessionBusy() && experienceStore.supported("run.control")}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void pauseSession() }}>
-                  <Icon name="stop" size="small" /><span>暂停回合</span>
-                </ButtonV2>
-              </Show>
-              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (input() === "") setInput("/"); openCommandPicker() }}>
-                <Icon name="console" size="small" /><span>命令</span><span class="mafw-more-key">/</span>
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setAttachOpen(false); setPickerTrigger(attachBtnEl as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}>
+                <Icon name="subagent" size="small" /><span>引用 Agent</span><span class="mafw-more-key">@</span>
+              </ButtonV2>
+            </div>
+          </Show>
+          <Show when={moreOpen()}>
+            <div class="mafw-composer-more-menu" ref={(el) => { moreMenuEl = el }} role="menu">
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); addAttachments() }}>
+                <Icon name="paperclip" size="small" /><span>附件</span>
+              </ButtonV2>
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void captureScreen() }}>
+                <Icon name="photo" size="small" /><span>截屏批注</span>
               </ButtonV2>
               <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}>
                 <Icon name="subagent" size="small" /><span>引用 Agent</span><span class="mafw-more-key">@</span>
@@ -2524,20 +2496,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
                 <Icon name="volume" size="small" /><span>语音播报</span>
               </ButtonV2>
-              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => {
-                setMoreOpen(false)
-                handleMicClick()
-              }}>
-                <Icon name={micStopActive() ? "stop" : "microphone"} size="small" /><span>{micStopActive() ? "停止语音输入" : "语音输入"}</span>
-              </ButtonV2>
-              <Show when={(props.primaryAgents() || []).length > 0 || isLead()}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-switch"); refreshSubagents() }}>
-                  <Icon name="task" size="small" /><span>切换 Agent</span>
+              <Show when={sessionBusy() && experienceStore.supported("run.control")}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void pauseSession() }}>
+                  <Icon name="stop" size="small" /><span>暂停回合</span>
                 </ButtonV2>
               </Show>
-              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("model") }}>
-                <Icon name="models" size="small" /><span>切换模型</span>
-              </ButtonV2>
             </div>
           </Show>
         </div>
@@ -2554,25 +2517,32 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           onSelect={onModelSelectWrap}
           onClose={() => setPickerOpen(null)}
         />
-        <AgentPicker
-          open={pickerOpen() === "agent-switch" || pickerOpen() === "agent-mention"}
+        <SessionConfigMenu
+          open={pickerOpen() === "session-config"}
           trigger={pickerTrigger()}
-          mode={pickerOpen() === "agent-switch" ? "switch" : "mention"}
-          anchor={pickerOpen() === "agent-switch" ? "tr" : "bl"}
+          agentName={props.agentSel()?.name ?? null}
+          agentLocked={isLead()}
+          agentOptions={props.primaryAgents().some((a: any) => isAgentKey(a, "plan"))
+            ? AGENT_SWITCH_OPTIONS
+            : AGENT_SWITCH_OPTIONS.filter(o => o.id !== "plan")}
+          modelLabel={currentModelLabel()}
+          thinkingLevel={props.thinkingLevel()}
+          thinkingSupported={props.thinkingSupported()}
+          onAgentSelect={(id) => onSessionAgentSelect(id)}
+          onOpenModelPicker={() => setPickerOpen("model")}
+          onThinkingSelect={(level) => { props.onThinkingSelect(level); setPickerOpen(null) }}
+          onClose={() => setPickerOpen(null)}
+        />
+        <AgentPicker
+          open={pickerOpen() === "agent-mention"}
+          trigger={pickerTrigger()}
+          mode="mention"
+          anchor="bl"
           primaryAgents={props.primaryAgents()}
           subagentAgents={props.subagentAgents()}
           subagents={subagents()}
           isRunning={props.subagentRunning}
-          lockedLead={isLead()}
-          currentName={agentKey(props.agentSel())}
-          onSelect={(a) => {
-            if (pickerOpen() === "agent-mention") {
-              addAgent(a.name)
-              setPickerOpen(null)
-            } else {
-              onAgentSelect(a)
-            }
-          }}
+          onSelect={(a) => { addAgent(a.name); setPickerOpen(null) }}
           onSubagentClick={(s) => props.onOpenSubagent ? props.onOpenSubagent(s.id) : showToastV2({ description: `${s.title}（子代理）`, duration: 2000 })}
           onClose={() => setPickerOpen(null)}
         />

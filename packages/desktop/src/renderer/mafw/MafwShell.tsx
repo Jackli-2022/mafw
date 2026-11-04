@@ -2749,6 +2749,9 @@ export function MafwShell() {
                           primaryAgents={primaryAgents}
                           subagentAgents={subagentAgents}
                           subagentRunning={subagentRunning}
+                          thinkingLevel={() => thinkingLevelOf(activeSessionId())}
+                          thinkingSupported={() => thinkingSupportedOf(activeSessionId())}
+                          onThinkingSelect={(level) => { const sid = activeSessionId(); if (sid) applyThinking(sid, level) }}
                                 readOnly={!!store.session.find((s: any) => s.id === activeSessionId()!)?.parentID}
                           parentID={store.session.find((s: any) => s.id === activeSessionId()!)?.parentID ?? null}
                           onBackToParent={() => backToParent(activeSessionId()!)}
