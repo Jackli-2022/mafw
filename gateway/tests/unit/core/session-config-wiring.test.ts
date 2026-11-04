@@ -1,14 +1,16 @@
-// 接线契约：thinkingLevelSupported 必须对活 runtime 求值——生产接线永远注入
-// setThinkingLevel wrapper（缺 surface 时抛 400），所以不能靠 dep 是否存在判断
-// （2026-11-04 终审 Critical：默认 opencode runtime 下菜单 Thinking 行永远可用并在点击后 400）。
+// 接线契约：thinkingLevelSupported 必须经**契约面**判定（RuntimeAccess.can），
+// 不得直接摸 runtime 对象属性（契约隔绝；opencode 的推理档位是 model variant，
+// 属于 runtime 内部实现，未实现该 surface → 显式降级为不支持）。
 import * as fs from 'fs';
 import * as path from 'path';
 
 describe('session-config wiring', () => {
-  it('supportsThinkingLevel 检查 live runtime 的 setThinkingLevel 表面', () => {
+  it('supportsThinkingLevel 走 session.setThinkingLevel 契约面', () => {
     const src = fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf8');
-    expect(src).toMatch(
-      /supportsThinkingLevel:\s*\(\)\s*=>\s*typeof this\.runtime\?\.session\.setThinkingLevel === 'function'/,
-    );
+    const idx = src.indexOf('supportsThinkingLevel:');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 400);
+    expect(block).toContain("can('session.setThinkingLevel')");
+    expect(block).not.toContain('typeof this.runtime?.session.setThinkingLevel');
   });
 });

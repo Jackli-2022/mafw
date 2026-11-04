@@ -29,8 +29,9 @@ export interface SessionConfigDeps {
   switchAgent?(sessionID: string, agent: string): Promise<void>;
   switchModel?(sessionID: string, model: { providerID: string; modelID: string }, variant?: string): Promise<void>;
   setThinkingLevel?(sessionID: string, level: ThinkingLevel): Promise<void>;
-  /** 活 runtime 是否支持 thought_level。生产接线注入 wrapper 时也必须提供该探针
-   *  （wrapper 恒存在，dep-presence 无法反映 runtime 能力，2026-11-04 终审 Critical）。 */
+  /** 活 runtime 是否支持 thought_level。**必须经契约面**（RuntimeAccess.can('session.setThinkingLevel')）
+   *  注入——生产 wrapper 恒存在，dep-presence 与直接摸 runtime 属性都不可靠
+   *  （2026-11-04 终审 Critical + 契约隔绝收口）。 */
   supportsThinkingLevel?(): boolean;
   emit(sessionID: string, state: SessionConfigState, category: SessionConfigCategory): void;
 }

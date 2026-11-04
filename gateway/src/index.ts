@@ -3957,8 +3957,11 @@ class MafwScheduler {
         if (!fn) throw new SessionConfigError(400, 'runtime does not support session thought_level; use model_config.variant');
         await fn({ sessionID: sid, level });
       },
-      // 活 runtime 探针（wrapper 恒存在，不能用 dep-presence；runtime 可热切换）。
-      supportsThinkingLevel: () => typeof this.runtime?.session.setThinkingLevel === 'function',
+      // 契约面探针（RuntimeAccess.can）：runtime 只声明/实现 surface，业务不摸 runtime 内部。
+      // opencode 的推理档位是 model variant（runtime 内部细节），未实现该 surface → false。
+      supportsThinkingLevel: () => {
+        try { return this.runtime?.access?.can('session.setThinkingLevel') === true; } catch { return false; }
+      },
       emit: (sid, state, category) => {
         this.broadcast(mafwBroadcast({
           type: MAFW.sessionConfig,

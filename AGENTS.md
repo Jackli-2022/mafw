@@ -1630,6 +1630,12 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
   （`clearSlotsForSession`，archived⇒unbound 不再依赖 rotation 写新槽）；⑥ 死 CSS（`.mafw-keyhint`）/
   暂停按钮死 class/测试名清理；⑦ ≤620 审批 pill hover/聚焦显示短标签（spec §3.1 字面）；
   ⑧ 注释 typo。gateway 目标套件绿（session-config 8、session-switch 13、manager-session-runtime 23）、`tsc` rc=0。
+  **契约边界收口（2026-11-04）**：`thinkingLevelSupported` 探针从「直摸 `runtime.session.setThinkingLevel`」
+  改为 **`RuntimeAccess.can('session.setThinkingLevel')`** 契约面判定（wiring 测试钉 `can('session.setThinkingLevel')`）。
+  发现并记录：opencode 的推理档位实际是 **model variant**（`/api/model` 的 `variants[{id,settings.reasoningEffort}]`，
+  `model_config.variant` 切换）——属 runtime 内部实现；中性契约只暴露 `session.setThinkingLevel`，
+  opencode 未实现 → 菜单显式降级 `—`；桌面**不分叉 runtime、不暴露 variant 目录**（契约隔绝）。
+  若未来要在 UI 暴露 variant，应由 runtime 适配器实现该 surface 或走 Experience 扩展。
 - **GUI 冒烟（2026-11-04，dev app CDP 9222 + 旧全局 gateway v5.0.0）**：主仓 dev app 实测——
   工具条收敛为 `＋ ⋯ | 🛡 | 🎤 上下文 会话pill 发送`（agent/plan-build pill、`/` `@`、keyhint 均消失）；
   Lead 会话菜单 `Agent lead·锁定`（disabled）+ `Thinking —`（opencode 无 setThinkingLevel，两代 gateway
