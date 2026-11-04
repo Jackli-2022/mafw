@@ -48,6 +48,7 @@ import { PodStore } from './core/pod/pod-store';
 import { PodEventService } from './core/pod/pod-event-service';
 import { buildPodPresence, type PodPresence } from './core/pod/pod-presence';
 import { handlePresence } from './routes/presence';
+import { handlePodEvents } from './routes/pod-events';
 import {
   classifyGoalArchive,
   classifyMemberMessage,
@@ -4068,7 +4069,7 @@ class MafwScheduler {
           leadMemberId: lead?.id ?? null,
         });
         const pod = this.podStore?.getPod(row.podId);
-        this.podEventService?.record({
+        const evt = this.podEventService?.record({
           ...cls,
           podId: row.podId,
           projectId: pod?.projectDir ?? '',
@@ -4078,6 +4079,15 @@ class MafwScheduler {
           summary: row.body.slice(0, 400),
           dedupeKey: memberDedupeKey(row.kind, row.id, row.toMemberId),
         });
+        if (evt) {
+          this.broadcast({
+            type: 'pod.event',
+            properties: {
+              podId: evt.podId, eventId: evt.id, goalId: evt.goalId,
+              revision: evt.revision, kind: evt.kind, severity: evt.severity,
+            },
+          });
+        }
       } catch (err: any) {
         log.warn(`[Pod] event write failed for message ${row.id} (non-fatal): ${err?.message ?? err}`);
       }
@@ -6333,6 +6343,32 @@ class MafwScheduler {
 
         // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — W1 计划审阅
         // （须在 dashboard /api/goals* 兜底之前）。
+        // Pod 事件（人侧查收）：list / 单条 seen / 按 goal+revision 批量 seen。
+        {
+          const seenAll = req.url?.match(/^\/api\/pods\/([^/]+)\/events\/seen(?:\?|$)/);
+          const seenOne = req.url?.match(/^\/api\/pods\/([^/]+)\/events\/([^/?]+)\/seen(?:\?|$)/);
+          const list = req.url?.match(/^\/api\/pods\/([^/]+)\/events(?:\?|$)/);
+          if (seenAll || seenOne || list) {
+            const podId = decodeURIComponent((seenAll ?? seenOne ?? list)![1]);
+            const params = new URL(req.url!, 'http://127.0.0.1').searchParams;
+            let body: any = {};
+            if (req.method === 'POST') {
+              try { body = JSON.parse(await readBody(req)); } catch { body = {}; }
+            }
+            const out = await handlePodEvents({ service: this.podEventService! })({
+              method: req.method ?? 'GET',
+              podId,
+              ...(seenOne ? { id: decodeURIComponent(seenOne[2]) } : {}),
+              ...(seenAll ? { action: 'seenAll' as const } : {}),
+              query: { state: params.get('state') ?? undefined, limit: params.get('limit') ?? undefined },
+              body,
+            });
+            res.writeHead(out.status, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(out.body));
+            return;
+          }
+        }
+
         // 跨项目常驻存在感（tray/taskbar 的唯一数据源）。
         if (req.url?.match(/^\/api\/presence(?:\?|$)/) && req.method === 'GET') {
           const out = await handlePresence({ list: () => this.buildPresence() });
@@ -8857,7 +8893,7 @@ class MafwScheduler {
         const cls = classifyGoalArchive({ verdict: (outcome.verdict as any) ?? null });
         const pod = this.podStore?.getPod(podId);
         const title = this.describePodGoal(goalId)?.title || goalId;
-        this.podEventService.record({
+        const evt = this.podEventService.record({
           ...cls,
           podId,
           projectId: pod?.projectDir ?? '',
@@ -8865,6 +8901,13 @@ class MafwScheduler {
           revision,
           title: `${title} · ${outcome.verdict}`,
           dedupeKey: goalDedupeKey(goalId, revision),
+        });
+        this.broadcast({
+          type: 'pod.event',
+          properties: {
+            podId: evt.podId, eventId: evt.id, goalId: evt.goalId,
+            revision: evt.revision, kind: evt.kind, severity: evt.severity,
+          },
         });
       } catch (err: any) {
         log.warn(`[Pod] event write failed for ${goalId} (non-fatal): ${err?.message ?? err}`);

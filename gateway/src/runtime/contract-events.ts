@@ -13,7 +13,7 @@ const TERMINAL = new Set(['turn.completed', 'turn.failed', 'turn.aborted']);
 
 const GATEWAY_PRODUCED = new Set([
   'usage.updated', 'queue.updated', 'session.config', 'session.checkpoint', 'run.updated',
-  'task.updated', 'pod.updated', 'trajectory.event', 'trajectory.turn', 'permission_mode', 'session.commands',
+  'task.updated', 'pod.updated', 'pod.event', 'trajectory.event', 'trajectory.turn', 'permission_mode', 'session.commands',
 ]);
 
 /** 同域双方产出：runtime 生命周期经 Ingress 翻译，gateway 任务/取消变更直接广播。 */
@@ -57,6 +57,8 @@ function requiredFieldsOf(type: string): string[] {
       return ['requestId', 'sessionID'];
     case 'background.job.updated':
       return ['job'];
+    case 'pod.event':
+      return ['podId', 'eventId', 'severity'];
     default:
       return [];
   }

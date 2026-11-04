@@ -2920,6 +2920,21 @@
       ]
     },
     {
+      "type": "pod.event",
+      "family": "state",
+      "requiredFields": [
+        "podId",
+        "eventId",
+        "severity"
+      ],
+      "producers": [
+        "gateway"
+      ],
+      "consumers": [
+        "desktop"
+      ]
+    },
+    {
       "type": "session.config",
       "family": "state",
       "requiredFields": [],

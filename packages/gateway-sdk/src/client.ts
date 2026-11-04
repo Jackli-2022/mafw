@@ -15,6 +15,7 @@ import {
   PodDetail, PodTask, PodMessage, PodGoal, PodNamespace, PodStatus, PodDeliveryState,
   PodCreateGoalInput, PodCreateGoalResult, PodHandoffGoalInput, PodLeadEnsureResult, PodGoalResult,
   PodWorkOverview, WorkNamespace,
+  PodEventItem, PresenceSummary,
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
   PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
@@ -948,6 +949,10 @@ export class MafwClient implements IMafwClient {
 
   // 鈹€鈹€ Goals 鈹€鈹€
 
+  presence = {
+    get: async (): Promise<PresenceSummary> => this.request<PresenceSummary>('/api/presence', { method: 'GET' }),
+  }
+
   goals = {
     list: async (): Promise<Goal[]> => {
       const data = await this.request<{ goals: Goal[] }>('/api/goals')
@@ -1343,6 +1348,28 @@ export class MafwClient implements IMafwClient {
       this.request<{ message: PodMessage }>(`/api/pods/${encodeURIComponent(podID)}/messages/${encodeURIComponent(messageID)}/read`, {
         method: 'POST',
       }),
+
+    events: {
+      list: async (podID: string, opts?: { state?: 'unread'; limit?: number }): Promise<{ items: PodEventItem[]; unread: number }> => {
+        const q = new URLSearchParams()
+        if (opts?.state) q.set('state', opts.state)
+        if (opts?.limit) q.set('limit', String(opts.limit))
+        return this.request<{ items: PodEventItem[]; unread: number }>(
+          `/api/pods/${encodeURIComponent(podID)}/events?${q}`,
+          { method: 'GET' },
+        )
+      },
+      seen: async (podID: string, eventID: string): Promise<{ ok: boolean; changed: boolean }> =>
+        this.request<{ ok: boolean; changed: boolean }>(
+          `/api/pods/${encodeURIComponent(podID)}/events/${encodeURIComponent(eventID)}/seen`,
+          { method: 'POST' },
+        ),
+      seenAll: async (podID: string, goalId: string, revision: number): Promise<{ ok: boolean; changed: number }> =>
+        this.request<{ ok: boolean; changed: number }>(
+          `/api/pods/${encodeURIComponent(podID)}/events/seen`,
+          { method: 'POST', body: JSON.stringify({ goalId, revision }) },
+        ),
+    },
 
     retryDelivery: async (podID: string, messageID: string): Promise<{ delivery: PodDeliveryState }> =>
       this.request<{ delivery: PodDeliveryState }>(`/api/pods/${encodeURIComponent(podID)}/messages/${encodeURIComponent(messageID)}/delivery/retry`, {

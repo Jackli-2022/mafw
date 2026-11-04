@@ -6,9 +6,10 @@ import {
 
 test("runtime event list has no duplicates", () => {
   expect(new Set(RUNTIME_EVENT_TYPES).size).toBe(RUNTIME_EVENT_TYPES.length)
-  // 32 = 31 + background.job.updated（Task 3 三源统一后台作业，2026-11-02）
-  expect(RUNTIME_EVENT_TYPES.length).toBe(32)
+  // 33 = 32 + pod.event（事件层，2026-11-04）
+  expect(RUNTIME_EVENT_TYPES.length).toBe(33)
   expect(RUNTIME_EVENT_TYPES).toContain("pod.updated")
+  expect(RUNTIME_EVENT_TYPES).toContain("pod.event")
   expect(RUNTIME_EVENT_TYPES).toContain("background.job.updated")
 })
 

@@ -30,6 +30,9 @@ import type { RouteDef } from './registry';
  */
 const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/presence', operationId: 'presence.get', tags: ['presence'] },
+  { method: 'GET', path: '/api/pods/:podId/events', operationId: 'pod.events.list', tags: ['pod'] },
+  { method: 'POST', path: '/api/pods/:podId/events/:id/seen', operationId: 'pod.events.seen', tags: ['pod'] },
+  { method: 'POST', path: '/api/pods/:podId/events/seen', operationId: 'pod.events.seenAll', tags: ['pod'] },
   { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'] },
   { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'] },
   { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'] },

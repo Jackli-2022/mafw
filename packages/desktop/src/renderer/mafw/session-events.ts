@@ -144,6 +144,7 @@ type ShellHandledType =
   | "session.diff" | "permission_mode"
   | "session.checkpoint"
   | "pod.updated"
+  | "pod.event"
   | "background.job.updated"
   | "plugins.changed"
 
@@ -213,6 +214,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "session.commands":
     case "task.updated":
     case "pod.updated":
+    case "pod.event":
       return
     default: {
       // 残余必须恰好是 plugin:* 模板；出现任何其他字面量 = 有事件未归类。

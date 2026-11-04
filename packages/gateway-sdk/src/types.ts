@@ -1567,6 +1567,47 @@ export interface WorkNamespace {
   overview(projectID: string): Promise<PodWorkOverview>
 }
 
+export interface PodEventItem {
+  id: string
+  podId: string
+  goalId: string | null
+  revision: number | null
+  kind: string
+  severity: 'p1' | 'p2' | 'p3'
+  reason: string
+  title: string
+  summary: string | null
+  audience: string
+  state: 'unread' | 'seen'
+  createdAt: string
+  seenAt: string | null
+}
+
+export interface PresenceItem {
+  podId: string
+  projectId: string
+  projectName: string
+  goalId: string
+  title: string
+  phase: string | null
+  node: string | null
+  progress: { current: number; total: number } | null
+  startedAt: string
+  updatedAt: string
+}
+
+export interface PresenceSummary {
+  running: PresenceItem[]
+  attention: { count: number; items: Array<{ id: string; goalId: string; revision: number; kind: string; title: string }> }
+  unreadResults: { count: number; latest: PresenceItem | null }
+}
+
+export interface PodEventNamespace {
+  list(podID: string, opts?: { state?: 'unread'; limit?: number }): Promise<{ items: PodEventItem[]; unread: number }>
+  seen(podID: string, eventID: string): Promise<{ ok: boolean; changed: boolean }>
+  seenAll(podID: string, goalId: string, revision: number): Promise<{ ok: boolean; changed: number }>
+}
+
 export interface PodNamespace {
   ensure(projectID: string): Promise<PodDetail>
   lookup(projectID: string): Promise<PodDetail>
@@ -1597,6 +1638,7 @@ export interface PodNamespace {
   transcript(podID: string, sessionID: string): Promise<{ transcript: unknown }>
   readMemory(podID: string, node?: 'plan' | 'execute' | 'review'): Promise<{ context: string | null }>
   readMemoryFile(podID: string, file: 'POD' | 'MEMORY' | 'GLOSSARY'): Promise<{ content: string | null }>
+  events: PodEventNamespace
   writeMemory(podID: string, body: { file: 'POD' | 'MEMORY' | 'GLOSSARY'; content: string; actorSessionID?: string }): Promise<{ path: string }>
   /** Tech Lead discussion for the active revision (GET ensures the hidden session exists). */
   techLead(podID: string, goalID: string, limit?: number): Promise<PodTechLeadHistory>

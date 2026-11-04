@@ -63,6 +63,7 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   'task.updated':         R([], 'passthrough', 'handled', 'ignore', 'Batch 4：gateway 持久任务状态变化（顶层广播，desktop task-store/BackgroundDock 消费）'),
   'background.job.updated': R([], 'passthrough', 'handled', 'ignore', 'Task 3：三源统一后台作业快照（Task 11 起 desktop BackgroundDock/WorkBar/reconcile 消费；task.updated 仍供任务看板）'),
   'pod.updated':          R([], 'passthrough', 'handled', 'ignore', 'Project Pod Lite：成员/任务/消息/记忆变更（gateway 自发；desktop Pod 面板刷新）'),
+  'pod.event':            R([], 'passthrough', 'handled', 'ignore', '事件层：pod_events 落库后广播（desktop 刷新 inbox 并触发一次 presence 轮询）'),
   'session.config':       R([], 'passthrough', 'ignore', 'ignore', 'Batch 7：会话配置选项变更（mode/agent/model/model_config/thought_level；gateway 顶层广播）'),
   'session.checkpoint':   R([], 'passthrough', 'ignore', 'ignore', 'T2-1：检查点创建（ gateway 自发，auto/manual；desktop overlay 拉取式消费）'),
   'run.updated':          R([], 'passthrough', 'handled', 'ignore', 'T2-2：回合软暂停状态（suspended/resumed/completed/failed/cancelled；gateway 自发；desktop run-store 消费）'),

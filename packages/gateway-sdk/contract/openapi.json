@@ -19,6 +19,83 @@
         }
       }
     },
+    "/api/pods/{podId}/events": {
+      "get": {
+        "operationId": "pod.events.list",
+        "tags": [
+          "pod"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/events/{id}/seen": {
+      "post": {
+        "operationId": "pod.events.seen",
+        "tags": [
+          "pod"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/pods/{podId}/events/seen": {
+      "post": {
+        "operationId": "pod.events.seenAll",
+        "tags": [
+          "pod"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/session": {
       "post": {
         "operationId": "session.create",

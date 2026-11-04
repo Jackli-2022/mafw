@@ -199,6 +199,7 @@ const Set<String> kMafwCanonicalEventTypes = {
   'task.updated',
   'background.job.updated',
   'pod.updated',
+  'pod.event',
   'session.config',
   'session.checkpoint',
   'run.updated',

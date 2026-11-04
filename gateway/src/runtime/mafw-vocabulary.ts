@@ -41,6 +41,7 @@ export const MAFW = {
   /** Task 3：三源统一的后台作业状态（替换 synthetic chat-message 伪装）。 */
   backgroundJobUpdated: 'background.job.updated',
   podUpdated: 'pod.updated',
+  podEvent: 'pod.event',
   sessionConfig: 'session.config',
   sessionCheckpoint: 'session.checkpoint',
   runUpdated: 'run.updated',
