@@ -1609,12 +1609,20 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
   注入（`leadSessionRegistry.findBySessionId` / `identityRegistry.get`）。
 - **Rail 视觉精修（46px 布局零变化）**：`bubble-5`/`magnifying-glass`/`sticky-note`/`team-three` 四枚字形按
   1.3px 线宽重描（弃粗体气泡/放大镜）；`new-action` 去虚线改实心 accent 14% tint；gap 5→8px、padding 8→10px。
-- **测试**：新增 `composer-session-menu-wiring`（6 例）、`session-config-menu-model`（4 例）、
-  session-switch gate（7 例）、session-config supported（1 例）、flow-cards session.config（2 例）、
+- **测试**：新增 `composer-session-menu-wiring`（6 例）、`session-config-menu-model`（6 例）、
+  session-switch gate（7 例）、session-config supported（2 例）+ wiring（1 例）、flow-cards session.config（2 例）、
   session-events 覆盖保持；更新 `design-contract`/`composer-toolbar-css`/`agent-identity`/`lead-coordinator-wiring`/
-  `duplex-voice-wiring`（麦克风单入口 3→2）。desktop **2821/2821**（617 suites，较批前 2810 净 +11）、
-  gateway **4678/4678（591 suites）**、SDK **199/199**；`tsgo --noEmit -p tsconfig.json` / gateway `tsc` /
+  `duplex-voice-wiring`（麦克风单入口 3→2）。desktop **2823/2823**（617 suites，较批前 2810 净 +13）、
+  gateway **4681/4681（592 suites）**、SDK **199/199**；`tsgo --noEmit -p tsconfig.json` / gateway `tsc` /
   `electron-vite build` rc=0。
+- **终审（deepseek-v4.1-flash）修复**（commit `cca48dd4`）：2 Critical + 2 Important 已修——
+  ① `thinkingLevelSupported` 生产恒 true（`index.ts` 恒注入抛错 wrapper）→ 新增
+  `supportsThinkingLevel` 活 runtime 探针 + wiring 测试；② view DTO id 是 `Build`/`Plan`，
+  菜单小写 id 查不到 entry（plan/build 静默失效）+ pill 恒显 `Build` 徽标 → `agentBadge` 大小写不敏感、
+  新增 `findAgentEntry`（`isAgentKey`）+ 行为单测；③ `POST /api/session/:id/config {category:'agent'}`
+  绕过 coordinator 门 → 抽出共享 `checkAgentSwitchGate` 并接入 config 路由；④ 菜单行为测试缺口由
+  上述单测补上。Minor 5 项 deferred（见 plan/ledger：gate 大小写、mafw-create 锁定、默认 thinking 档
+  不可回退、archived 槽位不变量、死 CSS/注释）。
 - **已知边界**：GUI 冒烟未跑（清单见 plan Task 7：会话菜单三态 / Lead 锁定 / Thinking 禁用态 / 窄窗两档 /
   rail 视觉对照 / switchAgent 403 curl）；attention 通知链与托盘 presence 归 pod-event-layer 批次
   （其设计已评审、未实现、无 plan）。
