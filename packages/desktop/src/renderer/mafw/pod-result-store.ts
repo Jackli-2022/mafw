@@ -1,6 +1,6 @@
 // Task 21：结果循环的 UI 状态（已查看结果 + 打开请求）。
 //
-// 为什么是模块单例：结果面板在右栏 PodDock 里，而「通知/rail 点」在 MafwShell；
+// 为什么是模块单例：结果面板在右工作台 PodDock 里，而「通知/rail 点」在 MafwShell；
 // 两条 UI 树之间没有父子 props 通道（ExecutionView 只是透传层）。用一个小 store
 // 表达「用户要打开哪个结果/哪个 Tech Lead」，比穿过三层 props 更不容易漏接线。
 //

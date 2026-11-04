@@ -1,5 +1,5 @@
 // 团队与设置（Task 15）：从日常导航退役后，只保留团队会话、协作诊断、
-// 邮箱与 Pod 记忆。Goal 创建/列表/任务板/结果都在项目工作空间与 Goal 详情。
+// 邮箱与 Pod 记忆。Goal 创建/列表/任务板/结果都在右工作台「工作」与 Goal 详情。
 import { For, Show, createEffect, createSignal, on } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"

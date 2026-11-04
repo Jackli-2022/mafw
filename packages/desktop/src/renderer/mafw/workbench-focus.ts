@@ -7,6 +7,7 @@ export type WorkbenchFocusSnapshot = {
   detent: WorkbenchDetent
   view: WorkbenchView
   surface: WorkbenchSurface
+  previousSurface: "code" | "browser"
   executionSection: ExecutionSection
 }
 

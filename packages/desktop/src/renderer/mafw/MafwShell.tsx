@@ -1854,8 +1854,8 @@ export function MafwShell() {
 
   const applyRightDock = (open: boolean) => {
     if (!open) {
+      restoreFocusSnapshot()
       setWorkbenchFocus(false)
-      workbenchFocusSnapshot = null
     }
     setRightDockOpen(open)
     try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch { /* ignore */ }
@@ -1871,11 +1871,20 @@ export function MafwShell() {
     try { localStorage.setItem("mafw-workbench-surface", surface) } catch { /* ignore */ }
   }
 
+  const currentWorkbenchSnapshot = (): WorkbenchFocusSnapshot => ({
+    detent: detent(),
+    view: workbenchView(),
+    surface: workbenchSurface(),
+    previousSurface: previousSurface(),
+    executionSection: executionSection(),
+  })
+
   const applyWorkbenchSnapshot = (snapshot: WorkbenchFocusSnapshot) => {
     setDetent(snapshot.detent)
     setChatPreview(null)
     setWorkbenchView(snapshot.view)
     setWorkbenchSurface(snapshot.surface)
+    setPreviousSurface(snapshot.previousSurface)
     setExecutionSection(snapshot.executionSection)
     try {
       localStorage.setItem("mafw-workbench-detent", String(snapshot.detent))
@@ -1885,25 +1894,19 @@ export function MafwShell() {
     } catch { /* ignore */ }
   }
 
+  const restoreFocusSnapshot = () => {
+    if (!workbenchFocusSnapshot) return
+    applyWorkbenchSnapshot(restoreWorkbenchFocusSnapshot(workbenchFocusSnapshot, currentWorkbenchSnapshot()))
+    workbenchFocusSnapshot = null
+  }
+
   const toggleWorkbenchFocus = () => {
     if (workbenchFocus()) {
+      restoreFocusSnapshot()
       setWorkbenchFocus(false)
-      const restored = restoreWorkbenchFocusSnapshot(workbenchFocusSnapshot, {
-        detent: detent(),
-        view: workbenchView(),
-        surface: workbenchSurface(),
-        executionSection: executionSection(),
-      })
-      applyWorkbenchSnapshot(restored)
-      workbenchFocusSnapshot = null
       return
     }
-    workbenchFocusSnapshot = captureWorkbenchFocusSnapshot({
-      detent: detent(),
-      view: workbenchView(),
-      surface: workbenchSurface(),
-      executionSection: executionSection(),
-    })
+    workbenchFocusSnapshot = captureWorkbenchFocusSnapshot(currentWorkbenchSnapshot())
     if (!rightDockOpen()) applyRightDock(true)
     setWorkbenchFocus(true)
   }
@@ -2291,8 +2294,8 @@ export function MafwShell() {
   // 这些 signal 变成依赖 → 自触发无限刷新（pod listMessages / cost 打屏）。
   createEffect(on(() => benchRoot() ?? currentProject(), (dir, previous) => {
     if (previous !== undefined && dir !== previous) {
+      restoreFocusSnapshot()
       setWorkbenchFocus(false)
-      workbenchFocusSnapshot = null
     }
     if (dir) void podStore.open(dir)
   }))
@@ -2944,7 +2947,7 @@ export function MafwShell() {
                       projectDir={currentProject()}
                       refreshTick={() => Math.max(goalsRev(), podStore.revision())}
                       composerRequest={goalComposerRequest()}
-                      active={dockPresent() && workbenchView() === "work"}
+                      active={workbenchContent() === "project" && dockPresent() && workbenchView() === "work"}
                       onOpenGoal={(goal, focus) => openGoalDetail(goal.goalId, focus)}
                       onGoalCreated={(goalId) => openGoalDetail(goalId)}
                     />

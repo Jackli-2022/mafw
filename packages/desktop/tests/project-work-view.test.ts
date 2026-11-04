@@ -22,10 +22,10 @@ test("ProjectWorkView owns the project work overview and Goal composer", () => {
 test("ProjectWorkView polls only while active and consumes each composer request once", () => {
   assert.match(view, /active: boolean/)
   assert.match(view, /let lastConsumedComposerRequest = 0/)
-  assert.match(view, /if \(!props\.active\) return/)
+  assert.match(view, /if \(!props\.active\) return\r?\n\s*void load\(\)\r?\n\s*const timer = setInterval/)
   assert.match(view, /if \(request > lastConsumedComposerRequest && props\.active\) \{/)
   assert.match(view, /lastConsumedComposerRequest = request/)
-  assert.match(shell, /active=\{dockPresent\(\) && workbenchView\(\) === "work"\}/)
+  assert.match(shell, /active=\{workbenchContent\(\) === "project" && dockPresent\(\) && workbenchView\(\) === "work"\}/)
 })
 
 test("the shell mounts ProjectWorkView in the work L1 pane", () => {
