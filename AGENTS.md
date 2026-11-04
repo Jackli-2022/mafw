@@ -1682,9 +1682,8 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
   `pod-presence` 6、`pod-events-route` 4、`pod-event-wake` 6；desktop 新增 `presence-model` 1、
   `attention-diff` 1、`pod-events` 1；SDK 契约计数 32→33。**gateway 4726/4726（598 suites）**、
   **desktop 2828/2828（618 suites）**、**SDK 199/199**；`tsc` / `tsgo -p` rc=0。
-- **未做（Task 9）**：桌面 inbox 面板与 `viewedResults` 双读迁移——`pod-events.ts` 纯函数（`isResultViewed` /
-  `shouldMarkSeen` / `listUnread`）已就位并有测试，但尚未接入 `podResultDot` / `latestUnviewedResult` /
-  `PodResultView`。因此「结果未查看」仍由既有 localStorage 驱动，跨端一致性与 inbox 展示留待下一批。
+- **评审（glm-5.3）与修复**：C1 已修——`unreadResults`/托盘 attention 原先由 `resultReady`（永不回 false）推导，导致托盘永久卡 attention、且无产物的硬失败反而不显示；现改为按 `pod_events` 的未读 p1（`goalId:r<revision>`）推导，seen 后自然回落 idle。I2 已修——唤醒预算失败退回、预算拒绝只累加 `wakeAttempts`（3 次才 suppress）、member 事件去重键带 message 身份（否则全 Pod 的 escalation 共用一个键）。I6 已修——presence 连续 3 次失败回落 idle（不再让托盘中继过期状态）。
+- **未做 / deferred**：Task 9（桌面 inbox + `viewedResults` 双读）；`pod.event` 的 renderer 消费与立即轮询（当前只有 main 15s 轮询）；`mafw-navigate-goal` 缺 preload/renderer 接收端（菜单行可点但暂无导航效果）；旧结果通知链（`handlePodResultEvent` toast + hidden-only 通知）未退役，同项目可能双通知；worktree 折叠目前只改标签不去重条目；p3 事件与审计文件无 prune；托盘三态无独立图标资源（只换 tooltip/菜单文案）。
 - **已知边界**：托盘图标三态（running/attention）尚未提供独立图标资源，当前只换 tooltip/菜单文案；
   未构建 `electron-vite build` 与真机冒烟（本机 dev 服务需重启后生效）。
 
