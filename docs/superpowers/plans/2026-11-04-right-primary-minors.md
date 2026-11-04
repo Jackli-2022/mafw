@@ -1,6 +1,6 @@
 # Right-Primary Deferred Minors Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Fix the nine deferred minors from the right-primary Agent workbench final review.
 
@@ -41,19 +41,19 @@
 - Consumes existing `buildRecentMessages(detail, messages, selfMemberId, nowMs, limit)`.
 - Removes `podRecentMessages` and its duplicate projection.
 
-- [ ] **Step 1: Write failing source/model contracts**
+- [x] **Step 1: Write failing source/model contracts**
   - In `project-resources-work.test.ts`, require `buildRecentMessages(props.detail, props.messages, props.selfMemberId, Date.now(), 3)` and forbid `podRecentMessages` and `message.readAt === null`.
   - In `pod-rail-face-model.test.ts`, remove the `podRecentMessages` test and keep an assertion that `buildRecentMessages` marks own outbound messages as read.
 
-- [ ] **Step 2: Run focused tests to verify failure**
+- [x] **Step 2: Run focused tests to verify failure**
   - `node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/pod-rail-face-model.test.ts tests/project-resources-work.test.ts`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - Replace the ad hoc mapping in `ProjectResources` with `buildRecentMessages`.
   - Render `route`, `preview`, `time`, and `unread` from that model.
   - Delete `podRecentMessages` from the model.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
   - Rerun focused tests, then commit `fix(desktop): reuse the pod recent-message projection`.
 
 ---
@@ -69,20 +69,20 @@
 - Adds `ProjectWorkViewProps.active: boolean`.
 - Adds module-level consumed-request tracking so remounts do not replay an old request.
 
-- [ ] **Step 1: Write failing source contracts**
+- [x] **Step 1: Write failing source contracts**
   - Require `active: boolean`.
   - Require the polling effect to return early when `!props.active`.
   - Require `lastConsumedComposerRequest` and only open the composer when the request number increases.
 
-- [ ] **Step 2: Run focused test to verify failure**
+- [x] **Step 2: Run focused test to verify failure**
   - `node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test tests/project-work-view.test.ts`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - Gate initial load, refresh tick, and 15s interval on `props.active`.
   - Track the consumed composer request sequence in a module variable.
   - Pass `active={dockPresent() && workbenchView() === "work"}` from `MafwShell`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
   - Rerun focused test, then commit `fix(desktop): gate project work polling and composer requests`.
 
 ---
@@ -111,19 +111,19 @@
   ): WorkbenchFocusSnapshot
   ```
 
-- [ ] **Step 1: Write failing pure and source tests**
+- [x] **Step 1: Write failing pure and source tests**
   - Pure test: capture copies all four fields; restore returns the snapshot when present and fallback when null.
   - Source test: `MafwShell` captures on entry, restores on exit, and gates the resize wrapper with Focus-active state.
 
-- [ ] **Step 2: Run focused tests to verify failure**
+- [x] **Step 2: Run focused tests to verify failure**
   - `node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/workbench-focus.test.ts tests/design-contract.test.ts`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - Add the pure snapshot module.
   - In `MafwShell`, capture the current detent/view/surface/section before entering Focus and restore them on exit.
   - Define one `focusActive()` helper and use it for both body columns and the resize wrapper.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
   - Rerun focused tests, then commit `fix(desktop): snapshot workbench focus state`.
 
 ---
@@ -143,20 +143,20 @@
 - User-facing copy says work is in the right workbench, not the retired workspace.
 - Restored visual pins cover WorkOverview, ProjectResources, GoalDetail, and their CSS.
 
-- [ ] **Step 1: Write failing contracts**
+- [x] **Step 1: Write failing contracts**
   - Forbid generic `/404/` mapping in `friendlyWorkError`.
   - Require the right-workbench copy in ProjectResources and the `/goals` command.
   - Pin status dots, group counts, chips, avatars, chevrons, Goal header/chips, and their CSS classes.
 
-- [ ] **Step 2: Run focused tests to verify failure**
+- [x] **Step 2: Run focused tests to verify failure**
   - `node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test tests/project-work-view.test.ts tests/project-resources-work.test.ts tests/right-primary-visual-contract.test.ts`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - Match only `pod not found` / `没有鲸群` / `no pod`.
   - Update stale copy.
   - Add the visual-contract assertions.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
   - Rerun focused tests, then commit `fix(desktop): tighten right-workbench copy and visual contracts`.
 
 ---
@@ -172,21 +172,21 @@
 - Produces a CSS file with no U+FFFD replacement characters.
 - Produces a delivery addendum in `AGENTS.md` §5.27.
 
-- [ ] **Step 1: Write failing encoding test**
+- [x] **Step 1: Write failing encoding test**
   - Assert `mafw.css` does not contain `\uFFFD`.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
   - `node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/css-encoding.test.ts`
 
-- [ ] **Step 3: Rewrite affected comments only**
+- [x] **Step 3: Rewrite affected comments only**
   - Replace mojibake comment blocks with readable UTF-8 comments.
   - Do not change selectors or declarations.
 
-- [ ] **Step 4: Full verification**
+- [x] **Step 4: Full verification**
   - `npm test`
   - `npx tsgo --noEmit -p tsconfig.json`
   - `npx electron-vite build`
 
-- [ ] **Step 5: Record delivery and commit**
+- [x] **Step 5: Record delivery and commit**
   - Add the minor-fix addendum to `AGENTS.md`.
   - Commit `fix(desktop): clean right-primary css comments` plus the docs record.
