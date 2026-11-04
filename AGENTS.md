@@ -1564,6 +1564,18 @@ chatview 是指挥列，左侧 rail 负责导航与团队状态。
   测试覆盖。已知 deferred minors：ProjectWorkView 常驻 15s 轮询、composer request remount 重开、
   最近消息 unread 未走 `countUnread`、Focus 中 resize handle 未隐藏、部分旧视觉契约未迁移。
 - **实现与终审修复 commits**：`65ee6344`..`b4c2c61a`（最终代码 `b4c2c61a`）。
+- **Deferred minors 收口（2026-11-04，commits `ba221583`/`c2e4b098`/`81d2ebb8`/`ed07c0a6`/`bb27330c`）**：
+  上条列出的 deferred minors 全部修复——① 左栏最近消息统一走 `buildRecentMessages`（自己发出的
+  广播不再误标未读，`podRecentMessages` 删除）；② `ProjectWorkView.active` 门控 15s 轮询，composer
+  请求用模块级消费游标只处理一次（remount 不重放）；③ Focus 进入时快照 detent/L1/L2，退出恢复
+  （Focus 中导航也不丢原视图），Focus 中隐藏 resize handle；④ `friendlyWorkError` 只映射
+  `pod not found`/`没有鲸群`/`no pod`（404 不再冒充“没有鲸群”）；⑤ 过期文案改为右工作台
+  （ProjectResources 副标题/注意力行、PodDock hint、`/goals` 命令标题与描述）；⑥ 恢复视觉契约
+  `right-primary-visual-contract.test.ts`（状态点/分组计数/chips/头像/chevron/Goal 信头与 CSS 类）；
+  ⑦ `mafw.css` 12 行 GBK/U+FFFD 乱码注释重写为可读 UTF-8（仅注释，零选择器/声明变化），新增
+  `css-encoding.test.ts` 守卫。门禁：desktop **2777/2777（609 suites，本批 +51）**、
+  `tsgo --noEmit -p tsconfig.json` rc=0、`electron-vite build` rc=0。本批未再跑 GUI 冒烟
+  （纯逻辑/文案/编码，由源契约与全量套件覆盖）；计划 `docs/superpowers/plans/2026-11-04-right-primary-minors.md`。
 
 ## 6. Gateway 运维
 
