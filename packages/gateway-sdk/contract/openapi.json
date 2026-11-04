@@ -6,6 +6,19 @@
     "description": "P4 生成的契约：paths 由 gateway routes/route-catalog.ts 经 emit-openapi 脚本产出（gateway-paths.json），本文件 = gateway-paths.json + overrides.json（手写 summary/description/responseSchema 元数据）合并产物，勿手改。变更链路：route-catalog.ts → (gateway) npm run emit:openapi → (sdk) npm run gen:api → api-schema.gen.ts。tags 含 internal 的 operation 不被 @mafw/sdk 调用（服务端内部/dashboard/mobile 用）。"
   },
   "paths": {
+    "/api/presence": {
+      "get": {
+        "operationId": "presence.get",
+        "tags": [
+          "presence"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/session": {
       "post": {
         "operationId": "session.create",

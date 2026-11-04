@@ -28,7 +28,7 @@ function stage(input: Partial<PodGoalStageInput>) {
 }
 
 function attention(input: Partial<PodGoalStageInput>) {
-  return projectPodAttention([{ goalId: 'g1', title: 'Fix Pod', stage: stage(input) }]);
+  return projectPodAttention([{ goalId: 'g1', title: 'Fix Pod', revision: 2, stage: stage(input) }]);
 }
 
 describe('projectPodGoalStage — revision aware phases', () => {
@@ -52,8 +52,9 @@ describe('projectPodGoalStage — revision aware phases', () => {
     expect(projected.action).toEqual({ type: 'open_direction_review', goalId: 'g1' });
     expect(attention(input)).toEqual([
       {
-        id: 'g1:direction_review',
+        id: 'g1:direction_review:r2',
         goalId: 'g1',
+        revision: 2,
         kind: 'direction_review',
         title: 'Fix Pod',
         action: { type: 'open_direction_review', goalId: 'g1' },

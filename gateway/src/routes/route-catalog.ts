@@ -29,6 +29,7 @@ import type { RouteDef } from './registry';
  * `emit:openapi` + `gen:api`，不要反向手改 openapi.json）。
  */
 const SDK_FACING_ROUTES: RouteDef[] = [
+  { method: 'GET', path: '/api/presence', operationId: 'presence.get', tags: ['presence'] },
   { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'] },
   { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'] },
   { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'] },

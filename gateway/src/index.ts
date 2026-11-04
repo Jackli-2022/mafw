@@ -46,12 +46,15 @@ import {
 } from './core/background/background-jobs';
 import { PodStore } from './core/pod/pod-store';
 import { PodEventService } from './core/pod/pod-event-service';
+import { buildPodPresence, type PodPresence } from './core/pod/pod-presence';
+import { handlePresence } from './routes/presence';
 import {
   classifyGoalArchive,
   classifyMemberMessage,
   goalDedupeKey,
   memberDedupeKey,
 } from './core/pod/pod-event-model';
+import { parentProjectDirForWorktree } from './core/pod/pod-identity';
 import { PodService } from './core/pod/pod-service';
 import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
@@ -405,7 +408,7 @@ async function isPortHealthy(port: number): Promise<boolean> {
   }
 }
 
-import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot } from './core/manager/manager-session-runtime';
+import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot, clearSlotsForSession } from './core/manager/manager-session-runtime';
 import { LeadSessionRegistry } from './core/manager/lead-session-registry';
 import { shouldEnsureLeadOnStartup } from './core/manager/lead-session-resolution';
 
@@ -2323,6 +2326,15 @@ class MafwScheduler {
       log.warn(`[Lead] archived metadata update failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
     }
     this.unregisterInternalSession(sessionId);
+    // stale slot 清理：归档后不得再被 findBySessionId/current 认领（不依赖 rotation 恰好写完新槽）。
+    try {
+      const rows = this.getGatewayDb().kvAll<unknown>('manager-session');
+      for (const row of clearSlotsForSession(rows, sessionId, this.runtimeName)) {
+        this.getGatewayDb().kvSet('manager-session', row.key, row.value);
+      }
+    } catch (err: any) {
+      log.warn(`[Lead] archived slot cleanup failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
+    }
   }
 
   private getPool(): SessionWorkerPool {
@@ -6321,6 +6333,14 @@ class MafwScheduler {
 
         // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — W1 计划审阅
         // （须在 dashboard /api/goals* 兜底之前）。
+        // 跨项目常驻存在感（tray/taskbar 的唯一数据源）。
+        if (req.url?.match(/^\/api\/presence(?:\?|$)/) && req.method === 'GET') {
+          const out = await handlePresence({ list: () => this.buildPresence() });
+          res.writeHead(out.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(out.body));
+          return;
+        }
+
         if (req.url?.match(/^\/api\/goals\/([^/]+)\/plan(?:\?|$)/) || req.url?.match(/^\/api\/goals\/([^/]+)\/plan-approval(?:\?|$)/)) {
           let body: any = {};
           if (req.method === 'POST') {
@@ -9265,6 +9285,29 @@ class MafwScheduler {
         else this.probeScopes.delete(sessionId);
       },
     };
+  }
+
+  /** 跨项目 presence：桌面 main 每 15s 拉一次，托盘/任务栏的唯一数据源。 */
+  private buildPresence(): PodPresence {
+    const inputs = [];
+    for (const pod of this.podStore?.listPods() ?? []) {
+      if (pod.status === 'archived') continue;
+      const views = this.podGoalService?.views(pod.id) ?? [];
+      const parent = parentProjectDirForWorktree(pod.projectDir);
+      inputs.push({
+        podId: pod.id,
+        projectId: pod.projectDir,
+        ...(parent ? { parentProjectId: parent } : {}),
+        projectName: pod.name || pod.projectDir,
+        goals: views,
+        tasks: (this.podStore?.listTasks(pod.id) ?? []).map((task) => ({
+          goalId: task.goalId ?? null,
+          status: task.status,
+        })),
+        attention: this.podGoalService?.attention(pod.id) ?? [],
+      });
+    }
+    return buildPodPresence(inputs);
   }
 
   private describePodGoal(goalId: string): PodGoalDescription | null {

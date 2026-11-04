@@ -23,8 +23,9 @@ describe('projectPodGoalStage', () => {
     expect(stage).toMatchObject({ owner: 'person', kind: 'plan_approval' });
     expect(projectPodAttention([{ goalId: 'g1', title: 'Fix Pod', stage }])).toEqual([
       {
-        id: 'g1:plan_approval',
+        id: 'g1:plan_approval:r1',
         goalId: 'g1',
+        revision: 1,
         kind: 'plan_approval',
         title: 'Fix Pod',
         action: { type: 'open_plan_review', goalId: 'g1' },

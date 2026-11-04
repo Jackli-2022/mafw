@@ -99,6 +99,8 @@ export interface PodGoalStageInput {
 export interface PodAttentionItem {
   id: string;
   goalId: string;
+  /** The revision this attention belongs to; ids are revision-scoped. */
+  revision: number;
   kind: 'plan_approval' | 'direction_review' | 'question' | 'blocked';
   title: string;
   action: PodGoalStageAction;
@@ -277,7 +279,7 @@ export function projectPodGoalStage(input: PodGoalStageInput): PodGoalStage {
 }
 
 export function projectPodAttention(
-  goals: Array<{ goalId: string; title: string; stage: PodGoalStage }>,
+  goals: Array<{ goalId: string; title: string; revision?: number; stage: PodGoalStage }>,
 ): PodAttentionItem[] {
   const out: PodAttentionItem[] = [];
   for (const goal of goals) {
@@ -285,9 +287,13 @@ export function projectPodAttention(
     if (stage.owner !== 'person') continue;
     if (!PERSON_ATTENTION_KINDS.has(stage.kind)) continue;
     if (!stage.action) continue;
+    const revision = goal.revision ?? 1;
     out.push({
-      id: `${goal.goalId}:${stage.kind}`,
+      // Revision-scoped: a rejected plan re-asks for approval in r2 and must
+      // not be deduped against r1's attention item.
+      id: `${goal.goalId}:${stage.kind}:r${revision}`,
       goalId: goal.goalId,
+      revision,
       kind: stage.kind as PodAttentionItem['kind'],
       title: goal.title,
       action: stage.action,

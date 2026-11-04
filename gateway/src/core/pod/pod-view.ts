@@ -213,6 +213,7 @@ export function buildPodAttention(views: PodGoalView[]): PodAttentionItem[] {
   return projectPodAttention(views.map((view) => ({
     goalId: view.goalId,
     title: view.title,
+    revision: view.revision,
     stage: view.stage,
   })));
 }
