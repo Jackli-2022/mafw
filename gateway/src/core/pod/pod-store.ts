@@ -186,6 +186,29 @@ export interface PodMessageDeliveryRow {
   nextRetryAt: string | null;
 }
 
+export interface PodEventRow {
+  id: string;
+  podId: string;
+  projectId: string;
+  goalId: string | null;
+  revision: number | null;
+  kind: string;
+  severity: string;
+  reason: string;
+  title: string;
+  summary: string | null;
+  refsJson: string | null;
+  dedupeKey: string;
+  audience: string;
+  state: 'unread' | 'seen';
+  wakeState: 'none' | 'pending' | 'delivered' | 'suppressed';
+  wakeAttempts: number;
+  wakeAt: string | null;
+  wakeSessionId: string | null;
+  createdAt: string;
+  seenAt: string | null;
+}
+
 export interface PodA2ALinkRow {
   id: string;
   podId: string;
@@ -554,6 +577,32 @@ export class PodStore {
         PRIMARY KEY (message_id, member_id)
       );
       CREATE INDEX IF NOT EXISTS idx_pod_deliveries_pod ON pod_message_deliveries(pod_id, status);
+
+      CREATE TABLE IF NOT EXISTS pod_events (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        goal_id TEXT,
+        revision INTEGER,
+        kind TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT,
+        refs_json TEXT,
+        dedupe_key TEXT NOT NULL,
+        audience TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'unread',
+        wake_state TEXT NOT NULL DEFAULT 'none',
+        wake_attempts INTEGER NOT NULL DEFAULT 0,
+        wake_at TEXT,
+        wake_session_id TEXT,
+        created_at TEXT NOT NULL,
+        seen_at TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_events_dedupe ON pod_events(pod_id, dedupe_key);
+      CREATE INDEX IF NOT EXISTS idx_pod_events_state ON pod_events(pod_id, state, created_at);
+      CREATE INDEX IF NOT EXISTS idx_pod_events_wake ON pod_events(pod_id, wake_state);
 
       CREATE TABLE IF NOT EXISTS pod_a2a_links (
         id TEXT PRIMARY KEY,
@@ -1374,6 +1423,132 @@ export class PodStore {
       'SELECT * FROM pod_messages WHERE pod_id = ? AND external_message_id = ?',
     ).get(podId, externalId) as any;
     return row ? messageFromRow(row) : null;
+  }
+
+  // —— pod events (attention layer) ——
+
+  private mapEvent(row: any): PodEventRow {
+    return {
+      id: row.id,
+      podId: row.pod_id,
+      projectId: row.project_id,
+      goalId: row.goal_id ?? null,
+      revision: row.revision ?? null,
+      kind: row.kind,
+      severity: row.severity,
+      reason: row.reason,
+      title: row.title,
+      summary: row.summary ?? null,
+      refsJson: row.refs_json ?? null,
+      dedupeKey: row.dedupe_key,
+      audience: row.audience,
+      state: row.state,
+      wakeState: row.wake_state,
+      wakeAttempts: row.wake_attempts ?? 0,
+      wakeAt: row.wake_at ?? null,
+      wakeSessionId: row.wake_session_id ?? null,
+      createdAt: row.created_at,
+      seenAt: row.seen_at ?? null,
+    };
+  }
+
+  /** Idempotent on (pod_id, dedupe_key): a repeat returns the existing row. */
+  insertEvent(input: {
+    id: string;
+    podId: string;
+    projectId: string;
+    goalId?: string | null;
+    revision?: number | null;
+    kind: string;
+    severity: string;
+    reason: string;
+    title: string;
+    summary?: string | null;
+    refsJson?: string | null;
+    dedupeKey: string;
+    audience: string;
+    wakeState?: string;
+    now: string;
+  }): PodEventRow {
+    this.db.prepare(`
+      INSERT INTO pod_events (
+        id, pod_id, project_id, goal_id, revision, kind, severity, reason,
+        title, summary, refs_json, dedupe_key, audience, wake_state, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(pod_id, dedupe_key) DO NOTHING
+    `).run(
+      input.id, input.podId, input.projectId, input.goalId ?? null, input.revision ?? null,
+      input.kind, input.severity, input.reason, input.title, input.summary ?? null,
+      input.refsJson ?? null, input.dedupeKey, input.audience, input.wakeState ?? 'none', input.now,
+    );
+    const row = this.db.prepare(
+      'SELECT * FROM pod_events WHERE pod_id = ? AND dedupe_key = ?',
+    ).get(input.podId, input.dedupeKey) as any;
+    return this.mapEvent(row);
+  }
+
+  listEvents(podId: string, opts?: { state?: 'unread'; limit?: number }): PodEventRow[] {
+    const limit = Math.max(1, Math.min(500, opts?.limit ?? 50));
+    if (opts?.state === 'unread') {
+      return (this.db.prepare(
+        'SELECT * FROM pod_events WHERE pod_id = ? AND state = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
+      ).all(podId, 'unread', limit) as any[]).map((r) => this.mapEvent(r));
+    }
+    return (this.db.prepare(
+      'SELECT * FROM pod_events WHERE pod_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
+    ).all(podId, limit) as any[]).map((r) => this.mapEvent(r));
+  }
+
+  getEvent(podId: string, id: string): PodEventRow | null {
+    const row = this.db.prepare('SELECT * FROM pod_events WHERE pod_id = ? AND id = ?').get(podId, id) as any;
+    return row ? this.mapEvent(row) : null;
+  }
+
+  markEventSeen(podId: string, id: string, now: string): boolean {
+    const info = this.db.prepare(
+      "UPDATE pod_events SET state = 'seen', seen_at = ? WHERE pod_id = ? AND id = ? AND state = 'unread'",
+    ).run(now, podId, id);
+    return info.changes > 0;
+  }
+
+  markEventsSeenForGoal(podId: string, goalId: string, revision: number, now: string): number {
+    const info = this.db.prepare(`
+      UPDATE pod_events SET state = 'seen', seen_at = ?
+      WHERE pod_id = ? AND goal_id = ? AND revision = ? AND state = 'unread'
+    `).run(now, podId, goalId, revision);
+    return info.changes;
+  }
+
+  countUnreadEvents(podId: string): number {
+    const row = this.db.prepare(
+      "SELECT COUNT(*) AS n FROM pod_events WHERE pod_id = ? AND state = 'unread'",
+    ).get(podId) as any;
+    return Number(row?.n ?? 0);
+  }
+
+  listPendingWakeEvents(podId?: string): PodEventRow[] {
+    const sql = podId
+      ? "SELECT * FROM pod_events WHERE pod_id = ? AND wake_state = 'pending' ORDER BY created_at ASC, rowid ASC"
+      : "SELECT * FROM pod_events WHERE wake_state = 'pending' ORDER BY created_at ASC, rowid ASC";
+    const rows = (podId ? this.db.prepare(sql).all(podId) : this.db.prepare(sql).all()) as any[];
+    return rows.map((r) => this.mapEvent(r));
+  }
+
+  updateEventWake(id: string, patch: {
+    wakeState?: 'none' | 'pending' | 'delivered' | 'suppressed';
+    wakeAttempts?: number;
+    wakeAt?: string | null;
+    wakeSessionId?: string | null;
+  }): void {
+    const sets: string[] = [];
+    const args: any[] = [];
+    if (patch.wakeState !== undefined) { sets.push('wake_state = ?'); args.push(patch.wakeState); }
+    if (patch.wakeAttempts !== undefined) { sets.push('wake_attempts = ?'); args.push(patch.wakeAttempts); }
+    if (patch.wakeAt !== undefined) { sets.push('wake_at = ?'); args.push(patch.wakeAt); }
+    if (patch.wakeSessionId !== undefined) { sets.push('wake_session_id = ?'); args.push(patch.wakeSessionId); }
+    if (!sets.length) return;
+    args.push(id);
+    this.db.prepare(`UPDATE pod_events SET ${sets.join(', ')} WHERE id = ?`).run(...args);
   }
 
   listPendingMessages(podId: string, memberId: string): PodMessageRow[] {
