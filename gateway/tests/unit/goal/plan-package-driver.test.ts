@@ -403,4 +403,24 @@ describe('reused Tech Lead session', () => {
     expect(h.calls.filter((c: any) => c.op === 'delete')).toHaveLength(0);
     expect(h.calls.find((c: any) => c.op === 'promptAsync').sessionID).toBe('ses_tech_lead');
   });
+
+  // 2026-11-04 冒烟实证：plan 节点复用讨论会话 + 结构化交卷（mafw_submit_result，
+  // 不写 waves.json 文件）时，唯一的完成 idle 被「陈旧讨论 idle」宽容吞掉，
+  // 节点卡在 running 直到 30 分钟 watchdog。完成 idle 必须先查结构化交卷。
+  it('completes a reused-session plan node from structured submission without a file artifact', async () => {
+    const doc = planDoc();
+    const h = makeHarness({ structured: async () => doc });
+    h.deps.existingNodeSession = (_goalId, node) => (node === 'plan' ? 'ses_tech_lead' : null);
+    seedGoal(h, 'g1', { patch: { planReview: 'manual' } });
+    await h.driver.advance('g1');
+
+    const wavesPath = nodeArtifactPaths(h.mafwDir, 'g1', 1).waves;
+    expect(fs.existsSync(wavesPath)).toBe(false); // 无文件产物，只有结构化交卷
+    await h.fireIdle('ses_tech_lead');
+
+    const st = h.load('g1')!;
+    expect(st.planApproval?.status).toBe('pending');
+    expect(st.nextAction).toBe('AWAIT_PLAN_APPROVAL');
+    expect(fs.existsSync(wavesPath)).toBe(true); // 交卷落盘，disk/hash/GET 同源
+  });
 });

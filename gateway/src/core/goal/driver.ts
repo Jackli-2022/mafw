@@ -640,11 +640,23 @@ export class NodeDriver {
       },
     });
 
+    // 2026-11-04：每个节点派发拥有自己的「一次宽容」——复用会话的下一个节点
+    // 不应继承上一个节点已用掉的 grace（否则第二个节点的首个 idle 会直接误判）。
+    this.reuseIdleGrace.delete(sessionId);
     this.listeners.set(sessionId, (ev, failure) => {
       if (ev === 'idle') {
         // 复用会话的 idle 竞态：讨论回合结束的 idle 可能晚于本节点的 prompt 到达。
         // 产物还没写（或还是上一版）时先宽容一次，第二次才按 artifact_missing 判定。
-        if (this.isStaleReuseIdle(mafwDir, goalId, sessionId)) return true;
+        if (this.isStaleReuseIdle(mafwDir, goalId, sessionId)) {
+          // Batch 1 结构化交卷（mafw_submit_result）没有文件产物：完成 idle 不能被
+          // 当成陈旧讨论 idle 吞掉——有交卷就立即按完成收账（2026-11-04 冒烟实证：
+          // plan 节点唯一 idle 被 grace 吞掉，卡到 30 分钟 watchdog）。
+          void (async () => {
+            const submitted = (await this.deps.client.structured?.(sessionId)) ?? null;
+            if (submitted) await this.completeNode(goalId, sessionId);
+          })();
+          return true;
+        }
         void this.completeNode(goalId, sessionId);
         return false;
       }
