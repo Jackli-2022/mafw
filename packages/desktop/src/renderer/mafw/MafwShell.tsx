@@ -556,6 +556,29 @@ export function MafwShell() {
       .catch(() => {})
   }
 
+  // Per-session session.config（agent/model/thinking）——会话菜单的状态源。
+  // SSE `session.config` 增量由 flow-cards 分支写入；打开会话时拉一次全量（fail-open）。
+  const [sessionConfigs, setSessionConfigs] = createStore<Record<string, any>>({})
+  createEffect(() => {
+    const sid = activeSessionId()
+    if (!sid) return
+    void window.api.mafw.sessions.config(sid)
+      .then((state: any) => setSessionConfigs(sid, state))
+      .catch(() => { /* fail-open：菜单的 Thinking 行按不支持处理 */ })
+  })
+  const thinkingLevelOf = (sid: string | null | undefined): any => (sid ? (sessionConfigs[sid]?.thinkingLevel ?? null) : null)
+  const thinkingSupportedOf = (sid: string | null | undefined): boolean => (sid ? sessionConfigs[sid]?.thinkingLevelSupported === true : false)
+  const applyThinking = (sid: string, level: any) => {
+    const prev = sessionConfigs[sid]
+    setSessionConfigs(sid, { ...(prev ?? {}), thinkingLevel: level })
+    window.api.mafw.sessions.setConfig(sid, { category: "thought_level", value: level } as any)
+      .then((state: any) => setSessionConfigs(sid, state))
+      .catch(() => {
+        setSessionConfigs(sid, prev as any)
+        showToastV2({ description: "切换思考档位失败", duration: 2000 } as any)
+      })
+  }
+
   // Shared destructive confirmation request (ConfirmOverlay) — replaces the
   // blocking window.confirm for in-shell actions.
   const [confirmReq, setConfirmReq] = createSignal<{ title: string; message?: string; confirmLabel?: string; onConfirm: () => void } | null>(null)
@@ -1159,6 +1182,7 @@ export function MafwShell() {
       resolveCard,
       setPermissionMode: (sid, mode) => setPermissionModes(sid, mode),
       setCompactionMark: (sid, mark) => setCompactionMarks(prev => ({ ...prev, [sid]: mark })),
+      onSessionConfig: (sid, config) => setSessionConfigs(sid, config as any),
       notify: notifyIfHidden,
       trace: traceEvent,
       scheduleReconcile: (delayMs) => { setTimeout(() => reconcileFlowCards(), delayMs) },

@@ -11,6 +11,8 @@ export interface FlowCardDeps {
   resolveCard(sid: string, id: string, resolution: { status: string; answers?: Record<string, string[]> }): void
   setPermissionMode(sid: string, mode: "read-only" | "auto" | "full-access"): void
   setCompactionMark(sid: string, mark: { at: number; summary?: string }): void
+  /** session.config 增量（会话菜单的 agent/model/thinking 状态源）。 */
+  onSessionConfig(sid: string, config: unknown, category: string): void
   notify(title: string, body: string): void
   trace(event: { type?: string }, channel: string): void
   /** auto 决策兜底 5s 后对账（原 setTimeout 语义，注入便于测试）。 */
@@ -94,6 +96,17 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
     const rawMode = event.properties?.mode
     const pmMode = rawMode === "auto" || rawMode === "full-access" ? rawMode : "read-only"
     if (pmSid) d.setPermissionMode(pmSid, pmMode)
+    return true
+  }
+  if (event.type === "session.config") {
+    // gateway 会话配置增量（agent/model/thinking）——会话菜单的 Thinking 行与徽标状态源。
+    // sid 优先 properties.sessionID（子会话分发时信封 sessionID 可能缺省）。
+    d.trace(event, "config:session")
+    const csid = event.properties?.sessionID || event.sessionID || sid
+    const config = event.properties?.config
+    if (csid && config) {
+      d.onSessionConfig(csid, config, String(event.properties?.category ?? ""))
+    }
     return true
   }
   if (event.type === "session.compacted") {

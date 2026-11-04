@@ -8,6 +8,7 @@ function makeDeps() {
   const flowCards: FlowCardDeps = {
     upsertCard: rec("upsertCard"), resolveCard: rec("resolveCard"),
     setPermissionMode: rec("setPermissionMode"), setCompactionMark: rec("setCompactionMark"),
+    onSessionConfig: rec("onSessionConfig"),
     notify: rec("notify"), trace: rec("trace"), scheduleReconcile: rec("scheduleReconcile"),
     agentTitleOf: () => "Agent",
     getAskCard: () => undefined,
@@ -34,6 +35,33 @@ describe("mapAskCard typed form", () => {
 })
 
 describe("handleFlowCardEvent", () => {
+  test("session.config → onSessionConfig(sid, config, category)", () => {
+    const { deps, calls } = makeDeps()
+    const consumed = handleFlowCardEvent({
+      type: "session.config",
+      sessionID: "s1",
+      properties: {
+        sessionID: "s1",
+        config: { mode: "read-only", thinkingLevel: "high", thinkingLevelSupported: true },
+        category: "thought_level",
+      },
+    }, "s1", deps)
+    expect(consumed).toBe(true)
+    const call = calls.find(c => c.name === "onSessionConfig")!
+    expect(call.args[0]).toBe("s1")
+    expect((call.args[1] as any).thinkingLevel).toBe("high")
+    expect(call.args[2]).toBe("thought_level")
+  })
+
+  test("session.config 优先 properties.sessionID（子会话分发健壮性）", () => {
+    const { deps, calls } = makeDeps()
+    handleFlowCardEvent({
+      type: "session.config",
+      properties: { sessionID: "s2", config: { mode: "auto" }, category: "mode" },
+    }, "s1", deps)
+    expect(calls.find(c => c.name === "onSessionConfig")!.args[0]).toBe("s2")
+  })
+
   test("question.asked → upsertCard(ask) + notify", () => {
     const { deps, calls } = makeDeps()
     const consumed = handleFlowCardEvent({ type: "question.asked", properties: { id: "q1", question: "哪个文件？" } }, "s1", deps)

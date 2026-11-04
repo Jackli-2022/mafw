@@ -108,7 +108,7 @@ export const IGNORED_AT_SHELL = [
   "memory_written", "memory_energy_changed", "memory_distillation_complete",
   "automation_triggered", "automation_completed",
   "mafw_commands_changed", "session.compacting", "usage.updated",
-  "session.config", "session.commands",
+  "session.commands",
 ] as const
 
 /** onmessage 尾部合法放行：else-if 链处理（分支不 return 落到尾部）的类型。 */
@@ -176,6 +176,8 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "permission.replied":
     case "session.compacted":
     case "permission_mode":
+    // ---- session config（flow-cards 消费 → 会话菜单 thinking 状态） ----
+    case "session.config":
     // ---- dock ----
     case "trajectory.event":
     case "trajectory.turn":
@@ -208,7 +210,6 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "mafw_commands_changed":
     case "session.compacting":
     case "usage.updated":
-    case "session.config":
     case "session.commands":
     case "task.updated":
     case "pod.updated":
