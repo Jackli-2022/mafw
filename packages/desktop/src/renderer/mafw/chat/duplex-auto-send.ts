@@ -7,6 +7,14 @@
 /** final 后的静默窗口：用户已经停顿约 1.2s（VAD 判停）才出 final，再等同等窗口即视为说完。 */
 export const VOICE_AUTO_SEND_DELAY_MS = 1200
 
+/**
+ * `voice.duplexAutoSend` 解析：只有显式 `false` 才关闭；缺失/非布尔 fail-open 默认开。
+ * ChatPane 在配置解析完成前以 false 起步（关闭启动竞态窗口），解析后经此函数落定。
+ */
+export function resolveDuplexAutoSend(configValue: unknown): boolean {
+  return configValue !== false
+}
+
 export interface DuplexAutoSendDeps {
   /** 静默窗口；缺省 VOICE_AUTO_SEND_DELAY_MS。 */
   delayMs?: number

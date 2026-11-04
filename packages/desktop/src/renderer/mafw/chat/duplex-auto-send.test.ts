@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   VOICE_AUTO_SEND_DELAY_MS,
   createDuplexAutoSendController,
+  resolveDuplexAutoSend,
   type DuplexAutoSendDeps,
 } from "./duplex-auto-send"
 
@@ -56,6 +57,16 @@ function makeDeps(overrides: Partial<DuplexAutoSendDeps> = {}) {
     armedChanges,
   }
 }
+
+describe("resolveDuplexAutoSend（配置解析）", () => {
+  test("只有显式 false 关闭；缺失/true/异常值 fail-open 默认开", () => {
+    expect(resolveDuplexAutoSend(false)).toBe(false)
+    expect(resolveDuplexAutoSend(undefined)).toBe(true)
+    expect(resolveDuplexAutoSend(null)).toBe(true)
+    expect(resolveDuplexAutoSend(true)).toBe(true)
+    expect(resolveDuplexAutoSend("false")).toBe(true) // 非布尔不猜
+  })
+})
 
 describe("createDuplexAutoSendController", () => {
   test("final → append + 计时（默认 1200ms）", () => {

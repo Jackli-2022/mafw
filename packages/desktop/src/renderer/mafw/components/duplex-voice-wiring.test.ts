@@ -62,14 +62,30 @@ describe("duplex voice auto-send wiring（Plan 2）", () => {
   test("ChatPane wires the auto-send controller with the config gate", () => {
     expect(chatPane).toContain("createDuplexAutoSendController")
     expect(chatPane).toContain("voice.duplexAutoSend")
-    expect(chatPane).toContain("onFinal: (text) => voiceAutoSend.handleFinal(text)")
+    // deferred minor：onFinal 经显式转接变量转发（控制器依赖 sendMessage，声明在下方）
+    expect(chatPane).toContain("relayFinalToAutoSend")
+    expect(chatPane).toContain("onFinal: (text) => relayFinalToAutoSend(text)")
+    // deferred minor：配置解析走纯函数 + signal（启动竞态：解析前不自动发送）
+    expect(chatPane).toContain("resolveDuplexAutoSend")
+    expect(chatPane).toContain("setDuplexAutoSendEnabled")
     expect(chatPane).toContain('sendMessage("send", { voiceOrigin: true })')
+    // deferred minor：自动发送后清字幕条 final
+    expect(chatPane).toContain("duplexVoice.clearFinal()")
   })
 
   test("partial / manual input / TTS playback cancel the pending auto-send", () => {
     expect(chatPane).toContain("voiceAutoSend.handlePartial()")
     expect(chatPane).toContain("voiceAutoSend.handleManualInput()")
     expect(chatPane).toMatch(/ttsSpeaking\(\)\) voiceAutoSend\.handleStop/)
+    // deferred minor：所有 composer 变异路径都取消挂起发送
+    const quote = chatPane.slice(chatPane.indexOf("const insertQuote = () =>"), chatPane.indexOf("const insertQuote = () =>") + 700)
+    expect(quote).toContain("voiceAutoSend.handleManualInput()")
+    const recall = chatPane.slice(chatPane.indexOf("history.up(input())"), chatPane.indexOf("history.up(input())") + 400)
+    expect(recall).toContain("voiceAutoSend.handleManualInput()")
+  })
+
+  test("TTS playback suppresses duplex transcript in the bar (deferred minor)", () => {
+    expect(chatPane).toContain("suppressTranscript: () => ttsSpeaking()")
   })
 
   test("stopping duplex shares one path that also stops TTS playback (D6)", () => {

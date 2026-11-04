@@ -382,6 +382,72 @@ describe("useDuplexVoice onFinal（Plan 2 D1：每 final 恰好一次）", () =>
   })
 })
 
+describe("useDuplexVoice transcript 抑制（TTS 播放期间，Plan 2 deferred minor）", () => {
+  test("suppressTranscript=true 时 partial/final 不进信号、不回调；解除后恢复", async () => {
+    let suppressed = true
+    const finals: string[] = []
+    const clients: FakeClient[] = []
+    const h = mount({
+      status: async () => ({ config: { duplexV1: true } }),
+      notify: () => {},
+      createAnalyzer: () => makeAnalyzer(),
+      createClient: (deps) => {
+        const client = makeClient(deps)
+        clients.push(client)
+        return client
+      },
+      onFinal: (text) => finals.push(text),
+      suppressTranscript: () => suppressed,
+    })
+
+    h.setReady(true)
+    await tick()
+    await h.ctrl.toggle()
+
+    clients[0].deps.onPartial("回声 partial")
+    clients[0].deps.onFinal("回声 final")
+    expect(h.ctrl.partial()).toBe("")
+    expect(h.ctrl.finalText()).toBe("")
+    expect(finals).toEqual([])
+
+    suppressed = false
+    clients[0].deps.onPartial("真实 partial")
+    expect(h.ctrl.partial()).toBe("真实 partial")
+
+    await h.ctrl.stop()
+    h.dispose()
+  })
+})
+
+describe("useDuplexVoice clearFinal（自动发送后清字幕）", () => {
+  test("clearFinal 清掉 finalText，保留 active 状态", async () => {
+    const clients: FakeClient[] = []
+    const h = mount({
+      status: async () => ({ config: { duplexV1: true } }),
+      notify: () => {},
+      createAnalyzer: () => makeAnalyzer(),
+      createClient: (deps) => {
+        const client = makeClient(deps)
+        clients.push(client)
+        return client
+      },
+    })
+
+    h.setReady(true)
+    await tick()
+    await h.ctrl.toggle()
+    clients[0].deps.onFinal("你好")
+    expect(h.ctrl.finalText()).toBe("你好")
+
+    h.ctrl.clearFinal()
+    expect(h.ctrl.finalText()).toBe("")
+    expect(h.ctrl.active()).toBe(true)
+
+    await h.ctrl.stop()
+    h.dispose()
+  })
+})
+
 // Keep the tap seam type-checked without a real AudioContext.
 export const __tapSeam: DuplexVoiceDeps["createTap"] = async (
   _input: MicInput,

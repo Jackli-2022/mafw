@@ -100,7 +100,7 @@ import { TranscriptSearchOverlay } from "./TranscriptSearchOverlay"
 import { CompressionDivider } from "./CompressionDivider"
 import { useVoiceBinding, extractVoiceReplies } from "../chat/use-voice-binding"
 import { useDuplexVoice } from "../chat/use-duplex-voice"
-import { createDuplexAutoSendController } from "../chat/duplex-auto-send"
+import { createDuplexAutoSendController, resolveDuplexAutoSend } from "../chat/duplex-auto-send"
 import { voiceMicAction } from "../chat/duplex-voice-mode"
 import { DuplexVoiceBar } from "./DuplexVoiceBar"
 import { workspace } from "../workspace/session-workspace"
@@ -767,9 +767,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // 双工 ASR（Task 8）：`voice.duplexV1` 开启时麦克风走持续 `/ws/voice` 上行，
   // 字幕显示在 composer 里；关闭时该 hook 完全静默（enabled() === false）。
-  // Plan 2 D1：非空 final 经 onFinal 恰好回调一次 → 自动发送控制器。
+  // Plan 2 D1：非空 final 经 onFinal 回调一次 → 自动发送控制器（依赖 sendMessage，
+  // 声明在下方，此处经显式转接变量转发，避免对后续 const 的前置引用）。
+  let relayFinalToAutoSend: (text: string) => void = () => {}
   const duplexVoice = useDuplexVoice(() => sidProp(), () => props.gwReady, {
-    onFinal: (text) => voiceAutoSend.handleFinal(text),
+    onFinal: (text) => relayFinalToAutoSend(text),
+    // TTS 播放期间（回声防线）：字幕也不显示 agent 自己的声音。
+    suppressTranscript: () => ttsSpeaking(),
   })
 
   // 麦克风唯一入口：toolbar 与窄屏「更多」菜单都调它，避免两处分支漂移。
@@ -903,6 +907,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const next = appendQuote(input(), block)
     setInput(next)
     setDraft(sidProp(), next)
+    // 手动编辑语音填入的文本：取消挂起的自动发送。
+    voiceAutoSend.handleManualInput()
     dismissQuote()
     window.getSelection()?.removeAllRanges()
     queueMicrotask(() => {
@@ -985,21 +991,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // ── Plan 2：duplex final → 输入栏 → 自动发送（语音来源标记随行）──
   const [voicePendingSend, setVoicePendingSend] = createSignal(false)
-  let duplexAutoSendEnabled = true
+  // 配置解析完成前以 false 起步（关闭启动竞态：final 早于 resolve 时只填输入栏，不误发）。
+  const [duplexAutoSendEnabled, setDuplexAutoSendEnabled] = createSignal(false)
   const voiceAutoSend = createDuplexAutoSendController({
-    autoSendEnabled: () => duplexAutoSendEnabled,
+    autoSendEnabled: () => duplexAutoSendEnabled(),
     // 回声防线输入：TTS 播放中的 ASR final 大概率是 agent 自己的声音。
     isSpeaking: () => ttsSpeaking(),
     appendFinal: (text) => setInput(prev => prev ? `${prev}\n${text}` : text),
-    send: () => { void sendMessage("send", { voiceOrigin: true }) },
+    send: () => { duplexVoice.clearFinal(); void sendMessage("send", { voiceOrigin: true }) },
     onArmedChange: setVoicePendingSend,
   })
+  // 控制器就绪后开始接收 final（此前到达的 final 已被抑制，不会误发）。
+  relayFinalToAutoSend = (text) => voiceAutoSend.handleFinal(text)
   // `voice.duplexAutoSend`（缺省 true；显式 false = 只填输入栏、手动发送）。读不到 fail-open。
   void (async () => {
+    let enabled = true
     try {
-      const cfg = await window.api.mafw.config.get("voice.duplexAutoSend")
-      duplexAutoSendEnabled = cfg !== false
+      enabled = resolveDuplexAutoSend(await window.api.mafw.config.get("voice.duplexAutoSend"))
     } catch { /* fail-open 默认开 */ }
+    setDuplexAutoSendEnabled(enabled)
   })()
   // 新 partial = 用户还在说：取消挂起的自动发送（文本保留，等下一段 final 续接）。
   createEffect(() => { if (duplexVoice.partial()) voiceAutoSend.handlePartial() })
@@ -2275,7 +2285,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               // IME 组合中不抢键（↑↓ 留给候选词导航）；picker 打开时已在上面的分支消费。
               else if (!e.isComposing && (history.browsing() || shouldNavigateHistory(e.key, e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length))) {
                 const next = e.key === "ArrowUp" ? history.up(input()) : history.down()
-                if (next !== null) { e.preventDefault(); setInput(next); queueMicrotask(() => { const ta = textareaEl(); if (ta) autoGrow(ta) }) }
+                if (next !== null) { e.preventDefault(); setInput(next); voiceAutoSend.handleManualInput(); queueMicrotask(() => { const ta = textareaEl(); if (ta) autoGrow(ta) }) }
                 else if (e.key === "ArrowUp" && shouldHintEmptyHistory(history.entries().length, emptyHistHinted)) {
                   // C2：空历史 ↑ 无反应易被当成坏了——每会话一次轻提示。
                   emptyHistHinted = true

@@ -41,6 +41,8 @@ export interface DuplexVoiceController {
   listening: () => boolean
   partial: () => string
   finalText: () => string
+  /** 自动发送后清掉字幕条的 final（状态保持：仍在收音）。 */
+  clearFinal: () => void
   error: () => string
   toggle: () => Promise<void>
   stop: () => Promise<void>
@@ -63,6 +65,11 @@ export interface DuplexVoiceDeps {
    * 调用方接线；generation guard 生效——stop/换代后的迟到 final 不回调）。
    */
   onFinal?: (text: string) => void
+  /**
+   * transcript 抑制（TTS 播放期间为 true）：partial/final 不进字幕、不回调——
+   * AEC 不完美时 agent 自己的声音不该出现在用户界面上（回声防线，deferred minor）。
+   */
+  suppressTranscript?: () => boolean
 }
 
 export function useDuplexVoice(
@@ -175,6 +182,8 @@ export function useDuplexVoice(
         createTap: makeTap,
         onPartial: (text) => {
           if (!guard.isCurrent(generation)) return
+          // TTS 播放期间（回声防线）：partial 不进字幕，避免 agent 自己的声音闪现。
+          if (overrides?.suppressTranscript?.()) return
           // The gateway opens the next stream with `asr.partial { text: "" }`.
           // That is not a new utterance: clearing here would wipe the final
           // subtitle the moment it arrives (real-desktop smoke, Plan 1).
@@ -185,6 +194,8 @@ export function useDuplexVoice(
         },
         onFinal: (text) => {
           if (!guard.isCurrent(generation)) return
+          // TTS 播放期间（回声防线）：final 整体丢弃——不进字幕、不回调。
+          if (overrides?.suppressTranscript?.()) return
           // 空白 final（VAD 误触发/无识别内容）不产生任何效果：不清字幕、不回调。
           if (!text || !text.trim()) return
           setPartial("")
@@ -286,6 +297,7 @@ export function useDuplexVoice(
     listening,
     partial,
     finalText,
+    clearFinal: () => setFinalText(""),
     error,
     toggle,
     stop,
