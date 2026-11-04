@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js"
 import type { QueueItem } from "@mafw/sdk"
+import { stripVoiceOriginMarker } from "./chat/voice-origin-marker"
 
 /** Gateway session queue snapshots, keyed by sessionID. */
 const [queueBySession, setQueueBySession] = createSignal<Record<string, QueueItem[]>>({})
@@ -51,13 +52,16 @@ export function replaceQueue(sessionID: string, items: QueueItem[]): void {
 }
 
 export function queueItemText(item: QueueItem, max = 80): string {
-  const raw = item.text?.trim()
+  const base = item.text?.trim()
     || (item.parts ?? [])
       .filter(p => p.type === "text")
       .map(p => String(p.text ?? "").trim())
       .filter(Boolean)
       .join(" ")
-    || ((item.parts?.length ?? 0) > 0 ? "(附件)" : "(空消息)")
+    || ""
+  // Plan 2 D3：忙时 steer/网关队列的 message 内联了 [语音输入] 标记，队列条不显示。
+  const stripped = base ? stripVoiceOriginMarker(base).trim() : ""
+  const raw = stripped || ((item.parts?.length ?? 0) > 0 ? "(附件)" : "(空消息)")
   if (raw.length <= max) return raw
   return raw.slice(0, Math.max(1, max - 1)) + "…"
 }

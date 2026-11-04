@@ -70,4 +70,11 @@ describe("queueItemText", () => {
     expect(queueItemText({ ...item("c", "2026-01-01T00:00:00Z"), text: undefined, parts: [{ type: "file" }] })).toBe("(附件)")
     expect(queueItemText(item("d", "2026-01-01T00:00:00Z", "x".repeat(120)), 10)).toBe("xxxxxxxxx…")
   })
+
+  test("剥离内联 [语音输入] 标记（Plan 2 D3：队列条不显示标记行）", () => {
+    const marked = `你好\n\n[语音输入] 本消息来自用户的实时语音转写。请用简短、口语化的中文回答。`
+    expect(queueItemText(item("v1", "2026-01-01T00:00:00Z", marked), 200)).toBe("你好")
+    // parts 兜底路径同样剥离
+    expect(queueItemText({ ...item("v2", "2026-01-01T00:00:00Z"), text: undefined, parts: [{ type: "text", text: marked }] }, 200)).toBe("你好")
+  })
 })

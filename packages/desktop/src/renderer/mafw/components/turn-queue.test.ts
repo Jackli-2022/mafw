@@ -34,4 +34,15 @@ describe("turn queue", () => {
     expect(removeTurnAt(q, 1).map(x => x.text)).toEqual(["a", "c"])
     expect(removeTurnAt(q, 99)).toEqual(q) // out of range is a no-op
   })
+
+  test("voiceOrigin flag 随队列项入队并经 takeFirstTurn 保留（Plan 2 D3 本地队列）", () => {
+    const voiceTurn: QueuedTurn = { text: "你好", atts: [], agents: [], voiceOrigin: true }
+    const q = enqueueTurn(enqueueTurn([], t("a")), voiceTurn)
+    const { first, rest } = takeFirstTurn(q)
+    expect(first?.text).toBe("a")
+    expect(first?.voiceOrigin).toBeUndefined()
+    const next = takeFirstTurn(rest)
+    expect(next.first?.voiceOrigin).toBe(true)
+    expect(next.first?.text).toBe("你好")
+  })
 })

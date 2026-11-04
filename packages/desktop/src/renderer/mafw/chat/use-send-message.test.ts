@@ -1,6 +1,27 @@
 import { describe, expect, test } from "bun:test"
-import { parseSlashShape, buildOptimisticParts, useSendMessage, decideBusyDelivery, steerDeliveryHint } from "./use-send-message"
+import { parseSlashShape, buildOptimisticParts, useSendMessage, decideBusyDelivery, steerDeliveryHint, composeVoiceOriginPart, busyQueuedText } from "./use-send-message"
+import { VOICE_ORIGIN_MARKER_TEXT, appendVoiceOriginMarker } from "./voice-origin-marker"
 import { createInputHistory } from "../components/input-history"
+
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+describe("composeVoiceOriginPart（Plan 2 D3：空闲路径 synthetic part）", () => {
+  test("synthetic text part，携带单行标记，id 可预测", () => {
+    const part = composeVoiceOriginPart(1700000000000)
+    expect(part).toMatchObject({ type: "text", synthetic: true })
+    expect(part.text).toBe(VOICE_ORIGIN_MARKER_TEXT)
+    expect(String(part.id)).toMatch(/^prt_voice_\d+$/)
+  })
+})
+
+describe("busyQueuedText（Plan 2 D3：忙时 steer/网关队列内联）", () => {
+  test("voiceOrigin=true 追加标记；false 原样；幂等", () => {
+    const marked = busyQueuedText("你好", true)
+    expect(marked).toBe(appendVoiceOriginMarker("你好"))
+    expect(busyQueuedText("你好", false)).toBe("你好")
+    expect(busyQueuedText(marked, true)).toBe(marked)
+  })
+})
 
 describe("steerDeliveryHint（Experience boundary）", () => {
   test("after-turn 与 tool 使用不同提示，不承诺打断", () => {
@@ -210,6 +231,89 @@ describe("sendMessage busy 排队路径", () => {
       const { sendMessage } = useSendMessage(f.deps)
       await sendMessage()
       expect(f.queued().length).toBe(1)
+    } finally { delete (globalThis as any).window }
+  })
+
+  // ── Plan 2 D3：voiceOrigin 标记在忙时/空闲/重放三路径的携带 ──
+
+  test("忙时 voiceOrigin → steer 消息内联标记", async () => {
+    const calls = mockPromptAsync()
+    try {
+      const f = baseDeps({ steerSupported: () => true })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage("send", { voiceOrigin: true })
+      expect(calls).toHaveLength(1)
+      expect(calls[0].delivery).toBe("steer")
+      expect(calls[0].message).toContain("[语音输入]")
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("忙时不支持 steer + voiceOrigin → 本地队列带 flag、文本干净", async () => {
+    const f = baseDeps({ steerSupported: () => false })
+    const { sendMessage } = useSendMessage(f.deps)
+    await sendMessage("send", { voiceOrigin: true })
+    expect(f.queued()).toHaveLength(1)
+    expect(f.queued()[0].voiceOrigin).toBe(true)
+    expect(f.queued()[0].text).toBe("排队的消息")
+  })
+
+  test("忙时非 voice → 队列项无 voiceOrigin flag（回归）", async () => {
+    const f = baseDeps({ steerSupported: () => false })
+    const { sendMessage } = useSendMessage(f.deps)
+    await sendMessage()
+    expect(f.queued()).toHaveLength(1)
+    expect(f.queued()[0].voiceOrigin).toBeUndefined()
+  })
+
+  test("空闲 voiceOrigin → sendEnriched parts 含 synthetic 标记 part，message 干净", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      const f = baseDeps({ sending: () => false, input: () => "你好" })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage("send", { voiceOrigin: true })
+      expect(sent).toHaveLength(1)
+      // 桌面侧：用户文本走 message 字段（gateway 会把它组装为首个 text part），
+      // parts 只携带 synthetic 标记——首个非 synthetic 展示规则由此保持气泡干净。
+      expect(sent[0].message).toBe("你好")
+      expect(sent[0].message).not.toContain("[语音输入]")
+      const parts = sent[0].parts ?? []
+      expect(parts).toHaveLength(1)
+      expect(parts[0]).toMatchObject({ type: "text", synthetic: true, text: VOICE_ORIGIN_MARKER_TEXT })
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("空闲非 voice → parts 无 synthetic 标记（回归）", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      const f = baseDeps({ sending: () => false, input: () => "你好" })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(sent).toHaveLength(1)
+      expect((sent[0].parts ?? []).some((p: any) => p.synthetic === true)).toBe(false)
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("flushQueue 重放 voiceOrigin 队列项 → 重新携带 synthetic 标记", async () => {
+    const sent: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { chat: { sendEnriched: async (req: any) => { sent.push(req); return { sessionID: "s_test_session" } } } } } }
+    try {
+      let queued: any[] = [{ text: "排队的消息", atts: [], agents: [], voiceOrigin: true }]
+      let currentInput = ""
+      const f = baseDeps({
+        sending: () => false,
+        input: () => currentInput,
+        setInput: (v: string) => { currentInput = v },
+        queuedItems: () => queued,
+        setQueuedItems: (fn: (prev: any[]) => any[]) => { queued = fn(queued) },
+      })
+      const { flushQueue } = useSendMessage(f.deps)
+      flushQueue()
+      await settle()
+      expect(sent).toHaveLength(1)
+      expect(sent[0].message).toBe("排队的消息")
+      expect((sent[0].parts ?? []).some((p: any) => p.synthetic === true && p.text.includes("[语音输入]"))).toBe(true)
     } finally { delete (globalThis as any).window }
   })
 })
