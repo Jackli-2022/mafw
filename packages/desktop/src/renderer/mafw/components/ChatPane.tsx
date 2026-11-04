@@ -761,6 +761,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     onSetUserMsgId: (s, id) => props.onSetUserMsgId(s, id),
     voiceRepliesForTurn: (userMsgId) => voiceRepliesForTurn(userMsgId),
     userMessages: () => userMessages(),
+    sending: () => sending(),
     onSpeakingIdle: () => setPreviewing(null),
   })
 

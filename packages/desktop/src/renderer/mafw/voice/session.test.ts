@@ -112,6 +112,28 @@ test("stopSpeaking from interrupted state returns to idle", async () => {
   vs.dispose()
 })
 
+test("artifact playback does not arm barge-in VAD (self-cut regression)", async () => {
+  const { vad, counters } = fakeVad()
+  let fakeAudio: any
+  const vs = createVoiceSession({
+    ...baseDeps(vad),
+    _makeAudio: () => {
+      fakeAudio = { src: "", paused: false, onended: null, onerror: null, play: () => Promise.resolve(), pause: () => { fakeAudio.paused = true } }
+      return fakeAudio
+    },
+  } as any)
+  const playing = vs.playUrl("http://gw:3000/a2a/artifacts/abc")
+  await new Promise((r) => setTimeout(r, 0))
+  // 播放自己的语音回复（HTMLAudio artifact）不得启动 barge-in 监听：否则外放自听会
+  // 立即 speech_started → bargeIn() → pause，用户只能听到前几秒被自己刹停。
+  expect(counters.starts).toBe(0)
+  fakeAudio.onended?.()
+  const result = await playing
+  expect(result.ok).toBe(true)
+  expect(vs.state).toBe("idle")
+  vs.dispose()
+})
+
 // ── 播放端背压：SSE 读流在缓冲超水位时暂停，降到低水位后恢复 ──
 // 背景：小米流式 TTS 实测 ~5x 实时速率，无背压时 30s 环形缓冲吃满后
 // worklet 静默丢帧 → 极速乱读。读流按水位暂停 = TCP/流队列蓄水，一帧不丢。

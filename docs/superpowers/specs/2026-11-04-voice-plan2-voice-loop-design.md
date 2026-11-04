@@ -49,6 +49,8 @@ Plan 1 只做实时字幕：final 停留在字幕条，不进输入栏，agent �
   - slash 命令与 Tech Lead 发送不标记（D7）。
 - **D4 语音回复**：完全复用既有 `mafw_media_speak` → `[语音回复 art:…]` → 自动播放 effect →
   `AudioReply` 卡。**不新增任何播放路径**（双播教训：自动行为只在既有 effect + 中央去重）。
+  **实时性门槛**：只有本面板正在跑的回合（`sending()`）才自动播放；进入会话加载的历史回复
+  永不自动出声。**artifact 播放不启动 barge-in VAD**（自听自切回归），流式 speak 的 barge-in 保留。
 - **D5 回声防线**：`ttsSpeaking`（VoiceSession speaking 态）期间，ASR final **丢弃**（不进输入栏、
   不计时）。AEC 已开但不可依赖（外放回声 → 自言自语环）。
 - **D6 停止 duplex 同时 `stopActivePlayback()`**：播放中点麦 = 全静音。

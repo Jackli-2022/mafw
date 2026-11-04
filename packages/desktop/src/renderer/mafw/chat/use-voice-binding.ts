@@ -49,6 +49,30 @@ export function cleanAssistantText(text: string): string {
   return text.replace(/\[语音回复\s+art:[^\]]+\]/g, "").trim()
 }
 
+/**
+ * 是否应为这条 [语音回复] 自动播放 artifact。
+ * 核心回归：**只有本面板正在跑的回合（sending===true）才自动出声**——进入会话
+ * 加载到的历史回复 sending 恒为 false，永不重播（此前仅靠 playedVoiceArtifacts
+ * 内存 Set + 60s hash，应用重启后第一次进入会话会把历史语音当新回复重播）。
+ * 不用消息时间戳比较：跨机 gateway 存在时钟偏差风险，sending 是纯客户端状态。
+ */
+export function shouldAutoPlayVoiceReply(
+  reply: { artifactId: string; hash?: string },
+  ctx: {
+    /** 本面板当前是否有回合在跑（ChatPane 的 sending 信号）。 */
+    sending: boolean
+    /** 已自动播放过的 artifact（页面生命周期内去重）。 */
+    played: Set<string>
+    /** 同文本是否已流式播放（VoiceSession 的 60s djb2 去重）。 */
+    hasRecentHash: (hex: string) => boolean
+  },
+): boolean {
+  if (!ctx.sending) return false
+  if (reply.hash && ctx.hasRecentHash(reply.hash)) return false
+  if (ctx.played.has(reply.artifactId)) return false
+  return true
+}
+
 // 已自动播放过的语音回复 artifact（防历史重载/重渲染重复播放）
 const playedVoiceArtifacts = new Set<string>()
 
@@ -62,6 +86,8 @@ export function useVoiceBinding(
     onSetUserMsgId: (sid: string, id: string) => void
     voiceRepliesForTurn: (userMsgId: string) => Array<{ artifactId: string; hash?: string }>
     userMessages: () => any[]
+    /** 本面板是否有回合在跑（自动播放只对实时回合生效，历史回复不重播）。 */
+    sending: () => boolean
     onSpeakingIdle: () => void
   },
 ) {
@@ -253,7 +279,9 @@ export function useVoiceBinding(
   }
 
   // mafw_media_speak 自动播放：回复文本出现新的 [语音回复 art:...] → 自动播 artifact。
-  // 去重：playedVoiceArtifacts（历史重载不重播）；标记 h 匹配"已流式播放"→ 跳过（防双播，
+  // 实时性门槛（shouldAutoPlayVoiceReply）：只有本面板正在跑的回合（sending）才播——
+  // 进入会话加载的历史回复永不自动出声（此前应用重启后会把历史语音当新回复重播）。
+  // 去重：playedVoiceArtifacts（页面生命周期）；标记 h 匹配"已流式播放"→ 跳过（防双播，
   // hash 由 VoiceSession.speakFromTool 记录，同 gateway media-speak djb2 实现）。
   createEffect(() => {
     const s = sid()
@@ -264,11 +292,17 @@ export function useVoiceBinding(
     const replies = deps.voiceRepliesForTurn(last.id)
     if (replies.length === 0) return
     for (const r of replies) {
-      if (r.hash && voiceSession.hasRecentSpeakHash(r.hash)) {
-        console.log("[voice] artifact skipped (already streamed):", r.artifactId)
+      const playable = shouldAutoPlayVoiceReply(r, {
+        sending: deps.sending(),
+        played: playedVoiceArtifacts,
+        hasRecentHash: (h) => voiceSession.hasRecentSpeakHash(h),
+      })
+      if (!playable) {
+        if (r.hash && voiceSession.hasRecentSpeakHash(r.hash)) {
+          console.log("[voice] artifact skipped (already streamed):", r.artifactId)
+        }
         continue
       }
-      if (playedVoiceArtifacts.has(r.artifactId)) continue
       playedVoiceArtifacts.add(r.artifactId)
       // URL 契约归 SDK（media.artifactUrl）；播放经 VoiceSession（互斥 + barge-in 一致）。
       void cachedArtifactUrl(r.artifactId).then(

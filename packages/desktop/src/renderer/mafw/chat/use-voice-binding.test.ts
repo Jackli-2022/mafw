@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { extractVoiceReplies, cleanAssistantText, markVoiceStatus } from "./use-voice-binding"
+import { extractVoiceReplies, cleanAssistantText, markVoiceStatus, shouldAutoPlayVoiceReply } from "./use-voice-binding"
 
 describe("extractVoiceReplies", () => {
   test("提取完整标记（artifactId/voice/hash）", () => {
@@ -46,5 +46,32 @@ describe("markVoiceStatus", () => {
     const messages = [{ id: "user-old" }, { id: "user-voice", voiceStatus: "analyzing" }]
     const next = markVoiceStatus(messages, "missing", "failed")
     expect(next).toEqual(messages)
+  })
+})
+
+describe("shouldAutoPlayVoiceReply（进入会话不重播历史语音）", () => {
+  const ctx = (over: Partial<{ sending: boolean; played: Set<string>; hasRecentHash: (h: string) => boolean }> = {}) => ({
+    sending: true,
+    played: new Set<string>(),
+    hasRecentHash: () => false,
+    ...over,
+  })
+
+  test("历史加载（sending=false）不自动播放——进入会话静默", () => {
+    expect(shouldAutoPlayVoiceReply({ artifactId: "a1" }, ctx({ sending: false }))).toBe(false)
+  })
+
+  test("本面板实时回合（sending=true）自动播放", () => {
+    expect(shouldAutoPlayVoiceReply({ artifactId: "a1" }, ctx())).toBe(true)
+  })
+
+  test("同文本已流式播放（60s hash）→ 跳过（防双播）", () => {
+    const c = ctx({ hasRecentHash: (h: string) => h === "deadbeef" })
+    expect(shouldAutoPlayVoiceReply({ artifactId: "a1", hash: "deadbeef" }, c)).toBe(false)
+    expect(shouldAutoPlayVoiceReply({ artifactId: "a1", hash: "cafebabe" }, c)).toBe(true)
+  })
+
+  test("已播放过的 artifact → 跳过", () => {
+    expect(shouldAutoPlayVoiceReply({ artifactId: "a1" }, ctx({ played: new Set(["a1"]) }))).toBe(false)
   })
 })

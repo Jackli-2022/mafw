@@ -12,6 +12,8 @@ export interface VoiceSessionDeps {
   defaultVoice: () => string
   /** 测试注入点；生产缺省 = createAudioWorkletPlayer */
   _makePlayer?: (ctx: AudioContext) => Promise<TtsPlayer>
+  /** artifact 播放（HTMLAudio）测试缝。 */
+  _makeAudio?: (url: string) => HTMLAudioElement
   /** 测试注入点；生产缺省 = 全局 fetch */
   fetchImpl?: typeof fetch
   /** 测试注入点；生产缺省 = 手势内新建 AudioContext（采样率 = 引擎声明） */
@@ -281,15 +283,18 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
   /**
    * 播放 artifact URL（HTMLAudio 短播放路径，[语音回复] 自动播放）。
    * 经 VoiceSession 以获得播放互斥 + barge-in 一致性。
+   * 注意：**不为 barge-in 启动 VAD**——artifact 是 agent 自己的语音回复，外放时
+   * VAD 会听到播放本身 → speech_started → bargeIn() 自己刹停自己（用户只能听到
+   * 前几秒）。流式 speak() 的 barge-in 监听不受影响。
    * resolve({ ok: false }) = 播放失败（调用方可回退为手动点击播放）。
    */
   function playUrl(url: string): Promise<{ ok: boolean }> {
     return new Promise((resolve) => {
       stopSpeaking("manual")
-      const audio = new Audio(url)
+      const makeAudio = deps._makeAudio ?? ((u: string) => new Audio(u))
+      const audio = makeAudio(url)
       activeAudio = audio
       setState("speaking")
-      void deps.vad.start().catch(() => {}) // barge-in 监听
       let settled = false
       const done = (ok: boolean) => {
         if (settled) return
