@@ -3934,6 +3934,8 @@ class MafwScheduler {
         if (!fn) throw new SessionConfigError(400, 'runtime does not support session thought_level; use model_config.variant');
         await fn({ sessionID: sid, level });
       },
+      // 活 runtime 探针（wrapper 恒存在，不能用 dep-presence；runtime 可热切换）。
+      supportsThinkingLevel: () => typeof this.runtime?.session.setThinkingLevel === 'function',
       emit: (sid, state, category) => {
         this.broadcast(mafwBroadcast({
           type: MAFW.sessionConfig,

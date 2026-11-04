@@ -58,6 +58,15 @@ describe('SessionConfigService', () => {
     expect((await svc.get('s1')).thinkingLevelSupported).toBe(false);
   });
 
+  it('supportsThinkingLevel dep overrides the dep-presence heuristic', async () => {
+    const { svc, deps } = make();
+    // 生产接线永远注入抛错 wrapper（index.ts），因此不能靠 dep 是否存在判断。
+    deps.supportsThinkingLevel = () => false;
+    expect((await svc.get('s1')).thinkingLevelSupported).toBe(false);
+    deps.supportsThinkingLevel = () => true;
+    expect((await svc.get('s1')).thinkingLevelSupported).toBe(true);
+  });
+
   it('rejects invalid category/values and unsupported thought level', async () => {
     const { svc, deps } = make();
     await expect(svc.set('s1', 'nope', 1)).rejects.toMatchObject({ status: 400 });

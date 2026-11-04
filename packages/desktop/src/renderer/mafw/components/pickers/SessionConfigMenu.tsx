@@ -32,9 +32,10 @@ export function SessionConfigMenu(props: SessionConfigMenuProps) {
 
   const currentAgent = () => {
     const name = (props.agentName ?? "").trim()
-    if (!name || name === "build") return "default"
-    if (name === "plan") return "plan"
-    return name
+    const key = name.toLowerCase()
+    if (!key || key === "build") return "default"
+    if (key === "plan") return "plan"
+    return key
   }
   const agentValue = () => {
     if (props.agentLocked) return props.agentName ?? "lead"

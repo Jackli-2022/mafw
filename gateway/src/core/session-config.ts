@@ -29,6 +29,9 @@ export interface SessionConfigDeps {
   switchAgent?(sessionID: string, agent: string): Promise<void>;
   switchModel?(sessionID: string, model: { providerID: string; modelID: string }, variant?: string): Promise<void>;
   setThinkingLevel?(sessionID: string, level: ThinkingLevel): Promise<void>;
+  /** 活 runtime 是否支持 thought_level。生产接线注入 wrapper 时也必须提供该探针
+   *  （wrapper 恒存在，dep-presence 无法反映 runtime 能力，2026-11-04 终审 Critical）。 */
+  supportsThinkingLevel?(): boolean;
   emit(sessionID: string, state: SessionConfigState, category: SessionConfigCategory): void;
 }
 
@@ -63,7 +66,9 @@ export class SessionConfigService {
       ...(model ? { model } : {}),
       ...(stored.variant ? { variant: stored.variant } : {}),
       ...(stored.thinkingLevel ? { thinkingLevel: stored.thinkingLevel } : {}),
-      thinkingLevelSupported: typeof this.deps.setThinkingLevel === 'function',
+      thinkingLevelSupported: this.deps.supportsThinkingLevel
+        ? this.deps.supportsThinkingLevel()
+        : typeof this.deps.setThinkingLevel === 'function',
     };
   }
 

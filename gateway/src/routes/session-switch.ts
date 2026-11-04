@@ -70,6 +70,30 @@ export async function applySessionSwitch(
   });
 }
 
+/** coordinator 身份门（双向）：pod 管理的会话不允许经裸 API 进入/离开 lead，
+ *  worker 身份（subagent 模式）也不该走 switch 路由。mafw-create 是工具壳身份，放行。
+ *  返回 null = 放行；否则为 HTTP 错误（调用方映射为 403）。 */
+export function checkAgentSwitchGate(
+  deps: Pick<SessionSwitchDeps, 'isCoordinationSession' | 'isRegistryIdentity'>,
+  sessionID: string,
+  agent: string,
+): { status: number; error: string } | null {
+  const target = resolveIdentityAlias(agent.trim());
+  if (!target) return null;
+  const bound = deps.isCoordinationSession?.(sessionID) ?? false;
+  const isCoordinator = target === 'lead';
+  if (bound && !isCoordinator) {
+    return { status: 403, error: 'coordinator sessions are managed by the pod' };
+  }
+  if (!bound && isCoordinator) {
+    return { status: 403, error: 'coordinator sessions are managed by the pod' };
+  }
+  if (!isCoordinator && target !== 'mafw-create' && deps.isRegistryIdentity?.(target)) {
+    return { status: 403, error: 'identity is managed by the pod' };
+  }
+  return null;
+}
+
 /**
  * POST /api/sessions/:id/agent {agent}
  * POST /api/sessions/:id/model {model:{providerID,modelID}, variant?}
@@ -104,23 +128,9 @@ export async function handleSessionSwitch(
   }
   try {
     if (kind === 'agent') {
-      // coordinator 身份门（双向）：pod 管理的会话不允许经裸 API 进入/离开 lead，
-      // worker 身份（subagent 模式）也不该走这个路由。mafw-create 是工具壳身份，放行。
       const agent = typeof body?.agent === 'string' ? body.agent.trim() : '';
-      if (agent) {
-        const target = resolveIdentityAlias(agent);
-        const bound = deps.isCoordinationSession?.(sessionID) ?? false;
-        const isCoordinator = target === 'lead';
-        if (bound && !isCoordinator) {
-          throw new SwitchError(403, 'coordinator sessions are managed by the pod');
-        }
-        if (!bound && isCoordinator) {
-          throw new SwitchError(403, 'coordinator sessions are managed by the pod');
-        }
-        if (!isCoordinator && target !== 'mafw-create' && deps.isRegistryIdentity?.(target)) {
-          throw new SwitchError(403, 'identity is managed by the pod');
-        }
-      }
+      const denied = agent ? checkAgentSwitchGate(deps, sessionID, agent) : null;
+      if (denied) throw new SwitchError(denied.status, denied.error);
     }
     await applySessionSwitch(client, sessionID, kind, body);
     json(200, { ok: true });

@@ -31,7 +31,7 @@ import type { DiscoveryService } from '../core/discovery/discovery-service';
 import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
 import { cleanupWorktreeForSession } from './session-worktree';
 import { handleSessionMutations } from './session-mutations';
-import { handleSessionSwitch } from './session-switch';
+import { handleSessionSwitch, checkAgentSwitchGate } from './session-switch';
 import { handleStructuredGet, handleStructuredSubmit } from './structured';
 import { structuredOutput } from '../runtime/structured-output';
 import type { TaskService } from '../runtime/task-service';
@@ -237,7 +237,13 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     await handleTaskOutput(res, params.id, parseTaskOutputQuery(u.searchParams), taskDeps());
   }));
 
-  const configDeps = () => ({ service: gw.sessionConfig ?? null });
+  const configDeps = () => ({
+    service: gw.sessionConfig ?? null,
+    checkAgentSwitch: (sid: string, agent: string) => checkAgentSwitchGate({
+      isCoordinationSession: (s) => gw.isCoordinationSession?.(s) ?? false,
+      isRegistryIdentity: (n) => gw.isRegistryIdentity?.(n) ?? false,
+    }, sid, agent),
+  });
   registry.attachHandler('session.config', H(async (_req, res, params) =>
     handleSessionConfigGet(res, params.id, configDeps())));
   registry.attachHandler('session.config.set', H(async (req, res, params) =>

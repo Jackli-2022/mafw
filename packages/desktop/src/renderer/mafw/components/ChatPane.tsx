@@ -18,7 +18,7 @@ import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
 import { SessionConfigMenu } from "./pickers/SessionConfigMenu"
-import { AGENT_SWITCH_OPTIONS, agentBadge, thinkingBadge } from "../session-config-menu-model"
+import { AGENT_SWITCH_OPTIONS, agentBadge, findAgentEntry, thinkingBadge } from "../session-config-menu-model"
 import { formatRailTitle } from "./rail-display"
 import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
@@ -1476,7 +1476,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       props.onPlanBuildToggle?.("default")
       return
     }
-    const entry = (props.primaryAgents() || []).find((a: any) => agentKey(a) === id) as AgentEntry | undefined
+    // findAgentEntry 大小写不敏感（view DTO 的 id 是 Build/Plan）。
+    const entry = findAgentEntry(props.primaryAgents() as AgentEntry[], id)
     if (!entry) return
     if (busy()) {
       setSwitchConfirm(entry)

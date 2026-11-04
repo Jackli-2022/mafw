@@ -38,6 +38,33 @@ describe('session config routes', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('agent category passes through the coordinator gate', async () => {
+    const service = fakeService();
+    const res = fakeRes();
+    const checkAgentSwitch = jest.fn(() => ({ status: 403, error: 'coordinator sessions are managed by the pod' }));
+    await handleSessionConfigSet(fakeReq({ category: 'agent', value: 'lead' }), res, 's1', { service, checkAgentSwitch });
+    expect(res.status).toBe(403);
+    expect(service.set).not.toHaveBeenCalled();
+
+    const ok = fakeRes();
+    const service2 = fakeService();
+    await handleSessionConfigSet(fakeReq({ category: 'agent', value: 'build' }), ok, 's1', {
+      service: service2,
+      checkAgentSwitch: () => null,
+    });
+    expect(ok.status).toBe(200);
+    expect(service2.set).toHaveBeenCalledWith('s1', 'agent', 'build');
+
+    // 非 agent 类别不过门
+    const other = fakeRes();
+    const service3 = fakeService();
+    await handleSessionConfigSet(fakeReq({ category: 'thought_level', value: 'high' }), other, 's1', {
+      service: service3,
+      checkAgentSwitch: () => ({ status: 403, error: 'should not run' }),
+    });
+    expect(other.status).toBe(200);
+  });
+
   it('missing category / missing service', async () => {
     const no = fakeRes();
     await handleSessionConfigSet(fakeReq({}), no, 's1', { service: fakeService() });

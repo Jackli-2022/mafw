@@ -3,6 +3,7 @@ import {
   AGENT_SWITCH_OPTIONS,
   THINKING_LEVELS,
   agentBadge,
+  findAgentEntry,
   thinkingBadge,
 } from "./session-config-menu-model"
 
@@ -24,6 +25,25 @@ describe("session config menu model", () => {
     expect(thinkingBadge(undefined)).toBeNull()
     expect(thinkingBadge("high")).toBe("⚡ high")
     expect(thinkingBadge("off")).toBe("⚡ off")
+  })
+
+  test("agentBadge 大小写不敏感（view DTO 的 id 是 Build/Plan）", () => {
+    expect(agentBadge("Build")).toBeNull()
+    expect(agentBadge("BUILD")).toBeNull()
+    expect(agentBadge("Plan")).toBe("plan")
+    expect(agentBadge("LEAD")).toBe("lead")
+    expect(agentBadge("Manager")).toBe("lead")
+    expect(agentBadge("MAFW-CREATE")).toBe("create")
+    expect(agentBadge("Custom")).toBe("Custom")
+  })
+
+  test("findAgentEntry: 菜单小写 id → 列表里的 Capitalized entry", () => {
+    const agents = [{ id: "Build", name: "Build" }, { id: "Plan", name: "Plan" }]
+    expect(findAgentEntry(agents, "build")?.id).toBe("Build")
+    expect(findAgentEntry(agents, "plan")?.id).toBe("Plan")
+    expect(findAgentEntry(agents, "PLAN")?.id).toBe("Plan")
+    expect(findAgentEntry(agents, "lead")).toBeUndefined()
+    expect(findAgentEntry([] as any[], "build")).toBeUndefined()
   })
 
   test("AGENT_SWITCH_OPTIONS 含默认/plan/build（鼠标可回默认）", () => {

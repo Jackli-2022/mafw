@@ -15,6 +15,8 @@ test("会话配置 pill + popover 接线（默认标签 = 模型名）", () => {
   assert.ok(pane.includes('setPickerOpen("session-config")'))
   assert.ok(pane.includes("agentBadge("))
   assert.ok(pane.includes("thinkingBadge("))
+  // 菜单 id（build/plan）→ entry 查找必须走大小写不敏感解析（view DTO id 是 Build/Plan）。
+  assert.ok(pane.includes("findAgentEntry("))
 })
 
 test("agent pill / plan-build pill / 命令与引用按钮移除；键盘能力保留", () => {
