@@ -110,6 +110,7 @@ import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
 import { buildMafwFileUrl } from "../../shared/mafw-file"
 import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
+import { captureWorkbenchFocusSnapshot, restoreWorkbenchFocusSnapshot, type WorkbenchFocusSnapshot } from "./workbench-focus"
 import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import { PopoverShell } from "./components/pickers/PopoverShell"
@@ -1769,6 +1770,7 @@ export function MafwShell() {
   const [rightDockOpen, setRightDockOpen] = createSignal(defaultDockOpen(localStorage.getItem("mafw-right-dock-open")))
   // Focus 是会话级瞬态：不持久化，项目切换时退出（spec 2026-11-04 §4.2）。
   const [workbenchFocus, setWorkbenchFocus] = createSignal(false)
+  let workbenchFocusSnapshot: WorkbenchFocusSnapshot | null = null
   const bootWorkbench = migrateWorkbenchStorage((k) => {
     try { return localStorage.getItem(k) } catch { return null }
   })
@@ -1841,16 +1843,20 @@ export function MafwShell() {
   const chatActive = () => activeTab() === "chat" && !showConfig() && !welcomeFull()
   const workbenchContent = (): WorkbenchContentMode => (showConfig() ? "config" : "project")
   const chatSplit = () => workbenchSplit({ content: workbenchContent(), open: rightDockOpen() })
+  const focusActive = () => workbenchFocusActive({ focus: workbenchFocus(), content: workbenchContent(), open: rightDockOpen() })
   const bodyColumns = () =>
     workbenchColumns({
       leftPx: leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : 0,
       chatPx: chatPx(),
       split: chatSplit(),
-      focus: workbenchFocusActive({ focus: workbenchFocus(), content: workbenchContent(), open: rightDockOpen() }),
+      focus: focusActive(),
     })
 
   const applyRightDock = (open: boolean) => {
-    if (!open) setWorkbenchFocus(false)
+    if (!open) {
+      setWorkbenchFocus(false)
+      workbenchFocusSnapshot = null
+    }
     setRightDockOpen(open)
     try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch { /* ignore */ }
   }
@@ -1863,6 +1869,43 @@ export function MafwShell() {
     setWorkbenchSurface(surface)
     applyWorkbenchView("workbench")
     try { localStorage.setItem("mafw-workbench-surface", surface) } catch { /* ignore */ }
+  }
+
+  const applyWorkbenchSnapshot = (snapshot: WorkbenchFocusSnapshot) => {
+    setDetent(snapshot.detent)
+    setChatPreview(null)
+    setWorkbenchView(snapshot.view)
+    setWorkbenchSurface(snapshot.surface)
+    setExecutionSection(snapshot.executionSection)
+    try {
+      localStorage.setItem("mafw-workbench-detent", String(snapshot.detent))
+      localStorage.setItem("mafw-workbench-view", snapshot.view)
+      localStorage.setItem("mafw-workbench-surface", snapshot.surface)
+      localStorage.setItem("mafw-execution-section", snapshot.executionSection)
+    } catch { /* ignore */ }
+  }
+
+  const toggleWorkbenchFocus = () => {
+    if (workbenchFocus()) {
+      setWorkbenchFocus(false)
+      const restored = restoreWorkbenchFocusSnapshot(workbenchFocusSnapshot, {
+        detent: detent(),
+        view: workbenchView(),
+        surface: workbenchSurface(),
+        executionSection: executionSection(),
+      })
+      applyWorkbenchSnapshot(restored)
+      workbenchFocusSnapshot = null
+      return
+    }
+    workbenchFocusSnapshot = captureWorkbenchFocusSnapshot({
+      detent: detent(),
+      view: workbenchView(),
+      surface: workbenchSurface(),
+      executionSection: executionSection(),
+    })
+    if (!rightDockOpen()) applyRightDock(true)
+    setWorkbenchFocus(true)
   }
 
   // Task 8/9：插件面板与配置页 tab 由 committed descriptors 投影，Desktop 只消费数据。
@@ -2247,7 +2290,10 @@ export function MafwShell() {
   // open()/refresh() 会同步读 detail()/refreshing()/projectDir()，裸 effect 会把
   // 这些 signal 变成依赖 → 自触发无限刷新（pod listMessages / cost 打屏）。
   createEffect(on(() => benchRoot() ?? currentProject(), (dir, previous) => {
-    if (previous !== undefined && dir !== previous) setWorkbenchFocus(false)
+    if (previous !== undefined && dir !== previous) {
+      setWorkbenchFocus(false)
+      workbenchFocusSnapshot = null
+    }
     if (dir) void podStore.open(dir)
   }))
   createEffect(on(() => connPhaseLabel(), (phase, previous) => {
@@ -2292,8 +2338,7 @@ export function MafwShell() {
       const el = e.target as HTMLElement | null
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return
       e.preventDefault()
-      if (!rightDockOpen()) applyRightDock(true)
-      setWorkbenchFocus((focus) => !focus)
+      toggleWorkbenchFocus()
     }
     window.addEventListener("keydown", onKey)
     onCleanup(() => window.removeEventListener("keydown", onKey))
@@ -2797,7 +2842,7 @@ export function MafwShell() {
               <AutomationsPage />
             ) : null}
           </div>
-          <Show when={chatSplit()}>
+          <Show when={chatSplit() && !focusActive()}>
             <div
               class="mafw-chat-resize-wrap"
               onDblClick={() => applyDetent(WORKBENCH_DEFAULT_DETENT)}
@@ -2835,7 +2880,7 @@ export function MafwShell() {
                   surface={workbenchSurface()}
                   executionSection={executionSection()}
                   focus={workbenchFocus()}
-                  onToggleFocus={() => setWorkbenchFocus((v) => !v)}
+                  onToggleFocus={toggleWorkbenchFocus}
                   onView={applyWorkbenchView}
                   onSurface={applyWorkbenchSurface}
                   onExecutionSection={applyExecutionSection}
