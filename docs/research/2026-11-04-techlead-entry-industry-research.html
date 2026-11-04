@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tech Lead 入口调研 · Pod 协作循环</title>
+<style>
+:root {
+  --bg: #131211;
+  --surface: #1c1a18;
+  --surface-2: #242019;
+  --inset: #171512;
+  --border: rgba(236,231,224,0.10);
+  --border-strong: rgba(236,231,224,0.18);
+  --text-1: #ece7e0;
+  --text-2: #b8b0a4;
+  --text-3: #8a8276;
+  --accent: #4fd388;
+  --accent-soft: rgba(79,211,136,0.12);
+  --accent-border: rgba(79,211,136,0.38);
+  --warn: #e8b45a;
+  --warn-soft: rgba(232,180,90,0.12);
+  --danger: #e07a5f;
+  --danger-soft: rgba(224,122,95,0.12);
+  --info: #7aa5e8;
+  --info-soft: rgba(122,165,232,0.12);
+  --font-ui: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  --font-data: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0908; color: var(--text-1); font-family: var(--font-ui); overflow: hidden; }
+.slide-deck { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+@media (min-width: 769px) {
+  .slide-deck { max-width: calc(100vh * 16 / 9); max-height: calc(100vw * 9 / 16); margin: auto; position: absolute; inset: 0; }
+}
+.slide {
+  position: absolute; width: 100%; height: 100%;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 52px 72px; opacity: 0; visibility: hidden;
+  transition: opacity 0.35s; background: var(--bg); overflow: hidden;
+}
+.slide.active { opacity: 1; visibility: visible; }
+.slide-content { width: 100%; max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+
+/* ── 编辑台式排版 ─────────────────────────────── */
+.kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.slide-title { font-size: clamp(26px, 3.6vw, 44px); font-weight: 700; line-height: 1.18; letter-spacing: -0.015em; }
+.slide-title em { font-style: normal; color: var(--accent); }
+.sub { font-size: clamp(13px, 1.35vw, 16px); color: var(--text-2); line-height: 1.65; max-width: 900px; }
+.foot { position: absolute; bottom: 26px; left: 72px; right: 72px; display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); font-family: var(--font-data); }
+
+/* ── 组件 ─────────────────────────────────────── */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+.card h3 { font-size: 14.5px; font-weight: 650; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.card p, .card li { font-size: 13px; color: var(--text-2); line-height: 1.7; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.dot.ok { background: var(--accent); }
+.dot.warn { background: var(--warn); }
+.dot.bad { background: var(--danger); }
+.dot.info { background: var(--info); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--inset); color: var(--text-3); font-family: var(--font-data); font-size: 10.5px; white-space: nowrap; }
+.chip.acc { border-color: var(--accent-border); background: var(--accent-soft); color: var(--accent); }
+.chip.bad { border-color: rgba(224,122,95,0.4); background: var(--danger-soft); color: var(--danger); }
+.chip.warn { border-color: rgba(232,180,90,0.4); background: var(--warn-soft); color: var(--warn); }
+.code { font-family: var(--font-data); font-size: 11px; color: var(--text-3); background: var(--inset); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; }
+.quote { border-left: 3px solid var(--accent-border); padding: 10px 16px; background: var(--accent-soft); border-radius: 0 10px 10px 0; font-size: 13.5px; color: var(--text-1); line-height: 1.7; }
+.quote .who { display: block; margin-top: 6px; font-size: 11px; color: var(--text-3); }
+.arrow { color: var(--text-3); font-size: 16px; flex: 0 0 auto; }
+
+/* ── 表格 ─────────────────────────────────────── */
+table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl th { text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); font-weight: 600; padding: 8px 12px; border-bottom: 1px solid var(--border-strong); }
+.tbl td { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text-2); line-height: 1.5; vertical-align: top; }
+.tbl td:first-child { color: var(--text-1); font-weight: 550; }
+.tbl tr:last-child td { border-bottom: none; }
+.st { font-family: var(--font-data); font-size: 11px; white-space: nowrap; }
+.st.ok { color: var(--accent); }
+.st.warn { color: var(--warn); }
+.st.bad { color: var(--danger); }
+.st.no { color: var(--text-3); }
+
+/* ── 旅程图 ───────────────────────────────────── */
+.journey { display: flex; align-items: stretch; gap: 10px; }
+.jstep { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; display: flex; flex-direction: column; gap: 7px; }
+.jstep .n { font-family: var(--font-data); font-size: 10px; color: var(--text-3); }
+.jstep .t { font-size: 12.5px; font-weight: 600; line-height: 1.45; }
+.jstep p { font-size: 11.5px; color: var(--text-3); line-height: 1.55; }
+.jstep.gone { border-color: rgba(224,122,95,0.45); background: var(--danger-soft); }
+.jstep.gone .t { color: var(--danger); }
+
+/* ── 线框 ─────────────────────────────────────── */
+.wire { background: var(--inset); border: 1px solid var(--border-strong); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.wire .wbar { display: flex; align-items: center; gap: 8px; }
+.wire .wtitle { font-size: 12.5px; font-weight: 650; }
+.wbubble { align-self: flex-start; max-width: 86%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 11.5px; color: var(--text-2); line-height: 1.55; }
+.wbubble.user { align-self: flex-end; border-color: var(--border-strong); }
+.winvite { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--accent-border); background: var(--accent-soft); border-radius: 10px; padding: 8px 12px; }
+.winvite .lbl { font-size: 11.5px; color: var(--text-1); }
+.wbtn { font-size: 11px; font-weight: 650; color: #0d150f; background: var(--accent); border-radius: 7px; padding: 5px 12px; white-space: nowrap; }
+.wbtn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent-border); }
+.wcomposer { border: 1px solid var(--border-strong); border-radius: 10px; padding: 8px 12px; font-size: 11px; color: var(--text-3); }
+.wmeta { display: flex; gap: 6px; flex-wrap: wrap; }
+.wanno { font-size: 10.5px; color: var(--accent); font-family: var(--font-data); }
+.wanno.bad { color: var(--danger); }
+
+/* ── 导航 ─────────────────────────────────────── */
+.progress-bar { position: fixed; top: 0; left: 0; height: 3px; background: var(--accent); transition: width 0.3s; z-index: 1000; }
+.nav-controls { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 18px; z-index: 1000; }
+.nav-btn { background: rgba(236,231,224,0.08); border: none; color: var(--text-1); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 16px; }
+.nav-btn:hover { background: rgba(236,231,224,0.18); }
+.slide-counter { color: var(--text-3); font-size: 12px; font-family: var(--font-data); }
+@media (max-width: 768px) {
+  .slide { padding: 28px 20px; }
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  .journey { flex-direction: column; }
+  .foot { left: 20px; right: 20px; }
+}
+</style>
+</head>
+<body>
+<div class="progress-bar" id="progressBar"></div>
+<div class="slide-deck">
+
+<!-- 1 · 封面 -->
+<div class="slide active">
+  <div class="slide-content" style="gap:26px">
+    <div class="kicker">POD 协作循环 · 调研视觉伴侣 · 2026-11-04</div>
+    <h1 class="slide-title">Lead 建完 Goal 之后，<br>用户该从哪走进 <em>Tech Lead 讨论</em>？</h1>
+    <p class="sub">现状盘点（对照 spec 验收）· 断链定位（代码证据）· 业界做法（Devin / Claude Code / Cursor / AutoGen / Windsurf）· 推荐方案（含你给的设计方向）</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <span class="chip acc">spec 2026-11-02-pod-collaborative-goal-loop</span>
+      <span class="chip">gateway e2e ✅</span>
+      <span class="chip warn">GUI 入口 #2 ⚠️</span>
+    </div>
+  </div>
+  <div class="foot"><span>MAFW · 桌面端</span><span>docs/research/2026-11-04-techlead-entry-industry-research.html</span></div>
+</div>
+
+<!-- 2 · Pod 进度 -->
+<div class="slide">
+  <div class="slide-content" style="gap:16px">
+    <div class="kicker">进度盘点 · 对照 spec §15 十三条验收</div>
+    <h2 class="slide-title">循环引擎已经闭环，断链只在<em>入口体验</em>一处</h2>
+    <table class="tbl">
+      <tr><th style="width:26%">验收组</th><th>覆盖内容</th><th style="width:13%">状态</th><th style="width:24%">证据</th></tr>
+      <tr><td>循环引擎 e2e</td><td>直接建 Goal → Tech Lead → Spike → Plan/Eval → 批准 → 实施 → 评审 → 结果 → 打回 → revision 2</td><td class="st ok">✅ 通过</td><td>pod-collaboration-loop.test.ts（真实服务 + 真实 NodeDriver）</td></tr>
+      <tr><td>隔离与安全</td><td>Goal 间讨论互不可见 · ContextManifest 清单+sha256 · 打回不重写旧证据</td><td class="st ok">✅ 通过</td><td>同一 e2e + pod-collaboration-routes.test.ts</td></tr>
+      <tr><td>恢复与迁移</td><td>会话失效自动重建 · 重启状态恢复 · 旧三角色 Pod 补 Tech Lead · legacy goal 打回从 rev2 起</td><td class="st ok">✅ 通过</td><td>e2e 迁移 2 场景</td></tr>
+      <tr><td>入口体验</td><td>验收 #2「用户点击进入该 Goal 的 Tech Lead 页面，自动加载正确 Goal，无 Session 选择」</td><td class="st warn">⚠️ 断链</td><td>GUI：仅 discussing 一瞬可见（本页起： slides 3–4）</td></tr>
+    </table>
+    <p class="sub" style="font-size:12px">GUI 冒烟（2026-11-03）已验证：Lead 直接建 Goal、聊天页入口、方向裁定、进入 planning；真实 Plan/Eval 批准、Spike、Reviewer PASS、结果打回由集成测试覆盖。</p>
+  </div>
+  <div class="foot"><span>Pod 进度</span><span>02 / 11</span></div>
+</div>
+
+<!-- 3 · 用户旅程断链 -->
+<div class="slide">
+  <div class="slide-content" style="gap:16px">
+    <div class="kicker">问题 · 你实际遇到的那条路</div>
+    <h2 class="slide-title">入口只在 <em>discussing 一瞬</em>存在</h2>
+    <div class="journey">
+      <div class="jstep"><span class="n">01</span><span class="t">用户向 Lead 说要做 X</span><p>Lead 聊天页，正常对话</p></div>
+      <div class="arrow">→</div>
+      <div class="jstep"><span class="n">02</span><span class="t">Lead：已建 Goal「X」</span><p>direct Goal，revision 1 = discussing</p></div>
+      <div class="arrow">→</div>
+      <div class="jstep"><span class="n">03</span><span class="t">方向明确 → planning</span><p>markClear 直接推到 planning / plan_review</p></div>
+      <div class="arrow">→</div>
+      <div class="jstep gone"><span class="n">04</span><span class="t">邀请条消失</span><p>techLeadInvite 只认 stage.kind === "discussing"</p></div>
+      <div class="arrow">→</div>
+      <div class="jstep gone"><span class="n">05</span><span class="t">用户：入口呢？</span><p>换 tab / 重启 / 隔天回来 → 无路可走</p></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <span class="chip">pod-store.ts:29 techLeadInvite()</span>
+      <span class="chip">仅 stage.kind==="discussing" && role==="tech_lead"</span>
+      <span class="chip bad">非 discussing 阶段一律不提示</span>
+    </div>
+  </div>
+  <div class="foot"><span>断链定位</span><span>03 / 11</span></div>
+</div>
+
+<!-- 4 · 现状三条路径 -->
+<div class="slide">
+  <div class="slide-content" style="gap:16px">
+    <div class="kicker">现状 · 与 Tech Lead 对话的全部路径</div>
+    <h2 class="slide-title">三条路，都到不了<em>「这个 Goal」</em></h2>
+    <div class="grid-3">
+      <div class="card">
+        <h3><span class="dot warn"></span>① Lead chat 邀请条</h3>
+        <ul style="padding-left:16px">
+          <li>仅在 Goal 处于 <span class="code">discussing</span> 时渲染</li>
+          <li>且要求当前 tab 就是 Lead 会话</li>
+          <li>阶段一推进就永久消失</li>
+        </ul>
+        <p style="margin-top:8px"><span class="code">PodTechLeadInvite.tsx</span></p>
+      </div>
+      <div class="card">
+        <h3><span class="dot warn"></span>② 资源页「班底」行</h3>
+        <ul style="padding-left:16px">
+          <li>打开该成员<b>最新 live 会话</b>，不按 Goal 区分</li>
+          <li>可能是另一个 Goal，或 plan 节点会话</li>
+          <li>节点会话被发送门拦截（只读）</li>
+        </ul>
+        <p style="margin-top:8px"><span class="code">pod-model.ts:159 memberOpenTarget()</span></p>
+      </div>
+      <div class="card">
+        <h3><span class="dot info"></span>③ 打回后自动打开</h3>
+        <ul style="padding-left:16px">
+          <li>唯一「按 Goal 精确打开」的路径</li>
+          <li>但只在打回成功那一次触发</li>
+          <li>日常找不到回来路</li>
+        </ul>
+        <p style="margin-top:8px"><span class="code">requestPodTechLeadOpen(goalId, rev)</span></p>
+      </div>
+    </div>
+    <div class="quote" style="border-left-color:rgba(224,122,95,0.5);background:var(--danger-soft)">
+      GoalDetailOverlay 头部没有任何 Tech Lead 按钮 —— 从工作概览点进 Goal 卡片，只能看到状态/计划/方向/结果，看不到「和 Tech Lead 讨论」。
+    </div>
+  </div>
+  <div class="foot"><span>断链定位</span><span>04 / 11</span></div>
+</div>
+
+<!-- 5 · Devin -->
+<div class="slide">
+  <div class="slide-content" style="gap:16px">
+    <div class="kicker">业界样本 · 一</div>
+    <h2 class="slide-title">Devin：<em>每一步都应一键可达</em></h2>
+    <div class="quote">
+      “With Devin 2.2, we rebuilt every screen of the UI around a simple idea: <b>each step of the dev lifecycle should always be one click away.</b>”
+      <span class="who">— Cognition, 2026-02 · Devin 2.2 发布</span>
+    </div>
+    <div class="grid-3">
+      <div class="card">
+        <h3><span class="dot ok"></span>Progress Tab</h3>
+        <p>会话内任务列表做成 live drawer；<b>点击任务 → Activity 流过滤到该任务的工作</b>。任务为中心导航，2026-10 上线。</p>
+      </div>
+      <div class="card">
+        <h3><span class="dot ok"></span>Spaces（Windsurf 2.0）</h3>
+        <p>按任务聚合 agent 会话 / PR / 文件 / 上下文。“<b>切换 Space 就是切换任务</b>”，每个任务里有一队 agent 在干活。</p>
+      </div>
+      <div class="card">
+        <h3><span class="dot ok"></span>Agent Command Center</h3>
+        <p>全部 local + cloud agent 按状态的 Kanban：“工程师的工作从写码<b>变成指挥</b>——要看到谁在做什么、什么被阻塞、什么待审。”</p>
+      </div>
+    </div>
+    <p class="sub">→ 对 MAFW 的映射：<b>Goal 就是任务对象</b>。讨论是 Goal 生命周期的一步，入口应挂在 Goal 上，一步可达。</p>
+  </div>
+  <div class="foot"><span>业界 · Devin / Cognition</span><span>05 / 11</span></div>
+</div>
+
+<!-- 6 · Claude Code -->
+<div class="slide">
+  <div class="slide-content" style="gap:16px">
+    <div class="kicker">业界样本 · 二</div>
+    <h2 class="slide-title">Claude Code Agent View：<em>roster + peek + 行内作答</em></h2>
+    <div class="card" style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;gap:10px;align-items:center"><span class="dot warn"></span><span style="font-size:12.5px"><b>waiting on you</b> · 最后一回合摘要 · 最近交互时间</span><span class="chip warn">行内作答，会话继续</span></div>
+      <div style="display:flex;gap:10px;align-items:center"><span class="dot ok"></span><span style="font-size:12.5px"><b>working</b> · 进行中的会话 · peek 最后一回合</span><span class="chip">Enter 进入完整 transcript</span></div>
+      <div style="display:flex;gap:10px;align-items:center"><span class="dot info"></span><span style="font-size:12.5px"><b>done</b> · 完成的后台 subagent</span><span class="chip">detail 停留可回看</span></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3><span class="dot ok"></span>关键设计（2026-05）</h3>
+        <ul style="padding-left:16px">
+          <li>每行三态：<b>等你 / 在跑 / 完成</b>，一眼分流注意力</li>
+          <li>peek 最后一回合，<b>不用离开列表</b>就能回话</li>
+          <li>prompt 下方行级 subagent 面板，完成后 detail 不关</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot info"></span>对 MAFW 的映射</h3>
+        <ul style="padding-left:16px">
+          <li>班底（roster）行 = 这个模式，但按 <b>session</b> 组织，不按 Goal</li>
+          <li>点击 Tech Lead 行应把用户带到<b>当前 Goal 的讨论</b>，而不是“最新会话”</li>
+          <li>三态思想可用于入口徽标：讨论中 / 规划中 / 待你批准</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>业界 · Claude Code (Anthropic)</span><span>06 / 11</span></div>
+</div>
+
+<!-- 7 · AutoGen / Cursor / 模式库 -->
+<div class="slide">
+  <div class="slide-content" style="gap:16px">
+    <div class="kicker">业界样本 · 三</div>
+    <h2 class="slide-title">相邻形态：<em>群聊、多 tab、常驻进度</em></h2>
+    <div class="grid-3">
+      <div class="card">
+        <h3><span class="dot bad"></span>AutoGen Studio</h3>
+        <p>Playground：一个线程里与整个 team 对话，agent 消息带 speaker 标签轮流出现。</p>
+        <p style="margin-top:6px"><b>MAFW spec 明确拒绝</b>——Goal 间上下文必须隔离，讨论按 Goal + revision 组织。</p>
+      </div>
+      <div class="card">
+        <h3><span class="dot info"></span>Cursor</h3>
+        <p>Agents Window：会话多 tab 并行；Cloud agents 在 sidebar 列出状态；PR review 的线程/评论/quick action <b>集中在一处</b>。</p>
+        <p style="margin-top:6px">→ 一个任务的各表面聚到一个屋檐下。</p>
+      </div>
+      <div class="card">
+        <h3><span class="dot ok"></span>Setproduct 模式库（16 型）</h3>
+        <p><b>Background progress pill</b>：常驻导航元素，带计数 + working + needs-attention 态，每个屏幕可见。</p>
+        <p style="margin-top:6px"><b>“用户必须做的决策，绝不放进折叠区。”</b> 入口同理：不能埋在会滚走的聊天消息里。</p>
+      </div>
+    </div>
+    <p class="sub">样本来源：microsoft/autogen 官方文档与博客 · code.claude.com/docs（agent view / subagents）· cursor.com/help 与论坛 · docs.devin.ai release notes · setproduct.com AI agent UI 模式库（2026-09）</p>
+  </div>
+  <div class="foot"><span>业界 · AutoGen / Cursor / 模式库</span><span>07 / 11</span></div>
+</div>
+
+<!-- 8 · 模式提炼 -->
+<div class="slide">
+  <div class="slide-content" style="gap:16px">
+    <div class="kicker">提炼 · 四种入口模式对 MAFW 的适配度</div>
+    <h2 class="slide-title">任务为中心是主答案，<em>roster 做 Goal 感知</em></h2>
+    <table class="tbl">
+      <tr><th style="width:19%">模式</th><th style="width:22%">代表</th><th style="width:22%">入口挂在哪</th><th style="width:14%">适配</th><th>说明</th></tr>
+      <tr><td>任务为中心</td><td>Devin Spaces / Progress Tab</td><td>任务卡片 / 任务列表</td><td class="st ok">✅ 主入口</td><td>Goal 详情头部常驻「与 Tech Lead 讨论」；讨论是 Goal 的一步</td></tr>
+      <tr><td>Roster + peek</td><td>Claude Code Agent View</td><td>成员/会话列表行</td><td class="st warn">⚠️ 次入口</td><td>班底 Tech Lead 行改为优先打开 active Goal 讨论，而非最新会话</td></tr>
+      <tr><td>状态看板</td><td>Windsurf Agent Command Center</td><td>状态列（Kanban）</td><td class="st ok">✅ 已有</td><td>工作概览五桶 + Goal 卡片已是这个形态，缺的只是卡片内的讨论入口</td></tr>
+      <tr><td>共享群聊</td><td>AutoGen Studio Playground</td><td>单一线程</td><td class="st no">— 已拒绝</td><td>spec §3.1：Tech Lead 上下文按 Goal 隔离，不进共享线程</td></tr>
+    </table>
+    <div class="quote">
+      附加共识（三样本一致）：<b>持久 UI 表面 &gt; 聊天内嵌链接</b>。聊天消息会滚走、会跨设备失效；Devin 的“一步可达”、Claude Code 的常驻 roster、模式库的“决策不进折叠区”说的都是同一件事。
+    </div>
+  </div>
+  <div class="foot"><span>模式提炼</span><span>08 / 11</span></div>
+</div>
+
+<!-- 9 · 推荐方案 -->
+<div class="slide">
+  <div class="slide-content" style="gap:14px">
+    <div class="kicker">推荐方案 · 双入口，一条通路</div>
+    <h2 class="slide-title">Chat 页拉 Tech Lead + <em>Goal 详情常驻按钮</em></h2>
+    <div class="quote">
+      “直接建，lead 不讨论，tech lead 才讨论，可以直接建议用户，然后建 goal，甚至可以在 chat 页拉 tech lead，<b>用户点击后就可以进入 tech lead 页讨论</b>。”
+      <span class="who">— 用户设计方向（2026-11-04，本调研的锚）</span>
+    </div>
+    <div class="grid-2">
+      <div class="wire">
+        <div class="wbar"><span class="wtitle">入口 A · Lead chat（现有邀请条增强）</span></div>
+        <div class="wbubble user">帮我把导出功能加上限流</div>
+        <div class="wbubble">已建立 Goal「导出限流」。技术方案建议与 Tech Lead 讨论，我先把它拉进来：</div>
+        <div class="winvite"><span class="lbl">📋 Goal「导出限流」 · 讨论中</span><span class="wbtn">与 Tech Lead 讨论 →</span></div>
+        <div class="wcomposer">给 Lead 发消息…</div>
+        <span class="wanno">改进：Goal 非终态即显示（不只 discussing）；标签随阶段变：讨论中 / 规划中 / 实施中 / 待你批准</span>
+      </div>
+      <div class="wire">
+        <div class="wbar"><span class="wtitle">入口 B · GoalDetailOverlay 头部</span></div>
+        <div class="wbar" style="justify-content:space-between">
+          <span class="wtitle">GOAL · 导出限流</span>
+          <span class="wbtn ghost">与 Tech Lead 讨论</span>
+        </div>
+        <div class="wmeta">
+          <span class="chip acc">implementing</span><span class="chip">rev 1</span><span class="chip">Loop 1/5</span>
+        </div>
+        <div class="wbubble" style="max-width:100%">当前行动 / 计划任务 / 方向 / 结果 / 时间线 —— 全都在，唯独没有去讨论的路</div>
+        <span class="wanno">新增：非终态 Goal 恒可见；终态降级为只读 transcript</span>
+        <span class="wanno bad">现状：此按钮不存在（slide 04）</span>
+      </div>
+    </div>
+    <p class="sub" style="font-size:12px">两个入口汇到同一条既有通路：<span class="code">requestPodTechLeadOpen(goalId, revision)</span> → <span class="code">openTechLead</span> → <span class="code">GET /api/pods/:podId/goals/:goalId/tech-lead</span> → <span class="code">ensureSession</span>（对任何非终态 revision 恢复/重建讨论会话）。<b>gateway 零改动。</b></p>
+  </div>
+  <div class="foot"><span>推荐方案</span><span>09 / 11</span></div>
+</div>
+
+<!-- 10 · 配套与边界 -->
+<div class="slide">
+  <div class="slide-content" style="gap:16px">
+    <div class="kicker">落地 · 配套改进与明确边界</div>
+    <h2 class="slide-title">范围收敛：<em>纯桌面改动，TDD</em></h2>
+    <div class="grid-2">
+      <div class="card">
+        <h3><span class="dot ok"></span>做</h3>
+        <ul style="padding-left:16px">
+          <li><b>GoalDetailOverlay 头部按钮</b>（主入口，非终态恒可见，点击关浮层开讨论 tab）</li>
+          <li><b>邀请条持续化</b>：Lead chat 的 techLeadInvite 判定放宽到非终态 Goal，标签随阶段变化</li>
+          <li><b>班底行 Goal 感知</b>：Tech Lead 行优先打开 active Goal 的讨论会话</li>
+          <li>终态 Goal → 入口降级为只读 transcript（历史可查）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot bad"></span>不做</h3>
+        <ul style="padding-left:16px">
+          <li>AutoGen 式共享群聊（spec 已拒绝 Goal 隔离例外）</li>
+          <li>Lead 回复里嵌 markdown 链接当主入口（会滚走；持久 UI 表面是业界共识）</li>
+          <li>gateway / SDK / 运行时契约改动（通路已具备）</li>
+          <li>发送语义改动（讨论会话可发、节点会话只读的门已有）</li>
+        </ul>
+      </div>
+    </div>
+    <table class="tbl">
+      <tr><th>验收</th><th>实现</th><th>验证</th></tr>
+      <tr><td>Goal 详情 / Lead chat 任一处点击 → 进入该 Goal 的 Tech Lead 讨论 tab</td><td class="st">复用 openTechLead + requestPodTechLeadOpen</td><td>契约测试（goal-detail-unified.test.ts 扩展）RED→GREEN</td></tr>
+      <tr><td>阶段推进 / 换 tab / 重启后入口仍在</td><td class="st">非终态判定替代 discussing 判定</td><td>techLeadInvite 单测扩展（pod-tech-lead-invite.test.ts）</td></tr>
+      <tr><td>班底 Tech Lead 行 → active Goal 讨论</td><td class="st">memberOpenTarget 增加 Goal 感知</td><td>pod-model 单测</td></tr>
+    </table>
+  </div>
+  <div class="foot"><span>落地范围</span><span>10 / 11</span></div>
+</div>
+
+<!-- 11 · 下一步 -->
+<div class="slide">
+  <div class="slide-content" style="gap:20px">
+    <div class="kicker">收束</div>
+    <h2 class="slide-title">一句话结论</h2>
+    <div class="quote" style="font-size:16px">
+      Tech Lead 需要<b>按 Goal 组织的持久入口</b>，而不是只在 discussing 一瞬出现的邀请。业界四种模式里，任务为中心（Devin）+ Goal 感知 roster（Claude Code）正对 MAFW 的形态；你给的「chat 页拉 Tech Lead、点击进讨论页」就是入口 A，配上 Goal 详情常驻按钮（入口 B），gateway 零改动即可落地。
+    </div>
+    <div class="grid-3">
+      <div class="card"><h3><span class="dot info"></span>本调研产物</h3><p>视觉伴侣（本文件）已落盘 docs/research/，可随时回看；结论当日蒸馏，防止会话流失。</p></div>
+      <div class="card"><h3><span class="dot warn"></span>待你确认</h3><p>① 双入口范围是否批准；② 班底行 Goal 感知是否纳入本批。</p></div>
+      <div class="card"><h3><span class="dot ok"></span>确认后</h3><p>失败契约测试先行 → 实现 → desktop 全量 + tsgo + build → 提交汇报（新增/全量测试数）。</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>MAFW · Pod 协作循环</span><span>11 / 11</span></div>
+</div>
+
+</div><!-- /.slide-deck -->
+
+<div class="nav-controls">
+  <button class="nav-btn" onclick="prevSlide()">←</button>
+  <span class="slide-counter"><span id="current">1</span> / <span id="total">11</span></span>
+  <button class="nav-btn" onclick="nextSlide()">→</button>
+</div>
+
+<script>
+let current = 1;
+const total = document.querySelectorAll('.slide').length;
+document.getElementById('total').textContent = total;
+function showSlide(n) {
+  if (n < 1) n = 1;
+  if (n > total) n = total;
+  current = n;
+  document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === n - 1));
+  document.getElementById('current').textContent = n;
+  document.getElementById('progressBar').style.width = (n / total * 100) + '%';
+}
+function nextSlide() { showSlide(current + 1); }
+function prevSlide() { showSlide(current - 1); }
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.nav-controls')) nextSlide();
+});
+showSlide(1);
+</script>
+</body>
+</html>

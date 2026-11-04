@@ -1578,6 +1578,12 @@ chatview 是指挥列，左侧 rail 负责导航与团队状态。
   **2782/2782（610 suites，本批新增 12 个用例）**、`tsgo --noEmit -p tsconfig.json` rc=0、
   `electron-vite build` rc=0。本批未再跑 GUI 冒烟（纯逻辑/文案/编码，由源契约与全量套件覆盖）；
   计划 `docs/superpowers/plans/2026-11-04-right-primary-minors.md`。
+- **Tech Lead 按 Goal 持久入口 + 班底焦点行（2026-11-04，spec `docs/superpowers/specs/2026-11-04-techlead-goal-entry-design.md`，plan `docs/superpowers/plans/2026-11-04-techlead-goal-entry.md`，调研 deck `docs/research/2026-11-04-techlead-entry-industry-research.html`）**：
+  修 GUI 验收 #2 断链（邀请条只在 discussing 一瞬、Goal 详情无按钮、班底行开「最新会话」抽奖）。
+  ① **入口 A**：Lead chat 邀请条非终态持续化——`techLeadInvite` 以 `PodGoal.endedAt` 为终态权威（老 gateway 缺 stage 不再一票否决），`pickTechLeadInviteGoal` discussing 优先选位 + `podStageLabel` 阶段标签透传 ChatPane/PodTechLeadInvite；
+  ② **入口 B**：`GoalDetailOverlay` 头部「与 Tech Lead 讨论」按钮（非终态可发、终态降「查看 Tech Lead 讨论」只读；revision 取 `activeRevision ?? revision`；点击 `requestPodTechLeadOpen` + `onClose`）；
+  ③ **班底焦点行**：`memberFocus` 纯函数（Tech Lead 恒走 `{kind:"techlead"}` → openTechLead ensure 讨论会话，其余成员 live/transcript；行内显示「讨论/实施/评审「Goal 标题」」，无 live 显示待命不可点），`ProjectResources` + `PodDock` 双面接入，techlead 目标经模块单例桥梁路由（零新 props 穿透）。
+  两入口均汇到既有 `openTechLead` → `ensureSession` 通路；**gateway / SDK / 运行时契约零改动**，成员消息维持邮箱 + A2A。业界依据：Devin（任务为中心/一步可达）、Claude Code Agent View（roster）、Naive 公司板、aweb 焦点、Jira/Elixion 任务挂人（详见 deck）。commits `1a759b1e`/`62812009`/`1c3b4259`/`57b85245`；desktop **2805/2805（616 suites，本批净 +14）**、`tsgo --noEmit -p tsconfig.json` rc=0、`electron-vite build` rc=0。GUI 冒烟未在本机执行（邀请条持续/详情按钮/班底焦点行的真机验证留发布前）。
 
 ## 6. Gateway 运维
 
