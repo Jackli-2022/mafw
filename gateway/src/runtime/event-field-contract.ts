@@ -105,6 +105,13 @@ export function checkEventFields(evt: RawEvt | null | undefined): string[] {
       if (!job.sessionID) warnings.push('background.job.updated without job.sessionID — row cannot be attached to a session');
       break;
     }
+    case 'pod.event': {
+      // 事件层：只有路由字段（完整事件由 pod.events.list 拉取）。
+      if (!props?.podId || !props?.eventId || !props?.severity) {
+        warnings.push('pod.event without podId/eventId/severity — desktop cannot refresh the inbox or trigger a presence poll');
+      }
+      break;
+    }
     default:
       break;
   }
