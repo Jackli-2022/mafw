@@ -1645,6 +1645,44 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 - **已知边界**：attention 通知链与托盘 presence 归 pod-event-layer 批次（其设计已评审、实现进行中）；
   本批未 push、未 deploy。
 
+### 5.29 Pod 事件层与常驻注意力（2026-11-04，进行中）
+
+spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design.md`，plan
+`docs/superpowers/plans/2026-11-04-pod-event-layer-ambient-attention.md`。**已交付 Task 1–8，Task 9（桌面 inbox /
+`viewedResults` 双读迁移）未做**——presence + 通知链不依赖它，故先发这一段。
+
+- **事件模型**（`gateway/src/core/pod/pod-event-model.ts`）：确定性分级，无 LLM。Goal 归档 `verdict ∈
+  {PASS,FAIL,MAX_RETRIES,ERROR,UNREVIEWED}` → p1（`resultReady` 不决定是否通知，硬失败同样要看见）；
+  `CANCELLED`/`verdict=null` → p3；成员消息 `request|escalation` 且 `to=lead` → p2，其余 p3。
+  `goalDedupeKey(goalId, revision)` 带 revision（打回后第二版不被吞）。
+- **存储**（`pod-store.ts` + `pod-event-service.ts`）：`pod_events` 表是运行时真相（`UNIQUE(pod_id,dedupe_key)`
+  幂等、`state` 只有 unread/seen、`wakeState/attempts/at/sessionId`），`~/.mafw/pods/<id>/events/*.json`
+  是创建时写一次的审计快照（写失败只 log，不丢事件）。
+- **写点**：`finishPodGoal`（全 verdict）+ **`PodStore.insertMessage`**（REST service / decision note / A2A bridge
+  三路唯一收口——挂在 service 层会漏掉 A2A 主通道）。
+- **`GET /api/presence`**：跨项目聚合 `running/attention(items+revision)/unreadResults`；progress 取自
+  `pod_tasks` 的 done/total（`state.currentWave` 只有 legacy 路径在写），worktree 经 `parentProjectDirForWorktree`
+  折叠；`PodAttentionItem` 增 `revision` 且 id 变 `goal:kind:r<rev>`。
+- **Lead 唤醒**（`pod-event-wake.ts`）：p2 落库后 `notify()` + 启动 5s + 每 60s 扫描；闸门 = Pod 暂停 /
+  run suspended / busy / 6 次每小时 / 同 goal+kind 10min；**已 delivered 的镜像消息直接落定不重复注入**；
+  多条 pending 合并成一条 `[POD EVENT]`；成功后 `commitDelivered` 收口；重启后 pending 自动补发。
+- **SSE `pod.event`** `{podId,eventId,goalId,revision,kind,severity}`：六处词汇链 + `emit:openapi` /
+  `emit:runtime-contract` / `gen:api` 同步；`checkEventFields` 增 `pod.event` 必填校验（并行批次报出的红）。
+- **桌面**（`presence-model.ts` / `presence-poller.ts` / `attention-diff.ts` / `notify-state.ts`）：main 15s 轮询
+  `/api/presence` → 托盘 tooltip + 任务栏 `setProgressBar`（无进度用 2 不确定态）+ 菜单状态行导航
+  （左键仍 toggle）；attention 差集按 id（含 revision）通知一次并持久化 `mafw-notify.json`，重启不重发；
+  结果按 `goalId:r<revision>` 去重后通知。
+- **测试**：gateway 新增 `pod-event-model` 16、`pod-event-service` 6、`pod-event-write-points` 4、
+  `pod-presence` 6、`pod-events-route` 4、`pod-event-wake` 6；desktop 新增 `presence-model` 1、
+  `attention-diff` 1、`pod-events` 1；SDK 契约计数 32→33。**gateway 4726/4726（598 suites）**、
+  **desktop 2828/2828（618 suites）**、**SDK 199/199**；`tsc` / `tsgo -p` rc=0。
+- **未做（Task 9）**：桌面 inbox 面板与 `viewedResults` 双读迁移——`pod-events.ts` 纯函数（`isResultViewed` /
+  `shouldMarkSeen` / `listUnread`）已就位并有测试，但尚未接入 `podResultDot` / `latestUnviewedResult` /
+  `PodResultView`。因此「结果未查看」仍由既有 localStorage 驱动，跨端一致性与 inbox 展示留待下一批。
+- **已知边界**：托盘图标三态（running/attention）尚未提供独立图标资源，当前只换 tooltip/菜单文案；
+  未构建 `electron-vite build` 与真机冒烟（本机 dev 服务需重启后生效）。
+
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令
