@@ -249,7 +249,9 @@ export function memberFocus(
   }
 
   if (member.role === "lead") {
-    return { focusText: live ? focusOf(live) : "协调中", target: memberOpenTarget(detail, memberId) }
+    // 协调会话通常没有 Goal 归属（goalId 为空）：只说「协调中」，不编造「未命名目标」。
+    const titled = live && goalOf(live.goalId)?.title ? focusOf(live) : "协调中"
+    return { focusText: titled, target: memberOpenTarget(detail, memberId) }
   }
 
   return { focusText: focusOf(live), target: memberOpenTarget(detail, memberId) }

@@ -57,6 +57,18 @@ describe("memberFocus", () => {
     assert.equal(focus.focusText, "协调中")
   })
 
+  test("lead 的协调会话没有 Goal 归属时显示「协调中」，不编造「未命名目标」", () => {
+    const detail = {
+      ...base,
+      sessions: [
+        { memberId: "m_l", sessionId: "ses_lead", goalId: null, node: "coordination", endedAt: null, createdAt: "2026-11-04T00:00:00.000Z" },
+      ],
+    } as any
+    const focus = memberFocus(detail, "m_l")
+    assert.equal(focus.focusText, "协调中")
+    assert.deepEqual(focus.target, { kind: "session", sessionId: "ses_lead" })
+  })
+
   test("builder live execute 会话 → 打开该会话，焦点含「实施」", () => {
     const detail = {
       ...base,
