@@ -1507,23 +1507,6 @@ html[data-theme="light"] body {
 }
 /* 会话配置菜单：子行缩进（复用 picker-row 基础样式） */
 .mafw-config-subrow { padding-left: 22px; }
-/* 窄 composer：按优先级逐档隐藏（上下文 pill → ＋ 入口 → 缩 pill 文本）——对齐桌面共识 */
-.mafw-input-area { container-type: inline-size; }
-@container (max-width: 620px) {
-  .mafw-context-pill { display: none; }
-  .mafw-composer-meta { display: none; }
-  .mafw-composer .mafw-mode-pill > span { display: none; }
-  /* 图标化后 hover/聚焦显示短标签（spec §3.1）；非默认档本就带底色，一眼可辨。 */
-  .mafw-composer .mafw-mode-pill:hover > span,
-  .mafw-composer .mafw-mode-pill:focus-visible > span { display: inline; }
-  .mafw-model-name { max-width: 120px; }
-}
-@container (max-width: 520px) {
-  .mafw-composer-attach { display: none; }
-  /* Tooltip 包装层仍是 flex item（0 宽但吃 gap）——按子按钮状态把整层隐藏 */
-  .mafw-composer-left [data-component="tooltip-v2-trigger"]:has(.mafw-composer-attach) { display: none; }
-  .mafw-model-name { max-width: 72px; }
-}
 .mafw-context-pill {
   display: inline-flex;
   align-items: center;
@@ -7540,3 +7523,22 @@ html[data-theme="light"] body {
   width: 100%;
 }
 .mafw-workspace-composer .mafw-pod-composer [data-component="textarea-v2"] { min-height: 90px; }
+
+/* 窄 composer 档位（放在全部基础规则之后：容器查询不提升特异性，同特异性按源序覆盖） */
+/* 窄 composer：按优先级逐档隐藏（上下文 pill → ＋ 入口 → 缩 pill 文本）——对齐桌面共识 */
+.mafw-input-area { container-type: inline-size; }
+@container (max-width: 620px) {
+  .mafw-context-pill { display: none; }
+  .mafw-composer-meta { display: none; }
+  .mafw-composer .mafw-mode-pill > span { display: none; }
+  /* 图标化后 hover/聚焦显示短标签（spec §3.1）；非默认档本就带底色，一眼可辨。 */
+  .mafw-composer .mafw-mode-pill:hover > span,
+  .mafw-composer .mafw-mode-pill:focus-visible > span { display: inline; }
+  .mafw-model-name { max-width: 120px; }
+}
+@container (max-width: 520px) {
+  .mafw-composer-attach { display: none; }
+  /* Tooltip 包装层仍是 flex item（0 宽但吃 gap）——按子按钮状态把整层隐藏 */
+  .mafw-composer-left [data-component="tooltip-v2-trigger"]:has(.mafw-composer-attach) { display: none; }
+  .mafw-model-name { max-width: 72px; }
+}

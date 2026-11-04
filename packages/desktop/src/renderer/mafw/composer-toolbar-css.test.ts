@@ -21,4 +21,12 @@ describe("composer toolbar overflow guards", () => {
     // 520 档收掉 ＋（附件/截屏/引用入口在 ⋯ 菜单里仍有）
     expect(css).toMatch(/@container \(max-width:\s*520px\)\s*\{[^@]*\.mafw-composer-attach/)
   })
+
+  test("tier overrides come after the base rules they override (source-order cascade)", () => {
+    // 容器查询不提升特异性：同特异性时后写的规则胜出。若基础规则在档位块之后，
+    // display:none 会被 base display 覆盖（2026-11-04 冒烟实证：ctx pill 窄窗未隐藏）。
+    const tier620 = css.indexOf("@container (max-width: 620px)")
+    expect(tier620).toBeGreaterThan(css.indexOf(".mafw-context-pill {"))
+    expect(tier620).toBeGreaterThan(css.indexOf(".mafw-composer-meta {"))
+  })
 })
