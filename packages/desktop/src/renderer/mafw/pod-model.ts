@@ -191,6 +191,18 @@ export type MemberFocusTarget =
   | null
 
 /**
+ * 入口 B 的分支决策（spec 2026-11-04-techlead-goal-entry §3.2）：非终态走 ensure
+ * 讨论会话；终态只能看已归档的讨论 transcript——GET tech-lead 对终态 revision 返回
+ * 409（revision is terminal），绝不能把用户送到那条路。
+ */
+export function techLeadEntryMode(
+  goal: { endedAt?: string | null } | null | undefined,
+): "discuss" | "transcript" | null {
+  if (!goal) return null
+  return goal.endedAt ? "transcript" : "discuss"
+}
+
+/**
  * 班底焦点行：行 = 目录 + 当前焦点。
  *
  * Tech Lead 恒走 `techlead` 通路（shell 的 openTechLead → ensureSession 打开该 Goal
@@ -219,8 +231,11 @@ export function memberFocus(
   }
 
   if (member.role === "tech_lead") {
-    // 最新 live 会话所在 Goal 优先；没有 live 会话时指向第一个非终态 Goal（打开即 ensure）。
-    const activeGoal = goalOf(live?.goalId) ?? (detail.goals ?? []).find((goal) => !goal.endedAt)
+    // 最新 live 会话所在 Goal 优先（但已终态 Goal 不再走 ensure——终态讨论已归档，
+    // GET tech-lead 会 409）；没有可用 live 会话时指向第一个非终态 Goal（打开即 ensure）。
+    const liveGoal = goalOf(live?.goalId)
+    const activeGoal = (liveGoal && !liveGoal.endedAt ? liveGoal : undefined)
+      ?? (detail.goals ?? []).find((goal) => !goal.endedAt)
     if (activeGoal) {
       return {
         focusText: focusOf(live) ?? `讨论「${activeGoal.title || "未命名目标"}」`,

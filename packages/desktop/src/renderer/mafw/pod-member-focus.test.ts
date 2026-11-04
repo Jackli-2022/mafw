@@ -3,7 +3,7 @@
 // 其余成员维持 memberOpenTarget（live 会话 / 已结束 transcript）。
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { memberFocus } from "./pod-model"
+import { memberFocus, techLeadEntryMode } from "./pod-model"
 
 const base = {
   pod: { id: "pod_1", projectDir: "/p", status: "active" },
@@ -74,8 +74,35 @@ describe("memberFocus", () => {
     assert.deepEqual(focus, { focusText: null, target: null })
   })
 
+  test("tech_lead 的 live 会话绑在已终态 Goal 上时，改指非终态 Goal（ensure 对终态会 409）", () => {
+    const detail = {
+      ...base,
+      goals: [
+        { goalId: "g_old", title: "旧目标", endedAt: "2026-11-03T00:00:00.000Z", activeRevision: 1 },
+        { goalId: "g_new", title: "导出限流", endedAt: null, activeRevision: 1 },
+      ],
+      sessions: [
+        { memberId: "m_t", sessionId: "ses_old", goalId: "g_old", node: "discussion", endedAt: null, createdAt: "2026-11-04T03:00:00.000Z" },
+      ],
+    } as any
+    const focus = memberFocus(detail, "m_t")
+    assert.deepEqual(focus.target, { kind: "techlead", goalId: "g_new" })
+  })
+
   test("detail 缺失 / 未知成员 → 安全空值", () => {
     assert.deepEqual(memberFocus(null, "m_t"), { focusText: null, target: null })
     assert.deepEqual(memberFocus(base, "m_missing"), { focusText: null, target: null })
+  })
+})
+
+// 入口 B 的分支决策（spec §3.2 / 复审 C1）：终态只能看归档 transcript——
+// GET tech-lead 对终态 revision 返回 409，绝不能走 ensure 路由。
+describe("techLeadEntryMode", () => {
+  test("非终态走 ensure 讨论；终态降级 transcript", () => {
+    assert.equal(techLeadEntryMode({ endedAt: null }), "discuss")
+    assert.equal(techLeadEntryMode({}), "discuss")
+    assert.equal(techLeadEntryMode({ endedAt: "2026-11-04T00:00:00.000Z" }), "transcript")
+    assert.equal(techLeadEntryMode(null), null)
+    assert.equal(techLeadEntryMode(undefined), null)
   })
 })

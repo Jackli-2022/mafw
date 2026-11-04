@@ -19,6 +19,7 @@ import {
   podStageLabel,
   revisionHistory,
   revisionStatusLabel,
+  techLeadEntryMode,
   type GoalDetailFocus,
 } from "../pod-model"
 import { requestPodTechLeadOpen } from "../pod-result-store"
@@ -278,18 +279,43 @@ export function GoalDetailOverlay(props: {
     if (target == null) return list[list.length - 1]
     return list.find((item) => item.revision === target) ?? null
   }
-  // 入口 B（spec 2026-11-04-techlead-goal-entry §3.2）：Goal 详情头部的 Tech Lead
-  // 入口。非终态可发送；终态降级为只读浏览（发送由服务端终态门禁拦截）。
-  // 点击复用既有模块单例桥梁 → shell effect → openTechLead（ensureSession 恢复讨论会话）。
+  // 入口 B（spec 2026-11-04-techlead-goal-entry §3.2 / 复审 C1）：非终态走 ensure
+  // 讨论会话（openTechLead → ensureSession）；终态只能看已归档讨论 transcript——
+  // GET tech-lead 对终态 revision 返回 409，绝不能把用户送到 ensure 路由。
+  const techLeadTranscript = (goalId: string): string | null => {
+    const detail: any = podDetail()
+    const member = (detail?.members ?? []).find((row: any) => row.role === "tech_lead")
+    if (!member) return null
+    const session = (detail?.sessions ?? [])
+      .filter((row: any) =>
+        row.memberId === member.id
+        && row.goalId === goalId
+        && (row.node === "discussion" || row.scopeKind === "discussion"))
+      .sort((a: any, b: any) =>
+        (b.endedAt ?? "").localeCompare(a.endedAt ?? "") || b.createdAt.localeCompare(a.createdAt))
+      .find((row: any) => !!row.endedAt && !!row.transcriptRef)
+    return session?.sessionId ?? null
+  }
   const techLeadEntry = () => {
     const goal: any = podGoal()
     const id = props.goalId
     if (!goal || !id) return null
-    const revision = goal.activeRevision ?? goal.revision ?? null
+    const mode = techLeadEntryMode(goal)
+    if (!mode) return null
     return {
-      terminal: !!goal.endedAt,
+      mode,
       open: () => {
-        requestPodTechLeadOpen(id, revision)
+        if (mode === "transcript") {
+          const sessionId = techLeadTranscript(id)
+          if (!sessionId) {
+            showToastV2({ description: "该 Goal 的讨论已归档（无快照）", duration: 3000 })
+            return
+          }
+          props.onOpenSession(sessionId)
+          props.onClose()
+          return
+        }
+        requestPodTechLeadOpen(id, activeRevision())
         props.onClose()
       },
     }
@@ -584,7 +610,7 @@ export function GoalDetailOverlay(props: {
               <Show when={techLeadEntry()}>
                 {(entry) => (
                   <ButtonV2 variant="outline" size="small" onClick={entry().open}>
-                    {entry().terminal ? "查看 Tech Lead 讨论" : "与 Tech Lead 讨论"}
+                    {entry().mode === "transcript" ? "查看 Tech Lead 讨论" : "与 Tech Lead 讨论"}
                   </ButtonV2>
                 )}
               </Show>

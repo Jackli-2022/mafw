@@ -121,7 +121,10 @@ test("quick Goal 不渲染空 Reviewer 泳道，历史评审证据仍保留", ()
 test("Goal 详情头部提供按 Goal 的 Tech Lead 入口（终态降级只读）", () => {
   assert.match(detail, /与 Tech Lead 讨论/)
   assert.match(detail, /查看 Tech Lead 讨论/)
-  assert.match(detail, /activeRevision \?\? .*revision/)
-  assert.match(detail, /requestPodTechLeadOpen\(id, revision\)/)
+  assert.match(detail, /techLeadEntryMode\(/)
+  // 终态：找已归档讨论 transcript（ensure 路由对终态 409），无快照给诚实提示。
+  assert.match(detail, /techLeadTranscript\(/)
+  assert.match(detail, /props\.onOpenSession\(sessionId\)/)
+  assert.match(detail, /requestPodTechLeadOpen\(id, activeRevision\(\)\)/)
   assert.match(detail, /props\.onClose\(\)/)
 })
