@@ -278,6 +278,22 @@ export function GoalDetailOverlay(props: {
     if (target == null) return list[list.length - 1]
     return list.find((item) => item.revision === target) ?? null
   }
+  // 入口 B（spec 2026-11-04-techlead-goal-entry §3.2）：Goal 详情头部的 Tech Lead
+  // 入口。非终态可发送；终态降级为只读浏览（发送由服务端终态门禁拦截）。
+  // 点击复用既有模块单例桥梁 → shell effect → openTechLead（ensureSession 恢复讨论会话）。
+  const techLeadEntry = () => {
+    const goal: any = podGoal()
+    const id = props.goalId
+    if (!goal || !id) return null
+    const revision = goal.activeRevision ?? goal.revision ?? null
+    return {
+      terminal: !!goal.endedAt,
+      open: () => {
+        requestPodTechLeadOpen(id, revision)
+        props.onClose()
+      },
+    }
+  }
   // Task 21：版本历史（新→旧）。旧 revision 的 verdict/feedback 是审计事实，永不丢。
   const revisionRows = () => revisionHistory(revisions(), activeRevision())
   const directionState = (): PodDirectionState | null => {
@@ -564,6 +580,13 @@ export function GoalDetailOverlay(props: {
                 <ButtonV2 variant="outline" size="small" onClick={planEntry()!.onOpen}>
                   计划{planEntry()!.badge ? ` · ${planEntry()!.badge}` : ""}
                 </ButtonV2>
+              </Show>
+              <Show when={techLeadEntry()}>
+                {(entry) => (
+                  <ButtonV2 variant="outline" size="small" onClick={entry().open}>
+                    {entry().terminal ? "查看 Tech Lead 讨论" : "与 Tech Lead 讨论"}
+                  </ButtonV2>
+                )}
               </Show>
             </div>
 

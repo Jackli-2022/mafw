@@ -114,3 +114,14 @@ test("quick Goal 不渲染空 Reviewer 泳道，历史评审证据仍保留", ()
   )
   assert.match(detail, /hideEmptyReviewLane\(/)
 })
+
+// 2026-11-04（spec techlead-goal-entry §3.2）：入口 B——Goal 详情头部的
+// 「与 Tech Lead 讨论」常驻按钮。非终态可发送；终态降级为只读浏览（文案变化，
+// 发送由服务端终态门禁拦截）。点击 = 既有 requestPodTechLeadOpen 桥梁 + 关浮层。
+test("Goal 详情头部提供按 Goal 的 Tech Lead 入口（终态降级只读）", () => {
+  assert.match(detail, /与 Tech Lead 讨论/)
+  assert.match(detail, /查看 Tech Lead 讨论/)
+  assert.match(detail, /activeRevision \?\? .*revision/)
+  assert.match(detail, /requestPodTechLeadOpen\(id, revision\)/)
+  assert.match(detail, /props\.onClose\(\)/)
+})
