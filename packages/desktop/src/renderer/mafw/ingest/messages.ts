@@ -5,6 +5,7 @@
 // diff、task 子会话、step-finish→stopReason）在这里收敛，session-ui 只读规范形。
 import { canonicalMessageError, type CanonicalMessageError } from "./errors"
 import { canonicalToolPart } from "./parts"
+import { stripVoiceOriginMarker } from "../chat/voice-origin-marker"
 
 export interface IngestedHistoryPage {
   /** 规范 flat 消息（含 `content`），不含 `info`/`parts` 信封。 */
@@ -83,6 +84,16 @@ export function canonicalMessage(
     ? flat.content
     : []
   const parts = canonicalParts(rawParts, { sessionID, messageID: id })
+  // Plan 2 D3：用户语音消息的 `[语音输入]` 标记只服务模型（服务端原始文本保留），
+  // 桌面展示层在摄取时剥离——「首个非 synthetic part」规则在 SDK 把 message 与
+  // parts 合并成单个 text part 后不再成立（真机历史重载实证泄漏）。
+  if (flat.role === "user") {
+    for (const part of parts) {
+      if (part?.type === "text" && typeof part.text === "string") {
+        part.text = stripVoiceOriginMarker(part.text)
+      }
+    }
+  }
   const error: CanonicalMessageError | undefined = canonicalMessageError(flat.error)
   const nativeModel =
     flat.model && typeof flat.model === "object"
@@ -112,6 +123,10 @@ export function canonicalMessage(
     ...(model ? { model } : {}),
     ...(stopReason ? { stopReason } : {}),
     content: parts,
+  }
+  // Plan 2：展示 DTO 的 text 同步剥离（部分消费方读 message.text 而非 parts）。
+  if (message.role === "user" && typeof message.text === "string") {
+    message.text = stripVoiceOriginMarker(message.text)
   }
   return { message, parts }
 }

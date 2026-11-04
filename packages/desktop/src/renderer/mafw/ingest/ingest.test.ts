@@ -165,6 +165,46 @@ describe('message ingestion', () => {
   })
 })
 
+describe('voice-origin marker ingestion (Plan 2)', () => {
+  const marker = '[语音输入] 本消息来自用户的实时语音转写。请用简短、口语化的中文回答。'
+  const userVoice = () => ({
+    id: 'u1',
+    sessionID: 's1',
+    role: 'user',
+    time: { created: 1 },
+    text: `请用一句话介绍你自己\n${marker}`,
+    content: [{ id: 'p1', type: 'text', text: `请用一句话介绍你自己\n${marker}` }],
+  })
+
+  test('历史用户消息剥离标记（text 与 text parts）', () => {
+    const { messages, parts } = ingestHistoryPage([userVoice()], { sessionID: 's1' })
+    expect(messages[0].text).toBe('请用一句话介绍你自己')
+    expect(messages[0].content[0].text).toBe('请用一句话介绍你自己')
+    expect(parts.u1[0].text).toBe('请用一句话介绍你自己')
+  })
+
+  test('live 用户消息同样剥离（SDK 合并 part 后也干净）', () => {
+    const live = ingestLiveMessage(userVoice(), { sessionID: 's1' })
+    expect(live!.message.text).toBe('请用一句话介绍你自己')
+    expect(live!.parts[0].text).toBe('请用一句话介绍你自己')
+  })
+
+  test('assistant 文本不剥离（标记只属于用户语音输入）', () => {
+    const { messages } = ingestHistoryPage(
+      [{ id: 'a1', role: 'assistant', time: { created: 1 }, content: [{ id: 'p', type: 'text', text: marker }] }],
+      { sessionID: 's1' },
+    )
+    expect(messages[0].content[0].text).toBe(marker)
+  })
+
+  test('无标记的用户消息原样保留', () => {
+    const plain = { id: 'u2', role: 'user', time: { created: 1 }, text: '普通文本', content: [{ id: 'p', type: 'text', text: '普通文本' }] }
+    const { messages } = ingestHistoryPage([plain], { sessionID: 's1' })
+    expect(messages[0].text).toBe('普通文本')
+    expect(messages[0].content[0].text).toBe('普通文本')
+  })
+})
+
 describe('tool part ingestion', () => {
   test('fills tool from v2.1 name and output from history content[]', () => {
     const part = canonicalToolPart({
