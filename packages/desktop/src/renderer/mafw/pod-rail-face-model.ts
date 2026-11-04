@@ -1,6 +1,6 @@
 // 左 dock 鲸群面的行模型（纯函数，无 Solid 依赖）。
 // spec: docs/superpowers/specs/2026-10-30-pod-left-rail-design.md §3.2
-import type { PodDetail, PodGoal, PodMessage, PodTask } from "@mafw/sdk"
+import type { PodDetail, PodGoal, PodTask } from "@mafw/sdk"
 import { countUnread, type PodUnreadMessage } from "./pod-rail-badge"
 import { podShortTime } from "./pod-model"
 
@@ -12,12 +12,6 @@ export function podAttentionRow(count: number): { label: string; visible: boolea
     label: count > 0 ? `需要你 ${count}` : "需要你",
     visible: count > 0,
   }
-}
-
-/** 左栏最近消息预览：取 store 顺序的最后 limit 条（Pod store 已按最新在后供给）。 */
-export function podRecentMessages(messages: PodMessage[], limit = 3): PodMessage[] {
-  if (limit <= 0) return []
-  return messages.slice(-limit)
 }
 
 const STATUS_LABEL: Record<string, string> = {

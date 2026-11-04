@@ -5,8 +5,8 @@ import type { PodDetail, PodMessage } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
-import { buildMemberRows, podAttentionRow, podCounts, podEmptyState, podRecentMessages, type PodEmptyState } from "../pod-rail-face-model"
-import { memberOpenTarget, podShortTime, podStatusLabel } from "../pod-model"
+import { buildMemberRows, buildRecentMessages, podAttentionRow, podCounts, podEmptyState, type PodEmptyState } from "../pod-rail-face-model"
+import { memberOpenTarget, podStatusLabel } from "../pod-model"
 
 export function ProjectResources(props: {
   detail: PodDetail | null
@@ -34,12 +34,9 @@ export function ProjectResources(props: {
     ? podCounts(props.detail, props.messages, props.selfMemberId)
     : { review: 0, todo: 0, inbox: 0 }))
   const attention = createMemo(() => podAttentionRow(props.attention))
-  const recentMessages = createMemo(() => podRecentMessages(props.messages, 3).map((message) => ({
-    ...message,
-    preview: message.body.replace(/\s+/g, " ").trim(),
-    time: podShortTime(message.createdAt, Date.now()),
-    unread: message.readAt === null,
-  })))
+  const recentMessages = createMemo(() => (props.detail
+    ? buildRecentMessages(props.detail, props.messages, props.selfMemberId, Date.now(), 3)
+    : []))
 
   return (
     <div class="mafw-resources">
@@ -209,6 +206,7 @@ export function ProjectResources(props: {
                   classList={{ unread: message.unread }}
                   onClick={() => props.onOpenPanel("team", "inbox")}
                 >
+                  <span class="mafw-pod-rail-message-route">{message.route}</span>
                   <span class="mafw-pod-rail-message-preview">{message.preview || "（空消息）"}</span>
                   <span class="mafw-pod-rail-message-time">{message.time}</span>
                 </ButtonV2>

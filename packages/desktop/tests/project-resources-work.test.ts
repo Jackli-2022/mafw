@@ -16,10 +16,12 @@ test("ProjectResources exposes attention without an empty zero block", () => {
 })
 
 test("ProjectResources previews at most three recent messages and keeps the inbox route", () => {
-  assert.match(resources, /podRecentMessages\(props\.messages, 3\)/)
+  assert.match(resources, /buildRecentMessages\(props\.detail, props\.messages, props\.selfMemberId, Date\.now\(\), 3\)/)
   assert.match(resources, /最近消息/)
   assert.match(resources, /onOpenPanel\("team", "inbox"\)/)
   assert.match(resources, /classList=\{\{ unread: message\.unread \}\}/)
+  assert.doesNotMatch(resources, /podRecentMessages/)
+  assert.doesNotMatch(resources, /message\.readAt === null/)
 })
 
 test("the active-Goal shortcut is retired from the left Pod face", () => {
