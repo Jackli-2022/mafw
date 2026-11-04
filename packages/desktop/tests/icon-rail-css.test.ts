@@ -7,10 +7,12 @@ import { join } from "node:path"
 const css = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "mafw.css"), "utf8")
 
 describe("icon rail CSS 契约", () => {
-  test("轨宽 46px 且纵向排列", () => {
+  test("轨宽 46px、纵向排列、间距 8px / padding 10px", () => {
     const block = css.match(/\.mafw-icon-rail \{[\s\S]*?\}/)?.[0] ?? ""
     expect(block).toContain("width: 46px")
     expect(block).toContain("flex-direction: column")
+    expect(block).toContain("gap: 8px")
+    expect(block).toContain("padding: 10px 0")
   })
   test("激活图标为 1a 填充块（accent 12% 底 + accent 图标，无 inset 左条）", () => {
     const block = css.match(/\.mafw-icon-rail-icon\.active \{[\s\S]*?\}/)?.[0] ?? ""
@@ -18,9 +20,10 @@ describe("icon rail CSS 契约", () => {
     expect(block).toContain("color: var(--accent)")
     expect(block).not.toContain("inset 2px 0 0")
   })
-  test("顶部新建动作为虚线描边样式", () => {
+  test("顶部新建动作为实心 accent tint（占位符视觉语言虚线退役）", () => {
     const block = css.match(/\.mafw-icon-rail-icon\.new-action \{[\s\S]*?\}/)?.[0] ?? ""
-    expect(block).toContain("border: 1px dashed")
+    expect(block).not.toContain("dashed")
+    expect(block).toContain("color-mix(in srgb, var(--accent) 14%, transparent)")
   })
   test("图标按钮固定 34×34（压过 ButtonV2 small 的 24px 高度）", () => {
     const block = css.match(/\.mafw-icon-rail \.mafw-icon-rail-icon[^{]*\{[\s\S]*?\}/)?.[0] ?? ""
