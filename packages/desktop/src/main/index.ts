@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow, globalShortcut, nativeTheme, net, session } from "electron"
+import { app, BrowserWindow, globalShortcut, nativeTheme, net, Notification, session } from "electron"
 
 import { Deferred, Effect } from "effect"
 
@@ -45,6 +45,8 @@ import { createTray, updateTrayPending, updateTrayPresence, setTrayNavigateHandl
 import { startTrayStatusPolling } from "./tray-status"
 import { podPresence } from "./presence-model"
 import { startPresencePolling } from "./presence-poller"
+import { diffAttention } from "./attention-diff"
+import { NotifyState } from "./notify-state"
 import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
@@ -373,6 +375,8 @@ const main = Effect.gen(function* () {
     app.once("will-quit", stopTrayStatus)
 
     // Cross-project Goal presence → tray icon state + taskbar progress.
+    const notifyState = new NotifyState(join(app.getPath("userData"), "mafw-notify.json"))
+    let prevAttentionIds: string[] = []
     const stopPresence = startPresencePolling({
       getBaseUrl: () => gwUrl,
       onSnapshot: (payload) => {
@@ -381,6 +385,22 @@ const main = Effect.gen(function* () {
         for (const win of BrowserWindow.getAllWindows()) {
           if (win.isDestroyed()) continue
           win.setProgressBar(view.progress)
+        }
+
+        const items = payload?.attention?.items ?? []
+        const { added } = diffAttention(prevAttentionIds, items)
+        prevAttentionIds = items.map((item) => item.id)
+        for (const item of added) {
+          if (notifyState.hasAttention(item.id)) continue
+          notifyState.markAttention(item.id)
+          new Notification({ title: "需要你", body: (item as any).title ?? "Pod 需要你的决定" }).show()
+        }
+        notifyState.pruneAttention(items.map((item) => item.id))
+
+        const latest = payload?.unreadResults?.latest
+        if (latest && !notifyState.hasResult(latest.goalId, latest.revision)) {
+          notifyState.markResult(latest.goalId, latest.revision)
+          new Notification({ title: `${latest.title} · 已完成`, body: "Goal 已归档，点击查看结果" }).show()
         }
       },
       log: (msg) => logger.warn(msg),

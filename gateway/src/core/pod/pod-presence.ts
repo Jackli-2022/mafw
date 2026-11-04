@@ -12,6 +12,7 @@ export interface PodPresenceGoal {
   resultReady: boolean;
   endedAt: string | null;
   startedAt: string | null;
+  revision?: number;
   currentAssignment?: { role?: string | null } | null;
 }
 
@@ -34,6 +35,7 @@ export interface PodPresenceItem {
   title: string;
   phase: string | null;
   node: string | null;
+  revision: number;
   progress: { current: number; total: number } | null;
   startedAt: string;
   updatedAt: string;
@@ -101,6 +103,7 @@ function toItem(input: PodPresenceInput, projectId: string, goal: PodPresenceGoa
     title: goal.title,
     phase: goal.phase,
     node: nodeOf(goal),
+    revision: goal.revision ?? 1,
     progress: total > 0 ? { current, total } : null,
     startedAt: goal.startedAt ?? '',
     updatedAt: goal.endedAt ?? goal.startedAt ?? '',

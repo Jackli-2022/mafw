@@ -10,6 +10,7 @@ export interface PresenceItem {
   title: string
   phase: string | null
   node: string | null
+  revision: number
   progress: { current: number; total: number } | null
   startedAt: string
   updatedAt: string
