@@ -8,6 +8,7 @@ import {
   TECH_LEAD_INVITE_LABEL,
   createPodStore,
   leadEntryLabel,
+  pickTechLeadInviteGoal,
   techLeadInvite,
   techLeadTabTitle,
   type PodStoreApi,
@@ -53,11 +54,24 @@ describe("techLeadInvite", () => {
   })
 })
 
+describe("pickTechLeadInviteGoal", () => {
+  test("discussing 优先于其他非终态，终态不占位", () => {
+    const goals = [
+      { goalId: "g_work", title: "A", stage: { kind: "working" }, endedAt: null },
+      { goalId: "g_discuss", title: "B", stage: { kind: "discussing" }, endedAt: null },
+      { goalId: "g_ended", title: "C", stage: { kind: "discussing" }, endedAt: "2026-11-04T00:00:00.000Z" },
+    ]
+    assert.equal(pickTechLeadInviteGoal(goals)?.goalId, "g_discuss")
+    assert.equal(pickTechLeadInviteGoal([goals[0]])?.goalId, "g_work")
+    assert.equal(pickTechLeadInviteGoal([goals[2]]), null)
+    assert.equal(pickTechLeadInviteGoal([]), null)
+  })
+})
+
 describe("techLeadTabTitle", () => {
   test("用 Goal 标题派生 tab 标题", () => {
     assert.equal(techLeadTabTitle("Pod loop"), "Tech Lead · Pod loop")
   })
-
   test("缺标题时用固定占位，不泄漏 runtime id", () => {
     assert.equal(techLeadTabTitle(""), "Tech Lead · 未命名目标")
     assert.equal(techLeadTabTitle("   "), "Tech Lead · 未命名目标")

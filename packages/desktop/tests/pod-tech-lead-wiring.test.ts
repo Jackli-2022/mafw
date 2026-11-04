@@ -56,3 +56,12 @@ test("shell 只在当前会话是 Lead 时计算邀请", () => {
   assert.match(shell, /techLeadInvite=\{activeLeadGoalInvite\}/)
   assert.match(shell, /onOpenTechLead=\{\(goalId\) => void openTechLead\(goalId\)\}/)
 })
+
+// 2026-11-04（spec techlead-goal-entry §3.1）：邀请条按 Goal 持久化——非终态都在，
+// discussing 优先占位；同时携带阶段标签，用户能看出 Goal 现在在哪一步。
+test("邀请条随 Goal 持久并携带阶段标签", () => {
+  assert.match(shell, /pickTechLeadInviteGoal\(/)
+  assert.match(shell, /stageLabel: podStageLabel\(/)
+  assert.match(chatPane, /stageLabel=\{invite\(\)\.stageLabel\}/)
+  assert.match(invite, /stageLabel/)
+})

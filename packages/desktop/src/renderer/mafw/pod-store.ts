@@ -37,6 +37,14 @@ export function techLeadInvite(
   return { goalId: goalID, label: TECH_LEAD_INVITE_LABEL }
 }
 
+/** Lead 邀请位的 Goal 选择：discussing 优先（刚建完的引导位），其次第一个非终态 Goal。 */
+export function pickTechLeadInviteGoal<
+  T extends { goalId: string; stage?: TechLeadStageLike; endedAt?: string | null },
+>(goals: readonly T[]): T | null {
+  const eligible = goals.filter((goal) => !!techLeadInvite(goal, goal.goalId))
+  return eligible.find((goal) => goal.stage?.kind === "discussing") ?? eligible[0] ?? null
+}
+
 /** Tech Lead tab 标题：由 Goal 标题派生，绝不含 runtime session id。
  *  新 revision（打回后的讨论）在标题上带 `rev N`，让用户知道在讨论哪一版。 */
 export function techLeadTabTitle(title?: string | null, revision?: number | null): string {

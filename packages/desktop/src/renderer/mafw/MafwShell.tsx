@@ -54,7 +54,7 @@ import { ProjectWorkView } from "./components/ProjectWorkView"
 import { ExecutionView } from "./components/ExecutionView"
 import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
-import { ingestPodEvent, podStore, resolvePodDetailCached, techLeadInvite, techLeadTabTitle } from "./pod-store"
+import { ingestPodEvent, podStore, pickTechLeadInviteGoal, resolvePodDetailCached, techLeadTabTitle } from "./pod-store"
 import { podRailBadge, podResultBadge } from "./pod-rail-badge"
 import {
   createPodResultQueue,
@@ -72,6 +72,7 @@ import {
   podResultNotice,
   podRoleForSession,
   podSessionRoute,
+  podStageLabel,
   reconcileGoalSessionTabs,
   resultStatus,
   techLeadSendGate,
@@ -2075,11 +2076,16 @@ export function MafwShell() {
     if (pd && currentLeadId(pd) === sid) return true
     return isLeadRole(tabSessionRole(sessions().find((s) => s.id === sid)))
   }
-  const activeLeadGoalInvite = (): { goalId: string; title: string } | null => {
+  const activeLeadGoalInvite = (): { goalId: string; title: string; stageLabel: string } | null => {
     if (!activeSessionIsLead()) return null
-    const goal = (podStore.detail()?.goals ?? []).find((item) => !!techLeadInvite(item, item.goalId))
+    // 2026-11-04：非终态 Goal 都保留邀请位；discussing 优先占位（刚建完的引导）。
+    const goal = pickTechLeadInviteGoal(podStore.detail()?.goals ?? [])
     if (!goal) return null
-    return { goalId: goal.goalId, title: goal.title || "未命名目标" }
+    return {
+      goalId: goal.goalId,
+      title: goal.title || "未命名目标",
+      stageLabel: podStageLabel(goal.stage),
+    }
   }
   // 打开 Goal 的 Tech Lead 讨论：`pod.techLead` 确保隐藏会话存在；tab 标题只由 Goal
   // 标题派生，runtime session id 不出现在任何用户可见文案里（spec §3.2）。
