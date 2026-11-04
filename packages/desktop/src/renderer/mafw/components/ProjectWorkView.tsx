@@ -5,6 +5,9 @@ import { WorkOverview } from "./WorkOverview"
 import { PodGoalComposer } from "./PodGoalComposer"
 import type { GoalDetailFocus } from "../pod-model"
 
+/** Composer 请求序列的会话级消费游标：remount 不重放已处理请求。 */
+let lastConsumedComposerRequest = 0
+
 function friendlyWorkError(error: unknown): string {
   const text = String((error as any)?.message ?? error ?? "")
   if (/404|pod not found|没有鲸群/i.test(text)) {
@@ -18,6 +21,7 @@ export function ProjectWorkView(props: {
   projectDir: string | null
   refreshTick: () => number
   composerRequest?: number
+  active: boolean
   onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
   onGoalCreated?: (goalId: string) => void
 }): JSX.Element {
@@ -50,6 +54,7 @@ export function ProjectWorkView(props: {
   createEffect(() => {
     props.projectDir
     props.refreshTick()
+    if (!props.active) return
     void load()
     const timer = setInterval(() => void load(), 15_000)
     onCleanup(() => clearInterval(timer))
@@ -57,7 +62,10 @@ export function ProjectWorkView(props: {
 
   createEffect(() => {
     const request = props.composerRequest ?? 0
-    if (request > 0) setComposerOpen(true)
+    if (request > lastConsumedComposerRequest && props.active) {
+      lastConsumedComposerRequest = request
+      setComposerOpen(true)
+    }
   })
 
   const activeGoalId = () => (

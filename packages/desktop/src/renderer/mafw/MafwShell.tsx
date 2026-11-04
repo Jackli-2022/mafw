@@ -2899,6 +2899,7 @@ export function MafwShell() {
                       projectDir={currentProject()}
                       refreshTick={() => Math.max(goalsRev(), podStore.revision())}
                       composerRequest={goalComposerRequest()}
+                      active={dockPresent() && workbenchView() === "work"}
                       onOpenGoal={(goal, focus) => openGoalDetail(goal.goalId, focus)}
                       onGoalCreated={(goalId) => openGoalDetail(goalId)}
                     />
