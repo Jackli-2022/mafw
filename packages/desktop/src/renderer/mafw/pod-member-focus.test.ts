@@ -89,6 +89,18 @@ describe("memberFocus", () => {
     assert.deepEqual(focus.target, { kind: "techlead", goalId: "g_new" })
   })
 
+  test("讨论会话以 scopeKind 标记（node 为空）时同样显示「讨论」", () => {
+    const detail = {
+      ...base,
+      sessions: [
+        { memberId: "m_t", sessionId: "ses_tl", goalId: "g1", node: null, scopeKind: "discussion", endedAt: null, createdAt: "2026-11-04T01:00:00.000Z" },
+      ],
+    } as any
+    const focus = memberFocus(detail, "m_t")
+    assert.deepEqual(focus.target, { kind: "techlead", goalId: "g1" })
+    assert.match(String(focus.focusText), /讨论「导出限流」/)
+  })
+
   test("detail 缺失 / 未知成员 → 安全空值", () => {
     assert.deepEqual(memberFocus(null, "m_t"), { focusText: null, target: null })
     assert.deepEqual(memberFocus(base, "m_missing"), { focusText: null, target: null })

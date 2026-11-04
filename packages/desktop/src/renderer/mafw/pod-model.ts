@@ -225,7 +225,10 @@ export function memberFocus(
     goalId ? (detail.goals ?? []).find((goal) => goal.goalId === goalId) : undefined
   const focusOf = (session: PodSession | undefined): string | null => {
     if (!session) return null
-    const label = POD_NODE_LABELS[session.node ?? ""] ?? "工作"
+    // 真实会话可能用 scopeKind 标记讨论（node 为空）——与 podSessionRoute 同口径。
+    const scopeKind = (session as PodSession & { scopeKind?: string | null }).scopeKind ?? null
+    const isDiscussion = scopeKind === "discussion" || session.node === "discussion"
+    const label = isDiscussion ? "讨论" : (POD_NODE_LABELS[session.node ?? ""] ?? "工作")
     const title = goalOf(session.goalId)?.title || "未命名目标"
     return `${label}「${title}」`
   }
