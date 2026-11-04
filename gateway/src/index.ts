@@ -45,6 +45,13 @@ import {
   jobFromTask,
 } from './core/background/background-jobs';
 import { PodStore } from './core/pod/pod-store';
+import { PodEventService } from './core/pod/pod-event-service';
+import {
+  classifyGoalArchive,
+  classifyMemberMessage,
+  goalDedupeKey,
+  memberDedupeKey,
+} from './core/pod/pod-event-model';
 import { PodService } from './core/pod/pod-service';
 import { PodTaskService } from './core/pod/pod-task-service';
 import { PodMessageService } from './core/pod/pod-message-service';
@@ -684,6 +691,7 @@ class MafwScheduler {
   private pairingService?: PairingService;
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
+  private podEventService?: PodEventService;
   private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
   private anchorGraphStore: import('./graph/anchor-graph-store').AnchorGraphStore | null = null;
   private coactivationGraphStore: import('./graph/coactivation-store').CoactivationGraphStore | null = null;
@@ -4036,6 +4044,32 @@ class MafwScheduler {
     });
 
     this.podStore = new PodStore(this.getGatewayDb().getStore());
+    this.podEventService = new PodEventService({ store: this.podStore, mafwDir: this.mafwDir });
+    // Agent messages reach the store through the A2A bridge, not through
+    // PodMessageService — the hook must live on the store or p2 never fires.
+    this.podStore.onMessageInserted((row) => {
+      try {
+        const lead = this.podStore?.getMemberByRole(row.podId, 'lead') ?? null;
+        const cls = classifyMemberMessage({
+          kind: row.kind,
+          toMemberId: row.toMemberId,
+          leadMemberId: lead?.id ?? null,
+        });
+        const pod = this.podStore?.getPod(row.podId);
+        this.podEventService?.record({
+          ...cls,
+          podId: row.podId,
+          projectId: pod?.projectDir ?? '',
+          goalId: null,
+          revision: null,
+          title: `[${cls.kind}] ${row.body.slice(0, 60)}`,
+          summary: row.body.slice(0, 400),
+          dedupeKey: memberDedupeKey(row.kind, row.id, row.toMemberId),
+        });
+      } catch (err: any) {
+        log.warn(`[Pod] event write failed for message ${row.id} (non-fatal): ${err?.message ?? err}`);
+      }
+    });
     this.leadSessionRegistry = new LeadSessionRegistry({
       kvGet: (scope, key) => this.getGatewayDb().kvGet(scope, key),
       kvSet: (scope, key, value) => this.getGatewayDb().kvSet(scope, key, value),
@@ -8792,6 +8826,28 @@ class MafwScheduler {
         }
       } catch (err: any) {
         log.warn(`[Pod] decision note failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
+      }
+    }
+    // Event layer: the human hears about every terminal Goal — including FAIL /
+    // MAX_RETRIES / ERROR, which the PASS-only notifyResult path never covered.
+    if (podId && outcome && this.podEventService) {
+      try {
+        const goal = this.podStore?.getGoalByGoalId(goalId);
+        const revision = goal?.activeRevision ?? 1;
+        const cls = classifyGoalArchive({ verdict: (outcome.verdict as any) ?? null });
+        const pod = this.podStore?.getPod(podId);
+        const title = this.describePodGoal(goalId)?.title || goalId;
+        this.podEventService.record({
+          ...cls,
+          podId,
+          projectId: pod?.projectDir ?? '',
+          goalId,
+          revision,
+          title: `${title} · ${outcome.verdict}`,
+          dedupeKey: goalDedupeKey(goalId, revision),
+        });
+      } catch (err: any) {
+        log.warn(`[Pod] event write failed for ${goalId} (non-fatal): ${err?.message ?? err}`);
       }
     }
     // 完成通知（spec §8.1）：Reviewer 判 PASS 后由 Lead 通知用户——revision 保持

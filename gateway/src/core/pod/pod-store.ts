@@ -1271,7 +1271,15 @@ export class PodStore {
       input.kind, input.body, input.protocol ?? null,
       input.externalMessageId ?? null, input.partsJson ?? null, input.now,
     ) as any;
-    return messageFromRow(row);
+    const inserted = messageFromRow(row);
+    for (const hook of this.messageHooks) {
+      try {
+        hook(inserted);
+      } catch {
+        // A broken listener must never lose the message itself.
+      }
+    }
+    return inserted;
   }
 
   markMessageDelivered(id: string, sessionId: string, now: string): void {
@@ -1426,6 +1434,13 @@ export class PodStore {
   }
 
   // —— pod events (attention layer) ——
+
+  private messageHooks: Array<(row: PodMessageRow) => void> = [];
+
+  /** Every message write path (REST service, decision notes, A2A bridge) lands here. */
+  onMessageInserted(cb: (row: PodMessageRow) => void): void {
+    this.messageHooks.push(cb);
+  }
 
   private mapEvent(row: any): PodEventRow {
     return {
