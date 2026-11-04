@@ -6,7 +6,8 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Icon } from "@mafw/ui/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { buildMemberRows, buildRecentMessages, podAttentionRow, podCounts, podEmptyState, type PodEmptyState } from "../pod-rail-face-model"
-import { memberOpenTarget, podStatusLabel } from "../pod-model"
+import { memberFocus, podStatusLabel } from "../pod-model"
+import { requestPodTechLeadOpen } from "../pod-result-store"
 
 export function ProjectResources(props: {
   detail: PodDetail | null
@@ -142,10 +143,18 @@ export function ProjectResources(props: {
         <div class="mafw-pod-rail-members">
           <For each={rows()}>
             {(row) => {
-              const target = () => (props.detail ? memberOpenTarget(props.detail, row.id) : null)
+              const focus = () => (props.detail ? memberFocus(props.detail, row.id) : { focusText: null, target: null })
+              const target = () => focus().target
               const open = () => {
+                // 2026-11-04（spec techlead-goal-entry §3.3）：Tech Lead 行走 Goal 入口
+                // （requestPodTechLeadOpen → openTechLead ensure 讨论会话），其余开 live 会话。
                 const hit = target()
-                if (hit) props.onOpenSession(hit.sessionId)
+                if (!hit) return
+                if (hit.kind === "techlead") {
+                  requestPodTechLeadOpen(hit.goalId, null)
+                  return
+                }
+                props.onOpenSession(hit.sessionId)
               }
               return (
                 <div
@@ -153,7 +162,7 @@ export function ProjectResources(props: {
                   classList={{ active: !!target() }}
                   role={target() ? "button" : undefined}
                   tabIndex={target() ? 0 : undefined}
-                  aria-label={target() ? `打开 ${row.displayName} 的会话` : undefined}
+                  aria-label={target() ? `打开 ${row.displayName}：${focus().focusText ?? "会话"}` : undefined}
                   onClick={open}
                   onKeyDown={(event) => {
                     if (!target()) return
@@ -171,16 +180,14 @@ export function ProjectResources(props: {
                       <span class="mafw-pod-rail-member-name">{row.displayName}</span>
                     </div>
                     <div class="mafw-pod-rail-member-action">
-                      {target()
-                        ? (target()!.kind === "session" ? "打开会话" : "查看快照")
-                        : row.action}
+                      {focus().focusText ?? (target() ? "查看快照" : "待命")}
                     </div>
                   </div>
                   <ButtonV2
                     variant="ghost"
                     size="small"
                     icon="square-arrow-top-right"
-                    aria-label={`打开 ${row.displayName} 的会话`}
+                    aria-label={target() ? `打开 ${row.displayName}：${focus().focusText ?? "会话"}` : undefined}
                     disabled={!target()}
                     onClick={(event: MouseEvent) => {
                       event.stopPropagation()

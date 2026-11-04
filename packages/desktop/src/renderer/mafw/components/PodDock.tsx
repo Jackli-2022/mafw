@@ -11,8 +11,9 @@ import { PodMemoryPanel } from "./PodMemoryPanel"
 import { PodTranscriptOverlay } from "./PodTranscriptOverlay"
 import { podStore } from "../pod-store"
 import { deliveryToast } from "../pod-rail-face-model"
+import { requestPodTechLeadOpen } from "../pod-result-store"
 import {
-  memberOpenTarget,
+  memberFocus,
   podMemberStatusLabel,
   podRoleLabel,
   podStatusLabel,
@@ -58,8 +59,14 @@ export function PodDock(props: {
   })
 
   const openMember = (detail: PodDetail, memberId: string) => {
-    const target = memberOpenTarget(detail, memberId)
+    // 2026-11-04（spec techlead-goal-entry §3.3）：行 = 目录 + 当前焦点。
+    // Tech Lead 行走 Goal 入口（ensure 讨论会话）；其余成员开 live 会话 / transcript。
+    const target = memberFocus(detail, memberId).target
     if (!target) return
+    if (target.kind === "techlead") {
+      requestPodTechLeadOpen(target.goalId, null)
+      return
+    }
     if (target.kind === "transcript") {
       transcriptPodId = detail.pod.id
       setTranscriptSession(target.sessionId)
@@ -184,7 +191,8 @@ export function PodDock(props: {
                   <div class="mafw-pod-members">
                     <For each={detail().members}>
                       {(member) => {
-                        const target = () => memberOpenTarget(detail(), member.id)
+                        const focus = () => memberFocus(detail(), member.id)
+                        const target = () => focus().target
                         return (
                           <div
                             class="mafw-pod-member"
@@ -206,7 +214,7 @@ export function PodDock(props: {
                               {podMemberStatusLabel(member.status)}
                             </span>
                             <span class="mafw-pod-member-count">
-                              {target() ? (target()!.kind === "session" ? "打开会话" : "查看快照") : "空闲"}
+                              {focus().focusText ?? (target() ? "查看快照" : "待命")}
                             </span>
                           </div>
                         )

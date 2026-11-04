@@ -48,3 +48,12 @@ test("Pod resources copy points at the right workbench, not the retired workspac
   assert.doesNotMatch(resources, /工作空间/)
   assert.doesNotMatch(resources, /右栏处理/)
 })
+
+// 2026-11-04（spec techlead-goal-entry §3.3）：班底焦点行——行 = 目录 + 当前焦点；
+// Tech Lead 行走 Goal 入口（requestPodTechLeadOpen），无 live 会话显示待命。
+test("roster rows show the current focus and route techlead members through the goal entry", () => {
+  assert.match(resources, /memberFocus\(/)
+  assert.match(resources, /focus\(\)\.focusText/)
+  assert.match(resources, /待命/)
+  assert.match(resources, /requestPodTechLeadOpen\(/)
+})
