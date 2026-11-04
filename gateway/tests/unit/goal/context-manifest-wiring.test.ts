@@ -151,6 +151,23 @@ describe('ContextManifest assembly', () => {
     expect(rev2).not.toContain('- g1/goal-eval.json');
   });
 
+  test('a quick plan without goal-eval does not fail the execute manifest', async () => {
+    const f = makeFixture({ artifacts: false });
+    // quick 计划包允许没有 goalEval（validatePlanPackage 的契约）；manifest 必须同样放行。
+    fs.writeFileSync(path.join(f.mafwDir, 'waves.json'), JSON.stringify({ strategy: 'quick', waves: [] }), 'utf-8');
+
+    const block = await f.service.renderForNode({ goalId: 'g1', node: 'execute', revision: 1 });
+    expect(block).toContain('stage: implementing');
+  });
+
+  test('a collaborative plan still requires goal-eval', async () => {
+    const f = makeFixture({ artifacts: false });
+    fs.writeFileSync(path.join(f.mafwDir, 'waves.json'), JSON.stringify({ waves: [] }), 'utf-8');
+
+    await expect(f.service.renderForNode({ goalId: 'g1', node: 'execute', revision: 1 }))
+      .rejects.toThrow(/required context missing: .*goal-eval\.json/);
+  });
+
   test('missing required baseline fails closed with the resolved path', async () => {
     const f = makeFixture({ artifacts: false });
 

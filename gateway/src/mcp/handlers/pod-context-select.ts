@@ -418,7 +418,12 @@ export class PodContextSelectionService {
     context: GoalContext,
     stage: string,
   ): ContextManifest {
-    const deferred = DEFERRED_BASELINE[stage] ?? [];
+    const deferred = [...(DEFERRED_BASELINE[stage] ?? [])];
+    // quick 计划包允许不带 goalEval（validatePlanPackage 的契约），所以 implementing /
+    // reviewing 阶段在 waves.strategy === 'quick' 时不得把 goal-eval.json 当硬前置。
+    if ((stage === 'implementing' || stage === 'reviewing') && this.isQuickPlan(context)) {
+      deferred.push('goal-eval.json');
+    }
     const missing: string[] = [];
     const required = manifest.required.map((ref) => {
       if (!ref.baseline) return ref;
@@ -432,6 +437,17 @@ export class PodContextSelectionService {
       throw new PodError(400, `required context missing: ${missing[0]}`);
     }
     return { ...manifest, required };
+  }
+
+  private isQuickPlan(context: GoalContext): boolean {
+    try {
+      const waves = nodeArtifactPaths(context.mafwDir, context.goalId, 1, { revision: context.revision }).waves;
+      if (!this.isReadableFile(waves)) return false;
+      const raw = JSON.parse(fs.readFileSync(waves, 'utf-8'));
+      return raw?.strategy === 'quick';
+    } catch {
+      return false;
+    }
   }
 
   private baselinePath(context: GoalContext, name: string): string {
