@@ -20,20 +20,20 @@ export const TECH_LEAD_INVITE_LABEL = "与 Tech Lead 讨论"
 export type TechLeadStageLike = { kind?: string | null; role?: string | null } | null | undefined
 
 /**
- * Lead 会话里的 Tech Lead 入口判定。
+ * Lead 会话里的 Tech Lead 入口判定（2026-11-04：按 Goal 持久化）。
  *
- * 只有 `discussing` 阶段的 Goal 才需要「去和 Tech Lead 讨论」——这时 NodeDriver 还没
- * 开始跑，Lead 不负责技术方案讨论（spec §3.1）。其他阶段/角色一律不提示，避免把用户
- * 引回已经进入规划/执行/审阅的 Goal。
+ * 除终态外都提示——`PodGoal.endedAt` 是终态权威（spec techlead-goal-entry §3.1）。
+ * 讨论入口在规划/实施/审阅阶段同样有效：Tech Lead 讨论会话贯穿整个 revision，用户
+ * 随时可以回来追问或纠偏；阶段标签由调用方（activeLeadGoalInvite）补充。
  */
 export function techLeadInvite(
-  goal: { stage?: TechLeadStageLike } | null | undefined,
+  goal: { stage?: TechLeadStageLike; endedAt?: string | null } | null | undefined,
   goalID: string,
 ): { goalId: string; label: string } | null {
   if (!goalID) return null
-  const stage = goal?.stage
-  if (!stage || stage.kind !== "discussing") return null
-  if (stage.role && stage.role !== "tech_lead") return null
+  // 2026-11-04：入口按 Goal 持久化——除终态外都提示（`PodGoal.endedAt` 是终态权威，
+  // 老 gateway 缺 stage 时不再一票否决；spec techlead-goal-entry §3.1）。
+  if (!goal || goal.endedAt) return null
   return { goalId: goalID, label: TECH_LEAD_INVITE_LABEL }
 }
 

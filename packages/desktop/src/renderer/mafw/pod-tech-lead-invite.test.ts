@@ -22,14 +22,30 @@ describe("techLeadInvite", () => {
     assert.equal(TECH_LEAD_INVITE_LABEL, "与 Tech Lead 讨论")
   })
 
-  test("其他阶段/其他角色/缺 stage 一律不提示（旧 gateway 缺 stage 时不误报）", () => {
-    assert.equal(techLeadInvite({ stage: { kind: "working", role: "builder" } }, "g1"), null)
-    assert.equal(techLeadInvite({ stage: { kind: "plan_approval", role: "tech_lead" } }, "g1"), null)
-    assert.equal(techLeadInvite({ stage: { kind: "discussing", role: "builder" } }, "g1"), null)
-    assert.equal(techLeadInvite({ stage: null }, "g1"), null)
-    assert.equal(techLeadInvite({}, "g1"), null)
+  test("非终态 Goal 各阶段都产出邀请（planning / plan_approval / working / discussing）", () => {
+    for (const kind of ["discussing", "planning", "plan_approval", "working"]) {
+      assert.deepEqual(techLeadInvite({ stage: { kind, role: "tech_lead" } }, "g1"), {
+        goalId: "g1",
+        label: "与 Tech Lead 讨论",
+      }, `stage=${kind}`)
+    }
+    // 非 Tech Lead 角色的阶段同样可进讨论（Goal 的主对话面就是 Tech Lead）
+    assert.deepEqual(techLeadInvite({ stage: { kind: "working", role: "builder" } }, "g1"), {
+      goalId: "g1",
+      label: "与 Tech Lead 讨论",
+    })
+  })
+
+  test("旧 gateway 缺 stage 不误报：非终态仍显示（endedAt 才是终态权威）", () => {
+    assert.deepEqual(techLeadInvite({ stage: null }, "g1"), { goalId: "g1", label: "与 Tech Lead 讨论" })
+    assert.deepEqual(techLeadInvite({}, "g1"), { goalId: "g1", label: "与 Tech Lead 讨论" })
     assert.equal(techLeadInvite(null, "g1"), null)
     assert.equal(techLeadInvite(undefined, "g1"), null)
+  })
+
+  test("终态 Goal（endedAt 非空）不再提示", () => {
+    assert.equal(techLeadInvite({ stage: { kind: "discussing", role: "tech_lead" }, endedAt: "2026-11-04T00:00:00.000Z" }, "g1"), null)
+    assert.equal(techLeadInvite({ endedAt: "2026-11-04T00:00:00.000Z" }, "g1"), null)
   })
 
   test("没有 goalId 就不出邀请（防 nullptr tab 标题）", () => {

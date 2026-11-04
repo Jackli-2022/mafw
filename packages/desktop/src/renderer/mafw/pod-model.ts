@@ -175,6 +175,68 @@ export function memberOpenTarget(
   return ended ? { kind: "transcript", sessionId: ended.sessionId } : null
 }
 
+/** 班底焦点行的节点词表（spec 2026-11-04-techlead-goal-entry §3.3）。 */
+const POD_NODE_LABELS: Record<string, string> = {
+  discussion: "讨论",
+  plan: "规划",
+  execute: "实施",
+  review: "评审",
+  probe: "探针",
+  coordination: "协调",
+}
+
+export type MemberFocusTarget =
+  | { kind: "session" | "transcript"; sessionId: string }
+  | { kind: "techlead"; goalId: string }
+  | null
+
+/**
+ * 班底焦点行：行 = 目录 + 当前焦点。
+ *
+ * Tech Lead 恒走 `techlead` 通路（shell 的 openTechLead → ensureSession 打开该 Goal
+ * 的讨论 tab，可发送且标题正确；节点会话不占入口）。其余成员维持 memberOpenTarget：
+ * 最新 live 会话，或已结束且带快照的 transcript。焦点文字只描述「在哪个 Goal 的哪一步」，
+ * 绝不包含 runtime session id。
+ */
+export function memberFocus(
+  detail: PodDetail | null,
+  memberId: string,
+): { focusText: string | null; target: MemberFocusTarget } {
+  if (!detail) return { focusText: null, target: null }
+  const member = detail.members.find((item) => item.id === memberId)
+  if (!member) return { focusText: null, target: null }
+  const sessions = memberSessions(detail, memberId)
+  const live = sessions
+    .filter((session) => !session.endedAt)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+  const goalOf = (goalId: string | null | undefined) =>
+    goalId ? (detail.goals ?? []).find((goal) => goal.goalId === goalId) : undefined
+  const focusOf = (session: PodSession | undefined): string | null => {
+    if (!session) return null
+    const label = POD_NODE_LABELS[session.node ?? ""] ?? "工作"
+    const title = goalOf(session.goalId)?.title || "未命名目标"
+    return `${label}「${title}」`
+  }
+
+  if (member.role === "tech_lead") {
+    // 最新 live 会话所在 Goal 优先；没有 live 会话时指向第一个非终态 Goal（打开即 ensure）。
+    const activeGoal = goalOf(live?.goalId) ?? (detail.goals ?? []).find((goal) => !goal.endedAt)
+    if (activeGoal) {
+      return {
+        focusText: focusOf(live) ?? `讨论「${activeGoal.title || "未命名目标"}」`,
+        target: { kind: "techlead", goalId: activeGoal.goalId },
+      }
+    }
+    return { focusText: focusOf(live), target: memberOpenTarget(detail, memberId) }
+  }
+
+  if (member.role === "lead") {
+    return { focusText: live ? focusOf(live) : "协调中", target: memberOpenTarget(detail, memberId) }
+  }
+
+  return { focusText: focusOf(live), target: memberOpenTarget(detail, memberId) }
+}
+
 export function podRoleForSession(detail: PodDetail | null, sessionID: string): PodMemberRole | null {
   if (!detail) return null
   const session = detail.sessions.find((item) => item.sessionId === sessionID)
