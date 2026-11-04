@@ -22,7 +22,9 @@ describe('handleSessionSwitch', () => {
     await handleSessionSwitch(fakeReq({ agent: 'plan' }), res, 's1', 'agent', {
       getRuntime: () => ({ session: { switchAgent: async (o: any) => calls.push(o) } }) as any,
       getAccess: () => ({ can: () => true }),
-    });
+  isCoordinationSession: () => false,
+  isRegistryIdentity: () => false,
+});
     expect(calls).toEqual([{ sessionID: 's1', agent: 'plan' }]);
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toEqual({ ok: true });
@@ -34,7 +36,9 @@ describe('handleSessionSwitch', () => {
     await handleSessionSwitch(fakeReq({ model: { providerID: 'gateway', modelID: 'deepseek-v4-flash' }, variant: 'fast' }), res, 's1', 'model', {
       getRuntime: () => ({ session: { switchModel: async (o: any) => calls.push(o) } }) as any,
       getAccess: () => ({ can: () => true }),
-    });
+  isCoordinationSession: () => false,
+  isRegistryIdentity: () => false,
+});
     expect(calls).toEqual([{
       sessionID: 's1',
       model: { providerID: 'gateway', modelID: 'deepseek-v4-flash' },
@@ -48,7 +52,9 @@ describe('handleSessionSwitch', () => {
     await handleSessionSwitch(fakeReq({}), res, 's1', 'agent', {
       getRuntime: () => ({ session: { switchAgent: async () => {} } }) as any,
       getAccess: () => ({ can: () => true }),
-    });
+  isCoordinationSession: () => false,
+  isRegistryIdentity: () => false,
+});
     expect(res.status).toBe(400);
   });
 
@@ -57,6 +63,8 @@ describe('handleSessionSwitch', () => {
     await handleSessionSwitch(fakeReq({ agent: 'plan' }), res, 's1', 'agent', {
       getRuntime: () => ({ session: {} }) as any,
       getAccess: () => ({ can: (id: string) => id !== 'session.switchAgent' }) as any,
+      isCoordinationSession: () => false,
+      isRegistryIdentity: () => false,
     });
     expect(res.status).toBe(503);
     expect(JSON.parse(res.body).error).toBe('runtime does not support session.switchAgent');
@@ -64,7 +72,11 @@ describe('handleSessionSwitch', () => {
 
   it('no runtime → 503', async () => {
     const res = fakeRes();
-    await handleSessionSwitch(fakeReq({ agent: 'plan' }), res, 's1', 'agent', { getRuntime: () => null });
+    await handleSessionSwitch(fakeReq({ agent: 'plan' }), res, 's1', 'agent', {
+      getRuntime: () => null,
+      isCoordinationSession: () => false,
+      isRegistryIdentity: () => false,
+    });
     expect(res.status).toBe(503);
   });
 });
@@ -86,6 +98,16 @@ describe('handleSessionSwitch · coordinator gate', () => {
     expect(res.status).toBe(403);
     expect(JSON.parse(res.body).error).toBe('coordinator sessions are managed by the pod');
     expect(calls).toEqual([]);
+  });
+
+  it('coordinator names are case-insensitive (Lead / MAFW-TECH-LEAD cannot slip through)', async () => {
+    for (const agent of ['Lead', 'LEAD', 'MAFW-TECH-LEAD']) {
+      const calls: any[] = [];
+      const res = fakeRes();
+      await handleSessionSwitch(fakeReq({ agent }), res, 's1', 'agent', deps(calls, { bound: false }));
+      expect(res.status).toBe(403);
+      expect(calls).toEqual([]);
+    }
   });
 
   it('historical manager alias is treated as lead', async () => {

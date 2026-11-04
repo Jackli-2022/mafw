@@ -43,8 +43,8 @@ test("占位符教学并入输入框；keyhint 浮层删除", () => {
   assert.ok(!pane.includes("mafw-keyhint"))
 })
 
-test("Lead 会话锁定迁移到会话菜单 Agent 行", () => {
-  assert.ok(pane.includes("agentLocked={isLead()}"))
+test("Lead / creator 会话锁定迁移到会话菜单 Agent 行", () => {
+  assert.ok(pane.includes('agentLocked={isLead() || isAgentKey(props.agentSel(), "mafw-create")}'))
 })
 
 test("窄窗档位：≤620 藏上下文 pill，≤520 藏 ＋（附件入口仍在 ⋯）", () => {

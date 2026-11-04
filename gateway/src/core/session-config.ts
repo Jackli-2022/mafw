@@ -102,6 +102,16 @@ export class SessionConfigService {
       await this.deps.switchModel(sessionID, current, variant);
       patch = { model: current, variant };
     } else if (category === 'thought_level') {
+      if (value === null) {
+        // 清除回「默认」：只清配置层（展示/徽标），runtime 无通用 unset 原语，
+        // 抹掉运行时档位会与 runtime 内部状态分裂——保留 runtime 现状，下次显式设定再同步。
+        const next = { ...stored };
+        delete next.thinkingLevel;
+        this.deps.save(sessionID, next);
+        const state = await this.get(sessionID);
+        this.deps.emit(sessionID, state, category);
+        return state;
+      }
       if (typeof value !== 'string' || !THINKING_LEVELS.has(value)) {
         throw new SessionConfigError(400, `invalid thinkingLevel: ${String(value)}`);
       }

@@ -149,7 +149,7 @@ import { countUserTurns, shouldKeepPaging } from "./components/history-paging"
 
 type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
-import type { MafwAgent, MafwProvider } from "@mafw/sdk"
+import type { MafwAgent, MafwProvider, ThinkingLevel } from "@mafw/sdk"
 
 /** `/api/provider` 信封：规范 `items` + 默认模型/连接列表（composer 初值用）。 */
 type ProvidersEnvelope = {
@@ -568,9 +568,9 @@ export function MafwShell() {
   })
   const thinkingLevelOf = (sid: string | null | undefined): any => (sid ? (sessionConfigs[sid]?.thinkingLevel ?? null) : null)
   const thinkingSupportedOf = (sid: string | null | undefined): boolean => (sid ? sessionConfigs[sid]?.thinkingLevelSupported === true : false)
-  const applyThinking = (sid: string, level: any) => {
+  const applyThinking = (sid: string, level: ThinkingLevel | null) => {
     const prev = sessionConfigs[sid]
-    setSessionConfigs(sid, { ...(prev ?? {}), thinkingLevel: level })
+    setSessionConfigs(sid, { ...(prev ?? {}), thinkingLevel: level ?? undefined })
     window.api.mafw.sessions.setConfig(sid, { category: "thought_level", value: level } as any)
       .then((state: any) => setSessionConfigs(sid, state))
       .catch(() => {

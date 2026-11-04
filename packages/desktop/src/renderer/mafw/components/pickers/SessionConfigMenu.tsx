@@ -3,7 +3,7 @@
 import { createEffect, createSignal, For, Show } from "solid-js"
 import type { ThinkingLevel } from "@mafw/sdk"
 import { PopoverShell } from "./PopoverShell"
-import { THINKING_LEVELS } from "../../session-config-menu-model"
+import { THINKING_MENU_OPTIONS } from "../../session-config-menu-model"
 
 export interface SessionConfigMenuProps {
   open: boolean
@@ -20,7 +20,7 @@ export interface SessionConfigMenuProps {
   thinkingSupported: boolean
   onAgentSelect: (id: "default" | "plan" | "build") => void
   onOpenModelPicker: () => void
-  onThinkingSelect: (level: ThinkingLevel) => void
+  onThinkingSelect: (level: ThinkingLevel | null) => void
   onClose: () => void
 }
 
@@ -107,18 +107,18 @@ export function SessionConfigMenu(props: SessionConfigMenuProps) {
           <span class="mafw-picker-row-meta">{thinkingValue()}</span>
         </div>
         <Show when={expand() === "thinking" && props.thinkingSupported}>
-          <For each={THINKING_LEVELS}>
-            {(level) => (
+          <For each={THINKING_MENU_OPTIONS}>
+            {(opt) => (
               <div
                 class="mafw-picker-row mafw-config-subrow"
                 role="menuitemradio"
                 tabindex="0"
-                aria-checked={props.thinkingLevel === level}
-                onClick={() => { props.onThinkingSelect(level); setExpand(null) }}
-                onKeyDown={(e) => rowKey(e, () => { props.onThinkingSelect(level); setExpand(null) })}
+                aria-checked={props.thinkingLevel === opt.id}
+                onClick={() => { props.onThinkingSelect(opt.id); setExpand(null) }}
+                onKeyDown={(e) => rowKey(e, () => { props.onThinkingSelect(opt.id); setExpand(null) })}
               >
-                <span class="mafw-picker-row-name">{level}</span>
-                <Show when={props.thinkingLevel === level}><span class="mafw-picker-row-check">✓</span></Show>
+                <span class="mafw-picker-row-name">{opt.label}</span>
+                <Show when={props.thinkingLevel === opt.id}><span class="mafw-picker-row-check">✓</span></Show>
               </div>
             )}
           </For>

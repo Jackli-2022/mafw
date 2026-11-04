@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   AGENT_SWITCH_OPTIONS,
   THINKING_LEVELS,
+  THINKING_MENU_OPTIONS,
   agentBadge,
   findAgentEntry,
   thinkingBadge,
@@ -56,5 +57,11 @@ describe("session config menu model", () => {
 
   test("THINKING_LEVELS 七档齐全且有序", () => {
     expect(THINKING_LEVELS).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+  })
+
+  test("THINKING_MENU_OPTIONS 默认项在首位（设定后可回退）", () => {
+    expect(THINKING_MENU_OPTIONS[0]).toEqual({ id: null, label: "默认" })
+    expect(THINKING_MENU_OPTIONS).toHaveLength(8)
+    expect(THINKING_MENU_OPTIONS[7]).toEqual({ id: "max", label: "max" })
   })
 })

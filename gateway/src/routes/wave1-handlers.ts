@@ -200,18 +200,22 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
       getAccess: () => gw.runtime?.access ?? null,
     })));
 
+  const switchGateDeps = () => ({
+    isCoordinationSession: (sid: string) => gw.isCoordinationSession?.(sid) ?? false,
+    isRegistryIdentity: (name: string) => gw.isRegistryIdentity?.(name) ?? false,
+  });
   registry.attachHandler('session.switchAgent', H(async (req, res, params) =>
     handleSessionSwitch(req, res, params.id, 'agent', {
       getRuntime: () => (gw.runtime ?? null) as any,
       getAccess: () => gw.runtime?.access ?? null,
-      isCoordinationSession: (sid) => gw.isCoordinationSession?.(sid) ?? false,
-      isRegistryIdentity: (name) => gw.isRegistryIdentity?.(name) ?? false,
+      ...switchGateDeps(),
     })));
 
   registry.attachHandler('session.switchModel', H(async (req, res, params) =>
     handleSessionSwitch(req, res, params.id, 'model', {
       getRuntime: () => (gw.runtime ?? null) as any,
       getAccess: () => gw.runtime?.access ?? null,
+      ...switchGateDeps(),
     })));
 
   registry.attachHandler('structured.submit', H(async (req, res) =>

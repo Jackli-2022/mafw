@@ -1513,6 +1513,9 @@ html[data-theme="light"] body {
   .mafw-context-pill { display: none; }
   .mafw-composer-meta { display: none; }
   .mafw-composer .mafw-mode-pill > span { display: none; }
+  /* 图标化后 hover/聚焦显示短标签（spec §3.1）；非默认档本就带底色，一眼可辨。 */
+  .mafw-composer .mafw-mode-pill:hover > span,
+  .mafw-composer .mafw-mode-pill:focus-visible > span { display: inline; }
   .mafw-model-name { max-width: 120px; }
 }
 @container (max-width: 520px) {
@@ -1581,19 +1584,6 @@ html[data-theme="light"] body {
   background: currentColor;
   border-radius: 2px;
 }
-.mafw-keyhint {
-  position: absolute;
-  right: 10px;
-  bottom: 54px;
-  font-size: 11px;
-  color: var(--text-5);
-  opacity: 0;
-  transition: opacity var(--dur-1) var(--ease);
-  flex-shrink: 0;
-  white-space: nowrap;
-  pointer-events: none;
-}
-.mafw-composer:focus-within .mafw-keyhint { opacity: 1; }
 
 /* Permission mode toggle (P1 batch 2) */
 .mafw-perm-mode-auto { color: var(--accent-text); background: var(--surface-base-active); }

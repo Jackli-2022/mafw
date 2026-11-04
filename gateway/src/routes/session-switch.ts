@@ -20,10 +20,11 @@ export interface SessionSwitchDeps {
   getRuntime: () => SessionSwitchClientLike | null;
   /** surface 门：注入 facade 的 RuntimeAccess（业务不构造 raw access）。 */
   getAccess?: () => Pick<RuntimeAccess, 'can'> | null;
-  /** 该会话是否绑定 Pod coordination 槽位（LeadSessionRegistry 权威）。 */
-  isCoordinationSession?: (sessionID: string) => boolean;
-  /** 目标名是否注册表身份（runtime 原生 agent 返回 false）。 */
-  isRegistryIdentity?: (name: string) => boolean;
+  /** 该会话是否绑定 Pod coordination 槽位（LeadSessionRegistry 权威）。必填：
+   *  漏接线会让 coordinator 门静默失效（2026-11-04 终审 Minor）。 */
+  isCoordinationSession: (sessionID: string) => boolean;
+  /** 目标名是否注册表身份（runtime 原生 agent 返回 false）。必填，理由同上。 */
+  isRegistryIdentity: (name: string) => boolean;
 }
 
 class SwitchError extends Error {
@@ -78,9 +79,10 @@ export function checkAgentSwitchGate(
   sessionID: string,
   agent: string,
 ): { status: number; error: string } | null {
-  const target = resolveIdentityAlias(agent.trim());
+  // 大小写归一（`Lead` / `MAFW-TECH-LEAD` 不得绕过治理门）；runtime 调用仍用原值。
+  const target = resolveIdentityAlias(agent.trim().toLowerCase());
   if (!target) return null;
-  const bound = deps.isCoordinationSession?.(sessionID) ?? false;
+  const bound = deps.isCoordinationSession(sessionID);
   const isCoordinator = target === 'lead';
   if (bound && !isCoordinator) {
     return { status: 403, error: 'coordinator sessions are managed by the pod' };
@@ -88,7 +90,7 @@ export function checkAgentSwitchGate(
   if (!bound && isCoordinator) {
     return { status: 403, error: 'coordinator sessions are managed by the pod' };
   }
-  if (!isCoordinator && target !== 'mafw-create' && deps.isRegistryIdentity?.(target)) {
+  if (!isCoordinator && target !== 'mafw-create' && deps.isRegistryIdentity(target)) {
     return { status: 403, error: 'identity is managed by the pod' };
   }
   return null;

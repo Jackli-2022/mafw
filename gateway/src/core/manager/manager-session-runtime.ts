@@ -155,6 +155,25 @@ export function clearManagerSlot(value: unknown, currentRuntime: string): unknow
 }
 
 /**
+ * Archive 后清理 stale slot：找出所有指向 `sessionId` 的 kv 行并摘掉当前 runtime 槽
+ *（保留其他 runtime / unattributed legacy）。归档会话不得再被 `findBySessionId`/`current` 认领
+ *（2026-11-04 终审 Minor：archived⇒unbound 不应依赖 rotation 恰好写完新槽）。
+ */
+export function clearSlotsForSession(
+  rows: Array<{ key: string; value: unknown }>,
+  sessionId: string,
+  currentRuntime: string,
+): Array<{ key: string; value: unknown }> {
+  const out: Array<{ key: string; value: unknown }> = [];
+  for (const row of rows) {
+    const slot = readManagerSlot(row.value, currentRuntime);
+    if (slot?.sessionId !== sessionId) continue;
+    out.push({ key: row.key, value: clearManagerSlot(row.value, currentRuntime) });
+  }
+  return out;
+}
+
+/**
  * Write the slot for `currentRuntime`, preserving all other runtimes' slots.
  * A tagged v1 legacy entry is migrated into its own slot; an untagged v1 entry
  * is preserved verbatim under `unattributed`.

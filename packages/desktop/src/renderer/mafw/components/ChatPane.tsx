@@ -167,7 +167,7 @@ export type ChatPaneProps = {
   thinkingLevel: () => ThinkingLevel | null
   /** runtime 是否支持 thought_level（false = 菜单行禁用）。 */
   thinkingSupported: () => boolean
-  onThinkingSelect: (level: ThinkingLevel) => void
+  onThinkingSelect: (level: ThinkingLevel | null) => void
   onApplyAgentSwitch: (a: AgentEntry) => void
   onPermReply: (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean | "tool" | "prefix") => void
   onAskSubmit: (card: AskCardData, answers: Record<string, string[]>, custom: Record<string, string>) => void
@@ -2434,7 +2434,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     size="small"
                     onClick={() => void pauseSession()}
                     aria-label="暂停"
-                    class="mafw-composer-optional"
                   >
                     <span class="mafw-pause-icon">II</span>
                   </ButtonV2>
@@ -2522,7 +2521,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           open={pickerOpen() === "session-config"}
           trigger={pickerTrigger()}
           agentName={props.agentSel()?.name ?? null}
-          agentLocked={isLead()}
+          agentLocked={isLead() || isAgentKey(props.agentSel(), "mafw-create")}
           agentOptions={props.primaryAgents().some((a: any) => isAgentKey(a, "plan"))
             ? AGENT_SWITCH_OPTIONS
             : AGENT_SWITCH_OPTIONS.filter(o => o.id !== "plan")}

@@ -1,6 +1,7 @@
 import {
   projectLeadSessionMetadata,
   clearManagerSlot,
+  clearSlotsForSession,
   readManagerSlot,
   writeManagerSlot,
   resolveManagerRuntime,
@@ -27,6 +28,19 @@ describe('manager-session per-runtime slots', () => {
     expect(cleared.byRuntime).toEqual({ pi: PI });
     expect(readManagerSlot(cleared, 'opencode')).toBeNull();
     expect(readManagerSlot(cleared, 'pi')).toEqual(PI);
+  });
+
+  it('clearSlotsForSession clears every row pointing at the archived session (current runtime only)', () => {
+    const rows = [
+      { key: '/proj/a', value: { byRuntime: { opencode: { sessionId: 'ses_old' }, pi: PI } } },
+      { key: '/proj/b', value: { byRuntime: { opencode: { sessionId: 'ses_other' } } } },
+      { key: '/proj/c', value: { sessionId: 'ses_old', runtime: 'opencode', createdAt: OC.createdAt } },
+    ];
+    const cleared = clearSlotsForSession(rows, 'ses_old', 'opencode');
+    expect(cleared.map((r) => r.key)).toEqual(['/proj/a', '/proj/c']);
+    expect(readManagerSlot(cleared[0].value, 'opencode')).toBeNull();
+    expect(readManagerSlot(cleared[0].value, 'pi')).toEqual(PI);
+    expect(readManagerSlot(cleared[1].value, 'opencode')).toBeNull();
   });
 
   it('readManagerSlot: v2 returns the active runtime slot', () => {

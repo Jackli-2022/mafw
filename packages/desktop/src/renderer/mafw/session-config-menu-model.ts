@@ -5,7 +5,13 @@ import { isAgentKey, type AgentLike } from "./agent-identity"
 
 export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
 
-/** Agent 行三项：默认/plan/build（对齐 Tab 三态循环；莱标用户可回默认）。 */
+/** Thinking 子菜单项：默认（null = 清除存储档位）在前，其后七档。 */
+export const THINKING_MENU_OPTIONS: Array<{ id: ThinkingLevel | null; label: string }> = [
+  { id: null, label: "默认" },
+  ...THINKING_LEVELS.map((level) => ({ id: level, label: level })),
+]
+
+/** Agent 行三项：默认/plan/build（对齐 Tab 三态循环；鼠标用户可回默认）。 */
 export const AGENT_SWITCH_OPTIONS: Array<{ id: "default" | "plan" | "build"; label: string }> = [
   { id: "default", label: "默认" },
   { id: "plan", label: "plan" },

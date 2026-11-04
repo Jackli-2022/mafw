@@ -67,6 +67,17 @@ describe('SessionConfigService', () => {
     expect((await svc.get('s1')).thinkingLevelSupported).toBe(true);
   });
 
+  it('thought_level null clears the stored level (回「默认」)', async () => {
+    const { svc, store, calls } = make();
+    store.s1 = { thinkingLevel: 'high' };
+    const state = await svc.set('s1', 'thought_level', null);
+    expect(state.thinkingLevel).toBeUndefined();
+    expect(store.s1.thinkingLevel).toBeUndefined();
+    // 不调用 runtime（无通用 unset 原语：清除是配置层动作）
+    expect(calls.some(c => c[0] === 'thinking')).toBe(false);
+    expect(calls.filter(c => c[0] === 'emit')).toHaveLength(1);
+  });
+
   it('rejects invalid category/values and unsupported thought level', async () => {
     const { svc, deps } = make();
     await expect(svc.set('s1', 'nope', 1)).rejects.toMatchObject({ status: 400 });
