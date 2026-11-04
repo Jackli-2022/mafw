@@ -3958,7 +3958,7 @@ class MafwScheduler {
         await fn({ sessionID: sid, level });
       },
       // 契约面探针（RuntimeAccess.can）：runtime 只声明/实现 surface，业务不摸 runtime 内部。
-      // opencode 的推理档位是 model variant（runtime 内部细节），未实现该 surface → false。
+      // runtime 的内部档位实现（如模型变体）不进入契约面；未实现该 surface → false。
       supportsThinkingLevel: () => {
         try { return this.runtime?.access?.can('session.setThinkingLevel') === true; } catch { return false; }
       },

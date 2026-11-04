@@ -117,7 +117,7 @@ export class SessionConfigService {
         throw new SessionConfigError(400, `invalid thinkingLevel: ${String(value)}`);
       }
       if (!this.deps.setThinkingLevel) {
-        throw new SessionConfigError(400, 'runtime does not support session thought_level; use model_config.variant');
+        throw new SessionConfigError(400, 'runtime does not support session.setThinkingLevel');
       }
       await this.deps.setThinkingLevel(sessionID, value as ThinkingLevel);
       patch = { thinkingLevel: value as ThinkingLevel };

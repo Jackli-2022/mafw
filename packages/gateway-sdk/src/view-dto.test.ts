@@ -51,6 +51,11 @@ test('field inventory covers the review-focus fields', () => {
   for (const field of ['model', 'stopReason', 'summary', 'error']) {
     assert.ok(messageFields.includes(field), `message must cover ${field}`);
   }
+  // agent 的角色提示来自 runtime 适配器（default/planning），前端只读 DTO。
+  const agentFields = VIEW_DTO_FIELD_INVENTORY.agent.fields as readonly string[];
+  for (const field of ['default', 'planning']) {
+    assert.ok(agentFields.includes(field), `agent must cover ${field}`);
+  }
 });
 
 test('checkpoint view is part of the contract inventory', () => {

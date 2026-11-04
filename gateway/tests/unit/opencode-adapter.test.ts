@@ -147,7 +147,8 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     const [url, init] = callsFor('/api/agent')[0];
     expect(url).toBe('http://127.0.0.1:4096/api/agent');
     expect(init.method).toBe('GET');
-    expect(agents).toEqual([{ name: 'build' }]);
+    // 默认 agent 由适配器标注（中性 DTO），客户端不认原生名。
+    expect(agents).toEqual([{ name: 'build', default: true }]);
   });
 
   it('todo 历史回放 / children 走 2.1.0 list parentID 过滤', async () => {

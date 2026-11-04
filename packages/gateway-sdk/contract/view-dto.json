@@ -173,6 +173,8 @@
       "description",
       "source",
       "selectable",
+      "default",
+      "planning",
       "mode",
       "model",
       "extensions"

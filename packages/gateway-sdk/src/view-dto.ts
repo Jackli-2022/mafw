@@ -286,6 +286,10 @@ export interface MafwAgent {
   source: MafwAgentSource
   /** 是否可被用户选中（primary/subagent 区分由此表达，不在业务代码硬编码）。 */
   selectable: boolean
+  /** runtime 的默认主 agent（由适配器声明；客户端不按 runtime 名猜默认）。 */
+  default?: boolean
+  /** runtime 声明的规划模式主 agent（用于「先规划，再执行」入口）。 */
+  planning?: boolean
   mode?: string
   model?: MafwModelRef
   extensions?: Record<string, unknown>
@@ -431,8 +435,8 @@ export const VIEW_DTO_FIELD_INVENTORY = {
   agent: {
     required: ['id', 'label', 'source', 'selectable'],
     fields: [
-      'id', 'label', 'description', 'source', 'selectable', 'mode',
-      'model', 'extensions',
+      'id', 'label', 'description', 'source', 'selectable', 'default', 'planning',
+      'mode', 'model', 'extensions',
     ],
   },
   permission: {

@@ -52,6 +52,47 @@ const OPENCODE_NATIVE_TOOLS: NativeToolDeclaration[] = [
   { name: 'todowrite', toolClass: 'plan' },
 ];
 
+/** opencode 内置的默认主 agent（config.default_agent 缺省时的回退）。 */
+const OPENCODE_BUILTIN_DEFAULT_AGENT = 'build';
+/** opencode 内置的规划模式 agent（只读推进）。 */
+const OPENCODE_PLANNING_AGENT = 'plan';
+
+/**
+ * 从 opencode 配置文档（`config.get()` 返回的 document 数组或单个 info）里取
+ * `default_agent`。多文档配置按声明顺序后者优先。只在这里解析——中性 DTO 不暴露
+ * 原生配置字段给 gateway/前端。
+ */
+export function defaultAgentNameFromConfig(config: unknown): string | null {
+  const docs = Array.isArray(config) ? config : [config];
+  let found: string | null = null;
+  for (const doc of docs) {
+    const info = (doc as any)?.info ?? doc;
+    const value = (info as any)?.default_agent;
+    if (typeof value === 'string' && value.trim()) found = value.trim();
+  }
+  return found;
+}
+
+/**
+ * 原生 agent 列表 → 中性角色标记：
+ *  - `default`：runtime 的默认主 agent（config.default_agent，缺省内置 build）；
+ *  - `planning`：规划模式 agent（内置 plan）。
+ * 客户端只看标记，不认 runtime 的原生 agent 名。
+ */
+export function annotateAgentRoles(list: unknown, defaultAgentName: string | null): any[] {
+  const defaultKey = (defaultAgentName || OPENCODE_BUILTIN_DEFAULT_AGENT).toLowerCase();
+  return (Array.isArray(list) ? list : []).map((agent) => {
+    const name = typeof (agent as any)?.name === 'string' ? (agent as any).name : '';
+    const key = name.toLowerCase();
+    if (!key) return agent;
+    return {
+      ...(agent as any),
+      ...(key === defaultKey ? { default: true } : {}),
+      ...(key === OPENCODE_PLANNING_AGENT ? { planning: true } : {}),
+    };
+  });
+}
+
 // ─── 工具函数 ───────────────────────────────────────────────
 
 function unwrap<T>(result: any): T {
@@ -873,7 +914,16 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       async agents() {
         // 2.1.0：agent 列表路由为 /api/agent（旧 /app/agent 404），返回 {location,data}
         const body = await directNative('/agent', 'GET');
-        return unwrapNative<any[]>(body) ?? [];
+        const list = unwrapNative<any[]>(body) ?? [];
+        // 默认 agent 的解析只在适配器内（config.default_agent → 内置回退），
+        // 中性 DTO 只暴露 default/planning 标记。
+        let defaultAgentName: string | null = null;
+        try {
+          defaultAgentName = defaultAgentNameFromConfig(unwrap<any>(await client.config.get()));
+        } catch {
+          /* fail-open：没有配置通道时用内置回退 */
+        }
+        return annotateAgentRoles(list, defaultAgentName);
       },
     },
 

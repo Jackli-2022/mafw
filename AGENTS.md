@@ -1609,12 +1609,12 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
   注入（`leadSessionRegistry.findBySessionId` / `identityRegistry.get`）。
 - **Rail 视觉精修（46px 布局零变化）**：`bubble-5`/`magnifying-glass`/`sticky-note`/`team-three` 四枚字形按
   1.3px 线宽重描（弃粗体气泡/放大镜）；`new-action` 去虚线改实心 accent 14% tint；gap 5→8px、padding 8→10px。
-- **测试**：新增 `composer-session-menu-wiring`（6 例）、`session-config-menu-model`（7 例）、
+- **测试**：新增 `composer-session-menu-wiring`（6 例）、`session-config-menu-model`（8 例）、
   session-switch gate（8 例）、session-config supported（2 例）+ wiring（1 例）、flow-cards session.config（2 例）、
+  gateway `opencode-agent-roles`（4 例）+ view-projections 角色标记（1 例）+ SDK agent 字段（1 例）、
   session-events 覆盖保持；更新 `design-contract`/`composer-toolbar-css`（含源序守卫）/`agent-identity`/
-  `lead-coordinator-wiring`/`duplex-voice-wiring`（麦克风单入口 3→2）。desktop **2826/2826**（617 suites，较批前 2810 净 +16）、
-  gateway **4715/4716（596 suites；唯一红为并行 pod-event WIP：`pod.event` requiredFields 声明与
-  `checkEventFields` 未同步，非本批文件）**、SDK **199/199**；`tsgo --noEmit -p tsconfig.json` / gateway `tsc` /
+  `lead-coordinator-wiring`/`duplex-voice-wiring`（麦克风单入口 3→2）。desktop **2829/2829**（617 suites，较批前 2810 净 +19）、
+  gateway **4735/4735（599 suites）**、SDK **199/199**；`tsgo --noEmit -p tsconfig.json` / gateway `tsc` /
   `electron-vite build` rc=0。
 - **终审（deepseek-v4.1-flash）修复**（commit `cca48dd4`）：2 Critical + 2 Important 已修——
   ① `thinkingLevelSupported` 生产恒 true（`index.ts` 恒注入抛错 wrapper）→ 新增
@@ -1636,10 +1636,22 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
   `model_config.variant` 切换）——属 runtime 内部实现；中性契约只暴露 `session.setThinkingLevel`，
   opencode 未实现 → 菜单显式降级 `—`；桌面**不分叉 runtime、不暴露 variant 目录**（契约隔绝）。
   若未来要在 UI 暴露 variant，应由 runtime 适配器实现该 surface 或走 Experience 扩展。
+- **Agent 菜单契约中立化（2026-11-04）**：`plan`/`build` 不再进入前端——Agent 行选项、Tab 循环、偏差徽标
+  全部从 `MafwAgent` DTO 派生（`session-config-menu-model.ts` 的 `agentMenuOptions`/`nextRuntimeAgent`/`agentBadge`；
+  只列 `source:'runtime' && selectable`，默认 agent 置顶）。runtime 的「默认主 agent / 规划 mode」由适配器翻译为
+  中性 `MafwAgent.default` / `MafwAgent.planning`（opencode 的 `default_agent`/`build`/`plan` 只存在于
+  `opencode-adapter.ts`），`WelcomeHome` 的「先规划，再执行」改读 `planning` 标记；`SessionConfigMenu` 不再有
+  硬编码「默认」项。`experience-boundaries` 增 `runtime-agent-name` 扫描（`isAgentKey(..., "plan"/"build")`
+  在 renderer 全域禁入，反向 fixture 钉扎）。老 gateway 无标记时：不猜默认（无徽标；显式选择后显示），
+  Agent 选项仍按 DTO 列表工作。`session-config` 的 thought_level 错误文案改为契约面名
+  `session.setThinkingLevel`。
+- **GUI 冒烟（契约中立化，旧全局 gateway v5.0.0）**：新建会话菜单 Agent 行显示 `Build`（会话 agent 真值；
+  无硬编码「默认」项）+ 选项 `Build✓ / Plan`；切 Plan → pill `Plan` 徽标；「先规划」按钮因缺 `planning`
+  标记而隐藏（新 gateway 标记后恢复）。截图 `.mafw/qa/agent-menu-contract.png`、`agent-pill-plan-contract.png`。
 - **GUI 冒烟（2026-11-04，dev app CDP 9222 + 旧全局 gateway v5.0.0）**：主仓 dev app 实测——
   工具条收敛为 `＋ ⋯ | 🛡 | 🎤 上下文 会话pill 发送`（agent/plan-build pill、`/` `@`、keyhint 均消失）；
   Lead 会话菜单 `Agent lead·锁定`（disabled）+ `Thinking —`（opencode 无 setThinkingLevel，两代 gateway
-  一致降级）；普通会话菜单 Agent 三选项（默认✓/plan/build），点 plan → pill 出 `plan` 徽标、点默认 →
+  一致降级）；普通会话菜单 Agent 三选项（默认✓/plan/build；**已由下方契约中立化取代**），点 plan → pill 出 `plan` 徽标、点默认 →
   徽标消失且**不再出现 Build 徽标**（Critical #2 端到端回归）；`＋` 菜单 附件/截屏批注/引用Agent、
   `⋯` 菜单 附件/截屏/引用/审阅改动(N)/语音播报/暂停(忙时)；容器档位强制宽度实测 610→仅藏上下文、
   500/420→藏＋、发送恒显且 toolbar 零溢出。**冒烟抓到并修复**：档位 `@container` 块写在

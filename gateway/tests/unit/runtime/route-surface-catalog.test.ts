@@ -398,6 +398,12 @@ export const NON_PRIMARY_GATES: NonPrimaryGate[] = [
     why: 'completion 通道门（index-scan/consolidation 内部通道，非 HTTP route）',
   },
   {
+    surface: 'session.setThinkingLevel',
+    file: 'src/index.ts',
+    marker: "can('session.setThinkingLevel')",
+    why: '会话配置 thought_level 能力探针（POST /api/session/:id/config 的 supportsThinkingLevel；无独立 route）',
+  },
+  {
     surface: 'identity.agents.install',
     file: 'src/index.ts',
     marker: "can('identity.agents.install')",

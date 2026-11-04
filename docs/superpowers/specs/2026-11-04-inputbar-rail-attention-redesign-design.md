@@ -133,7 +133,7 @@
 
 **Q4 · switchAgent 门双向**：① 非 coordination 会话切 **到** lead/manager → 403；② coordination 绑定会话切 **离** lead 到任何身份 → 403（防孤儿化注册槽位）；③ allowlist 白名单 = runtime 原生（build/plan 等）+ `mafw-create`，其余解析为注册表身份的目标一律 403（worker 身份本来就不该经此路由）；④ `lead-archived` 会话已解绑，不受限（可正常改造复用）。
 
-**Q6 · 会话菜单 Agent 行含「默认」**：展开三项 **默认 / plan / build**（对齐 Tab 三态循环的完整状态集）——鼠标用户可回默认，不砍功能。
+**Q6 · 会话菜单 Agent 行（2026-11-04 契约修正）**：~~展开三项 默认 / plan / build~~ 作废——`plan`/`build` 是 runtime（opencode）原生 agent 名，gateway/前端不得接触。Agent 行改为**从 `GET /api/agents` 的 `MafwAgent` DTO 派生**：只列 `source:'runtime' && selectable` 的 agent（`id/label` 原样来自 DTO，顺序由 DTO 决定，默认 agent 置顶），Tab 在可选 agent 间循环，徽标只在**非默认**或**显式选择**时显示。runtime 的「默认 agent / 规划 mode」由适配器翻译为中性标记 `MafwAgent.default` / `MafwAgent.planning`（opencode 的 `default_agent`/`build`/`plan` 只存在于 `opencode-adapter`），前端不认 runtime 名；`WelcomeHome` 的「先规划，再执行」改由 `planning` 标记驱动。老 gateway 无标记时：不猜默认（无徽标），Agent 选项仍按 DTO 列表工作。
 
 **Q5 · attention 作用域**：**~~撤回~~**（pod-event-layer 为跨项目权威设计，取代本设计的项目作用域 A；托盘 presence 归其 L1/L2/L3，见 supersession note 2）。
 

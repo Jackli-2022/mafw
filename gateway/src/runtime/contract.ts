@@ -167,7 +167,7 @@ export interface SessionPromptOpts {
   agent?: string;
   model?: { providerID: string; modelID: string };
   variant?: string;
-  /** Pi 原生推理档位；opencode 不消费（用 variant）。 */
+  /** runtime 原生推理档位（surface: session.setThinkingLevel；不支持时显式降级）。 */
   thinkingLevel?: ThinkingLevel;
   system?: string;
   /** busy 会话的消息投递时机：'steer'=当前工具批后送达（纠偏），'followup'=全部完成后，
@@ -511,7 +511,7 @@ export interface RuntimeClient {
       model: { providerID: string; modelID: string };
       variant?: string;
     }): Promise<void>;
-    /** Pi 原生推理档位；缺实现 = 不支持（opencode 用 model variant）。 */
+    /** runtime 原生推理档位；缺实现 = 不支持（由适配器映射到自家档位/变体）。 */
     setThinkingLevel?(opts: { sessionID: string; level: ThinkingLevel }): Promise<void>;
     summarize(opts: SessionSummarizeOpts): Promise<any>;
     /** 回复权限请求。'once'=仅本次放行；'always'=放行并持久化规则（opencode 原生规则 /

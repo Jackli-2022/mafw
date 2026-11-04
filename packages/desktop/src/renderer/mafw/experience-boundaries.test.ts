@@ -39,6 +39,9 @@ const BUSINESS_RULES: Rule[] = [
   // 事件载荷的 wire 形状：只允许 session 生命周期（见 EVENT_INFO_FILES）。
   { name: 'event-info', pattern: /properties\?*\.info\b/ },
   { name: 'sdk-import', pattern: /@opencode-ai\/sdk/ },
+  // runtime 原生 agent 名（plan/build/general/explore）不得出现在前端分支：
+  // Agent 选项/默认值/角色一律消费 MafwAgent DTO（source/selectable/default/planning）。
+  { name: 'runtime-agent-name', pattern: /\bisAgentKey\([^)]*,\s*["'](?:plan|build|general|explore)["']/ },
 ]
 
 /** 去掉注释再匹配：文档里解释被删除的能力位不算违规。 */
@@ -111,6 +114,10 @@ test('scanner catches synthetic capability, identity and wire reads', () => {
   expect(scanDesktopFixture('const z = msg.parts ?? [];')).toContain('history-wire-shape')
   expect(scanDesktopFixture('const sid = event.properties.info.sessionID;')).toContain('event-info')
   expect(scanDesktopFixture('import { x } from "@opencode-ai/sdk";')).toContain('sdk-import')
+  // runtime 原生 agent 名不得进入业务分支（MAFW 身份 lead/manager/mafw-create 允许）。
+  expect(scanDesktopFixture('candidates.some((a) => isAgentKey(a, "plan"))')).toContain('runtime-agent-name')
+  expect(scanDesktopFixture('const fallback = agents.find(a => isAgentKey(a, "build"))')).toContain('runtime-agent-name')
+  expect(scanDesktopFixture('const ok = isAgentKey(a, "lead") || isAgentKey(a, "mafw-create")')).toEqual([])
   // Experience / View DTO 面不得误报。
   expect(scanDesktopFixture('const y = experienceStore.supported("branch.fork")')).toEqual([])
   expect(scanDesktopFixture('const m = data.messages.map((row) => row.content)')).toEqual([])

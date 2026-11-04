@@ -54,6 +54,12 @@ describe("session config menu model", () => {
     expect(agentBadge("LEAD", agents)).toBe("lead")
     // 旧数据里的历史值原样展示，不猜 runtime 默认。
     expect(agentBadge("custom", agents)).toBe("custom")
+    // 老 gateway 没有 default 标记：只有用户本次显式选择才出徽标（不猜）。
+    const noDefault = [{ id: "Plan", label: "Plan", source: "runtime", selectable: true }]
+    expect(agentBadge("Plan", noDefault, false)).toBeNull()
+    expect(agentBadge("Plan", noDefault, true)).toBe("Plan")
+    expect(agentBadge("lead", noDefault, false)).toBeNull()
+    expect(agentBadge("lead", noDefault, true)).toBe("lead")
   })
 
   test("nextRuntimeAgent: 按菜单顺序循环（默认 → 其余 → 默认）", () => {

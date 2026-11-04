@@ -25,7 +25,10 @@ test("ChatPane 的协调会话判定只接受 lead，并继续锁住 agent 切�
   assert.match(chatPane, /isLeadRole\(workspace\.sessionRole\(/)
   assert.doesNotMatch(chatPane, /workspace\.sessionRole\([^)]*\) === "manager"/)
   // 锁定迁移到会话配置菜单的 Agent 行（agent pill 已收敛进菜单）；creator 会话同样锁定。
-  assert.match(chatPane, /agentLocked=\{isLead\(\) \|\| isAgentKey\(props\.agentSel\(\), "mafw-create"\)\}/)
+  assert.match(chatPane, /agentLocked=\{isLead\(\) \|\| creatorLocked\(\)\}/)
+  // creator 锁定同时认本地 picks 与会话持久化的 agent（session.agent 是展示真值）。
+  assert.match(chatPane, /isAgentKey\(props\.agentSel\(\), "mafw-create"\)/)
+  assert.match(chatPane, /=== "mafw-create"/)
 })
 
 test("MafwShell 从显式 Lead id 解析隐藏会话，并把 metadata 传进 tab", () => {

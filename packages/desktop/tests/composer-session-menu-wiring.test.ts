@@ -15,7 +15,7 @@ test("会话配置 pill + popover 接线（默认标签 = 模型名）", () => {
   assert.ok(pane.includes('setPickerOpen("session-config")'))
   assert.ok(pane.includes("agentBadge("))
   assert.ok(pane.includes("thinkingBadge("))
-  // 菜单 id（build/plan）→ entry 查找必须走大小写不敏感解析（view DTO id 是 Build/Plan）。
+  // 菜单 id → entry 查找必须走大小写不敏感解析（view DTO id 可能是 Build/Plan）。
   assert.ok(pane.includes("findAgentEntry("))
 })
 
@@ -24,10 +24,12 @@ test("agent pill / plan-build pill / 命令与引用按钮移除；键盘能力�
   assert.ok(!pane.includes("切换 Agent"), "more menu 的切换 Agent 应删除")
   assert.ok(!pane.includes('aria-label="命令"'), "命令按钮应删除")
   assert.ok(!pane.includes('aria-label="引用 Agent"'), "引用按钮应删除")
-  // Tab 三态循环与能力门保留（UI 收按钮不砍功能）
-  assert.ok(pane.includes("planBuildGate"))
-  assert.ok(pane.includes('isAgentKey(a, "plan")'))
-  assert.ok(pane.includes("cyclePlanBuild"))
+  // Tab agent 循环保留，但选项来自 MafwAgent DTO（不认 runtime 原生 plan/build）。
+  assert.ok(pane.includes("agentMenuOptions("), "Agent 选项必须从 DTO 派生")
+  assert.ok(pane.includes("nextRuntimeAgent("), "Tab 循环必须走契约模型")
+  assert.ok(pane.includes("agentCycleGate"))
+  assert.ok(!pane.includes("AGENT_SWITCH_OPTIONS"), "前端不得硬编码 plan/build 选项")
+  assert.ok(!/isAgentKey\([^)]*"(?:plan|build)"/.test(pane), "前端不得按 runtime agent 名分支")
 })
 
 test("附件/截屏/引用收进 ＋ 菜单；审阅/播报/暂停在 ⋯ 菜单", () => {
@@ -44,7 +46,9 @@ test("占位符教学并入输入框；keyhint 浮层删除", () => {
 })
 
 test("Lead / creator 会话锁定迁移到会话菜单 Agent 行", () => {
-  assert.ok(pane.includes('agentLocked={isLead() || isAgentKey(props.agentSel(), "mafw-create")}'))
+  assert.ok(pane.includes("agentLocked={isLead() || creatorLocked()}"))
+  assert.ok(pane.includes('isAgentKey(props.agentSel(), "mafw-create")'))
+  assert.ok(pane.includes('=== "mafw-create"'), "session.agent 为 mafw-create 时也要锁定")
 })
 
 test("窄窗档位：≤620 藏上下文 pill，≤520 藏 ＋（附件入口仍在 ⋯）", () => {

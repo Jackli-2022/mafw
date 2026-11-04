@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { agentKey, agentLabel, isAgentKey, resolveSessionAgent } from "./agent-identity"
 
-describe("agent identity (opencode 2.1.0 id/name split)", () => {
+describe("agent identity (id/label split)", () => {
   const agents = [
     { id: "build", name: "Build", mode: "primary" },
     { id: "plan", name: "Plan", mode: "primary" },
@@ -35,18 +35,21 @@ describe("agent identity (opencode 2.1.0 id/name split)", () => {
   })
 
   // 接线契约：纯函数只有被真实调用才算适配（防回退到 name 比较）
-  test("MafwShell 用稳定键存取 / 水合 session.agent", () => {
+  test("MafwShell 用稳定键存取 / 水合 session.agent，规划入口走 DTO 标记", () => {
     const src = readFileSync(join(import.meta.dirname, "MafwShell.tsx"), "utf8")
     expect(src).toContain("setAgentPicks(sid, agentKey(a))")
     expect(src).toContain("resolveSessionAgent(agents, s.agent)")
     expect(src).toContain("primaryAgents().find(a => agentKey(a) === name)")
-    expect(src).toContain("isAgentKey(a, \"plan\")")
+    expect(src).toContain("primaryAgents().some(a => a.planning === true)")
   })
 
   test("发送链用 id 而非显示名；会话菜单 Agent 行按稳定键比较", () => {
     const send = readFileSync(join(import.meta.dirname, "chat/use-send-message.ts"), "utf8")
     expect(send).toContain("agentKey(agentSel())")
     const pane = readFileSync(join(import.meta.dirname, "components/ChatPane.tsx"), "utf8")
-    expect(pane).toContain("isAgentKey(a, \"plan\")")
+    // 选项/循环从 MafwAgent DTO 派生，不认 runtime 原生 agent 名。
+    expect(pane).toContain("agentMenuOptions(")
+    expect(pane).toContain("nextRuntimeAgent(")
+    expect(pane).not.toContain('isAgentKey(a, "plan")')
   })
 })

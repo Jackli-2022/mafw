@@ -6,7 +6,7 @@ import { agentKey, isAgentKey } from "../../agent-identity"
 const COORDINATOR_AGENT_KEYS = ["lead", "manager"] as const
 
 export type AgentEntry = {
-  /** opencode 2.1.0 稳定 id（build/plan/…）；MAFW 注册表身份只有 name */
+  /** runtime 的稳定 agent id（来自 MafwAgent.id；MAFW 注册表身份同样用 id） */
   id?: string
   name: string
   description?: string
@@ -14,6 +14,10 @@ export type AgentEntry = {
   color?: string
   source?: string
   isManager?: boolean
+  /** runtime 声明的默认主 agent（MafwAgent.default）。 */
+  default?: boolean
+  /** runtime 声明的规划模式 agent（MafwAgent.planning）。 */
+  planning?: boolean
 }
 
 const TINTS = ["var(--accent)", "#7698fd", "#e8b84b", "#a855f7"]

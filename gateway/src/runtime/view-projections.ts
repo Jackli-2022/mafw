@@ -249,6 +249,10 @@ export function projectAgents(list: unknown): MafwAgent[] {
       ...(asString(agent.description) ? { description: asString(agent.description) } : {}),
       source,
       selectable,
+      // 角色标记由 runtime 适配器解析（默认主 agent / 规划模式）；投影只透传，
+      // 客户端不得按 runtime agent 名判断。
+      ...(agent.default === true ? { default: true } : {}),
+      ...(agent.planning === true ? { planning: true } : {}),
       ...(mode ? { mode } : {}),
       ...(model ? { model } : {}),
     });

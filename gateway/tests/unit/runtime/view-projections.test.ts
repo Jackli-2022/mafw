@@ -146,6 +146,20 @@ describe('MafwAgent 投影（/api/agents 出口）', () => {
     expect(projectAgents(null)).toEqual([]);
     expect(projectAgents([{ name: '' }])).toEqual([]);
   });
+
+  it('runtime 角色标记（default/planning）透传——客户端不按 runtime agent 名分支', () => {
+    const out = projectAgents([
+      { name: 'Build', mode: 'primary', default: true },
+      { name: 'Plan', mode: 'primary', planning: true },
+      { name: 'General', mode: 'subagent' },
+    ]);
+    expect(out[0]).toMatchObject({ id: 'Build', default: true });
+    expect(out[0]).not.toHaveProperty('planning');
+    expect(out[1]).toMatchObject({ id: 'Plan', planning: true });
+    expect(out[1]).not.toHaveProperty('default');
+    expect(out[2]).not.toHaveProperty('default');
+    expect(out[2]).not.toHaveProperty('planning');
+  });
 });
 
 describe('MafwPermissionRequest 投影（I1/I2）', () => {

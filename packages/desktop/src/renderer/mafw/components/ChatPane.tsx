@@ -18,12 +18,12 @@ import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
 import { SessionConfigMenu } from "./pickers/SessionConfigMenu"
-import { AGENT_SWITCH_OPTIONS, agentBadge, findAgentEntry, thinkingBadge } from "../session-config-menu-model"
+import { agentBadge, agentMenuOptions, findAgentEntry, nextRuntimeAgent, thinkingBadge } from "../session-config-menu-model"
 import { formatRailTitle } from "./rail-display"
 import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
-import { agentKey, isAgentKey } from "../agent-identity"
+import { isAgentKey } from "../agent-identity"
 import { isLeadRole } from "../lead-session"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
@@ -149,6 +149,8 @@ export type ChatPaneProps = {
   tasksAllDone: (sid: string) => boolean
   gwReady: boolean
   agentSel: () => AgentEntry | null
+  /** 当前 agent 是否为用户本次显式选择（无 default 标记时用于徽标门）。 */
+  agentExplicit?: () => boolean
   model: () => { providerID: string; modelID: string; label: string } | null
   modelGroups: () => { provider: string; providerID: string; models: ModelEntry[] }[]
   primaryAgents: () => any[]
@@ -178,8 +180,6 @@ export type ChatPaneProps = {
   onOpenBackgroundDock?: () => void
   /** 点击上下文 pill：打开「执行 → 概览 → 用量与上下文」 */
   onOpenUsage?: () => void
-  /** plan/build 模式三态循环（切片 3；'default' = 清除 picks 回 runtime 默认） */
-  onPlanBuildToggle?: (next: "plan" | "build" | "default") => void
   /** worktree 并行隔离（切片 4）：能力门 = Experience `session.worktree`（目录级 git 事实） */
   worktreeEnabled?: boolean
   /** revert 后可撤销能力（Experience checkpoint.restore semantics.undo） */
@@ -276,6 +276,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // accessor 保持响应式（sessions 变化即重算；split view 各 pane 各自查）
   // 协调会话 = Lead（只认显式 lead；历史 manager 是普通历史）
   const isLead = () => isLeadRole(workspace.sessionRole(sidProp()))
+  // 会话 agent 的展示真值：本地 picks → 会话持久化的 agent（MafwSession.agent）。
+  // 前端只比较契约 id，不认 runtime 原生名；默认/规划角色由 DTO 标记表达。
+  const sessionAgentName = (): string | null =>
+    props.agentSel()?.name ?? (store.session.find((s: any) => s.id === sidProp())?.agent ?? null)
+  const creatorLocked = () =>
+    isAgentKey(props.agentSel(), "mafw-create") ||
+    (sessionAgentName() ?? "").trim().toLowerCase() === "mafw-create"
   const connPhase = useConnPhase()
 
   // ── Composer state (per pane) ──
@@ -492,18 +499,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     }
   }
 
-  // ── plan/build 模式循环（切片 3）──────────────────────────────
-  // 能力门：primaryAgents 列表内容含 plan/build 才启用（pi 列表恒空 → 自动隐藏）；
-  // Lead 会话锁不适用。
-  const planBuildGate = () =>
-    !isLead() && (props.primaryAgents() || []).some((a: any) => isAgentKey(a, "plan") || isAgentKey(a, "build"))
-  const planBuildState = (): "plan" | "build" | "default" => {
-    const n = agentKey(props.agentSel())
-    return n === "plan" || n === "build" ? n : "default"
-  }
-  const cyclePlanBuild = () => {
-    const cur = planBuildState()
-    props.onPlanBuildToggle?.(cur === "plan" ? "build" : cur === "build" ? "default" : "plan")
+  // ── Agent 循环（Tab）──────────────────────────────────────────────
+  // 选项来自 MafwAgent DTO（runtime 可选项）；MAFW 身份不参与切换（Pod/creator 入口）。
+  // Lead/creator 会话锁定，Tab 不抢。
+  const agentOptions = createMemo(() => agentMenuOptions(props.primaryAgents() as any))
+  const agentCycleGate = () => !isLead() && agentOptions().length > 1
+  const cycleAgent = () => {
+    const next = nextRuntimeAgent(props.primaryAgents() as any, sessionAgentName())
+    if (next) props.onApplyAgentSwitch(next as unknown as AgentEntry)
   }
 
   // ── worktree 并行隔离（切片 4）：当前会话的 directory 与徽标 ──
@@ -1470,13 +1473,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return formatComposerMeta({ elapsedMs, tokens: m.tokens || null, streaming })
   }
 
-  const onSessionAgentSelect = (id: "default" | "plan" | "build") => {
+  const onSessionAgentSelect = (id: string) => {
     setPickerOpen(null)
-    if (id === "default") {
-      props.onPlanBuildToggle?.("default")
-      return
-    }
-    // findAgentEntry 大小写不敏感（view DTO 的 id 是 Build/Plan）。
     const entry = findAgentEntry(props.primaryAgents() as AgentEntry[], id)
     if (!entry) return
     if (busy()) {
@@ -2274,10 +2272,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 if (item.kind === "agent") { addAgent(item.value); setPickerOpen(null) }
                 else addFileMention(item.value)
               }
-              else if (e.key === "Tab" && !pickerOpen() && planBuildGate()) {
-                // plan/build 模式循环（opencode Tab 语义；补全/mention 激活时不抢）
+              else if (e.key === "Tab" && !pickerOpen() && agentCycleGate()) {
+                // Agent 循环（对齐 runtime 的 primary agent 列表；补全/mention 激活时不抢）
                 e.preventDefault()
-                cyclePlanBuild()
+                cycleAgent()
               }
               else if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
                 // W5a：Ctrl+Enter = 排队（gateway 服务端队列），忙时也可用；空闲时等同发送。
@@ -2418,8 +2416,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   aria-expanded={pickerOpen() === "session-config"}
                   onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("session-config") }}
                 >
-                  <Show when={agentBadge(props.agentSel()?.name ?? null)}>
-                    <span class="mafw-composer-session-badge">{agentBadge(props.agentSel()?.name ?? null)}</span>
+                  <Show when={agentBadge(sessionAgentName(), props.primaryAgents() as any, props.agentExplicit?.() ?? true)}>
+                    <span class="mafw-composer-session-badge">{agentBadge(sessionAgentName(), props.primaryAgents() as any, props.agentExplicit?.() ?? true)}</span>
                   </Show>
                   <Show when={thinkingBadge(props.thinkingLevel())}>
                     <span class="mafw-composer-session-badge">{thinkingBadge(props.thinkingLevel())}</span>
@@ -2520,11 +2518,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         <SessionConfigMenu
           open={pickerOpen() === "session-config"}
           trigger={pickerTrigger()}
-          agentName={props.agentSel()?.name ?? null}
-          agentLocked={isLead() || isAgentKey(props.agentSel(), "mafw-create")}
-          agentOptions={props.primaryAgents().some((a: any) => isAgentKey(a, "plan"))
-            ? AGENT_SWITCH_OPTIONS
-            : AGENT_SWITCH_OPTIONS.filter(o => o.id !== "plan")}
+          agentName={sessionAgentName()}
+          agentLocked={isLead() || creatorLocked()}
+          agentOptions={agentOptions()}
           modelLabel={currentModelLabel()}
           thinkingLevel={props.thinkingLevel()}
           thinkingSupported={props.thinkingSupported()}

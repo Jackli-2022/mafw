@@ -1,13 +1,11 @@
 /**
- * agent 身份层（opencode 2.1.0 契约换代）。
+ * agent 身份层（View DTO 的 id/label 双字段）。
  *
- * 2.1.0 的 agent 是 `{ id, name, mode, hidden, ... }`：`id` 是稳定标识
- * （build/plan/general/explore…），`name` 只是显示名（Build/Plan）。而 MAFW
- * 注册表身份只有 `name`（manager / memory-curator / mafw-*）。会话上的
- * `session.agent` 持久化为运行时 id。
+ * `MafwAgent`：`id` 是稳定标识，`label` 只是显示名（`name` 为旧形状兼容）。
+ * MAFW 注册表身份可能只有 `name`。会话上的 `session.agent` 持久化为 runtime 的 id。
  *
  * 统一规则：`agentKey = id ?? name`（选人/发 prompt/会话状态比较一律用 key），
- * `agentLabel = name ?? id`（只用于展示）。历史会话可能把显示名写进
+ * `agentLabel = label ?? name ?? id`（只用于展示）。历史会话可能把显示名写进
  * session.agent（旧前端按 name 发送），resolveSessionAgent 做大小写与显示名回退。
  */
 export type AgentLike = {

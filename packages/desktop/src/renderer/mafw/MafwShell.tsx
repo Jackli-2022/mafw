@@ -1669,6 +1669,7 @@ export function MafwShell() {
     setPageState(reconcile({}))
     setCompactionMarks({})
     setAgentPicks(reconcile({}))
+    setAgentPicksExplicit({})
   }
 
   // Agent 列表来自 `MafwAgent[]`（规范 DTO）：`selectable` 表达可切换（primary），
@@ -1679,6 +1680,8 @@ export function MafwShell() {
     description: a.description,
     mode: a.mode,
     source: a.source,
+    default: a.default,
+    planning: a.planning,
   })
   const primaryAgents = createMemo(() =>
     (agentsData() || []).filter((a) => a.selectable).map(agentEntryOf),
@@ -1726,9 +1729,10 @@ export function MafwShell() {
   }
 
   // ── Pickers: agent selection (shared), per-pane picker state lives in ChatPane ──
-  // Per-session agent pick（切片 3：agentSel 全局单值 → per-session，对齐 modelPicks 模式）。
-  // 值 = agent name（null/缺省 = runtime 默认）；plan/build 快捷切换写这里。
+  // Per-session agent pick（对齐 modelPicks 模式）。值 = MafwAgent 的稳定 id。
   const [agentPicks, setAgentPicks] = createStore<Record<string, string>>({})
+  // 用户本次显式选择过的会话（老 gateway 无 default 标记时，徽标只在显式选择后出现）。
+  const [agentPicksExplicit, setAgentPicksExplicit] = createSignal<Record<string, true>>({})
   const [switchLogs, setSwitchLogs] = createSignal<Record<string, string[]>>({})
   const [taskListOpen, setTaskListOpen] = createSignal(false)
   const [viewportWidth, setViewportWidth] = createSignal(window.innerWidth)
@@ -2469,13 +2473,19 @@ export function MafwShell() {
   const applyAgentSwitch = (a: AgentEntry, sidOverride?: string) => {
     const sid = sidOverride ?? currentSessionID()
     if (sid) {
-      // 2.1.0：稳定键是 id（build/plan），显示名只用于展示
+      // 稳定键是 agent id（来自 MafwAgent DTO），显示名只用于展示
       const prev = agentPicks[sid]
       setAgentPicks(sid, agentKey(a))
+      setAgentPicksExplicit(prevExplicit => ({ ...prevExplicit, [sid]: true }))
       setSwitchLogs(prev => ({ ...prev, [sid]: [...(prev[sid] || []), `已切换到 ${a.name}`] }))
       // sticky 即时切换：失败回滚本地 pick，防“显示已切换但服务端没切”。
       void window.api.mafw.sessions.switchAgent(sid, agentKey(a)).catch(() => {
         setAgentPicks(sid, prev as any)
+        setAgentPicksExplicit(prevExplicit => {
+          const next = { ...prevExplicit }
+          delete next[sid]
+          return next
+        })
         showToastV2({ description: "切换 agent 失败", duration: 2000 })
       })
     }
@@ -2523,9 +2533,8 @@ export function MafwShell() {
     openSessionTab(sid)
   }
 
-  // 2.1.0 sticky agent：session.agent 是运行时真值（build/plan/…）——
-  // 应用重启后用它把 agent 药丸补回来；本地已有选择时不覆盖
-  // （用户刚点的选择先于服务端旧值，直到下一条消息把切换写入会话）。
+  // sticky agent：session.agent 是运行时真值——应用重启后用它把 agent 选择补回来；
+  // 本地已有选择时不覆盖（用户刚点的选择先于服务端旧值，直到下一条消息把切换写入会话）。
   createEffect(() => {
     const list = historySessions() as Array<{ id?: string; agent?: string }>
     const agents = primaryAgents()
@@ -2744,6 +2753,10 @@ export function MafwShell() {
                           tasksAllDone={tasksAllDone}
                           gwReady={gwStatus()?.state === "ready"}
                           agentSel={() => sessionAgent(activeSessionId()!)}
+                          agentExplicit={() => {
+                            const sid = activeSessionId()
+                            return !!(sid && agentPicksExplicit()[sid])
+                          }}
                           model={() => sessionModel(activeSessionId()!)}
                           modelGroups={modelGroups}
                           primaryAgents={primaryAgents}
@@ -2786,25 +2799,6 @@ export function MafwShell() {
                           revertUndoEnabled={revertUndoEnabled()}
                           onCreateWorktreeSession={createWorktreeSession}
                           projectDirectory={currentProject()}
-                          onPlanBuildToggle={(next) => {
-                            if (next === "default") {
-                              const sid = activeSessionId()
-                              if (!sid) return
-                              const prev = agentPicks[sid]
-                              setAgentPicks(sid, undefined as any)
-                              // 2.1 没有“清除回默认”的端点；默认 driver 是 build。
-                              const fallback = primaryAgents().find(a => isAgentKey(a, "build"))
-                              if (fallback) {
-                                void window.api.mafw.sessions.switchAgent(sid, agentKey(fallback)).catch(() => {
-                                  setAgentPicks(sid, prev as any)
-                                  showToastV2({ description: "切换 agent 失败", duration: 2000 })
-                                })
-                              }
-                              return
-                            }
-                            const entry = primaryAgents().find(a => isAgentKey(a, next))
-                            if (entry) applyAgentSwitch(entry, activeSessionId()!)
-                          }}
                           onCreateSession={createSession}
                           onSetUserMsgId={(sid2, userMsgId2) => setSessions(prev => prev.map(s => s.id === sid2 ? { ...s, userMsgId: userMsgId2 } : s))}
                           compactionMark={compactionMarks()[activeSessionId()!] || null}
@@ -2836,9 +2830,9 @@ export function MafwShell() {
                      onOpenLead={openLeadEntry}
                      onOpenWork={openProjectWork}
                      onOpenGoalComposer={openNewGoalComposer}
-                     hasPlanAgent={primaryAgents().some(a => isAgentKey(a, "plan"))}
+                     hasPlanAgent={primaryAgents().some(a => a.planning === true)}
                      onStartWithPlan={() => {
-                       const planEntry = primaryAgents().find(a => isAgentKey(a, "plan"))
+                       const planEntry = primaryAgents().find(a => a.planning === true)
                        if (!planEntry) return
                        void createSession().then((sid) => { if (sid) applyAgentSwitch(planEntry, sid) })
                      }}
