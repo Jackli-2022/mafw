@@ -60,6 +60,8 @@ export class PodEventService {
       dedupeKey: input.dedupeKey,
       audience: input.audience,
       wakeState: input.wakeState ?? (input.audience === 'lead' ? 'pending' : 'none'),
+      // Only human-facing events can be "unread": lead/none events have no inbox.
+      state: input.audience === 'human' ? 'unread' : 'seen',
       now,
     });
     this.writeAuditFile(row);

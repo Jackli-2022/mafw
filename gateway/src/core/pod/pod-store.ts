@@ -1483,18 +1483,20 @@ export class PodStore {
     dedupeKey: string;
     audience: string;
     wakeState?: string;
+    state?: 'unread' | 'seen';
     now: string;
   }): PodEventRow {
     this.db.prepare(`
       INSERT INTO pod_events (
         id, pod_id, project_id, goal_id, revision, kind, severity, reason,
-        title, summary, refs_json, dedupe_key, audience, wake_state, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        title, summary, refs_json, dedupe_key, audience, wake_state, state, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(pod_id, dedupe_key) DO NOTHING
     `).run(
       input.id, input.podId, input.projectId, input.goalId ?? null, input.revision ?? null,
       input.kind, input.severity, input.reason, input.title, input.summary ?? null,
-      input.refsJson ?? null, input.dedupeKey, input.audience, input.wakeState ?? 'none', input.now,
+      input.refsJson ?? null, input.dedupeKey, input.audience, input.wakeState ?? 'none',
+      input.state ?? 'unread', input.now,
     );
     const row = this.db.prepare(
       'SELECT * FROM pod_events WHERE pod_id = ? AND dedupe_key = ?',

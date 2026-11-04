@@ -72,6 +72,15 @@ it('a file write failure does not lose the event', () => {
   expect(svc.list('pod_1').items).toHaveLength(1);
 });
 
+it('lead/none events never count as unread', () => {
+  const { svc } = make(tmpDir());
+  svc.record({ ...base, audience: 'lead', severity: 'p2', kind: 'member.escalation', dedupeKey: 'm:1' });
+  svc.record({ ...base, audience: 'none', severity: 'p3', kind: 'member.note', dedupeKey: 'm:2' });
+  expect(svc.list('pod_1').unread).toBe(0);
+  svc.record(base);
+  expect(svc.list('pod_1').unread).toBe(1);
+});
+
 it('markSeen is idempotent and counts unread', () => {
   const { svc } = make(tmpDir());
   const row = svc.record(base);
