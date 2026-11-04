@@ -1,5 +1,7 @@
 // 双工 ASR hook（Task 8）：`voice.duplexV1` 开启时，麦克风走持续 `/ws/voice`
 // 上行并在 composer 里显示 partial/final；关闭时完全不参与，旧录音路径不变。
+// Plan 2：非空 final 经 `onFinal` dep 恰好回调一次（追加进 composer + 自动发送
+// 由 ChatPane 的 duplex-auto-send 控制器负责）；本 hook 自身不发送、不接 LLM/TTS。
 //
 // 生命周期契约（来自 Task 7 client）：
 // - 每次 start 新建一个 Silero analyzer + client，绝不跨 start 复用（analyzer 持有
@@ -56,6 +58,11 @@ export interface DuplexVoiceDeps {
   createClient?: (deps: DuplexClientDeps) => DuplexClient
   createTap?: (input: MicInput, onFrame: (pcm: Int16Array) => void) => Promise<VoicePcmTap>
   notify?: (options: { description: string; duration: number }) => void
+  /**
+   * Plan 2 D1：每个非空 ASR final 恰好回调一次（composer 追加 + auto-send 计时由
+   * 调用方接线；generation guard 生效——stop/换代后的迟到 final 不回调）。
+   */
+  onFinal?: (text: string) => void
 }
 
 export function useDuplexVoice(
@@ -178,9 +185,12 @@ export function useDuplexVoice(
         },
         onFinal: (text) => {
           if (!guard.isCurrent(generation)) return
-          // final 不自动发给 agent（Plan 1 只做字幕），保留到下一段话。
+          // 空白 final（VAD 误触发/无识别内容）不产生任何效果：不清字幕、不回调。
+          if (!text || !text.trim()) return
           setPartial("")
           setFinalText(text)
+          // Plan 2 D1：非空 final 恰好回调一次（composer 追加 + auto-send 由调用方接线）。
+          overrides?.onFinal?.(text)
         },
         onState: (state: DuplexClientState) => {
           if (!guard.isCurrent(generation)) return

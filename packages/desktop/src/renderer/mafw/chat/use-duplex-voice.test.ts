@@ -325,6 +325,63 @@ describe("useDuplexVoice", () => {
   })
 })
 
+describe("useDuplexVoice onFinal（Plan 2 D1：每 final 恰好一次）", () => {
+  test("非空 final 回调一次并带原文；空文本不触发", async () => {
+    const finals: string[] = []
+    const clients: FakeClient[] = []
+    const h = mount({
+      status: async () => ({ config: { duplexV1: true } }),
+      notify: () => {},
+      createAnalyzer: () => makeAnalyzer(),
+      createClient: (deps) => {
+        const client = makeClient(deps)
+        clients.push(client)
+        return client
+      },
+      onFinal: (text) => finals.push(text),
+    })
+
+    h.setReady(true)
+    await tick()
+    await h.ctrl.toggle()
+
+    clients[0].deps.onFinal("你好，帮我看看")
+    clients[0].deps.onFinal("")
+    clients[0].deps.onFinal("   ")
+    expect(finals).toEqual(["你好，帮我看看"])
+    expect(h.ctrl.finalText()).toBe("你好，帮我看看")
+
+    await h.ctrl.stop()
+    h.dispose()
+  })
+
+  test("stop 之后的旧代 final 不回调（generation guard）", async () => {
+    const finals: string[] = []
+    const clients: FakeClient[] = []
+    const h = mount({
+      status: async () => ({ config: { duplexV1: true } }),
+      notify: () => {},
+      createAnalyzer: () => makeAnalyzer(),
+      createClient: (deps) => {
+        const client = makeClient(deps)
+        clients.push(client)
+        return client
+      },
+      onFinal: (text) => finals.push(text),
+    })
+
+    h.setReady(true)
+    await tick()
+    await h.ctrl.toggle()
+    await h.ctrl.stop()
+
+    clients[0].deps.onFinal("late final")
+    expect(finals).toEqual([])
+
+    h.dispose()
+  })
+})
+
 // Keep the tap seam type-checked without a real AudioContext.
 export const __tapSeam: DuplexVoiceDeps["createTap"] = async (
   _input: MicInput,
