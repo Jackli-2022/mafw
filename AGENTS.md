@@ -1694,6 +1694,8 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
   `pod-presence` 6、`pod-events-route` 4、`pod-event-wake` 6；desktop 新增 `presence-model` 1、
   `attention-diff` 1、`pod-events` 1；SDK 契约计数 32→33。**gateway 4726/4726（598 suites）**、
   **desktop 2828/2828（618 suites）**、**SDK 199/199**；`tsc` / `tsgo -p` rc=0。
+- **冒烟（2026-11-04，部署后 HTTP 实测）**：gateway build + `deploy:local` + 重启（`2a2f1265`）后 `/health` 200；`GET /api/presence` 返回 `running/attention/unreadResults` 三键，实测 `running=1 attention=1`（stale `plan-smoke-9`，attention id 已是 `goal:kind:r1`，`action` 正确）；`GET /api/pods/:id/events` 可用。POST 一条 `note` 消息 → 端到端产出 `member.note / p3 / audience=none / state=seen`（写点收口 + 分级 + 非人事件不计未读全部验证）。**冒烟抓到并修**：p3/lead 事件原本也计 `unread`，会污染人侧 inbox 计数 → 非 `human` audience 写入即 `seen`（commit `2a2f1265`，新增回归用例）。
+- **未冒烟**：桌面托盘/任务栏/通知需要重启 dev app（main 进程改动），且当前无在跑的 Goal 产生结果事件；GUI 部分留待有真实 Goal 时验。
 - **评审（glm-5.3）与修复**：C1 已修——`unreadResults`/托盘 attention 原先由 `resultReady`（永不回 false）推导，导致托盘永久卡 attention、且无产物的硬失败反而不显示；现改为按 `pod_events` 的未读 p1（`goalId:r<revision>`）推导，seen 后自然回落 idle。I2 已修——唤醒预算失败退回、预算拒绝只累加 `wakeAttempts`（3 次才 suppress）、member 事件去重键带 message 身份（否则全 Pod 的 escalation 共用一个键）。I6 已修——presence 连续 3 次失败回落 idle（不再让托盘中继过期状态）。
 - **未做 / deferred**：Task 9（桌面 inbox + `viewedResults` 双读）；`pod.event` 的 renderer 消费与立即轮询（当前只有 main 15s 轮询）；`mafw-navigate-goal` 缺 preload/renderer 接收端（菜单行可点但暂无导航效果）；旧结果通知链（`handlePodResultEvent` toast + hidden-only 通知）未退役，同项目可能双通知；worktree 折叠目前只改标签不去重条目；p3 事件与审计文件无 prune；托盘三态无独立图标资源（只换 tooltip/菜单文案）。
 - **已知边界**：托盘图标三态（running/attention）尚未提供独立图标资源，当前只换 tooltip/菜单文案；
