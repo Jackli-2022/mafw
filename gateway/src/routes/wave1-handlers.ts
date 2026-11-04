@@ -78,6 +78,10 @@ export interface Wave1Gateway {
   discovery?: DiscoveryService | null;
   /** T2-1：回合进行中禁止检查点 restore/create（gateway-side apply 无 serve busy 保护）。 */
   isCheckpointBusy?(sessionID: string): boolean;
+  /** switchAgent 门：会话是否绑定 Pod coordination 槽位（LeadSessionRegistry 权威）。 */
+  isCoordinationSession?(sessionID: string): boolean;
+  /** switchAgent 门：注册表身份名判定（runtime 原生 agent 返回 false）。 */
+  isRegistryIdentity?(name: string): boolean;
 }
 
 type Handler = NonNullable<RouteDef['handler']>;
@@ -200,6 +204,8 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     handleSessionSwitch(req, res, params.id, 'agent', {
       getRuntime: () => (gw.runtime ?? null) as any,
       getAccess: () => gw.runtime?.access ?? null,
+      isCoordinationSession: (sid) => gw.isCoordinationSession?.(sid) ?? false,
+      isRegistryIdentity: (name) => gw.isRegistryIdentity?.(name) ?? false,
     })));
 
   registry.attachHandler('session.switchModel', H(async (req, res, params) =>

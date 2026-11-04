@@ -1,6 +1,7 @@
 import * as http from 'http';
 import type { RuntimeAccess } from '../runtime/runtime-access';
 import { surfaceUnavailableMessage } from '../runtime/runtime-access';
+import { resolveIdentityAlias } from '../runtime/identity-registry';
 
 export type SessionSwitchKind = 'agent' | 'model';
 
@@ -19,6 +20,10 @@ export interface SessionSwitchDeps {
   getRuntime: () => SessionSwitchClientLike | null;
   /** surface 门：注入 facade 的 RuntimeAccess（业务不构造 raw access）。 */
   getAccess?: () => Pick<RuntimeAccess, 'can'> | null;
+  /** 该会话是否绑定 Pod coordination 槽位（LeadSessionRegistry 权威）。 */
+  isCoordinationSession?: (sessionID: string) => boolean;
+  /** 目标名是否注册表身份（runtime 原生 agent 返回 false）。 */
+  isRegistryIdentity?: (name: string) => boolean;
 }
 
 class SwitchError extends Error {
@@ -98,6 +103,25 @@ export async function handleSessionSwitch(
     return;
   }
   try {
+    if (kind === 'agent') {
+      // coordinator 身份门（双向）：pod 管理的会话不允许经裸 API 进入/离开 lead，
+      // worker 身份（subagent 模式）也不该走这个路由。mafw-create 是工具壳身份，放行。
+      const agent = typeof body?.agent === 'string' ? body.agent.trim() : '';
+      if (agent) {
+        const target = resolveIdentityAlias(agent);
+        const bound = deps.isCoordinationSession?.(sessionID) ?? false;
+        const isCoordinator = target === 'lead';
+        if (bound && !isCoordinator) {
+          throw new SwitchError(403, 'coordinator sessions are managed by the pod');
+        }
+        if (!bound && isCoordinator) {
+          throw new SwitchError(403, 'coordinator sessions are managed by the pod');
+        }
+        if (!isCoordinator && target !== 'mafw-create' && deps.isRegistryIdentity?.(target)) {
+          throw new SwitchError(403, 'identity is managed by the pod');
+        }
+      }
+    }
     await applySessionSwitch(client, sessionID, kind, body);
     json(200, { ok: true });
   } catch (err: any) {

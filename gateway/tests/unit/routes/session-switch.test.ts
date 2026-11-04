@@ -68,3 +68,74 @@ describe('handleSessionSwitch', () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe('handleSessionSwitch · coordinator gate', () => {
+  const registry = new Set(['lead', 'manager', 'mafw-create', 'mafw-tech-lead', 'mafw-plan', 'memory-curator']);
+
+  const deps = (calls: any[], opts: { bound?: boolean } = {}) => ({
+    getRuntime: () => ({ session: { switchAgent: async (o: any) => { calls.push(o) } } }) as any,
+    getAccess: () => ({ can: () => true }),
+    isCoordinationSession: () => opts.bound === true,
+    isRegistryIdentity: (name: string) => registry.has(name),
+  });
+
+  it('non-bound session cannot switch to lead', async () => {
+    const calls: any[] = [];
+    const res = fakeRes();
+    await handleSessionSwitch(fakeReq({ agent: 'lead' }), res, 's1', 'agent', deps(calls, { bound: false }));
+    expect(res.status).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('coordinator sessions are managed by the pod');
+    expect(calls).toEqual([]);
+  });
+
+  it('historical manager alias is treated as lead', async () => {
+    const calls: any[] = [];
+    const res = fakeRes();
+    await handleSessionSwitch(fakeReq({ agent: 'manager' }), res, 's1', 'agent', deps(calls, { bound: false }));
+    expect(res.status).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  it('coordination session cannot switch away from lead', async () => {
+    const calls: any[] = [];
+    const res = fakeRes();
+    await handleSessionSwitch(fakeReq({ agent: 'build' }), res, 's1', 'agent', deps(calls, { bound: true }));
+    expect(res.status).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('coordinator sessions are managed by the pod');
+    expect(calls).toEqual([]);
+  });
+
+  it('coordination session may re-select lead', async () => {
+    const calls: any[] = [];
+    const res = fakeRes();
+    await handleSessionSwitch(fakeReq({ agent: 'lead' }), res, 's1', 'agent', deps(calls, { bound: true }));
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([{ sessionID: 's1', agent: 'lead' }]);
+  });
+
+  it('worker registry identities are blocked', async () => {
+    const calls: any[] = [];
+    const res = fakeRes();
+    await handleSessionSwitch(fakeReq({ agent: 'mafw-tech-lead' }), res, 's1', 'agent', deps(calls, { bound: false }));
+    expect(res.status).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('identity is managed by the pod');
+    expect(calls).toEqual([]);
+  });
+
+  it('mafw-create stays switchable', async () => {
+    const calls: any[] = [];
+    const res = fakeRes();
+    await handleSessionSwitch(fakeReq({ agent: 'mafw-create' }), res, 's1', 'agent', deps(calls, { bound: false }));
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([{ sessionID: 's1', agent: 'mafw-create' }]);
+  });
+
+  it('archived (unbound) sessions switch freely', async () => {
+    const calls: any[] = [];
+    const res = fakeRes();
+    await handleSessionSwitch(fakeReq({ agent: 'build' }), res, 's1', 'agent', deps(calls, { bound: false }));
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([{ sessionID: 's1', agent: 'build' }]);
+  });
+});
+

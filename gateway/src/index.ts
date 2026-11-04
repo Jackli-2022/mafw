@@ -5106,6 +5106,9 @@ class MafwScheduler {
         get dataPartService() { return gwSelf.dataPartService; },
         get discovery() { return gwSelf.getDiscoveryService(); },
         isCheckpointBusy: (sid) => gwSelf.busySessions.has(sid),
+        // switchAgent 双向门：coordination 槽位（LeadSessionRegistry 权威）与注册表身份。
+        isCoordinationSession: (sid) => !!gwSelf.leadSessionRegistry?.findBySessionId(sid),
+        isRegistryIdentity: (name) => !!gwSelf.identityRegistry?.get(name),
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),
