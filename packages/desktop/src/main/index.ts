@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, globalShortcut, nativeTheme, net, session } from "electron"
+import { app, BrowserWindow, globalShortcut, nativeTheme, net, session } from "electron"
 
 import { Deferred, Effect } from "effect"
 
@@ -41,8 +41,10 @@ import {
   setDockIcon,
   restoreMainWindows,
 } from "./windows"
-import { createTray, updateTrayPending } from "./tray"
+import { createTray, updateTrayPending, updateTrayPresence, setTrayNavigateHandler } from "./tray"
 import { startTrayStatusPolling } from "./tray-status"
+import { podPresence } from "./presence-model"
+import { startPresencePolling } from "./presence-poller"
 import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
@@ -369,6 +371,28 @@ const main = Effect.gen(function* () {
       onPending: (pending) => updateTrayPending(pending),
     })
     app.once("will-quit", stopTrayStatus)
+
+    // Cross-project Goal presence → tray icon state + taskbar progress.
+    const stopPresence = startPresencePolling({
+      getBaseUrl: () => gwUrl,
+      onSnapshot: (payload) => {
+        const view = podPresence(payload)
+        updateTrayPresence(view)
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (win.isDestroyed()) continue
+          win.setProgressBar(view.progress)
+        }
+      },
+      log: (msg) => logger.warn(msg),
+    })
+    app.once("will-quit", stopPresence)
+    setTrayNavigateHandler((target) => {
+      const win = getLastFocusedWindow()
+      if (!win || win.isDestroyed()) return
+      win.show()
+      win.focus()
+      win.webContents.send("mafw-navigate-goal", target)
+    })
   } else {
     logger.error("MAFW Gateway failed to start")
     yield* Deferred.fail(serverReady, new Error("MAFW Gateway failed to start"))

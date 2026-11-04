@@ -9,10 +9,17 @@ import {
 } from "./tray-prefs"
 import { trayClickAction } from "./tray-toggle"
 import { trayMenuStatusLabel, trayTooltip } from "./tray-status"
+import type { PodPresenceView } from "./presence-model"
 import { write as writeLog } from "./logging"
 
 let tray: Tray | null = null
 let pendingCount = 0
+let presence: PodPresenceView = { trayState: "idle", progress: -1, tooltip: "MAFW Desktop", clickTarget: null }
+let onNavigateGoal: ((target: { podId: string; goalId: string }) => void) | null = null
+
+export function setTrayNavigateHandler(fn: (target: { podId: string; goalId: string }) => void): void {
+  onNavigateGoal = fn
+}
 
 function showOrCreateWindow(): void {
   const win = getLastFocusedWindow()
@@ -37,8 +44,17 @@ function handleTrayClick(): void {
 }
 
 function buildMenu(): Menu {
+  const statusLabel = presence.trayState === "idle"
+    ? trayMenuStatusLabel(pendingCount)
+    : `${presence.tooltip}${pendingCount > 0 ? ` · ${trayMenuStatusLabel(pendingCount)}` : ""}`
   return Menu.buildFromTemplate([
-    { label: trayMenuStatusLabel(pendingCount), enabled: false },
+    {
+      label: statusLabel,
+      enabled: !!presence.clickTarget && !!onNavigateGoal,
+      click: () => {
+        if (presence.clickTarget && onNavigateGoal) onNavigateGoal(presence.clickTarget)
+      },
+    },
     { label: "Open MAFW", click: showOrCreateWindow },
     { type: "separator" },
     {
@@ -77,7 +93,11 @@ async function warnCloseToTrayOffOnce(): Promise<void> {
 
 function applyStatus(): void {
   if (!tray) return
-  tray.setToolTip(trayTooltip(pendingCount))
+  const base = trayTooltip(pendingCount)
+  const tip = presence.trayState === "idle"
+    ? base
+    : `${presence.tooltip}${pendingCount > 0 ? ` · ${base.replace("MAFW Desktop — ", "")}` : ""}`
+  tray.setToolTip(tip)
   // Rebuild the whole menu: Linux requires setContextMenu() for any menu
   // change to take effect (Electron docs), so we never mutate items in place.
   tray.setContextMenu(buildMenu())
@@ -136,4 +156,13 @@ export function updateTrayPending(pending: number): void {
   if (pending === pendingCount) return
   pendingCount = pending
   applyStatus()
+}
+
+/** Cross-project Goal presence: icon state, tooltip and the menu's status row. */
+export function updateTrayPresence(next: PodPresenceView): void {
+  const same = next.trayState === presence.trayState
+    && next.tooltip === presence.tooltip
+    && next.clickTarget?.goalId === presence.clickTarget?.goalId
+  presence = next
+  if (!same) applyStatus()
 }
