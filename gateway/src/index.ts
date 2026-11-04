@@ -46,6 +46,7 @@ import {
 } from './core/background/background-jobs';
 import { PodStore } from './core/pod/pod-store';
 import { PodEventService } from './core/pod/pod-event-service';
+import { PodEventWake } from './core/pod/pod-event-wake';
 import { buildPodPresence, type PodPresence } from './core/pod/pod-presence';
 import { handlePresence } from './routes/presence';
 import { handlePodEvents } from './routes/pod-events';
@@ -696,6 +697,7 @@ class MafwScheduler {
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
   private podEventService?: PodEventService;
+  private podEventWake?: PodEventWake;
   private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
   private anchorGraphStore: import('./graph/anchor-graph-store').AnchorGraphStore | null = null;
   private coactivationGraphStore: import('./graph/coactivation-store').CoactivationGraphStore | null = null;
@@ -4058,6 +4060,26 @@ class MafwScheduler {
 
     this.podStore = new PodStore(this.getGatewayDb().getStore());
     this.podEventService = new PodEventService({ store: this.podStore, mafwDir: this.mafwDir });
+    this.podEventWake = new PodEventWake({
+      events: this.podEventService,
+      leadMemberId: (podId) => this.podStore?.getMemberByRole(podId, 'lead')?.id ?? null,
+      ensureLead: async (podId) => ({
+        sessionId: (await this.podService!.ensureLead(podId)).sessionId,
+      }),
+      isBusy: (sessionId) => this.busySessions.has(sessionId),
+      isSuspended: (sessionId) => this.runStateService?.active(sessionId)?.status === 'suspended',
+      isPodPaused: (podId) => this.podStore?.getPod(podId)?.status === 'paused',
+      promptAsync: async (input) => {
+        await this.runtime!.session.promptAsync({
+          sessionID: input.sessionID,
+          parts: [{ type: 'text', text: input.message }],
+        });
+      },
+      deliveryDelivered: (messageId, memberId) => this.podStore?.hasDelivery(messageId, memberId) ?? false,
+      commitDelivered: (ids, sessionId) => this.podMessageDelivery?.commitDelivered(ids, sessionId),
+    });
+    setInterval(() => { void this.podEventWake?.scan(); }, 60_000).unref?.();
+    setTimeout(() => { void this.podEventWake?.scan(); }, 5_000).unref?.();
     // Agent messages reach the store through the A2A bridge, not through
     // PodMessageService — the hook must live on the store or p2 never fires.
     this.podStore.onMessageInserted((row) => {
@@ -4077,6 +4099,7 @@ class MafwScheduler {
           revision: null,
           title: `[${cls.kind}] ${row.body.slice(0, 60)}`,
           summary: row.body.slice(0, 400),
+          refs: [{ kind: 'message', id: row.id }],
           dedupeKey: memberDedupeKey(row.kind, row.id, row.toMemberId),
         });
         if (evt) {
@@ -4087,6 +4110,7 @@ class MafwScheduler {
               revision: evt.revision, kind: evt.kind, severity: evt.severity,
             },
           });
+          if (evt.severity === 'p2') this.podEventWake?.notify();
         }
       } catch (err: any) {
         log.warn(`[Pod] event write failed for message ${row.id} (non-fatal): ${err?.message ?? err}`);
