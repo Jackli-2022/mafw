@@ -209,6 +209,18 @@ const icons = {
     viewBox: "0 0 16 16",
     body: `<circle cx="8" cy="8" r="5.8" stroke="currentColor"/><circle cx="8" cy="8" r="2.6" stroke="currentColor"/><circle cx="8" cy="8" r="0.9" fill="currentColor"/>`,
   },
+  refresh: {
+    viewBox: "0 0 20 20",
+    body: `<path d="M17.5 10C17.5 14.14 14.14 17.5 10 17.5C5.86 17.5 2.5 14.14 2.5 10C2.5 5.86 5.86 2.5 10 2.5C12.6 2.5 14.9 3.8 16.3 5.8M16.3 5.8V1.7M16.3 5.8H12.3" stroke="currentColor" stroke-linecap="square"/>`,
+  },
+  "square-arrow-top-right": {
+    viewBox: "0 0 20 20",
+    body: `<path d="M7.91675 2.9165H2.91675V17.0832H17.0834V12.0832M12.0834 2.9165H17.0834V7.9165M9.58342 10.4165L16.6667 3.33317" stroke="currentColor" stroke-linecap="square"/>`,
+  },
+  "layout-grid": {
+    viewBox: "0 0 20 20",
+    body: `<rect x="3" y="3" width="6" height="6" rx="1.2" stroke="currentColor"/><rect x="11" y="3" width="6" height="6" rx="1.2" stroke="currentColor"/><rect x="3" y="11" width="6" height="6" rx="1.2" stroke="currentColor"/><rect x="11" y="11" width="6" height="6" rx="1.2" stroke="currentColor"/>`,
+  },
 }
 
 const spriteID = "opencode-v2-icon-sprite"
