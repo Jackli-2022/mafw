@@ -1549,6 +1549,10 @@ export class PodStore {
     return rows.map((r) => this.mapEvent(r));
   }
 
+  incrementEventWakeAttempts(id: string): void {
+    this.db.prepare('UPDATE pod_events SET wake_attempts = wake_attempts + 1 WHERE id = ?').run(id);
+  }
+
   updateEventWake(id: string, patch: {
     wakeState?: 'none' | 'pending' | 'delivered' | 'suppressed';
     wakeAttempts?: number;

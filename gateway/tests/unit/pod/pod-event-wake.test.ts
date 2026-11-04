@@ -19,6 +19,7 @@ function harness(over: Partial<any> = {}) {
       pendingWakes: () => over.pending ?? [ev()],
       markWakeDelivered: (id: string) => { delivered.push(id); },
       markWakeSuppressed: (id: string) => { suppressed.push(id); },
+      markWakeAttempt: () => {},
     } as any,
     leadMemberId: () => 'lead',
     ensureLead: async (podId: string) => {
@@ -62,11 +63,27 @@ it('stays pending while paused, suspended or busy', async () => {
   }
 });
 
-it('suppresses beyond the hourly budget', async () => {
+it('suppresses only after repeated budget rejections', async () => {
   const h = harness({ pending: Array.from({ length: 8 }, (_, i) => ev({ id: `e${i}` })) });
   const out = await h.wake.scan('p');
   expect(out.delivered).toBe(6);
-  expect(out.suppressed).toBe(2);
+  expect(out.suppressed).toBe(0); // stays pending; attempts bumped instead
+});
+
+it('gives up after three budget rejections', async () => {
+  const h = harness({
+    pending: Array.from({ length: 7 }, (_, i) => ev({ id: `e${i}`, wakeAttempts: i === 6 ? 2 : 0 })),
+  });
+  const out = await h.wake.scan('p');
+  expect(out.delivered).toBe(6);
+  expect(out.suppressed).toBe(1);
+});
+
+it('different escalations do not collapse into one dedupe key', async () => {
+  const h = harness({ pending: [ev({ id: 'e1' }), ev({ id: 'e2', kind: 'member.request' })] });
+  await h.wake.scan('p');
+  const lines = h.prompts[0].message as string;
+  expect(lines).toContain('2 条待处理');
 });
 
 it('dedupes the same goal+kind inside the window', async () => {

@@ -17,6 +17,7 @@ export function startPresencePolling(opts: PresencePollingOpts): () => void {
   const fetchFn = opts.fetchFn ?? fetch
   let stopped = false
   let inFlight = false
+  let failures = 0
 
   const tick = async () => {
     if (stopped || inFlight) return
@@ -25,11 +26,15 @@ export function startPresencePolling(opts: PresencePollingOpts): () => void {
     inFlight = true
     try {
       const res = await fetchFn(`${base}/api/presence`, { signal: AbortSignal.timeout(5000) })
-      if (!res.ok) return
+      if (!res.ok) throw new Error(`presence ${res.status}`)
       const payload = (await res.json()) as PresencePayload
+      failures = 0
       if (!stopped) opts.onSnapshot(payload)
     } catch (err) {
-      opts.log?.(`presence poll failed: ${String(err)}`)
+      failures += 1
+      opts.log?.(`presence poll failed (${failures}): ${String(err)}`)
+      // A dead gateway must not leave the tray stuck on "running".
+      if (failures >= 3 && !stopped) opts.onSnapshot(null)
     } finally {
       inFlight = false
     }

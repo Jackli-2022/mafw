@@ -25,6 +25,8 @@ export interface PodPresenceInput {
   goals: PodPresenceGoal[];
   tasks: Array<{ goalId: string | null; status: string }>;
   attention: PodAttentionItem[];
+  /** Unread p1 events for this pod (`goalId` + `revision`), from `pod_events`. */
+  unread?: Array<{ goalId: string | null; revision: number | null }>;
 }
 
 export interface PodPresenceItem {
@@ -54,14 +56,14 @@ export function buildPodPresence(inputs: PodPresenceInput[]): PodPresence {
 
   for (const input of inputs) {
     const projectId = input.parentProjectId ?? input.projectId;
+    // Unread results come from `pod_events` (p1), not from `resultReady`:
+    // resultReady never returns to false, so it would latch the tray forever.
+    const unreadKeys = new Set((input.unread ?? []).map((item) => `${item.goalId}:r${item.revision ?? 1}`));
     for (const goal of input.goals) {
       const item = toItem(input, projectId, goal);
-      const terminal = goal.status === 'done' || goal.status === 'aborted' || !!goal.endedAt;
-      if (!terminal) {
-        running.push(item);
-      } else if (goal.resultReady && goal.verdict !== 'CANCELLED') {
-        results.push(item);
-      }
+      const key = `${goal.goalId}:r${goal.revision ?? 1}`;
+      if (unreadKeys.has(key)) results.push(item);
+      else if (!isTerminal(goal)) running.push(item);
     }
     attentionItems.push(...input.attention);
   }
@@ -73,6 +75,10 @@ export function buildPodPresence(inputs: PodPresenceInput[]): PodPresence {
     attention: { count: attentionItems.length, items: attentionItems },
     unreadResults: { count: results.length, latest: results[0] ?? null },
   };
+}
+
+function isTerminal(goal: PodPresenceGoal): boolean {
+  return goal.status === 'done' || goal.status === 'aborted' || !!goal.endedAt;
 }
 
 function nodeOf(goal: PodPresenceGoal): string | null {

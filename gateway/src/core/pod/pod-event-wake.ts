@@ -7,6 +7,7 @@ export interface PodEventWakeEvents {
   pendingWakes(podId?: string): PodEventRow[];
   markWakeDelivered(id: string, sessionId: string): void;
   markWakeSuppressed(id: string): void;
+  markWakeAttempt?(id: string): void;
 }
 
 export interface PodEventWakeDeps {
@@ -88,6 +89,7 @@ export class PodEventWake {
       const lead = this.deps.leadMemberId(currentPod);
       const accepted: PodEventRow[] = [];
       const priorDedupe = new Map(this.lastWakeByKey);
+      const spent: number[] = [];
       for (const event of events) {
         const messageId = messageIdOf(event);
         if (messageId && lead && this.deps.deliveryDelivered(messageId, lead)) {
@@ -95,11 +97,20 @@ export class PodEventWake {
           delivered += 1;
           continue;
         }
-        if (!this.admit(currentPod, event, priorDedupe)) {
-          this.deps.events.markWakeSuppressed(event.id);
-          suppressed += 1;
+        const stamp = this.admit(currentPod, event, priorDedupe);
+        if (stamp === null) {
+          // Transient gates (budget) must not silently kill a p2 forever: only
+          // give up after a few attempts, otherwise leave it pending.
+          const attempts = (event.wakeAttempts ?? 0) + 1;
+          if (attempts >= 3) {
+            this.deps.events.markWakeSuppressed(event.id);
+            suppressed += 1;
+          } else {
+            this.deps.events.markWakeAttempt?.(event.id);
+          }
           continue;
         }
+        spent.push(stamp);
         accepted.push(event);
       }
       if (!accepted.length) continue;
@@ -107,6 +118,7 @@ export class PodEventWake {
       try {
         await this.deps.promptAsync({ sessionID: sessionId, message: this.render(accepted) });
       } catch {
+        this.refund(currentPod, spent);
         continue; // stays pending; the next scan retries
       }
 
@@ -123,21 +135,31 @@ export class PodEventWake {
     return { delivered, suppressed };
   }
 
-  /** Budget (per event) + dedupe (per goal+kind, against the pre-scan snapshot). */
-  private admit(podId: string, event: PodEventRow, priorDedupe: Map<string, number>): boolean {
+  /** Returns the budget stamp it spent, or null when a gate rejects the event. */
+  private admit(podId: string, event: PodEventRow, priorDedupe: Map<string, number>): number | null {
     const now = this.now();
     const { perHour, dedupeMs } = this.budget();
     const times = (this.wakeTimes.get(podId) ?? []).filter((t) => now - t < 3_600_000);
     if (times.length >= perHour) {
       this.wakeTimes.set(podId, times);
-      return false;
+      return null;
     }
-    const key = `${podId}:${event.goalId ?? '-'}:${event.kind}`;
+    // Member events carry no goalId; keying only by kind would collapse every
+    // escalation in the window into one.
+    const identity = event.goalId ?? event.id;
+    const key = `${podId}:${identity}:${event.kind}`;
     const last = priorDedupe.get(key);
-    if (last !== undefined && now - last < dedupeMs) return false;
+    if (last !== undefined && now - last < dedupeMs) return null;
     times.push(now);
     this.wakeTimes.set(podId, times);
-    return true;
+    return now;
+  }
+
+  private refund(podId: string, stamps: number[]): void {
+    if (!stamps.length) return;
+    const drop = new Set(stamps);
+    const times = (this.wakeTimes.get(podId) ?? []).filter((t) => !drop.has(t));
+    this.wakeTimes.set(podId, times);
   }
 
   private render(events: PodEventRow[]): string {

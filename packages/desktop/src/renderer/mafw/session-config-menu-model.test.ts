@@ -1,24 +1,69 @@
 import { describe, expect, test } from "bun:test"
 import {
-  AGENT_SWITCH_OPTIONS,
   THINKING_LEVELS,
   THINKING_MENU_OPTIONS,
   agentBadge,
+  agentMenuOptions,
+  defaultAgentKey,
   findAgentEntry,
+  nextRuntimeAgent,
+  planningAgent,
   thinkingBadge,
 } from "./session-config-menu-model"
 
+// 契约样本：runtime 返回的 MafwAgent[]（source/selectable/default/planning 全部来自 DTO，
+// 前端不认 runtime 的原生 agent 名）。
+const agents = [
+  { id: "lead", label: "lead", source: "mafw", selectable: true },
+  { id: "Plan", label: "Plan", source: "runtime", selectable: true },
+  { id: "Build", label: "Build", source: "runtime", selectable: true, default: true },
+  { id: "Planning", label: "Planning", source: "runtime", selectable: true, planning: true },
+  { id: "General", label: "General", source: "runtime", selectable: false },
+]
+
 describe("session config menu model", () => {
-  test("agentBadge: 默认/build 不占位，非默认显示短名", () => {
-    expect(agentBadge(null)).toBeNull()
-    expect(agentBadge(undefined)).toBeNull()
-    expect(agentBadge("")).toBeNull()
-    expect(agentBadge("build")).toBeNull()
-    expect(agentBadge("plan")).toBe("plan")
-    expect(agentBadge("lead")).toBe("lead")
-    expect(agentBadge("manager")).toBe("lead")
-    expect(agentBadge("mafw-create")).toBe("create")
-    expect(agentBadge("custom")).toBe("custom")
+  test("agentMenuOptions: 只列 runtime 可选项，默认 agent 置顶并带提示", () => {
+    expect(agentMenuOptions(agents)).toEqual([
+      { id: "Build", label: "Build", hint: "默认" },
+      { id: "Plan", label: "Plan" },
+      { id: "Planning", label: "Planning" },
+    ])
+    expect(agentMenuOptions([])).toEqual([])
+    // 旧 gateway / pi：没有 runtime agent 时不伪造选项。
+    expect(agentMenuOptions([{ id: "lead", label: "lead", source: "mafw", selectable: true }])).toEqual([])
+  })
+
+  test("defaultAgentKey / planningAgent 只认 DTO 标记（不按名字猜）", () => {
+    expect(defaultAgentKey(agents)).toBe("Build")
+    expect(defaultAgentKey([{ id: "Plan", label: "Plan", source: "runtime", selectable: true }])).toBeNull()
+    expect(planningAgent(agents)?.id).toBe("Planning")
+    expect(planningAgent([{ id: "Plan", label: "Plan", source: "runtime", selectable: true }])).toBeNull()
+  })
+
+  test("agentBadge: 默认 agent / 未选择不占位，其余显示 DTO label", () => {
+    expect(agentBadge(null, agents)).toBeNull()
+    expect(agentBadge(undefined, agents)).toBeNull()
+    expect(agentBadge("", agents)).toBeNull()
+    expect(agentBadge("Build", agents)).toBeNull()
+    expect(agentBadge("build", agents)).toBeNull()
+    expect(agentBadge("Plan", agents)).toBe("Plan")
+    expect(agentBadge("plan", agents)).toBe("Plan")
+    expect(agentBadge("Planning", agents)).toBe("Planning")
+    // MAFW 身份不是 runtime 名（lead 由 Pod 管理），仍展示。
+    expect(agentBadge("lead", agents)).toBe("lead")
+    expect(agentBadge("LEAD", agents)).toBe("lead")
+    // 旧数据里的历史值原样展示，不猜 runtime 默认。
+    expect(agentBadge("custom", agents)).toBe("custom")
+  })
+
+  test("nextRuntimeAgent: 按菜单顺序循环（默认 → 其余 → 默认）", () => {
+    expect(nextRuntimeAgent(agents, "Build")?.id).toBe("Plan")
+    expect(nextRuntimeAgent(agents, "Plan")?.id).toBe("Planning")
+    expect(nextRuntimeAgent(agents, "Planning")?.id).toBe("Build")
+    // 无当前选择 → 默认（置顶项）；单 agent 不循环。
+    expect(nextRuntimeAgent(agents, null)?.id).toBe("Build")
+    expect(nextRuntimeAgent([agents[2]], "Build")).toBeNull()
+    expect(nextRuntimeAgent([], null)).toBeNull()
   })
 
   test("thinkingBadge: 未显式设定不占位，设定后显示档位", () => {
@@ -28,31 +73,13 @@ describe("session config menu model", () => {
     expect(thinkingBadge("off")).toBe("⚡ off")
   })
 
-  test("agentBadge 大小写不敏感（view DTO 的 id 是 Build/Plan）", () => {
-    expect(agentBadge("Build")).toBeNull()
-    expect(agentBadge("BUILD")).toBeNull()
-    expect(agentBadge("Plan")).toBe("plan")
-    expect(agentBadge("LEAD")).toBe("lead")
-    expect(agentBadge("Manager")).toBe("lead")
-    expect(agentBadge("MAFW-CREATE")).toBe("create")
-    expect(agentBadge("Custom")).toBe("Custom")
-  })
-
-  test("findAgentEntry: 菜单小写 id → 列表里的 Capitalized entry", () => {
-    const agents = [{ id: "Build", name: "Build" }, { id: "Plan", name: "Plan" }]
-    expect(findAgentEntry(agents, "build")?.id).toBe("Build")
-    expect(findAgentEntry(agents, "plan")?.id).toBe("Plan")
-    expect(findAgentEntry(agents, "PLAN")?.id).toBe("Plan")
-    expect(findAgentEntry(agents, "lead")).toBeUndefined()
+  test("findAgentEntry: 菜单 id → 列表 entry（大小写不敏感）", () => {
+    const list = [{ id: "Build", label: "Build" }, { id: "Plan", label: "Plan" }]
+    expect(findAgentEntry(list, "build")?.id).toBe("Build")
+    expect(findAgentEntry(list, "plan")?.id).toBe("Plan")
+    expect(findAgentEntry(list, "PLAN")?.id).toBe("Plan")
+    expect(findAgentEntry(list, "lead")).toBeUndefined()
     expect(findAgentEntry([] as any[], "build")).toBeUndefined()
-  })
-
-  test("AGENT_SWITCH_OPTIONS 含默认/plan/build（鼠标可回默认）", () => {
-    expect(AGENT_SWITCH_OPTIONS).toEqual([
-      { id: "default", label: "默认" },
-      { id: "plan", label: "plan" },
-      { id: "build", label: "build" },
-    ])
   })
 
   test("THINKING_LEVELS 七档齐全且有序", () => {

@@ -51,6 +51,7 @@ it('unread results pick the latest by endedAt', () => {
       projectName: 'mafw',
       tasks: [],
       attention: [],
+      unread: [{ goalId: 'old', revision: 1 }, { goalId: 'new', revision: 1 }],
       goals: [
         goal({ goalId: 'old', status: 'done', resultReady: true, endedAt: '2026-11-04T01:00:00Z' }),
         goal({ goalId: 'new', status: 'done', resultReady: true, endedAt: '2026-11-04T02:00:00Z' }),
@@ -59,6 +60,36 @@ it('unread results pick the latest by endedAt', () => {
   ]);
   expect(out.unreadResults.count).toBe(2);
   expect(out.unreadResults.latest?.goalId).toBe('new');
+});
+
+it('a result is no longer unread once its event is seen', () => {
+  const out = buildPodPresence([
+    {
+      podId: 'p1',
+      projectId: 'proj',
+      projectName: 'mafw',
+      tasks: [],
+      attention: [],
+      unread: [],
+      goals: [goal({ goalId: 'g', status: 'done', resultReady: true, endedAt: '2026-11-04T01:00:00Z' })],
+    },
+  ]);
+  expect(out.unreadResults.count).toBe(0);
+});
+
+it('a hard failure without evidence still surfaces when its event is unread', () => {
+  const out = buildPodPresence([
+    {
+      podId: 'p1',
+      projectId: 'proj',
+      projectName: 'mafw',
+      tasks: [],
+      attention: [],
+      unread: [{ goalId: 'bad', revision: 1 }],
+      goals: [goal({ goalId: 'bad', status: 'done', verdict: 'ERROR', resultReady: false, endedAt: '2026-11-04T01:00:00Z' })],
+    },
+  ]);
+  expect(out.unreadResults.count).toBe(1);
 });
 
 it('cancelled goals are not unread results', () => {

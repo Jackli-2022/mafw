@@ -97,6 +97,10 @@ export class PodEventService {
     this.deps.store.updateEventWake(id, { wakeState: 'suppressed' });
   }
 
+  markWakeAttempt(id: string): void {
+    this.deps.store.incrementEventWakeAttempts(id);
+  }
+
   private now(): string {
     return this.deps.now?.() ?? new Date().toISOString();
   }

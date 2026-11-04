@@ -9375,6 +9375,9 @@ class MafwScheduler {
           status: task.status,
         })),
         attention: this.podGoalService?.attention(pod.id) ?? [],
+        unread: (this.podEventService?.list(pod.id, { state: 'unread', limit: 500 }).items ?? [])
+          .filter((event) => event.severity === 'p1')
+          .map((event) => ({ goalId: event.goalId, revision: event.revision })),
       });
     }
     return buildPodPresence(inputs);
