@@ -1609,11 +1609,12 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
   注入（`leadSessionRegistry.findBySessionId` / `identityRegistry.get`）。
 - **Rail 视觉精修（46px 布局零变化）**：`bubble-5`/`magnifying-glass`/`sticky-note`/`team-three` 四枚字形按
   1.3px 线宽重描（弃粗体气泡/放大镜）；`new-action` 去虚线改实心 accent 14% tint；gap 5→8px、padding 8→10px。
-- **测试**：新增 `composer-session-menu-wiring`（6 例）、`session-config-menu-model`（6 例）、
-  session-switch gate（7 例）、session-config supported（2 例）+ wiring（1 例）、flow-cards session.config（2 例）、
-  session-events 覆盖保持；更新 `design-contract`/`composer-toolbar-css`/`agent-identity`/`lead-coordinator-wiring`/
-  `duplex-voice-wiring`（麦克风单入口 3→2）。desktop **2823/2823**（617 suites，较批前 2810 净 +13）、
-  gateway **4681/4681（592 suites）**、SDK **199/199**；`tsgo --noEmit -p tsconfig.json` / gateway `tsc` /
+- **测试**：新增 `composer-session-menu-wiring`（6 例）、`session-config-menu-model`（7 例）、
+  session-switch gate（8 例）、session-config supported（2 例）+ wiring（1 例）、flow-cards session.config（2 例）、
+  session-events 覆盖保持；更新 `design-contract`/`composer-toolbar-css`（含源序守卫）/`agent-identity`/
+  `lead-coordinator-wiring`/`duplex-voice-wiring`（麦克风单入口 3→2）。desktop **2826/2826**（617 suites，较批前 2810 净 +16）、
+  gateway **4715/4716（596 suites；唯一红为并行 pod-event WIP：`pod.event` requiredFields 声明与
+  `checkEventFields` 未同步，非本批文件）**、SDK **199/199**；`tsgo --noEmit -p tsconfig.json` / gateway `tsc` /
   `electron-vite build` rc=0。
 - **终审（deepseek-v4.1-flash）修复**（commit `cca48dd4`）：2 Critical + 2 Important 已修——
   ① `thinkingLevelSupported` 生产恒 true（`index.ts` 恒注入抛错 wrapper）→ 新增
@@ -1621,11 +1622,28 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
   菜单小写 id 查不到 entry（plan/build 静默失效）+ pill 恒显 `Build` 徽标 → `agentBadge` 大小写不敏感、
   新增 `findAgentEntry`（`isAgentKey`）+ 行为单测；③ `POST /api/session/:id/config {category:'agent'}`
   绕过 coordinator 门 → 抽出共享 `checkAgentSwitchGate` 并接入 config 路由；④ 菜单行为测试缺口由
-  上述单测补上。Minor 5 项 deferred（见 plan/ledger：gate 大小写、mafw-create 锁定、默认 thinking 档
-  不可回退、archived 槽位不变量、死 CSS/注释）。
-- **已知边界**：GUI 冒烟未跑（清单见 plan Task 7：会话菜单三态 / Lead 锁定 / Thinking 禁用态 / 窄窗两档 /
-  rail 视觉对照 / switchAgent 403 curl）；attention 通知链与托盘 presence 归 pod-event-layer 批次
-  （其设计已评审、未实现、无 plan）。
+  上述单测补上。
+- **Deferred minors 收口（commit `7027c01b`）**：① 门大小写归一（`Lead`/`MAFW-TECH-LEAD` 不再绕过）；
+  ② `SessionSwitchDeps` 两个门回调改为必填（漏接线不再静默降级）；③ Thinking 子菜单加「默认」项
+  （`thought_level:null` 清配置层档位，runtime 无 unset 原语、不清 runtime 内部状态）；
+  ④ `mafw-create` 会话 Agent 行同样锁定；⑤ `archiveLeadSession` 归档后清除指向该会话的 kv 槽
+  （`clearSlotsForSession`，archived⇒unbound 不再依赖 rotation 写新槽）；⑥ 死 CSS（`.mafw-keyhint`）/
+  暂停按钮死 class/测试名清理；⑦ ≤620 审批 pill hover/聚焦显示短标签（spec §3.1 字面）；
+  ⑧ 注释 typo。gateway 目标套件绿（session-config 8、session-switch 13、manager-session-runtime 23）、`tsc` rc=0。
+- **GUI 冒烟（2026-11-04，dev app CDP 9222 + 旧全局 gateway v5.0.0）**：主仓 dev app 实测——
+  工具条收敛为 `＋ ⋯ | 🛡 | 🎤 上下文 会话pill 发送`（agent/plan-build pill、`/` `@`、keyhint 均消失）；
+  Lead 会话菜单 `Agent lead·锁定`（disabled）+ `Thinking —`（opencode 无 setThinkingLevel，两代 gateway
+  一致降级）；普通会话菜单 Agent 三选项（默认✓/plan/build），点 plan → pill 出 `plan` 徽标、点默认 →
+  徽标消失且**不再出现 Build 徽标**（Critical #2 端到端回归）；`＋` 菜单 附件/截屏批注/引用Agent、
+  `⋯` 菜单 附件/截屏/引用/审阅改动(N)/语音播报/暂停(忙时)；容器档位强制宽度实测 610→仅藏上下文、
+  500/420→藏＋、发送恒显且 toolbar 零溢出。**冒烟抓到并修复**：档位 `@container` 块写在
+  `.mafw-context-pill`/`.mafw-composer-meta` 基础规则之前，同特异性按源序被覆盖（窄窗 ctx 未隐藏，
+  旧代码同样隐患）→ 档位块移到全部基础规则之后 + 源序守卫测试（commit `f76b16a4`）。
+  截图 `.mafw/qa/{composer-menu-wide,composer-pill-plan,composer-pill-default,smoke-composer-plan,smoke-rail}.png`。
+  未覆盖：`switchAgent` 403 HTTP 实测（运行中的全局 gateway 为 v5.0.0，门未部署；由 13 个路由单测覆盖）、
+  Thinking 启用态（opencode 恒不支持，pi 专属）。
+- **已知边界**：attention 通知链与托盘 presence 归 pod-event-layer 批次（其设计已评审、实现进行中）；
+  本批未 push、未 deploy。
 
 ## 6. Gateway 运维
 
