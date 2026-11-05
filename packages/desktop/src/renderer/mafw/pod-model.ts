@@ -14,7 +14,7 @@ import type {
   PodTask,
   PodTaskStatus,
 } from "@mafw/sdk"
-import { podResultBadge, resultViewedKey } from "./pod-rail-badge"
+import { podResultBadge } from "./pod-rail-badge"
 import { goalSessionTabTitle } from "./goal-session-title"
 import { isGeneratedSessionTitle } from "./session-tab-identity"
 
@@ -791,7 +791,7 @@ export function latestUnviewedResult<T extends {
   enqueuedAt?: string
 }>(
   goals: T[],
-  opts: { podId: string; viewed: (key: string) => boolean },
+  opts: { podId: string; viewed: (goalId: string, revision: number) => boolean },
 ): T | null {
   const ready = goals
     .filter((goal) => !!goal.resultReady)
@@ -799,34 +799,13 @@ export function latestUnviewedResult<T extends {
       const revision = goalRevisionOf(goal) ?? 1
       return podResultBadge({
         resultReady: true,
-        viewed: opts.viewed(resultViewedKey(opts.podId, goal.goalId, revision)),
+        viewed: opts.viewed(goal.goalId, revision),
       }) === "result"
     })
     .sort((a, b) => (b.endedAt ?? b.enqueuedAt ?? "").localeCompare(a.endedAt ?? a.enqueuedAt ?? ""))
   return ready[0] ?? null
 }
 
-/** `pod.updated` 的结果通知事件（kind=result；goalId 可选）。 */
-export function podResultEvent(event: unknown): { podId: string; goalId: string | null } | null {
-  const raw = event as any
-  if (raw?.type !== "pod.updated") return null
-  const props = raw.properties
-  if (!props || props.kind !== "result") return null
-  const podId = typeof props.podId === "string" ? props.podId : ""
-  if (!podId) return null
-  const goalId = typeof props.goalId === "string" && props.goalId ? props.goalId : null
-  return { podId, goalId }
-}
+/** `pod.updated` 的结果通知事件已退役（2026-11-04 Task 9）：
+ *  完成通知归 main 进程的 presence 轮询（事件层唯一所有），渲染层不再 toast/通知。 */
 
-/** OS 通知文案（标题固定，正文含 Goal + revision + 结果；标题截断防溢出）。 */
-export function podResultNotice(input: {
-  title?: string | null
-  verdict?: PodGoalVerdict | null
-  revision?: number | null
-}): { title: string; body: string } {
-  const title = (input.title ?? "").trim().slice(0, 80) || "未命名目标"
-  return {
-    title: "MAFW：鲸群结果",
-    body: `${title} · ${resultStatus({ verdict: input.verdict ?? null, revision: input.revision ?? null })}`,
-  }
-}

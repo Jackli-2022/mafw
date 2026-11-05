@@ -52,6 +52,8 @@ export function WorkOverview(props: {
   error?: string | null
   onOpenGoal: (goal: PodGoal, focus: GoalDetailFocus) => void
   onOpenAll?: () => void
+  /** 结果是否已查看（事件 + legacy 双读由调用方提供）；缺省 = 不标「未查看」。 */
+  isViewed?: (goal: PodGoal) => boolean
 }) {
   const sections = () => workspaceSections(props.overview ?? EMPTY)
   return (
@@ -105,6 +107,9 @@ export function WorkOverview(props: {
                     <span class="mafw-work-item-main">
                       <span class="mafw-work-item-title">{goal.title || "未命名目标"}</span>
                       <span class="mafw-work-item-meta">
+                        <Show when={section.bucket === "result_ready" && props.isViewed && !props.isViewed(goal)}>
+                          <span class="mafw-work-chip is-unviewed">未查看</span>
+                        </Show>
                         <For each={goalChips(goal)}>
                           {(chip) => <span class="mafw-work-chip">{chip}</span>}
                         </For>

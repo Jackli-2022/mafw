@@ -10,8 +10,6 @@ import assert from "node:assert/strict"
 import {
   goalRevisionOf,
   latestUnviewedResult,
-  podResultEvent,
-  podResultNotice,
   rejectButtonLabel,
   rejectErrorMessage,
   resultStatus,
@@ -153,7 +151,7 @@ describe("goalRevisionOf / latestUnviewedResult", () => {
     ]
     const picked = latestUnviewedResult(goals, {
       podId: "pod_1",
-      viewed: (key) => viewed.has(key),
+      viewed: (goalId, revision) => viewed.has(resultViewedKey("pod_1", goalId, revision)),
     })
     assert.equal(picked?.goalId, "g1")
   })
@@ -168,37 +166,6 @@ describe("goalRevisionOf / latestUnviewedResult", () => {
       latestUnviewedResult([goal({ goalId: "g1", resultReady: false })], { podId: "pod_1", viewed: () => false }),
       null,
     )
-  })
-})
-
-describe("podResultEvent / podResultNotice", () => {
-  test("只认 pod.updated kind=result", () => {
-    assert.deepEqual(
-      podResultEvent({ type: "pod.updated", properties: { podId: "pod_1", kind: "result", goalId: "g1" } }),
-      { podId: "pod_1", goalId: "g1" },
-    )
-    assert.deepEqual(
-      podResultEvent({ type: "pod.updated", properties: { podId: "pod_1", kind: "result" } }),
-      { podId: "pod_1", goalId: null },
-    )
-    assert.equal(podResultEvent({ type: "pod.updated", properties: { podId: "pod_1", kind: "goal" } }), null)
-    assert.equal(podResultEvent({ type: "pod.updated", properties: { kind: "result" } }), null)
-    assert.equal(podResultEvent(null), null)
-    assert.equal(podResultEvent({ type: "session.idle" }), null)
-  })
-
-  test("通知文案含 Goal 标题 + revision + 结果", () => {
-    assert.deepEqual(
-      podResultNotice({ title: "Pod loop", verdict: "PASS", revision: 2 }),
-      { title: "MAFW：鲸群结果", body: "Pod loop · revision 2 · 已通过" },
-    )
-    assert.deepEqual(
-      podResultNotice({ title: "Pod loop", verdict: "FAIL" }),
-      { title: "MAFW：鲸群结果", body: "Pod loop · 未通过" },
-    )
-    const long = podResultNotice({ title: "x".repeat(200), verdict: "PASS", revision: 1 })
-    assert.ok(long.body.length <= 140)
-    assert.match(long.body, /^x+ · revision 1 · 已通过$/)
   })
 })
 

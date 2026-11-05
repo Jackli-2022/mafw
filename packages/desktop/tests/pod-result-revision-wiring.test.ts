@@ -1,17 +1,17 @@
-// Task 21 接线契约：结果通知 / 打回 / revision 历史。
+// Task 21 + Task 9 接线契约：结果通知 / 打回 / revision 历史。
 //
 // 关键不变量：
-//   1. 结果事件（pod.updated kind=result）→ 隐藏时 OS 通知 + toast；rail 上出现
-//      「有新结果」点，但不增加 attention 数字徽标。
-//   2. 点通知回到窗口后直接打开该 Goal 的结果面板；**结果数据加载成功**后才标记已查看
-//      （打开面板本身不算，加载失败要保留「有新结果」点）。
+//   1. 完成通知归 main 的 presence 轮询（事件层唯一所有）；渲染层只保留「有新结果」点，
+//      且不增加 attention 数字徽标。
+//   2. `pod.event` 进 inbox store；「未查看」标记在结果数据加载成功后才清（seenAll），
+//      打开面板本身不算，加载失败要保留结果点。legacy localStorage 只读兜底旧 gateway。
 //   3. 结果面板可打回（反馈必填），成功后打开同一 Goal 的 Tech Lead 讨论（新 revision）。
 //   4. 队列/详情显示 revision；旧 revision 历史（verdict/feedback）永不丢。
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { podRailBadge } from "../src/renderer/mafw/pod-rail-badge"
-import { podResultEvent, resultStatus } from "../src/renderer/mafw/pod-model"
+import { resultStatus } from "../src/renderer/mafw/pod-model"
 import { techLeadTabTitle } from "../src/renderer/mafw/pod-store"
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8")
@@ -62,28 +62,33 @@ test("打回：反馈必填、按钮文案单一来源、调 pod.rejectResult", 
   assert.doesNotMatch(podDock, /rejectErrorMessage/)
 })
 
-test("结果事件：隐藏时 OS 通知 + 未查看结果点（不掺 attention）", () => {
-  assert.match(shell, /podResultEvent\(/)
-  assert.match(shell, /notifyIfHidden\(/)
+test("结果点由事件层驱动（完成通知归 main presence，不掺 attention）", () => {
+  assert.match(shell, /onPodEvent/)
+  assert.match(shell, /podEvents\.ingest\(/)
   assert.match(shell, /podResultBadge\(/)
   assert.match(shell, /podResultDot=/)
   assert.match(rail, /podResultDot/)
   assert.match(rail, /mafw-icon-rail-result-dot/)
   assert.match(cssBlock(".mafw-icon-rail-result-dot {"), /var\(--accent\)/)
+  // 渲染层 toast/OS 通知链已退役（spec 2026-11-04 §7）：否则同一个结果会双通知。
+  assert.doesNotMatch(shell, /podResultEvent\(/)
+  assert.doesNotMatch(shell, /podResultNotice\(/)
 
   const attention = [{ id: "a", goalId: "g1" }]
   assert.equal(podRailBadge({ attention, unread: 4, resultReady: true }), 1)
 })
 
-test("从通知打开结果：visibilitychange 后打开统一 Goal 详情", () => {
-  assert.match(shell, /visibilitychange/)
-  assert.match(shell, /openPendingResult/)
-  assert.match(shell, /openGoalDetail\(goalId, "result"\)/)
+test("pod.event 进 inbox store，工作概览给未查看结果加标记", () => {
+  assert.match(shell, /onPodEvent: \(event\) => \{ podEvents\.ingest\(event\) \}/)
+  assert.match(workOverview, /is-unviewed/)
+  assert.match(cssBlock(".mafw-work-chip.is-unviewed {"), /var\(--accent\)/)
 })
 
-test("查看结果清除未读点（localStorage 持久化，键含 revision；只在加载成功后标记）", () => {
+test("查看结果清除未读点（seenAll；只在加载成功后标记；legacy localStorage 只读兜底）", () => {
   assert.match(podResultView, /markResultViewedAfterLoad\(/)
   assert.doesNotMatch(podDock, /markPodResultViewed\(/, "打开面板不算查看")
+  assert.match(resultStore, /events\.markSeen\(/)
+  assert.match(resultStore, /isResultViewed\(/)
   assert.match(resultStore, /mafw-pod-result-viewed/)
   assert.match(resultStore, /addViewedResult/)
   assert.match(resultStore, /resultViewedKey/)
@@ -100,10 +105,6 @@ test("队列/详情显示 revision，旧版本历史保留", () => {
 
 test("进度条按 revision 标注旧结果不冒充当前版（纯函数）", () => {
   assert.equal(resultStatus({ verdict: "PASS", revision: 2 }), "revision 2 · 已通过")
-  assert.deepEqual(
-    podResultEvent({ type: "pod.updated", properties: { podId: "pod_1", kind: "result", goalId: "g1" } }),
-    { podId: "pod_1", goalId: "g1" },
-  )
 })
 
 test("打回后的 Tech Lead tab 标题带新 revision（rev 1 不啰嗦）", () => {

@@ -3,7 +3,8 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { WorkOverview } from "./WorkOverview"
 import { PodGoalComposer } from "./PodGoalComposer"
-import type { GoalDetailFocus } from "../pod-model"
+import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
+import { isPodResultViewed } from "../pod-result-store"
 
 /** Composer 请求序列的会话级消费游标：remount 不重放已处理请求。 */
 let lastConsumedComposerRequest = 0
@@ -137,6 +138,11 @@ export function ProjectWorkView(props: {
         error={error()}
         onOpenGoal={(goal, focus) => props.onOpenGoal(goal, focus)}
         onOpenAll={() => void load()}
+        isViewed={(goal) => {
+          const podId = overview()?.podId
+          if (!podId) return true
+          return isPodResultViewed(podId, goal.goalId, goalRevisionOf(goal) ?? 1)
+        }}
       />
     </div>
   )

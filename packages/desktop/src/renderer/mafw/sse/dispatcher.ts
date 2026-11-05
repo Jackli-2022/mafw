@@ -61,7 +61,10 @@ export interface RunDeps {
 }
 
 export interface PodDeps {
+  /** `pod.updated`：Pod 详情变了（Goal/任务/消息）→ 刷新 detail。 */
   onEvent(event: unknown): void
+  /** `pod.event`：事件层写入后的通知（inbox/角标），与 detail 刷新分开。 */
+  onPodEvent(event: unknown): void
 }
 
 /** Task 7: unified plugin package revision + registered package events. */
@@ -162,6 +165,14 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
   if (event.type === "pod.updated") {
     deps.core.trace(event, "pod:updated")
     deps.pod.onEvent(event)
+    return
+  }
+
+  // 事件层（Task 9）：`pod.event` 只进 inbox store（角标/未查看标记），
+  // 不触发 Pod 详情刷新——详情已由同一写点的 `pod.updated` 负责。
+  if (event.type === "pod.event") {
+    deps.core.trace(event, "pod:event")
+    deps.pod.onPodEvent(event)
     return
   }
 

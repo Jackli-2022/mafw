@@ -57,24 +57,20 @@ import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
 import { ingestPodEvent, podStore, pickTechLeadInviteGoal, resolvePodDetailCached, techLeadTabTitle } from "./pod-store"
 import { podRailBadge, podResultBadge } from "./pod-rail-badge"
 import {
-  createPodResultQueue,
   isPodResultViewed,
   podTechLeadOpenRequest,
-  podViewedResultKeys,
 } from "./pod-result-store"
+import { podEvents } from "./pod-events"
 import {
   attentionTarget,
   goalRevisionOf,
   goalSessionIdentity,
   latestUnviewedResult,
   leadSessionIdFromPod,
-  podResultEvent,
-  podResultNotice,
   podRoleForSession,
   podSessionRoute,
   podStageLabel,
   reconcileGoalSessionTabs,
-  resultStatus,
   techLeadSendGate,
   type GoalDetailFocus,
 } from "./pod-model"
@@ -1249,14 +1245,12 @@ export function MafwShell() {
     },
     pod: {
       onEvent: (event) => {
-        // Task 21：结果事件要「先刷新再看结果」——通知文案需要 Goal 标题/verdict。
-        // refresh 是 single-flight：忙时排队（只留最新一条），空闲后由 effect drain。
-        if (podResultEvent(event)) {
-          podResultQueue.push(event)
-          return
-        }
+        // `pod.updated` 保留（刷新 Pod 详情用）；完成通知已由 main 的 presence
+        // 轮询统一负责（spec 2026-11-04 §7：渲染层不再 toast/通知）。
         ingestPodEvent(event)
       },
+      // `pod.event`：事件层写入后的 inbox/角标信号，与详情刷新分开。
+      onPodEvent: (event) => { podEvents.ingest(event) },
     },
     // 统一插件包（Task 7）：修订通知 → 重拉 committed descriptors；
     // 已注册包事件 → 事件 hub（只做数据投递，绝不执行插件代码）。
@@ -1367,11 +1361,8 @@ export function MafwShell() {
       }
     }
     window.addEventListener("keydown", onInspectorKey)
-    // Task 21：通知点击 → main show/focus → 窗口可见；此时打开待查看的结果。
-    document.addEventListener("visibilitychange", openPendingResult)
     onCleanup(() => {
       window.removeEventListener("keydown", onInspectorKey)
-      document.removeEventListener("visibilitychange", openPendingResult)
       clearInterval(reconcileTimer)
       clearInterval(subagentTimer)
       clearInterval(backgroundTimer)
@@ -2012,6 +2003,7 @@ export function MafwShell() {
     attention: podStore.detail()?.attention ?? [],
   })
   // Task 21：未查看结果 + 隐藏时 OS 通知。结果不是人类阻塞点（不进 podBadgeCount）。
+  // Task 9：`isPodResultViewed` 已是事件 + legacy 双读，结果点随 `pod.events` 自动收敛。
   const podResultDot = () => {
     const detail = podStore.detail()
     if (!detail) return false
@@ -2020,54 +2012,8 @@ export function MafwShell() {
       viewed: isPodResultViewed(detail.pod.id, goal.goalId, goalRevisionOf(goal) ?? 1),
     }) === "result")
   }
-  // 通知点击 = 窗口重新可见（main 的 Notification click 只负责 show/focus）。
-  // 这里记住待打开的结果，回到窗口后打开；已查看/已删的 Goal 不打开。
-  let pendingResultGoalId: string | null = null
-  const handlePodResultEvent = async (event: unknown) => {
-    const info = podResultEvent(event)
-    if (!info) return
-    const dir = benchRoot() ?? currentProject()
-    if (dir) await podStore.open(dir)
-    await podStore.refresh()
-    const detail = podStore.detail()
-    if (!detail || detail.pod.id !== info.podId) return
-    const goal = info.goalId
-      ? detail.goals.find((item) => item.goalId === info.goalId) ?? null
-      : latestUnviewedResult(detail.goals, {
-          podId: detail.pod.id,
-          viewed: (key) => podViewedResultKeys().includes(key),
-        })
-    if (!goal) return
-    const revision = goalRevisionOf(goal) ?? 1
-    if (isPodResultViewed(detail.pod.id, goal.goalId, revision)) return
-    showToastV2({
-      description: `鲸群结果：${goal.title} · ${resultStatus({ verdict: goal.verdict, revision })}`,
-      duration: 4200,
-    } as any)
-    const notice = podResultNotice({ title: goal.title, verdict: goal.verdict, revision })
-    notifyIfHidden(notice.title, notice.body)
-    pendingResultGoalId = goal.goalId
-  }
-  // 结果事件队列：podStore.refresh() 忙时事件不能就地处理（single-flight 会直接返回，
-  // detail 还是旧值 → toast/通知静默丢失）。只保留最新一条，store 空闲后补处理。
-  const podResultQueue = createPodResultQueue({
-    isBusy: () => podStore.busy(),
-    handle: handlePodResultEvent,
-  })
-  createEffect(() => {
-    if (!podStore.busy()) podResultQueue.drain()
-  })
-  const openPendingResult = () => {
-    if (document.hidden || !pendingResultGoalId) return
-    const goalId = pendingResultGoalId
-    pendingResultGoalId = null
-    const detail = podStore.detail()
-    const goal = detail?.goals.find((item) => item.goalId === goalId)
-    if (!detail || !goal) return
-    if (isPodResultViewed(detail.pod.id, goalId, goalRevisionOf(goal) ?? 1)) return
-    // Task 15：结果就在统一 Goal 详情里，不再经过右栏「鲸群工作」页。
-    openGoalDetail(goalId, "result")
-  }
+  // 完成通知在 main（presence 轮询 → OS 通知/托盘），渲染层不再 toast/记录待打开结果
+  // （spec 2026-11-04 §7：通知逻辑退役，避免同一条结果双通知）。
   const [podPanelRequest, setPodPanelRequest] = createSignal<{
     tab: "team" | "memory"
     seq: number
@@ -2333,8 +2279,17 @@ export function MafwShell() {
     }
     if (dir) void podStore.open(dir)
   }))
+  // Task 9：事件 inbox 跟随当前 Pod。只按 pod id 变化触发（detail 每次刷新都是新对象，
+  // 直接读 detail 会让 refresh 自触发）。
+  createEffect(on(() => podStore.detail()?.pod.id ?? null, (podId) => {
+    podEvents.setPod(podId)
+    if (podId) void podEvents.refresh(podId)
+  }))
   createEffect(on(() => connPhaseLabel(), (phase, previous) => {
-    if (phase === "connected" && previous !== "connected") void podStore.refresh()
+    if (phase === "connected" && previous !== "connected") {
+      void podStore.refresh()
+      void podEvents.refresh()
+    }
   }))
   const dockPresent = createPresence(() => rightDockOpen(), SURFACE_MS)
 

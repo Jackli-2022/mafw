@@ -1,59 +1,9 @@
-// 结果事件队列 / 已查看标记的时序契约（final review minors）：
-//   1. podStore 正在 refresh/loading 时到达的结果事件不能丢——只保留最新一条，
-//      等 store 空闲后补处理（drain）。
-//   2. 已查看标记只在结果数据真的加载成功后才写，面板「打开」本身不算查看。
+// 已查看标记的时序契约：
+//   已查看只在结果数据真的加载成功后才写，面板「打开」本身不算查看。
+//   新版写在 `pod_events`（seenAll）；旧 gateway 没有事件路由时退回 localStorage。
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { createPodResultQueue, markResultViewedAfterLoad } from "./pod-result-store"
-
-describe("createPodResultQueue", () => {
-  test("busy 时只保留最新一条结果事件，空闲后补处理一次", async () => {
-    let busy = true
-    const seen: unknown[] = []
-    const queue = createPodResultQueue({
-      isBusy: () => busy,
-      handle: async (event) => { seen.push(event) },
-    })
-
-    queue.push({ seq: 1, goalId: "g1" })
-    queue.push({ seq: 2, goalId: "g2" })
-    await Promise.resolve()
-    assert.deepEqual(seen, [], "refresh 忙时不能处理（会被 store 的 single-flight 吞掉）")
-    assert.equal(queue.pending(), true)
-
-    busy = false
-    queue.drain()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.deepEqual(seen, [{ seq: 2, goalId: "g2" }], "只补最新一条，不重放整段历史")
-    assert.equal(queue.pending(), false)
-  })
-
-  test("空闲时立即处理；处理期间新事件排队，结束后继续 drain", async () => {
-    let busy = false
-    const seen: unknown[] = []
-    const gate: Array<() => void> = []
-    const queue = createPodResultQueue({
-      isBusy: () => busy,
-      handle: (event) => new Promise<void>((resolve) => {
-        seen.push(event)
-        gate.push(resolve)
-      }),
-    })
-
-    queue.push({ seq: 1 })
-    assert.deepEqual(seen, [{ seq: 1 }], "空闲立即处理")
-    queue.push({ seq: 2 })
-    busy = true // 处理中 refresh 又忙了：保留待补
-    gate[0]()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.deepEqual(seen, [{ seq: 1 }], "忙时新事件保持 pending")
-
-    busy = false
-    queue.drain()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.deepEqual(seen, [{ seq: 1 }, { seq: 2 }])
-  })
-})
+import { markResultViewedAfterLoad } from "./pod-result-store"
 
 describe("markResultViewedAfterLoad", () => {
   const calls: Array<[string, string, number]> = []
@@ -94,5 +44,57 @@ describe("markResultViewedAfterLoad", () => {
       podId: "pod_1", goalId: "g1", result: { goalId: "g1" } as any, mark,
     })
     assert.deepEqual(calls, [], "revision 未知时不写 viewed（避免误标下一版）")
+  })
+})
+
+describe("markResultViewedAfterLoad: event store first, legacy fallback", () => {
+  test("事件路由可用 → 调 seenAll（带 revision），不写 legacy", async () => {
+    const seen: Array<[string, string, number]> = []
+    const legacy: Array<[string, string, number]> = []
+    const marked = markResultViewedAfterLoad({
+      podId: "pod_1",
+      goalId: "g1",
+      result: { goalId: "g1", revision: 2 } as any,
+      mark: (podId, goalId, revision) => { legacy.push([podId, goalId, revision]) },
+      events: {
+        supported: () => true,
+        markSeen: async (podId, goalId, revision) => { seen.push([podId, goalId, revision]); return true },
+      },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(marked, true)
+    assert.deepEqual(seen, [["pod_1", "g1", 2]])
+    assert.deepEqual(legacy, [])
+  })
+
+  test("旧 gateway 没有事件路由 → 直接走 legacy localStorage", () => {
+    const legacy: Array<[string, string, number]> = []
+    markResultViewedAfterLoad({
+      podId: "pod_1",
+      goalId: "g1",
+      result: { goalId: "g1", revision: 2 } as any,
+      mark: (podId, goalId, revision) => { legacy.push([podId, goalId, revision]) },
+      events: { supported: () => false, markSeen: async () => false },
+    })
+    assert.deepEqual(legacy, [["pod_1", "g1", 2]])
+  })
+
+  test("seenAll 发现路由缺失 → 补写 legacy（不能角标永远清不掉）", async () => {
+    let supported = true
+    const legacy: Array<[string, string, number]> = []
+    markResultViewedAfterLoad({
+      podId: "pod_1",
+      goalId: "g1",
+      result: { goalId: "g1", revision: 2 } as any,
+      mark: (podId, goalId, revision) => { legacy.push([podId, goalId, revision]) },
+      events: {
+        supported: () => supported,
+        markSeen: async () => { supported = false; return false },
+      },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.deepEqual(legacy, [["pod_1", "g1", 2]])
   })
 })

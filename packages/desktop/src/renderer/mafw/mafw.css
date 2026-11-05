@@ -7313,6 +7313,13 @@ html[data-theme="light"] body {
   line-height: 1.5;
   white-space: nowrap;
 }
+/* 结果已好但还没看过（事件 inbox 的「未查看」标记）：accent tint，不抢 attention 的红色语义。 */
+.mafw-work-chip.is-unviewed {
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
 .mafw-work-item-chevron { flex: 0 0 auto; color: var(--text-5); }
 .mafw-work-overview .mafw-work-empty {
   display: flex;

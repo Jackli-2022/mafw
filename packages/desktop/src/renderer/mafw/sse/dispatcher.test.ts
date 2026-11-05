@@ -10,6 +10,7 @@ function makeDeps() {
   const queueEvents: unknown[] = []
   const runEvents: unknown[] = []
   const podEvents: unknown[] = []
+  const podEventStream: unknown[] = []
   const pluginChanges: unknown[] = []
   const pluginEvents: unknown[] = []
   const deps: ShellEventDeps = {
@@ -82,13 +83,14 @@ function makeDeps() {
     },
     pod: {
       onEvent: (event: unknown) => { podEvents.push(event) },
+      onPodEvent: (event: unknown) => { podEventStream.push(event) },
     },
     plugins: {
       onChanged: (event: unknown) => { pluginChanges.push(event) },
       onEvent: (event: unknown) => { pluginEvents.push(event) },
     },
   }
-  return { deps, calls, subagentEvents, backgroundEvents, taskEvents, queueEvents, runEvents, podEvents, pluginChanges, pluginEvents }
+  return { deps, calls, subagentEvents, backgroundEvents, taskEvents, queueEvents, runEvents, podEvents, podEventStream, pluginChanges, pluginEvents }
 }
 
 describe("dispatchShellEvent: core events", () => {
@@ -139,6 +141,18 @@ describe("dispatchShellEvent: pod updated", () => {
     dispatchShellEvent(event, deps)
     expect(podEvents).toEqual([event])
     expect(calls.some(c => c.name === "trace" && c.args[1] === "pod:updated")).toBe(true)
+  })
+
+  test("pod.event goes to the inbox store, not the pod-detail refresh path", () => {
+    const { deps, podEvents, podEventStream, calls } = makeDeps()
+    const event = {
+      type: "pod.event",
+      properties: { podId: "pod_1", eventId: "evt_1", goalId: "g1", revision: 1, kind: "goal.result", severity: "p1" },
+    }
+    dispatchShellEvent(event, deps)
+    expect(podEventStream).toEqual([event])
+    expect(podEvents).toEqual([])
+    expect(calls.some(c => c.name === "trace" && c.args[1] === "pod:event")).toBe(true)
   })
 })
 

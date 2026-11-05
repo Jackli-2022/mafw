@@ -11,6 +11,7 @@ import {
   parseViewedResults,
   resultViewedKey,
 } from "./pod-rail-badge"
+import { isResultViewed, podEvents, type PodEventsStore } from "./pod-events"
 
 export const VIEWED_RESULTS_STORAGE_KEY = "mafw-pod-result-viewed:v1"
 
@@ -49,8 +50,14 @@ export function podViewedResultKeys(): string[] {
 }
 
 export function isPodResultViewed(podId: string, goalId: string, revision: number): boolean {
-  const key = resultViewedKey(podId, goalId, revision)
-  return viewedKeys().includes(key)
+  // 双读：`pod_events` 是新的真相源，legacy localStorage 只读兼容（spec §7）。
+  return isResultViewed({
+    podId,
+    goalId,
+    revision,
+    events: podEvents.items(),
+    legacy: viewedKeys(),
+  })
 }
 
 /** 打开结果即视为已查看（点通知/rail 点/队列按钮同一口径）。 */
@@ -74,6 +81,9 @@ export function resetPodResultViewed(): void {
  * rail 上的「有新结果」却已消失。这里把口径收敛到「确实拿到结果数据」：
  * - result 为空（加载失败）→ 不标记，返回 false；
  * - revision 以结果自带为准，缺失回退 Goal revision；都拿不到就不写（避免误标下一版）。
+ *
+ * 2026-11-04 Task 9：默认写 `pod_events`（seenAll，只清当前 revision）；旧 gateway
+ * 没有事件路由时退回 legacy localStorage（特性门控，见 spec §7）。
  */
 export function markResultViewedAfterLoad(input: {
   podId: string
@@ -81,55 +91,32 @@ export function markResultViewedAfterLoad(input: {
   result: { goalId?: string | null; revision?: number | null } | null | undefined
   fallbackRevision?: number | null
   mark?: (podId: string, goalId: string, revision: number) => void
+  events?: Pick<PodEventsStore, "supported" | "markSeen">
 }): boolean {
   if (!input.result) return false
   const revision = positiveRevision(input.result.revision) ?? positiveRevision(input.fallbackRevision)
   if (revision === null) return false
   const goalId = (input.result.goalId ?? input.goalId ?? "").trim() || input.goalId
-  ;(input.mark ?? markPodResultViewed)(input.podId, goalId, revision)
+  const markLegacy = input.mark ?? markPodResultViewed
+  // 注入 mark 视为「测试里的 legacy 写点」；只有注入 events 才走事件路由。
+  // 生产调用（PodResultView）两者都不传 → 默认全局 podEvents。
+  const events = input.events ?? (input.mark ? null : podEvents)
+  if (!events || !events.supported()) {
+    markLegacy(input.podId, goalId, revision)
+    return true
+  }
+  void events.markSeen(input.podId, goalId, revision)
+    .then((ok) => {
+      // seenAll 才发现路由缺失（明细列表还没拉过）：补写 legacy，别让角标永远清不掉。
+      if (!ok && !events.supported()) markLegacy(input.podId, goalId, revision)
+    })
+    .catch(() => { /* 标记已查看是 best-effort；失败时结果点保留，用户可重试 */ })
   return true
 }
 
 function positiveRevision(value: unknown): number | null {
   const n = Number(value)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
-}
-
-// ── 结果事件队列（final review minor） ─────────────────────────────────────
-// podStore.refresh() 是 single-flight：refresh 忙时直接 return，事件如果此刻处理就会
-// 读到旧 detail 并静默丢弃（不弹 toast / 不发通知）。这里把结果事件排队，**只保留最新
-// 一条**，等 store 空闲（MafwShell 的 effect 调用 drain）后再补处理。
-
-export function createPodResultQueue(deps: {
-  isBusy: () => boolean
-  handle: (event: unknown) => Promise<void>
-}): {
-  push(event: unknown): void
-  drain(): void
-  pending(): boolean
-} {
-  let pending: unknown = null
-  let running = false
-  const run = () => {
-    if (running || deps.isBusy() || pending === null) return
-    const event = pending
-    pending = null
-    running = true
-    void deps.handle(event)
-      .catch(() => { /* 结果通知是 best-effort：失败不阻塞后续事件 */ })
-      .finally(() => {
-        running = false
-        run()
-      })
-  }
-  return {
-    push(event: unknown) {
-      pending = event // 只保留最新一条：旧结果通知没有补发价值
-      run()
-    },
-    drain: run,
-    pending: () => pending !== null,
-  }
 }
 
 // ── 打开请求（SSE/通知侧 → Tech Lead 讨论） ───────────────────────────────
