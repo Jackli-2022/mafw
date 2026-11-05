@@ -1756,6 +1756,24 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
 - **未做（资产类）**：托盘三态仍无独立图标资源（只换 tooltip/菜单文案）；`latestUnviewedResult` /
   `shouldMarkSeen` 作为纯契约 helper 保留（生产暂无调用方）。
 
+### 5.30 Mobile + Tailscale 接入（2026-11-05 起）
+
+调研：`docs/research/2026-11-05-mobile-tailscale-pod-research.md`（四路盘点 + Tailscale 方案对比 + 三诉求 gap 矩阵）。
+设计：`docs/superpowers/specs/2026-11-05-mobile-tailscale-pod-app-design.md`（用户拍板 D1 打开才看无离线推送 / D2 直连 tailnet /
+D3 鉴权洞独立先行 / D4 沿用桌面 Goal→Tech Lead 范式 / D5 含「需要你」应答 / D6 UI 参考 Dots+Muse+Grok，配色裁定 B「Grok 单色极简」）。
+计划：`plans/2026-11-05-mobile-gateway-p0.md`（已执行）+ `plans/2026-11-05-mobile-app-v1.md`（P1-P4 待执行）。
+
+- **Mobile Gateway P0 已交付（commits `527048cf`/`4d360d5f`/`110ab302`/`d8bfc043`/`40e627cf`）**：
+  ① `dispatchAuthorized`（`routes/registry-dispatch.ts`）把 registry dispatch 移到 apiToken 鉴权之后——修掉
+  「pods/work/协作面 40+ 路由远端无 token 可调」的 P0（真机 LAN 面实测无 token 401、loopback 404 零回归）；
+  ② `GOAL_SOURCES` 扩 `mobile`（+ `GoalAuthorization.source` union）；③ `mobile.tailscaleUrl` 配置键
+  （env > config > detect，PairingService 热更；`detectReachableHost` 抽到 `mobile/tailscale-url.ts`）；
+  ④ `goal.techLeadModel` 可配置（`pod-tech-lead-runtime-adapter.ts` 建会话后 fail-open bindModel，
+  lazy getter 热生效——终审 I-1 修复）。测试：P0 新增 **19**；gateway 全量 **4764（603 suites）**、
+  `tsc` rc=0。部署：build + deploy:local + daemon 重启，`/health` 200。
+  终审（deepseek-v4.1-flash）：0 Critical / 2 Important 已修（lazy getter、`docs/guides/plugin-creator.md`
+  安全文档同步）；deferred minors 见计划执行 ledger（workspace 已清理，git 历史为准）。
+
 
 ## 6. Gateway 运维
 
