@@ -603,7 +603,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 const GOAL_SOURCES: ReadonlySet<GoalAuthorization['source']> = new Set([
-  'desktop', 'lead', 'a2a', 'automation', 'user', 'tui', 'agent',
+  'desktop', 'lead', 'a2a', 'automation', 'user', 'tui', 'agent', 'mobile',
 ]);
 
 /** 入口来源白名单：未知值 400（请求文件里的 source 必须可信，不能静默落 desktop）。 */

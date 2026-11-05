@@ -261,4 +261,23 @@ describe('pod routes', () => {
     expect((await call('GET', '/api/pods/pod_1?actorSessionID=ses_x', deps)).res.status).toBe(403);
     expect((await call('GET', '/api/pods/pod_1/memory?actorSessionID=ses_x', deps)).res.status).toBe(403);
   });
+
+  it('accepts source mobile for discussion goals, rejects unknown sources (P0-2)', async () => {
+    const createGoal = jest.fn(async () => ({
+      goalId: 'goal_1', status: 'discussing', revision: 1, stage: 'discussing', sessionID: 'ses_1',
+    }));
+    const deps = makeDeps({ techLead: { createGoal } });
+
+    const created = await call('POST', '/api/pods/pod_1/goals', deps, {
+      title: 'mobile goal', objective: 'from phone', source: 'mobile',
+    });
+    expect(created.res.status).toBe(200);
+    expect(createGoal).toHaveBeenCalledTimes(1);
+    expect(createGoal.mock.calls[0][0].source).toBe('mobile');
+
+    const bogus = await call('POST', '/api/pods/pod_1/goals', deps, {
+      title: 'x', objective: 'y', source: 'bogus',
+    });
+    expect(bogus.res.status).toBe(400);
+  });
 });
