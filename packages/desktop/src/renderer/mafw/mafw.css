@@ -6974,6 +6974,15 @@ html[data-theme="light"] body {
   font-size: 10px;
   font-weight: 700;
 }
+.mafw-session-lead-avatar {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-left: 4px;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
+}
 
 .mafw-pod-member:focus-visible,
 .mafw-pod-goal-row:focus-visible,

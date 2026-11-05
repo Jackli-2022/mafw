@@ -13,6 +13,8 @@ import { freezeTabs } from "./session-strip-slinky"
 import { formatRailTitle } from "./rail-display"
 import { podRoleBadge } from "../pod-model"
 import type { PodMemberRole } from "@mafw/sdk"
+import leadAvatar16 from "../assets/lore/lead-avatar-16.png"
+import { sessionPodRole } from "../lead-avatar"
 
 export function SessionStrip(props: {
   sessions: () => { id: string; title: string; lead?: boolean }[]
@@ -170,11 +172,20 @@ export function SessionStrip(props: {
                 />
               }>{formatRailTitle(s.title)}</Show>
             </span>
-            <Show when={props.podRoleOf?.(s.id)}>
+            <Show when={sessionPodRole(props.podRoleOf?.(s.id), s.lead)}>
               {(role) => (
-                <TooltipV2 value={`Pod · ${role()}`} openDelay={300}>
-                  <span class="mafw-session-pod-badge" aria-label={`Pod ${role()}`}>{podRoleBadge(role())}</span>
-                </TooltipV2>
+                <Show
+                  when={role() === "lead"}
+                  fallback={
+                    <TooltipV2 value={`Pod · ${role()}`} openDelay={300}>
+                      <span class="mafw-session-pod-badge" aria-label={`Pod ${role()}`}>{podRoleBadge(role())}</span>
+                    </TooltipV2>
+                  }
+                >
+                  <TooltipV2 value="Pod · Lead" openDelay={300}>
+                    <img class="mafw-session-lead-avatar" src={leadAvatar16} alt="Pod Lead" />
+                  </TooltipV2>
+                </Show>
               )}
             </Show>
             <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); handleClose(s.id) }}>✕</ButtonV2>

@@ -10,3 +10,9 @@ test("ProjectResources Lore avatar fills its circular slot", () => {
   assert.match(css, /\.mafw-resource-avatar img\s*\{[^}]*border-radius:\s*50%/s)
   assert.match(css, /\.mafw-resource-avatar\s*\{[^}]*overflow:\s*hidden/s)
 })
+
+test("SessionStrip Lore avatar is a 16px circle", () => {
+  assert.match(css, /\.mafw-session-lead-avatar\s*\{[^}]*width:\s*16px/s)
+  assert.match(css, /\.mafw-session-lead-avatar\s*\{[^}]*height:\s*16px/s)
+  assert.match(css, /\.mafw-session-lead-avatar\s*\{[^}]*border-radius:\s*50%/s)
+})
