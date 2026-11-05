@@ -224,12 +224,13 @@ App（Flutter，`mobile/`）在 P1-P4 迭代中；连接层与 gateway 配对/�
 
 ### 4. opencode 接入（可选）
 
-> npm 包仅含 **Gateway + TUI**（`bin: mafw`）。opencode 插件入口（`dist/plugin.js`）不在
-> npm 包内——插件方式接入请从源码构建（`npm run build` 后本地安装 tgz），或仅用下方
-> MCP remote 接线（无需插件）。
+> npm 包含 **Gateway + TUI + opencode 插件入口**（`dist/plugin.js`，包内 `opencode.plugin`）。
+> 插件方式：全局安装后把 `@jack200714/mafw` 加入 opencode 的 `plugin` 数组即可；
+> 也可以只用下方 MCP remote 接线（无需插件）。
 
 ```json
 {
+  "plugin": ["@jack200714/mafw"],
   "mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true } }
 }
 ```
