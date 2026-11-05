@@ -22,6 +22,15 @@ test("工作概览：分组有状态点/计数，Goal 行有可读元信息 chip
   assert.match(css, /\.mafw-work-chip \{[^}]*border-radius: 4px;[^}]*font-family: var\(--font-data\)/)
 })
 
+test("工作项是内容撑高的多行行，不被 ButtonV2 small 的 24px 固定高度裁切", () => {
+  // ButtonV2[data-size="small"] 固定 height:24px；工作项是「标题 + 可换行 chips」两段式，
+  // 必须显式放开高度：否则 hover 背景只覆盖 24px，溢出文字压到下一行/下一组（2026-11-05 实证）。
+  const item = css.match(/\.mafw-shell \.mafw-work-item\[data-size="small"\] \{([^}]*)\}/)?.[1]
+  assert.ok(item, "缺少工作项高度放开规则")
+  assert.match(item, /height: auto/)
+  assert.match(item, /min-height: 30px/)
+})
+
 test("项目资源：行有图标/头像/chevron，扫读不再只有文字", () => {
   assert.match(resources, /mafw-resource-avatar/)
   assert.match(resources, /name="team-three"/)

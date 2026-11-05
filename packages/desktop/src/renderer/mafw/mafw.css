@@ -7323,6 +7323,12 @@ html[data-theme="light"] body {
   transition: background var(--dur-fast) var(--ease-standard);
 }
 .mafw-work-item:hover { background: var(--bg-hover); }
+/* ButtonV2 small 的 24px 固定高度只适用于单行；工作项是「标题 + 可换行 chips」两段式，
+   必须由内容撑高——否则 hover 背景只覆盖 24px，溢出文字压到下一行/下一组。 */
+.mafw-shell .mafw-work-item[data-size="small"] {
+  height: auto;
+  min-height: 30px;
+}
 .mafw-work-item-main { display: flex; flex: 1 1 auto; min-width: 0; flex-direction: column; gap: 4px; }
 .mafw-work-item-title {
   overflow: hidden;
