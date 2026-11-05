@@ -1,7 +1,8 @@
-"""Derive Lore avatar, tray, and favicon assets.
+"""Copy Lore avatars from the generated pack and derive tray/favicon assets.
 
-Source masters live in assets/brand/lore/source/; the platform pack is read-only.
-Avatars always use the simplified base (no thread/tag) so a circular crop is safe.
+The avatar pack (15 sizes × circle/transparent) is user-generated; use exact
+assets rather than upscaling. Tray and favicon are derived from the source
+masters/platform exports.
 """
 
 from pathlib import Path
@@ -15,8 +16,14 @@ SOURCE = LORE / "source"
 EXPORT = LORE / "export"
 RENDERER = ROOT / "packages" / "desktop" / "src" / "renderer" / "mafw" / "assets" / "lore"
 PLATFORM_WINDOWS = LORE / "platform" / "windows"
+AVATAR_PACK = LORE / "avatar"
 
-AVATAR_SIZES = (512, 256, 128, 96, 64)
+PACK_SIZES = (16, 20, 24, 28, 32, 40, 48, 64, 80, 96, 128, 160, 256, 512, 1024)
+UI_CIRCLE = ((16, "lead-avatar-16.png"), (32, "lead-avatar-32.png"), (64, "lead-avatar-64.png"))
+UI_TRANSPARENT = (
+    (16, "lead-avatar-transparent-16.png"),
+    (32, "lead-avatar-transparent-32.png"),
+)
 TRAY_BASES = (16, 20, 24, 32)
 
 
@@ -35,7 +42,6 @@ def square_crop(im: Image.Image, pad_ratio: float) -> Image.Image:
     x1 = x0 + side
     y1 = y0 + side
 
-    # Clamp while keeping the square size; shift the window back inside the image.
     if x0 < 0:
         x1 -= x0
         x0 = 0
@@ -70,17 +76,30 @@ def monochrome_silhouette(im: Image.Image) -> Image.Image:
 
 
 def emit_avatars() -> None:
-    source = Image.open(SOURCE / "lore-pearl-simplified-1024.png").convert("RGBA")
-    cropped = square_crop(source, 0.08)
-    avatar_dir = EXPORT / "avatar"
-    avatar_dir.mkdir(parents=True, exist_ok=True)
+    out_circle = EXPORT / "avatar" / "circle"
+    out_transparent = EXPORT / "avatar" / "transparent"
+    out_circle.mkdir(parents=True, exist_ok=True)
+    out_transparent.mkdir(parents=True, exist_ok=True)
     RENDERER.mkdir(parents=True, exist_ok=True)
-    for size in AVATAR_SIZES:
-        avatar = cropped.resize((size, size), Image.LANCZOS)
-        out = avatar_dir / f"lore-avatar-{size}.png"
-        avatar.save(out, format="PNG")
-        shutil.copyfile(out, RENDERER / f"lead-avatar-{size}.png")
-    print(f"avatars: {', '.join(str(s) for s in AVATAR_SIZES)}")
+
+    for size in PACK_SIZES:
+        shutil.copyfile(
+            AVATAR_PACK / "circle" / f"Lore_avatar_{size}.png",
+            out_circle / f"Lore_avatar_{size}.png",
+        )
+        shutil.copyfile(
+            AVATAR_PACK / "transparent" / f"Lore_avatar_transparent_{size}.png",
+            out_transparent / f"Lore_avatar_transparent_{size}.png",
+        )
+
+    for size, name in UI_CIRCLE:
+        shutil.copyfile(AVATAR_PACK / "circle" / f"Lore_avatar_{size}.png", RENDERER / name)
+    for size, name in UI_TRANSPARENT:
+        shutil.copyfile(
+            AVATAR_PACK / "transparent" / f"Lore_avatar_transparent_{size}.png",
+            RENDERER / name,
+        )
+    print("avatars: pack 16..1024 (circle/transparent) + UI 16/32/64 circle")
 
 
 def emit_tray() -> None:

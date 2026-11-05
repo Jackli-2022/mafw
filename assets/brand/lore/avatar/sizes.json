@@ -1,0 +1,29 @@
+{
+  "sizes": [
+    16,
+    20,
+    24,
+    28,
+    32,
+    40,
+    48,
+    64,
+    80,
+    96,
+    128,
+    160,
+    256,
+    512,
+    1024
+  ],
+  "small_simplified_sizes": [
+    16,
+    20,
+    24
+  ],
+  "variants": {
+    "circle": "circle/Lore_avatar_{size}.png",
+    "transparent": "transparent/Lore_avatar_transparent_{size}.png"
+  },
+  "note": "All dimensions are pixel sizes. Use exact assets rather than upscaling smaller files."
+}
