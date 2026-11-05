@@ -1709,8 +1709,11 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
   Report、绝不从自由文本推断」。测试：`goal-driver-quick-path` 新增派生用例，`context-manifest-wiring` 的 quick 用例翻成
   fail-closed；goal 套件 **426/426**、`tsc` rc=0。真机复跑 `goal-20261105-010329-3722d8`：goal-eval 生成 →
   execute 通过 → 文件产出 → 归档 `resultReady` → 结果通知一次（ledger 记 `goal-20261105-010329-3722d8:r1`）。
-- **已知缺口（未修）**：复用讨论会话的 plan 回合如果既没写产物也没结构化交卷，首个 idle 被 grace 吞掉后
-  没有第二个 idle，节点会卡到 30 分钟 watchdog（实证 `goal-20261104-132754-140bde`）。grace 需要时限。
+- **grace 有时限（2026-11-05，commit `15aeda0d`）**：复用讨论会话的 plan 回合若既没写产物也没结构化交卷，
+  首个 idle 被 grace 吞掉后不会再有第二个 idle → 以前只能等 30 分钟 watchdog（实证 `goal-20261104-132754-140bde`）。
+  现在 grace 消耗后启动 `reuseGraceMs`（默认 90s，deps 可覆盖）定时器，超时直接走 `completeNode` →
+  `artifact_missing` 判失败；节点派发/收账/失败都会清掉定时器。RED→GREEN：无修复时新用例失败，
+  修复后 goal 套件 **411/411**、`tsc` rc=0；已部署重启（health 200）。
 - **未做 / deferred**：Task 9（桌面 inbox + `viewedResults` 双读）；`pod.event` 的 renderer 消费与立即轮询（当前只有 main 15s 轮询）；`mafw-navigate-goal` 缺 preload/renderer 接收端（菜单行可点但暂无导航效果）；旧结果通知链（`handlePodResultEvent` toast + hidden-only 通知）未退役，同项目可能双通知；worktree 折叠目前只改标签不去重条目；p3 事件与审计文件无 prune；托盘三态无独立图标资源（只换 tooltip/菜单文案）。
 - **已知边界**：托盘图标三态（running/attention）尚未提供独立图标资源，当前只换 tooltip/菜单文案；
   未构建 `electron-vite build` 与真机冒烟（本机 dev 服务需重启后生效）。
