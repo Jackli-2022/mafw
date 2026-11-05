@@ -1701,6 +1701,16 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
   progress=null → 不画进度条）。
 
 - **评审（glm-5.3）与修复**：C1 已修——`unreadResults`/托盘 attention 原先由 `resultReady`（永不回 false）推导，导致托盘永久卡 attention、且无产物的硬失败反而不显示；现改为按 `pod_events` 的未读 p1（`goalId:r<revision>`）推导，seen 后自然回落 idle。I2 已修——唤醒预算失败退回、预算拒绝只累加 `wakeAttempts`（3 次才 suppress）、member 事件去重键带 message 身份（否则全 Pod 的 escalation 共用一个键）。I6 已修——presence 连续 3 次失败回落 idle（不再让托盘中继过期状态）。
+- **quick 路径 goal-eval 缺口（2026-11-05，commit `d0752664`）**：quick 计划允许不写 `goalEval`（`validatePlanPackage` 契约），
+  但 execute/review 的 ContextManifest 把它当硬前置 → 每个 quick Goal 一进 execute 就 fail-closed
+  （实证 `goal-20261104-120349-31c1a0`：`required context missing: goals/<id>/goal-eval.json`）。
+  裁决（用户）：**quick 也要 eval**，但**不额外消耗模型输出**——由 driver 从 `waves.tasks[].acceptance` 派生
+  （1 条 outcome + N 条 `g<task>-<n>` 条件 + mapping），manifest 保持严格。对齐 SuperAgent 的「完成状态是结构化
+  Report、绝不从自由文本推断」。测试：`goal-driver-quick-path` 新增派生用例，`context-manifest-wiring` 的 quick 用例翻成
+  fail-closed；goal 套件 **426/426**、`tsc` rc=0。真机复跑 `goal-20261105-010329-3722d8`：goal-eval 生成 →
+  execute 通过 → 文件产出 → 归档 `resultReady` → 结果通知一次（ledger 记 `goal-20261105-010329-3722d8:r1`）。
+- **已知缺口（未修）**：复用讨论会话的 plan 回合如果既没写产物也没结构化交卷，首个 idle 被 grace 吞掉后
+  没有第二个 idle，节点会卡到 30 分钟 watchdog（实证 `goal-20261104-132754-140bde`）。grace 需要时限。
 - **未做 / deferred**：Task 9（桌面 inbox + `viewedResults` 双读）；`pod.event` 的 renderer 消费与立即轮询（当前只有 main 15s 轮询）；`mafw-navigate-goal` 缺 preload/renderer 接收端（菜单行可点但暂无导航效果）；旧结果通知链（`handlePodResultEvent` toast + hidden-only 通知）未退役，同项目可能双通知；worktree 折叠目前只改标签不去重条目；p3 事件与审计文件无 prune；托盘三态无独立图标资源（只换 tooltip/菜单文案）。
 - **已知边界**：托盘图标三态（running/attention）尚未提供独立图标资源，当前只换 tooltip/菜单文案；
   未构建 `electron-vite build` 与真机冒烟（本机 dev 服务需重启后生效）。
