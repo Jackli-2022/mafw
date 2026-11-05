@@ -19,7 +19,7 @@ const p = podPresence(running)
 assert.equal(p.trayState, 'running')
 assert.equal(p.progress, 2 / 3)
 assert.match(p.tooltip, /冒烟 · execute 2\/3/)
-assert.deepEqual(p.clickTarget, { podId: 'p1', goalId: 'g1' })
+assert.deepEqual(p.clickTarget, { podId: 'p1', projectId: 'a', goalId: 'g1' })
 
 assert.equal(podPresence({ ...running, attention: { count: 1, items: [{ id: 'x' }] } }).trayState, 'attention')
 assert.equal(podPresence({ ...running, running: [], unreadResults: { count: 1, latest: running.running[0] } }).trayState, 'attention')

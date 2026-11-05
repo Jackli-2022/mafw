@@ -11,8 +11,14 @@ export interface PresencePollingOpts {
   log?(msg: string): void
 }
 
-/** Returns a stop function. Never throws. */
-export function startPresencePolling(opts: PresencePollingOpts): () => void {
+export interface PresencePollingHandle {
+  stop(): void
+  /** Trigger one immediate poll (renderer `pod.event` → 不等 15s 轮询). */
+  poll(): void
+}
+
+/** Returns a handle. Never throws. */
+export function startPresencePolling(opts: PresencePollingOpts): PresencePollingHandle {
   const intervalMs = opts.intervalMs ?? 15_000
   const fetchFn = opts.fetchFn ?? fetch
   let stopped = false
@@ -43,8 +49,13 @@ export function startPresencePolling(opts: PresencePollingOpts): () => void {
   void tick()
   const timer = setInterval(() => void tick(), intervalMs)
   timer.unref?.()
-  return () => {
-    stopped = true
-    clearInterval(timer)
+  return {
+    stop() {
+      stopped = true
+      clearInterval(timer)
+    },
+    poll() {
+      void tick()
+    },
   }
 }

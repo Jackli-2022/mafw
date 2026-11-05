@@ -243,6 +243,16 @@ export type MafwAPI = {
   work: WorkNamespace
   pod: PodNamespace
 
+  /** 托盘/OS 通知点击 → 打开 Goal（跨项目时先切项目）。 */
+  navigate: {
+    onGoal: (cb: (target: import("../shared/navigate-goal").NavigateGoalTarget) => void) => () => void
+  }
+
+  /** 常驻 presence 的立即轮询（renderer 收到 pod.event 时催一次，不等 15s）。 */
+  presence: {
+    refresh: () => Promise<void>
+  }
+
   permissions: {
     list: () => Promise<PermissionRequest[]>
     reply: (id: string, reply: 'once' | 'always' | 'reject', message?: string, persist?: boolean | 'tool' | 'prefix') => Promise<void>

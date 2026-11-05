@@ -72,6 +72,8 @@ export interface PodEventsStore {
   unreadCount(): number
   /** false = 旧 gateway 没有事件路由（特性门控：退回纯 resultReady + legacy localStorage）。 */
   supported(): boolean
+  /** false = 还没成功拉过列表（冷启动时不要把「未查看」先闪出来）。 */
+  loaded(): boolean
   podId(): string | null
   /** 项目/Pod 切换：换 Pod 时清空，绝不把上一个项目的结果点带过去。 */
   setPod(podId: string | null): void
@@ -113,11 +115,23 @@ function seenMarker(podId: string, goalId: string, revision: number): PodEventIt
 export function createPodEventsStore(api: PodEventsApi): PodEventsStore {
   const [items, setItems] = createSignal<PodEventItem[]>([])
   const [supported, setSupported] = createSignal(true)
+  const [loaded, setLoaded] = createSignal(false)
   const [currentPod, setCurrentPod] = createSignal<string | null>(null)
   let seq = 0
   let inflight: Promise<void> | null = null
   let inflightPod: string | null = null
   let queued = false
+  // 本会话已确认 seen 的事件 id：SSE 重放/分页回放时不要把它们重新标成未读。
+  const seenIds = new Set<string>()
+
+  function rememberSeen(id: string): void {
+    if (!id) return
+    if (seenIds.size >= 500) {
+      const first = seenIds.values().next().value
+      if (first) seenIds.delete(first)
+    }
+    seenIds.add(id)
+  }
 
   function setPod(podId: string | null): void {
     const next = podId || null
@@ -125,6 +139,8 @@ export function createPodEventsStore(api: PodEventsApi): PodEventsStore {
     setCurrentPod(next)
     seq++
     setItems([])
+    setLoaded(false)
+    seenIds.clear()
   }
 
   async function fetchPage(podId: string): Promise<void> {
@@ -139,13 +155,20 @@ export function createPodEventsStore(api: PodEventsApi): PodEventsStore {
         const keptSeen = prev.filter(
           (item) => item.state === "seen" && !server.some((next) => next.id === item.id),
         )
-        return [...server, ...keptSeen].slice(0, 200)
+        // keptSeen 优先占位：server 页满时先裁 server，否则保护标记会被 slice 整段丢掉。
+        const head = server.slice(0, Math.max(0, 200 - keptSeen.length))
+        for (const item of [...head, ...keptSeen]) {
+          if (item.state === "seen") rememberSeen(item.id)
+        }
+        return [...head, ...keptSeen]
       })
       setSupported(true)
+      setLoaded(true)
     } catch (err) {
       if (my !== seq || currentPod() !== podId) return
       if (routeMissing(err)) {
         setSupported(false)
+        setLoaded(true)
         setItems([])
       }
       // 其余失败 fail-open：保留上一次快照——网关抖了一下不等于结果已看过。
@@ -185,6 +208,12 @@ export function createPodEventsStore(api: PodEventsApi): PodEventsStore {
     if (!podId || podId !== currentPod()) return true
     const id = typeof props.eventId === "string" ? props.eventId : ""
     if (!id) return true
+    if (seenIds.has(id) || !loaded()) {
+      // 已查看重放 / 首屏事件列表还没回来：不要先落一条 unread（角标会闪），
+      // 直接拉 server truth。
+      void refresh(podId)
+      return true
+    }
     const revision = Number(props.revision)
     const item: PodEventItem = {
       id,
@@ -208,18 +237,33 @@ export function createPodEventsStore(api: PodEventsApi): PodEventsStore {
     // Goal 详情可能在 podStore 解析前打开：首次标记时采纳这个 Pod（之后由 shell 的
     // effect 维持作用域），绝不把别的 Pod 的未读带进来。
     if (currentPod() === null) setCurrentPod(podId)
-    if (podId !== currentPod()) return false
+    const isCurrent = podId === currentPod()
+    if (!isCurrent) {
+      // 切换项目/并发导航时仍要提交 server 真相：本地列表不属于这个 Pod，
+      // 但「已查看」不能因此丢失（切回来时 server 已经是 seen）。
+      try {
+        await api.seenAll(podId, goalId, revision)
+        return true
+      } catch (err) {
+        if (routeMissing(err)) setSupported(false)
+        return false
+      }
+    }
     const matches = (item: PodEventItem) => item.goalId === goalId && item.revision === revision
     const previous = items()
     const matching = previous.filter(matches)
     if (matching.length > 0 && matching.every((item) => item.state === "seen")) return true
     setItems((prev) => {
       if (prev.some(matches)) {
-        return prev.map((item) => (item.state === "unread" && matches(item) ? { ...item, state: "seen" } : item))
+        const next = prev.map((item) => (item.state === "unread" && matches(item) ? { ...item, state: "seen" as const } : item))
+        for (const item of next) if (matches(item)) rememberSeen(item.id)
+        return next
       }
       // 本地还没有这条事件（inbox 没拉过/分页外）：补一条 seen 标记，角标立即收敛；
       // 下一次刷新用 server truth 覆盖。
-      return [seenMarker(podId, goalId, revision), ...prev].slice(0, 200)
+      const marker = seenMarker(podId, goalId, revision)
+      rememberSeen(marker.id)
+      return [marker, ...prev].slice(0, 200)
     })
     try {
       await api.seenAll(podId, goalId, revision)
@@ -228,10 +272,14 @@ export function createPodEventsStore(api: PodEventsApi): PodEventsStore {
       if (currentPod() === podId) {
         setItems((prev) => {
           if (prev.some(matches)) {
-            return prev.map((item) => (matches(item) ? { ...item, state: "seen" } : item))
+            const next = prev.map((item) => (matches(item) ? { ...item, state: "seen" as const } : item))
+            for (const item of next) if (matches(item)) rememberSeen(item.id)
+            return next
           }
           // 并发刷新把事件挤掉了：补一条 seen 标记，保证「成功清过」不会被下一次刷新复活。
-          return [seenMarker(podId, goalId, revision), ...prev].slice(0, 200)
+          const marker = seenMarker(podId, goalId, revision)
+          rememberSeen(marker.id)
+          return [marker, ...prev].slice(0, 200)
         })
       }
       return true
@@ -249,12 +297,14 @@ export function createPodEventsStore(api: PodEventsApi): PodEventsStore {
     setCurrentPod(null)
     setItems([])
     setSupported(true)
+    setLoaded(false)
   }
 
   return {
     items,
     unreadCount: () => listUnread(items()).length,
     supported,
+    loaded,
     podId: currentPod,
     setPod,
     refresh,

@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow, globalShortcut, nativeTheme, net, Notification, session } from "electron"
+import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, net, Notification, session } from "electron"
 
 import { Deferred, Effect } from "effect"
 
@@ -33,6 +33,7 @@ import {
 } from "./server"
 import { setupAutoUpdater, showUpdaterDialog } from "./updater"
 import {
+  createMainWindow,
   getLastFocusedWindow,
   registerRendererProtocol,
   setRelaunchHandler,
@@ -47,6 +48,7 @@ import { podPresence } from "./presence-model"
 import { startPresencePolling } from "./presence-poller"
 import { diffAttention } from "./attention-diff"
 import { NotifyState } from "./notify-state"
+import type { NavigateGoalTarget } from "../shared/navigate-goal"
 import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
@@ -377,7 +379,7 @@ const main = Effect.gen(function* () {
     // Cross-project Goal presence → tray icon state + taskbar progress.
     const notifyState = new NotifyState(join(app.getPath("userData"), "mafw-notify.json"))
     let prevAttentionIds: string[] = []
-    const stopPresence = startPresencePolling({
+    const presencePoll = startPresencePolling({
       getBaseUrl: () => gwUrl,
       onSnapshot: (payload) => {
         const view = podPresence(payload)
@@ -393,28 +395,49 @@ const main = Effect.gen(function* () {
         for (const item of added) {
           if (notifyState.hasAttention(item.id)) continue
           notifyState.markAttention(item.id)
-          new Notification({ title: "需要你", body: (item as any).title ?? "Pod 需要你的决定" }).show()
+          const notification = new Notification({ title: "需要你", body: (item as any).title ?? "Pod 需要你的决定" })
+          notification.on("click", () => {
+            // attention 项没有 projectId：先在当前项目里找这个 Goal，找不到就只聚焦窗口。
+            navigateToGoal({ goalId: (item as any).goalId })
+          })
+          notification.show()
         }
         notifyState.pruneAttention(items.map((item) => item.id))
 
         const latest = payload?.unreadResults?.latest
         if (latest && !notifyState.hasResult(latest.goalId, latest.revision)) {
           notifyState.markResult(latest.goalId, latest.revision)
-          // 文案不承诺点击跳转：mafw-navigate-goal 的 renderer 接收端仍是 deferred
-          // （AGENTS §5.29）；等接收端落地后再加 click handler 与「点击查看」。
-          new Notification({ title: `${latest.title} · 已完成`, body: "Goal 已归档，打开工作台查看结果" }).show()
+          const notification = new Notification({
+            title: `${latest.title} · 已完成`,
+            body: "Goal 已归档，点击查看结果",
+          })
+          notification.on("click", () => {
+            navigateToGoal({ podId: latest.podId, projectId: latest.projectId, goalId: latest.goalId })
+          })
+          notification.show()
         }
       },
       log: (msg) => logger.warn(msg),
     })
-    app.once("will-quit", stopPresence)
-    setTrayNavigateHandler((target) => {
+    app.once("will-quit", () => presencePoll.stop())
+    // `pod.event` 到达时 renderer 立刻催一次，完成通知不再等 15s 轮询。
+    ipcMain.removeHandler("mafw-presence-refresh")
+    ipcMain.handle("mafw-presence-refresh", () => { presencePoll.poll() })
+    function navigateToGoal(target: NavigateGoalTarget): void {
+      if (!target?.goalId) return
       const win = getLastFocusedWindow()
-      if (!win || win.isDestroyed()) return
+      if (!win || win.isDestroyed()) {
+        const created = createMainWindow()
+        created.webContents.once("did-finish-load", () => {
+          if (!created.isDestroyed()) created.webContents.send("mafw-navigate-goal", target)
+        })
+        return
+      }
       win.show()
       win.focus()
       win.webContents.send("mafw-navigate-goal", target)
-    })
+    }
+    setTrayNavigateHandler(navigateToGoal)
   } else {
     logger.error("MAFW Gateway failed to start")
     yield* Deferred.fail(serverReady, new Error("MAFW Gateway failed to start"))

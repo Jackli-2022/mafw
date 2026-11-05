@@ -1249,7 +1249,11 @@ export function MafwShell() {
         ingestPodEvent(event)
       },
       // `pod.event`：事件层写入后的 inbox/角标信号，与详情刷新分开。
-      onPodEvent: (event) => { podEvents.ingest(event) },
+      // 同时催一次 main 的 presence 轮询——完成通知/托盘状态不再等 15s。
+      onPodEvent: (event) => {
+        podEvents.ingest(event)
+        void window.api.mafw.presence.refresh().catch(() => {})
+      },
     },
     // 统一插件包（Task 7）：修订通知 → 重拉 committed descriptors；
     // 已注册包事件 → 事件 hub（只做数据投递，绝不执行插件代码）。
@@ -1986,7 +1990,22 @@ export function MafwShell() {
       requestBrowserNavigate(req.url, { newTab: true })
       openWorkbenchSurface("browser")
     })
-    onCleanup(off)
+    // 托盘菜单 / OS 通知点击 → 打开 Goal（跨项目先切项目）。
+    const offNavigate = window.api.mafw.navigate.onGoal((target) => {
+      const goalId = String(target?.goalId ?? "").trim()
+      if (!goalId) return
+      const projectDir = String(target?.projectId ?? "").trim()
+      void (async () => {
+        if (projectDir && projectDir !== currentProject()) {
+          await handleSelectProject(projectDir).catch(() => {})
+        }
+        openGoalDetail(goalId, "result")
+      })()
+    })
+    onCleanup(() => {
+      off()
+      offNavigate()
+    })
   })
   // 文件/编辑器根：会话目录属于项目（含 worktree）才采用，否则回退项目目录
   // （协调会话（Lead/历史 manager）的 directory 可能指向 home 等外部目录，实证 2026-10-22）
@@ -2006,6 +2025,9 @@ export function MafwShell() {
   const podResultDot = () => {
     const detail = podStore.detail()
     if (!detail) return false
+    // 冷启动事件列表还没拉回来时不要先闪一下「有新结果」；旧 gateway（supported=false）
+    // 直接走 legacy localStorage，不受影响。
+    if (podEvents.supported() && !podEvents.loaded()) return false
     return detail.goals.some((goal) => podResultBadge({
       resultReady: goal.resultReady,
       viewed: isPodResultViewed(detail.pod.id, goal.goalId, goalRevisionOf(goal) ?? 1),

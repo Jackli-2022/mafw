@@ -93,6 +93,7 @@ describe("pod events store", () => {
       seenAll: async () => ({ ok: true }),
     })
     store.setPod("pod_1")
+    await store.refresh() // 首屏已加载后 ingest 才先落本地（未加载时只触发刷新）
     const event = {
       type: "pod.event",
       properties: { podId: "pod_1", eventId: "evt_1", goalId: "g1", revision: 1, kind: "goal.result", severity: "p1" },
@@ -204,5 +205,74 @@ describe("pod events store", () => {
     releaseSeen?.()
     assert.equal(await marking, true)
     assert.equal(store.items()[0].state, "seen", "seenAll 成功后本地必须保持已查看，不能依赖下一次刷新")
+  })
+
+  test("loaded 在首次成功/路由缺失后为 true，换 Pod 复位（冷启动不闪未查看）", async () => {
+    const store = createPodEventsStore({
+      list: async () => page([]),
+      seenAll: async () => ({ ok: true }),
+    })
+    store.setPod("pod_1")
+    assert.equal(store.loaded(), false)
+    await store.refresh()
+    assert.equal(store.loaded(), true)
+    store.setPod("pod_2")
+    assert.equal(store.loaded(), false)
+
+    const missing = createPodEventsStore({
+      list: async () => { throw new Error("HTTP 404: not found") },
+      seenAll: async () => ({ ok: true }),
+    })
+    missing.setPod("pod_1")
+    await missing.refresh()
+    assert.equal(missing.loaded(), true)
+    assert.equal(missing.supported(), false)
+  })
+
+  test("切换 Pod 后 markSeen 仍提交 server（不丢已查看标记）", async () => {
+    const calls: Array<[string, string, number]> = []
+    const store = createPodEventsStore({
+      list: async () => page([]),
+      seenAll: async (podId, goalId, revision) => { calls.push([podId, goalId, revision]); return { ok: true } },
+    })
+    store.setPod("pod_1")
+    store.setPod("pod_2")
+
+    assert.equal(await store.markSeen("pod_1", "g1", 1), true)
+    assert.deepEqual(calls, [["pod_1", "g1", 1]])
+    assert.equal(store.items().length, 0, "本地列表属于 pod_2，不能被 pod_1 的标记污染")
+  })
+
+  test("keptSeen 不会被 200 上限整段挤掉", async () => {
+    const full = Array.from({ length: 200 }, (_, i) => ev({ id: `s${i}`, goalId: `g${i + 10}`, state: "unread" }))
+    let first = true
+    const store = createPodEventsStore({
+      list: async () => {
+        if (first) { first = false; return page([]) }
+        return page(full)
+      },
+      seenAll: async () => ({ ok: true }),
+    })
+    store.setPod("pod_1")
+    await store.refresh()
+    await store.markSeen("pod_1", "g1", 1)
+    await store.refresh()
+
+    assert.equal(store.items().some((item) => item.state === "seen" && item.goalId === "g1"), true)
+  })
+
+  test("首屏事件列表未加载时，SSE 事件不先落 unread（避免角标闪一下）", async () => {
+    const store = createPodEventsStore({
+      list: async () => page([ev({ id: "evt_1", goalId: "g1", state: "seen" })]),
+      seenAll: async () => ({ ok: true }),
+    })
+    store.setPod("pod_1")
+    store.ingest({
+      type: "pod.event",
+      properties: { podId: "pod_1", eventId: "evt_1", goalId: "g1", revision: 1, kind: "goal.result", severity: "p1" },
+    })
+    assert.equal(store.items().length, 0, "未加载时先等 server truth")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(store.items()[0]?.state, "seen")
   })
 })

@@ -273,6 +273,18 @@ export function createMafwApi(): MafwAPI {
       revisions: (podID, goalID) => invoke("pod", "revisions", podID, goalID),
     },
 
+    navigate: {
+      onGoal: (cb) => {
+        const handler = (_event: unknown, target: any) => cb(target)
+        ipcRenderer.on("mafw-navigate-goal", handler)
+        return () => { ipcRenderer.removeListener("mafw-navigate-goal", handler) }
+      },
+    },
+
+    presence: {
+      refresh: () => ipcRenderer.invoke("mafw-presence-refresh") as Promise<void>,
+    },
+
     permissions: {
       list: () => invoke("permissions", "list"),
       reply: (id, reply, message?, persist?) => invoke("permissions", "reply", id, reply, message, persist),

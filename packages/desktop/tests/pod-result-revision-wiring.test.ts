@@ -79,7 +79,8 @@ test("结果点由事件层驱动（完成通知归 main presence，不掺 atten
 })
 
 test("pod.event 进 inbox store，工作概览给未查看结果加标记", () => {
-  assert.match(shell, /onPodEvent: \(event\) => \{ podEvents\.ingest\(event\) \}/)
+  assert.match(shell, /onPodEvent:[\s\S]{0,240}?podEvents\.ingest\(event\)/)
+  assert.match(shell, /mafw\.presence\.refresh\(\)/)
   assert.match(workOverview, /is-unviewed/)
   assert.match(cssBlock(".mafw-work-chip.is-unviewed {"), /var\(--accent\)/)
 })

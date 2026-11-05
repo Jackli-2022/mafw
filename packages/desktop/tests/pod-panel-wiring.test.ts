@@ -69,7 +69,7 @@ test("shell routes pod.updated, pod.event, project scope, sessions, goals, and b
   // Task 9：`pod.updated` 仍走通用刷新；`pod.event` 进 inbox store（角标/未查看），
   // 完成通知归 main presence——渲染层不再有结果 toast/待打开队列。
   assert.match(shell, /pod:\s*\{[\s\S]{0,600}?ingestPodEvent\(event\)/)
-  assert.match(shell, /onPodEvent: \(event\) => \{ podEvents\.ingest\(event\) \}/)
+  assert.match(shell, /onPodEvent:[\s\S]{0,240}?podEvents\.ingest\(event\)/)
   assert.doesNotMatch(shell, /podResultEvent\(event\)/)
   assert.match(shell, /projectDir=\{benchRoot\(\)/)
   assert.match(shell, /onOpenPodSession=\{\(sid, title\) => \{ void openPodSession\(sid, title\) \}\}/)

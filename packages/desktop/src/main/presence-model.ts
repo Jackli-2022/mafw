@@ -27,7 +27,7 @@ export interface PodPresenceView {
   /** -1 = no progress bar, 2 = indeterminate, 0..1 = determinate. */
   progress: number
   tooltip: string
-  clickTarget: { podId: string; goalId: string } | null
+  clickTarget: { podId: string; projectId: string; goalId: string } | null
 }
 
 const IDLE: PodPresenceView = {
@@ -63,7 +63,7 @@ export function podPresence(payload: PresencePayload | null): PodPresenceView {
     trayState,
     progress,
     tooltip: parts.length ? `MAFW — ${parts.join(' · ')}` : 'MAFW Desktop',
-    clickTarget: head ? { podId: head.podId, goalId: head.goalId } : null,
+    clickTarget: head ? { podId: head.podId, projectId: head.projectId, goalId: head.goalId } : null,
   }
 }
 

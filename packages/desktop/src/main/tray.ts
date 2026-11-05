@@ -10,14 +10,15 @@ import {
 import { trayClickAction } from "./tray-toggle"
 import { trayMenuStatusLabel, trayTooltip } from "./tray-status"
 import type { PodPresenceView } from "./presence-model"
+import type { NavigateGoalTarget } from "../shared/navigate-goal"
 import { write as writeLog } from "./logging"
 
 let tray: Tray | null = null
 let pendingCount = 0
 let presence: PodPresenceView = { trayState: "idle", progress: -1, tooltip: "MAFW Desktop", clickTarget: null }
-let onNavigateGoal: ((target: { podId: string; goalId: string }) => void) | null = null
+let onNavigateGoal: ((target: NavigateGoalTarget) => void) | null = null
 
-export function setTrayNavigateHandler(fn: (target: { podId: string; goalId: string }) => void): void {
+export function setTrayNavigateHandler(fn: (target: NavigateGoalTarget) => void): void {
   onNavigateGoal = fn
 }
 

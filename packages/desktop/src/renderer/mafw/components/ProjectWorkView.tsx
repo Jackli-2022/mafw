@@ -5,6 +5,7 @@ import { WorkOverview } from "./WorkOverview"
 import { PodGoalComposer } from "./PodGoalComposer"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
 import { isPodResultViewed } from "../pod-result-store"
+import { podEvents } from "../pod-events"
 
 /** Composer 请求序列的会话级消费游标：remount 不重放已处理请求。 */
 let lastConsumedComposerRequest = 0
@@ -141,6 +142,8 @@ export function ProjectWorkView(props: {
         isViewed={(goal) => {
           const podId = overview()?.podId
           if (!podId) return true
+          // 事件列表还没拉回来时先不标「未查看」（避免冷启动闪一下）。
+          if (podEvents.supported() && !podEvents.loaded()) return true
           return isPodResultViewed(podId, goal.goalId, goalRevisionOf(goal) ?? 1)
         }}
       />
