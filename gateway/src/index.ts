@@ -50,6 +50,7 @@ import { PodEventWake } from './core/pod/pod-event-wake';
 import { buildPodPresence, type PodPresence } from './core/pod/pod-presence';
 import { handlePresence } from './routes/presence';
 import { handlePodEvents } from './routes/pod-events';
+import { dispatchAuthorized } from './routes/registry-dispatch';
 import {
   classifyGoalArchive,
   classifyMemberMessage,
@@ -5268,18 +5269,6 @@ class MafwScheduler {
         try {
           res.setHeader('Content-Type', 'application/json');
 
-          // P5 Wave 1: registry dispatch —— attach 过 handler 的路由在 legacy 链之前
-          // 统一接管（shadow 条目无 handler 自然落回内联链）。挂在鉴权之后、一切
-          // /api matcher 之前：goals.sessions 须先于 dashboard 兜底、embedding-config
-          // 须先于 /api/memory/* 委托（AGENTS.md §6.5 顺序教训由 dispatch 位置一次性满足）。
-          {
-            const matched = this.routeRegistry.match(req.method as never, req.url || '');
-            if (matched?.def.handler) {
-              const handled = await matched.def.handler(req, res, matched.params);
-              if (handled !== false) return;
-            }
-          }
-
           // CORS headers for SSE
           res.setHeader("Access-Control-Allow-Origin", config.server.cors.origin);
           res.setHeader("Access-Control-Allow-Methods", config.server.cors.methods);
@@ -5302,6 +5291,12 @@ class MafwScheduler {
           res.end(JSON.stringify({ error: 'unauthorized' }));
           return;
         }
+
+        // P5 Wave 1: registry dispatch —— attach 过 handler 的路由在 legacy 链之前
+        // 统一接管（shadow 条目无 handler 自然落回内联链）。**必须在鉴权之后**（P0-1）：
+        // goals.sessions 须先于 dashboard 兜底、embedding-config 须先于 /api/memory/*
+        // 委托（AGENTS.md §6.5 顺序教训由 dispatch 位置一次性满足）。
+        if (await dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res)) return;
 
         // 文件级历史（loopback-only）：office 技能保存前快照 / 桌面 / 调试。
         if (await handleFileHistoryRoutes(req, res, {
