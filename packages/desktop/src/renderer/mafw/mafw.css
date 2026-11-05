@@ -1124,6 +1124,37 @@ html[data-theme="light"] body {
 /* changed files 移出 chat 流：回合级 diffs 块由 dock changes tab + 审阅抽屉承载 */
 .mafw-shell [data-component="session-turn-diffs-group"] { display: none; }
 
+/* ── 聊天流 Lore 标记（2026-11-05，用户裁决「Lore = 产品的声音」）──
+   每个 assistant 回合开头出现一次，16px 圆标走左侧 28px 留白（Claude 式）；
+   ::before 绝对定位可脱离 session-ui 的 flex column，不占一行；纯装饰、无角色语义。 */
+.mafw-session-turn-container [data-slot="session-turn-assistant-content"] {
+  position: relative;
+  box-sizing: border-box;
+  padding-left: 28px;
+}
+.mafw-session-turn-container [data-slot="session-turn-assistant-content"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: url("./assets/lore/lead-avatar-20.png") center / 16px 16px no-repeat;
+  opacity: .92;
+  pointer-events: none;
+}
+/* 回合以正文开头时对齐第一行（text-part 顶距 12px + 行盒 27.2px 居中 ≈ 18px） */
+.mafw-session-turn-container [data-slot="session-turn-assistant-content"]:has(> [data-component="text-part"]:first-child)::before {
+  top: 18px;
+}
+
+/* 回合级附加块（流程卡 / 审批汇总）与回复正文的左边界对齐 */
+.mafw-session-turn-container :is(.mafw-turn-cards, .mafw-approval-summary) {
+  box-sizing: border-box;
+  padding-left: 28px;
+}
+
 /* v5.1 消息正文：16px/1.7（业界 AI 对话标准），仅 assistant text part；reasoning 块不波及 */
 .mafw-shell [data-component="text-part"] [data-component="markdown"] {
   font-size: var(--mafw-chat-reading, 16px);

@@ -544,6 +544,8 @@ git commit -m "feat(desktop): show Lore in the Lead session tab"
 
 ## Task 6: Full verification and asset documentation
 
+> **2026-11-05 追加（已交付）**：用户裁决「Lore = 产品的声音」，在 chatview 增加品牌标记——每个 assistant 回合开头一次 16px Lore（左侧 28px 留白 / Claude 式），纯 CSS 伪元素，session-ui 零改动。验证见 `packages/desktop/src/renderer/mafw/chat-lore-mark.test.ts`（5 例）。
+
 **Files:**
 - Modify: `assets/brand/lore/README.md` (add the generation commands and file map)
 - No runtime code.

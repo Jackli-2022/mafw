@@ -449,3 +449,14 @@ Lore 是**左上品牌位的脸**（20px 圆形，显示 18px + Orcalore 字标�
 - **Avatar pack**：15 档、圆形/透明两版保留为未来品牌素材；当前 UI 只消费 20px 圆形作为左上品牌图标。
 - **App icon**：使用平台 pack；不在本切片切换（等 Orcalore 改名）。
 - **v1 最小集**：平台图标 + 左上品牌位；Lead 头像不在 v1；记忆面板 / onboarding / 空态 / 桌面宠物是否进 v1 仍待定。
+
+### 已定（2026-11-05）：聊天流 Lore 标记 =「产品的声音」
+
+用户裁决：**Lore 不是某个角色的头像，而是「谁来回答都是 Orcalore 在说话」**。据此在 chatview 增加一个品牌标记，与 Lead 的角色标记互不干扰。
+
+- **形态**：每个 assistant 回合的**开头出现一次** 16px 圆形 Lore（24KB 的 `lead-avatar-20.png`，显示 16px），正文整体让出 **28px 左侧留白**（Claude 式通栏 + 首行左侧 logomark）；回合内部的工具卡、续写、流程卡不再重复。
+- **对齐**：回合以正文开头时标记对齐第一行文字（text-part 顶距 12px + 行盒 27.2px 居中 ≈ `top: 18px`）；以工具卡开头时贴齐回合顶部（`top: 4px`）。
+- **同边界**：回合级流程卡（`.mafw-turn-cards`）与审批汇总（`.mafw-approval-summary`）同样加 28px 左内边距，和正文左边界对齐。
+- **纯装饰**：标记是 CSS 伪元素（无 `img`、无 alt、无角色语义）；身份仍由 L/T/B/R 徽标与标题承担。零 TSX 改动，session-ui 保持 runtime 中立。
+- **不复用为角色头像**：Lead tab / 左栏资源行仍保持 L / 首字母（见上一节）。
+- **备选（未采用）**：首行内联（文字绕排）、20px + 角色角标、不加。视觉对比见 `.mafw/qa/orcalore-concepts/chat-lore-mark.png`。
