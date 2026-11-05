@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Lore = Lead 的视觉身份 / 头像**；Lead 名字不变；Tech Lead / Builder / Reviewer 保留首字母，不使用 Lore。
+- **Lore = Lead 的视觉身份 / 头像**；Lead 名字不变；Tech Lead / Builder / Reviewer 保留首字母，不使用 Lore。**SessionStrip Lead tab 不放大头像**（用户 2026-11-05 决定），保留 L 徽标。
 - **No orca form**: cream/white pearl, two ink dot eyes, highlight, ink outline; no eye patch, dorsal fin, tail, or O-shaped whale body.
 - **Avatars use the simplified base**: no thread/tag; circular-safe; 64 / 96 / 128 / 256 / 512.
 - **Do not switch production app icon / tray / favicon**: this plan imports and derives assets only; the Orcalore rename plan consumes them.
@@ -446,6 +446,8 @@ git commit -m "feat(desktop): render Lore as the Lead avatar"
 ---
 
 ## Task 5: Replace the Lead tab badge with the Lore avatar
+
+> **Rev 2026-11-05:** after seeing the 16px tab, the user rejected the Lore avatar in the Lead session tab. This task is **reverted**: SessionStrip keeps the L role badge; no avatar on the tab. The brand-slot change from the follow-up request (Orcalore wordmark + Lore 20px icon) remains.
 
 **Files:**
 - Modify: `packages/desktop/src/renderer/mafw/components/SessionStrip.tsx`

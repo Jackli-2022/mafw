@@ -19,7 +19,7 @@ PLATFORM_WINDOWS = LORE / "platform" / "windows"
 AVATAR_PACK = LORE / "avatar"
 
 PACK_SIZES = (16, 20, 24, 28, 32, 40, 48, 64, 80, 96, 128, 160, 256, 512, 1024)
-UI_CIRCLE = ((16, "lead-avatar-16.png"), (32, "lead-avatar-32.png"), (64, "lead-avatar-64.png"))
+UI_CIRCLE = ((16, "lead-avatar-16.png"), (20, "lead-avatar-20.png"), (32, "lead-avatar-32.png"), (64, "lead-avatar-64.png"))
 UI_TRANSPARENT = (
     (16, "lead-avatar-transparent-16.png"),
     (32, "lead-avatar-transparent-32.png"),
@@ -99,7 +99,7 @@ def emit_avatars() -> None:
             AVATAR_PACK / "transparent" / f"Lore_avatar_transparent_{size}.png",
             RENDERER / name,
         )
-    print("avatars: pack 16..1024 (circle/transparent) + UI 16/32/64 circle")
+    print("avatars: pack 16..1024 (circle/transparent) + UI 16/20/32/64 circle")
 
 
 def emit_tray() -> None:

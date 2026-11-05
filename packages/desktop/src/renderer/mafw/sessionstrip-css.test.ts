@@ -69,12 +69,12 @@ describe("sessionstrip industry-tab contract", () => {
     expect(brandIdx).toBeLessThan(scrollIdx)
   })
 
-  test("B2 配色走主题 token（暗/亮主题自动适配）：M 与字标暖灰线框", () => {
-    const mark = css.match(/^\.mafw-sessionstrip-brand-mark\s*\{([^}]*)\}/m)?.[1]
-    expect(mark).toBeDefined()
-    expect(mark).toMatch(/border:\s*1\.5px solid var\(--text-2\)/)
-    expect(mark).toMatch(/color:\s*var\(--text-2\)/)
-    expect(mark).toMatch(/border-radius:\s*5px/)
+  test("B2 配色走主题 token（暗/亮主题自动适配）：Lore 图标与 Orcalore 字标", () => {
+    const icon = css.match(/^\.mafw-sessionstrip-brand-icon\s*\{([^}]*)\}/m)?.[1]
+    expect(icon).toBeDefined()
+    expect(icon).toMatch(/width:\s*18px/)
+    expect(icon).toMatch(/height:\s*18px/)
+    expect(icon).toMatch(/border-radius:\s*50%/)
     const word = css.match(/^\.mafw-sessionstrip-brand-word\s*\{([^}]*)\}/m)?.[1]
     expect(word).toBeDefined()
     expect(word).toMatch(/color:\s*var\(--text-3\)/)

@@ -26,7 +26,7 @@ def test_export_avatar_copies():
 
 
 def test_ui_avatar_copies():
-    for size in (16, 32, 64):
+    for size in (16, 20, 32, 64):
         im = Image.open(RENDERER / f"lead-avatar-{size}.png")
         assert im.size == (size, size)
         assert im.mode == "RGBA"

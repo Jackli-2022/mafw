@@ -235,7 +235,7 @@ Base 不变，配件可换；不超过 10 个，全部 clip-on。
 - App icon：16 / 24 / 32 / 48 / 64 / 128 / 256 / 512 / 1024 PNG；ICO；ICNS（824 网格）。
 - Tray：16 / 20 / 24 / 32 + `@2x` 单色 template；Windows/Linux 彩色。
 - Favicon：16 / 32 / 48。
-- Lead avatar：用户生成的 Avatar pack 15 档（16/20/24/28/32/40/48/64/80/96/128/160/256/512/1024），圆形 + 透明两版；16/20/24 简化（无线/信笺），28+ 带细线/信笺；UI 使用 **16px 圆形**（SessionStrip tab）与 **32px 圆形**（ProjectResources Lead 行），64px 留作后续。
+- Lead avatar：用户生成的 Avatar pack 15 档（16/20/24/28/32/40/48/64/80/96/128/160/256/512/1024），圆形 + 透明两版；16/20/24 简化（无线/信笺），28+ 带细线/信笺；UI 使用 **32px 圆形**（ProjectResources Lead 行）；**SessionStrip Lead tab 不放大头像**（2026-11-05 用户决定），保留 L 角色徽标；16px 留作未来其他内联位。
 - companion（可选）：64 / 128。
 - Character sheet：front / side / back；8 个表情；6 个配件。
 - Desktop pet sprite：idle / blink / thinking / happy / sleepy / error / handoff；每状态 4–8 帧；sprite sheet。
@@ -444,7 +444,7 @@ Lead 名字不变；Lore 是它的脸。其他角色（Tech Lead / Builder / Rev
 
 这意味着：
 
-- **Lead avatar 已由用户生成**：15 档、圆形/透明两版；UI 使用 16/32 圆形；16/20/24 简化，28+ 带线/信笺；64+ 留作后续。
+- **Lead avatar 已由用户生成**：15 档、圆形/透明两版；UI 使用 32px 圆形（ProjectResources）；SessionStrip Lead tab 保持 L 徽标、不放大头像；16/20/24 简化，28+ 带线/信笺；64+ 留作后续。
 - **接线面**（待实现计划确认）：ProjectResources 的 Lead 行、PodDock 成员行、SessionStrip 的 Lead 标记、Lead 会话 tab / 详情；其他角色不改。
 - **App icon 与 Lead avatar 同源**：同一个珍珠，app icon 用墨色底板，avatar 用透明珍珠；不出现两个角色。
 - **Lead avatar**：用户生成 pack 已覆盖 16–1024；UI 使用 16/32 圆形；不是阻塞。

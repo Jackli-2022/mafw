@@ -13,19 +13,17 @@ test("ProjectResources Lore avatar fills its circular slot", () => {
   assert.match(css, /\.mafw-resource-avatar\s*\{[^}]*overflow:\s*hidden/s)
 })
 
-test("SessionStrip Lore avatar is a 16px circle", () => {
-  assert.match(css, /\.mafw-session-lead-avatar\s*\{[^}]*width:\s*16px/s)
-  assert.match(css, /\.mafw-session-lead-avatar\s*\{[^}]*height:\s*16px/s)
-  assert.match(css, /\.mafw-session-lead-avatar\s*\{[^}]*border-radius:\s*50%/s)
+test("SessionStrip brand slot uses Orcalore and the Lore icon", () => {
+  assert.ok(sessionStrip.includes("mafw-sessionstrip-brand-icon"), "brand slot must render the Lore icon")
+  assert.ok(sessionStrip.includes("Orcalore"), "brand slot must show the Orcalore wordmark")
+  assert.ok(sessionStrip.includes("lead-avatar-20.png"), "brand slot must use the 20px Lore circle")
+  assert.match(css, /\.mafw-sessionstrip-brand-icon\s*\{[^}]*width:\s*18px/s)
 })
 
-test("SessionStrip wires the Lead flag into the Lore avatar branch", () => {
-  assert.ok(
-    sessionStrip.includes("sessionPodRole(props.podRoleOf?.(s.id), s.lead)"),
-    "SessionStrip must pass lead:true into sessionPodRole",
-  )
-  assert.ok(sessionStrip.includes("mafw-session-lead-avatar"), "SessionStrip must render the Lore avatar class")
-  assert.ok(sessionStrip.includes("lead-avatar-16.png"), "SessionStrip must use the 16px circle avatar")
+test("SessionStrip Lead tab stays text-only", () => {
+  assert.ok(!sessionStrip.includes("mafw-session-lead-avatar"), "Lead tab must not render the Lore avatar")
+  assert.ok(!sessionStrip.includes("lead-avatar-16.png"), "Lead tab must not import the 16px avatar")
+  assert.match(sessionStrip, /mafw-session-pod-badge/, "role badges remain on session tabs")
 })
 
 test("ProjectResources wires the Lead role into the Lore avatar branch", () => {
