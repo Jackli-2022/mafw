@@ -165,6 +165,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
+import { resolveMobileBaseUrl, detectReachableHost } from './mobile/tailscale-url';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
@@ -1366,6 +1367,19 @@ class MafwScheduler {
         const { changed, restartRequired } = config.reload();
         if (changed.length > 0) log.info(`[Scheduler] Config hot-reloaded: ${changed.join(', ')}`);
         if (restartRequired.length > 0) log.warn(`[Scheduler] Config changes need restart: ${restartRequired.join(', ')}`);
+        // P0-3: mobile pairing (URL/token) hot-update — phone picks up the new
+        // MagicDNS base after config.yaml edits without restarting the gateway.
+        if (changed.includes('mobile') || changed.includes('server')) {
+          this.pairingService?.updateConfig({
+            apiToken: (config.raw as any)?.server?.apiToken || '',
+            tailscaleUrl: resolveMobileBaseUrl(
+              process.env.MAFW_MOBILE_TAILSCALE_URL,
+              (config.raw as any)?.mobile?.tailscaleUrl,
+              detectReachableHost(),
+              this.apiPort,
+            ),
+          });
+        }
         // If the runtime plugin section changed, recreate runtime and
         // re-subscribe the event stream (hot-switch, no restart needed).
         if (changed.includes('runtime')) {
@@ -4706,24 +4720,13 @@ class MafwScheduler {
     // Mobile pairing service — auto-detect reachable IP (Tailscale > LAN > first non-loopback).
     // `http://localhost` is useless for mobile (the phone would try to connect to itself).
     const apiToken = (config.raw as any)?.server?.apiToken || '';
-    const detectReachableHost = (): string => {
-      const ifaces = os.networkInterfaces();
-      let lan: string | null = null;
-      let tailscale: string | null = null;
-      let anyV4: string | null = null;
-      for (const [name, addrs] of Object.entries(ifaces)) {
-        if (!addrs) continue;
-        for (const a of addrs) {
-          if (a.family !== 'IPv4' || a.internal) continue;
-          if (name.toLowerCase().startsWith('tailscale') || name === 'utun') tailscale = a.address;
-          else if (!anyV4) anyV4 = a.address;
-          if (!lan && (name.toLowerCase().includes('wlan') || name.toLowerCase().includes('wi-fi') || name.toLowerCase().includes('ethernet') || name.toLowerCase().includes('eth'))) lan = a.address;
-        }
-      }
-      return tailscale || lan || anyV4 || '127.0.0.1';
-    };
     const envUrl = process.env.MAFW_MOBILE_TAILSCALE_URL;
-    const tailscaleUrl = envUrl || `http://${detectReachableHost()}:${this.apiPort}`;
+    const tailscaleUrl = resolveMobileBaseUrl(
+      envUrl,
+      (config.raw as any)?.mobile?.tailscaleUrl,
+      detectReachableHost(),
+      this.apiPort,
+    );
     this.pairingService = new PairingService({ apiToken, tailscaleUrl });
 
     // Mobile mDNS discovery (P1: zero-config LAN connectivity)

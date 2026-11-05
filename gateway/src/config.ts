@@ -51,6 +51,11 @@ export interface GatewayConfig {
   goal: {
     nodeModel?: { providerID: string; modelID: string };
   };
+  /** 移动端配对 URL 覆盖（Tailscale/MagicDNS 基地址）；空串 = 自动探测。
+   *  Env（优先）: MAFW_MOBILE_TAILSCALE_URL。 */
+  mobile: {
+    tailscaleUrl: string;
+  };
   search: {
     defaultTopK: number;
     maxMemoryResults: number;
@@ -476,6 +481,8 @@ function defaults(projectDir: string): GatewayConfig {
     },
     // W1/W5a：goal 节点模型默认不覆盖（用身份内置模型；Config 页可改）。
     goal: {},
+    // P0-3：移动配对 URL 默认自动探测（env > config > detect）。
+    mobile: { tailscaleUrl: '' },
     search: {
       defaultTopK: 20,
       maxMemoryResults: 50,
