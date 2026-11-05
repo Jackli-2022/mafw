@@ -1666,8 +1666,8 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 ### 5.29 Pod 事件层与常驻注意力（2026-11-04，进行中）
 
 spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design.md`，plan
-`docs/superpowers/plans/2026-11-04-pod-event-layer-ambient-attention.md`。**已交付 Task 1–8，Task 9（桌面 inbox /
-`viewedResults` 双读迁移）未做**——presence + 通知链不依赖它，故先发这一段。
+`docs/superpowers/plans/2026-11-04-pod-event-layer-ambient-attention.md`。**Task 1–9 全部交付**（Task 9
+桌面 inbox / `viewedResults` 双读迁移于 2026-11-05 收口）。
 
 - **事件模型**（`gateway/src/core/pod/pod-event-model.ts`）：确定性分级，无 LLM。Goal 归档 `verdict ∈
   {PASS,FAIL,MAX_RETRIES,ERROR,UNREVIEWED}` → p1（`resultReady` 不决定是否通知，硬失败同样要看见）；
@@ -1721,9 +1721,23 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
   grace 超时（90s）降为「有活动却迟迟没有 idle」的兜底。测试新增 `idle-attribution` 三例（陈旧 idle 不收账 /
   有活动无产物快速失败 / 有活动有产物正常完成），harness `fireIdle` 默认模拟「先有活动再 idle」，
   显式 `{withActivity:false}` 才构造陈旧 idle；goal 套件 **414/414**、`tsc` rc=0，已部署重启（health 200）。
-- **未做 / deferred**：Task 9（桌面 inbox + `viewedResults` 双读）；`pod.event` 的 renderer 消费与立即轮询（当前只有 main 15s 轮询）；`mafw-navigate-goal` 缺 preload/renderer 接收端（菜单行可点但暂无导航效果）；旧结果通知链（`handlePodResultEvent` toast + hidden-only 通知）未退役，同项目可能双通知；worktree 折叠目前只改标签不去重条目；p3 事件与审计文件无 prune；托盘三态无独立图标资源（只换 tooltip/菜单文案）。
-- **已知边界**：托盘图标三态（running/attention）尚未提供独立图标资源，当前只换 tooltip/菜单文案；
-  未构建 `electron-vite build` 与真机冒烟（本机 dev 服务需重启后生效）。
+- **Task 9：桌面 inbox + `viewedResults` 双读（2026-11-05，commit `8864bf45`）**：`pod-events.ts` 增
+  `createPodEventsStore`（Solid 单例）——`pod.event` SSE 经 dispatcher `onPodEvent` 进 `ingest`（先本地落一条
+  让角标立即动，再拉 server truth）；`markSeen` 乐观 + 失败回滚（角标清了但结果没看到是更糟的状态）；
+  事件路由 404/HTML 回退 → `supported=false` 退回 legacy localStorage（特性门控）。**双读判定**
+  `isResultViewed` = `pod_events` 同 goal+revision 已 seen（且 podId 匹配）或 legacy `viewedResults` 键命中
+  （旧存档不丢，随查看自然收敛）。四个消费点：`MafwShell.podResultDot`、`pod-model.latestUnviewedResult`
+  （改为 `viewed(goalId, revision)`）、`PodResultView`（结果**加载成功后** `pod.events.seenAll`）；
+  `openPendingResult` 随旧通知链一并退役。工作台「工作」`result_ready` 行新增「未查看」chip
+  （`.mafw-work-chip.is-unviewed`）。**旧通知链退役**（spec §7）：`handlePodResultEvent` 的 toast +
+  hidden-only 通知 + `pendingResultGoalId` + 结果事件队列全部删除——完成通知归 main 的 presence 轮询
+  （同一条结果不再双通知）。
+  测试：desktop **2843/2843（620 suites，本批净 +15）**、`tsgo --noEmit -p` / `electron-vite build` rc=0。
+  真机冒烟（dev app + CDP）：工作面显示「未查看」chip → 点行打开结果、数据加载成功 → DB 事件
+  `state=seen`（unread 3→2）且 chip 消失；legacy localStorage 里两个已查看键仍抑制 chip（双读生效）。
+- **未做 / deferred**：`mafw-navigate-goal` 缺 preload/renderer 接收端（托盘菜单行可点但暂无导航效果）；
+  worktree 折叠目前只改标签不去重条目；p3 事件与审计文件无 prune。
+- **已知边界**：托盘图标三态（running/attention）尚未提供独立图标资源，当前只换 tooltip/菜单文案。
 
 
 ## 6. Gateway 运维
