@@ -1,8 +1,10 @@
 # MAFW Gateway 架构
 
-> 常驻进程：Goal 编排（NodeDriver 状态机）+ 谐波记忆 + 自动化引擎 + HTTP API（:3000）/ MCP / 事件流；并监管 opencode serve sidecar。
+> 常驻进程：Pod 协作循环（Lead → Tech Lead → Builder → Reviewer）+ Goal 编排（NodeDriver 状态机）+
+> 谐波记忆 + 事件层/常驻存在感 + 自动化引擎 + HTTP API（:3000）/ MCP / 事件流；并监管 opencode serve sidecar。
 >
-> 时效：2026-10-16 对照源码重写（Goal 编排自 LangGraph 迁移至 NodeDriver、runtime 契约新增必选工具注册通道、事件词汇 v2；LangGraph 旧设计见文末 Legacy 附录）。
+> 时效：2026-11-05 对照源码更新（Pod 协作 Goal Loop、Plan Package / Goal Eval、事件层与 presence、
+> Mobile P0、idle 归属与复用会话 grace）。NodeDriver 自 LangGraph 迁移与事件词汇 v2 见 2026-10-16 版。
 > 更细的子系统说明以根 `AGENTS.md` 为准（本文与其同源，取面向架构读者的视角）。
 
 ## 目录
@@ -11,7 +13,9 @@
 - [进程生命周期](#进程生命周期)
 - [CLI（bin/mafw.js）](#clibinmafwjs)
 - [Runtime 能力契约（多 runtime 接缝）](#runtime-能力契约多-runtime-接缝)
+- [Pod 协作 Goal Loop](#pod-协作-goal-loop)
 - [Goal 编排：NodeDriver 状态机](#goal-编排nodedriver-状态机)
+- [事件层与常驻存在感](#事件层与常驻存在感)
 - [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
 - [插件系统（四类型 loader + 统一包宿主）](#插件系统四类型-loader--统一包宿主)
 - [API 端点](#api-端点)
@@ -37,13 +41,26 @@ gateway/
 │   │
 │   ├── core/
 │   │   ├── goal/                 # Goal 编排（NodeDriver，2026-10-08 P1）
-│   │   │   ├── driver.ts         #   每 goal 一个互斥状态机实例（含 askUser 执行）
+│   │   │   ├── driver.ts         #   每 goal 一个互斥状态机实例（含 askUser 执行 / idle 归属 / grace）
 │   │   │   ├── routing.ts        #   纯函数路由（下一节点判定）
 │   │   │   ├── state-v3.ts       #   state.json v3（round/loop 双写、原子写）
-│   │   │   ├── node-prompts.ts   #   节点 prompt + 产物路径（nodeArtifactPaths）
+│   │   │   ├── node-prompts.ts   #   节点 prompt + 产物路径（nodeArtifactPaths，按 revision 隔离）
+│   │   │   ├── plan-package.ts   #   waves + goalEval 计划包（planHash / evalHash / packageHash）
+│   │   │   ├── review-rubric.ts  #   逐任务 rubric + Goal 条件校验 + acceptance 提取
+│   │   │   ├── probe.ts / assignment.ts / goal-identity.ts / wave-plan-edit.ts
 │   │   │   ├── node-run-store.ts #   goal_node_runs 表（每次尝试一行）
 │   │   │   └── starter.ts / recovery.ts   # goal_created 定位 + watchdog 恢复
 │   │   │   # 三节点身份（mafw-plan/execute/review）在 runtime/identity-registry.ts 内置
+│   │   ├── pod/                  # 项目鲸群（Pod 协作循环）
+│   │   │   ├── pod-store.ts      #   SQLite 7+ 表：pods / members / sessions / goals / revisions /
+│   │   │   │                     #     tasks / messages / events / probes / deliveries
+│   │   │   ├── pod-service.ts / pod-goal-service.ts / pod-goal-revision-service.ts
+│   │   │   ├── pod-tech-lead-service.ts / pod-direction-service.ts / pod-probe-service.ts
+│   │   │   ├── pod-session-supervisor.ts / pod-session-lifecycle.ts / lead-session-registry.ts
+│   │   │   ├── pod-task-service.ts / pod-message-service.ts / pod-memory-service.ts
+│   │   │   ├── pod-event-model.ts / pod-event-service.ts / pod-event-wake.ts / pod-presence.ts
+│   │   │   ├── pod-context-select.ts（mcp/handlers）  # 阶段基线 + 授权清单 manifest
+│   │   │   └── pod-a2a-bridge.ts / pod-a2a-artifacts.ts  # 外部 Agent handoff
 │   │   ├── manager/              # Lead 生命周期兼容（manager-session slot/registry）、goal 快照、/btw
 │   │   ├── memory/               # harmonic-index、energy-system、retrieval-events…
 │   │   ├── approval/             # 审批三档预设（read-only/auto/full-access）+ 规则沉淀
@@ -51,6 +68,10 @@ gateway/
 │   │   ├── diff/                 # 会话 diff hunk 级反转（diffApi）
 │   │   └── skills/               # memory-curator agent 定义、Lead agent 配置（manager 为历史别名）
 │   │
+│   ├── events/                   # 事件日志 / SSE attach / 广播信封（mafw_event + seq）
+│   ├── experience/               # Experience Contract（版本化 Action Descriptor，中性 UI 面）
+│   ├── mobile/                   # 配对（一次性深链）、设备存储、mDNS、Tailscale URL、
+│   │                             #   推送网关、媒体代理、TTS 工件
 │   ├── memory/                   # HarmonicUnitFileStore（OKF 读写）、GatewayDatabase、
 │   │                             #   ConsolidationService、嵌入运行时（ONNX/llamacpp）
 │   ├── recall/                   # 后台记忆召回与管线：
@@ -105,6 +126,7 @@ MafwScheduler.start()
     ├── materializeIdentities()         → IdentityRegistry → runtime agents.install
     ├── recoverConfig / recoverRegistry → 恢复注册表
     ├── recoverState() + recoverGoals() → 恢复活跃 Goal（产物优先 → 会话探测 → 重试）
+    ├── Pod 服务                        → PodStore / PodEventService（p3 prune）/ EventWake（5s 首扫 + 60s）
     ├── automationEngine.start()        → cron 轮询 + 事件监控
     └── 自更新轮询                      → ~/.mafw/pending-restart.json（2s，子进程接力重启）
 ```
@@ -183,6 +205,75 @@ blanket-deny 评估身份维度（allowlist auto-approve / deny auto-deny）。
 
 ---
 
+## Pod 协作 Goal Loop
+
+> 2026-11-02 起，Goal 从「Manager 三节点」升级为项目级 4 人协同：**Lead / Tech Lead / Builder / Reviewer**。
+> `core/pod/` 是业务事实源；NodeDriver 仍是执行状态机，但 plan/execute/review 节点由 Pod 角色承载。
+
+### 角色与隐藏会话
+
+| 角色 | 载体 | 职责 |
+|---|---|---|
+| **Lead** | 项目常驻会话（`coordination` node，可见） | 项目主对话、Goal intake、派工、结果通知 |
+| **Tech Lead** | 按 `(goal, revision)` 隔离的隐藏会话 | 需求讨论、方向裁定、Plan + Goal Eval、Spike 探针 |
+| **Builder** | 隐藏会话（`mafw-execute`） | 按 waves 实施，产出 receipt |
+| **Reviewer** | 隐藏会话（`mafw-review`） | 独立 rubric 评审（逐任务 + Goal 条件） |
+
+Lead/Builder/Reviewer/Tech Lead 都是内部会话（`session-visibility.ts`）：不出现在普通历史列表，
+但可通过 Pod transcript 读取。Lead 的权威 = 当前 Pod 的 active `coordination` 会话；
+`manager-session` kv 只作 gateway 内部恢复兼容。
+
+### 生命周期
+
+```
+直接建 Goal（discussing）
+  → Tech Lead 讨论（goal.md / request.json / direction.json）
+  →（按需）方向裁定：request → 人类 attention → markClear / 选择后进 planning
+  → planning：waves.json + goal-eval.json（Plan Package）
+  → plan_review：人工批准（manual 时驻留 AWAIT_PLAN_APPROVAL，绑定 planHash/evalHash）
+  → implementing：Builder 按 assignment 执行，产出 receipts
+  → reviewing：Reviewer 逐任务 rubric + Goal 条件校验
+  → completed：结果通知（p1）→ 用户可打回 → revision N+1（append-only）
+```
+
+- **revision 隔离**：`pod_goal_revisions` append-only；rev≥2 的 waves/eval/receipt/review 落在
+  `revisions/<goalId>/rev-N/`，旧 revision 证据与产物永不重写；打回只开新 revision
+- **Plan Package**：`planHash=computeWavesHash`、`evalHash=computeGoalEvalHash`、
+  `packageHash=computePlanPackageHash`；任务板编辑计划会自动作废旧批准（`stale_plan` 409）
+- **quick vs collaborative**：quick 只允许一个 task、可免人工批准、不进独立 Reviewer
+  （`archive_unreviewed`）；但与 collaborative 一样必须有 `goal-eval.json`——quick 的 eval 由
+  driver 从 `waves.tasks[].acceptance` **确定性派生**，不额外消耗模型输出
+- **Context Manifest**：`PodContextSelectionService.renderForNode` 强制阶段基线
+  （goal/request/direction/waves/goal-eval），Lead 只能追加已授权的跨 Goal 引用；
+  清单落 `manifests/rev-<n>-<stage>.md` + sha256，缺失/越权 fail-closed（`context_invalid`）
+- **Assignment**：每次派工写不可变 Assignment JSON + `attempt-N.prompt.md`（不覆盖旧 prompt），
+  prompt 顺序 `CONTEXT MANIFEST → POD HANDOFF → ASSIGNMENT → 节点正文`
+- **Probe / Spike**：单 Pod 单 running、队列上限；探针在隔离 workspace + Builder 会话执行，
+  报告原子写 `probes/*.json` 并镜像 `pod_probes`；模式 B（`full_chain`）批准绑定 `packageHash`，
+  探针 refutes/未覆盖/计划改写 → 批准作废回 planning
+- **Review rubric**：逐任务 `pass|fail|skipped` + evidence，必须覆盖每条必需 Goal 条件；
+  漏项/自相矛盾/证据空 → 强制 FAIL（reviewFix/round 修复），只有 JSON 不可解析才走 `artifact_invalid`
+- **结果与打回**：PASS 归档后 `notifyResult` 只广播一次 `pod.updated {kind:'result'}`；
+  `rejectResult` 先读真实结果证据，再 `finishRevision` + `openNextRevision`（并发打回 409）
+
+### 事件层与 presence（与 Pod 同源）
+
+`pod_events` 是运行时真相（`UNIQUE(pod_id,dedupe_key)` 幂等），`~/.mafw/pods/<id>/events/*.json`
+是创建时写一次的审计快照。写点收敛在 `finishPodGoal`（全 verdict）与 `PodStore.insertMessage`
+（REST / decision / A2A 三路唯一收口）。
+
+| 分级 | 触发 | 去向 |
+|---|---|---|
+| p1 | Goal 归档（PASS/FAIL/MAX_RETRIES/ERROR/UNREVIEWED） | 结果通知 / inbox / presence |
+| p2 | 成员 `request` / `escalation` 发给 Lead | Lead 唤醒（闸门：暂停/忙/预算/10min 去重） |
+| p3 | 其他成员消息（note/decision/review） | 审计；已读 7 天后 prune |
+
+`GET /api/presence` 跨项目聚合 running / attention / unreadResults；worktree Pod 折叠到父项目并
+按 `(projectId, goalId, revision)` 去重。桌面 main 15s 轮询（`pod.event` 到达即时催一次），
+驱动托盘三态、任务栏进度、OS 通知；通知点击经 `mafw-navigate-goal` 回到 Goal 详情。
+
+---
+
 ## Goal 编排：NodeDriver 状态机
 
 > 2026-10-08 P1 起，LangGraph 三件套（graph/checkpointer/interrupt/Command-resume）
@@ -193,25 +284,31 @@ blanket-deny 评估身份维度（allowlist auto-approve / deny auto-deny）。
 
 - **无图引擎**：每 goal 一个互斥状态机实例；`routing.ts` 纯函数定下一节点；
   state.json v3 是唯一持久化（原子写 .tmp+rename）
-- **事件驱动完成**：`void promptAsync`（不 await）+ per-session 完成监听，
-  由 `handleOpencodeEvent` 的 idle/error 分发
-- **双门完成判定**：`turn.completed` **且**产物文件存在且可解析
-  （`nodeArtifactPaths`：`waves.json` / `receipts/{goalId}/loop-{N}-receipt.json` /
-  `reviews/{goalId}-loop{N}.md`）——缺失/非法 → `failNode` → archive_fail
+- **事件驱动完成 + idle 归属**：`void promptAsync`（不 await）+ per-session 完成监听；
+  派发时记活动水位（`dispatchSeq`），只有「派发后有过本回合活动（turn.started / part.* /
+  message.updated）」的 idle 才收账——陈旧 idle 直接忽略且不消耗 grace
+- **双门完成判定**：`turn.completed` **且**（产物文件存在且可解析 **或** Batch 1 结构化交卷）。
+  产物缺失/非法 → `failNode(artifact_missing/invalid)` → archive_fail
+- **复用会话 grace**：plan 复用 Tech Lead 讨论会话时，讨论回合的迟到 idle 与新节点竞态；
+  宽恕一次 + `reuseGraceMs`（默认 90s）兜底——「有活动却迟迟没有 idle」不会卡到 30 分钟 watchdog
 - **三节点身份**：`mafw-plan`（deny file-edit/shell/web）/ `mafw-execute`（全开）/
   `mafw-review`（deny file-edit/web，allowlist 含 shell）——复用 IdentityRegistry 物化车道
 - **W4 先验注入**：plan 节点 prompt 注入能力账本（同类任务 PASS 率/均轮数/成本）+
   失败模式谱（`cat:failure`/`cat:correction` 蒸馏产物聚类）+ 反事实 pre-mortem
   （D4b：同类失败率/riskNote 要求）
 
+> 2026-11-02 起，plan 的产物升级为 Plan Package（waves + goal-eval，见 Pod 协作 Goal Loop）；
+> askUser 的回答/取消由 `PodGoalService`/driver 共同收口，Lead 可经 MCP 自治代答。
+
 ```
 goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
   → ensureGoalState(state v3) → advance(goalId)
-      │  读 state → routing 定下一节点 → 建会话（agent: 'mafw-<node>'）
-      │  → promptAsync（不 await）→ writeGoalState(nodeSession)
+      │  读 state → routing 定下一节点 → 复用/新建角色会话（Tech Lead / Builder / Reviewer）
+      │  → promptAsync（不 await）→ writeGoalState(nodeSession) + 活动水位
       ▼
 节点完成（idle/error 事件分发 onSessionIdle/onSessionError）
-  ├─ 双门判定（turn.completed + 产物存在可解析）
+  ├─ idle 归属：没有本回合活动 → 忽略（陈旧 idle，不消耗 grace）
+  ├─ 双门判定（turn.completed + 产物 / 结构化交卷）
   │    ├─ 通过 → completeNode → advance（下一节点）
   │    └─ 缺失/非法 → failNode(artifact_missing/invalid) → archive_fail
   └─ watchdog（周期扫描）：产物优先 → 会话探测 → abort + 重试 attempt+1
@@ -221,8 +318,9 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 ### askUser（state 驱动）
 
 `executeAskUser` 写 `QuestionLedger` asked + state.pendingQuestion；回答/取消经
-`handleAnswer/handleCancel` 写 state.userResponse/nextNode → advance。manager 可经
-`mafw_list_pending_questions` / `mafw_answer_question` 自治代答。
+`handleAnswer/handleCancel` 写 state.userResponse/nextNode → advance。Lead 可经
+`mafw_list_pending_questions` / `mafw_answer_question` 自治代答；手机/桌面共享同一
+`/api/questions` 面（「需要你」应答）。
 
 ### Trace 与观测
 
@@ -253,6 +351,9 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 | 审批三档 | `core/approval/` | read-only / auto / full-access + 持久规则沉淀（`~/.mafw/permission-rules.json`） |
 | 回合预算 | `core/budget-guard.ts` | step 切面计数 + TrajectoryStore 成本 → 超限 abort + noReply 通知 |
 | Lead 生命周期 | `core/manager/` + `core/pod/` | per-project Lead registry、goal 快照、里程碑推送、/btw、/waitwhat；人工 new-topic 已退役 |
+| Pod 协作循环 | `core/pod/` + `core/goal/plan-package.ts` | Goal revisions、Tech Lead 讨论/方向、Plan+Goal Eval 批准、Probe、Assignment、rubric review |
+| Pod 事件层 | `core/pod/pod-event-*.ts` + `routes/presence.ts` | `pod_events` 分级、`/api/presence` 跨项目聚合、Lead 唤醒闸门、托盘/任务栏/通知 |
+| Mobile 接入 | `mobile/` + `routes/mobile` | 一次性配对深链、设备存储、mDNS、Tailscale URL、推送网关、媒体/TTS 代理 |
 | Media Agent | `media/` | A2A 协议、四模态、每模态可插拔引擎 |
 | Python 内核 | `python/` | Jupyter wire 协议（ZeroMQ）、Mutex 队列、TTL 回收 |
 | TTS | `tts/` | 引擎注册表（mimo 云流式 / kokoro 本地 ONNX）+ 打断传播 |
@@ -308,7 +409,11 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
 |---|---|
 | 健康/事件 | `GET /health`、`GET /api/events`（SSE 订阅）、`POST /api/events`（发布：顶层扁平或 `mafw_event` 信封，全 UI 通道） |
 | 项目/会话 | `POST /register`、`GET /api/projects`、`GET /api/sessions`、`GET /api/manager/session`、`POST /api/manager/session/rotate` |
-| Goal 编排 | `POST /api/work/{goalId}/validate`、`POST /api/control`（PAUSE/ABORT）、`GET /api/goals/:id/timeline`（节点泳道）、`POST /api/goals/:id/nodes/:runId/retry` |
+| Pod / 工作 | `GET /api/projects/:id/work`（五桶 overview）、`GET/POST /api/pods/:id/goals`、`/tech-lead`、`/direction-decision`、`/probes`、`/revisions`、`/result`、`/reject`、`POST /api/pods/:id/goals/handoff` |
+| 事件/存在感 | `GET /api/presence`、`GET /api/pods/:id/events`、`POST /api/pods/:id/events/:eventId/seen`（单条）、`POST /api/pods/:id/events/seen`（body `{goalId, revision}` 清当前 revision） |
+| Experience | `GET /api/experience/actions`（版本化 Action Descriptor，客户端不硬编码 runtime 名） |
+| Goal 编排 | `POST /api/work/{goalId}/validate`、`POST /api/control`（PAUSE/ABORT）、`GET /api/goals/:id/timeline`（节点泳道）、`POST /api/goals/:id/nodes/:runId/retry`、`POST /api/goals/:id/plan-approval` |
+| Mobile | `GET /api/mobile/pairing-code`、`POST /api/mobile/pairing/verify`、`GET /api/mobile/tts/artifacts/:id` |
 | 记忆 | `GET /api/recall/context`、`GET /api/recall/pinned`、`GET /api/recall/priors`、`POST /api/obs/capture`、`POST /api/memory/add`、`GET /api/memory/search`、`GET /api/memory/stats`（含管线心跳） |
 | 基础工具 | `GET /api/tools`（六件套 spec 清单）、`POST /api/tools/execute`（通用执行，loopback 门） |
 | MCP | `POST/GET /mcp`（双传输） |
@@ -326,9 +431,14 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
 
 ## UI 服务
 
-- **Desktop（packages/desktop，Electron）**：主 UI。Rail + TabStrip；经 `@mafw/sdk`
-  走 `window.api.mafw.*` IPC → HTTP :3000；SSE 直连 gateway；自带 gateway bundle
-  （adopt → bundle → cli 三级决策）；Goal 详情 = 节点泳道图（goal_node 事件实时）
+- **Desktop（packages/desktop，Electron）**：主 UI。左侧 Rail + 右侧 **Agent 工作台**
+  （工作 / 工作台 / 执行 / 审阅）+ 可拖拽聊天列（520/640/760 档位）+ Focus 模式；
+  经 `@mafw/sdk` 走 `window.api.mafw.*` IPC → HTTP :3000；SSE 直连 gateway；
+  自带 gateway bundle（adopt → bundle → cli 三级决策）；托盘三态/任务栏进度/OS 通知（点击
+  经 `mafw-navigate-goal` 直达 Goal）；Goal 详情 = 统一结果/计划审阅/方向/时间线
+- **Mobile（mobile/，Flutter）**：Tailscale 直连（`http://<machine>.<tailnet>.ts.net:3000`）；
+  工作五桶、Goal 详情、Tech Lead 讨论、「需要你」应答；一次性配对深链
+  （`GET /api/mobile/pairing-code`）；v1 不做息屏离线推送（打开才看）
 - **TUI（mafw tui）**：pi-tui 四 tab，纯 HTTP/SSE 客户端（markdown 渲染、鼠标点选、
   远端命令合并）
 - **Web Dashboard**：退役——UI 职责由 Desktop 与 `mafw tui` 承担
@@ -337,19 +447,22 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
 
 ## 数据流全景
 
-### Goal 从创建到完成（NodeDriver）
+### Goal 从创建到完成（Pod 协作 + NodeDriver）
 
 ```
-用户 /goal（或 Lead mafw_set_goal）
-  → goal_created → startGoal → ensureGoalState(v3) → advance
+用户 / Lead → 建立讨论型 Goal（pod_goals + revision 1）
+  → Tech Lead 讨论 →（按需）方向裁定 → Plan Package（waves + goal-eval）
+  →（manual）人工批准 planHash/evalHash → AWAIT_PLAN_APPROVAL 放行
   │
   ▼
 NodeDriver: plan ⟶ (askUser) ⟶ execute ⟶ review ⟶ routing 判定
-  │  各节点：createSession(agent: mafw-<node>) → promptAsync → 监听完成
-  │  双门判定：turn.completed + 产物文件（waves.json / receipts / reviews）
+  │  各节点：复用 Tech Lead 会话 / Builder / Reviewer → promptAsync → idle 归属判定
+  │  双门判定：turn.completed + 产物/结构化交卷
   ▼
-PASS  → archive_success（记 goal_outcomes + goal_sessions + 记忆能量奖励）
-FAIL  → 未超限 → plan 重试（loop+1）/ 超限 → archive_fail
+Reviewer rubric：
+  PASS → archive_success（pod_events p1 → 通知/inbox；goal_outcomes + 记忆能量奖励）
+  FAIL → 未超限 → plan 修复/重试（loop+1）/ 超限 → archive_fail（同样 p1）
+用户打回 → openNextRevision（append-only）→ revision 2 从 discussing 重走
 ```
 
 ### 记忆事件流（两条正交通道）
@@ -373,9 +486,14 @@ FAIL  → 未超限 → plan 重试（loop+1）/ 超限 → archive_fail
 ```
 <project>/.mafw/                     # per-project（Goal 与请求面）
 ├── state/{goalId}.json              # goal 状态视图 v3（NodeDriver 唯一写入方）
-├── waves.json                       # wave 计划（plan 节点产物，双门校验）
+├── state/revisions/<goalId>/rev-N.json   # 旧 revision 状态快照（打回后归档）
+├── waves.json                       # wave 计划（plan 产物）
+├── goal-eval.json                   # Goal Eval（plan 产物；quick 由 acceptance 派生）
+├── manifests/rev-<n>-<stage>.md     # Context Manifest（sha256 记录）
+├── revisions/<goalId>/rev-N/        # rev≥2 的 waves/goal-eval/receipts/reviews 隔离目录
+├── probes/*.json                    # Spike 探针报告（原子写）
 ├── tasks/  receipts/{goalId}/       # execute 产物（per-loop receipt）
-├── reviews/{goalId}-loop{N}.md      # review 产物（per-loop）
+├── reviews/{goalId}-loop{N}.md      # review 产物（per-loop；含 rubric JSON）
 ├── requests/                        # 请求配置
 ├── commands/                        # 项目级自定义 slash 命令（markdown 模板）
 ├── logs/mafw.log                    # 插件侧文件日志
@@ -387,8 +505,11 @@ FAIL  → 未超限 → plan 重试（loop+1）/ 超限 → archive_fail
 │   │                                # OKF 记忆（每条一个 Markdown：frontmatter+正文）
 │   ├── .harmonic_index.json         # 检索索引（纯可推导产物）
 │   ├── vectors-<model>.json         # dense 嵌入（opt-in，按 provider 打标）
-│   └── gateway.db                   # 统一数据库：t1_observations、kv_store、
+│   └── gateway.db                   # 统一数据库：t1_observations、kv_store、pod_*、
 │                                    #   goal_outcomes、goal_sessions、goal_node_runs…
+├── pods/<podId>/
+│   ├── memory/{POD.md,POD_MEMORY.md,glossary.md}   # 项目鲸群共享记忆
+│   └── events/*.json                # 事件审计快照（DB 为真相；p3 已读 7 天 / 文件 30 天 prune）
 ├── automations/*.json               # 自动化规则（管线 cron 幂等供给）
 ├── commands/                        # 用户级自定义 slash 命令
 ├── skill-staging/                   # skill 物化草稿（SKILL.md 人审区）
@@ -457,6 +578,13 @@ post-task curator 只看轨迹存在"回顾性证据边界"。落地四点：
 | `MAFW_PYTHON_BIN` | 覆盖 Python 内核解释器 |
 | `MAFW_TAKEOVER` | 自更新接力分支（跳过单例守卫，等端口释放） |
 | `MAFW_TUI_PORTS` | TUI 探测端口覆盖（测试隔离） |
+
+可能落在 `config.yaml` 的移动/编排键：
+
+- `mobile.tailscaleUrl`：配对深链优先使用的 tailnet URL（env > config > 自动探测；热更配对服务）
+- `goal.techLeadModel`：Tech Lead 会话模型（provider/model 对）；建会话后 fail-open `bindModel`，
+  lazy getter 热生效
+- `mobile.push` / `mobile.mediaProxy`：推送网关与媒体代理（实验/可选）
 
 热生效边界：`config.yaml` 变更 watcher 2s 防抖自动 reload，`runtime` 段变更触发热切换；
 `server`/`paths` 段变更需重启。

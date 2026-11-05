@@ -20,12 +20,13 @@
 ## 这是什么
 
 MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工作平台，
-由四个常驻部分组成（另可选项接入 opencode 编辑器）：
+由 Gateway / Desktop / Mobile / TUI / CLI 五个部分组成（另可选接入 opencode 编辑器）：
 
 | 组件 | 形态 | 作用 |
 |---|---|---|
-| **Gateway** | 常驻进程（HTTP API :3000 + 事件流） | 记忆存取、Goal 编排、自动化引擎、全部业务中枢 |
-| **Desktop** | Electron 应用 | 对话、Goal 管理、记忆看板、审批与自动化配置的完整 GUI |
+| **Gateway** | 常驻进程（HTTP API :3000 + 事件流） | 记忆存取、Pod/Goal 编排、自动化引擎、全部业务中枢 |
+| **Desktop** | Electron 应用 | 右侧 Agent 工作台 + 聊天列：工作概览、Goal 详情、文件/浏览器/终端、审阅 |
+| **Mobile** | Flutter（Android，开发中） | Tailscale 直连 Gateway：项目工作、Tech Lead 讨论、「需要你」应答 |
 | **TUI** | `mafw tui` 命令 | 终端全功能界面：Chat / Goals / Memory / Triage（markdown 渲染、鼠标点选） |
 | **CLI** | `mafw` 命令 | Gateway 的启动、守护、诊断与运维 |
 | **opencode 插件** | 可选接入 | 在 opencode 内获得记忆注入与 `mafw_*` 工具（其一入口，非必需） |
@@ -56,23 +57,42 @@ MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工�
   （事件边界检测替代小时批，shadow 观察中）
 - **写时路由自检**：`mafw route-check` 一键验证 create / dedup / update 三条路径是否健康
 
-### 🤖 Goal 编排
+### 🤖 Pod / Goal 编排
 
-- **Manager Agent**：拆解目标 → plan / execute / review 循环，里程碑自动推送；创建即计划评审门（review-then-run）
+- **项目鲸群（Pod）**：`Lead`（项目主对话）→ `Tech Lead`（讨论、计划、Goal Eval）→ `Builder`（实施）→
+  `Reviewer`（rubric 独立评审）。计划批准绑定 `planHash`/`evalHash`，结果可打回开 revision N+1，
+  旧 revision 的证据与产物永不重写
+- **自适应执行**：`quick`（单任务、无独立评审、goal-eval 由验收条件派生）vs `collaborative`
+  （可人工批准、独立 Reviewer）；`planReview: manual` 强制走协作
+- **计划包**：`waves.json` + `goalEval` 一次产出；任务带可机械验证的 acceptance，Reviewer 逐任务
+  `pass/fail/skipped` + 证据，Goal 条件漏项即 FAIL
 - **回合预算**：goal 可设 `maxTurns` / `maxCostUsd`，超限自动硬停（BudgetGuard）
 - **每轮目标快照**注入，compaction 免疫；`/btw` 支线问答不污染主线
 - **演化观测**（RSI Phase 1）：goal 结果、会话映射、失败签名全量落库，为策略演化铺路
 
+### 🔔 事件层与常驻存在感
+
+- **`pod_events` 确定性分级**：p1（结果/硬失败）、p2（需要你决策）、p3（日常协作）——无 LLM 判级
+- **跨项目 presence**：`GET /api/presence` 聚合 running / attention / unread results；桌面托盘三态、
+  任务栏进度、OS 通知（点击直达 Goal）、鲸群 inbox「未查看」统一消费
+- **Lead 唤醒**：p2 事件经闸门（暂停/忙/预算/去重）合并注入 Lead 会话；重启后 pending 自动补发
+- **旧数据兼容**：`viewedResults` 只读双读，存量「已查看」不因升级消失
+
 ### 🖥️ Desktop 应用
 
-Rail 侧边栏 + TabStrip 布局：`chat / goals / memory / approvals / triage / automation / notes` 全功能 GUI，
-右 Dock 内置上下文用量、分模型成本统计与配额窗口，15s 轮询实时刷新。
+**右侧 Agent 工作台**（工作 / 工作台 / 执行 / 审阅）+ 可拖拽聊天列（520 / 640 / 760 三档）+ Focus 模式：
 
-交互面：**steering**（忙碌回合排队续发）、会话分支（fork / revert / unrevert）、全局命令面板（Ctrl+P）、
-审批三档（只读 / 自动 / 全开）与 plan / build 模式引导、worktree 并行会话（每会话独立 `⎇` 工作树）、
-语音输入（VAD 静音自动分段）与 TTS 播报（barge-in 可打断）、系统托盘与 OS 通知、会话导出 Markdown、@file 文件提及、
-transcript 搜索（Ctrl+F）；composer 工具条全 SVG 图标化、动作与模式开关分组；
-UI 工具卡插件系统支持 `.js` 文件自定义工具执行卡（v2：依赖声明 + 流式渲染）。
+- **工作**：`work.overview` 五桶（需要你 / 排队 / 进行中 / 结果 / 历史）+ Goal composer +
+  统一 Goal 详情（计划审阅、方向裁定、问题回答、结果/打回、时间线）
+- **工作台**：IDE 骨架（文件树 + 编辑器/浏览器 tab + 终端）；Office / PDF / CSV / JSON / Markdown /
+  图片预览与就地批注，HTML 预览走 `mafw-file://`
+- **执行**：概览、待办、子代理、后台、轨迹、鲸群（团队/邮箱/记忆/班底）
+- **审阅**：会话 diff、逐回合 diff、检查点时间线与代码回滚
+
+交互面：**steering**（忙碌回合 Enter 续发 / Ctrl+Enter 网关队列）、会话分支（fork / revert / unrevert）、
+全局命令面板（Ctrl+P）、审批三档（只读 / 自动 / 全开）、worktree 并行会话、语音输入（VAD 自动分段）
+与 TTS 播报（barge-in 可打断）、会话导出 Markdown、@file 提及、transcript 搜索（Ctrl+F）、
+系统托盘三态与任务栏进度、A2A 媒体理解、持久 Python 内核；UI 工具卡插件系统支持自定义工具执行卡。
 
 ### 🎬 媒体理解
 
@@ -145,20 +165,21 @@ LongMemEval-S（session 粒度，谐波记忆管线）：
 ## 架构
 
 ```
- Desktop (Electron)      CLI (mafw)      opencode 插件
-        │                     │                │
-        └───────────── HTTP :3000 / SSE ───────┘
-                          │
-                   ┌──────┴───────┐
-                   │    Gateway   │
-                   └──────┬───────┘
-        ┌──────────┬──────┴──────┬───────────┐
-   谐波记忆系统   Goal 编排引擎   自动化引擎   媒体/内核/用量
-   OKF + 索引    manager/plan/  cron 规则    A2A · Jupyter
-   能量·合并     execute/review 衰减·压缩    统一插件包
+ Desktop (Electron)   Mobile (Flutter)   CLI (mafw)   opencode 插件
+        │                   │               │              │
+        └────────── HTTP :3000 / SSE / MCP ────────────────┘
+                            │
+                     ┌──────┴───────┐
+                     │   Gateway    │
+                     └──────┬───────┘
+      ┌────────────┬────────┴────────┬──────────────┐
+  谐波记忆      Pod/Goal 编排      事件层 & 存在感   自动化 / 媒体 / 内核 / 用量
+  OKF + 索引    Lead→TL→B→R        pod_events       cron · A2A · Jupyter
+  能量·合并     plan/eval/review   presence/托盘     统一插件包
 ```
 
-数据根目录 `~/.mafw/`：记忆 OKF 文件、统一数据库、日志、配置覆盖。
+数据根目录 `~/.mafw/`：记忆 OKF 文件、统一数据库（含 `pod_events`）、Pod 记忆与事件审计、
+日志、配置覆盖。
 
 ## 快速开始
 
@@ -172,6 +193,7 @@ mafw daemon         # 后台守护
 mafw status         # 查看状态
 mafw tui            # 终端界面（Chat / Goals / Memory / Triage）
 mafw route-check    # 记忆写时路由自检（create / dedup / update）
+mafw office setup   # Office 编辑能力（Python 内核 venv + office-editing 技能）
 mafw dashboard      # 打开 Web Dashboard
 ```
 
@@ -194,7 +216,13 @@ cd packages/desktop
 npx electron-vite build
 ```
 
-### 3. opencode 接入（可选）
+### 3. 手机接入（开发中）
+
+Android 客户端经 **Tailscale 直连** Gateway（零公网暴露）：手机装 Tailscale，
+`GET /api/mobile/pairing-code` 生成一次性配对深链（`mafw://pair?…`），扫码即得 base URL + token。
+App（Flutter，`mobile/`）在 P1-P4 迭代中；连接层与 gateway 配对/鉴权已就绪。
+
+### 4. opencode 接入（可选）
 
 > npm 包仅含 **Gateway + TUI**（`bin: mafw`）。opencode 插件入口（`dist/plugin.js`）不在
 > npm 包内——插件方式接入请从源码构建（`npm run build` 后本地安装 tgz），或仅用下方
@@ -226,10 +254,14 @@ docs/                    设计文档与实施计划
 |---|---|
 | 架构总览（AGENTS.md） | `AGENTS.md` |
 | Gateway 架构 | `docs/architecture/gateway.md` |
+| Mobile 开发与调测 | `docs/architecture/mobile.md` |
 | Plugin 架构 | `docs/architecture/plugin.md` |
+| Runtime 插件作者手册 | `docs/guides/runtime-plugin-authoring.md` |
+| 统一插件包作者手册 | `docs/guides/plugin-authoring.md` / `docs/guides/plugin-creator.md` |
 | 谐波记忆 v6.3 | `docs/superpowers/specs/2026-07-02-v6.3-harmonic-memory-m1-m3.md` |
 | OKF 存储迁移 v6.8 | `docs/superpowers/specs/2026-07-16-okf-migration-design.md` |
 | Desktop 图标（茉芙/Mafu） | `docs/superpowers/specs/2026-09-10-desktop-icon-design.md` |
+| 版本发布说明 | `docs/releases/` |
 | 记忆基准 | `evaluation/README.md` |
 
 ## 声明

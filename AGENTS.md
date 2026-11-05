@@ -1,5 +1,9 @@
 # MAFW Gateway & Plugin 架构
 
+> 文档地图：面向用户看 `README.md`；网关架构看 `docs/architecture/gateway.md`；移动端看
+> `docs/architecture/mobile.md`；插件 / runtime 作者看 `docs/guides/`；版本说明看 `docs/releases/`。
+> 本文是 agent 与维护者的**完整事实源**（子系统细节、测试门禁、已知边界与 deferred 清单）。
+
 > **术语�?*：`CONTEXT.md` 是项目共享语言（ubiquitous language）——说�?命名/写码用它的词；`/waitwhat` 命令�?manager 重述依赖它�?
 
 ## 1. 谐波记忆系统
