@@ -76,6 +76,29 @@ function resolveReal(input: string): string {
   }
 }
 
+/**
+ * Canonicalize a path that may no longer exist (e.g. a disposed workspace), by
+ * realpath-ing its nearest existing ancestor and appending the rest. This keeps
+ * Windows 8.3 short names (`RUNNER~1`) consistent with the long form after the
+ * leaf directory is gone — otherwise the second (idempotent) dispose compares
+ * a short path against a long base and refuses.
+ */
+function resolveRealLoose(input: string): string {
+  let current = path.resolve(input);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync.native(current);
+      return tail.length ? path.join(real, ...tail.reverse()) : real;
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return path.resolve(input);
+      tail.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
 /** 临时目录名前缀：保留可读性（项目名 + goal + probe），不含分隔符。 */
 function dirPrefix(projectDir: string, goalId: string, probeId: string): string {
   const project = path.basename(projectDir).replace(/[^A-Za-z0-9._-]/g, '_') || 'project';
@@ -102,7 +125,9 @@ export class ProbeWorkspaceFactory {
     const goal = safeSegment(goalId, 'goalId');
     const probe = safeSegment(probeId, 'probeId');
     const project = resolveReal(projectDir);
-    const base = this.baseDir;
+    // Canonicalize the base too (it may not exist yet): a short-name base would
+    // otherwise look "outside" the long-name project and bypass the guard.
+    const base = resolveRealLoose(this.baseDir);
 
     if (isPathInside(base, project) || samePath(base, project)) {
       throw new Error('probe workspace base directory must be outside the main project');
@@ -126,12 +151,12 @@ export class ProbeWorkspaceFactory {
    */
   async dispose(workspace: ProbeWorkspace): Promise<void> {
     if (!workspace || typeof workspace.dir !== 'string' || !workspace.dir.trim()) return;
-    const project = path.resolve(workspace.projectDir);
+    const project = resolveRealLoose(workspace.projectDir);
     const dir = path.resolve(workspace.dir);
-    const base = resolveReal(this.baseDir);
-    const target = resolveReal(dir);
+    const base = resolveRealLoose(this.baseDir);
+    const target = resolveRealLoose(dir);
 
-    if (samePath(dir, project) || isPathInside(dir, project)) {
+    if (samePath(target, project) || isPathInside(target, project)) {
       throw new Error(`refusing to dispose a probe workspace inside the main project: ${dir}`);
     }
     if (samePath(target, base) || !isPathInside(target, base)) {

@@ -130,10 +130,11 @@ describe('PackageManager filesystem operations', () => {
   });
 
   it('rejects a relative source path', async () => {
-    const source = writePackage(sourceDir, 'acme', { module: DECLARATIVE_MODULE('acme', 'Acme') });
-    const relative = path.relative(process.cwd(), source);
-    await expect(manager.installFromPath({ path: relative })).rejects.toMatchObject({
+    // Cross-drive Windows runners make `path.relative(cwd, source)` absolute, so
+    // use a literal relative path: the guard is "not absolute", not "exists".
+    await expect(manager.installFromPath({ path: 'relative-package' })).rejects.toMatchObject({
       status: 400,
+      message: expect.stringContaining('path must be absolute'),
     });
     expect(fs.existsSync(path.join(pluginDir, 'acme'))).toBe(false);
   });
