@@ -3982,7 +3982,7 @@ class MafwScheduler {
       },
       setThinkingLevel: async (sid, level) => {
         const fn = this.runtime?.session.setThinkingLevel;
-        if (!fn) throw new SessionConfigError(400, 'runtime does not support session thought_level; use model_config.variant');
+        if (!fn) throw new SessionConfigError(400, 'runtime does not implement session.setThinkingLevel');
         await fn({ sessionID: sid, level });
       },
       // 契约面探针（RuntimeAccess.can）：runtime 只声明/实现 surface，业务不摸 runtime 内部。

@@ -14,6 +14,7 @@ const mockClient: any = {
     reject: jest.fn(async (...a: any[]) => { sdkCalls.push({ method: 'reject', args: a }); return {}; }),
   },
   session: {
+    get: jest.fn(async () => ({ data: { model: { id: 'm1', providerID: 'p1' } } })),
     permission: {
       reply: jest.fn(async () => ({})),
     },
@@ -149,6 +150,56 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     expect(init.method).toBe('GET');
     // 默认 agent 由适配器标注（中性 DTO），客户端不认原生名。
     expect(agents).toEqual([{ name: 'build', default: true }]);
+  });
+
+  it('setThinkingLevel 把契约档位映射到 model variant（opencode 细节只在适配器）', async () => {
+    mockClient.session.get.mockResolvedValueOnce({ data: { model: { id: 'm1', providerID: 'p1' } } });
+    routeFetch({
+      '/api/model': () => json({
+        data: [{
+          providerID: 'p1', id: 'm1', modelID: 'm1',
+          variants: [
+            { id: 'fast', settings: { reasoningEffort: 'low' } },
+            { id: 'deep', settings: { reasoningEffort: 'high' } },
+            { id: 'max', settings: { reasoningEffort: 'max' } },
+          ],
+        }],
+      }),
+      '/api/session/s1/model': () => json({ data: {} }),
+    });
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.session.setThinkingLevel!({ sessionID: 's1', level: 'high' });
+    const [url, init] = callsFor('/api/session/s1/model')[0];
+    expect(url).toBe('http://127.0.0.1:4096/api/session/s1/model');
+    expect(JSON.parse(init.body as string)).toEqual({
+      model: { id: 'm1', providerID: 'p1', variant: 'deep' },
+    });
+  });
+
+  it('setThinkingLevel 在会话无 model 时回退 /api/model/default', async () => {
+    mockClient.session.get.mockResolvedValueOnce({ data: {} });
+    routeFetch({
+      '/api/model/default': () => json({ data: { providerID: 'p2', modelID: 'm2' } }),
+      '/api/model': () => json({
+        data: [{ providerID: 'p2', id: 'm2', variants: [{ id: 'max', settings: { reasoningEffort: 'max' } }] }],
+      }),
+      '/api/session/s2/model': () => json({ data: {} }),
+    });
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.session.setThinkingLevel!({ sessionID: 's2', level: 'max' });
+    expect(JSON.parse(callsFor('/api/session/s2/model')[0][1].body as string)).toEqual({
+      model: { id: 'm2', providerID: 'p2', variant: 'max' },
+    });
+  });
+
+  it('setThinkingLevel 无可用 variant → 显式报错（不静默降级）', async () => {
+    mockClient.session.get.mockResolvedValueOnce({ data: { model: { id: 'm1', providerID: 'p1' } } });
+    routeFetch({
+      '/api/model': () => json({ data: [{ providerID: 'p1', id: 'm1', variants: [] }] }),
+    });
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await expect(rt.session.setThinkingLevel!({ sessionID: 's1', level: 'high' }))
+      .rejects.toThrow(/thinking variant/i);
   });
 
   it('todo 历史回放 / children 走 2.1.0 list parentID 过滤', async () => {

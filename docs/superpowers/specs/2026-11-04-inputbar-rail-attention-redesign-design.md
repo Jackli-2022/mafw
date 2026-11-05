@@ -127,7 +127,7 @@
 
 **Q2 · Thinking 的三层现实**：thinkingLevel 桌面零消费（`session.config` 事件在 ignore 清单、无 GET 调用）——因此**含网关与状态管道**：① 会话菜单打开时 `GET /api/session/:id/config` 拉取（SSE `session.config` 事件从 ignore 清单移出，增量 patch）；② 「默认档」= `thinkingLevel` **unset**（undefined）——徽标只在显式设定后出现（含显式 off），显示档位名；③ 「runtime 不支持」信号 = config GET 响应新增 additive 字段 `thinkingLevelSupported: boolean`（`SessionConfigService` 小改）；④ v1 **删掉 ⚙ 全部设置行**（菜单只有 Agent/模型/Thinking；per-session 设置面超范围，留后续）。
 
-**Q2b · 推理档位的契约边界（2026-11-04 补）**：opencode 的「思考」实际是 **model variant**（`/api/model` 的 `variants[{id, settings.reasoningEffort}]`，`model_config.variant` 切换）——这是 **runtime 内部实现**；中性契约只暴露 `session.setThinkingLevel` surface。因此：`thinkingLevelSupported` 必须经 **`RuntimeAccess.can('session.setThinkingLevel')`** 判定（不直摸 runtime 对象），opencode 未实现该 surface → 菜单显式降级为 `—`；桌面**不分叉 runtime、不暴露 variant 目录**（契约隔绝）。若未来要在 UI 暴露 opencode variant，应由 runtime 适配器实现该 surface（内部映射 variant）或走 Experience 契约扩展，不在桌面/业务层加分支。
+**Q2b · 推理档位的契约边界（2026-11-04 补）**：opencode 的「思考」实际是 **model variant**（`/api/model` 的 `variants[{id, settings.reasoningEffort}]`，`model_config.variant` 切换）——这是 **runtime 内部实现**；中性契约只暴露 `session.setThinkingLevel` surface。因此：`thinkingLevelSupported` 必须经 **`RuntimeAccess.can('session.setThinkingLevel')`** 判定（不直摸 runtime 对象）。**opencode 由适配器实现该 surface**：读取当前会话模型 → `/api/model` variants → 按 reasoningEffort 把七档映射到 variant（精确优先、缺档取最近、平局取更高；`off` 优先 `none`/`thinking.disabled`，无关闭档时降级到最低档）→ 复用 `POST /session/:id/model` 切 variant；桌面**不分叉 runtime、不暴露 variant 目录**（契约隔绝），variant 目录只存在于适配器。若未来要在 UI 暴露 opencode variant，应由 runtime 适配器实现该 surface（内部映射 variant）或走 Experience 契约扩展，不在桌面/业务层加分支。
 
 **Q3 · attention 发射点与重发语义**：**~~撤回~~**（移交 pod-event-layer；其 p0 不进事件表，重发/去重语义由该设计 §3.2/§10.5 决定）。
 

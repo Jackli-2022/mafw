@@ -25,6 +25,7 @@ import type {
   RuntimeCommandInfo,
   RuntimeSkillInfo,
   RuntimeDiscoveryResult,
+  ThinkingLevel,
 } from './contract';
 import type { RuntimePtyInbound, RuntimePtyInfo } from './pty';
 export type {
@@ -91,6 +92,68 @@ export function annotateAgentRoles(list: unknown, defaultAgentName: string | nul
       ...(key === OPENCODE_PLANNING_AGENT ? { planning: true } : {}),
     };
   });
+}
+
+/** 推理档位 → 排序（契约七档 + 常见 effort/id 同义词）。 */
+const THINKING_RANK: Record<string, number> = {
+  off: 0, none: 0, disabled: 0,
+  minimal: 1,
+  low: 2, fast: 2,
+  medium: 3, balanced: 3,
+  high: 4, deep: 4,
+  xhigh: 5,
+  max: 6,
+};
+
+/** 显式「关闭推理」的 variant 识别（id/effort/body 任一）。 */
+function isOffVariant(v: any, id: string, effort: string): boolean {
+  if (id === 'none' || id === 'off' || id === 'disabled') return true;
+  if (effort === 'none' || effort === 'off' || effort === 'disabled') return true;
+  return v?.body?.thinking?.type === 'disabled';
+}
+
+/**
+ * 契约 `ThinkingLevel` → 当前模型声明的 variant id。
+ *
+ * opencode 用 model variant 表达推理强度（`variants[].settings.reasoningEffort`）。
+ * 映射只在适配器内：精确 id/effort 优先；缺档取最近 rank（平局取更高）；`off`
+ * 优先显式关闭档，没有时降级到最低档。无可用 variant → null（上层显式报错）。
+ */
+export function thinkingVariantForLevel(variants: unknown, level: ThinkingLevel): string | null {
+  const list = (Array.isArray(variants) ? variants : [])
+    .map((v: any) => {
+      const id = typeof v?.id === 'string' ? v.id.trim() : '';
+      if (!id) return null;
+      const effort = String(v?.settings?.reasoningEffort ?? '').trim().toLowerCase();
+      const rank = isOffVariant(v, id.toLowerCase(), effort)
+        ? 0
+        : (THINKING_RANK[effort] ?? THINKING_RANK[id.toLowerCase()] ?? null);
+      return { id, effort, rank, off: isOffVariant(v, id.toLowerCase(), effort) };
+    })
+    .filter((v): v is { id: string; effort: string; rank: number; off: boolean } => !!v && v.rank !== null);
+  if (list.length === 0) return null;
+
+  const key = level.toLowerCase();
+  const byId = list.find((v) => v.id.toLowerCase() === key);
+  if (byId) return byId.id;
+  const byEffort = list.find((v) => v.effort === key);
+  if (byEffort) return byEffort.id;
+  if (level === 'off') {
+    const off = list.find((v) => v.off);
+    if (off) return off.id;
+  }
+
+  const target = THINKING_RANK[key] ?? 0;
+  let best = list[0];
+  let bestDistance = Math.abs(best.rank - target);
+  for (const v of list.slice(1)) {
+    const distance = Math.abs(v.rank - target);
+    if (distance < bestDistance || (distance === bestDistance && v.rank > best.rank)) {
+      best = v;
+      bestDistance = distance;
+    }
+  }
+  return best.id;
 }
 
 // ─── 工具函数 ───────────────────────────────────────────────
@@ -576,6 +639,36 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         variant?: string;
       }) {
         await switchModel(opts.sessionID, opts.model, opts.variant);
+      },
+
+      async setThinkingLevel(opts: { sessionID: string; level: ThinkingLevel }) {
+        // 契约档位 → 当前模型的 variant；variant 目录只在本适配器内可见。
+        let model: any;
+        try {
+          const info = unwrap<any>(await client.session.get({ sessionID: opts.sessionID }));
+          model = info?.model;
+        } catch {
+          /* fail-open：回退默认模型 */
+        }
+        if (!model?.providerID || !(model?.id || model?.modelID)) {
+          const def = unwrapNative<any>(await directNative('/model/default', 'GET'));
+          model = def?.model ?? def;
+        }
+        const providerID = String(model?.providerID ?? '');
+        const modelID = String(model?.id ?? model?.modelID ?? '');
+        if (!providerID || !modelID) {
+          throw new Error('cannot resolve session model for thinking level');
+        }
+        const body = await directNative('/model', 'GET');
+        const models = unwrapNative<any[]>(body) ?? [];
+        const hit = models.find(
+          (m: any) => m?.providerID === providerID && (m?.id === modelID || m?.modelID === modelID),
+        );
+        const variant = thinkingVariantForLevel(hit?.variants, opts.level);
+        if (!variant) {
+          throw new Error(`model ${providerID}/${modelID} exposes no thinking variant for "${opts.level}"`);
+        }
+        await switchModel(opts.sessionID, { providerID, modelID }, variant);
       },
 
       async summarize(opts: SessionSummarizeOpts) {
