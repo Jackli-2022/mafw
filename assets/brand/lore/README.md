@@ -43,6 +43,19 @@ It is consumed by the later Orcalore rename plan; do not edit it in place.
 derives tray templates and favicon. The UI copies live in
 `packages/desktop/src/renderer/mafw/assets/lore/`.
 
+## Regenerating
+
+From the repo root:
+
+```bash
+python packages/desktop/scripts/build_lore_assets.py
+python -m pytest packages/desktop/scripts/test_lore_assets_import.py packages/desktop/scripts/test_build_lore_assets.py -q
+```
+
+The script copies the exact avatar pack (never upscales) and derives tray/favicon
+from the platform exports. `platform/` stays read-only for the later Orcalore
+rename.
+
 ## Gaps
 
 - No SVG or Android Vector Drawable source yet.
