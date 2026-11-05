@@ -400,7 +400,9 @@ const main = Effect.gen(function* () {
         const latest = payload?.unreadResults?.latest
         if (latest && !notifyState.hasResult(latest.goalId, latest.revision)) {
           notifyState.markResult(latest.goalId, latest.revision)
-          new Notification({ title: `${latest.title} · 已完成`, body: "Goal 已归档，点击查看结果" }).show()
+          // 文案不承诺点击跳转：mafw-navigate-goal 的 renderer 接收端仍是 deferred
+          // （AGENTS §5.29）；等接收端落地后再加 click handler 与「点击查看」。
+          new Notification({ title: `${latest.title} · 已完成`, body: "Goal 已归档，打开工作台查看结果" }).show()
         }
       },
       log: (msg) => logger.warn(msg),

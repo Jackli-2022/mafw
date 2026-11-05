@@ -186,4 +186,23 @@ describe("pod events store", () => {
 
     assert.equal(store.items().some((item) => item.state === "seen" && item.goalId === "g1" && item.revision === 1), true)
   })
+
+  test("seenAll 成功后被并发刷新覆盖，也不会复活角标（成功路径必须重新落 seen）", async () => {
+    let releaseSeen: (() => void) | null = null
+    const store = createPodEventsStore({
+      list: async () => page([ev({ state: "unread" })]),
+      seenAll: () => new Promise((resolve) => { releaseSeen = () => resolve({ ok: true }) }),
+    })
+    store.setPod("pod_1")
+    await store.refresh()
+
+    const marking = store.markSeen("pod_1", "g1", 1)
+    // 另一条 pod.event 触发的刷新在 seenAll 提交前返回（server 仍旧 unread）。
+    await store.refresh()
+    assert.equal(store.items()[0].state, "unread")
+
+    releaseSeen?.()
+    assert.equal(await marking, true)
+    assert.equal(store.items()[0].state, "seen", "seenAll 成功后本地必须保持已查看，不能依赖下一次刷新")
+  })
 })

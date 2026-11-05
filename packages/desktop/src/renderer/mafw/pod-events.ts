@@ -95,6 +95,21 @@ function routeMissing(err: unknown): boolean {
   return httpStatusOf(err) === 404 || /older than the SDK|Received HTML instead of JSON/i.test(message)
 }
 
+function seenMarker(podId: string, goalId: string, revision: number): PodEventItem {
+  return {
+    id: `seen:${goalId}:${revision}`,
+    podId,
+    goalId,
+    revision,
+    kind: "goal.result",
+    severity: "p1",
+    title: "",
+    summary: null,
+    state: "seen",
+    createdAt: new Date().toISOString(),
+  }
+}
+
 export function createPodEventsStore(api: PodEventsApi): PodEventsStore {
   const [items, setItems] = createSignal<PodEventItem[]>([])
   const [supported, setSupported] = createSignal(true)
@@ -204,28 +219,26 @@ export function createPodEventsStore(api: PodEventsApi): PodEventsStore {
       }
       // 本地还没有这条事件（inbox 没拉过/分页外）：补一条 seen 标记，角标立即收敛；
       // 下一次刷新用 server truth 覆盖。
-      return [
-        {
-          id: `seen:${goalId}:${revision}`,
-          podId,
-          goalId,
-          revision,
-          kind: "goal.result",
-          severity: "p1" as const,
-          title: "",
-          summary: null,
-          state: "seen" as const,
-          createdAt: new Date().toISOString(),
-        },
-        ...prev,
-      ].slice(0, 200)
+      return [seenMarker(podId, goalId, revision), ...prev].slice(0, 200)
     })
     try {
       await api.seenAll(podId, goalId, revision)
+      // 成功路径必须重新落 seen：await 期间可能有一次刷新（另一条 pod.event）带回了
+      // 提交前的 unread 快照；只靠乐观写会让角标在「已成功清过」后复活且不自愈。
+      if (currentPod() === podId) {
+        setItems((prev) => {
+          if (prev.some(matches)) {
+            return prev.map((item) => (matches(item) ? { ...item, state: "seen" } : item))
+          }
+          // 并发刷新把事件挤掉了：补一条 seen 标记，保证「成功清过」不会被下一次刷新复活。
+          return [seenMarker(podId, goalId, revision), ...prev].slice(0, 200)
+        })
+      }
       return true
     } catch (err) {
       // 接口失败必须回滚：角标清了但用户什么都没看到是更糟的状态。
-      setItems(previous)
+      // 只回滚同一个 Pod（切换项目后不能把上一个 Pod 的列表塞进新 Pod）。
+      if (currentPod() === podId) setItems(previous)
       if (routeMissing(err)) setSupported(false)
       return false
     }
