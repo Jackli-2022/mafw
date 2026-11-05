@@ -6,7 +6,7 @@ import {
   goalAssignmentFilePath,
   readGoalAssignment,
 } from '../../src/core/goal/assignment';
-import { nodeArtifactPaths } from '../../src/core/goal/node-prompts';
+import { nodeArtifactPaths, goalEvalArtifactPath } from '../../src/core/goal/node-prompts';
 
 const quickPlan = {
   status: 'ready',
@@ -21,6 +21,20 @@ const quickPlan = {
 };
 
 describe('quick Worker assignment dispatch', () => {
+  test('derives goal-eval from task acceptance so execute keeps a manifest', async () => {
+    const h = makeHarness({ structured: async () => quickPlan });
+    seedGoal(h, 'gq');
+    const sid = await h.startAndIdle('gq');
+    await h.fireIdle(sid);
+
+    const evalPath = goalEvalArtifactPath(h.mafwDir, 'gq', 1);
+    expect(fs.existsSync(evalPath)).toBe(true);
+    const doc = JSON.parse(fs.readFileSync(evalPath, 'utf-8'));
+    expect(doc.conditions.length).toBeGreaterThan(0);
+    expect(doc.conditions[0]).toMatchObject({ statement: 'the error is gone', required: true });
+    expect(doc.mapping[doc.conditions[0].id].tasks).toEqual(['w1-t1']);
+  });
+
   test('persists an assignment before dispatch and puts its block after manifest/handoff', async () => {
     const h = makeHarness({ structured: async () => quickPlan });
     h.deps.contextBlock = async () => '[CONTEXT MANIFEST]\nmanifest';

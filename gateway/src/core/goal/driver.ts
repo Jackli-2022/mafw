@@ -129,6 +129,37 @@ function safePackageHash(planDoc: any, goalEval: GoalEval | null): string | null
   } catch { return null; }
 }
 
+/**
+ * quick 计划不要求模型写 GoalEval，但 execute/review 的 ContextManifest 需要它。
+ * 由 waves 的任务验收派生：完成契约始终结构化、可机械核对，而不是自由文本。
+ */
+function deriveQuickGoalEval(planDoc: any): GoalEval {
+  const waves = Array.isArray(planDoc?.waves) ? planDoc.waves : [];
+  const tasks = waves.flatMap((wave: any) => (Array.isArray(wave?.tasks) ? wave.tasks : []));
+  const conditions: Array<{ id: string; statement: string; required: boolean; evidence: string; method: string }> = [];
+  const mapping: Record<string, { tasks: string[] }> = {};
+  tasks.forEach((task: any, index: number) => {
+    const taskId = typeof task?.taskId === 'string' && task.taskId.trim()
+      ? task.taskId.trim()
+      : `w1-t${index + 1}`;
+    const raw = Array.isArray(task?.acceptance) ? task.acceptance : [];
+    const acceptance = (raw.length ? raw : [task?.title ?? `task ${taskId}`]).map((item: unknown) => String(item));
+    acceptance.forEach((statement: string, slot: number) => {
+      const id = `g${index + 1}-${slot + 1}`;
+      conditions.push({ id, statement, required: true, evidence: 'quick receipt', method: 'execution receipt' });
+      mapping[id] = { tasks: [taskId] };
+    });
+  });
+  return {
+    outcome: conditions.map((condition) => condition.statement).join('；') || 'quick task completed',
+    conditions,
+    failureConditions: [],
+    constraints: [],
+    nonGoals: [],
+    mapping,
+  } as GoalEval;
+}
+
 /** 原子写 Goal Eval（.tmp + rename；坏中间态不会被评审读到）。 */
 function writeGoalEvalFile(target: string, goalEval: GoalEval): void {
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -1651,6 +1682,8 @@ export class NodeDriver {
           try {
             fs.rmSync(goalEvalArtifactPath(mafwDir, goalId, revision), { force: true });
           } catch { /* best effort */ }
+          // quick：eval 从任务验收派生，保证 execute/review 的 manifest 有可判定的契约。
+          writeGoalEvalFile(goalEvalArtifactPath(mafwDir, goalId, revision), deriveQuickGoalEval(planDoc));
           patch = {
             wavePlanPath: a.waves,
             pendingQuestion: null,
