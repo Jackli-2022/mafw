@@ -8,6 +8,8 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { buildMemberRows, buildRecentMessages, podAttentionRow, podCounts, podEmptyState, type PodEmptyState } from "../pod-rail-face-model"
 import { memberFocus, podStatusLabel } from "../pod-model"
 import { requestPodTechLeadOpen } from "../pod-result-store"
+import leadAvatar32 from "../assets/lore/lead-avatar-32.png"
+import { memberAvatar } from "../lead-avatar"
 
 export function ProjectResources(props: {
   detail: PodDetail | null
@@ -145,6 +147,12 @@ export function ProjectResources(props: {
             {(row) => {
               const focus = () => (props.detail ? memberFocus(props.detail, row.id) : { focusText: null, target: null })
               const target = () => focus().target
+              const avatar = () => memberAvatar(row.role, row.displayName)
+              const avatarText = () => {
+                const a = avatar()
+                return a.kind === "initial" ? a.text : ""
+              }
+              const isLore = () => avatar().kind === "lore"
               const open = () => {
                 // 2026-11-04（spec techlead-goal-entry §3.3）：Tech Lead 行走 Goal 入口
                 // （requestPodTechLeadOpen → openTechLead ensure 讨论会话），其余开 live 会话。
@@ -172,7 +180,9 @@ export function ProjectResources(props: {
                   }}
                 >
                   <span class={`mafw-resource-avatar is-${row.role}`} aria-hidden="true">
-                    {row.displayName.charAt(0)}
+                    <Show when={isLore()} fallback={avatarText()}>
+                      <img src={leadAvatar32} alt="" />
+                    </Show>
                   </span>
                   <span class={`mafw-pod-rail-dot ${row.dotClass}`} aria-hidden="true" />
                   <div class="mafw-pod-rail-member-main">

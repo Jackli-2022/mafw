@@ -7437,6 +7437,14 @@ html[data-theme="light"] body {
 .mafw-resource-avatar.is-tech_lead { border-color: color-mix(in srgb, var(--info) 40%, transparent); background: color-mix(in srgb, var(--info) 10%, transparent); color: var(--info); }
 .mafw-resource-avatar.is-builder { border-color: color-mix(in srgb, var(--warning) 40%, transparent); background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
 .mafw-resource-avatar.is-reviewer { border-color: var(--border-base); color: var(--text-2); }
+.mafw-resource-avatar { overflow: hidden; }
+.mafw-resource-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 50%;
+  object-fit: cover;
+}
 .mafw-pod-rail-member { padding: 6px; border-radius: var(--r-sm); transition: background var(--dur-fast) var(--ease-standard); }
 .mafw-pod-rail-member:hover { background: var(--bg-hover); }
 .mafw-pod-rail-member .mafw-pod-rail-dot { margin-left: -2px; }
