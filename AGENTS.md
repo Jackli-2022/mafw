@@ -1732,9 +1732,12 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
   （`.mafw-work-chip.is-unviewed`）。**旧通知链退役**（spec §7）：`handlePodResultEvent` 的 toast +
   hidden-only 通知 + `pendingResultGoalId` + 结果事件队列全部删除——完成通知归 main 的 presence 轮询
   （同一条结果不再双通知）。
-  测试：desktop **2843/2843（620 suites，本批净 +15）**、`tsgo --noEmit -p` / `electron-vite build` rc=0。
+  测试：desktop **2845/2845（620 suites，本批净 +17）**、`tsgo --noEmit -p` / `electron-vite build` rc=0。
   真机冒烟（dev app + CDP）：工作面显示「未查看」chip → 点行打开结果、数据加载成功 → DB 事件
   `state=seen`（unread 3→2）且 chip 消失；legacy localStorage 里两个已查看键仍抑制 chip（双读生效）。
+  终审（glm-5.3）：I-1 已修——`seenAll` 成功后再落一次 seen（await 期间并发刷新带回 unread 不会让角标
+  复活），回滚只作用于同 Pod；I-2 通知文案改为「打开工作台查看结果」（不再承诺点击跳转，
+  `mafw-navigate-goal` 接收端仍 deferred）。
 - **未做 / deferred**：`mafw-navigate-goal` 缺 preload/renderer 接收端（托盘菜单行可点但暂无导航效果）；
   worktree 折叠目前只改标签不去重条目；p3 事件与审计文件无 prune。
 - **已知边界**：托盘图标三态（running/attention）尚未提供独立图标资源，当前只换 tooltip/菜单文案。
