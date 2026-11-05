@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { dropOtherLeadTabs, mergeTabIdentity } from "./session-tab-identity"
+import { dropOtherLeadTabs, isRoleNamedTab, mergeTabIdentity, pinLeadTabTitle } from "./session-tab-identity"
 
 test("merging identity upgrades an existing role-less tab in place", () => {
   const tabs = [{ id: "s1", title: "Chat 1" }]
@@ -66,4 +66,23 @@ test("merging never overwrites a user-renamed tab", () => {
     lead: false,
     metadata: { mafw: { role: "builder" } },
   }])
+})
+
+test("isRoleNamedTab recognizes Lead by marker and by metadata", () => {
+  assert.equal(isRoleNamedTab({ id: "s1", lead: true }), true)
+  assert.equal(isRoleNamedTab({ id: "s1", metadata: { mafw: { role: "lead" } } }), true)
+  assert.equal(isRoleNamedTab({ id: "s1" }), false)
+  assert.equal(isRoleNamedTab({ id: "s1", metadata: { mafw: { role: "builder" } } }), false)
+  assert.equal(isRoleNamedTab(undefined), false)
+})
+
+test("pinLeadTabTitle pins the Lead label, ignoring a carried runtime title", () => {
+  const tabs = [
+    { id: "lead", title: "冒烟: quick eval derivation" },
+    { id: "chat", title: "新建会话" },
+  ]
+  assert.deepEqual(pinLeadTabTitle(tabs, "lead", true).map((tab) => tab.title), ["Lead", "新建会话"])
+  // 非 Lead 打开 / 已是 Lead 标签 → 原样返回（引用不变）
+  assert.equal(pinLeadTabTitle(tabs, "lead", false), tabs)
+  assert.equal(pinLeadTabTitle([{ id: "lead", title: "Lead" }], "lead", true)[0].title, "Lead")
 })

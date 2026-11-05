@@ -78,8 +78,8 @@ import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiv
 import { PluginSurfaceHost } from "./plugins/PluginSurfaceHost"
 import { PluginWindowHost } from "./plugins/PluginWindowHost"
 import { buildPodNoteBody } from "./pod-note"
-import { retitleTab } from "./session-tab-title"
-import { dropOtherLeadTabs, mergeTabIdentity } from "./session-tab-identity"
+import { retitleTab, shouldRetitleTab } from "./session-tab-title"
+import { dropOtherLeadTabs, mergeTabIdentity, pinLeadTabTitle } from "./session-tab-identity"
 import { isLeadRole, leadTabMetadata, resolveLeadSession, tabSessionRole } from "./lead-session"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
@@ -386,7 +386,7 @@ export function MafwShell() {
     setActiveTab("chat")
     setShowWelcome(false)
     if (!sessions().some(s => s.id === sid)) {
-      const tabTitle = title || `Chat ${sessions().length + 1}`
+      const tabTitle = lead === true ? "Lead" : title || `Chat ${sessions().length + 1}`
       setSessions(prev => [...prev, { id: sid, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, lead, metadata }])
       setStore(prev => ({
         ...prev,
@@ -399,10 +399,12 @@ export function MafwShell() {
     // in place; opening a new Lead also drops the previous (possibly dead)
     // Lead tab so the strip never contains two "Lead" identities.
     setSessions(prev => mergeTabIdentity(prev, sid, lead, metadata, title))
+    // Lead 是角色 tab：标签恒为角色名，不继承 runtime 会话标题或恢复的旧标题。
+    setSessions(prev => pinLeadTabTitle(prev, sid, lead))
     if (lead === true) setSessions(prev => dropOtherLeadTabs(prev, sid))
     setActiveSessionId(sid)
     setActiveViewId(sid)
-    if (title?.trim()) {
+    if (shouldRetitleTab(sessions().find(s => s.id === sid), title)) {
       setSessions(prev => retitleTab(prev, sid, title))
       setStore(prev => ({ ...prev, session: retitleTab(prev.session, sid, title) }))
     }
@@ -1166,6 +1168,8 @@ export function MafwShell() {
       invalidate: () => sessionStore.invalidate(),
       patch: (id, patch) => sessionStore.patch(id, patch),
       retitleOpenTab: (id, title) => {
+        // Lead tab 的身份是角色名：runtime 自动标题（首轮后改写会话标题）不得覆盖。
+        if (!shouldRetitleTab(sessions().find(s => s.id === id), title)) return
         setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s))
         setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title } : x) }))
       },

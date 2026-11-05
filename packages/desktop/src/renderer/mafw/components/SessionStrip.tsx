@@ -37,6 +37,10 @@ export function SessionStrip(props: {
 
   const recheckOverflow = () => setOverflowed(stripOverflowed(scrollEl))
 
+  /** Lead tab 的身份是角色名，不参与 runtime 自动标题，也不支持双击改名。 */
+  const isLeadTab = (s: { id: string; lead?: boolean }) =>
+    s.lead === true || props.podRoleOf?.(s.id) === "lead"
+
   // 溢出检测：尺寸变化（ResizeObserver）+ tab 集合变化都重算
   let ro: ResizeObserver | undefined
   onMount(() => {
@@ -144,7 +148,7 @@ export function SessionStrip(props: {
             class="mafw-session-tab"
             classList={{
               active: props.activeViewId() === s.id,
-              "is-lead-tab": s.lead === true || props.podRoleOf?.(s.id) === "lead",
+              "is-lead-tab": isLeadTab(s),
             }}
             tabIndex={0}
             onClick={() => props.onSelect(s.id)}
@@ -154,7 +158,7 @@ export function SessionStrip(props: {
             <span class="mafw-agent-dot" style={{ background: s.lead ? "var(--accent)" : "var(--text-4)" }} />
             <span
               class="mafw-session-title"
-              onDblClick={e => { e.stopPropagation(); setRenamingId(s.id); setRenameDraft(s.title || "") }}
+              onDblClick={e => { e.stopPropagation(); if (isLeadTab(s)) return; setRenamingId(s.id); setRenameDraft(s.title || "") }}
             >
               <Show when={renamingId() !== s.id} fallback={
                 <TextInputV2

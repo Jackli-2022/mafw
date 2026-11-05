@@ -41,6 +41,14 @@ export function mergeTabIdentity<T extends TabIdentityLike>(
     : tab)
 }
 
+/**
+ * 角色命名的 tab（当前只有 Lead）用角色名当身份：只认用户显式重命名，
+ * runtime 自动生成的会话标题不得覆盖它。
+ */
+export function isRoleNamedTab(tab?: TabIdentityLike | null): boolean {
+  return tab?.lead === true || tab?.metadata?.mafw?.role === "lead"
+}
+
 /** A project has at most one current Lead tab; drop stale Lead identities. */
 export function dropOtherLeadTabs<T extends TabIdentityLike>(
   tabs: T[],
@@ -49,4 +57,23 @@ export function dropOtherLeadTabs<T extends TabIdentityLike>(
   return tabs.filter((tab) =>
     tab.id === keepSessionID
     || (!tab.lead && tab.metadata?.mafw?.role !== "lead"))
+}
+
+/**
+ * The Lead tab is a role surface, so its label is the role name — never a
+ * runtime session title carried over from an earlier open or a restored layout.
+ */
+export function pinLeadTabTitle<T extends TabIdentityLike>(
+  tabs: T[],
+  sessionID: string,
+  lead?: boolean,
+): T[] {
+  if (lead !== true) return tabs
+  let changed = false
+  const updated = tabs.map((tab) => {
+    if (tab.id !== sessionID || tab.title === "Lead") return tab
+    changed = true
+    return { ...tab, title: "Lead" }
+  })
+  return changed ? updated : tabs
 }
