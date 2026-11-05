@@ -245,6 +245,8 @@ export const MAX_PROBES_PER_REVISION = 4;
 
 export interface DriverDeps {
   client: GoalRuntimeClient;
+  /** 复用会话的 grace 上限：超时仍无产物/交卷就按 artifact_missing 判失败，避免卡到 watchdog。 */
+  reuseGraceMs?: number;
   db: {
     insertNodeRun(i: { goalId: string; projectId: string; loop: number; node: string; attempt: number; sessionId: string | null; startedAt: string; revision?: number }): number;
     finishNodeRun(id: number, p: { status: string; finishedAt: string; outcome?: string | null; error?: string | null; tokensInput?: number | null; tokensOutput?: number | null; costUsd?: number | null }): void;
@@ -314,6 +316,7 @@ export class NodeDriver {
   private reusedSessions = new Set<string>();
   /** 复用会话的"无产物 idle"宽容：讨论回合的 idle 会与本节点的 prompt 竞态。 */
   private reuseIdleGrace = new Set<string>();
+  private reuseGraceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** 复用会话节点启动时的产物指纹（判断 idle 时的产物是不是本次新写的）。 */
   private nodeStartArtifacts = new Map<string, { path: string; digest: string | null }>();
   /** Task 14：探针会话 → 隔离工作区（完成/失败都必须销毁）。 */
@@ -674,6 +677,7 @@ export class NodeDriver {
     // 2026-11-04：每个节点派发拥有自己的「一次宽容」——复用会话的下一个节点
     // 不应继承上一个节点已用掉的 grace（否则第二个节点的首个 idle 会直接误判）。
     this.reuseIdleGrace.delete(sessionId);
+    this.clearReuseGraceTimer(sessionId);
     this.listeners.set(sessionId, (ev, failure) => {
       if (ev === 'idle') {
         // 复用会话的 idle 竞态：讨论回合结束的 idle 可能晚于本节点的 prompt 到达。
@@ -686,6 +690,9 @@ export class NodeDriver {
             const submitted = (await this.deps.client.structured?.(sessionId)) ?? null;
             if (submitted) await this.completeNode(goalId, sessionId);
           })();
+          // grace 必须有时限：复用会话的「陈旧 idle」与「回合真的结束但没交卷」在
+          // 事件层面无法区分，无限等第二个 idle 会把节点挂到 30 分钟 watchdog。
+          this.armReuseGraceTimer(goalId, sessionId);
           return true;
         }
         void this.completeNode(goalId, sessionId);
@@ -1247,6 +1254,25 @@ export class NodeDriver {
    * - 内容与 mtime 都是节点启动前的旧值（同 revision 上一版计划）→ 暂存。
    * 暂存只宽容**一次**，第二个 idle 仍按 artifact_missing 判定（避免真的卡死）。
    */
+  /** 宽容只有一次，但必须有时限——否则「回合结束但没交卷」会卡到 watchdog。 */
+  private armReuseGraceTimer(goalId: string, sessionId: string): void {
+    this.clearReuseGraceTimer(sessionId);
+    const ms = Math.max(0, this.deps.reuseGraceMs ?? 90_000);
+    const timer = setTimeout(() => {
+      this.reuseGraceTimers.delete(sessionId);
+      void this.completeNode(goalId, sessionId);
+    }, ms);
+    timer.unref?.();
+    this.reuseGraceTimers.set(sessionId, timer);
+  }
+
+  private clearReuseGraceTimer(sessionId: string): void {
+    const timer = this.reuseGraceTimers.get(sessionId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.reuseGraceTimers.delete(sessionId);
+  }
+
   private isStaleReuseIdle(mafwDir: string, goalId: string, sessionId: string): boolean {
     if (!this.reusedSessions.has(sessionId)) return false;
     if (this.reuseIdleGrace.has(sessionId)) return false;

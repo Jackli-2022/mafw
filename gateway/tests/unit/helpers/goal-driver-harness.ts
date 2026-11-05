@@ -24,7 +24,7 @@ export interface Harness {
   write(goalId: string, patch: any): void;
 }
 
-export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: number; promptAsyncThrows?: boolean; structured?: (sessionID: string) => Promise<unknown | null> }): Harness {
+export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: number; promptAsyncThrows?: boolean; structured?: (sessionID: string) => Promise<unknown | null>; reuseGraceMs?: number }): Harness {
   const mafwDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-driver-'));
   for (const d of ['goals', 'requests', 'receipts', 'reviews']) {
     fs.mkdirSync(path.join(mafwDir, d), { recursive: true });
@@ -56,6 +56,7 @@ export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: numbe
 
   const deps: DriverDeps = {
     client,
+    ...(opts?.reuseGraceMs !== undefined ? { reuseGraceMs: opts.reuseGraceMs } : {}),
     db: {
       insertNodeRun: (i: any) => { const id = seq++; nodeRuns.push({ id, status: 'running', revision: 1, ...i }); return id; },
       finishNodeRun: (id: number, p: any) => { const r = nodeRuns.find((x) => x.id === id); if (r) Object.assign(r, p); },

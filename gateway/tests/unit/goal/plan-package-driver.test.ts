@@ -407,6 +407,23 @@ describe('reused Tech Lead session', () => {
   // 2026-11-04 冒烟实证：plan 节点复用讨论会话 + 结构化交卷（mafw_submit_result，
   // 不写 waves.json 文件）时，唯一的完成 idle 被「陈旧讨论 idle」宽容吞掉，
   // 节点卡在 running 直到 30 分钟 watchdog。完成 idle 必须先查结构化交卷。
+  // 2026-11-05 冒烟实证：复用会话的 plan 回合如果既没写产物也没结构化交卷，
+  // 首个 idle 被 grace 吞掉后不会再有任何 idle → 只能等 30 分钟 watchdog。
+  // grace 必须有时限：超时后按 artifact_missing 判失败。
+  it('fails a reused-session node whose turn ends with neither artifact nor submission', async () => {
+    const h = makeHarness({ reuseGraceMs: 10 });
+    h.deps.existingNodeSession = (_goalId, node) => (node === 'plan' ? 'ses_tech_lead' : null);
+    seedGoal(h, 'g1', { patch: { planReview: 'auto' } });
+    await h.driver.advance('g1');
+    await h.fireIdle('ses_tech_lead');
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const st = h.load('g1')!;
+    expect(st.nextAction).toBe('FAILED');
+    expect(String(st.lastError ?? '')).toContain('artifact_missing');
+  });
+
   it('completes a reused-session plan node from structured submission without a file artifact', async () => {
     const doc = planDoc();
     const h = makeHarness({ structured: async () => doc });
