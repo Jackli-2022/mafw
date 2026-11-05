@@ -103,6 +103,56 @@ export class PodEventService {
     this.deps.store.incrementEventWakeAttempts(id);
   }
 
+  /**
+   * Retention: p3 is informational (member notes / decisions), so seen p3 rows
+   * older than `p3Days` are dropped; audit JSON files older than `auditDays` are
+   * removed. p1/p2 rows are never pruned here — they are the result/blocker trail.
+   */
+  prune(opts?: { p3Days?: number; auditDays?: number }): { events: number; files: number } {
+    const nowMs = Date.parse(this.now());
+    if (!Number.isFinite(nowMs)) return { events: 0, files: 0 };
+    const p3Days = Math.max(1, opts?.p3Days ?? 7);
+    const auditDays = Math.max(1, opts?.auditDays ?? 30);
+    const events = this.deps.store.deleteStaleP3EventsBefore(
+      new Date(nowMs - p3Days * 86_400_000).toISOString(),
+    );
+    const files = this.pruneAuditFiles(nowMs - auditDays * 86_400_000);
+    return { events, files };
+  }
+
+  private pruneAuditFiles(cutoffMs: number): number {
+    const root = this.deps.mafwDir;
+    if (!root) return 0;
+    let removed = 0;
+    try {
+      const podsDir = path.join(root, 'pods');
+      if (!fs.existsSync(podsDir)) return 0;
+      for (const podId of fs.readdirSync(podsDir)) {
+        const dir = path.join(podsDir, podId, 'events');
+        if (!fs.existsSync(dir)) continue;
+        for (const name of fs.readdirSync(dir)) {
+          if (!name.endsWith('.json')) continue;
+          const file = path.join(dir, name);
+          try {
+            // Use the event's own createdAt (filename stamps are lossy; mtime is
+            // "when the file was written", not when the event happened).
+            const raw = fs.readFileSync(file, 'utf8');
+            const createdAt = Date.parse((JSON.parse(raw) as any)?.createdAt ?? '');
+            if (Number.isFinite(createdAt) && createdAt < cutoffMs) {
+              fs.unlinkSync(file);
+              removed += 1;
+            }
+          } catch {
+            /* one unreadable file must not abort the sweep */
+          }
+        }
+      }
+    } catch (err) {
+      this.deps.log?.(`pod event audit prune failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return removed;
+  }
+
   private now(): string {
     return this.deps.now?.() ?? new Date().toISOString();
   }

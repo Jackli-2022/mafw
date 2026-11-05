@@ -89,3 +89,29 @@ it('markSeen is idempotent and counts unread', () => {
   expect(svc.markSeen('pod_1', row.id)).toBe(false);
   expect(svc.list('pod_1').unread).toBe(0);
 });
+
+it('prunes only old seen p3 events and their audit files', () => {
+  const dir = tmpDir();
+  const store = new PodStore(new Database(':memory:'));
+  const old = new PodEventService({ store, mafwDir: dir, now: () => '2026-10-01T00:00:00.000Z' });
+  const seenNote = old.record({ ...base, severity: 'p3', kind: 'member.note', audience: 'none', dedupeKey: 'm:old' });
+  const unreadNote = old.record({ ...base, severity: 'p3', kind: 'member.note', audience: 'human', dedupeKey: 'm:unread' });
+  old.markSeen('pod_1', seenNote.id);
+  const fresh = new PodEventService({ store, mafwDir: dir, now: () => '2026-11-05T00:00:00.000Z' });
+  const result = fresh.record({ ...base, dedupeKey: 'goal.result:g1:r1' });
+
+  const out = fresh.prune({ p3Days: 7, auditDays: 30 });
+  expect(out.events).toBe(1);
+
+  const ids = fresh.list('pod_1').items.map((item) => item.id);
+  expect(ids).not.toContain(seenNote.id);
+  expect(ids).toContain(unreadNote.id);
+  expect(ids).toContain(result.id);
+
+  const files = fs.readdirSync(path.join(dir, 'pods', 'pod_1', 'events'));
+  // 审计文件按 createdAt 保留 30 天，与事件状态无关；DB 里的 unread p3 仍然保留。
+  expect(files.some((name) => name.includes(seenNote.id))).toBe(false);
+  expect(files.some((name) => name.includes(unreadNote.id))).toBe(false);
+  expect(files.some((name) => name.includes(result.id))).toBe(true);
+});
+

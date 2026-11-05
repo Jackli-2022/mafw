@@ -122,6 +122,32 @@ it('folds worktree pods into the parent project', () => {
   expect(out.running.map((r) => r.projectId)).toEqual(['C:/proj', 'C:/proj']);
 });
 
+it('dedupes the same goal seen from both a worktree pod and its parent', () => {
+  const out = buildPodPresence([
+    { podId: 'p1', projectId: 'C:/proj', projectName: 'proj', goals: [goal({ goalId: 'g1' })], tasks: [], attention: [] },
+    {
+      podId: 'p2',
+      projectId: 'C:/proj-wt-x',
+      parentProjectId: 'C:/proj',
+      projectName: 'proj',
+      goals: [goal({ goalId: 'g1' })],
+      tasks: [],
+      attention: [{ id: 'g1:blocked:r1', goalId: 'g1', revision: 1, kind: 'blocked', title: 'x', action: { type: 'open_goal', goalId: 'g1' } } as any],
+    },
+    {
+      podId: 'p3',
+      projectId: 'C:/proj-wt-y',
+      parentProjectId: 'C:/proj',
+      projectName: 'proj',
+      goals: [],
+      tasks: [],
+      attention: [{ id: 'g1:blocked:r1', goalId: 'g1', revision: 1, kind: 'blocked', title: 'x', action: { type: 'open_goal', goalId: 'g1' } } as any],
+    },
+  ]);
+  expect(out.running).toHaveLength(1);
+  expect(out.attention.count).toBe(1);
+});
+
 it('carries attention items with their revision-scoped ids', () => {
   const out = buildPodPresence([
     {

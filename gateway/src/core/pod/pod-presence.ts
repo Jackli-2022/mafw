@@ -53,6 +53,11 @@ export function buildPodPresence(inputs: PodPresenceInput[]): PodPresence {
   const running: PodPresenceItem[] = [];
   const attentionItems: PodAttentionItem[] = [];
   const results: PodPresenceItem[] = [];
+  // Worktree pods fold into the parent project: the same goal may be visible from
+  // both the parent and the worktree pod, so dedupe by (folded project, goal, revision)
+  // instead of emitting two identical rows for one logical project.
+  const seenGoals = new Set<string>();
+  const seenAttention = new Set<string>();
 
   for (const input of inputs) {
     const projectId = input.parentProjectId ?? input.projectId;
@@ -62,10 +67,21 @@ export function buildPodPresence(inputs: PodPresenceInput[]): PodPresence {
     for (const goal of input.goals) {
       const item = toItem(input, projectId, goal);
       const key = `${goal.goalId}:r${goal.revision ?? 1}`;
-      if (unreadKeys.has(key)) results.push(item);
-      else if (!isTerminal(goal)) running.push(item);
+      const dedupe = `${projectId}\u0000${key}`;
+      if (seenGoals.has(dedupe)) continue;
+      if (unreadKeys.has(key)) {
+        seenGoals.add(dedupe);
+        results.push(item);
+      } else if (!isTerminal(goal)) {
+        seenGoals.add(dedupe);
+        running.push(item);
+      }
     }
-    attentionItems.push(...input.attention);
+    for (const item of input.attention) {
+      if (seenAttention.has(item.id)) continue;
+      seenAttention.add(item.id);
+      attentionItems.push(item);
+    }
   }
 
   results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

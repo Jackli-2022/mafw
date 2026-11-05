@@ -1536,6 +1536,15 @@ export class PodStore {
     return info.changes;
   }
 
+  /** 清掉过期的 p3（已读、非待唤醒）事件；p1/p2 永不在此删除。 */
+  deleteStaleP3EventsBefore(cutoffIso: string): number {
+    const info = this.db.prepare(`
+      DELETE FROM pod_events
+      WHERE severity = 'p3' AND state = 'seen' AND wake_state != 'pending' AND created_at < ?
+    `).run(cutoffIso);
+    return info.changes;
+  }
+
   countUnreadEvents(podId: string): number {
     const row = this.db.prepare(
       "SELECT COUNT(*) AS n FROM pod_events WHERE pod_id = ? AND state = 'unread'",
