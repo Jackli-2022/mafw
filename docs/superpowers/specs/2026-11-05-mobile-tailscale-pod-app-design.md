@@ -1,7 +1,7 @@
-# Mobile App v1 设计：Tailscale 直连 + Pod 协作
+# Mobile App v1 设计：Orcalore · Tailscale 直连 + Pod 协作
 
-日期：2026-11-05 ｜ 前置调研：`docs/research/2026-11-05-mobile-tailscale-pod-research.md`（下称「调研报告」，所有行号证据在彼处）
-状态：待用户批准 ｜ 实现基线：mobile/（Flutter）+ gateway（HEAD `d0752664`）
+日期：2026-11-05（2026-11-06 品牌修订：MAFW → **Orcalore**）｜ 前置调研：`docs/research/2026-11-05-mobile-tailscale-pod-research.md`（下称「调研报告」，所有行号证据在彼处）
+状态：**已批准**（D1-D6 + 2026-11-06 品牌三项裁决）｜ 实现基线：mobile/（Flutter）+ gateway（HEAD `d0752664`）
 
 ---
 
@@ -36,22 +36,42 @@
 |---|---|---|
 | **Dots**（OpenAI，常驻 agent） | Activity View：后台任务与状态常驻可见，随时介入/重定向 | 「工作」tab = work.overview 五桶活动流（Dots 的 Activity View 同构）；goal 卡片常驻显示阶段 |
 | **Muse**（Meta，消息式 agent） | 像给人发消息一样与 agent 交流；非回合制（agent 干活时也能插话）；审批时刻（approval moment）才来找你；完整审计轨迹 | 与 Lead/Tech Lead 的交流全部是**消息流**（复用现有 chat 管线）；「需要你」= approval moment 置顶；Goal 详情 = revisions/timeline/证据的审计轨迹 |
-| **Grok**（xAI） | 深色极简、对话优先、质感流畅、最小 chrome | 配色裁定 **B「Grok 单色极简」**（2026-11-05 用户选）：中性灰阶主导，紫只做 accent——见下方 token 表 |
+| **Grok**（xAI） | 深色极简、对话优先、质感流畅、最小 chrome | 配色裁定 **B「Grok 单色极简」**（2026-11-05 用户选）+ **Orcalore 品牌修订**（2026-11-06）：中性 ink/cream 主导，**mint #4FD388（桌面同款 accent）**只做 accent——见下方 token 表与 §3.1 |
 
-### 配色 token（裁定 B「Grok 单色极简」）
+### 配色 token（裁定 B + Orcalore 品牌）
 
 ```
-背景/表面：bg #000 · surface #0D0D0F · border #232327（替代现 #0F0F13/#26262E 档）
-文本：    text #FAFAFA · dim #9CA3AF · faint #6B6B72
-accent 紫 #7C3AED（唯一彩色）只用于四处：
+背景/表面：bg #000 · surface #1D1F25（ink，替代 #0D0D0F）· border #2A2D36
+文本：    text #FCF8F1（cream）· dim #9CA3AF · faint #6B6B72
+accent mint #4FD388（唯一彩色，与桌面 accent 同源）只用于四处：
   ① 需要你卡片（边框 + ◆ 标记 + 提示文字）② 激活态（导航点/焦点/选中）③ CTA 主按钮 ④ 进行中的时间线节点/进度焦点
-FAB：    纯白 #FAFAFA 圆形 + 黑色＋号
-阶段徽标：全部中性化——#1C1C20 底 + #C9C9D4 字（不再彩虹徽标；阶段差异靠文字）
-verdict： 白 ✓ / 灰 ✕（PASS/FAIL 不引入绿红）
-语义：    「需要你」是唯一允许抢眼的元素；「在跑」用灰边白点或紫点（激活态语义）
+FAB：    纯白 #FCF8F1 圆形 + 黑色＋号
+阶段徽标：全部中性化——#24272F 底 + #C9C9D4 字（不再彩虹徽标；阶段差异靠文字）
+verdict： 白 ✓ / 灰 ✕（PASS/FAIL 不引入绿红；mint 是 accent 不是 success 专用色）
+语义：    「需要你」是唯一允许抢眼的元素；「在跑」用灰边白点或 mint 点（激活态语义）
 ```
 
-theme.dart 的 `kMafwPrimary` 语义从「全局主色」降为「accent」（Material 3 `ColorScheme.primary` 仍可指向紫，但组件用法按上表收敛）。粉 #EC4899 / 青 #22D3EE / 琥珀 #F59E0B 从 UI 语义色退役（保留给 markdown 内容渲染等非 chrome 场景可再议，默认不进 chrome）。
+theme.dart 的 accent 语义从「全局主色」收敛为「B accent」（Material 3 `ColorScheme.primary` 指向 mint，组件用法按上表收敛）。粉 #EC4899 / 青 #22D3EE / 琥珀 #F59E0B 从 UI 语义色退役（保留给 markdown 内容渲染等非 chrome 场景可再议，默认不进 chrome）。
+
+### 3.1 品牌修订（Orcalore，用户 2026-11-06 拍板）
+
+前置：`docs/superpowers/specs/2026-11-05-orcalore-lore-character-design.md`（产品名 Orcalore；Lore = 记忆珍珠/品牌形象；Pod 角色不改名；ink/cream/white + mint accent）。
+
+**用户三项裁决**：① 品牌一致（accent 用 mint #4FD388，弃 AI 紫）；② 技术标识现在就改；③ 品牌位放**工作 tab 顶部一行**。
+
+| 层 | 决定 |
+|---|---|
+| 品牌位 | 工作 tab 顶部一行：**Lore 20px 圆形图标 + Orcalore 字标**，项目切换器在右侧（同一行）；「我的」关于页同款 lockup |
+| 应用图标 | `assets/brand/lore/platform/` 的 Android 包（5 密度 + adaptive/monochrome，ink `#1D1F25` 底）；随 v1 首发（spec 的「等改名一起上」即本批） |
+| MaterialApp title / Launcher label | `Orcalore` |
+| applicationId / namespace | `ai.mafw.mafw_mobile` → **`ai.orcalore.mobile`**（换 appId = 全新应用，pre-release 无迁移） |
+| pubspec name | `mafw_mobile` → **`orcalore_mobile`** |
+| 配对深链 | `mafw://pair` → **`orcalore://pair`**，三处**锁步**：gateway `mobile/pairing.ts`、mobile `pairing_page.dart` 解析、Manifest intent-filter |
+| FCM 通知通道 | `mafw_messages`/`mafw_goals` → **`orcalore_messages`/`orcalore_goals`**（Android 通知设置用户可见） |
+| env 变量 | `MAFW_SERVER_API_TOKEN`/`MAFW_MOBILE_TAILSCALE_URL` **暂留原名**（归后续改名专项文档；mobile 文档同步说法） |
+
+**不改名（避免契约破坏/无谓 churn）**：HTTP 路径 `/api/*`；事件信封 `mafw_event` + canonical 词汇（若改名专项动，移动端 `isCanonical` 一行 + vocabulary parity 测试锁步）；`@mafw/sdk`（mobile 未依赖）；Dart 内部类名 `MafwSession`/`MafwMessage`/`MafwEvent`/`kMafw*`（纯代码不用户可见）。
+
 
 
 1. **消息优先**：所有 agent 交互都是聊天流，不是表单/工单；composer 永远在场；
@@ -65,7 +85,7 @@ theme.dart 的 `kMafwPrimary` 语义从「全局主色」降为「accent」（Ma
 ```
 手机                                     家里 PC（tailnet 节点）
 ┌──────────────────────────┐            ┌─────────────────────────────┐
-│ MAFW Mobile (Flutter)     │            │ gateway :3000               │
+│ Orcalore Mobile (Flutter) │            │ gateway :3000               │
 │  ├ GatewayClient (HTTP+token) ────────▶│  /api/projects/:id/work     │
 │  ├ WsClient v2 (header auth) ─────────▶│  /api/pods/* · tech-lead/*  │
 │  ├ Hive 缓存               │  WireGuard │  /api/chat/enriched         │
@@ -74,7 +94,7 @@ theme.dart 的 `kMafwPrimary` 语义从「全局主色」降为「accent」（Ma
                                          └─────────────────────────────┘
 ```
 
-复用面（不重造）：配对深链与 `detectReachableHost()`（Tailscale 优先）、`/api/ws` 事件管道（canonical + flat 帧同流）、chat 渲染管线（flat DTO + 事件驱动）、词汇 parity 测试（37 词与 SDK 钉死）、Hive 离线兜底、AI 紫主题。
+复用面（不重造）：配对深链与 `detectReachableHost()`（Tailscale 优先）、`/api/ws` 事件管道（canonical + flat 帧同流）、chat 渲染管线（flat DTO + 事件驱动）、词汇 parity 测试（37 词与 SDK 钉死）、Hive 离线兜底、Orcalore B-mint 主题。
 
 ## 5. Phase 0：gateway 先行修复（独立交付，D3）
 
@@ -94,7 +114,7 @@ theme.dart 的 `kMafwPrimary` 语义从「全局主色」降为「accent」（Ma
 - **Android cleartext**：`network_security_config.xml` 增加 `<domain-config cleartextTrafficPermitted="true"><domain>ts.net</domain></domain-config>`（域后缀匹配 ts.net 全部子域）；**不**全局放开。裸 100.x IP 的放行行为是验证点 V1（域条目按 Android 文档只匹配主机名）——若 IP 不被覆盖：App 内把 IP 形态映射为主机名输入提示，或接受仅主机名路径。
 - **apiToken**：`MAFW_SERVER_API_TOKEN` 必须设置（空 token = 远端全拒，auth.ts:43）。setup 文档写明。
 - **WS 鉴权迁移 header**：`IOWebSocketChannel.connect(url, headers: {Authorization: Bearer})`（dart:io 支持；现有「不支持 header」注释是误判）——为将来 serve 并存留余地；`deviceId` 仍走 query（PushGateway 在线追踪）。
-- **配对**：Manifest 增加 `mafw://` intent-filter（现有配对页/QR/nonce verify 全复用）；配对 URL 主机名经 P0-3 的 `mobile.tailscaleUrl` 配置（config.yaml 或 env），配对码即给 MagicDNS 主机名。
+- **配对**：Manifest 增加 `orcalore://` intent-filter（现有配对页/QR/nonce verify 全复用）；**深链 scheme 改名锁步三处**（gateway `mobile/pairing.ts` 生成、mobile `pairing_page.dart` 解析、Manifest intent-filter）；配对 URL 主机名经 P0-3 的 `mobile.tailscaleUrl` 配置（config.yaml 或 env），配对码即给 MagicDNS 主机名。
 - **重连**：接线 WsClientV2 + 修复 SmartReconnect 持久化 bug（`toString()`→`jsonEncode`，smart_reconnect.dart:182-183）；移除 v1 无上限重连路径。
 - **缺省清理**：SecureConfigStore 缺省 `http://127.0.0.1:3000` 改为空（未配置态）；mDNS 发现结果标注「局域网明文」警告（现状已有）但不再与禁明文策略自相矛盾（127.0.0.1 本机路径是 adb reverse 开发场景，文档化）。
 - **mDNS 与 Tailscale 并存**：配对页发现列表保持现状（mDNS=LAN），Tailscale 场景走扫码/手输；不做 Tailscale 网络自动发现（BRAINSTORMING 旧提议，留待后续）。

@@ -1615,10 +1615,10 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
   1.3px 线宽重描（弃粗体气泡/放大镜）；`new-action` 去虚线改实心 accent 14% tint；gap 5→8px、padding 8→10px。
 - **测试**：新增 `composer-session-menu-wiring`（6 例）、`session-config-menu-model`（8 例）、
   session-switch gate（8 例）、session-config supported（2 例）+ wiring（1 例）、flow-cards session.config（2 例）、
-  gateway `opencode-agent-roles`（4 例）+ view-projections 角色标记（1 例）+ SDK agent 字段（1 例）、
+  gateway `opencode-agent-roles`（4 例）+ `opencode-thinking-level`（4 例）+ view-projections 角色标记（1 例）+ SDK agent 字段（1 例）、
   session-events 覆盖保持；更新 `design-contract`/`composer-toolbar-css`（含源序守卫）/`agent-identity`/
   `lead-coordinator-wiring`/`duplex-voice-wiring`（麦克风单入口 3→2）。desktop **2829/2829**（617 suites，较批前 2810 净 +19）、
-  gateway **4735/4735（599 suites）**、SDK **199/199**；`tsgo --noEmit -p tsconfig.json` / gateway `tsc` /
+  gateway **4771/4771（604 suites）**、SDK **199/199**；`tsgo --noEmit -p tsconfig.json` / gateway `tsc` /
   `electron-vite build` rc=0。
 - **终审（deepseek-v4.1-flash）修复**（commit `cca48dd4`）：2 Critical + 2 Important 已修——
   ① `thinkingLevelSupported` 生产恒 true（`index.ts` 恒注入抛错 wrapper）→ 新增
@@ -1637,9 +1637,11 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
   **契约边界收口（2026-11-04）**：`thinkingLevelSupported` 探针从「直摸 `runtime.session.setThinkingLevel`」
   改为 **`RuntimeAccess.can('session.setThinkingLevel')`** 契约面判定（wiring 测试钉 `can('session.setThinkingLevel')`）。
   发现并记录：opencode 的推理档位实际是 **model variant**（`/api/model` 的 `variants[{id,settings.reasoningEffort}]`，
-  `model_config.variant` 切换）——属 runtime 内部实现；中性契约只暴露 `session.setThinkingLevel`，
-  opencode 未实现 → 菜单显式降级 `—`；桌面**不分叉 runtime、不暴露 variant 目录**（契约隔绝）。
-  若未来要在 UI 暴露 variant，应由 runtime 适配器实现该 surface 或走 Experience 扩展。
+  `model_config.variant` 切换）——属 runtime 内部实现；中性契约只暴露 `session.setThinkingLevel`。
+  **2026-11-06 补齐**：opencode 适配器实现该 surface（`thinkingVariantForLevel` 把七档映射到当前模型 variants：
+  精确 id/effort 优先、缺档取最近（平局取更高）、`off` 优先 `none`/`thinking.disabled` 否则降级最低档），
+  复用 `POST /session/:id/model` 切 variant；`thinkingLevelSupported` 随之变 true，桌面菜单可直接选档。
+  variant 目录仍只存在于适配器，桌面**不分叉 runtime、不暴露目录**（契约隔绝）。
 - **Agent 菜单契约中立化（2026-11-04）**：`plan`/`build` 不再进入前端——Agent 行选项、Tab 循环、偏差徽标
   全部从 `MafwAgent` DTO 派生（`session-config-menu-model.ts` 的 `agentMenuOptions`/`nextRuntimeAgent`/`agentBadge`；
   只列 `source:'runtime' && selectable`，默认 agent 置顶）。runtime 的「默认主 agent / 规划 mode」由适配器翻译为
@@ -1764,7 +1766,7 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
 
 调研：`docs/research/2026-11-05-mobile-tailscale-pod-research.md`（四路盘点 + Tailscale 方案对比 + 三诉求 gap 矩阵）。
 设计：`docs/superpowers/specs/2026-11-05-mobile-tailscale-pod-app-design.md`（用户拍板 D1 打开才看无离线推送 / D2 直连 tailnet /
-D3 鉴权洞独立先行 / D4 沿用桌面 Goal→Tech Lead 范式 / D5 含「需要你」应答 / D6 UI 参考 Dots+Muse+Grok，配色裁定 B「Grok 单色极简」）。
+D3 鉴权洞独立先行 / D4 沿用桌面 Goal→Tech Lead 范式 / D5 含「需要你」应答 / D6 UI 参考 Dots+Muse+Grok，配色裁定 B「Grok 单色极简」；**2026-11-06 品牌修订：产品名 Orcalore**——accent 紫→mint `#4FD388`（桌面同款）、ink `#1D1F25`/cream `#FCF8F1` 中性档、工作 tab 顶部品牌行（Lore 20px + Orcalore 字标）、技术标识现在改：applicationId `ai.orcalore.mobile`、pubspec `orcalore_mobile`、深链 `orcalore://pair`（gateway pairing.ts/mobile/Manifest 三处锁步）、FCM 通道 `orcalore_*`；env `MAFW_*` 与信封 `mafw_event`/Dart 内部类名暂留）。
 计划：`plans/2026-11-05-mobile-gateway-p0.md`（已执行）+ `plans/2026-11-05-mobile-app-v1.md`（P1-P4 待执行）。
 
 - **Mobile Gateway P0 已交付（commits `527048cf`/`4d360d5f`/`110ab302`/`d8bfc043`/`40e627cf`）**：

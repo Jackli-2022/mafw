@@ -1,19 +1,20 @@
-# Mobile App v1 Implementation Plan（Tailscale 直连 + Pod）
+# Orcalore Mobile App v1 Implementation Plan（Tailscale 直连 + Pod）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在现有 `mobile/` Flutter 客户端上交付 v1：B 配色 3-tab 壳、Tailscale 直连收尾、work.overview 看 goal 跑动、创建讨论 + Tech Lead 讨论、自由讨论 + 交给 Lead、需要你三形态应答。
+**Goal:** 在现有 `mobile/` Flutter 客户端上交付 v1：Orcalore B-mint 品牌 + 3-tab 壳、Tailscale 直连收尾、work.overview 看 goal 跑动、创建讨论 + Tech Lead 讨论、自由讨论 + 交给 Lead、需要你三形态应答。
 
 **Architecture:** 移动端只消费 flat View DTO + canonical/flat 双形态事件（既有 parity 测试守卫）；所有 agent 交互=消息流复用现有 chat 管线；讨论发送硬走 `tech-lead/messages` 专用通道；「需要你」内嵌 Goal 详情。前置：`docs/superpowers/plans/2026-11-05-mobile-gateway-p0.md`（P0）先行合入。
 
 **Tech Stack:** Flutter（CI 钉 3.47.0，Dart ^3.13）、http/web_socket_channel/hive_ce/riverpod-free（setState/InheritedWidget 现状）、flutter_test。
 
-**Spec:** `docs/superpowers/specs/2026-11-05-mobile-tailscale-pod-app-design.md`（§6-§11）；调研证据 `docs/research/2026-11-05-mobile-tailscale-pod-research.md`。
+**Spec:** `docs/superpowers/specs/2026-11-05-mobile-tailscale-pod-app-design.md`（§3.1 Orcalore 品牌修订 + §6-§11）；调研证据 `docs/research/2026-11-05-mobile-tailscale-pod-research.md`。
 
 ## Global Constraints
 
-- B 配色 token（spec §3）：bg `#000` / surface `#0D0D0F` / border `#232327` / text `#FAFAFA` / dim `#9CA3AF`；accent 紫 `#7C3AED` **仅** ①需要你 ②激活态 ③CTA ④进行中节点；FAB 纯白 `#FAFAFA`；阶段徽标中性（`#1C1C20` 底 + `#C9C9D4` 字）；无绿红 verdict
-- 事件词汇 parity：`mafw_models.dart` 词汇表与 `packages/gateway-sdk/src/events.ts` 集合+顺序钉死（`vocabulary_parity_test.dart`）——改词表必须同步
+- **Orcalore B-mint token（spec §3/§3.1）**：bg `#000` / surface `#1D1F25` / border `#2A2D36` / text `#FCF8F1` / dim `#9CA3AF`；accent **mint `#4FD388`**（桌面同款，唯一彩色）**仅** ①需要你 ②激活态 ③CTA ④进行中节点；FAB 纯白 `#FCF8F1`；阶段徽标中性（`#24272F` 底 + `#C9C9D4` 字）；无绿红 verdict
+- **品牌身份**：MaterialApp title / Launcher label = `Orcalore`；applicationId `ai.orcalore.mobile`；pubspec `orcalore_mobile`；深链 `orcalore://pair`（三处锁步）；FCM 通道 `orcalore_messages`/`orcalore_goals`；env `MAFW_*` 暂留原名（改名专项文档）
+- 事件词汇 parity：`mafw_models.dart` 词汇表与 `packages/gateway-sdk/src/events.ts` 集合+顺序钉死（`vocabulary_parity_test.dart`）——改词表必须同步；**信封 `mafw_event` 与 Dart 内部类名不改**（spec §3.1「不改名」清单）
 - 历史唯一形状 `{data: MafwMessage[], nextCursor}`；全页解析失败抛「upgrade gateway」可操作错误（`gateway_client.dart:70-82` 既有模式）
 - **发送路由纪律**：Goal 绑定的讨论视图绝不调 `sendEnriched`/`promptAsync`（丢 agent 绑定 + ContextManifest）
 - loopback-only 端点（`/a2a`、terminal）不触碰；媒体走 `/api/mobile/media/*`
@@ -25,42 +26,45 @@
 1. WS 断线重连后丢事件 → 重连成功必须触发 work/goal 数据 refetch（Task 5 测试）
 2. 终态 Goal 的 `GET tech-lead` 409 / `{sessionID:null}` → 「讨论已归档」+ transcript，不弹错误（Task 12 测试）
 3. plan-approval 提交遇 409 `stale_plan` → 提示重拉计划，不静默失败（Task 9 测试）
-4. 点跨项目 attention 条目 → 先切换 active 项目再开 Goal 详情（Task 8 测试）
+4. 点跨项目 attention 条目 → 先切换 active 项目再开 Goal 详情（Task 7 测试）
 5. baseUrl 为裸 `100.x` IP → 配对/设置页警告并建议 MagicDNS 主机名（Task 2 测试）
 
 ---
 
-## Phase 1 · 连接收尾
+## Phase 1 · 品牌 + 连接收尾
 
-### Task 1: B 配色 token 落地
+### Task 1: Orcalore 品牌基础（主题 token + 应用身份）
 
 **Files:**
 - Modify: `mobile/lib/src/theme.dart`（全量重写 ColorScheme/组件色）
+- Modify: `mobile/lib/main.dart:288`（title → `Orcalore`）、`mobile/android/app/src/main/AndroidManifest.xml`（label → `Orcalore`）、`mobile/android/app/build.gradle.kts`（applicationId/namespace → `ai.orcalore.mobile`）、`mobile/pubspec.yaml`（name → `orcalore_mobile`）、App 图标资源（从 `assets/brand/lore/platform/android/` 导入各密度 + adaptive/monochrome，ink `#1D1F25` 底）
 - Test: `mobile/test/theme_tokens_test.dart`
 
 **Interfaces:**
-- Produces: `theme.dart` 导出 `class MafwPalette { static const black, surface, border, text, dim, faint, accent, accentDim, badgeBg, badgeText }`（值 = Global Constraints 的 B token 表）；`kMafwPrimary` 保留为 `Color(0xFF7C3AED)`（语义=accent）
+- Produces: `theme.dart` 导出 `class MafwPalette { static const black, surface, border, text, dim, faint, accent, accentDim, badgeBg, badgeText }`（值 = Global Constraints 的 Orcalore token 表）；`kMafwPrimary` 改为 `Color(0xFF4FD388)`（mint，语义=accent）
+- 应用身份：title/label `Orcalore`、`ai.orcalore.mobile`、`orcalore_mobile`（Manifest/gradle/pubspec 非 flutter-test 可断言，靠 P1 冒烟 `flutter build` + 安装验证）
 
-- [ ] **Step 1: 写失败测试** — 断言 11 个 token 常量与 spec §3 表逐值相等；断言 `ThemeData` 的 `scaffoldBackgroundColor == black`、`colorScheme.primary == accent`
+- [ ] **Step 1: 写失败测试** — 断言 11 个 token 常量与 spec §3 表逐值相等（accent == `0xFF4FD388`、surface == `0xFF1D1F25`）；断言 MaterialApp `title == 'Orcalore'`（widget 冒烟）
 - [ ] **Step 2: 跑测试确认失败** — `cd mobile && flutter test test/theme_tokens_test.dart` FAIL
-- [ ] **Step 3: 实现** — 按 token 表重写 theme.dart；退役粉/青/琥珀 chrome 用法（theme 内不引用）
-- [ ] **Step 4: 跑测试 + analyze** — PASS + `flutter analyze` 零告警
-- [ ] **Step 5: Commit** — `feat(mobile): B-way monochrome theme tokens (Grok minimal)`
+- [ ] **Step 3: 实现** — 按 token 表重写 theme.dart（accent mint、ink/cream 中性）；改 title/label/applicationId/pubspec name；从 Lore platform pack 导入 Android 图标（adaptive + monochrome 5 密度）
+- [ ] **Step 4: 跑测试 + analyze** — PASS + `flutter analyze` 零告警；`flutter build apk --debug` 构建通过（图标/appId 生效性冒烟）
+- [ ] **Step 5: Commit** — `feat(mobile): Orcalore brand foundation (mint tokens, app identity, lore icon)`
 
-### Task 2: 连接配置收尾（URL 校验 + 缺省清理 + Android 配置）
+### Task 2: 连接配置收尾（URL 校验 + 深链改名 + Android 配置）
 
 **Files:**
-- Modify: `mobile/lib/src/config/connection_config.dart`（新增 `validateBaseUrl`）、`mobile/lib/src/services/secure_config_store.dart:21`（缺省改空）、`mobile/lib/src/pages/connection_settings_page.dart` 与 `pairing_page.dart`（接入校验/提示文案）、`mobile/android/app/src/main/AndroidManifest.xml`（`mafw://` intent-filter）、`mobile/android/app/src/main/res/xml/network_security_config.xml`（ts.net 域放行）
-- Test: `mobile/test/connection_url_test.dart`
+- Modify: `mobile/lib/src/config/connection_config.dart`（新增 `validateBaseUrl`）、`mobile/lib/src/services/secure_config_store.dart:21`（缺省改空）、`mobile/lib/src/pages/connection_settings_page.dart` 与 `pairing_page.dart`（接入校验/提示文案 + `orcalore://pair` 解析）、`mobile/android/app/src/main/AndroidManifest.xml`（`orcalore://` intent-filter）、`mobile/android/app/src/main/res/xml/network_security_config.xml`（ts.net 域放行）
+- **Gateway 锁步**：`gateway/src/mobile/pairing.ts`（`mafw://pair` → `orcalore://pair`）+ `gateway/tests/unit/mobile/` 相关断言
+- Test: `mobile/test/connection_url_test.dart`、`mobile/test/pairing_page_test.dart`（13 例 scheme 断言同步改）
 
 **Interfaces:**
 - Produces: `enum UrlCheck { ok, bareIpWarn, plaintextLanWarn, invalid }` + `UrlCheck checkBaseUrl(String url)` — `http://*.ts.net` → ok；`http://100.64/10.…` 或裸 IP → bareIpWarn（提示改 MagicDNS 主机名）；`http://192.168./10./172.16.` → plaintextLanWarn（既有警告保留）；非 http(s) → invalid
-- network_security_config：`<domain-config cleartextTrafficPermitted="true"><domain>ts.net</domain></domain-config>`（base 保持 false）；Manifest 增加 `<data android:scheme="mafw"/>` intent-filter
+- network_security_config：`<domain-config cleartextTrafficPermitted="true"><domain>ts.net</domain></domain-config>`（base 保持 false）；Manifest `<data android:scheme="orcalore"/>`；gateway pairing 深链前缀 `orcalore://pair`
 
-- [ ] **Step 1: 写失败测试** — checkBaseUrl 五形态断言；SecureConfigStore 无配置时 `load()` 返回空 baseUrl（非 `http://127.0.0.1:3000`）
-- [ ] **Step 2: 确认失败** — `flutter test test/connection_url_test.dart` FAIL
-- [ ] **Step 3: 实现** — 纯函数 + 存储缺省改空 + 两个页面对 warn/invalid 的提示文案（主机名建议含在文案里）+ `mobile/README.md` 连接章节更新（`MAFW_SERVER_API_TOKEN` 必设、MagicDNS 主机名优先与 Tailscale DNS 默认开启【V2】、`mobile.tailscaleUrl`/env 配置法）
-- [ ] **Step 4: 跑测试 + Commit** — PASS；`git commit -m "feat(mobile): url form check (ts.net first), empty default, mafw:// intent-filter, ts.net cleartext domain"`
+- [ ] **Step 1: 写失败测试** — checkBaseUrl 五形态断言；SecureConfigStore 无配置时 `load()` 返回空 baseUrl（非 `http://127.0.0.1:3000`）；pairing 解析仅接受 `orcalore://pair`（旧 `mafw://pair` 拒绝）
+- [ ] **Step 2: 确认失败** — `flutter test test/connection_url_test.dart test/pairing_page_test.dart` FAIL
+- [ ] **Step 3: 实现** — 纯函数 + 存储缺省改空 + 两个页面对 warn/invalid 的提示文案（主机名建议含在文案里）+ scheme 三处锁步（gateway pairing.ts / mobile parser / Manifest）+ `mobile/README.md` 连接章节更新（`MAFW_SERVER_API_TOKEN` 必设、MagicDNS 主机名优先与 Tailscale DNS 默认开启【V2】、`mobile.tailscaleUrl`/env 配置法、Orcalore 命名）
+- [ ] **Step 4: 跑测试 + Commit** — PASS；`git commit -m "feat(mobile): url form check + orcalore://pair scheme (gateway/mobile lockstep), ts.net cleartext domain"`
 
 ### Task 3: WS 层 v2 接线 + SmartReconnect 修复
 
@@ -124,7 +128,7 @@
 - [ ] **Step 3: 实现** — 重构（goal_detail_page 旧代码暂留，Task 8 重写）
 - [ ] **Step 4: 跑全量（既有 sessions/widget 用例同步迁移）+ Commit** — `git commit -m "feat(mobile): 3-tab shell (work/chat/me)"`
 
-### Task 7: 工作 tab（项目切换 + 需要你置顶 + 五桶 + FAB）
+### Task 7: 工作 tab（品牌行 + 项目切换 + 需要你置顶 + 五桶 + FAB）
 
 **Files:**
 - Create: `mobile/lib/src/pages/work_tab.dart`、`mobile/lib/src/services/active_project.dart`
@@ -132,13 +136,13 @@
 - Test: `mobile/test/work_tab_test.dart`
 
 **Interfaces:**
-- Produces: `ActiveProjectStore`（InheritedWidget 或顶层单例：`current(): String?` / `set(String dir)`，SharedPreferences 持久）；`WorkTab` 布局 = 项目切换器（`projects()` → 底部弹层）→ 需要你区（presence.attention 条目卡）→ Lead 入口条（占位，Task 14 接通）→ 五桶分组（needs_you/queued/in_progress/result_ready/ended，counts 徽标）→ FAB（占位回调，Task 11 接 composer）
+- Produces: `ActiveProjectStore`（InheritedWidget 或顶层单例：`current(): String?` / `set(String dir)`，SharedPreferences 持久）；`WorkTab` 布局 = **顶部品牌行（Lore 20px 圆形图标 + `Orcalore` 字标在左，项目切换器在右**，`projects()` → 底部弹层）→ 需要你区（presence.attention 条目卡）→ Lead 入口条（占位，Task 14 接通）→ 五桶分组（needs_you/queued/in_progress/result_ready/ended，counts 徽标）→ FAB（占位回调，Task 11 接 composer）
 - 刷新：15s Timer + `onReconnected` + `refreshWork` 效果（局部：按 goalId 更新对应卡片，不整页 setState 全拉）；attention 条目点击 → `onOpenGoal(projectId, goalId)`（跨项目先 `ActiveProjectStore.set`）
 
-- [ ] **Step 1: 写失败测试** — ① 五桶渲染（feed WorkOverview fixture）；② 跨项目 attention 点击后 ActiveProjectStore.current == 条目 projectId 且 onOpenGoal 收到 goalId；③ refreshWork 事件只触发数据 refetch 不重建 tab（fake client 计数）
+- [ ] **Step 1: 写失败测试** — ① 顶部品牌行渲染（`Orcalore` 字标 + Lore 图标 asset 存在）；② 五桶渲染（feed WorkOverview fixture）；③ 跨项目 attention 点击后 ActiveProjectStore.current == 条目 projectId 且 onOpenGoal 收到 goalId；④ refreshWork 事件只触发数据 refetch 不重建 tab（fake client 计数）
 - [ ] **Step 2: 确认失败** — FAIL
-- [ ] **Step 3: 实现** — 页面 + store；无项目/无 Pod/未连接三空态（spec §7.3）
-- [ ] **Step 4: 跑测试 + Commit** — `git commit -m "feat(mobile): work tab (buckets, attention, active project)"`
+- [ ] **Step 3: 实现** — 页面 + store + 品牌行（Lore 资产从 `assets/brand/lore/avatar/circle/Lore_avatar_20.png` 拷入 mobile assets）；无项目/无 Pod/未连接三空态（spec §7.3）
+- [ ] **Step 4: 跑测试 + Commit** — `git commit -m "feat(mobile): work tab (brand row, buckets, attention, active project)"`
 
 ### Task 8: Goal 详情页（重写）
 
@@ -148,7 +152,7 @@
 
 **Interfaces:**
 - Consumes: Task 4 的 `PodGoalView`；本任务自带四个 client 方法与模型（放进 `pod_models.dart`）：`goalTimeline(String goalId)`（`{goal,nodes,artifacts,outcome}`）、`goalRevisions(podId, goalId)`（`List<RevisionInfo{revision,status,verdict}>`）、`goalResult(podId, goalId)`（`GoalResultInfo{verdict,acceptance,evidence,feedback}`）、`rejectGoal(podId, goalId, feedback)`（POST `/api/pods/:podId/goals/:goalId/reject`）
-- Produces: `GoalDetailPage(podId, goalId, {initial: PodGoalView?})` — 头部（title/stage 徽标中性/revision/strategy）+ 需要你操作区（Task 9/13 填充组件位）+ 节点时间线（done=白实心✓/active=紫环/pend=灰空心，节点展开 attempt/耗时/verdict）+ 当前行动条 + **版本历史区**（revisions 列表渲染）+ **结果区**（终态：verdict/acceptance/证据列表 + 打回按钮 → 反馈输入 → `rejectGoal`，成功提示「已开启 revision N+1」并刷新）+ 底部「与 Tech Lead 讨论」按钮（占位回调，Task 12 接通）
+- Produces: `GoalDetailPage(podId, goalId, {initial: PodGoalView?})` — 头部（title/stage 徽标中性/revision/strategy）+ 需要你操作区（Task 9/13 填充组件位）+ 节点时间线（done=白实心✓/active=mint 环/pend=灰空心，节点展开 attempt/耗时/verdict）+ 当前行动条 + **版本历史区**（revisions 列表渲染）+ **结果区**（终态：verdict/acceptance/证据列表 + 打回按钮 → 反馈输入 → `rejectGoal`，成功提示「已开启 revision N+1」并刷新）+ 底部「与 Tech Lead 讨论」按钮（占位回调，Task 12 接通）
 
 - [ ] **Step 1: 写失败测试** — timeline fixture 渲染（三态节点）；`GET /api/goals/:id` 旧形状不再被请求（fake client 断言未调用）；stage 徽标中性色（palette.badgeBg）
 - [ ] **Step 2: 确认失败** — FAIL
@@ -275,7 +279,7 @@
 
 ## 阶段末真机冒烟（每阶段完成后执行，记录进交付汇报）
 
-- **P1**：真 Tailscale（手机与 PC 同 tailnet）扫码配对 → MagicDNS 主机名连接 → chat 收发 + WS 事件通；裸 IP 输入出现警告；杀 App 重进 SmartReconnect 状态恢复
+- **P1**：真 Tailscale（手机与 PC 同 tailnet）**Orcalore 桌面配对码（`orcalore://pair`）**扫码 → MagicDNS 主机名连接 → chat 收发 + WS 事件通；裸 IP 输入出现警告；杀 App 重进 SmartReconnect 状态恢复；桌面 Config 生成配对码与 gateway pairing 锁步验证（scheme 全链一致）
 - **P2**：工作 tab 五桶与桌面 work.overview 一致；goal 跑动事件（phase_transition/goal_node）驱动卡片变化；跨项目 attention 点击切换正确
 - **P3**：手机建讨论 Goal → Tech Lead 流式回复可见 → 终态后重进显示归档 transcript；plan 批准在手机上完成一次（含 stale_plan 场景）
 - **P4**：跟 Lead 聊一轮；普通会话长按交给 Lead → 桌面能看到新 Goal
