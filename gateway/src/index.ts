@@ -67,7 +67,8 @@ import { PodGoalRevisionService } from './core/pod/pod-goal-revision-service';
 import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodDirectionService } from './core/pod/pod-direction-service';
-import { PodTechLeadService } from './core/pod/pod-tech-lead-service';
+import { PodTechLeadService, TECH_LEAD_AGENT } from './core/pod/pod-tech-lead-service';
+import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
 import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
 import { PodContextSelectionService } from './mcp/handlers/pod-context-select';
 import { ProbeWorkspaceFactory } from './core/pod/pod-probe-workspace';
@@ -2870,7 +2871,10 @@ class MafwScheduler {
           video: config.raw.media.video,
           audio: config.raw.media.audio,
         },
-        goal: { nodeModel: config.raw.goal?.nodeModel ?? null },
+        goal: {
+          nodeModel: config.raw.goal?.nodeModel ?? null,
+          techLeadModel: config.raw.goal?.techLeadModel ?? null,
+        },
       }),
       invalidateScanService: () => { this.scanService = null; },
     };
@@ -4087,6 +4091,20 @@ class MafwScheduler {
 
     this.podStore = new PodStore(this.getGatewayDb().getStore());
     this.podEventService = new PodEventService({ store: this.podStore, mafwDir: this.mafwDir });
+    // Retention: p3 is informational; drop old seen p3 rows + audit files once a day
+    // (and once at startup so a long-idle install catches up immediately).
+    const prunePodEvents = () => {
+      try {
+        const out = this.podEventService?.prune();
+        if (out && (out.events > 0 || out.files > 0)) {
+          log.info(`[Pod] pruned ${out.events} stale p3 event(s), ${out.files} audit file(s)`);
+        }
+      } catch (err: any) {
+        log.warn(`[Pod] event prune failed (non-fatal): ${err?.message ?? err}`);
+      }
+    };
+    prunePodEvents();
+    setInterval(prunePodEvents, 24 * 60 * 60 * 1000).unref?.();
     this.podEventWake = new PodEventWake({
       events: this.podEventService,
       leadMemberId: (podId) => this.podStore?.getMemberByRole(podId, 'lead')?.id ?? null,
@@ -4360,17 +4378,25 @@ class MafwScheduler {
       store: this.podStore,
       pods: this.podService,
       sessions: this.podSessionSupervisor,
-      runtime: {
+      runtime: createTechLeadRuntimeAdapter({
         createSession: async ({ projectDir }) => {
           const created = await this.runtime!.session.create({ directory: projectDir });
-          return created.id;
+          return created;
+        },
+        // P0-4：v2 会话模型与 agent 解耦，建会话后显式绑模型（config.goal.techLeadModel
+        // 覆盖优先、身份内置兜底）。lazy 读 runtime：本闭包在 runtime 建好之前构造。
+        switchModel: (opts) => {
+          const fn = this.runtime?.session.switchModel;
+          return fn ? (fn as any).call(this.runtime!.session, opts) : Promise.resolve();
         },
         promptAsync: (opts) => this.runtime!.session.promptAsync(opts as any),
         messages: async ({ sessionID, limit }) => {
           const page: any = await this.runtime!.session.messages({ sessionID, limit });
           return { data: page?.data ?? [], nextCursor: page?.nextCursor };
         },
-      },
+        identityModel: this.identityRegistry?.get(TECH_LEAD_AGENT)?.model,
+        configModel: (config.raw as any)?.goal?.techLeadModel,
+      }),
       resolveProject: (requested) => {
         const canonical = canonicalProjectDir(requested || this.resolvedProjectDir());
         const hit = Array.from(this.registeredProjects.entries())

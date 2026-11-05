@@ -11,10 +11,14 @@ function makeDeps(overrides: any = {}) {
   let persistedRecall: any = { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' };
   let persistedMedia: any = { provider: 'xiaomi', model: 'mimo-v2.5', image: { provider: '', model: '' }, video: { provider: '', model: '' }, audio: { provider: '', model: '' } };
   let persistedGoal: any = { providerID: '', modelID: '' };
+  let persistedTechLead: any = { providerID: '', modelID: '' };
   return {
     persist: jest.fn().mockImplementation((o: any) => {
       if (o.recall) persistedRecall = o.recall.workerModel;
-      if (o.goal) persistedGoal = o.goal.nodeModel;
+      if (o.goal) {
+        if (o.goal.nodeModel) persistedGoal = o.goal.nodeModel;
+        if (o.goal.techLeadModel) persistedTechLead = o.goal.techLeadModel;
+      }
       if (o.media) {
         if (o.media.provider !== undefined) persistedMedia = { ...persistedMedia, ...o.media };
         else persistedMedia = { ...persistedMedia, ...o.media };
@@ -25,7 +29,7 @@ function makeDeps(overrides: any = {}) {
     currentConfig: jest.fn(() => ({
       recall: { workerModel: persistedRecall },
       media: persistedMedia,
-      goal: { nodeModel: persistedGoal },
+      goal: { nodeModel: persistedGoal, techLeadModel: persistedTechLead },
     })),
     invalidateScanService: jest.fn(),
     ...overrides,
@@ -247,5 +251,34 @@ describe('goal node model config', () => {
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     const res = await request(server, 'POST', { goal: { providerID: 'xiaomi', modelID: '' } });
     expect(res.status).toBe(400);
+  });
+
+  it('POST goal.techLeadModel 完整对 → 200 且 persist（不动 nodeModel）', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const res = await request(server, 'POST', { goal: { techLeadModel: { providerID: 'xiaomi', modelID: 'mimo-v2.5' } } });
+    expect(res.status).toBe(200);
+    expect(deps.persist).toHaveBeenCalledWith({ goal: { techLeadModel: { providerID: 'xiaomi', modelID: 'mimo-v2.5' } } });
+    expect(res.body.goal.techLeadModel).toEqual({ providerID: 'xiaomi', modelID: 'mimo-v2.5' });
+  });
+
+  it('POST goal.techLeadModel 半空对 → 400 且不 persist', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const res = await request(server, 'POST', { goal: { techLeadModel: { providerID: 'xiaomi', modelID: '' } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('goal.techLeadModel');
+    expect(deps.persist).not.toHaveBeenCalled();
+  });
+
+  it('POST goal.techLeadModel 空对 → 200 清空', async () => {
+    const deps = makeDeps();
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const res = await request(server, 'POST', { goal: { techLeadModel: { providerID: '', modelID: '' } } });
+    expect(res.status).toBe(200);
+    expect(deps.persist).toHaveBeenCalledWith({ goal: { techLeadModel: { providerID: '', modelID: '' } } });
   });
 });

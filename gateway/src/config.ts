@@ -50,6 +50,8 @@ export interface GatewayConfig {
   /** W1/W5a：goal 编排节点（plan/execute/review）模型覆盖；空对 = 身份内置模型。 */
   goal: {
     nodeModel?: { providerID: string; modelID: string };
+    /** P0-4：Tech Lead 讨论回合模型覆盖（空对 = 身份内置模型）。 */
+    techLeadModel?: { providerID: string; modelID: string } | null;
   };
   /** 移动端配对 URL 覆盖（Tailscale/MagicDNS 基地址）；空串 = 自动探测。
    *  Env（优先）: MAFW_MOBILE_TAILSCALE_URL。 */

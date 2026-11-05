@@ -25,7 +25,7 @@ export interface CurrentModelConfig {
     audio?: MediaModelRef;
   };
   /** W1/W5a：goal 编排节点模型覆盖（空对 = 身份内置模型）。 */
-  goal: { nodeModel?: ModelRef | null };
+  goal: { nodeModel?: ModelRef | null; techLeadModel?: ModelRef | null };
 }
 
 export interface ModelConfigDeps {
@@ -105,12 +105,20 @@ export async function handleModelConfigUpdate(
 
   const recallUpdate = body?.recall ?? null;
   const goalUpdate = body?.goal ?? null;
+  // goal 段兼容两种形状：顶层 providerID/modelID = nodeModel（既有契约）；
+  // goal.techLeadModel = P0-4 的 Tech Lead 模型覆盖。两者可独立提交。
+  const nodeUpdate = goalUpdate && (goalUpdate.providerID !== undefined || goalUpdate.modelID !== undefined)
+    ? goalUpdate
+    : null;
+  const techLeadUpdate = goalUpdate?.techLeadModel && typeof goalUpdate.techLeadModel === 'object'
+    ? goalUpdate.techLeadModel
+    : null;
   const mediaUpdate: Record<string, any> = {};
   for (const key of ['provider', 'model', ...MEDIA_MODALITIES]) {
     if (body?.media?.[key] !== undefined) mediaUpdate[key] = body.media[key];
   }
 
-  if (!recallUpdate && !goalUpdate && Object.keys(mediaUpdate).length === 0) {
+  if (!recallUpdate && !nodeUpdate && !techLeadUpdate && Object.keys(mediaUpdate).length === 0) {
     json(res, 400, { error: 'No model config specified' });
     return;
   }
@@ -121,12 +129,17 @@ export async function handleModelConfigUpdate(
     return;
   }
 
-  // W1/W5a：goal 节点模型——空对（双空串）= 恢复默认（身份内置模型）；半空对拒绝。
-  if (goalUpdate) {
-    const gp = goalUpdate.providerID ?? '';
-    const gm = goalUpdate.modelID ?? '';
-    if ((gp === '') !== (gm === '')) {
-      json(res, 400, { error: 'goal.nodeModel requires both providerID and modelID (or both empty to reset)' });
+  // goal 模型（nodeModel / techLeadModel）：空对（双空串）= 恢复默认（身份内置
+  // 模型）；半空对拒绝。
+  for (const [label, ref] of [
+    ['goal.nodeModel', nodeUpdate],
+    ['goal.techLeadModel', techLeadUpdate],
+  ] as Array<[string, any]>) {
+    if (!ref) continue;
+    const p = ref.providerID ?? '';
+    const m = ref.modelID ?? '';
+    if ((p === '') !== (m === '')) {
+      json(res, 400, { error: `${label} requires both providerID and modelID (or both empty to reset)` });
       return;
     }
   }
@@ -139,9 +152,11 @@ export async function handleModelConfigUpdate(
       if (err) { json(res, 400, { error: err, available }); return; }
     }
     // goal 空对 = 恢复默认，跳过校验；非空对按 recall 同规则校验。
-    if (goalUpdate && (goalUpdate.providerID || goalUpdate.modelID)) {
-      const err = validateRecall(goalUpdate, available);
-      if (err) { json(res, 400, { error: err, available }); return; }
+    for (const ref of [nodeUpdate, techLeadUpdate]) {
+      if (ref && (ref.providerID || ref.modelID)) {
+        const err = validateRecall(ref, available);
+        if (err) { json(res, 400, { error: err, available }); return; }
+      }
     }
     // Top-level media pair: both empty = reset to built-in default (skip);
     // partial pair falls back to the current persisted provider for validation.
@@ -167,7 +182,12 @@ export async function handleModelConfigUpdate(
   try {
     const overrides: Record<string, any> = {};
     if (recallUpdate) overrides.recall = { workerModel: { providerID: recallUpdate.providerID, modelID: recallUpdate.modelID } };
-    if (goalUpdate) overrides.goal = { nodeModel: { providerID: goalUpdate.providerID ?? '', modelID: goalUpdate.modelID ?? '' } };
+    if (nodeUpdate || techLeadUpdate) {
+      overrides.goal = {
+        ...(nodeUpdate ? { nodeModel: { providerID: nodeUpdate.providerID ?? '', modelID: nodeUpdate.modelID ?? '' } } : {}),
+        ...(techLeadUpdate ? { techLeadModel: { providerID: techLeadUpdate.providerID ?? '', modelID: techLeadUpdate.modelID ?? '' } } : {}),
+      };
+    }
     if (Object.keys(mediaUpdate).length > 0) overrides.media = mediaUpdate;
     deps.persist(overrides);
     if (recallUpdate) {
