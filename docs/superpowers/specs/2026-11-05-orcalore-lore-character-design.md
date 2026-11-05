@@ -50,11 +50,11 @@ MAFW 更名为 Orcalore 之后，需要一个能长期承载品牌、又能落�
 | 层 | 名称 | 说明 |
 |---|---|---|
 | 产品 | **Orcalore** | 品牌 / 海 / 世界 |
-| 角色 | **Lore** | 记忆珍珠；**Lead 的视觉身份 / 头像**；Pod 的记忆守护者 / 信使 |
-| 角色位 | **Lead** | 仍是 Lead，不改名；Lore 是它的脸，不是它的名字 |
+| 角色 | **Lore** | 记忆珍珠；**品牌形象 / 左上品牌位**；Pod 的记忆守护者 / 信使（不是 Lead 头像） |
+| 角色位 | **Lead** | 仍是 Lead，不改名；保留 L 徽标 / 首字母，不使用 Lore 头像 |
 | 角色位 | **Tech Lead / Builder / Reviewer** | 不改名；保留各自角色色与字母/几何标记 |
 
-- Lore 是**产品级角色**，也是 **Lead 的视觉身份 / 头像**；Lead 名字仍是 Lead，不改名。
+- Lore 是**产品级角色 / 品牌形象**；**不是 Lead 的头像**；Lead 保留角色标记（L 徽标 / 首字母），不改名。
 - 其他角色（Tech Lead / Builder / Reviewer）保留角色色与字母/几何标记，不使用 Lore。
 - Lore 同时可作为记忆面板的 curator / 空态角色；不是第二个吉祥物。
 - Orca 不再作为视觉主体；`Orcalore` 里的 Orca 作为「海 / 世界」的命名隐喻保留，视觉上只继承 ink / cream / white 配色。
@@ -204,7 +204,7 @@ Base 不变，配件可换；不超过 10 个，全部 clip-on。
 | App icon / 安装器 | Lore 珍珠主图 | 固定 |
 | 托盘 | macOS 单色 template；Windows/Linux 彩色 | 固定 |
 | Favicon | 珍珠 + 高光 | 固定 |
-| Lead 头像 | Lead 用 Lore 珍珠头像；名字仍叫 Lead | 固定 |
+| Lead 标记 | Lead tab / 左栏资源行保持 L 徽标 / 首字母；不使用 Lore | 固定 |
 | Onboarding | Lore + 线 + 第一颗珍珠 | 一次 |
 | 空态 | Lore idle / sleepy | 低 |
 | 记忆面板 | Lore 作为 curator；珍珠 = 记忆卡 | 中 |
@@ -235,7 +235,7 @@ Base 不变，配件可换；不超过 10 个，全部 clip-on。
 - App icon：16 / 24 / 32 / 48 / 64 / 128 / 256 / 512 / 1024 PNG；ICO；ICNS（824 网格）。
 - Tray：16 / 20 / 24 / 32 + `@2x` 单色 template；Windows/Linux 彩色。
 - Favicon：16 / 32 / 48。
-- Lead avatar：用户生成的 Avatar pack 15 档（16/20/24/28/32/40/48/64/80/96/128/160/256/512/1024），圆形 + 透明两版；16/20/24 简化（无线/信笺），28+ 带细线/信笺；UI 使用 **32px 圆形**（ProjectResources Lead 行）；**SessionStrip Lead tab 不放大头像**（2026-11-05 用户决定），保留 L 角色徽标；16px 留作未来其他内联位。
+- Lore 当前只用于**左上品牌位**（20px 圆形，显示 18px + Orcalore 字标）；Avatar pack 15 档保留为未来品牌素材；Lead tab / 左栏资源行保持 L / 首字母，**不替换 Lead 头像**。
 - companion（可选）：64 / 128。
 - Character sheet：front / side / back；8 个表情；6 个配件。
 - Desktop pet sprite：idle / blink / thinking / happy / sleepy / error / handoff；每状态 4–8 帧；sprite sheet。
@@ -297,7 +297,7 @@ assets/brand/lore/
 
 ### 已定（builder check 收口；可被用户推翻）
 
-1. Lore 定位为 **Lead 的视觉身份 / 头像**；Lead 名字仍是 Lead；其他角色保留角色色 / 字母。
+1. Lore 定位为**品牌形象 / 左上品牌位**；**不替换 Lead 头像**；Lead tab / 左栏保持 L / 首字母；其他角色保留角色色 / 字母。
 2. 桌面宠物默认关闭，opt-in；v1 只做应用内 SVG + motion tokens，不做 OS 级悬浮 sprite。
 3. App icon = 珍珠 + 极细线/标签；16px 省略线；**墨色圆角底板**（2026-11-05 资产包实测比暖奶油底更跳；原暖奶油底为暂定）。角色本体透明。
 4. 不做用户自定义命名；配件 / doodle 由品牌方控制。
@@ -310,7 +310,7 @@ assets/brand/lore/
 
 ### 仍需用户定
 
-1. **第一版 Lore 的范围**：平台图标 + Lead 头像已是既定最小集；是否再加记忆面板 / onboarding / 空态 / 桌面宠物？——**待定**。
+1. **第一版 Lore 的范围**：平台图标 + 左上品牌位已是既定最小集；Lead 头像不在 v1；是否再加记忆面板 / onboarding / 空态 / 桌面宠物——**待定**。
 2. **图标切换时机**：**已定（2026-11-05）——等 Orcalore 改名版本一起上**。prod / dev / beta 先保持 MAFW 图标，避免品牌错位；管线可先做但不切换。
 
 ---
@@ -438,14 +438,14 @@ assets/brand/lore/
 | 16px 调色板 | cream/white + ink 为主；对比度可用 |
 | 主色 | `#1D1F25` ink；cream/white；mint accent ≈ `#4FD388` |
 
-### 已定（2026-11-05）：Lore = Lead 的视觉身份 / 头像
+### 已定（2026-11-05）：Lore = 品牌形象，不替换 Lead 头像
 
-Lead 名字不变；Lore 是它的脸。其他角色（Tech Lead / Builder / Reviewer）保留角色色 / 字母，不使用 Lore。
+Lore 是**左上品牌位的脸**（20px 圆形，显示 18px + Orcalore 字标），不是 Lead 的头像。Lead 名字不变；Lead tab / 左栏 ProjectResources 行保持 L 徽标 / 首字母；Tech Lead / Builder / Reviewer 同样保留角色标记。
 
 这意味着：
 
-- **Lead avatar 已由用户生成**：15 档、圆形/透明两版；UI 使用 32px 圆形（ProjectResources）；SessionStrip Lead tab 保持 L 徽标、不放大头像；16/20/24 简化，28+ 带线/信笺；64+ 留作后续。
-- **接线面**（待实现计划确认）：ProjectResources 的 Lead 行、PodDock 成员行、SessionStrip 的 Lead 标记、Lead 会话 tab / 详情；其他角色不改。
-- **App icon 与 Lead avatar 同源**：同一个珍珠，app icon 用墨色底板，avatar 用透明珍珠；不出现两个角色。
-- **Lead avatar**：用户生成 pack 已覆盖 16–1024；UI 使用 16/32 圆形；不是阻塞。
-- **v1 最小集**：平台图标 + Lead 头像；记忆面板 / onboarding / 空态 / 桌面宠物是否进 v1 仍待定。
+- **Lead tab**：保持 L 徽标 + 完整 “Lead” 文本；不放大头像；隐藏冗余状态点并给标题保留最小宽度。
+- **左栏资源行**：保持首字母（如 L），不换成 Lore。
+- **Avatar pack**：15 档、圆形/透明两版保留为未来品牌素材；当前 UI 只消费 20px 圆形作为左上品牌图标。
+- **App icon**：使用平台 pack；不在本切片切换（等 Orcalore 改名）。
+- **v1 最小集**：平台图标 + 左上品牌位；Lead 头像不在 v1；记忆面板 / onboarding / 空态 / 桌面宠物是否进 v1 仍待定。

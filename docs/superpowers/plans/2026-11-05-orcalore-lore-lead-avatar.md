@@ -10,9 +10,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-05-orcalore-lore-character-design.md`
 
+> **2026-11-05 final revision:** the user rejected Lore as the Lead avatar in both the session tab and the left rail. The Lead tab keeps the L badge with full “Lead” text; ProjectResources keeps initials; only the top-left brand slot uses the 20px Lore icon + Orcalore wordmark. The avatar-integration tasks below are historical; the spec is authoritative for the final state.
+
 ## Global Constraints
 
-- **Lore = Lead 的视觉身份 / 头像**；Lead 名字不变；Tech Lead / Builder / Reviewer 保留首字母，不使用 Lore。**SessionStrip Lead tab 不放大头像**（用户 2026-11-05 决定），保留 L 徽标。
+- **Lore = 品牌形象**；Lead tab / 左栏保持角色标记（L 徽标 / 首字母）；**不替换 Lead 头像**；只有左上品牌位使用 20px Lore 图标 + Orcalore 字标。
 - **No orca form**: cream/white pearl, two ink dot eyes, highlight, ink outline; no eye patch, dorsal fin, tail, or O-shaped whale body.
 - **Avatars use the simplified base**: no thread/tag; circular-safe; 64 / 96 / 128 / 256 / 512.
 - **Do not switch production app icon / tray / favicon**: this plan imports and derives assets only; the Orcalore rename plan consumes them.
@@ -266,6 +268,8 @@ git commit -m "feat(brand): derive Lore avatars, tray, and favicon"
 
 ## Task 3: Add the role→avatar helper
 
+> **Rev 2026-11-05:** this helper was removed in the final state; Lore is not wired as the Lead avatar. The brand slot uses the 20px asset directly.
+
 **Files:**
 - Create: `packages/desktop/src/renderer/mafw/lead-avatar.ts`
 - Create: `packages/desktop/src/renderer/mafw/lead-avatar.test.ts`
@@ -354,6 +358,8 @@ git commit -m "feat(desktop): add Lore Lead avatar role helper"
 ---
 
 ## Task 4: Render the Lore avatar in ProjectResources
+
+> **Rev 2026-11-05:** reverted — ProjectResources keeps the initial letter; no Lore avatar in the left rail.
 
 **Files:**
 - Modify: `packages/desktop/src/renderer/mafw/components/ProjectResources.tsx`
@@ -447,7 +453,7 @@ git commit -m "feat(desktop): render Lore as the Lead avatar"
 
 ## Task 5: Replace the Lead tab badge with the Lore avatar
 
-> **Rev 2026-11-05:** after seeing the 16px tab, the user rejected the Lore avatar in the Lead session tab. This task is **reverted**: SessionStrip keeps the L role badge; no avatar on the tab. The brand-slot change from the follow-up request (Orcalore wordmark + Lore 20px icon) remains.
+> **Rev 2026-11-05:** after seeing the 16px tab, the user rejected the Lore avatar in the Lead session tab. This task is **reverted**: SessionStrip keeps the L role badge and full “Lead” text; no avatar on the tab. The Lead tab hides the redundant status dot and reserves 28px title width. The brand-slot change (Orcalore wordmark + Lore 20px icon) remains.
 
 **Files:**
 - Modify: `packages/desktop/src/renderer/mafw/components/SessionStrip.tsx`

@@ -142,7 +142,10 @@ export function SessionStrip(props: {
         {props.sessions().map(s => (
           <div
             class="mafw-session-tab"
-            classList={{ active: props.activeViewId() === s.id }}
+            classList={{
+              active: props.activeViewId() === s.id,
+              "is-lead-tab": s.lead === true || props.podRoleOf?.(s.id) === "lead",
+            }}
             tabIndex={0}
             onClick={() => props.onSelect(s.id)}
             onContextMenu={(event) => requestTabMenu(s, event)}
