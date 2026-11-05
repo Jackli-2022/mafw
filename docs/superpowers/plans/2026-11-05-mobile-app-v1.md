@@ -19,6 +19,7 @@
 - **发送路由纪律**：Goal 绑定的讨论视图绝不调 `sendEnriched`/`promptAsync`（丢 agent 绑定 + ContextManifest）
 - loopback-only 端点（`/a2a`、terminal）不触碰；媒体走 `/api/mobile/media/*`
 - 门禁：`flutter analyze` 零告警 + `flutter test` 全绿；每 task 一 commit
+- 可观测性：`debugPrint('[Orcalore][<subsystem>] ...')`（subsystem ∈ `ws/http/pair/events/pod/ui`，release 仅 warn/error）；调试面板 dev-only（`kDebugMode` / `--dart-define=ORCALORE_DEBUG_PANEL=true`）；调试策略全文见 `docs/architecture/mobile.md` §7（分层调试/真机日志三条路/故障速查）
 - 非目标（spec §9）：无 FCM/离线推送、无 serve 路径、无编辑器面、无语音增强、无 iOS
 
 ## Review Focus
@@ -50,21 +51,23 @@
 - [ ] **Step 4: 跑测试 + analyze** — PASS + `flutter analyze` 零告警；`flutter build apk --debug` 构建通过（图标/appId 生效性冒烟）
 - [ ] **Step 5: Commit** — `feat(mobile): Orcalore brand foundation (mint tokens, app identity, lore icon)`
 
-### Task 2: 连接配置收尾（URL 校验 + 深链改名 + Android 配置）
+### Task 2: 连接配置收尾（URL 校验 + 深链改名 + Android 配置 + 调试面板）
 
 **Files:**
 - Modify: `mobile/lib/src/config/connection_config.dart`（新增 `validateBaseUrl`）、`mobile/lib/src/services/secure_config_store.dart:21`（缺省改空）、`mobile/lib/src/pages/connection_settings_page.dart` 与 `pairing_page.dart`（接入校验/提示文案 + `orcalore://pair` 解析）、`mobile/android/app/src/main/AndroidManifest.xml`（`orcalore://` intent-filter）、`mobile/android/app/src/main/res/xml/network_security_config.xml`（ts.net 域放行）
+- Create: `mobile/lib/src/services/diagnostics.dart`（HTTP/WS 环形缓冲 + 拦截器）、`mobile/lib/src/pages/debug_page.dart`（连接诊断 + 事件检查器 + 复制诊断包；`kDebugMode`/`--dart-define=ORCALORE_DEBUG_PANEL=true` 门控）
 - **Gateway 锁步**：`gateway/src/mobile/pairing.ts`（`mafw://pair` → `orcalore://pair`）+ `gateway/tests/unit/mobile/` 相关断言
-- Test: `mobile/test/connection_url_test.dart`、`mobile/test/pairing_page_test.dart`（13 例 scheme 断言同步改）
+- Test: `mobile/test/connection_url_test.dart`、`mobile/test/pairing_page_test.dart`（13 例 scheme 断言同步改）、`mobile/test/debug_page_test.dart`
 
 **Interfaces:**
 - Produces: `enum UrlCheck { ok, bareIpWarn, plaintextLanWarn, invalid }` + `UrlCheck checkBaseUrl(String url)` — `http://*.ts.net` → ok；`http://100.64/10.…` 或裸 IP → bareIpWarn（提示改 MagicDNS 主机名）；`http://192.168./10./172.16.` → plaintextLanWarn（既有警告保留）；非 http(s) → invalid
+- `class DiagnosticsSink { void recordHttp(...); void recordWsFrame(String raw); HttpEntry? …; List<WsFrameEntry> wsFrames; Map<String, dynamic> export(); }`（注入式；HTTP 100 条 / WS 200 帧环形；WsFrameEntry 含 `raw`、`kind: canonical|flat|discarded`、`effect`）
 - network_security_config：`<domain-config cleartextTrafficPermitted="true"><domain>ts.net</domain></domain-config>`（base 保持 false）；Manifest `<data android:scheme="orcalore"/>`；gateway pairing 深链前缀 `orcalore://pair`
 
-- [ ] **Step 1: 写失败测试** — checkBaseUrl 五形态断言；SecureConfigStore 无配置时 `load()` 返回空 baseUrl（非 `http://127.0.0.1:3000`）；pairing 解析仅接受 `orcalore://pair`（旧 `mafw://pair` 拒绝）
-- [ ] **Step 2: 确认失败** — `flutter test test/connection_url_test.dart test/pairing_page_test.dart` FAIL
-- [ ] **Step 3: 实现** — 纯函数 + 存储缺省改空 + 两个页面对 warn/invalid 的提示文案（主机名建议含在文案里）+ scheme 三处锁步（gateway pairing.ts / mobile parser / Manifest）+ `mobile/README.md` 连接章节更新（`MAFW_SERVER_API_TOKEN` 必设、MagicDNS 主机名优先与 Tailscale DNS 默认开启【V2】、`mobile.tailscaleUrl`/env 配置法、Orcalore 命名）
-- [ ] **Step 4: 跑测试 + Commit** — PASS；`git commit -m "feat(mobile): url form check + orcalore://pair scheme (gateway/mobile lockstep), ts.net cleartext domain"`
+- [ ] **Step 1: 写失败测试** — checkBaseUrl 五形态断言；SecureConfigStore 无配置时 `load()` 返回空 baseUrl（非 `http://127.0.0.1:3000`）；pairing 解析仅接受 `orcalore://pair`（旧 `mafw://pair` 拒绝）；diagnostics 环形缓冲截断（101 条 HTTP 留 100、201 帧 WS 留 200）与 DebugPage 渲染（fixture 注入：帧原文 + 判定 + 效果、HTTP 行、复制诊断包 JSON 含 mask 后 token）
+- [ ] **Step 2: 确认失败** — `flutter test test/connection_url_test.dart test/pairing_page_test.dart test/debug_page_test.dart` FAIL
+- [ ] **Step 3: 实现** — 纯函数 + 存储缺省改空 + 两个页面对 warn/invalid 的提示文案（主机名建议含在文案里）+ scheme 三处锁步（gateway pairing.ts / mobile parser / Manifest）+ DiagnosticsSink（GatewayClient 拦截器 + WsClient 帧回调注入）+ DebugPage（我的 → 调试，门控显示）+ `mobile/README.md` 连接/调试章节更新（`MAFW_SERVER_API_TOKEN` 必设、MagicDNS 主机名优先与 Tailscale DNS 默认开启【V2】、`mobile.tailscaleUrl`/env 配置法、Orcalore 命名、诊断包出口）
+- [ ] **Step 4: 跑测试 + analyze + Commit** — PASS + `flutter analyze` 零告警；`git commit -m "feat(mobile): url form check + orcalore://pair scheme + dev diagnostics panel"`
 
 ### Task 3: WS 层 v2 接线 + SmartReconnect 修复
 
@@ -279,7 +282,7 @@
 
 ## 阶段末真机冒烟（每阶段完成后执行，记录进交付汇报）
 
-- **P1**：真 Tailscale（手机与 PC 同 tailnet）**Orcalore 桌面配对码（`orcalore://pair`）**扫码 → MagicDNS 主机名连接 → chat 收发 + WS 事件通；裸 IP 输入出现警告；杀 App 重进 SmartReconnect 状态恢复；桌面 Config 生成配对码与 gateway pairing 锁步验证（scheme 全链一致）
+- **P1**：真 Tailscale（手机与 PC 同 tailnet）**Orcalore 桌面配对码（`orcalore://pair`）**扫码 → MagicDNS 主机名连接 → chat 收发 + WS 事件通；裸 IP 输入出现警告；杀 App 重进 SmartReconnect 状态恢复；桌面 Config 生成配对码与 gateway pairing 锁步验证（scheme 全链一致）；**调试面板**：连接诊断卡显示真实状态、事件检查器能看到帧与判定、复制诊断包可用
 - **P2**：工作 tab 五桶与桌面 work.overview 一致；goal 跑动事件（phase_transition/goal_node）驱动卡片变化；跨项目 attention 点击切换正确
 - **P3**：手机建讨论 Goal → Tech Lead 流式回复可见 → 终态后重进显示归档 transcript；plan 批准在手机上完成一次（含 stale_plan 场景）
 - **P4**：跟 Lead 聊一轮；普通会话长按交给 Lead → 桌面能看到新 Goal

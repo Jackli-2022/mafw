@@ -215,8 +215,9 @@ transcript(podId, sessionId)
 - **连接层**：pairing URL 主机名/IP 双形态解析、WS header 鉴权、SmartReconnect 持久化往返（修 bug 的 RED 用例先写）；
 - **数据层**：每个新 client 方法的请求/响应解析测试（沿用 view_dto_test.dart 的「全页解析失败→可操作错误」模式）；**flat 帧解析测试**（goal_node/phase_transition 载荷）；event_effects 表扩展的钉死测试（37→N 词全部显式表态，vocabulary parity 自动守卫）；
 - **页面**：工作 tab 五桶渲染、Goal 详情时间线、讨论页发送分流（**必须有**「讨论视图绝不调 sendEnriched」的契约测试）、「需要你」三形态应答、终态回落 transcript；
+- **调试面（dev-only）**：`DiagnosticsSink` 环形缓冲截断断言 + DebugPage fixture 渲染（帧原文/判定/效果、HTTP 行、诊断包导出）；调试策略全文见 `docs/architecture/mobile.md` §7（分层调试、真机日志三条路、故障速查表）；
 - **交付纪律**（用户既定偏好）：每阶段汇报新增测试数与全量通过数；发布记录版本号 + commit 哈希；
-- **真机冒烟**（每阶段末）：真 Tailscale 连接（手机 + PC 同 tailnet）走通当阶段主链路；Phase 1 验证点 V1（裸 IP cleartext 行为）。
+- **真机冒烟**（每阶段末）：真 Tailscale 连接（手机 + PC 同 tailnet）走通当阶段主链路；Phase 1 验证点 V1（裸 IP cleartext 行为）+ 调试面板可用性。
 
 ## 11. 阶段划分与验收摘要
 
