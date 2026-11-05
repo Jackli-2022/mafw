@@ -65,7 +65,6 @@ import {
   attentionTarget,
   goalRevisionOf,
   goalSessionIdentity,
-  latestUnviewedResult,
   leadSessionIdFromPod,
   podRoleForSession,
   podSessionRoute,

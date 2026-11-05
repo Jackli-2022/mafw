@@ -45,10 +45,6 @@ export function saveViewedResults(keys: string[], storage: StorageLike | null = 
 
 const [viewedKeys, setViewedKeys] = createSignal<string[]>(readViewedResults())
 
-export function podViewedResultKeys(): string[] {
-  return viewedKeys()
-}
-
 export function isPodResultViewed(podId: string, goalId: string, revision: number): boolean {
   // 双读：`pod_events` 是新的真相源，legacy localStorage 只读兼容（spec §7）。
   return isResultViewed({
