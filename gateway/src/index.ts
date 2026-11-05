@@ -1664,6 +1664,15 @@ class MafwScheduler {
     // v2：turn.completed/turn.failed 是回合终态一等公民（opencode session.idle /
     // pi agent_end 经翻译层产出），双保险的 broadcast 切面已随 Mode A 改写删除。
     if (sessionID) {
+      // 回合归属：本回合的活动水位。没有它，陈旧 idle 与真结束无法区分。
+      if (
+        type === MAFW.turnStarted ||
+        type === MAFW.partUpdated ||
+        type === MAFW.partDelta ||
+        type === MAFW.messageUpdated
+      ) {
+        this.goalDriver?.noteSessionActivity(sessionID);
+      }
       if (type === MAFW.turnCompleted) this.goalDriver?.onSessionIdle(sessionID);
       if (type === MAFW.turnFailed) {
         const rawError = (props as any)?.error;

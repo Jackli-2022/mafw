@@ -317,6 +317,9 @@ export class NodeDriver {
   /** 复用会话的"无产物 idle"宽容：讨论回合的 idle 会与本节点的 prompt 竞态。 */
   private reuseIdleGrace = new Set<string>();
   private reuseGraceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** 派发瞬间的活动水位；idle 归属判定用它区分「上一回合的残余」与「本回合结束」。 */
+  private dispatchSeq = new Map<string, number>();
+  private activitySeq = new Map<string, number>();
   /** 复用会话节点启动时的产物指纹（判断 idle 时的产物是不是本次新写的）。 */
   private nodeStartArtifacts = new Map<string, { path: string; digest: string | null }>();
   /** Task 14：探针会话 → 隔离工作区（完成/失败都必须销毁）。 */
@@ -678,8 +681,12 @@ export class NodeDriver {
     // 不应继承上一个节点已用掉的 grace（否则第二个节点的首个 idle 会直接误判）。
     this.reuseIdleGrace.delete(sessionId);
     this.clearReuseGraceTimer(sessionId);
+    this.dispatchSeq.set(sessionId, this.activitySeq.get(sessionId) ?? 0);
     this.listeners.set(sessionId, (ev, failure) => {
       if (ev === 'idle') {
+        // 归属优先：派发之后一次活动都没有 → 这是上一回合的迟到 idle。
+        // 忽略且**不消耗 grace**（否则真回合结束时反而会被误判）。
+        if (!this.hasTurnActivity(sessionId)) return true;
         // 复用会话的 idle 竞态：讨论回合结束的 idle 可能晚于本节点的 prompt 到达。
         // 产物还没写（或还是上一版）时先宽容一次，第二次才按 artifact_missing 判定。
         if (this.isStaleReuseIdle(mafwDir, goalId, sessionId)) {
@@ -1254,6 +1261,16 @@ export class NodeDriver {
    * - 内容与 mtime 都是节点启动前的旧值（同 revision 上一版计划）→ 暂存。
    * 暂存只宽容**一次**，第二个 idle 仍按 artifact_missing 判定（避免真的卡死）。
    */
+  /** 记录一次属于当前回合的会话活动（part/message 事件）。 */
+  noteSessionActivity(sessionID: string): void {
+    if (!sessionID) return;
+    this.activitySeq.set(sessionID, (this.activitySeq.get(sessionID) ?? 0) + 1);
+  }
+
+  private hasTurnActivity(sessionId: string): boolean {
+    return (this.activitySeq.get(sessionId) ?? 0) > (this.dispatchSeq.get(sessionId) ?? 0);
+  }
+
   /** 宽容只有一次，但必须有时限——否则「回合结束但没交卷」会卡到 watchdog。 */
   private armReuseGraceTimer(goalId: string, sessionId: string): void {
     this.clearReuseGraceTimer(sessionId);

@@ -18,7 +18,7 @@ export interface Harness {
   nodeRuns: any[];     // node_runs 行（内存实现）
   charter(goalId: string): void;
   startAndIdle(goalId: string): Promise<string>;  // advance → 返回在飞 sessionId
-  fireIdle(sessionId?: string): Promise<void>;    // 触发 idle + 等 microtask
+  fireIdle(sessionId?: string, opts?: { withActivity?: boolean }): Promise<void>;  // 触发 idle + 等 microtask
   fireError(sessionId: string, msg: string, code?: string): Promise<void>;
   load(goalId: string): any;
   write(goalId: string, patch: any): void;
@@ -90,8 +90,12 @@ export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: numbe
       await driver.advance(goalId);
       return loadGoalState(mafwDir, goalId)!.nodeSession!.id;
     },
-    async fireIdle(sid?: string) {
-      driver.onSessionIdle(sid ?? currentSession!);
+    async fireIdle(sid?: string, opts?: { withActivity?: boolean }) {
+      const session = sid ?? currentSession!;
+      // 真实回合总会先有活动（part/message 事件）再 idle；测试默认也这样，
+      // 只有显式 withActivity:false 才是「上一回合的迟到 idle」。
+      if (opts?.withActivity !== false) driver.noteSessionActivity(session);
+      driver.onSessionIdle(session);
       await settle();
     },
     async fireError(sid: string, msg: string, code?: string) {
