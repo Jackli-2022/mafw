@@ -2,6 +2,9 @@
  * P0-4: Tech Lead runtime adapter — 建会话后按 resolveNodeModel 绑定模型
  * （config.goal.techLeadModel 覆盖优先，身份内置兜底；半空对不半用），
  * switchModel 失败 fail-open（会话照常返回）。
+ *
+ * Fix review I-1：configModel 是 **getter**（每次建会话现读），运行时改配置
+ * 对下一个新会话立即生效，不被构造期快照吞掉。
  */
 import { createTechLeadRuntimeAdapter } from '../../../../src/core/pod/pod-tech-lead-runtime-adapter';
 
@@ -16,7 +19,7 @@ function makeDeps(overrides: Record<string, any> = {}) {
     promptAsync: jest.fn(async () => undefined),
     messages: jest.fn(async () => ({ data: [] })),
     identityModel: IDENTITY,
-    configModel: null,
+    configModel: () => null,
     ...overrides,
   };
   return { deps, createSession, switchModel };
@@ -25,7 +28,7 @@ function makeDeps(overrides: Record<string, any> = {}) {
 describe('createTechLeadRuntimeAdapter (P0-4)', () => {
   it('binds the configured model when config is a complete pair', async () => {
     const config = { providerID: 'opencode-go', modelID: 'deepseek-v4.1-flash' };
-    const { deps, switchModel } = makeDeps({ configModel: config });
+    const { deps, switchModel } = makeDeps({ configModel: () => config });
     const runtime = createTechLeadRuntimeAdapter(deps);
 
     const id = await runtime.createSession({ projectDir: '/proj', goalId: 'g1', revision: 1 });
@@ -36,7 +39,7 @@ describe('createTechLeadRuntimeAdapter (P0-4)', () => {
 
   it('falls back to the identity model for empty or half-configured pairs', async () => {
     for (const configModel of [null, { providerID: 'x', modelID: '' }, { providerID: '', modelID: 'y' }]) {
-      const { deps, switchModel } = makeDeps({ configModel });
+      const { deps, switchModel } = makeDeps({ configModel: () => configModel });
       const runtime = createTechLeadRuntimeAdapter(deps);
       await runtime.createSession({ projectDir: '/proj', goalId: 'g1', revision: 1 });
       expect(switchModel).toHaveBeenCalledWith({ sessionID: 'ses_1', model: IDENTITY });
@@ -45,11 +48,31 @@ describe('createTechLeadRuntimeAdapter (P0-4)', () => {
 
   it('fail-open: session is returned even when switchModel rejects', async () => {
     const { deps } = makeDeps({
-      configModel: { providerID: 'opencode-go', modelID: 'deepseek-v4.1-flash' },
+      configModel: () => ({ providerID: 'opencode-go', modelID: 'deepseek-v4.1-flash' }),
       switchModel: jest.fn(async () => { throw new Error('provider down'); }),
     });
     const runtime = createTechLeadRuntimeAdapter(deps);
 
     await expect(runtime.createSession({ projectDir: '/proj', goalId: 'g1', revision: 1 })).resolves.toBe('ses_1');
+  });
+
+  it('reads configModel lazily: later config changes apply to the next session (I-1)', async () => {
+    let current: { providerID: string; modelID: string } | null = null;
+    const { deps, switchModel } = makeDeps({ configModel: () => current });
+    const runtime = createTechLeadRuntimeAdapter(deps);
+
+    await runtime.createSession({ projectDir: '/proj', goalId: 'g1', revision: 1 });
+    expect(switchModel).toHaveBeenLastCalledWith({ sessionID: 'ses_1', model: IDENTITY });
+
+    current = { providerID: 'opencode-go', modelID: 'deepseek-v4.1-flash' };
+    await runtime.createSession({ projectDir: '/proj', goalId: 'g1', revision: 2 });
+    expect(switchModel).toHaveBeenLastCalledWith({ sessionID: 'ses_1', model: current });
+  });
+
+  it('does not call switchModel when neither identity nor config model exists', async () => {
+    const { deps, switchModel } = makeDeps({ identityModel: null, configModel: () => null });
+    const runtime = createTechLeadRuntimeAdapter(deps);
+    await runtime.createSession({ projectDir: '/proj', goalId: 'g1', revision: 1 });
+    expect(switchModel).not.toHaveBeenCalled();
   });
 });

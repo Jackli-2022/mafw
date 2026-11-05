@@ -4395,7 +4395,9 @@ class MafwScheduler {
           return { data: page?.data ?? [], nextCursor: page?.nextCursor };
         },
         identityModel: this.identityRegistry?.get(TECH_LEAD_AGENT)?.model,
-        configModel: (config.raw as any)?.goal?.techLeadModel,
+        // I-1：现读 getter —— config.reload() 会整体替换 this.data，构造期快照会吞掉
+        // 运行时通过 /api/model-config 或 config.yaml 的修改；热更对下一个新会话生效。
+        configModel: () => (config.raw as any)?.goal?.techLeadModel,
       }),
       resolveProject: (requested) => {
         const canonical = canonicalProjectDir(requested || this.resolvedProjectDir());

@@ -18,14 +18,15 @@ export interface TechLeadRuntimeAdapterDeps {
   promptAsync: PodTechLeadRuntime['promptAsync'];
   messages: PodTechLeadRuntime['messages'];
   identityModel?: GoalNodeModelRef | null;
-  configModel?: GoalNodeModelRef | null;
+  /** 现读 getter（config 热更好使）；null/半空对回落身份内置模型。 */
+  configModel?: () => GoalNodeModelRef | null | undefined;
 }
 
 export function createTechLeadRuntimeAdapter(deps: TechLeadRuntimeAdapterDeps): PodTechLeadRuntime {
   return {
     createSession: async ({ projectDir }) => {
       const created = await deps.createSession({ projectDir });
-      const model = resolveNodeModel(deps.identityModel, deps.configModel);
+      const model = resolveNodeModel(deps.identityModel, deps.configModel?.());
       if (model && deps.switchModel) {
         try {
           await deps.switchModel({ sessionID: created.id, model });

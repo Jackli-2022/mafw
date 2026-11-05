@@ -249,7 +249,7 @@ mafw_plugin_manager({ operation: "install", draft: "acme", overwrite: false, req
 - 安装 = 在 **gateway 进程**里 `require` 并执行 `index.js`；与 gateway 同权限。
 - `check` 会激活 candidate，`test` 会运行草稿里的测试代码；两者都执行**草稿作者写的受信代码**，不是隔离环境。
 - 不要用 Creator 处理来源不可信的目录；只安装你信任、能读懂的草稿。
-- 这些接口没有新增远程端点，但 gateway 监听所有接口（`server.listen(apiPort)`），并非只绑定 loopback。**当前 registry 分发顺序是插件路由先于鉴权**：`plugins.install/enable/disable/delete/installPackage/apply/reload` 等 handler 在 `authorizeRequest` 之前执行，因此配置 `server.apiToken` 并不能保证它们在局域网上安全（这是既有的 auth-order P0）。**在该 P0 修复前，只在本机 loopback 或主机防火墙后面运行 gateway，不要暴露到局域网/公网**；P0 修复后再按正常的 token / 默认拒绝规则处理——届时 token 等同于安装/删除权限。
+- 这些接口没有新增远程端点，但 gateway 监听所有接口（`server.listen(apiPort)`），并非只绑定 loopback。**registry 路由与 legacy 链一样先过 `authorizeRequest`**（P0-1 修复，2026-11-05，`routes/registry-dispatch.ts` 的 `dispatchAuthorized`）：非 loopback 请求必须携带 `server.apiToken`（Bearer / X-API-Token / `?token=` 三通道），空 token = 远端全拒；loopback 保持豁免。暴露到局域网/Tailscale 前**必须设置 `server.apiToken`**——届时 token 等同于安装/删除权限。
 
 ### 12.2 没有视觉反馈通道
 
