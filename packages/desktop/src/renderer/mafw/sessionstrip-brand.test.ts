@@ -16,7 +16,12 @@ test("Lead tab reserves room for its label", () => {
   assert.ok(sessionStrip.includes('"is-lead-tab"'), "Lead tab must expose the is-lead-tab class")
   assert.ok(sessionStrip.includes("s.lead"), "Lead tab must derive its special layout from the lead flag")
   assert.match(css, /\.mafw-session-tab\.is-lead-tab \.mafw-agent-dot\s*\{[^}]*display:\s*none/s)
-  assert.match(css, /\.mafw-session-tab\.is-lead-tab \.mafw-session-title\s*\{[^}]*min-width:\s*28px/s)
+  // "Lead" @13px ≈ 30px：min-width 28 会把最后一个字母吃掉（实测渲染成 "L…"），
+  // 所以 Lead 标题必须不参与收缩且留够 34px。
+  const title = css.match(/\.mafw-session-tab\.is-lead-tab \.mafw-session-title\s*\{([^}]*)\}/s)?.[1]
+  assert.ok(title, "Lead tab title rule missing")
+  assert.match(title, /flex:\s*0 0 auto/)
+  assert.match(title, /min-width:\s*34px/)
   assert.match(css, /\.mafw-session-tab\.is-lead-tab \.mafw-session-close\s*\{[^}]*width:\s*16px/s)
 })
 

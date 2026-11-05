@@ -674,7 +674,7 @@ html[data-theme="light"] body {
 /* Lead tab: hide the redundant status dot and reserve enough title width so
    "Lead" is visible next to the L badge; keep the close button compact. */
 .mafw-session-tab.is-lead-tab .mafw-agent-dot { display: none; }
-.mafw-session-tab.is-lead-tab .mafw-session-title { min-width: 28px; }
+.mafw-session-tab.is-lead-tab .mafw-session-title { flex: 0 0 auto; min-width: 34px; }
 .mafw-session-tab.is-lead-tab .mafw-session-close { width: 16px; min-width: 16px; flex: 0 0 16px; padding: 0; }
 .mafw-session-close { background: none; border: none; cursor: pointer; color: var(--text-weak); padding: 0; line-height: 1; opacity: 0; transition: opacity var(--dur-1) var(--ease); font-size: 10px; }
 .mafw-session-tab:hover .mafw-session-close { opacity: 1; }
