@@ -1738,9 +1738,23 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
   终审（glm-5.3）：I-1 已修——`seenAll` 成功后再落一次 seen（await 期间并发刷新带回 unread 不会让角标
   复活），回滚只作用于同 Pod；I-2 通知文案改为「打开工作台查看结果」（不再承诺点击跳转，
   `mafw-navigate-goal` 接收端仍 deferred）。
-- **未做 / deferred**：`mafw-navigate-goal` 缺 preload/renderer 接收端（托盘菜单行可点但暂无导航效果）；
-  worktree 折叠目前只改标签不去重条目；p3 事件与审计文件无 prune。
-- **已知边界**：托盘图标三态（running/attention）尚未提供独立图标资源，当前只换 tooltip/菜单文案。
+- **deferred 收口（2026-11-05，commits `1a708c19`/`e2779fe0`）**：
+  - `mafw-navigate-goal` 全链接线：main 托盘状态行 + attention/result 通知点击 → `navigateToGoal`
+    （`{podId, projectId, goalId}`；无窗口时新建并等 `did-finish-load`）→ preload `navigate.onGoal`
+    → renderer 跨项目先 `handleSelectProject` 再 `openGoalDetail`；结果通知文案恢复「点击查看结果」。
+  - `pod.event` 到达时 renderer 调 `presence.refresh()`（新 IPC `mafw-presence-refresh`），完成通知/托盘
+    不再等 15s 轮询。
+  - presence 折叠真去重：同 `(parentProjectId, goalId, revision)` 只保留一条 running/result，
+    attention 按 revision-scoped id 去重（不再只改标签）。
+  - p3 事件 prune：`PodEventService.prune()` 每天（+ 启动时）清掉 7 天前**已读** p3 行（unread/待唤醒
+    不删）与 30 天前审计 JSON（按事件 `createdAt`，不是 mtime）；p1/p2 永不在此删除。
+  - inbox 收口：`loaded()` 门控冷启动不闪「未查看」；>200 事件时 keptSeen 优先占位；`seenAll` 成功后
+    重新落 seen；非当前 Pod 的 `markSeen` 仍提交 server；首屏未加载/已查看重放的 SSE 事件不再先落 unread。
+  测试：gateway pod 套件 **449/449**、`tsc` rc=0；desktop **2853/2853（620 suites，本批净 +8）**、
+  `tsgo -p` / `electron-vite build` rc=0。（prune 的每日定时接线在 `gateway/src/index.ts`，该文件随
+  并行批次 commit `d8bfc043` 一并落库。）
+- **未做（资产类）**：托盘三态仍无独立图标资源（只换 tooltip/菜单文案）；`latestUnviewedResult` /
+  `shouldMarkSeen` 作为纯契约 helper 保留（生产暂无调用方）。
 
 
 ## 6. Gateway 运维
