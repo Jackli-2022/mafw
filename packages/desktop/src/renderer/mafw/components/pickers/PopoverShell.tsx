@@ -1,6 +1,7 @@
 import { createEffect, createSignal, Show, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import type { JSX } from "solid-js"
+import { computePopoverPlacement, type PopoverAnchor } from "../../popover-placement"
 
 /**
  * Self-drawn popover shell for the ModelPicker / AgentPicker / TaskList.
@@ -44,49 +45,30 @@ export function PopoverShell(props: {
   })
 
   // Pure placement math — parameterized so it never touches reactive props.
-  const compute = (t: HTMLElement | null, anchor: string, width: number) => {
+  const compute = (t: HTMLElement | null, anchor: PopoverAnchor, width: number) => {
     if (!t) return
     const rect = t.getBoundingClientRect()
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    const GAP = 8
-    // Clamp width to the viewport (8px margin, symmetric with the left clamp) so
-    // fixed-width popovers (e.g. the 560px TaskList) never overflow narrow windows.
-    const W = Math.min(width, vw - 16)
-    const h = Math.min(selfRef()?.offsetHeight || 320, 380)
-    const spaceAbove = rect.top - GAP
-    const spaceBelow = vh - rect.bottom - GAP
-    let top: number
-    let left: number
-    if (anchor === "below-center") {
-      // Below the trigger, centered; flip above when not enough room below.
-      if (spaceBelow >= h) {
-        top = rect.bottom + 2
-      } else {
-        top = Math.max(8, rect.top - GAP - h)
-      }
-      left = rect.left + rect.width / 2 - W / 2
-    } else {
-      // Three-state placement: fully above → fully below → clamp on the larger side.
-      if (spaceAbove >= h) {
-        top = rect.top - GAP - h
-      } else if (spaceBelow >= h) {
-        top = rect.bottom + GAP
-      } else if (spaceAbove >= spaceBelow) {
-        top = Math.max(8, rect.top - GAP - h)
-      } else {
-        top = Math.min(vh - 8 - h, rect.bottom + GAP)
-      }
-      left = anchor === "tr" ? rect.right - W : rect.left
-    }
-    if (left < 8) left = 8
-    if (left + W > vw - 8) left = vw - 8 - W
+    const next = computePopoverPlacement({
+      trigger: {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+      },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      anchor,
+      width,
+      // 真实内容高度（CSS max-height 已限制）；展开子菜单后重新计算，
+      // 避免 popover 从旧 top 往下长、底部被 max-height + overflow:hidden 裁掉。
+      height: selfRef()?.offsetHeight || 0,
+    })
     // Only update when the position actually changed: `setPos` always receives a
     // fresh object, so without this guard the rAF re-position loop (compute →
     // setPos → effect → rAF) spins at 60fps for the whole time the popover is
     // open, and anything creating computations inside it runs on a null Owner.
     const p = pos()
-    if (!p || p.top !== top || p.left !== left || p.width !== W) setPos({ top, left, width: W })
+    if (!p || p.top !== next.top || p.left !== next.left || p.width !== next.width) setPos(next)
   }
 
   // Positioning: read all reactive props here (owner = this effect) and hand
@@ -116,6 +98,21 @@ export function PopoverShell(props: {
     if (props.open && pos()) {
       requestAnimationFrame(() => compute(t, a, w))
     }
+  })
+
+  // Content size changes (expanded Agent/Thinking submenus, async lists) must
+  // re-anchor. `top` is fixed once placed, so a popover that grows downward
+  // would overflow the viewport or be clipped by its own max-height.
+  createEffect(() => {
+    const t = props.trigger
+    const a = props.anchor
+    const w = props.width ?? 288
+    if (!props.open) return
+    const el = selfRef()
+    if (!el) return
+    const ro = new ResizeObserver(() => compute(t, a, w))
+    ro.observe(el)
+    onCleanup(() => ro.disconnect())
   })
 
   // Outside click / Esc close. `close` is snapshotted — DOM event callbacks

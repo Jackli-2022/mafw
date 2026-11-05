@@ -29,4 +29,14 @@ describe("composer toolbar overflow guards", () => {
     expect(tier620).toBeGreaterThan(css.indexOf(".mafw-context-pill {"))
     expect(tier620).toBeGreaterThan(css.indexOf(".mafw-composer-meta {"))
   })
+
+  test("session config menu scrolls its rows instead of clipping the Thinking submenu", () => {
+    // 2026-11-06 实证：.mafw-picker-pop 是 overflow:hidden + max-height:380，
+    // Thinking 展开 8 档后下半截被裁掉，点不到。菜单必须可滚动且高度随视口收缩。
+    const menu = css.match(/\.mafw-config-menu \{[^}]*\}/)?.[0] ?? ""
+    expect(menu).toContain("max-height: min(480px, calc(100vh - 16px))")
+    const rows = css.match(/\.mafw-config-menu \.mafw-config-rows \{[^}]*\}/)?.[0] ?? ""
+    expect(rows).toContain("overflow-y: auto")
+    expect(rows).toContain("min-height: 0")
+  })
 })

@@ -1654,6 +1654,13 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
 - **GUI 冒烟（契约中立化，旧全局 gateway v5.0.0）**：新建会话菜单 Agent 行显示 `Build`（会话 agent 真值；
   无硬编码「默认」项）+ 选项 `Build✓ / Plan`；切 Plan → pill `Plan` 徽标；「先规划」按钮因缺 `planning`
   标记而隐藏（新 gateway 标记后恢复）。截图 `.mafw/qa/agent-menu-contract.png`、`agent-pill-plan-contract.png`。
+- **Thinking 子菜单可选中（2026-11-06）**：`.mafw-picker-pop` 是 `overflow:hidden` + `max-height:380px`，
+  Thinking 展开 8 档后下半截被裁掉（用户实证「向下弹出、选择不了」）。修复：`.mafw-config-menu` 放宽到
+  `min(480px, calc(100vh - 16px))`，`.mafw-config-rows` 允许滚动（`overflow-y:auto; min-height:0`）；
+  `PopoverShell` 抽出纯函数 `computePopoverPlacement`（`popover-placement.ts`）并加 `ResizeObserver`，
+  内容变高时重新锚定（否则 top 固定、popover 向下长出视口）。测试：placement 6 例 + CSS 1 例 + wiring 1 例；
+  Electron 离屏布局实测 13 行菜单 473px 全可见，400px 高窗口 rows scrollable（scrollHeight 442 > client 356）。
+  desktop **2877/2877**、`tsgo -p` / `electron-vite build` rc=0。
 - **GUI 冒烟（2026-11-04，dev app CDP 9222 + 旧全局 gateway v5.0.0）**：主仓 dev app 实测——
   工具条收敛为 `＋ ⋯ | 🛡 | 🎤 上下文 会话pill 发送`（agent/plan-build pill、`/` `@`、keyhint 均消失）；
   Lead 会话菜单 `Agent lead·锁定`（disabled）+ `Thinking —`（opencode 无 setThinkingLevel，两代 gateway

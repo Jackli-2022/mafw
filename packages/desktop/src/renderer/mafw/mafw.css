@@ -1710,6 +1710,18 @@ html[data-theme="light"] body {
   overflow: hidden;
   animation: mafw-picker-in var(--dur-surface) var(--ease-surface);
 }
+/* 会话配置菜单：Thinking 子菜单展开后内容高于 picker 的默认 380px 上限。
+   放宽本菜单高度并让行区域滚动（.mafw-picker-pop 是 overflow:hidden，不滚动会裁掉后半截）。 */
+.mafw-config-menu {
+  max-height: min(480px, calc(100vh - 16px));
+}
+.mafw-config-menu .mafw-config-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.mafw-config-menu .mafw-picker-hint { flex: 0 0 auto; }
 /* Exit phase (PopoverShell keeps the pop mounted 120ms with .closing) */
 .mafw-picker-pop.closing {
   opacity: 0;
