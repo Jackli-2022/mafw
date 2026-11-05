@@ -1249,10 +1249,13 @@ export function MafwShell() {
         ingestPodEvent(event)
       },
       // `pod.event`：事件层写入后的 inbox/角标信号，与详情刷新分开。
-      // 同时催一次 main 的 presence 轮询——完成通知/托盘状态不再等 15s。
+      // p1/p2 才影响 presence（结果/注意力）；p3（成员备注）不催轮询。
       onPodEvent: (event) => {
         podEvents.ingest(event)
-        void window.api.mafw.presence.refresh().catch(() => {})
+        const severity = (event as any)?.properties?.severity
+        if (severity === "p1" || severity === "p2") {
+          void window.api.mafw.presence.refresh().catch(() => {})
+        }
       },
     },
     // 统一插件包（Task 7）：修订通知 → 重拉 committed descriptors；
