@@ -401,6 +401,9 @@ export function MafwShell() {
     setSessions(prev => mergeTabIdentity(prev, sid, lead, metadata, title))
     // Lead 是角色 tab：标签恒为角色名，不继承 runtime 会话标题或恢复的旧标题。
     setSessions(prev => pinLeadTabTitle(prev, sid, lead))
+    // ChatPane 头部读的是 store.session 的同一份标题，必须一起钉住，
+    // 否则 tab 显示 Lead、头部仍是被 runtime 改写过的「问候」。
+    if (lead === true) setStore(prev => ({ ...prev, session: pinLeadTabTitle(prev.session as any, sid, true) }))
     if (lead === true) setSessions(prev => dropOtherLeadTabs(prev, sid))
     setActiveSessionId(sid)
     setActiveViewId(sid)

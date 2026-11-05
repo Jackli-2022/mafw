@@ -19,7 +19,7 @@ import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
 import { SessionConfigMenu } from "./pickers/SessionConfigMenu"
 import { agentBadge, agentMenuOptions, findAgentEntry, nextRuntimeAgent, thinkingBadge } from "../session-config-menu-model"
-import { formatRailTitle } from "./rail-display"
+import { chatPaneTitle } from "../chat-pane-title"
 import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
@@ -1639,7 +1639,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (el.scrollTop < 100) { if (hiddenTurnCount() > 0) { expandRendered() } else { void loadOlder(sid) } }
   }
 
-  const title = () => formatRailTitle(store.session.find(s => s.id === sidProp())?.title || "Chat")
+  // Lead 是角色会话：头部恒显示角色名，runtime 自动标题（如「问候」）不得改写它。
+  const title = () => chatPaneTitle({ lead: isLead(), title: store.session.find(s => s.id === sidProp())?.title })
 
   // Render window: mount only the newest N turns; scrolling up expands locally
   // first (no network) and falls through to cursor pagination once the

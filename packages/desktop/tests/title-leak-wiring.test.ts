@@ -24,7 +24,11 @@ test("render surfaces format: SessionStrip tabs + ChatPane titlebar + WelcomeHom
   // 改名草稿 seed 原始 s.title（数据层 raw，不需要额外转换）
   assert.match(strip, /setRenameDraft\(s\.title \|\| ""\)/)
   const chat = read("src/renderer/mafw/components/ChatPane.tsx")
-  assert.match(chat, /formatRailTitle\(/)
+  // 2026-11-06：头部标题收敛到 chat-pane-title（Lead 固定角色名），
+  // 格式化仍只发生在渲染层——helper 自己调 formatRailTitle。
+  assert.match(chat, /chatPaneTitle\(/)
+  const chatTitle = read("src/renderer/mafw/chat-pane-title.ts")
+  assert.match(chatTitle, /formatRailTitle\(/)
   const welcome = read("src/renderer/mafw/components/WelcomeHome.tsx")
   assert.match(welcome, /formatRailTitle\(s\.title\)/)
 })
