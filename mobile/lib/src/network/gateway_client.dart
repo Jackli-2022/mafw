@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/connection_config.dart';
 import '../models/mafw_models.dart';
+import '../models/pod_models.dart';
 import '../services/diagnostics.dart';
 
 class GatewayClient {
@@ -172,8 +173,100 @@ class GatewayClient {
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
-  // ── Goals ──
+  // ── Projects / Work / Presence / Pod ──
 
+  /// Registered gateway projects (`GET /api/projects` → `{projects:[{id, worktree}]}`).
+  ///
+  /// A project's `id` is its absolute directory — the `projectId` used in the
+  /// `workOverview` / `podLookup` / `podEnsure` paths.
+  Future<List<ProjectInfo>> projects() async {
+    final res = await _get(_uri('/api/projects'));
+    if (res.statusCode != 200) throw GatewayException('projects: HTTP ${res.statusCode}');
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    final raw = j is Map<String, dynamic> ? j['projects'] : null;
+    final out = <ProjectInfo>[];
+    for (final item in raw is List ? raw : const <dynamic>[]) {
+      if (item is! Map<String, dynamic>) continue;
+      final info = ProjectInfo.fromJson(item);
+      if (info.dir.isEmpty) continue;
+      out.add(info);
+    }
+    return out;
+  }
+
+  /// Five-bucket project overview (`GET /api/projects/:projectId/work`).
+  ///
+  /// [projectDir] is percent-encoded: it is an absolute path and contains `:`
+  /// and `\` on Windows. A 404 means the project has no Pod yet — that is
+  /// reported as an actionable error, not an empty overview.
+  Future<WorkOverview> workOverview(String projectDir) async {
+    final res = await _get(_uri('/api/projects/${Uri.encodeComponent(projectDir)}/work'));
+    if (res.statusCode == 404) {
+      throw GatewayException('workOverview: no Pod for this project (HTTP 404)');
+    }
+    if (res.statusCode != 200) throw GatewayException('workOverview: HTTP ${res.statusCode}');
+    return WorkOverview.fromJson(jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>);
+  }
+
+  /// Cross-project presence (`GET /api/presence`).
+  Future<PresenceInfo> presence() async {
+    final res = await _get(_uri('/api/presence'));
+    if (res.statusCode != 200) throw GatewayException('presence: HTTP ${res.statusCode}');
+    return PresenceInfo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>);
+  }
+
+  /// Pod Goal rows (`GET /api/pods/:podId/goals` → `{items: PodGoalView[]}`).
+  Future<List<PodGoalView>> listPodGoals(String podId) async {
+    final res = await _get(_uri('/api/pods/${Uri.encodeComponent(podId)}/goals'));
+    if (res.statusCode != 200) throw GatewayException('listPodGoals: HTTP ${res.statusCode}');
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    final raw = j is Map<String, dynamic> ? j['items'] : null;
+    final out = <PodGoalView>[];
+    for (final item in raw is List ? raw : const <dynamic>[]) {
+      if (item is Map<String, dynamic>) out.add(PodGoalView.fromJson(item));
+    }
+    return out;
+  }
+
+  /// Looks up the project Pod (`GET /api/projects/:projectId/pod/lookup`).
+  ///
+  /// Returns `null` **only** for the designed 404 (project has no Pod yet);
+  /// every other failure throws so the caller can tell "no Pod" apart from
+  /// "gateway is broken/old".
+  Future<PodInfo?> podLookup(String projectDir) async {
+    final res = await _get(_uri('/api/projects/${Uri.encodeComponent(projectDir)}/pod/lookup'));
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) throw GatewayException('podLookup: HTTP ${res.statusCode}');
+    return PodInfo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>);
+  }
+
+  /// Creates the project Pod if missing (`POST /api/projects/:projectId/pod`).
+  ///
+  /// The response carries the full Pod detail; use [podLookup] when the caller
+  /// needs the ids (kept `void` per the mobile v1 interface).
+  Future<void> podEnsure(String projectDir) async {
+    final res = await _post(_uri('/api/projects/${Uri.encodeComponent(projectDir)}/pod'));
+    if (res.statusCode != 200) throw GatewayException('podEnsure: HTTP ${res.statusCode}');
+  }
+
+  /// Ensures the project Lead session and returns its session id
+  /// (`POST /api/pods/:podId/lead/ensure` → `{podId, projectDir, sessionId}`).
+  Future<String> ensureLeadSessionId(String podId) async {
+    final res = await _post(_uri('/api/pods/${Uri.encodeComponent(podId)}/lead/ensure'));
+    if (res.statusCode != 200) {
+      throw GatewayException('ensureLeadSessionId: HTTP ${res.statusCode}');
+    }
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    final sessionId = j is Map<String, dynamic> ? (j['sessionId'] ?? '').toString() : '';
+    if (sessionId.isEmpty) {
+      throw GatewayException('ensureLeadSessionId: gateway returned no sessionId');
+    }
+    return sessionId;
+  }
+
+  // ── Goals (legacy `/api/goals` shapes) ──
+
+  @Deprecated('legacy /api/goals shape; removed after Goal detail rewrite (Task 8)')
   Future<List<Map<String, dynamic>>> listGoals() async {
     final res = await _get(_uri('/api/goals'));
     if (res.statusCode != 200) throw GatewayException('listGoals: HTTP ${res.statusCode}');
@@ -182,6 +275,7 @@ class GatewayClient {
     return list.map((e) => e as Map<String, dynamic>).toList();
   }
 
+  @Deprecated('legacy /api/goals shape; removed after Goal detail rewrite (Task 8)')
   Future<Map<String, dynamic>?> getGoal(String goalId) async {
     final res = await _get(_uri('/api/goals/$goalId'));
     if (res.statusCode != 200) return null;
