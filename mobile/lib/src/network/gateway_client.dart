@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/connection_config.dart';
 import '../models/mafw_models.dart';
+import '../models/plan_models.dart';
 import '../models/pod_models.dart';
 import '../services/diagnostics.dart';
 
@@ -373,6 +374,103 @@ class GatewayClient {
     return GoalRejectResult.fromJson(j);
   }
 
+  // ── Plan approval（需要你形态一，Task 9）──
+
+  /// Reads the pending PlanPackage (`GET /api/goals/:goalId/plan`).
+  ///
+  /// The route answers its designed 404 `{"error":"goal state not found"}` when
+  /// the Goal has no execution state yet (still discussing/planning) — surfaced
+  /// as [GoalStateMissingException] so the detail page hides the card instead of
+  /// showing a failure.
+  Future<GoalPlanInfo> goalPlan(String goalId) async {
+    final res = await _get(_uri('/api/goals/${Uri.encodeComponent(goalId)}/plan'));
+    if (res.statusCode == 404) {
+      throw GoalStateMissingException(
+        'goalPlan: no Goal state yet (HTTP 404)',
+        errorBody: utf8.decode(res.bodyBytes, allowMalformed: true),
+      );
+    }
+    if (res.statusCode != 200) {
+      throw GatewayException(
+        'goalPlan: HTTP ${res.statusCode}',
+        statusCode: res.statusCode,
+        errorBody: utf8.decode(res.bodyBytes, allowMalformed: true),
+      );
+    }
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('goalPlan: unexpected payload (not a JSON object)');
+    }
+    return GoalPlanInfo.fromJson(j);
+  }
+
+  /// Approves or rejects the pending plan (`POST /api/goals/:goalId/plan-approval`).
+  ///
+  /// Body fields mirror `gateway/src/routes/goal-plan.ts`:
+  /// `{approve, approvalId?, planHash?, evalHash?, feedback?}`. Empty strings are
+  /// **omitted** on purpose:
+  /// - `matchesApproval` requires `approvalId === undefined` for legacy approvals
+  ///   without an id;
+  /// - `assertApprovalFresh` treats `''` as a real expected hash and would report
+  ///   a false `stale_plan`.
+  ///
+  /// Rejections must carry non-empty [planFeedback] (the server answers 400
+  /// `reject requires feedback`); the card validates that locally.
+  ///
+  /// A 409 whose body says `code: "stale_plan"` throws [StalePlanException];
+  /// every other 409 (not pending / wrong approvalId) stays a [GatewayException].
+  Future<void> planApproval(
+    String goalId, {
+    required bool approve,
+    required String approvalId,
+    required String planHash,
+    required String evalHash,
+    String? planFeedback,
+  }) async {
+    final body = <String, dynamic>{
+      'approve': approve,
+      if (approvalId.isNotEmpty) 'approvalId': approvalId,
+      if (planHash.isNotEmpty) 'planHash': planHash,
+      if (evalHash.isNotEmpty) 'evalHash': evalHash,
+      if (!approve && planFeedback != null && planFeedback.trim().isNotEmpty)
+        'feedback': planFeedback.trim(),
+    };
+    final res = await _post(
+      _uri('/api/goals/${Uri.encodeComponent(goalId)}/plan-approval'),
+      body: jsonEncode(body),
+    );
+    if (res.statusCode == 200) return;
+
+    final rawBody = utf8.decode(res.bodyBytes, allowMalformed: true);
+    if (res.statusCode == 409) {
+      final stale = _stalePlanException(rawBody);
+      if (stale != null) throw stale;
+    }
+    throw GatewayException(
+      'planApproval: HTTP ${res.statusCode}',
+      statusCode: res.statusCode,
+      errorBody: rawBody,
+    );
+  }
+
+  /// Builds a [StalePlanException] only for the designed `code: "stale_plan"` body.
+  StalePlanException? _stalePlanException(String body) {
+    if (body.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is! Map<String, dynamic>) return null;
+      if (decoded['code'] != 'stale_plan') return null;
+      return StalePlanException(
+        (decoded['error'] ?? 'plan content changed').toString(),
+        planHash: decoded['planHash']?.toString(),
+        evalHash: decoded['evalHash']?.toString(),
+        errorBody: body,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── Triage ──
 
   Future<List<Map<String, dynamic>>> listTriageItems() async {
@@ -501,4 +599,25 @@ class GatewayRouteMissingException extends GatewayException {
 /// (still discussing / planning) instead of a failure banner.
 class GoalStateMissingException extends GatewayException {
   GoalStateMissingException(super.message, {super.statusCode = 404, super.errorBody});
+}
+
+/// The plan changed after the user opened it (`409 {"code":"stale_plan"}`).
+///
+/// The server refreshes the pending approval hashes in the same response, so the
+/// UI must re-pull `GET /api/goals/:id/plan` and let the user approve the new
+/// content — never silently retry with the old hashes.
+class StalePlanException extends GatewayException {
+  /// Current waves hash (server-side, after refresh).
+  final String? planHash;
+
+  /// Current Goal Eval hash (server-side, after refresh); null when no eval.
+  final String? evalHash;
+
+  StalePlanException(
+    super.message, {
+    this.planHash,
+    this.evalHash,
+    super.statusCode = 409,
+    super.errorBody,
+  });
 }

@@ -12,14 +12,17 @@
 /// - `GET /api/pods/:podId/goals/:goalId/revisions` → append-only revision 历史。
 /// - `GET /api/pods/:podId/goals/:goalId/result` → 结果证据（验收/条件/任务/产物）。
 /// - `POST /api/pods/:podId/goals/:goalId/reject {feedback}` → 开启 revision N+1。
+/// - `GET /api/goals/:id/plan` → 待批准计划（仅 `stageKind == 'plan_approval'`，
+///   Task 9）；404（还没有 state）= 诚实空态，不是整页错误。
 ///
 /// 调色板纪律（spec §3）：mint 只用于 ① active 节点环 ② CTA ③ 需要你；
 /// 阶段徽标 / revision / verdict / 节点 done / 节点 pending 全部中性
 /// （verdict = 白 ✓ / 灰 ✕，不引入绿红）。
 ///
-/// 组件位（不实现，留给后续任务）：
-/// - [GoalDetailPage.attentionSlot]：需要你操作区（Task 9 计划批准、Task 13 方向/
-///   问答挂入）。页面只提供 mint 描边的容器与标题，内容由调用方决定。
+/// 组件位：
+/// - [GoalDetailPage.attentionSlot]：需要你操作区。显式传入时其返回值是权威
+///   （`null` = 整块不渲染，Task 13 会在这里组合方向裁定/问答）；缺省时页面自己
+///   渲染计划批准卡（Task 9）。
 /// - [GoalDetailPage.onDiscussWithTechLead]：底部 CTA（Task 12 接通讨论页）；
 ///   缺省时按钮是诚实的占位（snackbar + 一行说明）。
 library;
@@ -30,8 +33,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../models/pod_models.dart';
+import '../models/plan_models.dart';
 import '../network/gateway_client.dart';
 import '../theme.dart';
+import '../widgets/plan_approval_card.dart';
 // 阶段词表单源：工作 tab 的 `stageKind → 中文` 映射（Task 7 定义）。
 import 'work_tab.dart' show kWorkStageLabels, projectBasename;
 
@@ -303,6 +308,15 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
   bool _timelineMissing = false;
   List<RevisionInfo> _revisions = const <RevisionInfo>[];
   GoalResultInfo? _result;
+
+  /// 待批准的计划（`GET /api/goals/:id/plan`）；只在 `stageKind == 'plan_approval'`
+  /// 时读取 —— 别的阶段没有要人审批的计划，不该多发一次请求。
+  GoalPlanInfo? _plan;
+  String? _planError;
+
+  /// 阶段说「计划待批准」但 plan 路由 404（还没有 Goal state）——诚实空态，
+  /// 不是失败，也不是"正在加载"。
+  bool _planMissing = false;
   String? _podId;
 
   bool _loading = true;
@@ -374,6 +388,30 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
     }
     if (!mounted || seq != _seq) return;
 
+    // 计划待批准是唯一需要 plan 的阶段（Task 9「需要你」形态一）。
+    // 读不到计划（还没有 state / 旧网关）不算整页错误：卡片让位，头部与时间线照常。
+    var plan = _plan;
+    String? planError;
+    var planMissing = false;
+    final stageKind = goal?.stageKind ?? _goal?.stageKind ?? '';
+    if (stageKind == 'plan_approval') {
+      try {
+        plan = await client.goalPlan(widget.goalId);
+        planError = null;
+      } on GoalStateMissingException {
+        plan = null;
+        planError = null;
+        planMissing = true;
+      } catch (e) {
+        planError = _messageOf(e);
+      }
+      if (!mounted || seq != _seq) return;
+    } else {
+      // 离开批准阶段后不再保留旧计划（避免对已变更内容再次批准）。
+      plan = null;
+      planError = null;
+    }
+
     var revisions = _revisions;
     var result = _result;
     if (podId != null) {
@@ -406,6 +444,9 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       }
       _revisions = revisions;
       _result = result;
+      _plan = plan;
+      _planError = planError;
+      _planMissing = planMissing;
       _error = error != null && !hasTimeline && goal == null ? error : null;
     });
   }
@@ -609,15 +650,17 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       return children;
     }
 
-    final slot = widget.attentionSlot?.call(
-      context,
-      GoalAttentionContext(
-        podId: _podId,
-        goalId: widget.goalId,
-        revision: _revision,
-        stageKind: _goal?.stageKind,
-      ),
+    final slotContext = GoalAttentionContext(
+      podId: _podId,
+      goalId: widget.goalId,
+      revision: _revision,
+      stageKind: _goal?.stageKind,
     );
+    // 外部组件位优先（Task 13 会在这里组合方向/问答）；缺省时由页面自己渲染
+    // 计划批准卡（Task 9），两者都只在「需要你」时返回非 null。
+    final slot = widget.attentionSlot != null
+        ? widget.attentionSlot!(context, slotContext)
+        : _defaultAttentionSlot(slotContext);
     if (slot != null) {
       children.add(_buildAttention(slot));
       children.add(const SizedBox(height: 14));
@@ -670,6 +713,54 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
         ),
       ),
     );
+  }
+
+  /// 缺省「需要你」内容：计划待批准时渲染 [PlanApprovalCard]。
+  ///
+  /// 只在 `stageKind == 'plan_approval'`、计划可读且审批仍为 pending 时出现；
+  /// 其他情况返回 null（整块「需要你」不渲染，而不是给一个空框）。
+  Widget? _defaultAttentionSlot(GoalAttentionContext slot) {
+    if (slot.stageKind != 'plan_approval') return null;
+    final client = widget.client;
+    if (client == null) return null;
+    final plan = _plan;
+    if (plan == null) {
+      final error = _planError;
+      if (error == null) {
+        return Text(
+          _planMissing
+              ? '计划还没有生成（还没有 Goal state）；Tech Lead 可能还在规划，下拉刷新重试。'
+              : '正在读取计划…',
+          key: Key(_planMissing ? 'plan-missing' : 'plan-loading'),
+          style: const TextStyle(
+            fontSize: 11.5,
+            height: 1.45,
+            color: MafwPalette.dim,
+          ),
+        );
+      }
+      return Text(
+        '计划读取失败：$error\n下拉刷新重试。',
+        key: const Key('plan-load-error'),
+        style: const TextStyle(fontSize: 11.5, height: 1.45, color: MafwPalette.dim),
+      );
+    }
+    // 已批准 / 已驳回的审批记录不再催人（阶段会随下一次刷新迁移）。
+    if (!plan.pending) return null;
+    return PlanApprovalCard(
+      key: const Key('plan-approval-card'),
+      client: client,
+      goalId: widget.goalId,
+      plan: plan,
+      onApproved: () => _afterPlanDecision('计划已批准，Tech Lead 开始实施'),
+      onRejected: () => _afterPlanDecision('已驳回，Tech Lead 会按反馈重出计划'),
+      onRefresh: () => unawaited(_load()),
+    );
+  }
+
+  void _afterPlanDecision(String message) {
+    _snack(message);
+    unawaited(_load());
   }
 
   Widget _buildAttention(Widget slot) {
