@@ -323,6 +323,22 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
   **首跑实证**：claude `system/init → session.created` 缺 `properties.info.id`（桌面 Rail planner 得 `none`，列表不同步）
   ——审计已标为 error，插件侧待修。
 
+- **claude 会话创建事件修复（2026-11-06，commit `6a138887`）**：契约审计首跑发现 `system/init → session.created`
+  没有 `properties.info`——桌面 `planSessionEvent` 对无 info 的 created 返回 `{kind:'none'}`，会话列表不刷新。
+  映射补 `info.id = session_id`、`info.directory = cwd`；同时修正字段契约：`session.created` 只要求 `info.id`
+  （created 只触发 invalidate，标题从 `session.list` 重拉），`info.title` 仅 `session.updated` 必需（就地 patch）。
+  `mafw plugin-check --audit` 现在 claude **0 error / 2 ok**（此前 1 error / 1 bad-structure）。gateway **4798/4798（607 suites）**、adapter 21/21。
+
+- **OpenAPI → SDK 代码生成调研（2026-11-06，`docs/research/2026-11-06-openapi-sdk-codegen-research.md`）**：
+  现状链路 `route-catalog → gateway-paths.json → +overrides.json → openapi.json → openapi-typescript →
+  api-schema.gen.ts`；261 operations 只有 **11** 个带响应 schema，生成物只用于 `ApiPath` 路径守卫，
+  DTO 全手写（client 1.6k / types 1.7k 行）。事件 `events.ts` 是手写字符串 union + `properties?: any`
+  （`runtime-contract.json` 有 33 个事件的 `requiredFields`，无 payload schema）。结论：**接口继续用
+  openapi-typescript，先补 response schema（优先从 `types.ts`/`view-dto` 反生成，避免双写）；事件不要塞进
+  OpenAPI**（3.0/3.1 无 SSE 事件模型；3.2 `itemSchema` 是一等支持但工具链未跟齐），走
+  `payloadSchema → json-schema-to-typescript → events.gen.ts`（零 import、check-in + freshness），
+  AsyncAPI 只作人类可读层。不生成 `MafwClient` façade（能力门/SSE/错误语义无法通用生成）。
+
 - **Pod 任务板 v2：新增/删除计划任务（2026-11-02，commits `8b8b6ebe`..`6d3395cd`）**：位置 id（`w1-t2`）在删任务后会让状态错位，所以先给 `waves.tasks[]` 加**稳定 `taskId`**——plan 完成时由 driver 补齐并写回（legacy 任务补成当前位置 id，对已有投影 no-op）；第一次结构编辑时 `migrateLegacyTaskKeys` 把 `pod_tasks.source_key` 从 `wave:<wid>:task:<index>` 迁到 `wave:<wid>:task:<taskId>`（externalTaskId 不变，状态保留）。能力：`POST /api/pods/:podId/tasks` 增 `plan:true`（`goalId` 必填、`waveId` 缺省最后一个 wave）+ 新 `DELETE /api/pods/:podId/tasks/:taskId`（计划任务写回 waves，手工任务只删行）；门与 v1 一致（终态/运行中 409，有 actor 时仅 Lead）。桌面新建可切「手工任务 / 加入计划」，任务卡「删除」两步确认；`podActiveGoalId` 纯函数。非目标：重排、跨 wave 移动、删 wave、软删除。测试：gateway **3401/3401（476 suites，本批 +13）**、desktop **2161/2161（本批 +1）**、SDK **171/171**；`tsc`/`tsgo -p`/`electron-vite build` rc=0；`emit:openapi` 已重生成契约（`pods.tasks.delete`）。spec/plan：`docs/superpowers/specs/2026-11-02-pod-task-add-delete-design.md`、`docs/superpowers/plans/2026-11-02-pod-task-add-delete.md`。
 
 - **Runtime 隔离与 Experience Contract（2026-11-02，spec `docs/superpowers/specs/2026-11-02-runtime-isolation-experience-contract-design.md`，plan `docs/superpowers/plans/2026-11-02-runtime-isolation-experience-contract.md`）**：插件仍在 gateway 进程内；`runtime-facade.ts` 是业务核心唯一 runtime 面，原生事件/历史/semantics 只在 facade 闭包与 Ingress 中，未知或非法事件 fail-closed。`runtime-access.ts` 用 manifest surface + effective capabilities 收编首批能力门（MCP/branch/checkpoint/run/background），错误中性不含 runtime 名。新 `experience/` 层提供版本化 Action Descriptor（`GET /api/experience/actions`，`EXPERIENCE_VERSION=2026.11.0`），SDK/preload/`experience-store.ts` 消费；checkpoint 按对象返回 restore actions，steer/background/MCP 改投 Experience，不再前端硬编码 runtime 名。首批完成：checkpoint、steer、background、MCP；后续：dsh adapter、session-ui/TUI/SDK 全量迁移。测试：gateway **3433/3433（484 suites）**、desktop **2173/2173**、SDK **174/174**；`tsc`/`tsgo -p` rc=0。复审修复后：checkpoint 前端只读 Action Descriptor/Experience semantics（旧 gateway 有数据驱动的兼容降级），RuntimeAccess 用 WeakMap 隐藏 raw runtime 并按 manifest 校验 semantics，Experience JSON/版本有新鲜度测试，run/checkpoint core 走 RuntimeAccess，steer boundary 进入提示文案。真机冒烟补齐：发现并修复 `approval.question.list` surface id 拼写（新增 surface-id 守卫测）与 facade 对畸形/未翻译信封的最终过滤（malformed native 不再进入核心）。Experience 全量覆盖留后续。
