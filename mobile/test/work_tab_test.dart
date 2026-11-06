@@ -98,6 +98,44 @@ WorkOverview _overviewA({String dir = _dirA, String needsTitle = '修 CI'}) {
   });
 }
 
+/// [_overviewA] with one more Goal in the **queued** bucket — proves the 15s
+/// fallback poll publishes the whole snapshot instead of a stale goalId patch.
+WorkOverview _overviewB() {
+  return WorkOverview.fromJson({
+    'projectDir': _dirA,
+    'podId': 'pod-a',
+    'groups': {
+      'needs_you': [
+        _goal('needs_you', 'g-need', '修 CI',
+            revision: 2, strategy: 'collaborative', stageKind: 'plan_approval', stageOwner: 'person'),
+      ],
+      'queued': [
+        _goal('queued', 'g-queued', '排队的', status: 'queued', stageKind: 'queued'),
+        _goal('queued', 'g-new', '新目标', status: 'queued', stageKind: 'queued'),
+      ],
+      'in_progress': [
+        _goal('in_progress', 'g-run', '跑着的', strategy: 'quick', stageKind: 'implementing'),
+      ],
+      'result_ready': [
+        _goal('result_ready', 'g-done', '完成的',
+            status: 'done', verdict: 'PASS', stageKind: 'result_notified'),
+      ],
+      'ended': [
+        _goal('ended', 'g-end', '取消的',
+            status: 'aborted', verdict: 'CANCELLED', stageKind: 'ended', stageOwner: 'system'),
+      ],
+    },
+    'counts': {
+      'needs_you': 1,
+      'queued': 2,
+      'in_progress': 1,
+      'result_ready': 1,
+      'ended': 1,
+    },
+    'total': 6,
+  });
+}
+
 PresenceInfo _presence({
   List<Map<String, dynamic>> attention = const [],
   int unreadResults = 0,
@@ -478,6 +516,38 @@ void main() {
 
       expect(client.workCalls, 2);
       expect(client.presenceCalls, greaterThanOrEqualTo(2));
+    });
+
+    testWidgets('the 15s poll stays authoritative after a goal event', (tester) async {
+      final bus = WorkRefreshBus();
+      final client = _FakeWorkClient(overviews: {_dirA: _overviewA()});
+      await _pumpWorkTab(
+        tester,
+        client: client,
+        bus: bus,
+        refreshDebounce: Duration.zero,
+      );
+
+      // 1. A goal-scoped event: the refresh that follows is a local patch.
+      bus.onEvent(_goalNodeEvent('g-need'));
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(client.workCalls, 2);
+      expect(find.text('新目标'), findsNothing);
+
+      // 2. Another bucket gains a Goal *after* the event (not in its payload).
+      client.overviews[_dirA] = _overviewB();
+
+      // 3. The 15s fallback poll must publish the full snapshot.
+      //
+      // Regression (Task 7 review, Important): the timer used to go through the
+      // event signal, and the bus kept `lastEvent` forever — so every tick
+      // re-patched g-need and the queued bucket never picked up the new Goal.
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pumpAndSettle();
+
+      expect(client.workCalls, 3);
+      expect(find.text('新目标'), findsOneWidget);
     });
 
     test('patchWorkOverview replaces only the buckets that hold the touched Goal', () {

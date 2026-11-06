@@ -252,15 +252,29 @@ class _WorkTabState extends State<WorkTab> {
 
   void _startPolling() {
     _poll?.cancel();
-    _poll = Timer.periodic(widget.pollInterval, (_) => _onRefreshSignal());
+    // The fallback poll is authoritative: it never inherits an event's goalId.
+    _poll = Timer.periodic(widget.pollInterval, (_) => _onPollTick());
   }
 
-  /// 刷新信号（轮询 / 重连 / 事件）→ 合并窗口 → 一次重拉。
+  /// 事件 / 重连信号 → 合并窗口 → 一次重拉。
+  ///
+  /// [WorkRefreshBus.consumeEvent] 在信号处取走事件：事件只驱动**紧接着的一次**
+  /// 局部 patch，随后总线不再保留 goalId（否则 15s 兜底轮询会退化）。
   void _onRefreshSignal() {
-    final goalId = _bus.lastEvent?.goalId;
+    final goalId = _bus.consumeEvent()?.goalId;
     if (goalId != null && goalId.isNotEmpty) _pendingGoalIds.add(goalId);
     _debounce?.cancel();
     _debounce = Timer(widget.refreshDebounce, () => unawaited(_flushRefresh()));
+  }
+
+  /// 15s 兜底轮询：全量刷新。
+  ///
+  /// 丢弃尚未兑现的局部 patch 目标——全量快照已覆盖它们，而且这样任何桶的新
+  /// Goal 都能在一个轮询周期内出现。
+  void _onPollTick() {
+    _pendingGoalIds.clear();
+    _debounce?.cancel();
+    unawaited(_flushRefresh());
   }
 
   Future<void> _flushRefresh() async {
