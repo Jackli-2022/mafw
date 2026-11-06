@@ -35,8 +35,9 @@ The app talks to the desktop Orcalore (MAFW) gateway over Tailscale.
   the pairing code prefers it via `mobile.tailscaleUrl`). Bare `100.x` / LAN IPs
   still work but show a warning; public cleartext hostnames are rejected.
 - **Cleartext policy (two layers)**: the app itself (Dart/`package:http` sockets)
-  allows `https`, `*.ts.net`, loopback, and private-LAN/bare-IP cleartext with a
-  warning — public cleartext hostnames are **rejected**. Android's
+  allows `https`, `*.ts.net`, loopback, private-LAN IPs, and LAN mDNS names
+  (single-label hostnames and `.local`) with a warning — dotted public cleartext
+  hostnames are **rejected**. Android's
   `network_security_config.xml` covers the platform native stack (media playback
   such as TTS via just_audio/ExoPlayer) and allowlists the `ts.net` domain tree;
   it uses `<domain includeSubdomains="true">ts.net</domain>` because a bare

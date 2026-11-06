@@ -32,9 +32,15 @@ void main() {
       expect(checkBaseUrl('http://172.31.255.254:3000'), UrlCheck.plaintextLanWarn);
     });
 
+    test('single-label and .local hosts stay LAN plaintext (mDNS discovery)', () {
+      expect(checkBaseUrl('http://DESKTOP-ABC:3000'), UrlCheck.plaintextLanWarn);
+      expect(checkBaseUrl('http://desktop-abc.local:3000'), UrlCheck.plaintextLanWarn);
+      expect(checkBaseUrl('http://my-pc.local:3000'), UrlCheck.plaintextLanWarn);
+    });
+
     test('public cleartext hostnames are rejected (Tailscale/private only)', () {
       expect(checkBaseUrl('http://example.com:3000'), UrlCheck.publicPlaintext);
-      expect(checkBaseUrl('http://my-pc.local:3000'), UrlCheck.publicPlaintext);
+      expect(checkBaseUrl('http://evil.example.com'), UrlCheck.publicPlaintext);
       expect(checkBaseUrl('http://agent.example.org'), UrlCheck.publicPlaintext);
     });
 

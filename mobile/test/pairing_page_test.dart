@@ -141,7 +141,7 @@ void main() {
   group('Pairing URL policy (Tailscale/private only)', () {
     test('public http host is rejected', () {
       expect(canPairWithUrl('http://example.com:3000'), isFalse);
-      expect(canPairWithUrl('http://my-pc.local:3000'), isFalse);
+      expect(canPairWithUrl('http://evil.example.com'), isFalse);
     });
 
     test('ts.net http is accepted', () {
@@ -150,6 +150,11 @@ void main() {
 
     test('private LAN http is accepted with a warning', () {
       expect(canPairWithUrl('http://192.168.1.5:3000'), isTrue);
+    });
+
+    test('mDNS hosts (single-label / .local) are accepted', () {
+      expect(canPairWithUrl('http://DESKTOP-ABC:3000'), isTrue);
+      expect(canPairWithUrl('http://desktop-abc.local:3000'), isTrue);
     });
 
     test('non-http schemes are rejected', () {

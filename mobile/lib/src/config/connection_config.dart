@@ -51,10 +51,12 @@ bool _isPrivateLanIpv4(String host) {
 ///   preferred Tailscale path and are allowlisted for native media).
 /// - `http://100.64.0.0/10` (Tailscale CGNAT) or any other bare IP →
 ///   [UrlCheck.bareIpWarn] — debug-friendly warning, prefer MagicDNS.
-/// - `http://192.168./10./172.16-31.` → [UrlCheck.plaintextLanWarn] — trusted
-///   networks only (warn but allow, mDNS discovery path).
-/// - Any other cleartext hostname → [UrlCheck.publicPlaintext] — rejected; v1
-///   connects over Tailscale/private networks only.
+/// - `http://192.168./10./172.16-31.` and LAN mDNS names (single-label
+///   hostnames like `DESKTOP-ABC` and `.local` names) → [UrlCheck.plaintextLanWarn]
+///   — trusted networks only (warn but allow; keeps the mDNS discovery flow).
+/// - Any other cleartext hostname (dotted public/FQDN) →
+///   [UrlCheck.publicPlaintext] — rejected; v1 connects over Tailscale/private
+///   networks only.
 /// - Loopback stays [UrlCheck.ok] for `adb reverse` development.
 /// - Anything that is not an absolute http(s) URL → [UrlCheck.invalid].
 UrlCheck checkBaseUrl(String url) {
@@ -76,6 +78,12 @@ UrlCheck checkBaseUrl(String url) {
   if (host == 'ts.net' || host.endsWith('.ts.net')) return UrlCheck.ok;
   if (_isIpHost(host)) {
     return _isPrivateLanIpv4(host) ? UrlCheck.plaintextLanWarn : UrlCheck.bareIpWarn;
+  }
+  // LAN mDNS discovery (spec §6 keeps it): single-label hostnames (often the
+  // `os.hostname()` SRV target) and `.local` names stay warn-but-allow, the
+  // same tier as private LAN IPs. Dotted public hostnames remain rejected.
+  if (!host.contains('.') || host.endsWith('.local')) {
+    return UrlCheck.plaintextLanWarn;
   }
   return UrlCheck.publicPlaintext;
 }
