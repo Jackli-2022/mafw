@@ -242,7 +242,7 @@ mafw logs
 | 现象 | 排查 |
 |---|---|
 | `401 unauthorized`（远端） | `server.apiToken` 未设（空 token 远端全拒）或 App token 不匹配；配对码 token 取自生成时刻配置——改 token 后必须重新配对 |
-| `CLEARTEXT communication not permitted` | `network_security_config.xml` 未含 `ts.net` 域；或用了裸 `100.x` IP（域条目只匹配主机名 → 改用 MagicDNS 主机名） |
+| `CLEARTEXT communication not permitted` | 原生网络栈（TTS/ExoPlayer 等）受 NSC 约束：`network_security_config.xml` 的 ts.net 域必须带 `includeSubdomains="true"`（否则子域回落到 base-config），或用的是裸 `100.x` IP（域条目只匹配主机名 → 改用 MagicDNS 主机名）；Dart/`package:http` 请求不走 NSC，公网明文由应用层 `UrlCheck.publicPlaintext` 拒绝 |
 | `SocketException` / 连接拒绝 | 手机 Tailscale 未连/被省电杀掉；MagicDNS 解析失败（「Use Tailscale DNS」关闭）；gateway 未启动（`mafw status`） |
 | 扫码无反应 | 深链 scheme 不匹配（`orcalore://` vs 旧 `mafw://`）；nonce 过期（5min）或已被消费 |
 | 事件不驱动 UI | 调试面板看帧是否到达 + 解析判定；seq gap（重连）→ refetch；`pod.event` 无 projectId → 按当前项目反查归属 |

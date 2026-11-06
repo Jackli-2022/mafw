@@ -55,6 +55,19 @@ void main() {
       expect(sink.wsFrames.first.raw, contains('flat_1'));
       expect(sink.wsFrames.last.raw, contains('flat_200'));
     });
+
+    test('disabled sink records nothing (release gate)', () {
+      final sink = DiagnosticsSink(enabled: false);
+      for (var i = 0; i < 5; i++) {
+        sink.recordHttp(method: 'GET', path: '/api/x/$i', status: 200);
+        sink.recordWsFrame(_canonicalFrame());
+      }
+
+      expect(sink.httpEntries, isEmpty);
+      expect(sink.wsFrames, isEmpty);
+      expect(sink.export()['http'], isEmpty);
+      expect(sink.export()['ws'], isEmpty);
+    });
   });
 
   group('DiagnosticsSink frame classification', () {

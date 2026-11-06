@@ -138,6 +138,25 @@ void main() {
     });
   });
 
+  group('Pairing URL policy (Tailscale/private only)', () {
+    test('public http host is rejected', () {
+      expect(canPairWithUrl('http://example.com:3000'), isFalse);
+      expect(canPairWithUrl('http://my-pc.local:3000'), isFalse);
+    });
+
+    test('ts.net http is accepted', () {
+      expect(canPairWithUrl('http://machine.tailnet.ts.net:3000'), isTrue);
+    });
+
+    test('private LAN http is accepted with a warning', () {
+      expect(canPairWithUrl('http://192.168.1.5:3000'), isTrue);
+    });
+
+    test('non-http schemes are rejected', () {
+      expect(canPairWithUrl('mafw://pair?x=1'), isFalse);
+    });
+  });
+
   group('SecureConfigStore pairing flow', () {
     test('pairing writes config to secure storage', () async {
       final fake = _FakeSecureStorage();

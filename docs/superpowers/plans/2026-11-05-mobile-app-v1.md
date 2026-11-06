@@ -60,9 +60,9 @@
 - Test: `mobile/test/connection_url_test.dart`、`mobile/test/pairing_page_test.dart`（13 例 scheme 断言同步改）、`mobile/test/debug_page_test.dart`
 
 **Interfaces:**
-- Produces: `enum UrlCheck { ok, bareIpWarn, plaintextLanWarn, invalid }` + `UrlCheck checkBaseUrl(String url)` — `http://*.ts.net` → ok；`http://100.64/10.…` 或裸 IP → bareIpWarn（提示改 MagicDNS 主机名）；`http://192.168./10./172.16.` → plaintextLanWarn（既有警告保留）；非 http(s) → invalid
-- `class DiagnosticsSink { void recordHttp(...); void recordWsFrame(String raw); HttpEntry? …; List<WsFrameEntry> wsFrames; Map<String, dynamic> export(); }`（注入式；HTTP 100 条 / WS 200 帧环形；WsFrameEntry 含 `raw`、`kind: canonical|flat|discarded`、`effect`）
-- network_security_config：`<domain-config cleartextTrafficPermitted="true"><domain>ts.net</domain></domain-config>`（base 保持 false）；Manifest `<data android:scheme="orcalore"/>`；gateway pairing 深链前缀 `orcalore://pair`
+- Produces: `enum UrlCheck { ok, bareIpWarn, plaintextLanWarn, publicPlaintext, invalid }` + `UrlCheck checkBaseUrl(String url)` — `http://*.ts.net` → ok；`http://100.64/10.…` 或裸 IP → bareIpWarn（提示改 MagicDNS 主机名）；`http://192.168./10./172.16-31.` → plaintextLanWarn（既有警告保留）；**其他明文 hostname → publicPlaintext（拒绝保存/配对）**；非 http(s) → invalid
+- `class DiagnosticsSink { void recordHttp(...); void recordWsFrame(String raw); HttpEntry? …; List<WsFrameEntry> wsFrames; Map<String, dynamic> export(); }`（注入式；HTTP 100 条 / WS 200 帧环形；WsFrameEntry 含 `raw`、`kind: canonical|flat|discarded`、`effect`；release 不注入/`enabled:false` 零采集）
+- network_security_config：`<domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">ts.net</domain></domain-config>`（base 保持 false；`includeSubdomains` 必填，否则只匹配 exact `ts.net`）；Manifest `<data android:scheme="orcalore"/>`；gateway pairing 深链前缀 `orcalore://pair`
 
 - [ ] **Step 1: 写失败测试** — checkBaseUrl 五形态断言；SecureConfigStore 无配置时 `load()` 返回空 baseUrl（非 `http://127.0.0.1:3000`）；pairing 解析仅接受 `orcalore://pair`（旧 `mafw://pair` 拒绝）；diagnostics 环形缓冲截断（101 条 HTTP 留 100、201 帧 WS 留 200）与 DebugPage 渲染（fixture 注入：帧原文 + 判定 + 效果、HTTP 行、复制诊断包 JSON 含 mask 后 token）
 - [ ] **Step 2: 确认失败** — `flutter test test/connection_url_test.dart test/pairing_page_test.dart test/debug_page_test.dart` FAIL

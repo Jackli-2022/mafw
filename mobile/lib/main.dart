@@ -71,7 +71,13 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   ConnectivityWatcher? _connectivityWatcher;
   LifecycleWsManager? _lifecycleManager;
   final SessionCache _sessionCache = SessionCache();
-  final DiagnosticsSink _diagnostics = DiagnosticsSink();
+
+  /// Dev-only diagnostics collection. Release builds (unless built with
+  /// `--dart-define=ORCALORE_DEBUG_PANEL=true`) keep this null: no buffers,
+  /// no second JSON parse per WS frame, no retained chat text.
+  final DiagnosticsSink? _diagnostics =
+      debugPanelEnabled ? DiagnosticsSink() : null;
+
   List<MafwSession> _sessions = [];
   bool _connecting = true;
   bool _wsConnected = false;
@@ -121,7 +127,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _wsStatusSub?.cancel();
     _pushService?.dispose();
 
-    _diagnostics.updateConnection(baseUrl: cfg.baseUrl, apiToken: cfg.apiToken);
+    _diagnostics?.updateConnection(baseUrl: cfg.baseUrl, apiToken: cfg.apiToken);
 
     // Unconfigured state (spec §6 "缺省清理"): the app shows the "未配置" banner
     // and waits for settings/pairing instead of reconnecting to a phantom
@@ -140,7 +146,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     }
 
     final client = GatewayClient(cfg, diagnostics: _diagnostics);
-    final ws = WsClient(cfg, onRawFrame: _diagnostics.recordWsFrame);
+    final ws = WsClient(cfg, onRawFrame: _diagnostics?.recordWsFrame);
 
     _wsStatusSub = ws.connectionStatus.listen((ok) {
       if (mounted) setState(() => _wsConnected = ok);

@@ -111,7 +111,7 @@ theme.dart 的 accent 语义从「全局主色」收敛为「B accent」（Mater
 ## 6. 连接层（Phase 1）
 
 - **URL 形态**：主 `http://machine.<tailnet>.ts.net:3000`（MagicDNS 主机名；Tailscale App 默认接受 tailnet DNS，手机可解析）；配对码默认给的是 100.x IP（`detectReachableHost()`），App 侧允许两种，**主机名优先**（原因见 cleartext 条）。
-- **Android cleartext**：`network_security_config.xml` 增加 `<domain-config cleartextTrafficPermitted="true"><domain>ts.net</domain></domain-config>`（域后缀匹配 ts.net 全部子域）；**不**全局放开。裸 100.x IP 的放行行为是验证点 V1（域条目按 Android 文档只匹配主机名）——若 IP 不被覆盖：App 内把 IP 形态映射为主机名输入提示，或接受仅主机名路径。
+- **Android cleartext**：`network_security_config.xml` 增加 `<domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">ts.net</domain></domain-config>`（`includeSubdomains` 必填——缺省只匹配 exact `ts.net`，子域会回落到 base-config 被拒）；**不**全局放开。NSC 只约束平台原生网络栈（TTS/ExoPlayer 等）；Dart/`package:http` 不走 NSC，由应用层策略拒绝公网明文（仅放行 https / ts.net / 私网与 loopback 明文）。裸 100.x IP 的放行行为是验证点 V1（域条目按 Android 文档只匹配主机名）——若 IP 不被覆盖：App 内把 IP 形态映射为主机名输入提示，或接受仅主机名路径。
 - **apiToken**：`MAFW_SERVER_API_TOKEN` 必须设置（空 token = 远端全拒，auth.ts:43）。setup 文档写明。
 - **WS 鉴权迁移 header**：`IOWebSocketChannel.connect(url, headers: {Authorization: Bearer})`（dart:io 支持；现有「不支持 header」注释是误判）——为将来 serve 并存留余地；`deviceId` 仍走 query（PushGateway 在线追踪）。
 - **配对**：Manifest 增加 `orcalore://` intent-filter（现有配对页/QR/nonce verify 全复用）；**深链 scheme 改名锁步三处**（gateway `mobile/pairing.ts` 生成、mobile `pairing_page.dart` 解析、Manifest intent-filter）；配对 URL 主机名经 P0-3 的 `mobile.tailscaleUrl` 配置（config.yaml 或 env），配对码即给 MagicDNS 主机名。

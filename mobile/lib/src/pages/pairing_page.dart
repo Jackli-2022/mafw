@@ -100,33 +100,30 @@ class _PairingPageState extends State<PairingPage> {
   }
 
   Future<void> _verifyAndConnect(String url, String token, String nonce) async {
-    // Spec §6: https is always safe; http is accepted for ts.net / loopback /
-    // trusted LAN only, with the same hostname advice as the settings form.
-    switch (checkBaseUrl(url)) {
-      case UrlCheck.invalid:
-        if (mounted) {
-          setState(() {
-            _error = '连接地址无效：请使用 http(s):// 主机名:端口（推荐 MagicDNS 主机名 *.ts.net）';
-            _processing = false;
-          });
-        }
-        return;
-      case UrlCheck.bareIpWarn:
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('提示：裸 IP 明文连接，建议改用 MagicDNS 主机名（*.ts.net）')),
-          );
-        }
-        break;
-      case UrlCheck.plaintextLanWarn:
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('警告：使用局域网明文连接，仅限可信网络')),
-          );
-        }
-        break;
-      case UrlCheck.ok:
-        break;
+    // App-layer policy (spec §6): v1 is Tailscale/private only. Public cleartext
+    // and malformed URLs are hard-rejected; LAN / bare-IP cleartext still
+    // connects with a warning. (Native media is governed separately by the
+    // Android NSC ts.net allowlist; Dart/package:http sockets are not NSC-bound.)
+    final check = checkBaseUrl(url);
+    if (!canPairWithUrl(url)) {
+      if (mounted) {
+        setState(() {
+          _error = check == UrlCheck.publicPlaintext
+              ? '公网明文 http 连接被拒绝：请使用 https，或 Tailscale/局域网地址'
+              : '连接地址无效：请使用 http(s):// 主机名:端口（推荐 MagicDNS 主机名 *.ts.net）';
+          _processing = false;
+        });
+      }
+      return;
+    }
+    if (check == UrlCheck.bareIpWarn && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('提示：裸 IP 明文连接，建议改用 MagicDNS 主机名（*.ts.net）')),
+      );
+    } else if (check == UrlCheck.plaintextLanWarn && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('警告：使用局域网明文连接，仅限可信网络')),
+      );
     }
 
     try {

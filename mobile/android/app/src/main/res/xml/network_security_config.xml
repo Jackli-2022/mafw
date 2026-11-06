@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- I2 hardening: global cleartext disabled; Tailscale=https/wss required,
-         except MagicDNS hosts (spec §6). `<domain>ts.net</domain>` matches the
-         ts.net domain and all of its subdomains, so `http://machine.<tailnet>.ts.net`
-         works while bare-IP cleartext stays blocked (the app shows a warning
-         and asks for a MagicDNS hostname instead). -->
+    <!-- I2 hardening: global cleartext disabled. Cleartext is allowlisted ONLY
+         for the ts.net domain tree (MagicDNS). `includeSubdomains="true"` is
+         required: without it Android matches the exact host `ts.net` only, so
+         `machine.<tailnet>.ts.net` would fall back to the base-config and be
+         blocked. This config governs the platform native network stack (media
+         playback such as TTS via just_audio/ExoPlayer); Dart/package:http
+         traffic is not NSC-bound and is gated by app-level UrlCheck instead. -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
     <domain-config cleartextTrafficPermitted="true">
-        <domain>ts.net</domain>
+        <domain includeSubdomains="true">ts.net</domain>
     </domain-config>
 </network-security-config>

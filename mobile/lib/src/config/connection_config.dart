@@ -11,8 +11,11 @@ enum UrlCheck {
   /// Cleartext over a bare IP (Tailscale 100.64/10 or public) — prefer MagicDNS.
   bareIpWarn,
 
-  /// Cleartext over a private LAN / plain hostname — trusted networks only.
+  /// Cleartext over a private LAN address — trusted networks only.
   plaintextLanWarn,
+
+  /// Cleartext over a public hostname — rejected (v1 is Tailscale/private only).
+  publicPlaintext,
 
   /// Not an absolute http(s) URL.
   invalid,
@@ -36,15 +39,22 @@ bool _isPrivateLanIpv4(String host) {
   return false;
 }
 
-/// Classify [url] for the connection form.
+/// Classify [url] for the connection form / pairing policy.
 ///
-/// - `http://<host>.ts.net` → [UrlCheck.ok] (ts.net cleartext is allowlisted
-///   by `network_security_config.xml`; MagicDNS hostnames are the preferred
-///   Tailscale path).
+/// This is an **application-layer** policy: `package:http` (Dart sockets) is
+/// not governed by Android's network-security-config. The NSC exists for the
+/// platform native stack (media playback such as TTS via just_audio/ExoPlayer)
+/// and separately allowlists cleartext for the `ts.net` domain tree
+/// (`includeSubdomains="true"`).
+///
+/// - `http://<host>.ts.net` → [UrlCheck.ok] (MagicDNS hostnames are the
+///   preferred Tailscale path and are allowlisted for native media).
 /// - `http://100.64.0.0/10` (Tailscale CGNAT) or any other bare IP →
-///   [UrlCheck.bareIpWarn] — ask the user to switch to a MagicDNS hostname.
-/// - `http://192.168./10./172.16.` and other plaintext hostnames →
-///   [UrlCheck.plaintextLanWarn] — trusted networks only.
+///   [UrlCheck.bareIpWarn] — debug-friendly warning, prefer MagicDNS.
+/// - `http://192.168./10./172.16-31.` → [UrlCheck.plaintextLanWarn] — trusted
+///   networks only (warn but allow, mDNS discovery path).
+/// - Any other cleartext hostname → [UrlCheck.publicPlaintext] — rejected; v1
+///   connects over Tailscale/private networks only.
 /// - Loopback stays [UrlCheck.ok] for `adb reverse` development.
 /// - Anything that is not an absolute http(s) URL → [UrlCheck.invalid].
 UrlCheck checkBaseUrl(String url) {
@@ -67,7 +77,7 @@ UrlCheck checkBaseUrl(String url) {
   if (_isIpHost(host)) {
     return _isPrivateLanIpv4(host) ? UrlCheck.plaintextLanWarn : UrlCheck.bareIpWarn;
   }
-  return UrlCheck.plaintextLanWarn;
+  return UrlCheck.publicPlaintext;
 }
 
 class ConnectionConfig {

@@ -139,6 +139,11 @@ class DiagnosticsSink {
 
   final int httpCapacity;
   final int wsCapacity;
+
+  /// When false every `record*` call is a no-op (release builds use this to
+  /// guarantee zero collection overhead).
+  final bool enabled;
+
   final DateTime Function() _now;
 
   final List<HttpEntry> _http = [];
@@ -149,6 +154,7 @@ class DiagnosticsSink {
   DiagnosticsSink({
     this.httpCapacity = defaultHttpCapacity,
     this.wsCapacity = defaultWsCapacity,
+    this.enabled = true,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
@@ -179,6 +185,7 @@ class DiagnosticsSink {
     String? error,
     String? errorBody,
   }) {
+    if (!enabled) return;
     _push(
       _http,
       HttpEntry(
@@ -196,6 +203,7 @@ class DiagnosticsSink {
 
   /// Record and classify one raw WS frame (including malformed ones).
   void recordWsFrame(String raw) {
+    if (!enabled) return;
     _push(_ws, _classify(raw), wsCapacity);
   }
 

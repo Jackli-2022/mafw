@@ -5,6 +5,8 @@
 /// scheme is **rejected** — only [kPairingScheme] is accepted.
 library;
 
+import 'connection_config.dart';
+
 /// Deep-link scheme owned by Orcalore.
 const String kPairingScheme = 'orcalore';
 
@@ -47,6 +49,18 @@ class PairingLinkResult {
 
   static PairingLinkResult success(PairingLink link) =>
       PairingLinkResult._(link, PairingLinkError.none);
+}
+
+/// Pairing-time URL policy (single source shared by the page and its tests).
+///
+/// v1 connects over Tailscale/private networks only: https, `*.ts.net`,
+/// loopback, bare-IP/LAN cleartext (with a warning) are acceptable; public
+/// cleartext hostnames and non-http(s) URLs are rejected.
+bool canPairWithUrl(String url) {
+  final check = checkBaseUrl(url);
+  return check == UrlCheck.ok ||
+      check == UrlCheck.bareIpWarn ||
+      check == UrlCheck.plaintextLanWarn;
 }
 
 /// Parse and validate a pairing deep link.

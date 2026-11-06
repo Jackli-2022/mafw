@@ -31,11 +31,17 @@ flutter test
 
 The app talks to the desktop Orcalore (MAFW) gateway over Tailscale.
 
-- **Preferred URL**: `http://<machine>.<tailnet>.ts.net:3000` (MagicDNS hostname).
-  `android/app/src/main/res/xml/network_security_config.xml` allowlists cleartext
-  for the `ts.net` domain **and its subdomains only**; bare `100.x` / LAN IP
-  cleartext may be blocked by Android, in which case the app asks you to switch
-  to a MagicDNS hostname.
+- **Preferred URL**: `http://<machine>.<tailnet>.ts.net:3000` (MagicDNS hostname;
+  the pairing code prefers it via `mobile.tailscaleUrl`). Bare `100.x` / LAN IPs
+  still work but show a warning; public cleartext hostnames are rejected.
+- **Cleartext policy (two layers)**: the app itself (Dart/`package:http` sockets)
+  allows `https`, `*.ts.net`, loopback, and private-LAN/bare-IP cleartext with a
+  warning — public cleartext hostnames are **rejected**. Android's
+  `network_security_config.xml` covers the platform native stack (media playback
+  such as TTS via just_audio/ExoPlayer) and allowlists the `ts.net` domain tree;
+  it uses `<domain includeSubdomains="true">ts.net</domain>` because a bare
+  `<domain>ts.net</domain>` matches the exact host only and would block
+  `machine.<tailnet>.ts.net`.
 - **Tailscale DNS**: keep 「Use Tailscale DNS」 enabled on the phone (V2). If it is
   off, `*.ts.net` hostnames do not resolve even though Tailscale itself is up.
 - **Required token**: set `MAFW_SERVER_API_TOKEN` (or `server.apiToken`) on the

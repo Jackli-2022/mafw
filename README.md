@@ -219,7 +219,7 @@ npx electron-vite build
 ### 3. 手机接入（开发中）
 
 Android 客户端经 **Tailscale 直连** Gateway（零公网暴露）：手机装 Tailscale，
-`GET /api/mobile/pairing-code` 生成一次性配对深链（`mafw://pair?…`），扫码即得 base URL + token。
+`GET /api/mobile/pairing-code` 生成一次性配对深链（`orcalore://pair?…`），扫码即得 base URL + token。
 App（Flutter，`mobile/`）在 P1-P4 迭代中；连接层与 gateway 配对/鉴权已就绪。
 
 ### 4. opencode 接入（可选）

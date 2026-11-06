@@ -32,8 +32,10 @@ void main() {
       expect(checkBaseUrl('http://172.31.255.254:3000'), UrlCheck.plaintextLanWarn);
     });
 
-    test('other cleartext hostnames warn about plaintext', () {
-      expect(checkBaseUrl('http://my-pc.local:3000'), UrlCheck.plaintextLanWarn);
+    test('public cleartext hostnames are rejected (Tailscale/private only)', () {
+      expect(checkBaseUrl('http://example.com:3000'), UrlCheck.publicPlaintext);
+      expect(checkBaseUrl('http://my-pc.local:3000'), UrlCheck.publicPlaintext);
+      expect(checkBaseUrl('http://agent.example.org'), UrlCheck.publicPlaintext);
     });
 
     test('non-http(s) input is invalid', () {

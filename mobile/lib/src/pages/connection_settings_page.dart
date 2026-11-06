@@ -42,14 +42,19 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
     super.dispose();
   }
 
+  bool get _blocked =>
+      _urlCheck == UrlCheck.invalid || _urlCheck == UrlCheck.publicPlaintext;
+
   String? get _urlHint {
     if (_urlCtrl.text.trim().isEmpty) return null;
     return switch (_urlCheck) {
       UrlCheck.ok => null,
       UrlCheck.bareIpWarn =>
-        '提示：建议改用 MagicDNS 主机名（http://<机器名>.<tailnet>.ts.net:3000）。裸 IP 明文连接可能被 Android cleartext 策略拦截。',
+        '提示：建议改用 MagicDNS 主机名（http://<机器名>.<tailnet>.ts.net:3000）。裸 IP 明文仅建议调试使用。',
       UrlCheck.plaintextLanWarn =>
         '警告：局域网明文连接，仅限可信网络。远程访问请使用 Tailscale（https 或 *.ts.net 主机名）。',
+      UrlCheck.publicPlaintext =>
+        '公网地址不允许明文 http：请使用 https，或 Tailscale / 局域网地址（应用层策略，仅放行 ts.net 与私网明文）。',
       UrlCheck.invalid => '地址无效：需以 http:// 或 https:// 开头，并包含主机名（如 http://pc.tailnet.ts.net:3000）。',
     };
   }
@@ -57,12 +62,12 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
   Color get _urlHintColor => switch (_urlCheck) {
         UrlCheck.ok => Colors.green.shade700,
         UrlCheck.bareIpWarn || UrlCheck.plaintextLanWarn => Colors.orange.shade800,
-        UrlCheck.invalid => Colors.red.shade700,
+        UrlCheck.publicPlaintext || UrlCheck.invalid => Colors.red.shade700,
       };
 
   Future<void> _test() async {
-    if (_urlCheck == UrlCheck.invalid) {
-      setState(() => _testResult = '✗ 地址无效，无法测试连接');
+    if (_blocked) {
+      setState(() => _testResult = '✗ 地址无效或不允许明文公网连接，无法测试');
       return;
     }
     setState(() {
@@ -79,8 +84,8 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
   }
 
   Future<void> _save() async {
-    if (_urlCheck == UrlCheck.invalid || _urlCtrl.text.trim().isEmpty) {
-      setState(() => _testResult = '✗ 请先填写有效的 Gateway 地址');
+    if (_blocked || _urlCtrl.text.trim().isEmpty) {
+      setState(() => _testResult = '✗ 请先填写有效的 Gateway 地址（公网明文 http 不允许）');
       return;
     }
     final cfg = ConnectionConfig(baseUrl: _urlCtrl.text.trim(), apiToken: _tokenCtrl.text.trim());
@@ -149,9 +154,10 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
           const SizedBox(height: 24),
           const Text(
             '提示：\n'
-            '· 推荐：http://<机器名>.<tailnet>.ts.net:3000（MagicDNS 主机名，Android 已放行 ts.net 明文）\n'
+            '· 推荐：http://<机器名>.<tailnet>.ts.net:3000（MagicDNS 主机名）\n'
             '· 手机 Tailscale 需保持「Use Tailscale DNS」开启，否则主机名无法解析\n'
-            '· 裸 100.x IP 可连但可能被 cleartext 策略拦截；局域网 http 仅限可信网络\n'
+            '· 应用层策略：仅允许 https / ts.net / 局域网与 loopback 明文；公网明文 http 会被拒绝\n'
+            '· 原生媒体（TTS 等）走 Android 网络栈，ts.net 子域由 network_security_config 放行\n'
             '· 远程访问必须在 gateway 配置 MAFW_SERVER_API_TOKEN（或 server.apiToken）',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
