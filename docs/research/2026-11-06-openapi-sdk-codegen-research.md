@@ -248,6 +248,32 @@ npx tsc --noEmit --skipLibCheck --target es2022 --module esnext /tmp/opencode-ty
 4. opencode 用 vendor extension `x-effect-stream: { encoding: 'sse', causeSchema }` 描述流语义；
    openapi-typescript 会忽略它，只生成 `content.schema`（单帧对象）。
 
+### 6.1 和 opencode 自己的 SDK 对得上吗（v2 实测）
+
+opencode 的 SDK 是 `@hey-api/openapi-ts` 生成的（`dist/v2/gen/{types,sdk}.gen.d.ts`）。
+用本机 serve（CLI v2.2.5）的 `openapi.json` 与 `@opencode-ai/sdk@1.19.5`（当前安装 1.18.30）的 v2 类型对比：
+
+| 项 | spec（serve） | SDK 1.19.5 v2 | 结论 |
+|---|---|---|---|
+| 类型数 | 363 schemas | 1,409 exports | 命名/内联策略不同，不能按数量对齐 |
+| 方法数 | 169 ops | 188 methods | SDK 含 v1/v2 双份 |
+| 列表响应 | `SessionsResponse { data, cursor }` | `V2SessionListResponses[200] = SessionsResponse` | ✅ 一致 |
+| `Session.Info` | 16 字段 | `SessionV2Info` 12 字段 | 共享 12；spec 多 `fork/outcome/metadata/permissions` |
+| `Provider.Info` | 10 字段 | `ProviderV2Info` 6 字段 | 共享 3；双方各有增量（spec: `canonical/settings/...`；sdk: `disabled/api/request`） |
+| `Agent.Info` | 12 字段 | `AgentV2Info` 11 字段 | 共享 11；spec 多 `name` |
+| `Permission.Request` | 8 字段 | `PermissionV2Request` 7 字段 | 共享 7；spec 多 `message` |
+| `Project` | `canonical` | `worktree` | 字段名不同 |
+| **SSE 事件** | 帧 `{ id?, event, data: V2EventEncoded }`，`V2EventEncoded = string` | `V2Event` 联合 **88** 个变体 | ❌ 生成不出来 |
+
+结论：
+
+- **接口**：大体对得上（同一套 schema 源）。差异主要是**版本差**（serve 2.2.5 比 SDK 1.19.5 新）
+  与个别字段命名；用 `openapi.json` 生成得到的是**更接近当前 serve** 的形状，对写 runtime 插件有用。
+- **事件**：对不上。spec 里 SSE 的 `data` 是 JSON 字符串（`contentMediaType: application/json`），
+  `openapi-typescript` 只能生成 `string`；SDK 的 88 个 `V2Event` 变体来自构建期另一套 codegen
+  （不在 spec 里，`x-effect-stream` 也只带 `causeSchema`）。事件必须从 SDK 的 `V2Event`
+  或真实 SSE 抓包取，不能从 OpenAPI 生成。
+
 ### 但它是很好的**适配器层**校验输入
 
 - 可以拿 `Session.Info` / `Session.Message.Info` / `Provider.Info` 等 schema 与
