@@ -377,7 +377,30 @@ mafw plugin-check <file> --audit --probe                    # 真调只读接口
   `getBaseUrl`/`healthCheck`/`tools.nativeTools`/`provider.*`/`session.list|todo|children`/`mcp.list`
   并检查返回形状（超时归 skipped，不误报；方法缺席由 presence 校验负责）。
 
-退出码：审计 error 或探针 error → `1`。`--json` 输出完整 `PluginAuditReport`（含逐条样本 trace）。
+退出码：审计 error 或 probe error → `1`。`--json` 输出完整 `PluginAuditReport`（含逐条样本 trace）。
+
+**opencode 上游参考（写 opencode 适配器时用）**：从 opencode 仓库的
+`packages/protocol/openapi.json` 生成一套参考产物（不进 `@mafw/sdk` 运行时契约）：
+
+```bash
+npm run gen:opencode-ref -- \
+  --spec https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/protocol/openapi.json \
+  --source-label https://github.com/anomalyco/opencode/blob/dev/packages/protocol/openapi.json
+# 或本地文件：--spec ../../.tmp/opencode-openapi.json
+# CI/复核：加 --check（只比对不写）
+```
+
+产物在 `docs/reference/opencode/`：
+
+| 文件 | 用途 |
+|---|---|
+| `types.gen.ts` | openapi-typescript 全量类型（paths / operations / components） |
+| `events.gen.ts` | `OpencodeEvent` 联合（`V2Event`）+ `OPENCODE_EVENT_TYPES` 清单 |
+| `events.json` | 机器可读事件清单（type / schema / required / properties） |
+| `event-map.md` | opencode → MAFW canonical 建议表（**名称启发式，需人工确认**） |
+
+注意：**运行中 serve 的 `/openapi.json` 可能是旧构建**（没有 `V2Event` / `contentSchema`，
+脚本会直接报错并提示用仓库 spec）。事件必须从仓库 spec 取。
 
 需要真实 LLM 往返的场景时再跑 `mafw plugin-test`（§9.5）。
 

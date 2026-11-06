@@ -342,9 +342,25 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
   ① 对 `@mafw/sdk`：operationId 交集仅 **13**、类型名交集 **5**——不能作为 MAFW SDK 生成源。
   ② 对 opencode 自身 SDK（1.19.5 v2）：接口**大体对得上**（`SessionsResponse {data,cursor}` 一致；`Session.Info`
   共享 12 字段、spec 多 `fork/outcome/metadata/permissions`；`Project` 的 `canonical` vs `worktree`）——差异主要来自
-  serve 2.2.5 比 SDK 包新；③ **事件对不上**：spec 的 SSE `data` 是 `V2EventEncoded = {type:'string',contentMediaType:
-  'application/json'}`，生成只能是 `string`，而 SDK 的 `V2Event` 有 **88** 个变体（构建期另一套 codegen，不在 spec 里）。
-  结论：生成物适合当 adapter contract fixture / 写插件时的 DTO 参考，不能当事件来源。
+  serve 2.2.5 比 SDK 包新。
+  **opencode 的 OpenAPI 生成方式**（源码级）：`packages/protocol/script/generate-openapi.ts` =
+  `OpenApi.fromApi(ClientApi)`（Effect HttpApi）→ `stabilizeOpenApi()`（匿名 union 按内容哈希重命名、折叠重复副本、
+  components 排序）→ `packages/protocol/openapi.json`（check-in；`bun run generate` / `check:generated`）。
+  事件经 `groups/event.ts` 的 `Schema.Union([...definitions, rpc, server.connected]).annotate({identifier:'V2Event'})`
+  + `HttpApiSchema.StreamSse({data: EventSchema})` 进入 spec：`V2EventEncoded = {type:'string',
+  contentMediaType:'application/json', contentSchema:{$ref:'V2Event'}}`。
+  **仓库当前 spec（879,732 B / 497 schemas）有 `V2Event` 98 变体**，openapi-typescript 能生成联合类型（16,864 行、
+  `tsc` rc=0），但帧字段 `data` 仍是 `string`（工具不消费 `contentSchema`）；本机运行中的 `/openapi.json` 是旧构建
+  （363 schemas、无 `contentSchema`），所以「没有事件聚合」只对旧实例成立。结论：生成物适合当 adapter contract
+  fixture / 写插件时的 DTO 参考；事件要用仓库 spec 的 `V2Event`（而非运行中旧 spec）或真实抓包。
+
+- **opencode 参考生成脚本（2026-11-06，commit pending）**：`npm run gen:opencode-ref -- --spec <path|url>
+  [--source-label <stable>] [--check]` → `docs/reference/opencode/{types.gen.ts,events.gen.ts,events.json,
+  event-map.md,README.md}`。纯函数 `packages/gateway-sdk/src/opencode-reference.ts`（extractEventReference + render*），
+  脚本 `scripts/gen-opencode-reference.ts`（openapi-typescript 程序化 + sha256 来源 + `--check`）。从 opencode
+  `packages/protocol/openapi.json`（879,732 B / 497 schemas）生成：全量类型 **577 KB**、`V2Event` 联合 **98** 变体、
+  事件清单、opencode→MAFW canonical 建议表（名称启发式，人工确认）。测试 +7（SDK **206/206**）、`events.gen.ts`
+  `tsc` rc=0、`--check` 通过。注意：运行中 serve 的 `/openapi.json` 是旧构建（无 `V2Event`），脚本会报错并提示用仓库 spec。
 
 - **Pod 任务板 v2：新增/删除计划任务（2026-11-02，commits `8b8b6ebe`..`6d3395cd`）**：位置 id（`w1-t2`）在删任务后会让状态错位，所以先给 `waves.tasks[]` 加**稳定 `taskId`**——plan 完成时由 driver 补齐并写回（legacy 任务补成当前位置 id，对已有投影 no-op）；第一次结构编辑时 `migrateLegacyTaskKeys` 把 `pod_tasks.source_key` 从 `wave:<wid>:task:<index>` 迁到 `wave:<wid>:task:<taskId>`（externalTaskId 不变，状态保留）。能力：`POST /api/pods/:podId/tasks` 增 `plan:true`（`goalId` 必填、`waveId` 缺省最后一个 wave）+ 新 `DELETE /api/pods/:podId/tasks/:taskId`（计划任务写回 waves，手工任务只删行）；门与 v1 一致（终态/运行中 409，有 actor 时仅 Lead）。桌面新建可切「手工任务 / 加入计划」，任务卡「删除」两步确认；`podActiveGoalId` 纯函数。非目标：重排、跨 wave 移动、删 wave、软删除。测试：gateway **3401/3401（476 suites，本批 +13）**、desktop **2161/2161（本批 +1）**、SDK **171/171**；`tsc`/`tsgo -p`/`electron-vite build` rc=0；`emit:openapi` 已重生成契约（`pods.tasks.delete`）。spec/plan：`docs/superpowers/specs/2026-11-02-pod-task-add-delete-design.md`、`docs/superpowers/plans/2026-11-02-pod-task-add-delete.md`。
 

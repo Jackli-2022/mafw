@@ -103,9 +103,13 @@ operation 的响应类型上获得编译期收益，且不会与手写 façade �
 
 OpenAPI 侧：
 
-- **3.0 / 3.1**：只能声明 `content: text/event-stream` + `schema: type: string`，**无法把
-  流拆成「逐事件类型 + 载荷 schema」**。`callbacks` 描述的是服务端回调（out-of-band），
-  `webhooks` 描述的是「对方提供的回调端点」，都不是长连接 SSE 流。
+- **3.0 / 3.1**：**没有 SSE 流的一等模型**——不能像 3.2 那样用 `itemSchema` 描述「逐帧」。
+  `callbacks` 描述的是服务端回调（out-of-band），`webhooks` 描述的是「对方提供的回调端点」，
+  都不是长连接 SSE 流。
+  **但事件 union 仍可搭车**：JSON Schema 2020-12 的 `contentSchema`（字符串字段的解码后 schema）
+  可以挂在 `V2EventEncoded` 这类 `type: string` 字段上——opencode 的当前源码正是这么做的
+  （见 §6.2）。生成器是否消费 `contentSchema` 取决于工具：openapi-typescript 会生成被引用的
+  `V2Event` 联合类型，但帧字段本身仍是 `string`（不会自动把 `data` 改成 `V2Event`）。
 - **3.2（新）**：`text/event-stream` 响应支持 `itemSchema`——逐事件 schema 的一等支持；
   还引入 `prefixEncoding`/`itemEncoding` 覆盖 JSONL/SSE/multipart。但本仓库
   `merge-contract.mjs` 产出的是 `3.1.0`，且主流工具链（含 openapi-typescript 7.x）对 3.2
@@ -269,10 +273,76 @@ opencode 的 SDK 是 `@hey-api/openapi-ts` 生成的（`dist/v2/gen/{types,sdk}.
 
 - **接口**：大体对得上（同一套 schema 源）。差异主要是**版本差**（serve 2.2.5 比 SDK 1.19.5 新）
   与个别字段命名；用 `openapi.json` 生成得到的是**更接近当前 serve** 的形状，对写 runtime 插件有用。
-- **事件**：对不上。spec 里 SSE 的 `data` 是 JSON 字符串（`contentMediaType: application/json`），
-  `openapi-typescript` 只能生成 `string`；SDK 的 88 个 `V2Event` 变体来自构建期另一套 codegen
-  （不在 spec 里，`x-effect-stream` 也只带 `causeSchema`）。事件必须从 SDK 的 `V2Event`
-  或真实 SSE 抓包取，不能从 OpenAPI 生成。
+- **事件**：按**本机运行中的旧 spec** 对不上——SSE 的 `data` 是纯 JSON 字符串
+  （`contentMediaType: application/json`，没有 `contentSchema`），`openapi-typescript` 只能生成
+  `string`；SDK 的 88 个 `V2Event` 变体在 spec 之外。
+  **但仓库当前源码不是这样**：`packages/protocol/openapi.json` 的 `V2EventEncoded` 带
+  `contentSchema → V2Event`（98 变体），生成器能产出联合类型（见 §6.2）。所以“能不能生成事件”
+  取决于用的是哪份 spec：运行中的旧实例不能，仓库当前 spec 能（帧字段仍需手动接线）。
+
+### 6.2 opencode 的 OpenAPI 是怎么生成的（源码级，2026-11-06 查证）
+
+仓库：`anomalyco/opencode`（dev）。生成入口在 `packages/protocol`：
+
+```ts
+// packages/protocol/script/generate-openapi.ts
+import { OpenApi } from "effect/http-api"
+import { ClientApi } from "../src/client.js"
+import { stabilizeOpenApi } from "./openapi-stabilize.js"
+
+const document = format(JSON.stringify(stabilizeOpenApi(OpenApi.fromApi(ClientApi)), null, 2), {
+  parser: "json", printWidth: 120,
+})
+await Bun.write("packages/protocol/openapi.json", document) // --check 只比对不写
+```
+
+链路：
+
+```
+packages/protocol/src/api.ts + groups/*.ts   (Effect HttpApi)
+  → OpenApi.fromApi(ClientApi)                (Effect 官方 HttpApi → OpenAPI 3.1)
+  → stabilizeOpenApi()                        (后处理：匿名 Union_N/Objects_N 按内容哈希重命名、
+                                               折叠重复 _N 副本、components 排序 → diff 稳定)
+  → packages/protocol/openapi.json            (check-in；CI 用 --check 防陈旧)
+```
+
+命令：`cd packages/protocol && bun run generate` / `bun run check:generated`。
+
+事件是怎么进 spec 的（`packages/protocol/src/groups/event.ts`）：
+
+```ts
+const EventSchema = Schema.Union([...definitions, rpcEvent, serverConnected])
+  .annotate({ identifier: "V2Event" })
+
+HttpApiEndpoint.get("event.subscribe", "/api/event", {
+  query: /* types?: 字面量联合 */,
+  success: HttpApiSchema.StreamSse({ data: EventSchema }),
+})
+```
+
+Effect 的 OpenAPI 导出器把它写成：
+
+```json
+"V2EventEncoded": {
+  "type": "string",
+  "contentMediaType": "application/json",
+  "contentSchema": { "$ref": "#/components/schemas/V2Event" }
+}
+```
+
+**实测**（本机用 openapi-typescript 7.13 跑仓库的 `packages/protocol/openapi.json`，879,732 B）：
+
+| 指标 | 结果 |
+|---|---|
+| components.schemas | **497**（运行中 serve 的旧 spec 只有 363） |
+| `V2Event` | **存在**，`anyOf` **98** 个变体 |
+| `V2EventEncoded` | `type: string` + `contentSchema → V2Event` |
+| 生成物 | 16,864 行；`V2Event` 联合被完整生成；`tsc --noEmit` rc=0 |
+| 帧字段 | `data` 仍是 `string`（openapi-typescript 不消费 `contentSchema`） |
+
+补充：本机运行中的 serve 暴露的 `/openapi.json` 是**旧构建**（363 schemas、`V2EventEncoded`
+没有 `contentSchema`），所以之前「没有事件聚合」的结论只对那份旧 spec 成立；仓库当前源码
+（protocol 2.2.5）是**有聚合**的。
 
 ### 但它是很好的**适配器层**校验输入
 
