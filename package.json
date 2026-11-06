@@ -1,6 +1,6 @@
 {
   "name": "@jack200714/mafw",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "MAFW Loop Agent Plugin for OpenCode - Phase Relay + TMEM + Dynamic Compression",
   "repository": {
     "type": "git",
