@@ -43,8 +43,19 @@ if (!fs.existsSync(distSrc)) {
 fs.cpSync(distSrc, distDst, { recursive: true, force: true });
 console.log(`[deploy] dist → ${distDst}`);
 
-// 1b) package-shipped office assets: `mafw office setup` + gateway-startup skill install
+// 1a) CLI: new flags (e.g. `plugin-check --audit`) live in bin/mafw.js. A dist-only
+// deploy leaves the global CLI stale and silently ignoring them (false green) —
+// keep the command surface in lockstep with the gateway it drives.
 const pkgRoot = path.dirname(target);
+const cliSrc = path.join(gatewayRoot, "..", "bin", "mafw.js");
+const cliDst = path.join(pkgRoot, "bin", "mafw.js");
+if (fs.existsSync(cliSrc)) {
+  fs.mkdirSync(path.dirname(cliDst), { recursive: true });
+  fs.copyFileSync(cliSrc, cliDst);
+  console.log(`[deploy] cli → ${cliDst}`);
+}
+
+// 1b) package-shipped office assets: `mafw office setup` + gateway-startup skill install
 const assets = [
   [path.join(gatewayRoot, "scripts", "setup-pykernel.mjs"), path.join(target, "scripts", "setup-pykernel.mjs")],
   [path.join(gatewayRoot, "scripts", "office"), path.join(target, "scripts", "office")],
