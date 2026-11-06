@@ -69,7 +69,7 @@ export class PairingService {
       nonce,
     });
 
-    return { url: `mafw://pair?${params.toString()}` };
+    return { url: `orcalore://pair?${params.toString()}` };
   }
 
   /**
