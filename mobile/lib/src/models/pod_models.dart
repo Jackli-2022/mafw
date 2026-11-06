@@ -17,11 +17,25 @@
 /// - `GET /api/pods/:podId/goals/:goalId/result` → `PodGoalResult`
 ///   (`gateway/src/core/pod/pod-result.ts`), 404 = 还没有结果可读。
 /// - `POST /api/pods/:podId/goals/:goalId/reject {feedback}` → `PodRejectResult`。
+/// - `POST /api/pods/:podId/goals {title, objective?, acceptance?, source}` →
+///   `{podId, goalId, status, revision, stage, sessionID, goal, sessionError?}`
+///   (`gateway/src/routes/pods.ts`, Tech Lead 讨论分支) — `status` 是 **revision**
+///   状态（`discussing`），`goal` 是 `PodGoalView`。
+/// - `GET /api/pods/:podId/goals/:goalId/tech-lead?limit=` → `PodTechLeadHistory`
+///   (`gateway/src/core/pod/pod-tech-lead-service.ts`)；终态 revision 答 409。
+/// - `POST .../direction-decision` → `PodDirectionResult` + `planningStarted`
+///   (`gateway/src/routes/pod-collaboration.ts`)。
+/// - `GET /api/pods/:podId/events?state=` → `{items: PodEventRow[], unread}`
+///   (`gateway/src/routes/pod-events.ts`)；行内 `refsJson` 是字符串，SDK DTO 不暴露。
+/// - `GET /api/pods/:podId/sessions/:sessionId/transcript` → `{transcript: {sessionID, messages} | null}`
+///   (`gateway/src/core/pod/pod-service.ts` `snapshotSession` 写盘形状)。
 ///
 /// Every parser is tolerant of absent/absent-ish fields: a missing bucket is an
 /// empty list and a missing verdict stays `null` — the UI must never be forced
 /// to invent data the gateway did not send.
 library;
+
+import 'mafw_models.dart';
 
 /// The five `work.overview` buckets, in display order.
 const List<String> workBuckets = <String>[
@@ -646,4 +660,208 @@ class GoalRejectResult {
       sessionId: _strOrNull(j['sessionID'] ?? j['sessionId']),
     );
   }
+}
+
+// ── Pod 协作面：创建讨论 Goal / Tech Lead / 事件（Task 10）─────────────────────
+
+/// `POST /api/pods/:podId/goals` 的 Tech Lead 讨论分支响应。
+///
+/// [status] 是 **revision** 状态（`discussing`），不是 [PodGoalView.status]
+/// （`active`）；[sessionID] 为 `null` 表示 Goal 建成了但讨论会话没起来
+/// （服务端同时给 [sessionError]）——这不是创建失败，页面要照实区分。
+class CreateGoalResult {
+  final String podId;
+  final String goalId;
+  final int revision;
+  final String? sessionID;
+  final String status;
+  final String? stage;
+
+  /// 服务端投影的 `PodGoalView`（老网关可能缺该字段 → `null`，由调用方重新拉取）。
+  final PodGoalView? goal;
+
+  /// 讨论会话建立失败的原因（Goal 本身已落库为 revision 1 discussing）。
+  final String? sessionError;
+
+  const CreateGoalResult({
+    required this.podId,
+    required this.goalId,
+    required this.revision,
+    required this.sessionID,
+    required this.status,
+    required this.stage,
+    required this.goal,
+    required this.sessionError,
+  });
+
+  factory CreateGoalResult.fromJson(Map<String, dynamic> j) {
+    final goal = j['goal'];
+    final revision = _int(j['revision'], fallback: 1);
+    return CreateGoalResult(
+      podId: _str(j['podId']),
+      goalId: _str(j['goalId']),
+      revision: revision > 0 ? revision : 1,
+      sessionID: _strOrNull(j['sessionID'] ?? j['sessionId']),
+      status: _str(j['status']),
+      stage: _strOrNull(j['stage']),
+      goal: goal is Map<String, dynamic> ? PodGoalView.fromJson(goal) : null,
+      sessionError: _strOrNull(j['sessionError']),
+    );
+  }
+
+  /// 创建成功但讨论会话不可用（Goal 仍在，可稍后 retry ensure）。
+  bool get discussionUnavailable => sessionID == null;
+}
+
+/// `GET /api/pods/:podId/goals/:goalId/tech-lead` 的讨论历史。
+///
+/// [archived] 为 `true` 表示当前 revision 没有可写的讨论会话：
+/// - 服务端 409（revision 已终态），或
+/// - 200 但没有存活租约（`sessionID:null` + `messages:[]`）。
+///
+/// 两种都**不是错误**——页面对终态 Goal 走只读 transcript（`podTranscript`）。
+/// [revision] 在 409 分支没有载荷，保持 `null`（不猜）。
+class TechLeadHistory {
+  final String goalId;
+  final int? revision;
+  final String? sessionID;
+  final List<MafwMessage> messages;
+
+  /// 服务端 `sessionError`：ensureSession 失败但历史仍可读。
+  final String? sessionError;
+
+  const TechLeadHistory({
+    required this.goalId,
+    required this.revision,
+    required this.sessionID,
+    required this.messages,
+    required this.sessionError,
+  });
+
+  factory TechLeadHistory.fromJson(Map<String, dynamic> j) {
+    final sessionID = _strOrNull(j['sessionID'] ?? j['sessionId']);
+    final revision = j['revision'] == null ? null : _int(j['revision']);
+    final messages = <MafwMessage>[];
+    for (final item in _list(j['messages'])) {
+      if (item is Map<String, dynamic>) {
+        messages.add(MafwMessage.fromJson(item, sessionID: sessionID ?? ''));
+      }
+    }
+    return TechLeadHistory(
+      goalId: _str(j['goalId']),
+      revision: revision != null && revision > 0 ? revision : null,
+      sessionID: sessionID,
+      messages: messages,
+      sessionError: _strOrNull(j['sessionError']),
+    );
+  }
+
+  /// 讨论已归档：没有可写的会话（409 或空租约）。
+  bool get archived => sessionID == null;
+}
+
+/// `POST /api/pods/:podId/goals/:goalId/direction-decision` 的写入结果。
+///
+/// [planningStarted] / [planningError] 来自服务端：方向决定 append-only 落库后
+/// 才尝试启动规划，启动失败不会回滚决定——UI 必须把失败照实说出来。
+class DirectionDecisionResult {
+  final String goalId;
+  final int revision;
+
+  /// `discussing | direction_review | planning | ...`。
+  final String revisionStatus;
+
+  /// `none | pending | decided`。
+  final String directionStatus;
+  final bool planningStarted;
+  final String? planningError;
+
+  const DirectionDecisionResult({
+    required this.goalId,
+    required this.revision,
+    required this.revisionStatus,
+    required this.directionStatus,
+    required this.planningStarted,
+    required this.planningError,
+  });
+
+  factory DirectionDecisionResult.fromJson(Map<String, dynamic> j) {
+    final revision = _int(j['revision'], fallback: 1);
+    return DirectionDecisionResult(
+      goalId: _str(j['goalId']),
+      revision: revision > 0 ? revision : 1,
+      revisionStatus: _str(j['revisionStatus']),
+      directionStatus: _str(j['directionStatus']),
+      planningStarted: _bool(j['planningStarted']),
+      planningError: _strOrNull(j['planningError']),
+    );
+  }
+}
+
+/// 一条 Pod 事件（`PodEventRow`，人侧查收）。
+///
+/// 与 SDK `PodEventItem` 同名同形（`packages/gateway-sdk/src/types.ts`）；行内
+/// `refsJson` 是**字符串**、SDK DTO 不暴露，这里同样不解析（不发明第二套引用语义）。
+class PodEventItem {
+  final String id;
+  final String podId;
+
+  /// 事件所属项目目录（行内有，SDK DTO 未列）。
+  final String? projectId;
+  final String? goalId;
+  final int? revision;
+  final String kind;
+
+  /// `p1 | p2 | p3`。
+  final String severity;
+  final String reason;
+  final String title;
+  final String? summary;
+
+  /// `human | lead | ...`。
+  final String audience;
+
+  /// `unread | seen`。
+  final String state;
+  final String? createdAt;
+  final String? seenAt;
+
+  const PodEventItem({
+    required this.id,
+    required this.podId,
+    required this.projectId,
+    required this.goalId,
+    required this.revision,
+    required this.kind,
+    required this.severity,
+    required this.reason,
+    required this.title,
+    required this.summary,
+    required this.audience,
+    required this.state,
+    required this.createdAt,
+    required this.seenAt,
+  });
+
+  factory PodEventItem.fromJson(Map<String, dynamic> j) {
+    final revision = j['revision'];
+    return PodEventItem(
+      id: _str(j['id']),
+      podId: _str(j['podId']),
+      projectId: _strOrNull(j['projectId']),
+      goalId: _strOrNull(j['goalId']),
+      revision: revision is num ? revision.toInt() : null,
+      kind: _str(j['kind']),
+      severity: _str(j['severity']),
+      reason: _str(j['reason']),
+      title: _str(j['title']),
+      summary: _strOrNull(j['summary']),
+      audience: _str(j['audience']),
+      state: _str(j['state']),
+      createdAt: _strOrNull(j['createdAt']),
+      seenAt: _strOrNull(j['seenAt']),
+    );
+  }
+
+  bool get seen => state == 'seen';
 }

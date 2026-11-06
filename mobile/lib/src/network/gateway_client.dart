@@ -471,6 +471,235 @@ class GatewayClient {
     }
   }
 
+  // ── Pod 协作面：创建讨论 Goal / Tech Lead / 方向 / 问答 / 事件（Task 10）──
+
+  /// Failure with the server status + body preserved for the caller.
+  ///
+  /// New pod-collaboration endpoints keep the error body so the UI can show the
+  /// server's own words (e.g. `objective or charter is required`,
+  /// `revision 2 is terminal (completed)`) instead of a generic banner.
+  GatewayException _failure(String operation, http.Response res) {
+    return GatewayException(
+      '$operation: HTTP ${res.statusCode}',
+      statusCode: res.statusCode,
+      errorBody: utf8.decode(res.bodyBytes, allowMalformed: true),
+    );
+  }
+
+  String _podPath(String podId) => Uri.encodeComponent(podId);
+
+  String _goalPath(String goalId) => Uri.encodeComponent(goalId);
+
+  /// Creates a direct-discussion Goal (`POST /api/pods/:podId/goals`).
+  ///
+  /// Contract (`gateway/src/routes/pods.ts`):
+  /// - `source` is a **required** whitelisted entry point; mobile always sends
+  ///   `'mobile'` (an unknown value answers 400, and omitting it falls into the
+  ///   legacy intake path).
+  /// - The server requires `title` **and** `objective` (or `charter`); empty
+  ///   values are omitted here so the server's 400 stays the single validator.
+  /// - `status` is the **revision** status (`discussing`), not the Goal row status.
+  /// - `sessionID: null` + `sessionError` means the Goal was created but its
+  ///   Tech Lead session did not start — not a creation failure.
+  Future<CreateGoalResult> createGoal(
+    String podId, {
+    required String title,
+    String? objective,
+    List<String>? acceptance,
+  }) async {
+    final objectiveText = (objective ?? '').trim();
+    final acceptanceItems = <String>[
+      for (final item in acceptance ?? const <String>[])
+        if (item.trim().isNotEmpty) item.trim(),
+    ];
+    final body = <String, dynamic>{
+      'title': title.trim(),
+      if (objectiveText.isNotEmpty) 'objective': objectiveText,
+      if (acceptanceItems.isNotEmpty) 'acceptance': acceptanceItems,
+      'source': 'mobile',
+    };
+    final res = await _post(
+      _uri('/api/pods/${_podPath(podId)}/goals'),
+      body: jsonEncode(body),
+    );
+    if (res.statusCode != 200) throw _failure('createGoal', res);
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('createGoal: unexpected payload (not a JSON object)');
+    }
+    return CreateGoalResult.fromJson(j);
+  }
+
+  /// Reads the hidden Tech Lead discussion (`GET .../goals/:goalId/tech-lead`).
+  ///
+  /// A **409** is the server's designed answer for a terminal revision
+  /// (`pod-tech-lead-service.requireActiveRevision`), and a 200 with
+  /// `sessionID: null` means no live lease. Both mean「讨论已归档」and are
+  /// returned as [TechLeadHistory.archived] instead of throwing — the page then
+  /// shows the read-only transcript. Every other failure throws.
+  Future<TechLeadHistory> openTechLead(
+    String podId,
+    String goalId, {
+    int limit = 50,
+  }) async {
+    final res = await _get(
+      _uri(
+        '/api/pods/${_podPath(podId)}/goals/${_goalPath(goalId)}/tech-lead',
+        {'limit': '$limit'},
+      ),
+    );
+    if (res.statusCode == 409) {
+      return TechLeadHistory(
+        goalId: goalId,
+        revision: null,
+        sessionID: null,
+        messages: const <MafwMessage>[],
+        sessionError: null,
+      );
+    }
+    if (res.statusCode != 200) throw _failure('openTechLead', res);
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('openTechLead: unexpected payload (not a JSON object)');
+    }
+    return TechLeadHistory.fromJson(j);
+  }
+
+  /// Sends one message to the Tech Lead discussion (`POST .../tech-lead/messages`).
+  ///
+  /// The server prepends the revision's ContextManifest and answers 400 for
+  /// empty text; the message is sent verbatim (no local trimming) so the
+  /// server stays the single validator.
+  Future<void> sendTechLeadMessage(String podId, String goalId, String text) async {
+    final res = await _post(
+      _uri('/api/pods/${_podPath(podId)}/goals/${_goalPath(goalId)}/tech-lead/messages'),
+      body: jsonEncode({'text': text}),
+    );
+    if (res.statusCode != 200) throw _failure('sendTechLeadMessage', res);
+  }
+
+  /// Writes the user's direction decision (`POST .../direction-decision`).
+  ///
+  /// Body mirrors `gateway/src/routes/pod-collaboration.ts`:
+  /// `{mode: decided|clear|needs_user, optionId?, userWords?, reason?, revision?}`.
+  /// Empty strings are omitted (`''` would still count as a present field);
+  /// [userWords] is otherwise preserved verbatim — the gateway stores the user's
+  /// own words and never rewrites them.
+  Future<DirectionDecisionResult> directionDecision(
+    String podId,
+    String goalId, {
+    required String mode,
+    String? optionId,
+    String? userWords,
+    String? reason,
+    int? revision,
+  }) async {
+    final option = (optionId ?? '').trim();
+    final words = userWords ?? '';
+    final why = (reason ?? '').trim();
+    final body = <String, dynamic>{
+      'mode': mode,
+      if (option.isNotEmpty) 'optionId': option,
+      if (words.trim().isNotEmpty) 'userWords': words,
+      if (why.isNotEmpty) 'reason': why,
+      'revision': ?revision,
+    };
+    final res = await _post(
+      _uri('/api/pods/${_podPath(podId)}/goals/${_goalPath(goalId)}/direction-decision'),
+      body: jsonEncode(body),
+    );
+    if (res.statusCode != 200) throw _failure('directionDecision', res);
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('directionDecision: unexpected payload (not a JSON object)');
+    }
+    return DirectionDecisionResult.fromJson(j);
+  }
+
+  /// Answers or cancels a pending Goal question
+  /// (`POST /api/goals/:goalId/questions/:questionId/respond`).
+  ///
+  /// Body mirrors `gateway/src/index.ts`: `{answer}` or `{type: 'cancel'}`.
+  /// The route answers 404 for an unknown question and 409 when it is no longer
+  /// pending (`{status, currentState}`) — both surface verbatim.
+  Future<void> answerQuestion(
+    String goalId,
+    String questionId, {
+    String? answer,
+    bool cancel = false,
+  }) async {
+    final body = cancel
+        ? <String, dynamic>{'type': 'cancel'}
+        : <String, dynamic>{'answer': answer ?? ''};
+    final res = await _post(
+      _uri(
+        '/api/goals/${_goalPath(goalId)}/questions/${Uri.encodeComponent(questionId)}/respond',
+      ),
+      body: jsonEncode(body),
+    );
+    if (res.statusCode != 200) throw _failure('answerQuestion', res);
+  }
+
+  /// Human-facing Pod events (`GET /api/pods/:podId/events?state=`).
+  ///
+  /// [state] is passed through verbatim: `'unread'` filters, anything else
+  /// (e.g. `'all'`) means no filter on the gateway. An empty [state] omits the
+  /// query parameter. Returns the `items` array; the aggregate `unread` counter
+  /// is available from [presence] (`unreadResults`).
+  Future<List<PodEventItem>> podEvents(String podId, {String state = 'unread'}) async {
+    final res = await _get(
+      _uri(
+        '/api/pods/${_podPath(podId)}/events',
+        state.isEmpty ? null : {'state': state},
+      ),
+    );
+    if (res.statusCode != 200) throw _failure('podEvents', res);
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    final raw = j is Map<String, dynamic> ? j['items'] : null;
+    final out = <PodEventItem>[];
+    for (final item in raw is List ? raw : const <dynamic>[]) {
+      if (item is Map<String, dynamic>) out.add(PodEventItem.fromJson(item));
+    }
+    return out;
+  }
+
+  /// Marks one Pod event as seen (`POST /api/pods/:podId/events/:id/seen`).
+  Future<void> markPodEventSeen(String podId, String eventId) async {
+    final res = await _post(
+      _uri('/api/pods/${_podPath(podId)}/events/${Uri.encodeComponent(eventId)}/seen'),
+    );
+    if (res.statusCode != 200) throw _failure('markPodEventSeen', res);
+  }
+
+  /// Reads an archived session snapshot (`GET /api/pods/:podId/sessions/:sessionId/transcript`).
+  ///
+  /// The snapshot file shape is `{sessionID, messages}` (written by
+  /// `PodService.snapshotSession`); the route answers `{transcript: null}` when
+  /// no snapshot exists — that is「没有快照」and returns an empty list, never an
+  /// error (the page says so honestly).
+  Future<List<MafwMessage>> podTranscript(String podId, String sessionId) async {
+    final res = await _get(
+      _uri(
+        '/api/pods/${_podPath(podId)}/sessions/${Uri.encodeComponent(sessionId)}/transcript',
+      ),
+    );
+    if (res.statusCode != 200) throw _failure('podTranscript', res);
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    final snapshot = j is Map<String, dynamic> ? j['transcript'] : null;
+    if (snapshot is! Map<String, dynamic>) return const <MafwMessage>[];
+    final rawSession = snapshot['sessionID'];
+    final fallbackSession =
+        rawSession is String && rawSession.isNotEmpty ? rawSession : sessionId;
+    final out = <MafwMessage>[];
+    final raw = snapshot['messages'];
+    for (final item in raw is List ? raw : const <dynamic>[]) {
+      if (item is Map<String, dynamic>) {
+        out.add(MafwMessage.fromJson(item, sessionID: fallbackSession));
+      }
+    }
+    return out;
+  }
+
   // ── Triage ──
 
   Future<List<Map<String, dynamic>>> listTriageItems() async {
