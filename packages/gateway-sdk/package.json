@@ -7,7 +7,6 @@
   "scripts": {
     "build": "npm run gen:api && tsc",
     "gen:api": "node scripts/merge-contract.mjs && openapi-typescript contract/openapi.json -o src/api-schema.gen.ts",
-    "gen:opencode-ref": "node --import tsx scripts/gen-opencode-reference.ts",
     "emit:view-dto": "node --import tsx scripts/emit-view-dto.ts",
     "test": "node --import tsx --require ../../packages/test-shim/require-hook.cjs --test \"src/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.probes.json"
