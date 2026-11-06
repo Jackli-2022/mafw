@@ -27,10 +27,16 @@ const resultSuccess = {
   terminal_reason: 'completed',
 };
 
-test('system/init → session.created（model 保留）', () => {
-  const out = run({ type: 'system', subtype: 'init', session_id: sid, model: 'claude-opus-4-6', permissionMode: 'default' });
+test('system/init → session.created（info.id 契约必填 + model/directory 保留）', () => {
+  const out = run({
+    type: 'system', subtype: 'init', session_id: sid,
+    model: 'claude-opus-4-6', permissionMode: 'default', cwd: 'C:/proj',
+  });
   expect(out).toHaveLength(1);
   expect(out[0].payload.type).toBe('session.created');
+  // 桌面 planSessionEvent 需要 properties.info（缺了直接 {kind:'none'}，列表不同步）
+  expect(out[0].payload.properties.info.id).toBe(sid);
+  expect(out[0].payload.properties.info.directory).toBe('C:/proj');
   expect(out[0].payload.properties.model).toBe('claude-opus-4-6');
   expect(out[0].sessionID).toBe(sid);
 });

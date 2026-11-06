@@ -24,6 +24,15 @@ describe('checkEventFields', () => {
     expect(w.some((x) => x.includes('info'))).toBe(true);
   });
 
+  it('session.created only needs info.id (title comes from the list refresh)', () => {
+    expect(checkEventFields({ type: 'session.created', properties: { info: { id: 's1' } } })).toEqual([]);
+  });
+
+  it('session.updated without info.title warns (inline patch would keep a stale tab title)', () => {
+    const w = checkEventFields({ type: 'session.updated', properties: { info: { id: 's1' } } });
+    expect(w.some((x) => x.includes('title'))).toBe(true);
+  });
+
   it('message.updated accepts canonical properties.message', () => {
     expect(checkEventFields({ type: 'message.updated', properties: { message: { id: 'm1', role: 'user' } } })).toEqual([]);
   });

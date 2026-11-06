@@ -62,6 +62,10 @@ export const CLAUDE_EVENT_MAPPINGS: EventMapping[] = [
     from: 'system', to: 'session.created',
     when: [{ path: '$.subtype', equals: 'init' }],
     fields: {
+      // 契约 requiredFields: info.id。缺 info 时桌面 planSessionEvent 返回
+      // {kind:'none'}，会话列表永远不刷新（plugin-check --audit 实证）。
+      'info.id': { path: '$.session_id' },
+      'info.directory': { path: '$.cwd' },
       sessionID: { path: '$.session_id' },
       model: { path: '$.model' },
       permissionMode: { path: '$.permissionMode' },

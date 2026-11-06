@@ -73,8 +73,16 @@ export function checkEventFields(evt: RawEvt | null | undefined): string[] {
       }
       break;
     }
-    case 'session.created':
+    case 'session.created': {
+      // created 只触发列表 invalidate（标题从 session.list 重拉）——title 非必需。
+      const info = props?.info;
+      if (!info || !info.id) {
+        warnings.push(`'${type}' without properties.info.id — desktop Rail planner yields 'none' (list will not sync)`);
+      }
+      break;
+    }
     case 'session.updated': {
+      // updated 会就地 patch 标题——没有 title 时 tab 标题停在旧值。
       const info = props?.info;
       if (!info || !info.id) {
         warnings.push(`'${type}' without properties.info.id — desktop Rail planner yields 'none' (list will not sync)`);
