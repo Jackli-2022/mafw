@@ -354,7 +354,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
   （363 schemas、无 `contentSchema`），所以「没有事件聚合」只对旧实例成立。结论：生成物适合当 adapter contract
   fixture / 写插件时的 DTO 参考；事件要用仓库 spec 的 `V2Event`（而非运行中旧 spec）或真实抓包。
 
-- **opencode 参考生成脚本（2026-11-06，commit pending）**：`npm run gen:opencode-ref -- --spec <path|url>
+- **opencode 参考生成脚本（2026-11-06，commit `1c0e46f8`）**：`npm run gen:opencode-ref -- --spec <path|url>
   [--source-label <stable>] [--check]` → `docs/reference/opencode/{types.gen.ts,events.gen.ts,events.json,
   event-map.md,README.md}`。纯函数 `packages/gateway-sdk/src/opencode-reference.ts`（extractEventReference + render*），
   脚本 `scripts/gen-opencode-reference.ts`（openapi-typescript 程序化 + sha256 来源 + `--check`）。从 opencode
