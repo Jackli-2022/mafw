@@ -43,6 +43,8 @@ void main() {
       'task.updated': ChatEventEffects.none,
       'background.job.updated': ChatEventEffects.none,
       'pod.updated': ChatEventEffects.none,
+      // Pod 事件层：work tab 负责刷新，chat view 无 effect（Task 5 改为 refreshWork）。
+      'pod.event': ChatEventEffects.none,
       'session.config': ChatEventEffects.none,
       'session.checkpoint': ChatEventEffects.none,
       'run.updated': ChatEventEffects.none,
