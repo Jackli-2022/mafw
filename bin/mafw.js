@@ -45,7 +45,10 @@ API Commands:
 
 Runtime Plugin Commands:
   plugin-check <file> [--preset core|conversation|autonomous|desktop] [--strict] [--json]
-                     Offline plugin check: load + validate + dry-event samples (no LLM calls)
+                     [--audit] [--events <events.jsonl>] [--contract <runtime-contract.json>] [--probe]
+                     Offline plugin check: load + validate + dry-event samples (no LLM calls).
+                     --audit cross-checks eventMappings/samples against the runtime contract
+                     (wrong translations, missing required fields, no-output, API surface gaps).
   plugin-test        Online conformance scenarios against the active runtime (uses LLM roundtrips)
 
 Office Commands:
@@ -496,25 +499,39 @@ async function main() {
 // `mafw plugin-check <file>`: offline checks against a plugin FILE — loads it,
 // validates shape + event declarations + capabilities, feeds sampleEvents
 // through the real mapping executor. No gateway needed, no LLM roundtrips.
+//
+// `--audit` adds the contract cross-check (eventMappings + sampleEvents ×
+// packages/gateway-sdk/contract/runtime-contract.json): per-event verdicts,
+// missing required structures, no-output reasons, capability/surface gaps.
+// `--events <file>` feeds captured native events (JSONL or JSON array).
+// `--probe` calls read-only runtime methods once to verify return shapes.
 async function runPluginCheckCli(args) {
   const path = require('path');
-  // 位置参数 = 非 flag 且不是 --preset 的取值
+  const valueOf = (flag) => {
+    const i = args.indexOf(flag);
+    return i >= 0 ? args[i + 1] : undefined;
+  };
+  const FLAGS_WITH_VALUE = new Set(['--preset', '--contract', '--events', '--timeout']);
   const positional = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '--preset') { i++; continue; }
+    if (FLAGS_WITH_VALUE.has(a)) { i++; continue; }
     if (a.startsWith('--')) continue;
     positional.push(a);
   }
   const file = positional[0];
   if (!file) {
     console.error('Usage: mafw plugin-check <file.js> [--preset <id>] [--strict] [--json]');
+    console.error('       [--audit] [--events <events.jsonl>] [--contract <runtime-contract.json>] [--probe]');
     process.exit(1);
   }
-  const presetIdx = args.indexOf('--preset');
-  const preset = presetIdx >= 0 ? args[presetIdx + 1] : undefined;
+  const preset = valueOf('--preset');
   const strict = args.includes('--strict');
   const json = args.includes('--json');
+  const audit = args.includes('--audit');
+  const probe = args.includes('--probe');
+  const timeoutMs = Number(valueOf('--timeout')) || undefined;
+
   const dist = path.join(__dirname, '..', 'gateway', 'dist', 'runtime', 'plugin-check.js');
   let mod;
   try {
@@ -523,7 +540,52 @@ async function runPluginCheckCli(args) {
     console.error(`plugin-check requires a built gateway (missing ${dist}). Run: cd gateway && npm run build`);
     process.exit(2);
   }
-  const report = await mod.runPluginCheck({ file: path.resolve(file), preset, strict });
+
+  // 契约 JSON：显式路径 > 仓库内 check-in 产物 > 缺省（plugin-check 用内存 manifest）。
+  const fs = require('fs');
+  const contractPath = valueOf('--contract') ||
+    path.join(__dirname, '..', 'packages', 'gateway-sdk', 'contract', 'runtime-contract.json');
+  let contract;
+  if (fs.existsSync(contractPath)) {
+    try {
+      contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
+    } catch (e) {
+      console.error(`cannot read contract JSON ${contractPath}: ${e.message}`);
+      process.exit(2);
+    }
+  } else if (valueOf('--contract')) {
+    console.error(`contract JSON not found: ${contractPath}`);
+    process.exit(2);
+  }
+
+  // 事件抓包：JSONL（每行一个）或 JSON 数组。
+  let events;
+  const eventsPath = valueOf('--events');
+  if (eventsPath) {
+    try {
+      const raw = fs.readFileSync(eventsPath, 'utf8').trim();
+      events = raw.startsWith('[')
+        ? JSON.parse(raw)
+        : raw.split(/\r?\n/).filter(Boolean).map((line, i) => {
+          try { return JSON.parse(line); } catch (e) {
+            throw new Error(`line ${i + 1}: ${e.message}`);
+          }
+        });
+      if (!Array.isArray(events)) throw new Error('expected a JSON array or one event per line');
+    } catch (e) {
+      console.error(`cannot read events file ${eventsPath}: ${e.message}`);
+      process.exit(2);
+    }
+  }
+
+  const report = await mod.runPluginCheck({
+    file: path.resolve(file), preset, strict,
+    ...(audit || probe ? { audit: true } : {}),
+    ...(contract ? { contract } : {}),
+    ...(events ? { events } : {}),
+    ...(probe ? { probe: true, probeTimeoutMs: timeoutMs } : {}),
+  });
+
   if (json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
@@ -544,9 +606,64 @@ async function runPluginCheckCli(args) {
     } else {
       console.log(`Preset ${report.preset}: not evaluated${report.error ? ` (${report.error})` : ''}`);
     }
+    if (report.audit) printPluginAudit(report.audit);
     console.log('Next: `mafw plugin-test` for online conformance against the active runtime.');
   }
   process.exit(mod.pluginCheckExitCode(report, strict));
+}
+
+// ASCII-only output: mafw runs in Windows terminals with legacy code pages where
+// arrows/check marks/em-dashes turn into mojibake and break log scrapers.
+function printPluginAudit(audit) {
+  const { summary, findings, samples, capabilities, probes, mappings } = audit;
+  console.log('');
+  console.log(`Audit${audit.contractVersion ? ` (contract ${audit.contractVersion})` : ''}: ` +
+    `${summary.errors} error / ${summary.warnings} warn | ` +
+    `${mappings.mapped} mapped / ${mappings.drop} drop | ` +
+    `samples ${summary.samplesOk} ok / ${summary.samplesBad} bad-structure / ${summary.samplesMissing} no-output`);
+
+  const rank = { error: 0, warn: 1, info: 2 };
+  const ordered = [...findings].sort((a, b) => rank[a.severity] - rank[b.severity]);
+  for (const f of ordered) {
+    const mark = f.severity === 'error' ? 'x' : f.severity === 'warn' ? '!' : '.';
+    console.log(`  ${mark} [${f.severity}] ${f.where}: ${f.message}`);
+    if (f.fix) console.log(`      fix: ${f.fix}`);
+  }
+
+  if (samples.length > 0) {
+    console.log('Events:');
+    for (const s of samples) {
+      const head = s.outputs.length > 0
+        ? s.outputs.map((o) => o.type).join(', ')
+        : `no output (${s.reason})`;
+      const mark = s.outcome === 'ok' ? 'ok  ' : s.outcome === 'bad-structure' ? 'BAD ' : 'NONE';
+      const via = s.mapping ? `mapping[${s.mapping.index}]` : s.via;
+      console.log(`  ${mark} ${s.label} -> ${head}  (${via})`);
+      for (const o of s.outputs) {
+        for (const w of o.warnings) console.log(`      structure: ${w}`);
+        if (o.warnings.length > 0) {
+          console.log(`      required: ${o.type} fields from contract.events[].requiredFields`);
+        }
+      }
+      if (s.outcome === 'no-output' && s.detail) console.log(`      ${s.detail}`);
+    }
+  }
+
+  if (capabilities.length > 0) {
+    console.log('API:');
+    for (const cap of capabilities) {
+      const missing = cap.missing.length > 0 ? ` | missing: ${cap.missing.join(', ')}` : '';
+      console.log(`  . ${cap.capability}${cap.title ? ` (${cap.title})` : ''} -- ${cap.surfaces.length} surface(s)${missing}`);
+    }
+  }
+
+  if (probes && probes.length > 0) {
+    console.log('API probes:');
+    for (const p of probes) {
+      const mark = p.status === 'ok' ? 'ok  ' : p.status === 'skipped' ? 'skip' : 'FAIL';
+      console.log(`  ${mark} ${p.surface} -- ${p.status}${p.detail ? `: ${p.detail}` : ''} (${p.ms}ms)`);
+    }
+  }
 }
 
 // `mafw plugin-test`: run conformance scenarios against the ACTIVE runtime

@@ -17,11 +17,28 @@ import { resolveDeclaredCapabilities, stampDeclaredCapabilities } from './capabi
 import { validateRuntime } from './validate';
 import { buildRuntimeContractManifest } from './contract-manifest';
 import type { PresetId } from './contract-manifest-types';
+import {
+  auditPlugin,
+  probeRuntimeApis,
+  type AuditContract,
+  type PluginAuditReport,
+} from './plugin-audit';
 
 export interface PluginCheckOptions {
   file: string;
   preset?: PresetId;
   strict?: boolean;
+  /** 附加静态体检：eventMappings × 契约 JSON（翻错/缺结构/没输出/接口面）。 */
+  audit?: boolean;
+  /** 用外部契约占位（缺省 = contract-manifest 的内存投影）。 */
+  contract?: AuditContract;
+  /** 覆盖样例事件（如从 JSONL 抓包文件读入）；缺省用 module.exports.sampleEvents。 */
+  events?: unknown[];
+  /** 真调一次只读接口验返回形状（会触达外部 CLI/网络，超时归 skipped）。 */
+  probe?: boolean;
+  probeTimeoutMs?: number;
+  /** 限定探针面（默认全部）；测试/CI 可用纯函数面子集避免外部依赖。 */
+  probeSurfaces?: string[];
 }
 
 export interface PluginCheckReport {
@@ -44,6 +61,8 @@ export interface PluginCheckReport {
     unmatched: number;
     invalid: number;
   };
+  /** 可选静态体检报告（--audit；逐条事件 + 接口面）。 */
+  audit?: PluginAuditReport;
 }
 
 const DEFAULT_PRESET: PresetId = 'conversation';
@@ -172,12 +191,39 @@ async function evaluate(mod: any, report: PluginCheckReport, opts: PluginCheckOp
     report.samples = samples;
   }
 
+  if (opts.audit || opts.probe) {
+    const audit = auditPlugin({
+      entry,
+      capabilities: capabilities as unknown as Record<string, unknown>,
+      contract: (opts.contract ?? buildRuntimeContractManifest()) as unknown as AuditContract,
+      preset: report.preset,
+      samples: opts.events ?? (Array.isArray(mod.sampleEvents) ? mod.sampleEvents : undefined),
+      runtimeValidation: {
+        hard: validation.hard,
+        downgraded: validation.downgraded,
+        warnings: validation.warnings,
+        surfaces: validation.staticCoverage?.static.surfaces,
+      },
+    });
+    if (opts.probe) {
+      audit.probes = await probeRuntimeApis(rt, {
+        timeoutMs: opts.probeTimeoutMs,
+        ...(opts.probeSurfaces ? { only: opts.probeSurfaces } : {}),
+      });
+      audit.summary.probesBad = audit.probes.filter((p) => p.status === 'error').length;
+    }
+    report.audit = audit;
+  }
+
   return report;
 }
 
 export function pluginCheckExitCode(report: PluginCheckReport, strict?: boolean): number {
   if (report.status === 'error') return 1;
   if (report.hard.length > 0) return 1;
+  // --audit 的错误（翻错/缺结构/接口面不一致）是门禁失败；未开 audit 时字段缺席。
+  if (report.audit && report.audit.summary.errors > 0) return 1;
+  if (report.audit?.probes?.some((p) => p.status === 'error')) return 1;
   if (strict && !report.presetEvaluated) return 1;
   if (strict && report.presetMissing.length > 0) return 1;
   if (report.samples && report.samples.total > 0 && report.samples.translated === 0) return 1;

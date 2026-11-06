@@ -356,6 +356,29 @@ mafw plugin-check ~/.mafw/runtime-plugins/my-runtime.js --preset conversation --
 
 退出码：`0` = 通过；`1` = hard/error 或（`--strict` 时）preset 缺面；`2` = gateway dist 缺失。CI 可直接用（不需要 LLM 凭据）。
 
+**契约审计（`--audit`）**：用插件声明的 `eventMappings` × `packages/gateway-sdk/contract/runtime-contract.json`
+交叉核对，并让 `sampleEvents`（或抓包事件）逐条过真执行器：
+
+```bash
+mafw plugin-check <file> --audit
+mafw plugin-check <file> --audit --events captured.jsonl   # 一行一个原生事件
+mafw plugin-check <file> --audit --contract path/to/runtime-contract.json
+mafw plugin-check <file> --audit --probe                    # 真调只读接口，验返回形状
+```
+
+输出四类结论：
+
+- **翻译不对**：映射到契约里不存在的 canonical 类型；同一 `from` 被更早的无条件行遮住；重复行。
+- **需要什么结构**：映射缺少 `contract.events[].requiredFields`（如 `session.created` 必须带 `info.id`、
+  `part.updated` 必须带 `part`）——静态可判（`passProperties` 自动跳过，交给运行时）。
+- **没有输出**：样本未命中（unmatched）/ 被 drop 或 `transformEvent` 返回 null（suppressed）/
+  `transformEvent` 抛错或返回畸形（invalid）。
+- **接口面不对**：能力声明与契约 `surfaces`/`presets` 不一致；`--probe` 调一次
+  `getBaseUrl`/`healthCheck`/`tools.nativeTools`/`provider.*`/`session.list|todo|children`/`mcp.list`
+  并检查返回形状（超时归 skipped，不误报；方法缺席由 presence 校验负责）。
+
+退出码：审计 error 或探针 error → `1`。`--json` 输出完整 `PluginAuditReport`（含逐条样本 trace）。
+
 需要真实 LLM 往返的场景时再跑 `mafw plugin-test`（§9.5）。
 
 ### 9.1 加载/切换

@@ -44,6 +44,13 @@ export interface TranslationHooks {
   onSuppressed?: (type: string) => void;
   /** transformEvent 抛错或输出非法形状（B2 守卫接入）。 */
   onTranslationError?: (raw: any, reason: string) => void;
+  /** 命中一条翻译（mapping 行或 transformEvent）——离线 trace / 插件审计用。 */
+  onMatched?: (info: {
+    via: 'mapping' | 'transform';
+    mappingIndex?: number;
+    from: string | string[];
+    to: string | string[];
+  }) => void;
 }
 
 export interface EventMappingEntry {
@@ -111,7 +118,9 @@ export function applyEventMappings(
   const sessionID = sidPaths.map((p) => getPath(raw, p)).find((v) => v) as string | undefined;
   const directory = source?.directoryPath ? getPath(raw, source.directoryPath) : undefined;
 
-  for (const m of entry.eventMappings ?? []) {
+  const rows = entry.eventMappings ?? [];
+  for (let i = 0; i < rows.length; i++) {
+    const m = rows[i];
     const froms = Array.isArray(m.from) ? m.from : [m.from];
     if (!froms.includes(nativeType)) continue;
     if (!evalConditions(m.when, raw)) continue;
@@ -138,6 +147,7 @@ export function applyEventMappings(
         properties.sessionID = sessionID;
       }
     }
+    hooks?.onMatched?.({ via: 'mapping', mappingIndex: i, from: m.from, to: m.to });
     return [{ payload: { type: m.to, properties }, sessionID: sessionID as any, directory: directory as any }];
   }
 
@@ -161,6 +171,11 @@ export function applyEventMappings(
       hooks?.onTranslationError?.(raw, 'transformEvent returned malformed event(s) — expected {payload:{type,...}}/{type,...} objects, null, or array thereof');
       return [];
     }
+    hooks?.onMatched?.({
+      via: 'transform',
+      from: nativeType,
+      to: arr.map((e: any) => e?.payload?.type ?? e?.type),
+    });
     return arr as any[];
   }
 
