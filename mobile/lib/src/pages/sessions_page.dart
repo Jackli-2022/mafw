@@ -7,10 +7,19 @@ import '../network/gateway_client.dart';
 import '../services/diagnostics.dart';
 import '../theme.dart';
 import 'debug_page.dart';
-import 'goal_detail_page.dart';
+import 'work_tab.dart';
 
-/// 底部 Tab 导航页（方案 C：AI 紫品牌风，对标豆包 5 Tab）。
-/// Tab：会话 / Goal / 记忆 / 我的。
+/// Orcalore 底部 Tab 枚举（3-tab 结构，spec §7.2）。
+///
+/// - [work]：首页，工作活动流（Task 7 填充 [WorkTab]）
+/// - [chat]：普通会话列表（自由讨论 / 新话题）
+/// - [me]：连接设置 + 扫码配对 + 记忆检索
+///
+/// 旧 4-tab（会话 / Goal / 记忆 / 我的）里的 Goal tab 已退役：Goal 只从
+/// 「工作」tab 的 Goal 卡片 / 需要你进入（Task 7 接通）。记忆检索迁入 [me]。
+enum SessionsTab { work, chat, me }
+
+/// 底部 Tab 导航页（3-tab：工作 / 聊天 / 我的）。
 class SessionsPage extends StatefulWidget {
   final List<MafwSession> sessions;
   final void Function(MafwSession) onOpen;
@@ -46,15 +55,12 @@ class SessionsPage extends StatefulWidget {
 }
 
 class _SessionsPageState extends State<SessionsPage> {
+  SessionsTab _tab = SessionsTab.work;
   String _query = '';
-  int _tab = 0;
 
-  // Goal / 记忆数据（懒加载）
-  List<Map<String, dynamic>> _goals = [];
+  // 记忆检索（「我的」tab，懒加载）
   List<Map<String, dynamic>> _memories = [];
-  bool _loadingGoals = false;
   bool _loadingMemories = false;
-  bool _goalsLoaded = false;
   final _memSearchCtrl = TextEditingController();
   Timer? _memDebounce;
 
@@ -71,24 +77,6 @@ class _SessionsPageState extends State<SessionsPage> {
     _memDebounce?.cancel();
     _memSearchCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadGoals() async {
-    final c = widget.client;
-    if (c == null || _goalsLoaded || _loadingGoals) return;
-    setState(() => _loadingGoals = true);
-    try {
-      final goals = await c.listGoals();
-      if (!mounted) return;
-      setState(() {
-        _goals = goals;
-        _goalsLoaded = true;
-        _loadingGoals = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loadingGoals = false);
-    }
   }
 
   void _onMemoryQuery(String q) {
@@ -115,62 +103,49 @@ class _SessionsPageState extends State<SessionsPage> {
     });
   }
 
+  String get _title {
+    switch (_tab) {
+      case SessionsTab.work:
+        return 'Orcalore';
+      case SessionsTab.chat:
+        return '聊天';
+      case SessionsTab.me:
+        return '我的';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_tab == 0 ? 'MAFW 会话' : (_tab == 1 ? 'Goals' : (_tab == 2 ? '记忆' : '我的'))),
-        actions: [
-          if (_tab == 0) ...[
-            if (widget.onScan != null)
-              IconButton(
-                icon: const Icon(Icons.qr_code_scanner),
-                tooltip: '扫码配对',
-                onPressed: widget.onScan,
-              ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: '连接设置',
-              onPressed: widget.onSettings,
+      // 「工作」tab 自带品牌行（Task 7），壳不再压一条 AppBar 在它上面。
+      appBar: _tab == SessionsTab.work
+          ? null
+          : AppBar(
+              title: Text(_title),
+              actions: [
+                if (_tab == SessionsTab.chat) ...[
+                  if (widget.onScan != null)
+                    IconButton(
+                      icon: const Icon(Icons.qr_code_scanner),
+                      tooltip: '扫码配对',
+                      onPressed: widget.onScan,
+                    ),
+                  IconButton(
+                    icon: const Icon(Icons.settings),
+                    tooltip: '连接设置',
+                    onPressed: widget.onSettings,
+                  ),
+                ],
+              ],
             ),
-          ],
-        ],
-      ),
       body: Column(
         children: [
-          if (widget.isOffline)
-            Material(
-              color: Theme.of(context).colorScheme.error,
-              child: InkWell(
-                onTap: widget.onSettings,
-                child: SafeArea(
-                  bottom: false,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    child: Row(
-                      children: [
-                        Icon(Icons.cloud_off, size: 14, color: Theme.of(context).colorScheme.onError),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            (widget.baseUrl ?? '').isEmpty
-                                ? 'Gateway 未配置 — 点此去设置'
-                                : 'Gateway 未连接（${widget.baseUrl}）— 点此去设置',
-                            style: TextStyle(color: Theme.of(context).colorScheme.onError, fontSize: 12),
-                          ),
-                        ),
-                        Icon(Icons.chevron_right, size: 16, color: Theme.of(context).colorScheme.onError.withValues(alpha: 0.7)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          if (widget.isOffline) _buildOfflineBanner(context),
           Expanded(child: _buildTabBody(context)),
         ],
       ),
-      floatingActionButton: _tab == 0
+      // 新建会话（新话题入口）属于「聊天」tab。
+      floatingActionButton: _tab == SessionsTab.chat
           ? FloatingActionButton(
               // Orcalore FAB：theme 提供纯白（cream）底 + 黑色＋号（spec §3）。
               onPressed: widget.onCreate,
@@ -181,40 +156,84 @@ class _SessionsPageState extends State<SessionsPage> {
     );
   }
 
+  Widget _buildOfflineBanner(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.error,
+      child: InkWell(
+        onTap: widget.onSettings,
+        child: SafeArea(
+          bottom: false,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Icon(Icons.cloud_off, size: 14, color: scheme.onError),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    (widget.baseUrl ?? '').isEmpty
+                        ? 'Gateway 未配置 — 点此去设置'
+                        : 'Gateway 未连接（${widget.baseUrl}）— 点此去设置',
+                    style: TextStyle(color: scheme.onError, fontSize: 12),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  size: 16,
+                  color: scheme.onError.withValues(alpha: 0.7),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBottomNav(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return NavigationBar(
-      selectedIndex: _tab,
+      selectedIndex: _tab.index,
       onDestinationSelected: (i) {
-        setState(() => _tab = i);
-        if (i == 1) _loadGoals();
+        setState(() => _tab = SessionsTab.values[i]);
       },
       backgroundColor: scheme.surface,
-      indicatorColor: kMafwPrimary.withValues(alpha: 0.15),
+      indicatorColor: MafwPalette.accentDim,
       destinations: const [
-        NavigationDestination(icon: Icon(Icons.chat_bubble_outline), selectedIcon: Icon(Icons.chat_bubble), label: '会话'),
-        NavigationDestination(icon: Icon(Icons.flag_outlined), selectedIcon: Icon(Icons.flag), label: 'Goal'),
-        NavigationDestination(icon: Icon(Icons.memory_outlined), selectedIcon: Icon(Icons.memory), label: '记忆'),
-        NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: '我的'),
+        NavigationDestination(
+          icon: Icon(Icons.space_dashboard_outlined),
+          selectedIcon: Icon(Icons.space_dashboard),
+          label: '工作',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.chat_bubble_outline),
+          selectedIcon: Icon(Icons.chat_bubble),
+          label: '聊天',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.person_outline),
+          selectedIcon: Icon(Icons.person),
+          label: '我的',
+        ),
       ],
     );
   }
 
   Widget _buildTabBody(BuildContext context) {
     switch (_tab) {
-      case 1:
-        return _buildGoalsTab(context);
-      case 2:
-        return _buildMemoryTab(context);
-      case 3:
+      case SessionsTab.work:
+        return const WorkTab();
+      case SessionsTab.chat:
+        return _buildChatTab(context);
+      case SessionsTab.me:
         return _buildMeTab(context);
-      default:
-        return _buildSessionsTab(context);
     }
   }
 
-  // ── 会话 Tab ──
-  Widget _buildSessionsTab(BuildContext context) {
+  // ── 聊天 Tab（普通会话列表）──
+  Widget _buildChatTab(BuildContext context) {
     return Column(
       children: [
         Padding(
@@ -249,111 +268,43 @@ class _SessionsPageState extends State<SessionsPage> {
     );
   }
 
-  // ── Goal Tab ──
-  Widget _buildGoalsTab(BuildContext context) {
-    if (_loadingGoals) return const Center(child: CircularProgressIndicator());
-    if (_goals.isEmpty) {
-      return _EmptyState(
-        icon: Icons.flag_outlined,
-        title: widget.client == null ? '未连接' : '暂无 Goal',
-        subtitle: widget.client == null ? '先连接 Gateway' : '创建 Goal 后在这里跟踪',
-      );
-    }
-    return Column(
-      children: [
-        // Triage quick access
-        if (widget.onTriage != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: Card(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: ListTile(
-                leading: const Icon(Icons.pending_actions, size: 20, color: kMafwGoalActive),
-                title: const Text('Triage 待决项', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                trailing: Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                onTap: widget.onTriage,
-              ),
-            ),
-          ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _goals.length,
-            itemBuilder: (ctx, i) {
-              final g = _goals[i];
-              final title = (g['title'] ?? g['name'] ?? g['id'] ?? '').toString();
-              final status = (g['status'] ?? g['state'] ?? '').toString();
-              final goalId = (g['id'] ?? '').toString();
-              final active = status == 'active' || status == 'in_progress' || status == 'running';
-              return ListTile(
-                leading: CircleAvatar(
-                  radius: 14,
-                  backgroundColor: active ? kMafwGoalActive.withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.15),
-                  child: Icon(Icons.flag, size: 16, color: active ? kMafwGoalActive : Colors.grey),
-                ),
-                title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: active
-                    ? const _StatusChip(text: '进行中', color: kMafwGoalActive)
-                    : _StatusChip(text: status.isEmpty ? 'idle' : status, color: Colors.grey),
-                onTap: goalId.isNotEmpty
-                    ? () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => GoalDetailPage(
-                            client: widget.client,
-                            goalId: goalId,
-                            goalTitle: title,
-                            goalStatus: status,
-                          ),
-                        ))
-                    : null,
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── 记忆 Tab ──
-  Widget _buildMemoryTab(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: TextField(
-            controller: _memSearchCtrl,
-            onChanged: _onMemoryQuery,
-            decoration: const InputDecoration(
-              hintText: '检索记忆…',
-              prefixIcon: Icon(Icons.search),
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
-          ),
-        ),
-        Expanded(
-          child: _loadingMemories
-              ? const Center(child: CircularProgressIndicator())
-              : _memories.isEmpty
-                  ? _EmptyState(
-                      icon: Icons.memory,
-                      title: '检索谐波记忆',
-                      subtitle: '输入关键词，从记忆系统召回相关条目',
-                    )
-                  : ListView.builder(
-                      itemCount: _memories.length,
-                      itemBuilder: (ctx, i) => _MemoryCard(mem: _memories[i]),
-                    ),
-        ),
-      ],
-    );
-  }
-
-  // ── 我的 Tab ──
+  // ── 我的 Tab（记忆检索 + 连接设置 / 扫码配对 / 调试）──
   Widget _buildMeTab(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
+        _sectionLabel('记忆'),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _memSearchCtrl,
+          onChanged: _onMemoryQuery,
+          decoration: const InputDecoration(
+            hintText: '搜索记忆…',
+            prefixIcon: Icon(Icons.search),
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (_loadingMemories)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_memories.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Text(
+              '输入关键词，从谐波记忆召回相关条目',
+              style: TextStyle(fontSize: 12, color: MafwPalette.faint),
+            ),
+          )
+        else
+          for (final mem in _memories) _MemoryCard(mem: mem),
+        const SizedBox(height: 20),
+        _sectionLabel('连接'),
+        const SizedBox(height: 8),
         Card(
           color: scheme.surfaceContainerHighest,
           child: ListTile(
@@ -384,6 +335,24 @@ class _SessionsPageState extends State<SessionsPage> {
               onTap: widget.onScan,
             ),
           ),
+        // Triage 入口随旧 Goal tab 退役迁到这里（spec §9：保持现状入口）。
+        if (widget.onTriage != null) ...[
+          const SizedBox(height: 8),
+          Card(
+            color: scheme.surfaceContainerHighest,
+            child: ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: kMafwGoalActive,
+                foregroundColor: MafwPalette.black,
+                child: Icon(Icons.pending_actions, size: 20),
+              ),
+              title: const Text('Triage 待决项'),
+              subtitle: const Text('审批 / 待决项列表'),
+              trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+              onTap: widget.onTriage,
+            ),
+          ),
+        ],
         if (debugPanelEnabled) ...[
           const SizedBox(height: 8),
           Card(
@@ -409,6 +378,18 @@ class _SessionsPageState extends State<SessionsPage> {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.4,
+        color: MafwPalette.dim,
+      ),
     );
   }
 }
@@ -493,7 +474,7 @@ class _MemoryCard extends StatelessWidget {
     final type = (mem['type'] ?? mem['memory_type'] ?? '').toString();
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      margin: const EdgeInsets.only(bottom: 8),
       color: scheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.all(12),
