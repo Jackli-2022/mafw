@@ -2,8 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   extractEventReference,
+  extractEventSchemaClosure,
   renderEventMapMd,
   renderEventsJson,
+  renderEventsSchemaJson,
   renderEventsTs,
   renderReadme,
   suggestCanonical,
@@ -22,8 +24,16 @@ const spec = {
       },
       'session.created': {
         type: 'object',
-        properties: { type: { enum: ['session.created'] }, properties: { type: 'object' } },
+        properties: {
+          type: { enum: ['session.created'] },
+          properties: { $ref: '#/components/schemas/Session.Info' },
+        },
         required: ['type', 'properties'],
+      },
+      'Session.Info': {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
       },
       'session.execution.started': {
         type: 'object',
@@ -71,6 +81,24 @@ test('renderEventsTs emits a union alias, a sorted type list, and the rpc prefix
   assert.ok(createdIdx > 0 && startedIdx > createdIdx, 'types are sorted')
   assert.match(ts, /OPENCODE_RPC_PREFIX = 'rpc\.'/)
   assert.ok(!ts.includes("'V2Event.rpc'"), 'rpc variant does not leak into the literal list')
+})
+
+test('extractEventSchemaClosure follows transitive refs and rewrites them to $defs', () => {
+  const ref = extractEventReference(spec)
+  const closure = extractEventSchemaClosure(spec, ref)
+  assert.ok(closure.names.includes('session.created'))
+  assert.ok(closure.names.includes('Session.Info'), 'nested $ref is included')
+  assert.equal((closure.defs['session.created'] as any).properties.properties.$ref, '#/$defs/Session.Info')
+})
+
+test('renderEventsSchemaJson is a self-contained JSON Schema (oneOf + $defs)', () => {
+  const ref = extractEventReference(spec)
+  const schema = JSON.parse(renderEventsSchemaJson(spec, ref, meta))
+  assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema')
+  assert.equal(schema.oneOf.length, 3)
+  assert.deepEqual(schema.oneOf[0], { $ref: '#/$defs/session.created' })
+  assert.ok(schema.$defs['Session.Info'])
+  assert.equal(schema['x-event-count'], 3)
 })
 
 test('renderEventsJson is machine readable and keeps variant metadata', () => {

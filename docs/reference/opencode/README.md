@@ -11,6 +11,7 @@
 | `types.gen.ts` | openapi-typescript 全量类型：`paths` / `operations` / `components.schemas` |
 | `events.gen.ts` | `OpencodeEvent` 联合（`V2Event`）+ `OPENCODE_EVENT_TYPES` 清单 |
 | `events.json` | 机器可读事件清单（type / schema / required / properties） |
+| `events.schema.json` | 自包含 JSON Schema（`oneOf` + `$defs` 闭包），可喂 ajv / 其他语言 codegen |
 | `event-map.md` | opencode → MAFW canonical 建议表（需人工确认） |
 
 事件：**98** 个变体，其中名称启发式可对上 MAFW canonical 的 **9** 个。

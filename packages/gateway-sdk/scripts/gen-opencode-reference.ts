@@ -5,6 +5,7 @@
  *   types.gen.ts   openapi-typescript 全量类型（SDK 接口）
  *   events.gen.ts  V2Event 联合 + 事件 type 清单
  *   events.json    机器可读事件清单（type/schema/required/properties）
+ *   events.schema.json  自包含 JSON Schema（oneOf + $defs 闭包）
  *   event-map.md   opencode → MAFW canonical 建议表
  *   README.md      来源 / 统计 / 重新生成命令
  *
@@ -23,6 +24,7 @@ import {
   extractEventReference,
   renderEventMapMd,
   renderEventsJson,
+  renderEventsSchemaJson,
   renderEventsTs,
   renderReadme,
   type OpenApiSpecLike,
@@ -82,6 +84,7 @@ async function main(): Promise<void> {
     'types.gen.ts': types,
     'events.gen.ts': renderEventsTs(ref, meta),
     'events.json': renderEventsJson(ref, meta),
+    'events.schema.json': renderEventsSchemaJson(spec, ref, meta),
     'event-map.md': renderEventMapMd(ref, canonical, meta),
     'README.md': renderReadme(ref, canonical, meta),
   }
