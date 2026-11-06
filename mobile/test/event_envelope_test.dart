@@ -7,7 +7,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:mafw_mobile/src/models/mafw_models.dart';
+import 'package:orcalore_mobile/src/models/mafw_models.dart';
 
 void main() {
   group('MafwEvent canonical envelope', () {

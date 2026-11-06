@@ -1,4 +1,4 @@
-package ai.mafw.mafw_mobile
+package ai.orcalore.mobile
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine

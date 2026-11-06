@@ -463,7 +463,7 @@ body: Column(
               tooltip: _sending ? '停止' : '发送',
               style: IconButton.styleFrom(
                 backgroundColor: kMafwPrimary,
-                foregroundColor: Colors.white,
+                foregroundColor: MafwPalette.black,
               ),
               onPressed: _sending ? _stop : _send,
             ),
@@ -485,7 +485,7 @@ class _MessageBubble extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     if (isUser) {
-      // 用户消息：AI 紫 pill（Claude 式角色差异）
+      // 用户消息：中性 ink pill（Orcalore accent 纪律：mint 只给需要你/CTA/激活/进行中）
       return Align(
         alignment: Alignment.centerRight,
         child: Container(
@@ -493,12 +493,12 @@ class _MessageBubble extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
           decoration: BoxDecoration(
-            color: kMafwPrimary,
+            color: MafwPalette.badgeBg,
             borderRadius: BorderRadius.circular(18),
           ),
           child: SelectableText(
             text,
-            style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45),
+            style: const TextStyle(color: MafwPalette.text, fontSize: 15, height: 1.45),
           ),
         ),
       );

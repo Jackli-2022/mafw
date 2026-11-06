@@ -1,4 +1,4 @@
-package ai.mafw.mafw_mobile.benchmark
+package ai.orcalore.mobile.benchmark
 
 import android.content.Intent
 import android.util.Log
@@ -25,8 +25,8 @@ import org.junit.runners.MethodSorters
  *
  * Run via Android Studio Macrobenchmark config or:
  *   adb shell am instrument -w \
- *     -e class ai.mafw.mafw_mobile.benchmark.CriticalPathBenchmark \
- *     ai.mafw.mafw_mobile.test/androidx.benchmark.junit4.AndroidBenchmarkRunner
+ *     -e class ai.orcalore.mobile.benchmark.CriticalPathBenchmark \
+ *     ai.orcalore.mobile.test/androidx.benchmark.junit4.AndroidBenchmarkRunner
  */
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
@@ -35,7 +35,7 @@ class CriticalPathBenchmark {
     @get:Rule
     val benchmarkRule = MacrobenchmarkRule()
 
-    private val packageName = "ai.mafw.mafw_mobile"
+    private val packageName = "ai.orcalore.mobile"
     private val launchActivity = "$packageName.MainActivity"
     private val sessionItemTimeout = 5_000L
 

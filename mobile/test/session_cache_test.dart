@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:mafw_mobile/src/cache/session_cache.dart';
+import 'package:orcalore_mobile/src/cache/session_cache.dart';
 
 void main() {
   group('SessionCache', () {

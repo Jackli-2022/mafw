@@ -285,7 +285,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     final connected = _client != null && _wsConnected;
     return MaterialApp(
       navigatorKey: _navigatorKey,
-      title: 'MAFW Mobile',
+      title: 'Orcalore',
       theme: mafwLightTheme(),
       darkTheme: mafwDarkTheme(),
       themeMode: ThemeMode.system,

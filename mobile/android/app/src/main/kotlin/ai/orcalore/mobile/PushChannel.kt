@@ -1,4 +1,4 @@
-package ai.mafw.mafw_mobile
+package ai.orcalore.mobile
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

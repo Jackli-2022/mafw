@@ -13,7 +13,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:mafw_mobile/src/models/mafw_models.dart';
+import 'package:orcalore_mobile/src/models/mafw_models.dart';
 
 const List<String> _eventsTsCandidates = [
   '../packages/gateway-sdk/src/events.ts',

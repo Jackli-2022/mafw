@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "ai.mafw.mafw_mobile"
+    namespace = "ai.orcalore.mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -18,7 +18,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "ai.mafw.mafw_mobile"
+        applicationId = "ai.orcalore.mobile"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

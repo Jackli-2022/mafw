@@ -54,20 +54,20 @@ adb install app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
 # Run all benchmarks
 adb shell am instrument -w \
-  -e class ai.mafw.mafw_mobile.benchmark.CriticalPathBenchmark \
-  ai.mafw.mafw_mobile.test/androidx.benchmark.junit4.AndroidBenchmarkRunner
+  -e class ai.orcalore.mobile.benchmark.CriticalPathBenchmark \
+  ai.orcalore.mobile.test/androidx.benchmark.junit4.AndroidBenchmarkRunner
 
 # Run a single benchmark
 adb shell am instrument -w \
-  -e class ai.mafw.mafw_mobile.benchmark.CriticalPathBenchmark#recordBaselineProfile \
-  ai.mafw.mafw_mobile.test/androidx.benchmark.junit4.AndroidBenchmarkRunner
+  -e class ai.orcalore.mobile.benchmark.CriticalPathBenchmark#recordBaselineProfile \
+  ai.orcalore.mobile.test/androidx.benchmark.junit4.AndroidBenchmarkRunner
 ```
 
 ### Option C: adb cold-start measurement (quick gate)
 
 ```bash
-adb shell am force-stop ai.mafw.mafw_mobile
-adb shell am start -W ai.mafw.mafw_mobile/.MainActivity
+adb shell am force-stop ai.orcalore.mobile
+adb shell am start -W ai.orcalore.mobile/.MainActivity
 # Check TotalTime in output — must be < 1200ms
 ```
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mafw_mobile/src/services/lifecycle_ws.dart';
+import 'package:orcalore_mobile/src/services/lifecycle_ws.dart';
 
 void main() {
   // LifecycleWsManager reads WidgetsBinding.instance in its constructor.

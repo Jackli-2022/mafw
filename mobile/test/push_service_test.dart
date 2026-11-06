@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 
-import 'package:mafw_mobile/src/config/connection_config.dart';
-import 'package:mafw_mobile/src/services/push_service.dart';
+import 'package:orcalore_mobile/src/config/connection_config.dart';
+import 'package:orcalore_mobile/src/services/push_service.dart';
 
 void main() {
   group('PushService', () {

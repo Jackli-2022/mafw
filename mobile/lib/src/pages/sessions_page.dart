@@ -164,8 +164,7 @@ class _SessionsPageState extends State<SessionsPage> {
       ),
       floatingActionButton: _tab == 0
           ? FloatingActionButton(
-              backgroundColor: kMafwPrimary,
-              foregroundColor: Colors.white,
+              // Orcalore FAB：theme 提供纯白（cream）底 + 黑色＋号（spec §3）。
               onPressed: widget.onCreate,
               child: const Icon(Icons.add),
             )
@@ -352,7 +351,7 @@ class _SessionsPageState extends State<SessionsPage> {
           child: ListTile(
             leading: const CircleAvatar(
               backgroundColor: kMafwPrimary,
-              foregroundColor: Colors.white,
+              foregroundColor: MafwPalette.black,
               child: Icon(Icons.dns, size: 20),
             ),
             title: const Text('Gateway'),
@@ -368,7 +367,7 @@ class _SessionsPageState extends State<SessionsPage> {
             child: ListTile(
               leading: const CircleAvatar(
                 backgroundColor: kMafwAccent,
-                foregroundColor: Colors.white,
+                foregroundColor: MafwPalette.black,
                 child: Icon(Icons.qr_code_scanner, size: 20),
               ),
               title: const Text('扫码配对'),

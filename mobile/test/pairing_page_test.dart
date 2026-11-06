@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import 'package:mafw_mobile/src/config/connection_config.dart';
-import 'package:mafw_mobile/src/services/secure_config_store.dart';
+import 'package:orcalore_mobile/src/config/connection_config.dart';
+import 'package:orcalore_mobile/src/services/secure_config_store.dart';
 
 /// Minimal fake FlutterSecureStorage for unit tests.
 class _FakeSecureStorage extends FlutterSecureStorage {
