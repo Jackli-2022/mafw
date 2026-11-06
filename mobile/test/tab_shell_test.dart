@@ -1,4 +1,4 @@
-// Orcalore 3-tab shell (work / chat / me).
+﻿// Orcalore 3-tab shell (work / chat / me).
 //
 // Spec: docs/superpowers/specs/2026-11-05-mobile-tailscale-pod-app-design.md §7.2
 // Plan: docs/superpowers/plans/2026-11-05-mobile-app-v1.md (Task 6)
@@ -15,6 +15,7 @@ import 'package:orcalore_mobile/src/network/gateway_client.dart';
 import 'package:orcalore_mobile/src/pages/sessions_page.dart';
 import 'package:orcalore_mobile/src/pages/work_tab.dart';
 import 'package:orcalore_mobile/src/theme.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Offline-safe client: only the memory search is exercised by these tests.
 class _FakeClient extends GatewayClient {
@@ -71,6 +72,12 @@ List<String?> _navLabels(WidgetTester tester) => tester
     .toList();
 
 void main() {
+  setUp(() {
+    // The 工作 tab persists the active project (Task 7) — install the prefs mock
+    // so the shell boots without an unhandled plugin-channel call.
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('3-tab shell', () {
     testWidgets('bottom navigation is exactly 工作 / 聊天 / 我的', (tester) async {
       await _pumpShell(tester);
@@ -133,12 +140,17 @@ void main() {
       expect(find.byType(FloatingActionButton), findsNothing);
     });
 
-    testWidgets('聊天 keeps the new-session FAB; 工作 and 我的 do not', (tester) async {
+    testWidgets('工作 owns the discussion FAB; 聊天 keeps the new-session FAB; 我的 has none',
+        (tester) async {
       await _pumpShell(tester);
-      expect(find.byType(FloatingActionButton), findsNothing);
+      // 工作 tab 自带「＋ 新建讨论」占位 FAB（Task 7；Task 11 接 composer）。
+      expect(find.byType(FloatingActionButton), findsOneWidget);
+      expect(find.text('新建讨论'), findsOneWidget);
 
       await _tapTab(tester, '聊天');
       expect(find.byType(FloatingActionButton), findsOneWidget);
+      // 工作 tab 的 FAB 不能漏进聊天 tab。
+      expect(find.text('新建讨论'), findsNothing);
 
       await _tapTab(tester, '我的');
       expect(find.byType(FloatingActionButton), findsNothing);

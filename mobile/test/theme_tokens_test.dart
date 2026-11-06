@@ -11,8 +11,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orcalore_mobile/main.dart';
 import 'package:orcalore_mobile/src/theme.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    // Booting the real app mounts the 工作 tab, which persists its active
+    // project (Task 7) — install the prefs mock for every test in this file.
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('MafwPalette token table (Orcalore B-mint)', () {
     test('black is the OLED base background', () {
       expect(MafwPalette.black, const Color(0xFF000000));

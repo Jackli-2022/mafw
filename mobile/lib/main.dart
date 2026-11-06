@@ -12,13 +12,16 @@ import 'src/network/gateway_client.dart';
 import 'src/network/ws_client_v2.dart';
 import 'src/pages/chat_page.dart';
 import 'src/pages/connection_settings_page.dart';
+import 'src/pages/goal_detail_page.dart';
 import 'src/pages/pairing_page.dart';
 import 'src/pages/sessions_page.dart';
 import 'src/pages/triage_page.dart';
+import 'src/services/active_project.dart';
 import 'src/services/connectivity_watcher.dart';
 import 'src/services/diagnostics.dart';
 import 'src/services/lifecycle_ws.dart';
 import 'src/services/push_service.dart';
+import 'src/services/work_refresh_bus.dart';
 import 'src/theme.dart';
 
 /// Top-level handler for WorkManager background callbacks.
@@ -83,9 +86,21 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   bool _wsConnected = false;
   StreamSubscription? _wsStatusSub;
 
+  /// 工作 tab 的当前项目选择 + 刷新总线（Task 7）。两者都跨 tab 复用，
+  /// 由外壳注入而不是每个页面各自持有。
+  final ActiveProjectStore _activeProject = ActiveProjectStore();
+  final WorkRefreshBus _workRefresh = WorkRefreshBus();
+
+  /// WS 事件 → 工作面刷新（`shouldRefreshWork` 过滤在总线内部）。
+  StreamSubscription<MafwEvent>? _wsEventsSub;
+
   @override
   void initState() {
     super.initState();
+    // Restore the remembered project before the work tab's first fetch resolves.
+    _activeProject.load().catchError((Object e) {
+      debugPrint('[MAFW] ActiveProjectStore load failed (offlineable): $e');
+    });
     // Prefer initial config from main(); avoid blocking first frame on Hive.
     if (widget.initialConfig != null) {
       _applyConfig(widget.initialConfig!);
@@ -106,9 +121,12 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _lifecycleManager?.dispose();
     _connectivityWatcher?.dispose();
     _wsStatusSub?.cancel();
+    _wsEventsSub?.cancel();
     _pushService?.dispose();
     _ws?.dispose();
     _client?.dispose();
+    _activeProject.dispose();
+    _workRefresh.dispose();
     super.dispose();
   }
 
@@ -125,6 +143,8 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _lifecycleManager = null;
     _ws?.dispose();
     _wsStatusSub?.cancel();
+    _wsEventsSub?.cancel();
+    _wsEventsSub = null;
     _pushService?.dispose();
 
     _diagnostics?.updateConnection(baseUrl: cfg.baseUrl, apiToken: cfg.apiToken);
@@ -146,7 +166,13 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     }
 
     final client = GatewayClient(cfg, diagnostics: _diagnostics);
-    final ws = WsClientV2(cfg, onRawFrame: _diagnostics?.recordWsFrame);
+    final ws = WsClientV2(
+      cfg,
+      onRawFrame: _diagnostics?.recordWsFrame,
+      // Reconnect hook (Task 5): events missed while offline are not replayed,
+      // so the work surface refetches once per re-handshake.
+      onReconnected: _workRefresh.onReconnected,
+    );
     // Restore the persisted reconnect budget before the first attempt so a
     // retry budget exhausted before an app kill is honoured after relaunch.
     try {
@@ -163,6 +189,8 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _wsStatusSub = ws.connectionStatus.listen((ok) {
       if (mounted) setState(() => _wsConnected = ok);
     });
+    // 工作 tab 的数据刷新入口：只有会改变工作面的帧才触发（总线内过滤）。
+    _wsEventsSub = ws.events.listen(_workRefresh.onEvent);
 
     setState(() {
       _config = cfg;
@@ -263,6 +291,26 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     }
   }
 
+  /// 工作 tab 的 Goal 入口（Task 8 会重写详情页）。
+  ///
+  /// Task 7 只保证导航链通：`projectId`（跨项目 attention 先切好的项目）留给
+  /// Task 8 的 `GoalDetailPage(podId, goalId)` 使用，当前打开既有页面。
+  void _openGoal(String projectId, String goalId) {
+    _navigatorKey.currentState?.push(MaterialPageRoute(
+      builder: (_) => GoalDetailPage(
+        client: _client,
+        goalId: goalId,
+        goalTitle: '',
+        goalStatus: '',
+      ),
+    ));
+  }
+
+  /// 「＋ 新建讨论」占位：Task 11 接 Goal composer。
+  void _createDiscussion() {
+    _snack('新建讨论将在下一版本启用');
+  }
+
   void _openChat(MafwSession s) {
     final c = _client;
     final ws = _ws;
@@ -346,6 +394,10 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         client: _client,
         diagnostics: _diagnostics,
         wsConnected: () => _wsConnected,
+        activeProject: _activeProject,
+        refreshBus: _workRefresh,
+        onOpenGoal: _openGoal,
+        onCreateDiscussion: _createDiscussion,
       ),
     );
   }

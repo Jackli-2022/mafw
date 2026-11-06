@@ -197,15 +197,34 @@ class GatewayClient {
   /// Five-bucket project overview (`GET /api/projects/:projectId/work`).
   ///
   /// [projectDir] is percent-encoded: it is an absolute path and contains `:`
-  /// and `\` on Windows. A 404 means the project has no Pod yet — that is
-  /// reported as an actionable error, not an empty overview.
+  /// and `\` on Windows.
+  ///
+  /// A 404 is split into two distinct, actionable failures (Task 4 minor):
+  /// [NoPodException] when the gateway route exists and answers its designed
+  /// `{"error":"pod not found"}` body, and [GatewayRouteMissingException] when a
+  /// 404 carries no route payload — i.e. an **older gateway** that does not serve
+  /// the route at all. Both are 404, so the body is the only honest signal.
   Future<WorkOverview> workOverview(String projectDir) async {
     final res = await _get(_uri('/api/projects/${Uri.encodeComponent(projectDir)}/work'));
-    if (res.statusCode == 404) {
-      throw GatewayException('workOverview: no Pod for this project (HTTP 404)');
-    }
+    if (res.statusCode == 404) throw _notFound(res, operation: 'workOverview');
     if (res.statusCode != 200) throw GatewayException('workOverview: HTTP ${res.statusCode}');
     return WorkOverview.fromJson(jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>);
+  }
+
+  /// Classifies a 404 from a project-scoped route.
+  ///
+  /// The gateway's own routes answer 404 with `{"error":"pod not found"}`; a
+  /// gateway without the route answers an empty/plain 404 (verified against a
+  /// live gateway: unknown `/api/*` routes return 404 with an empty body).
+  GatewayException _notFound(http.Response res, {required String operation}) {
+    final body = utf8.decode(res.bodyBytes, allowMalformed: true).trim();
+    if (body.toLowerCase().contains('pod')) {
+      return NoPodException('$operation: no Pod for this project (HTTP 404)', errorBody: body);
+    }
+    return GatewayRouteMissingException(
+      '$operation: HTTP 404 without a route payload — gateway is too old for this route',
+      errorBody: body,
+    );
   }
 
   /// Cross-project presence (`GET /api/presence`).
@@ -375,7 +394,30 @@ class GatewayClient {
 
 class GatewayException implements Exception {
   final String message;
-  GatewayException(this.message);
+
+  /// HTTP status when the failure came from a response (null for transport errors).
+  final int? statusCode;
+
+  /// Decoded (best-effort) error body, kept so callers can tell designed 404s
+  /// apart from a missing route.
+  final String? errorBody;
+
+  GatewayException(this.message, {this.statusCode, this.errorBody});
   @override
   String toString() => message;
+}
+
+/// The project has no Pod yet — the gateway `/work` route exists and answered
+/// its designed `404 {"error":"pod not found"}`.
+///
+/// Distinct from [GatewayRouteMissingException] so the UI can say「这个项目还没有
+/// 鲸群」instead of「网关版本过旧」.
+class NoPodException extends GatewayException {
+  NoPodException(super.message, {super.statusCode = 404, super.errorBody});
+}
+
+/// A 404 that carries no gateway route payload: the gateway is too old to serve
+/// the route (e.g. `/api/projects/:id/work` did not exist before v5).
+class GatewayRouteMissingException extends GatewayException {
+  GatewayRouteMissingException(super.message, {super.statusCode = 404, super.errorBody});
 }

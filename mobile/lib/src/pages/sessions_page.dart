@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
+import '../services/active_project.dart';
 import '../services/diagnostics.dart';
+import '../services/work_refresh_bus.dart';
 import '../theme.dart';
 import 'debug_page.dart';
 import 'work_tab.dart';
@@ -34,6 +36,18 @@ class SessionsPage extends StatefulWidget {
   final DiagnosticsSink? diagnostics;
   final bool Function()? wsConnected;
 
+  /// 当前项目选择（「工作」tab 的项目切换器持久化在这里）。
+  final ActiveProjectStore? activeProject;
+
+  /// 工作 tab 刷新总线（`main.dart` 接 WS 重连与事件）。
+  final WorkRefreshBus? refreshBus;
+
+  /// 工作 tab 的 Goal 详情入口（`main.dart` 负责导航）。
+  final void Function(String projectId, String goalId)? onOpenGoal;
+
+  /// 「＋ 新建讨论」占位（Task 11 接 composer）。
+  final VoidCallback? onCreateDiscussion;
+
   const SessionsPage({
     super.key,
     required this.sessions,
@@ -48,6 +62,10 @@ class SessionsPage extends StatefulWidget {
     this.client,
     this.diagnostics,
     this.wsConnected,
+    this.activeProject,
+    this.refreshBus,
+    this.onOpenGoal,
+    this.onCreateDiscussion,
   });
 
   @override
@@ -224,7 +242,14 @@ class _SessionsPageState extends State<SessionsPage> {
   Widget _buildTabBody(BuildContext context) {
     switch (_tab) {
       case SessionsTab.work:
-        return const WorkTab();
+        return WorkTab(
+          client: widget.client,
+          activeProject: widget.activeProject,
+          refreshBus: widget.refreshBus,
+          onOpenGoal: widget.onOpenGoal,
+          onCreateDiscussion: widget.onCreateDiscussion,
+          onOpenSettings: widget.onSettings,
+        );
       case SessionsTab.chat:
         return _buildChatTab(context);
       case SessionsTab.me:

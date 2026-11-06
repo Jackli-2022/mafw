@@ -218,11 +218,33 @@ void main() {
       expect(presence.attention.single.goalId, 'g1');
       expect(presence.attention.single.kind, 'plan_approval');
       expect(presence.attention.single.title, '批准计划');
-      // The gateway presence projection does not attach project/pod ids to
-      // attention items — absent must stay null, never a guessed value.
+      // Gateway presence attaches the owning Pod + parent-folded project
+      // (Task 7) — a payload without them must still parse as null, never guess.
       expect(presence.attention.single.projectId, isNull);
       expect(presence.attention.single.podId, isNull);
       expect(presence.unreadResultsCount, 2);
+    });
+
+    test('attention items expose the owning pod/project when the gateway sends them', () {
+      final presence = PresenceInfo.fromJson({
+        'attention': {
+          'count': 1,
+          'items': [
+            {
+              'id': 'g1:blocked:r1',
+              'goalId': 'g1',
+              'revision': 1,
+              'kind': 'blocked',
+              'title': '卡住了',
+              'projectId': _projectDir,
+              'podId': 'pod-1',
+            },
+          ],
+        },
+      });
+
+      expect(presence.attention.single.projectId, _projectDir);
+      expect(presence.attention.single.podId, 'pod-1');
     });
 
     test('running titles fall back to goalId; an empty payload yields an empty presence', () {
