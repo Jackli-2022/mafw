@@ -11,7 +11,7 @@ import '../cache/session_cache.dart';
 import '../models/event_effects.dart';
 import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
-import '../network/ws_client.dart';
+import '../network/ws_client_interface.dart';
 import '../theme.dart';
 
 enum _GenPhase { idle, searching, writing }
@@ -20,7 +20,7 @@ enum _GenPhase { idle, searching, writing }
 class ChatPage extends StatefulWidget {
   final MafwSession session;
   final GatewayClient client;
-  final WsClient ws;
+  final MafwWsClient ws;
   final SessionCache? cache;
   final Future<void> Function() onSpeak; // P3: voice input hook
 

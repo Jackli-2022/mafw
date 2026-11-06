@@ -1,7 +1,7 @@
 /// Push notification service for MAFW mobile.
 ///
 /// Manages FCM token lifecycle, notification channels, click-through
-/// routing, WsClient event consumption, and WorkManager background fetch.
+/// routing, WS client event consumption, and WorkManager background fetch.
 /// Uses HTTP client injection for testability.
 library;
 
@@ -18,7 +18,7 @@ import 'package:workmanager/workmanager.dart';
 import '../config/connection_config.dart';
 import '../models/event_effects.dart';
 import '../models/mafw_models.dart';
-import '../network/ws_client.dart';
+import '../network/ws_client_interface.dart';
 
 /// Importance levels for notification channels.
 enum NotificationImportance {
@@ -101,12 +101,12 @@ class PushServiceException implements Exception {
 /// Push notification service for MAFW mobile.
 ///
 /// Handles FCM token lifecycle, notification channel setup, device
-/// registration with the MAFW gateway, WsClient event consumption,
+/// registration with the MAFW gateway, WS client event consumption,
 /// click-through navigation, and WorkManager background health checks.
 class PushService {
   final ConnectionConfig config;
   final http.Client _httpClient;
-  final WsClient? _ws;
+  final MafwWsClient? _ws;
   final Future<void> Function()? _onRefreshSessions;
   final void Function(String sessionID)? _onNavigateToSession;
 
@@ -147,7 +147,7 @@ class PushService {
   PushService({
     required this.config,
     http.Client? httpClient,
-    WsClient? ws,
+    MafwWsClient? ws,
     Future<void> Function()? onRefreshSessions,
     void Function(String sessionID)? onNavigateToSession,
   })  : _httpClient = httpClient ?? http.Client(),

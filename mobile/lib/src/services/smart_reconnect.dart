@@ -9,6 +9,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -161,27 +162,30 @@ class SmartReconnectManager {
   }
 
   /// Load state from SharedPreferences.
+  ///
+  /// The blob must be JSON (`jsonEncode`). Blobs written by older builds used
+  /// Dart's `Map.toString()`, which is not decodable — those are treated as
+  /// corrupt and replaced by a fresh state.
   Future<void> _loadState() async {
+    final raw = _prefs?.getString(_stateKey);
+    if (raw == null || raw.isEmpty) return;
     try {
-      final json = _prefs?.getString(_stateKey);
-      if (json != null) {
-        final map = Map<String, dynamic>.from(
-          Map<String, dynamic>.from(Uri.decodeComponent(json) as Map),
-        );
-        _state = ReconnectState.fromJson(map);
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        _state = ReconnectState.fromJson(decoded);
+        return;
       }
-    } catch (e) {
-      // Corrupted state, start fresh
-      _state = const ReconnectState();
+    } catch (_) {
+      // fall through to the fresh-state reset below
     }
+    _state = const ReconnectState();
   }
 
-  /// Save state to SharedPreferences.
+  /// Save state to SharedPreferences as JSON.
   Future<void> _saveState() async {
     try {
-      final json = _state.toJson();
-      await _prefs?.setString(_stateKey, json.toString());
-    } catch (e) {
+      await _prefs?.setString(_stateKey, jsonEncode(_state.toJson()));
+    } catch (_) {
       // Best effort, don't crash
     }
   }

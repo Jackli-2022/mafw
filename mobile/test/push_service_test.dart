@@ -183,7 +183,7 @@ void main() {
       service.dispose();
     });
 
-    test('constructor accepts optional WsClient and callbacks', () {
+    test('constructor accepts optional WS client and callbacks', () {
       // Verify the expanded constructor compiles and doesn't throw
       service = PushService(
         config: config,

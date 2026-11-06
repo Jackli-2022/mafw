@@ -13,8 +13,9 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/connection_config.dart';
 import '../models/mafw_models.dart';
+import 'ws_client_interface.dart';
 
-class WsClient {
+class WsClient implements MafwWsClient {
   final ConnectionConfig config;
 
   /// Raw-frame tap for the dev diagnostics panel (`DiagnosticsSink.recordWsFrame`).
@@ -33,12 +34,18 @@ class WsClient {
   final _events = StreamController<MafwEvent>.broadcast();
   final _status = StreamController<bool>.broadcast(); // connected
 
+  @override
   Stream<MafwEvent> get events => _events.stream;
+
+  @override
   Stream<bool> get connectionStatus => _status.stream;
+
+  @override
   bool get isConnected => _channel != null;
 
   WsClient(this.config, {this.onRawFrame});
 
+  @override
   Future<void> connect() async {
     if (_disposed) return;
     _channel?.sink.close();
@@ -75,6 +82,7 @@ class WsClient {
   }
 
   /// Force a reconnect (e.g., after connectivity change).
+  @override
   Future<void> reconnect() async {
     _attempts = 0;
     _reconnectTimer?.cancel();
@@ -86,6 +94,7 @@ class WsClient {
 
   /// Close the WebSocket connection without disposing the client.
   /// Used by lifecycle management — the client remains usable for reconnect.
+  @override
   void disconnect() {
     _reconnectTimer?.cancel();
     _channel?.sink.close();
@@ -109,6 +118,7 @@ class WsClient {
   }
 
   /// Send a chat message upstream. The gateway injects memory context.
+  @override
   Future<void> send(String message, {String? sessionID}) async {
     final ch = _channel;
     if (ch == null) throw StateError('not connected');
@@ -119,6 +129,7 @@ class WsClient {
     }));
   }
 
+  @override
   void dispose() {
     _disposed = true;
     _reconnectTimer?.cancel();

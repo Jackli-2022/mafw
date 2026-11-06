@@ -9,7 +9,7 @@ import 'src/cache/session_cache.dart';
 import 'src/config/connection_config.dart';
 import 'src/models/mafw_models.dart';
 import 'src/network/gateway_client.dart';
-import 'src/network/ws_client.dart';
+import 'src/network/ws_client_v2.dart';
 import 'src/pages/chat_page.dart';
 import 'src/pages/connection_settings_page.dart';
 import 'src/pages/pairing_page.dart';
@@ -66,7 +66,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   ConnectionConfig? _config;
   GatewayClient? _client;
-  WsClient? _ws;
+  WsClientV2? _ws;
   PushService? _pushService;
   ConnectivityWatcher? _connectivityWatcher;
   LifecycleWsManager? _lifecycleManager;
@@ -146,7 +146,19 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     }
 
     final client = GatewayClient(cfg, diagnostics: _diagnostics);
-    final ws = WsClient(cfg, onRawFrame: _diagnostics?.recordWsFrame);
+    final ws = WsClientV2(cfg, onRawFrame: _diagnostics?.recordWsFrame);
+    // Restore the persisted reconnect budget before the first attempt so a
+    // retry budget exhausted before an app kill is honoured after relaunch.
+    try {
+      await ws.init();
+    } catch (e) {
+      debugPrint('[MAFW] WsClientV2 init failed (offlineable): $e');
+    }
+    if (!mounted) {
+      ws.dispose();
+      client.dispose();
+      return;
+    }
 
     _wsStatusSub = ws.connectionStatus.listen((ok) {
       if (mounted) setState(() => _wsConnected = ok);
@@ -166,7 +178,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         await ws.reconnect();
       },
       onDisconnect: () async {
-        // Close socket but keep WsClient alive (dispose would kill stream controllers)
+        // Close socket but keep the client alive (dispose would kill streams)
         ws.disconnect();
       },
     );
@@ -185,7 +197,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
       await _refreshSessions();
     });
 
-    // Initialize push service with WsClient event wiring and navigation callback
+    // Initialize push service with WS event wiring and navigation callback
     final pushService = PushService(
       config: cfg,
       ws: ws,
