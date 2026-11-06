@@ -338,6 +338,10 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
   OpenAPI**（3.0/3.1 无 SSE 事件模型；3.2 `itemSchema` 是一等支持但工具链未跟齐），走
   `payloadSchema → json-schema-to-typescript → events.gen.ts`（零 import、check-in + freshness），
   AsyncAPI 只作人类可读层。不生成 `MafwClient` façade（能力门/SSE/错误语义无法通用生成）。
+  **opencode `openapi.json` 试生成实证**：169 ops / 363 schemas → openapi-typescript 264ms / 15k 行 / `tsc` rc=0；
+  但与 `@mafw/sdk` 交集仅 **13** 个 operationId、**5** 个类型名（`Session.Info` 共享 7 字段、opencode-only 9、
+  SDK-only 3），且 SSE 帧 `data` 被生成为 `string`（`V2EventEncoded = {type:'string'}`，431 个 `Event*` 类型在
+  OpenAPI 之外）——**不能作为 SDK 生成源**，只适合当 adapter contract fixture（升级 opencode 时做字段覆盖 diff）。
 
 - **Pod 任务板 v2：新增/删除计划任务（2026-11-02，commits `8b8b6ebe`..`6d3395cd`）**：位置 id（`w1-t2`）在删任务后会让状态错位，所以先给 `waves.tasks[]` 加**稳定 `taskId`**——plan 完成时由 driver 补齐并写回（legacy 任务补成当前位置 id，对已有投影 no-op）；第一次结构编辑时 `migrateLegacyTaskKeys` 把 `pod_tasks.source_key` 从 `wave:<wid>:task:<index>` 迁到 `wave:<wid>:task:<taskId>`（externalTaskId 不变，状态保留）。能力：`POST /api/pods/:podId/tasks` 增 `plan:true`（`goalId` 必填、`waveId` 缺省最后一个 wave）+ 新 `DELETE /api/pods/:podId/tasks/:taskId`（计划任务写回 waves，手工任务只删行）；门与 v1 一致（终态/运行中 409，有 actor 时仅 Lead）。桌面新建可切「手工任务 / 加入计划」，任务卡「删除」两步确认；`podActiveGoalId` 纯函数。非目标：重排、跨 wave 移动、删 wave、软删除。测试：gateway **3401/3401（476 suites，本批 +13）**、desktop **2161/2161（本批 +1）**、SDK **171/171**；`tsc`/`tsgo -p`/`electron-vite build` rc=0；`emit:openapi` 已重生成契约（`pods.tasks.delete`）。spec/plan：`docs/superpowers/specs/2026-11-02-pod-task-add-delete-design.md`、`docs/superpowers/plans/2026-11-02-pod-task-add-delete.md`。
 

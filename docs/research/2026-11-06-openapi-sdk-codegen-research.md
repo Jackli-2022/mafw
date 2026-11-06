@@ -203,7 +203,66 @@ contract-events.ts（或 runtime-contract.json）
 
 ---
 
-## 6. 参考
+## 6. 实证：用 opencode 的 `openapi.json` 试生成（2026-11-06）
+
+输入不是仓库文件，而是运行中的 serve 经 gateway 反代暴露的规格：
+
+```bash
+# gateway 反代会注入 serve 的 Basic auth，直接取得到
+curl -s http://127.0.0.1:3000/openapi.json -o /tmp/opencode-api.json
+
+cd packages/gateway-sdk
+npx openapi-typescript /tmp/opencode-api.json -o /tmp/opencode-types.gen.ts
+npx tsc --noEmit --skipLibCheck --target es2022 --module esnext /tmp/opencode-types.gen.ts
+```
+
+### 生成能力：OK
+
+| 指标 | 结果 |
+|---|---|
+| 规格 | OpenAPI 3.1.0，`opencode HttpApi`，350,880 B |
+| paths / operations / schemas | 138 / 169 / 363 |
+| 生成耗时 | 264 ms |
+| 生成物 | 15,062 行 / 499,701 B |
+| `tsc --noEmit` | rc=0 |
+
+### 与 `@mafw/sdk` 的一致性：不一致（且不应该一致）
+
+| 对比项 | 结果 |
+|---|---|
+| operationId 交集（opencode 169 vs gateway 261） | **13**（`session.list/create/get/fork/switchAgent/switchModel/prompt/command/diff/background`、`project.list`、`event.subscribe`、`config.get`） |
+| 类型名交集（opencode 363 schemas vs SDK 190 exports） | **5**（`Project`、`PermissionRequest`、`FileDiffInfo`、`ModelRef`、`PermissionRule`） |
+| `Session.Info` vs SDK `Session` 字段 | 共享 7；opencode-only 9（`fork/cost/tokens/outcome/subpath/metadata/permissions/revert/location`）；SDK-only 3（`directory/status/reverted`） |
+| 列表响应信封 | opencode `{ data, cursor }`；gateway `{ sessions }`（messages 是 `{ data, nextCursor }`） |
+
+原因不是「生成器不行」，而是**两边不是同一个 API**：
+
+1. opencode 的 spec 描述的是它自己的原始面（169 ops，含 `server.*`/`plugin.*`/`location.*` 等），
+   gateway 的 261 ops 里大部分是 MAFW 自己的（goals/pods/memory/approvals/automations…），交集只有 13。
+2. SDK 的 DTO 是**刻意中立**的（View DTO 边界：客户端不读 `{info,parts}` / `revert` / 原生枚举）。
+   直接把 opencode 的 16 字段 `Session.Info` 生成进 SDK 会破坏这条架构不变量。
+3. 事件仍然不行：`/api/event` 的 SSE 帧 schema 是 `{id?, event, data: V2EventEncoded}`，
+   而 `V2EventEncoded = { type: 'string', contentMediaType: 'application/json' }` —— 生成结果是
+   `V2EventEncoded: string`。opencode 的 431 个 `Event*` 类型在 **OpenAPI 之外**（SDK 自己的
+   代码生成），不在 spec 里。这直接印证了 §2.2 的结论。
+4. opencode 用 vendor extension `x-effect-stream: { encoding: 'sse', causeSchema }` 描述流语义；
+   openapi-typescript 会忽略它，只生成 `content.schema`（单帧对象）。
+
+### 但它是很好的**适配器层**校验输入
+
+- 可以拿 `Session.Info` / `Session.Message.Info` / `Provider.Info` 等 schema 与
+  `gateway/src/runtime/opencode-adapter.ts` 的投影做字段覆盖 diff：升级 opencode 时先看
+  spec 增删了哪些字段，再决定 adapter 是否要跟进（比跑起来看 UI 空白更早）。
+- 也可以作为 `plugin-audit` 的姊妹工具：`mafw adapter-check --spec <opencode-api.json>`，
+  只校验 adapter 输出是否覆盖 spec 的 required 字段，**不**生成 SDK DTO。
+
+### 结论
+
+`openapi.json` 可以生成、生成物可编译，但**不能生成与 `@mafw/sdk` 一致的接口**——两者的 API 面、
+DTO 中立性约束、事件模型都不同。它适合当「上游 runtime 的 contract fixture」用于适配器校验，
+不适合当 SDK 的生成源。SDK 的生成源仍应是 gateway 自己的 `openapi.json` + 事件 `payloadSchema`。
+
+## 7. 参考
 
 - Speakeasy, *Server Sent Events in OpenAPI*（3.2 `itemSchema`）：
   https://www.speakeasy.com/openapi/content/server-sent-events
