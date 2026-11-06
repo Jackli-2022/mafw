@@ -8,6 +8,9 @@
 /// - Smart reconnection with persistent state ([SmartReconnectManager])
 /// - Maximum retry attempts (10), exponential backoff with jitter
 /// - Reset after a successful handshake
+/// - [onReconnected] hook: fires once per successful **re**-handshake (never on
+///   the first connect) so consumers can refetch events missed while offline —
+///   the gateway does not replay them.
 /// - Structured [errors] stream + [onRawFrame] tap for the dev diagnostics panel
 library;
 
@@ -37,6 +40,14 @@ class WsClientV2 implements MafwWsClient {
   /// observable too. Kept optional/nullable so release builds pay nothing.
   final void Function(String raw)? onRawFrame;
 
+  /// Fires **once after every successful reconnection** — never on the first
+  /// connect (the initial load path fetches on its own).
+  ///
+  /// The gateway does not replay events sent while the socket was down, so the
+  /// work/goal surfaces must refetch here. A callback that throws cannot take
+  /// the socket down.
+  final void Function()? onReconnected;
+
   final SmartReconnectManager _reconnectManager = SmartReconnectManager();
 
   WebSocketChannel? _channel;
@@ -45,6 +56,10 @@ class WsClientV2 implements MafwWsClient {
   bool _disposed = false;
   bool _intentionalDisconnect = false;
   bool _connected = false;
+
+  /// At least one handshake has completed on this client (first connect vs
+  /// reconnection — [onReconnected] only fires once this is true).
+  bool _hasConnectedOnce = false;
 
   /// A backoff delay is being computed (guards the async gap in nextDelay()).
   bool _reconnectPending = false;
@@ -86,7 +101,7 @@ class WsClientV2 implements MafwWsClient {
           'Authorization': 'Bearer ${config.apiToken}',
       };
 
-  WsClientV2(this.config, {this.onRawFrame, this.deviceId});
+  WsClientV2(this.config, {this.onRawFrame, this.deviceId, this.onReconnected});
 
   /// Initialize the client, loading persisted reconnection state.
   ///
@@ -133,6 +148,18 @@ class WsClientV2 implements MafwWsClient {
       // Persist the success (resets the retry budget) — once per handshake,
       // never per frame.
       unawaited(_reconnectManager.onSuccess());
+
+      // Reconnect refetch hook: every handshake after the first one is a
+      // reconnection (events missed while offline are not replayed).
+      final isReconnect = _hasConnectedOnce;
+      _hasConnectedOnce = true;
+      if (isReconnect) {
+        try {
+          onReconnected?.call();
+        } catch (_) {
+          // Consumer refetch must never take the socket down.
+        }
+      }
     } catch (e) {
       _handleSocketError(seq, e);
     }

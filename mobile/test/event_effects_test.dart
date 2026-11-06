@@ -135,4 +135,147 @@ void main() {
       expect(kMafwCanonicalEventTypes.containsAll(kSessionRefreshEventTypes), isTrue);
     });
   });
+
+  // Work-overview refresh is deliberately a separate table from
+  // [kChatEventEffectTable]: `pod.event` must refresh the work tab without
+  // touching the chat bubbles, and flat goal frames have no chat consumer.
+  group('shouldRefreshWork', () {
+    const expectedCanonical = <String, bool>{
+      // session lifecycle — the work tab is project-scoped, not session-scoped
+      'session.created': false,
+      'session.updated': false,
+      'session.deleted': false,
+      // turn lifecycle
+      'turn.started': false,
+      'turn.completed': false,
+      'turn.failed': false,
+      'turn.aborted': false,
+      // compaction
+      'session.compacting': false,
+      'session.compacted': false,
+      // messages / parts
+      'message.updated': false,
+      'part.updated': false,
+      'part.delta': false,
+      'part.complete': false,
+      // questions / approvals
+      'question.asked': false,
+      'question.replied': false,
+      'question.rejected': false,
+      'permission.asked': false,
+      'permission.replied': false,
+      // data plane
+      'plan.updated': false,
+      'usage.updated': false,
+      'queue.updated': false,
+      'task.updated': false,
+      'background.job.updated': false,
+      // Pod / work read-model signals
+      'pod.updated': true,
+      'pod.event': true,
+      'session.config': false,
+      'session.checkpoint': false,
+      'run.updated': true,
+      'session.commands': false,
+      'trajectory.event': false,
+      'trajectory.turn': false,
+      'permission_mode': false,
+      'session.diff': false,
+    };
+
+    const expectedFlat = <String, bool>{
+      // agentic goal loop — reorder the work buckets on every transition
+      'goal_node': true,
+      'phase_transition': true,
+      'state_change': true,
+      'user_question': true,
+      // other flat broadcasts carry no work-overview meaning on mobile
+      'user_feedback': false,
+      'goal_created': false,
+      'memory_written': false,
+      'memory_energy_changed': false,
+      'memory_distillation_complete': false,
+      'automation_triggered': false,
+      'automation_completed': false,
+      'project_registered': false,
+      'runtime_switched': false,
+      'mafw_commands_changed': false,
+      'plugins.changed': false,
+      'connected': false,
+    };
+
+    test('canonical expectation table covers exactly the canonical vocabulary', () {
+      expect(
+        expectedCanonical.keys.toSet(),
+        kMafwCanonicalEventTypes,
+        reason: 'new canonical event needs an explicit work-refresh meaning',
+      );
+    });
+
+    test('flat expectation table covers exactly the flat vocabulary', () {
+      expect(
+        expectedFlat.keys.toSet(),
+        kMafwFlatEventTypes,
+        reason: 'new flat broadcast needs an explicit work-refresh meaning',
+      );
+    });
+
+    test('canonical envelopes resolve their work-refresh meaning', () {
+      for (final entry in expectedCanonical.entries) {
+        final ev = MafwEvent.fromJson({
+          'type': kMafwEventEnvelope,
+          'data': {
+            'type': entry.key,
+            'properties': const <String, dynamic>{},
+          },
+        });
+        expect(shouldRefreshWork(ev), entry.value, reason: entry.key);
+      }
+    });
+
+    test('flat broadcasts resolve their work-refresh meaning', () {
+      for (final entry in expectedFlat.entries) {
+        final ev = MafwEvent.fromJson({'type': entry.key});
+        expect(shouldRefreshWork(ev), entry.value, reason: entry.key);
+      }
+    });
+
+    test('work refresh and chat effects stay independent', () {
+      // `pod.event` refreshes work but must not wake the chat bubbles.
+      final podEvent = MafwEvent.fromJson({
+        'type': kMafwEventEnvelope,
+        'data': {
+          'type': 'pod.event',
+          'properties': const <String, dynamic>{},
+        },
+      });
+      expect(shouldRefreshWork(podEvent), isTrue);
+      expect(chatEventEffects('pod.event').any, isFalse);
+
+      // Flat frames never have a chat effect.
+      for (final flat in kWorkRefreshFlatEventTypes) {
+        final ev = MafwEvent.fromJson({'type': flat});
+        expect(shouldRefreshWork(ev), isTrue, reason: flat);
+        expect(chatEventEffects(ev.innerType).any, isFalse, reason: flat);
+      }
+    });
+
+    test('legacy and empty frames do not refresh work', () {
+      for (final type in const ['', 'opencode_event', 'message.part.delta']) {
+        expect(shouldRefreshWork(MafwEvent(type: type)), isFalse, reason: type);
+      }
+    });
+
+    test('refreshWork triggers stay inside their vocabularies', () {
+      expect(
+        kMafwCanonicalEventTypes.containsAll(kWorkRefreshCanonicalEventTypes),
+        isTrue,
+      );
+      expect(kMafwFlatEventTypes.containsAll(kWorkRefreshFlatEventTypes), isTrue);
+      expect(
+        kMafwCanonicalEventTypes.intersection(kWorkRefreshFlatEventTypes),
+        isEmpty,
+      );
+    });
+  });
 }

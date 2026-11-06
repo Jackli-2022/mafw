@@ -71,6 +71,19 @@ void main() {
       }
     });
 
+    test('kMafwFlatEventTypes equals FLAT_EVENT_TYPES in set and order', () {
+      final source = _readEventsContract();
+      final gatewayFlat = _parseConstArray(source, 'FLAT_EVENT_TYPES');
+
+      expect(gatewayFlat, isNotEmpty);
+      expect(
+        kMafwFlatEventTypes.toList(),
+        gatewayFlat,
+        reason: 'mobile flat vocabulary drifted from '
+            'packages/gateway-sdk/src/events.ts FLAT_EVENT_TYPES',
+      );
+    });
+
     test('envelope name matches the contract', () {
       final source = _readEventsContract();
       expect(source.contains('type: "mafw_event"'), isTrue);

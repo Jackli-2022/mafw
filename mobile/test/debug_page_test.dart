@@ -92,6 +92,44 @@ void main() {
       expect(frame.effect, 'refreshWork');
     });
 
+    // Parity guard (Task 2 deferred minor): the goal-lifecycle `refreshWork`
+    // signal comes from the single `event_effects.shouldRefreshWork` table, so
+    // every shared verb must agree with the work tab — including verbs that no
+    // longer have a local diagnostics entry.
+    test('shared flat refresh signals come from the unified effects table', () {
+      final sink = DiagnosticsSink();
+      for (final type in const [
+        'goal_node',
+        'phase_transition',
+        'state_change',
+        'user_question',
+      ]) {
+        sink.recordWsFrame(jsonEncode({'type': type, 'goalId': 'goal-1'}));
+      }
+
+      expect(sink.wsFrames, hasLength(4));
+      for (final frame in sink.wsFrames) {
+        expect(frame.kind, WsFrameKind.flat, reason: frame.type);
+        expect(frame.effect, 'refreshWork', reason: frame.type);
+      }
+    });
+
+    test('canonical work signals show refreshWork in the panel', () {
+      final sink = DiagnosticsSink();
+      for (final type in const ['pod.updated', 'pod.event', 'run.updated']) {
+        sink.recordWsFrame(jsonEncode({
+          'type': 'mafw_event',
+          'data': {'type': type, 'properties': <String, dynamic>{}},
+        }));
+      }
+
+      expect(sink.wsFrames, hasLength(3));
+      for (final frame in sink.wsFrames) {
+        expect(frame.kind, WsFrameKind.canonical, reason: frame.type);
+        expect(frame.effect, 'refreshWork', reason: frame.type);
+      }
+    });
+
     test('marks unparseable / unknown frames as discarded with a reason', () {
       final sink = DiagnosticsSink();
       sink.recordWsFrame('not json');

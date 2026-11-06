@@ -103,19 +103,23 @@ class WsFrameEntry {
       };
 }
 
-/// Flat top-level events (not `mafw_event` envelopes) → work-tab effects.
-/// Task 7 replaces this with the single `event_effects` table; the panel only
-/// needs a human-readable hint, so a local map is enough for v1.
+/// Flat top-level events (not `mafw_event` envelopes) → work-tab hints.
+///
+/// The `refreshWork` signal itself lives in `event_effects.shouldRefreshWork`
+/// (single table shared with the work tab) — do not re-declare it here. Only
+/// verbs that have no unified consumer yet stay local.
 const Map<String, String> _kFlatEventEffects = {
   'goal_created': 'refreshWork',
-  'goal_node': 'refreshWork',
-  'state_change': 'refreshWork',
-  'phase_transition': 'refreshWork',
-  'user_question': 'refreshWork',
   'user_feedback': 'refreshWork',
   'project_registered': 'refreshProjects',
   'mafw_commands_changed': 'refreshCommands',
 };
+
+/// Human-readable effect hint for a flat frame.
+String? _flatFrameEffect(MafwEvent event) {
+  if (shouldRefreshWork(event)) return 'refreshWork';
+  return _kFlatEventEffects[event.type];
+}
 
 const int _kMaxWsRawChars = 8000;
 const int _kMaxErrorBodyChars = 2000;
@@ -260,7 +264,7 @@ class DiagnosticsSink {
         raw: clipped,
         kind: WsFrameKind.canonical,
         type: event.innerType,
-        effect: _canonicalEffect(event.innerType),
+        effect: _canonicalEffect(event),
       );
     }
 
@@ -273,17 +277,18 @@ class DiagnosticsSink {
       raw: clipped,
       kind: WsFrameKind.flat,
       type: event.type,
-      effect: _kFlatEventEffects[event.type],
+      effect: _flatFrameEffect(event),
     );
   }
 
-  String? _canonicalEffect(String type) {
-    final effects = chatEventEffects(type);
+  String? _canonicalEffect(MafwEvent event) {
+    final effects = chatEventEffects(event.innerType);
     final parts = <String>[];
     if (effects.writing) parts.add('writing');
     if (effects.turnEnd) parts.add('turnEnd');
     if (effects.refresh) parts.add('refresh');
-    if (shouldRefreshSessions(type)) parts.add('refreshSessions');
+    if (shouldRefreshSessions(event.innerType)) parts.add('refreshSessions');
+    if (shouldRefreshWork(event)) parts.add('refreshWork');
     return parts.isEmpty ? null : parts.join('+');
   }
 

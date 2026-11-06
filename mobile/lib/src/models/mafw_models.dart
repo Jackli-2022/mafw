@@ -222,20 +222,52 @@ String canonicalEventTypeOf(String rawType) {
   return '';
 }
 
+/// Top-level flat broadcast names (`packages/gateway-sdk/src/events.ts`
+/// `FLAT_EVENT_TYPES`; gateway-side emitters live in
+/// `gateway/src/runtime/flat-emit-registry.ts`).
+///
+/// Flat frames are **not** `mafw_event` envelopes: they keep their own `type`,
+/// `innerType` stays empty, and the payload fields sit at the top level of the
+/// frame. **Set and order are pinned** by `test/vocabulary_parity_test.dart`,
+/// which parses the TS contract — do not reorder or hand-add entries there.
+const Set<String> kMafwFlatEventTypes = {
+  'user_question',
+  'user_feedback',
+  'goal_created',
+  'state_change',
+  'phase_transition',
+  'memory_written',
+  'memory_energy_changed',
+  'memory_distillation_complete',
+  'automation_triggered',
+  'automation_completed',
+  'project_registered',
+  'runtime_switched',
+  'mafw_commands_changed',
+  'goal_node',
+  'plugins.changed',
+  'connected',
+};
+
 /// WS/SSE event frame.
 ///
-/// Canonical envelopes only: `{type:'mafw_event', data:{type, properties?, sessionID?, directory?}}`.
+/// Canonical frames are envelopes:
+/// `{type:'mafw_event', data:{type, properties?, sessionID?, directory?}}`.
 /// Flat top-level broadcasts (e.g. `goal_created`) keep their own `type` and are
-/// **not** canonical envelopes (`innerType == ''`). Legacy `opencode_event`
-/// frames are likewise not unpacked.
+/// **not** canonical envelopes (`innerType == ''`); their payload fields are
+/// readable through [goalId] / [loop] / [node] / [revision] / [transition] /
+/// [phase] / [verdict] / [error] / [attempt]. Legacy `opencode_event` frames are
+/// likewise not unpacked.
 class MafwEvent {
-  /// Frame type as received (`mafw_event` for canonical envelopes).
+  /// Frame type as received (`mafw_event` for canonical envelopes, the
+  /// broadcast name for flat frames).
   final String type;
 
   /// Canonical inner event name; empty when this frame is not a canonical envelope.
   final String innerType;
 
-  /// Envelope `data` (empty for non-envelope frames).
+  /// Wire payload: the envelope's `data` for canonical frames, the whole frame
+  /// for flat broadcasts (empty for canonical envelopes and unknown frames).
   final Map<String, dynamic> data;
 
   /// Envelope `data.properties`.
@@ -254,7 +286,14 @@ class MafwEvent {
 
   bool get isCanonical => innerType.isNotEmpty;
 
-  String? get directory => data['directory'] as String?;
+  /// Whether this frame is a registered top-level flat broadcast
+  /// ([kMafwFlatEventTypes]) rather than a canonical envelope.
+  bool get isFlatBroadcast => kMafwFlatEventTypes.contains(type);
+
+  String? get directory {
+    final value = data['directory'];
+    return value is String ? value : null;
+  }
 
   /// Canonical `message.updated` payload: `properties.message` (flat MafwMessage).
   Map<String, dynamic>? get message {
@@ -264,12 +303,64 @@ class MafwEvent {
 
   String? get messageID => message?['id'] as String?;
 
+  // --- Flat broadcast payload ------------------------------------------------
+  //
+  // Flat fields are only read from registered flat frames: canonical envelopes
+  // keep their own accessors (`message`, `sessionID`, …) and must not pick up
+  // unrelated top-level keys.
+
+  String? _flatString(String key) {
+    if (!isFlatBroadcast) return null;
+    final value = data[key];
+    if (value is! String || value.isEmpty) return null;
+    return value;
+  }
+
+  int? _flatInt(String key) {
+    if (!isFlatBroadcast) return null;
+    final value = data[key];
+    return value is num ? value.toInt() : null;
+  }
+
+  /// Owning goal id (`goal_node` / `phase_transition` / `state_change` /
+  /// `user_question`).
+  String? get goalId => _flatString('goalId');
+
+  /// Goal loop index (`goal_node` / `phase_transition`).
+  int? get loop => _flatInt('loop');
+
+  /// Goal revision the node belongs to (a rejected result re-enters as rev 2+).
+  int? get revision => _flatInt('revision');
+
+  /// Goal node name (`plan` / `execute` / `review` / `probe`).
+  String? get node => _flatString('node');
+
+  /// Node transition (`started` / `completed` / `failed`) from `goal_node`.
+  String? get transition => _flatString('transition');
+
+  /// Goal phase name from `phase_transition` (e.g. `EXECUTING`).
+  String? get phase => _flatString('phase');
+
+  /// Verdict on a terminal `goal_node` (e.g. `PASS` / `FAIL`).
+  String? get verdict => _flatString('verdict');
+
+  /// Failure message on a `goal_node.failed` frame.
+  String? get error => _flatString('error');
+
+  /// 1-based attempt number (watchdog retries increment it).
+  int? get attempt => _flatInt('attempt');
+
   factory MafwEvent.fromJson(Map<String, dynamic> j) {
     final type = (j['type'] ?? '').toString();
     final rawData = j['data'];
     final data = rawData is Map<String, dynamic> ? rawData : const <String, dynamic>{};
     if (type != kMafwEventEnvelope) {
-      return MafwEvent(type: type);
+      // Flat broadcast: keep the frame itself so its top-level payload fields
+      // stay readable; `innerType` remains empty (not a canonical envelope).
+      return MafwEvent(
+        type: type,
+        data: kMafwFlatEventTypes.contains(type) ? j : const <String, dynamic>{},
+      );
     }
 
     final rawInner = (data['type'] ?? '').toString();
