@@ -266,6 +266,27 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     expect(fetchSpy.mock.calls).toHaveLength(3);
   });
 
+  it('provider.list 把配置内联 apiKey 的 provider 视为已连接（自定义 gateway provider）', async () => {
+    routeFetch({
+      '/api/provider': () => json({ data: [{ id: 'gateway', name: '蓝区统一网关' }] }),
+      '/api/model': () => json({ data: [
+        {
+          id: 'm1', modelID: 'm1', providerID: 'gateway', name: 'Model One',
+          settings: { apiKey: 'sk-inline', baseURL: 'https://example.test/v1' },
+          capabilities: { input: ['text'], output: ['text'] },
+        },
+      ] }),
+      '/api/model/default': () => json({ data: { providerID: 'gateway', modelID: 'm1' } }),
+      '/api/integration': () => json({ data: [] }),
+      '/api/credential': () => json({ data: [] }),
+    });
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    const out = await rt.provider.list();
+    // 自定义 provider 的 apiKey 在配置里，不会出现在 /api/credential；仍应可用。
+    expect(out.connected).toEqual(['gateway']);
+    expect(out.all.find((p: any) => p.id === 'gateway')?.models.m1.name).toBe('Model One');
+  });
+
   it('provider.list 重建 legacy {all,connected,default}（2.1.0 /provider 不再内嵌 models/connected）', async () => {
     routeFetch({
       '/api/provider': () => json({ location: {}, data: [{ id: 'gateway', name: '蓝区统一网关' }, { id: 'unused', name: 'Unused' }] }),

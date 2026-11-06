@@ -993,7 +993,14 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
           name: p.name || integrationName.get(p.id) || p.id,
           models: p.models ?? byProvider.get(p.id) ?? {},
         }));
-        const connected = [...new Set(creds.filter((c) => c?.active !== false).map((c) => c?.integrationID))]
+        const connected = [...new Set([
+          ...creds.filter((c) => c?.active !== false).map((c) => c?.integrationID),
+          // 自定义 provider 的 apiKey 在 opencode 配置里（如蓝区 gateway 的 settings.apiKey），
+          // 不会出现在 /api/credential；它仍然可用，不能报成「未连接」而让客户端隐藏模型。
+          ...models
+            .filter((m: any) => typeof m?.settings?.apiKey === 'string' && m.settings.apiKey.trim())
+            .map((m: any) => m?.providerID),
+        ])]
           .filter((id): id is string => typeof id === 'string' && merged.some((p: any) => p?.id === id));
         const defaultRef = def && (def.modelID || def.id) && def.providerID
           ? { providerID: def.providerID, modelID: def.modelID ?? def.id }

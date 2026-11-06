@@ -1661,6 +1661,12 @@ attention 通知链整体移交 `2026-11-04-pod-event-layer-ambient-attention-de
   内容变高时重新锚定（否则 top 固定、popover 向下长出视口）。测试：placement 6 例 + CSS 1 例 + wiring 1 例；
   Electron 离屏布局实测 13 行菜单 473px 全可见，400px 高窗口 rows scrollable（scrollHeight 442 > client 356）。
   desktop **2877/2877**、`tsgo -p` / `electron-vite build` rc=0。
+- **自定义 provider 不再被隐藏（2026-11-06）**：`/api/provider` 的 `connected` 原先只取 `/api/credential`；
+  蓝区 `gateway` 的 apiKey 在 opencode 配置 `settings.apiKey` 里、不是 credential → 被标 `connected:false`，
+  桌面 `modelGroups` 直接跳过整个 provider（用户实证「gateway 的模型不见了」）。适配器把带内联 apiKey 的
+  provider 并入 `connected`（凭据仍是 /api/credential 权威，只是不再是唯一来源）。测试 +1；
+  gateway **4772/4772（604 suites）**、`tsc` rc=0；已 build + deploy:local + 重启（`/api/provider`
+  现在 `gateway.connected=true`，5 个模型在 envelope 内）。
 - **GUI 冒烟（2026-11-04，dev app CDP 9222 + 旧全局 gateway v5.0.0）**：主仓 dev app 实测——
   工具条收敛为 `＋ ⋯ | 🛡 | 🎤 上下文 会话pill 发送`（agent/plan-build pill、`/` `@`、keyhint 均消失）；
   Lead 会话菜单 `Agent lead·锁定`（disabled）+ `Thinking —`（opencode 无 setThinkingLevel，两代 gateway
