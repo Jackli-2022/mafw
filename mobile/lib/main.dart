@@ -291,17 +291,17 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     }
   }
 
-  /// 工作 tab 的 Goal 入口（Task 8 会重写详情页）。
+  /// 工作 tab 的 Goal 入口（Task 8 的 `GoalDetailPage(podId, goalId)`）。
   ///
-  /// Task 7 只保证导航链通：`projectId`（跨项目 attention 先切好的项目）留给
-  /// Task 8 的 `GoalDetailPage(podId, goalId)` 使用，当前打开既有页面。
+  /// WorkTab 只给 `(projectId, goalId)`；详情页用 `projectDir` 自行
+  /// `podLookup` 解析 podId（`projectId` 就是项目目录）。
   void _openGoal(String projectId, String goalId) {
     _navigatorKey.currentState?.push(MaterialPageRoute(
       builder: (_) => GoalDetailPage(
+        null,
+        goalId,
         client: _client,
-        goalId: goalId,
-        goalTitle: '',
-        goalStatus: '',
+        projectDir: projectId,
       ),
     ));
   }

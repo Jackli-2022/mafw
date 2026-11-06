@@ -10,6 +10,13 @@
 /// - `GET /api/pods/:podId/goals` → `{items: PodGoalView[]}` (`gateway/src/routes/pods.ts`).
 /// - `GET /api/projects/:projectId/pod/lookup` → Pod detail view, 404 = no Pod.
 /// - `POST /api/pods/:podId/lead/ensure` → `{podId, projectDir, sessionId}`.
+/// - `GET /api/goals/:id/timeline` → `{goal, nodes, artifacts, outcome}`
+///   (`gateway/src/routes/goal-timeline.ts`), 404 = 还没有 Goal state。
+/// - `GET /api/pods/:podId/goals/:goalId/revisions` → `{items: PodGoalRevisionRow[]}`
+///   (`gateway/src/routes/pod-collaboration.ts` → `PodGoalRevisionRow`)。
+/// - `GET /api/pods/:podId/goals/:goalId/result` → `PodGoalResult`
+///   (`gateway/src/core/pod/pod-result.ts`), 404 = 还没有结果可读。
+/// - `POST /api/pods/:podId/goals/:goalId/reject {feedback}` → `PodRejectResult`。
 ///
 /// Every parser is tolerant of absent/absent-ish fields: a missing bucket is an
 /// empty list and a missing verdict stays `null` — the UI must never be forced
@@ -302,6 +309,341 @@ class PodInfo {
       activeGoalId: _strOrNull(pod['activeGoalId']),
       goals: goals,
       attention: attention,
+    );
+  }
+}
+
+// ── Goal 详情：timeline / revisions / result（Task 8）──────────────────────────
+
+/// 终态 `nextAction`（`gateway/src/core/goal/state-v3.ts` TERMINAL_ACTIONS）。
+const Set<String> goalTerminalActions = <String>{
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+  'ARCHIVED',
+};
+
+/// 一条 `goal_node_runs` 记录（`GET /api/goals/:id/timeline` → `nodes[]`）。
+///
+/// [status] 是 run 的机械状态（`running | succeeded | failed | timeout`），
+/// [outcome] 是该节点的结论文本（review 为 `PASS/FAIL`，execute 为回执摘要）。
+class GoalNodeRun {
+  final String runId;
+  final int loop;
+  final String node; // plan | probe | execute | review
+  final int attempt;
+  final String status;
+  final String? sessionId;
+  final String? startedAt;
+  final String? finishedAt;
+  final int? durationMs;
+  final String? outcome;
+  final String? error;
+
+  const GoalNodeRun({
+    required this.runId,
+    required this.loop,
+    required this.node,
+    required this.attempt,
+    required this.status,
+    required this.sessionId,
+    required this.startedAt,
+    required this.finishedAt,
+    required this.durationMs,
+    required this.outcome,
+    required this.error,
+  });
+
+  factory GoalNodeRun.fromJson(Map<String, dynamic> j) {
+    final duration = j['durationMs'];
+    return GoalNodeRun(
+      runId: _str(j['runId'] ?? j['id'] ?? j['run_id']),
+      loop: _int(j['loop'], fallback: 1),
+      node: _str(j['node']),
+      attempt: _int(j['attempt'], fallback: 1),
+      status: _str(j['status']),
+      sessionId: _strOrNull(j['sessionId'] ?? j['session_id']),
+      startedAt: _strOrNull(j['startedAt'] ?? j['started_at']),
+      finishedAt: _strOrNull(j['finishedAt'] ?? j['finished_at']),
+      durationMs: duration is num ? duration.toInt() : null,
+      outcome: _strOrNull(j['outcome']),
+      error: _strOrNull(j['error']),
+    );
+  }
+}
+
+/// `GET /api/goals/:id/timeline` — goal 节点级执行 trace 聚合。
+///
+/// [nextAction] 是阶段/终态的权威（`RUNNING_execute`、`AWAIT_PLAN_APPROVAL`、
+/// `COMPLETED` …），[terminal] 由它推导；缺失的字段一律保持空/`null`。
+class GoalTimeline {
+  final String goalId;
+  final String title;
+  final String? phase;
+  final int round;
+  final int maxRounds;
+  final String? verdict;
+  final String? nextNode;
+  final String? nextAction;
+  final String? lastError;
+  final String? updatedAt;
+  final List<GoalNodeRun> nodes;
+  final String? wavesPath;
+  final List<String> receipts;
+  final String? reviewsDir;
+
+  const GoalTimeline({
+    required this.goalId,
+    required this.title,
+    required this.phase,
+    required this.round,
+    required this.maxRounds,
+    required this.verdict,
+    required this.nextNode,
+    required this.nextAction,
+    required this.lastError,
+    required this.updatedAt,
+    required this.nodes,
+    required this.wavesPath,
+    required this.receipts,
+    required this.reviewsDir,
+  });
+
+  factory GoalTimeline.fromJson(Map<String, dynamic> j) {
+    final goal = _map(j['goal']);
+    final artifacts = _map(j['artifacts']);
+    final nodes = <GoalNodeRun>[];
+    for (final item in _list(j['nodes'])) {
+      if (item is Map<String, dynamic>) nodes.add(GoalNodeRun.fromJson(item));
+    }
+    final receipts = <String>[];
+    for (final item in _list(artifacts['receipts'])) {
+      final text = _str(item);
+      if (text.isNotEmpty) receipts.add(text);
+    }
+    return GoalTimeline(
+      goalId: _str(goal['goalId'] ?? j['goalId']),
+      title: _str(goal['title']),
+      phase: _strOrNull(goal['phase']),
+      round: _int(goal['round'], fallback: 1),
+      maxRounds: _int(goal['maxRounds']),
+      verdict: _strOrNull(goal['verdict']),
+      nextNode: _strOrNull(goal['nextNode']),
+      nextAction: _strOrNull(goal['nextAction']),
+      lastError: _strOrNull(goal['lastError']),
+      updatedAt: _strOrNull(goal['updatedAt']),
+      nodes: nodes,
+      wavesPath: _strOrNull(artifacts['wavesPath']),
+      receipts: receipts,
+      reviewsDir: _strOrNull(artifacts['reviewsDir']),
+    );
+  }
+
+  /// 归档态（`COMPLETED/FAILED/CANCELLED/ARCHIVED`）。
+  bool get terminal =>
+      nextAction != null && goalTerminalActions.contains(nextAction);
+}
+
+/// 一条 revision 历史（`PodGoalRevisionRow`，append-only）。
+class RevisionInfo {
+  final int revision;
+
+  /// `discussing | direction_review | planning | plan_review | queued |
+  /// implementing | reviewing | completed | aborted | discarded`。
+  final String status;
+  final String? verdict;
+
+  /// 打回反馈（`rejectResult` 写入下一 revision）。
+  final String? feedback;
+  final String? startedAt;
+  final String? endedAt;
+
+  const RevisionInfo({
+    required this.revision,
+    required this.status,
+    required this.verdict,
+    required this.feedback,
+    required this.startedAt,
+    required this.endedAt,
+  });
+
+  factory RevisionInfo.fromJson(Map<String, dynamic> j) {
+    return RevisionInfo(
+      revision: _int(j['revision'], fallback: 1),
+      status: _str(j['status']),
+      verdict: _strOrNull(j['verdict']),
+      feedback: _strOrNull(j['feedback']),
+      startedAt: _strOrNull(j['startedAt'] ?? j['started_at']),
+      endedAt: _strOrNull(j['endedAt'] ?? j['ended_at']),
+    );
+  }
+}
+
+/// Goal Eval 条件 + Reviewer 判定（[result]/[evidence] 来自 `goalResults`）。
+class GoalConditionResult {
+  final String id;
+  final String statement;
+  final bool required;
+
+  /// `pass | fail | skipped`；评审未跑时保持 `null`（不臆造证据）。
+  final String? result;
+  final String? evidence;
+
+  const GoalConditionResult({
+    required this.id,
+    required this.statement,
+    required this.required,
+    required this.result,
+    required this.evidence,
+  });
+
+  factory GoalConditionResult.fromJson(
+    Map<String, dynamic> condition, {
+    Map<String, dynamic>? judgement,
+  }) {
+    return GoalConditionResult(
+      id: _str(condition['id']),
+      statement: _str(condition['statement']),
+      required: condition['required'] == true,
+      result: _strOrNull(judgement?['result']),
+      evidence: _strOrNull(judgement?['evidence']),
+    );
+  }
+}
+
+/// Reviewer 的逐任务判定（`PodGoalResult.tasks`）。
+class GoalTaskResult {
+  final String taskId;
+
+  /// `pass | fail | skipped`。
+  final String result;
+  final String evidence;
+
+  const GoalTaskResult({
+    required this.taskId,
+    required this.result,
+    required this.evidence,
+  });
+
+  factory GoalTaskResult.fromJson(Map<String, dynamic> j) {
+    return GoalTaskResult(
+      taskId: _str(j['taskId']),
+      result: _str(j['result']),
+      evidence: _str(j['evidence']),
+    );
+  }
+}
+
+/// `GET /api/pods/:podId/goals/:goalId/result`（`PodGoalResult`）。
+///
+/// [acceptance] 是申请时的验收原文；[conditions] 把 Goal Eval 条件与 Reviewer
+/// 判定合并成一行一条；[tasks] 是逐任务证据；[failure] 非空表示「结果不可信」
+/// （评审缺失/非法）——UI 必须照实展示，不得宣称验收通过。
+class GoalResultInfo {
+  final String goalId;
+  final int revision;
+  final String? verdict;
+  final bool resultReady;
+
+  /// `reviewed | unreviewed | null`（没有独立评审）。
+  final String? assessment;
+  final List<String> acceptance;
+  final List<GoalConditionResult> conditions;
+  final List<GoalTaskResult> tasks;
+  final String feedback;
+  final List<String> artifacts;
+  final String? failure;
+
+  const GoalResultInfo({
+    required this.goalId,
+    required this.revision,
+    required this.verdict,
+    required this.resultReady,
+    required this.assessment,
+    required this.acceptance,
+    required this.conditions,
+    required this.tasks,
+    required this.feedback,
+    required this.artifacts,
+    required this.failure,
+  });
+
+  factory GoalResultInfo.fromJson(Map<String, dynamic> j) {
+    final judgements = <String, Map<String, dynamic>>{};
+    for (final item in _list(j['goalResults'])) {
+      if (item is! Map<String, dynamic>) continue;
+      final id = _str(item['conditionId']);
+      if (id.isNotEmpty) judgements[id] = item;
+    }
+
+    final conditions = <GoalConditionResult>[];
+    final seenConditions = <String>{};
+    for (final item in _list(j['goalConditions'])) {
+      if (item is! Map<String, dynamic>) continue;
+      final id = _str(item['id']);
+      conditions.add(GoalConditionResult.fromJson(item, judgement: judgements[id]));
+      if (id.isNotEmpty) seenConditions.add(id);
+    }
+    // 评审给了判定、但 eval 不完整（goal_eval_invalid）时也要披露证据。
+    for (final entry in judgements.entries) {
+      if (seenConditions.contains(entry.key)) continue;
+      conditions.add(GoalConditionResult.fromJson(
+        <String, dynamic>{'id': entry.key},
+        judgement: entry.value,
+      ));
+    }
+
+    final acceptance = <String>[];
+    for (final item in _list(j['goalAcceptance'])) {
+      final text = _str(item).trim();
+      if (text.isNotEmpty) acceptance.add(text);
+    }
+
+    final tasks = <GoalTaskResult>[];
+    for (final item in _list(j['tasks'])) {
+      if (item is Map<String, dynamic>) tasks.add(GoalTaskResult.fromJson(item));
+    }
+
+    final artifacts = <String>[];
+    for (final item in _list(j['artifacts'])) {
+      final text = _str(item);
+      if (text.isNotEmpty) artifacts.add(text);
+    }
+
+    return GoalResultInfo(
+      goalId: _str(j['goalId']),
+      revision: _int(j['revision'], fallback: 1),
+      verdict: _strOrNull(j['verdict']),
+      resultReady: _bool(j['resultReady']),
+      assessment: _strOrNull(j['assessment']),
+      acceptance: acceptance,
+      conditions: conditions,
+      tasks: tasks,
+      feedback: _str(j['reviewFeedback']),
+      artifacts: artifacts,
+      failure: _strOrNull(j['failure']),
+    );
+  }
+}
+
+/// `POST /api/pods/:podId/goals/:goalId/reject`（`PodRejectResult`）里页面需要的字段。
+class GoalRejectResult {
+  /// 新 revision 号（= 旧 revision + 1）。
+  final int revision;
+  final String status;
+  final String? sessionId;
+
+  const GoalRejectResult({
+    required this.revision,
+    required this.status,
+    required this.sessionId,
+  });
+
+  factory GoalRejectResult.fromJson(Map<String, dynamic> j) {
+    return GoalRejectResult(
+      revision: _int(j['revision']),
+      status: _str(j['status']),
+      sessionId: _strOrNull(j['sessionID'] ?? j['sessionId']),
     );
   }
 }

@@ -283,22 +283,94 @@ class GatewayClient {
     return sessionId;
   }
 
-  // ── Goals (legacy `/api/goals` shapes) ──
+  // ── Goal detail: timeline / revisions / result / reject（Task 8）──
 
-  @Deprecated('legacy /api/goals shape; removed after Goal detail rewrite (Task 8)')
-  Future<List<Map<String, dynamic>>> listGoals() async {
-    final res = await _get(_uri('/api/goals'));
-    if (res.statusCode != 200) throw GatewayException('listGoals: HTTP ${res.statusCode}');
-    final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-    final list = j['goals'] as List? ?? [];
-    return list.map((e) => e as Map<String, dynamic>).toList();
+  /// Node-level execution trace (`GET /api/goals/:goalId/timeline`).
+  ///
+  /// A 404 is the gateway's designed `{"error":"goal state not found"}` — the
+  /// Goal exists but has not started executing yet — surfaced as
+  /// [GoalStateMissingException] so the page can show its empty state instead of
+  /// a failure banner.
+  Future<GoalTimeline> goalTimeline(String goalId) async {
+    final res = await _get(_uri('/api/goals/${Uri.encodeComponent(goalId)}/timeline'));
+    if (res.statusCode == 404) {
+      throw GoalStateMissingException(
+        'goalTimeline: no Goal state yet (HTTP 404)',
+        errorBody: utf8.decode(res.bodyBytes, allowMalformed: true),
+      );
+    }
+    if (res.statusCode != 200) {
+      throw GatewayException(
+        'goalTimeline: HTTP ${res.statusCode}',
+        statusCode: res.statusCode,
+        errorBody: utf8.decode(res.bodyBytes, allowMalformed: true),
+      );
+    }
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('goalTimeline: unexpected payload (not a JSON object)');
+    }
+    return GoalTimeline.fromJson(j);
   }
 
-  @Deprecated('legacy /api/goals shape; removed after Goal detail rewrite (Task 8)')
-  Future<Map<String, dynamic>?> getGoal(String goalId) async {
-    final res = await _get(_uri('/api/goals/$goalId'));
-    if (res.statusCode != 200) return null;
-    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+  /// Revision history (`GET /api/pods/:podId/goals/:goalId/revisions`).
+  Future<List<RevisionInfo>> goalRevisions(String podId, String goalId) async {
+    final res = await _get(
+      _uri('/api/pods/${Uri.encodeComponent(podId)}/goals/${Uri.encodeComponent(goalId)}/revisions'),
+    );
+    if (res.statusCode != 200) {
+      throw GatewayException('goalRevisions: HTTP ${res.statusCode}');
+    }
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    final raw = j is Map<String, dynamic> ? j['items'] : null;
+    final out = <RevisionInfo>[];
+    for (final item in raw is List ? raw : const <dynamic>[]) {
+      if (item is Map<String, dynamic>) out.add(RevisionInfo.fromJson(item));
+    }
+    return out;
+  }
+
+  /// Goal result (`GET /api/pods/:podId/goals/:goalId/result`).
+  ///
+  /// Returns `null` for the designed 404 (`goal result not found`) — there is no
+  /// state to build a result from. Every other failure throws.
+  Future<GoalResultInfo?> goalResult(String podId, String goalId) async {
+    final res = await _get(
+      _uri('/api/pods/${Uri.encodeComponent(podId)}/goals/${Uri.encodeComponent(goalId)}/result'),
+    );
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) {
+      throw GatewayException('goalResult: HTTP ${res.statusCode}');
+    }
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('goalResult: unexpected payload (not a JSON object)');
+    }
+    return GoalResultInfo.fromJson(j);
+  }
+
+  /// Rejects the current revision and opens the next one
+  /// (`POST /api/pods/:podId/goals/:goalId/reject {feedback}`).
+  ///
+  /// The gateway requires non-empty feedback (400 otherwise); the server message
+  /// is kept in [GatewayException.errorBody] so the page can show it verbatim.
+  Future<GoalRejectResult> rejectGoal(String podId, String goalId, String feedback) async {
+    final res = await _post(
+      _uri('/api/pods/${Uri.encodeComponent(podId)}/goals/${Uri.encodeComponent(goalId)}/reject'),
+      body: jsonEncode({'feedback': feedback}),
+    );
+    if (res.statusCode != 200) {
+      throw GatewayException(
+        'rejectGoal: HTTP ${res.statusCode}',
+        statusCode: res.statusCode,
+        errorBody: utf8.decode(res.bodyBytes, allowMalformed: true),
+      );
+    }
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('rejectGoal: unexpected payload (not a JSON object)');
+    }
+    return GoalRejectResult.fromJson(j);
   }
 
   // ── Triage ──
@@ -420,4 +492,13 @@ class NoPodException extends GatewayException {
 /// the route (e.g. `/api/projects/:id/work` did not exist before v5).
 class GatewayRouteMissingException extends GatewayException {
   GatewayRouteMissingException(super.message, {super.statusCode = 404, super.errorBody});
+}
+
+/// The Goal exists but has no execution state yet (`GET /api/goals/:id/timeline`
+/// answered its designed 404 `{"error":"goal state not found"}`).
+///
+/// Distinct from [GatewayException] so the detail page shows「还没有执行记录」
+/// (still discussing / planning) instead of a failure banner.
+class GoalStateMissingException extends GatewayException {
+  GoalStateMissingException(super.message, {super.statusCode = 404, super.errorBody});
 }
