@@ -23,6 +23,7 @@ class ConnectionSettingsPage extends StatefulWidget {
 class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
   late final TextEditingController _urlCtrl;
   late final TextEditingController _tokenCtrl;
+  late UrlCheck _urlCheck;
   bool _testing = false;
   String? _testResult;
 
@@ -31,6 +32,7 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
     super.initState();
     _urlCtrl = TextEditingController(text: widget.initial.baseUrl);
     _tokenCtrl = TextEditingController(text: widget.initial.apiToken);
+    _urlCheck = checkBaseUrl(widget.initial.baseUrl);
   }
 
   @override
@@ -40,7 +42,29 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
     super.dispose();
   }
 
+  String? get _urlHint {
+    if (_urlCtrl.text.trim().isEmpty) return null;
+    return switch (_urlCheck) {
+      UrlCheck.ok => null,
+      UrlCheck.bareIpWarn =>
+        '提示：建议改用 MagicDNS 主机名（http://<机器名>.<tailnet>.ts.net:3000）。裸 IP 明文连接可能被 Android cleartext 策略拦截。',
+      UrlCheck.plaintextLanWarn =>
+        '警告：局域网明文连接，仅限可信网络。远程访问请使用 Tailscale（https 或 *.ts.net 主机名）。',
+      UrlCheck.invalid => '地址无效：需以 http:// 或 https:// 开头，并包含主机名（如 http://pc.tailnet.ts.net:3000）。',
+    };
+  }
+
+  Color get _urlHintColor => switch (_urlCheck) {
+        UrlCheck.ok => Colors.green.shade700,
+        UrlCheck.bareIpWarn || UrlCheck.plaintextLanWarn => Colors.orange.shade800,
+        UrlCheck.invalid => Colors.red.shade700,
+      };
+
   Future<void> _test() async {
+    if (_urlCheck == UrlCheck.invalid) {
+      setState(() => _testResult = '✗ 地址无效，无法测试连接');
+      return;
+    }
     setState(() {
       _testing = true;
       _testResult = null;
@@ -55,6 +79,10 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
   }
 
   Future<void> _save() async {
+    if (_urlCheck == UrlCheck.invalid || _urlCtrl.text.trim().isEmpty) {
+      setState(() => _testResult = '✗ 请先填写有效的 Gateway 地址');
+      return;
+    }
     final cfg = ConnectionConfig(baseUrl: _urlCtrl.text.trim(), apiToken: _tokenCtrl.text.trim());
     await SecureConfigStore().save(cfg);
     await widget.onSaved(cfg);
@@ -69,24 +97,29 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('电脑上的 MAFW Gateway 地址',
+          const Text('电脑上的 Orcalore Gateway 地址',
               style: TextStyle(fontSize: 13, color: Colors.grey)),
           const SizedBox(height: 6),
           TextField(
             controller: _urlCtrl,
             keyboardType: TextInputType.url,
+            onChanged: (value) => setState(() => _urlCheck = checkBaseUrl(value)),
             decoration: const InputDecoration(
               labelText: 'Base URL',
-              hintText: 'http://192.168.1.5:3000 或 https://xxx.tailnet.ts.net:3000',
+              hintText: 'http://<机器名>.<tailnet>.ts.net:3000（MagicDNS 主机名优先）',
               border: OutlineInputBorder(),
             ),
           ),
+          if (_urlHint != null) ...[
+            const SizedBox(height: 6),
+            Text(_urlHint!, style: TextStyle(fontSize: 12, color: _urlHintColor)),
+          ],
           const SizedBox(height: 16),
           TextField(
             controller: _tokenCtrl,
             obscureText: true,
             decoration: const InputDecoration(
-              labelText: 'API Token（可选，远程必填）',
+              labelText: 'API Token（远程必填）',
               hintText: 'MAFW_SERVER_API_TOKEN 的值',
               border: OutlineInputBorder(),
             ),
@@ -115,7 +148,11 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
           ],
           const SizedBox(height: 24),
           const Text(
-            '提示：\n· 局域网：直接填电脑 IP:3000\n· 远程：装 Tailscale 后用 tailnet 地址，gateway 需配置 MAFW_SERVER_API_TOKEN',
+            '提示：\n'
+            '· 推荐：http://<机器名>.<tailnet>.ts.net:3000（MagicDNS 主机名，Android 已放行 ts.net 明文）\n'
+            '· 手机 Tailscale 需保持「Use Tailscale DNS」开启，否则主机名无法解析\n'
+            '· 裸 100.x IP 可连但可能被 cleartext 策略拦截；局域网 http 仅限可信网络\n'
+            '· 远程访问必须在 gateway 配置 MAFW_SERVER_API_TOKEN（或 server.apiToken）',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],

@@ -27,6 +27,46 @@ flutter analyze   # must be clean (CI gate)
 flutter test
 ```
 
+## Connecting to the gateway
+
+The app talks to the desktop Orcalore (MAFW) gateway over Tailscale.
+
+- **Preferred URL**: `http://<machine>.<tailnet>.ts.net:3000` (MagicDNS hostname).
+  `android/app/src/main/res/xml/network_security_config.xml` allowlists cleartext
+  for the `ts.net` domain **and its subdomains only**; bare `100.x` / LAN IP
+  cleartext may be blocked by Android, in which case the app asks you to switch
+  to a MagicDNS hostname.
+- **Tailscale DNS**: keep 「Use Tailscale DNS」 enabled on the phone (V2). If it is
+  off, `*.ts.net` hostnames do not resolve even though Tailscale itself is up.
+- **Required token**: set `MAFW_SERVER_API_TOKEN` (or `server.apiToken`) on the
+  gateway — an empty token rejects every remote request with `401`. Env var names
+  intentionally stay `MAFW_*`.
+- **Gateway-side Tailscale URL**: `mobile.tailscaleUrl` in
+  `~/.config/mafw/config.yaml`, or the `MAFW_MOBILE_TAILSCALE_URL` env override
+  (env > config > auto-detected host). The pairing URL uses this value and is
+  hot-reloaded.
+- **Pairing deep link**: `orcalore://pair?...` (`orcalore` scheme, `pair` host).
+  Legacy `mafw://pair` links are rejected — regenerate the QR code after
+  upgrading the gateway. The Android intent-filter registers `orcalore://` only.
+- **mDNS discovery** is LAN-only and provides no token; pair via QR or enter the
+  URL + token manually.
+
+## In-app diagnostics (dev-only)
+
+「我的」→「调试」 is available in debug builds, and in release builds only when
+built with `--dart-define=ORCALORE_DEBUG_PANEL=true`.
+
+- **Connection card**: base URL, masked API token, WS state, last frame time, and
+  a live `GET /health` probe.
+- **Event inspector**: last 200 raw WS frames with their verdict
+  (`canonical` / `flat` / `discarded` + reason) and the effect they triggered
+  (e.g. `writing`, `refreshWork`).
+- **HTTP log**: last 100 calls (method, path, status, duration, error body).
+- **复制诊断包**: copies a JSON bundle with the API token masked — this is the
+  standard log exit on a real device without USB/adb.
+
+Background and the full troubleshooting table: `docs/architecture/mobile.md` §7.
+
 ## Contract notes (2026-11-02 breaking migration)
 
 The client speaks **MAFW View DTO + canonical events** only. There is no

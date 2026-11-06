@@ -16,6 +16,7 @@ import 'src/pages/pairing_page.dart';
 import 'src/pages/sessions_page.dart';
 import 'src/pages/triage_page.dart';
 import 'src/services/connectivity_watcher.dart';
+import 'src/services/diagnostics.dart';
 import 'src/services/lifecycle_ws.dart';
 import 'src/services/push_service.dart';
 import 'src/theme.dart';
@@ -70,6 +71,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   ConnectivityWatcher? _connectivityWatcher;
   LifecycleWsManager? _lifecycleManager;
   final SessionCache _sessionCache = SessionCache();
+  final DiagnosticsSink _diagnostics = DiagnosticsSink();
   List<MafwSession> _sessions = [];
   bool _connecting = true;
   bool _wsConnected = false;
@@ -112,13 +114,33 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
 
   Future<void> _applyConfig(ConnectionConfig cfg) async {
     _connectivityWatcher?.dispose();
+    _connectivityWatcher = null;
     _lifecycleManager?.dispose();
+    _lifecycleManager = null;
     _ws?.dispose();
     _wsStatusSub?.cancel();
     _pushService?.dispose();
 
-    final client = GatewayClient(cfg);
-    final ws = WsClient(cfg);
+    _diagnostics.updateConnection(baseUrl: cfg.baseUrl, apiToken: cfg.apiToken);
+
+    // Unconfigured state (spec §6 "缺省清理"): the app shows the "未配置" banner
+    // and waits for settings/pairing instead of reconnecting to a phantom
+    // loopback gateway.
+    if (cfg.normalizedBaseUrl.isEmpty) {
+      setState(() {
+        _config = cfg;
+        _client = null;
+        _ws = null;
+        _connecting = false;
+        _wsConnected = false;
+        _sessions = [];
+      });
+      _pushService = null;
+      return;
+    }
+
+    final client = GatewayClient(cfg, diagnostics: _diagnostics);
+    final ws = WsClient(cfg, onRawFrame: _diagnostics.recordWsFrame);
 
     _wsStatusSub = ws.connectionStatus.listen((ok) {
       if (mounted) setState(() => _wsConnected = ok);
@@ -304,6 +326,8 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         baseUrl: _config?.baseUrl,
         isConnecting: _connecting,
         client: _client,
+        diagnostics: _diagnostics,
+        wsConnected: () => _wsConnected,
       ),
     );
   }

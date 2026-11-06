@@ -126,16 +126,16 @@ class PushService {
   /// Notification channel definitions.
   static const List<NotificationChannelConfig> notificationChannels = [
     NotificationChannelConfig(
-      id: 'mafw_messages',
-      name: 'MAFW 消息',
-      description: 'MAFW 会话消息通知',
+      id: 'orcalore_messages',
+      name: 'Orcalore 消息',
+      description: 'Orcalore 会话消息通知',
       importance: NotificationImportance.high,
       enableVibration: true,
       enableLights: true,
     ),
     NotificationChannelConfig(
-      id: 'mafw_goals',
-      name: 'MAFW Goals',
+      id: 'orcalore_goals',
+      name: 'Orcalore Goals',
       description: 'Goal 状态更新通知',
       importance: NotificationImportance.defaultImportance,
     ),
@@ -446,17 +446,17 @@ class PushService {
     }
 
     final channelId = parsed.type == 'goal_update'
-        ? 'mafw_goals'
-        : 'mafw_messages';
+        ? 'orcalore_goals'
+        : 'orcalore_messages';
 
     _localNotifications.show(
       notification.hashCode,
-      notification.title ?? 'MAFW',
+      notification.title ?? 'Orcalore',
       notification.body ?? '',
       NotificationDetails(
         android: AndroidNotificationDetails(
           channelId,
-          channelId == 'mafw_goals' ? 'MAFW Goals' : 'MAFW 消息',
+          channelId == 'orcalore_goals' ? 'Orcalore Goals' : 'Orcalore 消息',
           importance: Importance.high,
           priority: Priority.high,
         ),

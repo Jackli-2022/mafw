@@ -6,13 +6,15 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/connection_config.dart';
+import '../config/pairing_link.dart';
 import '../services/mdns_discovery.dart';
 
 /// QR code scanner page for gateway pairing.
 ///
-/// Scans a `mafw://pair?url=...&token=...&v=1&exp=...&nonce=...` deep link,
+/// Scans an `orcalore://pair?url=...&token=...&v=1&exp=...&nonce=...` deep link,
 /// verifies the nonce with the gateway, writes credentials to SecureStorage,
-/// and returns [ConnectionConfig] on success.
+/// and returns [ConnectionConfig] on success. The legacy `mafw://pair` scheme
+/// is rejected (see `pairing_link.dart`).
 ///
 /// P1: Auto-discovers gateways on LAN via mDNS before showing the scanner.
 class PairingPage extends StatefulWidget {
@@ -82,55 +84,49 @@ class _PairingPageState extends State<PairingPage> {
     for (final barcode in capture.barcodes) {
       final raw = barcode.rawValue;
       if (raw == null) continue;
-      final result = _parsePairUrl(raw);
-      if (result != null) {
+      final result = parsePairingLink(raw);
+      if (result.ok) {
         _processing = true;
-        _verifyAndConnect(result.url, result.token, result.nonce);
+        final link = result.link!;
+        _verifyAndConnect(link.url, link.token, link.nonce);
         return;
       }
-    }
-  }
-
-  ({String url, String token, String nonce})? _parsePairUrl(String raw) {
-    try {
-      final uri = Uri.parse(raw);
-      if (uri.scheme != 'mafw' || uri.host != 'pair') return null;
-      final url = uri.queryParameters['url'];
-      final token = uri.queryParameters['token'];
-      final v = uri.queryParameters['v'];
-      final exp = uri.queryParameters['exp'];
-      final nonce = uri.queryParameters['nonce'];
-      if (url == null || token == null || v != '1' || exp == null || nonce == null) {
-        return null;
-      }
-      // Check expiry
-      final expTime = int.tryParse(exp);
-      if (expTime == null || DateTime.now().millisecondsSinceEpoch > expTime) {
+      if (result.isExpired) {
         if (mounted) setState(() => _error = '配对码已过期');
-        return null;
+      } else if (raw.contains('://')) {
+        if (mounted) setState(() => _error = '配对链接无效（仅支持 orcalore://pair）');
       }
-      return (url: url, token: token, nonce: nonce);
-    } catch (_) {
-      return null;
     }
   }
 
   Future<void> _verifyAndConnect(String url, String token, String nonce) async {
-    // Tailscale https/wss enforced, http only 192.168/10.x with UI warning (spec §5.3)
-    if (_isLocalHttpUrl(url)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('警告：使用局域网明文连接，仅限可信网络')),
-        );
-      }
-    } else if (url.startsWith('http://')) {
-      if (mounted) {
-        setState(() {
-          _error = '非可信网络的 http 连接被拒绝，请使用 https (Tailscale)';
-          _processing = false;
-        });
-      }
-      return;
+    // Spec §6: https is always safe; http is accepted for ts.net / loopback /
+    // trusted LAN only, with the same hostname advice as the settings form.
+    switch (checkBaseUrl(url)) {
+      case UrlCheck.invalid:
+        if (mounted) {
+          setState(() {
+            _error = '连接地址无效：请使用 http(s):// 主机名:端口（推荐 MagicDNS 主机名 *.ts.net）';
+            _processing = false;
+          });
+        }
+        return;
+      case UrlCheck.bareIpWarn:
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('提示：裸 IP 明文连接，建议改用 MagicDNS 主机名（*.ts.net）')),
+          );
+        }
+        break;
+      case UrlCheck.plaintextLanWarn:
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('警告：使用局域网明文连接，仅限可信网络')),
+          );
+        }
+        break;
+      case UrlCheck.ok:
+        break;
     }
 
     try {
@@ -172,35 +168,30 @@ class _PairingPageState extends State<PairingPage> {
 
   void _onManualSubmit() {
     final raw = _manualUrlCtrl.text.trim();
-    if (raw.isEmpty) return;
-    final result = _parsePairUrl(raw);
-    if (result != null) {
-      setState(() => _processing = true);
-      _verifyAndConnect(result.url, result.token, result.nonce);
-    } else {
-      // Raw URL/token fallback: allow plain url+token without mafw:// wrapper (manual fallback per task brief)
-      final url = _manualUrlCtrl.text.trim();
-      final token = _manualTokenCtrl.text.trim();
-      if (url.isNotEmpty) {
-        // No nonce verification needed for manual fallback; save directly
-        _verifyAndConnect(url, token, '__manual__');
-      } else {
-        setState(() => _error = '请输入配对链接或 Base URL');
-      }
+    if (raw.isEmpty) {
+      setState(() => _error = '请输入配对链接或 Base URL');
+      return;
     }
-  }
 
-  bool _isLocalHttpUrl(String url) {
-    try {
-      final uri = Uri.parse(url);
-      if (uri.scheme != 'http') return false;
-      final host = uri.host;
-      return host.startsWith('192.168.') ||
-          host.startsWith('10.') ||
-          host.startsWith('172.16.');
-    } catch (_) {
-      return false;
+    final result = parsePairingLink(raw);
+    if (result.ok) {
+      setState(() => _processing = true);
+      final link = result.link!;
+      _verifyAndConnect(link.url, link.token, link.nonce);
+      return;
     }
+
+    // A deep link with a non-http(s) scheme can only be a (wrong/expired)
+    // pairing link — surface that instead of treating it as a base URL.
+    final looksLikeDeepLink =
+        raw.contains('://') && !raw.startsWith('http://') && !raw.startsWith('https://');
+    if (looksLikeDeepLink) {
+      setState(() => _error = result.isExpired ? '配对码已过期' : '配对链接无效（仅支持 orcalore://pair）');
+      return;
+    }
+
+    // Raw URL/token fallback: allow plain url+token without the orcalore:// wrapper.
+    _verifyAndConnect(raw, _manualTokenCtrl.text.trim(), '__manual__');
   }
 
   @override
@@ -314,7 +305,7 @@ class _PairingPageState extends State<PairingPage> {
                                   controller: _manualUrlCtrl,
                                   decoration: const InputDecoration(
                                     labelText: '配对链接或 Base URL',
-                                    hintText: 'mafw://pair?... 或 https://xxx.ts.net:3000',
+                                    hintText: 'orcalore://pair?... 或 https://xxx.ts.net:3000',
                                     border: OutlineInputBorder(),
                                     isDense: true,
                                   ),

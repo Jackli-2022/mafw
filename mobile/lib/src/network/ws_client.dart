@@ -16,6 +16,14 @@ import '../models/mafw_models.dart';
 
 class WsClient {
   final ConnectionConfig config;
+
+  /// Raw-frame tap for the dev diagnostics panel (`DiagnosticsSink.recordWsFrame`).
+  ///
+  /// Fires before parsing so discarded/malformed frames are observable too.
+  /// **Keep this signature stable** — `WsClientV2` (Task 3) exposes the same
+  /// optional hook.
+  final void Function(String raw)? onRawFrame;
+
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
   Timer? _reconnectTimer;
@@ -29,7 +37,7 @@ class WsClient {
   Stream<bool> get connectionStatus => _status.stream;
   bool get isConnected => _channel != null;
 
-  WsClient(this.config);
+  WsClient(this.config, {this.onRawFrame});
 
   Future<void> connect() async {
     if (_disposed) return;
@@ -47,8 +55,10 @@ class WsClient {
       _sub = channel.stream.listen(
         (data) {
           _attempts = 0;
+          final raw = data.toString();
+          onRawFrame?.call(raw);
           try {
-            final j = jsonDecode(data.toString()) as Map<String, dynamic>;
+            final j = jsonDecode(raw) as Map<String, dynamic>;
             _events.add(MafwEvent.fromJson(j));
           } catch (_) {
             // ignore malformed frames

@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- I2 hardening: global cleartext disabled; Tailscale=https/wss required.
-         Private LAN http (192.168/10.x) is blocked at OS layer; app layer
-         shows a warning and advises switching to https. -->
+    <!-- I2 hardening: global cleartext disabled; Tailscale=https/wss required,
+         except MagicDNS hosts (spec §6). `<domain>ts.net</domain>` matches the
+         ts.net domain and all of its subdomains, so `http://machine.<tailnet>.ts.net`
+         works while bare-IP cleartext stays blocked (the app shows a warning
+         and asks for a MagicDNS hostname instead). -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain>ts.net</domain>
+    </domain-config>
 </network-security-config>

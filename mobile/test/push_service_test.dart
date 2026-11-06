@@ -115,13 +115,13 @@ void main() {
 
       expect(channels.length, 2);
 
-      final messagesChannel = channels.firstWhere((c) => c.id == 'mafw_messages');
-      expect(messagesChannel.name, 'MAFW 消息');
+      final messagesChannel = channels.firstWhere((c) => c.id == 'orcalore_messages');
+      expect(messagesChannel.name, 'Orcalore 消息');
       expect(messagesChannel.importance, NotificationImportance.high);
       expect(messagesChannel.enableVibration, true);
 
-      final goalsChannel = channels.firstWhere((c) => c.id == 'mafw_goals');
-      expect(goalsChannel.name, 'MAFW Goals');
+      final goalsChannel = channels.firstWhere((c) => c.id == 'orcalore_goals');
+      expect(goalsChannel.name, 'Orcalore Goals');
       expect(goalsChannel.importance, NotificationImportance.defaultImportance);
     });
 

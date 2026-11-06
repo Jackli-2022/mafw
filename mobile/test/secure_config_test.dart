@@ -65,10 +65,10 @@ void main() {
       expect(loaded.baseUrl, 'https://y.ts.net:3000');
     });
 
-    test('load returns default baseUrl when empty', () async {
+    test('load returns empty baseUrl when unconfigured', () async {
       final store = SecureConfigStore();
       final loaded = await store.load();
-      expect(loaded.baseUrl, isNotEmpty);
+      expect(loaded.baseUrl, isEmpty);
     });
 
     test('migrateLegacy is idempotent when no legacy token', () async {

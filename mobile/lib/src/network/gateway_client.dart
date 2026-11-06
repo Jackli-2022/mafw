@@ -9,12 +9,15 @@ import 'package:http/http.dart' as http;
 
 import '../config/connection_config.dart';
 import '../models/mafw_models.dart';
+import '../services/diagnostics.dart';
 
 class GatewayClient {
   final ConnectionConfig config;
+  final DiagnosticsSink? diagnostics;
   final http.Client _http;
 
-  GatewayClient(this.config, {http.Client? httpClient}) : _http = httpClient ?? http.Client();
+  GatewayClient(this.config, {http.Client? httpClient, this.diagnostics})
+      : _http = httpClient ?? http.Client();
 
   Uri _uri(String path, [Map<String, String>? query]) {
     var u = Uri.parse('${config.normalizedBaseUrl}$path');
@@ -26,11 +29,57 @@ class GatewayClient {
 
   Map<String, String> get _headers => config.headers;
 
+  // ── Diagnostics-wrapped transport ──
+
+  String _displayPath(Uri uri) => uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
+
+  Future<http.Response> _get(Uri uri, {Duration? timeout}) {
+    return _record('GET', uri, () {
+      final future = _http.get(uri, headers: _headers);
+      return timeout == null ? future : future.timeout(timeout);
+    });
+  }
+
+  Future<http.Response> _post(Uri uri, {Object? body}) {
+    return _record('POST', uri, () => _http.post(uri, headers: _headers, body: body));
+  }
+
+  Future<http.Response> _record(
+    String method,
+    Uri uri,
+    Future<http.Response> Function() run,
+  ) async {
+    final started = DateTime.now();
+    int elapsed() => DateTime.now().difference(started).inMilliseconds;
+    final path = _displayPath(uri);
+    try {
+      final res = await run();
+      diagnostics?.recordHttp(
+        method: method,
+        path: path,
+        status: res.statusCode,
+        durationMs: elapsed(),
+        errorBody: res.statusCode >= 400
+            ? utf8.decode(res.bodyBytes, allowMalformed: true)
+            : null,
+      );
+      return res;
+    } catch (e) {
+      diagnostics?.recordHttp(
+        method: method,
+        path: path,
+        durationMs: elapsed(),
+        error: e.toString(),
+      );
+      rethrow;
+    }
+  }
+
   // ── Health ──
 
   Future<bool> health() async {
     try {
-      final res = await _http.get(_uri('/health'), headers: _headers).timeout(const Duration(seconds: 5));
+      final res = await _get(_uri('/health'), timeout: const Duration(seconds: 5));
       return res.statusCode == 200;
     } catch (_) {
       return false;
@@ -40,9 +89,8 @@ class GatewayClient {
   // ── Sessions ──
 
   Future<List<MafwSession>> listSessions({String? projectID}) async {
-    final res = await _http.get(
+    final res = await _get(
       _uri('/api/sessions', projectID != null ? {'projectID': projectID} : null),
-      headers: _headers,
     );
     if (res.statusCode != 200) throw GatewayException('listSessions: HTTP ${res.statusCode}');
     final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
@@ -60,9 +108,8 @@ class GatewayClient {
   /// contract — throw an actionable [GatewayException] instead of rendering
   /// empty bubbles.
   Future<List<MafwMessage>> messages(String sessionID, {int limit = 50}) async {
-    final res = await _http.get(
+    final res = await _get(
       _uri('/api/sessions/$sessionID/messages', {'limit': '$limit'}),
-      headers: _headers,
     );
     if (res.statusCode != 200) throw GatewayException('messages: HTTP ${res.statusCode}');
     final j = jsonDecode(utf8.decode(res.bodyBytes));
@@ -83,9 +130,8 @@ class GatewayClient {
   }
 
   Future<String> createSession({String? directory}) async {
-    final res = await _http.post(
+    final res = await _post(
       _uri('/api/session'),
-      headers: _headers,
       body: jsonEncode({'directory': ?directory}),
     );
     if (res.statusCode != 200) throw GatewayException('createSession: HTTP ${res.statusCode}');
@@ -96,9 +142,8 @@ class GatewayClient {
   // ── Chat (enriched send, memory injection built in) ──
 
   Future<String> sendEnriched(String message, {String? sessionID}) async {
-    final res = await _http.post(
+    final res = await _post(
       _uri('/api/chat/enriched'),
-      headers: _headers,
       body: jsonEncode({
         'message': message,
         'sessionID': ?sessionID,
@@ -112,9 +157,8 @@ class GatewayClient {
   // ── Memory ──
 
   Future<List<Map<String, dynamic>>> memorySearch(String query, {int topK = 20}) async {
-    final res = await _http.get(
+    final res = await _get(
       _uri('/api/memory/search', {'query': query, 'topK': '$topK'}),
-      headers: _headers,
     );
     if (res.statusCode != 200) throw GatewayException('memorySearch: HTTP ${res.statusCode}');
     final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
@@ -123,7 +167,7 @@ class GatewayClient {
   }
 
   Future<Map<String, dynamic>?> memoryEnergyDistribution() async {
-    final res = await _http.get(_uri('/api/memory/energy-distribution'), headers: _headers);
+    final res = await _get(_uri('/api/memory/energy-distribution'));
     if (res.statusCode != 200) return null;
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
@@ -131,7 +175,7 @@ class GatewayClient {
   // ── Goals ──
 
   Future<List<Map<String, dynamic>>> listGoals() async {
-    final res = await _http.get(_uri('/api/goals'), headers: _headers);
+    final res = await _get(_uri('/api/goals'));
     if (res.statusCode != 200) throw GatewayException('listGoals: HTTP ${res.statusCode}');
     final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     final list = j['goals'] as List? ?? [];
@@ -139,7 +183,7 @@ class GatewayClient {
   }
 
   Future<Map<String, dynamic>?> getGoal(String goalId) async {
-    final res = await _http.get(_uri('/api/goals/$goalId'), headers: _headers);
+    final res = await _get(_uri('/api/goals/$goalId'));
     if (res.statusCode != 200) return null;
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
@@ -147,7 +191,7 @@ class GatewayClient {
   // ── Triage ──
 
   Future<List<Map<String, dynamic>>> listTriageItems() async {
-    final res = await _http.get(_uri('/api/triage'), headers: _headers);
+    final res = await _get(_uri('/api/triage'));
     if (res.statusCode != 200) throw GatewayException('listTriageItems: HTTP ${res.statusCode}');
     final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     final list = j['items'] as List? ?? [];
@@ -156,10 +200,7 @@ class GatewayClient {
 
   Future<Map<String, dynamic>> proposeTriageDecision(String triageId, {required bool accept}) async {
     final endpoint = accept ? 'confirm' : 'reject';
-    final res = await _http.post(
-      _uri('/api/triage/$triageId/$endpoint'),
-      headers: _headers,
-    );
+    final res = await _post(_uri('/api/triage/$triageId/$endpoint'));
     if (res.statusCode != 200) throw GatewayException('proposeTriageDecision: HTTP ${res.statusCode}');
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
@@ -174,8 +215,30 @@ class GatewayClient {
     final request = http.MultipartRequest('POST', _uri('/api/mobile/media/tasks'))
       ..headers.addAll(uploadHeaders)
       ..files.add(file);
-    final streamed = await request.send();
-    final body = await http.Response.fromStream(streamed);
+
+    final started = DateTime.now();
+    final path = _displayPath(request.url);
+    http.Response body;
+    try {
+      final streamed = await request.send();
+      body = await http.Response.fromStream(streamed);
+    } catch (e) {
+      diagnostics?.recordHttp(
+        method: 'POST',
+        path: path,
+        durationMs: DateTime.now().difference(started).inMilliseconds,
+        error: e.toString(),
+      );
+      rethrow;
+    }
+
+    diagnostics?.recordHttp(
+      method: 'POST',
+      path: path,
+      status: body.statusCode,
+      durationMs: DateTime.now().difference(started).inMilliseconds,
+      errorBody: body.statusCode >= 400 ? body.body : null,
+    );
     if (body.statusCode != 200) throw GatewayException('uploadMediaTask: HTTP ${body.statusCode}');
     return jsonDecode(body.body) as Map<String, dynamic>;
   }
@@ -183,9 +246,8 @@ class GatewayClient {
   /// Send a follow-up question to an existing media task.
   /// Returns { answer, taskId }.
   Future<Map<String, dynamic>> askMediaTask(String taskId, String question) async {
-    final res = await _http.post(
+    final res = await _post(
       _uri('/api/mobile/media/tasks/$taskId/ask'),
-      headers: _headers,
       body: jsonEncode({'question': question}),
     );
     if (res.statusCode != 200) throw GatewayException('askMediaTask: HTTP ${res.statusCode}');
@@ -195,16 +257,15 @@ class GatewayClient {
   // ── TTS ──
 
   Future<Map<String, dynamic>> ttsVoices() async {
-    final res = await _http.get(_uri('/api/tts/voices'), headers: _headers);
+    final res = await _get(_uri('/api/tts/voices'));
     if (res.statusCode != 200) throw GatewayException('ttsVoices: HTTP ${res.statusCode}');
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
   /// Synthesize speech, returns { artifactId, voice, mime, url }.
   Future<Map<String, dynamic>> ttsSpeak(String text, {String? voice, String? style}) async {
-    final res = await _http.post(
+    final res = await _post(
       _uri('/api/tts'),
-      headers: _headers,
       body: jsonEncode({
         'text': text,
         'voice': ?voice,

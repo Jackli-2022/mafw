@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:orcalore_mobile/src/config/connection_config.dart';
+import 'package:orcalore_mobile/src/config/pairing_link.dart';
 import 'package:orcalore_mobile/src/services/secure_config_store.dart';
 
 /// Minimal fake FlutterSecureStorage for unit tests.
@@ -49,73 +50,91 @@ class _FakeSecureStorage extends FlutterSecureStorage {
   }
 }
 
+Uri _pairUrl({
+  String scheme = 'orcalore',
+  String host = 'pair',
+  Map<String, String>? overrides,
+  int? expMs,
+}) {
+  final exp = expMs ?? DateTime.now().millisecondsSinceEpoch + 300000; // +5min
+  return Uri(
+    scheme: scheme,
+    host: host,
+    queryParameters: {
+      'url': 'https://my-tailnet.ts.net:3000',
+      'token': 'test-token-abc',
+      'v': '1',
+      'exp': '$exp',
+      'nonce': 'a' * 32,
+      ...?overrides,
+    },
+  );
+}
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  group('Pairing URL parsing', () {
-    test('valid mafw://pair URL parses correctly', () {
-      final exp = DateTime.now().millisecondsSinceEpoch + 300000; // +5min
-      final uri = Uri(
-        scheme: 'mafw',
-        host: 'pair',
-        queryParameters: {
-          'url': 'https://my-tailnet:3000',
-          'token': 'test-token-abc',
-          'v': '1',
-          'exp': '$exp',
-          'nonce': 'a' * 32,
-        },
-      );
+  group('Pairing URL parsing (orcalore://pair)', () {
+    test('valid orcalore://pair URL parses correctly', () {
+      final result = parsePairingLink(_pairUrl().toString());
 
-      expect(uri.scheme, 'mafw');
-      expect(uri.host, 'pair');
-      expect(uri.queryParameters['url'], 'https://my-tailnet:3000');
-      expect(uri.queryParameters['token'], 'test-token-abc');
-      expect(uri.queryParameters['v'], '1');
-      expect(uri.queryParameters['exp'], '$exp');
-      expect(uri.queryParameters['nonce'], 'a' * 32);
+      expect(result.ok, isTrue);
+      expect(result.error, PairingLinkError.none);
+      expect(result.link!.url, 'https://my-tailnet.ts.net:3000');
+      expect(result.link!.token, 'test-token-abc');
+      expect(result.link!.nonce, 'a' * 32);
     });
 
-    test('expired URL is rejected', () {
+    test('expired URL is rejected with an expired error', () {
       final exp = DateTime.now().millisecondsSinceEpoch - 1000; // 1s ago
-      final now = DateTime.now().millisecondsSinceEpoch;
-      expect(now > exp, true, reason: 'simulated expiry check');
+      final result = parsePairingLink(_pairUrl(expMs: exp).toString());
+
+      expect(result.ok, isFalse);
+      expect(result.error, PairingLinkError.expired);
+      expect(result.link, isNull);
     });
 
     test('missing required params are rejected', () {
       final uri = Uri(
-        scheme: 'mafw',
+        scheme: 'orcalore',
         host: 'pair',
         queryParameters: {
-          'url': 'https://my-tailnet:3000',
-          // missing token
+          'url': 'https://my-tailnet.ts.net:3000',
           'v': '1',
           'exp': '123',
           'nonce': 'a' * 32,
         },
       );
-      expect(uri.queryParameters['token'], isNull);
+
+      final result = parsePairingLink(uri.toString());
+      expect(result.ok, isFalse);
+      expect(result.error, PairingLinkError.malformed);
     });
 
-    test('wrong scheme is rejected', () {
-      final uri = Uri(scheme: 'http', host: 'pair');
-      expect(uri.scheme, isNot('mafw'));
+    test('legacy mafw://pair scheme and other schemes are rejected', () {
+      final legacy = parsePairingLink(_pairUrl(scheme: 'mafw').toString());
+      expect(legacy.ok, isFalse);
+      expect(legacy.error, PairingLinkError.malformed);
+
+      final http = parsePairingLink(_pairUrl(scheme: 'http').toString());
+      expect(http.ok, isFalse);
+      expect(http.error, PairingLinkError.malformed);
     });
 
     test('wrong host is rejected', () {
-      final uri = Uri(scheme: 'mafw', host: 'unknown');
-      expect(uri.host, isNot('pair'));
+      final result = parsePairingLink(_pairUrl(host: 'unknown').toString());
+      expect(result.ok, isFalse);
+      expect(result.error, PairingLinkError.malformed);
     });
 
     test('wrong version is rejected', () {
-      final uri = Uri(
-        scheme: 'mafw',
-        host: 'pair',
-        queryParameters: {'v': '2'},
+      final result = parsePairingLink(
+        _pairUrl(overrides: const {'v': '2'}).toString(),
       );
-      expect(uri.queryParameters['v'], isNot('1'));
+      expect(result.ok, isFalse);
+      expect(result.error, PairingLinkError.malformed);
     });
   });
 

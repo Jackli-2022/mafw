@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
+import '../services/diagnostics.dart';
 import '../theme.dart';
+import 'debug_page.dart';
 import 'goal_detail_page.dart';
 
 /// 底部 Tab 导航页（方案 C：AI 紫品牌风，对标豆包 5 Tab）。
@@ -20,6 +22,8 @@ class SessionsPage extends StatefulWidget {
   final String? baseUrl;
   final bool isConnecting;
   final GatewayClient? client;
+  final DiagnosticsSink? diagnostics;
+  final bool Function()? wsConnected;
 
   const SessionsPage({
     super.key,
@@ -33,6 +37,8 @@ class SessionsPage extends StatefulWidget {
     this.baseUrl,
     this.isConnecting = false,
     this.client,
+    this.diagnostics,
+    this.wsConnected,
   });
 
   @override
@@ -148,7 +154,9 @@ class _SessionsPageState extends State<SessionsPage> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'Gateway 未连接（${widget.baseUrl ?? ''}）— 点此去设置',
+                            (widget.baseUrl ?? '').isEmpty
+                                ? 'Gateway 未配置 — 点此去设置'
+                                : 'Gateway 未连接（${widget.baseUrl}）— 点此去设置',
                             style: TextStyle(color: Theme.of(context).colorScheme.onError, fontSize: 12),
                           ),
                         ),
@@ -376,6 +384,30 @@ class _SessionsPageState extends State<SessionsPage> {
               onTap: widget.onScan,
             ),
           ),
+        if (debugPanelEnabled) ...[
+          const SizedBox(height: 8),
+          Card(
+            color: scheme.surfaceContainerHighest,
+            child: ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: kMafwSubagent,
+                foregroundColor: MafwPalette.black,
+                child: Icon(Icons.bug_report, size: 20),
+              ),
+              title: const Text('调试'),
+              subtitle: const Text('连接诊断 · 事件检查器 · 诊断包（dev-only）'),
+              trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => DebugPage(
+                  diagnostics: widget.diagnostics,
+                  client: widget.client,
+                  baseUrl: widget.baseUrl,
+                  wsConnected: widget.wsConnected,
+                ),
+              )),
+            ),
+          ),
+        ],
       ],
     );
   }
