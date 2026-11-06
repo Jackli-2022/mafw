@@ -80,7 +80,15 @@ export function buildPodPresence(inputs: PodPresenceInput[]): PodPresence {
     for (const item of input.attention) {
       if (seenAttention.has(item.id)) continue;
       seenAttention.add(item.id);
-      attentionItems.push(item);
+      // Attention is consumed across projects (mobile work tab) — carry the
+      // owning Pod + the parent-folded project so a tap can switch projects and
+      // open the Goal without a second lookup. Producers may be more precise,
+      // so their own values win when present.
+      attentionItems.push({
+        ...item,
+        podId: item.podId ?? input.podId,
+        projectId: item.projectId ?? projectId,
+      });
     }
   }
 

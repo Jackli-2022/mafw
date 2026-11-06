@@ -162,3 +162,43 @@ it('carries attention items with their revision-scoped ids', () => {
   expect(out.attention.count).toBe(1);
   expect(out.attention.items[0].id).toBe('g1:plan_approval:r2');
 });
+
+// The mobile work tab renders presence attention across projects and must be
+// able to switch the active project before opening the Goal detail, so every
+// item has to carry the owning Pod + project (Task 7 / spec §7.1).
+it('attaches podId and projectId to every attention item', () => {
+  const out = buildPodPresence([
+    {
+      podId: 'p1',
+      projectId: 'C:/proj',
+      projectName: 'proj',
+      goals: [],
+      tasks: [],
+      attention: [
+        { id: 'g1:blocked:r1', goalId: 'g1', revision: 1, kind: 'blocked', title: 'x', action: { type: 'open_goal', goalId: 'g1' } } as any,
+      ],
+    },
+  ]);
+  expect(out.attention.items[0].podId).toBe('p1');
+  expect(out.attention.items[0].projectId).toBe('C:/proj');
+});
+
+it('folds a worktree attention item onto the parent project id', () => {
+  const out = buildPodPresence([
+    {
+      podId: 'p2',
+      projectId: 'C:/proj-wt-x',
+      parentProjectId: 'C:/proj',
+      projectName: 'proj',
+      goals: [],
+      tasks: [],
+      attention: [
+        { id: 'g2:question:r2', goalId: 'g2', revision: 2, kind: 'question', title: 'y', action: { type: 'open_question', goalId: 'g2' } } as any,
+      ],
+    },
+  ]);
+  expect(out.attention.items[0].projectId).toBe('C:/proj');
+  // The Pod id stays the worktree Pod: project folding is a display concern.
+  expect(out.attention.items[0].podId).toBe('p2');
+  expect(out.attention.items[0].revision).toBe(2);
+});

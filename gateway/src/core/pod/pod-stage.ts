@@ -104,6 +104,17 @@ export interface PodAttentionItem {
   kind: 'plan_approval' | 'direction_review' | 'question' | 'blocked';
   title: string;
   action: PodGoalStageAction;
+  /**
+   * Owning Pod id, when the projection knows it (presence attaches it so a
+   * cross-project client can navigate). Absent from the per-Pod detail view,
+   * where the Pod is already the request scope.
+   */
+  podId?: string;
+  /**
+   * Owning project directory. Presence folds worktree Pods onto their parent
+   * project, so this is the parent id — not necessarily `pod.projectDir`.
+   */
+  projectId?: string;
 }
 
 /** 只有这四种阶段是真正的人类阻塞（结果通知/未读不算）。 */
