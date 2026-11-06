@@ -262,11 +262,45 @@ class GatewayClient {
 
   /// Creates the project Pod if missing (`POST /api/projects/:projectId/pod`).
   ///
-  /// The response carries the full Pod detail; use [podLookup] when the caller
-  /// needs the ids (kept `void` per the mobile v1 interface).
-  Future<void> podEnsure(String projectDir) async {
+  /// The route answers the full Pod detail envelope (same shape as
+  /// [podLookup]), so the caller gets the ids it needs for the next step
+  /// (Task 11: the Goal composer needs `podId` without a second round trip).
+  ///
+  /// A 404 has two distinct meanings, and the body is the only honest signal:
+  /// - no route payload (empty/plain body) → [GatewayRouteMissingException]
+  ///   (gateway too old to create Pods);
+  /// - the route's own `{"error":"project is not registered: ..."}` → a plain
+  ///   [GatewayException] keeping the server body for display.
+  Future<PodInfo> podEnsure(String projectDir) async {
     final res = await _post(_uri('/api/projects/${Uri.encodeComponent(projectDir)}/pod'));
-    if (res.statusCode != 200) throw GatewayException('podEnsure: HTTP ${res.statusCode}');
+    if (res.statusCode == 404) throw _ensureNotFound(res);
+    if (res.statusCode != 200) throw _failure('podEnsure', res);
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('podEnsure: unexpected payload (not a JSON object)');
+    }
+    return PodInfo.fromJson(j);
+  }
+
+  /// Classifies a 404 from `POST /api/projects/:projectId/pod`.
+  ///
+  /// Matches [_notFound]'s body heuristic: the real route always names the pod
+  /// or the project in its error payload; an unknown `/api/*` route answers an
+  /// empty (or non-JSON) 404 on the live gateway.
+  GatewayException _ensureNotFound(http.Response res) {
+    final body = utf8.decode(res.bodyBytes, allowMalformed: true).trim();
+    final lower = body.toLowerCase();
+    if (body.isNotEmpty && (lower.contains('pod') || lower.contains('project'))) {
+      return GatewayException(
+        'podEnsure: HTTP 404',
+        statusCode: 404,
+        errorBody: body,
+      );
+    }
+    return GatewayRouteMissingException(
+      'podEnsure: HTTP 404 without a route payload — gateway is too old to create Pods',
+      errorBody: body,
+    );
   }
 
   /// Ensures the project Lead session and returns its session id

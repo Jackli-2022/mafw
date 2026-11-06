@@ -306,11 +306,6 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     ));
   }
 
-  /// 「＋ 新建讨论」占位：Task 11 接 Goal composer。
-  void _createDiscussion() {
-    _snack('新建讨论将在下一版本启用');
-  }
-
   void _openChat(MafwSession s) {
     final c = _client;
     final ws = _ws;
@@ -397,7 +392,6 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         activeProject: _activeProject,
         refreshBus: _workRefresh,
         onOpenGoal: _openGoal,
-        onCreateDiscussion: _createDiscussion,
       ),
     );
   }

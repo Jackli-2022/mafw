@@ -11,7 +11,8 @@
 /// 3. Lead 入口条（占位，Task 14 接通）；
 /// 4. 五桶活动流（needs_you / queued / in_progress / result_ready / ended，
 ///    中性 counts 徽标，goal 卡：title / stage / revision / strategy / verdict）；
-/// 5. FAB「＋ 新建讨论」（占位，Task 11 接 composer）。
+/// 5. FAB「＋ 新建讨论」：解析项目 Pod（无 Pod 时 `podEnsure`）→ 打开 Goal
+///    composer；创建成功 → `onOpenGoal(dir, goalId)` 进入 Goal 详情。
 ///
 /// 刷新（spec §7.3）：15s 轮询 + [WorkRefreshBus]（WS 重连 / 命中事件）。
 /// 事件刷新是「重拉数据 + 按 goalId 局部替换」，不重建页面状态；携带 goalId 的
@@ -27,6 +28,7 @@ import '../network/gateway_client.dart';
 import '../services/active_project.dart';
 import '../services/work_refresh_bus.dart';
 import '../theme.dart';
+import 'goal_composer_page.dart';
 
 // ── 纯词表 / 纯函数（widget 测试直接引用）──────────────────────────────────
 
@@ -156,7 +158,10 @@ class WorkTab extends StatefulWidget {
   /// Goal 卡片 / 需要你条目 → Goal 详情。跨项目条目会先切换 active 项目。
   final void Function(String projectId, String goalId)? onOpenGoal;
 
-  /// FAB「＋ 新建讨论」（Task 11 接 composer；缺省提示）。
+  /// FAB「＋ 新建讨论」的显式覆盖（宿主自定义入口）。
+  ///
+  /// 缺省时走内建流程：当前项目 → `podLookup`（404 → `podEnsure`）→
+  /// [GoalComposerPage] → 成功后 `onOpenGoal(projectDir, goalId)`。
   final VoidCallback? onCreateDiscussion;
 
   /// Lead 入口条（Task 14 接通；缺省提示）。
@@ -536,13 +541,84 @@ class _WorkTabState extends State<WorkTab> {
     widget.onOpenGoal?.call(target, goalId);
   }
 
-  void _onCreateDiscussion() {
+  /// FAB「＋ 新建讨论」：解析当前项目 Pod（无 Pod 时 ensure）→ composer →
+  /// 成功创建后交给外壳打开 Goal 详情（`onOpenGoal(projectDir, goalId)`）。
+  ///
+  /// 错误必须可操作且可区分（Task 11）：
+  /// - 网关过旧（ensure 路由缺失）→「网关版本过旧」；
+  /// - 项目未注册/服务端拒绝 →「创建鲸群失败：<服务端原文>」；
+  /// - 未配置 / 没有项目 → 直接说清缺什么。
+  Future<void> _onCreateDiscussion() async {
     final handler = widget.onCreateDiscussion;
     if (handler != null) {
       handler();
       return;
     }
-    _snack('新建讨论将在下一版本启用');
+
+    final client = widget.client;
+    if (client == null) {
+      _snack('未配置 Gateway');
+      return;
+    }
+    final dir = _store.current() ?? _activeDir;
+    if (dir == null || dir.isEmpty) {
+      _snack('还没有已注册的项目');
+      return;
+    }
+
+    PodInfo? pod;
+    try {
+      pod = await client.podLookup(dir);
+    } catch (e) {
+      if (!mounted) return;
+      _snack('读取项目失败：${goalComposerErrorMessage(e)}');
+      return;
+    }
+
+    if (pod == null) {
+      // `podLookup` 对「项目没有 Pod」和「网关过旧」都返回 404；ensure 的
+      // 404 分类（GatewayRouteMissingException）才是这两者的权威区分点。
+      try {
+        pod = await client.podEnsure(dir);
+      } on GatewayRouteMissingException {
+        if (!mounted) return;
+        _snack('网关版本过旧：缺少创建鲸群的路由，请升级 gateway 后重试');
+        return;
+      } catch (e) {
+        if (!mounted) return;
+        _snack('创建鲸群失败：${goalComposerErrorMessage(e)}');
+        return;
+      }
+      // Pod 刚建好：即使用户取消 composer，「这个项目还没有鲸群」也不该继续
+      // 挂在屏上（15s 轮询会迟到）。
+      if (!mounted) return;
+      unawaited(_refresh());
+    }
+
+    if (!mounted) return;
+    if (pod.id.isEmpty) {
+      _snack('创建鲸群失败：网关没有返回 Pod id');
+      return;
+    }
+    final podId = pod.id;
+
+    CreateGoalResult? created;
+    await Navigator.of(context).push<CreateGoalResult>(
+      MaterialPageRoute(
+        builder: (_) => GoalComposerPage(
+          podId,
+          client: client,
+          onCreated: (result) => created = result,
+        ),
+      ),
+    );
+    if (!mounted) return;
+
+    final result = created;
+    if (result == null || result.goalId.isEmpty) return;
+    // 新 Goal 立刻出现在活动流里（用户从详情返回时不用等下一次 15s 轮询）。
+    unawaited(_refresh());
+    widget.onOpenGoal?.call(dir, result.goalId);
   }
 
   void _onOpenLead() {
@@ -588,7 +664,7 @@ class _WorkTabState extends State<WorkTab> {
             bottom: 16,
             child: FloatingActionButton.extended(
               key: const Key('work-fab'),
-              onPressed: _onCreateDiscussion,
+              onPressed: () => unawaited(_onCreateDiscussion()),
               icon: const Icon(Icons.add, size: 20),
               label: const Text(
                 '新建讨论',
