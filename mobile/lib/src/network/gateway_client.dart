@@ -580,6 +580,61 @@ class GatewayClient {
     return CreateGoalResult.fromJson(j);
   }
 
+  /// Hands a free discussion over to the Lead
+  /// (`POST /api/pods/:podId/goals/handoff`).
+  ///
+  /// Body mirrors `gateway/src/routes/pods.ts:314-344`:
+  /// `{title, objective, sourceRef:{sessionID, snapshot, capturedAt}}`.
+  /// The server creates the Goal as a direct-discussion Goal (revision 1,
+  /// `discussing`) and answers `{podId, goalId, revision, sessionID, status,
+  /// goal, sessionError?}`.
+  ///
+  /// A 404 has two meanings and the body is the only honest signal:
+  /// - `{"error":"pod not found: ..."}` (a real route) → [GatewayException];
+  /// - an empty/plain 404 → [GatewayRouteMissingException] (gateway too old).
+  Future<Map<String, dynamic>> goalHandoff(
+    String podId, {
+    required String title,
+    required String objective,
+    required Map<String, dynamic> sourceRef,
+  }) async {
+    final res = await _post(
+      _uri('/api/pods/${_podPath(podId)}/goals/handoff'),
+      body: jsonEncode({
+        'title': title,
+        'objective': objective,
+        'sourceRef': sourceRef,
+      }),
+    );
+    if (res.statusCode == 404) throw _handoffNotFound(res);
+    if (res.statusCode != 200) throw _failure('goalHandoff', res);
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('goalHandoff: unexpected payload (not a JSON object)');
+    }
+    if ((j['goalId'] ?? '').toString().isEmpty) {
+      throw GatewayException('goalHandoff: gateway returned no goalId');
+    }
+    return j;
+  }
+
+  /// Classifies a 404 from `POST /api/pods/:podId/goals/handoff`.
+  GatewayException _handoffNotFound(http.Response res) {
+    final body = utf8.decode(res.bodyBytes, allowMalformed: true).trim();
+    final lower = body.toLowerCase();
+    if (body.isNotEmpty && (lower.contains('pod') || lower.contains('goal'))) {
+      return GatewayException(
+        'goalHandoff: HTTP 404',
+        statusCode: 404,
+        errorBody: body,
+      );
+    }
+    return GatewayRouteMissingException(
+      'goalHandoff: HTTP 404 without a route payload — gateway is too old for this route',
+      errorBody: body,
+    );
+  }
+
   /// Reads the hidden Tech Lead discussion (`GET .../goals/:goalId/tech-lead`).
   ///
   /// A **409** is the server's designed answer for a terminal revision

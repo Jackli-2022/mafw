@@ -6,6 +6,7 @@ import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
 import '../services/active_project.dart';
 import '../services/diagnostics.dart';
+import '../services/lead_handoff.dart';
 import '../services/work_refresh_bus.dart';
 import '../theme.dart';
 import 'debug_page.dart';
@@ -105,6 +106,9 @@ class _SessionsPageState extends State<SessionsPage> {
   bool _chatDirty = true;
   bool _creatingTopic = false;
   int _chatSeq = 0;
+
+  /// 「交给 Lead」在飞：防双击重复建 Goal。
+  bool _handoffBusy = false;
 
   // 记忆检索（「我的」tab，懒加载）
   List<Map<String, dynamic>> _memories = [];
@@ -249,6 +253,101 @@ class _SessionsPageState extends State<SessionsPage> {
     ScaffoldMessenger.maybeOf(context)
       ?..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
+  }
+
+  // ── 交给 Lead（handoff，Task 15）──
+
+  /// Lead 会话本身就是目的地；子代理行不是用户讨论——两者都不能交接。
+  bool _canHandoff(MafwSession session) =>
+      !session.isLead && session.parentID == null;
+
+  /// 会话所属项目：会话目录 > projectID > 当前项目（聊天列表按项目过滤时三者
+  /// 通常相同；没有当前项目的「显示全部」视图必须靠会话自己的目录）。
+  String? _handoffProjectDir(MafwSession session) {
+    for (final candidate in <String?>[
+      session.directory,
+      session.projectID,
+      _activeProjectDir,
+    ]) {
+      final dir = candidate?.trim() ?? '';
+      if (dir.isNotEmpty) return dir;
+    }
+    return null;
+  }
+
+  void _showSessionActions(MafwSession session) {
+    if (!_canHandoff(session)) {
+      _snack(session.isLead ? 'Lead 会话不能交给 Lead' : '子代理会话不能交给 Lead');
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(
+                session.displayTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: const Text('把这段讨论交给 Lead，变成项目里的 Goal'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              key: const Key('session-handoff-to-lead'),
+              leading: const Icon(Icons.handshake_outlined),
+              title: const Text('交给 Lead'),
+              subtitle: const Text('Lead 会先跟你对齐方向，再规划与实施'),
+              onTap: () {
+                Navigator.pop(ctx);
+                unawaited(_handoffToLead(session));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 先读会话历史，再解析项目 Pod（无 Pod 时创建），最后 POST handoff。
+  ///
+  /// 失败全部落成可操作提示（[leadHandoffErrorMessage]）：无 Pod 创建失败 /
+  /// 旧网关 / 网络错误各有自己的话，绝不静默。
+  Future<void> _handoffToLead(MafwSession session) async {
+    if (_handoffBusy) {
+      _snack('正在交给 Lead…');
+      return;
+    }
+    final client = widget.client;
+    if (client == null) {
+      _snack('未配置 Gateway，请先在「我的」里连接');
+      return;
+    }
+    final dir = _handoffProjectDir(session);
+    if (dir == null) {
+      _snack('无法确定会话所属项目，请先在「工作」tab 选择项目');
+      return;
+    }
+
+    _handoffBusy = true;
+    try {
+      final result = await LeadHandoffService(client).handoff(
+        session.id,
+        projectDir: dir,
+        sessionTitle: session.title,
+      );
+      if (!mounted) return;
+      _snack('已交给 Lead');
+      // 新 Goal 立刻可看：外壳打开详情（`main.dart` 的 `onOpenGoal`）。
+      widget.onOpenGoal?.call(dir, result.goalId);
+    } catch (e) {
+      if (!mounted) return;
+      _snack(leadHandoffErrorMessage(e));
+    } finally {
+      _handoffBusy = false;
+    }
   }
 
   @override
@@ -467,7 +566,11 @@ class _SessionsPageState extends State<SessionsPage> {
                     )
                   : ListView.builder(
                       itemCount: _filtered.length,
-                      itemBuilder: (ctx, i) => _SessionTile(session: _filtered[i], onOpen: widget.onOpen),
+                      itemBuilder: (ctx, i) => _SessionTile(
+                        session: _filtered[i],
+                        onOpen: widget.onOpen,
+                        onLongPress: _showSessionActions,
+                      ),
                     ),
         ),
       ],
@@ -625,8 +728,13 @@ class _SessionsPageState extends State<SessionsPage> {
 class _SessionTile extends StatelessWidget {
   final MafwSession session;
   final void Function(MafwSession) onOpen;
+  final void Function(MafwSession)? onLongPress;
 
-  const _SessionTile({required this.session, required this.onOpen});
+  const _SessionTile({
+    required this.session,
+    required this.onOpen,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -680,6 +788,7 @@ class _SessionTile extends StatelessWidget {
         ),
       ),
       onTap: () => onOpen(s),
+      onLongPress: onLongPress == null ? null : () => onLongPress!(s),
     );
   }
 }
