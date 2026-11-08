@@ -52,7 +52,7 @@ function artifactName(value: string): string {
   return value.split(/[\\/]/).filter(Boolean).pop() ?? value
 }
 
-export function GoalDetailOverlay(props: {
+export function GoalDetailPanel(props: {
   goalId: string | null
   projectDir?: string | null
   podId?: string | null
@@ -193,10 +193,9 @@ export function GoalDetailOverlay(props: {
     onCleanup(() => clearInterval(t))
   })
 
+  let panelTitleRef: HTMLDivElement | undefined
   onMount(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") props.onClose() }
-    window.addEventListener("keydown", onKey)
-    onCleanup(() => window.removeEventListener("keydown", onKey))
+    queueMicrotask(() => panelTitleRef?.focus())
   })
 
   async function retry(runId: number, node: string) {
@@ -550,21 +549,22 @@ export function GoalDetailOverlay(props: {
 
   return (
     <Show when={props.goalId} keyed>
-      <div class="mafw-goal-overlay" onClick={e => { if (e.target === e.currentTarget) props.onClose() }}>
-        <div class="mafw-goal-panel">
+      <section class="mafw-goal-panel mafw-goal-inline" role="region" aria-label="Goal 详情">
+          <div class="mafw-goal-inline-back">
+            <ButtonV2 variant="ghost" size="small" onClick={props.onClose}>
+              返回全部 Goal
+            </ButtonV2>
+          </div>
           <div class="mafw-goal-head">
             <div class="mafw-goal-head-main">
               <div class="mafw-work-kicker">Goal · {stageText() || "工作项"}</div>
-              <div class="mafw-card-title">{timeline()?.goal?.title || podGoal()?.title || props.goalId}</div>
+              <div
+                ref={panelTitleRef}
+                tabIndex={-1}
+                class="mafw-card-title mafw-goal-inline-title"
+              >{timeline()?.goal?.title || podGoal()?.title || props.goalId}</div>
               <div class="mafw-goal-id">{timeline()?.goal?.goalId || props.goalId}</div>
             </div>
-            <ButtonV2
-              variant="ghost"
-              size="small"
-              icon="close"
-              onClick={props.onClose}
-              aria-label="关闭详情"
-            />
           </div>
 
           <Show when={!loading() && !error()} fallback={
@@ -788,8 +788,7 @@ export function GoalDetailOverlay(props: {
               </div>
             </Show>
           </Show>
-        </div>
-      </div>
+      </section>
       <Show when={planOpen()}>
         <PlanReviewOverlay
           goalId={props.goalId!}

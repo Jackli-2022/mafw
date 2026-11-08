@@ -52,7 +52,6 @@ import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ProjectWorkView } from "./components/ProjectWorkView"
 import { ExecutionView } from "./components/ExecutionView"
-import { GoalDetailOverlay } from "./components/GoalDetailOverlay"
 import { PodTranscriptOverlay } from "./components/PodTranscriptOverlay"
 import { ingestPodEvent, podStore, pickTechLeadInviteGoal, resolvePodDetailCached, techLeadTabTitle } from "./pod-store"
 import { podRailBadge, podResultBadge } from "./pod-rail-badge"
@@ -213,6 +212,7 @@ export function MafwShell() {
   const [goalComposerRequest, setGoalComposerRequest] = createSignal(0)
   /** 打开统一 Goal 详情，并按 attention action 指定落点（计划/问题/方向/结果）。 */
   const openGoalDetail = (goalId: string, focus: GoalDetailFocus = "timeline"): void => {
+    openProjectWork()
     setGoalDetailFocus(focus)
     setPodGoalId(goalId)
   }
@@ -322,6 +322,12 @@ export function MafwShell() {
   /** Current Lead id; null while Pod is loading or when the Pod has no live Lead. */
   const currentLeadId = (project: string | null): string | null =>
     leadResolvedFor(project) ? leadSessionIdFromPod(podStore.detail()) : null
+  const podIdForCurrentProject = (): string | null => {
+    const detail = podStore.detail()
+    if (!detail) return null
+    const loadedFor = podStore.projectDir()
+    return !loadedFor || loadedFor === currentProject() ? detail.pod.id : null
+  }
   createEffect(() => {
     if (gwStatus()?.state !== "ready") return
     projectsRev() // gateway announces project_registered → refetch the list
@@ -358,6 +364,7 @@ export function MafwShell() {
     }
     switchingProject = true
     setLayoutProject(null)
+    setPodGoalId(null)
     setCurrentProject(worktree)
     try {
       try {
@@ -2957,8 +2964,13 @@ export function MafwShell() {
                       refreshTick={() => Math.max(goalsRev(), podStore.revision())}
                       composerRequest={goalComposerRequest()}
                       active={workbenchContent() === "project" && dockPresent() && workbenchView() === "work"}
+                      selectedGoalId={podGoalId()}
+                      detailFocus={goalDetailFocus()}
+                      podId={podIdForCurrentProject()}
                       onOpenGoal={(goal, focus) => openGoalDetail(goal.goalId, focus)}
                       onGoalCreated={(goalId) => openGoalDetail(goalId)}
+                      onCloseGoal={() => setPodGoalId(null)}
+                      onOpenSession={(sid) => { void openPodSession(sid) }}
                     />
                   }
                   onSendComment={(sid, text) => {
@@ -3031,21 +3043,6 @@ export function MafwShell() {
           </Show>
         </div>
       </div>
-      <Show when={podGoalId()} keyed>
-        <GoalDetailOverlay
-          goalId={podGoalId()}
-          projectDir={currentProject()}
-          podId={(() => {
-            const detail = podStore.detail()
-            if (!detail) return null
-            const loadedFor = podStore.projectDir()
-            return !loadedFor || loadedFor === currentProject() ? detail.pod.id : null
-          })()}
-          focus={goalDetailFocus()}
-          onClose={() => setPodGoalId(null)}
-          onOpenSession={(sid) => { void openPodSession(sid) }}
-        />
-      </Show>
       <Show when={podTranscriptTarget()}>
         {(target) => (
           <PodTranscriptOverlay

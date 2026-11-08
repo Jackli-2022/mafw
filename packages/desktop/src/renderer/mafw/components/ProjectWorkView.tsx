@@ -3,6 +3,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { WorkOverview } from "./WorkOverview"
 import { WorkPriorityList } from "./WorkPriorityList"
+import { GoalDetailPanel } from "./GoalDetailPanel"
 import { PodGoalComposer } from "./PodGoalComposer"
 import { buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
@@ -28,8 +29,13 @@ export function ProjectWorkView(props: {
   refreshTick: () => number
   composerRequest?: number
   active: boolean
+  selectedGoalId?: string | null
+  detailFocus?: GoalDetailFocus | null
+  podId?: string | null
   onOpenGoal: (goal: PodGoal, focus?: GoalDetailFocus) => void
   onGoalCreated?: (goalId: string) => void
+  onCloseGoal: () => void
+  onOpenSession: (sessionId: string) => void
 }): JSX.Element {
   const [overview, setOverview] = createSignal<PodWorkOverview | null>(null)
   const [loading, setLoading] = createSignal(false)
@@ -101,6 +107,22 @@ export function ProjectWorkView(props: {
     isResultViewed: isViewed,
   }))
 
+  let previousGoalId: string | null = null
+  createEffect(() => {
+    const selected = props.selectedGoalId ?? null
+    if (selected) {
+      previousGoalId = selected
+      queueMicrotask(() => document.querySelector<HTMLElement>(".mafw-goal-inline-title")?.focus())
+      return
+    }
+    const previous = previousGoalId
+    if (!previous) return
+    previousGoalId = null
+    queueMicrotask(() => {
+      document.querySelector<HTMLElement>(`.mafw-work-row[data-goal-id="${previous}"] .mafw-work-item`)?.focus()
+    })
+  })
+
   const createGoal = async (input: {
     title: string
     objective: string
@@ -132,46 +154,61 @@ export function ProjectWorkView(props: {
 
   return (
     <div class="mafw-project-work" aria-label="项目工作">
-      <div class="mafw-project-work-head">
-        <div>
-          <div class="mafw-work-kicker">工作</div>
-          <div class="mafw-project-work-hint">先处理重要事项，全部 Goal 都保留在下方</div>
+      <div class="mafw-project-work-overview" hidden={!!props.selectedGoalId}>
+        <div class="mafw-project-work-head">
+          <div>
+            <div class="mafw-work-kicker">工作</div>
+            <div class="mafw-project-work-hint">先处理重要事项，全部 Goal 都保留在下方</div>
+          </div>
+          <ButtonV2
+            variant="outline"
+            size="small"
+            icon="target"
+            onClick={() => setComposerOpen((open) => !open)}
+          >
+            新建 Goal
+          </ButtonV2>
         </div>
-        <ButtonV2
-          variant="outline"
-          size="small"
-          icon="target"
-          onClick={() => setComposerOpen((open) => !open)}
-        >
-          新建 Goal
-        </ButtonV2>
+
+        <Show when={composerOpen()}>
+          <section class="mafw-project-work-composer" aria-label="新建 Goal">
+            <PodGoalComposer
+              busy={creating()}
+              activeGoalId={activeGoalId()}
+              autofocus
+              onCreate={createGoal}
+            />
+          </section>
+        </Show>
+
+        <WorkPriorityList
+          items={priority()}
+          onOpen={(goal, focus) => props.onOpenGoal(goal, focus)}
+        />
+
+        <WorkOverview
+          goals={overviewGoals()}
+          loading={loading()}
+          error={error()}
+          filter={filter()}
+          onFilter={setFilter}
+          onOpenGoal={(goal, focus) => props.onOpenGoal(goal, focus)}
+          isViewed={isViewed}
+        />
       </div>
 
-      <Show when={composerOpen()}>
-        <section class="mafw-project-work-composer" aria-label="新建 Goal">
-          <PodGoalComposer
-            busy={creating()}
-            activeGoalId={activeGoalId()}
-            autofocus
-            onCreate={createGoal}
+      <Show when={props.selectedGoalId} keyed>
+        {(goalId) => (
+          <GoalDetailPanel
+            goalId={goalId}
+            projectDir={props.projectDir}
+            podId={props.podId ?? null}
+            focus={props.detailFocus ?? "timeline"}
+            onClose={props.onCloseGoal}
+            onOpenSession={props.onOpenSession}
           />
-        </section>
+        )}
       </Show>
-
-      <WorkPriorityList
-        items={priority()}
-        onOpen={(goal, focus) => props.onOpenGoal(goal, focus)}
-      />
-
-      <WorkOverview
-        goals={overviewGoals()}
-        loading={loading()}
-        error={error()}
-        filter={filter()}
-        onFilter={setFilter}
-        onOpenGoal={(goal, focus) => props.onOpenGoal(goal, focus)}
-        isViewed={isViewed}
-      />
     </div>
   )
 }

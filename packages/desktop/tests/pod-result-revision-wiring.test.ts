@@ -19,7 +19,7 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8"
 const podResultView = read("../src/renderer/mafw/components/PodResultView.tsx")
 const podDock = read("../src/renderer/mafw/components/PodDock.tsx")
 const workOverview = read("../src/renderer/mafw/components/WorkOverview.tsx")
-const goalDetail = read("../src/renderer/mafw/components/GoalDetailOverlay.tsx")
+const goalDetail = read("../src/renderer/mafw/components/GoalDetailPanel.tsx")
 const rail = read("../src/renderer/mafw/components/IconRail.tsx")
 const shell = read("../src/renderer/mafw/MafwShell.tsx")
 const resultStore = read("../src/renderer/mafw/pod-result-store.ts")
@@ -119,7 +119,7 @@ test("打回后的 Tech Lead tab 标题带新 revision（rev 1 不啰嗦）", ()
 test("设计契约：结果面板/版本历史无裸 button/input/title", () => {
   for (const [name, src] of [
     ["PodResultView", podResultView],
-    ["GoalDetailOverlay", goalDetail],
+    ["GoalDetailPanel", goalDetail],
   ] as const) {
     assert.doesNotMatch(src, /<button/, `${name} 不得用裸 button`)
     assert.doesNotMatch(src, /<input/, `${name} 不得用裸 input`)

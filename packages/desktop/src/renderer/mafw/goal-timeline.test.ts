@@ -143,8 +143,8 @@ describe("timelineFailure", () => {
   })
 })
 
-describe("GoalDetailOverlay timeline 加载接线", () => {
-  const src = readFileSync(join(import.meta.dirname, "components/GoalDetailOverlay.tsx"), "utf8")
+describe("GoalDetailPanel timeline 加载接线", () => {
+  const src = readFileSync(join(import.meta.dirname, "components/GoalDetailPanel.tsx"), "utf8")
   const loadBody = src.slice(src.indexOf("async function load("), src.indexOf("// 显式 podId"))
 
   test("load 只把 missing-state 404 当 timeline 不可用", () => {

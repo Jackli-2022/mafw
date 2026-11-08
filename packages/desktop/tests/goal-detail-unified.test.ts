@@ -13,7 +13,7 @@ import { buildGoalLanes, hideEmptyReviewLane } from "../src/renderer/mafw/goal-t
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8")
 
-const detail = read("../src/renderer/mafw/components/GoalDetailOverlay.tsx")
+const detail = read("../src/renderer/mafw/components/GoalDetailPanel.tsx")
 const resultView = read("../src/renderer/mafw/components/PodResultView.tsx")
 const workOverview = read("../src/renderer/mafw/components/WorkOverview.tsx")
 const board = read("../src/renderer/mafw/components/PodTaskBoard.tsx")
@@ -60,7 +60,8 @@ test("attention 按 action.type 分流到计划/问题/方向/结果", () => {
   // needs_you 就是 attention 列表本身；打开时必须带 action 对应的落点。
   assert.match(workOverview, /attentionTarget\(goal\.stage\.action\)/)
   assert.match(shell, /openGoalDetail\(/)
-  assert.match(shell, /focus=\{goalDetailFocus\(\)\}/)
+  assert.match(shell, /detailFocus=\{goalDetailFocus\(\)\}/)
+  assert.match(workOverview, /onOpenGoal\(goal, attentionTarget\(goal\.stage\.action\)\)/)
 })
 
 test("Goal 详情展示问题回答入口，复用既有 goals.respondQuestion", () => {

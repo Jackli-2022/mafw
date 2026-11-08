@@ -43,7 +43,7 @@ function cssBlock(selector: string): string {
 
 const planReview = read("../src/renderer/mafw/components/PlanReviewOverlay.tsx")
 const planRender = read("../src/renderer/mafw/components/plan-render.ts")
-const goalDetail = read("../src/renderer/mafw/components/GoalDetailOverlay.tsx")
+const goalDetail = read("../src/renderer/mafw/components/GoalDetailPanel.tsx")
 const workOverview = read("../src/renderer/mafw/components/WorkOverview.tsx")
 const projectWork = read("../src/renderer/mafw/components/ProjectWorkView.tsx")
 const workModel = read("../src/renderer/mafw/work-overview-model.ts")
@@ -123,8 +123,10 @@ test("SDK stage 类型包含新 kind / role / action（Task 19 前置项）", ()
   assert.match(sdkTypes, /'direction_review'/)
 })
 
-test("活动 Goal 变化时 keyed 重挂（不残留旧状态）", () => {
-  assert.match(shell, /<Show when=\{podGoalId\(\)\} keyed>/)
+test("活动 Goal 变化时 inline 详情 keyed 重挂（不残留旧状态）", () => {
+  const work = read("../src/renderer/mafw/components/ProjectWorkView.tsx")
+  assert.match(work, /<Show when=\{props\.selectedGoalId\} keyed>/)
+  assert.match(work, /<GoalDetailPanel/)
 })
 
 test("Tech Lead tab 发送走 pod.sendTechLeadMessage（保留身份/ContextManifest）", () => {

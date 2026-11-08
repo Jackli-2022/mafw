@@ -74,7 +74,7 @@ test("shell routes pod.updated, pod.event, project scope, sessions, goals, and b
   assert.match(shell, /projectDir=\{benchRoot\(\)/)
   assert.match(shell, /onOpenPodSession=\{\(sid, title\) => \{ void openPodSession\(sid, title\) \}\}/)
   assert.match(shell, /podRoleOf=\{/)
-  assert.match(shell, /<GoalDetailOverlay/)
+  assert.match(shell, /selectedGoalId=\{podGoalId\(\)\}/)
   assert.match(shell, /setPodGoalId/)
 })
 

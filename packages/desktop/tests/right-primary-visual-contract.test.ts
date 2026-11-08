@@ -11,7 +11,7 @@ const css = read("../src/renderer/mafw/mafw.css")
 const work = read("../src/renderer/mafw/components/ProjectWorkView.tsx")
 const overview = read("../src/renderer/mafw/components/WorkOverview.tsx")
 const resources = read("../src/renderer/mafw/components/ProjectResources.tsx")
-const detail = read("../src/renderer/mafw/components/GoalDetailOverlay.tsx")
+const detail = read("../src/renderer/mafw/components/GoalDetailPanel.tsx")
 
 test("工作列表先给阶段与真实进度，而不是工程 chips", () => {
   assert.match(overview, /podStageLabel\(goal\.stage\)/)
