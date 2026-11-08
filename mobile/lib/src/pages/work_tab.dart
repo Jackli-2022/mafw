@@ -8,7 +8,8 @@
 /// 1. 品牌行：Lore 20px 圆形图标 + `Orcalore` 字标（左），项目切换器（右，
 ///    `projects()` → 底部弹层）；
 /// 2. 「现在需要你」：`presence().attention` 跨项目条目（mint 描边）+ 未看结果数；
-/// 3. Lead 入口条（占位，Task 14 接通）；
+/// 3. Lead 入口条（Task 14：解析当前项目 Pod → `ensureLeadSessionId` → 宿主用
+///    裸 sessionID 打开 ChatPage）；
 /// 4. 五桶活动流（needs_you / queued / in_progress / result_ready / ended，
 ///    中性 counts 徽标，goal 卡：title / stage / revision / strategy / verdict）；
 /// 5. FAB「＋ 新建讨论」：解析项目 Pod（无 Pod 时 `podEnsure`）→ 打开 Goal
@@ -164,8 +165,10 @@ class WorkTab extends StatefulWidget {
   /// [GoalComposerPage] → 成功后 `onOpenGoal(projectDir, goalId)`。
   final VoidCallback? onCreateDiscussion;
 
-  /// Lead 入口条（Task 14 接通；缺省提示）。
-  final VoidCallback? onOpenLead;
+  /// Lead 对话入口（Task 14）：条点击 → 当前项目 Pod（`work.overview.podId`，
+  /// 缺失时 `podLookup`）→ `ensureLeadSessionId` → 把 `(projectDir, sessionID)`
+  /// 交给宿主，用「裸 sessionID」入口打开 ChatPage。
+  final void Function(String projectDir, String sessionId)? onOpenLead;
 
   /// 「未配置」空态里的去设置入口。
   final VoidCallback? onOpenSettings;
@@ -213,6 +216,9 @@ class _WorkTabState extends State<WorkTab> {
   Timer? _poll;
   Timer? _debounce;
   final Set<String> _pendingGoalIds = <String>{};
+
+  /// Lead 会话解析中（防双击并发 ensure）。
+  bool _leadBusy = false;
 
   /// 请求代际：切换项目 / 连续刷新时丢弃过期响应。
   int _seq = 0;
@@ -623,11 +629,71 @@ class _WorkTabState extends State<WorkTab> {
 
   void _onOpenLead() {
     final handler = widget.onOpenLead;
-    if (handler != null) {
-      handler();
+    if (handler == null) {
+      _snack('Lead 对话入口未接通');
       return;
     }
-    _snack('Lead 对话将在下一版本接通');
+    unawaited(_openLead(handler));
+  }
+
+  /// Lead 条（Task 14）：Pod 解析 + `ensureLeadSessionId` 之后再交给宿主，
+  /// 失败全部落成可操作提示（未配置 / 无项目 / 无 Pod / 网关过旧）。
+  Future<void> _openLead(
+    void Function(String projectDir, String sessionId) handler,
+  ) async {
+    if (_leadBusy) return;
+    final client = widget.client;
+    if (client == null) {
+      _snack('未配置 Gateway');
+      return;
+    }
+    final dir = _activeDir ?? _store.current();
+    if (dir == null || dir.isEmpty) {
+      _snack('还没有已注册的项目');
+      return;
+    }
+
+    setState(() => _leadBusy = true);
+    try {
+      // 当前项目的 Pod 就在五桶概览里，先省一次往返；概览缺失（还没有 Pod /
+      // 加载失败）时再 lookup 一次。
+      var podId = _overview?.podId ?? '';
+      if (podId.isEmpty) {
+        try {
+          podId = (await client.podLookup(dir))?.id ?? '';
+        } on GatewayRouteMissingException {
+          if (!mounted) return;
+          _snack('网关版本过旧：缺少 Pod 路由，请升级 gateway 后重试');
+          return;
+        } catch (e) {
+          if (!mounted) return;
+          _snack('读取项目失败：${_messageOf(e) ?? e}');
+          return;
+        }
+      }
+      if (podId.isEmpty) {
+        if (!mounted) return;
+        _snack('这个项目还没有鲸群，先在桌面端创建鲸群');
+        return;
+      }
+
+      final sessionID = await client.ensureLeadSessionId(podId);
+      if (!mounted) return;
+      handler(dir, sessionID);
+    } on GatewayRouteMissingException {
+      if (!mounted) return;
+      _snack('网关版本过旧：缺少 Lead 会话路由，请升级 gateway 后重试');
+    } on GatewayException catch (e) {
+      if (!mounted) return;
+      _snack(e.statusCode == 404
+          ? '网关版本过旧：缺少 Lead 会话路由，请升级 gateway 后重试'
+          : '打开 Lead 会话失败：${_messageOf(e) ?? e}');
+    } catch (e) {
+      if (!mounted) return;
+      _snack('打开 Lead 会话失败：${_messageOf(e) ?? e}');
+    } finally {
+      if (mounted) setState(() => _leadBusy = false);
+    }
   }
 
   void _snack(String message) {
@@ -832,10 +898,16 @@ class _WorkTabState extends State<WorkTab> {
           style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: MafwPalette.text),
         ),
         subtitle: const Text(
-          'Lead 对话将在下一版本接通',
+          '和项目 Lead 直接聊，讨论或交给 Lead 推进',
           style: TextStyle(fontSize: 11, color: MafwPalette.dim),
         ),
-        trailing: const Icon(Icons.chevron_right, size: 18, color: MafwPalette.faint),
+        trailing: _leadBusy
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.chevron_right, size: 18, color: MafwPalette.faint),
         onTap: _onOpenLead,
       ),
     );

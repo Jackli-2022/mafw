@@ -46,7 +46,6 @@ Future<void> _pumpShell(
       home: SessionsPage(
         sessions: sessions,
         onOpen: (_) {},
-        onCreate: () async {},
         onSettings: () {},
         onScan: () async {},
         client: client,

@@ -222,6 +222,15 @@ class _FakeWorkClient extends GatewayClient {
 
   @override
   Future<PodInfo?> podLookup(String projectDir) async => null;
+
+  /// Lead 入口（Task 14）：当前项目 Pod 已在 overview 里（`pod-a`）。
+  final List<String> leadEnsureRequests = <String>[];
+
+  @override
+  Future<String> ensureLeadSessionId(String podId) async {
+    leadEnsureRequests.add(podId);
+    return 'ses_lead';
+  }
 }
 
 // ── Harness ─────────────────────────────────────────────────────────────────
@@ -241,7 +250,7 @@ Future<ActiveProjectStore> _pumpWorkTab(
   WorkRefreshBus? bus,
   void Function(String projectId, String goalId)? onOpenGoal,
   VoidCallback? onCreateDiscussion,
-  VoidCallback? onOpenLead,
+  void Function(String projectDir, String sessionId)? onOpenLead,
   VoidCallback? onOpenSettings,
   Duration pollInterval = const Duration(seconds: 15),
   Duration refreshDebounce = const Duration(milliseconds: 250),
@@ -632,19 +641,28 @@ void main() {
       expect(taps, 1);
     });
 
-    testWidgets('the Lead entry row is present and wired to its placeholder', (tester) async {
-      var taps = 0;
+    testWidgets('the Lead entry resolves the Pod and opens the Lead session',
+        (tester) async {
+      final client = _FakeWorkClient();
+      String? openedDir;
+      String? openedSession;
       await _pumpWorkTab(
         tester,
-        client: _FakeWorkClient(),
-        onOpenLead: () => taps++,
+        client: client,
+        onOpenLead: (dir, sessionId) {
+          openedDir = dir;
+          openedSession = sessionId;
+        },
       );
 
       expect(find.text('跟 Lead 说件事'), findsOneWidget);
       await tester.tap(find.byKey(const Key('work-lead-entry')));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      expect(taps, 1);
+      // Task 14：Pod 来自 work.overview.podId，Lead 会话由 lead.ensure 返回。
+      expect(client.leadEnsureRequests, ['pod-a']);
+      expect(openedDir, _dirA);
+      expect(openedSession, 'ses_lead');
     });
   });
 

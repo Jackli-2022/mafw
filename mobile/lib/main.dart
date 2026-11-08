@@ -243,9 +243,9 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     try {
       final list = await c.listSessions();
       if (!mounted) return;
-      // Sort: managers first, then by recency.
+      // Sort: Lead sessions first, then by recency.
       list.sort((a, b) {
-        if (a.isManager != b.isManager) return a.isManager ? -1 : 1;
+        if (a.isLead != b.isLead) return a.isLead ? -1 : 1;
         return (b.timeCreated ?? 0).compareTo(a.timeCreated ?? 0);
       });
       setState(() => _sessions = list);
@@ -279,17 +279,61 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     });
   }
 
-  Future<void> _createSession() async {
+  Future<void> _chatSpeak() async {
+    _snack('语音输入将在下一版本启用');
+  }
+
+  /// 工作 tab Lead 条（Task 14）：按裸 sessionID 打开 Lead 会话。
+  ///
+  /// 会话由 `ensureLeadSessionId` 保证存在；这里只负责导航与前台推送去重。
+  void _openLeadChat(String projectDir, String sessionID) {
     final c = _client;
-    if (c == null) return;
-    try {
-      final id = await c.createSession();
-      await _refreshSessions();
-      final s = _sessions.where((x) => x.id == id).firstOrNull;
-      if (s != null) _openChat(s);
-    } catch (e) {
-      _snack('新建会话失败: $e');
-    }
+    final ws = _ws;
+    if (c == null || ws == null || sessionID.isEmpty) return;
+    _pushService?.currentSessionID = sessionID;
+    _navigatorKey.currentState
+        ?.push(MaterialPageRoute(
+          builder: (_) => ChatPage.forSessionId(
+            sessionID,
+            title: 'Lead',
+            projectID: projectDir,
+            directory: projectDir,
+            client: c,
+            ws: ws,
+            cache: _sessionCache,
+            onSpeak: _chatSpeak,
+          ),
+        ))
+        .then((_) {
+      if (_pushService?.currentSessionID == sessionID) {
+        _pushService?.currentSessionID = null;
+      }
+    });
+  }
+
+  void _openChat(MafwSession s) {
+    final c = _client;
+    final ws = _ws;
+    if (c == null || ws == null) return;
+    // Track current session for FCM foreground dedup (spec §6.2: onMessage
+    // skips notification when viewing the same session).
+    _pushService?.currentSessionID = s.id;
+    _navigatorKey.currentState
+        ?.push(MaterialPageRoute(
+          builder: (_) => ChatPage(
+            session: s,
+            client: c,
+            ws: ws,
+            cache: _sessionCache,
+            onSpeak: _chatSpeak,
+          ),
+        ))
+        .then((_) {
+      // Clear dedup when leaving ChatPage — subsequent pushes should notify.
+      if (_pushService?.currentSessionID == s.id) {
+        _pushService?.currentSessionID = null;
+      }
+    });
   }
 
   /// 工作 tab 的 Goal 入口（Task 8 的 `GoalDetailPage(podId, goalId)`）。
@@ -319,33 +363,6 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         messagesStream: _ws?.events,
       ),
     ));
-  }
-
-  void _openChat(MafwSession s) {
-    final c = _client;
-    final ws = _ws;
-    if (c == null || ws == null) return;
-    // Track current session for FCM foreground dedup (spec §6.2: onMessage
-    // skips notification when viewing the same session).
-    _pushService?.currentSessionID = s.id;
-    _navigatorKey.currentState
-        ?.push(MaterialPageRoute(
-          builder: (_) => ChatPage(
-            session: s,
-            client: c,
-            ws: ws,
-            cache: _sessionCache,
-            onSpeak: () async {
-              _snack('语音输入将在下一版本启用');
-            },
-          ),
-        ))
-        .then((_) {
-      // Clear dedup when leaving ChatPage — subsequent pushes should notify.
-      if (_pushService?.currentSessionID == s.id) {
-        _pushService?.currentSessionID = null;
-      }
-    });
   }
 
   Future<void> _openSettings() async {
@@ -390,7 +407,6 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
       home: SessionsPage(
         sessions: _sessions,
         onOpen: _openChat,
-        onCreate: _createSession,
         onSettings: _openSettings,
         onScan: _openScan,
         onTriage: () {
@@ -407,6 +423,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         activeProject: _activeProject,
         refreshBus: _workRefresh,
         onOpenGoal: _openGoal,
+        onOpenLead: _openLeadChat,
       ),
     );
   }

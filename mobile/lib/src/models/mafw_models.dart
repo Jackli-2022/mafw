@@ -33,7 +33,15 @@ class MafwSession {
     );
   }
 
-  bool get isManager => metadata?['mafw']?['role'] == 'manager';
+  /// Lead 会话（`metadata.mafw.role`）。
+  ///
+  /// 2026-11-03 起 Lead 取代 Manager 成为项目协调身份，新写入一律是 `lead`；
+  /// 旧数据里的 `manager` 仍识别为 Lead，让历史行沿用同一枚徽标（兼容层，
+  /// 不再产生新的 `manager` 行）。
+  bool get isLead {
+    final role = metadata?['mafw']?['role'];
+    return role == 'lead' || role == 'manager';
+  }
 
   String get displayTitle {
     if (title != null && title!.isNotEmpty) return title!;

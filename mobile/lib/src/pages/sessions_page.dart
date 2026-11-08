@@ -21,11 +21,30 @@ import 'work_tab.dart';
 /// 「工作」tab 的 Goal 卡片 / 需要你进入（Task 7 接通）。记忆检索迁入 [me]。
 enum SessionsTab { work, chat, me }
 
+/// 聊天 tab「新话题」：在 **active 项目目录** 创建会话（spec §7.7）。
+///
+/// 不传 `directory` 时 gateway 会把 enriched 消息落到第一个注册项目——跨项目
+/// 语义不可接受，所以目录是必填参数；调用方先在「工作」tab 选好项目。
+Future<MafwSession> createTopicSession(
+  GatewayClient client, {
+  required String directory,
+}) async {
+  final id = await client.createSession(directory: directory);
+  if (id.isEmpty) {
+    throw GatewayException('createSession: gateway returned no session id');
+  }
+  return MafwSession(
+    id: id,
+    title: '新话题',
+    projectID: directory,
+    directory: directory,
+  );
+}
+
 /// 底部 Tab 导航页（3-tab：工作 / 聊天 / 我的）。
 class SessionsPage extends StatefulWidget {
   final List<MafwSession> sessions;
   final void Function(MafwSession) onOpen;
-  final Future<void> Function() onCreate;
   final void Function() onSettings;
   final Future<void> Function()? onScan;
   final void Function()? onTriage;
@@ -45,6 +64,10 @@ class SessionsPage extends StatefulWidget {
   /// 工作 tab 的 Goal 详情入口（`main.dart` 负责导航）。
   final void Function(String projectId, String goalId)? onOpenGoal;
 
+  /// 工作 tab 的 Lead 对话入口（Task 14）：`(projectDir, sessionID)`，宿主持有
+  /// ws / cache，用 ChatPage 的裸 sessionID 入口打开。
+  final void Function(String projectDir, String sessionId)? onOpenLead;
+
   /// 「＋ 新建讨论」占位（Task 11 接 composer）。
   final VoidCallback? onCreateDiscussion;
 
@@ -52,7 +75,6 @@ class SessionsPage extends StatefulWidget {
     super.key,
     required this.sessions,
     required this.onOpen,
-    required this.onCreate,
     required this.onSettings,
     this.onScan,
     this.onTriage,
@@ -65,6 +87,7 @@ class SessionsPage extends StatefulWidget {
     this.activeProject,
     this.refreshBus,
     this.onOpenGoal,
+    this.onOpenLead,
     this.onCreateDiscussion,
   });
 
@@ -76,22 +99,157 @@ class _SessionsPageState extends State<SessionsPage> {
   SessionsTab _tab = SessionsTab.work;
   String _query = '';
 
+  // 聊天 tab：按 active 项目拉取（`listSessions(projectID:)`，Task 14）。
+  List<MafwSession>? _chatSessions;
+  bool _chatLoaded = false;
+  bool _chatLoading = false;
+  bool _chatDirty = true;
+  bool _creatingTopic = false;
+  int _chatSeq = 0;
+
   // 记忆检索（「我的」tab，懒加载）
   List<Map<String, dynamic>> _memories = [];
   bool _loadingMemories = false;
   final _memSearchCtrl = TextEditingController();
   Timer? _memDebounce;
 
+  String? get _activeProjectDir {
+    final dir = widget.activeProject?.current();
+    return dir == null || dir.isEmpty ? null : dir;
+  }
+
+  /// 聊天 tab 的列表来源。
+  ///
+  /// 没有 client（未配置 / 旧壳）时维持宿主传入的列表；有 client 但首屏还没
+  /// 回来时不拿跨项目的旧列表冒充过滤结果（返回空 → 加载态）。
+  List<MafwSession> get _chatSource {
+    final sessions = _chatSessions;
+    if (sessions != null) return sessions;
+    return widget.client == null ? widget.sessions : const <MafwSession>[];
+  }
+
+  bool get _showAllProjectsNote =>
+      widget.activeProject != null && _activeProjectDir == null;
+
+  bool get _canCreateTopic =>
+      widget.client != null && _activeProjectDir != null;
+
   List<MafwSession> get _filtered {
-    if (_query.isEmpty) return widget.sessions;
+    final source = _chatSource;
+    if (_query.isEmpty) return source;
     final q = _query.toLowerCase();
-    return widget.sessions
+    return source
         .where((s) => s.displayTitle.toLowerCase().contains(q) || s.id.contains(q))
         .toList();
   }
 
   @override
+  void initState() {
+    super.initState();
+    widget.activeProject?.addListener(_onActiveProjectChanged);
+    if (_tab == SessionsTab.chat) _ensureChatLoaded();
+  }
+
+  @override
+  void didUpdateWidget(covariant SessionsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.activeProject, widget.activeProject)) {
+      oldWidget.activeProject?.removeListener(_onActiveProjectChanged);
+      widget.activeProject?.addListener(_onActiveProjectChanged);
+      _resetChatSessions();
+    }
+    if (!identical(oldWidget.client, widget.client)) {
+      _resetChatSessions();
+    }
+    if (_tab == SessionsTab.chat) _ensureChatLoaded();
+  }
+
+  /// 丢弃当前聊天页数据（在飞响应由 `_chatSeq` 作废）。
+  void _resetChatSessions() {
+    _chatSessions = null;
+    _chatLoaded = false;
+    _chatLoading = false;
+    _chatDirty = true;
+    _chatSeq++;
+  }
+
+  /// active 项目切换（工作 tab 项目切换器 / 默认解析）→ 聊天列表重拉。
+  void _onActiveProjectChanged() {
+    if (!mounted) return;
+    setState(_resetChatSessions);
+    if (_tab == SessionsTab.chat) _ensureChatLoaded();
+  }
+
+  void _ensureChatLoaded() {
+    if (widget.client == null) return;
+    // 只有「需要拉取」时才发请求：显式进入 tab / 切换项目 / client 变更会把
+    // `_chatDirty` 置位；失败后不自动重试，避免离线时每个父级 rebuild 都打网关。
+    if (_chatLoading || (_chatLoaded && !_chatDirty)) return;
+    _chatDirty = false;
+    unawaited(_loadChatSessions());
+  }
+
+  Future<void> _loadChatSessions() async {
+    final client = widget.client;
+    if (client == null) return;
+    final dir = _activeProjectDir;
+    final seq = ++_chatSeq;
+    setState(() => _chatLoading = true);
+    try {
+      final list = await client.listSessions(projectID: dir);
+      if (!mounted || seq != _chatSeq) return;
+      list.sort(_compareSessions);
+      setState(() {
+        _chatSessions = list;
+        _chatLoaded = true;
+        _chatLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || seq != _chatSeq) return;
+      // 失败保留旧列表（离线时比空白更诚实）；没有旧列表就是空态，下次
+      // 进入聊天 tab 会重试。
+      setState(() => _chatLoading = false);
+    }
+  }
+
+  static int _compareSessions(MafwSession a, MafwSession b) {
+    if (a.isLead != b.isLead) return a.isLead ? -1 : 1;
+    return (b.timeCreated ?? 0).compareTo(a.timeCreated ?? 0);
+  }
+
+  /// 聊天 tab「新话题」：active 项目目录显式创建（spec §7.7），直接进 ChatPage。
+  Future<void> _onCreateTopic() async {
+    final client = widget.client;
+    final dir = _activeProjectDir;
+    if (client == null || dir == null) {
+      _snack('未选择项目：请先在「工作」tab 选择项目');
+      return;
+    }
+    setState(() => _creatingTopic = true);
+    try {
+      final session = await createTopicSession(client, directory: dir);
+      if (!mounted) return;
+      setState(() => _creatingTopic = false);
+      widget.onOpen(session);
+      // 新会话已在网关：返回列表时它应该出现（不阻塞打开 ChatPage）。
+      _chatDirty = true;
+      _ensureChatLoaded();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _creatingTopic = false);
+      _snack('新建会话失败: $e');
+    }
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
+  }
+
+  @override
   void dispose() {
+    widget.activeProject?.removeListener(_onActiveProjectChanged);
     _memDebounce?.cancel();
     _memSearchCtrl.dispose();
     super.dispose();
@@ -162,12 +320,19 @@ class _SessionsPageState extends State<SessionsPage> {
           Expanded(child: _buildTabBody(context)),
         ],
       ),
-      // 新建会话（新话题入口）属于「聊天」tab。
+      // 新建会话（新话题入口）属于「聊天」tab；按 active 项目目录创建。
       floatingActionButton: _tab == SessionsTab.chat
           ? FloatingActionButton(
-              // Orcalore FAB：theme 提供纯白（cream）底 + 黑色＋号（spec §3）。
-              onPressed: widget.onCreate,
-              child: const Icon(Icons.add),
+              key: const Key('chat-new-topic'),
+              tooltip: _canCreateTopic ? '新话题' : '先在「工作」选择项目',
+              onPressed: _canCreateTopic && !_creatingTopic ? _onCreateTopic : null,
+              child: _creatingTopic
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add),
             )
           : null,
       bottomNavigationBar: _buildBottomNav(context),
@@ -216,6 +381,11 @@ class _SessionsPageState extends State<SessionsPage> {
       selectedIndex: _tab.index,
       onDestinationSelected: (i) {
         setState(() => _tab = SessionsTab.values[i]);
+        if (_tab == SessionsTab.chat) {
+          // 显式进入聊天 tab = 重拉一次（列表可能被其它端改动/新建过）。
+          _chatDirty = true;
+          _ensureChatLoaded();
+        }
       },
       backgroundColor: scheme.surface,
       indicatorColor: MafwPalette.accentDim,
@@ -247,6 +417,7 @@ class _SessionsPageState extends State<SessionsPage> {
           activeProject: widget.activeProject,
           refreshBus: widget.refreshBus,
           onOpenGoal: widget.onOpenGoal,
+          onOpenLead: widget.onOpenLead,
           onCreateDiscussion: widget.onCreateDiscussion,
           onOpenSettings: widget.onSettings,
         );
@@ -257,7 +428,7 @@ class _SessionsPageState extends State<SessionsPage> {
     }
   }
 
-  // ── 聊天 Tab（普通会话列表）──
+  // ── 聊天 Tab（按 active 项目过滤的普通会话列表）──
   Widget _buildChatTab(BuildContext context) {
     return Column(
       children: [
@@ -273,14 +444,20 @@ class _SessionsPageState extends State<SessionsPage> {
             ),
           ),
         ),
+        if (_showAllProjectsNote) _buildAllProjectsNote(),
         Expanded(
-          child: widget.isConnecting && _filtered.isEmpty
+          child: (_chatLoading && _chatSessions == null) ||
+                  (widget.isConnecting && _filtered.isEmpty)
               ? const Center(child: CircularProgressIndicator())
               : _filtered.isEmpty
                   ? _EmptyState(
                       icon: Icons.chat_bubble_outline,
                       title: widget.isOffline ? '未连接到 Gateway' : '暂无会话',
-                      subtitle: widget.isOffline ? '点右上角扫码或设置连接地址' : '点击右下角 + 新建会话',
+                      subtitle: widget.isOffline
+                          ? '点右上角扫码或设置连接地址'
+                          : _showAllProjectsNote
+                              ? '未选择项目，显示全部会话；在「工作」选择项目后可新建话题'
+                              : '点击右下角 + 新建会话',
                       actionLabel: widget.isOffline ? '去设置连接' : null,
                       onAction: widget.isOffline ? widget.onSettings : null,
                     )
@@ -290,6 +467,27 @@ class _SessionsPageState extends State<SessionsPage> {
                     ),
         ),
       ],
+    );
+  }
+
+  /// 「未选择项目 · 显示全部」提示（spec §7.1：聊天 tab 按当前项目过滤；
+  /// 没有当前项目时保持可用，但必须说清不是过滤结果）。
+  Widget _buildAllProjectsNote() {
+    return Container(
+      key: const Key('chat-all-projects-note'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: MafwPalette.badgeBg,
+      child: const Row(
+        children: [
+          Icon(Icons.info_outline, size: 14, color: MafwPalette.dim),
+          SizedBox(width: 6),
+          Text(
+            '未选择项目 · 显示全部',
+            style: TextStyle(fontSize: 11, color: MafwPalette.dim),
+          ),
+        ],
+      ),
     );
   }
 
@@ -419,7 +617,7 @@ class _SessionsPageState extends State<SessionsPage> {
   }
 }
 
-// ── 会话条目（Manager 琥珀胶囊 / 子代理灰紫胶囊）──
+// ── 会话条目（Lead 中性胶囊 / 子代理灰紫胶囊）──
 class _SessionTile extends StatelessWidget {
   final MafwSession session;
   final void Function(MafwSession) onOpen;
@@ -429,21 +627,21 @@ class _SessionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = session;
-    final isManager = s.isManager;
-    final isSubagent = !isManager && s.parentID != null;
+    final isLead = s.isLead;
+    final isSubagent = !isLead && s.parentID != null;
     final scheme = Theme.of(context).colorScheme;
     return ListTile(
       leading: CircleAvatar(
         radius: 16,
-        backgroundColor: isManager
+        backgroundColor: isLead
             ? kMafwManager.withValues(alpha: 0.2)
             : isSubagent
                 ? kMafwSubagent.withValues(alpha: 0.2)
                 : scheme.surfaceContainerHighest,
         child: Text(
-          isManager ? 'M' : (s.displayTitle.isEmpty ? '?' : s.displayTitle[0].toUpperCase()),
+          isLead ? 'L' : (s.displayTitle.isEmpty ? '?' : s.displayTitle[0].toUpperCase()),
           style: TextStyle(
-            color: isManager ? kMafwManager : (isSubagent ? kMafwSubagent : scheme.onSurfaceVariant),
+            color: isLead ? kMafwManager : (isSubagent ? kMafwSubagent : scheme.onSurfaceVariant),
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -453,14 +651,14 @@ class _SessionTile extends StatelessWidget {
         s.displayTitle,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontWeight: isManager ? FontWeight.w700 : FontWeight.w500),
+        style: TextStyle(fontWeight: isLead ? FontWeight.w700 : FontWeight.w500),
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 2),
         child: Row(
           children: [
-            if (isManager) ...[
-              const _StatusChip(text: 'Manager', color: kMafwManager),
+            if (isLead) ...[
+              const _StatusChip(text: 'Lead', color: kMafwManager),
               const SizedBox(width: 6),
             ] else if (isSubagent) ...[
               const _StatusChip(text: '子代理', color: kMafwSubagent),

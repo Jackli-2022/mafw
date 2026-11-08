@@ -32,6 +32,37 @@ class ChatPage extends StatefulWidget {
     required this.onSpeak,
   });
 
+  /// 「按裸 sessionID 开会话」入口（Task 14）。
+  ///
+  /// 工作 tab 的 Lead 入口只有 `ensureLeadSessionId` 返回的会话 id，没有会话
+  /// 列表行可用；用裸 id + 标题构造，页面行为与列表打开完全一致。
+  ///
+  /// [projectID]/[directory] 用来让后续「交给 Lead」（Task 15）从会话解析所属
+  /// 项目 Pod（`MafwSession.directory/projectID`）。
+  ChatPage.forSessionId(
+    String sessionID, {
+    Key? key,
+    String? title,
+    String? projectID,
+    String? directory,
+    required GatewayClient client,
+    required MafwWsClient ws,
+    SessionCache? cache,
+    required Future<void> Function() onSpeak,
+  }) : this(
+          key: key,
+          session: MafwSession(
+            id: sessionID,
+            title: title ?? 'Lead',
+            projectID: projectID,
+            directory: directory ?? projectID,
+          ),
+          client: client,
+          ws: ws,
+          cache: cache,
+          onSpeak: onSpeak,
+        );
+
   @override
   State<ChatPage> createState() => _ChatPageState();
 }
@@ -367,8 +398,8 @@ class _ChatPageState extends State<ChatPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(widget.session.displayTitle, style: const TextStyle(fontSize: 16)),
-            if (widget.session.isManager)
-              const Text('Manager', style: TextStyle(fontSize: 11, color: Colors.amber)),
+            if (widget.session.isLead)
+              const Text('Lead', style: TextStyle(fontSize: 11, color: kMafwManager)),
           ],
         ),
       ),
