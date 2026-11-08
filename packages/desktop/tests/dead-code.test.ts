@@ -40,9 +40,10 @@ describe("dead code 清理", () => {
     expect(dock).not.toContain("PodAttentionList")
   })
 
-  test("项目资源是团队/邮箱/Pod 记忆/notes 的唯一入口，不再充当工具目录", () => {
+  test("Pod 首屏只保留双会话入口，团队资源降到次级区域", () => {
     const resources = read("src/renderer/mafw/components/ProjectResources.tsx")
-    expect(resources).toContain("项目资源")
+    expect(resources).toContain(">Pod</span>")
+    expect(resources).toContain("团队、邮箱与共享记忆")
     expect(resources).toContain("团队")
     expect(resources).toContain("邮箱")
     expect(resources).toContain("Pod 记忆")

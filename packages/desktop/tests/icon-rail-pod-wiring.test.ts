@@ -16,9 +16,9 @@ test("rail exposes the pod destination with a badge in its accessible name", () 
   assert.match(icons, /"team-three":/)
 })
 
-test("rail names the free-discussion face and the resource face truthfully", () => {
+test("rail names the free-discussion face and the Pod face truthfully", () => {
   assert.match(rail, /\"讨论 \(Ctrl\+B\)\"/)
-  assert.match(rail, /"资源"/)
+  assert.match(rail, /"Pod"/)
   assert.doesNotMatch(rail, /"工作空间"/)
   assert.match(rail, /"审批"/)
   assert.match(rail, /"checklist"/)

@@ -17,7 +17,7 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { ResizeHandle } from "@mafw/ui/resize-handle"
 import { NotesDock } from "./NotesDock"
 import { ProjectResources } from "./ProjectResources"
-import type { PodDetail, PodMessage } from "@mafw/sdk"
+import type { PodDetail } from "@mafw/sdk"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { formatRailTitle, railProjectName } from "./rail-display"
 import { sessionStore } from "../session-store"
@@ -61,18 +61,16 @@ type Props = {
   forkEnabled?: boolean
   onForkSession?: (id: string) => void
   onExportSession?: (id: string) => void
-  /** 鲸群面（spec 2026-10-30-pod-left-rail §3.2） */
+  /** Pod 面：Lead / Tech Lead 两个普通会话入口 + 次级团队资源。 */
   podDetail?: PodDetail | null
-  podMessages?: PodMessage[]
   podLoading?: boolean
   podError?: string | null
   podUnsupported?: boolean
   podIsWorktree?: boolean
-  podSelfMemberId?: string | null
-  podSessionTitleOf?: (sessionId: string) => string | null
   podAttention?: number
   onPodRefresh?: () => void
-  onPodOpenSession?: (sessionId: string) => void
+  onPodOpenLead?: () => void
+  onPodOpenTechLead?: (goalId: string) => void
   onPodOpenWork?: () => void
   onPodOpenPanel?: (panel: "team" | "memory", target?: "members" | "inbox") => void
   onPodOpenNotes?: () => void
@@ -391,16 +389,14 @@ export function LeftDock(props: Props) {
       <Show when={props.face === "pod"}>
         <ProjectResources
           detail={props.podDetail ?? null}
-          messages={props.podMessages ?? []}
           loading={!!props.podLoading}
           error={props.podError ?? null}
           unsupported={!!props.podUnsupported}
           isWorktree={!!props.podIsWorktree}
-          selfMemberId={props.podSelfMemberId ?? null}
-          sessionTitleOf={props.podSessionTitleOf}
           attention={props.podAttention ?? 0}
           onRefresh={() => props.onPodRefresh?.()}
-          onOpenSession={(id) => props.onPodOpenSession?.(id)}
+          onOpenLead={() => props.onPodOpenLead?.()}
+          onOpenTechLead={(goalId) => props.onPodOpenTechLead?.(goalId)}
           onOpenWork={() => props.onPodOpenWork?.()}
           onOpenPanel={(panel, target) => props.onPodOpenPanel?.(panel, target)}
           onOpenNotes={() => props.onPodOpenNotes?.()}

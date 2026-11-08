@@ -45,6 +45,8 @@ const planReview = read("../src/renderer/mafw/components/PlanReviewOverlay.tsx")
 const planRender = read("../src/renderer/mafw/components/plan-render.ts")
 const goalDetail = read("../src/renderer/mafw/components/GoalDetailOverlay.tsx")
 const workOverview = read("../src/renderer/mafw/components/WorkOverview.tsx")
+const projectWork = read("../src/renderer/mafw/components/ProjectWorkView.tsx")
+const workModel = read("../src/renderer/mafw/work-overview-model.ts")
 const directionPanel = read("../src/renderer/mafw/components/PodDirectionPanel.tsx")
 const probePanel = read("../src/renderer/mafw/components/PodProbePanel.tsx")
 const podModel = read("../src/renderer/mafw/pod-model.ts")
@@ -94,8 +96,10 @@ test("Goal 详情是统一人工行动面：结果/打回/计划任务/问题回
   assert.match(goalDetail, /requestPodTechLeadOpen\(/)
 })
 
-test("方向 attention 投影到工作概览的 needs_you，并带 action 落点", () => {
-  assert.match(workOverview, /needs_you/)
+test("方向 attention 进入工作优先级，并带 action 落点", () => {
+  assert.match(workModel, /goal\.stage\.owner === "person"/)
+  assert.match(workModel, /goal\.bucket === "needs_you"/)
+  assert.match(projectWork, /buildWorkPriority\(\{/)
   assert.match(workOverview, /attentionTarget/)
   assert.match(workOverview, /onOpenGoal/)
   assert.match(podModel, /direction_review/)
@@ -284,9 +288,10 @@ const POD_DETAIL = {
   goals: [{ goalId: "g1", title: "Pod loop" }],
 } as any
 
-test("所有 Pod 会话入口都经 openPodSession（Tech Lead 讨论可推断）", () => {
+test("所有 Pod 会话入口都经普通 Lead / Tech Lead 会话", () => {
   assert.match(shell, /const openPodSession = async \(sid: string, title\?: string\)/)
-  assert.match(shell, /onPodOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
+  assert.match(shell, /onPodOpenLead=\{\(\) => \{ void openLeadEntry\(\) \}\}/)
+  assert.match(shell, /onPodOpenTechLead=\{\(goalId\) => \{ void openTechLead\(goalId\) \}\}/)
   assert.match(shell, /onOpenPodSession=\{\(sid, title\) => \{ void openPodSession\(sid, title\) \}\}/)
   assert.match(shell, /<ProjectWorkView[\s\S]{0,900}onOpenGoal=/)
   assert.match(shell, /onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)

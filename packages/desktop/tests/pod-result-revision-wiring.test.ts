@@ -95,9 +95,10 @@ test("查看结果清除未读点（seenAll；只在加载成功后标记；lega
   assert.match(resultStore, /resultViewedKey/)
 })
 
-test("队列/详情显示 revision，旧版本历史保留", () => {
-  assert.match(workOverview, /rev \$\{goal\.revision\}/)
-  assert.match(workOverview, /goal\.revision/)
+test("列表先给阶段/进度，revision 历史留在 Goal 详情", () => {
+  assert.match(workOverview, /podStageLabel\(goal\.stage\)/)
+  assert.match(workOverview, /goalProgressText\(goal\)/)
+  assert.doesNotMatch(workOverview, /rev \$\{goal\.revision\}/)
   assert.match(goalDetail, /revisionHistory\(/)
   assert.match(goalDetail, /版本历史/)
   assert.match(goalDetail, /revisionStatusLabel\(/)

@@ -18,12 +18,14 @@ test("the goals page is retired and legacy routes redirect to right work", () =>
   assert.match(deepLink, /id === "workspace"\) return \{ kind: "tab", id: "goals" \}/)
 })
 
-test("the work overview is the only list projection and is not truncated", () => {
+test("the work list keeps every Goal behind one filter projection", () => {
   const overview = read("../src/renderer/mafw/components/WorkOverview.tsx")
-  assert.match(overview, /workspaceSections\(props\.overview \?\? EMPTY\)/)
-  assert.match(overview, /section\.count/)
+  assert.match(overview, /全部 Goal/)
+  assert.match(overview, /WORK_FILTERS/)
+  assert.match(overview, /filterWorkGoals\(props\.goals, props\.filter\)/)
+  assert.match(overview, /workFilterCounts\(props\.goals\)/)
   assert.doesNotMatch(overview, /slice\(0,\s*3\)/)
-  assert.match(overview, /全部历史/)
+  assert.doesNotMatch(overview, /全部历史/)
 })
 
 test("Welcome no longer maintains the legacy in-memory Goal list", () => {

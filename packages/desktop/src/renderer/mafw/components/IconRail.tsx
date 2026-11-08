@@ -58,7 +58,7 @@ export function IconRail(props: IconRailProps) {
     {
       key: "pod",
       icon: "team-three",
-      label: props.face === "pod" ? "收起资源" : "资源",
+      label: props.face === "pod" ? "收起 Pod" : "Pod",
       onClick: () => props.onToggleFace("pod"),
       active: props.face === "pod",
       badge: props.podBadge,

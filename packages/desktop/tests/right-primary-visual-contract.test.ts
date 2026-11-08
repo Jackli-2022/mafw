@@ -13,12 +13,12 @@ const overview = read("../src/renderer/mafw/components/WorkOverview.tsx")
 const resources = read("../src/renderer/mafw/components/ProjectResources.tsx")
 const detail = read("../src/renderer/mafw/components/GoalDetailOverlay.tsx")
 
-test("工作概览：分组有状态点/计数，Goal 行有可读元信息 chips", () => {
-  assert.match(overview, /mafw-work-status-dot/)
-  assert.match(overview, /mafw-work-group-count/)
-  assert.match(overview, /mafw-work-chip/)
-  assert.match(overview, /podStageLabel/)
-  assert.match(css, /\.mafw-work-status-dot \{[^}]*width: 6px;[^}]*border-radius: 50%/)
+test("工作列表先给阶段与真实进度，而不是工程 chips", () => {
+  assert.match(overview, /podStageLabel\(goal\.stage\)/)
+  assert.match(overview, /goalProgressText\(goal\)/)
+  assert.match(overview, /mafw-work-item-progress/)
+  assert.doesNotMatch(overview, /mafw-work-status-dot/)
+  assert.doesNotMatch(overview, /goalChips/)
   assert.match(css, /\.mafw-work-chip \{[^}]*border-radius: 4px;[^}]*font-family: var\(--font-data\)/)
 })
 
@@ -31,12 +31,11 @@ test("工作项是内容撑高的多行行，不被 ButtonV2 small 的 24px 固�
   assert.match(item, /min-height: 30px/)
 })
 
-test("项目资源：行有图标/头像/chevron，扫读不再只有文字", () => {
-  assert.match(resources, /mafw-resource-avatar/)
+test("Pod 联系人：头像/状态/chevron，资源行只在展开后出现", () => {
+  assert.match(resources, /mafw-pod-contact-avatar/)
   assert.match(resources, /name="team-three"/)
   assert.match(resources, /mafw-resources-chevron/)
   assert.match(resources, /mafw-resources-row/)
-  assert.match(css, /\.mafw-resource-avatar \{[^}]*width: 22px;[^}]*border-radius: 50%/)
   assert.match(css, /\.mafw-resources-chevron \{[^}]*opacity: 0;[^}]*var\(--dur-fast\)/)
 })
 

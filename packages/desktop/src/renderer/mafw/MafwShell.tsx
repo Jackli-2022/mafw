@@ -2039,7 +2039,6 @@ export function MafwShell() {
 
   // 鲸群左栏：shell 持有常驻订阅，左右两栏共用同一个 pod-store
   // （spec 2026-10-30-pod-left-rail §4.1）。目录口径与右栏一致。
-  const podSelfMemberId = () => podStore.detail()?.members.find((m) => m.role === "lead")?.id ?? null
   const podBadgeCount = () => podRailBadge({
     attention: podStore.detail()?.attention ?? [],
   })
@@ -2077,13 +2076,6 @@ export function MafwShell() {
       seq: prev.seq + 1,
     }))
   }
-  const podSessionTitleOf = (sessionId: string) =>
-    sessionId === currentLeadId(currentProject())
-      ? "Lead"
-      : goalSessionIdentity(podStore.detail(), sessionId)?.title
-        ?? store.session.find((s: any) => s.id === sessionId)?.title
-        ?? null
-
   // Task 19：Lead 只做协调，不讨论技术方案（spec §3.1）。有 Goal 处于 `discussing`
   // 时，在 Lead 的 composer 上方开一个入口，把用户送到该 Goal 的 Tech Lead 隐藏会话。
   // 判定口径：会话是当前项目的 Lead（kv 权威 id 或 tab 的 lead/manager 角色）。
@@ -2709,16 +2701,14 @@ export function MafwShell() {
             onForkSession={(id) => void forkSessionFromMenu(id)}
             onExportSession={(id) => void exportSession(id)}
             podDetail={podStore.detail()}
-            podMessages={podStore.messages()}
             podLoading={podStore.loading()}
             podError={podStore.error()}
             podUnsupported={podStore.unsupported()}
             podIsWorktree={benchRoot() !== currentProject()}
-            podSelfMemberId={podSelfMemberId()}
-            podSessionTitleOf={podSessionTitleOf}
             podAttention={podBadgeCount()}
             onPodRefresh={() => { void podStore.refresh() }}
-            onPodOpenSession={(sid) => { void openPodSession(sid) }}
+            onPodOpenLead={() => { void openLeadEntry() }}
+            onPodOpenTechLead={(goalId) => { void openTechLead(goalId) }}
             onPodOpenWork={openProjectWork}
             onPodOpenPanel={(tab, target) => openPodPanelTab(tab, target)}
             onPodOpenNotes={() => openLeftDockFace("notes")}
