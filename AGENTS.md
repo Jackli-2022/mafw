@@ -1853,6 +1853,17 @@ D3 鉴权洞独立先行 / D4 沿用桌面 Goal→Tech Lead 范式 / D5 含「�
   终审（deepseek-v4.1-flash）：0 Critical / 2 Important 已修（lazy getter、`docs/guides/plugin-creator.md`
   安全文档同步）；deferred minors 见计划执行 ledger（workspace 已清理，git 历史为准）。
 
+- **Mobile App v1 已交付（Orcalore，2026-11-09；15 tasks，commits `0bdf2c75`..`b91f08ce` + 品牌/连接/页面全链）**：
+  按 `plans/2026-11-05-mobile-app-v1.md` 逐 task TDD 执行（subagent-driven：15 实现 + 15 任务审查 + 7 轮 fix + 2 次终审）。
+  P1 品牌基础（MafwPalette mint/ink/cream、`Orcalore` title/label、`ai.orcalore.mobile`、`orcalore_mobile`、Lore 图标）；
+  P1 连接收尾（`checkBaseUrl` 分级/`publicPlaintext` 硬拒 + `includeSubdomains` NSC、`orcalore://pair` 三处锁步、WS v2 Bearer header + SmartReconnect 持久化修复、dev-only 诊断面板（HTTP 100/WS 200 环形、`[Orcalore][subsystem]` 日志））；
+  P2 工作 tab（品牌行 Lore 20px + Orcalore + 项目切换、需要你置顶/五桶/事件合并刷新/15s 权威轮询、Goal 详情 timeline/revisions/结果/打回）、flat 帧事件 + `shouldRefreshWork` + 跨项目 attention（gateway presence attention 补 podId/projectId `0427f215`）；
+  P3 新建讨论（`GoalComposerPage`，objective 按服务端必填）、Tech Lead 讨论页（`SendRouter` 契约：goalBound 永不 enriched；409/空租约→归档 transcript）、Plan 批准（双 hash 绑定、`stale_plan` 提示重拉）、方向裁定/问答（`pendingQuestion` wire DTO `4ac24292` + SDK `6b3f0011`；取消问题二次确认）；
+  P4 Lead 入口（`ensureLeadSessionId`→ChatPage.forSessionId）、`isLead`（lead/manager 兼容）、聊天项目过滤、新话题（显式 directory）、交给 Lead handoff（全部 text parts、4000/80 截断、ensure 流）；
+  终审修复波（`b91f08ce`）：重连信号多页 refetch（`ConnectionEvents`）、`MafwMessage.displayText` 全 text parts、问答取消二次确认、结果 `markPodEventsSeenAll` 批量已读。
+  测试：mobile 逐文件 **385/385**（31 文件；本机聚合跑有既有 `flutter_tester` 原生崩溃，逐文件为门禁）、`flutter analyze` 0；gateway additive pod 473/473 + api-contract 3/3 + `tsc` rc=0；SDK 199/199；desktop `tsgo -p` rc=0（类型兼容核对）。
+  版本：`mobile/pubspec.yaml` 1.1.0+2。**未做**：P1-P4 真机 Tailscale 冒烟（需真实手机 + gateway + 桌面）；OS `orcalore://pair` intent 路由（无 app_links，QR 为主路径）；FCM/离线推送（D1 非目标）。
+
 
 ## 6. Gateway 运维
 

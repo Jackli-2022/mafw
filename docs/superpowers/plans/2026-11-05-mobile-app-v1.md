@@ -208,7 +208,7 @@
 - Test: `mobile/test/goal_composer_test.dart`
 
 **Interfaces:**
-- Produces: `GoalComposerPage(podId, onCreated(CreateGoalResult))` — title（必填）+ objective（可选，与 title 至少其一的校验同服务端）+ 提交后 `createGoal` → 直接 `onCreated`（调用方跳 Goal 详情并进入讨论占位）；无 Pod 流：WorkTab FAB 先 `podLookup(dir)`，404 → `podEnsure(dir)` 后再进 composer
+- Produces: `GoalComposerPage(podId, onCreated(CreateGoalResult))` — title 必填 + **objective 必填**（服务端 `pods.ts:401` 要求 title + objective 至少其一即「objective or charter」，composer 无 charter 字段 → objective 必须；2026-11-06 实读校准，勿按旧稿「可选」实现）+ 提交后 `createGoal` → 直接 `onCreated`（调用方跳 Goal 详情并进入讨论占位）；无 Pod 流：WorkTab FAB 先 `podLookup(dir)`，404 → `podEnsure(dir)` 后再进 composer
 
 - [ ] **Step 1: 写失败测试** — 提交载荷断言（source:'mobile'）；空 title 空 objective 拒提交；创建成功回调带 sessionID/revision
 - [ ] **Step 2: 确认失败** — FAIL
