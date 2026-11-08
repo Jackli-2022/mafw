@@ -362,6 +362,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 
 - **Office/检查点桌面验收（2026-11-03，commit `fbfcfa03`）**：dev app + v5.0.0 gateway 真机验收：① Office 预览实时刷新——保持 deck.pptx 打开，外部 `set_text` 改标题后约 3s 内预览从 Acceptance 2026 自动变 2027；② 行内 diff——notes.txt 显示 1 处改动，header「改动」打开审阅面板可见 `-status: 2025/+status: 2026` 并可回退；③ 服务端检查点原本只有恢复动作，补「预览」：`sessions.diff(anchorMessageID)` + `DiffReviewPanel previewOnly`，实测 17:55 检查点显示「改动预览（只读）」；④ 验收发现 `mafw-create`（插件创建 agent）没有 `mafw_python`，Office 编辑需用标准 Build/default agent（Build 下同一任务成功，`mafw_office.snapshot` 历史 `office-edit`）。测试：desktop **2637/2637**、`tsgo -p`/`electron-vite build` rc=0。
 
+- **Office 深层能力：docx 批注/域 + xlsm 宏容器（2026-11-08，commit `7634474a`）**：① docx 批注——python-docx 1.2 原生 `add_comment(runs,text,author,initials)`，新增 `docx_add_comment`（1-based body 段落）与 `inspect_document.comments`。② docx 域——`docx_insert_toc`（TOC 域 + `w:updateFields`）、`docx_set_page_number_footer`（PAGE/NUMPAGES 域）、`docx_update_fields`（Word COM `Fields.Update` + `TablesOfContents.Update`；无 Word 时提示 F9）。③ xlsm——`_load_workbook` 非 read-only 时 `keep_vba=True`，`inspect_workbook` 增 `macro_enabled`，`render_office` 支持 `.xlsm`；宏只作为容器保留，不解析/不执行。验证：Python **20/20**（COM opt-in；COM 渲染测试改用副本，避免 Excel/Word 文件锁污染后续编辑）；VBA 实际宏测试受本机「信任对 VBA 工程对象模型的访问」限制，仅验证容器保留。④ PDF 真文字替换探针：pdfplumber 词框 + reportlab 白块叠字视觉可用，但旧词仍在文本层（extract_text 出现新旧两份），**不交付**；真要 redaction 需 PyMuPDF（AGPL）或改源文档。
+
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类�?API 获取数据�?
 ```
