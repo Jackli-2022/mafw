@@ -15,6 +15,7 @@ import { PodTaskBoard } from "./PodTaskBoard"
 import { buildGoalLanes, formatDuration, hideEmptyReviewLane, timelineFailure } from "../goal-timeline"
 import { createPodIdResolver, podStore } from "../pod-store"
 import {
+  goalDetailTitle,
   planEditGate,
   podStageLabel,
   revisionHistory,
@@ -562,7 +563,11 @@ export function GoalDetailPanel(props: {
                 ref={panelTitleRef}
                 tabIndex={-1}
                 class="mafw-card-title mafw-goal-inline-title"
-              >{timeline()?.goal?.title || podGoal()?.title || props.goalId}</div>
+              >{goalDetailTitle({
+                podTitle: podGoal()?.title,
+                timelineTitle: timeline()?.goal?.title,
+                goalId: props.goalId ?? "",
+              })}</div>
               <div class="mafw-goal-id">{timeline()?.goal?.goalId || props.goalId}</div>
             </div>
           </div>

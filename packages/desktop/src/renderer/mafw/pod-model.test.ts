@@ -14,6 +14,7 @@ import {
   podRoleLabel,
   podRoleForSession,
   podShortTime,
+  goalDetailTitle,
   podTaskArtifacts,
   canEditPlanTask,
   podActiveGoalId,
@@ -253,5 +254,23 @@ describe("pod-model", () => {
     const tasks = [task("a", "pending", { kind: "note" }), task("b", "pending", { kind: "plan", goalId: "g", externalTaskId: "w1-t1" }), task("c", "pending", { kind: "external_request" })]
     assert.deepEqual(planTaskOnly(tasks).map((t) => t.id), ["b"])
     assert.deepEqual(noteTasksOnly(tasks).map((t) => t.id), ["a"])
+  })
+
+  test("Goal detail prefers a human title over the internal id", () => {
+    assert.equal(goalDetailTitle({
+      podTitle: "冒烟·Tech Lead 入口验证",
+      timelineTitle: "goal-20261104-032632-7bd086",
+      goalId: "goal-20261104-032632-7bd086",
+    }), "冒烟·Tech Lead 入口验证")
+    assert.equal(goalDetailTitle({
+      podTitle: null,
+      timelineTitle: "人类可读标题",
+      goalId: "goal-1",
+    }), "人类可读标题")
+    assert.equal(goalDetailTitle({
+      podTitle: null,
+      timelineTitle: "goal-1",
+      goalId: "goal-1",
+    }), "未命名目标")
   })
 })

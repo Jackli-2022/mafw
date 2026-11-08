@@ -80,6 +80,19 @@ const GOAL_STATUS_LABEL: Record<PodGoalStatus, string> = {
   aborted: "中止",
 }
 
+/** The detail header must never present the internal goal id as its title. */
+export function goalDetailTitle(input: {
+  podTitle?: string | null
+  timelineTitle?: string | null
+  goalId: string
+}): string {
+  const usable = (value: string | null | undefined): string | null => {
+    const text = value?.trim()
+    return text && text !== input.goalId ? text : null
+  }
+  return usable(input.podTitle) ?? usable(input.timelineTitle) ?? "未命名目标"
+}
+
 export function groupPodTasks(tasks: PodTask[]): Array<{ id: PodTaskLane; label: string; tasks: PodTask[] }> {
   return POD_TASK_LANES.map((lane) => ({
     id: lane.id,
