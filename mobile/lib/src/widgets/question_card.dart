@@ -75,8 +75,35 @@ class _QuestionCardState extends State<QuestionCard> {
     await _respond(answer: answer);
   }
 
+  /// 「取消问题」= 整个 Goal 失败归档（gateway `driver.handleCancel` →
+  /// `nextNode:'archive_fail'`），**不是**跳过问题。所以必须二次确认：取消确认
+  /// 不发请求，确认后才发 `{type:'cancel'}`。
   Future<void> _cancel() async {
     if (_busy) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const Key('question-cancel-confirm'),
+        title: const Text('取消这个问题？'),
+        content: const Text('取消后本 Goal 将以失败归档，是否继续？'),
+        actions: [
+          TextButton(
+            key: const Key('question-cancel-dismiss'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('再想想'),
+          ),
+          TextButton(
+            key: const Key('question-cancel-confirm-ok'),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('确认取消'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     await _respond(cancel: true);
   }
 

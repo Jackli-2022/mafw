@@ -113,6 +113,25 @@ class MafwMessage {
     }
     return DateTime.now().millisecondsSinceEpoch;
   }
+
+  /// 展示用全文：拼接**全部非 synthetic** 的 text part（换行连接）。
+  ///
+  /// 一个 assistant 回合的真实形状是 `text → tool → text`：结论在工具调用
+  /// **之后**，而 [text] 只取首个 text part（DTO 便捷字段，契约不变）。气泡 /
+  /// 复制 / 朗读 / 缓存必须用这个 getter，否则工具调用后的结论整段消失。
+  ///
+  /// parts 没有可用文本时回退 [text]（缓存快照、纯文本消息）；空白片段跳过。
+  String get displayText {
+    final pieces = <String>[];
+    for (final part in parts) {
+      if (part.type != 'text' || part.synthetic) continue;
+      final value = part.text;
+      if (value == null || value.isEmpty) continue;
+      pieces.add(value);
+    }
+    if (pieces.isEmpty) return text ?? '';
+    return pieces.join('\n');
+  }
 }
 
 /// Flat MAFW View DTO part.
@@ -129,6 +148,9 @@ class MafwPart {
   final String? canonicalTool;
   final Map<String, dynamic>? state;
 
+  /// 非用户输入产生的文本（注入 / 系统提示回显）；展示时跳过。
+  final bool synthetic;
+
   MafwPart({
     required this.id,
     required this.type,
@@ -137,6 +159,7 @@ class MafwPart {
     this.toolClass,
     this.canonicalTool,
     this.state,
+    this.synthetic = false,
   });
 
   factory MafwPart.fromJson(Map<String, dynamic> j) {
@@ -148,6 +171,7 @@ class MafwPart {
       toolClass: j['toolClass'] as String?,
       canonicalTool: j['canonicalTool'] as String?,
       state: j['state'] is Map<String, dynamic> ? j['state'] as Map<String, dynamic> : null,
+      synthetic: j['synthetic'] == true,
     );
   }
 

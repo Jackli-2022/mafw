@@ -18,6 +18,7 @@ import 'src/pages/sessions_page.dart';
 import 'src/pages/tech_lead_discussion_page.dart';
 import 'src/pages/triage_page.dart';
 import 'src/services/active_project.dart';
+import 'src/services/connection_events.dart';
 import 'src/services/connectivity_watcher.dart';
 import 'src/services/diagnostics.dart';
 import 'src/services/lifecycle_ws.dart';
@@ -92,6 +93,10 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   final ActiveProjectStore _activeProject = ActiveProjectStore();
   final WorkRefreshBus _workRefresh = WorkRefreshBus();
 
+  /// 重连信号（final fix wave Finding 1）：`WsClientV2.onReconnected` 只有一个
+  /// 回调位，但消费者有多个（工作刷新 + 已打开的 Goal / Tech Lead / Chat）。
+  final ConnectionEvents _connectionEvents = ConnectionEvents();
+
   /// WS 事件 → 工作面刷新（`shouldRefreshWork` 过滤在总线内部）。
   StreamSubscription<MafwEvent>? _wsEventsSub;
 
@@ -128,6 +133,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _client?.dispose();
     _activeProject.dispose();
     _workRefresh.dispose();
+    _connectionEvents.dispose();
     super.dispose();
   }
 
@@ -171,8 +177,9 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
       cfg,
       onRawFrame: _diagnostics?.recordWsFrame,
       // Reconnect hook (Task 5): events missed while offline are not replayed,
-      // so the work surface refetches once per re-handshake.
-      onReconnected: _workRefresh.onReconnected,
+      // so every live surface refetches once per re-handshake — the work tab
+      // through its refresh bus, open pages through [ConnectionEvents].
+      onReconnected: _onReconnected,
     );
     // Restore the persisted reconnect budget before the first attempt so a
     // retry budget exhausted before an app kill is honoured after relaunch.
@@ -235,6 +242,13 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     );
     await pushService.init();
     _pushService = pushService;
+  }
+
+  /// 重连成功：断线期间的 WS 事件不会重放，工作面与所有已打开的实时页面
+  /// 都必须在一次重握手后重拉（final fix wave Finding 1）。
+  void _onReconnected() {
+    _workRefresh.onReconnected();
+    _connectionEvents.onReconnected();
   }
 
   Future<void> _refreshSessions() async {
@@ -302,6 +316,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
             ws: ws,
             cache: _sessionCache,
             onSpeak: _chatSpeak,
+            reconnect: _connectionEvents,
           ),
         ))
         .then((_) {
@@ -326,6 +341,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
             ws: ws,
             cache: _sessionCache,
             onSpeak: _chatSpeak,
+            reconnect: _connectionEvents,
           ),
         ))
         .then((_) {
@@ -349,6 +365,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         projectDir: projectId,
         // Task 12：底部「与 Tech Lead 讨论」→ 讨论页（带解析后的 Pod id）。
         onDiscussWithTechLead: _openTechLead,
+        reconnect: _connectionEvents,
       ),
     ));
   }
@@ -361,6 +378,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         goalId,
         client: _client,
         messagesStream: _ws?.events,
+        reconnect: _connectionEvents,
       ),
     ));
   }

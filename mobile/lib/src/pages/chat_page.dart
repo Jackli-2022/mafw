@@ -23,6 +23,10 @@ class ChatPage extends StatefulWidget {
   final SessionCache? cache;
   final Future<void> Function() onSpeak; // P3: voice input hook
 
+  /// 重连信号（final fix wave Finding 1）：断线期间的 WS 事件不重放，收到信号
+  /// 后静默重拉历史（保留屏上消息，不重新进入 loading）。
+  final Listenable? reconnect;
+
   const ChatPage({
     super.key,
     required this.session,
@@ -30,6 +34,7 @@ class ChatPage extends StatefulWidget {
     required this.ws,
     this.cache,
     required this.onSpeak,
+    this.reconnect,
   });
 
   /// 「按裸 sessionID 开会话」入口（Task 14）。
@@ -49,6 +54,7 @@ class ChatPage extends StatefulWidget {
     required MafwWsClient ws,
     SessionCache? cache,
     required Future<void> Function() onSpeak,
+    Listenable? reconnect,
   }) : this(
           key: key,
           session: MafwSession(
@@ -61,6 +67,7 @@ class ChatPage extends StatefulWidget {
           ws: ws,
           cache: cache,
           onSpeak: onSpeak,
+          reconnect: reconnect,
         );
 
   @override
@@ -88,8 +95,24 @@ class _ChatPageState extends State<ChatPage> {
   void initState() {
     super.initState();
     _loadHistory();
+    widget.reconnect?.addListener(_onReconnect);
     _sub = widget.ws.events.listen(_onEvent);
     _scrollCtrl.addListener(_onScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.reconnect, widget.reconnect)) {
+      oldWidget.reconnect?.removeListener(_onReconnect);
+      widget.reconnect?.addListener(_onReconnect);
+    }
+  }
+
+  /// 重连成功：静默重拉历史（断线期间的事件不重放）。
+  void _onReconnect() {
+    if (!mounted) return;
+    unawaited(_refreshFromGateway());
   }
 
   void _onScroll() {
@@ -110,6 +133,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    widget.reconnect?.removeListener(_onReconnect);
     _sub?.cancel();
     _refreshDebounce?.cancel();
     _audioPlayer.dispose();
@@ -181,7 +205,9 @@ class _ChatPageState extends State<ChatPage> {
         id: m.id,
         sessionID: m.sessionID,
         role: m.role,
-        text: m.text,
+        // 缓存全文（所有 text part）：只存首个 text part 会让离线回放丢掉
+        // `text → tool → text` 回合的结论（Finding 2）。
+        text: m.displayText,
         timeCreated: m.timeCreated,
       ));
     }
@@ -428,7 +454,8 @@ body: Column(
   }
 
   void _showMessageActions(MafwMessage msg) {
-    final text = msg.text ?? '';
+    // 复制 / 朗读用全文（所有 text part），与气泡一致（Finding 2）。
+    final text = msg.displayText;
     if (text.isEmpty) return;
     showModalBottomSheet(
       context: context,

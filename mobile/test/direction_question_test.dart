@@ -727,7 +727,8 @@ void main() {
       );
     });
 
-    testWidgets('cancel posts {type:cancel} and calls onAnswered', (tester) async {
+    testWidgets('cancel asks for confirmation first and sends nothing until confirmed',
+        (tester) async {
       final gateway = _FakeGateway();
       await gateway.installGoalDetailRoutes();
       var answered = 0;
@@ -735,6 +736,49 @@ void main() {
       await _pumpQuestionCard(tester, gateway, onAnswered: () => answered++);
 
       await tester.tap(find.byKey(const Key('question-cancel')));
+      await tester.pumpAndSettle();
+
+      // 取消不是「跳过问题」：gateway `handleCancel` 会把整个 Goal 归档失败，
+      // 所以必须先二次确认（文案明确后果）。
+      expect(find.byKey(const Key('question-cancel-confirm')), findsOneWidget);
+      expect(find.textContaining('本 Goal 将以失败归档'), findsOneWidget);
+      expect(
+        gateway.callsTo('POST', '/api/goals/$_goalId/questions/q1/respond'),
+        isEmpty,
+      );
+      expect(answered, 0);
+    });
+
+    testWidgets('dismissing the confirmation sends no cancel request', (tester) async {
+      final gateway = _FakeGateway();
+      await gateway.installGoalDetailRoutes();
+      var answered = 0;
+
+      await _pumpQuestionCard(tester, gateway, onAnswered: () => answered++);
+
+      await tester.tap(find.byKey(const Key('question-cancel')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('question-cancel-dismiss')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('question-cancel-confirm')), findsNothing);
+      expect(
+        gateway.callsTo('POST', '/api/goals/$_goalId/questions/q1/respond'),
+        isEmpty,
+      );
+      expect(answered, 0);
+    });
+
+    testWidgets('confirming posts {type:cancel} and calls onAnswered', (tester) async {
+      final gateway = _FakeGateway();
+      await gateway.installGoalDetailRoutes();
+      var answered = 0;
+
+      await _pumpQuestionCard(tester, gateway, onAnswered: () => answered++);
+
+      await tester.tap(find.byKey(const Key('question-cancel')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('question-cancel-confirm-ok')));
       await tester.pumpAndSettle();
 
       final posts = gateway.callsTo(

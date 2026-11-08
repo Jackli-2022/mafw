@@ -801,6 +801,22 @@ class GatewayClient {
     if (res.statusCode != 200) throw _failure('markPodEventSeen', res);
   }
 
+  /// 批量把某个 `(goalId, revision)` 的未读 Pod 事件标记为已读
+  ///（`POST /api/pods/:podId/events/seen {goalId, revision}`，
+  /// `gateway/src/routes/pod-events.ts` 的 `markSeenAll`）。
+  ///
+  /// 结果事件（p1 `goal.result`）没有单条 id 可点，工作 tab 的「N 个结果待
+  /// 查看」只能经这条批量路径清掉。404（旧网关没有该路由 / 事件已 prune）
+  /// 静默返回：标记是 best-effort，不阻塞结果渲染；其余失败由调用方决定。
+  Future<void> markPodEventsSeenAll(String podId, String goalId, int revision) async {
+    final res = await _post(
+      _uri('/api/pods/${_podPath(podId)}/events/seen'),
+      body: jsonEncode({'goalId': goalId, 'revision': revision}),
+    );
+    if (res.statusCode == 404) return;
+    if (res.statusCode != 200) throw _failure('markPodEventsSeenAll', res);
+  }
+
   /// Reads an archived session snapshot (`GET /api/pods/:podId/sessions/:sessionId/transcript`).
   ///
   /// The snapshot file shape is `{sessionID, messages}` (written by

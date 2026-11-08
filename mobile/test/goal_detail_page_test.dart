@@ -207,6 +207,7 @@ class _FakeGateway {
     this.resultJson,
     this.resultStatus = 200,
     this.podJson,
+    this.seenStatus = 200,
   });
 
   final Map<String, dynamic>? timelineJson;
@@ -215,10 +216,14 @@ class _FakeGateway {
   final Map<String, dynamic>? resultJson;
   final int resultStatus;
   final Map<String, dynamic>? podJson;
+  final int seenStatus;
 
   /// 每次请求的解码路径（`/api/goals/g1/timeline` 等）。
   final List<String> paths = <String>[];
   final List<Map<String, dynamic>> rejectBodies = <Map<String, dynamic>>[];
+
+  /// 批量结果已读（`POST /api/pods/:podId/events/seen`）的请求体。
+  final List<Map<String, dynamic>> seenBodies = <Map<String, dynamic>>[];
   int timelineCalls = 0;
 
   late final GatewayClient client = GatewayClient(
@@ -256,6 +261,13 @@ class _FakeGateway {
         'status': 'discussing',
         'feedback': '再加日志',
       });
+    }
+    if (path == '/api/pods/$_podId/events/seen' && request.method == 'POST') {
+      seenBodies.add(jsonDecode(request.body) as Map<String, dynamic>);
+      if (seenStatus != 200) {
+        return _json({'error': 'unexpected seen failure'}, seenStatus);
+      }
+      return _json({'ok': true, 'changed': 1});
     }
     if (path == '/api/projects/$_projectDir/pod/lookup') {
       final pod = podJson;
@@ -406,6 +418,23 @@ void main() {
       expect(gateway.rejectBodies.single, {'feedback': '再加日志'});
       expect(rejected.revision, 2);
       expect(rejected.status, 'discussing');
+    });
+
+    test('markPodEventsSeenAll POSTs goalId + revision to the batch seen route', () async {
+      final gateway = _FakeGateway();
+
+      await gateway.client.markPodEventsSeenAll(_podId, _goalId, 2);
+
+      expect(gateway.paths, ['/api/pods/$_podId/events/seen']);
+      expect(gateway.seenBodies.single, {'goalId': _goalId, 'revision': 2});
+    });
+
+    test('markPodEventsSeenAll swallows the old-gateway 404', () async {
+      final gateway = _FakeGateway(seenStatus: 404);
+
+      await gateway.client.markPodEventsSeenAll(_podId, _goalId, 1);
+
+      expect(gateway.seenBodies.single, {'goalId': _goalId, 'revision': 1});
     });
   });
 
@@ -615,6 +644,54 @@ void main() {
       expect(find.textContaining('截图已附'), findsOneWidget);
       expect(find.text('loop-1-receipt.json'), findsOneWidget);
       expect(find.text('全部通过'), findsOneWidget);
+    });
+
+    testWidgets('loading a terminal result marks its result events seen once', (tester) async {
+      final gateway = await pumpTerminal(tester);
+
+      // Finding 4：工作 tab 的「N 个结果待查看」只有这条批量 seen 写回能清掉。
+      expect(gateway.seenBodies, [
+        {'goalId': _goalId, 'revision': 1},
+      ]);
+    });
+
+    testWidgets('a running revision never marks result events seen', (tester) async {
+      final gateway = _FakeGateway(
+        revisionsJson: [_revisionJson(2, 'implementing')],
+      );
+
+      await _pumpPage(tester, gateway, initial: PodGoalView.fromJson(_goalViewJson()));
+
+      expect(gateway.seenBodies, isEmpty);
+    });
+
+    testWidgets('a terminal goal without a readable result never marks events seen',
+        (tester) async {
+      final gateway = _FakeGateway(
+        timelineJson: _timelineJson(
+          nextAction: 'COMPLETED',
+          nextNode: null,
+          verdict: 'PASS',
+          phase: 'ARCHIVED',
+        ),
+        revisionsJson: [_revisionJson(1, 'completed', verdict: 'PASS')],
+        resultStatus: 404,
+      );
+
+      await _pumpPage(
+        tester,
+        gateway,
+        initial: PodGoalView.fromJson(_goalViewJson(
+          status: 'done',
+          bucket: 'result_ready',
+          revision: 1,
+          verdict: 'PASS',
+          stageKind: 'result_notified',
+          resultReady: true,
+        )),
+      );
+
+      expect(gateway.seenBodies, isEmpty);
     });
 
     testWidgets('reject requires feedback then posts it and refreshes', (tester) async {

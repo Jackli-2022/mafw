@@ -33,7 +33,9 @@ class MafwMessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = msg.role == 'user';
-    final text = msg.text ?? '';
+    // 全文（所有非 synthetic text part）：`text → tool → text` 的结论在工具
+    // 调用之后，只取首个 text part 会把它丢掉（final fix wave Finding 2）。
+    final text = msg.displayText;
     final scheme = Theme.of(context).colorScheme;
 
     if (isUser) {

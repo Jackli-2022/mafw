@@ -78,12 +78,17 @@ class TechLeadDiscussionPage extends StatefulWidget {
   /// page can run without a socket (offline / tests).
   final Stream<MafwEvent>? messagesStream;
 
+  /// 重连信号（final fix wave Finding 1）：断线期间的 WS 事件不重放，收到信号
+  /// 后重新 `openTechLead`（保留已显示消息，成功后整体替换）。
+  final Listenable? reconnect;
+
   const TechLeadDiscussionPage(
     this.podId,
     this.goalId, {
     super.key,
     this.client,
     this.messagesStream,
+    this.reconnect,
   });
 
   @override
@@ -116,17 +121,34 @@ class _TechLeadDiscussionPageState extends State<TechLeadDiscussionPage> {
   @override
   void initState() {
     super.initState();
+    widget.reconnect?.addListener(_onReconnect);
     _listen();
     unawaited(_load());
   }
 
   @override
+  void didUpdateWidget(covariant TechLeadDiscussionPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.reconnect, widget.reconnect)) {
+      oldWidget.reconnect?.removeListener(_onReconnect);
+      widget.reconnect?.addListener(_onReconnect);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.reconnect?.removeListener(_onReconnect);
     _sub?.cancel();
     _refreshDebounce?.cancel();
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  /// 重连成功：静默重新打开讨论（断线期间的 WS 事件不重放）。
+  void _onReconnect() {
+    if (!mounted) return;
+    unawaited(_load(silent: true));
   }
 
   void _listen() {

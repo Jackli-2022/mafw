@@ -298,6 +298,10 @@ class GoalDetailPage extends StatefulWidget {
   /// 「与 Tech Lead 讨论」（Task 12 接通）；缺省时按钮为诚实占位。
   final GoalDiscussHandler? onDiscussWithTechLead;
 
+  /// 重连信号（final fix wave Finding 1）：断线期间的 WS 事件不重放，收到信号
+  /// 后静默重载时间线 / revision / 结果（保留屏上内容，不重新进入 loading）。
+  final Listenable? reconnect;
+
   const GoalDetailPage(
     this.podId,
     this.goalId, {
@@ -307,6 +311,7 @@ class GoalDetailPage extends StatefulWidget {
     this.initial,
     this.attentionSlot,
     this.onDiscussWithTechLead,
+    this.reconnect,
   });
 
   @override
@@ -344,6 +349,9 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
   /// 请求代际：连续刷新/打回时丢弃过期响应。
   int _seq = 0;
 
+  /// 已批量标记过已读的结果 revision（同一 revision 不重复 POST）。
+  int? _seenResultRevision;
+
   final Set<String> _expanded = <String>{};
   final TextEditingController _rejectController = TextEditingController();
   bool _rejectFormOpen = false;
@@ -354,18 +362,35 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
   void initState() {
     super.initState();
     _goal = widget.initial;
+    widget.reconnect?.addListener(_onReconnect);
     unawaited(_load());
   }
 
   @override
+  void didUpdateWidget(covariant GoalDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.reconnect, widget.reconnect)) {
+      oldWidget.reconnect?.removeListener(_onReconnect);
+      widget.reconnect?.addListener(_onReconnect);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.reconnect?.removeListener(_onReconnect);
     _rejectController.dispose();
     super.dispose();
   }
 
+  /// 重连成功：静默重载（断线期间的事件不重放）。
+  void _onReconnect() {
+    if (!mounted) return;
+    unawaited(_load(silent: true));
+  }
+
   // ── 数据 ──
 
-  Future<void> _load() async {
+  Future<void> _load({bool silent = false}) async {
     final client = widget.client;
     final seq = ++_seq;
     if (client == null) {
@@ -375,6 +400,11 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
         _error = '未配置 Gateway';
       });
       return;
+    }
+    // 只有「屏上什么都还没有」的非静默加载才进入整页 loading；重连后的静默
+    // 重载必须保留旧数据（final fix wave Finding 1）。
+    if (!silent && !_loading && _goal == null && _timeline == null) {
+      setState(() => _loading = true);
     }
 
     var podId = widget.podId ?? _podId;
@@ -512,6 +542,29 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       _questionLoaded = questionLoaded;
       _error = error != null && !hasTimeline && goal == null ? error : null;
     });
+
+    // 终态结果成功加载 = 人已经看到结果：批量把该 (goalId, revision) 的结果
+    // 事件标记已读，工作 tab 的「N 个结果待查看」才会回落（final fix wave
+    // Finding 4）。非终态 / 结果不可读都不写。
+    if (podId != null && result != null && _isTerminal && !_isCancelled) {
+      unawaited(_markResultEventsSeen(podId));
+    }
+  }
+
+  /// `POST /api/pods/:podId/events/seen {goalId, revision}`——结果事件（p1
+  /// `goal.result`）没有单条 id 可点，工作 tab 的 unread 徽标只有这条批量
+  /// 写回能清掉。fail-open：旧网关 404 / 网络失败都不阻塞结果渲染。
+  Future<void> _markResultEventsSeen(String podId) async {
+    final client = widget.client;
+    if (client == null) return;
+    final revision = _revision;
+    if (_seenResultRevision == revision) return;
+    try {
+      await client.markPodEventsSeenAll(podId, widget.goalId, revision);
+      _seenResultRevision = revision;
+    } catch (_) {
+      // Best-effort：角标会在下一次 presence 轮询/刷新时恢复（服务端权威）。
+    }
   }
 
   PodGoalView? _findGoal(List<PodGoalView> goals, String goalId) {
@@ -689,7 +742,7 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       ),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: () => _load(),
           color: MafwPalette.accent,
           backgroundColor: MafwPalette.surface,
           child: ListView(
