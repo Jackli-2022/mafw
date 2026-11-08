@@ -299,19 +299,27 @@ export class HarmonicIndexManager {
     this.save();
   }
 
-  updateEnergy(id: string, delta: number): void {
+  /**
+   * Update one entry's energy. Batch callers (daily decay over thousands of
+   * entries) must pass `{ silent: true, save: false }` and emit/save once at
+   * the end — otherwise every entry produces a full index write plus an SSE
+   * broadcast (2026-11-08: 17k-entry decay storm, gateway HTTP starvation).
+   */
+  updateEnergy(id: string, delta: number, opts: { silent?: boolean; save?: boolean } = {}): void {
     const entry = this.index.entries.find(e => e.id === id);
     if (entry) {
       const before = entry.energy;
       entry.energy = Math.max(0, Math.min(1, entry.energy + delta));
-      this.save();
-      eventBus.emit('memory_energy_changed', {
-        type: 'memory_energy_changed',
-        id,
-        from: before,
-        to: entry.energy,
-        delta,
-      });
+      if (opts.save !== false) this.save();
+      if (!opts.silent) {
+        eventBus.emit('memory_energy_changed', {
+          type: 'memory_energy_changed',
+          id,
+          from: before,
+          to: entry.energy,
+          delta,
+        });
+      }
     }
   }
 

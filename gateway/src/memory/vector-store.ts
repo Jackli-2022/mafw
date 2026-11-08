@@ -16,6 +16,22 @@ import * as path from 'path';
 import { EmbeddingProvider } from './embedding-provider';
 import { log } from '../core/utils/logger';
 
+/**
+ * Human-readable embedding failure. Node's fetch reports a bare "fetch failed"
+ * and hides the real reason in `cause.code` (ECONNRESET / ECONNREFUSED /
+ * UND_ERR_SOCKET); without it the log cannot tell a sidecar hiccup from a
+ * network fault.
+ */
+export function describeEmbedError(err: unknown): string {
+  const e = err as any;
+  const message = e?.message ? String(e.message) : String(err);
+  const cause = e?.cause?.code ?? e?.code;
+  if (typeof cause === 'string' && cause && !message.includes(cause)) {
+    return `${message} [${cause}]`;
+  }
+  return message;
+}
+
 export class MemoryVectorStore {
   private vectors = new Map<string, number[]>();
   private dirty = false;
@@ -205,7 +221,7 @@ export class EmbeddingIndexer {
           }
         } catch (err: any) {
           failed += batch.length;
-          log.warn(`[EmbeddingIndexer] batch embed failed (${batch.length} items): ${err?.message || err}`);
+          log.warn(`[EmbeddingIndexer] batch embed failed (${batch.length} items): ${describeEmbedError(err)}`);
         }
       }
     }

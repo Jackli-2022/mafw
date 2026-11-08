@@ -11,6 +11,8 @@ import { L5Store } from './core/memory/l5-store';
 import { decayRateFor, catdDecayRate } from './core/memory/abstraction-level';
 import { getRetrievalEventBuffer, RetrievalEvent } from './core/memory/retrieval-events';
 import { actrBonus } from './core/memory/retrieval-bonus';
+import { getEmbeddingRuntime } from './memory/embedding-runtime';
+import { runEmbeddingBackfill } from './memory/embedding-backfill';
 
 import { SchedulerLedger } from './ledger';
 import { eventBus } from './event-bus';
@@ -90,7 +92,7 @@ export function runEnergyDecay(
       const room = Math.max(0, 1.0 - entry.energy);
       const applied = Math.min(bonus, room);
       if (applied > 0.0005) {
-        indexManager.updateEnergy(id, applied);
+        indexManager.updateEnergy(id, applied, { silent: true, save: false });
         bonused++;
       }
     }
@@ -114,7 +116,7 @@ export function runEnergyDecay(
     const decayedEnergy = energySystem.decay(entry.energy, daysSinceDecay, salience, rate);
     const diff = entry.energy - decayedEnergy;
     if (diff > 0.005) {
-      indexManager.updateEnergy(entry.id, -(diff));
+      indexManager.updateEnergy(entry.id, -(diff), { silent: true, save: false });
       // Stamp only when decay is actually applied — otherwise days keep
       // accumulating until the diff crosses the write threshold (prevents
       // starvation of low-salience / low-rate entries).
@@ -126,22 +128,32 @@ export function runEnergyDecay(
   // V2 ⑦ graduation: capped pipeline writes whose 48h window elapsed with
   // no interference graduate to 0.75 (mechanical — no LLM, independent of
   // the graceRevisit verdict phase). "Survived without PE = stabilized".
+  let graduated = 0;
   try {
     const { selectGraduations, COMMITMENT_GRADUATE_TO, commitmentStats } = require('./recall/commitment');
     const grads = selectGraduations(indexManager.getIndex().entries, now);
     for (const id of grads) {
       const entry = indexManager.getIndex().entries.find(e => e.id === id);
       if (!entry) continue;
-      indexManager.updateEnergy(id, COMMITMENT_GRADUATE_TO - entry.energy);
+      indexManager.updateEnergy(id, COMMITMENT_GRADUATE_TO - entry.energy, { silent: true, save: false });
       delete (entry as any).commitment_capped_at;
     }
     if (grads.length > 0) {
       commitmentStats.graduated += grads.length;
-      indexManager.save();
+      graduated = grads.length;
     }
   } catch { /* fail-open */ }
 
   indexManager.save();
+  // One coalesced notice per pass; desktop only needs to know "energy changed".
+  if (decayed > 0 || bonused > 0 || graduated > 0) {
+    eventBus.emit('memory_energy_changed', {
+      type: 'memory_energy_changed',
+      decayed,
+      bonused,
+      graduated,
+    } as any);
+  }
   return { migrated: 0, decayed, bonused };
 }
 
@@ -165,12 +177,28 @@ actionRegistry.set('memory:decay', async (_rule, engine) => {
       }
     } catch { catd = undefined; }
     const res = runEnergyDecay(indexManager, Date.now(), events, catd);
+    // Coverage top-up: write-path embedding is fire-and-forget (failed batches
+    // are dropped), so vectors drift behind the index. Idempotent + fail-open.
+    const backfill = await runEmbeddingBackfill(
+      getEmbeddingRuntime(),
+      indexManager.getIndex().entries.map((e) => e.id),
+    );
     if (res.migrated > 0) {
       log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
     } else {
       log.info(`[AutomationEngine] Energy decay applied to ${res.decayed} entries, bonus to ${res.bonused} (from ${events.length} retrieval events)`);
     }
-    heartbeat?.record('memory:decay', { ok: true, counts: { migrated: res.migrated, decayed: res.decayed, bonused: res.bonused } });
+    heartbeat?.record('memory:decay', {
+      ok: backfill.ok,
+      error: backfill.ok ? undefined : `backfill: ${backfill.error}`,
+      counts: {
+        migrated: res.migrated,
+        decayed: res.decayed,
+        bonused: res.bonused,
+        backfillIndexed: backfill.indexed,
+        backfillMissing: backfill.missing,
+      },
+    });
   } catch (err: any) {
     heartbeat?.record('memory:decay', { ok: false, error: err?.message || String(err) });
     throw err;

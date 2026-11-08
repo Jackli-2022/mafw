@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { actionRegistry } from '../../src/automation-engine';
 import { HarmonicIndexManager } from '../../src/core/memory/harmonic-index';
+import { setEmbeddingRuntime } from '../../src/memory/embedding-runtime';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -192,7 +193,51 @@ describe('memory:decay incremental decay', () => {
     expect(recorded).toHaveLength(1);
     expect(recorded[0][0]).toBe('memory:decay');
     expect(recorded[0][1].ok).toBe(true);
-    expect(recorded[0][1].counts).toEqual({ migrated: 0, decayed: 1, bonused: 0 });
+    expect(recorded[0][1].counts).toEqual({
+      migrated: 0,
+      decayed: 1,
+      bonused: 0,
+      backfillIndexed: 0,
+      backfillMissing: 0,
+    });
+  });
+
+  test('runs the embedding backfill after decay (coverage top-up)', async () => {
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [
+        makeEntry({ id: 'a', last_decay_at: new Date().toISOString() }),
+        makeEntry({ id: 'b', last_decay_at: new Date().toISOString() }),
+      ],
+    });
+
+    const backfilled: string[][] = [];
+    setEmbeddingRuntime({
+      indexer: {
+        backfill: async (ids: string[]) => {
+          backfilled.push(ids);
+          return { indexed: 1, skipped: 1, missing: 0 };
+        },
+      },
+      vectors: { size: () => 7 },
+    } as any);
+
+    const recorded: Array<[string, any]> = [];
+    try {
+      const action = actionRegistry.get('memory:decay')!;
+      await action({} as any, {
+        mafwDir: tmpDir,
+        getHeartbeat: () => ({ record: (name: string, r: any) => recorded.push([name, r]) }),
+      } as any);
+    } finally {
+      setEmbeddingRuntime(null);
+    }
+
+    expect(backfilled).toHaveLength(1);
+    expect(backfilled[0].sort()).toEqual(['a', 'b']);
+    expect(recorded[0][1].counts.backfillIndexed).toBe(1);
+    expect(recorded[0][1].ok).toBe(true);
   });
 
   test('A3: applies ACT-R bonus from drained events before decay', async () => {
