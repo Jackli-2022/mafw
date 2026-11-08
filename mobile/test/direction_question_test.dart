@@ -104,6 +104,8 @@ Map<String, dynamic> _goalViewJson({
   String stageKind = 'direction_review',
   int revision = _revisionNumber,
   String status = 'active',
+  Map<String, dynamic>? pendingQuestion,
+  String? stageQuestionId,
 }) {
   return {
     'goalId': _goalId,
@@ -115,7 +117,13 @@ Map<String, dynamic> _goalViewJson({
     'verdict': null,
     'resultReady': false,
     'strategy': 'collaborative',
-    'stage': {'owner': 'person', 'kind': stageKind},
+    'stage': {
+      'owner': 'person',
+      'kind': stageKind,
+      if (stageQuestionId != null)
+        'action': {'type': 'open_question', 'questionId': stageQuestionId},
+    },
+    'pendingQuestion': ?pendingQuestion,
   };
 }
 
@@ -323,6 +331,10 @@ class _FakeGateway {
     on('POST', '/api/pods/$_podId/goals/$_goalId/direction-decision',
         (_) => _json(_directionResultJson()));
     on('POST', '/api/goals/$_goalId/questions/q1/respond',
+        (_) => _json({'status': 'accepted'}));
+    on('POST', '/api/goals/$_goalId/questions/q_driver_1/respond',
+        (_) => _json({'status': 'accepted'}));
+    on('POST', '/api/goals/$_goalId/questions/q_driver_2/respond',
         (_) => _json({'status': 'accepted'}));
     on('POST', '/api/goals/$_goalId/plan-approval',
         (_) => _json({'success': true}));
@@ -931,6 +943,77 @@ void main() {
         '/api/goals/$_goalId/questions/q1/respond',
       );
       expect(posts.single.json, {'answer': '先修登录'});
+    });
+
+    testWidgets('question stage prefers the goal pendingQuestion over approvals', (tester) async {
+      final gateway = _FakeGateway();
+      final goalView = _goalViewJson(
+        stageKind: 'question',
+        pendingQuestion: {
+          'questionId': 'q_driver_1',
+          'node': 'plan',
+          'questions': ['登录先走 SSO 还是密码？'],
+        },
+      );
+      await gateway.installGoalDetailRoutes(
+        goalView: goalView,
+        // 真实 driver 问题不在 approvals 里：空列表就是当前网关的行为。
+        approvalsJson: {'approvals': <dynamic>[]},
+      );
+
+      await _pumpGoalDetail(tester, gateway, goalView: goalView);
+
+      expect(find.byKey(const Key('question-card')), findsOneWidget);
+      expect(find.text('登录先走 SSO 还是密码？'), findsOneWidget);
+      // 不能因为 approvals 为空就谎称「已不在待回答列表」。
+      expect(find.byKey(const Key('question-missing')), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const Key('question-answer')),
+        '先走 SSO',
+      );
+      await tester.tap(find.byKey(const Key('question-submit')));
+      await tester.pumpAndSettle();
+
+      // 回答必须落到 driver 的 questionId（不是 approvals 的 id）。
+      final posts = gateway.callsTo(
+        'POST',
+        '/api/goals/$_goalId/questions/q_driver_1/respond',
+      );
+      expect(posts.single.json, {'answer': '先走 SSO'});
+    });
+
+    testWidgets('question stage uses the stage action questionId when the text is not on the wire',
+        (tester) async {
+      final gateway = _FakeGateway();
+      final goalView = _goalViewJson(
+        stageKind: 'question',
+        stageQuestionId: 'q_driver_2',
+      );
+      await gateway.installGoalDetailRoutes(
+        goalView: goalView,
+        approvalsJson: {'approvals': <dynamic>[]},
+      );
+
+      await _pumpGoalDetail(tester, gateway, goalView: goalView);
+
+      // 当前网关的 PodGoalView 只带 stage.action.questionId：卡片仍要出现，
+      // 且回答用这个 id（否则 respond 一律 404）。
+      expect(find.byKey(const Key('question-card')), findsOneWidget);
+      expect(find.byKey(const Key('question-missing')), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const Key('question-answer')),
+        '先走密码',
+      );
+      await tester.tap(find.byKey(const Key('question-submit')));
+      await tester.pumpAndSettle();
+
+      final posts = gateway.callsTo(
+        'POST',
+        '/api/goals/$_goalId/questions/q_driver_2/respond',
+      );
+      expect(posts.single.json, {'answer': '先走密码'});
     });
 
     testWidgets('question stage reads approvals even when the page has no Pod id',

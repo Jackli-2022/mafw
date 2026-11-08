@@ -82,6 +82,51 @@ class ProjectInfo {
   }
 }
 
+/// One pending Goal question (`PodGoalDescription.pendingQuestion`, state v3).
+///
+/// Shape taken from `gateway/src/core/pod/pod-view.ts`（`{questionId, node,
+/// questions[]}`）——正文是 `driver.ts` 的 `state.pendingQuestion.questions`，
+/// 与 `GET /api/approvals`（MCP `mafw_ask_user` 的 user-questions 文件）是
+/// 两套 id/来源；driver 的 `need_clarification` / no-progress 问题只在这份
+/// Goal 视图里（或当前网关只下发 `stage.action.questionId`）。
+class PendingQuestionInfo {
+  final String questionId;
+
+  /// `plan | execute | review`（提出问题的节点）。
+  final String node;
+
+  /// 问题正文列表（网关按原顺序保存）。
+  final List<String> questions;
+
+  const PendingQuestionInfo({
+    required this.questionId,
+    required this.node,
+    required this.questions,
+  });
+
+  factory PendingQuestionInfo.fromJson(Map<String, dynamic> j) {
+    final questions = <String>[];
+    for (final item in _list(j['questions'])) {
+      if (item is! String) continue;
+      final text = item.trim();
+      if (text.isNotEmpty) questions.add(text);
+    }
+    if (questions.isEmpty) {
+      // 宽容未来的单问题形状（`question: string`）。
+      final single = (j['question'] ?? '').toString().trim();
+      if (single.isNotEmpty) questions.add(single);
+    }
+    return PendingQuestionInfo(
+      questionId: _str(j['questionId']).trim(),
+      node: _str(j['node']).trim(),
+      questions: questions,
+    );
+  }
+
+  /// 卡片展示的问题正文（多问题按行拼接）。
+  String get text => questions.join('\n');
+}
+
 /// One Goal row of `work.overview` / `/api/pods/:id/goals` (`PodGoalView`).
 ///
 /// [status] is `queued|active|done|aborted`, [bucket] is one of [workBuckets];
@@ -106,6 +151,15 @@ class PodGoalView {
   /// `direction_review` | `question` | `blocked` | ...
   final String? stageKind;
 
+  /// Driver 的待答问题（含正文），旧网关缺省 `null`。
+  final PendingQuestionInfo? pendingQuestion;
+
+  /// `stage.action.questionId`（`open_question` attention 的落点）。
+  ///
+  /// 当前网关的 `PodGoalView` 只下发 id 而不下发正文；id 是 respond 路由的
+  /// 唯一权威（approvals 的 MCP id 不匹配 driver 的 `pendingQuestion`）。
+  final String? stageQuestionId;
+
   const PodGoalView({
     required this.goalId,
     required this.title,
@@ -117,10 +171,14 @@ class PodGoalView {
     required this.strategy,
     required this.stageOwner,
     required this.stageKind,
+    this.pendingQuestion,
+    this.stageQuestionId,
   });
 
   factory PodGoalView.fromJson(Map<String, dynamic> j) {
     final stage = _map(j['stage']);
+    final action = _map(stage['action']);
+    final rawPending = _map(j['pendingQuestion']);
     final revision = _int(j['revision'] ?? j['activeRevision'], fallback: 1);
     return PodGoalView(
       goalId: _str(j['goalId']),
@@ -133,7 +191,18 @@ class PodGoalView {
       strategy: _strOrNull(j['strategy']),
       stageOwner: _strOrNull(stage['owner']),
       stageKind: _strOrNull(stage['kind']),
+      pendingQuestion:
+          rawPending.isEmpty ? null : PendingQuestionInfo.fromJson(rawPending),
+      stageQuestionId: _strOrNull(action['questionId']),
     );
+  }
+
+  /// 本视图能确定的待答问题 id（driver `pendingQuestion` 优先，其次 stage action）。
+  String? get questionId {
+    final direct = pendingQuestion?.questionId ?? '';
+    if (direct.isNotEmpty) return direct;
+    final stage = (stageQuestionId ?? '').trim();
+    return stage.isEmpty ? null : stage;
   }
 }
 

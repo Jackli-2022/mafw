@@ -431,27 +431,41 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       planError = null;
     }
 
-    // 问答阶段（Task 13「需要你」形态三）：问题正文只在 `/api/approvals`
-    // （user-questions 扫描，与桌面 GoalDetailOverlay 同源），失败/已答不算
-    // 整页错误——卡片让位并给诚实的可重试提示。
+    // 问答阶段（Task 13「需要你」形态三）。
+    //
+    // 权威来源是 Goal 视图自带的 driver `pendingQuestion`（questionId + 正文，
+    // 与 `POST /api/goals/:id/questions/:qid/respond` 同 id）。`/api/approvals`
+    // 是另一套来源（MCP `mafw_ask_user` 的 user-questions 文件），只作为旧网关
+    // /视图没有 pendingQuestion 时的回退——它的 id 与 driver 问题不互通，读了
+    // 也答不上，因此有完整 pendingQuestion 时不再发这次请求。
     var question = _question;
     String? questionError;
     var questionLoaded = _questionLoaded;
     if (stageKind == 'question') {
       questionLoaded = false;
-      // 问题正文只依赖 goalId（`/api/approvals` 扫描），不需要 Pod 也能读；
-      // 没有 Pod 只是不回写事件已读（`markAttentionSeen` 会跳过）。
-      try {
-        final items = await client.pendingGoalQuestions(widget.goalId);
-        question = items.isEmpty ? null : items.first;
+      final goalQuestion = goal?.pendingQuestion;
+      final hasGoalQuestion = goalQuestion != null
+          && goalQuestion.questionId.isNotEmpty
+          && goalQuestion.text.isNotEmpty;
+      if (hasGoalQuestion) {
+        question = null;
         questionError = null;
         questionLoaded = true;
-      } catch (e) {
-        question = null;
-        questionError = _messageOf(e);
-        questionLoaded = true;
+      } else {
+        // 回退只依赖 goalId（`/api/approvals` 扫描），不需要 Pod；
+        // 没有 Pod 只是不回写事件已读（`markAttentionSeen` 会跳过）。
+        try {
+          final items = await client.pendingGoalQuestions(widget.goalId);
+          question = items.isEmpty ? null : items.first;
+          questionError = null;
+          questionLoaded = true;
+        } catch (e) {
+          question = null;
+          questionError = _messageOf(e);
+          questionLoaded = true;
+        }
+        if (!mounted || seq != _seq) return;
       }
-      if (!mounted || seq != _seq) return;
     } else {
       question = null;
       questionError = null;
@@ -860,21 +874,46 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
   }
 
   /// 待回答问题（Task 13 形态三）。
+  ///
+  /// 顺序（Important review 修复）：
+  /// 1. Goal 视图的 driver `pendingQuestion`（权威 id + 正文）；
+  /// 2. `/api/approvals` 的待答问题（旧网关 / MCP 问题）：当 Goal 视图也给了
+  ///    questionId 时，只采信 **同 id** 的正文，绝不拿别的问题正文配错 id；
+  /// 3. 只有 questionId 没有正文（当前网关只下发 `stage.action.questionId`）：
+  ///    仍然渲染卡片——回答会落到正确的 driver questionId，正文等网关补齐；
+  /// 4. 其余才是读取失败 / 正在读取 / 已不在列表。
   Widget? _questionAttention(GoalAttentionContext slot) {
     final client = widget.client;
     if (client == null) return null;
-    final question = _question;
-    if (question != null) {
+
+    QuestionCard cardFor(String questionId, String question) {
       return QuestionCard(
         widget.goalId,
-        question.id,
-        question.question,
+        questionId,
+        question,
         client: client,
         podId: slot.podId,
         revision: slot.revision,
         onAnswered: () => _afterAttentionAction('已提交回答'),
       );
     }
+
+    final goalQuestionId = _goal?.questionId;
+    final pending = _goal?.pendingQuestion;
+    if (pending != null && pending.questionId.isNotEmpty && pending.text.isNotEmpty) {
+      return cardFor(pending.questionId, pending.text);
+    }
+
+    final question = _question;
+    if (question != null &&
+        (goalQuestionId == null || question.id == goalQuestionId)) {
+      return cardFor(goalQuestionId ?? question.id, question.question);
+    }
+
+    if (goalQuestionId != null) {
+      return cardFor(goalQuestionId, 'Tech Lead 在等待你的回答。');
+    }
+
     final error = _questionError;
     if (error != null) {
       return Text(
