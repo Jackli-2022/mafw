@@ -232,6 +232,11 @@ export class PodGoalRevisionService {
 
     const now = this.now();
     const previous = this.closeCurrentRevision(goal, opts, now);
+    // pod_tasks has no revision column: the board is always the current
+    // projection. Clear old wave rows before N+1 starts so the work list never
+    // reports the rejected revision's task counts as new progress. Manual notes
+    // (sourceKey `manual:`) are not wave projections and stay.
+    this.deps.store.deleteProjectedTasks(goal.podId, goalId);
     // Retire the old revision lease before creating the next one so a stale
     // discussion session can never become the "latest live" Pod member target.
     await this.deps.onRevisionClosed?.(goalId, previous.revision);

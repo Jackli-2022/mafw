@@ -16,6 +16,7 @@ test("priority cards appear only when there is something to show", () => {
 test("each priority card has one direct human action", () => {
   assert.match(priority, /item\.kind === "attention" \? item\.label : "查看结果"/)
   assert.match(priority, /props\.onOpen\(item\.goal, priorityFocus\(item\)\)/)
+  assert.match(priority, /item\.kind === "result" \? "result"/)
   assert.match(priority, /attentionTarget\(item\.kind === "attention" && item\.actionType \? \{ type: item\.actionType \} : undefined\)/)
 })
 

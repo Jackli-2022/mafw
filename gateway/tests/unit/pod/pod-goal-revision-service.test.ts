@@ -115,6 +115,44 @@ describe('PodGoalRevisionService', () => {
     expect(result.revision).toBe(2);
   });
 
+  test('openNextRevision clears projected plan tasks so old progress cannot leak', async () => {
+    seedGoal();
+    seedRevision(1, 'completed', { verdict: 'PASS' });
+    seedState(1);
+    store.upsertTask({
+      id: 'task-plan',
+      podId: 'pod_1',
+      goalId: 'g1',
+      sourceKey: 'wave:w1:task:t1',
+      externalTaskId: 'w1-t1',
+      title: 'old plan task',
+      description: null,
+      ownerMemberId: null,
+      status: 'done',
+      dependenciesJson: null,
+      artifactRefsJson: null,
+      now: NOW,
+    });
+    store.upsertTask({
+      id: 'task-note',
+      podId: 'pod_1',
+      goalId: 'g1',
+      sourceKey: 'manual:note',
+      externalTaskId: null,
+      title: 'keep note',
+      description: null,
+      ownerMemberId: null,
+      status: 'pending',
+      dependenciesJson: null,
+      artifactRefsJson: null,
+      now: NOW,
+    });
+
+    await service.openNextRevision('g1', 'reject');
+
+    expect(store.listTasks('pod_1', 'g1').map((task) => task.id)).toEqual(['task-note']);
+  });
+
   test('openNextRevision closes the current revision, archives state and activates N+1', async () => {
     seedGoal();
     seedRevision(1, 'implementing');

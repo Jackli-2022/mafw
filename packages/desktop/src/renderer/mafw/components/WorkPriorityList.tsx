@@ -5,7 +5,7 @@ import { attentionTarget, podStageLabel, type GoalDetailFocus } from "../pod-mod
 import type { WorkPriorityItem } from "../work-overview-model"
 
 function priorityFocus(item: WorkPriorityItem): GoalDetailFocus {
-  return attentionTarget(item.kind === "attention" && item.actionType ? { type: item.actionType } : undefined)
+  return item.kind === "result" ? "result" : attentionTarget(item.kind === "attention" && item.actionType ? { type: item.actionType } : undefined)
 }
 
 /** The only deliberate interruption above the complete Goal list. */
