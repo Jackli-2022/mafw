@@ -78,6 +78,7 @@ Pod 的高频用户路径不是管理一套多 agent 组织，而是：
 
 - Lead 继续走现有 `openLeadEntry` / `ensureLead` 通路，可打开即恢复 coordination 会话。
 - Tech Lead 继续走现有 `openTechLead` / ensureSession 通路，但必须显示当前目标 Goal；有 live discussion 时优先沿用，没有可用讨论时才选择非终态 Goal。
+- **Lead / Tech Lead 都是普通会话**：入口只负责选中/确保对应 Pod session 并打开现有 ChatPane。必须复用普通 session 的 composer、消息发送、历史、SSE 流式、权限、模型/thinking 配置与排队能力；不得新建只读讨论面板、旁路发送 API 或第二套聊天状态。
 - Builder / Reviewer 不在首屏作为联系人展示，也不显示“查看快照”这种低频动作。
 - 「最近消息」不再展示内部 `Lead → Lead`、goal id、verdict 等日志；内部邮箱仍可在次级资源页查看。
 - 左侧 Rail 的目的地词汇可从「资源」恢复为更贴近用户心智的「Pod」；是否同步改图标留给了实现者，不能影响现有 badge 与键盘行为。
