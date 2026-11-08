@@ -165,8 +165,21 @@ String _historySessionID(List<MafwMessage> history) {
 /// with a blank line). When the session has no user message at all, the last
 /// assistant text is the honest fallback. Tool-only messages contribute nothing.
 String _handoffSource(List<MafwMessage> history) {
-  String textOf(MafwMessage message) =>
-      (message.text ?? '').replaceAll('\r\n', '\n').trim();
+  String textOf(MafwMessage message) {
+    // Desktop `textOfMessage` (`pod-transcript.ts:3-19`) joins **every** text
+    // part of the message and only falls back to the convenience `text` field
+    // when the parts carry no text. A `text → tool → text` assistant message
+    // keeps its tail conclusion this way; using `message.text` alone (the first
+    // text part) would silently drop it.
+    final textParts = <String>[];
+    for (final part in message.parts) {
+      if (part.type != 'text') continue;
+      final text = (part.text ?? '').trim();
+      if (text.isNotEmpty) textParts.add(text);
+    }
+    final raw = textParts.isNotEmpty ? textParts.join('\n') : (message.text ?? '');
+    return raw.replaceAll('\r\n', '\n').trim();
+  }
 
   var lastUser = -1;
   for (var i = history.length - 1; i >= 0; i--) {

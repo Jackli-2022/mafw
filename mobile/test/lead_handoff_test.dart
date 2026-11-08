@@ -277,6 +277,38 @@ void main() {
       expect(input.sourceRef.snapshot.contains('TOOL OUTPUT'), isFalse);
     });
 
+    test('all text parts of one message contribute (text → tool → text)', () {
+      // Real `MafwMessage.fromJson` sets `text` to the FIRST text part; the tail
+      // conclusion after a tool call lives in a later text part. Desktop
+      // `textOfMessage` joins every text part (`pod-transcript.ts:3-19`), so the
+      // handoff must not silently drop the second half.
+      final history = <MafwMessage>[
+        _msg('user', '跑一下测试'),
+        MafwMessage(
+          id: 'm2',
+          sessionID: 'ses_a',
+          role: 'assistant',
+          text: '开始检查',
+          timeCreated: 0,
+          parts: <MafwPart>[
+            MafwPart(id: 't1', type: 'text', text: '开始检查'),
+            MafwPart(
+              id: 'tp1',
+              type: 'tool',
+              tool: 'bash',
+              state: {'status': 'completed', 'output': 'TOOL OUTPUT'},
+            ),
+            MafwPart(id: 't2', type: 'text', text: '后半段结论'),
+          ],
+        ),
+      ];
+
+      final input = buildLeadHandoff(history)!;
+
+      expect(input.sourceRef.snapshot, '跑一下测试\n\n开始检查\n后半段结论');
+      expect(input.sourceRef.snapshot.contains('TOOL OUTPUT'), isFalse);
+    });
+
     test('snapshot and title are truncated at 4000 / 80 characters', () {
       final longLine = 'x' * 5000;
 
