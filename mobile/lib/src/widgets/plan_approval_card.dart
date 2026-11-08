@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 import '../models/plan_models.dart';
 import '../network/gateway_client.dart';
 import '../theme.dart';
+import 'attention_seen.dart';
 
 /// 计划批准 / 驳回卡。
 ///
@@ -38,6 +39,12 @@ class PlanApprovalCard extends StatefulWidget {
   final VoidCallback? onRejected;
   final VoidCallback? onRefresh;
 
+  /// Pod / revision / attention 事件 id：完成动作后 best-effort 回写事件已读
+  /// （Task 13 组合接缝；缺省 = 不回写，卡片独立可用）。
+  final String? podId;
+  final int? revision;
+  final String? eventId;
+
   const PlanApprovalCard({
     super.key,
     required this.client,
@@ -46,6 +53,9 @@ class PlanApprovalCard extends StatefulWidget {
     this.onApproved,
     this.onRejected,
     this.onRefresh,
+    this.podId,
+    this.revision,
+    this.eventId,
   });
 
   @override
@@ -117,6 +127,13 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
         _busy = false;
         _rejectOpen = false;
       });
+      unawaited(markAttentionSeen(
+        widget.client,
+        podId: widget.podId,
+        eventId: widget.eventId,
+        goalId: widget.goalId,
+        revision: widget.revision,
+      ));
       if (approve) {
         widget.onApproved?.call();
       } else {

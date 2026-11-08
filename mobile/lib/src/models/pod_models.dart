@@ -526,6 +526,15 @@ class RevisionInfo {
   final String status;
   final String? verdict;
 
+  /// `none | pending | decided`（方向裁定状态；只有 pending 才是人类 attention）。
+  final String? directionStatus;
+
+  /// 方向状态的 JSON 镜像（`DirectionState`，`direction-decision.ts`）。
+  ///
+  /// gateway 没有独立的 GET 方向路由；桌面 `GoalDetailOverlay` 与移动端
+  /// `DirectionPanel` 都从这一列读候选/理由（文件是权威，这一列是镜像）。
+  final String? directionJson;
+
   /// 打回反馈（`rejectResult` 写入下一 revision）。
   final String? feedback;
   final String? startedAt;
@@ -535,6 +544,8 @@ class RevisionInfo {
     required this.revision,
     required this.status,
     required this.verdict,
+    this.directionStatus,
+    this.directionJson,
     required this.feedback,
     required this.startedAt,
     required this.endedAt,
@@ -545,11 +556,48 @@ class RevisionInfo {
       revision: _int(j['revision'], fallback: 1),
       status: _str(j['status']),
       verdict: _strOrNull(j['verdict']),
+      directionStatus: _strOrNull(j['directionStatus'] ?? j['direction_status']),
+      directionJson: _strOrNull(j['directionJson'] ?? j['direction_json']),
       feedback: _strOrNull(j['feedback']),
       startedAt: _strOrNull(j['startedAt'] ?? j['started_at']),
       endedAt: _strOrNull(j['endedAt'] ?? j['ended_at']),
     );
   }
+}
+
+/// 一条待回答的 Goal 问题（`GET /api/approvals` → `approvals[]`）。
+///
+/// 形状实读 `gateway/src/index.ts:6990`：`{id, goalId, question, status,
+/// createdAt}`；`status == 'pending'` 才是还没回答的。问题正文是**用户问题**
+/// （不是 runtime 原生 `session.question`），与桌面 `GoalDetailOverlay` 的
+/// `approvals.list()` 同源。
+class GoalQuestionInfo {
+  final String id;
+  final String goalId;
+  final String question;
+  final String status;
+  final String? createdAt;
+
+  const GoalQuestionInfo({
+    required this.id,
+    required this.goalId,
+    required this.question,
+    required this.status,
+    required this.createdAt,
+  });
+
+  factory GoalQuestionInfo.fromJson(Map<String, dynamic> j) {
+    return GoalQuestionInfo(
+      id: _str(j['id']),
+      goalId: _str(j['goalId']),
+      question: _str(j['question']),
+      status: _str(j['status']),
+      createdAt: _strOrNull(j['createdAt']),
+    );
+  }
+
+  /// 还等着人回答（网关历史上可能省略 status，缺省按 pending 处理）。
+  bool get pending => status.isEmpty || status == 'pending';
 }
 
 /// Goal Eval 条件 + Reviewer 判定（[result]/[evidence] 来自 `goalResults`）。

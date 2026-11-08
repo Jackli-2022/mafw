@@ -690,6 +690,31 @@ class GatewayClient {
     if (res.statusCode != 200) throw _failure('answerQuestion', res);
   }
 
+  /// Pending questions for one Goal (`GET /api/approvals`).
+  ///
+  /// The approvals scan returns every `user-questions/*.json` row
+  /// (`gateway/src/index.ts:6990`) with `{id, goalId, question, status,
+  /// createdAt}`; this method filters to `goalId` + pending so the Goal detail
+  /// page can render the question text (there is no per-Goal question route).
+  /// Failures surface verbatim — the page shows an honest「问题读取失败」note.
+  Future<List<GoalQuestionInfo>> pendingGoalQuestions(String goalId) async {
+    final res = await _get(_uri('/api/approvals'));
+    if (res.statusCode != 200) throw _failure('pendingGoalQuestions', res);
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    final raw = j is Map<String, dynamic> ? j['approvals'] : j;
+    final out = <GoalQuestionInfo>[];
+    for (final item in raw is List ? raw : const <dynamic>[]) {
+      if (item is! Map<String, dynamic>) continue;
+      final question = GoalQuestionInfo.fromJson(item);
+      if (!question.pending) continue;
+      // 严格 goalId 匹配（与桌面 GoalDetailOverlay 的 approvals 过滤一致）：
+      // 没有 goalId 的历史问题不属于任何一个 Goal，不能拿来在目标详情里催回答。
+      if (question.goalId != goalId) continue;
+      out.add(question);
+    }
+    return out;
+  }
+
   /// Human-facing Pod events (`GET /api/pods/:podId/events?state=`).
   ///
   /// [state] is passed through verbatim: `'unread'` filters, anything else

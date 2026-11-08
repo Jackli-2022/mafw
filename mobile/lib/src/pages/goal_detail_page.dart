@@ -20,9 +20,11 @@
 /// （verdict = 白 ✓ / 灰 ✕，不引入绿红）。
 ///
 /// 组件位：
-/// - [GoalDetailPage.attentionSlot]：需要你操作区。显式传入时其返回值是权威
-///   （`null` = 整块不渲染，Task 13 会在这里组合方向裁定/问答）；缺省时页面自己
-///   渲染计划批准卡（Task 9）。
+/// - [GoalDetailPage.attentionSlot]：需要你操作区的**附加**内容（Task 13 组合
+///   语义）——内置卡按 `stageKind` 渲染（plan_approval → PlanApprovalCard、
+///   direction_review → DirectionPanel、question → QuestionCard），外部 builder
+///   的输出与之**同时**渲染；两者都没有才整块隐藏。`attentionSlot` 的返回值
+///   不再吃掉内置卡（Task 9 接缝修复）。
 /// - [GoalDetailPage.onDiscussWithTechLead]：底部 CTA（Task 12 已接通 ——
 ///   回调带解析后的 `(podId, goalId)`，外壳据此 push `TechLeadDiscussionPage`）；
 ///   缺省时按钮是诚实的占位（snackbar + 一行说明）。
@@ -37,7 +39,9 @@ import '../models/pod_models.dart';
 import '../models/plan_models.dart';
 import '../network/gateway_client.dart';
 import '../theme.dart';
+import '../widgets/direction_panel.dart';
 import '../widgets/plan_approval_card.dart';
+import '../widgets/question_card.dart';
 // 阶段词表单源：工作 tab 的 `stageKind → 中文` 映射（Task 7 定义）。
 import 'work_tab.dart' show kWorkStageLabels, projectBasename;
 
@@ -326,6 +330,14 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
   bool _planMissing = false;
   String? _podId;
 
+  /// 待回答的 Goal 问题（`stageKind == 'question'` 时从 `GET /api/approvals`
+  /// 读出；其它阶段清空，避免拿旧问题继续催人）。
+  GoalQuestionInfo? _question;
+  String? _questionError;
+
+  /// 问题列表是否已经读过（区分「正在读取」和「确实没有待回答问题」）。
+  bool _questionLoaded = false;
+
   bool _loading = true;
   String? _error;
 
@@ -419,6 +431,33 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       planError = null;
     }
 
+    // 问答阶段（Task 13「需要你」形态三）：问题正文只在 `/api/approvals`
+    // （user-questions 扫描，与桌面 GoalDetailOverlay 同源），失败/已答不算
+    // 整页错误——卡片让位并给诚实的可重试提示。
+    var question = _question;
+    String? questionError;
+    var questionLoaded = _questionLoaded;
+    if (stageKind == 'question') {
+      questionLoaded = false;
+      // 问题正文只依赖 goalId（`/api/approvals` 扫描），不需要 Pod 也能读；
+      // 没有 Pod 只是不回写事件已读（`markAttentionSeen` 会跳过）。
+      try {
+        final items = await client.pendingGoalQuestions(widget.goalId);
+        question = items.isEmpty ? null : items.first;
+        questionError = null;
+        questionLoaded = true;
+      } catch (e) {
+        question = null;
+        questionError = _messageOf(e);
+        questionLoaded = true;
+      }
+      if (!mounted || seq != _seq) return;
+    } else {
+      question = null;
+      questionError = null;
+      questionLoaded = true;
+    }
+
     var revisions = _revisions;
     var result = _result;
     if (podId != null) {
@@ -454,6 +493,9 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       _plan = plan;
       _planError = planError;
       _planMissing = planMissing;
+      _question = question;
+      _questionError = questionError;
+      _questionLoaded = questionLoaded;
       _error = error != null && !hasTimeline && goal == null ? error : null;
     });
   }
@@ -669,13 +711,16 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       revision: _revision,
       stageKind: _goal?.stageKind,
     );
-    // 外部组件位优先（Task 13 会在这里组合方向/问答）；缺省时由页面自己渲染
-    // 计划批准卡（Task 9），两者都只在「需要你」时返回非 null。
-    final slot = widget.attentionSlot != null
-        ? widget.attentionSlot!(context, slotContext)
-        : _defaultAttentionSlot(slotContext);
-    if (slot != null) {
-      children.add(_buildAttention(slot));
+    // 组合语义（Task 13 接缝修复）：内置卡按 stageKind 渲染，外部 builder 的
+    // 输出与之**同时**渲染；两者都为 null 才整块隐藏（不再二选一）。
+    final builtIn = _defaultAttentionSlot(slotContext);
+    final custom = widget.attentionSlot?.call(context, slotContext);
+    final slots = <Widget>[
+      ?builtIn,
+      ?custom,
+    ];
+    if (slots.isNotEmpty) {
+      children.add(_buildAttention(slots));
       children.add(const SizedBox(height: 14));
     }
 
@@ -728,12 +773,31 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
     );
   }
 
-  /// 缺省「需要你」内容：计划待批准时渲染 [PlanApprovalCard]。
+  /// 缺省「需要你」内容（Task 9/13）：按 `stageKind` 分发内置卡。
   ///
-  /// 只在 `stageKind == 'plan_approval'`、计划可读且审批仍为 pending 时出现；
-  /// 其他情况返回 null（整块「需要你」不渲染，而不是给一个空框）。
+  /// - `plan_approval` → [PlanApprovalCard]（计划可读且仍 pending 时）；
+  /// - `direction_review` → [DirectionPanel]（候选来自 revision 的
+  ///   `direction_json` 镜像，没有候选也能写自由文本）；
+  /// - `question` → [QuestionCard]（正文来自 `GET /api/approvals`）；
+  /// - 其它阶段 / 没有可做的事 → `null`（该卡不渲染，不是给一个空框）。
+  ///
+  /// 注意：这是**内置**内容；外部 `attentionSlot` 的输出由 [_buildChildren]
+  /// 叠加在同一「需要你」框里，二者不再二选一。
   Widget? _defaultAttentionSlot(GoalAttentionContext slot) {
-    if (slot.stageKind != 'plan_approval') return null;
+    switch (slot.stageKind) {
+      case 'plan_approval':
+        return _planAttention();
+      case 'direction_review':
+        return _directionAttention(slot);
+      case 'question':
+        return _questionAttention(slot);
+      default:
+        return null;
+    }
+  }
+
+  /// 计划待批准（Task 9）。
+  Widget? _planAttention() {
     final client = widget.client;
     if (client == null) return null;
     final plan = _plan;
@@ -765,18 +829,98 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
       client: client,
       goalId: widget.goalId,
       plan: plan,
-      onApproved: () => _afterPlanDecision('计划已批准，Tech Lead 开始实施'),
-      onRejected: () => _afterPlanDecision('已驳回，Tech Lead 会按反馈重出计划'),
+      podId: _podId,
+      revision: _revision,
+      onApproved: () => _afterAttentionAction('计划已批准，Tech Lead 开始实施'),
+      onRejected: () => _afterAttentionAction('已驳回，Tech Lead 会按反馈重出计划'),
       onRefresh: () => unawaited(_load()),
     );
   }
 
-  void _afterPlanDecision(String message) {
+  /// 方向待裁定（Task 13 形态二）。
+  Widget? _directionAttention(GoalAttentionContext slot) {
+    final client = widget.client;
+    if (client == null) return null;
+    final podId = slot.podId;
+    if (podId == null || podId.isEmpty) {
+      return const Text(
+        '还没有鲸群，无法记录方向；先在工作页创建鲸群。',
+        key: Key('direction-no-pod'),
+        style: TextStyle(fontSize: 11.5, height: 1.45, color: MafwPalette.dim),
+      );
+    }
+    return DirectionPanel(
+      podId,
+      widget.goalId,
+      client: client,
+      revision: slot.revision,
+      state: _directionStateInfo,
+      onDecided: _afterDirectionDecision,
+    );
+  }
+
+  /// 待回答问题（Task 13 形态三）。
+  Widget? _questionAttention(GoalAttentionContext slot) {
+    final client = widget.client;
+    if (client == null) return null;
+    final question = _question;
+    if (question != null) {
+      return QuestionCard(
+        widget.goalId,
+        question.id,
+        question.question,
+        client: client,
+        podId: slot.podId,
+        revision: slot.revision,
+        onAnswered: () => _afterAttentionAction('已提交回答'),
+      );
+    }
+    final error = _questionError;
+    if (error != null) {
+      return Text(
+        '问题读取失败：$error\n下拉刷新重试。',
+        key: const Key('question-load-error'),
+        style: const TextStyle(fontSize: 11.5, height: 1.45, color: MafwPalette.dim),
+      );
+    }
+    if (!_questionLoaded) {
+      return const Text(
+        '正在读取问题…',
+        key: Key('question-loading'),
+        style: TextStyle(fontSize: 11.5, height: 1.45, color: MafwPalette.dim),
+      );
+    }
+    return const Text(
+      '这个问题已经不在待回答列表里（可能已被回答）。下拉刷新重试。',
+      key: Key('question-missing'),
+      style: TextStyle(fontSize: 11.5, height: 1.45, color: MafwPalette.dim),
+    );
+  }
+
+  /// 当前 revision 的方向状态（`direction_json` 镜像；坏值 = 没有候选）。
+  DirectionStateInfo? get _directionStateInfo {
+    final current = latestRevision(_revisions);
+    if (current == null) return null;
+    return DirectionStateInfo.parse(current.directionJson);
+  }
+
+  /// 方向决定已落库后的阶段处理（Task 13 诚实接缝）。
+  ///
+  /// `planningStarted == false` 时**不刷新**：服务端已经把 revision 推进到
+  /// planning，刷新会让 `direction_review` 面板整体消失，[DirectionPanel]
+  /// 里的 `planningError` 就永远看不到。决定已经 append-only 落库，保留旧面板
+  /// 展示失败原因，用户可下拉刷新查看新阶段。
+  void _afterDirectionDecision(DirectionDecisionResult result) {
+    if (!result.planningStarted) return;
+    _afterAttentionAction('已记录方向，Tech Lead 会继续规划');
+  }
+
+  void _afterAttentionAction(String message) {
     _snack(message);
     unawaited(_load());
   }
 
-  Widget _buildAttention(Widget slot) {
+  Widget _buildAttention(List<Widget> slots) {
     return Container(
       key: const Key('goal-attention-slot'),
       padding: const EdgeInsets.all(12),
@@ -803,7 +947,10 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
             ],
           ),
           const SizedBox(height: 8),
-          slot,
+          for (var i = 0; i < slots.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            slots[i],
+          ],
         ],
       ),
     );
