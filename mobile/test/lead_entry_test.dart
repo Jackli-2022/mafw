@@ -364,6 +364,46 @@ void main() {
       expect(find.text('Alpha'), findsOneWidget);
       expect(find.text('Beta'), findsOneWidget);
     });
+
+    testWidgets('a failed first load is not retried by parent rebuilds',
+        (tester) async {
+      final client = _ChatClient()
+        ..sessions = [
+          MafwSession(id: 'ses_a', title: 'Alpha', projectID: _dirA),
+        ]
+        ..listError = Exception('offline');
+
+      final store = await _pumpChatTab(tester, client: client, activeDir: _dirA);
+      expect(client.listProjectIDs, [_dirA]);
+
+      // 父级 rebuild（WS 状态变化等）→ didUpdateWidget，但没有任何显式 dirty
+      // 来源：离线失败后不允许自动重试。
+      await tester.pumpWidget(MaterialApp(
+        theme: mafwDarkTheme(),
+        home: SessionsPage(
+          sessions: const <MafwSession>[],
+          onOpen: (_) {},
+          onSettings: () {},
+          client: client,
+          activeProject: store,
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(client.listProjectIDs, [_dirA],
+          reason: '失败后只有显式动作（进 tab / 切项目）才允许重试');
+
+      // 用户重新进入聊天 tab = 显式动作，允许重试。
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('聊天'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(client.listProjectIDs, [_dirA, _dirA]);
+    });
   });
 
   group('聊天 tab 新话题', () {

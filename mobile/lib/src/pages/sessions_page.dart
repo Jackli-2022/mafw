@@ -101,7 +101,6 @@ class _SessionsPageState extends State<SessionsPage> {
 
   // 聊天 tab：按 active 项目拉取（`listSessions(projectID:)`，Task 14）。
   List<MafwSession>? _chatSessions;
-  bool _chatLoaded = false;
   bool _chatLoading = false;
   bool _chatDirty = true;
   bool _creatingTopic = false;
@@ -167,7 +166,6 @@ class _SessionsPageState extends State<SessionsPage> {
   /// 丢弃当前聊天页数据（在飞响应由 `_chatSeq` 作废）。
   void _resetChatSessions() {
     _chatSessions = null;
-    _chatLoaded = false;
     _chatLoading = false;
     _chatDirty = true;
     _chatSeq++;
@@ -182,10 +180,12 @@ class _SessionsPageState extends State<SessionsPage> {
 
   void _ensureChatLoaded() {
     if (widget.client == null) return;
-    // 只有「需要拉取」时才发请求：显式进入 tab / 切换项目 / client 变更会把
-    // `_chatDirty` 置位；失败后不自动重试，避免离线时每个父级 rebuild 都打网关。
-    if (_chatLoading || (_chatLoaded && !_chatDirty)) return;
-    _chatDirty = false;
+    // `_chatDirty` 是「还有一次未兑现的拉取请求」的唯一权威：
+    // - 显式动作（进 tab / 切项目 / client 变更 / 新建后）把它置 true；
+    // - 请求真正结束（成功或失败）才清 false。
+    // 所以失败后普通父级 rebuild（WS 状态变化等）不会自动重试——离线是移动端
+    // 主场景，反复发起无超时请求 + 反复加载态比空态更糟；下一次显式动作再试。
+    if (_chatLoading || !_chatDirty) return;
     unawaited(_loadChatSessions());
   }
 
@@ -201,14 +201,18 @@ class _SessionsPageState extends State<SessionsPage> {
       list.sort(_compareSessions);
       setState(() {
         _chatSessions = list;
-        _chatLoaded = true;
         _chatLoading = false;
+        // 本次拉取已兑现；下一次显式动作才会重新置位。
+        _chatDirty = false;
       });
     } catch (_) {
       if (!mounted || seq != _chatSeq) return;
-      // 失败保留旧列表（离线时比空白更诚实）；没有旧列表就是空态，下次
-      // 进入聊天 tab 会重试。
-      setState(() => _chatLoading = false);
+      // 失败保留旧列表（离线时比空白更诚实）；没有旧列表就是空态。本次尝试
+      // 已结束（dirty 清掉），普通 rebuild 不会重试，进 tab / 切项目再试。
+      setState(() {
+        _chatLoading = false;
+        _chatDirty = false;
+      });
     }
   }
 
