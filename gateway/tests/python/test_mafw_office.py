@@ -221,6 +221,35 @@ class WorkbookTests(unittest.TestCase):
         self.assertEqual(result["pages"], 3)
         self.assertTrue(os.path.exists(result["path"]))
 
+    def test_merge_conditional_validation_protection(self) -> None:
+        mo.merge_cells(self.path, "Sheet1", "A1:B2")
+        mo.add_conditional_format(self.path, "Sheet1", "B2:B10", "color_scale")
+        mo.add_conditional_format(self.path, "Sheet1", "B2:B10", "cell_is", {
+            "operator": "greaterThan", "formula": ["10"], "fill": "FFC7CE",
+        })
+        mo.add_data_validation(self.path, "Sheet1", "C2:C5", "list", {"formula1": "A,B,C"})
+        mo.protect_sheet(self.path, "Sheet1", "secret")
+
+        info = mo.inspect_workbook(self.path)
+        sheet = info["sheets"][0]
+        self.assertIn("A1:B2", sheet["merged"])
+        self.assertGreaterEqual(sum(len(cf["rules"]) for cf in sheet["conditional_formatting"]), 2)
+        self.assertEqual(sheet["data_validations"], 1)
+        self.assertTrue(sheet["protected"])
+
+        from openpyxl import load_workbook
+
+        wb = load_workbook(self.path)
+        ws = wb["Sheet1"]
+        self.assertIn("A1:B2", [str(r) for r in ws.merged_cells.ranges])
+        self.assertGreaterEqual(sum(len(cf.rules) for cf in ws.conditional_formatting), 2)
+        self.assertEqual(len(ws.data_validations.dataValidation), 1)
+        self.assertTrue(ws.protection.sheet)
+        wb.close()
+
+        mo.unmerge_cells(self.path, "Sheet1", "A1:B2")
+        self.assertNotIn("A1:B2", mo.inspect_workbook(self.path)["sheets"][0]["merged"])
+
     def test_convert_legacy_rejects_modern_files(self) -> None:
         result = mo.convert_legacy(self.path)
         self.assertEqual(result["reason"], "not-legacy")

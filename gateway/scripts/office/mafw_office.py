@@ -477,16 +477,36 @@ def inspect_workbook(
                 "max_col": ws.max_column or 0,
                 "rows": rows,
             }
+            meta_ws = (
+                wb_charts[ws.title]
+                if wb_charts is not None and ws.title in wb_charts.sheetnames
+                else ws
+            )
             try:
-                item["merged"] = [str(r) for r in ws.merged_cells.ranges]
+                item["merged"] = [str(r) for r in meta_ws.merged_cells.ranges]
             except Exception:
                 item["merged"] = []
+            try:
+                item["conditional_formatting"] = [
+                    {"range": str(cf.sqref), "rules": [type(rule).__name__ for rule in cf.rules]}
+                    for cf in meta_ws.conditional_formatting
+                ]
+            except Exception:
+                item["conditional_formatting"] = []
+            try:
+                item["data_validations"] = len(meta_ws.data_validations.dataValidation)
+            except Exception:
+                item["data_validations"] = 0
+            try:
+                item["protected"] = bool(meta_ws.protection.sheet)
+            except Exception:
+                item["protected"] = False
             item["charts"] = (
                 [
                     {"type": type(chart).__name__}
-                    for chart in getattr(wb_charts[ws.title], "_charts", [])
+                    for chart in getattr(meta_ws, "_charts", [])
                 ]
-                if wb_charts is not None and ws.title in wb_charts.sheetnames
+                if wb_charts is not None
                 else []
             )
             if wb_formulas is not None and ws.title in wb_formulas.sheetnames:
@@ -754,6 +774,175 @@ def add_chart(
         "anchor": anchor,
         "out": os.path.abspath(target),
     }
+
+
+def merge_cells(path: str, sheet: str | None, cell_range: str, out: str | None = None) -> dict[str, Any]:
+    wb = _load_workbook(path)
+    ws = wb[sheet] if sheet else wb.worksheets[0]
+    ws.merge_cells(cell_range)
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheet": ws.title, "range": cell_range, "out": os.path.abspath(target)}
+
+
+def unmerge_cells(path: str, sheet: str | None, cell_range: str, out: str | None = None) -> dict[str, Any]:
+    wb = _load_workbook(path)
+    ws = wb[sheet] if sheet else wb.worksheets[0]
+    ws.unmerge_cells(cell_range)
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheet": ws.title, "range": cell_range, "out": os.path.abspath(target)}
+
+
+def _rule_fill(options: dict[str, Any]):
+    color = options.get("fill")
+    if not color:
+        return None
+    from openpyxl.styles import PatternFill
+
+    return PatternFill(start_color=_argb(color), end_color=_argb(color), fill_type="solid")
+
+
+def _rule_font(options: dict[str, Any]):
+    if not any(key in options for key in ("font_color", "bold", "italic", "font_size")):
+        return None
+    from openpyxl.styles import Font
+
+    return Font(
+        color=_argb(options["font_color"]) if options.get("font_color") else None,
+        bold=bool(options.get("bold")) if "bold" in options else None,
+        italic=bool(options.get("italic")) if "italic" in options else None,
+        size=float(options["font_size"]) if options.get("font_size") else None,
+    )
+
+
+def add_conditional_format(
+    path: str,
+    sheet: str | None,
+    cell_range: str,
+    rule_type: str,
+    options: dict[str, Any] | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Add conditional formatting: color_scale | data_bar | icon_set | cell_is | formula."""
+    from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule, FormulaRule, IconSetRule
+
+    opts = options or {}
+    kind = rule_type.lower()
+    if kind == "color_scale":
+        rule = ColorScaleRule(
+            start_type=opts.get("start_type", "min"),
+            start_color=_argb(opts.get("start_color", "F8696B")),
+            mid_type=opts.get("mid_type", "percentile"),
+            mid_value=opts.get("mid_value", 50),
+            mid_color=_argb(opts.get("mid_color", "FFEB84")),
+            end_type=opts.get("end_type", "max"),
+            end_color=_argb(opts.get("end_color", "63BE7B")),
+        )
+    elif kind == "data_bar":
+        rule = DataBarRule(
+            start_type="num",
+            start_value=opts.get("start_value", 0),
+            end_type="num",
+            end_value=opts.get("end_value", 100),
+            color=_argb(opts.get("color", "638EC6")),
+            showValue=bool(opts.get("show_value", True)),
+        )
+    elif kind == "icon_set":
+        rule = IconSetRule(
+            icon_style=opts.get("icon_style", "3TrafficLights1"),
+            type=opts.get("type", "percent"),
+            values=opts.get("values", [0, 33, 67]),
+            showValue=bool(opts.get("show_value", True)),
+            reverse=bool(opts.get("reverse", False)),
+        )
+    elif kind == "cell_is":
+        kwargs: dict[str, Any] = {
+            "operator": opts.get("operator", "greaterThan"),
+            "formula": [str(value) for value in opts.get("formula", ["0"])],
+        }
+        fill = _rule_fill(opts)
+        font = _rule_font(opts)
+        if fill is not None:
+            kwargs["fill"] = fill
+        if font is not None:
+            kwargs["font"] = font
+        rule = CellIsRule(**kwargs)
+    elif kind == "formula":
+        kwargs = {"formula": [str(value) for value in opts.get("formula", ["TRUE"])]}
+        fill = _rule_fill(opts)
+        font = _rule_font(opts)
+        if fill is not None:
+            kwargs["fill"] = fill
+        if font is not None:
+            kwargs["font"] = font
+        rule = FormulaRule(**kwargs)
+    else:
+        raise ValueError(f"unsupported rule type: {rule_type!r} (color_scale|data_bar|icon_set|cell_is|formula)")
+    wb = _load_workbook(path)
+    ws = wb[sheet] if sheet else wb.worksheets[0]
+    ws.conditional_formatting.add(cell_range, rule)
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheet": ws.title, "range": cell_range, "rule": kind, "out": os.path.abspath(target)}
+
+
+def add_data_validation(
+    path: str,
+    sheet: str | None,
+    cell_range: str,
+    validation_type: str = "list",
+    options: dict[str, Any] | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Add data validation (list|whole|decimal|date|time|textLength|custom)."""
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    opts = options or {}
+    formula1 = opts.get("formula1")
+    if validation_type == "list" and formula1 and not str(formula1).startswith(("=", '"')):
+        formula1 = f'"{formula1}"'
+    validation = DataValidation(
+        type=validation_type,
+        operator=opts.get("operator"),
+        formula1=formula1,
+        formula2=opts.get("formula2"),
+        allow_blank=bool(opts.get("allow_blank", True)),
+        showErrorMessage=bool(opts.get("show_error", True)),
+        showInputMessage=bool(opts.get("show_input", True)),
+        errorTitle=opts.get("error_title"),
+        error=opts.get("error"),
+        promptTitle=opts.get("prompt_title"),
+        prompt=opts.get("prompt"),
+    )
+    validation.add(cell_range)
+    wb = _load_workbook(path)
+    ws = wb[sheet] if sheet else wb.worksheets[0]
+    ws.add_data_validation(validation)
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheet": ws.title, "range": cell_range, "type": validation_type, "out": os.path.abspath(target)}
+
+
+def protect_sheet(
+    path: str,
+    sheet: str | None,
+    password: str | None = None,
+    options: dict[str, Any] | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Protect a worksheet; true/false options map to SheetProtection fields."""
+    wb = _load_workbook(path)
+    ws = wb[sheet] if sheet else wb.worksheets[0]
+    ws.protection.sheet = True
+    if password:
+        ws.protection.set_password(str(password))
+    for key, value in (options or {}).items():
+        if hasattr(ws.protection, key):
+            setattr(ws.protection, key, bool(value))
+    target = out or path
+    atomic_save(wb, target)
+    return {"ok": True, "sheet": ws.title, "protected": True, "out": os.path.abspath(target)}
 
 
 def inspect_document(path: str, max_paragraphs: int = 100) -> dict[str, Any]:

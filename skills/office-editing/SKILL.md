@@ -208,11 +208,28 @@ mafw_office.add_chart(
 mafw_office.add_sheet(path, title="附录", index=2)
 mafw_office.rename_sheet(path, "附录", "Appendix")
 mafw_office.delete_sheet(path, "Appendix")
+
+# 合并 / 条件格式 / 数据验证 / 保护
+mafw_office.merge_cells(path, "Sheet1", "A1:B2")
+mafw_office.unmerge_cells(path, "Sheet1", "A1:B2")
+mafw_office.add_conditional_format(path, "Sheet1", "B2:B10", "color_scale")
+mafw_office.add_conditional_format(path, "Sheet1", "B2:B10", "cell_is", {
+    "operator": "greaterThan", "formula": ["10"], "fill": "FFC7CE", "font_color": "9C0006",
+})
+mafw_office.add_conditional_format(path, "Sheet1", "C2:C10", "data_bar", {"color": "638EC6"})
+mafw_office.add_data_validation(path, "Sheet1", "D2:D50", "list", {
+    "formula1": "草稿,进行中,完成", "error": "请选择列表中的值",
+})
+mafw_office.protect_sheet(path, "Sheet1", "secret", {"formatCells": False})
 ```
 
 - `set_cells` / `set_cell_style` 保留未指定的样式；`fill/color` 用 6 位 RGB。
 - `set_formulas` 只写公式字符串；**Excel 打开时才重算**，openpyxl 不计算。需要最终数值时用 Excel COM 打开保存，或让用户确认。
 - `add_image` 需要 Pillow；`set_sheet_layout` 的 `freeze=""` 可取消冻结。
+- 条件格式支持 `color_scale` / `data_bar` / `icon_set` / `cell_is` / `formula`；`inspect_workbook` 返回
+  `merged` / `conditional_formatting` / `data_validations` / `protected`，改前先看。
+- 数据验证的 list 直接写逗号分隔值（helper 自动加引号）；范围引用写成 `=Sheet1!$A$1:$A$5`。
+- 保护工作表会阻止后续编辑，**最后再做**；需要继续编辑时先取消保护（openpyxl 直接 `ws.protection.sheet=false`）。
 - 图表/宏（xlsm）不建模；复杂图表改数据请先确认用户接受风险。
 
 ### 7.2 docx
