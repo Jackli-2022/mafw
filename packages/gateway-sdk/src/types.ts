@@ -1139,6 +1139,13 @@ export interface PodGoalStage {
     questionId?: string
   }
 }
+/** Driver 的待答问题（`pendingQuestion`）：questionId 是 respond 的权威 id。 */
+export interface PodPendingQuestion {
+  questionId: string
+  node: 'plan' | 'execute' | 'review'
+  /** 问题正文（`driver.ts` 的 `state.pendingQuestion.questions`）。 */
+  questions: string[]
+}
 export interface PodAttentionItem {
   id: string
   goalId: string
@@ -1181,6 +1188,8 @@ export interface PodGoal {
   phase: string | null
   verdict: PodGoalVerdict | null
   stage: PodGoalStage
+  /** Driver 的待答问题（含正文）；旧网关缺省/为 null。 */
+  pendingQuestion?: PodPendingQuestion | null
   /** Canonical list bucket; absent on pre-v3 gateways. */
   bucket?: PodWorkBucket
   resultReady: boolean
