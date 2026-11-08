@@ -25,6 +25,17 @@ def _shape_type(sh) -> str:
         return "UNKNOWN"
 
 
+def _load_workbook(path: str, **kwargs: Any):
+    """openpyxl loader that preserves VBA for .xlsm (read_only cannot keep_vba)."""
+    from openpyxl import load_workbook as _xlsx_load
+
+    if kwargs.get("read_only"):
+        kwargs.pop("keep_vba", None)
+    else:
+        kwargs.setdefault("keep_vba", str(path).lower().endswith(".xlsm"))
+    return _xlsx_load(path, **kwargs)
+
+
 def _text_of(sh) -> str | None:
     if not getattr(sh, "has_text_frame", False):
         return None
@@ -449,9 +460,9 @@ def inspect_workbook(
     """
     from openpyxl import load_workbook
 
-    wb = load_workbook(path, read_only=True, data_only=True)
-    wb_formulas = load_workbook(path, read_only=True, data_only=False) if include_formulas else None
-    wb_charts = load_workbook(path, data_only=True) if include_charts else None
+    wb = _load_workbook(path, read_only=True, data_only=True)
+    wb_formulas = _load_workbook(path, read_only=True, data_only=False) if include_formulas else None
+    wb_charts = _load_workbook(path, data_only=True) if include_charts else None
     try:
         sheets: list[dict[str, Any]] = []
         for ws in wb.worksheets:
@@ -491,7 +502,11 @@ def inspect_workbook(
                             formulas.append({"cell": cell.coordinate, "formula": cell.value})
                 item["formulas"] = formulas
             sheets.append(item)
-        return {"path": os.path.abspath(path), "sheets": sheets}
+        return {
+            "path": os.path.abspath(path),
+            "macro_enabled": str(path).lower().endswith(".xlsm"),
+            "sheets": sheets,
+        }
     finally:
         wb.close()
         if wb_formulas is not None:
@@ -512,7 +527,7 @@ def set_cells(
     """Set cells: [{sheet?, cell, value}]. Keeps existing styles; first sheet by default."""
     from openpyxl import load_workbook
 
-    wb = load_workbook(path)
+    wb = _load_workbook(path)
     changed = 0
     for update in updates:
         name = update.get("sheet")
@@ -535,7 +550,7 @@ def _argb(value: Any) -> str:
 def add_sheet(path: str, title: str | None = None, index: int | None = None, out: str | None = None) -> dict[str, Any]:
     from openpyxl import load_workbook
 
-    wb = load_workbook(path)
+    wb = _load_workbook(path)
     ws = wb.create_sheet(title=title)
     if index is not None:
         wb._sheets.remove(ws)
@@ -548,7 +563,7 @@ def add_sheet(path: str, title: str | None = None, index: int | None = None, out
 def delete_sheet(path: str, sheet: str, out: str | None = None) -> dict[str, Any]:
     from openpyxl import load_workbook
 
-    wb = load_workbook(path)
+    wb = _load_workbook(path)
     if sheet not in wb.sheetnames:
         raise ValueError(f"sheet not found: {sheet!r}; available: {wb.sheetnames}")
     if len(wb.sheetnames) <= 1:
@@ -562,7 +577,7 @@ def delete_sheet(path: str, sheet: str, out: str | None = None) -> dict[str, Any
 def rename_sheet(path: str, sheet: str, new_title: str, out: str | None = None) -> dict[str, Any]:
     from openpyxl import load_workbook
 
-    wb = load_workbook(path)
+    wb = _load_workbook(path)
     if sheet not in wb.sheetnames:
         raise ValueError(f"sheet not found: {sheet!r}; available: {wb.sheetnames}")
     wb[sheet].title = new_title
@@ -580,7 +595,7 @@ def set_cell_style(path: str, updates: Iterable[dict[str, Any]], out: str | None
     from openpyxl import load_workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-    wb = load_workbook(path)
+    wb = _load_workbook(path)
     changed = 0
     for update in updates:
         ws = wb[update["sheet"]] if update.get("sheet") else wb.worksheets[0]
@@ -624,7 +639,7 @@ def set_formulas(path: str, updates: Iterable[dict[str, Any]], out: str | None =
     recalculates on open; openpyxl does not compute values."""
     from openpyxl import load_workbook
 
-    wb = load_workbook(path)
+    wb = _load_workbook(path)
     changed = 0
     for update in updates:
         ws = wb[update["sheet"]] if update.get("sheet") else wb.worksheets[0]
@@ -646,7 +661,7 @@ def set_sheet_layout(
 ) -> dict[str, Any]:
     from openpyxl import load_workbook
 
-    wb = load_workbook(path)
+    wb = _load_workbook(path)
     ws = wb[sheet] if sheet else wb.worksheets[0]
     for column, width in (columns or {}).items():
         ws.column_dimensions[str(column)].width = float(width)
@@ -672,7 +687,7 @@ def add_image(
     from openpyxl import load_workbook
     from openpyxl.drawing.image import Image as XLImage
 
-    wb = load_workbook(path)
+    wb = _load_workbook(path)
     ws = wb[sheet] if sheet else wb.worksheets[0]
     image = XLImage(image_path)
     if width:
@@ -704,7 +719,7 @@ def add_chart(
     from openpyxl.chart import AreaChart, BarChart, LineChart, PieChart, Reference
     from openpyxl.utils import range_boundaries
 
-    wb = load_workbook(path)
+    wb = _load_workbook(path)
     ws = wb[sheet] if sheet else wb.worksheets[0]
     kind = chart_type.lower()
     if kind in ("bar", "column"):
@@ -765,6 +780,16 @@ def inspect_document(path: str, max_paragraphs: int = 100) -> dict[str, Any]:
             "header": "\n".join(p.text for p in section.header.paragraphs),
             "footer": "\n".join(p.text for p in section.footer.paragraphs),
         })
+    comments = []
+    try:
+        for comment in document.comments:
+            comments.append({
+                "id": getattr(comment, "comment_id", None),
+                "author": getattr(comment, "author", ""),
+                "text": getattr(comment, "text", ""),
+            })
+    except Exception:
+        pass
     return {
         "path": os.path.abspath(path),
         "paragraph_count": len(document.paragraphs),
@@ -772,11 +797,174 @@ def inspect_document(path: str, max_paragraphs: int = 100) -> dict[str, Any]:
         "paragraphs_detail": detail[:max_paragraphs],
         "tables": tables,
         "sections": sections,
+        "comments": comments,
     }
 
 
 def inspect_json_document(path: str, **kwargs: Any) -> str:
     return json.dumps(inspect_document(path, **kwargs), ensure_ascii=False, indent=2)
+
+
+def docx_add_comment(
+    path: str,
+    paragraph_index: int,
+    text: str,
+    author: str = "MAFW",
+    initials: str | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Attach a Word comment to a 1-based body paragraph's runs."""
+    import docx
+
+    document = docx.Document(path)
+    paragraphs = document.paragraphs
+    if paragraph_index < 1 or paragraph_index > len(paragraphs):
+        raise ValueError(f"paragraph index out of range: {paragraph_index} (1..{len(paragraphs)})")
+    paragraph = paragraphs[paragraph_index - 1]
+    runs = list(paragraph.runs)
+    if not runs:
+        paragraph.add_run("")
+        runs = list(paragraph.runs)
+    comment = document.add_comment(runs, text=text, author=author, initials=initials)
+    target = out or path
+    atomic_save(document, target)
+    return {
+        "ok": True,
+        "paragraph": paragraph_index,
+        "comment_id": getattr(comment, "comment_id", None),
+        "out": os.path.abspath(target),
+    }
+
+
+def _docx_set_update_fields(document, enabled: bool = True) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    settings = document.settings.element
+    existing = settings.find(qn("w:updateFields"))
+    if existing is None:
+        existing = OxmlElement("w:updateFields")
+        settings.append(existing)
+    existing.set(qn("w:val"), "true" if enabled else "false")
+
+
+def _docx_append_field(paragraph, instruction: str, placeholder: str = "1") -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    field = OxmlElement("w:fldSimple")
+    field.set(qn("w:instr"), instruction)
+    run = OxmlElement("w:r")
+    text = OxmlElement("w:t")
+    text.text = placeholder
+    run.append(text)
+    field.append(run)
+    paragraph._p.append(field)
+
+
+def docx_insert_toc(
+    path: str,
+    levels: int = 3,
+    title: str | None = None,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Append a TOC field (Word updates it on open; w:updateFields is set)."""
+    import docx
+
+    document = docx.Document(path)
+    if title:
+        document.add_paragraph(title)
+    paragraph = document.add_paragraph()
+    _docx_append_field(
+        paragraph,
+        f'TOC \\o "1-{max(1, int(levels))}" \\h \\z \\u',
+        "右键更新目录",
+    )
+    _docx_set_update_fields(document, True)
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "levels": levels, "out": os.path.abspath(target)}
+
+
+def docx_set_page_number_footer(
+    path: str,
+    template: str = "第 {PAGE} 页 / 共 {NUMPAGES} 页",
+    section_index: int = 1,
+    out: str | None = None,
+) -> dict[str, Any]:
+    """Replace a section footer with text + PAGE/NUMPAGES fields."""
+    import re
+
+    import docx
+
+    document = docx.Document(path)
+    if section_index < 1 or section_index > len(document.sections):
+        raise ValueError(f"section index out of range: {section_index} (1..{len(document.sections)})")
+    footer = document.sections[section_index - 1].footer
+    footer.is_linked_to_previous = False
+    paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    for run in list(paragraph.runs):
+        run._element.getparent().remove(run._element)
+    for part in re.split(r"(\{PAGE\}|\{NUMPAGES\})", template):
+        if part == "{PAGE}":
+            _docx_append_field(paragraph, " PAGE ", "1")
+        elif part == "{NUMPAGES}":
+            _docx_append_field(paragraph, " NUMPAGES ", "1")
+        elif part:
+            paragraph.add_run(part)
+    _docx_set_update_fields(document, True)
+    target = out or path
+    atomic_save(document, target)
+    return {"ok": True, "section": section_index, "out": os.path.abspath(target)}
+
+
+def docx_update_fields(path: str, out: str | None = None) -> dict[str, Any]:
+    """Update Word fields/TOC via COM (Windows + Word)."""
+    if os.name != "nt":
+        return {"ok": False, "reason": "unsupported-platform", "error": "Word COM is Windows-only"}
+    try:
+        import win32com.client
+    except Exception as exc:
+        return {"ok": False, "reason": "pywin32-missing", "error": str(exc)}
+
+    src = os.path.abspath(path)
+    target = os.path.abspath(out or path)
+    app = None
+    document = None
+    try:
+        app = win32com.client.DispatchEx("Word.Application")
+        try:
+            app.Visible = False
+        except Exception:
+            pass
+        try:
+            app.DisplayAlerts = 0
+        except Exception:
+            pass
+        document = app.Documents.Open(src, ReadOnly=False, AddToRecentFiles=False, Visible=False)
+        fields = int(document.Fields.Count)
+        document.Fields.Update()
+        tocs = int(document.TablesOfContents.Count)
+        for index in range(1, tocs + 1):
+            document.TablesOfContents(index).Update()
+        if target != src:
+            document.SaveAs2(target)
+        else:
+            document.Save()
+        return {"ok": True, "fields": fields, "tocs": tocs, "out": target}
+    except Exception as exc:
+        return {"ok": False, "reason": "update-failed", "error": str(exc)[:300]}
+    finally:
+        if document is not None:
+            try:
+                document.Close(False)
+            except Exception:
+                pass
+        if app is not None:
+            try:
+                app.Quit()
+            except Exception:
+                pass
 
 
 def _set_paragraph_text(paragraph, text: str) -> None:
@@ -1217,7 +1405,7 @@ def render_office(
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pptx":
         result = render_deck(path, out_dir, width=width, slides=slides)
-    elif ext == ".xlsx":
+    elif ext in (".xlsx", ".xlsm"):
         result = render_workbook(path, out_dir, width=width)
     elif ext == ".docx":
         result = render_document(path, out_dir, width=width)

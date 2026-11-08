@@ -228,7 +228,16 @@ mafw_office.set_header(path, "2026 年度报告")
 mafw_office.set_footer(path, "内部资料 · 第 1 页")
 mafw_office.docx_add_picture(path, r"C:\work\proj\shot.png", width_inches=4.5)
 mafw_office.replace_text_docx(path, {"2025": "2026"})
+mafw_office.docx_add_comment(path, 1, "这里需要补充数据来源", author="Reviewer")
+mafw_office.docx_insert_toc(path, levels=3, title="目录")
+mafw_office.docx_set_page_number_footer(path, "第 {PAGE} 页 / 共 {NUMPAGES} 页")
+mafw_office.docx_update_fields(path)   # Word COM：更新 TOC/页码域
 ```
+
+- 批注用 `docx_add_comment`（1-based body 段落），`inspect_document` 会返回 `comments`。
+- TOC/页码是 Word 域：插入后设 `w:updateFields`，再用 `docx_update_fields`（Windows + Word）更新；
+  没有 Word 时让用户打开文档按 F9 更新。
+- `.xlsm` 走 `keep_vba=True` 编辑，保留宏容器；openpyxl 仍不建模宏/复杂图表。
 
 - `replace_text_docx` 走 run 级替换（保字体/字号），覆盖正文段落、表格、页眉、页脚；跨 run 命中会合并该段 run。
 - `set_header` / `set_footer` 默认第 1 节；多节文档用 `section_index`。
@@ -275,7 +284,7 @@ render = mafw_pdf.render_pdf(path, r"C:\work\proj\.render", width=1280)
 ```
 
 - **坐标**：points（1/72 inch），从页面**左上角**起算；页尺寸从 `inspect_pdf` 取（A4 = 595×842）。
-- **改文字**：优先改源 docx/pptx 后重新导出；PDF 只能叠加/水印/表单。用白底矩形盖住旧字再叠新字会漂移字体/位置，非必要不要做。
+- **改文字**：优先改源 docx/pptx 后重新导出；PDF 只能叠加/水印/表单。用白底矩形盖住旧字再叠新字会漂移字体/位置，且**旧词仍在文本层**（复制/搜索会出现新旧两份），非必要不要做。
 - **加密 PDF**：`inspect_pdf(..., password=...)`；编辑函数也接受 `password`（部分函数未透传时先解密另存）。
 - 表单字段先 `inspect_pdf` 看 `form_fields`；`fill_form` 后可重开确认 `/V` 值。
 - 页面操作默认写回原文件；建议 `out=` 输出副本，确认后再替换。

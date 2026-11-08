@@ -8,6 +8,7 @@ or on POSIX:
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -129,7 +130,9 @@ class DeckTests(unittest.TestCase):
         "set MAFW_TEST_OFFICE_COM=1 (Windows + Office) to run COM render tests",
     )
     def test_render_deck_powerpoint_com(self) -> None:
-        result = mo.render_deck(self.deck, os.path.join(self.tmp, "render"), width=640, height=360, slides=[1])
+        source = os.path.join(self.tmp, "render-deck-src.pptx")
+        shutil.copyfile(self.deck, source)
+        result = mo.render_deck(source, os.path.join(self.tmp, "render"), width=640, height=360, slides=[1])
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["images"][0]["slide"], 1)
         self.assertGreater(os.path.getsize(result["images"][0]["path"]), 1000)
@@ -222,6 +225,33 @@ class WorkbookTests(unittest.TestCase):
         result = mo.convert_legacy(self.path)
         self.assertEqual(result["reason"], "not-legacy")
 
+    @unittest.skipUnless(COM_TESTS, "set MAFW_TEST_OFFICE_COM=1 (Windows + Excel) to create/test xlsm")
+    def test_xlsm_edit_preserves_container(self) -> None:
+        import win32com.client
+
+        xlsm = os.path.join(self.tmp, "book.xlsm")
+        source = os.path.join(self.tmp, "xlsm-src.xlsx")
+        shutil.copyfile(self.path, source)
+        app = win32com.client.DispatchEx("Excel.Application")
+        try:
+            app.Visible = False
+            app.DisplayAlerts = False
+            wb = app.Workbooks.Open(source, ReadOnly=True)
+            wb.SaveAs(xlsm, FileFormat=52)  # xlOpenXMLWorkbookMacroEnabled
+            wb.Close(False)
+        finally:
+            try:
+                app.Quit()
+            except Exception:
+                pass
+        self.assertTrue(os.path.exists(xlsm))
+
+        mo.set_cells(xlsm, [{"cell": "B2", "value": 123}])
+        info = mo.inspect_workbook(xlsm)
+        self.assertTrue(info["macro_enabled"])
+        self.assertEqual(info["sheets"][0]["rows"][1][1], 123)
+        self.assertTrue(xlsm.endswith(".xlsm"))
+
     def test_inspect_and_set_cells(self) -> None:
         info = mo.inspect_workbook(self.path)
         self.assertEqual(info["sheets"][0]["name"], "Sheet1")
@@ -231,7 +261,9 @@ class WorkbookTests(unittest.TestCase):
 
     @unittest.skipUnless(COM_TESTS, "set MAFW_TEST_OFFICE_COM=1 (Windows + Excel) to run COM render tests")
     def test_render_workbook_excel_com(self) -> None:
-        result = mo.render_workbook(self.path, os.path.join(self.tmp, "render"), width=640)
+        source = os.path.join(self.tmp, "render-src.xlsx")
+        shutil.copyfile(self.path, source)
+        result = mo.render_workbook(source, os.path.join(self.tmp, "render"), width=640)
         self.assertTrue(result["ok"], result)
         self.assertGreaterEqual(len(result["images"]), 1)
         self.assertGreater(os.path.getsize(result["images"][0]["path"]), 1000)
@@ -254,6 +286,40 @@ class DocumentTests(unittest.TestCase):
         table = document.add_table(rows=1, cols=1)
         table.cell(0, 0).text = "cell 2025"
         document.save(self.path)
+
+    def test_comments_toc_and_page_numbers(self) -> None:
+        mo.docx_add_comment(self.path, 1, "Please review this paragraph", "Alice")
+        info = mo.inspect_document(self.path)
+        self.assertEqual(len(info["comments"]), 1)
+        self.assertEqual(info["comments"][0]["author"], "Alice")
+        self.assertIn("Please review", info["comments"][0]["text"])
+
+        mo.docx_insert_toc(self.path, levels=3, title="目录")
+        mo.docx_set_page_number_footer(self.path, "第 {PAGE} 页 / 共 {NUMPAGES} 页")
+
+        import zipfile
+
+        with zipfile.ZipFile(self.path) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+            settings_xml = archive.read("word/settings.xml").decode("utf-8")
+            footers = "".join(
+                archive.read(name).decode("utf-8")
+                for name in archive.namelist()
+                if name.startswith("word/footer") and name.endswith(".xml")
+            )
+        self.assertIn("TOC", document_xml)
+        self.assertIn("updateFields", settings_xml)
+        self.assertIn("PAGE", footers)
+        self.assertIn("NUMPAGES", footers)
+
+    @unittest.skipUnless(COM_TESTS, "set MAFW_TEST_OFFICE_COM=1 (Windows + Word) to update fields")
+    def test_update_fields_word_com(self) -> None:
+        mo.docx_insert_toc(self.path, levels=2)
+        mo.docx_set_page_number_footer(self.path, "第 {PAGE} 页")
+        result = mo.docx_update_fields(self.path)
+        self.assertTrue(result["ok"], result)
+        self.assertGreaterEqual(result["tocs"], 1)
+        self.assertGreaterEqual(result["fields"], 1)
 
     def test_paragraph_table_header_footer_image(self) -> None:
         mo.set_paragraph(self.path, 1, "Updated 2026")
@@ -291,7 +357,9 @@ class DocumentTests(unittest.TestCase):
 
     @unittest.skipUnless(COM_TESTS, "set MAFW_TEST_OFFICE_COM=1 (Windows + Word) to run COM render tests")
     def test_render_document_word_com(self) -> None:
-        result = mo.render_document(self.path, os.path.join(self.tmp, "render"), width=640)
+        source = os.path.join(self.tmp, "render-src.docx")
+        shutil.copyfile(self.path, source)
+        result = mo.render_document(source, os.path.join(self.tmp, "render"), width=640)
         self.assertTrue(result["ok"], result)
         self.assertGreaterEqual(len(result["images"]), 1)
         self.assertGreater(os.path.getsize(result["images"][0]["path"]), 1000)
