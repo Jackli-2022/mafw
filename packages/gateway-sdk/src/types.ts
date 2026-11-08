@@ -1179,6 +1179,15 @@ export interface PodMember {
   updatedAt: string
 }
 
+export interface PodGoalProgress {
+  total: number
+  done: number
+  inProgress: number
+  review: number
+  failed: number
+  skipped: number
+}
+
 export interface PodGoal {
   id: string
   podId: string
@@ -1193,6 +1202,8 @@ export interface PodGoal {
   /** Canonical list bucket; absent on pre-v3 gateways. */
   bucket?: PodWorkBucket
   resultReady: boolean
+  /** Real plan-task counts; absent on old gateways or Goals without a plan. */
+  progress?: PodGoalProgress | null
   sourceRef?: GoalSourceRef | null
   strategy?: PodGoalStrategy | null
   assessment?: PodGoalAssessment | null

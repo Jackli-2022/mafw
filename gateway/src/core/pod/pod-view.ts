@@ -7,6 +7,7 @@ import type {
 import type { GoalSourceRef } from '../goal/goal-intake';
 import type { PodDetail } from './pod-service';
 import { projectPodWorkBucket, type PodWorkBucket } from './pod-work-stage';
+import type { PodGoalProgress } from './pod-goal-progress';
 import {
   projectPodAttention,
   projectPodGoalStage,
@@ -85,6 +86,8 @@ export interface PodGoalView {
   /** The only list/count bucket exposed to Desktop. */
   bucket: PodWorkBucket;
   resultReady: boolean;
+  /** 当前计划任务的真实计数；没有计划任务时为 null（客户端不得伪造 0/0）。 */
+  progress?: PodGoalProgress | null;
   sourceRef: GoalSourceRef | null;
   strategy: PodGoalStrategy | null;
   assessment: PodGoalAssessment | null;
@@ -167,6 +170,7 @@ export function buildPodGoalView(
   row: PodGoalRow,
   description: PodGoalDescription | null,
   queueReason: PodQueueReason | undefined,
+  progress: PodGoalProgress | null = null,
 ): PodGoalView {
   const terminal = !!description?.terminal || row.status === 'done' || row.status === 'aborted';
   const verdict = row.verdict ?? description?.verdict ?? null;
@@ -210,6 +214,7 @@ export function buildPodGoalView(
     stage,
     bucket: projectPodWorkBucket({ stage, status: row.status, resultReady }),
     resultReady,
+    progress,
     sourceRef: description?.sourceRef ?? null,
     strategy: description?.strategy ?? null,
     assessment: description?.assessment ?? null,

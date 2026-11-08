@@ -53,6 +53,12 @@ describe('buildPodGoalView', () => {
     expect(view).toMatchObject({ verdict: 'MAX_RETRIES', resultReady: true, stage: { kind: 'ended' } });
   });
 
+  test('carries real progress and explicit null without inventing counts', () => {
+    const progress = { total: 5, done: 3, inProgress: 1, review: 0, failed: 1, skipped: 0 };
+    expect(buildPodGoalView(row, desc, undefined, progress).progress).toEqual(progress);
+    expect(buildPodGoalView(row, desc, undefined, null).progress).toBeNull();
+  });
+
   test('carries source, strategy, assessment and assignment without inventing old metadata', () => {
     const sourceRef = {
       sessionID: 'ses_free',

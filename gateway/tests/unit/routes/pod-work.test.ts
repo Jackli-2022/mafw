@@ -30,6 +30,7 @@ function goal(index: number, bucket: PodGoalView['bucket']): PodGoalView {
     strategy: null,
     assessment: null,
     currentAssignment: null,
+    progress: null,
     activeRevision: 1,
     revision: 1,
     priority: 0,

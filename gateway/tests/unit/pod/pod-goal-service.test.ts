@@ -94,6 +94,61 @@ describe('PodGoalService', () => {
     expect(startGoal).toHaveBeenLastCalledWith('g2', projectDir);
   });
 
+  test('views attaches plan-task progress without counting notes', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    store.upsertTask({
+      id: 't1',
+      podId: first.podId,
+      goalId: 'g1',
+      sourceKey: 'wave:w1:task:t1',
+      externalTaskId: 'w1-t1',
+      title: 'first',
+      description: null,
+      ownerMemberId: null,
+      status: 'done',
+      dependenciesJson: null,
+      artifactRefsJson: null,
+      now: '2026-10-29T00:00:00.000Z',
+    });
+    store.upsertTask({
+      id: 't2',
+      podId: first.podId,
+      goalId: 'g1',
+      sourceKey: 'wave:w1:task:t2',
+      externalTaskId: 'w1-t2',
+      title: 'second',
+      description: null,
+      ownerMemberId: null,
+      status: 'in_progress',
+      dependenciesJson: null,
+      artifactRefsJson: null,
+      now: '2026-10-29T00:00:01.000Z',
+    });
+    store.upsertTask({
+      id: 't3',
+      podId: first.podId,
+      goalId: 'g1',
+      sourceKey: 'manual:note',
+      externalTaskId: null,
+      title: 'note',
+      description: null,
+      ownerMemberId: null,
+      status: 'pending',
+      dependenciesJson: null,
+      artifactRefsJson: null,
+      now: '2026-10-29T00:00:02.000Z',
+    });
+
+    expect(service.views(first.podId)[0].progress).toEqual({
+      total: 2,
+      done: 1,
+      inProgress: 1,
+      review: 0,
+      failed: 0,
+      skipped: 0,
+    });
+  });
+
   test('paused pod queues without starting and does not promote', async () => {
     const first = await service.enqueueGoal('g1', projectDir);
     store.updatePod(first.podId, { status: 'paused' }, '2026-10-29T00:00:00.000Z');

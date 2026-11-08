@@ -9,6 +9,8 @@ import {
 } from './pod-view';
 import type { PodAttentionItem, PodGoalVerdict, PodQueueReason } from './pod-stage';
 import type { PodGoalResult } from './pod-result';
+import { podTaskKindOf } from './pod-task-service';
+import { summarizePodGoalProgress } from './pod-goal-progress';
 import type {
   FinishRevisionInput,
   FinishRevisionResult,
@@ -397,10 +399,20 @@ export class PodGoalService {
     const pod = this.deps.store.getPod(podId);
     if (!pod) return [];
     const runningProbe = this.deps.store.getRunningProbe(podId);
+    const tasksByGoal = new Map<string, Array<{ kind: string; status: string }>>();
+    for (const task of this.deps.store.listTasks(podId)) {
+      if (!task.goalId) continue;
+      const kind = podTaskKindOf(task);
+      if (kind !== 'plan') continue;
+      const items = tasksByGoal.get(task.goalId) ?? [];
+      items.push({ kind, status: task.status });
+      tasksByGoal.set(task.goalId, items);
+    }
     return this.deps.store.listGoals(podId).map((row) => buildPodGoalView(
       row,
       this.describeWithRevision(row, runningProbe),
       this.queueReasonFor(pod, row),
+      summarizePodGoalProgress(tasksByGoal.get(row.goalId) ?? []),
     ));
   }
 
