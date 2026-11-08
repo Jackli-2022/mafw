@@ -318,6 +318,22 @@ class GatewayClient {
     return sessionId;
   }
 
+  /// Pod detail envelope (`GET /api/pods/:podId`, route-catalog `pods.get`).
+  ///
+  /// Same shape as `podLookup` plus `members[]` / `tasks[]` / `sessions[]`
+  /// (`PodSessionRow`). The archived Tech Lead transcript needs the discussion
+  /// lease id from `sessions[]` — the `tech-lead` route itself answers 409 for a
+  /// terminal revision and carries no session id (Task 12).
+  Future<PodInfo> podDetail(String podId) async {
+    final res = await _get(_uri('/api/pods/${Uri.encodeComponent(podId)}'));
+    if (res.statusCode != 200) throw _failure('podDetail', res);
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) {
+      throw GatewayException('podDetail: unexpected payload (not a JSON object)');
+    }
+    return PodInfo.fromJson(j);
+  }
+
   // ── Goal detail: timeline / revisions / result / reject（Task 8）──
 
   /// Node-level execution trace (`GET /api/goals/:goalId/timeline`).

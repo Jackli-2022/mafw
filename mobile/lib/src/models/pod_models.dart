@@ -295,6 +295,10 @@ class PodInfo {
   final List<PodGoalView> goals;
   final List<AttentionItem> attention;
 
+  /// Pod member sessions (only present on the detail envelope
+  /// `GET /api/pods/:podId`); empty when the gateway did not send them.
+  final List<PodSessionInfo> sessions;
+
   const PodInfo({
     required this.id,
     required this.projectDir,
@@ -303,6 +307,7 @@ class PodInfo {
     required this.activeGoalId,
     required this.goals,
     required this.attention,
+    this.sessions = const <PodSessionInfo>[],
   });
 
   factory PodInfo.fromJson(Map<String, dynamic> j) {
@@ -315,6 +320,10 @@ class PodInfo {
     for (final item in _list(j['attention'])) {
       if (item is Map<String, dynamic>) attention.add(AttentionItem.fromJson(item));
     }
+    final sessions = <PodSessionInfo>[];
+    for (final item in _list(j['sessions'])) {
+      if (item is Map<String, dynamic>) sessions.add(PodSessionInfo.fromJson(item));
+    }
     return PodInfo(
       id: _str(pod['id'] ?? j['podId']),
       projectDir: _str(pod['projectDir']),
@@ -323,9 +332,59 @@ class PodInfo {
       activeGoalId: _strOrNull(pod['activeGoalId']),
       goals: goals,
       attention: attention,
+      sessions: sessions,
     );
   }
 }
+
+/// One `pod_member_sessions` row (`PodSessionRow`,
+/// `gateway/src/core/pod/pod-store.ts`) — the Pod detail's `sessions[]`.
+///
+/// `scopeKind == 'discussion'` is the Tech Lead discussion lease for
+/// `(goalId, revision)`; node sessions (execute/review/probe) carry `node` and
+/// no scope kind. Sentinels are `null` when the gateway omitted them.
+class PodSessionInfo {
+  final String sessionId;
+  final String memberId;
+  final String? goalId;
+  final String? node;
+  final String? scopeKind;
+  final int? revision;
+  final int generation;
+  final String createdAt;
+  final String? endedAt;
+
+  const PodSessionInfo({
+    required this.sessionId,
+    required this.memberId,
+    required this.goalId,
+    required this.node,
+    required this.scopeKind,
+    required this.revision,
+    required this.generation,
+    required this.createdAt,
+    required this.endedAt,
+  });
+
+  factory PodSessionInfo.fromJson(Map<String, dynamic> j) {
+    final revision = j['revision'];
+    return PodSessionInfo(
+      sessionId: _str(j['sessionId'] ?? j['sessionID']),
+      memberId: _str(j['memberId']),
+      goalId: _strOrNull(j['goalId']),
+      node: _strOrNull(j['node']),
+      scopeKind: _strOrNull(j['scopeKind']),
+      revision: revision is num ? revision.toInt() : null,
+      generation: _int(j['generation'], fallback: 1),
+      createdAt: _str(j['createdAt']),
+      endedAt: _strOrNull(j['endedAt']),
+    );
+  }
+
+  /// This lease is a Tech Lead discussion session (never a node session).
+  bool get isDiscussion => scopeKind == 'discussion' || node == 'discussion';
+}
+
 
 // ── Goal 详情：timeline / revisions / result（Task 8）──────────────────────────
 

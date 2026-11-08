@@ -13,8 +13,7 @@ import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
 import '../network/ws_client_interface.dart';
 import '../theme.dart';
-
-enum _GenPhase { idle, searching, writing }
+import '../widgets/chat_messages.dart';
 
 /// Chat view for one session: message list (live via WS events) + composer.
 class ChatPage extends StatefulWidget {
@@ -47,9 +46,10 @@ class _ChatPageState extends State<ChatPage> {
   bool _sending = false;
   bool _sticky = true;
 
-  /// Perplexity 式流式阶段：idle → searching → writing →（done 隐藏）。
+  /// Perplexity 式流式阶段（共享词表 `widgets/chat_messages.dart`）：
+  /// idle → searching → writing →（done 隐藏）。
   /// searching = 已发送待处理；writing = 收到 part 增量（生成中）。
-  _GenPhase _phase = _GenPhase.idle;
+  GenPhase _phase = GenPhase.idle;
   StreamSubscription<MafwEvent>? _sub;
   Timer? _refreshDebounce;
 
@@ -171,10 +171,10 @@ class _ChatPageState extends State<ChatPage> {
       debugPrint('[MAFW] phase ev: ${ev.innerType} session=${ev.sessionID} '
           'sending=$_sending phase=$_phase');
       if (effects.writing) {
-        if (_phase != _GenPhase.writing) setState(() => _phase = _GenPhase.writing);
+        if (_phase != GenPhase.writing) setState(() => _phase = GenPhase.writing);
       } else if (effects.turnEnd) {
         setState(() {
-          _phase = _GenPhase.idle;
+          _phase = GenPhase.idle;
           _sending = false;
         });
       }
@@ -191,7 +191,7 @@ class _ChatPageState extends State<ChatPage> {
     if (text.isEmpty || _sending) return;
     setState(() {
       _sending = true;
-      _phase = _GenPhase.searching;
+      _phase = GenPhase.searching;
     });
     _inputCtrl.clear();
     // Optimistic append of the user message.
@@ -214,7 +214,7 @@ class _ChatPageState extends State<ChatPage> {
         // 否则新会话事件被 sessionID 过滤，_sending 永远卡住。
         setState(() {
           _sending = false;
-          _phase = _GenPhase.idle;
+          _phase = GenPhase.idle;
         });
         _snack('已在新会话回复: $sid');
       }
@@ -224,7 +224,7 @@ class _ChatPageState extends State<ChatPage> {
       // 发送失败才复位；成功则保持 searching，等 WS 事件驱动 writing/done
       setState(() {
         _sending = false;
-        _phase = _GenPhase.idle;
+        _phase = GenPhase.idle;
       });
     }
   }
@@ -234,7 +234,7 @@ class _ChatPageState extends State<ChatPage> {
     if (!mounted) return;
     setState(() {
       _sending = false;
-      _phase = _GenPhase.idle;
+      _phase = GenPhase.idle;
     });
     _refreshDebounce?.cancel();
     _loadHistory();
@@ -385,11 +385,11 @@ body: Column(
                         itemCount: _messages.length,
                         itemBuilder: (ctx, i) => GestureDetector(
                           onLongPress: () => _showMessageActions(_messages[i]),
-                          child: _MessageBubble(msg: _messages[i]),
+                          child: MafwMessageBubble(msg: _messages[i]),
                         ),
                       ),
           ),
-          if (_phase != _GenPhase.idle) _GenPhaseIndicator(phase: _phase),
+          if (_phase != GenPhase.idle) GenPhaseIndicator(phase: _phase),
           _composer(),
         ],
       ),
@@ -474,92 +474,3 @@ body: Column(
   }
 }
 
-class _MessageBubble extends StatelessWidget {
-  final MafwMessage msg;
-  const _MessageBubble({required this.msg});
-
-  @override
-  Widget build(BuildContext context) {
-    final isUser = msg.role == 'user';
-    final text = msg.text ?? '';
-    final scheme = Theme.of(context).colorScheme;
-
-    if (isUser) {
-      // 用户消息：中性 ink pill（Orcalore accent 纪律：mint 只给需要你/CTA/激活/进行中）
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
-          decoration: BoxDecoration(
-            color: MafwPalette.badgeBg,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: SelectableText(
-            text,
-            style: const TextStyle(color: MafwPalette.text, fontSize: 15, height: 1.45),
-          ),
-        ),
-      );
-    }
-
-    // AI 消息：全宽文档感（无气泡，行高 1.5，Claude 式排版）
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: SelectableText(
-        text,
-        style: TextStyle(
-          color: scheme.onSurface,
-          fontSize: 15,
-          height: 1.55,
-        ),
-      ),
-    );
-  }
-}
-
-/// Perplexity 式阶段指示条（searching→writing 逐级点亮）。
-class _GenPhaseIndicator extends StatelessWidget {
-  final _GenPhase phase;
-  const _GenPhaseIndicator({required this.phase});
-
-  @override
-  Widget build(BuildContext context) {
-    final writing = phase == _GenPhase.writing;
-    final label = writing ? '正在生成…' : '正在处理…';
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: writing
-            ? kMafwPrimary.withValues(alpha: 0.12)
-            : kMafwGoalActive.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 12,
-            height: 12,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: writing ? kMafwPrimary : kMafwGoalActive,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: writing ? kMafwPrimary : kMafwGoalActive,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

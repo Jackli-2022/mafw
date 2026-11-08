@@ -23,7 +23,8 @@
 /// - [GoalDetailPage.attentionSlot]：需要你操作区。显式传入时其返回值是权威
 ///   （`null` = 整块不渲染，Task 13 会在这里组合方向裁定/问答）；缺省时页面自己
 ///   渲染计划批准卡（Task 9）。
-/// - [GoalDetailPage.onDiscussWithTechLead]：底部 CTA（Task 12 接通讨论页）；
+/// - [GoalDetailPage.onDiscussWithTechLead]：底部 CTA（Task 12 已接通 ——
+///   回调带解析后的 `(podId, goalId)`，外壳据此 push `TechLeadDiscussionPage`）；
 ///   缺省时按钮是诚实的占位（snackbar + 一行说明）。
 library;
 
@@ -267,6 +268,12 @@ typedef GoalAttentionSlotBuilder = Widget? Function(
   GoalAttentionContext slotContext,
 );
 
+/// 「与 Tech Lead 讨论」入口（Task 12）：由外壳接线打开讨论页。
+///
+/// 回调带上页面解析后的 `podId`（Goal 列表行可能没有 Pod id，页面自己
+/// `podLookup` 解析），讨论页据此 `openTechLead` / `sendTechLeadMessage`。
+typedef GoalDiscussHandler = void Function(String podId, String goalId);
+
 // ── 页面 ────────────────────────────────────────────────────────────────────
 
 class GoalDetailPage extends StatefulWidget {
@@ -285,7 +292,7 @@ class GoalDetailPage extends StatefulWidget {
   final GoalAttentionSlotBuilder? attentionSlot;
 
   /// 「与 Tech Lead 讨论」（Task 12 接通）；缺省时按钮为诚实占位。
-  final VoidCallback? onDiscussWithTechLead;
+  final GoalDiscussHandler? onDiscussWithTechLead;
 
   const GoalDetailPage(
     this.podId,
@@ -515,11 +522,17 @@ class _GoalDetailPageState extends State<GoalDetailPage> {
 
   void _onDiscussWithTechLead() {
     final handler = widget.onDiscussWithTechLead;
-    if (handler != null) {
-      handler();
+    if (handler == null) {
+      _snack('与 Tech Lead 讨论将在下一版本接通');
       return;
     }
-    _snack('与 Tech Lead 讨论将在下一版本接通');
+    // 讨论页需要 Pod id（`openTechLead` / `sendTechLeadMessage` 的路径段）。
+    final podId = _podId ?? widget.podId;
+    if (podId == null || podId.isEmpty) {
+      _snack('还没有鲸群，无法打开讨论');
+      return;
+    }
+    handler(podId, widget.goalId);
   }
 
   void _snack(String message) {

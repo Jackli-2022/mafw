@@ -288,7 +288,7 @@ Future<void> _pumpPage(
   String? podId = _podId,
   String? projectDir,
   GoalAttentionSlotBuilder? attentionSlot,
-  VoidCallback? onDiscussWithTechLead,
+  GoalDiscussHandler? onDiscussWithTechLead,
 }) async {
   _sizeView(tester);
   await tester.pumpWidget(MaterialApp(
@@ -680,6 +680,8 @@ void main() {
   group('slots + navigation', () {
     testWidgets('reserves the 需要你 slot and the Tech Lead CTA', (tester) async {
       var discussed = 0;
+      String? discussedPod;
+      String? discussedGoal;
       GoalAttentionContext? slotContext;
       final gateway = _FakeGateway();
 
@@ -691,7 +693,11 @@ void main() {
           slotContext = slot;
           return const Text('计划批准卡（Task 9 挂入）');
         },
-        onDiscussWithTechLead: () => discussed++,
+        onDiscussWithTechLead: (podId, goalId) {
+          discussed++;
+          discussedPod = podId;
+          discussedGoal = goalId;
+        },
       );
 
       expect(find.text('需要你'), findsOneWidget);
@@ -707,6 +713,9 @@ void main() {
       await tester.tap(find.byKey(const Key('goal-tech-lead')));
       await tester.pumpAndSettle();
       expect(discussed, 1);
+      // 讨论页（Task 12）需要解析后的 Pod id，回调必须带上它。
+      expect(discussedPod, _podId);
+      expect(discussedGoal, _goalId);
     });
 
     testWidgets('a null slot result hides the 需要你 block entirely', (tester) async {
@@ -723,7 +732,8 @@ void main() {
       expect(find.text('需要你'), findsNothing);
     });
 
-    testWidgets('the Tech Lead CTA is a placeholder until Task 12 wires it', (tester) async {
+    testWidgets('without a handler the CTA is an honest placeholder (Task 12 fallback)',
+        (tester) async {
       final gateway = _FakeGateway();
 
       await _pumpPage(tester, gateway, initial: PodGoalView.fromJson(_goalViewJson()));
@@ -735,6 +745,25 @@ void main() {
       await tester.tap(find.byKey(const Key('goal-tech-lead')));
       await tester.pumpAndSettle();
       expect(find.text('与 Tech Lead 讨论将在下一版本接通'), findsOneWidget);
+    });
+
+    testWidgets('a handler is not called when no Pod can be resolved', (tester) async {
+      var discussed = 0;
+      final gateway = _FakeGateway();
+
+      // podId 为 null 且没有 projectDir → podLookup 无从发起，Pod 未知。
+      await _pumpPage(
+        tester,
+        gateway,
+        podId: null,
+        onDiscussWithTechLead: (_, _) => discussed++,
+      );
+
+      await tester.tap(find.byKey(const Key('goal-tech-lead')));
+      await tester.pumpAndSettle();
+
+      expect(discussed, 0);
+      expect(find.text('还没有鲸群，无法打开讨论'), findsOneWidget);
     });
 
     testWidgets('resolves the Pod through podLookup when podId is null', (tester) async {

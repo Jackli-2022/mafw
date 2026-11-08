@@ -15,6 +15,7 @@ import 'src/pages/connection_settings_page.dart';
 import 'src/pages/goal_detail_page.dart';
 import 'src/pages/pairing_page.dart';
 import 'src/pages/sessions_page.dart';
+import 'src/pages/tech_lead_discussion_page.dart';
 import 'src/pages/triage_page.dart';
 import 'src/services/active_project.dart';
 import 'src/services/connectivity_watcher.dart';
@@ -302,6 +303,20 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         goalId,
         client: _client,
         projectDir: projectId,
+        // Task 12：底部「与 Tech Lead 讨论」→ 讨论页（带解析后的 Pod id）。
+        onDiscussWithTechLead: _openTechLead,
+      ),
+    ));
+  }
+
+  /// Tech Lead 讨论页（Task 12）：goalBound 上下文，发送只走 tech-lead 通道。
+  void _openTechLead(String podId, String goalId) {
+    _navigatorKey.currentState?.push(MaterialPageRoute(
+      builder: (_) => TechLeadDiscussionPage(
+        podId,
+        goalId,
+        client: _client,
+        messagesStream: _ws?.events,
       ),
     ));
   }
