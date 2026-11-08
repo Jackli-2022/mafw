@@ -2,8 +2,11 @@
 // 组件只做布局与交互；Agent 选项与徽标派生在 session-config-menu-model.ts（单测覆盖）。
 import { createEffect, createSignal, For, Show } from "solid-js"
 import type { ThinkingLevel } from "@mafw/sdk"
+import { Icon } from "@mafw/ui/icon"
 import { PopoverShell } from "./PopoverShell"
 import { THINKING_MENU_OPTIONS, type AgentOption } from "../../session-config-menu-model"
+import { PERMISSION_MODES, type PermissionMode } from "../permission-card-mapping"
+import { permissionPresentation } from "../composer-permission"
 
 export interface SessionConfigMenuProps {
   open: boolean
@@ -18,6 +21,9 @@ export interface SessionConfigMenuProps {
   modelLabel: string
   thinkingLevel: ThinkingLevel | null
   thinkingSupported: boolean
+  /** 审批三档（图标常驻在工具条上，这里提供直选入口）。 */
+  permissionMode: PermissionMode
+  onPermissionSelect: (mode: PermissionMode) => void
   onAgentSelect: (id: string) => void
   onOpenModelPicker: () => void
   onThinkingSelect: (level: ThinkingLevel | null) => void
@@ -25,7 +31,7 @@ export interface SessionConfigMenuProps {
 }
 
 export function SessionConfigMenu(props: SessionConfigMenuProps) {
-  const [expand, setExpand] = createSignal<"agent" | "thinking" | null>(null)
+  const [expand, setExpand] = createSignal<"agent" | "thinking" | "permission" | null>(null)
   createEffect(() => {
     if (props.open) setExpand(null)
   })
@@ -125,6 +131,39 @@ export function SessionConfigMenu(props: SessionConfigMenuProps) {
                 <Show when={props.thinkingLevel === opt.id}><span class="mafw-picker-row-check">✓</span></Show>
               </div>
             )}
+          </For>
+        </Show>
+
+        <div
+          class="mafw-picker-row mafw-config-row"
+          role="menuitem"
+          tabindex="0"
+          aria-expanded={expand() === "permission"}
+          onClick={() => setExpand(expand() === "permission" ? null : "permission")}
+          onKeyDown={(e) => rowKey(e, () => setExpand(expand() === "permission" ? null : "permission"))}
+        >
+          <span class="mafw-picker-row-name">审批模式</span>
+          <span class="mafw-picker-row-meta">{permissionPresentation(props.permissionMode).label}</span>
+        </div>
+        <Show when={expand() === "permission"}>
+          <For each={PERMISSION_MODES}>
+            {(mode) => {
+              const view = permissionPresentation(mode)
+              return (
+                <div
+                  class="mafw-picker-row mafw-config-subrow"
+                  role="menuitemradio"
+                  tabindex="0"
+                  aria-checked={props.permissionMode === mode}
+                  onClick={() => { props.onPermissionSelect(mode); setExpand(null) }}
+                  onKeyDown={(e) => rowKey(e, () => { props.onPermissionSelect(mode); setExpand(null) })}
+                >
+                  <Icon name={view.icon} size="small" />
+                  <span class="mafw-picker-row-name">{view.label}</span>
+                  <Show when={props.permissionMode === mode}><span class="mafw-picker-row-check">✓</span></Show>
+                </div>
+              )
+            }}
           </For>
         </Show>
       </div>

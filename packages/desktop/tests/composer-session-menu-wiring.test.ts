@@ -32,12 +32,11 @@ test("agent pill / plan-build pill / 命令与引用按钮移除；键盘能力�
   assert.ok(!/isAgentKey\([^)]*"(?:plan|build)"/.test(pane), "前端不得按 runtime agent 名分支")
 })
 
-test("附件/截屏/引用收进 ＋ 菜单；审阅/播报/暂停在 ⋯ 菜单", () => {
+test("唯一 composer 菜单是 ＋：附件 / 截屏批注 / 引用 Agent", () => {
   assert.ok(pane.includes("mafw-composer-attach"))
   assert.ok(pane.includes("mafw-composer-attach-menu"))
-  assert.ok(pane.includes("审阅改动"))
-  assert.ok(pane.includes("语音播报"))
-  assert.ok(pane.includes("暂停回合"))
+  assert.ok(!pane.includes("mafw-composer-more"))
+  assert.ok(!pane.includes("setMoreOpen"))
 })
 
 test("占位符教学并入输入框；keyhint 浮层删除", () => {
@@ -51,7 +50,8 @@ test("Lead / creator 会话锁定迁移到会话菜单 Agent 行", () => {
   assert.ok(pane.includes('=== "mafw-create"'), "session.agent 为 mafw-create 时也要锁定")
 })
 
-test("窄窗档位：≤620 藏上下文 pill，≤520 藏 ＋（附件入口仍在 ⋯）", () => {
-  assert.match(css, /@container \(max-width: 620px\)[\s\S]*?\.mafw-context-pill \{ display: none/)
-  assert.match(css, /@container \(max-width: 520px\)[\s\S]*?\.mafw-composer-attach \{ display: none/)
+test("窄窗零降级：不再有容器查询隐藏 composer 控件", () => {
+  assert.ok(!css.includes(".mafw-context-pill"))
+  assert.ok(!css.includes(".mafw-composer-meta"))
+  assert.ok(!css.includes(".mafw-mode-pill"))
 })

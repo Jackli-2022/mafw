@@ -122,7 +122,7 @@ import { transcriptTurns } from "./pod-transcript"
 import { parseDeepLink } from "./deep-link"
 import { ConfirmOverlay } from "./components/ConfirmOverlay"
 import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
-import { nextMode as nextPermissionMode } from "./components/permission-card-mapping"
+import { nextMode as nextPermissionMode, type PermissionMode } from "./components/permission-card-mapping"
 import { findPendingToolPart } from "./components/flow-card-placement"
 import { saveProjectLayout, loadProjectLayout, migrateLegacyLayout, pruneMissing } from "./layout-persist"
 import { isWorkingStatus, sessionStatusFromInfo } from "./session-status"
@@ -1989,6 +1989,19 @@ export function MafwShell() {
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
   }
 
+  /** 审批三档直选（composer 图标循环 + 会话菜单共用；乐观更新失败回滚）。 */
+  const applyPermissionMode = (mode: PermissionMode) => {
+    const sid = activeSessionId()
+    if (!sid) return
+    const prev = permissionModes[sid] || "read-only"
+    if (prev === mode) return
+    setPermissionModes(sid, mode)
+    window.api.mafw.permissions.setMode(sid, mode).catch(() => {
+      setPermissionModes(sid, prev)
+      showToastV2({ description: "切换审批模式失败", duration: 2000 })
+    })
+  }
+
   // External links: chat/workbench-visible links go to a new browser tab;
   // links from non-chat views stay visible via the system browser.
   onMount(() => {
@@ -2789,15 +2802,8 @@ export function MafwShell() {
                           onSetUserMsgId={(sid2, userMsgId2) => setSessions(prev => prev.map(s => s.id === sid2 ? { ...s, userMsgId: userMsgId2 } : s))}
                           compactionMark={compactionMarks()[activeSessionId()!] || null}
                           permissionMode={permissionModes[activeSessionId()!] || "read-only"}
-                          onTogglePermissionMode={() => {
-                            const prev = permissionModes[activeSessionId()!] || "read-only"
-                            const next = nextPermissionMode(prev)
-                            setPermissionModes(activeSessionId()!, next) // 乐观更新
-                            window.api.mafw.permissions.setMode(activeSessionId()!, next).catch(() => {
-                              setPermissionModes(activeSessionId()!, prev) // 回滚
-                              showToastV2({ description: "切换审批模式失败", duration: 2000 })
-                            })
-                          }}
+                          onTogglePermissionMode={() => applyPermissionMode(nextPermissionMode(permissionModes[activeSessionId()!] || "read-only"))}
+                          onSetPermissionMode={applyPermissionMode}
                           pageState={pageState}
                           setPageState={setPageState as any}
                         />

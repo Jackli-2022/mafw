@@ -6,6 +6,7 @@ import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { ProgressCircleV2 } from "@mafw/ui/v2/progress-circle-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { SessionTurn } from "@mafw/session-ui/session-turn"
 import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint, ThinkingLevel } from "@mafw/sdk"
@@ -46,7 +47,7 @@ import { queueForSession, fetchQueue, cancelQueueItem, clearGatewayQueue, queueI
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
-import { formatComposerMeta } from "./composer-meta"
+import { permissionAriaLabel, permissionPresentation } from "./composer-permission"
 import { type PermissionMode } from "./permission-card-mapping"
 import { getSessionTurnDiffs } from "../session-turn-diffs"
 import { PendingAnnotations } from "./PendingAnnotations"
@@ -55,17 +56,6 @@ import { buildAnnotationBatch } from "../editor-annotation"
 import { hydrateAnnotations, pendingFor, takeForSend } from "../annotation-store"
 import { formatCaptureBatch, captureAttachmentName, getPendingCaptures } from "../chat/pending-captures"
 
-/** 🛡 三档按钮文案与提示（切片 1）；图标由 shield 承担，文案不带 emoji。 */
-const PERMISSION_MODE_LABEL: Record<PermissionMode, string> = {
-  "read-only": "只读",
-  auto: "auto",
-  "full-access": "全开",
-}
-const PERMISSION_MODE_HINT: Record<PermissionMode, string> = {
-  "read-only": "审批模式：只读 — 只读工具免审，任何变更需确认。点击切到自动",
-  auto: "审批模式：自动 — 安全命令免审，高危仍需确认，25 次后回落只读。点击切到全开",
-  "full-access": "审批模式：全开 — 不再审批（危险命令也直接执行）。点击切回只读",
-}
 import { createInputHistory, shouldNavigateHistory, shouldHintEmptyHistory } from "./input-history"
 import { loadInputHistory, saveInputHistory } from "./input-history-persist"
 import { applyReadlineKey } from "./composer-readline"
@@ -222,8 +212,10 @@ export type ChatPaneProps = {
   onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void
   onUnregisterPhaseUpdater?: (sid: string) => void
   compactionMark?: { at: number; summary?: string } | null
-  permissionMode?: "read-only" | "auto" | "full-access"
+  permissionMode?: PermissionMode
   onTogglePermissionMode?: () => void
+  /** 会话菜单里的审批模式直选（三档）。 */
+  onSetPermissionMode?: (mode: PermissionMode) => void
   pageState: Record<string, { cursor: string | null; hasMore: boolean; loading: boolean }>
   setPageState: (sid: string, patch: any, flag?: boolean) => void
 }
@@ -318,13 +310,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [ttsVoiceSel, setTtsVoiceSel] = createSignal<string | null>(null)
   const [ttsEngine, setTtsEngine] = createSignal<string>("mimo")
   const [pickerTrigger, setPickerTrigger] = createSignal<HTMLElement | null>(null)
-  /** 窄 composer 的「更多」菜单（附件/截屏/引用/审阅/语音/暂停）。 */
-  const [moreOpen, setMoreOpen] = createSignal(false)
-  let moreBtnEl: HTMLElement | undefined
+  /** 「＋」附件菜单（附件 / 截屏批注 / 引用 Agent）——唯一的 composer 菜单。 */
   const [attachOpen, setAttachOpen] = createSignal(false)
   let attachBtnEl: HTMLElement | undefined
   let attachMenuEl: HTMLElement | undefined
-  let moreMenuEl: HTMLElement | undefined
   /** G1 截屏：待裁剪的整屏图（null = 浮层关闭） */
   const [shot, setShot] = createSignal<CaptureShot | null>(null)
   const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
@@ -1053,23 +1042,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
   // 切会话时关闭裁剪浮层（避免把上一会话的截图发给新会话）
   createEffect(on(sidProp, () => setShot(null), { defer: true }))
-  // 「更多」菜单：点外部/Esc 关闭
-  createEffect(() => {
-    if (!moreOpen()) return
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (moreMenuEl?.contains(t) || moreBtnEl?.contains(t)) return
-      setMoreOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMoreOpen(false) }
-    document.addEventListener("mousedown", onDown)
-    window.addEventListener("keydown", onKey)
-    onCleanup(() => {
-      document.removeEventListener("mousedown", onDown)
-      window.removeEventListener("keydown", onKey)
-    })
-  })
-  // 「＋」附件菜单：点外部/Esc 关闭（与「更多」同款）
+  // 「＋」附件菜单：点外部/Esc 关闭
   createEffect(() => {
     if (!attachOpen()) return
     const onDown = (e: MouseEvent) => {
@@ -1277,6 +1250,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       { id: "model", trigger: "/model", title: "切换模型", description: "选择模型", group: "local", source: "builtin", run: () => { closeCommandPicker(); setPickerTrigger(textareaEl()); setPickerOpen("model") } },
       { id: "theme", trigger: "/theme", title: "切换主题", description: "明暗主题", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onToggleTheme?.() } },
       { id: "settings", trigger: "/settings", title: "打开设置", description: "MAFW 配置", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onOpenSettings?.() } },
+      { id: "pause", trigger: "/pause", title: "暂停回合", description: "中止当前回合并保存续跑摘要", group: "local", source: "builtin", run: () => { closeCommandPicker(); if (sessionBusy() && experienceStore.supported("run.control")) void pauseSession() } },
+      { id: "voice", trigger: "/voice", title: "语音播报设置", description: "音色 / 引擎 / 风格", group: "local", source: "builtin", run: () => { closeCommandPicker(); if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() } },
       ...(props.parentID ? [{ id: "back", trigger: "/back", title: "返回父会话", description: "回到父会话", group: "local" as const, source: "builtin" as const, run: () => { closeCommandPicker(); props.onBackToParent?.() } }] : []),
       { id: "goals", trigger: "/goals", title: "项目工作", description: "在右工作台打开项目工作", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("goals") } },
       { id: "memory", trigger: "/memory", title: "Memory 页", description: "打开记忆页", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("memory") } },
@@ -1456,22 +1431,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const busy = () => isWorkingStatus(store.session_status[sidProp()])
 
-  // composer 元数据（v6 §3）：streaming 时逐秒跳（reduced-motion 下环境不宜逐秒亦无害），
-  // 空闲时只显示冻结的 token 数。数据面复用 taskMetrics（无新增请求）。
-  const [metaNow, setMetaNow] = createSignal(Date.now())
-  createEffect(() => {
-    if (!busy()) return
-    const t = setInterval(() => setMetaNow(Date.now()), 1000)
-    onCleanup(() => clearInterval(t))
-  })
-  const composerMeta = () => {
-    const sid = sidProp()
-    if (!sid) return ""
-    const m = props.taskMetrics(sid)
-    const streaming = busy()
-    const elapsedMs = streaming && m.started ? metaNow() - m.started : null
-    return formatComposerMeta({ elapsedMs, tokens: m.tokens || null, streaming })
-  }
+  /** 权限三档的图标/颜色/hover 解释（形状+颜色双编码，无文字）。 */
+  const perm = createMemo(() => permissionPresentation(props.permissionMode))
 
   const onSessionAgentSelect = (id: string) => {
     setPickerOpen(null)
@@ -1729,13 +1690,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     unplacedCardsSlot(flowSlotCards(), store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
 
   // agent 解析后的显示名（Lead 会话固定 lead；会话菜单与切换确认共用）。
-
-  // 会话改动文件数（message.summary.diffs 聚合，含 patch）——composer 审阅按钮的常驻计数徽标
-  const diffCount = () => {
-    const sid = sidProp()
-    const msgs = (store.message as any)[sid] || []
-    return getSessionTurnDiffs().count(sid, msgs)
-  }
 
   // 预热本 pane 会话的 per-turn 数据：badge 与 ChangesDock 使用同一份合并结果
   // （split view 的非活动 pane 也一致；store 内部按 key 去重）。
@@ -2328,7 +2282,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           />
           <div class="mafw-composer-toolbar">
             <div class="mafw-composer-left">
-              <TooltipV2 value="附件与引用" openDelay={300}>
+              <TooltipV2 value="附件 / 截屏批注 / 引用 Agent" openDelay={300}>
                 <ButtonV2
                   variant="ghost"
                   size="small"
@@ -2336,62 +2290,23 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   aria-label="附件与引用"
                   aria-expanded={attachOpen()}
                   ref={(el: any) => { attachBtnEl = el }}
-                  onClick={() => { setMoreOpen(false); setAttachOpen(o => !o) }}
+                  onClick={() => setAttachOpen(o => !o)}
                 >
                   <Icon name="plus-small" size="small" />
                 </ButtonV2>
               </TooltipV2>
-              <TooltipV2 value="更多" openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-composer-icon mafw-composer-more"
-                  aria-label="更多"
-                  aria-expanded={moreOpen()}
-                  ref={(el: any) => { moreBtnEl = el }}
-                  onClick={() => { setAttachOpen(false); setMoreOpen(o => !o) }}
-                >
-                  <IconV2 name="outline-dots" size="small" />
-                </ButtonV2>
-              </TooltipV2>
-              <span class="mafw-composer-divider" />
-              <TooltipV2 value={PERMISSION_MODE_HINT[props.permissionMode ?? "read-only"]} openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-mode-pill"
-                  classList={{ "mafw-perm-mode-auto": (props.permissionMode ?? "read-only") !== "read-only" }}
-                  aria-label="审批模式（三档循环：只读 / 自动 / 全开）"
-                  onClick={() => props.onTogglePermissionMode?.()}
-                >
-                  <Icon name="shield" size="small" />
-                  <span>{PERMISSION_MODE_LABEL[props.permissionMode ?? "read-only"]}</span>
-                </ButtonV2>
-              </TooltipV2>
             </div>
             <div class="mafw-composer-right">
-              <Show when={composerMeta()}>
-                <span class="mafw-composer-meta">{composerMeta()}</span>
-              </Show>
-              <TooltipV2 value={micStopActive() ? "停止语音输入" : "语音输入（录音，静音自动分段）"} openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-composer-icon"
-                  classList={{ "mafw-voice-recording": micStopActive() }}
-                  aria-label="语音输入"
-                  onClick={handleMicClick}
-                ><Icon name={micStopActive() ? "stop" : "microphone"} size="small" /></ButtonV2>
-              </TooltipV2>
               <TooltipV2 value={contextTooltip()} openDelay={300}>
                 <span
-                  class="mafw-context-pill"
+                  class="mafw-context-ring"
                   classList={{
-                    "mafw-context-warn": contextUsage().percent >= 70,
-                    "mafw-context-danger": contextUsage().percent >= 90,
+                    "is-warn": contextUsage().percent >= 70 && contextUsage().percent < 90,
+                    "is-danger": contextUsage().percent >= 90,
                   }}
                   role={props.onOpenUsage ? "button" : undefined}
                   tabIndex={props.onOpenUsage ? 0 : undefined}
+                  aria-label={`上下文占用 ${contextText().main}`}
                   style={{ cursor: props.onOpenUsage ? "pointer" : undefined }}
                   onClick={() => props.onOpenUsage?.()}
                   onKeyDown={(e) => {
@@ -2402,13 +2317,26 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     }
                   }}
                 >
-                  <span class="mafw-context-main">{contextText().main}</span>
-                  <Show when={sessionTokenSummary().cost > 0}>
-                    <span class="mafw-context-cost">${sessionTokenSummary().cost.toFixed(2)}</span>
-                  </Show>
+                  <ProgressCircleV2 percentage={contextUsage().percent} size={14} strokeWidth={1.5} />
                 </span>
               </TooltipV2>
-              <TooltipV2 value="会话配置（Agent / 模型 / 思考档位）" openDelay={300}>
+              <TooltipV2 value={perm().hint} openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-perm-icon"
+                  classList={{
+                    "is-muted": perm().tone === "muted",
+                    "is-accent": perm().tone === "accent",
+                    "is-danger": perm().tone === "danger",
+                  }}
+                  aria-label={permissionAriaLabel(props.permissionMode)}
+                  onClick={() => props.onTogglePermissionMode?.()}
+                >
+                  <Icon name={perm().icon} size="small" />
+                </ButtonV2>
+              </TooltipV2>
+              <TooltipV2 value="会话配置（Agent / 模型 / 思考档位 / 审批）" openDelay={300}>
                 <ButtonV2
                   variant="ghost"
                   size="small"
@@ -2426,18 +2354,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <span class="mafw-model-name">{currentModelLabel()}</span><span class="mafw-model-chevron">▾</span>
                 </ButtonV2>
               </TooltipV2>
-              <Show when={sessionBusy() && experienceStore.supported("run.control")}>
-                <TooltipV2 value="暂停当前回合并保存续跑摘要" openDelay={300}>
-                  <ButtonV2
-                    variant="ghost"
-                    size="small"
-                    onClick={() => void pauseSession()}
-                    aria-label="暂停"
-                  >
-                    <span class="mafw-pause-icon">II</span>
-                  </ButtonV2>
-                </TooltipV2>
-              </Show>
+              <TooltipV2 value={micStopActive() ? "停止语音输入" : "语音输入（录音，静音自动分段）"} openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-composer-icon"
+                  classList={{ "mafw-voice-recording": micStopActive() }}
+                  aria-label="语音输入"
+                  onClick={handleMicClick}
+                ><Icon name={micStopActive() ? "stop" : "microphone"} size="small" /></ButtonV2>
+              </TooltipV2>
               <Show when={sending()} fallback={
                 <ButtonV2
                   variant="contrast"
@@ -2464,7 +2390,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </div>
           </div>
           <Show when={attachOpen()}>
-            <div class="mafw-composer-more-menu mafw-composer-attach-menu" ref={(el) => { attachMenuEl = el }} role="menu">
+            <div class="mafw-composer-menu mafw-composer-attach-menu" ref={(el) => { attachMenuEl = el }} role="menu">
               <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setAttachOpen(false); addAttachments() }}>
                 <Icon name="paperclip" size="small" /><span>附件</span>
               </ButtonV2>
@@ -2474,32 +2400,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setAttachOpen(false); setPickerTrigger(attachBtnEl as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}>
                 <Icon name="subagent" size="small" /><span>引用 Agent</span><span class="mafw-more-key">@</span>
               </ButtonV2>
-            </div>
-          </Show>
-          <Show when={moreOpen()}>
-            <div class="mafw-composer-more-menu" ref={(el) => { moreMenuEl = el }} role="menu">
-              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); addAttachments() }}>
-                <Icon name="paperclip" size="small" /><span>附件</span>
-              </ButtonV2>
-              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void captureScreen() }}>
-                <Icon name="photo" size="small" /><span>截屏批注</span>
-              </ButtonV2>
-              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}>
-                <Icon name="subagent" size="small" /><span>引用 Agent</span><span class="mafw-more-key">@</span>
-              </ButtonV2>
-              <Show when={props.onOpenDiffReview}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); props.onOpenDiffReview?.() }}>
-                  <Icon name="review" size="small" /><span>审阅改动{diffCount() > 0 ? ` (${diffCount()})` : ""}</span>
-                </ButtonV2>
-              </Show>
-              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
-                <Icon name="volume" size="small" /><span>语音播报</span>
-              </ButtonV2>
-              <Show when={sessionBusy() && experienceStore.supported("run.control")}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void pauseSession() }}>
-                  <Icon name="stop" size="small" /><span>暂停回合</span>
-                </ButtonV2>
-              </Show>
             </div>
           </Show>
         </div>
@@ -2525,6 +2425,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           modelLabel={currentModelLabel()}
           thinkingLevel={props.thinkingLevel()}
           thinkingSupported={props.thinkingSupported()}
+          permissionMode={props.permissionMode ?? "read-only"}
+          onPermissionSelect={(mode) => { props.onSetPermissionMode?.(mode); setPickerOpen(null) }}
           onAgentSelect={(id) => onSessionAgentSelect(id)}
           onOpenModelPicker={() => setPickerOpen("model")}
           onThinkingSelect={(level) => { props.onThinkingSelect(level); setPickerOpen(null) }}

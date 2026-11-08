@@ -650,10 +650,12 @@ describe("DiffReviewPanel 接线", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
     expect(src).toContain('openWorkbench("review")')
   })
-  test("ChatPane：审阅改动（⋯ 菜单）带改动计数", () => {
+  test("审阅改动已移出 composer（归回合动作 + 工作台）", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
-    expect(src).toContain("审阅改动")
-    expect(src).toContain("diffCount")
+    expect(src).not.toContain("审阅改动")
+    expect(src).not.toContain("diffCount")
+    const part = readFileSync(join(import.meta.dirname, "..", "..", "session-ui", "src", "components", "message-part.tsx"), "utf8")
+    expect(part).toContain("审阅改动")
   })
 })
 
@@ -1036,22 +1038,24 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
   })
 })
 
-describe("窄 composer：更多菜单 + 断点收拢（最小宽度不裁切）", () => {
+describe("composer 常态六件：最小宽度不裁切", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("更多菜单入口 + 菜单项（附件/截屏/引用/审阅/语音/暂停）", () => {
+  test("唯一 composer 菜单是 ＋（附件 / 截屏批注 / 引用 Agent）", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
-    expect(src).toContain("mafw-composer-more")
-    expect(src).toContain("mafw-composer-more-menu")
-    for (const label of ["附件", "截屏批注", "引用 Agent", "审阅改动", "语音播报", "暂停回合"]) {
+    expect(src).toContain("mafw-composer-attach")
+    expect(src).toContain("mafw-composer-attach-menu")
+    for (const label of ["附件", "截屏批注", "引用 Agent"]) {
       expect(src).toContain(label)
     }
+    // ⋯ 菜单已合并删除（审阅→回合尾卡/工作台，播报→/voice，暂停→/pause）
+    expect(src).not.toContain("mafw-composer-more")
+    expect(src).not.toContain("setMoreOpen")
   })
-  test("断点：≤620 藏上下文 pill；≤520 藏 ＋（附件入口仍在 ⋯）；更多菜单常显", () => {
-    expect(css).toMatch(/@container \(max-width: 620px\)[\s\S]*?\.mafw-context-pill \{ display: none/)
-    expect(css).toMatch(/@container \(max-width: 520px\)[\s\S]*?\.mafw-composer-attach \{ display: none/)
-    expect(cssBlock(".mafw-composer-more-menu {")).toContain("position: absolute")
-    // 更多菜单常显（不再按 ≤720 才出现）
-    expect(css).not.toContain(".mafw-composer-more { display: none")
+  test("零降级：容器查询不再隐藏任何 composer 控件", () => {
+    expect(css).not.toContain(".mafw-context-pill")
+    expect(css).not.toContain(".mafw-composer-meta")
+    expect(css).not.toContain(".mafw-mode-pill")
+    expect(cssBlock(".mafw-composer-menu {")).toContain("position: absolute")
   })
   test("右工作台不再按窄屏自动 overlay（只有显式开关）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
