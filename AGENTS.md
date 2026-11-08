@@ -364,6 +364,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约�?`comple
 
 - **Office 深层能力：docx 批注/域 + xlsm 宏容器（2026-11-08，commit `7634474a`）**：① docx 批注——python-docx 1.2 原生 `add_comment(runs,text,author,initials)`，新增 `docx_add_comment`（1-based body 段落）与 `inspect_document.comments`。② docx 域——`docx_insert_toc`（TOC 域 + `w:updateFields`）、`docx_set_page_number_footer`（PAGE/NUMPAGES 域）、`docx_update_fields`（Word COM `Fields.Update` + `TablesOfContents.Update`；无 Word 时提示 F9）。③ xlsm——`_load_workbook` 非 read-only 时 `keep_vba=True`，`inspect_workbook` 增 `macro_enabled`，`render_office` 支持 `.xlsm`；宏只作为容器保留，不解析/不执行。验证：Python **20/20**（COM opt-in；COM 渲染测试改用副本，避免 Excel/Word 文件锁污染后续编辑）；VBA 实际宏测试受本机「信任对 VBA 工程对象模型的访问」限制，仅验证容器保留。④ PDF 真文字替换探针：pdfplumber 词框 + reportlab 白块叠字视觉可用，但旧词仍在文本层（extract_text 出现新旧两份），**不交付**；真要 redaction 需 PyMuPDF（AGPL）或改源文档。
 
+- **Office 深层能力：xlsx 条件格式/数据验证/合并/保护（2026-11-08，commit `00608433`）**：新增 `merge_cells`/`unmerge_cells`、`add_conditional_format`（color_scale/data_bar/icon_set/cell_is/formula）、`add_data_validation`（list/whole/decimal/date/time/textLength/custom）、`protect_sheet`（密码 + SheetProtection 选项）。`inspect_workbook` 增 merged / conditional_formatting（range+rules）/ data_validations / protected；read_only 看不到 drawing/protection，故这些元数据从普通 workbook 读取。技能加了配方与顺序（验证/保护最后做）。验证：Python **21/21**（COM opt-in）。真机 agent E2E 被环境阻塞：gateway 正在反复广播 `memory_energy_changed`（日志累计 17k 行，3000 端口超时/CPU 高），非本批改动；待 gateway 恢复后再补一次真机验收。
+
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类�?API 获取数据�?
 ```
