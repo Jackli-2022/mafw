@@ -1,14 +1,18 @@
-import { Show, createEffect, createSignal, onCleanup, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { PodGoal, PodWorkOverview } from "@mafw/sdk"
 import { WorkOverview } from "./WorkOverview"
+import { WorkPriorityList } from "./WorkPriorityList"
 import { PodGoalComposer } from "./PodGoalComposer"
+import { buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
 import { isPodResultViewed } from "../pod-result-store"
 import { podEvents } from "../pod-events"
 
 /** Composer 请求序列的会话级消费游标：remount 不重放已处理请求。 */
 let lastConsumedComposerRequest = 0
+
+const WORK_BUCKETS = ["needs_you", "queued", "in_progress", "result_ready", "ended"] as const
 
 function friendlyWorkError(error: unknown): string {
   const text = String((error as any)?.message ?? error ?? "")
@@ -18,7 +22,7 @@ function friendlyWorkError(error: unknown): string {
   return text || "工作概览加载失败"
 }
 
-/** Right-workbench `工作` face: one authoritative project work overview plus Goal composer. */
+/** Right-workbench `工作` face: priority first, then the complete Goal list. */
 export function ProjectWorkView(props: {
   projectDir: string | null
   refreshTick: () => number
@@ -32,6 +36,7 @@ export function ProjectWorkView(props: {
   const [error, setError] = createSignal<string | null>(null)
   const [composerOpen, setComposerOpen] = createSignal(false)
   const [creating, setCreating] = createSignal(false)
+  const [filter, setFilter] = createSignal<WorkFilter>("all")
 
   const load = async () => {
     const dir = props.projectDir
@@ -70,11 +75,31 @@ export function ProjectWorkView(props: {
     }
   })
 
+  const overviewGoals = createMemo<PodGoal[]>(() => {
+    const current = overview()
+    if (!current) return []
+    return WORK_BUCKETS.flatMap((bucket) => current.groups[bucket] ?? [])
+  })
+
   const activeGoalId = () => (
     overview()?.groups.in_progress.find((goal) => goal.status === "active")?.goalId
       ?? overview()?.groups.needs_you.find((goal) => goal.status === "active")?.goalId
       ?? null
   )
+
+  const isViewed = (goal: PodGoal): boolean => {
+    const podId = overview()?.podId
+    if (!podId) return true
+    // 事件列表还没拉回来时先不标「未查看」（避免冷启动闪一下）。
+    if (podEvents.supported() && !podEvents.loaded()) return true
+    return isPodResultViewed(podId, goal.goalId, goalRevisionOf(goal) ?? 1)
+  }
+
+  const priority = createMemo(() => buildWorkPriority({
+    goals: overviewGoals(),
+    events: podEvents.items(),
+    isResultViewed: isViewed,
+  }))
 
   const createGoal = async (input: {
     title: string
@@ -109,8 +134,8 @@ export function ProjectWorkView(props: {
     <div class="mafw-project-work" aria-label="项目工作">
       <div class="mafw-project-work-head">
         <div>
-          <div class="mafw-work-kicker">项目工作</div>
-          <div class="mafw-project-work-hint">Goal 队列、注意力与结果都在这里处理</div>
+          <div class="mafw-work-kicker">工作</div>
+          <div class="mafw-project-work-hint">先处理重要事项，全部 Goal 都保留在下方</div>
         </div>
         <ButtonV2
           variant="outline"
@@ -133,19 +158,19 @@ export function ProjectWorkView(props: {
         </section>
       </Show>
 
+      <WorkPriorityList
+        items={priority()}
+        onOpen={(goal, focus) => props.onOpenGoal(goal, focus)}
+      />
+
       <WorkOverview
-        overview={overview()}
+        goals={overviewGoals()}
         loading={loading()}
         error={error()}
+        filter={filter()}
+        onFilter={setFilter}
         onOpenGoal={(goal, focus) => props.onOpenGoal(goal, focus)}
-        onOpenAll={() => void load()}
-        isViewed={(goal) => {
-          const podId = overview()?.podId
-          if (!podId) return true
-          // 事件列表还没拉回来时先不标「未查看」（避免冷启动闪一下）。
-          if (podEvents.supported() && !podEvents.loaded()) return true
-          return isPodResultViewed(podId, goal.goalId, goalRevisionOf(goal) ?? 1)
-        }}
+        isViewed={isViewed}
       />
     </div>
   )

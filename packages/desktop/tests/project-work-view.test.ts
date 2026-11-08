@@ -4,11 +4,13 @@ import { readFileSync } from "node:fs"
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 const view = read("src/renderer/mafw/components/ProjectWorkView.tsx")
+const overview = read("src/renderer/mafw/components/WorkOverview.tsx")
 const pane = read("src/renderer/mafw/components/ChatPane.tsx")
 const podDock = read("src/renderer/mafw/components/PodDock.tsx")
 const shell = read("src/renderer/mafw/MafwShell.tsx")
 
 test("ProjectWorkView owns the project work overview and Goal composer", () => {
+  assert.match(view, /import \{ WorkPriorityList \} from "\.\/WorkPriorityList"/)
   assert.match(view, /import \{ WorkOverview \} from "\.\/WorkOverview"/)
   assert.match(view, /import \{ PodGoalComposer \} from "\.\/PodGoalComposer"/)
   assert.match(view, /window\.api\.mafw\.work\.overview\(/)
@@ -17,6 +19,24 @@ test("ProjectWorkView owns the project work overview and Goal composer", () => {
   assert.match(view, /refreshTick:/)
   assert.match(view, /composerRequest \?\? 0/)
   assert.doesNotMatch(view, /WorkspaceHome/)
+})
+
+test("ProjectWorkView builds one Goal projection for priority and the full list", () => {
+  assert.match(view, /import \{ buildWorkPriority, type WorkFilter \} from "\.\.\/work-overview-model"/)
+  assert.match(view, /const overviewGoals = createMemo/)
+  assert.match(view, /buildWorkPriority\(\{/)
+  assert.match(view, /goals: overviewGoals\(\)/)
+  assert.match(view, /<WorkPriorityList/)
+  assert.match(view, /goals=\{overviewGoals\(\)\}/)
+  assert.match(view, /filter=\{filter\(\)\}/)
+  assert.match(view, /onFilter=\{setFilter\}/)
+})
+
+test("WorkOverview owns filtering and progress rendering", () => {
+  assert.match(overview, /WORK_FILTERS/)
+  assert.match(overview, /filterWorkGoals\(props\.goals, props\.filter\)/)
+  assert.match(overview, /workFilterCounts\(props\.goals\)/)
+  assert.match(overview, /goalProgressText\(goal\)/)
 })
 
 test("ProjectWorkView polls only while active and consumes each composer request once", () => {
