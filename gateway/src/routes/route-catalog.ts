@@ -23,6 +23,7 @@
  */
 
 import type { RouteDef } from './registry';
+import { SessionListResponse } from './schemas/session';
 
 /**
  * SDK-facing 端点（catalog → gateway-paths → openapi 单向生成；**在此新增**后必须重跑
@@ -42,7 +43,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/session/:id/config', operationId: 'session.config.set', tags: ['session'] },
   { method: 'DELETE', path: '/api/session/{id}/queue', operationId: 'session.queue.clear', tags: ['session'] },
   { method: 'DELETE', path: '/api/session/{id}/queue/{itemId}', operationId: 'session.queue.cancel', tags: ['session'] },
-  { method: 'GET', path: '/api/sessions', operationId: 'session.list', tags: ['session'] },
+  // code-first 试点：response schema 是唯一来源（emit:openapi 直接投影，不经 overrides）。
+  { method: 'GET', path: '/api/sessions', operationId: 'session.list', tags: ['session'], response: SessionListResponse },
   { method: 'GET', path: '/api/sessions/:id', operationId: 'session.get', tags: ['session'] },
   { method: 'DELETE', path: '/api/sessions/:id', operationId: 'session.delete', tags: ['session'] },
   { method: 'PATCH', path: '/api/sessions/:id', operationId: 'session.rename', tags: ['session'] },

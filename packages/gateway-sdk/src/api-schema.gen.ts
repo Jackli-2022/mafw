@@ -4072,7 +4072,6 @@ export interface operations {
                                 updated: number;
                             };
                             parentID?: string;
-                            /** @enum {string} */
                             status?: "idle" | "busy" | "retry" | "unknown";
                             reverted?: {
                                 messageID: string;
@@ -4082,7 +4081,6 @@ export interface operations {
                                     patch?: string;
                                     additions?: number;
                                     deletions?: number;
-                                    /** @enum {string} */
                                     status?: "added" | "modified" | "deleted" | "renamed" | "unknown";
                                 }[];
                             };

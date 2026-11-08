@@ -17,6 +17,12 @@ export interface RouteDef {
   summary?: string;
   tags?: string[];
   /**
+   * 200 JSON 响应 schema（code-first：OpenAPI 的唯一来源，emit 时直接投影）。
+   * 缺省 = 暂无 schema（旧路由）；null = 明确无 JSON 响应（SSE/二进制/代理）。
+   * 用 TypeBox/JSON Schema 对象均可；JSON.stringify 后必须是合法 JSON Schema。
+   */
+  response?: object | null;
+  /**
    * Phase 3 dispatch；shadow 登记阶段缺省。返回 false 表示"实际未处理"
    * （模块内部正则未命中，如 query 形状差异）→ dispatch 放行回退 legacy 链；
    * 返回 void/true 视为已处理。
@@ -139,7 +145,10 @@ export class RouteRegistry {
         schema: { type: 'string' },
       }));
       if (params.length) op.parameters = params;
-      op.responses = { 200: { description: 'OK' } };
+      // code-first：RouteDef.response 直接投影成 OpenAPI 200 content schema。
+      op.responses = def.response
+        ? { 200: { description: 'OK', content: { 'application/json': { schema: def.response } } } }
+        : { 200: { description: 'OK' } };
       entry[def.method.toLowerCase()] = op;
     }
     return out;

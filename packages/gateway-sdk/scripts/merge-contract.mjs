@@ -31,13 +31,18 @@ for (const [p, methods] of Object.entries(gatewayPaths.paths)) {
       knownOverrides.delete(op.operationId);
       if (ov.summary) o.summary = ov.summary;
       if (ov.description) o.description = ov.description;
-      if (ov.responseSchema) {
+      // code-first：catalog 已经带 response schema 时，它就是权威来源；
+      // overrides 仅作为尚未迁移路由的兜底（迁移完成后可整体删除）。
+      const catalogSchema = o.responses?.['200']?.content?.['application/json']?.schema;
+      if (ov.responseSchema && !catalogSchema) {
         o.responses = {
           200: {
             description: ov.responseDescription || 'OK',
             content: { 'application/json': { schema: ov.responseSchema } },
           },
         };
+      } else if (ov.responseSchema && catalogSchema) {
+        console.log(`[merge-contract] ${op.operationId}: catalog response schema wins over overrides`);
       }
     }
     paths[p][method] = o;

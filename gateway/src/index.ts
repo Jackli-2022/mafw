@@ -330,6 +330,8 @@ import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
 import type { ModelConfigDeps } from './routes/model-config';
 import { RouteRegistry } from './routes/registry';
+import { attachTypedRoute } from './routes/typed';
+import { SessionListResponse } from './routes/schemas/session';
 import { buildRouteCatalog } from './routes/route-catalog';
 import { attachWave1Handlers } from './routes/wave1-handlers';
 import { attachWave2Handlers } from './routes/wave2-handlers';
@@ -5295,6 +5297,14 @@ class MafwScheduler {
       });
       // Task 3：中性 background jobs façade（三源统一；runtime shell 原生 DTO 不出 gateway）
       attachBackgroundJobHandlers(this.routeRegistry, () => ({ service: this.backgroundJobs ?? null }));
+      // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
+      attachTypedRoute(this.routeRegistry, {
+        operationId: 'session.list',
+        response: SessionListResponse,
+        handler: async ({ url }) => ({
+          sessions: projectSessions(await this.listSessions(url.searchParams.get('projectID'))),
+        }),
+      });
 
       const server = http.createServer(async (req, res) => {
         try {
@@ -7741,20 +7751,8 @@ class MafwScheduler {
 
         // DELETE/PATCH /api/sessions/:id — P5 Wave 1 起由 registry dispatch 接管
 
-        // GET /api/sessions — list sessions (optional ?projectID=xxx)
-        if (req.url?.match(/^\/api\/sessions(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const projectID = parsedUrl.searchParams.get('projectID');
-            const sessions = await this.listSessions(projectID);
-            res.writeHead(200);
-            res.end(JSON.stringify({ sessions: projectSessions(sessions) }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET /api/sessions —— code-first P0 起由 registry typed handler 接管
+        // （attachTypedRoute('session.list')，schema 见 routes/schemas/session.ts）。
 
         // POST /api/sessions/{id}/permissions/{requestId} — forward permission reply to runtime
         const permMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/permissions\/([^/]+)(?:\?|$)/);

@@ -232,7 +232,166 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "sessions"
+                  ],
+                  "properties": {
+                    "sessions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "projectID",
+                          "directory",
+                          "title",
+                          "time"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "projectID": {
+                            "type": "string"
+                          },
+                          "directory": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "time": {
+                            "type": "object",
+                            "required": [
+                              "created",
+                              "updated"
+                            ],
+                            "properties": {
+                              "created": {
+                                "type": "number"
+                              },
+                              "updated": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "parentID": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "const": "idle",
+                                "type": "string"
+                              },
+                              {
+                                "const": "busy",
+                                "type": "string"
+                              },
+                              {
+                                "const": "retry",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "reverted": {
+                            "type": "object",
+                            "required": [
+                              "messageID"
+                            ],
+                            "properties": {
+                              "messageID": {
+                                "type": "string"
+                              },
+                              "partID": {
+                                "type": "string"
+                              },
+                              "diffs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "required": [
+                                    "file"
+                                  ],
+                                  "properties": {
+                                    "file": {
+                                      "type": "string"
+                                    },
+                                    "patch": {
+                                      "type": "string"
+                                    },
+                                    "additions": {
+                                      "type": "number"
+                                    },
+                                    "deletions": {
+                                      "type": "number"
+                                    },
+                                    "status": {
+                                      "anyOf": [
+                                        {
+                                          "const": "added",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "const": "modified",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "const": "deleted",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "const": "renamed",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "const": "unknown",
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "model": {
+                            "type": "object",
+                            "required": [
+                              "providerID",
+                              "modelID"
+                            ],
+                            "properties": {
+                              "providerID": {
+                                "type": "string"
+                              },
+                              "modelID": {
+                                "type": "string"
+                              },
+                              "variant": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "agent": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

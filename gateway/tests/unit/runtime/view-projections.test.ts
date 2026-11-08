@@ -277,7 +277,8 @@ describe('出口接线（index.ts）', () => {
   const source = fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf-8');
 
   it('/api/sessions 列表与单条都过 projectSession（规范 status/reverted/model）', () => {
-    expect(source).toMatch(/JSON\.stringify\(\{ sessions: projectSessions\(sessions\) \}\)/);
+    // 列表自 code-first P0 起由 registry typed handler 接管（schema + 数据返回，不再手写 stringify）。
+    expect(source).toMatch(/sessions:\s*projectSessions\(await this\.listSessions\(/);
     expect(source).toMatch(/JSON\.stringify\(projectSession\(session\)\)/);
   });
 
