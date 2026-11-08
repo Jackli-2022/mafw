@@ -275,6 +275,37 @@ describe('PodGoalService', () => {
     expect(views[1]).toMatchObject({ title: 'Second goal', stage: { kind: 'queued', queueReason: 'active_goal' } });
   });
 
+  test('views expose the driver pendingQuestion (and null when there is none)', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    const pendingQuestion = {
+      questionId: 'q_1700000000000_ab12_ok',
+      node: 'plan' as const,
+      questions: ['登录先走 SSO 还是密码？'],
+    };
+    const baseDescription = {
+      title: 'Needs an answer',
+      phase: 'ASKING_USER',
+      nextAction: 'WAIT_USER_ANSWER',
+      terminal: false,
+      verdict: null,
+      hasResultEvidence: false,
+      nodeSession: null,
+      lastError: null,
+    };
+    service = makeService(undefined, {
+      describeGoal: (goalId) => (goalId === 'g1'
+        ? { ...baseDescription, pendingQuestion }
+        : { ...baseDescription, pendingQuestion: null, title: 'Other goal', nextAction: 'RUNNING_plan' }),
+    });
+
+    const view = service.views(first.podId).find((item) => item.goalId === 'g1');
+    expect(view?.pendingQuestion).toEqual(pendingQuestion);
+    expect(view?.stage).toMatchObject({
+      kind: 'question',
+      action: { type: 'open_question', questionId: pendingQuestion.questionId },
+    });
+  });
+
   test('paused queue reason and plan approval attention are server-projected', async () => {
     const first = await service.enqueueGoal('g1', projectDir);
     await service.enqueueGoal('g2', projectDir);

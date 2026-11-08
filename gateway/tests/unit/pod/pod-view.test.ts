@@ -90,6 +90,25 @@ describe('buildPodGoalView', () => {
     });
   });
 
+  test('exposes the driver pendingQuestion (id + node + question text) on the view', () => {
+    const pendingQuestion = {
+      questionId: 'q_1700000000000_ab12_ok',
+      node: 'plan' as const,
+      questions: ['登录先走 SSO 还是密码？', '需要保留旧的登录方式吗？'],
+    };
+    const view = buildPodGoalView(row, { ...desc, pendingQuestion }, undefined);
+    expect(view.pendingQuestion).toEqual(pendingQuestion);
+    // stage 与正文同源：attention 落点仍用同一个 questionId。
+    expect(view.stage).toMatchObject({
+      kind: 'question',
+      action: { type: 'open_question', questionId: pendingQuestion.questionId },
+    });
+
+    // 没有待答问题时显式 null，绝不发一个空壳对象。
+    expect(buildPodGoalView(row, desc, undefined).pendingQuestion).toBeNull();
+    expect(buildPodGoalView(row, null, undefined).pendingQuestion).toBeNull();
+  });
+
   test('a discussing Goal without state is work in progress, not ended', () => {
     const view = buildPodGoalView(row, {
       ...desc,

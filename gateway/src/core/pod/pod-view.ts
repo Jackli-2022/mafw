@@ -29,6 +29,19 @@ export interface PodCurrentAssignment {
   attempt: number;
 }
 
+/**
+ * Driver 的待答问题（`GoalStateV3.pendingQuestion`，`driver.ts` 写入）。
+ *
+ * `questions[]` 是问题正文；`questionId` 是 `POST /api/goals/:id/questions/
+ * :qid/respond` 的唯一权威（与 `/api/approvals` 的 MCP user-questions id 是
+ * 两套来源）。
+ */
+export interface PodPendingQuestion {
+  questionId: string;
+  node: 'plan' | 'execute' | 'review';
+  questions: string[];
+}
+
 export interface PodGoalDescription {
   title: string;
   phase: string | null;
@@ -37,11 +50,7 @@ export interface PodGoalDescription {
   verdict: PodGoalVerdict | null;
   hasResultEvidence: boolean;
   planApproval?: { id?: string; status: 'pending' | 'approved' | 'rejected' } | null;
-  pendingQuestion?: {
-    questionId: string;
-    node: 'plan' | 'execute' | 'review';
-    questions: string[];
-  } | null;
+  pendingQuestion?: PodPendingQuestion | null;
   nodeSession: PodNodeSessionSummary | null;
   lastError: string | null;
   /** No state file yet (queued goal, or an active goal whose state vanished). */
@@ -80,6 +89,11 @@ export interface PodGoalView {
   strategy: PodGoalStrategy | null;
   assessment: PodGoalAssessment | null;
   currentAssignment: PodCurrentAssignment | null;
+  /**
+   * Driver 的待答问题（含正文），供客户端直接渲染问答卡；
+   * 没有待答问题（或旧数据）时为 `null`。
+   */
+  pendingQuestion?: PodPendingQuestion | null;
   /** 当前 revision（legacy 行为 1）；revision 明细见 pod_goal_revisions。 */
   activeRevision: number;
   /**
@@ -200,6 +214,7 @@ export function buildPodGoalView(
     strategy: description?.strategy ?? null,
     assessment: description?.assessment ?? null,
     currentAssignment: description?.currentAssignment ?? null,
+    pendingQuestion: description?.pendingQuestion ?? null,
     activeRevision: row.activeRevision,
     revision: row.activeRevision,
     priority: row.priority,
