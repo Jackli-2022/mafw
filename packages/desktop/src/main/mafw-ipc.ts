@@ -4,11 +4,14 @@ import type { IpcMainInvokeEvent } from "electron"
 import { join } from "path"
 import { readdir } from "node:fs/promises"
 import {
+  getGatewaySourcePreference,
   getGatewayStatus,
   getGatewayPort,
   onGatewayStateChange,
   restartGateway,
+  setGatewaySourcePreference,
   startGateway,
+  useLegacyExternalOnce,
 } from "./mafw-sidecar"
 import { getLastFocusedWindow, trayIconPath, createMainWindow } from "./windows"
 import { walkProjectFiles } from "./file-listing"
@@ -161,6 +164,21 @@ export function registerMafwIpcHandlers() {
   })
 
   ipcMain.handle("mafw-gateway-info", () => getGatewayStatus())
+  ipcMain.handle("mafw-gateway-source-preference-get", () => getGatewaySourcePreference())
+  ipcMain.handle("mafw-gateway-source-preference-set", (_event, value: unknown) => {
+    if (value !== "managed" && value !== "external") throw new Error("invalid gateway source preference")
+    return setGatewaySourcePreference(value)
+  })
+  ipcMain.handle("mafw-gateway-legacy-external-once", () => {
+    useLegacyExternalOnce()
+    return { ok: true }
+  })
+  ipcMain.handle("mafw-gateway-retry-managed", async (_event, opts?: { force?: boolean }) => {
+    restartScheduler.cancel()
+    void opts?.force
+    await restartGateway()
+    return getGatewayStatus()
+  })
 
   // Open an additional main window (window-registry already persists ids).
   ipcMain.handle("mafw-new-window", () => {

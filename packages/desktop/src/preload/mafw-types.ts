@@ -55,6 +55,10 @@ export type MafwAPI = {
     start: () => Promise<GatewayStatus>
     restart: () => Promise<GatewayStatus>
     update: () => Promise<{ ok: boolean; error?: string }>
+    getSourcePreference: () => Promise<"managed" | "external">
+    setSourcePreference: (value: "managed" | "external") => Promise<"managed" | "external">
+    useExternalOnce: () => Promise<{ ok: boolean }>
+    retryManaged: (opts?: { force?: boolean }) => Promise<GatewayStatus>
     logsPath: () => Promise<string>
     onStateChange: (cb: (status: GatewayStatus) => void) => () => void
     onHealthChange: (cb: (health: { healthy: boolean; failures: number }) => void) => () => void
