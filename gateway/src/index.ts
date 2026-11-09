@@ -260,7 +260,7 @@ import { getBridgeEventEntry } from './runtime/adapter-bridge';
 import { setPiUnknownRecorder } from './runtime/pi/pi-events';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
-import { createOpencodeDefinition, opencodeCapabilities, type OpencodeVariant } from './runtime/opencode-definition';
+import { createOpencodeDefinition, opencodeCapabilities, opencodeStaticEntry, type OpencodeVariant } from './runtime/opencode-definition';
 
 import { injectServeAuth } from './runtime/proxy-auth';
 import { serveAuthHeaders } from './runtime/serve-sidecar';
@@ -926,31 +926,42 @@ class MafwScheduler {
       v2: 'opencode@v2',
       v21: 'opencode@v21',
     };
-    const opencodeDefinition = (variant: OpencodeVariant) => () =>
-      createOpencodeDefinition({
+    const opencodeDefinition = (variant: OpencodeVariant) => () => {
+      const name = registrationName[variant];
+      return createOpencodeDefinition({
         variant,
-        registrationName: registrationName[variant],
+        registrationName: name,
         baseUrl: sdkSnapshot.baseUrl,
         headers: { ...sdkSnapshot.headers },
+        hooks: {
+          onUnmatched: (type) => this.recordTranslationDrop(name, type, 'unmatched'),
+          onSuppressed: (type) => this.recordTranslationDrop(name, type, 'suppressed'),
+          onTranslationError: (_raw, reason) => this.recordTranslationError(name, 'transformEvent', reason),
+        },
       });
+    };
     // 裸名 = 自适应方言（激活时探测一次，fail-safe @v1）
     this.runtimeLoader.registerBuiltinDefinition('opencode', opencodeDefinition('adaptive'), {
       external,
       capabilities: opencodeCapabilities('adaptive', external),
+      eventEntry: opencodeStaticEntry('adaptive'),
     });
     // 钉死方言：映射表随定义固定，探测跳过
     this.runtimeLoader.registerBuiltinDefinition('opencode@v1', opencodeDefinition('v1'), {
       external,
       capabilities: opencodeCapabilities('v1', external),
+      eventEntry: opencodeStaticEntry('v1'),
     });
     this.runtimeLoader.registerBuiltinDefinition('opencode@v2', opencodeDefinition('v2'), {
       external,
       capabilities: opencodeCapabilities('v2', external),
+      eventEntry: opencodeStaticEntry('v2'),
     });
     // 钉死 2.1.0 方言（顶层 type/data + session.* 富事件；dry-event/一致性测试用）
     this.runtimeLoader.registerBuiltinDefinition('opencode@v21', opencodeDefinition('v21'), {
       external,
       capabilities: opencodeCapabilities('v21', external),
+      eventEntry: opencodeStaticEntry('v21'),
     });
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;

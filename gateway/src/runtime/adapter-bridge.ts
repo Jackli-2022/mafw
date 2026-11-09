@@ -11,7 +11,7 @@
  */
 import { defineRuntime, type AdapterEvent, type RuntimeChannels, type RuntimeChannelsV2, type RuntimeDefinition, type RuntimeTransport } from '@mafw/runtime-contract';
 import type { AgentRuntime } from './contract';
-import type { EventMappingEntry } from './event-mapper';
+import type { EventMappingEntry, TranslationHooks } from './event-mapper';
 import { applyEventMappings } from './event-mapper';
 import type { RawRuntimeEvent } from './normalize';
 
@@ -134,6 +134,7 @@ export interface AdapterBridgeMeta {
     entry?: EventMappingEntry;
     entryResolver?: () => Promise<EventMappingEntry>;
     isCanonical: (type: string) => boolean;
+    hooks?: TranslationHooks;
   };
   /** Notification when a deferred entry resolves (diagnostics/activeDialect). */
   onEntryResolved?: (entry: EventMappingEntry) => void;
@@ -222,9 +223,12 @@ export function toRuntimeDefinition(
       let resolvedEntry: EventMappingEntry | undefined = translate?.entryResolver ? undefined : translate?.entry;
       let resolving: Promise<EventMappingEntry> | undefined;
       let buffer: RawRuntimeEvent[] = [];
+      // Exposed for the neutral facade's rewireEvents (serve recovery may
+      // change the dialect; the next event re-probes).
+      (transport as any).rewire = () => { resolvedEntry = translate?.entryResolver ? undefined : translate?.entry; resolving = undefined; buffer = []; };
 
       const translateOne = (entry: EventMappingEntry, evt: RawRuntimeEvent) =>
-        applyEventMappings(evt, entry, meta.translate!.isCanonical);
+        applyEventMappings(evt, entry, meta.translate!.isCanonical, meta.translate!.hooks);
 
       const pump = (evt: RawRuntimeEvent) => {
         if (resolvedEntry) return translateOne(resolvedEntry, evt);
@@ -240,8 +244,15 @@ export function toRuntimeDefinition(
             for (const item of pending) forwardTranslated(translateOne(entry, item));
             return entry;
           }).catch(() => {
+            // Never leave the stream buffering forever: fall back to the static
+            // entry (v1 fail-safe) and re-arm the resolver for the next event.
+            const fallback = meta.translate?.entry;
+            resolvedEntry = fallback;
+            resolving = undefined;
+            const pending = buffer;
             buffer = [];
-            return undefined as unknown as EventMappingEntry;
+            if (fallback) for (const item of pending) forwardTranslated(translateOne(fallback, item));
+            return fallback as unknown as EventMappingEntry;
           });
         }
         return [] as RawRuntimeEvent[];

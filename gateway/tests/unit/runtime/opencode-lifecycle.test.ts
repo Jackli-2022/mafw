@@ -112,6 +112,73 @@ describe('opencode definition lifecycle', () => {
     expect(getBridgeEventEntry('opencode@v1')?.eventMappings).toBe(OPENCODE_V1_EVENT_MAPPINGS);
   });
 
+  it('registers pinned entries at loader registration time (before activation)', async () => {
+    const loader = new RuntimePluginLoader(fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-def-')));
+    await loader.init();
+    loader.registerBuiltinDefinition('pinned@v1', async () => { throw new Error('not activated'); }, {
+      external: false,
+      capabilities: { sessionApi: true } as any,
+      eventEntry: { eventMappings: OPENCODE_V1_EVENT_MAPPINGS },
+    });
+    expect(getBridgeEventEntry('pinned@v1')?.eventMappings).toBe(OPENCODE_V1_EVENT_MAPPINGS);
+  });
+
+  it('prefers a neutral-format file plugin over a builtin definition', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-def-'));
+    fs.writeFileSync(
+      path.join(dir, 'x.js'),
+      `module.exports = { name: 'x', api: 1, eventApi: 1, preset: 'core', transport: {\n` +
+      `  createSession: async () => ({ sessionID: 's1' }),\n` +
+      `  sendTurn: async (input) => ({ turnID: input.turnID }),\n` +
+      `  interruptTurn: async () => {},\n` +
+      `  onEvent: () => () => {},\n` +
+      `} };`,
+    );
+    const loader = new RuntimePluginLoader(dir);
+    await loader.init();
+    let builtinBuilt = 0;
+    loader.registerBuiltinDefinition('x', async () => { builtinBuilt += 1; return defineRuntime({
+      api: 1, name: 'builtin-x', displayName: 'X', preset: 'core',
+      transport: {
+        createSession: async () => ({ sessionID: 's1' }),
+        sendTurn: async (i) => ({ turnID: i.turnID }),
+        interruptTurn: async () => {},
+        onEvent: () => () => {},
+      },
+    }); }, { external: false, capabilities: {} as any });
+
+    const resolved = await loader.resolveBuiltinDefinition('x', {});
+    expect(builtinBuilt).toBe(0);
+    expect(resolved?.name).toBe('x');
+  });
+
+  it('lets the definition getBaseUrl win over the composition-root default', () => {
+    const definition = toRuntimeDefinition(
+      { ...queuedRuntime(), getBaseUrl: () => 'http://serve:4096' },
+      { name: 'x' },
+    );
+    const neutral = createNeutralRuntime(definition, {
+      bus: new RuntimeBus(),
+      host: { getBaseUrl: () => 'http://gateway:3000' },
+    });
+    expect(neutral.getBaseUrl()).toBe('http://serve:4096');
+  });
+
+  it('exposes the resolved dialect on the neutral runtime', async () => {
+    const runtime = queuedRuntime();
+    const definition = await createOpencodeDefinition(
+      { variant: 'adaptive', baseUrl: 'http://x' },
+      { runtime, probe: async () => 'v21' },
+    );
+    const bus = new RuntimeBus();
+    bus.register(definition);
+    const neutral: any = createNeutralRuntime(definition, { bus });
+    runtime.emit({ type: 'session.renamed', data: { sessionID: 's1', title: 't' } });
+    const started = Date.now();
+    while (neutral.activeDialect !== 'v21' && Date.now() - started < 1000) await tick();
+    expect(neutral.activeDialect).toBe('v21');
+  });
+
   it('carries agentProcess from the real opencode runtime and passes validation', async () => {
     const real = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:1' });
     try {

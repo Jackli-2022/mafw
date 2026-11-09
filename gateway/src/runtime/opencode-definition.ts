@@ -23,6 +23,8 @@ export interface OpencodeDefinitionOptions {
   headers?: Record<string, string>;
   /** Loader key when it differs from the runtime name (dry-event/conformance). */
   registrationName?: string;
+  /** Translation telemetry hooks (unmatched/suppressed/errors). */
+  hooks?: import('./event-mapper').TranslationHooks;
 }
 
 export interface OpencodeDefinitionDeps {
@@ -47,6 +49,11 @@ const V21_ENTRY: EventMappingEntry = {
   eventMappings: OPENCODE_21_EVENT_MAPPINGS,
   transformEvent: translateOpencode21Event,
 };
+
+/** Static entry for a pinned variant (tooling/dry-event, no activation needed). */
+export function opencodeStaticEntry(variant: OpencodeVariant): EventMappingEntry {
+  return variant === 'v21' ? V21_ENTRY : variant === 'v2' ? V2_ENTRY : V1_ENTRY;
+}
 
 /**
  * Resolve the event-mapping entry for a variant. `adaptive` probes the serve
@@ -89,8 +96,7 @@ export function opencodeCapabilities(variant: OpencodeVariant, external: boolean
 export async function createOpencodeDefinition(
   opts: OpencodeDefinitionOptions,
   deps: OpencodeDefinitionDeps = {},
-): Promise<RuntimeDefinition> {
-  const external = !!process.env.MAFW_SERVER_SERVE_URL;
+): Promise<RuntimeDefinition> {  const external = !!process.env.MAFW_SERVER_SERVE_URL;
   const runtime = deps.runtime ?? await createOpencodeRuntime({
     baseUrl: opts.baseUrl,
     headers: opts.headers ? { ...opts.headers } : undefined,
@@ -99,7 +105,7 @@ export async function createOpencodeDefinition(
 
   const dialectOf = (entry: EventMappingEntry): 'v1' | 'v2' | 'v21' =>
     entry === V21_ENTRY ? 'v21' : entry === V2_ENTRY ? 'v2' : 'v1';
-  const staticEntry = opts.variant === 'v21' ? V21_ENTRY : opts.variant === 'v2' ? V2_ENTRY : V1_ENTRY;
+  const staticEntry = opencodeStaticEntry(opts.variant);
 
   let definition: RuntimeDefinition | undefined;
   definition = toRuntimeDefinition(runtime, {
@@ -122,6 +128,7 @@ export async function createOpencodeDefinition(
           }
         : {}),
       isCanonical: (type) => !!EVENT_FLOW_MATRIX[type],
+      ...(opts.hooks ? { hooks: opts.hooks } : {}),
     },
     onEntryResolved: (entry) => {
       if (definition?.host) definition.host.activeDialect = dialectOf(entry);

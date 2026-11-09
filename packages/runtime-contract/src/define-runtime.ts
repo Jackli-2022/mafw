@@ -38,9 +38,21 @@ export interface RuntimeManifest {
   configSchema?: unknown;
 }
 
+export interface RuntimeServeSpawnResult {
+  url?: string;
+  close?(): void;
+}
+
 export interface RuntimeAgentProcess {
   restart(): Promise<void>;
-  spawnServe?(opts: { host?: string; port?: number; rootDir?: string }): Promise<unknown>;
+  spawnServe?(opts: {
+    host?: string;
+    port?: number;
+    rootDir?: string;
+    timeoutMs?: number;
+    onOutput?(chunk: string): void;
+    onExit?(code: number | null): void;
+  }): Promise<RuntimeServeSpawnResult>;
   killServe?(): void;
 }
 
@@ -55,7 +67,6 @@ export interface RuntimeHostSurface {
   /** Dialect label resolved by the adapter (diagnostics only). */
   activeDialect?: string;
 }
-
 export interface RuntimeDefinitionInput {
   api: 1;
   name: string;

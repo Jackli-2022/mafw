@@ -18,6 +18,7 @@ import { resolveEventDeclaration } from './event-declaration';
 import { resolvePluginEntry } from './plugin-entry';
 import { RuntimeBus } from './runtime-bus';
 import { toRuntimeDefinition } from './legacy/legacy-plugin-bridge';
+import { setBridgeEventEntry } from './adapter-bridge';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import type { RuntimePackageEntry } from '../plugins/package-types';
 
@@ -78,6 +79,8 @@ export class RuntimePluginLoader {
     external: boolean;
     capabilities: RuntimeCapabilities;
   }>();
+  /** Names whose neutral definition came from a plugin file (override priority). */
+  private readonly fileNeutral = new Set<string>();
   private readonly legacyModules = new Map<string, any>();
   private readonly neutralBus = new RuntimeBus();
   /** canonical 词汇表（校验 eventMappings.to 用）——index.ts 注入，避免 loader 依赖矩阵。 */
@@ -131,6 +134,7 @@ export class RuntimePluginLoader {
           this.factories.delete(prev.name);
           this.meta.delete(prev.name);
           this.neutralDefinitions.delete(prev.name);
+          this.fileNeutral.delete(prev.name);
           this.neutralFactories.delete(prev.name);
           this.legacyModules.delete(prev.name);
           this.neutralBus.unregister(prev.name);
@@ -168,6 +172,7 @@ export class RuntimePluginLoader {
         }
         if (entry.kind === 'neutral') {
           this.neutralDefinitions.set(name, entry.definition);
+          this.fileNeutral.add(name);
           this.neutralBus.register(entry.definition);
           log.info(`[RuntimePluginLoader] Loaded neutral runtime ${file} (${name})`);
         } else {
@@ -295,15 +300,17 @@ export class RuntimePluginLoader {
   registerBuiltinDefinition(
     name: string,
     factory: (ctx: any) => Promise<RuntimeDefinition>,
-    meta: { external: boolean; capabilities: RuntimeCapabilities },
+    meta: { external: boolean; capabilities: RuntimeCapabilities; eventEntry?: EventMappingEntry },
   ): void {
     this.builtinDefinitions.set(name, { factory, external: meta.external, capabilities: meta.capabilities });
+    // Tooling (dry-event/conformance) must see pinned entries before activation.
+    if (meta.eventEntry) setBridgeEventEntry(name, meta.eventEntry);
   }
 
   /** Resolve a builtin definition, falling back to file plugins and legacy entries. */
   async resolveBuiltinDefinition(name: string, ctx: any): Promise<RuntimeDefinition | undefined> {
     // Same-name file/package plugins keep their documented override priority.
-    if (this.factories.has(name) || this.legacyModules.has(name)) {
+    if (this.factories.has(name) || this.legacyModules.has(name) || this.fileNeutral.has(name)) {
       return this.getNeutral(name, ctx);
     }
 

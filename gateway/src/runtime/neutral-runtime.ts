@@ -220,6 +220,9 @@ export function createNeutralRuntime(
 
     global: {
       async event() {
+        // A fresh subscription after a full teardown (serve recovery, SSE
+        // reconnect) may face a different dialect: re-arm the resolver.
+        if (streams.size === 0) (transport as any).rewire?.();
         const busStream = createBusStream(bus, definition.name);
         streams.add(busStream.close);
         return { stream: busStream.stream };
@@ -344,10 +347,16 @@ export function createNeutralRuntime(
   if (host.getBaseUrl) runtime.getBaseUrl = host.getBaseUrl;
   if (host.healthCheck) runtime.healthCheck = host.healthCheck;
   if (host.agentProcess) runtime.agentProcess = host.agentProcess;
-  if (host.activeDialect) runtime.activeDialect = host.activeDialect;
+  Object.defineProperty(runtime, 'activeDialect', {
+    enumerable: true,
+    // Read through to the definition: the adapter may resolve the dialect
+    // after the runtime was constructed (first event / cold start).
+    get: () => (definition.host as any)?.activeDialect ?? host.activeDialect,
+  });
   if (host.resolveEventEntry) runtime.resolveEventEntry = host.resolveEventEntry;
 
   runtime.rewireEvents = async () => {
+    (transport as any).rewire?.();
     for (const close of [...streams]) close();
     streams.clear();
     return 'neutral';
