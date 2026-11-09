@@ -102,6 +102,31 @@ test('two sessions keep their own turns', async () => {
   assert.equal(events.find((e) => e.type === 'turn.completed' && e.turnID === 'tb')?.sessionID, b.sessionID);
 });
 
+test('rejects file parts explicitly instead of silently dropping them', async () => {
+  const t = createClaudeTransport({ sdk: sdk([]) });
+  const { sessionID } = await t.createSession({ directory: 'C:/tmp' });
+  await assert.rejects(
+    t.sendTurn({
+      sessionID, turnID: 't1', text: 'look',
+      parts: [{ type: 'file', mime: 'image/png', ref: { id: 'a1', bytes: 1, mime: 'image/png' } }],
+    }),
+    /ENODEV|file parts/,
+  );
+});
+
+test('result usage emits usage.updated with the turn id', async () => {
+  const t = createClaudeTransport({ sdk: sdk([
+    { type: 'user', session_id: 'raw1', uuid: 'u1', message: { role: 'user', content: 'hi' } },
+    { type: 'result', subtype: 'success', session_id: 'raw1', usage: { input_tokens: 3, output_tokens: 2 } },
+  ]) });
+  const { sessionID } = await t.createSession({ directory: 'C:/tmp' });
+  const events: any[] = [];
+  t.onEvent((e) => events.push(e));
+  await t.sendTurn({ sessionID, turnID: 't1', text: 'hi' });
+  await tick();
+  assert.equal(events.find((e) => e.type === 'usage.updated')?.turnID, 't1');
+});
+
 test('busy send queues the next turn id', async () => {
   const scripts = [
     [

@@ -38,7 +38,7 @@ export function canonicalToAdapterEvent(evt: RawRuntimeEvent, state: LegacyBridg
   const sessionID = sessionOf(evt, props);
   if (!type) return null;
   let turnID = typeof props.turnID === 'string' ? props.turnID : (sessionID ? state.turns.get(sessionID) : undefined);
-  if (type === 'turn.started' || (type.startsWith('turn.') && !turnID)) {
+  if (type === 'turn.started' || type === 'usage.updated' || (type.startsWith('turn.') && !turnID)) {
     turnID = turnID ?? `legacy-${sessionID ?? 'session'}-${nextID()}`;
     if (sessionID) state.turns.set(sessionID, turnID);
   }
@@ -164,7 +164,7 @@ export function toRuntimeDefinition(
   if (legacy.session.messages) {
     channels.messages = {
       list: async (sessionID, opts) => legacy.session.messages({ sessionID, limit: opts?.limit, before: opts?.before } as any),
-      ...(typeof legacy.session.normalizeMessages === 'function' ? { normalize: legacy.session.normalizeMessages } : {}),
+      ...(typeof legacy.session.normalizeMessages === 'function' ? { normalize: legacy.session.normalizeMessages as any } : {}),
     };
   }
   channels.session = {
@@ -193,7 +193,7 @@ export function toRuntimeDefinition(
   }
   if (legacy.session.diff || legacy.session.vcs) {
     channels.diff = {
-      get: legacy.session.diff ? (sessionID, messageID) => legacy.session.diff!({ sessionID, messageID }) : undefined,
+      get: legacy.session.diff ? ((sessionID: string, messageID?: string) => legacy.session.diff!({ sessionID, messageID })) as any : undefined,
       vcsDiff: legacy.session.vcs?.diff ? (opts) => legacy.session.vcs!.diff!(opts) : undefined,
       vcsApply: legacy.session.vcs?.apply ? (patch) => legacy.session.vcs!.apply!({ patch }) : undefined,
     };

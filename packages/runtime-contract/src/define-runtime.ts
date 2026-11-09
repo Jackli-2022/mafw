@@ -53,10 +53,23 @@ export interface RuntimeDefinitionInput {
   overrides?: Partial<RuntimeCapabilities>;
 }
 
+export class RuntimeUnsupportedError extends Error {
+  readonly code = 'ENODEV';
+  readonly surface: string;
+
+  constructor(surface: string) {
+    super(`runtime does not support ${surface}`);
+    this.name = 'RuntimeUnsupportedError';
+    this.surface = surface;
+  }
+}
+
 export interface RuntimeDefinition extends RuntimeDefinitionInput {
   eventApi: 1;
   channelApi: 1 | 2;
   capabilities: RuntimeCapabilities;
+  /** Throws a neutral ENODEV error for a missing surface. */
+  unsupported(surface: string): RuntimeUnsupportedError;
 }
 
 const BASE_CAPABILITIES: RuntimeCapabilities = {
@@ -135,5 +148,6 @@ export function defineRuntime(input: RuntimeDefinitionInput): RuntimeDefinition 
     eventApi,
     channelApi,
     capabilities: deriveCapabilities({ ...input, eventApi }),
+    unsupported: (surface: string) => new RuntimeUnsupportedError(surface),
   };
 }

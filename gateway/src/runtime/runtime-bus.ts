@@ -10,11 +10,18 @@ export interface RuntimeBusStats {
   dropped: number;
 }
 
+export interface RuntimeBusTelemetry {
+  kind: 'unknown' | 'duplicate' | 'stale' | 'dropped';
+  type?: string;
+  runtimeName?: string;
+}
+
 const SEEN_LIMIT = 2048;
 
 export class RuntimeBus {
   private readonly definitions = new Map<string, { definition: RuntimeDefinition; unsubscribe: () => void }>();
   private readonly listeners = new Set<(event: DeliveredAdapterEvent) => void>();
+  private readonly telemetry = new Set<(event: RuntimeBusTelemetry) => void>();
   private readonly seen = new Map<string, Set<string>>();
   private readonly lastSeq = new Map<string, number>();
   private readonly retiredTurns = new Map<string, Set<string>>();
@@ -41,12 +48,25 @@ export class RuntimeBus {
     return () => this.listeners.delete(listener);
   }
 
+  onTelemetry(listener: (event: RuntimeBusTelemetry) => void): () => void {
+    this.telemetry.add(listener);
+    return () => this.telemetry.delete(listener);
+  }
+
+  private report(kind: RuntimeBusTelemetry['kind'], event: AdapterEvent | undefined, runtimeName: string): void {
+    this.counters[kind] += 1;
+    const telemetry = { kind, ...(event?.type ? { type: event.type } : {}), runtimeName };
+    for (const listener of this.telemetry) {
+      try { listener(telemetry); } catch { /* telemetry must not affect dispatch */ }
+    }
+  }
+
   /** Called by adapters' onEvent; tests may call it directly. */
   dispatch(input: AdapterEvent, runtimeName = this.defaultRuntime ?? 'unknown'): void {
     const validation = validateAdapterEvent(input);
     if (!validation.ok) {
-      if (validation.errors.some((error) => error.startsWith('unknown event type'))) this.counters.unknown += 1;
-      else this.counters.dropped += 1;
+      const unknown = validation.errors.some((error) => error.startsWith('unknown event type'));
+      this.report(unknown ? 'unknown' : 'dropped', input, runtimeName);
       return;
     }
     const event = validation.event;
@@ -54,7 +74,7 @@ export class RuntimeBus {
     if (event.sessionID) {
       const seen = this.seen.get(event.sessionID) ?? new Set<string>();
       if (seen.has(event.id)) {
-        this.counters.duplicate += 1;
+        this.report('duplicate', event, runtimeName);
         return;
       }
       seen.add(event.id);
@@ -68,20 +88,20 @@ export class RuntimeBus {
     if (event.sessionID && event.seq !== undefined) {
       const previous = this.lastSeq.get(event.sessionID);
       if (previous !== undefined && event.seq <= previous) {
-        this.counters.stale += 1;
+        this.report('stale', event, runtimeName);
         return;
       }
       this.lastSeq.set(event.sessionID, event.seq);
     }
 
     if (event.sessionID && event.turnID && this.retiredTurns.get(event.sessionID)?.has(event.turnID)) {
-      this.counters.stale += 1;
+      this.report('stale', event, runtimeName);
       return;
     }
 
     const mapped = mapAdapterEvent(event);
     if (mapped.dropped) {
-      this.counters.dropped += 1;
+      this.report('dropped', event, runtimeName);
       return;
     }
 

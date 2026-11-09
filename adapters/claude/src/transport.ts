@@ -41,6 +41,9 @@ export function createClaudeTransport(deps: ClaudeRuntimeDeps): RuntimeTransport
       return { sessionID };
     },
     async sendTurn(input: SendTurnInput) {
+      if ((input.parts ?? []).some((part) => part.type === 'file')) {
+        throw new Error('claude transport does not support file parts (ENODEV)');
+      }
       const queue = pendingTurns.get(input.sessionID) ?? [];
       queue.push(input.turnID);
       pendingTurns.set(input.sessionID, queue);

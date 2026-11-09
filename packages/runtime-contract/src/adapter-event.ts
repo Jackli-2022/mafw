@@ -126,6 +126,7 @@ const SESSIONLESS = new Set<string>(['runtime.notice', 'runtime.error']);
 const NEED_TURN = new Set<string>([
   'turn.started', 'turn.completed', 'turn.failed', 'turn.aborted',
   'turn.retrying', 'turn.waiting', 'turn.cap_exhausted',
+  'usage.updated',
   'tool.call', 'tool.delta', 'tool.result',
 ]);
 const NEED_REQUEST = new Set<string>([

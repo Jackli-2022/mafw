@@ -1,8 +1,13 @@
 import { resolvePluginEntry } from '../../../src/runtime/plugin-entry';
 
 it('recognizes a neutral definition', () => {
-  const def = { api: 1, eventApi: 1, name: 'x', transport: {} };
+  const def = { api: 1, eventApi: 1, name: 'x', transport: { onEvent: () => () => {} } };
   expect(resolvePluginEntry(def)).toEqual({ kind: 'neutral', definition: def });
+});
+
+it('does not treat an ABI-mismatched object as neutral', () => {
+  expect(resolvePluginEntry({ api: 1, name: 'x', transport: { onEvent: () => () => {} } })).toBeNull();
+  expect(resolvePluginEntry({ api: 1, eventApi: 1, name: 'x', transport: {} })).toBeNull();
 });
 
 it('recognizes an async createRuntimeDefinition factory', () => {

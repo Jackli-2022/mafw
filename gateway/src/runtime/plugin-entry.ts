@@ -11,7 +11,13 @@ function isRecord(value: unknown): value is Record<string, any> {
 
 export function resolvePluginEntry(exported: unknown): PluginEntry | null {
   if (!isRecord(exported)) return null;
-  if (exported.api === 1 && isRecord(exported.transport)) {
+  if (
+    exported.api === 1
+    && exported.eventApi === 1
+    && typeof exported.name === 'string'
+    && isRecord(exported.transport)
+    && typeof exported.transport.onEvent === 'function'
+  ) {
     return { kind: 'neutral', definition: exported as RuntimeDefinition };
   }
   if (typeof exported.createRuntimeDefinition === 'function') {

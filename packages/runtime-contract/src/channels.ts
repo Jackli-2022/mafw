@@ -1,8 +1,61 @@
-/**
+﻿/**
  * RuntimeChannels: everything a runtime exposes outside the turn protocol.
  * All blocks are optional; a missing block means the surface is unsupported
  * (ENODEV / 503), never a runtime-specific fallback.
  */
+
+export interface AdapterSession {
+  id: string;
+  status?: string;
+  title?: string;
+  directory?: string;
+  parentID?: string;
+  model?: unknown;
+  time?: { created?: number; updated?: number };
+}
+
+export interface AdapterMessage {
+  id?: string;
+  sessionID?: string;
+  role: 'user' | 'assistant';
+  content?: unknown[];
+  time?: { created?: number; updated?: number; completed?: number };
+}
+
+export interface AdapterPart {
+  id?: string;
+  sessionID?: string;
+  messageID?: string;
+  type: string;
+}
+
+export interface AdapterProvider {
+  id: string;
+  name?: string;
+  models: unknown[];
+  connected?: boolean;
+}
+
+export interface AdapterAgent {
+  id: string;
+  label: string;
+  source?: string;
+  selectable?: boolean;
+}
+
+export interface AdapterQuestionRequest {
+  id: string;
+  sessionID: string;
+  questions: unknown[];
+}
+
+export interface AdapterDiff {
+  file: string;
+  patch?: string;
+  additions?: number;
+  deletions?: number;
+  status?: string;
+}
 
 export interface RuntimeChannels {
   tools?: {
@@ -10,22 +63,22 @@ export interface RuntimeChannels {
     nativeTools?(): unknown[];
   };
   session?: {
-    list?(opts?: { directory?: string }): Promise<unknown[]>;
-    listByDirectory?(directory: string, limit?: number): Promise<unknown[]>;
-    get?(sessionID: string): Promise<unknown>;
+    list?(opts?: { directory?: string }): Promise<AdapterSession[]>;
+    listByDirectory?(directory: string, limit?: number): Promise<AdapterSession[]>;
+    get?(sessionID: string): Promise<AdapterSession>;
     update?(sessionID: string, patch: { title?: string }): Promise<void>;
     delete?(sessionID: string): Promise<void>;
     abort?(sessionID: string): Promise<void>;
   };
   messages?: {
-    list(sessionID: string, opts?: { limit?: number; before?: string }): Promise<{ data: unknown[]; nextCursor?: string }>;
-    normalize?(raw: unknown[]): unknown[];
+    list(sessionID: string, opts?: { limit?: number; before?: string }): Promise<{ data: AdapterMessage[]; nextCursor?: string }>;
+    normalize?(raw: unknown[]): AdapterMessage[];
   };
   providers?: {
-    list(): Promise<{ all: unknown[]; connected: string[]; default: Record<string, string> }>;
+    list(): Promise<{ all: AdapterProvider[]; connected: string[]; default: Record<string, string> }>;
   };
   agents?: {
-    list(): Promise<unknown[]>;
+    list(): Promise<AdapterAgent[]>;
     install(name: string, definition: unknown): Promise<void>;
     remove?(name: string): Promise<void>;
   };
@@ -35,12 +88,12 @@ export interface RuntimeChannels {
     unrevert?(sessionID: string): Promise<void>;
   };
   diff?: {
-    get?(sessionID: string, messageID?: string): Promise<unknown[]>;
-    vcsDiff?(opts?: { mode?: 'git' | 'branch' }): Promise<unknown[]>;
+    get?(sessionID: string, messageID?: string): Promise<AdapterDiff[]>;
+    vcsDiff?(opts?: { mode?: 'git' | 'branch' }): Promise<AdapterDiff[]>;
     vcsApply?(patch: string): Promise<void>;
   };
   question?: {
-    list(opts?: { directory?: string }): Promise<unknown[]>;
+    list(opts?: { directory?: string }): Promise<AdapterQuestionRequest[]>;
     reply(opts: { requestID: string; answers: string[][]; directory?: string }): Promise<void>;
     reject(opts: { requestID: string; directory?: string }): Promise<void>;
   };
@@ -89,3 +142,4 @@ export interface RuntimeChannelsV2 {
     cancel?(jobID: string): Promise<void>;
   };
 }
+

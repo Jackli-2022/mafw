@@ -23,10 +23,18 @@ export {
 export {
   type RuntimeChannels,
   type RuntimeChannelsV2,
+  type AdapterSession,
+  type AdapterMessage,
+  type AdapterPart,
+  type AdapterProvider,
+  type AdapterAgent,
+  type AdapterQuestionRequest,
+  type AdapterDiff,
 } from './channels.ts';
 export {
   defineRuntime,
   deriveCapabilities,
+  RuntimeUnsupportedError,
   type RuntimeCapabilities,
   type RuntimeDefinition,
   type RuntimeDefinitionInput,

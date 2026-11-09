@@ -151,6 +151,12 @@ export function claudeAdapterEvents(
         usage: raw.usage,
         ...(typeof raw.total_cost_usd === 'number' ? { costUsd: raw.total_cost_usd } : {}),
       }));
+      if (raw.usage) {
+        out.push(make('usage.updated', sid, turnID, {
+          usage: raw.usage,
+          ...(typeof raw.total_cost_usd === 'number' ? { costUsd: raw.total_cost_usd } : {}),
+        }));
+      }
     } else if (reason === 'aborted_streaming' || reason === 'aborted_tools' || raw.subtype === 'aborted_streaming' || raw.subtype === 'aborted_tools') {
       out.push(make('turn.aborted', sid, turnID, { reason }));
     } else {

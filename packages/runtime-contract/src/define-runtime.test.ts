@@ -41,3 +41,8 @@ test('rejects an unsupported api', () => {
 test('rejects a native key', () => {
   assert.throws(() => defineRuntime({ api: 1, name: 'x', displayName: 'X', preset: 'core', transport, native: {} } as any));
 });
+
+test('exposes a neutral ENODEV helper', () => {
+  const def = defineRuntime({ api: 1, name: 'x', displayName: 'X', preset: 'core', transport });
+  assert.equal(def.unsupported('messages').code, 'ENODEV');
+});

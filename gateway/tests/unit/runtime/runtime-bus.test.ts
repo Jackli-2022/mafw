@@ -48,6 +48,15 @@ it('drops events from a retired turn', () => {
   expect(seen.filter((m) => m.canonical?.payload.type === 'turn.completed')).toHaveLength(1);
 });
 
+it('reports drops through the telemetry sink', () => {
+  const bus = new RuntimeBus();
+  const seen: any[] = [];
+  bus.onTelemetry((event) => seen.push(event));
+  bus.register(fakeDef(() => () => {}));
+  bus.dispatch({ id: 'e1', type: 'nope', sessionID: 's1', at: 1, data: {} } as any);
+  expect(seen).toEqual([{ kind: 'unknown', type: 'nope', runtimeName: 'fake' }]);
+});
+
 it('drops out-of-order seq and malformed envelopes', () => {
   const bus = new RuntimeBus();
   bus.register(fakeDef(() => () => {}));
