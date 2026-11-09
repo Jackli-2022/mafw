@@ -1,5 +1,5 @@
 import { validateAdapterEvent } from '@mafw/runtime-contract';
-import { toRuntimeDefinition } from '../../../src/runtime/legacy/legacy-plugin-bridge';
+import { toRuntimeDefinition } from '../../../src/runtime/adapter-bridge';
 
 function legacy() {
   const listeners = new Set<(e: any) => void>();
