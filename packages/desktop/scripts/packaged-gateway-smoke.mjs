@@ -188,6 +188,18 @@ async function assertPortClosed(port) {
   throw new Error(`gateway left port ${port} open after shutdown`)
 }
 
+async function removeTempDir(dir) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (attempt === 9) throw error
+      await wait(300)
+    }
+  }
+}
+
 function localElectron() {
   const names = process.platform === "win32" ? ["electron.exe"] : ["electron", "Electron"]
   const roots = [
@@ -247,7 +259,11 @@ export async function runPackagedGatewaySmoke(options) {
     await assertPortClosed(port).catch((error) => {
       throw Object.assign(error, { cause: output })
     })
-    rmSync(home, { recursive: true, force: true })
+    // Windows may retain handles for a few hundred ms after the process exits.
+    // Cleanup is best-effort; a stale temp dir must not mask a healthy smoke.
+    await removeTempDir(home).catch((error) => {
+      console.warn(`[smoke] temporary HOME cleanup failed: ${error?.message ?? error}`)
+    })
   }
 }
 
