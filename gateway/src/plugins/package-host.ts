@@ -25,6 +25,7 @@ import { buildActivatedContributions } from './package-validator';
 import { withPluginEmit } from './package-context';
 import { PluginActionRegistry, type PluginActionInvokeOptions } from './plugin-actions';
 import { PluginEventRegistry, type PluginEventFrame } from './plugin-events';
+import { DEFAULT_WEB_SURFACE_ENTRY, validatePluginWebSurfaces } from './plugin-web-assets';
 import { createRegistrationBag, type RegistrationBag } from './registration-bag';
 import type {
   ActivatedContributions,
@@ -945,6 +946,23 @@ export class PluginHost {
     const built = buildActivatedContributions(modName, raw, this.canonicalTypes);
     if (!built.ok) throw new Error(`invalid contributions: ${built.errors.join('; ')}`);
     const activated = built.value;
+    // Web surfaces are the one UI slot with on-disk assets: the shared contract
+    // only validates the declaration, so the real files are checked here. A
+    // declared entry that does not resolve fails the whole package instead of
+    // publishing a surface that would 404 when opened.
+    const webSurfaces = activated.ui.webSurfaces ?? [];
+    if (webSurfaces.length > 0) {
+      const webErrors = desc.pkgDir
+        ? validatePluginWebSurfaces(desc.pkgDir, webSurfaces)
+        : webSurfaces.map((surface) => {
+            const entry = surface.entry ?? DEFAULT_WEB_SURFACE_ENTRY;
+            return (
+              `web surface "${surface.id}" entry "${entry}" is not supported in a single-file ` +
+              'package (no package web/ directory)'
+            );
+          });
+      if (webErrors.length > 0) throw new Error(`invalid web surfaces: ${webErrors.join('; ')}`);
+    }
     const contribs: PluginContributions = activated.legacy;
 
     const kinds: string[] = [];
