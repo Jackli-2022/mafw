@@ -317,3 +317,50 @@ adb shell input keyevent 4                    # 返回（root 页再按会退出
 - **P2** Tailscale DNS 自动检测：App 启动探测 `*.ts.net` 可达性，自动切换 Tailscale/局域网，真机免填 baseUrl
 - **P3** FCM 中继 + 后台推送：需真实 `google-services.json` + OAuth2 service account（spec 标 v2 / WS-only beta）
 - 桌面端（Windows/web）运行：部分移动插件缺失，如要支持需加条件编译/桌面适配
+
+---
+
+## AGENTS.md 归档：Mobile / Tailscale（2026-11-10 迁移）
+
+> 原文搬迁（未改写），保留当时的决策与验证记录。
+
+#### Mobile + Tailscale 接入（2026-11-05 起）
+
+调研：`docs/research/2026-11-05-mobile-tailscale-pod-research.md`（四路盘点 + Tailscale 方案对比 + 三诉求 gap 矩阵）。
+设计：`docs/superpowers/specs/2026-11-05-mobile-tailscale-pod-app-design.md`（用户拍板 D1 打开才看无离线推送 / D2 直连 tailnet /
+D3 鉴权洞独立先行 / D4 沿用桌面 Goal→Tech Lead 范式 / D5 含「需要你」应答 / D6 UI 参考 Dots+Muse+Grok，配色裁定 B「Grok 单色极简」；**2026-11-06 品牌修订：产品名 Orcalore**——accent 紫→mint `#4FD388`（桌面同款）、ink `#1D1F25`/cream `#FCF8F1` 中性档、工作 tab 顶部品牌行（Lore 20px + Orcalore 字标）、技术标识现在改：applicationId `ai.orcalore.mobile`、pubspec `orcalore_mobile`、深链 `orcalore://pair`（gateway pairing.ts/mobile/Manifest 三处锁步）、FCM 通道 `orcalore_*`；env `MAFW_*` 与信封 `mafw_event`/Dart 内部类名暂留）。
+计划：`plans/2026-11-05-mobile-gateway-p0.md`（已执行）+ `plans/2026-11-05-mobile-app-v1.md`（P1-P4 待执行）。
+
+- **Mobile Gateway P0 已交付（commits `527048cf`/`4d360d5f`/`110ab302`/`d8bfc043`/`40e627cf`）**：
+  ① `dispatchAuthorized`（`routes/registry-dispatch.ts`）把 registry dispatch 移到 apiToken 鉴权之后——修掉
+  「pods/work/协作面 40+ 路由远端无 token 可调」的 P0（真机 LAN 面实测无 token 401、loopback 404 零回归）；
+  ② `GOAL_SOURCES` 扩 `mobile`（+ `GoalAuthorization.source` union）；③ `mobile.tailscaleUrl` 配置键
+  （env > config > detect，PairingService 热更；`detectReachableHost` 抽到 `mobile/tailscale-url.ts`）；
+  ④ `goal.techLeadModel` 可配置（`pod-tech-lead-runtime-adapter.ts` 建会话后 fail-open bindModel，
+  lazy getter 热生效——终审 I-1 修复）。测试：P0 新增 **19**；gateway 全量 **4764（603 suites）**、
+  `tsc` rc=0。部署：build + deploy:local + daemon 重启，`/health` 200。
+  终审（deepseek-v4.1-flash）：0 Critical / 2 Important 已修（lazy getter、`docs/guides/plugin-creator.md`
+  安全文档同步）；deferred minors 见计划执行 ledger（workspace 已清理，git 历史为准）。
+
+- **Mobile App v1 已交付（Orcalore，2026-11-09；15 tasks，commits `0bdf2c75`..`b91f08ce` + 品牌/连接/页面全链）**：
+  按 `plans/2026-11-05-mobile-app-v1.md` 逐 task TDD 执行（subagent-driven：15 实现 + 15 任务审查 + 7 轮 fix + 2 次终审）。
+  P1 品牌基础（MafwPalette mint/ink/cream、`Orcalore` title/label、`ai.orcalore.mobile`、`orcalore_mobile`、Lore 图标）；
+  P1 连接收尾（`checkBaseUrl` 分级/`publicPlaintext` 硬拒 + `includeSubdomains` NSC、`orcalore://pair` 三处锁步、WS v2 Bearer header + SmartReconnect 持久化修复、dev-only 诊断面板（HTTP 100/WS 200 环形、`[Orcalore][subsystem]` 日志））；
+  P2 工作 tab（品牌行 Lore 20px + Orcalore + 项目切换、需要你置顶/五桶/事件合并刷新/15s 权威轮询、Goal 详情 timeline/revisions/结果/打回）、flat 帧事件 + `shouldRefreshWork` + 跨项目 attention（gateway presence attention 补 podId/projectId `0427f215`）；
+  P3 新建讨论（`GoalComposerPage`，objective 按服务端必填）、Tech Lead 讨论页（`SendRouter` 契约：goalBound 永不 enriched；409/空租约→归档 transcript）、Plan 批准（双 hash 绑定、`stale_plan` 提示重拉）、方向裁定/问答（`pendingQuestion` wire DTO `4ac24292` + SDK `6b3f0011`；取消问题二次确认）；
+  P4 Lead 入口（`ensureLeadSessionId`→ChatPage.forSessionId）、`isLead`（lead/manager 兼容）、聊天项目过滤、新话题（显式 directory）、交给 Lead handoff（全部 text parts、4000/80 截断、ensure 流）；
+  终审修复波（`b91f08ce`）：重连信号多页 refetch（`ConnectionEvents`）、`MafwMessage.displayText` 全 text parts、问答取消二次确认、结果 `markPodEventsSeenAll` 批量已读。
+  测试：mobile 逐文件 **385/385**（31 文件；本机聚合跑有既有 `flutter_tester` 原生崩溃，逐文件为门禁）、`flutter analyze` 0；gateway additive pod 473/473 + api-contract 3/3 + `tsc` rc=0；SDK 199/199；desktop `tsgo -p` rc=0（类型兼容核对）。
+  版本：`mobile/pubspec.yaml` 1.1.0+2。**未做**：P1-P4 真机 Tailscale 冒烟（需真实手机 + gateway + 桌面）；OS `orcalore://pair` intent 路由（无 app_links，QR 为主路径）；FCM/离线推送（D1 非目标）。
+
+- **模拟器 GUI 冒烟（2026-11-09，commit `cadb20dd`）**：AVD Pixel_9a + `adb reverse tcp:3000` + `run-as` prefs 注入
+  （baseUrl/active project；loopback 免 token）+ adb tap/uiautomator/screencap 驱动（配方见
+  `docs/architecture/mobile.md` §7.8）。实证通过：工作 tab（品牌行/需要你/结果待看/五桶/Lead 入口）、聊天
+  （Lead 徽标+项目过滤+新话题）、我的（记忆/连接/扫码/Triage/调试）、调试面板（WS 已连接、事件检查器、HTTP 日志）、
+  Goal 详情（时间线/版本/结果/打回）、终态讨论归档 transcript（409 分支）、Lead 聊天历史、composer、
+  长按「交给 Lead」守卫；真实事件 `pod.updated`+`pod.event`（member.note/p3，带 seq）被捕获；
+  `markPodEventsSeenAll` 写回使「结果待查看」2→1。**冒烟发现并修复**：work FAB / 调试「复制诊断包」的
+  `FloatingActionButton.extended` 被主题 `CircleBorder` 裁成圆（label 溢出）→ 改纯圆 FAB + 列表内按钮
+  （`cadb20dd`；`work_tab`/`tab_shell`/`debug_page` 47/47 + analyze 0，重装真机复验）。已知：通知授权每次启动
+  可能重弹（`adb shell pm grant ... POST_NOTIFICATIONS` 可规避）；模拟器上残留旧 `ai.mafw.mafw_mobile` 可卸载。
+

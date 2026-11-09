@@ -5,7 +5,8 @@
 >
 > 时效：2026-11-05 对照源码更新（Pod 协作 Goal Loop、Plan Package / Goal Eval、事件层与 presence、
 > Mobile P0、idle 归属与复用会话 grace）。NodeDriver 自 LangGraph 迁移与事件词汇 v2 见 2026-10-16 版。
-> 更细的子系统说明以根 `AGENTS.md` 为准（本文与其同源，取面向架构读者的视角）。
+> 更细的子系统说明见 `docs/architecture/*` 与 `docs/guides/*`（2026-11-10 起根 `AGENTS.md` 只保留索引；
+> 本文末尾的「AGENTS.md 归档」是迁移前的原文）。
 
 ## 目录
 
@@ -338,7 +339,7 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 ## MafwScheduler 关键子系统
 
 **文件**：`gateway/src/index.ts`（`class MafwScheduler`，~7500 行）。
-主要子系统（细节见 AGENTS.md 对应章节）：
+主要子系统（细节见 `docs/architecture/*` 对应文档）：
 
 | 子系统 | 位置 | 说明 |
 |---|---|---|
@@ -403,7 +404,7 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
 
 ## API 端点
 
-全部挂在 **:3000**（单端口；桌面/TUI/插件同源）。按组列举（完整清单见 AGENTS.md §5）：
+全部挂在 **:3000**（单端口；桌面/TUI/插件同源）。按组列举（完整清单见 `docs/reference/tools.md`）：
 
 | 组 | 代表端点 |
 |---|---|
@@ -607,3 +608,220 @@ post-task curator 只看轨迹存在"回顾性证据边界"。落地四点：
 checkpoints 与产物文件语义重叠。NodeDriver 以 state v3 + 产物双门判定 + goal_node_runs
 取代（见正文专节）；`chat/graph-runner.ts` / `core/mcp/tools.ts` / `poll.ts` 等标注
 deprecated，物理删除待后续 PR。历史细节见 git 历史中的本文旧版（≤ 2026-10-08）。
+
+---
+
+## AGENTS.md 归档：Gateway / 运行 / 运维（2026-11-10 迁移）
+
+> 原文搬迁（未改写），保留当时的决策与验证记录。
+
+#### 统一配置管理
+
+- 三层优先级：环境变量 > `.mafw/config.yaml` > `~/.config/mafw/config.yaml` > 默认值
+- 所有端口/URL/超时/路径集中在 `gateway/src/config.ts`
+- 环境变量以 `MAFW_` 为前缀，路径用 `_` 分隔（如 `MAFW_SERVER_API_PORT`）
+
+#### 记忆与 Goal 解耦
+
+- `HarmonicUnit.goal_id` 可选 —— 记忆不绑定任何 Goal
+- 所有 Hooks 在无 goal 上下文时照常运行
+- `recordFeedback` 存储路径已扁平化（`.mafw/feedback/`）；`askUser` 已扁平化（`.mafw/user-questions/{id}.json`，legacy 按 goal 分目录读取兜底）
+- `CostEstimator.ToolCallRecord.goalId` 改为可选
+
+#### 记忆融合系统（git worktree）
+
+- `mafw_merge_memory` MCP 工具：MinHash 签名比对（相似度阈值 **0.6**），提取独有记忆（energy=0.4）
+- 冲突处理支持 `manual` / `higher_energy` / `newer` 策略
+- 存档时自动触发：`archive-worktree.ts` 在 git merge 前调用 `mergeMemoryFromWorktree()`（读源 worktree 的 harmonic index + OKF，非 legacy memories.json）
+- 融合记录写入 `~/.mafw/fusion-log.jsonl`
+- HTTP 端点：`POST /api/merge-memory`（插件 `/merge-memory` 命令用，复用 MCP handler）
+- CLI 命令：`/merge-memory`；`/worktree-list`、`/worktree-prune` 仅存在于 deprecated legacy 插件路径
+
+#### 文件日志系统
+
+- 插件侧 `installFileLogging()` 劫持全局 `console.log/warn/error`，写入 `<project>/.mafw/logs/mafw.log`（`src/utils/logger.ts`）
+- gateway 侧日志写 `~/.mafw/logs/mafw.log`（`gateway/src/core/utils/logger.ts`）
+- 格式：`[ISO时间戳] [LEVEL] 原始消息`
+- 5MB 自动轮转
+
+#### Gateway 启动顺序
+
+```
+start()
+  ├─ installFileLogging()              → ~/.mafw/logs/mafw.log
+  ├─ initServices()                    → Memory + Cost + MCP + Automation
+  ├─ startApiServer()                  → HTTP API on port 3000
+  ├─ init SDK client                   → @opencode-ai/sdk
+  ├─ probe isServeHealthy()            → 先探已有 opencode server
+  │   ├─ 通 → 直接复用
+  │   └─ 不通 → startServe() → waitForServeReady() ×60s
+  │       └─ 超时 → MCP-only mode
+  ├─ recoverConfig / recoverRegistry   → 恢复注册表
+  ├─ recoverState                      → 恢复活跃 Goal
+  └─ automationEngine.start()          → 轮询 + 事件监控
+```
+Server 启动失败不崩溃，优雅降级到 MCP-only 模式。
+
+#### Desktop → Gateway 探测连接
+
+`mafw-sidecar.ts:startGateway()` 按 `mafw-gateway-plan.ts` 的优先级决策：
+```
+probeExistingGateway()（MAFW_SERVER_API_PORT → MAFW_GATEWAY_PORT → 3000，GET /health 确认）
+  → 通 → adopt：state="ready"，不 spawn
+  → 不通 → packaged 且 resources/gateway/dist/index.js 存在
+  │     → bundle：spawn(process.execPath, [entry], ELECTRON_RUN_AS_NODE=1, windowsHide)
+  │     → will-quit 时 taskkill /F /T 树杀（Windows）
+  → 否则 → cli：execFile("mafw", ["daemon"])（dev 回退，CLI 缺失则 failed）
+```
+运行时健康检查每 30s 一次，连续 5 次失败后自动 restart。
+
+#### Client SDK → Gateway IPC 通道
+
+```
+Renderer (SolidJS)                    Main Process                    Gateway
+window.api.mafw.{sessions}.{list}()
+  └─ ipcRenderer.invoke("mafw-invoke")
+       └─ mafw-ipc.ts
+            └─ mafwClient[ns][m](...args)
+                 └─ fetch("http://localhost:<port>/api/...")
+                      └─ Gateway HTTP API
+```
+Renderer 调用静态类型 API（`window.api.mafw.sessions.list()`），不再用 `invoke(ns, m, args)` 字符串派发。
+SSE 事件直接从前端 EventSource 连 gateway，不走 IPC。
+
+`@mafw/sdk` 包位于 `packages/gateway-sdk/`，提供 `MafwClient` 类 + 全部 DTO 类型。
+
+##### Slash 命令注册表（2026-09-18）
+
+`/api/mafw-commands/run` 由硬编码 if 链收敛为注册表（`gateway/src/commands/`）：
+
+- **registry.ts**：`MafwCommandDef`（name/aliases/description/argumentHint/category/destructive/kind）+ `MafwCommandRegistry`（别名解析、重注册覆盖）；5 条内置元数据见 `BUILTIN_COMMAND_DEFS`（new-topic 已退役）
+- **builtin-handlers.ts**：6 条内置 handler（deps 注入可单测），语义与原 if 链逐字一致；**custom-exec.ts**：自定义命令执行 = 渲染模板 → promptAsync 到 sessionID（缺省 manager session 兜底）
+- **custom-commands.ts**：用户自定义命令——`~/.mafw/commands/`（用户级）+ `<project>/.mafw/commands/`（项目级，同名覆盖用户级），markdown + frontmatter（description/argument-hint），子目录即命名空间（`git/commit.md`→`git:commit`）；模板语法 `$ARGUMENTS`/`$1..$N`/`` !`shell` ``（块内参数 shell 转义防注入，cwd=projectDir、30s 超时、1MB cap）/`@file`（≤100KB，相对 projectDir，防路径逃逸）；`fs.watch` 300ms 防抖热重载，变更广播 `mafw_commands_changed`（扁平顶层事件）
+- **GET /api/mafw-commands**：元数据清单（SDK `mafwCommands.list()`）；TUI/Desktop 拉取合并——**本地命令优先**（远端 name/alias 撞本地 name/alias 时隐藏远端，远端 `new-topic` 一律过滤、远端 `status` 在 TUI 隐藏让位本地 recap）；TUI 未命中本地时 fallback 到 `mafwCommands.run` 派发，远端 destructive 命令同样过确认门
+- 插件侧 5 个 opencode command 维持静态注册（`/goal` 插件走 requests 文件 skill 流程，与 gateway goal 的 manager-prompt 语义不同——刻意保留两条路径）
+
+#### OpenCode Serve Sidecar（自监管）
+
+opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
+（`gateway/src/serve-sidecar.ts`，替换 SDK `createOpencodeServer` 封装）：
+
+- **spawn 契约与 SDK 完全一致**：`createOpencodeServer` 内部使用 cross-spawn、
+  `opencode serve --hostname=127.0.0.1 --port=4096`、env `OPENCODE_CONFIG_CONTENT="{}"`、
+  就绪信号 stdout `opencode server listening on <url>`（超时 5s 树杀报错）
+- **健康轮询监督**：SDK 不暴露子进程/exit 回调，**owned 与 adopted serve 都走 watchdog**：
+  每 30s 探测 `/global/health`，连续 3 次失败 → `recoverServe()` 重启并**重订阅事件流**
+  （SSE 建立在 serve 之上，进程重启后必须重连，否则自动化触发器和桌面 SSE 转发全部静默失效）
+- **windowsHide 必须显式传**（2026-09-07 黑窗事故）：gateway 以 detached（无控制台）运行时，
+  无 `windowsHide: true` 的 spawn 每次都会创建**可见控制台窗口**——用户关窗 = 杀掉 serve，
+  watchdog 重启又弹新窗，形成"黑色弹窗关掉还会弹"的循环。SDK `createOpencodeServer` 不传
+  windowsHide，故 `serve-sidecar.ts` 已改回**手写 spawn**（保留 SDK 契约：参数、
+  `OPENCODE_CONFIG_CONTENT`、ready 行解析、taskkill /F /T 树杀）
+- **退避策略**：连续崩溃 streak 1/2/3 次 → 0/5s/15s 快速重试；≥4 次 → 5min 间隔；
+  streak 仅在 serve 稳定运行 60s 后清零（防 flapping 热重启）
+- **adopted 场景**：gateway 崩溃后孤儿 serve 存活，新 gateway 启动时
+  `isServeHealthy()` 探到则**收养**（不重新 spawn），watchdog 同上
+- **恢复动作收敛**：共用 `recoverServe()` = `killProcessOnPort(4096)` + `startServe()` + `subscribeToEvents()`
+- **手动恢复入口**：`POST /api/runtime/restart-agent`（SDK `runtime.restartAgent()` / Config 页按钮 /
+  MCP `mafw_restart_agent`）触发与 watchdog 相同的编排（kill+respawn+事件流重订）；external 模式 503
+- 外部 serve 模式（`MAFW_SERVER_SERVE_URL`）不监管（用户管理的进程）
+- serve 的 stdout/stderr 由手写 spawn 经 `onOutput` 转发（index.ts 以 `[Serve]` debug 日志记录），
+  serve 崩溃原因不再静默；诊断同时依赖 watchdog 的 "Serve unhealthy" / recovery 日志
+- **server 启动根（2026-10-29）**：serve 的 cwd **固定 `~/.mafw/runtime-root`**（`runtime/runtime-root.ts`），不再继承 gateway/Electron 的启动目录；`serve-sidecar` 缺省也落到该根。gateway 经 `agentProcess.spawnServe({ rootDir })` 传入，runtime 插件经 `ctx.rootDir` 拿到同一路径（绝对、已确保存在）。该 root **只用于 server/插件初始化**，session cwd 仍只认 `opts.directory`；opencode 会把 root 注册成一个 project（专用目录，非主目录）。gateway **3044/3044（427 suites）**、tsgo/build rc=0；调研 `docs/research/2026-10-29-runtime-server-root-dir-research.md`。
+- 经验：子进程型依赖必须配监督（检测点不能在启动时一次完事）；恢复动作必须完整
+  （重启进程 ≠ 恢复连接，事件订阅要一并重连）；
+  **detached 环境下所有子进程 spawn 必须带 `windowsHide: true`**（python kernel / llamacpp 均已带）
+
+#### 自更新（Self-Update，不依赖 desktop）
+
+gateway 可自行构建新代码并**子进程接力重启**（`gateway/src/self-update.ts`）：
+
+- **触发协议**：`~/.mafw/pending-restart.json`（homedir 控制面）——
+  `{ target: "gateway", action: "update"|"restart", reason?, delayMs?, commit? }`；
+  原子写（`.tmp` + rename）；gateway 2s 轮询，先删令牌防循环，坏 JSON 连续 5 次后删除
+- **更新动作**：`action: update` → 包根 `npm run build`（exit 0 + dist 校验）→ 顺带
+  `npm pack` + `npm install -g`（尽力而为，失败不阻塞）；`restart` 跳过构建
+- **接力重启**：spawn 新进程（`MAFW_TAKEOVER=1`，同入口 dist）→ 2s 确认存活 →
+  优雅 `stop()` + exit；新进程 2s 内崩溃则**取消重启**，旧进程继续服务；
+  失败安全：build 失败/坏令牌均不重启
+- **TAKEOVER 分支**：跳过单实例守卫 → 等 3000 释放（≤30s）→ 接管 → 更新
+  `~/.config/mafw/gateway.pid`（CLI status/stop 继续有效）
+- **调用者定位**：事件流中 bash 工具命令含 `pending-restart` 的会话 = 写令牌者
+  （确定性）；兜底最近活跃会话
+- **完成通知**：新 gateway 启动完成 + recoverState 后，向调用者会话 `promptAsync`
+  注入 `[MAFW SYSTEM] 自更新已完成...`（同会话自动续跑）；调用者未知时兜底通知
+  **主项目** manager session（不做全项目广播——其他项目 manager 收到只烧 token，
+  2026-09-08 修复）；失败 → `notified:false` + 被动续跑（agent 读 last-restart.json）
+- **记录**：`~/.mafw/last-restart.json`（reason/commit/requestedAt/sessionID/notified）
+- 等价入口：`mafw update` CLI（写同一令牌；无会话上下文 → manager 兜底通知）
+- 非目标：git 远端拉取（无 remote）、定时自动更新、进程内热替换（重启 ~2-3s，
+  文档声明中断窗口）；dev 模式自举以 dist 为准
+- agent 操作手册：`.opencode/skills/mafw-gateway-restart/SKILL.md`（七步流程）
+
+#### Desktop 受管 Gateway（2026-11-09，取代 NSIS npm 更新）
+
+spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.md`，plan
+`docs/superpowers/plans/2026-11-09-desktop-gateway-managed-runtime.md`。§5.5 中旧的
+「adopt → CLI → bundle」启动顺序和 `2026-09-17-desktop-installer-gateway-update-design.md`
+的 NSIS 全局 npm 更新已失效。
+
+- **来源**：packaged Desktop 默认 `managed`；只有显式切到 `external` 才使用全局 CLI/已运行
+  gateway。旧的无版本 external 只能在 Config 点「仅本次使用未验证外部 gateway」，不持久化。
+- **身份/握手**：`/health` 增加 `gatewayVersion`、`experienceVersion`、
+  `minimumClientExperienceVersion`、`schemaEpoch`、`channel`、`instanceId`、
+  `distribution`。`gateway/dist/release.json` 由 `gateway/scripts/write-release-manifest.mjs`
+  从 root version + Experience 常量生成；`gatewayVersion === productVersion`，不再信任
+  `gateway/package.json.version`。
+- **supervisor**：managed spawn 固定 `MAFW_SERVER_API_PORT=3000`，注入
+  `MAFW_DESKTOP_MANAGED/CHANNEL/INSTANCE_ID`，清除 inherited `MAFW_TAKEOVER/GATEWAY_PORT`；
+  不写 `~/.config/mafw/gateway.pid`。实例登记在
+  `~/.mafw/runtime/desktop-gateway/<channel>/<instanceId>.json`。未登记运行进程显示 conflict，
+  绝不静默收养或杀死。`GatewayState` 增加 `conflict`；managed newer/schema/channel 冲突拒绝降级。
+- **受管重启**：`pending-restart.json` 在 managed 下只让进程以退出码 **75** 退出，由 Desktop
+  child-exit supervisor 拉起当前 payload；不得 detached takeover。source checkout 仍保留原
+  build + takeover。
+- **版本目录**：`<userData>/gateway/versions/<gatewayVersion>-<payloadDigest前12位>/`，
+  `current.json`/`previous.json`/`quarantine.json` 为原子指针。payload 安装先 staging + 逐文件
+  SHA-256，再写 `.install-complete.json` 并 rename；同版本不同 digest 不会覆盖运行中的目录。
+  启动校验 marker + release/payload manifest + entry/native 文件，全量 hash 只在安装/修复时做。
+  坏 payload 写隔离；同 version+digest 不自动重试，Config「重试已隔离版本」才 force；新 digest
+  自动放行。`schemaEpoch` 变化失败时不自动回滚，进入阻塞恢复。
+- **Desktop 退出/更新**：`autoUpdater.autoInstallOnAppQuit=false`，由 `quit-coordinator` 在
+  `before-quit` preventDefault，先等待受管 gateway 退出与端口释放，再 `quitAndInstall` 或退出。
+  updater channel 跟随 prod/beta；`allowDowngrade=false`；Windows
+  `verifyUpdateCodeSignature=true`。签名证书尚未配置，因此生产自动安装保持 gated。
+  Linux 只有 AppImage 支持应用内更新，deb/rpm 交给包管理器。
+- **打包**：`scripts/gateway-package-assets.mjs` 是 Desktop/global 共享资产清单（dist、voice、
+  root skills、Office scripts、CLI 仅 global）。Desktop staging 原样复制 gateway package.json +
+  package-lock，执行 `npm ci --omit=dev`，保留 optionalDependencies；再重建 Electron ABI
+  better-sqlite3，生成 `payload-manifest.json` / `release-manifest.json`。Node 基线 `>=22`。
+- **验证**：`packages/desktop` 新增 pure manifest/installer/store/lifecycle/handshake/supervisor/
+  updater/config 测试与 packaged smoke；CI 在 Win/Linux 打包后分别跑
+  `npm run smoke:packaged-gateway -- --app-root dist/<unpacked>`。本地可用
+  `npm run smoke:packaged-gateway -- --payload-only`（Electron ABI staged gateway）。
+- **Dev 与已运行 gateway**：源码 checkout（`!app.isPackaged`）默认仍走 managed，但发现 3000 上已有
+  健康 gateway（通常是全局 `mafw daemon` 或旧 dev 实例）时**直接采纳**（`devAdoptRunningGateway`，
+  不登记、不接管所有权、退出时不杀它），避免 dev 与全局 daemon 抢端口。打包版保持原语义：未登记
+  进程一律 conflict，绝不静默采纳。要测仓库内 gateway 时设 `MAFW_DEV_ADOPT=0` 强制自己起。
+- **本地自签名**（`npm run sign:dev` / `sign:dev:clean`，`scripts/win-self-sign.ps1`）：仅在
+  `MAFW_WIN_SELF_SIGN=1` 时启用 `win.signtoolOptions`（`certificateSubjectName` / `publisherName` /
+  仅 SHA-256）+ `forceCodeSigning`；`publisherName` 写进 `app-update.yml` 供 electron-updater 校验。
+  自签名**只**用于本机验证签名与更新链路，不解决 SmartScreen、不可对外分发；不设该变量时发布构建
+  仍为未签名。
+- **安装器**：`gateway-update/` 与 `resources/installer.nsh` 已删除；安装器不再要求 Node/npm/
+  网络，改用 electron-builder 内建 `CHECK_APP_RUNNING`。
+- **安装包冒烟（2026-11-10）**：Windows NSIS 静默安装 → 对安装目录跑
+  `smoke:packaged-gateway` → 启动 GUI（隔离 HOME/userData）→ 静默卸载，全绿。修复三处：
+  ① electron-builder 的 app-builder 对 **>MAX_PATH 路径**和**非目标平台/架构原生库**是
+  **静默丢弃**，而 `payload-manifest.json` 按 stage 目录生成 → 首启校验必然失败。`stage-gateway.ts`
+  现在先裁剪 `node_modules` 的 `.d.ts/.d.ts.map/*.js.map/.ts`、`test|tests|__tests__`、非目标
+  `onnxruntime-node/bin/*/{platform}/{arch}`，以及无人引用的 `@mistralai/mistralai`
+  （shrinkwrap 深路径；裁剪前扫描 `dist/**` 与 `pi-coding-agent/dist/**` 确认无引用），**裁剪后**再生成
+  manifest，并加 170 字符相对路径预算（超出直接构建失败）。payload 37,129→17,581 文件，安装包
+  444→333MB，首启受管安装约 33s。② `package:win` **不会**重建 `out/`：必须先
+  `OPENCODE_CHANNEL=prod npx electron-vite build` 再打包（CI 已如此），否则安装包是 dev 通道 +
+  旧主进程（`distribution` 永远 `standalone`）。③ `smoke:packaged-gateway` 新增
+  `assertPackagedPayload`：按 manifest 逐文件核对存在性与大小，打包丢文件时 CI 立刻失败。
+  实机证据：`versions/5.1.0-fbdbee783d70/.install-complete.json`、
+  `~/.mafw/runtime/desktop-gateway/prod/<instanceId>.json`、health `distribution=desktop-managed`。
+
