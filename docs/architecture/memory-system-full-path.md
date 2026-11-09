@@ -27,7 +27,7 @@
 | HTTP `POST /api/memory/add` | `index.ts:7125-7245` | `pinned/sticky/stickyDays/importance/authority/sessionID/supersedes`(**单串**)`/novelty` |
 | MCP `mafw_add_memory` | `mcp/handlers/add-memory.ts:26-148` | `supersedes[]`(**数组**)、schemaFastPath energy、无 pinned |
 | 插件工具 `mafw_add_memory` | `src/tools/add-memory.ts:27-73` | **HTTP 直连**（serve worker 无 MCP） |
-| pi host 扩展 | `runtime/pi/pi-mafw-host-extension.ts:109-120` | 同上（HTTP） |
+| pi host 扩展 | `adapters/pi/src/pi-mafw-host-extension.ts:109-120` | 同上（HTTP） |
 | 内部写者 | turnCompress worker（经 HTTP/MCP）、reflection(`reflection.ts:370-391`)、A2 promote/reject(`:253-273`)、reconsolidate(`index.ts:2302-2318`)、grace(`grace-revisit.ts:95-152`)、consolidation UPDATE(`consolidation-service.ts:357-380`)、skill-install(`skill-install.ts:14-35`)、constraints 迁移(`constraints-migrate.ts:51-73`)、merge-memory(`mcp/handlers/merge-memory.ts`) |
 | 非谐波 | `/api/obs/capture` → `t1_observations`（§2.1） |
 

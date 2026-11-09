@@ -1223,19 +1223,19 @@ UI 当前项目 ?? config 项目根）；runtime 侧用 `requireSessionDir(opts.
 | injectSystem | GET /api/recall/pinned + 静�?MEMORY_GUIDE | 150ms fail-open；追�?system 尾部 |
 | tools | /api/memory/add�?api/python/*�?api/tts�?a2a | 六件套；add_memory �?HTTP �?serve worker �?MCP |
 
-宿主实现：pi = `runtime/pi/pi-mafw-host-extension.ts`（薄事件映射，消�?host-adapter 核心）；v1 opencode 插件 = 原生实现同语义（**刻意不重�?*——生产宿主，v2 迁移时统一）；v2 = 待迁移（�?host-adapter 为核，spike 原型见调研文�?§8）�?*一致性验�?*：`POST /api/runtime/conformance {scenarios:["cognition-observe","cognition-inject"]}` —�?S3 验证 T1 三类观察行、S4 验证 recall 触达 + memory-guide 端到端到达模型（复述法，宿主无关）�?
+宿主实现：pi = `adapters/pi/src/pi-mafw-host-extension.ts`（薄事件映射，消�?host-adapter 核心）；v1 opencode 插件 = 原生实现同语义（**刻意不重�?*——生产宿主，v2 迁移时统一）；v2 = 待迁移（�?host-adapter 为核，spike 原型见调研文�?§8）�?*一致性验�?*：`POST /api/runtime/conformance {scenarios:["cognition-observe","cognition-inject"]}` —�?S3 验证 T1 三类观察行、S4 验证 recall 触达 + memory-guide 端到端到达模型（复述法，宿主无关）�?
 
-**内置插件：pi-coding-agent runtime（`gateway/src/runtime/plugins/pi-runtime.ts`�?*
+**内置 runtime：pi-coding-agent（`adapters/pi/src/runtime.ts`，发布为 `@mafw/adapter-pi`）**
 - `config.runtime.plugin: pi` 激活；进程�?SDK 嵌入（ESM �?`new Function('spec','return import(spec)')`�?
 - 能力：sessionApi/promptWhileBusy/eventStream/nativeApprovals/providerConfigApi/sessionStorageApi/agentConfigApi true
 - 认证链：`ctx.credentials.getApiKey` �?auth.json 回退 �?ModelRuntime.setRuntimeApiKey（单例共享）
 - 会话：`PiSessionRegistry`（Map<sessionID, AgentSession>，忙�?followUp 队列�?
 - 存储：`pi-session-storage.ts`（调�?pi SessionManager.list(cwd) 列出持久化会话，映射�?gateway SessionInfo 格式�?
-- 事件：`PiEventStream`（subscribe �?RawRuntimeEvent �?normalize.ts 四信�?turn.completed/turn.failed/part.updated/message.updated；v2 词汇�?
+- 事件：`PiEventStream`（subscribe 原生事件 �?AdapterEvent；neutral runtime/bus 归一为 canonical turn.completed/turn.failed/part.updated/message.updated）
 - external=true：gateway �?spawn；外�?runtime 的事件订阅与 serveReady 解耦（不等 opencode serve�?
 - 媒体 agent 消费 AgentRuntime（Phase 2，见 `docs/superpowers/specs/2026-08-27-pi-runtime-design.md`�?
 
-**认知面宿主扩�?mafw-host�?026-10-08，Phase 2�?*：`runtime/pi/pi-mafw-host-extension.ts`，随会话 factory 注入（create/fork 双路径，`runtime.pluginConfig.pi.hostExtension !== false` 默认开）。四动词：observe（message_end user/assistant+thinking + tool_result �?loopback `/api/obs/capture`）、injectContext（context 事件，双模游�?id 优先/count 回退，短增量并入 assistant 尾部�?00ms fail-open，synthetic part 标记防回流）、injectSystem（before_agent_start 链式追加 `<memory-guide>` + pinned `<user-profile>`）、tools（六件套 registerTool，typebox �?ESM �?import `@earendil-works/pi-coding-agent/node_modules/typebox` 取同实例）。与 v1 插件完全同出口（loopback HTTP）——ACT-R 结算/FOK 采样/内部会话过滤零漂移�?*approval 旁路已修�?026-10-08�?*：静�?autoApprove 五件套删除，改为 `evaluatePermission`（ApprovalPolicyService.evaluate 同步直评，index.ts 三处 runtime 赋值点注入�? ask→政策环（applyApprovalPolicy）兜底；`ApprovalPolicy.autoApprove` 语义 = 会话动�?allowlist + config 显式预置�?
+**认知面宿主扩�?mafw-host�?026-10-08，Phase 2�?*：`adapters/pi/src/pi-mafw-host-extension.ts`，随会话 factory 注入（create/fork 双路径，`runtime.pluginConfig.pi.hostExtension !== false` 默认开）。四动词：observe（message_end user/assistant+thinking + tool_result �?loopback `/api/obs/capture`）、injectContext（context 事件，双模游�?id 优先/count 回退，短增量并入 assistant 尾部�?00ms fail-open，synthetic part 标记防回流）、injectSystem（before_agent_start 链式追加 `<memory-guide>` + pinned `<user-profile>`）、tools（六件套 registerTool，typebox �?ESM �?import `@earendil-works/pi-coding-agent/node_modules/typebox` 取同实例）。与 v1 插件完全同出口（loopback HTTP）——ACT-R 结算/FOK 采样/内部会话过滤零漂移�?*approval 旁路已修�?026-10-08�?*：静�?autoApprove 五件套删除，改为 `evaluatePermission`（ApprovalPolicyService.evaluate 同步直评，index.ts 三处 runtime 赋值点注入�? ask→政策环（applyApprovalPolicy）兜底；`ApprovalPolicy.autoApprove` 语义 = 会话动�?allowlist + config 显式预置�?
 
 #### 事件映射注册�?026-10-08，v4.20.0�?
 

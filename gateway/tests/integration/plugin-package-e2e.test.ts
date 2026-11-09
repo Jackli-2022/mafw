@@ -557,13 +557,19 @@ console.log(JSON.stringify({ resolved: require.resolve('@mafw/plugin-contract') 
 
     const rootPkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
     expect(rootPkg.scripts.postinstall).toContain('stage-plugin-contract.mjs');
+    // Packed-global installs must stage the adapter next to the gateway's pi
+    // SDK; otherwise the adapter's external import cannot resolve.
+    expect(rootPkg.scripts.postinstall).toContain('@mafw/adapter-pi');
+    expect(rootPkg.scripts.postinstall).toContain('gateway/node_modules');
     expect(rootPkg.files).toContain('scripts/stage-plugin-contract.mjs');
     expect(rootPkg.files).toContain('packages/plugin-contract/dist/');
     expect(rootPkg.files).toContain('packages/runtime-contract/dist/');
+    expect(rootPkg.files).toContain('adapters/pi/dist/');
 
     const gatewayPkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'gateway', 'package.json'), 'utf8'));
     expect(gatewayPkg.mafw.bundledPackages['@mafw/plugin-contract']).toBe('../packages/plugin-contract');
     expect(gatewayPkg.mafw.bundledPackages['@mafw/runtime-contract']).toBe('../packages/runtime-contract');
+    expect(gatewayPkg.mafw.bundledPackages['@mafw/adapter-pi']).toBe('../adapters/pi');
 
     for (const workspace of ['gateway-sdk', 'desktop']) {
       const workspacePkg = JSON.parse(

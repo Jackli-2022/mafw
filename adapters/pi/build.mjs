@@ -3,7 +3,10 @@
  *
  * The pi SDK and the neutral contract packages stay external: the gateway
  * resolves them from its own node_modules, and the adapter must not carry a
- * second copy of the contract.
+ * second copy of the contract. The package is staged into
+ * `gateway/node_modules/@mafw/adapter-pi` (root postinstall + deploy-local) so
+ * that this entry's own `@earendil-works/pi-coding-agent` import resolves next
+ * to the gateway's copy.
  */
 import { build } from 'esbuild';
 import { mkdirSync, writeFileSync } from 'node:fs';

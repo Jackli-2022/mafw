@@ -19,9 +19,9 @@ const PI_RAW = [
 ];
 
 /**
- * The pi driver's `global.event()` stream is already canonical (PiEventStream).
- * This fake reproduces that seam; raw→canonical translation is pinned by
- * pi-events.test.ts.
+ * Legacy bridge seam: the fake runtime yields canonical events. The real pi
+ * adapter now emits AdapterEvent natively (pi-adapter-events); this fixture
+ * keeps the old declared-mapping path pinned by pi-events.test.ts.
  */
 function fakeRuntime(canonical: any[]) {
   return {

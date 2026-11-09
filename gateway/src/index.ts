@@ -255,6 +255,7 @@ import { stampDeclaredCapabilities } from './runtime/capability-source';
 import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext, noRuntimeRegisteredError } from './runtime/loader';
 import { PI_CAPABILITIES, createPiDefinition, setPiUnknownRecorder } from './runtime/pi-adapter';
+import { createPluginCredentials } from './runtime/plugin-credentials';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
 import { getBridgeEventEntry } from './runtime/adapter-bridge';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
@@ -847,15 +848,15 @@ class MafwScheduler {
     this.runtimeLoader = new RuntimePluginLoader(config.resolvePath('runtime-plugins'));
     this.runtimeLoader.setCanonicalTypes(CANONICAL_TYPE_SET);
     await this.runtimeLoader.init();
-    // 内置插件注册：pi-coding-agent runtime（进程内 SDK 嵌入）
-    // extras 声明事件映射（纯数据）——加载期校验 + dry-event 试衣间 + 流包装用。
+    // 内置 pi runtime 注册：实现已抽到 `@mafw/adapter-pi`（adapters/pi），
+    // gateway 只经 `runtime/pi-adapter.ts` 的包入口调用。
     this.runtimeLoader.registerBuiltinDefinition(
       'pi',
       (ctx) => createPiDefinition(ctx),
       { external: false, capabilities: PI_CAPABILITIES },
     );
-    // pi 内部翻译路径的未知原生事件 → 统一遥测（gateway 侧 wrap 的 onUnknown
-    // 对 pi 不可达——事件到达时已信封化；recorder 挂在 transformEvent fallthrough）。
+    // pi 原生未知事件 → 统一遥测。翻译在 adapter 的 pi-adapter-events 内完成，
+    // 未映射类型由该模块的 recorder 上报（gateway 不再有 transform fallthrough）。
     setPiUnknownRecorder((t) => { try { this.unknownEventTracker.record('pi', t); } catch { /* fail-open */ } });
 
     // 2b. 统一插件包宿主（必须在 createRuntime 之前 init——包 runtime 贡献要先注册）
@@ -2371,14 +2372,15 @@ class MafwScheduler {
   }
 
   /**
-   * 插件 ctx 的凭据来源：active runtime credentials → opencode auth.json 回退。
+   * 插件 ctx 的凭据来源：active runtime credentials 快照 → opencode auth.json 回退。
    * 首次激活（runtimeHost 尚未建立）也必须拿得到 key——旧 pi 驱动自己读
    * auth.json，抽成外部 adapter 后只认 ctx.credentials，这里补上同一条链。
+   *
+   * 快照必须在构造时取值：新 runtime 被 adopt 后，runtimeHost.credentials 可能
+   * 反过来委托给这个对象（pi definition 的 host.credentials），惰性读会自递归。
    */
   private async runtimeCredentialsForPlugin(): Promise<RuntimeCredentials | undefined> {
-    return {
-      getApiKey: (provider: string) => getProviderApiKey(provider, undefined, this.runtimeHost?.credentials) ?? null,
-    };
+    return createPluginCredentials(this.runtimeHost?.credentials);
   }
 
   /** 凭据单点接线（Plan 3 终审 #10）：active runtime credentials → legacy auth.json → null。

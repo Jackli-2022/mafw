@@ -404,5 +404,6 @@ Dispatch a reviewer; fix Critical/Important; merge only when `main` is clean (ot
 ## Known Boundaries
 
 - `usage.updated`, `session.created/deleted`, `question.*` remain Plan 6.
+- `plan.updated`: pi has no native plan source today (only `registry.todo()`); the surface stays unimplemented until a producer exists.
 - `adapters/opencode` remains Plan 7.
 - `@earendil-works/pi-coding-agent` stays an external runtime dependency (not bundled) to keep the adapter bundle small.

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import {
   defineRuntime,
+  type AdapterEvent,
   type AdapterSession,
   type RuntimeAgentDefinition,
   type RuntimeCapabilities,
@@ -17,6 +18,7 @@ import { fixMediaPayload, requireSessionDir } from '@mafw/runtime-core';
 import { PiSessionRegistry } from './pi-session';
 import { normalizePiMessages } from './pi-message-normalize';
 import { PiEventStream } from './pi-events';
+import { PiTurnAttribution } from './pi-turn-attribution';
 import { translateProviders, translateConfigGet, translateConfigUpdate } from './pi-provider';
 import { listByDirectory } from './pi-session-storage';
 import * as piAgentConfig from './pi-agent-config';
@@ -149,6 +151,7 @@ export async function createPiState(
   }
 
   const eventStream = new PiEventStream((session: any) => registry.sessionIdFor(session));
+  const attribution = new PiTurnAttribution();
   const registry: PiSessionRegistry = new PiSessionRegistry({
     createSession: async (opts: any) => {
       const pi = await imp('@earendil-works/pi-coding-agent');
@@ -201,25 +204,40 @@ export async function createPiState(
     },
     async sendTurn(input: SendTurnInput) {
       const converted = partsToPromptInput(input.parts);
-      const text = input.text ?? converted.text ?? '';
+      const text = input.text?.length ? input.text : converted.text ?? '';
       if (converted.media?.length) registry.attachMedia(input.sessionID, converted.media);
-      await registry.promptAsync(input.sessionID, text, {
+      attribution.enqueue(input.sessionID, input.turnID);
+      // Transport contract: sendTurn must not block on turn completion. The
+      // event stream carries the terminal; a synchronous rejection is surfaced
+      // as a turn.failed frame instead of swallowing it.
+      void registry.promptAsync(input.sessionID, text, {
         system: input.system,
         agent: input.agent,
         expectReply: input.expectReply,
         delivery: input.delivery === 'queue' ? undefined : input.delivery,
         images: converted.images,
+      }).catch((err: any) => {
+        attribution.withdraw(input.sessionID, input.turnID);
+        eventStream.push({
+          id: `pi_turn_fail_${input.turnID}`,
+          type: 'turn.failed',
+          sessionID: input.sessionID,
+          turnID: input.turnID,
+          at: Date.now(),
+          data: { error: { kind: 'unknown', message: String(err?.message ?? err) }, retryable: false },
+        } as AdapterEvent);
       });
       return { turnID: input.turnID };
     },
     async steer(sessionID, text, parts) {
       const converted = partsToPromptInput(parts);
       if (converted.media?.length) registry.attachMedia(sessionID, converted.media);
-      await registry.promptAsync(sessionID, text ?? converted.text ?? '', { delivery: 'steer', images: converted.images });
+      await registry.promptAsync(sessionID, text?.length ? text : converted.text ?? '', { delivery: 'steer', images: converted.images });
       return 'steered';
     },
     async interruptTurn(sessionID) {
       await registry.abort(sessionID);
+      attribution.clearActive(sessionID);
     },
     async respondToRequest(sessionID, requestID, decision) {
       if (typeof registry.permissionReply !== 'function') return 'unavailable';
@@ -239,7 +257,7 @@ export async function createPiState(
         try {
           for await (const evt of stream) {
             if (cancelled) return;
-            listener(evt);
+            listener(attribution.attribute(evt));
           }
         } catch { /* stream teardown */ }
       })();
