@@ -256,6 +256,7 @@ import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loade
 import { PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { createPiDefinition } from './runtime/pi/pi-definition';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
+import { getBridgeEventEntry } from './runtime/adapter-bridge';
 import { setPiUnknownRecorder } from './runtime/pi/pi-events';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
@@ -2666,6 +2667,8 @@ class MafwScheduler {
   private dryEventDeps(): DryEventDeps {
     return {
       getPluginEventEntry: (name: string) => {
+        const bridged = getBridgeEventEntry(name);
+        if (bridged?.eventMappings?.length) return bridged;
         const e = this.runtimeLoader?.get(name);
         return e?.eventMappings?.length
           ? { eventSource: e.eventSource, eventMappings: e.eventMappings, transformEvent: e.transformEvent }

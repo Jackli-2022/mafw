@@ -107,6 +107,13 @@ export function canonicalToAdapterEvent(
   }
 }
 
+const bridgeEntries = new Map<string, EventMappingEntry>();
+
+/** Event-translation declaration registered by a bridged definition (dry-event/audit tooling). */
+export function getBridgeEventEntry(name: string): EventMappingEntry | undefined {
+  return bridgeEntries.get(name);
+}
+
 export interface AdapterBridgeMeta {
   name: string;
   displayName?: string;
@@ -326,6 +333,7 @@ export function toRuntimeDefinition(
   }
 
   const channelsV2: RuntimeChannelsV2 = {};
+  if (meta.translate) bridgeEntries.set(meta.name, meta.translate.entry);
   if (legacy.mcp) channelsV2.mcp = legacy.mcp as unknown as RuntimeChannelsV2['mcp'];
   if (legacy.discovery) channelsV2.discovery = legacy.discovery as unknown as RuntimeChannelsV2['discovery'];
   if (legacy.session.instructions) channelsV2.instructions = legacy.session.instructions as RuntimeChannelsV2['instructions'];
