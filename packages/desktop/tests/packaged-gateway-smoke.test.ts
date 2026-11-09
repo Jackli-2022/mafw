@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
+  assertPackagedPayload,
   assertSmokeHealth,
   findFreePort,
   parseSmokeArgs,
@@ -56,6 +57,29 @@ test("health assertions require the managed release identity", () => {
     instanceId: "smoke-1",
     distribution: "standalone",
   }), /desktop-managed/)
+})
+
+test("packaged payload guard rejects dropped or truncated files", () => {
+  const root = mkdtempSync(join(tmpdir(), "mafw-smoke-payload-"))
+  const writeManifest = (files: Array<{ path: string; size: number }>) => {
+    writeFileSync(join(root, "payload-manifest.json"), JSON.stringify({ schemaVersion: 1, files }))
+  }
+  try {
+    writeFileSync(join(root, "kept.txt"), "hello")
+    writeManifest([{ path: "kept.txt", size: 5 }])
+    assert.equal(assertPackagedPayload(root), 1)
+
+    writeManifest([{ path: "kept.txt", size: 4 }])
+    assert.throws(() => assertPackagedPayload(root), /size mismatches/)
+
+    writeManifest([{ path: "dropped.dll", size: 1 }])
+    assert.throws(() => assertPackagedPayload(root), /incomplete.*dropped\.dll/)
+
+    rmSync(join(root, "payload-manifest.json"))
+    assert.throws(() => assertPackagedPayload(root), /manifest missing/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test("argument parsing supports packaged and payload-only smoke modes", () => {
