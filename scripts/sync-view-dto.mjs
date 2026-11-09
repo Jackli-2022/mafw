@@ -3,9 +3,9 @@
  * View DTO 镜像生成器。
  *
  * 单一事实源：packages/gateway-sdk/src/view-dto.ts
- * 生成镜像：  gateway/src/runtime/view-dto.generated.ts
+ * 生成镜像：  packages/runtime-core/src/view-dto.generated.ts
  *
- * gateway 不跨包 import（tsconfig rootDir=src），因此保留一份逐字镜像；
+ * gateway 不跨包 import（tsconfig rootDir=src），因此 runtime-core 保留一份逐字镜像；
  * 首部注释替换为 AUTO-GENERATED 标记，正文必须逐字一致
  * （钉扎：gateway/tests/unit/runtime/view-dto-sync.test.ts）。
  *
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const sourcePath = join(root, 'packages', 'gateway-sdk', 'src', 'view-dto.ts');
-const mirrorPath = join(root, 'gateway', 'src', 'runtime', 'view-dto.generated.ts');
+const mirrorPath = join(root, 'packages', 'runtime-core', 'src', 'view-dto.generated.ts');
 
 const HEADER = '/** AUTO-GENERATED from packages/gateway-sdk/src/view-dto.ts — run npm run sync:view-dto. */\n';
 const SOURCE_HEADER = /^\/\*\*[\s\S]*?\*\/\r?\n/;

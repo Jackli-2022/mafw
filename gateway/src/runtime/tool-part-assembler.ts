@@ -21,14 +21,8 @@ export interface ToolResultPrimitive {
   tool?: string; input?: Record<string, unknown>; title?: string; metadata?: Record<string, unknown>;
 }
 
-export function coerceOutput(output: unknown): string {
-  if (output === undefined || output === null) return '';
-  if (typeof output === 'string') return output;
-  if (Array.isArray(output)) {
-    return output.map((b: any) => (typeof b?.text === 'string' ? b.text : '')).join('');
-  }
-  try { return JSON.stringify(output); } catch { return String(output); }
-}
+import { coerceOutput } from '@mafw/runtime-core';
+export { coerceOutput };
 
 interface WorkingPart {
   messageID: string; tool: string; callID: string;

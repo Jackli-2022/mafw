@@ -3,7 +3,7 @@ import * as path from 'path';
 
 const root = path.resolve(__dirname, '../../../..');
 const source = path.join(root, 'packages/gateway-sdk/src/view-dto.ts');
-const mirror = path.join(root, 'gateway/src/runtime/view-dto.generated.ts');
+const mirror = path.join(root, 'packages/runtime-core/src/view-dto.generated.ts');
 
 /** 统一行尾：Windows autocrlf 检出为 CRLF，逐字比较前归一到 LF。 */
 function readNormalized(file: string): string {
