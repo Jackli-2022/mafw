@@ -34,13 +34,32 @@ export class PiTurnAttribution {
   private readonly queues = new Map<string, string[]>();
   private readonly active = new Map<string, string>();
   private readonly fallback = new Map<string, string>();
+  private readonly suppressed = new Map<string, string>();
   private seq = 0;
 
   /** Register a gateway-minted turn id before the native prompt starts. */
   enqueue(sessionID: string, turnID: string): void {
+    this.suppressed.delete(sessionID);
     const queue = this.queues.get(sessionID) ?? [];
     queue.push(turnID);
     this.queues.set(sessionID, queue);
+  }
+
+  /** The running turn id, if any. */
+  activeTurnID(sessionID: string): string | undefined {
+    return this.active.get(sessionID) ?? this.fallback.get(sessionID);
+  }
+
+  /**
+   * Abort the running turn without a native terminal: mark the session so late
+   * frames cannot mint a new id, and return the id the caller should terminate.
+   */
+  abort(sessionID: string): string | undefined {
+    const active = this.active.get(sessionID) ?? this.fallback.get(sessionID);
+    this.active.delete(sessionID);
+    this.fallback.delete(sessionID);
+    if (active) this.suppressed.set(sessionID, active);
+    return active;
   }
 
   /** Drop a turn that failed before it could start (prompt rejection). */
@@ -52,20 +71,28 @@ export class PiTurnAttribution {
     if (queue.length === 0) this.queues.delete(sessionID);
   }
 
-  /** Abort clears the running turn; queued ids stay for the next start. */
-  clearActive(sessionID: string): void {
-    this.active.delete(sessionID);
-  }
-
   /** True when a turn is running or a gateway turn id is still queued. */
   hasInFlight(sessionID: string): boolean {
-    return this.active.has(sessionID) || (this.queues.get(sessionID)?.length ?? 0) > 0;
+    return this.active.has(sessionID)
+      || this.fallback.has(sessionID)
+      || (this.queues.get(sessionID)?.length ?? 0) > 0;
   }
 
   /** Attach the current turn id to one native event. */
-  attribute(event: AdapterEvent): AdapterEvent {
+  attribute(event: AdapterEvent): AdapterEvent | null {
     const sessionID = event.sessionID;
     if (!sessionID) return event;
+
+    const suppressedID = this.suppressed.get(sessionID);
+    if (suppressedID) {
+      if (event.type === 'turn.started') {
+        this.suppressed.delete(sessionID);
+      } else if (event.turnID !== suppressedID) {
+        // Late native frames (no explicit turn id) must not mint a terminal
+        // after the synthetic abort frame.
+        return null;
+      }
+    }
 
     if (event.type === 'turn.started' && !this.active.has(sessionID)) {
       // Promote only on a fresh run. pi also emits agent_start for automatic

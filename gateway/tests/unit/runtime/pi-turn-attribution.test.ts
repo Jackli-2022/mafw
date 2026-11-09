@@ -70,12 +70,14 @@ describe('PiTurnAttribution', () => {
     expect(attr.attribute(evt('turn.started')).turnID).toBe('t2');
   });
 
-  it('abort clears the running id but leaves the queued turn intact', () => {
+  it('abort terminates the active id and drops late frames until the next start', () => {
     const attr = new PiTurnAttribution();
     attr.enqueue('s1', 't1');
     attr.enqueue('s1', 't2');
     attr.attribute(evt('turn.started'));
-    attr.clearActive('s1');
+    expect(attr.abort('s1')).toBe('t1');
+    // A late native terminal must not mint a second terminal.
+    expect(attr.attribute(evt('turn.completed'))).toBeNull();
     expect(attr.attribute(evt('turn.started')).turnID).toBe('t2');
   });
 

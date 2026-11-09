@@ -116,8 +116,6 @@ export class PiSessionRegistry {
 
   sessionFor(id: string): any | undefined { return this.sessions.get(id); }
 
-  isStreaming(id: string): boolean { return this.sessions.get(id)?.isStreaming === true; }
-
   sessionIdFor(session: any): string | undefined { return this.bySession.get(session); }
 
   async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; expectReply?: boolean; delivery?: 'steer' | 'followup'; thinkingLevel?: ThinkingLevel; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<void> {

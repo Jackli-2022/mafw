@@ -208,9 +208,7 @@ export async function createPiState(
       if (converted.media?.length) registry.attachMedia(input.sessionID, converted.media);
       // A steer/follow-up is delivered into the running pi loop and has no
       // `agent_start` of its own — only a fresh run gets the gateway turn id.
-      const startsRun = input.delivery !== 'steer'
-        && !attribution.hasInFlight(input.sessionID)
-        && !registry.isStreaming(input.sessionID);
+      const startsRun = input.delivery !== 'steer' && !attribution.hasInFlight(input.sessionID);
       if (startsRun) attribution.enqueue(input.sessionID, input.turnID);
       // Transport contract: sendTurn must not block on turn completion. The
       // event stream carries the terminal; a synchronous rejection is surfaced
@@ -248,7 +246,19 @@ export async function createPiState(
     },
     async interruptTurn(sessionID) {
       await registry.abort(sessionID);
-      attribution.clearActive(sessionID);
+      // A normal abort emits agent_end(aborted); a retry-backoff abort does
+      // not. Only synthesize when no native terminal cleared the active id.
+      const active = attribution.abort(sessionID);
+      if (active) {
+        eventStream.push({
+          id: `pi_turn_abort_${active}`,
+          type: 'turn.aborted',
+          sessionID,
+          turnID: active,
+          at: Date.now(),
+          data: { reason: 'aborted' },
+        } as AdapterEvent);
+      }
     },
     async respondToRequest(sessionID, requestID, decision) {
       if (typeof registry.permissionReply !== 'function') return 'unavailable';
@@ -268,7 +278,8 @@ export async function createPiState(
         try {
           for await (const evt of stream) {
             if (cancelled) return;
-            listener(attribution.attribute(evt));
+            const attributed = attribution.attribute(evt);
+            if (attributed) listener(attributed);
           }
         } catch { /* stream teardown */ }
       })();
