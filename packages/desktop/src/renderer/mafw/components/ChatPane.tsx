@@ -2295,6 +2295,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <Icon name="plus-small" size="small" />
                 </ButtonV2>
               </TooltipV2>
+              <TooltipV2 value={perm().hint} openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-perm-icon"
+                  classList={{
+                    "is-muted": perm().tone === "muted",
+                    "is-accent": perm().tone === "accent",
+                    "is-danger": perm().tone === "danger",
+                  }}
+                  aria-label={permissionAriaLabel(props.permissionMode)}
+                  onClick={() => props.onTogglePermissionMode?.()}
+                >
+                  <Icon name={perm().icon} size="small" />
+                </ButtonV2>
+              </TooltipV2>
             </div>
             <div class="mafw-composer-right">
               <TooltipV2 value={contextTooltip()} openDelay={300}>
@@ -2319,22 +2335,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 >
                   <ProgressCircleV2 percentage={contextUsage().percent} size={14} strokeWidth={1.5} />
                 </span>
-              </TooltipV2>
-              <TooltipV2 value={perm().hint} openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-perm-icon"
-                  classList={{
-                    "is-muted": perm().tone === "muted",
-                    "is-accent": perm().tone === "accent",
-                    "is-danger": perm().tone === "danger",
-                  }}
-                  aria-label={permissionAriaLabel(props.permissionMode)}
-                  onClick={() => props.onTogglePermissionMode?.()}
-                >
-                  <Icon name={perm().icon} size="small" />
-                </ButtonV2>
               </TooltipV2>
               <TooltipV2 value="会话配置（Agent / 模型 / 思考档位 / 审批）" openDelay={300}>
                 <ButtonV2

@@ -1429,8 +1429,8 @@ html[data-theme="light"] body {
   gap: 6px;
   min-width: 0;
 }
-/* 左侧只有「＋」；右侧占满剩余空间、靠右排，模型 pill 是唯一可收缩项（发送恒完整） */
-.mafw-composer-left { flex: 0 0 auto; overflow: hidden; position: relative; }
+/* 左侧：＋ 与权限图标（输入侧动作）；与右侧组至少留 6px，256px 时不会贴在一起 */
+.mafw-composer-left { flex: 0 0 auto; overflow: hidden; position: relative; margin-right: 6px; }
 .mafw-composer-right { flex: 1 1 auto; justify-content: flex-end; min-width: 0; }
 /* 附件菜单（唯一 composer 菜单） */
 .mafw-composer-menu {

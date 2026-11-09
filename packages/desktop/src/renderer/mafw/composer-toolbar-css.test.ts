@@ -90,4 +90,13 @@ describe("composer control inventory", () => {
     expect(pane).toContain("handleMicClick")
     expect(pane).toContain("mafw-send")
   })
+
+  test("permission icon lives in the left group, right after ＋ (2026-11-09)", () => {
+    const left = pane.indexOf('class="mafw-composer-left"')
+    const right = pane.indexOf('class="mafw-composer-right"')
+    const perm = pane.indexOf('class="mafw-perm-icon"')
+    expect(left).toBeGreaterThan(-1)
+    expect(perm).toBeGreaterThan(left)
+    expect(perm).toBeLessThan(right)
+  })
 })
