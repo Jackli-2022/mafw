@@ -258,8 +258,9 @@ import { createPiDefinition } from './runtime/pi/pi-definition';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
 import { setPiUnknownRecorder } from './runtime/pi/pi-events';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
-import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './runtime/opencode-21-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
+import { createOpencodeDefinition, opencodeCapabilities, type OpencodeVariant } from './runtime/opencode-definition';
+
 import { injectServeAuth } from './runtime/proxy-auth';
 import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
@@ -917,43 +918,27 @@ class MafwScheduler {
     // fail-safe @v1）+ 钉死 `opencode@v1` / `opencode@v2`；三个名字共享同一
     // runtime 工厂（serve/adapter/凭据全同），差异仅在事件映射表。
     const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
-    const opencodeFactory = (dialectProbe: boolean) => async () =>
-      (await import('./runtime/opencode-runtime.js')).createOpencodeRuntime({
-        ...sdkSnapshot,
-        headers: { ...sdkSnapshot.headers },
-        dialectProbe,
-      });
     const external = !!process.env.MAFW_SERVER_SERVE_URL;
-    // 环境条件性收窄必须体现在内置件声明里（code review I1）：external 模式只探不杀，
-    // 声明 agentProcessApi=true 会被实例收窄后反判成「矛盾声明」并让 restart-agent 放行。
-    const opencodeCaps = () => {
-      const caps = fullCapabilities();
-      if (external) caps.agentProcessApi = false;
-      return caps;
-    };
-    // 裸名 = 自适应方言（resolveEventEntry 探测覆盖静态 @v1 fail-safe）
-    this.runtimeLoader.registerBuiltin('opencode', opencodeFactory(true), opencodeCaps(), external, {
-      eventSource: OPENCODE_EVENT_SOURCE,
-      eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
-      transformEvent: OPENCODE_TRANSFORM_EVENT,
+    const opencodeDefinition = (variant: OpencodeVariant) => () =>
+      createOpencodeDefinition({ variant, baseUrl: sdkSnapshot.baseUrl, headers: { ...sdkSnapshot.headers } });
+    // 裸名 = 自适应方言（激活时探测一次，fail-safe @v1）
+    this.runtimeLoader.registerBuiltinDefinition('opencode', opencodeDefinition('adaptive'), {
+      external,
+      capabilities: opencodeCapabilities('adaptive', external),
     });
-    // 钉死方言：映射表由注册 extras 直接携带（无 resolveEventEntry，探测跳过）
-    const legacyCaps = { ...opencodeCaps(), instructionsApi: false, discoveryApi: false };
-    this.runtimeLoader.registerBuiltin('opencode@v1', opencodeFactory(false), legacyCaps, external, {
-      eventSource: OPENCODE_EVENT_SOURCE,
-      eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
-      transformEvent: OPENCODE_TRANSFORM_EVENT,
+    // 钉死方言：映射表随定义固定，探测跳过
+    this.runtimeLoader.registerBuiltinDefinition('opencode@v1', opencodeDefinition('v1'), {
+      external,
+      capabilities: opencodeCapabilities('v1', external),
     });
-    this.runtimeLoader.registerBuiltin('opencode@v2', opencodeFactory(false), { ...legacyCaps }, external, {
-      eventSource: OPENCODE_EVENT_SOURCE,
-      eventMappings: OPENCODE_V2_EVENT_MAPPINGS,
-      transformEvent: OPENCODE_TRANSFORM_EVENT,
+    this.runtimeLoader.registerBuiltinDefinition('opencode@v2', opencodeDefinition('v2'), {
+      external,
+      capabilities: opencodeCapabilities('v2', external),
     });
     // 钉死 2.1.0 方言（顶层 type/data + session.* 富事件；dry-event/一致性测试用）
-    this.runtimeLoader.registerBuiltin('opencode@v21', opencodeFactory(false), opencodeCaps(), external, {
-      eventSource: OPENCODE_21_EVENT_SOURCE,
-      eventMappings: OPENCODE_21_EVENT_MAPPINGS,
-      transformEvent: translateOpencode21Event,
+    this.runtimeLoader.registerBuiltinDefinition('opencode@v21', opencodeDefinition('v21'), {
+      external,
+      capabilities: opencodeCapabilities('v21', external),
     });
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;
