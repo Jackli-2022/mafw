@@ -1594,6 +1594,13 @@ workspace，结束后销毁）。
   merged/abandoned/missing 行省略 worktree 根；同一 store 在合并/移除后自动回落到项目目录。
 - **测试**：gateway `pod-worktree-path`/`pod-store`/`pod-worktree-service`/`pod-result-accept`/
   `pod-accept-route`/`pod-a2a-artifacts`/`pod-wiring`，desktop `pod-result-view-model`。
+- **真机冒烟（2026-11-09，commit `8e363e86`）**：临时 Git 仓库 + 3 个真实 quick Goal（opencode-go
+  deepseek-v4.1-flash）跑通——worktree 路径/分支、`acceptance=pending`、单次验收真实 mergeCommit、
+  重复验收幂等、验收后打回 409、worktree 移除/分支保留、主项目文件与 clean 状态；桌面 dev（CDP 9222）
+  结果页显示 worktree 卡 + Goal Eval 4 条「未判定」+ 单次验收按钮，点击后状态「已合并」、按钮消失、
+  toast 与落库一致。冒烟驱动修复：非 `.mafw` 未提交改动阻塞验收（不强制删除有改动的 worktree）；
+  `result_ready` 优先于归档→row 更新的瞬时窗口（bucket 不再闪到 ended）。`.mafw` 产物按 spec
+  不进分支（验收为 no-op，worktree 仍移除）。
 
 ### 5.26 项目工作空间与自适应 Goal（2026-11-03）
 
