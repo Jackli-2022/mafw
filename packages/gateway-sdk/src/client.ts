@@ -17,7 +17,7 @@ import {
   PodWorkOverview, WorkNamespace,
   PodEventItem, PresenceSummary,
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
-  PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision,
+  PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision, PodGoalAcceptResult,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
   VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
@@ -1493,6 +1493,16 @@ export class MafwClient implements IMafwClient {
       this.request<PodRejectResult>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/reject`, {
         method: 'POST',
         body: JSON.stringify({ feedback, ...body }),
+      }),
+
+    acceptResult: async (
+      podID: string,
+      goalID: string,
+      body: { revision?: number; confirm: true },
+    ): Promise<PodGoalAcceptResult> =>
+      this.request<PodGoalAcceptResult>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/accept`, {
+        method: 'POST',
+        body: JSON.stringify(body),
       }),
 
     revisions: async (podID: string, goalID: string): Promise<{ items: PodGoalRevision[] }> =>

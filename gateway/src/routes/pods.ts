@@ -22,7 +22,7 @@ export interface PodRouteDeps {
   messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
   goals: Pick<PodGoalService, 'list' | 'promote'> & Partial<Pick<
     PodGoalService,
-    'enqueueGoal' | 'views' | 'attention' | 'pause' | 'resume' | 'cancelQueued' | 'result'
+    'enqueueGoal' | 'views' | 'attention' | 'pause' | 'resume' | 'cancelQueued' | 'result' | 'acceptResult'
   >>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
   access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
@@ -308,6 +308,28 @@ export async function handlePods(
       readMember(deps, url, podId);
       if (!deps.goals.result) throw new PodError(503, 'goal result unavailable');
       sendJson(res, 200, deps.goals.result(podId, decode(goalResult[2])));
+      return true;
+    }
+
+    const goalAccept = pathname.match(/^\/api\/pods\/([^/]+)\/goals\/([^/]+)\/accept$/);
+    if (goalAccept) {
+      if (method !== 'POST') return false;
+      const podId = decode(goalAccept[1]);
+      const goalId = decode(goalAccept[2]);
+      requirePod(deps, podId);
+      const body = await readJson(req);
+      if (typeof body?.actorSessionID === 'string' && body.actorSessionID) {
+        throw new PodError(403, 'goal acceptance is human-only; agent sessions cannot merge');
+      }
+      if (body?.confirm !== true) {
+        throw new PodError(400, 'confirm:true is required');
+      }
+      if (!deps.goals.acceptResult) throw new PodError(503, 'goal acceptance unavailable');
+      const revision = body.revision;
+      if (revision !== undefined && (!Number.isInteger(revision) || revision < 1)) {
+        throw new PodError(400, 'revision must be a positive integer');
+      }
+      sendJson(res, 200, await deps.goals.acceptResult(podId, goalId, { revision }));
       return true;
     }
 
