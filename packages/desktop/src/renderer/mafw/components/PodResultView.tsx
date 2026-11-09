@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createSignal } from "solid-js"
-import type { PodGoalResult, PodGoalRevision } from "@mafw/sdk"
+import type { PodGoalAcceptResult, PodGoalResult, PodGoalRevision } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
@@ -11,16 +11,32 @@ import {
   resultStatus,
   revisionHistory,
 } from "../pod-model"
+import {
+  podResultAcceptanceView,
+  podResultCanViewDiff,
+  podResultConditionRows,
+  podResultWorktreeRows,
+} from "../pod-result-view-model"
+import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import { markResultViewedAfterLoad } from "../pod-result-store"
 
 const TASK_RESULT_LABEL = { pass: "通过", fail: "失败", skipped: "跳过" } as const
 const artifactName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() ?? value
 
+const CONDITION_TONE: Record<string, string> = {
+  通过: "is-pass",
+  失败: "is-fail",
+  跳过: "is-skipped",
+  未判定: "is-unknown",
+}
+
 /**
- * 结果正文（Task 13 单一实现）：
- * - 当前 revision 的结果 + Goal 验收条件 + 逐任务证据；
+ * 结果正文（Task 13 单一实现，Task 6 增补 revision worktree 与人工验收）：
+ * - 当前 revision 的结果 + Goal 验收条件 + Goal Eval 逐条件判定 + 逐任务证据；
+ * - 代码结果卡（分支/合并目标/状态/合并提交）；
  * - 版本历史（新→旧，旧版本 verdict/feedback 永不丢）；
- * - 已收尾的版本可打回给 Tech Lead（反馈必填），quick 与协作结果同样可达。
+ * - 已收尾的版本可打回给 Tech Lead（反馈必填），quick 与协作结果同样可达；
+ * - 只有可信的成功结果且 worktree 仍待验收时，才给一次性「验收并合并」。
  *
  * Goal 详情与兼容的 PodResultPanel 都渲染这个组件，不再维护第二套结果状态。
  */
@@ -29,6 +45,8 @@ export function PodResultView(props: {
   goalId: string
   onResubmit?: (result: PodGoalResult) => void
   onReject: (feedback: string) => Promise<boolean>
+  /** 单次点击验收：父组件负责调用 gateway 并刷新鲸群。 */
+  onAccept?: () => Promise<PodGoalAcceptResult | null>
 }) {
   const [result, setResult] = createSignal<PodGoalResult | null>(null)
   const [revisions, setRevisions] = createSignal<PodGoalRevision[]>([])
@@ -37,6 +55,12 @@ export function PodResultView(props: {
   const [feedback, setFeedback] = createSignal("")
   const [rejecting, setRejecting] = createSignal(false)
   const [rejectError, setRejectError] = createSignal<string | null>(null)
+  const [accepting, setAccepting] = createSignal(false)
+  const [acceptError, setAcceptError] = createSignal<string | null>(null)
+  const [diffOpen, setDiffOpen] = createSignal(false)
+  const [diffFiles, setDiffFiles] = createSignal<FileDiffEntry[]>([])
+  const [diffLoading, setDiffLoading] = createSignal(false)
+  const [diffError, setDiffError] = createSignal<string | null>(null)
 
   let loadSeq = 0
   createEffect(() => {
@@ -49,6 +73,10 @@ export function PodResultView(props: {
     setRevisions([])
     setFeedback("")
     setRejectError(null)
+    setAcceptError(null)
+    setDiffOpen(false)
+    setDiffFiles([])
+    setDiffError(null)
     // revisions 失败（旧 gateway / 无权限）不影响结果本身：fail-open 空历史。
     void Promise.allSettled([
       window.api.mafw.pod.result(podId, goalId),
@@ -92,7 +120,10 @@ export function PodResultView(props: {
   }
   const revisionRows = () => revisionHistory(revisions(), activeRevision())
   const currentStatus = () => revisionRows().find((row) => row.current)?.status ?? null
-  const rejectLabel = () => rejectButtonLabel({ status: currentStatus() })
+  const rejectLabel = () => rejectButtonLabel({
+    status: currentStatus(),
+    accepted: result()?.acceptance === "accepted" || result()?.worktree?.status === "merged",
+  })
   const assessmentLabel = () => {
     const value = result()
     if (!value) return null
@@ -101,6 +132,66 @@ export function PodResultView(props: {
       assessment: value.assessment ?? null,
       reviewed: value.reviewed,
     })
+  }
+  const acceptance = () => {
+    const value = result()
+    return value ? podResultAcceptanceView(value) : null
+  }
+  const worktreeRows = () => {
+    const value = result()
+    return value ? podResultWorktreeRows(value) : []
+  }
+  const conditionRows = () => {
+    const value = result()
+    return value ? podResultConditionRows(value) : []
+  }
+  /** The branch preview is useful until the revision is merged (branch then keeps history only). */
+  const canViewDiff = () => {
+    const value = result()
+    return value ? podResultCanViewDiff(value) : false
+  }
+  const worktreeNote = () => {
+    const worktree = result()?.worktree
+    if (!worktree) return null
+    if (worktree.status === "merged") {
+      return `已合并到 ${worktree.baseBranch || "主分支"}；分支保留用于追溯。`
+    }
+    if (worktree.status === "abandoned") return "该 revision 已打回；分支保留用于追溯。"
+    if (worktree.status === "missing") return "worktree 目录缺失；分支记录仍保留。"
+    if (failed()) return "改动保留在分支。失败结果不显示验收合并入口；可查看差异、重提或打回。"
+    return "主项目尚未修改。用户验收后才合并；失败时不会出现此验收动作。"
+  }
+  const failureReason = () => {
+    const value = result()
+    if (!value) return ""
+    const feedback = String(value.reviewFeedback ?? "").trim()
+    if (feedback) return feedback.slice(0, 400)
+    return value.failure ? `结果证据不可信：${String(value.failure)}` : "结果未通过独立评审；改动保留在分支。"
+  }
+  const toggleDiff = async () => {
+    if (diffOpen()) {
+      setDiffOpen(false)
+      return
+    }
+    if (diffLoading()) return
+    setDiffOpen(true)
+    setDiffLoading(true)
+    setDiffError(null)
+    try {
+      const diff = await window.api.mafw.pod.worktreeDiff(props.podId, props.goalId, activeRevision() ?? undefined)
+      setDiffFiles(Array.isArray(diff?.files) ? diff.files : [])
+    } catch (err: any) {
+      const status = podHttpStatus(err)
+      setDiffError(status === 404
+        ? "这一版没有可预览的分支"
+        : status === 409
+          ? `分支差异不可读：${String(err?.message ?? err).slice(0, 140)}`
+          : status === 503
+            ? "当前 gateway 不支持分支差异预览，请升级"
+            : `读取分支差异失败：${String(err?.message ?? err).slice(0, 140)}`)
+    } finally {
+      setDiffLoading(false)
+    }
   }
 
   const submitReject = async () => {
@@ -114,6 +205,37 @@ export function PodResultView(props: {
       setRejectError(rejectErrorMessage(podHttpStatus(err)))
     } finally {
       setRejecting(false)
+    }
+  }
+
+  const submitAccept = async () => {
+    const value = result()
+    if (!value || accepting() || !props.onAccept) return
+    setAccepting(true)
+    setAcceptError(null)
+    try {
+      const accepted = await props.onAccept()
+      // 父组件已 toast/刷新；这里只就地更新合并事实，避免整页重新拉取闪烁。
+      if (accepted) {
+        setResult((prev) => (prev
+          ? {
+            ...prev,
+            acceptance: "accepted",
+            worktree: prev.worktree
+              ? {
+                ...prev.worktree,
+                status: "merged" as const,
+                mergeCommit: accepted.mergeCommit,
+                mergedAt: accepted.mergedAt,
+              }
+              : prev.worktree,
+          }
+          : prev))
+      }
+    } catch (err: any) {
+      setAcceptError(String(err?.message ?? err))
+    } finally {
+      setAccepting(false)
     }
   }
 
@@ -139,6 +261,33 @@ export function PodResultView(props: {
                 {(label) => <span class="mafw-pod-result-assessment">{label()}</span>}
               </Show>
             </div>
+
+            <Show when={failed()}>
+              <div class="mafw-pod-result-failure">
+                <strong>失败 · 不可验收</strong>
+                <span>{failureReason()}</span>
+              </div>
+            </Show>
+
+            <Show when={worktreeRows().length > 0}>
+              <div class="mafw-pod-result-label">代码结果</div>
+              <div class="mafw-pod-result-worktree">
+                <For each={worktreeRows()}>
+                  {(row) => (
+                    <div
+                      class="mafw-pod-result-worktree-row"
+                      classList={{ "is-warning": row.tone === "warning", "is-danger": row.tone === "danger" }}
+                    >
+                      <span class="mafw-pod-result-worktree-key">{row.label}</span>
+                      <code class="mafw-pod-result-worktree-value">{row.value}</code>
+                    </div>
+                  )}
+                </For>
+                <Show when={worktreeNote()}>
+                  {(note) => <div class="mafw-pod-result-worktree-note">{note()}</div>}
+                </Show>
+              </div>
+            </Show>
 
             <Show when={revisionRows().length > 0}>
               <div class="mafw-pod-result-label">版本历史</div>
@@ -166,6 +315,32 @@ export function PodResultView(props: {
                 <For each={value().goalAcceptance}>{(item) => <li>{item}</li>}</For>
               </ul>
             </Show>
+
+            <Show when={conditionRows().length > 0}>
+              <div class="mafw-pod-result-label">Goal Eval 条件</div>
+              <div class="mafw-pod-result-conditions">
+                <For each={conditionRows()}>
+                  {(row) => (
+                    <div class="mafw-pod-result-condition">
+                      <span class="mafw-pod-result-condition-statement">
+                        {row.statement}
+                        <Show when={row.required}>
+                          <span class="mafw-pod-result-condition-required">必需</span>
+                        </Show>
+                      </span>
+                      <span class={`mafw-pod-result-condition-result ${CONDITION_TONE[row.result] ?? "is-unknown"}`}>
+                        {row.result}
+                      </span>
+                      <Show when={row.evidence}>
+                        <span class="mafw-pod-result-condition-evidence">{row.evidence}</span>
+                      </Show>
+                      <span class="mafw-pod-result-condition-id">{row.id}</span>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+
             <div class="mafw-pod-result-label">逐任务证据</div>
             <Show when={value().tasks.length > 0} fallback={<div class="mafw-pod-empty-line">没有可解析的逐任务证据</div>}>
               <For each={value().tasks}>
@@ -188,6 +363,37 @@ export function PodResultView(props: {
                 <For each={value().artifacts}>{(item) => <li><code>{artifactName(item)}</code></li>}</For>
               </ul>
             </Show>
+            <Show when={canViewDiff()}>
+              <div class="mafw-pod-result-diff-actions">
+                <ButtonV2 variant="ghost" size="small" onClick={() => void toggleDiff()}>
+                  {diffOpen() ? "收起分支差异" : "查看分支差异"}
+                </ButtonV2>
+              </div>
+              <Show when={diffOpen()}>
+                <div class="mafw-pod-result-diff">
+                  <Show when={diffLoading()}>
+                    <LoaderV2 width={14} height={14} />
+                  </Show>
+                  <Show when={diffError()}>
+                    <div class="mafw-pod-result-error">{diffError()}</div>
+                  </Show>
+                  <Show when={!diffLoading() && !diffError() && diffFiles().length === 0}>
+                    <div class="mafw-pod-empty-line">该分支没有代码差异</div>
+                  </Show>
+                  <Show when={diffFiles().length > 0}>
+                    <DiffReviewPanel
+                      sessionID=""
+                      diffs={diffFiles()}
+                      previewOnly
+                      embedded
+                      allowSessionFallback={false}
+                      onBack={() => setDiffOpen(false)}
+                    />
+                  </Show>
+                </div>
+              </Show>
+            </Show>
+
             <Show when={props.onResubmit && failed()}>
               <ButtonV2 variant="outline" size="small" onClick={() => props.onResubmit?.(value())}>
                 基于失败反馈重新提交
@@ -215,6 +421,41 @@ export function PodResultView(props: {
                   >
                     {rejecting() ? "打回中…" : label()}
                   </ButtonV2>
+                </div>
+              )}
+            </Show>
+
+            <Show when={acceptance()}>
+              {(view) => (
+                <div
+                  class="mafw-pod-result-accept"
+                  classList={{
+                    "is-pending": view().actionable,
+                    "is-failure": view().tone === "failure",
+                    "is-accepted": view().tone === "success" && !view().actionable,
+                  }}
+                >
+                  <Show
+                    when={view().actionable && props.onAccept}
+                    fallback={<div class="mafw-pod-result-accept-state">{view().label}</div>}
+                  >
+                    <div class="mafw-pod-result-label">验收</div>
+                    <div class="mafw-pod-result-accept-note">
+                      会立即把 <code>{value().worktree?.branch ?? "该分支"}</code> 合并到{" "}
+                      <code>{value().worktree?.baseBranch || "主分支"}</code>，不再二次确认。
+                    </div>
+                    <Show when={acceptError()}>
+                      <div class="mafw-pod-result-error">{acceptError()}</div>
+                    </Show>
+                    <ButtonV2
+                      variant="contrast"
+                      size="small"
+                      disabled={accepting()}
+                      onClick={() => void submitAccept()}
+                    >
+                      {accepting() ? "合并中…" : "验收并合并到主分支"}
+                    </ButtonV2>
+                  </Show>
                 </div>
               )}
             </Show>

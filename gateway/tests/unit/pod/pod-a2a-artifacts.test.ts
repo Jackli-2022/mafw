@@ -90,4 +90,51 @@ describe('PodA2AArtifactStore', () => {
     expect(store.get('notes.md')?.path).toBe(fs.realpathSync(path.join(roots.artifactRoot, 'notes.md')));
     roots.cleanup();
   });
+
+  test('searches the revision worktree before the project checkout', () => {
+    const roots = makeRoots();
+    const worktreeDir = path.join(path.dirname(roots.projectDir), 'project-wt-goal-1-r1');
+    fs.mkdirSync(worktreeDir, { recursive: true });
+    fs.writeFileSync(path.join(worktreeDir, 'notes.md'), '# worktree notes');
+    fs.writeFileSync(path.join(worktreeDir, 'built.txt'), 'built in revision 1');
+    try {
+      const store = new PodA2AArtifactStore({
+        worktreeDir,
+        projectDir: roots.projectDir,
+        artifactRoot: roots.artifactRoot,
+      });
+      expect(fs.readFileSync(store.get('notes.md')!.path, 'utf-8')).toBe('# worktree notes');
+      expect(fs.readFileSync(store.get('built.txt')!.path, 'utf-8')).toBe('built in revision 1');
+      // A ref that only exists in the project still falls back.
+      expect(store.get('receipts/goal-1/loop-1-receipt.json')).not.toBeNull();
+    } finally {
+      roots.cleanup();
+    }
+  });
+
+  test('resolves roots dynamically so merged or removed worktrees fall back to the project', () => {
+    const roots = makeRoots();
+    const worktreeDir = path.join(path.dirname(roots.projectDir), 'project-wt-goal-1-r1');
+    fs.mkdirSync(worktreeDir, { recursive: true });
+    fs.writeFileSync(path.join(worktreeDir, 'notes.md'), '# worktree notes');
+    fs.writeFileSync(path.join(worktreeDir, 'built.txt'), 'built in revision 1');
+    let current: { worktreeDir?: string; projectDir: string; artifactRoot: string } = {
+      worktreeDir,
+      projectDir: roots.projectDir,
+      artifactRoot: roots.artifactRoot,
+    };
+    try {
+      const store = new PodA2AArtifactStore(() => current);
+      expect(store.get('built.txt')).not.toBeNull();
+
+      // Merged worktrees are omitted by the resolver: the same store must stop
+      // resolving the revision-only file and read the project copy again.
+      fs.rmSync(worktreeDir, { recursive: true, force: true });
+      current = { projectDir: roots.projectDir, artifactRoot: roots.artifactRoot };
+      expect(store.get('built.txt')).toBeNull();
+      expect(fs.readFileSync(store.get('notes.md')!.path, 'utf-8')).toBe('# notes');
+    } finally {
+      roots.cleanup();
+    }
+  });
 });

@@ -75,6 +75,7 @@ import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService, TECH_LEAD_AGENT } from './core/pod/pod-tech-lead-service';
+import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
 import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
 import { PodContextSelectionService } from './mcp/handlers/pod-context-select';
@@ -645,6 +646,7 @@ class MafwScheduler {
   private podSessionLifecycle!: PodSessionLifecycle;
   private podDirectionService!: PodDirectionService;
   private podTechLeadService!: PodTechLeadService;
+  private podWorktreeService!: PodWorktreeService;
   private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
   private podProbeWorkspaces!: ProbeWorkspaceFactory;
@@ -1172,6 +1174,14 @@ class MafwScheduler {
       archiveGoal: (goalId, opts) => this.archiveGoal(goalId, opts as any),
       nodeTimeoutMs: (config as any).goal?.nodeTimeoutMs ?? 30 * 60_000,
       maxAttempts: 2,
+      workdirForRevision: async (goalId, revision) => {
+        const goal = this.podStore?.getGoalByGoalId(goalId);
+        if (!goal) return null;
+        // No row = legacy/in-flight Goal from before worktree support: never retrofit
+        // mid-Goal (its earlier work lives in the project checkout).
+        const worktree = await this.podWorktreeService.ensureExisting(goal.podId, goalId, revision);
+        return worktree?.dir ?? null;
+      },
       newApprovalId: () => `pa_${randomUUID()}`,
       canCreateNode: (goalId: string) => {
         const podId = this.podService?.getPodIdForGoal(goalId);
@@ -4388,6 +4398,11 @@ class MafwScheduler {
       ensureMemory: (podId, projectName) => this.podMemoryService.ensurePodMemory(podId, projectName),
       log: (message) => log.info(message),
     });
+    this.podWorktreeService = new PodWorktreeService({
+      store: this.podStore,
+      now: () => new Date().toISOString(),
+      log: (message) => log.info(message),
+    });
     this.podTaskService = new PodTaskService({
       store: this.podStore,
       now: () => new Date().toISOString(),
@@ -4464,6 +4479,7 @@ class MafwScheduler {
       }),
       budget: this.podBudget,
       revisions: this.podGoalRevisionService,
+      worktrees: this.podWorktreeService,
       sessions: { retireRevision: (goalId, revision) => this.podSessionLifecycle.retireRevision(goalId, revision) },
       // 打回需要立刻恢复 Tech Lead 讨论、并把反馈记进方向输入：这两者在本函数稍后
       // 才构造，因此用惰性适配器（调用时才解析到真实服务）。
@@ -4526,6 +4542,7 @@ class MafwScheduler {
       store: this.podStore,
       pods: this.podService,
       sessions: this.podSessionSupervisor,
+      worktrees: this.podWorktreeService,
       runtime: createTechLeadRuntimeAdapter({
         createSession: async ({ projectDir }) => {
           const created = await this.runtime!.session.create({ directory: projectDir });
@@ -4590,12 +4607,8 @@ class MafwScheduler {
       delivery: this.podMessageDelivery,
       describeArtifact: (podId, ref) => {
         try {
-          const pod = this.podStore.getPod(podId);
-          if (!pod) return null;
-          return new PodA2AArtifactStore({
-            projectDir: pod.projectDir,
-            artifactRoot: path.join(os.homedir(), '.mafw', 'pods', podId, 'artifacts'),
-          }).describe(ref);
+          if (!this.podStore.getPod(podId)) return null;
+          return new PodA2AArtifactStore(() => this.podArtifactRoots(podId)).describe(ref);
         } catch {
           return null;
         }
@@ -9058,6 +9071,15 @@ class MafwScheduler {
     const podId = this.podService?.getPodIdForGoal(goalId);
     const existingGoal = podId ? this.podStore?.getGoalByGoalId(goalId) : null;
     const alreadyClosed = existingGoal?.status === 'done' || existingGoal?.status === 'aborted';
+    if (podId && !alreadyClosed && this.podWorktreeService) {
+      const goal = this.podStore?.getGoalByGoalId(goalId);
+      const revision = goal?.activeRevision ?? 1;
+      try {
+        await this.podWorktreeService.commitPending(podId, goalId, revision);
+      } catch (err: any) {
+        log.warn(`[Pod] worktree commit failed for ${goalId}#${revision} (non-fatal): ${err?.message ?? err}`);
+      }
+    }
     if (podId && this.podMemoryService && !alreadyClosed) {
       try {
         const mafwDir = this.goalDriverMafwDirCache.get(goalId);
@@ -9152,6 +9174,34 @@ class MafwScheduler {
     }
   }
 
+  /**
+   * A2A artifact roots for a Pod: the revision worktree (when still active)
+   * comes first so unmerged work is visible; merged/abandoned/missing rows fall
+   * back to the project checkout. Re-evaluated per lookup (see resolver ctor).
+   */
+  private podArtifactRoots(podId: string): {
+    worktreeDir?: string;
+    projectDir?: string;
+    artifactRoot: string;
+  } {
+    const pod = this.podStore.getPod(podId);
+    const active = this.podStore.getActiveGoal(podId);
+    const goals = active ? [active] : [...this.podStore.listGoals(podId)].reverse();
+    let worktreeDir: string | undefined;
+    for (const goal of goals) {
+      const worktree = this.podStore.getGoalWorktree(podId, goal.goalId, goal.activeRevision);
+      if (worktree?.status === 'active') {
+        worktreeDir = worktree.dir;
+        break;
+      }
+    }
+    return {
+      worktreeDir,
+      projectDir: pod?.projectDir,
+      artifactRoot: path.join(os.homedir(), '.mafw', 'pods', podId, 'artifacts'),
+    };
+  }
+
   private podA2AAgent(podId: string): PodA2AAgent | null {
     const pod = this.podStore.getPod(podId);
     if (!pod) return null;
@@ -9164,6 +9214,7 @@ class MafwScheduler {
         baseUrl: `http://127.0.0.1:${config.server.apiPort}`,
         artifactRoot: path.join(os.homedir(), '.mafw', 'pods', podId, 'artifacts'),
         projectDir: pod.projectDir,
+        roots: () => this.podArtifactRoots(podId),
       });
       this.podA2AAgents.set(podId, agent);
     }

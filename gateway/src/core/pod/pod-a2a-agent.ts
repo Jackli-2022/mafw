@@ -16,7 +16,7 @@ import {
 } from '@a2a-js/sdk';
 import type { PodA2ABridge } from './pod-a2a-bridge';
 import { PodA2ATaskStore } from './pod-a2a-task-store';
-import { PodA2AArtifactStore, type PodA2AArtifactSummary } from './pod-a2a-artifacts';
+import { PodA2AArtifactStore, type PodA2AArtifactRootsResolver, type PodA2AArtifactSummary } from './pod-a2a-artifacts';
 
 export interface PodA2AAgentOptions {
   bridge: PodA2ABridge;
@@ -26,6 +26,8 @@ export interface PodA2AAgentOptions {
   artifactRoot: string;
   /** Pod project dir — artifact refs (repo-relative receipts) resolve here first. */
   projectDir?: string;
+  /** Dynamic roots (revision worktree before project); overrides projectDir/artifactRoot. */
+  roots?: PodA2AArtifactRootsResolver;
   defaultVersion?: string;
 }
 
@@ -44,10 +46,12 @@ export class PodA2AAgent {
 
   constructor(options: PodA2AAgentOptions) {
     this.options = options;
-    this.artifacts = new PodA2AArtifactStore({
-      projectDir: options.projectDir,
-      artifactRoot: options.artifactRoot,
-    });
+    this.artifacts = options.roots
+      ? new PodA2AArtifactStore(options.roots)
+      : new PodA2AArtifactStore({
+        projectDir: options.projectDir,
+        artifactRoot: options.artifactRoot,
+      });
     this.agentCardData = this.buildAgentCard();
     const taskStore = new PodA2ATaskStore({ bridge: options.bridge, podId: options.podId });
     const executor: AgentExecutor = {

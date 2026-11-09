@@ -340,4 +340,82 @@ describe('PodStore', () => {
     expect(reopened.listPendingMessages('pod_1', reviewer.id)).toEqual([]);
     expect(reopened.listDeliveryFailures('pod_1')).toEqual([]);
   });
+
+  test('goal worktree insert is idempotent and readable by revision', () => {
+    const first = store.insertGoalWorktree({
+      podId: 'pod_1',
+      goalId: 'g1',
+      revision: 1,
+      dir: '/tmp/repo-wt-g1-r1',
+      branch: 'mafw/g1-r1',
+      baseRef: 'main',
+      baseBranch: 'main',
+      status: 'active',
+      now: '2026-11-09T00:00:00.000Z',
+    });
+    const duplicate = store.insertGoalWorktree({
+      podId: 'pod_1',
+      goalId: 'g1',
+      revision: 1,
+      dir: '/tmp/other',
+      branch: 'mafw/other',
+      baseRef: 'HEAD',
+      baseBranch: null,
+      status: 'missing',
+      now: '2026-11-09T00:01:00.000Z',
+    });
+
+    expect(duplicate.dir).toBe(first.dir);
+    expect(duplicate.dir).toBe('/tmp/repo-wt-g1-r1');
+    expect(store.getGoalWorktree('pod_1', 'g1', 1)).toMatchObject({
+      podId: 'pod_1',
+      goalId: 'g1',
+      revision: 1,
+      branch: 'mafw/g1-r1',
+      baseRef: 'main',
+      baseBranch: 'main',
+      status: 'active',
+      mergeCommit: null,
+      mergedAt: null,
+    });
+    expect(store.getGoalWorktree('pod_1', 'g1', 2)).toBeNull();
+  });
+
+  test('goal worktree update records merge state and returns null for missing rows', () => {
+    store.insertGoalWorktree({
+      podId: 'pod_1',
+      goalId: 'g1',
+      revision: 1,
+      dir: '/tmp/repo-wt-g1-r1',
+      branch: 'mafw/g1-r1',
+      baseRef: 'main',
+      baseBranch: 'main',
+      status: 'active',
+      now: '2026-11-09T00:00:00.000Z',
+    });
+
+    const updated = store.updateGoalWorktree({
+      podId: 'pod_1',
+      goalId: 'g1',
+      revision: 1,
+      status: 'merged',
+      mergeCommit: 'abc123',
+      mergedAt: '2026-11-09T01:00:00.000Z',
+      now: '2026-11-09T01:00:00.000Z',
+    });
+
+    expect(updated).toMatchObject({
+      status: 'merged',
+      mergeCommit: 'abc123',
+      mergedAt: '2026-11-09T01:00:00.000Z',
+      updatedAt: '2026-11-09T01:00:00.000Z',
+    });
+    expect(store.updateGoalWorktree({
+      podId: 'pod_1',
+      goalId: 'missing',
+      revision: 1,
+      status: 'merged',
+      now: '2026-11-09T01:00:00.000Z',
+    })).toBeNull();
+  });
 });

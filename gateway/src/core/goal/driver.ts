@@ -295,6 +295,8 @@ export interface DriverDeps {
   canCreateNode?: (goalId: string) => boolean;
   /** Task 14：Spike 端口（缺省 = 该 goal 不支持探针；need_probe 计划会失败）。 */
   probes?: GoalProbePort;
+  /** Pod revision worktree resolver: null/absent = legacy/main workspace. Throwing fails the node. */
+  workdirForRevision?: (goalId: string, revision: number) => Promise<string | null>;
 }
 
 const NODE_PHASE: Record<ExecutableGoalNode, { running: string; complete: string }> = {
@@ -497,8 +499,25 @@ export class NodeDriver {
     // Task 12：plan 可复用 Tech Lead 讨论会话（同一 revision 的讨论 → 计划连续性）。
     // 复用时不建 runtime 会话，但仍登记 goal_sessions 绑定（onSessionCreated）。
     const reusedSessionId = this.resolveExistingSession(goalId, node, revision);
-    const sessionId = reusedSessionId
-      ?? (await this.deps.client.create(state.projectDir)).id;
+    let sessionId: string;
+    if (reusedSessionId) {
+      sessionId = reusedSessionId;
+    } else {
+      let sessionDir = state.projectDir;
+      if (this.deps.workdirForRevision) {
+        try {
+          sessionDir = (await this.deps.workdirForRevision(goalId, revision)) ?? state.projectDir;
+        } catch (err: any) {
+          await this.failBeforeSession(
+            goalId,
+            'worktree_unavailable',
+            `worktree unavailable: ${err?.message ?? err}`,
+          );
+          return;
+        }
+      }
+      sessionId = (await this.deps.client.create(sessionDir)).id;
+    }
     if (reusedSessionId) this.reusedSessions.add(reusedSessionId);
     // 复用会话：记下节点启动时产物已有的内容指纹（idle 竞态判定"是不是本次写的"）。
     if (reusedSessionId) {
@@ -1499,6 +1518,29 @@ export class NodeDriver {
   }
 
   /** 节点失败（error/timeout/artifact 缺失或非法）。 */
+  /** A node failed before any runtime session existed (e.g. worktree provisioning). */
+  private async failBeforeSession(goalId: string, code: string, message: string): Promise<void> {
+    const found = this.findState(goalId);
+    if (!found) return;
+    const state = loadGoalState(found.mafwDir, goalId);
+    if (!state) return;
+    writeGoalState(found.mafwDir, goalId, {
+      nodeSession: null,
+      lastError: `${code}: ${message}`,
+      lastFailure: {
+        class: 'terminal_session',
+        code,
+        message,
+        node: (state.nextNode as any) ?? 'execute',
+        attempt: state.nodeSession?.attempt ?? 1,
+        at: new Date().toISOString(),
+      },
+      reviewVerdict: 'ERROR',
+      nextNode: 'archive_fail',
+    });
+    await this.continueAdvance(goalId);
+  }
+
   private async failNode(
     goalId: string,
     sessionID: string,

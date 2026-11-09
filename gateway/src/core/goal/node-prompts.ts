@@ -569,6 +569,7 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
   }
 
   if (node === 'execute') {
+    const worktreeNote = '你运行在本 revision 的独立 Git worktree（fresh checkout，主项目未被修改）：重建/测试前按项目需要安装依赖（如 npm ci / pip install），不要改动主项目目录。';
     if (isFixPass) {
       const failed = (ctx.fixTasks ?? [])
         .map((task) => `- ${task.taskId}：${task.evidence || "（reviewer 未给证据）"}`)
@@ -585,6 +586,7 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
 只更新失败任务；把**完整回执**写到 ${a.receipt}（不是只写失败项）。`,
         `产物契约（写入 ${a.receipt}）：`,
         `{"goalId":"${ctx.goalId}","timestamp":"<ISO>","receipts":[{"taskId":"w1-t1","status":"done|failed|skipped","summary":"一句话","files":["改动文件"]}]}`,
+        worktreeNote,
         '阻塞不停下提问：标 failed 并写明原因。用 TDD，跑测试验证。',
       ].filter(Boolean).join('\n');
     }
@@ -594,6 +596,7 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
       '',
       `产物契约（写入 ${a.receipt}）：`,
       `{"goalId":"${ctx.goalId}","timestamp":"<ISO>","receipts":[{"taskId":"w1-t1","status":"done|failed|skipped","summary":"一句话","files":["改动文件"]}]}`,
+      worktreeNote,
       '阻塞不停下提问：标 failed 并写明原因。用 TDD，跑测试验证。',
     ].join('\n');
   }
@@ -609,6 +612,7 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
   return [
     head, docs, retryContext, '',
     `任务：独立验证本轮执行结果。读 charter、${a.waves}、回执 ${a.receipt}，用只读工具与测试命令复核（不信任回执自述）。`,
+    '你复核的是本 revision 的独立 Git worktree（fresh checkout）：跑测试前按项目需要安装依赖（如 npm ci / pip install），不要修改主项目目录。',
     ctx.reviewFixPass
       ? '本轮是**同轮复核（复评）**：只复核上一轮失败项/评审缺口与回归，评审报告必须写到上面的 `-fix` 路径（不要写 loop-N.md）。'
       : '',

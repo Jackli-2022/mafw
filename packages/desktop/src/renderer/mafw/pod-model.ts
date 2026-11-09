@@ -689,7 +689,12 @@ export function podResultVerdictLabel(verdict: PodGoalVerdict | null): string {
 /** 只有已收尾的 revision 可以打回（正在规划/实施/验收时打回会抢跑并发状态）。 */
 const REJECTABLE_REVISION_STATUSES = new Set<string>(["completed", "aborted"])
 
-export function rejectButtonLabel(input: { status: string | null | undefined }): string | null {
+export function rejectButtonLabel(input: {
+  status: string | null | undefined
+  /** 已验收/已合并的 revision 不再提供打回入口（服务端也会 409）。 */
+  accepted?: boolean
+}): string | null {
+  if (input.accepted) return null
   return input.status && REJECTABLE_REVISION_STATUSES.has(input.status)
     ? "打回并继续讨论"
     : null

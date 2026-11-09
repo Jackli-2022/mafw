@@ -16,6 +16,19 @@ describe('Pod gateway wiring', () => {
     expect(source).toContain('new PodGoalService(');
   });
 
+  test('constructs the revision worktree service and injects it everywhere', () => {
+    expect(source).toContain('new PodWorktreeService(');
+    expect(source).toMatch(/worktrees:\s*this\.podWorktreeService/);
+    expect(source).toContain('workdirForRevision:');
+    expect(source).toMatch(/workdirForRevision:[\s\S]{0,800}ensureExisting/);
+  });
+
+  test('resolves A2A artifacts from the active revision worktree', () => {
+    expect(source).toContain('new PodA2AArtifactStore(() =>');
+    expect(source).toMatch(/podArtifactRoots\(podId\)/);
+    expect(source).toMatch(/getGoalWorktree\([\s\S]{0,200}status === 'active'/);
+  });
+
   test('routes goal creation through the pod queue', () => {
     expect(source).toMatch(/eventBus\.on\("goal_created"[\s\S]{0,300}this\.startGoal/);
     expect(source).toMatch(/private async startGoal\([\s\S]{0,500}podGoalService\.enqueueGoal/);

@@ -8,7 +8,9 @@ import {
   type PodGoalView,
 } from './pod-view';
 import type { PodAttentionItem, PodGoalVerdict, PodQueueReason } from './pod-stage';
-import type { PodGoalResult } from './pod-result';
+import { isAcceptablePodResult, type PodGoalResult, type PodResultWorktree } from './pod-result';
+import type { PodGoalWorktreeRow } from './pod-store';
+import type { PodWorktreeService, PodWorktreeDiff } from './pod-worktree-service';
 import { podTaskKindOf } from './pod-task-service';
 import { summarizePodGoalProgress } from './pod-goal-progress';
 import type {
@@ -25,6 +27,17 @@ export interface PodEnqueueResult {
   queueReason: PodQueueReason | null;
 }
 
+function resultWorktree(row: PodGoalWorktreeRow): PodResultWorktree {
+  return {
+    dir: row.dir,
+    branch: row.branch,
+    baseBranch: row.baseBranch,
+    status: row.status,
+    mergeCommit: row.mergeCommit,
+    mergedAt: row.mergedAt,
+  };
+}
+
 /** 打回结果（Task 16）：同一 Goal 的下一 revision，讨论立即恢复。 */
 export interface PodRejectResult {
   podId: string;
@@ -38,6 +51,15 @@ export interface PodRejectResult {
   /** Tech Lead 讨论会话（重建/复用的 scoped session）。 */
   sessionID: string | null;
   sessionError?: string;
+}
+
+export interface PodGoalAcceptResult {
+  podId: string;
+  goalId: string;
+  revision: number;
+  branch: string;
+  mergeCommit: string;
+  mergedAt: string;
 }
 
 /** 完成通知结果：同一 revision 只广播一次结果事件。 */
@@ -91,14 +113,31 @@ export interface PodGoalServiceDeps {
     feedback: string;
     source?: string | null;
   }): unknown };
+  /** Revision worktree lifecycle; production always injects PodWorktreeService. */
+  worktrees?: Pick<PodWorktreeService, 'get' | 'ensure' | 'commitPending' | 'mergeForAcceptance' | 'markAbandoned' | 'branchDiff'>;
   log?(message: string): void;
 }
 
 export class PodGoalService {
   /** 已广播过结果事件的 `<podId>/<goalId>#<revision>`（best-effort 去重；重启后最多重发一次）。 */
   private readonly notifiedResults = new Set<string>();
+  /** Accept/reject must be serialized per Goal: a rejected revision can never merge later. */
+  private readonly goalMutations = new Map<string, Promise<unknown>>();
 
   constructor(private readonly deps: PodGoalServiceDeps) {}
+
+  private runGoalMutation<T>(podId: string, goalId: string, run: () => Promise<T>): Promise<T> {
+    const key = `${podId}\u0000${goalId}`;
+    const previous = this.goalMutations.get(key) ?? Promise.resolve();
+    const result = previous.catch(() => undefined).then(run);
+    let tail: Promise<unknown>;
+    const cleanup = () => {
+      if (this.goalMutations.get(key) === tail) this.goalMutations.delete(key);
+    };
+    tail = result.then(cleanup, cleanup);
+    this.goalMutations.set(key, tail);
+    return result;
+  }
 
   async enqueueGoal(
     goalId: string,
@@ -427,6 +466,7 @@ export class PodGoalService {
     const description = this.describeGoal(row.goalId);
     if (!description) return null;
     const revision = this.deps.store.getGoalRevision(row.podId, row.goalId, row.activeRevision);
+    const worktree = this.deps.worktrees?.get(row.podId, row.goalId, row.activeRevision) ?? null;
     return {
       ...description,
       ...(revision
@@ -435,6 +475,7 @@ export class PodGoalService {
           directionStatus: revision.directionStatus,
         }
         : {}),
+      accepted: worktree?.status === 'merged',
       probeRunning: !!runningProbe
         && runningProbe.goalId === row.goalId
         && runningProbe.revision === row.activeRevision,
@@ -450,7 +491,80 @@ export class PodGoalService {
     if (!row) throw new PodError(404, `goal not found: ${goalId}`);
     const result = this.deps.resultForGoal?.(goalId);
     if (!result) throw new PodError(404, `goal result not found: ${goalId}`);
-    return { ...result, verdict: row.verdict ?? result.verdict };
+    const enriched: PodGoalResult = { ...result, verdict: row.verdict ?? result.verdict };
+    const revision = Number.isFinite(result.revision) ? result.revision : row.activeRevision;
+    const worktree = this.deps.worktrees?.get(podId, goalId, revision) ?? null;
+    if (!worktree) return { ...enriched, worktree: null, acceptance: 'unavailable' };
+    const acceptance = worktree.status === 'merged'
+      ? 'accepted'
+      : worktree.status === 'active' && isAcceptablePodResult(result)
+        ? 'pending'
+        : 'unavailable';
+    return {
+      ...enriched,
+      worktree: resultWorktree(worktree),
+      acceptance,
+    };
+  }
+
+  /** Read-only revision branch preview (merge-base diff against the recorded base). */
+  async worktreeDiff(
+    podId: string,
+    goalId: string,
+    opts: { revision?: number } = {},
+  ): Promise<PodWorktreeDiff> {
+    const row = this.requireGoalRow(podId, goalId);
+    const revision = opts.revision ?? row.activeRevision;
+    if (!Number.isInteger(revision) || revision < 1) {
+      throw new PodError(400, 'revision must be a positive integer');
+    }
+    if (!this.deps.worktrees?.branchDiff) {
+      throw new PodError(503, 'worktree diff is unavailable');
+    }
+    return this.deps.worktrees.branchDiff(podId, goalId, revision);
+  }
+
+  /**
+   * Explicit user acceptance: only the current revision, a trustworthy PASS /
+   * quick UNREVIEWED result, and an active revision worktree can merge.
+   */
+  async acceptResult(
+    podId: string,
+    goalId: string,
+    opts: { revision?: number } = {},
+  ): Promise<PodGoalAcceptResult> {
+    return this.runGoalMutation(podId, goalId, async () => {
+      const row = this.requireGoalRow(podId, goalId);
+    const revision = opts.revision ?? row.activeRevision;
+    if (!Number.isInteger(revision) || revision < 1) {
+      throw new PodError(400, 'revision must be a positive integer');
+    }
+    if (revision !== row.activeRevision) {
+      throw new PodError(409, `revision ${revision} is not the active revision (${row.activeRevision})`);
+    }
+    const revisionRow = this.deps.store.getGoalRevision(podId, goalId, revision);
+    if (!revisionRow) throw new PodError(404, `goal revision not found: ${goalId}#${revision}`);
+    if (!isTerminalGoalRevisionStatus(revisionRow.status)) {
+      throw new PodError(409, `goal revision is not finished: ${goalId}#${revision}`);
+    }
+    const result = this.deps.resultForGoal?.(goalId);
+    if (!result) throw new PodError(409, `goal result is unavailable: ${goalId}`);
+    if (result.revision !== revision) {
+      throw new PodError(409, `result revision ${result.revision} does not match ${revision}`);
+    }
+    if (!isAcceptablePodResult(result)) {
+      throw new PodError(409, `goal result is not acceptable: ${goalId}#${revision}`);
+    }
+    const worktree = this.deps.worktrees?.get(podId, goalId, revision);
+    if (!worktree) throw new PodError(409, `goal revision has no worktree to merge: ${goalId}#${revision}`);
+    if (worktree.status === 'abandoned') {
+      throw new PodError(409, `goal revision worktree was abandoned: ${goalId}#${revision}`);
+    }
+
+    const merged = await this.deps.worktrees!.mergeForAcceptance(podId, goalId, revision);
+    this.deps.notify(podId, 'result', goalId);
+    return { podId, goalId, revision, ...merged };
+    });
   }
 
   /**
@@ -507,20 +621,32 @@ export class PodGoalService {
    * 新 revision 从 `discussing` 开始（Tech Lead 讨论立即恢复），并带上打回优先级。
    */
   async rejectResult(podId: string, goalId: string, feedback: string): Promise<PodRejectResult> {
+    return this.runGoalMutation(podId, goalId, async () => {
     const reason = typeof feedback === 'string' ? feedback.trim() : '';
     if (!reason) throw new PodError(400, 'reject feedback is required');
     const row = this.requireGoalRow(podId, goalId);
     if (!this.deps.revisions) throw new PodError(503, 'goal revisions unavailable');
+    const rejectedRevision = row.activeRevision;
+    const worktree = this.deps.worktrees?.get(podId, goalId, rejectedRevision) ?? null;
+    if (worktree?.status === 'merged') {
+      throw new PodError(409, `goal revision is already accepted and merged: ${goalId}#${rejectedRevision}`);
+    }
+    if (worktree?.status === 'active') {
+      await this.deps.worktrees!.commitPending(podId, goalId, rejectedRevision);
+    }
 
     const reopened = await this.deps.revisions.reopenAfterReject(goalId, reason, {
-      expectedRevision: row.activeRevision,
+      expectedRevision: rejectedRevision,
     });
     if (!reopened.opened) {
       throw new PodError(
         409,
-        `goal revision ${row.activeRevision} could not be reopened`
+        `goal revision ${rejectedRevision} could not be reopened`
         + ` (${reopened.staleReason ?? 'stale'})`,
       );
+    }
+    if (worktree?.status === 'active') {
+      this.deps.worktrees!.markAbandoned(podId, goalId, rejectedRevision);
     }
 
     // 同一 Goal 回到 Pod 队列：当前没有别的 Goal 在跑就立即 active；否则排队等优先级。
@@ -553,6 +679,8 @@ export class PodGoalService {
     let sessionID: string | null = null;
     let sessionError: string | undefined;
     try {
+      // New revision inherits from the rejected one: provision its checkout before discussion.
+      await this.deps.worktrees?.ensure(podId, goalId, reopened.revision);
       sessionID = (await this.deps.techLead?.ensureSession(goalId)) ?? null;
     } catch (err: any) {
       sessionError = String(err?.message ?? err);
@@ -574,6 +702,7 @@ export class PodGoalService {
       sessionID,
       ...(sessionError ? { sessionError } : {}),
     };
+    });
   }
 
   list(podId: string): PodGoalRow[] {
