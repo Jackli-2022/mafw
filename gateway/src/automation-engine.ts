@@ -50,14 +50,6 @@ export interface RegisteredAction {
     timeoutMs?: number;
   };
 }
-
-/**
- * @deprecated The engine's instance registry is authoritative (builtins +
- * setActionsProvider). This module-global exists ONLY as a registration
- * compatibility path for index.ts until Phase B Task 3 migrates those
- * registrations to engine.registerAction — after which it is deleted.
- */
-export const actionRegistry: Map<string, ActionHandler> = new Map();
 /**
  * One energy-decay pass over a HarmonicIndexManager.
  *
@@ -343,12 +335,11 @@ export class AutomationEngine {
   }
 
   getAction(type: string): ActionHandler | undefined {
-    const entry = this.actions.get(type) ?? this.actionFromGlobal(type);
-    return entry?.handler;
+    return this.actions.get(type)?.handler;
   }
 
   hasAction(type: string): boolean {
-    return this.actions.has(type) || actionRegistry.has(type);
+    return this.actions.has(type);
   }
 
   /** The host's re-registration hook: called by refreshActions() so the
@@ -369,13 +360,6 @@ export class AutomationEngine {
 
   private registerBuiltinActions(): void {
     registerBuiltinActionsOn(this);
-  }
-
-  private actionFromGlobal(type: string): RegisteredAction | undefined {
-    // @deprecated compat path for index.ts's module-global registrations —
-    // removed in Phase B Task 3 once they migrate to registerAction.
-    const handler = actionRegistry.get(type);
-    return handler ? { handler } : undefined;
   }
 
   /** Inject the unified scheduler. When set, every action execution is
@@ -644,7 +628,7 @@ export class AutomationEngine {
     rule: AutomationRule,
     source?: 'cron' | 'event' | 'user' | 'llm',
   ): Promise<void> {
-    const entry = this.actions.get(actionType) ?? this.actionFromGlobal(actionType);
+    const entry = this.actions.get(actionType);
     if (!entry) {
       log.warn(`[AutomationEngine] No handler registered for action: ${actionType}`);
       return;

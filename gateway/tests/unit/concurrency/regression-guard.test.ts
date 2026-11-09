@@ -68,3 +68,47 @@ describe('concurrency regression guard', () => {
     expect(wq.content).not.toMatch(/private\s+processing\s*=\s*false/);
   });
 });
+
+describe('scheduler migration guard (Phase B Task 3)', () => {
+  const srcDir = path.join(__dirname, '..', '..', '..', 'src');
+  const index = fs.readFileSync(path.join(srcDir, 'index.ts'), 'utf-8');
+  const engine = fs.readFileSync(path.join(srcDir, 'automation-engine.ts'), 'utf-8');
+
+  it('index.ts constructs the unified Scheduler and imports from scheduler/', () => {
+    expect(index).toMatch(/new Scheduler\(/);
+    expect(index).toMatch(/from\s+['"]\.\/scheduler['"]/);
+  });
+
+  it('index.ts no longer hand-rolls pipeline guards', () => {
+    expect(index).not.toMatch(/runPipelineGuarded/);
+    expect(index).not.toMatch(/pipelineGuard\s*=/);
+  });
+
+  it('index.ts no longer registers actions via the module-global actionRegistry', () => {
+    expect(index).not.toMatch(/actionRegistry\.set/);
+    expect(index).not.toMatch(/import\s*\{[^}]*actionRegistry[^}]*\}\s*from\s*["']\.\/automation-engine["']/);
+  });
+
+  it('automation-engine no longer exports the module-global actionRegistry', () => {
+    expect(engine).not.toMatch(/export const actionRegistry/);
+  });
+
+  it('index.ts wires the engine through the provider/scheduler/graph injections', () => {
+    expect(index).toMatch(/setActionsProvider/);
+    expect(index).toMatch(/setScheduler/);
+    expect(index).toMatch(/setGraphProvider/);
+    expect(index).toMatch(/registerAction\(/);
+  });
+
+  it('cron pipeline actions carry budget admission with the internal pipeline names', () => {
+    // Names MUST match the pipelines' internal PipelineBudget.allow() calls
+    // (turn-pipeline 'extract', reflection 'reflect', stale-verify 'review',
+    // reconsolidate-pipeline 'reconsolidate', index.ts dream, axiomDistill).
+    for (const name of ['extract', 'reflect', 'review', 'reconsolidate', 'dream', 'axiomDistill']) {
+      expect(index).toMatch(
+        new RegExp(`pipeline:\\s*['"]${name}['"]`),
+        `missing budget taskOpts for pipeline "${name}"`,
+      );
+    }
+  });
+});
