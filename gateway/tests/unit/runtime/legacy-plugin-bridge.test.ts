@@ -45,7 +45,7 @@ it('reads session id from info.id and synthesizes a turn id when missing', () =>
   expect(got[0].sessionID).toBe('s1');
   expect(validateAdapterEvent(got[0]).ok).toBe(true);
   expect(got[1].type).toBe('turn.completed');
-  expect(got[1].turnID).toMatch(/^legacy-s1-/);
+  expect(got[1].turnID).toMatch(/^bridge-s1-/);
   expect(validateAdapterEvent(got[1]).ok).toBe(true);
 });
 
