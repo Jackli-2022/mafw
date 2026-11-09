@@ -9,6 +9,13 @@ import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
 import { log } from './core/utils/logger';
+import {
+  createGatewayRuntimeIdentity,
+  gatewayHealthFields,
+  loadGatewayReleaseMetadata,
+  type GatewayReleaseMetadata,
+  type GatewayRuntimeIdentity,
+} from './release-info';
 import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
 import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
@@ -435,6 +442,8 @@ class MafwScheduler {
   private serveInstance?: { url: string; close: () => void };
   private serveUrl: string;
   private apiPort: number;
+  private releaseMetadata: GatewayReleaseMetadata | null = null;
+  private runtimeIdentity: GatewayRuntimeIdentity | null = null;
   private pollInterval: number;
   private projectDir: string;
   /** Runtime server root（规范：`~/.mafw/runtime-root`，懒初始化）。
@@ -760,6 +769,13 @@ class MafwScheduler {
   /** Check actual serve health via TCP connection, not just object existence. */
   async start() {
     log.info('MAFW Scheduler v5.0 starting...');
+    this.releaseMetadata = loadGatewayReleaseMetadata(__dirname);
+    this.runtimeIdentity = createGatewayRuntimeIdentity(process.env, () => randomUUID());
+    log.info(
+      `[Scheduler] release v${this.releaseMetadata.gatewayVersion}`
+      + ` (${this.runtimeIdentity.distribution}/${this.runtimeIdentity.channel})`
+      + ` instance=${this.runtimeIdentity.instanceId}`,
+    );
 
     // Single-instance guard: if a healthy gateway already owns apiPort, this
     // instance is redundant — exit before spawning anything (avoids two
@@ -6884,7 +6900,10 @@ class MafwScheduler {
             serveRunning: !!this.serveInstance,
             registeredProjects: Array.from(this.registeredProjects.keys()),
             activeGoals: Array.from(this.activeGoals.keys()),
-            media: { configured: !!this.mediaService?.isConfigured }
+            media: { configured: !!this.mediaService?.isConfigured },
+            ...(this.releaseMetadata && this.runtimeIdentity
+              ? gatewayHealthFields(this.releaseMetadata, this.runtimeIdentity)
+              : {}),
           }));
           return;
         }
