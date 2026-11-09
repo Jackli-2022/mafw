@@ -19,7 +19,6 @@ import { installTerminalServiceIpc } from "./terminal/terminal-ipc"
 import { installCaptureIpc } from "./capture/screenshot-capture"
 import { externalTerminalCommand } from "./terminal/terminal-core"
 import { spawn } from "node:child_process"
-import { buildUpdateToken, pendingRestartPath, atomicWriteToken } from "./pending-update"
 import { writeFile } from "node:fs/promises"
 import { UiPluginManager } from "./ui-plugins"
 import type { RenderRequest } from "../shared/ui-plugins"
@@ -318,31 +317,6 @@ export function registerMafwIpcHandlers() {
     // stop → 等旧进程停止应答 → start（skip adopt 垂死进程竞态）
     await restartGateway()
     return getGatewayStatus()
-  })
-
-  // Desktop trigger for the gateway self-update flow: writes the
-  // pending-restart.json token consumed by gateway's 2s poller.
-  ipcMain.handle("mafw-gateway-update", async () => {
-    const path = pendingRestartPath()
-    const io = {
-      writeFile: async (p: string, data: string) => {
-        const fs = await import("node:fs/promises")
-        await fs.mkdir(join(p, ".."), { recursive: true })
-        await fs.writeFile(p, data, "utf8")
-      },
-      rename: async (from: string, to: string) => {
-        const fs = await import("node:fs/promises")
-        await fs.rename(from, to)
-      },
-    }
-    try {
-      await atomicWriteToken(path, buildUpdateToken("desktop 更新按钮", app.getVersion()), io)
-      writeLog("utility", "mafw-gateway-update token written", { path })
-      return { ok: true }
-    } catch (err) {
-      writeLog("utility", "mafw-gateway-update failed", { err: String(err) }, "error")
-      return { ok: false, error: String(err) }
-    }
   })
 
   // Internal transport for the typed preload namespaces (window.api.mafw.*).

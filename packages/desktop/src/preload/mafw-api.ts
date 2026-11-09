@@ -44,7 +44,6 @@ export function createMafwApi(): MafwAPI {
       info: () => ipcRenderer.invoke("mafw-gateway-info"),
       start: () => ipcRenderer.invoke("mafw-gateway-start"),
       restart: () => ipcRenderer.invoke("mafw-gateway-restart"),
-      update: () => ipcRenderer.invoke("mafw-gateway-update") as Promise<{ ok: boolean; error?: string }>,
       getSourcePreference: () => ipcRenderer.invoke("mafw-gateway-source-preference-get"),
       setSourcePreference: (value) => ipcRenderer.invoke("mafw-gateway-source-preference-set", value),
       useExternalOnce: () => ipcRenderer.invoke("mafw-gateway-legacy-external-once"),

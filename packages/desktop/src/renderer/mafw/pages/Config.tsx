@@ -22,6 +22,9 @@ import { ConfirmOverlay } from "../components/ConfirmOverlay"
 import { KeybindingsSection } from "./KeybindingsSection"
 import { PluginPackagesSection } from "./PluginPackagesSection"
 import type { CreatorEntryReason } from "./creator-entry"
+import type { GatewayStatus } from "@mafw/sdk"
+import type { UpdaterState } from "../../../types/updater"
+import { gatewayConfigView, gatewayConflictGuidance } from "../gateway-config-model"
 
 interface ConfigSection {
   key: string
@@ -189,21 +192,40 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   }
 
   // ── Gateway ops ──
-  const [gwStatus, setGwStatus] = createSignal<any>(null)
+  const [gwStatus, setGwStatus] = createSignal<GatewayStatus | null>(null)
   const [restarting, setRestarting] = createSignal(false)
+  const [gatewayBusy, setGatewayBusy] = createSignal(false)
+  const [gatewaySourcePref, setGatewaySourcePref] = createSignal<"managed" | "external">("managed")
+  const [updaterState, setUpdaterState] = createSignal<UpdaterState>({ status: "idle" })
 
   onMount(() => {
     window.api.mafw.gateway.info().then(setGwStatus).catch(() => {})
+    window.api.mafw.gateway.getSourcePreference().then(setGatewaySourcePref).catch(() => {})
     const unsub = window.api.mafw.gateway.onStateChange(s => setGwStatus(s))
-    onCleanup(unsub)
+    let stopUpdater: (() => void) | null = null
+    void window.api.updater.subscribe(s => setUpdaterState(s)).then((stop) => {
+      stopUpdater = stop
+    })
+    onCleanup(() => {
+      unsub()
+      stopUpdater?.()
+      stopUpdater = null
+    })
+  })
+
+  const gwView = createMemo(() => gatewayConfigView(gwStatus()))
+  const gwGuidance = createMemo(() => {
+    const status = gwStatus()
+    return status ? gatewayConflictGuidance(status) : null
   })
 
   const gwStateText = () => {
     const s = gwStatus()
     if (!s) return "unknown"
-    if (s.state === "ready") return `connected :${s.port ?? 3000}`
+    if (s.state === "ready") return `connected :${s.port ?? 3000} · ${gwView().sourceLabel}`
     if (s.state === "starting" || s.state === "stopped") return "Reconnecting…"
     if (s.state === "failed") return "连接失败"
+    if (s.state === "conflict") return s.quarantine ? "版本已隔离" : "来源/版本冲突"
     return s.state
   }
 
@@ -220,20 +242,72 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     } catch { /* ignore */ }
   }
 
+  const refreshGatewayStatus = async () => {
+    try {
+      setGwStatus(await window.api.mafw.gateway.info())
+    } catch { /* fail-open */ }
+  }
+
   const restartGateway = async () => {
     setRestarting(true)
     try {
       await window.api.mafw.gateway.restart()
       showToastV2({ description: "Gateway 重启中…", duration: 2000 })
+      await refreshGatewayStatus()
     } catch (err: any) {
       showToastV2({ description: `重启失败: ${err.message}`, duration: 3000 })
     }
     setRestarting(false)
   }
 
-  const [restartingAgent, setRestartingAgent] = createSignal(false)
+  const setGatewaySource = async (source: "managed" | "external") => {
+    setGatewayBusy(true)
+    try {
+      setGatewaySourcePref(await window.api.mafw.gateway.setSourcePreference(source))
+      showToastV2({ description: source === "managed" ? "已切换为受管 gateway（重启后生效）" : "已切换为外部 gateway（重启后生效）", duration: 2500 })
+    } catch (err: any) {
+      showToastV2({ description: `切换失败: ${err?.message ?? err}`, duration: 3000 })
+    }
+    setGatewayBusy(false)
+  }
 
-  const [updating, setUpdating] = createSignal(false)
+  const useLegacyExternalOnce = async () => {
+    setGatewayBusy(true)
+    try {
+      setGatewaySourcePref(await window.api.mafw.gateway.setSourcePreference("external"))
+      await window.api.mafw.gateway.useExternalOnce()
+      await window.api.mafw.gateway.restart()
+      await refreshGatewayStatus()
+      showToastV2({ description: "本次会话使用未验证外部 gateway", duration: 3000 })
+    } catch (err: any) {
+      showToastV2({ description: `使用失败: ${err?.message ?? err}`, duration: 3000 })
+    }
+    setGatewayBusy(false)
+  }
+
+  const retryQuarantinedGateway = async () => {
+    setGatewayBusy(true)
+    try {
+      await window.api.mafw.gateway.retryManaged({ force: true })
+      await refreshGatewayStatus()
+      showToastV2({ description: "已强制重试受管 gateway", duration: 2500 })
+    } catch (err: any) {
+      showToastV2({ description: `重试失败: ${err?.message ?? err}`, duration: 3000 })
+    }
+    setGatewayBusy(false)
+  }
+
+  const installDesktopUpdate = async () => {
+    setGatewayBusy(true)
+    try {
+      await window.api.updater.install()
+    } catch (err: any) {
+      showToastV2({ description: `更新安装失败: ${err?.message ?? err}`, duration: 4000 })
+      setGatewayBusy(false)
+    }
+  }
+
+  const [restartingAgent, setRestartingAgent] = createSignal(false)
 
   const [confirmReq, setConfirmReq] = createSignal<{ title: string; message?: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null>(null)
 
@@ -262,30 +336,6 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   createEffect(() => {
     if (activeNav() === "gateway") void refreshUiPlugins()
   })
-
-  const updateGateway = async () => {
-    setConfirmReq({
-      title: "触发 Gateway 自更新？",
-      message: "将拉取当前代码构建并接力重启，约需 1-2 分钟，期间服务短暂中断。",
-      confirmLabel: "开始更新",
-      onConfirm: () => void doUpdateGateway(),
-    })
-  }
-
-  const doUpdateGateway = async () => {
-    setUpdating(true)
-    try {
-      const res = await window.api.mafw.gateway.update()
-      if (res?.ok) {
-        showToastV2({ description: "更新令牌已提交，Gateway 将自动构建并接力重启（完成后通知活跃会话）", duration: 5000 })
-      } else {
-        showToastV2({ description: `更新请求失败: ${res?.error || "unknown"}`, duration: 4000 })
-      }
-    } catch (err: any) {
-      showToastV2({ description: `更新请求失败: ${err.message}`, duration: 4000 })
-    }
-    setUpdating(false)
-  }
 
   const restartAgentRuntime = async () => {
     setRestartingAgent(true)
@@ -850,19 +900,103 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
               </div>
               <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
-                  Gateway 进程管理。查看连接状态、重启服务、获取日志路径。
+                  Desktop 默认使用与安装包同发布单元的受管 gateway；外部 CLI 必须显式选择。
                 </div>
+                <div class="mafw-config-grid">
+                  <div class="mafw-config-grid-row">
+                    <span class="mafw-config-grid-label">来源</span>
+                    <strong>{gwStatus()?.source ? gwView().sourceLabel : "未知"}</strong>
+                  </div>
+                  <div class="mafw-config-grid-row">
+                    <span class="mafw-config-grid-label">期望</span>
+                    <code>{gwStatus()?.expectedVersion ?? "—"}</code>
+                  </div>
+                  <div class="mafw-config-grid-row">
+                    <span class="mafw-config-grid-label">实际</span>
+                    <code>{gwStatus()?.actualVersion ?? "—"}</code>
+                  </div>
+                  <div class="mafw-config-grid-row">
+                    <span class="mafw-config-grid-label">兼容</span>
+                    <strong>{gwView().compatibility === "ok" ? "OK" : gwView().compatibility === "conflict" ? "冲突" : "未知"}</strong>
+                  </div>
+                  <div class="mafw-config-grid-row">
+                    <span class="mafw-config-grid-label">实例</span>
+                    <code>{gwStatus()?.instanceId?.slice(0, 8) ?? "—"}</code>
+                  </div>
+                  <div class="mafw-config-grid-row">
+                    <span class="mafw-config-grid-label">Schema</span>
+                    <code>{gwStatus()?.schemaEpoch ?? "—"}</code>
+                  </div>
+                </div>
+                <Show when={gwGuidance()}>
+                  {(text) => <div class="mafw-config-hint">{text()}</div>}
+                </Show>
+                <Show when={gwStatus()?.quarantine}>
+                  {(quarantine) => (
+                    <div class="mafw-config-hint">
+                      已隔离 {quarantine().version} · {quarantine().error}
+                    </div>
+                  )}
+                </Show>
                 <div class="mafw-config-actions-row">
-                  <ButtonV2 variant="outline" size="small" onClick={restartGateway} disabled={restarting()}>
-                    {restarting() ? "重启中…" : "Restart Gateway"}
+                  <ButtonV2
+                    variant="outline"
+                    size="small"
+                    onClick={restartGateway}
+                    disabled={restarting() || gatewayBusy() || !gwView().canRestart}
+                  >
+                    {restarting() ? "重启中…" : "重启受管 Gateway"}
                   </ButtonV2>
-                  <ButtonV2 variant="outline" size="small" onClick={updateGateway} disabled={updating()}>
-                    {updating() ? "请求已提交…" : "更新 Gateway（自更新）"}
+                  <Show when={gwView().canRetryQuarantined}>
+                    <ButtonV2
+                      variant="outline"
+                      size="small"
+                      onClick={() => void retryQuarantinedGateway()}
+                      disabled={gatewayBusy()}
+                    >
+                      重试已隔离版本
+                    </ButtonV2>
+                  </Show>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    onClick={() => void setGatewaySource("managed")}
+                    disabled={gatewayBusy() || gatewaySourcePref() === "managed"}
+                  >
+                    切换为受管 gateway
                   </ButtonV2>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    onClick={() => void setGatewaySource("external")}
+                    disabled={gatewayBusy() || gatewaySourcePref() === "external"}
+                  >
+                    切换为外部 gateway
+                  </ButtonV2>
+                  <Show when={gwView().canUseExternalOnce}>
+                    <ButtonV2
+                      variant="ghost"
+                      size="small"
+                      onClick={() => void useLegacyExternalOnce()}
+                      disabled={gatewayBusy()}
+                    >
+                      仅本次使用未验证外部 gateway
+                    </ButtonV2>
+                  </Show>
+                  <Show when={updaterState().status === "ready"}>
+                    <ButtonV2
+                      variant="contrast"
+                      size="small"
+                      onClick={() => void installDesktopUpdate()}
+                      disabled={gatewayBusy()}
+                    >
+                      重启以更新
+                    </ButtonV2>
+                  </Show>
                   <ButtonV2 variant="outline" size="small" onClick={restartAgentRuntime} disabled={restartingAgent()}>
                     {restartingAgent() ? "重启中…" : "重启 Agent 运行时"}
                   </ButtonV2>
-                  <ButtonV2 variant="outline" size="small" onClick={() => gwStatus()?.url && copyText(gwStatus().url, "URL")} disabled={!gwStatus()?.url}>
+                  <ButtonV2 variant="outline" size="small" onClick={() => gwStatus()?.url && copyText(gwStatus()!.url!, "URL")} disabled={!gwStatus()?.url}>
                     Copy URL
                   </ButtonV2>
                   <ButtonV2 variant="outline" size="small" onClick={async () => {

@@ -54,7 +54,6 @@ export type MafwAPI = {
     info: () => Promise<GatewayStatus>
     start: () => Promise<GatewayStatus>
     restart: () => Promise<GatewayStatus>
-    update: () => Promise<{ ok: boolean; error?: string }>
     getSourcePreference: () => Promise<"managed" | "external">
     setSourcePreference: (value: "managed" | "external") => Promise<"managed" | "external">
     useExternalOnce: () => Promise<{ ok: boolean }>
