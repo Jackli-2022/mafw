@@ -1,5 +1,6 @@
 import type { Database } from 'better-sqlite3';
 import type { ProbeStatus } from '../goal/probe';
+import type { PodGoalWorktreeStatus } from './pod-worktree-path';
 import type { PodGoalVerdict } from './pod-stage';
 
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived';
@@ -121,6 +122,22 @@ export interface PodGoalRevisionRow {
   enqueuedAt: string;
   startedAt: string | null;
   endedAt: string | null;
+}
+
+/** Pod revision 的代码执行 checkout（一个 revision 一个 worktree/branch）。 */
+export interface PodGoalWorktreeRow {
+  podId: string;
+  goalId: string;
+  revision: number;
+  dir: string;
+  branch: string;
+  baseRef: string;
+  baseBranch: string | null;
+  status: PodGoalWorktreeStatus;
+  mergeCommit: string | null;
+  createdAt: string;
+  updatedAt: string;
+  mergedAt: string | null;
 }
 
 /** Spike 探针（spec §6）：请求/报告持久化 + 每 Pod 单运行槽。 */
@@ -354,6 +371,23 @@ function goalRevisionFromRow(row: any): PodGoalRevisionRow {
   };
 }
 
+function goalWorktreeFromRow(row: any): PodGoalWorktreeRow {
+  return {
+    podId: row.pod_id,
+    goalId: row.goal_id,
+    revision: Number(row.revision),
+    dir: row.dir,
+    branch: row.branch,
+    baseRef: row.base_ref,
+    baseBranch: row.base_branch ?? null,
+    status: row.status as PodGoalWorktreeStatus,
+    mergeCommit: row.merge_commit ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    mergedAt: row.merged_at ?? null,
+  };
+}
+
 function taskFromRow(row: any): PodTaskRow {
   return {
     id: row.id,
@@ -527,6 +561,22 @@ export class PodStore {
         ON pod_goal_revisions(pod_id, goal_id, revision);
       CREATE INDEX IF NOT EXISTS idx_pod_goal_revisions_status
         ON pod_goal_revisions(pod_id, status, priority);
+
+      CREATE TABLE IF NOT EXISTS pod_goal_worktrees (
+        pod_id TEXT NOT NULL,
+        goal_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        dir TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        base_ref TEXT NOT NULL,
+        base_branch TEXT,
+        status TEXT NOT NULL,
+        merge_commit TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        merged_at TEXT,
+        PRIMARY KEY (pod_id, goal_id, revision)
+      );
 
       CREATE TABLE IF NOT EXISTS pod_tasks (
         id TEXT PRIMARY KEY,
@@ -1031,6 +1081,64 @@ export class PodStore {
       'SELECT * FROM pod_goal_revisions WHERE pod_id = ? AND goal_id = ? AND revision = ?',
     ).get(podId, goalId, revision) as any;
     return row ? goalRevisionFromRow(row) : null;
+  }
+
+  getGoalWorktree(podId: string, goalId: string, revision: number): PodGoalWorktreeRow | null {
+    const row = this.db.prepare(
+      'SELECT * FROM pod_goal_worktrees WHERE pod_id = ? AND goal_id = ? AND revision = ?',
+    ).get(podId, goalId, revision) as any;
+    return row ? goalWorktreeFromRow(row) : null;
+  }
+
+  /** append-only by key: repeated ensure for the same revision returns the first row. */
+  insertGoalWorktree(input: {
+    podId: string;
+    goalId: string;
+    revision: number;
+    dir: string;
+    branch: string;
+    baseRef: string;
+    baseBranch: string | null;
+    status: PodGoalWorktreeStatus;
+    now: string;
+  }): PodGoalWorktreeRow {
+    const existing = this.getGoalWorktree(input.podId, input.goalId, input.revision);
+    if (existing) return existing;
+    const row = this.db.prepare(`
+      INSERT INTO pod_goal_worktrees (
+        pod_id, goal_id, revision, dir, branch, base_ref, base_branch,
+        status, merge_commit, created_at, updated_at, merged_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL)
+      RETURNING *
+    `).get(
+      input.podId, input.goalId, input.revision, input.dir, input.branch,
+      input.baseRef, input.baseBranch, input.status, input.now, input.now,
+    ) as any;
+    return goalWorktreeFromRow(row);
+  }
+
+  updateGoalWorktree(input: {
+    podId: string;
+    goalId: string;
+    revision: number;
+    status: PodGoalWorktreeStatus;
+    mergeCommit?: string | null;
+    mergedAt?: string | null;
+    now: string;
+  }): PodGoalWorktreeRow | null {
+    const row = this.db.prepare(`
+      UPDATE pod_goal_worktrees SET
+        status = ?,
+        merge_commit = COALESCE(?, merge_commit),
+        merged_at = COALESCE(?, merged_at),
+        updated_at = ?
+      WHERE pod_id = ? AND goal_id = ? AND revision = ?
+      RETURNING *
+    `).get(
+      input.status, input.mergeCommit ?? null, input.mergedAt ?? null, input.now,
+      input.podId, input.goalId, input.revision,
+    ) as any;
+    return row ? goalWorktreeFromRow(row) : null;
   }
 
   listGoalRevisions(podId: string, goalId: string): PodGoalRevisionRow[] {
