@@ -2,6 +2,7 @@
 // NodeDriver —— goal 编排状态机（spec §3）。
 // 驱动：state 文件（真相源）+ per-session 事件监听（idle/error 双门完成判定）。
 // langgraph 三件套（graph/checkpointer/interrupt）退役；路由用 routing.ts 纯函数。
+import { Watermark } from '../../concurrency/watermark';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
@@ -320,8 +321,8 @@ export class NodeDriver {
   private reuseIdleGrace = new Set<string>();
   private reuseGraceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** 派发瞬间的活动水位；idle 归属判定用它区分「上一回合的残余」与「本回合结束」。 */
-  private dispatchSeq = new Map<string, number>();
-  private activitySeq = new Map<string, number>();
+  private watermark = new Watermark();
+  private dispatchMarks = new Map<string, number>();
   /** 复用会话节点启动时的产物指纹（判断 idle 时的产物是不是本次新写的）。 */
   private nodeStartArtifacts = new Map<string, { path: string; digest: string | null }>();
   /** Task 14：探针会话 → 隔离工作区（完成/失败都必须销毁）。 */
@@ -700,7 +701,7 @@ export class NodeDriver {
     // 不应继承上一个节点已用掉的 grace（否则第二个节点的首个 idle 会直接误判）。
     this.reuseIdleGrace.delete(sessionId);
     this.clearReuseGraceTimer(sessionId);
-    this.dispatchSeq.set(sessionId, this.activitySeq.get(sessionId) ?? 0);
+    this.dispatchMarks.set(sessionId, this.watermark.mark(sessionId));
     this.listeners.set(sessionId, (ev, failure) => {
       if (ev === 'idle') {
         // 归属优先：派发之后一次活动都没有 → 这是上一回合的迟到 idle。
@@ -1283,11 +1284,11 @@ export class NodeDriver {
   /** 记录一次属于当前回合的会话活动（part/message 事件）。 */
   noteSessionActivity(sessionID: string): void {
     if (!sessionID) return;
-    this.activitySeq.set(sessionID, (this.activitySeq.get(sessionID) ?? 0) + 1);
+    this.watermark.bump(sessionID);
   }
 
   private hasTurnActivity(sessionId: string): boolean {
-    return (this.activitySeq.get(sessionId) ?? 0) > (this.dispatchSeq.get(sessionId) ?? 0);
+    return this.watermark.hasActivitySince(sessionId, this.dispatchMarks.get(sessionId) ?? 0);
   }
 
   /** 宽容只有一次，但必须有时限——否则「回合结束但没交卷」会卡到 watchdog。 */
