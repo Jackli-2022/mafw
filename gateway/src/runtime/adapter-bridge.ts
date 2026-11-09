@@ -38,12 +38,16 @@ export interface AdapterBridgeState {
 }
 
 /** Reverse-map a canonical envelope to AdapterEvent for the runtime event set. */
-export function canonicalToAdapterEvent(evt: RawRuntimeEvent, state: AdapterBridgeState = { turns: new Map() }): AdapterEvent | null {
+export function canonicalToAdapterEvent(
+  evt: RawRuntimeEvent,
+  state: AdapterBridgeState = { turns: new Map() },
+  overrideTurnID?: string,
+): AdapterEvent | null {
   const type = typeOf(evt);
   const props = propsOf(evt);
   const sessionID = sessionOf(evt, props);
   if (!type) return null;
-  let turnID = typeof props.turnID === 'string' ? props.turnID : (sessionID ? state.turns.get(sessionID) : undefined);
+  let turnID = overrideTurnID ?? (typeof props.turnID === 'string' ? props.turnID : (sessionID ? state.turns.get(sessionID) : undefined));
   if (
     type === 'turn.started' || type === 'usage.updated'
     || type === 'tool.call' || type === 'tool.delta' || type === 'tool.result'
@@ -122,6 +126,8 @@ export function toRuntimeDefinition(
 ): RuntimeDefinition {
   const unsubscribers = new Set<() => void>();
   const bridgeState: AdapterBridgeState = { turns: new Map() };
+  /** Gateway-minted turn id per session; the adapter contract echoes it. */
+  const activeTurns = new Map<string, string>();
   let closed = false;
 
   const transport: RuntimeTransport = {
@@ -131,6 +137,8 @@ export function toRuntimeDefinition(
     },
     async sendTurn(input) {
       // Transport contract: sendTurn must not block on turn completion.
+      // The minted turn id is echoed on every turn-scoped event by the bridge.
+      activeTurns.set(input.sessionID, input.turnID);
       void Promise.resolve(legacy.session.promptAsync({
         sessionID: input.sessionID,
         message: input.text,
@@ -161,11 +169,16 @@ export function toRuntimeDefinition(
           ? applyEventMappings(evt, meta.translate.entry, meta.translate.isCanonical)
           : [evt];
         for (const item of translated) {
-          const converted = canonicalToAdapterEvent(item, bridgeState);
+          const sessionHint = sessionOf(item as RawRuntimeEvent, propsOf(item as RawRuntimeEvent));
+          const overrideTurnID = sessionHint ? activeTurns.get(sessionHint) : undefined;
+          const converted = canonicalToAdapterEvent(item, bridgeState, overrideTurnID);
           if (converted) {
             listener(converted);
             if (converted.type === 'turn.completed' || converted.type === 'turn.failed' || converted.type === 'turn.aborted') {
-              if (converted.sessionID) bridgeState.turns.delete(converted.sessionID);
+              if (converted.sessionID) {
+                bridgeState.turns.delete(converted.sessionID);
+                activeTurns.delete(converted.sessionID);
+              }
             }
           }
         }

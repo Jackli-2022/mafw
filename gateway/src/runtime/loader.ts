@@ -29,6 +29,11 @@ export interface RuntimePluginContext {
   pluginConfig(name: string): Record<string, any>;
   /** runtime 凭据（media/pi 认证链优先走这里） */
   credentials?: RuntimeCredentials;
+  /**
+   * Gateway 交给 driver 的策略钩子（审批 / 认知门 / 结果脱敏）。
+   * driver 自己接到原生宿主编排上；组合根不再直接摸原生对象。
+   */
+  policy?: import('@mafw/runtime-contract').RuntimePolicyHooks;
   /** 项目根（**绝对路径**；runtime 实例创建时的当前项目快照）。
    *  **启动期信息**，不用于 session cwd —— 建会话一律用 opts.directory（契约必填）。 */
   projectDir?: string;
@@ -361,7 +366,7 @@ export class RuntimePluginLoader {
 
 export function createRuntimePluginContext(
   credentials?: RuntimeCredentials,
-  extra?: { projectDir?: string; gatewayPort?: number; rootDir?: string },
+  extra?: { projectDir?: string; gatewayPort?: number; rootDir?: string; policy?: import('@mafw/runtime-contract').RuntimePolicyHooks },
 ): RuntimePluginContext {
   return {
     fetch: (url: string, opts?: any) =>
@@ -369,6 +374,7 @@ export function createRuntimePluginContext(
     log,
     pluginConfig: (name: string) => (config.raw as any)?.runtime?.pluginConfig?.[name] ?? {},
     credentials,
+    policy: extra?.policy,
     projectDir: extra?.projectDir,
     rootDir: extra?.rootDir,
     gatewayPort: extra?.gatewayPort,

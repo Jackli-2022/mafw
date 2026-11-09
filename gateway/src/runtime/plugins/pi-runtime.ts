@@ -9,6 +9,7 @@ import { config } from '../../config';
 import { listByDirectory } from '../pi/pi-session-storage';
 import { fixMediaPayload } from '../../media/pi-adapter';
 import * as piAgentConfig from '../pi/pi-agent-config';
+import { applyPiPolicyHooks } from '../pi/pi-policy';
 import { requireSessionDir } from '../session-dir';
 
 export const PI_CAPABILITIES: RuntimeCapabilities = {
@@ -171,6 +172,8 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       },
     }),
   });
+
+  applyPiPolicyHooks(registry as any, ctx.policy);
 
   const sessionAPI = {
     create: async (opts: { directory?: string }) => {
