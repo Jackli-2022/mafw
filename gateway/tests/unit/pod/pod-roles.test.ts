@@ -74,6 +74,7 @@ describe('pod four-role vocabulary', () => {
         now: () => new Date(Date.UTC(2026, 10, 2, 0, 0, seq++)).toISOString(),
         newId: () => `id_${++seq}`,
         broadcast: () => {},
+        currentRuntime: () => 'opencode',
         getManagerSession: async () => 'ses_lead',
         getSession: async () => ({ time: { idle: 1 } }),
         messages: async () => [],

@@ -25,7 +25,7 @@ function makeBridge() {
   store.upsertMember({ id: 'm_other', podId: otherPod.id, role: 'lead', displayName: 'Other', agentName: 'manager', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
 
   const notify = () => {};
-  const access = new PodAccess(store);
+  const access = new PodAccess(store, () => 'opencode');
   const bridge = new PodA2ABridge({
     store, access, now: () => NOW, newId: () => `id_${++seq}`, notify,
   });
@@ -111,7 +111,7 @@ describe('PodA2ABridge', () => {
     });
     const bridge = new PodA2ABridge({
       store: h.store,
-      access: new PodAccess(h.store),
+      access: new PodAccess(h.store, () => 'opencode'),
       now: () => NOW,
       newId: () => 'id_extra',
       describeArtifact: (podId, ref) => (podId === h.pod.id && ref === 'receipts/g1/loop-1-receipt.json'

@@ -128,9 +128,108 @@ async function walkFiles(root: string, rel = ""): Promise<string[]> {
   return files
 }
 
+// ---------------------------------------------------------------------------
+// Shipping hygiene (2026-11-09 installer smoke):
+// electron-builder's app-builder copies extraResources with a Win32 MAX_PATH
+// walker and silently drops binaries for non-target platforms/arches. The
+// payload manifest is generated from this directory, so anything app-builder
+// refuses to copy makes first-run verification fail on every machine. Prune
+// exactly what the runtime never needs BEFORE hashing, then enforce a path
+// budget so a future deep dependency pin fails the build loudly instead of
+// shipping a payload that can never verify.
+// ---------------------------------------------------------------------------
+const PRUNED_SUFFIXES = [".d.ts", ".d.ts.map", ".js.map", ".mjs.map", ".cjs.map", ".ts", ".ts.map"]
+const PRUNED_TEST_DIRS = new Set(["test", "tests", "__tests__", "__mocks__"])
+const MAX_PAYLOAD_RELATIVE_PATH = 170
+
+function isForeignNativeDir(segments: string[]): boolean {
+  const binIndex = segments.lastIndexOf("bin")
+  if (binIndex < 2 || segments[binIndex - 1] !== "onnxruntime-node") return false
+  const platform = segments[binIndex + 2]
+  const arch = segments[binIndex + 3]
+  if (!platform || !arch) return false
+  if (platform !== process.platform) return true
+  // macOS keeps x64 + arm64 (Rosetta / universal builds); other hosts only
+  // need their own arch.
+  return process.platform !== "darwin" && arch !== process.arch
+}
+
+/** True when runtime JS outside the package imports it (then it must stay). */
+async function payloadReferences(root: string, specifier: string): Promise<boolean> {
+  const roots = [
+    path.join(root, "dist"),
+    path.join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist"),
+  ]
+  const needle = Buffer.from(specifier)
+  const visit = async (dir: string): Promise<boolean> => {
+    if (!existsSync(dir)) return false
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const child = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (await visit(child)) return true
+      } else if (entry.name.endsWith(".js") || entry.name.endsWith(".cjs")) {
+        if ((await readFile(child)).includes(needle)) return true
+      }
+    }
+    return false
+  }
+  for (const dir of roots) {
+    if (await visit(dir)) return true
+  }
+  return false
+}
+
+async function prunePayload(root: string): Promise<{ files: number; dirs: number }> {
+  // @mistralai/mistralai is a shrinkwrapped transitive dependency of
+  // pi-coding-agent whose generated operation filenames blow past MAX_PATH.
+  // It is only safe to drop when no shipped JS imports it (verified by scan).
+  const keepMistral = await payloadReferences(root, "@mistralai/mistralai")
+  let files = 0
+  let dirs = 0
+  const walk = async (rel: string): Promise<void> => {
+    for (const entry of await readdir(path.join(root, rel), { withFileTypes: true })) {
+      const child = rel ? `${rel}/${entry.name}` : entry.name
+      const segments = child.split("/")
+      if (entry.isDirectory()) {
+        const inNodeModules = segments.includes("node_modules")
+        const drop =
+          (inNodeModules && PRUNED_TEST_DIRS.has(entry.name)) ||
+          isForeignNativeDir(segments) ||
+          (!keepMistral && child.endsWith("node_modules/@mistralai/mistralai"))
+        if (drop) {
+          await rm(path.join(root, child), { recursive: true, force: true })
+          dirs += 1
+          continue
+        }
+        await walk(child)
+        continue
+      }
+      if (segments.includes("node_modules") && PRUNED_SUFFIXES.some((suffix) => child.endsWith(suffix))) {
+        await rm(path.join(root, child), { force: true })
+        files += 1
+      }
+    }
+  }
+  await walk("")
+  return { files, dirs }
+}
+
+const pruned = await prunePayload(outDir)
+const payloadFiles = await walkFiles(outDir)
+const deepest = payloadFiles.reduce((worst, rel) => (rel.length > worst.length ? rel : worst), "")
+if (deepest.length > MAX_PAYLOAD_RELATIVE_PATH) {
+  throw new Error(
+    `gateway payload path exceeds ${MAX_PAYLOAD_RELATIVE_PATH} chars (${deepest.length}): ${deepest}`,
+  )
+}
+console.log(
+  `[stage-gateway] pruned payload: ${pruned.dirs} dirs / ${pruned.files} files; ` +
+    `${payloadFiles.length} files remain, deepest relative path ${deepest.length}`,
+)
+
 const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex")
 const { manifest: payloadManifest, digest } = await createGatewayPayloadManifest(outDir, {
-  walk: async () => walkFiles(outDir),
+  walk: async () => payloadFiles,
   read: async (rel) => readFile(path.join(outDir, rel)),
   stat: async (rel) => {
     const value = await stat(path.join(outDir, rel))

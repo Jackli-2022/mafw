@@ -7,7 +7,13 @@ import { PodStore } from '../../../src/core/pod/pod-store';
 
 const NOW = '2026-10-30T00:00:00.000Z';
 
-function makeDelivery(opts: { node: string | null; sessionId?: string; notify?: (podId: string) => void }) {
+function makeDelivery(opts: {
+  node: string | null;
+  sessionId?: string;
+  notify?: (podId: string) => void;
+  sessionRuntime?: string;
+  runtimeName?: () => string;
+}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-delivery-'));
   const db = new Database(path.join(dir, 'test.db'));
   const store = new PodStore(db);
@@ -19,12 +25,14 @@ function makeDelivery(opts: { node: string | null; sessionId?: string; notify?: 
   if (opts.node !== null) {
     store.insertSession({
       id: 'ps1', podId: pod.id, memberId: builder.id, goalId: 'g1', node: opts.node,
-      sessionId, status: 'active', transcriptRef: null, now: NOW,
+      sessionId, status: 'active', transcriptRef: null,
+      runtime: opts.sessionRuntime ?? 'opencode', now: NOW,
     });
   }
   store.insertSession({
     id: 'ps2', podId: pod.id, memberId: reviewer.id, goalId: 'g1', node: opts.node ?? 'review',
-    sessionId: 'ses_reviewer', status: 'active', transcriptRef: null, now: NOW,
+    sessionId: 'ses_reviewer', status: 'active', transcriptRef: null,
+    runtime: opts.sessionRuntime ?? 'opencode', now: NOW,
   });
   const message = store.insertMessage({
     id: 'm1', podId: pod.id, fromMemberId: lead.id, toMemberId: builder.id,
@@ -35,6 +43,7 @@ function makeDelivery(opts: { node: string | null; sessionId?: string; notify?: 
     store,
     promptAsync: async (input) => { prompts.push(input); },
     notify: opts.notify,
+    runtimeName: opts.runtimeName ?? (() => 'opencode'),
   });
   return { dir, db, store, pod, lead, builder, reviewer, message, prompts, delivery };
 }
@@ -62,6 +71,15 @@ describe('PodMessageDelivery', () => {
     h.delivery.commitDelivered(claim!.ids, 'ses_builder');
     expect(h.store.listMessages(h.pod.id)[0].deliveredAt).toBeTruthy();
     expect(await h.delivery.pendingForSession('ses_builder')).toBeNull();
+    h.db.close();
+    fs.rmSync(h.dir, { recursive: true, force: true });
+  });
+
+  test('does not push or claim a session owned by another runtime', async () => {
+    const h = makeDelivery({ node: 'coordination', sessionRuntime: 'pi' });
+    expect(await h.delivery.deliver(h.message.id)).toBe('pending');
+    expect(h.prompts).toHaveLength(0);
+    expect(h.delivery.claimPendingForSession('ses_builder')).toBeNull();
     h.db.close();
     fs.rmSync(h.dir, { recursive: true, force: true });
   });

@@ -1,3 +1,7 @@
+/**
+ * @deprecated Use `Guard` from `gateway/src/concurrency/guard.ts` instead.
+ * Kept for one cleanup cycle; index.ts no longer consumes this class.
+ */
 export type PipelineRunStatus = 'ran' | 'skipped' | 'timeout' | 'error';
 
 export interface PipelineGuardOptions {

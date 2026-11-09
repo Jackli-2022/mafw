@@ -1,7 +1,8 @@
 # MAFW 谐波记忆系统全路径逻辑（代码级）
 
 2026-10-13 · 本文以**当前代码为准**（file:line 均为写作时行号），是端到端运行逻辑的单一索引。
-与 AGENTS.md 的出入集中在 §9（AGENTS.md 有多处已过期描述）。
+2026-10-13 曾与当时的根 AGENTS.md 对齐（历史出入见 §9）；2026-11-10 起 AGENTS.md 只保留索引，
+记忆细节以本文与 `docs/architecture/memory.md` 为准。
 目标架构/未来项见 `docs/research/2026-10-10-memory-target-architecture.md`（本文只写已落地）。
 
 ## 0. 总览：三层

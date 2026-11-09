@@ -28,12 +28,29 @@ describe('PodAccess', () => {
       id: 'ps_lead', podId: 'pod_1', memberId: 'm_lead', goalId: null, node: 'coordination',
       sessionId: 's1', status: 'active', transcriptRef: null, now: '2026-10-29T00:00:00.000Z',
     });
-    access = new PodAccess(store);
+    access = new PodAccess(store, () => 'opencode');
   });
 
   afterEach(() => {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('rejects a session owned by another runtime', () => {
+    store.insertSession({
+      id: 'ps_pi', podId: 'pod_1', memberId: 'm_lead', goalId: null, node: 'coordination',
+      sessionId: 's_pi', status: 'active', transcriptRef: null, runtime: 'pi',
+      now: '2026-10-29T00:00:00.000Z',
+    });
+    let runtime = 'opencode';
+    access = new (PodAccess as any)(store, () => runtime);
+
+    expect(access.requireMember('s1', ['lead']).id).toBe('m_lead');
+    expect(() => access.requireMember('s_pi', ['lead'])).toThrow(PodError);
+
+    runtime = 'pi';
+    expect(access.requireMember('s_pi', ['lead']).id).toBe('m_lead');
+    expect(() => access.requireMember('s1', ['lead'])).toThrow(PodError);
   });
 
   test('returns the member when the role is allowed', () => {

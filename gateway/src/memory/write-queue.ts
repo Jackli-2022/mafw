@@ -1,24 +1,13 @@
-type AsyncFn = () => Promise<void>;
+// gateway/src/memory/write-queue.ts
+// FIFO write serialization for harmonic file stores.
+// Internally uses the unified MutexQueue from concurrency/.
+
+import { MutexQueue } from '../concurrency';
 
 export class WriteQueue {
-  private queue: AsyncFn[] = [];
-  private processing = false;
+  private queue = new MutexQueue();
 
-  async enqueue(fn: AsyncFn): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.queue.push(async () => {
-        try { await fn(); resolve(); } catch (e) { reject(e); }
-      });
-      if (!this.processing) this.process();
-    });
-  }
-
-  private async process(): Promise<void> {
-    this.processing = true;
-    while (this.queue.length > 0) {
-      const fn = this.queue.shift()!;
-      await fn();
-    }
-    this.processing = false;
+  enqueue(fn: () => Promise<void>): Promise<void> {
+    return this.queue.run('write', fn);
   }
 }

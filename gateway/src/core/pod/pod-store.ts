@@ -286,6 +286,8 @@ export interface PodSessionRow {
   goalId: string | null;
   node: string | null;
   sessionId: string;
+  /** Runtime that owns this session id (ids are not portable across runtimes). */
+  runtime: string;
   status: string;
   transcriptRef: string | null;
   /** 作用域类型；null = 历史/节点会话（非 Supervisor 管理）。 */
@@ -299,6 +301,9 @@ export interface PodSessionRow {
   createdAt: string;
   endedAt: string | null;
 }
+
+/** Legacy Pod session rows predate runtime tagging; the only writer then was opencode. */
+export const LEGACY_POD_SESSION_RUNTIME = 'opencode';
 
 export class PodError extends Error {
   constructor(public status: number, message: string) {
@@ -478,6 +483,9 @@ function sessionFromRow(row: any): PodSessionRow {
     goalId: row.goal_id ?? null,
     node: row.node ?? null,
     sessionId: row.session_id,
+    runtime: typeof row.runtime === 'string' && row.runtime.trim()
+      ? row.runtime
+      : LEGACY_POD_SESSION_RUNTIME,
     status: row.status,
     transcriptRef: row.transcript_ref ?? null,
     scopeKind: scopeKindFromRow(row.scope_kind),
@@ -675,6 +683,7 @@ export class PodStore {
         goal_id TEXT,
         node TEXT,
         session_id TEXT NOT NULL UNIQUE,
+        runtime TEXT,
         status TEXT NOT NULL,
         transcript_ref TEXT,
         scope_kind TEXT,
@@ -737,14 +746,28 @@ export class PodStore {
     this.ensureColumn('pod_member_sessions', 'revision', 'revision INTEGER');
     this.ensureColumn('pod_member_sessions', 'generation', 'generation INTEGER NOT NULL DEFAULT 1');
     this.ensureColumn('pod_member_sessions', 'last_active_at', 'last_active_at TEXT');
+    this.ensureColumn('pod_member_sessions', 'runtime', 'runtime TEXT');
     this.db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_pod_messages_external
         ON pod_messages(pod_id, external_message_id)
         WHERE external_message_id IS NOT NULL;
     `);
+    this.backfillLegacySessionRuntime();
     this.ensureScopeIndexes();
     this.backfillLegacyDeliveries();
     this.backfillLegacyRevisions();
+  }
+
+  /**
+   * Legacy rows predate runtime tagging. The single-runtime-era writer was
+   * opencode, so tag them once at startup (idempotent) instead of guessing at
+   * read time. New writes always carry an explicit runtime.
+   */
+  private backfillLegacySessionRuntime(): void {
+    this.db.prepare(`
+      UPDATE pod_member_sessions SET runtime = ?
+      WHERE runtime IS NULL OR TRIM(runtime) = ''
+    `).run(LEGACY_POD_SESSION_RUNTIME);
   }
 
   /**
@@ -969,14 +992,17 @@ export class PodStore {
     return row ? memberFromRow(row) : null;
   }
 
-  getMemberBySession(sessionId: string): PodMemberRow | null {
+  getMemberBySession(sessionId: string, runtime?: string): PodMemberRow | null {
     const row = this.db.prepare(`
       SELECT m.* FROM pod_members m
       JOIN pod_member_sessions s ON s.member_id = m.id
       WHERE s.session_id = ? AND s.ended_at IS NULL
+        AND (? IS NULL OR COALESCE(s.runtime, ?) = ?)
       ORDER BY s.created_at DESC
       LIMIT 1
-    `).get(sessionId) as any;
+    `).get(
+      sessionId, runtime ?? null, LEGACY_POD_SESSION_RUNTIME, runtime ?? null,
+    ) as any;
     return row ? memberFromRow(row) : null;
   }
 
@@ -1876,8 +1902,9 @@ export class PodStore {
   insertSession(
     input: Omit<
       PodSessionRow,
-      'createdAt' | 'endedAt' | 'scopeKind' | 'revision' | 'generation' | 'lastActiveAt'
+      'createdAt' | 'endedAt' | 'scopeKind' | 'revision' | 'generation' | 'lastActiveAt' | 'runtime'
     > & {
+      runtime?: string;
       scopeKind?: PodSessionScopeKind | null;
       revision?: number | null;
       generation?: number;
@@ -1887,12 +1914,13 @@ export class PodStore {
   ): PodSessionRow {
     this.db.prepare(`
       INSERT OR IGNORE INTO pod_member_sessions (
-        id, pod_id, member_id, goal_id, node, session_id, status, transcript_ref,
+        id, pod_id, member_id, goal_id, node, session_id, runtime, status, transcript_ref,
         scope_kind, revision, generation, last_active_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.id, input.podId, input.memberId, input.goalId, input.node,
-      input.sessionId, input.status, input.transcriptRef,
+      input.sessionId, input.runtime ?? LEGACY_POD_SESSION_RUNTIME,
+      input.status, input.transcriptRef,
       input.scopeKind ?? null, input.revision ?? null,
       input.generation ?? 1, input.lastActiveAt ?? null, input.now,
     );
@@ -1913,19 +1941,33 @@ export class PodStore {
     id: string;
     scope: PodSessionScopeKey;
     sessionId: string;
+    runtime: string;
     now: string;
   }): PodSessionRow {
     const lease = this.db.transaction(() => {
       const generation = this.getScopedGeneration(input.scope) + 1;
       const [podId, memberId, goalId, revision, kind] = this.scopeParams(input.scope);
+      // Runtime switch: the previous runtime's active lease for this exact
+      // scope is retired (its id cannot be used under the new runtime). One
+      // active lease line remains, so the existing unique scope index holds.
+      this.db.prepare(`
+        UPDATE pod_member_sessions
+        SET ended_at = ?, status = 'ended'
+        WHERE pod_id = ? AND member_id = ?
+          AND COALESCE(goal_id, '') = COALESCE(?, '')
+          AND COALESCE(revision, -1) = COALESCE(?, -1)
+          AND scope_kind = ?
+          AND ended_at IS NULL
+          AND COALESCE(runtime, ?) <> ?
+      `).run(input.now, podId, memberId, goalId, revision, kind, LEGACY_POD_SESSION_RUNTIME, input.runtime);
       const row = this.db.prepare(`
         INSERT INTO pod_member_sessions (
-          id, pod_id, member_id, goal_id, node, session_id, status, transcript_ref,
+          id, pod_id, member_id, goal_id, node, session_id, runtime, status, transcript_ref,
           scope_kind, revision, generation, last_active_at, created_at
-        ) VALUES (?, ?, ?, ?, NULL, ?, 'active', NULL, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'active', NULL, ?, ?, ?, ?, ?)
         RETURNING *
       `).get(
-        input.id, podId, memberId, goalId, input.sessionId,
+        input.id, podId, memberId, goalId, input.sessionId, input.runtime,
         kind, revision, generation, input.now, input.now,
       ) as any;
       return sessionFromRow(row);
@@ -1937,7 +1979,7 @@ export class PodStore {
    * 精确作用域的活跃租约（null goal/revision 按 NULL 匹配）。
    * 查询谓词与 `idx_pod_member_sessions_active_scope` 表达式逐字一致（索引可用）。
    */
-  getActiveScopedSession(scope: PodSessionScopeKey): PodSessionRow | null {
+  getActiveScopedSession(scope: PodSessionScopeKey, runtime?: string): PodSessionRow | null {
     const [podId, memberId, goalId, revision, kind] = this.scopeParams(scope);
     const row = this.db.prepare(`
       SELECT * FROM pod_member_sessions
@@ -1946,9 +1988,13 @@ export class PodStore {
         AND COALESCE(revision, -1) = COALESCE(?, -1)
         AND scope_kind = ?
         AND ended_at IS NULL
+        AND (? IS NULL OR COALESCE(runtime, ?) = ?)
       ORDER BY generation DESC, created_at DESC
       LIMIT 1
-    `).get(podId, memberId, goalId, revision, kind) as any;
+    `).get(
+      podId, memberId, goalId, revision, kind,
+      runtime ?? null, LEGACY_POD_SESSION_RUNTIME, runtime ?? null,
+    ) as any;
     return row ? sessionFromRow(row) : null;
   }
 
@@ -1985,16 +2031,22 @@ export class PodStore {
     return row ? sessionFromRow(row) : null;
   }
 
-  listActiveSessions(podId: string): PodSessionRow[] {
-    return (this.db.prepare(
-      'SELECT * FROM pod_member_sessions WHERE pod_id = ? AND ended_at IS NULL ORDER BY created_at DESC',
-    ).all(podId) as any[]).map(sessionFromRow);
+  listActiveSessions(podId: string, runtime?: string): PodSessionRow[] {
+    return (this.db.prepare(`
+      SELECT * FROM pod_member_sessions
+      WHERE pod_id = ? AND ended_at IS NULL
+        AND (? IS NULL OR COALESCE(runtime, ?) = ?)
+      ORDER BY created_at DESC
+    `).all(podId, runtime ?? null, LEGACY_POD_SESSION_RUNTIME, runtime ?? null) as any[]).map(sessionFromRow);
   }
 
-  listActiveScopedSessions(): PodSessionRow[] {
-    return (this.db.prepare(
-      'SELECT * FROM pod_member_sessions WHERE ended_at IS NULL AND scope_kind IS NOT NULL ORDER BY created_at ASC',
-    ).all() as any[]).map(sessionFromRow);
+  listActiveScopedSessions(runtime?: string): PodSessionRow[] {
+    return (this.db.prepare(`
+      SELECT * FROM pod_member_sessions
+      WHERE ended_at IS NULL AND scope_kind IS NOT NULL
+        AND (? IS NULL OR COALESCE(runtime, ?) = ?)
+      ORDER BY created_at ASC
+    `).all(runtime ?? null, LEGACY_POD_SESSION_RUNTIME, runtime ?? null) as any[]).map(sessionFromRow);
   }
 
   endSession(sessionId: string, now: string): void {
@@ -2004,13 +2056,14 @@ export class PodStore {
   }
 
   /** Reuse the same runtime session id after its previous Pod binding ended. */
-  reactivateSession(sessionId: string, now: string): PodSessionRow | null {
+  reactivateSession(sessionId: string, now: string, runtime?: string): PodSessionRow | null {
     this.db.prepare(`
       UPDATE pod_member_sessions
-      SET ended_at = NULL, status = 'active', last_active_at = ?
+      SET ended_at = NULL, status = 'active', last_active_at = ?,
+          runtime = COALESCE(?, runtime)
       WHERE session_id = ?
       RETURNING *
-    `).run(now, sessionId);
+    `).run(now, runtime ?? null, sessionId);
     const row = this.db.prepare('SELECT * FROM pod_member_sessions WHERE session_id = ?').get(sessionId) as any;
     return row ? sessionFromRow(row) : null;
   }

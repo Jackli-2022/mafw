@@ -90,6 +90,16 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     expect(out.finish).toBeUndefined();
   });
 
+  it('session.get 404 错误信封 → undefined（SDK throwOnError=false，不能把 envelope 当会话）', async () => {
+    mockClient.session.get.mockResolvedValueOnce({
+      error: { name: 'NotFoundError', data: { message: 'Session not found' } },
+      request: {},
+      response: { status: 404 },
+    });
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await expect(rt.session.get({ sessionID: 'ses_missing' })).resolves.toBeUndefined();
+  });
+
   it('abort → POST /api/session/{id}/interrupt', async () => {
     routeFetch();
     const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });

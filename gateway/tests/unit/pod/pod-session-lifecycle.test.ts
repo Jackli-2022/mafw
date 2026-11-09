@@ -47,7 +47,7 @@ describe('PodSessionLifecycle', () => {
     if (active) store.setActiveRevision('pod_1', 'g1', revision);
   }
 
-  function lease(goalId: string, revision: number, sessionId: string) {
+  function lease(goalId: string, revision: number, sessionId: string, runtime = 'opencode') {
     store.leaseScopedSession({
       id: `lease_${sessionId}`,
       scope: {
@@ -58,6 +58,7 @@ describe('PodSessionLifecycle', () => {
         kind: 'discussion',
       },
       sessionId,
+      runtime,
       now: NOW,
     });
   }
@@ -66,6 +67,7 @@ describe('PodSessionLifecycle', () => {
     return new PodSessionLifecycle({
       store,
       supervisor,
+      runtimeName: () => 'opencode',
       snapshotSession: async (sessionId) => {
         if (snapshotFails) throw new Error('snapshot failed');
         snapshots.push(sessionId);
@@ -81,7 +83,7 @@ describe('PodSessionLifecycle', () => {
     seq = 0;
     snapshots = [];
     snapshotFails = false;
-    supervisor = new PodSessionSupervisor({ store, now, newId });
+    supervisor = new PodSessionSupervisor({ store, now, newId, runtimeName: () => 'opencode' });
     seedPod();
     store.enqueueGoal({ id: 'pg1', podId: 'pod_1', goalId: 'g1', now: NOW });
   });
@@ -103,6 +105,29 @@ describe('PodSessionLifecycle', () => {
     expect(snapshots).toEqual(['ses_rev1']);
     expect(store.getSessionBySessionId('ses_rev1')?.endedAt).toBeTruthy();
     expect(store.getSessionBySessionId('ses_rev2')?.endedAt).toBeNull();
+  });
+
+  test('retireRevision ignores a lease owned by another runtime', async () => {
+    seedRevision(1, 'completed');
+    lease('g1', 1, 'ses_pi', 'pi');
+
+    const retired = await lifecycle().retireRevision('g1', 1);
+
+    expect(retired).toBe(false);
+    expect(store.getSessionBySessionId('ses_pi')?.endedAt).toBeNull();
+    expect(snapshots).toEqual([]);
+  });
+
+  test('stale sweep only considers leases owned by the current runtime', async () => {
+    seedRevision(1, 'completed');
+    seedRevision(2, 'discussing', true);
+    lease('g1', 1, 'ses_pi_stale', 'pi');
+
+    const retired = await lifecycle().retireStaleDiscussionLeases();
+
+    expect(retired).toBe(0);
+    expect(store.getSessionBySessionId('ses_pi_stale')?.endedAt).toBeNull();
+    expect(snapshots).toEqual([]);
   });
 
   test('snapshot failure still retires the lease', async () => {

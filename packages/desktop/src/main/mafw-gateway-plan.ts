@@ -45,6 +45,12 @@ export function planGatewayStart(input: {
     | { kind: "gateway"; health: GatewayHealthSnapshot; managedInstance: GatewayInstanceRecord | null }
     | { kind: "port-conflict" }
   legacyExternalOverride: boolean
+  /**
+   * Source checkout only: attach to an already-running gateway (typically the
+   * global CLI daemon) instead of reporting a conflict. Packaged builds ignore
+   * this — an unregistered process there may be an older desktop release.
+   */
+  devAdoptRunningGateway?: boolean
 }): GatewayStartPlan {
   if (input.running.kind === "port-conflict") {
     return {
@@ -100,11 +106,18 @@ export function planGatewayStart(input: {
 
   if (input.running.kind === "gateway") {
     const instance = input.running.managedInstance
-    if (
-      !instance
-      || input.running.health.distribution !== "desktop-managed"
-      || input.running.health.instanceId !== instance.instanceId
-    ) {
+    const registered = !!instance
+      && input.running.health.distribution === "desktop-managed"
+      && input.running.health.instanceId === instance.instanceId
+    if (!registered) {
+      // A source checkout shares the machine with whatever gateway the
+      // developer already runs (usually the global CLI daemon). Fighting it
+      // for port 3000 breaks the dev loop, so dev attaches to it instead.
+      // Packaged builds must never do this: an unregistered process could be
+      // an older desktop build or a stale CLI install.
+      if (input.devAdoptRunningGateway && !input.packaged) {
+        return { mode: "managed", entry, action: "adopt" }
+      }
       return {
         mode: "conflict",
         reason: "external-unregistered",
@@ -116,10 +129,10 @@ export function planGatewayStart(input: {
       mode: "managed",
       health: input.running.health,
       expected: input.expected,
-      expectedInstanceId: instance.instanceId,
+      expectedInstanceId: instance!.instanceId,
     })
     if (handshake.ok) {
-      return { mode: "managed", entry, action: "adopt", instanceId: instance.instanceId }
+      return { mode: "managed", entry, action: "adopt", instanceId: instance!.instanceId }
     }
     if (handshake.reason === "older-than-required") {
       return { mode: "managed", entry, action: "spawn" }

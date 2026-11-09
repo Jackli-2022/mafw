@@ -23,6 +23,8 @@ export interface PodSessionSupervisorDeps {
   store: PodStore;
   now(): string;
   newId?(): string;
+  /** Live runtime name — leases are owned per runtime (ids are not portable). */
+  runtimeName(): string;
   /**
    * runtime 会话活性探测。**显式 false** 才作废旧租约并重建（generation+1）；
    * 抛错按存活处理（fail-open）——传输/鉴权抖动不该销毁可复用上下文。
@@ -109,7 +111,7 @@ export class PodSessionSupervisor {
   /** 结束该作用域当前的活跃租约；返回是否真的结束了什么。 */
   retire(requested: PodSessionScope): boolean {
     const scope = normalizeScope(requested);
-    const active = this.deps.store.getActiveScopedSession(scope);
+    const active = this.deps.store.getActiveScopedSession(scope, this.deps.runtimeName());
     if (!active) return false;
     this.deps.store.endSession(active.sessionId, this.deps.now());
     this.emit(scope);
@@ -120,7 +122,7 @@ export class PodSessionSupervisor {
   async current(requested: PodSessionScope): Promise<PodSessionLease | null> {
     // 只读语义（M4）：不创建、不结束、也不盖 last_active_at。
     const scope = normalizeScope(requested);
-    const active = this.deps.store.getActiveScopedSession(scope);
+    const active = this.deps.store.getActiveScopedSession(scope, this.deps.runtimeName());
     if (!active) return null;
     if (!(await this.isAlive(active.sessionId))) return null;
     return {
@@ -134,7 +136,8 @@ export class PodSessionSupervisor {
     scope: PodSessionScope,
     create: () => Promise<string> | string,
   ): Promise<PodSessionLease> {
-    const active = this.deps.store.getActiveScopedSession(scope);
+    const runtime = this.deps.runtimeName();
+    const active = this.deps.store.getActiveScopedSession(scope, runtime);
     if (active) {
       if (await this.isAlive(active.sessionId)) {
         this.deps.store.touchSession(active.sessionId, this.deps.now());
@@ -173,10 +176,12 @@ export class PodSessionSupervisor {
     let row: PodSessionRow;
     try {
       // 世代读取 + 插入在同一事务；作用域唯一索引兜底跨实例竞争（I-1）。
+      // leaseScopedSession 同时结束其它 runtime 的同作用域活跃租约（id 不跨 runtime 复用）。
       row = this.deps.store.leaseScopedSession({
         id: this.deps.newId?.() ?? `podsess_${randomUUID()}`,
         scope,
         sessionId,
+        runtime,
         now,
       });
     } catch (err) {
@@ -192,7 +197,7 @@ export class PodSessionSupervisor {
       }
       if (conflict === 'active_scope') {
         // 输给并发实例：它已写入该作用域的活跃租约，我们复用赢家并回收自己刚建的会话。
-        const winner = this.deps.store.getActiveScopedSession(scope);
+        const winner = this.deps.store.getActiveScopedSession(scope, runtime);
         if (winner) {
           await this.releaseUnleased(sessionId, 'lost the active-lease race');
           this.deps.log?.(

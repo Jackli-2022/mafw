@@ -3,7 +3,7 @@
 > opencode 插件（`src/`）：**注入点 + 观察捕获 + 原生工具 + MCP 自接线**。
 > 记忆的存储、检索与维护都在 Gateway 侧——本文只描述插件作为"宿主接入层"的职责。
 >
-> 时效：2026-10-16 更新（六件套 gateway 单源注记 + Goal 编排分工）。权威细节见根 `AGENTS.md`；
+> 时效：2026-10-16 更新（六件套 gateway 单源注记 + Goal 编排分工）。权威细节见 `docs/architecture/*` 与 `docs/guides/*`（2026-11-10 起 AGENTS.md 只保留索引）；
 > Gateway 侧架构见 `docs/architecture/gateway.md`；pi 等第三方 runtime 的同类宿主实现
 > 见 `gateway/src/runtime/host-adapter.ts`（认知面契约）与 `.opencode/skills/runtime-plugin-authoring/SKILL.md`。
 
@@ -118,7 +118,7 @@ opencode 加载插件（plugin.ts）
 `POST /api/mafw-commands/run`——**UI/用户指令驱动**，刻意不暴露为 MCP 工具给 agent。
 人工 `/new-topic` 已退役；Lead 的 compact/recovery 由系统内部处理。
 `/merge-memory`（跨 worktree 记忆融合）走 `POST /api/merge-memory`（复用 MCP handler）。
-命令清单经 `GET /api/mafw-commands` 暴露（含用户自定义命令，见 AGENTS.md §5.13c）。
+命令清单经 `GET /api/mafw-commands` 暴露（含用户自定义命令，见 `docs/architecture/gateway.md` 归档 §5.13c）。
 
 ## MCP 自接线
 

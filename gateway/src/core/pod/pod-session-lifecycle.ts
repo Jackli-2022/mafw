@@ -9,6 +9,8 @@ import type { PodSessionSupervisor } from './pod-session-supervisor';
 export interface PodSessionLifecycleDeps {
   store: PodStore;
   supervisor: Pick<PodSessionSupervisor, 'retire'>;
+  /** Live runtime name — only the current runtime's leases are retired. */
+  runtimeName(): string;
   snapshotSession(sessionId: string): Promise<unknown>;
   log?(message: string): void;
 }
@@ -35,7 +37,7 @@ export class PodSessionLifecycle {
       revision,
       kind: 'discussion',
     };
-    const active = this.deps.store.getActiveScopedSession(scope);
+    const active = this.deps.store.getActiveScopedSession(scope, this.deps.runtimeName());
     if (!active) return false;
     await this.retireLease(scope, active);
     return true;
@@ -47,7 +49,7 @@ export class PodSessionLifecycle {
    */
   async retireStaleDiscussionLeases(): Promise<number> {
     let retired = 0;
-    for (const row of this.deps.store.listActiveScopedSessions()) {
+    for (const row of this.deps.store.listActiveScopedSessions(this.deps.runtimeName())) {
       if (row.scopeKind !== 'discussion' || !row.goalId || row.revision === null) continue;
       if (!this.isStale(row)) continue;
       await this.retireLease({

@@ -32,8 +32,10 @@ export interface PodServiceDeps {
   now(): string;
   newId(): string;
   broadcast(event: { type: string; properties?: Record<string, unknown>; sessionID?: string }): void;
+  /** Live runtime name — Pod session ids are owned per runtime. */
+  currentRuntime(): string;
   getManagerSession(projectDir: string): Promise<string>;
-  getSession(sessionID: string): Promise<{ time?: { idle?: number; completed?: number }; parentID?: string }>;
+  getSession(sessionID: string): Promise<{ time?: { idle?: number; completed?: number }; parentID?: string } | null>;
   messages(sessionID: string, limit: number): Promise<unknown[]>;
   /** Best-effort archive after a replaced/ended Lead coordination row. */
   archiveLeadSession?(sessionId: string): Promise<void> | void;
@@ -82,12 +84,16 @@ export class PodService {
   get(podId: string): PodDetail | null {
     const pod = this.deps.store.getPod(podId);
     if (!pod) return null;
+    const runtime = this.deps.currentRuntime();
     return {
       pod,
       members: this.deps.store.listMembers(pod.id),
       goals: this.deps.store.listGoals(pod.id),
       tasks: this.deps.store.listTasks(pod.id),
-      sessions: this.deps.store.listSessions(pod.id),
+      // Active rows from another runtime cannot be opened under the current
+      // one; keep ended history (transcripts) but hide live foreign leases.
+      sessions: this.deps.store.listSessions(pod.id)
+        .filter((session) => !!session.endedAt || session.runtime === runtime),
     };
   }
 
@@ -119,13 +125,27 @@ export class PodService {
     if (!pod) throw new PodError(404, `pod not found: ${podId}`);
     const lead = this.deps.store.getMemberByRole(podId, 'lead');
     if (!lead) throw new PodError(404, `pod lead not found: ${podId}`);
+    const runtime = this.deps.currentRuntime();
     const allCoordination = this.deps.store.listSessions(podId).filter(
       (session) => session.memberId === lead.id && session.node === 'coordination',
     );
-    const coordination = allCoordination.filter((session) => !session.endedAt);
-    const sameActive = coordination.find((session) => session.sessionId === managerSessionId);
-    const extras = coordination.filter((session) => session.sessionId !== managerSessionId);
-    if (sameActive && extras.length === 0) return;
+    const currentCoordination = allCoordination.filter((session) => session.runtime === runtime);
+    const sameActive = currentCoordination.find(
+      (session) => !session.endedAt && session.sessionId === managerSessionId,
+    );
+    const extras = currentCoordination.filter(
+      (session) => !session.endedAt && session.sessionId !== managerSessionId,
+    );
+    const foreignActive = allCoordination.filter(
+      (session) => !session.endedAt && session.runtime !== runtime,
+    );
+    // Runtime switch: retire the previous runtime's live coordination row
+    // without snapshot/archive — its id cannot be probed through this runtime.
+    // Ended rows stay as history and can be reactivated on switching back.
+    for (const session of foreignActive) {
+      this.deps.store.endSession(session.sessionId, this.deps.now());
+    }
+    if (sameActive && extras.length === 0 && foreignActive.length === 0) return;
     for (const session of extras) {
       try {
         await this.snapshotSession(session.sessionId);
@@ -149,7 +169,7 @@ export class PodService {
       (session) => session.sessionId === managerSessionId && !!session.endedAt,
     );
     if (endedSame) {
-      this.deps.store.reactivateSession(managerSessionId, this.deps.now());
+      this.deps.store.reactivateSession(managerSessionId, this.deps.now(), runtime);
     } else {
       this.deps.store.insertSession({
         id: this.deps.newId(),
@@ -158,6 +178,7 @@ export class PodService {
         goalId: null,
         node: 'coordination',
         sessionId: managerSessionId,
+        runtime,
         status: 'active',
         transcriptRef: null,
         now: this.deps.now(),
@@ -193,6 +214,7 @@ export class PodService {
       goalId,
       node,
       sessionId,
+      runtime: this.deps.currentRuntime(),
       status: 'active',
       transcriptRef: null,
       now: this.deps.now(),
@@ -205,6 +227,9 @@ export class PodService {
   async snapshotSession(sessionId: string): Promise<string | null> {
     const session = this.deps.store.getSessionBySessionId(sessionId);
     if (!session) return null;
+    // A foreign-runtime session cannot be read through the current runtime;
+    // leave it as history instead of forcing a wrong snapshot.
+    if (session.runtime !== this.deps.currentRuntime()) return session.transcriptRef;
     if (session.endedAt) return session.transcriptRef;
 
     let messages: unknown[] = [];
@@ -239,6 +264,7 @@ export class PodService {
   finalizeMissingSession(sessionId: string): string | null {
     const session = this.deps.store.getSessionBySessionId(sessionId);
     if (!session) return null;
+    if (session.runtime !== this.deps.currentRuntime()) return session.transcriptRef;
     if (session.endedAt) return session.transcriptRef;
     const safeSessionId = sessionId.replace(/[^A-Za-z0-9._-]/g, '_');
     const transcriptPath = path.join(this.deps.memoryRoot, session.podId, 'sessions', `${safeSessionId}.json`);
@@ -267,8 +293,9 @@ export class PodService {
   }
 
   async reconcile(): Promise<void> {
+    const runtime = this.deps.currentRuntime();
     for (const pod of this.deps.store.listPods()) {
-      for (const session of this.deps.store.listActiveSessions(pod.id)) {
+      for (const session of this.deps.store.listActiveSessions(pod.id, runtime)) {
         if (session.node === 'coordination') continue;
         // Session Supervisor 租约（scope_kind 非空）只豁免「回合 idle」这一种收尾：
         // idle 只表示本轮结束，快照/结束会让存活复用失效并每轮抬 generation。
@@ -315,7 +342,8 @@ export class PodService {
    *   直接删除时这两步可能都不触发，这里兜底。sleeping/retired 是人工状态，不动。） */
   reconcileMemberStatus(podId: string): number {
     const active = new Set(
-      this.deps.store.listActiveSessions(podId).map((session) => session.memberId),
+      this.deps.store.listActiveSessions(podId, this.deps.currentRuntime())
+        .map((session) => session.memberId),
     );
     let repaired = 0;
     for (const member of this.deps.store.listMembers(podId)) {
@@ -329,7 +357,7 @@ export class PodService {
   }
 
   memberForSession(sessionId: string): PodMemberRow | null {
-    return this.deps.store.getMemberBySession(sessionId);
+    return this.deps.store.getMemberBySession(sessionId, this.deps.currentRuntime());
   }
 
   private resolveProjectDir(projectDir: string): string {

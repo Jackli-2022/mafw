@@ -690,3 +690,63 @@ node scripts/stage-plugin-contract.mjs --verify <entry-file>
 - `index.test.js` — 零依赖自测：surface 声明、精确路由集合、`req.projectDir` 绑定、400/错误路径、action 往返、PTY 桥接与无 PTY 降级、页面 CSP 契约。
 
 端到端回归：`gateway/tests/integration/plugin-web-surface.test.ts` 用真实 PackageManager/PluginHost 覆盖 check → install → descriptor（含 `url`）→ asset/ticket/`/files` 分发 → 跨包票据 403 → 路由清单与事件 → entry 缺失 fail-closed。
+
+---
+
+## AGENTS.md 归档：统一插件包（2026-11-10 迁移）
+
+> 原文搬迁（未改写），保留当时的决策与验证记录。
+
+##### 统一插件包（Unified Plugin Packages，2026-09-16）
+
+`~/.mafw/plugins/` 一个插件包可同时贡献多种能力（usage 配额 / media 引擎 / runtime；uiTools v1 仅登记展示，桌面侧加载仍走 `~/.mafw/ui-plugins/`）：
+
+- 单文件包 `name.js` 或目录包 `name/plugin.json`（`{name, version?, main?}`，main 缺省 index.js）
+- 模块形状：声明式 `{ name, usage?, media?, runtime?, uiTools? }` 或 `async activate(ctx) → contributions`
+- 统一 ctx = 三个 legacy ctx 超集：apiKey/fetch(60s)/log/pluginConfig（读 `plugins.<name>.config`，回退 legacy 三段）/projectDir/gatewayPort/usage.modelStats（`gateway/src/plugins/package-context.ts`）/emit（`POST /api/events` 发布自定义事件到全 UI 通道；type 建议 `plugin:<name>:<event>` 命名空间，消费方对未知 type 忽略——SSE 通知语义，无注册制）
+- **优先级（同名）：包 > legacy 目录文件 > 内置**；legacy 四目录行为不变
+- PluginHost（`gateway/src/plugins/package-host.ts`）：扫描/激活/跨面原子 reload（先全部激活再一次性推各 loader 的 `setPackageEntries`）+ 顶层与每包子目录双 watcher
+- 内置件与用户插件同一接口（dogfood）：opencode 经 `registerBuiltinDefinition('opencode', …)` 注册（index.ts，可被同名文件/包覆盖）；media `pi` 经 `registerBuiltinEngine('pi', …)` 注册，`resolveMediaPrompt`（`media/resolve-prompt.ts`）先查 engines map，非 builtin 同名直接生效
+- hub：`GET /api/plugins` 响应含 `packages` 键（PackageState[]）
+- 环境变量 `MAFW_PLUGINS_DIR` 覆盖包目录（测试用）
+- 限制：reload 只清主文件 require.cache（改包内 lib/ 需 `mafw restart`）
+
+**两种插件形态**（CJS `module.exports`）：
+
+```js
+// 形态 A：完全自定义引擎（不经 pi，直接 HTTP 调用）
+module.exports = {
+  name: "gemini-vision",
+  modalities: ["image", "video"],
+  async createPrompt(ctx) {
+    return async (parts, opts) => { /* 返回分析文本 */ };
+  },
+};
+
+// 形态 B：复用 pi 运行时，只换 wire 格式修复器
+module.exports = {
+  name: "qwen-vl",
+  modalities: ["image", "video"],
+  engine: "pi",
+  fixPayload(payload) { /* 自定义改写，返回 undefined 表示不修改 */ },
+};
+```
+
+**ctx**（`gateway/src/media/plugin-context.ts`）：`apiKey(name)` / `fetch(url, opts)`（60s timeout）/
+`pluginConfig(name)`（读 `config.media.pluginConfig`）/ `log`。
+
+**config 路由**（per-modality 覆盖全局）：
+```yaml
+media:
+  engine: pi              # 默认引擎
+  video:
+    engine: qwen-vl       # video 模态走插件
+  pluginConfig: {}        # 插件自定义配置
+```
+
+**HTTP API**：`GET /api/media/plugins`（状态列表）、`POST /api/media/plugins/reload`（手动重载）。
+校验失败 fail-open（状态记 error，不影响其他插件与默认 pi）。
+`pi-adapter` 的 `fixPayload` 现为可选 dep（默认 `fixMediaPayload` 小米格式），插件可覆盖。
+缓存 key 含 engineName 防同模型不同引擎串缓存。
+测试：`tests/unit/gateway/media-plugin-loader.test.ts`（11 例）、`media-service.test.ts` resolvePrompt 路由（4 例）。
+

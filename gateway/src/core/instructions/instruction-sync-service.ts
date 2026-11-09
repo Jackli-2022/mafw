@@ -93,6 +93,8 @@ function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+import { Singleflight } from '../../concurrency/singleflight';
+
 export class InstructionSyncService {
   private readonly syncTimeoutMs: number;
   private readonly disabledCooldownMs: number;
@@ -100,7 +102,7 @@ export class InstructionSyncService {
   private readonly log: { info(msg: string): void; warn(msg: string): void };
   private readonly now: () => number;
 
-  private readonly singleFlight = new Map<string, Promise<InstructionSyncResult>>();
+  private readonly flight = new Singleflight();
   private breakerUntil = 0;
   private breakerReason?: string;
   private lastError?: string;
@@ -128,15 +130,7 @@ export class InstructionSyncService {
       return { managed: false, error: this.breakerReason ?? 'breaker' };
     }
 
-    const existing = this.singleFlight.get(sessionID);
-    if (existing) return existing;
-
-    let promise: Promise<InstructionSyncResult>;
-    promise = this.runSync(sessionID, rt).finally(() => {
-      if (this.singleFlight.get(sessionID) === promise) this.singleFlight.delete(sessionID);
-    });
-    this.singleFlight.set(sessionID, promise);
-    return promise;
+    return this.flight.run(sessionID, () => this.runSync(sessionID, rt));
   }
 
   async inspect(sessionID: string, blocks: InstructionBlocks): Promise<InstructionInspectResult> {
@@ -194,7 +188,8 @@ export class InstructionSyncService {
   }
 
   forget(sessionID: string): void {
-    this.singleFlight.delete(sessionID);
+    // Singleflight entries are self-cleaning (finally callback), so there's
+    // nothing to manually delete. Kept as a no-op for API compatibility.
   }
 
   reset(): void {

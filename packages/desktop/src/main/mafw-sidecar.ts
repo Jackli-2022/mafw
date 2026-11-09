@@ -548,6 +548,9 @@ export async function startGateway(): Promise<void> {
     externalCli: cliProbe,
     running,
     legacyExternalOverride,
+    // Dev convenience by default; MAFW_DEV_ADOPT=0 forces the repo gateway so
+    // gateway-side changes can be exercised against a running global daemon.
+    devAdoptRunningGateway: !app.isPackaged && process.env.MAFW_DEV_ADOPT !== "0",
   })
   writeLog("utility", "mafw gateway start plan", {
     mode: plan.mode,
@@ -574,12 +577,29 @@ export async function startGateway(): Promise<void> {
   }
 
   if (plan.mode === "managed" && plan.action === "adopt") {
-    if (running.kind !== "gateway" || !running.managedInstance) {
-      errorMessage = "managed instance registration disappeared during adoption"
+    if (running.kind !== "gateway") {
+      errorMessage = "gateway disappeared during adoption"
       notifyState("failed")
       return
     }
-    managedRecord = running.managedInstance
+    if (plan.instanceId) {
+      if (!running.managedInstance || running.managedInstance.instanceId !== plan.instanceId) {
+        errorMessage = "managed instance registration disappeared during adoption"
+        notifyState("failed")
+        return
+      }
+      managedRecord = running.managedInstance
+    } else {
+      // Dev-only adoption of a gateway we did not spawn and did not register
+      // (usually the global `mafw daemon`). Never stop it on quit.
+      managedRecord = null
+      writeLog(
+        "utility",
+        "mafw dev adopting running gateway",
+        { instanceId: running.health.instanceId ?? null, distribution: running.health.distribution ?? null },
+        "warn",
+      )
+    }
     spawnedByUs = false
     actualHealth = running.health
     port = 3000

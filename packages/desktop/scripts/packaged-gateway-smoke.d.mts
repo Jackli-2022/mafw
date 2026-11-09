@@ -27,6 +27,8 @@ export function assertSmokeHealth(
   expected?: { gatewayVersion?: string; experienceVersion?: string; schemaEpoch?: number },
 ): void
 
+export function assertPackagedPayload(resourcesRoot: string): number
+
 export function parseSmokeArgs(
   args: string[],
   platform?: NodeJS.Platform,

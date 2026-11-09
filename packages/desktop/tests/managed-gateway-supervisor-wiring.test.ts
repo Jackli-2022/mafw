@@ -27,11 +27,13 @@ test("managed spawn pins port and identity and never writes the CLI pid file", (
   assert.doesNotMatch(sidecar, /writeGatewayPidFile|clearGatewayPidFile|mafw-pid-file/)
 })
 
-test("startup probes ownership before planning and never adopts an unregistered gateway", () => {
+test("startup probes ownership before planning and never adopts an unregistered gateway when packaged", () => {
   assert.match(sidecar, /const running = await probeGatewayAt\(3000\)/)
   assert.match(sidecar, /readGatewayInstanceRecords\(INSTANCE_ROOT, CHANNEL\)/)
   assert.match(sidecar, /preference: sourcePreference/)
   assert.match(sidecar, /running,/)
+  // Dev attaches to an already-running gateway; packaged builds never do.
+  assert.match(sidecar, /devAdoptRunningGateway: !app\.isPackaged && process\.env\.MAFW_DEV_ADOPT !== "0"/)
   assert.match(sidecar, /plan\.mode === "conflict"/)
   assert.match(sidecar, /plan\.action === "adopt"/)
 })

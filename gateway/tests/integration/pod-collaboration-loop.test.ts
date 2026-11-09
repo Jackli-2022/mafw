@@ -175,6 +175,7 @@ describe('pod collaborative goal loop (Task 22 e2e)', () => {
       now: () => NOW,
       newId: seq('id'),
       broadcast: () => {},
+      currentRuntime: () => 'opencode',
       getManagerSession: async () => 'ses_manager',
       getSession: async () => ({ time: { idle: 1 } }),
       messages: async () => [],
@@ -185,13 +186,14 @@ describe('pod collaborative goal loop (Task 22 e2e)', () => {
     const detail = await pods.ensure(projectDir);
     const podId = detail.pod.id;
 
-    const supervisor = new PodSessionSupervisor({ store, now: () => NOW, isAlive: () => true });
+    const supervisor = new PodSessionSupervisor({ store, now: () => NOW, runtimeName: () => 'opencode', isAlive: () => true });
 
     let techSessionSeq = 0;
     const techLead = new PodTechLeadService({
       store,
       pods,
       sessions: supervisor,
+      runtimeName: () => 'opencode',
       runtime: {
         createSession: async () => `ses_tech_${++techSessionSeq}`,
         promptAsync: async ({ sessionID, agent, parts }) => {
@@ -273,6 +275,7 @@ describe('pod collaborative goal loop (Task 22 e2e)', () => {
     // Task 17: every worker prompt carries the real per-Goal ContextManifest.
     const contexts = new PodContextSelectionService({
       store,
+      runtimeName: () => 'opencode',
       resolveMafwDir: () => mafwDir,
       now: () => NOW,
       log: () => {},
@@ -557,6 +560,7 @@ describe('pod collaboration migration checks (Task 22)', () => {
       now: () => NOW,
       newId: seq('id'),
       broadcast: () => {},
+      currentRuntime: () => 'opencode',
       getManagerSession: async () => 'ses_manager',
       getSession: async () => ({ time: { idle: 1 } }),
       messages: async () => [],

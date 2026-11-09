@@ -43,6 +43,21 @@ describe('Lead lifecycle wiring', () => {
     expect(indexSource).toContain('private async reconcilePodLeads()');
   });
 
+  test('Lead registry reads the live runtime name and uses the neutral liveness check', () => {
+    expect(indexSource).toContain('runtimeName: () => this.runtimeName');
+    expect(indexSource).toContain("import { isLiveSessionInfo } from './runtime/session-liveness'");
+    const probe = section('isAlive: async (sessionId) => {', 'registerLead: async (sessionId, dir) => {');
+    expect(probe).toContain('isLiveSessionInfo');
+  });
+
+  test('Pod session supervisor uses the same neutral liveness check', () => {
+    const supervisor = section(
+      'this.podSessionSupervisor = new PodSessionSupervisor({',
+      'this.podSessionLifecycle = new PodSessionLifecycle({',
+    );
+    expect(supervisor).toContain('isLiveSessionInfo');
+  });
+
   test('internal rotate archives through the Lead path, not legacy manager metadata', () => {
     const downgrade = section('downgrade: async (sid) => {', 'create: (pd) => this.rotateCreateManagerSession(pd),');
     expect(downgrade).toContain('this.archiveLeadSession(sid)');

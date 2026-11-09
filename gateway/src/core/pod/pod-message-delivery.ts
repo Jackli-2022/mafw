@@ -5,15 +5,22 @@ export type DeliveryDecision = 'push' | 'pull' | 'pending';
 export interface PodMessageDeliveryDeps {
   store: PodStore;
   promptAsync(input: { sessionID: string; message: string; delivery?: 'queue' }): Promise<void>;
+  /** Live runtime name — never push/claim a session owned by another runtime. */
+  runtimeName(): string;
   /** Broadcast a pod change after a message becomes delivered (badge/待投递 refresh). */
   notify?(podId: string): void;
   now?(): string;
   log?(message: string): void;
 }
 
-function activeSessionForMember(store: PodStore, podId: string, memberId: string): PodSessionRow | null {
-  return [...store.listSessions(podId)]
-    .filter((session) => session.memberId === memberId && !session.endedAt)
+function activeSessionForMember(
+  store: PodStore,
+  podId: string,
+  memberId: string,
+  runtime: string,
+): PodSessionRow | null {
+  return [...store.listActiveSessions(podId, runtime)]
+    .filter((session) => session.memberId === memberId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
 }
 
@@ -23,7 +30,7 @@ export class PodMessageDelivery {
   decide(messageId: string): DeliveryDecision {
     const message = this.findMessage(messageId);
     if (!message || !message.toMemberId) return 'pending';
-    const session = activeSessionForMember(this.deps.store, message.podId, message.toMemberId);
+    const session = activeSessionForMember(this.deps.store, message.podId, message.toMemberId, this.deps.runtimeName());
     if (!session) return 'pending';
     return session.node === 'coordination' ? 'push' : 'pull';
   }
@@ -43,7 +50,7 @@ export class PodMessageDelivery {
     // pull-by-design node handoff into an immediate push.
     if (this.decide(messageId) !== 'push') return 'pending';
 
-    const session = activeSessionForMember(this.deps.store, message.podId, message.toMemberId);
+    const session = activeSessionForMember(this.deps.store, message.podId, message.toMemberId, this.deps.runtimeName());
     if (!session) return 'pending';
     try {
       await this.deps.promptAsync({
@@ -67,7 +74,7 @@ export class PodMessageDelivery {
   }
 
   claimPendingForSession(sessionId: string): { block: string; ids: string[] } | null {
-    const member = this.deps.store.getMemberBySession(sessionId);
+    const member = this.deps.store.getMemberBySession(sessionId, this.deps.runtimeName());
     if (!member) return null;
     const messages = this.deps.store.listPendingMessages(member.podId, member.id);
     if (messages.length === 0) return null;
@@ -78,7 +85,7 @@ export class PodMessageDelivery {
   }
 
   commitDelivered(ids: string[], sessionId: string): void {
-    const member = this.deps.store.getMemberBySession(sessionId);
+    const member = this.deps.store.getMemberBySession(sessionId, this.deps.runtimeName());
     if (!member) return;
     const now = this.now();
     let podId: string | null = null;

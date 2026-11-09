@@ -1,10 +1,13 @@
 import { PodError, PodStore, type PodMemberRole, type PodMemberRow } from './pod-store';
 
 export class PodAccess {
-  constructor(private readonly store: PodStore) {}
+  constructor(
+    private readonly store: PodStore,
+    private readonly runtimeName: () => string,
+  ) {}
 
   requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow {
-    const member = this.store.getMemberBySession(sessionId);
+    const member = this.store.getMemberBySession(sessionId, this.runtimeName());
     if (!member) throw new PodError(403, `session is not a pod member: ${sessionId}`);
     if (podId && member.podId !== podId) {
       throw new PodError(403, `session belongs to another pod: ${member.podId}`);

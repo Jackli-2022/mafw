@@ -51,11 +51,13 @@ function makeFixture(opts: { request?: Record<string, unknown>; activeRevision?:
   ]);
   const members = new Map<string, any>([
     ['ses_lead', { id: 'mem_lead', podId: 'pod_1', role: 'lead' }],
+    ['ses_pi_lead', { id: 'mem_lead_pi', podId: 'pod_1', role: 'lead', runtime: 'pi' }],
     ['ses_tl', { id: 'mem_tl', podId: 'pod_1', role: 'tech_lead' }],
     ['ses_builder', { id: 'mem_b', podId: 'pod_1', role: 'builder' }],
     ['ses_reviewer', { id: 'mem_r', podId: 'pod_1', role: 'reviewer' }],
     ['ses_other_lead', { id: 'mem_lead2', podId: 'pod_2', role: 'lead' }],
   ]);
+  const runtimeRef = { current: 'opencode' };
   const store: any = {
     getGoalByGoalId: (goalId: string) => (
       goalId === 'g1'
@@ -70,16 +72,21 @@ function makeFixture(opts: { request?: Record<string, unknown>; activeRevision?:
         ? { id: 'pod_1', projectDir: mafwDir, status: 'active' }
         : null
     ),
-    getMemberBySession: (sessionId: string) => members.get(sessionId) ?? null,
+    getMemberBySession: (sessionId: string, runtime?: string) => {
+      const member = members.get(sessionId) ?? null;
+      if (!member) return null;
+      return (member.runtime ?? 'opencode') === (runtime ?? 'opencode') ? member : null;
+    },
   };
 
   const service = new PodContextSelectionService({
     store,
     resolveMafwDir: (goalId: string) => (goalId === 'g1' ? mafwDir : null),
+    runtimeName: () => runtimeRef.current,
     now: () => NOW,
   });
 
-  return { mafwDir, goalDir, store, service };
+  return { mafwDir, goalDir, store, service, runtimeRef };
 }
 
 function selectionFile(goalDir: string): any {
@@ -97,6 +104,18 @@ describe('PodContextSelectionService', () => {
       ).rejects.toMatchObject({ status: 403 });
     }
     expect(selectionFile(f.goalDir)).toBeNull();
+  });
+
+  test('a Lead session from another runtime cannot change the Goal context', async () => {
+    const f = makeFixture();
+    f.runtimeRef.current = 'pi';
+    await expect(
+      f.service.select({ goalId: 'g1', revision: 2, refs: [{ path: 'notes/design.md' }] }, 'ses_lead'),
+    ).rejects.toMatchObject({ status: 403 });
+    // Only the pi-owned Lead is accepted while the active runtime is pi.
+    await expect(
+      f.service.select({ goalId: 'g1', revision: 2, refs: [{ path: 'notes/design.md' }] }, 'ses_pi_lead'),
+    ).resolves.toMatchObject({ revision: 2 });
   });
 
   test('the Lead adds an optional in-Goal ref and the manifest path/hash are persisted', async () => {
@@ -273,6 +292,7 @@ describe('PodContextSelectionService', () => {
 
     const broken = new PodContextSelectionService({
       store: f.store,
+      runtimeName: () => 'opencode',
       resolveMafwDir: () => null,
       now: () => NOW,
     });
