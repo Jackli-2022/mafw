@@ -8,6 +8,7 @@ const sidecar = read("../src/main/mafw-sidecar.ts")
 const ipc = read("../src/main/mafw-ipc.ts")
 const preload = read("../src/preload/mafw-api.ts")
 const preloadTypes = read("../src/preload/mafw-types.ts")
+const main = read("../src/main/index.ts")
 
 test("managed entry resolves packaged resources or the repository gateway", () => {
   assert.match(sidecar, /import \{ resolveGatewayEntry \} from "\.\/mafw-gateway-resolver"/)
@@ -49,6 +50,16 @@ test("status carries source, expected/actual versions and instance identity", ()
   assert.match(sidecar, /actualVersion:\s*actualHealth\?\.gatewayVersion \?\? null/)
   assert.match(sidecar, /instanceId:\s*actualHealth\?\.instanceId \?\? managedRecord\?\.instanceId \?\? null/)
   assert.match(sidecar, /distribution:\s*actualHealth\?\.distribution \?\? null/)
+})
+
+test("quit waits for the managed gateway and never uses the WSL-only stop callback", () => {
+  assert.match(main, /const updater = setupAutoUpdater\(stopGateway\)/)
+  assert.match(main, /createQuitCoordinator\(\{/)
+  assert.match(main, /event\.preventDefault\(\)/)
+  assert.match(main, /void quitCoordinator\.requestQuit\(\)/)
+  assert.match(main, /Promise\.allSettled\(\[stopSidecars\(\), stopGateway\(\)\]\)/)
+  assert.doesNotMatch(main, /setupAutoUpdater\(stopSidecars\)/)
+  assert.doesNotMatch(sidecar, /installQuitHook|app\.on\("will-quit"/)
 })
 
 test("IPC and preload expose source switching and forced managed retry", () => {
