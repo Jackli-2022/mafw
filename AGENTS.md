@@ -1976,6 +1976,10 @@ spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.m
   updater/config 测试与 packaged smoke；CI 在 Win/Linux 打包后分别跑
   `npm run smoke:packaged-gateway -- --app-root dist/<unpacked>`。本地可用
   `npm run smoke:packaged-gateway -- --payload-only`（Electron ABI staged gateway）。
+- **Dev 与已运行 gateway**：源码 checkout（`!app.isPackaged`）默认仍走 managed，但发现 3000 上已有
+  健康 gateway（通常是全局 `mafw daemon` 或旧 dev 实例）时**直接采纳**（`devAdoptRunningGateway`，
+  不登记、不接管所有权、退出时不杀它），避免 dev 与全局 daemon 抢端口。打包版保持原语义：未登记
+  进程一律 conflict，绝不静默采纳。
 - **本地自签名**（`npm run sign:dev` / `sign:dev:clean`，`scripts/win-self-sign.ps1`）：仅在
   `MAFW_WIN_SELF_SIGN=1` 时启用 `win.signtoolOptions`（`certificateSubjectName` / `publisherName` /
   仅 SHA-256）+ `forceCodeSigning`；`publisherName` 写进 `app-update.yml` 供 electron-updater 校验。

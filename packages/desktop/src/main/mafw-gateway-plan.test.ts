@@ -85,8 +85,51 @@ describe("planGatewayStart", () => {
     expect(newer.mode === "conflict" ? newer.reason : null).toBe("managed-newer")
   })
 
-  test("a non-gateway port conflict is surfaced instead of killed", () => {
-    const plan = planGatewayStart(input({ running: { kind: "port-conflict" } }))
+  test("dev managed adopts a running standalone gateway instead of conflicting", () => {
+    const plan = planGatewayStart(input({
+      packaged: false,
+      managedEntry: "C:/repo/gateway/dist/index.js",
+      devAdoptRunningGateway: true,
+      running: {
+        kind: "gateway",
+        health: {
+          ...health,
+          instanceId: "standalone-1",
+          distribution: "standalone",
+          channel: "standalone",
+        },
+        managedInstance: null,
+      },
+    }))
+
+    expect(plan).toEqual({
+      mode: "managed",
+      entry: "C:/repo/gateway/dist/index.js",
+      action: "adopt",
+    })
+  })
+
+  test("dev managed still refuses a running gateway that does not answer as a gateway", () => {
+    const plan = planGatewayStart(input({
+      packaged: false,
+      managedEntry: "C:/repo/gateway/dist/index.js",
+      devAdoptRunningGateway: true,
+      running: { kind: "port-conflict" },
+    }))
+    expect(plan.mode).toBe("conflict")
+    expect(plan.mode === "conflict" ? plan.reason : null).toBe("port-conflict")
+  })
+
+  test("packaged managed never adopts an unregistered gateway even when dev adoption is requested", () => {
+    const plan = planGatewayStart(input({
+      devAdoptRunningGateway: true,
+      running: { kind: "gateway", health, managedInstance: null },
+    }))
+    expect(plan.mode).toBe("conflict")
+    expect(plan.mode === "conflict" ? plan.reason : null).toBe("external-unregistered")
+  })
+
+  test("a non-gateway port conflict is surfaced instead of killed", () => {    const plan = planGatewayStart(input({ running: { kind: "port-conflict" } }))
     expect(plan.mode).toBe("conflict")
     expect(plan.mode === "conflict" ? plan.reason : null).toBe("port-conflict")
   })
