@@ -90,6 +90,8 @@ export interface PodGoalView {
   resultReady: boolean;
   /** User accepted and merged this revision's worktree. */
   accepted: boolean;
+  /** Last driver error (worktree provisioning, runtime, artifact); old goals may be null. */
+  lastError?: string | null;
   /** 当前计划任务的真实计数；没有计划任务时为 null（客户端不得伪造 0/0）。 */
   progress?: PodGoalProgress | null;
   sourceRef: GoalSourceRef | null;
@@ -219,6 +221,7 @@ export function buildPodGoalView(
     bucket: projectPodWorkBucket({ stage, status: row.status, resultReady, accepted: description?.accepted === true }),
     resultReady,
     accepted: description?.accepted === true,
+    lastError: description?.lastError ?? null,
     progress,
     sourceRef: description?.sourceRef ?? null,
     strategy: description?.strategy ?? null,

@@ -1,5 +1,6 @@
 import * as os from 'os';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import {
   podWorktreeBranch,
   podWorktreeDir,
@@ -23,6 +24,13 @@ describe('pod worktree path rules', () => {
   test('never returns an empty slug', () => {
     expect(safePodGoalSlug('')).not.toBe('');
     expect(safePodGoalSlug('///')).not.toBe('');
+  });
+
+  test('always forms a valid git branch name', () => {
+    for (const id of ['../goal/2026-11-09', '..', '.hidden', 'a b', '-dash', 'trailing.']) {
+      const slug = safePodGoalSlug(id);
+      expect(() => execSync(`git check-ref-format --branch mafw/${slug}-r1`, { stdio: 'ignore' })).not.toThrow();
+    }
   });
 
   test('branch is revision scoped', () => {

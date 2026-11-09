@@ -128,6 +128,11 @@ describe("podResultWorktreeRows", () => {
     assert.equal(rows[3].value, "abcdef1")
   })
 
+  test("a failed result does not label its worktree as waiting for acceptance", () => {
+    const rows = podResultWorktreeRows(result({ verdict: "FAIL", acceptance: "unavailable" }))
+    assert.equal(rows.find((row) => row.label === "状态")?.value, "未合并")
+  })
+
   test("abandoned and missing worktrees carry a warning", () => {
     const abandoned = podResultWorktreeRows(result({
       worktree: { ...result().worktree!, status: "abandoned" },
@@ -160,8 +165,8 @@ describe("podResultConditionRows", () => {
         { id: "g2", statement: "文档更新", required: false },
       ],
       goalResults: [
-        { id: "g1", result: "pass", evidence: "npm test 42/42" },
-        { id: "g2", result: "skipped", evidence: "README 未涉及" },
+        { conditionId: "g1", result: "pass", evidence: "npm test 42/42" },
+        { conditionId: "g2", result: "skipped", evidence: "README 未涉及" },
       ],
     }))
     assert.deepEqual(rows, [
@@ -183,8 +188,8 @@ describe("podResultConditionRows", () => {
     const rows = podResultConditionRows(result({
       goalConditions: [{ id: "g1", statement: "构建通过", required: true }],
       goalResults: [
-        { id: "g1", result: "pass", evidence: "ok" },
-        { id: "g9", result: "fail", evidence: "未声明却失败" },
+        { conditionId: "g1", result: "pass", evidence: "ok" },
+        { conditionId: "g9", result: "fail", evidence: "未声明却失败" },
       ],
     }))
     assert.equal(rows.length, 2)
@@ -201,8 +206,8 @@ describe("podResultConditionRows", () => {
     const rows = podResultConditionRows(result({
       goalConditions: [{ id: "g1", statement: "构建通过", required: true }],
       goalResults: [
-        { id: "g1", result: "pass", evidence: "first" },
-        { id: "g1", result: "fail", evidence: "second" },
+        { conditionId: "g1", result: "pass", evidence: "first" },
+        { conditionId: "g1", result: "fail", evidence: "second" },
       ],
     }))
     assert.equal(rows[0].result, "通过")

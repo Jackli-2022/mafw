@@ -1189,7 +1189,10 @@ class MafwScheduler {
       workdirForRevision: async (goalId, revision) => {
         const goal = this.podStore?.getGoalByGoalId(goalId);
         if (!goal) return null;
-        return (await this.podWorktreeService.ensure(goal.podId, goalId, revision)).dir;
+        // No row = legacy/in-flight Goal from before worktree support: never retrofit
+        // mid-Goal (its earlier work lives in the project checkout).
+        const worktree = await this.podWorktreeService.ensureExisting(goal.podId, goalId, revision);
+        return worktree?.dir ?? null;
       },
       newApprovalId: () => `pa_${randomUUID()}`,
       canCreateNode: (goalId: string) => {

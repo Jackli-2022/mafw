@@ -1216,6 +1216,8 @@ export interface PodGoal {
   resultReady: boolean
   /** User accepted and merged this revision's worktree; absent on old gateways. */
   accepted?: boolean
+  /** Last driver error (e.g. worktree_unavailable); absent on old gateways. */
+  lastError?: string | null
   /** Real plan-task counts; absent on old gateways or Goals without a plan. */
   progress?: PodGoalProgress | null
   sourceRef?: GoalSourceRef | null
@@ -1301,7 +1303,7 @@ export interface PodGoalResult {
   assessment?: PodGoalAssessment | null
   goalAcceptance: string[]
   goalConditions?: Array<{ id: string; statement: string; required: boolean }>
-  goalResults?: Array<{ id: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
+  goalResults?: Array<{ conditionId: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
   goalEvalValid?: boolean
   tasks: Array<{ taskId: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
   reviewFeedback: string

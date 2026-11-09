@@ -4,6 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { PodError, PodStore, type PodMemberRole } from '../../../src/core/pod/pod-store';
 import { PodSessionSupervisor } from '../../../src/core/pod/pod-session-supervisor';
+import { PodWorktreeService } from '../../../src/core/pod/pod-worktree-service';
+import { tmpGitRepo } from '../worktree/tmp-git';
 import type { PodDetail } from '../../../src/core/pod/pod-service';
 import {
   PodTechLeadService,
@@ -263,5 +265,64 @@ describe('PodTechLeadService', () => {
 
     // A later ensure retries and succeeds with the same created Goal.
     await expect(service.ensureSession(created.goalId)).resolves.toBe('ses_tech_lead');
+  });
+
+  test('rejects a non-git project before writing discussion files', async () => {
+    const nonGit = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-nongit-'));
+    try {
+      const withWorktrees = new PodTechLeadService({
+        store,
+        pods: { ensure: jest.fn(async () => detail) },
+        sessions: supervisor,
+        runtime,
+        worktrees: new PodWorktreeService({ store, now: () => LATER }),
+        resolveProject: () => ({ projectDir: nonGit, mafwDir: path.join(nonGit, '.mafw') }),
+        now: () => LATER,
+        newId: () => 'pg_nongit',
+        newGoalId: () => 'goal-nongit',
+        registerInternalSession,
+        emitGoalCreated,
+        notify,
+      });
+
+      await expect(withWorktrees.createGoal({
+        podId: 'pod_1', projectDir: nonGit, title: 'Loop', objective: 'x', createdBy: 'ses_lead',
+      })).rejects.toMatchObject({ status: 409 });
+      expect(store.listGoals('pod_1')).toEqual([]);
+      expect(fs.existsSync(path.join(nonGit, '.mafw', 'goals', 'goal-nongit'))).toBe(false);
+      expect(runtime.createSession).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(nonGit, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects a repository subdirectory before writing discussion files', async () => {
+    const repo = tmpGitRepo('mafw-pod-subdir-');
+    const sub = path.join(repo, 'pkg');
+    fs.mkdirSync(sub);
+    try {
+      const withWorktrees = new PodTechLeadService({
+        store,
+        pods: { ensure: jest.fn(async () => detail) },
+        sessions: supervisor,
+        runtime,
+        worktrees: new PodWorktreeService({ store, now: () => LATER }),
+        resolveProject: () => ({ projectDir: sub, mafwDir: path.join(sub, '.mafw') }),
+        now: () => LATER,
+        newId: () => 'pg_subdir',
+        newGoalId: () => 'goal-subdir',
+        registerInternalSession,
+        emitGoalCreated,
+        notify,
+      });
+
+      await expect(withWorktrees.createGoal({
+        podId: 'pod_1', projectDir: sub, title: 'Loop', objective: 'x', createdBy: 'ses_lead',
+      })).rejects.toMatchObject({ status: 409 });
+      expect(store.listGoals('pod_1')).toEqual([]);
+      expect(runtime.createSession).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

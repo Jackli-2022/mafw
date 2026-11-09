@@ -20,7 +20,7 @@ describe('Pod gateway wiring', () => {
     expect(source).toContain('new PodWorktreeService(');
     expect(source).toMatch(/worktrees:\s*this\.podWorktreeService/);
     expect(source).toContain('workdirForRevision:');
-    expect(source).toMatch(/workdirForRevision:[\s\S]{0,300}podWorktreeService\.ensure/);
+    expect(source).toMatch(/workdirForRevision:[\s\S]{0,800}ensureExisting/);
   });
 
   test('resolves A2A artifacts from the active revision worktree', () => {

@@ -452,29 +452,35 @@ export function GoalDetailPanel(props: {
       showToastV2({ description: "当前项目还没有鲸群，无法验收", duration: 3000 })
       return null
     }
+    let accepted: PodGoalAcceptResult
     try {
-      const accepted = await window.api.mafw.pod.acceptResult(podId, id, { confirm: true })
-      showToastV2({
-        description: `已验收：revision ${accepted.revision} 已合并（${accepted.mergeCommit.slice(0, 7)}）`,
-        variant: "success",
-        duration: 4000,
-      } as any)
-      await podStore.refresh()
-      await load(id)
-      await loadCollaboration(id)
-      return accepted
+      accepted = await window.api.mafw.pod.acceptResult(podId, id, { confirm: true })
     } catch (err: any) {
       const status = podHttpStatus(err)
       const description = status === 403
         ? "只有人类可以验收；agent 会话不能合并"
         : status === 409
-          ? "当前无法合并：主项目有未提交改动、分支已切换或存在冲突"
+          ? `当前无法合并：${String(err?.message ?? err).slice(0, 160)}`
           : status === 503
             ? "当前 gateway 不支持验收，请升级"
             : `验收失败：${String(err?.message ?? err).slice(0, 120)}`
       showToastV2({ description, duration: 3800 })
       return null
     }
+    // The merge already happened: a refresh blip must not make the UI claim it failed.
+    showToastV2({
+      description: `已验收：revision ${accepted.revision} 已合并（${accepted.mergeCommit.slice(0, 7) || "无新提交"}）`,
+      variant: "success",
+      duration: 4000,
+    } as any)
+    try {
+      await podStore.refresh()
+      await load(id)
+      await loadCollaboration(id)
+    } catch {
+      // best-effort: worktree card flips locally from the returned merge result
+    }
+    return accepted
   }
 
   const rejectGoal = async (feedback: string): Promise<boolean> => {
@@ -653,6 +659,10 @@ export function GoalDetailPanel(props: {
                 )}
               </Show>
             </div>
+
+            <Show when={podGoal()?.lastError}>
+              {(message) => <div class="mafw-goal-hint">最近错误：{message()}</div>}
+            </Show>
 
             <Show when={currentAction()}>
               {(action) => (

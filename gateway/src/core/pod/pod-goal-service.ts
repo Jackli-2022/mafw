@@ -114,15 +114,30 @@ export interface PodGoalServiceDeps {
     source?: string | null;
   }): unknown };
   /** Revision worktree lifecycle; production always injects PodWorktreeService. */
-  worktrees?: Pick<PodWorktreeService, 'get' | 'commitPending' | 'mergeForAcceptance' | 'markAbandoned'>;
+  worktrees?: Pick<PodWorktreeService, 'get' | 'ensure' | 'commitPending' | 'mergeForAcceptance' | 'markAbandoned'>;
   log?(message: string): void;
 }
 
 export class PodGoalService {
   /** 已广播过结果事件的 `<podId>/<goalId>#<revision>`（best-effort 去重；重启后最多重发一次）。 */
   private readonly notifiedResults = new Set<string>();
+  /** Accept/reject must be serialized per Goal: a rejected revision can never merge later. */
+  private readonly goalMutations = new Map<string, Promise<unknown>>();
 
   constructor(private readonly deps: PodGoalServiceDeps) {}
+
+  private runGoalMutation<T>(podId: string, goalId: string, run: () => Promise<T>): Promise<T> {
+    const key = `${podId}\u0000${goalId}`;
+    const previous = this.goalMutations.get(key) ?? Promise.resolve();
+    const result = previous.catch(() => undefined).then(run);
+    let tail: Promise<unknown>;
+    const cleanup = () => {
+      if (this.goalMutations.get(key) === tail) this.goalMutations.delete(key);
+    };
+    tail = result.then(cleanup, cleanup);
+    this.goalMutations.set(key, tail);
+    return result;
+  }
 
   async enqueueGoal(
     goalId: string,
@@ -501,7 +516,8 @@ export class PodGoalService {
     goalId: string,
     opts: { revision?: number } = {},
   ): Promise<PodGoalAcceptResult> {
-    const row = this.requireGoalRow(podId, goalId);
+    return this.runGoalMutation(podId, goalId, async () => {
+      const row = this.requireGoalRow(podId, goalId);
     const revision = opts.revision ?? row.activeRevision;
     if (!Number.isInteger(revision) || revision < 1) {
       throw new PodError(400, 'revision must be a positive integer');
@@ -531,6 +547,7 @@ export class PodGoalService {
     const merged = await this.deps.worktrees!.mergeForAcceptance(podId, goalId, revision);
     this.deps.notify(podId, 'result', goalId);
     return { podId, goalId, revision, ...merged };
+    });
   }
 
   /**
@@ -587,6 +604,7 @@ export class PodGoalService {
    * 新 revision 从 `discussing` 开始（Tech Lead 讨论立即恢复），并带上打回优先级。
    */
   async rejectResult(podId: string, goalId: string, feedback: string): Promise<PodRejectResult> {
+    return this.runGoalMutation(podId, goalId, async () => {
     const reason = typeof feedback === 'string' ? feedback.trim() : '';
     if (!reason) throw new PodError(400, 'reject feedback is required');
     const row = this.requireGoalRow(podId, goalId);
@@ -644,6 +662,8 @@ export class PodGoalService {
     let sessionID: string | null = null;
     let sessionError: string | undefined;
     try {
+      // New revision inherits from the rejected one: provision its checkout before discussion.
+      await this.deps.worktrees?.ensure(podId, goalId, reopened.revision);
       sessionID = (await this.deps.techLead?.ensureSession(goalId)) ?? null;
     } catch (err: any) {
       sessionError = String(err?.message ?? err);
@@ -665,6 +685,7 @@ export class PodGoalService {
       sessionID,
       ...(sessionError ? { sessionError } : {}),
     };
+    });
   }
 
   list(podId: string): PodGoalRow[] {

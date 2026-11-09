@@ -57,7 +57,7 @@ export interface PodTechLeadServiceDeps {
   sessions: Pick<PodSessionSupervisor, 'ensure' | 'current'>;
   runtime: PodTechLeadRuntime;
   /** revision checkout provider; production always injects PodWorktreeService. */
-  worktrees?: Pick<PodWorktreeService, 'ensure'>;
+  worktrees?: Pick<PodWorktreeService, 'ensure' | 'ensureExisting' | 'assertProjectRoot'>;
   /** 项目解析（与 intake 同一来源）：返回 canonical projectDir 与 mafwDir。 */
   resolveProject(projectDir?: string): { projectDir: string; mafwDir: string } | null;
   now?(): string;
@@ -170,6 +170,8 @@ export class PodTechLeadService {
       }
     }
     const projectDir = detail.pod.projectDir || resolved.projectDir;
+    // Fail before writing any discussion files: Pod worktrees require the repo root.
+    await this.deps.worktrees?.assertProjectRoot(projectDir);
     const techLead = this.techLeadMember(detail);
     const now = this.now();
     const goalId = clean(input.goalId)
@@ -257,6 +259,8 @@ export class PodTechLeadService {
     let sessionID: string | null = null;
     let sessionError: string | undefined;
     try {
+      // New Goal: provision the revision checkout exactly once, before the discussion session.
+      await this.deps.worktrees?.ensure(detail.pod.id, goalId, revision);
       sessionID = await this.ensureScopedSession(
         detail.pod.id,
         techLead.id,
@@ -396,9 +400,12 @@ export class PodTechLeadService {
   ): Promise<string> {
     const scope: PodSessionScope = { podId, memberId, goalId, revision, kind: 'discussion' };
     const lease: PodSessionLease = await this.deps.sessions.ensure(scope, async () => {
-      const sessionDir = this.deps.worktrees
-        ? (await this.deps.worktrees.ensure(podId, goalId, revision)).dir
-        : projectDir;
+      // Discussion reuses the revision checkout that was created with the Goal/revision.
+      // No row = legacy/in-flight Goal: keep the project dir instead of retrofitting.
+      const worktree = this.deps.worktrees
+        ? await this.deps.worktrees.ensureExisting(podId, goalId, revision)
+        : null;
+      const sessionDir = worktree?.dir ?? projectDir;
       const sessionId = await this.deps.runtime.createSession({ projectDir: sessionDir, goalId, revision });
       return sessionId;
     });

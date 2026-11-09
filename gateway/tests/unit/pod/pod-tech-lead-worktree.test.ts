@@ -73,4 +73,59 @@ describe('Pod Tech Lead worktree session', () => {
       fs.rmSync(dbDir, { recursive: true, force: true });
     }
   });
+
+  test('a legacy Goal without a worktree row keeps the project directory', async () => {
+    const repo = tmpGitRepo('mafw-pod-tl-legacy-');
+    const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-tl-db-'));
+    const db = new Database(path.join(dbDir, 'test.db'));
+    try {
+      const store = new PodStore(db);
+      const now = '2026-11-09T00:00:00.000Z';
+      store.ensurePod({ id: 'pod_1', projectDir: repo, name: 'repo', now });
+      store.upsertMember({
+        id: 'm_tl', podId: 'pod_1', role: 'tech_lead', displayName: 'Tech Lead',
+        agentName: 'mafw-tech-lead', modelProvider: null, modelId: null,
+        status: 'available', configJson: null, now,
+      });
+      const goalRow = store.enqueueGoal({ id: 'pg_legacy', podId: 'pod_1', goalId: 'goal-legacy', now });
+      store.setGoalStatus(goalRow.id, 'active', { startedAt: now });
+      store.createGoalRevision({
+        podId: 'pod_1', goalId: 'goal-legacy', revision: 1, status: 'discussing', now,
+      });
+      const detail = {
+        pod: store.getPod('pod_1')!,
+        members: store.listMembers('pod_1'),
+        goals: [],
+        tasks: [],
+        sessions: store.listSessions('pod_1'),
+      };
+      const runtime = {
+        createSession: jest.fn(async () => 'ses_tl'),
+        promptAsync: jest.fn(async () => ({})),
+        messages: jest.fn(async () => ({ data: [], nextCursor: null })),
+      };
+      const service = new PodTechLeadService({
+        store,
+        pods: { ensure: jest.fn(async () => detail) },
+        sessions: new PodSessionSupervisor({ store, now: () => now, newId: () => 'podsess_1' }),
+        runtime,
+        worktrees: new PodWorktreeService({ store, now: () => now }),
+        resolveProject: () => ({ projectDir: repo, mafwDir: path.join(dbDir, '.mafw') }),
+        now: () => now,
+        newId: () => 'pg_legacy',
+        newGoalId: () => 'goal-legacy',
+        registerInternalSession: jest.fn(),
+        emitGoalCreated: jest.fn(),
+        notify: jest.fn(),
+      });
+
+      await expect(service.ensureSession('goal-legacy')).resolves.toBe('ses_tl');
+      expect(runtime.createSession).toHaveBeenCalledWith(expect.objectContaining({ projectDir: repo }));
+      expect(store.getGoalWorktree('pod_1', 'goal-legacy', 1)).toBeNull();
+    } finally {
+      db.close();
+      fs.rmSync(repo, { recursive: true, force: true });
+      fs.rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
 });

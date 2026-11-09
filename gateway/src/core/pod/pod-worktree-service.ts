@@ -21,7 +21,11 @@ export interface PodWorktreeMergeResult {
   mergedAt: string;
 }
 
-const MAFW_IDENTITY = ['-c', 'user.name=MAFW', '-c', 'user.email=mafw@localhost'];
+const MAFW_IDENTITY = [
+  '-c', 'user.name=MAFW',
+  '-c', 'user.email=mafw@localhost',
+  '-c', 'commit.gpgsign=false',
+];
 
 function canonical(value: string): string {
   const resolved = path.resolve(value);
@@ -62,6 +66,36 @@ export class PodWorktreeService {
     return this.deps.store.getGoalWorktree(podId, goalId, revision);
   }
 
+  /**
+   * Only reconcile an already-provisioned revision (recover a deleted dir).
+   * Returns null when the row does not exist: in-flight Goals created before
+   * this feature must not be retrofitted into a worktree (they keep the project
+   * checkout and acceptance stays unavailable).
+   */
+  async ensureExisting(
+    podId: string,
+    goalId: string,
+    revision: number,
+  ): Promise<PodGoalWorktreeRow | null> {
+    const existing = this.get(podId, goalId, revision);
+    if (!existing) return null;
+    if (existing.status === 'merged' || existing.status === 'abandoned') return existing;
+    if (fs.existsSync(existing.dir)) return existing;
+    const pod = this.deps.store.getPod(podId);
+    if (!pod) throw new PodError(404, `pod not found: ${podId}`);
+    await this.attachMissing(existing, pod.projectDir, goalId, revision);
+    return this.get(podId, goalId, revision) ?? existing;
+  }
+
+  /** Preflight used before writing Goal intake: Pod project must be the repo root. */
+  async assertProjectRoot(projectDir: string): Promise<string> {
+    const repoRoot = await this.repoRoot(projectDir);
+    if (!samePath(projectDir, repoRoot)) {
+      throw new PodError(409, `pod worktree requires project root; got subdirectory ${projectDir}`);
+    }
+    return repoRoot;
+  }
+
   async ensure(podId: string, goalId: string, revision: number): Promise<PodGoalWorktreeRow> {
     const key = `${podId}\u0000${goalId}\u0000${revision}`;
     const pending = this.inflight.get(key);
@@ -79,6 +113,7 @@ export class PodWorktreeService {
     if (!fs.existsSync(row.dir)) return { commit: null };
     const git = this.gitFor(row.dir);
     try {
+      await this.assertWorktreeBranch(git, row);
       await git.raw(['add', '-A', '--', '.']);
       await git.raw(['reset', '-q', '--', '.mafw']).catch(() => {});
       const staged = await git.raw(['diff', '--cached', '--name-only']);
@@ -104,8 +139,11 @@ export class PodWorktreeService {
     const row = this.get(podId, goalId, revision);
     if (!row) throw new PodError(409, `goal revision has no worktree: ${goalId}#${revision}`);
     if (row.status === 'merged') {
-      if (!row.mergeCommit) throw new PodError(409, `merged worktree has no merge commit: ${goalId}#${revision}`);
-      return { branch: row.branch, mergeCommit: row.mergeCommit, mergedAt: row.mergedAt ?? this.now() };
+      return {
+        branch: row.branch,
+        mergeCommit: row.mergeCommit ?? '',
+        mergedAt: row.mergedAt ?? this.now(),
+      };
     }
     if (row.status !== 'active') {
       throw new PodError(409, `goal revision worktree is not acceptable: ${row.status}`);
@@ -133,8 +171,9 @@ export class PodWorktreeService {
     }
 
     await this.commitPending(podId, goalId, revision);
+    const before = (await project.revparse(['HEAD'])).trim();
     try {
-      await project.raw([...MAFW_IDENTITY, 'merge', '--no-ff', '--no-edit', row.branch]);
+      await project.raw([...MAFW_IDENTITY, 'merge', '--no-ff', '--no-verify', '--no-edit', row.branch]);
       const unmerged = (await project.raw(['diff', '--name-only', '--diff-filter=U'])).trim();
       if (unmerged) {
         await project.raw(['merge', '--abort']).catch(() => {});
@@ -146,7 +185,10 @@ export class PodWorktreeService {
       throw new PodError(409, `worktree merge conflict: ${errorMessage(err)}`);
     }
 
-    const mergeCommit = (await project.revparse(['HEAD'])).trim();
+    const after = (await project.revparse(['HEAD'])).trim();
+    // An already-contained branch produces no merge commit ("Already up to date");
+    // leave it empty instead of claiming a pre-existing base commit was the merge.
+    const mergeCommit = after !== before ? after : '';
     const mergedAt = this.now();
     this.deps.store.updateGoalWorktree({
       podId,
@@ -178,20 +220,13 @@ export class PodWorktreeService {
   private async ensureInner(podId: string, goalId: string, revision: number): Promise<PodGoalWorktreeRow> {
     const existing = this.get(podId, goalId, revision);
     if (existing) {
-      if (existing.status === 'merged' || existing.status === 'abandoned') return existing;
-      if (fs.existsSync(existing.dir)) return existing;
-      const pod = this.deps.store.getPod(podId);
-      if (!pod) throw new PodError(404, `pod not found: ${podId}`);
-      await this.attachMissing(existing, pod.projectDir, goalId, revision);
-      return this.get(podId, goalId, revision) ?? existing;
+      const reconciled = await this.ensureExisting(podId, goalId, revision);
+      return reconciled ?? existing;
     }
 
     const pod = this.deps.store.getPod(podId);
     if (!pod) throw new PodError(404, `pod not found: ${podId}`);
-    const repoRoot = await this.repoRoot(pod.projectDir);
-    if (!samePath(pod.projectDir, repoRoot)) {
-      throw new PodError(409, `pod worktree requires project root; got subdirectory ${pod.projectDir}`);
-    }
+    const repoRoot = await this.assertProjectRoot(pod.projectDir);
 
     const branch = podWorktreeBranch(goalId, revision);
     const dir = podWorktreeDir(repoRoot, goalId, revision);
@@ -242,6 +277,8 @@ export class PodWorktreeService {
   ): Promise<void> {
     const git = this.gitFor(projectDir);
     try {
+      // A deleted checkout leaves a registered-missing entry; clear it before re-add.
+      await git.raw(['worktree', 'prune']).catch(() => {});
       const exists = await this.branchExists(git, row.branch);
       if (exists) await git.raw(['worktree', 'add', row.dir, row.branch]);
       else await git.raw(['worktree', 'add', '-b', row.branch, row.dir, row.baseRef]);
@@ -253,7 +290,25 @@ export class PodWorktreeService {
         now: this.now(),
       });
     } catch (err) {
+      this.deps.store.updateGoalWorktree({
+        podId: row.podId,
+        goalId,
+        revision,
+        status: 'missing',
+        now: this.now(),
+      });
       throw new PodError(409, `worktree recovery failed: ${errorMessage(err)}`);
+    }
+  }
+
+  /** A session may have switched branches inside the checkout; never merge that drift. */
+  private async assertWorktreeBranch(git: SimpleGit, row: PodGoalWorktreeRow): Promise<void> {
+    const head = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+    if (!head || head === 'HEAD' || head !== row.branch) {
+      throw new PodError(
+        409,
+        `worktree is on ${head || '(detached)'} but the revision branch is ${row.branch}`,
+      );
     }
   }
 

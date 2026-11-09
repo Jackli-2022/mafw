@@ -58,12 +58,17 @@ const WORKTREE_STATUS_LABEL: Record<PodGoalResultWorktree["status"], string> = {
 export function podResultWorktreeRows(result: PodGoalResult): PodResultWorktreeRow[] {
   const worktree = result.worktree ?? null
   if (!worktree) return []
+  const activeLabel = podResultAcceptanceView(result).tone === "failure" ? "未合并" : "待验收"
   const rows: PodResultWorktreeRow[] = [
     { label: "分支", value: worktree.branch },
     { label: "合并到", value: worktree.baseBranch || "未知" },
     {
       label: "状态",
-      value: WORKTREE_STATUS_LABEL[worktree.status] ?? worktree.status,
+      value: worktree.status === "active"
+        ? activeLabel
+        : worktree.status in WORKTREE_STATUS_LABEL
+          ? WORKTREE_STATUS_LABEL[worktree.status]
+          : worktree.status,
       ...(worktree.status === "missing"
         ? { tone: "danger" as const }
         : worktree.status === "abandoned"
@@ -102,8 +107,13 @@ export function podResultConditionRows(result: PodGoalResult): PodResultConditio
   const results = Array.isArray(result.goalResults) ? result.goalResults : []
   const byId = new Map<string, { result: string; evidence: string }>()
   for (const item of results) {
-    if (!item || typeof item.id !== "string" || byId.has(item.id)) continue
-    byId.set(item.id, {
+    // Gateway shape is `{ conditionId, result, evidence }` (review-rubric.ts);
+    // keep `id` as a compatibility alias for older fixtures/clients.
+    const conditionId = typeof (item as any)?.conditionId === "string"
+      ? (item as any).conditionId
+      : (item as any)?.id
+    if (typeof conditionId !== "string" || !conditionId || byId.has(conditionId)) continue
+    byId.set(conditionId, {
       result: CONDITION_RESULT_LABEL[item.result] ?? "未判定",
       evidence: String(item.evidence ?? ""),
     })

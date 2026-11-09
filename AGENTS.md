@@ -1569,16 +1569,27 @@ workspace，结束后销毁）。
   （已 merged 直接返回原 mergeCommit）。验收是**人类专属**：请求带 `actorSessionID` → 403，
   不提供 MCP 验收工具。
 - **合并门**：主项目当前分支必须等于 worktree 创建时记录的 `baseBranch`，且无 tracked 改动；
-  否则 409 且 worktree 保留。合并用 `git merge --no-ff`，冲突时 `git merge --abort`、主项目
-  不变、worktree 保留。成功写 status=merged + mergeCommit/mergedAt，移除 worktree 但保留
-  branch。自动提交身份固定 `MAFW <mafw@localhost>`、`--no-verify`、排除 `.mafw`。
+  worktree 自身 HEAD 必须仍在 `mafw/<goal>-rN`（Agent 在 checkout 里切分支/脱离 HEAD → 409，
+  绝不合并错误分支）；否则 409 且 worktree 保留。合并用 `git merge --no-ff --no-verify`
+  （`commit.gpgsign=false`），冲突时 `git merge --abort`、主项目不变、worktree 保留。成功写
+  status=merged + mergeCommit/mergedAt（空分支无新提交时 mergeCommit 为空串），移除 worktree
+  但保留 branch。自动提交身份固定 `MAFW <mafw@localhost>`、`--no-verify`、排除 `.mafw`。
+  删除 worktree 目录后 `ensure/ensureExisting` 先 `git worktree prune` 再重建（同一 row，
+  不会 `missing but already registered` 卡死）。
+- **验收/打回串行**：`PodGoalService` 按 `(podId, goalId)` 串行 accept/reject（进程内 Promise
+  链）——并发点击最多一个成功，被拒绝的 revision 不会在合并竞态里落进主分支。
+- **不 retrofit**：`workdirForRevision` 只走 `PodWorktreeService.ensureExisting`（无 row 返回
+  null，节点沿用项目目录）；新 Goal（`PodTechLeadService.createGoal`）与新 revision（打回后）
+  才显式 `ensure` 创建 checkout。旧在途 Goal 不会在升级后被切成两半。
 - **打回**：打回前先 `commitPending` 保住未提交改动，再开下一 revision，旧 worktree 标
   `abandoned`（branch 保留可追溯）；已 merged 的 revision 不能打回（409）。
 - **结果 DTO/UI**：`PodGoalResult.worktree -> {dir,branch,baseBranch,status,mergeCommit,mergedAt}`
-  + `acceptance: 'pending' | 'accepted' | 'unavailable'`；`PodGoalView.accepted`。验收后
-  `result_ready` → `ended`。桌面结果页保留 verdict/assessment、版本历史、Goal acceptance、
-  **Goal Eval 条件与逐条件判定（缺结果 = 未判定，绝不按通过）**、逐任务证据、Review
-  feedback、产物、失败重提、打回输入；失败结果显示「失败 · 不可验收」，不出现验收入口。
+  + `acceptance: 'pending' | 'accepted' | 'unavailable'`；`PodGoalView.accepted` +
+  `lastError`（worktree_unavailable 等直接显示在 Goal 详情）。验收后 `result_ready` → `ended`。
+  Goal Eval 的真实形状是 `goalResults: [{conditionId, result, evidence}]`（不是 `id`）。
+  桌面结果页保留 verdict/assessment、版本历史、Goal acceptance、**Goal Eval 条件与逐条件
+  判定（缺结果 = 未判定，绝不按通过）**、逐任务证据、Review feedback、产物、失败重提、打回
+  输入；失败结果显示「失败 · 不可验收」，不出现验收入口；已验收后隐藏打回入口。
 - **A2A artifact**：`PodA2AArtifactStore` 支持动态 roots resolver，**revision worktree 优先**，
   merged/abandoned/missing 行省略 worktree 根；同一 store 在合并/移除后自动回落到项目目录。
 - **测试**：gateway `pod-worktree-path`/`pod-store`/`pod-worktree-service`/`pod-result-accept`/

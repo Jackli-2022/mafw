@@ -184,4 +184,69 @@ describe('PodWorktreeService', () => {
       f.cleanup();
     }
   });
+
+  test('refuses to accept when the worktree is on another branch', async () => {
+    const f = fixture();
+    try {
+      const wt = await f.service.ensure('pod_1', 'goal-1', 1);
+      fs.writeFileSync(path.join(wt.dir, 'rogue.txt'), 'rogue\n');
+      git(wt.dir, 'switch -c rogue');
+      git(wt.dir, 'add rogue.txt');
+      git(wt.dir, '-c user.name=t -c user.email=t@t commit -m rogue-change');
+
+      await expect(f.service.mergeForAcceptance('pod_1', 'goal-1', 1))
+        .rejects.toMatchObject({ status: 409 });
+      expect(fs.existsSync(path.join(f.repo, 'rogue.txt'))).toBe(false);
+      expect(fs.existsSync(wt.dir)).toBe(true);
+      expect(f.store.getGoalWorktree('pod_1', 'goal-1', 1)?.status).toBe('active');
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  test('recovers a worktree whose directory was deleted', async () => {
+    const f = fixture();
+    try {
+      const wt = await f.service.ensure('pod_1', 'goal-1', 1);
+      fs.writeFileSync(path.join(wt.dir, 'uncommitted.txt'), 'lost?\n');
+      await f.service.commitPending('pod_1', 'goal-1', 1);
+      fs.rmSync(wt.dir, { recursive: true, force: true });
+
+      const recovered = await f.service.ensure('pod_1', 'goal-1', 1);
+      expect(recovered.dir).toBe(wt.dir);
+      expect(fs.existsSync(wt.dir)).toBe(true);
+      expect(fs.existsSync(path.join(recovered.dir, 'uncommitted.txt'))).toBe(true);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  test('ensureExisting never creates a new revision checkout', async () => {
+    const f = fixture();
+    try {
+      expect(await f.service.ensureExisting('pod_1', 'goal-1', 1)).toBeNull();
+      expect(f.store.getGoalWorktree('pod_1', 'goal-1', 1)).toBeNull();
+
+      const wt = await f.service.ensure('pod_1', 'goal-1', 1);
+      fs.rmSync(wt.dir, { recursive: true, force: true });
+      const existing = await f.service.ensureExisting('pod_1', 'goal-1', 1);
+      expect(existing?.dir).toBe(wt.dir);
+      expect(fs.existsSync(wt.dir)).toBe(true);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  test('auto-commits use the fixed MAFW identity', async () => {
+    const f = fixture();
+    try {
+      const wt = await f.service.ensure('pod_1', 'goal-1', 1);
+      fs.writeFileSync(path.join(wt.dir, 'identity.txt'), 'x\n');
+      await f.service.commitPending('pod_1', 'goal-1', 1);
+      expect(git(wt.dir, 'log -1 --format=%an')).toBe('MAFW');
+      expect(git(wt.dir, 'log -1 --format=%ae')).toBe('mafw@localhost');
+    } finally {
+      f.cleanup();
+    }
+  });
 });

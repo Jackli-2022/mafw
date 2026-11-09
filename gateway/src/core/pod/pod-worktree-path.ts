@@ -15,9 +15,15 @@ export function safePodGoalSlug(goalId: string): string {
     .trim()
     .replace(/[^A-Za-z0-9._-]/g, '_')
     .replace(/_+/g, '_')
-    .slice(0, MAX_SLUG);
+    // A ref component cannot contain `..`, start with `.`/`-`, or end with `.`
+    // (`git check-ref-format`); sanitize instead of failing at worktree creation.
+    .replace(/\.{2,}/g, '.')
+    .replace(/^[.\-_]+/, '')
+    .replace(/[.\-_]+$/, '')
+    .slice(0, MAX_SLUG)
+    .replace(/[.\-_]+$/, '');
   if (!cleaned || cleaned === '.' || cleaned === '..') return 'goal';
-  return cleaned;
+  return cleaned.endsWith('.lock') ? `${cleaned.slice(0, -5)}_lock` : cleaned;
 }
 
 export function podWorktreeBranch(goalId: string, revision: number): string {

@@ -55,6 +55,7 @@ describe('Pod result acceptance', () => {
   let wt: PodGoalWorktreeRow | null;
   let worktrees: {
     get: jest.Mock;
+    ensure: jest.Mock;
     commitPending: jest.Mock;
     mergeForAcceptance: jest.Mock;
     markAbandoned: jest.Mock;
@@ -83,6 +84,7 @@ describe('Pod result acceptance', () => {
     wt = worktree();
     worktrees = {
       get: jest.fn(() => wt),
+      ensure: jest.fn(async () => wt ?? worktree()),
       commitPending: jest.fn(async () => ({ commit: null })),
       mergeForAcceptance: jest.fn(async () => ({
         branch: 'mafw/g1-r1',
@@ -206,5 +208,38 @@ describe('Pod result acceptance', () => {
     await expect(service.rejectResult('pod_1', 'g1', 'no'))
       .rejects.toMatchObject({ status: 409 });
     expect(worktrees.commitPending).not.toHaveBeenCalled();
+  });
+
+  test('accept and reject are serialized per goal', async () => {
+    seed();
+    store.insertGoalWorktree({
+      podId: 'pod_1', goalId: 'g1', revision: 1,
+      dir: '/tmp/repo-wt-g1-r1', branch: 'mafw/g1-r1',
+      baseRef: 'main', baseBranch: 'main', status: 'active', now: NOW,
+    });
+    worktrees.get.mockImplementation((podId: string, goalId: string, revision: number) =>
+      store.getGoalWorktree(podId, goalId, revision));
+    let releaseMerge!: () => void;
+    const mergeGate = new Promise<void>((resolve) => { releaseMerge = resolve; });
+    worktrees.mergeForAcceptance.mockImplementation(async () => {
+      await mergeGate;
+      store.updateGoalWorktree({
+        podId: 'pod_1', goalId: 'g1', revision: 1,
+        status: 'merged', mergeCommit: 'abc123', mergedAt: NOW, now: NOW,
+      });
+      return { branch: 'mafw/g1-r1', mergeCommit: 'abc123', mergedAt: NOW };
+    });
+
+    const acceptPromise = service.acceptResult('pod_1', 'g1');
+    await Promise.resolve();
+    const rejectPromise = service.rejectResult('pod_1', 'g1', 'too late');
+    await Promise.resolve();
+    // The queued reject must not even start its commit while acceptance merges.
+    expect(worktrees.commitPending).not.toHaveBeenCalled();
+    releaseMerge();
+
+    await expect(acceptPromise).resolves.toMatchObject({ mergeCommit: 'abc123' });
+    await expect(rejectPromise).rejects.toMatchObject({ status: 409 });
+    expect(revisions.reopenAfterReject).not.toHaveBeenCalled();
   });
 });

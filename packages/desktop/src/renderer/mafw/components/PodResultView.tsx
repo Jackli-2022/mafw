@@ -111,7 +111,10 @@ export function PodResultView(props: {
   }
   const revisionRows = () => revisionHistory(revisions(), activeRevision())
   const currentStatus = () => revisionRows().find((row) => row.current)?.status ?? null
-  const rejectLabel = () => rejectButtonLabel({ status: currentStatus() })
+  const rejectLabel = () => rejectButtonLabel({
+    status: currentStatus(),
+    accepted: result()?.acceptance === "accepted" || result()?.worktree?.status === "merged",
+  })
   const assessmentLabel = () => {
     const value = result()
     if (!value) return null
