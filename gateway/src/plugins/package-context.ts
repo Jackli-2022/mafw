@@ -2,6 +2,7 @@ import { config } from '../config';
 import { log } from '../core/utils/logger';
 import type { UsageStatsProvider } from '../usage/plugin-context';
 import type { RegistrationBag } from './registration-bag';
+import type { PluginHttpApi } from './plugin-http';
 import type { PluginEmitEvent, PluginPackageContext } from './package-types';
 
 export interface PackageContextDeps {
@@ -26,6 +27,18 @@ export interface PackageContextDeps {
 }
 
 const EMPTY_USAGE: UsageStatsProvider = { modelStats: () => [] };
+
+/**
+ * `ctx.http` placeholder for hosts that did not inject a recorder (legacy
+ * loaders, direct test contexts). Calling it throws instead of silently
+ * accepting routes that could never be served.
+ */
+function unavailableHttp(): PluginHttpApi {
+  const fail = (): never => {
+    throw new Error('ctx.http is not available: this host did not provide an HTTP registry');
+  };
+  return { route: fail, ws: fail };
+}
 
 const FORBIDDEN_KEY_NAMES = new Set(['__proto__', 'prototype', 'constructor']);
 
@@ -107,6 +120,7 @@ export function createPluginPackageContext(name: string, deps: PackageContextDep
     gatewayPort: deps.gatewayPort,
     usage: deps.usageStats?.() ?? EMPTY_USAGE,
     emit: (event) => deps.emit?.(event),
+    http: unavailableHttp(),
     effect: (dispose) => {
       if (!deps.bag) {
         throw new Error('ctx.effect is not available: this host did not provide a registration bag');
@@ -130,4 +144,19 @@ export function withPluginEmit(
   emit: (event: PluginEmitEvent) => void,
 ): PluginPackageContext {
   return { ...ctx, emit };
+}
+
+/**
+ * Replaces `ctx.http` with the activation's recorder.
+ *
+ * The PluginHost builds one recorder per candidate and replays its validated
+ * entries only when the candidate is committed. Keeping the injection in the
+ * context module mirrors `withPluginEmit`: packages receive one context object
+ * whose capability surface is decided by the host.
+ */
+export function withPluginHttp(
+  ctx: PluginPackageContext,
+  http: PluginHttpApi,
+): PluginPackageContext {
+  return { ...ctx, http };
 }

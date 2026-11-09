@@ -2,6 +2,7 @@ import type { log } from '../core/utils/logger';
 import type { PromptFn } from '../media/media-service';
 import type { AgentRuntime, RuntimeCapabilities, RuntimeCredentials } from '../runtime/contract';
 import type { UsageStatsProvider } from '../usage/plugin-context';
+import type { PluginHttpApi } from './plugin-http';
 import type {
   PluginActionDescriptor,
   PluginEventDescriptor,
@@ -28,6 +29,14 @@ export interface PluginPackageContext {
    *  'plugin:<name>:<event>'；未注册/canonical/外命名空间/schema 失败的发射
    *  一律丢弃并记诊断（Host 包装，见 package-context.withPluginEmit）。 */
   emit: (event: PluginEmitEvent) => void;
+  /**
+   * 本包作用域的 HTTP/WS 路由（`/api/plugins/<pkg>/api<path>`）。
+   *
+   * 只在 `activate()` 期间可注册：PluginHost 在 commit 时把记录的路由装进
+   * 宿主 registry，reload/disable/remove 时随该 revision 的 RegistrationBag
+   * 一起退役（WS 以 1001 关闭）。离线 `checkPackage` 只校验不注册。
+   */
+  http: PluginHttpApi;
   /**
    * 注册本包在 `activate()` 里创建的外部副作用清理（timer / listener /
    * 自建 watcher / 缓存等）。

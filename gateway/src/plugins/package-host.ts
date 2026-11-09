@@ -22,9 +22,10 @@ import { createPiPromptAdapter } from '../media/pi-adapter';
 import { buildClientDescriptor, buildClientSnapshot, type PluginClientSnapshot } from './client-descriptor';
 import { fingerprintPackage } from './package-fingerprint';
 import { buildActivatedContributions } from './package-validator';
-import { withPluginEmit } from './package-context';
+import { withPluginEmit, withPluginHttp } from './package-context';
 import { PluginActionRegistry, type PluginActionInvokeOptions } from './plugin-actions';
 import { PluginEventRegistry, type PluginEventFrame } from './plugin-events';
+import { createPluginHttpRecorder, createPluginHttpRegistry, type PluginHttpRecorder, type PluginHttpRegistry } from './plugin-http';
 import { DEFAULT_WEB_SURFACE_ENTRY, validatePluginWebSurfaces } from './plugin-web-assets';
 import { createRegistrationBag, type RegistrationBag } from './registration-bag';
 import type {
@@ -75,6 +76,12 @@ export interface PluginHostOptions {
   actionRegistry?: PluginActionRegistry;
   /** Injected event registry (defaults to one bound to `canonicalTypes`). */
   eventRegistry?: PluginEventRegistry;
+  /**
+   * Injected package HTTP/WS registry (defaults to a fresh one owned by this
+   * host). The gateway pulls it back through `getHttpRegistry()` to serve
+   * `/api/plugins/<pkg>/api*` and the `/ws/*` upgrade path.
+   */
+  httpRegistry?: PluginHttpRegistry;
 }
 
 export interface PluginPendingState {
@@ -135,6 +142,8 @@ interface ActivationResult {
    * adopts it, so a late emit from a superseded activation is dropped.
    */
   emitterToken: object;
+  /** Routes recorded through `ctx.http` during activation. */
+  http: PluginHttpRecorder;
 }
 
 interface PackageActivation extends ActivationResult {
@@ -203,6 +212,7 @@ export class PluginHost {
   private readonly broadcast?: PluginHostOptions['broadcast'];
   private readonly actions: PluginActionRegistry;
   private readonly events: PluginEventRegistry;
+  private readonly http: PluginHttpRegistry;
   /**
    * Packages whose first activation must not take over the active runtime
    * (manager install/enable). Consumed by the next scan only.
@@ -226,6 +236,7 @@ export class PluginHost {
       broadcast: this.broadcast ? (frame) => this.broadcast?.(frame) : undefined,
       onDiagnostic: (diagnostic) => log.warn(`[PluginHost] ${diagnostic.packageName} ${diagnostic.code}: ${diagnostic.message}`),
     });
+    this.http = options.httpRegistry ?? createPluginHttpRegistry({ log });
     this.snapshot = buildClientSnapshot(this.currentToken(), []);
     this.lastStateSignature = JSON.stringify(this.getState());
   }
@@ -258,6 +269,9 @@ export class PluginHost {
 
   /** Committed event registry (diagnostics + manual emits). */
   getEventRegistry(): PluginEventRegistry { return this.events; }
+
+  /** Committed package HTTP/WS registry (API dispatch + upgrade wiring). */
+  getHttpRegistry(): PluginHttpRegistry { return this.http; }
 
   /**
    * Invokes one action of a committed package.
@@ -732,6 +746,24 @@ export class PluginHost {
       revision: record.revision,
       token: record.emitterToken,
     });
+    // HTTP/WS routes are replayed from the activation recorder only here: a
+    // staged candidate stays unreachable until its revision is committed. The
+    // retirement disposer is attached to the same bag at commit time (never at
+    // activation time), so discarding a *pending* candidate cannot retire the
+    // still-active revision's routes. It is added before the registrations so a
+    // mid-loop failure cannot leave routes without an owner.
+    if (record.http.entries.length > 0) {
+      record.bag.add('http-routes', () => this.http.retire(name));
+    }
+    for (const route of record.http.entries) {
+      if (route.kind === 'http') {
+        this.http.register(name, route.method, route.path, route.handler, {
+          maxBodyBytes: route.maxBodyBytes,
+        });
+      } else {
+        this.http.registerWs(name, route.path, route.handler);
+      }
+    }
   }
 
   /**
@@ -935,11 +967,24 @@ export class PluginHost {
     // `ctx.emit` is package-scoped: it can only publish events this package
     // registered (the emitter token ties the closure to this activation).
     const emitterToken = {};
-    const ctx = withPluginEmit(this.createContext(modName, bag), (event) => {
-      this.events.emitFrom(modName, emitterToken, event);
-    });
-    const raw: UnifiedPluginContributions =
-      typeof mod.activate === 'function' ? ((await mod.activate(ctx)) ?? {}) : pickContributions(mod);
+    // `ctx.http` records routes for this candidate only. Registrations are
+    // replayed into the committed registry at commit time; an offline check
+    // discards them with the candidate.
+    const httpRecorder = createPluginHttpRecorder(modName);
+    const ctx = withPluginHttp(
+      withPluginEmit(this.createContext(modName, bag), (event) => {
+        this.events.emitFrom(modName, emitterToken, event);
+      }),
+      httpRecorder.api,
+    );
+    let raw: UnifiedPluginContributions;
+    try {
+      raw = typeof mod.activate === 'function' ? ((await mod.activate(ctx)) ?? {}) : pickContributions(mod);
+    } finally {
+      // A registration outside activate() could never be committed; seal so a
+      // late timer/async callback fails loudly instead of disappearing.
+      httpRecorder.seal();
+    }
 
     // Declarative half is validated before anything is published; legacy
     // contributions are the same object with `ui`/`actions`/`events` removed.
@@ -1048,6 +1093,7 @@ export class PluginHost {
       activated,
       entries: { runtime, media, tts, usage },
       emitterToken,
+      http: httpRecorder,
     };
   }
 
