@@ -98,14 +98,18 @@ class _DebugPageState extends State<DebugPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('调试')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _copyBundle,
-        icon: const Icon(Icons.copy_all),
-        label: const Text('复制诊断包'),
-      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         children: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: _copyBundle,
+              icon: const Icon(Icons.copy_all, size: 18),
+              label: const Text('复制诊断包'),
+            ),
+          ),
+          const SizedBox(height: 12),
           _ConnectionCard(
             baseUrl: _baseUrl,
             token: _tokenText,

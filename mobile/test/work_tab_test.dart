@@ -627,6 +627,17 @@ void main() {
   });
 
   group('FAB + Lead placeholder', () {
+    testWidgets('the FAB is a plain circular FAB (not extended) — label clipping regression',
+        (tester) async {
+      await _pumpWorkTab(tester, client: _FakeWorkClient());
+      final fab = tester.widget<FloatingActionButton>(
+        find.byKey(const Key('work-fab')),
+      );
+      // Theme sets CircleBorder; an extended FAB would draw its label outside
+      // the circle (real-device smoke: white circle with overflowing text).
+      expect(fab.isExtended, isFalse);
+    });
+
     testWidgets('the FAB calls the discussion placeholder', (tester) async {
       var taps = 0;
       await _pumpWorkTab(
@@ -635,7 +646,7 @@ void main() {
         onCreateDiscussion: () => taps++,
       );
 
-      await tester.tap(find.text('新建讨论'));
+      await tester.tap(find.byKey(const Key('work-fab')));
       await tester.pump();
 
       expect(taps, 1);

@@ -142,14 +142,14 @@ void main() {
     testWidgets('工作 owns the discussion FAB; 聊天 keeps the new-session FAB; 我的 has none',
         (tester) async {
       await _pumpShell(tester);
-      // 工作 tab 自带「＋ 新建讨论」占位 FAB（Task 7；Task 11 接 composer）。
+      // 工作 tab 自带「＋ 新建讨论」圆形 FAB（Task 7；Task 11 接 composer）。
       expect(find.byType(FloatingActionButton), findsOneWidget);
-      expect(find.text('新建讨论'), findsOneWidget);
+      expect(find.byKey(const Key('work-fab')), findsOneWidget);
 
       await _tapTab(tester, '聊天');
       expect(find.byType(FloatingActionButton), findsOneWidget);
       // 工作 tab 的 FAB 不能漏进聊天 tab。
-      expect(find.text('新建讨论'), findsNothing);
+      expect(find.byKey(const Key('work-fab')), findsNothing);
 
       await _tapTab(tester, '我的');
       expect(find.byType(FloatingActionButton), findsNothing);

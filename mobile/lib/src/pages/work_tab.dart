@@ -728,14 +728,11 @@ class _WorkTabState extends State<WorkTab> {
           Positioned(
             right: 16,
             bottom: 16,
-            child: FloatingActionButton.extended(
+            child: FloatingActionButton(
               key: const Key('work-fab'),
+              tooltip: '新建讨论',
               onPressed: () => unawaited(_onCreateDiscussion()),
-              icon: const Icon(Icons.add, size: 20),
-              label: const Text(
-                '新建讨论',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              ),
+              child: const Icon(Icons.add, size: 24),
             ),
           ),
         ],
