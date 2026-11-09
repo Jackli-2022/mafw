@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, readFile, rm } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import * as path from "node:path"
 import {
@@ -6,6 +6,7 @@ import {
   resolvePluginContract,
   stagePluginContract,
 } from "../../../scripts/stage-plugin-contract.mjs"
+import { gatewayAssetPlan } from "../../../scripts/gateway-package-assets.mjs"
 import { run } from "./utils"
 
 /**
@@ -14,9 +15,13 @@ import { run } from "./utils"
  *
  * Layout produced:
  *   gateway-bundle/
- *     package.json        (gateway deps only, no scripts/devDeps)
- *     dist/               (copied from <repo>/gateway/dist)
- *     node_modules/       (npm install --omit=dev)
+ *     package.json        (verbatim gateway manifest, including optional deps)
+ *     package-lock.json   (verbatim, npm ci is the only dependency install)
+ *     dist/               (compiled output + release.json)
+ *     voice_sidecars/
+ *     skills/
+ *     scripts/
+ *     node_modules/       (npm ci --omit=dev)
  *
  * Native modules must load under the Electron runtime (ELECTRON_RUN_AS_NODE):
  *   - zeromq is a Node-API addon (node-addon-api) → ABI-stable, no action.
@@ -35,49 +40,40 @@ const desktopPkg = JSON.parse(await readFile(path.join(packageDir, "package.json
 const electronVersion: string = desktopPkg.devDependencies.electron
 if (!electronVersion) throw new Error("electron version not found in desktop package.json")
 
-const gatewayDist = path.join(gatewayDir, "dist")
-if (!existsSync(path.join(gatewayDist, "index.js"))) {
-  throw new Error(`${gatewayDist}/index.js missing — run "npm run build" at the repo root first`)
+if (!existsSync(path.join(gatewayDir, "dist", "index.js"))) {
+  throw new Error(`${gatewayDir}/dist/index.js missing — run "npm run build" at the repo root first`)
 }
 
 console.log(`[stage-gateway] staging into ${outDir} (electron ${electronVersion})`)
 await rm(outDir, { recursive: true, force: true })
 await mkdir(outDir, { recursive: true })
 
-// Copy compiled output.
-await cp(gatewayDist, path.join(outDir, "dist"), { recursive: true })
-
-// Python sidecar sources ship next to dist: compiled voice code resolves
-// `<gateway>/voice_sidecars/qwen3_asr_server.py`, which in the bundle is
-// `gateway-bundle/voice_sidecars`.
-const voiceSidecars = path.join(gatewayDir, "voice_sidecars")
-if (!existsSync(voiceSidecars)) {
-  throw new Error(`${voiceSidecars} missing — ASR sidecar sources must ship with the gateway`)
+for (const asset of gatewayAssetPlan({
+  repoRoot: rootDir,
+  gatewayRoot: gatewayDir,
+  profile: "desktop",
+})) {
+  if (!existsSync(asset.from)) {
+    throw new Error(`required gateway asset missing: ${asset.from}`)
+  }
+  const target = path.join(outDir, asset.to)
+  await mkdir(path.dirname(target), { recursive: true })
+  await cp(asset.from, target, { recursive: true })
+  console.log(`[stage-gateway] ${asset.to}`)
 }
-await cp(voiceSidecars, path.join(outDir, "voice_sidecars"), { recursive: true })
-console.log(`[stage-gateway] voice_sidecars -> ${path.join(outDir, "voice_sidecars")}`)
 
-// Minimal manifest: production dependencies only.
-// Version label comes from the ROOT package.json — the single version source
-// (scripts/bump-version.mjs only syncs packages/* workspaces, so
-// gateway/package.json lags behind and must not be trusted here).
 const gatewayPkg = JSON.parse(await readFile(path.join(gatewayDir, "package.json"), "utf8"))
-const rootPkg = JSON.parse(await readFile(path.join(rootDir, "package.json"), "utf8"))
-const bundlePkg = {
-  name: "mafw-gateway-bundled",
-  version: rootPkg.version,
-  private: true,
-  main: "dist/index.js",
-  dependencies: gatewayPkg.dependencies,
+if (!existsSync(path.join(gatewayDir, "package-lock.json"))) {
+  throw new Error("gateway/package-lock.json missing — lockfile-consistent staging is required")
 }
-await writeFile(path.join(outDir, "package.json"), JSON.stringify(bundlePkg, null, 2))
+await cp(path.join(gatewayDir, "package.json"), path.join(outDir, "package.json"))
+await cp(path.join(gatewayDir, "package-lock.json"), path.join(outDir, "package-lock.json"))
 
-console.log("[stage-gateway] installing production dependencies (this can take a while)...")
-run("npm", ["install", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: outDir })
+console.log("[stage-gateway] installing production dependencies with npm ci...")
+run("npm", ["ci", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: outDir })
 
 // Private workspace packages are resolved by name from gateway/dist. npm cannot
-// fetch them (not published) and npm install in the bundle would otherwise link
-// them to the build machine's workspace, so copy the built package explicitly.
+// fetch them and the bundle must not link to the build machine workspace.
 const bundledPackages: Record<string, string> = gatewayPkg.mafw?.bundledPackages ?? {}
 for (const [name, relative] of Object.entries(bundledPackages)) {
   if (name !== PLUGIN_CONTRACT_PACKAGE) continue

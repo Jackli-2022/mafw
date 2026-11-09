@@ -16,6 +16,7 @@ import {
   resolvePluginContract,
   stagePluginContract,
 } from "../../scripts/stage-plugin-contract.mjs";
+import { gatewayAssetPlan } from "../../scripts/gateway-package-assets.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const gatewayRoot = path.resolve(here, "..");
@@ -33,41 +34,23 @@ if (!fs.existsSync(target)) {
   process.exit(1);
 }
 
-// 1) dist
-const distSrc = path.join(gatewayRoot, "dist");
-const distDst = path.join(target, "dist");
-if (!fs.existsSync(distSrc)) {
-  console.error(`[deploy] dist missing (run npm run build first): ${distSrc}`);
-  process.exit(1);
-}
-fs.cpSync(distSrc, distDst, { recursive: true, force: true });
-console.log(`[deploy] dist → ${distDst}`);
-
-// 1a) CLI: new flags (e.g. `plugin-check --audit`) live in bin/mafw.js. A dist-only
-// deploy leaves the global CLI stale and silently ignoring them (false green) —
-// keep the command surface in lockstep with the gateway it drives.
+// 1) Runtime assets: one shared plan with desktop staging. Global targets are
+// relative to the npm package root (dist/office live under gateway/, CLI and
+// skills at the package root).
 const pkgRoot = path.dirname(target);
-const cliSrc = path.join(gatewayRoot, "..", "bin", "mafw.js");
-const cliDst = path.join(pkgRoot, "bin", "mafw.js");
-if (fs.existsSync(cliSrc)) {
-  fs.mkdirSync(path.dirname(cliDst), { recursive: true });
-  fs.copyFileSync(cliSrc, cliDst);
-  console.log(`[deploy] cli → ${cliDst}`);
-}
-
-// 1b) package-shipped office assets: `mafw office setup` + gateway-startup skill install
-const assets = [
-  [path.join(gatewayRoot, "scripts", "setup-pykernel.mjs"), path.join(target, "scripts", "setup-pykernel.mjs")],
-  [path.join(gatewayRoot, "scripts", "office"), path.join(target, "scripts", "office")],
-  // ASR sidecar sources: compiled code resolves `<gateway>/voice_sidecars/qwen3_asr_server.py`.
-  [path.join(gatewayRoot, "voice_sidecars"), path.join(target, "voice_sidecars")],
-  [path.join(gatewayRoot, "..", "skills"), path.join(pkgRoot, "skills")],
-];
-for (const [src, dst] of assets) {
-  if (!fs.existsSync(src)) continue;
+for (const asset of gatewayAssetPlan({
+  repoRoot: path.resolve(gatewayRoot, ".."),
+  gatewayRoot,
+  profile: "global",
+})) {
+  if (!fs.existsSync(asset.from)) {
+    console.error(`[deploy] required asset missing: ${asset.from}`);
+    process.exit(1);
+  }
+  const dst = path.join(pkgRoot, asset.to);
   fs.mkdirSync(path.dirname(dst), { recursive: true });
-  fs.cpSync(src, dst, { recursive: true, force: true });
-  console.log(`[deploy] asset → ${dst}`);
+  fs.cpSync(asset.from, dst, { recursive: true, force: true });
+  console.log(`[deploy] ${asset.to} → ${dst}`);
 }
 
 // 2) 缺失的生产依赖
