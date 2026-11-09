@@ -28,7 +28,7 @@
     "test:kit": "node --test \"packages/runtime-kit/src/*.test.ts\"",
     "test:desktop": "npm test -w @mafw/desktop",
     "test:plugin-contract": "npm test -w @mafw/plugin-contract",
-    "test:plugin-example": "node --test docs/examples/plugins/service-monitor/index.test.js",
+    "test:plugin-example": "node --test docs/examples/plugins/service-monitor/index.test.js docs/examples/plugins/web-surface-demo/index.test.js",
     "test:creator": "jest tests/plugin-creator-tools.test.ts tests/plugin-v2.test.ts --runInBand",
     "verify:plugin-contract": "node scripts/stage-plugin-contract.mjs --selftest"
   },

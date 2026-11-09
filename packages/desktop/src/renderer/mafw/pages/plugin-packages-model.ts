@@ -166,6 +166,13 @@ export function contributionBadges(
     if (toolCards > 0) push("tool-card", countLabel("工具卡", toolCards))
     const windows = ui.messageWindows?.length ?? 0
     if (windows > 0) push("message-window", countLabel("小窗", windows))
+    const webSurfaces = ui.webSurfaces ?? []
+    if (webSurfaces.length > 0) {
+      // The count is always spelled out: "Web 页面" alone would not tell
+      // someone installing the package whether it adds one page or several.
+      push("web", `Web 页面 ${webSurfaces.length}`)
+      if (webSurfaces.some((surface) => surface?.rail)) push("rail", "左栏入口")
+    }
   }
   const actions = descriptor?.actions?.length ?? 0
   if (actions > 0) push("action", countLabel("动作", actions))

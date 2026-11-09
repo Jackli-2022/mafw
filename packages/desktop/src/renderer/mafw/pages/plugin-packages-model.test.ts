@@ -164,6 +164,67 @@ describe("plugin package contribution badges", () => {
     ])
   })
 
+  it("shows a Web page count and the left-rail marker for web surfaces", () => {
+    const badge = contributionBadges(
+      row(),
+      descriptor({
+        ui: {
+          webSurfaces: [
+            {
+              id: "tree",
+              title: "Tree",
+              entry: "index.html",
+              scope: "session",
+              reloadOnSessionChange: true,
+              url: "/api/plugins/demo/ui/index.html",
+              rail: { icon: "folder", order: 100, badge: true },
+            },
+          ],
+        },
+      }),
+    )
+    assert.deepEqual(badge, [
+      { key: "web", label: "Web 页面 1" },
+      { key: "rail", label: "左栏入口" },
+    ])
+  })
+
+  it("counts web pages once and omits the rail marker without a rail entry", () => {
+    const surface = (
+      id: string,
+      rail?: { icon: string; order: number; badge: boolean },
+    ) => ({
+      id,
+      title: id,
+      entry: "index.html",
+      scope: "session" as const,
+      reloadOnSessionChange: true,
+      url: `/api/plugins/demo/ui/${id}/index.html`,
+      ...(rail ? { rail } : {}),
+    })
+    const badges = contributionBadges(
+      row(),
+      descriptor({
+        ui: {
+          webSurfaces: [
+            surface("a"),
+            surface("b", { icon: "folder", order: 100, badge: false }),
+          ],
+        },
+      }),
+    )
+    assert.deepEqual(badges, [
+      { key: "web", label: "Web 页面 2" },
+      { key: "rail", label: "左栏入口" },
+    ])
+
+    const withoutRail = contributionBadges(
+      row(),
+      descriptor({ ui: { webSurfaces: [surface("only")] } }),
+    )
+    assert.deepEqual(withoutRail, [{ key: "web", label: "Web 页面 1" }])
+  })
+
   it("falls back to legacy contributions for a disabled package", () => {
     const badges = contributionBadges(
       row({ status: "disabled", enabled: false, contributions: ["media", "tts"] }),

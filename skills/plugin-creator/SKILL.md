@@ -301,7 +301,7 @@ ui: { webSurfaces: [{
 - 页面可用 bridge `window.mafwPlugin`（`context` / `invoke` / `onEvent` / `setBadge` / `setTitle`），
   但它**可选**：页面应能在 loopback 浏览器里独立跑。
 - 路由只能在 `activate()` 内注册，随 revision 退役；精确路径、无 `:param`、无通配。
-- 完整契约与票据/CSP/隔离细节见 [plugin-authoring.md §6.5](../../docs/guides/plugin-authoring.md#65-websurfaces沙箱-web-页面)；
+- 完整契约与票据/CSP/隔离细节见 `docs/guides/plugin-authoring.md §6.5`；
   可复制 `docs/examples/plugins/web-surface-demo/` 作为起点（文件树 + 终端）。
 
 ## 8. View 与 Widget 限制

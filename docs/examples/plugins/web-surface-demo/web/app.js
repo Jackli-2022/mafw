@@ -91,11 +91,13 @@
       });
       if (!response.ok) throw new Error(body.error || 'HTTP ' + response.status);
       renderEntries(body);
+      publishBadge(body.entries.length);
       setStatus(
         'Listed ' + body.entries.length + ' entries from ' + body.projectDir +
           (reason ? ' (' + reason + ')' : '')
       );
     } catch (err) {
+      publishBadge(0);
       setStatus('Cannot read project files: ' + (err && err.message ? err.message : err), true);
     } finally {
       refreshEl.disabled = false;
@@ -103,6 +105,16 @@
   }
 
   // ------------------------------------------------------------------ bridge
+
+  /** `rail.badge: true` needs a producer: the count mirrors the file list. */
+  function publishBadge(count) {
+    if (!bridge || typeof bridge.setBadge !== 'function') return;
+    try {
+      bridge.setBadge(count);
+    } catch (err) {
+      /* the badge is cosmetic; never break the page over it */
+    }
+  }
 
   function describeContext(ctx) {
     if (!ctx) return 'context: unavailable';

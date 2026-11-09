@@ -35,7 +35,9 @@ function fakeSocket() {
   const handlers = new Map();
   const sent = [];
   const closed = [];
-  return {
+  const socket = {
+    // `ws` / browser WebSocket readyState: 1 = OPEN, 3 = CLOSED.
+    readyState: 1,
     sent,
     closed,
     send(data) {
@@ -43,6 +45,7 @@ function fakeSocket() {
     },
     close(code, reason) {
       closed.push({ code, reason });
+      socket.readyState = 3;
     },
     on(event, callback) {
       const list = handlers.get(event) ?? [];
@@ -50,9 +53,11 @@ function fakeSocket() {
       handlers.set(event, list);
     },
     emit(event, ...args) {
+      if (event === "close") socket.readyState = 3;
       for (const callback of handlers.get(event) ?? []) callback(...args);
     },
   };
+  return socket;
 }
 
 function createContext(options = {}) {
@@ -97,6 +102,8 @@ function createContext(options = {}) {
     terminal: {
       async create(opts) {
         terminal.create.push(opts);
+        // Lets a test close the socket while the host is still creating the PTY.
+        if (options.createGate) await options.createGate;
         if (options.terminalError) throw options.terminalError;
         return { id: "pty_1" };
       },
@@ -202,17 +209,21 @@ test("GET /files answers 400 with a neutral error when the ticket has no project
   assert.deepEqual(harness.filesCalls, []);
 });
 
-test("GET /files maps entries to public fields and reports file errors", async () => {
+test("GET /files maps entries to public fields and maps host errors to 500", async () => {
   const harness = await activate();
   const handler = httpRoute(harness, "GET", "/files").handler;
   const body = JSON.parse((await handler({ projectDir: "/project/alpha" })).body);
   assert.deepEqual(body.entries[0], { name: "src", kind: "dir", size: 0, mtime: 1 });
   assert.equal(body.entries[0].internal, undefined);
 
-  const failing = await activate({ filesError: new Error("not a directory: .") });
+  // A host failure is a server error, not a caller error, and the raw host
+  // message (absolute paths, errno text) never reaches the page.
+  const failing = await activate({ filesError: new Error("not a directory: C:/secret") });
   const failed = await httpRoute(failing, "GET", "/files").handler({ projectDir: "/project" });
-  assert.equal(failed.status, 400);
-  assert.match(JSON.parse(failed.body).error, /not a directory/);
+  assert.equal(failed.status, 500);
+  const error = JSON.parse(failed.body).error;
+  assert.match(error, /unavailable/i);
+  assert.doesNotMatch(error, /not a directory|C:\/secret/i);
 });
 
 test("listFiles action shares the host-service path and needs an explicit projectDir", async () => {
@@ -272,6 +283,35 @@ test("ws /term reports a neutral error when the host has no PTY", async () => {
   assert.equal(socket.sent[0].type, "error");
   assert.match(socket.sent[0].message, /not supported/);
   assert.deepEqual(socket.closed, [{ code: 1011, reason: "terminal unavailable" }]);
+});
+
+test("ws /term kills the PTY when the socket closes before create resolves", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const harness = await activate({ createGate: gate });
+  const socket = fakeSocket();
+
+  const pending = wsRoute(harness, "/term").handler(socket, { projectDir: "/project/alpha" });
+  // The page navigates away (or Desktop closes the tab) mid-create.
+  socket.close(1001, "page closed");
+  release();
+  await pending;
+
+  assert.deepEqual(harness.terminal.create, [
+    { projectDir: "/project/alpha", cols: 100, rows: 24 },
+  ]);
+  // The freshly created PTY must not outlive a socket that never got it.
+  assert.deepEqual(harness.terminal.kill, ["pty_1"]);
+  assert.equal(harness.terminal.bridge.length, 0);
+});
+
+test("the page publishes the rail badge from its file count", () => {
+  const app = fs.readFileSync(path.join(__dirname, "web", "app.js"), "utf8");
+  assert.match(app, /setBadge/, "rail.badge:true needs a producer");
+  assert.match(app, /publishBadge\(body\.entries\.length\)/, "badge mirrors the file count");
+  assert.match(app, /publishBadge\(0\)/, "badge clears when the list fails");
 });
 
 test("the page is CSP-safe and only calls its own package namespace", () => {

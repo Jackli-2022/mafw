@@ -54,6 +54,18 @@ function messageOf(err) {
   return String(err);
 }
 
+/** `ws` and the browser WebSocket both use readyState 1 for OPEN. */
+const WS_OPEN = 1;
+
+/**
+ * True once the socket left the OPEN state (closing/closed). The host may
+ * finish creating the PTY after the page navigated away; a close listener
+ * attached that late would never fire, so the caller must reap the PTY now.
+ */
+function socketClosed(socket) {
+  return typeof socket.readyState === 'number' && socket.readyState !== WS_OPEN;
+}
+
 function requireProjectDir(value, source) {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new TypeError(`${source} needs an explicit projectDir (never ctx.projectDir)`);
@@ -98,10 +110,20 @@ module.exports = {
     // Served at `/api/plugins/web-surface-demo/api/files`.
     // The page calls its own namespace; no gateway route is reachable from here.
     ctx.http.route('GET', '/files', async (req) => {
+      let projectDir;
       try {
-        return json(200, await listEntries(req.projectDir, 'GET /files'));
+        projectDir = requireProjectDir(req.projectDir, 'GET /files');
       } catch (err) {
+        // No ticket project: the caller asked without a usable context.
         return json(400, { error: messageOf(err) });
+      }
+      try {
+        return json(200, await listEntries(projectDir, 'GET /files'));
+      } catch (err) {
+        // Host failure (permissions, transient FS): a server error. The raw
+        // message can carry absolute paths, so the page gets neutral copy.
+        ctx.log.warn(`[${PACKAGE_NAME}] GET /files failed: ${messageOf(err)}`);
+        return json(500, { error: 'project files are unavailable' });
       }
     });
 
@@ -118,6 +140,12 @@ module.exports = {
         return;
       }
       const id = session.id;
+      // The socket can close while the host is still creating the PTY. Attach
+      // the listener only while it can still fire; otherwise reap right away.
+      if (socketClosed(socket)) {
+        ctx.terminal.kill(id);
+        return;
+      }
       socket.on('close', () => ctx.terminal.kill(id));
       try {
         await ctx.terminal.bridge(id, socket);
