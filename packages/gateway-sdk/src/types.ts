@@ -297,6 +297,8 @@ export interface GatewayStatus {
   attached?: boolean
   /** `standalone` / `desktop-managed`, or null when the gateway did not report one. */
   attachedOrigin?: string | null
+  canRestartWithLocalBuild?: boolean
+  restartHint?: string | null
   source: 'managed' | 'external' | null
   expectedVersion: string | null
   actualVersion: string | null

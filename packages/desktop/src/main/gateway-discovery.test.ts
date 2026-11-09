@@ -7,6 +7,7 @@ import {
   isGatewayDiscoveryFresh,
   parseGatewayDiscovery,
   readGatewayDiscovery,
+  readGatewayDiscoverySync,
 } from "./gateway-discovery"
 
 const now = 1_000_000
@@ -65,6 +66,7 @@ describe("desktop gateway discovery", () => {
     try {
       await writeFile(gatewayDiscoveryPath(dir), JSON.stringify(record()), "utf8")
       expect(await readGatewayDiscovery(dir)).toMatchObject({ instanceId: "instance-1", port: 3000 })
+      expect(readGatewayDiscoverySync(dir)).toMatchObject({ instanceId: "instance-1", port: 3000 })
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

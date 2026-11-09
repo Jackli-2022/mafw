@@ -19,6 +19,9 @@ test("Config renders gateway ownership and source diagnostics from the model", (
   assert.match(config, /gwStatus\(\)\?\.quarantine/)
   assert.match(config, /gwStatus\(\)\?\.attached/)
   assert.match(config, /gwStatus\(\)\?\.attachedOrigin/)
+  assert.match(config, /gwStatus\(\)\?\.canRestartWithLocalBuild/)
+  assert.match(config, /gwStatus\(\)\?\.restartHint/)
+  assert.match(config, /gateway\.restartLocal\(\)/)
 })
 
 test("Config switches source explicitly and supports quarantine retry", () => {

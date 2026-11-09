@@ -23,7 +23,12 @@ import {
   gatewayInstanceRegistryRoot,
   readGatewayInstanceRecords,
 } from "./gateway-instance-registry"
-import { readGatewayDiscovery, type GatewayDiscoveryRecord } from "./gateway-discovery"
+import {
+  readGatewayDiscovery,
+  readGatewayDiscoverySync,
+  type GatewayDiscoveryRecord,
+} from "./gateway-discovery"
+import { decideLocalBuildRestart } from "./gateway-restart"
 import {
   healthMatchesDiscovery,
   probeGateway,
@@ -76,6 +81,8 @@ export type GatewayStatus = {
   attached: boolean
   /** `standalone` / `desktop-managed`, or null when the gateway did not report one. */
   attachedOrigin: string | null
+  canRestartWithLocalBuild: boolean
+  restartHint: string | null
   source: GatewaySourcePreference | null
   expectedVersion: string | null
   actualVersion: string | null
@@ -705,12 +712,65 @@ export function restartGateway(): Promise<void> {
   return restartInflight
 }
 
+/**
+ * Stop the gateway described by `gateway.json` and start this desktop's build.
+ * Only a process whose /health matches the discovery record is eligible, so a
+ * stale file or a reused pid can never turn this into a kill-anything button.
+ */
+export async function restartGatewayWithLocalBuild(): Promise<void> {
+  const discovery = await readGatewayDiscovery()
+  const probe = await probeRunningGateway()
+  const decision = decideLocalBuildRestart({
+    state,
+    discovery,
+    health: probe.kind === "gateway" ? probe.health : null,
+  })
+  if (!decision.allowed || !discovery) {
+    errorMessage = decision.hint ?? "cannot restart the current gateway with the local build"
+    notifyState(state === "conflict" ? "conflict" : "failed")
+    return
+  }
+
+  writeLog("utility", "restarting gateway with the local build", {
+    pid: discovery.pid,
+    port: discovery.port,
+  }, "info")
+  await killProcess(discovery.pid)
+  await waitForGatewayDown(() => checkHealth(`http://127.0.0.1:${discovery.port}`), {
+    timeoutMs: 8000,
+    intervalMs: 200,
+  })
+  if (await tcpReachable("127.0.0.1", discovery.port)) {
+    errorMessage = `old gateway is still holding port ${discovery.port}`
+    notifyState("failed")
+    return
+  }
+
+  if (healthInterval) {
+    clearInterval(healthInterval)
+    healthInterval = null
+  }
+  port = null
+  actualHealth = null
+  managedChild = null
+  managedRecord = null
+  spawnedByUs = false
+  errorMessage = null
+  notifyState("stopped")
+  await startGateway()
+}
+
 export function getGatewayStatus(): GatewayStatus {
   const quarantine = managedRoot ? readQuarantine(managedRoot) : null
   const attachment = resolveGatewayAttachment({
     ready: state === "ready",
     spawnedByUs,
     distribution: actualHealth?.distribution ?? null,
+  })
+  const restartDecision = decideLocalBuildRestart({
+    state,
+    discovery: readGatewayDiscoverySync(),
+    health: actualHealth,
   })
   return {
     state,
@@ -720,6 +780,8 @@ export function getGatewayStatus(): GatewayStatus {
     spawnedByUs,
     attached: attachment.attached,
     attachedOrigin: attachment.attachedOrigin,
+    canRestartWithLocalBuild: restartDecision.allowed,
+    restartHint: restartDecision.hint,
     source: sourcePreference,
     expectedVersion: expected?.gatewayVersion ?? null,
     actualVersion: actualHealth?.gatewayVersion ?? null,

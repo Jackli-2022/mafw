@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -84,4 +85,15 @@ export function isGatewayDiscoveryFresh(
   staleMs = 30_000,
 ): boolean {
   return now - Date.parse(record.heartbeatAt) <= staleMs
+}
+
+/** Status IPC is synchronous; reading a small JSON file is cheaper than a cache. */
+export function readGatewayDiscoverySync(
+  runtimeDir: string = gatewayRuntimeDir(),
+): GatewayDiscoveryRecord | null {
+  try {
+    return parseGatewayDiscovery(JSON.parse(readFileSync(gatewayDiscoveryPath(runtimeDir), "utf8")))
+  } catch {
+    return null
+  }
 }
