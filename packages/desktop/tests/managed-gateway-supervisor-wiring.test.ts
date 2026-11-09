@@ -28,7 +28,9 @@ test("managed spawn pins port and identity and never writes the CLI pid file", (
 })
 
 test("startup probes ownership before planning and never adopts an unregistered gateway when packaged", () => {
-  assert.match(sidecar, /const running = await probeGatewayAt\(3000\)/)
+  assert.match(sidecar, /const running = await probeRunningGateway\(\)/)
+  assert.match(sidecar, /readGatewayDiscovery\(\)/)
+  assert.match(sidecar, /healthMatchesDiscovery\(health, discovery\)/)
   assert.match(sidecar, /readGatewayInstanceRecords\(INSTANCE_ROOT, CHANNEL\)/)
   assert.match(sidecar, /preference: sourcePreference/)
   assert.match(sidecar, /running,/)
@@ -52,10 +54,11 @@ test("packaged managed startup uses the verified lifecycle before replacing a ch
   assert.match(main, /configureManagedGatewayRoot\(join\(app\.getPath\("userData"\), "gateway"\)\)/)
 })
 
-test("managed stop awaits child exit and removes its registration", () => {
+test("managed stop awaits child exit and no longer writes a registry record", () => {
   assert.match(sidecar, /async function terminateManagedInstance/)
   assert.match(sidecar, /await waitForChildExit\(child\)/)
-  assert.match(sidecar, /await removeGatewayInstanceRecord\(INSTANCE_ROOT, record\)/)
+  assert.doesNotMatch(sidecar, /writeGatewayInstanceRecord/)
+  assert.doesNotMatch(sidecar, /removeGatewayInstanceRecord\(INSTANCE_ROOT/)
   assert.match(sidecar, /await waitForGatewayDown\(\(\) => checkHealth\(liveUrl\)/)
   assert.match(sidecar, /restartInflight = \(async \(\) => \{\s*await stopGateway\(\)\s*await startGateway\(\)/)
 })
