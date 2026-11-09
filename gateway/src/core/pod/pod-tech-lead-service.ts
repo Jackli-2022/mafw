@@ -55,6 +55,8 @@ export interface PodTechLeadServiceDeps {
   store: PodStore;
   pods: Pick<PodService, 'ensure'>;
   sessions: Pick<PodSessionSupervisor, 'ensure' | 'current'>;
+  /** Live runtime name — a lease from another runtime is not the bound session. */
+  runtimeName(): string;
   runtime: PodTechLeadRuntime;
   /** revision checkout provider; production always injects PodWorktreeService. */
   worktrees?: Pick<PodWorktreeService, 'ensure' | 'ensureExisting' | 'assertProjectRoot'>;
@@ -164,7 +166,7 @@ export class PodTechLeadService {
       );
     }
     if (input.createdBy) {
-      const caller = this.deps.store.getMemberBySession(input.createdBy);
+      const caller = this.deps.store.getMemberBySession(input.createdBy, this.deps.runtimeName());
       if (!caller || caller.role !== 'lead' || caller.podId !== detail.pod.id) {
         throw new PodError(403, 'only the project Lead can create a Pod goal');
       }
@@ -368,7 +370,7 @@ export class PodTechLeadService {
       goalId: goal.goalId,
       revision,
       kind: 'discussion',
-    });
+    }, this.deps.runtimeName());
     if (!active || active.sessionId !== caller) {
       throw new PodError(403, `session is not the bound Tech Lead session for goal ${goal.goalId}`);
     }
@@ -379,7 +381,7 @@ export class PodTechLeadService {
   isLeadSession(sessionID: string): boolean {
     const caller = clean(sessionID);
     if (!caller) return false;
-    return this.deps.store.getMemberBySession(caller)?.role === 'lead';
+    return this.deps.store.getMemberBySession(caller, this.deps.runtimeName())?.role === 'lead';
   }
 
   /** 该项目是否已经有 Pod（用于拒绝「Lead 无 sessionID」的静默 legacy 回退）。 */

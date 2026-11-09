@@ -110,6 +110,7 @@ describe('pod collaboration routes (Task 18)', () => {
       now: () => now,
       newId: (() => { let n = 0; return () => `id_${++n}`; })(),
       broadcast: () => {},
+      currentRuntime: () => 'opencode',
       getManagerSession: async () => 'ses_manager',
       getSession: async () => ({ time: { idle: 1 } }),
       messages: async () => [],
@@ -123,6 +124,7 @@ describe('pod collaboration routes (Task 18)', () => {
     const supervisor = new PodSessionSupervisor({
       store,
       now: () => now,
+      runtimeName: () => 'opencode',
       isAlive: () => true,
     });
     promptCalls = [];
@@ -131,6 +133,7 @@ describe('pod collaboration routes (Task 18)', () => {
       store,
       pods,
       sessions: supervisor,
+      runtimeName: () => 'opencode',
       runtime: {
         createSession: async () => `ses_tech_${++sessionSeq}`,
         promptAsync: async ({ sessionID, parts }) => {
@@ -193,7 +196,7 @@ describe('pod collaboration routes (Task 18)', () => {
       directions: { recordRejectInput: (input) => directions.recordRejectInput(input) },
       log: () => {},
     });
-    access = new PodAccess(store);
+    access = new PodAccess(store, () => 'opencode');
 
     podDeps = {
       pods,

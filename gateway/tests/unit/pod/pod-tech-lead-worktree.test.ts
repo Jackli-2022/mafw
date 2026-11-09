@@ -40,11 +40,13 @@ describe('Pod Tech Lead worktree session', () => {
         store,
         now: () => now,
         newId: () => 'podsess_1',
+        runtimeName: () => 'opencode',
       });
       const service = new PodTechLeadService({
         store,
         pods: { ensure: jest.fn(async () => detail) },
         sessions: supervisor,
+        runtimeName: () => 'opencode',
         runtime,
         worktrees,
         resolveProject: () => ({ projectDir: repo, mafwDir }),
@@ -107,9 +109,10 @@ describe('Pod Tech Lead worktree session', () => {
       const service = new PodTechLeadService({
         store,
         pods: { ensure: jest.fn(async () => detail) },
-        sessions: new PodSessionSupervisor({ store, now: () => now, newId: () => 'podsess_1' }),
+        sessions: new PodSessionSupervisor({ store, now: () => now, newId: () => 'podsess_1', runtimeName: () => 'opencode' }),
         runtime,
         worktrees: new PodWorktreeService({ store, now: () => now }),
+        runtimeName: () => 'opencode',
         resolveProject: () => ({ projectDir: repo, mafwDir: path.join(dbDir, '.mafw') }),
         now: () => now,
         newId: () => 'pg_legacy',

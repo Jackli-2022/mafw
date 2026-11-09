@@ -1273,6 +1273,8 @@ export interface PodSession {
   goalId: string | null
   node: string | null
   sessionId: string
+  /** Owning runtime (old gateways omit it; ids are not portable across runtimes). */
+  runtime?: string
   status: string
   transcriptRef: string | null
   /** Supervisor 作用域（旧 gateway 缺省）：discussion = Tech Lead 讨论会话。 */

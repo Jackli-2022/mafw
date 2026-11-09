@@ -25,10 +25,11 @@ test('A2A handoff end-to-end: create, deliver, pull, cancel', async () => {
   store.insertSession({ id: 'ps1', podId: pod.id, memberId: builder.id, goalId: 'g1', node: 'coordination', sessionId: 'ses_builder', status: 'active', transcriptRef: null, now: NOW });
 
   const notify = () => {};
-  const access = new PodAccess(store);
+  const access = new PodAccess(store, () => 'opencode');
   const prompts: any[] = [];
   const delivery = new PodMessageDelivery({
     store,
+    runtimeName: () => 'opencode',
     getSession: async () => ({}),
     promptAsync: async (input) => { prompts.push(input); },
   });
@@ -115,12 +116,13 @@ test('A2A actor gate admits a Tech Lead session and rejects a non-roster role', 
   store.upsertMember({ id: 'm_ghost', podId: pod.id, role: 'ghost' as any, displayName: 'Ghost', agentName: 'ghost', modelProvider: null, modelId: null, status: 'available', configJson: null, now: NOW });
   store.insertSession({ id: 'ps_ghost', podId: pod.id, memberId: 'm_ghost', goalId: 'g1', node: 'discussion', sessionId: 'ses_ghost', status: 'active', transcriptRef: null, now: NOW });
 
-  const access = new PodAccess(store);
+  const access = new PodAccess(store, () => 'opencode');
   const bridge = new PodA2ABridge({
     store,
     access,
     delivery: new PodMessageDelivery({
       store,
+      runtimeName: () => 'opencode',
       getSession: async () => ({}),
       promptAsync: async () => {},
     }),

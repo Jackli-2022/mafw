@@ -418,4 +418,79 @@ describe('PodStore', () => {
       now: '2026-11-09T01:00:00.000Z',
     })).toBeNull();
   });
+
+  test('migrates pod_member_sessions with a runtime column and tags legacy rows opencode', () => {
+    const oldDb = new Database(path.join(dir, 'old-session-runtime.db'));
+    oldDb.exec(`
+      CREATE TABLE pod_member_sessions (
+        id TEXT PRIMARY KEY,
+        pod_id TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        goal_id TEXT,
+        node TEXT,
+        session_id TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL,
+        transcript_ref TEXT,
+        scope_kind TEXT,
+        revision INTEGER,
+        generation INTEGER NOT NULL DEFAULT 1,
+        last_active_at TEXT,
+        created_at TEXT NOT NULL,
+        ended_at TEXT
+      );
+    `);
+    oldDb.prepare(`
+      INSERT INTO pod_member_sessions (id, pod_id, member_id, session_id, status, created_at)
+      VALUES ('ps_old', 'pod_1', 'm_lead', 'ses_legacy', 'active', '2026-10-01T00:00:00.000Z')
+    `).run();
+
+    const migrated = new PodStore(oldDb);
+    const cols = (oldDb.prepare('PRAGMA table_info(pod_member_sessions)').all() as any[]).map((c) => c.name);
+    expect(cols).toContain('runtime');
+    expect(migrated.getSessionBySessionId('ses_legacy')?.runtime).toBe('opencode');
+    oldDb.close();
+  });
+
+  test('persists session runtime and filters active sessions/leases by runtime', () => {
+    const now = '2026-11-09T00:00:00.000Z';
+    store.insertSession({
+      id: 'ps_oc', podId: 'pod_1', memberId: 'm_lead', goalId: null, node: 'coordination',
+      sessionId: 'ses_oc', status: 'active', transcriptRef: null, runtime: 'opencode', now,
+    });
+    store.insertSession({
+      id: 'ps_pi', podId: 'pod_1', memberId: 'm_lead', goalId: null, node: 'coordination',
+      sessionId: 'ses_pi', status: 'active', transcriptRef: null, runtime: 'pi', now,
+    });
+    expect(store.getSessionBySessionId('ses_pi')?.runtime).toBe('pi');
+    expect(store.listActiveSessions('pod_1', 'opencode').map((s) => s.sessionId)).toEqual(['ses_oc']);
+    expect(store.listActiveSessions('pod_1', 'pi').map((s) => s.sessionId)).toEqual(['ses_pi']);
+
+    const scope = { podId: 'pod_1', memberId: 'm_builder', goalId: 'g1', revision: 1, kind: 'discussion' as const };
+    store.leaseScopedSession({ id: 'ls_oc', scope, sessionId: 'ses_scoped_oc', runtime: 'opencode', now });
+    expect(store.getActiveScopedSession(scope, 'opencode')?.sessionId).toBe('ses_scoped_oc');
+    expect(store.getActiveScopedSession(scope, 'pi')).toBeNull();
+
+    // A runtime switch retires the previous runtime's lease for that scope
+    // (Option 1: one active lease line; old runtime rows stay as history).
+    store.leaseScopedSession({ id: 'ls_pi', scope, sessionId: 'ses_scoped_pi', runtime: 'pi', now });
+    expect(store.getActiveScopedSession(scope, 'pi')?.sessionId).toBe('ses_scoped_pi');
+    expect(store.getActiveScopedSession(scope, 'opencode')).toBeNull();
+    expect(store.getSessionBySessionId('ses_scoped_oc')?.endedAt).not.toBeNull();
+  });
+
+  test('getMemberBySession only resolves sessions owned by the requested runtime', () => {
+    const now = '2026-11-09T00:00:00.000Z';
+    store.ensurePod({ id: 'pod_1', projectDir: '/p', name: 'P', now });
+    store.upsertMember({
+      id: 'm_lead', podId: 'pod_1', role: 'lead', displayName: 'Lead', agentName: 'lead',
+      modelProvider: null, modelId: null, status: 'available', configJson: null, now,
+    });
+    store.insertSession({
+      id: 'ps_pi_lead', podId: 'pod_1', memberId: 'm_lead', goalId: null, node: 'coordination',
+      sessionId: 'ses_pi_lead', status: 'active', transcriptRef: null, runtime: 'pi', now,
+    });
+
+    expect((store.getMemberBySession as any)('ses_pi_lead', 'opencode')).toBeNull();
+    expect((store.getMemberBySession as any)('ses_pi_lead', 'pi')?.id).toBe('m_lead');
+  });
 });

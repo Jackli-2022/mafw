@@ -3,6 +3,25 @@
 > 迁移自根 `AGENTS.md`（2026-11-10），原文搬迁（未改写）；章节号沿用迁移前编号，
 > 交叉引用以标题为准。后续变更记录写 `docs/releases/`，不再回填本文件。
 
+## 现状：会话 runtime 归属（2026-11-10）
+
+- **身份与租约分离**：Lead 的稳定身份是 `(project, role=lead)`；runtime session id 只是租约。
+  kv `manager-session` 用 `byRuntime` 按 runtime 分槽（`LeadSessionRegistry.runtimeName` 必须是
+  **live getter**，构造于 runtime 创建之前也不能快照），不能靠 `ses_` / `pi_` 前缀猜归属。
+- **Pod 会话表按 runtime 归属**：`pod_member_sessions.runtime`（存量行启动时一次性回填
+  `opencode`）。`PodSessionSupervisor` / `PodSessionLifecycle` / `PodTechLeadService` /
+  `PodContextSelectionService` / `PodAccess` / `PodMessageDelivery` 只认当前 runtime 的
+  租约、成员与推送目标。
+- **单活跃租约**：仍每个作用域一条 active 行；`leaseScopedSession` 在同一事务结束其它 runtime
+  的同作用域租约（旧行保留为历史）。`PodService.bindLead` 对其它 runtime 的 coordination 行
+  只 `end`、不 snapshot/archive；切回原 runtime 时按旧 session id `reactivate`。
+- **展示与回收**：`PodService.get` 隐藏其它 runtime 的 active session（ended 历史仍展示）；
+  `reconcile` / `reconcileMemberStatus` / `snapshotSession` / `finalizeMissingSession` 均按当前
+  runtime。
+- **活探针**：`opencode` SDK `throwOnError=false` 下 404 返回 `{error,...}` 信封，adapter 归一为
+  `undefined`；Lead 与 Pod 会话探活统一 `isLiveSessionInfo`（必须是带 `id` 且无 `error` 的会话
+  记录）。
+
 ### Pod 协作 Goal Loop：Lead / Tech Lead / Builder / Reviewer（2026-11-03）
 
 spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`，plan

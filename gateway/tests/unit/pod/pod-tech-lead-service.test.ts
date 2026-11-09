@@ -45,6 +45,7 @@ describe('PodTechLeadService', () => {
   let notify: jest.Mock;
   let service: PodTechLeadService;
   let supervisor: PodSessionSupervisor;
+  let currentRuntime: string;
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-pod-tech-lead-'));
@@ -98,15 +99,18 @@ describe('PodTechLeadService', () => {
     registerInternalSession = jest.fn();
     emitGoalCreated = jest.fn();
     notify = jest.fn();
+    currentRuntime = 'opencode';
     supervisor = new PodSessionSupervisor({
       store,
       now: () => LATER,
       newId: () => 'podsess_1',
+      runtimeName: () => currentRuntime,
     });
     service = new PodTechLeadService({
       store,
       pods: { ensure: jest.fn(async () => detail) },
       sessions: supervisor,
+      runtimeName: () => currentRuntime,
       runtime,
       resolveProject: () => ({ projectDir: dir, mafwDir }),
       now: () => LATER,
@@ -209,6 +213,27 @@ describe('PodTechLeadService', () => {
     expect(service.isLeadSession('ses_builder')).toBe(false);
   });
 
+  test('Lead identity and creator checks are runtime-scoped', async () => {
+    expect(service.isLeadSession('ses_lead')).toBe(true);
+    currentRuntime = 'pi';
+    expect(service.isLeadSession('ses_lead')).toBe(false);
+    await expect(service.createGoal({
+      podId: 'pod_1', projectDir: dir, title: 'Loop', objective: 'x', createdBy: 'ses_lead',
+    })).rejects.toMatchObject({ status: 403 });
+  });
+
+  test('a Tech Lead lease owned by another runtime is not the bound session', async () => {
+    const created = await service.createGoal({
+      podId: 'pod_1', projectDir: dir, title: 'Loop', objective: 'x', createdBy: 'ses_lead',
+    });
+
+    // No ensure has run under the new runtime yet: the opencode lease is still
+    // stored, but its id cannot be used as the pi Tech Lead session.
+    currentRuntime = 'pi';
+    expect(() => service.assertTechLeadSession(created.goalId, 'ses_tech_lead'))
+      .toThrow(PodError);
+  });
+
   test('rejects a non-Lead creator and a pod mismatch before writing any goal', async () => {
     await expect(service.createGoal({
       podId: 'pod_1', projectDir: dir, title: 'Loop', objective: 'x', createdBy: 'ses_builder',
@@ -274,6 +299,7 @@ describe('PodTechLeadService', () => {
         store,
         pods: { ensure: jest.fn(async () => detail) },
         sessions: supervisor,
+        runtimeName: () => currentRuntime,
         runtime,
         worktrees: new PodWorktreeService({ store, now: () => LATER }),
         resolveProject: () => ({ projectDir: nonGit, mafwDir: path.join(nonGit, '.mafw') }),
@@ -305,6 +331,7 @@ describe('PodTechLeadService', () => {
         store,
         pods: { ensure: jest.fn(async () => detail) },
         sessions: supervisor,
+        runtimeName: () => currentRuntime,
         runtime,
         worktrees: new PodWorktreeService({ store, now: () => LATER }),
         resolveProject: () => ({ projectDir: sub, mafwDir: path.join(sub, '.mafw') }),

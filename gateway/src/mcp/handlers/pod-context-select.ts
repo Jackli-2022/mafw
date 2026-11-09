@@ -87,6 +87,8 @@ export interface PodContextSelectionDeps {
     PodStore,
     'getGoalByGoalId' | 'getGoalRevision' | 'getPod' | 'getMemberBySession'
   >;
+  /** Live runtime name — a session from another runtime is not the Lead. */
+  runtimeName(): string;
   /** Goal 的 mafw 目录（组合根提供：state/request 两种布局都能解析）。 */
   resolveMafwDir(goalId: string): string | null;
   now?(): string;
@@ -195,7 +197,7 @@ export class PodContextSelectionService {
     const goal = this.deps.store.getGoalByGoalId(goalId);
     if (!goal) throw new PodError(404, `goal not found: ${goalId}`);
     const actor = clean(actorSessionID);
-    const member = actor ? this.deps.store.getMemberBySession(actor) : null;
+    const member = actor ? this.deps.store.getMemberBySession(actor, this.deps.runtimeName()) : null;
     // 只有绑定在该 Pod 的 Lead 能改上下文；Tech Lead/Builder/Reviewer 不能扩大自己的上下文。
     if (!member || member.role !== 'lead' || member.podId !== goal.podId) {
       throw new PodError(403, `only the project Lead can change the context of goal ${goalId}`);

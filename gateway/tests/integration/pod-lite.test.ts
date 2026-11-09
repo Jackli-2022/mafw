@@ -38,6 +38,7 @@ describe('Pod Lite backend e2e', () => {
       now: () => new Date().toISOString(),
       newId: (() => { let n = 0; return () => `id_${++n}`; })(),
       broadcast: () => {},
+      currentRuntime: () => 'opencode',
       getManagerSession: async () => 'ses_manager',
       getSession: async () => ({ time: { idle: 1 } }),
       messages: async () => [{ role: 'assistant', text: 'ok' }],
@@ -67,7 +68,7 @@ describe('Pod Lite backend e2e', () => {
       newId: (() => { let n = 0; return () => `pg_${++n}`; })(),
       notify: () => {},
     });
-    access = new PodAccess(store);
+    access = new PodAccess(store, () => 'opencode');
   });
 
   afterEach(() => {

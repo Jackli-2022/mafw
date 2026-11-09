@@ -36,7 +36,7 @@ function fixture() {
     kvAll: <T,>(scope: string) => [...kv.entries()]
       .filter(([key]) => key.startsWith(`${scope}\u0000`))
       .map(([key, value]) => ({ key: key.slice(scope.length + 1), value: value as T })),
-    runtimeName: 'opencode',
+    runtimeName: () => 'opencode',
     podByProject: (dir) => pods.get(canonicalProjectDir(dir)) ?? null,
     activePodCoordination: (podId) => coordination.get(podId) ?? null,
     createSession: async () => {
@@ -248,6 +248,30 @@ describe('LeadSessionRegistry', () => {
 
     expect(registry.findBySessionId('ses_active')).toMatchObject({ projectDir: f.canonical });
     expect(registry.findBySessionId('ses_pi_only')).toBeNull();
+  });
+
+  test('runtime switch writes the current runtime slot and preserves the previous runtime slot', async () => {
+    const f = fixture();
+    f.writeSlot(f.projectDir, 'ses_oc', 'opencode');
+    f.alive.add('ses_oc');
+    let runtime = 'pi';
+    // Lazy getter: the slot must follow the *current* runtime, not the one
+    // that happened to be active when the registry was constructed.
+    const registry = new LeadSessionRegistry(f.deps({ runtimeName: () => runtime }));
+
+    const created = await registry.ensure(f.projectDir);
+    expect(created.sessionId).toBe('ses_created_1');
+
+    const slots = f.kv.get(`manager-session\u0000${f.projectDir}`) as any;
+    expect(slots.byRuntime.opencode.sessionId).toBe('ses_oc');
+    expect(slots.byRuntime.pi.sessionId).toBe('ses_created_1');
+    expect(registry.current(f.projectDir)?.sessionId).toBe('ses_created_1');
+
+    runtime = 'opencode';
+    const resumed = await registry.ensure(f.projectDir);
+    expect(resumed.sessionId).toBe('ses_oc');
+    expect((f.kv.get(`manager-session\u0000${f.projectDir}`) as any).byRuntime.pi.sessionId)
+      .toBe('ses_created_1');
   });
 
   test('ensure is idempotent when called twice', async () => {

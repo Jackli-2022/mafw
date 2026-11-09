@@ -539,6 +539,9 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         const result = await client.session.get({
           sessionID: opts.sessionID,
         });
+        // SDK 默认 throwOnError=false：404 解析为 `{error,...}` 信封（无 data）。
+        // 不能把它交给 unwrap（会返回 truthy 信封）——调用方按 undefined = 不存在处理。
+        if (result && typeof result === 'object' && (result as any).error) return undefined;
         return unwrap(result);
       },
 

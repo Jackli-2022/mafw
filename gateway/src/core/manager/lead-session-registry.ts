@@ -19,7 +19,9 @@ export interface LeadSessionRegistryDeps {
   kvGet(scope: string, key: string): unknown;
   kvSet(scope: string, key: string, value: unknown): void;
   kvAll<T = unknown>(scope: string): Array<{ key: string; value: T }>;
-  runtimeName: string;
+  /** Live runtime name — a getter, not a snapshot: a hot runtime switch must
+   *  read/write the new runtime's slot and leave the previous one intact. */
+  runtimeName: () => string;
   podByProject(projectDir: string): { podId: string; projectDir: string } | null;
   activePodCoordination(podId: string): { sessionId: string } | null;
   createSession(projectDir: string): Promise<string>;
@@ -81,7 +83,7 @@ export class LeadSessionRegistry {
 
   findBySessionId(sessionID: string): { projectDir: string; sessionId: string } | null {
     for (const row of this.deps.kvAll('manager-session')) {
-      const slot = readManagerSlot(row.value, this.deps.runtimeName);
+      const slot = readManagerSlot(row.value, this.deps.runtimeName());
       if (slot?.sessionId !== sessionID) continue;
       return { projectDir: canonicalProjectDir(row.key), sessionId: slot.sessionId };
     }
@@ -163,7 +165,7 @@ export class LeadSessionRegistry {
     const rows: SlotRow[] = [];
     for (const entry of this.deps.kvAll('manager-session')) {
       if (canonicalProjectDir(entry.key) !== canonical) continue;
-      const slot = readManagerSlot(entry.value, this.deps.runtimeName);
+      const slot = readManagerSlot(entry.value, this.deps.runtimeName());
       if (!slot?.sessionId) continue;
       rows.push({
         key: entry.key,
@@ -180,11 +182,11 @@ export class LeadSessionRegistry {
 
   private writeCanonical(canonical: string, sessionId: string): void {
     const existing = this.deps.kvGet('manager-session', canonical);
-    const slot = readManagerSlot(existing, this.deps.runtimeName);
+    const slot = readManagerSlot(existing, this.deps.runtimeName());
     if (slot?.sessionId === sessionId) return;
     this.deps.kvSet('manager-session', canonical, writeManagerSlot(
       existing,
-      this.deps.runtimeName,
+      this.deps.runtimeName(),
       { sessionId, createdAt: slot?.createdAt ?? this.deps.now() },
     ));
   }
@@ -204,7 +206,7 @@ export class LeadSessionRegistry {
         this.deps.kvSet(
           'manager-session',
           row.key,
-          clearManagerSlot(existing, this.deps.runtimeName),
+          clearManagerSlot(existing, this.deps.runtimeName()),
         );
       } catch (err: any) {
         this.deps.log?.(`[Lead] archive failed for ${row.sessionId} (non-fatal): ${err?.message ?? err}`);

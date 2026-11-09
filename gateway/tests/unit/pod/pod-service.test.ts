@@ -20,6 +20,8 @@ describe('PodService', () => {
   let clock: number;
   let getSessionImpl: (sessionID: string) => Promise<{ time?: { idle?: number; completed?: number }; parentID?: string }>;
   let messagesImpl: (sessionID: string, limit: number) => Promise<unknown[]>;
+  let currentRuntime: string;
+  let messagesCalls: string[];
   let service: PodService;
 
   const now = () => new Date(Date.UTC(2026, 9, 29, 0, 0, clock++)).toISOString();
@@ -40,6 +42,8 @@ describe('PodService', () => {
     clock = 0;
     getSessionImpl = async () => ({ time: { idle: 1 } });
     messagesImpl = async () => [{ role: 'assistant', text: 'done' }];
+    currentRuntime = 'opencode';
+    messagesCalls = [];
     service = new PodService({
       store,
       now,
@@ -50,7 +54,8 @@ describe('PodService', () => {
         return managerSessionId;
       },
       getSession: (sessionID) => getSessionImpl(sessionID),
-      messages: (sessionID, limit) => messagesImpl(sessionID, limit),
+      messages: (sessionID, limit) => { messagesCalls.push(sessionID); return messagesImpl(sessionID, limit); },
+      currentRuntime: () => currentRuntime,
       memoryRoot,
       listRegisteredProjectDirs: () => [projectDir],
       ensureMemory: () => {},
@@ -86,6 +91,7 @@ describe('PodService', () => {
       now,
       newId,
       broadcast: () => {},
+      currentRuntime: () => currentRuntime,
       getManagerSession: async () => managerSessionId,
       getSession: (sessionID) => getSessionImpl(sessionID),
       messages: (sessionID, limit) => messagesImpl(sessionID, limit),
@@ -113,6 +119,53 @@ describe('PodService', () => {
     expect(active[0].sessionId).toBe(managerSessionId);
     expect(active[0].id).toBe(old.id);
     expect(active[0].endedAt).toBeNull();
+  });
+
+  test('runtime switch retires the previous Lead coordination row without snapshotting it', async () => {
+    const first = await service.ensure(projectDir);
+    const podId = first.pod.id;
+    const ocRow = store.listSessions(podId)
+      .find((s) => s.node === 'coordination' && !s.endedAt)!;
+    expect(ocRow.runtime).toBe('opencode');
+    const messagesBefore = messagesCalls.length;
+
+    currentRuntime = 'pi';
+    managerSessionId = 'pier_lead';
+    const out = await service.ensureLead(podId);
+    expect(out.sessionId).toBe('pier_lead');
+    const active = store.listSessions(podId).filter((s) => s.node === 'coordination' && !s.endedAt);
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({ sessionId: 'pier_lead', runtime: 'pi' });
+    expect(store.getSessionBySessionId(ocRow.sessionId)?.endedAt).not.toBeNull();
+    // Cross-runtime rows are retired, never snapshotted through the wrong runtime.
+    expect(messagesCalls).toHaveLength(messagesBefore);
+
+    currentRuntime = 'opencode';
+    managerSessionId = ocRow.sessionId;
+    const back = await service.ensureLead(podId);
+    expect(back.sessionId).toBe(ocRow.sessionId);
+    const activeBack = store.listSessions(podId).filter((s) => s.node === 'coordination' && !s.endedAt);
+    expect(activeBack).toHaveLength(1);
+    expect(activeBack[0]).toMatchObject({ sessionId: ocRow.sessionId, runtime: 'opencode' });
+    expect(store.getSessionBySessionId('pier_lead')?.endedAt).not.toBeNull();
+  });
+
+  test('get hides active sessions owned by another runtime and keeps ended history', async () => {
+    const pod = await service.ensure(projectDir);
+    const builder = store.getMemberByRole(pod.pod.id, 'builder')!;
+    store.insertSession({
+      id: 'ps_pi_active', podId: pod.pod.id, memberId: builder.id, goalId: 'g1', node: 'execute',
+      sessionId: 'pier_active', status: 'active', transcriptRef: null, runtime: 'pi', now: now(),
+    });
+    store.insertSession({
+      id: 'ps_pi_ended', podId: pod.pod.id, memberId: builder.id, goalId: 'g1', node: 'review',
+      sessionId: 'pier_ended', status: 'active', transcriptRef: null, runtime: 'pi', now: now(),
+    });
+    store.endSession('pier_ended', now());
+
+    const detail = service.get(pod.pod.id)!;
+    expect(detail.sessions.some((s) => s.sessionId === 'pier_active')).toBe(false);
+    expect(detail.sessions.some((s) => s.sessionId === 'pier_ended')).toBe(true);
   });
 
   test('ensureLead cleans extra active coordination rows even when current id already active', async () => {
@@ -214,6 +267,7 @@ describe('PodService', () => {
       now,
       newId,
       broadcast: () => {},
+      currentRuntime: () => currentRuntime,
       getManagerSession: async () => managerSessionId,
       getSession: (sessionID) => getSessionImpl(sessionID),
       messages: (sessionID, limit) => messagesImpl(sessionID, limit),
@@ -243,6 +297,7 @@ describe('PodService', () => {
       now,
       newId,
       broadcast: () => {},
+      currentRuntime: () => currentRuntime,
       getManagerSession: async () => managerSessionId,
       getSession: (sessionID) => getSessionImpl(sessionID),
       messages: (sessionID, limit) => messagesImpl(sessionID, limit),
@@ -269,6 +324,7 @@ describe('PodService', () => {
       now,
       newId,
       broadcast: () => {},
+      currentRuntime: () => currentRuntime,
       getManagerSession: async () => { throw new Error('manager unavailable'); },
       getSession: (sessionID) => getSessionImpl(sessionID),
       messages: (sessionID, limit) => messagesImpl(sessionID, limit),

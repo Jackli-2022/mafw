@@ -33,13 +33,14 @@ describe('PodSessionSupervisor', () => {
     ...overrides,
   });
   const build = (deps: Partial<ConstructorParameters<typeof PodSessionSupervisor>[0]> = {}) =>
-    new PodSessionSupervisor({ store, now, newId, ...deps });
+    new PodSessionSupervisor({ store, now, newId, runtimeName: () => 'opencode', ...deps });
 
   const makeService = (overrides: Partial<PodServiceDeps> = {}) => new PodService({
     store,
     now,
     newId,
     broadcast: () => {},
+    currentRuntime: () => 'opencode',
     getManagerSession: async () => 'ses_manager',
     getSession: async () => ({ time: { idle: 1 } }),
     messages: async () => [{ role: 'assistant', text: 'done' }],
@@ -80,6 +81,31 @@ describe('PodSessionSupervisor', () => {
   afterEach(() => {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('runtime switch retires the previous runtime lease and creates in the new runtime', async () => {
+    let runtime = 'opencode';
+    const scoped = new PodSessionSupervisor({
+      store, now, newId,
+      runtimeName: () => runtime,
+      isAlive: () => true,
+    });
+
+    const first = await scoped.ensure(scope(), async () => 'ses_oc');
+    expect(first.sessionId).toBe('ses_oc');
+    expect(store.getSessionBySessionId('ses_oc')?.runtime).toBe('opencode');
+
+    runtime = 'pi';
+    const second = await scoped.ensure(scope(), async () => 'ses_pi');
+    expect(second.sessionId).toBe('ses_pi');
+    expect(store.getSessionBySessionId('ses_oc')?.endedAt).not.toBeNull();
+    expect(store.getSessionBySessionId('ses_pi')?.runtime).toBe('pi');
+
+    // current() only sees the active runtime's lease; the old runtime id is
+    // not resurrected under the new one.
+    expect((await scoped.current(scope()))?.sessionId).toBe('ses_pi');
+    runtime = 'opencode';
+    expect(await scoped.current(scope())).toBeNull();
   });
 
   test('reuses a live lease for the exact scope', async () => {
@@ -301,7 +327,9 @@ describe('PodSessionSupervisor', () => {
 
     const migratedDb = new Database(legacyPath);
     const migratedStore = new PodStore(migratedDb);
-    const migrated = new PodSessionSupervisor({ store: migratedStore, now, newId });
+    const migrated = new PodSessionSupervisor({
+      store: migratedStore, now, newId, runtimeName: () => 'opencode',
+    });
 
     expect(migratedStore.getSessionBySessionId('ses_old')).toMatchObject({
       sessionId: 'ses_old',

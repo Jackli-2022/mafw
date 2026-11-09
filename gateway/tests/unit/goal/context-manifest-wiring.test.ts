@@ -60,6 +60,7 @@ function makeFixture(opts: { request?: Record<string, unknown>; activeRevision?:
   };
   const service = new PodContextSelectionService({
     store,
+    runtimeName: () => 'opencode',
     resolveMafwDir: () => mafwDir,
     now: () => NOW,
   });
