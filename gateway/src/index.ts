@@ -259,7 +259,6 @@ import { createNeutralRuntime } from './runtime/neutral-runtime';
 import { getBridgeEventEntry } from './runtime/adapter-bridge';
 import { setPiUnknownRecorder } from './runtime/pi/pi-events';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
 import { createOpencodeDefinition, opencodeCapabilities, opencodeStaticEntry, type OpencodeVariant } from './runtime/opencode-definition';
 
 import { injectServeAuth } from './runtime/proxy-auth';
@@ -963,7 +962,7 @@ class MafwScheduler {
       capabilities: opencodeCapabilities('v21', external),
       eventEntry: opencodeStaticEntry('v21'),
     });
-    const runtime = await this.createRuntime(sdkConfig);
+    const runtime = await this.createRuntime();
     this.runtime = runtime;
     this.setRuntimeDiagnostics();
     this.runtimeNameBeforeSwitch = null;
@@ -1419,7 +1418,7 @@ class MafwScheduler {
             if (opencodePassword) {
               sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
             }
-              const runtime = await this.createRuntime(sdkConfig);
+              const runtime = await this.createRuntime();
               this.runtime = runtime;
               this.setRuntimeDiagnostics();
               this.runtimeNameBeforeSwitch = null;
@@ -1996,9 +1995,9 @@ class MafwScheduler {
   /**
    * Runtime 选择（D 收敛）：单查找路径——config.runtime.plugin 缺省 'opencode'
    * （loader 注册表成员，文件>包>内置统一优先级）；失败/缺失回退 opencode；
-   * loader 未注册 opencode 时 direct import 安全网（不应发生）。
+   * 两级都失败时抛中性错误，不再直连 adapter。
    */
-  private async createRuntime(sdkConfig: { baseUrl: string; directory?: string; headers: Record<string, string> }): Promise<RuntimeFacade> {
+  private async createRuntime(): Promise<RuntimeFacade> {
     const wanted = config.runtime?.plugin || 'opencode';
     const rt = await this.activatePluginRuntime(wanted, true);
     if (rt) return rt;
@@ -2007,43 +2006,10 @@ class MafwScheduler {
       const fallback = await this.activatePluginRuntime('opencode', false);
       if (fallback) return fallback;
     }
-    // 最终安全网：loader 未注册 opencode 时直连（不应发生）
-    const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
-    const fallbackRt = await createOpencodeRuntime({
-      ...sdkConfig,
-    });
-    this.applyRuntimeValidation(fallbackRt, 'builtin:opencode(direct)', false, {
-      declaration: {
-        eventSource: OPENCODE_EVENT_SOURCE,
-        eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
-        transformEvent: OPENCODE_TRANSFORM_EVENT,
-      },
-      plugin: {
-        name: 'opencode',
-        createRuntime: () => {},
-        external: !!(fallbackRt as any).external,
-        capabilities: fallbackRt.capabilities,
-      },
-      source: 'active',
-      declaredCapabilityKeys: Object.keys(fallbackRt.capabilities ?? {}),
-    });
-    await activateRuntimeTools(fallbackRt, 'builtin:opencode(direct)', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
-    const wrappedFallback = this.wrapRuntimeIdentity(fallbackRt);
-    const fallbackFacade = await createRuntimeFacade(wrappedFallback, {
-      entry: {
-        eventSource: OPENCODE_EVENT_SOURCE,
-        eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
-        transformEvent: OPENCODE_TRANSFORM_EVENT,
-      },
-      isCanonical: (t) => CANONICAL_TYPE_SET.has(t),
-      hooks: {
-        onUnmatched: (t) => this.recordTranslationDrop('opencode', t, 'unmatched'),
-        onSuppressed: (t) => this.recordTranslationDrop('opencode', t, 'suppressed'),
-        onTranslationError: (_raw, reason) => this.recordTranslationError('opencode', 'transformEvent', reason),
-      },
-      onHistoryViolation: (reason) => this.recordTranslationError('opencode', 'normalizeMessages', reason),
-    });
-    return this.adoptRuntimeHost(wrappedFallback, fallbackFacade);
+    // No direct adapter fallback: the definition registry is the only entry.
+    throw new Error(
+      `No runtime is registered for '${wanted}'. Configure runtime.plugin or install a runtime plugin.`,
+    );
   }
 
   /** 单激活路径（D 收敛）：plugin/builtin/package 同一序列。fatal=true 时校验失败抛错触发回退。 */
@@ -2734,7 +2700,7 @@ class MafwScheduler {
         if (opencodePassword) {
           sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
         }
-        return this.createRuntime(sdkConfig);
+        return this.createRuntime();
       },
       onSwitched: async (rt: RuntimeFacade, prev: RuntimeFacade | null) => {
         this.runtime = rt;
