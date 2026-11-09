@@ -11,6 +11,7 @@ import {
 import {
   moveCurrentToPrevious,
   readCurrentPointer,
+  readPreviousPointer,
   readQuarantine,
   writeCurrentPointer,
   writeQuarantine,
@@ -177,6 +178,48 @@ describe("managed gateway lifecycle", () => {
       })
       expect(retried.kind).toBe("start")
       expect(readQuarantine(f.managed)).toBeNull()
+    } finally {
+      rmSync(f.root, { recursive: true, force: true })
+    }
+  })
+
+  test("upgrading a valid current payload preserves it as previous", async () => {
+    const f = await fixture("5.1.0")
+    try {
+      const old = await prepareManagedGateway({
+        resourcesRoot: f.resources,
+        managedRoot: f.managed,
+        expected: f.expected,
+        canReplaceRunning: true,
+        forceRetry: false,
+        deps: {},
+      })
+      expect(old.kind).toBe("start")
+      const oldPointer = readCurrentPointer(f.managed)!
+
+      writeFileSync(join(f.resources, "dist", "index.js"), "console.log('new')\n")
+      const { manifest, digest } = await createGatewayPayloadManifest(f.resources, manifestDeps(f.resources))
+      const newRelease: GatewayReleaseManifest = {
+        ...f.release,
+        productVersion: "5.2.0",
+        gatewayVersion: "5.2.0",
+        desktopMinimumGatewayVersion: "5.2.0",
+        payloadManifestSha256: digest,
+      }
+      writeFileSync(join(f.resources, "payload-manifest.json"), JSON.stringify(manifest))
+      writeFileSync(join(f.resources, "release-manifest.json"), JSON.stringify(newRelease))
+
+      const upgraded = await prepareManagedGateway({
+        resourcesRoot: f.resources,
+        managedRoot: f.managed,
+        expected: { ...f.expected, gatewayVersion: "5.2.0" },
+        canReplaceRunning: true,
+        forceRetry: false,
+        deps: {},
+      })
+      expect(upgraded.kind).toBe("start")
+      expect(readCurrentPointer(f.managed)?.version).toBe("5.2.0")
+      expect(readPreviousPointer(f.managed)).toEqual(oldPointer)
     } finally {
       rmSync(f.root, { recursive: true, force: true })
     }

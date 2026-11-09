@@ -1,5 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  EXPERIENCE_VERSION,
+  MIN_CLIENT_EXPERIENCE_VERSION,
+} from './experience/experience-contract';
 
 export interface GatewayReleaseMetadata {
   productVersion: string;
@@ -65,8 +69,30 @@ export function parseGatewayReleaseMetadata(value: unknown): GatewayReleaseMetad
   };
 }
 
+function loadDevReleaseMetadata(srcDir: string): GatewayReleaseMetadata | null {
+  if (path.basename(srcDir) !== 'src') return null;
+  try {
+    const gatewayRoot = path.dirname(srcDir);
+    const repoRoot = path.dirname(gatewayRoot);
+    const rootPkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf-8'));
+    const policy = JSON.parse(fs.readFileSync(path.join(gatewayRoot, 'release-policy.json'), 'utf-8'));
+    return composeGatewayReleaseMetadata({
+      productVersion: rootPkg.version,
+      experienceVersion: EXPERIENCE_VERSION,
+      minimumClientExperienceVersion: MIN_CLIENT_EXPERIENCE_VERSION,
+      schemaEpoch: policy.schemaEpoch,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function loadGatewayReleaseMetadata(distDir: string): GatewayReleaseMetadata {
   const file = path.join(distDir, 'release.json');
+  if (!fs.existsSync(file)) {
+    const dev = loadDevReleaseMetadata(distDir);
+    if (dev) return dev;
+  }
   try {
     return parseGatewayReleaseMetadata(JSON.parse(fs.readFileSync(file, 'utf-8')));
   } catch (err: any) {

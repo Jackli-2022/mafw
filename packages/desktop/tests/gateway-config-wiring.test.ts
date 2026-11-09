@@ -27,6 +27,12 @@ test("Config switches source explicitly and supports quarantine retry", () => {
   assert.match(config, /仅本次使用未验证外部 gateway/)
   assert.match(config, /切换为受管 gateway/)
   assert.match(config, /切换为外部 gateway/)
+
+  const start = config.indexOf("const useLegacyExternalOnce")
+  const end = config.indexOf("const retryQuarantinedGateway", start)
+  const onceBlock = config.slice(start, end)
+  assert.match(onceBlock, /gateway\.useExternalOnce\(\)/)
+  assert.doesNotMatch(onceBlock, /setSourcePreference\(/)
 })
 
 test("Desktop restart no longer writes the gateway self-update token", () => {

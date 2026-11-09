@@ -10,6 +10,7 @@ import {
 import { installGatewayPayload } from "./gateway-payload-installer"
 import {
   clearQuarantine,
+  moveCurrentToPrevious,
   readCurrentPointer,
   readPreviousPointer,
   readQuarantine,
@@ -176,6 +177,9 @@ export async function prepareManagedGateway(input: {
       payloadManifestSha256: release.payloadManifestSha256,
       versionDir: basename(installed.versionDir),
       installedAt: input.deps.now?.() ?? new Date().toISOString(),
+    }
+    if (current && currentComplete && current.payloadManifestSha256 !== release.payloadManifestSha256) {
+      await moveCurrentToPrevious(input.managedRoot)
     }
     await writeCurrentPointer(input.managedRoot, pointer)
     return {

@@ -274,8 +274,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   const useLegacyExternalOnce = async () => {
     setGatewayBusy(true)
     try {
-      setGatewaySourcePref(await window.api.mafw.gateway.setSourcePreference("external"))
       await window.api.mafw.gateway.useExternalOnce()
+      setGatewaySourcePref("external")
       await window.api.mafw.gateway.restart()
       await refreshGatewayStatus()
       showToastV2({ description: "本次会话使用未验证外部 gateway", duration: 3000 })

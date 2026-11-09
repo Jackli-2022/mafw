@@ -24,9 +24,11 @@ import {
   writeGatewayInstanceRecord,
 } from "./gateway-instance-registry"
 import {
-  allowLegacyExternalOnce,
+  clearSessionSourcePreference,
   consumeLegacyExternalOnce,
-  readGatewaySourcePreference,
+  hasLegacyExternalSession,
+  readEffectiveGatewaySourcePreference,
+  useLegacyExternalSession,
   writeGatewaySourcePreference,
 } from "./gateway-source-preference"
 import { waitForGatewayDown } from "./gateway-health"
@@ -36,6 +38,7 @@ import {
   parseGatewayReleaseManifest,
   type GatewayReleaseManifest,
 } from "./gateway-release-manifest"
+import { stopRegisteredReplacement } from "./gateway-managed-replacement"
 import {
   prepareManagedGateway,
   recordManagedStartFailure,
@@ -508,7 +511,7 @@ export async function startGateway(): Promise<void> {
 
   const forceManagedRetry = forceManagedRetryOnce
   forceManagedRetryOnce = false
-  sourcePreference = readGatewaySourcePreference(preferenceStore())
+  sourcePreference = readEffectiveGatewaySourcePreference(preferenceStore())
   const managedEntry = resolveManagedEntry()
   const releaseEntry = managedEntry
   if (!releaseEntry) {
@@ -527,7 +530,8 @@ export async function startGateway(): Promise<void> {
 
   const running = await probeGatewayAt(3000)
   const cliProbe = sourcePreference === "external" ? await probeMafwCli() : { available: false as const, reason: "managed mode" }
-  const legacyExternalOverride = sourcePreference === "external" && consumeLegacyExternalOnce()
+  const legacyExternalOverride = sourcePreference === "external"
+    && (hasLegacyExternalSession() || consumeLegacyExternalOnce())
   const plan = planGatewayStart({
     packaged: app.isPackaged,
     preference: sourcePreference,
@@ -597,7 +601,15 @@ export async function startGateway(): Promise<void> {
       oldInstance: running.managedInstance?.instanceId ?? null,
       expected: expected.gatewayVersion,
     }, "info")
-    await terminateManagedInstance()
+    await stopRegisteredReplacement({
+      registered: running.managedInstance,
+      adopt: (record) => {
+        managedRecord = record
+      },
+      terminate: async () => {
+        await terminateManagedInstance()
+      },
+    })
     await waitForGatewayDown(() => checkHealth(GATEWAY_URL), { timeoutMs: 8000, intervalMs: 200 })
     if (await tcpReachable("127.0.0.1", 3000)) {
       errorMessage = "old managed gateway is still holding port 3000"
@@ -680,18 +692,20 @@ export function getGatewayPort(): number | null {
 }
 
 export function getGatewaySourcePreference(): GatewaySourcePreference {
-  sourcePreference = readGatewaySourcePreference(preferenceStore())
+  sourcePreference = readEffectiveGatewaySourcePreference(preferenceStore())
   return sourcePreference
 }
 
 export function setGatewaySourcePreference(value: GatewaySourcePreference): GatewaySourcePreference {
+  clearSessionSourcePreference()
   writeGatewaySourcePreference(preferenceStore(), value)
   sourcePreference = value
   return value
 }
 
 export function useLegacyExternalOnce(): void {
-  allowLegacyExternalOnce()
+  useLegacyExternalSession()
+  sourcePreference = "external"
 }
 
 export function retryManagedGateway(force = false): Promise<void> {

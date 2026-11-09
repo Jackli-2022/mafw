@@ -84,6 +84,27 @@ describe('gateway release identity', () => {
     });
   });
 
+  test('loadGatewayReleaseMetadata derives dev metadata from root package when running from src', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-release-dev-'));
+    try {
+      fs.mkdirSync(path.join(root, 'gateway', 'src'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '6.0.0' }));
+      fs.writeFileSync(
+        path.join(root, 'gateway', 'release-policy.json'),
+        JSON.stringify({ schemaEpoch: 2 }),
+      );
+      expect(loadGatewayReleaseMetadata(path.join(root, 'gateway', 'src'))).toEqual({
+        productVersion: '6.0.0',
+        gatewayVersion: '6.0.0',
+        experienceVersion: '2026.11.1',
+        minimumClientExperienceVersion: '2026.11.0',
+        schemaEpoch: 2,
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('loadGatewayReleaseMetadata names a missing release file', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-release-info-'));
     try {
