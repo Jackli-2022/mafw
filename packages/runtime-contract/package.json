@@ -1,0 +1,20 @@
+{
+  "name": "@mafw/runtime-contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Neutral runtime driver contract: AdapterEvent, RuntimeTransport, RuntimeChannels, defineRuntime.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').writeFileSync('dist/package.json', JSON.stringify({ type: 'commonjs' }))\"",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

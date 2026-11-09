@@ -8,7 +8,7 @@ import { createGatewayPayloadManifest } from "../src/main/gateway-release-manife
 import {
   PACKAGE_NAME as PLUGIN_CONTRACT_PACKAGE,
   resolvePluginContract,
-  stagePluginContract,
+  stageContractPackage,
 } from "../../../scripts/stage-plugin-contract.mjs"
 import { gatewayAssetPlan } from "../../../scripts/gateway-package-assets.mjs"
 import { run } from "./utils"
@@ -80,8 +80,8 @@ run("npm", ["ci", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], 
 // fetch them and the bundle must not link to the build machine workspace.
 const bundledPackages: Record<string, string> = gatewayPkg.mafw?.bundledPackages ?? {}
 for (const [name, relative] of Object.entries(bundledPackages)) {
-  if (name !== PLUGIN_CONTRACT_PACKAGE) continue
-  stagePluginContract({
+  stageContractPackage({
+    packageName: name,
     sourceDir: path.resolve(gatewayDir, relative),
     nodeModulesDir: path.join(outDir, "node_modules"),
   })

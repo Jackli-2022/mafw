@@ -212,7 +212,7 @@ export const claudeTransformEvent: TransformEventFn = (event: any) => {
     }
     if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string') {
       return [makeEvent('part.delta', {
-        field: 'text', delta: delta.thinking,
+        field: 'reasoning', delta: delta.thinking,
         ...(sid ? { sessionID: sid } : {}),
       }, sid)];
     }

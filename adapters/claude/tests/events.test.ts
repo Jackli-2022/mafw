@@ -91,6 +91,7 @@ test('stream_event 分派：text/thinking → part.delta；input_json_delta → 
     event: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '思考' } },
   }) as any[];
   assert.equal(thinking[0].payload.type, 'part.delta');
+  assert.equal(thinking[0].payload.properties.field, 'reasoning');
   assert.equal(thinking[0].payload.properties.delta, '思考');
 
   const json = claudeTransformEvent({

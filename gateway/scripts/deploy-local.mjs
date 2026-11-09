@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import {
   PACKAGE_NAME as CONTRACT_PACKAGE,
   resolvePluginContract,
-  stagePluginContract,
+  stageContractPackage,
 } from "../../scripts/stage-plugin-contract.mjs";
 import { gatewayAssetPlan } from "../../scripts/gateway-package-assets.mjs";
 
@@ -75,8 +75,8 @@ for (const dep of prodDeps) {
 // stage 到目标 gateway 的 node_modules（workspace symlink 在全局安装里不存在）。
 const bundled = pkg.mafw?.bundledPackages ?? {};
 for (const [dep, relative] of Object.entries(bundled)) {
-  if (dep !== CONTRACT_PACKAGE) continue;
-  stagePluginContract({
+  stageContractPackage({
+    packageName: dep,
     sourceDir: path.resolve(gatewayRoot, relative),
     nodeModulesDir: targetModules,
   });
