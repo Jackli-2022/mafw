@@ -8,6 +8,9 @@ import * as yaml from 'js-yaml';
 import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
+import { Guard, GuardTimeoutError } from './concurrency/guard';
+import { MutexQueue } from './concurrency/mutex-queue';
+import { TtlMap } from './concurrency/ttl-map';
 import { log } from './core/utils/logger';
 import {
   createGatewayRuntimeIdentity,
@@ -542,7 +545,7 @@ class MafwScheduler {
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
-  private pipelineGuard = new (require('./recall/pipeline-guard').PipelineGuard)({ timeoutMs: 30 * 60_000, log: (m: string) => log.warn(m) }); // action-level in-flight guards, keyed by action name
+  private pipelineGuard = new Guard(); // action-level in-flight guards, keyed by action name
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
   private promptBudgetSessions = new Set<string>();
   /** busy 追踪（spec §5.1 v2）：value = busy 起始 ms；turn.started 置位、三终态清除；15min TTL 防楔死。 */
@@ -580,7 +583,7 @@ class MafwScheduler {
   // 被 projectsRev 重拉弹回首注册项目（切换失效根因，2026-09-22）。
   private currentProjectDir: string | null = null;
   private registryPath: string;
-  private registryWriteQueue: Promise<void> = Promise.resolve();
+  private registryWriteQueue = new MutexQueue();
   private running = true;
   // private dashboard?: DashboardServer;
   private mcpEndpoint?: McpSSEEndpoint;
@@ -616,7 +619,7 @@ class MafwScheduler {
   /** B3 入口拦截计数：unmatched（监控信号）/ suppressed（声明式压制），per-runtime per-type。 */
   private translationDrops = new Map<string, { unmatched: Record<string, number>; suppressed: Record<string, number> }>();
   /** Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。 */
-  private eventTaps = new Map<string, Set<(e: { type: string; sessionID?: string; at: number }) => void>>();
+  private eventTaps = new TtlMap<string, Set<(e: { type: string; sessionID?: string; at: number }) => void>>(5 * 60_000); // 5min TTL (conformance observers)
   private serveSupervisor: ServeSupervisor;
   private switchingRuntime = false;
   /** Abort controller for the active event stream subscription. Cancelled
@@ -650,7 +653,7 @@ class MafwScheduler {
   private podProbeService!: PodProbeService;
   private podProbeWorkspaces!: ProbeWorkspaceFactory;
   /** Task 14：探针会话 → ProbeRequest 范围绑定（审批守门在 hook/policy 里同步读取）。 */
-  private readonly probeScopes = new Map<string, GoalProbeSessionBinding>();
+  private readonly probeScopes = new TtlMap<string, GoalProbeSessionBinding>(10 * 60_000); // probe timeout TTL
   private podAccess!: PodAccess;
   private podBudget!: PodBudget;
   private podMessageDelivery!: PodMessageDelivery;
@@ -686,7 +689,7 @@ class MafwScheduler {
   private usageStatsProvider?: UsageStatsProvider;
   private ttsService?: ReturnType<typeof createTtsService>;
   private ttsRegistry = new TtsEngineRegistry();
-  private ttsInflight = new Map<string, Set<AbortController>>(); // sessionId → 在途合成
+  private ttsInflight = new TtlMap<string, Set<AbortController>>(3 * 60_000); // sessionId → 在途合成 (3min TTL = max TTS duration)
   private ttsPluginLoader?: TtsPluginLoader;
   private voiceSidecar?: Qwen3AsrSidecar;
   private voiceRuntime?: VoiceRuntime;
@@ -3016,8 +3019,9 @@ class MafwScheduler {
   private runtimeValidationNotes: string[] = [];
   /** 激活期覆盖矩阵（清单驱动），GET /api/runtime(.contract) 暴露。 */
   private runtimeCoverage: RuntimeCoverage | null = null;
-  /** Serialises snapshot builds (shared GPU sidecars). */
-  private snapshotBuildInFlight = false;
+  /** Serialises snapshot builds (shared GPU sidecars); queue mode — concurrent
+   *  requests wait for the current build rather than being dropped. */
+  private snapshotGuard = new Guard();
 
   /** Schedule a debounced snapshot refresh (called on each user turn). */
   private scheduleSnapshotRefresh(sessionID: string): void {
@@ -3040,15 +3044,12 @@ class MafwScheduler {
    */
   private async refreshSnapshot(sessionID: string): Promise<void> {
     if (!this.memoryService) return;
-    // One build at a time: each build does a dense embedding + a reranker pass,
-    // and concurrent builds starve the boundary path's own search.
-    if (this.snapshotBuildInFlight) return;
-    this.snapshotBuildInFlight = true;
-    try {
-      await this.refreshSnapshotInner(sessionID);
-    } finally {
-      this.snapshotBuildInFlight = false;
-    }
+    // One build at a time (shared GPU sidecars), but concurrent requests queue
+    // instead of being dropped: the latest session state is served after the
+    // current build finishes.
+    await this.snapshotGuard.run('snapshot', () => this.refreshSnapshotInner(sessionID), {
+      onConflict: 'queue',
+    });
   }
 
   private async refreshSnapshotInner(sessionID: string): Promise<void> {
@@ -3278,7 +3279,22 @@ class MafwScheduler {
    * each pipeline runs at most once at a time.
    */
   private async runPipelineGuarded(name: string, fn: () => Promise<void>): Promise<void> {
-    await this.pipelineGuard.run(name, fn);
+    try {
+      const result = await this.pipelineGuard.run(name, fn, {
+        onConflict: 'skip',
+        timeoutMs: 30 * 60_000,
+        onTimeout: 'error',
+      });
+      if (result === null) {
+        log.info(`[Scheduler] ${name} skipped: previous run still in flight`);
+      }
+    } catch (err) {
+      if (err instanceof GuardTimeoutError) {
+        log.warn(`[Scheduler] ${name} watchdog timeout: ${err.message}`);
+      } else {
+        log.warn(`[Scheduler] ${name} run error: ${err instanceof Error ? err.message : err}`);
+      }
+    }
   }
 
   /** Goal 会话预算挂载：读 state/<goalId>.json 的 policySnapshot.{maxTurns,maxCostUsd}；
@@ -8787,7 +8803,7 @@ class MafwScheduler {
   // 鈹€鈹€ 3. 娉ㄥ唽琛ㄦ寔涔呭寲锛堝啓闃熷垪闃插苟鍙戯級 鈹€鈹€
 
   private async persistRegistry() {
-    this.registryWriteQueue = this.registryWriteQueue.then(async () => {
+    await this.registryWriteQueue.run('registry', async () => {
       const entries = Array.from(this.registeredProjects.entries());
       // Authoritative copy in the gateway DB (kv_store) — survives cwd /
       // projectDir churn because the db lives at the fixed ~/.mafw root.
@@ -8809,7 +8825,6 @@ class MafwScheduler {
         log.warn(`[Scheduler] registry file persist failed: ${err.message}`);
       }
     });
-    await this.registryWriteQueue;
   }
 
   // User data directories that must never be treated as projects (desktop's
@@ -9991,20 +10006,12 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   // Concurrent calls for the same projectDir (start() loop + /register
-  // handler) must create exactly one manager session — join the in-flight run.
-  private managerSessionInflight = new Map<string, Promise<unknown>>();
+  // handler + rotate) must serialize — MutexQueue handles both joiners
+  // (ensureManagerSession) and serialized rotate (runManagerExclusive).
+  private managerQueue = new MutexQueue();
 
   private ensureManagerSession(projectDir: string, mafwDir: string): Promise<string> {
-    const inFlight = this.managerSessionInflight.get(projectDir);
-    if (inFlight) return inFlight as Promise<string>;
-    const run = this.createManagerSession(projectDir, mafwDir);
-    this.managerSessionInflight.set(projectDir, run);
-    run
-      .catch(() => {})
-      .finally(() => {
-        if (this.managerSessionInflight.get(projectDir) === run) this.managerSessionInflight.delete(projectDir);
-      });
-    return run;
+    return this.managerQueue.run(projectDir, () => this.createManagerSession(projectDir, mafwDir));
   }
 
   // Slot-based read of a manager-session kv entry: each runtime owns a slot
@@ -10040,27 +10047,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
   }
 
-  // Serialized rotate: joins any in-flight ensure/create for the same project
-  // so rotate and lazy-init never double-create (spec §4).
+  // Serialized rotate: queues behind any in-flight ensure/create for the same
+  // project so rotate and lazy-init never double-create (spec §4).
   private async runManagerExclusive<T>(projectDir: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.managerSessionInflight.get(projectDir);
-    const run = (async () => {
-      if (prev) { try { await prev; } catch { /* prior failure does not block */ } }
-      return fn();
-    })();
-    // The inflight map is shared with ensureManagerSession, whose joiners
-    // expect the promise to resolve to a session id string — map the rotate
-    // result onto the resulting kv entry.
-    const mapped = run.then(
-      () => this.readManagerSessionEntry(projectDir)?.sessionId ?? '',
-      () => '',
-    );
-    this.managerSessionInflight.set(projectDir, mapped);
-    try {
-      return await run;
-    } finally {
-      if (this.managerSessionInflight.get(projectDir) === mapped) this.managerSessionInflight.delete(projectDir);
-    }
+    return this.managerQueue.run(projectDir, fn);
   }
 
   private async createManagerSession(projectDir: string, _mafwDir: string): Promise<string> {

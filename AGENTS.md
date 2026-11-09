@@ -1976,6 +1976,10 @@ spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.m
   updater/config 测试与 packaged smoke；CI 在 Win/Linux 打包后分别跑
   `npm run smoke:packaged-gateway -- --app-root dist/<unpacked>`。本地可用
   `npm run smoke:packaged-gateway -- --payload-only`（Electron ABI staged gateway）。
+- **Dev 与已运行 gateway**：源码 checkout（`!app.isPackaged`）默认仍走 managed，但发现 3000 上已有
+  健康 gateway（通常是全局 `mafw daemon` 或旧 dev 实例）时**直接采纳**（`devAdoptRunningGateway`，
+  不登记、不接管所有权、退出时不杀它），避免 dev 与全局 daemon 抢端口。打包版保持原语义：未登记
+  进程一律 conflict，绝不静默采纳。
 - **本地自签名**（`npm run sign:dev` / `sign:dev:clean`，`scripts/win-self-sign.ps1`）：仅在
   `MAFW_WIN_SELF_SIGN=1` 时启用 `win.signtoolOptions`（`certificateSubjectName` / `publisherName` /
   仅 SHA-256）+ `forceCodeSigning`；`publisherName` 写进 `app-update.yml` 供 electron-updater 校验。
@@ -1983,6 +1987,20 @@ spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.m
   仍为未签名。
 - **安装器**：`gateway-update/` 与 `resources/installer.nsh` 已删除；安装器不再要求 Node/npm/
   网络，改用 electron-builder 内建 `CHECK_APP_RUNNING`。
+- **安装包冒烟（2026-11-10）**：Windows NSIS 静默安装 → 对安装目录跑
+  `smoke:packaged-gateway` → 启动 GUI（隔离 HOME/userData）→ 静默卸载，全绿。修复三处：
+  ① electron-builder 的 app-builder 对 **>MAX_PATH 路径**和**非目标平台/架构原生库**是
+  **静默丢弃**，而 `payload-manifest.json` 按 stage 目录生成 → 首启校验必然失败。`stage-gateway.ts`
+  现在先裁剪 `node_modules` 的 `.d.ts/.d.ts.map/*.js.map/.ts`、`test|tests|__tests__`、非目标
+  `onnxruntime-node/bin/*/{platform}/{arch}`，以及无人引用的 `@mistralai/mistralai`
+  （shrinkwrap 深路径；裁剪前扫描 `dist/**` 与 `pi-coding-agent/dist/**` 确认无引用），**裁剪后**再生成
+  manifest，并加 170 字符相对路径预算（超出直接构建失败）。payload 37,129→17,581 文件，安装包
+  444→333MB，首启受管安装约 33s。② `package:win` **不会**重建 `out/`：必须先
+  `OPENCODE_CHANNEL=prod npx electron-vite build` 再打包（CI 已如此），否则安装包是 dev 通道 +
+  旧主进程（`distribution` 永远 `standalone`）。③ `smoke:packaged-gateway` 新增
+  `assertPackagedPayload`：按 manifest 逐文件核对存在性与大小，打包丢文件时 CI 立刻失败。
+  实机证据：`versions/5.1.0-fbdbee783d70/.install-complete.json`、
+  `~/.mafw/runtime/desktop-gateway/prod/<instanceId>.json`、health `distribution=desktop-managed`。
 
 ## 6. Gateway 运维
 

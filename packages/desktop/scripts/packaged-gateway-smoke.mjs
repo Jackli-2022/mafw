@@ -2,7 +2,7 @@ import { execFile } from "node:child_process"
 import { createConnection } from "node:net"
 import { spawn } from "node:child_process"
 import { createServer } from "node:net"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -107,6 +107,40 @@ export function assertSmokeHealth(health, expected = {}) {
       throw new Error(`health ${key}=${health[key]} does not match release ${expected[key]}`)
     }
   }
+}
+
+/**
+ * Verify that the packaged gateway resource really contains every file the
+ * payload manifest promises. electron-builder's app-builder drops Win32
+ * MAX_PATH and foreign-arch entries silently, which used to leave the managed
+ * runtime unable to verify its payload on first run (2026-11-09 smoke).
+ */
+export function assertPackagedPayload(resourcesRoot) {
+  const manifestFile = path.join(resourcesRoot, "payload-manifest.json")
+  if (!existsSync(manifestFile)) {
+    throw new Error(`packaged gateway payload manifest missing: ${manifestFile}`)
+  }
+  const payload = JSON.parse(readFileSync(manifestFile, "utf8").replace(/^\uFEFF/, ""))
+  const files = Array.isArray(payload?.files) ? payload.files : []
+  if (files.length === 0) throw new Error("packaged gateway payload manifest lists no files")
+  const missing = []
+  const sizeMismatch = []
+  for (const file of files) {
+    const target = path.join(resourcesRoot, file.path)
+    try {
+      const value = statSync(target)
+      if (value.size !== file.size) sizeMismatch.push(`${file.path} (${value.size} != ${file.size})`)
+    } catch {
+      missing.push(file.path)
+    }
+  }
+  if (missing.length > 0 || sizeMismatch.length > 0) {
+    const sample = [...missing, ...sizeMismatch].slice(0, 5).join(", ")
+    throw new Error(
+      `packaged gateway payload is incomplete (${missing.length} missing, ${sizeMismatch.length} size mismatches): ${sample}`,
+    )
+  }
+  return files.length
 }
 
 export function findFreePort(host = "127.0.0.1") {
@@ -217,6 +251,7 @@ function localElectron() {
 
 export async function runPackagedGatewaySmoke(options) {
   const paths = resolvePackagedGatewayPaths(options)
+  assertPackagedPayload(paths.resourcesRoot)
   const release = JSON.parse(readFileSync(paths.releaseFile, "utf8").replace(/^\uFEFF/, ""))
   const port = await findFreePort()
   const home = mkdtempSync(path.join(tmpdir(), "mafw-smoke-home-"))

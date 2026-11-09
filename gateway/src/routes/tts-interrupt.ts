@@ -1,7 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 
 export interface TtsInterruptDeps {
-  inflight: Map<string, Set<AbortController>>;
+  /** Duck-typed store: accepts both Map and TtlMap. */
+  inflight: {
+    get(sessionId: string): Set<AbortController> | undefined;
+    delete(sessionId: string): boolean;
+  };
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
