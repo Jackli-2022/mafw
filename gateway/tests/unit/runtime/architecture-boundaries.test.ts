@@ -293,11 +293,6 @@ export const COMPOSITION_ROOT_EXCEPTIONS: CompositionRootException[] = [
   },
   {
     rule: 'raw-capability',
-    excerpt: /\bfallbackRt\.capabilities/,
-    why: '插件激活失败时回退实例的能力快照（激活期诊断）',
-  },
-  {
-    rule: 'raw-capability',
     excerpt: /\bplugin\.capabilities/,
     why: '插件模块声明（纯数据），不是 runtime 实例能力门',
   },

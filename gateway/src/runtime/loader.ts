@@ -8,6 +8,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { createRequire } from 'module';
 import { log } from '../core/utils/logger';
 import { config } from '../config';
 import { AgentRuntime, RuntimeCapabilities, RuntimeCredentials, minimalCapabilities } from './contract';
@@ -80,6 +81,8 @@ export class RuntimePluginLoader {
   }>();
   /** Names whose neutral definition came from a plugin file (override priority). */
   private readonly fileNeutral = new Set<string>();
+  /** Source file for each neutral definition loaded from a plugin file. */
+  private readonly neutralFileSources = new Map<string, string>();
   private readonly legacyModules = new Map<string, any>();
   private readonly neutralBus = new RuntimeBus();
   /** canonical 词汇表（校验 eventMappings.to 用）——index.ts 注入，避免 loader 依赖矩阵。 */
@@ -124,6 +127,7 @@ export class RuntimePluginLoader {
           this.meta.delete(prev.name);
           this.neutralDefinitions.delete(prev.name);
           this.fileNeutral.delete(prev.name);
+          this.neutralFileSources.delete(prev.name);
           this.neutralFactories.delete(prev.name);
           this.legacyModules.delete(prev.name);
           this.neutralBus.unregister(prev.name);
@@ -137,7 +141,7 @@ export class RuntimePluginLoader {
     }
   }
 
-  private async loadFile(file: string, loadedNames: Set<string>): Promise<void> {
+  private async loadFile(file: string, loadedNames: Set<string>, forceFresh = false): Promise<void> {
     const fullPath = path.join(this.pluginsDir, file);
     try {
       const cacheKey = require.resolve(fullPath);
@@ -145,7 +149,7 @@ export class RuntimePluginLoader {
     } catch { /* first load */ }
 
     try {
-      const mod = require(fullPath);
+      const mod = forceFresh ? this.evaluateFresh(fullPath) : require(fullPath);
       const entry = resolvePluginEntry(mod);
       if (entry && entry.kind !== 'legacy') {
         const name = mod?.name ?? (entry.kind === 'neutral' ? entry.definition.name : file.replace(/\.js$/, ''));
@@ -162,10 +166,12 @@ export class RuntimePluginLoader {
         if (entry.kind === 'neutral') {
           this.neutralDefinitions.set(name, entry.definition);
           this.fileNeutral.add(name);
+          this.neutralFileSources.set(name, file);
           this.neutralBus.register(entry.definition);
           log.info(`[RuntimePluginLoader] Loaded neutral runtime ${file} (${name})`);
         } else {
           this.neutralFactories.set(name, entry.factory);
+          this.neutralFileSources.delete(name);
           log.info(`[RuntimePluginLoader] Loaded neutral runtime factory ${file} (${name})`);
         }
         // Compatibility: a module may export both the neutral entry and the
@@ -235,6 +241,7 @@ export class RuntimePluginLoader {
       const declaredCapabilityKeys = Object.keys(mod.capabilities || {});
       this.factories.set(name, mod.createRuntime);
       this.legacyModules.set(name, mod);
+      this.neutralFileSources.delete(name);
       this.meta.set(name, { capabilities, external, declaredCapabilityKeys, ...eventExtras });
       loadedNames.add(name);
       // Filename-stem alias: the plugin hub addresses runtime plugins by
@@ -262,6 +269,19 @@ export class RuntimePluginLoader {
       this.state.set(file, { file, name: prev?.name, status: 'error', error: err.message });
       log.warn(`[RuntimePluginLoader] ${file} load error: ${err.message}`);
     }
+  }
+
+  /**
+   * Re-evaluate a plugin file without the CJS registry. Jest's module registry
+   * ignores `require.cache`, and a disposed definition must never be reused.
+   */
+  private evaluateFresh(fullPath: string): any {
+    const source = fs.readFileSync(fullPath, 'utf8');
+    const module = { exports: {} as any };
+    const pluginRequire = createRequire(fullPath);
+    const fn = new Function('module', 'exports', 'require', '__filename', '__dirname', source);
+    fn.call(module.exports, module, module.exports, pluginRequire, fullPath, path.dirname(fullPath));
+    return module.exports;
   }
 
   /** PluginHost 推送的包贡献。查找顺序：legacy 文件 > 包 > 内置。scan() 不影响。 */
@@ -298,8 +318,14 @@ export class RuntimePluginLoader {
 
   /** Resolve a builtin definition, falling back to file plugins and legacy entries. */
   async resolveBuiltinDefinition(name: string, ctx: any): Promise<RuntimeDefinition | undefined> {
-    // Same-name file/package plugins keep their documented override priority.
-    if (this.factories.has(name) || this.legacyModules.has(name) || this.fileNeutral.has(name)) {
+    // A static file definition cannot be revived after dispose; re-evaluate
+    // the module so switching back gets a fresh transport/producer.
+    if (this.fileNeutral.has(name)) {
+      await this.reloadNeutralFile(name);
+      return this.getNeutral(name, ctx);
+    }
+    // Same-name legacy file/package plugins keep their documented priority.
+    if (this.factories.has(name) || this.legacyModules.has(name)) {
       return this.getNeutral(name, ctx);
     }
 
@@ -313,6 +339,16 @@ export class RuntimePluginLoader {
       return definition;
     }
     return this.getNeutral(name, ctx);
+  }
+
+  /** Static file definitions cannot be revived after dispose; re-evaluate the module. */
+  private async reloadNeutralFile(name: string): Promise<void> {
+    const file = this.neutralFileSources.get(name);
+    if (!file) return;
+    this.neutralBus.unregister(name);
+    this.neutralDefinitions.delete(name);
+    this.fileNeutral.delete(name);
+    await this.loadFile(file, new Set(), true);
   }
 
   /** Neutral runtime bus (single fan-in for AdapterEvents). */
