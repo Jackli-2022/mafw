@@ -111,4 +111,37 @@ describe('Singleflight', () => {
     await Promise.all([p1, p2, p3]);
     expect(sf.size).toBe(0);
   });
+
+  it('has returns true for in-flight key, false after completion', async () => {
+    const sf = new Singleflight();
+    const slow = () => new Promise<string>((r) => setTimeout(() => r('slow'), 30));
+
+    expect(sf.has('key')).toBe(false);
+    const p = sf.run('key', slow);
+    expect(sf.has('key')).toBe(true);
+    await p;
+    expect(sf.has('key')).toBe(false);
+  });
+
+  it('clear removes all in-flight entries (new calls start fresh)', async () => {
+    const sf = new Singleflight();
+    const slow = () => new Promise<string>((r) => setTimeout(() => r('slow'), 30));
+
+    const p1 = sf.run('key1', slow);
+    const p2 = sf.run('key2', slow);
+    expect(sf.size).toBe(2);
+
+    sf.clear();
+    expect(sf.size).toBe(0);
+    expect(sf.has('key1')).toBe(false);
+
+    // In-flight promises still resolve (clear doesn't cancel)
+    expect(await p1).toBe('slow');
+    expect(await p2).toBe('slow');
+
+    // New calls start fresh
+    const p3 = sf.run('key1', slow);
+    expect(sf.has('key1')).toBe(true);
+    await p3;
+  });
 });

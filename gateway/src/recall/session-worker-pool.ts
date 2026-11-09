@@ -5,6 +5,7 @@
 // (session, kind) so concurrent triggers (cron + restore + manual) can never
 // run the same worker twice at once.
 import { TtlMap } from './ttl-map';
+import { Singleflight } from '../concurrency';
 import { MemoryWorker, WorkerClient } from './memory-worker';
 import { registerWorkerOrigin } from './worker-origin';
 
@@ -33,7 +34,7 @@ export interface SessionWorkerPoolOptions {
 
 export class SessionWorkerPool {
   private entries: TtlMap<string, WorkerPair>;
-  private inflight = new Map<string, Promise<unknown>>();
+  private flight = new Singleflight();
   private creationOrder: string[] = [];
 
   constructor(private opts: SessionWorkerPoolOptions) {
@@ -101,18 +102,11 @@ export class SessionWorkerPool {
    * second concurrent run (prevents duplicate extraction / cursor races).
    */
   runExclusive<T>(sessionID: string, kind: WorkerKind, fn: () => Promise<T>): Promise<T> {
-    const key = `${sessionID}:${kind}`;
-    const prev = this.inflight.get(key);
-    if (prev) return prev as Promise<T>;
-    const run = fn().finally(() => {
-      if (this.inflight.get(key) === run) this.inflight.delete(key);
-    });
-    this.inflight.set(key, run);
-    return run;
+    return this.flight.run(`${sessionID}:${kind}`, fn);
   }
 
   isRunning(sessionID: string, kind: WorkerKind): boolean {
-    return this.inflight.has(`${sessionID}:${kind}`);
+    return this.flight.has(`${sessionID}:${kind}`);
   }
 
   size(): number {
@@ -122,7 +116,7 @@ export class SessionWorkerPool {
   /** Dispose every worker (gateway stop / restart). */
   disposeAll(): Promise<void> {
     this.entries.clear(); // onEvict disposes pairs
-    this.inflight.clear();
+    this.flight.clear();
     this.creationOrder = [];
     return Promise.resolve();
   }

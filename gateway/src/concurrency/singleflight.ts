@@ -18,4 +18,12 @@ export class Singleflight {
   get size(): number {
     return this.inflight.size;
   }
+
+  has(key: string): boolean {
+    return this.inflight.has(key);
+  }
+
+  clear(): void {
+    this.inflight.clear();
+  }
 }

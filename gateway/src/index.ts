@@ -7,6 +7,7 @@ import * as https from 'https';
 import * as yaml from 'js-yaml';
 import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
+import { Guard, GuardTimeoutError } from './concurrency/guard';
 import { config } from "./config";
 import { log } from './core/utils/logger';
 import {
@@ -417,6 +418,7 @@ async function isPortHealthy(port: number): Promise<boolean> {
 import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot, clearSlotsForSession } from './core/manager/manager-session-runtime';
 import { LeadSessionRegistry } from './core/manager/lead-session-registry';
 import { shouldEnsureLeadOnStartup } from './core/manager/lead-session-resolution';
+import { isLiveSessionInfo } from './runtime/session-liveness';
 
 const INTERNAL_SESSION_TTL_DAYS = 7;
 
@@ -542,7 +544,7 @@ class MafwScheduler {
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
-  private pipelineGuard = new (require('./recall/pipeline-guard').PipelineGuard)({ timeoutMs: 30 * 60_000, log: (m: string) => log.warn(m) }); // action-level in-flight guards, keyed by action name
+  private pipelineGuard = new Guard(); // action-level in-flight guards, keyed by action name
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
   private promptBudgetSessions = new Set<string>();
   /** busy 追踪（spec §5.1 v2）：value = busy 起始 ms；turn.started 置位、三终态清除；15min TTL 防楔死。 */
@@ -1253,7 +1255,7 @@ class MafwScheduler {
         if (!member) return null;
         const lease = this.podStore?.getActiveScopedSession({
           podId, memberId: member.id, goalId, revision, kind: 'discussion',
-        });
+        }, this.runtimeName);
         return lease?.sessionId ?? null;
       },
       // Task 14：两段式 Spike。生产实现 = PodProbeService（持久化/单飞/脱敏）+
@@ -3278,7 +3280,22 @@ class MafwScheduler {
    * each pipeline runs at most once at a time.
    */
   private async runPipelineGuarded(name: string, fn: () => Promise<void>): Promise<void> {
-    await this.pipelineGuard.run(name, fn);
+    try {
+      const result = await this.pipelineGuard.run(name, fn, {
+        onConflict: 'skip',
+        timeoutMs: 30 * 60_000,
+        onTimeout: 'error',
+      });
+      if (result === null) {
+        log.info(`[Scheduler] ${name} skipped: previous run still in flight`);
+      }
+    } catch (err) {
+      if (err instanceof GuardTimeoutError) {
+        log.warn(`[Scheduler] ${name} watchdog timeout: ${err.message}`);
+      } else {
+        log.warn(`[Scheduler] ${name} run error: ${err instanceof Error ? err.message : err}`);
+      }
+    }
   }
 
   /** Goal 会话预算挂载：读 state/<goalId>.json 的 policySnapshot.{maxTurns,maxCostUsd}；
@@ -4271,7 +4288,7 @@ class MafwScheduler {
       kvGet: (scope, key) => this.getGatewayDb().kvGet(scope, key),
       kvSet: (scope, key, value) => this.getGatewayDb().kvSet(scope, key, value),
       kvAll: <T,>(scope: string) => this.getGatewayDb().kvAll<T>(scope),
-      runtimeName: this.runtimeName,
+      runtimeName: () => this.runtimeName,
       podByProject: (dir) => {
         const pod = this.podStore.getPodByProject(dir);
         return pod ? { podId: pod.id, projectDir: pod.projectDir } : null;
@@ -4282,7 +4299,8 @@ class MafwScheduler {
         const row = this.podStore.listSessions(podId).find((session) =>
           session.memberId === lead.id
           && session.node === 'coordination'
-          && !session.endedAt,
+          && !session.endedAt
+          && session.runtime === this.runtimeName,
         );
         return row ? { sessionId: row.sessionId } : null;
       },
@@ -4294,7 +4312,8 @@ class MafwScheduler {
       },
       isAlive: async (sessionId) => {
         try {
-          return !!(await this.runtime!.session.get({ sessionID: sessionId }));
+          const info = await this.runtime!.session.get({ sessionID: sessionId });
+          return isLiveSessionInfo(info);
         } catch (err: any) {
           const message = String(err?.message ?? err);
           if (/not found|404|gone|missing|deleted|no such/i.test(message)) return false;
@@ -4331,6 +4350,7 @@ class MafwScheduler {
       now: () => new Date().toISOString(),
       newId: () => `pod_${randomUUID()}`,
       broadcast: (event) => this.broadcast(event as any),
+      currentRuntime: () => this.runtimeName,
       getManagerSession: (dir) => {
         const canonical = canonicalProjectDir(dir);
         const entry = Array.from(this.registeredProjects.entries())
@@ -4338,7 +4358,10 @@ class MafwScheduler {
         const projectRoot = entry?.[0] ?? dir;
         return this.ensureManagerSession(projectRoot, entry?.[1].mafwDir ?? this.mafwDirFor(projectRoot));
       },
-      getSession: (sessionID) => this.runtime!.session.get({ sessionID }),
+      getSession: async (sessionID) => {
+        const info = await this.runtime!.session.get({ sessionID });
+        return isLiveSessionInfo(info) ? info : null;
+      },
       messages: (sessionID, limit) => this.runtime!.session.messages({ sessionID, limit }).then((r: any) => r?.data ?? []),
       archiveLeadSession: (sessionId) => this.archiveLeadSession(sessionId),
       memoryRoot: path.join(os.homedir(), '.mafw', 'pods'),
@@ -4378,7 +4401,7 @@ class MafwScheduler {
       newId: () => `podmsg_${randomUUID()}`,
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'message' } }),
     });
-    this.podAccess = new PodAccess(this.podStore);
+    this.podAccess = new PodAccess(this.podStore, () => this.runtimeName);
     this.podBudget = new PodBudget({
       store: this.podStore,
       costForSessions: (sessionIds, sinceEpoch) => {
@@ -4458,11 +4481,14 @@ class MafwScheduler {
       store: this.podStore,
       now: () => new Date().toISOString(),
       newId: () => `podsess_${randomUUID()}`,
+      runtimeName: () => this.runtimeName,
       isAlive: async (sessionId) => {
         // Throwing is fail-open (treated alive) inside the supervisor; only an
-        // explicit false retires and rebuilds the lease.
+        // explicit false retires and rebuilds the lease. The result must be a
+        // real session record — an SDK error envelope for a foreign/deleted id
+        // is not alive.
         const info = await this.runtime!.session.get({ sessionID: sessionId });
-        return !!info;
+        return isLiveSessionInfo(info);
       },
       dispose: async (sessionId) => {
         try {
@@ -4475,6 +4501,7 @@ class MafwScheduler {
     this.podSessionLifecycle = new PodSessionLifecycle({
       store: this.podStore,
       supervisor: this.podSessionSupervisor,
+      runtimeName: () => this.runtimeName,
       snapshotSession: (sessionId) => this.podService.snapshotSession(sessionId),
       log: (message) => log.info(message),
     });
@@ -4490,6 +4517,7 @@ class MafwScheduler {
       store: this.podStore,
       pods: this.podService,
       sessions: this.podSessionSupervisor,
+      runtimeName: () => this.runtimeName,
       worktrees: this.podWorktreeService,
       runtime: createTechLeadRuntimeAdapter({
         createSession: async ({ projectDir }) => {
@@ -4531,6 +4559,7 @@ class MafwScheduler {
     // Task 17：Lead 的上下文选择 + 每个节点/探针 prompt 的确定性 ContextManifest。
     this.podContextSelectionService = new PodContextSelectionService({
       store: this.podStore,
+      runtimeName: () => this.runtimeName,
       resolveMafwDir: (goalId) => this.findGoalMafwDir(goalId),
       now: () => new Date().toISOString(),
       log: (message) => log.info(message),
@@ -4538,6 +4567,7 @@ class MafwScheduler {
 
     this.podMessageDelivery = new PodMessageDelivery({
       store: this.podStore,
+      runtimeName: () => this.runtimeName,
       promptAsync: async (input) => {
         await this.runtime!.session.promptAsync({
           sessionID: input.sessionID,
@@ -9397,7 +9427,7 @@ class MafwScheduler {
     }
     const podId = this.podService?.getPodIdForGoal(goalId);
     if (podId && this.podStore) {
-      for (const session of this.podStore.listActiveSessions(podId)) {
+      for (const session of this.podStore.listActiveSessions(podId, this.runtimeName)) {
         if (session.goalId === goalId && session.node !== 'coordination') ids.add(session.sessionId);
       }
     }

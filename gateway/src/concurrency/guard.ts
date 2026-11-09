@@ -65,6 +65,10 @@ export class Guard {
     return [...this.held];
   }
 
+  get size(): number {
+    return this.held.size;
+  }
+
   private execute<T>(
     key: string,
     fn: () => Promise<T>,
