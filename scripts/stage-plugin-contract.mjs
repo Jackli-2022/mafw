@@ -45,6 +45,7 @@ export const CONTRACT_PACKAGES = [
   { name: PACKAGE_NAME, sourceDir: defaultSourceDir },
   { name: RUNTIME_CONTRACT_PACKAGE, sourceDir: defaultRuntimeContractDir },
   { name: RUNTIME_CORE_PACKAGE, sourceDir: path.join(repoRoot, "packages", "runtime-core") },
+  { name: "@mafw/adapter-pi", sourceDir: path.join(repoRoot, "adapters", "pi") },
 ];
 
 function logLine(message) {

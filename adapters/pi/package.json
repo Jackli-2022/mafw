@@ -1,0 +1,18 @@
+{
+  "name": "@mafw/adapter-pi",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@mafw/runtime-contract": "*",
+    "@mafw/runtime-core": "*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
+  }
+}
