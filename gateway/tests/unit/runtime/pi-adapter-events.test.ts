@@ -60,16 +60,33 @@ describe('translatePiAdapterEvent', () => {
     expect(replied.data).toMatchObject({ reply: 'once', approved: true, source: 'user' });
   });
 
-  it('maps step parts and compaction', () => {
+  it('maps step parts and drops registry-owned compaction events', () => {
     expect(translatePiAdapterEvent({ type: 'turn_start' }, 's1')!.data).toMatchObject({ part: { type: 'step-start' } });
     expect(translatePiAdapterEvent({ type: 'turn_end' }, 's1')!.data).toMatchObject({ part: { type: 'step-finish' } });
-    expect(translatePiAdapterEvent({ type: 'session_before_compact' }, 's1')!.type).toBe('session.compacting');
-    expect(translatePiAdapterEvent({ type: 'session_compact' }, 's1')!.type).toBe('session.compacted');
+    expect(translatePiAdapterEvent({ type: 'session_before_compact' }, 's1')).toBeNull();
+    expect(translatePiAdapterEvent({ type: 'session_compact' }, 's1')).toBeNull();
   });
 
-  it('drops unknown events', () => {
+  it('drops extension-only tool hooks and unknown events', () => {
+    expect(translatePiAdapterEvent({ type: 'tool_call' }, 's1')).toBeNull();
+    expect(translatePiAdapterEvent({ type: 'tool_result' }, 's1')).toBeNull();
     expect(translatePiAdapterEvent({ type: 'mystery' }, 's1')).toBeNull();
     expect(translatePiAdapterEvent({}, 's1')).toBeNull();
+  });
+
+  it('suppresses user message_start but emits user message_end', () => {
+    expect(translatePiAdapterEvent({ type: 'message_start', message: { role: 'user', timestamp: 1, content: 'hi' } }, 's1')).toBeNull();
+    const end = translatePiAdapterEvent({ type: 'message_end', message: { role: 'user', timestamp: 1, content: 'hi' } }, 's1')!;
+    expect((end.data as any).message.id).toBe('piu_1');
+  });
+
+  it('maps tool update/result and agent_settled', () => {
+    expect(translatePiAdapterEvent({ type: 'tool_execution_update', sessionID: 's1', toolCallId: 'c1', partialResult: 'half' }, 's1')!.data)
+      .toMatchObject({ callID: 'c1', field: 'output', delta: 'half' });
+    const failed = translatePiAdapterEvent({ type: 'tool_execution_end', sessionID: 's1', toolCallId: 'c1', result: 'boom', isError: true }, 's1')!;
+    expect(failed.data).toMatchObject({ callID: 'c1', ok: false, output: 'boom' });
+    expect((failed.data as any).error).toBeUndefined();
+    expect(translatePiAdapterEvent({ type: 'agent_settled', messages: [{ role: 'assistant', stopReason: 'error', errorMessage: 'x' }] }, 's1')!.type).toBe('turn.failed');
   });
 
   it('PiEventStream emits AdapterEvent from the raw subscription', async () => {

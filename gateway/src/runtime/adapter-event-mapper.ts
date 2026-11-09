@@ -146,7 +146,7 @@ export function mapAdapterEvent(event: AdapterEvent): MappedAdapterEvent {
       return { canonical: canonical('permission.replied', {
         sessionID: event.sessionID, requestId: event.requestID,
         reply: data.reply, source: data.source,
-        approved: data.approved ?? data.reply === 'once',
+        approved: data.approved ?? (data.reply === 'once' || data.reply === 'always'),
         ...(data.decision ? { decision: data.decision } : {}),
         ...(data.message ? { message: data.message } : {}),
       }, event.sessionID) };

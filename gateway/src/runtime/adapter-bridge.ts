@@ -10,6 +10,7 @@
  * (opencode dialects): the bridge applies the declared event mappings first.
  */
 import { defineRuntime, validateAdapterEvent, type AdapterEvent, type RuntimeChannels, type RuntimeChannelsV2, type RuntimeDefinition, type RuntimeTransport } from '@mafw/runtime-contract';
+import { log } from '../core/utils/logger';
 import type { AgentRuntime } from './contract';
 import type { EventMappingEntry, TranslationHooks } from './event-mapper';
 import { applyEventMappings } from './event-mapper';
@@ -19,6 +20,19 @@ let sequence = 0;
 function nextID(): string {
   sequence += 1;
   return `bridge-${Date.now().toString(36)}-${sequence}`;
+}
+
+/** AdapterEvent types that require a turnID (validateAdapterEvent contract). */
+function nativeNeedsTurn(type: string): boolean {
+  return type.startsWith('turn.') || type === 'usage.updated' || type.startsWith('tool.');
+}
+
+const nativeDropWarned = new Set<string>();
+function warnNativeDrop(type: string, reason: string): void {
+  const key = `${type}:${reason}`;
+  if (nativeDropWarned.has(key)) return;
+  nativeDropWarned.add(key);
+  log.warn(`[AdapterBridge] dropped native ${key}`);
 }
 
 function propsOf(evt: RawRuntimeEvent): Record<string, any> {
@@ -148,6 +162,9 @@ export function toRuntimeDefinition(
   legacy: AgentRuntime,
   meta: AdapterBridgeMeta,
 ): RuntimeDefinition {
+  if (meta.nativeEvents && meta.translate) {
+    throw new Error('toRuntimeDefinition: nativeEvents and translate are mutually exclusive');
+  }
   const unsubscribers = new Set<() => void>();
   const bridgeState: AdapterBridgeState = { turns: new Map() };
   /**
@@ -303,22 +320,36 @@ export function toRuntimeDefinition(
           if (next) activeTurns.set(sessionHint, next);
           if (queue && queue.length === 0) pendingTurns.delete(sessionHint);
         }
-        const overrideTurnID = sessionHint
-          ? (activeTurns.get(sessionHint) ?? pendingTurns.get(sessionHint)?.[0])
-          : undefined;
+        const active = sessionHint ? activeTurns.get(sessionHint) : undefined;
+        const bridged = sessionHint ? bridgeState.turns.get(sessionHint) : undefined;
+        const queued = sessionHint ? pendingTurns.get(sessionHint)?.[0] : undefined;
+        let overrideTurnID = active ?? bridged ?? queued;
+        if (sessionHint && !overrideTurnID && nativeNeedsTurn(evt.type)) {
+          // An extension/restarted run may not have gone through sendTurn; mint
+          // one rather than losing the terminal or tool frames.
+          overrideTurnID = `bridge-${sessionHint}-${nextID()}`;
+          bridgeState.turns.set(sessionHint, overrideTurnID);
+        }
+        if (sessionHint && evt.type === 'turn.started' && overrideTurnID) {
+          bridgeState.turns.set(sessionHint, overrideTurnID);
+        }
         const withTurnID = overrideTurnID && !evt.turnID ? { ...evt, turnID: overrideTurnID } : evt;
         const validation = validateAdapterEvent(withTurnID);
-        if (!validation.ok) return;
+        if (!validation.ok) {
+          warnNativeDrop(String(evt.type), validation.errors.join('; '));
+          return;
+        }
         listener(validation.event);
         if (validation.event.type === 'turn.completed' || validation.event.type === 'turn.failed' || validation.event.type === 'turn.aborted') {
           const sid = validation.event.sessionID;
           if (!sid) return;
           bridgeState.turns.delete(sid);
-          // Runtimes without a turn.started event consume the queue head on the
-          // terminal; with a start, the active id was already advanced.
           if (activeTurns.has(sid)) {
             activeTurns.delete(sid);
-          } else {
+          } else if (!bridged) {
+            // Terminal was attributed to the queue head; consume it. When the
+            // bridge fallback supplied the id, the queued turn is the NEXT one
+            // and must not lose its start.
             const queue = pendingTurns.get(sid);
             queue?.shift();
             if (queue && queue.length === 0) pendingTurns.delete(sid);

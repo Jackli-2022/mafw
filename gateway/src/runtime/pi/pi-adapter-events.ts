@@ -121,8 +121,13 @@ export function translatePiAdapterEvent(event: any, sessionID: string): AdapterE
         callID: event?.toolCallId,
         ok: event?.isError !== true,
         output: event?.result,
-        ...(event?.isError ? { error: event?.result } : {}),
       });
+
+    // extension-only hook events (not reachable through session.subscribe);
+    // dropped explicitly so they do not pollute unknown-event telemetry.
+    case 'tool_call':
+    case 'tool_result':
+      return null;
 
     case 'permission.asked': {
       const request = {
@@ -144,12 +149,14 @@ export function translatePiAdapterEvent(event: any, sessionID: string): AdapterE
       );
     }
 
+    // Compaction is emitted by PiSessionRegistry directly (session.compacting/
+    // session.compacted); these raw hooks are extension-only and would duplicate
+    // the registry frames if pi ever surfaces them on session.subscribe.
     case 'session_before_compact':
-    case 'session.compacting':
-      return make('session.compacting', sessionID, {});
     case 'session_compact':
+    case 'session.compacting':
     case 'session.compacted':
-      return make('session.compacted', sessionID, {});
+      return null;
 
     default:
       try { piUnknownRecorder?.(t); } catch { /* fail-open telemetry */ }
