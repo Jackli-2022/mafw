@@ -256,6 +256,60 @@ mafw logs
 - TDD 门禁不变：`flutter analyze` 零告警 + `flutter test` 全绿；
 - P1 起每阶段末按 Plan B「阶段末真机冒烟」执行；调试面板导出的诊断包可存档 `.mafw/qa/` 供复盘。
 
+### 7.8 模拟器自动冒烟配方（2026-11-09 实证）
+
+目标：无真机时用 AVD + `adb reverse` 让 App 连本机 gateway，并用 adb 驱动 UI/截图做可重复冒烟。
+
+```powershell
+# 0) 环境（每段命令都带上）
+$env:JAVA_HOME='C:\dev\jdk17\jdk-17.0.20+8'
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:PATH="C:\dev\flutter\bin;$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME\emulator;$env:PATH"
+
+# 1) 启动 AVD 并等 boot
+flutter emulators --launch Pixel_9a
+adb wait-for-device
+# 等 sys.boot_completed=1
+
+# 2) loopback 反代：App 连 127.0.0.1:3000 即到宿主机 gateway
+adb reverse tcp:3000 tcp:3000
+
+# 3) 构建 + 安装（appId ai.orcalore.mobile；旧 ai.mafw.mafw_mobile 会并存，建议先卸载）
+cd mobile; flutter build apk --debug
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+
+# 4) 免 UI 注入配置（debug 包可 run-as；adb reverse 走 loopback → 无需 apiToken）
+adb shell am force-stop ai.orcalore.mobile
+adb push orcalore-smoke-prefs.xml /data/local/tmp/orcalore-prefs.xml
+adb shell run-as ai.orcalore.mobile mkdir -p /data/data/ai.orcalore.mobile/shared_prefs
+adb shell run-as ai.orcalore.mobile cp /data/local/tmp/orcalore-prefs.xml \
+  /data/data/ai.orcalore.mobile/shared_prefs/FlutterSharedPreferences.xml
+# prefs 内容（SharedPreferences 前缀 flutter.）：
+#   flutter.mafw_conn_base_url        = http://127.0.0.1:3000
+#   flutter.orcalore_active_project   = <项目绝对路径>
+
+# 5) 免通知弹窗（否则每次启动都会弹 POST_NOTIFICATIONS）
+adb shell pm grant ai.orcalore.mobile android.permission.POST_NOTIFICATIONS
+adb shell am start -n ai.orcalore.mobile/.MainActivity
+
+# 6) 观察：截图 + UI 树 + 日志
+adb shell screencap -p /sdcard/s.png; adb pull /sdcard/s.png s.png
+adb shell uiautomator dump /sdcard/ui.xml; adb pull /sdcard/ui.xml ui.xml
+# Flutter 文本在 content-desc（多行用 &#10; 连接）；UI 树是单行长 XML，建议按正则取 content-desc+bounds
+adb logcat -d --pid=<pid> | Select-String flutter
+
+# 7) 驱动：点击/长按/返回
+adb shell input tap <x> <y>
+adb shell input swipe <x> <y> <x> <y> 900   # 长按 900ms
+adb shell input keyevent 4                    # 返回（root 页再按会退出 App）
+```
+
+注意：
+- 截图坐标 = 设备像素（Pixel_9a `1080x2424`）；`screencap` 图可能被缩放显示，按 UI 树 bounds 点。
+- Flutter 的 `ListView` 语义节点可滚动；长按会话行可验证「交给 Lead」菜单（Lead 会话会被守卫拒绝并提示）。
+- 事件检查器里可看到 `connected`、`pod.updated`、`pod.event` 的原始帧与 `seq`——冒烟时让 gateway 产生真实事件（如 `POST /api/pods/:podId/messages`）即可验证 WS 全链。
+- App 重启后通知授权可能再次提示（系统策略），用第 5 步 grant 可避免。
+
 ---
 
 ## 8. 已知待办（roadmap）

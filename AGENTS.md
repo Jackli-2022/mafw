@@ -1864,6 +1864,17 @@ D3 鉴权洞独立先行 / D4 沿用桌面 Goal→Tech Lead 范式 / D5 含「�
   测试：mobile 逐文件 **385/385**（31 文件；本机聚合跑有既有 `flutter_tester` 原生崩溃，逐文件为门禁）、`flutter analyze` 0；gateway additive pod 473/473 + api-contract 3/3 + `tsc` rc=0；SDK 199/199；desktop `tsgo -p` rc=0（类型兼容核对）。
   版本：`mobile/pubspec.yaml` 1.1.0+2。**未做**：P1-P4 真机 Tailscale 冒烟（需真实手机 + gateway + 桌面）；OS `orcalore://pair` intent 路由（无 app_links，QR 为主路径）；FCM/离线推送（D1 非目标）。
 
+- **模拟器 GUI 冒烟（2026-11-09，commit `cadb20dd`）**：AVD Pixel_9a + `adb reverse tcp:3000` + `run-as` prefs 注入
+  （baseUrl/active project；loopback 免 token）+ adb tap/uiautomator/screencap 驱动（配方见
+  `docs/architecture/mobile.md` §7.8）。实证通过：工作 tab（品牌行/需要你/结果待看/五桶/Lead 入口）、聊天
+  （Lead 徽标+项目过滤+新话题）、我的（记忆/连接/扫码/Triage/调试）、调试面板（WS 已连接、事件检查器、HTTP 日志）、
+  Goal 详情（时间线/版本/结果/打回）、终态讨论归档 transcript（409 分支）、Lead 聊天历史、composer、
+  长按「交给 Lead」守卫；真实事件 `pod.updated`+`pod.event`（member.note/p3，带 seq）被捕获；
+  `markPodEventsSeenAll` 写回使「结果待查看」2→1。**冒烟发现并修复**：work FAB / 调试「复制诊断包」的
+  `FloatingActionButton.extended` 被主题 `CircleBorder` 裁成圆（label 溢出）→ 改纯圆 FAB + 列表内按钮
+  （`cadb20dd`；`work_tab`/`tab_shell`/`debug_page` 47/47 + analyze 0，重装真机复验）。已知：通知授权每次启动
+  可能重弹（`adb shell pm grant ... POST_NOTIFICATIONS` 可规避）；模拟器上残留旧 `ai.mafw.mafw_mobile` 可卸载。
+
 
 ## 6. Gateway 运维
 
