@@ -10,11 +10,14 @@
 // Lifecycle (spec 2026-11-09 §5.7/§6.2/§6.5):
 // - mount: prepare → create `<webview>` → set src;
 // - `expiresAt - 30min`: prepare again (fresh cookie), then `reload()`;
-// - first load failure / HTTP 403: retry once with a fresh ticket, then show a
-//   banner with a manual retry (never a white page);
+// - HTTP 403: renew the ticket and retry once; first network load failure: same;
+// - any other 4xx/5xx (incl. 404) or a failed retry: `DockBanner` with a manual
+//   retry — a missing entry never renders as a white page (spec §3.3);
 // - session change: session-scoped surfaces are rebuilt with the new binding
 //   (new partition + cookie); project/global surfaces and pages that opted out
-//   via `reloadOnSessionChange: false` only receive a `context` push.
+//   via `reloadOnSessionChange: false` only receive a `context` push;
+// - teardown: the page's badge and title are cleared (nothing the page
+//   published outlives it).
 //
 // The page half is `src/preload/plugin-web.ts`; the message router is the pure
 // `plugin-web-bridge.ts` (unit tested).
@@ -25,6 +28,7 @@ import { DockBanner } from "../components/dock-panel"
 import { createPluginWebBridge, type PluginWebBridge, type PluginWebBridgePush } from "./plugin-web-bridge"
 import {
   pluginWebLoadErrorMessage,
+  pluginWebNavigationOutcome,
   pluginWebRefreshDelay,
   webSurfaceBinding,
   webSurfaceBindingKey,
@@ -59,6 +63,11 @@ export function PluginWebSurfaceHost(props: PluginWebSurfaceHostProps) {
   const [loading, setLoading] = createSignal(true)
   const themeListeners = new Set<(theme: PluginWebTheme) => void>()
   const contextListeners = new Set<(context: PluginWebSurfaceContext) => void>()
+  // Badge/title the page published (null = it never did). Cleared on teardown so
+  // a removed surface cannot leave a stale count on the rail or a stale label on
+  // the tab strip (the declared title is the fallback the shell applies).
+  let publishedBadge: number | null = null
+  let publishedTitle: string | null = null
 
   const binding = () => webSurfaceBinding(props.view, props.projectDir, props.sessionID)
   const currentTheme = (): PluginWebTheme =>
@@ -67,6 +76,20 @@ export function PluginWebSurfaceHost(props: PluginWebSurfaceHostProps) {
   const report = (message: string): void => {
     setError(message)
     props.onError?.(message)
+  }
+
+  /** Bridge `setBadge` — keep the last value so teardown can clear it. */
+  const publishBadge = (count: number): void => {
+    const next = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0
+    publishedBadge = next
+    props.onBadge?.(next)
+  }
+
+  /** Bridge `setTitle` / `<title>` — empty means "fall back to the declared title". */
+  const publishTitle = (title: string): void => {
+    const next = typeof title === "string" ? title.trim() : ""
+    publishedTitle = next.length > 0 ? next : null
+    props.onTitle?.(next)
   }
 
   const sendToPage = (el: any, frame: PluginWebBridgePush | unknown): void => {
@@ -91,6 +114,14 @@ export function PluginWebSurfaceHost(props: PluginWebSurfaceHostProps) {
     themeListeners.clear()
     contextListeners.clear()
     retryUsed = false
+    if (publishedBadge !== null) {
+      publishedBadge = null
+      props.onBadge?.(0)
+    }
+    if (publishedTitle !== null) {
+      publishedTitle = null
+      props.onTitle?.("")
+    }
     if (current) {
       try {
         current.remove()
@@ -192,8 +223,8 @@ export function PluginWebSurfaceHost(props: PluginWebSurfaceHostProps) {
       context: () => ({ ...webSurfaceContext(props.projectDir, props.sessionID), theme: currentTheme() }),
       invoke: (pkg, action, input) =>
         window.api.mafw.plugins.invoke(pkg, action, input, props.sessionID ?? undefined),
-      setBadge: (count) => props.onBadge?.(count),
-      setTitle: (title) => props.onTitle?.(title),
+      setBadge: (count) => publishBadge(count),
+      setTitle: (title) => publishTitle(title),
       openExternal: (url) => {
         void window.api.browser.openExternal(url)
       },
@@ -269,19 +300,24 @@ export function PluginWebSurfaceHost(props: PluginWebSurfaceHostProps) {
     })
     el.addEventListener("page-title-updated", (event: any) => {
       const title = typeof event?.title === "string" ? event.title.trim() : ""
-      if (title.length > 0) props.onTitle?.(title)
+      if (title.length > 0) publishTitle(title)
     })
     el.addEventListener("did-navigate", (event: any) => {
-      const status = Number(event?.httpResponseCode ?? 0)
-      if (status === 403) {
-        // Ticket expired or was revoked: refresh the cookie, then retry once.
-        void retryLoad(pluginWebLoadErrorMessage(403, ""))
-        return
-      }
-      if (status >= 200 && status < 400) {
+      const outcome = pluginWebNavigationOutcome(Number(event?.httpResponseCode ?? 0))
+      if (outcome.kind === "healthy") {
         retryUsed = false
         setError(null)
+        return
       }
+      if (outcome.kind === "ignore") return
+      if (outcome.kind === "renew-ticket") {
+        // Ticket expired or was revoked: refresh the cookie, then retry once.
+        void retryLoad(outcome.message)
+        return
+      }
+      // 404/5xx: the entry is gone (or the package failed closed). A fresh
+      // ticket cannot create the file, so surface the banner right away.
+      report(outcome.message)
     })
     el.addEventListener("did-fail-load", (event: any) => {
       if (event?.errorCode === -3 || event?.isMainFrame === false) return

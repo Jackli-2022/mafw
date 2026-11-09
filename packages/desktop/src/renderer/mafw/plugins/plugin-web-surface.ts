@@ -11,6 +11,7 @@
 // must project to nothing rather than break the rail.
 import type { PluginClientDescriptor } from "@mafw/plugin-contract"
 import { pluginSurfaceId, type PluginSurfaceId } from "../workbench-views"
+import type { PluginTabSurface } from "./plugin-view-model"
 
 /** Declared rail projection (defaults already applied). */
 export interface PluginWebSurfaceRailView {
@@ -43,6 +44,16 @@ export interface PluginRailItem {
   icon: string
   order: number
   badge: boolean
+}
+
+/**
+ * Task 9: one web surface as an L2 workbench tab.
+ *
+ * `descriptor` is the owning package, exactly like a declarative panel tab, so
+ * the tab strip can render both without a second code path.
+ */
+export interface PluginWebTab extends PluginTabSurface {
+  view: PluginWebSurfaceView
 }
 
 /** Same character set as `workbench-views.ts` surface ids and the descriptor. */
@@ -131,6 +142,31 @@ export function railItemsFromWebSurfaces(
   }
   items.sort(compareRailItems)
   return items
+}
+
+/**
+ * Task 9: L2 tab surfaces for web views.
+ *
+ * Views already carry the rail ordering (see `webSurfaceViews`), so the strip
+ * and the rail agree; declarative panel/config tabs keep their own order ahead
+ * of these. A view whose package descriptor is missing cannot happen with a
+ * single projection source, but is skipped rather than rendered with a hole.
+ */
+export function webSurfaceTabs(
+  views: readonly PluginWebSurfaceView[],
+  plugins: readonly PluginClientDescriptor[],
+): PluginWebTab[] {
+  const byName = new Map<string, PluginClientDescriptor>()
+  for (const descriptor of plugins ?? []) {
+    if (descriptor && typeof descriptor.name === "string") byName.set(descriptor.name, descriptor)
+  }
+  const tabs: PluginWebTab[] = []
+  for (const view of views ?? []) {
+    const descriptor = byName.get(view.packageName)
+    if (!descriptor) continue
+    tabs.push({ id: view.surfaceId, label: view.title, descriptor, view })
+  }
+  return tabs
 }
 
 /**

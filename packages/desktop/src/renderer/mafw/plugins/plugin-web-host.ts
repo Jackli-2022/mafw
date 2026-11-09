@@ -124,3 +124,31 @@ export function pluginWebLoadErrorMessage(
   const detail = trimmed(description)
   return detail.length > 0 ? `插件页面加载失败：${detail}` : "插件页面加载失败"
 }
+
+/**
+ * What the host does after a top-level navigation finished with an HTTP status.
+ *
+ * - 2xx/3xx → healthy: clear a previous error and re-arm the one-shot retry.
+ * - 403 → ticket missing/expired/revoked: renew the cookie and retry once
+ *   (spec §5.7); the retry path falls back to the banner when that also fails.
+ * - any other 4xx/5xx (incl. 404) → the page is not there (missing entry,
+ *   fail-closed package, CSP) — a fresh ticket cannot create the file, so the
+ *   banner shows immediately (spec §3.3: never a white page). Manual 重试 still
+ *   covers the "revision just landed" race.
+ * - 0 / 1xx (non-HTTP document, provisional) → nothing to say.
+ */
+export type PluginWebNavigationOutcome =
+  | { kind: "healthy" }
+  | { kind: "renew-ticket"; message: string }
+  | { kind: "error"; message: string }
+  | { kind: "ignore" }
+
+export function pluginWebNavigationOutcome(
+  status: number | null | undefined,
+): PluginWebNavigationOutcome {
+  const code = typeof status === "number" && Number.isFinite(status) ? Math.floor(status) : 0
+  if (code >= 200 && code < 400) return { kind: "healthy" }
+  if (code === 403) return { kind: "renew-ticket", message: pluginWebLoadErrorMessage(403, "") }
+  if (code >= 400) return { kind: "error", message: pluginWebLoadErrorMessage(code, "") }
+  return { kind: "ignore" }
+}

@@ -74,6 +74,15 @@ import {
 } from "./pod-model"
 import { ingestPluginEvent, ingestPluginsChanged, pluginClientRevision, pluginDescriptors, refreshPluginClient } from "./plugins/plugin-store"
 import { pluginSurfaceIssues, pluginSurfaces, pluginConfigSurfaces, resolveActiveSurface } from "./plugins/plugin-view-model"
+import { railItemsFromWebSurfaces, webSurfaceTabs, webSurfaceViews } from "./plugins/plugin-web-surface"
+import {
+  EMPTY_PLUGIN_SURFACE_RUNTIME,
+  applyPluginRailState,
+  applyPluginSurfaceBadge,
+  applyPluginSurfaceTitle,
+  applyPluginTabTitles,
+  prunePluginSurfaceRuntime,
+} from "./plugins/plugin-surface-state"
 import { PluginSurfaceHost } from "./plugins/PluginSurfaceHost"
 import { PluginWindowHost } from "./plugins/PluginWindowHost"
 import { buildPodNoteBody } from "./pod-note"
@@ -97,6 +106,7 @@ import {
   migrateWorkbenchStorage,
   terminalSurfaceHotkeyAction,
   type ExecutionSection,
+  type PluginSurfaceId,
   type WorkbenchSurface,
   type WorkbenchView,
 } from "./workbench-views"
@@ -157,7 +167,7 @@ export function MafwShell() {
   const [activeTab, setActiveTab] = createSignal<NavTab>("chat")
   const [showConfig, setShowConfig] = createSignal(false)
   const [configSection, setConfigSection] = createSignal<NavKey | undefined>(undefined)
-  const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
+  const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null; url?: string | null } | null>(null)
   const [theme, setTheme] = createSignal<string | null>(null)
 
   // Model selection is per-session: user picks live in modelPicks (in-memory),
@@ -1954,10 +1964,43 @@ export function MafwShell() {
   // Task 8/9：插件面板与配置页 tab 由 committed descriptors 投影，Desktop 只消费数据。
   const pluginSurfaceList = createMemo(() => pluginSurfaces(pluginDescriptors()))
   const pluginConfigSurfaceList = createMemo(() => pluginConfigSurfaces(pluginDescriptors()))
-  const pluginTabList = createMemo(() => [
-    ...pluginSurfaceList(),
-    ...pluginConfigSurfaceList(),
+  // Task 9：沙箱 Web 页面与声明式面板共用 `plugin:<pkg>:<surface>` 身份与 L2 tab。
+  const pluginWebSurfaces = createMemo(() => webSurfaceViews(pluginDescriptors()))
+  const pluginWebSurfaceTabs = createMemo(() =>
+    webSurfaceTabs(pluginWebSurfaces(), pluginDescriptors()),
+  )
+  // 页面通过 bridge 写的角标/标题（rail 与 tab 共用一个源）。
+  const [pluginSurfaceRuntime, setPluginSurfaceRuntime] = createSignal(EMPTY_PLUGIN_SURFACE_RUNTIME)
+  const pluginTabList = createMemo(() =>
+    applyPluginTabTitles(
+      [
+        ...pluginSurfaceList(),
+        ...pluginConfigSurfaceList(),
+        ...pluginWebSurfaceTabs(),
+      ],
+      pluginSurfaceRuntime(),
+    ),
+  )
+  const pluginSurfaceIdList = createMemo(() => [
+    ...pluginSurfaceList().map((surface) => surface.id),
+    ...pluginConfigSurfaceList().map((surface) => surface.id),
+    ...pluginWebSurfaceTabs().map((surface) => surface.id),
   ])
+  const pluginRailItems = createMemo(() =>
+    applyPluginRailState(railItemsFromWebSurfaces(pluginWebSurfaces()), pluginSurfaceRuntime()),
+  )
+  const gatewayUrl = () => gwStatus()?.url ?? ""
+  const applyWebSurfaceBadge = (surfaceId: string, count: number) => {
+    setPluginSurfaceRuntime((prev) => applyPluginSurfaceBadge(prev, surfaceId, count))
+  }
+  const applyWebSurfaceTitle = (surfaceId: string, title: string) => {
+    setPluginSurfaceRuntime((prev) => applyPluginSurfaceTitle(prev, surfaceId, title))
+  }
+  // 错误面在宿主内部（DockBanner + 重试）；shell 只留诊断轨迹，避免后台 tab
+  // 的失败被静默吞掉。
+  const applyWebSurfaceError = (surfaceId: string, message: string) => {
+    console.warn(`[plugins] ${surfaceId}: ${message}`)
+  }
   const reportedPluginIssues = new Set<string>()
   createEffect(() => {
     for (const issue of pluginSurfaceIssues(pluginDescriptors())) {
@@ -1967,14 +2010,16 @@ export function MafwShell() {
       console.warn(`[plugins] ${issue.message}`)
     }
   })
-  // 包/面板/配置页被删除后，活动 surface 若已消失则回退到内置「文件」；不打断执行/审阅视图。
+  // revision 变化移除 surface 后，页面已卸载不会再回调：清掉遗留的角标/标题
+  // （prune 无变化时返回同一个对象，不会自激）。
+  createEffect(() => {
+    const live = pluginSurfaceIdList()
+    setPluginSurfaceRuntime((prev) => prunePluginSurfaceRuntime(prev, live))
+  })
+  // 包/面板/配置页/Web 页面被删除后，活动 surface 若已消失则回退到内置「文件」；不打断执行/审阅视图。
   createEffect(() => {
     const current = workbenchSurface()
-    const resolved = resolveActiveSurface(
-      current,
-      pluginTabList().map((surface) => surface.id),
-      pluginClientRevision() !== "",
-    )
+    const resolved = resolveActiveSurface(current, pluginSurfaceIdList(), pluginClientRevision() !== "")
     if (resolved === current) return
     setWorkbenchSurface(resolved)
     try { localStorage.setItem("mafw-workbench-surface", resolved) } catch { /* ignore */ }
@@ -1994,6 +2039,13 @@ export function MafwShell() {
     applyWorkbenchSurface(surface)
     setRightDockOpen(true)
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
+  }
+  /** 左栏插件入口：切到「工作台」并激活该 surface（spec 2026-11-09 §6.4）。 */
+  const openPluginSurface = (surfaceId: PluginSurfaceId) => {
+    closeLeftDockIfOverlay()
+    setShowConfig(false)
+    openWorkbench("workbench")
+    applyWorkbenchSurface(surfaceId)
   }
 
   /** 审批三档直选（composer 图标循环 + 会话菜单共用；乐观更新失败回滚）。 */
@@ -2630,6 +2682,9 @@ export function MafwShell() {
           approvals={pendingPermissionCount()}
           podBadge={podBadgeCount()}
           podResultDot={podResultDot()}
+          pluginItems={pluginRailItems()}
+          pluginActiveSurface={rightDockOpen() && workbenchView() === "workbench" ? workbenchSurface() : null}
+          onPluginItem={openPluginSurface}
           connPhase={connPhaseLabel()}
           gatewayState={gwStatus()?.state ?? null}
           approvalsActive={activeTab() === "approvals" && !showConfig()}
@@ -3029,6 +3084,11 @@ export function MafwShell() {
                     />
                   }
                   pluginSurfaces={pluginTabList()}
+                  webSurfaces={pluginWebSurfaces()}
+                  gatewayUrl={gatewayUrl()}
+                  onWebBadge={applyWebSurfaceBadge}
+                  onWebTitle={applyWebSurfaceTitle}
+                  onWebError={applyWebSurfaceError}
                   renderPluginSurface={(id) => (
                     <PluginSurfaceHost
                       id={id}

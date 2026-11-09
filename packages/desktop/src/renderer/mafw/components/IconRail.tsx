@@ -8,6 +8,8 @@ import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { LeftDockFace } from "../left-dock"
 import { connDotState, railAriaLabel } from "../left-dock"
 import { formatRailBadge } from "../pod-rail-badge"
+import type { PluginRailItemState } from "../plugins/plugin-surface-state"
+import type { PluginSurfaceId } from "../workbench-views"
 
 type IconName = ComponentProps<typeof Icon>["name"]
 
@@ -25,6 +27,15 @@ export type IconRailProps = {
   podBadge?: number
   /** 鲸群：有未查看的结果（Task 21）——独立圆点，不计入 attention 数字。 */
   podResultDot?: boolean
+  /**
+   * 统一插件包的 Web surface 入口（spec 2026-11-09 §6.4），已按 `rail.order`
+   * 排序；声明了 `rail.badge` 的条目带 `count`。
+   */
+  pluginItems?: readonly PluginRailItemState[]
+  /** 当前激活的插件 surface（仅工作台 L1=workbench 时由 shell 传入）。 */
+  pluginActiveSurface?: string | null
+  /** 打开插件 surface：切到工作台并激活该二级 tab。 */
+  onPluginItem?: (surfaceId: PluginSurfaceId) => void
   connPhase: string // connected | reconnecting | down | initial
   gatewayState?: string | null // stopped | starting | ready | failed（stopped 用中性色，不报红）
   approvalsActive?: boolean
@@ -70,6 +81,23 @@ export function IconRail(props: IconRailProps) {
     { key: "approvals", icon: "checklist", label: "审批", onClick: props.onApprovals, active: props.approvalsActive, badge: props.approvals },
     { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, active: props.configActive, connDot: true },
   ]
+
+  // 插件 Web surface 入口（spec 2026-11-09 §6.4）：与内置目的地同组，排在资源
+  // （讨论/搜索/便签/Pod）之后。图标名来自 descriptor 校验过的 PLUGIN_ICON_NAMES
+  // 白名单（契约侧只允许命中 v1 图标表的名字），因此可以直接当图标名使用。
+  const pluginEntries = (): RailItem[] =>
+    (props.pluginItems ?? []).map((item) => {
+      const count = item.badge ? item.count ?? 0 : 0
+      return {
+        key: item.surfaceId,
+        icon: item.icon as IconName,
+        label: item.label,
+        onClick: () => props.onPluginItem?.(item.surfaceId),
+        active: !!props.pluginActiveSurface && props.pluginActiveSurface === item.surfaceId,
+        badge: count,
+        badgeLabel: formatRailBadge(count) || undefined,
+      }
+    })
 
   const renderItem = (item: RailItem) => (
     <TooltipV2 value={railAriaLabel(item.label, item.badge)} openDelay={300}>
@@ -126,6 +154,7 @@ export function IconRail(props: IconRailProps) {
         </TooltipV2>
       </div>
       <For each={destinationItems()}>{renderItem}</For>
+      <For each={pluginEntries()}>{renderItem}</For>
       <div class="mafw-icon-rail-spacer" />
       <For each={metaItems()}>{renderItem}</For>
     </nav>

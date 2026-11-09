@@ -16,6 +16,7 @@ import {
   type WorkbenchView,
 } from "../workbench-views"
 import { observePluginTabCapacity, planPluginTabs, type PluginTabSurface } from "../plugins/plugin-view-model"
+import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
@@ -44,9 +45,15 @@ export type WorkbenchShellProps = {
   executionView: JSX.Element
   reviewView: JSX.Element
   /** Dynamic L2 tabs contributed by unified plugin packages. */
-  pluginSurfaces: PluginTabSurface[]
+  pluginSurfaces: readonly PluginTabSurface[]
   /** Mounts one plugin surface (MafwShell owns descriptor resolution). */
   renderPluginSurface: (id: string) => JSX.Element
+  /** Task 9: Web surfaces (sandboxed pages) mounted by `WorkbenchCodeView`. */
+  webSurfaces?: readonly PluginWebSurfaceView[]
+  gatewayUrl?: string
+  onWebBadge?: (surfaceId: string, count: number) => void
+  onWebTitle?: (surfaceId: string, title: string) => void
+  onWebError?: (surfaceId: string, message: string) => void
 }
 
 export function WorkbenchShell(props: WorkbenchShellProps) {
@@ -293,6 +300,11 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             onSendComment={props.onSendComment}
             onOpenReview={props.onOpenReview}
             renderPluginSurface={props.renderPluginSurface}
+            webSurfaces={props.webSurfaces}
+            gatewayUrl={props.gatewayUrl}
+            onWebBadge={props.onWebBadge}
+            onWebTitle={props.onWebTitle}
+            onWebError={props.onWebError}
           />
         </div>
         <div class="mafw-rw-pane" classList={{ "is-active": props.view === "execution" }}>

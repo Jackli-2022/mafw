@@ -12,6 +12,7 @@ import {
   PLUGIN_WEB_REFRESH_MIN_MS,
   PLUGIN_WEB_TIMER_MAX_MS,
   pluginWebLoadErrorMessage,
+  pluginWebNavigationOutcome,
   pluginWebRefreshDelay,
   webSurfaceBinding,
   webSurfaceBindingKey,
@@ -145,6 +146,38 @@ describe("pluginWebLoadErrorMessage", () => {
   })
 })
 
+// Task 9 carry-over: a 404 must land on the error banner instead of rendering
+// the gateway's 404 body as the page (the only previous branch was 403).
+describe("pluginWebNavigationOutcome", () => {
+  test("2xx/3xx clears a previous error", () => {
+    expect(pluginWebNavigationOutcome(200)).toEqual({ kind: "healthy" })
+    expect(pluginWebNavigationOutcome(204)).toEqual({ kind: "healthy" })
+    expect(pluginWebNavigationOutcome(304)).toEqual({ kind: "healthy" })
+  })
+
+  test("403 renews the ticket instead of showing an error", () => {
+    expect(pluginWebNavigationOutcome(403)).toEqual({
+      kind: "renew-ticket",
+      message: "插件页面加载失败（HTTP 403）",
+    })
+  })
+
+  test("404 and every other 4xx/5xx surface the banner immediately", () => {
+    for (const status of [400, 404, 410, 500, 502, 503]) {
+      expect(pluginWebNavigationOutcome(status)).toEqual({
+        kind: "error",
+        message: `插件页面加载失败（HTTP ${status}）`,
+      })
+    }
+  })
+
+  test("a document without an HTTP status is ignored", () => {
+    expect(pluginWebNavigationOutcome(0)).toEqual({ kind: "ignore" })
+    expect(pluginWebNavigationOutcome(Number.NaN)).toEqual({ kind: "ignore" })
+    expect(pluginWebNavigationOutcome(null)).toEqual({ kind: "ignore" })
+  })
+})
+
 describe("host + preload wiring pins", () => {
   test("the host consumes the partition and url returned by main verbatim", () => {
     const source = read("PluginWebSurfaceHost.tsx")
@@ -160,8 +193,21 @@ describe("host + preload wiring pins", () => {
     expect(source).toContain("reload")
     // Failure surface: retry once, then a banner with a manual retry.
     expect(source).toContain("did-fail-load")
-    expect(source).toContain("403")
+    // Task 9: navigation outcomes (403 renew, 404/5xx banner) live in the pure model.
+    expect(source).toContain("pluginWebNavigationOutcome")
     expect(source).toContain("DockBanner")
+  })
+
+  test("a 404 lands on the banner and teardown clears the page badge/title", () => {
+    const source = read("PluginWebSurfaceHost.tsx")
+    // Navigation outcomes are decided by the pure model, not an inline status check.
+    expect(source).toContain("pluginWebNavigationOutcome")
+    expect(source).not.toContain("status === 403")
+    // What the page published must not outlive it.
+    expect(source).toContain("publishedBadge")
+    expect(source).toContain("publishedTitle")
+    expect(source).toContain("props.onBadge?.(0)")
+    expect(source).toContain('props.onTitle?.("")')
   })
 
   test("the host routes the bridge channel through the pure router", () => {
