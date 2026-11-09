@@ -33,7 +33,7 @@ test("startup probes ownership before planning and never adopts an unregistered 
   assert.match(sidecar, /preference: sourcePreference/)
   assert.match(sidecar, /running,/)
   // Dev attaches to an already-running gateway; packaged builds never do.
-  assert.match(sidecar, /devAdoptRunningGateway: !app\.isPackaged/)
+  assert.match(sidecar, /devAdoptRunningGateway: !app\.isPackaged && process\.env\.MAFW_DEV_ADOPT !== "0"/)
   assert.match(sidecar, /plan\.mode === "conflict"/)
   assert.match(sidecar, /plan\.action === "adopt"/)
 })

@@ -548,7 +548,9 @@ export async function startGateway(): Promise<void> {
     externalCli: cliProbe,
     running,
     legacyExternalOverride,
-    devAdoptRunningGateway: !app.isPackaged,
+    // Dev convenience by default; MAFW_DEV_ADOPT=0 forces the repo gateway so
+    // gateway-side changes can be exercised against a running global daemon.
+    devAdoptRunningGateway: !app.isPackaged && process.env.MAFW_DEV_ADOPT !== "0",
   })
   writeLog("utility", "mafw gateway start plan", {
     mode: plan.mode,
