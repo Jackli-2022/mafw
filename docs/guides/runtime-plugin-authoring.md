@@ -88,6 +88,34 @@ curl -s http://127.0.0.1:3000/api/runtime | jq '.active.coverage.static.presets'
 curl -s http://127.0.0.1:3000/api/runtime/contract | jq '.coverage.static.missing[:10]'
 ```
 
+## 2.6 中性 RuntimeDefinition（v5.1+）
+
+内置 runtime 与新的第三方 runtime 统一走 `defineRuntime` 形状（`@mafw/runtime-contract`）：
+
+```js
+module.exports = {
+  api: 1,
+  eventApi: 1,
+  name: 'my-runtime',
+  displayName: 'My Runtime',
+  preset: 'conversation',
+  transport: {
+    createSession: async ({ directory }) => ({ sessionID: '...' }),
+    sendTurn: async ({ sessionID, turnID, text }) => ({ turnID }),
+    interruptTurn: async ({ sessionID }) => {},
+    onEvent: (listener) => { /* ... */ return () => {}; },
+  },
+  channels: { /* session/events/tools/approvals/... 中立方法，见 §2 */ },
+  channelsV2: { /* mcp/discovery/instructions/pty/checkpoint/background */ },
+  host: { /* config/credentials/completion/healthCheck/getBaseUrl/agentProcess */ },
+};
+```
+
+- `transport` 只负责回合协议；所有非事件面走 `channels`（v1）或 `channelsV2`（v2）。
+- 事件必须是 `AdapterEvent`（33 个变体）；原生信封翻译在 adapter 内完成，gateway 不认原生字段。
+- 旧的 `module.exports = { name, capabilities, createRuntime(ctx) }` 仍可用一个发布周期（generic bridge 包裹），新代码请直接导出 definition。
+- `registerBuiltinDefinition` 是 gateway 内部注册面；外部插件只需导出上面的对象。
+
 ## 3. 先让 `core` 跑起来
 
 ### 3.1 文件位置与形状

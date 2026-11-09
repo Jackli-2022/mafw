@@ -387,7 +387,7 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
 |---|---|
 | **包**（`~/.mafw/plugins/`） | PluginHost 推送（`setPackageEntries`），最高 |
 | **legacy 目录文件** | 各 loader 自扫，用户同名文件覆盖内置（原有语义） |
-| **内置** | usage：`dist/usage/builtin-plugins/*.js`；runtime：`registerBuiltin('opencode'/'pi')`；media：`registerBuiltinEngine('pi')` |
+| **内置** | usage：`dist/usage/builtin-plugins/*.js`；runtime：`registerBuiltinDefinition('opencode'/'pi')`（`defineRuntime` 定义 + `RuntimeBus`）；media：`registerBuiltinEngine('pi')` |
 
 - **包形态**：单文件 `name.js` 或目录 `name/plugin.json`（`{name, version?, main?}`）；
   声明式 `{ name, usage?, media?, runtime?, uiTools?, tts? }` 或
