@@ -1,10 +1,10 @@
 import { createMafwApprovalExtension } from '../../../src/runtime/pi/pi-approval-extension';
 import { ApprovalBridge } from '../../../src/runtime/pi/pi-approval-bridge';
-import type { RawRuntimeEvent } from '../../../src/runtime/normalize';
+import type { AdapterEvent } from '../../../src/runtime/adapter-event';
 
 describe('MafwApprovalExtension', () => {
   let bridge: ApprovalBridge;
-  let emittedEvents: RawRuntimeEvent[];
+  let emittedEvents: AdapterEvent[];
   let extension: ReturnType<typeof createMafwApprovalExtension>;
   let mockEmitter: { on: jest.Mock };
   let toolCallHandler: (event: any, ctx: any) => Promise<any>;
@@ -33,9 +33,9 @@ describe('MafwApprovalExtension', () => {
     const promise = toolCallHandler(event, ctx);
 
     expect(emittedEvents).toHaveLength(1);
-    expect(emittedEvents[0].payload!.type).toBe('permission.asked');
-    expect(emittedEvents[0].payload!.properties.toolName).toBe('read');
-    bridge.reply(emittedEvents[0].payload!.properties.requestId, true);
+    expect(emittedEvents[0].type).toBe('permission.asked');
+    expect((emittedEvents[0].data as any).request.toolName).toBe('read');
+    bridge.reply(emittedEvents[0].requestID!, true);
     await promise;
   });
 
@@ -97,18 +97,18 @@ describe('MafwApprovalExtension', () => {
     const promise = toolCallHandler(event, ctx);
 
     expect(emittedEvents).toHaveLength(1);
-    expect(emittedEvents[0].payload!.type).toBe('permission.asked');
-    expect(emittedEvents[0].payload!.properties.toolName).toBe('bash');
+    expect(emittedEvents[0].type).toBe('permission.asked');
+    expect((emittedEvents[0].data as any).request.toolName).toBe('bash');
 
-    const requestId = emittedEvents[0].payload!.properties.requestId;
+    const requestId = emittedEvents[0].requestID!;
     bridge.reply(requestId, true);
 
     const result = await promise;
     expect(result).toBeUndefined();
 
     expect(emittedEvents).toHaveLength(2);
-    expect(emittedEvents[1].payload!.type).toBe('permission.replied');
-    expect(emittedEvents[1].payload!.properties.approved).toBe(true);
+    expect(emittedEvents[1].type).toBe('permission.replied');
+    expect((emittedEvents[1].data as any).approved).toBe(true);
   });
 
   it('should block tool when user rejects', async () => {
@@ -116,7 +116,7 @@ describe('MafwApprovalExtension', () => {
     const ctx = { sessionId: 'session-1' };
 
     const promise = toolCallHandler(event, ctx);
-    const requestId = emittedEvents[0].payload!.properties.requestId;
+    const requestId = emittedEvents[0].requestID!;
     bridge.reply(requestId, false);
 
     const result = await promise;
@@ -136,7 +136,7 @@ describe('MafwApprovalExtension', () => {
     const handler = customEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
 
     const promise = handler({ toolName: 'bash', input: { command: 'ls' } }, { sessionId: 'session-1' });
-    const requestId = emittedEvents[emittedEvents.length - 1].payload!.properties.requestId;
+    const requestId = emittedEvents[emittedEvents.length - 1].requestID!;
     customBridge.reply(requestId, 'always');
     const result = await promise;
     expect(result).toBeUndefined();
@@ -161,7 +161,7 @@ describe('MafwApprovalExtension', () => {
     const handler = customEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
 
     const promise = handler({ toolName: 'bash', input: { command: 'rm -rf /' } }, { sessionId: 'session-1' });
-    const requestId = emittedEvents[emittedEvents.length - 1].payload!.properties.requestId;
+    const requestId = emittedEvents[emittedEvents.length - 1].requestID!;
     customBridge.reply(requestId, 'reject', '危险命令');
     const result = await promise;
     expect(result).toEqual({ block: true, reason: '危险命令' });
@@ -180,12 +180,12 @@ describe('MafwApprovalExtension', () => {
     const handler = customEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
 
     const promise = handler({ toolName: 'bash', input: {} }, { sessionId: 'session-1' });
-    const requestId = emittedEvents[emittedEvents.length - 1].payload!.properties.requestId;
+    const requestId = emittedEvents[emittedEvents.length - 1].requestID!;
     customBridge.reply(requestId, 'always');
     await promise;
-    const replied = emittedEvents.find((e) => e.payload!.type === 'permission.replied');
-    expect(replied!.payload!.properties.approved).toBe(true);
-    expect(replied!.payload!.properties.decision).toBe('always');
+    const replied = emittedEvents.find((e) => e.type === 'permission.replied');
+    expect((replied!.data as any).approved).toBe(true);
+    expect((replied!.data as any).decision).toBe('always');
     customBridge.dispose();
   });
 
@@ -202,7 +202,7 @@ describe('MafwApprovalExtension', () => {
     const handler = metaEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
 
     const promise = handler({ toolName: 'bash', input: { command: 'ls' } }, { sessionId: 'pi-native' });
-    const requestId = emittedEvents[emittedEvents.length - 1].payload!.properties.requestId;
+    const requestId = emittedEvents[emittedEvents.length - 1].requestID!;
     const pending = metaBridge.listPending();
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({

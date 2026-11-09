@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import type { RawRuntimeEvent } from '../normalize';
+import type { AdapterEvent } from '../adapter-event';
 import type { ApprovalBridge } from './pi-approval-bridge';
 
 export interface ApprovalPolicy {
@@ -19,7 +19,7 @@ export type PermissionEvaluator = (
 
 export function createMafwApprovalExtension(
   bridge: ApprovalBridge,
-  emitEvent: (event: RawRuntimeEvent) => void,
+  emitEvent: (event: AdapterEvent) => void,
   policy: ApprovalPolicy = DEFAULT_POLICY,
   gatewaySessionId: string,
   evaluatePermission?: PermissionEvaluator,
@@ -92,9 +92,13 @@ export function createMafwApprovalExtension(
         const sessionID = gatewaySessionId;
 
         emitEvent({
-          payload: {
-            type: 'permission.asked',
-            properties: {
+          id: `pi_perm_asked_${requestId}`,
+          type: 'permission.asked',
+          sessionID,
+          requestID: requestId,
+          at: Date.now(),
+          data: {
+            request: {
               sessionID,
               requestId,
               toolName,
@@ -119,14 +123,16 @@ export function createMafwApprovalExtension(
         const message = record?.message;
 
         emitEvent({
-          payload: {
-            type: 'permission.replied',
-            properties: {
-              sessionID,
-              requestId,
-              approved,
-              ...(decision !== 'once' ? { decision, ...(message ? { message } : {}) } : {}),
-            },
+          id: `pi_perm_replied_${requestId}`,
+          type: 'permission.replied',
+          sessionID,
+          requestID: requestId,
+          at: Date.now(),
+          data: {
+            reply: approved ? 'once' : 'reject',
+            approved,
+            source: 'user',
+            ...(decision !== 'once' ? { decision, ...(message ? { message } : {}) } : {}),
           },
         });
 

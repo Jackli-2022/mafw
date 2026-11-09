@@ -1,8 +1,10 @@
+import type { AdapterEvent } from '@mafw/runtime-contract';
 import type { RawRuntimeEvent } from '../normalize';
 import { applyEventMappings, EventMapping, EventSourceShape, TransformEventFn } from '../event-mapper';
 import { EVENT_FLOW_MATRIX } from '../event-flow-matrix';
 import { TOOL_PRIMITIVE_TYPES } from '../tool-part-assembler';
 import { normalizePiLiveMessage, piMessageIdentity, piPartId } from './pi-message-normalize';
+import { translatePiAdapterEvent, setPiUnknownRecorder as setNativeUnknownRecorder } from './pi-adapter-events';
 
 /** pi 原生事件源形状：session.subscribe 事件顶层 type；sessionID 由 PiEventStream 解析后附上。 */
 export const PI_EVENT_SOURCE: EventSourceShape = { typePath: '$.type', sessionIdPath: '$.sessionID' };
@@ -86,6 +88,7 @@ function messageEnvelope(type: string, sid: string | undefined, message: Record<
 let piUnknownRecorder: ((type: string) => void) | undefined;
 export function setPiUnknownRecorder(fn: ((type: string) => void) | undefined): void {
   piUnknownRecorder = fn;
+  setNativeUnknownRecorder(fn);
 }
 
 /**
@@ -207,7 +210,7 @@ export function translatePiEvent(event: any, sessionID: string): RawRuntimeEvent
 }
 
 export class PiEventStream {
-  private listeners = new Set<(evt: any) => void>();
+  private listeners = new Set<(evt: AdapterEvent) => void>();
   private subscribed = false;
   private onEvent: ((evt: any) => void) | null = null;
 
@@ -220,7 +223,7 @@ export class PiEventStream {
     this.onEvent = (evt: any) => {
       const id = this.resolveSessionId(evt?.session);
       if (!id) return;
-      const translated = translatePiEvent(evt, id);
+      const translated = translatePiAdapterEvent(evt, id);
       if (translated) {
         for (const l of this.listeners) l(translated);
       }
@@ -235,11 +238,11 @@ export class PiEventStream {
   }
 
   /** 返回新 AsyncIterable，fan-out 共享底层 listener。 */
-  stream(): AsyncIterable<any> {
+  stream(): AsyncIterable<AdapterEvent> {
     const listeners = this.listeners;
-    const queue: any[] = [];
-    const waiters: Array<(v: any) => void> = [];
-    const listener = (evt: any) => {
+    const queue: AdapterEvent[] = [];
+    const waiters: Array<(v: AdapterEvent) => void> = [];
+    const listener = (evt: AdapterEvent) => {
       const w = waiters.shift();
       if (w) w(evt); else queue.push(evt);
     };
@@ -248,7 +251,7 @@ export class PiEventStream {
       [Symbol.asyncIterator]() {
         return {
           next: async () => {
-            if (queue.length) return { value: queue.shift(), done: false };
+            if (queue.length) return { value: queue.shift() as AdapterEvent, done: false };
             return new Promise((resolve) => waiters.push((v) => resolve({ value: v, done: false })));
           },
           return: async () => { listeners.delete(listener); return { done: true, value: undefined }; },
@@ -257,7 +260,7 @@ export class PiEventStream {
     };
   }
 
-  push(event: RawRuntimeEvent): void {
+  push(event: AdapterEvent): void {
     for (const l of this.listeners) l(event);
   }
 

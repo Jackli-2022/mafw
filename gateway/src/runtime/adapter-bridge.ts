@@ -9,7 +9,7 @@
  * `translate` is for runtimes whose native stream is not yet canonical
  * (opencode dialects): the bridge applies the declared event mappings first.
  */
-import { defineRuntime, type AdapterEvent, type RuntimeChannels, type RuntimeChannelsV2, type RuntimeDefinition, type RuntimeTransport } from '@mafw/runtime-contract';
+import { defineRuntime, validateAdapterEvent, type AdapterEvent, type RuntimeChannels, type RuntimeChannelsV2, type RuntimeDefinition, type RuntimeTransport } from '@mafw/runtime-contract';
 import type { AgentRuntime } from './contract';
 import type { EventMappingEntry, TranslationHooks } from './event-mapper';
 import { applyEventMappings } from './event-mapper';
@@ -140,6 +140,8 @@ export interface AdapterBridgeMeta {
   onEntryResolved?: (entry: EventMappingEntry) => void;
   /** Tooling key when it differs from the runtime name (dry-event/conformance). */
   entryAlias?: string;
+  /** true = the runtime's global.event() already yields AdapterEvent v1. */
+  nativeEvents?: boolean;
 }
 
 export function toRuntimeDefinition(
@@ -291,8 +293,42 @@ export function toRuntimeDefinition(
         }
       };
 
+      const forwardNative = (input: unknown) => {
+        if (closed || !input || typeof input !== 'object') return;
+        const evt = input as AdapterEvent;
+        const sessionHint = evt.sessionID;
+        if (sessionHint && evt.type === 'turn.started') {
+          const queue = pendingTurns.get(sessionHint);
+          const next = queue?.shift();
+          if (next) activeTurns.set(sessionHint, next);
+          if (queue && queue.length === 0) pendingTurns.delete(sessionHint);
+        }
+        const overrideTurnID = sessionHint
+          ? (activeTurns.get(sessionHint) ?? pendingTurns.get(sessionHint)?.[0])
+          : undefined;
+        const withTurnID = overrideTurnID && !evt.turnID ? { ...evt, turnID: overrideTurnID } : evt;
+        const validation = validateAdapterEvent(withTurnID);
+        if (!validation.ok) return;
+        listener(validation.event);
+        if (validation.event.type === 'turn.completed' || validation.event.type === 'turn.failed' || validation.event.type === 'turn.aborted') {
+          const sid = validation.event.sessionID;
+          if (!sid) return;
+          bridgeState.turns.delete(sid);
+          // Runtimes without a turn.started event consume the queue head on the
+          // terminal; with a start, the active id was already advanced.
+          if (activeTurns.has(sid)) {
+            activeTurns.delete(sid);
+          } else {
+            const queue = pendingTurns.get(sid);
+            queue?.shift();
+            if (queue && queue.length === 0) pendingTurns.delete(sid);
+          }
+        }
+      };
+
       const forward = (evt: RawRuntimeEvent) => {
         if (closed) return;
+        if (meta.nativeEvents) return forwardNative(evt);
         if (!translate) return forwardTranslated([evt]);
         const immediate = pump(evt);
         if (immediate.length > 0) forwardTranslated(immediate);

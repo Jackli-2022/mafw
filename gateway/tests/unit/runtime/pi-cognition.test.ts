@@ -50,7 +50,7 @@ describe('审批扩展 gate 步（C1-C4；Review Focus #2/#3）', () => {
   it('规则 ask → 跳过政策直落 human（emit permission.asked）', async () => {
     const { handler, emit } = setup(() => ({ decision: 'ask' }) as GateDecision);
     await handler({ toolName: 'bash', input: {} }, {});
-    expect(emit[0]?.payload?.type).toBe('permission.asked');
+    expect(emit[0]?.type).toBe('permission.asked');
   });
   it('gate 步异常 → 放行继续链（C1/Review Focus #2：pi fail-CLOSED 被我方包裹）', async () => {
     let policyRan = false;

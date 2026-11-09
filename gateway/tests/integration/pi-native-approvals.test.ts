@@ -1,5 +1,6 @@
 import { createPiRuntime } from '../../src/runtime/plugins/pi-runtime';
-import { translatePiEvent } from '../../src/runtime/pi/pi-events';
+import { translatePiAdapterEvent } from '../../src/runtime/pi/pi-adapter-events';
+import { mapAdapterEvent } from '../../src/runtime/adapter-event-mapper';
 import { normalizeOpencodeEvent } from '../../src/runtime/normalize';
 import { ApprovalBridge } from '../../src/runtime/pi/pi-approval-bridge';
 
@@ -79,26 +80,23 @@ describe('pi nativeApprovals integration', () => {
     await (rt as any).dispose();
   });
 
-  it('should translate permission.asked through translatePiEvent and normalizeOpencodeEvent', () => {
+  it('should translate permission.asked through the native adapter event and normalizeOpencodeEvent', () => {
     const rawEvent = {
-      payload: {
-        type: 'permission.asked',
-        properties: {
-          sessionID: 'pi_test',
-          requestId: 'req-100',
-          toolName: 'bash',
-          args: { command: 'ls -la' },
-          risk: 'medium',
-        },
-      },
+      type: 'permission.asked',
+      sessionID: 'pi_test',
+      requestId: 'req-100',
+      toolName: 'bash',
+      args: { command: 'ls -la' },
+      risk: 'medium',
     };
 
-    const translated = translatePiEvent(rawEvent, 'pi_test');
+    const translated = translatePiAdapterEvent(rawEvent, 'pi_test');
     expect(translated).not.toBeNull();
-    expect(translated!.payload!.type).toBe('permission.asked');
-    expect(translated!.payload!.properties.toolName).toBe('bash');
+    expect(translated!.type).toBe('permission.asked');
+    const mapped = mapAdapterEvent(translated!);
+    expect(mapped.canonical?.payload?.properties.toolName).toBe('bash');
 
-    const facets = normalizeOpencodeEvent(translated!);
+    const facets = normalizeOpencodeEvent(mapped.canonical!);
     expect(facets.type).toBe('permission.asked');
     expect(facets.sessionID).toBe('pi_test');
     expect(facets.properties.requestId).toBe('req-100');
@@ -107,21 +105,19 @@ describe('pi nativeApprovals integration', () => {
 
   it('should translate permission.replied through the event pipeline', () => {
     const rawEvent = {
-      payload: {
-        type: 'permission.replied',
-        properties: {
-          sessionID: 'pi_test',
-          requestId: 'req-100',
-          approved: true,
-        },
-      },
+      type: 'permission.replied',
+      sessionID: 'pi_test',
+      requestId: 'req-100',
+      approved: true,
     };
 
-    const translated = translatePiEvent(rawEvent, 'pi_test');
+    const translated = translatePiAdapterEvent(rawEvent, 'pi_test');
     expect(translated).not.toBeNull();
-    expect(translated!.payload!.type).toBe('permission.replied');
+    expect(translated!.type).toBe('permission.replied');
+    const mapped = mapAdapterEvent(translated!);
+    expect(mapped.canonical?.payload?.properties.approved).toBe(true);
 
-    const facets = normalizeOpencodeEvent(translated!);
+    const facets = normalizeOpencodeEvent(mapped.canonical!);
     expect(facets.type).toBe('permission.replied');
     expect(facets.properties.approved).toBe(true);
   });

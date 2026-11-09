@@ -96,10 +96,8 @@ describe('PiSessionRegistry branch primitives', () => {
     ext.factory(fakePi);
     handlers['session_before_compact']();
     handlers['session_compact']();
-    expect(emitted).toEqual([
-      { payload: { type: 'session.compacting', properties: { sessionID: id } } },
-      { payload: { type: 'session.compacted', properties: { sessionID: id } } },
-    ]);
+    expect(emitted.map((e) => e.type)).toEqual(['session.compacting', 'session.compacted']);
+    expect(emitted.map((e) => e.sessionID)).toEqual([id, id]);
   });
 
   it('busy promptAsync maps delivery and warns noReply once per session', async () => {

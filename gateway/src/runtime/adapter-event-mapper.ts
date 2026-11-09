@@ -145,7 +145,10 @@ export function mapAdapterEvent(event: AdapterEvent): MappedAdapterEvent {
     case 'permission.replied':
       return { canonical: canonical('permission.replied', {
         sessionID: event.sessionID, requestId: event.requestID,
-        reply: data.reply, source: data.source, ...(data.message ? { message: data.message } : {}),
+        reply: data.reply, source: data.source,
+        approved: data.approved ?? data.reply === 'once',
+        ...(data.decision ? { decision: data.decision } : {}),
+        ...(data.message ? { message: data.message } : {}),
       }, event.sessionID) };
     case 'question.asked':
       if (!isRecord(data.request)) return { dropped: { reason: 'question.asked payload has no request' } };

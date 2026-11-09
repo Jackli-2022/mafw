@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { ApprovalBridge } from './pi-approval-bridge';
 import { createMafwApprovalExtension, type ApprovalPolicy, type PermissionEvaluator } from './pi-approval-extension';
 import { createMafwHostExtension } from './pi-mafw-host-extension';
-import type { RawRuntimeEvent } from '../normalize';
+import type { AdapterEvent } from '../adapter-event';
 import type { MafwToolRegistration, ThinkingLevel } from '../contract';
 
 export interface PiSessionDeps {
@@ -19,7 +19,7 @@ export interface PiMediaAttachment {
 
 export interface PiSessionRegistryOptions {
   sessionTtlMs?: number;   // 默认 24h
-  emitEvent?: (event: RawRuntimeEvent) => void;
+  emitEvent?: (event: AdapterEvent) => void;
   policy?: ApprovalPolicy;
   /** gateway 三档政策同步直评（index.ts 注入；缺省时 human 问询兜底） */
   evaluatePermission?: PermissionEvaluator;
@@ -49,7 +49,7 @@ export class PiSessionRegistry {
   private approvalBridges = new Map<string, ApprovalBridge>();
   private warnedNoReply = new Set<string>();
   private pendingMedia = new Map<string, PiMediaAttachment[]>();
-  private emitEvent: (event: RawRuntimeEvent) => void;
+  private emitEvent: (event: AdapterEvent) => void;
   private policy?: ApprovalPolicy;
 
   constructor(
@@ -215,10 +215,10 @@ export class PiSessionRegistry {
       name: 'mafw-compaction',
       factory: (pi: any) => {
         pi.on('session_before_compact', () => {
-          this.emitEvent({ payload: { type: 'session.compacting', properties: { sessionID: id } } });
+          this.emitEvent({ id: `pi_compact_start_${id}_${Date.now()}`, type: 'session.compacting', sessionID: id, at: Date.now(), data: {} });
         });
         pi.on('session_compact', () => {
-          this.emitEvent({ payload: { type: 'session.compacted', properties: { sessionID: id } } });
+          this.emitEvent({ id: `pi_compact_end_${id}_${Date.now()}`, type: 'session.compacted', sessionID: id, at: Date.now(), data: {} });
         });
       },
     };
