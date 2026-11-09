@@ -46,9 +46,18 @@ export const PI_EVENT_MAPPINGS: EventMapping[] = [
   // 只路由给扩展，session.subscribe 不可达）——live 死代码，显式 drop 保 suppressed 计数
   { from: 'tool_call', to: 'drop' },
   { from: 'tool_result', to: 'drop' },
-  { from: 'turn_start', to: 'part.updated', fields: { 'part.type': { const: 'step-start' } } },
+  { from: 'turn_start', to: 'part.updated',
+    fields: {
+      'part.type': { const: 'step-start' },
+      'part.id': { template: 'pi_step_start_{$.sessionID}' },
+      'part.messageID': { template: 'pi_step_start_{$.sessionID}' },
+    } },
   { from: 'turn_end', to: 'part.updated',
-    fields: { 'part.type': { const: 'step-finish' }, 'part.messageID': { template: 'pi_step_{$.sessionID}' } } },
+    fields: {
+      'part.type': { const: 'step-finish' },
+      'part.id': { template: 'pi_step_{$.sessionID}' },
+      'part.messageID': { template: 'pi_step_{$.sessionID}' },
+    } },
 ];
 
 /**
