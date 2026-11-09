@@ -21,6 +21,8 @@
 
 **为什么不是「pi + opencode + v2 同一份计划」**：pi 需要 4 个内核模块（`normalize` / `event-mapper` / `canonical-types` / `tool-part-assembler`）才能离开 gateway（`event-flow-matrix` 是 gateway 业务矩阵，只有旧的 canonical mapper 需要，留在 gateway）；opencode 是 2.8k 行 + 6 个 v2 surface，且 v2 的真实实现只属于 opencode。`v2 channels 与 v1 同批交付` 指**同一发布**，不是同一份 plan——Plan 2/3/4 全部落地后才发版。
 
+**执行修订（2026-11-09）**：本计划实际交付 `runtime-core`、契约补齐、`createNeutralRuntime`、通用 adapter bridge、pi 的**中立定义**与生产切换；`adapters/pi` 物理包与 `adapters/opencode` + v2 channels 一起进 Plan 3。理由见 Task 5 的 Amendment。
+
 ## Global Constraints
 
 - ABI：`api: 1`、`eventApi: 1`；不新增第二个 ABI 版本。
@@ -374,14 +376,14 @@ git commit -m "feat(gateway): promote the legacy bridge to a generic adapter bri
 
 ---
 
-### Task 5: `adapters/pi` package — transport, events, channels, definition
+### Task 5: pi neutral definition (in-gateway; package extraction deferred)
+
+> **Amendment (execution ruling):** the pi sources stay in `gateway/src/runtime/pi` for this plan. Moving them to `adapters/pi` requires the legacy canonical pipeline (`pi-events` / `event-mapper` / `event-flow-matrix` / `normalize`) to leave the gateway too, and 15 gateway test files import the pi modules by path. This plan delivers the neutral **interface** (definition + policy wiring); the physical `adapters/pi` package moves to Plan 3 together with the remaining canonical-pipeline extraction.
 
 **Files:**
-- Create: `adapters/pi/package.json`, `adapters/pi/build.mjs`, `adapters/pi/src/index.ts`
-- Create: `adapters/pi/src/transport.ts`, `adapters/pi/src/adapter-events.ts`, `adapters/pi/src/channels.ts`, `adapters/pi/src/definition.ts`
-- Move: `gateway/src/runtime/pi/*.ts` **除 `pi-events.ts`** → `adapters/pi/src/`（`pi-events.ts` 留作 legacy 路径，Plan 4 删除）
-- Move: `gateway/src/runtime/plugins/pi-runtime.ts` → `adapters/pi/src/runtime.ts`
-- Test: `adapters/pi/tests/{transport,channels,definition}.test.ts`
+- Create: `gateway/src/runtime/pi/pi-definition.ts`, `gateway/src/runtime/pi/pi-policy.ts`
+- Modify: `gateway/src/runtime/plugins/pi-runtime.ts`（`ctx.policy` 接线）, `gateway/src/runtime/loader.ts`（`RuntimePluginContext.policy`）
+- Test: `gateway/tests/unit/runtime/{pi-definition,pi-policy}.test.ts`
 
 **Interfaces:**
 - Consumes: `@mafw/runtime-contract`, `@mafw/runtime-core`, `@earendil-works/pi-coding-agent`.
