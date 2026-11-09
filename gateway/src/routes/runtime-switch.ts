@@ -165,7 +165,7 @@ export async function performRuntimeSwitch(
   let expectedName = wanted;
   if (wanted) {
     // D 收敛：opencode 与其他 runtime 同走 loader 校验（注册表成员语义，特判已删）
-    if (!deps.loader?.get(wanted)) {
+    if (!(deps.loader?.has?.(wanted) ?? deps.loader?.get(wanted))) {
       return { success: false, code: 'not-found', error: `Runtime plugin '${wanted}' not found` };
     }
     // The hub addresses file plugins by filename stem; the facade identity is

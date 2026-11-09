@@ -386,6 +386,12 @@ export const NON_PRIMARY_GATES: NonPrimaryGate[] = [
     why: 'POST /api/session 的 worktree 开口径（gateway git + directory 契约）；由专门用例断言',
   },
   {
+    surface: 'session.messages',
+    file: 'src/routes/session-history.ts',
+    marker: "access.can('session.messages')",
+    why: '历史出口的第二道门：没有 messages 通道时必须 503，不能回空历史',
+  },
+  {
     surface: 'approval.question.list',
     file: 'src/index.ts',
     marker: "can('approval.question.list')",

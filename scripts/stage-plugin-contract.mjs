@@ -40,9 +40,11 @@ export const defaultSourceDir = path.join(repoRoot, "packages", "plugin-contract
 export const defaultRuntimeContractDir = path.join(repoRoot, "packages", "runtime-contract");
 export const PACKAGE_NAME = "@mafw/plugin-contract";
 export const RUNTIME_CONTRACT_PACKAGE = "@mafw/runtime-contract";
+export const RUNTIME_CORE_PACKAGE = "@mafw/runtime-core";
 export const CONTRACT_PACKAGES = [
   { name: PACKAGE_NAME, sourceDir: defaultSourceDir },
   { name: RUNTIME_CONTRACT_PACKAGE, sourceDir: defaultRuntimeContractDir },
+  { name: RUNTIME_CORE_PACKAGE, sourceDir: path.join(repoRoot, "packages", "runtime-core") },
 ];
 
 function logLine(message) {

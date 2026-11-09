@@ -29,6 +29,11 @@ export interface RuntimePluginContext {
   pluginConfig(name: string): Record<string, any>;
   /** runtime 凭据（media/pi 认证链优先走这里） */
   credentials?: RuntimeCredentials;
+  /**
+   * Gateway 交给 driver 的策略钩子（审批 / 认知门 / 结果脱敏）。
+   * driver 自己接到原生宿主编排上；组合根不再直接摸原生对象。
+   */
+  policy?: import('@mafw/runtime-contract').RuntimePolicyHooks;
   /** 项目根（**绝对路径**；runtime 实例创建时的当前项目快照）。
    *  **启动期信息**，不用于 session cwd —— 建会话一律用 opts.directory（契约必填）。 */
   projectDir?: string;
@@ -68,6 +73,11 @@ export class RuntimePluginLoader {
   private extraErrors = new Map<string, string>();
   private readonly neutralDefinitions = new Map<string, RuntimeDefinition>();
   private readonly neutralFactories = new Map<string, (ctx: any) => Promise<RuntimeDefinition>>();
+  private readonly builtinDefinitions = new Map<string, {
+    factory: (ctx: any) => Promise<RuntimeDefinition>;
+    external: boolean;
+    capabilities: RuntimeCapabilities;
+  }>();
   private readonly legacyModules = new Map<string, any>();
   private readonly neutralBus = new RuntimeBus();
   /** canonical 词汇表（校验 eventMappings.to 用）——index.ts 注入，避免 loader 依赖矩阵。 */
@@ -115,7 +125,9 @@ export class RuntimePluginLoader {
     for (const [file] of this.state) {
       if (!seen.has(file)) {
         const prev = this.state.get(file);
-        if (prev?.name) {
+        // Only real files are purged. `builtin:` / `package:` rows are
+        // registrations, not watched files — a scan must never unregister them.
+        if (prev?.name && !file.startsWith('builtin:') && !file.startsWith('package:')) {
           this.factories.delete(prev.name);
           this.meta.delete(prev.name);
           this.neutralDefinitions.delete(prev.name);
@@ -263,9 +275,44 @@ export class RuntimePluginLoader {
     this.packageEntries = new Map(entries.map((e) => [e.name, e]));
   }
 
+  /** True when a runtime of this name is registered in any form (file, builtin, definition). */
+  has(name: string): boolean {
+    return !!this.get(name)
+      || this.builtinDefinitions.has(name)
+      || this.neutralDefinitions.has(name)
+      || this.neutralFactories.has(name);
+  }
+
   /** Neutral definitions currently registered with the runtime bus. */
   getNeutralDefinitions(): RuntimeDefinition[] {
     return [...this.neutralDefinitions.values()];
+  }
+
+  /**
+   * Register an in-process builtin as a neutral definition factory. The
+   * factory runs once per name (lazy: SDK imports stay lazy).
+   */
+  registerBuiltinDefinition(
+    name: string,
+    factory: (ctx: any) => Promise<RuntimeDefinition>,
+    meta: { external: boolean; capabilities: RuntimeCapabilities },
+  ): void {
+    this.builtinDefinitions.set(name, { factory, external: meta.external, capabilities: meta.capabilities });
+  }
+
+  /** Resolve a builtin definition, falling back to file plugins and legacy entries. */
+  async resolveBuiltinDefinition(name: string, ctx: any): Promise<RuntimeDefinition | undefined> {
+    const existing = this.neutralDefinitions.get(name);
+    if (existing) return existing;
+
+    const builtin = this.builtinDefinitions.get(name);
+    if (builtin) {
+      const definition = await builtin.factory(ctx);
+      this.neutralDefinitions.set(name, definition);
+      this.neutralBus.register(definition);
+      return definition;
+    }
+    return this.getNeutral(name, ctx);
   }
 
   /** Neutral runtime bus (single fan-in for AdapterEvents). */
@@ -333,11 +380,20 @@ export class RuntimePluginLoader {
 
   /** 已注册内置件名（builtin 文件件不在其中，opencode 为恒等默认由 index.ts 注入 hub）。 */
   getBuiltinNames(): string[] {
-    return [...this.builtins.keys()];
+    return [...new Set([...this.builtins.keys(), ...this.builtinDefinitions.keys()])];
   }
 
   getState(): RuntimePluginState[] {
     for (const [name, b] of this.builtins) {
+      const extra = this.extraErrors.get(name);
+      this.state.set(`builtin:${name}`, {
+        file: `builtin:${name}`, name,
+        status: extra ? 'error' : 'ok',
+        error: extra,
+        capabilities: b.capabilities,
+      });
+    }
+    for (const [name, b] of this.builtinDefinitions) {
       const extra = this.extraErrors.get(name);
       this.state.set(`builtin:${name}`, {
         file: `builtin:${name}`, name,
@@ -361,7 +417,7 @@ export class RuntimePluginLoader {
 
 export function createRuntimePluginContext(
   credentials?: RuntimeCredentials,
-  extra?: { projectDir?: string; gatewayPort?: number; rootDir?: string },
+  extra?: { projectDir?: string; gatewayPort?: number; rootDir?: string; policy?: import('@mafw/runtime-contract').RuntimePolicyHooks },
 ): RuntimePluginContext {
   return {
     fetch: (url: string, opts?: any) =>
@@ -369,6 +425,7 @@ export function createRuntimePluginContext(
     log,
     pluginConfig: (name: string) => (config.raw as any)?.runtime?.pluginConfig?.[name] ?? {},
     credentials,
+    policy: extra?.policy,
     projectDir: extra?.projectDir,
     rootDir: extra?.rootDir,
     gatewayPort: extra?.gatewayPort,

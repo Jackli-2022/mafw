@@ -149,6 +149,28 @@ describe('session history route (flat by default and only)', () => {
     expect(warn).toHaveBeenCalled();
   });
 
+  it('returns a neutral 503 when the runtime lacks the messages surface', async () => {
+    const { handled, res, body } = await get('/api/sessions/ses_1/messages', deps({
+      runtime: {
+        session: {},
+        access: { can: (surface: string) => surface !== 'session.messages' },
+      },
+    }));
+    expect(handled).toBe(true);
+    expect(res.status).toBe(503);
+    expect(body.error).toContain('session.messages');
+  });
+
+  it('maps an ENODEV runtime error to 503 instead of an empty page', async () => {
+    const err: any = new Error('runtime does not support messages');
+    err.code = 'ENODEV';
+    const { res, body } = await get('/api/sessions/ses_1/messages', deps({
+      runtime: { session: { messages: async () => { throw err; } } },
+    }));
+    expect(res.status).toBe(503);
+    expect(body.error).toContain('session.messages');
+  });
+
   it('fails open when the data-part overlay throws', async () => {
     const { body } = await get('/api/sessions/ses_1/messages', deps({
       listDataParts: () => { throw new Error('db down'); },

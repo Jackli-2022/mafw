@@ -16,9 +16,10 @@ import type { MafwMessage } from '../runtime/canonical-types';
 import type { SessionDataPartRow } from '../memory/gateway-db';
 import { enrichHistoryParts } from '../runtime/tool-classes';
 import { mergeDataPartsIntoFlat } from '../core/data-parts/merge-flat';
+import { surfaceUnavailableMessage } from '../runtime/runtime-access';
 
 export interface SessionHistoryDeps {
-  getRuntime(): BusinessRuntime | null;
+  getRuntime(): (BusinessRuntime & { access?: { can(surfaceId: string): boolean } }) | null;
   /** 只返回本页消息 id 的 overlay 行；缺省表示无 overlay。 */
   listDataParts?(sessionID: string, messageIds: string[]): SessionDataPartRow[];
   /** 失败可观测入口（组合根接 gateway logger）；缺省静默 fail-open。 */
@@ -54,6 +55,14 @@ export async function handleSessionHistory(
     return true;
   }
 
+  // A runtime without the messages channel must report unsupported, not an
+  // empty success envelope (a silent "no history" is worse than a 503).
+  if (runtime.access && !runtime.access.can('session.messages')) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: surfaceUnavailableMessage('session.messages') }));
+    return true;
+  }
+
   try {
     const result = await runtime.session.messages({
       sessionID,
@@ -80,6 +89,11 @@ export async function handleSessionHistory(
     json(res, 200, { data: messages, nextCursor });
   } catch (err: any) {
     deps.warn?.(`[SessionHistory] failed to fetch messages: ${err?.message ?? String(err)}`);
+    if (err?.code === 'ENODEV') {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: surfaceUnavailableMessage('session.messages') }));
+      return true;
+    }
     emptyEnvelope(res);
   }
   return true;

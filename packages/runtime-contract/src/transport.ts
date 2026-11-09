@@ -37,8 +37,36 @@ export interface RuntimeFactoryContext {
   projectDir?: string;
   pluginConfig(name: string): Record<string, unknown>;
   credentials?: { getApiKey(provider: string): string | null };
+  /**
+   * Gateway-owned policy hooks. The adapter wires them into its native
+   * approval/cognition machinery; the gateway never touches native objects.
+   * Return values stay opaque to the contract and are narrowed by the adapter.
+   */
+  policy?: RuntimePolicyHooks;
   log?: { info(message: string): void; warn(message: string): void };
 }
+
+export interface RuntimePolicyCandidate {
+  tool?: string;
+  command?: string;
+  patterns?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Policy hooks a gateway may hand to a driver. All are optional and
+ * fail-open: a missing hook means the adapter keeps its own default.
+ * Return values are intentionally `unknown`; only the adapter that owns the
+ * native policy type narrows them.
+ */
+export interface RuntimePolicyHooks {
+  evaluatePermission?(sessionID: string, candidate: RuntimePolicyCandidate): unknown;
+  gateToolCall?(sessionID: string, payload: { tool: string; input: Record<string, unknown> }): unknown;
+  gatePrompt?(sessionID: string, text: string): unknown;
+  redactToolResult?(sessionID: string, tool: string, content: unknown[]): unknown;
+}
+
+export type DeliveryMode = 'steer' | 'followup' | 'queue';
 
 export interface SendTurnInput {
   sessionID: string;
@@ -52,6 +80,8 @@ export interface SendTurnInput {
   variant?: string;
   thinkingLevel?: ThinkingLevel;
   cwd?: string;
+  /** Busy delivery hint: steer = inject into the running turn, queue = gateway queue. */
+  delivery?: DeliveryMode;
   /** false = notification-only turn; do not trigger a model answer. */
   expectReply?: boolean;
   /** Gateway queue idempotency key; the adapter only passes it through. */

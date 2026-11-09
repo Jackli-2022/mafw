@@ -38,12 +38,26 @@ export interface RuntimeManifest {
   configSchema?: unknown;
 }
 
+export interface RuntimeHostSurface {
+  config?: { get(): Promise<unknown>; update(config: unknown): Promise<unknown> };
+  credentials?: { getApiKey(provider: string): string | null };
+  completion?: unknown;
+  healthCheck?(): Promise<boolean>;
+  getBaseUrl?(): string;
+}
+
 export interface RuntimeDefinitionInput {
   api: 1;
   name: string;
   displayName: string;
   preset: RuntimePreset;
   transport: RuntimeTransport;
+  /** true = the runtime process is user-managed; the gateway never spawns or kills it. */
+  external?: boolean;
+  /** Surface-level semantics declared by the adapter (steer boundary, revert guarantees). */
+  semantics?: Record<string, Record<string, unknown>>;
+  /** Host-only surfaces a driver brings along (config/credentials/completion/health). */
+  host?: RuntimeHostSurface;
   channels?: RuntimeChannels;
   channelsV2?: RuntimeChannelsV2;
   channelApi?: 1 | 2;

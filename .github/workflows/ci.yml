@@ -93,6 +93,9 @@ jobs:
       - name: Test runtime-contract
         run: npm run test:contract
 
+      - name: Test runtime-core
+        run: npm run test:core
+
       - name: Test runtime-kit
         run: npm run test:kit
 
