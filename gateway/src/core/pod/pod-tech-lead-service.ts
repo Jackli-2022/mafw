@@ -31,6 +31,7 @@ import {
 import type { PodDetail, PodService } from './pod-service';
 import { canonicalProjectDir } from './pod-identity';
 import type { PodSessionLease, PodSessionScope, PodSessionSupervisor } from './pod-session-supervisor';
+import type { PodWorktreeService } from './pod-worktree-service';
 
 /** Tech Lead 身份（IdentityRegistry 内置物化名）。 */
 export const TECH_LEAD_AGENT = 'mafw-tech-lead';
@@ -55,6 +56,8 @@ export interface PodTechLeadServiceDeps {
   pods: Pick<PodService, 'ensure'>;
   sessions: Pick<PodSessionSupervisor, 'ensure' | 'current'>;
   runtime: PodTechLeadRuntime;
+  /** revision checkout provider; production always injects PodWorktreeService. */
+  worktrees?: Pick<PodWorktreeService, 'ensure'>;
   /** 项目解析（与 intake 同一来源）：返回 canonical projectDir 与 mafwDir。 */
   resolveProject(projectDir?: string): { projectDir: string; mafwDir: string } | null;
   now?(): string;
@@ -393,7 +396,10 @@ export class PodTechLeadService {
   ): Promise<string> {
     const scope: PodSessionScope = { podId, memberId, goalId, revision, kind: 'discussion' };
     const lease: PodSessionLease = await this.deps.sessions.ensure(scope, async () => {
-      const sessionId = await this.deps.runtime.createSession({ projectDir, goalId, revision });
+      const sessionDir = this.deps.worktrees
+        ? (await this.deps.worktrees.ensure(podId, goalId, revision)).dir
+        : projectDir;
+      const sessionId = await this.deps.runtime.createSession({ projectDir: sessionDir, goalId, revision });
       return sessionId;
     });
     // 幂等登记：gateway 重启后 kv 恢复前也保证隐藏判定与角色归属。

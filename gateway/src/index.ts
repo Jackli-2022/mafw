@@ -75,6 +75,7 @@ import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService, TECH_LEAD_AGENT } from './core/pod/pod-tech-lead-service';
+import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
 import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
 import { PodContextSelectionService } from './mcp/handlers/pod-context-select';
@@ -663,6 +664,7 @@ class MafwScheduler {
   private podSessionLifecycle!: PodSessionLifecycle;
   private podDirectionService!: PodDirectionService;
   private podTechLeadService!: PodTechLeadService;
+  private podWorktreeService!: PodWorktreeService;
   private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
   private podProbeWorkspaces!: ProbeWorkspaceFactory;
@@ -1184,6 +1186,11 @@ class MafwScheduler {
       archiveGoal: (goalId, opts) => this.archiveGoal(goalId, opts as any),
       nodeTimeoutMs: (config as any).goal?.nodeTimeoutMs ?? 30 * 60_000,
       maxAttempts: 2,
+      workdirForRevision: async (goalId, revision) => {
+        const goal = this.podStore?.getGoalByGoalId(goalId);
+        if (!goal) return null;
+        return (await this.podWorktreeService.ensure(goal.podId, goalId, revision)).dir;
+      },
       newApprovalId: () => `pa_${randomUUID()}`,
       canCreateNode: (goalId: string) => {
         const podId = this.podService?.getPodIdForGoal(goalId);
@@ -4333,6 +4340,11 @@ class MafwScheduler {
       ensureMemory: (podId, projectName) => this.podMemoryService.ensurePodMemory(podId, projectName),
       log: (message) => log.info(message),
     });
+    this.podWorktreeService = new PodWorktreeService({
+      store: this.podStore,
+      now: () => new Date().toISOString(),
+      log: (message) => log.info(message),
+    });
     this.podTaskService = new PodTaskService({
       store: this.podStore,
       now: () => new Date().toISOString(),
@@ -4471,6 +4483,7 @@ class MafwScheduler {
       store: this.podStore,
       pods: this.podService,
       sessions: this.podSessionSupervisor,
+      worktrees: this.podWorktreeService,
       runtime: createTechLeadRuntimeAdapter({
         createSession: async ({ projectDir }) => {
           const created = await this.runtime!.session.create({ directory: projectDir });
