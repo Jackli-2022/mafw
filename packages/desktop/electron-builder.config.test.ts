@@ -41,6 +41,12 @@ test("ships the staged gateway bundle as an extra resource", async () => {
   expect(resources).toContainEqual({ from: "gateway-bundle/", to: "gateway/" })
 })
 
+test("Windows updates require a valid code signature", async () => {
+  const module = await import("./electron-builder.config.ts?update-signature=1")
+  const config = module.default as Configuration
+  expect(config.win?.verifyUpdateCodeSignature).toBe(true)
+})
+
 test("stages channel icons next to the executable for runtime icon paths", async () => {
   const module = await import("./electron-builder.config.ts?icons=1")
   const config = module.default as Configuration

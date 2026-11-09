@@ -47,6 +47,7 @@ import { EventInspector } from "./components/EventInspector"
 import { ImageLightbox } from "./components/ImageLightbox"
 import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
+import { UpdaterBanner } from "./components/UpdaterBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
@@ -2604,6 +2605,7 @@ export function MafwShell() {
       <MenuHost controller={menuController} />
       <TextMenuBridge />
       <ToastV2.Region />
+      <UpdaterBanner />
       <CommandPalette
         open={paletteOpen()}
         items={paletteItems()}

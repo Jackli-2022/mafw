@@ -101,7 +101,7 @@ const getBase = (appId: string): Configuration => ({
   win: {
     icon: `resources/icons/icon.ico`,
     target: ["nsis"],
-    verifyUpdateCodeSignature: false,
+    verifyUpdateCodeSignature: true,
   },
   nsis: {
     oneClick: true,
