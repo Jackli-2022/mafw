@@ -66,6 +66,8 @@ test("status carries source, expected/actual versions and instance identity", ()
   assert.match(sidecar, /actualVersion:\s*actualHealth\?\.gatewayVersion \?\? null/)
   assert.match(sidecar, /instanceId:\s*actualHealth\?\.instanceId \?\? managedRecord\?\.instanceId \?\? null/)
   assert.match(sidecar, /distribution:\s*actualHealth\?\.distribution \?\? null/)
+  assert.match(sidecar, /attached:\s*attachment\.attached/)
+  assert.match(sidecar, /attachedOrigin:\s*attachment\.attachedOrigin/)
 })
 
 test("quit waits for the managed gateway and never uses the WSL-only stop callback", () => {

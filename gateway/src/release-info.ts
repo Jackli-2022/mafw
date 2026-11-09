@@ -116,6 +116,7 @@ export function createGatewayRuntimeIdentity(
 export function gatewayHealthFields(
   metadata: GatewayReleaseMetadata,
   identity: GatewayRuntimeIdentity,
+  pid: number = process.pid,
 ): Record<string, unknown> {
   return {
     gatewayVersion: metadata.gatewayVersion,
@@ -125,5 +126,6 @@ export function gatewayHealthFields(
     instanceId: identity.instanceId,
     distribution: identity.distribution,
     channel: identity.channel,
+    pid,
   };
 }

@@ -17,6 +17,8 @@ test("Config renders gateway ownership and source diagnostics from the model", (
   assert.match(config, /gwStatus\(\)\?\.instanceId/)
   assert.match(config, /gwStatus\(\)\?\.schemaEpoch/)
   assert.match(config, /gwStatus\(\)\?\.quarantine/)
+  assert.match(config, /gwStatus\(\)\?\.attached/)
+  assert.match(config, /gwStatus\(\)\?\.attachedOrigin/)
 })
 
 test("Config switches source explicitly and supports quarantine retry", () => {

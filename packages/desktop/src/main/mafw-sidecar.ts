@@ -9,6 +9,7 @@ import { write as writeLog } from "./logging"
 import { probeMafwCli } from "./mafw-cli-probe"
 import { planGatewayStart, type GatewayStartPlan } from "./mafw-gateway-plan"
 import { planManagedGatewaySpawn } from "./managed-gateway-spawn"
+import { resolveGatewayAttachment } from "./gateway-attachment"
 import {
   negotiateGateway,
   type GatewayHealthSnapshot,
@@ -67,6 +68,10 @@ export type GatewayStatus = {
   url: string | null
   error: string | null
   spawnedByUs?: boolean
+  /** Ready, but using a gateway this desktop did not spawn (handshake passed). */
+  attached: boolean
+  /** `standalone` / `desktop-managed`, or null when the gateway did not report one. */
+  attachedOrigin: string | null
   source: GatewaySourcePreference | null
   expectedVersion: string | null
   actualVersion: string | null
@@ -593,11 +598,19 @@ export async function startGateway(): Promise<void> {
       // Dev-only adoption of a gateway we did not spawn and did not register
       // (usually the global `mafw daemon`). Never stop it on quit.
       managedRecord = null
+      const versionDiffers = !!expected
+        && !!running.health.gatewayVersion
+        && running.health.gatewayVersion !== expected.gatewayVersion
       writeLog(
         "utility",
-        "mafw dev adopting running gateway",
-        { instanceId: running.health.instanceId ?? null, distribution: running.health.distribution ?? null },
-        "warn",
+        versionDiffers ? "mafw dev attached to a gateway with a different version" : "mafw dev attached to running gateway",
+        {
+          instanceId: running.health.instanceId ?? null,
+          distribution: running.health.distribution ?? null,
+          actual: running.health.gatewayVersion ?? null,
+          expected: expected?.gatewayVersion ?? null,
+        },
+        versionDiffers ? "warn" : "info",
       )
     }
     spawnedByUs = false
@@ -693,12 +706,19 @@ export function restartGateway(): Promise<void> {
 
 export function getGatewayStatus(): GatewayStatus {
   const quarantine = managedRoot ? readQuarantine(managedRoot) : null
+  const attachment = resolveGatewayAttachment({
+    ready: state === "ready",
+    spawnedByUs,
+    distribution: actualHealth?.distribution ?? null,
+  })
   return {
     state,
     port,
     url: port ? `http://127.0.0.1:${port}` : null,
     error: errorMessage ?? (state === "failed" ? "Gateway failed to start" : null),
     spawnedByUs,
+    attached: attachment.attached,
+    attachedOrigin: attachment.attachedOrigin,
     source: sourcePreference,
     expectedVersion: expected?.gatewayVersion ?? null,
     actualVersion: actualHealth?.gatewayVersion ?? null,

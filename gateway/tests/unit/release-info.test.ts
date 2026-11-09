@@ -73,7 +73,7 @@ describe('gateway release identity', () => {
       instanceId: 'uuid-1',
       distribution: 'desktop-managed',
       channel: 'prod',
-    })).toEqual({
+    }, 4321)).toEqual({
       gatewayVersion: '5.2.0',
       experienceVersion: '2026.11.1',
       minimumClientExperienceVersion: '2026.11.0',
@@ -81,6 +81,7 @@ describe('gateway release identity', () => {
       instanceId: 'uuid-1',
       distribution: 'desktop-managed',
       channel: 'prod',
+      pid: 4321,
     });
   });
 
