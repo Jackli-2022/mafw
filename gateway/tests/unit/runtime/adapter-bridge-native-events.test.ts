@@ -152,6 +152,30 @@ it('mints a turn id for an extension-initiated run', async () => {
   expect(seen.every((e) => e.turnID === id)).toBe(true);
 });
 
+it('attributes three normal turns with turn.started', async () => {
+  const runtime = nativeRuntime();
+  const def = toRuntimeDefinition(runtime, { name: 'pi', nativeEvents: true });
+  const seen: any[] = [];
+  def.transport.onEvent((e) => seen.push(e));
+  await tick();
+
+  await def.transport.sendTurn({ sessionID: 's1', turnID: 't1', text: 'one' } as any);
+  await def.transport.sendTurn({ sessionID: 's1', turnID: 't2', text: 'two' } as any);
+  await def.transport.sendTurn({ sessionID: 's1', turnID: 't3', text: 'three' } as any);
+  for (const id of ['t1', 't2', 't3']) {
+    runtime.emit(event('turn.started', { sessionID: 's1' }));
+    runtime.emit(event('tool.call', { sessionID: 's1', data: { callID: `c_${id}`, name: 'bash', input: {} } }));
+    runtime.emit(event('turn.completed', { sessionID: 's1', data: { ok: true } }));
+  }
+  await tick();
+
+  expect(seen.map((e) => `${e.type}:${e.turnID}`)).toEqual([
+    'turn.started:t1', 'tool.call:t1', 'turn.completed:t1',
+    'turn.started:t2', 'tool.call:t2', 'turn.completed:t2',
+    'turn.started:t3', 'tool.call:t3', 'turn.completed:t3',
+  ]);
+});
+
 it('rejects nativeEvents combined with translate', () => {
   expect(() => toRuntimeDefinition(nativeRuntime(), {
     name: 'pi',
