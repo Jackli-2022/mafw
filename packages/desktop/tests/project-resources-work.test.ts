@@ -36,6 +36,10 @@ test("attention and New Goal remain direct actions", () => {
   assert.match(resources, /onClick=\{\(\) => props\.onOpenWork\(\)\}/)
   assert.match(resources, /onClick=\{props\.onCreate\}/)
   assert.match(resources, />\s*新建 Goal\s*</)
+  assert.ok(
+    resources.indexOf("mafw-pod-contacts") < resources.indexOf("mafw-resources-attention"),
+    "Lead / Tech Lead contacts must precede the attention row",
+  )
 })
 
 test("team, inbox, Pod memory and notes live behind the secondary resource toggle", () => {

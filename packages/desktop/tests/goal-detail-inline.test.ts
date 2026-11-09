@@ -29,7 +29,8 @@ test("the right work panel keeps its list mounted and renders detail in place", 
   assert.match(work, /onOpenSession=\{props\.onOpenSession\}/)
   assert.match(work, /mafw-goal-inline-title/)
   assert.match(work, /data-goal-id/)
-  assert.match(work, /\.mafw-work-item["'`]?\)\?\.focus/)
+  assert.match(work, /\.mafw-work-item`\)/)
+  assert.match(work, /\(row \?\? fallback\)\?\.focus\(\)/)
 })
 
 test("every Goal open path goes through the right work panel", () => {
@@ -52,6 +53,11 @@ test("ProjectWorkView receives one shell-owned inline selection", () => {
   assert.match(shell, /const podIdForCurrentProject = \(\): string \| null => \{[\s\S]{0,220}podStore\.detail\(\)/)
   assert.match(shell, /onCloseGoal=\{\(\) => setPodGoalId\(null\)\}/)
   assert.match(shell, /onOpenSession=\{\(sid\) => \{ void openPodSession\(sid\) \}\}/)
+})
+
+test("returning to a Goal excluded by the active filter falls back to that filter", () => {
+  assert.match(work, /\.mafw-work-row\[data-goal-id="\$\{previous\}"\] \.mafw-work-item/)
+  assert.match(work, /\.mafw-work-filter\[aria-pressed="true"\]/)
 })
 
 test("switching projects clears the old Goal before rendering the next overview", () => {

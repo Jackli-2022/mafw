@@ -71,19 +71,6 @@ export function ProjectResources(props: {
       </Show>
 
       <Show when={emptyState() === "ready"}>
-        <Show when={attention().visible}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            class="mafw-resources-row mafw-resources-attention"
-            onClick={() => props.onOpenWork()}
-          >
-            <span class="mafw-resources-leading"><Icon name="status" size="small" /><span>{attention().label}</span></span>
-            <span class="mafw-resources-meta accent">工作台处理</span>
-            <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
-          </ButtonV2>
-        </Show>
-
         <div class="mafw-pod-contacts">
           <For each={contacts()}>
             {(row) => (
@@ -118,6 +105,19 @@ export function ProjectResources(props: {
             )}
           </For>
         </div>
+
+        <Show when={attention().visible}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-resources-row mafw-resources-attention"
+            onClick={() => props.onOpenWork()}
+          >
+            <span class="mafw-resources-leading"><Icon name="status" size="small" /><span>{attention().label}</span></span>
+            <span class="mafw-resources-meta accent">工作台处理</span>
+            <Icon name="chevron-right" size="small" class="mafw-resources-chevron" />
+          </ButtonV2>
+        </Show>
 
         <ButtonV2 variant="outline" size="small" class="mafw-pod-new-goal" onClick={props.onCreate}>
           新建 Goal

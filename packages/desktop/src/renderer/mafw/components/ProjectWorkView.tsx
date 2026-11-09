@@ -119,7 +119,12 @@ export function ProjectWorkView(props: {
     if (!previous) return
     previousGoalId = null
     queueMicrotask(() => {
-      document.querySelector<HTMLElement>(`.mafw-work-row[data-goal-id="${previous}"] .mafw-work-item`)?.focus()
+      // The Goal may have come from the priority area or a notification while
+      // the active filter excludes its bucket. Keep keyboard context on the
+      // active filter instead of dropping focus to <body>.
+      const row = document.querySelector<HTMLElement>(`.mafw-work-row[data-goal-id="${previous}"] .mafw-work-item`)
+      const fallback = document.querySelector<HTMLElement>('.mafw-work-filter[aria-pressed="true"]')
+      ;(row ?? fallback)?.focus()
     })
   })
 
