@@ -385,3 +385,40 @@ test("rejects an invalid event scope", () => {
   if (result.ok) return
   assert.match(result.error, /scope/i)
 })
+
+test("webSurfaces: defaults entry/scope/reload and builds the gateway URL", () => {
+  const result = validateClientDescriptor({
+    name: "demo", version: "1.0.0", revision: "r1",
+    ui: { webSurfaces: [{ id: "panel", title: "Demo", rail: { icon: "layout-grid" } }] },
+    actions: [], events: [],
+  })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.deepEqual(result.value.ui.webSurfaces, [{
+    id: "panel", title: "Demo", entry: "index.html", scope: "session",
+    reloadOnSessionChange: true, url: "/api/plugins/demo/ui/index.html",
+    rail: { icon: "layout-grid", order: 100, badge: false },
+  }])
+})
+
+test("webSurfaces: rejects traversal/absolute entries and unknown icons", () => {
+  for (const entry of ["../x.html", "/etc/passwd", "a/../../b.html", "a\\..\\b.html"]) {
+    const r = validateClientDescriptor({ name: "demo", version: "1", revision: "r",
+      ui: { webSurfaces: [{ id: "p", title: "P", entry }] }, actions: [], events: [] })
+    assert.equal(r.ok, false)
+  }
+  const icon = validateClientDescriptor({ name: "demo", version: "1", revision: "r",
+    ui: { webSurfaces: [{ id: "p", title: "P", rail: { icon: "not-a-real-icon" } }] }, actions: [], events: [] })
+  assert.equal(icon.ok, false)
+})
+
+test("webSurfaces: id collides with panels and unknown fields reject", () => {
+  const collide = validateClientDescriptor({ name: "demo", version: "1", revision: "r",
+    ui: { panels: [{ id: "p", title: "P", viewAction: "v" }],
+          webSurfaces: [{ id: "p", title: "P" }] },
+    actions: [{ name: "v" }], events: [] })
+  assert.equal(collide.ok, false)
+  const extra = validateClientDescriptor({ name: "demo", version: "1", revision: "r",
+    ui: { webSurfaces: [{ id: "p", title: "P", url: "https://evil" }] }, actions: [], events: [] })
+  assert.equal(extra.ok, false)
+})

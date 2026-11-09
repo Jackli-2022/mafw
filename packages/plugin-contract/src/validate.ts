@@ -7,6 +7,7 @@
  * truncating it silently.
  */
 import { PLUGIN_UI_LIMITS } from "./limits.ts"
+import { isPluginIconName } from "./icons.ts"
 import type {
   PluginActionDescriptor,
   PluginClientDescriptor,
@@ -19,6 +20,7 @@ import type {
   PluginToolCardDescriptor,
   PluginUiContribution,
   PluginView,
+  PluginWebSurfaceClientDescriptor,
   Widget,
 } from "./types.ts"
 
@@ -51,12 +53,35 @@ const DESCRIPTOR_KEYS = [
   "diagnostics",
 ] as const
 
-const UI_SLOT_KEYS = ["panels", "toolCards", "configPages", "messageWindows"] as const
+const UI_SLOT_KEYS = ["panels", "toolCards", "configPages", "messageWindows", "webSurfaces"] as const
 
 const PANEL_KEYS = ["id", "title", "icon", "order", "viewAction", "refreshOn"] as const
 const TOOL_CARD_KEYS = ["id", "tools", "override", "viewAction"] as const
 const CONFIG_PAGE_KEYS = ["id", "title", "schema", "loadAction", "saveAction", "reloadOnSave"] as const
 const MESSAGE_WINDOW_KEYS = ["id", "title", "triggerEvent", "viewAction", "modal", "dismissible"] as const
+const WEB_SURFACE_KEYS = [
+  "id",
+  "title",
+  "icon",
+  "entry",
+  "scope",
+  "reloadOnSessionChange",
+  "rail",
+] as const
+const WEB_SURFACE_RAIL_KEYS = ["icon", "order", "badge"] as const
+
+const MAX_WEB_SURFACES = 32
+const MAX_WEB_SURFACE_TITLE_LENGTH = 80
+const MAX_WEB_SURFACE_ENTRY_LENGTH = 256
+const DEFAULT_WEB_SURFACE_ENTRY = "index.html"
+const DEFAULT_WEB_SURFACE_RAIL_ORDER = 100
+
+/**
+ * Allowed characters per entry segment. Deliberately excludes `\`, `%`, `:`,
+ * `#`, `?`, whitespace and control characters so a validated entry is already
+ * a safe relative URL path and cannot smuggle an escape or a scheme.
+ */
+const WEB_SURFACE_ENTRY_SEGMENT = /^[A-Za-z0-9._~@+-]+$/
 
 const ACTION_KEYS = ["name", "title", "description", "inputSchema", "outputSchema", "timeoutMs"] as const
 const EVENT_KEYS = ["type", "title", "description", "schema", "scope"] as const
@@ -681,6 +706,179 @@ function readMessageWindows(
   return windows
 }
 
+function readWebSurfaceScope(
+  value: unknown,
+  label: string,
+  errors: string[],
+): PluginWebSurfaceClientDescriptor["scope"] | undefined {
+  if (value === undefined) return undefined
+  if (value === "session" || value === "project" || value === "global") return value
+  addError(errors, `${label} must be "session", "project" or "global"`)
+  return undefined
+}
+
+/**
+ * Normalizes a Web surface entry path.
+ *
+ * Accepts only a relative `web/`-local path: no absolute paths, backslashes,
+ * NUL/`#`/`?`, URL schemes, `..` segments or characters that would need URL
+ * escaping. `.` segments are dropped so `./app/index.html` normalizes to
+ * `app/index.html`; an empty result is rejected.
+ */
+function readWebSurfaceEntry(
+  value: unknown,
+  label: string,
+  errors: string[],
+): string | undefined {
+  if (value === undefined) return DEFAULT_WEB_SURFACE_ENTRY
+  if (typeof value !== "string" || value.length === 0) {
+    addError(errors, `${label} must be a non-empty relative path`)
+    return undefined
+  }
+  if (value.length > MAX_WEB_SURFACE_ENTRY_LENGTH) {
+    addError(errors, `${label} exceeds ${MAX_WEB_SURFACE_ENTRY_LENGTH} characters`)
+    return undefined
+  }
+  if (value.startsWith("/") || value.startsWith("\\")) {
+    addError(errors, `${label} must be relative to the package web/ directory`)
+    return undefined
+  }
+  if (value.includes("\\")) {
+    addError(errors, `${label} must use "/" path separators`)
+    return undefined
+  }
+  if (value.includes("\0") || value.includes("#") || value.includes("?")) {
+    addError(errors, `${label} must not contain NUL, "#" or "?"`)
+    return undefined
+  }
+  if (value.includes(":")) {
+    addError(errors, `${label} must be a relative path, not a URL or drive path`)
+    return undefined
+  }
+  const segments: string[] = []
+  for (const segment of value.split("/")) {
+    if (segment === ".") continue
+    if (segment === "..") {
+      addError(errors, `${label} must not contain ".." segments`)
+      return undefined
+    }
+    if (segment.length === 0) {
+      addError(errors, `${label} must not contain empty path segments`)
+      return undefined
+    }
+    if (!WEB_SURFACE_ENTRY_SEGMENT.test(segment)) {
+      addError(errors, `${label} contains unsupported characters in "${segment}"`)
+      return undefined
+    }
+    segments.push(segment)
+  }
+  if (segments.length === 0) {
+    addError(errors, `${label} must name a file inside the package web/ directory`)
+    return undefined
+  }
+  return segments.join("/")
+}
+
+function readWebSurfaceRail(
+  value: unknown,
+  label: string,
+  errors: string[],
+): PluginWebSurfaceClientDescriptor["rail"] | undefined {
+  if (value === undefined) return undefined
+  if (!isPlainObject(value)) {
+    addError(errors, `${label} must be an object`)
+    return undefined
+  }
+  checkKnownFields(value, WEB_SURFACE_RAIL_KEYS, label, errors)
+  const icon = requireString(value.icon, `${label}.icon`, MAX_ID_LENGTH, errors)
+  if (icon === undefined) return undefined
+  if (!isPluginIconName(icon)) {
+    addError(errors, `${label}.icon "${icon}" is not a supported plugin icon`)
+  }
+  const order = optionalNumber(value.order, `${label}.order`, errors)
+  const badge = optionalBoolean(value.badge, `${label}.badge`, errors)
+  return {
+    icon,
+    order: order ?? DEFAULT_WEB_SURFACE_RAIL_ORDER,
+    badge: badge ?? false,
+  }
+}
+
+/**
+ * Reads `ui.webSurfaces`, the sandboxed Web page slot.
+ *
+ * Shares the surface-id namespace with `ui.panels` (`plugin:<package>:<id>`
+ * has exactly one renderer). Projection adds the gateway asset URL so clients
+ * never rebuild package paths; the filesystem check for the entry itself lives
+ * in the Host at activation time.
+ */
+function readWebSurfaces(
+  value: unknown,
+  packageName: string,
+  panelIds: ReadonlySet<string>,
+  errors: string[],
+): PluginWebSurfaceClientDescriptor[] | undefined {
+  if (!Array.isArray(value)) {
+    addError(errors, "ui.webSurfaces must be an array")
+    return undefined
+  }
+  if (value.length > MAX_WEB_SURFACES) {
+    addError(errors, `ui.webSurfaces exceeds ${MAX_WEB_SURFACES} entries`)
+    return undefined
+  }
+  const surfaces: PluginWebSurfaceClientDescriptor[] = []
+  const ids = new Set<string>(panelIds)
+  value.forEach((item, index) => {
+    const label = `webSurfaces[${index}]`
+    if (!isPlainObject(item)) {
+      addError(errors, `${label} must be an object`)
+      return
+    }
+    checkKnownFields(item, WEB_SURFACE_KEYS, label, errors)
+    const id = readIdentifier(item.id, `${label}.id`, errors)
+    if (id === undefined) return
+    if (ids.has(id)) {
+      addError(
+        errors,
+        panelIds.has(id)
+          ? `web surface id "${id}" collides with a panel id (surfaces share the plugin:${packageName}:<id> namespace)`
+          : `duplicate web surface id "${id}"`,
+      )
+      return
+    }
+    ids.add(id)
+
+    const surfaceLabel = `web surface "${id}"`
+    const title = requireString(item.title, `${surfaceLabel} title`, MAX_WEB_SURFACE_TITLE_LENGTH, errors)
+    const icon = optionalString(item.icon, `${surfaceLabel} icon`, MAX_ID_LENGTH, errors)
+    if (icon !== undefined && !isPluginIconName(icon)) {
+      addError(errors, `${surfaceLabel} icon "${icon}" is not a supported plugin icon`)
+    }
+    const entry = readWebSurfaceEntry(item.entry, `${surfaceLabel} entry`, errors)
+    const scope = readWebSurfaceScope(item.scope, `${surfaceLabel} scope`, errors)
+    const reloadOnSessionChange = optionalBoolean(
+      item.reloadOnSessionChange,
+      `${surfaceLabel} reloadOnSessionChange`,
+      errors,
+    )
+    const rail = readWebSurfaceRail(item.rail, `${surfaceLabel} rail`, errors)
+
+    const surfaceEntry = entry ?? DEFAULT_WEB_SURFACE_ENTRY
+    const surface: PluginWebSurfaceClientDescriptor = {
+      id,
+      title: title ?? "",
+      entry: surfaceEntry,
+      scope: scope ?? "session",
+      reloadOnSessionChange: reloadOnSessionChange ?? true,
+      url: `/api/plugins/${packageName}/ui/${surfaceEntry}`,
+    }
+    if (icon !== undefined) surface.icon = icon
+    if (rail !== undefined) surface.rail = rail
+    surfaces.push(surface)
+  })
+  return surfaces
+}
+
 function readUi(
   value: unknown,
   packageName: string,
@@ -703,6 +901,11 @@ function readUi(
   if (value.panels !== undefined) {
     const panels = readPanels(value.panels, actionNames, prefix, eventTypes, errors)
     if (panels !== undefined) ui.panels = panels
+  }
+  if (value.webSurfaces !== undefined) {
+    const panelIds = new Set((ui.panels ?? []).map((panel) => panel.id))
+    const webSurfaces = readWebSurfaces(value.webSurfaces, packageName, panelIds, errors)
+    if (webSurfaces !== undefined) ui.webSurfaces = webSurfaces
   }
   if (value.toolCards !== undefined) {
     const toolCards = readToolCards(value.toolCards, actionNames, errors)

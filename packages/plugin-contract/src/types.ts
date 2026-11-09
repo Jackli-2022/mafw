@@ -104,12 +104,60 @@ export interface PluginMessageWindowDescriptor {
   dismissible?: boolean
 }
 
+/** Left-rail entry contributed by a plugin Web surface. */
+export interface PluginWebSurfaceRailDescriptor {
+  /** Glyph name; must satisfy `isPluginIconName` (`./icons.ts`). */
+  icon: string
+  /** Rail sort order; lower comes first. Defaults to `100`. */
+  order?: number
+  /** When `true` the surface may publish a count through the host bridge. */
+  badge?: boolean
+}
+
+/**
+ * Sandboxed plugin Web page opened as a right-workbench surface.
+ *
+ * Asset existence is checked by the gateway at activation time (fail-closed);
+ * the contract stays filesystem-free and only validates the declaration.
+ */
+export interface PluginWebSurfaceDescriptor {
+  id: string
+  title: string
+  /** Glyph name; must satisfy `isPluginIconName` (`./icons.ts`). */
+  icon?: string
+  /** Entry file relative to the package `web/` directory; defaults to `index.html`. */
+  entry?: string
+  /** Page context scope; defaults to `session`. */
+  scope?: "session" | "project" | "global"
+  /** Reload the page when the active session changes; defaults to `true`. */
+  reloadOnSessionChange?: boolean
+  /** Left-rail entry; without it the surface is only reachable from the workbench. */
+  rail?: PluginWebSurfaceRailDescriptor
+}
+
+/**
+ * Validated Web surface sent to Desktop: defaults applied and the gateway
+ * asset URL projected, so clients never rebuild package paths themselves.
+ */
+export interface PluginWebSurfaceClientDescriptor {
+  id: string
+  title: string
+  icon?: string
+  entry: string
+  scope: "session" | "project" | "global"
+  reloadOnSessionChange: boolean
+  /** Gateway asset URL: `/api/plugins/<package>/ui/<entry>`. */
+  url: string
+  rail?: { icon: string; order: number; badge: boolean }
+}
+
 /** First-phase UI contribution slots. Unknown slots are rejected. */
 export interface PluginUiContribution {
   panels?: PluginPanelDescriptor[]
   toolCards?: PluginToolCardDescriptor[]
   configPages?: PluginConfigPageDescriptor[]
   messageWindows?: PluginMessageWindowDescriptor[]
+  webSurfaces?: PluginWebSurfaceDescriptor[]
 }
 
 /** Declarative action exposed to the gateway action registry. */
@@ -160,4 +208,11 @@ export interface PluginClientDescriptor {
   actions: PluginActionDescriptor[]
   events: PluginEventDescriptor[]
   diagnostics?: PluginDiagnostic[]
+  /**
+   * Optional flattened mirror of `ui.webSurfaces` for clients that project
+   * surfaces across packages. `validateClientDescriptor` validates and
+   * projects the `ui.webSurfaces` slot; hosts may additionally publish this
+   * top-level list on a snapshot.
+   */
+  webSurfaces?: PluginWebSurfaceClientDescriptor[]
 }
