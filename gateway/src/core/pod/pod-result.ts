@@ -23,6 +23,17 @@ export type PodGoalResultFailure =
   | 'review_invalid'
   | 'goal_eval_invalid';
 
+export interface PodResultWorktree {
+  dir: string;
+  branch: string;
+  baseBranch: string | null;
+  status: 'active' | 'merged' | 'abandoned' | 'missing';
+  mergeCommit: string | null;
+  mergedAt: string | null;
+}
+
+export type PodGoalAcceptance = 'pending' | 'accepted' | 'unavailable';
+
 export interface PodGoalResult {
   goalId: string;
   /** 该结果对应的 revision（legacy 行为 1）。 */
@@ -45,7 +56,18 @@ export interface PodGoalResult {
   reviewFeedback: string;
   receipt: unknown | null;
   artifacts: string[];
+  /** Revision worktree metadata; absent for legacy Goals or old gateways. */
+  worktree?: PodResultWorktree | null;
+  /** User acceptance state; absent for legacy results. */
+  acceptance?: PodGoalAcceptance;
 }
+
+/** PASS or quick UNREVIEWED, with trustworthy evidence and no failure classification. */
+export function isAcceptablePodResult(result: PodGoalResult): boolean {
+  if (!result.resultReady || result.failure) return false;
+  return result.verdict === 'PASS' || result.verdict === null;
+}
+
 
 /** Goal Eval 产物路径：`<mafwDir>/goals/<goalId>/goal-eval.json`（goal-dir 布局）。
  *  goalId 只保留安全字符；纯 `.`/`..`/标点会被折叠成 `_`（绝不产生 `goals/../…`）。 */

@@ -5,7 +5,7 @@ import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import type { PodDirectionState, PodGoalRevision, PodMember, PodProbe, PodTask } from "@mafw/sdk"
+import type { PodDirectionState, PodGoalAcceptResult, PodGoalRevision, PodMember, PodProbe, PodTask } from "@mafw/sdk"
 import { GoalTimelineLane } from "./GoalTimelineLane"
 import { PlanReviewOverlay } from "./PlanReviewOverlay"
 import { PodDirectionPanel } from "./PodDirectionPanel"
@@ -17,6 +17,7 @@ import { createPodIdResolver, podStore } from "../pod-store"
 import {
   goalDetailTitle,
   planEditGate,
+  podHttpStatus,
   podStageLabel,
   revisionHistory,
   revisionStatusLabel,
@@ -444,6 +445,44 @@ export function GoalDetailPanel(props: {
     return true
   })
 
+  const acceptGoal = async (): Promise<PodGoalAcceptResult | null> => {
+    const podId = await resolvePodIdForGoal()
+    const id = props.goalId
+    if (!podId || !id) {
+      showToastV2({ description: "当前项目还没有鲸群，无法验收", duration: 3000 })
+      return null
+    }
+    let accepted: PodGoalAcceptResult
+    try {
+      accepted = await window.api.mafw.pod.acceptResult(podId, id, { confirm: true })
+    } catch (err: any) {
+      const status = podHttpStatus(err)
+      const description = status === 403
+        ? "只有人类可以验收；agent 会话不能合并"
+        : status === 409
+          ? `当前无法合并：${String(err?.message ?? err).slice(0, 160)}`
+          : status === 503
+            ? "当前 gateway 不支持验收，请升级"
+            : `验收失败：${String(err?.message ?? err).slice(0, 120)}`
+      showToastV2({ description, duration: 3800 })
+      return null
+    }
+    // The merge already happened: a refresh blip must not make the UI claim it failed.
+    showToastV2({
+      description: `已验收：revision ${accepted.revision} 已合并（${accepted.mergeCommit.slice(0, 7) || "无新提交"}）`,
+      variant: "success",
+      duration: 4000,
+    } as any)
+    try {
+      await podStore.refresh()
+      await load(id)
+      await loadCollaboration(id)
+    } catch {
+      // best-effort: worktree card flips locally from the returned merge result
+    }
+    return accepted
+  }
+
   const rejectGoal = async (feedback: string): Promise<boolean> => {
     const podId = await resolvePodIdForGoal()
     const id = props.goalId
@@ -621,6 +660,10 @@ export function GoalDetailPanel(props: {
               </Show>
             </div>
 
+            <Show when={podGoal()?.lastError}>
+              {(message) => <div class="mafw-goal-hint">最近错误：{message()}</div>}
+            </Show>
+
             <Show when={currentAction()}>
               {(action) => (
                 <div class="mafw-goal-current-action">
@@ -722,6 +765,7 @@ export function GoalDetailPanel(props: {
                         showToastV2({ description: "在鲸群「工作」页基于失败反馈重新提交", duration: 3200 })
                       }}
                       onReject={rejectGoal}
+                      onAccept={acceptGoal}
                     />
                   )}
                 </Show>

@@ -96,6 +96,12 @@ describe('buildPodGoalView', () => {
     });
   });
 
+  test('surfaces the last driver error on the view', () => {
+    expect(buildPodGoalView(row, { ...desc, lastError: 'worktree_unavailable: not a git repo' }, undefined))
+      .toMatchObject({ lastError: 'worktree_unavailable: not a git repo' });
+    expect(buildPodGoalView(row, { ...desc, lastError: null }, undefined).lastError).toBeNull();
+  });
+
   test('exposes the driver pendingQuestion (id + node + question text) on the view', () => {
     const pendingQuestion = {
       questionId: 'q_1700000000000_ab12_ok',

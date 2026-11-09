@@ -1214,6 +1214,10 @@ export interface PodGoal {
   /** Canonical list bucket; absent on pre-v3 gateways. */
   bucket?: PodWorkBucket
   resultReady: boolean
+  /** User accepted and merged this revision's worktree; absent on old gateways. */
+  accepted?: boolean
+  /** Last driver error (e.g. worktree_unavailable); absent on old gateways. */
+  lastError?: string | null
   /** Real plan-task counts; absent on old gateways or Goals without a plan. */
   progress?: PodGoalProgress | null
   sourceRef?: GoalSourceRef | null
@@ -1299,13 +1303,51 @@ export interface PodGoalResult {
   assessment?: PodGoalAssessment | null
   goalAcceptance: string[]
   goalConditions?: Array<{ id: string; statement: string; required: boolean }>
-  goalResults?: Array<{ id: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
+  goalResults?: Array<{ conditionId: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
   goalEvalValid?: boolean
   tasks: Array<{ taskId: string; result: 'pass' | 'fail' | 'skipped'; evidence: string }>
   reviewFeedback: string
   receipt: unknown | null
   artifacts: string[]
   failure?: unknown
+  /** Revision worktree metadata; absent on old gateways or legacy Goals. */
+  worktree?: PodGoalResultWorktree | null
+  /** User acceptance state; absent on old gateways. */
+  acceptance?: 'pending' | 'accepted' | 'unavailable'
+}
+
+export interface PodGoalResultWorktree {
+  dir: string
+  branch: string
+  baseBranch: string | null
+  status: 'active' | 'merged' | 'abandoned' | 'missing'
+  mergeCommit: string | null
+  mergedAt: string | null
+}
+
+export interface PodGoalAcceptResult {
+  podId: string
+  goalId: string
+  revision: number
+  branch: string
+  mergeCommit: string
+  mergedAt: string
+}
+
+export interface PodWorktreeDiffFile {
+  file: string
+  patch: string
+  additions: number
+  deletions: number
+  status: string
+}
+
+export interface PodWorktreeDiff {
+  goalId: string
+  revision: number
+  branch: string
+  baseRef: string
+  files: PodWorktreeDiffFile[]
 }
 
 export interface PodHandoffGoalInput {
@@ -1680,6 +1722,10 @@ export interface PodNamespace {
   probes(podID: string, goalID: string, filter?: { revision?: number; status?: PodProbeStatus }): Promise<{ items: PodProbe[] }>
   createProbe(podID: string, goalID: string, body: PodProbeInput | PodProbeInput[]): Promise<{ items: PodProbe[] }>
   rejectResult(podID: string, goalID: string, feedback: string, body?: { actorSessionID?: string }): Promise<PodRejectResult>
+  /** Explicit human acceptance: merge the active revision worktree into its base branch. */
+  acceptResult(podID: string, goalID: string, body: { revision?: number; confirm: true }): Promise<PodGoalAcceptResult>
+  /** Read-only merge-base diff for a revision branch (survives the worktree checkout). */
+  worktreeDiff(podID: string, goalID: string, revision?: number): Promise<PodWorktreeDiff>
   revisions(podID: string, goalID: string): Promise<{ items: PodGoalRevision[] }>
 }
 

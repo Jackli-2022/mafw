@@ -17,7 +17,7 @@ import {
   PodWorkOverview, WorkNamespace,
   PodEventItem, PresenceSummary,
   PodTechLeadHistory, PodTechLeadPrompt, PodDirectionDecisionInput, PodDirectionResult,
-  PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision,
+  PodProbe, PodProbeInput, PodProbeStatus, PodRejectResult, PodGoalRevision, PodGoalAcceptResult, PodWorktreeDiff,
   SessionConfigState, SessionConfigCategory, SessionNamespace,
   VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
@@ -1494,6 +1494,28 @@ export class MafwClient implements IMafwClient {
         method: 'POST',
         body: JSON.stringify({ feedback, ...body }),
       }),
+
+    acceptResult: async (
+      podID: string,
+      goalID: string,
+      body: { revision?: number; confirm: true },
+    ): Promise<PodGoalAcceptResult> =>
+      this.request<PodGoalAcceptResult>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/accept`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    worktreeDiff: async (
+      podID: string,
+      goalID: string,
+      revision?: number,
+    ): Promise<PodWorktreeDiff> => {
+      const q = revision !== undefined ? `?revision=${encodeURIComponent(String(revision))}` : ''
+      return this.request<PodWorktreeDiff>(
+        `/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/worktree/diff${q}`,
+        { method: 'GET' },
+      )
+    },
 
     revisions: async (podID: string, goalID: string): Promise<{ items: PodGoalRevision[] }> =>
       this.request<{ items: PodGoalRevision[] }>(`/api/pods/${encodeURIComponent(podID)}/goals/${encodeURIComponent(goalID)}/revisions`),

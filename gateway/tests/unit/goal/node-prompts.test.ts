@@ -23,6 +23,14 @@ describe('goal node prompts', () => {
     expect(renderNodePrompt('execute', ctx)).not.toContain('pods.tasks.delete returns 200');
   });
 
+  test('execute and review prompts declare the fresh revision worktree', () => {
+    for (const node of ['execute', 'review'] as const) {
+      const prompt = renderNodePrompt(node, ctx);
+      expect(prompt).toContain('worktree');
+      expect(prompt).toMatch(/依赖|安装/);
+    }
+  });
+
   test('retry prompt includes attempt and structured last failure', () => {
     const prompt = renderNodePrompt('execute', {
       ...ctx,

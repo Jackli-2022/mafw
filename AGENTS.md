@@ -1548,6 +1548,65 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
     TUI **306（305 pass/1 skip）**、SDK **188/188**、plugin **30/30**，
     `tsc`/`tsgo -p`/root build/electron-vite build rc=0。
 
+#### Revision worktree 与人工验收（2026-11-09）
+
+spec `docs/superpowers/specs/2026-11-09-pod-revision-worktree-design.md`，plan
+`docs/superpowers/plans/2026-11-09-pod-revision-worktree.md`。Git 粒度 = **每个 Goal revision
+一个 worktree/branch**，讨论、Plan、Builder、Reviewer 共用同一 checkout（Probe 仍用隔离临时
+workspace，结束后销毁）。
+
+- **路径/分支**：`<repoParent>/<repo>-wt-<safeGoalId>-r<N>` / `mafw/<safeGoalId>-r<N>`；
+  `safePodGoalSlug` 只保留 `[A-Za-z0-9._-]`（`../x` 之类全部折叠）。revision 1 从项目当前
+  HEAD 创建；revision N+1 从 revision N 的分支创建。元数据存 `pod_goal_worktrees`
+  （`PodWorktreeService.ensure/get/commitPending/mergeForAcceptance/markAbandoned`）。
+- **前置约束**：Pod 项目必须是 Git 仓库根目录（子目录 409，不自动安装依赖）；worktree 创建
+  失败时节点直接失败（`worktree_unavailable`），**绝不静默回落主目录**。升级时已在途 Goal
+  不 retrofit，只有新 revision/新 Goal 获得 checkout。
+- **PASS 不合并**：Reviewer PASS 只收尾 revision；主项目保持原样。用户点一次「验收并合并到
+  主分支」→ `POST /api/pods/:podId/goals/:goalId/accept`（body `{revision?, confirm:true}`）
+  → `PodGoalService.acceptResult`。只接受**当前 active revision**、可信成功结果
+  （`PASS` 或 quick `UNREVIEWED`，无 `failure`）、且 worktree 仍 `active`；重复验收幂等
+  （已 merged 直接返回原 mergeCommit）。验收是**人类专属**：请求带 `actorSessionID` → 403，
+  不提供 MCP 验收工具。
+- **合并门**：主项目当前分支必须等于 worktree 创建时记录的 `baseBranch`，且无 tracked 改动；
+  worktree 自身 HEAD 必须仍在 `mafw/<goal>-rN`（Agent 在 checkout 里切分支/脱离 HEAD → 409，
+  绝不合并错误分支）；否则 409 且 worktree 保留。合并用 `git merge --no-ff --no-verify`
+  （`commit.gpgsign=false`），冲突时 `git merge --abort`、主项目不变、worktree 保留。成功写
+  status=merged + mergeCommit/mergedAt（空分支无新提交时 mergeCommit 为空串），移除 worktree
+  但保留 branch。自动提交身份固定 `MAFW <mafw@localhost>`、`--no-verify`、排除 `.mafw`。
+  删除 worktree 目录后 `ensure/ensureExisting` 先 `git worktree prune` 再重建（同一 row，
+  不会 `missing but already registered` 卡死）。
+- **验收/打回串行**：`PodGoalService` 按 `(podId, goalId)` 串行 accept/reject（进程内 Promise
+  链）——并发点击最多一个成功，被拒绝的 revision 不会在合并竞态里落进主分支。
+- **不 retrofit**：`workdirForRevision` 只走 `PodWorktreeService.ensureExisting`（无 row 返回
+  null，节点沿用项目目录）；新 Goal（`PodTechLeadService.createGoal`）与新 revision（打回后）
+  才显式 `ensure` 创建 checkout。旧在途 Goal 不会在升级后被切成两半。
+- **打回**：打回前先 `commitPending` 保住未提交改动，再开下一 revision，旧 worktree 标
+  `abandoned`（branch 保留可追溯）；已 merged 的 revision 不能打回（409）。
+- **结果 DTO/UI**：`PodGoalResult.worktree -> {dir,branch,baseBranch,status,mergeCommit,mergedAt}`
+  + `acceptance: 'pending' | 'accepted' | 'unavailable'`；`PodGoalView.accepted` +
+  `lastError`（worktree_unavailable 等直接显示在 Goal 详情）。验收后 `result_ready` → `ended`。
+  Goal Eval 的真实形状是 `goalResults: [{conditionId, result, evidence}]`（不是 `id`）。
+  桌面结果页保留 verdict/assessment、版本历史、Goal acceptance、**Goal Eval 条件与逐条件
+  判定（缺结果 = 未判定，绝不按通过）**、逐任务证据、Review feedback、产物、失败重提、打回
+  输入；失败结果显示「失败 · 不可验收」，不出现验收入口；已验收后隐藏打回入口。
+- **A2A artifact**：`PodA2AArtifactStore` 支持动态 roots resolver，**revision worktree 优先**，
+  merged/abandoned/missing 行省略 worktree 根；同一 store 在合并/移除后自动回落到项目目录。
+- **分支差异预览**：`GET /api/pods/:podId/goals/:goalId/worktree/diff?revision=N` 返回
+  merge-base 三点 diff（最多 100 文件；base/branch 缺失 409，revision 无 row 404）。只读，
+  不需要 worktree 目录（验收后分支仍可读）。桌面结果页「查看分支差异」只在 active/abandoned
+  revision 显示（验收后隐藏），复用 `DiffReviewPanel` 的 `previewOnly` 模式，不提供回退按钮。
+- **测试**：gateway `pod-worktree-path`/`pod-store`/`pod-worktree-service`/`pod-result-accept`/
+  `pod-accept-route`/`pod-worktree-diff-route`/`pod-a2a-artifacts`/`pod-wiring`，desktop
+  `pod-result-view-model`/`pod-result-diff-wiring`。
+- **真机冒烟（2026-11-09，commit `8e363e86`）**：临时 Git 仓库 + 3 个真实 quick Goal（opencode-go
+  deepseek-v4.1-flash）跑通——worktree 路径/分支、`acceptance=pending`、单次验收真实 mergeCommit、
+  重复验收幂等、验收后打回 409、worktree 移除/分支保留、主项目文件与 clean 状态；桌面 dev（CDP 9222）
+  结果页显示 worktree 卡 + Goal Eval 4 条「未判定」+ 单次验收按钮，点击后状态「已合并」、按钮消失、
+  toast 与落库一致。冒烟驱动修复：非 `.mafw` 未提交改动阻塞验收（不强制删除有改动的 worktree）；
+  `result_ready` 优先于归档→row 更新的瞬时窗口（bucket 不再闪到 ended）。`.mafw` 产物按 spec
+  不进分支（验收为 no-op，worktree 仍移除）。
+
 ### 5.26 项目工作空间与自适应 Goal（2026-11-03）
 
 > **2026-11-04 supersession note**：本节的 Goal 领域语义、`work.overview` 读模型与 Lead handoff 仍有效；

@@ -75,6 +75,12 @@ describe("rejectButtonLabel / rejectErrorMessage", () => {
     assert.equal(rejectButtonLabel({ status: "unknown-status" }), null)
   })
 
+  test("已验收的版本不再显示打回入口", () => {
+    assert.equal(rejectButtonLabel({ status: "completed", accepted: true }), null)
+    assert.equal(rejectButtonLabel({ status: "aborted", accepted: true }), null)
+    assert.equal(rejectButtonLabel({ status: "completed", accepted: false }), "打回并继续讨论")
+  })
+
   test("打回失败按 HTTP 状态给可读原因", () => {
     assert.match(rejectErrorMessage(400) ?? "", /原因/)
     assert.match(rejectErrorMessage(409) ?? "", /已收尾|正在/)
