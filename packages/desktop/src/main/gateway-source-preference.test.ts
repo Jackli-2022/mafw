@@ -6,6 +6,7 @@ import {
   hasLegacyExternalSession,
   readEffectiveGatewaySourcePreference,
   readGatewaySourcePreference,
+  safeReadGatewaySourcePreference,
   resetSessionSourcePreferenceForTests,
   useLegacyExternalSession,
   writeGatewaySourcePreference,
@@ -61,3 +62,11 @@ describe("gateway source preference", () => {
     }
   })
 })
+
+  test("an unreadable store falls back to managed instead of throwing", () => {
+    const throwing = { get: () => { throw new Error("Unexpected token in JSON") } }
+    let seen: unknown = null
+    expect(safeReadGatewaySourcePreference(throwing, (err) => { seen = err })).toBe("managed")
+    expect(String(seen)).toContain("Unexpected token")
+  })
+

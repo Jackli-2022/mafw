@@ -22,6 +22,24 @@ export function readEffectiveGatewaySourcePreference(
   return sessionSourcePreference ?? readGatewaySourcePreference(store)
 }
 
+/**
+ * Reading the preference must never abort Desktop startup: a corrupt
+ * electron-store file (e.g. a UTF-8 BOM) throws inside `get()`, and the
+ * original call site ran before any try/catch, leaving the app windowless
+ * with no error. Fall back to managed and report the error to the caller.
+ */
+export function safeReadGatewaySourcePreference(
+  store: { get(key: string): unknown },
+  onError?: (error: unknown) => void,
+): GatewaySourcePreference {
+  try {
+    return readEffectiveGatewaySourcePreference(store)
+  } catch (error) {
+    onError?.(error)
+    return "managed"
+  }
+}
+
 export function useLegacyExternalSession(): void {
   sessionSourcePreference = "external"
   allowLegacyExternalOnce()

@@ -2,6 +2,7 @@ import Store from "electron-store"
 import electron from "electron"
 import { rmSync } from "node:fs"
 import { join } from "node:path"
+import { stripStoreFileBom } from "./store-bom"
 
 import { SETTINGS_STORE } from "./store-keys"
 import { deleteStoreFileIfEmpty } from "./store-cleanup"
@@ -15,9 +16,19 @@ const cache = new Map<string, Store>()
 export function getStore(name = SETTINGS_STORE) {
   const cached = cache.get(name)
   if (cached) return cached
+  const cwd = electron.app.getPath("userData")
+  try {
+    // Windows editors / PowerShell 5 may leave a UTF-8 BOM. electron-store's
+    // JSON.parse rejects it, so normalise before construction.
+    if (stripStoreFileBom(cwd, name)) {
+      console.warn(`[mafw] stripped UTF-8 BOM from store "${name}"`)
+    }
+  } catch {
+    /* unreadable store: let electron-store report it */
+  }
   const next = new Store({
     name,
-    cwd: electron.app.getPath("userData"),
+    cwd,
     fileExtension: "",
     accessPropertiesByDotNotation: false,
   })

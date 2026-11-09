@@ -8,6 +8,7 @@ import { MafwClient } from "@mafw/sdk"
 import { write as writeLog } from "./logging"
 import { probeMafwCli } from "./mafw-cli-probe"
 import { planGatewayStart, type GatewayStartPlan } from "./mafw-gateway-plan"
+import { planManagedGatewaySpawn } from "./managed-gateway-spawn"
 import {
   negotiateGateway,
   type GatewayHealthSnapshot,
@@ -27,7 +28,7 @@ import {
   clearSessionSourcePreference,
   consumeLegacyExternalOnce,
   hasLegacyExternalSession,
-  readEffectiveGatewaySourcePreference,
+  safeReadGatewaySourcePreference,
   useLegacyExternalSession,
   writeGatewaySourcePreference,
 } from "./gateway-source-preference"
@@ -270,15 +271,21 @@ async function spawnManagedGateway(
   delete env.MAFW_GATEWAY_PORT
   delete env.MAFW_SERVER_API_PORT
   Object.assign(env, {
-    ELECTRON_RUN_AS_NODE: "1",
     MAFW_DESKTOP_MANAGED: "1",
     MAFW_DESKTOP_CHANNEL: CHANNEL,
     MAFW_DESKTOP_INSTANCE_ID: instanceId,
     MAFW_SERVER_API_PORT: "3000",
   })
 
-  const child = spawn(process.execPath, [entry], {
+  const plan = planManagedGatewaySpawn({
+    packaged: app.isPackaged,
+    execPath: process.execPath,
+    nodeBin: process.env.MAFW_NODE_BIN || process.env.npm_node_execpath,
+    entry,
     env,
+  })
+  const child = spawn(plan.command, plan.args, {
+    env: plan.env,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   })
@@ -511,7 +518,7 @@ export async function startGateway(): Promise<void> {
 
   const forceManagedRetry = forceManagedRetryOnce
   forceManagedRetryOnce = false
-  sourcePreference = readEffectiveGatewaySourcePreference(preferenceStore())
+  sourcePreference = safeReadGatewaySourcePreference(preferenceStore(), (err) => writeLog("utility", "gateway preference unreadable; falling back to managed", { error: String(err) }, "warn"))
   const managedEntry = resolveManagedEntry()
   const releaseEntry = managedEntry
   if (!releaseEntry) {
@@ -692,7 +699,7 @@ export function getGatewayPort(): number | null {
 }
 
 export function getGatewaySourcePreference(): GatewaySourcePreference {
-  sourcePreference = readEffectiveGatewaySourcePreference(preferenceStore())
+  sourcePreference = safeReadGatewaySourcePreference(preferenceStore(), (err) => writeLog("utility", "gateway preference unreadable; falling back to managed", { error: String(err) }, "warn"))
   return sourcePreference
 }
 
