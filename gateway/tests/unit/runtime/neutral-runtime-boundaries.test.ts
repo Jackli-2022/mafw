@@ -5,6 +5,7 @@ import { stripComments } from '../../../../packages/test-shim/comment-strip';
 const NEUTRAL_FILES = [
   'adapter-event.ts',
   'adapter-event-mapper.ts',
+  'adapter-bridge.ts',
   'runtime-bus.ts',
   'plugin-entry.ts',
 ];
@@ -52,4 +53,13 @@ it('the composition root has no direct adapter fallback', () => {
   const index = readCode(path.join(__dirname, '../../../src/index.ts'));
   expect(index).not.toMatch(/createOpencodeRuntime\s*\(/);
   expect(index).not.toMatch(/builtin:opencode\(direct\)/);
+});
+
+it('removed the legacy bridge shim', () => {
+  expect(fs.existsSync(path.join(__dirname, '../../../src/runtime/legacy'))).toBe(false);
+});
+
+it('missing-surface errors stay runtime-neutral', () => {
+  const access = readCode(path.join(__dirname, '../../../src/runtime/runtime-access.ts'));
+  expect(FORBIDDEN.test(access)).toBe(false);
 });
