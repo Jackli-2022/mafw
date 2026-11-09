@@ -9,12 +9,13 @@ import {
   PLUGIN_WEB_BRIDGE_CHANNEL,
   PLUGIN_WEB_BRIDGE_METHODS,
   PLUGIN_WEB_BRIDGE_VERSION,
+  createPluginWebEventHub,
+  type PluginWebBridgePush,
 } from "../../../shared/plugin-web-bridge"
 import {
   createPluginWebBridge,
   sanitizePluginExternalUrl,
   type PluginWebBridgeDeps,
-  type PluginWebBridgePush,
   type PluginWebTheme,
 } from "./plugin-web-bridge"
 
@@ -166,8 +167,57 @@ describe("createPluginWebBridge", () => {
 
     h.emitEvent("plugin:demo:deploy", { state: "ok" })
     expect(h.pushes).toEqual([
-      { kind: "event", type: "plugin:demo:deploy", payload: { state: "ok" } },
+      {
+        kind: "event",
+        type: "plugin:demo:deploy",
+        // The page's own spelling rides along so its synchronous shorthand
+        // subscriber (keyed by `deploy`) is found by the preload.
+        key: "deploy",
+        payload: { state: "ok" },
+      },
     ])
+  })
+
+  test("onEvent round-trip: a shorthand subscription receives the normalized push", async () => {
+    const h = harness()
+    const hub = createPluginWebEventHub()
+    const received: unknown[] = []
+    const unsubscribe = hub.subscribe("deploy", (payload) => received.push(payload))
+
+    expect(await h.bridge.handle({ id: 30, method: "onEvent", params: { type: "deploy" } })).toEqual({
+      id: 30,
+      ok: true,
+      result: { type: "plugin:demo:deploy" },
+    })
+    h.emitEvent("plugin:demo:deploy", { state: "ok" })
+
+    // Exactly the wire path: bridge emit → host `webview.send` args → preload hub.
+    expect(h.pushes.length).toBe(1)
+    for (const push of h.pushes) expect(hub.dispatch(push)).toBe(true)
+    expect(received).toEqual([{ state: "ok" }])
+
+    unsubscribe()
+    expect(hub.dispatch(h.pushes[0]!)).toBe(false)
+  })
+
+  test("onEvent round-trip: a fully-qualified subscription also fires", async () => {
+    const h = harness()
+    const hub = createPluginWebEventHub()
+    const received: unknown[] = []
+    hub.subscribe("plugin:demo:deploy", (payload) => received.push(payload))
+
+    await h.bridge.handle({ id: 31, method: "onEvent", params: { type: "plugin:demo:deploy" } })
+    h.emitEvent("plugin:demo:deploy", { state: "ok" })
+    for (const push of h.pushes) hub.dispatch(push)
+    expect(received).toEqual([{ state: "ok" }])
+  })
+
+  test("onEvent refuses the bare package prefix (no event name)", async () => {
+    const h = harness()
+    await expect(
+      h.bridge.handle({ id: 32, method: "onEvent", params: { type: "plugin:demo:" } }),
+    ).rejects.toThrow(/outside package/)
+    expect(h.errors).toEqual(["event type outside package: plugin:demo:"])
   })
 
   test("onEvent refuses event types outside the package", async () => {
@@ -182,6 +232,8 @@ describe("createPluginWebBridge", () => {
     const h = harness()
     expect(h.bridge.emit({ kind: "event", type: "plugin:demo:deploy", payload: null })).toBe(true)
     expect(h.bridge.emit({ kind: "event", type: "plugin:other:deploy", payload: null })).toBe(false)
+    // a bare package prefix names no event
+    expect(h.bridge.emit({ kind: "event", type: "plugin:demo:", payload: null })).toBe(false)
     expect(h.bridge.emit({ kind: "theme", theme: "light" })).toBe(true)
     expect(h.bridge.emit({ kind: "theme", theme: "sepia" as PluginWebTheme })).toBe(false)
     expect(h.pushes.map((push) => push.kind)).toEqual(["event", "theme"])
@@ -289,5 +341,73 @@ describe("sanitizePluginExternalUrl", () => {
     ]) {
       expect(sanitizePluginExternalUrl(value)).toBeNull()
     }
+  })
+})
+
+describe("createPluginWebEventHub", () => {
+  test("dispatches by the normalized type when the page registered a full type", () => {
+    const hub = createPluginWebEventHub()
+    const seen: unknown[] = []
+    hub.subscribe("plugin:demo:deploy", (payload) => seen.push(payload))
+    expect(
+      hub.dispatch({ kind: "event", type: "plugin:demo:deploy", payload: { n: 1 } }),
+    ).toBe(true)
+    expect(seen).toEqual([{ n: 1 }])
+  })
+
+  test("dispatches by the requested key for shorthand subscribers", () => {
+    const hub = createPluginWebEventHub()
+    const seen: unknown[] = []
+    hub.subscribe("deploy", (payload) => seen.push(payload))
+    expect(
+      hub.dispatch({
+        kind: "event",
+        type: "plugin:demo:deploy",
+        key: "deploy",
+        payload: "x",
+      }),
+    ).toBe(true)
+    expect(seen).toEqual(["x"])
+  })
+
+  test("a callback registered under both spellings fires once per push", () => {
+    const hub = createPluginWebEventHub()
+    let calls = 0
+    const callback = () => {
+      calls += 1
+    }
+    hub.subscribe("deploy", callback)
+    hub.subscribe("plugin:demo:deploy", callback)
+    hub.dispatch({ kind: "event", type: "plugin:demo:deploy", key: "deploy", payload: null })
+    expect(calls).toBe(1)
+  })
+
+  test("drops unknown events, foreign types and non-event pushes", () => {
+    const hub = createPluginWebEventHub()
+    const seen: unknown[] = []
+    hub.subscribe("deploy", (payload) => seen.push(payload))
+    expect(hub.dispatch({ kind: "event", type: "plugin:demo:deploy", payload: 1 })).toBe(false)
+    expect(hub.dispatch({ kind: "event", type: "plugin:other:deploy", payload: 1 })).toBe(false)
+    expect(hub.dispatch({ kind: "theme", theme: "light" })).toBe(false)
+    expect(hub.dispatch(null as unknown as PluginWebBridgePush)).toBe(false)
+    expect(seen).toEqual([])
+  })
+
+  test("a throwing listener does not block the others; clear() drops every bucket", () => {
+    const hub = createPluginWebEventHub()
+    const seen: unknown[] = []
+    hub.subscribe("deploy", () => {
+      throw new Error("page bug")
+    })
+    hub.subscribe("deploy", (payload) => seen.push(payload))
+    expect(
+      hub.dispatch({ kind: "event", type: "plugin:demo:deploy", key: "deploy", payload: 7 }),
+    ).toBe(true)
+    expect(seen).toEqual([7])
+
+    hub.clear()
+    expect(
+      hub.dispatch({ kind: "event", type: "plugin:demo:deploy", key: "deploy", payload: 8 }),
+    ).toBe(false)
   })
 })

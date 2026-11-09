@@ -13,6 +13,7 @@ import { contextBridge, ipcRenderer } from "electron"
 import {
   PLUGIN_WEB_BRIDGE_CHANNEL,
   PLUGIN_WEB_BRIDGE_VERSION,
+  createPluginWebEventHub,
   type PluginWebBridgePush,
   type PluginWebBridgeReply,
   type PluginWebTheme,
@@ -28,7 +29,10 @@ interface Pending {
 
 let sequence = 0
 const pending = new Map<number, Pending>()
-const eventSubscribers = new Map<string, Set<(payload: unknown) => void>>()
+// Keyed by the page's own spelling (`deploy` or `plugin:demo:deploy`); pushes
+// carry both the normalized type and the requested key, so the shorthand stays
+// synchronous and live (see `createPluginWebEventHub`).
+const events = createPluginWebEventHub()
 const requestedEvents = new Set<string>()
 const themeSubscribers = new Set<(theme: PluginWebTheme) => void>()
 const contextSubscribers = new Set<
@@ -64,18 +68,9 @@ function notify(method: string, params?: unknown): void {
 
 function dispatchPush(frame: PluginWebBridgePush): void {
   switch (frame.kind) {
-    case "event": {
-      const bucket = eventSubscribers.get(frame.type)
-      if (!bucket) return
-      for (const listener of [...bucket]) {
-        try {
-          listener(frame.payload)
-        } catch {
-          /* a page listener must not break the others */
-        }
-      }
+    case "event":
+      events.dispatch(frame)
       return
-    }
     case "theme":
       for (const listener of [...themeSubscribers]) {
         try {
@@ -115,6 +110,7 @@ ipcRenderer.on(PLUGIN_WEB_BRIDGE_CHANNEL, (_event: unknown, raw: unknown) => {
 
 /** Drop every pending promise when the host navigates the page away. */
 window.addEventListener("pagehide", () => {
+  events.clear()
   for (const [id, entry] of pending) {
     clearTimeout(entry.timer)
     entry.reject(new Error("plugin bridge disposed"))
@@ -130,23 +126,15 @@ const api = {
   invoke: (action: string, input?: unknown) => call("invoke", { action, input }),
 
   onEvent: (type: string, callback: (payload: unknown) => void): (() => void) => {
-    const key = String(type ?? "")
-    let bucket = eventSubscribers.get(key)
-    if (!bucket) {
-      bucket = new Set()
-      eventSubscribers.set(key, bucket)
-    }
-    bucket.add(callback)
+    const key = String(type ?? "").trim()
+    if (key.length === 0) return () => {}
+    const unsubscribe = events.subscribe(key, callback)
     if (!requestedEvents.has(key)) {
       requestedEvents.add(key)
+      // The host normalizes; the reply is advisory (pushes carry the key).
       notify("onEvent", { type: key })
     }
-    return () => {
-      const current = eventSubscribers.get(key)
-      if (!current) return
-      current.delete(callback)
-      if (current.size === 0) eventSubscribers.delete(key)
-    }
+    return unsubscribe
   },
 
   setBadge: (count: number) => notify("setBadge", { count }),

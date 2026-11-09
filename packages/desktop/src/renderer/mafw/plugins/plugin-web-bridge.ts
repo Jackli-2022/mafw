@@ -138,7 +138,11 @@ export function createPluginWebBridge(deps: PluginWebBridgeDeps): PluginWebBridg
       }
 
       case "onEvent": {
-        const type = eventTypeFor(deps.pkg, params.type)
+        // Keep the page's own spelling (`deploy` shorthand or the full type):
+        // it is the key the preload registered its callback under, and it rides
+        // along on every push so the shorthand works without a reply round-trip.
+        const requested = typeof params.type === "string" ? params.type.trim() : ""
+        const type = eventTypeFor(deps.pkg, requested)
         if (!type) {
           const label = typeof params.type === "string" ? params.type : JSON.stringify(params.type ?? null)
           report(`event type outside package: ${label}`)
@@ -147,7 +151,7 @@ export function createPluginWebBridge(deps: PluginWebBridgeDeps): PluginWebBridg
         const subscribe = deps.subscribeEvent
         if (subscribe) {
           const unsubscribe = subscribe(type, (payload) => {
-            emit({ kind: "event", type, payload })
+            emit({ kind: "event", type, key: requested, payload })
           })
           if (typeof unsubscribe === "function") track(unsubscribe)
         }
@@ -261,7 +265,9 @@ function eventTypeFor(pkg: string, raw: unknown): string | null {
   const value = raw.trim()
   if (value.length === 0 || value.length > 200 || /\s/.test(value)) return null
   if (value.startsWith("plugin:")) {
-    return value.startsWith(`plugin:${pkg}:`) ? value : null
+    const prefix = `plugin:${pkg}:`
+    // The bare `plugin:<pkg>:` prefix names no event and must be refused.
+    return value.startsWith(prefix) && value.length > prefix.length ? value : null
   }
   return `plugin:${pkg}:${value}`
 }
@@ -269,7 +275,11 @@ function eventTypeFor(pkg: string, raw: unknown): string | null {
 function isValidPush(push: PluginWebBridgePush, pkg: string): boolean {
   if (!push || typeof push !== "object") return false
   if (push.kind === "event") {
-    return typeof push.type === "string" && push.type.startsWith(`plugin:${pkg}:`)
+    const prefix = `plugin:${pkg}:`
+    if (typeof push.type !== "string" || !push.type.startsWith(prefix)) return false
+    if (push.type.length <= prefix.length) return false
+    if (push.key !== undefined && typeof push.key !== "string") return false
+    return true
   }
   if (push.kind === "theme") return THEMES.has(push.theme)
   if (push.kind === "context") {

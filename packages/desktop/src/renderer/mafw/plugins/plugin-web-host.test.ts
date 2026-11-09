@@ -182,6 +182,12 @@ describe("host + preload wiring pins", () => {
     expect(source).toContain("sendToHost(")
     expect(source).toContain("PLUGIN_WEB_BRIDGE_CHANNEL")
     expect(source).toContain("PLUGIN_WEB_BRIDGE_VERSION")
+    // Event dispatch must go through the shared hub (requested key + normalized
+    // type); a local exact-type map silently killed the `onEvent("deploy")`
+    // shorthand on the wire.
+    expect(source).toContain("createPluginWebEventHub")
+    expect(source).toContain("events.dispatch(frame)")
+    expect(source).not.toContain("eventSubscribers")
     for (const method of [
       "context",
       "invoke",

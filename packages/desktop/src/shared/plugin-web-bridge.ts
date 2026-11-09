@@ -45,9 +45,86 @@ export interface PluginWebBridgeReply {
 
 /** Host → page push frames (subscriptions; they have no request id). */
 export type PluginWebBridgePush =
-  | { kind: "event"; type: string; payload: unknown }
+  | {
+      kind: "event"
+      /** Fully-qualified `plugin:<pkg>:<event>` name (the canonical key). */
+      type: string
+      /**
+       * The key the page passed to `onEvent` (`deploy` shorthand or the full
+       * type). Sent so the preload can find a subscriber registered under the
+       * shorthand before it learned the normalized name — the host normalizes,
+       * the page keeps calling `onEvent("deploy", cb)` synchronously.
+       */
+      key?: string
+      payload: unknown
+    }
   | { kind: "theme"; theme: PluginWebTheme }
   | { kind: "context"; context: { projectDir: string; sessionID?: string } }
+
+/**
+ * Page-side event dispatcher shared by the preload and the tests.
+ *
+ * Subscribers are keyed by exactly what the page passed to `onEvent`; a push is
+ * delivered when either the canonical `type` or the requested `key` matches.
+ * That keeps `onEvent(type, cb)` synchronous (no waiting for the host's
+ * normalization reply) while the shorthand stays live on the wire.
+ */
+export interface PluginWebEventHub {
+  subscribe(key: string, callback: (payload: unknown) => void): () => void
+  /** Deliver one push; false when nobody was listening. */
+  dispatch(frame: PluginWebBridgePush): boolean
+  clear(): void
+}
+
+export function createPluginWebEventHub(): PluginWebEventHub {
+  const buckets = new Map<string, Set<(payload: unknown) => void>>()
+
+  return {
+    subscribe(key, callback) {
+      const normalized = typeof key === "string" ? key.trim() : ""
+      if (normalized.length === 0 || typeof callback !== "function") return () => {}
+      let bucket = buckets.get(normalized)
+      if (!bucket) {
+        bucket = new Set()
+        buckets.set(normalized, bucket)
+      }
+      bucket.add(callback)
+      return () => {
+        const current = buckets.get(normalized)
+        if (!current) return
+        current.delete(callback)
+        if (current.size === 0) buckets.delete(normalized)
+      }
+    },
+
+    dispatch(frame) {
+      if (!frame || frame.kind !== "event" || typeof frame.type !== "string") return false
+      // De-duplicate: a callback registered under both `deploy` and the full
+      // type must still fire once per push.
+      const recipients = new Set<(payload: unknown) => void>()
+      const byType = buckets.get(frame.type)
+      if (byType) for (const callback of byType) recipients.add(callback)
+      const key = typeof frame.key === "string" ? frame.key : ""
+      if (key.length > 0 && key !== frame.type) {
+        const byKey = buckets.get(key)
+        if (byKey) for (const callback of byKey) recipients.add(callback)
+      }
+      if (recipients.size === 0) return false
+      for (const callback of recipients) {
+        try {
+          callback(frame.payload)
+        } catch {
+          /* one page listener must not break the others */
+        }
+      }
+      return true
+    },
+
+    clear() {
+      buckets.clear()
+    },
+  }
+}
 
 /** Answer to `context()`. */
 export interface PluginWebBridgeContext {
