@@ -38,12 +38,22 @@ export interface RuntimeManifest {
   configSchema?: unknown;
 }
 
+export interface RuntimeAgentProcess {
+  restart(): Promise<void>;
+  spawnServe?(opts: { host?: string; port?: number; rootDir?: string }): Promise<unknown>;
+  killServe?(): void;
+}
+
 export interface RuntimeHostSurface {
   config?: { get(): Promise<unknown>; update(config: unknown): Promise<unknown> };
   credentials?: { getApiKey(provider: string): string | null };
   completion?: unknown;
   healthCheck?(): Promise<boolean>;
   getBaseUrl?(): string;
+  /** Process primitives for serve-backed runtimes (spawn/kill/restart). */
+  agentProcess?: RuntimeAgentProcess;
+  /** Dialect label resolved by the adapter (diagnostics only). */
+  activeDialect?: string;
 }
 
 export interface RuntimeDefinitionInput {

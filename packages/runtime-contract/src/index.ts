@@ -58,4 +58,5 @@ export {
   type RuntimeManifest,
   type RuntimePreset,
   type RuntimeHostSurface,
+  type RuntimeAgentProcess,
 } from './define-runtime.ts';

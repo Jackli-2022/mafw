@@ -156,6 +156,7 @@ export interface RuntimeDiscoveryCommand {
   agent?: string;
   template?: string;
   subtask?: boolean;
+  model?: { id: string; providerID: string; variant?: string };
 }
 
 export interface RuntimeDiscoverySkill {
@@ -197,6 +198,7 @@ export interface RuntimePtyInfo {
   title?: string;
   command?: string;
   cwd?: string;
+  status?: string;
 }
 
 export interface RuntimePtyConnection {
@@ -204,10 +206,14 @@ export interface RuntimePtyConnection {
   url?: string;
   ticket?: string;
   protocol?: string;
+  /** Gateway/proxy auth headers required by the socket handshake. */
+  headers?: Record<string, string>;
+  /** Resume cursor (adapter frame format). */
+  cursor?: unknown;
 }
 
 export interface RuntimePtyChannel {
-  create(opts: { directory?: string; title?: string }): Promise<{ id: string }>;
+  create(opts: { directory?: string; title?: string; cols?: number; rows?: number; cwd?: string }): Promise<{ id: string }>;
   connect(opts: { id: string; directory?: string }): Promise<RuntimePtyConnection>;
   resize(opts: { id: string; directory?: string; cols: number; rows: number }): Promise<void>;
   remove(opts: { id: string; directory?: string }): Promise<void>;

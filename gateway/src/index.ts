@@ -920,8 +920,19 @@ class MafwScheduler {
     // runtime 工厂（serve/adapter/凭据全同），差异仅在事件映射表。
     const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
     const external = !!process.env.MAFW_SERVER_SERVE_URL;
+    const registrationName: Record<OpencodeVariant, string> = {
+      adaptive: 'opencode',
+      v1: 'opencode@v1',
+      v2: 'opencode@v2',
+      v21: 'opencode@v21',
+    };
     const opencodeDefinition = (variant: OpencodeVariant) => () =>
-      createOpencodeDefinition({ variant, baseUrl: sdkSnapshot.baseUrl, headers: { ...sdkSnapshot.headers } });
+      createOpencodeDefinition({
+        variant,
+        registrationName: registrationName[variant],
+        baseUrl: sdkSnapshot.baseUrl,
+        headers: { ...sdkSnapshot.headers },
+      });
     // 裸名 = 自适应方言（激活时探测一次，fail-safe @v1）
     this.runtimeLoader.registerBuiltinDefinition('opencode', opencodeDefinition('adaptive'), {
       external,
@@ -2138,7 +2149,7 @@ class MafwScheduler {
         },
       });
       this.applyRuntimeValidation(rawRuntime, name, fatal, {
-        declaration: { eventTranslation: 'self' },
+        declaration: getBridgeEventEntry(name) ?? { eventTranslation: 'self' },
         plugin: {
           name,
           createRuntime: () => {},

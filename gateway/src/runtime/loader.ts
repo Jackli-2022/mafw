@@ -302,11 +302,15 @@ export class RuntimePluginLoader {
 
   /** Resolve a builtin definition, falling back to file plugins and legacy entries. */
   async resolveBuiltinDefinition(name: string, ctx: any): Promise<RuntimeDefinition | undefined> {
-    const existing = this.neutralDefinitions.get(name);
-    if (existing) return existing;
+    // Same-name file/package plugins keep their documented override priority.
+    if (this.factories.has(name) || this.legacyModules.has(name)) {
+      return this.getNeutral(name, ctx);
+    }
 
     const builtin = this.builtinDefinitions.get(name);
     if (builtin) {
+      // Built at every activation: a disposed definition must never be reused
+      // (its transport is closed and the bus producer is gone).
       const definition = await builtin.factory(ctx);
       this.neutralDefinitions.set(name, definition);
       this.neutralBus.register(definition);

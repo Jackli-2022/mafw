@@ -31,7 +31,7 @@ it('resolves a lazily registered builtin definition', async () => {
   expect(resolved?.name).toBe('fake');
 });
 
-it('caches one definition per name', async () => {
+it('builds a fresh definition on every activation (no disposed reuse)', async () => {
   let calls = 0;
   const loader = new RuntimePluginLoader(tempDir());
   await loader.init();
@@ -39,9 +39,10 @@ it('caches one definition per name', async () => {
     external: false,
     capabilities: definition('fake').capabilities,
   });
-  await loader.resolveBuiltinDefinition('fake', {});
-  await loader.resolveBuiltinDefinition('fake', {});
-  expect(calls).toBe(1);
+  const first = await loader.resolveBuiltinDefinition('fake', {});
+  const second = await loader.resolveBuiltinDefinition('fake', {});
+  expect(calls).toBe(2);
+  expect(first).not.toBe(second);
 });
 
 it('returns undefined for an unknown builtin', async () => {

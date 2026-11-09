@@ -96,4 +96,20 @@ describe('opencode v2 surface parity on the neutral path', () => {
     expect(await rt.snapshotTree.locate({ start: 'a', end: 'b' })).toBe('/snap');
     await rt.session.background({ sessionID: 's1' });
   });
+
+  it('falls back to the v2 background channel when the v1 block is absent', async () => {
+    const runtime = richRuntime();
+    delete runtime.session.background;
+    const definition = toRuntimeDefinition(runtime, {
+      name: 'opencode',
+      capabilities: {},
+      translate: { entry: { eventMappings: [] }, isCanonical: () => true },
+    });
+    // The bridge mirrors v1 background into channelsV2; simulate a v2-only adapter:
+    (definition.channelsV2 as any).background = { toBackground: async () => {} };
+    const bus = new RuntimeBus();
+    bus.register(definition);
+    const neutral: any = createNeutralRuntime(definition, { bus });
+    await neutral.session.background({ sessionID: 's1' });
+  });
 });

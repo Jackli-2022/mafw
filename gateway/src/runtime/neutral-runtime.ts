@@ -89,7 +89,9 @@ export function createNeutralRuntime(
   options: NeutralRuntimeOptions,
 ): AgentRuntime {
   const { transport, channels = {}, channelsV2 = {} } = definition;
-  const host: NeutralRuntimeHost = { ...(definition.host as any), ...(options.host ?? {}) };
+  // Definition-declared host surfaces win over composition-root defaults
+  // (e.g. an adapter's live serve URL must beat the gateway API port).
+  const host: NeutralRuntimeHost = { ...(options.host ?? {}), ...(definition.host as any) };
   const bus = options.bus;
   const now = options.now ?? Date.now;
   const promptTimeoutMs = options.promptTimeoutMs ?? 600_000;
@@ -254,6 +256,9 @@ export function createNeutralRuntime(
   }
   if (channels.session?.permissionList) session.permissionList = (opts?: any) => channels.session!.permissionList!(opts);
   if (channels.session?.background) session.background = (opts: any) => channels.session!.background!(opts.sessionID);
+  else if (channelsV2.background?.toBackground) {
+    session.background = (opts: any) => channelsV2.background!.toBackground!(opts.sessionID);
+  }
   if (channels.branch?.fork) {
     session.fork = async (opts: any) => {
       const created = await channels.branch!.fork!(opts.sessionID, opts.messageID);

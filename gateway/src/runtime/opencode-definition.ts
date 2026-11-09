@@ -7,12 +7,13 @@
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import type { AgentRuntime } from './contract';
 import { fullCapabilities } from './contract';
-import { toRuntimeDefinition } from './adapter-bridge';
+import { toRuntimeDefinition, setBridgeEventEntry } from './adapter-bridge';
 import type { EventMappingEntry } from './event-mapper';
 import { createOpencodeRuntime } from './opencode-runtime';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './opencode-events';
 import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './opencode-21-events';
 import { probeOpencodeDialect } from './opencode-dialect-probe';
+import { EVENT_FLOW_MATRIX } from './event-flow-matrix';
 
 export type OpencodeVariant = 'adaptive' | 'v1' | 'v2' | 'v21';
 
@@ -20,6 +21,8 @@ export interface OpencodeDefinitionOptions {
   variant: OpencodeVariant;
   baseUrl: string;
   headers?: Record<string, string>;
+  /** Loader key when it differs from the runtime name (dry-event/conformance). */
+  registrationName?: string;
 }
 
 export interface OpencodeDefinitionDeps {
@@ -73,6 +76,9 @@ export async function resolveOpencodeEntry(
 export function opencodeCapabilities(variant: OpencodeVariant, external: boolean): ReturnType<typeof fullCapabilities> {
   const caps = fullCapabilities();
   if (external) caps.agentProcessApi = false;
+  // v1/v2 pre-date instruction entries and the discovery catalog. The HTTP
+  // endpoints are dialect-independent, but the event tables are not, so the
+  // pinned old dialects keep the old capability surface (documented in Plan 3).
   if (variant === 'v1' || variant === 'v2') {
     caps.instructionsApi = false;
     caps.discoveryApi = false;
@@ -90,12 +96,39 @@ export async function createOpencodeDefinition(
     headers: opts.headers ? { ...opts.headers } : undefined,
     dialectProbe: opts.variant === 'adaptive',
   });
-  const entry = await resolveOpencodeEntry(opts.variant, opts.baseUrl, deps);
-  return toRuntimeDefinition(runtime, {
+
+  const dialectOf = (entry: EventMappingEntry): 'v1' | 'v2' | 'v21' =>
+    entry === V21_ENTRY ? 'v21' : entry === V2_ENTRY ? 'v2' : 'v1';
+  const staticEntry = opts.variant === 'v21' ? V21_ENTRY : opts.variant === 'v2' ? V2_ENTRY : V1_ENTRY;
+
+  let definition: RuntimeDefinition | undefined;
+  definition = toRuntimeDefinition(runtime, {
     name: 'opencode',
     displayName: 'opencode',
     capabilities: opencodeCapabilities(opts.variant, external) as unknown as Record<string, unknown>,
     external,
-    translate: { entry, isCanonical: (type) => !!type },
+    entryAlias: opts.registrationName,
+    translate: {
+      entry: staticEntry,
+      // Adaptive: resolve at first event, after the serve exists. Use the
+      // runtime's live base URL (it changes once the sidecar has started).
+      ...(opts.variant === 'adaptive'
+        ? {
+            entryResolver: () => resolveOpencodeEntry(
+              opts.variant,
+              (runtime as any).getBaseUrl?.() ?? opts.baseUrl,
+              deps,
+            ),
+          }
+        : {}),
+      isCanonical: (type) => !!EVENT_FLOW_MATRIX[type],
+    },
+    onEntryResolved: (entry) => {
+      if (definition?.host) definition.host.activeDialect = dialectOf(entry);
+      if (opts.registrationName) setBridgeEventEntry(opts.registrationName, entry);
+      setBridgeEventEntry('opencode', entry);
+    },
   });
+  if (definition.host && opts.variant !== 'adaptive') definition.host.activeDialect = dialectOf(staticEntry);
+  return definition;
 }

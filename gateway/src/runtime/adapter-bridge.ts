@@ -114,6 +114,11 @@ export function getBridgeEventEntry(name: string): EventMappingEntry | undefined
   return bridgeEntries.get(name);
 }
 
+/** Update the tooling entry after a deferred dialect probe resolves. */
+export function setBridgeEventEntry(name: string, entry: EventMappingEntry): void {
+  bridgeEntries.set(name, entry);
+}
+
 export interface AdapterBridgeMeta {
   name: string;
   displayName?: string;
@@ -122,9 +127,18 @@ export interface AdapterBridgeMeta {
   external?: boolean;
   /**
    * Dialect translation applied before reverse-mapping: for runtimes whose
-   * native stream is still raw (opencode v1/v2/v21).
+   * native stream is still raw (opencode v1/v2/v21). `entryResolver` defers
+   * resolution until the first event (cold start: the serve may not exist yet).
    */
-  translate?: { entry: EventMappingEntry; isCanonical: (type: string) => boolean };
+  translate?: {
+    entry?: EventMappingEntry;
+    entryResolver?: () => Promise<EventMappingEntry>;
+    isCanonical: (type: string) => boolean;
+  };
+  /** Notification when a deferred entry resolves (diagnostics/activeDialect). */
+  onEntryResolved?: (entry: EventMappingEntry) => void;
+  /** Tooling key when it differs from the runtime name (dry-event/conformance). */
+  entryAlias?: string;
 }
 
 export function toRuntimeDefinition(
@@ -204,14 +218,40 @@ export function toRuntimeDefinition(
       await (legacy as any).dispose?.();
     },
     onEvent(listener) {
-      const forward = (evt: RawRuntimeEvent) => {
+      const translate = meta.translate;
+      let resolvedEntry: EventMappingEntry | undefined = translate?.entryResolver ? undefined : translate?.entry;
+      let resolving: Promise<EventMappingEntry> | undefined;
+      let buffer: RawRuntimeEvent[] = [];
+
+      const translateOne = (entry: EventMappingEntry, evt: RawRuntimeEvent) =>
+        applyEventMappings(evt, entry, meta.translate!.isCanonical);
+
+      const pump = (evt: RawRuntimeEvent) => {
+        if (resolvedEntry) return translateOne(resolvedEntry, evt);
+        // Defer translation until the dialect resolver settles (cold start:
+        // the serve may not exist when the definition is built).
+        buffer.push(evt);
+        if (!resolving && translate?.entryResolver) {
+          resolving = translate.entryResolver().then((entry) => {
+            resolvedEntry = entry;
+            meta.onEntryResolved?.(entry);
+            const pending = buffer;
+            buffer = [];
+            for (const item of pending) forwardTranslated(translateOne(entry, item));
+            return entry;
+          }).catch(() => {
+            buffer = [];
+            return undefined as unknown as EventMappingEntry;
+          });
+        }
+        return [] as RawRuntimeEvent[];
+      };
+
+      const forwardTranslated = (translated: RawRuntimeEvent[]) => {
         if (closed) return;
-        const translated = meta.translate
-          ? applyEventMappings(evt, meta.translate.entry, meta.translate.isCanonical)
-          : [evt];
         for (const item of translated) {
-          const sessionHint = sessionOf(item as RawRuntimeEvent, propsOf(item as RawRuntimeEvent));
-          if (sessionHint && typeOf(item as RawRuntimeEvent) === 'turn.started') {
+          const sessionHint = sessionOf(item, propsOf(item));
+          if (sessionHint && typeOf(item) === 'turn.started') {
             const queue = pendingTurns.get(sessionHint);
             const next = queue?.shift();
             if (next) activeTurns.set(sessionHint, next);
@@ -221,16 +261,30 @@ export function toRuntimeDefinition(
             ? (activeTurns.get(sessionHint) ?? pendingTurns.get(sessionHint)?.[0])
             : undefined;
           const converted = canonicalToAdapterEvent(item, bridgeState, overrideTurnID);
-          if (converted) {
-            listener(converted);
-            if (converted.type === 'turn.completed' || converted.type === 'turn.failed' || converted.type === 'turn.aborted') {
-              if (converted.sessionID) {
-                bridgeState.turns.delete(converted.sessionID);
-                activeTurns.delete(converted.sessionID);
-              }
+          if (!converted) continue;
+          listener(converted);
+          if (converted.type === 'turn.completed' || converted.type === 'turn.failed' || converted.type === 'turn.aborted') {
+            if (!converted.sessionID) continue;
+            bridgeState.turns.delete(converted.sessionID);
+            // Runtimes without a turn.started event never advance the queue on
+            // start; consume the head id on the terminal so the next turn gets
+            // its own (otherwise it would reuse a retired id and be dropped).
+            if (activeTurns.has(converted.sessionID)) {
+              activeTurns.delete(converted.sessionID);
+            } else {
+              const queue = pendingTurns.get(converted.sessionID);
+              queue?.shift();
+              if (queue && queue.length === 0) pendingTurns.delete(converted.sessionID);
             }
           }
         }
+      };
+
+      const forward = (evt: RawRuntimeEvent) => {
+        if (closed) return;
+        if (!translate) return forwardTranslated([evt]);
+        const immediate = pump(evt);
+        if (immediate.length > 0) forwardTranslated(immediate);
       };
       listeners.add(listener);
       const legacyOnEvent = (legacy as any).onEvent;
@@ -333,7 +387,11 @@ export function toRuntimeDefinition(
   }
 
   const channelsV2: RuntimeChannelsV2 = {};
-  if (meta.translate) bridgeEntries.set(meta.name, meta.translate.entry);
+  const entryForTooling = meta.translate?.entry;
+  if (entryForTooling) {
+    bridgeEntries.set(meta.name, entryForTooling);
+    if (meta.entryAlias) bridgeEntries.set(meta.entryAlias, entryForTooling);
+  }
   if (legacy.mcp) channelsV2.mcp = legacy.mcp as unknown as RuntimeChannelsV2['mcp'];
   if (legacy.discovery) channelsV2.discovery = legacy.discovery as unknown as RuntimeChannelsV2['discovery'];
   if (legacy.session.instructions) channelsV2.instructions = legacy.session.instructions as RuntimeChannelsV2['instructions'];
@@ -350,17 +408,17 @@ export function toRuntimeDefinition(
     channels,
     ...(meta.external !== undefined ? { external: meta.external } : {}),
     ...(legacy.semantics ? { semantics: legacy.semantics } : {}),
-    ...(legacy.config || legacy.credentials || legacy.completion || legacy.healthCheck || legacy.getBaseUrl
-      ? {
-          host: {
-            ...(legacy.config ? { config: legacy.config } : {}),
-            ...(legacy.credentials ? { credentials: legacy.credentials } : {}),
-            ...(legacy.completion ? { completion: legacy.completion } : {}),
-            ...(typeof legacy.healthCheck === 'function' ? { healthCheck: legacy.healthCheck.bind(legacy) } : {}),
-            ...(typeof legacy.getBaseUrl === 'function' ? { getBaseUrl: legacy.getBaseUrl.bind(legacy) } : {}),
-          },
-        }
-      : {}),
+    // Always carry a host block: adapters attach activeDialect/agentProcess at
+    // creation time, and the composition root reads it for diagnostics.
+    host: {
+      ...(legacy.config ? { config: legacy.config } : {}),
+      ...(legacy.credentials ? { credentials: legacy.credentials } : {}),
+      ...(legacy.completion ? { completion: legacy.completion } : {}),
+      ...(typeof legacy.healthCheck === 'function' ? { healthCheck: legacy.healthCheck.bind(legacy) } : {}),
+      ...(typeof legacy.getBaseUrl === 'function' ? { getBaseUrl: legacy.getBaseUrl.bind(legacy) } : {}),
+      ...(legacy.agentProcess ? { agentProcess: legacy.agentProcess } : {}),
+      ...(legacy.activeDialect ? { activeDialect: legacy.activeDialect } : {}),
+    },
     ...(Object.keys(channelsV2).length > 0 ? { channelsV2, channelApi: 2 as const } : {}),
     overrides: (meta.capabilities ?? legacy.capabilities ?? {}) as any,
   });
