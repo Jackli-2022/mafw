@@ -73,6 +73,11 @@ export class RuntimePluginLoader {
   private extraErrors = new Map<string, string>();
   private readonly neutralDefinitions = new Map<string, RuntimeDefinition>();
   private readonly neutralFactories = new Map<string, (ctx: any) => Promise<RuntimeDefinition>>();
+  private readonly builtinDefinitions = new Map<string, {
+    factory: (ctx: any) => Promise<RuntimeDefinition>;
+    external: boolean;
+    capabilities: RuntimeCapabilities;
+  }>();
   private readonly legacyModules = new Map<string, any>();
   private readonly neutralBus = new RuntimeBus();
   /** canonical 词汇表（校验 eventMappings.to 用）——index.ts 注入，避免 loader 依赖矩阵。 */
@@ -271,6 +276,33 @@ export class RuntimePluginLoader {
   /** Neutral definitions currently registered with the runtime bus. */
   getNeutralDefinitions(): RuntimeDefinition[] {
     return [...this.neutralDefinitions.values()];
+  }
+
+  /**
+   * Register an in-process builtin as a neutral definition factory. The
+   * factory runs once per name (lazy: SDK imports stay lazy).
+   */
+  registerBuiltinDefinition(
+    name: string,
+    factory: (ctx: any) => Promise<RuntimeDefinition>,
+    meta: { external: boolean; capabilities: RuntimeCapabilities },
+  ): void {
+    this.builtinDefinitions.set(name, { factory, external: meta.external, capabilities: meta.capabilities });
+  }
+
+  /** Resolve a builtin definition, falling back to file plugins and legacy entries. */
+  async resolveBuiltinDefinition(name: string, ctx: any): Promise<RuntimeDefinition | undefined> {
+    const existing = this.neutralDefinitions.get(name);
+    if (existing) return existing;
+
+    const builtin = this.builtinDefinitions.get(name);
+    if (builtin) {
+      const definition = await builtin.factory(ctx);
+      this.neutralDefinitions.set(name, definition);
+      this.neutralBus.register(definition);
+      return definition;
+    }
+    return this.getNeutral(name, ctx);
   }
 
   /** Neutral runtime bus (single fan-in for AdapterEvents). */
