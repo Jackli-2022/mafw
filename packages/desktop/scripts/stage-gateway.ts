@@ -1,6 +1,10 @@
-import { cp, mkdir, readFile, rm } from "node:fs/promises"
+import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { createRequire } from "node:module"
 import * as path from "node:path"
+import type { GatewayReleaseManifest } from "../src/main/gateway-release-manifest"
+import { createGatewayPayloadManifest } from "../src/main/gateway-release-manifest"
 import {
   PACKAGE_NAME as PLUGIN_CONTRACT_PACKAGE,
   resolvePluginContract,
@@ -113,4 +117,60 @@ if (existsSync(bsqlDir)) {
   }
 }
 
+async function walkFiles(root: string, rel = ""): Promise<string[]> {
+  const entries = await readdir(path.join(root, rel), { withFileTypes: true })
+  const files: string[] = []
+  for (const entry of entries) {
+    const child = rel ? `${rel}/${entry.name}` : entry.name
+    if (entry.isDirectory()) files.push(...await walkFiles(root, child))
+    else files.push(child)
+  }
+  return files
+}
+
+const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex")
+const { manifest: payloadManifest, digest } = await createGatewayPayloadManifest(outDir, {
+  walk: async () => walkFiles(outDir),
+  read: async (rel) => readFile(path.join(outDir, rel)),
+  stat: async (rel) => {
+    const value = await stat(path.join(outDir, rel))
+    return { size: value.size }
+  },
+  sha256,
+})
+
+const releaseJson = JSON.parse(await readFile(path.join(outDir, "dist", "release.json"), "utf8"))
+const requireBuilt = createRequire(import.meta.url)
+const experience = requireBuilt(path.join(outDir, "dist", "experience", "experience-contract.js"))
+if (releaseJson.experienceVersion !== experience.EXPERIENCE_VERSION) {
+  throw new Error("release.json Experience version disagrees with compiled experience-contract")
+}
+if (releaseJson.minimumClientExperienceVersion !== experience.MIN_CLIENT_EXPERIENCE_VERSION) {
+  throw new Error("release.json minimum client Experience disagrees with compiled contract")
+}
+if (!releaseJson.gatewayVersion || releaseJson.gatewayVersion !== releaseJson.productVersion) {
+  throw new Error("release.json gatewayVersion must equal productVersion")
+}
+
+const releaseManifest: GatewayReleaseManifest = {
+  schemaVersion: 1,
+  productVersion: releaseJson.productVersion,
+  gatewayVersion: releaseJson.gatewayVersion,
+  desktopMinimumGatewayVersion: releaseJson.gatewayVersion,
+  experienceVersion: releaseJson.experienceVersion,
+  minimumClientExperienceVersion: releaseJson.minimumClientExperienceVersion,
+  schemaEpoch: releaseJson.schemaEpoch,
+  payloadManifestSha256: digest,
+}
+await writeFile(
+  path.join(outDir, "payload-manifest.json"),
+  `${JSON.stringify(payloadManifest, null, 2)}\n`,
+  "utf8",
+)
+await writeFile(
+  path.join(outDir, "release-manifest.json"),
+  `${JSON.stringify(releaseManifest, null, 2)}\n`,
+  "utf8",
+)
+console.log(`[stage-gateway] payload manifest: ${payloadManifest.files.length} files, digest ${digest.slice(0, 12)}`)
 console.log("[stage-gateway] done")

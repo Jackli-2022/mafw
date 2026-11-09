@@ -51,6 +51,15 @@ test("staging copies the lockfile verbatim and uses npm ci", () => {
   assert.doesNotMatch(staging, /"\s*install",\s*"--omit=dev"/)
 })
 
+test("staging emits payload and release manifests after native rebuild", () => {
+  const staging = read("../scripts/stage-gateway.ts")
+  assert.match(staging, /createGatewayPayloadManifest/)
+  assert.match(staging, /payload-manifest\.json/)
+  assert.match(staging, /release-manifest\.json/)
+  assert.match(staging, /EXPERIENCE_VERSION/)
+  assert.match(staging, /desktopMinimumGatewayVersion/)
+})
+
 test("the gateway manifest keeps optional dependencies and the repo requires Node 22+", () => {
   const gatewayPkg = JSON.parse(read("../../../gateway/package.json"))
   const rootPkg = JSON.parse(read("../../../package.json"))
