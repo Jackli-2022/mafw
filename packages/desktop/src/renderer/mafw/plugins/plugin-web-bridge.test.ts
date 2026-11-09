@@ -252,7 +252,9 @@ describe("createPluginWebBridge", () => {
 
     await h.bridge.handle({ id: 14, method: "setTitle", params: { title: "  Deploy  " } })
     await h.bridge.handle({ id: 15, method: "setTitle", params: { title: "x".repeat(400) } })
-    expect(h.titles).toEqual(["Deploy", "x".repeat(200)])
+    // Empty must reach the host so a page can take its title back.
+    await h.bridge.handle({ id: 16, method: "setTitle", params: { title: "   " } })
+    expect(h.titles).toEqual(["Deploy", "x".repeat(200), ""])
   })
 
   test("openExternal only accepts http(s)/mailto/tel and rejects script/file/data", async () => {
@@ -279,7 +281,7 @@ describe("createPluginWebBridge", () => {
     expect(h.external).toEqual(["https://x.test/a", "mailto:a@b.test"])
   })
 
-  test("theme and context subscriptions forward host pushes", async () => {
+  test("theme and context subscriptions push the current value, then host updates", async () => {
     const h = harness()
     await h.bridge.handle({ id: 18, method: "onThemeChange" })
     await h.bridge.handle({ id: 19, method: "onContextChange" })
@@ -288,9 +290,23 @@ describe("createPluginWebBridge", () => {
     h.emitContext({ projectDir: "/repo", sessionID: "s2" })
 
     expect(h.pushes).toEqual([
+      // Subscribing is also a read: the page gets today's values immediately.
+      { kind: "theme", theme: "dark" },
+      { kind: "context", context: { projectDir: "/repo", sessionID: "s1" } },
       { kind: "theme", theme: "light" },
       { kind: "context", context: { projectDir: "/repo", sessionID: "s2" } },
     ])
+  })
+
+  test("a global-scope context (no projectDir) is still a valid push", async () => {
+    const h = harness({
+      context: () => ({ theme: "dark" }),
+      subscribeContext: () => () => {},
+    })
+    const reply = await h.bridge.handle({ id: 30, method: "context" })
+    expect(reply.result).toEqual({ surface: "plugin:demo:db", theme: "dark" })
+    await h.bridge.handle({ id: 31, method: "onContextChange" })
+    expect(h.pushes).toEqual([{ kind: "context", context: {} }])
   })
 
   test("malformed frames are rejected instead of silently ignored", async () => {

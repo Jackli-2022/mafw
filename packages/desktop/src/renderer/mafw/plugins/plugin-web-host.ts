@@ -27,9 +27,11 @@ export interface PluginWebSurfaceBinding {
   sessionID?: string
 }
 
-/** What the page sees: always the live binding, whatever the ticket scope is. */
+/** What the page sees: the live binding, narrowed to the declared scope. */
 export interface PluginWebSurfaceContext {
-  projectDir: string
+  /** Absent for `scope: "global"` (the surface is not bound to a project). */
+  projectDir?: string
+  /** Present only for `scope: "session"`. */
   sessionID?: string
 }
 
@@ -70,16 +72,23 @@ export function webSurfaceBinding(
 /**
  * Live context pushed to the page (and returned by `context()`).
  *
+ * Scope-gated, per spec §5.8: `session` surfaces see `projectDir + sessionID`,
+ * `project` surfaces see `projectDir` only, and `global` surfaces see neither
+ * (they are not bound to a project — the tab still belongs to one project).
+ *
  * Independent of the ticket scope: `reloadOnSessionChange: false` keeps the
  * opening ticket/partition but the page still learns that the active session
  * moved (spec §5.8 `contextChange`), so its `invoke` calls target the new one.
  */
 export function webSurfaceContext(
+  view: PluginWebSurfaceView,
   projectDir: string,
   sessionID?: string | null,
 ): PluginWebSurfaceContext {
-  const context: PluginWebSurfaceContext = { projectDir: trimmed(projectDir) }
-  const session = trimmed(sessionID)
+  const context: PluginWebSurfaceContext = {}
+  const project = view.scope === "global" ? "" : trimmed(projectDir)
+  if (project.length > 0) context.projectDir = project
+  const session = view.scope === "session" ? trimmed(sessionID) : ""
   if (session.length > 0) context.sessionID = session
   return context
 }

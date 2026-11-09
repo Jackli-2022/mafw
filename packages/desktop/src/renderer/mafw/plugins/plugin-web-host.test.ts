@@ -95,14 +95,23 @@ describe("webSurfaceBindingKey", () => {
 })
 
 describe("webSurfaceContext", () => {
-  test("always carries the live session, including opted-out surfaces", () => {
+  test("session surfaces carry projectDir + the live session", () => {
     // Ticket binding and page context are different things: a page that keeps
     // its ticket still learns the new session through `contextChange`.
-    expect(webSurfaceContext("/repo", "s1")).toEqual({ projectDir: "/repo", sessionID: "s1" })
-    expect(webSurfaceContext("  /repo  ", " s2 ")).toEqual({ projectDir: "/repo", sessionID: "s2" })
-    expect(webSurfaceContext("/repo", null)).toEqual({ projectDir: "/repo" })
-    expect(webSurfaceContext("/repo", "   ")).toEqual({ projectDir: "/repo" })
-    expect(webSurfaceContext("", "s1")).toEqual({ projectDir: "", sessionID: "s1" })
+    expect(webSurfaceContext(view(), "/repo", "s1")).toEqual({ projectDir: "/repo", sessionID: "s1" })
+    expect(webSurfaceContext(view(), "  /repo  ", " s2 ")).toEqual({ projectDir: "/repo", sessionID: "s2" })
+    expect(webSurfaceContext(view(), "/repo", null)).toEqual({ projectDir: "/repo" })
+    expect(webSurfaceContext(view(), "/repo", "   ")).toEqual({ projectDir: "/repo" })
+    expect(webSurfaceContext(view(), "", "s1")).toEqual({ sessionID: "s1" })
+  })
+
+  test("project surfaces never receive a session; global surfaces receive neither", () => {
+    expect(webSurfaceContext(view({ scope: "project" }), "/repo", "s1")).toEqual({ projectDir: "/repo" })
+    expect(webSurfaceContext(view({ scope: "project" }), "/repo", null)).toEqual({ projectDir: "/repo" })
+    // `global` is not bound to a project: the tab still belongs to the active
+    // project, but the page context must not pretend otherwise.
+    expect(webSurfaceContext(view({ scope: "global" }), "/repo", "s1")).toEqual({})
+    expect(webSurfaceContext(view({ scope: "global" }), "", null)).toEqual({})
   })
 })
 

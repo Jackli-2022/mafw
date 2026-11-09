@@ -36,7 +36,7 @@ const events = createPluginWebEventHub()
 const requestedEvents = new Set<string>()
 const themeSubscribers = new Set<(theme: PluginWebTheme) => void>()
 const contextSubscribers = new Set<
-  (context: { projectDir: string; sessionID?: string }) => void
+  (context: { projectDir?: string; sessionID?: string }) => void
 >()
 let themeRequested = false
 let contextRequested = false
@@ -155,7 +155,7 @@ const api = {
   },
 
   onContextChange: (
-    callback: (context: { projectDir: string; sessionID?: string }) => void,
+    callback: (context: { projectDir?: string; sessionID?: string }) => void,
   ): (() => void) => {
     contextSubscribers.add(callback)
     if (!contextRequested) {

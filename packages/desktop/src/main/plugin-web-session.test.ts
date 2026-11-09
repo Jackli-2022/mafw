@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import {
   PLUGIN_WEB_PARTITION_PREFIX,
+  PLUGIN_WEB_REQUEST_FILTER_URLS,
   PLUGIN_WEB_TICKET_COOKIE,
   applyPluginWebSessionPolicy,
   applyPluginWebviewAttachPolicy,
@@ -37,9 +38,11 @@ type FakeSession = {
   beforeRequest?: (details: { url: string }, cb: (res: { cancel: boolean }) => void) => void
   filters: Array<{ urls: string[] }>
   cookieWrites: any[]
+  downloadHandlers: Array<(event: { preventDefault(): void }) => void>
   cookies: { set(details: any): Promise<void> }
   setPermissionRequestHandler(fn: FakeSession["permissionRequest"]): void
   setPermissionCheckHandler(fn: FakeSession["permissionCheck"]): void
+  on(event: string, listener: (event: { preventDefault(): void }) => void): void
   webRequest: {
     onBeforeRequest(filter: { urls: string[] }, listener: FakeSession["beforeRequest"]): void
   }
@@ -49,6 +52,7 @@ function fakeSession(): FakeSession {
   const ses: FakeSession = {
     filters: [],
     cookieWrites: [],
+    downloadHandlers: [],
     cookies: {
       set: async (details: any) => {
         ses.cookieWrites.push(details)
@@ -59,6 +63,9 @@ function fakeSession(): FakeSession {
     },
     setPermissionCheckHandler(fn) {
       ses.permissionCheck = fn
+    },
+    on(event, listener) {
+      if (event === "will-download") ses.downloadHandlers.push(listener)
     },
     webRequest: {
       onBeforeRequest(filter, listener) {
@@ -271,7 +278,7 @@ describe("pluginWebRequestAllowed", () => {
 })
 
 describe("applyPluginWebSessionPolicy", () => {
-  test("denies permissions and filters every request through the package namespace", () => {
+  test("denies permissions, downloads and filters every request through the package namespace", () => {
     const ses = fakeSession()
     applyPluginWebSessionPolicy(ses, () => GATEWAY, "demo")
 
@@ -283,7 +290,13 @@ describe("applyPluginWebSessionPolicy", () => {
     assert.equal(ses.permissionCheck!({}, "media", GATEWAY), false)
     assert.equal(ses.permissionCheck!({}, "notifications", GATEWAY), false)
 
-    assert.deepEqual(ses.filters, [{ urls: ["*://*/*"] }])
+    // Downloads leave the sandbox (arbitrary file write); they are cancelled.
+    assert.equal(ses.downloadHandlers.length, 1)
+    let prevented = false
+    ses.downloadHandlers[0]({ preventDefault: () => { prevented = true } })
+    assert.equal(prevented, true)
+
+    assert.deepEqual(ses.filters, [{ urls: [...PLUGIN_WEB_REQUEST_FILTER_URLS] }])
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/demo/ui/index.html`), { cancel: false })
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/demo/web-ticket`), { cancel: true })
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/demo//web-ticket`), { cancel: true })
@@ -291,6 +304,23 @@ describe("applyPluginWebSessionPolicy", () => {
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/other/ui/index.html`), { cancel: true })
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/sessions`), { cancel: true })
     assert.deepEqual(decideRequest(ses, "http://evil.test/api/plugins/demo/ui/index.html"), { cancel: true })
+  })
+
+  test("the registered URL filter intercepts WebSocket handshakes", () => {
+    // Electron 42: `*://*/*` alone never matches ws(s) — a plugin page could
+    // otherwise open the gateway's loopback-authorized `/api/ws` stream or
+    // another package's `ws/*` route.
+    assert.deepEqual(PLUGIN_WEB_REQUEST_FILTER_URLS, ["*://*/*", "ws://*/*", "wss://*/*"])
+    const ses = fakeSession()
+    applyPluginWebSessionPolicy(ses, () => GATEWAY, "demo")
+    for (const pattern of ["ws://*/*", "wss://*/*"]) {
+      assert.ok(ses.filters[0].urls.includes(pattern), `${pattern} must be intercepted`)
+    }
+    // A loopback WS to the gateway's own API is cancelled; the package's ws is
+    // allowed (the gateway still requires the ticket + same origin).
+    assert.deepEqual(decideRequest(ses, "ws://127.0.0.1:3000/api/ws"), { cancel: true })
+    assert.deepEqual(decideRequest(ses, "ws://127.0.0.1:3000/api/plugins/demo/ws/term"), { cancel: false })
+    assert.deepEqual(decideRequest(ses, "ws://127.0.0.1:3000/api/plugins/other/ws/term"), { cancel: true })
   })
 
   test("reads the gateway URL lazily (port changes after a gateway restart)", () => {

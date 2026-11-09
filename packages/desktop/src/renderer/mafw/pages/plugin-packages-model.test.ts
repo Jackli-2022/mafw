@@ -418,7 +418,7 @@ describe("plugin package install preview", () => {
     assert.deepEqual(preview.contributions, ["actions", "ui", "Web 页面 1"])
   })
 
-  it("keeps the overwrite diff on contribution kinds, not surface labels", () => {
+  it("includes web surface and rail labels in the overwrite diff", () => {
     const existing = row({ contributions: ["ui"] })
     const preview = planInstallPreview([existing], {
       ok: true,
@@ -426,10 +426,33 @@ describe("plugin package install preview", () => {
       contributions: ["ui"],
       webSurfaces: { count: 1, rail: false },
     })
-    assert.deepEqual(preview.diff?.added, [])
+    assert.deepEqual(preview.diff?.added, ["Web 页面 1"])
     assert.deepEqual(preview.diff?.removed, [])
     assert.deepEqual(preview.diff?.unchanged, ["ui"])
     assert.deepEqual(preview.contributions, ["ui", "Web 页面 1"])
+    // The confirmation spells the new page out instead of "贡献声明无变化".
+    const confirmation = installConfirmation(preview)
+    assert.match(confirmation!.message!, /Web 页面 1/)
+  })
+
+  it("shows the rail label appearing (and disappearing) in the diff", () => {
+    const added = planInstallPreview([row({ contributions: ["ui"] })], {
+      ok: true,
+      name: "demo",
+      contributions: ["ui"],
+      webSurfaces: { count: 2, rail: true },
+    })
+    assert.deepEqual(added.diff?.added, ["Web 页面 2", "左栏入口"])
+
+    // If a previous inventory row recorded the rail label, dropping it shows up
+    // as a removal instead of silently keeping "no change".
+    const removed = planInstallPreview([row({ contributions: ["ui", "左栏入口"] })], {
+      ok: true,
+      name: "demo",
+      contributions: ["ui"],
+      webSurfaces: { count: 1, rail: false },
+    })
+    assert.ok(removed.diff?.removed.includes("左栏入口"))
   })
 
   it("keeps a failed check visible and blocks install", () => {

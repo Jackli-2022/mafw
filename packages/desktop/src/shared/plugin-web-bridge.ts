@@ -10,6 +10,13 @@ export const PLUGIN_WEB_BRIDGE_CHANNEL = "mafw-plugin-bridge"
 export const PLUGIN_WEB_BRIDGE_VERSION = 1
 
 /**
+ * Longest page-published title the host accepts (`setTitle` / `<title>`).
+ * A page with a huge title would otherwise be able to push a megabyte into the
+ * tab strip every frame.
+ */
+export const PLUGIN_WEB_MAX_TITLE_LENGTH = 200
+
+/**
  * Every method a page may call. The host rejects anything else — the bridge is
  * an allowlist, never a generic RPC pipe into the renderer.
  */
@@ -59,7 +66,7 @@ export type PluginWebBridgePush =
       payload: unknown
     }
   | { kind: "theme"; theme: PluginWebTheme }
-  | { kind: "context"; context: { projectDir: string; sessionID?: string } }
+  | { kind: "context"; context: { projectDir?: string; sessionID?: string } }
 
 /**
  * Page-side event dispatcher shared by the preload and the tests.
@@ -128,7 +135,8 @@ export function createPluginWebEventHub(): PluginWebEventHub {
 
 /** Answer to `context()`. */
 export interface PluginWebBridgeContext {
-  projectDir: string
+  /** Absent for a `scope: "global"` surface (not bound to a project). */
+  projectDir?: string
   sessionID?: string
   surface: string
   theme: PluginWebTheme

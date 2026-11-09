@@ -316,10 +316,12 @@ function normalizeContributionList(value: readonly unknown[] | undefined): strin
 /**
  * Display labels for the Web surface summary a check reports.
  *
- * These are preview-only labels appended after the contribution kinds; they
- * never participate in the overwrite diff (a surface is not a kind) and old
- * gateways omit `webSurfaces` entirely. A zero/absent count yields no labels,
- * so a package cannot advertise a rail entry without a page.
+ * They are appended after the contribution kinds and, like any other label,
+ * participate in the overwrite diff — a package that starts shipping a page (or
+ * a rail entry) must say so in the confirmation, or the diff reads "no change"
+ * while the install adds UI. Old gateways omit `webSurfaces` entirely; a
+ * zero/absent count yields no labels, so a package cannot advertise a rail entry
+ * without a page.
  */
 function webSurfaceLabels(summary: PluginCheckResult["webSurfaces"]): string[] {
   if (!summary || typeof summary !== "object") return []
@@ -371,10 +373,12 @@ export function planInstallPreview(
     (entry) => typeof entry?.name === "string" && entry.name.toLowerCase() === lower,
   )
   const nextContributions = normalizeContributionList(check.contributions)
-  // Preview-only labels: appended (never sorted into the kinds) and the source
-  // list is never mutated — the caller keeps the check result for retries.
+  // Appended (never sorted into the kinds) and the source list is never mutated
+  // — the caller keeps the check result for retries. Labels still take part in
+  // the diff below: adding a page/rail entry is a visible contribution change.
+  const webLabels = webSurfaceLabels(check.webSurfaces)
   const contributions = [...nextContributions]
-  for (const label of webSurfaceLabels(check.webSurfaces)) {
+  for (const label of webLabels) {
     if (!contributions.includes(label)) contributions.push(label)
   }
   const preview: InstallPreview = {
@@ -390,9 +394,9 @@ export function planInstallPreview(
 
   const currentContributions = normalizeContributionList(existing.contributions)
   const current = new Set(currentContributions)
-  const next = new Set(nextContributions)
+  const next = new Set([...nextContributions, ...webLabels])
   preview.diff = {
-    added: nextContributions.filter((item) => !current.has(item)),
+    added: contributions.filter((item) => !current.has(item)),
     removed: currentContributions.filter((item) => !next.has(item)),
     unchanged: currentContributions.filter((item) => next.has(item)),
     existingVersion: existing.version,

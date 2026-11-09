@@ -14,15 +14,16 @@
 //   Paths are normalized exactly like the gateway router (trailing slashes
 //   stripped, empty segments dropped), so `/demo//web-ticket` cannot slip past
 //   the deny while the gateway still routes it to the ticket handler.
-//   That filter is the *real* package isolation: the gateway treats any
-//   loopback request without a valid ticket as the ambient project (dev/curl
-//   affordance), so without the filter a compromised page could reach another
-//   package's namespace, or the whole gateway API. `web-ticket` is refused
-//   because it accepts any registered project and ignores a presented ticket:
-//   letting the page mint one would make its `ctx.http` project binding
-//   page-controllable (and could overwrite the partition cookie). `apply` /
-//   `reload` / `actions` are refused because they are host privileges, not page
-//   APIs.
+//   The filter covers **WebSocket handshakes too** (`ws://`/`wss://` are a
+//   separate URL pattern; `*://*/*` silently misses them in Electron 42), so a
+//   page cannot reach the gateway's own `/api/ws` or another package's `ws/*`.
+//   This filter is defence in depth: the gateway independently requires a valid
+//   ticket for `api|events|ws` and rejects a foreign `Origin`.
+//   `web-ticket` is refused because it accepts any known project and ignores a
+//   presented ticket: letting the page mint one would make its `ctx.http`
+//   project binding page-controllable (and could overwrite the partition
+//   cookie). `apply` / `reload` / `actions` are refused because they are host
+//   privileges, not page APIs.
 // - One partition per *binding* (not per package): tickets are bucketed per
 //   `(pkg, projectDir, sessionID)`, so a shared package cookie would let a
 //   second window silently flip the first surface onto its project/session.
@@ -46,6 +47,21 @@ const PLUGIN_WEB_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const DEFAULT_WEB_ENTRY = "index.html"
 const LOOPBACK_HTTP_PROTOCOLS = new Set(["http:", "ws:"])
 const LOOPBACK_SECURE_PROTOCOLS = new Set(["https:", "wss:"])
+/**
+ * URL filter for the partition request guard (exported for the contract test).
+ *
+ * A bare wildcard-scheme filter (`*` + `://` + `*`) does **not** intercept
+ * WebSocket handshakes in Electron 42: `ws://` / `wss://` requests bypass
+ * `onBeforeRequest` entirely, which would let a plugin page open
+ * `ws://127.0.0.1:3000/api/ws` (loopback-authorized whole event stream) or
+ * another package's `/ws/*`. The explicit schemes (rather than `<all_urls>`)
+ * keep the guard on network requests only.
+ */
+export const PLUGIN_WEB_REQUEST_FILTER_URLS: readonly string[] = [
+  "*://*/*",
+  "ws://*/*",
+  "wss://*/*",
+]
 // `~` is not allowed in a package name, so `<pkg>~<hash>` is unambiguous.
 const BINDING_SEPARATOR = "~"
 const BINDING_HASH_PATTERN = /^[0-9a-f]{12}$/
@@ -268,6 +284,14 @@ export interface PluginWebCookieDetails {
 export interface PluginWebSessionLike {
   setPermissionRequestHandler(handler: ((wc: unknown, permission: string, callback: (granted: boolean) => void) => void) | null): void
   setPermissionCheckHandler(handler: ((wc: unknown, permission: string, origin: string) => boolean) | null): void
+  /**
+   * `will-download` (and future lifecycle hooks). A plugin page must never
+   * write files outside its sandbox; downloads are cancelled, not quarantined.
+   */
+  on(
+    event: "will-download",
+    listener: (event: { preventDefault(): void }, item: unknown, webContents: unknown) => void,
+  ): void
   webRequest: {
     onBeforeRequest(
       filter: { urls: string[] },
@@ -299,7 +323,7 @@ export interface PluginWebHostLike {
   on(event: "will-attach-webview", listener: PluginWebviewAttachListener): void
 }
 
-/** Deny permissions + confine the partition to one package namespace (no ticket minting). */
+/** Deny permissions + downloads and confine the partition to one package namespace (no ticket minting). */
 export function applyPluginWebSessionPolicy(
   ses: PluginWebSessionLike,
   gatewayUrl: () => string,
@@ -307,10 +331,12 @@ export function applyPluginWebSessionPolicy(
 ): void {
   ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
   ses.setPermissionCheckHandler(() => false)
-  // Matches http(s)/ws(s); other schemes are never reachable from a sandboxed
-  // page (no node integration, no file: navigation) and are handled by the
-  // guest's webPreferences.
-  ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, callback) => {
+  // Downloads escape the surface (arbitrary file write / user-visible file).
+  // A plugin page has no legitimate download flow in v1: cancel outright.
+  ses.on("will-download", (event) => event.preventDefault())
+  // `PLUGIN_WEB_REQUEST_FILTER_URLS` covers http(s) **and** ws(s): the shorthand
+  // `*://*/*` does not intercept WebSocket handshakes in Electron 42.
+  ses.webRequest.onBeforeRequest({ urls: [...PLUGIN_WEB_REQUEST_FILTER_URLS] }, (details, callback) => {
     callback({ cancel: !pluginWebRequestAllowed(gatewayUrl(), pkg, details.url) })
   })
 }

@@ -23,7 +23,7 @@ import type {
   PluginWebBridgeRequest,
   PluginWebTheme,
 } from "../../../shared/plugin-web-bridge"
-import { isPluginWebBridgeMethod } from "../../../shared/plugin-web-bridge"
+import { PLUGIN_WEB_MAX_TITLE_LENGTH, isPluginWebBridgeMethod } from "../../../shared/plugin-web-bridge"
 
 // Re-exported so hosts/tests need one import (the wire types live in `shared`).
 export type {
@@ -35,7 +35,7 @@ export type {
 } from "../../../shared/plugin-web-bridge"
 
 const MAX_ACTION_LENGTH = 200
-const MAX_TITLE_LENGTH = 200
+const MAX_TITLE_LENGTH = PLUGIN_WEB_MAX_TITLE_LENGTH
 const MAX_BADGE = 9999
 const MAX_EXTERNAL_URL_LENGTH = 2048
 const EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"])
@@ -52,7 +52,7 @@ export interface PluginWebBridgeDeps {
   /** `plugin:<pkg>:<surface>` identity (returned by `context()`). */
   surface: string
   /** Current binding + theme (read lazily: it changes with the session). */
-  context(): { projectDir: string; sessionID?: string; theme: PluginWebTheme }
+  context(): { projectDir?: string; sessionID?: string; theme: PluginWebTheme }
   /** Host action transport; the bridge always passes its own `pkg`. */
   invoke(pkg: string, action: string, input: unknown): Promise<unknown>
   setBadge?(count: number): void
@@ -64,7 +64,7 @@ export interface PluginWebBridgeDeps {
    */
   subscribeEvent?(type: string, listener: (payload: unknown) => void): () => void
   subscribeTheme?(listener: (theme: PluginWebTheme) => void): () => void
-  subscribeContext?(listener: (context: { projectDir: string; sessionID?: string }) => void): () => void
+  subscribeContext?(listener: (context: { projectDir?: string; sessionID?: string }) => void): () => void
   /** Deliver one push frame to the page (`webview.send`). */
   send(push: PluginWebBridgePush): void
   /** Protocol/security violations worth a banner (not action failures). */
@@ -166,7 +166,9 @@ export function createPluginWebBridge(deps: PluginWebBridgeDeps): PluginWebBridg
 
       case "setTitle": {
         const title = typeof params.title === "string" ? params.title.trim().slice(0, MAX_TITLE_LENGTH) : ""
-        if (title.length > 0) deps.setTitle?.(title)
+        // Empty is meaningful: it clears the published title and the host falls
+        // back to the declared one (a page must be able to take its title back).
+        deps.setTitle?.(title)
         return { id, ok: true, result: { title } }
       }
 
@@ -186,6 +188,10 @@ export function createPluginWebBridge(deps: PluginWebBridgeDeps): PluginWebBridg
             emit({ kind: "theme", theme })
           })
           if (typeof unsubscribe === "function") track(unsubscribe)
+          // Push the current value immediately: a page that subscribes does not
+          // want to wait for the next OS theme flip to learn today's theme.
+          const current = deps.context()
+          emit({ kind: "theme", theme: THEMES.has(current.theme) ? current.theme : "dark" })
         }
         return { id, ok: true, result: { subscribed: Boolean(subscribe) } }
       }
@@ -197,6 +203,15 @@ export function createPluginWebBridge(deps: PluginWebBridgeDeps): PluginWebBridg
             emit({ kind: "context", context })
           })
           if (typeof unsubscribe === "function") track(unsubscribe)
+          // Same as theme: the current (scope-gated) context is the first push.
+          const current = deps.context()
+          emit({
+            kind: "context",
+            context: {
+              ...(current.projectDir ? { projectDir: current.projectDir } : {}),
+              ...(current.sessionID ? { sessionID: current.sessionID } : {}),
+            },
+          })
         }
         return { id, ok: true, result: { subscribed: Boolean(subscribe) } }
       }
@@ -246,10 +261,11 @@ function contextOf(deps: PluginWebBridgeDeps): PluginWebBridgeContext {
   const binding = deps.context()
   const theme = THEMES.has(binding.theme) ? binding.theme : "dark"
   const context: PluginWebBridgeContext = {
-    projectDir: binding.projectDir,
     surface: deps.surface,
     theme,
   }
+  const projectDir = typeof binding.projectDir === "string" ? binding.projectDir.trim() : ""
+  if (projectDir.length > 0) context.projectDir = projectDir
   if (typeof binding.sessionID === "string" && binding.sessionID.length > 0) {
     context.sessionID = binding.sessionID
   }
@@ -283,7 +299,13 @@ function isValidPush(push: PluginWebBridgePush, pkg: string): boolean {
   }
   if (push.kind === "theme") return THEMES.has(push.theme)
   if (push.kind === "context") {
-    return !!push.context && typeof push.context.projectDir === "string" && push.context.projectDir.length > 0
+    if (!push.context || typeof push.context !== "object") return false
+    const projectDir = (push.context as { projectDir?: unknown }).projectDir
+    const sessionID = (push.context as { sessionID?: unknown }).sessionID
+    if (projectDir !== undefined && typeof projectDir !== "string") return false
+    if (typeof projectDir === "string" && projectDir.length === 0) return false
+    if (sessionID !== undefined && typeof sessionID !== "string") return false
+    return true
   }
   return false
 }

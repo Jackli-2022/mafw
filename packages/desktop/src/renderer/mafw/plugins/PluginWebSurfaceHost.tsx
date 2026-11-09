@@ -23,7 +23,7 @@
 // `plugin-web-bridge.ts` (unit tested).
 import { Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
-import { PLUGIN_WEB_BRIDGE_CHANNEL, type PluginWebTheme } from "../../../shared/plugin-web-bridge"
+import { PLUGIN_WEB_BRIDGE_CHANNEL, PLUGIN_WEB_MAX_TITLE_LENGTH, type PluginWebTheme } from "../../../shared/plugin-web-bridge"
 import { DockBanner } from "../components/dock-panel"
 import { createPluginWebBridge, type PluginWebBridge, type PluginWebBridgePush } from "./plugin-web-bridge"
 import {
@@ -87,7 +87,10 @@ export function PluginWebSurfaceHost(props: PluginWebSurfaceHostProps) {
 
   /** Bridge `setTitle` / `<title>` — empty means "fall back to the declared title". */
   const publishTitle = (title: string): void => {
-    const next = typeof title === "string" ? title.trim() : ""
+    const trimmed = typeof title === "string" ? title.trim() : ""
+    // The page can emit a `<title>` on every frame; cap it before it reaches
+    // the tab strip (the bridge caps `setTitle`, this covers `page-title-updated`).
+    const next = trimmed.slice(0, PLUGIN_WEB_MAX_TITLE_LENGTH)
     publishedTitle = next.length > 0 ? next : null
     props.onTitle?.(next)
   }
@@ -206,7 +209,7 @@ export function PluginWebSurfaceHost(props: PluginWebSurfaceHostProps) {
   const pushContext = (): void => {
     // Live context, not the ticket binding: pages that opted out of reloading
     // still follow the active session through `contextChange` (spec §5.8).
-    const context = webSurfaceContext(props.projectDir, props.sessionID)
+    const context = webSurfaceContext(props.view, props.projectDir, props.sessionID)
     for (const listener of [...contextListeners]) {
       try {
         listener(context)
@@ -220,7 +223,7 @@ export function PluginWebSurfaceHost(props: PluginWebSurfaceHostProps) {
     createPluginWebBridge({
       pkg: props.view.packageName,
       surface: props.view.surfaceId,
-      context: () => ({ ...webSurfaceContext(props.projectDir, props.sessionID), theme: currentTheme() }),
+      context: () => ({ ...webSurfaceContext(props.view, props.projectDir, props.sessionID), theme: currentTheme() }),
       invoke: (pkg, action, input) =>
         window.api.mafw.plugins.invoke(pkg, action, input, props.sessionID ?? undefined),
       setBadge: (count) => publishBadge(count),
