@@ -19,6 +19,9 @@ export {
   type SteerOutcome,
   type ThinkingLevel,
   type RuntimeModelRef,
+  type DeliveryMode,
+  type RuntimePolicyHooks,
+  type RuntimePolicyCandidate,
 } from './transport.ts';
 export {
   type RuntimeChannels,

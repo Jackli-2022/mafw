@@ -69,6 +69,22 @@ export interface RuntimeChannels {
     update?(sessionID: string, patch: { title?: string }): Promise<void>;
     delete?(sessionID: string): Promise<void>;
     abort?(sessionID: string): Promise<void>;
+    /** Session todo/plan snapshot (agent task list). Missing = unsupported. */
+    todo?(sessionID: string): Promise<unknown[]>;
+    /** Child (subagent) sessions. Missing = unsupported. */
+    children?(sessionID: string): Promise<AdapterSession[]>;
+    /** Compact/summarize a session. Missing = unsupported. */
+    summarize?(input: { sessionID: string; providerID?: string; modelID?: string }): Promise<unknown>;
+    /** Switch the session's agent for subsequent turns. */
+    switchAgent?(sessionID: string, agent: string): Promise<void>;
+    /** Switch the session's model for subsequent turns. */
+    switchModel?(sessionID: string, model: import('./transport.ts').RuntimeModelRef): Promise<void>;
+    /** Switch the reasoning/thinking level for subsequent turns. */
+    setThinkingLevel?(sessionID: string, level: import('./transport.ts').ThinkingLevel): Promise<void>;
+    /** Pending native permission requests (approval cards). */
+    permissionList?(opts?: { directory?: string }): Promise<unknown[]>;
+    /** Move a blocking tool call to the background. */
+    background?(sessionID: string): Promise<void>;
   };
   messages?: {
     list(sessionID: string, opts?: { limit?: number; before?: string }): Promise<{ data: AdapterMessage[]; nextCursor?: string }>;

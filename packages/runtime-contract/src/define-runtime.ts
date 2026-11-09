@@ -44,6 +44,8 @@ export interface RuntimeDefinitionInput {
   displayName: string;
   preset: RuntimePreset;
   transport: RuntimeTransport;
+  /** true = the runtime process is user-managed; the gateway never spawns or kills it. */
+  external?: boolean;
   channels?: RuntimeChannels;
   channelsV2?: RuntimeChannelsV2;
   channelApi?: 1 | 2;
