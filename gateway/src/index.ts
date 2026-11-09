@@ -254,11 +254,9 @@ import { resolveEventDeclaration } from './runtime/event-declaration';
 import { stampDeclaredCapabilities } from './runtime/capability-source';
 import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext, noRuntimeRegisteredError } from './runtime/loader';
-import { PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
-import { createPiDefinition } from './runtime/pi/pi-definition';
+import { PI_CAPABILITIES, createPiDefinition, setPiUnknownRecorder } from './runtime/pi-adapter';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
 import { getBridgeEventEntry } from './runtime/adapter-bridge';
-import { setPiUnknownRecorder } from './runtime/pi/pi-events';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import { createOpencodeDefinition, opencodeCapabilities, opencodeStaticEntry, type OpencodeVariant } from './runtime/opencode-definition';
 
@@ -2372,10 +2370,15 @@ class MafwScheduler {
     });
   }
 
-  /** 插件 ctx 的凭据来源：当前 runtime host 的 credentials（若实现），否则 undefined。 */
+  /**
+   * 插件 ctx 的凭据来源：active runtime credentials → opencode auth.json 回退。
+   * 首次激活（runtimeHost 尚未建立）也必须拿得到 key——旧 pi 驱动自己读
+   * auth.json，抽成外部 adapter 后只认 ctx.credentials，这里补上同一条链。
+   */
   private async runtimeCredentialsForPlugin(): Promise<RuntimeCredentials | undefined> {
-    if (this.runtimeHost?.credentials) return this.runtimeHost.credentials;
-    return undefined;
+    return {
+      getApiKey: (provider: string) => getProviderApiKey(provider, undefined, this.runtimeHost?.credentials) ?? null,
+    };
   }
 
   /** 凭据单点接线（Plan 3 终审 #10）：active runtime credentials → legacy auth.json → null。

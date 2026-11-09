@@ -1,4 +1,4 @@
-import { PiSessionRegistry } from '../../../src/runtime/pi/pi-session';
+import { PiSessionRegistry } from '../../../../adapters/pi/src/pi-session';
 
 const fakeSession = (overrides: any = {}) => ({
   prompt: jest.fn(async () => {}),

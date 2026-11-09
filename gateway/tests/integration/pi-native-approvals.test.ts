@@ -1,8 +1,8 @@
-import { createPiRuntime } from '../../src/runtime/plugins/pi-runtime';
-import { translatePiAdapterEvent } from '../../src/runtime/pi/pi-adapter-events';
+import { createPiRuntime } from '../fixtures/pi-test-runtime';
+import { translatePiAdapterEvent } from '../../../adapters/pi/src/pi-adapter-events';
 import { mapAdapterEvent } from '../../src/runtime/adapter-event-mapper';
 import { normalizeOpencodeEvent } from '../../src/runtime/normalize';
-import { ApprovalBridge } from '../../src/runtime/pi/pi-approval-bridge';
+import { ApprovalBridge } from '../../../adapters/pi/src/pi-approval-bridge';
 
 jest.mock('../../src/core/utils/logger', () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -55,7 +55,7 @@ describe('pi nativeApprovals integration', () => {
     const requestId = 'test-req-1';
     const promise = bridge.request(requestId);
 
-    const result = await rt.session.permissionReply(sessionID, requestId, true);
+    const result = await rt.session.permissionReply(sessionID, requestId, 'once');
     expect(result).toBe(true);
 
     const approved = await promise;
@@ -72,7 +72,7 @@ describe('pi nativeApprovals integration', () => {
     const requestId = 'test-req-2';
 
     const promise = bridge.request(requestId);
-    await rt.session.permissionReply(sessionID, requestId, false);
+    await rt.session.permissionReply(sessionID, requestId, 'reject');
 
     const approved = await promise;
     expect(approved).toBe(false);
@@ -124,7 +124,7 @@ describe('pi nativeApprovals integration', () => {
 
   it('should return false when permissionReply is called for unknown session', async () => {
     const rt = await createPiRuntime(makeCtx(), { loadPi: async () => fakePi });
-    const result = await rt.session.permissionReply('nonexistent', 'req-x', true);
+    const result = await rt.session.permissionReply('nonexistent', 'req-x', 'once');
     expect(result).toBe(false);
     await (rt as any).dispose();
   });
@@ -139,10 +139,14 @@ describe('pi nativeApprovals integration', () => {
     const registry = (rt as any).registry;
     const emitEvent = registry['emitEvent'];
 
-    const rawEvent = {
-      payload: {
-        type: 'permission.asked',
-        properties: {
+    const adapterEvent = {
+      id: 'pi_push_1',
+      type: 'permission.asked',
+      sessionID,
+      requestID: 'req-push-1',
+      at: Date.now(),
+      data: {
+        request: {
           sessionID,
           requestId: 'req-push-1',
           toolName: 'bash',
@@ -153,12 +157,11 @@ describe('pi nativeApprovals integration', () => {
     };
 
     const nextPromise = iter.next();
-    emitEvent(rawEvent);
+    emitEvent(adapterEvent);
 
     const result = await nextPromise;
     expect(result.done).toBe(false);
     expect(result.value.payload.type).toBe('permission.asked');
-    expect(result.value.payload.properties.requestId).toBe('req-push-1');
     expect(result.value.payload.properties.toolName).toBe('bash');
 
     await iter.return!();

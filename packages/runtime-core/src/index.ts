@@ -10,3 +10,4 @@ export * from './view-dto.generated.ts';
 export { coerceOutput } from './output.ts';
 export { requireSessionDir, resolvePluginProjectDir } from './session-dir.ts';
 export { fixMediaPayload } from './media-payload.ts';
+export * from './host-adapter.ts';

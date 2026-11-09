@@ -1,4 +1,4 @@
-import { createMafwHostExtension } from '../../../src/runtime/pi/pi-mafw-host-extension';
+import { createMafwHostExtension } from '../../../../adapters/pi/src/pi-mafw-host-extension';
 import { hashText, buildRecallQuery } from '../../../src/runtime/host-adapter';
 import { buildMafwToolFactory } from '../../../src/runtime/mafw-tools';
 

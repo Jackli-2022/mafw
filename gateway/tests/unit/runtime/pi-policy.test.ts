@@ -1,4 +1,4 @@
-import { applyPiPolicyHooks } from '../../../src/runtime/pi/pi-policy';
+import { applyPiPolicyHooks } from '../../../../adapters/pi/src/pi-policy';
 
 function fakeRegistry() {
   const calls: any = {};

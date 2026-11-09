@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AgentDefinition, AgentPermissions } from '../agent-definition';
+import type { RuntimeAgentDefinition as AgentDefinition, RuntimeAgentPermissions as AgentPermissions } from '@mafw/runtime-contract';
 
 /**
  * pi agent configuration module

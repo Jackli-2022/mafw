@@ -24,8 +24,8 @@
  *   live 文本/推理增量用 `piPartId(msgId, kind, contentIndex + 1)`——与历史同一套编号。
  */
 
-import { coerceOutput } from '../tool-part-assembler';
-import { MafwMessage, MafwMessageError, StopReason } from '../canonical-types';
+import { coerceOutput } from '@mafw/runtime-core';
+import { MafwMessage, MafwMessageError, StopReason } from '@mafw/runtime-core';
 
 /**
  * pi StopReason（pi-ai types.d.ts）→ MAFW canonical StopReason。

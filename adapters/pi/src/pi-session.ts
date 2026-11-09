@@ -2,8 +2,8 @@ import { randomUUID } from 'crypto';
 import { ApprovalBridge } from './pi-approval-bridge';
 import { createMafwApprovalExtension, type ApprovalPolicy, type PermissionEvaluator } from './pi-approval-extension';
 import { createMafwHostExtension } from './pi-mafw-host-extension';
-import type { AdapterEvent } from '../adapter-event';
-import type { MafwToolRegistration, ThinkingLevel } from '../contract';
+import type { AdapterEvent } from '@mafw/runtime-contract';
+import type { RuntimeToolRegistration, ThinkingLevel } from '@mafw/runtime-contract';
 
 export interface PiSessionDeps {
   /** 注入 createAgentSession（ESM 桥在 pi-runtime.ts 传入） */
@@ -28,7 +28,7 @@ export interface PiSessionRegistryOptions {
   /** ESM 桥取 pi 同实例 typebox（pi-runtime 注入；host 工具注册用） */
   getType?: () => Promise<any>;
   /** MAFW 基础工具 factory（runtime tools.registerTools 注入；host extension 按会话消费） */
-  toolFactory?: (sessionId: string) => MafwToolRegistration[];
+  toolFactory?: (sessionId: string) => RuntimeToolRegistration[];
   /** 认知面 gate（spec 2026-10-22；审批扩展 tool_call 步消费） */
   evaluateGate?: (sessionID: string, payload: { tool: string; input: Record<string, unknown> }) =>
     { decision: 'allow' } | { decision: 'deny'; reason?: string; rule?: string }
@@ -60,7 +60,7 @@ export class PiSessionRegistry {
     this.policy = opts.policy;
   }
 
-  setToolFactory(f: (sessionId: string) => MafwToolRegistration[]): void {
+  setToolFactory(f: (sessionId: string) => RuntimeToolRegistration[]): void {
     this.opts = { ...this.opts, toolFactory: f };
   }
 

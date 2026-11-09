@@ -1,5 +1,5 @@
-import { PiSessionRegistry } from '../../../src/runtime/pi/pi-session';
-import { partsToPromptInput } from '../../../src/runtime/plugins/pi-runtime';
+import { PiSessionRegistry } from '../../../../adapters/pi/src/pi-session';
+import { partsToPromptInput } from '../../../../adapters/pi/src/runtime';
 
 function fakeSession(over: any = {}) {
   return {

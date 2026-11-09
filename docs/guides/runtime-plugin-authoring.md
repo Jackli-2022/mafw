@@ -125,6 +125,7 @@ module.exports = defineRuntime({
 - 旧的 `module.exports = { name, capabilities, createRuntime(ctx) }` 仍可用一个发布周期（generic bridge 包裹），新代码请直接导出 definition。
 - `registerBuiltinDefinition` 是 gateway 内部注册面；外部插件只需导出上面的对象（或继续用 §3.1 的 `createRuntime` 形状）。
 - 直接导出裸对象时**必须自带 `capabilities` 和 `channels.tools`**（Tier-0 校验）；`defineRuntime` 会补默认值。离线 `mafw plugin-check` 目前仍只识别 `createRuntime`，中性 definition 的离线检查在 Plan 5 迁移。
+- **内置 pi 是首个包形态 adapter**：源码在 `adapters/pi/src`，构建为 `@mafw/adapter-pi`（CJS bundle，external `@earendil-works/pi-coding-agent` / `@mafw/runtime-contract` / `@mafw/runtime-core`）。gateway 只在 `gateway/src/runtime/pi-adapter.ts` 通过 `require('@mafw/adapter-pi')` 导入包入口；adapter 源码不得 import `gateway/src/**`。`channels.messages.list` 返回原生历史，`channels.messages.normalize` 负责转 flat MAFW DTO（neutral runtime 只归一一次，不要在 `list` 里重复归一）。
 
 ## 3. 先让 `core` 跑起来
 

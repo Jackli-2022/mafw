@@ -1,4 +1,4 @@
-import { createPiDefinition, PI_DEFINITION_NAME } from '../../../src/runtime/pi/pi-definition';
+import { createPiDefinition, PI_DEFINITION_NAME } from '../../../../adapters/pi/src/runtime';
 import type { RuntimePluginContext } from '../../../src/runtime/loader';
 
 function fakeCtx(overrides: Partial<RuntimePluginContext> = {}): RuntimePluginContext {
@@ -22,9 +22,20 @@ it('builds a neutral definition with the pi capability set', async () => {
   expect(def.external).toBe(true);
   expect(def.capabilities.sessionApi).toBe(true);
   expect(def.capabilities.nativeApprovals).toBe(true);
+  expect(def.capabilities.steerApi).toBe(true);
+  expect(def.capabilities.discoveryApi).toBe(false);
   expect(def.capabilities.instructionsApi).toBe(false);
   expect(typeof def.transport.onEvent).toBe('function');
+  expect(typeof def.transport.respondToRequest).toBe('function');
   expect(typeof def.channels?.messages?.list).toBe('function');
+  expect(typeof def.channels?.messages?.normalize).toBe('function');
+  expect(typeof def.channels?.branch?.fork).toBe('function');
+  expect(typeof def.channels?.session?.listByDirectory).toBe('function');
+  expect(typeof def.channels?.agents?.install).toBe('function');
+  expect(typeof def.channels?.mediaSession?.create).toBe('function');
+  expect(typeof def.host?.completion?.complete).toBe('function');
+  expect(typeof def.host?.credentials?.getApiKey).toBe('function');
+  expect(typeof def.host?.healthCheck).toBe('function');
 });
 
 it('uses the neutral transport surface, not the raw runtime', async () => {

@@ -1,7 +1,7 @@
 import { RuntimeBus } from '../../../src/runtime/runtime-bus';
 import { toRuntimeDefinition } from '../../../src/runtime/adapter-bridge';
-import { translatePiEvent } from '../../../src/runtime/pi/pi-events';
-import { PI_CAPABILITIES } from '../../../src/runtime/plugins/pi-runtime';
+import { translatePiEvent } from '../../fixtures/pi-canonical-events';
+import { PI_CAPABILITIES } from '../../../../adapters/pi/src/runtime';
 
 const SESSION = 'pi_golden';
 

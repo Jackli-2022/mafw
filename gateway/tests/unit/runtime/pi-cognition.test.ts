@@ -1,5 +1,5 @@
-import { createMafwApprovalExtension } from '../../../src/runtime/pi/pi-approval-extension';
-import { createMafwHostExtension } from '../../../src/runtime/pi/pi-mafw-host-extension';
+import { createMafwApprovalExtension } from '../../../../adapters/pi/src/pi-approval-extension';
+import { createMafwHostExtension } from '../../../../adapters/pi/src/pi-mafw-host-extension';
 import type { GateDecision } from '../../../src/core/cognition/rules';
 
 function fakeEmitter() {

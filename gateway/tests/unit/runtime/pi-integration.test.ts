@@ -1,4 +1,4 @@
-import { createPiRuntime } from '../../../src/runtime/plugins/pi-runtime';
+import { createPiRuntime } from '../../fixtures/pi-test-runtime';
 
 jest.mock('../../../src/core/utils/logger', () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },

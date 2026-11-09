@@ -1,8 +1,8 @@
 ﻿import {
   MEMORY_GUIDE, contentToText, buildRecallQuery,
   createCognitionClient, createRecallCursor,
-} from '../host-adapter';
-import type { MafwToolRegistration } from '../contract';
+} from '@mafw/runtime-core';
+import type { RuntimeToolRegistration } from '@mafw/runtime-contract';
 
 /**
  * mafw-host —— pi 认知面宿主扩展（HostAdapter 的 pi 实现，Phase 2/3）。
@@ -25,7 +25,7 @@ export interface MafwHostDeps {
   /** ESM 桥取 pi 同实例 typebox 的 Type（registerTool 需要 TSchema 实例） */
   getType?: () => Promise<any>;
   /** MAFW 基础工具 factory（runtime tools.registerTools 注入；gateway 单源） */
-  toolFactory?: (sessionId: string) => MafwToolRegistration[];
+  toolFactory?: (sessionId: string) => RuntimeToolRegistration[];
   /** 认知面 gate/rewrite（spec 2026-10-22-cognition-gate-rewrite）：
    *  gatePrompt（input 门——内部豁免在服务层）/ applyToolResultRedact（输出脱敏）。
    *  缺省 = 两钩零行为（向后兼容）。gateToolCall 走审批扩展 registry 通道，不经此。 */

@@ -87,10 +87,10 @@ gateway/
 │   │   ├── opencode-runtime.ts   #   内置恒等实现（全能力）
 │   │   ├── mafw-tools.ts         #   六件套单源（spec + execute factory + 激活助手）
 │   │   ├── tool-classes.ts       #   工具语义类别层（并集表 + runtime 声明 overlay）
-│   │   ├── host-adapter.ts       #   认知面契约（四动词，loopback HTTP）
+│   │   ├── host-adapter.ts       #   re-export `@mafw/runtime-core` 认知面契约（四动词，loopback HTTP）
 │   │   ├── event-mapper.ts / canonical-facets.ts / mafw-vocabulary.ts   # 事件映射 + 词汇单源
 │   │   ├── identity-registry.ts / identity-state.ts        # agent 身份单一事实源
-│   │   └── pi/ + plugins/        #   pi runtime 实现 + 适配层
+│   │   └── pi-adapter.ts         #   唯一 `require('@mafw/adapter-pi')` 入口（pi 实现已移出 gateway）
 │   ├── mcp/                      # MCP 工具注册表 + handlers（/mcp 双传输）
 │   ├── media/                    # A2A Media Agent、pi-adapter、插件引擎加载器
 │   ├── python/                   # 持久 Python 内核（Jupyter wire 协议 + ZeroMQ）

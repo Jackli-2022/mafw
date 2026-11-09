@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import type { AdapterEvent } from '../adapter-event';
+import type { AdapterEvent } from '@mafw/runtime-contract';
 import type { ApprovalBridge } from './pi-approval-bridge';
 
 export interface ApprovalPolicy {

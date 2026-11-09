@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { install, remove, list, get, loadAgentExtensions, getAgentDir, getPromptsDir, getExtensionsDir } from '../../../src/runtime/pi/pi-agent-config';
+import { install, remove, list, get, loadAgentExtensions, getAgentDir, getPromptsDir, getExtensionsDir } from '../../../../adapters/pi/src/pi-agent-config';
 import type { AgentDefinition } from '../../../src/runtime/agent-definition';
 
 describe('pi-agent-config', () => {

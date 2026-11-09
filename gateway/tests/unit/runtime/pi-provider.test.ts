@@ -1,4 +1,4 @@
-import { translateProviders, translateAgents, translateConfigGet, translateConfigUpdate } from '../../../src/runtime/pi/pi-provider';
+import { translateProviders, translateAgents, translateConfigGet, translateConfigUpdate } from '../../../../adapters/pi/src/pi-provider';
 
 const fakeMR = () => ({
   getProviders: () => [{ id: 'xiaomi', name: 'Xiaomi' }, { id: 'openai', name: 'OpenAI' }],

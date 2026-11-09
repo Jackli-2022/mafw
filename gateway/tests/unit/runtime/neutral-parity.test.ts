@@ -4,7 +4,7 @@ import { createNeutralRuntime } from '../../../src/runtime/neutral-runtime';
 import { createRuntimeFacade } from '../../../src/runtime/runtime-facade';
 import { toRuntimeDefinition } from '../../../src/runtime/adapter-bridge';
 import { validateRuntime } from '../../../src/runtime/validate';
-import { createPiDefinition } from '../../../src/runtime/pi/pi-definition';
+import { createPiDefinition } from '../../../../adapters/pi/src/runtime';
 import type { RuntimePluginContext } from '../../../src/runtime/loader';
 
 function transport(overrides: Partial<RuntimeTransport> = {}): RuntimeTransport {

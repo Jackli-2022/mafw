@@ -1,9 +1,9 @@
-import { listByDirectory, mapPiSessionToGateway, type PiSessionInfo } from '../../../src/runtime/pi/pi-session-storage';
+import { listByDirectory, mapPiSession, type PiAdapterSession } from '../../../../adapters/pi/src/pi-session-storage';
 
 describe('pi-session-storage', () => {
-  describe('mapPiSessionToGateway', () => {
+  describe('mapPiSession', () => {
     it('maps pi session to gateway format', () => {
-      const piSession: PiSessionInfo = {
+      const piSession: PiAdapterSession = {
         path: '/home/user/.pi/agent/sessions/abc123/session.jsonl',
         id: 'abc123',
         cwd: '/home/user/project',
@@ -14,11 +14,10 @@ describe('pi-session-storage', () => {
         firstMessage: 'Hello world',
       };
 
-      const result = mapPiSessionToGateway(piSession);
+      const result = mapPiSession(piSession);
 
       expect(result).toEqual({
         id: 'abc123',
-        projectID: '/home/user/project',
         directory: '/home/user/project',
         title: 'Test Session',
         time: {
@@ -29,7 +28,7 @@ describe('pi-session-storage', () => {
     });
 
     it('uses firstMessage as title when name is missing', () => {
-      const piSession: PiSessionInfo = {
+      const piSession: PiAdapterSession = {
         path: '/path/to/session.jsonl',
         id: 'xyz789',
         cwd: '/project',
@@ -39,13 +38,13 @@ describe('pi-session-storage', () => {
         firstMessage: 'First message content',
       };
 
-      const result = mapPiSessionToGateway(piSession);
+      const result = mapPiSession(piSession);
 
       expect(result.title).toBe('First message content');
     });
 
     it('uses id as title when both name and firstMessage are missing', () => {
-      const piSession: PiSessionInfo = {
+      const piSession: PiAdapterSession = {
         path: '/path/to/session.jsonl',
         id: 'fallback-id',
         cwd: '/project',
@@ -55,13 +54,13 @@ describe('pi-session-storage', () => {
         firstMessage: '',
       };
 
-      const result = mapPiSessionToGateway(piSession);
+      const result = mapPiSession(piSession);
 
       expect(result.title).toBe('fallback-id');
     });
 
     it('handles missing dates gracefully', () => {
-      const piSession: PiSessionInfo = {
+      const piSession: PiAdapterSession = {
         path: '/path/to/session.jsonl',
         id: 'test-id',
         cwd: '/project',
@@ -71,7 +70,7 @@ describe('pi-session-storage', () => {
         firstMessage: '',
       };
 
-      const result = mapPiSessionToGateway(piSession);
+      const result = mapPiSession(piSession);
 
       expect(result.time.created).toBe(0);
       expect(result.time.updated).toBe(0);
@@ -91,7 +90,7 @@ describe('pi-session-storage', () => {
     });
 
     it('calls SessionManager.list with directory', async () => {
-      const mockSessions: PiSessionInfo[] = [
+      const mockSessions: PiAdapterSession[] = [
         {
           path: '/path/session1.jsonl',
           id: 'session1',
@@ -119,7 +118,7 @@ describe('pi-session-storage', () => {
     });
 
     it('applies limit when provided', async () => {
-      const mockSessions: PiSessionInfo[] = [
+      const mockSessions: PiAdapterSession[] = [
         {
           path: '/path/session1.jsonl',
           id: 'session1',
@@ -178,7 +177,7 @@ describe('pi-session-storage', () => {
     });
 
     it('maps all sessions to gateway format', async () => {
-      const mockSessions: PiSessionInfo[] = [
+      const mockSessions: PiAdapterSession[] = [
         {
           path: '/path/session1.jsonl',
           id: 'session1',
@@ -211,13 +210,11 @@ describe('pi-session-storage', () => {
       expect(result).toHaveLength(2);
       expect(result[0]).toMatchObject({
         id: 'session1',
-        projectID: '/project',
         directory: '/project',
         title: 'Session 1',
       });
       expect(result[1]).toMatchObject({
         id: 'session2',
-        projectID: '/project',
         directory: '/project',
         title: 'World',
       });

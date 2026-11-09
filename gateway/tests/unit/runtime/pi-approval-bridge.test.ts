@@ -1,4 +1,4 @@
-import { ApprovalBridge } from '../../../src/runtime/pi/pi-approval-bridge';
+import { ApprovalBridge } from '../../../../adapters/pi/src/pi-approval-bridge';
 
 describe('ApprovalBridge', () => {
   let bridge: ApprovalBridge;

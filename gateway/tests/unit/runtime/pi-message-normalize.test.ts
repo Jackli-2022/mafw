@@ -1,4 +1,4 @@
-import { normalizePiMessages, normalizePiLiveMessage } from '../../../src/runtime/pi/pi-message-normalize';
+import { normalizePiMessages, normalizePiLiveMessage } from '../../../../adapters/pi/src/pi-message-normalize';
 import { isMafwMessage } from '../../../src/runtime/canonical-types';
 
 const T = 1_700_000_000_000;

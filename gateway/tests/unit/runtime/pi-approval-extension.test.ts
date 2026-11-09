@@ -1,5 +1,5 @@
-import { createMafwApprovalExtension } from '../../../src/runtime/pi/pi-approval-extension';
-import { ApprovalBridge } from '../../../src/runtime/pi/pi-approval-bridge';
+import { createMafwApprovalExtension } from '../../../../adapters/pi/src/pi-approval-extension';
+import { ApprovalBridge } from '../../../../adapters/pi/src/pi-approval-bridge';
 import type { AdapterEvent } from '../../../src/runtime/adapter-event';
 
 describe('MafwApprovalExtension', () => {

@@ -60,6 +60,63 @@ it('removed the legacy bridge shim', () => {
   expect(fs.existsSync(path.join(__dirname, '../../../src/runtime/legacy'))).toBe(false);
 });
 
+it('the legacy in-tree pi driver is gone and the package shim is the only import site', () => {
+  const root = path.join(__dirname, '../../../src');
+  expect(fs.existsSync(path.join(root, 'runtime/pi'))).toBe(false);
+  expect(fs.existsSync(path.join(root, 'runtime/plugins/pi-runtime.ts'))).toBe(false);
+
+  const offenders: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!entry.name.endsWith('.ts')) continue;
+      const rel = path.relative(root, full).replace(/\\/g, '/');
+      for (const line of fs.readFileSync(full, 'utf8').split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('import') && !trimmed.includes('require(') && !trimmed.includes('import(')) continue;
+        if (!trimmed.includes('@mafw/adapter-pi') && !trimmed.includes('adapters/pi')) continue;
+        if (rel !== 'runtime/pi-adapter.ts') offenders.push(`${rel}: ${trimmed}`);
+      }
+    }
+  };
+  walk(root);
+  expect(offenders).toEqual([]);
+});
+
+it('the pi adapter package does not reach back into the gateway', () => {
+  const adapterRoot = path.join(__dirname, '../../../../adapters/pi/src');
+  const offenders: string[] = [];
+  const allowedPackage = (line: string) =>
+    line.includes("'@mafw/runtime-contract") ||
+    line.includes("'@mafw/runtime-core") ||
+    line.includes("'@earendil-works/pi-coding-agent") ||
+    /from\s+['"](?:node:)?(?:fs|path|crypto|os|url|util)['"]/.test(line) ||
+    /require\(\s*['"](?:node:)?(?:fs|path|crypto|os|url|util)['"]\s*\)/.test(line);
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) { walk(path.join(dir, entry.name)); continue; }
+      if (!entry.name.endsWith('.ts')) continue;
+      const full = path.join(dir, entry.name);
+      for (const line of fs.readFileSync(full, 'utf8').split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('import') && !trimmed.includes('require(') && !trimmed.includes('import(')) continue;
+        const specifier = /from\s+['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)/.exec(trimmed);
+        const from = specifier?.[1] ?? specifier?.[2];
+        if (!from) continue;
+        if (from.startsWith('.')) {
+          if (from.startsWith('../../')) offenders.push(`${entry.name}: ${trimmed}`);
+          continue;
+        }
+        if (!allowedPackage(trimmed)) offenders.push(`${entry.name}: ${trimmed}`);
+      }
+    }
+  };
+  walk(adapterRoot);
+  expect(offenders).toEqual([]);
+});
+
 it('missing-surface errors stay runtime-neutral', () => {
   const access = readCode(path.join(__dirname, '../../../src/runtime/runtime-access.ts'));
   expect(FORBIDDEN.test(access)).toBe(false);

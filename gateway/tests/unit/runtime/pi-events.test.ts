@@ -1,7 +1,7 @@
-import { translatePiEvent, setPiUnknownRecorder, PI_EVENT_MAPPINGS, PI_EVENT_SOURCE, piTransformEvent } from '../../../src/runtime/pi/pi-events';
+import { translatePiEvent, setPiUnknownRecorder, PI_EVENT_MAPPINGS, PI_EVENT_SOURCE, piTransformEvent } from '../../fixtures/pi-canonical-events';
 import { hasEventDeclarations } from '../../../src/runtime/event-mapper';
 import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
-import { normalizePiMessages } from '../../../src/runtime/pi/pi-message-normalize';
+import { normalizePiMessages } from '../../../../adapters/pi/src/pi-message-normalize';
 
 describe('pi 事件翻译覆盖 audit（B1）', () => {
   it('pi 注册面有声明；已知原生类型全部在映射表或 transformEvent，不依赖 canonical 直发', () => {

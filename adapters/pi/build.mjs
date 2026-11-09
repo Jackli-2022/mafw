@@ -42,6 +42,7 @@ writeFileSync(
   resolve(here, 'dist/index.d.ts'),
   [
     "import type { RuntimeCapabilities, RuntimeDefinition, RuntimeFactoryContext } from '@mafw/runtime-contract';",
+    'export declare const PI_DEFINITION_NAME: string;',
     'export declare const PI_CAPABILITIES: RuntimeCapabilities;',
     'export declare function createPiDefinition(ctx: RuntimeFactoryContext, deps?: unknown): Promise<RuntimeDefinition>;',
     'export declare function setPiUnknownRecorder(fn: ((type: string) => void) | undefined): void;',

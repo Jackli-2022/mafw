@@ -25,7 +25,7 @@ describe('终审 #4：gate-ask 强制 human（政策环让路）', () => {
     expect(hookSrc).toMatch(/cognition rule requested human confirmation/);
   });
   it('审批扩展 ask 路径携带 forceHuman + cognitionAsk reason', () => {
-    const extSrc = readFileSync(join(__dirname, '../../../src/runtime/pi/pi-approval-extension.ts'), 'utf8');
+    const extSrc = readFileSync(join(__dirname, '../../../../adapters/pi/src/pi-approval-extension.ts'), 'utf8');
     expect(extSrc).toMatch(/forceHuman: true/);
     expect(extSrc).toMatch(/cognitionAsk/);
   });

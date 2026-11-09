@@ -50,6 +50,8 @@
     "packages/runtime-contract/dist/",
     "packages/runtime-core/package.json",
     "packages/runtime-core/dist/",
+    "adapters/pi/package.json",
+    "adapters/pi/dist/",
     "packages/tui/dist/",
     "README.md"
   ],

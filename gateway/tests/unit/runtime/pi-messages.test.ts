@@ -1,4 +1,4 @@
-import { translatePiMessages, piMessagesToParts } from '../../../src/runtime/pi/pi-messages';
+import { translatePiMessages, piMessagesToParts } from '../../../../adapters/pi/src/pi-messages';
 
 describe('translatePiMessages', () => {
   it('maps role and text content to opencode shape', () => {

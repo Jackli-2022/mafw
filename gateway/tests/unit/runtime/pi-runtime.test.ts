@@ -1,4 +1,5 @@
-import { PI_CAPABILITIES, createPiRuntime, partsToPromptInput } from '../../../src/runtime/plugins/pi-runtime';
+import { PI_CAPABILITIES, partsToPromptInput } from '../../../../adapters/pi/src/runtime';
+import { createPiRuntime } from '../../fixtures/pi-test-runtime';
 
 jest.mock('../../../src/core/utils/logger', () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -161,7 +162,7 @@ describe('pi session.update (rename)', () => {
 
   it('persisted session → SessionManager.open + appendSessionInfo', async () => {
     const rt = await createPiRuntime(
-      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { fetch, log: console, pluginConfig: () => ({}), projectDir: '/tmp/proj' } as any,
       { loadPi: async () => fakePi },
     );
     await (rt.session as any).update({ sessionID: 'pi-sess-1', title: '改名' });
@@ -170,7 +171,7 @@ describe('pi session.update (rename)', () => {
 
   it('unknown session → throws a diagnosable error', async () => {
     const rt = await createPiRuntime(
-      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { fetch, log: console, pluginConfig: () => ({}), projectDir: '/tmp/proj' } as any,
       { loadPi: async () => fakePi },
     );
     await expect((rt.session as any).update({ sessionID: 'nope', title: 'x' }))
@@ -263,7 +264,7 @@ describe('permissionReply', () => {
 
     await rt.session.permissionReply!(id, 'req-1', true as any);
 
-    expect(replySpy).toHaveBeenCalledWith(id, 'req-1', true, undefined);
+    expect(replySpy).toHaveBeenCalledWith(id, 'req-1', 'once', undefined);
   });
 
   it('permissionList aggregates pending approvals across sessions (contract)', async () => {

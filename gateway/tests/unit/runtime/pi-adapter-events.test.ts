@@ -1,6 +1,6 @@
 import { mapAdapterEvent } from '../../../src/runtime/adapter-event-mapper';
-import { translatePiAdapterEvent } from '../../../src/runtime/pi/pi-adapter-events';
-import { PiEventStream } from '../../../src/runtime/pi/pi-events';
+import { translatePiAdapterEvent } from '../../../../adapters/pi/src/pi-adapter-events';
+import { PiEventStream } from '../../../../adapters/pi/src/pi-events';
 
 const liveMessage = {
   role: 'assistant',

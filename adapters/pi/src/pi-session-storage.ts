@@ -1,9 +1,9 @@
-import type { SessionInfo } from '../contract';
+import type { AdapterSession } from '@mafw/runtime-contract';
 
 /**
  * pi SessionManager.list() 返回的会话信息格式
  */
-export interface PiSessionInfo {
+export interface PiAdapterSession {
   path: string;
   id: string;
   cwd: string;
@@ -16,12 +16,11 @@ export interface PiSessionInfo {
 }
 
 /**
- * 将 pi 的 SessionInfo 映射为 gateway 的 SessionInfo 格式
+ * 将 pi 的 AdapterSession 映射为 gateway 的 AdapterSession 格式
  */
-export function mapPiSessionToGateway(pi: PiSessionInfo): SessionInfo {
+export function mapPiSession(pi: PiAdapterSession): AdapterSession {
   return {
     id: pi.id,
-    projectID: pi.cwd || '',
     directory: pi.cwd || '',
     title: pi.name || pi.firstMessage || pi.id,
     time: {
@@ -37,23 +36,23 @@ export function mapPiSessionToGateway(pi: PiSessionInfo): SessionInfo {
  * @param directory - 工作目录（cwd）
  * @param limit - 可选，限制返回数量
  * @param piModule - 可选，已加载的 pi SDK 模块（用于测试注入）
- * @returns gateway SessionInfo 数组
+ * @returns gateway AdapterSession 数组
  */
 export async function listByDirectory(
   directory: string,
   limit?: number,
   piModule?: any
-): Promise<SessionInfo[]> {
+): Promise<AdapterSession[]> {
   try {
     // 动态导入 pi SDK（ESM-only）或使用注入的模块
     const mod = piModule ?? await import('@earendil-works/pi-coding-agent');
     if (!mod?.SessionManager) return [];
 
     // 调用 pi 的 SessionManager.list(cwd)
-    const sessions: PiSessionInfo[] = await mod.SessionManager.list(directory);
+    const sessions: PiAdapterSession[] = await mod.SessionManager.list(directory);
 
     // 映射格式
-    const mapped = sessions.map(mapPiSessionToGateway);
+    const mapped = sessions.map(mapPiSession);
 
     // 应用 limit
     return limit ? mapped.slice(0, limit) : mapped;

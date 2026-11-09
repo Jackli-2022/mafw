@@ -63,7 +63,7 @@ describe('RuntimePluginLoader registerBuiltinDefinition', () => {
   });
 
   it('pi capabilities stay a single object', async () => {
-    const { PI_CAPABILITIES } = await import('../../../src/runtime/plugins/pi-runtime');
+    const { PI_CAPABILITIES } = await import('../../../../adapters/pi/src/runtime');
     const loader = new RuntimePluginLoader(dir);
     loader.registerBuiltinDefinition('pi', async () => definition('pi'), {
       external: false,
