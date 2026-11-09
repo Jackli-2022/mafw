@@ -42,6 +42,7 @@ const LEGACY_SHAPE_PATTERN = /\.info\s*\?\?|\.info\s*\|\|\s*[A-Za-z_$]|\.parts\s
  * 运行时原生协议或 Agent2Agent 消息，不是客户端历史兼容面。
  */
 const NATIVE_PROTOCOL_FILES = new Set([
+  join(GATEWAY, 'src', 'runtime', 'adapter-event-mapper.ts'),
   join(GATEWAY, 'src', 'runtime', 'opencode-adapter.ts'),
   join(GATEWAY, 'src', 'runtime', 'opencode-history.ts'),
   join(GATEWAY, 'src', 'runtime', 'opencode-events.ts'),

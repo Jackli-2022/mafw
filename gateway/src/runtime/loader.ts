@@ -15,6 +15,10 @@ import { isKnownEventType } from './event-telemetry';
 import { checkEventFields } from './event-field-contract';
 import { EventMappingEntry, validateEventMappings } from './event-mapper';
 import { resolveEventDeclaration } from './event-declaration';
+import { resolvePluginEntry } from './plugin-entry';
+import { RuntimeBus } from './runtime-bus';
+import { toRuntimeDefinition } from './legacy/legacy-plugin-bridge';
+import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import type { RuntimePackageEntry } from '../plugins/package-types';
 
 export interface RuntimePluginContext {
@@ -62,6 +66,10 @@ export class RuntimePluginLoader {
   private packageEntries = new Map<string, RuntimePackageEntry>();
   /** 激活期发现的矛盾声明（实例 caps ≠ 模块声明）——hub 可见。 */
   private extraErrors = new Map<string, string>();
+  private readonly neutralDefinitions = new Map<string, RuntimeDefinition>();
+  private readonly neutralFactories = new Map<string, (ctx: any) => Promise<RuntimeDefinition>>();
+  private readonly legacyModules = new Map<string, any>();
+  private readonly neutralBus = new RuntimeBus();
   /** canonical 词汇表（校验 eventMappings.to 用）——index.ts 注入，避免 loader 依赖矩阵。 */
   private canonicalTypes: ReadonlySet<string> = new Set();
 
@@ -129,6 +137,51 @@ export class RuntimePluginLoader {
 
     try {
       const mod = require(fullPath);
+      const entry = resolvePluginEntry(mod);
+      if (entry && entry.kind !== 'legacy') {
+        const name = mod?.name ?? (entry.kind === 'neutral' ? entry.definition.name : undefined);
+        if (!name || typeof name !== 'string') {
+          this.state.set(file, { file, status: 'error', error: 'missing name' });
+          log.error(`[RuntimePluginLoader] ${file}: missing 'name' export — plugin NOT registered`);
+          return;
+        }
+        if (loadedNames.has(name)) {
+          this.state.set(file, { file, name, status: 'error', error: 'duplicate name' });
+          log.warn(`[RuntimePluginLoader] ${file}: duplicate name '${name}', skipping`);
+          return;
+        }
+        if (entry.kind === 'neutral') {
+          this.neutralDefinitions.set(name, entry.definition);
+          this.neutralBus.register(entry.definition);
+          log.info(`[RuntimePluginLoader] Loaded neutral runtime ${file} (${name})`);
+        } else {
+          this.neutralFactories.set(name, entry.factory);
+          log.info(`[RuntimePluginLoader] Loaded neutral runtime factory ${file} (${name})`);
+        }
+        // Compatibility: a module may export both the neutral entry and the
+        // old createRuntime. Keep the old factory visible to legacy callers
+        // until Plan 3 deletes the legacy surface.
+        if (typeof mod.createRuntime === 'function') {
+          const legacyCapabilities: RuntimeCapabilities = { ...minimalCapabilities(), ...(mod.capabilities || {}) };
+          const legacyExtras: EventMappingEntry = {
+            eventSource: mod.eventSource,
+            eventMappings: Array.isArray(mod.eventMappings) ? mod.eventMappings : undefined,
+            transformEvent: typeof mod.transformEvent === 'function' ? mod.transformEvent : undefined,
+            ...(mod.eventTranslation === 'self' ? { eventTranslation: 'self' as const } : {}),
+          };
+          this.factories.set(name, mod.createRuntime);
+          this.legacyModules.set(name, mod);
+          this.meta.set(name, {
+            capabilities: legacyCapabilities,
+            external: mod.external !== false,
+            declaredCapabilityKeys: Object.keys(mod.capabilities || {}),
+            ...legacyExtras,
+          });
+        }
+        loadedNames.add(name);
+        this.state.set(file, { file, name, status: 'ok', capabilities: entry.kind === 'neutral' ? entry.definition.capabilities : undefined });
+        return;
+      }
       const name = mod?.name;
       if (!name || typeof name !== 'string') {
         this.state.set(file, { file, status: 'error', error: 'missing name' });
@@ -171,6 +224,7 @@ export class RuntimePluginLoader {
       const external = mod.external !== false;
       const declaredCapabilityKeys = Object.keys(mod.capabilities || {});
       this.factories.set(name, mod.createRuntime);
+      this.legacyModules.set(name, mod);
       this.meta.set(name, { capabilities, external, declaredCapabilityKeys, ...eventExtras });
       loadedNames.add(name);
       // Filename-stem alias: the plugin hub addresses runtime plugins by
@@ -203,6 +257,43 @@ export class RuntimePluginLoader {
   /** PluginHost 推送的包贡献。查找顺序：legacy 文件 > 包 > 内置。scan() 不影响。 */
   setPackageEntries(entries: RuntimePackageEntry[]): void {
     this.packageEntries = new Map(entries.map((e) => [e.name, e]));
+  }
+
+  /** Neutral definitions currently registered with the runtime bus. */
+  getNeutralDefinitions(): RuntimeDefinition[] {
+    return [...this.neutralDefinitions.values()];
+  }
+
+  /** Neutral runtime bus (single fan-in for AdapterEvents). */
+  getRuntimeBus(): RuntimeBus {
+    return this.neutralBus;
+  }
+
+  /**
+   * Resolve a neutral runtime by name. Static definitions are returned as-is;
+   * async factories and legacy plugins are resolved once and cached.
+   */
+  async getNeutral(name: string, ctx: any): Promise<RuntimeDefinition | undefined> {
+    const existing = this.neutralDefinitions.get(name);
+    if (existing) return existing;
+
+    const factory = this.neutralFactories.get(name);
+    if (factory) {
+      const definition = await factory(ctx);
+      this.neutralDefinitions.set(name, definition);
+      this.neutralBus.register(definition);
+      return definition;
+    }
+
+    const legacy = this.legacyModules.get(name);
+    if (legacy) {
+      const runtime = await legacy.createRuntime(ctx);
+      const definition = toRuntimeDefinition(runtime, { name, displayName: legacy.displayName ?? name });
+      this.neutralDefinitions.set(name, definition);
+      this.neutralBus.register(definition);
+      return definition;
+    }
+    return undefined;
   }
 
   /** 插件不存在或未通过校验时返回 undefined（调用方回退内置 opencode）。文件插件优先于内置。 */
