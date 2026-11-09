@@ -273,6 +273,14 @@ export class RuntimePluginLoader {
     this.packageEntries = new Map(entries.map((e) => [e.name, e]));
   }
 
+  /** True when a runtime of this name is registered in any form (file, builtin, definition). */
+  has(name: string): boolean {
+    return !!this.get(name)
+      || this.builtinDefinitions.has(name)
+      || this.neutralDefinitions.has(name)
+      || this.neutralFactories.has(name);
+  }
+
   /** Neutral definitions currently registered with the runtime bus. */
   getNeutralDefinitions(): RuntimeDefinition[] {
     return [...this.neutralDefinitions.values()];
@@ -375,6 +383,15 @@ export class RuntimePluginLoader {
 
   getState(): RuntimePluginState[] {
     for (const [name, b] of this.builtins) {
+      const extra = this.extraErrors.get(name);
+      this.state.set(`builtin:${name}`, {
+        file: `builtin:${name}`, name,
+        status: extra ? 'error' : 'ok',
+        error: extra,
+        capabilities: b.capabilities,
+      });
+    }
+    for (const [name, b] of this.builtinDefinitions) {
       const extra = this.extraErrors.get(name);
       this.state.set(`builtin:${name}`, {
         file: `builtin:${name}`, name,

@@ -243,30 +243,7 @@ import { mergeBudgetIntoSnapshot } from './core/goal-budget';
  * ask→applyApprovalPolicy 政策环。非 pi runtime（无 registry）静默跳过。
  */
 /** 认知面注入（spec 2026-10-22-cognition-gate-rewrite）：gate（审批扩展）+ 宿主钩（input 门/redact）。 */
-function wirePiCognition(runtime: AgentRuntime, gate: ReturnType<typeof createCognitionGate>): void {
-  const registry = (runtime as any).registry;
-  if (typeof registry?.setCognitionGate === 'function') {
-    registry.setCognitionGate((sessionID: string, payload: { tool: string; input: Record<string, unknown> }) => {
-      return gate.gateToolCall(sessionID, payload);
-    });
-  }
-  // 宿主钩经 opts.cognitionHost（pi-session 构造期读取）
-  if (typeof registry?.setCognitionHost === 'function') {
-    registry.setCognitionHost({
-      gatePrompt: (sid: string, text: string) => gate.gatePrompt(sid, text),
-      applyToolResultRedact: (sid: string, tool: string, content: any[]) => gate.applyToolResultRedact(sid, tool, content),
-    });
-  }
-}
-
-function wirePiPermissionEvaluator(runtime: AgentRuntime, policy: ApprovalPolicyService): void {
-  const registry = (runtime as any).registry;
-  if (typeof registry?.setPermissionEvaluator === 'function') {
-    registry.setPermissionEvaluator((sessionID: string, candidate: Parameters<ApprovalPolicyService['evaluate']>[1]) => {
-      try { return policy.evaluate(sessionID, candidate); } catch { return null; }
-    });
-  }
-}
+// pi 的审批/认知接线已收进 driver（ctx.policy → applyPiPolicyHooks）。
 
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials, type CompletionChannel } from './runtime/contract';
 import { validateRuntime, RuntimeValidation } from './runtime/validate';
@@ -276,8 +253,11 @@ import { resolveEventDeclaration } from './runtime/event-declaration';
 import { stampDeclaredCapabilities } from './runtime/capability-source';
 import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
-import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
-import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
+import { PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
+import { createPiDefinition } from './runtime/pi/pi-definition';
+import { createNeutralRuntime } from './runtime/neutral-runtime';
+import { setPiUnknownRecorder } from './runtime/pi/pi-events';
+import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
 import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './runtime/opencode-21-events';
 import { injectServeAuth } from './runtime/proxy-auth';
@@ -868,11 +848,11 @@ class MafwScheduler {
     await this.runtimeLoader.init();
     // 内置插件注册：pi-coding-agent runtime（进程内 SDK 嵌入）
     // extras 声明事件映射（纯数据）——加载期校验 + dry-event 试衣间 + 流包装用。
-    this.runtimeLoader.registerBuiltin('pi', createPiRuntime, PI_CAPABILITIES, true, {
-      eventSource: PI_EVENT_SOURCE,
-      eventMappings: PI_EVENT_MAPPINGS,
-      transformEvent: piTransformEvent,
-    });
+    this.runtimeLoader.registerBuiltinDefinition(
+      'pi',
+      (ctx) => createPiDefinition(ctx),
+      { external: false, capabilities: PI_CAPABILITIES },
+    );
     // pi 内部翻译路径的未知原生事件 → 统一遥测（gateway 侧 wrap 的 onUnknown
     // 对 pi 不可达——事件到达时已信封化；recorder 挂在 transformEvent fallthrough）。
     setPiUnknownRecorder((t) => { try { this.unknownEventTracker.record('pi', t); } catch { /* fail-open */ } });
@@ -2061,15 +2041,27 @@ class MafwScheduler {
   /** 单激活路径（D 收敛）：plugin/builtin/package 同一序列。fatal=true 时校验失败抛错触发回退。 */
   private async activatePluginRuntime(name: string, fatal: boolean): Promise<RuntimeFacade | null> {
     const plugin = this.runtimeLoader?.get(name);
+    const creds = name === 'opencode' ? undefined : await this.runtimeCredentialsForPlugin();
+    const ctx = createRuntimePluginContext(creds, {
+      projectDir: this.resolvedProjectDir(),
+      rootDir: this.ensureRuntimeRootDir(),
+      gatewayPort: config.server.apiPort,
+      policy: this.runtimePolicyHooks(),
+    });
+
+    // Neutral path: a registered definition is the only entry. The legacy
+    // `createRuntime` branch stays reachable until Plan 4 deletes it.
+    let definition: RuntimeDefinition | undefined;
+    try {
+      definition = await this.runtimeLoader?.resolveBuiltinDefinition(name, ctx);
+    } catch (err: any) {
+      log.warn(`[Runtime] '${name}' definition failed: ${err?.message ?? err}${fatal ? ' — falling back' : ''}`);
+    }
+    if (definition) return this.activateNeutralRuntime(name, definition, fatal);
+
     if (!plugin) return null;
     try {
-      // builtin opencode 无凭据需求；插件走当前 runtime 凭据链（pi 认证消费）
-      const creds = name === 'opencode' ? undefined : await this.runtimeCredentialsForPlugin();
-      const rawRuntime = await plugin.createRuntime(createRuntimePluginContext(creds, {
-        projectDir: this.resolvedProjectDir(),
-        rootDir: this.ensureRuntimeRootDir(),
-        gatewayPort: config.server.apiPort,
-      }));
+      const rawRuntime = await plugin.createRuntime(ctx);
       // 能力声明单源（G3）：module.exports.capabilities 为准；实例若自带且不一致 →
       // log.error 后仍以模块声明覆盖（普通可写赋值，激活期降级路径继续可写）。
       const capabilityMismatch = stampDeclaredCapabilities(rawRuntime, plugin.capabilities);
@@ -2108,10 +2100,6 @@ class MafwScheduler {
       // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
       await activateRuntimeTools(rawRuntime, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
       log.info(`[Runtime] using runtime '${rawRuntime.name}' (${name}, capabilities: ${JSON.stringify(rawRuntime.capabilities)})`);
-      // 组合根在 facade 创建前完成 runtime 私有宿主接线（pi registry 等）；
-      // registry 不进入 facade，业务核心无法触达原生宿主对象。
-      wirePiPermissionEvaluator(rawRuntime, this.approvalPolicy);
-      wirePiCognition(rawRuntime, this.cognitionGate);
       const wrapped = this.wrapRuntimeIdentity(rawRuntime);
       // Runtime Ingress：翻译、合帧与 RawRuntime 全部留在 facade 闭包内；
       // 业务核心从返回值起只看到 canonical 面。
@@ -2134,6 +2122,63 @@ class MafwScheduler {
       return this.adoptRuntimeHost(wrapped, facade);
     } catch (err: any) {
       log.warn(`[Runtime] '${name}' createRuntime failed: ${err.message}${fatal ? ' — falling back' : ''}`);
+      return null;
+    }
+  }
+
+  /** Gateway 交给 driver 的中性策略钩子（审批 / 认知门 / 结果脱敏）。 */
+  private runtimePolicyHooks(): import('@mafw/runtime-contract').RuntimePolicyHooks {
+    return {
+      evaluatePermission: (sessionID, candidate) => {
+        try { return this.approvalPolicy.evaluate(sessionID, candidate as any); } catch { return null; }
+      },
+      gateToolCall: (sessionID, payload) => this.cognitionGate.gateToolCall(sessionID, payload),
+      gatePrompt: (sessionID, text) => this.cognitionGate.gatePrompt(sessionID, text),
+      redactToolResult: (sessionID, tool, content) => this.cognitionGate.applyToolResultRedact(sessionID, tool, content as any),
+    };
+  }
+
+  /** 中性 runtime 激活：definition → AgentRuntime → 校验/工具/身份 → facade。 */
+  private async activateNeutralRuntime(
+    name: string,
+    definition: RuntimeDefinition,
+    fatal: boolean,
+  ): Promise<RuntimeFacade | null> {
+    try {
+      const rawRuntime = createNeutralRuntime(definition, {
+        bus: this.runtimeLoader!.getRuntimeBus(),
+        host: {
+          getBaseUrl: () => `http://127.0.0.1:${config.server.apiPort}`,
+        },
+      });
+      this.applyRuntimeValidation(rawRuntime, name, fatal, {
+        declaration: { eventTranslation: 'self' },
+        plugin: {
+          name,
+          createRuntime: () => {},
+          external: definition.external ?? false,
+          capabilities: rawRuntime.capabilities,
+        },
+        source: 'active',
+        declaredCapabilityKeys: Object.keys(rawRuntime.capabilities),
+      });
+      await activateRuntimeTools(rawRuntime, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
+      log.info(`[Runtime] using neutral runtime '${definition.name}' (${name})`);
+      const wrapped = this.wrapRuntimeIdentity(rawRuntime);
+      const facade = await createRuntimeFacade(wrapped, {
+        neutral: true,
+        entry: { eventTranslation: 'self' },
+        isCanonical: (t) => CANONICAL_TYPE_SET.has(t),
+        hooks: {
+          onUnmatched: (t) => this.recordTranslationDrop(definition.name, t, 'unmatched'),
+          onSuppressed: (t) => this.recordTranslationDrop(definition.name, t, 'suppressed'),
+          onTranslationError: (_raw, reason) => this.recordTranslationError(definition.name, 'transformEvent', reason),
+        },
+        onHistoryViolation: (reason) => this.recordTranslationError(definition.name, 'normalizeMessages', reason),
+      });
+      return this.adoptRuntimeHost(wrapped, facade);
+    } catch (err: any) {
+      log.warn(`[Runtime] neutral '${name}' activation failed: ${err.message}${fatal ? ' — falling back' : ''}`);
       return null;
     }
   }
@@ -2641,7 +2686,7 @@ class MafwScheduler {
           ? { eventSource: e.eventSource, eventMappings: e.eventMappings, transformEvent: e.transformEvent }
           : null;
       },
-      hasPlugin: (name: string) => !!this.runtimeLoader?.get(name),
+      hasPlugin: (name: string) => !!this.runtimeLoader?.has(name),
       listPlugins: () =>
         (this.runtimeLoader?.getState() ?? [])
           .filter((s) => s.status === 'ok' && s.name)

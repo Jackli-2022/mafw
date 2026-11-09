@@ -48,6 +48,11 @@ export interface RuntimeFacadeOptions {
   isCanonical: (type: string) => boolean;
   hooks?: TranslationHooks & { onNoMappings?: () => void };
   onHistoryViolation?: (reason: string) => void;
+  /**
+   * The source already speaks canonical (a neutral runtime backed by the bus):
+   * skip dialect translation entirely and pass the stream through.
+   */
+  neutral?: boolean;
 }
 
 const PUBLIC_KEYS = [
@@ -83,7 +88,7 @@ export async function createRuntimeFacade(
   options: RuntimeFacadeOptions,
 ): Promise<RuntimeFacade> {
   const hasEventStream = typeof (raw as any)?.global?.event === 'function';
-  if (hasEventStream) {
+  if (hasEventStream && !options.neutral) {
     await wrapDialectEventStream(raw, options.entry, options.isCanonical, options.hooks);
   }
 
@@ -125,7 +130,7 @@ export async function createRuntimeFacade(
     };
   }
   facade.access = new RuntimeAccess(raw);
-  facade.rewireEvents = () => wrapDialectEventStream(raw);
+  facade.rewireEvents = () => options.neutral ? Promise.resolve('neutral') : wrapDialectEventStream(raw);
   Object.defineProperty(facade, RUNTIME_FACADE, { value: true, enumerable: false });
   return facade as RuntimeFacade;
 }
