@@ -26,6 +26,7 @@ import { withPluginEmit, withPluginHttp } from './package-context';
 import { PluginActionRegistry, type PluginActionInvokeOptions } from './plugin-actions';
 import { PluginEventRegistry, type PluginEventFrame } from './plugin-events';
 import { createPluginHttpRecorder, createPluginHttpRegistry, type PluginHttpRecorder, type PluginHttpRegistry } from './plugin-http';
+import { disposeHostServices } from './plugin-host-services';
 import { DEFAULT_WEB_SURFACE_ENTRY, validatePluginWebSurfaces } from './plugin-web-assets';
 import { createRegistrationBag, type RegistrationBag } from './registration-bag';
 import type {
@@ -761,6 +762,12 @@ export class PluginHost {
       revision: record.revision,
       token: record.emitterToken,
     });
+    // Host services: the activation bag already owns this revision's terminal
+    // handle; this package-level sweep is the belt-and-braces retire path
+    // (remove/disable/stop) that also catches handles created outside the
+    // standard context factory. Disposing is idempotent and a later create()
+    // re-arms, so the sweep can never brick a freshly staged revision.
+    record.bag.add('host-services', () => disposeHostServices(name));
     // HTTP/WS routes are replayed from the activation recorder only here: a
     // staged candidate stays unreachable until its revision is committed. The
     // retirement disposer is attached to the same bag at commit time (never at
@@ -1196,6 +1203,10 @@ module.exports = {
 - \`ctx.effect(dispose)\` —— 注册 timer/listener 等清理；包被替换/停用/删除或离线 check 结束时执行（LIFO）
 - \`ctx.pluginConfig()\` —— 读 config.yaml \`plugins.<name>.config\`（回退 legacy 三段 pluginConfig）
 - \`ctx.projectDir\` / \`ctx.gatewayPort\` / \`ctx.usage.modelStats({sinceMs?, provider?})\`
+- \`ctx.files.list(projectDir, rel)\` / \`stat\` / \`read(projectDir, rel, {maxBytes?})\` —— 只读项目文件；
+  projectDir 传请求票据绑定的目录（不是 ctx.projectDir），越界/点文件/符号链接逃逸一律拒绝
+- \`ctx.terminal.create({projectDir, cols?, rows?})\` / \`bridge(id, ws)\` / \`resize\` / \`kill\` ——
+  与桌面终端同一 PTY；包被替换/停用/删除时自动关闭本包创建的会话
 
 ## 优先级
 

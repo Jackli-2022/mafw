@@ -1,8 +1,10 @@
 import { config } from '../config';
 import { log } from '../core/utils/logger';
 import type { UsageStatsProvider } from '../usage/plugin-context';
+import type { TerminalService } from '../terminal/terminal-service';
 import type { RegistrationBag } from './registration-bag';
 import type { PluginHttpApi } from './plugin-http';
+import { createPluginFilesApi, createPluginTerminalApi } from './plugin-host-services';
 import type { PluginEmitEvent, PluginPackageContext } from './package-types';
 
 export interface PackageContextDeps {
@@ -24,6 +26,12 @@ export interface PackageContextDeps {
    * 静默接受一个永远不会执行的清理。
    */
   bag?: RegistrationBag;
+  /**
+   * 中性 terminal service 的惰性取用（runtime 热切换安全）。缺省 = 宿主未接
+   * 终端能力：`ctx.terminal.create` 抛中性错误，而不是静默接受一个永远跑不了
+   * 的 PTY 请求。
+   */
+  terminal?: () => TerminalService | undefined;
 }
 
 const EMPTY_USAGE: UsageStatsProvider = { modelStats: () => [] };
@@ -92,6 +100,17 @@ export function createPluginPackageContext(name: string, deps: PackageContextDep
   const readPluginConfig = (): Record<string, any> =>
     (config.raw as any)?.plugins?.[name]?.config ?? readLegacyFallback(name);
 
+  // Host services: `files` is pure fs (scoped per call), `terminal` is one
+  // activation handle whose PTYs die with this candidate's RegistrationBag.
+  // The instance also stays reachable for the package-level retire sweep.
+  const files = createPluginFilesApi();
+  const terminal = createPluginTerminalApi({
+    pkg: name,
+    service: () => deps.terminal?.(),
+    bag: deps.bag,
+    log,
+  });
+
   return {
     log,
     fetch: (url, opts) => fetch(url, { ...opts, signal: opts?.signal ?? AbortSignal.timeout(60_000) }),
@@ -121,6 +140,8 @@ export function createPluginPackageContext(name: string, deps: PackageContextDep
     usage: deps.usageStats?.() ?? EMPTY_USAGE,
     emit: (event) => deps.emit?.(event),
     http: unavailableHttp(),
+    files,
+    terminal,
     effect: (dispose) => {
       if (!deps.bag) {
         throw new Error('ctx.effect is not available: this host did not provide a registration bag');

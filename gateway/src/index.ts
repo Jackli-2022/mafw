@@ -874,6 +874,9 @@ class MafwScheduler {
         // ctx.effect 的清理挂在本 candidate 的 RegistrationBag：reload/replace/
         // disable/delete/离线 check 时统一执行（LIFO）。
         bag,
+        // ctx.terminal 复用桌面终端同一个 TerminalService（惰性：runtime 热切换
+        // 与「无 PTY 能力」都在调用时现读）。PTY 归属目录由插件按请求票据传入。
+        terminal: () => this.getTerminalService(),
         emit: (event) => this.broadcast(event),
         // 包只能改 plugins.<package>.config——context 负责收敛命名空间与
         // 补丁安全校验，这里只透传到既有的 config.persistOverrides。

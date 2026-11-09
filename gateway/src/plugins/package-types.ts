@@ -3,6 +3,7 @@ import type { PromptFn } from '../media/media-service';
 import type { AgentRuntime, RuntimeCapabilities, RuntimeCredentials } from '../runtime/contract';
 import type { UsageStatsProvider } from '../usage/plugin-context';
 import type { PluginHttpApi } from './plugin-http';
+import type { PluginFilesApi, PluginTerminalApi } from './plugin-host-services';
 import type {
   PluginActionDescriptor,
   PluginEventDescriptor,
@@ -37,6 +38,18 @@ export interface PluginPackageContext {
    * 一起退役（WS 以 1001 关闭）。离线 `checkPackage` 只校验不注册。
    */
   http: PluginHttpApi;
+  /**
+   * 只读的项目文件访问（v1）。每次调用都要传**票据绑定的 projectDir**（首个
+   * 参数），绝不用 `ctx.projectDir`（gateway 启动目录）。realpath 包含校验：
+   * `..` / 绝对路径 / 点文件 / 符号链接逃逸一律拒绝；`read` 默认 8 MiB 上限。
+   */
+  files: PluginFilesApi;
+  /**
+   * 与桌面终端同一 `TerminalService` 的 PTY 访问。`create` 需要显式
+   * `projectDir`；本包只控制自己创建的 id（`bridge`/`resize` 越权直接抛错，
+   * `kill` 幂等 no-op）。PTY 随本 revision 的 RegistrationBag 一起关闭。
+   */
+  terminal: PluginTerminalApi;
   /**
    * 注册本包在 `activate()` 里创建的外部副作用清理（timer / listener /
    * 自建 watcher / 缓存等）。

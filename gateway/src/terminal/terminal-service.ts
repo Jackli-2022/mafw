@@ -229,6 +229,22 @@ export class TerminalService {
     return { protocol: MAFW_TERMINAL_PROTOCOL, id, url: terminalConnectPath(id) };
   }
 
+  /**
+   * 直接 resize（不经客户端帧）：宿主侧主动调整尺寸（插件 `ctx.terminal.resize`）。
+   *
+   * 与帧路径同语义：缺省用本进程记录的目录；失败由调用方按非致命处理。
+   */
+  async resize(id: string, cols: number, rows: number, directory?: string): Promise<void> {
+    if (!id) throw new TerminalTicketError('terminal session id is required');
+    if (!Number.isInteger(cols) || cols <= 0 || !Number.isInteger(rows) || rows <= 0) {
+      throw new TerminalTicketError('terminal size must be positive integers');
+    }
+    const channel = this.channel();
+    if (!channel) throw new TerminalUnsupportedError();
+    const dir = directory ?? this.sessions.get(id)?.directory;
+    await channel.resize({ id, ...(dir ? { directory: dir } : {}), cols, rows });
+  }
+
   /** 签发一次性 ticket：绑定 ptyId + directory + 短 TTL。 */
   issueTicket(opts: { id: string; directory: string }): TerminalTicketView {
     if (!this.channel()) throw new TerminalUnsupportedError();
