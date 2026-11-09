@@ -55,6 +55,16 @@ const MESSAGE_WINDOW_FIELDS = [
   'id', 'title', 'triggerEvent', 'viewAction', 'modal', 'dismissible',
 ] as const;
 
+/**
+ * Web surface fields a Creator may read back from a committed descriptor.
+ *
+ * `url` is gateway-computed (`/api/plugins/<pkg>/ui/<entry>`); the package
+ * declares everything else. Handlers and on-disk paths never appear here.
+ */
+const WEB_SURFACE_FIELDS = [
+  'id', 'title', 'icon', 'entry', 'scope', 'reloadOnSessionChange', 'rail', 'url',
+] as const;
+
 function isRecord(value: unknown): value is Record<string, any> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -117,6 +127,7 @@ function projectUi(ui: unknown): Record<string, Array<Record<string, any>>> {
     toolCards: objects(source.toolCards).map((item) => pick(item, TOOL_CARD_FIELDS)),
     configPages: objects(source.configPages).map((item) => pick(item, CONFIG_PAGE_FIELDS)),
     messageWindows: objects(source.messageWindows).map((item) => pick(item, MESSAGE_WINDOW_FIELDS)),
+    webSurfaces: objects(source.webSurfaces).map((item) => pick(item, WEB_SURFACE_FIELDS)),
   };
 }
 
@@ -291,6 +302,7 @@ export const pluginInspectTool: PluginTool<PluginInspectArgs> = {
         case 'slots':
           return payloadResult('slots', {
             slots: PLUGIN_PUBLIC_CONTRACT.slots,
+            webSurfaceFields: PLUGIN_PUBLIC_CONTRACT.webSurfaceFields,
             widgets: PLUGIN_PUBLIC_CONTRACT.widgetTypes,
           });
 

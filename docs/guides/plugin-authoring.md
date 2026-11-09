@@ -14,9 +14,9 @@
 
 统一插件包由 **gateway 进程执行 Host 代码**，向 Desktop 只发送**可序列化的声明式 UI**：
 
-- 包可以做：注册 action（Host 闭包）、注册 `plugin:<package>:*` 事件、声明 panel / config page / tool card / message window。
-- 包不能做：把 Solid/React 组件、任意 HTML/CSS/JS、事件 handler 或函数传到 Desktop；跨包调用 action；发射 canonical runtime 事件；读写任意配置文件。
-- 这不是安全沙箱：安装包等于在本机 gateway 进程里执行代码。只安装你信任的目录。
+- 包可以做：注册 action（Host 闭包）、注册 `plugin:<package>:*` 事件、声明 panel / config page / tool card / message window，或用 `ui.webSurfaces[]` 提供**自己的沙箱页面**（`web/` 目录 + 自带 HTTP/WS 路由，见 §6.5）。
+- 包不能做：把 Solid/React 组件注入宿主 DOM、把任意 HTML/CSS/JS 塞进声明式 slot、把事件 handler 或函数传到 Desktop；跨包调用 action；发射 canonical runtime 事件；读写任意配置文件。
+- 这不是安全沙箱：安装包等于在本机 gateway 进程里执行代码。只安装你信任的目录。（Web 页面的沙箱防的是宿主 UI 被污染，不是防插件作者——见 §6.5。）
 
 第一阶段没有专用 Creator 会话或第二套安装通道；Agent 创建功能只是在普通空白 Session 里用受限的
 `mafw-create` 身份写项目草稿，检查/测试/安装仍走本文档描述的同一套包契约与 `PackageManager`。
@@ -31,6 +31,7 @@
   plugin.json          # 元数据
   index.js             # 入口（默认 main = index.js）
   lib/…                # 可选：包内 Host 模块
+  web/…                # 可选：Web 页面（声明 ui.webSurfaces 时必须存在）
 ```
 
 ```json
@@ -49,6 +50,7 @@
 - `main` 必须位于包目录内；manifest 不能把 Host 指向任意本地模块。
 - 单文件包 `~/.mafw/plugins/example.js` 仍受支持，等价于单入口包，名字取自文件名。
 - 包内可以 `require` 自己的模块；它们只在 gateway 执行，不会进入 Desktop。
+- `web/` 只在声明了 `ui.webSurfaces` 时被服务；入口文件缺失/逃逸会让**整包激活失败**（fail-closed）。单文件包没有 `web/` 目录，不能声明 Web 页面。
 
 ## 2. 最小可运行包
 
@@ -136,6 +138,11 @@ module.exports = {
 | `ctx.usage.modelStats({sinceMs?, provider?})` | 本地 trajectory 分模型统计 |
 | `ctx.emit(event)` | 只发射本包已注册的 `plugin:<package>:*` 事件（见 §4） |
 | `ctx.effect(dispose)` | 注册本包副作用清理函数（见下） |
+| `ctx.http.route(method, path, handler, opts?)` / `ctx.http.ws(path, handler)` | 本包作用域的 HTTP/WS 路由（`/api/plugins/<pkg>/api<path>`、`/ws<path>`），只能在 `activate()` 内注册，随 revision 退役（见 §6.5） |
+| `ctx.files.list(projectDir, rel)` / `stat` / `read` | 只读项目文件；第一个参数始终是**票据绑定的 projectDir**（不是 `ctx.projectDir`），`read` 默认 8 MiB 上限、超限报错不截断 |
+| `ctx.terminal.create({ projectDir, cols?, rows? })` / `bridge` / `resize` / `kill` | 与桌面终端同一个 `TerminalService` 的 PTY；只能操作本包创建的 id，PTY 随 revision 的 RegistrationBag 关闭 |
+
+`ctx.files` / `ctx.terminal` 是**宿主基础服务**：它们只给 Host 半（`index.js`），页面永远拿不到直接文件/PTY 权限，只能通过本包自己注册的路由/WS 间接使用（§6.5 的 demo 就是文件树 + 终端）。
 
 `ctx.effect` 是 `activate()` 中创建的 timer / listener / watcher 等副作用的**唯一受支持清理路径**。包必须在创建副作用时立即登记：
 
@@ -233,7 +240,7 @@ actions: {
 
 ## 6. UI slots
 
-`ui` 只接受四个 slot（未知 slot 直接失败）：
+`ui` 接受五个 slot（未知 slot 直接失败）：`panels` / `configPages` / `toolCards` / `messageWindows` 是**声明式数据**（Desktop 用内置组件渲染）；`webSurfaces` 是**沙箱 Web 页面**（插件自己写 HTML/JS）。两类可以并存于同一个包。
 
 ### 6.1 panels
 
@@ -368,6 +375,101 @@ ui: {
 - `dismissible:true` 支持关闭按钮与 Esc。
 - 小窗内按钮仍是 action widget，经本包 action 回调 gateway；action 需要开小窗时，在 action 中发射相应注册事件，不要新增脚本化 UI 命令。
 
+### 6.5 webSurfaces（沙箱 Web 页面）
+
+`panels` 用宿主组件渲染数据；`webSurfaces` 让插件交付**自己写的页面**，由 Desktop 在沙箱 `<webview>` 里加载。适合文件树、编辑器、终端、分栏、图表等声明式 widget 表达不了的交互。
+
+```js
+ui: {
+  webSurfaces: [{
+    id: 'explorer',
+    title: 'Web Surface Demo',
+    icon: 'folder',
+    entry: 'index.html',                 // 缺省 index.html，必须落在 web/ 内
+    scope: 'project',                    // session（默认）| project | global
+    reloadOnSessionChange: true,         // 缺省 true
+    rail: { icon: 'folder', order: 10, badge: true }, // 可选左栏入口
+  }],
+}
+```
+
+- 一个 surface 是右工作台「工作台」里的一个 L2 tab，客户端 key 仍是 `plugin:<package>:<id>`；与 `panels` 共享 id 命名空间（同包 id 冲突 = validation error）。
+- `entry` 必须是 `web/` 下的相对路径：拒绝 `..`、绝对路径、scheme、点文件；入口缺失/不可读时**整包激活失败**，不会发布一个打开就 404 的页面。
+- `rail` 可选：声明后左栏出现入口；`icon` 必须命中宿主字形白名单（未知图标是 validation error，不是静默画 `plus`）。`order` 缺省 100，`badge` 缺省 false（角标计数由页面经 bridge `setBadge` 提供）。
+- `scope`：`session`（默认，绑定 `projectDir + 打开时的 sessionID`，切会话默认整页重载）、`project`（只绑 `projectDir`）、`global`（不绑）。tab 身份始终是项目级。
+- 页面地址由宿主构造：`GET /api/plugins/<pkg>/ui/<entry>?revision=<rev>`。响应固定带 CSP（`script-src 'self'`）与 `Cache-Control: no-store`；**inline script 会被 CSP 拒绝**，脚本必须是 `web/` 下的独立文件。
+- revision 变化 → 页面重载；包被移除/禁用 → tab 与左栏入口立即消失。
+
+#### 6.5.1 插件自带 host 半（`ctx.http`）
+
+页面只调本包命名空间，不碰 gateway 全局 API：
+
+```js
+async activate(ctx) {
+  ctx.http.route('GET', '/files', async (req) => {
+    // req.projectDir 来自 Web 页面票据，绝不是 ctx.projectDir
+    const entries = await ctx.files.list(req.projectDir, '.');
+    return {
+      status: 200,
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+      body: JSON.stringify({ projectDir: req.projectDir, entries }),
+    };
+  });
+
+  ctx.http.ws('/term', async (socket, reqCtx) => {
+    let session;
+    try {
+      session = await ctx.terminal.create({ projectDir: reqCtx.projectDir, cols: 100, rows: 24 });
+    } catch (err) {
+      socket.send(JSON.stringify({ type: 'error', message: err.message }));
+      socket.close(1011, 'terminal unavailable');
+      return;
+    }
+    socket.on('close', () => ctx.terminal.kill(session.id));
+    await ctx.terminal.bridge(session.id, socket);
+  });
+}
+```
+
+- HTTP 实际 URL 是 `/api/plugins/<pkg>/api<path>`，WS 是 `/api/plugins/<pkg>/ws<path>`；只支持**精确路径**（没有 `:param`、没有通配），重复注册直接抛错。
+- handler 收到 `{ method, path, query, headers, sessionID?, projectDir, body: AsyncIterable<Buffer> }`，返回 `{ status?, headers?, body? }`（`string` / `Buffer` / `Readable` / `AsyncIterable`）。请求体默认上限 32 MiB（`opts.maxBodyBytes` 可调）。
+- 路由只在 **commit 之后**生效；reload / disable / remove / revision 替换时全部退役，WS 以 1001 关闭。离线 `check` 时 `ctx.http` 只是记录器，只校验不监听。
+- `ctx.files` 是只读的，`ctx.terminal` 只能操作本包创建的 PTY；两者都只给 Host 半，页面通过上面的路由间接使用。
+- WS 用 MAFW 终端帧协议：客户端发 `{"v":1,"type":"input","data":"ls\n"}`、`{"v":1,"type":"resize","cols":100,"rows":24}`；宿主回 `{"v":1,"type":"output","data":"…"}` / `meta` / `close`。
+
+#### 6.5.2 Bridge（`window.mafwPlugin`）
+
+Desktop 在沙箱页面里注入只读 bridge（v1）：
+
+| 方法 | 用途 |
+|---|---|
+| `context()` | `{ projectDir, sessionID?, surface, theme }`；页面自己展示/裁剪 |
+| `invoke(action, input?)` | 只能调用**本包**已声明的 action |
+| `onEvent(type, cb)` | 订阅本包 `plugin:<package>:*` 事件，返回取消函数 |
+| `setBadge(count)` / `setTitle(title)` | 左栏/标签角标与页面标题 |
+| `onThemeChange(cb)` / `onContextChange(cb)` | 跟随宿主亮暗与活动会话/项目变化 |
+| `openExternal(url)` | 外链走系统浏览器；页面不能自行导航出去 |
+
+bridge 是**可选**的：页面应能在普通浏览器里以 loopback 直接打开（无票据时 gateway 用 loopback 上下文），缺 bridge 时隐藏依赖它的按钮。
+
+#### 6.5.3 票据、隔离与失败面
+
+- Desktop 打开页面前由主进程取票：`POST /api/plugins/<pkg>/web-ticket { projectDir, sessionID? }`（loopback）。gateway 设置路径限定 cookie（`Path=/api/plugins/<pkg>/`、`HttpOnly`、`SameSite=Strict`，TTL 8 小时）。
+- `/api/plugins/<pkg>/{ui,api,ws,events}*` 一律按票据解析 `{ projectDir, sessionID? }`；票据绑定包名，**跨包重放一律 403**（即使来自 loopback）。
+- 事件订阅可直接用页面侧 `EventSource('/api/plugins/<pkg>/events')`（只转发本包 `plugin:<pkg>:*`，带 `?sessionID=` 时只转发该会话），也可走 bridge `onEvent`。
+- 页面加载失败/404/5xx 时宿主显示错误面与重试按钮，不留白屏；页面自己的每个 fetch 都要处理非 2xx。
+- 旧 gateway 会**拒绝**声明 `webSurfaces` 的包（descriptor 校验是封闭的）——这是有意的 fail-closed，安装前确认 gateway 版本。
+
+#### 6.5.4 与 `panels` 怎么选
+
+| 想要 | 用 |
+|---|---|
+| 键值表、列表、进度条、按钮等纯数据视图 | `panels` + widget |
+| 文件树 / 编辑器 / 终端 / 分栏 / 图表等真实交互 | `webSurfaces` + `ctx.http` |
+| 需要项目文件或 PTY | `webSurfaces`（action 里也能调 `ctx.files`，但把文件内容塞进 256 KiB 的 action payload 不是正确用法） |
+
+完整可运行示例：`docs/examples/plugins/web-surface-demo/`（文件树 + 终端 + action/event 刷新）。
+
 ## 7. View 与 Widget
 
 `viewAction` 返回：
@@ -446,6 +548,10 @@ REST（Desktop 的 Plugins 页使用同一组接口）：
 | `GET /api/plugins/client` | 已提交的 client snapshot（只含可序列化 DTO） |
 | `POST /api/plugins/:name/actions/:action` `{input, sessionID?}` | 调用已提交 action |
 | `GET /api/plugins` | Hub 清单（含 disabled / pending / error / 来源路径 / 贡献类型） |
+| `POST /api/plugins/:name/web-ticket` `{projectDir, sessionID?}` | 为 Web 页面签发包绑定的作用域票据（仅 loopback；Desktop 主进程调用） |
+| `GET /api/plugins/:name/ui/<entry…>` | 服务已提交包的 `web/` 静态资源（CSP + `no-store`，失败一律 404） |
+| `GET /api/plugins/:name/events` | 只转发本包 `plugin:<name>:*` 事件的 SSE（可带 `?sessionID=`） |
+| `/api/plugins/:name/api/*`、`/api/plugins/:name/ws/*` | 本包 `ctx.http` 注册的 HTTP/WS 路由（票据校验后分发） |
 
 - `path` 必须是绝对路径；安装不会移动或删除源目录。
 - 同名安装必须显式 `overwrite:true`；Desktop 在覆盖前展示贡献 diff 并要求确认。
@@ -461,6 +567,8 @@ REST（Desktop 的 Plugins 页使用同一组接口）：
 - **Action 隔离**：input/output 校验、超时、AbortSignal、payload 上限、revision 代际、卸载 abort。
 - **配置隔离**：`ctx.config.update` 只能写 `plugins.<package>.config`，并通过原型污染/循环引用检查。
 - **UI 数据化**：没有函数、表达式、事件 handler、任意 HTML/CSS/JS；markdown 转义 raw HTML；link 走 browser-policy；image 只接受受限 `data:image/*`。
+- **Web 页面隔离**：页面在沙箱 `<webview>` 里跑（`contextIsolation`、`sandbox`、无 Node、CSP 禁 inline script），只能访问本包命名空间；票据绑定包名，跨包重放 403；静态资源做 realpath 包含与 MIME 白名单。注意：这防的是宿主 UI 被污染，**不是**防插件作者——Host 半仍是受信代码。
+- **文件/终端服务**：`ctx.files` 只读且限制在调用方传入的项目根内（realpath 包含，拒绝 `..`/绝对路径/点文件/符号链接逃逸）；`ctx.terminal` 只能 bridge/resize/kill 本包创建的 PTY。
 - **不是脚本化 UI 通道**：面板要开小窗时发注册事件，不新增“执行某 UI 命令”的接口。
 
 ## 11. 本地开发与验证
@@ -471,10 +579,17 @@ REST（Desktop 的 Plugins 页使用同一组接口）：
    cp -r docs/examples/plugins/service-monitor /tmp/my-plugin
    ```
 
+   Web 页面示例（文件树 + 终端）：
+
+   ```bash
+   cp -r docs/examples/plugins/web-surface-demo /tmp/my-web-plugin
+   ```
+
 2. 跑包自测（示例自带，零依赖）：
 
    ```bash
    node --test docs/examples/plugins/service-monitor/index.test.js
+   node --test docs/examples/plugins/web-surface-demo/index.test.js
    ```
 
 3. 起 gateway，在 Desktop → Config → Plugins → 安装本地目录选择源目录。安装前会先 `check` 并展示：
@@ -536,6 +651,11 @@ node scripts/stage-plugin-contract.mjs --verify <entry-file>
 | 安装后显示 pending | 包拥有当前 active runtime；确认后点「应用」 |
 | 编辑文件后仍是旧界面 | watcher 未触发或实例未变；点「重新加载」；检查是否命中 active-runtime pending |
 | `source must not be the installed package or inside it` | 直接对 `~/.mafw/plugins/<name>` 原地覆盖；改源目录再安装 |
+| `invalid web surfaces: web surface "x" entry "y" does not resolve…` | `web/` 下缺 entry、entry 拼错或路径逃逸；补齐文件后重新 check |
+| Web 页面白屏 / 404 | 包未提交、entry 拼错、旧 gateway 不支持 `webSurfaces`（会整包拒绝）；看 `[PluginHost]` diagnostic |
+| 页面 API 403 `invalid plugin ticket` | 票据过期或属于别的包；重新打开 surface（Desktop 会重新取票），不要跨包复用 cookie |
+| 页面脚本不执行 | CSP 拒绝 inline script；把脚本移到 `web/app.js` 并用 `<script src>` 引入 |
+| 页面读不到项目文件 | 路由用了 `ctx.projectDir` 而不是 `req.projectDir`（票据绑定目录） |
 
 ## 14. 示例走读
 
@@ -552,3 +672,17 @@ node scripts/stage-plugin-contract.mjs --verify <entry-file>
 - `index.test.js` — 零依赖自测：fake ctx 下逐项验证 slot/action/event、tool card override、配置往返、事件发射、嵌套 message window payload 与 widget 可序列化。
 
 端到端回归：`gateway/tests/integration/plugin-package-e2e.test.ts` 用真实 PackageManager/PluginHost 覆盖 check → install → descriptor → action → event → canonical 伪造 → 热重载 → disable/delete，以及打包后的 contract 解析。
+
+`docs/examples/plugins/web-surface-demo/`（沙箱 Web 页面）：
+
+- `plugin.json` — 包元数据。
+- `index.js` — 一次 `activate(ctx)` 返回：
+  - `ui.webSurfaces`：一个 `explorer` 页面（`entry:'index.html'`、`scope:'project'`、左栏 `folder` 入口，`order:10`、`badge:true`）。
+  - `ctx.http.route('GET', '/files')`：用 `ctx.files.list(req.projectDir, '.')` 返回项目文件树（`/api/plugins/web-surface-demo/api/files`）。
+  - `ctx.http.ws('/term')`：为票据项目 `ctx.terminal.create` 一个 PTY 并 `bridge` 到页面（`/api/plugins/web-surface-demo/ws/term`），socket 关闭时 `kill`。
+  - `actions.listFiles`：同一 host-service 路径的 bridge 动作；`actions.emitChanged`：发射 `plugin:web-surface-demo:changed`。
+  - `events`：`plugin:web-surface-demo:changed`（带 payload schema），驱动页面刷新。
+- `web/index.html` + `web/app.js` — 页面：文件树、刷新、终端 `<pre>` + 行输入、bridge 上下文/主题跟随与事件订阅；零依赖、CSP 安全（无 inline script）。
+- `index.test.js` — 零依赖自测：surface 声明、精确路由集合、`req.projectDir` 绑定、400/错误路径、action 往返、PTY 桥接与无 PTY 降级、页面 CSP 契约。
+
+端到端回归：`gateway/tests/integration/plugin-web-surface.test.ts` 用真实 PackageManager/PluginHost 覆盖 check → install → descriptor（含 `url`）→ asset/ticket/`/files` 分发 → 跨包票据 403 → 路由清单与事件 → entry 缺失 fail-closed。

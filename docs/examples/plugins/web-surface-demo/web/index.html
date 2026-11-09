@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Web Surface Demo</title>
+  <!--
+    Served from /api/plugins/web-surface-demo/ui/index.html with
+    Content-Security-Policy: script-src 'self'; style-src 'self' 'unsafe-inline';
+    connect-src 'self'. Inline scripts are blocked by the CSP, so all behaviour
+    lives in app.js. Inline <style> blocks are allowed by the style-src exception.
+  -->
+  <style>
+    :root {
+      --bg: #fcf8f1;
+      --fg: #1d1f25;
+      --muted: #6b6f7a;
+      --line: #e2ddd2;
+      --inset: #f3efe6;
+      --accent: #4fd388;
+      --danger: #c2453f;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #12110f;
+        --fg: #efede7;
+        --muted: #9aa0a8;
+        --line: #2c2a26;
+        --inset: #1a1917;
+        --accent: #4fd388;
+        --danger: #ff8a80;
+        color-scheme: dark;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #12110f;
+      --fg: #efede7;
+      --muted: #9aa0a8;
+      --line: #2c2a26;
+      --inset: #1a1917;
+      --accent: #4fd388;
+      --danger: #ff8a80;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg: #fcf8f1;
+      --fg: #1d1f25;
+      --muted: #6b6f7a;
+      --line: #e2ddd2;
+      --inset: #f3efe6;
+      --accent: #4fd388;
+      --danger: #c2453f;
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 14px 16px 18px;
+      background: var(--bg);
+      color: var(--fg);
+      font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0.01em; }
+    .context { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .spacer { flex: 1 1 auto; }
+    button {
+      font: inherit;
+      color: var(--fg);
+      background: var(--inset);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button:disabled { opacity: 0.55; cursor: default; }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.2fr);
+      gap: 14px;
+      margin-top: 12px;
+      align-items: start;
+    }
+    @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
+
+    section { min-width: 0; }
+    h2 {
+      margin: 0 0 6px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    #files {
+      margin: 0;
+      padding: 8px 10px;
+      list-style: none;
+      background: var(--inset);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      max-height: 46vh;
+      overflow: auto;
+    }
+    #files li { display: flex; gap: 8px; padding: 1px 0; }
+    #files .name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #files .meta { color: var(--muted); }
+    #files .dir .name { color: var(--accent); }
+
+    #terminal {
+      margin: 0;
+      padding: 8px 10px;
+      height: 240px;
+      overflow: auto;
+      background: #0d0d0c;
+      color: #d8d5ce;
+      border: 1px solid var(--line);
+      border-radius: 8px 8px 0 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #term-input {
+      width: 100%;
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--fg);
+      background: var(--inset);
+      border: 1px solid var(--line);
+      border-top: 0;
+      border-radius: 0 0 8px 8px;
+      padding: 6px 10px;
+    }
+    #term-input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+    #status { margin-top: 10px; color: var(--muted); font-size: 12px; min-height: 18px; }
+    #status.error { color: var(--danger); }
+    .hint { color: var(--muted); font-size: 11px; margin: 6px 0 0; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Web Surface Demo</h1>
+    <span class="context" id="context">context: connecting…</span>
+    <span class="spacer"></span>
+    <button type="button" id="notify" disabled>Emit event</button>
+    <button type="button" id="refresh" disabled>Refresh</button>
+  </header>
+
+  <main>
+    <section aria-labelledby="files-heading">
+      <h2 id="files-heading">Project files</h2>
+      <ul id="files"><li class="meta">loading…</li></ul>
+      <p class="hint">
+        Read host-side through <code>ctx.files.list(projectDir, ".")</code> and served by the
+        package route <code>GET /api/plugins/web-surface-demo/api/files</code>.
+        The project comes from the Web-surface ticket, never from the gateway directory.
+      </p>
+    </section>
+
+    <section aria-labelledby="term-heading">
+      <h2 id="term-heading">Terminal (PTY)</h2>
+      <pre id="terminal" aria-live="polite" aria-label="Terminal output"></pre>
+      <input id="term-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="type a command, Enter to run (line input demo)" disabled />
+      <p class="hint">
+        Bridged by <code>ws /term</code> to <code>ctx.terminal</code> (the same PTY stack as the
+        desktop terminal). Frames are MAFW terminal frames:
+        <code>{"v":1,"type":"input","data":"ls\n"}</code>.
+      </p>
+    </section>
+  </main>
+
+  <p id="status" role="status"></p>
+
+  <script src="app.js"></script>
+</body>
+</html>

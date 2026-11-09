@@ -10,13 +10,33 @@
  * load from a tool and easy to diff.
  */
 
-/** The four first-phase UI contribution slots. Unknown slots are rejected. */
+/** The UI contribution slots. Unknown slots are rejected. */
 export const PLUGIN_UI_SLOTS = [
   'panels',
   'toolCards',
   'configPages',
   'messageWindows',
+  'webSurfaces',
 ] as const;
+
+/**
+ * Field reference for `ui.webSurfaces[]` — the sandboxed Web page slot.
+ *
+ * Unlike the four declarative slots, a Web surface is an actual page shipped in
+ * the package's `web/` directory. `entry` must resolve below `web/` or the whole
+ * package fails activation; `url` is added by the gateway in the client
+ * descriptor and is never written by the package.
+ */
+export const PLUGIN_WEB_SURFACE_FIELDS = {
+  id: 'string, required, unique in the package and against ui.panels ids',
+  title: 'string, required, max 80 chars',
+  icon: 'optional glyph name from the plugin icon whitelist',
+  entry: 'optional file below web/, default index.html; no "..", absolute paths or scheme',
+  scope: 'session (default) | project | global',
+  reloadOnSessionChange: 'boolean, default true',
+  rail: 'optional left-rail entry { icon (required), order (default 100), badge (default false) }',
+  url: 'read-only, added by the gateway: /api/plugins/<package>/ui/<entry>',
+} as const;
 
 /** Declarative widget vocabulary rendered by Desktop. */
 export const PLUGIN_WIDGET_TYPES = [
@@ -47,6 +67,7 @@ export const PLUGIN_UI_LIMITS_SNAPSHOT = {
 
 export const PLUGIN_PUBLIC_CONTRACT = {
   slots: PLUGIN_UI_SLOTS,
+  webSurfaceFields: PLUGIN_WEB_SURFACE_FIELDS,
   widgetTypes: PLUGIN_WIDGET_TYPES,
   limits: PLUGIN_UI_LIMITS_SNAPSHOT,
 } as const;

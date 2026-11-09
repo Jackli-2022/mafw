@@ -1,0 +1,8 @@
+{
+  "name": "web-surface-demo",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Reference MAFW plugin package for sandboxed Web surfaces: a self-served page with a project file tree (ctx.files + ctx.http) and a terminal panel (ctx.terminal + WS), plus an action/event refresh loop.",
+  "author": "MAFW",
+  "license": "ISC"
+}

@@ -65,6 +65,7 @@ Desktop：`Config → Plugins → 让 Agent 创建插件`。
      plugin.json
      index.js
      index.test.js
+     web/…（可选：声明 ui.webSurfaces 时的页面与脚本）
 3. mafw_plugin_manager({ operation: "check", draft: "<packageName>" })
 4. mafw_plugin_manager({ operation: "test", draft: "<packageName>" })
 5. mafw_plugin_manager({ operation: "install", draft: "<packageName>", overwrite: false, requestId: "<新的随机 id>" })
@@ -85,6 +86,7 @@ Desktop：`Config → Plugins → 让 Agent 创建插件`。
   index.js             # 入口（默认 main = index.js）
   index.test.js        # 零依赖自测
   lib/…                # 可选：包内 Host 模块
+  web/…                # 可选：Web 页面（index.html / app.js / style.css）
 ```
 
 - 目录名、`plugin.json` 的 `name`、`module.exports.name` 必须完全一致。
@@ -92,6 +94,15 @@ Desktop：`Config → Plugins → 让 Agent 创建插件`。
 - `main` 必须在包目录内。
 - 草稿根固定为 `.mafw/plugin-drafts`；`..`、绝对路径、符号链接/junction 逃逸都会被拒绝。
 - 指纹/path 检查的实际上限：5000 个文件、50 MiB。
+
+**Web 页面（`web/`）**：Creator 现在可以直接写页面草稿——`ui.webSurfaces[]` 声明、`web/<entry>` 文件、以及页面调用的 `ctx.http` 路由都由同一个 `index.js` 提供。要点（完整契约见
+[统一插件包编写指南 §6.5](./plugin-authoring.md#65-websurfaces沙箱-web-页面)）：
+
+- `entry` 缺省 `index.html`，必须是 `web/` 内的相对路径；**入口文件缺失或路径逃逸会让 `check` 直接失败**（fail-closed），不会安装一个打开就 404 的页面。
+- `check` 会校验声明、权限引用和 entry 文件是否存在；`test` 仍只跑 `node --test`，所以**页面本身的行为要写进 `index.test.js`**（fake ctx 记录 `ctx.http` 注册、直接调用 handler），不要指望 `check` 验证 HTML/JS。
+- 页面 CSP 禁止 inline script：脚本放独立文件（`web/app.js`）并用 `<script src>` 引入；`style` 可以 inline。
+- 参考实现：`docs/examples/plugins/web-surface-demo/`（文件树 + 终端），可直接复制成草稿起点。
+- 视觉验证仍然只能由用户在真实 Desktop 里看（§12.2），模型不得声称自己看见了页面。
 
 **会被拒绝（不是跳过）的内容**：
 
@@ -254,6 +265,7 @@ mafw_plugin_manager({ operation: "install", draft: "acme", overwrite: false, req
 ### 12.2 没有视觉反馈通道
 
 - 没有截图、renderer 回传或 DOM 检查工具；模型看不见真实渲染结果。
+- Web 页面（`webSurfaces`）也一样：页面 DOM、文件树、终端输出只能由用户在真实 Desktop 里确认；`check`/`test` 通过不代表页面能工作。
 - 视觉正确性只以**用户在真实 Desktop 的反馈**为准。Agent 不得声称自己看见了界面。
 - 渲染问题由用户描述（哪个 panel/tab/卡片、看到什么、期望什么），Agent 改草稿后重新安装验证。
 

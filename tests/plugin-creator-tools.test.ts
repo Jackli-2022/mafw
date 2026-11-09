@@ -126,6 +126,16 @@ function acmeEntry(): Record<string, unknown> {
         triggerEvent: 'plugin:acme:ping',
         viewAction: 'window',
       }],
+      webSurfaces: [{
+        id: 'acme.page',
+        title: 'Acme page',
+        entry: 'index.html',
+        scope: 'project',
+        url: '/api/plugins/acme/ui/index.html',
+        rail: { icon: 'folder', order: 5, badge: true },
+        // Host-private; the projection must drop it.
+        handler: () => 1,
+      }],
     },
     actions: [{ name: 'view', title: 'View', inputSchema: { type: 'object' } }],
     events: [{ type: 'plugin:acme:ping', title: 'Ping', scope: 'session' }],
@@ -158,8 +168,11 @@ test('slots and widgetSchema expose the public contract only', async () => {
   installFetch();
   const slots: any = await pluginInspectTool.execute({ query: 'slots' }, ctx);
   expect(JSON.parse(slots.output).slots).toEqual([
-    'panels', 'toolCards', 'configPages', 'messageWindows',
+    'panels', 'toolCards', 'configPages', 'messageWindows', 'webSurfaces',
   ]);
+  // The sandboxed page slot ships field docs, not just a name.
+  expect(JSON.parse(slots.output).webSurfaceFields.entry).toContain('index.html');
+  expect(JSON.parse(slots.output).webSurfaceFields.rail).toContain('badge');
   const schema: any = await pluginInspectTool.execute({ query: 'widgetSchema' }, ctx);
   expect(JSON.parse(schema.output).limits.maxWidgets).toBe(256);
 });
@@ -167,7 +180,7 @@ test('slots and widgetSchema expose the public contract only', async () => {
 test('the public snapshot stays in sync with @mafw/plugin-contract', () => {
   expect(PLUGIN_PUBLIC_CONTRACT.limits).toEqual(PLUGIN_UI_LIMITS);
   expect(PLUGIN_PUBLIC_CONTRACT.slots).toEqual([
-    'panels', 'toolCards', 'configPages', 'messageWindows',
+    'panels', 'toolCards', 'configPages', 'messageWindows', 'webSurfaces',
   ]);
   expect(PLUGIN_PUBLIC_CONTRACT.widgetTypes).toEqual([
     'text', 'code', 'kv', 'tags', 'list', 'row', 'image', 'link', 'markdown',
@@ -264,6 +277,15 @@ test('clientDescriptors projects UI, actions, events and diagnostics', async () 
   expect(plugin.ui.toolCards[0].tools).toEqual(['bash']);
   expect(plugin.ui.configPages[0].saveAction).toBe('save');
   expect(plugin.ui.messageWindows[0].triggerEvent).toBe('plugin:acme:ping');
+  // Web surfaces project the declared fields plus the gateway asset URL only.
+  expect(plugin.ui.webSurfaces[0]).toEqual({
+    id: 'acme.page',
+    title: 'Acme page',
+    entry: 'index.html',
+    scope: 'project',
+    url: '/api/plugins/acme/ui/index.html',
+    rail: { icon: 'folder', order: 5, badge: true },
+  });
   expect(plugin.actions[0].name).toBe('view');
   expect(plugin.events[0].scope).toBe('session');
   expect(plugin.diagnostics).toHaveLength(1);

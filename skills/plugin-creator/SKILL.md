@@ -1,6 +1,6 @@
 ---
 name: plugin-creator
-description: Create and iterate MAFW unified plugin packages (plugin.json + index.js with declarative panel/config page/tool card/message window) inside <project>/.mafw/plugin-drafts/, then check, test, install and verify them in the real Desktop. Use when the user asks to build, modify, or debug a MAFW plugin, its panel/config page/tool card/message window, its actions or its plugin:<name>:* events.
+description: Create and iterate MAFW unified plugin packages (plugin.json + index.js with declarative panel/config page/tool card/message window, or a sandboxed web/ page via ui.webSurfaces) inside <project>/.mafw/plugin-drafts/, then check, test, install and verify them in the real Desktop. Use when the user asks to build, modify, or debug a MAFW plugin, its panel/config page/tool card/message window/web page, its actions or its plugin:<name>:* events.
 argument-hint: "[packageName] [requirement]"
 metadata:
   author: mafw
@@ -9,7 +9,7 @@ metadata:
 
 # Plugin Creator（统一插件包）
 
-本技能是**唯一**的详细教程来源：包布局、四个 UI slot、Widget/action/event 限制、模板、
+本技能是**唯一**的详细教程来源：包布局、五个 UI slot、Widget/action/event 限制、模板、
 工作顺序、审批语义、验证与恢复都写在这里。Creator 身份的系统提示只有铁律，不复制细节——
 两者冲突时以本技能为准。
 
@@ -53,6 +53,7 @@ metadata:
   index.js         # 入口（默认 main = index.js）
   index.test.js    # 零依赖自测（node --test）
   lib/…            # 可选：包内 Host 模块，只在 gateway 执行
+  web/…            # 可选：Web 页面（声明 ui.webSurfaces 时）
 ```
 
 ```json
@@ -140,6 +141,9 @@ module.exports = {
 | `ctx.usage.modelStats({sinceMs?, provider?})` | 本地 trajectory 分模型统计 |
 | `ctx.emit(event)` | 只发本包已注册的 `plugin:<package>:*` 事件 |
 | `ctx.effect(dispose)` | 登记副作用清理（timer/listener/watcher 的唯一受支持清理路径） |
+| `ctx.http.route(method, path, handler, opts?)` / `ctx.http.ws(path, handler)` | 本包作用域 HTTP/WS 路由（`/api/plugins/<pkg>/api…`、`/ws…`），只在 `activate()` 内注册，随 revision 退役 |
+| `ctx.files.list/stat/read` | 只读项目文件；每个调用第一个参数是**票据绑定的 projectDir**，`read` 默认 8 MiB 上限 |
+| `ctx.terminal.create/bridge/resize/kill` | 与桌面终端同一 PTY 服务；只能操作本包创建的 id |
 
 - 有副作用就必须 `ctx.effect(() => clearInterval(timer))`；不要在模块顶层创建长生命周期资源。
 - 清理在 reload/replace/disable/delete/check 释放时执行，同包多 effect 逆序（LIFO），单个清理抛错
@@ -193,7 +197,7 @@ actions: {
 中性错误码：`unknown-package`/`unknown-action`（404）、`invalid-input`/`payload-too-large`（400）、
 `invalid-output`/`handler-error`（502）、`timeout`（408）、`aborted`/`unloaded`/`stale-revision`（409）。
 
-## 7. 四个 UI slot（未知 slot 直接失败）
+## 7. 五个 UI slot（未知 slot 直接失败）
 
 ### 7.1 panels
 
@@ -276,6 +280,29 @@ ui: { messageWindows: [{
 - `viewAction` 不得发射 `triggerEvent`。
 - `ui` 中所有 `viewAction`/`loadAction`/`saveAction`/`triggerEvent`/`refreshOn` 都必须在同包内有定义，
   否则整个 candidate 校验失败。
+
+### 7.5 webSurfaces（沙箱 Web 页面）
+
+```js
+ui: { webSurfaces: [{
+  id: 'explorer', title: 'Explorer', icon: 'folder',
+  entry: 'index.html',            // 缺省 index.html，必须落在 web/ 内
+  scope: 'project',               // session（默认）| project | global
+  reloadOnSessionChange: true,
+  rail: { icon: 'folder', order: 10, badge: true }, // 可选左栏入口
+}]}
+```
+
+- 一个 surface = 右工作台「工作台」里的 L2 tab；页面文件在 `<draft>/web/<entry>`，由宿主以沙箱
+  `<webview>` 加载 `/api/plugins/<pkg>/ui/<entry>`（CSP 禁 inline script）。
+- `entry` 缺失/逃逸 → `check` 直接失败；单文件包不能声明 `webSurfaces`。
+- 页面数据走本包自己的路由：`ctx.http.route('GET','/files', …)` → `/api/plugins/<pkg>/api/files`；
+  文件/终端用 `ctx.files` / `ctx.terminal`（第一参数/上下文是票据的 `projectDir`，不是 `ctx.projectDir`）。
+- 页面可用 bridge `window.mafwPlugin`（`context` / `invoke` / `onEvent` / `setBadge` / `setTitle`），
+  但它**可选**：页面应能在 loopback 浏览器里独立跑。
+- 路由只能在 `activate()` 内注册，随 revision 退役；精确路径、无 `:param`、无通配。
+- 完整契约与票据/CSP/隔离细节见 [plugin-authoring.md §6.5](../../docs/guides/plugin-authoring.md#65-websurfaces沙箱-web-页面)；
+  可复制 `docs/examples/plugins/web-surface-demo/` 作为起点（文件树 + 终端）。
 
 ## 8. View 与 Widget 限制
 
