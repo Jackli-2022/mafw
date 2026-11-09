@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.0.1",
+    "@mafw/runtime-contract": "*",
     "@earendil-works/pi-coding-agent": "^0.84.1",
     "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
