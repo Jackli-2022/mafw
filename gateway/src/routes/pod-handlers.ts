@@ -44,6 +44,7 @@ export function attachPodHandlers(
     'pods.goals.handoff',
     'pods.goals.cancel',
     'pods.goals.result',
+    'pods.goals.accept',
     'pods.transcript',
     'pods.memory.get',
     'pods.memory.write',

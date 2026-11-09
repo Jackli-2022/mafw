@@ -21,11 +21,16 @@ const MIME: Record<string, string> = {
 export const ARTIFACT_INLINE_MAX_BYTES = 32 * 1024;
 
 export interface PodA2AArtifactRoots {
+  /** Active revision worktree — searched before the project checkout. */
+  worktreeDir?: string;
   /** Pod project dir — where `task.artifactRefs` (repo-relative paths) point. */
   projectDir?: string;
   /** Optional staged upload dir (`~/.mafw/pods/<podId>/artifacts`). */
   artifactRoot?: string;
 }
+
+/** Dynamic roots: re-evaluated on every lookup so merges/removals take effect. */
+export type PodA2AArtifactRootsResolver = () => PodA2AArtifactRoots | null | undefined;
 
 export interface PodA2AArtifactSummary {
   ref: string;
@@ -52,19 +57,25 @@ function isTextLike(contentType: string, ext: string): boolean {
 }
 
 /**
- * Resolves A2A artifact ids to files. Ids are relative refs: first the Pod project
+ * Resolves A2A artifact ids to files. Ids are relative refs: first the active
+ * revision worktree (when the resolver provides one), then the Pod project
  * (where task receipts live), then the optional staging dir.
  * Rejects traversal, absolute paths, NUL bytes, and dotfile/dot-dir segments.
  */
 export class PodA2AArtifactStore {
-  private readonly roots: string[];
+  private readonly roots: string[] | PodA2AArtifactRootsResolver;
 
-  constructor(roots: PodA2AArtifactRoots | string) {
+  constructor(roots: PodA2AArtifactRoots | string | PodA2AArtifactRootsResolver) {
+    if (typeof roots === 'function') {
+      this.roots = roots;
+      return;
+    }
     if (typeof roots === 'string') {
       this.roots = roots ? [roots] : [];
       return;
     }
-    this.roots = [roots.projectDir, roots.artifactRoot].filter((root): root is string => !!root);
+    this.roots = [roots.worktreeDir, roots.projectDir, roots.artifactRoot]
+      .filter((root): root is string => !!root);
   }
 
   get(id: string): { path: string; contentType: string } | null {
@@ -96,7 +107,7 @@ export class PodA2AArtifactStore {
   private resolve(id: string): ResolvedArtifact | null {
     const normalized = this.normalize(id);
     if (!normalized) return null;
-    for (const root of this.roots) {
+    for (const root of this.currentRoots()) {
       const candidate = this.resolveInside(root, normalized.relative);
       if (!candidate) continue;
       let stats: fs.Stats;
@@ -110,6 +121,19 @@ export class PodA2AArtifactStore {
       return { ref: normalized.ref, path: candidate, contentType, bytes: stats.size };
     }
     return null;
+  }
+
+  private currentRoots(): string[] {
+    if (typeof this.roots !== 'function') return this.roots;
+    let resolved: PodA2AArtifactRoots | null | undefined;
+    try {
+      resolved = this.roots();
+    } catch {
+      return [];
+    }
+    if (!resolved) return [];
+    return [resolved.worktreeDir, resolved.projectDir, resolved.artifactRoot]
+      .filter((root): root is string => !!root);
   }
 
   private normalize(id: string): { ref: string; relative: string } | null {

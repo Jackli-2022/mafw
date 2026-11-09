@@ -1548,6 +1548,42 @@ spec `docs/superpowers/specs/2026-11-02-pod-collaborative-goal-loop-design.md`�
     TUI **306（305 pass/1 skip）**、SDK **188/188**、plugin **30/30**，
     `tsc`/`tsgo -p`/root build/electron-vite build rc=0。
 
+#### Revision worktree 与人工验收（2026-11-09）
+
+spec `docs/superpowers/specs/2026-11-09-pod-revision-worktree-design.md`，plan
+`docs/superpowers/plans/2026-11-09-pod-revision-worktree.md`。Git 粒度 = **每个 Goal revision
+一个 worktree/branch**，讨论、Plan、Builder、Reviewer 共用同一 checkout（Probe 仍用隔离临时
+workspace，结束后销毁）。
+
+- **路径/分支**：`<repoParent>/<repo>-wt-<safeGoalId>-r<N>` / `mafw/<safeGoalId>-r<N>`；
+  `safePodGoalSlug` 只保留 `[A-Za-z0-9._-]`（`../x` 之类全部折叠）。revision 1 从项目当前
+  HEAD 创建；revision N+1 从 revision N 的分支创建。元数据存 `pod_goal_worktrees`
+  （`PodWorktreeService.ensure/get/commitPending/mergeForAcceptance/markAbandoned`）。
+- **前置约束**：Pod 项目必须是 Git 仓库根目录（子目录 409，不自动安装依赖）；worktree 创建
+  失败时节点直接失败（`worktree_unavailable`），**绝不静默回落主目录**。升级时已在途 Goal
+  不 retrofit，只有新 revision/新 Goal 获得 checkout。
+- **PASS 不合并**：Reviewer PASS 只收尾 revision；主项目保持原样。用户点一次「验收并合并到
+  主分支」→ `POST /api/pods/:podId/goals/:goalId/accept`（body `{revision?, confirm:true}`）
+  → `PodGoalService.acceptResult`。只接受**当前 active revision**、可信成功结果
+  （`PASS` 或 quick `UNREVIEWED`，无 `failure`）、且 worktree 仍 `active`；重复验收幂等
+  （已 merged 直接返回原 mergeCommit）。验收是**人类专属**：请求带 `actorSessionID` → 403，
+  不提供 MCP 验收工具。
+- **合并门**：主项目当前分支必须等于 worktree 创建时记录的 `baseBranch`，且无 tracked 改动；
+  否则 409 且 worktree 保留。合并用 `git merge --no-ff`，冲突时 `git merge --abort`、主项目
+  不变、worktree 保留。成功写 status=merged + mergeCommit/mergedAt，移除 worktree 但保留
+  branch。自动提交身份固定 `MAFW <mafw@localhost>`、`--no-verify`、排除 `.mafw`。
+- **打回**：打回前先 `commitPending` 保住未提交改动，再开下一 revision，旧 worktree 标
+  `abandoned`（branch 保留可追溯）；已 merged 的 revision 不能打回（409）。
+- **结果 DTO/UI**：`PodGoalResult.worktree -> {dir,branch,baseBranch,status,mergeCommit,mergedAt}`
+  + `acceptance: 'pending' | 'accepted' | 'unavailable'`；`PodGoalView.accepted`。验收后
+  `result_ready` → `ended`。桌面结果页保留 verdict/assessment、版本历史、Goal acceptance、
+  **Goal Eval 条件与逐条件判定（缺结果 = 未判定，绝不按通过）**、逐任务证据、Review
+  feedback、产物、失败重提、打回输入；失败结果显示「失败 · 不可验收」，不出现验收入口。
+- **A2A artifact**：`PodA2AArtifactStore` 支持动态 roots resolver，**revision worktree 优先**，
+  merged/abandoned/missing 行省略 worktree 根；同一 store 在合并/移除后自动回落到项目目录。
+- **测试**：gateway `pod-worktree-path`/`pod-store`/`pod-worktree-service`/`pod-result-accept`/
+  `pod-accept-route`/`pod-a2a-artifacts`/`pod-wiring`，desktop `pod-result-view-model`。
+
 ### 5.26 项目工作空间与自适应 Goal（2026-11-03）
 
 > **2026-11-04 supersession note**：本节的 Goal 领域语义、`work.overview` 读模型与 Lead handoff 仍有效；

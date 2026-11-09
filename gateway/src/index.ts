@@ -4549,12 +4549,8 @@ class MafwScheduler {
       delivery: this.podMessageDelivery,
       describeArtifact: (podId, ref) => {
         try {
-          const pod = this.podStore.getPod(podId);
-          if (!pod) return null;
-          return new PodA2AArtifactStore({
-            projectDir: pod.projectDir,
-            artifactRoot: path.join(os.homedir(), '.mafw', 'pods', podId, 'artifacts'),
-          }).describe(ref);
+          if (!this.podStore.getPod(podId)) return null;
+          return new PodA2AArtifactStore(() => this.podArtifactRoots(podId)).describe(ref);
         } catch {
           return null;
         }
@@ -9120,6 +9116,34 @@ class MafwScheduler {
     }
   }
 
+  /**
+   * A2A artifact roots for a Pod: the revision worktree (when still active)
+   * comes first so unmerged work is visible; merged/abandoned/missing rows fall
+   * back to the project checkout. Re-evaluated per lookup (see resolver ctor).
+   */
+  private podArtifactRoots(podId: string): {
+    worktreeDir?: string;
+    projectDir?: string;
+    artifactRoot: string;
+  } {
+    const pod = this.podStore.getPod(podId);
+    const active = this.podStore.getActiveGoal(podId);
+    const goals = active ? [active] : [...this.podStore.listGoals(podId)].reverse();
+    let worktreeDir: string | undefined;
+    for (const goal of goals) {
+      const worktree = this.podStore.getGoalWorktree(podId, goal.goalId, goal.activeRevision);
+      if (worktree?.status === 'active') {
+        worktreeDir = worktree.dir;
+        break;
+      }
+    }
+    return {
+      worktreeDir,
+      projectDir: pod?.projectDir,
+      artifactRoot: path.join(os.homedir(), '.mafw', 'pods', podId, 'artifacts'),
+    };
+  }
+
   private podA2AAgent(podId: string): PodA2AAgent | null {
     const pod = this.podStore.getPod(podId);
     if (!pod) return null;
@@ -9132,6 +9156,7 @@ class MafwScheduler {
         baseUrl: `http://127.0.0.1:${config.server.apiPort}`,
         artifactRoot: path.join(os.homedir(), '.mafw', 'pods', podId, 'artifacts'),
         projectDir: pod.projectDir,
+        roots: () => this.podArtifactRoots(podId),
       });
       this.podA2AAgents.set(podId, agent);
     }
