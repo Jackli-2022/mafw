@@ -4982,6 +4982,75 @@
           }
         }
       }
+    },
+    "/api/plugins/{name}/web-ticket": {
+      "post": {
+        "operationId": "plugins.webTicket",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/ui": {
+      "get": {
+        "operationId": "plugins.webAsset",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/events": {
+      "get": {
+        "operationId": "plugins.webEvents",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

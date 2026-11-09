@@ -273,6 +273,21 @@ export class PluginHost {
   /** Committed package HTTP/WS registry (API dispatch + upgrade wiring). */
   getHttpRegistry(): PluginHttpRegistry { return this.http; }
 
+  /** True when the package currently has a committed revision. */
+  isPackageCommitted(name: string): boolean {
+    return this.active.has(name);
+  }
+
+  /**
+   * Directory of a committed directory package, used by the Web asset route.
+   *
+   * `null` for unknown/pending/failed packages and for single-file packages
+   * (they have no `web/` directory by definition).
+   */
+  getCommittedPackageDir(name: string): string | null {
+    return this.active.get(name)?.descriptor.pkgDir ?? null;
+  }
+
   /**
    * Invokes one action of a committed package.
    *

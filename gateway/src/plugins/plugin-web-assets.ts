@@ -16,6 +16,11 @@ import type { PluginWebSurfaceDescriptor } from '@mafw/plugin-contract';
 /** Entry used when a surface omits `entry` (mirrors the contract default). */
 export const DEFAULT_WEB_SURFACE_ENTRY = 'index.html';
 
+/**
+ * MIME whitelist for served assets. Anything else is a 404 at the route layer:
+ * an unknown extension must not be served as `text/plain` (a `.bin`/source dump
+ * would then render as text inside the sandboxed surface).
+ */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
   '.htm': 'text/html; charset=utf-8',
@@ -23,15 +28,18 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.wasm': 'application/wasm',
+  '.woff': 'font/woff',
   '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
 };
-
-const FALLBACK_CONTENT_TYPE = 'text/plain; charset=utf-8';
 
 function realpathOrNull(value: string): string | null {
   try {
@@ -113,9 +121,12 @@ export function validatePluginWebSurfaces(
   return errors;
 }
 
-/** `Content-Type` for a served asset, by extension with a text fallback. */
-export function pluginWebAssetContentType(filePath: string): string {
+/**
+ * `Content-Type` for a served asset, or `null` when the extension is not on the
+ * whitelist (the asset route answers 404 in that case).
+ */
+export function pluginWebAssetContentType(filePath: string): string | null {
   const clean = filePath.replace(/[?#].*$/, '');
   const extension = path.extname(clean).toLowerCase();
-  return CONTENT_TYPES[extension] ?? FALLBACK_CONTENT_TYPE;
+  return CONTENT_TYPES[extension] ?? null;
 }

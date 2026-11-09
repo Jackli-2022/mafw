@@ -117,7 +117,7 @@ describe('plugin web asset resolution', () => {
     ).toHaveLength(1);
   });
 
-  it('maps asset extensions to content types', () => {
+  it('maps asset extensions to content types and rejects unknown ones', () => {
     expect(pluginWebAssetContentType('/x/index.html')).toContain('text/html');
     expect(pluginWebAssetContentType('/x/app.JS')).toContain('text/javascript');
     expect(pluginWebAssetContentType('/x/app.css')).toContain('text/css');
@@ -127,7 +127,13 @@ describe('plugin web asset resolution', () => {
     expect(pluginWebAssetContentType('/x/icon.jpg')).toBe('image/jpeg');
     expect(pluginWebAssetContentType('/x/icon.webp')).toBe('image/webp');
     expect(pluginWebAssetContentType('/x/font.woff2')).toBe('font/woff2');
-    expect(pluginWebAssetContentType('/x/blob.bin')).toContain('text/plain');
+    expect(pluginWebAssetContentType('/x/font.woff')).toBe('font/woff');
+    expect(pluginWebAssetContentType('/x/font.ttf')).toBe('font/ttf');
+    expect(pluginWebAssetContentType('/x/icon.ico')).toBe('image/x-icon');
+    expect(pluginWebAssetContentType('/x/module.wasm')).toBe('application/wasm');
+    expect(pluginWebAssetContentType('/x/app.js.map')).toContain('application/json');
+    // Unknown extensions are not silently served as text/plain.
+    expect(pluginWebAssetContentType('/x/blob.bin')).toBeNull();
   });
 });
 

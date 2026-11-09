@@ -32,6 +32,12 @@ import {
   handlePluginReload,
   handlePluginInvokeAction,
 } from './plugin-packages';
+import type { PluginWebRouteDeps } from './plugin-web';
+import {
+  handlePluginWebAsset,
+  handlePluginWebEvents,
+  handlePluginWebTicket,
+} from './plugin-web';
 import { cleanupExamples } from '../plugins/hub';
 import { log } from '../core/utils/logger';
 
@@ -42,6 +48,8 @@ export interface Wave2Gateway {
   conformanceDeps(): ConformanceDeps;
   pluginHubDeps(): PluginsRouteDeps;
   pluginPackageDeps(): PluginPackagesRouteDeps;
+  /** Plugin Web surfaces（asset/ticket/SSE）deps；宿主未初始化时也要可构造。 */
+  pluginWebDeps(): PluginWebRouteDeps;
   dryEventDeps(): DryEventDeps;
   /** runtime.switch 守卫：serveRecovering || switchingRuntime。 */
   runtimeSwitchBlocked(): boolean;
@@ -125,4 +133,14 @@ export function attachWave2Handlers(registry: RouteRegistry, gw: Wave2Gateway): 
       name: params.name,
       action: params.action,
     })));
+
+  // Task 4：Plugin Web surfaces。catalog 只登记三个精确路径；`ui/*` 与 `api/*`
+  // 的通配匹配在 index.ts 的请求链（registry 只支持精确段数）。SSE 事件过滤器
+  // 复用 gateway 单一 broadcast 通道，不新建事件总线。
+  registry.attachHandler('plugins.webTicket', H(async (req, res, params) =>
+    handlePluginWebTicket(req, res, gw.pluginWebDeps(), { name: params.name })));
+  registry.attachHandler('plugins.webAsset', H(async (req, res, params) =>
+    handlePluginWebAsset(req, res, gw.pluginWebDeps(), { name: params.name })));
+  registry.attachHandler('plugins.webEvents', H(async (req, res, params) =>
+    handlePluginWebEvents(req, res, gw.pluginWebDeps(), { name: params.name })));
 }

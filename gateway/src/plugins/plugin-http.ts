@@ -90,6 +90,13 @@ export interface PluginHttpDispatchRequest {
   query?: URLSearchParams;
   headers?: IncomingHttpHeaders;
   body?: AsyncIterable<Buffer | Uint8Array>;
+  /**
+   * Invoked once when `body` exceeds the route cap, before the 413 is written.
+   * Hosts use it to drain the inbound stream (`req.resume()`); the body iterator
+   * passed by the host must not destroy the socket on return or a real client
+   * would see a reset instead of the 413.
+   */
+  onBodyTooLarge?: () => void;
 }
 
 export interface PluginHttpRegistry {
@@ -258,13 +265,17 @@ function writeJson(res: PluginHttpResponseWriter, status: number, payload: unkno
 async function* limitBody(
   source: AsyncIterable<Buffer | Uint8Array> | undefined,
   maxBodyBytes: number,
+  onBodyTooLarge?: () => void,
 ): AsyncIterable<Buffer> {
   if (!source) return;
   let total = 0;
   for await (const chunk of source) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     total += buffer.length;
-    if (total > maxBodyBytes) throw new PluginHttpBodyTooLargeError(maxBodyBytes);
+    if (total > maxBodyBytes) {
+      try { onBodyTooLarge?.(); } catch { /* drain failures must not mask the 413 */ }
+      throw new PluginHttpBodyTooLargeError(maxBodyBytes);
+    }
     yield buffer;
   }
 }
@@ -475,7 +486,7 @@ export function createPluginHttpRegistry(deps: PluginHttpRegistryDeps): PluginHt
       headers: req.headers ?? {},
       sessionID: ctx.sessionID,
       projectDir: ctx.projectDir,
-      body: limitBody(req.body, entry.maxBodyBytes),
+      body: limitBody(req.body, entry.maxBodyBytes, req.onBodyTooLarge),
     };
 
     let init: PluginHttpResponseInit | void;

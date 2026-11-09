@@ -311,6 +311,16 @@ import { performRuntimeSwitch, type RuntimeSwitchDeps } from './routes/runtime-s
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps, PluginsPackageEntry } from './routes/plugins';
 import type { PluginPackagesRouteDeps } from './routes/plugin-packages';
+import type { PluginWebRouteDeps } from './routes/plugin-web';
+import {
+  handlePluginApiRoute,
+  handlePluginWebAsset,
+  handlePluginWsUpgrade,
+  parsePluginApiUrl,
+  parsePluginWebAssetUrl,
+  parsePluginWsUrl,
+} from './routes/plugin-web';
+import { createPluginWebTicketStore } from './plugins/plugin-web-ticket';
 import type { DryEventDeps } from './routes/dry-event';
 import { PluginHost } from './plugins/package-host';
 import { PackageStateStore } from './plugins/package-state-store';
@@ -679,6 +689,8 @@ class MafwScheduler {
   private packageManager?: PackageManager;
   /** 最近一次已提交的统一插件包 client 快照（Task 6 的 /api/plugins/client 直接读）。 */
   private pluginClientSnapshot?: PluginClientSnapshot;
+  /** Plugin Web surface 票据（进程内，8h TTL；重启即失效，客户端重取）。 */
+  private pluginWebTickets = createPluginWebTicketStore();
   private usageStatsProvider?: UsageStatsProvider;
   private ttsService?: ReturnType<typeof createTtsService>;
   private ttsRegistry = new TtsEngineRegistry();
@@ -2747,6 +2759,54 @@ class MafwScheduler {
           end: () => { this.switchingRuntime = false; },
         }),
     };
+  }
+
+  /**
+   * Task 4：Plugin Web surface deps。所有查询都是 thunk——宿主/manager 未初始化时
+   * 也要能构造 deps（route 直接 404）。
+   */
+  private pluginWebDeps(): PluginWebRouteDeps {
+    return {
+      isActivePackage: (name) => this.pluginHost?.isPackageCommitted(name) ?? false,
+      packageDir: (name) => this.pluginHost?.getCommittedPackageDir(name) ?? null,
+      listProjects: () => Array.from(this.registeredProjects.keys()),
+      tickets: this.pluginWebTickets,
+      httpRegistry: () => this.pluginHost?.getHttpRegistry(),
+      isLoopback: (req) => isLoopbackAddr(req.socket?.remoteAddress || ''),
+      defaultProjectDir: () => this.resolvedProjectDir(),
+      // 复用 gateway 唯一的 broadcast 通道：把过滤 writer 注册成普通 SSE 客户端，
+      // broadcast() 照常写帧，writer 只放行 plugin:<pkg>:* 并自行写响应。
+      attachEventStream: (res, write) => {
+        this.sseClients.set(res, write);
+        return () => { this.sseClients.delete(res); };
+      },
+    };
+  }
+
+  /**
+   * 通配的 Plugin Web 路径（registry 只支持精确段数）：
+   * `GET /api/plugins/<pkg>/ui/*` 与 `/api/plugins/<pkg>/api/*`。
+   *
+   * @returns true = 已由这里处理（含 404），false = 与插件 Web 无关。
+   */
+  private async handlePluginWebWildcard(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<boolean> {
+    // Cheap gate: only the package namespace can match below.
+    if (!req.url || !req.url.startsWith('/api/plugins/')) return false;
+
+    const asset = parsePluginWebAssetUrl(req.url);
+    if (asset && req.method === 'GET') {
+      await handlePluginWebAsset(req, res, this.pluginWebDeps(), { name: asset.name });
+      return true;
+    }
+    const api = parsePluginApiUrl(req.url);
+    if (api) {
+      await handlePluginApiRoute(req, res, this.pluginWebDeps(), api.name, api.path);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -5243,6 +5303,7 @@ class MafwScheduler {
         restartAgentDeps: () => this.restartAgentDeps(),
         pluginHubDeps: () => this.pluginHubDeps(),
         pluginPackageDeps: () => this.pluginPackagesDeps(),
+        pluginWebDeps: () => this.pluginWebDeps(),
         conformanceDeps: () => this.conformanceDeps(),
         dryEventDeps: () => this.dryEventDeps(),
         runtimeSwitchBlocked: () => this.serveRecovering || this.switchingRuntime,
@@ -5338,6 +5399,11 @@ class MafwScheduler {
         // goals.sessions 须先于 dashboard 兜底、embedding-config 须先于 /api/memory/*
         // 委托（AGENTS.md §6.5 顺序教训由 dispatch 位置一次性满足）。
         if (await dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res)) return;
+
+        // Plugin Web surfaces：registry 只支持精确段数，`ui/*` / `api/*` 的通配
+        // 在这里匹配（必须早于 dashboard 委托与反代）。三个精确端点
+        // （web-ticket / ui 基路径 / events）由上面的 registry dispatch 接管。
+        if (await this.handlePluginWebWildcard(req, res)) return;
 
         // 文件级历史（loopback-only）：office 技能保存前快照 / 桌面 / 调试。
         if (await handleFileHistoryRoutes(req, res, {
@@ -8630,6 +8696,13 @@ class MafwScheduler {
                   try { ws.close(4502, 'terminal bridge failed'); } catch { /* already closed */ }
                 });
             });
+            return;
+          }
+
+          const pluginWs = parsePluginWsUrl(url);
+          if (pluginWs) {
+            // 票据 cookie / loopback 鉴权在 handler 内完成；拒绝也消费 socket。
+            handlePluginWsUpgrade(this.pluginWebDeps(), req, socket, head);
             return;
           }
 

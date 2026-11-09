@@ -316,6 +316,12 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/merge-memory', operationId: 'memory.merge', tags: ['internal'] },
   // 根健康检查（dashboard/桌面探测用）
   { method: 'GET', path: '/health', operationId: 'health.root', tags: ['internal'] },
+  // Plugin Web surfaces（spec 2026-11-09 §5.4-§5.6）：asset/events 由浏览器
+  // webview 直接消费（不经 SDK）；web-ticket 从 Task 5 起由桌面主进程经 SDK
+  // 调用——届时可把它移到 SDK_FACING_ROUTES（现在标 internal 以免 SDK 死契约）。
+  { method: 'POST', path: '/api/plugins/:name/web-ticket', operationId: 'plugins.webTicket', tags: ['internal'] },
+  { method: 'GET', path: '/api/plugins/:name/ui', operationId: 'plugins.webAsset', tags: ['internal'] },
+  { method: 'GET', path: '/api/plugins/:name/events', operationId: 'plugins.webEvents', tags: ['internal'] },
 ];
 
 /** gateway 全量 HTTP 端点 shadow 登记（无 handler；Phase 3 逐条挂 handler 前不参与 dispatch）。
