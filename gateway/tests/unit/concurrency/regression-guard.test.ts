@@ -50,8 +50,9 @@ describe('concurrency regression guard', () => {
   });
 
   it('index.ts should import concurrency primitives', () => {
+    // Phase B Task 4 removed the last Guard consumer (snapshotGuard →
+    // scheduler); MutexQueue and TtlMap remain in use.
     const index = sources.find((s) => s.file === 'index.ts')!;
-    expect(index.content).toMatch(/from\s+'\.\/concurrency\/guard'/);
     expect(index.content).toMatch(/from\s+'\.\/concurrency\/mutex-queue'/);
     expect(index.content).toMatch(/from\s+'\.\/concurrency\/ttl-map'/);
   });
@@ -91,6 +92,12 @@ describe('scheduler migration guard (Phase B Task 3)', () => {
 
   it('automation-engine no longer exports the module-global actionRegistry', () => {
     expect(engine).not.toMatch(/export const actionRegistry/);
+  });
+
+  it('snapshot builds go through the scheduler as defer-to-idle (no snapshotGuard)', () => {
+    expect(index).not.toMatch(/snapshotGuard\s*=/);
+    expect(index).toMatch(/strategy:\s*['"]defer-to-idle['"]/);
+    expect(index).toMatch(/mutexKey:\s*['"]snapshot['"]/);
   });
 
   it('index.ts wires the engine through the provider/scheduler/graph injections', () => {

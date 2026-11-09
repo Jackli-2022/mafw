@@ -8,7 +8,6 @@ import * as yaml from 'js-yaml';
 import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
-import { Guard } from './concurrency/guard';
 import { MutexQueue } from './concurrency/mutex-queue';
 import { TtlMap } from './concurrency/ttl-map';
 import { Scheduler, TaskSkippedError, TaskTimeoutError } from './scheduler';
@@ -3061,10 +3060,6 @@ class MafwScheduler {
   private runtimeValidationNotes: string[] = [];
   /** 激活期覆盖矩阵（清单驱动），GET /api/runtime(.contract) 暴露。 */
   private runtimeCoverage: RuntimeCoverage | null = null;
-  /** Serialises snapshot builds (shared GPU sidecars); queue mode — concurrent
-   *  requests wait for the current build rather than being dropped. */
-  private snapshotGuard = new Guard();
-
   /** Schedule a debounced snapshot refresh (called on each user turn). */
   private scheduleSnapshotRefresh(sessionID: string): void {
     const cfg = config.search.snapshot;
@@ -3083,15 +3078,17 @@ class MafwScheduler {
    * Build the expensive retrieval for a session in the background: BM25 +
    * expansion (+ optional reranker) rendered as the pointer block, stored in kv
    * so the boundary path can serve it inside the 100ms contract.
+   *
+   * Submitted to the unified scheduler as midground + defer-to-idle: one build
+   * at a time per key (concurrent requests queue, not drop), and queued builds
+   * wait for foreground quiescence before starting.
    */
   private async refreshSnapshot(sessionID: string): Promise<void> {
     if (!this.memoryService) return;
-    // One build at a time (shared GPU sidecars), but concurrent requests queue
-    // instead of being dropped: the latest session state is served after the
-    // current build finishes.
-    await this.snapshotGuard.run('snapshot', () => this.refreshSnapshotInner(sessionID), {
-      onConflict: 'queue',
-    });
+    await this.scheduler.submit(
+      { id: `snapshot:${sessionID}`, priority: 'midground', mutexKey: 'snapshot', strategy: 'defer-to-idle' },
+      () => this.refreshSnapshotInner(sessionID),
+    );
   }
 
   private async refreshSnapshotInner(sessionID: string): Promise<void> {
