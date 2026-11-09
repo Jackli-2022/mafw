@@ -3813,6 +3813,37 @@
         }
       }
     },
+    "/api/pods/{podId}/goals/{goalId}/worktree/diff": {
+      "get": {
+        "operationId": "pods.goals.worktree.diff",
+        "tags": [
+          "pods"
+        ],
+        "parameters": [
+          {
+            "name": "podId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/pods/{podId}/sessions/{sessionId}/transcript": {
       "get": {
         "operationId": "pods.transcript",

@@ -115,6 +115,18 @@ test("pod.acceptResult posts the one-click acceptance body", async () => {
   expect(res.mergeCommit).toBe("abc123")
 })
 
+test("pod.worktreeDiff reads the revision branch diff", async () => {
+  fetchMock.mockResolvedValue(okJson({
+    goalId: "g1", revision: 1, branch: "mafw/g1-r1", baseRef: "main",
+    files: [{ file: "feature.txt", patch: "@@ +x", additions: 1, deletions: 0, status: "A" }],
+  }))
+  const c = new MafwClient("http://gw:3000")
+  const res = await c.pod.worktreeDiff("pod_1", "g1", 1)
+  expect(lastCall()[0]).toBe("http://gw:3000/api/pods/pod_1/goals/g1/worktree/diff?revision=1")
+  expect(lastCall()[1]).toMatchObject({ method: "GET" })
+  expect(res.files[0].file).toBe("feature.txt")
+})
+
 test("pod.rejectResult posts feedback and returns the next revision", async () => {
   fetchMock.mockResolvedValue(okJson({ podId: "pod_1", goalId: "g1", revision: 2, status: "discussing" }))
   const c = new MafwClient("http://gw:3000")

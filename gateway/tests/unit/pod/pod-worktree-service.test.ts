@@ -289,6 +289,41 @@ describe('PodWorktreeService', () => {
       f.cleanup();
     }
   });
+  test('branchDiff returns per-file patches for an unmerged revision', async () => {
+    const f = fixture();
+    try {
+      const wt = await f.service.ensure('pod_1', 'goal-1', 1);
+      fs.writeFileSync(path.join(wt.dir, 'feature.txt'), 'feature\n');
+      fs.writeFileSync(path.join(wt.dir, 'a.txt'), 'hello\nchanged\n');
+      await f.service.commitPending('pod_1', 'goal-1', 1);
+
+      const diff = await f.service.branchDiff('pod_1', 'goal-1', 1);
+      expect(diff.branch).toBe('mafw/goal-1-r1');
+      expect(diff.files.map((file) => file.file).sort()).toEqual(['a.txt', 'feature.txt']);
+      const added = diff.files.find((file) => file.file === 'feature.txt')!;
+      expect(added).toMatchObject({ status: 'A', additions: 1, deletions: 0 });
+      expect(added.patch).toContain('+feature');
+      const modified = diff.files.find((file) => file.file === 'a.txt')!;
+      expect(modified.additions).toBe(1);
+      expect(modified.patch).toContain('+changed');
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  test('branchDiff rejects a missing revision or unknown goal', async () => {
+    const f = fixture();
+    try {
+      await f.service.ensure('pod_1', 'goal-1', 1);
+      await expect(f.service.branchDiff('pod_1', 'goal-1', 2))
+        .rejects.toMatchObject({ status: 404 });
+      await expect(f.service.branchDiff('pod_1', 'unknown', 1))
+        .rejects.toMatchObject({ status: 404 });
+    } finally {
+      f.cleanup();
+    }
+  });
+
   test('auto-commits use the fixed MAFW identity', async () => {
     const f = fixture();
     try {

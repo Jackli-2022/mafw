@@ -274,6 +274,7 @@ export function createMafwApi(): MafwAPI {
       createProbe: (podID, goalID, body) => invoke("pod", "createProbe", podID, goalID, body),
       rejectResult: (podID, goalID, feedback, body) => invoke("pod", "rejectResult", podID, goalID, feedback, body),
       acceptResult: (podID, goalID, body) => invoke("pod", "acceptResult", podID, goalID, body),
+      worktreeDiff: (podID, goalID, revision) => invoke("pod", "worktreeDiff", podID, goalID, revision),
       revisions: (podID, goalID) => invoke("pod", "revisions", podID, goalID),
     },
 

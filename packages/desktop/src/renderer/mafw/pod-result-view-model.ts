@@ -38,8 +38,12 @@ export function podResultAcceptanceView(result: PodGoalResult): PodResultAccepta
   return { actionable: false, label: "不可验收", tone: "neutral" }
 }
 
-export interface PodResultWorktreeRow {
-  label: string
+/** Branch preview is useful while the revision is not merged (branch keeps history after). */
+export function podResultCanViewDiff(result: PodGoalResult): boolean {
+  return result.worktree?.status === "active" || result.worktree?.status === "abandoned"
+}
+
+export interface PodResultWorktreeRow {  label: string
   value: string
   tone?: "warning" | "danger"
 }

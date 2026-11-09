@@ -7625,6 +7625,12 @@ html[data-theme="light"] body {
 .mafw-pod-result-accept.is-accepted .mafw-pod-result-accept-state { color: var(--accent-success); }
 .mafw-pod-result-accept-note { color: var(--text-3); font-size: 11px; }
 .mafw-pod-result-accept-note code { color: var(--text-2); font-family: var(--font-data); }
+.mafw-pod-result-worktree-note { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border-subtle); color: var(--text-3); font-size: 10.5px; line-height: 1.5; }
+.mafw-pod-result-failure { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--danger-text) 28%, var(--border-subtle)); border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger-text) 7%, transparent); }
+.mafw-pod-result-failure strong { color: var(--danger-text); font-size: 11px; }
+.mafw-pod-result-failure span { color: var(--text-3); font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+.mafw-pod-result-diff-actions { display: flex; justify-content: flex-start; }
+.mafw-pod-result-diff { max-height: 380px; overflow: auto; padding: 8px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); }
 .mafw-workspace-composer .mafw-pod-composer [data-component="text-input-v2"],
 .mafw-workspace-composer .mafw-pod-composer [data-component="textarea-v2"] {
   width: 100%;

@@ -10,7 +10,7 @@ import {
 import type { PodAttentionItem, PodGoalVerdict, PodQueueReason } from './pod-stage';
 import { isAcceptablePodResult, type PodGoalResult, type PodResultWorktree } from './pod-result';
 import type { PodGoalWorktreeRow } from './pod-store';
-import type { PodWorktreeService } from './pod-worktree-service';
+import type { PodWorktreeService, PodWorktreeDiff } from './pod-worktree-service';
 import { podTaskKindOf } from './pod-task-service';
 import { summarizePodGoalProgress } from './pod-goal-progress';
 import type {
@@ -114,7 +114,7 @@ export interface PodGoalServiceDeps {
     source?: string | null;
   }): unknown };
   /** Revision worktree lifecycle; production always injects PodWorktreeService. */
-  worktrees?: Pick<PodWorktreeService, 'get' | 'ensure' | 'commitPending' | 'mergeForAcceptance' | 'markAbandoned'>;
+  worktrees?: Pick<PodWorktreeService, 'get' | 'ensure' | 'commitPending' | 'mergeForAcceptance' | 'markAbandoned' | 'branchDiff'>;
   log?(message: string): void;
 }
 
@@ -505,6 +505,23 @@ export class PodGoalService {
       worktree: resultWorktree(worktree),
       acceptance,
     };
+  }
+
+  /** Read-only revision branch preview (merge-base diff against the recorded base). */
+  async worktreeDiff(
+    podId: string,
+    goalId: string,
+    opts: { revision?: number } = {},
+  ): Promise<PodWorktreeDiff> {
+    const row = this.requireGoalRow(podId, goalId);
+    const revision = opts.revision ?? row.activeRevision;
+    if (!Number.isInteger(revision) || revision < 1) {
+      throw new PodError(400, 'revision must be a positive integer');
+    }
+    if (!this.deps.worktrees?.branchDiff) {
+      throw new PodError(503, 'worktree diff is unavailable');
+    }
+    return this.deps.worktrees.branchDiff(podId, goalId, revision);
   }
 
   /**

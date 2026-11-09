@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import type { PodGoalResult } from "@mafw/sdk"
 import {
   podResultAcceptanceView,
+  podResultCanViewDiff,
   podResultConditionRows,
   podResultWorktreeRows,
 } from "./pod-result-view-model"
@@ -157,8 +158,26 @@ describe("podResultWorktreeRows", () => {
   })
 })
 
-describe("podResultConditionRows", () => {
-  test("conditions pair with results by id", () => {
+describe("podResultCanViewDiff", () => {
+  test("active and abandoned revisions keep the branch preview", () => {
+    assert.equal(podResultCanViewDiff(result()), true)
+    assert.equal(podResultCanViewDiff(result({
+      worktree: { ...result().worktree!, status: "abandoned" },
+    })), true)
+  })
+
+  test("merged, missing, and legacy results hide the preview", () => {
+    assert.equal(podResultCanViewDiff(result({
+      worktree: { ...result().worktree!, status: "merged" },
+    })), false)
+    assert.equal(podResultCanViewDiff(result({
+      worktree: { ...result().worktree!, status: "missing" },
+    })), false)
+    assert.equal(podResultCanViewDiff(result({ worktree: null })), false)
+  })
+})
+
+describe("podResultConditionRows", () => {  test("conditions pair with results by id", () => {
     const rows = podResultConditionRows(result({
       goalConditions: [
         { id: "g1", statement: "构建通过", required: true },

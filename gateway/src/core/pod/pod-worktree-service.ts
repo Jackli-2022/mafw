@@ -21,6 +21,25 @@ export interface PodWorktreeMergeResult {
   mergedAt: string;
 }
 
+export interface PodWorktreeDiffFile {
+  file: string;
+  patch: string;
+  additions: number;
+  deletions: number;
+  status: string;
+}
+
+export interface PodWorktreeDiff {
+  goalId: string;
+  revision: number;
+  branch: string;
+  baseRef: string;
+  files: PodWorktreeDiffFile[];
+}
+
+/** Per-response cap so a huge revision cannot blow up the desktop payload. */
+const MAX_DIFF_FILES = 100;
+
 const MAFW_IDENTITY = [
   '-c', 'user.name=MAFW',
   '-c', 'user.email=mafw@localhost',
@@ -227,6 +246,54 @@ export class PodWorktreeService {
     });
   }
 
+  /**
+   * Read-only branch preview for the result page: merge-base diff of the
+   * revision branch against the recorded base. Works while the branch exists
+   * (also after the checkout was removed by acceptance).
+   */
+  async branchDiff(podId: string, goalId: string, revision: number): Promise<PodWorktreeDiff> {
+    const row = this.get(podId, goalId, revision);
+    if (!row) throw new PodError(404, `goal revision has no worktree: ${goalId}#${revision}`);
+    const pod = this.deps.store.getPod(podId);
+    if (!pod) throw new PodError(404, `pod not found: ${podId}`);
+    const git = this.gitFor(pod.projectDir);
+    if (!(await this.branchExists(git, row.branch))) {
+      throw new PodError(409, `revision branch is missing: ${row.branch}`);
+    }
+    if (!(await this.refExists(git, row.baseRef))) {
+      throw new PodError(409, `revision base is missing: ${row.baseRef}`);
+    }
+    // Three-dot range = merge-base(base, branch)..branch, so main-only commits
+    // made after the worktree was created never pollute the review.
+    const range = `${row.baseRef}...${row.branch}`;
+    const nameStatus = await git.raw(['diff', '--name-status', '--no-renames', range]);
+    const statuses = new Map<string, string>();
+    for (const line of nameStatus.split('\n')) {
+      const match = line.match(/^([A-Z])\t(.+)$/);
+      if (match) statuses.set(match[2], match[1]);
+    }
+    const numstat = await git.raw(['diff', '--numstat', '--no-renames', range]);
+    const entries = numstat.split('\n')
+      .map((line) => line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/))
+      .filter((match): match is RegExpMatchArray => !!match)
+      .slice(0, MAX_DIFF_FILES);
+    const files: PodWorktreeDiffFile[] = [];
+    for (const match of entries) {
+      const [, additionsRaw, deletionsRaw, file] = match;
+      const patch = await git
+        .raw(['diff', '--patch', '--no-color', '--no-renames', '--unified=3', range, '--', file])
+        .catch(() => '');
+      files.push({
+        file,
+        patch,
+        additions: additionsRaw === '-' ? 0 : Number(additionsRaw),
+        deletions: deletionsRaw === '-' ? 0 : Number(deletionsRaw),
+        status: statuses.get(file) ?? 'M',
+      });
+    }
+    return { goalId, revision, branch: row.branch, baseRef: row.baseRef, files };
+  }
+
   private async ensureInner(podId: string, goalId: string, revision: number): Promise<PodGoalWorktreeRow> {
     const existing = this.get(podId, goalId, revision);
     if (existing) {
@@ -334,6 +401,15 @@ export class PodWorktreeService {
   private async branchExists(git: SimpleGit, branch: string): Promise<boolean> {
     try {
       await git.raw(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async refExists(git: SimpleGit, ref: string): Promise<boolean> {
+    try {
+      await git.raw(['rev-parse', '--verify', '--quiet', ref]);
       return true;
     } catch {
       return false;

@@ -22,7 +22,7 @@ export interface PodRouteDeps {
   messages: Pick<PodMessageService, 'list' | 'send' | 'markRead'>;
   goals: Pick<PodGoalService, 'list' | 'promote'> & Partial<Pick<
     PodGoalService,
-    'enqueueGoal' | 'views' | 'attention' | 'pause' | 'resume' | 'cancelQueued' | 'result' | 'acceptResult'
+    'enqueueGoal' | 'views' | 'attention' | 'pause' | 'resume' | 'cancelQueued' | 'result' | 'acceptResult' | 'worktreeDiff'
   >>;
   memory: Pick<PodMemoryService, 'renderContext' | 'writeMemory' | 'readMemoryFile'>;
   access?: { requireMember(sessionId: string, allowed: PodMemberRole[], podId?: string): PodMemberRow };
@@ -308,6 +308,26 @@ export async function handlePods(
       readMember(deps, url, podId);
       if (!deps.goals.result) throw new PodError(503, 'goal result unavailable');
       sendJson(res, 200, deps.goals.result(podId, decode(goalResult[2])));
+      return true;
+    }
+
+    const goalWorktreeDiff = pathname.match(/^\/api\/pods\/([^/]+)\/goals\/([^/]+)\/worktree\/diff$/);
+    if (goalWorktreeDiff) {
+      if (method !== 'GET') return false;
+      const podId = decode(goalWorktreeDiff[1]);
+      const goalId = decode(goalWorktreeDiff[2]);
+      requirePod(deps, podId);
+      if (!deps.goals.worktreeDiff) throw new PodError(503, 'worktree diff unavailable');
+      const raw = new URL(url, 'http://localhost').searchParams.get('revision');
+      let opts: { revision?: number } = {};
+      if (raw !== null) {
+        const revision = Number(raw);
+        if (!Number.isInteger(revision) || revision < 1) {
+          throw new PodError(400, 'revision must be a positive integer');
+        }
+        opts = { revision };
+      }
+      sendJson(res, 200, await deps.goals.worktreeDiff(podId, goalId, opts));
       return true;
     }
 

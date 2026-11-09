@@ -1334,6 +1334,22 @@ export interface PodGoalAcceptResult {
   mergedAt: string
 }
 
+export interface PodWorktreeDiffFile {
+  file: string
+  patch: string
+  additions: number
+  deletions: number
+  status: string
+}
+
+export interface PodWorktreeDiff {
+  goalId: string
+  revision: number
+  branch: string
+  baseRef: string
+  files: PodWorktreeDiffFile[]
+}
+
 export interface PodHandoffGoalInput {
   title: string
   objective?: string
@@ -1708,6 +1724,8 @@ export interface PodNamespace {
   rejectResult(podID: string, goalID: string, feedback: string, body?: { actorSessionID?: string }): Promise<PodRejectResult>
   /** Explicit human acceptance: merge the active revision worktree into its base branch. */
   acceptResult(podID: string, goalID: string, body: { revision?: number; confirm: true }): Promise<PodGoalAcceptResult>
+  /** Read-only merge-base diff for a revision branch (survives the worktree checkout). */
+  worktreeDiff(podID: string, goalID: string, revision?: number): Promise<PodWorktreeDiff>
   revisions(podID: string, goalID: string): Promise<{ items: PodGoalRevision[] }>
 }
 

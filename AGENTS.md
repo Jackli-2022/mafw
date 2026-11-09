@@ -1592,8 +1592,13 @@ workspace，结束后销毁）。
   输入；失败结果显示「失败 · 不可验收」，不出现验收入口；已验收后隐藏打回入口。
 - **A2A artifact**：`PodA2AArtifactStore` 支持动态 roots resolver，**revision worktree 优先**，
   merged/abandoned/missing 行省略 worktree 根；同一 store 在合并/移除后自动回落到项目目录。
+- **分支差异预览**：`GET /api/pods/:podId/goals/:goalId/worktree/diff?revision=N` 返回
+  merge-base 三点 diff（最多 100 文件；base/branch 缺失 409，revision 无 row 404）。只读，
+  不需要 worktree 目录（验收后分支仍可读）。桌面结果页「查看分支差异」只在 active/abandoned
+  revision 显示（验收后隐藏），复用 `DiffReviewPanel` 的 `previewOnly` 模式，不提供回退按钮。
 - **测试**：gateway `pod-worktree-path`/`pod-store`/`pod-worktree-service`/`pod-result-accept`/
-  `pod-accept-route`/`pod-a2a-artifacts`/`pod-wiring`，desktop `pod-result-view-model`。
+  `pod-accept-route`/`pod-worktree-diff-route`/`pod-a2a-artifacts`/`pod-wiring`，desktop
+  `pod-result-view-model`/`pod-result-diff-wiring`。
 - **真机冒烟（2026-11-09，commit `8e363e86`）**：临时 Git 仓库 + 3 个真实 quick Goal（opencode-go
   deepseek-v4.1-flash）跑通——worktree 路径/分支、`acceptance=pending`、单次验收真实 mergeCommit、
   重复验收幂等、验收后打回 409、worktree 移除/分支保留、主项目文件与 clean 状态；桌面 dev（CDP 9222）
