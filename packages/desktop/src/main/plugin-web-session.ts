@@ -1,0 +1,364 @@
+// packages/desktop/src/main/plugin-web-session.ts
+// Plugin web surfaces: sandboxed per-package partitions + path-scoped ticket
+// cookies (spec 2026-11-09 §5.5/§6.2). Pure decisions live here so they run
+// under `node --test`; the electron calls arrive through injected deps
+// (`mafw-ipc.ts` wires `session.fromPartition` / `BrowserWindow`).
+//
+// Isolation model — read before changing the filter:
+// - Each package gets its own `persist:` partition, and `onBeforeRequest`
+//   cancels every request that is not `<gateway>/api/plugins/<pkg>/…`.
+//   That filter is the *real* package isolation: the gateway treats any
+//   loopback request without a valid ticket as the ambient project (dev/curl
+//   affordance), so without the filter a compromised page could reach another
+//   package's namespace, or the whole gateway API.
+// - `will-attach-webview` force-installs the bridge preload and strips node
+//   capabilities. `browser-session.ts` skips plugin partitions so the browser
+//   guest rules never strip that preload.
+// - Only loopback webviews are supported: remote gateways need the global API
+//   token as well as the ticket, and the desktop has no story for that yet.
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+
+/** Every plugin webview lives in its own persistent partition. */
+export const PLUGIN_WEB_PARTITION_PREFIX = "persist:mafw-plugin-"
+/** Must match `gateway/src/routes/plugin-web.ts` (path-scoped cookie). */
+export const PLUGIN_WEB_TICKET_COOKIE = "mafw_plugin_ticket"
+/** Package names are contract-validated; this is the pre-network gate. */
+const PLUGIN_WEB_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+const DEFAULT_WEB_ENTRY = "index.html"
+const LOOPBACK_HTTP_PROTOCOLS = new Set(["http:", "ws:"])
+const LOOPBACK_SECURE_PROTOCOLS = new Set(["https:", "wss:"])
+
+const here = dirname(fileURLToPath(import.meta.url))
+
+export function pluginWebPartition(pkg: string): string {
+  return `${PLUGIN_WEB_PARTITION_PREFIX}${pkg}`
+}
+
+/** Inverse of `pluginWebPartition`; `null` for partitions this module does not own. */
+export function pluginWebPartitionPackage(partition: string | null | undefined): string | null {
+  if (typeof partition !== "string") return null
+  if (!partition.startsWith(PLUGIN_WEB_PARTITION_PREFIX)) return null
+  const pkg = partition.slice(PLUGIN_WEB_PARTITION_PREFIX.length)
+  return pkg.length > 0 ? pkg : null
+}
+
+/** Path-scoped to the package namespace so a cookie can never reach another package. */
+export function pluginWebCookiePath(pkg: string): string {
+  return `/api/plugins/${pkg}/`
+}
+
+/** `""` / missing → `index.html`; leading slashes are not part of a relative entry. */
+export function normalizePluginWebEntry(entry?: string | null): string {
+  const value = typeof entry === "string" ? entry.trim().replace(/^\/+/, "") : ""
+  return value.length > 0 ? value : DEFAULT_WEB_ENTRY
+}
+
+/**
+ * `src` for the surface `<webview>`: gateway origin + package namespace + entry,
+ * with the committed revision as a cache-busting query token.
+ *
+ * Dot segments are dropped: the gateway resolver rejects them anyway, and the
+ * surface URL must never be able to point outside `/api/plugins/<pkg>/ui/`.
+ */
+export function pluginWebUrl(
+  gatewayUrl: string,
+  pkg: string,
+  entry?: string | null,
+  revision?: string | null,
+): string {
+  const base = gatewayUrl.replace(/\/+$/, "")
+  const rel = normalizePluginWebEntry(entry)
+    .split("/")
+    .filter((segment) => segment !== "" && segment !== "." && segment !== "..")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")
+  const url = `${base}/api/plugins/${encodeURIComponent(pkg)}/ui/${rel || DEFAULT_WEB_ENTRY}`
+  return revision ? `${url}?revision=${encodeURIComponent(revision)}` : url
+}
+
+/** `out/preload/plugin-web.js` next to `out/main/` (electron-vite layout). */
+export function pluginWebPreloadPath(baseDir: string = here): string {
+  return join(baseDir, "../preload/plugin-web.js")
+}
+
+function parseUrl(raw: string): URL | null {
+  try {
+    return new URL(raw)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * True when `requestUrl` targets the gateway origin and this package's namespace.
+ * The trailing-slash boundary keeps `demo` from matching `demo2`.
+ */
+export function pluginWebRequestAllowed(gatewayUrl: string, pkg: string, requestUrl: string): boolean {
+  const gateway = parseUrl(gatewayUrl)
+  const request = parseUrl(requestUrl)
+  if (!gateway || !request) return false
+  if (!PLUGIN_WEB_NAME_PATTERN.test(pkg)) return false
+
+  const protocols = gateway.protocol === "https:" ? LOOPBACK_SECURE_PROTOCOLS : LOOPBACK_HTTP_PROTOCOLS
+  if (!protocols.has(request.protocol)) return false
+  if (request.host !== gateway.host) return false
+
+  const base = `/api/plugins/${pkg}`
+  return request.pathname === base || request.pathname.startsWith(`${base}/`)
+}
+
+export type PluginWebAttachDecision =
+  | { ok: true; pkg: string }
+  | { ok: false; pkg: string | null; reason: string }
+
+/** Attach gate for one `will-attach-webview` event. */
+export function pluginWebAttachDecision(
+  gatewayUrl: string,
+  partition: string | null | undefined,
+  src: string | null | undefined,
+): PluginWebAttachDecision {
+  const pkg = pluginWebPartitionPackage(partition)
+  if (!pkg) return { ok: false, pkg: null, reason: "not a plugin web partition" }
+
+  const value = typeof src === "string" ? src.trim() : ""
+  if (value.length === 0 || value === "about:blank") return { ok: true, pkg }
+  if (!pluginWebRequestAllowed(gatewayUrl, pkg, value)) {
+    return { ok: false, pkg, reason: "src is outside the package namespace" }
+  }
+  return { ok: true, pkg }
+}
+
+// ── session-level policy (injected electron shapes) ──
+
+export interface PluginWebCookieDetails {
+  url: string
+  name: string
+  value: string
+  path: string
+  httpOnly: boolean
+  sameSite: "strict"
+  expirationDate: number
+}
+
+/** Structural subset of Electron `Session` used by this module. */
+export interface PluginWebSessionLike {
+  setPermissionRequestHandler(handler: ((wc: unknown, permission: string, callback: (granted: boolean) => void) => void) | null): void
+  setPermissionCheckHandler(handler: ((wc: unknown, permission: string, origin: string) => boolean) | null): void
+  webRequest: {
+    onBeforeRequest(
+      filter: { urls: string[] },
+      listener: (details: { url: string }, callback: (response: { cancel: boolean }) => void) => void,
+    ): void
+  }
+  cookies: {
+    set(details: PluginWebCookieDetails): Promise<void>
+  }
+}
+
+export interface PluginWebPreferences {
+  preload?: string
+  nodeIntegration?: boolean
+  contextIsolation?: boolean
+  sandbox?: boolean
+  webSecurity?: boolean
+  webviewTag?: boolean
+}
+
+export type PluginWebviewAttachListener = (
+  event: { preventDefault(): void },
+  webPreferences: PluginWebPreferences,
+  params: { partition?: string; src?: string },
+) => void
+
+/** Structural subset of Electron `WebContents` (only the attach hook). */
+export interface PluginWebHostLike {
+  on(event: "will-attach-webview", listener: PluginWebviewAttachListener): void
+}
+
+/** Deny permissions + confine the partition to one package namespace. */
+export function applyPluginWebSessionPolicy(
+  ses: PluginWebSessionLike,
+  gatewayUrl: () => string,
+  pkg: string,
+): void {
+  ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+  ses.setPermissionCheckHandler(() => false)
+  // Matches http(s)/ws(s); other schemes are never reachable from a sandboxed
+  // page (no node integration, no file: navigation) and are handled by the
+  // guest's webPreferences.
+  ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, callback) => {
+    callback({ cancel: !pluginWebRequestAllowed(gatewayUrl(), pkg, details.url) })
+  })
+}
+
+/** Force the bridge preload + strip node capabilities on our partitions only. */
+export function applyPluginWebviewAttachPolicy(
+  host: PluginWebHostLike,
+  gatewayUrl: () => string,
+  preloadPath: string = pluginWebPreloadPath(),
+): void {
+  host.on("will-attach-webview", (event, webPreferences, params) => {
+    const decision = pluginWebAttachDecision(gatewayUrl(), params.partition, params.src)
+    if (!decision.ok) {
+      // Foreign partitions belong to browser-session.ts; only veto our own.
+      if (decision.pkg) event.preventDefault()
+      return
+    }
+    webPreferences.preload = preloadPath
+    webPreferences.nodeIntegration = false
+    webPreferences.contextIsolation = true
+    webPreferences.sandbox = true
+    webPreferences.webSecurity = true
+    webPreferences.webviewTag = false
+  })
+}
+
+// ── composition (electron-facing) ──
+
+const configuredSessions = new WeakSet<object>()
+const wiredHosts = new WeakSet<object>()
+const registeredHostFactories = new WeakSet<object>()
+
+export interface PluginWebSessionDeps {
+  /** Read lazily: the gateway port changes across restarts. */
+  gatewayUrl(): string
+  fromPartition(partition: string): PluginWebSessionLike
+  /** Host windows whose `will-attach-webview` must be hardened. */
+  hosts(): PluginWebHostLike[]
+  /** Optional factory so windows created later are hardened too. */
+  onHostCreated?(listener: (host: PluginWebHostLike) => void): void
+  preloadPath?: string
+}
+
+/**
+ * Configure one package: partition policy + `will-attach-webview` on every
+ * host. Idempotent per session/host object; safe to call before every surface.
+ *
+ * @returns the package's Electron session (the caller installs the cookie).
+ */
+export function configurePluginWebSession(
+  pkg: string,
+  deps: PluginWebSessionDeps,
+): PluginWebSessionLike {
+  const partition = pluginWebPartition(pkg)
+  const ses = deps.fromPartition(partition)
+  // Re-registering would replace the listener anyway, but the closure reads the
+  // gateway URL lazily, so wiring once per session is enough.
+  if (!configuredSessions.has(ses as object)) {
+    applyPluginWebSessionPolicy(ses, deps.gatewayUrl, pkg)
+    configuredSessions.add(ses as object)
+  }
+
+  const preload = deps.preloadPath ?? pluginWebPreloadPath()
+  for (const host of deps.hosts()) {
+    if (wiredHosts.has(host as object)) continue
+    applyPluginWebviewAttachPolicy(host, deps.gatewayUrl, preload)
+    wiredHosts.add(host as object)
+  }
+
+  const factory = deps.onHostCreated
+  if (factory && !registeredHostFactories.has(factory as object)) {
+    registeredHostFactories.add(factory as object)
+    factory((host) => {
+      if (wiredHosts.has(host as object)) return
+      applyPluginWebviewAttachPolicy(host, deps.gatewayUrl, preload)
+      wiredHosts.add(host as object)
+    })
+  }
+  return ses
+}
+
+// ── IPC-facing preparer ──
+
+export interface PluginWebPrepareInput {
+  name: string
+  /** Registered project the surface is bound to (never the gateway cwd). */
+  projectDir: string
+  sessionID?: string
+  entry?: string
+  revision?: string
+}
+
+export interface PluginWebPrepareResult {
+  partition: string
+  url: string
+  expiresAt: number
+}
+
+export interface PluginWebSessionPreparerDeps {
+  gatewayUrl(): string
+  issueTicket(
+    name: string,
+    input: { projectDir: string; sessionID?: string },
+  ): Promise<{ ticket: string; expiresAt: number }>
+  fromPartition(partition: string): PluginWebSessionLike
+  hosts(): PluginWebHostLike[]
+  onHostCreated?(listener: (host: PluginWebHostLike) => void): void
+  preloadPath?: string
+  log?(message: string, detail?: Record<string, unknown>): void
+}
+
+export interface PluginWebSessionPreparer {
+  prepare(input: PluginWebPrepareInput): Promise<PluginWebPrepareResult>
+  /** Most recent ticket expiry (epoch ms) per package — the host schedules renewal. */
+  expiresAtFor(name: string): number | undefined
+}
+
+/**
+ * One `prepareWebSurface` call = a fresh ticket + cookie in the package
+ * partition (the gateway revokes the previous ticket for the same binding, so
+ * the cookie must always be replaced). The renderer calls this again at
+ * `expiresAt - 30min` and after any 403.
+ */
+export function createPluginWebSessionPreparer(deps: PluginWebSessionPreparerDeps): PluginWebSessionPreparer {
+  const expiresAtByPackage = new Map<string, number>()
+
+  return {
+    async prepare(input: PluginWebPrepareInput): Promise<PluginWebPrepareResult> {
+      const name = typeof input?.name === "string" ? input.name.trim() : ""
+      if (!PLUGIN_WEB_NAME_PATTERN.test(name)) {
+        throw new Error(`invalid plugin package name: ${JSON.stringify(input?.name ?? "")}`)
+      }
+      const projectDir = typeof input.projectDir === "string" ? input.projectDir.trim() : ""
+      if (!projectDir) throw new Error("plugin web surface requires a projectDir")
+      const sessionID =
+        typeof input.sessionID === "string" && input.sessionID.trim().length > 0
+          ? input.sessionID.trim()
+          : undefined
+
+      try {
+        const gatewayUrl = deps.gatewayUrl().replace(/\/+$/, "")
+        if (!gatewayUrl) throw new Error("MAFW Gateway is not ready")
+        const ticket = await deps.issueTicket(name, {
+          projectDir,
+          ...(sessionID ? { sessionID } : {}),
+        })
+
+        const ses = configurePluginWebSession(name, deps)
+        const partition = pluginWebPartition(name)
+        await ses.cookies.set({
+          url: gatewayUrl,
+          name: PLUGIN_WEB_TICKET_COOKIE,
+          value: ticket.ticket,
+          path: pluginWebCookiePath(name),
+          httpOnly: true,
+          sameSite: "strict",
+          expirationDate: Math.floor(ticket.expiresAt / 1000),
+        })
+
+        expiresAtByPackage.set(name, ticket.expiresAt)
+        const url = pluginWebUrl(gatewayUrl, name, input.entry, input.revision)
+        deps.log?.("plugin web session prepared", { pkg: name, partition, expiresAt: ticket.expiresAt })
+        return { partition, url, expiresAt: ticket.expiresAt }
+      } catch (err) {
+        deps.log?.("plugin web session failed", { pkg: name, error: String(err) })
+        throw err
+      }
+    },
+
+    expiresAtFor(name: string): number | undefined {
+      return expiresAtByPackage.get(name)
+    },
+  }
+}

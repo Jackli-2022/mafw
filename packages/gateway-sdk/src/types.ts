@@ -1951,6 +1951,13 @@ export interface PluginPackageUpdateResult extends PluginPackageInstallResult {
   active?: { name: string; capabilities: Record<string, unknown> }
 }
 
+/** `POST /api/plugins/:name/web-ticket` — loopback-only, package-bound ticket. */
+export interface PluginWebTicket {
+  ticket: string
+  /** Epoch milliseconds (8h TTL; the client renews before expiry). */
+  expiresAt: number
+}
+
 /** `POST /api/plugins/check` — `ok:false` is a diagnostic, not an HTTP error. */
 export interface PluginCheckResult {
   ok: boolean

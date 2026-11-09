@@ -144,3 +144,21 @@ test("sdk plugins.enablePackage/disablePackage/removePackage post {package}", as
   }
 })
 
+test("sdk plugins.webTicket posts {projectDir, sessionID} to the encoded package path", async () => {
+  const f = stubFetch(200, { ticket: "tkt-1", expiresAt: 1_900_000_000_123 })
+  const client = new MafwClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl: f as unknown as typeof fetch })
+  const res = await client.plugins.webTicket("acme space", { projectDir: "C:\\repo", sessionID: "s1" })
+  const call = (f as any).mock.calls[0]
+  expect(call[0]).toBe("http://127.0.0.1:3000/api/plugins/acme%20space/web-ticket")
+  expect(call[1].method).toBe("POST")
+  expect(JSON.parse(call[1].body)).toEqual({ projectDir: "C:\\repo", sessionID: "s1" })
+  expect(res).toEqual({ ticket: "tkt-1", expiresAt: 1_900_000_000_123 })
+})
+
+test("sdk plugins.webTicket surfaces the gateway rejection text", async () => {
+  const f = stubFetch(400, { error: "projectDir is not a registered project" })
+  const client = new MafwClient({ baseUrl: "http://127.0.0.1:3000", fetchImpl: f as unknown as typeof fetch })
+  await expect(client.plugins.webTicket("acme", { projectDir: "/nope" }))
+    .rejects.toThrow("projectDir is not a registered project")
+})
+

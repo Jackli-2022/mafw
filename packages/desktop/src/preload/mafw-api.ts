@@ -397,6 +397,15 @@ export function createMafwApi(): MafwAPI {
     plugins: {
       list: () => invoke("plugins", "list"),
       client: () => invoke("plugins", "client"),
+      // Plugin web surfaces: main mints the package-bound ticket and installs it
+      // as a path-scoped cookie in `persist:mafw-plugin-<pkg>` (the renderer
+      // never sees the ticket). Call again at `expiresAt - 30min` / after a 403.
+      prepareWebSurface: (name, input) =>
+        ipcRenderer.invoke("mafw-plugin-web-session", { name, ...input }) as Promise<{
+          partition: string
+          url: string
+          expiresAt: number
+        }>,
       chooseDirectory: () => ipcRenderer.invoke("mafw-plugins-choose-directory") as Promise<{ path: string | null; error?: string }>,
       installPackage: (input) => invoke("plugins", "installPackage", input),
       check: (input) => invoke("plugins", "check", input),

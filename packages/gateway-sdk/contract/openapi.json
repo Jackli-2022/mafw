@@ -2294,6 +2294,29 @@
         }
       }
     },
+    "/api/plugins/{name}/web-ticket": {
+      "post": {
+        "operationId": "plugins.webTicket",
+        "tags": [
+          "plugins"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "operationId": "config.get",
@@ -5610,29 +5633,6 @@
         "operationId": "health.root",
         "tags": [
           "internal"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/plugins/{name}/web-ticket": {
-      "post": {
-        "operationId": "plugins.webTicket",
-        "tags": [
-          "internal"
-        ],
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
         ],
         "responses": {
           "200": {

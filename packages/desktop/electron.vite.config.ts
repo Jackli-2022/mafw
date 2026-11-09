@@ -99,7 +99,12 @@ const require = __cjs_mod__.createRequire(import.meta.url);
   preload: {
     build: {
       rollupOptions: {
-        input: { index: "src/preload/index.ts" },
+        input: {
+          index: "src/preload/index.ts",
+          // Key (not the file name) becomes the emitted `out/preload/plugin-web.js`
+          // that main/plugin-web-session.ts force-attaches to plugin webviews.
+          "plugin-web": "src/preload/plugin-web.ts",
+        },
         output: {
           format: "cjs",
           entryFileNames: "[name].js",

@@ -2,6 +2,7 @@
 // will-attach-webview 强制安全基线。渲染层只负责 UI；决策纯函数在 browser-policy.ts。
 import { app, BrowserWindow, session, shell, type WebContents } from "electron"
 import { BROWSER_PARTITION, guestAttachAllowed, navigationDecision, windowOpenDecision } from "../shared/browser-policy"
+import { pluginWebPartitionPackage } from "./plugin-web-session"
 
 let configured = false
 
@@ -67,11 +68,17 @@ export function configureBrowserSession() {
 /** 宿主窗口加固：webview 挂载前清掉 preload/node 能力、锁 partition、拒绝危险 src。 */
 export function wireWebviewAttach(host: WebContents) {
   host.on("will-attach-webview", (event, webPreferences, params) => {
-    delete (webPreferences as { preload?: string }).preload
+    const pluginPartition = pluginWebPartitionPackage(params.partition) !== null
+    // Plugin web surfaces own their partition, preload and request filter
+    // (main/plugin-web-session.ts): never strip that preload and never veto the
+    // partition here, but keep the node-capability baseline below as
+    // defense-in-depth (either listener may run first).
+    if (!pluginPartition) delete (webPreferences as { preload?: string }).preload
     webPreferences.nodeIntegration = false
     webPreferences.contextIsolation = true
     webPreferences.sandbox = true
     webPreferences.webSecurity = true
+    if (pluginPartition) return
     if (params.partition !== BROWSER_PARTITION) {
       event.preventDefault()
       return

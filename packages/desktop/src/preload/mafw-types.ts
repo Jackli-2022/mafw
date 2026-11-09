@@ -387,6 +387,17 @@ export type MafwAPI = {
   plugins: {
     list(): Promise<PluginsListResult>
     client(): Promise<PluginClientSnapshot>
+    /**
+     * Prepare a sandboxed plugin web surface: main asks the gateway for a
+     * package-bound ticket, installs it as a path-scoped cookie in the package
+     * partition, and returns the surface url for the `<webview>`.
+     */
+    prepareWebSurface(name: string, input: {
+      projectDir: string
+      sessionID?: string
+      entry?: string
+      revision?: string
+    }): Promise<{ partition: string; url: string; expiresAt: number }>
     /** Native directory picker for package install (main owns the dialog). */
     chooseDirectory(): Promise<{ path: string | null; error?: string }>
     installPackage(input: { path: string; overwrite?: boolean; requestId?: string }): Promise<PluginPackageInstallResult>

@@ -21,7 +21,7 @@ import {
   SessionConfigState, SessionConfigCategory, SessionNamespace,
   VoiceStatusResponse,
   PluginClientSnapshot, PluginsListResult, PluginPackageInstallResult, PluginPackageUpdateResult,
-  PluginCheckResult,
+  PluginCheckResult, PluginWebTicket,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -776,6 +776,21 @@ export class MafwClient implements IMafwClient {
 
     /** Committed package revision + descriptors (never pending candidates). */
     client: async (): Promise<PluginClientSnapshot> => this.request('/api/plugins/client'),
+
+    /**
+     * Issue a package-bound ticket for a sandboxed plugin page (desktop main).
+     * The gateway revokes the previous ticket for the same binding, so every
+     * call replaces the cookie the partition holds.
+     */
+    webTicket: async (
+      name: string,
+      input: { projectDir: string; sessionID?: string },
+    ): Promise<PluginWebTicket> => {
+      return this.request(`/api/plugins/${encodeURIComponent(name)}/web-ticket`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+    },
 
     /** Install an absolute local package directory into `~/.mafw/plugins`. */
     installPackage: async (input: { path: string; overwrite?: boolean; requestId?: string }): Promise<PluginPackageInstallResult> => {

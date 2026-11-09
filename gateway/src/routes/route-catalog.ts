@@ -142,6 +142,10 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/plugins/:name/apply', operationId: 'plugins.apply', tags: ['plugins'] },
   { method: 'POST', path: '/api/plugins/:name/reload', operationId: 'plugins.reload', tags: ['plugins'] },
   { method: 'POST', path: '/api/plugins/:name/actions/:action', operationId: 'plugins.invoke', tags: ['plugins'] },
+  // Plugin web surfaces (spec 2026-11-09 §5.5): the desktop main process mints
+  // the package-bound ticket through the SDK; asset/events stay browser-only
+  // (internal, see NON_SDK_ROUTES).
+  { method: 'POST', path: '/api/plugins/:name/web-ticket', operationId: 'plugins.webTicket', tags: ['plugins'] },
   { method: 'GET', path: '/api/config', operationId: 'config.get', tags: ['config'] },
   { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'] },
   { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'] },
@@ -317,9 +321,8 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // 根健康检查（dashboard/桌面探测用）
   { method: 'GET', path: '/health', operationId: 'health.root', tags: ['internal'] },
   // Plugin Web surfaces（spec 2026-11-09 §5.4-§5.6）：asset/events 由浏览器
-  // webview 直接消费（不经 SDK）；web-ticket 从 Task 5 起由桌面主进程经 SDK
-  // 调用——届时可把它移到 SDK_FACING_ROUTES（现在标 internal 以免 SDK 死契约）。
-  { method: 'POST', path: '/api/plugins/:name/web-ticket', operationId: 'plugins.webTicket', tags: ['internal'] },
+  // webview 直接消费（不经 SDK）；web-ticket 在 Task 6 起由桌面主进程经 SDK
+  // 调用，已登记在 SDK_FACING_ROUTES（此前标 internal 以免 SDK 死契约）。
   { method: 'GET', path: '/api/plugins/:name/ui', operationId: 'plugins.webAsset', tags: ['internal'] },
   { method: 'GET', path: '/api/plugins/:name/events', operationId: 'plugins.webEvents', tags: ['internal'] },
 ];

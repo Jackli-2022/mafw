@@ -1,5 +1,5 @@
 import { MafwClient } from "@mafw/sdk"
-import { BrowserWindow, Notification, app, ipcMain, safeStorage } from "electron"
+import { BrowserWindow, Notification, app, ipcMain, safeStorage, session } from "electron"
 import type { IpcMainInvokeEvent } from "electron"
 import { join } from "path"
 import { readdir } from "node:fs/promises"
@@ -19,6 +19,7 @@ import { spawn } from "node:child_process"
 import { buildUpdateToken, pendingRestartPath, atomicWriteToken } from "./pending-update"
 import { writeFile } from "node:fs/promises"
 import { UiPluginManager } from "./ui-plugins"
+import { createPluginWebSessionPreparer } from "./plugin-web-session"
 import type { RenderRequest } from "../shared/ui-plugins"
 import { write as writeLog } from "./logging"
 import { createGatewayHealthMonitor, createRestartScheduler } from "./gateway-health"
@@ -246,6 +247,31 @@ export function registerMafwIpcHandlers() {
       return { path: null, error: String(err) }
     }
   })
+
+  // Plugin web surfaces (spec 2026-11-09 §5.5/§5.7): mint a package-bound
+  // ticket and install it as a path-scoped cookie in the package's own
+  // partition. The renderer never sees the ticket — only { partition, url,
+  // expiresAt }; it calls this again at `expiresAt - 30min` and after a 403.
+  // `plugin-web-session.ts` also owns the partition request filter (the real
+  // cross-package isolation) and the `will-attach-webview` hardening.
+  const preparePluginWebSession = createPluginWebSessionPreparer({
+    gatewayUrl: () => `http://127.0.0.1:${getGatewayPort() ?? 3000}`,
+    issueTicket: async (name, input) => {
+      if (!mafwClient) throw new Error("MAFW Gateway not ready")
+      return mafwClient.plugins.webTicket(name, input)
+    },
+    fromPartition: (partition) => session.fromPartition(partition),
+    hosts: () => BrowserWindow.getAllWindows().map((win) => win.webContents),
+    onHostCreated: (listener) => {
+      app.on("browser-window-created", (_event, win) => listener(win.webContents))
+    },
+    log: (message, detail) => writeLog("utility", message, detail ?? {}, "warn"),
+  })
+  ipcMain.handle(
+    "mafw-plugin-web-session",
+    (_event: IpcMainInvokeEvent, input: Parameters<typeof preparePluginWebSession.prepare>[0]) =>
+      preparePluginWebSession.prepare(input),
+  )
 
   // OS-level notification for away-from-window moments (close-to-tray).
   // The renderer decides relevance (document.hidden) and throttling.
