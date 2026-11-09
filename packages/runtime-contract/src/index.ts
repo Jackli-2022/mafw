@@ -60,3 +60,9 @@ export {
   type RuntimeHostSurface,
   type RuntimeAgentProcess,
 } from './define-runtime.ts';
+export {
+  type PermissionRule,
+  type RuntimeAgentPermissions,
+  type RuntimeAgentDefinition,
+} from './agent-definition.ts';
+export { type RuntimeToolRegistration } from './tool-registration.ts';
