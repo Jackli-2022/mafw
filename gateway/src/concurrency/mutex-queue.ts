@@ -10,7 +10,16 @@ export class MutexQueue {
     return new Promise<T>((resolve, reject) => {
       const task = () => {
         this.running.add(key);
-        fn().then(
+        let fnPromise: Promise<T>;
+        try {
+          fnPromise = fn();
+        } catch (syncErr) {
+          // fn threw synchronously — reject and release the slot.
+          reject(syncErr);
+          queueMicrotask(() => this.finish(key));
+          return;
+        }
+        fnPromise.then(
           (value) => {
             resolve(value);
             queueMicrotask(() => this.finish(key));

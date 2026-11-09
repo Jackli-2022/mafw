@@ -108,12 +108,14 @@ describe('Guard', () => {
     expect(guard.isHeld('key')).toBe(false);
   });
 
-  it('if fn throws, lock is released', async () => {
+  it('if fn throws synchronously, lock is released (I1)', async () => {
     const guard = new Guard();
 
-    await expect(guard.run('key', async () => {
-      throw new Error('boom');
-    }, { onConflict: 'skip' })).rejects.toThrow('boom');
+    // fn is NOT async — it throws synchronously before returning a promise
+    const syncThrow = () => { throw new Error('sync boom'); };
+
+    await expect(guard.run('key', syncThrow as unknown as () => Promise<string>, { onConflict: 'skip' }))
+      .rejects.toThrow('sync boom');
 
     expect(guard.isHeld('key')).toBe(false);
 

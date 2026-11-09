@@ -99,7 +99,18 @@ export class Guard {
         this.timers.set(key, timer);
       }
 
-      fn().then(
+      let fnPromise: Promise<T>;
+      try {
+        fnPromise = fn();
+      } catch (syncErr) {
+        // fn threw synchronously — release the lock and reject.
+        settled = true;
+        this.releaseIfCurrent(key, token);
+        reject(syncErr);
+        return;
+      }
+
+      fnPromise.then(
         (value) => {
           if (settled) return;
           settled = true;

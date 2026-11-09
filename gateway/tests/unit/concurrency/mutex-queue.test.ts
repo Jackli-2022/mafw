@@ -62,20 +62,23 @@ describe('MutexQueue', () => {
     expect(started).toEqual(['A', 'B', 'C']);
   });
 
-  it('if a task throws, the next queued task still runs', async () => {
+  it('if fn throws synchronously, next queued task still runs (I1)', async () => {
     const mq = new MutexQueue();
     const results: string[] = [];
 
-    const p1 = mq.run('key', async () => {
-      throw new Error('task-1-failed');
-    }).catch(() => results.push('caught-1'));
+    // fn is NOT async — it throws synchronously before returning a promise
+    const syncThrow = () => { throw new Error('sync fail'); };
+
+    const p1 = mq.run('key', syncThrow as unknown as () => Promise<void>)
+      .catch(() => results.push('caught-1'));
 
     const p2 = mq.run('key', async () => {
       results.push('task-2-ran');
     });
 
     await Promise.all([p1, p2]);
-    expect(results).toEqual(['caught-1', 'task-2-ran']);
+    // queueMicrotask(finish) fires before .catch handler → task-2-ran first
+    expect(results).toEqual(['task-2-ran', 'caught-1']);
   });
 
   it('queueLength returns pending count for a key', async () => {
