@@ -59,4 +59,26 @@ describe('Watermark', () => {
     wm.bump('key');
     expect(wm.hasActivitySince('key', mark)).toBe(true);
   });
+
+  it('delete removes a key\'s counter (mark resets to 0)', () => {
+    const wm = new Watermark();
+    wm.bump('key');
+    wm.bump('key');
+    expect(wm.mark('key')).toBe(2);
+
+    wm.delete('key');
+    expect(wm.mark('key')).toBe(0);
+    expect(wm.hasActivitySince('key', 0)).toBe(false);
+  });
+
+  it('clear removes all counters', () => {
+    const wm = new Watermark();
+    wm.bump('a');
+    wm.bump('b');
+    wm.bump('b');
+
+    wm.clear();
+    expect(wm.mark('a')).toBe(0);
+    expect(wm.mark('b')).toBe(0);
+  });
 });

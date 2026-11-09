@@ -19,4 +19,14 @@ export class Watermark {
   hasActivitySince(key: string, watermark: number): boolean {
     return (this.counters.get(key) ?? 0) > watermark;
   }
+
+  /** Remove a key's counter (next mark starts from 0). */
+  delete(key: string): void {
+    this.counters.delete(key);
+  }
+
+  /** Remove all counters. */
+  clear(): void {
+    this.counters.clear();
+  }
 }

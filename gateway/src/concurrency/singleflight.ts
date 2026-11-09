@@ -4,6 +4,15 @@
 export class Singleflight {
   private readonly inflight = new Map<string, Promise<unknown>>();
 
+  /**
+   * Same-key concurrent calls merge into one promise; all callers share the result.
+   *
+   * ⚠ Type safety caveat: the internal map stores `Promise<unknown>`, and the
+   * same-key cast back to `Promise<T>` is unchecked. If different call sites
+   * use the same key with different `T` types, the later caller may get a
+   * value of the wrong type. Keys should be namespaced to avoid this
+   * (e.g. `manager:${projectDir}` rather than just `manager`).
+   */
   async run<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const existing = this.inflight.get(key);
     if (existing) return existing as Promise<T>;

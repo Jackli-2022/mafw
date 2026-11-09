@@ -33,6 +33,16 @@ export class Guard {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly waiters = new Map<string, Waiter[]>();
 
+  /**
+   * Execute fn while holding the lock for key.
+   *
+   * Returns the result of fn(), or `null` if skipped (onConflict: 'skip'
+   * and the key was already held).
+   *
+   * ⚠ Note: if fn can legitimately resolve to `null`, the caller cannot
+   * distinguish "skipped" from "fn resolved null". For such fns, use
+   * `isHeld(key)` before calling, or use a sentinel value in fn's return.
+   */
   run<T>(key: string, fn: () => Promise<T>, opts?: GuardOpts): Promise<T | null> {
     const onConflict = opts?.onConflict ?? 'skip';
     const timeoutMs = opts?.timeoutMs;
