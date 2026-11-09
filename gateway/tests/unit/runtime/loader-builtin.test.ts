@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { defineRuntime } from '@mafw/runtime-contract';
 import { RuntimePluginLoader } from '../../../src/runtime/loader';
 import { minimalCapabilities } from '../../../src/runtime/contract';
 
@@ -9,51 +10,67 @@ jest.mock('../../../src/core/utils/logger', () => ({
 }));
 jest.mock('../../../src/config', () => ({ config: { raw: {} } }));
 
-describe('RuntimePluginLoader registerBuiltin', () => {
+function definition(name: string) {
+  return defineRuntime({
+    api: 1,
+    name,
+    displayName: name,
+    preset: 'core',
+    transport: {
+      createSession: async () => ({ sessionID: 's1' }),
+      sendTurn: async (input) => ({ turnID: input.turnID }),
+      interruptTurn: async () => {},
+      onEvent: () => () => {},
+    },
+  });
+}
+
+describe('RuntimePluginLoader registerBuiltinDefinition', () => {
   let dir: string;
   beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'loader-builtin-')); });
   afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
-  it('registerBuiltin makes get() return the builtin factory', async () => {
+  it('resolves a builtin definition and exposes it in hub state', async () => {
     const loader = new RuntimePluginLoader(dir);
-    const caps = { ...minimalCapabilities(), eventStream: true };
-    loader.registerBuiltin('my-builtin', async () => ({ name: 'my-builtin' } as any), caps, true);
-    await loader.init();
+    loader.registerBuiltinDefinition('my-builtin', async () => definition('my-builtin'), {
+      external: true,
+      capabilities: { ...minimalCapabilities(), eventStream: true },
+    });
 
-    const plugin = loader.get('my-builtin');
-    expect(plugin).toBeDefined();
-    expect(plugin!.capabilities.eventStream).toBe(true);
-    expect(plugin!.external).toBe(true);
-    expect(typeof plugin!.createRuntime).toBe('function');
+    const resolved = await loader.resolveBuiltinDefinition('my-builtin', {});
+    expect(resolved?.name).toBe('my-builtin');
+    expect(loader.getBuiltinNames()).toContain('my-builtin');
+    expect(loader.get('my-builtin')).toBeUndefined();
+
+    const state = loader.getState().find((s) => s.name === 'my-builtin');
+    expect(state?.status).toBe('ok');
+    expect(state?.capabilities?.eventStream).toBe(true);
   });
 
-  it('file plugins take precedence over builtins of the same name', async () => {
+  it('file plugins take precedence over a same-name builtin definition', async () => {
+    fs.writeFileSync(path.join(dir, 'dup.js'), `module.exports = { name: 'dup', async createRuntime() { return { name: 'dup-file', session: { messages: async () => ({ data: [] }) } }; } };`);
+    let built = 0;
     const loader = new RuntimePluginLoader(dir);
-    loader.registerBuiltin('dup', async () => ({ name: 'dup-builtin' } as any), minimalCapabilities(), true);
-    fs.writeFileSync(path.join(dir, 'dup.js'), `module.exports = { name: 'dup', async createRuntime() { return { name: 'dup-file' }; } };`);
+    loader.registerBuiltinDefinition('dup', async () => { built += 1; return definition('dup-builtin'); }, {
+      external: false,
+      capabilities: minimalCapabilities(),
+    });
     await loader.init();
 
-    const plugin = loader.get('dup');
-    const rt = await plugin!.createRuntime({} as any);
-    expect(rt.name).toBe('dup-file');
+    const resolved = await loader.resolveBuiltinDefinition('dup', {});
+    expect(resolved).toBeDefined();
+    expect(built).toBe(0);
   });
 
-  it('getState() reports builtins as ok with source builtin', async () => {
-    const loader = new RuntimePluginLoader(dir);
-    loader.registerBuiltin('b1', async () => ({ name: 'b1' } as any), minimalCapabilities(), true);
-    await loader.init();
-    const state = loader.getState();
-    expect(state).toHaveLength(1);
-    expect(state[0].name).toBe('b1');
-    expect(state[0].status).toBe('ok');
-  });
-
-  it('pi builtin exposes the module-level PI_CAPABILITIES object as its single source', async () => {
+  it('pi capabilities stay a single object', async () => {
     const { PI_CAPABILITIES } = await import('../../../src/runtime/plugins/pi-runtime');
     const loader = new RuntimePluginLoader(dir);
-    loader.registerBuiltin('pi', async () => ({ name: 'pi' } as any), PI_CAPABILITIES, true);
-    await loader.init();
-    const plugin = loader.get('pi')!;
-    expect(plugin.capabilities).toBe(PI_CAPABILITIES); // same object: no second declaration to drift
+    loader.registerBuiltinDefinition('pi', async () => definition('pi'), {
+      external: false,
+      capabilities: PI_CAPABILITIES,
+    });
+
+    const state = loader.getState().find((s) => s.name === 'pi');
+    expect(state?.capabilities).toBe(PI_CAPABILITIES);
   });
 });

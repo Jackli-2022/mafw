@@ -68,7 +68,6 @@ export class RuntimePluginLoader {
   private factories = new Map<string, RuntimeFactory>();
   private meta = new Map<string, { capabilities: RuntimeCapabilities; external: boolean; declaredCapabilityKeys: string[] } & EventMappingEntry>();
   private state = new Map<string, RuntimePluginState>();
-  private builtins = new Map<string, { factory: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean; declaredCapabilityKeys: string[] } & EventMappingEntry>();
   private packageEntries = new Map<string, RuntimePackageEntry>();
   /** 激活期发现的矛盾声明（实例 caps ≠ 模块声明）——hub 可见。 */
   private extraErrors = new Map<string, string>();
@@ -93,16 +92,6 @@ export class RuntimePluginLoader {
   }
 
   /** 注册内置插件（优先级低于文件插件）。extras 携带事件映射声明（纯数据）。 */
-  registerBuiltin(
-    name: string,
-    factory: RuntimeFactory,
-    capabilities: RuntimeCapabilities,
-    external: boolean,
-    extras?: EventMappingEntry,
-  ): void {
-    this.builtins.set(name, { factory, capabilities, external, declaredCapabilityKeys: Object.keys(capabilities), ...(extras ?? {}) });
-  }
-
   async init(): Promise<void> {
     this.ensureDir();
     await this.scan();
@@ -256,7 +245,7 @@ export class RuntimePluginLoader {
       // alias never shadows a builtin.
       const stem = file.replace(/\.js$/, '');
       let alias: string | undefined;
-      if (stem !== name && !this.factories.has(stem) && !this.builtins.has(stem)) {
+      if (stem !== name && !this.factories.has(stem) && !this.builtinDefinitions.has(stem)) {
         this.factories.set(stem, mod.createRuntime);
         this.meta.set(stem, { capabilities, external, declaredCapabilityKeys, ...eventExtras });
         alias = stem;
@@ -376,8 +365,6 @@ export class RuntimePluginLoader {
         declaredCapabilityKeys: Object.keys(pkg.capabilities ?? {}),
       };
     }
-    const builtin = this.builtins.get(name);
-    if (builtin) return { createRuntime: builtin.factory, ...builtin };
     return undefined;
   }
 
@@ -391,19 +378,10 @@ export class RuntimePluginLoader {
 
   /** 已注册内置件名（builtin 文件件不在其中，opencode 为恒等默认由 index.ts 注入 hub）。 */
   getBuiltinNames(): string[] {
-    return [...new Set([...this.builtins.keys(), ...this.builtinDefinitions.keys()])];
+    return [...this.builtinDefinitions.keys()];
   }
 
   getState(): RuntimePluginState[] {
-    for (const [name, b] of this.builtins) {
-      const extra = this.extraErrors.get(name);
-      this.state.set(`builtin:${name}`, {
-        file: `builtin:${name}`, name,
-        status: extra ? 'error' : 'ok',
-        error: extra,
-        capabilities: b.capabilities,
-      });
-    }
     for (const [name, b] of this.builtinDefinitions) {
       const extra = this.extraErrors.get(name);
       this.state.set(`builtin:${name}`, {

@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { stripComments } from '../../../../packages/test-shim/comment-strip';
 
 const NEUTRAL_FILES = [
   'adapter-event.ts',
@@ -10,14 +11,17 @@ const NEUTRAL_FILES = [
 
 const FORBIDDEN = /opencode|claude|\bpi\b/i;
 
+function readCode(file: string): string {
+  return stripComments(fs.readFileSync(file, 'utf8')).code;
+}
+
 it('neutral kernel files do not contain runtime protocol names', () => {
   const root = path.join(__dirname, '../../../src/runtime');
   const offenders: string[] = [];
   for (const file of NEUTRAL_FILES) {
     const full = path.join(root, file);
     if (!fs.existsSync(full)) continue;
-    const text = fs.readFileSync(full, 'utf8');
-    if (FORBIDDEN.test(text)) offenders.push(file);
+    if (FORBIDDEN.test(readCode(full))) offenders.push(file);
   }
   expect(offenders).toEqual([]);
 });
@@ -31,4 +35,15 @@ it('only the mapper may speak payload.properties', () => {
       return fs.existsSync(full) && fs.readFileSync(full, 'utf8').includes('payload.properties');
     });
   expect(offenders).toEqual([]);
+});
+
+it('the loader has no legacy builtin registration API', () => {
+  const loader = readCode(path.join(__dirname, '../../../src/runtime/loader.ts'));
+  expect(loader).not.toMatch(/\bregisterBuiltin\s*\(/);
+  expect(loader).not.toMatch(/\bprivate builtins\b/);
+});
+
+it('the composition root registers no legacy builtins', () => {
+  const index = readCode(path.join(__dirname, '../../../src/index.ts'));
+  expect(index).not.toMatch(/runtimeLoader\.registerBuiltin\s*\(/);
 });

@@ -34,10 +34,11 @@ module.exports = { name: 'pkg-rt', capabilities: {}, async createRuntime() { ret
   it('包条目优先于同名内置', async () => {
     const loader = new RuntimePluginLoader(dir);
     await loader.init();
-    loader.registerBuiltin('pkg-rt', async () => ({ name: 'from-builtin' }) as any, {} as any, true);
+    loader.registerBuiltinDefinition('pkg-rt', async () => ({ name: 'from-builtin' }) as any, { external: true, capabilities: {} as any });
     loader.setPackageEntries([{ name: 'pkg-rt', createRuntime: async () => ({ name: 'from-package' }) as any, capabilities: {}, external: true, source: '/x.js' }]);
     const rt = await loader.get('pkg-rt')!.createRuntime({} as any);
     expect(rt.name).toBe('from-package');
+    expect(loader.has('pkg-rt')).toBe(true);
   });
 
   it('scan() 不清包条目；getState 含 package: 条目', async () => {

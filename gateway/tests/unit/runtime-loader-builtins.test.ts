@@ -7,7 +7,7 @@ test('runtime loader: getBuiltinNames and no example generation', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-rt-'));
   const dir = path.join(root, 'runtime-plugins'); // 不存在的子目录 → ensureDir 走创建分支
   const loader = new RuntimePluginLoader(dir);
-  loader.registerBuiltin('pi', (async () => ({ name: 'pi' }) as any), {} as any, false);
+  loader.registerBuiltinDefinition('pi', async () => ({}) as any, { external: false, capabilities: {} as any });
   await loader.init();
   try {
     expect(loader.getBuiltinNames()).toEqual(['pi']);

@@ -7,8 +7,6 @@ import * as os from 'os';
 import * as path from 'path';
 import { RuntimePluginLoader } from '../../../src/runtime/loader';
 
-const FACTORY_A = async () => ({ name: 'a' } as any);
-
 function writePlugin(dir: string, filename: string, moduleName: string): void {
   fs.writeFileSync(
     path.join(dir, filename),
@@ -17,14 +15,7 @@ function writePlugin(dir: string, filename: string, moduleName: string): void {
 }
 
 function makeLoader(dir: string): RuntimePluginLoader {
-  const loader = new RuntimePluginLoader(dir);
-  loader.registerBuiltin(
-    'pi',
-    FACTORY_A,
-    { sessionApi: true } as any,
-    true,
-  );
-  return loader;
+  return new RuntimePluginLoader(dir);
 }
 
 describe('RuntimePluginLoader filename-stem alias', () => {
@@ -56,17 +47,21 @@ describe('RuntimePluginLoader filename-stem alias', () => {
     writePlugin(dir, 'b.js', 'a');
     const loader = makeLoader(dir);
     await loader.init();
-    expect(loader.get('a')!.createRuntime).not.toBe(FACTORY_A);
     const viaAlias = loader.get('a');
     const viaB = loader.get('b'); // stem of b.js (same as its module name)
     expect(viaAlias!.createRuntime).toBe(viaB!.createRuntime);
   });
 
-  test('stem alias never shadows a builtin with the same stem', async () => {
+  test('stem alias never shadows a neutral builtin name', async () => {
     writePlugin(dir, 'pi.js', 'xyz');
-    const loader = makeLoader(dir);
+    const loader = new RuntimePluginLoader(dir);
+    loader.registerBuiltinDefinition('pi', async () => ({}) as any, {
+      external: false,
+      capabilities: { sessionApi: true } as any,
+    });
     await loader.init();
-    expect(loader.get('pi')!.createRuntime).toBe(FACTORY_A); // builtin wins
+    expect(loader.has('pi')).toBe(true); // the neutral builtin name
+    expect(loader.get('pi')).toBeUndefined(); // no stem alias shadowed it
     expect(loader.get('xyz')).toBeDefined();
   });
 
