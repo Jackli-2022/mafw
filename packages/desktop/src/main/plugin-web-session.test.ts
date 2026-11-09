@@ -206,6 +206,23 @@ describe("pluginWebRequestAllowed", () => {
     assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/api/web-ticket`), true)
   })
 
+  test("normalizes empty path segments before the ticket deny (gateway drops them)", () => {
+    // WHATWG URL keeps empty segments, but the gateway router filters them
+    // (`split('/').filter(s => s.length > 0)`), so `/demo//web-ticket` reaches
+    // plugins.webTicket. The filter must normalize first.
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo//web-ticket`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo///web-ticket`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo//web-ticket/`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo//web-ticket?projectDir=x`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api//plugins/demo/web-ticket`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api//plugins//demo//web-ticket`), false)
+    assert.equal(isAllowed(`${GATEWAY}///api/plugins/demo/web-ticket`), false)
+    // plugin-owned routes (and normal assets) keep working with the same
+    // normalization the gateway applies
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/api//web-ticket`), true)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/ui//index.html`), true)
+  })
+
   test("rejects other origins and non-http schemes", () => {
     assert.equal(isAllowed("http://evil.test/api/plugins/demo/ui/index.html"), false)
     assert.equal(isAllowed("http://127.0.0.1:3999/api/plugins/demo/ui/index.html"), false)
@@ -232,6 +249,8 @@ describe("applyPluginWebSessionPolicy", () => {
     assert.deepEqual(ses.filters, [{ urls: ["*://*/*"] }])
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/demo/ui/index.html`), { cancel: false })
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/demo/web-ticket`), { cancel: true })
+    assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/demo//web-ticket`), { cancel: true })
+    assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/demo///web-ticket`), { cancel: true })
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/other/ui/index.html`), { cancel: true })
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/sessions`), { cancel: true })
     assert.deepEqual(decideRequest(ses, "http://evil.test/api/plugins/demo/ui/index.html"), { cancel: true })

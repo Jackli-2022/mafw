@@ -8,6 +8,9 @@
 // - Each surface binding `(pkg, projectDir, sessionID?)` gets its own
 //   `persist:` partition, and `onBeforeRequest` cancels every request that is
 //   not `<gateway>/api/plugins/<pkg>/…` **except `web-ticket`**.
+//   Paths are normalized exactly like the gateway router (trailing slashes
+//   stripped, empty segments dropped), so `/demo//web-ticket` cannot slip past
+//   the deny while the gateway still routes it to the ticket handler.
 //   That filter is the *real* package isolation: the gateway treats any
 //   loopback request without a valid ticket as the ambient project (dev/curl
 //   affordance), so without the filter a compromised page could reach another
@@ -130,12 +133,28 @@ function parseUrl(raw: string): URL | null {
 }
 
 /**
+ * Mirror of the gateway router's path normalization
+ * (`gateway/src/routes/registry.ts` `match()`: `split('?')[0].replace(/\/+$/, '')`
+ * then `split('/').filter(s => s.length > 0)`).
+ *
+ * WHATWG URL parsing keeps empty segments, so `/demo//web-ticket` would
+ * otherwise pass the namespace check while the gateway still routes it to
+ * `plugins.webTicket` (the page could re-bind its own project context).
+ */
+function normalizeRoutePath(pathname: string): string {
+  const collapsed = pathname.replace(/\/{2,}/g, "/").replace(/\/+$/, "")
+  return collapsed.length > 0 ? collapsed : "/"
+}
+
+/**
  * True when `requestUrl` targets the gateway origin and this package's
  * namespace, minus the ticket endpoint.
  *
  * The trailing-slash boundary keeps `demo` from matching `demo2`; `web-ticket`
  * is refused because it would let the sandboxed page bind its own context to
- * any registered project (see the module header).
+ * any registered project (see the module header). Paths are normalized the
+ * same way the gateway router normalizes them, so empty segments cannot slip
+ * the ticket deny.
  */
 export function pluginWebRequestAllowed(gatewayUrl: string, pkg: string, requestUrl: string): boolean {
   const gateway = parseUrl(gatewayUrl)
@@ -147,11 +166,12 @@ export function pluginWebRequestAllowed(gatewayUrl: string, pkg: string, request
   if (!protocols.has(request.protocol)) return false
   if (request.host !== gateway.host) return false
 
+  const pathname = normalizeRoutePath(request.pathname)
   const base = `/api/plugins/${pkg}`
-  if (request.pathname !== base && !request.pathname.startsWith(`${base}/`)) return false
-  // `new URL` already resolves dot segments, so `x/../web-ticket` lands here too.
+  if (pathname !== base && !pathname.startsWith(`${base}/`)) return false
+  // `new URL` already resolves dot segments; empty segments are collapsed above.
   const ticket = `${base}${TICKET_PATH}`
-  return request.pathname !== ticket && !request.pathname.startsWith(`${ticket}/`)
+  return pathname !== ticket && !pathname.startsWith(`${ticket}/`)
 }
 
 export type PluginWebAttachDecision =
