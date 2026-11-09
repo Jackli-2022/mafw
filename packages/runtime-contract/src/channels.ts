@@ -128,34 +128,115 @@ export interface RuntimeChannels {
 }
 
 /**
- * v2 channels, delivered in the same release as v1 (user ruling).
- * Payload types are structural placeholders in Plan 1; Plan 2 replaces them
- * with the shared DTO types. Method names/shapes stay.
+ * v2 channels. Payloads are concrete neutral DTOs; native wire formats
+ * (MCP JSONC, PTY frames, instruction snapshots) stay behind the adapter.
  */
+export interface RuntimeMcpStatusInfo {
+  name: string;
+  status: 'connected' | 'disabled' | 'failed' | 'needs_auth' | 'unknown';
+  detail?: string;
+  type?: 'local' | 'remote';
+  url?: string;
+  command?: string[];
+  source?: string;
+  disabled?: boolean;
+}
+
+export interface RuntimeMcpChannel {
+  list(opts?: { directory?: string }): Promise<RuntimeMcpStatusInfo[]>;
+  connect?(name: string, opts?: { directory?: string }): Promise<boolean>;
+  disconnect?(name: string, opts?: { directory?: string }): Promise<boolean>;
+  /** Adapter-owned config surface (mcpConfigApi); opaque to the kernel. */
+  config?: unknown;
+}
+
+export interface RuntimeDiscoveryCommand {
+  name: string;
+  description?: string;
+  agent?: string;
+  template?: string;
+  subtask?: boolean;
+}
+
+export interface RuntimeDiscoverySkill {
+  id: string;
+  name: string;
+  description?: string;
+  slash?: boolean;
+  location?: string;
+  contentLength: number;
+}
+
+export interface RuntimeDiscoverySkillContent extends RuntimeDiscoverySkill {
+  content: string;
+}
+
+export interface RuntimeDiscoveryWarning {
+  source: 'commands' | 'skills';
+  message: string;
+}
+
+export interface RuntimeDiscoveryResult {
+  commands: RuntimeDiscoveryCommand[];
+  skills: RuntimeDiscoverySkill[];
+  warnings: RuntimeDiscoveryWarning[];
+}
+
+export interface RuntimeDiscoveryChannel {
+  list(opts: { directory: string }): Promise<RuntimeDiscoveryResult>;
+  loadSkill?(opts: { directory: string; key: string }): Promise<RuntimeDiscoverySkillContent | null>;
+}
+
+export interface RuntimeInstructionEntry {
+  key: string;
+  value: unknown;
+}
+
+export interface RuntimePtyInfo {
+  id: string;
+  title?: string;
+  command?: string;
+  cwd?: string;
+}
+
+export interface RuntimePtyConnection {
+  id?: string;
+  url?: string;
+  ticket?: string;
+  protocol?: string;
+}
+
+export interface RuntimePtyChannel {
+  create(opts: { directory?: string; title?: string }): Promise<{ id: string }>;
+  connect(opts: { id: string; directory?: string }): Promise<RuntimePtyConnection>;
+  resize(opts: { id: string; directory?: string; cols: number; rows: number }): Promise<void>;
+  remove(opts: { id: string; directory?: string }): Promise<void>;
+  list?(opts?: { directory?: string }): Promise<RuntimePtyInfo[]>;
+  /** Native frame decoding stays adapter-owned and opaque. */
+  decodeInbound?(data: unknown): unknown[];
+  encodeInput?(data: string): unknown;
+}
+
+export interface RuntimeSnapshotTreeChannel {
+  locate(opts: { projectID?: string; start: string; end: string }): Promise<string | null>;
+}
+
+export interface RuntimeBackgroundChannel {
+  toBackground?(sessionID: string): Promise<void>;
+  list?(): Promise<unknown[]>;
+  cancel?(jobID: string): Promise<void>;
+}
+
 export interface RuntimeChannelsV2 {
-  mcp?: {
-    list(opts?: { directory?: string }): Promise<unknown[]>;
-    connect?(name: string): Promise<void>;
-    disconnect?(name: string): Promise<void>;
-    config?: unknown;
-  };
-  discovery?: {
-    list(input?: { directory?: string }): Promise<unknown>;
-    loadSkill?(key: string): Promise<string>;
-  };
+  mcp?: RuntimeMcpChannel;
+  discovery?: RuntimeDiscoveryChannel;
   instructions?: {
-    list(sessionID: string): Promise<Array<{ key: string; value: unknown }>>;
+    list(sessionID: string): Promise<RuntimeInstructionEntry[]>;
     put(sessionID: string, key: string, value: unknown): Promise<void>;
     remove(sessionID: string, key: string): Promise<void>;
   };
-  pty?: unknown;
-  checkpoint?: {
-    snapshotTree?(sessionID: string, messageID?: string): Promise<unknown>;
-  };
-  background?: {
-    toBackground?(sessionID: string): Promise<void>;
-    list?(): Promise<unknown[]>;
-    cancel?(jobID: string): Promise<void>;
-  };
+  pty?: RuntimePtyChannel;
+  checkpoint?: RuntimeSnapshotTreeChannel;
+  background?: RuntimeBackgroundChannel;
 }
 

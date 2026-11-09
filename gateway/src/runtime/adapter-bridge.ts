@@ -329,8 +329,8 @@ export function toRuntimeDefinition(
   if (legacy.mcp) channelsV2.mcp = legacy.mcp as unknown as RuntimeChannelsV2['mcp'];
   if (legacy.discovery) channelsV2.discovery = legacy.discovery as unknown as RuntimeChannelsV2['discovery'];
   if (legacy.session.instructions) channelsV2.instructions = legacy.session.instructions as RuntimeChannelsV2['instructions'];
-  if (legacy.pty) channelsV2.pty = legacy.pty as unknown;
-  if (legacy.snapshotTree) channelsV2.checkpoint = { snapshotTree: legacy.snapshotTree as any };
+  if (legacy.pty) channelsV2.pty = legacy.pty as unknown as RuntimeChannelsV2['pty'];
+  if (legacy.snapshotTree) channelsV2.checkpoint = { locate: (opts) => legacy.snapshotTree!.locate(opts) };
   if (legacy.session.background) channelsV2.background = { toBackground: (sessionID) => legacy.session.background!({ sessionID }) };
 
   return defineRuntime({
