@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { executePendingRestart, MANAGED_RESTART_EXIT_CODE } from '../../src/self-update';
 
 type ExitSignal = Error & { code: number };
@@ -39,6 +41,17 @@ describe('executePendingRestart', () => {
 
     expect(calls).toEqual(['restart-info', 'stop', `exit:${MANAGED_RESTART_EXIT_CODE}`]);
     expect(stopped).toBe(true);
+  });
+
+  test('an aborted restart does not disable the token watcher', () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '../../src/self-update.ts'),
+      'utf8',
+    );
+    const start = source.indexOf('await executePendingRestart({');
+    const end = source.indexOf('}, TOKEN_POLL_MS)', start);
+    const tail = source.slice(start, end > start ? end : undefined);
+    expect(tail).not.toMatch(/running\s*=\s*false/);
   });
 
   test('source checkout restart keeps build plus takeover behavior', async () => {

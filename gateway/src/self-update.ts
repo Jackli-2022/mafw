@@ -324,7 +324,6 @@ export function startTokenWatcher(deps: SelfUpdateDeps): () => void {
       exit: (code) => process.exit(code),
       onError: deps.onError,
     });
-    running = false;
   }, TOKEN_POLL_MS);
   timer.unref();
 

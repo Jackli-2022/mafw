@@ -64,5 +64,6 @@ test("the gateway manifest keeps optional dependencies and the repo requires Nod
   const gatewayPkg = JSON.parse(read("../../../gateway/package.json"))
   const rootPkg = JSON.parse(read("../../../package.json"))
   assert.equal(typeof gatewayPkg.optionalDependencies?.["kokoro-js"], "string")
+  assert.equal(typeof gatewayPkg.dependencies?.["simple-git"], "string")
   assert.equal(rootPkg.engines?.node, ">=22")
 })

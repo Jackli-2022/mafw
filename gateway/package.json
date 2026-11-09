@@ -27,6 +27,7 @@
     "js-yaml": "^4.1.0",
     "jsonc-parser": "^3.3.1",
     "langchain-mcp-adapters": "^0.6.0",
+    "simple-git": "^3.36.0",
     "ws": "^8.21.3",
     "zeromq": "^6.1.2"
   },
