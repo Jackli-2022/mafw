@@ -252,7 +252,7 @@ import { type ContractSubject, type RuntimeCoverage } from './runtime/coverage';
 import { resolveEventDeclaration } from './runtime/event-declaration';
 import { stampDeclaredCapabilities } from './runtime/capability-source';
 import { resolvePluginProjectDir } from './runtime/session-dir';
-import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
+import { RuntimePluginLoader, createRuntimePluginContext, noRuntimeRegisteredError } from './runtime/loader';
 import { PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { createPiDefinition } from './runtime/pi/pi-definition';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
@@ -1410,14 +1410,6 @@ class MafwScheduler {
           const prev = this.runtime;
           try {
             log.info(`[Scheduler] Runtime plugin changed: '${prevPlugin ?? 'builtin'}' → '${newPlugin ?? 'builtin'}'; hot-switching...`);
-            const sdkConfig = {
-              baseUrl: this.serveUrl,
-              headers: {} as Record<string, string>,
-            };
-            const opencodePassword = (process.env.MAFW_RUNTIME_PASSWORD ?? process.env.MAFW_OPENCODE_PASSWORD);
-            if (opencodePassword) {
-              sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
-            }
               const runtime = await this.createRuntime();
               this.runtime = runtime;
               this.setRuntimeDiagnostics();
@@ -2007,9 +1999,7 @@ class MafwScheduler {
       if (fallback) return fallback;
     }
     // No direct adapter fallback: the definition registry is the only entry.
-    throw new Error(
-      `No runtime is registered for '${wanted}'. Configure runtime.plugin or install a runtime plugin.`,
-    );
+    throw noRuntimeRegisteredError(wanted);
   }
 
   /** 单激活路径（D 收敛）：plugin/builtin/package 同一序列。fatal=true 时校验失败抛错触发回退。 */
@@ -2024,7 +2014,7 @@ class MafwScheduler {
     });
 
     // Neutral path: a registered definition is the only entry. The legacy
-    // `createRuntime` branch stays reachable until Plan 4 deletes it.
+    // `createRuntime` remains for legacy plugin files for one release.
     let definition: RuntimeDefinition | undefined;
     try {
       definition = await this.runtimeLoader?.resolveBuiltinDefinition(name, ctx);
@@ -2692,14 +2682,6 @@ class MafwScheduler {
       runtimeCaps: () => this.runtimeCaps,
       envOverride: () => !!process.env.MAFW_RUNTIME_PLUGIN,
       createRuntime: async () => {
-        const sdkConfig = {
-          baseUrl: this.serveUrl,
-          headers: {} as Record<string, string>,
-        };
-        const opencodePassword = (process.env.MAFW_RUNTIME_PASSWORD ?? process.env.MAFW_OPENCODE_PASSWORD);
-        if (opencodePassword) {
-          sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
-        }
         return this.createRuntime();
       },
       onSwitched: async (rt: RuntimeFacade, prev: RuntimeFacade | null) => {

@@ -869,7 +869,7 @@ opencode LLM（推�?Agent�?                      └─ MediaService �?pi 
 - 统一 ctx = 三个 legacy ctx 超集：apiKey/fetch(60s)/log/pluginConfig（读 `plugins.<name>.config`，回退 legacy 三段�?projectDir/gatewayPort/usage.modelStats（`gateway/src/plugins/package-context.ts`�?emit（`POST /api/events` 发布自定义事件到�?UI 通道；type 建议 `plugin:<name>:<event>` 命名空间，消费方对未�?type 忽略——SSE 通知语义，无注册制）
 - **优先级（同名）：�?> legacy 目录文件 > 内置**；legacy 四目录行为不�?
 - PluginHost（`gateway/src/plugins/package-host.ts`）：扫描/激�?跨面原子 reload（先全部激活再一次性推�?loader �?`setPackageEntries`�? 顶层与每包子目录�?watcher
-- 内置件与用户插件同一接口（dogfood）：opencode �?`registerBuiltin('opencode', �?` 注册（index.ts，可被同名文�?包覆盖）；media `pi` �?`registerBuiltinEngine('pi', �?` 注册，`resolveMediaPrompt`（`media/resolve-prompt.ts`）先�?engines map，非 builtin 同名直接生效
+- 内置件与用户插件同一接口（dogfood）：opencode �?`registerBuiltinDefinition('opencode', �?` 注册（index.ts，可被同名文�?包覆盖）；media `pi` �?`registerBuiltinEngine('pi', �?` 注册，`resolveMediaPrompt`（`media/resolve-prompt.ts`）先�?engines map，非 builtin 同名直接生效
 - hub：`GET /api/plugins` 响应�?`packages` 键（PackageState[]�?
 - 环境变量 `MAFW_PLUGINS_DIR` 覆盖包目录（测试用）
 - 限制：reload 只清主文�?require.cache（改包内 lib/ 需 `mafw restart`�?

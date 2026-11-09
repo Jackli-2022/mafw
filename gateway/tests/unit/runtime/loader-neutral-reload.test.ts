@@ -55,4 +55,55 @@ describe('file-neutral definitions', () => {
     expect(resolved?.displayName).toBe('file');
     expect(built).toBe(0);
   });
+
+  it('drops the old neutral definition when the file changes to the legacy shape', async () => {
+    const file = path.join(dir, 'reloadable.js');
+    fs.writeFileSync(file, neutralModule('one'));
+    const loader = new RuntimePluginLoader(dir);
+    await loader.init();
+    const first = await loader.resolveBuiltinDefinition('reloadable', {});
+    expect(first?.displayName).toBe('one');
+
+    fs.writeFileSync(file, `module.exports = {
+      name: 'reloadable',
+      async createRuntime() {
+        return { name: 'reloadable', session: { messages: async () => ({ data: [] }) } };
+      },
+    };`);
+
+    const second = await loader.resolveBuiltinDefinition('reloadable', {});
+    expect(second).toBeDefined();
+    expect(second!.displayName).toBe('reloadable');
+    expect(second).not.toBe(first);
+  });
+
+  it('drops the old neutral definition when the file changes to a factory', async () => {
+    const file = path.join(dir, 'reloadable.js');
+    fs.writeFileSync(file, neutralModule('one'));
+    const loader = new RuntimePluginLoader(dir);
+    await loader.init();
+    const first = await loader.resolveBuiltinDefinition('reloadable', {});
+    expect(first?.displayName).toBe('one');
+
+    fs.writeFileSync(file, `module.exports = {
+      name: 'reloadable',
+      async createRuntimeDefinition() {
+        return {
+          name: 'reloadable',
+          displayName: 'factory',
+          capabilities: {},
+          transport: {
+            createSession: async () => ({ sessionID: 's1' }),
+            sendTurn: async (input) => ({ turnID: input.turnID }),
+            interruptTurn: async () => {},
+            onEvent: () => () => {},
+          },
+        };
+      },
+    };`);
+
+    const second = await loader.resolveBuiltinDefinition('reloadable', {});
+    expect(second?.displayName).toBe('factory');
+    expect(second).not.toBe(first);
+  });
 });

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { stripComments } from '../../../../packages/test-shim/comment-strip';
+import { noRuntimeRegisteredError } from '../../../src/runtime/loader';
 
 const NEUTRAL_FILES = [
   'adapter-event.ts',
@@ -62,4 +63,11 @@ it('removed the legacy bridge shim', () => {
 it('missing-surface errors stay runtime-neutral', () => {
   const access = readCode(path.join(__dirname, '../../../src/runtime/runtime-access.ts'));
   expect(FORBIDDEN.test(access)).toBe(false);
+});
+
+it('the cold-start error names the configured runtime and stays neutral', () => {
+  const err = noRuntimeRegisteredError('missing-plugin');
+  expect(err.message).toContain("'missing-plugin'");
+  expect(err.message).toContain('Configure runtime.plugin');
+  expect(FORBIDDEN.test(err.message.replace('missing-plugin', ''))).toBe(false);
 });

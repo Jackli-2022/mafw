@@ -65,6 +65,13 @@ export interface RuntimePluginState {
   alias?: string;
 }
 
+/** Neutral error for an unregistered runtime (no adapter names). */
+export function noRuntimeRegisteredError(name: string): Error {
+  return new Error(
+    `No runtime is registered for '${name}'. Configure runtime.plugin or install a runtime plugin.`,
+  );
+}
+
 export class RuntimePluginLoader {
   private factories = new Map<string, RuntimeFactory>();
   private meta = new Map<string, { capabilities: RuntimeCapabilities; external: boolean; declaredCapabilityKeys: string[] } & EventMappingEntry>();
@@ -83,6 +90,8 @@ export class RuntimePluginLoader {
   private readonly fileNeutral = new Set<string>();
   /** Source file for each neutral definition loaded from a plugin file. */
   private readonly neutralFileSources = new Map<string, string>();
+  /** File-neutral names that have already produced a live runtime (needs reload on reuse). */
+  private readonly activatedFileNeutral = new Set<string>();
   private readonly legacyModules = new Map<string, any>();
   private readonly neutralBus = new RuntimeBus();
   /** canonical 词汇表（校验 eventMappings.to 用）——index.ts 注入，避免 loader 依赖矩阵。 */
@@ -94,7 +103,7 @@ export class RuntimePluginLoader {
     this.canonicalTypes = types;
   }
 
-  /** 注册内置插件（优先级低于文件插件）。extras 携带事件映射声明（纯数据）。 */
+  /** 扫描插件目录（幂等；供启动与 /api/runtime/reload 调用）。 */
   async init(): Promise<void> {
     this.ensureDir();
     await this.scan();
@@ -128,6 +137,7 @@ export class RuntimePluginLoader {
           this.neutralDefinitions.delete(prev.name);
           this.fileNeutral.delete(prev.name);
           this.neutralFileSources.delete(prev.name);
+          this.activatedFileNeutral.delete(prev.name);
           this.neutralFactories.delete(prev.name);
           this.legacyModules.delete(prev.name);
           this.neutralBus.unregister(prev.name);
@@ -170,8 +180,8 @@ export class RuntimePluginLoader {
           this.neutralBus.register(entry.definition);
           log.info(`[RuntimePluginLoader] Loaded neutral runtime ${file} (${name})`);
         } else {
+          this.clearNeutral(name);
           this.neutralFactories.set(name, entry.factory);
-          this.neutralFileSources.delete(name);
           log.info(`[RuntimePluginLoader] Loaded neutral runtime factory ${file} (${name})`);
         }
         // Compatibility: a module may export both the neutral entry and the
@@ -239,9 +249,9 @@ export class RuntimePluginLoader {
       // 插件 runtime 一律视为外部托管（gateway 不 spawn/监管其进程）
       const external = mod.external !== false;
       const declaredCapabilityKeys = Object.keys(mod.capabilities || {});
+      this.clearNeutral(name);
       this.factories.set(name, mod.createRuntime);
       this.legacyModules.set(name, mod);
-      this.neutralFileSources.delete(name);
       this.meta.set(name, { capabilities, external, declaredCapabilityKeys, ...eventExtras });
       loadedNames.add(name);
       // Filename-stem alias: the plugin hub addresses runtime plugins by
@@ -276,11 +286,12 @@ export class RuntimePluginLoader {
    * ignores `require.cache`, and a disposed definition must never be reused.
    */
   private evaluateFresh(fullPath: string): any {
-    const source = fs.readFileSync(fullPath, 'utf8');
-    const module = { exports: {} as any };
+    const source = fs.readFileSync(fullPath, 'utf8').replace(/^#![^\n]*\r?\n/, '');
+    const module = { id: fullPath, filename: fullPath, loaded: false, exports: {} as any };
     const pluginRequire = createRequire(fullPath);
     const fn = new Function('module', 'exports', 'require', '__filename', '__dirname', source);
     fn.call(module.exports, module, module.exports, pluginRequire, fullPath, path.dirname(fullPath));
+    module.loaded = true;
     return module.exports;
   }
 
@@ -319,15 +330,21 @@ export class RuntimePluginLoader {
   /** Resolve a builtin definition, falling back to file plugins and legacy entries. */
   async resolveBuiltinDefinition(name: string, ctx: any): Promise<RuntimeDefinition | undefined> {
     // A static file definition cannot be revived after dispose; re-evaluate
-    // the module so switching back gets a fresh transport/producer.
+    // the module when a previously activated definition is reused. The very
+    // first activation uses the instance loaded by scan() (never disposed).
     if (this.fileNeutral.has(name)) {
-      await this.reloadNeutralFile(name);
-      return this.getNeutral(name, ctx);
+      if (this.activatedFileNeutral.has(name)) await this.reloadNeutralFile(name);
+      const definition = await this.getNeutral(name, ctx);
+      if (definition) this.activatedFileNeutral.add(name);
+      return definition;
     }
     // Same-name legacy file/package plugins keep their documented priority.
     if (this.factories.has(name) || this.legacyModules.has(name)) {
       return this.getNeutral(name, ctx);
     }
+    // Package contributions are v1 `createRuntime` entries; activation uses
+    // the plugin branch, not the neutral definition registry.
+    if (this.packageEntries.has(name)) return undefined;
 
     const builtin = this.builtinDefinitions.get(name);
     if (builtin) {
@@ -339,6 +356,16 @@ export class RuntimePluginLoader {
       return definition;
     }
     return this.getNeutral(name, ctx);
+  }
+
+  /** Drop any stale neutral registration when a file changes shape. */
+  private clearNeutral(name: string): void {
+    const hadNeutral = this.fileNeutral.delete(name);
+    this.neutralFileSources.delete(name);
+    this.activatedFileNeutral.delete(name);
+    if (!hadNeutral) return;
+    this.neutralDefinitions.delete(name);
+    this.neutralBus.unregister(name);
   }
 
   /** Static file definitions cannot be revived after dispose; re-evaluate the module. */
@@ -412,7 +439,7 @@ export class RuntimePluginLoader {
     }
   }
 
-  /** 已注册内置件名（builtin 文件件不在其中，opencode 为恒等默认由 index.ts 注入 hub）。 */
+  /** 已注册的中性内置定义名（hub 用）。 */
   getBuiltinNames(): string[] {
     return [...this.builtinDefinitions.keys()];
   }

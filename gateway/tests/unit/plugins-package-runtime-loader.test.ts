@@ -58,4 +58,19 @@ module.exports = { name: 'pkg-rt', capabilities: {}, async createRuntime() { ret
     loader.setPackageEntries([]);
     expect(loader.get('pkg-rt')).toBeUndefined();
   });
+
+  it('包条目不会被同名内置定义在激活路径上遮蔽', async () => {
+    let built = 0;
+    const loader = new RuntimePluginLoader(dir);
+    await loader.init();
+    loader.registerBuiltinDefinition('pkg-rt', async () => { built += 1; return ({}) as any; }, {
+      external: false,
+      capabilities: {} as any,
+    });
+    loader.setPackageEntries([{ name: 'pkg-rt', createRuntime: async () => ({ name: 'from-package' }) as any, capabilities: {}, external: true, source: '/x.js' }]);
+
+    expect(await loader.resolveBuiltinDefinition('pkg-rt', {})).toBeUndefined();
+    expect(built).toBe(0);
+    expect(loader.get('pkg-rt')).toBeDefined();
+  });
 });
