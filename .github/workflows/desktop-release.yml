@@ -87,6 +87,20 @@ jobs:
           OPENCODE_CHANNEL: prod
         run: npm run package:linux -- --publish never
 
+      - name: Smoke packaged gateway (windows)
+        if: runner.os == 'Windows'
+        working-directory: packages/desktop
+        run: |
+          Copy-Item gateway-bundle/release-manifest.json dist/gateway-release-manifest-windows.json
+          npm run smoke:packaged-gateway -- --app-root dist/win-unpacked
+
+      - name: Smoke packaged gateway (linux)
+        if: runner.os == 'Linux'
+        working-directory: packages/desktop
+        run: |
+          cp gateway-bundle/release-manifest.json dist/gateway-release-manifest-linux.json
+          npm run smoke:packaged-gateway -- --app-root dist/linux-unpacked
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -98,6 +112,7 @@ jobs:
             packages/desktop/dist/*.deb
             packages/desktop/dist/*.rpm
             packages/desktop/dist/latest*.yml
+            packages/desktop/dist/gateway-release-manifest-*.json
           if-no-files-found: error
 
   release:
@@ -122,3 +137,4 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/latest*.yml
+            dist/gateway-release-manifest-*.json

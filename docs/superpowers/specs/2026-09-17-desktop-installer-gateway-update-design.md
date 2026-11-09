@@ -1,5 +1,10 @@
 # 桌面安装包安装时更新全局 Gateway — 设计
 
+> **已被取代（2026-11-09）**：桌面默认 gateway 改为与安装包同发布单元的受管 sidecar，
+> 安装/升级不再更新或依赖全局 npm 包。见
+> `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.md`。
+> 本文保留为历史设计记录。
+
 - 日期：2026-09-17
 - 状态：已批准（用户确认三个决策点 + 调研修正后的方案 A）
 - 关联记忆：#mem-929cmb（桌面 UI 更新入口，另行规划）、#mem-lhzhuw（复用已验证更新原语原则）、#mem-g85zzz（探测底座；其 PID 路径记载有误，以本文为准）

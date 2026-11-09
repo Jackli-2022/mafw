@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// 本地 dist 拷贝部署：把 gateway/dist 与生产依赖同步到全局安装目录。
+// 本地 dist 拷贝部署：把 gateway/dist、共享运行时资产与缺失的生产依赖同步到
+// 全局安装目录。资产清单与 Desktop staging 共用 scripts/gateway-package-assets.mjs，
+// 防止 skills/Office/voice 在两条发布路径中漂移。
 // 背景：`npm install -g` 会按 package.json 自动装依赖，但开发期「只拷 dist」的方式
 // 会在新增运行时依赖（如 jsonc-parser）时漏拷 node_modules，导致 daemon 启动
 // MODULE_NOT_FOUND。本脚本把缺失的生产依赖一并补上。
@@ -7,6 +9,7 @@
 // 用法：
 //   node gateway/scripts/deploy-local.mjs            # 默认目标：<npm prefix -g>/node_modules/@jack200714/mafw/gateway
 //   node gateway/scripts/deploy-local.mjs <target>   # 自定义 gateway 目标目录（需已存在）
+// 注意：这是全局 npm/开发安装的同步工具，不参与 Desktop 受管 payload 更新。
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,6 +19,7 @@ import {
   resolvePluginContract,
   stagePluginContract,
 } from "../../scripts/stage-plugin-contract.mjs";
+import { gatewayAssetPlan } from "../../scripts/gateway-package-assets.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const gatewayRoot = path.resolve(here, "..");
@@ -33,41 +37,23 @@ if (!fs.existsSync(target)) {
   process.exit(1);
 }
 
-// 1) dist
-const distSrc = path.join(gatewayRoot, "dist");
-const distDst = path.join(target, "dist");
-if (!fs.existsSync(distSrc)) {
-  console.error(`[deploy] dist missing (run npm run build first): ${distSrc}`);
-  process.exit(1);
-}
-fs.cpSync(distSrc, distDst, { recursive: true, force: true });
-console.log(`[deploy] dist → ${distDst}`);
-
-// 1a) CLI: new flags (e.g. `plugin-check --audit`) live in bin/mafw.js. A dist-only
-// deploy leaves the global CLI stale and silently ignoring them (false green) —
-// keep the command surface in lockstep with the gateway it drives.
+// 1) Runtime assets: one shared plan with desktop staging. Global targets are
+// relative to the npm package root (dist/office live under gateway/, CLI and
+// skills at the package root).
 const pkgRoot = path.dirname(target);
-const cliSrc = path.join(gatewayRoot, "..", "bin", "mafw.js");
-const cliDst = path.join(pkgRoot, "bin", "mafw.js");
-if (fs.existsSync(cliSrc)) {
-  fs.mkdirSync(path.dirname(cliDst), { recursive: true });
-  fs.copyFileSync(cliSrc, cliDst);
-  console.log(`[deploy] cli → ${cliDst}`);
-}
-
-// 1b) package-shipped office assets: `mafw office setup` + gateway-startup skill install
-const assets = [
-  [path.join(gatewayRoot, "scripts", "setup-pykernel.mjs"), path.join(target, "scripts", "setup-pykernel.mjs")],
-  [path.join(gatewayRoot, "scripts", "office"), path.join(target, "scripts", "office")],
-  // ASR sidecar sources: compiled code resolves `<gateway>/voice_sidecars/qwen3_asr_server.py`.
-  [path.join(gatewayRoot, "voice_sidecars"), path.join(target, "voice_sidecars")],
-  [path.join(gatewayRoot, "..", "skills"), path.join(pkgRoot, "skills")],
-];
-for (const [src, dst] of assets) {
-  if (!fs.existsSync(src)) continue;
+for (const asset of gatewayAssetPlan({
+  repoRoot: path.resolve(gatewayRoot, ".."),
+  gatewayRoot,
+  profile: "global",
+})) {
+  if (!fs.existsSync(asset.from)) {
+    console.error(`[deploy] required asset missing: ${asset.from}`);
+    process.exit(1);
+  }
+  const dst = path.join(pkgRoot, asset.to);
   fs.mkdirSync(path.dirname(dst), { recursive: true });
-  fs.cpSync(src, dst, { recursive: true, force: true });
-  console.log(`[deploy] asset → ${dst}`);
+  fs.cpSync(asset.from, dst, { recursive: true, force: true });
+  console.log(`[deploy] ${asset.to} → ${dst}`);
 }
 
 // 2) 缺失的生产依赖

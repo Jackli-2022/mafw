@@ -1,6 +1,6 @@
 import { app, dialog } from "electron"
 import pkg from "electron-updater"
-import { UPDATER_ENABLED } from "./constants"
+import { UPDATE_SUPPORT } from "./constants"
 import { createUpdaterController, type UpdaterReadyRecord } from "./updater-controller"
 import { getLogger } from "./logging"
 import { getStore } from "./store"
@@ -12,9 +12,9 @@ const key = "ready"
 export function setupAutoUpdater(stop: () => Promise<void>) {
   const logger = getLogger()
   autoUpdater.logger = logger
-  autoUpdater.channel = "latest"
+  autoUpdater.channel = UPDATE_SUPPORT.enabled ? UPDATE_SUPPORT.channel : "latest"
   autoUpdater.allowPrerelease = false
-  autoUpdater.allowDowngrade = true
+  autoUpdater.allowDowngrade = false
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   logger.log("auto updater configured", {
@@ -26,7 +26,7 @@ export function setupAutoUpdater(stop: () => Promise<void>) {
 
   const store = getStore("opencode.updater")
   return createUpdaterController({
-    enabled: UPDATER_ENABLED,
+    enabled: UPDATE_SUPPORT.enabled,
     currentVersion: app.getVersion(),
     backend: {
       checkForUpdates: () => autoUpdater.checkForUpdates(),

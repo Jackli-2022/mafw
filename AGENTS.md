@@ -1876,6 +1876,50 @@ D3 鉴权洞独立先行 / D4 沿用桌面 Goal→Tech Lead 范式 / D5 含「�
   可能重弹（`adb shell pm grant ... POST_NOTIFICATIONS` 可规避）；模拟器上残留旧 `ai.mafw.mafw_mobile` 可卸载。
 
 
+### 5.31 Desktop 受管 Gateway（2026-11-09，取代 NSIS npm 更新）
+
+spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.md`，plan
+`docs/superpowers/plans/2026-11-09-desktop-gateway-managed-runtime.md`。§5.5 中旧的
+「adopt → CLI → bundle」启动顺序和 `2026-09-17-desktop-installer-gateway-update-design.md`
+的 NSIS 全局 npm 更新已失效。
+
+- **来源**：packaged Desktop 默认 `managed`；只有显式切到 `external` 才使用全局 CLI/已运行
+  gateway。旧的无版本 external 只能在 Config 点「仅本次使用未验证外部 gateway」，不持久化。
+- **身份/握手**：`/health` 增加 `gatewayVersion`、`experienceVersion`、
+  `minimumClientExperienceVersion`、`schemaEpoch`、`channel`、`instanceId`、
+  `distribution`。`gateway/dist/release.json` 由 `gateway/scripts/write-release-manifest.mjs`
+  从 root version + Experience 常量生成；`gatewayVersion === productVersion`，不再信任
+  `gateway/package.json.version`。
+- **supervisor**：managed spawn 固定 `MAFW_SERVER_API_PORT=3000`，注入
+  `MAFW_DESKTOP_MANAGED/CHANNEL/INSTANCE_ID`，清除 inherited `MAFW_TAKEOVER/GATEWAY_PORT`；
+  不写 `~/.config/mafw/gateway.pid`。实例登记在
+  `~/.mafw/runtime/desktop-gateway/<channel>/<instanceId>.json`。未登记运行进程显示 conflict，
+  绝不静默收养或杀死。`GatewayState` 增加 `conflict`；managed newer/schema/channel 冲突拒绝降级。
+- **受管重启**：`pending-restart.json` 在 managed 下只让进程以退出码 **75** 退出，由 Desktop
+  child-exit supervisor 拉起当前 payload；不得 detached takeover。source checkout 仍保留原
+  build + takeover。
+- **版本目录**：`<userData>/gateway/versions/<gatewayVersion>-<payloadDigest前12位>/`，
+  `current.json`/`previous.json`/`quarantine.json` 为原子指针。payload 安装先 staging + 逐文件
+  SHA-256，再写 `.install-complete.json` 并 rename；同版本不同 digest 不会覆盖运行中的目录。
+  启动校验 marker + release/payload manifest + entry/native 文件，全量 hash 只在安装/修复时做。
+  坏 payload 写隔离；同 version+digest 不自动重试，Config「重试已隔离版本」才 force；新 digest
+  自动放行。`schemaEpoch` 变化失败时不自动回滚，进入阻塞恢复。
+- **Desktop 退出/更新**：`autoUpdater.autoInstallOnAppQuit=false`，由 `quit-coordinator` 在
+  `before-quit` preventDefault，先等待受管 gateway 退出与端口释放，再 `quitAndInstall` 或退出。
+  updater channel 跟随 prod/beta；`allowDowngrade=false`；Windows
+  `verifyUpdateCodeSignature=true`。签名证书尚未配置，因此生产自动安装保持 gated。
+  Linux 只有 AppImage 支持应用内更新，deb/rpm 交给包管理器。
+- **打包**：`scripts/gateway-package-assets.mjs` 是 Desktop/global 共享资产清单（dist、voice、
+  root skills、Office scripts、CLI 仅 global）。Desktop staging 原样复制 gateway package.json +
+  package-lock，执行 `npm ci --omit=dev`，保留 optionalDependencies；再重建 Electron ABI
+  better-sqlite3，生成 `payload-manifest.json` / `release-manifest.json`。Node 基线 `>=22`。
+- **验证**：`packages/desktop` 新增 pure manifest/installer/store/lifecycle/handshake/supervisor/
+  updater/config 测试与 packaged smoke；CI 在 Win/Linux 打包后分别跑
+  `npm run smoke:packaged-gateway -- --app-root dist/<unpacked>`。本地可用
+  `npm run smoke:packaged-gateway -- --payload-only`（Electron ABI staged gateway）。
+- **安装器**：`gateway-update/` 与 `resources/installer.nsh` 已删除；安装器不再要求 Node/npm/
+  网络，改用 electron-builder 内建 `CHECK_APP_RUNNING`。
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令

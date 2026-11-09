@@ -16,6 +16,8 @@ import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { startMafwGw } from "./mafw-bootstrap"
+import { configureManagedGatewayRoot, stopGateway } from "./mafw-sidecar"
+import { createQuitCoordinator } from "./quit-coordinator"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import { registerMafwFileProtocol, mafwFileRoots } from "./mafw-file-protocol"
@@ -153,6 +155,7 @@ const main = Effect.gen(function* () {
     onboardingTestRoot ? join(onboardingTestRoot, "desktop") : join(app.getPath("appData"), appId),
   )
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
+  configureManagedGatewayRoot(join(app.getPath("userData"), "gateway"))
   initializeOldLayoutEligibility(app.getPath("userData"))
   logger = initLogging()
   initCrashReporter()
@@ -177,9 +180,11 @@ const main = Effect.gen(function* () {
   const stopSidecars = async () => {
     wslServers.stopAll()
   }
+  let allowQuit = false
+  let quitCoordinator: ReturnType<typeof createQuitCoordinator> | null = null
   const relaunch = () => {
     setAppQuitting()
-    void stopSidecars().finally(() => {
+    void Promise.allSettled([stopSidecars(), stopGateway()]).finally(() => {
       app.relaunch()
       app.exit(0)
     })
@@ -239,9 +244,18 @@ const main = Effect.gen(function* () {
     emitDeepLinks([url])
   })
 
-  app.on("before-quit", () => {
+  app.on("before-quit", (event: Event) => {
     setAppQuitting()
-    void stopSidecars()
+    if (allowQuit) return
+    event.preventDefault()
+    if (quitCoordinator) {
+      void quitCoordinator.requestQuit()
+      return
+    }
+    void Promise.allSettled([stopSidecars(), stopGateway()]).finally(() => {
+      allowQuit = true
+      app.quit()
+    })
   })
 
   app.on("will-quit", () => {
@@ -264,7 +278,7 @@ const main = Effect.gen(function* () {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
       setAppQuitting()
-      void stopSidecars().finally(() => app.exit(0))
+      void Promise.allSettled([stopSidecars(), stopGateway()]).finally(() => app.exit(0))
     })
   }
 
@@ -314,7 +328,32 @@ const main = Effect.gen(function* () {
     logger.warn("failed to register quick entry hotkey", { error: String(error) })
   }
   app.on("will-quit", () => globalShortcut.unregister(QUICK_ENTRY_ACCELERATOR))
-  const updater = setupAutoUpdater(stopSidecars)
+  const updater = setupAutoUpdater(stopGateway)
+  const installUpdate = async () => {
+    // quitAndInstall emits before-quit; let that pass only after the updater
+    // has stopped the managed gateway through its own stop callback.
+    allowQuit = true
+    try {
+      await updater.install()
+    } catch (error) {
+      allowQuit = false
+      throw error
+    }
+  }
+  const updaterApi = { ...updater, install: installUpdate }
+  quitCoordinator = createQuitCoordinator({
+    stopGateway,
+    getUpdateReady: () => updater.getState().status === "ready",
+    installUpdate,
+    quit: () => {
+      allowQuit = true
+      app.quit()
+    },
+    onError: (error) => {
+      allowQuit = false
+      writeLog("utility", "desktop quit coordination failed", { error: String(error) }, "error")
+    },
+  })
   registerIpcHandlers({
     killSidecar: () => {},
     relaunch,
@@ -338,8 +377,8 @@ const main = Effect.gen(function* () {
     parseMarkdown: async (markdown) => parseMarkdown(markdown),
     checkAppExists: (appName) => checkAppExists(appName),
     resolveAppPath: async (appName) => resolveAppPath(appName),
-    updater,
-    showUpdater: () => showUpdaterDialog(updater, true),
+    updater: updaterApi,
+    showUpdater: () => showUpdaterDialog(updaterApi, true),
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
@@ -451,7 +490,7 @@ const main = Effect.gen(function* () {
         if (win) sendMenuCommand(win, id)
       },
       checkForUpdates: () => {
-        void showUpdaterDialog(updater, true)
+        void showUpdaterDialog(updaterApi, true)
       },
       relaunch: () => {
         relaunch()

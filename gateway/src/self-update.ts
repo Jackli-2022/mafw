@@ -210,6 +210,52 @@ export function spawnTakeoverChild(): ReturnType<typeof spawn> | null {
 
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** Desktop supervisor restart handoff. Not a valid generic gateway exit code. */
+export const MANAGED_RESTART_EXIT_CODE = 75;
+
+export async function executePendingRestart(input: {
+  managed: boolean;
+  build(): { ok: boolean; skipped?: boolean; error?: string };
+  writeRestartInfo(): void;
+  spawnTakeoverChild(): { exitCode: number | null } | null;
+  sleep(ms: number): Promise<void>;
+  stop(): Promise<void>;
+  exit(code: number): never;
+  onError?(message: string): void;
+}): Promise<void> {
+  if (input.managed) {
+    // Desktop owns the process lifecycle. Exiting with a dedicated code lets
+    // its supervisor restart the verified managed payload; spawning a detached
+    // TAKEOVER child here would create an unregistered gateway outside the
+    // Desktop instance registry.
+    input.writeRestartInfo();
+    await input.stop();
+    input.exit(MANAGED_RESTART_EXIT_CODE);
+    return;
+  }
+
+  const build = input.build();
+  if (!build.ok) {
+    input.onError?.(`[SelfUpdate] build failed; update aborted, continuing with current build: ${build.error}`);
+    return;
+  }
+
+  input.writeRestartInfo();
+  const child = input.spawnTakeoverChild();
+  if (!child) {
+    input.onError?.('[SelfUpdate] failed to spawn takeover child; aborting restart');
+    return;
+  }
+  await input.sleep(2000);
+  if (child.exitCode !== null) {
+    input.onError?.(`[SelfUpdate] takeover child exited early (code=${child.exitCode}); aborting restart`);
+    return;
+  }
+  input.onError?.('[SelfUpdate] takeover child alive; shutting down gracefully');
+  await input.stop();
+  input.exit(0);
+}
+
 // ── Token watcher (polls; rename-safe on Windows) ──
 
 export interface SelfUpdateDeps {
@@ -249,44 +295,35 @@ export function startTokenWatcher(deps: SelfUpdateDeps): () => void {
     removeToken();
     deps.onError(`[SelfUpdate] token accepted: action=${token.action} reason=${token.reason || '-'} caller=${callerSession || 'unknown'}`);
 
-    if (token.action === 'update') {
-      const build = buildGateway();
-      if (!build.ok) {
-        deps.onError(`[SelfUpdate] build failed; update aborted, continuing with current build: ${build.error}`);
-        return;
-      }
-      // Global-install form: nothing to repackage (the installed dist is the
-      // artifact being restarted). repackageGlobal also self-guards, but the
-      // explicit skip keeps intent clear.
-      if (!build.skipped) repackageGlobal();
-    }
-
     const delay = Math.max(0, token.delayMs ?? 5000);
     deps.onError(`[SelfUpdate] restarting gateway in ${delay}ms`);
     await sleep(delay);
     if (!running) return;
 
-    writeRestartInfo({
-      reason: token.reason,
-      commit: token.commit,
-      requestedAt: token.requestedAt,
-      sessionID: callerSession,
+    const managed = process.env.MAFW_DESKTOP_MANAGED === '1';
+    await executePendingRestart({
+      managed,
+      build: token.action === 'update'
+        ? () => {
+          const result = buildGateway();
+          // Global-install form: nothing to repackage (the installed dist is
+          // the artifact being restarted). repackageGlobal also self-guards.
+          if (result.ok && !result.skipped) repackageGlobal();
+          return result;
+        }
+        : () => ({ ok: true, skipped: true }),
+      writeRestartInfo: () => writeRestartInfo({
+        reason: token.reason,
+        commit: token.commit,
+        requestedAt: token.requestedAt,
+        sessionID: callerSession,
+      }),
+      spawnTakeoverChild,
+      sleep,
+      stop: async () => deps.stop(),
+      exit: (code) => process.exit(code),
+      onError: deps.onError,
     });
-
-    const child = spawnTakeoverChild();
-    if (!child) {
-      deps.onError('[SelfUpdate] failed to spawn takeover child; aborting restart');
-      return;
-    }
-    await sleep(2000);
-    if (child.exitCode !== null) {
-      deps.onError(`[SelfUpdate] takeover child exited early (code=${child.exitCode}); aborting restart`);
-      return;
-    }
-    deps.onError('[SelfUpdate] takeover child alive; shutting down gracefully');
-    running = false;
-    deps.stop();
-    process.exit(0);
   }, TOKEN_POLL_MS);
   timer.unref();
 

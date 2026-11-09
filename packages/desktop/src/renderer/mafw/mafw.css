@@ -388,6 +388,31 @@ html[data-theme="light"] body {
 }
 .mafw-topstrip button, .mafw-topstrip input, .mafw-topstrip .mafw-session-tab { -webkit-app-region: no-drag; }
 .mafw-topstrip-spacer { flex: 1; }
+
+/* 已下载的桌面更新：单条非模态提示，不挤压 tab/strip */
+.mafw-updater-banner {
+  position: fixed;
+  top: 46px;
+  left: 50%;
+  z-index: 60;
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 11px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-lg);
+  background: var(--bg-raised);
+  box-shadow: var(--elev-soft);
+  -webkit-app-region: no-drag;
+}
+.mafw-updater-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mafw-updater-copy strong { color: var(--text-1); font-size: 12px; font-weight: 650; }
+.mafw-updater-copy span { color: var(--text-3); font-size: 11px; line-height: 1.45; }
+.mafw-updater-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+
 /* ── 布局开关（顶行两端：左=侧边栏、右=面板；填充=开、描边=关）── */
 .mafw-layout-toggle { color: var(--text-3); flex-shrink: 0; }
 .mafw-layout-toggle:hover { color: var(--text-1); }

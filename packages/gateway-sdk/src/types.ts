@@ -289,10 +289,22 @@ export interface TrajectoryResponse {
 }
 
 export interface GatewayStatus {
-  state: 'stopped' | 'starting' | 'ready' | 'failed'
+  state: 'stopped' | 'starting' | 'ready' | 'failed' | 'conflict'
   port: number | null
   url: string | null
   error: string | null
+  source: 'managed' | 'external' | null
+  expectedVersion: string | null
+  actualVersion: string | null
+  instanceId: string | null
+  schemaEpoch: number | null
+  distribution: string | null
+  quarantine?: {
+    version: string
+    payloadManifestSha256: string
+    error: string
+    failedAt: string
+  } | null
 }
 
 // ============================================================

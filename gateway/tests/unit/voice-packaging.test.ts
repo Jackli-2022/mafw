@@ -15,19 +15,20 @@ describe('voice sidecar packaging', () => {
     expect(rootPkg.files).toContain('gateway/voice_sidecars/');
   });
 
-  it('copies the sidecar directory during local deploy', () => {
+  it('copies the sidecar directory during local deploy through the shared asset plan', () => {
     const deploy = fs.readFileSync(path.join(root, 'gateway/scripts/deploy-local.mjs'), 'utf8');
-    expect(deploy).toContain('voice_sidecars');
-    // Asset pairs copy into the target gateway root, where the compiled sidecar
-    // resolves `__dirname/../../../voice_sidecars`.
-    expect(deploy).toMatch(/path\.join\(gatewayRoot,\s*"voice_sidecars"\)/);
-    expect(deploy).toMatch(/path\.join\(target,\s*"voice_sidecars"\)/);
+    const assets = fs.readFileSync(path.join(root, 'scripts/gateway-package-assets.mjs'), 'utf8');
+    expect(deploy).toContain('gatewayAssetPlan');
+    expect(deploy).toMatch(/profile:\s*"global"/);
+    expect(assets).toContain('voice_sidecars');
+    expect(assets).toMatch(/path\.join\(gatewayRoot,\s*"voice_sidecars"\)/);
   });
 
-  it('copies the sidecar directory into the desktop gateway bundle', () => {
+  it('copies the sidecar directory into the desktop gateway bundle through the shared plan', () => {
     const stage = fs.readFileSync(path.join(root, 'packages/desktop/scripts/stage-gateway.ts'), 'utf8');
-    expect(stage).toContain('voice_sidecars');
-    expect(stage).toMatch(/path\.join\(gatewayDir,\s*"voice_sidecars"\)/);
-    expect(stage).toMatch(/path\.join\(outDir,\s*"voice_sidecars"\)/);
+    const assets = fs.readFileSync(path.join(root, 'scripts/gateway-package-assets.mjs'), 'utf8');
+    expect(stage).toContain('gatewayAssetPlan');
+    expect(stage).toMatch(/profile:\s*"desktop"/);
+    expect(assets).toContain('voice_sidecars');
   });
 });
