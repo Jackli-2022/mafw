@@ -103,18 +103,36 @@ function decideRequest(ses: FakeSession, url: string): { cancel: boolean } {
 
 // ── pure helpers ──
 
+const BINDING = { projectDir: "C:\\repo", sessionID: "s1" }
+const BINDING_OTHER_PROJECT = { projectDir: "C:\\other", sessionID: "s1" }
+const BINDING_OTHER_SESSION = { projectDir: "C:\\repo", sessionID: "s2" }
+
 describe("pluginWebPartition", () => {
-  test("partition is per package", () => {
-    assert.equal(pluginWebPartition("demo"), "persist:mafw-plugin-demo")
+  test("partition is per package AND per binding", () => {
+    const partition = pluginWebPartition("demo", BINDING)
+    assert.match(partition, /^persist:mafw-plugin-demo~[0-9a-f]{12}$/)
     assert.equal(PLUGIN_WEB_PARTITION_PREFIX, "persist:mafw-plugin-")
-    assert.notEqual(pluginWebPartition("demo"), pluginWebPartition("other"))
+    assert.notEqual(pluginWebPartition("other", BINDING), partition)
   })
 
-  test("partition → package is the inverse; foreign partitions are not ours", () => {
-    assert.equal(pluginWebPartitionPackage(pluginWebPartition("demo")), "demo")
-    assert.equal(pluginWebPartitionPackage("persist:mafw-plugin-demo-2"), "demo-2")
+  test("same binding is stable; different bindings never share a partition", () => {
+    assert.equal(pluginWebPartition("demo", { ...BINDING }), pluginWebPartition("demo", BINDING))
+    // absent sessionID and "" are the same binding
+    assert.equal(
+      pluginWebPartition("demo", { projectDir: "C:\\repo" }),
+      pluginWebPartition("demo", { projectDir: "C:\\repo", sessionID: "" }),
+    )
+    assert.notEqual(pluginWebPartition("demo", BINDING_OTHER_PROJECT), pluginWebPartition("demo", BINDING))
+    assert.notEqual(pluginWebPartition("demo", BINDING_OTHER_SESSION), pluginWebPartition("demo", BINDING))
+  })
+
+  test("partition → package is the inverse; foreign/unhashed partitions are not ours", () => {
+    assert.equal(pluginWebPartitionPackage(pluginWebPartition("demo", BINDING)), "demo")
+    assert.equal(pluginWebPartitionPackage(pluginWebPartition("demo-2", BINDING)), "demo-2")
     assert.equal(pluginWebPartitionPackage("persist:workbench-browser"), null)
     assert.equal(pluginWebPartitionPackage("persist:mafw-plugin-"), null)
+    // legacy one-partition-per-package shape is not a valid surface partition
+    assert.equal(pluginWebPartitionPackage("persist:mafw-plugin-demo"), null)
     assert.equal(pluginWebPartitionPackage(undefined), null)
   })
 })
@@ -177,6 +195,17 @@ describe("pluginWebRequestAllowed", () => {
     assert.equal(isAllowed(`${GATEWAY}/api/plugins`), false)
   })
 
+  test("refuses the page's own ticket mint (project binding must stay host-controlled)", () => {
+    // web-ticket is loopback + "registered project" only and ignores a presented
+    // ticket: a page could re-bind its ctx.http context to any project and
+    // overwrite the partition cookie / replay the ticket through the header.
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/web-ticket`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/web-ticket?x=1`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/web-ticket/`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/x/../web-ticket`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/api/web-ticket`), true)
+  })
+
   test("rejects other origins and non-http schemes", () => {
     assert.equal(isAllowed("http://evil.test/api/plugins/demo/ui/index.html"), false)
     assert.equal(isAllowed("http://127.0.0.1:3999/api/plugins/demo/ui/index.html"), false)
@@ -202,6 +231,7 @@ describe("applyPluginWebSessionPolicy", () => {
 
     assert.deepEqual(ses.filters, [{ urls: ["*://*/*"] }])
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/demo/ui/index.html`), { cancel: false })
+    assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/demo/web-ticket`), { cancel: true })
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/plugins/other/ui/index.html`), { cancel: true })
     assert.deepEqual(decideRequest(ses, `${GATEWAY}/api/sessions`), { cancel: true })
     assert.deepEqual(decideRequest(ses, "http://evil.test/api/plugins/demo/ui/index.html"), { cancel: true })
@@ -221,16 +251,16 @@ describe("applyPluginWebSessionPolicy", () => {
 
 describe("pluginWebAttachDecision", () => {
   test("accepts own-package webviews only", () => {
-    const ok = pluginWebAttachDecision(GATEWAY, pluginWebPartition("demo"), `${GATEWAY}/api/plugins/demo/ui/index.html`)
+    const ok = pluginWebAttachDecision(GATEWAY, pluginWebPartition("demo", BINDING), `${GATEWAY}/api/plugins/demo/ui/index.html`)
     assert.deepEqual(ok, { ok: true, pkg: "demo" })
-    assert.deepEqual(pluginWebAttachDecision(GATEWAY, pluginWebPartition("demo"), "about:blank"), { ok: true, pkg: "demo" })
+    assert.deepEqual(pluginWebAttachDecision(GATEWAY, pluginWebPartition("demo", BINDING), "about:blank"), { ok: true, pkg: "demo" })
 
     assert.equal(
-      pluginWebAttachDecision(GATEWAY, pluginWebPartition("demo"), `${GATEWAY}/api/plugins/other/ui/index.html`).ok,
+      pluginWebAttachDecision(GATEWAY, pluginWebPartition("demo", BINDING), `${GATEWAY}/api/plugins/other/ui/index.html`).ok,
       false,
     )
     assert.equal(
-      pluginWebAttachDecision(GATEWAY, pluginWebPartition("demo"), "http://evil.test/api/plugins/demo/ui/index.html").ok,
+      pluginWebAttachDecision(GATEWAY, pluginWebPartition("demo", BINDING), "http://evil.test/api/plugins/demo/ui/index.html").ok,
       false,
     )
     assert.equal(
@@ -247,7 +277,7 @@ describe("applyPluginWebviewAttachPolicy", () => {
     applyPluginWebviewAttachPolicy(host, () => GATEWAY, preload)
 
     const { prevented, prefs } = host.attach({
-      partition: pluginWebPartition("demo"),
+      partition: pluginWebPartition("demo", BINDING),
       src: `${GATEWAY}/api/plugins/demo/ui/index.html?revision=b1%3A2`,
     })
     assert.equal(prevented, false)
@@ -264,7 +294,7 @@ describe("applyPluginWebviewAttachPolicy", () => {
     applyPluginWebviewAttachPolicy(host, () => GATEWAY, "/app/out/preload/plugin-web.js")
 
     const denied = host.attach({
-      partition: pluginWebPartition("demo"),
+      partition: pluginWebPartition("demo", BINDING),
       src: `${GATEWAY}/api/plugins/other/ui/index.html`,
     })
     assert.equal(denied.prevented, true)
@@ -301,13 +331,13 @@ describe("configurePluginWebSession", () => {
 
   test("configures the partition session and every host exactly once", () => {
     const { deps, sessions, hosts, created } = makeDeps()
-    const first = configurePluginWebSession("demo", deps as any)
-    const second = configurePluginWebSession("demo", deps as any)
+    const first = configurePluginWebSession("demo", BINDING, deps as any)
+    const second = configurePluginWebSession("demo", BINDING, deps as any)
 
     assert.equal(first, second)
     assert.equal(sessions.size, 1)
-    assert.ok(sessions.has(pluginWebPartition("demo")))
-    assert.equal(sessions.get(pluginWebPartition("demo"))!.filters.length, 1)
+    assert.ok(sessions.has(pluginWebPartition("demo", BINDING)))
+    assert.equal(sessions.get(pluginWebPartition("demo", BINDING))!.filters.length, 1)
     assert.equal(hosts[0].listeners.length, 1)
     assert.equal(created.length, 1)
 
@@ -318,10 +348,25 @@ describe("configurePluginWebSession", () => {
 
   test("is idempotent per host across different packages", () => {
     const { deps, hosts, created } = makeDeps()
-    configurePluginWebSession("demo", deps as any)
-    configurePluginWebSession("other", deps as any)
+    configurePluginWebSession("demo", BINDING, deps as any)
+    configurePluginWebSession("other", BINDING, deps as any)
     assert.equal(hosts[0].listeners.length, 1)
     assert.equal(created.length, 1)
+  })
+
+  test("each binding gets its own partition session (no shared filter state)", () => {
+    const { deps, sessions } = makeDeps()
+    configurePluginWebSession("demo", BINDING, deps as any)
+    configurePluginWebSession("demo", BINDING_OTHER_PROJECT, deps as any)
+    assert.equal(sessions.size, 2)
+    assert.equal(
+      sessions.get(pluginWebPartition("demo", BINDING))!.filters.length,
+      1,
+    )
+    assert.equal(
+      sessions.get(pluginWebPartition("demo", BINDING_OTHER_PROJECT))!.filters.length,
+      1,
+    )
   })
 })
 
@@ -334,6 +379,7 @@ describe("createPluginWebSessionPreparer", () => {
     const sessions = new Map<string, FakeSession>()
     const hosts = [fakeHost()]
     const issued: Array<{ name: string; input: { projectDir: string; sessionID?: string } }> = []
+    const logs: Array<{ message: string; level?: "info" | "warn" }> = []
     const preparer = createPluginWebSessionPreparer({
       gatewayUrl: () => GATEWAY,
       issueTicket: async (name, input) => {
@@ -348,12 +394,15 @@ describe("createPluginWebSessionPreparer", () => {
       hosts: () => hosts,
       onHostCreated: () => {},
       preloadPath: "/app/out/preload/plugin-web.js",
+      log: (message, _detail, level) => {
+        logs.push({ message, level })
+      },
     })
-    return { preparer, sessions, hosts, issued }
+    return { preparer, sessions, hosts, issued, logs }
   }
 
   test("issues a ticket, installs the path-scoped cookie and returns the surface url", async () => {
-    const { preparer, sessions, issued } = makePreparer()
+    const { preparer, sessions, issued, logs } = makePreparer()
     const result = await preparer.prepare({
       name: "demo",
       projectDir: "C:\\work\\demo",
@@ -364,12 +413,12 @@ describe("createPluginWebSessionPreparer", () => {
 
     assert.deepEqual(issued, [{ name: "demo", input: { projectDir: "C:\\work\\demo", sessionID: "s1" } }])
     assert.deepEqual(result, {
-      partition: pluginWebPartition("demo"),
+      partition: pluginWebPartition("demo", { projectDir: "C:\\work\\demo", sessionID: "s1" }),
       url: `${GATEWAY}/api/plugins/demo/ui/app/index.html?revision=b1%3A2`,
       expiresAt: 1_900_000_000_123,
     })
 
-    const ses = sessions.get(pluginWebPartition("demo"))!
+    const ses = sessions.get(result.partition)!
     assert.equal(ses.cookieWrites.length, 1)
     assert.deepEqual(ses.cookieWrites[0], {
       url: GATEWAY,
@@ -380,7 +429,9 @@ describe("createPluginWebSessionPreparer", () => {
       sameSite: "strict",
       expirationDate: Math.floor(1_900_000_000_123 / 1000),
     })
-    assert.equal(preparer.expiresAtFor("demo"), 1_900_000_000_123)
+    assert.equal(preparer.expiresAtFor(result.partition), 1_900_000_000_123)
+    // success is an info line; only failures are warn (desktop log hygiene)
+    assert.deepEqual(logs, [{ message: "plugin web session prepared", level: "info" }])
   })
 
   test("refreshing replaces the cookie in the same partition and keeps the newest expiry", async () => {
@@ -388,16 +439,50 @@ describe("createPluginWebSessionPreparer", () => {
     const { preparer, sessions } = makePreparer({
       issueTicket: async () => ({ ticket: `tkt-${++n}`, expiresAt: 1_900_000_000_000 + n * 1000 }),
     })
-    await preparer.prepare({ name: "demo", projectDir: "C:\\work\\demo" })
-    await preparer.prepare({ name: "demo", projectDir: "C:\\work\\demo" })
+    const first = await preparer.prepare({ name: "demo", projectDir: "C:\\work\\demo" })
+    const second = await preparer.prepare({ name: "demo", projectDir: "C:\\work\\demo" })
 
-    const ses = sessions.get(pluginWebPartition("demo"))!
+    assert.equal(first.partition, second.partition)
+    const ses = sessions.get(first.partition)!
     assert.equal(sessions.size, 1)
     assert.deepEqual(
       ses.cookieWrites.map((c) => c.value),
       ["tkt-1", "tkt-2"],
     )
-    assert.equal(preparer.expiresAtFor("demo"), 1_900_000_002_000)
+    assert.equal(preparer.expiresAtFor(first.partition), 1_900_000_002_000)
+  })
+
+  test("a second binding gets its own partition; cookies never cross windows", async () => {
+    let n = 0
+    const { preparer, sessions } = makePreparer({
+      issueTicket: async () => ({ ticket: `tkt-${++n}`, expiresAt: 1_900_000_000_000 + n * 1000 }),
+    })
+    const a = await preparer.prepare({ name: "demo", projectDir: "C:\\work\\a", sessionID: "s1" })
+    const b = await preparer.prepare({ name: "demo", projectDir: "C:\\work\\b", sessionID: "s2" })
+
+    assert.notEqual(a.partition, b.partition)
+    assert.equal(sessions.size, 2)
+    assert.deepEqual(
+      sessions.get(a.partition)!.cookieWrites.map((c) => c.value),
+      ["tkt-1"],
+    )
+    assert.deepEqual(
+      sessions.get(b.partition)!.cookieWrites.map((c) => c.value),
+      ["tkt-2"],
+    )
+    // re-preparing binding A must not touch binding B's cookie
+    const a2 = await preparer.prepare({ name: "demo", projectDir: "C:\\work\\a", sessionID: "s1" })
+    assert.equal(a2.partition, a.partition)
+    assert.deepEqual(
+      sessions.get(a.partition)!.cookieWrites.map((c) => c.value),
+      ["tkt-1", "tkt-3"],
+    )
+    assert.deepEqual(
+      sessions.get(b.partition)!.cookieWrites.map((c) => c.value),
+      ["tkt-2"],
+    )
+    assert.equal(preparer.expiresAtFor(a.partition), 1_900_000_003_000)
+    assert.equal(preparer.expiresAtFor(b.partition), 1_900_000_002_000)
   })
 
   test("omits sessionID when absent and defaults the entry", async () => {
@@ -417,7 +502,7 @@ describe("createPluginWebSessionPreparer", () => {
   })
 
   test("a gateway ticket failure propagates and leaves no cookie behind", async () => {
-    const { preparer, sessions } = makePreparer({
+    const { preparer, sessions, logs } = makePreparer({
       issueTicket: async () => {
         throw new Error("404 not found")
       },
@@ -426,7 +511,11 @@ describe("createPluginWebSessionPreparer", () => {
       () => preparer.prepare({ name: "demo", projectDir: "C:\\work\\demo" }),
       /404 not found/,
     )
-    assert.equal(sessions.get(pluginWebPartition("demo"))?.cookieWrites.length ?? 0, 0)
+    assert.equal(
+      sessions.get(pluginWebPartition("demo", { projectDir: "C:\\work\\demo" }))?.cookieWrites.length ?? 0,
+      0,
+    )
+    assert.deepEqual(logs.map((l) => l.level), ["warn"])
   })
 })
 
@@ -438,6 +527,8 @@ describe("wiring contract", () => {
     assert.match(src, /mafw-plugin-web-session/)
     assert.match(src, /createPluginWebSessionPreparer\(/)
     assert.match(src, /plugins\.webTicket\(/)
+    // success/info vs failure/warn is chosen by the preparer, main just forwards
+    assert.match(src, /level \?\? "warn"/)
   })
 
   test("preload exposes prepareWebSurface", () => {
@@ -452,6 +543,10 @@ describe("wiring contract", () => {
   })
 
   test("the browser webview handler leaves plugin partitions to this module", () => {
-    assert.match(read("main/browser-session.ts"), /pluginWebPartitionPackage\(/)
+    const src = read("main/browser-session.ts")
+    assert.match(src, /pluginWebPartitionPackage\(/)
+    // The bridge preload must survive the browser handler (only non-plugin
+    // partitions may have their preload stripped).
+    assert.match(src, /if \(!pluginPartition\) delete \(webPreferences as \{ preload\?: string \}\)\.preload/)
   })
 })

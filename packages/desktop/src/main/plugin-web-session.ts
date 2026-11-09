@@ -1,25 +1,33 @@
 // packages/desktop/src/main/plugin-web-session.ts
-// Plugin web surfaces: sandboxed per-package partitions + path-scoped ticket
+// Plugin web surfaces: sandboxed per-binding partitions + path-scoped ticket
 // cookies (spec 2026-11-09 §5.5/§6.2). Pure decisions live here so they run
 // under `node --test`; the electron calls arrive through injected deps
 // (`mafw-ipc.ts` wires `session.fromPartition` / `BrowserWindow`).
 //
 // Isolation model — read before changing the filter:
-// - Each package gets its own `persist:` partition, and `onBeforeRequest`
-//   cancels every request that is not `<gateway>/api/plugins/<pkg>/…`.
+// - Each surface binding `(pkg, projectDir, sessionID?)` gets its own
+//   `persist:` partition, and `onBeforeRequest` cancels every request that is
+//   not `<gateway>/api/plugins/<pkg>/…` **except `web-ticket`**.
 //   That filter is the *real* package isolation: the gateway treats any
 //   loopback request without a valid ticket as the ambient project (dev/curl
 //   affordance), so without the filter a compromised page could reach another
-//   package's namespace, or the whole gateway API.
+//   package's namespace, or the whole gateway API. `web-ticket` is refused
+//   because it accepts any registered project and ignores a presented ticket:
+//   letting the page mint one would make its `ctx.http` project binding
+//   page-controllable (and could overwrite the partition cookie).
+// - One partition per *binding* (not per package): tickets are bucketed per
+//   `(pkg, projectDir, sessionID)`, so a shared package cookie would let a
+//   second window silently flip the first surface onto its project/session.
 // - `will-attach-webview` force-installs the bridge preload and strips node
 //   capabilities. `browser-session.ts` skips plugin partitions so the browser
 //   guest rules never strip that preload.
 // - Only loopback webviews are supported: remote gateways need the global API
 //   token as well as the ticket, and the desktop has no story for that yet.
+import { createHash } from "node:crypto"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-/** Every plugin webview lives in its own persistent partition. */
+/** Prefix of every plugin surface partition (contract-level, keep stable). */
 export const PLUGIN_WEB_PARTITION_PREFIX = "persist:mafw-plugin-"
 /** Must match `gateway/src/routes/plugin-web.ts` (path-scoped cookie). */
 export const PLUGIN_WEB_TICKET_COOKIE = "mafw_plugin_ticket"
@@ -28,19 +36,50 @@ const PLUGIN_WEB_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const DEFAULT_WEB_ENTRY = "index.html"
 const LOOPBACK_HTTP_PROTOCOLS = new Set(["http:", "ws:"])
 const LOOPBACK_SECURE_PROTOCOLS = new Set(["https:", "wss:"])
+// `~` is not allowed in a package name, so `<pkg>~<hash>` is unambiguous.
+const BINDING_SEPARATOR = "~"
+const BINDING_HASH_PATTERN = /^[0-9a-f]{12}$/
+// The page must never mint its own ticket (see the module header).
+const TICKET_PATH = "/web-ticket"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-export function pluginWebPartition(pkg: string): string {
-  return `${PLUGIN_WEB_PARTITION_PREFIX}${pkg}`
+/** Context a surface is bound to; also the partition identity. */
+export interface PluginWebBinding {
+  projectDir: string
+  sessionID?: string
 }
 
-/** Inverse of `pluginWebPartition`; `null` for partitions this module does not own. */
+/** Stable short hash of the binding (same binding → same partition). */
+export function pluginWebBindingHash(binding: PluginWebBinding): string {
+  const key = `${binding.projectDir}\u0000${binding.sessionID ?? ""}`
+  return createHash("sha256").update(key, "utf8").digest("hex").slice(0, 12)
+}
+
+/**
+ * One partition per `(pkg, binding)`: `persist:mafw-plugin-<pkg>~<hash>`.
+ * Different bindings never share a cookie store, so two windows on the same
+ * package cannot flip each other's project/session.
+ */
+export function pluginWebPartition(pkg: string, binding: PluginWebBinding): string {
+  return `${PLUGIN_WEB_PARTITION_PREFIX}${pkg}${BINDING_SEPARATOR}${pluginWebBindingHash(binding)}`
+}
+
+/**
+ * Inverse of `pluginWebPartition`; `null` for partitions this module does not
+ * own. Partitions without a binding hash are rejected (fail-closed): an
+ * unconfigured `persist:mafw-plugin-*` must never be attached.
+ */
 export function pluginWebPartitionPackage(partition: string | null | undefined): string | null {
   if (typeof partition !== "string") return null
   if (!partition.startsWith(PLUGIN_WEB_PARTITION_PREFIX)) return null
-  const pkg = partition.slice(PLUGIN_WEB_PARTITION_PREFIX.length)
-  return pkg.length > 0 ? pkg : null
+  const rest = partition.slice(PLUGIN_WEB_PARTITION_PREFIX.length)
+  const separator = rest.lastIndexOf(BINDING_SEPARATOR)
+  if (separator <= 0) return null
+  const pkg = rest.slice(0, separator)
+  const hash = rest.slice(separator + 1)
+  if (!PLUGIN_WEB_NAME_PATTERN.test(pkg) || !BINDING_HASH_PATTERN.test(hash)) return null
+  return pkg
 }
 
 /** Path-scoped to the package namespace so a cookie can never reach another package. */
@@ -91,8 +130,12 @@ function parseUrl(raw: string): URL | null {
 }
 
 /**
- * True when `requestUrl` targets the gateway origin and this package's namespace.
- * The trailing-slash boundary keeps `demo` from matching `demo2`.
+ * True when `requestUrl` targets the gateway origin and this package's
+ * namespace, minus the ticket endpoint.
+ *
+ * The trailing-slash boundary keeps `demo` from matching `demo2`; `web-ticket`
+ * is refused because it would let the sandboxed page bind its own context to
+ * any registered project (see the module header).
  */
 export function pluginWebRequestAllowed(gatewayUrl: string, pkg: string, requestUrl: string): boolean {
   const gateway = parseUrl(gatewayUrl)
@@ -105,7 +148,10 @@ export function pluginWebRequestAllowed(gatewayUrl: string, pkg: string, request
   if (request.host !== gateway.host) return false
 
   const base = `/api/plugins/${pkg}`
-  return request.pathname === base || request.pathname.startsWith(`${base}/`)
+  if (request.pathname !== base && !request.pathname.startsWith(`${base}/`)) return false
+  // `new URL` already resolves dot segments, so `x/../web-ticket` lands here too.
+  const ticket = `${base}${TICKET_PATH}`
+  return request.pathname !== ticket && !request.pathname.startsWith(`${ticket}/`)
 }
 
 export type PluginWebAttachDecision =
@@ -176,7 +222,7 @@ export interface PluginWebHostLike {
   on(event: "will-attach-webview", listener: PluginWebviewAttachListener): void
 }
 
-/** Deny permissions + confine the partition to one package namespace. */
+/** Deny permissions + confine the partition to one package namespace (no ticket minting). */
 export function applyPluginWebSessionPolicy(
   ses: PluginWebSessionLike,
   gatewayUrl: () => string,
@@ -232,16 +278,18 @@ export interface PluginWebSessionDeps {
 }
 
 /**
- * Configure one package: partition policy + `will-attach-webview` on every
- * host. Idempotent per session/host object; safe to call before every surface.
+ * Configure one surface binding: partition policy + `will-attach-webview` on
+ * every host. Idempotent per session/host object; safe to call before every
+ * surface.
  *
- * @returns the package's Electron session (the caller installs the cookie).
+ * @returns the binding's Electron session (the caller installs the cookie).
  */
 export function configurePluginWebSession(
   pkg: string,
+  binding: PluginWebBinding,
   deps: PluginWebSessionDeps,
 ): PluginWebSessionLike {
-  const partition = pluginWebPartition(pkg)
+  const partition = pluginWebPartition(pkg, binding)
   const ses = deps.fromPartition(partition)
   // Re-registering would replace the listener anyway, but the closure reads the
   // gateway URL lazily, so wiring once per session is enough.
@@ -296,23 +344,23 @@ export interface PluginWebSessionPreparerDeps {
   hosts(): PluginWebHostLike[]
   onHostCreated?(listener: (host: PluginWebHostLike) => void): void
   preloadPath?: string
-  log?(message: string, detail?: Record<string, unknown>): void
+  log?(message: string, detail?: Record<string, unknown>, level?: "info" | "warn"): void
 }
 
 export interface PluginWebSessionPreparer {
   prepare(input: PluginWebPrepareInput): Promise<PluginWebPrepareResult>
-  /** Most recent ticket expiry (epoch ms) per package — the host schedules renewal. */
-  expiresAtFor(name: string): number | undefined
+  /** Most recent ticket expiry (epoch ms) per surface partition — the host schedules renewal. */
+  expiresAtFor(partition: string): number | undefined
 }
 
 /**
- * One `prepareWebSurface` call = a fresh ticket + cookie in the package
+ * One `prepareWebSurface` call = a fresh ticket + cookie in the binding's
  * partition (the gateway revokes the previous ticket for the same binding, so
  * the cookie must always be replaced). The renderer calls this again at
  * `expiresAt - 30min` and after any 403.
  */
 export function createPluginWebSessionPreparer(deps: PluginWebSessionPreparerDeps): PluginWebSessionPreparer {
-  const expiresAtByPackage = new Map<string, number>()
+  const expiresAtByPartition = new Map<string, number>()
 
   return {
     async prepare(input: PluginWebPrepareInput): Promise<PluginWebPrepareResult> {
@@ -326,6 +374,7 @@ export function createPluginWebSessionPreparer(deps: PluginWebSessionPreparerDep
         typeof input.sessionID === "string" && input.sessionID.trim().length > 0
           ? input.sessionID.trim()
           : undefined
+      const binding: PluginWebBinding = { projectDir, ...(sessionID ? { sessionID } : {}) }
 
       try {
         const gatewayUrl = deps.gatewayUrl().replace(/\/+$/, "")
@@ -335,8 +384,8 @@ export function createPluginWebSessionPreparer(deps: PluginWebSessionPreparerDep
           ...(sessionID ? { sessionID } : {}),
         })
 
-        const ses = configurePluginWebSession(name, deps)
-        const partition = pluginWebPartition(name)
+        const ses = configurePluginWebSession(name, binding, deps)
+        const partition = pluginWebPartition(name, binding)
         await ses.cookies.set({
           url: gatewayUrl,
           name: PLUGIN_WEB_TICKET_COOKIE,
@@ -347,18 +396,18 @@ export function createPluginWebSessionPreparer(deps: PluginWebSessionPreparerDep
           expirationDate: Math.floor(ticket.expiresAt / 1000),
         })
 
-        expiresAtByPackage.set(name, ticket.expiresAt)
+        expiresAtByPartition.set(partition, ticket.expiresAt)
         const url = pluginWebUrl(gatewayUrl, name, input.entry, input.revision)
-        deps.log?.("plugin web session prepared", { pkg: name, partition, expiresAt: ticket.expiresAt })
+        deps.log?.("plugin web session prepared", { pkg: name, partition, expiresAt: ticket.expiresAt }, "info")
         return { partition, url, expiresAt: ticket.expiresAt }
       } catch (err) {
-        deps.log?.("plugin web session failed", { pkg: name, error: String(err) })
+        deps.log?.("plugin web session failed", { pkg: name, error: String(err) }, "warn")
         throw err
       }
     },
 
-    expiresAtFor(name: string): number | undefined {
-      return expiresAtByPackage.get(name)
+    expiresAtFor(partition: string): number | undefined {
+      return expiresAtByPartition.get(partition)
     },
   }
 }

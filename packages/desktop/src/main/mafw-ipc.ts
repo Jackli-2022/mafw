@@ -265,7 +265,7 @@ export function registerMafwIpcHandlers() {
     onHostCreated: (listener) => {
       app.on("browser-window-created", (_event, win) => listener(win.webContents))
     },
-    log: (message, detail) => writeLog("utility", message, detail ?? {}, "warn"),
+    log: (message, detail, level) => writeLog("utility", message, detail ?? {}, level ?? "warn"),
   })
   ipcMain.handle(
     "mafw-plugin-web-session",
