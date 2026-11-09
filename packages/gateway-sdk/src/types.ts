@@ -1964,6 +1964,12 @@ export interface PluginCheckResult {
   name?: string
   version?: string
   contributions?: string[]
+  /**
+   * Web surface summary of a successful check (`ui.webSurfaces` validated by
+   * the gateway). Absent when the candidate has no Web surfaces and on
+   * `ok:false` diagnostics, so old clients keep the previous shape.
+   */
+  webSurfaces?: { count: number; rail: boolean }
   error?: string
 }
 

@@ -208,6 +208,27 @@ describe('plugin package routes', () => {
     expect(res.body.error).toMatch(/overwrite/);
   });
 
+  test('POST /api/plugins/check passes the web surface summary through', async () => {
+    const manager = makeManager();
+    manager.checkPath.mockResolvedValue({
+      ok: true,
+      name: 'acme',
+      version: '1.0.0',
+      contributions: ['ui'],
+      webSurfaces: { count: 2, rail: true },
+    } as any);
+    await listen(makeDeps(manager));
+    const res = await request(server, 'POST', '/api/plugins/check', { path: 'C:\\tmp\\acme' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      name: 'acme',
+      version: '1.0.0',
+      contributions: ['ui'],
+      webSurfaces: { count: 2, rail: true },
+    });
+  });
+
   test('POST /api/plugins/check returns ok:false diagnostics as a 200 response', async () => {
     const manager = makeManager();
     manager.checkPath.mockResolvedValue({ ok: false, name: 'acme', error: 'invalid contributions: x' } as any);

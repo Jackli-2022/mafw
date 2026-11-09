@@ -391,6 +391,47 @@ describe("plugin package install preview", () => {
     assert.equal(installConfirmation(preview), null)
   })
 
+  it("install preview shows web surface and rail labels", () => {
+    const preview = planInstallPreview([], {
+      ok: true,
+      name: "demo",
+      version: "1.0.0",
+      contributions: ["ui"],
+      webSurfaces: { count: 2, rail: true },
+    })
+    assert.equal(preview.status, "ready")
+    assert.deepEqual(preview.contributions, ["ui", "Web 页面 2", "左栏入口"])
+  })
+
+  it("shows the surface count without a rail entry and leaves the check untouched", () => {
+    const contributions = ["actions", "ui"]
+    const check = {
+      ok: true,
+      name: "demo",
+      contributions,
+      webSurfaces: { count: 1, rail: false },
+    }
+    const preview = planInstallPreview([], check)
+    // The check result is a value the caller keeps: previews must not mutate it.
+    assert.deepEqual(contributions, ["actions", "ui"])
+    assert.equal(check.contributions, contributions)
+    assert.deepEqual(preview.contributions, ["actions", "ui", "Web 页面 1"])
+  })
+
+  it("keeps the overwrite diff on contribution kinds, not surface labels", () => {
+    const existing = row({ contributions: ["ui"] })
+    const preview = planInstallPreview([existing], {
+      ok: true,
+      name: "demo",
+      contributions: ["ui"],
+      webSurfaces: { count: 1, rail: false },
+    })
+    assert.deepEqual(preview.diff?.added, [])
+    assert.deepEqual(preview.diff?.removed, [])
+    assert.deepEqual(preview.diff?.unchanged, ["ui"])
+    assert.deepEqual(preview.contributions, ["ui", "Web 页面 1"])
+  })
+
   it("keeps a failed check visible and blocks install", () => {
     const preview = planInstallPreview([], {
       ok: false,

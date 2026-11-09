@@ -206,6 +206,59 @@ describe('PluginHost web surface activation', () => {
     expect(host.getClientSnapshot().plugins).toHaveLength(0);
   });
 
+  it('reports the web surface count and rail presence in a check result', async () => {
+    const candidateRoot = mkTmp('mafw-web-check-meta-');
+    const withRail = writePackage(
+      candidateRoot,
+      'two-pages',
+      `return { ui: { webSurfaces: [
+        { id: 'main', title: 'Main', rail: { icon: 'folder' } },
+        { id: 'side', title: 'Side' },
+      ] } };`,
+      { 'index.html': '<html></html>' },
+    );
+    const withoutRail = writePackage(
+      candidateRoot,
+      'one-page',
+      `return { ui: { webSurfaces: [{ id: 'main', title: 'Main' }] } };`,
+      { 'index.html': '<html></html>' },
+    );
+    const noWeb = writePackage(
+      candidateRoot,
+      'no-web',
+      `return { actions: { ping: { handler() { return 'pong'; } } } };`,
+    );
+    const broken = writePackage(
+      candidateRoot,
+      'broken-web',
+      `return { ui: { webSurfaces: [{ id: 'main', title: 'Main', entry: 'missing.html' }] } };`,
+      { 'index.html': '<html></html>' },
+    );
+    host = mkHost(dir);
+    await host.init();
+
+    // Pre-install previews show the surface summary without committing anything.
+    await expect(host.checkPackage(withRail)).resolves.toMatchObject({
+      ok: true,
+      name: 'two-pages',
+      webSurfaces: { count: 2, rail: true },
+    });
+    await expect(host.checkPackage(withoutRail)).resolves.toMatchObject({
+      ok: true,
+      webSurfaces: { count: 1, rail: false },
+    });
+
+    // The field is additive: packages without web surfaces and invalid checks
+    // keep the previous shape.
+    const plain = await host.checkPackage(noWeb);
+    expect(plain).toMatchObject({ ok: true, name: 'no-web' });
+    expect(plain.webSurfaces).toBeUndefined();
+    const rejected = await host.checkPackage(broken);
+    expect(rejected).toMatchObject({ ok: false, name: 'broken-web' });
+    expect(rejected.webSurfaces).toBeUndefined();
+    expect(host.getClientSnapshot().plugins).toHaveLength(0);
+  });
+
   it('runs the check for offline checkPackage dry runs too', async () => {
     const candidateRoot = mkTmp('mafw-web-check-');
     const broken = writePackage(

@@ -232,6 +232,8 @@ describe('web-surface-demo package (end-to-end)', () => {
     await host.reload();
     const check = await manager.checkPath(DEMO_DIR);
     expect(check).toMatchObject({ ok: true, name: PACKAGE, version: '1.0.0' });
+    // The manager thread carries the surface summary for the install preview.
+    expect(check.webSurfaces).toEqual({ count: 1, rail: true });
     // A check never installs or publishes anything.
     expect(host.getClientSnapshot().plugins).toEqual([]);
 

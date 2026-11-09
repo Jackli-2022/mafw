@@ -116,6 +116,14 @@ export interface PluginCheckResult {
   version?: string;
   /** Contribution kinds of the candidate (`ui`, `actions`, `runtime`, …). */
   contributions?: string[];
+  /**
+   * Validated Web surface summary for the pre-install preview.
+   *
+   * Only present on successful checks of packages that declare
+   * `ui.webSurfaces`; the count always reflects the validated descriptors (an
+   * unreadable `web/` entry fails the whole check instead of lowering it).
+   */
+  webSurfaces?: { count: number; rail: boolean };
   error?: string;
 }
 
@@ -678,12 +686,22 @@ export class PluginHost {
       const bag = this.createBag();
       try {
         const activation = await this.activate(desc, bag);
-        return {
+        // Web surfaces are the only slot with on-disk assets; activation already
+        // validated them, so the summary is authoritative for the install preview.
+        const webSurfaces = activation.activated.ui.webSurfaces ?? [];
+        const result: PluginCheckResult = {
           ok: true,
           name,
           version: activation.version ?? manifest.version,
           contributions: activation.contributions,
         };
+        if (webSurfaces.length > 0) {
+          result.webSurfaces = {
+            count: webSurfaces.length,
+            rail: webSurfaces.some((surface) => surface.rail !== undefined),
+          };
+        }
+        return result;
       } finally {
         await this.disposeBags([bag]);
         // The candidate was not committed: drop its modules so a later install

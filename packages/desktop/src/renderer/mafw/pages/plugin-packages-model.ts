@@ -313,6 +313,25 @@ function normalizeContributionList(value: readonly unknown[] | undefined): strin
   return out.sort((a, b) => a.localeCompare(b))
 }
 
+/**
+ * Display labels for the Web surface summary a check reports.
+ *
+ * These are preview-only labels appended after the contribution kinds; they
+ * never participate in the overwrite diff (a surface is not a kind) and old
+ * gateways omit `webSurfaces` entirely. A zero/absent count yields no labels,
+ * so a package cannot advertise a rail entry without a page.
+ */
+function webSurfaceLabels(summary: PluginCheckResult["webSurfaces"]): string[] {
+  if (!summary || typeof summary !== "object") return []
+  const count = typeof summary.count === "number" && Number.isFinite(summary.count)
+    ? Math.floor(summary.count)
+    : 0
+  if (count <= 0) return []
+  const labels = [`Web 页面 ${count}`]
+  if (summary.rail === true) labels.push("左栏入口")
+  return labels
+}
+
 export function planInstallPreview(
   inventory: readonly PluginsPackageEntry[] | null | undefined,
   check: PluginCheckResult | null | undefined,
@@ -352,13 +371,19 @@ export function planInstallPreview(
     (entry) => typeof entry?.name === "string" && entry.name.toLowerCase() === lower,
   )
   const nextContributions = normalizeContributionList(check.contributions)
+  // Preview-only labels: appended (never sorted into the kinds) and the source
+  // list is never mutated — the caller keeps the check result for retries.
+  const contributions = [...nextContributions]
+  for (const label of webSurfaceLabels(check.webSurfaces)) {
+    if (!contributions.includes(label)) contributions.push(label)
+  }
   const preview: InstallPreview = {
     status: "ready",
     name,
     ...(typeof check.version === "string" && check.version.length > 0
       ? { version: check.version }
       : {}),
-    contributions: nextContributions,
+    contributions,
     overwrite: Boolean(existing),
   }
   if (!existing) return preview
