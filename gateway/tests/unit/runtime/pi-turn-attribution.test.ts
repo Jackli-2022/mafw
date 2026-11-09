@@ -46,6 +46,18 @@ describe('PiTurnAttribution', () => {
     expect(attr.attribute(evt('message.updated')).turnID).toBeUndefined();
   });
 
+  it('does not promote a queued turn on an automatic retry start', () => {
+    const attr = new PiTurnAttribution();
+    attr.enqueue('s1', 't1');
+    attr.enqueue('s1', 't2');
+
+    expect(attr.attribute(evt('turn.started')).turnID).toBe('t1');
+    // pi retries emit another agent_start within the same logical turn.
+    expect(attr.attribute(evt('turn.started')).turnID).toBe('t1');
+    expect(attr.attribute(evt('turn.completed')).turnID).toBe('t1');
+    expect(attr.attribute(evt('turn.started')).turnID).toBe('t2');
+  });
+
   it('withdrawing a failed turn does not consume the next queued turn', () => {
     const attr = new PiTurnAttribution();
     attr.enqueue('s1', 't1');

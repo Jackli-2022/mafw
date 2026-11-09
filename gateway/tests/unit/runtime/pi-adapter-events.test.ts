@@ -80,21 +80,39 @@ describe('translatePiAdapterEvent', () => {
     expect((end.data as any).message.id).toBe('piu_1');
   });
 
-  it('maps tool update/result and agent_settled', () => {
+  it('maps tool update/result and treats agent_end (not agent_settled) as the terminal', () => {
     expect(translatePiAdapterEvent({ type: 'tool_execution_update', sessionID: 's1', toolCallId: 'c1', partialResult: 'half' }, 's1')!.data)
       .toMatchObject({ callID: 'c1', field: 'output', delta: 'half' });
     const failed = translatePiAdapterEvent({ type: 'tool_execution_end', sessionID: 's1', toolCallId: 'c1', result: 'boom', isError: true }, 's1')!;
     expect(failed.data).toMatchObject({ callID: 'c1', ok: false, output: 'boom' });
     expect((failed.data as any).error).toBeUndefined();
-    expect(translatePiAdapterEvent({ type: 'agent_settled', messages: [{ role: 'assistant', stopReason: 'error', errorMessage: 'x' }] }, 's1')!.type).toBe('turn.failed');
+    expect(translatePiAdapterEvent({ type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'error', errorMessage: 'x' }] }, 's1')!.type).toBe('turn.failed');
+    // pi emits agent_settled after agent_end; it must not produce a second terminal.
+    expect(translatePiAdapterEvent({ type: 'agent_settled' }, 's1')).toBeNull();
   });
 
-  it('PiEventStream emits AdapterEvent from the raw subscription', async () => {
-    const stream = new PiEventStream(() => 's1');
+  it('does not emit a terminal while pi is auto-retrying', () => {
+    expect(translatePiAdapterEvent({
+      type: 'agent_end',
+      willRetry: true,
+      messages: [{ role: 'assistant', stopReason: 'error', errorMessage: 'rate limited' }],
+    }, 's1')).toBeNull();
+    expect(translatePiAdapterEvent({
+      type: 'agent_end',
+      willRetry: false,
+      messages: [{ role: 'assistant', stopReason: 'stop' }],
+    }, 's1')!.type).toBe('turn.completed');
+  });
+
+  it('PiEventStream emits AdapterEvent from the raw subscription (no event.session field)', async () => {
+    const session = { subscribe: (_fn: any) => {} };
+    const stream = new PiEventStream((candidate) => (candidate === session ? 's1' : undefined));
     let handler: ((evt: any) => void) | undefined;
-    stream.trackSession({ subscribe: (fn: any) => { handler = fn; } });
+    session.subscribe = (fn: any) => { handler = fn; };
+    stream.trackSession(session);
     const iterator = stream.stream()[Symbol.asyncIterator]();
 
+    // Real pi AgentEvent: no `session` property.
     handler!({ type: 'agent_start' });
     const { value } = await iterator.next();
     expect(value.type).toBe('turn.started');

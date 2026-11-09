@@ -60,7 +60,9 @@ function fakePiHarness(): FakePiHarness {
     session,
     promptImpl,
     emit: (event) => {
-      for (const fn of subscribers) fn({ ...event, session });
+      // Real pi AgentEvent has no `session` field; the stream resolves the id
+      // from the subscribed session object.
+      for (const fn of subscribers) fn(event);
     },
   };
 }
@@ -92,7 +94,7 @@ describe('pi definition event path', () => {
     await state.definition.transport.stop?.();
   });
 
-  it('attributes queued follow-ups to their own turn ids', async () => {
+  it('attributes serial queued turns to their own ids', async () => {
     const harness = fakePiHarness();
     const state = await createPiState(fakeCtx(), { loadPi: async () => harness.pi });
     const seen: AdapterEvent[] = [];
@@ -100,21 +102,88 @@ describe('pi definition event path', () => {
 
     const { sessionID } = await state.definition.transport.createSession({ directory: '/tmp/proj' });
     await state.definition.transport.sendTurn({ sessionID, turnID: 't1', text: 'one' });
-    await state.definition.transport.sendTurn({ sessionID, turnID: 't2', text: 'two' });
+    harness.emit({ type: 'agent_start' });
+    harness.emit({
+      type: 'agent_end',
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'reply-1' }], stopReason: 'stop' }],
+    });
+    await tick();
 
-    for (let i = 0; i < 2; i += 1) {
-      harness.emit({ type: 'agent_start' });
-      harness.emit({
-        type: 'agent_end',
-        messages: [{ role: 'assistant', content: [{ type: 'text', text: `reply-${i}` }], stopReason: 'stop' }],
-      });
-    }
+    await state.definition.transport.sendTurn({ sessionID, turnID: 't2', text: 'two' });
+    harness.emit({ type: 'agent_start' });
+    harness.emit({
+      type: 'agent_end',
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'reply-2' }], stopReason: 'stop' }],
+    });
     await tick();
 
     expect(seen.filter((event) => event.type === 'turn.started').map((event) => event.turnID))
       .toEqual(['t1', 't2']);
     expect(seen.filter((event) => event.type === 'turn.completed').map((event) => event.turnID))
       .toEqual(['t1', 't2']);
+
+    await state.definition.transport.stop?.();
+  });
+
+  it('does not mint a new turn id for a steer delivered into the running loop', async () => {
+    const harness = fakePiHarness();
+    const state = await createPiState(fakeCtx(), { loadPi: async () => harness.pi });
+    const seen: AdapterEvent[] = [];
+    state.definition.transport.onEvent((event) => seen.push(event));
+
+    const { sessionID } = await state.definition.transport.createSession({ directory: '/tmp/proj' });
+    await state.definition.transport.sendTurn({ sessionID, turnID: 't1', text: 'one' });
+    harness.emit({ type: 'agent_start' });
+
+    harness.session.isStreaming = true;
+    await state.definition.transport.sendTurn({ sessionID, turnID: 'steer-2', text: 'two', delivery: 'steer' });
+    harness.emit({
+      type: 'agent_end',
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'done' }], stopReason: 'stop' }],
+    });
+    await tick();
+
+    harness.session.isStreaming = false;
+    await state.definition.transport.sendTurn({ sessionID, turnID: 't3', text: 'three' });
+    harness.emit({ type: 'agent_start' });
+    harness.emit({
+      type: 'agent_end',
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'done-3' }], stopReason: 'stop' }],
+    });
+    await tick();
+
+    expect(seen.filter((event) => event.type === 'turn.completed').map((event) => event.turnID))
+      .toEqual(['t1', 't3']);
+
+    await state.definition.transport.stop?.();
+  });
+
+  it('keeps one logical turn across a pi auto-retry and ignores agent_settled', async () => {
+    const harness = fakePiHarness();
+    const state = await createPiState(fakeCtx(), { loadPi: async () => harness.pi });
+    const seen: AdapterEvent[] = [];
+    state.definition.transport.onEvent((event) => seen.push(event));
+
+    const { sessionID } = await state.definition.transport.createSession({ directory: '/tmp/proj' });
+    await state.definition.transport.sendTurn({ sessionID, turnID: 't1', text: 'hi' });
+
+    harness.emit({ type: 'agent_start' });
+    harness.emit({
+      type: 'agent_end',
+      willRetry: true,
+      messages: [{ role: 'assistant', content: [], stopReason: 'error', errorMessage: 'rate limited' }],
+    });
+    harness.emit({ type: 'agent_start' });
+    harness.emit({
+      type: 'agent_end',
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok' }], stopReason: 'stop' }],
+    });
+    harness.emit({ type: 'agent_settled' });
+    await tick();
+
+    expect(seen.filter((event) => event.type === 'turn.failed')).toHaveLength(0);
+    expect(seen.filter((event) => event.type === 'turn.completed').map((event) => event.turnID))
+      .toEqual(['t1']);
 
     await state.definition.transport.stop?.();
   });
@@ -146,6 +215,26 @@ describe('pi definition event path', () => {
     expect(bus.stats()).toMatchObject({ unknown: 0, dropped: 0 });
 
     bus.unregister('pi');
+    await state.definition.transport.stop?.();
+  });
+
+  it('does not fail the running turn when a steer prompt rejects', async () => {
+    const harness = fakePiHarness();
+    const state = await createPiState(fakeCtx(), { loadPi: async () => harness.pi });
+    const seen: AdapterEvent[] = [];
+    state.definition.transport.onEvent((event) => seen.push(event));
+
+    const { sessionID } = await state.definition.transport.createSession({ directory: '/tmp/proj' });
+    await state.definition.transport.sendTurn({ sessionID, turnID: 't1', text: 'one' });
+    harness.emit({ type: 'agent_start' });
+
+    harness.session.isStreaming = true;
+    harness.promptImpl.current = async () => { throw new Error('steer rejected'); };
+    await state.definition.transport.sendTurn({ sessionID, turnID: 'steer-2', text: 'two', delivery: 'steer' });
+    await tick();
+
+    expect(seen.filter((event) => event.type === 'turn.failed')).toHaveLength(0);
+
     await state.definition.transport.stop?.();
   });
 

@@ -3,35 +3,33 @@ import { translatePiAdapterEvent, setPiUnknownRecorder } from './pi-adapter-even
 
 export { setPiUnknownRecorder };
 
+/**
+ * Fan-out for one pi session event subscription.
+ *
+ * pi's `AgentSession.subscribe(listener)` forwards the raw agent event only —
+ * the event has no `session` field. Resolve the session id from the session
+ * object captured at subscription time (not from the event payload), otherwise
+ * every live event is silently dropped.
+ */
 export class PiEventStream {
   private listeners = new Set<(evt: AdapterEvent) => void>();
-  private subscribed = false;
-  private onEvent: ((evt: any) => void) | null = null;
 
   constructor(private resolveSessionId: (session: any) => string | undefined) {}
 
-  /** 单例底层订阅：registry 在 create 时经 trackSession 挂订阅。 */
-  attach(): void {
-    if (this.subscribed) return;
-    this.subscribed = true;
-    this.onEvent = (evt: any) => {
-      const id = this.resolveSessionId(evt?.session);
-      if (!id) return;
-      const translated = translatePiAdapterEvent(evt, id);
-      if (translated) {
-        for (const l of this.listeners) l(translated);
-      }
-    };
-  }
-
-  /** 新会话登记时挂订阅（PiSessionRegistry.create 经回调调用）。 */
+  /** Register a pi session and subscribe its raw event stream. */
   trackSession(session: any): void {
     if (typeof session?.subscribe !== 'function') return;
-    this.attach();
-    session.subscribe(this.onEvent);
+    session.subscribe((raw: any) => {
+      const id = this.resolveSessionId(session);
+      if (!id) return;
+      const translated = translatePiAdapterEvent(raw, id);
+      if (translated) {
+        for (const listener of this.listeners) listener(translated);
+      }
+    });
   }
 
-  /** 返回新 AsyncIterable，fan-out 共享底层 listener。 */
+  /** Return a new AsyncIterable; listeners share the underlying fan-out. */
   stream(): AsyncIterable<AdapterEvent> {
     const listeners = this.listeners;
     const queue: AdapterEvent[] = [];
@@ -55,12 +53,10 @@ export class PiEventStream {
   }
 
   push(event: AdapterEvent): void {
-    for (const l of this.listeners) l(event);
+    for (const listener of this.listeners) listener(event);
   }
 
   async dispose(): Promise<void> {
     this.listeners.clear();
-    this.subscribed = false;
-    this.onEvent = null;
   }
 }

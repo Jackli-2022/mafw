@@ -206,7 +206,12 @@ export async function createPiState(
       const converted = partsToPromptInput(input.parts);
       const text = input.text?.length ? input.text : converted.text ?? '';
       if (converted.media?.length) registry.attachMedia(input.sessionID, converted.media);
-      attribution.enqueue(input.sessionID, input.turnID);
+      // A steer/follow-up is delivered into the running pi loop and has no
+      // `agent_start` of its own — only a fresh run gets the gateway turn id.
+      const startsRun = input.delivery !== 'steer'
+        && !attribution.hasInFlight(input.sessionID)
+        && !registry.isStreaming(input.sessionID);
+      if (startsRun) attribution.enqueue(input.sessionID, input.turnID);
       // Transport contract: sendTurn must not block on turn completion. The
       // event stream carries the terminal; a synchronous rejection is surfaced
       // as a turn.failed frame instead of swallowing it.
@@ -217,6 +222,12 @@ export async function createPiState(
         delivery: input.delivery === 'queue' ? undefined : input.delivery,
         images: converted.images,
       }).catch((err: any) => {
+        if (!startsRun) {
+          // A steer/follow-up failure must not emit a terminal for the
+          // running turn; report it without touching the active turn id.
+          ctx.log?.warn?.(`[pi] steer/follow-up failed: ${String(err?.message ?? err)}`);
+          return;
+        }
         attribution.withdraw(input.sessionID, input.turnID);
         eventStream.push({
           id: `pi_turn_fail_${input.turnID}`,

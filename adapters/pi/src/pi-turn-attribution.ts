@@ -57,12 +57,20 @@ export class PiTurnAttribution {
     this.active.delete(sessionID);
   }
 
+  /** True when a turn is running or a gateway turn id is still queued. */
+  hasInFlight(sessionID: string): boolean {
+    return this.active.has(sessionID) || (this.queues.get(sessionID)?.length ?? 0) > 0;
+  }
+
   /** Attach the current turn id to one native event. */
   attribute(event: AdapterEvent): AdapterEvent {
     const sessionID = event.sessionID;
     if (!sessionID) return event;
 
-    if (event.type === 'turn.started') {
+    if (event.type === 'turn.started' && !this.active.has(sessionID)) {
+      // Promote only on a fresh run. pi also emits agent_start for automatic
+      // retries within the same logical turn; promoting a queued id there
+      // would relabel the retry's frames to the next turn.
       const queue = this.queues.get(sessionID);
       const next = queue?.shift();
       if (next) this.active.set(sessionID, next);

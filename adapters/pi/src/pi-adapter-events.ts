@@ -40,8 +40,11 @@ export function translatePiAdapterEvent(event: any, sessionID: string): AdapterE
     case 'agent_start':
       return make('turn.started', sessionID, {});
 
-    case 'agent_end':
-    case 'agent_settled': {
+    case 'agent_end': {
+      // pi auto-retry: this attempt is not the logical turn terminal. The
+      // next `agent_start` continues the same turn; the final `agent_end`
+      // (willRetry false) produces the terminal.
+      if (event?.willRetry === true) return null;
       const messages = Array.isArray(event?.messages) ? event.messages : [];
       const lastAssistant = [...messages].reverse().find((m: any) => m?.role === 'assistant');
       const stop = lastAssistant?.stopReason;
@@ -57,6 +60,12 @@ export function translatePiAdapterEvent(event: any, sessionID: string): AdapterE
         ...(mapPiStopReason(stop) ? { stopReason: mapPiStopReason(stop) } : {}),
       });
     }
+
+    case 'agent_settled':
+      // `agent_end` already emitted the terminal for the run. `agent_settled`
+      // is the idle notification after retries/queues; a second terminal here
+      // fakes completion and can consume the next queued turn id.
+      return null;
 
     case 'message_start': {
       if (event?.message?.role !== 'assistant') return null;
