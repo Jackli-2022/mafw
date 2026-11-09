@@ -1,13 +1,28 @@
 // 浏览器 guest 的 main 侧加固：权限全拒、window.open 转 dock 内导航、非 http(s) 导航拦截、
 // will-attach-webview 强制安全基线。渲染层只负责 UI；决策纯函数在 browser-policy.ts。
+//
+// 插件 Web 页面的 guest 走另一套 window.open 规则（plugin-web-session.ts）：
+// 永远拒绝弹窗，http(s)/mailto/tel 交给系统浏览器，绝不进工作台浏览器 dock
+// （dock 有自己的分区与 guest 策略，插件页不该借道进入）。
 import { app, BrowserWindow, session, shell, type WebContents } from "electron"
 import { BROWSER_PARTITION, guestAttachAllowed, navigationDecision, windowOpenDecision } from "../shared/browser-policy"
-import { pluginWebPartitionPackage } from "./plugin-web-session"
+import {
+  isPluginWebSession,
+  pluginWebPartitionPackage,
+  pluginWebWindowOpenAction,
+} from "./plugin-web-session"
 
 let configured = false
 
 function hardenGuest(contents: WebContents) {
   contents.setWindowOpenHandler(({ url }) => {
+    // `contents.session` is read at call time: the guest session is attached
+    // when the webview is created, not guaranteed when this handler is wired.
+    if (isPluginWebSession(contents.session)) {
+      const pluginDecision = pluginWebWindowOpenAction(url)
+      if (pluginDecision.action === "external") void shell.openExternal(pluginDecision.url)
+      return { action: "deny" }
+    }
     const decision = windowOpenDecision(url)
     if (decision.action === "navigate") {
       const host = contents.hostWebContents ?? BrowserWindow.getFocusedWindow()?.webContents

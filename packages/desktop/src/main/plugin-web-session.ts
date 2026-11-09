@@ -7,7 +7,10 @@
 // Isolation model — read before changing the filter:
 // - Each surface binding `(pkg, projectDir, sessionID?)` gets its own
 //   `persist:` partition, and `onBeforeRequest` cancels every request that is
-//   not `<gateway>/api/plugins/<pkg>/…` **except `web-ticket`**.
+//   not one of the package's *page* subpaths: `ui/…`, `api/…`, `ws/…` and
+//   `events`. Everything else under `/api/plugins/<pkg>/` is refused, notably
+//   the host-control routes that share the namespace: `web-ticket`, `apply`,
+//   `reload` and `actions/:action`.
 //   Paths are normalized exactly like the gateway router (trailing slashes
 //   stripped, empty segments dropped), so `/demo//web-ticket` cannot slip past
 //   the deny while the gateway still routes it to the ticket handler.
@@ -17,13 +20,17 @@
 //   package's namespace, or the whole gateway API. `web-ticket` is refused
 //   because it accepts any registered project and ignores a presented ticket:
 //   letting the page mint one would make its `ctx.http` project binding
-//   page-controllable (and could overwrite the partition cookie).
+//   page-controllable (and could overwrite the partition cookie). `apply` /
+//   `reload` / `actions` are refused because they are host privileges, not page
+//   APIs.
 // - One partition per *binding* (not per package): tickets are bucketed per
 //   `(pkg, projectDir, sessionID)`, so a shared package cookie would let a
 //   second window silently flip the first surface onto its project/session.
 // - `will-attach-webview` force-installs the bridge preload and strips node
-//   capabilities. `browser-session.ts` skips plugin partitions so the browser
-//   guest rules never strip that preload.
+//   capabilities, and only for partitions main prepared (a forged binding hash
+//   fails closed). `browser-session.ts` skips plugin partitions so the browser
+//   guest rules never strip that preload; plugin guests also get their own
+//   `window.open` policy (deny + system browser, never the browser dock).
 // - Only loopback webviews are supported: remote gateways need the global API
 //   token as well as the ticket, and the desktop has no story for that yet.
 import { createHash } from "node:crypto"
@@ -42,8 +49,11 @@ const LOOPBACK_SECURE_PROTOCOLS = new Set(["https:", "wss:"])
 // `~` is not allowed in a package name, so `<pkg>~<hash>` is unambiguous.
 const BINDING_SEPARATOR = "~"
 const BINDING_HASH_PATTERN = /^[0-9a-f]{12}$/
-// The page must never mint its own ticket (see the module header).
-const TICKET_PATH = "/web-ticket"
+// The page may only reach its own package's *page* surfaces. Host-management
+// routes share the namespace (`apply` / `reload` / `actions/:action` /
+// `web-ticket`), so an allowlist of subpaths is the only safe filter.
+const PACKAGE_ROUTE_PREFIXES = ["/ui", "/api", "/ws"]
+const PACKAGE_ROUTE_EXACT = "/events"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -147,14 +157,15 @@ function normalizeRoutePath(pathname: string): string {
 }
 
 /**
- * True when `requestUrl` targets the gateway origin and this package's
- * namespace, minus the ticket endpoint.
+ * True when `requestUrl` targets the gateway origin and one of this package's
+ * page subpaths (`ui/`, `api/`, `ws/`, `events`).
  *
- * The trailing-slash boundary keeps `demo` from matching `demo2`; `web-ticket`
- * is refused because it would let the sandboxed page bind its own context to
- * any registered project (see the module header). Paths are normalized the
- * same way the gateway router normalizes them, so empty segments cannot slip
- * the ticket deny.
+ * The trailing-slash boundary keeps `demo` from matching `demo2`. Host-control
+ * routes that share the same namespace (`apply`, `reload`, `actions/:action`,
+ * `web-ticket`) are refused: `web-ticket` would let the sandboxed page bind its
+ * own context to any registered project, and the other two would let it drive
+ * package lifecycle as the host. Paths are normalized the same way the gateway
+ * router normalizes them, so empty segments cannot slip the allowlist.
  */
 export function pluginWebRequestAllowed(gatewayUrl: string, pkg: string, requestUrl: string): boolean {
   const gateway = parseUrl(gatewayUrl)
@@ -170,22 +181,41 @@ export function pluginWebRequestAllowed(gatewayUrl: string, pkg: string, request
   const base = `/api/plugins/${pkg}`
   if (pathname !== base && !pathname.startsWith(`${base}/`)) return false
   // `new URL` already resolves dot segments; empty segments are collapsed above.
-  const ticket = `${base}${TICKET_PATH}`
-  return pathname !== ticket && !pathname.startsWith(`${ticket}/`)
+  return pluginWebSubpathAllowed(pathname.slice(base.length))
+}
+
+/** `/ui/...`, `/api/...`, `/ws/...` or exactly `/events`. */
+function pluginWebSubpathAllowed(rest: string): boolean {
+  if (rest === PACKAGE_ROUTE_EXACT) return true
+  for (const prefix of PACKAGE_ROUTE_PREFIXES) {
+    if (rest === prefix || rest.startsWith(`${prefix}/`)) return true
+  }
+  return false
 }
 
 export type PluginWebAttachDecision =
   | { ok: true; pkg: string }
   | { ok: false; pkg: string | null; reason: string }
 
-/** Attach gate for one `will-attach-webview` event. */
+/**
+ * Attach gate for one `will-attach-webview` event.
+ *
+ * `isConfigured` is the belt to the partition shape's braces: a surface can
+ * only attach after main minted a ticket for that exact binding (which is when
+ * the partition becomes known). A forged hash with the right shape therefore
+ * fails closed instead of opening an unconfigured cookie store.
+ */
 export function pluginWebAttachDecision(
   gatewayUrl: string,
   partition: string | null | undefined,
   src: string | null | undefined,
+  isConfigured?: (partition: string) => boolean,
 ): PluginWebAttachDecision {
   const pkg = pluginWebPartitionPackage(partition)
   if (!pkg) return { ok: false, pkg: null, reason: "not a plugin web partition" }
+  if (isConfigured && !isConfigured(partition as string)) {
+    return { ok: false, pkg, reason: "partition is not configured" }
+  }
 
   const value = typeof src === "string" ? src.trim() : ""
   if (value.length === 0 || value === "about:blank") return { ok: true, pkg }
@@ -193,6 +223,33 @@ export function pluginWebAttachDecision(
     return { ok: false, pkg, reason: "src is outside the package namespace" }
   }
   return { ok: true, pkg }
+}
+
+/**
+ * `window.open` / `target=_blank` decision for a *plugin* guest.
+ *
+ * Plugin pages must never open windows (the sandbox is the point). A legacy
+ * `window.open("https://…")` is proxied to the system browser by the host; the
+ * workbench browser dock is deliberately not a destination (it would inherit a
+ * different partition and its own guest policy). The supported route is the
+ * bridge's `openExternal`.
+ */
+export type PluginWebWindowOpenAction = { action: "external"; url: string } | { action: "deny" }
+
+export function pluginWebWindowOpenAction(raw: unknown): PluginWebWindowOpenAction {
+  const value = typeof raw === "string" ? raw.trim() : ""
+  if (value.length === 0) return { action: "deny" }
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return { action: "deny" }
+  }
+  const protocol = parsed.protocol.toLowerCase()
+  if (protocol === "http:" || protocol === "https:" || protocol === "mailto:" || protocol === "tel:") {
+    return { action: "external", url: value }
+  }
+  return { action: "deny" }
 }
 
 // ── session-level policy (injected electron shapes) ──
@@ -265,7 +322,12 @@ export function applyPluginWebviewAttachPolicy(
   preloadPath: string = pluginWebPreloadPath(),
 ): void {
   host.on("will-attach-webview", (event, webPreferences, params) => {
-    const decision = pluginWebAttachDecision(gatewayUrl(), params.partition, params.src)
+    const decision = pluginWebAttachDecision(
+      gatewayUrl(),
+      params.partition,
+      params.src,
+      isPluginWebPartitionConfigured,
+    )
     if (!decision.ok) {
       // Foreign partitions belong to browser-session.ts; only veto our own.
       if (decision.pkg) event.preventDefault()
@@ -282,9 +344,31 @@ export function applyPluginWebviewAttachPolicy(
 
 // ── composition (electron-facing) ──
 
-const configuredSessions = new WeakSet<object>()
-const wiredHosts = new WeakSet<object>()
-const registeredHostFactories = new WeakSet<object>()
+// Partition strings that main prepared at least once (see `pluginWebAttachDecision`).
+// Insert-only: a live webview must survive a reload after its binding was
+// configured, and the strings are small (one per package × project × session).
+const configuredPartitions = new Set<string>()
+let configuredSessions = new WeakSet<object>()
+let wiredHosts = new WeakSet<object>()
+let registeredHostFactories = new WeakSet<object>()
+
+/** True when this exact partition (package + binding hash) was prepared by main. */
+export function isPluginWebPartitionConfigured(partition: string | null | undefined): boolean {
+  return typeof partition === "string" && configuredPartitions.has(partition)
+}
+
+/** True when `ses` is one of the plugin surface sessions (not the browser dock's). */
+export function isPluginWebSession(ses: unknown): boolean {
+  return !!ses && typeof ses === "object" && configuredSessions.has(ses as object)
+}
+
+/** Test-only: forget every configured partition/session/host. */
+export function resetPluginWebSessionsForTests(): void {
+  configuredPartitions.clear()
+  configuredSessions = new WeakSet<object>()
+  wiredHosts = new WeakSet<object>()
+  registeredHostFactories = new WeakSet<object>()
+}
 
 export interface PluginWebSessionDeps {
   /** Read lazily: the gateway port changes across restarts. */
@@ -310,6 +394,9 @@ export function configurePluginWebSession(
   deps: PluginWebSessionDeps,
 ): PluginWebSessionLike {
   const partition = pluginWebPartition(pkg, binding)
+  // Register before the webview can attach: `will-attach-webview` fails closed
+  // for partitions main has never prepared.
+  configuredPartitions.add(partition)
   const ses = deps.fromPartition(partition)
   // Re-registering would replace the listener anyway, but the closure reads the
   // gateway URL lazily, so wiring once per session is enough.

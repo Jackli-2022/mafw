@@ -2,7 +2,7 @@
 // Plugin web surfaces: sandboxed per-package partitions, path-scoped ticket
 // cookies and the `will-attach-webview` hardening. Electron is injected so
 // every decision is testable without booting the app (spec 2026-11-09 §5.5/§6.2).
-import { describe, test } from "node:test"
+import { beforeEach, describe, test } from "node:test"
 import assert from "node:assert/strict"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -13,6 +13,8 @@ import {
   applyPluginWebviewAttachPolicy,
   configurePluginWebSession,
   createPluginWebSessionPreparer,
+  isPluginWebPartitionConfigured,
+  isPluginWebSession,
   pluginWebAttachDecision,
   pluginWebCookiePath,
   pluginWebPartition,
@@ -20,6 +22,8 @@ import {
   pluginWebPreloadPath,
   pluginWebRequestAllowed,
   pluginWebUrl,
+  pluginWebWindowOpenAction,
+  resetPluginWebSessionsForTests,
 } from "./plugin-web-session"
 
 const read = (rel: string) => readFileSync(join(import.meta.dirname, "..", rel), "utf8")
@@ -106,6 +110,20 @@ function decideRequest(ses: FakeSession, url: string): { cancel: boolean } {
 const BINDING = { projectDir: "C:\\repo", sessionID: "s1" }
 const BINDING_OTHER_PROJECT = { projectDir: "C:\\other", sessionID: "s1" }
 const BINDING_OTHER_SESSION = { projectDir: "C:\\repo", sessionID: "s2" }
+
+/** Configures one binding exactly like `prepare` would (partition + attach gate). */
+function configureOnly(pkg: string, binding: { projectDir: string; sessionID?: string }): string {
+  configurePluginWebSession(pkg, binding, {
+    gatewayUrl: () => GATEWAY,
+    fromPartition: () => fakeSession(),
+    hosts: () => [],
+  })
+  return pluginWebPartition(pkg, binding)
+}
+
+beforeEach(() => {
+  resetPluginWebSessionsForTests()
+})
 
 describe("pluginWebPartition", () => {
   test("partition is per package AND per binding", () => {
@@ -223,6 +241,25 @@ describe("pluginWebRequestAllowed", () => {
     assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/ui//index.html`), true)
   })
 
+  test("refuses host-control routes that share the package namespace", () => {
+    // `apply` / `reload` / `actions/:action` are host privileges the page must
+    // never hold; `web-ticket` was already refused above.
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/apply`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/reload`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/actions/deploy`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo//apply`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/events/extra`), false)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/ui/../apply`), false)
+    // the page subpaths keep working, with and without a trailing segment
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/ui`), true)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/api`), true)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/ws`), true)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/events`), true)
+    assert.equal(isAllowed(`${GATEWAY}/api/plugins/demo/events?sessionID=s1`), true)
+  })
+
   test("rejects other origins and non-http schemes", () => {
     assert.equal(isAllowed("http://evil.test/api/plugins/demo/ui/index.html"), false)
     assert.equal(isAllowed("http://127.0.0.1:3999/api/plugins/demo/ui/index.html"), false)
@@ -291,12 +328,13 @@ describe("pluginWebAttachDecision", () => {
 
 describe("applyPluginWebviewAttachPolicy", () => {
   test("forces the bridge preload and strips node integration", () => {
+    const partition = configureOnly("demo", BINDING)
     const host = fakeHost()
     const preload = "/app/out/preload/plugin-web.js"
     applyPluginWebviewAttachPolicy(host, () => GATEWAY, preload)
 
     const { prevented, prefs } = host.attach({
-      partition: pluginWebPartition("demo", BINDING),
+      partition,
       src: `${GATEWAY}/api/plugins/demo/ui/index.html?revision=b1%3A2`,
     })
     assert.equal(prevented, false)
@@ -309,11 +347,12 @@ describe("applyPluginWebviewAttachPolicy", () => {
   })
 
   test("blocks cross-package srcs but leaves other partitions to the browser handler", () => {
+    const partition = configureOnly("demo", BINDING)
     const host = fakeHost()
     applyPluginWebviewAttachPolicy(host, () => GATEWAY, "/app/out/preload/plugin-web.js")
 
     const denied = host.attach({
-      partition: pluginWebPartition("demo", BINDING),
+      partition,
       src: `${GATEWAY}/api/plugins/other/ui/index.html`,
     })
     assert.equal(denied.prevented, true)
@@ -325,6 +364,70 @@ describe("applyPluginWebviewAttachPolicy", () => {
     })
     assert.equal(browser.prevented, false)
     assert.equal(browser.prefs.preload, undefined)
+  })
+
+  test("fails closed for a partition main never prepared (forged binding hash)", () => {
+    const host = fakeHost()
+    applyPluginWebviewAttachPolicy(host, () => GATEWAY, "/app/out/preload/plugin-web.js")
+    const forged = `${PLUGIN_WEB_PARTITION_PREFIX}demo~0123456789ab`
+    assert.equal(isPluginWebPartitionConfigured(forged), false)
+
+    const denied = host.attach({
+      partition: forged,
+      src: `${GATEWAY}/api/plugins/demo/ui/index.html`,
+    })
+    assert.equal(denied.prevented, true)
+    assert.equal(denied.prefs.preload, undefined)
+    assert.deepEqual(
+      pluginWebAttachDecision(GATEWAY, forged, `${GATEWAY}/api/plugins/demo/ui/index.html`, isPluginWebPartitionConfigured),
+      { ok: false, pkg: "demo", reason: "partition is not configured" },
+    )
+
+    // …while the partition main actually prepared attaches.
+    const prepared = configureOnly("demo", BINDING)
+    const ok = host.attach({
+      partition: prepared,
+      src: `${GATEWAY}/api/plugins/demo/ui/index.html`,
+    })
+    assert.equal(ok.prevented, false)
+    assert.equal(ok.prefs.preload, "/app/out/preload/plugin-web.js")
+  })
+})
+
+describe("pluginWebWindowOpenAction", () => {
+  test("proxies http(s)/mailto/tel to the system browser", () => {
+    assert.deepEqual(pluginWebWindowOpenAction("https://mafw.test/x"), {
+      action: "external",
+      url: "https://mafw.test/x",
+    })
+    assert.deepEqual(pluginWebWindowOpenAction("  http://127.0.0.1:3000/  "), {
+      action: "external",
+      url: "http://127.0.0.1:3000/",
+    })
+    assert.deepEqual(pluginWebWindowOpenAction("mailto:team@mafw.test"), {
+      action: "external",
+      url: "mailto:team@mafw.test",
+    })
+    assert.deepEqual(pluginWebWindowOpenAction("tel:+123"), { action: "external", url: "tel:+123" })
+  })
+
+  test("denies every other target (never the browser dock, never a dangerous protocol)", () => {
+    for (const value of [
+      undefined,
+      null,
+      42,
+      "",
+      "   ",
+      "javascript:alert(1)",
+      "file:///C:/secret",
+      "data:text/html,<script>",
+      "chrome://settings",
+      "mafw-file://root/x.html",
+      "about:blank",
+      "not a url",
+    ]) {
+      assert.deepEqual(pluginWebWindowOpenAction(value), { action: "deny" })
+    }
   })
 })
 
@@ -567,5 +670,23 @@ describe("wiring contract", () => {
     // The bridge preload must survive the browser handler (only non-plugin
     // partitions may have their preload stripped).
     assert.match(src, /if \(!pluginPartition\) delete \(webPreferences as \{ preload\?: string \}\)\.preload/)
+  })
+
+  test("plugin guests deny window.open and never route to the browser dock", () => {
+    const src = read("main/browser-session.ts")
+    assert.match(src, /isPluginWebSession\(contents\.session\)/)
+    assert.match(src, /pluginWebWindowOpenAction\(/)
+    // The plugin branch must decide before the browser dock navigation branch.
+    const pluginBranch = src.indexOf("isPluginWebSession(contents.session)")
+    const dockBranch = src.indexOf('host.send("browser-open-url"')
+    assert.ok(pluginBranch > 0, "plugin guest branch is wired")
+    assert.ok(dockBranch > pluginBranch, "plugin guests must not reach the browser dock")
+  })
+
+  test("the renderer host prepares every surface through main (no partition recompute)", () => {
+    const src = read("renderer/mafw/plugins/PluginWebSurfaceHost.tsx")
+    assert.match(src, /plugins\.prepareWebSurface\(/)
+    assert.match(src, /setAttribute\("partition", prepared\.partition\)/)
+    assert.doesNotMatch(src, /pluginWebPartition\(/)
   })
 })
