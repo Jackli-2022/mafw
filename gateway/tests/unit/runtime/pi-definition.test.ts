@@ -19,7 +19,7 @@ const fakeLoadPi = async () => ({});
 it('builds a neutral definition with the pi capability set', async () => {
   const def = await createPiDefinition(fakeCtx(), { loadPi: fakeLoadPi });
   expect(def.name).toBe(PI_DEFINITION_NAME);
-  expect(def.external).toBe(false);
+  expect(def.external).toBe(true);
   expect(def.capabilities.sessionApi).toBe(true);
   expect(def.capabilities.nativeApprovals).toBe(true);
   expect(def.capabilities.instructionsApi).toBe(false);

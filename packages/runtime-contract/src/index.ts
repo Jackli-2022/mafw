@@ -43,4 +43,5 @@ export {
   type RuntimeDefinitionInput,
   type RuntimeManifest,
   type RuntimePreset,
+  type RuntimeHostSurface,
 } from './define-runtime.ts';

@@ -8,6 +8,7 @@
 import type { EventMappingEntry, TranslationHooks } from './event-mapper';
 import type { AgentRuntime, BusinessRuntime } from './contract';
 import { wrapDialectEventStream } from './event-stream-wiring';
+import { wrapToolPartAssembly } from './tool-part-assembler';
 import { normalizeFacadeHistory } from './normalize-messages';
 import { RuntimeAccess } from './runtime-access';
 
@@ -91,6 +92,9 @@ export async function createRuntimeFacade(
   if (hasEventStream && !options.neutral) {
     await wrapDialectEventStream(raw, options.entry, options.isCanonical, options.hooks);
   }
+  // Neutral runtimes already deliver canonical events, but still need the
+  // tool-primitive assembler (call/delta/result → part.updated snapshots).
+  if (hasEventStream && options.neutral) wrapToolPartAssembly(raw);
 
   const facade: Record<PropertyKey, any> = {};
   for (const key of PUBLIC_KEYS) {

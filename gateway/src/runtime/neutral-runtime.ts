@@ -89,7 +89,7 @@ export function createNeutralRuntime(
   options: NeutralRuntimeOptions,
 ): AgentRuntime {
   const { transport, channels = {}, channelsV2 = {} } = definition;
-  const host: NeutralRuntimeHost = options.host ?? {};
+  const host: NeutralRuntimeHost = { ...(definition.host as any), ...(options.host ?? {}) };
   const bus = options.bus;
   const now = options.now ?? Date.now;
   const promptTimeoutMs = options.promptTimeoutMs ?? 600_000;
@@ -140,6 +140,7 @@ export function createNeutralRuntime(
       async prompt(opts: any) {
         const turnID = mintTurnID();
         const parts: any[] = [];
+        const textChunks: string[] = [];
         let usage: unknown;
         let finish: unknown;
         let failure: string | undefined;
@@ -150,8 +151,23 @@ export function createNeutralRuntime(
           if (delivered.runtimeName !== definition.name || !delivered.canonical) return;
           const payload: any = (delivered.canonical as any).payload ?? {};
           const props: any = payload.properties ?? {};
+          const sessionID = props.sessionID ?? (delivered.canonical as any).sessionID;
+          if (sessionID && sessionID !== opts.sessionID) return;
           if (payload.type === 'part.updated' && props.part) parts.push(props.part);
-          if (payload.type === 'turn.usage') usage = props.usage ?? props;
+          if (payload.type === 'message.updated' && props.message?.role === 'assistant') {
+            const content = Array.isArray(props.message.parts)
+              ? props.message.parts
+              : Array.isArray(props.message.content) ? props.message.content : [];
+            for (const block of content) {
+              if (block?.type === 'text' && typeof block.text === 'string') {
+                parts.push(block);
+                textChunks.push(block.text);
+              }
+            }
+          }
+          if (payload.type === 'part.delta' && props.field === 'text' && typeof props.delta === 'string') {
+            textChunks.push(props.delta);
+          }
           if (props.turnID !== turnID) return;
           if (payload.type === 'turn.completed') {
             usage = props.usage ?? usage;
@@ -166,6 +182,7 @@ export function createNeutralRuntime(
           }
         });
 
+        let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           await transport.sendTurn({
             sessionID: opts.sessionID,
@@ -183,22 +200,19 @@ export function createNeutralRuntime(
             outputSchema: opts.outputSchema,
           });
           const timeout = new Promise<void>((_, reject) => {
-            const timer = setTimeout(() => reject(new Error(`turn timeout after ${promptTimeoutMs}ms`)), promptTimeoutMs);
+            timer = setTimeout(() => reject(new Error(`turn timeout after ${promptTimeoutMs}ms`)), promptTimeoutMs);
             timer.unref?.();
           });
           await Promise.race([settled, timeout]);
         } finally {
+          if (timer) clearTimeout(timer);
           unsubscribe();
         }
 
-        return { parts, finish, usage, ...(failure ? { error: failure } : {}) };
+        return { parts, text: textChunks.join(''), finish, usage, ...(failure ? { error: failure } : {}) };
       },
       async abort(opts: any) {
         await transport.interruptTurn(opts.sessionID);
-      },
-      async messages(opts: any) {
-        if (!channels.messages) throw definition.unsupported('messages');
-        return channels.messages.list(opts.sessionID, { limit: opts.limit, before: opts.before });
       },
     },
 
@@ -213,7 +227,15 @@ export function createNeutralRuntime(
 
   // Optional session surfaces: presence mirrors the channel.
   const session = runtime.session;
-  session.dispose = undefined;
+  if (channels.messages) {
+    session.messages = async (opts: any) => {
+      const result = await channels.messages!.list(opts.sessionID, { limit: opts.limit, before: opts.before });
+      const data = channels.messages!.normalize && Array.isArray(result?.data)
+        ? channels.messages!.normalize(result.data)
+        : result?.data;
+      return { ...result, data };
+    };
+  }
   if (channels.session?.get) session.get = (opts: any) => channels.session!.get!(opts.sessionID);
   if (channels.session?.list) session.list = (opts?: any) => channels.session!.list!(opts);
   if (channels.session?.listByDirectory) {

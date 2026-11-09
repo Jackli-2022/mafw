@@ -21,6 +21,8 @@ export async function createPiDefinition(
     name: PI_DEFINITION_NAME,
     displayName: 'pi',
     capabilities: PI_CAPABILITIES as unknown as Record<string, unknown>,
-    external: false,
+    // In-process runtime: the gateway never spawns or kills it (the flag also
+    // drives the startup event-subscription branch, as it did before).
+    external: true,
   });
 }

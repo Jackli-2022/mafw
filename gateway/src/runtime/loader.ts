@@ -125,7 +125,9 @@ export class RuntimePluginLoader {
     for (const [file] of this.state) {
       if (!seen.has(file)) {
         const prev = this.state.get(file);
-        if (prev?.name) {
+        // Only real files are purged. `builtin:` / `package:` rows are
+        // registrations, not watched files — a scan must never unregister them.
+        if (prev?.name && !file.startsWith('builtin:') && !file.startsWith('package:')) {
           this.factories.delete(prev.name);
           this.meta.delete(prev.name);
           this.neutralDefinitions.delete(prev.name);
@@ -378,7 +380,7 @@ export class RuntimePluginLoader {
 
   /** 已注册内置件名（builtin 文件件不在其中，opencode 为恒等默认由 index.ts 注入 hub）。 */
   getBuiltinNames(): string[] {
-    return [...this.builtins.keys()];
+    return [...new Set([...this.builtins.keys(), ...this.builtinDefinitions.keys()])];
   }
 
   getState(): RuntimePluginState[] {

@@ -126,19 +126,39 @@ export function toRuntimeDefinition(
 ): RuntimeDefinition {
   const unsubscribers = new Set<() => void>();
   const bridgeState: AdapterBridgeState = { turns: new Map() };
-  /** Gateway-minted turn id per session; the adapter contract echoes it. */
+  /**
+   * Gateway-minted turn ids per session. Pi queues prompts, so ids must be
+   * promoted one at a time: the next id becomes active only on `turn.started`,
+   * otherwise a busy follow-up would relabel the running turn's terminal.
+   */
+  const pendingTurns = new Map<string, string[]>();
   const activeTurns = new Map<string, string>();
+  const listeners = new Set<(evt: AdapterEvent) => void>();
   let closed = false;
+
+  const emitFailure = (sessionID: string, turnID: string | undefined, message: string) => {
+    const event: AdapterEvent = {
+      id: `bridge_fail_${Date.now().toString(36)}`,
+      type: 'turn.failed',
+      sessionID,
+      ...(turnID ? { turnID } : {}),
+      at: Date.now(),
+      data: { error: { kind: 'unknown', message }, retryable: false },
+    } as AdapterEvent;
+    for (const listener of listeners) listener(event);
+  };
 
   const transport: RuntimeTransport = {
     async createSession(opts) {
       const created = await legacy.session.create({ directory: opts.directory, parentID: opts.parentID });
-      return { sessionID: String(created?.id) };
+      return { sessionID: String((created as any)?.id ?? (created as any)?.sessionID) };
     },
     async sendTurn(input) {
       // Transport contract: sendTurn must not block on turn completion.
       // The minted turn id is echoed on every turn-scoped event by the bridge.
-      activeTurns.set(input.sessionID, input.turnID);
+      const queue = pendingTurns.get(input.sessionID) ?? [];
+      queue.push(input.turnID);
+      pendingTurns.set(input.sessionID, queue);
       void Promise.resolve(legacy.session.promptAsync({
         sessionID: input.sessionID,
         message: input.text,
@@ -148,19 +168,33 @@ export function toRuntimeDefinition(
         model: input.model,
         variant: input.variant,
         thinkingLevel: input.thinkingLevel,
+        delivery: input.delivery,
         expectReply: input.expectReply,
         idempotencyKey: input.idempotencyKey,
-      } as any)).catch(() => { /* the legacy runtime reports failures on its stream */ });
+      } as any)).catch((err: any) => {
+        // Surface the failure on the stream instead of swallowing it.
+        const queueNow = pendingTurns.get(input.sessionID) ?? [];
+        const index = queueNow.indexOf(input.turnID);
+        if (index >= 0) queueNow.splice(index, 1);
+        emitFailure(input.sessionID, input.turnID, String(err?.message ?? err));
+      });
       return { turnID: input.turnID };
     },
     async interruptTurn(sessionID) {
       await legacy.session.abort({ sessionID });
+      activeTurns.delete(sessionID);
     },
     async respondToRequest(sessionID, requestID, decision) {
       if (typeof legacy.session.permissionReply !== 'function') return 'unavailable';
       const reply = decision.behavior === 'answer' ? 'once' : decision.behavior === 'allow' ? (decision.always ? 'always' : 'once') : 'reject';
       await legacy.session.permissionReply(sessionID, requestID, reply, decision.message);
       return decision.behavior === 'answer' ? 'answered' : decision.behavior === 'allow' ? 'allowed-once' : 'rejected';
+    },
+    async stop() {
+      closed = true;
+      for (const unsubscribe of unsubscribers) unsubscribe();
+      unsubscribers.clear();
+      await (legacy as any).dispose?.();
     },
     onEvent(listener) {
       const forward = (evt: RawRuntimeEvent) => {
@@ -170,7 +204,15 @@ export function toRuntimeDefinition(
           : [evt];
         for (const item of translated) {
           const sessionHint = sessionOf(item as RawRuntimeEvent, propsOf(item as RawRuntimeEvent));
-          const overrideTurnID = sessionHint ? activeTurns.get(sessionHint) : undefined;
+          if (sessionHint && typeOf(item as RawRuntimeEvent) === 'turn.started') {
+            const queue = pendingTurns.get(sessionHint);
+            const next = queue?.shift();
+            if (next) activeTurns.set(sessionHint, next);
+            if (queue && queue.length === 0) pendingTurns.delete(sessionHint);
+          }
+          const overrideTurnID = sessionHint
+            ? (activeTurns.get(sessionHint) ?? pendingTurns.get(sessionHint)?.[0])
+            : undefined;
           const converted = canonicalToAdapterEvent(item, bridgeState, overrideTurnID);
           if (converted) {
             listener(converted);
@@ -183,6 +225,7 @@ export function toRuntimeDefinition(
           }
         }
       };
+      listeners.add(listener);
       const legacyOnEvent = (legacy as any).onEvent;
       if (typeof legacyOnEvent === 'function') {
         const unsubscribe = legacyOnEvent(forward);
@@ -205,6 +248,7 @@ export function toRuntimeDefinition(
         unsubscribers.add(() => { cancelled = true; });
       }
       return () => {
+        listeners.delete(listener);
         for (const unsubscribe of unsubscribers) unsubscribe();
         unsubscribers.clear();
       };
@@ -247,16 +291,16 @@ export function toRuntimeDefinition(
       : undefined,
   } as RuntimeChannels['session'];
   if (legacy.provider?.list) channels.providers = { list: () => legacy.provider.list() };
-  if (legacy.agents) channels.agents = {
-    list: async () => (legacy.agents as any).list?.() ?? [],
+  if (legacy.agents || legacy.app?.agents) channels.agents = {
+    list: async () => legacy.app?.agents ? legacy.app.agents() : ((legacy.agents as any)?.list?.() ?? []),
     install: (name, definition) => legacy.agents!.install(name, definition as any),
-    remove: legacy.agents!.remove,
+    remove: legacy.agents?.remove,
   };
   if (legacy.session.fork || legacy.session.revert || legacy.session.unrevert) {
     channels.branch = {
       fork: legacy.session.fork ? async (sessionID, messageID) => {
         const result = await legacy.session.fork!({ sessionID, messageID });
-        return { sessionID: String(result?.id) };
+        return { sessionID: String((result as any)?.id ?? (result as any)?.sessionID) };
       } : undefined,
       revert: legacy.session.revert ? (sessionID, messageID, opts) => legacy.session.revert!({ sessionID, messageID, files: opts?.files }) : undefined,
       unrevert: legacy.session.unrevert ? (sessionID) => legacy.session.unrevert!({ sessionID }) : undefined,
@@ -297,6 +341,18 @@ export function toRuntimeDefinition(
     transport,
     channels,
     ...(meta.external !== undefined ? { external: meta.external } : {}),
+    ...(legacy.semantics ? { semantics: legacy.semantics } : {}),
+    ...(legacy.config || legacy.credentials || legacy.completion || legacy.healthCheck || legacy.getBaseUrl
+      ? {
+          host: {
+            ...(legacy.config ? { config: legacy.config } : {}),
+            ...(legacy.credentials ? { credentials: legacy.credentials } : {}),
+            ...(legacy.completion ? { completion: legacy.completion } : {}),
+            ...(typeof legacy.healthCheck === 'function' ? { healthCheck: legacy.healthCheck.bind(legacy) } : {}),
+            ...(typeof legacy.getBaseUrl === 'function' ? { getBaseUrl: legacy.getBaseUrl.bind(legacy) } : {}),
+          },
+        }
+      : {}),
     ...(Object.keys(channelsV2).length > 0 ? { channelsV2, channelApi: 2 as const } : {}),
     overrides: (meta.capabilities ?? legacy.capabilities ?? {}) as any,
   });
