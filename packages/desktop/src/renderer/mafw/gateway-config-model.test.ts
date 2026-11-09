@@ -101,4 +101,8 @@ describe("gatewayConflictGuidance", () => {
     }))).toContain("仅本次")
     expect(gatewayConflictGuidance(status())).toBeNull()
   })
+
+  test("explains a managed version mismatch even while the previous gateway is running", () => {
+    expect(gatewayConflictGuidance(status({ actualVersion: "5.1.0" }))).toContain("与 Desktop 期望")
+  })
 })

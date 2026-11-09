@@ -9,6 +9,7 @@ import {
   getGatewayPort,
   onGatewayStateChange,
   restartGateway,
+  retryManagedGateway,
   setGatewaySourcePreference,
   startGateway,
   useLegacyExternalOnce,
@@ -174,8 +175,7 @@ export function registerMafwIpcHandlers() {
   })
   ipcMain.handle("mafw-gateway-retry-managed", async (_event, opts?: { force?: boolean }) => {
     restartScheduler.cancel()
-    void opts?.force
-    await restartGateway()
+    await retryManagedGateway(!!opts?.force)
     return getGatewayStatus()
   })
 

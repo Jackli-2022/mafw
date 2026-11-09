@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { randomUUID } from "node:crypto"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { connect } from "node:net"
 import { app } from "electron"
 import { MafwClient } from "@mafw/sdk"
@@ -32,6 +32,21 @@ import {
 import { waitForGatewayDown } from "./gateway-health"
 import { getStore } from "./store"
 import { CHANNEL } from "./constants"
+import {
+  parseGatewayReleaseManifest,
+  type GatewayReleaseManifest,
+} from "./gateway-release-manifest"
+import {
+  prepareManagedGateway,
+  recordManagedStartFailure,
+  type ManagedLifecycleResult,
+} from "./gateway-managed-lifecycle"
+import {
+  readPreviousPointer,
+  readQuarantine,
+  type ManagedPointer,
+} from "./gateway-managed-store"
+import { readFile } from "node:fs/promises"
 
 export type GatewayState = "stopped" | "starting" | "ready" | "failed" | "conflict"
 
@@ -86,8 +101,22 @@ let expected: GatewayReleaseExpectation | null = null
 let actualHealth: GatewayHealthSnapshot | null = null
 let sourcePreference: GatewaySourcePreference | null = null
 let errorMessage: string | null = null
+let managedRoot: string | null = null
+let managedRelease: GatewayReleaseManifest | null = null
+let forceManagedRetryOnce = false
 // Set by stopGateway() so an async child exit can distinguish intentional stop.
 let expectedExit = false
+
+export function configureManagedGatewayRoot(root: string): void {
+  managedRoot = root
+}
+
+function resolveManagedRoot(): string {
+  if (!managedRoot) {
+    managedRoot = join(app.getPath("userData"), "gateway")
+  }
+  return managedRoot
+}
 
 function preferenceStore() {
   return getStore("mafw.gateway")
@@ -312,7 +341,13 @@ function spawnCliDaemon(): boolean {
   }
 }
 
-function pollUntilReady(url: string, mode: "managed" | "external", instanceId?: string): void {
+function pollUntilReady(
+  url: string,
+  mode: "managed" | "external",
+  instanceId?: string,
+  onGiveUp?: (error: string) => Promise<void>,
+  handshakeExpected: GatewayReleaseExpectation | null = expected,
+): void {
   let attempts = 0
   const maxAttempts = 30
 
@@ -323,7 +358,7 @@ function pollUntilReady(url: string, mode: "managed" | "external", instanceId?: 
       const handshake = negotiateGateway({
         mode,
         health,
-        expected: expected!,
+        expected: handshakeExpected!,
         expectedInstanceId: instanceId,
       })
       if (healthInterval) clearInterval(healthInterval)
@@ -331,6 +366,13 @@ function pollUntilReady(url: string, mode: "managed" | "external", instanceId?: 
       if (!handshake.ok) {
         errorMessage = `gateway handshake failed: ${handshake.reason}`
         actualHealth = health
+        if (mode === "managed") {
+          await terminateManagedInstance()
+          if (onGiveUp) {
+            await onGiveUp(errorMessage)
+            return
+          }
+        }
         notifyState("conflict")
         return
       }
@@ -342,9 +384,14 @@ function pollUntilReady(url: string, mode: "managed" | "external", instanceId?: 
     if (attempts >= maxAttempts) {
       if (healthInterval) clearInterval(healthInterval)
       healthInterval = null
-      errorMessage = "Gateway failed to start within 30s"
+      const failure = "Gateway failed to start within 30s"
+      errorMessage = failure
       if (mode === "managed") {
-        void terminateManagedInstance()
+        await terminateManagedInstance()
+        if (onGiveUp) {
+          await onGiveUp(failure)
+          return
+        }
       }
       notifyState("failed")
     }
@@ -359,9 +406,108 @@ function conflict(plan: Extract<GatewayStartPlan, { mode: "conflict" }>, running
   notifyState("conflict")
 }
 
+async function readReleaseManifestFromDir(dir: string): Promise<GatewayReleaseManifest> {
+  const raw = JSON.parse(await readFile(join(dir, "release-manifest.json"), "utf8"))
+  return parseGatewayReleaseManifest(raw)
+}
+
+async function handleManagedStartFailure(error: string): Promise<void> {
+  if (!app.isPackaged || !managedRelease) {
+    errorMessage = error
+    notifyState("failed")
+    return
+  }
+  const root = resolveManagedRoot()
+  const previous = readPreviousPointer(root)
+  let previousRelease: GatewayReleaseManifest | null = null
+  let schemaChanged = true
+  if (previous) {
+    try {
+      previousRelease = await readReleaseManifestFromDir(join(root, "versions", previous.versionDir))
+      schemaChanged = previousRelease.schemaEpoch !== managedRelease.schemaEpoch
+    } catch {
+      previousRelease = null
+      schemaChanged = true
+    }
+  }
+
+  const failure = await recordManagedStartFailure({
+    managedRoot: root,
+    release: managedRelease,
+    error,
+    previousAvailable: !!previous,
+    schemaChanged,
+    deps: {},
+  })
+  if (failure.blocked) {
+    errorMessage = `${error}; gateway data schema changed, so automatic rollback is unsafe`
+    notifyState("conflict")
+    return
+  }
+  if (!failure.restartPointer || !previousRelease) {
+    errorMessage = `${error}; no previous gateway payload is available`
+    notifyState("conflict")
+    return
+  }
+
+  const pointer: ManagedPointer = failure.restartPointer
+  const fallbackDir = join(root, "versions", pointer.versionDir)
+  const fallbackEntry = join(fallbackDir, "dist", "index.js")
+  try {
+    const fallbackExpected = readGatewayReleaseExpectation(fallbackEntry, CHANNEL)
+    notifyState("starting")
+    port = 3000
+    spawnedByUs = true
+    const { record } = await spawnManagedGateway(fallbackEntry, fallbackExpected)
+    errorMessage = `${error}; running previous gateway ${previousRelease.gatewayVersion}`
+    pollUntilReady(GATEWAY_URL, "managed", record.instanceId, async (retryError) => {
+      errorMessage = `${retryError}; previous gateway payload also failed`
+      notifyState("failed")
+    }, fallbackExpected)
+  } catch (fallbackError: any) {
+    errorMessage = `${error}; previous gateway restart failed: ${fallbackError?.message ?? fallbackError}`
+    notifyState("failed")
+  }
+}
+
+async function prepareManagedSpawn(entry: string, forceRetry: boolean): Promise<string | null> {
+  const resourcesRoot = dirname(dirname(entry))
+  const result: ManagedLifecycleResult = await prepareManagedGateway({
+    resourcesRoot,
+    managedRoot: resolveManagedRoot(),
+    expected: expected!,
+    canReplaceRunning: true,
+    forceRetry,
+    deps: {},
+  })
+  if (result.kind === "start") {
+    try {
+      managedRelease = await readReleaseManifestFromDir(resourcesRoot)
+    } catch {
+      managedRelease = null
+    }
+    return result.entry
+  }
+  if (result.kind === "quarantined") {
+    errorMessage = `gateway ${result.version} is quarantined: ${result.error}`
+    notifyState("conflict")
+    return null
+  }
+  if (result.kind === "blocked") {
+    errorMessage = "gateway schema epoch changed; blocking automatic start and rollback"
+    notifyState("conflict")
+    return null
+  }
+  errorMessage = result.reason
+  notifyState("failed")
+  return null
+}
+
 export async function startGateway(): Promise<void> {
   if (state === "starting" || state === "ready") return
 
+  const forceManagedRetry = forceManagedRetryOnce
+  forceManagedRetryOnce = false
   sourcePreference = readGatewaySourcePreference(preferenceStore())
   const managedEntry = resolveManagedEntry()
   const releaseEntry = managedEntry
@@ -407,6 +553,13 @@ export async function startGateway(): Promise<void> {
     errorMessage = plan.reason
     notifyState("failed")
     return
+  }
+
+  let preparedManagedEntry = plan.mode === "managed" ? plan.entry : null
+  if (plan.mode === "managed" && plan.action === "spawn" && app.isPackaged) {
+    const prepared = await prepareManagedSpawn(plan.entry, forceManagedRetry)
+    if (!prepared) return
+    preparedManagedEntry = prepared
   }
 
   if (plan.mode === "managed" && plan.action === "adopt") {
@@ -458,9 +611,10 @@ export async function startGateway(): Promise<void> {
   spawnedByUs = plan.mode === "managed"
 
   if (plan.mode === "managed") {
-    writeLog("utility", "mafw starting verified managed gateway", { entry: plan.entry }, "info")
-    const { record } = await spawnManagedGateway(plan.entry, expected)
-    pollUntilReady(GATEWAY_URL, "managed", record.instanceId)
+    const entry = preparedManagedEntry ?? plan.entry
+    writeLog("utility", "mafw starting verified managed gateway", { entry }, "info")
+    const { record } = await spawnManagedGateway(entry, expected)
+    pollUntilReady(GATEWAY_URL, "managed", record.instanceId, handleManagedStartFailure)
     return
   }
 
@@ -499,6 +653,7 @@ export function restartGateway(): Promise<void> {
 }
 
 export function getGatewayStatus(): GatewayStatus {
+  const quarantine = managedRoot ? readQuarantine(managedRoot) : null
   return {
     state,
     port,
@@ -511,6 +666,7 @@ export function getGatewayStatus(): GatewayStatus {
     instanceId: actualHealth?.instanceId ?? managedRecord?.instanceId ?? null,
     schemaEpoch: actualHealth?.schemaEpoch ?? expected?.schemaEpoch ?? null,
     distribution: actualHealth?.distribution ?? null,
+    quarantine,
   }
 }
 
@@ -536,6 +692,11 @@ export function setGatewaySourcePreference(value: GatewaySourcePreference): Gate
 
 export function useLegacyExternalOnce(): void {
   allowLegacyExternalOnce()
+}
+
+export function retryManagedGateway(force = false): Promise<void> {
+  forceManagedRetryOnce = force
+  return restartGateway()
 }
 
 export function resetGatewaySourcePreferenceForTests(): void {

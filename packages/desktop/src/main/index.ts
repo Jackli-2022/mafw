@@ -16,7 +16,7 @@ import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { startMafwGw } from "./mafw-bootstrap"
-import { stopGateway } from "./mafw-sidecar"
+import { configureManagedGatewayRoot, stopGateway } from "./mafw-sidecar"
 import { createQuitCoordinator } from "./quit-coordinator"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
@@ -155,6 +155,7 @@ const main = Effect.gen(function* () {
     onboardingTestRoot ? join(onboardingTestRoot, "desktop") : join(app.getPath("appData"), appId),
   )
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
+  configureManagedGatewayRoot(join(app.getPath("userData"), "gateway"))
   initializeOldLayoutEligibility(app.getPath("userData"))
   logger = initLogging()
   initCrashReporter()

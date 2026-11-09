@@ -18,6 +18,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "stage:gateway": "node --import tsx ./scripts/stage-gateway.ts",
+    "smoke:packaged-gateway": "node scripts/packaged-gateway-smoke.mjs",
     "package": "node --import tsx ./scripts/stage-gateway.ts && electron-builder --config electron-builder.config.ts",
     "package:mac": "node --import tsx ./scripts/stage-gateway.ts && electron-builder --mac --config electron-builder.config.ts",
     "package:win": "node --import tsx ./scripts/stage-gateway.ts && electron-builder --win --config electron-builder.config.ts",

@@ -36,6 +36,20 @@ test("startup probes ownership before planning and never adopts an unregistered 
   assert.match(sidecar, /plan\.action === "adopt"/)
 })
 
+test("packaged managed startup uses the verified lifecycle before replacing a child", () => {
+  assert.match(sidecar, /prepareManagedSpawn\(/)
+  assert.match(sidecar, /prepareManagedGateway\(\{/)
+  assert.match(sidecar, /if \(!prepared\) return/)
+  assert.match(sidecar, /recordManagedStartFailure\(\{/)
+  assert.match(sidecar, /readQuarantine\(managedRoot\)/)
+  const prepareAt = sidecar.indexOf("prepareManagedSpawn(plan.entry")
+  assert.ok(
+    prepareAt >= 0 && prepareAt < sidecar.indexOf("await terminateManagedInstance()", prepareAt),
+    "new payload must stage before the running child is stopped",
+  )
+  assert.match(main, /configureManagedGatewayRoot\(join\(app\.getPath\("userData"\), "gateway"\)\)/)
+})
+
 test("managed stop awaits child exit and removes its registration", () => {
   assert.match(sidecar, /async function terminateManagedInstance/)
   assert.match(sidecar, /await waitForChildExit\(child\)/)

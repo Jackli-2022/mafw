@@ -81,6 +81,10 @@ export function gatewayConflictGuidance(status: GatewayStatus): string | null {
   if (status.source === "external" && !status.actualVersion) {
     return "当前外部 gateway 没有可验证的版本信息。你只能选择仅本次使用，重启后将回到受管 gateway。"
   }
+  if (status.source === "managed" && status.actualVersion && status.expectedVersion
+    && !sameVersion(status.actualVersion, status.expectedVersion)) {
+    return `当前运行的 gateway ${status.actualVersion} 与 Desktop 期望 ${status.expectedVersion} 不一致，可能正在使用上一版回滚 payload。`
+  }
   if (status.state === "conflict") {
     return status.error || "gateway 来源或版本冲突，请显式选择受管或外部来源后重试。"
   }
