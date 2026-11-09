@@ -171,6 +171,16 @@ export class PodWorktreeService {
     }
 
     await this.commitPending(podId, goalId, revision);
+    // Never force-remove uncommitted work: `.mafw` is intentionally excluded from
+    // revision branches, so anything else still dirty blocks acceptance.
+    const worktreeGit = this.gitFor(row.dir);
+    const leftover = (await worktreeGit.raw(['status', '--porcelain', '--', '.', ':(exclude).mafw'])).trim();
+    if (leftover) {
+      throw new PodError(
+        409,
+        `worktree has uncommitted changes that cannot be auto-committed: ${leftover.split('\n')[0]}`,
+      );
+    }
     const before = (await project.revparse(['HEAD'])).trim();
     try {
       await project.raw([...MAFW_IDENTITY, 'merge', '--no-ff', '--no-verify', '--no-edit', row.branch]);

@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { PodStore } from '../../../src/core/pod/pod-store';
 import { PodWorktreeService } from '../../../src/core/pod/pod-worktree-service';
+import { simpleGit } from 'simple-git';
 import { tmpGitRepo } from '../worktree/tmp-git';
 
 function git(cwd: string, command: string): string {
@@ -237,6 +238,57 @@ describe('PodWorktreeService', () => {
     }
   });
 
+  test('acceptance keeps .mafw artifacts out of the branch but still merges clean work', async () => {
+    const f = fixture();
+    try {
+      const wt = await f.service.ensure('pod_1', 'goal-1', 1);
+      fs.mkdirSync(path.join(wt.dir, '.mafw', 'qa'), { recursive: true });
+      fs.writeFileSync(path.join(wt.dir, '.mafw', 'qa', 'artifact.txt'), 'evidence\n');
+      fs.writeFileSync(path.join(wt.dir, 'feature.txt'), 'feature\n');
+
+      const result = await f.service.mergeForAcceptance('pod_1', 'goal-1', 1);
+      expect(result.mergeCommit).toMatch(/^[0-9a-f]{40}$/);
+      expect(fs.existsSync(path.join(f.repo, 'feature.txt'))).toBe(true);
+      expect(fs.existsSync(path.join(f.repo, '.mafw', 'qa', 'artifact.txt'))).toBe(false);
+      expect(fs.existsSync(wt.dir)).toBe(false);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  test('refuses to merge when the worktree still has uncommitted non-.mafw changes', async () => {
+    const f = fixture();
+    try {
+      const wt = await f.service.ensure('pod_1', 'goal-1', 1);
+      fs.writeFileSync(path.join(wt.dir, 'feature.txt'), 'feature\n');
+      await f.service.commitPending('pod_1', 'goal-1', 1);
+
+      // A merge driver that fails after the auto-commit stage leaves work behind.
+      const service = new PodWorktreeService({
+        store: f.store,
+        now: () => '2026-11-09T01:00:00.000Z',
+        gitFactory: (dir) => {
+          const git = simpleGit(dir);
+          if (dir !== wt.dir) return git;
+          return {
+            raw: async (args: string[]) => {
+              if (args[0] === 'status') {
+                return ' M leftover.txt\n';
+              }
+              return git.raw(args);
+            },
+            revparse: (args: string[]) => git.revparse(args),
+          } as any;
+        },
+      });
+      await expect(service.mergeForAcceptance('pod_1', 'goal-1', 1))
+        .rejects.toMatchObject({ status: 409 });
+      expect(fs.existsSync(wt.dir)).toBe(true);
+      expect(f.store.getGoalWorktree('pod_1', 'goal-1', 1)?.status).toBe('active');
+    } finally {
+      f.cleanup();
+    }
+  });
   test('auto-commits use the fixed MAFW identity', async () => {
     const f = fixture();
     try {

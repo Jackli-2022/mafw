@@ -21,7 +21,10 @@ export function projectPodWorkBucket(input: PodWorkBucketInput): PodWorkBucket {
   const { stage, status, resultReady, accepted } = input;
 
   if (status === 'aborted') return 'ended';
-  if (status === 'done') return resultReady && !accepted ? 'result_ready' : 'ended';
+  // Evidence is authoritative: the state archive can land a moment before the
+  // pod_goals row flips to done; a ready result must not flash into history.
+  if (resultReady && !accepted) return 'result_ready';
+  if (status === 'done') return 'ended';
   if (stage.kind === 'ended') return 'ended';
   if (stage.owner === 'person') return 'needs_you';
   if (stage.kind === 'queued') return 'queued';

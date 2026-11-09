@@ -56,6 +56,21 @@ describe('projectPodWorkBucket', () => {
     })).toBe('ended');
   });
 
+  test('evidence wins over a lagging goal row status (archive -> row update window)', () => {
+    expect(projectPodWorkBucket({
+      stage: stage('ended'),
+      status: 'active',
+      resultReady: true,
+      accepted: false,
+    })).toBe('result_ready');
+    expect(projectPodWorkBucket({
+      stage: stage('ended'),
+      status: 'active',
+      resultReady: true,
+      accepted: true,
+    })).toBe('ended');
+  });
+
   test('a terminal Goal without evidence is history, never a fake result', () => {
     expect(projectPodWorkBucket({
       stage: stage('ended'),
