@@ -18,6 +18,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "stage:gateway": "node --import tsx ./scripts/stage-gateway.ts",
+    "sign:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/win-self-sign.ps1 -Trust",
+    "sign:dev:clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/win-self-sign.ps1 -Remove",
     "smoke:packaged-gateway": "node scripts/packaged-gateway-smoke.mjs",
     "package": "node --import tsx ./scripts/stage-gateway.ts && electron-builder --config electron-builder.config.ts",
     "package:mac": "node --import tsx ./scripts/stage-gateway.ts && electron-builder --mac --config electron-builder.config.ts",

@@ -1,9 +1,9 @@
-import { expect, test } from "bun:test"
+﻿import { expect, test } from "bun:test"
 import type { Configuration } from "electron-builder"
 
 // 2026-09-20: removed the "keeps a hidden prod launcher for old Linux pins"
-// case — it referenced resources/linux/opencode-desktop.desktop, which no
-// longer exists in the repo (documented known-bad in AGENTS.md §6.6).
+// case 鈥?it referenced resources/linux/opencode-desktop.desktop, which no
+// longer exists in the repo (documented known-bad in AGENTS.md 搂6.6).
 
 const channels = [
   { channel: "dev", appId: "ai.mafw.desktop.dev", productName: "MAFW Dev", protocolName: "MAFW" },
@@ -45,6 +45,63 @@ test("Windows updates require a valid code signature", async () => {
   const module = await import("./electron-builder.config.ts?update-signature=1")
   const config = module.default as Configuration
   expect(config.win?.verifyUpdateCodeSignature).toBe(true)
+})
+
+test("self-sign mode pins the dev certificate and forces signing", async () => {
+  const previousFlag = process.env.MAFW_WIN_SELF_SIGN
+  const previousSubject = process.env.MAFW_WIN_SELF_SIGN_SUBJECT
+  process.env.MAFW_WIN_SELF_SIGN = "1"
+  delete process.env.MAFW_WIN_SELF_SIGN_SUBJECT
+  try {
+    const module = await import("./electron-builder.config.ts?self-sign=1")
+    const config = module.default as Configuration
+
+    expect(config.win?.signtoolOptions?.certificateSubjectName).toBe("MAFW Dev")
+    expect(config.win?.signtoolOptions?.publisherName).toBe("CN=MAFW Dev")
+    expect(config.win?.signtoolOptions?.signingHashAlgorithms).toEqual(["sha256"])
+    expect(config.forceCodeSigning).toBe(true)
+    // Self-signing must not weaken update verification.
+    expect(config.win?.verifyUpdateCodeSignature).toBe(true)
+  } finally {
+    if (previousFlag === undefined) delete process.env.MAFW_WIN_SELF_SIGN
+    else process.env.MAFW_WIN_SELF_SIGN = previousFlag
+    if (previousSubject === undefined) delete process.env.MAFW_WIN_SELF_SIGN_SUBJECT
+    else process.env.MAFW_WIN_SELF_SIGN_SUBJECT = previousSubject
+  }
+})
+
+test("self-sign mode honours a custom subject", async () => {
+  const previousFlag = process.env.MAFW_WIN_SELF_SIGN
+  const previousSubject = process.env.MAFW_WIN_SELF_SIGN_SUBJECT
+  process.env.MAFW_WIN_SELF_SIGN = "1"
+  process.env.MAFW_WIN_SELF_SIGN_SUBJECT = "MAFW Internal"
+  try {
+    const module = await import("./electron-builder.config.ts?self-sign-subject=1")
+    const config = module.default as Configuration
+    expect(config.win?.signtoolOptions?.certificateSubjectName).toBe("MAFW Internal")
+    expect(config.win?.signtoolOptions?.publisherName).toBe("CN=MAFW Internal")
+  } finally {
+    if (previousFlag === undefined) delete process.env.MAFW_WIN_SELF_SIGN
+    else process.env.MAFW_WIN_SELF_SIGN = previousFlag
+    if (previousSubject === undefined) delete process.env.MAFW_WIN_SELF_SIGN_SUBJECT
+    else process.env.MAFW_WIN_SELF_SIGN_SUBJECT = previousSubject
+  }
+})
+
+test("release builds stay unsigned unless self-sign mode is enabled", async () => {
+  const previousFlag = process.env.MAFW_WIN_SELF_SIGN
+  delete process.env.MAFW_WIN_SELF_SIGN
+  try {
+    const module = await import("./electron-builder.config.ts?release-unsigned=1")
+    const config = module.default as Configuration
+    expect(config.win?.signtoolOptions?.certificateSubjectName).toBeUndefined()
+    expect(config.win?.signtoolOptions?.publisherName).toBeUndefined()
+    expect(config.win?.signtoolOptions?.signingHashAlgorithms).toBeUndefined()
+    expect(config.forceCodeSigning).toBeFalsy()
+    expect(config.win?.verifyUpdateCodeSignature).toBe(true)
+  } finally {
+    if (previousFlag !== undefined) process.env.MAFW_WIN_SELF_SIGN = previousFlag
+  }
 })
 
 test("stages channel icons next to the executable for runtime icon paths", async () => {

@@ -17,6 +17,13 @@ const APP_IDS = {
   prod: "ai.mafw.desktop",
 } as const
 
+// Local, self-signed Authenticode signing for verifying the signing and
+// auto-update chain on a developer machine. Opt-in only: a public release must
+// never look up a certificate that exists solely on one workstation. The
+// certificate is created/trusted by scripts/win-self-sign.ps1.
+const selfSign = process.env.MAFW_WIN_SELF_SIGN === "1"
+const selfSignSubject = process.env.MAFW_WIN_SELF_SIGN_SUBJECT?.trim() || "MAFW Dev"
+
 // The native macOS helper module is optional (inherited from the opencode
 // fork; not shipped in this repo). Only include it when the directory exists
 // so packaging on machines without it doesn't fail on a missing copy source.
@@ -55,6 +62,10 @@ if (existsSync(path.join(packageDir, "native"))) {
 
 const getBase = (appId: string): Configuration => ({
   artifactName: "mafw-desktop-${os}-${arch}.${ext}",
+  // Refuse to produce a build that silently skipped signing when the operator
+  // explicitly asked for it (self-sign mode only; release builds stay unsigned
+  // until a real certificate is provisioned).
+  forceCodeSigning: selfSign,
   directories: {
     output: "dist",
     buildResources: "resources",
@@ -94,6 +105,15 @@ const getBase = (appId: string): Configuration => ({
     icon: `resources/icons/icon.ico`,
     target: ["nsis"],
     verifyUpdateCodeSignature: true,
+    ...(selfSign
+      ? {
+          signtoolOptions: {
+            certificateSubjectName: selfSignSubject,
+            publisherName: `CN=${selfSignSubject}`,
+            signingHashAlgorithms: ["sha256"] as Array<"sha1" | "sha256">,
+          },
+        }
+      : {}),
   },
   nsis: {
     oneClick: true,

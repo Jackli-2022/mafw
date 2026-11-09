@@ -54,6 +54,26 @@ Windows code signatures. Signing credentials are not configured in this
 branch, so production auto-install remains gated. Linux auto-update is
 AppImage-only; deb/rpm are package-manager artifacts.
 
+### Local self-signed Windows builds (dev only)
+
+To exercise the real signing + auto-update chain without buying a certificate:
+
+```bash
+npm run sign:dev          # create CN=MAFW Dev and trust it for the current user
+MAFW_WIN_SELF_SIGN=1 npx electron-builder --win --config electron-builder.config.ts --publish never
+npm run sign:dev:clean    # remove the certificate and its trust entries
+```
+
+`MAFW_WIN_SELF_SIGN=1` makes the config pin `win.signtoolOptions`
+(`certificateSubjectName`, `publisherName`, SHA-256 only) and enables
+`forceCodeSigning`, so a build that fails to sign fails loudly. The same flag
+is what makes `app-update.yml` carry `publisherName`, which is what
+electron-updater verifies updates against.
+
+This proves the wiring only. A self-signed certificate is **not** trusted on
+other machines, so SmartScreen still warns and the build must not be
+distributed. Release builds stay unsigned unless the flag is set.
+
 ### Packaged smoke
 
 ```bash

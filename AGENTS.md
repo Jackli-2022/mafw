@@ -1917,6 +1917,11 @@ spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.m
   updater/config 测试与 packaged smoke；CI 在 Win/Linux 打包后分别跑
   `npm run smoke:packaged-gateway -- --app-root dist/<unpacked>`。本地可用
   `npm run smoke:packaged-gateway -- --payload-only`（Electron ABI staged gateway）。
+- **本地自签名**（`npm run sign:dev` / `sign:dev:clean`，`scripts/win-self-sign.ps1`）：仅在
+  `MAFW_WIN_SELF_SIGN=1` 时启用 `win.signtoolOptions`（`certificateSubjectName` / `publisherName` /
+  仅 SHA-256）+ `forceCodeSigning`；`publisherName` 写进 `app-update.yml` 供 electron-updater 校验。
+  自签名**只**用于本机验证签名与更新链路，不解决 SmartScreen、不可对外分发；不设该变量时发布构建
+  仍为未签名。
 - **安装器**：`gateway-update/` 与 `resources/installer.nsh` 已删除；安装器不再要求 Node/npm/
   网络，改用 electron-builder 内建 `CHECK_APP_RUNNING`。
 
