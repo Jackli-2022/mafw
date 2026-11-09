@@ -26,7 +26,6 @@ import { withPluginEmit, withPluginHttp } from './package-context';
 import { PluginActionRegistry, type PluginActionInvokeOptions } from './plugin-actions';
 import { PluginEventRegistry, type PluginEventFrame } from './plugin-events';
 import { createPluginHttpRecorder, createPluginHttpRegistry, type PluginHttpRecorder, type PluginHttpRegistry } from './plugin-http';
-import { disposeHostServices } from './plugin-host-services';
 import { DEFAULT_WEB_SURFACE_ENTRY, validatePluginWebSurfaces } from './plugin-web-assets';
 import { createRegistrationBag, type RegistrationBag } from './registration-bag';
 import type {
@@ -762,12 +761,12 @@ export class PluginHost {
       revision: record.revision,
       token: record.emitterToken,
     });
-    // Host services: the activation bag already owns this revision's terminal
-    // handle; this package-level sweep is the belt-and-braces retire path
-    // (remove/disable/stop) that also catches handles created outside the
-    // standard context factory. Disposing is idempotent and a later create()
-    // re-arms, so the sweep can never brick a freshly staged revision.
-    record.bag.add('host-services', () => disposeHostServices(name));
+    // Host services (`ctx.terminal`): the PTY handle is owned by the activation's
+    // own bag (see `createPluginTerminalApi`), which is disposed with this
+    // record. There is deliberately no package-wide sweep here: during a
+    // re-activating reload the successor candidate activates *before* the
+    // replaced revision's bag is disposed, so sweeping by package name would
+    // close the new revision's PTYs.
     // HTTP/WS routes are replayed from the activation recorder only here: a
     // staged candidate stays unreachable until its revision is committed. The
     // retirement disposer is attached to the same bag at commit time (never at

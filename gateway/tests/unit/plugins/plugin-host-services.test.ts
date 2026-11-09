@@ -21,9 +21,8 @@ import {
   DEFAULT_PLUGIN_READ_MAX_BYTES,
   createPluginFilesApi,
   createPluginTerminalApi,
-  disposeHostServices,
 } from '../../../src/plugins/plugin-host-services';
-import { PluginHost } from '../../../src/plugins/package-host';
+import { PluginHost, type PluginHostOptions } from '../../../src/plugins/package-host';
 import {
   TerminalService,
   type TerminalNativeSocket,
@@ -131,6 +130,33 @@ function serviceWith(runtime: { pty?: RuntimePtyChannel } | null) {
     },
   });
   return { service, natives };
+}
+
+/**
+ * Writes a package whose `activate()` creates one PTY (recorded in
+ * `globalThis.__mafwPtyIds`) and exposes it through a `resize` action, so a test
+ * can prove which revision still owns the session after a revision swap.
+ * Only the trailing marker changes between revisions: the body is identical,
+ * which is enough to change the fingerprint and force a new activation.
+ */
+function writePtyPackage(dir: string, marker: string, withRuntime = false): void {
+  const runtimeBlock = withRuntime
+    ? `\n    runtime: { name: 'term', async createRuntime() { return { name: 'term', capabilities: {} }; } },`
+    : '';
+  fs.writeFileSync(path.join(dir, 'term.js'), `
+module.exports = { name: 'term', async activate(ctx) {
+  const g = globalThis;
+  const created = await ctx.terminal.create({ projectDir: g.__mafwPtyProject });
+  g.__mafwPtyIds = g.__mafwPtyIds || [];
+  g.__mafwPtyIds.push(created.id);
+  return {
+    actions: {
+      resize: { handler: async () => { ctx.terminal.resize(created.id, 80, 24); return { id: created.id }; } },
+    },${runtimeBlock}
+  };
+} };
+// ${marker}
+`);
 }
 
 /* -------------------------------------------------------------------- files */
@@ -277,32 +303,32 @@ describe('ctx.terminal (per-package PTY tracking)', () => {
     expect(calls.created[0]).toMatchObject({ directory: projectA, cols: 100, rows: 40 });
     expect(calls.created[1]).toMatchObject({ directory: projectB });
 
-    await disposeHostServices('pkg-create');
+    await a.dispose();
     expect(calls.removed).toEqual([{ id: createdA.id, directory: projectA }]);
 
     // Package B's PTY is untouched by A's retire.
     await b.bridge(createdB.id, new FakeClientSocket() as unknown as WebSocket);
     expect(calls.connected).toEqual([{ id: createdB.id, directory: projectB }]);
-    await disposeHostServices('pkg-other');
+    await b.dispose();
     expect(calls.removed).toEqual([
       { id: createdA.id, directory: projectA },
       { id: createdB.id, directory: projectB },
     ]);
   });
 
-  it('re-arms after dispose and stays idempotent across repeated sweeps', async () => {
+  it('re-arms after dispose and stays idempotent across repeated disposals', async () => {
     const { runtime, calls } = fakePtyRuntime();
     const { service } = serviceWith(runtime);
     const api = createPluginTerminalApi({ pkg: 'pkg-rearm', service: () => service });
 
     const first = await api.create({ projectDir: '/p' });
-    await disposeHostServices('pkg-rearm');
-    await disposeHostServices('pkg-rearm');
+    await api.dispose();
+    await api.dispose();
     expect(calls.removed).toEqual([{ id: first.id, directory: '/p' }]);
 
     const second = await api.create({ projectDir: '/p' });
     expect(second.id).not.toBe(first.id);
-    await disposeHostServices('pkg-rearm');
+    await api.dispose();
     expect(calls.removed).toEqual([
       { id: first.id, directory: '/p' },
       { id: second.id, directory: '/p' },
@@ -325,7 +351,7 @@ describe('ctx.terminal (per-package PTY tracking)', () => {
     intruder.kill(owned.id); // idempotent no-op, never reaches the runtime
     expect(calls.removed).toEqual([]);
 
-    await disposeHostServices('pkg-owner');
+    await owner.dispose();
     expect(calls.removed).toEqual([{ id: owned.id, directory: '/owner' }]);
   });
 
@@ -375,7 +401,7 @@ describe('ctx.terminal (per-package PTY tracking)', () => {
       api.bridge(id, new FakeClientSocket() as unknown as WebSocket),
     ).rejects.toThrow(/not owned by this package/);
 
-    await disposeHostServices('pkg-kill');
+    await api.dispose();
     expect(calls.removed).toEqual([{ id, directory: '/projects/a' }]);
   });
 
@@ -472,6 +498,107 @@ module.exports = { name: 'term', async activate(ctx) {
       delete (globalThis as any).__mafwHasFiles;
       fs.rmSync(dir, { recursive: true, force: true });
       fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});
+
+/* ------------------------------------------------- revision replacement */
+
+describe('revision replacement PTY ownership', () => {
+  let dir: string;
+  let projectDir: string;
+
+  beforeEach(() => {
+    dir = mkTmpDir('mafw-replace-pty-');
+    projectDir = mkTmpDir('mafw-replace-project-');
+    (globalThis as any).__mafwPtyProject = projectDir;
+    (globalThis as any).__mafwPtyIds = [];
+  });
+
+  afterEach(() => {
+    delete (globalThis as any).__mafwPtyProject;
+    delete (globalThis as any).__mafwPtyIds;
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  function hostFor(service: TerminalService, options: PluginHostOptions = {}): PluginHost {
+    return new PluginHost(
+      dir,
+      (name, bag) => createPluginPackageContext(name, {
+        projectDir: '/gateway/launch/dir',
+        gatewayPort: 3000,
+        bag,
+        terminal: () => service,
+      }),
+      options,
+    );
+  }
+
+  /**
+   * Regression (Task 5 review, Important): a re-activating reload activates the
+   * successor *before* the replaced revision's bag is disposed. A package-wide
+   * sweep keyed by package name would therefore close the successor's PTYs
+   * inside the old revision's disposer. Cleanup must stay instance/bag-scoped.
+   */
+  it('reload: the replaced revision closes only its own PTY, the successor keeps its own', async () => {
+    const { runtime, calls } = fakePtyRuntime();
+    const { service } = serviceWith(runtime);
+    writePtyPackage(dir, 'v1');
+    const host = hostFor(service);
+
+    try {
+      await host.init();
+      expect((globalThis as any).__mafwPtyIds).toEqual(['pty_1']);
+
+      writePtyPackage(dir, 'v2');
+      await host.reload();
+
+      expect((globalThis as any).__mafwPtyIds).toEqual(['pty_1', 'pty_2']);
+      // Only the replaced revision's session is closed.
+      expect(calls.removed).toEqual([{ id: 'pty_1', directory: projectDir }]);
+      // The committed successor still owns its PTY: resize would throw
+      // "not owned by this package" if the old bag had swept it.
+      await expect(host.invokeAction('term', 'resize', {})).resolves.toEqual({ id: 'pty_2' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(calls.resized).toEqual([{ id: 'pty_2', directory: projectDir, cols: 80, rows: 24 }]);
+    } finally {
+      host.stop();
+    }
+  });
+
+  /**
+   * Same ordering through `runApplyPending` (active-runtime package): the
+   * replaced bag is disposed at apply time, after the pending candidate has
+   * already activated and created its PTY.
+   */
+  it('applyPending: the replaced revision closes only its own PTY, the successor keeps its own', async () => {
+    const { runtime, calls } = fakePtyRuntime();
+    const { service } = serviceWith(runtime);
+    writePtyPackage(dir, 'v1', true);
+    const host = hostFor(service, { activeRuntime: () => 'term' });
+
+    try {
+      await host.init();
+      expect((globalThis as any).__mafwPtyIds).toEqual(['pty_1']);
+
+      writePtyPackage(dir, 'v2', true);
+      await host.reload();
+
+      // Pending activation created its PTY while the old revision still serves.
+      expect((globalThis as any).__mafwPtyIds).toEqual(['pty_1', 'pty_2']);
+      expect(host.getPending('term')).not.toBeNull();
+      expect(calls.removed).toEqual([]);
+
+      const applied = await host.applyPending('term');
+      expect(applied.applied).toBe(true);
+      expect(calls.removed).toEqual([{ id: 'pty_1', directory: projectDir }]);
+
+      await expect(host.invokeAction('term', 'resize', {})).resolves.toEqual({ id: 'pty_2' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(calls.resized).toEqual([{ id: 'pty_2', directory: projectDir, cols: 80, rows: 24 }]);
+    } finally {
+      host.stop();
     }
   });
 });

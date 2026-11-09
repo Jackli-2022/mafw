@@ -109,6 +109,10 @@ export interface PluginTerminalDeps {
    * Activation bag: the first PTY created here attaches this instance's
    * disposer, so reload/disable/remove close the PTYs without registering
    * anything for a package that never opens a terminal.
+   *
+   * This bag is the only owner of the handle — there is no package-wide sweep,
+   * because a re-activating reload disposes the *replaced* revision's bag after
+   * the successor has already activated (and possibly created PTYs).
    */
   bag?: RegistrationBag;
   log?: Pick<typeof defaultLog, 'warn'>;
@@ -117,9 +121,6 @@ export interface PluginTerminalDeps {
 const TERMINAL_UNAVAILABLE =
   'ctx.terminal is not available: this host did not provide a terminal service';
 const TERMINAL_NOT_OWNED = 'terminal session is not owned by this package';
-
-/** package → live activation instances, for the package-level retire sweep. */
-const liveTerminalInstances = new Map<string, Set<PluginTerminalApiInstance>>();
 
 function describeError(err: unknown): string {
   if (err instanceof Error) return err.message || err.name;
@@ -290,10 +291,12 @@ function requireProjectDir(value: unknown): string {
 /**
  * Creates one activation's terminal handle.
  *
- * PTY ids are tracked per instance; the instance unregisters itself on dispose,
- * so `disposeHostServices(pkg)` only ever sees live activations. A later
- * `create()` re-arms the same handle (the plugin context may outlive one sweep
- * during a staged revision swap).
+ * Ownership is strictly **instance-scoped**: `dispose()` closes only the PTYs
+ * this handle created, and the activation's RegistrationBag owns the disposer.
+ * There is deliberately no package-wide sweep — during a re-activating reload
+ * the successor candidate is activated *before* the replaced revision's bag is
+ * disposed, so a sweep keyed by package name would kill the new revision's
+ * PTYs. A later `create()` after `dispose()` re-arms the same handle.
  */
 export function createPluginTerminalApi(deps: PluginTerminalDeps): PluginTerminalApiInstance {
   const logger = deps.log ?? defaultLog;
@@ -305,20 +308,6 @@ export function createPluginTerminalApi(deps: PluginTerminalDeps): PluginTermina
     const service = serviceOrNull();
     if (!service) throw new Error(TERMINAL_UNAVAILABLE);
     return service;
-  };
-  const unregister = (api: PluginTerminalApiInstance): void => {
-    const instances = liveTerminalInstances.get(deps.pkg);
-    if (!instances) return;
-    instances.delete(api);
-    if (instances.size === 0) liveTerminalInstances.delete(deps.pkg);
-  };
-  const register = (api: PluginTerminalApiInstance): void => {
-    let instances = liveTerminalInstances.get(deps.pkg);
-    if (!instances) {
-      instances = new Set();
-      liveTerminalInstances.set(deps.pkg, instances);
-    }
-    instances.add(api);
   };
   const removeQuietly = (service: TerminalService | null, id: string, projectDir: string): Promise<void> => {
     if (!service) return Promise.resolve();
@@ -342,11 +331,12 @@ export function createPluginTerminalApi(deps: PluginTerminalDeps): PluginTermina
         ...(createOpts?.rows === undefined ? {} : { rows: createOpts.rows }),
       });
       owned.set(created.id, projectDir);
-      register(api);
       if (!bagBound && deps.bag) {
         bagBound = true;
         // Late registration after teardown disposes immediately (registration
         // bag semantics), so a create() racing a retire cannot orphan a PTY.
+        // The bag belongs to *this* activation: replacing the revision disposes
+        // this handle only, leaving a successor revision's PTYs untouched.
         deps.bag.add('plugin-terminal', () => api.dispose());
       }
       return { id: created.id };
@@ -388,32 +378,8 @@ export function createPluginTerminalApi(deps: PluginTerminalDeps): PluginTermina
         owned.delete(id);
         removals.push(removeQuietly(service, id, projectDir));
       }
-      unregister(api);
       await Promise.all(removals);
     },
   };
   return api;
-}
-
-/**
- * Closes every PTY any live activation of `pkg` created.
- *
- * used by the PluginHost at commit-time bag disposal (reload/replace/disable/
- * remove/stop) as the package-level sweep; each instance also disposes itself
- * through its own activation bag. Idempotent: disposed instances have no ids
- * left and a `create()` after the sweep re-arms cleanly.
- */
-export async function disposeHostServices(pkg: string): Promise<void> {
-  const instances = liveTerminalInstances.get(pkg);
-  if (!instances) return;
-  const pending: Array<Promise<void>> = [];
-  for (const api of [...instances]) {
-    pending.push(api.dispose().catch((err) => {
-      defaultLog.warn(`[PluginTerminal] ${pkg} dispose failed: ${describeError(err)}`);
-    }));
-  }
-  await Promise.all(pending);
-  if (instances.size === 0 && liveTerminalInstances.get(pkg) === instances) {
-    liveTerminalInstances.delete(pkg);
-  }
 }
