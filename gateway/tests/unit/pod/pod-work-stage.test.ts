@@ -47,6 +47,15 @@ describe('projectPodWorkBucket', () => {
     })).toBe('result_ready');
   });
 
+  test('user-accepted results move to history even when evidence remains', () => {
+    expect(projectPodWorkBucket({
+      stage: stage('ended'),
+      status: 'done',
+      resultReady: true,
+      accepted: true,
+    })).toBe('ended');
+  });
+
   test('a terminal Goal without evidence is history, never a fake result', () => {
     expect(projectPodWorkBucket({
       stage: stage('ended'),

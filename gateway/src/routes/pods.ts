@@ -379,6 +379,7 @@ export async function handlePods(
             stage: { owner: 'system', kind: 'waiting' },
             bucket: row.status === 'queued' ? 'queued' : (row.status === 'done' || row.status === 'aborted') ? 'ended' : 'in_progress',
             resultReady: false,
+            accepted: false,
             sourceRef: null,
             strategy: null,
             assessment: null,

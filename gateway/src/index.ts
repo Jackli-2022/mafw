@@ -4421,6 +4421,7 @@ class MafwScheduler {
       }),
       budget: this.podBudget,
       revisions: this.podGoalRevisionService,
+      worktrees: this.podWorktreeService,
       sessions: { retireRevision: (goalId, revision) => this.podSessionLifecycle.retireRevision(goalId, revision) },
       // 打回需要立刻恢复 Tech Lead 讨论、并把反馈记进方向输入：这两者在本函数稍后
       // 才构造，因此用惰性适配器（调用时才解析到真实服务）。
@@ -9016,6 +9017,15 @@ class MafwScheduler {
     const podId = this.podService?.getPodIdForGoal(goalId);
     const existingGoal = podId ? this.podStore?.getGoalByGoalId(goalId) : null;
     const alreadyClosed = existingGoal?.status === 'done' || existingGoal?.status === 'aborted';
+    if (podId && !alreadyClosed && this.podWorktreeService) {
+      const goal = this.podStore?.getGoalByGoalId(goalId);
+      const revision = goal?.activeRevision ?? 1;
+      try {
+        await this.podWorktreeService.commitPending(podId, goalId, revision);
+      } catch (err: any) {
+        log.warn(`[Pod] worktree commit failed for ${goalId}#${revision} (non-fatal): ${err?.message ?? err}`);
+      }
+    }
     if (podId && this.podMemoryService && !alreadyClosed) {
       try {
         const mafwDir = this.goalDriverMafwDirCache.get(goalId);

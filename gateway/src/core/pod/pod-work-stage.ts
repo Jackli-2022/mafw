@@ -13,13 +13,15 @@ export interface PodWorkBucketInput {
   stage: PodGoalStage;
   status: 'queued' | 'active' | 'done' | 'aborted';
   resultReady: boolean;
+  /** User accepted and merged the revision worktree. */
+  accepted?: boolean;
 }
 
 export function projectPodWorkBucket(input: PodWorkBucketInput): PodWorkBucket {
-  const { stage, status, resultReady } = input;
+  const { stage, status, resultReady, accepted } = input;
 
   if (status === 'aborted') return 'ended';
-  if (status === 'done') return resultReady ? 'result_ready' : 'ended';
+  if (status === 'done') return resultReady && !accepted ? 'result_ready' : 'ended';
   if (stage.kind === 'ended') return 'ended';
   if (stage.owner === 'person') return 'needs_you';
   if (stage.kind === 'queued') return 'queued';
