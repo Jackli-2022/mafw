@@ -86,7 +86,11 @@ export class RuntimeBus {
     }
 
     for (const listener of this.listeners) {
-      listener({ ...mapped, runtimeName });
+      try {
+        listener({ ...mapped, runtimeName });
+      } catch {
+        // A bad consumer must not stop the fan-out or break the bus.
+      }
     }
 
     if (event.sessionID && event.turnID && (event.type === 'turn.completed' || event.type === 'turn.failed' || event.type === 'turn.aborted')) {

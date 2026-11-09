@@ -8,6 +8,8 @@ it('maps part.delta to canonical part.delta', () => {
   const out = mapAdapterEvent(ev('part.delta', { messageID: 'm1', partID: 'p1', field: 'text', delta: 'hi' }, { turnID: 't1' }));
   expect(out.canonical?.payload.type).toBe('part.delta');
   expect(out.canonical?.payload.properties.delta).toBe('hi');
+  expect(out.canonical?.payload.properties.messageID).toBe('m1');
+  expect(out.canonical?.payload.properties.partID).toBe('p1');
 });
 
 it('maps session.status into session.updated', () => {
@@ -36,4 +38,10 @@ it('maps turn-scoped runtime.error to turn.failed', () => {
 it('drops malformed part.updated', () => {
   const out = mapAdapterEvent(ev('part.updated', { part: { type: 'tool' } }));
   expect(out.dropped).toBeDefined();
+});
+
+it('drops malformed session.created, permission.asked and plan.updated', () => {
+  expect(mapAdapterEvent(ev('session.created', { session: {} })).dropped).toBeDefined();
+  expect(mapAdapterEvent(ev('permission.asked', {}, { requestID: 'r1' })).dropped).toBeDefined();
+  expect(mapAdapterEvent(ev('plan.updated', { items: 'nope' })).dropped).toBeDefined();
 });

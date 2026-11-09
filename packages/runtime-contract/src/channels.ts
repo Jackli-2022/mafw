@@ -5,6 +5,10 @@
  */
 
 export interface RuntimeChannels {
+  tools?: {
+    registerTools(factory: (sessionID: string) => unknown[]): void | Promise<void>;
+    nativeTools?(): unknown[];
+  };
   session?: {
     list?(opts?: { directory?: string }): Promise<unknown[]>;
     listByDirectory?(directory: string, limit?: number): Promise<unknown[]>;

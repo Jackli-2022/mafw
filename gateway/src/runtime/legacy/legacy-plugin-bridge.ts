@@ -24,19 +24,28 @@ function typeOf(evt: RawRuntimeEvent): string {
 }
 
 function sessionOf(evt: RawRuntimeEvent, props: Record<string, any>): string | undefined {
-  return props.sessionID ?? props.part?.sessionID ?? props.message?.sessionID ?? props.info?.sessionID ?? evt.sessionID;
+  return props.sessionID ?? props.part?.sessionID ?? props.message?.sessionID ?? props.info?.sessionID ?? props.info?.id ?? evt.sessionID;
+}
+
+export interface LegacyBridgeState {
+  turns: Map<string, string>;
 }
 
 /** Reverse-map the old canonical envelope to AdapterEvent for the core event set. */
-export function canonicalToAdapterEvent(evt: RawRuntimeEvent): AdapterEvent | null {
+export function canonicalToAdapterEvent(evt: RawRuntimeEvent, state: LegacyBridgeState = { turns: new Map() }): AdapterEvent | null {
   const type = typeOf(evt);
   const props = propsOf(evt);
   const sessionID = sessionOf(evt, props);
   if (!type) return null;
+  let turnID = typeof props.turnID === 'string' ? props.turnID : (sessionID ? state.turns.get(sessionID) : undefined);
+  if (type === 'turn.started' || (type.startsWith('turn.') && !turnID)) {
+    turnID = turnID ?? `legacy-${sessionID ?? 'session'}-${nextID()}`;
+    if (sessionID) state.turns.set(sessionID, turnID);
+  }
   const base = {
     id: nextID(),
     sessionID,
-    turnID: typeof props.turnID === 'string' ? props.turnID : undefined,
+    turnID,
     requestID: typeof props.requestId === 'string' ? props.requestId : typeof props.id === 'string' ? props.id : undefined,
     at: Date.now(),
   };
@@ -48,7 +57,10 @@ export function canonicalToAdapterEvent(evt: RawRuntimeEvent): AdapterEvent | nu
     case 'session.deleted': return make('session.deleted', {});
     case 'turn.started': return make('turn.started', {});
     case 'turn.completed': return make('turn.completed', { ok: props.ok !== false, stopReason: props.stopReason, usage: props.usage, costUsd: props.cost });
-    case 'turn.failed': return make('turn.failed', { error: { kind: 'unknown', message: String(props.error ?? 'runtime error') }, retryable: props.retryable });
+    case 'turn.failed': return make('turn.failed', {
+      error: { kind: 'unknown', message: String(props.error?.message ?? props.error ?? 'runtime error') },
+      retryable: props.retryable,
+    });
     case 'turn.aborted': return make('turn.aborted', { reason: props.reason });
     case 'message.updated': return make('message.updated', { message: props.message });
     case 'part.updated': return make('part.updated', { part: props.part });
@@ -65,8 +77,12 @@ export function canonicalToAdapterEvent(evt: RawRuntimeEvent): AdapterEvent | nu
   }
 }
 
-export function toRuntimeDefinition(legacy: AgentRuntime, meta: { name: string; displayName?: string }): RuntimeDefinition {
+export function toRuntimeDefinition(
+  legacy: AgentRuntime,
+  meta: { name: string; displayName?: string; capabilities?: Record<string, unknown> },
+): RuntimeDefinition {
   const unsubscribers = new Set<() => void>();
+  const bridgeState: LegacyBridgeState = { turns: new Map() };
   let closed = false;
 
   const transport: RuntimeTransport = {
@@ -75,7 +91,8 @@ export function toRuntimeDefinition(legacy: AgentRuntime, meta: { name: string; 
       return { sessionID: String(created?.id) };
     },
     async sendTurn(input) {
-      await legacy.session.promptAsync({
+      // Transport contract: sendTurn must not block on turn completion.
+      void Promise.resolve(legacy.session.promptAsync({
         sessionID: input.sessionID,
         message: input.text,
         parts: input.parts,
@@ -86,7 +103,7 @@ export function toRuntimeDefinition(legacy: AgentRuntime, meta: { name: string; 
         thinkingLevel: input.thinkingLevel,
         expectReply: input.expectReply,
         idempotencyKey: input.idempotencyKey,
-      } as any);
+      } as any)).catch(() => { /* the legacy runtime reports failures on its stream */ });
       return { turnID: input.turnID };
     },
     async interruptTurn(sessionID) {
@@ -101,8 +118,13 @@ export function toRuntimeDefinition(legacy: AgentRuntime, meta: { name: string; 
     onEvent(listener) {
       const forward = (evt: RawRuntimeEvent) => {
         if (closed) return;
-        const converted = canonicalToAdapterEvent(evt);
-        if (converted) listener(converted);
+        const converted = canonicalToAdapterEvent(evt, bridgeState);
+        if (converted) {
+          listener(converted);
+          if (converted.type === 'turn.completed' || converted.type === 'turn.failed' || converted.type === 'turn.aborted') {
+            if (converted.sessionID) bridgeState.turns.delete(converted.sessionID);
+          }
+        }
       };
       const legacyOnEvent = (legacy as any).onEvent;
       if (typeof legacyOnEvent === 'function') {
@@ -133,6 +155,12 @@ export function toRuntimeDefinition(legacy: AgentRuntime, meta: { name: string; 
   };
 
   const channels: RuntimeChannels = {};
+  if (legacy.tools) {
+    channels.tools = {
+      registerTools: (factory) => legacy.tools!.registerTools(factory as any),
+      nativeTools: () => legacy.tools!.nativeTools?.() ?? [],
+    };
+  }
   if (legacy.session.messages) {
     channels.messages = {
       list: async (sessionID, opts) => legacy.session.messages({ sessionID, limit: opts?.limit, before: opts?.before } as any),
@@ -198,6 +226,6 @@ export function toRuntimeDefinition(legacy: AgentRuntime, meta: { name: string; 
     transport,
     channels,
     ...(Object.keys(channelsV2).length > 0 ? { channelsV2, channelApi: 2 as const } : {}),
-    overrides: (legacy.capabilities ?? {}) as any,
+    overrides: (meta.capabilities ?? legacy.capabilities ?? {}) as any,
   });
 }

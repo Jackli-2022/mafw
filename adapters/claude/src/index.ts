@@ -55,6 +55,7 @@ export async function createClaudeDefinition(
     preset: 'conversation',
     transport,
     channels,
+    overrides: { promptWhileBusy: true, worktreeApi: true },
   });
 }
 

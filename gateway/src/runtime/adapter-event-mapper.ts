@@ -34,6 +34,10 @@ function dataOf(event: AdapterEvent): Record<string, any> {
   return (event.data ?? {}) as Record<string, any>;
 }
 
+function isRecord(value: unknown): value is Record<string, any> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function internal(event: AdapterEvent, type: InternalAdapterEvent['type']): InternalAdapterEvent {
   return { type, sessionID: event.sessionID, turnID: event.turnID, data: event.data };
 }
@@ -41,10 +45,16 @@ function internal(event: AdapterEvent, type: InternalAdapterEvent['type']): Inte
 export function mapAdapterEvent(event: AdapterEvent): MappedAdapterEvent {
   const data = dataOf(event);
   switch (event.type) {
-    case 'session.created':
-      return { canonical: canonical('session.created', { info: data.session ?? data.info }, event.sessionID) };
-    case 'session.updated':
-      return { canonical: canonical('session.updated', { info: { id: event.sessionID, ...(data.patch ?? data.info ?? {}) } }, event.sessionID) };
+    case 'session.created': {
+      const session = data.session ?? data.info;
+      if (!isRecord(session) || !session.id) return { dropped: { reason: 'session.created payload has no session id' } };
+      return { canonical: canonical('session.created', { info: session }, event.sessionID) };
+    }
+    case 'session.updated': {
+      const patch = data.patch ?? data.info;
+      if (!isRecord(patch)) return { dropped: { reason: 'session.updated payload has no patch' } };
+      return { canonical: canonical('session.updated', { info: { id: event.sessionID, ...patch } }, event.sessionID) };
+    }
     case 'session.deleted':
       return { canonical: canonical('session.deleted', { sessionID: event.sessionID }, event.sessionID) };
     case 'session.status':
@@ -116,9 +126,13 @@ export function mapAdapterEvent(event: AdapterEvent): MappedAdapterEvent {
         ...(data.transient ? { transient: true } : {}),
       } }, event.sessionID) };
 
-    case 'plan.updated':
-      return { canonical: canonical('plan.updated', { sessionID: event.sessionID, todos: data.items ?? data.todos ?? [] }, event.sessionID) };
+    case 'plan.updated': {
+      const items = data.items ?? data.todos;
+      if (!Array.isArray(items)) return { dropped: { reason: 'plan.updated payload has no items' } };
+      return { canonical: canonical('plan.updated', { sessionID: event.sessionID, todos: items }, event.sessionID) };
+    }
     case 'usage.updated':
+      if (!isRecord(data.usage)) return { dropped: { reason: 'usage.updated payload has no usage' } };
       return { canonical: canonical('usage.updated', {
         sessionID: event.sessionID, turnID: event.turnID,
         usage: data.usage, ...(data.contextTokens !== undefined ? { contextTokens: data.contextTokens } : {}),
@@ -126,14 +140,16 @@ export function mapAdapterEvent(event: AdapterEvent): MappedAdapterEvent {
       }, event.sessionID) };
 
     case 'permission.asked':
-      return { canonical: canonical('permission.asked', { ...(data.request ?? {}), ...data }, event.sessionID) };
+      if (!isRecord(data.request)) return { dropped: { reason: 'permission.asked payload has no request' } };
+      return { canonical: canonical('permission.asked', { ...data.request, ...data }, event.sessionID) };
     case 'permission.replied':
       return { canonical: canonical('permission.replied', {
         sessionID: event.sessionID, requestId: event.requestID,
         reply: data.reply, source: data.source, ...(data.message ? { message: data.message } : {}),
       }, event.sessionID) };
     case 'question.asked':
-      return { canonical: canonical('question.asked', { ...(data.request ?? {}), ...data }, event.sessionID) };
+      if (!isRecord(data.request)) return { dropped: { reason: 'question.asked payload has no request' } };
+      return { canonical: canonical('question.asked', { ...data.request, ...data }, event.sessionID) };
     case 'question.replied':
       return { canonical: canonical('question.replied', { sessionID: event.sessionID, requestId: event.requestID, answers: data.answers }, event.sessionID) };
     case 'question.rejected':

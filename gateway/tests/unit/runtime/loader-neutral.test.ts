@@ -53,3 +53,40 @@ it('loads an async createRuntimeDefinition factory lazily', async () => {
   const resolved = await loader.getNeutral('fake-factory', {});
   expect(resolved?.name).toBe('fake-factory');
 });
+
+it('removes neutral registrations when the plugin file disappears', async () => {
+  const dir = tempDir();
+  const file = path.join(dir, 'gone.js');
+  fs.writeFileSync(file, `module.exports = { name: 'gone', api: 1, eventApi: 1, preset: 'core', transport: {
+    createSession: async () => ({ sessionID: 's1' }),
+    sendTurn: async (input) => ({ turnID: input.turnID }),
+    interruptTurn: async () => {},
+    onEvent: () => () => {},
+  } };`);
+  const loader = new RuntimePluginLoader(dir);
+  await loader.init();
+  expect(loader.getNeutralDefinitions().map((d) => d.name)).toContain('gone');
+  fs.rmSync(file);
+  await loader.scan();
+  expect(loader.getNeutralDefinitions().map((d) => d.name)).not.toContain('gone');
+});
+
+it('uses the file stem when an async factory has no static name', async () => {
+  const dir = tempDir();
+  fs.writeFileSync(path.join(dir, 'no-name.js'), `module.exports = {
+    createRuntimeDefinition: async () => ({
+      api: 1, eventApi: 1, name: 'no-name', displayName: 'No Name', preset: 'core',
+      transport: {
+        createSession: async () => ({ sessionID: 's1' }),
+        sendTurn: async (input) => ({ turnID: input.turnID }),
+        interruptTurn: async () => {},
+        onEvent: () => () => {},
+      },
+      capabilities: {},
+    }),
+  };`);
+  const loader = new RuntimePluginLoader(dir);
+  await loader.init();
+  const resolved = await loader.getNeutral('no-name', {});
+  expect(resolved?.name).toBe('no-name');
+});

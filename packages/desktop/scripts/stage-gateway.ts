@@ -4,7 +4,7 @@ import * as path from "node:path"
 import {
   PACKAGE_NAME as PLUGIN_CONTRACT_PACKAGE,
   resolvePluginContract,
-  stagePluginContract,
+  stageContractPackage,
 } from "../../../scripts/stage-plugin-contract.mjs"
 import { run } from "./utils"
 
@@ -80,8 +80,8 @@ run("npm", ["install", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=erro
 // them to the build machine's workspace, so copy the built package explicitly.
 const bundledPackages: Record<string, string> = gatewayPkg.mafw?.bundledPackages ?? {}
 for (const [name, relative] of Object.entries(bundledPackages)) {
-  if (name !== PLUGIN_CONTRACT_PACKAGE) continue
-  stagePluginContract({
+  stageContractPackage({
+    packageName: name,
     sourceDir: path.resolve(gatewayDir, relative),
     nodeModulesDir: path.join(outDir, "node_modules"),
   })

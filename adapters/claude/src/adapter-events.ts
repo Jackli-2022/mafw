@@ -19,7 +19,15 @@ function textOf(content: unknown): string {
   return '';
 }
 
-export function claudeAdapterEvents(raw: any, ctx: { sessionID?: string; turnID?: string }): AdapterEvent[] {
+export interface ClaudeDeltaState {
+  messageID?: string;
+  partIDs?: { text?: string; reasoning?: string };
+}
+
+export function claudeAdapterEvents(
+  raw: any,
+  ctx: { sessionID?: string; turnID?: string; state?: ClaudeDeltaState },
+): AdapterEvent[] {
   const sid: string | undefined = ctx.sessionID ?? raw?.session_id ?? raw?.sessionID ?? raw?.payload?.properties?.sessionID;
   if (!sid) return [];
   const turnID = ctx.turnID ?? '';
@@ -52,6 +60,10 @@ export function claudeAdapterEvents(raw: any, ctx: { sessionID?: string; turnID?
     const msg = raw.message ?? {};
     const uuid = raw.uuid ?? msg.id ?? id();
     const messageID = `cla_${uuid}`;
+    if (ctx.state) {
+      ctx.state.messageID = messageID;
+      ctx.state.partIDs = {};
+    }
     out.push(make('message.updated', sid, turnID, {
       message: {
         id: messageID,
@@ -65,11 +77,15 @@ export function claudeAdapterEvents(raw: any, ctx: { sessionID?: string; turnID?
     for (const block of Array.isArray(msg.content) ? msg.content : []) {
       i += 1;
       if (block?.type === 'text' && typeof block.text === 'string') {
-        out.push(make('part.updated', sid, turnID, { part: { id: `${messageID}_t${i}`, sessionID: sid, messageID, type: 'text', text: block.text } }));
+        const partID = `${messageID}_t${i}`;
+        if (ctx.state) ctx.state.partIDs!.text = partID;
+        out.push(make('part.updated', sid, turnID, { part: { id: partID, sessionID: sid, messageID, type: 'text', text: block.text } }));
       } else if (block?.type === 'thinking' && (block.thinking || block.text)) {
+        const partID = `${messageID}_r${i}`;
+        if (ctx.state) ctx.state.partIDs!.reasoning = partID;
         out.push(make('part.updated', sid, turnID, {
           part: {
-            id: `${messageID}_r${i}`, sessionID: sid, messageID, type: 'reasoning',
+            id: partID, sessionID: sid, messageID, type: 'reasoning',
             text: block.thinking ?? block.text,
             ...(typeof block.signature === 'string' ? { signature: block.signature } : {}),
           },
@@ -108,9 +124,19 @@ export function claudeAdapterEvents(raw: any, ctx: { sessionID?: string; turnID?
     const delta = raw?.event?.delta;
     if (!delta || raw?.event?.type !== 'content_block_delta') return out;
     if (delta.type === 'text_delta' && typeof delta.text === 'string') {
-      out.push(make('part.delta', sid, turnID, { field: 'text', delta: delta.text }));
+      out.push(make('part.delta', sid, turnID, {
+        messageID: ctx.state?.messageID,
+        partID: ctx.state?.partIDs?.text,
+        field: 'text',
+        delta: delta.text,
+      }));
     } else if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string') {
-      out.push(make('part.delta', sid, turnID, { field: 'reasoning', delta: delta.thinking }));
+      out.push(make('part.delta', sid, turnID, {
+        messageID: ctx.state?.messageID,
+        partID: ctx.state?.partIDs?.reasoning,
+        field: 'reasoning',
+        delta: delta.thinking,
+      }));
     } else if (delta.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
       out.push(make('tool.delta', sid, turnID, { callID: raw.parent_tool_use_id, field: 'input', delta: delta.partial_json }));
     }
@@ -118,14 +144,15 @@ export function claudeAdapterEvents(raw: any, ctx: { sessionID?: string; turnID?
   }
 
   if (t === 'result') {
+    const reason = String(raw.terminal_reason ?? raw.subtype ?? '');
     if (raw.subtype === 'success') {
       out.push(make('turn.completed', sid, turnID, {
         ok: true,
         usage: raw.usage,
         ...(typeof raw.total_cost_usd === 'number' ? { costUsd: raw.total_cost_usd } : {}),
       }));
-    } else if (raw.subtype === 'aborted_streaming' || raw.subtype === 'aborted_tools') {
-      out.push(make('turn.aborted', sid, turnID, { reason: raw.subtype }));
+    } else if (reason === 'aborted_streaming' || reason === 'aborted_tools' || raw.subtype === 'aborted_streaming' || raw.subtype === 'aborted_tools') {
+      out.push(make('turn.aborted', sid, turnID, { reason }));
     } else {
       out.push(make('turn.failed', sid, turnID, { error: { kind: 'unknown', message: String(raw.result ?? raw.subtype ?? 'claude error') } }));
     }

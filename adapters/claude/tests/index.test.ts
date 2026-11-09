@@ -16,6 +16,8 @@ test('creates a defineRuntime definition with api 1', async () => {
   assert.equal(def.capabilities.sessionApi, true);
   assert.equal(def.capabilities.eventStream, true);
   assert.equal(def.capabilities.nativeApprovals, false);
+  assert.equal(def.capabilities.promptWhileBusy, true);
+  assert.equal(def.capabilities.worktreeApi, true);
 });
 
 test('has a messages channel', async () => {

@@ -118,6 +118,10 @@ export class RuntimePluginLoader {
         if (prev?.name) {
           this.factories.delete(prev.name);
           this.meta.delete(prev.name);
+          this.neutralDefinitions.delete(prev.name);
+          this.neutralFactories.delete(prev.name);
+          this.legacyModules.delete(prev.name);
+          this.neutralBus.unregister(prev.name);
         }
         if (prev?.alias) {
           this.factories.delete(prev.alias);
@@ -139,7 +143,7 @@ export class RuntimePluginLoader {
       const mod = require(fullPath);
       const entry = resolvePluginEntry(mod);
       if (entry && entry.kind !== 'legacy') {
-        const name = mod?.name ?? (entry.kind === 'neutral' ? entry.definition.name : undefined);
+        const name = mod?.name ?? (entry.kind === 'neutral' ? entry.definition.name : file.replace(/\.js$/, ''));
         if (!name || typeof name !== 'string') {
           this.state.set(file, { file, status: 'error', error: 'missing name' });
           log.error(`[RuntimePluginLoader] ${file}: missing 'name' export — plugin NOT registered`);
@@ -288,7 +292,11 @@ export class RuntimePluginLoader {
     const legacy = this.legacyModules.get(name);
     if (legacy) {
       const runtime = await legacy.createRuntime(ctx);
-      const definition = toRuntimeDefinition(runtime, { name, displayName: legacy.displayName ?? name });
+      const definition = toRuntimeDefinition(runtime, {
+        name,
+        displayName: legacy.displayName ?? name,
+        capabilities: this.meta.get(name)?.capabilities as Record<string, unknown> | undefined,
+      });
       this.neutralDefinitions.set(name, definition);
       this.neutralBus.register(definition);
       return definition;

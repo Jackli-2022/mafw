@@ -47,3 +47,13 @@ it('drops events from a retired turn', () => {
   bus.dispatch({ id: 'e2', type: 'turn.completed', sessionID: 's1', turnID: 't1', at: 2, data: { ok: true } } as any);
   expect(seen.filter((m) => m.canonical?.payload.type === 'turn.completed')).toHaveLength(1);
 });
+
+it('drops out-of-order seq and malformed envelopes', () => {
+  const bus = new RuntimeBus();
+  bus.register(fakeDef(() => () => {}));
+  bus.dispatch({ id: 'e1', type: 'turn.started', sessionID: 's1', turnID: 't1', at: 1, seq: 2, data: {} } as any);
+  bus.dispatch({ id: 'e2', type: 'part.delta', sessionID: 's1', turnID: 't1', at: 2, seq: 1, data: { delta: 'old' } } as any);
+  bus.dispatch({ id: 'e3', type: 'part.delta', sessionID: 's1', at: 3, data: null } as any);
+  expect(bus.stats().stale).toBe(1);
+  expect(bus.stats().dropped).toBe(1);
+});

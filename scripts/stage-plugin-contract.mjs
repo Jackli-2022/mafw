@@ -37,43 +37,49 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, "..");
 export const defaultSourceDir = path.join(repoRoot, "packages", "plugin-contract");
+export const defaultRuntimeContractDir = path.join(repoRoot, "packages", "runtime-contract");
 export const PACKAGE_NAME = "@mafw/plugin-contract";
+export const RUNTIME_CONTRACT_PACKAGE = "@mafw/runtime-contract";
+export const CONTRACT_PACKAGES = [
+  { name: PACKAGE_NAME, sourceDir: defaultSourceDir },
+  { name: RUNTIME_CONTRACT_PACKAGE, sourceDir: defaultRuntimeContractDir },
+];
 
 function logLine(message) {
-  console.log(`[plugin-contract] ${message}`);
+  console.log(`[contract] ${message}`);
 }
 
-function packageParts() {
-  return PACKAGE_NAME.split("/");
+function packageParts(packageName = PACKAGE_NAME) {
+  return packageName.split("/");
 }
 
 /**
- * Copies the built contract package into `nodeModulesDir/@mafw/plugin-contract`.
+ * Copies a built contract package into `nodeModulesDir/@mafw/<name>`.
  *
  * @param {object} options
+ * @param {string} [options.packageName] Package name (defaults to @mafw/plugin-contract).
  * @param {string} [options.sourceDir] Built contract package (`package.json` + `dist/`).
  * @param {string} options.nodeModulesDir Destination `node_modules` directory.
- * @param {boolean} [options.allowMissing] Skip (with a warning) when `dist/` is absent
- *   instead of throwing. Used by the root postinstall, which runs before the
- *   first build on a fresh checkout.
+ * @param {boolean} [options.allowMissing] Skip (with a warning) when `dist/` is absent.
  * @param {(message: string) => void} [options.log]
  * @returns {{ staged: boolean, reason?: "missing" | "link", target: string, sourceDir: string }}
  */
-export function stagePluginContract(options) {
+export function stageContractPackage(options) {
   const {
-    sourceDir = defaultSourceDir,
+    packageName = PACKAGE_NAME,
+    sourceDir = packageName === RUNTIME_CONTRACT_PACKAGE ? defaultRuntimeContractDir : defaultSourceDir,
     nodeModulesDir,
     allowMissing = false,
     log = logLine,
   } = options ?? {};
   if (typeof nodeModulesDir !== "string" || nodeModulesDir.length === 0) {
-    throw new Error("stagePluginContract requires nodeModulesDir");
+    throw new Error("stageContractPackage requires nodeModulesDir");
   }
 
   const manifestPath = path.join(sourceDir, "package.json");
   const distDir = path.join(sourceDir, "dist");
   const distIndex = path.join(distDir, "index.js");
-  const target = path.join(nodeModulesDir, ...packageParts());
+  const target = path.join(nodeModulesDir, ...packageParts(packageName));
 
   if (!fs.existsSync(manifestPath) || !fs.existsSync(distIndex)) {
     const detail = `built package missing (expected ${manifestPath} and ${distIndex})`;
@@ -130,8 +136,20 @@ export function stagePluginContract(options) {
     fs.rmSync(backup, { recursive: true, force: true });
   }
 
-  log(`staged ${PACKAGE_NAME} -> ${target}`);
+  log(`staged ${packageName} -> ${target}`);
   return { staged: true, target, sourceDir };
+}
+
+/** Backward-compatible wrapper for @mafw/plugin-contract. */
+export function stagePluginContract(options) {
+  return stageContractPackage({ ...(options ?? {}), packageName: PACKAGE_NAME });
+}
+
+/** Stage every bundled contract package into one node_modules directory. */
+export function stageAllContracts(options) {
+  return CONTRACT_PACKAGES.map((entry) =>
+    stageContractPackage({ ...(options ?? {}), packageName: entry.name, sourceDir: entry.sourceDir }),
+  );
 }
 
 /**
@@ -244,11 +262,17 @@ function main(argv) {
     verify(readFlag(argv, "--verify"));
     return;
   }
-  stagePluginContract({
-    sourceDir: readFlag(argv, "--source") ?? defaultSourceDir,
-    nodeModulesDir: readFlag(argv, "--node-modules") ?? path.join(repoRoot, "node_modules"),
-    allowMissing: argv.includes("--allow-missing"),
-  });
+  const packageName = readFlag(argv, "--package");
+  const sourceDir = readFlag(argv, "--source");
+  const nodeModulesDir = readFlag(argv, "--node-modules") ?? path.join(repoRoot, "node_modules");
+  const allowMissing = argv.includes("--allow-missing");
+  if (packageName) {
+    stageContractPackage({ packageName, sourceDir: sourceDir ?? undefined, nodeModulesDir, allowMissing });
+  } else if (sourceDir) {
+    stagePluginContract({ sourceDir, nodeModulesDir, allowMissing });
+  } else {
+    stageAllContracts({ nodeModulesDir, allowMissing });
+  }
 }
 
 const invokedDirectly =

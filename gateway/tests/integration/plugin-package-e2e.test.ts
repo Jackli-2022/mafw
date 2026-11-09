@@ -549,19 +549,21 @@ console.log(JSON.stringify({ resolved: require.resolve('@mafw/plugin-contract') 
       path.join(REPO_ROOT, 'packages', 'desktop', 'scripts', 'stage-gateway.ts'),
       'utf8',
     );
-    expect(stageGateway).toContain('stagePluginContract');
+    expect(stageGateway).toContain('stageContractPackage');
     expect(stageGateway).toContain('node_modules');
 
     const deploy = fs.readFileSync(path.join(REPO_ROOT, 'gateway', 'scripts', 'deploy-local.mjs'), 'utf8');
-    expect(deploy).toContain('stagePluginContract');
+    expect(deploy).toContain('stageContractPackage');
 
     const rootPkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
     expect(rootPkg.scripts.postinstall).toContain('stage-plugin-contract.mjs');
     expect(rootPkg.files).toContain('scripts/stage-plugin-contract.mjs');
     expect(rootPkg.files).toContain('packages/plugin-contract/dist/');
+    expect(rootPkg.files).toContain('packages/runtime-contract/dist/');
 
     const gatewayPkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'gateway', 'package.json'), 'utf8'));
     expect(gatewayPkg.mafw.bundledPackages['@mafw/plugin-contract']).toBe('../packages/plugin-contract');
+    expect(gatewayPkg.mafw.bundledPackages['@mafw/runtime-contract']).toBe('../packages/runtime-contract');
 
     for (const workspace of ['gateway-sdk', 'desktop']) {
       const workspacePkg = JSON.parse(
