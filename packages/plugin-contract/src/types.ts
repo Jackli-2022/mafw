@@ -160,6 +160,15 @@ export interface PluginUiContribution {
   webSurfaces?: PluginWebSurfaceDescriptor[]
 }
 
+/**
+ * Client-visible UI slots: the declared slots plus Web surfaces in their
+ * validated projection (defaults applied, gateway URL built). Web surfaces are
+ * published only here, so there is exactly one source of truth for clients.
+ */
+export interface PluginClientUiContribution extends Omit<PluginUiContribution, "webSurfaces"> {
+  webSurfaces?: PluginWebSurfaceClientDescriptor[]
+}
+
 /** Declarative action exposed to the gateway action registry. */
 export interface PluginActionDescriptor {
   name: string
@@ -204,15 +213,8 @@ export interface PluginClientDescriptor {
   revision: string
   title?: string
   description?: string
-  ui: PluginUiContribution
+  ui: PluginClientUiContribution
   actions: PluginActionDescriptor[]
   events: PluginEventDescriptor[]
   diagnostics?: PluginDiagnostic[]
-  /**
-   * Optional flattened mirror of `ui.webSurfaces` for clients that project
-   * surfaces across packages. `validateClientDescriptor` validates and
-   * projects the `ui.webSurfaces` slot; hosts may additionally publish this
-   * top-level list on a snapshot.
-   */
-  webSurfaces?: PluginWebSurfaceClientDescriptor[]
 }

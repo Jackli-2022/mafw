@@ -11,6 +11,7 @@ import { isPluginIconName } from "./icons.ts"
 import type {
   PluginActionDescriptor,
   PluginClientDescriptor,
+  PluginClientUiContribution,
   PluginConfigPageDescriptor,
   PluginDiagnostic,
   PluginEventDescriptor,
@@ -18,7 +19,6 @@ import type {
   PluginMessageWindowDescriptor,
   PluginPanelDescriptor,
   PluginToolCardDescriptor,
-  PluginUiContribution,
   PluginView,
   PluginWebSurfaceClientDescriptor,
   Widget,
@@ -885,7 +885,7 @@ function readUi(
   actionNames: Set<string>,
   eventTypes: Set<string>,
   errors: string[],
-): PluginUiContribution {
+): PluginClientUiContribution {
   if (!isPlainObject(value)) {
     addError(errors, "ui must be an object")
     return {}
@@ -897,7 +897,7 @@ function readUi(
   }
 
   const prefix = `plugin:${packageName}:`
-  const ui: PluginUiContribution = {}
+  const ui: PluginClientUiContribution = {}
   if (value.panels !== undefined) {
     const panels = readPanels(value.panels, actionNames, prefix, eventTypes, errors)
     if (panels !== undefined) ui.panels = panels
