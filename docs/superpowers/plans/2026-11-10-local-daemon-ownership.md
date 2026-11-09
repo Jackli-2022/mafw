@@ -5,6 +5,20 @@
   3000；现有 `devAdopt` 静默采纳、跳过握手；并发启动无仲裁。
 - 调研：`docs/research/2026-11-10-local-daemon-ownership-research.md`
 
+## 进度（2026-11-10，分支 `feat/gateway-kernel-scheduler`）
+
+| 任务 | 状态 | commit | 验证 |
+|---|---|---|---|
+| T0 attach 握手 / attached 状态 / `/health` pid | done | `58ef6471` | desktop 3158/3158，gateway 5223/5223 |
+| T1 `instance-lock` 锁原语 | done | `2036e700` | 10 个锁测试；gateway `tsc -p` rc=0 |
+| T2 discovery + 自登记 + defer | done | `83bb8f6c` | gateway 5250/5250；temp-home 冒烟：首实例 port/pid 一致，kill 后第二实例接管 |
+| T3 Desktop 读 discovery / 不再写登记 | done | `eaae6699` | desktop 3171/3171；pid/instanceId 对账；并发 loser attach |
+| T4 用当前构建重启 | done | `ace7b89d` | desktop 3177/3177；仅允许 discovery + /health 身份匹配的实例 |
+| T5 协议版本协商 | pending | — | — |
+| T6 CI 集成门禁 | pending | — | — |
+
+T0–T4 的 `tsgo -p` / `tsc -p` 均 rc=0。未推送远端。
+
 ## 0. 一句话模型
 
 **`~/.mafw` 是单写者资源：一个数据目录同时只能有一个 gateway。**
