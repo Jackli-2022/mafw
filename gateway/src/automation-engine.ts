@@ -3,16 +3,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { CronJob } from 'cron';
 import { HarmonicIndexManager } from './core/memory/harmonic-index';
+import { CognitiveGraphManager } from './core/memory/cognitive-graph';
 import { config } from './config';
 import { EnergySystem } from './core/memory/energy-system';
 import { ReviewScheduler } from './core/memory/review-scheduler';
-import { CognitiveGraphManager } from './core/memory/cognitive-graph';
 import { L5Store } from './core/memory/l5-store';
 import { decayRateFor, catdDecayRate } from './core/memory/abstraction-level';
 import { getRetrievalEventBuffer, RetrievalEvent } from './core/memory/retrieval-events';
 import { actrBonus } from './core/memory/retrieval-bonus';
 import { getEmbeddingRuntime } from './memory/embedding-runtime';
 import { runEmbeddingBackfill } from './memory/embedding-backfill';
+import { Scheduler, TaskSkippedError, TaskTimeoutError, BudgetExceededError, TaskBudget } from './scheduler';
 
 import { SchedulerLedger } from './ledger';
 import { eventBus } from './event-bus';
@@ -36,13 +37,27 @@ export type ActionHandler = (
   rule: AutomationRule,
   engine: AutomationEngine
 ) => Promise<void>;
+
+/** Per-action task metadata merged into the scheduler descriptor when the
+ *  engine submits the action for execution. */
+export interface RegisteredAction {
+  handler: ActionHandler;
+  taskOpts?: {
+    /** Budget admission (kind:'pipeline' — pipeline name must match the
+     *  pipeline's internal PipelineBudget.allow() name). */
+    budget?: TaskBudget;
+    /** Watchdog override; default 30 min. */
+    timeoutMs?: number;
+  };
+}
+
+/**
+ * @deprecated The engine's instance registry is authoritative (builtins +
+ * setActionsProvider). This module-global exists ONLY as a registration
+ * compatibility path for index.ts until Phase B Task 3 migrates those
+ * registrations to engine.registerAction — after which it is deleted.
+ */
 export const actionRegistry: Map<string, ActionHandler> = new Map();
-export function unregisterAction(type: string): boolean {
-  return actionRegistry.delete(type);
-}
-export function resetActionRegistry(): void {
-  actionRegistry.clear();
-}
 /**
  * One energy-decay pass over a HarmonicIndexManager.
  *
@@ -157,74 +172,93 @@ export function runEnergyDecay(
   return { migrated: 0, decayed, bonused };
 }
 
-actionRegistry.set('memory:decay', async (_rule, engine) => {
-  log.info('[AutomationEngine] Running energy decay...');
-  // Prefer the gateway's live index instance (set via setIndexManagerProvider)
-  // so the migration is not clobbered by the live instance's next save.
-  const indexManager = engine.getLiveIndexManager?.() ?? new HarmonicIndexManager(engine.mafwDir);
-  const heartbeat = engine.getHeartbeat?.();
-  try {
-    // A3: settle the accumulated retrieval events (ACT-R log bonus + exposure
-    // discount) in the same daily pass — zero extra scheduling.
-    const buffer = getRetrievalEventBuffer();
-    const events = buffer.drain();
-    // D5 CATD: scale decay by anchor-graph weighted degree when enabled.
-    let catd: { degreeFor: (id: string) => number; beta?: number } | undefined;
-    try {
-      if (config.decay?.catd !== false) {
-        const graph = indexManager.getAnchorGraphStore?.();
-        if (graph) catd = { degreeFor: (id) => graph.weightedDegree(id), beta: config.decay?.catdBeta };
-      }
-    } catch { catd = undefined; }
-    const res = runEnergyDecay(indexManager, Date.now(), events, catd);
-    // Coverage top-up: write-path embedding is fire-and-forget (failed batches
-    // are dropped), so vectors drift behind the index. Idempotent + fail-open.
-    const backfill = await runEmbeddingBackfill(
-      getEmbeddingRuntime(),
-      indexManager.getIndex().entries.map((e) => e.id),
-    );
-    if (res.migrated > 0) {
-      log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
-    } else {
-      log.info(`[AutomationEngine] Energy decay applied to ${res.decayed} entries, bonus to ${res.bonused} (from ${events.length} retrieval events)`);
+/**
+ * Builtin actions registered on every engine instance. Each one follows the
+ * live-instance discipline: they require the gateway's live managers to be
+ * injected (setIndexManagerProvider / setGraphProvider) and skip with a loud
+ * warning when absent — a throwaway manager's writes would be clobbered by
+ * the live instance's next save (the 2026-09 decay freeze).
+ */
+function registerBuiltinActionsOn(engine: AutomationEngine): void {
+  engine.registerAction('memory:decay', async (_rule, eng) => {
+    log.info('[AutomationEngine] Running energy decay...');
+    const indexManager = eng.getLiveIndexManager();
+    if (!indexManager) {
+      log.warn('[AutomationEngine] memory:decay skipped: no live index manager injected (setIndexManagerProvider)');
+      return;
     }
-    heartbeat?.record('memory:decay', {
-      ok: backfill.ok,
-      error: backfill.ok ? undefined : `backfill: ${backfill.error}`,
-      counts: {
-        migrated: res.migrated,
-        decayed: res.decayed,
-        bonused: res.bonused,
-        backfillIndexed: backfill.indexed,
-        backfillMissing: backfill.missing,
-      },
-    });
-  } catch (err: any) {
-    heartbeat?.record('memory:decay', { ok: false, error: err?.message || String(err) });
-    throw err;
-  }
-});
-actionRegistry.set('memory:review', async (_rule, engine) => {
-  log.info('[AutomationEngine] Checking review queue...');
-  const indexManager = new HarmonicIndexManager(engine.mafwDir);
-  const scheduler = new ReviewScheduler(indexManager, engine.mafwDir);
-  scheduler.tick();
-  const queue = scheduler.getReviewQueue();
-  log.info(`[AutomationEngine] Review queue: ${queue.length} items due`);
-});
-actionRegistry.set('memory:prune', async (_rule, engine) => {
-  log.info('[AutomationEngine] Pruning cognitive graph...');
-  const graph = new CognitiveGraphManager(engine.mafwDir);
-  const before = graph.getGraph().edges.length;
-  graph.prune(0.1);
-  const after = graph.getGraph().edges.length;
-  const pruned = before - after;
-  if (pruned > 0) {
-    log.info(`[AutomationEngine] Pruned ${pruned} low-weight edges`);
-  } else {
-    log.info('[AutomationEngine] No edges to prune');
-  }
-});
+    const heartbeat = eng.getHeartbeat?.();
+    try {
+      // A3: settle the accumulated retrieval events (ACT-R log bonus + exposure
+      // discount) in the same daily pass — zero extra scheduling.
+      const buffer = getRetrievalEventBuffer();
+      const events = buffer.drain();
+      // D5 CATD: scale decay by anchor-graph weighted degree when enabled.
+      let catd: { degreeFor: (id: string) => number; beta?: number } | undefined;
+      try {
+        if (config.decay?.catd !== false) {
+          const graph = indexManager.getAnchorGraphStore?.();
+          if (graph) catd = { degreeFor: (id) => graph.weightedDegree(id), beta: config.decay?.catdBeta };
+        }
+      } catch { catd = undefined; }
+      const res = runEnergyDecay(indexManager, Date.now(), events, catd);
+      // Coverage top-up: write-path embedding is fire-and-forget (failed batches
+      // are dropped), so vectors drift behind the index. Idempotent + fail-open.
+      const backfill = await runEmbeddingBackfill(
+        getEmbeddingRuntime(),
+        indexManager.getIndex().entries.map((e) => e.id),
+      );
+      if (res.migrated > 0) {
+        log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
+      } else {
+        log.info(`[AutomationEngine] Energy decay applied to ${res.decayed} entries, bonus to ${res.bonused} (from ${events.length} retrieval events)`);
+      }
+      heartbeat?.record('memory:decay', {
+        ok: backfill.ok,
+        error: backfill.ok ? undefined : `backfill: ${backfill.error}`,
+        counts: {
+          migrated: res.migrated,
+          decayed: res.decayed,
+          bonused: res.bonused,
+          backfillIndexed: backfill.indexed,
+          backfillMissing: backfill.missing,
+        },
+      });
+    } catch (err: any) {
+      heartbeat?.record('memory:decay', { ok: false, error: err?.message || String(err) });
+      throw err;
+    }
+  });
+  engine.registerAction('memory:review', async (_rule, eng) => {
+    log.info('[AutomationEngine] Checking review queue...');
+    const indexManager = eng.getLiveIndexManager();
+    if (!indexManager) {
+      log.warn('[AutomationEngine] memory:review skipped: no live index manager injected (setIndexManagerProvider)');
+      return;
+    }
+    const scheduler = new ReviewScheduler(indexManager, eng.mafwDir);
+    scheduler.tick();
+    const queue = scheduler.getReviewQueue();
+    log.info(`[AutomationEngine] Review queue: ${queue.length} items due`);
+  });
+  engine.registerAction('memory:prune', async (_rule, eng) => {
+    log.info('[AutomationEngine] Pruning cognitive graph...');
+    const graph = eng.getGraphManager();
+    if (!graph) {
+      log.warn('[AutomationEngine] memory:prune skipped: no live graph manager injected (setGraphProvider)');
+      return;
+    }
+    const before = graph.getGraph().edges.length;
+    graph.prune(0.1);
+    const after = graph.getGraph().edges.length;
+    const pruned = before - after;
+    if (pruned > 0) {
+      log.info(`[AutomationEngine] Pruned ${pruned} low-weight edges`);
+    } else {
+      log.info('[AutomationEngine] No edges to prune');
+    }
+  });
+}
 
 export interface AutomationRule {
   id: string;
@@ -288,10 +322,79 @@ export class AutomationEngine {
   private reportedPairs: Set<string> = new Set();
   private eventHandlerRefs: Map<string, Array<{ event: string; handler: (...args: any[]) => void }>> = new Map();
   private _indexManagerProvider?: () => HarmonicIndexManager;
+  private _graphProvider?: () => CognitiveGraphManager | undefined;
   private _heartbeat?: import('./recall/pipeline-heartbeat').PipelineHeartbeat;
+  private _scheduler?: Scheduler;
+  /** Instance-owned action registry — the dispatch authority. Rebuilt from
+   *  builtins + the host provider on start()/reloadRules(). */
+  private actions = new Map<string, RegisteredAction>();
+  private actionsProvider?: () => void;
 
   constructor(mafwDir: string) {
     this.mafwDir = mafwDir;
+    this.registerBuiltinActions();
+  }
+
+  /** Register an action handler on this engine instance, with optional task
+   *  metadata (budget admission / watchdog override) applied when the engine
+   *  submits the action through the scheduler. */
+  registerAction(type: string, handler: ActionHandler, taskOpts?: RegisteredAction['taskOpts']): void {
+    this.actions.set(type, { handler, taskOpts });
+  }
+
+  getAction(type: string): ActionHandler | undefined {
+    const entry = this.actions.get(type) ?? this.actionFromGlobal(type);
+    return entry?.handler;
+  }
+
+  hasAction(type: string): boolean {
+    return this.actions.has(type) || actionRegistry.has(type);
+  }
+
+  /** The host's re-registration hook: called by refreshActions() so the
+   *  registry is rebuilt deterministically (start + reloadRules) rather than
+   *  depending on registration order. */
+  setActionsProvider(fn: () => void): void {
+    this.actionsProvider = fn;
+  }
+
+  /** Rebuild the action registry: builtins + the host provider. Registrations
+   *  made by bare registerAction() are wiped — the lifecycle contract is
+   *  explicit: register through the provider to survive refreshes. */
+  refreshActions(): void {
+    this.actions.clear();
+    this.registerBuiltinActions();
+    this.actionsProvider?.();
+  }
+
+  private registerBuiltinActions(): void {
+    registerBuiltinActionsOn(this);
+  }
+
+  private actionFromGlobal(type: string): RegisteredAction | undefined {
+    // @deprecated compat path for index.ts's module-global registrations —
+    // removed in Phase B Task 3 once they migrate to registerAction.
+    const handler = actionRegistry.get(type);
+    return handler ? { handler } : undefined;
+  }
+
+  /** Inject the unified scheduler. When set, every action execution is
+   *  submitted as a scheduler task (per-key skip + 30min watchdog; user/LLM
+   *  triggers run at foreground priority). Absent: handlers run directly. */
+  setScheduler(s: Scheduler): void {
+    this._scheduler = s;
+  }
+
+  /** Inject the gateway's live CognitiveGraphManager — memory:prune must
+   *  mutate the SAME instance the gateway keeps in memory, or the live
+   *  instance's next save clobbers the prune (same bug class as the decay
+   *  freeze). */
+  setGraphProvider(fn: () => CognitiveGraphManager | undefined): void {
+    this._graphProvider = fn;
+  }
+
+  getGraphManager(): CognitiveGraphManager | undefined {
+    return this._graphProvider?.();
   }
 
   /** Inject the pipeline heartbeat so background actions can record outcomes. */
@@ -350,7 +453,8 @@ export class AutomationEngine {
 
   // Hot-reload: stop() cancels future cron triggers and event listeners while
   // in-flight handlers run to completion (Node is single-threaded), then rules
-  // are rebuilt from disk and rescheduled.
+  // are rebuilt from disk and rescheduled. start() refreshes the action
+  // registry, so the reload also rebuilds it (spec §5.4).
   reloadRules(): void {
     this.stop();
     this.rules.clear();
@@ -360,6 +464,7 @@ export class AutomationEngine {
   }
 
   start(): void {
+    this.refreshActions();
     for (const [id, rule] of this.rules) {
       // Defensive: trigger may be null despite earlier validation (fall-through)
       if (rule.trigger?.type === 'cron') {
@@ -371,6 +476,7 @@ export class AutomationEngine {
   }
 
   stop(): void {
+    const jobCount = this.jobs.size;
     for (const [id, job] of this.jobs) {
       job.stop();
       this.jobs.delete(id);
@@ -379,7 +485,7 @@ export class AutomationEngine {
     for (const id of eventRuleIds) {
       this.unregisterEventRule(id);
     }
-    log.info(`[AutomationEngine] Stopped ${this.jobs.size} cron jobs and cleaned up event listeners`);
+    log.info(`[AutomationEngine] Stopped ${jobCount} cron jobs and cleaned up event listeners`);
   }
 
   private scheduleRule(id: string, rule: AutomationRule): void {
@@ -491,7 +597,7 @@ export class AutomationEngine {
     });
 
     if (rule.action) {
-      await this.executeAction(rule.action.type, rule);
+      await this.executeAction(rule.action.type, rule, source);
       const result = { action: rule.action.type };
       eventBus.emit('automation_completed', {
         type: 'automation_completed',
@@ -533,16 +639,59 @@ export class AutomationEngine {
     }
   }
 
-  private async executeAction(actionType: string, rule: AutomationRule): Promise<void> {
-    const handler = actionRegistry.get(actionType);
-    if (!handler) {
+  private async executeAction(
+    actionType: string,
+    rule: AutomationRule,
+    source?: 'cron' | 'event' | 'user' | 'llm',
+  ): Promise<void> {
+    const entry = this.actions.get(actionType) ?? this.actionFromGlobal(actionType);
+    if (!entry) {
       log.warn(`[AutomationEngine] No handler registered for action: ${actionType}`);
       return;
     }
+    const handler = entry.handler;
+
+    // Standalone engines (tests, embedders without a scheduler) run handlers
+    // directly — the scheduler is an optimization/discipline layer, not a
+    // hard dependency.
+    if (!this._scheduler) {
+      try {
+        await handler(rule, this);
+      } catch (err: any) {
+        log.error(`[AutomationEngine] Action ${actionType} failed: ${err.message}`);
+      }
+      return;
+    }
+
+    // Unified submission: per-key skip, 30min watchdog (overridable via
+    // taskOpts), budget admission. User/LLM triggers are foreground (an
+    // interactive caller is waiting); cron/event triggers are background.
     try {
-      await handler(rule, this);
-    } catch (err: any) {
-      log.error(`[AutomationEngine] Action ${actionType} failed: ${err.message}`);
+      await this._scheduler.submit(
+        {
+          id: `automation:${actionType}:${Date.now()}`,
+          priority: source === 'user' || source === 'llm' ? 'foreground' : 'background',
+          mutexKey: `action:${actionType}`,
+          strategy: 'skip',
+          timeoutMs: entry.taskOpts?.timeoutMs ?? 30 * 60_000,
+          budget: entry.taskOpts?.budget,
+        },
+        () => handler(rule, this),
+      );
+    } catch (err) {
+      if (err instanceof TaskSkippedError) {
+        log.info(`[AutomationEngine] ${actionType} skipped: previous run still in flight`);
+        return;
+      }
+      if (err instanceof TaskTimeoutError) {
+        log.warn(`[AutomationEngine] ${actionType} watchdog timeout — run continues in background`);
+        return;
+      }
+      if (err instanceof BudgetExceededError) {
+        log.warn(`[AutomationEngine] ${actionType} denied by budget: ${err.message}`);
+        return;
+      }
+      log.error(`[AutomationEngine] Action ${actionType} failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -687,7 +836,7 @@ export class AutomationEngine {
     log.info(`[AutomationEngine] LLM triggered rule ${id}`);
 
     if (rule.action) {
-      await this.executeAction(rule.action.type, rule);
+      await this.executeAction(rule.action.type, rule, 'llm');
       ledger.append({
         timestamp: new Date().toISOString(),
         event: 'AUTOMATION_TRIGGERED',
@@ -749,7 +898,7 @@ export class AutomationEngine {
     if (!rule.action && !rule.skill) {
       errors.push('Rule must have either an action or a skill');
     }
-    if (rule.action && !actionRegistry.has(rule.action.type)) {
+    if (rule.action && !this.hasAction(rule.action.type)) {
       errors.push(`Unknown action type: ${rule.action.type}`);
     }
     if (rule.onResult && !['triage', 'goal'].includes(rule.onResult.type)) {
