@@ -30,6 +30,8 @@ import {
   parsePluginWebAssetUrl,
   parsePluginWsUrl,
   pluginWebEventFilter,
+  pluginWebOriginAllowed,
+  resolvePluginWebProjectDir,
   type PluginWebRouteDeps,
 } from '../../../src/routes/plugin-web';
 
@@ -69,6 +71,7 @@ function makeDeps(over: Partial<PluginWebRouteDeps> = {}): TestDeps {
     isActivePackage: (name) => name === 'demo',
     packageDir: (name) => (name === 'demo' ? pkgDir : null),
     listProjects: () => ['/repo'],
+    listWorktreeDirs: () => [],
     httpRegistry: () => registry,
     isLoopback: () => true,
     defaultProjectDir: () => '/repo',
@@ -185,6 +188,51 @@ function servePluginApi(deps: PluginWebRouteDeps): http.Server {
   });
 }
 
+describe('plugin web project scope', () => {
+  it('accepts projects, worktrees and directories below either', () => {
+    const repo = fs.mkdtempSync(path.join(tmpRoot, 'scope-repo-'));
+    const sub = path.join(repo, 'packages', 'app');
+    fs.mkdirSync(sub, { recursive: true });
+    const worktree = fs.mkdtempSync(path.join(tmpRoot, 'scope-wt-'));
+    const worktreeSub = path.join(worktree, 'src');
+    fs.mkdirSync(worktreeSub, { recursive: true });
+    const scope = { projects: [repo], worktrees: [worktree] };
+
+    expect(resolvePluginWebProjectDir(scope, repo)).toBe(repo);
+    expect(resolvePluginWebProjectDir(scope, path.join(repo, '..', path.basename(repo)))).toBe(repo);
+    expect(resolvePluginWebProjectDir(scope, sub)).toBe(fs.realpathSync(sub));
+    expect(resolvePluginWebProjectDir(scope, worktree)).toBe(worktree);
+    expect(resolvePluginWebProjectDir(scope, worktreeSub)).toBe(fs.realpathSync(worktreeSub));
+
+    expect(resolvePluginWebProjectDir(scope, path.join(tmpRoot, 'nope'))).toBeNull();
+    expect(resolvePluginWebProjectDir(scope, '')).toBeNull();
+    expect(resolvePluginWebProjectDir(scope, '/etc')).toBeNull();
+    // A sibling that merely shares a prefix is not a subdirectory.
+    expect(resolvePluginWebProjectDir({ projects: [repo] }, `${repo}-other`)).toBeNull();
+    // Without worktree knowledge the worktree is rejected.
+    expect(resolvePluginWebProjectDir({ projects: [repo] }, worktree)).toBeNull();
+  });
+});
+
+describe('plugin web origin check', () => {
+  const fakeReq = (headers: Record<string, string>) => ({ headers } as unknown as http.IncomingMessage);
+
+  it('accepts the gateway origin and non-browser clients', () => {
+    expect(pluginWebOriginAllowed(fakeReq({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000' }))).toBe(true);
+    expect(pluginWebOriginAllowed(fakeReq({ host: '127.0.0.1:3000' }))).toBe(true);
+    expect(pluginWebOriginAllowed(fakeReq({ host: '127.0.0.1:3000', 'sec-fetch-site': 'same-origin' }))).toBe(true);
+  });
+
+  it('rejects foreign, null and cross-site browser requests', () => {
+    expect(pluginWebOriginAllowed(fakeReq({ host: '127.0.0.1:3000', origin: 'http://evil.test' }))).toBe(false);
+    expect(pluginWebOriginAllowed(fakeReq({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3999' }))).toBe(false);
+    expect(pluginWebOriginAllowed(fakeReq({ host: '127.0.0.1:3000', origin: 'null' }))).toBe(false);
+    expect(pluginWebOriginAllowed(fakeReq({ host: '127.0.0.1:3000', 'sec-fetch-site': 'cross-site' }))).toBe(false);
+    expect(pluginWebOriginAllowed(fakeReq({ host: '127.0.0.1:3000', origin: 'file:///C:/x' }))).toBe(false);
+    expect(pluginWebOriginAllowed(fakeReq({ origin: 'http://127.0.0.1:3000' }))).toBe(false);
+  });
+});
+
 describe('plugin web ticket route', () => {
   let server: http.Server;
   let port: number;
@@ -213,6 +261,9 @@ describe('plugin web ticket route', () => {
     expect(cookie).toContain('Path=/api/plugins/demo/');
     expect(cookie).toContain('HttpOnly');
     expect(cookie).toContain('SameSite=Strict');
+    // The ticket is a credential: this response must not be CORS-readable.
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+    expect(res.headers['cache-control']).toBe('no-store');
 
     expect(deps.tickets.verify('demo', payload.ticket)).toEqual({
       projectDir: '/repo',
@@ -275,6 +326,65 @@ describe('plugin web ticket route', () => {
     });
     expect(res.status).toBe(400);
     expect(JSON.parse(res.body).error).toContain('invalid JSON');
+  });
+
+  it('accepts a subdirectory of a registered project and a known worktree directory', async () => {
+    const repo = fs.mkdtempSync(path.join(tmpRoot, 'repo-'));
+    const sub = path.join(repo, 'packages', 'app');
+    fs.mkdirSync(sub, { recursive: true });
+    const worktree = fs.mkdtempSync(path.join(tmpRoot, 'repo-wt-'));
+    const deps = makeDeps({ listProjects: () => [repo], listWorktreeDirs: () => [worktree] });
+    server = servePluginWeb(deps);
+    port = await listen(server);
+
+    const inside = await request(port, 'POST', '/api/plugins/demo/web-ticket', {
+      body: JSON.stringify({ projectDir: sub, sessionID: 'ses_wt' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(inside.status).toBe(200);
+    const insideBinding = deps.tickets.verify('demo', JSON.parse(inside.body).ticket);
+    // Subdir sessions (monorepo benches) bind their own directory, canonicalized.
+    expect(insideBinding?.projectDir).toBe(fs.realpathSync(sub));
+    expect(insideBinding?.sessionID).toBe('ses_wt');
+
+    const wt = await request(port, 'POST', '/api/plugins/demo/web-ticket', {
+      body: JSON.stringify({ projectDir: worktree }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(wt.status).toBe(200);
+    const wtBinding = deps.tickets.verify('demo', JSON.parse(wt.body).ticket);
+    // Worktrees sit beside the project, so they are accepted explicitly.
+    expect(wtBinding?.projectDir).toBe(worktree);
+
+    // Still not a blank cheque: an unrelated directory stays a 400.
+    const outside = await request(port, 'POST', '/api/plugins/demo/web-ticket', {
+      body: JSON.stringify({ projectDir: path.join(tmpRoot, 'elsewhere') }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(outside.status).toBe(400);
+  });
+
+  it('rejects a ticket mint for a foreign browser Origin', async () => {
+    server = servePluginWeb(makeDeps());
+    port = await listen(server);
+
+    for (const headers of [
+      { Origin: 'http://evil.test' },
+      { Origin: 'null' },
+      { Origin: 'http://127.0.0.1:3999' },
+      { 'Sec-Fetch-Site': 'cross-site' },
+      // DNS rebinding: Origin and Host agree, so only the loopback-host rule
+      // stops the mint (the socket peer is loopback).
+      { Host: 'evil.example:3000', Origin: 'http://evil.example:3000' },
+    ]) {
+      const res = await request(port, 'POST', '/api/plugins/demo/web-ticket', {
+        body: JSON.stringify({ projectDir: '/repo' }),
+        headers: { 'Content-Type': 'application/json', ...headers },
+      });
+      expect(res.status).toBe(403);
+      expect(res.headers['set-cookie']).toBeUndefined();
+      expect(res.headers['access-control-allow-origin']).toBeUndefined();
+    }
   });
 });
 
@@ -363,6 +473,7 @@ describe('plugin web events route', () => {
         return () => { cleaned += 1; };
       },
     });
+    const ticket = deps.tickets.issue('demo', { projectDir: '/repo', sessionID: 's1' });
     const server = servePluginWeb(deps);
     const port = await listen(server);
 
@@ -371,6 +482,7 @@ describe('plugin web events route', () => {
       hostname: '127.0.0.1',
       port,
       path: '/api/plugins/demo/events?sessionID=s1',
+      headers: { Cookie: `mafw_plugin_ticket=${ticket.ticket}` },
     }, (res) => {
       expect(res.statusCode).toBe(200);
       expect(String(res.headers['content-type'])).toContain('text/event-stream');
@@ -399,8 +511,8 @@ describe('plugin web events route', () => {
     await closeServer(server);
   });
 
-  it('404s inactive packages and 403s missing tickets off loopback', async () => {
-    const server = servePluginWeb(makeDeps({ isLoopback: () => false }));
+  it('requires the ticket even on loopback and 404s inactive packages', async () => {
+    const server = servePluginWeb(makeDeps());
     const port = await listen(server);
 
     const denied = await new Promise<{ status: number; body: string }>((resolve, reject) => {
@@ -412,6 +524,7 @@ describe('plugin web events route', () => {
       req.on('error', reject);
     });
     expect(denied.status).toBe(403);
+    expect(JSON.parse(denied.body).error).toContain('ticket');
     await closeServer(server);
 
     const inactiveServer = servePluginWeb(makeDeps({ isActivePackage: () => false }));
@@ -435,7 +548,7 @@ describe('plugin API pass-through', () => {
     expect(parsePluginApiUrl('/api/plugins/demo/ui/files')).toBeNull();
   });
 
-  it('dispatches to the committed registry with the loopback context', async () => {
+  it('requires the ticket even on loopback for execution routes', async () => {
     const deps = makeDeps();
     deps.registry.register('demo', 'GET', '/state', async (req) => ({
       headers: { 'content-type': 'application/json' },
@@ -444,9 +557,17 @@ describe('plugin API pass-through', () => {
     const server = servePluginApi(deps);
     const port = await listen(server);
 
-    const res = await request(port, 'GET', '/api/plugins/demo/api/state');
+    // Loopback alone is not authorization: any web page can reach the port.
+    const denied = await request(port, 'GET', '/api/plugins/demo/api/state');
+    expect(denied.status).toBe(403);
+    expect(JSON.parse(denied.body).error).toContain('ticket');
+
+    const ticket = deps.tickets.issue('demo', { projectDir: '/ticket-repo' });
+    const res = await request(port, 'GET', '/api/plugins/demo/api/state', {
+      headers: { Cookie: `mafw_plugin_ticket=${ticket.ticket}` },
+    });
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ projectDir: '/repo', sessionID: null });
+    expect(JSON.parse(res.body)).toEqual({ projectDir: '/ticket-repo', sessionID: null });
     await closeServer(server);
   });
 
@@ -493,12 +614,15 @@ describe('plugin API pass-through', () => {
     await closeServer(server);
   });
 
-  it('404s unknown routes and inactive packages', async () => {
+  it('404s unknown routes and inactive packages (with a valid ticket)', async () => {
     const deps = makeDeps();
+    const ticket = deps.tickets.issue('demo', { projectDir: '/repo' });
     const server = servePluginApi(deps);
     const port = await listen(server);
 
-    const missing = await request(port, 'GET', '/api/plugins/demo/api/nope');
+    const missing = await request(port, 'GET', '/api/plugins/demo/api/nope', {
+      headers: { Cookie: `mafw_plugin_ticket=${ticket.ticket}` },
+    });
     expect(missing.status).toBe(404);
     expect(JSON.parse(missing.body).error).toContain('no plugin route');
 
@@ -511,6 +635,7 @@ describe('plugin API pass-through', () => {
 
   it('streams an async iterable response without buffering it', async () => {
     const deps = makeDeps();
+    const ticket = deps.tickets.issue('demo', { projectDir: '/repo' });
     deps.registry.register('demo', 'GET', '/stream', async () => ({
       headers: { 'content-type': 'application/octet-stream' },
       body: (async function* () {
@@ -520,7 +645,9 @@ describe('plugin API pass-through', () => {
     const server = servePluginApi(deps);
     const port = await listen(server);
 
-    const res = await request(port, 'GET', '/api/plugins/demo/api/stream');
+    const res = await request(port, 'GET', '/api/plugins/demo/api/stream', {
+      headers: { Cookie: `mafw_plugin_ticket=${ticket.ticket}` },
+    });
     expect(res.status).toBe(200);
     expect(res.body).toBe('x'.repeat(64));
     expect(res.headers['transfer-encoding']).toBe('chunked');
@@ -534,6 +661,7 @@ describe('plugin API pass-through', () => {
 
   it('answers 413 and drains the request when a route body cap is exceeded', async () => {
     const deps = makeDeps();
+    const ticket = deps.tickets.issue('demo', { projectDir: '/repo' });
     deps.registry.register('demo', 'POST', '/small', async (req) => {
       for await (const _chunk of req.body) { /* drain */ }
       return { status: 200, body: 'ok' };
@@ -550,7 +678,10 @@ describe('plugin API pass-through', () => {
 
     const res = await request(port, 'POST', '/api/plugins/demo/api/small', {
       body: 'y'.repeat(64 * 1024),
-      headers: { 'Content-Type': 'text/plain' },
+      headers: {
+        'Content-Type': 'text/plain',
+        Cookie: `mafw_plugin_ticket=${ticket.ticket}`,
+      },
     });
     expect(res.status).toBe(413);
     expect(JSON.parse(res.body).error).toContain('body too large');
@@ -595,8 +726,9 @@ describe('plugin websocket upgrade', () => {
     expect(parsePluginWsUrl('/api/ws')).toBeNull();
   });
 
-  it('upgrades with loopback context and echoes through the registry handler', async () => {
+  it('upgrades with the ticket context and echoes through the registry handler', async () => {
     const deps = makeDeps();
+    const ticket = deps.tickets.issue('demo', { projectDir: '/ticket-repo' });
     deps.registry.registerWs('demo', '/echo', (ws, ctx) => {
       ws.on('message', (data) => {
         if (String(data) === 'ctx') ws.send(JSON.stringify(ctx));
@@ -606,10 +738,12 @@ describe('plugin websocket upgrade', () => {
     const server = startWsServer(deps);
     const port = await listen(server);
 
-    const ws = await openSocket(port, '/api/plugins/demo/ws/echo');
+    const ws = await openSocket(port, '/api/plugins/demo/ws/echo', {
+      cookie: `mafw_plugin_ticket=${ticket.ticket}`,
+    });
     const next = (): Promise<string> => new Promise((resolve) => ws.once('message', (d) => resolve(String(d))));
     ws.send('ctx');
-    expect(JSON.parse(await next())).toEqual({ projectDir: '/repo' });
+    expect(JSON.parse(await next())).toEqual({ projectDir: '/ticket-repo' });
 
     ws.send('ping');
     expect(await next()).toBe('ping');
@@ -636,21 +770,49 @@ describe('plugin websocket upgrade', () => {
     await closeServer(server);
   });
 
-  it('rejects missing/cross-package tickets off loopback and unknown routes', async () => {
-    const deniedDeps = makeDeps({ isLoopback: () => false });
+  it('rejects missing/cross-package tickets even on loopback and unknown routes', async () => {
+    const deniedDeps = makeDeps();
+    deniedDeps.registry.registerWs('demo', '/echo', () => {});
     const deniedServer = startWsServer(deniedDeps);
     const deniedPort = await listen(deniedServer);
+    // Loopback is not authorization: a page from any site can reach it.
     expect(await socketFailure(deniedPort, '/api/plugins/demo/ws/echo')).toContain('403');
     await closeServer(deniedServer);
 
     const deps = makeDeps();
+    deps.registry.registerWs('demo', '/echo', () => {});
+    const ticket = deps.tickets.issue('demo', { projectDir: '/repo' });
     const foreign = deps.tickets.issue('other', { projectDir: '/repo' });
     const server = startWsServer(deps);
     const port = await listen(server);
     expect(await socketFailure(port, '/api/plugins/demo/ws/echo', {
       cookie: `mafw_plugin_ticket=${foreign.ticket}`,
     })).toContain('403');
-    expect(await socketFailure(port, '/api/plugins/demo/ws/missing')).toContain('404');
+    expect(await socketFailure(port, '/api/plugins/demo/ws/missing', {
+      cookie: `mafw_plugin_ticket=${ticket.ticket}`,
+    })).toContain('404');
+    await closeServer(server);
+  });
+
+  it('rejects a foreign browser Origin even with a valid ticket', async () => {
+    const deps = makeDeps();
+    const ticket = deps.tickets.issue('demo', { projectDir: '/repo' });
+    deps.registry.registerWs('demo', '/term', (ws, ctx) => ws.send(JSON.stringify(ctx)));
+    const server = startWsServer(deps);
+    const port = await listen(server);
+    const cookie = `mafw_plugin_ticket=${ticket.ticket}`;
+
+    expect(await socketFailure(port, '/api/plugins/demo/ws/term', {
+      cookie,
+      origin: 'http://evil.test',
+    })).toContain('403');
+
+    // The gateway's own origin (the desktop webview page) is accepted.
+    const ok = await openSocket(port, '/api/plugins/demo/ws/term', {
+      cookie,
+      origin: `http://127.0.0.1:${port}`,
+    });
+    ok.terminate();
     await closeServer(server);
   });
 });

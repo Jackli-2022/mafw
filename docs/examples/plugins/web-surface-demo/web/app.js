@@ -9,10 +9,11 @@
  *
  * When Desktop injects the bridge, the page additionally reads its context and
  * theme, subscribes to `plugin:web-surface-demo:changed`, and can invoke the
- * package action that emits it. Without the bridge (plain browser at
- * http://127.0.0.1:<port>) everything except the bridge buttons still works:
- * loopback requests carry no ticket and the gateway falls back to the
- * loopback context.
+ * package action that emits it. The page always runs inside the host
+ * `<webview>`: `api/*`, `ws/*` and `events` require the ticket cookie main
+ * installs (loopback alone is not authorization), so a plain browser tab has no
+ * project context. Bridge-only buttons hide themselves when `window.mafwPlugin`
+ * is missing.
  */
 (function () {
   'use strict';

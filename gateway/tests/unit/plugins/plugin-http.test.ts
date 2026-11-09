@@ -3,6 +3,7 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import type { AddressInfo } from 'net';
+import { EventEmitter } from 'events';
 import { WebSocket } from 'ws';
 import { PluginHost } from '../../../src/plugins/package-host';
 import { createPluginPackageContext } from '../../../src/plugins/package-context';
@@ -204,6 +205,102 @@ describe('plugin http registry', () => {
     expect(res.status).toBe(500);
     expect(res.text()).toBe('{"error":"plugin handler failed"}');
     expect(silentLog.warn).toHaveBeenCalledWith(expect.stringContaining('secret detail'));
+  });
+
+  it('waits for drain before pulling the next streamed chunk', async () => {
+    const reg = createPluginHttpRegistry({ log: silentLog });
+    const events = new EventEmitter();
+    const written: Buffer[] = [];
+    let produced = 0;
+    let ended = false;
+    let blockNext = true;
+
+    const res: PluginHttpResponseWriter = {
+      writeHead() {},
+      write(chunk) {
+        written.push(Buffer.from(chunk as any));
+        // The first write fills the socket buffer; only the next may proceed
+        // after the (simulated) drain.
+        if (blockNext) {
+          blockNext = false;
+          return false;
+        }
+        return true;
+      },
+      end() {
+        ended = true;
+      },
+      once(event, listener) {
+        events.once(event, listener);
+      },
+      removeListener(event, listener) {
+        events.removeListener(event, listener);
+      },
+    };
+
+    reg.register('demo', 'GET', '/stream', async () => ({
+      body: (async function* () {
+        for (let index = 0; index < 3; index += 1) {
+          produced += 1;
+          yield Buffer.from(`c${index}`);
+        }
+      })(),
+    }));
+
+    const dispatch = reg.dispatch('demo', { method: 'GET', path: '/stream' }, res, dispatchCtx());
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    // The producer is suspended at the full buffer: one chunk written, no more
+    // pulled, and the response is not finished.
+    expect(written).toHaveLength(1);
+    expect(produced).toBe(1);
+    expect(ended).toBe(false);
+
+    events.emit('drain');
+    expect(await dispatch).toBe(true);
+    expect(written.map((chunk) => chunk.toString())).toEqual(['c0', 'c1', 'c2']);
+    expect(produced).toBe(3);
+    expect(ended).toBe(true);
+  });
+
+  it('stops a streamed response when the peer goes away without a drain', async () => {
+    const reg = createPluginHttpRegistry({ log: silentLog });
+    const events = new EventEmitter();
+    let produced = 0;
+    let destroyed = false;
+    const res: PluginHttpResponseWriter = {
+      writeHead() {},
+      write() {
+        return false;
+      },
+      end() {},
+      once(event, listener) {
+        events.once(event, listener);
+      },
+      removeListener(event, listener) {
+        events.removeListener(event, listener);
+      },
+      get destroyed() {
+        return destroyed;
+      },
+    };
+
+    reg.register('demo', 'GET', '/stream', async () => ({
+      body: (async function* () {
+        for (let index = 0; index < 1000; index += 1) {
+          produced += 1;
+          yield Buffer.from('x');
+        }
+      })(),
+    }));
+
+    const dispatch = reg.dispatch('demo', { method: 'GET', path: '/stream' }, res, dispatchCtx());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    destroyed = true;
+    events.emit('close');
+    expect(await dispatch).toBe(true);
+    // Destroyed writer: the loop stops instead of iterating the whole source.
+    expect(produced).toBeLessThan(5);
   });
 
   it('retire removes routes and closes live websockets', async () => {

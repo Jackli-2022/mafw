@@ -141,10 +141,11 @@ interface PluginHttpApi {
 
 ### 5.5 票据与命名空间
 
-- `POST /api/plugins/<pkg>/web-ticket`（loopback；body `{ sessionID? }`）返回 `{ ticket, expiresAt }`；
+- `POST /api/plugins/<pkg>/web-ticket`（loopback；body `{ projectDir, sessionID? }`）返回 `{ ticket, expiresAt }`；
 - gateway 设置 **path-scoped cookie**：`mafw_plugin_ticket=<ticket>; Path=/api/plugins/<pkg>/; HttpOnly; SameSite=Strict`；
-- 所有 `/api/plugins/<pkg>/*`（含 WS upgrade）校验 cookie 或 loopback + `x-mafw-plugin-ticket`；票据绑定包名，跨包请求 403；
-- Desktop 只在对应分区里加载该 URL；主进程 `webRequest` 只允许该分区访问 `/api/plugins/<pkg>/`（外加 `/api/plugins/<pkg>/ui/`、`/events`、`/ws/*`）。
+- **执行面必须带票**（2026-11-09 rev2）：`api/*` / `events` / `ws/*` 校验票据（cookie 或 `x-mafw-plugin-ticket`）——**即使来自 loopback 也不例外**；只有 `ui/*` 资产允许无票据 loopback 打开（bootstrap）。票据绑定包名，跨包请求 403；
+- `web-ticket` 只接受 gateway 自己的 `Origin`（无 `Origin` 的非浏览器客户端允许），响应不发 `Access-Control-Allow-Origin`；WS upgrade 校验 `Origin`/`Sec-Fetch-Site`；
+- Desktop 只在对应分区里加载该 URL；主进程 `webRequest` 只允许该分区访问 `/api/plugins/<pkg>/`（外加 `/api/plugins/<pkg>/ui/`、`/events`、`/ws/*`），并覆盖 **`ws://` / `wss://`**（`*://*/*` 在 Electron 42 不拦截 WebSocket）。
 
 ### 5.6 事件
 
@@ -153,19 +154,19 @@ interface PluginHttpApi {
 
 ### 5.7 票据绑定、TTL 与续期
 
-- 票据载荷绑定 `(pkg, projectDir, sessionID?)`；`POST /api/plugins/<pkg>/web-ticket` 的 body 必须显式带 `projectDir`（已注册项目，gateway 校验；不读全局 currentProject，避免多窗口串项目），`sessionID` 可选；
-- handler 的 `ctx.projectDir`/`sessionID` 来自票据载荷，**不是** gateway 启动目录或全局当前项目；
+- 票据载荷绑定 `(pkg, projectDir, sessionID?)`；`POST /api/plugins/<pkg>/web-ticket` 的 body 必须显式带 `projectDir`（canonical 化后必须是已注册项目、其子目录、或已知 `session-worktree` 目录；gateway 校验，不读全局 currentProject，避免多窗口串项目），`sessionID` 可选；
+- handler 的 `ctx.projectDir`/`sessionID` 只来自票据载荷（**没有** ambient project 回退），**不是** gateway 启动目录或全局当前项目；
 - TTL 8 小时；主进程在过期前 30 分钟或首次 403 时调 `plugins.refreshWebTicket(pkg)` 续期（页面不接触 cookie）；
 - 页面 403 恢复：主进程续票后通过 `<webview>.reload()` 重载；连续失败进入错误面；
 - 同一包同一项目同一会话同一时间只有一个有效票据；切换会话/项目时重新取票（旧票自然过期）。
 
 ### 5.8 `scope` 语义
 
-| scope | 绑定的上下文 | 会话切换时 |
-|---|---|---|
-| `session`（默认） | `projectDir` + 打开时的 `sessionID` | 重新绑定**当前活动会话**，下发 `contextChange`；页面若声明 `reloadOnSessionChange !== false` 则整页重载 |
-| `project` | 仅 `projectDir` | 只下发 `projectDir`（切项目才重载） |
-| `global` | 无 | 不重载 |
+| scope | 绑定的上下文 | 页面收到 | 会话切换时 |
+|---|---|---|---|
+| `session`（默认） | `projectDir` + 打开时的 `sessionID` | `{projectDir, sessionID}` | 重新绑定**当前活动会话**，下发 `contextChange`；页面若声明 `reloadOnSessionChange !== false` 则整页重载 |
+| `project` | 仅 `projectDir` | `{projectDir}` | 只下发 `projectDir`（切项目才重载） |
+| `global` | 无 | `{}` | 不重载 |
 
 Tab 身份仍是项目级 `plugin:<pkg>:<surface>`（复用 `mafw-workbench-*` 持久化）；`scope` 只决定上下文与重载策略，不改变 tab 数量。
 

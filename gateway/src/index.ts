@@ -2773,6 +2773,18 @@ class MafwScheduler {
       isActivePackage: (name) => this.pluginHost?.isPackageCommitted(name) ?? false,
       packageDir: (name) => this.pluginHost?.getCommittedPackageDir(name) ?? null,
       listProjects: () => Array.from(this.registeredProjects.keys()),
+      // Parallel-worktree sessions bind their surface to the worktree directory
+      // (it is a sibling of the project, so containment alone cannot accept it).
+      listWorktreeDirs: () => {
+        try {
+          return this.getGatewayDb()
+            .kvAll<{ dir?: unknown }>('session-worktree')
+            .map((entry) => (typeof entry.value?.dir === 'string' ? entry.value.dir : null))
+            .filter((dir): dir is string => typeof dir === 'string' && dir.length > 0);
+        } catch {
+          return [];
+        }
+      },
       tickets: this.pluginWebTickets,
       httpRegistry: () => this.pluginHost?.getHttpRegistry(),
       isLoopback: (req) => isLoopbackAddr(req.socket?.remoteAddress || ''),

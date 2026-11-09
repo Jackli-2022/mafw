@@ -226,18 +226,29 @@ test("GET /files maps entries to public fields and maps host errors to 500", asy
   assert.doesNotMatch(error, /not a directory|C:\/secret/i);
 });
 
-test("listFiles action shares the host-service path and needs an explicit projectDir", async () => {
+test("listFiles action uses the last ticket-bound project and refuses page paths", async () => {
   const harness = await activate();
-  const result = await harness.contributions.actions.listFiles.handler(
-    { projectDir: "/project/beta" },
-    CALL,
-  );
+  const action = harness.contributions.actions.listFiles;
+
+  // No route has observed a ticket yet: an action cannot invent a context.
+  await assert.rejects(() => action.handler({}, CALL), /ticket-bound|open the web surface/i);
+
+  // A ticket-bound route records the project; ctx.projectDir is never used.
+  await httpRoute(harness, "GET", "/files").handler({ projectDir: "/project/beta" });
+
+  const result = await action.handler({}, CALL);
   assert.equal(result.projectDir, "/project/beta");
-  assert.deepEqual(harness.filesCalls, [{ dir: "/project/beta", rel: "." }]);
+  assert.deepEqual(harness.filesCalls, [
+    { dir: "/project/beta", rel: "." },
+    { dir: "/project/beta", rel: "." },
+  ]);
+
+  // A page-supplied path is refused, not forwarded to ctx.files.
   await assert.rejects(
-    () => harness.contributions.actions.listFiles.handler({}, CALL),
-    /projectDir/,
+    () => action.handler({ projectDir: "/etc" }, CALL),
+    /does not accept projectDir|not ticket-bound/i,
   );
+  assert.equal(harness.filesCalls.length, 2);
 });
 
 test("emitChanged emits the registered package event with a revision-local count", async () => {

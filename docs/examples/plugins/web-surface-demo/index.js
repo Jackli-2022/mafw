@@ -13,10 +13,12 @@
  * `ctx.files.*` with an explicit project directory and `ctx.terminal.*`; the
  * page never gets direct file/PTY access, only what these routes expose.
  *
- * The project directory always comes from the caller — `req.projectDir` for an
- * HTTP/WS route (resolved from the Web-surface ticket) or an explicit
- * `projectDir` action input. It is never `ctx.projectDir`, which is the
- * gateway's launch directory.
+ * Context model: `req.projectDir` on an HTTP/WS route comes from the Web-surface
+ * ticket (the page cannot choose it). A package **action** is not ticket-bound —
+ * it runs from the bridge or REST with a page-supplied payload. This demo
+ * therefore remembers the last project its own route observed and uses that for
+ * `listFiles`, refusing any page-supplied `projectDir`. Never trust a path that
+ * arrived in an action input.
  *
  * Copy this directory to a scratch location, install it from
  * Plugins → 安装本地目录, and read docs/guides/plugin-authoring.md §6.5.
@@ -85,12 +87,38 @@ module.exports = {
   name: PACKAGE_NAME,
   async activate(ctx) {
     let refreshes = 0;
+    // Last ticket-bound project this activation's own routes observed. Actions
+    // are not ticket-bound, so this is the only trusted project a page action
+    // may read (never a projectDir from the action payload).
+    let boundProjectDir = null;
+
+    const rememberProjectDir = (value, source) => {
+      const root = requireProjectDir(value, source);
+      boundProjectDir = root;
+      return root;
+    };
 
     /** `ctx.files` is read-only and rooted at the given project directory. */
     const listEntries = async (projectDir, source) => {
       const root = requireProjectDir(projectDir, source);
       const entries = await ctx.files.list(root, '.');
       return { projectDir: root, entries: entries.map(publicEntry) };
+    };
+
+    /**
+     * The action path: only the project a ticket-bound route already observed.
+     * A `projectDir` in the action input is refused instead of forwarded.
+     */
+    const boundEntries = async (input) => {
+      if (input && typeof input.projectDir === 'string' && input.projectDir.trim().length > 0) {
+        throw new TypeError(
+          'listFiles does not accept projectDir: actions are not ticket-bound and must not read page-supplied paths',
+        );
+      }
+      if (typeof boundProjectDir !== 'string' || boundProjectDir.length === 0) {
+        throw new TypeError('listFiles needs a ticket-bound project: open the web surface first');
+      }
+      return listEntries(boundProjectDir, 'listFiles');
     };
 
     const emitChanged = (source) => {
@@ -112,7 +140,7 @@ module.exports = {
     ctx.http.route('GET', '/files', async (req) => {
       let projectDir;
       try {
-        projectDir = requireProjectDir(req.projectDir, 'GET /files');
+        projectDir = rememberProjectDir(req.projectDir, 'GET /files');
       } catch (err) {
         // No ticket project: the caller asked without a usable context.
         return json(400, { error: messageOf(err) });
@@ -132,8 +160,10 @@ module.exports = {
     // host bridge MAFW terminal frames between this socket and the runtime.
     ctx.http.ws('/term', async (socket, reqCtx) => {
       let session;
+      let projectDir;
       try {
-        session = await ctx.terminal.create({ projectDir: reqCtx.projectDir, cols: 100, rows: 24 });
+        projectDir = rememberProjectDir(reqCtx.projectDir, 'ws /term');
+        session = await ctx.terminal.create({ projectDir, cols: 100, rows: 24 });
       } catch (err) {
         try { socket.send(JSON.stringify({ type: 'error', message: messageOf(err) })); } catch { /* closed */ }
         try { socket.close(1011, 'terminal unavailable'); } catch { /* closed */ }
@@ -194,19 +224,21 @@ module.exports = {
       actions: {
         // Bridge-callable equivalent of GET /files. The page usually uses the
         // HTTP route (it works without the bridge too); this action exists to
-        // show that both channels share one host-service helper.
+        // show that both channels share one host-service helper *and* to show
+        // the trust boundary: actions are not ticket-bound, so it reads the
+        // project its own route last observed and refuses page paths.
         listFiles: {
           title: 'List project files',
-          description: 'Reads the project root through ctx.files (read-only).',
+          description:
+            'Reads the last ticket-bound project root through ctx.files (read-only); never a page-supplied path.',
           inputSchema: {
             type: 'object',
-            properties: { projectDir: { type: 'string' } },
-            required: ['projectDir'],
+            properties: {},
             additionalProperties: false,
           },
           outputSchema: FILE_LIST_SCHEMA,
           handler(input) {
-            return listEntries(input && input.projectDir, 'listFiles');
+            return boundEntries(input);
           },
         },
         emitChanged: {

@@ -227,6 +227,7 @@ actions: {
 - action 结果带有 revision 代际：旧 revision 的 handler 不能给新 revision 的界面作答。
 - UI 只能按本包 action 名引用；跨包 action 引用在 candidate 校验阶段就失败。
 - action 不是任意 shell/API 转发器；包内的特权操作仍受现有审批与信任模型约束（本阶段不做细粒度 per-action 审批）。
+- **action 不带票据上下文**：`call.sessionID` 只是会话提示，`input` 完全来自页面/调用方。需要项目目录的特权读（`ctx.files` / `ctx.terminal`）必须使用包自己 route 观察到的票据绑定目录（见 §6.5.1），**绝不**把 `input.projectDir` 直接传给 host service。
 
 中性错误码（REST/Desktop 可安全展示）：
 
@@ -396,7 +397,7 @@ ui: {
 - 一个 surface 是右工作台「工作台」里的一个 L2 tab，客户端 key 仍是 `plugin:<package>:<id>`；与 `panels` 共享 id 命名空间（同包 id 冲突 = validation error）。
 - `entry` 必须是 `web/` 下的相对路径：拒绝 `..`、绝对路径、scheme、点文件；入口缺失/不可读时**整包激活失败**，不会发布一个打开就 404 的页面。
 - `rail` 可选：声明后左栏出现入口；`icon` 必须命中宿主字形白名单（未知图标是 validation error，不是静默画 `plus`）。`order` 缺省 100，`badge` 缺省 false（角标计数由页面经 bridge `setBadge` 提供）。
-- `scope`：`session`（默认，绑定 `projectDir + 打开时的 sessionID`，切会话默认整页重载）、`project`（只绑 `projectDir`）、`global`（不绑）。tab 身份始终是项目级。
+- `scope`：`session`（默认，绑定 `projectDir + 打开时的 sessionID`，切会话默认整页重载）、`project`（只绑 `projectDir`）、`global`（不绑）。页面通过 bridge 看到的上下文按 scope 收窄：`session` = `{projectDir, sessionID}`、`project` = `{projectDir}`、`global` = `{}`（tab 仍属当前项目，但页面不被授予项目上下文）。tab 身份始终是项目级。
 - 页面地址由宿主构造：`GET /api/plugins/<pkg>/ui/<entry>?revision=<rev>`。响应固定带 CSP（`script-src 'self'`）与 `Cache-Control: no-store`；**inline script 会被 CSP 拒绝**，脚本必须是 `web/` 下的独立文件。
 - revision 变化 → 页面重载；包被移除/禁用 → tab 与左栏入口立即消失。
 
@@ -443,19 +444,21 @@ Desktop 在沙箱页面里注入只读 bridge（v1）：
 
 | 方法 | 用途 |
 |---|---|
-| `context()` | `{ projectDir, sessionID?, surface, theme }`；页面自己展示/裁剪 |
-| `invoke(action, input?)` | 只能调用**本包**已声明的 action |
+| `context()` | `{ projectDir?, sessionID?, surface, theme }`；按 scope 收窄（`global` 无 `projectDir`），页面自己展示/裁剪 |
+| `invoke(action, input?)` | 只能调用**本包**已声明的 action（action 不带票据上下文，见 §5） |
 | `onEvent(type, cb)` | 订阅本包 `plugin:<package>:*` 事件，返回取消函数 |
-| `setBadge(count)` / `setTitle(title)` | 左栏/标签角标与页面标题 |
-| `onThemeChange(cb)` / `onContextChange(cb)` | 跟随宿主亮暗与活动会话/项目变化 |
+| `setBadge(count)` / `setTitle(title)` | 左栏/标签角标与页面标题（空标题 = 清除，退回声明的 title） |
+| `onThemeChange(cb)` / `onContextChange(cb)` | 订阅时会先推一次当前值；之后跟随宿主亮暗与活动会话/项目变化 |
 | `openExternal(url)` | 外链走系统浏览器；页面不能自行导航出去 |
 
-bridge 是**可选**的：页面应能在普通浏览器里以 loopback 直接打开（无票据时 gateway 用 loopback 上下文），缺 bridge 时隐藏依赖它的按钮。
+bridge 是**可选**的：页面应能在缺少 `window.mafwPlugin` 时隐藏依赖它的按钮。但**页面本身离不开票据**——`api/*`、`ws/*`、`events` 即使在 loopback 也要求有效票据，只有 `ui/*` 资产允许无票据打开。因此不要假设「在普通浏览器标签里直接打开页面 URL 就能工作」；本地调试请由 Desktop 打开页面，或手动 `POST /api/plugins/<pkg>/web-ticket` 取票后带上 `mafw_plugin_ticket` cookie / `x-mafw-plugin-ticket` 头。
 
 #### 6.5.3 票据、隔离与失败面
 
-- Desktop 打开页面前由主进程取票：`POST /api/plugins/<pkg>/web-ticket { projectDir, sessionID? }`（loopback）。gateway 设置路径限定 cookie（`Path=/api/plugins/<pkg>/`、`HttpOnly`、`SameSite=Strict`，TTL 8 小时）。
-- `/api/plugins/<pkg>/{ui,api,ws,events}*` 一律按票据解析 `{ projectDir, sessionID? }`；票据绑定包名，**跨包重放一律 403**（即使来自 loopback）。
+- Desktop 打开页面前由主进程取票：`POST /api/plugins/<pkg>/web-ticket { projectDir, sessionID? }`（loopback）。`projectDir` 必须是 canonical 化后落在**已注册项目、其子目录、或已知 `session-worktree` 目录**内（worktree 与 monorepo 子目录会话都能开页面）；其它目录 400。gateway 设置路径限定 cookie（`Path=/api/plugins/<pkg>/`、`HttpOnly`、`SameSite=Strict`，TTL 8 小时）。
+- **执行面必须带票**：`/api/plugins/<pkg>/api/*`、`/events`、`/ws/*` 一律要求有效票据——**即使请求来自 loopback**（任何网页都能访问本机端口，票据才是上下文权威）。handler 的 `{ projectDir, sessionID? }` 只来自票据，gateway 不会退回「当前项目」。`ui/*` 资产仍允许无票据 loopback 打开（不执行包代码）。
+- 票据绑定包名，**跨包重放一律 403**。`web-ticket` 只接受 gateway 自己的 `Origin`（缺 `Origin` 的非浏览器客户端可以），并且该响应**不发** `Access-Control-Allow-Origin`——票据不可被外部页面读取。
+- WS 升级同时校验 `Origin` / `Sec-Fetch-Site`：桌面页面 origin 即 gateway origin；外部 Origin 403（非浏览器客户端无 `Origin` 时仍需有效票据）。
 - 事件订阅可直接用页面侧 `EventSource('/api/plugins/<pkg>/events')`（只转发本包 `plugin:<pkg>:*`，带 `?sessionID=` 时只转发该会话），也可走 bridge `onEvent`。
 - 页面加载失败/404/5xx 时宿主显示错误面与重试按钮，不留白屏；页面自己的每个 fetch 都要处理非 2xx。
 - 旧 gateway 会**拒绝**声明 `webSurfaces` 的包（descriptor 校验是封闭的）——这是有意的 fail-closed，安装前确认 gateway 版本。
@@ -549,9 +552,9 @@ REST（Desktop 的 Plugins 页使用同一组接口）：
 | `POST /api/plugins/:name/actions/:action` `{input, sessionID?}` | 调用已提交 action |
 | `GET /api/plugins` | Hub 清单（含 disabled / pending / error / 来源路径 / 贡献类型） |
 | `POST /api/plugins/:name/web-ticket` `{projectDir, sessionID?}` | 为 Web 页面签发包绑定的作用域票据（仅 loopback；Desktop 主进程调用） |
-| `GET /api/plugins/:name/ui/<entry…>` | 服务已提交包的 `web/` 静态资源（CSP + `no-store`，失败一律 404） |
-| `GET /api/plugins/:name/events` | 只转发本包 `plugin:<name>:*` 事件的 SSE（可带 `?sessionID=`） |
-| `/api/plugins/:name/api/*`、`/api/plugins/:name/ws/*` | 本包 `ctx.http` 注册的 HTTP/WS 路由（票据校验后分发） |
+| `GET /api/plugins/:name/ui/<entry…>` | 服务已提交包的 `web/` 静态资源（CSP + `no-store`，失败一律 404；loopback 可无票据） |
+| `GET /api/plugins/:name/events` | 只转发本包 `plugin:<name>:*` 事件的 SSE（需票据；可带 `?sessionID=`） |
+| `/api/plugins/:name/api/*`、`/api/plugins/:name/ws/*` | 本包 `ctx.http` 注册的 HTTP/WS 路由（需票据 + 同源校验后分发） |
 
 - `path` 必须是绝对路径；安装不会移动或删除源目录。
 - 同名安装必须显式 `overwrite:true`；Desktop 在覆盖前展示贡献 diff 并要求确认。
@@ -655,7 +658,8 @@ node scripts/stage-plugin-contract.mjs --verify <entry-file>
 | Web 页面白屏 / 404 | 包未提交、entry 拼错、旧 gateway 不支持 `webSurfaces`（会整包拒绝）；看 `[PluginHost]` diagnostic |
 | 页面 API 403 `invalid plugin ticket` | 票据过期或属于别的包；重新打开 surface（Desktop 会重新取票），不要跨包复用 cookie |
 | 页面脚本不执行 | CSP 拒绝 inline script；把脚本移到 `web/app.js` 并用 `<script src>` 引入 |
-| 页面读不到项目文件 | 路由用了 `ctx.projectDir` 而不是 `req.projectDir`（票据绑定目录） |
+| 页面读不到项目文件 | 路由用了 `ctx.projectDir` 而不是 `req.projectDir`（票据绑定目录）；或 action 把 `input.projectDir` 当票据目录（action 不带票据，必须用自己 route 观察到的目录） |
+| 页面在浏览器里直接打开是 403 | `api/events/ws` 即使在 loopback 也要求票据（只有 `ui/*` 资产可匿名打开）；用 Desktop 打开或先 `POST /api/plugins/<pkg>/web-ticket` 取票 |
 
 ## 14. 示例走读
 
@@ -680,7 +684,7 @@ node scripts/stage-plugin-contract.mjs --verify <entry-file>
   - `ui.webSurfaces`：一个 `explorer` 页面（`entry:'index.html'`、`scope:'project'`、左栏 `folder` 入口，`order:10`、`badge:true`）。
   - `ctx.http.route('GET', '/files')`：用 `ctx.files.list(req.projectDir, '.')` 返回项目文件树（`/api/plugins/web-surface-demo/api/files`）。
   - `ctx.http.ws('/term')`：为票据项目 `ctx.terminal.create` 一个 PTY 并 `bridge` 到页面（`/api/plugins/web-surface-demo/ws/term`），socket 关闭时 `kill`。
-  - `actions.listFiles`：同一 host-service 路径的 bridge 动作；`actions.emitChanged`：发射 `plugin:web-surface-demo:changed`。
+  - `actions.listFiles`：同一 host-service 路径的 bridge 动作——**action 不带票据**，所以它只用 `GET /files` 最近观察到的票据绑定项目，页面传 `projectDir` 会被拒绝；`actions.emitChanged`：发射 `plugin:web-surface-demo:changed`。
   - `events`：`plugin:web-surface-demo:changed`（带 payload schema），驱动页面刷新。
 - `web/index.html` + `web/app.js` — 页面：文件树、刷新、终端 `<pre>` + 行输入、bridge 上下文/主题跟随与事件订阅；零依赖、CSP 安全（无 inline script）。
 - `index.test.js` — 零依赖自测：surface 声明、精确路由集合、`req.projectDir` 绑定、400/错误路径、action 往返、PTY 桥接与无 PTY 降级、页面 CSP 契约。

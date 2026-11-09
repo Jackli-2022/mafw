@@ -102,7 +102,9 @@ export function createPluginPackageContext(name: string, deps: PackageContextDep
 
   // Host services: `files` is pure fs (scoped per call), `terminal` is one
   // activation handle whose PTYs die with this candidate's RegistrationBag.
-  // The instance also stays reachable for the package-level retire sweep.
+  // There is deliberately no package-wide sweep: a reload disposes the replaced
+  // revision's bag *after* the successor activated, so a name-keyed sweep would
+  // kill the new revision's PTYs.
   const files = createPluginFilesApi();
   const terminal = createPluginTerminalApi({
     pkg: name,

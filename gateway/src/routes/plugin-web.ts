@@ -7,14 +7,23 @@
  * - `events`  SSE stream filtered to `plugin:<pkg>:*`;
  * - `api/*` + `ws/*`  the package's own `ctx.http` routes (Task 3 registry).
  *
- * Every package-scoped request resolves its context from the ticket
- * (`{ projectDir, sessionID? }`), never from the gateway's launch directory.
- * Loopback clients may omit the ticket (desktop dev + curl); a *presented* but
- * invalid ticket is always a 403, so a ticket minted for one package cannot be
- * replayed against another. Spec §5.4–§5.7.
+ * Auth model (2026-11-09 hardening, spec §5.4–§5.7):
+ * - `api|events|ws` require a **valid ticket** — even on loopback. The ticket
+ *   is the only source of the handler context (`{ projectDir, sessionID? }`);
+ *   there is no ambient "current project" fallback. A page from any site can
+ *   reach a loopback port, so loopback alone must never authorize execution
+ *   (a plugin WS route can create a PTY).
+ * - `ui/*` assets stay loopback-reachable so a plain browser can bootstrap a
+ *   page; assets do not execute host work, and a presented ticket is still
+ *   validated (cross-package replay is a 403).
+ * - `web-ticket` stays loopback-only for the desktop main process, rejects a
+ *   non-gateway `Origin` and never emits `Access-Control-Allow-Origin`.
+ * - A *presented* but invalid ticket is always a 403, so a ticket minted for
+ *   one package cannot be replayed against another.
  */
 import * as fs from 'fs';
 import * as http from 'http';
+import * as path from 'path';
 import type { Duplex } from 'stream';
 import { canonicalProjectDir } from '../core/pod/pod-identity';
 import {
@@ -35,6 +44,13 @@ const ASSET_CSP =
   "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'";
 const SSE_HEARTBEAT_MS = 15_000;
 const TICKET_BODY_LIMIT_BYTES = 16 * 1024;
+/**
+ * Host names a loopback client may use. `isLoopback(req)` is the socket peer;
+ * a DNS-rebinding page also connects from loopback, so the ticket mint also
+ * checks that the URL host is a loopback name (desktop main always uses
+ * `127.0.0.1`).
+ */
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0']);
 
 export interface PluginWebRouteParams {
   name: string;
@@ -47,13 +63,25 @@ export interface PluginWebRouteDeps {
   packageDir(name: string): string | null;
   /** Registered project directories (ticket validation). */
   listProjects(): readonly string[];
+  /**
+   * Known `session-worktree` directories (kv `session-worktree/<sid>.dir`).
+   * Worktrees live beside the project, not below it, so the containment rule
+   * needs them explicitly. Optional: hosts without worktree support pass none.
+   */
+  listWorktreeDirs?(): readonly string[];
   /** Process-local ticket store shared by every package-scoped route. */
   tickets: PluginWebTicketStore;
   /** Committed `ctx.http` registry, undefined before the host is ready. */
   httpRegistry(): PluginHttpRegistry | undefined;
-  /** Loopback fallback auth for host-local clients. */
+  /** Loopback detection for `web-ticket` issuance and `ui/*` bootstrap only. */
   isLoopback(req: http.IncomingMessage): boolean;
-  /** Context used for loopback requests without a ticket (gateway project). */
+  /**
+   * Context for a loopback `ui/*` asset request without a ticket.
+   *
+   * Assets do not execute package code, so the ambient project is harmless
+   * there; `api|events|ws` never use it (they require a ticket). Keeping the
+   * fallback means a browser can open the page URL directly while developing.
+   */
   defaultProjectDir(): string;
   /**
    * Attaches a filtered writer to the gateway's single broadcast stream and
@@ -233,13 +261,14 @@ function presentedTicket(req: http.IncomingMessage): string | null {
 }
 
 /**
- * Resolves the context for a package-scoped request.
+ * Resolves the context for a `ui/*` asset request.
  *
- * A presented ticket must verify for *this* package, even on loopback: that is
- * what makes cross-package replay a 403 instead of silently downgrading to the
- * loopback fallback.
+ * Assets are not code execution, so loopback may omit the ticket (plain
+ * browser bootstrap). A presented ticket always wins over the loopback
+ * fallback — and a presented *foreign/invalid* ticket is a 403, never a
+ * downgrade.
  */
-function resolvePluginWebAuth(
+function resolvePluginWebAssetAuth(
   req: http.IncomingMessage,
   deps: PluginWebRouteDeps,
   pkg: string,
@@ -255,6 +284,86 @@ function resolvePluginWebAuth(
     return { ok: true, context: { projectDir: deps.defaultProjectDir() } };
   }
   return { ok: false, status: 403, error: 'plugin ticket required' };
+}
+
+/**
+ * Resolves the context for a package-scoped **execution** route
+ * (`api/*`, `events`, `ws/*`).
+ *
+ * A valid ticket is required even on loopback: the ticket is the only source
+ * of the handler context, and loopback ports are reachable from any web page.
+ * There is deliberately no ambient/current-project fallback here.
+ */
+function resolvePluginWebContextAuth(
+  req: http.IncomingMessage,
+  deps: PluginWebRouteDeps,
+  pkg: string,
+): PluginWebAuth {
+  const presented = presentedTicket(req);
+  if (!presented) return { ok: false, status: 403, error: 'plugin ticket required' };
+  const binding = deps.tickets.verify(pkg, presented);
+  return binding
+    ? { ok: true, context: binding }
+    : { ok: false, status: 403, error: 'invalid plugin ticket' };
+}
+
+/**
+ * True when the request URL's host is a loopback name (see `LOOPBACK_HOSTNAMES`).
+ *
+ * Only used for the ticket mint: the mint is the credential grant, and a
+ * DNS-rebinding page presents a matching non-loopback `Host`/`Origin` pair that
+ * `pluginWebOriginAllowed` alone would accept.
+ */
+function pluginWebHostIsLoopback(req: http.IncomingMessage): boolean {
+  const raw = req.headers.host;
+  const host = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof host !== 'string' || host.trim().length === 0) return false;
+  try {
+    const parsed = new URL(`http://${host.trim()}`);
+    return LOOPBACK_HOSTNAMES.has(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when the request may act as a browser request for the gateway itself.
+ *
+ * Browsers always send `Origin` on cross-site WebSocket handshakes and on
+ * cross-origin `fetch`; the page served by the gateway has the gateway origin,
+ * so a foreign `Origin` is a CSRF-grade refusal. A missing `Origin` is a
+ * non-browser client (desktop main process, curl) and stays allowed — the
+ * ticket still gates the route. `Sec-Fetch-Site: cross-site` catches a browser
+ * request that somehow omitted `Origin`.
+ *
+ * Comparison is `Origin` host vs the request's `Host` header (the browser sets
+ * both; a non-browser client can forge them, but then it already holds the
+ * ticket, which is the real credential).
+ */
+export function pluginWebOriginAllowed(req: http.IncomingMessage): boolean {
+  const raw = req.headers.origin;
+  const origin = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof origin === 'string' && origin.trim().length > 0) {
+    const value = origin.trim();
+    // `Origin: null` (sandboxed iframe / file://) names no gateway origin.
+    if (value.toLowerCase() === 'null') return false;
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return false;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = String(req.headers.host ?? '').trim().toLowerCase();
+    if (host.length === 0) return false;
+    return parsed.host.toLowerCase() === host;
+  }
+  const site = req.headers['sec-fetch-site'];
+  const fetchSite = Array.isArray(site) ? site[0] : site;
+  if (typeof fetchSite === 'string' && fetchSite.trim().toLowerCase() === 'cross-site') {
+    return false;
+  }
+  return true;
 }
 
 class BodyTooLargeError extends Error {}
@@ -314,12 +423,52 @@ function sameProjectDir(left: string, right: string): boolean {
   return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
-function findRegisteredProject(
-  projects: readonly string[],
+/** True when `candidate` is `root` or below it (canonical, case-normalized on Windows). */
+function isInsideDir(root: string, candidate: string): boolean {
+  const normalize = (value: string): string =>
+    process.platform === 'win32' ? value.toLowerCase() : value;
+  const relative = path.relative(normalize(root), normalize(candidate));
+  if (relative === '') return true;
+  if (path.isAbsolute(relative)) return false;
+  return relative !== '..' && !relative.startsWith(`..${path.sep}`);
+}
+
+/** Ticket-issuable directories: registered projects plus known worktrees. */
+export interface PluginWebProjectScope {
+  projects: readonly string[];
+  worktrees?: readonly string[];
+}
+
+/**
+ * Resolves the `projectDir` a Web surface ticket may bind to.
+ *
+ * Accepted (all canonicalized first, so `..` and symlinks cannot widen the
+ * scope):
+ * - a registered project (returned with the registered spelling — it is the
+ *   stable partition identity);
+ * - a known `session-worktree` directory (parallel-worktree sessions open
+ *   surfaces bound to the worktree);
+ * - a subdirectory of either (monorepo subdir / bench root below the repo).
+ *
+ * Everything else is `null` (the ticket route answers 400).
+ */
+export function resolvePluginWebProjectDir(
+  scope: PluginWebProjectScope,
   requested: string,
 ): string | null {
-  for (const project of projects) {
-    if (sameProjectDir(project, requested)) return project;
+  const raw = typeof requested === 'string' ? requested.trim() : '';
+  if (raw.length === 0) return null;
+  const canonical = canonicalProjectDir(raw);
+  const worktrees = scope.worktrees ?? [];
+
+  for (const project of scope.projects) {
+    if (sameProjectDir(project, canonical)) return project;
+  }
+  for (const worktree of worktrees) {
+    if (sameProjectDir(worktree, canonical)) return worktree;
+  }
+  for (const root of [...scope.projects, ...worktrees]) {
+    if (isInsideDir(canonicalProjectDir(root), canonical)) return canonical;
   }
   return null;
 }
@@ -337,7 +486,7 @@ function ticketCookie(pkg: string, ticket: string, expiresAt: number, secure: bo
   return parts.join('; ');
 }
 
-/** `POST /api/plugins/:name/web-ticket` — loopback only, registered project required. */
+/** `POST /api/plugins/:name/web-ticket` — loopback only, known project required. */
 export async function handlePluginWebTicket(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -348,6 +497,17 @@ export async function handlePluginWebTicket(
   if (!name) return sendJson(res, 404, { error: 'not found' });
   if (!deps.isLoopback(req)) {
     return sendJson(res, 403, { error: 'plugin tickets are issued to local clients only' });
+  }
+  // Socket peer is loopback for a DNS-rebinding page too; the URL host must be
+  // a loopback name as well (desktop main always calls 127.0.0.1).
+  if (!pluginWebHostIsLoopback(req)) {
+    return sendJson(res, 403, { error: 'plugin tickets are issued to loopback hosts only' });
+  }
+  // A browser minting a ticket would re-bind its own surface context; only the
+  // gateway's own pages (desktop renderer / dev page) may ask. No Origin =
+  // desktop main process (`@mafw/sdk` fetch), which is the intended caller.
+  if (!pluginWebOriginAllowed(req)) {
+    return sendJson(res, 403, { error: 'plugin tickets are issued to the gateway origin only' });
   }
   if (!deps.isActivePackage(name)) return sendJson(res, 404, { error: 'not found' });
 
@@ -367,18 +527,28 @@ export async function handlePluginWebTicket(
     return sendJson(res, 400, { error: 'sessionID must be a non-empty string' });
   }
 
-  const registered = findRegisteredProject(deps.listProjects(), projectDir);
-  if (!registered) {
-    return sendJson(res, 400, { error: 'projectDir is not a registered project' });
+  const resolved = resolvePluginWebProjectDir(
+    { projects: deps.listProjects(), worktrees: deps.listWorktreeDirs?.() ?? [] },
+    projectDir,
+  );
+  if (!resolved) {
+    return sendJson(res, 400, {
+      error: 'projectDir is not a registered project, a worktree or a directory below one',
+    });
   }
 
   const issued = deps.tickets.issue(name, {
-    projectDir: registered,
+    projectDir: resolved,
     ...(sessionID === undefined ? {} : { sessionID: (sessionID as string).trim() }),
   });
   const secure = req.headers['x-forwarded-proto'] === 'https';
+  // A readable ticket response is a credential leak: a foreign page can send a
+  // (CORS-preflighted) request and read the JSON. The gateway-level CORS header
+  // would make it readable, so this one response opts out.
+  try { res.removeHeader('Access-Control-Allow-Origin'); } catch { /* not set */ }
   sendJson(res, 200, issued, {
     'Set-Cookie': ticketCookie(name, issued.ticket, issued.expiresAt, secure),
+    'Cache-Control': 'no-store',
   });
 }
 
@@ -395,7 +565,7 @@ export async function handlePluginWebAsset(
   const name = params?.name ?? parsed?.name;
   if (!name) return sendJson(res, 404, { error: 'not found' });
 
-  const auth = resolvePluginWebAuth(req, deps, name);
+  const auth = resolvePluginWebAssetAuth(req, deps, name);
   if (!auth.ok) return sendJson(res, auth.status, { error: auth.error });
 
   const dir = deps.packageDir(name);
@@ -447,7 +617,7 @@ export async function handlePluginWebEvents(
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'method not allowed' });
   if (!deps.isActivePackage(name)) return sendJson(res, 404, { error: 'not found' });
 
-  const auth = resolvePluginWebAuth(req, deps, name);
+  const auth = resolvePluginWebContextAuth(req, deps, name);
   if (!auth.ok) return sendJson(res, auth.status, { error: auth.error });
 
   let sessionID: string | undefined;
@@ -460,11 +630,12 @@ export async function handlePluginWebEvents(
   }
 
   try {
+    // No hardcoded `*`: the gateway-level CORS middleware already applied the
+    // configured origin (`config.server.cors.origin`) to this response.
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
       'X-Accel-Buffering': 'no',
     });
   } catch {
@@ -511,7 +682,7 @@ export async function handlePluginApiRoute(
 ): Promise<void> {
   if (!deps.isActivePackage(name)) return sendJson(res, 404, { error: 'not found' });
 
-  const auth = resolvePluginWebAuth(req, deps, name);
+  const auth = resolvePluginWebContextAuth(req, deps, name);
   if (!auth.ok) return sendJson(res, auth.status, { error: auth.error });
 
   const registry = deps.httpRegistry();
@@ -588,7 +759,14 @@ export function handlePluginWsUpgrade(
     rejectUpgrade(socket, 404, 'Not Found');
     return true;
   }
-  const auth = resolvePluginWebAuth(req, deps, route.name);
+  // A plugin WS route can execute host work (the demo opens a PTY), so a
+  // foreign page must never reach it: the ticket is mandatory and the browser
+  // Origin must be the gateway itself.
+  if (!pluginWebOriginAllowed(req)) {
+    rejectUpgrade(socket, 403, 'Forbidden');
+    return true;
+  }
+  const auth = resolvePluginWebContextAuth(req, deps, route.name);
   if (!auth.ok) {
     rejectUpgrade(socket, 403, 'Forbidden');
     return true;

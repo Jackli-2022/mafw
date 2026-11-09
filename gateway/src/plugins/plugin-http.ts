@@ -79,8 +79,20 @@ export interface PluginHttpRouteInfo {
 /** Minimal response writer; Node's `ServerResponse` structurally satisfies it. */
 export interface PluginHttpResponseWriter {
   writeHead(status: number, headers?: Record<string, string>): void;
-  write(chunk: string | Buffer | Uint8Array): void;
+  /**
+   * Node returns `false` when the socket buffer is above `highWaterMark`; the
+   * caller must then wait for `drain` before writing more (a plugin can stream
+   * megabytes, so ignoring this would grow the gateway's heap to the size of
+   * the response). Test doubles may return `void`.
+   */
+  write(chunk: string | Buffer | Uint8Array): boolean | void;
   end(chunk?: string | Buffer | Uint8Array): void;
+  /** Present on Node streams; absent on doubles without backpressure. */
+  once?(event: 'drain' | 'close', listener: (...args: unknown[]) => void): void;
+  removeListener?(event: 'drain' | 'close', listener: (...args: unknown[]) => void): void;
+  /** Node stream state; used to stop a stream whose peer went away. */
+  readonly destroyed?: boolean;
+  readonly writableEnded?: boolean;
 }
 
 /** Request shape accepted by `dispatch()` (the host adds ticket context). */
@@ -280,6 +292,44 @@ async function* limitBody(
   }
 }
 
+/** True once the response can no longer receive bytes (peer gone / ended). */
+function writerClosed(res: PluginHttpResponseWriter): boolean {
+  return res.destroyed === true || res.writableEnded === true;
+}
+
+/**
+ * Resolves when the socket drained, the peer went away, or the writer has no
+ * backpressure signals (test doubles). Never rejects: a closed peer is not a
+ * handler error, the caller stops on `writerClosed`.
+ */
+function waitForDrain(res: PluginHttpResponseWriter): Promise<void> {
+  const add = res.once;
+  if (typeof add !== 'function') return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      try { res.removeListener?.('drain', finish); } catch { /* already removed */ }
+      try { res.removeListener?.('close', finish); } catch { /* already removed */ }
+      resolve();
+    };
+    try {
+      add.call(res, 'drain', finish);
+      add.call(res, 'close', finish);
+    } catch {
+      finish();
+    }
+  });
+}
+
+/** One backpressure-aware write; resolves after `drain` when the buffer is full. */
+async function writeChunk(res: PluginHttpResponseWriter, chunk: Buffer): Promise<void> {
+  if (writerClosed(res)) return;
+  if (res.write(chunk) !== false) return;
+  await waitForDrain(res);
+}
+
 async function writeResponseBody(
   res: PluginHttpResponseWriter,
   body: string | Buffer | NodeJS.ReadableStream | AsyncIterable<Uint8Array>,
@@ -297,7 +347,8 @@ async function writeResponseBody(
     for await (const chunk of body as AsyncIterable<Uint8Array>) {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       total += buffer.length;
-      res.write(buffer);
+      if (writerClosed(res)) break;
+      await writeChunk(res, buffer);
     }
     res.end();
     return total;
@@ -309,7 +360,16 @@ async function writeResponseBody(
     stream.on('data', (chunk: Buffer | string) => {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       total += buffer.length;
-      res.write(buffer);
+      if (writerClosed(res)) {
+        stream.pause?.();
+        return;
+      }
+      if (res.write(buffer) === false) {
+        stream.pause?.();
+        void waitForDrain(res).then(() => {
+          if (!writerClosed(res)) stream.resume?.();
+        });
+      }
     });
     stream.on('end', () => resolve());
     stream.on('error', (err) => reject(err));

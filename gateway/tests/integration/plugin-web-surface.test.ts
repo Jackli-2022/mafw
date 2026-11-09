@@ -182,8 +182,8 @@ describe('web-surface-demo package (end-to-end)', () => {
       tickets,
       httpRegistry: () => host.getHttpRegistry(),
       isLoopback: () => true,
-      // Deliberately a *different* directory: a request without a ticket must
-      // not be answered with the demo's project.
+      // Deliberately a *different* directory: only `ui/*` may fall back to it.
+      // Execution routes (api/events/ws) require a ticket and never use it.
       defaultProjectDir: () => otherProjectDir,
       attachEventStream: () => () => undefined,
     };
@@ -297,10 +297,11 @@ describe('web-surface-demo package (end-to-end)', () => {
     // ctx.files hides dot entries; the page never sees .env.
     expect(files.body).not.toContain('.env');
 
-    // The same route without the cookie falls back to the injected default.
+    // No ticket: loopback alone must not execute a package route (any web page
+    // can reach the port). The loopback default exists for `ui/*` only.
     const fallback = await request(port, 'GET', `/api/plugins/${PACKAGE}/api/files`);
-    expect(fallback.status).toBe(200);
-    expect(JSON.parse(fallback.body).projectDir).toBe(otherProjectDir);
+    expect(fallback.status).toBe(403);
+    expect(JSON.parse(fallback.body).error).toContain('ticket');
   });
 
   it('rejects a ticket minted for another package, even on loopback', async () => {
@@ -326,6 +327,7 @@ describe('web-surface-demo package (end-to-end)', () => {
 
   it('registers exactly the declared routes and emits the refresh event', async () => {
     await installDemo();
+    const port = await serve();
 
     const routes = host.getHttpRegistry().routes().filter((route) => route.package === PACKAGE);
     expect(routes).toEqual([
@@ -333,9 +335,20 @@ describe('web-surface-demo package (end-to-end)', () => {
       { package: PACKAGE, method: 'WS', path: '/term', ws: true },
     ]);
 
-    const listed = await host.invokeAction(PACKAGE, 'listFiles', { projectDir }) as any;
+    const minted = await mintTicket(port, { projectDir });
+    const { ticket } = JSON.parse(minted.body);
+    await request(port, 'GET', `/api/plugins/${PACKAGE}/api/files`, {
+      headers: { Cookie: `mafw_plugin_ticket=${ticket}` },
+    });
+
+    // The action is not ticket-bound: it reuses the project its own route last
+    // observed and refuses page-supplied paths (schema + handler both refuse).
+    const listed = await host.invokeAction(PACKAGE, 'listFiles', {}) as any;
     expect(listed.projectDir).toBe(projectDir);
     expect(listed.entries.map((entry: any) => entry.name)).toEqual(['src', 'aaa.txt', 'zzz.md']);
+    await expect(host.invokeAction(PACKAGE, 'listFiles', { projectDir: otherProjectDir })).rejects.toThrow(
+      /invalid input|projectDir|ticket-bound/i,
+    );
 
     const emitted = await host.invokeAction(PACKAGE, 'emitChanged', { source: 'integration' });
     expect(emitted).toEqual({ emitted: true, refreshes: 1 });
