@@ -167,7 +167,7 @@ Windows 示例（其他平台使用 Electron `app.getPath("userData")` 的等价
 
 ```text
 <userData>/gateway/
-  versions/<gatewayVersion>/
+  versions/<gatewayVersion>-<payloadDigest前12位>/
     dist/
     node_modules/
     voice_sidecars/
@@ -179,10 +179,11 @@ Windows 示例（其他平台使用 Electron `app.getPath("userData")` 的等价
   staging/<random>/
   current.json
   previous.json
+  quarantine.json
   instances/<instanceId>.json
 ```
 
-`current.json` 只保存版本、payload 根和选择时间；指针原子写入。旧版本目录永不原地改写。
+目录键包含 payload 摘要短码，避免同一版本号的两次构建原地覆盖正在运行的目录。`current.json` 只保存版本、payload 摘要、payload 根和选择时间；指针原子写入。旧版本目录永不原地改写。
 
 ### 6.2 首次安装与升级
 
