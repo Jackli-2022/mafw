@@ -113,6 +113,8 @@ export function canonicalToAdapterEvent(
     case 'plan.updated': return make('plan.updated', { items: props.todos ?? props.items ?? props });
     case 'usage.updated': return make('usage.updated', { usage: props.usage ?? props, contextTokens: props.contextTokens, contextWindow: props.contextWindow });
     case 'background.job.updated': return make('background.job.updated', { job: props.job });
+    // 2.1 inbox events carry `action`/`item`/`id` but no snapshot, so `items` must
+    // stay absent to avoid clearing the client queue.
     case 'queue.updated': return make('queue.updated', {
       ...(Array.isArray(props.items) ? { items: props.items } : {}),
       ...(props.action ? { action: props.action } : {}),
@@ -465,10 +467,10 @@ export function toRuntimeDefinition(
     bridgeEntries.set(meta.name, entryForTooling);
     if (meta.entryAlias) bridgeEntries.set(meta.entryAlias, entryForTooling);
   }
-  if (legacy.mcp) channelsV2.mcp = legacy.mcp as unknown as RuntimeChannelsV2['mcp'];
+  if (legacy.mcp) channelsV2.mcp = legacy.mcp;
   if (legacy.discovery) channelsV2.discovery = legacy.discovery as unknown as RuntimeChannelsV2['discovery'];
   if (legacy.session.instructions) channelsV2.instructions = legacy.session.instructions as RuntimeChannelsV2['instructions'];
-  if (legacy.pty) channelsV2.pty = legacy.pty as RuntimeChannelsV2['pty'];
+  if (legacy.pty) channelsV2.pty = legacy.pty;
   if (legacy.snapshotTree) channelsV2.checkpoint = { locate: (opts) => legacy.snapshotTree!.locate(opts) };
   if (legacy.session.background) channelsV2.background = { toBackground: (sessionID) => legacy.session.background!({ sessionID }) };
 

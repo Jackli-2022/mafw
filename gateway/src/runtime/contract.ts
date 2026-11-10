@@ -24,6 +24,10 @@ import type { MafwMessage } from './canonical-types';
 import type { EventMappingEntry } from './event-mapper';
 import type { OutputSchemaSpec } from './structured-output';
 import type { RuntimePtyChannel } from './pty';
+import type {
+  RuntimeMcpChannel as RuntimeMcpChannelContract,
+  RuntimeMcpStatusInfo,
+} from '@mafw/runtime-contract';
 
 export interface RuntimeCapabilities {
   /** session.create/prompt/promptAsync/messages/... 全套会话 API */
@@ -391,81 +395,31 @@ export interface RuntimeMediaSessionChannel {
 }
 
 // ── MCP 运行时管理（mcpApi；gateway 不感知具体 runtime 的 API/CLI 形态） ──
+// plan 2026-11-10-adapters-opencode-minors Task 2：DTO 单一真相源在
+// `@mafw/runtime-contract`（channels.ts）。此处只留 legacy 名字别名，
+// gateway 与适配器不再各养一份同形状接口。
 
-export type RuntimeMcpStatus = 'connected' | 'disabled' | 'failed' | 'needs_auth' | 'unknown';
+export type RuntimeMcpStatus = RuntimeMcpStatusInfo['status'];
 
-export interface RuntimeMcpServer {
-  name: string;
-  status: RuntimeMcpStatus;
-  /** 失败/待认证等附加说明（来自 runtime，不保证存在）。 */
-  detail?: string;
-  /** 配置来源（本地/远端、URL/命令、来源文件名）。 */
-  type?: 'local' | 'remote';
-  url?: string;
-  command?: string[];
-  source?: string;
-  disabled?: boolean;
-}
+export type RuntimeMcpServer = RuntimeMcpStatusInfo;
 
-export interface RuntimeMcpChannel {
-  /** 合并「配置定义」与「运行时状态」的服务器列表（具体来源由 runtime 决定）。 */
-  list(opts?: { directory?: string }): Promise<RuntimeMcpServer[]>;
-  /** 运行时连接（不修改配置）；返回是否成功。 */
-  connect(name: string, opts?: { directory?: string }): Promise<boolean>;
-  /** 运行时断开（不修改配置）。 */
-  disconnect(name: string, opts?: { directory?: string }): Promise<boolean>;
-}
+/**
+ * connect/disconnect 在契约里可选（只读 MCP 列表的 runtime 合法）；legacy
+ * gateway 调用方（routes/mcp.ts）依赖它们必选，故别名处收紧。
+ */
+export type RuntimeMcpChannel = RuntimeMcpChannelContract & {
+  connect: NonNullable<RuntimeMcpChannelContract['connect']>;
+  disconnect: NonNullable<RuntimeMcpChannelContract['disconnect']>;
+};
 
 // ── MCP 配置写入（mcpConfigApi；持久化实现归 runtime 适配器） ──
 
-export interface RuntimeMcpServerConfigInput {
-  name: string;
-  type: 'remote' | 'local';
-  /** remote 必填 */
-  url?: string;
-  /** local 必填（非空字符串数组） */
-  command?: string[];
-  /** 同名覆盖（缺省 → 冲突错误） */
-  overwrite?: boolean;
-  /** type 变更时显式替换（缺省 → 冲突错误） */
-  replace?: boolean;
-}
-
-export interface RuntimeMcpConfigPreview {
-  /** 乐观锁令牌（文件内容哈希），apply/remove/restore 必须回传。 */
-  token: string;
-  /** 展示给用户的目标文件绝对路径。 */
-  target: string;
-  /** 已掩码的统一 diff。 */
-  diff: string;
-  /** 预计备份文件名（无既有文件时缺省）。 */
-  backup?: string;
-  /** 覆盖时保留的未暴露字段。 */
-  preserved?: string[];
-  warnings?: string[];
-}
-
-export interface RuntimeMcpConfigResult {
-  /** 配置文件已持久化。 */
-  applied: boolean;
-  /** 运行时立即生效（尽力）。 */
-  runtimeApplied: boolean;
-  backup?: string;
-  error?: string;
-}
-
-export interface RuntimeMcpConfigChannel {
-  /** dry-run：计算 diff/token，不写盘。 */
-  preview(input: RuntimeMcpServerConfigInput): Promise<RuntimeMcpConfigPreview>;
-  /** dry-run：删除预览（返回 token 与移除后的 diff，不写盘）。 */
-  previewRemove(name: string): Promise<RuntimeMcpConfigPreview>;
-  /** 提交写入（token 不匹配 → etag_mismatch）。 */
-  apply(input: RuntimeMcpServerConfigInput & { token: string; confirm: true }): Promise<RuntimeMcpConfigResult>;
-  /** 删除配置项（先文件后运行时）。 */
-  remove(name: string, opts: { token: string; confirm: true }): Promise<RuntimeMcpConfigResult>;
-  /** 只回滚 mcp.servers 子树（外科式恢复）。 */
-  restore(opts: { token: string; confirm: true; backupPath?: string }): Promise<RuntimeMcpConfigResult>;
-}
+export type {
+  RuntimeMcpServerConfigInput,
+  RuntimeMcpConfigPreview,
+  RuntimeMcpConfigResult,
+  RuntimeMcpConfigChannel,
+} from '@mafw/runtime-contract';
 
 export interface RuntimeClient {
   session: {
@@ -590,7 +544,7 @@ export interface RuntimeClient {
   /** 专用媒体分析会话（media.session）；缺省 = 无会话承载的媒体分析。 */
   mediaSession?: RuntimeMediaSessionChannel;
   /** MCP 运行时管理（mcpApi 能力）。runtime 拥有列表/连接/断开的实现细节。 */
-  mcp?: RuntimeMcpChannel & { config?: RuntimeMcpConfigChannel };
+  mcp?: RuntimeMcpChannel;
   config: {
     get(): Promise<any>;
     update(config: any): Promise<any>;
