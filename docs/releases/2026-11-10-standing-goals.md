@@ -5,7 +5,7 @@
 - **基础**：`main` `7ee50700`（P2.4 合并后的发布记录）
 - **Spec**：`docs/superpowers/specs/2026-11-10-standing-goals-design.md`
 - **Plan**：`docs/superpowers/plans/2026-11-10-standing-goals.md`
-- **Head**：`8fac9c8e`（Tasks 1–10 + review fix pass）
+- **Head**：`b29fb24b`（Tasks 1–10 + two review fix passes）
 - **Merge**：待合入 `main`
 
 ## 交付
@@ -31,7 +31,7 @@
 
 ## 门禁（2026-11-11）
 
-- gateway：**6065 passed / 1 skipped / 6066 total**（新增 36）
+- gateway：**6067 passed / 1 skipped / 6068 total**（新增 38）
 - SDK：**205/205**
 - desktop：**3204/3204**（新增 2）
 - root：**112/112**
@@ -57,6 +57,11 @@
 - **输入校验**：projectDir 必须为已注册绝对路径；approval/budget/数字/模板/cron/timezone 校验。
 - **UI/MCP**：503 视为功能关闭；MCP list 受 flag 约束；Lead 工具 allowlist 与提示词补齐。
 - `comment` / `label` 在 v1 仍显式失败（notify-only），文档已改为如实描述。
+- **第二轮复核**：automation 文件名改为 base64url（可逆、无碰撞，兼容旧文件名）；`approval='plan'`
+  只对 `goal` 强制 manual plan review，不再误伤 `report`；批准执行失败会落 `failed`，不会卡在
+  `running`；暂停目标仍允许手动 force run；关闭 flag 后残留订阅不再投递；GitHub payload 补齐
+  repo/author 供 filter 匹配；cron 用 `CronTime` 做真实表达式校验；面板对 `waiting_person`
+  显示顶层“待你确认”徽标。
 
 ## 设计裁定
 
