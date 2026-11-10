@@ -69,8 +69,15 @@ describe('Lead lifecycle wiring', () => {
   });
 
   test('manager session route resolves canonical project keys through the registry', () => {
-    const route = section("if (req.url && req.url.startsWith('/api/manager/session')", '// 健康检查');
-    expect(route).toContain('this.leadSessionRegistry.current(filter)');
-    expect(route).not.toContain('live.find((e) => e.key === filter)');
+    // Phase D1 Task H2: the branch moved out of index.ts into
+    // routes/manager-session.ts (registry dispatch, manager.session). The guard
+    // follows the code: reads must go through the Lead registry + canonical keys,
+    // never a raw kv-key comparison.
+    const managersRoute = readFileSync(path.join(__dirname, '../../src/routes/manager-session.ts'), 'utf8');
+    expect(managersRoute).toContain('deps.leadSessionRegistry().current(filter)');
+    expect(managersRoute).toContain('canonicalProjectDir(entry.key)');
+    expect(managersRoute).not.toContain('live.find((e) => e.key === filter)');
+    // index.ts must not still own an inline manager/session branch.
+    expect(indexSource).not.toContain("req.url.startsWith('/api/manager/session')");
   });
 });

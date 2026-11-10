@@ -33,8 +33,6 @@ import {
 } from './core/goal/goal-identity';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
 import { attachGoalRoutes } from './routes/goals-inline';
-import { handleMcp } from './routes/mcp';
-import { handleMcpConfig } from './routes/mcp-config';
 import { handleTerminal } from './routes/terminal';
 import { TerminalService } from './terminal/terminal-service';
 import { matchTerminalConnectUrl } from './terminal/terminal-protocol';
@@ -67,7 +65,6 @@ import { PodStore } from './core/pod/pod-store';
 import { PodEventService } from './core/pod/pod-event-service';
 import { PodEventWake } from './core/pod/pod-event-wake';
 import { buildPodPresence, type PodPresence } from './core/pod/pod-presence';
-import { handlePodEvents } from './routes/pod-events';
 import { dispatchAuthorized } from './routes/registry-dispatch';
 import {
   classifyGoalArchive,
@@ -228,6 +225,11 @@ import { attachMiscRoutes } from './routes/misc';
 import { attachConfigRoutes } from './routes/config';
 import { attachLlmRoutes } from './routes/llm';
 import { attachMediaPluginRoutes } from './routes/media-plugins';
+import { attachPodsEventsRoutes } from './routes/pods-events-dispatch';
+import { attachMcpMgmtRoutes } from './routes/mcp-mgmt';
+import { attachManagerSessionRoutes } from './routes/manager-session';
+import { attachDevicesMobileRoutes } from './routes/devices-mobile';
+import { attachEventsSseRoutes } from './routes/events-sse';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -237,7 +239,6 @@ const isThinkingLevel = (v: unknown): v is string => typeof v === 'string' && TH
 import { EventStore } from './events/event-store';
 import { migrateEventLogInfoToMessage } from './events/event-log-migrate';
 import { enrichBroadcastFrame } from './events/broadcast-frame';
-import { parseSince, attachGlobalSse } from './events/sse-attach';
 import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
 import { PermissionRulesStore } from './core/approval/rules-store';
@@ -5790,6 +5791,28 @@ class MafwScheduler {
       attachMediaPluginRoutes(this.routeRegistry, {
         mediaPluginLoader: () => this.mediaPluginLoader,
       });
+      // Phase D1 Task H2：devices / mobile 配对 / pods events / mcp 管理 / manager
+      // session / events SSE 迁 registry dispatch（15 条 legacy 分支；handler 体逐字，
+      // live getter 注入 pushGateway / pairingService / runtime / podEventService）。
+      attachDevicesMobileRoutes(this.routeRegistry, {
+        pushGateway: () => this.pushGateway,
+        pairingService: () => this.pairingService,
+      });
+      attachPodsEventsRoutes(this.routeRegistry, {
+        podEventService: () => this.podEventService,
+      });
+      attachMcpMgmtRoutes(this.routeRegistry, {
+        runtime: () => this.runtime,
+      });
+      attachManagerSessionRoutes(this.routeRegistry, {
+        leadSessionRegistry: () => this.leadSessionRegistry,
+        getGatewayDb: () => this.getGatewayDb(),
+      });
+      attachEventsSseRoutes(this.routeRegistry, {
+        chatSessions: () => this.chatSessions,
+        eventStore: () => this.eventStore,
+        sseClients: () => this.sseClients,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6026,31 +6049,8 @@ class MafwScheduler {
         // GET /api/goals/:id/timeline — Phase D1 Task F2：已迁 registry dispatch。
         // POST /api/goals/:id/nodes/:runId/retry — Phase D1 Task F2：已迁 registry dispatch。
         // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — Phase D1 Task F2：已迁 registry dispatch。
-        // Pod 事件（人侧查收）：list / 单条 seen / 按 goal+revision 批量 seen。
-        {
-          const seenAll = req.url?.match(/^\/api\/pods\/([^/]+)\/events\/seen(?:\?|$)/);
-          const seenOne = req.url?.match(/^\/api\/pods\/([^/]+)\/events\/([^/?]+)\/seen(?:\?|$)/);
-          const list = req.url?.match(/^\/api\/pods\/([^/]+)\/events(?:\?|$)/);
-          if (seenAll || seenOne || list) {
-            const podId = decodeURIComponent((seenAll ?? seenOne ?? list)![1]);
-            const params = new URL(req.url!, 'http://127.0.0.1').searchParams;
-            let body: any = {};
-            if (req.method === 'POST') {
-              try { body = JSON.parse(await readBody(req)); } catch { body = {}; }
-            }
-            const out = await handlePodEvents({ service: this.podEventService! })({
-              method: req.method ?? 'GET',
-              podId,
-              ...(seenOne ? { id: decodeURIComponent(seenOne[2]) } : {}),
-              ...(seenAll ? { action: 'seenAll' as const } : {}),
-              query: { state: params.get('state') ?? undefined, limit: params.get('limit') ?? undefined },
-              body,
-            });
-            res.writeHead(out.status, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(out.body));
-            return;
-          }
-        }
+        // GET /api/pods/:podId/events + POST .../events/:id/seen + POST .../events/seen
+        // — Phase D1 Task H2：已迁 registry dispatch（pod.events.list / seen / seenAll）。
 
         // 跨项目常驻存在感（tray/taskbar 的唯一数据源）。
         // GET /api/presence — Phase D1 Task H1：已迁 registry dispatch。
@@ -6059,31 +6059,10 @@ class MafwScheduler {
 
         // Neutral terminal PTY façade — Phase D1 Task 3d：已迁 registry dispatch。
 
-        // MCP 管理门面（runtime-neutral）：gateway 只做能力门 + 契约调用；
-        // opencode 的 v2 HTTP / CLI / 配置文档细节在 runtime/opencode-mcp.ts。
-        if (req.url?.match(/^\/api\/mcp\//)) {
-          const rt = this.runtime;
-          const channel = rt?.mcp;
-          if (await handleMcp(req, res, req.url!, {
-            access: rt?.access ?? null,
-            list: (opts) => channel!.list(opts),
-            connect: (name, opts) => channel!.connect(name, opts),
-            disconnect: (name, opts) => channel!.disconnect(name, opts),
-          })) return;
-        }
-
-        // MCP 配置写入（mcpConfigApi）：持久化实现归 runtime 适配器，gateway 只透传。
-        if (req.url?.match(/^\/api\/mcp\/config\//)) {
-          const cfgChannel = this.runtime?.mcp?.config;
-          if (await handleMcpConfig(req, res, req.url!, {
-            access: this.runtime?.access ?? null,
-            preview: (input) => cfgChannel!.preview(input),
-            previewRemove: (name) => cfgChannel!.previewRemove(name),
-            apply: (input) => cfgChannel!.apply(input),
-            remove: (name, opts) => cfgChannel!.remove(name, opts),
-            restore: (opts) => cfgChannel!.restore(opts),
-          })) return;
-        }
+        // MCP 管理门面（runtime-neutral）+ MCP 配置写入（mcpConfigApi）
+        // — Phase D1 Task H2：已迁 registry dispatch（mcp.servers / connect /
+        // disconnect / configPreview / configPreviewRemove / configApply /
+        // configRestore / configRemove；委派 handleMcp / handleMcpConfig 不变）。
 
         // Dashboard API
         if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
@@ -6249,59 +6228,8 @@ class MafwScheduler {
 
         // POST /api/work/{goalId}/validate + POST /api/work/{goalId}/complete — Phase D1 Task F2：已迁 registry dispatch。
         // POST /api/manager/session/rotate — P5 Wave 1 起由 registry dispatch 接管
-        // GET /api/manager/session — return manager session info (per-project,
-        // read from the gateway DB). ?projectDir= filters a single project.
-        if (req.url && req.url.startsWith('/api/manager/session') && req.method === 'GET') {
-          const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-          const filter = parsedUrl.searchParams.get('projectDir') || '';
-          try {
-            if (filter) {
-              const current = this.leadSessionRegistry.current(filter);
-              if (!current) {
-                res.writeHead(404);
-                res.end(JSON.stringify({ error: 'No manager session for project' }));
-                return;
-              }
-              res.writeHead(200);
-              res.end(
-                JSON.stringify({
-                  projectDir: canonicalProjectDir(filter),
-                  sessionId: current.sessionId,
-                  createdAt: current.createdAt ?? null,
-                }),
-              );
-              return;
-            }
-            // Per-runtime slots: surface only the ACTIVE runtime's Lead per
-            // canonical project. Dormant runtimes and raw-key variants are
-            // resolved through the same lifecycle reader, never duplicated.
-            const all = this.getGatewayDb().kvAll('manager-session');
-            const projectDirs = new Set(all.map((entry) => canonicalProjectDir(entry.key)));
-            const live = Array.from(projectDirs)
-              .map((projectDir) => ({ projectDir, current: this.leadSessionRegistry.current(projectDir) }))
-              .filter((entry): entry is { projectDir: string; current: NonNullable<typeof entry.current> } => !!entry.current);
-            if (live.length === 0) {
-              res.writeHead(404);
-              res.end(JSON.stringify({ error: 'No manager session' }));
-              return;
-            }
-            res.writeHead(200);
-            res.end(
-              JSON.stringify(
-                live.map((entry) => ({
-                  projectDir: entry.projectDir,
-                  sessionId: entry.current.sessionId,
-                  createdAt: entry.current.createdAt ?? null,
-                })),
-              ),
-            );
-          } catch (err: any) {
-            log.warn(`[Scheduler] /api/manager/session failed: ${err.message}`);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: 'Failed to read manager sessions' }));
-          }
-          return;
-        }
+        // GET /api/manager/session — Phase D1 Task H2：已迁 registry dispatch
+        // （manager.session；?projectDir= 单项目 / 全量投影语义随迁）。
 
         // 健康检查
         if (req.url === '/health' && req.method === 'GET') {
@@ -6321,138 +6249,12 @@ class MafwScheduler {
 
         // GET /api/projects + GET /api/projects/current — Phase D1 Task A1：已迁 registry dispatch。
 
-        // POST /api/devices — register a mobile device for push notifications
-        if (req.url?.match(/^\/api\/devices(?:\?|$)/) && req.method === 'POST') {
-          try {
-            const body = JSON.parse(await readBody(req));
-            const { id, fcmToken, platform, token } = body;
-            if (!id || !fcmToken || !platform || !token) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'id, fcmToken, platform, token required' }));
-              return;
-            }
-            // SECURITY: Compute apiTokenHash server-side from the token
-            const { createHash } = require('crypto');
-            const apiTokenHash = createHash('sha256').update(token).digest('hex').slice(0, 16);
-            const entry = this.pushGateway?.registerDevice({ id, fcmToken, platform, apiTokenHash });
-            res.writeHead(200);
-            res.end(JSON.stringify({ ok: true, device: entry }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/mobile/devices — list registered devices
-        if (req.url?.match(/^\/api\/mobile\/devices(?:\?|$)/) && req.method === 'GET') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ devices: this.pushGateway ? this.pushGateway.listDevices() : [] }));
-          return;
-        }
-
-        // DELETE /api/mobile/devices/:id — remove a device
-        const mobileDeviceDeleteMatch = req.url?.match(/^\/api\/mobile\/devices\/([^/]+)(?:\?|$)/);
-        if (mobileDeviceDeleteMatch && req.method === 'DELETE') {
-          const id = decodeURIComponent(mobileDeviceDeleteMatch[1]);
-          const ok = this.pushGateway ? this.pushGateway.removeDevice(id) : false;
-          res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(ok ? { ok: true } : { error: 'device not found' }));
-          return;
-        }
-
-        // GET /api/devices — legacy alias for list
-        if (req.url?.match(/^\/api\/devices(?:\?|$)/) && req.method === 'GET') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ devices: this.pushGateway ? this.pushGateway.listDevices() : [] }));
-          return;
-        }
-
-        // DELETE /api/devices/:id — legacy alias for remove
-        const legacyDeviceDeleteMatch = req.url?.match(/^\/api\/devices\/([^/]+)(?:\?|$)/);
-        if (legacyDeviceDeleteMatch && req.method === 'DELETE') {
-          const id = decodeURIComponent(legacyDeviceDeleteMatch[1]);
-          const ok = this.pushGateway ? this.pushGateway.removeDevice(id) : false;
-          res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(ok ? { ok: true } : { error: 'device not found' }));
-          return;
-        }
-
-        // POST /api/mobile/devices/register — mobile device registration alias
-        // Maps mobile's { token, platform, deviceName } to gateway's { id, fcmToken, platform, apiTokenHash }
-        if (req.url?.match(/^\/api\/mobile\/devices\/register(?:\?|$)/) && req.method === 'POST') {
-          try {
-            const body = JSON.parse(await readBody(req));
-            const { token, platform, deviceName } = body;
-            if (!token || !platform) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'token and platform required' }));
-              return;
-            }
-            const { createHash } = require('crypto');
-            const id = createHash('sha256').update(token).digest('hex').slice(0, 32);
-            const apiTokenHash = createHash('sha256').update(token).digest('hex').slice(0, 16);
-            const entry = this.pushGateway?.registerDevice({ id, fcmToken: token, platform, apiTokenHash });
-            res.writeHead(200);
-            res.end(JSON.stringify({ ok: true, device: entry }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/mobile/pairing-code — generate a single-use pairing URL for mobile scan
-        if (req.url?.match(/^\/api\/mobile\/pairing-code(?:\?|$)/) && req.method === 'GET') {
-          try {
-            if (!this.pairingService) {
-              res.writeHead(503);
-              res.end(JSON.stringify({ error: 'Pairing service not available' }));
-              return;
-            }
-            const ip = req.socket.remoteAddress || '';
-            const result = this.pairingService.generatePairingCode(ip);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            const msg = err?.message || String(err);
-            const status = /rate limit/i.test(msg) ? 429 : 500;
-            res.writeHead(status, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: msg }));
-          }
-          return;
-        }
-
-        // POST /api/mobile/pairing/verify — consume a pairing nonce after mobile scan
-        if (req.url?.match(/^\/api\/mobile\/pairing\/verify(?:\?|$)/) && req.method === 'POST') {
-          try {
-            if (!this.pairingService) {
-              res.writeHead(503);
-              res.end(JSON.stringify({ error: 'Pairing service not available' }));
-              return;
-            }
-            const body = JSON.parse(await readBody(req));
-            const { nonce } = body;
-            if (!nonce) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'nonce required' }));
-              return;
-            }
-            const consumed = this.pairingService.consumeNonce(nonce);
-            if (!consumed) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'Invalid or expired pairing nonce' }));
-              return;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: true }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
+        // POST /api/devices + GET /api/devices + DELETE /api/devices/:id
+        // — Phase D1 Task H2：已迁 registry dispatch（devices.register / list / delete）。
+        // GET/DELETE /api/mobile/devices(:id) + POST /api/mobile/devices/register
+        // + GET /api/mobile/pairing-code + POST /api/mobile/pairing/verify
+        // — Phase D1 Task H2：已迁 registry dispatch（mobile.devicesList / devicesDelete /
+        // devicesRegister / pairingCode / pairingVerify；配对令牌与 429 语义随迁）。
         // GET /api/approvals + POST /api/approvals/:id/respond — Phase D1 Task A5：已迁 registry dispatch。
 
         // GET /api/questions + POST /api/questions/:id/{reply,reject} — Phase D1 Task B1：已迁 registry dispatch。
@@ -6602,32 +6404,8 @@ class MafwScheduler {
 
         // POST /api/events — P5 Wave 1 起由 registry dispatch 接管
 
-        // SSE 事件（→ Dashboard / Chat）
-        if (req.url && req.url.startsWith('/api/events') && req.method === 'GET') {
-          const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-          const sessionID = parsedUrl.searchParams.get('sessionID');
-
-          if (sessionID) {
-            // Mode B: subscribe to specific chat session's delta events
-            this.chatSessions.register(sessionID, res);
-          } else {
-            // Mode A: subscribe to global event stream (Dashboard)
-            // 2026-10-22 持久回放（spec 2026-10-22-persistent-event-replay-design §5.3）：
-            // Last-Event-ID 头（原生 EventSource 重连自动携带）/ ?since 参数 → 重放后直播
-            // （newest-window + firstReplayedSeq 截断信号）。
-            const since = parseSince(parsedUrl.searchParams, req.headers['last-event-id'] as string | undefined);
-            const conn = attachGlobalSse({
-              res,
-              store: this.eventStore,
-              replayLimit: config.events.replayLimit,
-              writeFrame: (r, frame) => { if (frame) r.write(frame); },
-              since,
-            });
-            this.sseClients.set(res, conn.write);
-            req.on('close', () => { this.sseClients.delete(res); });
-          }
-          return;
-        }
+        // SSE 事件（→ Dashboard / Chat）— Phase D1 Task H2：已迁 registry dispatch
+        // （event.subscribe；Mode A 全局流 + 持久回放 / Mode B chat session 订阅随迁）。
 
         // GET /health — standalone health endpoint (not proxied)
         if (req.url === '/health') {

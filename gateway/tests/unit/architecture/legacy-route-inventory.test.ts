@@ -49,22 +49,28 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // Task H1: long-tail singles 10 match (voice/presence/eval/config×2/
     // orchestration/provider/agents/media-plugins×2) + llm/compress 1 equals →
     // 23+14=37.
-    expect(inv.byKind.match).toBe(23);
+    // Task H2: pods events 3 match (seenAll/seenOne/list shared consts) + mcp 2 match
+    // (facade + config facade) + devices/mobile 8 match (devices POST/GET/DELETE +
+    // mobile list/delete/register + pairing-code/verify) → 10+14=24. The
+    // manager/session + events SSE branches are `req.url && …startsWith` blind
+    // spots (no `?.`) — never counted, migrated anyway.
+    expect(inv.byKind.match).toBe(10);
     expect(inv.byKind.equals).toBe(14);
-    expect(inv.total).toBe(37);
+    expect(inv.total).toBe(24);
   });
 
   it('groups match the D1 plan inventory', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
     for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage', '/api/approvals', '/api/recall', '/api/automations', '/api/chat', '/api/obs', '/api/session', '/api/llm']) {
-      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5 + B1-B4 + C1-C3 + D1 + H1)
+      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5 + B1-B4 + C1-C3 + D1 + H1-H2)
     }
-    // questions/permissions/usage 的 7 条 match 分支落在 '/api' 聚合组（analyzer 对
-    // 2 段式 api 路径的分组口径），因此只校验聚合数下降：66 → 59 → 57 → 56 → 47 → 42 → 36 → 29 → 23 → 13。
+    // questions/permissions/usage 的 7 条 match 分支曾落在 '/api' 聚合组（analyzer 对
+    // 2 段式 api 路径的分组口径）：66 → 59 → 57 → 56 → 47 → 42 → 36 → 29 → 23 → 13。
+    // Task H2 迁走最后 13 条（pods events 3 / mcp 2 / devices+mobile 8）→ 该组消失。
     // /api/memory 只剩 dashboard 侧残量（4：add / pin / 兜底 startsWith / catch-all）。
     // /api/goals 只剩 dashboard 兜底与 /control 等价臂（3）。
-    // The biggest single group is the /api catch-all mass.
-    expect(byPrefix.get('/api')).toBe(13);
+    // The biggest single group is now the /api/memory residual.
+    expect(byPrefix.get('/api')).toBeUndefined();
   });
 
   it('transport/root branches are pinned — they are D3, not D1', () => {
