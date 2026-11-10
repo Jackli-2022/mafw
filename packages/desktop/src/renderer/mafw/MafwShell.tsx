@@ -30,6 +30,7 @@ import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { applyPartUpsert } from "./sse/chat-reducers"
 import { createToolPartScheduler } from "./sse/tool-part-scheduler"
 import { bumpGoalsRev, goalsRev } from "./goals-rev"
+import { buildTopicList, type LeadTopicListItem } from "./lead-topics"
 import { bumpCheckpointRev } from "./checkpoint-rev"
 import { keybindingFor } from "./keybinding-store"
 import { matchesCombo } from "./keybindings"
@@ -2163,6 +2164,34 @@ export function MafwShell() {
     if (pd && currentLeadId(pd) === sid) return true
     return isLeadRole(tabSessionRole(sessions().find((s) => s.id === sid)))
   }
+  const [showTopics, setShowTopics] = createSignal(false)
+  const [topicItems, setTopicItems] = createSignal<LeadTopicListItem[]>([])
+  const [topicBusy, setTopicBusy] = createSignal(false)
+  const openTopics = async (): Promise<void> => {
+    if (showTopics()) { setShowTopics(false); return }
+    const projectDir = currentProject()
+    if (!projectDir) return
+    setTopicBusy(true)
+    try {
+      const result = await window.api.mafw.lead.topics.list({ projectDir })
+      setTopicItems(buildTopicList(result.items))
+      setShowTopics(true)
+    } catch (err: any) {
+      showToastV2({ description: `读取话题失败：${err?.message || err}`, duration: 3000 } as any)
+    }
+    setTopicBusy(false)
+  }
+  const resumeTopic = async (id: string): Promise<void> => {
+    setTopicBusy(true)
+    try {
+      const result = await window.api.mafw.lead.topics.resume(id)
+      setShowTopics(false)
+      openSessionTab(result.sessionID)
+    } catch (err: any) {
+      showToastV2({ description: `恢复话题失败：${err?.message || err}`, duration: 3000 } as any)
+    }
+    setTopicBusy(false)
+  }
   const activeLeadGoalInvite = (): { goalId: string; title: string; stageLabel: string; sourceLabel?: string } | null => {
     if (!activeSessionIsLead()) return null
     // 2026-11-04：非终态 Goal 都保留邀请位；discussing 优先占位（刚建完的引导）。
@@ -2886,6 +2915,12 @@ export function MafwShell() {
                           techLeadInvite={activeLeadGoalInvite}
                           leadGoals={() => podStore.detail()?.goals ?? []}
                           leadAttention={() => podStore.detail()?.attention ?? []}
+                          showTopics={showTopics()}
+                          topicItems={topicItems()}
+                          topicBusy={topicBusy()}
+                          onOpenTopics={() => void openTopics()}
+                          onResumeTopic={(id) => void resumeTopic(id)}
+                          onCloseTopics={() => setShowTopics(false)}
                           onOpenTechLead={(goalId) => void openTechLead(goalId)}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}

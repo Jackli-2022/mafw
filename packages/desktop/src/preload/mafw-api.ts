@@ -234,6 +234,17 @@ export function createMafwApi(): MafwAPI {
       overview: (projectID) => invoke("work", "overview", projectID),
     },
 
+    lead: {
+      topics: {
+        list: (input) => invoke("lead", "topics.list", input),
+        get: (id) => invoke("lead", "topics.get", id),
+        resume: (id) => invoke("lead", "topics.resume", id),
+      },
+      workingSet: (input) => invoke("lead", "workingSet", input),
+      compact: (input) => invoke("lead", "compact", input),
+      recall: (input) => invoke("lead", "recall", input),
+    },
+
     pod: {
       ensure: (projectID) => invoke("pod", "ensure", projectID),
       lookup: (projectID) => invoke("pod", "lookup", projectID),

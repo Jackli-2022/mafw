@@ -3,6 +3,7 @@ import {
   MafwClient as IMafwClient, MafwClientOptions,
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline, GoalPlanInfo,
   GoalSourceRef,
+  LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
@@ -1271,6 +1272,36 @@ export class MafwClient implements IMafwClient {
   work: WorkNamespace = {
     overview: async (projectID: string): Promise<PodWorkOverview> =>
       this.request<PodWorkOverview>(`/api/projects/${encodeURIComponent(projectID)}/work`),
+  }
+
+  // ── Lead working set ─────────────────────────────────────────────────────
+
+  lead: LeadNamespace = {
+    topics: {
+      list: async (input = {}): Promise<{ items: LeadTopicView[] }> => {
+        const query = new URLSearchParams()
+        if (input.projectDir) query.set('projectDir', input.projectDir)
+        if (input.query) query.set('query', input.query)
+        if (input.limit !== undefined) query.set('limit', String(input.limit))
+        const suffix = query.toString()
+        return this.request(`/api/lead/topics${suffix ? `?${suffix}` : ''}`)
+      },
+      get: async (id: string): Promise<{ topic: LeadTopicView; messages: LeadTopicIndexMessage[] }> =>
+        this.request(`/api/lead/topics/${encodeURIComponent(id)}`),
+      resume: async (id: string): Promise<{ sessionID: string; resumedFrom: string | null }> =>
+        this.request(`/api/lead/topics/${encodeURIComponent(id)}/resume`, { method: 'POST' }),
+    },
+    workingSet: async (input = {}): Promise<LeadWorkingSet> => {
+      const suffix = input.projectDir ? `?projectDir=${encodeURIComponent(input.projectDir)}` : ''
+      return this.request(`/api/lead/working-set${suffix}`)
+    },
+    compact: async (input: { topicId: string }): Promise<LeadCompactResult> =>
+      this.request('/api/lead/compact', { method: 'POST', body: JSON.stringify(input) }),
+    recall: async (input: { projectDir?: string; q: string }): Promise<{ candidates: LeadRecallCandidate[] }> => {
+      const query = new URLSearchParams({ q: input.q })
+      if (input.projectDir) query.set('projectDir', input.projectDir)
+      return this.request(`/api/lead/recall?${query.toString()}`)
+    },
   }
 
   // ── Project Pod Lite ─────────────────────────────────────────────────────

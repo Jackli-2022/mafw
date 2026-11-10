@@ -28,6 +28,8 @@ import { isAgentKey } from "../agent-identity"
 import { isLeadRole } from "../lead-session"
 import { buildLeadGoalStatusCards, type LeadGoalStatusSource } from "../lead-goal-status"
 import { LeadGoalStatusCard } from "./LeadGoalStatusCard"
+import { TopicIndexPanel } from "./TopicIndexPanel"
+import type { LeadTopicListItem } from "../lead-topics"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply, cachedArtifactUrl } from "./AudioReply"
@@ -207,6 +209,13 @@ export type ChatPaneProps = {
   leadGoals?: () => LeadGoalStatusSource[]
   /** Lead 状态卡的人类 attention 计数（与 goals 同源：pod detail）。 */
   leadAttention?: () => { goalId: string }[]
+  /** Lead 话题索引（shell 持有数据；面板与状态卡互斥）。 */
+  showTopics?: boolean
+  topicItems?: LeadTopicListItem[]
+  topicBusy?: boolean
+  onOpenTopics?: () => void
+  onResumeTopic?: (id: string) => void
+  onCloseTopics?: () => void
   /** 打开 Goal 的 Tech Lead 隐藏会话（Goal 标题作用域的 tab）。 */
   onOpenTechLead?: (goalId: string) => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
@@ -275,6 +284,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // 协调会话 = Lead（只认显式 lead；历史 manager 是普通历史）
   const isLead = () => isLeadRole(workspace.sessionRole(sidProp()))
   const [showLeadStatus, setShowLeadStatus] = createSignal(false)
+  createEffect(() => { if (props.showTopics) setShowLeadStatus(false) })
   // 会话 agent 的展示真值：本地 picks → 会话持久化的 agent（MafwSession.agent）。
   // 前端只比较契约 id，不认 runtime 原生名；默认/规划角色由 DTO 标记表达。
   const sessionAgentName = (): string | null =>
@@ -1840,12 +1850,28 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   </TooltipV2>
                 </Show>
                 <Show when={isLead()}>
+                  <TooltipV2 value="查看可恢复的话题" openDelay={300}>
+                    <ButtonV2
+                      variant="ghost"
+                      size="small"
+                      aria-pressed={props.showTopics === true}
+                      onClick={(e: MouseEvent) => { e.stopPropagation(); props.onOpenTopics?.() }}
+                    >
+                      话题
+                    </ButtonV2>
+                  </TooltipV2>
                   <TooltipV2 value="查看当前 Goal 状态（按需）" openDelay={300}>
                     <ButtonV2
                       variant="ghost"
                       size="small"
                       aria-pressed={showLeadStatus()}
-                      onClick={(e: MouseEvent) => { e.stopPropagation(); setShowLeadStatus((open) => !open) }}
+                      onClick={(e: MouseEvent) => {
+                        e.stopPropagation()
+                        setShowLeadStatus((open) => {
+                          if (!open) props.onCloseTopics?.()
+                          return !open
+                        })
+                      }}
                     >
                       状态
                     </ButtonV2>
@@ -2141,6 +2167,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </For>
             <ButtonV2 variant="ghost" size="small" onClick={() => setQueuedItems([])}>清空</ButtonV2>
           </div>
+        </Show>
+        <Show when={isLead() && props.showTopics}>
+          <TopicIndexPanel
+            topics={props.topicItems ?? []}
+            busy={props.topicBusy}
+            onResume={(id) => props.onResumeTopic?.(id)}
+            onClose={() => props.onCloseTopics?.()}
+          />
         </Show>
         <Show when={isLead() && showLeadStatus()}>
           <LeadGoalStatusCard goals={buildLeadGoalStatusCards(props.leadGoals?.() ?? [], props.leadAttention?.() ?? [])} />

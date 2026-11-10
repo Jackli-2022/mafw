@@ -1773,6 +1773,61 @@ export interface PermissionsNamespace {
 // MafwClient — full client interface
 // ============================================================
 
+export type LeadTopicState = 'resident' | 'warm' | 'cold' | 'archived'
+
+export interface LeadTopicView {
+  id: string
+  title: string
+  summary: string | null
+  state: LeadTopicState
+  lastActiveAt: string
+  goalId: string
+  resumedFrom: string | null
+}
+
+export interface LeadTopicIndexMessage {
+  topicId: string
+  messageId: string
+  role: 'user' | 'assistant'
+  text: string
+  tokenEstimate: number
+  createdAt: string
+}
+
+export interface LeadWorkingSet {
+  resident: string[]
+  warm: string[]
+  cold: string[]
+  pinned: string[]
+  evicted: string[]
+  topics: LeadTopicView[]
+}
+
+export interface LeadCompactResult {
+  topicId: string
+  beforeTokens: number
+  afterTokens: number
+  evictedMessageIds: string[]
+}
+
+export interface LeadRecallCandidate {
+  topicId: string
+  title: string
+  score: number
+  matches: string[]
+}
+
+export interface LeadNamespace {
+  topics: {
+    list(input?: { projectDir?: string; query?: string; limit?: number }): Promise<{ items: LeadTopicView[] }>
+    get(id: string): Promise<{ topic: LeadTopicView; messages: LeadTopicIndexMessage[] }>
+    resume(id: string): Promise<{ sessionID: string; resumedFrom: string | null }>
+  }
+  workingSet(input?: { projectDir?: string }): Promise<LeadWorkingSet>
+  compact(input: { topicId: string }): Promise<LeadCompactResult>
+  recall(input: { projectDir?: string; q: string }): Promise<{ candidates: LeadRecallCandidate[] }>
+}
+
 export interface MafwClient {
   session: SessionNamespace
   project: ProjectNamespace
@@ -1795,6 +1850,7 @@ export interface MafwClient {
   background: BackgroundNamespace
   terminal: TerminalNamespace
   pod: PodNamespace
+  lead: LeadNamespace
   work: WorkNamespace
   permissions: PermissionsNamespace
   providers: ProvidersNamespace
