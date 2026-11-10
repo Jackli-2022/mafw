@@ -214,6 +214,7 @@ import { shouldFlush } from './core/queue-flush';
 import { createCognitionGate } from './core/cognition/cognition-gate';
 import { validateRules, type CognitionRule } from './core/cognition/rules';
 import { attachCognitionRoutes } from './routes/cognition';
+import { attachPythonRoutes } from './routes/python';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5532,6 +5533,8 @@ class MafwScheduler {
       attachBackgroundJobHandlers(this.routeRegistry, () => ({ service: this.backgroundJobs ?? null }));
       // Phase D1 Task 2：认知面动词迁 registry dispatch（loopback-only 语义随迁）。
       attachCognitionRoutes(this.routeRegistry, { gate: () => this.cognitionGate });
+      // Phase D1 Task 3a：Python 内核面迁 registry dispatch（loopback-only）。
+      attachPythonRoutes(this.routeRegistry, { kernels: () => this.kernels });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6002,49 +6005,8 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/python/execute — persistent Python kernel (session-scoped)
-        if (req.url === "/api/python/execute" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.kernels) { res.writeHead(503); res.end(JSON.stringify({ error: 'PyKernel not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const sessionID = typeof body?.sessionID === 'string' ? body.sessionID : '';
-            const code = typeof body?.code === 'string' ? body.code : '';
-            if (!sessionID || !code) { res.writeHead(400); res.end(JSON.stringify({ error: 'sessionID and code are required' })); return; }
-            const kernel = this.kernels.get(sessionID);
-            const result = await kernel.execute(code, {
-              timeoutMs: typeof body?.timeoutMs === 'number' ? body.timeoutMs : undefined,
-            });
-            if (result.truncated) {
-              const removed = 'output truncated';
-              result.stdout += `\n\n... (${removed}, 已截断)`;
-            }
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
-
-        // POST /api/python/restart — restart the session's kernel (state lost)
-        if (req.url === "/api/python/restart" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.kernels) { res.writeHead(503); res.end(JSON.stringify({ error: 'PyKernel not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const sessionID = typeof body?.sessionID === 'string' ? body.sessionID : '';
-            if (!sessionID) { res.writeHead(400); res.end(JSON.stringify({ error: 'sessionID is required' })); return; }
-            await this.kernels.restart(sessionID);
-            res.writeHead(200);
-            res.end(JSON.stringify({ ok: true }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/python/execute + restart + status — Phase D1 Task 3a：
+        // 已迁 registry dispatch（attachPythonRoutes；loopback 守卫随迁）。
 
         // GET /api/tools — MAFW 基础工具 spec 清单（out-of-process runtime 的注册面）
         if (req.url === "/api/tools" && req.method === "GET") {
@@ -6064,21 +6026,8 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/python/status — kernel status for a session
-        if (req.url === "/api/python/status" && req.method === "GET") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.kernels) { res.writeHead(503); res.end(JSON.stringify({ error: 'PyKernel not initialized' })); return; }
-            const sessionID = new URL(req.url, 'http://localhost').searchParams.get('sessionID') || '';
-            if (!sessionID) { res.writeHead(400); res.end(JSON.stringify({ error: 'sessionID is required' })); return; }
-            res.writeHead(200);
-            res.end(JSON.stringify(this.kernels.status(sessionID)));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // GET /api/python/status — kernel status for a session — Phase D1 Task 3a：
+        // 已迁 registry dispatch。
 
         // MCP endpoints on /mcp — dual transport:
         //   POST with ?sessionId=... → legacy SSE message channel
