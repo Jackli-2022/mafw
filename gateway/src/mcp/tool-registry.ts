@@ -315,7 +315,7 @@ export const DEFINITIONS: ToolDefinition[] = [
       },
       required: ["success"],
     },
-    description: "Fetch a memory's full content by id. Accepts the full id (mem_...) or the 6-char pointer tail shown in <recall> blocks (#mem-xxxxxx). Superseded memories include the supersede chain with the latest version attached. Use this to expand a recall pointer into the full note before relying on it.",
+    description: "Fetch a memory's full content by id. Accepts mem_... / #mem-xxxxxx for Harmonic memories, t1:<traceId> for a permanent T1 verbatim turn, or legacy t1:<sessionTail>:<turnId>. Superseded memories include the latest version. Use this to expand a recall pointer before relying on it.",
     inputSchema: {
       type: "object",
       properties: {

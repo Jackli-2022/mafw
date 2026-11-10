@@ -5087,10 +5087,11 @@ class MafwScheduler {
     const services = {
       memory: this.memoryService,
       searchArchive: (sid: string, anchors: string[], k: number) => this.getGatewayDb().searchArchive(sid, anchors, k),
-      resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findArchiveBySessionTail(tail, turnId),
+      resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findT1BySessionTail(tail, turnId),
       searchT1: require('./recall/t1-search').createGatewayT1Search(this.getGatewayDb()),
       recordT1Retrieval: (traceId: string, kind: any, score?: number) =>
         this.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
+      readTrace: (traceId: string) => this.getGatewayDb().readTrace(traceId),
       cost,
       automation: this.automationEngine,
       ledger: this.ledger,

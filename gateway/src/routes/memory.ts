@@ -230,7 +230,10 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         memory: deps.memoryService(),
         mafwDir: deps.mafwDir(),
         searchArchive: (sid: string, anchors: string[], k: number) => deps.getGatewayDb().searchArchive(sid, anchors, k),
-        resolveT1: (tail: string, turnId: number) => deps.getGatewayDb().findArchiveBySessionTail(tail, turnId),
+        resolveT1: (tail: string, turnId: number) => deps.getGatewayDb().findT1BySessionTail(tail, turnId),
+        readTrace: (traceId: string) => deps.getGatewayDb().readTrace(traceId),
+        recordT1Retrieval: (traceId: string, kind: any, score?: number) =>
+          deps.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
       } as any);
       const body = JSON.parse(result.content[0].text);
       res.writeHead(result.isError ? 404 : 200, { 'Content-Type': 'application/json' });

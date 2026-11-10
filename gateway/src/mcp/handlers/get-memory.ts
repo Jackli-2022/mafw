@@ -9,7 +9,7 @@ import { reconstructSource } from "../../recall/source-reconstruction";
  * guessing. Superseded memories report the supersede chain with the latest
  * version attached so the agent never acts on stale notes.
  */
-export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive, resolveT1 }) => {
+export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive, resolveT1, readTrace, recordT1Retrieval }) => {
   try {
     // V1: t1 pointer redemption — ids of the form `t1:<sessionTail>:<turnId>`
     // resolve to raw archived round rows (verbatim layer).
@@ -25,12 +25,46 @@ export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, sear
       if (!rows.length) {
         return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `no t1 rows for session tail ${tail} turn ${turnId}` }) }], isError: true };
       }
+      const traceId = rows[0].trace_id ?? undefined;
+      if (traceId) recordT1Retrieval?.(traceId, 'redeem');
       const t1Payload = {
         success: true,
         t1: {
           sessionId: rows[0].session_id,
           turnId,
+          ...(traceId ? { traceId } : {}),
           rows: rows.map(r => ({ source: r.source, content: r.content })),
+        },
+      };
+      return { content: [{ type: "text", text: JSON.stringify(t1Payload) }], structuredContent: t1Payload };
+    }
+
+    // V2: permanent trace pointer `t1:<traceId>` resolves active+archived rows
+    // by identity, independent of the legacy session-tail pointer above.
+    const traceMatch = rawId.replace(/^#/, '').match(/^t1:([^:]+)$/);
+    if (traceMatch) {
+      const traceId = traceMatch[1];
+      if (!readTrace) {
+        return { content: [{ type: "text", text: JSON.stringify({ success: false, error: 't1 trace resolution unavailable (gateway service missing)' }) }], isError: true };
+      }
+      const trace = readTrace(traceId);
+      if (!trace) {
+        return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `no t1 rows for trace ${traceId}` }) }], isError: true };
+      }
+      recordT1Retrieval?.(traceId, 'redeem');
+      const t1Payload = {
+        success: true,
+        t1: {
+          traceId,
+          sessionId: trace.turn.session_id,
+          turnId: trace.turn.turn_seq,
+          archived: trace.archived,
+          legacyAmbiguous: trace.turn.legacy_ambiguous === 1,
+          rows: trace.rows.map(r => ({
+            source: r.source,
+            content: r.content,
+            ...(r.observation_key ? { observationKey: r.observation_key } : {}),
+          })),
         },
       };
       return { content: [{ type: "text", text: JSON.stringify(t1Payload) }], structuredContent: t1Payload };

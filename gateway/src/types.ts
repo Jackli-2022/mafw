@@ -41,6 +41,8 @@ export interface Services {
     kind: import('./memory/gateway-db').T1RetrievalKind,
     score?: number,
   ) => void;
+  /** Resolve a permanent T1 trace id to its full active+archive turn. */
+  readTrace?: (traceId: string) => import('./memory/gateway-db').T1TraceRead | null;
 }
 
 export type ToolHandler = (

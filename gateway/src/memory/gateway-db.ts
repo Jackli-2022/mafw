@@ -1005,6 +1005,16 @@ export class GatewayDatabase {
       .all(tail, turnId) as T1Observation[];
   }
 
+  /** Legacy t1 pointer: archive first, then active rows for not-yet-archived turns. */
+  findT1BySessionTail(tail: string, turnId: number): T1Observation[] {
+    if (!tail || !Number.isInteger(turnId) || turnId < 0) return [];
+    const archived = this.findArchiveBySessionTail(tail, turnId);
+    if (archived.length) return archived;
+    return this.db
+      .prepare(`SELECT * FROM t1_observations WHERE session_id LIKE '%' || ? || '%' AND turn_id = ? ORDER BY id LIMIT 50`)
+      .all(tail, turnId) as T1Observation[];
+  }
+
   // ── Noop log (extraction coverage monitoring) ──────────────────────────
 
   /**
