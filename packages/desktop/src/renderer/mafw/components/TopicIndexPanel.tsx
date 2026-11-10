@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import type { LeadBoundaryView } from "@mafw/sdk"
 import type { LeadTopicListItem } from "../lead-topics"
 
 /**
@@ -8,8 +9,11 @@ import type { LeadTopicListItem } from "../lead-topics"
  */
 export function TopicIndexPanel(props: {
   topics: LeadTopicListItem[]
+  boundaries?: LeadBoundaryView[]
   busy?: boolean
   onResume: (id: string) => void
+  onFork?: (id: string) => void
+  onBoundaryAction?: (id: string, action: "accept" | "merge" | "undo") => void
   onClose: () => void
 }) {
   return (
@@ -37,9 +41,40 @@ export function TopicIndexPanel(props: {
                   <span class="mafw-card-meta">{topic.summary}</span>
                 </Show>
               </ButtonV2>
+              <Show when={props.onFork}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  disabled={props.busy}
+                  onClick={() => props.onFork?.(topic.id)}
+                >
+                  分叉
+                </ButtonV2>
+              </Show>
             </div>
           )}
         </For>
+      </Show>
+      <Show when={props.boundaries && props.boundaries.length > 0}>
+        <div class="mafw-topic-index-boundaries">
+          <span class="mafw-work-kicker">边界提议</span>
+          <For each={props.boundaries}>
+            {(boundary) => (
+              <div class="mafw-topic-index-row" data-boundary-id={boundary.id}>
+                <span class="mafw-card-meta">检测到新话题</span>
+                <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => props.onBoundaryAction?.(boundary.id, "accept")}>
+                  接受
+                </ButtonV2>
+                <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => props.onBoundaryAction?.(boundary.id, "merge")}>
+                  合并
+                </ButtonV2>
+                <ButtonV2 variant="ghost" size="small" disabled={props.busy} onClick={() => props.onBoundaryAction?.(boundary.id, "undo")}>
+                  撤销
+                </ButtonV2>
+              </div>
+            )}
+          </For>
+        </div>
       </Show>
     </div>
   )
