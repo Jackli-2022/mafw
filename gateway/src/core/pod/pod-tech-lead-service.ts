@@ -10,6 +10,7 @@ import {
   GoalConflictError,
   createGoalIntake,
   makePodGoalId,
+  readGoalRequest,
   type GoalAuthorization,
   type GoalIntakeInput,
   type GoalIntakeResult,
@@ -24,6 +25,7 @@ import {
 import {
   PodError,
   isTerminalGoalRevisionStatus,
+  type PodGoalMode,
   type PodGoalRevisionRow,
   type PodGoalRow,
   type PodMemberRow,
@@ -361,6 +363,19 @@ export class PodTechLeadService {
       parts: [{ type: 'text', text: content }],
     });
     return { goalId: goal.goalId, revision, sessionID, text: content };
+  }
+
+  /** Persist the Tech Lead's execution shape on the active revision. */
+  async setGoalMode(goalId: string, mode: PodGoalMode): Promise<void> {
+    const goal = this.requireGoal(goalId);
+    const revision = this.requireActiveRevision(goal);
+    const pod = this.requirePod(goal.podId);
+    const resolved = this.deps.resolveProject(pod.projectDir);
+    const request = resolved ? readGoalRequest(resolved.mafwDir, goal.goalId) : null;
+    if (mode === 'quick' && request?.planReview === 'manual') {
+      throw new PodError(400, 'quick requires auto plan review');
+    }
+    this.deps.store.setGoalRevisionMode(goal.goalId, revision, mode);
   }
 
   /** 只读读取当前讨论会话历史；没有存活会话时返回空（不创建会话）。 */

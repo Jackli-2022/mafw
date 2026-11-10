@@ -219,6 +219,31 @@ describe('PodTechLeadService', () => {
     });
   });
 
+  test('setGoalMode persists quick', async () => {
+    const created = await service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Quick',
+      objective: 'O',
+      createdBy: 'ses_lead',
+    });
+    await service.setGoalMode(created.goalId, 'quick');
+    expect(store.getGoalRevision('pod_1', created.goalId, 1)?.goalMode).toBe('quick');
+  });
+
+  test('setGoalMode rejects quick when plan review is manual', async () => {
+    const manual = await service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Manual',
+      objective: 'O',
+      createdBy: 'ses_lead',
+      planReview: 'manual',
+    });
+    await expect(service.setGoalMode(manual.goalId, 'quick')).rejects.toMatchObject({ status: 400 });
+    expect(store.getGoalRevision('pod_1', manual.goalId, 1)?.goalMode).toBe('standard');
+  });
+
   test('ensureSession reuses the scoped discussion session and history reads it', async () => {
     const created = await service.createGoal({
       podId: 'pod_1', projectDir: dir, title: 'Loop', objective: 'x', createdBy: 'ses_lead',

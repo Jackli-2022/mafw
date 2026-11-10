@@ -40,6 +40,7 @@ describe('mafw_pod_goal_direction', () => {
   let techLead: { assertTechLeadSession: jest.Mock };
   let direction: { decide: jest.Mock; request: jest.Mock };
   let startPlanning: jest.Mock;
+  let setGoalMode: jest.Mock;
   let log: jest.Mock;
   let tool: ReturnType<typeof createPodGoalDirectionTool>;
 
@@ -50,8 +51,9 @@ describe('mafw_pod_goal_direction', () => {
       request: jest.fn(() => directionResult('needs_user')),
     };
     startPlanning = jest.fn(async () => undefined);
+    setGoalMode = jest.fn();
     log = jest.fn();
-    tool = createPodGoalDirectionTool({ techLead, direction, startPlanning, now: () => NOW, log });
+    tool = createPodGoalDirectionTool({ techLead, direction, startPlanning, setGoalMode, now: () => NOW, log });
   });
 
   test('clear records a Tech Lead decision without user attention and starts planning', async () => {
@@ -188,5 +190,27 @@ describe('mafw_pod_goal_direction', () => {
       planningError: 'driver unavailable',
     });
     expect(log).toHaveBeenCalled();
+  });
+
+  test('writes goalMode before deciding and starting planning', async () => {
+    await tool.execute(
+      { goalId: 'g1', mode: 'clear', userWords: '按方案 A', goalMode: 'quick' },
+      { sessionID: 'ses_tl' },
+    );
+
+    expect(setGoalMode).toHaveBeenCalledWith('g1', 'quick');
+    expect(direction.decide).toHaveBeenCalled();
+    expect(startPlanning).toHaveBeenCalledWith('g1');
+  });
+
+  test('standing is not supported yet', async () => {
+    const result = await tool.execute(
+      { goalId: 'g1', mode: 'clear', userWords: '按方案 A', goalMode: 'standing' },
+      { sessionID: 'ses_tl' },
+    );
+
+    expect(result.structuredContent).toMatchObject({ success: false, status: 501 });
+    expect(setGoalMode).not.toHaveBeenCalled();
+    expect(direction.decide).not.toHaveBeenCalled();
   });
 });

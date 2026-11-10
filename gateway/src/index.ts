@@ -5042,6 +5042,7 @@ class MafwScheduler {
         techLead: this.podTechLeadService,
         direction: this.podDirectionService,
         startPlanning: (goalId: string) => this.startGoalDirect(goalId),
+        setGoalMode: (goalId: string, mode: any) => this.podTechLeadService.setGoalMode(goalId, mode),
         log: (message: string) => log.info(message),
       },
       podGoalStatus: {
