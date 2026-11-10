@@ -18,7 +18,6 @@ import type {
   CompletionRequest,
   CompletionResult,
   OpencodeRuntime,
-  RuntimeCredentials,
   SessionInfo,
 } from './types';
 import { MAFW_TERMINAL_PROTOCOL, fullCapabilities } from './types';

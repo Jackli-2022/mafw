@@ -85,13 +85,16 @@ gateway/
 │   │   └── pipeline-rules.ts / pipeline-heartbeat.ts / pipeline-budget.ts
 │   ├── runtime/                  # Runtime 能力契约（见专节）：
 │   │   ├── contract.ts / validate.ts / loader.ts           # 契约 + 激活校验 + 插件加载
-│   │   ├── opencode-runtime.ts   #   内置恒等实现（全能力）
+│   │   ├── neutral-runtime.ts / runtime-facade.ts / runtime-bus.ts   # 中性门面 / 总线
+│   │   ├── adapter-bridge.ts     #   通用 legacy→neutral 桥（opencode 包内有本地副本）
+│   │   ├── opencode-adapter.ts   #   唯一 `require('@mafw/adapter-opencode')` 入口（驱动已移出 gateway）
+│   │   ├── pi-adapter.ts         #   唯一 `require('@mafw/adapter-pi')` 入口（pi 实现已移出 gateway）
+│   │   ├── provider-transport.ts #   scan 路径 provider baseURL/key 优先级（credentials → driver → gateway 链）
 │   │   ├── mafw-tools.ts         #   六件套单源（spec + execute factory + 激活助手）
 │   │   ├── tool-classes.ts       #   工具语义类别层（并集表 + runtime 声明 overlay）
 │   │   ├── host-adapter.ts       #   re-export `@mafw/runtime-core` 认知面契约（四动词，loopback HTTP）
 │   │   ├── event-mapper.ts / canonical-facets.ts / mafw-vocabulary.ts   # 事件映射 + 词汇单源
-│   │   ├── identity-registry.ts / identity-state.ts        # agent 身份单一事实源
-│   │   └── pi-adapter.ts         #   唯一 `require('@mafw/adapter-pi')` 入口（pi 实现已移出 gateway）
+│   │   └── identity-registry.ts / identity-state.ts        # agent 身份单一事实源
 │   ├── mcp/                      # MCP 工具注册表 + handlers（/mcp 双传输）
 │   ├── media/                    # A2A Media Agent、pi-adapter、插件引擎加载器
 │   ├── python/                   # 持久 Python 内核（Jupyter wire 协议 + ZeroMQ）
@@ -198,6 +201,25 @@ activateRuntimeTools()                     registerTools(factory)   ← stash
 宿主适配器对 gateway 的四动词（loopback HTTP，宿主无关）——observe（5s）/ injectContext
 （100ms 游标增量）/ injectSystem（150ms）/ tools（六件套）。实现：v1 opencode 插件
 （原生同语义）、pi host extension（消费本核心）、v2 待迁移。
+
+**opencode 驱动的物理边界（Plan 6）**：opencode 实现全部在 workspace 包
+`adapters/opencode`（`@mafw/adapter-opencode`）：dialect 探测与 v1/v2/v21 事件表、canonical
+消息、history wire→flat、MCP（运行时 + JSONC 编辑）、PTY、snapshot/checkpoint、后台任务、
+serve 子进程监管、`auth.json` 凭据与 inline provider settings、legacy→neutral 组装
+（`definition.ts` + 包内 `legacy-definition.ts` 副本）。gateway 只剩
+`runtime/opencode-adapter.ts` 一个 fail-soft 包入口（缺包时一次性 warn + 能力全 false 的
+静态回退，激活抛可诊断错误让组合根回退），因此 `gateway/src` 里不再有 opencode 驱动文件、
+也不再有任何第二处 `require('@mafw/adapter-opencode')`（`neutral-runtime-boundaries` 守卫）。
+包内不得 import `gateway/src`（只允许 `@mafw/runtime-contract` / `@mafw/runtime-core` /
+`@opencode-ai/sdk` / `jsonc-parser` / `cross-spawn` / Node 内置 / 本地模块）。
+
+组合根与驱动之间只有契约里声明的 host 接缝：`ctx.serve`（gateway 请求的 serve listener，
+adapter 缺省 `127.0.0.1:4096`）、`ctx.rootDir`（serve cwd）、`ctx.credentials`（凭据快照）、
+`proxyHeaders`（adapter 产出 serve Basic-auth 头，gateway 反代优先用它、`serveAuthHeaders()`
+只作 fail-safe 兜底）与 `resolveProviderTransport`（scan 路径 provider 解析，gateway 保持
+credentials 优先）。翻译归属保持「self-vs-declared」：驱动自报
+`eventMappings`/`transformEvent`（声明式），gateway 只做校验、映射与 canonical passthrough，
+不认识任何原生 payload 字段名。
 
 **Agent 身份层（IdentityRegistry）**：lead / memory-curator / mafw-{plan,execute,review}（manager 为兼容别名）
 收敛为 gateway 持有的 `IdentitySpec`（systemPrompt + policy 中立类别词汇），物化车道
@@ -344,7 +366,7 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 | 子系统 | 位置 | 说明 |
 |---|---|---|
 | serve sidecar 监管 | index.ts + 契约 | spawn/收养、watchdog、recoverServe、事件流重订阅 |
-| Runtime 能力契约 | `runtime/` | Tier 0-2 + 必选工具通道；opencode 内置 / pi 插件 / 热切换（见专节） |
+| Runtime 能力契约 | `runtime/` + `adapters/opencode` | Tier 0-2 + 必选工具通道；opencode 驱动在包内（`@mafw/adapter-opencode`）、gateway 只留 `runtime/opencode-adapter.ts` shim / pi 插件 / 热切换（见专节） |
 | 事件映射注册 | `runtime/event-mapper.ts` + `canonical-facets.ts` | 纯数据表（原生→canonical）+ facet 规则表；`path-expr.ts` 安全求值；工具三原语合帧（`tool-part-assembler.ts`） |
 | 谐波记忆 | `memory/` + `core/memory/` | OKF 存储、BM25/hybrid 检索、能量（ACT-R 检索加成）、巩固层语义合并 |
 | 记忆管线 | `recall/` | turnCompress / reflection / reconsolidate / dream / stale 重验 / skill 物化 / 公理蒸馏（见专节） |
@@ -703,8 +725,9 @@ SSE 事件直接从前端 EventSource 连 gateway，不走 IPC。
 
 #### OpenCode Serve Sidecar（自监管）
 
-opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
-（`gateway/src/serve-sidecar.ts`，替换 SDK `createOpencodeServer` 封装）：
+opencode serve（4096）由 opencode 驱动以 **sidecar 子进程**方式监管
+（`adapters/opencode/src/serve-sidecar.ts`，替换 SDK `createOpencodeServer` 封装）；
+gateway 只保留中性编排（watchdog / recoverServe / 事件流重订）：
 
 - **spawn 契约与 SDK 完全一致**：`createOpencodeServer` 内部使用 cross-spawn、
   `opencode serve --hostname=127.0.0.1 --port=4096`、env `OPENCODE_CONFIG_CONTENT="{}"`、

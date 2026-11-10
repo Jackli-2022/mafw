@@ -273,7 +273,7 @@ describe('createOpencodeRuntime', () => {
 
 describe('opencode-runtime �����������ʵ��ϣ����� Critical #1 �ع鶤����', () => {
   it('����Ӧ resolveEventEntry �������ﱣ�� transformEvent �� message.updated �˵��˴��', async () => {
-    const { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS } = await import('../../../src/runtime/opencode-events');
+    const { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS } = await import('../../../../adapters/opencode/src/events');
     const { EVENT_FLOW_MATRIX } = await import('../../../src/runtime/event-flow-matrix');
     const { TOOL_PRIMITIVE_TYPES } = await import('../../../src/runtime/tool-part-assembler');
     const { applyEventMappings } = await import('../../../src/runtime/event-mapper');

@@ -1,14 +1,19 @@
 /**
  * Gateway entry for the opencode driver. The package is a CJS bundle; this
- * shim is the only place the gateway resolves it by name.
+ * shim is the only place the gateway resolves it by name (Plan 6 Task 7 removed
+ * the one-release `opencode-*` re-export shims, so the old gateway import paths
+ * are gone for good).
  *
  * Loading is fail-soft (same policy as `pi-adapter.ts`): a missing/partial
  * staging must not crash gateway boot for users running another runtime. The
- * static capability/entry fallbacks keep registration alive; activation throws
- * a diagnosable error that lets the composition root fall back.
+ * first miss is logged once instead of silently degrading the credential /
+ * serve-auth / definition surfaces; static capability/entry fallbacks keep
+ * registration alive, and activation throws a diagnosable error that lets the
+ * composition root fall back.
  */
 import type { RuntimeCapabilities, RuntimeDefinition, RuntimeFactoryContext } from '@mafw/runtime-contract';
 import type { OpencodeDefinitionOptions, OpencodeDefinitionDeps, OpencodeVariant } from '@mafw/adapter-opencode';
+import { log } from '../core/utils/logger';
 import type { EventMappingEntry } from './event-mapper';
 import { setBridgeEventEntryProvider } from './adapter-bridge';
 
@@ -27,6 +32,15 @@ interface AdapterOpencodeModule {
   ): string | undefined;
   getBridgeEventEntry(name: string): EventMappingEntry | undefined;
   setBridgeEventEntry(name: string, entry: EventMappingEntry): void;
+  /** Serve Basic-auth headers for the reverse proxy fallback. */
+  serveAuthHeaders(): Record<string, string>;
+  /** Inline provider settings read from an opencode config document. */
+  readProviderApiKey(cfg: unknown, providerID: string): string | null;
+  readProviderBaseUrlWithPath(cfg: unknown, providerID: string): string | null;
+  readProviderTransportFromList(
+    list: unknown,
+    providerID: string,
+  ): { baseUrl: string | null; apiKey: string | null };
 }
 
 const FALLBACK_CAPABILITIES: RuntimeCapabilities = {
@@ -58,6 +72,21 @@ const FALLBACK_CAPABILITIES: RuntimeCapabilities = {
 
 let cached: AdapterOpencodeModule | undefined;
 let loadError: unknown;
+let warnedMissing = false;
+
+function warnMissingOnce(): void {
+  if (warnedMissing) return;
+  warnedMissing = true;
+  const detail = loadError instanceof Error ? loadError.message : String(loadError);
+  try {
+    log.warn(
+      `[opencode] @mafw/adapter-opencode is not available (${detail}); `
+      + 'opencode definitions, provider credentials and serve auth headers are unavailable',
+    );
+  } catch {
+    /* logging must never block boot */
+  }
+}
 
 function adapter(): AdapterOpencodeModule | undefined {
   if (cached) return cached;
@@ -72,6 +101,7 @@ function adapter(): AdapterOpencodeModule | undefined {
     });
   } catch (err) {
     loadError = err;
+    warnMissingOnce();
   }
   return cached;
 }
@@ -104,12 +134,38 @@ export function opencodeCapabilities(variant: OpencodeVariant, external: boolean
   return loaded?.opencodeCapabilities(variant, external) ?? FALLBACK_CAPABILITIES;
 }
 
+/**
+ * `auth.json` credential reader. Unlike the pre-extraction gateway copy this
+ * fails soft when the adapter is missing, but it is no longer silent: the
+ * package miss is logged once at load (`warnMissingOnce`).
+ */
 export function getProviderApiKey(
   provider: string,
   authPath?: string,
   credentials?: { getApiKey(provider: string): string | null },
 ): string | undefined {
   return loaded?.getProviderApiKey(provider, authPath, credentials);
+}
+
+/** Serve Basic-auth headers used by the reverse proxy when the host has no seam. */
+export function serveAuthHeaders(): Record<string, string> {
+  return loaded?.serveAuthHeaders() ?? {};
+}
+
+/** Judge/scan fallback: inline `provider.<id>.settings` from the runtime config. */
+export function readProviderApiKey(cfg: unknown, providerID: string): string | null {
+  return loaded?.readProviderApiKey(cfg, providerID) ?? null;
+}
+
+export function readProviderBaseUrlWithPath(cfg: unknown, providerID: string): string | null {
+  return loaded?.readProviderBaseUrlWithPath(cfg, providerID) ?? null;
+}
+
+export function readProviderTransportFromList(
+  list: unknown,
+  providerID: string,
+): { baseUrl: string | null; apiKey: string | null } {
+  return loaded?.readProviderTransportFromList(list, providerID) ?? { baseUrl: null, apiKey: null };
 }
 
 export function getBridgeEventEntry(name: string): EventMappingEntry | undefined {

@@ -6,7 +6,7 @@ jest.mock('../../../src/core/utils/logger', () => ({
 jest.mock('../../../src/config', () => ({
   config: { raw: { paths: { projectDir: '/tmp/proj' } }, server: { apiPort: 3000 } },
 }));
-jest.mock('../../../src/runtime/auth', () => ({
+jest.mock('../../../../adapters/opencode/src/auth', () => ({
   DEFAULT_AUTH_PATH: () => '/tmp/nonexistent-auth.json',
   readOpencodeAuth: () => ({}),
 }));

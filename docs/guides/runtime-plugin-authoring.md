@@ -126,6 +126,9 @@ module.exports = defineRuntime({
 - `registerBuiltinDefinition` 是 gateway 内部注册面；外部插件只需导出上面的对象（或继续用 §3.1 的 `createRuntime` 形状）。
 - 直接导出裸对象时**必须自带 `capabilities` 和 `channels.tools`**（Tier-0 校验）；`defineRuntime` 会补默认值。离线 `mafw plugin-check` 目前仍只识别 `createRuntime`，中性 definition 的离线检查在 Plan 5 迁移。
 - **内置 pi 是首个包形态 adapter**：源码在 `adapters/pi/src`，构建为 `@mafw/adapter-pi`（CJS bundle，external `@earendil-works/pi-coding-agent` / `@mafw/runtime-contract` / `@mafw/runtime-core`）。gateway 只在 `gateway/src/runtime/pi-adapter.ts` 通过 `require('@mafw/adapter-pi')` 导入包入口；adapter 源码不得 import `gateway/src/**`。`channels.messages.list` 返回原生历史，`channels.messages.normalize` 负责转 flat MAFW DTO（neutral runtime 只归一一次，不要在 `list` 里重复归一）。
+- **opencode 同样已包化（Plan 6）**：`adapters/opencode` → `@mafw/adapter-opencode`，gateway 只在 `gateway/src/runtime/opencode-adapter.ts` require 包入口（缺包一次性 warn + 能力全 false 回退）。包内可 import 的只有 `@mafw/runtime-contract` / `@mafw/runtime-core` / `@opencode-ai/sdk` / `jsonc-parser` / `cross-spawn` / Node 内置 / 本地模块；`gateway/src` 里出现第二处 `require('@mafw/adapter-*')` 或任何 `adapters/opencode` 引用会被 `gateway/tests/unit/runtime/neutral-runtime-boundaries.test.ts` 判红。
+- **host 接缝（ctx）**：`ctx.serve`（宿主请求的 serve listener，缺省 `127.0.0.1:4096`）、`ctx.rootDir`（server cwd）、`ctx.credentials`（凭据快照）、`ctx.policy`（审批/认知钩子）、`ctx.log`。反向代理的 serve Basic-auth 头由驱动在 `host.proxyHeaders()` 提供（gateway 不再自己拼）；scan/judge 的 provider 解析可经 `host.resolveProviderTransport(providerID)` 暴露驱动自己的 config 读取，gateway 会保持 credentials 优先。
+- **翻译归属**：驱动自报 `eventMappings`/`transformEvent`（声明式纯数据），gateway 只执行与校验——不要在驱动里写第二套翻译执行器，也不要把原生字段名带到 gateway 业务层。
 
 ## 3. 先让 `core` 跑起来
 

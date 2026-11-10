@@ -1,6 +1,6 @@
 import { createPluginCredentials } from '../../../src/runtime/plugin-credentials';
 
-jest.mock('../../../src/runtime/auth', () => ({
+jest.mock('../../../../adapters/opencode/src/auth', () => ({
   getProviderApiKey: jest.fn((provider: string, _authPath?: string, active?: { getApiKey(p: string): string | null }) =>
     active?.getApiKey(provider) ?? `auth:${provider}`),
 }));

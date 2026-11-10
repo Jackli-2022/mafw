@@ -75,9 +75,25 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
 - `normalize.ts` — runtime 原生事件 → `EventFacets`（正交切面：step/chatSignal/
   broadcast/toolCommand）；opencode 版本知识（≥1.18 step-finish part 结算）只存在于
   本文件（step facet 喂 BudgetGuard 回合计数）
-- `opencode-runtime.ts` — 内置恒等实现（全能力，`external` 跟随 MAFW_SERVER_SERVE_URL）；
-  内含 opencode 专属实现：SQLite session 存储（`sessionStorageApi`）、auth.json 凭据
-  （`credentials`）、agent frontmatter 序列化（`agents.install`）
+- **opencode 驱动 = workspace 包 `adapters/opencode`（`@mafw/adapter-opencode`）**（Plan 6）：
+  驱动整体移出 gateway，包内分工 `adapter.ts`（恒等实现：session/PTY/checkpoint/diff/MCP
+  通道）、`runtime.ts`（serve 生命周期 + SQLite session 存储 `sessionStorageApi` + auth.json
+  凭据 + agent frontmatter 序列化）、`definition.ts` + `legacy-definition.ts`（legacy→neutral
+  组装；bridge 的包内副本，gateway 保留通用版本）、`events.ts`/`events-21.ts`（方言事件表）、
+  `canonical.ts`/`history.ts`/`snapshot.ts`/`mcp.ts`/`mcp-config.ts`/`mcp-jsonc.ts`/
+  `dialect-probe.ts`/`form-question.ts`/`auth.ts`/`provider-settings.ts`/`serve-sidecar.ts`。
+  gateway 只保留 `runtime/opencode-adapter.ts` 一个 fail-soft 包入口：缺包时一次性 warn、
+  能力全 false + 空事件表回退，激活抛可诊断错误让组合根回退；**`gateway/src` 里没有任何
+  第二处 `require('@mafw/adapter-opencode')`**（Task 7 删除了一个发布周期的 re-export shim，
+  `neutral-runtime-boundaries` 守卫钉住）。包内只允许 import `@mafw/runtime-contract` /
+  `@mafw/runtime-core` / `@opencode-ai/sdk` / `jsonc-parser` / `cross-spawn` / Node 内置 /
+  本地模块，不得回指 `gateway/src`
+- **host 接缝**（组合根 ↔ 驱动，Plan 6 Task 3/6）：`ctx.serve`（gateway 请求的 serve
+  listener，adapter 缺省 `127.0.0.1:4096`）、`ctx.rootDir`（serve cwd = `~/.mafw/runtime-root`）、
+  `ctx.credentials`（凭据快照）、`proxyHeaders`（adapter 产出 serve Basic-auth 头，反代优先用，
+  `serveAuthHeaders()` 只作 fail-safe）、`resolveProviderTransport`（scan 路径 provider
+  baseURL/key；gateway 用 `provider-transport.ts` 保持 credentials → driver → gateway 链的
+  原优先级，judge 路径不变）
 - `agent-definition.ts` — 运行时中立的 `AgentDefinition` 模型（description/mode/model/
   systemPrompt/permissions），各 runtime 翻译为自己的配置格式
 - `loader.ts` — `~/.mafw/runtime-plugins/*.js` 插件加载（CJS `module.exports =
@@ -240,8 +256,9 @@ runtime 插件用**纯数据表**把原生事件接入 canonical 管线，不再
 - **加载期校验**（`loader.ts`）：未知 canonical `to` / 坏路径 / **声明 eventStream 却无翻译声明** → 插件 `eventStream` 能力降级 + error 状态（fail-open，仍注册；包贡献 runtime 由 index.ts activatePluginRuntime 兜底降级）
 - **B2/B3 可观测**：`GET /api/runtime` 暴露 `translationErrors`（transformEvent/normalizeMessages 守卫失败，限频 ERROR + 计数）与 `translationDrops`（per-type **unmatched**=未命中翻译【监控信号，turn 终态类每次 loud warn】 / **suppressed**=drop 行或 transformEvent 显式 null【作者意图】）；conformance 断言 unmatched===0（升级 runtime 后跑一遍即抓词汇漂移）+ session-lifecycle 历史形状断言（`{info,parts[]}`）
 - **dry-event 试衣间**：`POST /api/runtime/dry-event { plugin, event }` 输出 映射→facet→矩阵→字段契约 每跳（含 approval facet 回显 + 工具三原语的 assembler 跳回显 `assembled`）
-- **已迁入**：pi（`PI_EVENT_MAPPINGS`，`translatePiEvent` 由 switch 表化——**turn_end 改 `part.messageID`，修复 BudgetGuard step facet 在 pi 上从未触发的 bug**）；opencode 原生事件即 canonical（不包装）；~~词汇表沿用 opencode 形状~~（**2026-10-12 v2 已反转**，见下）
-- **词汇 v2（2026-10-12，`docs/superpowers/specs/2026-10-12-native-event-vocabulary-design.md`）**：canonical 词汇所有权归 MAFW——`turn.completed/failed/aborted` 三元组统一回合终态（原 session.idle/message.complete/message.error/message.aborted 五终态双轨 + Mode A 改写 hack 全部删除，广播统一 passthrough）；`message.part.*` → `part.*`；`todo.updated` → `plan.updated`；新增 `usage.updated`（gateway 从 TrajectoryTurn tokens/cost 合成）与 permission.asked 载荷可选 `options[]`/`suggestedRule`；`session.next.*` 六条除名（唯一消费者 v1 宿主插件在进程内吃原生事件）；信封 `opencode_event` → `mafw_event`（SDK 类型 `MafwEventEnvelope`）。**强制翻译接线**：opencode 经 `registerBuiltin` 携 `OPENCODE_EVENT_MAPPINGS`（`runtime/opencode-events.ts`：差异行 + session.next.*/sync 显式 drop 行 + `canonicalIdentity('$.payload.properties')` 恒等行——transformEvent 已退役）接入，与文件插件同一注册接口；三分支（plugin/builtin/direct）共用 `wrapGlobalEventStream`（强制）→ `wrapToolPartAssembly` 序列。**词汇单源**：SDK `events.ts`（客户端契约）↔ `runtime/mafw-vocabulary.ts`（gateway 常量 `MAFW`，交叉测试 `vocabulary-sync.test.ts` 钉扎）；三层守卫链不变（SDK union ↔ 矩阵测试 ↔ desktop `assertShellEventCoverage`）+ TUI 第四道弱守卫（KNOWN_EVENTS ⊆ union，`tests/event-coverage.test.ts`）。**toolCommand facet 载体迁移**：原 `session.next.tool.*`（`type.includes('tool')` 特例）→ `part.updated` + `part.type='tool'` 规则行（`$.part.state.input.command`），自更新调用者定位行为保持。**eventBus 扁平发射注册表化**：`runtime/flat-emit-registry.ts`（10 类型）替换 setupEventBus if 链；goal_node 已正式登记 SDK union/矩阵/穷尽守卫。oracle 重立为 v2 手写参照（`normalize-oracle.test.ts`）；replay 升级为全链路 golden（opencode raw → 翻译 → normalize，`event-replay.test.ts`）
+- **已迁入**：pi（`PI_EVENT_MAPPINGS`，`translatePiEvent` 由 switch 表化——**turn_end 改 `part.messageID`，修复 BudgetGuard step facet 在 pi 上从未触发的 bug**）；opencode 原生事件即 canonical（不包装，映射表仍显式声明）；~~词汇表沿用 opencode 形状~~（**2026-10-12 v2 已反转**，见下）
+- **翻译归属 = self-vs-declared（Plan 6）**：驱动自报 `eventMappings`/`transformEvent`/`eventSource`（声明式、纯数据），gateway 只做声明校验 + 映射执行 + canonical passthrough，不认识任何原生 payload 字段名。opencode 的表随驱动进包（`adapters/opencode/src/events.ts` / `events-21.ts`），`dry-event` 的 tooling entry 由 shim 的 bridge provider 镜像回 gateway 映射表（`setBridgeEventEntryProvider`）
+- **词汇 v2（2026-10-12，`docs/superpowers/specs/2026-10-12-native-event-vocabulary-design.md`）**：canonical 词汇所有权归 MAFW——`turn.completed/failed/aborted` 三元组统一回合终态（原 session.idle/message.complete/message.error/message.aborted 五终态双轨 + Mode A 改写 hack 全部删除，广播统一 passthrough）；`message.part.*` → `part.*`；`todo.updated` → `plan.updated`；新增 `usage.updated`（gateway 从 TrajectoryTurn tokens/cost 合成）与 permission.asked 载荷可选 `options[]`/`suggestedRule`；`session.next.*` 六条除名（唯一消费者 v1 宿主插件在进程内吃原生事件）；信封 `opencode_event` → `mafw_event`（SDK 类型 `MafwEventEnvelope`）。**强制翻译接线**：opencode 经 `registerBuiltinDefinition` 携包内 `OPENCODE_EVENT_MAPPINGS`（`adapters/opencode/src/events.ts`：差异行 + session.next.*/sync 显式 drop 行 + `canonicalIdentity('$.payload.properties')` 恒等行——transformEvent 已退役）接入，与文件插件同一注册接口；三分支（plugin/builtin/direct）共用 `wrapGlobalEventStream`（强制）→ `wrapToolPartAssembly` 序列。**词汇单源**：SDK `events.ts`（客户端契约）↔ `runtime/mafw-vocabulary.ts`（gateway 常量 `MAFW`，交叉测试 `vocabulary-sync.test.ts` 钉扎）；三层守卫链不变（SDK union ↔ 矩阵测试 ↔ desktop `assertShellEventCoverage`）+ TUI 第四道弱守卫（KNOWN_EVENTS ⊆ union，`tests/event-coverage.test.ts`）。**toolCommand facet 载体迁移**：原 `session.next.tool.*`（`type.includes('tool')` 特例）→ `part.updated` + `part.type='tool'` 规则行（`$.part.state.input.command`），自更新调用者定位行为保持。**eventBus 扁平发射注册表化**：`runtime/flat-emit-registry.ts`（10 类型）替换 setupEventBus if 链；goal_node 已正式登记 SDK union/矩阵/穷尽守卫。oracle 重立为 v2 手写参照（`normalize-oracle.test.ts`）；replay 升级为全链路 golden（opencode raw → 翻译 → normalize，`event-replay.test.ts`）
 - **工具身份 canonical 翻译层（A 切片，2026-10-20 rev2）**：`runtime/tool-classes.ts` 增 `TOOL_CANONICAL_TABLE`（形状兼容别名：command_execution/ls/find/file_change/collab_tool_call/web_search/todo_list/powershell → opencode 名）+ `canonicalToolOf(name)` 解析链（overlay 声明 → 静态表 → 已是 opencode 名 → undefined 不硬猜）；`NativeToolDeclaration.canonical?` 声明进 overlay。enrich 双出口：live = `enrichToolIdentity`（handleOpencodeEvent 单点，补 `part.toolClass` + `part.canonicalTool` additive）；历史 = `enrichHistoryParts`（messages 路由出口，全 runtime）。消费面：session-ui 四级查找链 `原生名 > canonicalTool > CLASS_FAMILY[toolClass] > GenericTool`（`tool-canonical.ts`，注册表拆 `tool-registry.ts` 轻依赖模块）+ read 域多 key（`filePath ?? path ?? file_path`）+ 上下文组成员资格 canonical 感知；TUI chat-store 与 trajectory collector 聚合键改 `canonicalTool ?? tool`（recap 不再按别名碎片化）
 - **工具 part 合帧（2026-10-12）**：`runtime/tool-part-assembler.ts` 的 `ToolPartAssembler`（per-session、callID 键控状态机）把「call/result 分离」runtime 的三原语（`tool.call`/`tool.delta`/`tool.result`，**内部类型**：进 `CANONICAL_TYPE_SET` 校验但不进公开词汇表/矩阵、不广播）合帧为 opencode 形状 ToolPart 快照（part.id = `toolpart_<callID>`，live 与历史同 id 去重）。`wrapToolPartAssembly` 在 `wrapGlobalEventStream` 之后接线（plugin + builtin 两分支；opencode 无三原语 → 恒等直通），`handleOpencodeEvent` 有三原语防漏底线。历史路径：契约可选 `session.normalizeMessages`（缺省恒等），gateway messages 路由经 `applyNormalizeMessages` 统一过；pi 实现 `adapters/pi/src/pi-message-normalize.ts`（ToolCall block + toolResult 按 toolCallId 归并）——修复「pi 工具卡桌面从不渲染 + 历史空」。spec：`docs/superpowers/specs/2026-10-12-tool-part-compat-design.md`
 

@@ -9,7 +9,7 @@ import { toRuntimeDefinition, getBridgeEventEntry } from '../../../src/runtime/a
 import { createOpencodeDefinition } from '../../../../adapters/opencode/src/definition';
 // Identity assertions below compare against the table the gateway definition
 // registers (`opencode-events` shim → the package), so import it from the shim.
-import { OPENCODE_V1_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
+import { OPENCODE_V1_EVENT_MAPPINGS } from '../../../../adapters/opencode/src/events';
 import { createOpencodeRuntime } from '../../../../adapters/opencode/src/runtime';
 // Load the gateway shim once: it registers the adapter's tooling bridge map.
 import '../../../src/runtime/opencode-adapter';

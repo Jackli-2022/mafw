@@ -1,5 +1,9 @@
 /**
- * Provider transport resolution shared by the judge/scan paths.
+ * Provider transport fallback for the **scan** path (`Scheduler.resolveScanProviderTransport`).
+ *
+ * The judge path is unchanged: it already resolved credentials first through
+ * `getProviderApiKey` / auth.json and never consulted the driver seam, so this
+ * helper is deliberately scan-only.
  *
  * Precedence is deliberately the pre-extraction order:
  *   1. runtime credentials (`auth.json` / active host) — authoritative;

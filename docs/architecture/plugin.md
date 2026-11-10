@@ -137,6 +137,21 @@ opencode 加载插件（plugin.ts）
 | Goal 编排 | Gateway NodeDriver（state v3 + 事件驱动双门判定，见 gateway.md） |
 | opencode 权限/agent 定义安装 | Gateway `runtime.agents.install`（agentConfigApi） |
 
+### 三种插件形态（别混淆）
+
+| 形态 | 位置 | 说明 |
+|---|---|---|
+| opencode **宿主插件** | 仓库根 `src/`（本文） | 跑在 opencode 进程内：注入面 / 观察捕获 / 原生工具 / MCP 自接线 |
+| **runtime 驱动包** | `adapters/{opencode,pi,claude}`（workspace 包） | 实现 `RuntimeDefinition`（transport + channels + host），由 gateway 的单一 fail-soft shim（`gateway/src/runtime/opencode-adapter.ts` / `pi-adapter.ts`）加载 |
+| **统一插件包** | `<project>/.mafw/plugin-drafts` → 安装 | 一包多贡献（usage/media/runtime/uiTools/tts），见下节 |
+
+约束（Plan 6）：`gateway/src` 里只有 shim 能 `require('@mafw/adapter-*')`（一个发布周期的
+re-export shim 已在 Task 7 删除）；驱动包不得 import `gateway/src`，只依赖
+`@mafw/runtime-contract` / `@mafw/runtime-core` / 自身原生 SDK / Node 内置 / 本地模块。
+打包面：`gateway/package.json` 的 `mafw.bundledPackages` 登记 `../adapters/opencode`，
+根 `postinstall` 用 `scripts/stage-plugin-contract.mjs` 把 `dist/` 落到 `gateway/node_modules`
+（`plugin-package-e2e.test.ts` 钉住 files/postinstall/bundledPackages 与 staged 入口）。
+
 ## Legacy 附录（v6.x 插件内记忆路径，已废弃）
 
 本文早期版本描述的插件内记忆栈——`HybridCompressor` 压缩管线、`T1ToT2Compressor`、

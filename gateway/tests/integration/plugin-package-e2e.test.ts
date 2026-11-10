@@ -559,6 +559,12 @@ if (typeof adapter.createOpencodeRuntime !== 'function') process.exit(6);
 if (typeof adapter.createOpencodeAdapter !== 'function') process.exit(7);
 if (typeof adapter.opencodeStaticEntry !== 'function') process.exit(8);
 if (typeof adapter.opencodeCapabilities !== 'function') process.exit(9);
+// Task 7: the gateway shim forwards these package exports (serve auth fallback
+// for the reverse proxy, inline provider settings for judge/scan).
+if (typeof adapter.serveAuthHeaders !== 'function') process.exit(10);
+if (typeof adapter.readProviderApiKey !== 'function') process.exit(11);
+if (typeof adapter.readProviderBaseUrlWithPath !== 'function') process.exit(12);
+if (typeof adapter.readProviderTransportFromList !== 'function') process.exit(13);
 console.log(JSON.stringify({ resolved: require.resolve('@mafw/adapter-opencode') }));
 `,
     );

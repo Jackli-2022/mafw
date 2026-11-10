@@ -137,8 +137,12 @@ import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite, getRouteStats } fr
 import { obsSalience } from "./recall/obs-salience";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
-import { getProviderApiKey } from "./runtime/opencode-adapter";
-import { readProviderApiKey, readProviderBaseUrlWithPath, readProviderTransportFromList } from "./runtime/provider-settings";
+import {
+  getProviderApiKey,
+  readProviderApiKey,
+  readProviderBaseUrlWithPath,
+  readProviderTransportFromList,
+} from "./runtime/opencode-adapter";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
@@ -261,11 +265,16 @@ import { PI_CAPABILITIES, createPiDefinition, setPiUnknownRecorder } from './run
 import { createPluginCredentials } from './runtime/plugin-credentials';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
 import { getBridgeEventEntry } from './runtime/adapter-bridge';
-import type { RuntimeDefinition } from '@mafw/runtime-contract';
-import { createOpencodeDefinition, opencodeCapabilities, opencodeStaticEntry, type OpencodeVariant } from './runtime/opencode-adapter';
+import type { RuntimeDefinition, RuntimeFactoryContext } from '@mafw/runtime-contract';
+import {
+  createOpencodeDefinition,
+  opencodeCapabilities,
+  opencodeStaticEntry,
+  serveAuthHeaders,
+  type OpencodeVariant,
+} from './runtime/opencode-adapter';
 
 import { injectServeAuth } from './runtime/proxy-auth';
-import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { resolveProviderTransportPrecedence } from './runtime/provider-transport';
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
 import {
@@ -931,7 +940,7 @@ class MafwScheduler {
       v2: 'opencode@v2',
       v21: 'opencode@v21',
     };
-    const opencodeDefinition = (variant: OpencodeVariant) => (ctx: any) => {
+    const opencodeDefinition = (variant: OpencodeVariant) => (ctx: RuntimeFactoryContext) => {
       const name = registrationName[variant];
       return createOpencodeDefinition(ctx, {
         variant,

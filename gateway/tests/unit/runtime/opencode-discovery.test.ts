@@ -3,7 +3,7 @@ import { createOpencodeAdapter } from '../../../../adapters/opencode/src/adapter
 jest.mock('@opencode-ai/sdk/v2', () => ({
   createOpencodeClient: jest.fn(() => ({})),
 }));
-jest.mock('../../../src/runtime/serve-sidecar', () => ({
+jest.mock('../../../../adapters/opencode/src/serve-sidecar', () => ({
   serveAuthHeaders: () => ({ Authorization: 'Basic dGVzdA==' }),
 }));
 

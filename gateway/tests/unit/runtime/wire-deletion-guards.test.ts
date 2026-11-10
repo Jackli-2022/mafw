@@ -40,12 +40,13 @@ const LEGACY_SHAPE_PATTERN = /\.info\s*\?\?|\.info\s*\|\|\s*[A-Za-z_$]|\.parts\s
 /**
  * adapter 内部 native 翻译 + A2A/media 协议载体（spec §9.2 保留）：它们接触的是
  * 运行时原生协议或 Agent2Agent 消息，不是客户端历史兼容面。
+ *
+ * Plan 6 Task 7: the opencode driver moved to `adapters/opencode`, and its
+ * one-release `opencode-history` / `opencode-events` gateway shims are gone — the
+ * allowlist keeps only gateway files that still speak native protocol.
  */
 const NATIVE_PROTOCOL_FILES = new Set([
   join(GATEWAY, 'src', 'runtime', 'adapter-event-mapper.ts'),
-  join(GATEWAY, 'src', 'runtime', 'opencode-adapter.ts'),
-  join(GATEWAY, 'src', 'runtime', 'opencode-history.ts'),
-  join(GATEWAY, 'src', 'runtime', 'opencode-events.ts'),
   join(GATEWAY, 'src', 'runtime', 'host-adapter.ts'),
   join(GATEWAY, 'src', 'core', 'pod', 'pod-a2a-bridge.ts'),
   join(GATEWAY, 'src', 'core', 'pod', 'pod-a2a-mapping.ts'),

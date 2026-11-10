@@ -56,17 +56,17 @@ describe('依赖边界守卫（runtime/ 之外零 SDK import）', () => {
     expect(violations).toEqual([]);
   });
 
-  it('runtime/auth.ts 仅 runtime/** 与 index.ts import（单点接线）', () => {
+  it('opencode 凭据读取只经包 shim（旧 runtime/auth 接线已删除）', () => {
     // walk 扫描代替 git grep（测试沙箱内 git 可能受限）
-    const importers: string[] = [];
+    const movedReader: string[] = [];
     for (const file of walk(SRC)) {
       const rel = 'src/' + file.replace(SRC, '').replace(/^[\\/]/, '').replace(/\\/g, '/');
-      if (!readFileSync(file, 'utf8').includes('runtime/auth')) continue;
-      importers.push(rel);
+      if (readFileSync(file, 'utf8').includes('runtime/auth')) movedReader.push(rel);
     }
-    const allowed = (f: string) => f.startsWith('src/runtime/') || f === 'src/index.ts';
-    const violations = importers.filter((f) => !allowed(f));
-    expect(violations).toEqual([]);
+    expect(movedReader).toEqual([]);
+    // 唯一的凭据兜底仍走包 shim（Task 7 删除 re-export shim 后单点接线保持）。
+    const credentials = readFileSync(join(SRC, 'runtime', 'plugin-credentials.ts'), 'utf8');
+    expect(credentials).toContain("from './opencode-adapter'");
   });
 
   it('业务目录不 import adapter 实现（runtime 私有布局/原生 SDK 只属于 adapter）', () => {
@@ -86,6 +86,23 @@ describe('依赖边界守卫（runtime/ 之外零 SDK import）', () => {
         if (!/runtime\//.test(trimmed)) continue;
         for (const mod of ADAPTER_MODULES) {
           if (trimmed.includes(mod)) violations.push(`${rel}: ${trimmed}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('业务目录不 import adapter 包（opencode 只经 runtime/opencode-adapter.ts 单一入口）', () => {
+    const BUSINESS_DIRS = ['src/routes/', 'src/core/', 'src/media/', 'src/trajectory/', 'src/usage/'];
+    const violations: string[] = [];
+    for (const file of walk(SRC)) {
+      const rel = 'src/' + file.replace(SRC, '').replace(/^[\\/]/, '').replace(/\\/g, '/');
+      if (!BUSINESS_DIRS.some((dir) => rel.startsWith(dir))) continue;
+      for (const line of readFileSync(file, 'utf8').split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('import') && !trimmed.includes('require(') && !trimmed.includes('import(')) continue;
+        if (trimmed.includes('@mafw/adapter-') || trimmed.includes('adapters/')) {
+          violations.push(`${rel}: ${trimmed}`);
         }
       }
     }

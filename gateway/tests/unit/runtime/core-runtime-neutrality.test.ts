@@ -339,6 +339,18 @@ describe('contract surfaces and composition-root wiring', () => {
     expect(code).not.toMatch(/name\s*===\s*'pi'/);
   });
 
+  it('the extracted opencode package owns its driver modules (no gateway copies to drift)', () => {
+    // Task 7: after the one-release re-export shims were deleted the adapter is
+    // the only implementation. The gateway keeps the neutral kernel + the
+    // single package shim, so a re-added gateway copy would red this test.
+    const gatewayRuntime = path.join(ROOT, 'src', 'runtime');
+    const moved = ['opencode-dialect-probe.ts', 'opencode-snapshot.ts', 'serve-sidecar.ts', 'provider-settings.ts'];
+    expect(moved.filter((file) => fs.existsSync(path.join(gatewayRuntime, file)))).toEqual([]);
+    for (const rel of ['../adapters/opencode/src/dialect-probe.ts', '../adapters/opencode/src/snapshot.ts']) {
+      expect(codeOf(rel).length).toBeGreaterThan(0);
+    }
+  });
+
   it('policy service no longer takes a runtime name argument', () => {
     const code = codeOf('src/core/approval/policy-service.ts');
     expect(code).not.toContain('runtimeName');
@@ -361,6 +373,8 @@ describe('comment stripping keeps every scanned file whole', () => {
     'src/runtime/opencode-adapter.ts',
     '../adapters/opencode/src/adapter.ts',
     '../adapters/opencode/src/runtime.ts',
+    '../adapters/opencode/src/definition.ts',
+    '../adapters/opencode/src/legacy-definition.ts',
     '../adapters/pi/src/runtime.ts',
   ];
 

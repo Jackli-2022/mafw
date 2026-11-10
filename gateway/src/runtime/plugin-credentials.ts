@@ -6,9 +6,13 @@
  * same object (pi's definition does exactly that), which would recurse. The
  * opencode auth.json fallback stays authoritative for providers without a
  * runtime credential.
+ *
+ * Plan 6 Task 7: the reader is reached through the single opencode package shim
+ * (`./opencode-adapter`), which fails soft (one warn) when the adapter is not
+ * staged. No gateway module imports the driver's auth reader directly.
  */
 import type { RuntimeCredentials } from './contract';
-import { getProviderApiKey } from './auth';
+import { getProviderApiKey } from './opencode-adapter';
 
 export function createPluginCredentials(active?: RuntimeCredentials): RuntimeCredentials {
   return {
