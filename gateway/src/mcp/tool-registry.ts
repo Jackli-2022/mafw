@@ -55,6 +55,7 @@ export const DEFINITIONS: ToolDefinition[] = [
           enum: ["current-topic", "none"],
           description: "Hand off the current Lead topic; gateway builds sourceRef when omitted",
         },
+        forkFromTopicId: { type: "string", description: "COW fork from an existing Lead topic (source topic id)" },
         topicId: { type: "string", description: "Source Lead topic id (optional; gateway resolves the latest when omitted)" },
       },
       required: ["title"],

@@ -66,7 +66,7 @@ export interface PodTechLeadServiceDeps {
   /** revision checkout provider; production always injects PodWorktreeService. */
   worktrees?: Pick<PodWorktreeService, 'ensure' | 'ensureExisting' | 'assertProjectRoot'>;
   /** Current-topic handoff builder; absent = no automatic handoff. */
-  leadHandoff?: Pick<LeadHandoffService, 'prepareForGoal' | 'commit' | 'rollback'>;
+  leadHandoff?: Pick<LeadHandoffService, 'prepareForGoal' | 'buildForkForGoal' | 'commit' | 'rollback'>;
   /** 项目解析（与 intake 同一来源）：返回 canonical projectDir 与 mafwDir。 */
   resolveProject(projectDir?: string): { projectDir: string; mafwDir: string } | null;
   now?(): string;
@@ -100,6 +100,8 @@ export interface PodTechLeadGoalInput {
   sourceRef?: GoalSourceRef;
   /** Hand off the current Lead topic (default current-topic when createdBy is set). */
   handoff?: 'current-topic' | 'none';
+  /** P2 COW fork: reference an existing topic instead of the current conversation. */
+  forkFromTopicId?: string;
   /** Optional explicit source topic; omitted = latest handoff topic. */
   topicId?: string;
   /** Optional exclusive upper bound for the handoff snapshot. */
@@ -225,15 +227,25 @@ export class PodTechLeadService {
     let handoffPath: string | undefined;
     let preparedHandoff: LeadHandoffPrepared | null = null;
     if (!sourceRef && input.createdBy && input.handoff !== 'none' && this.deps.leadHandoff) {
-      preparedHandoff = await this.deps.leadHandoff.prepareForGoal({
-        projectDir,
-        leadSessionId: input.createdBy,
-        goalId,
-        goalDir,
-        title,
-        topicId: input.topicId,
-        untilMessageId: input.untilMessageId,
-      }).catch((err: any) => {
+      const forkEnabled = process.env.MAFW_LEAD_COW_FORK !== '0';
+      const prepared = input.forkFromTopicId && forkEnabled && this.deps.leadHandoff.buildForkForGoal
+        ? this.deps.leadHandoff.buildForkForGoal({
+            projectDir,
+            goalId,
+            goalDir,
+            title,
+            sourceTopicId: input.forkFromTopicId,
+          })
+        : this.deps.leadHandoff.prepareForGoal({
+            projectDir,
+            leadSessionId: input.createdBy,
+            goalId,
+            goalDir,
+            title,
+            topicId: input.topicId,
+            untilMessageId: input.untilMessageId,
+          });
+      preparedHandoff = await prepared.catch((err: any) => {
         this.deps.log?.(`[Pod] handoff failed for ${goalId}: ${err?.message ?? err}`);
         return null;
       });
