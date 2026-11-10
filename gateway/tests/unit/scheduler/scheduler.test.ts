@@ -356,4 +356,22 @@ describe('Scheduler', () => {
     await Promise.all(tasks);
     expect(s.stats().queued).toBe(0);
   });
+
+  it('fn returning a non-promise value resolves and releases the key (M1)', async () => {
+    const s = new Scheduler();
+    // fn is NOT async — returns a plain value, violating the () => Promise<T> type
+    const plain = (() => 'oops') as unknown as () => Promise<string>;
+    const result = await s.submit({ priority: 'background', mutexKey: 'k', strategy: 'queue' }, plain);
+    expect(result).toBe('oops');
+    // Key released: next same-key task runs.
+    const next = await s.submit({ priority: 'background', mutexKey: 'k', strategy: 'queue' }, async () => 'ok');
+    expect(next).toBe('ok');
+    expect(s.stats().running).toBe(0);
+  });
+
+  it('maxConcurrent: 0 is clamped to 1 — tasks still run (M5)', async () => {
+    const s = new Scheduler({ maxConcurrent: 0 });
+    const a = await s.submit({ priority: 'background', strategy: 'queue' }, async () => 'a');
+    expect(a).toBe('a'); // if 0 were honored, the queue would never drain
+  });
 });

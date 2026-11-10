@@ -379,12 +379,23 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`reloadRules()`
 调用 `refreshActions()` 确定性重建。
 
-**本批有意不迁移**（Phase B2 跟进）：NodeDriver 节点执行、RunCoordinator
-suspend/resume、SessionWorkerPool.runExclusive（per-session promise-dedup，
-Phase A 已统一到 Singleflight，路由进全局队列反而引入排队延迟）、PodEventWake
-扫描、边界 recall 100ms 路径（最敏感延迟路径零改动；foreground 通道在生产中
-由 user/llm 触发的 automation 消费）。HTTP 诊断端点（`/api/scheduler/stats`）
-留给 Phase D 诊断面合并。
+**本批有意不迁移**（Phase B2 跟进）：
+- **NodeDriver 节点执行**：B2 已把其 raw promise-chain mutex 迁到 `MutexQueue`（`advance`/
+  `withGoalMutex` 统一 per-goal FIFO）；**scheduler 提交裁决不做**——节点完成是事件驱动
+  （turn.completed + 产物文件 + idle 归属 + grace + watchdog），fire-and-forget 派发不适配
+  「promise 落定 = 任务完成」的任务模型；per-goal 互斥已由 MutexQueue 提供。
+- **RunCoordinator suspend/resume**：不迁——`pendingSuspend` 是 **409 冲突契约**
+  （HTTP 显式拒绝），不是调度闸门；`awaitingStart`/`settled`/`suspended` 是运行状态机
+  转移，换掉会破坏 API 契约。
+- **serve 健康轮询**：不迁——探针循环不可能堆叠（healthCheck 有适配器层超时 + 自带
+  `serveRecovering` 标志），是探针循环不是任务闸门。
+- **SessionWorkerPool.runExclusive**：per-session promise-dedup（Phase A 已统一到
+  Singleflight），不是调度闸门。
+- **PodEventWake**：B2 已迁移——scan 经 scheduler `midground` + `coalesce`
+  （`mutexKey: 'pod-event-wake'`），定时器 + notify 并发合流，关闭双投递竞态。
+- **边界 recall 100ms 路径**：最敏感延迟路径零改动（零新增延迟风险）；foreground 通道
+  在生产中由 user/llm 触发的 automation 消费。
+- HTTP 诊断端点（`/api/scheduler/stats`）留给 Phase D 诊断面合并。
 
 ---
 

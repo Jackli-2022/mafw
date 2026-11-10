@@ -1,4 +1,4 @@
-﻿import { log } from './core/utils/logger';
+import { log } from './core/utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CronJob } from 'cron';
@@ -43,7 +43,7 @@ export type ActionHandler = (
 export interface RegisteredAction {
   handler: ActionHandler;
   taskOpts?: {
-    /** Budget admission (kind:'pipeline' — pipeline name must match the
+    /** Budget admission (kind:'pipeline' �� pipeline name must match the
      *  pipeline's internal PipelineBudget.allow() name). */
     budget?: TaskBudget;
     /** Watchdog override; default 30 min. */
@@ -53,19 +53,19 @@ export interface RegisteredAction {
 /**
  * One energy-decay pass over a HarmonicIndexManager.
  *
- * Runs the one-time v1→v2 baseline migration on the first call (stamping
- * last_decay_at WITHOUT applying decay — pre-fix passes over-decayed
+ * Runs the one-time v1��v2 baseline migration on the first call (stamping
+ * last_decay_at WITHOUT applying decay �� pre-fix passes over-decayed
  * quadratically from created_at, so the past is forgiven), then applies
  * incremental pure-time decay. Mutates the GIVEN manager so the caller's live
  * in-memory index stays authoritative: a throwaway manager would migrate the
- * file, but the live instance's next save would overwrite it back to v1 —
+ * file, but the live instance's next save would overwrite it back to v1 ��
  * the 2026-09 production freeze (index stuck at v1, zero decay).
  */
 export function runEnergyDecay(
   indexManager: HarmonicIndexManager,
   now: number = Date.now(),
   events: RetrievalEvent[] = [],
-  /** D5 CATD: topology-weighted decay — when provided, each entry's decay rate
+  /** D5 CATD: topology-weighted decay �� when provided, each entry's decay rate
    *  is scaled by its anchor-graph weighted degree (load-bearing entries
    *  forget slower). */
   catd?: { degreeFor: (id: string) => number; beta?: number },
@@ -79,7 +79,7 @@ export function runEnergyDecay(
     return { migrated, decayed: 0, bonused: 0 };
   }
   // A3 settlement: group drained retrieval events by id and apply the ACT-R
-  // log-form bonus FIRST — the decay loop below reads the same live entries,
+  // log-form bonus FIRST �� the decay loop below reads the same live entries,
   // so "use it or lose it" nets out within one pass. Bonuses clamp at the
   // 1.0 ceiling; ids no longer in the index (superseded/pruned meanwhile)
   // are dropped silently.
@@ -108,10 +108,10 @@ export function runEnergyDecay(
   for (const entry of index.entries) {
     const salience = (entry as any).salience || 1.0;
     // Incremental decay: days since the last APPLIED decay (entries created
-    // after the migration have no last_decay_at yet → fall back to created_at).
+    // after the migration have no last_decay_at yet �� fall back to created_at).
     const base = new Date(entry.last_decay_at || entry.created_at || 0).getTime();
     const daysSinceDecay = base > 0 ? Math.max(0, (now - base) / DAY_MS) : 0;
-    // Pure time decay — event bonuses are settled above from the retrieval
+    // Pure time decay �� event bonuses are settled above from the retrieval
     // event buffer (ACT-R form), not from this pass. D5 CATD scales the rate
     // by topological load when a degree provider is wired.
     let rate = decayRateFor(entry.type);
@@ -124,7 +124,7 @@ export function runEnergyDecay(
     const diff = entry.energy - decayedEnergy;
     if (diff > 0.005) {
       indexManager.updateEnergy(entry.id, -(diff), { silent: true, save: false });
-      // Stamp only when decay is actually applied — otherwise days keep
+      // Stamp only when decay is actually applied �� otherwise days keep
       // accumulating until the diff crosses the write threshold (prevents
       // starvation of low-salience / low-rate entries).
       indexManager.stampDecay(entry.id, nowIso);
@@ -132,8 +132,8 @@ export function runEnergyDecay(
     }
   }
 
-  // V2 ⑦ graduation: capped pipeline writes whose 48h window elapsed with
-  // no interference graduate to 0.75 (mechanical — no LLM, independent of
+  // V2 �� graduation: capped pipeline writes whose 48h window elapsed with
+  // no interference graduate to 0.75 (mechanical �� no LLM, independent of
   // the graceRevisit verdict phase). "Survived without PE = stabilized".
   let graduated = 0;
   try {
@@ -168,7 +168,7 @@ export function runEnergyDecay(
  * Builtin actions registered on every engine instance. Each one follows the
  * live-instance discipline: they require the gateway's live managers to be
  * injected (setIndexManagerProvider / setGraphProvider) and skip with a loud
- * warning when absent — a throwaway manager's writes would be clobbered by
+ * warning when absent �� a throwaway manager's writes would be clobbered by
  * the live instance's next save (the 2026-09 decay freeze).
  */
 function registerBuiltinActionsOn(engine: AutomationEngine): void {
@@ -182,7 +182,7 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
     const heartbeat = eng.getHeartbeat?.();
     try {
       // A3: settle the accumulated retrieval events (ACT-R log bonus + exposure
-      // discount) in the same daily pass — zero extra scheduling.
+      // discount) in the same daily pass �� zero extra scheduling.
       const buffer = getRetrievalEventBuffer();
       const events = buffer.drain();
       // D5 CATD: scale decay by anchor-graph weighted degree when enabled.
@@ -252,6 +252,10 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
   });
 }
 
+/** Outcome of one action execution, surfaced to interactive callers
+ *  (runRuleFromLLM); cron/event callers ignore it. */
+export type ActionRunStatus = 'ran' | 'skipped' | 'timeout' | 'denied' | 'error' | 'missing';
+
 export interface AutomationRule {
   id: string;
   enabled: boolean;
@@ -317,10 +321,13 @@ export class AutomationEngine {
   private _graphProvider?: () => CognitiveGraphManager | undefined;
   private _heartbeat?: import('./recall/pipeline-heartbeat').PipelineHeartbeat;
   private _scheduler?: Scheduler;
-  /** Instance-owned action registry — the dispatch authority. Rebuilt from
+  /** Instance-owned action registry �� the dispatch authority. Rebuilt from
    *  builtins + the host provider on start()/reloadRules(). */
   private actions = new Map<string, RegisteredAction>();
   private actionsProvider?: () => void;
+  /** Monotonic per-engine sequence for task ids (Date.now() collides when two
+   *  triggers of the same action land in the same millisecond �� B2 M2). */
+  private _actionSeq = 0;
 
   constructor(mafwDir: string) {
     this.mafwDir = mafwDir;
@@ -350,7 +357,7 @@ export class AutomationEngine {
   }
 
   /** Rebuild the action registry: builtins + the host provider. Registrations
-   *  made by bare registerAction() are wiped — the lifecycle contract is
+   *  made by bare registerAction() are wiped �� the lifecycle contract is
    *  explicit: register through the provider to survive refreshes. */
   refreshActions(): void {
     this.actions.clear();
@@ -369,7 +376,7 @@ export class AutomationEngine {
     this._scheduler = s;
   }
 
-  /** Inject the gateway's live CognitiveGraphManager — memory:prune must
+  /** Inject the gateway's live CognitiveGraphManager �� memory:prune must
    *  mutate the SAME instance the gateway keeps in memory, or the live
    *  instance's next save clobbers the prune (same bug class as the decay
    *  freeze). */
@@ -397,7 +404,7 @@ export class AutomationEngine {
   /**
    * Inject the gateway's live HarmonicIndexManager. Actions that mutate the
    * index (memory:decay) must operate on the SAME instance the gateway keeps
-   * in memory — otherwise their file-level changes are clobbered by the live
+   * in memory �� otherwise their file-level changes are clobbered by the live
    * instance's next save.
    */
   setIndexManagerProvider(fn: () => HarmonicIndexManager): void {
@@ -438,7 +445,7 @@ export class AutomationEngine {
   // Hot-reload: stop() cancels future cron triggers and event listeners while
   // in-flight handlers run to completion (Node is single-threaded), then rules
   // are rebuilt from disk and rescheduled. start() refreshes the action
-  // registry, so the reload also rebuilds it (spec §5.4).
+  // registry, so the reload also rebuilds it (spec ��5.4).
   reloadRules(): void {
     this.stop();
     this.rules.clear();
@@ -601,7 +608,7 @@ export class AutomationEngine {
     }
 
     if (!rule.onResult || !rule.skill) {
-      log.info(`[AutomationEngine] Rule ${id} has no action, skill, or onResult — skipping`);
+      log.info(`[AutomationEngine] Rule ${id} has no action, skill, or onResult �� skipping`);
       return;
     }
 
@@ -627,24 +634,25 @@ export class AutomationEngine {
     actionType: string,
     rule: AutomationRule,
     source?: 'cron' | 'event' | 'user' | 'llm',
-  ): Promise<void> {
+  ): Promise<ActionRunStatus> {
     const entry = this.actions.get(actionType);
     if (!entry) {
       log.warn(`[AutomationEngine] No handler registered for action: ${actionType}`);
-      return;
+      return 'missing';
     }
     const handler = entry.handler;
 
     // Standalone engines (tests, embedders without a scheduler) run handlers
-    // directly — the scheduler is an optimization/discipline layer, not a
+    // directly �� the scheduler is an optimization/discipline layer, not a
     // hard dependency.
     if (!this._scheduler) {
       try {
         await handler(rule, this);
+        return 'ran';
       } catch (err: any) {
-        log.error(`[AutomationEngine] Action ${actionType} failed: ${err.message}`);
+        log.error(`[AutomationEngine] Action ${actionType} failed: ${err instanceof Error ? err.message : err}`);
+        return 'error';
       }
-      return;
     }
 
     // Unified submission: per-key skip, 30min watchdog (overridable via
@@ -653,7 +661,7 @@ export class AutomationEngine {
     try {
       await this._scheduler.submit(
         {
-          id: `automation:${actionType}:${Date.now()}`,
+          id: `automation:${actionType}:${++this._actionSeq}`,
           priority: source === 'user' || source === 'llm' ? 'foreground' : 'background',
           mutexKey: `action:${actionType}`,
           strategy: 'skip',
@@ -662,20 +670,22 @@ export class AutomationEngine {
         },
         () => handler(rule, this),
       );
+      return 'ran';
     } catch (err) {
       if (err instanceof TaskSkippedError) {
         log.info(`[AutomationEngine] ${actionType} skipped: previous run still in flight`);
-        return;
+        return 'skipped';
       }
       if (err instanceof TaskTimeoutError) {
-        log.warn(`[AutomationEngine] ${actionType} watchdog timeout — run continues in background`);
-        return;
+        log.warn(`[AutomationEngine] ${actionType} watchdog timeout (${err.message}) �� run continues in background`);
+        return 'timeout';
       }
       if (err instanceof BudgetExceededError) {
         log.warn(`[AutomationEngine] ${actionType} denied by budget: ${err.message}`);
-        return;
+        return 'denied';
       }
       log.error(`[AutomationEngine] Action ${actionType} failed: ${err instanceof Error ? err.message : err}`);
+      return 'error';
     }
   }
 
@@ -751,7 +761,7 @@ export class AutomationEngine {
     log.info(`[AutomationEngine] Created goal: ${goalId}`);
   }
 
-  // 鈹€鈹€ Tier 1: Read-only methods 鈹€鈹€
+  // ── Tier 1: Read-only methods ──
 
   getRules(): AutomationRule[] {
     const rules = Array.from(this.rules.values());
@@ -802,25 +812,25 @@ export class AutomationEngine {
       }
       job.stop();
     } catch {
-      // invalid cron 鈥攔eturn empty
+      // invalid cron —return empty
     }
     return { next5 };
   }
 
-  // 鈹€鈹€ Tier 2: Safe action methods 鈹€鈹€
+  // ── Tier 2: Safe action methods ──
 
   async runRuleFromLLM(id: string, ledger: SchedulerLedger): Promise<{ triageId: string; message: string }> {
     const rule = this.rules.get(id);
     if (!rule) throw new Error(`Rule not found: ${id}`);
 
     if (!rule.action && !rule.skill) {
-      throw new Error(`Rule ${id} has no action or skill — nothing to run`);
+      throw new Error(`Rule ${id} has no action or skill �� nothing to run`);
     }
 
     log.info(`[AutomationEngine] LLM triggered rule ${id}`);
 
     if (rule.action) {
-      await this.executeAction(rule.action.type, rule, 'llm');
+      const status = await this.executeAction(rule.action.type, rule, 'llm');
       ledger.append({
         timestamp: new Date().toISOString(),
         event: 'AUTOMATION_TRIGGERED',
@@ -828,7 +838,7 @@ export class AutomationEngine {
         source: 'llm',
         reason: `action:${rule.action.type} (LLM-triggered)`,
       });
-      return { triageId: '', message: `Action ${rule.action.type} executed` };
+      return { triageId: '', message: `Action ${rule.action.type} ${status === 'ran' ? 'executed' : status}` };
     }
 
     const triageId = await this.llmCreateTriage(id, rule);
@@ -840,7 +850,7 @@ export class AutomationEngine {
       reason: `scan:${rule.skill}`,
       details: { triageId, autoConfirmForced: true },
     });
-    return { triageId, message: `Scan complete — triage item ${triageId} created (pending your confirmation)` };
+    return { triageId, message: `Scan complete �� triage item ${triageId} created (pending your confirmation)` };
   }
 
   validateRule(rule: AutomationRule): ValidationResult {
@@ -902,7 +912,7 @@ export class AutomationEngine {
     return { valid: errors.length === 0, errors, nextTriggers };
   }
 
-  // 鈹€鈹€ Tier 3: Draft/Suggest methods 鈹€鈹€
+  // ── Tier 3: Draft/Suggest methods ──
 
   getTriageItems(status?: string): TriageItem[] {
     const triageDir = path.join(this.mafwDir, 'triage');
@@ -968,7 +978,7 @@ export class AutomationEngine {
     if (fs.existsSync(existingPath)) {
       const existing: AutomationRule = JSON.parse(fs.readFileSync(existingPath, 'utf-8'));
       if (existing.enabled) {
-        return { id: rule.id, valid: false, errors: [`Rule "${rule.id}" is already enabled — cannot overwrite. Disable it first or use a different id`] };
+        return { id: rule.id, valid: false, errors: [`Rule "${rule.id}" is already enabled �� cannot overwrite. Disable it first or use a different id`] };
       }
     }
 

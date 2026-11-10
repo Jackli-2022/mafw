@@ -100,6 +100,12 @@ describe('scheduler migration guard (Phase B Task 3)', () => {
     expect(index).toMatch(/mutexKey:\s*['"]snapshot['"]/);
   });
 
+  it('NodeDriver uses MutexQueue, not a raw promise-chain mutex (B2 Task 2)', () => {
+    const driver = fs.readFileSync(path.join(srcDir, 'core', 'goal', 'driver.ts'), 'utf-8');
+    expect(driver).not.toMatch(/private\s+mutex\s*=\s*new\s+Map<string,\s*Promise/);
+    expect(driver).toMatch(/new\s+MutexQueue\(\)/);
+  });
+
   it('index.ts wires the engine through the provider/scheduler/graph injections', () => {
     expect(index).toMatch(/setActionsProvider/);
     expect(index).toMatch(/setScheduler/);

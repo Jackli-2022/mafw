@@ -4298,6 +4298,12 @@ class MafwScheduler {
       },
       deliveryDelivered: (messageId, memberId) => this.podStore?.hasDelivery(messageId, memberId) ?? false,
       commitDelivered: (ids, sessionId) => this.podMessageDelivery?.commitDelivered(ids, sessionId),
+      // B2: coalesce scans via the unified scheduler — the 60s timer scan and a
+      // p2-notify scan landing together join the in-flight one (no double delivery).
+      runScan: (fn) => this.scheduler.submit(
+        { id: `pod-event-wake:${Date.now()}`, priority: 'midground', mutexKey: 'pod-event-wake', strategy: 'coalesce' },
+        fn,
+      ),
     });
     setInterval(() => { void this.podEventWake?.scan(); }, 60_000).unref?.();
     setTimeout(() => { void this.podEventWake?.scan(); }, 5_000).unref?.();

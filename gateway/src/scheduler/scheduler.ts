@@ -74,7 +74,9 @@ export class Scheduler {
   private seq = 0;
 
   constructor(opts?: SchedulerOpts) {
-    this.maxConcurrent = opts?.maxConcurrent ?? 4;
+    // Clamp: maxConcurrent 0 (or negative) would queue every non-foreground
+    // task forever with no warning — a silent deadlock for future consumers.
+    this.maxConcurrent = Math.max(1, opts?.maxConcurrent ?? 4);
     this.budgetChecker = opts?.budgetChecker;
     this.log = opts?.log ?? (() => {});
   }
@@ -230,7 +232,10 @@ export class Scheduler {
 
     let fnPromise: Promise<any>;
     try {
-      fnPromise = task.fn();
+      // Promise.resolve wraps non-promise returns (defensive against `as any`
+      // callers) without adding a hop for real promises; sync throws still
+      // land in the catch below.
+      fnPromise = Promise.resolve(task.fn());
     } catch (syncErr) {
       // fn threw synchronously — reject and free the slot (Phase A I1 parity).
       this.settleErr(task, syncErr);

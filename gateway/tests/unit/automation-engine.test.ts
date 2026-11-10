@@ -9,6 +9,7 @@ import {
   AutomationRule,
 } from '../../src/automation-engine';
 import { Scheduler, BudgetExceededError } from '../../src/scheduler';
+import { log } from '../../src/core/utils/logger';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -232,5 +233,100 @@ describe('AutomationEngine live-instance discipline', () => {
     const engine = new AutomationEngine(dir); // no setGraphProvider
     const action = engine.getAction('memory:prune')!;
     await expect(action(rule, engine)).resolves.toBeUndefined();
+  });
+});
+
+describe('B2 minors: ids, statuses, throw parity', () => {
+  it('same-tick action submissions produce distinct task ids (M2)', async () => {
+    const dir = tmp();
+    const s = new Scheduler();
+    const engine = new AutomationEngine(dir);
+    engine.setScheduler(s);
+    const gate = manual();
+    engine.registerAction('test:ids', () => gate.promise);
+
+    // Capture the descriptors submitted to the scheduler: both calls reach
+    // submit() in the SAME tick (the second rejects with TaskSkippedError
+    // inside submit, but its descriptor was still created) — this is the
+    // same-millisecond collision window M2 exists to fix.
+    const ids: string[] = [];
+    const origSubmit = s.submit.bind(s);
+    const spy = jest.spyOn(s, 'submit').mockImplementation(((task: any, fn: any) => {
+      ids.push(task.id);
+      return origSubmit(task, fn);
+    }) as any);
+
+    try {
+      const p1 = (engine as any).executeAction('test:ids', rule, 'cron');
+      const p2 = (engine as any).executeAction('test:ids', rule, 'cron'); // same tick — skips
+      gate.resolve(undefined);
+      await p1;
+      await p2;
+      expect(ids).toHaveLength(2);
+      expect(ids[0]).not.toBe(ids[1]);
+      expect(new Set(ids).size).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('executeAction returns a status: ran / skipped (M3)', async () => {
+    const dir = tmp();
+    const s = new Scheduler();
+    const engine = new AutomationEngine(dir);
+    engine.setScheduler(s);
+    const gate = manual();
+    let calls = 0;
+    engine.registerAction('test:st', () => {
+      calls++;
+      return gate.promise;
+    });
+    const r1 = (engine as any).executeAction('test:st', rule, 'cron');
+    const r2 = (engine as any).executeAction('test:st', rule, 'cron'); // skip branch
+    gate.resolve(undefined);
+    expect(await r1).toBe('ran');
+    expect(await r2).toBe('skipped');
+    expect(calls).toBe(1);
+    // No-scheduler path returns statuses too.
+    const engine2 = new AutomationEngine(dir);
+    engine2.registerAction('test:st2', async () => {});
+    expect(await (engine2 as any).executeAction('test:st2', rule, 'cron')).toBe('ran');
+    expect(await (engine2 as any).executeAction('missing:action', rule, 'cron')).toBe('missing');
+  });
+
+  it('runRuleFromLLM message reflects the budget-denied status (M3)', async () => {
+    const dir = tmp();
+    fs.mkdirSync(path.join(dir, 'automations'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'automations', 'r1.json'),
+      JSON.stringify({
+        id: 'r1',
+        enabled: true,
+        trigger: { type: 'cron', schedule: '0 * * * *', timezone: 'UTC' },
+        action: { type: 'test:x' },
+      }),
+      'utf-8',
+    );
+    const s = new Scheduler({ budgetChecker: () => ({ ok: false, reason: 'daily cap' }) });
+    const engine = new AutomationEngine(dir);
+    engine.setScheduler(s);
+    let ran = false;
+    engine.registerAction('test:x', async () => { ran = true; }, { budget: { kind: 'pipeline', pipeline: 'extract' } });
+    engine.loadRules();
+    const ledger = { append: () => {} } as any;
+    const res = await engine.runRuleFromLLM('r1', ledger);
+    expect(ran).toBe(false);
+    expect(res.message).toContain('denied');
+    expect(res.message).not.toContain('executed');
+  });
+
+  it('no-scheduler path survives a thrown null (err.message access, M4)', async () => {
+    const dir = tmp();
+    const engine = new AutomationEngine(dir);
+    engine.registerAction('test:null', (async () => {
+      throw null;
+    }) as any);
+    const status = await (engine as any).executeAction('test:null', rule, 'cron');
+    expect(status).toBe('error');
   });
 });
