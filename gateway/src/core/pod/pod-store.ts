@@ -29,6 +29,8 @@ export type PodGoalRevisionStatus =
   | 'aborted'
   | 'discarded';
 export type PodGoalDirectionStatus = 'none' | 'pending' | 'decided';
+/** Goal execution shape: quick = one-task fast path; standard = plan/review; standing = template. */
+export type PodGoalMode = 'quick' | 'standard' | 'standing';
 
 /** 终态 revision：完成/中止/丢弃后不可再改写（打回只能追加下一 revision）。 */
 export const TERMINAL_GOAL_REVISION_STATUSES = ['completed', 'aborted', 'discarded'] as const;
@@ -112,6 +114,7 @@ export interface PodGoalRevisionRow {
   goalId: string;
   revision: number;
   status: PodGoalRevisionStatus;
+  goalMode: PodGoalMode;
   verdict: string | null;
   directionStatus: PodGoalDirectionStatus;
   directionJson: string | null;
@@ -363,6 +366,7 @@ function goalRevisionFromRow(row: any): PodGoalRevisionRow {
     goalId: row.goal_id,
     revision: Number(row.revision),
     status: row.status,
+    goalMode: row.goal_mode ?? 'standard',
     verdict: row.verdict ?? null,
     directionStatus: row.direction_status ?? 'none',
     directionJson: row.direction_json ?? null,
@@ -740,6 +744,7 @@ export class PodStore {
     // Task 3：Goal revision 根指针 + 调度优先级（legacy 行按 DEFAULT 归一为 1/0）。
     this.ensureColumn('pod_goals', 'active_revision', 'active_revision INTEGER NOT NULL DEFAULT 1');
     this.ensureColumn('pod_goals', 'priority', 'priority INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('pod_goal_revisions', 'goal_mode', "goal_mode TEXT NOT NULL DEFAULT 'standard'");
     this.ensureColumn('pod_tasks', 'acceptance_json', 'acceptance_json TEXT');
     // Task 5：Session Supervisor 作用域元点 + 租约世代（历史行遗留为 null/1）。
     this.ensureColumn('pod_member_sessions', 'scope_kind', 'scope_kind TEXT');
@@ -1070,6 +1075,7 @@ export class PodStore {
     goalId: string;
     revision: number;
     status: PodGoalRevisionStatus;
+    goalMode?: PodGoalMode;
     verdict?: string | null;
     directionStatus?: PodGoalDirectionStatus;
     directionJson?: string | null;
@@ -1087,13 +1093,14 @@ export class PodStore {
     const id = input.id ?? `goalrev_${input.goalId}_${input.revision}`;
     const row = this.db.prepare(`
       INSERT INTO pod_goal_revisions (
-        id, pod_id, goal_id, revision, status, verdict,
+        id, pod_id, goal_id, revision, status, goal_mode, verdict,
         direction_status, direction_json, plan_hash, eval_hash, feedback,
         priority, enqueued_at, started_at, ended_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING *
     `).get(
-      id, input.podId, input.goalId, input.revision, input.status, input.verdict ?? null,
+      id, input.podId, input.goalId, input.revision, input.status,
+      input.goalMode ?? 'standard', input.verdict ?? null,
       input.directionStatus ?? 'none', input.directionJson ?? null,
       input.planHash ?? null, input.evalHash ?? null, input.feedback ?? null,
       input.priority ?? 0, input.enqueuedAt ?? input.now,
@@ -1247,6 +1254,13 @@ export class PodStore {
     this.db.prepare(
       'UPDATE pod_goals SET active_revision = ? WHERE pod_id = ? AND goal_id = ?',
     ).run(revision, podId, goalId);
+  }
+
+  /** Set the execution shape on the active revision (Tech Lead triage). */
+  setGoalRevisionMode(goalId: string, revision: number, mode: PodGoalMode): void {
+    this.db.prepare(
+      'UPDATE pod_goal_revisions SET goal_mode = ? WHERE goal_id = ? AND revision = ?',
+    ).run(mode, goalId, revision);
   }
 
   /**

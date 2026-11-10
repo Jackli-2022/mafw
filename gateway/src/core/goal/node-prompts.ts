@@ -415,6 +415,8 @@ export interface NodePromptCtx {
   goalTaskType?: string;
   /** 计划审阅模式（manual = 人工批准后才实施）。 */
   planReview?: 'auto' | 'manual';
+  /** Tech Lead 选择的执行形态（quick = 一个 task 的快路径）。 */
+  goalMode?: 'quick' | 'standard' | 'standing';
   /** Task 14：Spike 节点上下文（probe 节点在隔离工作区里跑）。 */
   probe?: {
     request: ProbeRequest;
@@ -530,6 +532,9 @@ function renderNodePromptBody(node: ExecutableGoalNode, ctx: NodePromptCtx): str
         : '',
       ctx.planReview
         ? `Plan review mode: ${ctx.planReview === 'manual' ? 'manual（计划需人工批准后才实施；该模式下始终使用 collaborative 计划并给出 Goal Eval）' : 'auto'}`
+        : '',
+      ctx.goalMode === 'quick'
+        ? 'This Goal is quick: produce exactly one task, request no probes, and set strategy:"quick".'
         : '',
       '执行策略由你选择：范围清晰、低风险、一个 Worker 可完成且只需一个 task 时，可用 quick；否则用 collaborative。quick 不得请求 probe，也不走独立 Reviewer。',
       'quick 计划示例（不要 goalEval）：{"status":"ready","strategy":"quick","taskType":"bugfix","waves":[{"id":"w1","title":"...","riskNote":"...","tasks":[{"title":"...","acceptance":["可机械验证的结果"]}]}]}',

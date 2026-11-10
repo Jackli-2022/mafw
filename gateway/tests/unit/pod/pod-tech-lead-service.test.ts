@@ -43,6 +43,7 @@ describe('PodTechLeadService', () => {
   let registerInternalSession: jest.Mock;
   let emitGoalCreated: jest.Mock;
   let notify: jest.Mock;
+  let leadHandoff: { prepareForGoal: jest.Mock; commit: jest.Mock; rollback: jest.Mock };
   let service: PodTechLeadService;
   let supervisor: PodSessionSupervisor;
   let currentRuntime: string;
@@ -99,6 +100,11 @@ describe('PodTechLeadService', () => {
     registerInternalSession = jest.fn();
     emitGoalCreated = jest.fn();
     notify = jest.fn();
+    leadHandoff = {
+      prepareForGoal: jest.fn(async () => null),
+      commit: jest.fn(),
+      rollback: jest.fn(),
+    };
     currentRuntime = 'opencode';
     supervisor = new PodSessionSupervisor({
       store,
@@ -119,6 +125,7 @@ describe('PodTechLeadService', () => {
       registerInternalSession,
       emitGoalCreated,
       notify,
+      leadHandoff,
     });
   });
 
@@ -177,6 +184,77 @@ describe('PodTechLeadService', () => {
     expect(second.sessionID).toBe('ses_tech_lead');
     expect(second.parts[0].text).toContain('[CONTEXT MANIFEST]');
     expect(second.parts[0].text).toContain('先调研现有 Pod');
+  });
+
+  test('seeds the Tech Lead with the current-topic handoff', async () => {
+    leadHandoff.prepareForGoal.mockResolvedValue({
+      sourceRef: {
+        snapshot: 'USER: hi',
+        topicId: 't1',
+        messageRange: { from: 'm1', to: 'm2' },
+        capturedAt: NOW,
+      },
+      handoffPath: path.join(mafwDir, 'goals', 'goal-direct-1', 'context', 'lead-handoff.md'),
+      topicId: 't1',
+      messageRange: { from: 'm1', to: 'm2' },
+      fullText: 'USER: hi',
+      projectDir: dir,
+      goalId: 'goal-direct-1',
+      leadSessionId: 'ses_lead',
+      title: 'Pod loop',
+      startMessageId: 'm1',
+      endMessageId: 'm2',
+      createdAt: NOW,
+    });
+
+    const created = await service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Pod loop',
+      objective: 'O',
+      createdBy: 'ses_lead',
+      handoff: 'current-topic',
+    });
+
+    expect(leadHandoff.prepareForGoal).toHaveBeenCalledWith(expect.objectContaining({
+      projectDir: dir,
+      leadSessionId: 'ses_lead',
+      goalId: 'goal-direct-1',
+      title: 'Pod loop',
+    }));
+    expect(leadHandoff.commit).toHaveBeenCalled();
+    const prompt = runtime.promptAsync.mock.calls[0][0].parts[0].text;
+    expect(prompt).toContain('<lead-handoff>');
+    expect(prompt).toContain('USER: hi');
+    expect(JSON.parse(fs.readFileSync(created.requestPath, 'utf8')).sourceRef).toMatchObject({
+      topicId: 't1',
+      messageRange: { from: 'm1', to: 'm2' },
+    });
+  });
+
+  test('setGoalMode persists quick', async () => {
+    const created = await service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Quick',
+      objective: 'O',
+      createdBy: 'ses_lead',
+    });
+    await service.setGoalMode(created.goalId, 'quick');
+    expect(store.getGoalRevision('pod_1', created.goalId, 1)?.goalMode).toBe('quick');
+  });
+
+  test('setGoalMode rejects quick when plan review is manual', async () => {
+    const manual = await service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Manual',
+      objective: 'O',
+      createdBy: 'ses_lead',
+      planReview: 'manual',
+    });
+    await expect(service.setGoalMode(manual.goalId, 'quick')).rejects.toMatchObject({ status: 400 });
+    expect(store.getGoalRevision('pod_1', manual.goalId, 1)?.goalMode).toBe('standard');
   });
 
   test('ensureSession reuses the scoped discussion session and history reads it', async () => {
@@ -274,6 +352,44 @@ describe('PodTechLeadService', () => {
       podId: 'pod_1', projectDir: dir, goalId: 'goal-adv', title: 'Loop', objective: 'x', createdBy: 'ses_lead',
     })).rejects.toMatchObject({ status: 409 });
     expect(fs.existsSync(path.join(mafwDir, 'goals', 'goal-adv'))).toBe(false);
+  });
+
+  test('rejects an unsafe goal id before writing outside goals', async () => {
+    await expect(service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      goalId: '../../escape',
+      title: 'X',
+      objective: 'O',
+      createdBy: 'ses_lead',
+    })).rejects.toMatchObject({ status: 400 });
+    expect(fs.existsSync(path.join(dir, 'escape'))).toBe(false);
+    expect(leadHandoff.prepareForGoal).not.toHaveBeenCalled();
+  });
+
+  test('does not overwrite an existing Goal handoff on duplicate create', async () => {
+    const created = await service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Dup',
+      objective: 'O',
+      createdBy: 'ses_lead',
+    });
+    const handoffFile = path.join(created.goalDir!, 'context', 'lead-handoff.md');
+    fs.mkdirSync(path.dirname(handoffFile), { recursive: true });
+    fs.writeFileSync(handoffFile, 'first');
+    leadHandoff.prepareForGoal.mockClear();
+
+    await expect(service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Dup2',
+      objective: 'O2',
+      createdBy: 'ses_lead',
+    })).rejects.toMatchObject({ status: 409 });
+
+    expect(fs.readFileSync(handoffFile, 'utf8')).toBe('first');
+    expect(leadHandoff.prepareForGoal).not.toHaveBeenCalled();
   });
 
   test('a runtime failure keeps the goal discussing and reports the session error', async () => {

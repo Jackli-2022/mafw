@@ -299,6 +299,8 @@ export interface DriverDeps {
   probes?: GoalProbePort;
   /** Pod revision worktree resolver: null/absent = legacy/main workspace. Throwing fails the node. */
   workdirForRevision?: (goalId: string, revision: number) => Promise<string | null>;
+  /** Execution shape chosen by the Tech Lead for this revision. */
+  goalMode?: (goalId: string, revision: number) => 'quick' | 'standard' | 'standing' | null;
 }
 
 const NODE_PHASE: Record<ExecutableGoalNode, { running: string; complete: string }> = {
@@ -620,6 +622,7 @@ export class NodeDriver {
     const basePrompt = renderNodePrompt(node, {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds,
       revision,
+      goalMode: this.deps.goalMode?.(goalId, revision) ?? undefined,
       charterPath,
       requestPath,
       reviewFeedback: state.reviewFeedback || undefined,

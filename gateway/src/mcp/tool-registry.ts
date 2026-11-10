@@ -35,6 +35,27 @@ export const DEFINITIONS: ToolDefinition[] = [
           properties: { maxTurns: { type: "number" }, maxCostUsd: { type: "number" } },
         },
         taskType: { type: "string", enum: ["feature", "bugfix", "refactor", "research", "docs", "test", "other"], description: "D4b task type (optional declaration; the plan node's judgement in waves.taskType wins). Powers task-typed capability priors and counterfactual pre-mortem." },
+        sourceRef: {
+          type: "object",
+          description: "Immutable handoff provenance (current Lead topic snapshot)",
+          properties: {
+            sessionID: { type: "string" },
+            messageID: { type: "string" },
+            snapshot: { type: "string" },
+            capturedAt: { type: "string" },
+            topicId: { type: "string" },
+            messageRange: {
+              type: "object",
+              properties: { from: { type: "string" }, to: { type: "string" } },
+            },
+          },
+        },
+        handoff: {
+          type: "string",
+          enum: ["current-topic", "none"],
+          description: "Hand off the current Lead topic; gateway builds sourceRef when omitted",
+        },
+        topicId: { type: "string", description: "Source Lead topic id (optional; gateway resolves the latest when omitted)" },
       },
       required: ["title"],
     },
@@ -47,6 +68,8 @@ export const DEFINITIONS: ToolDefinition[] = [
       properties: {
         goalId: { type: "string", description: "Goal identifier" },
         mode: { type: "string", enum: ["clear", "needs_user", "decided"], description: "Direction outcome" },
+        goalMode: { type: "string", enum: ["quick", "standard", "standing"], description: "Execution shape chosen by the Tech Lead (quick = one-task fast path; standard = plan/review; standing = long-lived template, not supported yet)" },
+        requiresApproval: { type: "boolean", description: "High-risk action needs human confirmation; quick is rejected" },
         userWords: { type: "string", description: "User words (verbatim) or the clear Tech Lead conclusion" },
         optionId: { type: "string", description: "Chosen direction option id (when options were offered)" },
         options: {
@@ -684,6 +707,17 @@ export const DEFINITIONS: ToolDefinition[] = [
       properties: {},
     },
   },
+  {
+    name: "mafw_lead_goal_status",
+    description: "Read the project Lead goal-status projection: stage / progress / blockers / pending attention for active Goals. Read-only; does not read the Tech Lead transcript.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectDir: { type: "string", description: "Registered project directory (defaults to MAFW_PROJECT_DIR/current)" },
+        limit: { type: "number", description: "Maximum active Goals to return (default 5)" },
+      },
+    },
+  },
 ];
 
 // MCP stable spec 注解物化（2026-10-22 spec §5.3）：模块加载期一次性从 mafw 专属表
@@ -694,6 +728,7 @@ for (const def of DEFINITIONS) {
 }
 
 import { handleCreateGoal } from "./handlers/create-goal";
+import { handleLeadGoalStatus } from "./handlers/lead-goal-status";
 import { handlePodGoalDirection } from "./handlers/pod-goal-direction";
 import { handlePodGoalContext } from "./handlers/pod-context-select";
 import { handleUpdateState } from "./handlers/update-state";
@@ -741,6 +776,7 @@ export function createToolRegistry(): ToolRegistry {
     definitions: DEFINITIONS.map((d) => d.outputSchema ? d : { ...d, outputSchema: genericOutputSchema }),
     handlers: {
       mafw_create_goal: handleCreateGoal,
+      mafw_lead_goal_status: handleLeadGoalStatus,
       mafw_pod_goal_direction: handlePodGoalDirection,
       mafw_pod_goal_context: handlePodGoalContext,
       mafw_update_state: handleUpdateState,

@@ -87,6 +87,8 @@ import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService, TECH_LEAD_AGENT } from './core/pod/pod-tech-lead-service';
+import { LeadTopicStore } from './core/lead/lead-topic-store';
+import { LeadHandoffService } from './core/lead/lead-handoff-service';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
 import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
@@ -1241,6 +1243,11 @@ class MafwScheduler {
         // mid-Goal (its earlier work lives in the project checkout).
         const worktree = await this.podWorktreeService.ensureExisting(goal.podId, goalId, revision);
         return worktree?.dir ?? null;
+      },
+      goalMode: (goalId, revision) => {
+        const goal = this.podStore?.getGoalByGoalId(goalId);
+        if (!goal) return null;
+        return this.podStore.getGoalRevision(goal.podId, goalId, revision)?.goalMode ?? 'standard';
       },
       newApprovalId: () => `pa_${randomUUID()}`,
       canCreateNode: (goalId: string) => {
@@ -4595,12 +4602,25 @@ class MafwScheduler {
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'direction' } }),
       log: (message) => log.info(message),
     });
+    const leadHandoffService = process.env.MAFW_LEAD_HANDOFF === '0'
+      ? null
+      : new LeadHandoffService({
+          topics: new LeadTopicStore(this.getGatewayDb().getStore()),
+          listMessages: async ({ sessionID, limit }) => {
+            const page: any = await this.runtime!.session.messages({ sessionID, limit });
+            return { data: page?.data ?? [] };
+          },
+          now: () => new Date().toISOString(),
+          newId: () => `topic_${randomUUID()}`,
+          log: (message) => log.warn(message),
+        });
     this.podTechLeadService = new PodTechLeadService({
       store: this.podStore,
       pods: this.podService,
       sessions: this.podSessionSupervisor,
       runtimeName: () => this.runtimeName,
       worktrees: this.podWorktreeService,
+      leadHandoff: leadHandoffService ?? undefined,
       runtime: createTechLeadRuntimeAdapter({
         createSession: async ({ projectDir }) => {
           const created = await this.runtime!.session.create({ directory: projectDir });
@@ -5022,7 +5042,20 @@ class MafwScheduler {
         techLead: this.podTechLeadService,
         direction: this.podDirectionService,
         startPlanning: (goalId: string) => this.startGoalDirect(goalId),
+        ...(process.env.MAFW_GOAL_MODES === '0' ? {} : {
+          setGoalMode: (goalId: string, mode: any) => this.podTechLeadService.setGoalMode(goalId, mode),
+        }),
         log: (message: string) => log.info(message),
+      },
+      podGoalStatus: {
+        listViews: (projectDir: string) => {
+          const pod = this.podStore.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.views(pod.id) : [];
+        },
+        attention: (projectDir: string) => {
+          const pod = this.podStore.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.attention(pod.id) : [];
+        },
       },
       desktop: desktopClient || undefined,
       restartAgent: async () => {
@@ -5975,6 +6008,7 @@ class MafwScheduler {
         // GET /api/goals/:id/sessions — P5 Wave 1 起由 registry dispatch 接管
         // （历史约束"须挂 Dashboard /api/goals* 兜底之前"由 dispatch 位置满足）。
 
+        // GET /api/goals/:id/source — registry route `goals.source` (handoff provenance + full text).
         // GET /api/goals/:id/timeline — Phase D1 Task F2：已迁 registry dispatch。
         // POST /api/goals/:id/nodes/:runId/retry — Phase D1 Task F2：已迁 registry dispatch。
         // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — Phase D1 Task F2：已迁 registry dispatch。
@@ -8007,6 +8041,23 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   // 鈹€鈹€ LangGraph Node Options 鈹€鈹€
+
+  async goalSource(goalId: string): Promise<{ sourceRef: unknown; handoffPath: string | null; fullText: string | null }> {
+    const request = await this.loadRequest(goalId);
+    const mafwDir = this.goalDriverMafwDirCache.get(goalId)
+      ?? this.findGoalStatePath(goalId)?.info.mafwDir;
+    const handoffPath = mafwDir
+      ? path.join(mafwDir, 'goals', goalId, 'context', 'lead-handoff.md')
+      : null;
+    const fullText = handoffPath && fs.existsSync(handoffPath)
+      ? fs.readFileSync(handoffPath, 'utf8')
+      : null;
+    return {
+      sourceRef: (request as any)?.sourceRef ?? null,
+      handoffPath: fullText ? handoffPath : null,
+      fullText,
+    };
+  }
 
   private async handleDashboardAPI(req: http.IncomingMessage): Promise<any> {
     if (req.url?.startsWith("/api/goals")) {

@@ -1728,6 +1728,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/goals/{id}/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["goals.source"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/goals/{id}/nodes/{runId}/retry": {
         parameters: {
             query?: never;
@@ -6358,6 +6374,26 @@ export interface operations {
         };
     };
     "goals.timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "goals.source": {
         parameters: {
             query?: never;
             header?: never;

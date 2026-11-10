@@ -2,6 +2,7 @@
 import {
   MafwClient as IMafwClient, MafwClientOptions,
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline, GoalPlanInfo,
+  GoalSourceRef,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
@@ -1010,6 +1011,10 @@ export class MafwClient implements IMafwClient {
 
     timeline: async (goalId: string): Promise<GoalTimeline> => {
       return this.request<GoalTimeline>(`/api/goals/${encodeURIComponent(goalId)}/timeline`)
+    },
+
+    source: async (goalId: string): Promise<{ sourceRef: GoalSourceRef | null; handoffPath: string | null; fullText: string | null }> => {
+      return this.request(`/api/goals/${encodeURIComponent(goalId)}/source`)
     },
 
     plan: async (goalId: string): Promise<GoalPlanInfo> => {

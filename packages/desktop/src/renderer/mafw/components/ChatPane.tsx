@@ -26,6 +26,8 @@ import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
 import { isAgentKey } from "../agent-identity"
 import { isLeadRole } from "../lead-session"
+import { buildLeadGoalStatusCards, type LeadGoalStatusSource } from "../lead-goal-status"
+import { LeadGoalStatusCard } from "./LeadGoalStatusCard"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply, cachedArtifactUrl } from "./AudioReply"
@@ -200,7 +202,9 @@ export type ChatPaneProps = {
    * 「与 Tech Lead 讨论」入口。由 shell 计算（Pod 状态 + Lead 判定都在那边）。
    * 2026-11-04：非终态持久显示，携带阶段标签（spec techlead-goal-entry §3.1）。
    */
-  techLeadInvite?: () => { goalId: string; title: string; stageLabel?: string } | null
+  techLeadInvite?: () => { goalId: string; title: string; stageLabel?: string; sourceLabel?: string } | null
+  /** Lead 状态卡数据（按需展示；不常驻）。 */
+  leadGoals?: () => LeadGoalStatusSource[]
   /** 打开 Goal 的 Tech Lead 隐藏会话（Goal 标题作用域的 tab）。 */
   onOpenTechLead?: (goalId: string) => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
@@ -268,6 +272,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // accessor 保持响应式（sessions 变化即重算；split view 各 pane 各自查）
   // 协调会话 = Lead（只认显式 lead；历史 manager 是普通历史）
   const isLead = () => isLeadRole(workspace.sessionRole(sidProp()))
+  const [showLeadStatus, setShowLeadStatus] = createSignal(false)
   // 会话 agent 的展示真值：本地 picks → 会话持久化的 agent（MafwSession.agent）。
   // 前端只比较契约 id，不认 runtime 原生名；默认/规划角色由 DTO 标记表达。
   const sessionAgentName = (): string | null =>
@@ -1832,6 +1837,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务"><Icon name="branch" size="small" /> 并行</ButtonV2>
                   </TooltipV2>
                 </Show>
+                <Show when={isLead()}>
+                  <TooltipV2 value="查看当前 Goal 状态（按需）" openDelay={300}>
+                    <ButtonV2
+                      variant="ghost"
+                      size="small"
+                      aria-pressed={showLeadStatus()}
+                      onClick={(e: MouseEvent) => { e.stopPropagation(); setShowLeadStatus((open) => !open) }}
+                    >
+                      状态
+                    </ButtonV2>
+                  </TooltipV2>
+                </Show>
                 <Show when={props.onHandoffToLead && (props.handoffEligible?.() ?? true)}>
                   <TooltipV2 value="把当前讨论作为来源，交给 Lead 创建 Goal 执行" openDelay={300}>
                     <ButtonV2
@@ -2123,12 +2140,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             <ButtonV2 variant="ghost" size="small" onClick={() => setQueuedItems([])}>清空</ButtonV2>
           </div>
         </Show>
+        <Show when={isLead() && showLeadStatus()}>
+          <LeadGoalStatusCard goals={buildLeadGoalStatusCards(props.leadGoals?.() ?? [])} />
+        </Show>
         <Show when={props.techLeadInvite?.()}>
           {(invite) => (
             <PodTechLeadInvite
               goalId={invite().goalId}
               title={invite().title}
               stageLabel={invite().stageLabel}
+              sourceLabel={invite().sourceLabel}
               onOpen={(goalId) => props.onOpenTechLead?.(goalId)}
             />
           )}

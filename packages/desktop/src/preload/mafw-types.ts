@@ -194,6 +194,7 @@ export type MafwAPI = {
     sessions: (id: string) => Promise<GoalSessionInfo[]>
     respondQuestion: (goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }) => Promise<{ status: string }>
     timeline: (id: string) => Promise<GoalTimeline>
+    source: (id: string) => Promise<{ sourceRef: import('@mafw/sdk').GoalSourceRef | null; handoffPath: string | null; fullText: string | null }>
     plan: (id: string) => Promise<GoalPlanInfo>
     approvePlan: (goalId: string, approvalId?: string) => Promise<{ success: boolean }>
     rejectPlan: (goalId: string, approvalId: string | undefined, feedback: string) => Promise<{ success: boolean }>

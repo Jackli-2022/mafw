@@ -471,6 +471,8 @@ export async function handlePods(
           planReview: body.planReview === 'manual' ? 'manual' : body.planReview === 'auto' ? 'auto' : undefined,
           source,
           sourceRef,
+          handoff: body.handoff === 'none' ? 'none' : 'current-topic',
+          topicId: typeof body.topicId === 'string' ? body.topicId : undefined,
           authorization: { source, requestMode: 'explicit', scope: detail.pod.projectDir },
           ...(actor && typeof body.actorSessionID === 'string' ? { createdBy: body.actorSessionID } : {}),
         });
@@ -490,6 +492,8 @@ export async function handlePods(
           queueReason: null,
           sessionID: created.sessionID,
           goal: view,
+          ...(created.sourceRef ? { sourceRef: created.sourceRef } : {}),
+          ...(created.handoffPath ? { handoffPath: created.handoffPath } : {}),
           ...(created.sessionError ? { sessionError: created.sessionError } : {}),
           ...(created.promptError ? { promptError: created.promptError } : {}),
         });

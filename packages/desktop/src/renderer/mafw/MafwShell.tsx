@@ -2163,7 +2163,7 @@ export function MafwShell() {
     if (pd && currentLeadId(pd) === sid) return true
     return isLeadRole(tabSessionRole(sessions().find((s) => s.id === sid)))
   }
-  const activeLeadGoalInvite = (): { goalId: string; title: string; stageLabel: string } | null => {
+  const activeLeadGoalInvite = (): { goalId: string; title: string; stageLabel: string; sourceLabel?: string } | null => {
     if (!activeSessionIsLead()) return null
     // 2026-11-04：非终态 Goal 都保留邀请位；discussing 优先占位（刚建完的引导）。
     const goal = pickTechLeadInviteGoal(podStore.detail()?.goals ?? [])
@@ -2172,6 +2172,7 @@ export function MafwShell() {
       goalId: goal.goalId,
       title: goal.title || "未命名目标",
       stageLabel: podStageLabel(goal.stage),
+      sourceLabel: goal.sourceRef?.topicId ? "来自 Lead 话题" : undefined,
     }
   }
   // 打开 Goal 的 Tech Lead 讨论：`pod.techLead` 确保隐藏会话存在；tab 标题只由 Goal
@@ -2883,6 +2884,7 @@ export function MafwShell() {
                           onHandoffToLead={() => void handoffActiveSessionToLead()}
                           handoffEligible={canHandoffActiveSession}
                           techLeadInvite={activeLeadGoalInvite}
+                          leadGoals={() => podStore.detail()?.goals ?? []}
                           onOpenTechLead={(goalId) => void openTechLead(goalId)}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}

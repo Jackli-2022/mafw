@@ -28,6 +28,20 @@ describe('PodStore goal revisions', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  test('defaults new revisions to standard and updates goal mode', () => {
+    seedGoal();
+    const rev = store.createGoalRevision({
+      podId: 'pod_1',
+      goalId: 'g1',
+      revision: 1,
+      status: 'discussing',
+      now: NOW,
+    });
+    expect(rev.goalMode).toBe('standard');
+    store.setGoalRevisionMode('g1', 1, 'quick');
+    expect(store.getGoalRevision('pod_1', 'g1', 1)?.goalMode).toBe('quick');
+  });
+
   test('appends revisions without moving the active revision', () => {
     seedGoal();
 

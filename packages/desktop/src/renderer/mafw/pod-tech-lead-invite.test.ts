@@ -49,8 +49,20 @@ describe("techLeadInvite", () => {
     assert.equal(techLeadInvite({ endedAt: "2026-11-04T00:00:00.000Z" }, "g1"), null)
   })
 
-  test("没有 goalId 就不出邀请（防 nullptr tab 标题）", () => {
+  test("no goalId means no invite (prevents nullptr tab title)", () => {
     assert.equal(techLeadInvite({ stage: { kind: "discussing", role: "tech_lead" } }, ""), null)
+  })
+
+  test("invite carries the handoff source label without a session id", () => {
+    const goal = {
+      stage: { kind: "discussing", role: "tech_lead" },
+      sourceRef: { topicId: "t1", snapshot: "hi" },
+    } as any
+    assert.deepEqual(techLeadInvite(goal, "g1"), {
+      goalId: "g1",
+      label: TECH_LEAD_INVITE_LABEL,
+      sourceLabel: "来自 Lead 话题",
+    })
   })
 })
 

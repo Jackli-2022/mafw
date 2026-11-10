@@ -1107,6 +1107,9 @@ export interface GoalSourceRef {
   messageID?: string
   snapshot: string
   capturedAt: string
+  /** Handoff topic provenance (P0). */
+  topicId?: string
+  messageRange?: { from: string; to: string }
 }
 export type PodWorkBucket = 'needs_you' | 'queued' | 'in_progress' | 'result_ready' | 'ended'
 export type PodGoalStrategy = 'quick' | 'collaborative'
@@ -1228,6 +1231,7 @@ export interface PodGoal {
   progress?: PodGoalProgress | null
   sourceRef?: GoalSourceRef | null
   strategy?: PodGoalStrategy | null
+  goalMode?: 'quick' | 'standard' | 'standing'
   assessment?: PodGoalAssessment | null
   currentAssignment?: PodCurrentAssignment | null
   activeRevision?: number
