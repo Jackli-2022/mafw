@@ -15,6 +15,7 @@ export function PodTechLeadInvite(props: {
   goalId: string
   title: string
   stageLabel?: string
+  sourceLabel?: string
   onOpen: (goalId: string) => void
 }) {
   return (
@@ -22,6 +23,9 @@ export function PodTechLeadInvite(props: {
       <span class="mafw-run-count">{props.title}</span>
       <Show when={props.stageLabel}>
         <span class="mafw-card-meta mafw-tech-lead-invite-stage">{props.stageLabel}</span>
+      </Show>
+      <Show when={props.sourceLabel}>
+        <span class="mafw-card-meta">{props.sourceLabel}</span>
       </Show>
       <ButtonV2
         variant="outline"

@@ -26,6 +26,7 @@ import {
 } from "../pod-model"
 import { requestPodTechLeadOpen } from "../pod-result-store"
 import { goalsRev } from "../goals-rev"
+import { goalModeLabel } from "../work-overview-model"
 
 const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
 
@@ -79,6 +80,8 @@ export function GoalDetailPanel(props: {
   const [error, setError] = createSignal<string | null>(null)
   const [retrying, setRetrying] = createSignal(false)
   const [planOpen, setPlanOpen] = createSignal(false)
+  const [sourceFull, setSourceFull] = createSignal<string | null>(null)
+  const [sourceBusy, setSourceBusy] = createSignal(false)
 
   let questionRef: HTMLDivElement | undefined
   let directionRef: HTMLDivElement | undefined
@@ -199,6 +202,20 @@ export function GoalDetailPanel(props: {
   onMount(() => {
     queueMicrotask(() => panelTitleRef?.focus())
   })
+
+  async function toggleSourceFull() {
+    const id = props.goalId
+    if (!id) return
+    if (sourceFull()) { setSourceFull(null); return }
+    setSourceBusy(true)
+    try {
+      const result = await window.api.mafw.goals.source(id)
+      setSourceFull(result.fullText ?? result.sourceRef?.snapshot ?? "")
+    } catch (e: any) {
+      showToastV2({ description: `读取来源失败：${e?.message || e}`, duration: 3000 })
+    }
+    setSourceBusy(false)
+  }
 
   async function retry(runId: number, node: string) {
     const id = props.goalId!
@@ -637,6 +654,9 @@ export function GoalDetailPanel(props: {
               <Show when={podGoal()?.strategy === "quick"}>
                 <span class="mafw-card-meta mafw-goal-chip is-accent">快速执行</span>
               </Show>
+              <Show when={goalModeLabel(podGoal()?.goalMode)}>
+                <span class="mafw-card-meta mafw-goal-chip">{goalModeLabel(podGoal()?.goalMode)}</span>
+              </Show>
               <Show when={podGoal()?.assessment === "unreviewed"}>
                 <span class="mafw-card-meta mafw-goal-chip">未独立评审</span>
               </Show>
@@ -659,6 +679,18 @@ export function GoalDetailPanel(props: {
                 )}
               </Show>
             </div>
+
+            <Show when={podGoal()?.sourceRef}>
+              <div class="mafw-card-meta" data-goal-source>
+                上下文来源：{podGoal()!.sourceRef!.snapshot.slice(0, 120)}
+                <ButtonV2 variant="ghost" size="small" disabled={sourceBusy()} onClick={() => void toggleSourceFull()}>
+                  {sourceFull() ? "收起全文" : "查看全文"}
+                </ButtonV2>
+              </div>
+              <Show when={sourceFull()}>
+                <pre class="mafw-goal-source-full">{sourceFull()}</pre>
+              </Show>
+            </Show>
 
             <Show when={podGoal()?.lastError}>
               {(message) => <div class="mafw-goal-hint">最近错误：{message()}</div>}

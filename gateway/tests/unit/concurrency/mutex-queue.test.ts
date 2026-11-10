@@ -96,4 +96,48 @@ describe('MutexQueue', () => {
     await Promise.all([p1, p2, p3]);
     expect(mq.queueLength('key')).toBe(0);
   });
+
+  it('has() is false for unknown keys, true while running or queued (B2 Task 2)', async () => {
+    const mq = new MutexQueue();
+    // MutexQueue releases the key in a queueMicrotask AFTER the task's promise
+    // settles — flush one microtask turn before asserting "released".
+    const flush = () => new Promise<void>((r) => queueMicrotask(() => queueMicrotask(r)));
+    expect(mq.has('k')).toBe(false);
+    let release!: () => void;
+    let release2!: () => void;
+    const blocked = new Promise<void>((r) => { release = r; });
+    const blocked2 = new Promise<void>((r) => { release2 = r; });
+    const p1 = mq.run('k', () => blocked);
+    expect(mq.has('k')).toBe(true); // running
+    const p2 = mq.run('k', () => blocked2);
+    expect(mq.has('k')).toBe(true); // running + queued
+    release();
+    await p1;
+    await flush();
+    // p2 now running (still blocked)
+    expect(mq.has('k')).toBe(true);
+    release2();
+    await p2;
+    await flush();
+    expect(mq.has('k')).toBe(false);
+  });
+
+  it('has() is independent per key', async () => {
+    const mq = new MutexQueue();
+    const flush = () => new Promise<void>((r) => queueMicrotask(() => queueMicrotask(r)));
+    let releaseA!: () => void;
+    const blockedA = new Promise<void>((r) => { releaseA = r; });
+    const pa = mq.run('a', () => blockedA);
+    expect(mq.has('a')).toBe(true);
+    expect(mq.has('b')).toBe(false);
+    const pb = await mq.run('b', async () => 'b-done');
+    expect(pb).toBe('b-done');
+    await flush();
+    expect(mq.has('b')).toBe(false); // b settled — a's state is independent
+    expect(mq.has('a')).toBe(true);
+    releaseA();
+    await pa;
+    await flush();
+    expect(mq.has('a')).toBe(false);
+  });
 });

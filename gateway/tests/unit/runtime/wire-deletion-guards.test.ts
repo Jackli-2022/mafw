@@ -72,8 +72,8 @@ describe('wire / legacy surfaces are physically gone', () => {
     expect(src).not.toMatch(/toWireHistory|toWireInfo|handleSessionHistoryFlat/);
     expect(src).not.toMatch(/properties\.info/);
     expect(src).not.toMatch(/format\s*===\s*'flat'/);
-    // 唯一历史出口必须是 flat handler（不是内联 wire 分支）。
-    expect(src).toContain('handleSessionHistory(');
+    // 唯一历史出口必须是 flat handler（D1：接线已迁到 routes/sessions-read.ts）。
+    expect(read(GATEWAY, 'src', 'routes', 'sessions-read.ts')).toContain('handleSessionHistory(');
   });
 
   test('normalize-messages has no zero-consumer legacy channels', () => {

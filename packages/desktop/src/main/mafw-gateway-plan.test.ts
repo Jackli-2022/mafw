@@ -109,6 +109,103 @@ describe("planGatewayStart", () => {
     })
   })
 
+  test("dev managed refuses a running standalone gateway older than the repo build", () => {
+    const plan = planGatewayStart(input({
+      packaged: false,
+      managedEntry: "C:/repo/gateway/dist/index.js",
+      devAdoptRunningGateway: true,
+      running: {
+        kind: "gateway",
+        health: {
+          ...health,
+          gatewayVersion: "5.1.0",
+          instanceId: "standalone-old",
+          distribution: "standalone",
+          channel: "standalone",
+        },
+        managedInstance: null,
+      },
+    }))
+
+    expect(plan.mode).toBe("conflict")
+    expect(plan.mode === "conflict" ? plan.reason : null).toBe("gateway-outdated")
+    if (plan.mode === "conflict") {
+      expect(plan.detail).toContain("5.1.0")
+      expect(plan.detail).toContain("5.2.0")
+      expect(plan.detail).toContain("restart")
+    }
+  })
+
+  test("dev managed refuses a running standalone gateway with a different schema epoch", () => {
+    const plan = planGatewayStart(input({
+      packaged: false,
+      managedEntry: "C:/repo/gateway/dist/index.js",
+      devAdoptRunningGateway: true,
+      running: {
+        kind: "gateway",
+        health: { ...health, schemaEpoch: 2, distribution: "standalone" },
+        managedInstance: null,
+      },
+    }))
+
+    expect(plan.mode).toBe("conflict")
+    expect(plan.mode === "conflict" ? plan.reason : null).toBe("schema-mismatch")
+  })
+
+  test("dev managed refuses a running standalone gateway with an incompatible experience contract", () => {
+    const plan = planGatewayStart(input({
+      packaged: false,
+      managedEntry: "C:/repo/gateway/dist/index.js",
+      devAdoptRunningGateway: true,
+      running: {
+        kind: "gateway",
+        health: {
+          ...health,
+          experienceVersion: "2020.01.0",
+          minimumClientExperienceVersion: "2020.01.0",
+          distribution: "standalone",
+        },
+        managedInstance: null,
+      },
+    }))
+
+    expect(plan.mode).toBe("conflict")
+    expect(plan.mode === "conflict" ? plan.reason : null).toBe("experience-incompatible")
+  })
+
+  test("dev managed refuses an unversioned legacy gateway without an explicit override", () => {
+    const plan = planGatewayStart(input({
+      packaged: false,
+      managedEntry: "C:/repo/gateway/dist/index.js",
+      devAdoptRunningGateway: true,
+      running: {
+        kind: "gateway",
+        health: { status: "ok" },
+        managedInstance: null,
+      },
+    }))
+
+    expect(plan.mode).toBe("conflict")
+    expect(plan.mode === "conflict" ? plan.reason : null).toBe("legacy-external-unverified")
+  })
+
+  test("dev without adoption reports the running gateway instead of spawning into an occupied port", () => {
+    const plan = planGatewayStart(input({
+      packaged: false,
+      managedEntry: "C:/repo/gateway/dist/index.js",
+      devAdoptRunningGateway: false,
+      running: {
+        kind: "gateway",
+        health: { ...health, distribution: "standalone" },
+        managedInstance: null,
+      },
+    }))
+
+    expect(plan.mode).toBe("conflict")
+    expect(plan.mode === "conflict" ? plan.reason : null).toBe("gateway-running")
+    if (plan.mode === "conflict") expect(plan.detail).toContain("mafw stop")
+  })
+
   test("dev managed still refuses a running gateway that does not answer as a gateway", () => {
     const plan = planGatewayStart(input({
       packaged: false,

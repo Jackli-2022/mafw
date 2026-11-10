@@ -44,6 +44,7 @@ export function createMafwApi(): MafwAPI {
       info: () => ipcRenderer.invoke("mafw-gateway-info"),
       start: () => ipcRenderer.invoke("mafw-gateway-start"),
       restart: () => ipcRenderer.invoke("mafw-gateway-restart"),
+      restartLocal: () => ipcRenderer.invoke("mafw-gateway-restart-local"),
       getSourcePreference: () => ipcRenderer.invoke("mafw-gateway-source-preference-get"),
       setSourcePreference: (value) => ipcRenderer.invoke("mafw-gateway-source-preference-set", value),
       useExternalOnce: () => ipcRenderer.invoke("mafw-gateway-legacy-external-once"),
@@ -181,6 +182,7 @@ export function createMafwApi(): MafwAPI {
       sessions: (id) => invoke("goals", "sessions", id),
       respondQuestion: (goalId, questionId, input) => invoke("goals", "respondQuestion", goalId, questionId, input),
       timeline: (id) => invoke("goals", "timeline", id),
+  source: (id) => invoke("goals", "source", id),
       plan: (id) => invoke("goals", "plan", id),
       approvePlan: (goalId, approvalId) => invoke("goals", "approvePlan", goalId, approvalId),
       rejectPlan: (goalId, approvalId, feedback) => invoke("goals", "rejectPlan", goalId, approvalId, feedback),
@@ -230,6 +232,17 @@ export function createMafwApi(): MafwAPI {
 
     work: {
       overview: (projectID) => invoke("work", "overview", projectID),
+    },
+
+    lead: {
+      topics: {
+        list: (input) => invoke("lead", "topics.list", input),
+        get: (id) => invoke("lead", "topics.get", id),
+        resume: (id) => invoke("lead", "topics.resume", id),
+      },
+      workingSet: (input) => invoke("lead", "workingSet", input),
+      compact: (input) => invoke("lead", "compact", input),
+      recall: (input) => invoke("lead", "recall", input),
     },
 
     pod: {

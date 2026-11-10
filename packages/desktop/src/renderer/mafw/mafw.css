@@ -517,6 +517,8 @@ html[data-theme="light"] body {
 
 /* ── Main ── */
 .mafw-main { display: grid; grid-template-rows: 1fr; overflow: hidden; min-width: 0; position: relative; grid-column: 2; }
+.mafw-narrow-switch { display: flex; align-items: center; gap: 2px; padding: 2px; margin-right: 4px; border: 1px solid var(--border-subtle); border-radius: 8px; }
+.mafw-narrow-switch .mafw-narrow-tab[aria-pressed="true"] { background: var(--bg-raised); color: var(--text-1); }
 .mafw-chat-resize { position: absolute; top: 0; bottom: 0; right: 0; z-index: 5; }
 .mafw-chat-resize-badge {
   position: absolute;
@@ -571,6 +573,9 @@ html[data-theme="light"] body {
   --mafw-chat-reading: 16px;
   --mafw-chat-composer: 16px;
 }
+
+/* A 方案：窄窗 Chat / Workbench 切换；chat 视图保持 760 居中，composer 不被侧面板覆盖。 */
+.mafw-main.mafw-narrow-chat .mafw-chat { width: min(760px, 100%); margin-left: auto; margin-right: auto; }
 
 .mafw-titlebar-dot {
   width: 6px;
@@ -1620,6 +1625,13 @@ html[data-theme="light"] body {
 .mafw-queue-count { font-size: 11px; color: var(--text-base); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mafw-run-bar { border-style: dashed; }
 .mafw-run-count { font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; max-width: 60ch; white-space: nowrap; }
+.mafw-lead-status-card { flex-direction: column; align-items: stretch; gap: 4px; }
+.mafw-lead-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mafw-topic-index { flex-direction: column; align-items: stretch; gap: 4px; }
+.mafw-topic-index-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mafw-topic-index-row { display: flex; align-items: center; }
+.mafw-topic-index-row .mafw-card-meta { margin-left: 8px; }
+.mafw-goal-source-full { max-height: 240px; overflow: auto; white-space: pre-wrap; margin: 6px 0 0; padding: 8px; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); font-size: 12px; }
 
 /* T2-3 data part 卡 */
 .mafw-data-part { margin: 6px 0; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); overflow: hidden; }

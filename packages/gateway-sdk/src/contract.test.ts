@@ -31,10 +31,12 @@ function contractOps(): Map<string, string[]> {
   return map
 }
 
-/** internal 端点（gateway 内部/dashboard/mobile 用）不被 @mafw/sdk 调用，豁免死契约检查。 */
-function isInternal(path: string): boolean {
-  const methods = contract.paths[path] as any
-  return Object.values(methods).some((op: any) => Array.isArray(op?.tags) && op.tags.includes('internal'))
+/** internal 端点（gateway 内部/dashboard/mobile 用）不被 @mafw/sdk 调用，豁免死契约检查。
+ *  豁免粒度是 **(method, path)**：同一路径上的 internal GET 不得连带豁免 SDK-facing 的
+ *  PUT/DELETE（`/api/automations/:id` 就是这种混排路径）。 */
+function isInternalOp(path: string, method: string): boolean {
+  const op = (contract.paths[path] as any)?.[method] as any
+  return Array.isArray(op?.tags) && op.tags.includes('internal')
 }
 
 /**
@@ -188,9 +190,9 @@ test("contract ops ⊆ SDK 调用面（无死契约；internal 标签豁免）",
   const used = new Set(calls.map(c => `${c.method} ${c.path}`))
   const dead: string[] = []
   for (const [rawPath, methods] of Object.entries<any>(contract.paths)) {
-    if (isInternal(rawPath)) continue
     for (const m of Object.keys(methods)) {
       if (!(METHODS as readonly string[]).includes(m)) continue
+      if (isInternalOp(rawPath, m)) continue
       const key = `${m.toUpperCase()} ${norm(rawPath)}`
       if (!used.has(key)) dead.push(key)
     }

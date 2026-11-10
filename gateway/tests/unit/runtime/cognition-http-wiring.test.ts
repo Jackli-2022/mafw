@@ -32,10 +32,11 @@ describe('POST /api/cognition/gate 路由（deps 注入）', () => {
   });
 });
 
-// wiring 断言（index.ts 巨类源码模式）：
+// wiring 断言（index.ts 巨类源码模式；Phase D1 Task 2 后动词接线在 routes/cognition.ts）：
 import { readFileSync } from 'fs';
 import { join } from 'path';
 const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+const cognitionRouteSrc = readFileSync(join(__dirname, '../../../src/routes/cognition.ts'), 'utf8');
 describe('index.ts cognition 接线', () => {
   it('CognitionGate 实例 + isInternalSession 接 internalSessionRoles（C5）', () => {
     expect(src).toMatch(/createCognitionGate\(/);
@@ -44,8 +45,10 @@ describe('index.ts cognition 接线', () => {
   it('cognition_gate 扁平事件经 broadcast（Review Focus #4）', () => {
     expect(src).toMatch(/type: 'cognition_gate'/);
   });
-  it('HTTP 动词注册 + loopback 门', () => {
-    expect(src).toMatch(/\/api\/cognition\/gate/);
+  it('HTTP 动词注册 + loopback 门（D1 Task 2 后在 routes/cognition.ts）', () => {
+    expect(src).toMatch(/attachCognitionRoutes\(/);
+    expect(cognitionRouteSrc).toMatch(/\/api\/cognition\/gate/);
+    expect(cognitionRouteSrc).toMatch(/isLoopbackAddr/);
   });
 });
 // desktop：TAIL_ACCOUNTED_PREFIXES 含 cognition_（终审 #1 修正：前缀匹配 cognition_gate 事件类型）

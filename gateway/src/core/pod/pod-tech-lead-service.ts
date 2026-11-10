@@ -9,13 +9,16 @@
 import {
   GoalConflictError,
   createGoalIntake,
+  isSafeGoalDirId,
   makePodGoalId,
+  readGoalRequest,
   type GoalAuthorization,
   type GoalIntakeInput,
   type GoalIntakeResult,
   type GoalSourceRef,
 } from '../goal/goal-intake';
 import * as fs from 'fs';
+import * as path from 'path';
 import {
   buildContextManifest,
   renderContextManifest,
@@ -23,6 +26,7 @@ import {
 import {
   PodError,
   isTerminalGoalRevisionStatus,
+  type PodGoalMode,
   type PodGoalRevisionRow,
   type PodGoalRow,
   type PodMemberRow,
@@ -32,6 +36,7 @@ import type { PodDetail, PodService } from './pod-service';
 import { canonicalProjectDir } from './pod-identity';
 import type { PodSessionLease, PodSessionScope, PodSessionSupervisor } from './pod-session-supervisor';
 import type { PodWorktreeService } from './pod-worktree-service';
+import type { LeadHandoffService, LeadHandoffPrepared } from '../lead/lead-handoff-service';
 
 /** Tech Lead 身份（IdentityRegistry 内置物化名）。 */
 export const TECH_LEAD_AGENT = 'mafw-tech-lead';
@@ -60,6 +65,8 @@ export interface PodTechLeadServiceDeps {
   runtime: PodTechLeadRuntime;
   /** revision checkout provider; production always injects PodWorktreeService. */
   worktrees?: Pick<PodWorktreeService, 'ensure' | 'ensureExisting' | 'assertProjectRoot'>;
+  /** Current-topic handoff builder; absent = no automatic handoff. */
+  leadHandoff?: Pick<LeadHandoffService, 'prepareForGoal' | 'commit' | 'rollback'>;
   /** 项目解析（与 intake 同一来源）：返回 canonical projectDir 与 mafwDir。 */
   resolveProject(projectDir?: string): { projectDir: string; mafwDir: string } | null;
   now?(): string;
@@ -91,6 +98,12 @@ export interface PodTechLeadGoalInput {
   planReview?: GoalIntakeInput['planReview'];
   source?: string;
   sourceRef?: GoalSourceRef;
+  /** Hand off the current Lead topic (default current-topic when createdBy is set). */
+  handoff?: 'current-topic' | 'none';
+  /** Optional explicit source topic; omitted = latest handoff topic. */
+  topicId?: string;
+  /** Optional exclusive upper bound for the handoff snapshot. */
+  untilMessageId?: string;
   authorization?: GoalAuthorization;
   /** 调用者会话；提供时必须已绑定为 Lead。 */
   createdBy?: string;
@@ -108,6 +121,10 @@ export interface PodTechLeadGoalCreated {
   goalDir: string | null;
   charterPath: string;
   requestPath: string;
+  /** Handoff provenance written into request.json (when handoff ran). */
+  sourceRef?: GoalSourceRef;
+  /** Full handoff text path (when commit succeeded). */
+  handoffPath?: string;
   sessionError?: string;
   promptError?: string;
 }
@@ -196,6 +213,36 @@ export class PodTechLeadService {
       );
     }
 
+    if (!isSafeGoalDirId(goalId)) {
+      throw new PodError(400, `invalid goal id for goal-dir layout: ${goalId}`);
+    }
+    const goalDir = path.join(resolved.mafwDir, 'goals', goalId);
+    if (fs.existsSync(path.join(goalDir, 'goal.md')) || fs.existsSync(path.join(goalDir, 'request.json'))) {
+      throw new PodError(409, `goal ${goalId} already exists`);
+    }
+
+    let sourceRef = input.sourceRef;
+    let handoffPath: string | undefined;
+    let preparedHandoff: LeadHandoffPrepared | null = null;
+    if (!sourceRef && input.createdBy && input.handoff !== 'none' && this.deps.leadHandoff) {
+      preparedHandoff = await this.deps.leadHandoff.prepareForGoal({
+        projectDir,
+        leadSessionId: input.createdBy,
+        goalId,
+        goalDir,
+        title,
+        topicId: input.topicId,
+        untilMessageId: input.untilMessageId,
+      }).catch((err: any) => {
+        this.deps.log?.(`[Pod] handoff failed for ${goalId}: ${err?.message ?? err}`);
+        return null;
+      });
+      if (preparedHandoff) {
+        sourceRef = preparedHandoff.sourceRef;
+        handoffPath = preparedHandoff.handoffPath;
+      }
+    }
+
     let intake: GoalIntakeResult;
     try {
       intake = createGoalIntake({
@@ -213,7 +260,7 @@ export class PodTechLeadService {
         planReview: input.planReview,
         projectDir,
         source: input.source || 'lead',
-        sourceRef: input.sourceRef,
+        sourceRef,
         authorization: input.authorization
           ?? { source: 'lead', requestMode: 'explicit', scope: projectDir },
         // Discussion goals must never reach the goal_created listener.
@@ -256,6 +303,14 @@ export class PodTechLeadService {
       }
       throw err;
     }
+    if (preparedHandoff) {
+      try {
+        this.deps.leadHandoff?.commit(preparedHandoff);
+      } catch (err: any) {
+        this.deps.log?.(`[Pod] handoff persist failed for ${goalId}: ${err?.message ?? err}`);
+        handoffPath = undefined;
+      }
+    }
     this.deps.notify?.(detail.pod.id, 'goal');
 
     let sessionID: string | null = null;
@@ -280,7 +335,7 @@ export class PodTechLeadService {
     let promptError: string | undefined;
     if (sessionID) {
       try {
-        await this.prompt(goalId, this.openingPrompt(title, objective || charter));
+        await this.prompt(goalId, this.openingPrompt(title, objective || charter, sourceRef, handoffPath));
       } catch (err: any) {
         promptError = String(err?.message ?? err);
         this.deps.log?.(`[Pod] Tech Lead opening prompt failed for ${goalId}: ${promptError}`);
@@ -299,6 +354,8 @@ export class PodTechLeadService {
       goalDir: intake.goalDir,
       charterPath: intake.charterPath,
       requestPath: intake.requestPath,
+      ...(sourceRef ? { sourceRef } : {}),
+      ...(handoffPath ? { handoffPath } : {}),
       ...(sessionError ? { sessionError } : {}),
       ...(promptError ? { promptError } : {}),
     };
@@ -326,6 +383,19 @@ export class PodTechLeadService {
       parts: [{ type: 'text', text: content }],
     });
     return { goalId: goal.goalId, revision, sessionID, text: content };
+  }
+
+  /** Persist the Tech Lead's execution shape on the active revision. */
+  async setGoalMode(goalId: string, mode: PodGoalMode): Promise<void> {
+    const goal = this.requireGoal(goalId);
+    const revision = this.requireActiveRevision(goal);
+    const pod = this.requirePod(goal.podId);
+    const resolved = this.deps.resolveProject(pod.projectDir);
+    const request = resolved ? readGoalRequest(resolved.mafwDir, goal.goalId) : null;
+    if (mode === 'quick' && request?.planReview === 'manual') {
+      throw new PodError(400, 'quick requires auto plan review');
+    }
+    this.deps.store.setGoalRevisionMode(goal.goalId, revision, mode);
   }
 
   /** 只读读取当前讨论会话历史；没有存活会话时返回空（不创建会话）。 */
@@ -449,17 +519,41 @@ export class PodTechLeadService {
   }
 
   private withManifest(goalId: string, revision: number, body?: string): string {
+    const goal = this.deps.store.getGoalByGoalId(goalId);
+    const pod = goal ? this.deps.store.getPod(goal.podId) : null;
+    const resolved = pod ? this.deps.resolveProject(pod.projectDir) : null;
+    const handoffRel = 'context/lead-handoff.md';
+    const hasHandoff = !!resolved
+      && fs.existsSync(path.join(resolved.mafwDir, 'goals', goalId, handoffRel));
     const manifest = buildContextManifest({
       goalId,
       revision,
       stage: 'discussing',
       role: TECH_LEAD_INTERNAL_ROLE,
+      ...(hasHandoff ? {
+        optional: [{ path: handoffRel, label: 'Lead handoff', scope: 'goal' }],
+      } : {}),
     });
     const rendered = renderContextManifest(manifest);
     return body ? `${rendered}\n\n${body}` : rendered;
   }
 
-  private openingPrompt(title: string, objective: string): string {
+  private openingPrompt(
+    title: string,
+    objective: string,
+    sourceRef?: GoalSourceRef,
+    handoffPath?: string,
+  ): string {
+    const handoff = sourceRef?.snapshot
+      ? [
+          '',
+          '<lead-handoff>',
+          sourceRef.snapshot,
+          '</lead-handoff>',
+          `The user and the Lead discussed this above. Full text: ${handoffPath ?? '(inline snapshot)'}.`,
+          'Continue from it; do not ask the user to repeat confirmed points.',
+        ].join('\n')
+      : '';
     return [
       'Start the technical discussion for this Pod Goal.',
       `Goal: ${title}`,
@@ -467,7 +561,7 @@ export class PodTechLeadService {
       'Clarify constraints and direction with the user. Do not start planning here:',
       'call mafw_pod_goal_direction with mode "clear" when the direction is unambiguous,',
       'or "needs_user" when a real ambiguity needs the user to decide.',
-    ].filter(Boolean).join('\n');
+    ].filter(Boolean).join('\n') + handoff;
   }
 
   private requireGoal(goalId: string): PodGoalRow {

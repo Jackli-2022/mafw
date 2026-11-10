@@ -8,6 +8,7 @@ import {
   type LeadCandidate,
 } from './lead-session-resolution';
 import { canonicalProjectDir } from '../pod/pod-identity';
+import type { SessionRegistry } from '../../session';
 
 export interface LeadSessionRecord {
   sessionId: string;
@@ -31,6 +32,9 @@ export interface LeadSessionRegistryDeps {
   bindPodLead(podId: string, sessionId: string): Promise<void>;
   now(): string;
   log?(message: string): void;
+  /** Observe-only mirror into the unified session registry (Phase C Task 5):
+   *  bindings/archives write kind 'lead' records; all Lead logic stays here. */
+  sessionRegistry?: Pick<SessionRegistry, 'register' | 'unregister' | 'lookup'>;
 }
 
 export class LeadSessionConflictError extends Error {
@@ -142,6 +146,7 @@ export class LeadSessionRegistry {
       this.writeCanonical(canonical, resolution.sessionId);
       await this.deps.registerLead(resolution.sessionId, canonical);
       if (pod) await this.deps.bindPodLead(pod.podId, resolution.sessionId);
+      this.mirrorLead(canonical, resolution.sessionId, pod?.podId);
       return {
         sessionId: resolution.sessionId,
         createdAt: this.createdAtFor(canonical, resolution.sessionId),
@@ -154,11 +159,46 @@ export class LeadSessionRegistry {
     this.writeCanonical(canonical, sessionId);
     await this.deps.registerLead(sessionId, canonical);
     if (pod) await this.deps.bindPodLead(pod.podId, sessionId);
+    this.mirrorLead(canonical, sessionId, pod?.podId);
     return {
       sessionId,
       createdAt: this.createdAtFor(canonical, sessionId),
       source: 'created',
     };
+  }
+
+  /** Phase C Task 5 mirror: the Lead binding becomes a kind 'lead' process-table
+   *  record (no TTL — the Lead persists). Observe-only; failures are non-fatal. */
+  private mirrorLead(canonical: string, sessionId: string, podId?: string): void {
+    try {
+      this.deps.sessionRegistry?.register({
+        sessionID: sessionId,
+        scope: { kind: 'lead', projectId: canonical },
+        metadata: podId ? { podId } : {},
+        runtimeName: this.deps.runtimeName(),
+      });
+    } catch (err: any) {
+      this.deps.log?.(`[Lead] session-registry mirror failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
+    }
+  }
+
+  private unmirrorLead(sessionId: string): void {
+    try {
+      const existing = this.deps.sessionRegistry?.lookup(sessionId);
+      if (existing?.scope.kind === 'lead') {
+        this.deps.sessionRegistry?.unregister(sessionId);
+      }
+    } catch (err: any) {
+      this.deps.log?.(`[Lead] session-registry unmirror failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
+    }
+  }
+
+  /** Public unmirror for archive paths OUTSIDE this registry (rotation downgrade,
+   *  pod manager archive dep — final review I2): every entry point that archives
+   *  a Lead session must converge here or the process table keeps a zombie
+   *  kind 'lead' record. Guarded: foreign records are never touched. */
+  unmirrorLeadSession(sessionId: string): void {
+    this.unmirrorLead(sessionId);
   }
 
   private slotRows(canonical: string): SlotRow[] {
@@ -208,13 +248,14 @@ export class LeadSessionRegistry {
           row.key,
           clearManagerSlot(existing, this.deps.runtimeName()),
         );
+        this.unmirrorLead(row.sessionId);
       } catch (err: any) {
         this.deps.log?.(`[Lead] archive failed for ${row.sessionId} (non-fatal): ${err?.message ?? err}`);
       }
     }
   }
 
-  private async isAlive(sessionId: string): Promise<boolean> {
+  async isAlive(sessionId: string): Promise<boolean> {
     try {
       return await this.deps.isAlive(sessionId);
     } catch (err: any) {

@@ -260,6 +260,18 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     setRestarting(false)
   }
 
+  const restartGatewayWithLocalBuild = async () => {
+    setRestarting(true)
+    try {
+      await window.api.mafw.gateway.restartLocal()
+      showToastV2({ description: "已用当前构建重启 Gateway", duration: 2000 })
+      await refreshGatewayStatus()
+    } catch (err: any) {
+      showToastV2({ description: `重启失败: ${err.message}`, duration: 3000 })
+    }
+    setRestarting(false)
+  }
+
   const setGatewaySource = async (source: "managed" | "external") => {
     setGatewayBusy(true)
     try {
@@ -907,6 +919,15 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                     <span class="mafw-config-grid-label">来源</span>
                     <strong>{gwStatus()?.source ? gwView().sourceLabel : "未知"}</strong>
                   </div>
+                  <Show when={gwStatus()?.attached}>
+                    <div class="mafw-config-grid-row">
+                      <span class="mafw-config-grid-label">连接</span>
+                      <strong>
+                        {gwStatus()?.attachedOrigin === "standalone" ? "已连接全局 gateway" : "已连接现有 gateway"}
+                        {gwStatus()?.actualVersion ? ` · v${gwStatus()?.actualVersion}` : ""}
+                      </strong>
+                    </div>
+                  </Show>
                   <div class="mafw-config-grid-row">
                     <span class="mafw-config-grid-label">期望</span>
                     <code>{gwStatus()?.expectedVersion ?? "—"}</code>
@@ -938,6 +959,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                     </div>
                   )}
                 </Show>
+                <Show when={gwStatus()?.restartHint}>
+                  {(text) => <div class="mafw-config-hint">{text()}</div>}
+                </Show>
                 <div class="mafw-config-actions-row">
                   <ButtonV2
                     variant="outline"
@@ -947,6 +971,16 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   >
                     {restarting() ? "重启中…" : "重启受管 Gateway"}
                   </ButtonV2>
+                  <Show when={gwStatus()?.canRestartWithLocalBuild}>
+                    <ButtonV2
+                      variant="outline"
+                      size="small"
+                      onClick={restartGatewayWithLocalBuild}
+                      disabled={restarting() || gatewayBusy()}
+                    >
+                      {restarting() ? "重启中…" : "用当前构建重启"}
+                    </ButtonV2>
+                  </Show>
                   <Show when={gwView().canRetryQuarantined}>
                     <ButtonV2
                       variant="outline"

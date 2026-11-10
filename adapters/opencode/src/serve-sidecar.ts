@@ -17,31 +17,75 @@
 // opencode adapter package (`ensureRuntimeRoot`/`resolveRuntimeRoot` now come
 // from `@mafw/runtime-core`).
 import * as childProcess from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { ensureRuntimeRoot, resolveRuntimeRoot } from '@mafw/runtime-core';
+
+export interface KillServeDeps {
+  platform?: NodeJS.Platform;
+  execSync?: (command: string, options?: Record<string, unknown>) => any;
+  execFileSync?: (file: string, args: string[], options?: Record<string, unknown>) => any;
+  kill?: (pid: number, signal?: NodeJS.Signals | number) => void;
+}
+
+/** Extract the LISTENING pid for an exact port (never matches :40960). */
+export function parseListeningPid(output: string, port: number): number | null {
+  const line = output.split(/\r?\n/).find(
+    (candidate) => new RegExp(`:${port}\\s`).test(candidate) && /LISTENING/i.test(candidate),
+  );
+  const match = line ? line.match(/LISTENING\s+(\d+)\s*$/i) : null;
+  return match ? Number(match[1]) : null;
+}
 
 // Kill whatever is listening on the serve port. windowsHide is mandatory:
 // execSync defaults to a visible console window, so every call here would
 // flash a cmd popup (notably during serve crash-recovery). SIGTERM is NOT
 // used: on Windows libuv maps SIGTERM to a console CTRL_C broadcast, which
 // makes a process exit with 0xC000013A and can trigger recovery loops;
-// hard-kill instead. Lives here (not gateway core) because the serve port is
-// an opencode-runtime implementation detail.
-export function killServePort(port: number): void {
+// hard-kill the whole tree instead (`taskkill /F /T`) — a bare process.kill
+// can leave the actual listening child alive (observed with an orphaned
+// opencode serve after a gateway restart). Lives here (not gateway core)
+// because the serve port is an opencode-runtime implementation detail.
+export function killServePort(port: number, deps: KillServeDeps = {}): void {
+  const platform = deps.platform ?? process.platform;
+  const execSync = deps.execSync ?? childProcess.execSync;
+  const execFileSync = deps.execFileSync ?? childProcess.execFileSync;
+  const kill = deps.kill ?? ((pid, signal) => process.kill(pid, signal));
   try {
-    if (process.platform === 'win32') {
-      const out = childProcess.execSync(`netstat -ano | findstr :${port}`, { windowsHide: true }).toString();
-      // findstr ":4096" also matches ":40960" etc. — require the exact local
-      // port followed by whitespace on a LISTENING line before trusting the PID.
-      const line = out.split(/\r?\n/).find((l) => new RegExp(`:${port}\\s`).test(l) && /LISTENING/i.test(l));
-      const match = line ? line.match(/LISTENING\s+(\d+)/) : null;
-      const pid = match ? Number(match[1]) : null;
-      if (pid) process.kill(pid);
+    if (platform === 'win32') {
+      // netstat can report PID 0 for listening sockets (observed on a
+      // constrained/AppContainer-like session), so taskkill would be a no-op.
+      // Get-NetTCPConnection reports the real owner; fall back to netstat only
+      // when PowerShell is unavailable.
+      let pid: number | null = null;
+      try {
+        const out = execFileSync(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Where-Object RemotePort -eq 0 | Select-Object -First 1 -ExpandProperty OwningProcess`,
+          ],
+          { windowsHide: true },
+        ).toString().trim();
+        const parsed = Number(out);
+        if (Number.isFinite(parsed) && parsed > 0) pid = parsed;
+      } catch { /* fall through to netstat */ }
+      if (!pid) {
+        const out = execSync(`netstat -ano | findstr :${port}`, { windowsHide: true }).toString();
+        pid = parseListeningPid(out, port);
+      }
+      if (pid && pid > 0) {
+        execSync(`taskkill /F /T /PID ${pid}`, { windowsHide: true, stdio: 'ignore' });
+      }
     } else {
-      const out = childProcess.execSync(`lsof -ti:${port}`, { windowsHide: true }).toString().trim();
+      const out = execSync(`lsof -ti:${port}`, { windowsHide: true }).toString().trim();
       const pid = Number(out) || null;
-      if (pid) process.kill(pid);
+      if (pid) kill(pid, 'SIGKILL');
     }
-  } catch { /* port is free */ }
+  } catch { /* port is free / process gone */ }
 }
 
 export interface ServeSidecarOptions {
@@ -68,17 +112,59 @@ export interface ServeSidecar {
   password?: string;
 }
 
-/** 密码单源（2026-10-22 修复）：env 显式优先（MAFW_RUNTIME_PASSWORD / MAFW_OPENCODE_PASSWORD /
- *  OPENCODE_SERVER_PASSWORD——外部 serve 模式用户自管），全缺省时进程内生成稳定随机值
- *  （owned sidecar 与 gateway 同生命周期，spawn 注入 + adapter 认证同源）。 */
 let cachedServePassword: string | null = null;
+
+/** Password file override (tests/embedding); default `~/.mafw/serve-password`. */
+export function servePasswordFile(): string {
+  const override = process.env.MAFW_SERVE_PASSWORD_FILE?.trim();
+  return override || path.join(os.homedir(), '.mafw', 'serve-password');
+}
+
+function readPersistedServePassword(): string | null {
+  try {
+    const value = fs.readFileSync(servePasswordFile(), 'utf-8').trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+function persistServePassword(password: string): void {
+  const file = servePasswordFile();
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, password, { encoding: 'utf-8', mode: 0o600 });
+    fs.renameSync(tmp, file);
+    try { fs.chmodSync(file, 0o600); } catch { /* windows */ }
+  } catch {
+    // fail-open: the current process still uses the generated value; a later
+    // process simply cannot adopt this serve and will replace it.
+  }
+}
+
+/** Password single source (2026-10-22 fix): env explicitly first; otherwise a
+ *  stable per-user file so a *restarted gateway* can adopt the still-running
+ *  serve. A per-process random value made every restart 401 against the old
+ *  serve (orphaned listener → EADDRINUSE → MCP-only mode). */
 export function resolveServePassword(): string {
   if (cachedServePassword) return cachedServePassword;
-  cachedServePassword =
+  const explicit =
     process.env.MAFW_RUNTIME_PASSWORD ??
     process.env.MAFW_OPENCODE_PASSWORD ??
-    process.env.OPENCODE_SERVER_PASSWORD ??
-    `mafw-${require('crypto').randomUUID()}`;
+    process.env.OPENCODE_SERVER_PASSWORD;
+  if (explicit && explicit.trim()) {
+    cachedServePassword = explicit;
+    return cachedServePassword;
+  }
+  const persisted = readPersistedServePassword();
+  if (persisted) {
+    cachedServePassword = persisted;
+    return cachedServePassword;
+  }
+  const generated = `mafw-${require('crypto').randomUUID()}`;
+  persistServePassword(generated);
+  cachedServePassword = generated;
   return cachedServePassword;
 }
 

@@ -25,8 +25,12 @@ describe('Lead lifecycle wiring', () => {
   });
 
   test('Goal snapshot resolves Lead sessions through the registry', () => {
-    expect(indexSource).toContain('this.leadSessionRegistry.findBySessionId(sessionID)');
+    // Phase D1 Task B3/B4: recall/context 迁入 routes/recall.ts —— 仍必须是
+    // registry 的 findBySessionId 解析（不得回退到 .value.sessionId 比较）。
+    const recallRoute = readFileSync(path.join(__dirname, '../../src/routes/recall.ts'), 'utf8');
+    expect(recallRoute).toMatch(/attachHandler\('recall\.context'[\s\S]{0,2000}deps\.leadSessionRegistry\(\)\.findBySessionId\(sessionID\)/);
     expect(indexSource).not.toContain('.value.sessionId === sessionID');
+    expect(recallRoute).not.toContain('.value.sessionId === sessionID');
   });
 
   test('startup only ensures registered projects with a Pod or in-flight goal', () => {
@@ -65,8 +69,15 @@ describe('Lead lifecycle wiring', () => {
   });
 
   test('manager session route resolves canonical project keys through the registry', () => {
-    const route = section("if (req.url && req.url.startsWith('/api/manager/session')", '// 健康检查');
-    expect(route).toContain('this.leadSessionRegistry.current(filter)');
-    expect(route).not.toContain('live.find((e) => e.key === filter)');
+    // Phase D1 Task H2: the branch moved out of index.ts into
+    // routes/manager-session.ts (registry dispatch, manager.session). The guard
+    // follows the code: reads must go through the Lead registry + canonical keys,
+    // never a raw kv-key comparison.
+    const managersRoute = readFileSync(path.join(__dirname, '../../src/routes/manager-session.ts'), 'utf8');
+    expect(managersRoute).toContain('deps.leadSessionRegistry().current(filter)');
+    expect(managersRoute).toContain('canonicalProjectDir(entry.key)');
+    expect(managersRoute).not.toContain('live.find((e) => e.key === filter)');
+    // index.ts must not still own an inline manager/session branch.
+    expect(indexSource).not.toContain("req.url.startsWith('/api/manager/session')");
   });
 });

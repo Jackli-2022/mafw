@@ -293,6 +293,12 @@ export interface GatewayStatus {
   port: number | null
   url: string | null
   error: string | null
+  /** Ready, but using a gateway this desktop did not spawn (handshake passed). */
+  attached?: boolean
+  /** `standalone` / `desktop-managed`, or null when the gateway did not report one. */
+  attachedOrigin?: string | null
+  canRestartWithLocalBuild?: boolean
+  restartHint?: string | null
   source: 'managed' | 'external' | null
   expectedVersion: string | null
   actualVersion: string | null
@@ -1101,6 +1107,9 @@ export interface GoalSourceRef {
   messageID?: string
   snapshot: string
   capturedAt: string
+  /** Handoff topic provenance (P0). */
+  topicId?: string
+  messageRange?: { from: string; to: string }
 }
 export type PodWorkBucket = 'needs_you' | 'queued' | 'in_progress' | 'result_ready' | 'ended'
 export type PodGoalStrategy = 'quick' | 'collaborative'
@@ -1222,6 +1231,7 @@ export interface PodGoal {
   progress?: PodGoalProgress | null
   sourceRef?: GoalSourceRef | null
   strategy?: PodGoalStrategy | null
+  goalMode?: 'quick' | 'standard' | 'standing'
   assessment?: PodGoalAssessment | null
   currentAssignment?: PodCurrentAssignment | null
   activeRevision?: number
@@ -1763,6 +1773,61 @@ export interface PermissionsNamespace {
 // MafwClient — full client interface
 // ============================================================
 
+export type LeadTopicState = 'resident' | 'warm' | 'cold' | 'archived'
+
+export interface LeadTopicView {
+  id: string
+  title: string
+  summary: string | null
+  state: LeadTopicState
+  lastActiveAt: string
+  goalId: string
+  resumedFrom: string | null
+}
+
+export interface LeadTopicIndexMessage {
+  topicId: string
+  messageId: string
+  role: 'user' | 'assistant'
+  text: string
+  tokenEstimate: number
+  createdAt: string
+}
+
+export interface LeadWorkingSet {
+  resident: string[]
+  warm: string[]
+  cold: string[]
+  pinned: string[]
+  evicted: string[]
+  topics: LeadTopicView[]
+}
+
+export interface LeadCompactResult {
+  topicId: string
+  beforeTokens: number
+  afterTokens: number
+  evictedMessageIds: string[]
+}
+
+export interface LeadRecallCandidate {
+  topicId: string
+  title: string
+  score: number
+  matches: string[]
+}
+
+export interface LeadNamespace {
+  topics: {
+    list(input?: { projectDir?: string; query?: string; limit?: number }): Promise<{ items: LeadTopicView[] }>
+    get(id: string): Promise<{ topic: LeadTopicView; messages: LeadTopicIndexMessage[] }>
+    resume(id: string): Promise<{ sessionID: string; resumedFrom: string | null }>
+  }
+  workingSet(input?: { projectDir?: string }): Promise<LeadWorkingSet>
+  compact(input: { topicId: string }): Promise<LeadCompactResult>
+  recall(input: { projectDir?: string; q: string }): Promise<{ candidates: LeadRecallCandidate[] }>
+}
+
 export interface MafwClient {
   session: SessionNamespace
   project: ProjectNamespace
@@ -1785,6 +1850,7 @@ export interface MafwClient {
   background: BackgroundNamespace
   terminal: TerminalNamespace
   pod: PodNamespace
+  lead: LeadNamespace
   work: WorkNamespace
   permissions: PermissionsNamespace
   providers: ProvidersNamespace

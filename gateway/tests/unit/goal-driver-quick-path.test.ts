@@ -146,4 +146,18 @@ describe('quick Worker assignment dispatch', () => {
     expect(st.planFeedback).toContain('w1-t1');
     expect(h.calls.some((c) => c.op === 'archiveGoal')).toBe(false);
   });
+
+  test('a quick revision rejects a collaborative plan', async () => {
+    const h = makeHarness({
+      maxAttempts: 1,
+      structured: async () => ({ ...quickPlan, strategy: 'collaborative' }),
+    });
+    h.deps.goalMode = () => 'quick';
+    seedGoal(h, 'gq');
+    const sid = await h.startAndIdle('gq');
+    await h.fireIdle(sid);
+
+    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'ERROR' });
+    expect(h.load('gq')!.lastFailure?.message).toContain("requires strategy:'quick'");
+  });
 });

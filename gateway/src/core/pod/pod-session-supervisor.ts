@@ -37,6 +37,9 @@ export interface PodSessionSupervisorDeps {
   dispose?(sessionId: string): void | Promise<void>;
   broadcast?(event: { type: string; properties?: Record<string, unknown> }): void;
   log?(message: string): void;
+  /** Observe-only mirror into the unified session registry (Phase C Task 6):
+   *  ensure/retire write goal-scoped records; lease logic stays here. */
+  sessionRegistry?: Pick<import('../../session').SessionRegistry, 'register' | 'unregister' | 'lookup'>;
 }
 
 function generationOf(row: PodSessionRow): number {
@@ -114,6 +117,7 @@ export class PodSessionSupervisor {
     const active = this.deps.store.getActiveScopedSession(scope, this.deps.runtimeName());
     if (!active) return false;
     this.deps.store.endSession(active.sessionId, this.deps.now());
+    this.unmirrorSession(active.sessionId);
     this.emit(scope);
     return true;
   }
@@ -141,6 +145,7 @@ export class PodSessionSupervisor {
     if (active) {
       if (await this.isAlive(active.sessionId)) {
         this.deps.store.touchSession(active.sessionId, this.deps.now());
+        this.mirrorSession(scope, active.sessionId, generationOf(active));
         return {
           sessionId: active.sessionId,
           generation: generationOf(active),
@@ -148,6 +153,7 @@ export class PodSessionSupervisor {
         };
       }
       this.deps.store.endSession(active.sessionId, this.deps.now());
+      this.unmirrorSession(active.sessionId);
       this.deps.log?.(
         `[Pod] dead scoped session retired: ${active.sessionId} (${scope.kind}, generation ${generationOf(active)})`,
       );
@@ -200,6 +206,7 @@ export class PodSessionSupervisor {
         const winner = this.deps.store.getActiveScopedSession(scope, runtime);
         if (winner) {
           await this.releaseUnleased(sessionId, 'lost the active-lease race');
+          this.mirrorSession(scope, winner.sessionId, generationOf(winner));
           this.deps.log?.(
             `[Pod] scoped lease race lost for ${scope.kind}; reusing ${winner.sessionId} `
             + `(generation ${generationOf(winner)})`,
@@ -221,7 +228,41 @@ export class PodSessionSupervisor {
     }
 
     this.emit(scope);
+    this.mirrorSession(scope, row.sessionId, generationOf(row));
     return { sessionId: row.sessionId, generation: generationOf(row), reused: false };
+  }
+
+  /** Phase C Task 6 mirror: the lease becomes a goal-scoped process-table record
+   *  (leaseKind/runtime/generation in metadata; no TTL — lease rows own the
+   *  lifetime). Observe-only; failures are non-fatal. */
+  private mirrorSession(scope: PodSessionScope, sessionId: string, generation: number): void {
+    try {
+      this.deps.sessionRegistry?.register({
+        sessionID: sessionId,
+        scope: {
+          kind: 'goal',
+          podId: scope.podId,
+          memberId: scope.memberId ?? undefined,
+          goalId: scope.goalId ?? undefined,
+          revision: typeof scope.revision === 'number' ? scope.revision : undefined,
+        },
+        metadata: { leaseKind: scope.kind, runtime: this.deps.runtimeName(), generation },
+        runtimeName: this.deps.runtimeName(),
+      });
+    } catch (err: any) {
+      this.deps.log?.(`[Pod] session-registry mirror failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
+    }
+  }
+
+  private unmirrorSession(sessionId: string): void {
+    try {
+      const existing = this.deps.sessionRegistry?.lookup(sessionId);
+      if (existing?.scope.kind === 'goal') {
+        this.deps.sessionRegistry?.unregister(sessionId);
+      }
+    } catch (err: any) {
+      this.deps.log?.(`[Pod] session-registry unmirror failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
+    }
   }
 
   /**

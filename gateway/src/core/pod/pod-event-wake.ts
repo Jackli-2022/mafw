@@ -23,6 +23,11 @@ export interface PodEventWakeDeps {
   commitDelivered(ids: string[], sessionId: string): void;
   now?(): number;
   budget?: { perHour: number; dedupeMs: number };
+  /** Single-flight wrapper for scans (B2): concurrent scan() calls join the
+   *  in-flight one — the underlying fn runs once, all callers share the
+   *  result. The gateway wires this to scheduler.submit(midground,
+   *  mutexKey 'pod-event-wake', coalesce); absent = direct call. */
+  runScan?: (fn: () => Promise<PodEventWakeResult>) => Promise<PodEventWakeResult>;
 }
 
 export interface PodEventWakeResult {
@@ -62,6 +67,14 @@ export class PodEventWake {
   }
 
   async scan(podId?: string): Promise<PodEventWakeResult> {
+    // B2: coalesce through the injected runScan (scheduler midground coalesce
+    // in production) — concurrent timer + notify scans join the in-flight one
+    // instead of racing (double-delivery fix). Absent = direct call.
+    const run = this.deps.runScan ?? ((fn: () => Promise<PodEventWakeResult>) => fn());
+    return run(() => this.scanInner(podId));
+  }
+
+  private async scanInner(podId?: string): Promise<PodEventWakeResult> {
     const pending = this.deps.events.pendingWakes(podId);
     if (!pending.length) return { delivered: 0, suppressed: 0 };
 

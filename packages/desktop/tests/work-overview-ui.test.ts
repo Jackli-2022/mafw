@@ -38,3 +38,8 @@ test("Goal rows lead with stage and real progress instead of engineering metadat
   assert.doesNotMatch(overview, /rev \$\{/)
   assert.doesNotMatch(overview, /onOpenAll/)
 })
+
+test("non-standard Goal mode is visible in the list", () => {
+  assert.match(overview, /goalModeLabel\(goal\.goalMode\)/)
+  assert.match(overview, /goal\.goalMode !== "standard"/)
+})

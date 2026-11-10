@@ -5,6 +5,8 @@
  */
 import { MafwCommandRegistry, BUILTIN_COMMAND_DEFS } from '../commands/registry';
 import { buildBuiltinHandlers, type MafwBuiltinDeps } from '../commands/builtin-handlers';
+import { readRouteBody } from './cognition';
+import type { RouteRegistry } from './registry';
 
 export interface MafwCommandsRouteDeps {
   registry: MafwCommandRegistry;
@@ -48,3 +50,46 @@ export async function handleMafwCommandRun(deps: MafwCommandsRouteDeps, rawBody:
 export function handleMafwCommandList(deps: MafwCommandsRouteDeps): RouteReply {
   return { status: 200, body: { commands: deps.registry.list() } };
 }
+
+// ─── Phase D1 Task A2: registry dispatch wiring ───────────────────────────────
+
+export interface MafwCommandsWiringDeps {
+  getRegistry: () => MafwCommandRegistry;
+  registeredProjects: () => Map<string, { projectDir: string }>;
+  projectDir: () => string;
+  /** hold-queue 预检（runCoordinator 可能未初始化 → undefined = 不 hold）。 */
+  shouldHoldQueue: (sessionID: string) => boolean | undefined;
+}
+
+/**
+ * 绑定 catalog 的 mafwCommands.run / mafwCommands.list。
+ * 409 hold-queue 预检仍在该路由内、delegate 之前；请求体 JSON.parse 不设
+ * try/catch（非法 JSON 依原样抛到外层 500）。
+ */
+export function attachMafwCommandRoutes(registry: RouteRegistry, deps: MafwCommandsWiringDeps): void {
+  registry.attachHandler('mafwCommands.run', async (req, res) => {
+    const cmdBody = JSON.parse(await readRouteBody(req));
+    const cmdSessionID = typeof cmdBody?.sessionID === 'string' ? cmdBody.sessionID : '';
+    if (cmdSessionID && deps.shouldHoldQueue(cmdSessionID)) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
+      return;
+    }
+    const reply = await handleMafwCommandRun(
+      {
+        registry: deps.getRegistry(),
+        resolveProjectDir: () => deps.registeredProjects().values().next().value?.projectDir || deps.projectDir(),
+      },
+      cmdBody,
+    );
+    res.writeHead(reply.status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(reply.body));
+  });
+
+  registry.attachHandler('mafwCommands.list', async (_req, res) => {
+    const reply = handleMafwCommandList({ registry: deps.getRegistry(), resolveProjectDir: () => deps.projectDir() });
+    res.writeHead(reply.status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(reply.body));
+  });
+}
+

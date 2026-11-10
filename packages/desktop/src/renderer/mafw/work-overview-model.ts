@@ -3,6 +3,17 @@ import type { PodEventItem } from "./pod-events"
 
 export type WorkFilter = "all" | "active" | "results" | "history"
 
+const GOAL_MODE_LABELS: Record<string, string> = {
+  quick: "Quick",
+  standard: "Standard",
+  standing: "Standing",
+}
+
+/** Goal execution shape label; unknown values pass through so new modes stay visible. */
+export function goalModeLabel(mode?: string | null): string | null {
+  return mode ? (GOAL_MODE_LABELS[mode] ?? mode) : null
+}
+
 export const WORK_FILTERS: ReadonlyArray<{ id: WorkFilter; label: string }> = [
   { id: "all", label: "全部" },
   { id: "active", label: "进行中" },

@@ -38,7 +38,9 @@ describe('Pod gateway wiring', () => {
 
   test('binds node sessions and snapshots before delete', () => {
     expect(source).toContain('podService?.bindSession(');
-    expect(source).toMatch(/snapshotSession\(sessionID\)[\s\S]{0,200}sdkSession\.delete\(sessionID\)/);
+    // Phase D1 Task D1: DELETE /api/session/:id 迁入 routes/sessions-core.ts。
+    const sessionsCore = fs.readFileSync(path.join(__dirname, '../../../src/routes/sessions-core.ts'), 'utf-8');
+    expect(sessionsCore).toMatch(/snapshotSession\(sessionID\)[\s\S]{0,200}sdkSession\(\)\.delete\(sessionID\)/);
     expect(source).toContain('podService?.reconcile()');
     expect(source).toContain('podGoalService?.reconcile()');
   });

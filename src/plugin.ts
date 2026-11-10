@@ -22,6 +22,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { sessionEndingHook } from './hooks/session-ending';
 import { sessionRecallHook } from './hooks/session-recall';
+import { leadWorkingSetHook } from './hooks/lead-working-set';
 import { mediaIngestHook } from './hooks/media-ingest';
 import { pythonGuideHook } from './hooks/bash-python-guide';
 import { writeToolPaths } from './utils/write-paths';
@@ -253,6 +254,7 @@ export default {
         await mediaIngestHook({ sessionID }, out);
         pythonGuideHook({ sessionID }, out);
         await sessionRecallHook({ sessionID }, out);
+        await leadWorkingSetHook({ sessionID }, out);
         voiceGuideMessagesHook({ sessionID }, out);
         // V1 hooks 推入的合成消息（python-guide 提示）回写到 V2 messages
         propagateSyntheticViews(views, messages);

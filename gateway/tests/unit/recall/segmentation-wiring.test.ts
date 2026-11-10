@@ -24,10 +24,12 @@ describe('V2 ②/③ segmentation shadow + event-segment input', () => {
     worker = new CapturingWorker();
     shadowPath = path.join(dir, 'segmentation-shadow.jsonl');
     // Two turns on distinct topics (BM25 vs desktop tray).
-    db.append({ session_id: 'ses_seg', turn_id: 1, source: 'user_input', content: 'fix the BM25 token cache bug in harmonic index', salience: 0.8 });
-    db.append({ session_id: 'ses_seg', turn_id: 1, source: 'assistant_reply', content: 'the BM25 cache now memoizes tokens per entry for speed', salience: 0.8 });
-    db.append({ session_id: 'ses_seg', turn_id: 2, source: 'user_input', content: 'switching gears: the desktop tray icon needs a new menu', salience: 0.8 });
-    db.append({ session_id: 'ses_seg', turn_id: 2, source: 'assistant_reply', content: 'tray menu should show pending approvals count', salience: 0.8 });
+    const t1 = db.beginTurn('ses_seg', 0.8);
+    db.append({ session_id: 'ses_seg', turn_id: t1.turn_seq, trace_id: t1.trace_id, source: 'user_input', content: 'fix the BM25 token cache bug in harmonic index', salience: 0.8 });
+    db.append({ session_id: 'ses_seg', turn_id: t1.turn_seq, trace_id: t1.trace_id, source: 'assistant_reply', content: 'the BM25 cache now memoizes tokens per entry for speed', salience: 0.8 });
+    const t2 = db.beginTurn('ses_seg', 0.8);
+    db.append({ session_id: 'ses_seg', turn_id: t2.turn_seq, trace_id: t2.trace_id, source: 'user_input', content: 'switching gears: the desktop tray icon needs a new menu', salience: 0.8 });
+    db.append({ session_id: 'ses_seg', turn_id: t2.turn_seq, trace_id: t2.trace_id, source: 'assistant_reply', content: 'tray menu should show pending approvals count', salience: 0.8 });
   });
   afterEach(() => { db.close(); fs.rmSync(dir, { recursive: true, force: true }); });
 

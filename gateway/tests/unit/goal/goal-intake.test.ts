@@ -6,6 +6,7 @@ import {
   createGoalIntake,
   GoalConflictError,
   makePodGoalId,
+  normalizeGoalSourceRef,
   type GoalIntakeDeps,
 } from '../../../src/core/goal/goal-intake';
 
@@ -99,6 +100,23 @@ describe('goal intake', () => {
       snapshot: 'x'.repeat(4000),
       capturedAt: '2026-11-03T00:00:00.000Z',
     });
+  });
+
+  test('sourceRef keeps topic provenance and drops invalid range', () => {
+    const ref = normalizeGoalSourceRef({
+      snapshot: 'hello',
+      topicId: 'topic_1',
+      messageRange: { from: 'm1', to: 'm2' },
+      capturedAt: '2026-11-10T00:00:00.000Z',
+    }, 'fallback');
+    expect(ref).toEqual({
+      snapshot: 'hello',
+      topicId: 'topic_1',
+      messageRange: { from: 'm1', to: 'm2' },
+      capturedAt: '2026-11-10T00:00:00.000Z',
+    });
+    expect(normalizeGoalSourceRef({ snapshot: 'x', messageRange: { from: '', to: 'm2' } }, 'f')?.messageRange)
+      .toBeUndefined();
   });
 
   test('autoStart false leaves starting to the caller', () => {

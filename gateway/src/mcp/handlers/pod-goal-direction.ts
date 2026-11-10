@@ -9,6 +9,7 @@
 // 权限：只有绑定在当前 Goal revision 的 Tech Lead 会话能调用（assertTechLeadSession）。
 import type { ToolHandler } from '../../types';
 import { PodError } from '../../core/pod/pod-store';
+import type { PodGoalMode } from '../../core/pod/pod-store';
 import type { PodTechLeadService } from '../../core/pod/pod-tech-lead-service';
 import type { PodDirectionService } from '../../core/pod/pod-direction-service';
 import type { DirectionOptionInput } from '../../core/goal/direction-decision';
@@ -18,6 +19,10 @@ export type PodGoalDirectionMode = 'clear' | 'needs_user' | 'decided';
 export interface PodGoalDirectionArgs {
   goalId: string;
   mode: PodGoalDirectionMode;
+  /** Execution shape chosen by the Tech Lead; defaults to standard. */
+  goalMode?: PodGoalMode;
+  /** High-risk action requires human confirmation; quick is rejected. */
+  requiresApproval?: boolean;
   /** 用户原话（逐字保留）或 Tech Lead 的明确结论（clear）。 */
   userWords?: string;
   /** 用户选中的既有 option id。 */
@@ -37,6 +42,8 @@ export interface PodGoalDirectionDeps {
   direction: Pick<PodDirectionService, 'decide' | 'request'>;
   /** 规划启动器（clear / decided 后调用；needs_user 绝不调用）。 */
   startPlanning(goalId: string): Promise<void> | void;
+  /** Persist the execution shape before direction/planning (optional for legacy wiring). */
+  setGoalMode?(goalId: string, mode: PodGoalMode): Promise<void> | void;
   now?(): string;
   log?(message: string): void;
 }
@@ -95,6 +102,20 @@ export function createPodGoalDirectionTool(deps: PodGoalDirectionDeps) {
         throw new PodError(403, `session is not the bound Tech Lead session for goal ${goalId}`);
       }
       const bound = deps.techLead.assertTechLeadSession(goalId, sessionID);
+      const goalMode: PodGoalMode = args?.goalMode === 'standing'
+        ? 'standing'
+        : args?.goalMode === 'quick' ? 'quick' : 'standard';
+      if (goalMode === 'standing') {
+        return fail(new PodError(501, 'standing goals are not supported yet'));
+      }
+      if (goalMode === 'quick' && args?.requiresApproval === true) {
+        return fail(new PodError(400, 'quick requires explicit approval; use standard'));
+      }
+      if (deps.setGoalMode) {
+        await deps.setGoalMode(goalId, goalMode);
+      } else if (goalMode !== 'standard') {
+        return fail(new PodError(503, 'goal mode selection is unavailable'));
+      }
 
       if (mode === 'needs_user') {
         const options = Array.isArray(args?.options) ? args.options : [];

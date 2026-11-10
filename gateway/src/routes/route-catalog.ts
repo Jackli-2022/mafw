@@ -38,11 +38,11 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/cognition/gate', operationId: 'cognition.gate', tags: ['cognition'] },
   { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'] },
   { method: 'GET', path: '/api/cognition/rules', operationId: 'cognition.rules', tags: ['cognition'] },
-  { method: 'GET', path: '/api/session/{id}/queue', operationId: 'session.queue.list', tags: ['session'] },
+  { method: 'GET', path: '/api/session/:id/queue', operationId: 'session.queue.list', tags: ['session'] },
   { method: 'GET', path: '/api/session/:id/config', operationId: 'session.config', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/config', operationId: 'session.config.set', tags: ['session'] },
-  { method: 'DELETE', path: '/api/session/{id}/queue', operationId: 'session.queue.clear', tags: ['session'] },
-  { method: 'DELETE', path: '/api/session/{id}/queue/{itemId}', operationId: 'session.queue.cancel', tags: ['session'] },
+  { method: 'DELETE', path: '/api/session/:id/queue', operationId: 'session.queue.clear', tags: ['session'] },
+  { method: 'DELETE', path: '/api/session/:id/queue/:itemId', operationId: 'session.queue.cancel', tags: ['session'] },
   // code-first 试点：response schema 是唯一来源（emit:openapi 直接投影，不经 overrides）。
   { method: 'GET', path: '/api/sessions', operationId: 'session.list', tags: ['session'], response: SessionListResponse },
   { method: 'GET', path: '/api/sessions/:id', operationId: 'session.get', tags: ['session'] },
@@ -156,6 +156,14 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/goals/:id/plan-approval', operationId: 'goals.planApproval', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id/sessions', operationId: 'goals.sessions', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id/timeline', operationId: 'goals.timeline', tags: ['goals'] },
+  { method: 'GET', path: '/api/goals/:id/source', operationId: 'goals.source', tags: ['goals'] },
+  { method: 'GET', path: '/api/lead/context', operationId: 'lead.context', tags: ['internal'] },
+  { method: 'GET', path: '/api/lead/topics', operationId: 'lead.topics.list', tags: ['lead'] },
+  { method: 'GET', path: '/api/lead/topics/:id', operationId: 'lead.topics.get', tags: ['lead'] },
+  { method: 'GET', path: '/api/lead/working-set', operationId: 'lead.workingSet', tags: ['lead'] },
+  { method: 'GET', path: '/api/lead/recall', operationId: 'lead.recall', tags: ['lead'] },
+  { method: 'POST', path: '/api/lead/compact', operationId: 'lead.compact', tags: ['lead'] },
+  { method: 'POST', path: '/api/lead/topics/:id/resume', operationId: 'lead.topics.resume', tags: ['lead'] },
   { method: 'POST', path: '/api/goals/:id/nodes/:runId/retry', operationId: 'goals.retryNode', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:goalId/questions/:questionId/respond', operationId: 'goals.respondQuestion', tags: ['goals'] },
   { method: 'POST', path: '/api/work/:goalId/validate', operationId: 'goals.validate', tags: ['goals'] },
@@ -263,6 +271,10 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'] },
   { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'] },
   { method: 'GET', path: '/api/recall/pinned', operationId: 'recall.pinned', tags: ['internal'] },
+  // Task B3：T2-4 fallback 面 / W1 常驻先验块（plugin / pi host extension 消费；
+  // 非 SDK 端点 → 与兄弟 NON_SDK 条目一致用 tags ['internal']，SDK 死契约检查据此豁免）
+  { method: 'GET', path: '/api/recall/instructions', operationId: 'recall.instructions', tags: ['internal'] },
+  { method: 'GET', path: '/api/recall/priors', operationId: 'recall.priors', tags: ['internal'] },
   // 记忆补充（memory.mergedSearch 已在 SDK-facing，不重复）
   { method: 'POST', path: '/api/memory/add', operationId: 'memory.add', tags: ['internal'] },
   { method: 'GET', path: '/api/memory/get', operationId: 'memory.get', tags: ['internal'] },
@@ -308,12 +320,24 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/devices/:id', operationId: 'devices.delete', tags: ['internal'] },
   // P5 Wave 2 反向审计补遗
   { method: 'GET', path: '/.well-known/agent-card.json', operationId: 'a2a.agentCard', tags: ['internal'] },
+  // Task C1：单规则详情 GET /api/automations/:id 未进 @mafw/sdk 调用面
+  // （SDK 只有 list/toggle/remove/draft）→ 与 automations.history 同放
+  // NON_SDK 并标 internal，SDK 死契约门据此豁免。
+  { method: 'GET', path: '/api/automations/:id', operationId: 'automations.get', tags: ['internal'] },
   { method: 'GET', path: '/api/automations/:id/history', operationId: 'automations.history', tags: ['internal'] },
   { method: 'GET', path: '/api/goals/:id/loops/:n', operationId: 'goals.loopsAt', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/dry-event', operationId: 'runtime.dryEvent', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/conformance', operationId: 'runtime.conformance', tags: ['internal'] },
   { method: 'POST', path: '/api/sessions/:sid/permissions/:rid', operationId: 'permissions.replyRuntime', tags: ['internal'] },
+  // Task E2：subagent 面对不上 SDK 调用面（packages/gateway-sdk/src/client.ts 无
+  // /subagents 调用；packages/runtime-core/src 与 packages/desktop/src 也不发这些
+  // 请求，只有 gateway 内 mafw-tools 走 HTTP）→ NON_SDK + internal，SDK 死契约门豁免。
+  { method: 'POST', path: '/api/sessions/:id/subagents', operationId: 'session.subagents.spawn', tags: ['internal'] },
+  { method: 'GET', path: '/api/sessions/:id/subagents', operationId: 'session.subagents.list', tags: ['internal'] },
+  { method: 'POST', path: '/api/sessions/:id/subagents/:subId/message', operationId: 'session.subagents.message', tags: ['internal'] },
+  { method: 'POST', path: '/api/sessions/:id/subagents/:subId/cancel', operationId: 'session.subagents.cancel', tags: ['internal'] },
+  { method: 'GET', path: '/api/sessions/:id/subagents/:subId/result', operationId: 'session.subagents.result', tags: ['internal'] },
   { method: 'DELETE', path: '/api/session/:id', operationId: 'session.deleteLegacy', tags: ['internal'] },
   // Eval / LLM 压缩
   { method: 'POST', path: '/api/eval/chat/completions', operationId: 'eval.chatCompletions', tags: ['internal'] },
@@ -327,6 +351,11 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // 调用，已登记在 SDK_FACING_ROUTES（此前标 internal 以免 SDK 死契约）。
   { method: 'GET', path: '/api/plugins/:name/ui', operationId: 'plugins.webAsset', tags: ['internal'] },
   { method: 'GET', path: '/api/plugins/:name/events', operationId: 'plugins.webEvents', tags: ['internal'] },
+  // MAFW 基础工具面（out-of-process runtime 注册/执行通道；loopback-only）
+  { method: 'GET', path: '/api/tools', operationId: 'tools.list', tags: ['internal'] },
+  { method: 'POST', path: '/api/tools/execute', operationId: 'tools.execute', tags: ['internal'] },
+  // Agent 自我认知只读面（L1 能力账本 + L2 失败谱；fail-open）
+  { method: 'GET', path: '/api/agent/capabilities', operationId: 'agent.capabilities', tags: ['internal'] },
 ];
 
 /** gateway 全量 HTTP 端点 shadow 登记（无 handler；Phase 3 逐条挂 handler 前不参与 dispatch）。
