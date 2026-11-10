@@ -184,8 +184,8 @@ export interface T1Observation {
   id: number;
   session_id: string;
   turn_id: number;
-  trace_id: string;
-  observation_key: string;
+  trace_id: string | null;
+  observation_key: string | null;
   source: ObservationSource;
   content: string;
   failure: number;
@@ -206,6 +206,8 @@ append(obs: {
 ```
 
 - `append` throws `trace_id required` when missing/empty and `unknown trace_id: <id>` when no `t1_turns` row matches.
+- `trace_id` and `observation_key` are **nullable reads** for pre-migration legacy rows (they read back `NULL` until the Task 4 backfill), while the `append` input still requires `trace_id: string` (always supplied by the capture route).
+- `append` also verifies trace ownership: the referenced `t1_turns` row's `(session_id, turn_seq)` must equal `obs.session_id` / `obs.turn_id`, otherwise it throws a `trace ownership mismatch` error naming both tuples.
 - A missing `observation_key` becomes `t1o_${randomUUID()}`.
 - Appending raises `t1_turns.encoding_salience` to the maximum supplied salience.
 - Capture response is additive: `{ ok, id, turnId, traceId, deduped }` for stored rows; blank content keeps the existing no-turn response.
@@ -478,13 +480,21 @@ describe('T1 legacy identity migration', () => {
 
     db.close();
     const reopened = new GatewayDatabase(file);
-    expect(reopened.currentTurn('s1')?.legacy_ambiguous).toBe(1);
+    const legacyTurn = (reopened as any).getStore()
+      .prepare("SELECT legacy_ambiguous FROM t1_turns WHERE trace_id LIKE 't1l_%'")
+      .get() as { legacy_ambiguous: number };
+    expect(legacyTurn.legacy_ambiguous).toBe(1);
     expect(reopened.nextTurnId('s1')).toBe(3);
     reopened.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 ```
+
+> Amendment after Task 4 review: the original reopen assertion called
+> `currentTurn('s1')` after `beginTurn('s1')` had already created turn 2, so it
+> could never observe the legacy turn's `legacy_ambiguous=1`. The query-based
+> check above is the equivalent idempotency assertion used by the implementation.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -543,9 +553,28 @@ Do not mutate `~/.mafw/memory/gateway.db`. Open it read-only with better-sqlite3
 
 Do not proceed to deployment if migration changes the active/archive row counts (excluding the new `t1_turns` table), throws, or leaves trace IDs null.
 
-- [ ] **Step 4: Deploy the verified build and observe startup migration**
+- [ ] **Step 4: Stop before deployment**
 
-Create a fresh SQLite backup of production before deployment. Run `cd gateway; npm run deploy:local`, write `~/.mafw/pending-restart.json` with `{ "target": "gateway", "action": "restart" }`, wait for the gateway PID to change, and verify `/health` is `ok`. Inspect logs for the identity migration outcome and re-run the read-only count checks from Step 3 against production. If startup fails or counts change unexpectedly, stop and restore the backup; do not continue to later phases.
+Do not deploy from this task. Deployment is a production side effect and must
+wait until the whole-branch final review is clean. The controller performs the
+verified deployment after that review.
+
+> **Controller-only deployment checklist (runs only after a clean whole-branch
+> review):**
+>
+> 1. Create a fresh SQLite snapshot via better-sqlite3 `backup()` (never a raw
+>    file copy, which can miss WAL state).
+> 2. `npm run deploy:local`.
+> 3. Write the pending-restart token (`~/.mafw/pending-restart.json`,
+>    `{ target: "gateway", action: "restart" }`).
+> 4. Wait for the PID change (confirm the old process exited and the new payload
+>    is serving).
+> 5. Verify `/health` returns healthy.
+> 6. Re-run the read-only counts from Step 3: `t1_turns` count, ambiguous legacy
+>    turn count, missing `trace_id`/`observation_key` **= 0**, and active/archive
+>    row counts unchanged.
+> 7. If `/health` or any count check fails, **roll back by restoring the backup
+>    snapshot** and do not leave the migrated state in place.
 
 - [ ] **Step 5: Write the release note**
 

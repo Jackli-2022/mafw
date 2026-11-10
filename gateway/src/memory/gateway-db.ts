@@ -8,7 +8,9 @@
 // turns or duplicate writes (database-level UNIQUE dedup on observations).
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID, createHash } from 'crypto';
 import Database from 'better-sqlite3';
+import { log } from '../core/utils/logger';
 
 export type ObservationSource = 'user_input' | 'assistant_reply' | 'tool_result' | 'reasoning';
 
@@ -16,6 +18,12 @@ export interface T1Observation {
   id: number;
   session_id: string;
   turn_id: number;
+  /** Logical turn trace (`t1_turns.trace_id`) the observation belongs to;
+   *  null for legacy rows until the Task 4 backfill. */
+  trace_id: string | null;
+  /** Stable per-observation identity (`t1o_<uuid>`); null for legacy rows
+   *  until the Task 4 backfill. */
+  observation_key: string | null;
   source: ObservationSource;
   content: string;
   failure: number;
@@ -31,6 +39,25 @@ export interface TurnSummary {
   has_user_input: number;
   response_count: number;
   last_ts: number;
+}
+
+/** Durable logical turn identity (T1); survives archival and restarts. */
+export interface T1Turn {
+  trace_id: string;
+  session_id: string;
+  turn_seq: number;
+  created_at: number;
+  archived_at: number | null;
+  encoding_salience: number | null;
+  legacy_ambiguous: number;
+}
+
+/** A turn's full observation set (active + archived) resolved by trace id. */
+export interface T1TraceRead {
+  turn: T1Turn;
+  rows: T1Observation[];
+  /** Whether the turn is currently archived (from `t1_turns.archived_at`). */
+  archived: boolean;
 }
 
 export interface GoalOutcome {
@@ -130,6 +157,8 @@ export class GatewayDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id TEXT NOT NULL,
         turn_id INTEGER NOT NULL,
+        trace_id TEXT,
+        observation_key TEXT,
         source TEXT NOT NULL,
         content TEXT NOT NULL,
         failure INTEGER DEFAULT 0,
@@ -243,9 +272,12 @@ export class GatewayDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id TEXT NOT NULL,
         turn_id INTEGER NOT NULL,
+        trace_id TEXT,
+        observation_key TEXT,
         source TEXT NOT NULL,
         content TEXT NOT NULL,
         failure INTEGER DEFAULT 0,
+        salience REAL,
         created_at INTEGER NOT NULL,
         archived_at INTEGER DEFAULT (unixepoch())
       );
@@ -260,6 +292,18 @@ export class GatewayDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_noop_session ON t1_noop_log(session_id);
       CREATE INDEX IF NOT EXISTS idx_noop_created ON t1_noop_log(created_at);
+
+      CREATE TABLE IF NOT EXISTS t1_turns (
+        trace_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_seq INTEGER NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        archived_at INTEGER,
+        encoding_salience REAL,
+        legacy_ambiguous INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(session_id, turn_seq)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_turns_session ON t1_turns(session_id, turn_seq);
 
       CREATE TABLE IF NOT EXISTS goal_outcomes (
         goal_id TEXT PRIMARY KEY,
@@ -393,6 +437,40 @@ export class GatewayDatabase {
       // Column already exists, ignore
     }
 
+    // Migration: add stable observation identity columns (logical turn trace
+    // + per-observation key) to t1_observations if not exists. Legacy rows
+    // read back null for both; new appends always populate them.
+    try {
+      this.db.exec(`ALTER TABLE t1_observations ADD COLUMN trace_id TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE t1_observations ADD COLUMN observation_key TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
+
+    // Migration: copy stable observation identity (logical turn trace +
+    // per-observation key) and salience onto t1_archive so archived rows keep
+    // the same identity as their active counterparts. Legacy archived rows
+    // read back null for all three.
+    try {
+      this.db.exec(`ALTER TABLE t1_archive ADD COLUMN trace_id TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE t1_archive ADD COLUMN observation_key TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE t1_archive ADD COLUMN salience REAL`);
+    } catch {
+      // Column already exists, ignore
+    }
+
     // Migration: D4b task-type dimension on goal_outcomes (legacy rows NULL →
     // aggregate into the global/'other' bucket).
     try {
@@ -413,42 +491,289 @@ export class GatewayDatabase {
       CREATE INDEX IF NOT EXISTS idx_node_runs_goal_revision
         ON goal_node_runs(goal_id, revision, loop);
     `);
+
+    // Task 4: backfill durable identity onto pre-Task-4 legacy rows. Idempotent
+    // and transactional; a failure is logged and must never block startup.
+    this.migrateT1Identity();
+  }
+
+  /**
+   * Constructor-time, idempotent legacy migration: give every pre-Task-4
+   * `(session_id, turn_id)` composite a durable `t1_turns` identity and link
+   * its observation rows to that trace, without ever merging, rewriting, or
+   * deleting legacy observation content.
+   *
+   * Rules (per the T1 identity plan):
+   *  - one `t1_turns` row per legacy composite key, keyed by a deterministic
+   *    `t1l_<sha1(session_id + NUL + turn_id).slice(0,20)>` trace;
+   *  - `legacy_ambiguous = 1` when the composite holds more than one
+   *    `user_input`, or spans both active and archive tables (never guess a
+   *    precise historical boundary);
+   *  - every legacy observation row receives its composite trace plus a
+   *    table-scoped observation key (`t1o_legacy_active_<id>` /
+   *    `t1o_legacy_archive_<id>`);
+   *  - `turn_seq` equals the legacy `turn_id`, so the next allocated sequence
+   *    is always greater than every legacy sequence.
+   *
+   * Only rows whose `trace_id` is still NULL are touched, so re-running on
+   * every startup neither duplicates `t1_turns` rows nor overwrites the
+   * identity of turns allocated by `beginTurn`. Runs in one transaction; any
+   * failure is logged and swallowed so gateway startup is unaffected, with no
+   * partial commit.
+   */
+  private migrateT1Identity(): void {
+    try {
+      // Trace/observation-key indexes must come after the ALTERs that add the
+      // columns (legacy tables predate them).
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_t1_observations_trace ON t1_observations(trace_id);
+        CREATE INDEX IF NOT EXISTS idx_t1_observations_key ON t1_observations(observation_key);
+        CREATE INDEX IF NOT EXISTS idx_t1_archive_trace ON t1_archive(trace_id);
+        CREATE INDEX IF NOT EXISTS idx_t1_archive_key ON t1_archive(observation_key);
+      `);
+
+      const txn = this.db.transaction(() => {
+        const composites = this.db
+          .prepare(
+            `SELECT session_id, turn_id,
+                    SUM(user_input) AS user_input_count,
+                    MAX(active)    AS has_active,
+                    MAX(archive)   AS has_archive,
+                    MIN(created_at)    AS min_created_at,
+                    MAX(archived_at)   AS max_archived_at,
+                    MAX(salience)      AS max_salience
+             FROM (
+               SELECT session_id, turn_id,
+                      CASE WHEN source = 'user_input' THEN 1 ELSE 0 END AS user_input,
+                      1 AS active, 0 AS archive,
+                      created_at, NULL AS archived_at, salience
+                 FROM t1_observations
+                WHERE trace_id IS NULL
+               UNION ALL
+               SELECT session_id, turn_id,
+                      CASE WHEN source = 'user_input' THEN 1 ELSE 0 END AS user_input,
+                      0 AS active, 1 AS archive,
+                      created_at, archived_at, salience
+                 FROM t1_archive
+                WHERE trace_id IS NULL
+             )
+             GROUP BY session_id, turn_id`,
+          )
+          .all() as Array<{
+            session_id: string;
+            turn_id: number;
+            user_input_count: number;
+            has_active: number;
+            has_archive: number;
+            min_created_at: number | null;
+            max_archived_at: number | null;
+            max_salience: number | null;
+          }>;
+
+        const insertTurn = this.db.prepare(
+          `INSERT OR IGNORE INTO t1_turns
+             (trace_id, session_id, turn_seq, created_at, archived_at, encoding_salience, legacy_ambiguous)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        );
+        const backfillActive = this.db.prepare(
+          `UPDATE t1_observations
+              SET trace_id = ?, observation_key = 't1o_legacy_active_' || id
+            WHERE session_id = ? AND turn_id = ? AND trace_id IS NULL`,
+        );
+        const backfillArchive = this.db.prepare(
+          `UPDATE t1_archive
+              SET trace_id = ?, observation_key = 't1o_legacy_archive_' || id
+            WHERE session_id = ? AND turn_id = ? AND trace_id IS NULL`,
+        );
+
+        let turnsCreated = 0;
+        let ambiguousTurns = 0;
+        let rowsBackfilled = 0;
+        for (const c of composites) {
+          const trace =
+            't1l_' +
+            createHash('sha1')
+              .update(`${c.session_id}\0${c.turn_id}`)
+              .digest('hex')
+              .slice(0, 20);
+          const ambiguous =
+            c.user_input_count > 1 || (c.has_active === 1 && c.has_archive === 1) ? 1 : 0;
+          // A turn is "archived" only when it has archive rows and no active
+          // rows; a composite spanning both is left open (and marked ambiguous).
+          const archivedAt =
+            c.has_archive === 1 && c.has_active === 0 ? c.max_archived_at : null;
+          const createdAt = c.min_created_at ?? Math.floor(Date.now() / 1000);
+          turnsCreated += insertTurn.run(
+            trace,
+            c.session_id,
+            c.turn_id,
+            createdAt,
+            archivedAt,
+            c.max_salience,
+            ambiguous,
+          ).changes;
+          if (ambiguous) ambiguousTurns += 1;
+          rowsBackfilled += backfillActive.run(trace, c.session_id, c.turn_id).changes;
+          rowsBackfilled += backfillArchive.run(trace, c.session_id, c.turn_id).changes;
+        }
+        return { turnsCreated, ambiguousTurns, rowsBackfilled };
+      });
+      const { turnsCreated, ambiguousTurns, rowsBackfilled } = txn();
+      log.info('t1 identity legacy migration complete', {
+        turnsCreated,
+        ambiguousTurns,
+        rowsBackfilled,
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      log.error('t1 identity legacy migration failed (startup continues)', detail);
+    }
   }
 
   // ── T1 observations ─────────────────────────────────────────────────────
 
   /**
-   * Next turn ID for a new user message: max existing turn for the session + 1.
-   * No rows yet → 1.
+   * Highest logical turn sequence + 1 for a session, computed over the union of
+   * allocated turns (t1_turns), active observations (t1_observations), and
+   * archived observations (t1_archive). Including archived rows guarantees
+   * untracked legacy fixtures can never cause a turn number to be reused, and
+   * archiving every active row does not reset the sequence.
    */
-  nextTurnId(session_id: string): number {
+  private nextTurnSeq(session_id: string): number {
     const row = this.db
-      .prepare('SELECT COALESCE(MAX(turn_id), 0) AS m FROM t1_observations WHERE session_id = ?')
-      .get(session_id) as { m: number };
-    return row.m + 1;
-  }
-
-  /** Current turn ID for non-user observations: max existing turn, or 0. */
-  currentTurnId(session_id: string): number {
-    const row = this.db
-      .prepare('SELECT COALESCE(MAX(turn_id), 0) AS m FROM t1_observations WHERE session_id = ?')
-      .get(session_id) as { m: number };
-    return row.m;
+      .prepare(
+        `SELECT MAX(turn_seq) AS m FROM (
+           SELECT turn_seq FROM t1_turns WHERE session_id = ?
+           UNION ALL
+           SELECT turn_id AS turn_seq FROM t1_observations WHERE session_id = ?
+           UNION ALL
+           SELECT turn_id AS turn_seq FROM t1_archive WHERE session_id = ?
+         )`,
+      )
+      .get(session_id, session_id, session_id) as { m: number | null };
+    return (row.m ?? 0) + 1;
   }
 
   /**
-   * Insert one observation. Database-level dedup via the UNIQUE constraint:
-   * a duplicate (same session/turn/source/content) is silently ignored.
-   * Returns the row id, or null when deduplicated.
+   * Next turn ID for a new user message: highest known logical turn (active or
+   * archived) + 1. Non-allocating peek: repeated calls do not advance anything.
+   * No rows yet → 1.
    */
-  append(obs: Omit<T1Observation, 'id' | 'created_at'>): number | null {
-    const result = this.db
-      .prepare(
-        `INSERT OR IGNORE INTO t1_observations (session_id, turn_id, source, content, failure, salience)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(obs.session_id, obs.turn_id, obs.source, obs.content, obs.failure, obs.salience ?? null);
-    return result.changes > 0 ? Number(result.lastInsertRowid) : null;
+  nextTurnId(session_id: string): number {
+    return this.nextTurnSeq(session_id);
+  }
+
+  /** Current turn ID for non-user observations: latest logical turn, or 0. */
+  currentTurnId(session_id: string): number {
+    return this.currentTurn(session_id)?.turn_seq ?? 0;
+  }
+
+  /** Latest logical turn for the session regardless of archived state. */
+  currentTurn(session_id: string): T1Turn | null {
+    const row = this.db
+      .prepare('SELECT * FROM t1_turns WHERE session_id = ? ORDER BY turn_seq DESC LIMIT 1')
+      .get(session_id) as T1Turn | undefined;
+    return row ?? null;
+  }
+
+  /**
+   * Allocate one new logical turn for a session and return it. Runs in a
+   * transaction: computes the next sequence from the union of turns /
+   * observations / archive, inserts a `t1t_` trace-id row, and returns the
+   * inserted row. The sequence is persisted, so restarts and archivals cannot
+   * renumber or duplicate turns.
+   */
+  beginTurn(session_id: string, encodingSalience?: number): T1Turn {
+    const txn = this.db.transaction((): T1Turn => {
+      const turn_seq = this.nextTurnSeq(session_id);
+      const trace_id = `t1t_${randomUUID()}`;
+      this.db
+        .prepare(
+          `INSERT INTO t1_turns (trace_id, session_id, turn_seq, created_at, encoding_salience)
+           VALUES (?, ?, ?, unixepoch(), ?)`,
+        )
+        .run(trace_id, session_id, turn_seq, encodingSalience ?? null);
+      return this.db.prepare('SELECT * FROM t1_turns WHERE trace_id = ?').get(trace_id) as T1Turn;
+    });
+    return txn();
+  }
+
+  /**
+   * Insert one observation against an allocated logical turn.
+   *
+   * `trace_id` is required and must reference an existing `t1_turns` row
+   * (`trace_id required` / `unknown trace_id: <id>` otherwise). The referenced
+   * turn's `(session_id, turn_seq)` must match `obs.session_id` /
+   * `obs.turn_id` (`trace ownership mismatch: ...` otherwise). A missing
+   * `observation_key` is generated as `t1o_<uuid>`. On write, the turn's
+   * `encoding_salience` is raised to the maximum supplied salience.
+   *
+   * Database-level dedup via the UNIQUE constraint: a duplicate
+   * (same session/turn/source/content) is silently ignored. Returns the row
+   * id, or null when deduplicated.
+   */
+  append(obs: {
+    session_id: string;
+    turn_id: number;
+    trace_id: string;
+    observation_key?: string;
+    source: ObservationSource;
+    content: string;
+    failure: number;
+    salience?: number | null;
+  }): number | null {
+    if (!obs.trace_id || !obs.trace_id.trim()) {
+      throw new Error('trace_id required');
+    }
+    const turn = this.db
+      .prepare('SELECT trace_id, session_id, turn_seq FROM t1_turns WHERE trace_id = ?')
+      .get(obs.trace_id) as { trace_id: string; session_id: string; turn_seq: number } | undefined;
+    if (!turn) {
+      throw new Error(`unknown trace_id: ${obs.trace_id}`);
+    }
+    if (turn.session_id !== obs.session_id || turn.turn_seq !== obs.turn_id) {
+      throw new Error(
+        `trace ownership mismatch: trace_id ${obs.trace_id} owns ` +
+          `(session_id, turn_seq)=(${turn.session_id}, ${turn.turn_seq}) but append targeted ` +
+          `(session_id, turn_id)=(${obs.session_id}, ${obs.turn_id})`,
+      );
+    }
+    const observationKey = obs.observation_key || `t1o_${randomUUID()}`;
+    const txn = this.db.transaction((): number | null => {
+      const result = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO t1_observations (session_id, turn_id, trace_id, observation_key, source, content, failure, salience)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          obs.session_id,
+          obs.turn_id,
+          obs.trace_id,
+          observationKey,
+          obs.source,
+          obs.content,
+          obs.failure,
+          obs.salience ?? null,
+        );
+      // Raise — never lower — the turn's encoding salience.
+      if (obs.salience != null) {
+        this.db
+          .prepare(
+            `UPDATE t1_turns
+                SET encoding_salience = MAX(COALESCE(encoding_salience, 0), ?)
+              WHERE trace_id = ?`,
+          )
+          .run(obs.salience, obs.trace_id);
+      }
+      // A late observation reopens an archived turn (identity unchanged).
+      if (result.changes > 0) {
+        this.db
+          .prepare('UPDATE t1_turns SET archived_at = NULL WHERE trace_id = ?')
+          .run(obs.trace_id);
+      }
+      return result.changes > 0 ? Number(result.lastInsertRowid) : null;
+    });
+    return txn();
   }
 
   /** Per-session turn summaries (grouped), optionally filtered to a session. */
@@ -494,21 +819,28 @@ export class GatewayDatabase {
 
   /**
    * Archive a processed turn: move from t1_observations to t1_archive, then
-   * delete from t1_observations. Preserves the raw observation data for future
-   * re-extraction with upgraded pipelines. Returns the number of rows archived.
+   * delete from t1_observations. Preserves the raw observation data (including
+   * the logical trace id, observation key, and salience) for future
+   * re-extraction with upgraded pipelines, and stamps `t1_turns.archived_at`
+   * to record when the turn was archived. Returns the number of rows archived.
    */
   archiveTurn(session_id: string, turn_id: number): number {
     const txn = this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO t1_archive (session_id, turn_id, source, content, failure, created_at)
-           SELECT session_id, turn_id, source, content, failure, created_at
+          `INSERT INTO t1_archive (session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at)
+           SELECT session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at
            FROM t1_observations WHERE session_id = ? AND turn_id = ?`,
         )
         .run(session_id, turn_id);
       const del = this.db
         .prepare('DELETE FROM t1_observations WHERE session_id = ? AND turn_id = ?')
         .run(session_id, turn_id);
+      if (del.changes > 0) {
+        this.db
+          .prepare('UPDATE t1_turns SET archived_at = unixepoch() WHERE session_id = ? AND turn_seq = ?')
+          .run(session_id, turn_id);
+      }
       return del.changes;
     });
     return txn();
@@ -519,6 +851,35 @@ export class GatewayDatabase {
     return this.db
       .prepare('SELECT * FROM t1_archive WHERE session_id = ? AND turn_id = ? ORDER BY id')
       .all(session_id, turn_id) as T1Observation[];
+  }
+
+  /**
+   * Read a turn's full observation set by logical trace id, combining active
+   * (t1_observations) and archived (t1_archive) rows. Rows are ordered by
+   * `created_at`, then stable row id within each source (archived rows sort
+   * before active rows on created_at ties, preserving replay order across an
+   * archival/reopen cycle). Returns `archived` from the turn metadata.
+   * Returns null when the trace id is unknown.
+   */
+  readTrace(trace_id: string): T1TraceRead | null {
+    const turn = this.db
+      .prepare('SELECT * FROM t1_turns WHERE trace_id = ?')
+      .get(trace_id) as T1Turn | undefined;
+    if (!turn) return null;
+    const rows = this.db
+      .prepare(
+        `SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at
+         FROM (
+           SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at, 0 AS src
+             FROM t1_archive WHERE trace_id = ?
+           UNION ALL
+           SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at, 1 AS src
+             FROM t1_observations WHERE trace_id = ?
+         )
+         ORDER BY created_at, src, id`,
+      )
+      .all(trace_id, trace_id) as T1Observation[];
+    return { turn, rows, archived: turn.archived_at != null };
   }
 
   /** List archived turns (grouped), optionally filtered to a session. */

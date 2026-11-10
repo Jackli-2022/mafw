@@ -42,9 +42,13 @@ function setup(opts: { internal?: boolean; appendThrows?: boolean; dreamQueries?
   const deleted: Array<[string, string]> = [];
   const prefetched: Array<[string, string]> = [];
   const snapshots: string[] = [];
+  const fakeTurn = {
+    trace_id: 't1t_fake', session_id: 's1', turn_seq: 7, created_at: 0,
+    archived_at: null, encoding_salience: null, legacy_ambiguous: 0,
+  };
   const db = {
-    nextTurnId: () => 7,
-    currentTurnId: () => 7,
+    beginTurn: (_sid: string, salience?: number) => ({ ...fakeTurn, encoding_salience: salience ?? null }),
+    currentTurn: () => fakeTurn,
     append: (row: any) => { if (opts.appendThrows) throw new Error('db down'); appended.push(row); return opts.appendId === undefined ? 'obs-1' : opts.appendId; },
     kvGet: (_scope: string, _key: string) => (opts.dreamQueries ? { queries: opts.dreamQueries } : undefined),
     kvDelete: (scope: string, key: string) => { deleted.push([scope, key]); },
@@ -84,10 +88,10 @@ describe('obs capture registry wiring (D1 Task C3)', () => {
     await handlerFor(registry, 'POST', '/api/obs/capture')!(wrap('/api/obs/capture', { sessionID: 's1', source: 'user_input', content: raw }), r.res);
     await settle();
     expect(r.status).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ ok: true, id: 'obs-1', turnId: 7, deduped: false });
+    expect(JSON.parse(r.body)).toEqual({ ok: true, id: 'obs-1', turnId: 7, traceId: 't1t_fake', deduped: false });
     expect(appended[0].content).toBe(redactSecrets(raw).slice(0, 100_000));
     expect(appended[0].salience).toBeGreaterThanOrEqual(0);
-    expect(appended[0]).toMatchObject({ session_id: 's1', turn_id: 7, source: 'user_input', failure: 0 });
+    expect(appended[0]).toMatchObject({ session_id: 's1', turn_id: 7, trace_id: 't1t_fake', source: 'user_input', failure: 0 });
   });
 
   it('400 on invalid source, 200 deduped on blank content', async () => {
@@ -164,7 +168,7 @@ describe('obs capture registry wiring (D1 Task C3)', () => {
     expect(deleted).toEqual([['dream-queries', 's1']]);
   });
 
-  it('non user_input sources skip prefetch/snapshot and use currentTurnId', async () => {
+  it('non user_input sources skip prefetch/snapshot and join the current turn', async () => {
     const { registry, prefetched, snapshots, appended } = setup();
     const r = fakeRes();
     await handlerFor(registry, 'POST', '/api/obs/capture')!(
@@ -173,6 +177,6 @@ describe('obs capture registry wiring (D1 Task C3)', () => {
     await settle();
     expect(prefetched).toHaveLength(0);
     expect(snapshots).toHaveLength(0);
-    expect(appended[0]).toMatchObject({ source: 'tool_result', failure: 1, turn_id: 7 });
+    expect(appended[0]).toMatchObject({ source: 'tool_result', failure: 1, turn_id: 7, trace_id: 't1t_fake' });
   });
 });
