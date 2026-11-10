@@ -2726,6 +2726,75 @@
         }
       }
     },
+    "/api/goals/{id}/pause": {
+      "post": {
+        "operationId": "goals.pause",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goals/{id}/stop": {
+      "post": {
+        "operationId": "goals.stop",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goals/{id}/retry": {
+      "post": {
+        "operationId": "goals.retry",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/lead/topics": {
       "get": {
         "operationId": "lead.topics.list",

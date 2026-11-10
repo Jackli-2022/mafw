@@ -360,6 +360,7 @@ import { attachWave1Handlers } from './routes/wave1-handlers';
 import { attachLeadTopicRoutes } from './routes/lead-topics';
 import { attachAttentionRoutes } from './routes/attention';
 import { attachSchedulerRoutes } from './routes/scheduler';
+import { attachGoalControlRoutes } from './routes/goal-control';
 import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
 import { attachPodHandlers } from './routes/pod-handlers';
@@ -5613,6 +5614,27 @@ class MafwScheduler {
           const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
           return pod ? this.podGoalService.schedulerStatus(pod.id) : null;
         },
+      });
+      attachGoalControlRoutes(this.routeRegistry, {
+        patchState: (goalId, patch) => this.patchState(goalId, patch as any),
+        destroySessions: (goalId) => this.destroyAllSessions(goalId),
+        archiveGoal: async (goalId, opts) => {
+          await this.archiveGoal(goalId, opts as any);
+        },
+        retry: async (goalId, runId) => {
+          if (runId !== undefined && this.goalDriver) {
+            await this.goalDriver.retryNodeRun(goalId, runId);
+            return;
+          }
+          const runs = this.getGatewayDb().listNodeRuns(goalId);
+          const latest = runs[runs.length - 1]?.id;
+          if (latest !== undefined && this.goalDriver) {
+            await this.goalDriver.retryNodeRun(goalId, latest);
+            return;
+          }
+          await this.startGoalDirect(goalId);
+        },
+        startGoal: (goalId) => this.startGoalDirect(goalId),
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),
