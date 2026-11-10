@@ -26,16 +26,9 @@ import {
 } from "../pod-model"
 import { requestPodTechLeadOpen } from "../pod-result-store"
 import { goalsRev } from "../goals-rev"
+import { goalModeLabel } from "../work-overview-model"
 
 const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
-
-const GOAL_MODE_LABELS: Record<string, string> = {
-  quick: "Quick",
-  standard: "Standard",
-  standing: "Standing",
-}
-const goalModeLabel = (mode?: string | null): string | null =>
-  mode ? (GOAL_MODE_LABELS[mode] ?? mode) : null
 
 /** revision.directionJson 是 DirectionState 的镜像；坏 JSON 只当没有（fail-open）。 */
 function parseDirectionState(json: string | null | undefined, revision: number | null): PodDirectionState | null {

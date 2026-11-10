@@ -205,6 +205,8 @@ export type ChatPaneProps = {
   techLeadInvite?: () => { goalId: string; title: string; stageLabel?: string; sourceLabel?: string } | null
   /** Lead 状态卡数据（按需展示；不常驻）。 */
   leadGoals?: () => LeadGoalStatusSource[]
+  /** Lead 状态卡的人类 attention 计数（与 goals 同源：pod detail）。 */
+  leadAttention?: () => { goalId: string }[]
   /** 打开 Goal 的 Tech Lead 隐藏会话（Goal 标题作用域的 tab）。 */
   onOpenTechLead?: (goalId: string) => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
@@ -2141,7 +2143,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           </div>
         </Show>
         <Show when={isLead() && showLeadStatus()}>
-          <LeadGoalStatusCard goals={buildLeadGoalStatusCards(props.leadGoals?.() ?? [])} />
+          <LeadGoalStatusCard goals={buildLeadGoalStatusCards(props.leadGoals?.() ?? [], props.leadAttention?.() ?? [])} />
         </Show>
         <Show when={props.techLeadInvite?.()}>
           {(invite) => (

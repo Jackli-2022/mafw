@@ -2885,6 +2885,7 @@ export function MafwShell() {
                           handoffEligible={canHandoffActiveSession}
                           techLeadInvite={activeLeadGoalInvite}
                           leadGoals={() => podStore.detail()?.goals ?? []}
+                          leadAttention={() => podStore.detail()?.attention ?? []}
                           onOpenTechLead={(goalId) => void openTechLead(goalId)}
                           techLeadTarget={activeTechLeadTarget}
                           sendBlocked={activeTechLeadBlocked}

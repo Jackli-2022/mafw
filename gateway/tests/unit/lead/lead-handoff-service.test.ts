@@ -113,4 +113,35 @@ describe('LeadHandoffService', () => {
     });
     expect(missing).toBeNull();
   });
+
+  test('untilMessageId caps the snapshot inclusively', async () => {
+    const { dir, service } = makeService([
+      msg('m1', 'user', 'one'),
+      msg('m2', 'user', 'two'),
+      msg('m3', 'user', 'three'),
+    ]);
+    const goalDir = path.join(dir, 'goals', 'g5');
+    const prepared = await service.prepareForGoal({
+      projectDir: '/p', leadSessionId: 's1', goalId: 'g5', goalDir, title: 'T5',
+      untilMessageId: 'm2',
+    });
+
+    expect(prepared?.sourceRef.snapshot).toBe('User: one\n\nUser: two');
+    expect(prepared?.sourceRef.messageRange).toEqual({ from: 'm1', to: 'm2' });
+  });
+
+  test('rollback removes the topic row and the full text file', async () => {
+    const { dir, topics, service } = makeService([msg('m1', 'user', 'hi')]);
+    const goalDir = path.join(dir, 'goals', 'g6');
+    const prepared = await service.prepareForGoal({
+      projectDir: '/p', leadSessionId: 's1', goalId: 'g6', goalDir, title: 'T6',
+    });
+    service.commit(prepared!);
+    expect(topics.get(prepared!.topicId)).not.toBeNull();
+    expect(fs.existsSync(prepared!.handoffPath)).toBe(true);
+
+    service.rollback(prepared!.topicId, prepared!.handoffPath);
+    expect(topics.get(prepared!.topicId)).toBeNull();
+    expect(fs.existsSync(prepared!.handoffPath)).toBe(false);
+  });
 });

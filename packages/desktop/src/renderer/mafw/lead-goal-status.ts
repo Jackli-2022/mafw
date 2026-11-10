@@ -16,6 +16,7 @@ export interface LeadGoalStatusCardModel {
   stageLabel: string;
   progressText: string;
   blocker: string;
+  pendingAttention: number;
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -39,8 +40,13 @@ const OWNER_RANK: Record<string, number> = { person: 0, team: 1, system: 2 };
 
 export function buildLeadGoalStatusCards(
   goals: readonly LeadGoalStatusSource[],
+  attention: readonly { goalId: string }[] = [],
   limit = 5,
 ): LeadGoalStatusCardModel[] {
+  const attentionByGoal = new Map<string, number>();
+  for (const item of attention) {
+    attentionByGoal.set(item.goalId, (attentionByGoal.get(item.goalId) ?? 0) + 1);
+  }
   return goals
     .filter((goal) => !goal.endedAt)
     .sort((a, b) => {
@@ -59,5 +65,6 @@ export function buildLeadGoalStatusCards(
       blocker: goal.pendingQuestion
         ? "待你回答"
         : (goal.stage?.kind === "blocked" ? "阻塞" : (goal.lastError ?? "")),
+      pendingAttention: attentionByGoal.get(goal.goalId) ?? 0,
     }));
 }

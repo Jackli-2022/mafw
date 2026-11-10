@@ -19,4 +19,6 @@ test("Lead status card is on-demand and above the composer", () => {
   assert.match(card, /mafw-queue-bar/)
   assert.doesNotMatch(card, /<button/)
   assert.doesNotMatch(card, /ses_[a-zA-Z0-9]+/)
+  assert.match(chat, /leadAttention/)
+  assert.match(card, /pendingAttention/)
 })

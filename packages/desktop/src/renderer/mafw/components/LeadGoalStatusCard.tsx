@@ -23,6 +23,9 @@ export function LeadGoalStatusCard(props: { goals: LeadGoalStatusCardModel[] }) 
               <Show when={goal.blocker}>
                 <span class="mafw-card-meta">{goal.blocker}</span>
               </Show>
+              <Show when={goal.pendingAttention > 0}>
+                <span class="mafw-card-meta">待处理 {goal.pendingAttention}</span>
+              </Show>
             </div>
           )}
         </For>

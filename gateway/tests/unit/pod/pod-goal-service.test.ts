@@ -514,4 +514,21 @@ describe('PodGoalService', () => {
 
     expect(store.getPod(first.podId)?.status).toBe('archived');
   });
+
+  test('views project goal mode from each active revision', async () => {
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+    store.createGoalRevision({
+      podId: first.podId, goalId: 'g1', revision: 1, status: 'queued', now: '2026-10-29T00:00:00.000Z',
+    });
+    store.createGoalRevision({
+      podId: first.podId, goalId: 'g2', revision: 1, status: 'queued', now: '2026-10-29T00:00:00.000Z',
+    });
+    store.setGoalRevisionMode('g1', 1, 'quick');
+    store.setGoalRevisionMode('g2', 1, 'standard');
+
+    const views = service.views(first.podId);
+    expect(views.find((view) => view.goalId === 'g1')?.goalMode).toBe('quick');
+    expect(views.find((view) => view.goalId === 'g2')?.goalMode).toBe('standard');
+  });
 });

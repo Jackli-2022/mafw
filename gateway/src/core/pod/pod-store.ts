@@ -1180,6 +1180,13 @@ export class PodStore {
     ).all(podId, goalId) as any[]).map(goalRevisionFromRow);
   }
 
+  /** All revisions for a pod (list views need the active revision of every Goal). */
+  listGoalRevisionsForPod(podId: string): PodGoalRevisionRow[] {
+    return (this.db.prepare(
+      'SELECT * FROM pod_goal_revisions WHERE pod_id = ? ORDER BY goal_id ASC, revision ASC',
+    ).all(podId) as any[]).map(goalRevisionFromRow);
+  }
+
   /**
    * 排队中的 revision：优先级高的先跑，同优先级按入队时间（打回 Goal 抢先）。
    *

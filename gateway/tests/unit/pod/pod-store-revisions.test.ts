@@ -369,4 +369,25 @@ describe('PodStore goal revisions', () => {
     })).toBe(false);
     expect(store.listGoalRevisions('pod_1', 'g1')).toEqual([]);
   });
+
+  test('lists revisions for a pod across goals in stable order', () => {
+    seedGoal();
+    store.enqueueGoal({ id: 'pg_2', podId: 'pod_1', goalId: 'g2', now: NOW });
+    store.createGoalRevision({ podId: 'pod_1', goalId: 'g1', revision: 1, status: 'discussing', now: NOW });
+    store.createGoalRevision({ podId: 'pod_1', goalId: 'g2', revision: 1, status: 'planning', now: NOW });
+
+    expect(store.listGoalRevisionsForPod('pod_1').map((rev) => `${rev.goalId}:${rev.revision}`))
+      .toEqual(['g1:1', 'g2:1']);
+  });
+
+  test('legacy revision tables gain goal_mode with a standard default', () => {
+    seedGoal();
+    store.createGoalRevision({
+      podId: 'pod_1', goalId: 'g1', revision: 1, status: 'discussing', goalMode: 'quick', now: NOW,
+    });
+    db.exec('ALTER TABLE pod_goal_revisions DROP COLUMN goal_mode');
+
+    const reopened = new PodStore(db);
+    expect(reopened.getGoalRevision('pod_1', 'g1', 1)?.goalMode).toBe('standard');
+  });
 });

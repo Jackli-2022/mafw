@@ -1685,6 +1685,19 @@ export class NodeDriver {
         const manualPlan = (state.planReview ?? 'auto') === 'manual';
         const requestedQuick = planDoc.strategy === 'quick';
         const quickPlan = requestedQuick && !manualPlan;
+        // Defense in depth: an explicit quick revision must not silently fall back
+        // to the collaborative path (or request probes / manual approval).
+        if (this.deps.goalMode?.(goalId, revision) === 'quick') {
+          if (manualPlan) {
+            throw new Error('artifact_invalid: quick goal cannot require manual plan review');
+          }
+          if (planDoc.status === 'need_probe') {
+            throw new Error('artifact_invalid: quick goal cannot request probes');
+          }
+          if (planDoc.status === 'ready' && !requestedQuick) {
+            throw new Error("artifact_invalid: quick goal requires strategy:'quick'");
+          }
+        }
         if (planDoc.status === 'need_clarification') {
           patch = {
             pendingQuestion: {

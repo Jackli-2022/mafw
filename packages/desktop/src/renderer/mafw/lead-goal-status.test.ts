@@ -42,4 +42,13 @@ describe('buildLeadGoalStatusCards', () => {
     expect(cards[0].stageLabel).toBe('阻塞');
     expect(cards[0].blocker).toBe('阻塞');
   });
+
+  test('counts human attention per Goal', () => {
+    const cards = buildLeadGoalStatusCards(
+      [view({ goalId: 'a' }), view({ goalId: 'b' })],
+      [{ goalId: 'a' }, { goalId: 'a' }, { goalId: 'b' }],
+    );
+    expect(cards.find((card) => card.goalId === 'a')?.pendingAttention).toBe(2);
+    expect(cards.find((card) => card.goalId === 'b')?.pendingAttention).toBe(1);
+  });
 });

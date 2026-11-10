@@ -22,4 +22,20 @@ describe("LeadTopicStore", () => {
     expect(store.listByProject("/p").map((t) => t.id)).toEqual(["t2", "t1"]);
     expect(store.get("t1")?.goalId).toBe("g1");
   });
+
+  test("same createdAt resolves by id, not insertion order", () => {
+    const db = new Database(":memory:");
+    const store = new LeadTopicStore(db);
+    const row = (id: string) => ({
+      id, projectDir: "/p", leadSessionId: "s1", title: id,
+      startMessageId: "m1", endMessageId: "m2", goalId: `g-${id}`,
+      ownerRole: "tech-lead" as const, ownerSessionId: null,
+      createdAt: "2026-11-10T01:00:00.000Z",
+    });
+    store.insert(row("t1"));
+    store.insert(row("t2"));
+
+    expect(store.latestForProject("/p")?.id).toBe("t2");
+    expect(store.listByProject("/p").map((t) => t.id)).toEqual(["t2", "t1"]);
+  });
 });
