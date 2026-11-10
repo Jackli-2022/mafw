@@ -3,13 +3,16 @@ import { join } from 'path';
 import { SessionQueue } from '../../../src/core/session-queue';
 
 const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// Phase D2: turn.started / 终态 busy 语义随 handleRuntimeEvent 链迁入 event-dispatch.ts。
+const dispatchSrc = readFileSync(join(__dirname, '../../../src/runtime/event-dispatch.ts'), 'utf8');
 
 describe('busy 追踪 wiring（spec §5.1 v2）', () => {
   it('busySessions Map 字段 + turn.started 置位 + 三终态清除', () => {
     expect(src).toMatch(/busySessions = new Map<string, number>/);
-    expect(src).toMatch(/type === MAFW\.turnStarted\)[\s\S]{0,120}busySessions\.set/);
-    expect(src).toMatch(/MAFW\.turnCompleted \|\| type === MAFW\.turnFailed \|\| type === MAFW\.turnAborted/);
-    expect(src).toMatch(/busySessions\.delete/);
+    expect(dispatchSrc).toMatch(/f\.type === MAFW\.turnStarted/);
+    expect(dispatchSrc).toMatch(/ctx\.busySessions\(\)\.set\(sessionID, Date\.now\(\)\)/);
+    expect(dispatchSrc).toMatch(/TURN_TERMINALS\.has\(f\.type\)/);
+    expect(dispatchSrc).toMatch(/ctx\.busySessions\(\)\.delete\(sessionID\)/);
   });
   it('防楔死：BUSY_STALE_MS 常量 + sweep 方法 + interval 注册', () => {
     expect(src).toContain('BUSY_STALE_MS = 15 * 60_000');

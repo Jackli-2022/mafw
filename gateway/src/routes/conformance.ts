@@ -24,7 +24,7 @@ export interface ConformanceDeps {
   bindIdentity(sessionID: string, identity: string): void;
   /** S5：直接评估合成候选项的网关审批策略。 */
   evaluatePolicy(sessionID: string, candidate: { toolName: string; patterns: string[]; metadata: Record<string, unknown> }): { action: string };
-  /** tool-visibility：注入点（与 /api/tools/execute 同一管线 = handleOpencodeEvent）。 */
+  /** tool-visibility：注入点（与 /api/tools/execute 同一管线 = handleRuntimeEvent）。 */
   injectEvent(evt: unknown): void;
   /** B2：拉会话历史（session-lifecycle 历史形状断言用）。 */
   getMessages(sessionID: string): Promise<any[]>;

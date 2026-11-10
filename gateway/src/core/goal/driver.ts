@@ -345,7 +345,7 @@ export class NodeDriver {
     this.stateDirs.set(goalId, mafwDir);
   }
 
-  /** handleOpencodeEvent 分发入口（idle）。处理器返回 true = 继续监听（暂存 idle）。 */
+  /** handleRuntimeEvent 分发入口（idle）。处理器返回 true = 继续监听（暂存 idle）。 */
   onSessionIdle(sessionID: string): void {
     const h = this.listeners.get(sessionID);
     if (!h) return;
@@ -353,7 +353,7 @@ export class NodeDriver {
     if (keep !== true) this.listeners.delete(sessionID);
   }
 
-  /** handleOpencodeEvent 分发入口（error）。code 缺省时按未知运行时错误 fail-closed。 */
+  /** handleRuntimeEvent 分发入口（error）。code 缺省时按未知运行时错误 fail-closed。 */
   onSessionError(sessionID: string, errorMsg: string, errorCode?: string): void {
     const h = this.listeners.get(sessionID);
     if (h) {

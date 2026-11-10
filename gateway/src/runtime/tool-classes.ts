@@ -197,7 +197,7 @@ export function canonicalToolOf(toolName: string | undefined | null): string | u
 
 /**
  * live enrich（additive）：tool part 快照补 `part.toolClass` + `part.canonicalTool`。
- * 纯函数（原地补缺省 key，已有值不覆写）——handleOpencodeEvent 单点调用；
+ * 纯函数（原地补缺省 key，已有值不覆写）——handleRuntimeEvent 单点调用；
  * opencode 路径 passProperties 深拷贝 / pi 路径 assembler 新建对象，无 aliasing。
  */
 export function enrichToolIdentity(evt: { type?: string; payload?: { type?: string; properties?: any } }): void {

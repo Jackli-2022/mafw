@@ -9,7 +9,7 @@ import { spawn, execSync } from 'child_process';
 import { config } from "./config";
 import { MutexQueue } from './concurrency/mutex-queue';
 import { TtlMap } from './concurrency/ttl-map';
-import { Scheduler, TaskSkippedError, TaskTimeoutError } from './scheduler';
+import { Scheduler } from './scheduler';
 import { getDefaultSessionRegistry } from './session';
 import { InternalRolesView } from './session/views/internal-roles';
 import { log } from './core/utils/logger';
@@ -180,8 +180,8 @@ import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
 import { resolveMobileBaseUrl, detectReachableHost } from './mobile/tailscale-url';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
-import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
-import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
+import { normalizeOpencodeEvent } from './runtime/normalize';
+import { UnknownEventTracker } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
 import { createBuiltinIdentityRegistry, identityMaterializable, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
 import { IdentityState, withIdentityPrompt } from './runtime/identity-state';
@@ -244,7 +244,6 @@ import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
 import { PermissionRulesStore } from './core/approval/rules-store';
 import { normalizeMode, SessionPermissionMode } from './core/approval/policy-service';
-import { applyApprovalPolicy } from './core/approval/hook';
 import { SessionConfigService, SessionConfigError } from './core/session-config';
 import { archiveWorktree } from './core/tools/archive-worktree.js';
 import { resolveNodeModel } from './core/goal/node-model';
@@ -291,13 +290,12 @@ import { injectServeAuth } from './runtime/proxy-auth';
 import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
 import {
-  enrichPermissionEvent,
-  projectQuestionRequest,
   projectSessions,
 } from './runtime/view-projections';
 import { buildRuntimeDiagnostics, type RuntimeDiagnosticsView } from './runtime/runtime-diagnostics';
 import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
+import { runEventPipeline, type DispatchCtx } from './runtime/event-dispatch';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
  *  三原语是 assembler 内部入口类型：可校验、可映射，但不广播（有 handleRuntimeEvent 底线）。
@@ -1724,280 +1722,44 @@ class MafwScheduler {
 
   private handleRuntimeEvent(evt: any): void {
     const f = normalizeOpencodeEvent(evt);
-    // opencode v2 sync 信封：与 legacy 事件双发的状态重同步噪声，gateway
-    // 边界丢弃（处置登记于 event-flow-matrix.ts RUNTIME_NATIVE_DROPPED）。
-    // 放行会重复处理 + desktop miss 告警 + [SSE] 日志刷屏。
-    if (RUNTIME_NATIVE_DROPPED.has(f.type)) return;
-    // 工具三原语属 assembler 内部入口：正常路径已被 wrapToolPartAssembly 消费，
-    // 漏到这里说明装配层未接线——丢弃防广播污染（tool part 只能以合成快照形态出站）。
-    if (TOOL_PRIMITIVE_TYPES.has(f.type)) return;
-    // 畸形事件诊断（限频）：runtime 插件发来的事件 type/properties 全空时
-    // 静默穿过会污染 trajectory 与桌面 SSE——这里给可定位诊断。
-    if (isMalformedEvent(evt)) {
-      const now = Date.now();
-      const last = this.malformedEventWarnAt.get(this.runtimeName) ?? 0;
-      if (now - last > 30_000) {
-        this.malformedEventWarnAt.set(this.runtimeName, now);
-        let summary: string;
-        try { summary = JSON.stringify(evt)?.slice(0, 200) ?? '(unserializable)'; } catch { summary = '(unserializable)'; }
-        log.warn(`[SSE] malformed event from runtime '${this.runtimeName}' (no type/properties) — dropped consumers may misbehave; payload: ${summary}`);
-      }
-    }
-    // 未知类型遥测（全量启用）：首次出现时 warn 一次给可定位诊断，
-    // 计数经 GET /api/runtime 的 unknownEvents 暴露。fail-open 不阻断。
-    if (!isKnownEventType(f.type)) {
-      try {
-        const { firstSeen } = this.unknownEventTracker.record(this.runtimeName, f.type);
-        if (firstSeen) {
-          log.warn(
-            `[SSE] runtime '${this.runtimeName}' emitted unknown event type '${f.type}' ` +
-            `(not canonical, not plugin:* namespaced) — desktop will show it as ` +
-            `'miss' in the event inspector; counters: GET /api/runtime .unknownEvents`,
-          );
-        }
-      } catch { /* fail-open */ }
-    }
-    const { type, properties: props, sessionID } = f;
-    // 工具语义类别 enrich（additive 可选字段 part.toolClass + part.canonicalTool；
-    // tool-classes.ts 单源——审批 read-only 档 / 身份类别 / 渲染四级查找链共用此维度）。
-    // 单点 enrich 保证 eventTaps / trajectory / broadcast 全下游可见。
-    try { enrichToolIdentity(evt); } catch { /* fail-open：enrich 绝不阻断事件链 */ }
-    // Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。
-    // 放在 internal 过滤之前——tap 要看到该会话的全量事件（fail-open 不阻断主链）。
-    if (sessionID) {
-      const taps = this.eventTaps.get(sessionID);
-      if (taps && taps.size) {
-        const snap = { type: f.type, sessionID, at: Date.now(), ...(props?.part ? { part: props.part } : {}) };
-        for (const t of taps) { try { t(snap); } catch { /* fail-open */ } }
-      }
-    }
-    // Goal node listeners: NodeDriver 完成/失败双门的事件侧（spec §3）。
-    // v2：turn.completed/turn.failed 是回合终态一等公民（opencode session.idle /
-    // pi agent_end 经翻译层产出），双保险的 broadcast 切面已随 Mode A 改写删除。
-    if (sessionID) {
-      // 回合归属：本回合的活动水位。没有它，陈旧 idle 与真结束无法区分。
-      if (
-        type === MAFW.turnStarted ||
-        type === MAFW.partUpdated ||
-        type === MAFW.partDelta ||
-        type === MAFW.messageUpdated
-      ) {
-        this.goalDriver?.noteSessionActivity(sessionID);
-      }
-      if (type === MAFW.turnCompleted) this.goalDriver?.onSessionIdle(sessionID);
-      if (type === MAFW.turnFailed) {
-        const rawError = (props as any)?.error;
-        const code = typeof rawError === 'object' && rawError
-          ? String(rawError.type ?? rawError.code ?? 'session_error')
-          : String((props as any)?.errorCode ?? 'session_error');
-        const message = typeof rawError === 'object' && rawError
-          ? String(rawError.message ?? rawError.type ?? 'session error')
-          : String(rawError ?? 'session error');
-        this.goalDriver?.onSessionError(sessionID, message, code);
-      }
-      // busy 追踪（spec 2026-10-22-session-queue-inbox §5.1 v2）：turn.started 置位；
-      // 本词汇的首个消费者——配对可靠性由 15min TTL 清扫兜底（防楔死，v2 Q2）。
-      if (type === MAFW.turnStarted) {
-        this.busySessions.set(sessionID, Date.now());
-        this.runCoordinator?.onTurnStarted(sessionID);
-      }
-    }
-    // Task 3：runtime shell 台账（synthetic / shell 生命周期经翻译层产出的 canonical
-    // background.job.updated）。终态不回退；广播仍走下方统一出口（不重复发）。
-    if (type === MAFW.backgroundJobUpdated) {
-      const job = (props as any)?.job;
-      if (job && typeof job === 'object') {
-        try { this.backgroundShells.apply(job as any, { directory: f.directory }); } catch { /* fail-open */ }
-      }
-    }
-    // Approval policy：asked 事件先于 internal 过滤与 Mode A 广播评估（内部会话
-    // fail-safe 需在 memoryWorker drop 之前生效）；决策附在广播 properties.mafwPolicy，
-    // 三端据此分流（非 human = 直接渲染已决记录，不弹交互卡）。
-    if (f.approval && sessionID) {
-      applyApprovalPolicy(this.approvalPolicy, this.runtime, f.approval, sessionID, props);
-    }
-    // 规范权限字段并入载荷（id/kind/targets/suggestedRule…）：asked 与 replied **同一投影**。
-    // pi 的 `{requestId, toolName, args}` 与 opencode 的 `{id, permission, patterns}` 在出口
-    // 收敛成同一张卡片（review I2：pi 卡片曾丢 id、只显示 "shell"）；replied 无工具元数据也
-    // 必须带 canonical id（opencode v2 用 requestID），否则桌面/远端按 `requestID || id` 找
-    // 不到卡、永远销账不掉。原生答复字段（approved/decision/message/reply）原样保留；
-    // 审批策略与答复语义不变——这里只做投影。
-    if ((type === MAFW.permissionAsked || type === MAFW.permissionReplied) && sessionID) {
-      try { enrichPermissionEvent(props, sessionID); } catch { /* fail-open：卡片退回客户端兜底 */ }
-    }
-    // 问题载荷同样补规范字段（`questions[].question/options`）；原生 form 字段保留。
-    if (type === 'question.asked' && sessionID) {
-      try {
-        const projected = projectQuestionRequest(props, sessionID);
-        if (projected && typeof projected === 'object') Object.assign(props, projected);
-      } catch { /* fail-open */ }
-    }
-    // Turn-level identity binding cleanup: a user-picked identity lasts one turn.
-    if (type === MAFW.turnCompleted && sessionID) this.identityState.clearTurnBindings(sessionID);
-    // T2-1：自动检查点（fail-open；门控在 runAutoCheckpoint 内——内部会话/隐藏会话/
-    // 非 checkpointApi runtime 全跳过）。挂在 memoryWorker 早退之前，role 门兜底。
-    if (type === MAFW.turnCompleted && sessionID) {
-      void this.recordAutoCheckpoint(sessionID).catch((err: any) => {
-        log.warn(`[Checkpoint] auto record failed for ${sessionID} (non-fatal): ${err?.message ?? err}`);
-      });
-    }
-    // P0-2：per-prompt 预算 guard 回合终态清理（三终态；防上次预算泄漏到
-    // 后续无预算 prompt。goal guard 不在此列——其生命周期是整个 goal）。
-    if ((type === MAFW.turnCompleted || type === MAFW.turnFailed || type === MAFW.turnAborted) && sessionID) {
-      if (this.promptBudgetSessions.delete(sessionID)) this.budgetGuards.delete(sessionID);
-      // busy 清除 + 队列续发（每终态一条，fire-and-forget）
-      this.busySessions.delete(sessionID);
-      // T2-2：run 状态收尾/落定（resumed 才 finish；suspend 的 abort 终态只 settle）
-      try {
-        this.runCoordinator?.onTerminal(
-          sessionID,
-          type === MAFW.turnCompleted ? 'completed' : type === MAFW.turnFailed ? 'failed' : 'aborted',
-        );
-      } catch (err: any) {
-        log.warn(`[Run] terminal handling failed for ${sessionID} (non-fatal): ${err?.message ?? err}`);
-      }
-      this.flushSessionQueue(sessionID);
-    }
-    // Only memory-system sessions (index-scan / extract / reflect workers) are
-    // internal: their token-level deltas flooded the desktop renderer (per-delta
-    // store writes + re-render storms froze the UI). Tiered policy for them:
-    // token noise dropped; lifecycle events (idle/error) still broadcast, tagged
-    // `internal`, so the UI can surface pipeline status. Every other session —
-    // user chats AND manager goal sessions — passes through untouched.
-    const role = sessionID ? this.internalSessionRoles.get(sessionID) : undefined;
-    const memoryWorker = !!role && (role === 'index-scan' || role === 'extract' || role === 'reflect');
-    if (memoryWorker && type !== MAFW.turnCompleted && type !== MAFW.turnFailed && type !== MAFW.turnAborted) return;
-    // deltas are never logged for any session (per-token lines churned the 5MB log)
-    if (type !== MAFW.partDelta) log.info(`[SSE] ${this.runtimeName} event: ${type} sessionID=${sessionID}`);
+    // Phase D2：24 段有序 stage 表（src/runtime/event-dispatch.ts）。数组位置即执行顺序；
+    // 仅 nativeDrop / toolPrimitiveDrop / internalFilter 三段可 HALT（legacy early return）。
+    runEventPipeline(f, evt, this.buildDispatchCtx());
+  }
 
-    // Caller-location bookkeeping for self-update: every event refreshes the
-    // session's last-active stamp; tool events carrying a shell command that
-    // touches the restart token file pin the exact session that wrote it.
-    if (sessionID) {
-      this.lastActiveBySession.set(sessionID, Date.now());
-      // T2-2：长回合只要有事件就刷新 busy 时间戳（15min 清扫不得误删活跃回合）。
-      if (this.busySessions.has(sessionID)) this.busySessions.set(sessionID, Date.now());
-      if (f.toolCommand) {
-        if (/pending-restart/i.test(f.toolCommand)) {
-          this.tokenWriterSession = { sessionID, at: Date.now() };
-        }
-        this.lastWriteBySession.set(sessionID, { at: Date.now(), command: f.toolCommand });
-      }
-    }
-
-    // Path T: trajectory accumulation — writes SQLite + broadcasts trajectory.event/trajectory.turn
-    try {
-      if (!memoryWorker) {
-        const collector = this.trajectoryCollector;
-        if (collector) {
-          const trajEvt = collector.handleEvent(type, props, f.directory);
-          if (trajEvt) {
-            this.broadcast(mafwBroadcast({ type: MAFW.trajectoryEvent, properties: trajEvt, sessionID }, memoryWorker));
-          }
-        }
-      }
-    } catch (err: any) {
-      log.warn(`[Trajectory] handle failed (non-fatal): ${err.message}`);
-    }
-
-    // Compaction flush: 会话压缩发生时把该 session 的 pending T1 回合立即喂给
-    // turnCompress（fail-open；同 session 的 flush 在飞则跳过本轮）。Per-session
-    // mutexKey 与 hourly cron 的 action key 不同，互不阻塞（pipeline 内部有
-    // per-session runExclusive 兜底）。
-    if (f.compaction && sessionID && !memoryWorker) {
-      void this.scheduler
-        .submit(
-          {
-            id: `compact-flush:${sessionID}`,
-            priority: 'background',
-            mutexKey: `compact-flush:${sessionID}`,
-            strategy: 'skip',
-            timeoutMs: 30 * 60_000,
-          },
-          async () => {
-            try {
-              const pipeline = this.getTurnPipeline();
-              const res = await pipeline.runSession(sessionID);
-              if (res.turns > 0) {
-                log.info(`[TurnPipeline] compaction flush session=${sessionID} turns=${res.turns} archived=${res.archived}`);
-                this.scanService?.refreshCache();
-              }
-            } catch (err: any) {
-              log.warn(`[TurnPipeline] compaction flush failed (non-fatal): ${err.message}`);
-            }
-          },
-        )
-        .catch((err) => {
-          if (err instanceof TaskSkippedError) {
-            log.info(`[TurnPipeline] compaction flush ${sessionID} skipped: previous flush in flight`);
-            return;
-          }
-          if (err instanceof TaskTimeoutError) {
-            log.warn(`[TurnPipeline] compaction flush ${sessionID} watchdog timeout`);
-            return;
-          }
-          log.warn(`[TurnPipeline] compaction flush ${sessionID} submit failed (non-fatal): ${err instanceof Error ? err.message : err}`);
-        });
-    }
-
-    // BudgetGuard: goal-session turn/cost hard stop (turnBudgetApi-lacking
-    // runtimes). Guard auto-detonates once → detach.
-    if (f.step && sessionID) {
-      const guard = this.budgetGuards.get(sessionID);
-      if (guard) {
-        guard.onStep();
-        if (guard.triggered) this.budgetGuards.delete(sessionID);
-      }
-    }
-
-    // Per-session SSE (Mode B) forwarding
-    if (sessionID && this.chatSessions.hasListeners(sessionID)) {
-      if (f.chatSignal === 'delta' && f.deltaText) {
-        this.chatSessions.pushDelta(sessionID, f.deltaText);
-      } else if (f.chatSignal === 'complete') {
-        this.chatSessions.pushComplete(sessionID);
-      } else if (f.chatSignal === 'error') {
-        this.chatSessions.pushError(sessionID, String(f.chatError || 'Unknown error'));
-      }
-    }
-
-    // Global broadcast (Mode A — used by the desktop renderer).
-    // v2：Mode A 改写 hack（session.idle→message.complete / session.error→
-    // message.error）已删除——turn.completed/turn.failed 是词汇一等公民，翻译层
-    // 直接产出；回合聚合与 usage 合成挂在 turn.completed，广播统一 passthrough。
-    if (type === MAFW.turnCompleted && sessionID) {
-      try {
-        if (this.trajectoryCollector) {
-          const turn = this.trajectoryCollector.onIdle(sessionID);
-          if (turn) {
-            this.broadcast(mafwBroadcast({ type: MAFW.trajectoryTurn, properties: turn, sessionID }, memoryWorker));
-            // v2 增量：usage.updated 从回合聚合合成（tokens/cost 汇总；Tier 0 之外
-            // 的可选组，desktop UsagePill 事件化消费留后续，轮询保留兜底）。
-            if (turn.tokens || turn.cost) {
-              this.broadcast(mafwBroadcast({
-                type: MAFW.usageUpdated,
-                properties: { tokens: turn.tokens, cost: turn.cost, model: turn.model, provider: turn.provider, turnID: turn.turnID },
-                sessionID,
-              }, memoryWorker));
-            }
-          }
-        }
-      } catch (err: any) {
-        log.warn(`[Trajectory] turn aggregation failed (non-fatal): ${err.message}`);
-      }
-    }
-    // turn.failed 保留 error 字段提取（消费方错误展示的 wire 契约）；其余 passthrough。
-    const errorText = type === MAFW.turnFailed
-      ? (props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error'))
-      : undefined;
-    this.broadcast(mafwBroadcast(
-      {
-        type, properties: props, sessionID,
-        directory: f.directory,
-        ...(errorText !== undefined ? { error: errorText } : {}),
-      },
-      memoryWorker,
-    ));
+  /**
+   * D2：stage 表的组合根上下文 —— **全部 live getter**（表是长驻对象，快照会读陈旧值）。
+   * `tokenWriterSession` 是唯一需要写回的一格（getter/setter pair，legacy 为直接赋值）。
+   */
+  private buildDispatchCtx(): DispatchCtx {
+    return {
+      runtimeName: () => this.runtimeName,
+      malformedEventWarnAt: () => this.malformedEventWarnAt,
+      unknownEventTracker: () => this.unknownEventTracker,
+      eventTaps: () => this.eventTaps,
+      goalDriver: () => this.goalDriver,
+      busySessions: () => this.busySessions,
+      runCoordinator: () => this.runCoordinator,
+      backgroundShells: () => this.backgroundShells,
+      approvalPolicy: () => this.approvalPolicy,
+      runtime: () => this.runtime,
+      identityState: () => this.identityState,
+      recordAutoCheckpoint: (sessionID) => this.recordAutoCheckpoint(sessionID),
+      promptBudgetSessions: () => this.promptBudgetSessions,
+      budgetGuards: () => this.budgetGuards,
+      flushSessionQueue: (sessionID) => this.flushSessionQueue(sessionID),
+      internalSessionRoles: () => this.internalSessionRoles,
+      lastActiveBySession: () => this.lastActiveBySession,
+      getTokenWriterSession: () => this.tokenWriterSession,
+      setTokenWriterSession: (value) => { this.tokenWriterSession = value; },
+      lastWriteBySession: () => this.lastWriteBySession,
+      trajectoryCollector: () => this.trajectoryCollector,
+      broadcast: (event) => this.broadcast(event),
+      scheduler: () => this.scheduler,
+      getTurnPipeline: () => this.getTurnPipeline(),
+      scanService: () => this.scanService,
+      chatSessions: () => this.chatSessions,
+    };
   }
 
   /** Surface 门：业务路由不再自行解释 capability / 方法存在性。 */
@@ -3408,7 +3170,7 @@ class MafwScheduler {
   /** Per-prompt 预算挂载（P0-2，2026-10-22）：普通会话经 HTTP promptAsync body
    *  传入 maxTurns/maxCostUsd 的兜底路径。裁决走 resolvePromptBudget（纯函数）：
    *  goal guard 优先不顶掉；上次 per-prompt 预算不泄漏（replace）。回合终态
-   *  （turn.completed/failed/aborted）由 handleOpencodeEvent 清理。 */
+   *  （turn.completed/failed/aborted）由 handleRuntimeEvent 清理。 */
   private attachBudgetGuardForPrompt(sessionID: string, maxTurns?: number, maxCostUsd?: number): void {
     try {
       if (!this.runtime || this.runtimeCaps.turnBudgetApi) return;

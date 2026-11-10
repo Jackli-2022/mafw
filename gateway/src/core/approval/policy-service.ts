@@ -7,7 +7,7 @@
 //      auto        → 4. dangerous → human；5. 预算耗尽（25）→ 回落 read-only + 广播 → human；
 //                    6. 其余 auto-approve（计数 +1）
 // 'manual' 为 legacy 别名：load/save/set 入参归一化为 'read-only'。
-// evaluate 必须同步（handleOpencodeEvent 是同步路径）；kv 懒加载，未完成时按 read-only 保守。
+// evaluate 必须同步（handleRuntimeEvent 是同步路径）；kv 懒加载，未完成时按 read-only 保守。
 
 import { ApprovalCandidate, SafetyVerdict, classifySafety, isReadOnlyTool } from './safety-classifier';
 import { IdentityPolicy, ToolCategory, policyDecides, resolveToolCategory } from '../../runtime/identity-registry';
