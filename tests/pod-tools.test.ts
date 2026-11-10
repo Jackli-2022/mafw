@@ -15,7 +15,7 @@ describe('pod plugin tools', () => {
   });
 
   test('status fetches an explicit pod', async () => {
-    (globalThis.fetch as jest.Mock).mockResolvedValue(okJson({ pod: { id: 'pod_1' }, members: [] }));
+    (globalThis.fetch as unknown as jest.Mock).mockResolvedValue(okJson({ pod: { id: 'pod_1' }, members: [] }));
     const result: any = await podStatusTool.execute({ podId: 'pod_1' }, { sessionID: 'ses_lead' });
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://127.0.0.1:3000/api/pods/pod_1?actorSessionID=ses_lead',
@@ -26,18 +26,18 @@ describe('pod plugin tools', () => {
   });
 
   test('status resolves a pod from the caller session directory', async () => {
-    (globalThis.fetch as jest.Mock)
+    (globalThis.fetch as unknown as jest.Mock)
       .mockResolvedValueOnce(okJson({ directory: '/proj' }))
       .mockResolvedValueOnce(okJson({ pod: { id: 'pod_2' }, members: [] }))
       .mockResolvedValueOnce(okJson({ pod: { id: 'pod_2' }, members: [] }));
     const result: any = await podStatusTool.execute({}, { sessionID: 'ses_lead' });
-    expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toContain('/api/sessions/ses_lead');
-    expect((globalThis.fetch as jest.Mock).mock.calls[1][0]).toContain('/api/projects/%2Fproj/pod');
+    expect((globalThis.fetch as unknown as jest.Mock).mock.calls[0][0]).toContain('/api/sessions/ses_lead');
+    expect((globalThis.fetch as unknown as jest.Mock).mock.calls[1][0]).toContain('/api/projects/%2Fproj/pod');
     expect(result.metadata.podId).toBe('pod_2');
   });
 
   test('task update sends actorSessionID and returns task metadata', async () => {
-    (globalThis.fetch as jest.Mock).mockResolvedValue(okJson({ task: { id: 't1', status: 'done' } }));
+    (globalThis.fetch as unknown as jest.Mock).mockResolvedValue(okJson({ task: { id: 't1', status: 'done' } }));
     const result: any = await podTaskUpdateTool.execute(
       { podId: 'pod_1', taskId: 't1', status: 'done' },
       { sessionID: 'ses_builder' },
@@ -50,7 +50,7 @@ describe('pod plugin tools', () => {
   });
 
   test('memory write surfaces 403 as isError', async () => {
-    (globalThis.fetch as jest.Mock).mockResolvedValue({
+    (globalThis.fetch as unknown as jest.Mock).mockResolvedValue({
       ok: false,
       status: 403,
       json: async () => ({ error: 'forbidden' }),
@@ -64,19 +64,19 @@ describe('pod plugin tools', () => {
   });
 
   test('fetch rejection is reported as an error', async () => {
-    (globalThis.fetch as jest.Mock).mockRejectedValue(new Error('down'));
+    (globalThis.fetch as unknown as jest.Mock).mockRejectedValue(new Error('down'));
     const result: any = await podStatusTool.execute({ podId: 'pod_1' }, { sessionID: 'ses_lead' });
     expect(result.isError).toBe(true);
     expect(String(result.output)).toContain('down');
   });
 
   test('pod message defaults to A2A JSON-RPC', async () => {
-    (globalThis.fetch as jest.Mock).mockResolvedValue(okJson({ jsonrpc: '2.0', result: { task: { id: 't1' } } }));
+    (globalThis.fetch as unknown as jest.Mock).mockResolvedValue(okJson({ jsonrpc: '2.0', result: { task: { id: 't1' } } }));
     const result: any = await podMessageTool.execute(
       { podId: 'pod_1', kind: 'request', toMemberId: 'm_builder', body: 'do' },
       { sessionID: 'ses_lead' },
     );
-    const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0];
+    const [url, init] = (globalThis.fetch as unknown as jest.Mock).mock.calls[0];
     expect(url).toContain('/a2a/pods/pod_1');
     const payload = JSON.parse(init.body);
     expect(payload.method).toBe('message/send');
@@ -86,26 +86,26 @@ describe('pod plugin tools', () => {
   });
 
   test('pod message falls back to REST on a JSON-RPC error', async () => {
-    (globalThis.fetch as jest.Mock)
+    (globalThis.fetch as unknown as jest.Mock)
       .mockResolvedValueOnce(okJson({ jsonrpc: '2.0', error: { code: -32603, message: 'boom' } }))
       .mockResolvedValueOnce(okJson({ message: { id: 'm1' } }));
     const result: any = await podMessageTool.execute(
       { podId: 'pod_1', kind: 'note', body: 'x' },
       { sessionID: 'ses_lead' },
     );
-    expect((globalThis.fetch as jest.Mock).mock.calls[1][0]).toContain('/api/pods/pod_1/messages');
+    expect((globalThis.fetch as unknown as jest.Mock).mock.calls[1][0]).toContain('/api/pods/pod_1/messages');
     expect(result.metadata.protocol).toBe('rest');
   });
 
   test('pod message falls back to REST when A2A is unavailable', async () => {
-    (globalThis.fetch as jest.Mock)
+    (globalThis.fetch as unknown as jest.Mock)
       .mockRejectedValueOnce(new Error('ECONNREFUSED'))
       .mockResolvedValueOnce(okJson({ message: { id: 'm1' } }));
     const result: any = await podMessageTool.execute(
       { podId: 'pod_1', kind: 'note', body: 'x' },
       { sessionID: 'ses_lead' },
     );
-    expect((globalThis.fetch as jest.Mock).mock.calls[1][0]).toContain('/api/pods/pod_1/messages');
+    expect((globalThis.fetch as unknown as jest.Mock).mock.calls[1][0]).toContain('/api/pods/pod_1/messages');
     expect(result.metadata.protocol).toBe('rest');
   });
 });

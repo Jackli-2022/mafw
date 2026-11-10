@@ -597,7 +597,7 @@ kernel.ts handleRuntimeEvent(evt)
   没有冗余 `order` 字段；拓扑断言一律 `stageIndex(name)` 比较（名字是稳定锚点）。
 - **`matches` = legacy 块级 if，`run` = 块体逐字**（`this.x` → `ctx.x()`；ctx 全为
   **live getter**）：`DispatchCtx` **26 个成员** = 25 个 live getter + 1 个
-  `setTokenWriterSession` 写回口；`buildDispatchCtx()` 在 index.ts 里 30 行。
+  `setTokenWriterSession` 写回口；`buildDispatchCtx()` 在 kernel.ts 里 30 行。
 - **只有三段可以 HALT**（legacy 的 `return`；HALT 停掉全部下游）：
 
 | # | stage | 门 | 语义 |
@@ -635,7 +635,7 @@ trajectory、compaction flush、budget、Mode B、回合聚合、passthrough）�
   门缺席），只留 `normalizeRuntimeEvent → runEventPipeline` 接线点；链体内容在表模块里成对断言。
 
 **Ruling D2-R4（spec §5.4 降级）**：broadcast seq 空间**已经统一**——`broadcast()`
-是 EventStore 的唯一 sink（`index.ts` 内同步 `eventStore?.append()` 分配 seq，
+是 EventStore 的唯一 sink（`server/event-hub.ts` 内同步 `eventStore?.append()` 分配 seq，
 `part.delta` 不占号），eventBus 的扁平发射（`FLAT_EMITTERS` 注册表，10 类）与 canonical
 `mafw_event` 信封共用同一条单调 seq；`tests/unit/events/broadcast-seq.test.ts` 对这个
 混合序列（扁平 → 扁平 → 信封 = seq 1/2/3）直接钉扎。**eventBus 是内部 ingress**，不对外；
@@ -656,13 +656,13 @@ spec —— 它需要幂等设计与不受 retention 裁剪的影子流（`event
 | 文件 | 行数 | 职责 |
 |---|---|---|
 | `index.ts` | 33 | 日志 + `import { MafwScheduler } from './kernel'`；`export { MafwScheduler }`；`require.main === module` 时 `new MafwScheduler().start()` |
-| `kernel.ts` | 6233 | `class MafwScheduler`（组合根）：字段 / `initServices()` / 子系统方法；不再内联 HTTP 分发 |
-| `boot.ts` | 1025 | `bootKernel(kernel)` = 原 `start()` 逐字（83 成员 `BootKernel` 视图）+ `BOOT_STEPS` 27 步有序声明（D3-R6：DB-open-before-migration 气味只记录不修） |
+| `kernel.ts` | 6345 | `class MafwScheduler`（组合根）：字段 / `initServices()` / 子系统方法；不再内联 HTTP 分发 |
+| `boot.ts` | 1027 | `bootKernel(kernel)` = 原 `start()` 逐字（83 成员 `BootKernel` 视图）+ `BOOT_STEPS` 27 步有序声明（D3-R6：DB-open-before-migration 气味只记录不修） |
 | `http-router.ts` | 42 | spec §5.1 HTTP facade：re-export `createRequestListener` / `TransportDeps` / `createWsHub` / `WsHub`（无逻辑、无分发） |
 | `http/transport.ts` | 524 | `createRequestListener(deps)`：CORS/OPTIONS → auth → registry → plugin web → file history → transport 分支 → dashboard 兜底（R6 顺序保留）→ `/register` → `/control` → `/health` → 反代 → 500 |
 | `http/ws-upgrade.ts` | 203 | `createWsHub(server, deps)`：`/api/ws` / voice / terminal / plugin WS 上行 + 30s 心跳 + 60s push 维护；`dispose()` 由 `shutdown()` 收口 |
-| `server/event-hub.ts` | 131 | `EventHub`：`broadcast()` / `setupEventBus()` / `sseClients` / `wsClients`（D3-R4；kernel 保留同名委托方法，70+ 闭包调用点未动） |
-| `subsystems/api-routes.ts` | 726 | `attachAllRoutes(deps)`：46 条 attach（45 个 `attach*` + 1 条 typed route），顺序 46/46 原样；lead/pod 外来货物逐字 |
+| `server/event-hub.ts` | 145 | `EventHub`：`broadcast()` / `setupEventBus()` / `sseClients` / `wsClients`（D3-R4；kernel 保留同名委托方法，70+ 闭包调用点未动） |
+| `subsystems/api-routes.ts` | 820 | `attachAllRoutes(deps)`：47 条 attach（46 个 `attach*` + 1 条 typed route），顺序 46/46 原样；lead/pod 外来货物逐字 |
 | `subsystems/dashboard-legacy.ts` | 248 | `handleDashboardAPI`（R5 兜底）逐字；transport 经 `dashboardDispatch` 依赖调用 |
 | `runtime/event-dispatch.ts` | 635 | D2 的 24 段 stage 表（未变） |
 
@@ -708,6 +708,16 @@ T1 `searchT1` 家族 / goal pause-resume-retry 控制面 / 主题记忆提升 / 
 组合根状态与路由接线 → `kernel.ts`，反代头 → `http/transport.ts`（`deps.proxyHeaders()`），
 dashboard `memory.add` 影子条 → `subsystems/dashboard-legacy.ts`，MCP `searchT1` →
 `subsystems/api-routes.ts`。D2 的 24 段 stage 表与主线内联链体**逐段等价**（无新增段）。
+
+**合入 main P2.4 事件层（Round 2, 2026-11-11）**：主线 `901ed772..7ee50700` 的
+`index.ts` 增量（+258/−71）同样逐段落位——事件层服务/字段/`initServices` 装配与
+`ingestInternalEvent` / `processEventThread` → `kernel.ts`；`setupEventBus()` 的三条
+internal 订阅 + memory 三类事件 → `server/event-hub.ts`（经 `deps.ingestInternalEvent`）；
+`attachEventRoutes`（source/thread/subscription/delivery + GitHub webhook HMAC）→
+`subsystems/api-routes.ts`；`skillsDir()` / `runtimeConfigDir()` 改由 adapter 声明
+（`discovery.roots()`）；`DEFAULT_BUILTIN_RUNTIME` 取代 `'opencode'` 字面量与
+`opencodeExternalMode()` 取代 env 直读（`boot.ts`）；凭据链收窄为 runtime credentials
+（adapter 兜底移入包内）。事件层说明见 `docs/architecture/events.md`。
 
 **D4 遗留**（Ruling D3-R1：spec §3 的 `index < 100` / `kernel ~400` / `subsystems ~300` 不在
 D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kernel 按注册面再分解、
@@ -1179,3 +1189,10 @@ spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.m
   实机证据：`versions/5.1.0-fbdbee783d70/.install-complete.json`、
   `~/.mafw/runtime/desktop-gateway/prod/<instanceId>.json`、health `distribution=desktop-managed`。
 
+
+## 领域事件层（P2.4）
+
+`gateway/src/core/events/` 提供 Source → Trigger → Thread → Subscription → Decision → Delivery
+领域事件层；`MAFW_EVENT_LAYER=1` 启用。AutomationEngine 通过 `event:github_poll` /
+`event:cron_tick` 动作把事件交给 `EventLayerService`；GitHub 第一版轮询 issues/PRs + comments，
+reviews/CI 归 follow-up。完整表、API、背压与测试见 `docs/architecture/events.md`。

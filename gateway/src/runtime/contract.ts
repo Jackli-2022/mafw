@@ -370,6 +370,8 @@ export interface RuntimeDiscoveryResult {
 export interface RuntimeDiscoveryChannel {
   list(opts: { directory: string }): Promise<RuntimeDiscoveryResult>;
   loadSkill(opts: { directory: string; key: string }): Promise<RuntimeSkillContent | null>;
+  /** Adapter-declared skill/instruction roots (Phase 4: gateway stops hardcoding vendor paths). */
+  roots?(): { skillRoots?: string[]; instructionRoots?: string[] };
 }
 
 // ── 快照树（session.snapshotTree；存储布局只存在于 adapter） ──────────────
@@ -466,7 +468,7 @@ export interface RuntimeClient {
     permissionList?(opts?: { directory?: string }): Promise<any[]>;
     /** 原生 question 通道（questionApi 能力）。opencode 实现；pi 无 question API 不实现。
      *  answers 为 string[][]——每个问题一组答案选项（与 opencode QuestionAnswer 对齐）。
-     *  directory：opencode serve 的 workspace 路由用（V1 原生路由 workspace-scoped）。 */
+     *  directory：runtime serve 的 workspace 路由用（V1 原生路由 workspace-scoped）。 */
     question?: {
       list(opts?: { directory?: string }): Promise<any[]>;
       reply(opts: { requestID: string; answers: string[][]; directory?: string }): Promise<void>;
@@ -621,7 +623,7 @@ export interface AgentRuntime extends RuntimeClient {
     /** 杀掉 runtime 自带的 server 进程（opencode: kill serve 端口）。
      *  重生（respawn）由 gateway 编排：supervisor 经 spawnServe 原语重新拉起。 */
     restart(): Promise<void>;
-    /** 拉起 runtime 自带的 server 进程（opencode: `opencode serve` sidecar，
+    /** 拉起 runtime 自带的 server 进程（opencode: `runtime serve` sidecar，
      *  含 windowsHide）。进程内 runtime（pi）不提供——gateway 据此跳过 serve
      *  拉起（MCP-only 降级），不再硬编码任何具体 agent 的 spawn 细节。
      *  host/port 缺省由 runtime 自定（serve 端口是实现细节）；sidecar 报告的

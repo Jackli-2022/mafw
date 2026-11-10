@@ -337,7 +337,7 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
           const { projectDir, mafwDir, setCurrent } = intent;
 
           // Never register the user's home directory (or its standard data
-          // folders) as a project — desktop's opencode server plugin activates
+          // folders) as a project — desktop's runtime server plugin activates
           // with cwd=$HOME (or a folder under it) and would otherwise pollute
           // the registry with bogus "projects" (and manager sessions).
           if (deps.register.isUserDataDir(projectDir)) {

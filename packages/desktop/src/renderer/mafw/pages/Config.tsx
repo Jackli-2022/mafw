@@ -17,6 +17,7 @@ import { isNavKey, navItems, type NavKey } from "./config-nav"
 import { draftFromConfig, validateFokThresholds, toSearchOverrides, mergeSearchSection, RERANKER_OPTIONS } from "./search-behavior"
 import { embeddingDraftFromState, embeddingDraftDirty, embeddingUpdatePayload } from "./config-embedding"
 import { UsageProviders } from "../components/UsageProviders"
+import { EventLayerSection } from "../components/EventLayerSection"
 import { ApprovalsSection } from "../components/ApprovalsSection"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
 import { KeybindingsSection } from "./KeybindingsSection"
@@ -1080,6 +1081,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 </Show>
               </div>
             </div>
+            <EventLayerSection projectDir={props.projectDir} />
           </Show>
 
           {/* ═══ Desktop ═══*/}

@@ -706,7 +706,7 @@ export const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_restart_agent",
-    description: "Restart the agent runtime (opencode serve). This will interrupt any in-flight prompts. Only works when the runtime supports agent process management (agentProcessApi=true).",
+    description: "Restart the agent runtime (runtime serve). This will interrupt any in-flight prompts. Only works when the runtime supports agent process management (agentProcessApi=true).",
     inputSchema: {
       type: "object",
       properties: {},

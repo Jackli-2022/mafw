@@ -56,6 +56,8 @@ export interface EventHubDeps {
   getGoalDriver(): NodeDriver | null;
   /** `phase_transition` → milestone push（懒构造，需 live getter）。 */
   getMilestonePush(): MilestonePushNotifier | undefined;
+  /** P2.4 event layer ingress for internal domain events (inert when disabled). */
+  ingestInternalEvent(kind: string, data: any): void;
 }
 
 export class EventHub {
@@ -84,6 +86,11 @@ export class EventHub {
   /** milestone push 懒构造在 kernel，故经 getter 取。 */
   private getMilestonePush(): MilestonePushNotifier | undefined {
     return this.deps.getMilestonePush();
+  }
+
+  /** P2.4: internal domain event → event layer (kernel decides enablement). */
+  private ingestInternalEvent(kind: string, data: any): void {
+    this.deps.ingestInternalEvent(kind, data);
   }
 
   broadcast(event: { type: string; [key: string]: any }): void {
@@ -118,14 +125,21 @@ export class EventHub {
       eventBus.on(name, (data: any) => this.broadcast(emit(data)));
     }
     eventBus.on("goal_created", (data: any) => {
+      this.ingestInternalEvent("goal.created", data);
       if (shouldAutoStartGoalEvent(data)) setImmediate(() => void this.startGoal(data.goalId, data.projectDir));
     });
     eventBus.on("state_change", (data: any) => {
+      this.ingestInternalEvent("goal.state", data);
       // legacy /goal skill 链唤醒——driver.advance 幂等（在飞即短路）
       if (data?.goalId) setImmediate(() => void this.goalDriver?.advance(data.goalId));
     });
     eventBus.on("phase_transition", (data: any) => {
+      this.ingestInternalEvent("goal.phase", data);
       this.getMilestonePush()?.onPhaseTransition(data);
     });
+    // P2.4：memory 管线的内部事件同样进事件层（thread/decision 可观测）。
+    for (const name of ['memory_written', 'memory_energy_changed', 'memory_distillation_complete']) {
+      eventBus.on(name, (data: any) => this.ingestInternalEvent(name, data));
+    }
   }
 }

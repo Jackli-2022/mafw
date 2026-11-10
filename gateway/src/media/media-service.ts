@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 
 /**
  * MediaService — multimodal (image / video / audio) analysis client that
- * routes every request through the opencode server SDK (`session.prompt`).
+ * routes every request through the runtime server SDK (`session.prompt`).
  *
  * Credentials and endpoints are owned by opencode: the caller (gateway) only
  * picks the model per modality (`{ providerID, modelID }`) and opencode
@@ -105,7 +105,7 @@ export function kindFromMediaType(mediaType: string): MediaKind {
 }
 
 export interface MediaServiceDeps {
-  /** Invokes the opencode server with the given parts + model. */
+  /** Invokes the runtime server with the given parts + model. */
   prompt: PromptFn;
   /** Optional live config reader (gateway config.raw.media); defaults apply. */
   config?: () => Partial<MediaConfig>;
@@ -158,7 +158,7 @@ export class MediaService {
 
   /**
    * Analyze media (image / video / audio) with the model configured for that
-   * modality. Routes through the opencode server via the injected PromptFn —
+   * modality. Routes through the runtime server via the injected PromptFn —
    * opencode performs the provider auth and the multimodal part conversion.
    */
   async analyze(input: MediaInput, promptText: string): Promise<string> {

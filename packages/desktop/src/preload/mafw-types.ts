@@ -9,6 +9,7 @@ import type {
   PodNamespace, WorkNamespace,
   LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
   LeadBoundaryView, LeadBoundaryDecision,
+  EventsNamespace,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
@@ -270,6 +271,8 @@ export type MafwAPI = {
     compact: (input: { topicId: string }) => Promise<LeadCompactResult>
     recall: (input: { projectDir?: string; q: string }) => Promise<{ candidates: LeadRecallCandidate[] }>
   }
+
+  events: EventsNamespace
 
   /** 托盘/OS 通知点击 → 打开 Goal（跨项目时先切项目）。 */
   navigate: {

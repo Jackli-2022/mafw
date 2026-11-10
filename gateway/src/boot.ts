@@ -83,7 +83,7 @@ import type { RuntimeCapabilities } from './runtime/contract';
 import { RuntimePluginLoader } from './runtime/loader';
 import { PI_CAPABILITIES, createPiDefinition, setPiUnknownRecorder } from './runtime/pi-adapter';
 import type { RuntimeFactoryContext } from '@mafw/runtime-contract';
-import { createOpencodeDefinition, type OpencodeVariant } from './runtime/opencode-adapter';
+import { createOpencodeDefinition, opencodeExternalMode, type OpencodeVariant } from './runtime/opencode-adapter';
 import { builtinAdapterRegistrations } from './runtime/builtin-adapters';
 import type { RuntimeFacade, RuntimeHost } from './runtime/runtime-facade';
 import type { IdentityRegistry } from './runtime/identity-registry';
@@ -208,6 +208,8 @@ export interface BootKernel {
   registerInternalSession(sessionId: string, role: string, identity?: string): void;
   restoreWorkerState(): void;
   runtimeGetApiKey(provider: string): string | null;
+  /** Adapter-declared user-level skills dir (`discovery.roots().skillRoots[0]`). */
+  skillsDir(): string;
   startBackupPolling(): void;
   stop(): void;
   watchAutomationsDir(): void;
@@ -319,7 +321,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   // Install the shipped Office skill before serve spawns: opencode builds its
   // skill catalog at startup, so a later write would not be discovered.
   try {
-    const skill = await ensureGlobalOfficeSkill();
+    const skill = await ensureGlobalOfficeSkill({ skillsDir: kernel.skillsDir() });
     if (skill.ok) {
       if (skill.action !== 'unchanged') log.info(`[Office] global skill ${skill.action}: ${skill.target}`);
     } else {
@@ -331,7 +333,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   // The Creator identity requires the shipped plugin-creator skill before its
   // first inspect/write; install it beside the Office skill (same startup gate).
   try {
-    const skill = await ensurePluginCreatorSkill();
+    const skill = await ensurePluginCreatorSkill({ skillsDir: kernel.skillsDir() });
     if (skill.ok) {
       if (skill.action !== 'unchanged') log.info(`[PluginCreator] global skill ${skill.action}: ${skill.target}`);
     } else {
@@ -448,7 +450,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   // fail-safe @v1）+ 钉死 `opencode@v1` / `opencode@v2`；三个名字共享同一
   // runtime 工厂（serve/adapter/凭据全同），差异仅在事件映射表。
   const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
-  const external = !!process.env.MAFW_SERVER_SERVE_URL;
+  const external = opencodeExternalMode();
   const opencodeDefinition = (variant: OpencodeVariant, name: string) => (ctx: RuntimeFactoryContext) => {
     return createOpencodeDefinition(ctx, {
       variant,
@@ -494,17 +496,17 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
   const isExternal = !!runtime.external;
   let serveReady = false;
   if (isExternal) {
-    log.info(`[Scheduler] Using external OpenCode Serve at ${kernel.serveUrl} (runtime.external=true)`);
+    log.info(`[Scheduler] Using external Runtime serve at ${kernel.serveUrl} (runtime.external=true)`);
     try { await kernel.waitForServeReady(); serveReady = true; }
-    catch { log.warn('External OpenCode Serve not available — MCP-only mode'); }
+    catch { log.warn('External Runtime serve not available — MCP-only mode'); }
   } else {
     if (await kernel.isServeHealthy()) {
-      log.info('OpenCode Serve already running (adopted; health-poll watchdog)');
+      log.info('Runtime serve already running (adopted; health-poll watchdog)');
       serveReady = true;
       kernel.serveOwned = false;
       kernel.startServeWatchdog();
     } else {
-      log.info('OpenCode Serve not reachable, checking for stale process...');
+      log.info('Runtime serve not reachable, checking for stale process...');
       // 清场原语归 runtime（serve 端口是实现细节；无原语的 runtime 无从清场）
       kernel.runtimeHost?.agentProcess?.killServe?.();
       // taskkill /F /T 是异步生效的；给监听 socket 一点释放时间，避免紧随其后的
@@ -514,7 +516,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
         await kernel.startServe();
         serveReady = !!kernel.serveInstance;
       } catch (err) {
-        log.error(`Failed to start OpenCode Serve: ${err instanceof Error ? err.message : String(err)}`);
+        log.error(`Failed to start Runtime serve: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
@@ -524,7 +526,7 @@ export async function bootKernel(kernel: BootKernel): Promise<void> {
     // sidecars it is already running and the guard is a no-op.
     kernel.startServeWatchdog();
   }
-  // 外部 runtime（如 pi）声明 eventStream 时，事件订阅不等 opencode serve 就绪
+  // 外部 runtime（如 pi）声明 eventStream 时，事件订阅不等 runtime serve 就绪
   if (serveReady || (kernel.runtimeCaps.eventStream && isExternal)) {
     kernel.subscribeToEvents();
   }

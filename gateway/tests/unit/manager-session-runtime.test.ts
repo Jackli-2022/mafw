@@ -164,7 +164,8 @@ describe('migration wiring（legacy 文件导入按 opencode 打标）', () => {
   const bootSrc = fs.readFileSync(path.join(__dirname, '../../src/boot.ts'), 'utf-8');
 
   it('gateway-db-migrate 用 writeManagerSlot(..., "opencode", ...) 打标', () => {
-    expect(migrateSrc).toContain("writeManagerSlot(existing, 'opencode', {");
+    expect(migrateSrc).toContain('writeManagerSlot(existing, LEGACY_RUNTIME_TAG, {');
+    expect(migrateSrc).toContain("from '../runtime/legacy-runtime-tags'");
     expect(migrateSrc).not.toMatch(/kvSet\('manager-session', ms\.projectDir, \{\s*sessionId:/);
   });
 

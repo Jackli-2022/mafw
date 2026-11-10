@@ -5,6 +5,7 @@ import {
   GoalSourceRef,
   LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
   LeadBoundaryView, LeadBoundaryDecision,
+  EventsNamespace, EventSourceView, EventThreadView, EventTriggerView, EventSubscriptionView, EventDeliveryView,
   MemoryUnit, MemorySearchOptions, MemoryLayer, MemoryLayeredSearchOptions, MemoryLayeredSearchResult, T1SearchHit, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
@@ -1347,6 +1348,50 @@ export class MafwClient implements IMafwClient {
       if (input.projectDir) query.set('projectDir', input.projectDir)
       return this.request(`/api/lead/recall?${query.toString()}`)
     },
+  }
+
+  events: EventsNamespace = {
+    sources: async (input = {}): Promise<{ items: EventSourceView[] }> => {
+      const query = new URLSearchParams()
+      if (input.projectDir) query.set('projectDir', input.projectDir)
+      const suffix = query.toString()
+      return this.request(`/api/event-sources${suffix ? `?${suffix}` : ''}`)
+    },
+    createSource: async (input: {
+      projectDir: string
+      kind: 'github' | 'webhook'
+      name: string
+      config: Record<string, unknown>
+    }): Promise<EventSourceView> =>
+      this.request('/api/event-sources', { method: 'POST', body: JSON.stringify(input) }),
+    setSourceEnabled: async (id: string, enabled: boolean): Promise<{ ok: boolean }> =>
+      this.request(`/api/event-sources/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      }),
+    threads: async (input = {}): Promise<{ items: EventThreadView[] }> => {
+      const query = new URLSearchParams()
+      if (input.projectDir) query.set('projectDir', input.projectDir)
+      if (input.sourceId) query.set('sourceId', input.sourceId)
+      const suffix = query.toString()
+      return this.request(`/api/event-threads${suffix ? `?${suffix}` : ''}`)
+    },
+    triggers: async (threadId: string): Promise<{ items: EventTriggerView[] }> =>
+      this.request(`/api/event-threads/${encodeURIComponent(threadId)}/triggers`),
+    subscriptions: async (threadId: string): Promise<{ items: EventSubscriptionView[] }> =>
+      this.request(`/api/event-threads/${encodeURIComponent(threadId)}/subscriptions`),
+    subscribe: async (
+      threadId: string,
+      input: { subscriberType: string; subscriberId: string; mode: 'work' | 'context' },
+    ): Promise<EventSubscriptionView> =>
+      this.request(`/api/event-threads/${encodeURIComponent(threadId)}/subscriptions`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    unsubscribe: async (id: string): Promise<{ ok: boolean }> =>
+      this.request(`/api/event-subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    deliveries: async (threadId: string): Promise<{ items: EventDeliveryView[] }> =>
+      this.request(`/api/event-deliveries?threadId=${encodeURIComponent(threadId)}`),
   }
 
   // ── Project Pod Lite ─────────────────────────────────────────────────────

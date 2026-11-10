@@ -80,7 +80,7 @@ export function createTtsService(deps: {
     const cfg = ttsCfg();
     const key = deps.getApiKey?.(provider()) ?? null;
     if (!key) {
-      throw new Error(`No API key for provider "${provider()}" — connect it in opencode first (auth.json)`);
+      throw new Error(`No API key for provider "${provider()}" — connect it in the active runtime first (auth.json)`);
     }
     const text = (input.text || '').trim();
     if (!text) throw new Error('TTS requires non-empty text');
@@ -139,7 +139,7 @@ export function createTtsService(deps: {
     const cfg = ttsCfg();
     const key = deps.getApiKey?.(provider()) ?? null;
     if (!key) {
-      throw new Error(`No API key for provider "${provider()}" — connect it in opencode first (auth.json)`);
+      throw new Error(`No API key for provider "${provider()}" — connect it in the active runtime first (auth.json)`);
     }
     const text = (input.text || '').trim();
     if (!text) throw new Error('TTS requires non-empty text');

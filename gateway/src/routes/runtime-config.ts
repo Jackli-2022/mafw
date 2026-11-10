@@ -45,7 +45,7 @@ export function attachRuntimeConfigRoutes(registry: RouteRegistry, deps: Runtime
       const configData = await deps.runtimeHost()?.config.get();
       res.end(JSON.stringify({ config: configData ?? {} }));
     } catch (err: any) {
-      log.error('[OpenCodeConfig] get error:', err.message);
+      log.error('[RuntimeConfig] get error:', err.message);
       res.writeHead(500);
       res.end(JSON.stringify({ error: err.message }));
     }
@@ -60,7 +60,7 @@ export function attachRuntimeConfigRoutes(registry: RouteRegistry, deps: Runtime
       const result = await deps.runtimeHost()?.config.update(body);
       res.end(JSON.stringify({ status: 'ok', config: result ?? null }));
     } catch (err: any) {
-      log.error('[OpenCodeConfig] update error:', err.message);
+      log.error('[RuntimeConfig] update error:', err.message);
       res.writeHead(500);
       res.end(JSON.stringify({ error: err.message }));
     }

@@ -1,12 +1,14 @@
 // Async, fail-open topic-boundary observation from the host plugin.
 // The gateway decides whether to propose; the hook must never block a turn.
 
+type FetchLike = (input: any, init?: any) => Promise<any>
+
 const GATEWAY_PORT = process.env.MAFW_SERVER_API_PORT || process.env.MAFW_GATEWAY_PORT || '3000'
 const OBSERVE_URL = `http://127.0.0.1:${GATEWAY_PORT}/api/lead/boundaries/observe`
 
 export async function leadBoundaryHook(
   input: { sessionID?: string; text?: string },
-  deps: { fetchImpl?: typeof fetch } = {},
+  deps: { fetchImpl?: FetchLike } = {},
 ): Promise<void> {
   try {
     const sessionID = input?.sessionID || ''

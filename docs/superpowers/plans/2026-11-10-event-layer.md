@@ -258,6 +258,9 @@ export class EventLayerError extends Error {
 }
 export class EventLayerService {
   constructor(deps: EventLayerDeps)
+  createSource(input: { projectDir: string; kind: EventSourceKind; name: string; config: Record<string, unknown> }): EventSourceRow
+  setSourceEnabled(id: string, enabled: boolean): EventSourceRow
+  listSources(projectDir: string): EventSourceRow[]
   ingest(envelope: EventEnvelope): { trigger: EventTriggerRow; thread: EventThreadRow; duplicate: boolean }
   subscribe(input: { threadId: string; subscriberType: EventSubscriptionRow['subscriberType']; subscriberId: string; mode: EventSubscriptionMode; expiresAt?: string | null }): EventSubscriptionRow
   listSubscriptions(threadId: string): EventSubscriptionRow[]
@@ -270,7 +273,6 @@ export function admitIngress(input: {
 }): { ok: true } | { ok: false; reason: 'queue_full' | 'rate_limited' }
 ```
 `EventLayerDeps` gains `admit?(envelope: EventEnvelope): ReturnType<typeof admitIngress>`; default allows.
-```
 
 - [ ] **Step 1: Write failing tests**
 
@@ -306,7 +308,7 @@ Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement ingest / subscription / read methods**
 
-`ingest` calls `deps.admit?.(envelope) ?? { ok: true }`; a false result throws `EventLayerError(429, reason)` and writes no trigger. It then calls `store.ensureThread` with `externalKey`, inserts the trigger, updates thread `last_trigger_at`, and broadcasts only for a non-duplicate. `admitIngress` treats `person` events as always admitted; non-person events check the thread queue cap first and the source token bucket second. `subscribe` uses `store.upsertSubscription`; `list*` delegate to the store.
+`ingest` calls `deps.admit?.(envelope) ?? { ok: true }`; a false result throws `EventLayerError(429, reason)` and writes no trigger. It then calls `store.ensureThread` with `externalKey`, inserts the trigger, updates thread `last_trigger_at`, and broadcasts only for a non-duplicate. `admitIngress` treats `person` events as always admitted; non-person events check the thread queue cap first and the source token bucket second. `createSource` inserts a source (default enabled) and `setSourceEnabled` updates it. `subscribe` uses `store.upsertSubscription`; `list*` delegate to the store.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -624,6 +626,14 @@ git commit -m "feat(events): expose event source, thread and delivery APIs"
 - Test: `packages/desktop/tests/event-layer-wiring.test.ts`
 
 **Interfaces:**
+- View types (mirror the server rows; hide secrets/tokens):
+```ts
+export type EventSourceView = Pick<EventSourceRow, 'id' | 'kind' | 'name' | 'enabled' | 'cursor' | 'updatedAt'>
+export type EventThreadView = Pick<EventThreadRow, 'id' | 'sourceId' | 'externalKey' | 'title' | 'state' | 'lastTriggerAt'>
+export type EventTriggerView = Pick<EventTriggerRow, 'id' | 'kind' | 'actor' | 'occurredAt' | 'disposition'>
+export type EventSubscriptionView = Pick<EventSubscriptionRow, 'id' | 'subscriberType' | 'subscriberId' | 'mode' | 'createdAt'>
+export type EventDeliveryView = Pick<EventDeliveryRow, 'id' | 'state' | 'attempts' | 'lastError' | 'deliveredAt' | 'answeredAt'>
+```
 - SDK namespace:
 ```ts
 events: {

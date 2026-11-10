@@ -8,7 +8,7 @@
 //   - PATCH→ `{ status: 'ok', config: result ?? null }` (native merge semantics);
 //   - no runtime at all → 503 `{ error: 'LLM client not available' }`;
 //   - capGuard first (provider.config / provider.config.update) → neutral 503;
-//   - any throw → 500 `{ error: message }` + the `[OpenCodeConfig] …` log line.
+//   - any throw → 500 `{ error: message }` + the `[RuntimeConfig] …` log line.
 // Query strings are stripped by RouteRegistry.match (same tolerance as the old
 // `^/api/runtime-config(?:\?|$)` regex); the deleted alias `/api/opencode-config`
 // no longer matches anything.
@@ -175,7 +175,7 @@ describe('runtime-config registry wiring (D3 Task 2)', () => {
       );
       expect(badJson.status).toBe(500);
       expect(JSON.parse(badJson.body).error).toBeTruthy();
-      expect(errorSpy).toHaveBeenCalledWith('[OpenCodeConfig] update error:', expect.any(String));
+      expect(errorSpy).toHaveBeenCalledWith('[RuntimeConfig] update error:', expect.any(String));
 
       errorSpy.mockClear();
       const getFails = setup({
@@ -188,7 +188,7 @@ describe('runtime-config registry wiring (D3 Task 2)', () => {
       );
       expect(getRes.status).toBe(500);
       expect(JSON.parse(getRes.body)).toEqual({ error: 'boom' });
-      expect(errorSpy).toHaveBeenCalledWith('[OpenCodeConfig] get error:', 'boom');
+      expect(errorSpy).toHaveBeenCalledWith('[RuntimeConfig] get error:', 'boom');
     } finally {
       errorSpy.mockRestore();
     }

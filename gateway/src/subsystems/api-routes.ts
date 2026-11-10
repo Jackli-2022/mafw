@@ -21,6 +21,7 @@
  * Spec: docs/superpowers/specs/2026-11-09-gateway-kernel-microkernel-design.md §5.1。
  */
 import { config } from '../config';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { eventBus } from '../event-bus';
 import { canonicalProjectDir } from '../core/pod/pod-identity';
 import { buildPodAttention } from '../core/pod/pod-view';
@@ -66,6 +67,10 @@ import { attachDashboardRoutes } from '../routes/dashboard';
 import { attachMiscRoutes } from '../routes/misc';
 import { attachConfigRoutes } from '../routes/config';
 import { attachRuntimeConfigRoutes } from '../routes/runtime-config';
+import { attachEventRoutes } from '../routes/events';
+import { normalizeGitHubEvent, normalizeWebhookEvent } from '../core/events/event-normalize';
+import type { EventLayerService } from '../core/events/event-layer-service';
+import type { EventStore as EventLayerStore } from '../core/events/event-store';
 import { attachLlmRoutes } from '../routes/llm';
 import { attachMediaPluginRoutes } from '../routes/media-plugins';
 import { attachDevicesMobileRoutes } from '../routes/devices-mobile';
@@ -266,6 +271,11 @@ export interface ApiRouteDeps {
   handleRuntimeEvent: (evt: any) => void;
   listSessions: (projectID: string | null) => Promise<any[]>;
   skillInstallDeps: TriageDeps['skillInstallDeps'];
+
+  // ── P2.4 event layer (live: constructed in initServices, inert when off) ──
+  eventLayer?: EventLayerService;
+  eventLayerStore?: EventLayerStore;
+  processEventThread: (threadId: string) => Promise<void>;
 }
 
 export function attachAllRoutes(deps: ApiRouteDeps): void {
@@ -397,6 +407,90 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
         goalActive,
         goalJustClosed,
       });
+    },
+  });
+  // P2.4 事件层：source / thread / trigger / subscription / delivery + GitHub
+  // webhook ingress（HMAC 校验逐字随迁）。禁用时 `enabled()` 返回 false → 503。
+  attachEventRoutes(deps.routeRegistry, {
+    enabled: () => process.env.MAFW_EVENT_LAYER === '1',
+    sources: {
+      list: (projectDir) => deps.eventLayer!.listSources(projectDir),
+      create: (input: any) => deps.eventLayer!.createSource({
+        projectDir: String(input?.projectDir ?? ''),
+        kind: input?.kind,
+        name: String(input?.name ?? ''),
+        config: input?.config && typeof input.config === 'object' ? input.config : {},
+      }),
+      setEnabled: (id, enabled) => {
+        if (!deps.eventLayerStore?.getSource(id)) return false;
+        deps.eventLayerStore.setSourceEnabled(id, enabled, new Date().toISOString());
+        return true;
+      },
+    },
+    threads: {
+      list: (projectDir, sourceId) => deps.eventLayer!.listThreads(projectDir, sourceId),
+      triggers: (threadId) => deps.eventLayer!.listTriggers(threadId),
+      subscriptions: (threadId) => deps.eventLayer!.listSubscriptions(threadId),
+    },
+    subscribe: (input: any) => deps.eventLayer!.subscribe({
+      threadId: String(input?.threadId ?? ''),
+      subscriberType: input?.subscriberType,
+      subscriberId: String(input?.subscriberId ?? ''),
+      mode: input?.mode,
+    }),
+    unsubscribe: (id) => deps.eventLayerStore?.removeSubscription(id, new Date().toISOString()) ?? false,
+    deliveries: (threadId) => deps.eventLayer!.listDeliveries(threadId),
+    webhook: async (sourceId, headers, body: any, rawBody?: string) => {
+      const source = deps.eventLayerStore?.getSource(sourceId);
+      if (!source) return { accepted: false, status: 404 };
+      const secret = typeof source.config.secret === 'string' ? source.config.secret : '';
+      if (!secret) return { accepted: false, status: 401 };
+      const provided = String(headers['x-hub-signature-256'] ?? '');
+      const expected = `sha256=${createHmac('sha256', secret).update(rawBody ?? JSON.stringify(body ?? {})).digest('hex')}`;
+      const a = Buffer.from(provided);
+      const b = Buffer.from(expected);
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        return { accepted: false, status: 401 };
+      }
+      if (!deps.eventLayer) return { accepted: false, status: 503 };
+      const now = new Date().toISOString();
+      const deliveryId = String(headers['x-github-delivery'] ?? randomUUID());
+      const eventKind = String(headers['x-github-event'] ?? 'webhook');
+      let envelope;
+      if (source.kind === 'github') {
+        const repo = String(body?.repository?.full_name ?? '');
+        const number = Number(body?.number ?? body?.pull_request?.number ?? body?.issue?.number ?? 0);
+        if (!repo || !Number.isFinite(number) || number <= 0) {
+          return { accepted: false, status: 400 };
+        }
+        envelope = normalizeGitHubEvent({
+          projectDir: source.projectDir,
+          sourceId: source.id,
+          deliveryId,
+          event: eventKind,
+          action: String(body?.action ?? ''),
+          repo,
+          number,
+          actor: String(body?.sender?.login ?? '') || null,
+          payload: body ?? {},
+          occurredAt: String(body?.pull_request?.updated_at ?? body?.issue?.updated_at ?? now),
+          receivedAt: now,
+        });
+      } else {
+        envelope = normalizeWebhookEvent({
+          projectDir: source.projectDir,
+          sourceId: source.id,
+          deliveryId,
+          kind: eventKind,
+          actor: String(body?.sender?.login ?? body?.actor ?? '') || null,
+          payload: body ?? {},
+          occurredAt: String(body?.occurred_at ?? body?.timestamp ?? now),
+          receivedAt: now,
+        });
+      }
+      const ingested = deps.eventLayer.ingest(envelope);
+      void deps.processEventThread(ingested.thread.id);
+      return { accepted: true, duplicate: ingested.duplicate };
     },
   });
   attachWave2Handlers(deps.routeRegistry, {

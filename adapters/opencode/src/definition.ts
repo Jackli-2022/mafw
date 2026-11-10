@@ -26,6 +26,11 @@ import { setBridgeEventEntry } from './entry-registry';
 
 export type OpencodeVariant = 'adaptive' | 'v1' | 'v2' | 'v21';
 
+/** Single source for external mode (the adapter owns the serve env contract). */
+export function opencodeExternalMode(): boolean {
+  return !!process.env.MAFW_SERVER_SERVE_URL;
+}
+
 export interface OpencodeDefinitionOptions {
   variant: OpencodeVariant;
   baseUrl: string;
@@ -111,7 +116,7 @@ export async function createOpencodeDefinition(
   opts: OpencodeDefinitionOptions,
   deps: OpencodeDefinitionDeps = {},
 ): Promise<RuntimeDefinition> {
-  const external = deps.external ?? !!process.env.MAFW_SERVER_SERVE_URL;
+  const external = deps.external ?? opencodeExternalMode();
   const runtime = deps.runtime ?? await createOpencodeRuntime({
     baseUrl: opts.baseUrl,
     headers: opts.headers ? { ...opts.headers } : undefined,

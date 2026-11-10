@@ -66,7 +66,8 @@ describe('依赖边界守卫（runtime/ 之外零 SDK import）', () => {
     expect(movedReader).toEqual([]);
     // 唯一的凭据兜底仍走包 shim（Task 7 删除 re-export shim 后单点接线保持）。
     const credentials = readFileSync(join(SRC, 'runtime', 'plugin-credentials.ts'), 'utf8');
-    expect(credentials).toContain("from './opencode-adapter'");
+    expect(credentials).toContain('active?.getApiKey');
+    expect(credentials).not.toContain("from './opencode-adapter'");
   });
 
   it('业务目录不 import adapter 实现（runtime 私有布局/原生 SDK 只属于 adapter）', () => {

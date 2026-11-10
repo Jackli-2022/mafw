@@ -283,11 +283,6 @@ export const COMPOSITION_ROOT_EXCEPTIONS: CompositionRootException[] = [
     why: 'plugin 实例形状校验失败时的诊断错误文案（组合根自己拼的 message）',
   },
   {
-    rule: 'runtime-name',
-    excerpt: /name === 'opencode' \? undefined/,
-    why: 'opencode 凭据在 adapter 内部（auth.json），插件凭据路径只服务非内置 runtime',
-  },
-  {
     rule: 'raw-capability',
     excerpt: /this\.runtimeDiagnostics\?\.capabilities/,
     why: '`runtimeCaps` accessor 从 diagnostics 快照读能力（Diagnostics 通道，不是业务门）',

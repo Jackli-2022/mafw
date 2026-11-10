@@ -8,6 +8,7 @@
 // to guess an owner: a legacy v1 entry without a tag stays dormant (never
 // deleted, never attributed), and new writes always carry the tag.
 
+import { LEGACY_RUNTIME_TAG } from '../../runtime/legacy-runtime-tags';
 export interface ManagerSlot {
   sessionId: string;
   createdAt?: string | null;
@@ -94,7 +95,7 @@ export function backfillManagerSlot(value: unknown): { value: unknown; changed: 
     if (v.unattributed?.sessionId && !v.byRuntime.opencode) {
       const { unattributed, ...rest } = v;
       return {
-        value: { ...rest, byRuntime: { ...v.byRuntime, opencode: { ...unattributed } } },
+        value: { ...rest, byRuntime: { ...v.byRuntime, [LEGACY_RUNTIME_TAG]: { ...unattributed } } },
         changed: true,
       };
     }
@@ -103,7 +104,7 @@ export function backfillManagerSlot(value: unknown): { value: unknown; changed: 
 
   if (!hasSession) return { value, changed: false };
   const slot: ManagerSlot = { sessionId: v.sessionId as string, ...(v.createdAt ? { createdAt: v.createdAt } : {}) };
-  const owner = resolveManagerRuntime(v) ?? 'opencode';
+  const owner = resolveManagerRuntime(v) ?? LEGACY_RUNTIME_TAG;
   return { value: { byRuntime: { [owner]: slot } }, changed: true };
 }
 

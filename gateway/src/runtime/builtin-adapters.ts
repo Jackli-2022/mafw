@@ -11,6 +11,7 @@ import type { EventMappingEntry } from './event-mapper';
 import {
   OPENCODE_REGISTRATIONS,
   opencodeCapabilities,
+  opencodeDiscoveryRoots,
   opencodeStaticEntry,
   type OpencodeVariant,
 } from './opencode-adapter';
@@ -26,6 +27,9 @@ export interface BuiltinAdapterRegistration {
   };
 }
 
+/** First registered builtin adapter is the default runtime. */
+export const DEFAULT_BUILTIN_RUNTIME = OPENCODE_REGISTRATIONS[0]?.name ?? 'runtime';
+
 export function builtinAdapterRegistrations(external: boolean): BuiltinAdapterRegistration[] {
   return OPENCODE_REGISTRATIONS.map((registration) => ({
     name: registration.name,
@@ -36,4 +40,9 @@ export function builtinAdapterRegistrations(external: boolean): BuiltinAdapterRe
       eventEntry: opencodeStaticEntry(registration.variant),
     },
   }));
+}
+
+/** Skill/instruction roots declared by the builtin adapter (no runtime needed). */
+export function builtinDiscoveryRoots(): { skillRoots?: string[]; instructionRoots?: string[] } {
+  return opencodeDiscoveryRoots();
 }

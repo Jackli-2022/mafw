@@ -161,12 +161,6 @@ import { LayaConflictClient } from "./memory/laya-client";
 import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/route-write";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
-import {
-  getProviderApiKey,
-  readProviderApiKey,
-  readProviderBaseUrlWithPath,
-  readProviderTransportFromList,
-} from "./runtime/opencode-adapter";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
@@ -274,6 +268,17 @@ import { createPluginCredentials } from './runtime/plugin-credentials';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
 import { getBridgeEventEntry } from './runtime/legacy-plugin-bridge';
 import { resolveProviderTransportPrecedence } from './runtime/provider-transport';
+import { DEFAULT_BUILTIN_RUNTIME, builtinDiscoveryRoots } from './runtime/builtin-adapters';
+// P2.4 event layer: domain ingress / threads / decisions / delivery.
+import { EventLayerService } from './core/events/event-layer-service';
+import { EventStore as EventLayerStore } from './core/events/event-store';
+import {
+  normalizeCronTick,
+  normalizeGitHubEvent,
+  normalizeInternalEvent,
+  normalizeWebhookEvent,
+} from './core/events/event-normalize';
+import { pollGitHubSource } from './core/events/sources/github-source';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
@@ -586,7 +591,7 @@ class MafwScheduler {
   private get runtimeCaps(): RuntimeCapabilities {
     return this.runtimeDiagnostics?.capabilities ?? this.runtimeCapsFallback;
   }
-  private runtimeName = 'opencode';
+  private runtimeName = DEFAULT_BUILTIN_RUNTIME;
   /** 组合根持有的诊断视图（业务核心只读 access/Experience；本视图供 /api/runtime 等 Admin 面）。 */
   private runtimeDiagnostics: RuntimeDiagnosticsView | null = null;
   /**
@@ -627,6 +632,7 @@ class MafwScheduler {
     startGoal: (goalId, projectDir) => this.startGoal(goalId, projectDir),
     getGoalDriver: () => this.goalDriver,
     getMilestonePush: () => this.getMilestonePush(),
+    ingestInternalEvent: (kind, data) => this.ingestInternalEvent(kind, data),
   });
   private chatSessions: ChatSessionManager;
   private sdkSession!: SdkSessionResource;
@@ -707,6 +713,8 @@ class MafwScheduler {
   private wsHub?: WsHub;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
+  private eventLayerStore?: EventLayerStore;
+  private eventLayer?: EventLayerService;
   private ledger?: SchedulerLedger;
   private pushGateway?: PushGateway;
   private pairingService?: PairingService;
@@ -1181,12 +1189,12 @@ class MafwScheduler {
    * 两级都失败时抛中性错误，不再直连 adapter。
    */
   private async createRuntime(): Promise<RuntimeFacade> {
-    const wanted = config.runtime?.plugin || 'opencode';
+    const wanted = config.runtime?.plugin || DEFAULT_BUILTIN_RUNTIME;
     const rt = await this.activatePluginRuntime(wanted, true);
     if (rt) return rt;
-    if (wanted !== 'opencode') {
+    if (wanted !== DEFAULT_BUILTIN_RUNTIME) {
       log.warn(`[Runtime] plugin '${wanted}' unavailable — falling back to opencode`);
-      const fallback = await this.activatePluginRuntime('opencode', false);
+      const fallback = await this.activatePluginRuntime(DEFAULT_BUILTIN_RUNTIME, false);
       if (fallback) return fallback;
     }
     // No direct adapter fallback: the definition registry is the only entry.
@@ -1196,7 +1204,7 @@ class MafwScheduler {
   /** 单激活路径（D 收敛）：plugin/builtin/package 同一序列。fatal=true 时校验失败抛错触发回退。 */
   private async activatePluginRuntime(name: string, fatal: boolean): Promise<RuntimeFacade | null> {
     const plugin = this.runtimeLoader?.get(name);
-    const creds = name === 'opencode' ? undefined : await this.runtimeCredentialsForPlugin();
+    const creds = name === DEFAULT_BUILTIN_RUNTIME ? undefined : await this.runtimeCredentialsForPlugin();
     const ctx = createRuntimePluginContext(creds, {
       projectDir: this.resolvedProjectDir(),
       rootDir: this.ensureRuntimeRootDir(),
@@ -1428,7 +1436,7 @@ class MafwScheduler {
         gatewayProjectDir: this.projectDir,
         mafwDir: this.mafwDir,
         homeDir: os.homedir(),
-        globalConfigDir: path.join(os.homedir(), '.config', 'opencode'),
+        globalConfigDir: this.runtimeConfigDir(),
       });
     }
     return this.discovery;
@@ -1566,49 +1574,27 @@ class MafwScheduler {
     return createPluginCredentials(this.runtimeHost?.credentials);
   }
 
-  /** 凭据单点接线（Plan 3 终审 #10）：active runtime credentials → legacy auth.json → null。
-   *  全部消费方构造点的唯一凭据来源——链变更只改这里。 */
+  /** 凭据单点接线（Plan 3 终审 #10）：active runtime credentials 即唯一来源。
+   *  Phase 4 起 adapter 兜底（auth.json / inline provider settings）已移入包内，
+   *  gateway 不再读 opencode 配置；全部消费方构造点只经这里。 */
   private runtimeGetApiKey(provider: string): string | null {
-    return getProviderApiKey(provider, undefined, this.runtimeHost?.credentials) ?? null;
+    return this.runtimeHost?.credentials?.getApiKey(provider) ?? null;
   }
 
   /**
-   * Index-scan provider transport. Precedence is the pre-extraction order:
-   * runtime credentials → driver `resolveProviderTransport` → gateway config /
-   * provider-list fallback. The fallback only runs for still-missing fields, so
-   * a driver transport that already read its config does not double-read it.
+   * Index-scan provider transport: runtime credentials first, then the driver
+   * transport. No gateway config/provider fallback — those are adapter-owned in
+   * Phase 4 (P2.4 removed the last read of `getProviderApiKey` here).
    */
   private async resolveScanProviderTransport(
     providerID: string,
   ): Promise<{ baseUrl: string | null; apiKey: string | null }> {
+    // Runtime credentials first, then the driver transport. No gateway
+    // config/provider fallback: those are adapter-owned in Phase 4.
     return resolveProviderTransportPrecedence({
       providerID,
       credentials: this.runtimeHost?.credentials,
       resolveTransport: (id) => this.runtimeHost?.resolveProviderTransport?.(id) ?? {},
-      fallback: async ({ needBaseUrl, needApiKey }) => {
-        let baseUrl: string | null = null;
-        let apiKey: string | null = null;
-        if (needBaseUrl || needApiKey) {
-          try {
-            const cfg: any = await this.runtimeHost?.config.get();
-            if (needBaseUrl) baseUrl = readProviderBaseUrlWithPath(cfg, providerID) ?? null;
-            if (needApiKey) apiKey = readProviderApiKey(cfg, providerID) ?? null;
-          } catch { /* fail-open to the next resolution step */ }
-        }
-        if (needBaseUrl && !baseUrl) {
-          try {
-            const list: any = await this.runtime?.provider?.list?.();
-            baseUrl = readProviderTransportFromList(list, providerID).baseUrl ?? null;
-          } catch { /* fail-open */ }
-        }
-        if (needApiKey && !apiKey) {
-          try {
-            const list: any = await this.runtime?.provider?.list?.();
-            apiKey = readProviderTransportFromList(list, providerID).apiKey ?? null;
-          } catch { /* fail-open */ }
-        }
-        return { baseUrl, apiKey };
-      },
     });
   }
 
@@ -1710,7 +1696,7 @@ class MafwScheduler {
       const providerID = judgeModel?.providerID;
       const modelID = judgeModel?.modelID;
       const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
-      const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
+      const judgeApiKey = judgeBaseUrl ? this.runtimeGetApiKey(providerID!) : null;
       // Judge transport: prefer the runtime's stateless completion channel
       // (thunk — resolves inline-defined providers like "gateway" via opencode
       // provider config, hot-swap safe), fall back to direct HTTP. Gated by the
@@ -2864,9 +2850,16 @@ class MafwScheduler {
     });
   }
 
-  /** 用户级 skills 目录（W2 安装目标）。 */
+  /** 用户级 skills 目录（W2 安装目标）。P2.4：目标目录由 active/builtin adapter 声明。 */
   private skillsDir(): string {
-    return path.join(os.homedir(), '.config', 'opencode', 'skills');
+    const roots = this.runtime?.discovery?.roots?.() ?? builtinDiscoveryRoots();
+    return roots.skillRoots?.[0] ?? path.join(this.mafwDir, 'skills');
+  }
+
+  /** Instruction/config root declared by the active/builtin adapter. */
+  private runtimeConfigDir(): string {
+    const roots = this.runtime?.discovery?.roots?.() ?? builtinDiscoveryRoots();
+    return roots.instructionRoots?.[0] ?? this.mafwDir;
   }
 
   /** 已安装 skill 数（含 staging 之外的用户级目录）——G5 列表膨胀闸门的输入。 */
@@ -3964,7 +3957,7 @@ class MafwScheduler {
       const providerID = judgeModel?.providerID;
       const modelID = judgeModel?.modelID;
       const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
-      const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
+      const judgeApiKey = judgeBaseUrl ? this.runtimeGetApiKey(providerID!) : null;
       setRouteWriteDeps({
         vectors: routeRt.vectors,
         provider: routeRt.provider,
@@ -4095,6 +4088,84 @@ class MafwScheduler {
     this.ledger = new SchedulerLedger(projectDir);
     this.automationEngine = new AutomationEngine(mafwDir);
     this.automationEngine.setLedger(this.ledger);
+
+    // P2.4 event layer: domain ingress / threads / decisions / delivery.
+    // The first evaluator is deliberately conservative: only work
+    // subscriptions are accepted; P2.5 wires the Standing Goal evaluator.
+    const eventStore = new EventLayerStore(this.getGatewayDb().getStore());
+    this.eventLayerStore = eventStore;
+    this.eventLayer = new EventLayerService({
+      store: eventStore,
+      now: () => new Date().toISOString(),
+      newId: (prefix) => `${prefix}_${randomUUID()}`,
+      broadcast: (event) => this.broadcast(event as any),
+      enabled: () => process.env.MAFW_EVENT_LAYER === '1',
+      evaluate: async ({ subscriptions }) => (subscriptions.some((subscription) => subscription.mode === 'work')
+        ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
+        : { decision: 'ignore', rationale: 'no work subscription' }),
+      deliverWork: async ({ thread, trigger, subscription, decision }) => {
+        // P2.4 has no Standing Goal executor; surface the work handoff so the
+        // P2.5 consumer can attach without changing the delivery path.
+        this.broadcast({
+          type: 'event.delivery.work',
+          properties: {
+            threadId: thread.id,
+            triggerId: trigger.id,
+            subscriptionId: subscription.id,
+            mode: decision.mode ?? null,
+          },
+        });
+      },
+      log: (message) => log.warn(message),
+    });
+
+    this.automationEngine.registerAction('event:github_poll', async (rule) => {
+      if (process.env.MAFW_EVENT_LAYER !== '1') return;
+      const sourceId = String(rule.args?.sourceId ?? '');
+      const source = sourceId ? eventStore.getSource(sourceId) : null;
+      if (!source || !source.enabled) return;
+      try {
+        const polled = await pollGitHubSource({
+          projectDir: source.projectDir,
+          sourceId: source.id,
+          config: {
+            repo: String(source.config.repo ?? ''),
+            token: typeof source.config.token === 'string' ? source.config.token : undefined,
+            labels: Array.isArray(source.config.labels) ? source.config.labels.map(String) : undefined,
+            branches: Array.isArray(source.config.branches) ? source.config.branches.map(String) : undefined,
+            authors: Array.isArray(source.config.authors) ? source.config.authors.map(String) : undefined,
+            cursor: source.cursor as any,
+          },
+          now: () => new Date().toISOString(),
+        });
+        for (const envelope of polled.envelopes) {
+          const ingested = this.eventLayer!.ingest(envelope);
+          void this.processEventThread(ingested.thread.id);
+        }
+        eventStore.updateSourceCursor(source.id, polled.cursor, new Date().toISOString());
+      } catch (err: any) {
+        this.broadcast({
+          type: 'event.source.error',
+          properties: { sourceId, error: String(err?.message ?? err) },
+        });
+      }
+    });
+
+    this.automationEngine.registerAction('event:cron_tick', async (rule) => {
+      if (process.env.MAFW_EVENT_LAYER !== '1') return;
+      const standingGoalId = String(rule.args?.standingGoalId ?? '');
+      const projectDir = String(rule.args?.projectDir ?? '');
+      if (!standingGoalId || !projectDir) return;
+      const now = new Date().toISOString();
+      const ingested = this.eventLayer!.ingest(normalizeCronTick({
+        projectDir,
+        sourceId: 'cron',
+        standingGoalId,
+        scheduledAt: String(rule.args?.scheduledAt ?? now),
+        actualAt: now,
+      }));
+      void this.processEventThread(ingested.thread.id);
+    });
     // Pipeline heartbeat (arXiv:2609.05510): background pipelines fail silently
     // by default — record last-run/last-success/counts and flag stalled ones.
     {
@@ -4267,12 +4338,8 @@ class MafwScheduler {
         usageStats: statsProvider,
         // inline provider key 兜底（auth.json 无条目的自建 provider，如 gateway）——
         // thunk 惰性求值，runtime 此时尚未初始化也不影响。
-        resolveInlineApiKey: async (providerID: string) => {
-          try {
-            const cfg: any = await this.runtimeHost?.config.get();
-            return readProviderApiKey(cfg, providerID);
-          } catch { return null; }
-        },
+        resolveInlineApiKey: async (providerID: string) =>
+          (await this.runtimeHost?.resolveProviderTransport?.(providerID))?.apiKey ?? null,
       });
       await pluginLoader.init();
       this.pluginLoader = pluginLoader;
@@ -4346,6 +4413,48 @@ class MafwScheduler {
     return this.eventHub.setupEventBus();
   }
 
+  /**
+   * P2.4 event layer: internal domain events (goal lifecycle, memory pipeline)
+   * are ingested as event-layer envelopes. Inert unless `MAFW_EVENT_LAYER=1`.
+   */
+  private ingestInternalEvent(kind: string, data: any) {
+    if (!this.eventLayer || process.env.MAFW_EVENT_LAYER !== '1') return;
+    try {
+      const goalId = typeof data?.goalId === 'string' ? data.goalId : '';
+      const resolved = goalId ? this.resolveGoalProject(goalId) : null;
+      const projectDir = typeof data?.projectDir === 'string'
+        ? data.projectDir
+        : (resolved?.ok ? resolved.projectDir : '');
+      if (!projectDir) return;
+      const now = new Date().toISOString();
+      const eventId = String(data?.eventId ?? data?.id ?? `${kind}:${goalId || projectDir}:${now}`);
+      const ingested = this.eventLayer.ingest(normalizeInternalEvent({
+        projectDir,
+        sourceId: 'internal',
+        eventId,
+        kind,
+        aggregateId: goalId || projectDir,
+        actor: 'system',
+        payload: data ?? {},
+        occurredAt: typeof data?.timestamp === 'string' ? data.timestamp : now,
+        receivedAt: now,
+      }));
+      void this.processEventThread(ingested.thread.id);
+    } catch (err: any) {
+      log.debug(`[EventLayer] internal ingest skipped: ${err?.message ?? err}`);
+    }
+  }
+
+  private async processEventThread(threadId: string): Promise<void> {
+    if (!this.eventLayer) return;
+    try {
+      this.eventLayer.fanOut(threadId);
+      await this.eventLayer.evaluate(threadId);
+    } catch (err: any) {
+      log.debug(`[EventLayer] process thread ${threadId} skipped: ${err?.message ?? err}`);
+    }
+  }
+
   private async startServe() {
     // Serve 拉起原语在组合根 RuntimeHost 上（agentProcess.spawnServe；facade 不含
     // 进程原语）——gateway 只做 bookkeeping（serveInstance/owned/exit 退避），不硬编码 spawn 细节。
@@ -4354,7 +4463,7 @@ class MafwScheduler {
       log.warn('[Scheduler] active runtime does not own a server process — skipping serve spawn');
       return;
     }
-    log.info('Starting OpenCode Serve sidecar...');
+    log.info('Starting Runtime serve sidecar...');
     try {
       // host/port 归 runtime 自定（serve 端口是实现细节）；sidecar 实际 URL
       // 由 runtime 吸收（getBaseUrl 跟随），gateway 只记 bookkeeping。
@@ -4368,9 +4477,9 @@ class MafwScheduler {
         close: () => sidecar.close(),
       };
       this.serveOwned = true;
-      log.info(`OpenCode Serve started at ${sidecar.url} (owned sidecar)`);
+      log.info(`Runtime serve started at ${sidecar.url} (owned sidecar)`);
     } catch (err: any) {
-      log.error(`Failed to start OpenCode Serve: ${err.message}`);
+      log.error(`Failed to start Runtime serve: ${err.message}`);
       throw err;
     }
   }
@@ -4382,7 +4491,7 @@ class MafwScheduler {
   private handleServeExit(code: number | null) {
     if (!this.serveOwned || this.serveRecovering) return;
     // After a hot-switch to an in-process/external runtime, the (still owned)
-    // opencode serve is no longer the active backend: its exit must NOT trigger
+    // runtime serve is no longer the active backend: its exit must NOT trigger
     // recovery — pi has no spawnServe, so the orchestrator would fall into the
     // supervisor's kill+spawn path and retry forever (killing whatever listens
     // on the serve port each cycle). A later switch back re-ensures via
@@ -4402,7 +4511,7 @@ class MafwScheduler {
     const delay = this.serveExitStreak <= this.serveFastRetries
       ? [0, 5_000, 15_000][this.serveExitStreak - 1] ?? 15_000
       : this.serveBackoffMs;
-    log.warn(`[Scheduler] OpenCode Serve exited (code=${code}); restarting in ${delay}ms (streak=${this.serveExitStreak})`);
+    log.warn(`[Scheduler] Runtime serve exited (code=${code}); restarting in ${delay}ms (streak=${this.serveExitStreak})`);
     if (this.serveRetryTimer) clearTimeout(this.serveRetryTimer);
     this.serveRetryTimer = setTimeout(() => void this.recoverServe(), delay);
   }
@@ -4431,9 +4540,9 @@ class MafwScheduler {
     if (this.serveRecovering || !this.running) return;
     this.serveRecovering = true;
     try {
-      log.info('[Scheduler] Recovering OpenCode Serve...');
+      log.info('[Scheduler] Recovering Runtime serve...');
       await this.restartAgentOrchestrated();
-      log.info('[Scheduler] OpenCode Serve recovered');
+      log.info('[Scheduler] Runtime serve recovered');
       if (this.serveStableTimer) clearTimeout(this.serveStableTimer);
       this.serveStableTimer = setTimeout(() => {
         this.serveExitStreak = 0;
@@ -4511,7 +4620,7 @@ class MafwScheduler {
       localSessions = (await this.sdkSession.list()) as any[];
     } catch { localSessions = []; }
 
-    // Try SDK first (opencode server), fall back to local store
+    // Try SDK first (runtime server), fall back to local store
     const fromServe: any[] = [];
     if (this.runtime) {
       try {
@@ -4569,7 +4678,7 @@ class MafwScheduler {
         return;
       }
     }
-    throw new Error(`Failed to start OpenCode Serve after ${maxRetries * interval / 1000} seconds`);
+    throw new Error(`Failed to start Runtime serve after ${maxRetries * interval / 1000} seconds`);
   }
 
   /**
@@ -4752,6 +4861,9 @@ class MafwScheduler {
       get handleRuntimeEvent() { return (...a: any[]) => (self.handleRuntimeEvent as any)(...a); },
       get listSessions() { return (...a: any[]) => (self.listSessions as any)(...a); },
       get skillInstallDeps() { return (...a: any[]) => (self.skillInstallDeps as any)(...a); },
+      get eventLayer() { return self.eventLayer; },
+      get eventLayerStore() { return self.eventLayerStore; },
+      get processEventThread() { return (...a: any[]) => (self.processEventThread as any)(...a); },
     };
   }
 
@@ -4894,7 +5006,7 @@ class MafwScheduler {
   }
 
   // User data directories that must never be treated as projects (desktop's
-  // opencode server plugin activates with cwd=$HOME or a folder under it).
+  // runtime server plugin activates with cwd=$HOME or a folder under it).
   private userDataDirs(): Set<string> {
     const homeNorm = normalizeDir(os.homedir());
     const dirs = ['', 'Desktop', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos']
@@ -5884,7 +5996,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         sessionID: sessionId,
         parts: [{ type: 'text', text: prompt }],
         system: systemPrompt,
-        ...(model ? { model: { providerID: 'opencode', modelID: model } } : {}),
+        ...(model ? { model: { providerID: this.runtimeName, modelID: model } } : {}),
       });
       const text = result.parts
         ?.filter((p: any) => p.type === 'text')
