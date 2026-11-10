@@ -630,13 +630,14 @@ describe('runtime isolation architecture boundaries', () => {
   });
 
   it('every gated route entry point receives RuntimeAccess instead of capabilities', () => {
-    const text = readSource('src/index.ts');
     // 两条 permission reply 入口都必须注入 access（拒绝路径也要能中性 503）。
     // Phase D1 Task B1: 直连入口随 permissions.reply 迁入 routes/questions-permissions.ts
     // （registry params 已解码，id 取 params.id）。
     const questionsPermissions = readSource('src/routes/questions-permissions.ts');
     expect(questionsPermissions).toMatch(/handlePermissionReplyById\(req, res, params\.id, \{[^}]*access:/);
-    expect(text).toMatch(/handlePermissionReply\(this\.runtime, req, res, permMatch\[1\], permMatch\[2\], \{[^}]*access:/);
+    // Phase D1 Task E2: per-session 直连入口迁入 routes/sessions-permissions.ts。
+    const sessionsPermissions = readSource('src/routes/sessions-permissions.ts');
+    expect(sessionsPermissions).toMatch(/handlePermissionReply\(deps\.runtime\(\), req, res, params\.sid, params\.rid, \{[^}]*access:/);
   });
 
   it('first-party run/checkpoint core uses RuntimeAccess, not runtime identity branches', () => {
@@ -767,8 +768,22 @@ describe('composition root exceptions (spec §11: 按区段登记，禁止整文
     // spec §11「Diagnostics 白名单逐文件列出」：只有这两个 route 可以把 runtime 名称/
     // 能力位放进 HTTP 响应（GET /api/runtime、/api/runtime/conformance 诊断视图）。
     const DIAGNOSTICS_ROUTES = new Set(['src/routes/runtime-switch.ts', 'src/routes/conformance.ts']);
-    const readers = filesUnder('src/routes').filter((file) =>
-      /runtimeName\s*\(|runtimeCaps\s*\(|deps\.runtimeName|deps\.runtimeCaps/.test(readSource(file)));
+    // 例外只允许「内部身份键读取」：/api/agents 用 runtime 名判断身份是否物化，
+    // 不序列化名称、不读能力位（Phase D1 Task H1 迁入 routes/misc.ts）。
+    const INTERNAL_IDENTITY_READERS = new Map([
+      ['src/routes/misc.ts', /isMaterialized\(deps\.runtimeName\(\), s\.name\)/],
+    ]);
+    const readers = filesUnder('src/routes').filter((file) => {
+      const src = readSource(file);
+      if (!/runtimeName\s*\(|runtimeCaps\s*\(|deps\.runtimeName|deps\.runtimeCaps/.test(src)) return false;
+      const exemption = INTERNAL_IDENTITY_READERS.get(file);
+      if (exemption && exemption.test(src)) {
+        expect(src).not.toMatch(/runtimeCaps/);
+        expect(src).not.toMatch(/\bname:\s*deps\.runtimeName\(\)/);
+        return false;
+      }
+      return true;
+    });
     expect(new Set(readers)).toEqual(DIAGNOSTICS_ROUTES);
     for (const file of DIAGNOSTICS_ROUTES) expect(fs.existsSync(path.join(ROOT, file))).toBe(true);
     // 白名单文件本身也必须走「中性 DTO」：不得把 runtime 名拼进业务错误文案。
