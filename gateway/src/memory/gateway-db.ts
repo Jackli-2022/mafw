@@ -17,10 +17,12 @@ export interface T1Observation {
   id: number;
   session_id: string;
   turn_id: number;
-  /** Logical turn trace (`t1_turns.trace_id`) the observation belongs to. */
-  trace_id: string;
-  /** Stable per-observation identity (`t1o_<uuid>`); null for legacy rows. */
-  observation_key: string;
+  /** Logical turn trace (`t1_turns.trace_id`) the observation belongs to;
+   *  null for legacy rows until the Task 4 backfill. */
+  trace_id: string | null;
+  /** Stable per-observation identity (`t1o_<uuid>`); null for legacy rows
+   *  until the Task 4 backfill. */
+  observation_key: string | null;
   source: ObservationSource;
   content: string;
   failure: number;
