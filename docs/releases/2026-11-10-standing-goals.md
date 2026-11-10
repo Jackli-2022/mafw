@@ -3,11 +3,11 @@
 - **版本**：`v5.1.0` 基础上交付（不新打 tag；合入 `main` 后由发布记录补充 merge hash）
 - **分支**：独立 worktree（detached HEAD）
 - **基础**：`main` `7ee50700`（P2.4 合并后的发布记录）
-- **集成基线**：`main` `99fe7d0d`（D3 内核重构 + T1 replay + opencode phase 4）
+- **集成基线**：`main` `a95cb840`（D3 内核重构 + T1 replay + opencode phase 4 + guard test fix）
 - **Spec**：`docs/superpowers/specs/2026-11-10-standing-goals-design.md`
 - **Plan**：`docs/superpowers/plans/2026-11-10-standing-goals.md`
-- **Head**：`33f7e643`（P2.5 代码）；集成 `main` `99fe7d0d` 后合并
-- **Merge**：待合入 `main`
+- **Head**：`33f7e643`（P2.5 代码）；集成 `main` `a95cb840` 后合并
+- **Merge**：`87211a31`（main）
 
 ## 交付
 
