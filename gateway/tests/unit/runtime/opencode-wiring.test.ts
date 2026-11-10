@@ -3,7 +3,7 @@ import { join } from 'path';
 import { defineRuntime } from '@mafw/runtime-contract';
 import { RuntimeBus } from '../../../src/runtime/runtime-bus';
 import { toRuntimeDefinition, getBridgeEventEntry } from '../../../src/runtime/adapter-bridge';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS } from '../../../../adapters/opencode/src/events';
 
 const GATEWAY = join(__dirname, '../../..');
 

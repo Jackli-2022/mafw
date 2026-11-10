@@ -3,7 +3,7 @@ import { join } from 'path';
 import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
 import { mafwBroadcast } from '../../../src/runtime/event-broadcast';
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../src/runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../../adapters/opencode/src/events';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 
 /** v2 全链路 golden：opencode 原生（GlobalEvent 信封）→ 翻译表 → canonical → facets。 */

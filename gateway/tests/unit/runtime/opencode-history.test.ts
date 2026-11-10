@@ -5,7 +5,7 @@
  * 为字符串——翻译 = 纯信封搬移（info 字段全量同名展开到顶层，parts → content
  * 引用直通）。round-trip 恒等性由 Task 5 的 golden 承担，本文件钉翻译形状。
  */
-import { normalizeOpencodeHistory } from '../../../src/runtime/opencode-history';
+import { normalizeOpencodeHistory } from '../../../../adapters/opencode/src/history';
 import { isMafwMessage } from '../../../src/runtime/canonical-types';
 
 const assistantWire = {

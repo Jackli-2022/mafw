@@ -6,7 +6,7 @@ import * as path from 'path';
 import {
   createOpencodeMcpConfigChannel,
   McpConfigError,
-} from '../../../src/runtime/opencode-mcp-config';
+} from '../../../../adapters/opencode/src/mcp-config';
 
 const FIXTURE = `{
   // top comment

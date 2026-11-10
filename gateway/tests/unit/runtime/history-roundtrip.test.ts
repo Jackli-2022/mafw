@@ -7,7 +7,7 @@
  *
  * Task 15 删除 wire egress 后，本文件不再做 flat→wire round-trip。
  */
-import { normalizeOpencodeHistory } from '../../../src/runtime/opencode-history';
+import { normalizeOpencodeHistory } from '../../../../adapters/opencode/src/history';
 import { normalizePiMessages } from '../../../../adapters/pi/src/pi-message-normalize';
 
 const T = 1_700_000_000_000;

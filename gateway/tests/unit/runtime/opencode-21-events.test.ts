@@ -8,7 +8,7 @@ import {
   OPENCODE_21_EVENT_MAPPINGS,
   OPENCODE_21_EVENT_SOURCE,
   translateOpencode21Event,
-} from '../../../src/runtime/opencode-21-events';
+} from '../../../../adapters/opencode/src/events-21';
 
 const canonical = new Set(MAFW_RUNTIME_EVENT_NAMES);
 const entry = {

@@ -14,7 +14,7 @@ import {
   OPENCODE_V1_EVENT_MAPPINGS,
   OPENCODE_V2_EVENT_MAPPINGS,
   OPENCODE_TRANSFORM_EVENT,
-} from '../../../src/runtime/opencode-events';
+} from '../../../../adapters/opencode/src/events';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 import { TOOL_PRIMITIVE_TYPES, ToolPartAssembler } from '../../../src/runtime/tool-part-assembler';
 

@@ -7,6 +7,8 @@ import { createNeutralRuntime } from '../../../src/runtime/neutral-runtime';
 import { RuntimePluginLoader } from '../../../src/runtime/loader';
 import { toRuntimeDefinition, getBridgeEventEntry } from '../../../src/runtime/adapter-bridge';
 import { createOpencodeDefinition } from '../../../src/runtime/opencode-definition';
+// Identity assertions below compare against the table the gateway definition
+// registers (`opencode-events` shim → the package), so import it from the shim.
 import { OPENCODE_V1_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
 import { createOpencodeRuntime } from '../../../src/runtime/opencode-runtime';
 

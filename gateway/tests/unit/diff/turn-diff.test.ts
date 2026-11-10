@@ -12,7 +12,7 @@ import {
   selectTurnSnapshot,
   TurnDiffUnavailableError,
 } from '../../../src/core/diff/turn-diff';
-import { findOpenCodeSnapshotRepo } from '../../../src/runtime/opencode-snapshot';
+import { findOpenCodeSnapshotRepo } from '../../../../adapters/opencode/src/snapshot';
 
 const user = (id: string, created: number) => ({ id, role: 'user', time: { created } });
 const asst = (id: string, created: number, snapshot: any) => ({ id, role: 'assistant', time: { created }, snapshot });

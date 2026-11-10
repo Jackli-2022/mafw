@@ -3,7 +3,7 @@ import {
   readProviderBaseUrl,
   readProviderBaseUrlWithPath,
   readProviderTransportFromList,
-} from '../../src/runtime/provider-settings';
+} from '../../../adapters/opencode/src/provider-settings';
 
 const v2 = {
   provider: {

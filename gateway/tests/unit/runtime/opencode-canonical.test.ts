@@ -9,14 +9,14 @@
  */
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
-import { normalizeOpencodeHistory } from '../../../src/runtime/opencode-history';
-import { errorKindOf } from '../../../src/runtime/opencode-canonical';
+import { normalizeOpencodeHistory } from '../../../../adapters/opencode/src/history';
+import { errorKindOf } from '../../../../adapters/opencode/src/canonical';
 import {
   OPENCODE_21_EVENT_MAPPINGS,
   OPENCODE_21_EVENT_SOURCE,
   translateOpencode21Event,
-} from '../../../src/runtime/opencode-21-events';
-import { OPENCODE_EVENT_MAPPINGS, OPENCODE_EVENT_SOURCE, OPENCODE_TRANSFORM_EVENT } from '../../../src/runtime/opencode-events';
+} from '../../../../adapters/opencode/src/events-21';
+import { OPENCODE_EVENT_MAPPINGS, OPENCODE_EVENT_SOURCE, OPENCODE_TRANSFORM_EVENT } from '../../../../adapters/opencode/src/events';
 
 const V1_ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,

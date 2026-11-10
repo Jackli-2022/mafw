@@ -5,7 +5,7 @@
  * （sync 信封或 session.next.* 出现 ⇒ 2.x serve）；无信号（idle serve）/超时/
  * 异常 ⇒ @v1 fail-safe（legacy 族在任何 serve 上都发，方向安全）。
  */
-import { probeOpencodeDialect } from '../../../src/runtime/opencode-dialect-probe';
+import { probeOpencodeDialect } from '../../../../adapters/opencode/src/dialect-probe';
 
 function sseBody(chunks: string[], readDelayMs = 0) {
   let i = 0;

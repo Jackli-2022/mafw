@@ -11,7 +11,7 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { normalizeOpencodeHistory } from '../../../src/runtime/opencode-history';
+import { normalizeOpencodeHistory } from '../../../../adapters/opencode/src/history';
 import { normalizePiMessages } from '../../../../adapters/pi/src/pi-message-normalize';
 import { normalizeClaudeHistory } from '../../../../adapters/claude/src/history';
 import { applyEventMappings, canonicalTypeSet } from '../../../src/runtime/event-mapper';
@@ -19,7 +19,7 @@ import { mafwBroadcast } from '../../../src/runtime/event-broadcast';
 import { ToolPartAssembler } from '../../../src/runtime/tool-part-assembler';
 import {
   OPENCODE_EVENT_MAPPINGS, OPENCODE_EVENT_SOURCE, OPENCODE_TRANSFORM_EVENT,
-} from '../../../src/runtime/opencode-events';
+} from '../../../../adapters/opencode/src/events';
 import { PI_EVENT_MAPPINGS, PI_EVENT_SOURCE, piTransformEvent } from '../../fixtures/pi-canonical-events';
 import { CLAUDE_EVENT_MAPPINGS, CLAUDE_EVENT_SOURCE, claudeTransformEvent } from '../../../../adapters/claude/src/events';
 import { handleSessionHistory } from '../../../src/routes/session-history';

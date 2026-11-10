@@ -11,7 +11,7 @@ import {
   type CheckpointServiceDeps,
 } from '../../../src/core/checkpoint/checkpoint-service';
 import type { SessionCheckpointRow } from '../../../src/memory/gateway-db';
-import { findOpenCodeSnapshotRepo } from '../../../src/runtime/opencode-snapshot';
+import { findOpenCodeSnapshotRepo } from '../../../../adapters/opencode/src/snapshot';
 
 const T1 = 'a'.repeat(40);
 const T2 = 'b'.repeat(40);

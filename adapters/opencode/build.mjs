@@ -12,8 +12,14 @@
  * `jsonc-parser` (opencode.jsonc writer) and `cross-spawn` (Windows `.cmd` shim
  * resolution for the serve sidecar) are bundled: they must not depend on the
  * gateway's install layout.
+ *
+ * Typings are emitted by `tsc -p tsconfig.build.json` (declaration-only) so the
+ * gateway shims — and Task 6's package shim — re-export a real surface instead
+ * of hand-maintained declarations.
  */
 import { build } from 'esbuild';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +39,10 @@ const result = await build({
   sourcemap: false,
   logLevel: 'info',
   metafile: true,
+  // `jsonc-parser`'s UMD entry passes the outer `require` into its factory, which
+  // esbuild cannot rewrite (`require('./impl/format')` stays dynamic) and the
+  // bundle then fails at runtime. Prefer its ESM entry so the imports inline.
+  mainFields: ['module', 'main'],
   external: [
     '@opencode-ai/sdk',
     '@opencode-ai/sdk/v2',
@@ -46,18 +56,14 @@ const bytes = Object.values(result.metafile.outputs)[0]?.bytes ?? 0;
 
 // The package root is ESM; pin the bundle to CommonJS for require().
 writeFileSync(resolve(here, 'dist/package.json'), JSON.stringify({ type: 'commonjs' }, null, 2) + '\n');
-writeFileSync(
-  resolve(here, 'dist/index.d.ts'),
-  [
-    "export declare const ADAPTER_PACKAGE_NAME: '@mafw/adapter-opencode';",
-    "export declare const OPENCODE_RUNTIME_NAME: 'opencode';",
-    "export type OpencodeVariant = 'adaptive' | 'v1' | 'v2' | 'v21';",
-    'export declare const OPENCODE_VARIANTS: readonly OpencodeVariant[];',
-    'export declare const ADAPTER_EVENT_API_VERSION: number;',
-    'export declare function loadOpencodeSdkV2(): Promise<unknown>;',
-    '',
-  ].join('\n'),
-);
+
+// Real typings for the extracted driver surface (the gateway shims re-export
+// from this package, so hand-maintained declarations would silently drift).
+// Declarations are emitted next to the bundle; `dist/package.json`
+// (`type: commonjs`) makes TS read them as the CJS entry's types.
+const require = createRequire(import.meta.url);
+const tsc = require.resolve('typescript/bin/tsc', { paths: [here] });
+execFileSync(process.execPath, [tsc, '-p', resolve(here, 'tsconfig.build.json')], { stdio: 'inherit' });
 
 // `@opencode-ai/sdk/v2` is an ESM-only subpath: the bundle must keep a real
 // `import()` there. A `require()` rewrite would throw ERR_REQUIRE_ESM at

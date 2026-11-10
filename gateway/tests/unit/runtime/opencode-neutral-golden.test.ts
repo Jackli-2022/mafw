@@ -4,8 +4,8 @@ import { RuntimeBus } from '../../../src/runtime/runtime-bus';
 import { toRuntimeDefinition } from '../../../src/runtime/adapter-bridge';
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../src/runtime/opencode-events';
-import { OPENCODE_21_EVENT_MAPPINGS, OPENCODE_21_EVENT_SOURCE, translateOpencode21Event } from '../../../src/runtime/opencode-21-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../../adapters/opencode/src/events';
+import { OPENCODE_21_EVENT_MAPPINGS, OPENCODE_21_EVENT_SOURCE, translateOpencode21Event } from '../../../../adapters/opencode/src/events-21';
 
 const ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,

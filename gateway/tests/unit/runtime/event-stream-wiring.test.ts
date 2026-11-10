@@ -7,7 +7,7 @@
  * （自适应 opencode）时经探测覆盖。
  */
 import { wrapDialectEventStream } from '../../../src/runtime/event-stream-wiring';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS } from '../../../../adapters/opencode/src/events';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 import { TOOL_PRIMITIVE_TYPES } from '../../../src/runtime/tool-part-assembler';
 

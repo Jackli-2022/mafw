@@ -13,7 +13,7 @@ import {
   type CheckpointServiceDeps,
 } from '../../../src/core/checkpoint/checkpoint-service';
 import { defaultGit } from '../../../src/core/diff/turn-diff';
-import { findOpenCodeSnapshotRepo } from '../../../src/runtime/opencode-snapshot';
+import { findOpenCodeSnapshotRepo } from '../../../../adapters/opencode/src/snapshot';
 import type { SessionCheckpointRow } from '../../../src/memory/gateway-db';
 
 const exec = promisify(execFile);

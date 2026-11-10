@@ -1,4 +1,4 @@
-import { expiresAtOf, formAnswerOf, formToQuestion } from '../../../src/runtime/form-question';
+import { expiresAtOf, formAnswerOf, formToQuestion } from '../../../../adapters/opencode/src/form-question';
 
 const form = {
   id: 'f1', sessionID: 's1', title: 'T',

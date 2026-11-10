@@ -14,7 +14,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { OPENCODE_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
+import { OPENCODE_EVENT_MAPPINGS } from '../../../../adapters/opencode/src/events';
 
 const SDK_TYPES = join(__dirname, '..', '..', '..', 'node_modules', '@opencode-ai', 'sdk', 'dist', 'v2', 'gen', 'types.gen.d.ts');
 

@@ -1,0 +1,15 @@
+{
+  // Typings for the gateway shims and consumers: the CJS bundle owns the runtime
+  // surface, so declarations are emitted next to it (`dist/index.d.ts` is what
+  // package.json `types` points at). Emit-only: the JS comes from esbuild.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

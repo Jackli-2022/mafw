@@ -7,7 +7,7 @@ import {
   restoreServersSubtree,
   maskSecrets,
   renderDiff,
-} from '../../../src/runtime/mcp-jsonc';
+} from '../../../../adapters/opencode/src/mcp-jsonc';
 
 const FIXTURE = `{
   // top comment

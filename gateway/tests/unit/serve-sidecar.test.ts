@@ -1,7 +1,10 @@
 import * as os from 'os';
 import * as path from 'path';
 
-jest.mock('cross-spawn', () => {
+// The extracted sidecar lives in `adapters/opencode/src` and resolves
+// `cross-spawn` from the repo root, not from `gateway/node_modules`. Mock the
+// copy the adapter actually requires so the spawn is intercepted.
+jest.mock(require.resolve('cross-spawn', { paths: [__dirname + '/../../../adapters/opencode/src'] }), () => {
   const spawnCalls: any[] = [];
   const makeChild = () => ({
     pid: 4321,
@@ -20,7 +23,7 @@ jest.mock('cross-spawn', () => {
 
 describe('resolveOpencodeBin（2.1.0 二进制解析）', () => {
   let resolveOpencodeBin: any;
-  beforeEach(() => { jest.resetModules(); resolveOpencodeBin = require('../../src/runtime/serve-sidecar').resolveOpencodeBin; });
+  beforeEach(() => { jest.resetModules(); resolveOpencodeBin = require('../../../adapters/opencode/src/serve-sidecar').resolveOpencodeBin; });
 
   test('显式 MAFW_OPENCODE_BIN / OPENCODE_BIN 优先', () => {
     const exists = () => false;
@@ -54,9 +57,9 @@ describe('serve-sidecar spawn options', () => {
 
   beforeEach(() => {
     jest.resetModules();
-    crossSpawnMock = require('cross-spawn');
+    crossSpawnMock = require(require.resolve('cross-spawn', { paths: [__dirname + '/../../../adapters/opencode/src'] }));
     if (crossSpawnMock.__reset) crossSpawnMock.__reset();
-    startServeSidecar = require('../../src/runtime/serve-sidecar').startServeSidecar;
+    startServeSidecar = require('../../../adapters/opencode/src/serve-sidecar').startServeSidecar;
   });
 
   test('spawns opencode serve with windowsHide (no black console window)', async () => {

@@ -7,8 +7,8 @@
  *  - 事件翻译（@2.1 与 @v1/@v2 方言）：synthetic shell/subagent → `background.job.updated`
  *  - `BackgroundJobService`（REST 语义：list/output/cancel）
  */
-import { OPENCODE_TRANSFORM_EVENT } from '../../../src/runtime/opencode-events';
-import { translateOpencode21Event } from '../../../src/runtime/opencode-21-events';
+import { OPENCODE_TRANSFORM_EVENT } from '../../../../adapters/opencode/src/events';
+import { translateOpencode21Event } from '../../../../adapters/opencode/src/events-21';
 import type { SessionInfo } from '../../../src/runtime/contract';
 import { SubagentService } from '../../../src/runtime/subagent-service';
 import type { TaskEntity } from '../../../src/runtime/task-service';

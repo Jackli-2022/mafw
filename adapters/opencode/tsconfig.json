@@ -1,8 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
+    // `bundler` resolution is required for the SDK's `exports` map
+    // (`@opencode-ai/sdk/v2` only ships an `import` condition); the package is
+    // bundled by esbuild, so this config is typecheck-only.
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM"],
     "strict": true,
     "esModuleInterop": true,

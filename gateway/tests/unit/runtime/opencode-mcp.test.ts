@@ -5,7 +5,7 @@ import {
   parseMcpListOutput,
   resolveMcpListCommand,
   createOpencodeMcpChannel,
-} from '../../../src/runtime/opencode-mcp';
+} from '../../../../adapters/opencode/src/mcp';
 
 describe('parseMcpListOutput', () => {
   test('connected / failed / needs_auth / disabled', () => {
