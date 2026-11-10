@@ -1,7 +1,18 @@
 // Phase D1 baseline: index.ts's legacy dispatch chain, grouped by path prefix.
-// Numbers DECREASE as migration tasks delete branches; the end state pins only
-// the static/MCP/root transport branches (they migrate to http-router.ts in D3,
-// not to RouteRegistry). Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
+// Numbers DECREASE as migration tasks delete branches. D1 END STATE (Task 9) is
+// pinned at 24 (10 match + 14 equals) and is exactly three kinds of residue:
+//   1. transport/root branches — migrate to http-router.ts in D3, NOT to
+//      RouteRegistry: /a2a, /.well-known, /a, /assets, /static, /, /index.html,
+//      /mcp, /register, /control, /health;
+//   2. RETAINED dashboard dispatch (ruling R5) — the joint
+//      `/api/goals | /api/stats | /api/memory` catch-all + handleDashboardAPI.
+//      The four well-defined shadow entries (goals.list / dashboard.stats /
+//      memory.add / memory.setSticky) are registry-first; the catch-all keeps
+//      every other path's pre-D1 behavior;
+//   3. the dead `/api/goals/control` arm (ruling R6) — shadowed by the dashboard
+//      catch-all since cdf678db2 (latent bug, deliberately NOT fixed in D1).
+// Everything else lives in routes/*.ts attached to the RouteRegistry.
+// Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
 import { execFileSync } from 'child_process';
 import * as path from 'path';
 
@@ -54,6 +65,7 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // mobile list/delete/register + pairing-code/verify) → 10+14=24. The
     // manager/session + events SSE branches are `req.url && …startsWith` blind
     // spots (no `?.`) — never counted, migrated anyway.
+    // Task 9: END STATE pin — no further D1 migration changes these numbers.
     expect(inv.byKind.match).toBe(10);
     expect(inv.byKind.equals).toBe(14);
     expect(inv.total).toBe(24);
@@ -61,22 +73,32 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
 
   it('groups match the D1 plan inventory', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
-    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage', '/api/approvals', '/api/recall', '/api/automations', '/api/chat', '/api/obs', '/api/session', '/api/llm']) {
-      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5 + B1-B4 + C1-C3 + D1 + H1-H2)
+    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage', '/api/approvals', '/api/recall', '/api/automations', '/api/chat', '/api/obs', '/api/session', '/api/llm', '/api/events', '/api/devices', '/api/pods', '/api/voice', '/api/presence', '/api/eval', '/api/config', '/api/orchestration', '/api/provider', '/api/agents', '/api/questions', '/api/permissions', '/api/usage']) {
+      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5 + B1-B4 + C1-C3 + D1 + E1-E2 + F1-F2 + H1-H2)
     }
     // questions/permissions/usage 的 7 条 match 分支曾落在 '/api' 聚合组（analyzer 对
     // 2 段式 api 路径的分组口径）：66 → 59 → 57 → 56 → 47 → 42 → 36 → 29 → 23 → 13。
     // Task H2 迁走最后 13 条（pods events 3 / mcp 2 / devices+mobile 8）→ 该组消失。
-    // /api/memory 只剩 dashboard 侧残量（4：add / pin / 兜底 startsWith / catch-all）。
-    // /api/goals 只剩 dashboard 兜底与 /control 等价臂（3）。
-    // The biggest single group is now the /api/memory residual.
     expect(byPrefix.get('/api')).toBeUndefined();
+  });
+
+  it('residual /api groups are the R5 dashboard dispatch only', () => {
+    const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
+    // R5: the joint catch-all + handleDashboardAPI are retained verbatim. These
+    // are the ONLY /api-prefixed legacy hits left after D1 (Task 9 end state).
+    // /api/memory 4 = catch-all + memory.add + memory.pin + "not yet implemented".
+    // /api/goals 3 = catch-all + the dead /api/goals/control equality arm (R6) +
+    //                handleDashboardAPI's goals.list.
+    // /api/stats 2 = catch-all + handleDashboardAPI's dashboard.stats.
+    expect(byPrefix.get('/api/memory')).toBe(4);
+    expect(byPrefix.get('/api/goals')).toBe(3);
+    expect(byPrefix.get('/api/stats')).toBe(2);
   });
 
   it('transport/root branches are pinned — they are D3, not D1', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
-    // Static/MCP/health/a2a/register/control: transport-level dispatch that
-    // migrates to http-router.ts in D3 — NOT RouteRegistry material in D1.
+    // Static/MCP/health/a2a/register/control/artifact: transport-level dispatch
+    // that migrates to http-router.ts in D3 — NOT RouteRegistry material in D1.
     expect(byPrefix.get('/assets')).toBe(1);
     expect(byPrefix.get('/static')).toBe(1);
     expect(byPrefix.get('/mcp')).toBe(2);
@@ -84,6 +106,7 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     expect(byPrefix.get('/index.html')).toBe(2);
     expect(byPrefix.get('/health')).toBe(2);
     expect(byPrefix.get('/a2a')).toBe(1);
+    expect(byPrefix.get('/a')).toBe(1);
     expect(byPrefix.get('/.well-known')).toBe(1);
     expect(byPrefix.get('/register')).toBe(1);
     expect(byPrefix.get('/control')).toBe(1);

@@ -21,6 +21,7 @@
 - [统一会话注册表（session/，内核重构 Phase C）](#统一会话注册表session内核重构-phase-c)
 - [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
 - [插件系统（四类型 loader + 统一包宿主）](#插件系统四类型-loader--统一包宿主)
+- [HTTP 路由分发（内核重构 Phase D1 现状）](#http-路由分发内核重构-phase-d1-现状)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -38,7 +39,7 @@ gateway/
 ├── bin/
 │   └── mafw.js                   # CLI 入口（进程管理、诊断、TUI）
 ├── src/
-│   ├── index.ts                  # MafwScheduler — 主调度器（~7500 行）
+│   ├── index.ts                  # MafwScheduler — 主调度器（~8200 行；HTTP 分发见「HTTP 路由分发」）
 │   ├── config.ts                 # 统一配置（三层优先级，MAFW_* 环境变量）
 │   ├── concurrency/              # 并发原语：Singleflight/MutexQueue/Guard/TtlMap/Watermark（内核重构 Phase A）
 │   ├── scheduler/                # 统一调度器：优先级队列 + 冲突策略 + 预算准入（内核重构 Phase B）
@@ -100,7 +101,7 @@ gateway/
 │   ├── media/                    # A2A Media Agent、pi-adapter、插件引擎加载器
 │   ├── python/                   # 持久 Python 内核（Jupyter wire 协议 + ZeroMQ）
 │   ├── tts/                      # TTS 引擎注册表（mimo 流式 / kokoro 本地）
-│   ├── routes/                   # 独立路由模块（runtime-switch、tools、model-config…）
+│   ├── routes/                   # 独立路由模块（40 个 attach* 入口 / 38 个文件 → RouteRegistry；见「HTTP 路由分发」）
 │   ├── plugins/                  # 统一插件包宿主（package-host/context/types）
 │   ├── commands/                 # slash 命令注册表（内置 + 用户/项目自定义）
 │   ├── usage/                    # 用量 provider 插件系统（内置适配器 = 同接口 JS 文件）
@@ -427,7 +428,7 @@ index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`rel
 
 ## MafwScheduler 关键子系统
 
-**文件**：`gateway/src/index.ts`（`class MafwScheduler`，~7500 行）。
+**文件**：`gateway/src/index.ts`（`class MafwScheduler`，~8200 行；HTTP 分发见「HTTP 路由分发」）。
 主要子系统（细节见 `docs/architecture/*` 对应文档）：
 
 | 子系统 | 位置 | 说明 |
@@ -489,6 +490,58 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
   事件映射表、工具注册通道、conformance 场景四件套）
 - 限制：包 reload 只清主文件 `require.cache`（改包内 `lib/` 需 `mafw restart`）；
   env `MAFW_PLUGINS_DIR` 覆盖包目录（测试）
+
+---
+
+## HTTP 路由分发（内核重构 Phase D1 现状）
+
+> 2026-11-10 对照源码更新。设计：`docs/superpowers/specs/2026-11-09-gateway-kernel-microkernel-design.md` §5.2；
+> 交付记录：`docs/releases/2026-11-10-gateway-kernel-d1-routes-batch2.md`。
+
+请求在 `startApiServer()` 的单个 `http.createServer` 回调里按**固定顺序**流动：
+
+```
+OPTIONS → CORS 预检 204
+→ 鉴权（loopback 直通 / MAFW_SERVER_API_TOKEN bearer）          401
+→ RouteRegistry dispatch（dispatchAuthorized）— attach 过 handler 的 (method, path) 接管
+→ 插件 Web 通配面（ui/* 与 api/*；registry 只支持精确段数）
+→ 文件级历史（loopback-only）
+→ legacy if 链残量（transport + dashboard 兜底，见下表）
+→ 反代 serve（其余一切）
+```
+
+**顺序是契约**：registry 必须在鉴权之后（内部路由不得绕过 token 门），也必须早于
+legacy 链——`goals.sessions` 先于 dashboard 兜底、`memory/embedding-config` 先于
+`/api/memory/*` 委托、`sessions.*/permissions` 先于会话兜底等顺序依赖，由 dispatch
+位置一次性满足（替代 AGENTS §6.5 那类「靠分支顺序 + 正则锚定」的隐式契约）。
+
+**路由模块**：`gateway/src/routes/` 下 38 个文件、40 个 `attach*` 入口，向 `RouteRegistry`
+（`routes/registry.ts`；catalog = `routes/route-catalog.ts`，278 条 `operationId`）挂
+**208 个 handler**。每个模块 = `attach<Domain>Routes(registry, deps)`，handler 体从
+index.ts **逐字**搬迁（状态码 / 响应形状 / fail-open / 200-not-404 miss / 405-else 臂全保留），
+`this.x` 一律换成 **live getter** `() => this.x`（boot 后重赋的字段不能捕快照）。
+新增路由 = catalog 条目（`operationId` + method + path-template）+ `attachHandler`，缺一不可达；
+path-template 里 `{id}` 是字面量、只有 `:param` 才是参数（registry 拆分后 decodeURIComponent）。
+
+**委派契约（load-bearing）**：handler 委派给既有 handler 模块时必须 `return` 委派
+promise：`return handleX(req, res, req.url!, deps)`。`dispatchAuthorized` 把 `undefined`
+视为「已处理」，因此 `if (await handleX(...)) return;` 会吞掉委派方的 `false`
+（fall-through 契约）——请求既不写响应也不落反代，客户端挂死。D1 期间这类 bug 出现 3 次
+（`sessions.background` / `mcp.*` / `session.messages`），现各有回归测试逐条钉住。
+
+**D1 结束后 legacy 链只剩三类**（`tests/unit/architecture/legacy-route-inventory.test.ts`
+以 24 = 10 match + 14 equals 钉死，group 级逐组钉：transport 11 组 + `/api/memory` 4 +
+`/api/goals` 3 + `/api/stats` 2）：
+
+| 残量 | 分组 | 归属 |
+|---|---|---|
+| transport / 静态 / MCP / 根路径 | `/a2a`、`/.well-known`、`/a`、`/assets`、`/static`、`/`、`/index.html`、`/mcp`、`/register`、`/control`、`/health` | **D3**（`http-router.ts`：auth → registry → 404；不进 RouteRegistry） |
+| dashboard 兜底（R5） | `/api/goals`、`/api/stats`、`/api/memory` 联合 `startsWith` + `handleDashboardAPI` | 保留：四个明确影子条目已 registry-first（`goals.list` / `dashboard.stats` / `memory.add` / `memory.setSticky`），其余路径行为不变 |
+| `/api/goals/control` 等价臂（R6） | 与 `/control` 共享的 POST 分支 | 死代码（自 cdf678db2 起被 dashboard 兜底遮蔽）；D1 不修，合并时按潜在 bug 处理 |
+
+`index.ts` 从 **10098 行（D1 起点 `ed2e998e`）降到 8204 行**（−1894 / −18.8%），减掉的
+全是分支体；迁移留下的 tombstone 注释（`// <METHOD> <path> — Phase D1 Task <X>：已迁
+registry dispatch。`）留在原位，D3 可直接按注释清理。
 
 ---
 
