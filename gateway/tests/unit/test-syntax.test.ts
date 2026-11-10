@@ -30,8 +30,10 @@ type SourceWithParseDiagnostics = ts.SourceFile & {
  * Parse `text` the way the compiler does and return only the parse (syntax)
  * diagnostics. `createSourceFile` always records them on `parseDiagnostics`,
  * which is internal rather than part of the public `SourceFile` typing, hence
- * the narrow cast. The fifth argument is `setParentNodes` (`true` here); there
- * is no `reportDiagnostics` argument to `createSourceFile`.
+ * the narrow cast. The signature is `(fileName, sourceText, languageVersion,
+ * setParentNodes?, scriptKind?)`: our fourth argument is `setParentNodes`
+ * (`true` here) and the fifth is the script kind. There is no
+ * `reportDiagnostics` argument to `createSourceFile`.
  */
 function parseDiagnosticsOf(fileName: string, text: string): readonly ts.Diagnostic[] {
   const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);

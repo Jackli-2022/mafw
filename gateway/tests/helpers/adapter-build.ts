@@ -55,10 +55,12 @@ export const BUILD_OUTPUTS = ['dist/index.js', 'dist/index.d.ts', 'dist/package.
 /**
  * Non-source build inputs at the adapter root. Missing any of these is stale.
  *
- * `tsconfig.json` and `package.json` belong here because `build.mjs` reads them
- * (`tsconfig.build.json` extends `tsconfig.json`; the package name/exports/type
- * shape what `dist` must satisfy): editing the compiler config or the package
- * manifest has to invalidate the bundle even when no source file changed.
+ * `tsconfig.json` and `package.json` are inputs even though `build.mjs` never
+ * reads them directly: `tsc -p tsconfig.build.json` extends `tsconfig.json`, so
+ * the compiler options shape `dist/index.d.ts`, and `package.json` governs the
+ * package identity/exports that the staged `dist` must satisfy. Both affect the
+ * build/package contract, so editing either has to invalidate `dist` even when
+ * no source file changed.
  */
 const BUILD_INPUT_FILES = ['build.mjs', 'tsconfig.json', 'tsconfig.build.json', 'package.json'] as const;
 

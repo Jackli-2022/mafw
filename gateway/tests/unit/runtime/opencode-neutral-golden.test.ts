@@ -57,16 +57,19 @@ function semanticOwner(event: any) {
 }
 
 /**
- * Payload keys that can never match between the two bridge copies, so they are
- * stripped before the deep compare:
+ * Payload keys removed before the deep compare: bridge-local identity
+ * (`turnID`, minted `id`/`at`) or the non-canonical `native` frame.
  *
- *  - `id` / `at` are minted per emitted AdapterEvent (`Date.now()` + a module
- *    counter), so a copy that forwards one into the payload (`queue.updated.id`)
- *    carries a per-run value;
  *  - `turnID` is minted by whichever copy owns the turn queue (`bridge-<sid>-
  *    bridge-<stamp>-<n>`); each module has its own counter;
  *  - `native` (when present) is the untouched upstream frame, not a canonical
- *    field.
+ *    field;
+ *  - `id` / `at` are stripped only because *some* events carry
+ *    implementation-specific identity values at the top level (the bridge mints
+ *    `id`/`at` per emitted AdapterEvent and can forward them into the payload),
+ *    so the field name is removed rather than the value compared. This is not a
+ *    claim that every `id` is volatile: `queue.updated.id`, for example, is the
+ *    upstream `data.id` and is stable across both copies.
  *
  * Everything else must still be deep-equal: a copy that keeps the right event
  * type but loses or changes a property (e.g. `queue.updated.action`, or
@@ -74,7 +77,7 @@ function semanticOwner(event: any) {
  */
 const VOLATILE_PAYLOAD_FIELDS = ['id', 'at', 'turnID', 'native'] as const;
 
-/** `payload.properties` with the bridge-local identity fields removed. */
+/** `payload.properties` with the normalized-away identity fields removed. */
 function stablePayload(event: any): Record<string, any> {
   const properties = { ...(event.payload?.properties ?? {}) };
   for (const field of VOLATILE_PAYLOAD_FIELDS) delete properties[field];
