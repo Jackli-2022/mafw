@@ -39,8 +39,8 @@ export const RUNTIME_IDENTITY_TYPES: readonly string[] = [
 ];
 
 /**
- * gateway 词汇版恒等翻译行（默认参数 = 契约 AdapterEvent 面，gateway 必须显式注入
- * 完整 MAFW 词汇：`part.complete` / `task.updated` / `session.config` 等不在 AdapterEvent ABI 内）。
+ * gateway 词汇版恒等翻译行：core API 要求调用方给出 canonical 词汇（词汇 owner 在
+ * gateway：`part.complete` / `task.updated` / `session.config` 等不是 AdapterEvent 类型）。
  */
 export function canonicalIdentity(passProperties?: string): EventMapping[] {
   return coreCanonicalIdentity(passProperties, RUNTIME_IDENTITY_TYPES);

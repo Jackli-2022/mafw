@@ -16,8 +16,5 @@
   },
   "devDependencies": {
     "typescript": "^5.7.0"
-  },
-  "dependencies": {
-    "@mafw/runtime-contract": "*"
   }
 }

@@ -285,17 +285,44 @@ test('hasEventDeclarations detects mapping rows and transformEvent', () => {
   assert.equal(hasEventDeclarations({ transformEvent: () => null }), true);
 });
 
-test('canonicalIdentity derives one identity row per canonical type (optionally passing properties)', () => {
-  const identity = canonicalIdentity();
-  assert.ok(identity.length > 0);
+/** MAFW canonical 词汇样本（含 canonical-only 名，故意不含 AdapterEvent 的 `shell.updated`）。 */
+const CANONICAL_VOCABULARY: readonly string[] = [
+  'turn.completed',
+  'session.updated',
+  'message.updated',
+  'part.updated',
+  'part.complete',
+  'task.updated',
+  'session.config',
+  'tool.call',
+  'tool.delta',
+  'tool.result',
+];
+
+test('canonicalIdentity derives one identity row per provided vocabulary entry (optionally passing properties)', () => {
+  const identity = canonicalIdentity(undefined, CANONICAL_VOCABULARY);
+  assert.equal(identity.length, CANONICAL_VOCABULARY.length);
   assert.ok(identity.every((row) => Array.isArray(row.from) === false && row.from === row.to));
   assert.equal(identity[0].passProperties, undefined);
-  const withProps = canonicalIdentity('$.payload.properties');
+  const withProps = canonicalIdentity('$.payload.properties', CANONICAL_VOCABULARY);
   assert.equal(withProps[0].passProperties, '$.payload.properties');
 });
 
-test('canonicalTypeSet returns the identity vocabulary as a set', () => {
-  const set = canonicalTypeSet();
+test('canonicalIdentity seam: canonical-only names are included, AdapterEvent-only names are not', () => {
+  const froms = canonicalIdentity('$.payload.properties', CANONICAL_VOCABULARY).map((row) => row.from);
+  assert.equal(froms.includes('part.complete'), true);
+  assert.equal(froms.includes('task.updated'), true);
+  assert.equal(froms.includes('tool.call'), true);
+  assert.equal(froms.includes('shell.updated'), false);
+  assert.equal(froms.includes('runtime.notice'), false);
+  assert.deepEqual(froms, [...CANONICAL_VOCABULARY]);
+});
+
+test('canonicalTypeSet equals the provided vocabulary', () => {
+  const set = canonicalTypeSet(CANONICAL_VOCABULARY);
+  assert.equal(set.size, CANONICAL_VOCABULARY.length);
+  for (const type of CANONICAL_VOCABULARY) assert.equal(set.has(type), true);
   assert.equal(set.has('session.updated'), true);
+  assert.equal(set.has('shell.updated'), false);
   assert.equal(set.has('not.a.type'), false);
 });

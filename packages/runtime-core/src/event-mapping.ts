@@ -8,7 +8,6 @@
  */
 import { getPath, evalConditions, renderTemplate, setPath } from './path-expr.ts';
 import type { Condition } from './path-expr.ts';
-import { ADAPTER_EVENT_TYPES } from '@mafw/runtime-contract';
 
 /** 原生 runtime 事件的最小信封形状（adapter/gateway 共用的中性类型）。 */
 export interface RawRuntimeEvent {
@@ -73,22 +72,18 @@ export interface EventMappingEntry {
 }
 
 /**
- * 默认恒等翻译词汇：runtime 契约事件面（= AdapterEvent ABI）。
- *
- * gateway 的 canonical 词汇更大（MAFW/SDK 事件面 + 工具三原语），由 gateway shim
- * 显式注入（见 `RUNTIME_IDENTITY_TYPES`）；driver 可传入自己的词汇表。
- */
-export const DEFAULT_IDENTITY_TYPES: readonly string[] = [...ADAPTER_EVENT_TYPES];
-
-/**
  * 词汇单源派生的恒等翻译行（B1 identity 声明）。
  * 恒等行 = 「该类型已注册翻译，翻译是恒等」——default-deny 下同名事件经此放行；
- * 词汇表加新类型自动覆盖（契约内类型即放行），runtime 私货类型被拦逼显式注册。
+ * 词汇表加新类型自动覆盖（词汇内类型即放行），runtime 私货类型被拦逼显式注册。
+ *
+ * `identityTypes` 必填：canonical 词汇的 owner 是调用方（gateway = MAFW/SDK 事件面
+ * ∪ 工具三原语；driver 用自己声明的词汇）。核心不得用 AdapterEvent 传输联合类型
+ * 冒充 canonical allowlist——那会放行 `shell.updated`、拦掉 `part.complete`。
  * passProperties 传 runtime 信封的 properties 路径（opencode '$.payload.properties'）。
  */
 export function canonicalIdentity(
-  passProperties?: string,
-  identityTypes: readonly string[] = DEFAULT_IDENTITY_TYPES,
+  passProperties: string | undefined,
+  identityTypes: readonly string[],
 ): EventMapping[] {
   return identityTypes.map((t) => ({
     from: t,
@@ -238,7 +233,7 @@ export function hasEventDeclarations(entry: EventMappingEntry): boolean {
   return (entry.eventMappings?.length ?? 0) > 0 || !!entry.transformEvent;
 }
 
-/** canonical 词汇集合（默认 = AdapterEvent ABI；gateway 注入自己的完整词汇）——loader/plugin-check 共用。 */
-export function canonicalTypeSet(identityTypes: readonly string[] = DEFAULT_IDENTITY_TYPES): ReadonlySet<string> {
+/** canonical 词汇集合（调用方必须给出词汇；gateway 注入完整 MAFW 词汇）——loader/plugin-check 共用。 */
+export function canonicalTypeSet(identityTypes: readonly string[]): ReadonlySet<string> {
   return new Set(identityTypes);
 }
