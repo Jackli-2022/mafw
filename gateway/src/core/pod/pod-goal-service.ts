@@ -239,7 +239,8 @@ export class PodGoalService {
       ...(verdict ? { verdict } : {}),
     });
     try {
-      this.deps.onGoalCompleted?.(goalId, outcome);
+      if (outcome) this.deps.onGoalCompleted?.(goalId, outcome);
+      else this.deps.onGoalCompleted?.(goalId);
     } catch {
       /* fail-open: memory promotion must not block Goal archival */
     }

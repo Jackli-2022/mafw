@@ -17,6 +17,7 @@
 - [Pod 协作 Goal Loop](#pod-协作-goal-loop)
 - [Goal 编排：NodeDriver 状态机](#goal-编排nodedriver-状态机)
 - [事件层与常驻存在感](#事件层与常驻存在感)
+- [长效目标（Standing Goals）](standing-goals.md)
 - [统一调度器（scheduler/，内核重构 Phase B）](#统一调度器scheduler内核重构-phase-b)
 - [统一会话注册表（session/，内核重构 Phase C）](#统一会话注册表session内核重构-phase-c)
 - [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
@@ -467,6 +468,7 @@ index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`rel
 | Lead 生命周期 | `core/manager/` + `core/pod/` | per-project Lead registry、goal 快照、里程碑推送、/btw、/waitwhat；人工 new-topic 已退役 |
 | Pod 协作循环 | `core/pod/` + `core/goal/plan-package.ts` | Goal revisions、Tech Lead 讨论/方向、Plan+Goal Eval 批准、Probe、Assignment、rubric review |
 | Pod 事件层 | `core/pod/pod-event-*.ts` + `routes/presence.ts` | `pod_events` 分级、`/api/presence` 跨项目聚合、Lead 唤醒闸门、托盘/任务栏/通知 |
+| 长效目标（Standing Goals） | `core/standing/` + `routes/standing-goals.ts` | cron/event/manual 触发 → GoalRun 分流 → 复用普通 Goal；预算/并发/审批闸门（`MAFW_STANDING_GOALS=1`） |
 | Mobile 接入 | `mobile/` + `routes/mobile` | 一次性配对深链、设备存储、mDNS、Tailscale URL、推送网关、媒体/TTS 代理 |
 | Media Agent | `media/` | A2A 协议、四模态、每模态可插拔引擎 |
 | Python 内核 | `python/` | Jupyter wire 协议（ZeroMQ）、Mutex 队列、TTL 回收 |
