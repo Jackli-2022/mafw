@@ -3,7 +3,7 @@ import { join } from 'path';
 import { defineRuntime } from '@mafw/runtime-contract';
 import { RuntimeBus } from '../../../src/runtime/runtime-bus';
 import { toRuntimeDefinition, getBridgeEventEntry, setBridgeEventEntry } from '../../../src/runtime/adapter-bridge';
-import { setBridgeEventEntry as setAdapterBridgeEventEntry } from '../../../../adapters/opencode/src/legacy-definition';
+import { setBridgeEventEntry as setAdapterBridgeEventEntry } from '../../../../adapters/opencode/src/entry-registry';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS } from '../../../../adapters/opencode/src/events';
 // Loading the shim registers the adapter's tooling map with the gateway bridge.
 import '../../../src/runtime/opencode-adapter';

@@ -374,7 +374,6 @@ describe('comment stripping keeps every scanned file whole', () => {
     '../adapters/opencode/src/adapter.ts',
     '../adapters/opencode/src/runtime.ts',
     '../adapters/opencode/src/definition.ts',
-    '../adapters/opencode/src/legacy-definition.ts',
     '../adapters/pi/src/runtime.ts',
   ];
 

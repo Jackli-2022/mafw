@@ -37,7 +37,6 @@ export * from './channels';
 export * from './host';
 export * from './entry-registry';
 export * from './registration';
-export * from './legacy-definition';
 export * from './definition';
 
 /** Package identity used by the gateway shim and the stage manifests. */

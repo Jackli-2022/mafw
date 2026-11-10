@@ -1030,4 +1030,10 @@ spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.m
   `assertPackagedPayload`：按 manifest 逐文件核对存在性与大小，打包丢文件时 CI 立刻失败。
   实机证据：`versions/5.1.0-fbdbee783d70/.install-complete.json`、
   `~/.mafw/runtime/desktop-gateway/prod/<instanceId>.json`、health `distribution=desktop-managed`。
+## Phase 4 seams（2026-11-11）
 
+- 内置 adapter 注册走 `runtime/builtin-adapters.ts` 的描述符聚合；`runtime/opencode-adapter.ts` 是唯一包绑定入口。
+- reverse proxy 只使用 `runtimeHost.proxyHeaders()`；gateway 不再回退到 adapter 的 `serveAuthHeaders()`。
+- 凭据：`runtimeGetApiKey`/`createPluginCredentials` 只使用 active host；scan 解析为 credentials → `resolveProviderTransport`，无 gateway config/provider-list fallback。
+- `runtime/legacy-plugin-bridge.ts` 为 Phase 4.1 旧插件 shim；`adapter-bridge.ts` 仅保留 deprecated re-export。
+- 协议守卫：`gateway/tests/unit/runtime/runtime-protocol-guards.test.ts`（G1–G4）。

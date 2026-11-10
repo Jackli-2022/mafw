@@ -32,6 +32,7 @@ const RULES: Rule[] = [
     pattern: /\bruntimeCaps\b|\brtCaps\b|\bworktreeApi\b|\bdiffApi\b|\bsteerApi\b|\brunStateApi\b|\bcheckpointApi\b|\bsessionBranchApi\b|\bmcpConfigApi\b|\binstructionsApi\b|\bdiscoveryApi\b/,
   },
   { name: "runtime-name", pattern: /\bruntimeName\b|\brtName\b|\bactive\.name\b/ },
+  { name: "runtime-literal", pattern: /\b(?:opencode|claude)\b/i },
   { name: "wire-shape", pattern: /\.info\s*\?\?|\bitem\.info\b|\b(?:m|msg|message|row|entry)\.parts\s*\?\?|properties\?*\.info\b/ },
   { name: "sdk-import", pattern: /@opencode-ai\/sdk/ },
 ]

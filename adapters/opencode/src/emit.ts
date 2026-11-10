@@ -8,10 +8,8 @@
  * `transport.onEvent` can yield only validated `AdapterEvent`s and the gateway
  * never sees a native envelope or canonical intermediate from this driver.
  *
- * The switch is lifted from the legacy bridge copy (`legacy-definition.ts:55-136`,
- * itself a copy of `gateway/src/runtime/adapter-bridge.ts`) and is intentionally
- * property-identical: the W1 golden pins `data` payloads, not just types, and
- * the neutral-golden A/B compares this path against the legacy one.
+ * The switch was lifted from the legacy bridge (Plan 6); the adapter copy is now
+ * the only emitter and is pinned by the native golden (type + `data`).
  *
  * Turn identity is not minted here; `OpencodeTurnAttribution` owns the queue and
  * the stable fallback ids (`opencode_turn_*`). This module only forwards a

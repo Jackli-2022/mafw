@@ -229,3 +229,14 @@ test('desktop history ingestion accepts flat messages and canonical errors', () 
   expect(errors).toContain('kind')
   expect(errors).toContain('message')
 })
+test('runtime literal names stay out of the mafw UI', () => {
+  const dir = join(SRC, 'renderer', 'mafw')
+  const bad: string[] = []
+  for (const file of walk(dir)) {
+    if (/\.(test|stories)\.(ts|tsx)$/.test(file)) continue
+    if (/(?:opencode|claude)/i.test(stripComments(readFileSync(file, 'utf8')))) {
+      bad.push(relative(ROOT, file))
+    }
+  }
+  expect(bad).toEqual([])
+})

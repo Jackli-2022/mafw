@@ -895,12 +895,12 @@ class MafwScheduler {
     try {
       const models = await ensurePiModels();
       if (models.ok) {
-        if (models.action !== 'unchanged') log.info(`[Media] pi models ${models.action}: ${models.path}`);
+        if (models.action !== 'unchanged') log.info(`[Media] media models ${models.action}: ${models.path}`);
       } else {
-        log.warn(`[Media] pi models not updated (${models.reason}): ${models.path}`);
+        log.warn(`[Media] media models not updated (${models.reason}): ${models.path}`);
       }
     } catch (err: any) {
-      log.warn(`[Media] pi models update failed (non-fatal): ${err?.message ?? err}`);
+      log.warn(`[Media] media models update failed (non-fatal): ${err?.message ?? err}`);
     }
     this.setupEventBus();
 
