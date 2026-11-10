@@ -8,8 +8,9 @@
 // turns or duplicate writes (database-level UNIQUE dedup on observations).
 import * as fs from 'fs';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import Database from 'better-sqlite3';
+import { log } from '../core/utils/logger';
 
 export type ObservationSource = 'user_input' | 'assistant_reply' | 'tool_result' | 'reasoning';
 
@@ -490,6 +491,132 @@ export class GatewayDatabase {
       CREATE INDEX IF NOT EXISTS idx_node_runs_goal_revision
         ON goal_node_runs(goal_id, revision, loop);
     `);
+
+    // Task 4: backfill durable identity onto pre-Task-4 legacy rows. Idempotent
+    // and transactional; a failure is logged and must never block startup.
+    this.migrateT1Identity();
+  }
+
+  /**
+   * Constructor-time, idempotent legacy migration: give every pre-Task-4
+   * `(session_id, turn_id)` composite a durable `t1_turns` identity and link
+   * its observation rows to that trace, without ever merging, rewriting, or
+   * deleting legacy observation content.
+   *
+   * Rules (per the T1 identity plan):
+   *  - one `t1_turns` row per legacy composite key, keyed by a deterministic
+   *    `t1l_<sha1(session_id + NUL + turn_id).slice(0,20)>` trace;
+   *  - `legacy_ambiguous = 1` when the composite holds more than one
+   *    `user_input`, or spans both active and archive tables (never guess a
+   *    precise historical boundary);
+   *  - every legacy observation row receives its composite trace plus a
+   *    table-scoped observation key (`t1o_legacy_active_<id>` /
+   *    `t1o_legacy_archive_<id>`);
+   *  - `turn_seq` equals the legacy `turn_id`, so the next allocated sequence
+   *    is always greater than every legacy sequence.
+   *
+   * Only rows whose `trace_id` is still NULL are touched, so re-running on
+   * every startup neither duplicates `t1_turns` rows nor overwrites the
+   * identity of turns allocated by `beginTurn`. Runs in one transaction; any
+   * failure is logged and swallowed so gateway startup is unaffected, with no
+   * partial commit.
+   */
+  private migrateT1Identity(): void {
+    try {
+      // Trace/observation-key indexes must come after the ALTERs that add the
+      // columns (legacy tables predate them).
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_t1_observations_trace ON t1_observations(trace_id);
+        CREATE INDEX IF NOT EXISTS idx_t1_observations_key ON t1_observations(observation_key);
+        CREATE INDEX IF NOT EXISTS idx_t1_archive_trace ON t1_archive(trace_id);
+        CREATE INDEX IF NOT EXISTS idx_t1_archive_key ON t1_archive(observation_key);
+      `);
+
+      const txn = this.db.transaction(() => {
+        const composites = this.db
+          .prepare(
+            `SELECT session_id, turn_id,
+                    SUM(user_input) AS user_input_count,
+                    MAX(active)    AS has_active,
+                    MAX(archive)   AS has_archive,
+                    MIN(created_at)    AS min_created_at,
+                    MAX(archived_at)   AS max_archived_at,
+                    MAX(salience)      AS max_salience
+             FROM (
+               SELECT session_id, turn_id,
+                      CASE WHEN source = 'user_input' THEN 1 ELSE 0 END AS user_input,
+                      1 AS active, 0 AS archive,
+                      created_at, NULL AS archived_at, salience
+                 FROM t1_observations
+                WHERE trace_id IS NULL
+               UNION ALL
+               SELECT session_id, turn_id,
+                      CASE WHEN source = 'user_input' THEN 1 ELSE 0 END AS user_input,
+                      0 AS active, 1 AS archive,
+                      created_at, archived_at, salience
+                 FROM t1_archive
+                WHERE trace_id IS NULL
+             )
+             GROUP BY session_id, turn_id`,
+          )
+          .all() as Array<{
+            session_id: string;
+            turn_id: number;
+            user_input_count: number;
+            has_active: number;
+            has_archive: number;
+            min_created_at: number | null;
+            max_archived_at: number | null;
+            max_salience: number | null;
+          }>;
+
+        const insertTurn = this.db.prepare(
+          `INSERT OR IGNORE INTO t1_turns
+             (trace_id, session_id, turn_seq, created_at, archived_at, encoding_salience, legacy_ambiguous)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        );
+        const backfillActive = this.db.prepare(
+          `UPDATE t1_observations
+              SET trace_id = ?, observation_key = 't1o_legacy_active_' || id
+            WHERE session_id = ? AND turn_id = ? AND trace_id IS NULL`,
+        );
+        const backfillArchive = this.db.prepare(
+          `UPDATE t1_archive
+              SET trace_id = ?, observation_key = 't1o_legacy_archive_' || id
+            WHERE session_id = ? AND turn_id = ? AND trace_id IS NULL`,
+        );
+
+        for (const c of composites) {
+          const trace =
+            't1l_' +
+            createHash('sha1')
+              .update(`${c.session_id}\0${c.turn_id}`)
+              .digest('hex')
+              .slice(0, 20);
+          const ambiguous =
+            c.user_input_count > 1 || (c.has_active === 1 && c.has_archive === 1) ? 1 : 0;
+          // A turn is "archived" only when it has archive rows and no active
+          // rows; a composite spanning both is left open (and marked ambiguous).
+          const archivedAt =
+            c.has_archive === 1 && c.has_active === 0 ? c.max_archived_at : null;
+          const createdAt = c.min_created_at ?? Math.floor(Date.now() / 1000);
+          insertTurn.run(
+            trace,
+            c.session_id,
+            c.turn_id,
+            createdAt,
+            archivedAt,
+            c.max_salience,
+            ambiguous,
+          );
+          backfillActive.run(trace, c.session_id, c.turn_id);
+          backfillArchive.run(trace, c.session_id, c.turn_id);
+        }
+      });
+      txn();
+    } catch (err) {
+      log.error('t1 identity legacy migration failed (startup continues)', err);
+    }
   }
 
   // ── T1 observations ─────────────────────────────────────────────────────
