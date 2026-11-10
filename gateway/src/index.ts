@@ -5347,6 +5347,21 @@ class MafwScheduler {
         broadcast: (event) => this.broadcast(event as any),
         now: () => new Date().toISOString(),
         resume: (topicId) => this.leadTopicResume.resume(topicId),
+        fork: async (topicId, input) => {
+          const topic = this.leadTopics.get(topicId);
+          if (!topic) throw Object.assign(new Error('topic not found'), { status: 404 });
+          const pod = this.podStore.getPodByProject(canonicalProjectDir(topic.projectDir));
+          if (!pod) throw Object.assign(new Error('pod not found'), { status: 404 });
+          const created = await this.podTechLeadService.createGoal({
+            podId: pod.id,
+            projectDir: topic.projectDir,
+            title: input.goalTitle || topic.title,
+            objective: topic.summary || topic.title,
+            createdBy: topic.leadSessionId,
+            forkFromTopicId: topicId,
+          });
+          return { goalId: created.goalId, sessionID: created.sessionID };
+        },
       });
       attachAttentionRoutes(this.routeRegistry, {
         views: (projectDir) => {

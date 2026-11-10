@@ -187,6 +187,9 @@ export function createMafwApi(): MafwAPI {
       approvePlan: (goalId, approvalId) => invoke("goals", "approvePlan", goalId, approvalId),
       rejectPlan: (goalId, approvalId, feedback) => invoke("goals", "rejectPlan", goalId, approvalId, feedback),
       retryNode: (goalId, runId, opts) => invoke("goals", "retryNode", goalId, runId, opts),
+      pause: (goalId) => invoke("goals", "pause", goalId),
+      stop: (goalId) => invoke("goals", "stop", goalId),
+      retry: (goalId, runId) => invoke("goals", "retry", goalId, runId),
     },
 
     memory: {
@@ -239,6 +242,13 @@ export function createMafwApi(): MafwAPI {
         list: (input) => invoke("lead", "topics.list", input),
         get: (id) => invoke("lead", "topics.get", id),
         resume: (id) => invoke("lead", "topics.resume", id),
+        fork: (id, input) => invoke("lead", "topics.fork", id, input),
+        boundaries: (id) => invoke("lead", "topics.boundaries", id),
+      },
+      boundaries: {
+        accept: (topicId, id) => invoke("lead", "boundaries.accept", topicId, id),
+        merge: (topicId, id) => invoke("lead", "boundaries.merge", topicId, id),
+        undo: (topicId, id) => invoke("lead", "boundaries.undo", topicId, id),
       },
       workingSet: (input) => invoke("lead", "workingSet", input),
       compact: (input) => invoke("lead", "compact", input),

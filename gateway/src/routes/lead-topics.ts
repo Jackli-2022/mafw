@@ -32,6 +32,7 @@ export interface LeadTopicRouteDeps {
   broadcast?(event: { type: string; properties: Record<string, unknown> }): void;
   now?(): string;
   resume?(topicId: string): Promise<{ sessionID: string; resumedFrom: string | null }>;
+  fork?(topicId: string, input: { goalTitle?: string }): Promise<{ goalId: string; sessionID?: string | null }>;
 }
 
 const EMPTY_CONTEXT: LeadContext = {
@@ -285,6 +286,22 @@ export async function handleResumeTopic(
   }
 }
 
+/** POST /api/lead/topics/:id/fork — create a new Goal from a source topic. */
+export async function handleForkTopic(
+  args: { id?: string; goalTitle?: string },
+  deps: LeadTopicRouteDeps,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const id = clean(args?.id);
+  if (!id) return { status: 400, body: { error: 'topic id is required' } };
+  if (!deps.fork) return { status: 503, body: { error: 'lead topic fork is unavailable' } };
+  try {
+    return { status: 200, body: await deps.fork(id, { goalTitle: clean(args?.goalTitle) || undefined }) };
+  } catch (err: any) {
+    const status = typeof err?.status === 'number' ? err.status : 500;
+    return { status, body: { error: String(err?.message ?? err) } };
+  }
+}
+
 function send(res: ServerResponse, out: { status: number; body: unknown }): void {
   res.writeHead(out.status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(out.body));
@@ -328,5 +345,10 @@ export function attachLeadTopicRoutes(registry: RouteRegistry, deps: LeadTopicRo
   });
   registry.attachHandler('lead.topics.resume', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
     send(res, await handleResumeTopic({ id: params.id }, deps));
+  });
+  registry.attachHandler('lead.topics.fork', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    let body: any = {};
+    try { body = JSON.parse(await readRouteBody(req) || '{}'); } catch { body = {}; }
+    send(res, await handleForkTopic({ id: params.id, goalTitle: body?.goalTitle }, deps));
   });
 }

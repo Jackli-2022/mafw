@@ -2392,7 +2392,7 @@
       "get": {
         "operationId": "attention.list",
         "tags": [
-          "attention"
+          "internal"
         ],
         "responses": {
           "200": {
@@ -2690,6 +2690,29 @@
     "/api/lead/topics/{id}/resume": {
       "post": {
         "operationId": "lead.topics.resume",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics/{id}/fork": {
+      "post": {
+        "operationId": "lead.topics.fork",
         "tags": [
           "lead"
         ],

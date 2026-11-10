@@ -4,6 +4,7 @@ import {
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline, GoalPlanInfo,
   GoalSourceRef,
   LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
+  LeadBoundaryView, LeadBoundaryDecision,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
@@ -1042,6 +1043,18 @@ export class MafwClient implements IMafwClient {
         { method: 'POST', body: JSON.stringify(opts ?? {}) },
       )
     },
+
+    pause: async (goalId: string): Promise<{ status: string }> =>
+      this.request(`/api/goals/${encodeURIComponent(goalId)}/pause`, { method: 'POST' }),
+
+    stop: async (goalId: string): Promise<{ status: string }> =>
+      this.request(`/api/goals/${encodeURIComponent(goalId)}/stop`, { method: 'POST' }),
+
+    retry: async (goalId: string, runId?: number): Promise<{ status: string }> =>
+      this.request(`/api/goals/${encodeURIComponent(goalId)}/retry`, {
+        method: 'POST',
+        body: JSON.stringify(runId === undefined ? {} : { runId }),
+      }),
   }
 
   // 鈹€鈹€ Memory 鈹€鈹€
@@ -1290,6 +1303,21 @@ export class MafwClient implements IMafwClient {
         this.request(`/api/lead/topics/${encodeURIComponent(id)}`),
       resume: async (id: string): Promise<{ sessionID: string; resumedFrom: string | null }> =>
         this.request(`/api/lead/topics/${encodeURIComponent(id)}/resume`, { method: 'POST' }),
+      fork: async (id: string, input: { goalTitle?: string } = {}): Promise<{ goalId: string; sessionID?: string | null }> =>
+        this.request(`/api/lead/topics/${encodeURIComponent(id)}/fork`, {
+          method: 'POST',
+          body: JSON.stringify(input),
+        }),
+      boundaries: async (id: string): Promise<{ items: LeadBoundaryView[] }> =>
+        this.request(`/api/lead/topics/${encodeURIComponent(id)}/boundaries`),
+    },
+    boundaries: {
+      accept: async (topicId: string, id: string): Promise<LeadBoundaryDecision> =>
+        this.request(`/api/lead/topics/${encodeURIComponent(topicId)}/boundaries/${encodeURIComponent(id)}/accept`, { method: 'POST' }),
+      merge: async (topicId: string, id: string): Promise<LeadBoundaryDecision> =>
+        this.request(`/api/lead/topics/${encodeURIComponent(topicId)}/boundaries/${encodeURIComponent(id)}/merge`, { method: 'POST' }),
+      undo: async (topicId: string, id: string): Promise<LeadBoundaryDecision> =>
+        this.request(`/api/lead/topics/${encodeURIComponent(topicId)}/boundaries/${encodeURIComponent(id)}/undo`, { method: 'POST' }),
     },
     workingSet: async (input = {}): Promise<LeadWorkingSet> => {
       const query = new URLSearchParams()

@@ -31,6 +31,7 @@ import { applyPartUpsert } from "./sse/chat-reducers"
 import { createToolPartScheduler } from "./sse/tool-part-scheduler"
 import { bumpGoalsRev, goalsRev } from "./goals-rev"
 import { buildTopicList, type LeadTopicListItem } from "./lead-topics"
+import type { LeadBoundaryView } from "@mafw/sdk"
 import { bumpCheckpointRev } from "./checkpoint-rev"
 import { keybindingFor } from "./keybinding-store"
 import { matchesCombo } from "./keybindings"
@@ -2166,6 +2167,7 @@ export function MafwShell() {
   }
   const [showTopics, setShowTopics] = createSignal(false)
   const [topicItems, setTopicItems] = createSignal<LeadTopicListItem[]>([])
+  const [topicBoundaries, setTopicBoundaries] = createSignal<LeadBoundaryView[]>([])
   const [topicBusy, setTopicBusy] = createSignal(false)
   const openTopics = async (): Promise<void> => {
     if (showTopics()) { setShowTopics(false); return }
@@ -2173,13 +2175,24 @@ export function MafwShell() {
     if (!projectDir) return
     setTopicBusy(true)
     try {
-      const result = await window.api.mafw.lead.topics.list({ projectDir })
-      setTopicItems(buildTopicList(result.items))
+      await refreshTopics(projectDir)
       setShowTopics(true)
     } catch (err: any) {
       showToastV2({ description: `读取话题失败：${err?.message || err}`, duration: 3000 } as any)
     }
     setTopicBusy(false)
+  }
+  const refreshTopics = async (projectDir: string): Promise<void> => {
+    const result = await window.api.mafw.lead.topics.list({ projectDir })
+    setTopicItems(buildTopicList(result.items))
+    const items = await Promise.all(result.items.map(async (topic) => {
+      try {
+        return (await window.api.mafw.lead.topics.boundaries(topic.id)).items
+      } catch {
+        return []
+      }
+    }))
+    setTopicBoundaries(items.flat())
   }
   const resumeTopic = async (id: string): Promise<void> => {
     setTopicBusy(true)
@@ -2189,6 +2202,32 @@ export function MafwShell() {
       await openPodSession(result.sessionID)
     } catch (err: any) {
       showToastV2({ description: `恢复话题失败：${err?.message || err}`, duration: 3000 } as any)
+    }
+    setTopicBusy(false)
+  }
+  const forkTopic = async (id: string): Promise<void> => {
+    setTopicBusy(true)
+    try {
+      const result = await window.api.mafw.lead.topics.fork(id)
+      if (result.sessionID) {
+        setShowTopics(false)
+        await openPodSession(result.sessionID)
+      }
+    } catch (err: any) {
+      showToastV2({ description: `分叉失败：${err?.message || err}`, duration: 3000 } as any)
+    }
+    setTopicBusy(false)
+  }
+  const boundaryAction = async (boundaryId: string, action: "accept" | "merge" | "undo"): Promise<void> => {
+    const boundary = topicBoundaries().find((item) => item.id === boundaryId)
+    if (!boundary) return
+    setTopicBusy(true)
+    try {
+      await window.api.mafw.lead.boundaries[action](boundary.fromTopicId, boundaryId)
+      const projectDir = currentProject()
+      if (projectDir) await refreshTopics(projectDir)
+    } catch (err: any) {
+      showToastV2({ description: `边界操作失败：${err?.message || err}`, duration: 3000 } as any)
     }
     setTopicBusy(false)
   }
@@ -2917,9 +2956,12 @@ export function MafwShell() {
                           leadAttention={() => podStore.detail()?.attention ?? []}
                           showTopics={showTopics()}
                           topicItems={topicItems()}
+                          topicBoundaries={topicBoundaries()}
                           topicBusy={topicBusy()}
                           onOpenTopics={() => void openTopics()}
                           onResumeTopic={(id) => void resumeTopic(id)}
+                          onForkTopic={(id) => void forkTopic(id)}
+                          onBoundaryAction={(id, action) => void boundaryAction(id, action)}
                           onCloseTopics={() => setShowTopics(false)}
                           onOpenTechLead={(goalId) => void openTechLead(goalId)}
                           techLeadTarget={activeTechLeadTarget}
