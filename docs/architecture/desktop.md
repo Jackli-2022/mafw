@@ -376,7 +376,7 @@ spec `docs/superpowers/specs/2026-11-04-pod-event-layer-ambient-attention-design
   修复后 goal 套件 **411/411**、`tsc` rc=0；已部署重启（health 200）。
 - **idle 归属（2026-11-05，commit `521139ba`）**：调研 `docs/research/2026-11-05-turn-idle-attribution-research.md`
   后按业界第 1 级（完成信号归属本回合）修：`NodeDriver` 记 `dispatchSeq`（派发瞬间的活动水位）与 `activitySeq`
-  （`turn.started` / `part.updated` / `part.delta` / `message.updated` 经 `handleOpencodeEvent` 单点累加）；
+  （`turn.started` / `part.updated` / `part.delta` / `message.updated` 经 `handleRuntimeEvent` 单点累加）；
   idle 到达时**没有本回合活动就忽略且不消耗 grace**，有活动才收账（无产物 → `artifact_missing`）。
   grace 超时（90s）降为「有活动却迟迟没有 idle」的兜底。测试新增 `idle-attribution` 三例（陈旧 idle 不收账 /
   有活动无产物快速失败 / 有活动有产物正常完成），harness `fireIdle` 默认模拟「先有活动再 idle」，

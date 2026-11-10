@@ -95,6 +95,7 @@ gateway/
 │   │   ├── tool-classes.ts       #   工具语义类别层（并集表 + runtime 声明 overlay）
 │   │   ├── host-adapter.ts       #   re-export `@mafw/runtime-core` 认知面契约（四动词，loopback HTTP）
 │   │   ├── event-mapper.ts / canonical-facets.ts / mafw-vocabulary.ts   # 事件映射 + 词汇单源
+│   │   ├── event-dispatch.ts     #   handleRuntimeEvent 的 24 段有序 stage 表（内核重构 Phase D2）
 │   │   ├── identity-registry.ts / identity-state.ts        # agent 身份单一事实源
 │   │   └── pi-adapter.ts         #   唯一 `require('@mafw/adapter-pi')` 入口（pi 实现已移出 gateway）
 │   ├── mcp/                      # MCP 工具注册表 + handlers（/mcp 双传输）
@@ -543,6 +544,72 @@ promise：`return handleX(req, res, req.url!, deps)`。`dispatchAuthorized` 把 
 `index.ts` 从 **10098 行（D1 起点 `ed2e998e`）降到 8204 行**（−1894 / −18.8%），减掉的
 全是分支体；迁移留下的 tombstone 注释（`// <METHOD> <path> — Phase D1 Task <X>：已迁
 registry dispatch。`）留在原位，D3 可直接按注释清理。
+
+---
+
+## 事件分发（内核重构 Phase D2 现状）
+
+> 2026-11-10 对照源码更新。设计：`docs/superpowers/specs/2026-11-09-gateway-kernel-microkernel-design.md`
+> §5.3（拓扑）、§5.4（seq 空间，见 Ruling D2-R4）；交付记录：
+> `docs/releases/2026-11-10-gateway-kernel-d2-event-dispatch.md`。
+
+`handleRuntimeEvent`（原 `handleOpencodeEvent`，e46a75fa 改名）不再是 index.ts 里的
+277 行顺序敏感 if 链，而是一条 **facet/state 门控的 stage pipeline**，表在
+`gateway/src/runtime/event-dispatch.ts`：
+
+```
+index.ts handleRuntimeEvent(evt)
+  = normalizeOpencodeEvent(evt) → runEventPipeline(f, evt, buildDispatchCtx())
+```
+
+- **数组位置就是执行顺序**（Ruling D2-R1）：`DISPATCH_STAGES` 是 24 段的有序数组，
+  没有冗余 `order` 字段；拓扑断言一律 `stageIndex(name)` 比较（名字是稳定锚点）。
+- **`matches` = legacy 块级 if，`run` = 块体逐字**（`this.x` → `ctx.x()`；ctx 全为
+  **live getter**，27 个成员，`tokenWriterSession` 是唯一 getter/setter 写回口）。
+- **只有三段可以 HALT**（legacy 的 `return`；HALT 停掉全部下游）：
+
+| # | stage | 门 | 语义 |
+|---|---|---|---|
+| 1 | `nativeDrop` | `RUNTIME_NATIVE_DROPPED` | opencode v2 sync 信封等状态重同步噪声，边界丢弃 |
+| 2 | `toolPrimitiveDrop` | `TOOL_PRIMITIVE_TYPES` | 工具三原语属 assembler 内部入口，漏到这里即丢弃 |
+| 16 | `internalFilter` | memoryWorker 且非 turn 终态 | index-scan / extract / reflect 的 token 噪声不出站；**三终态放行**（`TURN_TERMINALS`） |
+
+其余 21 段都是 add/observe（enrich、tap、审批、权限投影、checkpoint、终态清理、
+trajectory、compaction flush、budget、Mode B、回合聚合、passthrough）。
+
+- **零 await**：整链同步；approval 的 `policy.evaluate` 保持同步契约
+  （`policy-service.ts:10`），autoCheckpoint / compact flush / queue flush 仍
+  fire-and-forget；**不新增 pipeline 级 try/catch**（legacy 没有，段内各自 fail-open）。
+- **不在 D2 范围**（D3 材料）：`broadcast()`、`setupEventBus()`、`subscribeToEvents()`、
+  `emitNodeEvent`、RuntimeBus。
+
+**拓扑测试**（`tests/unit/runtime/event-dispatch.test.ts`，33 条；表位置 + 行为双钉）：
+
+- 注释级次序契约变成断言（Ruling D2-R3）：`approvalPolicy < internalFilter`、
+  `conformanceTap < internalFilter`、`autoCheckpoint < internalFilter`、
+  `enrichToolIdentity < conformanceTap`、`internalFilter < trajectoryHandle`、
+  `finalBroadcast` 恒为最后一段、`nativeDrop < toolPrimitiveDrop`。
+- 内部会话 drop 语义（非终态无帧无 trajectory 无 last-active；终态仍出站且带
+  `internal: true`）、派生广播先于 passthrough（`trajectory.event → trajectory.turn
+  → usage.updated → turn.completed`）、终态 4 步微观次序（budget → busy →
+  `runCoordinator.onTerminal` → queue flush）、审批同步评估、enrich 先于 tap 快照。
+- **恰好三段可 halt**：按 `run` 函数体里的 halt 信号结构化断言为
+  `{nativeDrop, toolPrimitiveDrop, internalFilter}`（不引入第二个名单常量）。
+- 矩阵交叉校验（Ruling D2-R2）：两个丢弃门的命中集**恰好等于**矩阵声明的
+  `RUNTIME_NATIVE_DROPPED` / `TOOL_PRIMITIVE_TYPES`；丢弃类型不进客户端矩阵但仍是
+  「已知类型」（drop ≠ unknown 遥测）。
+- 边界守卫 `tests/unit/runtime/architecture-boundaries.test.ts`：`index.ts` 不再含链体
+  （`enrichToolIdentity(` / `applyApprovalPolicy(` / 两个 `.has(` 门缺席），只留
+  `normalizeOpencodeEvent → runEventPipeline` 接线点；链体内容在表模块里成对断言。
+
+**Ruling D2-R4（spec §5.4 降级）**：broadcast seq 空间**已经统一**——`broadcast()`
+是 EventStore 的唯一 sink（`index.ts` 内同步 `eventStore?.append()` 分配 seq，
+`part.delta` 不占号），eventBus 的扁平发射（`FLAT_EMITTERS` 注册表，10 类）与 canonical
+`mafw_event` 信封共用同一条单调 seq；`tests/unit/events/broadcast-seq.test.ts` 对这个
+混合序列（扁平 → 扁平 → 信封 = seq 1/2/3）直接钉扎。**eventBus 是内部 ingress**，不对外；
+**全量消费者迁移**（automations / startGoal / advance 改为从 EventStore 回放消费）另立
+spec —— 它需要幂等设计与不受 retention 裁剪的影子流（`event_log` 会 prune，今天这些
+消费者不是幂等的），不在 D2 内承诺。
 
 ---
 
