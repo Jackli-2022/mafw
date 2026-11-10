@@ -10,7 +10,7 @@ import type { RouteRegistry } from './registry';
 
 export interface ToolsExecuteDeps {
   buildFactory: () => (sessionId: string) => MafwToolRegistration[];
-  /** 合成事件出口（index.ts 接 handleOpencodeEvent——与 runtime 事件同管线：enrich/trajectory/广播） */
+  /** 合成事件出口（index.ts 接 handleRuntimeEvent——与 runtime 事件同管线：enrich/trajectory/广播） */
   emitEvent: (evt: unknown) => void;
 }
 

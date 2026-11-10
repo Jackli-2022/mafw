@@ -10,7 +10,8 @@ describe('concurrency regression guard', () => {
 
   /** Files that were migrated to consume concurrency/ primitives. */
   const guardedFiles = [
-    'index.ts',
+    // D3 Task 8: the giant class moved to kernel.ts.
+    'kernel.ts',
     'recall/session-worker-pool.ts',
     'memory/write-queue.ts',
     'core/instructions/instruction-sync-service.ts',
@@ -39,20 +40,20 @@ describe('concurrency regression guard', () => {
     }
   });
 
-  it('index.ts should not contain boolean mutex patterns (xxInFlight = false)', () => {
-    const index = sources.find((s) => s.file === 'index.ts')!;
+  it('kernel.ts should not contain boolean mutex patterns (xxInFlight = false)', () => {
+    const index = sources.find((s) => s.file === 'kernel.ts')!;
     expect(index.content).not.toMatch(/private\s+\w*[Ii]n[Ff]light\s*=\s*false/);
   });
 
-  it('index.ts should not contain raw promise-chain queueing (xxx = xxx.then)', () => {
-    const index = sources.find((s) => s.file === 'index.ts')!;
+  it('kernel.ts should not contain raw promise-chain queueing (xxx = xxx.then)', () => {
+    const index = sources.find((s) => s.file === 'kernel.ts')!;
     expect(index.content).not.toMatch(/this\.\w+Queue\s*=\s*this\.\w+Queue\s*\.then/);
   });
 
-  it('index.ts should import concurrency primitives', () => {
+  it('kernel.ts should import concurrency primitives', () => {
     // Phase B Task 4 removed the last Guard consumer (snapshotGuard →
     // scheduler); MutexQueue and TtlMap remain in use.
-    const index = sources.find((s) => s.file === 'index.ts')!;
+    const index = sources.find((s) => s.file === 'kernel.ts')!;
     expect(index.content).toMatch(/from\s+'\.\/concurrency\/mutex-queue'/);
     expect(index.content).toMatch(/from\s+'\.\/concurrency\/ttl-map'/);
   });
@@ -72,20 +73,21 @@ describe('concurrency regression guard', () => {
 
 describe('scheduler migration guard (Phase B Task 3)', () => {
   const srcDir = path.join(__dirname, '..', '..', '..', 'src');
-  const index = fs.readFileSync(path.join(srcDir, 'index.ts'), 'utf-8');
+  // D3 Task 8: the composition root (class MafwScheduler) moved to kernel.ts.
+  const index = fs.readFileSync(path.join(srcDir, 'kernel.ts'), 'utf-8');
   const engine = fs.readFileSync(path.join(srcDir, 'automation-engine.ts'), 'utf-8');
 
-  it('index.ts constructs the unified Scheduler and imports from scheduler/', () => {
+  it('kernel.ts constructs the unified Scheduler and imports from scheduler/', () => {
     expect(index).toMatch(/new Scheduler\(/);
     expect(index).toMatch(/from\s+['"]\.\/scheduler['"]/);
   });
 
-  it('index.ts no longer hand-rolls pipeline guards', () => {
+  it('kernel.ts no longer hand-rolls pipeline guards', () => {
     expect(index).not.toMatch(/runPipelineGuarded/);
     expect(index).not.toMatch(/pipelineGuard\s*=/);
   });
 
-  it('index.ts no longer registers actions via the module-global actionRegistry', () => {
+  it('kernel.ts no longer registers actions via the module-global actionRegistry', () => {
     expect(index).not.toMatch(/actionRegistry\.set/);
     expect(index).not.toMatch(/import\s*\{[^}]*actionRegistry[^}]*\}\s*from\s*["']\.\/automation-engine["']/);
   });
@@ -106,13 +108,13 @@ describe('scheduler migration guard (Phase B Task 3)', () => {
     expect(driver).toMatch(/new\s+MutexQueue\(\)/);
   });
 
-  it('index.ts declares the registry wiring and drives a unified sweeper (Phase C)', () => {
+  it('kernel.ts declares the registry wiring and drives a unified sweeper (Phase C)', () => {
     expect(index).toMatch(/from\s+['"]\.\/session['"]/);
     expect(index).toMatch(/sessionRegistry\.sweep\(\)/);
     expect(index).not.toMatch(/internalSessionRoles\s*=\s*new\s+Map/);
   });
 
-  it('index.ts uses the DEFAULT registry singleton (no split-brain with worker-origin)', () => {
+  it('kernel.ts uses the DEFAULT registry singleton (no split-brain with worker-origin)', () => {
     // worker-origin falls back to getDefaultSessionRegistry(); the pool and
     // views must write the SAME instance or origin resolution silently
     // no-ops in production (final review C1).
@@ -132,7 +134,7 @@ describe('scheduler migration guard (Phase B Task 3)', () => {
     expect(pool).toMatch(/registerWorkerSession/);
   });
 
-  it('index.ts wires the engine through the provider/scheduler/graph injections', () => {
+  it('kernel.ts wires the engine through the provider/scheduler/graph injections', () => {
     expect(index).toMatch(/setActionsProvider/);
     expect(index).toMatch(/setScheduler/);
     expect(index).toMatch(/setGraphProvider/);

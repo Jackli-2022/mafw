@@ -338,3 +338,9 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
   `tsc`/`tsgo -p tsconfig.json`/`electron-vite build`/根 build/`flutter analyze`+`flutter test` rc=0。
   契约产物新鲜度由 `api-contract.test.ts` 与 `contract-manifest-freshness.test.ts` 把守。
   状态：**v5.0.0 已发布**（2026-11-03，tag `v5.0.0`，release commit `49a63ca2`，main/tag 已推送）。
+## Phase 4 现状（2026-11-11）
+
+- opencode 由 `adapters/opencode` 通过原生 `defineRuntime` 装配：`transport.ts`（含断流重订阅/重探）、`host.ts`、`channels.ts`（v1 + channelsV2）、`emit.ts`（raw → canonical → 校验后的 `AdapterEvent`）。
+- `legacy-definition.ts` 已删除；gateway 只保留 `runtime/legacy-plugin-bridge.ts` 作为旧文件插件的一次性 shim（`adapter-bridge.ts` 为 deprecated re-export）。
+- gateway 侧不再持有 opencode 凭据解析、serve Basic-auth fallback、`~/.config/opencode` 路径或 external env 判定：凭据来自 active host，skills/instruction roots 来自 `discovery.roots()`，external 来自 adapter 的 `opencodeExternalMode()`。
+- 注册名/方言由 adapter 的 `OPENCODE_REGISTRATIONS` 描述符驱动；gateway `builtin-adapters.ts` 聚合，`index.ts` 不再硬编码 runtime 名。

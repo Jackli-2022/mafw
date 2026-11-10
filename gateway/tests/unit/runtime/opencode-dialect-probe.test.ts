@@ -90,4 +90,15 @@ describe('probeOpencodeDialect（SSE peek，fail-safe 恒 v1）', () => {
     const fetchImpl = (async () => ({ ok: false, status: 404 })) as unknown as typeof fetch;
     expect(await probeOpencodeDialect('http://127.0.0.1:4096', fetchImpl, 500)).toBe('v1');
   });
+
+  it('uses explicit headers instead of adapter env', async () => {
+    let seenAuth = '';
+    const fetchImpl = (async (_url: any, init: any) => {
+      seenAuth = init?.headers?.Authorization ?? '';
+      return { ok: true, status: 200, body: sseBody(['data: {"id":"e1","type":"server.connected","data":{}}\n\n']) };
+    }) as unknown as typeof fetch;
+    const dialect = await probeOpencodeDialect('http://x', fetchImpl, 1000, () => ({ Authorization: 'Bearer explicit' }));
+    expect(dialect).toBe('v21');
+    expect(seenAuth).toBe('Bearer explicit');
+  });
 });

@@ -1,9 +1,9 @@
 import { MAFW } from '@mafw/runtime-contract';
 import { backgroundJobEvent, backgroundJobFromSynthetic } from '@mafw/runtime-core';
 import { translateOpencode21Event } from '../../../../adapters/opencode/src/events-21';
-import { canonicalToAdapterEvent as canonicalToAdapterEventAdapterPackage } from '../../../../adapters/opencode/src/legacy-definition';
+import { canonicalToAdapterEvent } from '../../../src/runtime/legacy-plugin-bridge';
+const canonicalToAdapterEventAdapterPackage = canonicalToAdapterEvent;
 import { mapAdapterEvent } from '../../../src/runtime/adapter-event-mapper';
-import { canonicalToAdapterEvent } from '../../../src/runtime/adapter-bridge';
 
 function ev(type: string, data: any, extra: any = {}) {
   return { id: 'e1', type, sessionID: 's1', at: 1, data, ...extra } as any;

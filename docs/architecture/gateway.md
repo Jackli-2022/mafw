@@ -23,6 +23,7 @@
 - [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
 - [插件系统（四类型 loader + 统一包宿主）](#插件系统四类型-loader--统一包宿主)
 - [HTTP 路由分发（内核重构 Phase D1 现状）](#http-路由分发内核重构-phase-d1-现状)
+- [内核拆分（Phase D3 现状：entry / boot / kernel / HTTP）](#内核拆分phase-d3-现状entry--boot--kernel--http)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -40,7 +41,14 @@ gateway/
 ├── bin/
 │   └── mafw.js                   # CLI 入口（进程管理、诊断、TUI）
 ├── src/
-│   ├── index.ts                  # MafwScheduler — 主调度器（~8200 行；HTTP 分发见「HTTP 路由分发」）
+│   ├── index.ts                  # 33 行入口：require.main bootstrap + `export { MafwScheduler }`（内核重构 D3）
+│   ├── kernel.ts                 # class MafwScheduler — 组合根 + initServices（~6200 行；见「内核拆分」D3）
+│   ├── boot.ts                   # bootKernel(kernel) + BOOT_STEPS（27 步启动序列，D3 Task 5）
+│   ├── http-router.ts            # HTTP facade：re-export createRequestListener / createWsHub（D3）
+│   ├── http/transport.ts         # createRequestListener — CORS → auth → registry → transport → 反代（D3 Task 3）
+│   ├── http/ws-upgrade.ts        # createWsHub — /api/ws / voice / terminal / plugin WS + 心跳（D3 Task 3）
+│   ├── server/event-hub.ts       # EventHub — broadcast / setupEventBus / sseClients / wsClients（D3 Task 7）
+│   ├── subsystems/               # api-routes.ts（attachAllRoutes 编排）+ dashboard-legacy.ts（R5 兜底，D3 Task 4/6）
 │   ├── config.ts                 # 统一配置（三层优先级，MAFW_* 环境变量）
 │   ├── concurrency/              # 并发原语：Singleflight/MutexQueue/Guard/TtlMap/Watermark（内核重构 Phase A）
 │   ├── scheduler/                # 统一调度器：优先级队列 + 冲突策略 + 预算准入（内核重构 Phase B）
@@ -100,6 +108,7 @@ gateway/
 │   │   ├── tool-classes.ts       #   工具语义类别层（并集表 + runtime 声明 overlay）
 │   │   ├── host-adapter.ts       #   re-export `@mafw/runtime-core` 认知面契约（四动词，loopback HTTP）
 │   │   ├── event-mapper.ts / canonical-facets.ts / mafw-vocabulary.ts   # 事件映射 + 词汇单源
+│   │   ├── event-dispatch.ts     #   handleRuntimeEvent 的 24 段有序 stage 表（内核重构 Phase D2）
 │   │   └── identity-registry.ts / identity-state.ts        # agent 身份单一事实源
 │   ├── mcp/                      # MCP 工具注册表 + handlers（/mcp 双传输）
 │   ├── media/                    # A2A Media Agent、pi-adapter、插件引擎加载器
@@ -120,10 +129,10 @@ gateway/
 mafw start / daemon / desktop adopt
     │
     ▼
-MafwScheduler.start()
+MafwScheduler.start() → boot.ts bootKernel(kernel)
     ├── installFileLogging()            → ~/.mafw/logs/mafw.log
     ├── initServices()                  → Memory + Cost + MCP + Automation
-    ├── startApiServer()                → HTTP API :3000（含 /mcp、SSE）
+    ├── startApiServer()                → HTTP API :3000（http/transport.ts + http/ws-upgrade.ts）
     ├── createRuntime()                 → runtime 选择 + 激活期校验：
     │     ├── applyRuntimeValidation()  #   声明 vs 实现（hard → 插件回退 opencode）
     │     ├── activateRuntimeTools()    #   推送六件套 factory + nativeTools → 类别 overlay
@@ -394,14 +403,14 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 | 消费方 | 提交形态 |
 |---|---|
 | AutomationEngine `executeAction` | `background`（cron/event 触发）或 `foreground`（user/llm 触发——交互方在等），`mutexKey: action:<type>`，`skip` + 30min watchdog + taskOpts 预算 |
-| index.ts 快照构建 | `midground` + `defer-to-idle`，`mutexKey: 'snapshot'`（Phase A 的 drop→queue 升级为 queue+idle 让位） |
-| index.ts compaction flush | `background`，per-session `compact-flush:<sid>` key（与 cron action key 不同，互不阻塞） |
+| kernel.ts 快照构建 | `midground` + `defer-to-idle`，`mutexKey: 'snapshot'`（Phase A 的 drop→queue 升级为 queue+idle 让位） |
+| kernel.ts compaction flush | `background`，per-session `compact-flush:<sid>` key（与 cron action key 不同，互不阻塞） |
 
 **AutomationEngine 注册表**（同批改造）：action 注册从模块级全局 Map 改为实例所有
 （`registerAction` + taskOpts）；builtins（memory:decay/review/prune）在构造时注册并
 遵守 live-instance 纪律（`setIndexManagerProvider`/`setGraphProvider` 缺席则 warn 跳过，
 **绝不 new 临时副本**——2026-09 衰减冻结与 prune 图被 live 实例回写的教训）；
-index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`reloadRules()`
+kernel.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`reloadRules()`
 调用 `refreshActions()` 确定性重建。
 
 **本批有意不迁移**（Phase B2 跟进）：
@@ -437,13 +446,13 @@ index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`rel
 
 | 视图 | 角色 | 说明 |
 |---|---|---|
-| `InternalRolesView`（index.ts） | overlay | `metadata.role`；自建记录 kind `internal`（delete 会整体注销），foreign 记录只清 role、owner 生命周期不动；kv 双写不变 |
+| `InternalRolesView`（kernel.ts） | overlay | `metadata.role`；自建记录 kind `internal`（delete 会整体注销），foreign 记录只清 role、owner 生命周期不动；kv 双写不变 |
 | worker-origin（recall/worker-origin.ts） | overlay | `metadata.originSessionID`；默认注册表单例（`getDefaultSessionRegistry`），`clearWorkerOrigins` 区分自建记录与 owner 记录 |
 | SessionWorkerPool | owner（worker 会话） | **pair 缓存留在 TtlMap**（以源会话为键——那是用户会话，不能标 kind worker）；**worker 会话**（w-* sid）在 onSessionCreated 注册（role+origin+TTL + per-record onEvict→evictPair）；`evictPair()` 是唯一的守卫式处置入口（TtlMap 访问逐出 / sweeper 记录逐出 / disposeAll 三路收敛，恰好一次）——60s sweeper 现在**独立兜住空闲 pair**，无需 getWorker 访问 |
 | LeadSessionRegistry | owner（lead） | observe-only 镜像：bind/ensure 写 kind `lead` 记录（projectId + podId），dead-row 归档注销；全部 Lead 逻辑（kv 行/活性/快照）不动 |
 | PodSessionSupervisor | owner（goal 域） | observe-only 镜像：ensure/retire 写 kind `goal` 记录（podId+memberId+goalId+revision，metadata leaseKind/runtime/generation）；租约逻辑（唯一索引兜底/单飞/冲突归因）不动 |
 
-**统一 sweeper**：index.ts 60s `sessionRegistry.sweep()`（与 queueSweepTimer 并列；`sweepBusyAndQueue` 是活跃簿记非进程表状态，保留自己的间隔——spec §9 Key Ruling 7）。
+**统一 sweeper**：kernel.ts 60s `sessionRegistry.sweep()`（与 queueSweepTimer 并列；`sweepBusyAndQueue` 是活跃簿记非进程表状态，保留自己的间隔——spec §9 Key Ruling 7）。
 
 **范围外（裁决）**：`PiSessionRegistry` 已随 neutral runtime driver 迁入 `adapters/pi/src/`（网关外，适配器自治）；`eventTaps`/`probeScopes` TTL 由 Phase A TtlMap 完成；`busySessions`/`recallCalledBySession`（活跃簿记）、memory-worker `compactIdleMs`（prompt 时策略检查）不属于进程表。CI 守卫按「已迁移文件不得回潮裸 Map」钉扎（regression-guard.test.ts）。
 
@@ -451,13 +460,13 @@ index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`rel
 
 ## MafwScheduler 关键子系统
 
-**文件**：`gateway/src/index.ts`（`class MafwScheduler`，~8200 行；HTTP 分发见「HTTP 路由分发」）。
+**文件**：`gateway/src/kernel.ts`（`class MafwScheduler`，~6200 行；入口/启动/HTTP 拆分见「内核拆分」D3）。
 主要子系统（细节见 `docs/architecture/*` 对应文档）：
 
 | 子系统 | 位置 | 说明 |
 |---|---|---|
 | 统一调度器 | `scheduler/` | 优先级队列 + 冲突策略 + 预算准入（见专节，内核重构 Phase B） |
-| serve sidecar 监管 | index.ts + 契约 | spawn/收养、watchdog、recoverServe、事件流重订阅 |
+| serve sidecar 监管 | kernel.ts + 契约 | spawn/收养、watchdog、recoverServe、事件流重订阅 |
 | Runtime 能力契约 | `runtime/` + `adapters/opencode` | Tier 0-2 + 必选工具通道；opencode 驱动在包内（`@mafw/adapter-opencode`）、gateway 只留 `runtime/opencode-adapter.ts` shim / pi 插件 / 热切换（见专节） |
 | 事件映射注册 | `runtime/event-mapper.ts` + `canonical-facets.ts` | 纯数据表（原生→canonical）+ facet 规则表；`path-expr.ts` 安全求值；工具三原语合帧（`tool-part-assembler.ts`） |
 | 谐波记忆 | `memory/` + `core/memory/` | OKF 存储、BM25/hybrid 检索、能量（ACT-R 检索加成）、巩固层语义合并 |
@@ -562,11 +571,160 @@ promise：`return handleX(req, res, req.url!, deps)`。`dispatchAuthorized` 把 
 | transport / 静态 / MCP / 根路径 | `/a2a`、`/.well-known`、`/a`、`/assets`、`/static`、`/`、`/index.html`、`/mcp`、`/register`、`/control`、`/health` | **D3**（`http-router.ts`：auth → registry → 404；不进 RouteRegistry） |
 | dashboard 兜底（R5） | `/api/goals`、`/api/stats`、`/api/memory` 联合 `startsWith` + `handleDashboardAPI` | 保留：四个明确影子条目已 registry-first（`goals.list` / `dashboard.stats` / `memory.add` / `memory.setSticky`），其余路径行为不变 |
 | `/api/goals/control` 等价臂（R6） | 与 `/control` 共享的 POST 分支 | 死代码（自 cdf678db2 起被 dashboard 兜底遮蔽）；D1 不修，合并时按潜在 bug 处理 |
-| runtime-config 内联残量 | `GET/PATCH /api/runtime-config`（`matchRuntimeConfigRoute` 门，index.ts 内联分发） | **未迁移**：analyzer 从不计数（R9），catalog 的 `runtime.config.get` / `runtime.config.update` 是**无 handler 的幻影条目**；连同 `/api/ws` upgrade（transport 级、不经 HTTP 分发链）一并归 **D3** |
+| runtime-config | `GET/PATCH /api/runtime-config` | **D3 Task 2 已迁**：`routes/runtime-config.ts` 挂 `runtime.config.get` / `runtime.config.update`（原幻影条目转实）；GET `{ config }` / PATCH `{ status:'ok', config }` 包络、`provider.config(.update)` 门与 503/500 语义逐字随迁，runtime / runtimeHost 走 live getter。analyzer 从不计数这段 helper 分发（R9 盲区），故 24 基线不变；`/api/ws` upgrade 仍归 D3 Task 3 |
 
 `index.ts` 从 **10098 行（D1 起点 `ed2e998e`）降到 8204 行**（−1894 / −18.8%），减掉的
 全是分支体；迁移留下的 tombstone 注释（`// <METHOD> <path> — Phase D1 Task <X>：已迁
-registry dispatch。`）留在原位，D3 可直接按注释清理。
+registry dispatch。`）当时留在原位，D3 Task 3/9 已连同 `startApiServer` 搬入
+`http/transport.ts` 并整体删除（历史见 `docs/releases/` + git）。
+
+---
+
+## 事件分发（内核重构 Phase D2 现状）
+
+> 2026-11-10 对照源码更新。设计：`docs/superpowers/specs/2026-11-09-gateway-kernel-microkernel-design.md`
+> §5.3（拓扑）、§5.4（seq 空间，见 Ruling D2-R4）；交付记录：
+> `docs/releases/2026-11-10-gateway-kernel-d2-event-dispatch.md`。
+
+`handleRuntimeEvent`（原 `handleOpencodeEvent`，e46a75fa 改名）不再是 index.ts 里的
+277 行顺序敏感 if 链，而是一条 **facet/state 门控的 stage pipeline**，表在
+`gateway/src/runtime/event-dispatch.ts`：
+
+```
+kernel.ts handleRuntimeEvent(evt)
+  = normalizeRuntimeEvent(evt) → runEventPipeline(f, evt, buildDispatchCtx())
+```
+
+- **数组位置就是执行顺序**（Ruling D2-R1）：`DISPATCH_STAGES` 是 24 段的有序数组，
+  没有冗余 `order` 字段；拓扑断言一律 `stageIndex(name)` 比较（名字是稳定锚点）。
+- **`matches` = legacy 块级 if，`run` = 块体逐字**（`this.x` → `ctx.x()`；ctx 全为
+  **live getter**）：`DispatchCtx` **26 个成员** = 25 个 live getter + 1 个
+  `setTokenWriterSession` 写回口；`buildDispatchCtx()` 在 kernel.ts 里 30 行。
+- **只有三段可以 HALT**（legacy 的 `return`；HALT 停掉全部下游）：
+
+| # | stage | 门 | 语义 |
+|---|---|---|---|
+| 1 | `nativeDrop` | `RUNTIME_NATIVE_DROPPED` | opencode v2 sync 信封等状态重同步噪声，边界丢弃 |
+| 2 | `toolPrimitiveDrop` | `TOOL_PRIMITIVE_TYPES` | 工具三原语属 assembler 内部入口，漏到这里即丢弃 |
+| 16 | `internalFilter` | memoryWorker 且非 turn 终态 | index-scan / extract / reflect 的 token 噪声不出站；**三终态放行**（`TURN_TERMINALS`） |
+
+其余 21 段都是 add/observe（enrich、tap、审批、权限投影、checkpoint、终态清理、
+trajectory、compaction flush、budget、Mode B、回合聚合、passthrough）。
+
+- **零 await**：整链同步；approval 的 `policy.evaluate` 保持同步契约
+  （`policy-service.ts:10`），autoCheckpoint / compact flush / queue flush 仍
+  fire-and-forget；**不新增 pipeline 级 try/catch**（legacy 没有，段内各自 fail-open）。
+- **不在 D2 范围**（D3 材料）：`broadcast()`、`setupEventBus()`、`subscribeToEvents()`、
+  `emitNodeEvent`、RuntimeBus。
+
+**拓扑测试**（`tests/unit/runtime/event-dispatch.test.ts`，33 条；表位置 + 行为双钉）：
+
+- 注释级次序契约变成断言（Ruling D2-R3）：`approvalPolicy < internalFilter`、
+  `conformanceTap < internalFilter`、`autoCheckpoint < internalFilter`、
+  `enrichToolIdentity < conformanceTap`、`internalFilter < trajectoryHandle`、
+  `finalBroadcast` 恒为最后一段、`nativeDrop < toolPrimitiveDrop`。
+- 内部会话 drop 语义（非终态无帧无 trajectory 无 last-active；终态仍出站且带
+  `internal: true`）、派生广播先于 passthrough（`trajectory.event → trajectory.turn
+  → usage.updated → turn.completed`）、终态 4 步微观次序（budget → busy →
+  `runCoordinator.onTerminal` → queue flush）、审批同步评估、enrich 先于 tap 快照。
+- **恰好三段可 halt**：按 `run` 函数体里的 halt 信号结构化断言为
+  `{nativeDrop, toolPrimitiveDrop, internalFilter}`（不引入第二个名单常量）。
+- 矩阵交叉校验（Ruling D2-R2）：两个丢弃门的命中集**恰好等于**矩阵声明的
+  `RUNTIME_NATIVE_DROPPED` / `TOOL_PRIMITIVE_TYPES`；丢弃类型不进客户端矩阵但仍是
+  「已知类型」（drop ≠ unknown 遥测）。
+- 边界守卫 `tests/unit/runtime/architecture-boundaries.test.ts`：组合根（D2 时是 `index.ts`，
+  D3 后是 `kernel.ts`）不再含链体（`enrichToolIdentity(` / `applyApprovalPolicy(` / 两个 `.has(`
+  门缺席），只留 `normalizeRuntimeEvent → runEventPipeline` 接线点；链体内容在表模块里成对断言。
+
+**Ruling D2-R4（spec §5.4 降级）**：broadcast seq 空间**已经统一**——`broadcast()`
+是 EventStore 的唯一 sink（`server/event-hub.ts` 内同步 `eventStore?.append()` 分配 seq，
+`part.delta` 不占号），eventBus 的扁平发射（`FLAT_EMITTERS` 注册表，10 类）与 canonical
+`mafw_event` 信封共用同一条单调 seq；`tests/unit/events/broadcast-seq.test.ts` 对这个
+混合序列（扁平 → 扁平 → 信封 = seq 1/2/3）直接钉扎。**eventBus 是内部 ingress**，不对外；
+**全量消费者迁移**（automations / startGoal / advance 改为从 EventStore 回放消费）另立
+spec —— 它需要幂等设计与不受 retention 裁剪的影子流（`event_log` 会 prune，今天这些
+消费者不是幂等的），不在 D2 内承诺。
+
+---
+
+## 内核拆分（Phase D3 现状：entry / boot / kernel / HTTP）
+
+> 2026-11-11 对照源码更新。设计：`docs/superpowers/specs/2026-11-09-gateway-kernel-microkernel-design.md`
+> §3 / §5.1 / §5.5 / §7；交付记录：`docs/releases/2026-11-10-gateway-kernel-d3.md`。
+
+`gateway/src/index.ts` 从 **8120 行降到 33 行**，只剩入口职责（Ruling D3-R7；类名仍是
+`MafwScheduler`，测试与文档依赖它）：
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `index.ts` | 33 | 日志 + `import { MafwScheduler } from './kernel'`；`export { MafwScheduler }`；`require.main === module` 时 `new MafwScheduler().start()` |
+| `kernel.ts` | 6345 | `class MafwScheduler`（组合根）：字段 / `initServices()` / 子系统方法；不再内联 HTTP 分发 |
+| `boot.ts` | 1027 | `bootKernel(kernel)` = 原 `start()` 逐字（83 成员 `BootKernel` 视图）+ `BOOT_STEPS` 27 步有序声明（D3-R6：DB-open-before-migration 气味只记录不修） |
+| `http-router.ts` | 42 | spec §5.1 HTTP facade：re-export `createRequestListener` / `TransportDeps` / `createWsHub` / `WsHub`（无逻辑、无分发） |
+| `http/transport.ts` | 524 | `createRequestListener(deps)`：CORS/OPTIONS → auth → registry → plugin web → file history → transport 分支 → dashboard 兜底（R6 顺序保留）→ `/register` → `/control` → `/health` → 反代 → 500 |
+| `http/ws-upgrade.ts` | 203 | `createWsHub(server, deps)`：`/api/ws` / voice / terminal / plugin WS 上行 + 30s 心跳 + 60s push 维护；`dispose()` 由 `shutdown()` 收口 |
+| `server/event-hub.ts` | 145 | `EventHub`：`broadcast()` / `setupEventBus()` / `sseClients` / `wsClients`（D3-R4；kernel 保留同名委托方法，70+ 闭包调用点未动） |
+| `subsystems/api-routes.ts` | 820 | `attachAllRoutes(deps)`：47 条 attach（46 个 `attach*` + 1 条 typed route），顺序 46/46 原样；lead/pod 外来货物逐字 |
+| `subsystems/dashboard-legacy.ts` | 248 | `handleDashboardAPI`（R5 兜底）逐字；transport 经 `dashboardDispatch` 依赖调用 |
+| `runtime/event-dispatch.ts` | 635 | D2 的 24 段 stage 表（未变） |
+
+**启动序列（`boot.ts BOOT_STEPS`，27 步，数组顺序即执行顺序）**：
+
+| 阶段 | 步骤 |
+|---|---|
+| 身份 / 租约 / 服务 | `boot.metadata` → `instance.ownership` → `services.init` → `shipped.assets` → `eventbus.setup` → `question-ledger.reconcile` |
+| HTTP / 发现 | `http.listen` → `instance.discovery` |
+| runtime | `runtime.loader` → `plugin.host` → `runtime.activate` → `serve.ensure` → `serve.watch` |
+| 注册表 / 迁移 | `registry.recover` → `datadir.migrate` → `gatewaydb.migrate` → `constraints.migrate` → `legacy-t1.archive` |
+| Goal / 自动化 / 观察 | `identities.materialize` → `goal.driver` → `state.recover` → `lead.ensure` → `automation.start` → `worker.restore` → `backup.poll` → `watchers` |
+| 自更新 | `self-update.watch` |
+
+顺序是**抽取即原样**（D3-R6）：`requires` 只做声明，不在启动期断言；`registry.recover` 先于
+`gatewaydb.migrate` 的「DB-open-before-migration」存量气味已记录，行为等价优先，不在 D3 修。
+
+**路由残量**：`node scripts/analyze-routes.cjs` 对 `index.ts` 的 TOTAL = **0**（D1 收尾 24 →
+D3 Task 3 的 5 → Task 4 的 0）。D3-R2 把 `.match` / `.startsWith` 纪律收口到
+`index.ts` + `http-router.ts` + `http/*`：transport 的 19 个 dispatcher 由
+`tests/unit/architecture/legacy-route-inventory.test.ts` 在 `http/transport.ts` **就地**钉扎
+（exact 12 + prefix 6 + artifact slot 1），dashboard 的 5 个在 `subsystems/dashboard-legacy.ts`
+钉扎；`/api/ws` 不在 HTTP 链上（`http/ws-upgrade.ts`）。
+
+**D3 验收（spec §7 字面）**：
+
+| 条件 | 状态 |
+|---|---|
+| `index.ts < 1000 行` | ✅ 33 行 |
+| `boot.ts` / `kernel.ts` / `http-router.ts` / `subsystems/` 存在 | ✅ |
+| API routes registry-only | ✅ catalog 全量 handler 化；index/transport 零 `/api/*` 路由分发（transport 只留 transport 级分支） |
+| transport 收口在 http-router | ✅ 分发只在 `http/transport.ts`；`http-router.ts` 仅 re-export |
+| 守卫 | ✅ `kernel-split-guards.test.ts` 7/7（index < 1000、模块存在、零 dispatch、entry shape、无环） |
+
+**合入 main（2026-11-11 merge reconciliation）**：D3 分支携带的是 lead/pod P2 早先快照，合入
+主线（含 P2 最终线 + adapters phase4）时按类解决 32 个冲突面里的实际 10 个：
+外来功能文件取主线版本；`gateway/src/index.ts` 取 D3 的 33 行入口；`route-catalog.ts` 两侧
+改动集合逐字相等（无需并集，297 ops 无重复）；SDK `client.ts` 取主线类型导入超集
+（192 个调用键 = 主线 ∪ 分支）。主线在 `index.ts` 上的功能增量（adapters phase4 的
+`builtinAdapterRegistrations` 注册循环 / `proxyHeaders` / `resolveScanProviderTransport` /
+T1 `searchT1` 家族 / goal pause-resume-retry 控制面 / 主题记忆提升 / provenance
+`sourceTraceIds` 等 34 个 hunk）按 D3 抽取边界**逐段落位**：启动期注册循环 → `boot.ts`，
+组合根状态与路由接线 → `kernel.ts`，反代头 → `http/transport.ts`（`deps.proxyHeaders()`），
+dashboard `memory.add` 影子条 → `subsystems/dashboard-legacy.ts`，MCP `searchT1` →
+`subsystems/api-routes.ts`。D2 的 24 段 stage 表与主线内联链体**逐段等价**（无新增段）。
+
+**合入 main P2.4 事件层（Round 2, 2026-11-11）**：主线 `901ed772..7ee50700` 的
+`index.ts` 增量（+258/−71）同样逐段落位——事件层服务/字段/`initServices` 装配与
+`ingestInternalEvent` / `processEventThread` → `kernel.ts`；`setupEventBus()` 的三条
+internal 订阅 + memory 三类事件 → `server/event-hub.ts`（经 `deps.ingestInternalEvent`）；
+`attachEventRoutes`（source/thread/subscription/delivery + GitHub webhook HMAC）→
+`subsystems/api-routes.ts`；`skillsDir()` / `runtimeConfigDir()` 改由 adapter 声明
+（`discovery.roots()`）；`DEFAULT_BUILTIN_RUNTIME` 取代 `'opencode'` 字面量与
+`opencodeExternalMode()` 取代 env 直读（`boot.ts`）；凭据链收窄为 runtime credentials
+（adapter 兜底移入包内）。事件层说明见 `docs/architecture/events.md`。
+
+**D4 遗留**（Ruling D3-R1：spec §3 的 `index < 100` / `kernel ~400` / `subsystems ~300` 不在
+D3 承诺内）：`initServices()`（1104 行）拆分到 `subsystems/*`、kernel 按注册面再分解、
+`subsystems/` 粒度、`EventTapCallback` 类型化、三个 entry 负向 pin（`core-runtime-neutrality`
+的剥离器样本等）。
 
 ---
 
@@ -1032,7 +1190,13 @@ spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.m
   `assertPackagedPayload`：按 manifest 逐文件核对存在性与大小，打包丢文件时 CI 立刻失败。
   实机证据：`versions/5.1.0-fbdbee783d70/.install-complete.json`、
   `~/.mafw/runtime/desktop-gateway/prod/<instanceId>.json`、health `distribution=desktop-managed`。
+## Phase 4 seams（2026-11-11）
 
+- 内置 adapter 注册走 `runtime/builtin-adapters.ts` 的描述符聚合；`runtime/opencode-adapter.ts` 是唯一包绑定入口。
+- reverse proxy 只使用 `runtimeHost.proxyHeaders()`；gateway 不再回退到 adapter 的 `serveAuthHeaders()`。
+- 凭据：`runtimeGetApiKey`/`createPluginCredentials` 只使用 active host；scan 解析为 credentials → `resolveProviderTransport`，无 gateway config/provider-list fallback。
+- `runtime/legacy-plugin-bridge.ts` 为 Phase 4.1 旧插件 shim；`adapter-bridge.ts` 仅保留 deprecated re-export。
+- 协议守卫：`gateway/tests/unit/runtime/runtime-protocol-guards.test.ts`（G1–G4）。
 
 ## 领域事件层（P2.4）
 

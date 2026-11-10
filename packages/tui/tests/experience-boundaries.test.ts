@@ -26,6 +26,7 @@ const RULES: Rule[] = [
     pattern: /\bruntimeCaps\b|\brtCaps\b|\bworktreeApi\b|\bdiffApi\b|\bsteerApi\b|\brunStateApi\b|\bcheckpointApi\b|\bsessionBranchApi\b|\bmcpConfigApi\b|\binstructionsApi\b|\bdiscoveryApi\b/,
   },
   { name: 'runtime-name', pattern: /\bruntimeName\b|\brtName\b|\bactive\.name\b/ },
+  { name: 'runtime-literal', pattern: /\b(?:opencode|claude)\b/i },
   // 旧 wire 历史/事件形状：`item.info ?? item`、`msg.parts ?? []`、`properties.info`。
   { name: 'wire-shape', pattern: /\.info\s*\?\?|\bitem\.info\b|\b(?:m|msg|message|row|entry)\.parts\s*\?\?|properties\?*\.info\b/ },
   { name: 'sdk-import', pattern: /@opencode-ai\/sdk/ },
@@ -62,7 +63,7 @@ test('scanner catches synthetic capability/identity/wire reads (reverse fixtures
   assert.deepEqual(scanTuiFixture('if (runtimeName === "pi") {}'), ['runtime-name'])
   assert.deepEqual(scanTuiFixture('item.info ?? item'), ['wire-shape'])
   assert.deepEqual(scanTuiFixture('const parts = msg.parts ?? [];'), ['wire-shape'])
-  assert.deepEqual(scanTuiFixture('import { x } from "@opencode-ai/sdk";'), ['sdk-import'])
+  assert.deepEqual(scanTuiFixture('import { x } from "@opencode-ai/sdk";'), ['runtime-literal', 'sdk-import'])
   // Experience / View DTO 面不误报；注释里的旧术语不误报。
   assert.deepEqual(scanTuiFixture('const ok = experience.supported("branch.fork")'), [])
   assert.deepEqual(scanTuiFixture('// 不再读 capabilities\nconst ok = 1;'), [])

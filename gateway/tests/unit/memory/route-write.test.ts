@@ -274,6 +274,45 @@ describe('routeAndWrite', () => {
     expect(s.writes).toHaveLength(0);
   });
 
+  test('skip with exact provenance reinforces the target and unions ids', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('dup', [1, 0]);
+    const target = u('dup');
+    target.source_trace_ids = ['t1t_old'];
+    target.energy = 0.8;
+    const incoming = u('n1');
+    incoming.source_trace_ids = ['t1t_new', 't1t_old'];
+    const s = memStore([target]);
+    const out = await routeAndWrite(incoming, s as any, {
+      vectors: v,
+      provider,
+      judge: async () => null,
+      readEntry: () => ({ primary_abstraction: 'n1' }),
+    });
+    expect(out).toEqual({ action: 'skip', id: 'dup', targetId: 'dup', reinforced: true });
+    expect(s.writes).toHaveLength(1);
+    expect(s.writes[0].source_trace_ids).toEqual(['t1t_new', 't1t_old']);
+    expect(s.writes[0].energy).toBeCloseTo(0.82, 5);
+  });
+
+  test('repeated reinforcement never exceeds energy 1.0', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('dup', [1, 0]);
+    const target = u('dup');
+    target.source_trace_ids = ['t1t_old'];
+    target.energy = 0.995;
+    const incoming = u('n1');
+    incoming.source_trace_ids = ['t1t_new'];
+    const s = memStore([target]);
+    await routeAndWrite(incoming, s as any, {
+      vectors: v,
+      provider,
+      judge: async () => null,
+      readEntry: () => ({ primary_abstraction: 'n1' }),
+    });
+    expect(s.writes[0].energy).toBe(1);
+  });
+
   test('update → merges into newer, supersedes target', async () => {
     const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
     v.upsert('old', [0.9, 0.44]);

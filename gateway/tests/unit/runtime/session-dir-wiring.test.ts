@@ -6,7 +6,8 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8').replace(/\r\n/g, '\n');
+// D3 Task 8: 组合根（class MafwScheduler）搬到 kernel.ts。
+const src = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8').replace(/\r\n/g, '\n');
 
 describe('session directory wiring', () => {
   test('resolvedProjectDir helper exists and is the single resolution point', () => {

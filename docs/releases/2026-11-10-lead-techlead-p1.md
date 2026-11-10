@@ -3,6 +3,8 @@
 - **分支**：`feat/gateway-kernel-d1-batch2`
 - **提交范围**：`af1d93ed..f051dedc`（P1 任务链 + review fix，plan
   `docs/superpowers/plans/2026-11-10-lead-techlead-p1-working-set.md`）
+- **合入 main**：`6cddcbf1`
+- **当前工作分支**：`feat/lead-techlead-p2`
 - **Spec**：`docs/superpowers/specs/2026-11-10-lead-techlead-p1-working-set-design.md`
 - **前置**：P0 / P0.5（`docs/releases/2026-11-10-lead-techlead-p0.md`）
 

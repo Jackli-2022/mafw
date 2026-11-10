@@ -2,6 +2,7 @@
 
 - **分支**：`feat/lead-techlead-p0`
 - **合并**：`d50f4f18`（`feat/gateway-kernel-d1-batch2` ← `b4d20575`）
+- **最终合入 main**：`6cddcbf1`（D1 batch 2 + Lead P0/P0.5/P1）
 - **后续**：`6bee9da0`（D1 迁移后重锚 history 出口守卫）
 - **Plan**：`docs/superpowers/plans/2026-11-10-lead-techlead-p0-handoff.md`
 - **Spec**：`docs/superpowers/specs/2026-11-10-lead-techlead-thread-handoff-design.md`、`2026-11-10-lead-techlead-p0-kernel-objects-design.md`、`2026-11-10-goal-shapes-quick-goals-design.md`

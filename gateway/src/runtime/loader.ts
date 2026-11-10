@@ -625,7 +625,7 @@ Match priority: eventMappings (array order — includes \`drop\` rows and
 \`canonicalIdentity()\`-derived identity rows) → transformEvent (guarded) →
 dropped + unmatched counter. There is NO canonical passthrough branch: a
 runtime emitting same-named canonical events registers identity rows via
-canonicalIdentity('$.payload.properties') (vocabulary single source).
+canonicalIdentity('<properties path>') (vocabulary single source).
 Load-time validation rejects unknown canonical targets / malformed paths /
 eventStream-without-declarations (plugin's eventStream capability degrades,
 fail-open). Drop counters: GET /api/runtime .translationDrops (unmatched =

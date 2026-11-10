@@ -48,6 +48,8 @@ export interface OpencodeDefinitionDeps {
   runtime?: OpencodeRuntime;
   /** Test seam: dialect probe override. */
   probe?: (baseUrl: string) => Promise<'v1' | 'v2' | 'v21'>;
+  /** Explicit auth headers for the dialect probe (defaults to adapter env). */
+  headers?: () => Record<string, string>;
   /** Explicit external-mode override (default: `MAFW_SERVER_SERVE_URL`). */
   external?: boolean;
 }
@@ -87,7 +89,7 @@ export async function resolveOpencodeEntry(
   if (variant === 'v2') return V2_ENTRY;
   if (variant === 'v21') return V21_ENTRY;
 
-  const probe = deps.probe ?? ((url: string) => probeOpencodeDialect(url));
+  const probe = deps.probe ?? ((url: string) => probeOpencodeDialect(url, undefined, undefined, deps.headers));
   try {
     const dialect = await probe(baseUrl);
     if (dialect === 'v21') return V21_ENTRY;
@@ -128,6 +130,7 @@ export async function createOpencodeDefinition(
   const dialectOf = (entry: EventMappingEntry): 'v1' | 'v2' | 'v21' =>
     entry === V21_ENTRY ? 'v21' : entry === V2_ENTRY ? 'v2' : 'v1';
   const staticEntry = opencodeStaticEntry(opts.variant);
+  const probeHeaders = () => ({ ...serveAuthHeaders(), ...(opts.headers ?? {}) });
 
   let definition: RuntimeDefinition | undefined;
   const onEntryResolved = (entry: EventMappingEntry) => {
@@ -141,7 +144,7 @@ export async function createOpencodeDefinition(
     // Adaptive: resolve at first event, after the serve exists. Use the
     // runtime's live base URL (it changes once the sidecar has started).
     ...(opts.variant === 'adaptive'
-      ? { resolveEntry: () => resolveOpencodeEntry(opts.variant, runtime.getBaseUrl?.() ?? opts.baseUrl, deps) }
+      ? { resolveEntry: () => resolveOpencodeEntry(opts.variant, runtime.getBaseUrl?.() ?? opts.baseUrl, { ...deps, headers: probeHeaders }) }
       : {}),
     ...(opts.hooks ? { hooks: opts.hooks } : {}),
     onEntryResolved,

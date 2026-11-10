@@ -31,8 +31,8 @@ describe('终审 #4：gate-ask 强制 human（政策环让路）', () => {
   });
 });
 
-// 终审 #3：规则错误有声日志
-const idxSrc = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// 终审 #3：规则错误有声日志（D3 Task 8：组合根在 kernel.ts）
+const idxSrc = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8');
 describe('终审 #3：规则加载错误有声 warn', () => {
   it('getRules 缓存刷新分支 log.warn errors', () => {
     expect(idxSrc).toMatch(/\[Cognition\] rule errors/);

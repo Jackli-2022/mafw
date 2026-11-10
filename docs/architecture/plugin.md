@@ -160,3 +160,7 @@ re-export shim 已在 Task 7 删除）；驱动包不得 import `gateway/src`，
 全部收敛到 gateway（`/api/memory/add` + MCP + turnCompress worker，均经
 `HarmonicUnitFileStore.write()`）。历史细节见 git 历史中的本文旧版
 （`docs/architecture/plugin.md`，≤ 2026-09）。
+## Phase 4 tooling metadata（2026-11-11）
+
+- adapter 导出 `REGISTRATION`/dialect 描述符与 `getBridgeEventEntry`/`setBridgeEventEntry`（`entry-registry.ts`），dry-event/conformance 通过 gateway 的 provider seam 读取，不依赖 legacy bridge 实例。
+- opencode 的 `discovery.roots()` 暴露 skills/instruction 根目录；插件/技能安装不再由 gateway 猜测厂商路径。

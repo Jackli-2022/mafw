@@ -23,7 +23,7 @@ function makeDeps(overrides: Partial<ConformanceDeps> = {}): ConformanceDeps {
       setTimeout(() => { cb({ type: 'part.updated', sessionID: 't1', at: 1 }); cb({ type: 'turn.completed', sessionID: 't1', at: 2 }); }, 5);
       return () => {};
     },
-    // 模拟 handleOpencodeEvent 的 tap 快照形状（normalize + enrichToolClass 已发生）
+    // 模拟 handleRuntimeEvent 的 tap 快照形状（normalize + enrichToolClass 已发生）
     injectEvent: (evt: any) => {
       const part = evt?.properties?.part
         ? { ...evt.properties.part, toolClass: evt.properties.part.toolClass ?? 'other' }
