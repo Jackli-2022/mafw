@@ -225,6 +225,7 @@ import { attachTriageRoutes } from './routes/triage';
 import { attachApprovalsRoutes } from './routes/approvals';
 import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
 import { attachUsageRoutes } from './routes/usage';
+import { attachRecallRoutes } from './routes/recall';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5636,6 +5637,19 @@ class MafwScheduler {
         trajectoryStore: () => this.trajectoryStore,
         usagePoller: () => this.usagePoller,
       });
+      // Phase D1 Task B3/B4：recall 面迁 registry dispatch（instructions/pinned/priors/
+      // context；裸 startsWith 收紧为精确段匹配，懒 require 全部保留）。
+      attachRecallRoutes(this.routeRegistry, {
+        buildInstructionBlocks: () => this.buildInstructionBlocks(),
+        instructionSync: () => this.instructionSync ?? null,
+        memoryService: () => this.memoryService,
+        recallCalledBySession: () => this.recallCalledBySession,
+        leadSessionRegistry: () => this.leadSessionRegistry,
+        registeredProjects: () => this.registeredProjects,
+        mafwDir: () => this.mafwDir,
+        getGatewayDb: () => this.getGatewayDb(),
+        getScanService: () => this.getScanService(),
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -7740,61 +7754,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/recall/instructions — T2-4 fallback: which of the three
-        // instruction blocks are missing from the session's opencode entries.
-        if (req.url?.startsWith('/api/recall/instructions') && req.method === 'GET') {
-          const { handleRecallInstructions } = require('./routes/recall-instructions');
-          const handled = await handleRecallInstructions(req, res, req.url, {
-            getBlocks: () => this.buildInstructionBlocks(),
-            getSync: () => this.instructionSync ?? null,
-          });
-          if (handled) return;
-        }
-
-        // GET /api/recall/pinned — disclosure layer for system prompt injection.
-        // Pinned memories appear every turn regardless of retrieval; fail-open.
-        if (req.url?.startsWith('/api/recall/pinned') && req.method === 'GET') {
-          try {
-            if (!this.memoryService) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } }));
-              return;
-            }
-            const { handleRecallPinned } = require('./routes/pinned-recall');
-            const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
-            const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
-            const result = await handleRecallPinned({
-              getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
-              readUnit: (id: string) => store.read(id),
-            });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            log.error('[Scheduler] recall/pinned error:', err.message);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } }));
-          }
-          return;
-        }
-
-        // GET /api/recall/priors — W1 常驻先验块（L5 公理 + L2 失败模式谱），fail-open。
-        if (req.url?.startsWith('/api/recall/priors') && req.method === 'GET') {
-          try {
-            const { handleAgentPriors } = require('./routes/agent-priors');
-            const result = await handleAgentPriors({
-              l5: new L5Store(),
-              getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
-              needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
-            });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            log.error('[Recall] priors error:', err.message);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ block: null, used: 0, budget: { maxChars: 800 } }));
-          }
-          return;
-        }
+        // GET /api/recall/{instructions,pinned,priors} — Phase D1 Task B3：已迁 registry dispatch。
 
         // GET /api/agent/capabilities — Phase D1 Task 3d：已迁 registry dispatch
         // （attachAgentRoutes；fail-open 语义随迁）。

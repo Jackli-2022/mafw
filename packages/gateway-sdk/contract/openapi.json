@@ -4924,6 +4924,32 @@
         }
       }
     },
+    "/api/recall/instructions": {
+      "get": {
+        "operationId": "recall.instructions",
+        "tags": [
+          "recall"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/recall/priors": {
+      "get": {
+        "operationId": "recall.priors",
+        "tags": [
+          "recall"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/memory/add": {
       "post": {
         "operationId": "memory.add",

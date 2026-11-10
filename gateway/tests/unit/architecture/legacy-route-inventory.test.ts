@@ -30,14 +30,15 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // Task A5: approvals 3 match + 1 equals → 80+23=103.
     // Task B1: questions 3 match + permissions 2 match → 75+23=98.
     // Task B2: usage 2 match → 73+23=96.
-    expect(inv.byKind.match).toBe(73);
+    // Task B3: recall thin three 3 match → 70+23=93.
+    expect(inv.byKind.match).toBe(70);
     expect(inv.byKind.equals).toBe(23);
-    expect(inv.total).toBe(96);
+    expect(inv.total).toBe(93);
   });
 
   it('groups match the D1 plan inventory', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
-    expect(byPrefix.get('/api/recall')).toBe(4);
+    expect(byPrefix.get('/api/recall')).toBe(1); // Task B3: thin three migrated → only /api/recall/context left
     for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage', '/api/approvals']) {
       expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5)
     }
