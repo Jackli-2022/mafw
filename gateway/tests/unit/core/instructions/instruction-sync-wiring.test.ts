@@ -5,9 +5,10 @@ const read = (rel: string) => readFileSync(join(__dirname, rel), 'utf8').replace
 
 describe('instruction sync wiring', () => {
   it('DELETE /api/session/:id forgets the per-session sync state', () => {
-    const index = read('../../../../src/index.ts');
-    const at = index.lastIndexOf('await this.sdkSession.delete(sessionID);');
+    // Phase D1 Task D1: the branch migrated verbatim into routes/sessions-core.ts.
+    const route = read('../../../../src/routes/sessions-core.ts');
+    const at = route.lastIndexOf('await deps.sdkSession().delete(sessionID);');
     expect(at).toBeGreaterThanOrEqual(0);
-    expect(index.slice(at, at + 300)).toContain('this.instructionSync?.forget(sessionID);');
+    expect(route.slice(at, at + 300)).toContain('deps.instructionSync()?.forget(sessionID);');
   });
 });

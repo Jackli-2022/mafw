@@ -8,7 +8,8 @@ describe('discovery wiring', () => {
     const index = read('../../../../src/index.ts');
     expect(index).toContain("broadcastKnown('commands_changed')");
     expect(index).toContain("broadcastKnown('runtime_switched')");
-    expect(index).toContain('discovery?.forget(sessionID)');
+    // Phase D1 Task D1: DELETE /api/session/:id migrated into routes/sessions-core.ts.
+    expect(read('../../../../src/routes/sessions-core.ts')).toContain('discovery()?.forget(sessionID)');
     expect(index).toContain('this.broadcast(mafwBroadcast(e as any))');
   });
 });

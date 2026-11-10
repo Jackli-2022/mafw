@@ -222,6 +222,7 @@ import { attachTriageRoutes } from './routes/triage';
 import { attachAutomationRoutes } from './routes/automations';
 import { attachChatRoutes } from './routes/chat';
 import { attachObsRoutes } from './routes/obs';
+import { attachSessionsCoreRoutes } from './routes/sessions-core';
 import { attachApprovalsRoutes } from './routes/approvals';
 import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
 import { attachUsageRoutes } from './routes/usage';
@@ -313,10 +314,7 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
 
 import { handlePermissionReply } from './routes/permission';
 import { surfaceUnavailableMessage } from './runtime/runtime-access';
-import { handleSessionBackground } from './routes/session-background';
 import { attachBackgroundJobHandlers } from './routes/background-jobs';
-import { handleSessionCreate } from './routes/session-create';
-import { resolveWorktreeAvailability, probeGitWorktreeSupport } from './core/worktree/worktree-availability';
 import { performRuntimeSwitch, type RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps, PluginsPackageEntry } from './routes/plugins';
@@ -5672,6 +5670,26 @@ class MafwScheduler {
         getScanService: () => this.getScanService(),
         scheduleSnapshotRefresh: (sessionID) => this.scheduleSnapshotRefresh(sessionID),
       });
+      // Phase D1 Task D1：sessions core 面迁 registry dispatch（10 分支；deleteLegacy
+      // 与 session.delete 的 cleanup 集合不同，R4 各自逐字保留）。
+      attachSessionsCoreRoutes(this.routeRegistry, {
+        getGatewayDb: () => this.getGatewayDb(),
+        resolvedProjectDir: () => this.resolvedProjectDir(),
+        sdkSession: () => this.sdkSession,
+        runtime: () => this.runtime,
+        podService: () => this.podService,
+        instructionSync: () => this.instructionSync,
+        discovery: () => this.discovery,
+        trajectoryStore: () => this.trajectoryStore,
+        identityRegistry: () => this.identityRegistry,
+        identityState: () => this.identityState,
+        runCoordinator: () => this.runCoordinator,
+        busySessions: () => this.busySessions,
+        sessionQueue: () => this.sessionQueue,
+        enqueueQueuedPrompt: (opts, source) => this.enqueueQueuedPrompt(opts, source),
+        attachBudgetGuardForPrompt: (sessionID, maxTurns, maxCostUsd) => this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd),
+        emitQueueUpdated: (sessionID, kind, items, itemId) => this.emitQueueUpdated(sessionID, kind, items, itemId),
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6294,13 +6312,7 @@ class MafwScheduler {
           })) return;
         }
 
-        // Background 中性动词（必须早于 serve 透传兜底）。
-        if (req.url?.match(/^\/api\/session\/[^/]+\/background(?:\?|$)/)) {
-          if (await handleSessionBackground(req, res, req.url!, {
-            getRuntime: () => this.runtime,
-            getAccess: () => this.runtime?.access ?? null,
-          })) return;
-        }
+        // POST /api/session/{id}/background — Phase D1 Task D1：已迁 registry dispatch。
 
         // Neutral terminal PTY façade — Phase D1 Task 3d：已迁 registry dispatch。
 
@@ -6924,207 +6936,24 @@ class MafwScheduler {
 
         // 鈹€鈹€ SdkSessionResource REST endpoints 鈹€鈹€
 
-        // POST /api/session — create a session（worktree 归属门在 routes/session-create.ts）
-        if (req.url === '/api/session' && req.method === 'POST') {
-          await handleSessionCreate(req, res, {
-            kvGet: (key, id) => this.getGatewayDb().kvGet<any>(key, id),
-            kvSet: (key, id, v) => this.getGatewayDb().kvSet(key, id, v),
-            kvDel: (key, id) => this.getGatewayDb().kvDelete(key, id),
-            // 目录必填：缺省时回退到 gateway 的单点解析（绝对路径）
-            createSession: (directory, metadata) => this.sdkSession.create(directory ?? this.resolvedProjectDir(), metadata),
-            // worktree 归属（设计 §7.1）：gateway git + session.create({directory}) 契约，
-            // 不再按 runtime 私有 worktreeApi 能力位拒绝支持的 runtime。
-            worktreeAvailability: async (directory) => {
-              let directorySupported = false;
-              try {
-                directorySupported = this.runtime?.access?.can('session.worktree') === true;
-              } catch { /* unknown surface → unsupported */ }
-              return resolveWorktreeAvailability({
-                directory,
-                directorySupported,
-                gitAvailable: await probeGitWorktreeSupport(directory),
-              });
-            },
-          });
-          return;
-        }
+        // POST /api/session — Phase D1 Task D1：已迁 registry dispatch。
 
-        // POST /api/session/{id}/promptAsync — fire-and-forget prompt
-        const promptAsyncMatch = req.url?.match(/^\/api\/session\/([^/]+)\/promptAsync(?:\?|$)/);
-        if (promptAsyncMatch && req.method === 'POST') {
-          try {
-            const sessionID = promptAsyncMatch[1];
-            const body = await readBody(req);
-            const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, thinkingLevel, variant, outputSchema } = body ? JSON.parse(body) : {};
-            if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
-            if (thinkingLevel !== undefined && !isThinkingLevel(thinkingLevel)) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: `invalid thinkingLevel: ${String(thinkingLevel)}` }));
-              return;
-            }
-            // Identity-aware (spec §3.2): picking a registry identity binds it for
-            // this turn — the policy layer evaluates the turn's tool calls against it.
-            // The agent param itself is injected/stripped by withIdentityPrompt at the runtime.
-            if (agent && this.identityRegistry.get(agent)) {
-              this.identityState.bind(sessionID, agent, 'turn');
-            }
-            // 队列交付（spec §5.3）：busy + delivery:'queue' → 入队短路响应。
-            // 终审 #4：budget 字段与 queue/暂停入队组合无强制语义（guard 只护当前回合，flush 后无保护）——显式 400 拒绝。
-            const holdsQueue = this.runCoordinator?.shouldHoldQueue(sessionID) === true;
-            if ((delivery === 'queue' || holdsQueue) && (typeof maxTurns === 'number' || typeof maxCostUsd === 'number')) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'queued/suspended send cannot carry maxTurns/maxCostUsd (budget guards the current turn only)' }));
-              return;
-            }
-            // 暂停中（T2-2）一律入队：会话已 idle，普通直发会绕过暂停。
-            if (holdsQueue || (delivery === 'queue' && this.busySessions.has(sessionID))) {
-              try {
-                const parsedBody = body ? JSON.parse(body) : {};
-                const q = await this.enqueueQueuedPrompt({
-                  sessionID, text: message, parts, agent, model, idempotencyKey,
-                  ...(parsedBody.expectReply !== undefined ? { expectReply: parsedBody.expectReply } : {}),
-                  ...(thinkingLevel ? { thinkingLevel } : {}),
-                  ...(variant ? { variant } : {}),
-                }, 'http');
-                res.writeHead(200);
-                res.end(JSON.stringify({ status: 'ok', ...q }));
-              } catch (qerr: any) {
-                res.writeHead(qerr?.statusCode ?? 500);
-                res.end(JSON.stringify({ error: qerr.message }));
-              }
-              return;
-            }
-            // P0-2：per-prompt 预算（guard 须先于 promptAsync 挂载——step 事件在回合执行中流出；
-            // 放在队列短路口之后：入队/暂停分支不挂 guard）。
-            this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);
-            await this.sdkSession.promptAsync(sessionID, message, parts, agent, model, outputSchema, {
-              ...(delivery ? { delivery } : {}),
-              ...(idempotencyKey ? { idempotencyKey } : {}),
-              ...(expectReply !== undefined ? { expectReply } : {}),
-              ...(thinkingLevel ? { thinkingLevel } : {}),
-              ...(variant ? { variant } : {}),
-            });
-            res.writeHead(200);
-            res.end(JSON.stringify({ status: 'ok' }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // POST /api/session/{id}/promptAsync — Phase D1 Task D1：已迁 registry dispatch。
 
-        // POST /api/session/{id}/prompt — synchronous prompt
-        const promptMatch = req.url?.match(/^\/api\/session\/([^/]+)\/prompt$/);
-        if (promptMatch && req.method === 'POST') {
-          try {
-            const sessionID = promptMatch[1];
-            if (this.runCoordinator?.shouldHoldQueue(sessionID)) {
-              res.writeHead(409);
-              res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
-              return;
-            }
-            const body = await readBody(req);
-            const opts = body ? JSON.parse(body) : {};
-            if (opts.thinkingLevel !== undefined && !isThinkingLevel(opts.thinkingLevel)) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: `invalid thinkingLevel: ${String(opts.thinkingLevel)}` }));
-              return;
-            }
-            const result = await this.sdkSession.prompt(sessionID, opts.parts || [], opts.system, opts.outputSchema, {
-              ...(opts.thinkingLevel ? { thinkingLevel: opts.thinkingLevel } : {}),
-              ...(opts.variant ? { variant: opts.variant } : {}),
-            });
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // POST /api/session/{id}/prompt — Phase D1 Task D1：已迁 registry dispatch。
 
-        // DELETE /api/session/{id} — delete a session
-        const deleteMatch = req.url?.match(/^\/api\/session\/([^/]+)$/);
-        if (deleteMatch && req.method === 'DELETE') {
-          try {
-            const sessionID = deleteMatch[1];
-            try {
-              await this.podService?.snapshotSession(sessionID);
-            } catch {
-              this.podService?.finalizeMissingSession(sessionID);
-            }
-            await this.sdkSession.delete(sessionID);
-            this.instructionSync?.forget(sessionID);
-            this.discovery?.forget(sessionID);
-            try { this.trajectoryStore?.deleteSession(sessionID); } catch (err: any) { log.warn(`[Trajectory] delete failed: ${err.message}`); }
-            res.writeHead(200);
-            res.end(JSON.stringify({ status: 'ok' }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // DELETE /api/session/{id} — Phase D1 Task D1：已迁 registry dispatch。
 
-        // POST /api/session/{id}/abort —abort an in-flight run
-        const abortMatch = req.url?.match(/^\/api\/session\/([^/]+)\/abort$/);
-        if (abortMatch && req.method === 'POST') {
-          try {
-            const sessionID = abortMatch[1];
-            if (!this.runtime) {
-              res.writeHead(503);
-              res.end(JSON.stringify({ error: 'LLM client not available' }));
-              return;
-            }
-            await this.runtime.session.abort({ sessionID });
-            res.writeHead(200);
-            res.end(JSON.stringify({ ok: true }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // POST /api/session/{id}/abort — Phase D1 Task D1：已迁 registry dispatch。
 
         // ── 认知面 HTTP 动词（spec 2026-10-22-cognition-gate-rewrite §5.4；loopback-only）──
         // Phase D1 Task 2：已迁 registry dispatch（attachCognitionRoutes；loopback
         // 守卫与 per-request config 读取随 handler 迁移，行为等价）。
 
         // ── 会话队列 inbox 管理面（spec 2026-10-22-session-queue-inbox §5.5）──
-        // GET /api/session/{id}/queue — 列队
-        const queueListMatch = req.url?.match(/^\/api\/session\/([^/]+)\/queue(?:\?|$)/);
-        if (queueListMatch && req.method === 'GET') {
-          const sessionID = queueListMatch[1];
-          res.writeHead(200);
-          res.end(JSON.stringify({ items: this.sessionQueue.list(sessionID) }));
-          return;
-        }
-        // DELETE /api/session/{id}/queue — 清空
-        const queueClearMatch = req.url?.match(/^\/api\/session\/([^/]+)\/queue$/);
-        if (queueClearMatch && req.method === 'DELETE') {
-          const sessionID = queueClearMatch[1];
-          const cleared = this.sessionQueue.clear(sessionID);
-          this.emitQueueUpdated(sessionID, 'clear', this.sessionQueue.list(sessionID));
-          res.writeHead(200);
-          res.end(JSON.stringify({ cleared: cleared.length }));
-          return;
-        }
-        // DELETE /api/session/{id}/queue/{itemId} — 取消单条
-        const queueCancelMatch = req.url?.match(/^\/api\/session\/([^/]+)\/queue\/([^/]+)$/);
-        if (queueCancelMatch && req.method === 'DELETE') {
-          const sessionID = queueCancelMatch[1];
-          const itemId = queueCancelMatch[2];
-          const cancelled = this.sessionQueue.cancel(sessionID, itemId);
-          if (!cancelled) {
-            res.writeHead(404);
-            res.end(JSON.stringify({ error: `queue item not found: ${itemId}` }));
-            return;
-          }
-          this.emitQueueUpdated(sessionID, 'cancel', this.sessionQueue.list(sessionID), itemId);
-          res.writeHead(200);
-          res.end(JSON.stringify({ cancelled: itemId }));
-          return;
-        }
+        // GET /api/session/{id}/queue — Phase D1 Task D1：已迁 registry dispatch。
+        // DELETE /api/session/{id}/queue — Phase D1 Task D1：已迁 registry dispatch。
+        // DELETE /api/session/{id}/queue/{itemId} — Phase D1 Task D1：已迁 registry dispatch。
 
         // DELETE/PATCH /api/sessions/:id — P5 Wave 1 起由 registry dispatch 接管
 
@@ -7149,26 +6978,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/sessions/{id} —get session via SDK (with local fallback)
-        const sessionsGetMatch = req.url?.match(/^\/api\/sessions\/([^/]+)(?:\?|$)/);
-        if (sessionsGetMatch && req.method === 'GET') {
-          try {
-            const id = sessionsGetMatch[1];
-            if (this.runtime) {
-              try {
-                const session = await this.runtime.session.get({ sessionID: id });
-                if (session) { res.writeHead(200); res.end(JSON.stringify(projectSession(session))); return; }
-              } catch {}
-            }
-            const session = await this.sdkSession.get(id);
-            res.writeHead(200);
-            res.end(JSON.stringify(session ? projectSession(session) : { error: 'not found' }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET /api/sessions/{id} — Phase D1 Task D1：已迁 registry dispatch。
 
         // GET /api/sessions/{id}/messages — flat MAFW history（默认且唯一出口）
         const messagesMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/messages(?:\?|$)/);

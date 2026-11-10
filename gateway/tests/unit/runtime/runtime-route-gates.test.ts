@@ -185,20 +185,22 @@ describe('worktree availability', () => {
   });
 });
 
-// 源码守卫：POST /api/session 的 worktree 门必须留在 index.ts 接线里（gateway git +
+// 源码守卫：POST /api/session 的 worktree 门必须留在 gateway 接线里（gateway git +
 // session.create({directory}) 契约），且 409 映射留在被抽出的 route 中。防止后续重构
-// 把门拆掉或退回 worktreeApi。
+// 把门拆掉或退回 worktreeApi。Phase D1 Task D1 起接线住在 routes/sessions-core.ts
+// （index.ts 只做 attachSessionsCoreRoutes）。
 describe('POST /api/session worktree gate wiring', () => {
   const SRC = path.resolve(__dirname, '../../../src');
   const indexSrc = fs.readFileSync(path.join(SRC, 'index.ts'), 'utf8');
+  const sessionsCoreSrc = fs.readFileSync(path.join(SRC, 'routes', 'sessions-core.ts'), 'utf8');
   const createRouteSrc = fs.readFileSync(path.join(SRC, 'routes', 'session-create.ts'), 'utf8');
 
-  it('index.ts delegates to the gated route with the production availability probe', () => {
-    expect(indexSrc).toContain("import { handleSessionCreate } from './routes/session-create';");
+  it('sessions-core delegates to the gated route with the production availability probe', () => {
+    expect(sessionsCoreSrc).toContain("import { handleSessionCreate } from './session-create';");
     expect(indexSrc).not.toContain("import { createSessionWithWorktree");
-    const start = indexSrc.indexOf('await handleSessionCreate(req, res, {');
+    const start = sessionsCoreSrc.indexOf('await handleSessionCreate(req, res, {');
     expect(start).toBeGreaterThan(-1);
-    const call = indexSrc.slice(start, start + 1200);
+    const call = sessionsCoreSrc.slice(start, start + 1200);
     expect(call).toContain('worktreeAvailability:');
     expect(call).toContain("access?.can('session.worktree')");
     expect(call).toContain('resolveWorktreeAvailability({');
