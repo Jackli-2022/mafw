@@ -106,6 +106,24 @@ describe('scheduler migration guard (Phase B Task 3)', () => {
     expect(driver).toMatch(/new\s+MutexQueue\(\)/);
   });
 
+  it('index.ts declares the SessionRegistry and drives a unified sweeper (Phase C)', () => {
+    expect(index).toMatch(/new SessionRegistry\(\)/);
+    expect(index).toMatch(/sessionRegistry\.sweep\(\)/);
+    expect(index).not.toMatch(/internalSessionRoles\s*=\s*new\s+Map/);
+  });
+
+  it('worker-origin is a registry view, not a module-level Map (Phase C)', () => {
+    const workerOrigin = fs.readFileSync(path.join(srcDir, 'recall', 'worker-origin.ts'), 'utf-8');
+    expect(workerOrigin).not.toMatch(/const\s+origins\s*=\s*new\s+Map/);
+    expect(workerOrigin).toMatch(/getDefaultSessionRegistry/);
+  });
+
+  it('session-worker-pool registers worker sessions and consumes the registry (Phase C)', () => {
+    const pool = fs.readFileSync(path.join(srcDir, 'recall', 'session-worker-pool.ts'), 'utf-8');
+    expect(pool).toMatch(/registry\?:\s*SessionRegistry/);
+    expect(pool).toMatch(/registerWorkerSession/);
+  });
+
   it('index.ts wires the engine through the provider/scheduler/graph injections', () => {
     expect(index).toMatch(/setActionsProvider/);
     expect(index).toMatch(/setScheduler/);

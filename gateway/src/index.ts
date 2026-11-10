@@ -542,6 +542,7 @@ class MafwScheduler {
   }
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private queueSweepTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionSweepTimer: ReturnType<typeof setInterval> | null = null;
   // Unified session registry (kernel refactor Phase C) — the gateway's process
   // table. Views below hold a reference; worker-origin / pool / lead / pod
   // mirrors consume it (plan 2026-11-10-gateway-kernel-session-registry.md).
@@ -2510,6 +2511,8 @@ class MafwScheduler {
         ttlMs: config.recall.sessionWorkerTtlMs,
         compactIdleMs: config.recall.workerCompactIdleMs,
         promptTimeoutMs: config.recall.workerPromptTimeoutMs,
+        // Phase C: worker sessions register in the gateway's process table.
+        registry: this.sessionRegistry,
         // Recursion guard (A): internal worker sessions are registered so
         // /api/obs/capture never records their output as observations.
         onSessionCreated: (sessionId, role) => {
@@ -4932,6 +4935,17 @@ class MafwScheduler {
       if (!this.queueSweepTimer) {
         this.queueSweepTimer = setInterval(() => this.sweepBusyAndQueue(), 60_000);
         this.queueSweepTimer.unref?.();
+      }
+      // 统一会话 sweeper（Phase C Task 7）：回收过期 session 记录（worker
+      // 24h TTL → per-record onEvict dispose pair；其余视图按各自生命周期）。
+      // sweepBusyAndQueue 是活跃簿记（非进程表状态），保持自己的间隔——见
+      // plan Key Ruling 7。
+      if (!this.sessionSweepTimer) {
+        this.sessionSweepTimer = setInterval(() => {
+          const swept = this.sessionRegistry.sweep();
+          if (swept > 0) log.info(`[SessionRegistry] swept ${swept} expired session record(s)`);
+        }, 60_000);
+        this.sessionSweepTimer.unref?.();
       }
     }
     // memory:decay must mutate the gateway's LIVE index instance — a throwaway
