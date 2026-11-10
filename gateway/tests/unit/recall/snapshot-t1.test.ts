@@ -62,4 +62,32 @@ describe('buildSnapshot searchT1 fusion', () => {
     expect(snap).toBeTruthy();
     expect(snap!.t1Hits).toBeUndefined();
   });
+
+  test('builds a T1-only snapshot when Harmonic has no hits', async () => {
+    const stored: any[] = [];
+    const deps = makeDeps({
+      search: () => [],
+      searchT1: async () => [
+        { sessionId: 'ses_1', turnId: 2, traceId: 't1t_hit', cosine: 0.9, excerpt: 'raw evidence' },
+      ],
+      store: (_sid: string, snap: any) => stored.push(snap),
+    });
+    const snap = await buildSnapshot(
+      deps,
+      's1',
+      { maxTurns: 4, maxChars: 400, t1K: 3, t1MaxChars: 300 } as any,
+      3,
+    );
+    expect(snap).toBeTruthy();
+    expect(snap!.ids).toEqual([]);
+    expect(snap!.block).toContain('[T1 原始记录 · 依据前请核实：取全文 → mafw_get_memory("t1:<traceId>")]');
+    expect(snap!.block).toContain('[t1|t1t_hit]');
+    expect(snap!.t1Hits).toHaveLength(1);
+    expect(stored).toHaveLength(1);
+  });
+
+  test('both empty → no snapshot', async () => {
+    const deps = makeDeps({ search: () => [], searchT1: async () => [] });
+    expect(await buildSnapshot(deps, 's1', { maxTurns: 4, maxChars: 400 } as any, 3)).toBeNull();
+  });
 });

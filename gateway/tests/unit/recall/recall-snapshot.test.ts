@@ -80,6 +80,13 @@ describe('decideSnapshotUse', () => {
     expect(decideSnapshotUse(snap({ ids: [] }), 'kubernetes', now)).toBe('no-snapshot');
   });
 
+  test('T1-only snapshot is usable', () => {
+    expect(decideSnapshotUse(snap({
+      ids: [],
+      t1Hits: [{ sessionId: 's', turnId: 1, traceId: 't1t_x', cosine: 0.8, excerpt: 'e' }],
+    }), 'kubernetes', now)).toBe('use');
+  });
+
   test('expired snapshot → stale', () => {
     const old = snap({ builtAt: new Date(now.getTime() - SNAPSHOT_DEFAULTS.ttlMs - 1000).toISOString() });
     expect(decideSnapshotUse(old, 'kubernetes deployment', now)).toBe('stale');
