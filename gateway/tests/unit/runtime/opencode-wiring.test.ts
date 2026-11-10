@@ -44,6 +44,7 @@ it('exposes the bridge translate entry for dry-event tooling', () => {
 });
 
 it('dryEventDeps falls back to the bridge entry', () => {
-  const src = readFileSync(join(GATEWAY, 'src', 'index.ts'), 'utf8');
+  // D3 Task 8: composition root = kernel.ts.
+  const src = readFileSync(join(GATEWAY, 'src', 'kernel.ts'), 'utf8');
   expect(src).toContain('getBridgeEventEntry');
 });

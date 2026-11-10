@@ -333,8 +333,9 @@ describe('contract surfaces and composition-root wiring', () => {
     expect(codeOf('../adapters/pi/src/runtime.ts')).toContain('mediaSession');
   });
 
-  it('index.ts picks the media executor by surface, not by runtime name', () => {
-    const code = codeOf('src/index.ts');
+  it('kernel.ts picks the media executor by surface, not by runtime name', () => {
+    // D3 Task 8: composition root (class MafwScheduler) moved to kernel.ts.
+    const code = codeOf('src/kernel.ts');
     expect(code).toContain("can('media.session')");
     expect(code).not.toMatch(/name\s*===\s*'pi'/);
   });

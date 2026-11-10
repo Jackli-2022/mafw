@@ -261,7 +261,8 @@ export function scanSource(text: string): BoundaryLeak[] {
 }
 
 /**
- * 组合根例外：`src/index.ts` 是唯一允许接触 RuntimeHost（narrowed raw window）的地方，
+ * 组合根例外：`src/kernel.ts`（D3 Task 8 起组合根的宿主；原 `src/index.ts`）是唯一
+ * 允许接触 RuntimeHost（narrowed raw window）的地方，
  * 但**不是整文件豁免**——逐条登记「规则 + 具体访问形态」。
  *
  * 只有同时满足 (a) 规则匹配、(b) 摘录命中下面某条登记形态 的泄漏才算已登记；
@@ -410,7 +411,8 @@ function filesUnder(dir: string): string[] {
 /** 守卫扫描面（业务目录 + 抽出的模块 + 组合根/顶层业务文件）。 */
 function scannedBoundaryFiles(): string[] {
   return [
-    'src/index.ts',
+    // D3 Task 8: the composition root (class MafwScheduler) lives in kernel.ts.
+    'src/kernel.ts',
     'src/automation-engine.ts',
     'src/eval-endpoint.ts',
     ...['src/routes', 'src/core', 'src/media', 'src/trajectory', 'src/experience', 'src/events', 'src/terminal'].flatMap(filesUnder),
@@ -649,7 +651,7 @@ describe('runtime isolation architecture boundaries', () => {
   });
 
   it('composition root keeps diagnostics on dedicated symbols only', () => {
-    const text = readSource('src/index.ts');
+    const text = readSource('src/kernel.ts');
     const ALLOWED_SYMBOLS = ['runtimeHost', 'runtimeDiagnostics', 'runtimeCaps', 'runtimeName'];
     for (const symbol of ALLOWED_SYMBOLS) {
       expect(text).toContain(symbol);
@@ -671,13 +673,13 @@ describe('runtime isolation architecture boundaries', () => {
   });
 
   it('composition root gates the completion channel through RuntimeAccess', () => {
-    const code = stripComments(readSource('src/index.ts')).code;
+    const code = stripComments(readSource('src/kernel.ts')).code;
     expect(code).toContain("access.can('process.completion')");
     expect(code).not.toMatch(/capabilities\??\.completionApi/);
   });
 
-  it('composition-root comment stripping covers the whole of index.ts (no truncated fake green)', () => {
-    const source = readSource('src/index.ts');
+  it('composition-root comment stripping covers the whole of kernel.ts (no truncated fake green)', () => {
+    const source = readSource('src/kernel.ts');
     const stripped = stripComments(source);
     // 行结构与源文件逐行对齐（命中行号可直接回源码定位）。
     expect(stripped.code.split('\n')).toHaveLength(source.split('\n').length);
@@ -713,8 +715,8 @@ describe('runtime isolation architecture boundaries', () => {
 });
 
 describe('event dispatch extraction (D2: the chain body lives outside the composition root)', () => {
-  it('index.ts no longer carries the dispatch chain body — wiring only', () => {
-    const code = stripComments(readSource('src/index.ts')).code;
+  it('kernel.ts no longer carries the dispatch chain body — wiring only', () => {
+    const code = stripComments(readSource('src/kernel.ts')).code;
     // D2 把 24 段 if 链整段搬进 src/runtime/event-dispatch.ts：enrich / 审批 /
     // 权限投影 / 两个早期丢弃门都不再出现在组合根（注释里的历史说明不算，
     // stripComments 已剥离）。
@@ -747,12 +749,12 @@ describe('event dispatch extraction (D2: the chain body lives outside the compos
 });
 
 describe('composition root exceptions (spec §11: 按区段登记，禁止整文件豁免)', () => {
-  it('index.ts has no unregistered runtime identity/capability/diagnostic reads', () => {
-    expect(compositionRootViolations(readSource('src/index.ts'))).toEqual([]);
+  it('kernel.ts has no unregistered runtime identity/capability/diagnostic reads', () => {
+    expect(compositionRootViolations(readSource('src/kernel.ts'))).toEqual([]);
   });
 
   it('every registered exception is still used (no dead widening)', () => {
-    const leaks = scanSource(readSource('src/index.ts'));
+    const leaks = scanSource(readSource('src/kernel.ts'));
     const dead = COMPOSITION_ROOT_EXCEPTIONS.filter(
       (allowed) => !leaks.some((leak) => leak.rule === allowed.rule && allowed.excerpt.test(leak.excerpt)),
     ).map((allowed) => `${allowed.rule}: ${allowed.excerpt}`);

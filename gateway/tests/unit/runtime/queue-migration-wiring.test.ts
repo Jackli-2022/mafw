@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// D3 Task 8: 组合根（class MafwScheduler）搬到 kernel.ts。
+const src = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8');
 // D3 Task 5：自更新通知的 body 移入 src/boot.ts（start() 启动序的一部分）。
 const bootSrc = readFileSync(join(__dirname, '../../../src/boot.ts'), 'utf8');
 

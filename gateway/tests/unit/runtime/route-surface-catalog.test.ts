@@ -393,43 +393,43 @@ export const NON_PRIMARY_GATES: NonPrimaryGate[] = [
   },
   {
     surface: 'approval.question.list',
-    file: 'src/index.ts',
+    file: 'src/kernel.ts',
     marker: "can('approval.question.list')",
     why: '原生 question 通道的 inline 门（无独立 MAFW route）',
   },
   {
     surface: 'process.completion',
-    file: 'src/index.ts',
+    file: 'src/kernel.ts',
     marker: "can('process.completion')",
     why: 'completion 通道门（index-scan/consolidation 内部通道，非 HTTP route）',
   },
   {
     surface: 'session.setThinkingLevel',
-    file: 'src/index.ts',
+    file: 'src/kernel.ts',
     marker: "can('session.setThinkingLevel')",
     why: '会话配置 thought_level 能力探针（POST /api/session/:id/config 的 supportsThinkingLevel；无独立 route）',
   },
   {
     surface: 'identity.agents.install',
-    file: 'src/index.ts',
+    file: 'src/kernel.ts',
     marker: "can('identity.agents.install')",
     why: '身份物化门（无独立 route）',
   },
   {
     surface: 'session.shell',
-    file: 'src/index.ts',
+    file: 'src/kernel.ts',
     marker: "can('session.shell')",
     why: 'inline /api/shell route',
   },
   {
     surface: 'session.abort',
-    file: 'src/index.ts',
+    file: 'src/kernel.ts',
     marker: "can('session.abort')",
     why: 'inline /api/session/:id/abort route',
   },
   {
     surface: 'media.session',
-    file: 'src/index.ts',
+    file: 'src/kernel.ts',
     marker: "can('media.session')",
     why: '媒体会话门（A2A / media runtime 内部）',
   },
@@ -484,11 +484,14 @@ export function gatedSurfacesFrom(text: string): string[] {
   return [...found];
 }
 
-/** 扫描 src/routes/** 与 src/index.ts（有 HTTP 门的两处），返回 surface → 命中位置。 */
+/**
+ * 扫描 src/routes/** 与 src/kernel.ts（有 HTTP 门的两处；D3 Task 8 把组合根
+ * 的 inline 门从 index.ts 搬到 kernel.ts），返回 surface → 命中位置。
+ */
 function scanGatedSurfaces(): Map<string, string[]> {
   const files = [
     ...walkTs(path.join(GATEWAY_ROOT, 'src', 'routes')),
-    path.join(GATEWAY_ROOT, 'src', 'index.ts'),
+    path.join(GATEWAY_ROOT, 'src', 'kernel.ts'),
   ];
   const out = new Map<string, string[]>();
   for (const file of files) {

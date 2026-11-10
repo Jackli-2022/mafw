@@ -6,11 +6,13 @@
 import { readFileSync } from 'fs';
 import * as path from 'path';
 
-const INDEX = path.resolve(__dirname, '../../src/index.ts');
+// D3 Task 8: the class moved to kernel.ts; INDEX keeps pointing at the module
+// that now carries the static `archiveWorktree` import.
+const INDEX = path.resolve(__dirname, '../../src/kernel.ts');
 const src = readFileSync(INDEX, 'utf-8');
 
 describe('archiveGoal 模块接线（archive_failed 根因回归）', () => {
-  it('index.ts 静态 import archiveWorktree（同包模块）', () => {
+  it('kernel.ts 静态 import archiveWorktree（同包模块）', () => {
     expect(src).toMatch(/import\s*\{[^}]*archiveWorktree[^}]*\}\s*from\s*['"]\.\/core\/tools\/archive-worktree\.js['"]/);
   });
 

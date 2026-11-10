@@ -4,7 +4,8 @@ import { SessionQueue } from '../../../src/core/session-queue';
 import { MAFW } from '../../../src/runtime/mafw-vocabulary';
 import { TURN_TERMINALS } from '../../../src/runtime/event-dispatch';
 
-const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// D3 Task 8: 组合根（class MafwScheduler）搬到 kernel.ts。
+const src = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8');
 // Phase D2: turn.started / 终态 busy 语义随 handleRuntimeEvent 链迁入 event-dispatch.ts。
 const dispatchSrc = readFileSync(join(__dirname, '../../../src/runtime/event-dispatch.ts'), 'utf8');
 

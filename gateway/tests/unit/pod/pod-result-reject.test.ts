@@ -423,7 +423,7 @@ describe('PodGoal result notification and reject', () => {
   });
 
   test('gateway wires the revision service, result notification and reject dependencies', () => {
-    const source = fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf-8');
+    const source = fs.readFileSync(path.join(__dirname, '../../../src/kernel.ts'), 'utf-8');
     expect(source).toContain('new PodGoalRevisionService(');
     expect(source).toMatch(/revisions: this\.podGoalRevisionService/);
     expect(source).toMatch(/techLead: \{ ensureSession:/);

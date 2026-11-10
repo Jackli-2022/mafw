@@ -33,6 +33,8 @@ function inventory(): Inventory {
 }
 
 const INDEX = path.join(__dirname, '..', '..', '..', 'src', 'index.ts');
+// D3 Task 8: the composition root (class MafwScheduler) lives in kernel.ts.
+const KERNEL = path.join(__dirname, '..', '..', '..', 'src', 'kernel.ts');
 const TRANSPORT = path.join(__dirname, '..', '..', '..', 'src', 'http', 'transport.ts');
 const DASHBOARD_LEGACY = path.join(__dirname, '..', '..', '..', 'src', 'subsystems', 'dashboard-legacy.ts');
 
@@ -207,7 +209,8 @@ describe('dashboard legacy inventory (D3 Task 4: subsystems/dashboard-legacy.ts)
   it('is wired through transport as `dashboardDispatch`, after the joint branch', () => {
     // The transport still owns the joint branch position (before /control, R6);
     // the kernel hands it this module and nothing in the kernel body remains.
-    const indexSrc = fs.readFileSync(INDEX, 'utf-8');
+    // D3 Task 8: that wiring lives in kernel.ts now.
+    const indexSrc = fs.readFileSync(KERNEL, 'utf-8');
     expect(indexSrc).toContain('handleDashboardAPI(req, this.dashboardLegacyDeps())');
     expect(indexSrc).not.toMatch(/handleDashboardAPI\s*\(req:\s*http\.IncomingMessage\)/);
 

@@ -159,7 +159,8 @@ describe('goal modes: quick / standard integration', () => {
     const driver = fs.readFileSync(path.join(__dirname, '../../src/core/goal/driver.ts'), 'utf8');
     expect(driver).toContain('goalMode: this.deps.goalMode?.(goalId, revision)');
     const index = [
-      fs.readFileSync(path.join(__dirname, '../../src/index.ts'), 'utf8'),
+      // D3 Task 8: composition root (class MafwScheduler) = kernel.ts.
+      fs.readFileSync(path.join(__dirname, '../../src/kernel.ts'), 'utf8'),
       fs.readFileSync(path.join(__dirname, '../../src/boot.ts'), 'utf8'),
     ].join('\n');
     expect(index).toContain('goalMode: (goalId, revision)');

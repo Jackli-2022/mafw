@@ -42,10 +42,10 @@ describe('enrichBroadcastFrame（spec §5.2 v2 Q2：双层放置）', () => {
   });
 });
 
-// wiring 断言（index.ts 实际调用——否则纯函数可能存在但未接线）。
+// wiring 断言（组合根实际调用——否则纯函数可能存在但未接线）。
 // D3 Task 7: broadcast()/setupEventBus() 本体在 src/server/event-hub.ts（D3-R4），
-// index.ts 只保留委派方法。
-const idxSrc = rf(pjoin(__dirname, '../../../src/index.ts'), 'utf8');
+// kernel.ts 只保留委派方法（D3 Task 8）。
+const idxSrc = rf(pjoin(__dirname, '../../../src/kernel.ts'), 'utf8');
 const hubSrc = rf(pjoin(__dirname, '../../../src/server/event-hub.ts'), 'utf8');
 describe('event hub broadcast 接线（wiring）', () => {
   it('broadcast 走 enrichBroadcastFrame + eventStore.append', () => {
@@ -54,7 +54,7 @@ describe('event hub broadcast 接线（wiring）', () => {
     expect(hubSrc).toMatch(/maybePrune\(/);
   });
   it('EventStore 初始化受 config.events.persist 门控（fail-open）', () => {
-    // 惰性初始化仍留在 kernel.getGatewayDb（hub 不打开 DB），所以门控在 index.ts。
+    // 惰性初始化仍留在 kernel.getGatewayDb（hub 不打开 DB），所以门控在 kernel.ts。
     expect(idxSrc).toMatch(/config\.events\.persist/);
   });
   it('append 先于 enrich：seq 来自单点 sink 的返回值（顺序反了就是 seq=null）', () => {

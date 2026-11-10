@@ -11,7 +11,8 @@ const read = (rel: string) => readFileSync(join(__dirname, rel), 'utf8').replace
 describe('dead directory channel removed', () => {
   const adapter = read('../../../src/runtime/opencode-adapter.ts');
   const runtime = read('../../../src/runtime/opencode-runtime.ts');
-  const index = read('../../../src/index.ts');
+  // D3 Task 8: composition root = kernel.ts (index.ts is the entry now).
+  const index = read('../../../src/kernel.ts');
 
   test('adapter config no longer declares directory', () => {
     expect(adapter).not.toMatch(/createOpencodeAdapter\(config:\s*\{[\s\S]{0,200}?directory/);

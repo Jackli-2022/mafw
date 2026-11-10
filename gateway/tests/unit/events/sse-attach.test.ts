@@ -104,7 +104,8 @@ describe('attachGlobalSse（spec §5.3）', () => {
 // D3 Task 6: attach 调用从 index.ts 搬入 subsystems/api-routes.ts（字面量随迁）。
 // D3 Task 7: sseClients 容器归 server/event-hub.ts 所有，kernel 经 live getter 交给
 // SSE 路由（identity 承重：broadcast 与 attach 写同一 Map）。
-const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// D3 Task 8: 组合根（class MafwScheduler）在 kernel.ts。
+const src = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8');
 const hubSrc = readFileSync(join(__dirname, '../../../src/server/event-hub.ts'), 'utf8');
 const attachSrc = readFileSync(join(__dirname, '../../../src/subsystems/api-routes.ts'), 'utf8');
 const sseRouteSrc = readFileSync(join(__dirname, '../../../src/routes/events-sse.ts'), 'utf8');

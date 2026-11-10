@@ -66,8 +66,9 @@ describe('wire / legacy surfaces are physically gone', () => {
     expect(existsSync(join(GATEWAY, 'tests', 'unit', 'runtime', 'wire-compat.test.ts'))).toBe(false);
   });
 
-  test('index.ts has no wire egress, no flat opt-in and no info payload reference', () => {
-    const src = read(GATEWAY, 'src', 'index.ts');
+  test('kernel.ts has no wire egress, no flat opt-in and no info payload reference', () => {
+    // D3 Task 8: the composition root moved to kernel.ts.
+    const src = read(GATEWAY, 'src', 'kernel.ts');
     expect(src).not.toMatch(/toWireHistory|toWireInfo|handleSessionHistoryFlat/);
     expect(src).not.toMatch(/properties\.info/);
     expect(src).not.toMatch(/format\s*===\s*'flat'/);

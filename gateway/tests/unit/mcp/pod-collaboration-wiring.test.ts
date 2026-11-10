@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 describe('Pod collaboration MCP wiring gate', () => {
-  const source = fs.readFileSync(path.join(process.cwd(), 'src', 'index.ts'), 'utf-8');
+  // D3 Task 8: 组合根（class MafwScheduler）搬到 kernel.ts。
+  const source = fs.readFileSync(path.join(process.cwd(), 'src', 'kernel.ts'), 'utf-8');
   // D3 Task 7: `goal_created` 的 shouldAutoStartGoalEvent 门控随 setupEventBus()
   // 搬到 src/server/event-hub.ts（index.ts 只留委派）。
   const hubSource = fs.readFileSync(path.join(process.cwd(), 'src', 'server', 'event-hub.ts'), 'utf-8');

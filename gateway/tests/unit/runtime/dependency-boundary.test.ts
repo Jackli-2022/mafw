@@ -2,7 +2,7 @@
  * 依赖边界守卫（Plan 3 Task 7 / 设计 §3.6）——
  * ① gateway/src 中 runtime/ 之外禁 import 两 SDK（@opencode-ai/sdk、
  *    @earendil-works/pi-coding-agent）
- * ② runtime/auth.ts（opencode 凭据源）仅允许 runtime/** 与 index.ts（单点接线）
+ * ② runtime/auth.ts（opencode 凭据源）仅允许 runtime/** 与 kernel.ts（单点接线）
  *    import
  * 违例即红：防止解耦被悄悄腐蚀（spec 反目标）。
  */
@@ -56,7 +56,7 @@ describe('依赖边界守卫（runtime/ 之外零 SDK import）', () => {
     expect(violations).toEqual([]);
   });
 
-  it('runtime/auth.ts 仅 runtime/** 与 index.ts import（单点接线）', () => {
+  it('runtime/auth.ts 仅 runtime/** 与 kernel.ts import（单点接线）', () => {
     // walk 扫描代替 git grep（测试沙箱内 git 可能受限）
     const importers: string[] = [];
     for (const file of walk(SRC)) {
@@ -64,7 +64,8 @@ describe('依赖边界守卫（runtime/ 之外零 SDK import）', () => {
       if (!readFileSync(file, 'utf8').includes('runtime/auth')) continue;
       importers.push(rel);
     }
-    const allowed = (f: string) => f.startsWith('src/runtime/') || f === 'src/index.ts';
+    // D3 Task 8: 单点接线随 class MafwScheduler 搬到 kernel.ts（index.ts 只剩入口）。
+    const allowed = (f: string) => f.startsWith('src/runtime/') || f === 'src/kernel.ts';
     const violations = importers.filter((f) => !allowed(f));
     expect(violations).toEqual([]);
   });

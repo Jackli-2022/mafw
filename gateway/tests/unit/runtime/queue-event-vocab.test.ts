@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// D3 Task 8: 组合根（class MafwScheduler）搬到 kernel.ts。
+const src = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8');
 const vocab = readFileSync(join(__dirname, '../../../src/runtime/mafw-vocabulary.ts'), 'utf8');
 const sdkEvents = readFileSync(join(__dirname, '../../../../packages/gateway-sdk/src/events.ts'), 'utf8');
 const tuiConn = readFileSync(join(__dirname, '../../../../packages/tui/src/store/connection.ts'), 'utf8');
