@@ -21,14 +21,20 @@ export interface LeadTopicRow {
   lastActiveAt: string;
   residentTokens: number;
   resumedFrom: string | null;
+  /** P2 COW fork provenance (null for ordinary topics). */
+  forkedFrom?: string | null;
+  forkedAt?: string | null;
+  inheritedMessageRange?: { from: string; to: string } | null;
 }
 
 type LeadTopicInsert = Omit<
   LeadTopicRow,
   'summary' | 'summaryHash' | 'summaryUpdatedAt' | 'state' | 'lastActiveAt' | 'residentTokens' | 'resumedFrom'
+  | 'forkedFrom' | 'forkedAt' | 'inheritedMessageRange'
 > & Partial<Pick<
   LeadTopicRow,
   'summary' | 'summaryHash' | 'summaryUpdatedAt' | 'state' | 'lastActiveAt' | 'residentTokens' | 'resumedFrom'
+  | 'forkedFrom' | 'forkedAt' | 'inheritedMessageRange'
 >>;
 
 interface LeadTopicDbRow {
@@ -49,10 +55,24 @@ interface LeadTopicDbRow {
   last_active_at?: string | null;
   resident_tokens?: number | null;
   resumed_from?: string | null;
+  forked_from?: string | null;
+  forked_at?: string | null;
+  inherited_message_range?: string | null;
 }
 
 function normalizeState(value: unknown): LeadTopicState {
   return value === 'resident' || value === 'cold' || value === 'archived' ? value : 'warm';
+}
+
+function parseRange(value: unknown): { from: string; to: string } | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed.from === 'string' && typeof parsed.to === 'string') {
+      return { from: parsed.from, to: parsed.to };
+    }
+  } catch { /* ignore */ }
+  return null;
 }
 
 function toRow(row: LeadTopicDbRow): LeadTopicRow {
@@ -74,6 +94,9 @@ function toRow(row: LeadTopicDbRow): LeadTopicRow {
     lastActiveAt: row.last_active_at ?? row.created_at,
     residentTokens: Number(row.resident_tokens ?? 0),
     resumedFrom: row.resumed_from ?? null,
+    forkedFrom: row.forked_from ?? null,
+    forkedAt: row.forked_at ?? null,
+    inheritedMessageRange: parseRange(row.inherited_message_range),
   };
 }
 
@@ -106,7 +129,10 @@ export class LeadTopicStore {
         state TEXT NOT NULL DEFAULT 'warm',
         last_active_at TEXT,
         resident_tokens INTEGER NOT NULL DEFAULT 0,
-        resumed_from TEXT
+        resumed_from TEXT,
+        forked_from TEXT,
+        forked_at TEXT,
+        inherited_message_range TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_lead_topic_project_created
         ON lead_topic(project_dir, created_at DESC);
@@ -119,6 +145,9 @@ export class LeadTopicStore {
     this.ensureColumn('last_active_at', 'last_active_at TEXT');
     this.ensureColumn('resident_tokens', 'resident_tokens INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('resumed_from', 'resumed_from TEXT');
+    this.ensureColumn('forked_from', 'forked_from TEXT');
+    this.ensureColumn('forked_at', 'forked_at TEXT');
+    this.ensureColumn('inherited_message_range', 'inherited_message_range TEXT');
     this.db.exec('UPDATE lead_topic SET last_active_at = created_at WHERE last_active_at IS NULL');
   }
 
@@ -134,8 +163,8 @@ export class LeadTopicStore {
         id, project_dir, lead_session_id, title, start_message_id,
         end_message_id, goal_id, owner_role, owner_session_id, created_at,
         summary, summary_hash, summary_updated_at, state, last_active_at,
-        resident_tokens, resumed_from
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        resident_tokens, resumed_from, forked_from, forked_at, inherited_message_range
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       row.id,
       row.projectDir,
@@ -154,6 +183,9 @@ export class LeadTopicStore {
       row.lastActiveAt ?? row.createdAt,
       row.residentTokens ?? 0,
       row.resumedFrom ?? null,
+      row.forkedFrom ?? null,
+      row.forkedAt ?? null,
+      row.inheritedMessageRange ? JSON.stringify(row.inheritedMessageRange) : null,
     );
   }
 
