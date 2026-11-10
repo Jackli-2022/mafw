@@ -8,6 +8,7 @@
 // turns or duplicate writes (database-level UNIQUE dedup on observations).
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import Database from 'better-sqlite3';
 
 export type ObservationSource = 'user_input' | 'assistant_reply' | 'tool_result' | 'reasoning';
@@ -31,6 +32,17 @@ export interface TurnSummary {
   has_user_input: number;
   response_count: number;
   last_ts: number;
+}
+
+/** Durable logical turn identity (T1); survives archival and restarts. */
+export interface T1Turn {
+  trace_id: string;
+  session_id: string;
+  turn_seq: number;
+  created_at: number;
+  archived_at: number | null;
+  encoding_salience: number | null;
+  legacy_ambiguous: number;
 }
 
 export interface GoalOutcome {
@@ -261,6 +273,18 @@ export class GatewayDatabase {
       CREATE INDEX IF NOT EXISTS idx_noop_session ON t1_noop_log(session_id);
       CREATE INDEX IF NOT EXISTS idx_noop_created ON t1_noop_log(created_at);
 
+      CREATE TABLE IF NOT EXISTS t1_turns (
+        trace_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_seq INTEGER NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        archived_at INTEGER,
+        encoding_salience REAL,
+        legacy_ambiguous INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(session_id, turn_seq)
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_turns_session ON t1_turns(session_id, turn_seq);
+
       CREATE TABLE IF NOT EXISTS goal_outcomes (
         goal_id TEXT PRIMARY KEY,
         project_id TEXT,
@@ -418,22 +442,69 @@ export class GatewayDatabase {
   // ── T1 observations ─────────────────────────────────────────────────────
 
   /**
-   * Next turn ID for a new user message: max existing turn for the session + 1.
+   * Highest logical turn sequence + 1 for a session, computed over the union of
+   * allocated turns (t1_turns), active observations (t1_observations), and
+   * archived observations (t1_archive). Including archived rows guarantees
+   * untracked legacy fixtures can never cause a turn number to be reused, and
+   * archiving every active row does not reset the sequence.
+   */
+  private nextTurnSeq(session_id: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT MAX(turn_seq) AS m FROM (
+           SELECT turn_seq FROM t1_turns WHERE session_id = ?
+           UNION ALL
+           SELECT turn_id AS turn_seq FROM t1_observations WHERE session_id = ?
+           UNION ALL
+           SELECT turn_id AS turn_seq FROM t1_archive WHERE session_id = ?
+         )`,
+      )
+      .get(session_id, session_id, session_id) as { m: number | null };
+    return (row.m ?? 0) + 1;
+  }
+
+  /**
+   * Next turn ID for a new user message: highest known logical turn (active or
+   * archived) + 1. Non-allocating peek: repeated calls do not advance anything.
    * No rows yet → 1.
    */
   nextTurnId(session_id: string): number {
-    const row = this.db
-      .prepare('SELECT COALESCE(MAX(turn_id), 0) AS m FROM t1_observations WHERE session_id = ?')
-      .get(session_id) as { m: number };
-    return row.m + 1;
+    return this.nextTurnSeq(session_id);
   }
 
-  /** Current turn ID for non-user observations: max existing turn, or 0. */
+  /** Current turn ID for non-user observations: latest logical turn, or 0. */
   currentTurnId(session_id: string): number {
+    return this.currentTurn(session_id)?.turn_seq ?? 0;
+  }
+
+  /** Latest logical turn for the session regardless of archived state. */
+  currentTurn(session_id: string): T1Turn | null {
     const row = this.db
-      .prepare('SELECT COALESCE(MAX(turn_id), 0) AS m FROM t1_observations WHERE session_id = ?')
-      .get(session_id) as { m: number };
-    return row.m;
+      .prepare('SELECT * FROM t1_turns WHERE session_id = ? ORDER BY turn_seq DESC LIMIT 1')
+      .get(session_id) as T1Turn | undefined;
+    return row ?? null;
+  }
+
+  /**
+   * Allocate one new logical turn for a session and return it. Runs in a
+   * transaction: computes the next sequence from the union of turns /
+   * observations / archive, inserts a `t1t_` trace-id row, and returns the
+   * inserted row. The sequence is persisted, so restarts and archivals cannot
+   * renumber or duplicate turns.
+   */
+  beginTurn(session_id: string, encodingSalience?: number): T1Turn {
+    const txn = this.db.transaction((): T1Turn => {
+      const turn_seq = this.nextTurnSeq(session_id);
+      const trace_id = `t1t_${randomUUID()}`;
+      this.db
+        .prepare(
+          `INSERT INTO t1_turns (trace_id, session_id, turn_seq, created_at, encoding_salience)
+           VALUES (?, ?, ?, unixepoch(), ?)`,
+        )
+        .run(trace_id, session_id, turn_seq, encodingSalience ?? null);
+      return this.db.prepare('SELECT * FROM t1_turns WHERE trace_id = ?').get(trace_id) as T1Turn;
+    });
+    return txn();
   }
 
   /**
