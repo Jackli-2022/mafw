@@ -88,6 +88,8 @@ import { TopicMessageIndexStore } from './core/lead/topic-message-index';
 import { LeadTopicSummaryService } from './core/lead/lead-topic-summary-service';
 import { LeadTopicResumeService } from './core/lead/lead-topic-resume-service';
 import { TopicForkStore } from './core/lead/topic-fork-store';
+import { LeadBoundaryService } from './core/lead/lead-boundary-service';
+import { TopicBoundaryStore } from './core/lead/topic-boundary-store';
 import { summarizeTopic } from './core/lead/topic-summary';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
@@ -349,6 +351,7 @@ import { attachLeadTopicRoutes } from './routes/lead-topics';
 import { attachAttentionRoutes } from './routes/attention';
 import { attachSchedulerRoutes } from './routes/scheduler';
 import { attachGoalControlRoutes } from './routes/goal-control';
+import { attachLeadBoundaryRoutes } from './routes/lead-boundaries';
 import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
 import { attachPodHandlers } from './routes/pod-handlers';
@@ -692,6 +695,7 @@ class MafwScheduler {
   private leadTopicSummary!: LeadTopicSummaryService;
   private leadTopicResume!: LeadTopicResumeService;
   private topicForks!: TopicForkStore;
+  private leadBoundaries!: LeadBoundaryService;
   private podWorktreeService!: PodWorktreeService;
   private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
@@ -4392,6 +4396,19 @@ class MafwScheduler {
     this.leadTopicIndex = leadTopicIndex;
     this.leadTopicSummary = leadTopicSummary;
     this.topicForks = topicForks;
+    const leadBoundaries = new LeadBoundaryService({
+      boundaries: new TopicBoundaryStore(this.getGatewayDb().getStore()),
+      topics: leadTopics,
+      mode: () => {
+        const raw = process.env.MAFW_LEAD_AUTO_BOUNDARY;
+        return raw === 'off' ? 'off' : raw === 'on' ? 'on' : 'observe';
+      },
+      broadcast: (event) => this.broadcast(event as any),
+      now: () => new Date().toISOString(),
+      newId: () => `boundary_${randomUUID()}`,
+      log: (message) => log.warn(message),
+    });
+    this.leadBoundaries = leadBoundaries;
     const leadTopicResume = new LeadTopicResumeService({
       topics: leadTopics,
       index: leadTopicIndex,
@@ -5363,6 +5380,25 @@ class MafwScheduler {
           await this.startGoalDirect(goalId);
         },
         startGoal: (goalId) => this.startGoalDirect(goalId),
+      });
+      attachLeadBoundaryRoutes(this.routeRegistry, {
+        service: this.leadBoundaries,
+        observe: ({ sessionID, text }) => {
+          const projectDir = this.leadSessionRegistry?.findBySessionId(sessionID)?.projectDir;
+          if (!projectDir) return null;
+          const topic = this.leadTopics.latestForProject(projectDir);
+          if (!topic) return null;
+          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
+          const goalActive = pod ? this.podStore.listActiveGoals(pod.id).length > 0 : false;
+          return this.leadBoundaries.observe({
+            projectDir,
+            leadSessionId: sessionID,
+            fromTopicId: topic.id,
+            text,
+            now: new Date().toISOString(),
+            goalActive,
+          });
+        },
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),
