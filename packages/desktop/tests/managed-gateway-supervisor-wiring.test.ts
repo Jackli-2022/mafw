@@ -21,6 +21,7 @@ test("managed spawn pins port and identity and never writes the CLI pid file", (
   assert.match(sidecar, /MAFW_DESKTOP_MANAGED: "1"/)
   assert.match(sidecar, /MAFW_DESKTOP_CHANNEL: CHANNEL/)
   assert.match(sidecar, /MAFW_DESKTOP_INSTANCE_ID: instanceId/)
+  assert.match(sidecar, /MAFW_GATEWAY_ORIGIN: app\.isPackaged \? "desktop-packaged" : "desktop-dev"/)
   assert.match(sidecar, /delete env\.MAFW_TAKEOVER/)
   assert.match(sidecar, /delete env\.MAFW_GATEWAY_PORT/)
   assert.match(sidecar, /delete env\.MAFW_SERVER_API_PORT/)

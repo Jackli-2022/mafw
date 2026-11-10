@@ -282,6 +282,7 @@ async function spawnManagedGateway(
     MAFW_DESKTOP_MANAGED: "1",
     MAFW_DESKTOP_CHANNEL: CHANNEL,
     MAFW_DESKTOP_INSTANCE_ID: instanceId,
+    MAFW_GATEWAY_ORIGIN: app.isPackaged ? "desktop-packaged" : "desktop-dev",
     MAFW_SERVER_API_PORT: "3000",
   })
 
