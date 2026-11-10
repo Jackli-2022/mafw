@@ -223,6 +223,7 @@ import { attachAutomationRoutes } from './routes/automations';
 import { attachChatRoutes } from './routes/chat';
 import { attachObsRoutes } from './routes/obs';
 import { attachSessionsCoreRoutes } from './routes/sessions-core';
+import { attachSessionsReadRoutes } from './routes/sessions-read';
 import { attachApprovalsRoutes } from './routes/approvals';
 import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
 import { attachUsageRoutes } from './routes/usage';
@@ -259,7 +260,6 @@ import { handleFileHistoryRoutes } from './routes/file-history';
 import { RunStateService } from './core/run/run-state-service';
 import { RunCoordinator } from './core/run/run-coordinator';
 import { DataPartService } from './core/data-parts/data-part-service';
-import { handleSessionHistory } from './routes/session-history';
 import { defaultGit } from './core/diff/turn-diff';
 import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
@@ -5690,6 +5690,15 @@ class MafwScheduler {
         attachBudgetGuardForPrompt: (sessionID, maxTurns, maxCostUsd) => this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd),
         emitQueueUpdated: (sessionID, kind, items, itemId) => this.emitQueueUpdated(sessionID, kind, items, itemId),
       });
+      // Phase D1 Task E1：sessions 读模型面迁 registry dispatch（5 分支；todo/trajectory/
+      // token-summary/children 的 fail-open 200 语义逐字保留）。
+      attachSessionsReadRoutes(this.routeRegistry, {
+        runtime: () => this.runtime,
+        trajectoryStore: () => this.trajectoryStore,
+        projectDir: () => this.projectDir,
+        listDataParts: (sessionID, messageIds) => this.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
+        subagentService: () => this.subagentService,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6980,102 +6989,17 @@ class MafwScheduler {
 
         // GET /api/sessions/{id} — Phase D1 Task D1：已迁 registry dispatch。
 
-        // GET /api/sessions/{id}/messages — flat MAFW history（默认且唯一出口）
-        const messagesMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/messages(?:\?|$)/);
-        if (messagesMatch && req.method === 'GET') {
-          await handleSessionHistory(req, res, req.url!, {
-            getRuntime: () => this.runtime,
-            listDataParts: (sessionID, messageIds) =>
-              this.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
-            warn: (message) => log.warn(message),
-          });
-          return;
-        }
+        // GET /api/sessions/{id}/messages — Phase D1 Task E1：已迁 registry dispatch。
 
-        // GET /api/sessions/{id}/todo —fetch session todo list (task panel)
-        const todoMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/todo(?:\?|$)/);
-        if (todoMatch && req.method === 'GET') {
-          const id = todoMatch[1];
-          try {
-            if (!this.runtime) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ data: [] }));
-              return;
-            }
-            const result = await this.runtime.session.todo({ sessionID: id });
-            const rawData = Array.isArray(result) ? result : [];
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [] }));
-          } catch (err: any) {
-            log.warn(`[Scheduler] Failed to fetch todos for ${id}: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: [] }));
-          }
-          return;
-        }
+        // GET /api/sessions/{id}/todo — Phase D1 Task E1：已迁 registry dispatch（fail-open 200 {data:[]}）。
 
-        // GET /api/sessions/{id}/trajectory —agent trajectory timeline (task/desktop)
-        const trajectoryMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/trajectory(?:\?|$)/);
-        if (trajectoryMatch && req.method === 'GET') {
-          const id = trajectoryMatch[1];
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const limit = Math.min(parseInt(parsedUrl.searchParams.get('limit') || '50', 10), 200);
-            const beforeTurn = parsedUrl.searchParams.get('before_turn') ? Number(parsedUrl.searchParams.get('before_turn')) : undefined;
-            const rebuild = parsedUrl.searchParams.get('rebuild') === '1';
-            const store = this.trajectoryStore;
-            if (!store) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ turns: [], events: [] }));
-              return;
-            }
-            if (rebuild) {
-              try {
-                const result = await this.runtime?.session.messages({ sessionID: id, limit: 200 });
-                const data = result?.data || [];
-                const messages = Array.isArray(data) ? data : [];
-                const { handleTrajectoryRequest } = require('./trajectory/api') as typeof import('./trajectory/api');
-                const out = await handleTrajectoryRequest({ store, sessionID: id, opts: { limit, beforeTurn, rebuild }, messages: { data: messages }, projectID: this.projectDir || '.' });
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify(out));
-                return;
-              } catch (err: any) {
-                log.warn(`[Trajectory] rebuild failed (non-fatal): ${err.message}`);
-              }
-            }
-            const { handleTrajectoryRequest } = require('./trajectory/api') as typeof import('./trajectory/api');
-            const out = await handleTrajectoryRequest({ store, sessionID: id, opts: { limit, beforeTurn } });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(out));
-          } catch (err: any) {
-            log.warn(`[Trajectory] fetch failed (non-fatal): ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ turns: [], events: [] }));
-          }
-          return;
-        }
+        // GET /api/sessions/{id}/trajectory — Phase D1 Task E1：已迁 registry dispatch
+        // （store 缺失 / 抛错 → fail-open 200 {turns:[],events:[]}；rebuild 懒 require 随迁）。
 
-        // GET /api/sessions/{id}/token-summary — per-session token/cost totals
-        const tokenSummaryMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/token-summary(?:\?|$)/);
-        if (tokenSummaryMatch && req.method === 'GET') {
-          const id = tokenSummaryMatch[1];
-          try {
-            const store = this.trajectoryStore;
-            if (!store) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }));
-              return;
-            }
-            const summary = store.getSessionTokenSummary(id);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(summary));
-          } catch (err: any) {
-            log.warn(`[TokenSummary] fetch failed: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }));
-          }
-          return;
-        }
+
+        // GET /api/sessions/{id}/token-summary — Phase D1 Task E1：已迁 registry dispatch
+        // （store 缺失 / 抛错 → fail-open 200 零值汇总）。
+
 
         // /api/usage/plugins* — P5 Wave 1 起由 registry dispatch 接管（7 条）
 
@@ -7143,31 +7067,9 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/sessions/{id}/children —subagent sessions of this run (AgentPicker)
-        const childrenMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/children(?:\?|$)/);
-        if (childrenMatch && req.method === 'GET') {
-          const id = childrenMatch[1];
-          try {
-            if (!this.runtime) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ items: [] }));
-              return;
-            }
-            const result = await this.runtime.session.children({ sessionID: id });
-            const items = Array.isArray(result) ? result : [];
-            const parentDepth = await this.subagentService.depthOf(id);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ items: items.map((item: any) => ({
-              ...item,
-              depth: typeof item?.depth === 'number' ? item.depth : parentDepth + 1,
-            })) }));
-          } catch (err: any) {
-            log.warn(`[Scheduler] Failed to fetch children for ${id}: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ items: [] }));
-          }
-          return;
-        }
+        // GET /api/sessions/{id}/children — Phase D1 Task E1：已迁 registry dispatch
+        // （runtime 缺失 / 抛错 → fail-open 200 {items:[]}；depth 补齐随迁）。
+
 
         // GET /api/recall/context — Phase D1 Task B4：已迁 registry dispatch（逐字迁移，fail-open 200）。
 
