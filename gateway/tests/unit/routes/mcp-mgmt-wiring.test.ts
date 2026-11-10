@@ -8,6 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachMcpMgmtRoutes } from '../../../src/routes/mcp-mgmt';
+import { dispatchAuthorized } from '../../../src/routes/registry-dispatch';
 
 function fakeReq(opts: { method: string; url: string; body?: string }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
@@ -31,17 +32,39 @@ function fakeReq(opts: { method: string; url: string; body?: string }): Incoming
   return req as unknown as IncomingMessage;
 }
 
-function fakeRes(): { res: ServerResponse; status: number; body: string; headers: Record<string, unknown> } {
-  const out = { res: null as unknown as ServerResponse, status: 200, body: '', headers: {} as Record<string, unknown> };
+function fakeRes(): {
+  res: ServerResponse;
+  status: number;
+  body: string;
+  headers: Record<string, unknown>;
+  ended: boolean;
+  written: number;
+} {
+  const out = {
+    res: null as unknown as ServerResponse,
+    status: 200,
+    body: '',
+    headers: {} as Record<string, unknown>,
+    ended: false,
+    written: 0,
+  };
   out.res = {
     writeHead: (status: number, headers?: Record<string, unknown>) => {
       out.status = status;
+      out.written += 1;
       if (headers) Object.assign(out.headers, headers);
     },
-    end: (payload?: unknown) => { out.body = String(payload ?? ''); },
+    end: (payload?: unknown) => { out.body = String(payload ?? ''); out.ended = true; },
     setHeader: () => {},
   } as unknown as ServerResponse;
-  return { res: out.res, get status() { return out.status; }, get body() { return out.body; }, get headers() { return out.headers; } } as any;
+  return {
+    res: out.res,
+    get status() { return out.status; },
+    get body() { return out.body; },
+    get headers() { return out.headers; },
+    get ended() { return out.ended; },
+    get written() { return out.written; },
+  } as any;
 }
 
 function runtime(over: { canList?: boolean; canConnect?: boolean; canConfig?: (surface: string) => boolean } = {}) {
@@ -207,5 +230,81 @@ describe('MCP management registry wiring (D1 Task H2)', () => {
     await handlerFor(registry, 'GET', '/api/mcp/servers')!(fakeReq({ method: 'GET', url: '/api/mcp/servers' }), r.res);
     expect(r.status).toBe(503);
     expect(JSON.parse(r.body).error).toBe("runtime surface 'mcp.list' is not available");
+  });
+
+  // ── false-propagation seam (fix round 1) ────────────────────────────────
+  // RouteRegistry.match() strips trailing slashes, so shapes the delegates'
+  // anchored regexes reject (/api/mcp/servers/, .../servers/<name>/) still reach
+  // these handlers. handleMcp / handleMcpConfig answer false = "fall back to the
+  // legacy chain"; dispatchAuthorized only falls back on literal false, so the
+  // handler MUST return the delegate's promise. Swallowing it leaves the request
+  // neither answered nor falling through → client hangs.
+  describe('delegate false propagation (no hung request)', () => {
+    it('GET /api/mcp/servers/ (trailing slash) returns the delegate false and writes nothing', async () => {
+      const { registry, calls } = setup();
+      const r = fakeRes();
+      const handled = await handlerFor(registry, 'GET', '/api/mcp/servers/')!(
+        fakeReq({ method: 'GET', url: '/api/mcp/servers/' }), r.res,
+      );
+      expect(handled).toBe(false);
+      expect(r.written).toBe(0);
+      expect(r.ended).toBe(false);
+      expect(calls.list).toEqual([]); // the delegate bailed before touching the runtime
+    });
+
+    it('DELETE /api/mcp/config/servers/x/ (trailing slash) returns false, writes nothing', async () => {
+      const { registry, calls } = setup();
+      const r = fakeRes();
+      const handled = await handlerFor(registry, 'DELETE', '/api/mcp/config/servers/ctx7/')!(
+        fakeReq({ method: 'DELETE', url: '/api/mcp/config/servers/ctx7/', body: JSON.stringify({ confirm: true }) }), r.res,
+      );
+      expect(handled).toBe(false);
+      expect(r.written).toBe(0);
+      expect(r.ended).toBe(false);
+      expect(calls.remove).toEqual([]);
+    });
+
+    it('POST /api/mcp/%20/connect (decoded-empty name → delegate false) propagates', async () => {
+      const { registry, calls } = setup();
+      const r = fakeRes();
+      const handled = await handlerFor(registry, 'POST', '/api/mcp/%20/connect')!(
+        fakeReq({ method: 'POST', url: '/api/mcp/%20/connect' }), r.res,
+      );
+      expect(handled).toBe(false);
+      expect(r.written).toBe(0);
+      expect(calls.connect).toEqual([]);
+    });
+
+    it('all eight handlers return the delegate boolean (true on a matching shape)', async () => {
+      const { registry } = setup();
+      const shapes: Array<[string, string, string]> = [
+        ['GET', '/api/mcp/servers', 'mcp.servers'],
+        ['POST', '/api/mcp/ctx7/connect', 'mcp.connect'],
+        ['POST', '/api/mcp/ctx7/disconnect', 'mcp.disconnect'],
+        ['POST', '/api/mcp/config/preview', 'mcp.configPreview'],
+        ['POST', '/api/mcp/config/preview-remove', 'mcp.configPreviewRemove'],
+        ['POST', '/api/mcp/config/apply', 'mcp.configApply'],
+        ['POST', '/api/mcp/config/restore', 'mcp.configRestore'],
+        ['DELETE', '/api/mcp/config/servers/ctx7', 'mcp.configRemove'],
+      ];
+      for (const [method, url, op] of shapes) {
+        expect(registry.match(method as never, url)?.def.operationId).toBe(op);
+        const r = fakeRes();
+        const handled = await handlerFor(registry, method, url)!(fakeReq({ method, url }), r.res);
+        // true (delegated + answered) — never undefined, which would be indistinguishable
+        // from a swallowed false to dispatchAuthorized's `handled !== false` test.
+        expect(handled).toBe(true);
+        expect(r.written).toBeGreaterThan(0);
+      }
+    });
+
+    it('dispatchAuthorized falls back (false) for the trailing-slash shape instead of hanging', async () => {
+      const { registry } = setup();
+      const r = fakeRes();
+      const req = fakeReq({ method: 'GET', url: '/api/mcp/servers/' });
+      const handled = await dispatchAuthorized({ registry, apiToken: '' }, req, r.res);
+      expect(handled).toBe(false); // legacy chain continues → reverse proxy
+      expect(r.written).toBe(0);
+    });
   });
 });
