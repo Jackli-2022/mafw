@@ -11,6 +11,8 @@ import { config } from "./config";
 import { MutexQueue } from './concurrency/mutex-queue';
 import { TtlMap } from './concurrency/ttl-map';
 import { Scheduler, TaskSkippedError, TaskTimeoutError } from './scheduler';
+import { SessionRegistry } from './session';
+import { InternalRolesView } from './session/views/internal-roles';
 import { log } from './core/utils/logger';
 import {
   createGatewayRuntimeIdentity,
@@ -540,10 +542,14 @@ class MafwScheduler {
   }
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private queueSweepTimer: ReturnType<typeof setInterval> | null = null;
+  // Unified session registry (kernel refactor Phase C) — the gateway's process
+  // table. Views below hold a reference; worker-origin / pool / lead / pod
+  // mirrors consume it (plan 2026-11-10-gateway-kernel-session-registry.md).
+  private sessionRegistry = new SessionRegistry();
   // Internal worker sessions (memory pipelines) — their output must never be
-  // captured back into T1 (recursion guard A). Maps sessionID → worker role
-  // (manager, turn-compress, index-scan, reflect) for token usage tracking.
-  private internalSessionRoles = new Map<string, string>();
+  // captured back into T1 (recursion guard A). Role overlay over the session
+  // registry (was: bare Map<string, string>; kv dual-write unchanged).
+  private internalSessionRoles = new InternalRolesView(this.sessionRegistry);
   // Identity layer (spec 2026-10-08-runtime-neutral-agent-identity): registry 是身份
   // 单一事实源；state 持 session→identity 绑定与 (runtime, identity) 物化状态。
   private identityRegistry = createBuiltinIdentityRegistry();
