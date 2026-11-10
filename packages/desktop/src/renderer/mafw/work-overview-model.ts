@@ -143,6 +143,83 @@ export function buildWorkPriority(input: {
   return [...attention, ...results.filter((item) => !claimed.has(`${item.goal.goalId}:r${currentRevisionOf(item.goal)}`))]
 }
 
+export type AttentionListKind =
+  | "answer" | "plan_approval" | "direction_review" | "review" | "blocked" | "failed"
+
+export interface AttentionListItem {
+  key: string
+  goal: PodGoal
+  kind: AttentionListKind
+  label: string
+  actionType: PodGoalStageActionType | null
+}
+
+const ATTENTION_LABELS: Record<AttentionListKind, string> = {
+  answer: "回答问题",
+  plan_approval: "批准计划",
+  direction_review: "裁定方向",
+  review: "查看结果",
+  blocked: "处理阻塞",
+  failed: "重试",
+}
+
+const ATTENTION_PRIORITY: Record<AttentionListKind, number> = {
+  plan_approval: 100,
+  direction_review: 90,
+  answer: 80,
+  review: 70,
+  failed: 60,
+  blocked: 50,
+}
+
+/**
+ * Person-first attention list for the workbench. Healthy goals and unread
+ * results are excluded here; they stay in the complete Goal list.
+ */
+export function buildAttentionList(input: {
+  goals: readonly PodGoal[]
+  attention: readonly unknown[]
+  isResultViewed: (goal: PodGoal) => boolean
+}): AttentionListItem[] {
+  const byGoal = new Map<string, AttentionListItem & { person: boolean }>()
+  for (const goal of input.goals) {
+    if (goal.endedAt) continue
+    const stage = goal.stage
+    let kind: AttentionListKind | null = null
+    let person = false
+    if (stage.owner === "person") {
+      person = true
+      switch (stage.kind) {
+        case "plan_approval": kind = "plan_approval"; break
+        case "direction_review": kind = "direction_review"; break
+        case "question": kind = "answer"; break
+        case "blocked": kind = goal.lastError ? "failed" : "blocked"; break
+        case "reviewing":
+        case "result_notified": kind = goal.resultReady ? "review" : null; break
+        default: kind = null
+      }
+    } else if (goal.bucket === "result_ready" && !input.isResultViewed(goal)) {
+      kind = "review"
+    }
+    if (!kind || byGoal.has(goal.goalId)) continue
+    byGoal.set(goal.goalId, {
+      key: `${goal.goalId}:${currentRevisionOf(goal)}:${kind}`,
+      goal,
+      kind,
+      label: ATTENTION_LABELS[kind],
+      actionType: stage.action?.type ?? null,
+      person,
+    })
+  }
+
+  return [...byGoal.values()]
+    .sort((a, b) =>
+      Number(b.person) - Number(a.person)
+      || ATTENTION_PRIORITY[b.kind] - ATTENTION_PRIORITY[a.kind]
+      || a.goal.goalId.localeCompare(b.goal.goalId))
+    .map(({ person: _person, ...item }) => item)
+}
+
 function progressRoleLabel(goal: PodGoal): string {
   const role = goal.currentAssignment?.role ?? goal.stage.role
   if (role === "builder") return "Builder"
