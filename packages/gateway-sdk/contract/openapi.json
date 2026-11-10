@@ -2700,6 +2700,68 @@
         }
       }
     },
+    "/api/lead/topics": {
+      "get": {
+        "operationId": "lead.topics.list",
+        "tags": [
+          "lead"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics/{id}": {
+      "get": {
+        "operationId": "lead.topics.get",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/working-set": {
+      "get": {
+        "operationId": "lead.workingSet",
+        "tags": [
+          "lead"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/recall": {
+      "get": {
+        "operationId": "lead.recall",
+        "tags": [
+          "lead"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/goals/{id}/nodes/{runId}/retry": {
       "post": {
         "operationId": "goals.retryNode",
