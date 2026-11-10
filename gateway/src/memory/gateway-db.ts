@@ -115,6 +115,14 @@ export interface SkillRegistryRecord {
   deoptReason: string | null;
 }
 
+export interface SkillInvocationStats {
+  total: number;
+  success: number;
+  failure: number;
+  unknown: number;
+  lastAt: number | null;
+}
+
 const T1_RETRIEVAL_KINDS: T1RetrievalKind[] = ['search', 'recall', 'redeem'];
 
 function parseJsonStringArray(raw: unknown): string[] {
@@ -421,6 +429,22 @@ export class GatewayDatabase {
         deopt_reason TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_skill_registry_status ON skill_registry(status);
+
+      -- Skill v1 6B: trusted runtime activations only. The default outcome is
+      -- unknown; success is never inferred from a non-error tool result.
+      CREATE TABLE IF NOT EXISTS skill_invocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_name TEXT NOT NULL,
+        skill_version INTEGER,
+        session_id TEXT,
+        goal_id TEXT,
+        call_id TEXT NOT NULL UNIQUE,
+        outcome TEXT NOT NULL DEFAULT 'unknown',
+        evidence TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_skill_invocations_name ON skill_invocations(skill_name, created_at);
 
       CREATE TABLE IF NOT EXISTS goal_outcomes (
         goal_id TEXT PRIMARY KEY,
@@ -1303,6 +1327,110 @@ export class GatewayDatabase {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Record one trusted runtime skill activation. Deduped by callID; a missing
+   * skill name or callID is rejected (never infer identity from text).
+   */
+  recordSkillInvocation(record: {
+    skillName: string;
+    callId: string;
+    sessionId?: string;
+    goalId?: string;
+    skillVersion?: number;
+  }): boolean {
+    const skillName = String(record?.skillName || '').trim().slice(0, 200);
+    const callId = String(record?.callId || '').trim().slice(0, 200);
+    if (!skillName || !callId) return false;
+    const version = Number.isFinite(record.skillVersion)
+      ? Math.floor(record.skillVersion!)
+      : this.getSkillRecord(skillName)?.version ?? null;
+    try {
+      return this.db
+        .prepare(
+          `INSERT OR IGNORE INTO skill_invocations
+             (skill_name, skill_version, session_id, goal_id, call_id, outcome, evidence, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'unknown', 'runtime.tool.call', unixepoch(), unixepoch())`,
+        )
+        .run(
+          skillName,
+          version,
+          record.sessionId ?? null,
+          record.goalId ?? null,
+          callId,
+        ).changes > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Mechanical failure only (tool/load error); non-error results stay unknown. */
+  markSkillInvocationFailed(callId: string, evidence = 'runtime.tool.result'): boolean {
+    const id = String(callId || '').trim();
+    if (!id) return false;
+    try {
+      return this.db
+        .prepare("UPDATE skill_invocations SET outcome = 'failure', evidence = ?, updated_at = unixepoch() WHERE call_id = ?")
+        .run(evidence, id).changes > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  skillInvocationStats(skillName: string): SkillInvocationStats {
+    const empty: SkillInvocationStats = { total: 0, success: 0, failure: 0, unknown: 0, lastAt: null };
+    const name = String(skillName || '').trim();
+    if (!name) return empty;
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT COUNT(*) AS total,
+                  SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) AS success,
+                  SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) AS failure,
+                  SUM(CASE WHEN outcome = 'unknown' THEN 1 ELSE 0 END) AS unknown,
+                  MAX(created_at) AS lastAt
+             FROM skill_invocations WHERE skill_name = ?`,
+        )
+        .get(name) as any;
+      if (!row || !row.total) return empty;
+      return {
+        total: row.total ?? 0,
+        success: row.success ?? 0,
+        failure: row.failure ?? 0,
+        unknown: row.unknown ?? 0,
+        lastAt: row.lastAt ?? null,
+      };
+    } catch {
+      return empty;
+    }
+  }
+
+  listSkillInvocationStats(): Record<string, SkillInvocationStats> {
+    const out: Record<string, SkillInvocationStats> = {};
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT skill_name,
+                  COUNT(*) AS total,
+                  SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) AS success,
+                  SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) AS failure,
+                  SUM(CASE WHEN outcome = 'unknown' THEN 1 ELSE 0 END) AS unknown,
+                  MAX(created_at) AS lastAt
+             FROM skill_invocations GROUP BY skill_name`,
+        )
+        .all() as any[];
+      for (const row of rows) {
+        out[row.skill_name] = {
+          total: row.total ?? 0,
+          success: row.success ?? 0,
+          failure: row.failure ?? 0,
+          unknown: row.unknown ?? 0,
+          lastAt: row.lastAt ?? null,
+        };
+      }
+    } catch { /* fail-open */ }
+    return out;
   }
 
   /**
