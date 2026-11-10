@@ -34,6 +34,13 @@ export interface BehaviorResult {
   detail?: string;
 }
 
+/** Declaration surfaces that are intentionally absent under `eventTranslation: 'self'`. */
+export const SELF_TRANSLATION_SURFACES: ReadonlySet<string> = new Set([
+  'plugin.eventSource',
+  'plugin.eventMappings',
+  'plugin.transformEvent',
+]);
+
 export interface RuntimeCoverage {
   runtime: string;
   contractVersion: string;
@@ -129,6 +136,9 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
   const capsSource = (subject.rt.capabilities ?? subject.plugin?.capabilities ?? {}) as unknown as Record<string, boolean>;
   const declared = { ...capsSource };
   const effective = { ...declared };
+  const translationMode = subject.declaration
+    ? resolveEventDeclaration({ eventStream: !!capsSource.eventStream }, subject.declaration).mode
+    : 'declared' as const;
   const surfaces: RuntimeCoverage['static']['surfaces'] = {};
   const missing: RuntimeCoverage['static']['missing'] = [];
   const unverified: RuntimeCoverage['static']['unverified'] = [];
@@ -144,7 +154,12 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
 
   for (const s of manifest.surfaces) {
     let status: SurfaceStatus;
-    if (s.verification !== 'presence') {
+    if (translationMode === 'self' && SELF_TRANSLATION_SURFACES.has(s.id)) {
+      // The adapter translates native events itself; gateway declaration
+      // surfaces are not applicable rather than missing.
+      status = 'unverified';
+      unverified.push({ id: s.id, reason: 'self-translation' });
+    } else if (s.verification !== 'presence') {
       status = 'unverified';
       const reason = s.verification === 'attested'
         ? 'attested'
@@ -190,7 +205,7 @@ export function computeCoverage(subject: ContractSubject, manifest: RuntimeContr
 
   const translation = subject.declaration
     ? {
-        mode: resolveEventDeclaration({ eventStream: !!capsSource.eventStream }, subject.declaration).mode,
+        mode: translationMode,
         note: '',
       }
     : { mode: 'declared' as const, note: '' };

@@ -24,6 +24,18 @@ describe('manifest-driven validateRuntime', () => {
     expect(validateRuntime(rt, 'test').hard).toEqual([]);
   });
 
+  it('does not warn declaration surfaces in self-translation mode', () => {
+    const rt = fakeRuntime({ capabilities: { ...fullCapabilities(), eventStream: true } });
+    const v = validateRuntime(rt, 'test', {
+      source: 'active',
+      declaration: { eventTranslation: 'self' },
+    });
+    expect(v.warnings.join('\n')).not.toMatch(/plugin\.(eventSource|eventMappings|transformEvent)/);
+    expect(v.staticCoverage?.static.surfaces['plugin.eventSource'].status).toBe('unverified');
+    expect(v.staticCoverage?.static.missing.map((m) => m.id))
+      .not.toContain('plugin.eventSource');
+  });
+
   it('hard-fails global.event when eventStream is true', () => {
     const rt = fakeRuntime({ capabilities: { ...fullCapabilities(), eventStream: true }, global: undefined });
     expect(validateRuntime(rt, 'test').hard.join('\n')).toMatch(/events\.global/);

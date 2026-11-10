@@ -65,6 +65,19 @@ describe('coverage engine', () => {
     expect(c.static.translation.note).toContain('not recommended');
   });
 
+  it('does not mark declaration surfaces missing in self-translation mode', () => {
+    const c = computeCoverage({
+      rt: fakeRuntime({ capabilities: { ...fullCapabilities(), eventStream: true } }),
+      source: 'active',
+      declaration: { eventTranslation: 'self' },
+    }, manifest);
+    for (const id of ['plugin.eventSource', 'plugin.eventMappings', 'plugin.transformEvent']) {
+      expect(c.static.surfaces[id].status).toBe('unverified');
+      expect(c.static.missing.map((m) => m.id)).not.toContain(id);
+    }
+    expect(c.static.unverified).toContainEqual({ id: 'plugin.eventSource', reason: 'self-translation' });
+  });
+
   it('defaults translation annotation to declared', () => {
     const c = computeCoverage({ rt: fakeRuntime(), source: 'file' }, manifest);
     expect(c.static.translation).toEqual({ mode: 'declared', note: '' });

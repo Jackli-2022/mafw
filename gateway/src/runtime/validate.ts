@@ -11,7 +11,7 @@ import type { AgentRuntime, RuntimeCapabilities } from './contract';
 import { buildRuntimeContractManifest } from './contract-manifest';
 import { CONTRACT_CAPABILITIES } from './contract-capabilities';
 import type { ContractSurface } from './contract-manifest-types';
-import { computeCoverage, type ContractSubject, type RuntimeCoverage } from './coverage';
+import { computeCoverage, SELF_TRANSLATION_SURFACES, type ContractSubject, type RuntimeCoverage } from './coverage';
 import { deriveUndeclaredCapabilities } from './capability-source';
 
 export interface RuntimeValidation {
@@ -157,6 +157,7 @@ export function validateRuntime(
       const capKey = surface.capability as keyof RuntimeCapabilities;
       if (!liveCaps[capKey]) continue;
       if (status === 'present') continue;
+      if (coverage.static.translation.mode === 'self' && SELF_TRANSLATION_SURFACES.has(surface.id)) continue;
       const requires = CAP_BY_ID.get(surface.capability)?.requires ?? [];
       if (requires.includes(surface.id)) {
         if (effectiveCaps[capKey]) {
