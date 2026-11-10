@@ -2,13 +2,19 @@ import { readFileSync } from 'fs';
 import * as path from 'path';
 
 const indexSource = readFileSync(path.join(__dirname, '../../src/index.ts'), 'utf8');
+// D3 Task 5：启动序（步骤 7/8 的 section markers）搬进 src/boot.ts。
+const bootSource = readFileSync(path.join(__dirname, '../../src/boot.ts'), 'utf8');
+
+function sectionOf(source: string, start: string, end: string): string {
+  const from = source.indexOf(start);
+  expect(from).toBeGreaterThanOrEqual(0);
+  const to = source.indexOf(end, from + start.length);
+  expect(to).toBeGreaterThan(from);
+  return source.slice(from, to);
+}
 
 function section(start: string, end: string): string {
-  const from = indexSource.indexOf(start);
-  expect(from).toBeGreaterThanOrEqual(0);
-  const to = indexSource.indexOf(end, from + start.length);
-  expect(to).toBeGreaterThan(from);
-  return indexSource.slice(from, to);
+  return sectionOf(indexSource, start, end);
 }
 
 describe('Lead lifecycle wiring', () => {
@@ -34,8 +40,9 @@ describe('Lead lifecycle wiring', () => {
   });
 
   test('startup only ensures registered projects with a Pod or in-flight goal', () => {
-    expect(indexSource).toContain('shouldEnsureLeadOnStartup');
-    const startup = section('// 7. Lead 只属于已有 Pod', '// 8. 启动自动化引擎');
+    // D3 Task 5: the startup block (section 7) moved verbatim into boot.ts.
+    expect(bootSource).toContain('shouldEnsureLeadOnStartup');
+    const startup = sectionOf(bootSource, '// 7. Lead 只属于已有 Pod', '// 8. 启动自动化引擎');
     expect(startup).toContain('shouldEnsureLeadOnStartup');
     expect(startup).toContain('hasPod');
     expect(startup).toContain('hasInFlightGoal');

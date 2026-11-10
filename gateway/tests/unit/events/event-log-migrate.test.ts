@@ -343,8 +343,14 @@ describe('migrateEventLogInfoToMessage（message.error 规范形归一）', () =
 });
 
 // 接线守卫：迁移必须在 API/SSE 开放前执行（spec §9.1「在 replay 服务开放前完成」）。
-describe('index.ts wiring（迁移先于 API/SSE ready）', () => {
+//
+// D3 Task 5：`start()` 移入 `src/boot.ts`（`bootKernel(kernel)`），因此 API
+// 开放点现在读 boot.ts；迁移调用仍在 index.ts 的 `getGatewayDb()` 里（由
+// `initServices()` 触发）。两条断言合起来守住原来的顺序：
+// getGatewayDb → 迁移，且 initServices（含迁移）先于 startApiServer。
+describe('boot wiring（迁移先于 API/SSE ready）', () => {
   const idxSrc = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+  const bootSrc = readFileSync(join(__dirname, '../../../src/boot.ts'), 'utf8');
 
   it('getGatewayDb 构造 EventStore 后调用迁移', () => {
     expect(idxSrc).toContain('migrateEventLogInfoToMessage(');
@@ -355,9 +361,14 @@ describe('index.ts wiring（迁移先于 API/SSE ready）', () => {
   });
 
   it('迁移调用出现在 startApiServer 之前', () => {
+    // 迁移入口：index.ts 的 getGatewayDb()（EventStore 构造之后立即迁移）。
     const migrateIdx = idxSrc.indexOf('migrateEventLogInfoToMessage(');
-    const apiIdx = idxSrc.indexOf('await this.startApiServer()');
+    // API 开放点：boot.ts 启动序里的 startApiServer；initServices 是它的前置步骤。
+    const initIdx = bootSrc.indexOf('await kernel.initServices()');
+    const apiIdx = bootSrc.indexOf('await kernel.startApiServer()');
+    expect(migrateIdx).toBeGreaterThan(-1);
+    expect(initIdx).toBeGreaterThan(-1);
     expect(apiIdx).toBeGreaterThan(-1);
-    expect(migrateIdx).toBeLessThan(apiIdx);
+    expect(initIdx).toBeLessThan(apiIdx);
   });
 });

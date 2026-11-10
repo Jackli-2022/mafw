@@ -14,9 +14,7 @@ import { getDefaultSessionRegistry } from './session';
 import { InternalRolesView } from './session/views/internal-roles';
 import { log } from './core/utils/logger';
 import {
-  createGatewayRuntimeIdentity,
   gatewayHealthFields,
-  loadGatewayReleaseMetadata,
   type GatewayReleaseMetadata,
   type GatewayRuntimeIdentity,
 } from './release-info';
@@ -24,6 +22,8 @@ import { isLoopbackAddr } from './core/auth';
 // D3 Task 3：HTTP 传输链 + WS 上行枢纽（原先内联在 startApiServer 的 626 行回调）。
 import { createRequestListener } from './http/transport';
 import { createWsHub, type WsHub } from './http/ws-upgrade';
+// D3 Task 5：启动序列（start() + 实例所有权 + 迁移 + 自更新 watcher）移入 boot.ts。
+import { bootKernel, exitAfterPortConflict, persistRegistry, releaseInstanceOwnership, type BootKernel } from './boot';
 // D3 Task 4：dashboard legacy 总分发器移入 subsystems/（R5 保留，逐字搬移）。
 import { handleDashboardAPI, type DashboardLegacyDeps } from './subsystems/dashboard-legacy';
 import { normalizeDir, isPortHealthy } from './core/http/http-util';
@@ -50,7 +50,6 @@ import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
 import { TaskService, TaskError } from './runtime/task-service';
-import { claimGatewayInstance } from './runtime/instance-ownership';
 import {
   gatewayDiscoveryPath,
   publishGatewayDiscovery,
@@ -188,7 +187,6 @@ import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
 import { resolveMobileBaseUrl, detectReachableHost } from './mobile/tailscale-url';
-import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
 import { normalizeOpencodeEvent } from './runtime/normalize';
 import { UnknownEventTracker } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
@@ -415,7 +413,6 @@ interface Session {
 
 import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot, clearSlotsForSession } from './core/manager/manager-session-runtime';
 import { LeadSessionRegistry } from './core/manager/lead-session-registry';
-import { shouldEnsureLeadOnStartup } from './core/manager/lead-session-resolution';
 import { isLiveSessionInfo } from './runtime/session-liveness';
 
 const INTERNAL_SESSION_TTL_DAYS = 7;
@@ -786,665 +783,24 @@ class MafwScheduler {
   }
 
   /** Check actual serve health via TCP connection, not just object existence. */
+  /**
+   * D3 Task 5: the boot sequence lives in `boot.ts` (extract-as-is, ruling
+   * D3-R6). The kernel is handed over through boot.ts's type-only `BootKernel`
+   * surface; its private members are structurally compatible at runtime, so the
+   * one cast stays at this boundary and the boot body itself is fully typed.
+   */
+  private bootView(): BootKernel {
+    return this as unknown as BootKernel;
+  }
+
+  /** canonical 词汇表全集（boot 的 runtime.loader 步骤从这里读；D3 Task 5）。 */
+  private canonicalTypes(): ReadonlySet<string> {
+    return CANONICAL_TYPE_SET;
+  }
+
+  /** Check actual serve health via TCP connection, not just object existence. */
   async start() {
-    log.info('MAFW Scheduler v5.0 starting...');
-    this.releaseMetadata = loadGatewayReleaseMetadata(__dirname);
-    this.runtimeIdentity = createGatewayRuntimeIdentity(process.env, () => randomUUID());
-    log.info(
-      `[Scheduler] release v${this.releaseMetadata.gatewayVersion}`
-      + ` (${this.runtimeIdentity.distribution}/${this.runtimeIdentity.channel})`
-      + ` instance=${this.runtimeIdentity.instanceId}`,
-    );
-
-    // One data directory, one gateway. Ownership is a lease held by the
-    // process that is about to bind — not a probe against the port. A
-    // contender either becomes the owner or reports the live instance so the
-    // caller can attach; a self-update successor waits for the old owner to
-    // release instead of stealing a live lock.
-    const takeover = process.env.MAFW_TAKEOVER === '1';
-    const ownership = await claimGatewayInstance({
-      runtimeDir: mafwRuntimeDir(),
-      takeover,
-    });
-    if (ownership.kind === 'deferred') {
-      const holder = ownership.holder;
-      process.stdout.write(`${JSON.stringify({ mafw: 'deferred', instance: holder })}\n`);
-      log.info(
-        `[Scheduler] Another gateway already owns ${mafwRuntimeDir()}`
-        + (holder ? ` (pid ${holder.pid}, port ${holder.port})` : '')
-        + '; exiting',
-      );
-      process.exit(0);
-      return;
-    }
-    if (ownership.kind === 'failed') {
-      log.error(`[Scheduler] Cannot own the gateway instance lock: ${ownership.error}`);
-      process.exit(1);
-      return;
-    }
-    this.instanceLock = ownership.lock;
-    if (takeover) {
-      log.info('[Scheduler] Takeover: acquired the instance lock from the previous gateway');
-    }
-
-    if (takeover) {
-      // Keep the mafw CLI PID file pointing at this process so status/stop
-      // keep working after a self-restart.
-      try {
-        const dir = path.join(os.homedir(), '.config', 'mafw');
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, 'gateway.pid'), String(process.pid), 'utf-8');
-      } catch {}
-    }
-
-    // 0. Init services
-    await this.initServices();
-    // Install the shipped Office skill before serve spawns: opencode builds its
-    // skill catalog at startup, so a later write would not be discovered.
-    try {
-      const skill = await ensureGlobalOfficeSkill();
-      if (skill.ok) {
-        if (skill.action !== 'unchanged') log.info(`[Office] global skill ${skill.action}: ${skill.target}`);
-      } else {
-        log.warn(`[Office] global skill not installed (${skill.reason}): ${skill.target}`);
-      }
-    } catch (err: any) {
-      log.warn(`[Office] global skill install failed (non-fatal): ${err?.message ?? err}`);
-    }
-    // The Creator identity requires the shipped plugin-creator skill before its
-    // first inspect/write; install it beside the Office skill (same startup gate).
-    try {
-      const skill = await ensurePluginCreatorSkill();
-      if (skill.ok) {
-        if (skill.action !== 'unchanged') log.info(`[PluginCreator] global skill ${skill.action}: ${skill.target}`);
-      } else {
-        log.warn(`[PluginCreator] global skill not installed (${skill.reason}): ${skill.target}`);
-      }
-    } catch (err: any) {
-      log.warn(`[PluginCreator] global skill install failed (non-fatal): ${err?.message ?? err}`);
-    }
-    // pi-ai's bundled xiaomi catalog lags the provider (v2.5 removed). Merge the
-    // v2.6 ids into pi's models.json before Media Agent resolves a model.
-    try {
-      const models = await ensurePiModels();
-      if (models.ok) {
-        if (models.action !== 'unchanged') log.info(`[Media] pi models ${models.action}: ${models.path}`);
-      } else {
-        log.warn(`[Media] pi models not updated (${models.reason}): ${models.path}`);
-      }
-    } catch (err: any) {
-      log.warn(`[Media] pi models update failed (non-fatal): ${err?.message ?? err}`);
-    }
-    this.setupEventBus();
-
-    // Boot reconcile: orphan questions for inactive goals
-    const bootLedger = new QuestionLedger(this.mafwDir);
-    const activeCheckpoints = new Set(Array.from(this.activeGoals.keys()));
-    bootLedger.bootReconcile(activeCheckpoints);
-
-    // 1. Start HTTP API immediately (health check endpoint, MCP, etc.)
-    const listening = await this.startApiServer();
-    if (!listening) {
-      await this.releaseInstanceOwnership();
-      process.exit(1);
-      return;
-    }
-    try {
-      await this.publishInstanceDiscovery();
-    } catch (err: any) {
-      log.error(`[Scheduler] gateway discovery publish failed: ${err?.message ?? err}`);
-      await this.releaseInstanceOwnership();
-      process.exit(1);
-      return;
-    }
-
-    // 2. 初始化 runtime 插件加载器
-    this.runtimeLoader = new RuntimePluginLoader(config.resolvePath('runtime-plugins'));
-    this.runtimeLoader.setCanonicalTypes(CANONICAL_TYPE_SET);
-    await this.runtimeLoader.init();
-    // 内置 pi runtime 注册：实现已抽到 `@mafw/adapter-pi`（adapters/pi），
-    // gateway 只经 `runtime/pi-adapter.ts` 的包入口调用。
-    this.runtimeLoader.registerBuiltinDefinition(
-      'pi',
-      (ctx) => createPiDefinition(ctx),
-      { external: false, capabilities: PI_CAPABILITIES },
-    );
-    // pi 原生未知事件 → 统一遥测。翻译在 adapter 的 pi-adapter-events 内完成，
-    // 未映射类型由该模块的 recorder 上报（gateway 不再有 transform fallthrough）。
-    setPiUnknownRecorder((t) => { try { this.unknownEventTracker.record('pi', t); } catch { /* fail-open */ } });
-
-    // 2b. 统一插件包宿主（必须在 createRuntime 之前 init——包 runtime 贡献要先注册）
-    const pluginPackageDir = process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins');
-    this.packageStateStore = new PackageStateStore(config.resolvePath());
-    this.pluginHost = new PluginHost(
-      pluginPackageDir,
-      (name, bag) => createPluginPackageContext(name, {
-        getApiKey: this.runtimeGetApiKey.bind(this),
-        usageStats: () => this.usageStatsProvider,
-        projectDir: this.projectDir,
-        gatewayPort: config.server.apiPort,
-        // ctx.effect 的清理挂在本 candidate 的 RegistrationBag：reload/replace/
-        // disable/delete/离线 check 时统一执行（LIFO）。
-        bag,
-        // ctx.terminal 复用桌面终端同一个 TerminalService（惰性：runtime 热切换
-        // 与「无 PTY 能力」都在调用时现读）。PTY 归属目录由插件按请求票据传入。
-        terminal: () => this.getTerminalService(),
-        emit: (event) => this.broadcast(event),
-        // 包只能改 plugins.<package>.config——context 负责收敛命名空间与
-        // 补丁安全校验，这里只透传到既有的 config.persistOverrides。
-        persistConfig: (overrides) => {
-          config.persistOverrides(overrides as unknown as Parameters<typeof config.persistOverrides>[0]);
-        },
-      }),
-      {
-        // 变更包若拥有当前 active runtime → 整包 pending，不打断正在使用的工作。
-        activeRuntime: () => this.runtimeName,
-        // 管理器独立持久化的禁用状态：包仍在磁盘上，但扫描时跳过。
-        isDisabled: (name) => this.packageStateStore!.isDisabled(name),
-        // 包事件不得冒充 canonical 事件。
-        canonicalTypes: CANONICAL_TYPE_SET,
-        // 包事件 + 提交后的 plugins.changed 走 gateway 既有扁平广播通道。
-        broadcast: (event) => this.broadcast(event as any),
-      },
-    );
-    this.packageManager = new PackageManager({
-      pluginDir: pluginPackageDir,
-      host: this.pluginHost,
-      stateStore: this.packageStateStore,
-    });
-    this.pluginHost.bindRuntime((entries) => this.runtimeLoader?.setPackageEntries(entries));
-    // 客户端快照只在 commit 后替换；handler/源码永不下发。
-    this.pluginHost.onSnapshot((snapshot) => { this.pluginClientSnapshot = snapshot; });
-    await this.pluginHost.init();
-
-    // 3. 创建 SDK 客户端（auth），用于健康检查和后续通信
-    const sdkConfig = {
-      baseUrl: this.serveUrl,
-      headers: {} as Record<string, string>,
-    };
-    const opencodePassword = (process.env.MAFW_RUNTIME_PASSWORD ?? process.env.MAFW_OPENCODE_PASSWORD);
-    if (opencodePassword) {
-      sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
-    }
-    // opencode 注册为正式内置插件（与用户插件同一接口；同名文件/包可覆盖）。
-    // v2：携带事件翻译声明——opencode 不再有「免翻译特权」，原生流经同一
-    // wrap 序列（映射差异行 + transformEvent 前缀丢弃）进 canonical 管线。
-    // canonical v3 / Plan 2：方言寻址——裸 `opencode`（自适应：SSE peek 探测，
-    // fail-safe @v1）+ 钉死 `opencode@v1` / `opencode@v2`；三个名字共享同一
-    // runtime 工厂（serve/adapter/凭据全同），差异仅在事件映射表。
-    const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
-    const external = !!process.env.MAFW_SERVER_SERVE_URL;
-    const registrationName: Record<OpencodeVariant, string> = {
-      adaptive: 'opencode',
-      v1: 'opencode@v1',
-      v2: 'opencode@v2',
-      v21: 'opencode@v21',
-    };
-    const opencodeDefinition = (variant: OpencodeVariant) => () => {
-      const name = registrationName[variant];
-      return createOpencodeDefinition({
-        variant,
-        registrationName: name,
-        baseUrl: sdkSnapshot.baseUrl,
-        headers: { ...sdkSnapshot.headers },
-        hooks: {
-          onUnmatched: (type) => this.recordTranslationDrop(name, type, 'unmatched'),
-          onSuppressed: (type) => this.recordTranslationDrop(name, type, 'suppressed'),
-          onTranslationError: (_raw, reason) => this.recordTranslationError(name, 'transformEvent', reason),
-        },
-      });
-    };
-    // 裸名 = 自适应方言（激活时探测一次，fail-safe @v1）
-    this.runtimeLoader.registerBuiltinDefinition('opencode', opencodeDefinition('adaptive'), {
-      external,
-      capabilities: opencodeCapabilities('adaptive', external),
-      eventEntry: opencodeStaticEntry('adaptive'),
-    });
-    // 钉死方言：映射表随定义固定，探测跳过
-    this.runtimeLoader.registerBuiltinDefinition('opencode@v1', opencodeDefinition('v1'), {
-      external,
-      capabilities: opencodeCapabilities('v1', external),
-      eventEntry: opencodeStaticEntry('v1'),
-    });
-    this.runtimeLoader.registerBuiltinDefinition('opencode@v2', opencodeDefinition('v2'), {
-      external,
-      capabilities: opencodeCapabilities('v2', external),
-      eventEntry: opencodeStaticEntry('v2'),
-    });
-    // 钉死 2.1.0 方言（顶层 type/data + session.* 富事件；dry-event/一致性测试用）
-    this.runtimeLoader.registerBuiltinDefinition('opencode@v21', opencodeDefinition('v21'), {
-      external,
-      capabilities: opencodeCapabilities('v21', external),
-      eventEntry: opencodeStaticEntry('v21'),
-    });
-    const runtime = await this.createRuntime();
-    this.runtime = runtime;
-    this.setRuntimeDiagnostics();
-    this.runtimeNameBeforeSwitch = null;
-    try { await this.taskService.start(); } catch (err: any) {
-      log.warn(`[Tasks] start failed (non-fatal): ${err?.message ?? err}`);
-    }
-    this.sdkSession.setClient(this.runtime);
-    if (this.trajectoryCollector) {
-      this.trajectoryCollector.setRuntime(this.runtime);
-    }
-    if (this.automationEngine) {
-      this.automationEngine.setRuntimeClient(runtime);
-    }
-    log.info(`Runtime initialized: ${this.runtimeName} (capabilities: ${JSON.stringify(this.runtimeCaps)})`);
-
-    // 3. Background: connect to OpenCode server
-    const isExternal = !!runtime.external;
-    let serveReady = false;
-    if (isExternal) {
-      log.info(`[Scheduler] Using external OpenCode Serve at ${this.serveUrl} (runtime.external=true)`);
-      try { await this.waitForServeReady(); serveReady = true; }
-      catch { log.warn('External OpenCode Serve not available — MCP-only mode'); }
-    } else {
-      if (await this.isServeHealthy()) {
-        log.info('OpenCode Serve already running (adopted; health-poll watchdog)');
-        serveReady = true;
-        this.serveOwned = false;
-        this.startServeWatchdog();
-      } else {
-        log.info('OpenCode Serve not reachable, checking for stale process...');
-        // 清场原语归 runtime（serve 端口是实现细节；无原语的 runtime 无从清场）
-        this.runtimeHost?.agentProcess?.killServe?.();
-        // taskkill /F /T 是异步生效的；给监听 socket 一点释放时间，避免紧随其后的
-        // spawn 仍撞 EADDRINUSE 并退化成 MCP-only。
-        await this.sleep(500);
-        try {
-          await this.startServe();
-          serveReady = !!this.serveInstance;
-        } catch (err) {
-          log.error(`Failed to start OpenCode Serve: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-    }
-
-    if (serveReady) {
-      // For owned sidecars this starts the health-poll watchdog; for adopted
-      // sidecars it is already running and the guard is a no-op.
-      this.startServeWatchdog();
-    }
-    // 外部 runtime（如 pi）声明 eventStream 时，事件订阅不等 opencode serve 就绪
-    if (serveReady || (this.runtimeCaps.eventStream && isExternal)) {
-      this.subscribeToEvents();
-    }
-
-    // 4. Dashboard is now served via the API server on the same port
-    // this.dashboard = new DashboardServer(3001, this.projectDir, this);
-    // this.dashboard.start();
-
-    // 5. 恢复注册表（权威源：gateway DB kv_store + legacy 文件兜底）
-    await this.recoverRegistry();
-
-    // 5.0 Data-directory migration: move memory store + pipeline files from
-    // the previously-fixed gateway package .mafw (and any project-relative
-    // leftovers) to the user-home ~/.mafw data root. Runs before any other
-    // migration/watcher so everything downstream reads the new fixed location.
-    try {
-      const { migrateDataDir } = await import('./recall/data-dir-migrate.js');
-      const res = migrateDataDir(
-        config.resolvePath(),
-        path.join(__dirname, '..', '.mafw'),
-      );
-      if (res.migrated) {
-        log.info(`[Scheduler] data dir migrated: ${res.moved.join(', ')}; legacy removed: ${res.legacyRemoved}`);
-      }
-    } catch (err: any) {
-      log.warn(`[Scheduler] data dir migration failed (non-fatal): ${err.message}`);
-    }
-
-    // 5.0b Reconcile missing merged_from in .harmonic_index.json from OKF
-    // frontmatter. Older addEntry() versions omitted this field.
-    try {
-      const { HarmonicIndexManager } = await import('./core/memory/harmonic-index.js');
-      const idxMgr = new HarmonicIndexManager(config.resolvePath());
-      const reconcile = idxMgr.reconcileMergedFrom();
-      if (reconcile.patched > 0) {
-        log.info(`[Scheduler] merged_from reconcile: ${reconcile.patched} patched, ${reconcile.alreadyOk} ok, ${reconcile.missing} missing`);
-      }
-    } catch (err: any) {
-      log.warn(`[Scheduler] merged_from reconcile failed (non-fatal): ${err.message}`);
-    }
-
-    // 5.0 File → DB migration for the unified gateway database: rename legacy
-    // t1.db, import manager-session files and the reflect cursor, snapshot the
-    // registry. Idempotent; every step fails open.
-    try {
-      const { migrateGatewayDb } = await import('./recall/gateway-db-migrate.js');
-      const managerSessions: Array<{ projectDir: string; filePath: string }> = [];
-      for (const [, info] of this.registeredProjects) {
-        managerSessions.push({ projectDir: info.projectDir, filePath: path.join(info.mafwDir, 'manager-session.json') });
-      }
-      managerSessions.push({ projectDir: this.projectDir, filePath: path.join(config.resolvePath(), 'manager-session.json') });
-      const res = migrateGatewayDb(
-        path.join(config.resolvePath(), 'memory'),
-        managerSessions,
-        path.join(config.resolvePath(), 'recall-reflect-cursor.json'),
-        Object.fromEntries(this.registeredProjects),
-      );
-      if (res.renamed || res.managerSessions > 0 || res.cursorImported) {
-        log.info(
-          `[Scheduler] gateway-db migrate: renamed=${res.renamed} managerSessions=${res.managerSessions} cursor=${res.cursorImported} registrySnapshot=${res.registrySnapshot}`,
-        );
-      }
-      // I3：迁移之后补齐存量 untagged manager-session 行（一次性打标，幂等）。
-      this.backfillManagerSessionSlots();
-    } catch (err: any) {
-      log.warn(`[Scheduler] gateway-db migration failed (non-fatal): ${err.message}`);
-    }
-
-    // 5.0a Migrate the legacy pinned-constraints channel into harmonic memory
-    // (idempotent; renamed backup marks a project as done).
-    try {
-      const { migrateConstraintsFiles } = await import('./recall/constraints-migrate.js');
-      const projectDirs = Array.from(this.registeredProjects.values()).map((p) => p.projectDir);
-      if (!projectDirs.includes(this.projectDir)) projectDirs.unshift(this.projectDir);
-      const res = await migrateConstraintsFiles(projectDirs);
-      if (res.migrated > 0 || res.renamed > 0) {
-        log.info(`[Scheduler] constraints migration: ${res.migrated} migrated, ${res.renamed} renamed, ${res.skipped} skipped`);
-      }
-    } catch (err: any) {
-      log.warn(`[Scheduler] constraints migration failed (non-fatal): ${err.message}`);
-    }
-
-    // 5.0a Archive legacy spiral-*.jsonl T1 files (superseded by the SQLite store).
-    try {
-      const { archiveLegacyT1 } = await import('./recall/legacy-t1-archive.js');
-      const projectDirs = Array.from(this.registeredProjects.values()).map((p) => p.projectDir);
-      if (!projectDirs.includes(this.projectDir)) projectDirs.unshift(this.projectDir);
-      const res = archiveLegacyT1(projectDirs);
-      if (res.archived > 0) log.info(`[Scheduler] archived ${res.archived} legacy T1 files across ${res.projects} projects`);
-    } catch (err: any) {
-      log.warn(`[Scheduler] legacy T1 archival failed (non-fatal): ${err.message}`);
-    }
-
-    // 5.1 Materialize every registry identity into the runtime's native format
-    // (spec 2026-10-08-runtime-neutral-agent-identity §3.2/3.4 — 物化车道 1)。
-    // agents.install 的语义即物化：opencode 写 agent md、pi 写 prompts+extension。
-    await this.materializeIdentities();
-
-    // 5.2 Goal NodeDriver（spec 2026-10-08-goal-orchestration-p1）：state 文件驱动的
-    // 编排状态机。client 直连 sdkSession（agent 参数显式绑定身份）；memory 注入由
-    // 边界 recall（消息 transform / pi host extension）按每 LLM 调用覆盖，故不再走
-    // legacy withMemoryInjection 全量注入。
-    this.goalDriver = new NodeDriver({
-      client: {
-        create: async (directory: string) => {
-          const rec = await this.sdkSession.create(directory);
-          return { id: rec.id };
-        },
-        // W1：节点会话按身份绑模型（v2 会话模型与 agent 解耦，agent md 的
-        // model 只对 subagent 工具子会话生效——goal 会话必须显式 switch）。
-        // W5a：模型可配置——config.goal.nodeModel 覆盖优先，身份内置兜底。
-        bindModel: async (sessionID: string, agent: string) => {
-          const model = resolveNodeModel(
-            this.identityRegistry.get(agent)?.model,
-            config.raw.goal?.nodeModel,
-          );
-          if (!model) return;
-          const fn = this.runtime?.session.switchModel;
-          if (!fn) return;
-          await fn({ sessionID, model });
-        },
-        promptAsync: async (opts) => {
-          const text = opts.parts.find((p) => p.type === 'text')?.text ?? '';
-          await this.sdkSession.promptAsync(opts.sessionID, text, undefined, opts.agent, undefined, opts.outputSchema);
-        },
-        delete: async (sessionID: string) => {
-          await this.podService?.snapshotSession(sessionID);
-          await this.sdkSession.delete(sessionID);
-        },
-        abort: async (sessionID: string) => { await this.runtime!.session.abort({ sessionID }); },
-        structured: async (sessionID: string) => structuredOutput.submitted(sessionID) ?? null,
-      },
-      db: {
-        insertNodeRun: (i) => this.getGatewayDb().insertNodeRun(i),
-        finishNodeRun: (id, p) => this.getGatewayDb().finishNodeRun(id, p),
-        listNodeRuns: (g) => this.getGatewayDb().listNodeRuns(g),
-        latestNodeAttempt: (g, r, l, n) => this.getGatewayDb().latestNodeAttempt(g, r, l, n),
-      },
-      ledger: new QuestionLedger(this.mafwDir),
-      emitNodeEvent: (p) => {
-        this.broadcast(p as any);
-        this.onPodGoalNode(p as any);
-      }, // 扁平顶层广播（事件信封契约 §5.6）
-      emitPhaseTransition: (p) => eventBus.emit('phase_transition', p),
-      onSessionCreated: (info) => {
-        recordSessionInDb(this.getGatewayDb(), info);
-        this.podService?.bindSession(info.goalId, info.phase as 'plan' | 'probe' | 'execute' | 'review', info.sessionId);
-        // Plan reuses the Tech Lead discussion session, which is already
-        // internal. Probe/execute/review get their own hidden role here.
-        if (info.phase === 'probe' || info.phase === 'execute' || info.phase === 'review') {
-          this.registerInternalSession(
-            info.sessionId,
-            podInternalSessionRoleForNode(info.phase),
-          );
-        }
-        const mafwDir = this.goalDriverMafwDirCache.get(info.goalId);
-        if (mafwDir) this.attachBudgetGuardForGoal(info.goalId, info.sessionId, mafwDir);
-      },
-      archiveGoal: (goalId, opts) => this.archiveGoal(goalId, opts as any),
-      nodeTimeoutMs: (config as any).goal?.nodeTimeoutMs ?? 30 * 60_000,
-      maxAttempts: 2,
-      workdirForRevision: async (goalId, revision) => {
-        const goal = this.podStore?.getGoalByGoalId(goalId);
-        if (!goal) return null;
-        // No row = legacy/in-flight Goal from before worktree support: never retrofit
-        // mid-Goal (its earlier work lives in the project checkout).
-        const worktree = await this.podWorktreeService.ensureExisting(goal.podId, goalId, revision);
-        return worktree?.dir ?? null;
-      },
-      goalMode: (goalId, revision) => {
-        const goal = this.podStore?.getGoalByGoalId(goalId);
-        if (!goal) return null;
-        return this.podStore.getGoalRevision(goal.podId, goalId, revision)?.goalMode ?? 'standard';
-      },
-      newApprovalId: () => `pa_${randomUUID()}`,
-      canCreateNode: (goalId: string) => {
-        const podId = this.podService?.getPodIdForGoal(goalId);
-        if (!podId) return true;
-        const pod = this.podStore?.getPod(podId);
-        return !pod || pod.status === 'active' || pod.status === 'idle';
-      },
-      // W4: plan 节点注入 L1 能力账本 + L2 失败谱（自我认知闭环），fail-open。
-      // D4b: 签名带 goalId——读 state.taskType 做同类任务先验。
-      capabilityPrior: (goalId: string) => {
-        try {
-          const { buildCapabilityLedger, buildFailureTaxonomy, capabilityPriorBlock } = require('./orchestration/capability-ledger');
-          const ledger = buildCapabilityLedger(this.getGatewayDb().listGoalOutcomes({ limit: 200 }));
-          const taxonomy = buildFailureTaxonomy(this.memoryService?.harmonicIndex.getIndex().entries ?? []);
-          return capabilityPriorBlock(ledger, taxonomy) || null;
-        } catch {
-          return null;
-        }
-      },
-      // D4b: plan 节点注入反事实推演块（pre-mortem）——同类任务失败形态 + riskNote 要求。
-      counterfactualPrior: (goalId: string) => {
-        try {
-          const { counterfactualBlock } = require('./orchestration/capability-ledger');
-          const mafwDir = this.goalDriverMafwDirCache.get(goalId);
-          const taskType = mafwDir
-            ? (loadGoalState(mafwDir, goalId)?.taskType ?? 'other')
-            : 'other';
-          const outcomes = this.getGatewayDb().listGoalOutcomes({ limit: 200 });
-          const taxonomy = require('./orchestration/capability-ledger').buildFailureTaxonomy(
-            this.memoryService?.harmonicIndex.getIndex().entries ?? [],
-          );
-          return counterfactualBlock({ taskType }, outcomes, taxonomy) || null;
-        } catch {
-          return null;
-        }
-      },
-      podContext: (goalId: string, node: 'plan' | 'execute' | 'review', sessionId: string) => {
-        try {
-          const podId = this.podService?.getPodIdForGoal(goalId);
-          if (!podId) return null;
-          const claim = this.podMessageDelivery?.claimPendingForSession(sessionId) ?? null;
-          if (claim) this.podPendingHandoffs.set(sessionId, claim.ids);
-          const memory = this.podMemoryService?.renderContext(podId, node) ?? null;
-          return [claim?.block ?? null, memory].filter(Boolean).join('\n\n') || null;
-        } catch {
-          return null;
-        }
-      },
-      // Task 17：确定性 ContextManifest（阶段基线 + Lead 选入的引用）。legacy/非 Pod Goal
-      // 不注入（旧 prompt 零迁移）；Pod Goal 的缺失/敏感引用 fail-closed（driver 归档该节点）。
-      contextBlock: async (goalId: string, node: 'plan' | 'probe' | 'execute' | 'review', revision: number) => {
-        if (!this.podContextSelectionService) return null;
-        if (!this.podService?.getPodIdForGoal(goalId)) return null;
-        return this.podContextSelectionService.renderForNode({ goalId, node, revision });
-      },
-      onPromptDispatched: (sessionId: string) => {
-        const ids = this.podPendingHandoffs.get(sessionId);
-        if (!ids) return;
-        this.podMessageDelivery?.commitDelivered(ids, sessionId);
-        this.podPendingHandoffs.delete(sessionId);
-      },
-      // Task 12/13：plan 复用 Tech Lead 讨论会话（同一 revision 的讨论 → 计划连续性）。
-      // 同步、非创建式查找——只有当前 revision 已有活跃讨论租约才命中；讨论回合与
-      // 计划回合的 idle 竞态由 driver 的 reuse idle 宽容兜底。
-      existingNodeSession: (goalId: string, node: 'plan' | 'execute' | 'review', revision: number) => {
-        if (node !== 'plan') return null;
-        const podId = this.podService?.getPodIdForGoal(goalId);
-        if (!podId) return null;
-        const member = this.podStore?.getMemberByRole(podId, 'tech_lead');
-        if (!member) return null;
-        const lease = this.podStore?.getActiveScopedSession({
-          podId, memberId: member.id, goalId, revision, kind: 'discussion',
-        }, this.runtimeName);
-        return lease?.sessionId ?? null;
-      },
-      // Task 14：两段式 Spike。生产实现 = PodProbeService（持久化/单飞/脱敏）+
-      // ProbeWorkspaceFactory（主项目之外的隔离工作区）。
-      probes: this.buildGoalProbePort(),
-    });
-
-    // 6. 恢复活跃 Goal
-    await this.recoverState();
-    await this.podService?.reconcile().catch((err: any) => log.warn(`[Pod] reconcile failed (non-fatal): ${err?.message ?? err}`));
-    await this.podGoalService?.reconcile().catch((err: any) => log.warn(`[Pod] goal reconcile failed (non-fatal): ${err?.message ?? err}`));
-    await this.podSessionLifecycle?.retireStaleDiscussionLeases()
-      .catch((err: any) => log.warn(`[Pod] session lease reconcile failed (non-fatal): ${err?.message ?? err}`));
-
-    // 7. Lead 只属于已有 Pod 或仍有 in-flight Goal 的项目；Pod-less registered
-    // project 不再预建一个没有用户入口的隐藏会话。
-    const inFlightDirs = new Set(
-      Array.from(this.activeGoals.values())
-        .map((state: any) => state?.projectDir)
-        .filter((dir: unknown): dir is string => typeof dir === 'string' && dir.length > 0)
-        .map((dir) => canonicalProjectDir(dir)),
-    );
-    const leadDirs = new Map<string, RegisteredProject>();
-    for (const [projectDir, info] of this.registeredProjects) {
-      const canonical = canonicalProjectDir(projectDir);
-      if (leadDirs.has(canonical)) continue;
-      const hasPod = !!this.podStore.getPodByProject(canonical);
-      if (!shouldEnsureLeadOnStartup({ hasPod, hasInFlightGoal: inFlightDirs.has(canonical) })) continue;
-      leadDirs.set(canonical, info);
-    }
-    for (const [canonical, info] of leadDirs) {
-      try {
-        await this.ensureManagerSession(canonical, info.mafwDir);
-      } catch (err: any) {
-        log.warn(`[Scheduler] Lead session init failed for ${canonical}: ${err.message}`);
-      }
-    }
-
-    // 8. 启动自动化引擎
-    if (this.automationEngine) {
-      this.automationEngine.start();
-      log.info('[Scheduler] Automation engine started');
-    }
-
-    // 8.0 Worker-state recovery: reflect sessions that accumulated unreflected
-    // episodes while their workers were evicted (fire-and-forget).
-    setTimeout(() => this.restoreWorkerState(), 3000);
-
-    // 8. 开始轮询（降级兜底）
-    const pollInterval = config.timeouts.backupPollInterval;
-    log.info(`[Scheduler] Starting backup polling loop (${pollInterval / 1000}s)...`);
-    this.startBackupPolling();
-
-    // 9. 监听 events 目录 (替代 HTTP POST /api/events)
-    this.watchEventsDir();
-    // 10. 鐩戝惉 registry 鐩綍 (鏇夸唬 HTTP POST /register)
-    this.watchRegistryDir();
-    // 11. 鐑厛閰嶇疆 (config.yaml / automations)
-    this.watchConfigFile();
-    this.watchAutomationsDir();
-
-    // 12. Self-update: watch the restart token and, in takeover mode, notify
-    // the caller session that the update completed.
-    this.startTokenWatcher();
-    if (takeover) {
-      await this.notifyUpdateComplete();
-    }
-  }
-
-  // ── Self-update ──
-
-  private startTokenWatcher(): void {
-    this.stopTokenWatcher = startTokenWatcher({
-      stop: () => this.stop(),
-      locateCaller: () => this.locateCallerSession(),
-      onError: (message) => log.info(message),
-    });
-  }
-
-  // Deterministic: the token writer's session is pinned by handleRuntimeEvent
-  // when a tool command touching pending-restart.json was observed; fall back
-  // to the most recently active session.
-  private locateCallerSession(): string | null {
-    if (this.tokenWriterSession) return this.tokenWriterSession.sessionID;
-    let best: string | null = null;
-    let bestAt = 0;
-    for (const [sid, at] of this.lastActiveBySession) {
-      if (at > bestAt) { bestAt = at; best = sid; }
-    }
-    return best;
-  }
-
-  // After a self-restart, tell the agent that the update finished: notify the
-  // recorded caller session only. Goal-state resume semantics belong to the
-  // caller; cross-project managers gain nothing from this notice (they would
-  // just burn a round of LLM tokens). If the caller is unknown, fall back to
-  // the primary project's manager. Failures degrade to the passive protocol.
-  private async notifyUpdateComplete(): Promise<void> {
-    const info = readRestartInfo();
-    if (!info || info.notified) return;
-    const elapsed = info.startedAt ? Math.round((Date.now() - new Date(info.startedAt).getTime()) / 1000) : undefined;
-    const message = `[MAFW SYSTEM] Gateway \u81ea\u66f4\u65b0\u5df2\u5b8c\u6210\uff08reason: ${info.reason || '-'}${info.commit ? `, commit: ${info.commit}` : ''}${elapsed !== undefined ? `, \u8017\u65f6 ${elapsed}s` : ''}\uff09\u3002goal \u6267\u884c\u72b6\u6001\u5df2\u6301\u4e45\u5316\uff0c\u8bf7\u8bfb\u53d6 goal state \u7684 nextAction \u5e76\u7ee7\u7eed\u6267\u884c\uff1b\u82e5\u65e0\u672a\u5b8c\u6210\u4efb\u52a1\u5219\u65e0\u9700\u989d\u5916\u52a8\u4f5c\u3002`;
-
-    const targets = new Set<string>();
-    if (info.sessionID) {
-      targets.add(info.sessionID);
-    } else {
-      try {
-        const ms = this.readManagerSessionEntry(this.projectDir);
-        if (ms?.sessionId) targets.add(ms.sessionId);
-      } catch { /* skip */ }
-    }
-
-    if (!this.runtime) return;
-    let notified = false;
-    for (const sid of targets) {
-      try {
-        await this.runtime.session.promptAsync({
-          sessionID: sid,
-          parts: [{ type: 'text', text: message }],
-          delivery: 'queue',
-          idempotencyKey: 'self-update-notify',
-        });
-        notified = true;
-        log.info(`[SelfUpdate] notified session ${sid} of update completion`);
-      } catch (err: any) {
-        log.warn(`[SelfUpdate] notify failed for ${sid}: ${err.message}`);
-      }
-    }
-    markRestartNotified(notified);
+    return bootKernel(this.bootView());
   }
 
   // L1: hot-reload config.yaml (global + project). Rebuilds from defaults so
@@ -5851,90 +5207,19 @@ class MafwScheduler {
 
   /** Bind failed and another MAFW gateway owns the port: release our lease and defer. */
   private async exitAfterPortConflict(alreadyRunning: boolean): Promise<void> {
-    await this.releaseInstanceOwnership();
-    if (alreadyRunning) {
-      process.stdout.write(`${JSON.stringify({
-        mafw: 'deferred',
-        instance: await this.readCurrentInstanceDiscovery(),
-      })}\n`);
-      log.info(`[Scheduler] Another gateway already running on port ${this.apiPort}; exiting`);
-      process.exit(0);
-      return;
-    }
-    log.error(`[Scheduler] Port ${this.apiPort} is occupied by another process; exiting`);
-    process.exit(1);
+    return exitAfterPortConflict(this.bootView(), alreadyRunning);
   }
 
-  private async readCurrentInstanceDiscovery() {
-    try {
-      return await readGatewayDiscovery(mafwRuntimeDir());
-    } catch {
-      return null;
-    }
-  }
-
-  private async publishInstanceDiscovery(): Promise<void> {
-    if (!this.releaseMetadata || !this.runtimeIdentity) return;
-    const runtimeDir = mafwRuntimeDir();
-    this.instanceDiscovery = await publishGatewayDiscovery({
-      instanceId: this.runtimeIdentity.instanceId,
-      pid: process.pid,
-      port: this.apiPort,
-      gatewayVersion: this.releaseMetadata.gatewayVersion,
-      experienceVersion: this.releaseMetadata.experienceVersion,
-      minimumClientExperienceVersion: this.releaseMetadata.minimumClientExperienceVersion,
-      schemaEpoch: this.releaseMetadata.schemaEpoch,
-      channel: this.runtimeIdentity.channel,
-      distribution: this.runtimeIdentity.distribution,
-      origin: process.env.MAFW_GATEWAY_ORIGIN?.trim() || 'standalone',
-    }, runtimeDir);
-    this.discoveryHeartbeatTimer = setInterval(() => {
-      void this.instanceDiscovery?.heartbeat().catch((err: any) => {
-        log.warn(`[Scheduler] gateway discovery heartbeat failed: ${err?.message ?? err}`);
-      });
-    }, 10_000);
-    this.discoveryHeartbeatTimer.unref?.();
-    log.info(`[Scheduler] gateway discovery published: ${gatewayDiscoveryPath(runtimeDir)} (port ${this.apiPort})`);
-  }
+  // 实例所有权释放（D3 Task 5：方法体在 boot.ts；stop()/shutdown() 仍经这里）。
 
   private async releaseInstanceOwnership(): Promise<void> {
-    if (this.discoveryHeartbeatTimer) {
-      clearInterval(this.discoveryHeartbeatTimer);
-      this.discoveryHeartbeatTimer = null;
-    }
-    const discovery = this.instanceDiscovery;
-    const lock = this.instanceLock;
-    this.instanceDiscovery = null;
-    this.instanceLock = null;
-    try { await discovery?.release(); } catch { /* best effort */ }
-    try { await lock?.release(); } catch { /* best effort */ }
+    return releaseInstanceOwnership(this.bootView());
   }
 
   // 鈹€鈹€ 3. 娉ㄥ唽琛ㄦ寔涔呭寲锛堝啓闃熷垪闃插苟鍙戯級 鈹€鈹€
 
   private async persistRegistry() {
-    await this.registryWriteQueue.run('registry', async () => {
-      const entries = Array.from(this.registeredProjects.entries());
-      // Authoritative copy in the gateway DB (kv_store) — survives cwd /
-      // projectDir churn because the db lives at the fixed ~/.mafw root.
-      try {
-        this.getGatewayDb().kvSet('registry/snapshot', 'default', entries);
-      } catch (err: any) {
-        log.warn(`[Scheduler] registry kv persist failed: ${err.message}`);
-      }
-      // Compatibility mirror at the legacy file location (opencode never
-      // reads it; kept so older tooling can inspect registered projects).
-      try {
-        const dir = path.dirname(this.registryPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(
-          this.registryPath,
-          JSON.stringify(entries, null, 2)
-        );
-      } catch (err: any) {
-        log.warn(`[Scheduler] registry file persist failed: ${err.message}`);
-      }
-    });
+    return persistRegistry(this.bootView());
   }
 
   // User data directories that must never be treated as projects (desktop's

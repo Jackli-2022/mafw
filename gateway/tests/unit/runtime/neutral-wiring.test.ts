@@ -37,9 +37,11 @@ it('neutral:true passes the canonical stream through without translation', async
 
 it('gateway composition root drives builtins through the neutral path', () => {
   const src = fs.readFileSync(path.join(GATEWAY, 'src', 'index.ts'), 'utf8');
+  // D3 Task 5：内置 runtime 注册（runtime.loader 启动步骤）搬进 src/boot.ts。
+  const bootSrc = fs.readFileSync(path.join(GATEWAY, 'src', 'boot.ts'), 'utf8');
   expect(src).toContain('resolveBuiltinDefinition');
   expect(src).toContain('createNeutralRuntime');
-  expect(src).toContain('registerBuiltinDefinition');
+  expect(bootSrc).toContain('registerBuiltinDefinition');
   expect(src).not.toMatch(/\(rawRuntime as any\)\.registry/);
   expect(src).not.toContain('wirePiPermissionEvaluator');
   expect(src).not.toContain('wirePiCognition');

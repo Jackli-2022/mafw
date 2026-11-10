@@ -22,7 +22,8 @@ function fakeRuntime() {
 }
 
 it('the composition root registers all four opencode definitions', () => {
-  const src = readFileSync(join(GATEWAY, 'src', 'index.ts'), 'utf8');
+  // D3 Task 5：runtime.loader 启动步骤（4 个 opencode 方言注册）搬进 src/boot.ts。
+  const src = readFileSync(join(GATEWAY, 'src', 'boot.ts'), 'utf8');
   expect(src).toContain("registerBuiltinDefinition('opencode'");
   expect(src).toContain("registerBuiltinDefinition('opencode@v1'");
   expect(src).toContain("registerBuiltinDefinition('opencode@v2'");
