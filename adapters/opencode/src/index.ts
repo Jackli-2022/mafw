@@ -21,6 +21,7 @@ export type { EmitContext } from './emit';
 export * from './turn-attribution';
 export * from './history';
 export * from './snapshot';
+export * from './discovery-roots';
 export * from './mcp';
 export * from './mcp-config';
 export * from './mcp-jsonc';

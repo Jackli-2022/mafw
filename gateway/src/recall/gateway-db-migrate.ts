@@ -13,6 +13,7 @@ import { log } from '../core/utils/logger';
 import { GatewayDatabase } from '../memory/gateway-db';
 import { writeManagerSlot } from '../core/manager/manager-session-runtime';
 
+import { LEGACY_RUNTIME_TAG } from '../runtime/legacy-runtime-tags';
 export interface GatewayDbMigrateResult {
   renamed: boolean;
   managerSessions: number;
@@ -71,7 +72,7 @@ export function migrateGatewayDb(
         // 否则 `readManagerSlot` 永远读不到 = 新会话顶掉旧 topic 后旧 topic 复活。
         // 读路径不做归属推断，只有这里的迁移可以声明「旧 writer 是 opencode」。
         const existing = db.kvGet('manager-session', ms.projectDir);
-        db.kvSet('manager-session', ms.projectDir, writeManagerSlot(existing, 'opencode', {
+        db.kvSet('manager-session', ms.projectDir, writeManagerSlot(existing, LEGACY_RUNTIME_TAG, {
           sessionId: data.sessionId,
           createdAt: data.createdAt || null,
         }));

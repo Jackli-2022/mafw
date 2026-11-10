@@ -11,22 +11,15 @@
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 
 export type EnsureSkillResult =
   | { ok: true; action: 'installed' | 'updated' | 'unchanged'; target: string }
   | { ok: false; reason: 'source-missing' | 'io'; target: string };
 
-/** User-level opencode skills directory (overridable for tests/packaging). */
-export function defaultSkillsDir(): string {
-  return process.env.MAFW_OPENCODE_SKILLS_DIR
-    || path.join(os.homedir(), '.config', 'opencode', 'skills');
-}
-
 /** `<skillsDir>/<skillName>/SKILL.md` */
-export function globalSkillTarget(skillName: string, skillsDir?: string): string {
-  return path.join(skillsDir || defaultSkillsDir(), skillName, 'SKILL.md');
+export function globalSkillTarget(skillName: string, skillsDir: string): string {
+  return path.join(skillsDir, skillName, 'SKILL.md');
 }
 
 /** Package root: <root>/gateway/dist/core/skills → <root> (same depth in src). */
@@ -37,7 +30,7 @@ function defaultSourceRoot(): string {
 export async function ensureGlobalSkill(opts: {
   skillName: string;
   sourceRoot?: string;
-  skillsDir?: string;
+  skillsDir: string;
   /** Test/override: exact source file. */
   sourceFile?: string;
 }): Promise<EnsureSkillResult> {

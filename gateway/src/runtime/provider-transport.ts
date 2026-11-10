@@ -36,7 +36,7 @@ export interface ResolveProviderTransportOptions {
     providerID: string,
   ): ProviderTransportCandidate | Promise<ProviderTransportCandidate>;
   /** Gateway chain for whatever the driver could not resolve. */
-  fallback(
+  fallback?(
     input: ProviderTransportFallbackInput,
   ): ProviderTransportCandidate | Promise<ProviderTransportCandidate>;
 }
@@ -62,7 +62,7 @@ export async function resolveProviderTransportPrecedence(
   let baseUrl = transport?.baseUrl ?? null;
   if (!apiKey) apiKey = transport?.apiKey ?? null;
 
-  if (!baseUrl || !apiKey) {
+  if ((!baseUrl || !apiKey) && options.fallback) {
     const filled = await options.fallback({ needBaseUrl: !baseUrl, needApiKey: !apiKey });
     if (!baseUrl) baseUrl = filled.baseUrl ?? null;
     if (!apiKey) apiKey = filled.apiKey ?? null;
