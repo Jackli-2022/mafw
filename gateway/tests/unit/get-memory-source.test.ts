@@ -65,6 +65,8 @@ describe('handleGetMemory source reconstruction', () => {
     });
     services.searchArchive = searchArchive;
     services.readTrace = (id: string) => (id === 't1t_a' ? trace(id, 'exact raw evidence A') : null);
+    const propagate = jest.fn();
+    services.propagateT1Activation = propagate;
     const res = await handleGetMemory({ id: 'mem_1_abcdef' }, services);
     const body = JSON.parse(res.content[0].text);
     expect(body.source.traces).toEqual([
@@ -72,6 +74,28 @@ describe('handleGetMemory source reconstruction', () => {
     ]);
     expect(body.source.evidence).toBeUndefined();
     expect(searchArchive).not.toHaveBeenCalled();
+    expect(propagate).toHaveBeenCalledWith(['t1t_a']);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('legacy units do not propagate activation', async () => {
+    const { dir, services } = await setup(true);
+    const propagate = jest.fn();
+    services.propagateT1Activation = propagate;
+    const res = await handleGetMemory({ id: 'mem_1_abcdef' }, services);
+    expect(JSON.parse(res.content[0].text).source.evidence).toContain('raw kubernetes question');
+    expect(propagate).not.toHaveBeenCalled();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('propagation failure never fails the read', async () => {
+    const { dir, services } = await setup(false, { sourceTraceIds: ['t1t_a'] });
+    services.readTrace = (id: string) => trace(id, 'raw');
+    services.propagateT1Activation = () => {
+      throw new Error('state db down');
+    };
+    const res = await handleGetMemory({ id: 'mem_1_abcdef' }, services);
+    expect(JSON.parse(res.content[0].text).success).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 

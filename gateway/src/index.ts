@@ -5095,6 +5095,7 @@ class MafwScheduler {
         this.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
       readTrace: (traceId: string) => this.getGatewayDb().readTrace(traceId),
       hasTrace: (traceId: string) => this.getGatewayDb().hasTrace(traceId),
+      propagateT1Activation: (traceIds: string[]) => this.getGatewayDb().propagateT1Activation(traceIds),
       cost,
       automation: this.automationEngine,
       ledger: this.ledger,

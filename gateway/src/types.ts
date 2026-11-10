@@ -45,6 +45,8 @@ export interface Services {
   readTrace?: (traceId: string) => import('./memory/gateway-db').T1TraceRead | null;
   /** Cheap existence check for exact T1 provenance validation on write. */
   hasTrace?: (traceId: string) => boolean;
+  /** Bounded abstract→T1 activation propagation (never fails the read). */
+  propagateT1Activation?: (traceIds: string[]) => void;
 }
 
 export type ToolHandler = (

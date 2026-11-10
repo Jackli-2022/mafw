@@ -9,7 +9,7 @@ import { reconstructSource } from "../../recall/source-reconstruction";
  * guessing. Superseded memories report the supersede chain with the latest
  * version attached so the agent never acts on stale notes.
  */
-export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive, resolveT1, readTrace, recordT1Retrieval }) => {
+export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive, resolveT1, readTrace, recordT1Retrieval, propagateT1Activation }) => {
   try {
     // V1: t1 pointer redemption — ids of the form `t1:<sessionTail>:<turnId>`
     // resolve to raw archived round rows (verbatim layer).
@@ -154,7 +154,13 @@ export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, sear
           });
         } catch { /* fail-open: try the next id */ }
       }
-      if (traces.length > 0) source = { sessionId: traces[0].sessionId, traces };
+      if (traces.length > 0) {
+        source = { sessionId: traces[0].sessionId, traces };
+        // Abstract→T1: redeeming an abstraction strengthens its exact sources.
+        try {
+          propagateT1Activation?.(traces.map((t) => t.traceId));
+        } catch { /* fail-open: activation is a side channel */ }
+      }
     }
 
     // C0: reconstruct raw source-turn evidence from t1_archive when available.

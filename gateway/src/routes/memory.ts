@@ -242,6 +242,7 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         readTrace: (traceId: string) => deps.getGatewayDb().readTrace(traceId),
         recordT1Retrieval: (traceId: string, kind: any, score?: number) =>
           deps.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
+        propagateT1Activation: (traceIds: string[]) => deps.getGatewayDb().propagateT1Activation(traceIds),
       } as any);
       const body = JSON.parse(result.content[0].text);
       res.writeHead(result.isError ? 404 : 200, { 'Content-Type': 'application/json' });
