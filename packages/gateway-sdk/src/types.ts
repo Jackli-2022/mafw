@@ -293,6 +293,12 @@ export interface GatewayStatus {
   port: number | null
   url: string | null
   error: string | null
+  /** Ready, but using a gateway this desktop did not spawn (handshake passed). */
+  attached?: boolean
+  /** `standalone` / `desktop-managed`, or null when the gateway did not report one. */
+  attachedOrigin?: string | null
+  canRestartWithLocalBuild?: boolean
+  restartHint?: string | null
   source: 'managed' | 'external' | null
   expectedVersion: string | null
   actualVersion: string | null

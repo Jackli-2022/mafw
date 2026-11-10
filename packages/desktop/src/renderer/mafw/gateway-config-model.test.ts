@@ -81,6 +81,15 @@ describe("gatewayConfigView", () => {
     expect(legacy.canUseExternalOnce).toBe(true)
     expect(gatewayConfigView(status()).canUseExternalOnce).toBe(false)
   })
+
+  test("an attached standalone gateway is labeled as attached, not as managed", () => {
+    const view = gatewayConfigView(status({
+      attached: true,
+      attachedOrigin: "standalone",
+      distribution: "standalone",
+    }))
+    expect(view.sourceLabel).toBe("已连接全局 gateway")
+  })
 })
 
 describe("gatewayConflictGuidance", () => {
@@ -104,5 +113,13 @@ describe("gatewayConflictGuidance", () => {
 
   test("explains a managed version mismatch even while the previous gateway is running", () => {
     expect(gatewayConflictGuidance(status({ actualVersion: "5.1.0" }))).toContain("与 Desktop 期望")
+  })
+
+  test("explains when desktop is attached to an already-running gateway", () => {
+    expect(gatewayConflictGuidance(status({
+      attached: true,
+      attachedOrigin: "standalone",
+      actualVersion: "5.1.0",
+    }))).toContain("已连接")
   })
 })

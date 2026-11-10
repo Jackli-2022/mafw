@@ -38,11 +38,15 @@ export function gatewayConfigView(status: GatewayStatus | null): GatewayConfigVi
     }
   }
 
-  const sourceLabel = status.source === "managed"
-    ? "受管 gateway"
-    : status.source === "external"
-      ? "外部 gateway"
-      : "未知"
+  const sourceLabel = status.attached
+    ? status.attachedOrigin === "standalone"
+      ? "已连接全局 gateway"
+      : "已连接现有 gateway"
+    : status.source === "managed"
+      ? "受管 gateway"
+      : status.source === "external"
+        ? "外部 gateway"
+        : "未知"
   const versionLabel = status.actualVersion && status.expectedVersion
     ? status.actualVersion === status.expectedVersion
       ? status.actualVersion
@@ -80,6 +84,11 @@ export function gatewayConflictGuidance(status: GatewayStatus): string | null {
   }
   if (status.source === "external" && !status.actualVersion) {
     return "当前外部 gateway 没有可验证的版本信息。你只能选择仅本次使用，重启后将回到受管 gateway。"
+  }
+  if (status.attached) {
+    const origin = status.attachedOrigin === "standalone" ? "全局 gateway" : "已运行的 gateway"
+    const version = status.actualVersion ? ` v${status.actualVersion}` : ""
+    return `已连接${origin}${version}，Desktop 没有启动自己的 gateway；如需运行当前构建，请重启 gateway。`
   }
   if (status.source === "managed" && status.actualVersion && status.expectedVersion
     && !sameVersion(status.actualVersion, status.expectedVersion)) {

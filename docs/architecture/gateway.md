@@ -702,8 +702,12 @@ deprecated，物理删除待后续 PR。历史细节见 git 历史中的本文�
 ```
 start()
   ├─ installFileLogging()              → ~/.mafw/logs/mafw.log
+  ├─ claimGatewayInstance()            → ~/.mafw/runtime/gateway.lock
+  │   ├─ 拿到锁 → 继续
+  │   └─ 已有活实例 → stdout {"mafw":"deferred","instance":…} → exit 0
   ├─ initServices()                    → Memory + Cost + MCP + Automation
   ├─ startApiServer()                  → HTTP API on port 3000
+  ├─ publishGatewayDiscovery()         → ~/.mafw/runtime/gateway.json + 10s heartbeat
   ├─ init SDK client                   → @opencode-ai/sdk
   ├─ probe isServeHealthy()            → 先探已有 opencode server
   │   ├─ 通 → 直接复用
@@ -715,17 +719,42 @@ start()
 ```
 Server 启动失败不崩溃，优雅降级到 MCP-only 模式。
 
+#### 单实例所有权与发现
+
+`~/.mafw` 是单写者资源：一个数据目录同时只能有一个 gateway。
+
+- **锁**：`~/.mafw/runtime/gateway.lock`，`O_EXCL` 创建；内容
+  `{pid, processStartTime, startedAt, heartbeatAt, nonce}`。陈旧判据 = pid 不存在 /
+  同 pid 但启动时间不符 / 心跳超过 30s；绝不靠“端口是否被占”。
+- **发现**：`listen` 成功后由 gateway 自己写 `~/.mafw/runtime/gateway.json`
+  （实际 `port`、`pid`、`instanceId`、版本、schema、`origin`、`heartbeatAt`），
+  每 10s 心跳，退出删除。`origin` 只用于诊断（`standalone` / `desktop-dev` /
+  `desktop-packaged`），不参与数据分区。
+- **退让**：拿不到锁且发现文件指向活实例时，输出 `deferred` JSON 并 `exit 0`；
+  不再用 `GET /health` 200 作为互斥判据。
+- **自更新**：`MAFW_TAKEOVER=1` 等待旧实例释放锁（最长 45s），不抢占活锁。
+
 #### Desktop → Gateway 探测连接
 
 `mafw-sidecar.ts:startGateway()` 按 `mafw-gateway-plan.ts` 的优先级决策：
 ```
-probeExistingGateway()（MAFW_SERVER_API_PORT → MAFW_GATEWAY_PORT → 3000，GET /health 确认）
-  → 通 → adopt：state="ready"，不 spawn
-  → 不通 → packaged 且 resources/gateway/dist/index.js 存在
-  │     → bundle：spawn(process.execPath, [entry], ELECTRON_RUN_AS_NODE=1, windowsHide)
-  │     → will-quit 时 taskkill /F /T 树杀（Windows）
-  → 否则 → cli：execFile("mafw", ["daemon"])（dev 回退，CLI 缺失则 failed）
+probeRunningGateway()
+  ├─ 读 ~/.mafw/runtime/gateway.json
+  │   └─ 心跳新鲜 → GET <port>/health → pid/instanceId 必须与发现文件一致
+  ├─ 没有/过期 → 回落 3000 + GET /health（旧实例迁移期）
+  └─ 有候选 → negotiateGateway
+       ├─ 兼容 → attach（state="ready"，不 spawn；版本不同只警告）
+       ├─ 旧于期望 / schema 不符 → conflict + 「用当前构建重启」
+       ├─ 没有 → packaged 且有 resources/gateway/dist/index.js
+       │         → bundle：spawn(process.execPath, [entry], ELECTRON_RUN_AS_NODE=1)
+       │         → dev：spawn 仓库 gateway/dist
+       │         → will-quit 时 taskkill /F /T 树杀（Windows）
+       └─ 否则 → cli：execFile("mafw", ["daemon"])（CLI 缺失则 failed）
 ```
+Desktop 不再写 `desktop-gateway/<channel>/*.json`；gateway 自己的发现文件是唯一事实源。
+「用当前构建重启」只停止 discovery pid + `/health` 身份都匹配的实例；
+legacy 实例只显示 `mafw stop` / `mafw restart` 提示。
+
 运行时健康检查每 30s 一次，连续 5 次失败后自动 restart。
 
 #### Client SDK → Gateway IPC 通道

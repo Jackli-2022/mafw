@@ -48,6 +48,15 @@ import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
 import { TaskService, TaskError } from './runtime/task-service';
+import { claimGatewayInstance } from './runtime/instance-ownership';
+import {
+  gatewayDiscoveryPath,
+  publishGatewayDiscovery,
+  readGatewayDiscovery,
+  type GatewayDiscoveryHandle,
+} from './runtime/gateway-discovery';
+import { mafwRuntimeDir } from './runtime/runtime-paths';
+import type { InstanceLock } from './runtime/instance-lock';
 import {
   BackgroundJobError,
   BackgroundJobRegistry,
@@ -725,6 +734,9 @@ class MafwScheduler {
   private pairingService?: PairingService;
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
+  private instanceLock: InstanceLock | null = null;
+  private instanceDiscovery: GatewayDiscoveryHandle | null = null;
+  private discoveryHeartbeatTimer: NodeJS.Timeout | null = null;
   private podEventService?: PodEventService;
   private podEventWake?: PodEventWake;
   private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
@@ -780,31 +792,35 @@ class MafwScheduler {
       + ` instance=${this.runtimeIdentity.instanceId}`,
     );
 
-    // Single-instance guard: if a healthy gateway already owns apiPort, this
-    // instance is redundant — exit before spawning anything (avoids two
-    // gateways fighting over ports 3000/4096). In takeover mode (self-update
-    // successor) the old process is expected to still hold the port briefly,
-    // so wait for it to free before proceeding.
+    // One data directory, one gateway. Ownership is a lease held by the
+    // process that is about to bind — not a probe against the port. A
+    // contender either becomes the owner or reports the live instance so the
+    // caller can attach; a self-update successor waits for the old owner to
+    // release instead of stealing a live lock.
     const takeover = process.env.MAFW_TAKEOVER === '1';
-    if (await isPortHealthy(this.apiPort)) {
-      if (takeover) {
-        log.info('[Scheduler] Takeover mode: waiting for previous gateway to release the port...');
-        let freed = false;
-        for (let i = 0; i < 30; i++) {
-          await this.sleep(1000);
-          if (!(await isPortHealthy(this.apiPort))) { freed = true; break; }
-        }
-        if (!freed) {
-          log.error('[Scheduler] Takeover aborted: previous gateway never released the port');
-          process.exit(1);
-          return;
-        }
-        log.info('[Scheduler] Port free, taking over');
-      } else {
-        log.info(`[Scheduler] Another gateway already running on port ${this.apiPort}; exiting`);
-        process.exit(0);
-        return;
-      }
+    const ownership = await claimGatewayInstance({
+      runtimeDir: mafwRuntimeDir(),
+      takeover,
+    });
+    if (ownership.kind === 'deferred') {
+      const holder = ownership.holder;
+      process.stdout.write(`${JSON.stringify({ mafw: 'deferred', instance: holder })}\n`);
+      log.info(
+        `[Scheduler] Another gateway already owns ${mafwRuntimeDir()}`
+        + (holder ? ` (pid ${holder.pid}, port ${holder.port})` : '')
+        + '; exiting',
+      );
+      process.exit(0);
+      return;
+    }
+    if (ownership.kind === 'failed') {
+      log.error(`[Scheduler] Cannot own the gateway instance lock: ${ownership.error}`);
+      process.exit(1);
+      return;
+    }
+    this.instanceLock = ownership.lock;
+    if (takeover) {
+      log.info('[Scheduler] Takeover: acquired the instance lock from the previous gateway');
     }
 
     if (takeover) {
@@ -863,7 +879,20 @@ class MafwScheduler {
     bootLedger.bootReconcile(activeCheckpoints);
 
     // 1. Start HTTP API immediately (health check endpoint, MCP, etc.)
-    await this.startApiServer();
+    const listening = await this.startApiServer();
+    if (!listening) {
+      await this.releaseInstanceOwnership();
+      process.exit(1);
+      return;
+    }
+    try {
+      await this.publishInstanceDiscovery();
+    } catch (err: any) {
+      log.error(`[Scheduler] gateway discovery publish failed: ${err?.message ?? err}`);
+      await this.releaseInstanceOwnership();
+      process.exit(1);
+      return;
+    }
 
     // 2. 初始化 runtime 插件加载器
     this.runtimeLoader = new RuntimePluginLoader(config.resolvePath('runtime-plugins'));
@@ -4060,7 +4089,14 @@ class MafwScheduler {
     // if (this.dashboard) {
     //   this.dashboard.stop();
     // }
+    void this.releaseInstanceOwnership();
     log.info('[Scheduler] Stopping...');
+  }
+
+  /** Graceful shutdown that also releases the instance lease before exit. */
+  async shutdown() {
+    this.stop();
+    await this.releaseInstanceOwnership();
   }
 
   // 鈹€鈹€ Services & Event Bus 鈹€鈹€
@@ -5365,8 +5401,8 @@ class MafwScheduler {
 
   // 鈹€鈹€ 2. HTTP API 鈹€鈹€
 
-  private async startApiServer() {
-    return new Promise<void>((resolve) => {
+  private async startApiServer(): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
       // P5 Wave 1: catalog shadow 登记 + 模块 handler 绑定（一次性，重复 attach 会抛错）。
       // adapter 显式桥接私有成员（结构化类型不认 private）。
       // runtime/runtimeCaps 必须是 getter（活引用）：attach 发生在 startApiServer，
@@ -8659,18 +8695,11 @@ class MafwScheduler {
       server.on('error', async (err: any) => {
         if (err.code === 'EADDRINUSE') {
           const alreadyRunning = await isPortHealthy(this.apiPort);
-          if (alreadyRunning) {
-            log.info(`[Scheduler] Another gateway already running on port ${this.apiPort}; exiting`);
-            process.exit(0);
-            return;
-          }
-          log.warn(`[Scheduler] Port ${this.apiPort} in use (no healthy gateway), retrying in 2s...`);
-          server.close();
-          setTimeout(() => this.startApiServer().then(resolve).catch(resolve), 2000);
-        } else {
-          log.error(`[Scheduler] HTTP API error: ${err.message}`);
-          resolve();
+          await this.exitAfterPortConflict(alreadyRunning);
+          return;
         }
+        log.error(`[Scheduler] HTTP API error: ${err.message}`);
+        resolve(false);
       });
       server.listen(this.apiPort, () => {
         log.info(`[Scheduler] HTTP API on port ${this.apiPort}`);
@@ -8831,9 +8860,70 @@ class MafwScheduler {
             wss.emit('connection', ws, req);
           });
         });
-        resolve();
+        resolve(true);
       });
     });
+  }
+
+  /** Bind failed and another MAFW gateway owns the port: release our lease and defer. */
+  private async exitAfterPortConflict(alreadyRunning: boolean): Promise<void> {
+    await this.releaseInstanceOwnership();
+    if (alreadyRunning) {
+      process.stdout.write(`${JSON.stringify({
+        mafw: 'deferred',
+        instance: await this.readCurrentInstanceDiscovery(),
+      })}\n`);
+      log.info(`[Scheduler] Another gateway already running on port ${this.apiPort}; exiting`);
+      process.exit(0);
+      return;
+    }
+    log.error(`[Scheduler] Port ${this.apiPort} is occupied by another process; exiting`);
+    process.exit(1);
+  }
+
+  private async readCurrentInstanceDiscovery() {
+    try {
+      return await readGatewayDiscovery(mafwRuntimeDir());
+    } catch {
+      return null;
+    }
+  }
+
+  private async publishInstanceDiscovery(): Promise<void> {
+    if (!this.releaseMetadata || !this.runtimeIdentity) return;
+    const runtimeDir = mafwRuntimeDir();
+    this.instanceDiscovery = await publishGatewayDiscovery({
+      instanceId: this.runtimeIdentity.instanceId,
+      pid: process.pid,
+      port: this.apiPort,
+      gatewayVersion: this.releaseMetadata.gatewayVersion,
+      experienceVersion: this.releaseMetadata.experienceVersion,
+      minimumClientExperienceVersion: this.releaseMetadata.minimumClientExperienceVersion,
+      schemaEpoch: this.releaseMetadata.schemaEpoch,
+      channel: this.runtimeIdentity.channel,
+      distribution: this.runtimeIdentity.distribution,
+      origin: process.env.MAFW_GATEWAY_ORIGIN?.trim() || 'standalone',
+    }, runtimeDir);
+    this.discoveryHeartbeatTimer = setInterval(() => {
+      void this.instanceDiscovery?.heartbeat().catch((err: any) => {
+        log.warn(`[Scheduler] gateway discovery heartbeat failed: ${err?.message ?? err}`);
+      });
+    }, 10_000);
+    this.discoveryHeartbeatTimer.unref?.();
+    log.info(`[Scheduler] gateway discovery published: ${gatewayDiscoveryPath(runtimeDir)} (port ${this.apiPort})`);
+  }
+
+  private async releaseInstanceOwnership(): Promise<void> {
+    if (this.discoveryHeartbeatTimer) {
+      clearInterval(this.discoveryHeartbeatTimer);
+      this.discoveryHeartbeatTimer = null;
+    }
+    const discovery = this.instanceDiscovery;
+    const lock = this.instanceLock;
+    this.instanceDiscovery = null;
+    this.instanceLock = null;
+    try { await discovery?.release(); } catch { /* best effort */ }
+    try { await lock?.release(); } catch { /* best effort */ }
   }
 
   // 鈹€鈹€ 3. 娉ㄥ唽琛ㄦ寔涔呭寲锛堝啓闃熷垪闃插苟鍙戯級 鈹€鈹€
@@ -10318,14 +10408,12 @@ if (require.main === module) {
 
   process.on('SIGINT', () => {
     log.info('\n[Scheduler] Received SIGINT, shutting down...');
-    scheduler.stop();
-    process.exit(0);
+    void scheduler.shutdown().finally(() => process.exit(0));
   });
 
   process.on('SIGTERM', () => {
     log.info('\n[Scheduler] Received SIGTERM, shutting down...');
-    scheduler.stop();
-    process.exit(0);
+    void scheduler.shutdown().finally(() => process.exit(0));
   });
 
   scheduler.start().catch(err => {

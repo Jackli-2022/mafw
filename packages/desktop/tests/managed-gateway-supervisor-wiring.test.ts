@@ -28,7 +28,9 @@ test("managed spawn pins port and identity and never writes the CLI pid file", (
 })
 
 test("startup probes ownership before planning and never adopts an unregistered gateway when packaged", () => {
-  assert.match(sidecar, /const running = await probeGatewayAt\(3000\)/)
+  assert.match(sidecar, /const running = await probeRunningGateway\(\)/)
+  assert.match(sidecar, /readGatewayDiscovery\(\)/)
+  assert.match(sidecar, /healthMatchesDiscovery\(health, discovery\)/)
   assert.match(sidecar, /readGatewayInstanceRecords\(INSTANCE_ROOT, CHANNEL\)/)
   assert.match(sidecar, /preference: sourcePreference/)
   assert.match(sidecar, /running,/)
@@ -52,10 +54,11 @@ test("packaged managed startup uses the verified lifecycle before replacing a ch
   assert.match(main, /configureManagedGatewayRoot\(join\(app\.getPath\("userData"\), "gateway"\)\)/)
 })
 
-test("managed stop awaits child exit and removes its registration", () => {
+test("managed stop awaits child exit and no longer writes a registry record", () => {
   assert.match(sidecar, /async function terminateManagedInstance/)
   assert.match(sidecar, /await waitForChildExit\(child\)/)
-  assert.match(sidecar, /await removeGatewayInstanceRecord\(INSTANCE_ROOT, record\)/)
+  assert.doesNotMatch(sidecar, /writeGatewayInstanceRecord/)
+  assert.doesNotMatch(sidecar, /removeGatewayInstanceRecord\(INSTANCE_ROOT/)
   assert.match(sidecar, /await waitForGatewayDown\(\(\) => checkHealth\(liveUrl\)/)
   assert.match(sidecar, /restartInflight = \(async \(\) => \{\s*await stopGateway\(\)\s*await startGateway\(\)/)
 })
@@ -66,6 +69,10 @@ test("status carries source, expected/actual versions and instance identity", ()
   assert.match(sidecar, /actualVersion:\s*actualHealth\?\.gatewayVersion \?\? null/)
   assert.match(sidecar, /instanceId:\s*actualHealth\?\.instanceId \?\? managedRecord\?\.instanceId \?\? null/)
   assert.match(sidecar, /distribution:\s*actualHealth\?\.distribution \?\? null/)
+  assert.match(sidecar, /attached:\s*attachment\.attached/)
+  assert.match(sidecar, /attachedOrigin:\s*attachment\.attachedOrigin/)
+  assert.match(sidecar, /canRestartWithLocalBuild:\s*restartDecision\.allowed/)
+  assert.match(sidecar, /restartHint:\s*restartDecision\.hint/)
 })
 
 test("quit waits for the managed gateway and never uses the WSL-only stop callback", () => {
@@ -83,9 +90,12 @@ test("IPC and preload expose source switching and forced managed retry", () => {
   assert.match(ipc, /mafw-gateway-source-preference-set/)
   assert.match(ipc, /mafw-gateway-legacy-external-once/)
   assert.match(ipc, /mafw-gateway-retry-managed/)
+  assert.match(ipc, /mafw-gateway-restart-local/)
   assert.match(preload, /getSourcePreference:/)
   assert.match(preload, /setSourcePreference:/)
   assert.match(preload, /useExternalOnce:/)
   assert.match(preload, /retryManaged:/)
+  assert.match(preload, /restartLocal:/)
   assert.match(preloadTypes, /retryManaged: \(opts\?: \{ force\?: boolean \}\) => Promise<GatewayStatus>/)
+  assert.match(preloadTypes, /restartLocal: \(\) => Promise<GatewayStatus>/)
 })

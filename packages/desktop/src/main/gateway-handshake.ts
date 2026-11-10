@@ -19,6 +19,7 @@ export interface GatewayHealthSnapshot {
   channel?: string
   instanceId?: string
   distribution?: string
+  pid?: number
 }
 
 export type GatewayHandshakeResult =

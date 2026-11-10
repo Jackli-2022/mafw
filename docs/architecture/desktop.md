@@ -12,8 +12,10 @@
   `.beta` / `.dev`；dev 用 `ai.mafw.desktop.dev` 独立 userData。
 - **受管 gateway**：打包版默认 managed（payload 从 `resources/gateway` 安装到
   `<userData>/gateway/versions/<version>-<digest12>/`，逐文件 SHA-256 校验 + `.install-complete.json`）；
-  未登记进程一律 conflict，绝不静默采纳。dev checkout 发现 3000 已有健康 gateway 时直接采纳
-  （不接管所有权；`MAFW_DEV_ADOPT=0` 强制自起）。详见 `docs/architecture/gateway.md`。
+  未登记进程一律 conflict，绝不静默采纳。
+  dev checkout 先读 `~/.mafw/runtime/gateway.json`，用 `/health` 的 `pid`/`instanceId` 对账：
+  兼容则 attach（Config 显示「已连接」），版本/schema 不符则 conflict 并提供「用当前构建重启」；
+  `MAFW_DEV_ADOPT=0` 表示不 attach、提示先停止现有 gateway。详见 `docs/architecture/gateway.md`。
 - **主布局**：左 IconRail（46px，项目会话/搜索/便签/鲸群/审批/Config）+ 左 dock；主区 = chat 指挥列
   + 右工作台（`工作 / 工作台 / 执行 / 审阅`）。chat 档位 520/640/760（默认 760）；push 预算 1490；
   `Ctrl+Alt+F` 专注模式；最小窗口 1088×720。
