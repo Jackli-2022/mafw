@@ -133,7 +133,24 @@ export interface MemoryStats {
   /** A3 retrieval event stream counters. */
   retrievalEvents?: { pending: number; needTracked: number } | null
   /** T1 verbatim vector coverage + trailing-7-day retrieval observations. */
-  t1?: { vectors: number; activeRows: number; archiveRows: number; coverage: number; retrieval: T1RetrievalStats } | null
+  t1?: {
+    vectors: number
+    activeRows: number
+    archiveRows: number
+    coverage: number
+    retrieval: T1RetrievalStats
+    /** Exact source_trace_ids coverage over Harmonic index entries (Phase 3A). */
+    provenance?: { memories: number; withExact: number; coverage: number }
+    /** Bounded T1 trace activation state (Phase 3B). */
+    activation?: { traces: number; mean: number; max: number }
+    /** Activation re-rank mode and A/B counters (Phase 3C). */
+    activationRanking?: {
+      mode: 'off' | 'shadow' | 'on'
+      evaluations: number
+      wouldReorder: number
+      applied: number
+    }
+  } | null
 }
 
 export interface ModelUsageStat {
@@ -955,6 +972,10 @@ export interface T1SearchHit {
   traceId?: string | null
   cosine: number
   excerpt: string
+  /** 产生该融合命中的检索通道。 */
+  sources?: Array<'dense' | 'lexical'>
+  /** 融合后的 RRF 分数（高于 0；原始 dense 命中可能缺省）。 */
+  score?: number
 }
 
 export interface MemoryLayeredSearchOptions extends MemorySearchOptions {
