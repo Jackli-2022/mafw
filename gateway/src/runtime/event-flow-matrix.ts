@@ -103,7 +103,7 @@ const VALID_CONSUMPTION = new Set(['handled', 'ignore']);
  * 自家客户端的状态重同步传输，与 legacy/dedicated 事件**双发**。MAFW 三端消费
  * legacy/dedicated 事件即可：放行只会造成重复处理、desktop miss 告警与
  * [SSE] 日志刷屏。刻意不进 EVENT_FLOW_MATRIX（canonical 契约的单表）——
- * 这些类型永远不到客户端。opencode 翻译表（opencode-events.ts 的
+ * 这些类型永远不到客户端。opencode 翻译表（adapters/opencode/src/events.ts 的
  * transformEvent）同时按前缀丢弃 session.next.* legacy 族。
  * 若未来 opencode 移除 legacy 双发，应在翻译层把 syncEvent 翻译为
  * canonical 形状，而非放行原始信封。

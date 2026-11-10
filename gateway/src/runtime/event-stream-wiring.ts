@@ -8,7 +8,7 @@
  *    双重包装。
  *  - 静态 entry 是 fail-safe（opencode 裸名 = @v1 表）；rt.resolveEventEntry
  *    存在（自适应 opencode，dialectProbe 模式）时经其解析覆盖（SSE peek
- *    探测，见 opencode-dialect-probe.ts）。
+ *    探测，见 adapters/opencode/src/dialect-probe.ts）。
  *  - subscribeToEvents 每次（重）订阅调用本函数（无参重入复用存储参数）：
  *    serve 恢复后的重订阅即重探测时机（激活期 serve 未起，探测必然
  *    fail-safe 落 @v1，不阻塞启动）。

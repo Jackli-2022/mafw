@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { builtinModules } from 'node:module';
 import { stripComments } from '../../../../packages/test-shim/comment-strip';
+import { isAllowedAdapterSpecifier, scanModuleSpecifiers } from './import-scan';
 import { noRuntimeRegisteredError } from '../../../src/runtime/loader';
 
 const NEUTRAL_FILES = [
@@ -190,36 +190,26 @@ it('only the package shim resolves @mafw/adapter-opencode / adapters/opencode', 
 it('the opencode adapter package does not reach back into the gateway', () => {
   // Same allowlist as the pi extraction: contract + core + the driver's own
   // native dependencies, Node builtins and local modules. No `gateway/src`.
+  // Specifiers are collected over the whole text (multi-line imports and
+  // `export * from` included) — see `import-scan.ts`.
   const adapterRoot = path.join(__dirname, '../../../../adapters/opencode/src');
-  const ALLOWED_PACKAGES = new Set([
-    '@mafw/runtime-contract',
-    '@mafw/runtime-core',
-    '@opencode-ai/sdk',
-    '@opencode-ai/sdk/v2',
-    'jsonc-parser',
-    'cross-spawn',
-  ]);
-  const BUILTINS = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]));
-  const SPECIFIER = /from\s+['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)|import\(\s*['"]([^'"]+)['"]\s*\)/;
-
   const files = walkTs(adapterRoot);
   expect(files.length).toBeGreaterThan(15);
 
   const offenders: string[] = [];
+  let scanned = 0;
   for (const file of files) {
     const rel = path.relative(adapterRoot, file).replace(/\\/g, '/');
-    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('import') && !trimmed.includes('require(') && !trimmed.includes('import(')) continue;
-      const match = SPECIFIER.exec(trimmed);
-      const from = match?.[1] ?? match?.[2] ?? match?.[3];
-      if (!from) continue;
-      if (from.startsWith('./')) continue;
-      if (BUILTINS.has(from) || ALLOWED_PACKAGES.has(from)) continue;
-      offenders.push(`${rel}: ${trimmed}`);
+    const specifiers = scanModuleSpecifiers(fs.readFileSync(file, 'utf8'));
+    scanned += specifiers.length;
+    for (const entry of specifiers) {
+      if (isAllowedAdapterSpecifier(entry.specifier)) continue;
+      offenders.push(`${rel}:${entry.line}: ${entry.snippet}`);
     }
   }
   expect(offenders).toEqual([]);
+  // Scan sanity: a scanner that returns nothing would make the loop vacuous.
+  expect(scanned).toBeGreaterThan(50);
 });
 
 it('missing-surface errors stay runtime-neutral', () => {

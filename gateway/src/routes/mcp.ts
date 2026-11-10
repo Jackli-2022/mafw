@@ -1,7 +1,7 @@
 // gateway/src/routes/mcp.ts
 // MCP 管理 HTTP 门面（runtime-neutral）。
 // gateway 只做：能力门 → 调用 RuntimeMcpChannel → 返回 JSON。
-// opencode 的 v2 HTTP / CLI / 配置文档细节在 runtime/opencode-mcp.ts（适配器层）。
+// opencode 的 v2 HTTP / CLI / 配置文档细节在 adapters/opencode/src/mcp.ts（驱动包内）。
 import * as http from 'http';
 import type { RuntimeMcpServer } from '../runtime/contract';
 import type { RuntimeAccess } from '../runtime/runtime-access';

@@ -6671,7 +6671,7 @@ class MafwScheduler {
         }
 
         // MCP 管理门面（runtime-neutral）：gateway 只做能力门 + 契约调用；
-        // opencode 的 v2 HTTP / CLI / 配置文档细节在 runtime/opencode-mcp.ts。
+        // opencode 的 v2 HTTP / CLI / 配置文档细节在 adapters/opencode/src/mcp.ts（驱动包内）。
         if (req.url?.match(/^\/api\/mcp\//)) {
           const rt = this.runtime;
           const channel = rt?.mcp;

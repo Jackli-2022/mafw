@@ -7,8 +7,8 @@ import { createNeutralRuntime } from '../../../src/runtime/neutral-runtime';
 import { RuntimePluginLoader } from '../../../src/runtime/loader';
 import { toRuntimeDefinition, getBridgeEventEntry } from '../../../src/runtime/adapter-bridge';
 import { createOpencodeDefinition } from '../../../../adapters/opencode/src/definition';
-// Identity assertions below compare against the table the gateway definition
-// registers (`opencode-events` shim → the package), so import it from the shim.
+// Identity assertions below compare against the table the adapter package
+// registers, so import it from the adapter source (the gateway shims are gone).
 import { OPENCODE_V1_EVENT_MAPPINGS } from '../../../../adapters/opencode/src/events';
 import { createOpencodeRuntime } from '../../../../adapters/opencode/src/runtime';
 // Load the gateway shim once: it registers the adapter's tooling bridge map.

@@ -2,12 +2,17 @@
  * 依赖边界守卫（Plan 3 Task 7 / 设计 §3.6）——
  * ① gateway/src 中 runtime/ 之外禁 import 两 SDK（@opencode-ai/sdk、
  *    @earendil-works/pi-coding-agent）
- * ② runtime/auth.ts（opencode 凭据源）仅允许 runtime/** 与 index.ts（单点接线）
- *    import
+ * ② 业务目录（routes/core/media/trajectory/usage）禁 import adapter 实现与
+ *    `@mafw/adapter-*` / `adapters/` 包；opencode 驱动只经
+ *    `runtime/opencode-adapter.ts` 单一入口
  * 违例即红：防止解耦被悄悄腐蚀（spec 反目标）。
+ *
+ * 扫描用共享的 `import-scan.ts`（整段文本收集 specifier）：多行 import 与
+ * `export * from` 不会因为 specifier 不在 `import` 同一行而漏判。
  */
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
+import { scanModuleSpecifiers } from './import-scan';
 
 const SRC = join(__dirname, '..', '..', '..', 'src');
 
@@ -28,10 +33,6 @@ function walk(dir: string): string[] {
 
 const FORBIDDEN_SDKS = ['@opencode-ai/sdk', '@earendil-works/pi-coding-agent'];
 
-function importLineMatches(line: string, pkg: string): boolean {
-  return line.includes(`'${pkg}`) || line.includes(`"${pkg}`) || line.includes('`' + pkg);
-}
-
 describe('依赖边界守卫（runtime/ 之外零 SDK import）', () => {
   const files = walk(SRC).filter((f) => !f.replace(/\\/g, '/').includes('/src/runtime/'));
 
@@ -44,12 +45,11 @@ describe('依赖边界守卫（runtime/ 之外零 SDK import）', () => {
     const violations: string[] = [];
     for (const file of files) {
       const rel = file.replace(SRC, '').replace(/^[\\/]/, '');
-      const content = readFileSync(file, 'utf8');
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('import') && !trimmed.includes('require(') && !trimmed.includes('import(')) continue;
+      for (const entry of scanModuleSpecifiers(readFileSync(file, 'utf8'))) {
         for (const pkg of FORBIDDEN_SDKS) {
-          if (importLineMatches(trimmed, pkg)) violations.push(`${rel}: ${trimmed}`);
+          if (entry.specifier === pkg || entry.specifier.startsWith(`${pkg}/`)) {
+            violations.push(`${rel}:${entry.line}: ${entry.snippet}`);
+          }
         }
       }
     }
@@ -76,36 +76,45 @@ describe('依赖边界守卫（runtime/ 之外零 SDK import）', () => {
       'opencode-mcp-config', 'plugins/pi-runtime', 'pi-runtime', 'pi-session',
       'pi-adapter', 'pi-events', 'pi-approval', 'claude',
     ];
+    let businessFiles = 0;
+    let scanned = 0;
     const violations: string[] = [];
     for (const file of walk(SRC)) {
       const rel = 'src/' + file.replace(SRC, '').replace(/^[\\/]/, '').replace(/\\/g, '/');
       if (!BUSINESS_DIRS.some((dir) => rel.startsWith(dir))) continue;
-      for (const line of readFileSync(file, 'utf8').split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('import') && !trimmed.includes('require(') && !trimmed.includes('import(')) continue;
-        if (!/runtime\//.test(trimmed)) continue;
+      businessFiles++;
+      for (const entry of scanModuleSpecifiers(readFileSync(file, 'utf8'))) {
+        scanned++;
+        if (!entry.specifier.includes('runtime/')) continue;
         for (const mod of ADAPTER_MODULES) {
-          if (trimmed.includes(mod)) violations.push(`${rel}: ${trimmed}`);
+          if (entry.specifier.includes(mod)) violations.push(`${rel}:${entry.line}: ${entry.snippet}`);
         }
       }
     }
     expect(violations).toEqual([]);
+    expect(businessFiles).toBeGreaterThan(20);
+    expect(scanned).toBeGreaterThan(50);
   });
 
   it('业务目录不 import adapter 包（opencode 只经 runtime/opencode-adapter.ts 单一入口）', () => {
     const BUSINESS_DIRS = ['src/routes/', 'src/core/', 'src/media/', 'src/trajectory/', 'src/usage/'];
+    let businessFiles = 0;
+    let scanned = 0;
     const violations: string[] = [];
     for (const file of walk(SRC)) {
       const rel = 'src/' + file.replace(SRC, '').replace(/^[\\/]/, '').replace(/\\/g, '/');
       if (!BUSINESS_DIRS.some((dir) => rel.startsWith(dir))) continue;
-      for (const line of readFileSync(file, 'utf8').split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('import') && !trimmed.includes('require(') && !trimmed.includes('import(')) continue;
-        if (trimmed.includes('@mafw/adapter-') || trimmed.includes('adapters/')) {
-          violations.push(`${rel}: ${trimmed}`);
+      businessFiles++;
+      for (const entry of scanModuleSpecifiers(readFileSync(file, 'utf8'))) {
+        scanned++;
+        if (entry.specifier.includes('@mafw/adapter-') || entry.specifier.includes('adapters/')) {
+          violations.push(`${rel}:${entry.line}: ${entry.snippet}`);
         }
       }
     }
     expect(violations).toEqual([]);
+    // 扫描面非空：业务目录确实被扫到、确实有 import（否则整段断言假绿）。
+    expect(businessFiles).toBeGreaterThan(20);
+    expect(scanned).toBeGreaterThan(50);
   });
 });
