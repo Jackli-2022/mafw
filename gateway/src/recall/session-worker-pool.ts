@@ -4,10 +4,17 @@
 // or hard-cap overflow). runExclusive serializes pipeline work per
 // (session, kind) so concurrent triggers (cron + restore + manual) can never
 // run the same worker twice at once.
+//
+// Kernel refactor Phase C (Task 4, revised): the pair cache stays on TtlMap —
+// it is keyed by the SOURCE session (a user session, never labeled
+// kind 'worker'). The WORKER sessions themselves register as session-registry
+// records at creation (role + origin + TTL), refresh with their pair, and
+// unregister at pair eviction / overflow / disposeAll.
 import { TtlMap } from './ttl-map';
 import { Singleflight } from '../concurrency';
 import { MemoryWorker, WorkerClient } from './memory-worker';
 import { registerWorkerOrigin } from './worker-origin';
+import { SessionRegistry, getDefaultSessionRegistry } from '../session';
 
 export type WorkerKind = 'extract' | 'reflect';
 
@@ -30,19 +37,26 @@ export interface SessionWorkerPoolOptions {
    *  internal sessions from observation capture — recursion guard). The role
    *  parameter is the worker kind ('extract' | 'reflect'). */
   onSessionCreated?: (sessionId: string, role: string) => void;
+  /** Session registry for worker-session records (Phase C). Defaults to the
+   *  shared gateway registry; tests pass isolated instances. */
+  registry?: SessionRegistry;
 }
 
 export class SessionWorkerPool {
   private entries: TtlMap<string, WorkerPair>;
   private flight = new Singleflight();
   private creationOrder: string[] = [];
+  private registry: SessionRegistry;
 
   constructor(private opts: SessionWorkerPoolOptions) {
     const ttlMs = opts.ttlMs;
+    this.registry = opts.registry ?? getDefaultSessionRegistry();
     this.entries = new TtlMap<string, WorkerPair>(ttlMs, {
-      onEvict: (_key, pair) => {
+      onEvict: (key: unknown, pair: WorkerPair) => {
         void pair.extract.dispose();
         void pair.reflect.dispose();
+        // The pair's worker sessions die with it — drop their records too.
+        this.unregisterWorkersFor(String(key));
       },
     });
   }
@@ -51,11 +65,31 @@ export class SessionWorkerPool {
     return this.opts.maxSessions ?? 64;
   }
 
+  /** Unregister the session-registry records of a source session's workers. */
+  private unregisterWorkersFor(sourceSessionID: string): void {
+    for (const rec of this.registry.byScope({ kind: 'worker' })) {
+      if (rec.metadata.originSessionID === sourceSessionID) {
+        this.registry.unregister(rec.sessionID);
+      }
+    }
+  }
+
+  /** Touch the session-registry records of a source session's workers. */
+  private touchWorkersFor(sourceSessionID: string): void {
+    for (const rec of this.registry.byScope({ kind: 'worker' })) {
+      if (rec.metadata.originSessionID === sourceSessionID) {
+        this.registry.touch(rec.sessionID);
+      }
+    }
+  }
+
   /** Get (or lazily create) the worker for a session. Touches the TTL. */
   getWorker(sessionID: string, kind: WorkerKind): MemoryWorker {
     this.entries.sweep(); // release idle/expired sessions before serving one
     let pair = this.entries.getAndTouch(sessionID, this.opts.ttlMs);
-    if (!pair) {
+    if (pair) {
+      this.touchWorkersFor(sessionID); // worker records refresh with the pair
+    } else {
       // Hard cap: evict the oldest entry that is not mid-flight (never kill a
       // worker whose prompt is in progress — that degrades to fallback/retry).
       while (this.entries.size() >= this.maxSessions()) {
@@ -64,7 +98,7 @@ export class SessionWorkerPool {
         );
         if (idx === -1) break; // everything in flight → accept the overflow
         const oldest = this.creationOrder.splice(idx, 1)[0];
-        this.entries.delete(oldest);
+        this.entries.delete(oldest); // fires onEvict → disposes + unregisters workers
       }
       const label = `mem-${sessionID}`;
       pair = {
@@ -74,7 +108,7 @@ export class SessionWorkerPool {
           compactIdleMs: this.opts.compactIdleMs,
           promptTimeoutMs: this.opts.promptTimeoutMs,
           onSessionCreated: (sid) => {
-            registerWorkerOrigin(sid, sessionID);
+            this.registerWorkerSession(sid, sessionID, 'extract', label);
             this.opts.onSessionCreated?.(sid, 'extract');
           },
         }),
@@ -84,7 +118,7 @@ export class SessionWorkerPool {
           compactIdleMs: this.opts.compactIdleMs,
           promptTimeoutMs: this.opts.promptTimeoutMs,
           onSessionCreated: (sid) => {
-            registerWorkerOrigin(sid, sessionID);
+            this.registerWorkerSession(sid, sessionID, 'reflect', label);
             this.opts.onSessionCreated?.(sid, 'reflect');
           },
         }),
@@ -94,6 +128,22 @@ export class SessionWorkerPool {
       this.creationOrder.push(sessionID);
     }
     return kind === 'extract' ? pair.extract : pair.reflect;
+  }
+
+  /** Register a worker session in the process table; the origin overlay
+   *  (registerWorkerOrigin) patches the same record when it already exists. */
+  private registerWorkerSession(workerSid: string, sourceSessionID: string, kind: WorkerKind, label: string): void {
+    const existing = this.registry.lookup(workerSid);
+    if (existing) {
+      registerWorkerOrigin(workerSid, sourceSessionID); // patch in place
+      return;
+    }
+    this.registry.register({
+      sessionID: workerSid,
+      scope: { kind: 'worker', role: kind },
+      metadata: { originSessionID: sourceSessionID, label },
+      ttlMs: this.opts.ttlMs,
+    });
   }
 
   /**
@@ -115,9 +165,13 @@ export class SessionWorkerPool {
 
   /** Dispose every worker (gateway stop / restart). */
   disposeAll(): Promise<void> {
-    this.entries.clear(); // onEvict disposes pairs
+    const sources = [...this.creationOrder];
+    this.entries.clear(); // onEvict disposes pairs + unregisters workers
+    // TtlMap.clear may or may not fire onEvict for every entry — be explicit.
+    for (const source of sources) this.unregisterWorkersFor(source);
     this.flight.clear();
     this.creationOrder = [];
     return Promise.resolve();
   }
 }
+
