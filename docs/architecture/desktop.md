@@ -24,6 +24,9 @@
   标题 + 阶段 + `来自 Lead 话题`）；Goal 详情「上下文来源」显示 snapshot 前 120 字并可「查看全文」
   （`goals.source`）；详情显示 `goalMode` 徽标（Quick / Standard / Standing）；标题栏「状态」按需
   打开 Lead 状态卡（stage / progress / blocker），不常驻占位。
+- **P2 调度 / Topic map（2026-11-10）**：工作台首屏改为 attention-first「需要你处理」（person 优先，
+  健康状态只在全部 Goal 列表）；Lead 话题面板增加「分叉」与边界提议的接受/合并/撤销，恢复/分叉
+  统一走 `openPodSession`，不展示 session id。
 - **工作台**：L2 `文件 / 浏览器 / 终端`。文件树 + 编辑器 + 预览；浏览器多 tab（`persist:workbench-browser`，
   本地文件走 `mafw-file://`）；终端本地 + 多 SSH（xterm.js + ssh2，`mafw-terminal/1` 契约）。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
