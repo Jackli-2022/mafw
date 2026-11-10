@@ -256,6 +256,18 @@ export function createMafwApi(): MafwAPI {
       recall: (input) => invoke("lead", "recall", input),
     },
 
+    events: {
+      sources: (input) => invoke("events", "sources", input),
+      createSource: (input) => invoke("events", "createSource", input),
+      setSourceEnabled: (id, enabled) => invoke("events", "setSourceEnabled", id, enabled),
+      threads: (input) => invoke("events", "threads", input),
+      triggers: (threadId) => invoke("events", "triggers", threadId),
+      subscriptions: (threadId) => invoke("events", "subscriptions", threadId),
+      subscribe: (threadId, input) => invoke("events", "subscribe", threadId, input),
+      unsubscribe: (id) => invoke("events", "unsubscribe", id),
+      deliveries: (threadId) => invoke("events", "deliveries", threadId),
+    },
+
     pod: {
       ensure: (projectID) => invoke("pod", "ensure", projectID),
       lookup: (projectID) => invoke("pod", "lookup", projectID),

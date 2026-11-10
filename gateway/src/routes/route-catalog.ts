@@ -178,7 +178,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/event-threads/:id/subscriptions', operationId: 'events.threads.subscriptions.create', tags: ['events'] },
   { method: 'DELETE', path: '/api/event-subscriptions/:id', operationId: 'events.subscriptions.delete', tags: ['events'] },
   { method: 'GET', path: '/api/event-deliveries', operationId: 'events.deliveries.list', tags: ['events'] },
-  { method: 'POST', path: '/api/event-sources/:id/webhook', operationId: 'events.webhook.receive', tags: ['events'] },
+  { method: 'POST', path: '/api/event-sources/:id/webhook', operationId: 'events.webhook.receive', tags: ['internal'] },
   { method: 'GET', path: '/api/lead/topics', operationId: 'lead.topics.list', tags: ['lead'] },
   { method: 'GET', path: '/api/lead/topics/:id', operationId: 'lead.topics.get', tags: ['lead'] },
   { method: 'GET', path: '/api/lead/working-set', operationId: 'lead.workingSet', tags: ['lead'] },

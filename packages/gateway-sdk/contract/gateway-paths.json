@@ -2802,7 +2802,7 @@
       "post": {
         "operationId": "events.webhook.receive",
         "tags": [
-          "events"
+          "internal"
         ],
         "parameters": [
           {
