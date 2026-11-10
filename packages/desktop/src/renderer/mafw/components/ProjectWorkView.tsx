@@ -5,7 +5,7 @@ import { WorkOverview } from "./WorkOverview"
 import { WorkPriorityList } from "./WorkPriorityList"
 import { GoalDetailPanel } from "./GoalDetailPanel"
 import { PodGoalComposer } from "./PodGoalComposer"
-import { buildWorkPriority, type WorkFilter } from "../work-overview-model"
+import { buildAttentionList, buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
 import { isPodResultViewed } from "../pod-result-store"
 import { podEvents } from "../pod-events"
@@ -107,6 +107,12 @@ export function ProjectWorkView(props: {
     isResultViewed: isViewed,
   }))
 
+  const attention = createMemo(() => buildAttentionList({
+    goals: overviewGoals(),
+    attention: [],
+    isResultViewed: isViewed,
+  }))
+
   let previousGoalId: string | null = null
   createEffect(() => {
     const selected = props.selectedGoalId ?? null
@@ -188,6 +194,7 @@ export function ProjectWorkView(props: {
 
         <WorkPriorityList
           items={priority()}
+          attention={attention()}
           onOpen={(goal, focus) => props.onOpenGoal(goal, focus)}
         />
 

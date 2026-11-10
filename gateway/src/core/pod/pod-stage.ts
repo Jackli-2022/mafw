@@ -101,7 +101,7 @@ export interface PodAttentionItem {
   goalId: string;
   /** The revision this attention belongs to; ids are revision-scoped. */
   revision: number;
-  kind: 'plan_approval' | 'direction_review' | 'question' | 'blocked';
+  kind: 'plan_approval' | 'direction_review' | 'question' | 'blocked' | 'review' | 'failed';
   title: string;
   action: PodGoalStageAction;
   /**

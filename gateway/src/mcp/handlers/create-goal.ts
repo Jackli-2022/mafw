@@ -117,6 +117,7 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
             source: 'lead',
             sourceRef,
             handoff: args.handoff === 'none' ? 'none' : 'current-topic',
+            forkFromTopicId: clean(args.forkFromTopicId) || undefined,
             topicId: clean(args.topicId) || undefined,
             authorization: {
               source: "lead",

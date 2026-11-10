@@ -8,6 +8,7 @@ import type {
   MafwBackgroundJob, MafwBackgroundOutput,
   PodNamespace, WorkNamespace,
   LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
+  LeadBoundaryView, LeadBoundaryDecision,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
@@ -200,6 +201,10 @@ export type MafwAPI = {
     approvePlan: (goalId: string, approvalId?: string) => Promise<{ success: boolean }>
     rejectPlan: (goalId: string, approvalId: string | undefined, feedback: string) => Promise<{ success: boolean }>
     retryNode: (goalId: string, runId: number, opts?: { confirm?: boolean }) => Promise<{ success: boolean; runId: number }>
+    pause: (goalId: string) => Promise<{ status: string }>
+    resume: (goalId: string) => Promise<{ status: string }>
+    stop: (goalId: string) => Promise<{ status: string }>
+    retry: (goalId: string, runId?: number) => Promise<{ status: string }>
   }
 
   memory: {
@@ -253,6 +258,13 @@ export type MafwAPI = {
       list: (input?: { projectDir?: string; query?: string; limit?: number }) => Promise<{ items: LeadTopicView[] }>
       get: (id: string) => Promise<{ topic: LeadTopicView; messages: LeadTopicIndexMessage[] }>
       resume: (id: string) => Promise<{ sessionID: string; resumedFrom: string | null }>
+      fork: (id: string, input?: { goalTitle?: string }) => Promise<{ goalId: string; sessionID?: string | null }>
+      boundaries: (id: string) => Promise<{ items: LeadBoundaryView[] }>
+    }
+    boundaries: {
+      accept: (topicId: string, id: string) => Promise<LeadBoundaryDecision>
+      merge: (topicId: string, id: string) => Promise<LeadBoundaryDecision>
+      undo: (topicId: string, id: string) => Promise<LeadBoundaryDecision>
     }
     workingSet: (input?: { projectDir?: string }) => Promise<LeadWorkingSet>
     compact: (input: { topicId: string }) => Promise<LeadCompactResult>

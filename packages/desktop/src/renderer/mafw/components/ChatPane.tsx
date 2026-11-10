@@ -30,6 +30,7 @@ import { buildLeadGoalStatusCards, type LeadGoalStatusSource } from "../lead-goa
 import { LeadGoalStatusCard } from "./LeadGoalStatusCard"
 import { TopicIndexPanel } from "./TopicIndexPanel"
 import type { LeadTopicListItem } from "../lead-topics"
+import type { LeadBoundaryView } from "@mafw/sdk"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply, cachedArtifactUrl } from "./AudioReply"
@@ -212,9 +213,12 @@ export type ChatPaneProps = {
   /** Lead 话题索引（shell 持有数据；面板与状态卡互斥）。 */
   showTopics?: boolean
   topicItems?: LeadTopicListItem[]
+  topicBoundaries?: LeadBoundaryView[]
   topicBusy?: boolean
   onOpenTopics?: () => void
   onResumeTopic?: (id: string) => void
+  onForkTopic?: (id: string) => void
+  onBoundaryAction?: (id: string, action: "accept" | "merge" | "undo") => void
   onCloseTopics?: () => void
   /** 打开 Goal 的 Tech Lead 隐藏会话（Goal 标题作用域的 tab）。 */
   onOpenTechLead?: (goalId: string) => void
@@ -2171,8 +2175,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         <Show when={isLead() && props.showTopics}>
           <TopicIndexPanel
             topics={props.topicItems ?? []}
+            boundaries={props.topicBoundaries}
             busy={props.topicBusy}
             onResume={(id) => props.onResumeTopic?.(id)}
+            onFork={(id) => props.onForkTopic?.(id)}
+            onBoundaryAction={(id, action) => props.onBoundaryAction?.(id, action)}
             onClose={() => props.onCloseTopics?.()}
           />
         </Show>

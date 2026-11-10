@@ -2388,6 +2388,253 @@
         }
       }
     },
+    "/api/attention": {
+      "get": {
+        "operationId": "attention.list",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/scheduler/status": {
+      "get": {
+        "operationId": "scheduler.status",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goals/{id}/pause": {
+      "post": {
+        "operationId": "goals.pause",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goals/{id}/resume": {
+      "post": {
+        "operationId": "goals.resume",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goals/{id}/stop": {
+      "post": {
+        "operationId": "goals.stop",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goals/{id}/retry": {
+      "post": {
+        "operationId": "goals.retry",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics/{id}/boundaries": {
+      "get": {
+        "operationId": "lead.boundaries.list",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics/{id}/boundaries/{bid}/accept": {
+      "post": {
+        "operationId": "lead.boundaries.accept",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics/{id}/boundaries/{bid}/merge": {
+      "post": {
+        "operationId": "lead.boundaries.merge",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics/{id}/boundaries/{bid}/undo": {
+      "post": {
+        "operationId": "lead.boundaries.undo",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/boundaries/observe": {
+      "post": {
+        "operationId": "lead.boundaries.observe",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/lead/topics": {
       "get": {
         "operationId": "lead.topics.list",
@@ -2466,6 +2713,29 @@
     "/api/lead/topics/{id}/resume": {
       "post": {
         "operationId": "lead.topics.resume",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics/{id}/fork": {
+      "post": {
+        "operationId": "lead.topics.fork",
         "tags": [
           "lead"
         ],

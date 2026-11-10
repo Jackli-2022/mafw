@@ -13,6 +13,8 @@ import type { PodGoalWorktreeRow } from './pod-store';
 import type { PodWorktreeService, PodWorktreeDiff } from './pod-worktree-service';
 import { podTaskKindOf } from './pod-task-service';
 import { summarizePodGoalProgress } from './pod-goal-progress';
+import { planPromotions } from './pod-scheduler';
+import { deriveAttention } from '../lead/attention';
 import type {
   FinishRevisionInput,
   FinishRevisionResult,
@@ -38,7 +40,7 @@ function resultWorktree(row: PodGoalWorktreeRow): PodResultWorktree {
   };
 }
 
-/** 打回结果（Task 16）：同一 Goal 的下一 revision，讨论立即恢复。 */
+/** 闂佺懓鐏氶幐绋棵洪弽顐ょ＜闁规儳顕禍顖炴煥濞戞ɑ娌焌sk 16闂佹寧绋戦¨鈧紒鍙樺嵆瀹曘儳浠﹂懖鈺婁紘 Goal 闂佹眹鍔岀€氼亞绮崨顔锯枖闁?revision闂佹寧绋戦惌渚€顢樼捄銊﹀闁惧繐婀辫ぐ宀勬煕濡ゅ嫭鐝ù鐙€鍠楀鍕吋閸愶絽浜?*/
 export interface PodRejectResult {
   podId: string;
   goalId: string;
@@ -48,7 +50,7 @@ export interface PodRejectResult {
   feedback: string;
   archivedState: string | null;
   previous: RejectRevisionResult['previous'];
-  /** Tech Lead 讨论会话（重建/复用的 scoped session）。 */
+  /** Tech Lead 闁荤姳闄嶉崝蹇涱敊閹寸偛顕辨慨妯虹－濡牓鏌ㄥ☉妯煎ⅵ闁革絿顭堥?婵犮垼娉涚粔鍫曞极閵堝鍎?scoped session闂佹寧绋戦ˇ顓㈠焵?*/
   sessionID: string | null;
   sessionError?: string;
 }
@@ -62,19 +64,19 @@ export interface PodGoalAcceptResult {
   mergedAt: string;
 }
 
-/** 完成通知结果：同一 revision 只广播一次结果事件。 */
+/** 闁诲海鎳撻張顒勫垂濮樿埖鐒绘慨妯夸含閸欌偓缂傚倷鐒﹂幐濠氭倶婢舵劖鏅慨姗嗗墯閸婂崬鈽夐幘顖氫壕 revision 闂佸憡鐟禍婊呯不瀹ュ绠绘い鎾寸箘椤忚鲸绻涢崱顓犵？缂侇喓鍔戝绋款煥閳ь剛鑺遍妸锔绢浄闂婎剚绁撮崑?*/
 export interface PodResultNotification {
   podId: string;
   goalId: string;
   revision: number;
   verdict: PodGoalVerdict | null;
-  /** true = 本次调用广播了结果事件。 */
+  /** true = 闂佸搫鐗滈崜姘额敃閼测晜瀚柛鎰典簼閺嗗繑顨ラ悙鏉戭嚋闁规瓕椴哥粋宥夊幢濞嗘垶灏濋梺鍝勵儐缁牏鑺遍妸锔绢浄闂婎剚绁撮崑?*/
   notified: boolean;
-  /** true = 该 revision 已经通知过（重复调用不重复广播）。 */
+  /** true = 闁?revision 閻庤鐡曠亸娆戝垝閿熺姵鐒绘慨妯夸含閸欌偓闁哄鏅涘ù鍕濞嗘挻鐓傜€广儱鎷嬪Σ濠氭偣鐎ｎ亜鏆熼柡浣靛€栫粙澶婎吋婢跺﹥顏熸繝銏ｆ硾缁夊绮诲澶婄妞ゆ挶鍔庣粈鍡涙煏?*/
   duplicate: boolean;
 }
 
-/** 打回所需的 revision 生命周期能力（Task 4 service；按需注入）。 */
+/** 闂佺懓鐏氶幐绋棵洪弽顓炵闁逞屽墴濡線鍩€椤掑嫭鍎?revision 闂佹眹鍨婚崰搴ㄥ箠閿熺姴宸濋柕濠忛檮閸╁倿鏌ょ€圭姵顥夊┑顔肩箻閺佸秹宕烽惄绺甼 4 service闂佹寧绋掔粙鎺斺偓鍨矒濡線鍩€椤掆偓閳绘棃濡搁妷銉ユ辈闂佹寧绋戦ˇ顓㈠焵?*/
 export interface PodRevisionLifecycle {
   finishRevision(goalId: string, input: FinishRevisionInput): FinishRevisionResult;
   reopenAfterReject(
@@ -93,20 +95,24 @@ export interface PodGoalServiceDeps {
   now(): string;
   newId(): string;
   notify(podId: string, kind?: string, goalId?: string): void;
+  /** P2: Goal reached a terminal state (memory promotion hook, fail-open). */
+  onGoalCompleted?(goalId: string): void;
   budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } };
+  /** P2: max normal slots per Pod (default 1; MAFW_POD_MAX_GOALS). */
+  maxConcurrentGoals?(): number;
   goalState?(goalId: string): { terminal: boolean; verdict?: string } | null;
   describeGoal?(goalId: string): PodGoalDescription | null;
   resultForGoal?(goalId: string): PodGoalResult | null;
   listInFlightGoals?(projectDir: string): string[];
   listRegisteredProjectDirs?(): string[];
   finalizeGoal?(goalId: string, outcome?: { verdict?: string }): Promise<void>;
-  /** Task 4：revision 收尾 / 打回开下一版。 */
+  /** Task 4闂佹寧绋掗鐞玽ision 闂佽　鍋撻悹楦挎閸?/ 闂佺懓鐏氶幐绋棵洪弽褜鍤曢柍褜鍓氱粙澶屸偓锝傛櫇椤忛亶鏌ｅΔ鈧悧鍕焵?*/
   revisions?: PodRevisionLifecycle;
   /** Revision session retirement (Tech Lead discussion lease). */
   sessions?: { retireRevision(goalId: string, revision: number): Promise<boolean> };
-  /** Task 10：打回后立即恢复该 Goal 的 Tech Lead 讨论会话。 */
+  /** Task 10闂佹寧绋掔喊宥嗘櫠閿曞倸鐐婇柣鎰级閸婄數绱掗弬娆惧剰鐎规挸妫濋獮渚€濮€閻欌偓濡插鎮?Goal 闂?Tech Lead 闁荤姳闄嶉崝蹇涱敊閹寸偛顕辨慨妯虹－濡牓鏌?*/
   techLead?: { ensureSession(goalId: string): Promise<string> };
-  /** Task 6：打回反馈作为方向决定的输入（append-only，不推动阶段）。 */
+  /** Task 6闂佹寧绋掔喊宥嗘櫠閿曞倸鐐婇柣鎰絻閸愨偓婵☆偓绲介悧鍛礊閺冣偓缁嬪鎮滃Ο鑽ゅ幍闂佸憡纰嶉崹鐢稿窗閸涱垪鍋撶憴鍕殤婵炲牊鍨跺蹇涘箻閸愭彃姹查梺鎸庣☉濞煎pend-only闂佹寧绋戞總鏃傜箔婢舵劕绠抽柕濞垮劚琚熼梻鍌氬暢閸╂牠顢欏畝鍕櫖濠㈣泛鐗冮崑?*/
   directions?: { recordRejectInput(input: {
     goalId: string;
     revision?: number;
@@ -119,7 +125,7 @@ export interface PodGoalServiceDeps {
 }
 
 export class PodGoalService {
-  /** 已广播过结果事件的 `<podId>/<goalId>#<revision>`（best-effort 去重；重启后最多重发一次）。 */
+  /** 閻庣懓鎲¤ぐ鍐不瀹ュ绠绘い鎿勭磿缁犳牜绱撴担瑙勫鞍闁诲繐顦扮粋宥団偓锝傛櫆椤愪粙鏌?`<podId>/<goalId>#<revision>`闂佹寧绋戝瀹攕t-effort 闂佸憡锚椤兘宕抽幖浣规櫖婵炴垯鍨瑰▍銏ゆ煕濮樼厧鐏犻柟顔筋殜瀵敻鍩€椤掍礁绶炴慨妯挎硾濞呫垽鏌涘▎鎰仯缂佹梹娼欓埢搴ㄥ煡閸涱垳顦梺?*/
   private readonly notifiedResults = new Set<string>();
   /** Accept/reject must be serialized per Goal: a rejected revision can never merge later. */
   private readonly goalMutations = new Map<string, Promise<unknown>>();
@@ -166,7 +172,7 @@ export class PodGoalService {
           queueReason: null,
         };
       }
-      if (existing.status === 'queued' && !this.deps.store.getActiveGoal(pod.id)
+      if (existing.status === 'queued' && this.hasCapacity(pod.id)
         && pod.status !== 'paused' && pod.status !== 'archived') {
         const budget = this.deps.budget?.canStart(pod.id);
         if (!budget || budget.ok) await this.promote(pod.id);
@@ -186,18 +192,22 @@ export class PodGoalService {
       goalId,
       now: this.deps.now(),
     });
-    const active = this.deps.store.getActiveGoal(pod.id);
     const olderQueued = this.deps.store.listGoals(pod.id)
       .some((candidate) => candidate.id !== row.id && candidate.status === 'queued');
     const budget = this.deps.budget?.canStart(pod.id);
-    if (pod.status === 'paused' || pod.status === 'archived' || !!active || (budget && !budget.ok)) {
+    if (pod.status === 'paused' || pod.status === 'archived' || !this.hasCapacity(pod.id) || (budget && !budget.ok)) {
       this.deps.notify(pod.id);
       return { status: 'queued', podId: pod.id, queueReason: this.queueReasonFor(pod, row) ?? null };
     }
     if (olderQueued) {
       await this.promote(pod.id);
       this.deps.notify(pod.id);
-      return { status: 'queued', podId: pod.id, queueReason: 'active_goal' };
+      const current = this.deps.store.getGoal(pod.id, goalId);
+      return {
+        status: current?.status === 'active' ? 'started' : 'queued',
+        podId: pod.id,
+        queueReason: current?.status === 'active' ? null : (this.queueReasonFor(pod, current ?? row) ?? null),
+      };
     }
 
     await this.startQueued(row.id, pod.id, goalId, pod.projectDir);
@@ -220,22 +230,35 @@ export class PodGoalService {
     const pod = this.deps.store.getPod(goal.podId);
     if (!pod) return;
 
-    const wasActive = pod.activeGoalId === goal.goalId;
+    const wasActive = pod.status !== 'paused' && pod.status !== 'archived'
+      && (pod.activeGoalId === goal.goalId || this.deps.store.listActiveGoals(pod.id).length > 0);
     const verdict = normalizeVerdict(outcome?.verdict);
     const nextStatus = verdict === 'CANCELLED' ? 'aborted' : 'done';
     this.deps.store.setGoalStatus(goal.id, nextStatus, {
       endedAt: this.deps.now(),
       ...(verdict ? { verdict } : {}),
     });
+    try {
+      this.deps.onGoalCompleted?.(goalId);
+    } catch {
+      /* fail-open: memory promotion must not block Goal archival */
+    }
+
+    const remaining = this.deps.store.listActiveGoals(pod.id);
+    const pointerStillValid = remaining.some((candidate) => candidate.goalId === pod.activeGoalId);
+    const nextPointer = pointerStillValid ? pod.activeGoalId : (remaining[0]?.goalId ?? null);
+    if (pod.activeGoalId === goal.goalId || !pointerStillValid) {
+      this.deps.store.updatePod(pod.id, {
+        activeGoalId: nextPointer,
+        status: pod.status === 'paused' || pod.status === 'archived'
+          ? pod.status
+          : (remaining.length > 0 ? 'active' : 'idle'),
+      }, this.deps.now());
+    }
     if (!wasActive) {
       this.deps.notify(pod.id);
       return;
     }
-
-    this.deps.store.updatePod(pod.id, {
-      activeGoalId: null,
-      status: pod.status === 'paused' || pod.status === 'archived' ? pod.status : 'idle',
-    }, this.deps.now());
     if (pod.status === 'paused' || pod.status === 'archived') {
       this.deps.notify(pod.id);
       return;
@@ -244,24 +267,129 @@ export class PodGoalService {
     this.deps.notify(pod.id);
   }
 
-  async promote(podId: string): Promise<boolean> {
+  /** Public admission check for a brand-new Goal (queued goal does not count yet). */
+  canAdmitGoal(podId: string): boolean {
     const pod = this.deps.store.getPod(podId);
     if (!pod || pod.status === 'paused' || pod.status === 'archived') return false;
-    if (this.deps.store.getActiveGoal(podId)) return false;
-    const next = this.deps.store.listGoals(podId)
-      .find((candidate) => candidate.status === 'queued' && this.isStartable(candidate.goalId));
-    if (!next) return false;
-    const budget = this.deps.budget?.canStart(podId);
-    if (budget && !budget.ok) return false;
-    await this.startQueued(next.id, podId, next.goalId, pod.projectDir);
-    this.deps.notify(podId);
-    return true;
+    return this.deps.store.listActiveGoals(podId).length < this.capacityFor(podId);
   }
 
   /**
-   * 讨论中的 Goal（revision discussing / direction_review）绝不能进入 NodeDriver：
-   * 只有 direction `clear`/`decided` 把 revision 推到 planning 后，方向工具才会
-   * 显式调用 starter。没有 revision 行的 legacy Goal 保持可启动。
+   * Admit a Goal whose direction decision is done. Starts it when a slot is
+   * free; otherwise parks it in the queue so the scheduler can promote it later.
+   */
+  async admitReadyGoal(goalId: string, projectDirHint?: string): Promise<boolean> {
+    const row = this.deps.store.getGoalByGoalId(goalId);
+    if (!row) throw new PodError(404, `goal not found: ${goalId}`);
+    const pod = this.deps.store.getPod(row.podId);
+    if (!pod) throw new PodError(404, `pod not found: ${row.podId}`);
+    if (!this.isStartable(goalId)) return false;
+    if (pod.status === 'paused' || pod.status === 'archived') return false;
+
+    const activeOthers = this.deps.store.listActiveGoals(pod.id)
+      .filter((candidate) => candidate.goalId !== goalId);
+    if (activeOthers.length >= this.capacityFor(pod.id, goalId)) {
+      if (row.status === 'active') this.deps.store.setGoalStatus(row.id, 'queued', {});
+      const pointer = pod.activeGoalId === goalId
+        ? (activeOthers[0]?.goalId ?? null)
+        : pod.activeGoalId;
+      this.deps.store.updatePod(pod.id, {
+        activeGoalId: pointer,
+        status: pointer ? 'active' : 'idle',
+      }, this.deps.now());
+      this.deps.notify(pod.id);
+      return false;
+    }
+
+    await this.startQueued(row.id, pod.id, goalId, projectDirHint ?? pod.projectDir);
+    this.deps.notify(pod.id);
+    return true;
+  }
+
+  async promote(podId: string): Promise<boolean> {
+    const pod = this.deps.store.getPod(podId);
+    if (!pod || pod.status === 'paused' || pod.status === 'archived') return false;
+    const budget = this.deps.budget?.canStart(podId);
+    if (budget && !budget.ok) return false;
+
+    const goals = this.deps.store.listGoals(podId);
+    const humanAttention = new Set(
+      deriveAttention(this.views(podId).filter((view) => !view.stateMissing)).map((item) => item.goalId),
+    );
+    const toCandidate = (goal: PodGoalRow) => ({
+      goalId: goal.goalId,
+      active: goal.status === 'active',
+      priority: goal.priority ?? 0,
+      enqueuedAt: goal.enqueuedAt,
+      humanAttention: humanAttention.has(goal.goalId),
+    });
+    const active = goals.filter((goal) => goal.status === 'active').map(toCandidate);
+    const queued = goals
+      .filter((goal) => goal.status === 'queued' && this.isStartable(goal.goalId))
+      .map(toCandidate);
+    const plan = planPromotions({ active, queued, maxConcurrent: this.maxConcurrent() });
+
+    let started = false;
+    for (const goalId of plan.start) {
+      const row = goals.find((goal) => goal.goalId === goalId);
+      if (!row) continue;
+      await this.startQueued(row.id, podId, goalId, pod.projectDir);
+      started = true;
+    }
+    if (started) this.deps.notify(podId);
+    return started;
+  }
+
+  schedulerStatus(podId: string): {
+    active: string[];
+    queued: string[];
+    capacity: number;
+    plan: ReturnType<typeof planPromotions>;
+  } | null {
+    const pod = this.deps.store.getPod(podId);
+    if (!pod) return null;
+    const goals = this.deps.store.listGoals(podId);
+    const humanAttention = new Set(
+      deriveAttention(this.views(podId).filter((view) => !view.stateMissing)).map((item) => item.goalId),
+    );
+    const toCandidate = (goal: PodGoalRow) => ({
+      goalId: goal.goalId,
+      active: goal.status === 'active',
+      priority: goal.priority ?? 0,
+      enqueuedAt: goal.enqueuedAt,
+      humanAttention: humanAttention.has(goal.goalId),
+    });
+    const active = goals.filter((goal) => goal.status === 'active').map(toCandidate);
+    const queued = goals.filter((goal) => goal.status === 'queued').map(toCandidate);
+    const plan = planPromotions({ active, queued, maxConcurrent: this.maxConcurrent() });
+    return {
+      active: active.map((item) => item.goalId),
+      queued: queued.map((item) => item.goalId),
+      capacity: plan.capacity,
+      plan,
+    };
+  }
+
+  private maxConcurrent(): number {
+    return Math.max(1, Math.trunc(this.deps.maxConcurrentGoals?.() ?? 1));
+  }
+
+  private hasCapacity(podId: string): boolean {
+    return this.deps.store.listActiveGoals(podId).length < this.capacityFor(podId);
+  }
+
+  private capacityFor(podId: string, excludeGoalId?: string): number {
+    const max = this.maxConcurrent();
+    const human = deriveAttention(
+      this.views(podId).filter((view) => !view.stateMissing && view.goalId !== excludeGoalId),
+    ).length > 0;
+    return max + (human ? 1 : 0);
+  }
+
+  /**
+   * 闁荤姳闄嶉崝蹇涱敊閹寸偟鈻旀い鎾跺У閻?Goal闂佹寧绋戝涔獀ision discussing / direction_review闂佹寧绋戦ˇ杈╁垝闁垮鈻旂€广儱鐗嗛崢鎾级閳哄倻鈽夐柛?NodeDriver闂?
+   * 闂佸憡鐟禍婵嗭耿?direction `clear`/`decided` 闂?revision 闂佽浜介崝宀勫春?planning 闂佸憡鑹鹃崙鐣屾濠靛妫橀柣鐔哄閸婅崵鈧鎮堕崕閬嶅矗閸ф绠ョ€广儱瀚粣?
+   * 闂佸搫瀚崕宕囨閿涘嫭瀚柛鎰典簼閺?starter闂侀潧妫楅崐褰掓儉閸涙潙瀚?revision 闁荤偞绋戦惉鐓庘枔?legacy Goal 婵烇絽娲︾换鍐偓鍨瀹曪綁顢涘顓炲壔闂佸憡鏌ｉ崝濠囧焵?
    */
   isStartable(goalId: string): boolean {
     const goal = this.deps.store.getGoalByGoalId(goalId);
@@ -285,19 +413,24 @@ export class PodGoalService {
       );
       return;
     }
+    const before = this.deps.store.getPod(podId);
+    const claimedPointer = !before?.activeGoalId;
     this.deps.store.setGoalStatus(rowId, 'active', { startedAt: this.deps.now() });
     this.deps.store.updatePod(podId, {
       status: 'active',
-      activeGoalId: goalId,
+      ...(claimedPointer ? { activeGoalId: goalId } : {}),
     }, this.deps.now());
     try {
       await this.deps.startGoal(goalId, projectDir);
     } catch (err) {
       this.deps.store.setGoalStatus(rowId, 'queued', {});
-      this.deps.store.updatePod(podId, {
-        status: 'idle',
-        activeGoalId: null,
-      }, this.deps.now());
+      if (claimedPointer) {
+        const others = this.deps.store.listActiveGoals(podId);
+        this.deps.store.updatePod(podId, {
+          status: others.length > 0 ? 'active' : 'idle',
+          activeGoalId: others[0]?.goalId ?? null,
+        }, this.deps.now());
+      }
       throw err;
     }
   }
@@ -464,8 +597,8 @@ export class PodGoalService {
   }
 
   /**
-   * 把当前 revision 的任务状态与 Spike 运行态并入描述（Task 11 读模型）：
-   * revision 行是「阶段/attention」的权威，state 只提供 blockers 与标题。
+   * 闂佺娉涢敃銈囩礊鐎ｎ喖绀?revision 闂佹眹鍔岀€氼亪骞戦姀銈呯闁挎稑瀚瑧闂佽鍏涘鎺旂箔?Spike 闁哄鏅滈崝姗€銆侀幋锕€绠戝ù锝嗙摃鐎氭瑩鏌涜箛瀣姕鐎殿喗瀵у鑽ゆ暜椤斿墽顦㏕ask 11 闁荤姴娲ㄧ划顖濆暞闂佹悶鍔岄鎴犳濮樿埖鏅?
+   * revision 闁荤偞绋戦張顒€危閹间礁违鐎光偓閸曨兘鏋嗗┑?attention闂侀潧妫楃粔璺衡枔閹达箑绾ч柛鎰╁妷閺嬪棝鏌ㄥ☉姗嗗晪tate 闂佸憡鐟禍婵娿亹娴ｅ湱鐟?blockers 婵炴垶鎸哥€涒晠鎮ラ敐鍡矗婵☆垳纭堕崑?
    */
   private describeWithRevision(
     row: PodGoalRow,
@@ -576,12 +709,12 @@ export class PodGoalService {
   }
 
   /**
-   * 完成通知（spec §8.1）：Reviewer 判 PASS 后由 Lead 通知用户。
+   * 闁诲海鎳撻張顒勫垂濮樿埖鐒绘慨妯夸含閸欌偓闂佹寧绋戝鍍積c 闁?.1闂佹寧绋戦¨鈧紒杈╂珔eviewer 闂?PASS 闂佸憡鑹惧ù鐑藉极?Lead 闂備緡鍋呭銊╂偂閿熺姵鍋ㄩ柕濠忕畱閻撴洟鏌?
    *
-   * - 当前 revision **保持**真实完成结果（终态行永不改写；尚未收尾但有证据时
-   *   只按证据 verdict 收尾一次，绝不臆造 PASS）；
-   * - 只广播一条 `pod.updated {kind:'result', goalId}`，同一 revision 不重复发；
-   * - 不创建人类 attention，也不需要用户再点一次「验收通过」。
+   * - 閻熸粎澧楅幐鍛婃櫠?revision **婵烇絽娲︾换鍐偓?*闂佹椿浜為崰搴ㄦ偪閸曨厸鍋撻悷鐗堟拱闁搞劍姘ㄧ槐鎺楀箻鐎甸晲鍑介梺鎸庣☉閻楀繒鍒掗幘璇茬畱濞达絿鐡旈弨鑺ユ叏濮椻偓閺呰尙绮径鎰哗闁荤喐婢橀弲鎼佹煥濞戞瑧鈽夐柣銊ヮ煼瀵敻顢旈崨顔芥瘑闁诲繐绻愯ぐ鐐靛緤妤ｅ啫瀚夊璺烘捣濡插牓鏌熺拠鈥虫灍婵?
+   *   闂佸憡鐟禍婵堚偓鍨矌閹风姵鎷呴悷鎵偊 verdict 闂佽　鍋撻悹楦挎閸熸彃鈽夐幘顖氫壕濠电偛妫屽Σ鍕濠靛牏纾兼繝闈涙噽閻熸繈鏌ゅ畡鐗堫棦闁?PASS闂佹寧绋戦¨鈧紒?
+   * - 闂佸憡鐟禍婊呯不瀹ュ绠绘い鎾寸箘椤忛亶鏌?`pod.updated {kind:'result', goalId}`闂佹寧绋戦懟顖炲箖閹惧鈻旈柍?revision 婵炴垶鎸哥粔褰掑闯閸涘﹤绶炵€广儱鎳庣徊娲煥?
+   * - 婵炴垶鎸哥粔鎾垂閸楃儐鍤堥弶鐐靛閻晫绱?attention闂佹寧绋戞總鏃傚姬閸愨晝鈻旂€广儱顦版禒姗€鎮烽弴姘冲厡闁轰降鍊濋獮瀣暋閺夋寧娅冮梺缁樺姍閳ь剚绋撻杈ㄧ箾閸犫剝澹嬮崑鎾崇暆閸曨厼鐭楅梺琛″亾闁割偅娲嶉崑鎾愁潩瀹曞洨鐣洪梺闈涙缁夋煡鍩€?
    */
   async notifyResult(podId: string, goalId: string): Promise<PodResultNotification> {
     const row = this.requireGoalRow(podId, goalId);
@@ -622,11 +755,11 @@ export class PodGoalService {
   }
 
   /**
-   * 打回（spec §8.2 / §8.3）：同一 Goal 继续，开下一 revision。
+   * 闂佺懓鐏氶幐绋棵洪弽顓熸櫖闁秆呮異ec 闁?.2 / 闁?.3闂佹寧绋戦¨鈧紒鍙樺嵆瀹曘儳浠﹂懖鈺婁紘 Goal 缂傚倷缍€閸涱垱鏆伴梺鎸庣☉閼活垳妲愰幋鐐碘枖閻庯絺鏅濋?revision闂?
    *
-   * 顺序不可交换（HARD PREREQUISITE）：先带结果证据收尾当前 revision，再
-   * `openNextRevision(expectedRevision)`。旧 revision 只追加、永不重写或反归档；
-   * 新 revision 从 `discussing` 开始（Tech Lead 讨论立即恢复），并带上打回优先级。
+   * 婵＄偑鍊曢幖顐よ姳椤撶喓鈻旂€广儱鎳庣拋鎻捗瑰┃鍨偓鏍х暦閺屻儲鏅柛锔筋儖RD PREREQUISITE闂佹寧绋戦¨鈧紒鍙樺嵆瀹曟宕煎┑鍫熸殧缂傚倷鐒﹂幐濠氭倶婢跺本瀚氬ù锝囨嚀缁侊箓鏌￠埀顒傛崉閾忕懓鏆￠悷婊呭閹稿憡鏅?revision闂佹寧绋戦懟顖炲疮閳?
+   * `openNextRevision(expectedRevision)`闂侀潧妫楅崐鐟拔?revision 闂佸憡鐟禍锝夊箯閻戣棄绀夐柣姗嗗枓閸嬫挻鎷呯憴鍕垫敵婵炴垶鎸哥粔褰掑闯閹间礁绀冩繛鍡樺姇閻忔鏌涘▎蹇曅㈢紓宥咃工椤╁ジ鏁愯箛鏇炶€?
+   * 闂?revision 婵?`discussing` 閻庢鍠掗崑鎾斥攽椤旂⒈鍎滅紒杈ㄢ攺ech Lead 闁荤姳闄嶉崝蹇涱敊閹寸姷鍗氶悗锝庝簻缁侇噣鏌熼婊冪仼妞わ附鐓￠弫宥嗗緞濞戞氨顦Δ鐘靛仩濞夋盯鎮介锝団枖濠电姴鍟埅鐢告煕閵壯冧粧缂侀硸鍙冨畷妤呭醇閵忋倗宕滈梺?
    */
   async rejectResult(podId: string, goalId: string, feedback: string): Promise<PodRejectResult> {
     return this.runGoalMutation(podId, goalId, async () => {
@@ -657,7 +790,7 @@ export class PodGoalService {
       this.deps.worktrees!.markAbandoned(podId, goalId, rejectedRevision);
     }
 
-    // 同一 Goal 回到 Pod 队列：当前没有别的 Goal 在跑就立即 active；否则排队等优先级。
+    // 闂佸憡鑹炬總鏃傜博?Goal 闂佹悶鍎抽崑娑㈠春?Pod 闂傚倸鍟伴崰搴ㄥ垂椤忓牊鏅慨姗嗗墰缁夊ジ鏌涢幘宕囆ｉ柣銉ユ嚇瀵灚寰勬繝鍌滃姸闂?Goal 闂侀潻璐熼崝蹇曠玻閸モ晙鐒婇弶鍫氭櫇瑜板矂鏌?active闂佹寧绋掔粙鎴﹀箚娓氣偓瀹曟艾鈻庨幇顒傜懇闂傚倸鍟伴崰鎾绘偤閹寸偛顕辨俊顖氭惈鐢儳绱掗悪娆庤閸?
     const pod = this.deps.store.getPod(podId);
     const active = this.deps.store.getActiveGoal(podId);
     const blocked = !pod || pod.status === 'paused' || pod.status === 'archived';
@@ -669,7 +802,7 @@ export class PodGoalService {
       this.deps.store.updatePod(podId, { status: 'active', activeGoalId: goalId }, this.deps.now());
     }
 
-    // 打回反馈作为方向决定的输入（append-only；不改变 discussing 阶段）。
+    // 闂佺懓鐏氶幐绋棵洪弽顓炵煑鐎广儱顦藉ú顖毭归敐鍡欑焼閻犳劗鍠栧顒勬偡閻楀牆鈧鏌涢幇顒€鏆遍柣锝夌畺閹啴宕熼鍓х倳闂佺绻堥崕鑽ゆ濡惧兎pend-only闂佹寧绋掔粙鎰箔婢舵劕缁╅柣鐔告緲缂?discussing 闂傚倸鍟抽崺鏍敊瀹€鍕櫖濠㈣泛鐗冮崑?
     try {
       this.deps.directions?.recordRejectInput({
         goalId,
@@ -677,7 +810,7 @@ export class PodGoalService {
         feedback: reason,
       });
     } catch (err: any) {
-      // revision 已经开出：反馈镜像失败不能让打回回滚（原件仍在行 feedback 上）。
+      // revision 閻庤鐡曠亸娆戝垝閳ユ剚鍤曢柍褜鍓熷畷娆撴偖鐎靛摜鐛ラ梺鍛婄懃缁夊綊銆呴銏♀拹婵犲﹤鍟崜鐓庮熆閹壆绨块悷娆欓檮缁嬪顓奸崼婵嗗箣闁荤姳璁查弲婊勬櫠閿曞倸鐐婇柣鎰级缁€鈧┑鐘诧攻閻旑剛妲愬▎鎾冲偍闁绘棁鍩栭钘壝归悩鑼㈡繝鈧鍡樺仒?feedback 婵炴垶鎸搁…顓犳濮樿泛违?
       this.deps.log?.(
         `[Pod] reject feedback record failed for ${goalId}#${reopened.revision}`
         + ` (non-fatal): ${err?.message ?? err}`,

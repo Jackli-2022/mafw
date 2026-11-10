@@ -10,7 +10,7 @@ describe('Pod collaboration MCP wiring gate', () => {
     expect(source).toContain('podGoalDirection: {');
     expect(source).toContain('techLead: this.podTechLeadService');
     expect(source).toContain('direction: this.podDirectionService');
-    expect(source).toContain('startPlanning: (goalId: string) => this.startGoalDirect(goalId)');
+    expect(source).toContain('startPlanning: (goalId: string) => this.podGoalService.admitReadyGoal(goalId).then(() => undefined)');
   });
 
   test('discussion Goals are gated in the starter and the goal_created listener', () => {
