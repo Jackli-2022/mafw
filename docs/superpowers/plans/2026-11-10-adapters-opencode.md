@@ -145,20 +145,24 @@ git commit -m "refactor(runtime): move event mapping helpers into runtime-core"
 - Modify: `packages/runtime-contract/src/transport.ts` (`RuntimeFactoryContext.serve?: { host?: string; port?: number }`)
 - Modify: `packages/runtime-contract/src/define-runtime.ts` (`RuntimeHostSurface.proxyHeaders?`, `resolveProviderTransport?`)
 - Modify: `packages/runtime-contract/src/channels.ts` (typed MCP config/preview DTOs; PTY metadata)
+- Create: `packages/runtime-contract/src/vocabulary.ts` (move `MAFW`, `MAFW_RUNTIME_EVENT_NAMES`, `RUNTIME_IDENTITY_TYPES` from `gateway/src/runtime/mafw-vocabulary.ts`)
+- Modify: `packages/runtime-contract/src/index.ts` (export vocabulary)
+- Modify: `gateway/src/runtime/mafw-vocabulary.ts` (re-export shim)
 - Create: `packages/runtime-core/src/runtime-root.ts`
 - Create: `packages/runtime-core/src/completion-http.ts`
 - Modify gateway shims: `gateway/src/runtime/runtime-root.ts`, `completion-http.ts`, `pty.ts`
-- Test: `packages/runtime-contract/src/channels.test.ts`, `packages/runtime-core/src/core.test.ts`, `gateway/tests/unit/runtime/completion-http.test.ts`
+- Test: `packages/runtime-contract/src/channels.test.ts`, `packages/runtime-contract/src/vocabulary.test.ts`, `packages/runtime-core/src/core.test.ts`, `gateway/tests/unit/runtime/completion-http.test.ts`
 
 **Interfaces:**
 - `RuntimeFactoryContext.serve` is optional; absent means adapter default `127.0.0.1:4096`.
 - `RuntimeHostSurface.proxyHeaders?(): Record<string,string>` is the only supported way for gateway to obtain serve Basic auth after extraction.
 - `RuntimeHostSurface.resolveProviderTransport?(providerID)` returns `{ baseUrl?: string|null; apiKey?: string|null }` for judge/scan paths.
 - `httpComplete` takes an explicit `credentials` resolver (no `auth.ts` import).
+- `@mafw/runtime-contract` exports `MAFW`, `MAFW_RUNTIME_EVENT_NAMES`, `RUNTIME_IDENTITY_TYPES`; gateway `mafw-vocabulary.ts` stays as a re-export shim so current imports are unchanged.
 
 - [ ] **Step 1: Write failing tests**
 
-Assert `RuntimeFactoryContext` accepts `serve`; `RuntimeHostSurface` accepts `proxyHeaders`; `httpComplete` uses the injected credentials resolver and preserves the existing HTTP fallback.
+Assert `RuntimeFactoryContext` accepts `serve`; `RuntimeHostSurface` accepts `proxyHeaders`; `httpComplete` uses the injected credentials resolver and preserves the existing HTTP fallback; contract exports the canonical vocabulary constants (same keys/values as the gateway source).
 
 - [ ] **Step 2: Run red**
 
@@ -167,7 +171,7 @@ Expected: FAIL (types/missing module).
 
 - [ ] **Step 3: Implement the contract/core additions and gateway re-exports**
 
-Keep gateway `runtime-root.ts` / `completion-http.ts` as re-export shims. Move `completion-http`'s auth lookup into a caller-provided resolver; update `recall/index-scan.ts` to pass `() => getProviderApiKey(...)`.
+Move the vocabulary constants verbatim; keep `gateway/src/runtime/mafw-vocabulary.ts` as a re-export shim. Keep gateway `runtime-root.ts` / `completion-http.ts` as re-export shims. Move `completion-http`'s auth lookup into a caller-provided resolver; update `recall/index-scan.ts` to pass `() => getProviderApiKey(...)`.
 
 - [ ] **Step 4: Run green**
 
@@ -178,7 +182,7 @@ Expected: PASS.
 
 ```bash
 git add packages/runtime-contract packages/runtime-core gateway/src/runtime gateway/src/recall/index-scan.ts
-git commit -m "feat(runtime): add serve/proxy host seams and neutral completion helpers"
+git commit -m "feat(runtime): add serve/proxy host seams and neutral vocabulary"
 ```
 
 ---
