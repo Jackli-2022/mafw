@@ -13,6 +13,8 @@ export interface T1ReplayDeps {
   readTrace: (traceId: string) => T1TraceRead | null;
   searchT1?: (query: string, k: number) => Promise<T1Hit[]>;
   topActivatedTraces?: (limit: number) => Array<{ traceId: string; activation: number }>;
+  /** Stamp replay exposure for traces actually injected into the prompt. */
+  markT1Replayed?: (traceIds: string[]) => void;
 }
 
 export interface T1ReplayOptions {
