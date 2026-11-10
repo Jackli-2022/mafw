@@ -27,6 +27,8 @@ function textOf(parts: any[]): string {
     .trim()
 }
 
+type FetchLike = (input: any, init?: any) => Promise<any>
+
 function lastUserMessage(messages: any[]): any | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]
@@ -38,7 +40,7 @@ function lastUserMessage(messages: any[]): any | null {
 export async function leadWorkingSetHook(
   input: { sessionID?: string },
   output: { messages?: any[] },
-  deps: { fetchImpl?: typeof fetch } = {},
+  deps: { fetchImpl?: FetchLike } = {},
 ): Promise<void> {
   try {
     const messages = Array.isArray(output?.messages) ? output.messages : []
