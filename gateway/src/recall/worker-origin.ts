@@ -29,10 +29,12 @@ export function registerWorkerOrigin(workerSessionId: string, sourceSessionId: s
   if (!workerSessionId || !sourceSessionId) return;
   const reg = backing();
   const existing = reg.lookup(workerSessionId);
-  if (existing) {
+  if (existing && existing.status === 'active') {
     reg.updateMetadata(workerSessionId, { originSessionID: sourceSessionId });
     return;
   }
+  // Absent — or lazily expired and not yet swept: re-register (patching an
+  // ended record would be dropped at the next sweep).
   reg.register({
     sessionID: workerSessionId,
     scope: { kind: 'worker' },
