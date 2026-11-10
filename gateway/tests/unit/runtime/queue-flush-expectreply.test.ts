@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// D3 Task 8: 组合根（class MafwScheduler）搬到 kernel.ts。
+const src = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8');
 
 describe('终审 #1 修复：flush 保真 expectReply（noReply 通知不得变 LLM 回合）', () => {
   it('QueuedItem 捕获 expectReply（enqueue 侧）', () => {

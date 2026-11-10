@@ -10,7 +10,8 @@ export interface ObservedEvent {
   type: string;
   sessionID?: string;
   at: number;
-  /** part.updated 载荷（tool-visibility 断言用；enrich 在 tap 之前——index.ts enrichToolClass 先于 tap 快照） */
+  /** part.updated 载荷（tool-visibility 断言用；enrich 在 tap 之前——
+   *  `runtime/event-dispatch.ts` 的 enrichToolIdentity 段先于 conformanceTap 快照） */
   part?: any;
 }
 

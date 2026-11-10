@@ -1918,6 +1918,57 @@ export interface LeadNamespace {
   recall(input: { projectDir?: string; q: string }): Promise<{ candidates: LeadRecallCandidate[] }>
 }
 
+export interface EventsNamespace {
+  sources(input?: { projectDir?: string }): Promise<{ items: EventSourceView[] }>
+  createSource(input: { projectDir: string; kind: 'github' | 'webhook'; name: string; config: Record<string, unknown> }): Promise<EventSourceView>
+  setSourceEnabled(id: string, enabled: boolean): Promise<{ ok: boolean }>
+  threads(input?: { projectDir?: string; sourceId?: string }): Promise<{ items: EventThreadView[] }>
+  triggers(threadId: string): Promise<{ items: EventTriggerView[] }>
+  subscriptions(threadId: string): Promise<{ items: EventSubscriptionView[] }>
+  subscribe(threadId: string, input: { subscriberType: string; subscriberId: string; mode: 'work' | 'context' }): Promise<EventSubscriptionView>
+  unsubscribe(id: string): Promise<{ ok: boolean }>
+  deliveries(threadId: string): Promise<{ items: EventDeliveryView[] }>
+}
+
+export interface EventSourceView {
+  id: string
+  kind: 'github' | 'cron' | 'internal' | 'webhook'
+  name: string
+  enabled: boolean
+  cursor: Record<string, unknown>
+  updatedAt: string
+}
+export interface EventThreadView {
+  id: string
+  sourceId: string
+  externalKey: string
+  title: string
+  state: 'open' | 'closed' | 'archived'
+  lastTriggerAt: string | null
+}
+export interface EventTriggerView {
+  id: string
+  kind: string
+  actor: string | null
+  occurredAt: string
+  disposition: string
+}
+export interface EventSubscriptionView {
+  id: string
+  subscriberType: string
+  subscriberId: string
+  mode: 'work' | 'context'
+  createdAt: string
+}
+export interface EventDeliveryView {
+  id: string
+  state: string
+  attempts: number
+  lastError: string | null
+  deliveredAt: string | null
+  answeredAt: string | null
+}
+
 export interface MafwClient {
   session: SessionNamespace
   project: ProjectNamespace
@@ -1941,6 +1992,7 @@ export interface MafwClient {
   terminal: TerminalNamespace
   pod: PodNamespace
   lead: LeadNamespace
+  events: EventsNamespace
   work: WorkNamespace
   permissions: PermissionsNamespace
   providers: ProvidersNamespace

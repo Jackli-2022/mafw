@@ -28,14 +28,16 @@ describe('selectNewerRelated', () => {
 });
 
 describe('ReconsolidatePipeline.runOnce', () => {
-  const makePipeline = (opts: { verdict: string; budgetDeny?: boolean; related?: string[] }) => {
+  const makePipeline = (opts: { verdict: string; budgetDeny?: boolean; related?: string[]; t1Replay?: any }) => {
     const queue = new InMemoryReconsolidationQueue();
     queue.mark('m1', 'retrieved');
     const prompts: string[] = [];
     const written: any[] = [];
+    const marks: string[][] = [];
     const unit = {
       id: 'm1', type: 'semantic', primary_abstraction: 'abs m1', cue_anchors: ['gateway'],
       memory_value: '旧事实', energy: 0.8, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+      source_trace_ids: ['t1t_a'],
     };
     const relatedIds = opts.related ?? ['m2'];
     const pipe = new ReconsolidatePipeline({
@@ -47,14 +49,15 @@ describe('ReconsolidatePipeline.runOnce', () => {
       writeSuperseding: async (oldId, content) => { written.push({ oldId, content }); return 'new-id'; },
       budget: { allow: () => !opts.budgetDeny },
       maxPerRun: 10,
+      ...(opts.t1Replay ? { t1Replay: opts.t1Replay } : {}),
     });
-    return { pipe, prompts, written, queue };
+    return { pipe, prompts, written, queue, marks };
   };
 
   test('rewrite verdict → supersedes chain write + consume', async () => {
     const { pipe, written, queue } = makePipeline({ verdict: '{"action":"rewrite","content":"新事实 m2 已取代旧事实"}' });
     const r = await pipe.runOnce();
-    expect(r).toEqual({ checked: 1, rewritten: 1, skipped: 0 });
+    expect(r).toEqual({ checked: 1, rewritten: 1, skipped: 0, replayed: 0 });
     expect(written[0].oldId).toBe('m1');
     expect(queue.isEligible('m1')).toBe(false);
   });
@@ -62,7 +65,7 @@ describe('ReconsolidatePipeline.runOnce', () => {
   test('keep verdict → no write, still consumed', async () => {
     const { pipe, written, queue } = makePipeline({ verdict: '{"action":"keep"}' });
     const r = await pipe.runOnce();
-    expect(r).toEqual({ checked: 1, rewritten: 0, skipped: 0 });
+    expect(r).toEqual({ checked: 1, rewritten: 0, skipped: 0, replayed: 0 });
     expect(written.length).toBe(0);
     expect(queue.isEligible('m1')).toBe(false);
   });
@@ -70,7 +73,7 @@ describe('ReconsolidatePipeline.runOnce', () => {
   test('budget deny → zero work, queue untouched', async () => {
     const { pipe, queue } = makePipeline({ verdict: '{}', budgetDeny: true });
     const r = await pipe.runOnce();
-    expect(r).toEqual({ checked: 0, rewritten: 0, skipped: 0 });
+    expect(r).toEqual({ checked: 0, rewritten: 0, skipped: 0, replayed: 0 });
     expect(queue.isEligible('m1')).toBe(true);
   });
 
@@ -84,7 +87,54 @@ describe('ReconsolidatePipeline.runOnce', () => {
   test('no newer related → skip without worker call', async () => {
     const { pipe, prompts } = makePipeline({ verdict: '{}', related: [] });
     const r = await pipe.runOnce();
-    expect(r).toEqual({ checked: 0, rewritten: 0, skipped: 1 });
+    expect(r).toEqual({ checked: 0, rewritten: 0, skipped: 1, replayed: 0 });
     expect(prompts.length).toBe(0);
+  });
+
+  test('replay deps inject raw T1 and mark exposure', async () => {
+    const marks: string[][] = [];
+    const trace = {
+      turn: { trace_id: 't1t_a', session_id: 's1', turn_seq: 1, created_at: 1, archived_at: null, encoding_salience: null, legacy_ambiguous: 0 },
+      rows: [{ session_id: 's1', turn_id: 1, trace_id: 't1t_a', observation_key: 'k', source: 'user_input', content: '原始证据', failure: 0, created_at: 1 }],
+      archived: false,
+    } as any;
+    const { pipe, prompts } = makePipeline({
+      verdict: '{"action":"keep"}',
+      t1Replay: {
+        deps: {
+          readTrace: () => trace,
+          markT1Replayed: (ids: string[]) => marks.push(ids),
+        },
+      },
+    });
+    const r = await pipe.runOnce();
+    expect(prompts[0]).toContain('RAW T1 REPLAY START');
+    expect(prompts[0]).toContain('[trace:t1t_a][USER] 原始证据');
+    expect(r.replayed).toBe(1);
+    expect(marks).toEqual([['t1t_a']]);
+  });
+
+  test('worker failure does not mark replay', async () => {
+    const marks: string[][] = [];
+    const trace = {
+      turn: { trace_id: 't1t_a', session_id: 's1', turn_seq: 1, created_at: 1, archived_at: null, encoding_salience: null, legacy_ambiguous: 0 },
+      rows: [{ session_id: 's1', turn_id: 1, trace_id: 't1t_a', observation_key: 'k', source: 'user_input', content: '原始证据', failure: 0, created_at: 1 }],
+      archived: false,
+    } as any;
+    const queue = new InMemoryReconsolidationQueue();
+    queue.mark('m1', 'retrieved');
+    const pipe = new ReconsolidatePipeline({
+      queue,
+      index: { getIndex: () => ({ entries: [entry('m2', ['gateway'], '2026-10-05T00:00:00Z')] }) } as any,
+      readMemory: async () => ({ id: 'm1', type: 'semantic', primary_abstraction: 'abs', cue_anchors: ['gateway'], memory_value: 'old', energy: 0.8, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z', source_trace_ids: ['t1t_a'] } as any),
+      readRelated: async (id) => ({ id, memory_value: `新事实 ${id}` } as any),
+      worker: { prompt: async () => { throw new Error('worker down'); } } as any,
+      writeSuperseding: async () => 'new-id',
+      budget: { allow: () => true },
+      t1Replay: { deps: { readTrace: () => trace, markT1Replayed: (ids: string[]) => marks.push(ids) } },
+    });
+    const r = await pipe.runOnce();
+    expect(r.skipped).toBe(1);
+    expect(marks).toEqual([]);
   });
 });

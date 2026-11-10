@@ -607,14 +607,18 @@ describe('revision replacement PTY ownership', () => {
 
 describe('gateway composition root', () => {
   /**
-   * `index.ts` cannot be instantiated in a unit test (it boots the gateway), so
+   * `kernel.ts` (the composition root; D3 Task 8 moved it out of `index.ts`)
+   * cannot be instantiated in a unit test (it boots the gateway), so
    * the injection point is pinned at the source level — the same pattern the
    * repo uses for other composition-root wiring. Without this line the whole
    * `ctx.terminal` feature would be dead in production while every unit test
    * still passes (they inject the service themselves).
    */
   it('injects the shared TerminalService into the package context', () => {
-    const source = fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf8');
-    expect(source).toContain('terminal: () => this.getTerminalService(),');
+    const source = [
+      fs.readFileSync(path.join(__dirname, '../../../src/kernel.ts'), 'utf8'),
+      fs.readFileSync(path.join(__dirname, '../../../src/boot.ts'), 'utf8'),
+    ].join('\n');
+    expect(source).toContain('terminal: () => kernel.getTerminalService(),');
   });
 });

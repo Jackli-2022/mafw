@@ -25,7 +25,8 @@ function fakeRuntime() {
 }
 
 it('the composition root registers all four opencode definitions from adapter descriptors', () => {
-  const src = readFileSync(join(GATEWAY, 'src', 'index.ts'), 'utf8');
+  // D3 Task 5: the runtime.loader boot step (descriptor registration) lives in boot.ts.
+  const src = readFileSync(join(GATEWAY, 'src', 'boot.ts'), 'utf8');
   expect(src).toContain('builtinAdapterRegistrations(external)');
   expect(src).not.toMatch(/registerBuiltinDefinition\('opencode/);
   const descriptors = readFileSync(
@@ -44,8 +45,11 @@ it('the composition root registers all four opencode definitions from adapter de
 });
 
 it('proxy and pre-activation provider resolution use the host seams', () => {
-  const src = readFileSync(join(GATEWAY, 'src', 'index.ts'), 'utf8');
-  expect(src).toContain('runtimeHost?.proxyHeaders?.()');
+  // D3: the reverse proxy lives in http/transport.ts (deps.proxyHeaders) and the
+  // scan transport precedence in kernel.ts (resolveScanProviderTransport).
+  const src = readFileSync(join(GATEWAY, 'src', 'kernel.ts'), 'utf8')
+    + readFileSync(join(GATEWAY, 'src', 'http', 'transport.ts'), 'utf8');
+  expect(src).toContain('proxyHeaders?.()');
   expect(src).toContain('resolveProviderTransport');
   // The adapter shim is the only package entry the gateway loads.
   const shim = readFileSync(join(GATEWAY, 'src', 'runtime', 'opencode-adapter.ts'), 'utf8');
@@ -65,7 +69,8 @@ it('exposes the bridge translate entry for dry-event tooling', () => {
 });
 
 it('dryEventDeps falls back to the bridge entry', () => {
-  const src = readFileSync(join(GATEWAY, 'src', 'index.ts'), 'utf8');
+  // D3 Task 8: composition root = kernel.ts.
+  const src = readFileSync(join(GATEWAY, 'src', 'kernel.ts'), 'utf8');
   expect(src).toContain('getBridgeEventEntry');
 });
 

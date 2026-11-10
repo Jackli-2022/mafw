@@ -1,7 +1,8 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const index = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// D3 Task 8: 组合根（class MafwScheduler）搬到 kernel.ts。
+const index = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8');
 // Phase D1 Task D1: prompt/promptAsync 面迁入 registry route 模块。
 const sessionsCore = readFileSync(join(__dirname, '../../../src/routes/sessions-core.ts'), 'utf8');
 const queue = readFileSync(join(__dirname, '../../../src/core/session-queue.ts'), 'utf8');

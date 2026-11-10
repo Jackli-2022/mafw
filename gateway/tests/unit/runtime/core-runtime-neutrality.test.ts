@@ -333,8 +333,9 @@ describe('contract surfaces and composition-root wiring', () => {
     expect(codeOf('../adapters/pi/src/runtime.ts')).toContain('mediaSession');
   });
 
-  it('index.ts picks the media executor by surface, not by runtime name', () => {
-    const code = codeOf('src/index.ts');
+  it('kernel.ts picks the media executor by surface, not by runtime name', () => {
+    // D3 Task 8: composition root (class MafwScheduler) moved to kernel.ts.
+    const code = codeOf('src/kernel.ts');
     expect(code).toContain("can('media.session')");
     expect(code).not.toMatch(/name\s*===\s*'pi'/);
   });
@@ -364,6 +365,8 @@ describe('contract surfaces and composition-root wiring', () => {
 
 // 守卫本身的可信度：`codeOf` 只剥注释、不裁文件——行结构逐行对齐、尾部保留、
 // 没有「几十行被整体置空」的失明段（旧正则的假绿形态）。
+// 注：`src/index.ts` 留在这份清单里是故意的——它是剥离器的入口完整性样本
+// （入口被截尾/整体置空会假绿）；`can('media.session')` 等正向断言已在 kernel.ts。
 describe('comment stripping keeps every scanned file whole', () => {
   const FILES = [
     'src/index.ts',
