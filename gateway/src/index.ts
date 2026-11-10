@@ -346,6 +346,7 @@ import { buildRouteCatalog } from './routes/route-catalog';
 import { attachWave1Handlers } from './routes/wave1-handlers';
 import { attachLeadTopicRoutes } from './routes/lead-topics';
 import { attachAttentionRoutes } from './routes/attention';
+import { attachSchedulerRoutes } from './routes/scheduler';
 import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
 import { attachPodHandlers } from './routes/pod-handlers';
@@ -4303,6 +4304,11 @@ class MafwScheduler {
         properties: { podId, kind, ...(goalId ? { goalId } : {}) },
       }),
       budget: this.podBudget,
+      maxConcurrentGoals: () => {
+        if (process.env.MAFW_LEAD_SCHEDULER === '0') return 1;
+        const parsed = Number(process.env.MAFW_POD_MAX_GOALS ?? 1);
+        return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 1;
+      },
       revisions: this.podGoalRevisionService,
       worktrees: this.podWorktreeService,
       sessions: { retireRevision: (goalId, revision) => this.podSessionLifecycle.retireRevision(goalId, revision) },
@@ -5322,6 +5328,12 @@ class MafwScheduler {
         views: (projectDir) => {
           const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
           return pod ? this.podGoalService.views(pod.id) : [];
+        },
+      });
+      attachSchedulerRoutes(this.routeRegistry, {
+        status: (projectDir) => {
+          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.schedulerStatus(pod.id) : null;
         },
       });
       attachWave2Handlers(this.routeRegistry, {

@@ -46,6 +46,7 @@ export function deriveAttention(views: PodGoalView[]): AttentionItem[] {
         kind = 'answer';
         break;
       case 'blocked':
+        if (view.stateMissing && !view.lastError) continue;
         kind = view.lastError ? 'failed' : 'blocked';
         break;
       case 'reviewing':

@@ -531,4 +531,19 @@ describe('PodGoalService', () => {
     expect(views.find((view) => view.goalId === 'g1')?.goalMode).toBe('quick');
     expect(views.find((view) => view.goalId === 'g2')?.goalMode).toBe('standard');
   });
+
+  test('starts up to maxConcurrentGoals and keeps the rest queued', async () => {
+    service = makeService(undefined, { maxConcurrentGoals: () => 2 });
+
+    const first = await service.enqueueGoal('g1', projectDir);
+    const second = await service.enqueueGoal('g2', projectDir);
+    const third = await service.enqueueGoal('g3', projectDir);
+
+    expect(first.status).toBe('started');
+    expect(second.status).toBe('started');
+    expect(third.status).toBe('queued');
+    expect(store.listGoals(first.podId).filter((goal) => goal.status === 'active')
+      .map((goal) => goal.goalId).sort()).toEqual(['g1', 'g2']);
+    expect(startGoal).toHaveBeenCalledTimes(2);
+  });
 });
