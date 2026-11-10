@@ -78,8 +78,8 @@ describe('lead scheduler integration', () => {
     });
     expect(proposal?.trigger).toBe('explicit');
     const row = boundaries.listByTopic('t1')[0];
-    expect(boundary.merge(row.id).status).toBe('merged');
-    expect(boundary.undo(row.id).status).toBe('undone');
+    expect(boundary.merge('t1', row.id).status).toBe('merged');
+    expect(boundary.undo('t1', row.id).status).toBe('undone');
     expect(boundaries.listByTopic('t1')).toHaveLength(1);
 
     fs.rmSync(dir, { recursive: true, force: true });

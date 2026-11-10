@@ -12,6 +12,8 @@ export interface TopicBoundaryRow {
   trigger: BoundaryTrigger;
   confidence: number;
   status: BoundaryStatus;
+  /** Triggering user text (used to title the split topic). */
+  text: string;
   createdAt: string;
 }
 
@@ -24,6 +26,7 @@ interface TopicBoundaryDbRow {
   trigger: string;
   confidence: number;
   status: string;
+  text: string | null;
   created_at: string;
 }
 
@@ -37,6 +40,7 @@ function toRow(row: TopicBoundaryDbRow): TopicBoundaryRow {
     trigger: row.trigger as BoundaryTrigger,
     confidence: Number(row.confidence ?? 0),
     status: row.status as BoundaryStatus,
+    text: row.text ?? '',
     createdAt: row.created_at,
   };
 }
@@ -53,6 +57,7 @@ export class TopicBoundaryStore {
         trigger TEXT NOT NULL,
         confidence REAL NOT NULL,
         status TEXT NOT NULL,
+        text TEXT,
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_topic_boundary_project
@@ -60,14 +65,18 @@ export class TopicBoundaryStore {
       CREATE INDEX IF NOT EXISTS idx_topic_boundary_from
         ON topic_boundary(from_topic_id, created_at DESC);
     `);
+    const columns = this.db.prepare('PRAGMA table_info(topic_boundary)').all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === 'text')) {
+      this.db.exec('ALTER TABLE topic_boundary ADD COLUMN text TEXT');
+    }
   }
 
   insert(row: TopicBoundaryRow): void {
     this.db.prepare(`
       INSERT INTO topic_boundary (
         id, project_dir, lead_session_id, from_topic_id, to_topic_id,
-        trigger, confidence, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        trigger, confidence, status, text, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       row.id,
       row.projectDir,
@@ -77,6 +86,7 @@ export class TopicBoundaryStore {
       row.trigger,
       row.confidence,
       row.status,
+      row.text,
       row.createdAt,
     );
   }
@@ -92,6 +102,16 @@ export class TopicBoundaryStore {
       SELECT * FROM topic_boundary WHERE from_topic_id = ?
       ORDER BY created_at DESC, id DESC
     `).all(topicId) as TopicBoundaryDbRow[]).map(toRow);
+  }
+
+  /** Most recent proposed row for a topic/trigger, used for observe dedupe. */
+  latestProposed(fromTopicId: string, since: string): TopicBoundaryRow | null {
+    const row = this.db.prepare(`
+      SELECT * FROM topic_boundary
+      WHERE from_topic_id = ? AND status = 'proposed' AND created_at >= ?
+      ORDER BY created_at DESC, id DESC LIMIT 1
+    `).get(fromTopicId, since) as TopicBoundaryDbRow | undefined;
+    return row ? toRow(row) : null;
   }
 
   updateStatus(id: string, status: BoundaryStatus, toTopicId?: string | null): void {

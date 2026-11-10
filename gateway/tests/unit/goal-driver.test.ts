@@ -1,4 +1,5 @@
 import { makeHarness, seedGoal } from './helpers/goal-driver-harness';
+import { resumeStatePatch } from '../../src/routes/goal-control';
 
 describe('NodeDriver advance（启动侧）', () => {
   it('fresh goal → 启动 plan：建会话/绑身份/发 prompt/写 state/注册监听/INSERT node_run', async () => {
@@ -42,6 +43,28 @@ describe('NodeDriver advance（启动侧）', () => {
     await h.driver.advance('g1');
     expect(h.calls).toHaveLength(0);
     expect(h.load('g1')!.nextAction).toBe('PAUSED');
+  });
+
+  it('resume rewrites nextAction and advances the paused goal', async () => {
+    const h = makeHarness();
+    seedGoal(h, 'g1', {
+      patch: {
+        phase: 'PAUSED',
+        nextAction: 'PAUSED',
+        nextNode: 'plan',
+        _resumePhase: 'PLANNING',
+        _resumeNextAction: 'CREATE_PLAN_SESSION',
+      },
+    });
+    await h.driver.advance('g1');
+    expect(h.calls).toHaveLength(0);
+
+    const patch = resumeStatePatch(h.load('g1'))!;
+    h.write('g1', patch);
+    await h.driver.advance('g1');
+
+    expect(h.calls.find((c) => c.op === 'promptAsync')).toMatchObject({ agent: 'mafw-plan' });
+    expect(h.load('g1')!.nodeSession?.phase).toBe('plan');
   });
 
   it('promptAsync 抛错 → failNode：lastError + archive_fail', async () => {

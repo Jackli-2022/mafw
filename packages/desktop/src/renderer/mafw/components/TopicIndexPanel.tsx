@@ -55,10 +55,10 @@ export function TopicIndexPanel(props: {
           )}
         </For>
       </Show>
-      <Show when={props.boundaries && props.boundaries.length > 0}>
+      <Show when={props.boundaries?.some((boundary) => boundary.status === "proposed")}>
         <div class="mafw-topic-index-boundaries">
           <span class="mafw-work-kicker">边界提议</span>
-          <For each={props.boundaries}>
+          <For each={props.boundaries!.filter((boundary) => boundary.status === "proposed")}>
             {(boundary) => (
               <div class="mafw-topic-index-row" data-boundary-id={boundary.id}>
                 <span class="mafw-card-meta">检测到新话题</span>

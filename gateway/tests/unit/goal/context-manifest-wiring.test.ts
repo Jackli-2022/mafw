@@ -216,11 +216,14 @@ describe('renderNodePrompt manifest placement', () => {
 });
 
 describe('composition root wiring', () => {
-  const source = fs.readFileSync(path.join(process.cwd(), 'src', 'index.ts'), 'utf-8');
+  const source = [
+    fs.readFileSync(path.join(process.cwd(), 'src', 'index.ts'), 'utf-8'),
+    fs.readFileSync(path.join(process.cwd(), 'src', 'boot.ts'), 'utf-8'),
+  ].join('\n');
 
   test('the driver receives contextBlock and MCP services expose the selection service', () => {
     expect(source).toContain('contextBlock: async (goalId: string');
-    expect(source).toContain('this.podContextSelectionService.renderForNode');
+    expect(source).toContain('kernel.podContextSelectionService.renderForNode');
     expect(source).toContain('podContextSelect: this.podContextSelectionService');
   });
 });

@@ -61,7 +61,7 @@ export function detectBoundary(signal: BoundarySignal): BoundaryProposal | null 
       const overlap = [...current].filter((token) => previous.has(token)).length;
       const ratio = overlap / Math.min(current.size, previous.size);
       if (ratio < 0.2) {
-        return { trigger: 'semantic', confidence: 0.4, reason: '与上一轮话题词重叠较低' };
+        return { trigger: 'semantic', confidence: 0.5, reason: '与上一轮话题词重叠较低' };
       }
     }
   }

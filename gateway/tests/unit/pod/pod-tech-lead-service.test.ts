@@ -187,6 +187,50 @@ describe('PodTechLeadService', () => {
     expect(second.parts[0].text).toContain('先调研现有 Pod');
   });
 
+  test('queues a second Lead goal when maxConcurrent is one', async () => {
+    let goalSeq = 0;
+    let rowSeq = 0;
+    let sessionSeq = 0;
+    const canAdmit = jest.fn()
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+    const busySupervisor = new PodSessionSupervisor({
+      store,
+      now: () => LATER,
+      newId: () => `podsess_${++sessionSeq}`,
+      runtimeName: () => currentRuntime,
+    });
+    const busyService = new PodTechLeadService({
+      store,
+      pods: { ensure: jest.fn(async () => detail) },
+      sessions: busySupervisor,
+      runtimeName: () => currentRuntime,
+      runtime,
+      resolveProject: () => ({ projectDir: dir, mafwDir }),
+      now: () => LATER,
+      newId: () => `pg_${++rowSeq}`,
+      newGoalId: () => `goal-${++goalSeq}`,
+      registerInternalSession,
+      emitGoalCreated,
+      notify,
+      leadHandoff,
+      canAdmit,
+    });
+
+    const first = await busyService.createGoal({
+      podId: 'pod_1', projectDir: dir, title: 'First', objective: 'A', createdBy: 'ses_lead',
+    });
+    const second = await busyService.createGoal({
+      podId: 'pod_1', projectDir: dir, title: 'Second', objective: 'B', createdBy: 'ses_lead',
+    });
+
+    expect(first.goalId).toBe('goal-1');
+    expect(second.goalId).toBe('goal-2');
+    expect(store.getGoal('pod_1', 'goal-1')?.status).toBe('active');
+    expect(store.getGoal('pod_1', 'goal-2')?.status).toBe('queued');
+    expect(store.getPod('pod_1')?.activeGoalId).toBe('goal-1');
+  });
+
   test('seeds the Tech Lead with the current-topic handoff', async () => {
     leadHandoff.prepareForGoal.mockResolvedValue({
       sourceRef: {
@@ -275,6 +319,43 @@ describe('PodTechLeadService', () => {
     expect(JSON.parse(fs.readFileSync(created.requestPath, 'utf8')).sourceRef).toMatchObject({
       topicId: 't_new',
       messageRange: { from: 'm1', to: 'm3' },
+    });
+  });
+
+  test('falls back to the P0 handoff when the fork cannot be built', async () => {
+    leadHandoff.buildForkForGoal.mockRejectedValue(new Error('source topic missing'));
+    leadHandoff.prepareForGoal.mockResolvedValue({
+      sourceRef: {
+        snapshot: 'USER: fallback',
+        topicId: 't_p0',
+        messageRange: { from: 'm1', to: 'm2' },
+        capturedAt: NOW,
+      },
+      handoffPath: path.join(mafwDir, 'goals', 'goal-direct-1', 'context', 'lead-handoff.md'),
+      topicId: 't_p0',
+      messageRange: { from: 'm1', to: 'm2' },
+      fullText: 'USER: fallback',
+      messages: [],
+      projectDir: dir,
+      goalId: 'goal-direct-1',
+      leadSessionId: 'ses_lead',
+      title: 'Fallback',
+      startMessageId: 'm1',
+      endMessageId: 'm2',
+      createdAt: NOW,
+    });
+
+    const created = await service.createGoal({
+      podId: 'pod_1', projectDir: dir, title: 'Fallback', objective: 'O',
+      createdBy: 'ses_lead', forkFromTopicId: 't_missing',
+    });
+
+    expect(leadHandoff.prepareForGoal).toHaveBeenCalledWith(expect.objectContaining({
+      leadSessionId: 'ses_lead',
+    }));
+    expect(leadHandoff.commit).toHaveBeenCalled();
+    expect(JSON.parse(fs.readFileSync(created.requestPath, 'utf8')).sourceRef).toMatchObject({
+      topicId: 't_p0',
     });
   });
 

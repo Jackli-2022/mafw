@@ -10,6 +10,7 @@ const row = (id: string, status: "proposed" | "accepted" = "proposed") => ({
   trigger: "explicit" as const,
   confidence: 0.9,
   status,
+  text: "换个话题",
   createdAt: "2026-11-10T00:00:00.000Z",
 });
 

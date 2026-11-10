@@ -61,20 +61,70 @@ describe('LeadBoundaryService', () => {
     expect(h.boundaries.listByTopic('t1')).toHaveLength(0);
   });
 
-  test('accept creates one new topic and is idempotent', () => {
+  test('dedupes the same trigger within the window', () => {
     const h = setup('observe');
-    h.service.observe({ ...base, text: '换个话题，聊 UI' });
+    expect(h.service.observe({ ...base, text: '换个话题，聊 UI' })).not.toBeNull();
+    expect(h.service.observe({ ...base, text: '换个话题，聊 DB' })).toBeNull();
+    expect(h.boundaries.listByTopic('t1')).toHaveLength(1);
+  });
+
+  test('idle and goal-closed signals reach the service', () => {
+    const idle = setup('observe');
+    expect(idle.service.observe({
+      ...base,
+      text: '继续',
+      lastActiveAt: '2026-11-09T23:00:00.000Z',
+    })?.trigger).toBe('idle');
+
+    const closed = setup('observe');
+    expect(closed.service.observe({
+      ...base,
+      text: '好了',
+      goalJustClosed: true,
+    })?.trigger).toBe('goal_closed');
+  });
+
+  test('accept splits off a new topic instead of copying the source', () => {
+    const h = setup('observe');
+    h.service.observe({ ...base, text: '换个话题，聊 UI 细节' });
     const boundary = h.boundaries.listByTopic('t1')[0];
 
-    const first = h.service.accept(boundary.id);
+    const first = h.service.accept('t1', boundary.id);
     expect(first).toMatchObject({ status: 'accepted' });
     expect(first.toTopicId).toBeTruthy();
-    expect(h.topics.get(first.toTopicId!)?.title).toBe('SQLite');
-    expect(h.topics.get(first.toTopicId!)?.state).toBe('resident');
+    expect(first.toTopicId).not.toBe('t1');
 
-    const second = h.service.accept(boundary.id);
+    const created = h.topics.get(first.toTopicId!)!;
+    expect(created).toMatchObject({
+      goalId: '',
+      summary: null,
+      resumedFrom: null,
+      state: 'resident',
+    });
+    expect(created.title).toContain('聊 UI 细节');
+    expect(created.startMessageId).not.toBe('m1');
+
+    const source = h.topics.get('t1')!;
+    expect(source.state).toBe('cold');
+    expect(source.startMessageId).toBe('m1');
+    expect(source.endMessageId).toBe('m3');
+    expect(source.summary).toBe('决定：A');
+
+    const second = h.service.accept('t1', boundary.id);
     expect(second).toEqual(first);
     expect(h.topics.listByProject('/p')).toHaveLength(2);
+    expect(() => h.service.merge('t1', boundary.id)).toThrow();
+    expect(() => h.service.undo('t1', boundary.id)).toThrow();
+  });
+
+  test('accept/merge/undo reject a boundary from another topic', () => {
+    const h = setup('observe');
+    h.service.observe({ ...base, text: '换个话题' });
+    const boundary = h.boundaries.listByTopic('t1')[0];
+
+    expect(() => h.service.accept('t2', boundary.id)).toThrow();
+    expect(() => h.service.merge('t2', boundary.id)).toThrow();
+    expect(() => h.service.undo('t2', boundary.id)).toThrow();
   });
 
   test('merge/undo only change status and never delete', () => {
@@ -82,10 +132,10 @@ describe('LeadBoundaryService', () => {
     h.service.observe({ ...base, text: '换个话题' });
     const boundary = h.boundaries.listByTopic('t1')[0];
 
-    expect(h.service.merge(boundary.id).status).toBe('merged');
+    expect(h.service.merge('t1', boundary.id).status).toBe('merged');
     expect(h.boundaries.get(boundary.id)?.status).toBe('merged');
-    expect(h.service.undo(boundary.id).status).toBe('undone');
-    expect(h.service.undo(boundary.id).status).toBe('undone');
+    expect(h.service.undo('t1', boundary.id).status).toBe('undone');
+    expect(h.service.undo('t1', boundary.id).status).toBe('undone');
     expect(h.boundaries.get(boundary.id)?.status).toBe('undone');
     expect(h.boundaries.listByTopic('t1')).toHaveLength(1);
   });

@@ -5,7 +5,7 @@ import type { BoundaryStatus, TopicBoundaryRow, TopicBoundaryStore } from './top
 
 export interface LeadBoundaryDeps {
   boundaries: TopicBoundaryStore;
-  topics: Pick<LeadTopicStore, 'get' | 'insert'>;
+  topics: Pick<LeadTopicStore, 'get' | 'insert' | 'setState'>;
   mode(): 'off' | 'observe' | 'on';
   broadcast?(event: { type: string; properties: Record<string, unknown> }): void;
   now(): string;
@@ -16,6 +16,14 @@ export interface LeadBoundaryDeps {
 export interface BoundaryDecision {
   status: 'accepted' | 'merged' | 'undone';
   toTopicId?: string;
+}
+
+const PROPOSE_THRESHOLD = 0.5;
+const DEDUPE_WINDOW_MS = 10 * 60_000;
+
+function splitTitle(text: string, fallback: string): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean ? clean.slice(0, 40) : fallback;
 }
 
 export class LeadBoundaryService {
@@ -31,13 +39,19 @@ export class LeadBoundaryService {
     fromTopicId: string;
     text: string;
     previousUserText?: string;
+    lastActiveAt?: string;
     now: string;
     goalActive: boolean;
     goalJustClosed?: boolean;
   }): BoundaryProposal | null {
     if (this.deps.mode() === 'off') return null;
     const proposal = detectBoundary(input);
-    if (!proposal || proposal.confidence < 0.7) return null;
+    if (!proposal || proposal.confidence < PROPOSE_THRESHOLD) return null;
+
+    const since = new Date(Date.parse(input.now) - DEDUPE_WINDOW_MS).toISOString();
+    if (this.deps.boundaries.latestProposed(input.fromTopicId, since)) {
+      return null;
+    }
 
     const id = this.deps.newId();
     this.deps.boundaries.insert({
@@ -49,6 +63,7 @@ export class LeadBoundaryService {
       trigger: proposal.trigger,
       confidence: proposal.confidence,
       status: 'proposed',
+      text: input.text,
       createdAt: this.deps.now(),
     });
     if (this.deps.mode() === 'on') {
@@ -60,12 +75,17 @@ export class LeadBoundaryService {
     return proposal;
   }
 
-  accept(boundaryId: string): BoundaryDecision {
-    const row = this.requireBoundary(boundaryId);
+  /**
+   * Accept splits at the current topic tail: the source keeps its transcript
+   * and is parked cold, while the new topic starts after the last message.
+   * Nothing from the source is copied except the boundary anchor.
+   */
+  accept(topicId: string, boundaryId: string): BoundaryDecision {
+    const row = this.requireBoundary(topicId, boundaryId);
     if (row.status === 'accepted' && row.toTopicId) {
       return { status: 'accepted', toTopicId: row.toTopicId };
     }
-    if (row.status !== 'proposed' && row.status !== 'accepted') {
+    if (row.status !== 'proposed') {
       throw new PodError(409, `boundary is ${row.status}`);
     }
     const source = this.deps.topics.get(row.fromTopicId);
@@ -77,29 +97,36 @@ export class LeadBoundaryService {
       id: toTopicId,
       projectDir: source.projectDir,
       leadSessionId: source.leadSessionId,
-      title: source.title,
-      startMessageId: source.startMessageId,
+      title: splitTitle(row.text, `${source.title}（新话题）`),
+      startMessageId: source.endMessageId,
       endMessageId: source.endMessageId,
-      goalId: source.goalId,
+      goalId: '',
       ownerRole: 'lead',
       ownerSessionId: source.leadSessionId,
       createdAt: now,
-      summary: source.summary,
+      summary: null,
       state: 'resident',
       lastActiveAt: now,
     });
+    this.deps.topics.setState(source.id, 'cold', now);
     this.deps.boundaries.updateStatus(row.id, 'accepted', toTopicId);
     return { status: 'accepted', toTopicId };
   }
 
-  merge(boundaryId: string): BoundaryDecision {
-    const row = this.requireBoundary(boundaryId);
+  merge(topicId: string, boundaryId: string): BoundaryDecision {
+    const row = this.requireBoundary(topicId, boundaryId);
+    if (row.status === 'accepted') {
+      throw new PodError(409, 'accepted boundary already split the topic');
+    }
     this.update(row, 'merged');
     return { status: 'merged' };
   }
 
-  undo(boundaryId: string): BoundaryDecision {
-    const row = this.requireBoundary(boundaryId);
+  undo(topicId: string, boundaryId: string): BoundaryDecision {
+    const row = this.requireBoundary(topicId, boundaryId);
+    if (row.status === 'accepted') {
+      throw new PodError(409, 'accepted boundary cannot be undone');
+    }
     this.update(row, 'undone');
     return { status: 'undone' };
   }
@@ -109,9 +136,12 @@ export class LeadBoundaryService {
     this.deps.boundaries.updateStatus(row.id, status);
   }
 
-  private requireBoundary(boundaryId: string): TopicBoundaryRow {
+  private requireBoundary(topicId: string, boundaryId: string): TopicBoundaryRow {
+    if (!topicId || !boundaryId) throw new PodError(400, 'topic and boundary ids are required');
     const row = this.deps.boundaries.get(boundaryId);
-    if (!row) throw new PodError(404, `boundary not found: ${boundaryId}`);
+    if (!row || row.fromTopicId !== topicId) {
+      throw new PodError(404, `boundary not found: ${boundaryId}`);
+    }
     return row;
   }
 }

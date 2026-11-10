@@ -202,6 +202,7 @@ export type MafwAPI = {
     rejectPlan: (goalId: string, approvalId: string | undefined, feedback: string) => Promise<{ success: boolean }>
     retryNode: (goalId: string, runId: number, opts?: { confirm?: boolean }) => Promise<{ success: boolean; runId: number }>
     pause: (goalId: string) => Promise<{ status: string }>
+    resume: (goalId: string) => Promise<{ status: string }>
     stop: (goalId: string) => Promise<{ status: string }>
     retry: (goalId: string, runId?: number) => Promise<{ status: string }>
   }

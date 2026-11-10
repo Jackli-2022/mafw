@@ -25,36 +25,49 @@ const PRIORITY: Record<AttentionKind, number> = {
 
 /**
  * Person-first attention list derived only from structured Goal facts.
- * Healthy / reviewing / ended goals never appear here.
+ * Review is reachable after the Goal ends (result ready, not accepted); failed
+ * is reachable from the driver's last error even while the stage is team-owned.
  */
 export function deriveAttention(views: PodGoalView[]): AttentionItem[] {
   const byKey = new Map<string, AttentionItem>();
   for (const view of views) {
-    if (view.endedAt) continue;
-    const stage = view.stage;
-    if (!stage || stage.owner !== 'person') continue;
-
     let kind: AttentionKind | null = null;
-    switch (stage.kind) {
-      case 'plan_approval':
-        kind = 'plan_approval';
-        break;
-      case 'direction_review':
-        kind = 'direction_review';
-        break;
-      case 'question':
-        kind = 'answer';
-        break;
-      case 'blocked':
-        if (view.stateMissing && !view.lastError) continue;
-        kind = view.lastError ? 'failed' : 'blocked';
-        break;
-      case 'reviewing':
-      case 'result_notified':
-        kind = view.resultReady ? 'review' : null;
-        break;
-      default:
-        kind = null;
+    let action: AttentionItem['action'] = { type: 'open_goal', goalId: view.goalId };
+
+    if (view.resultReady && !view.accepted) {
+      kind = 'review';
+      action = { type: 'open_result', goalId: view.goalId };
+    } else if (view.endedAt) {
+      continue;
+    } else if (view.lastError) {
+      kind = 'failed';
+    } else {
+      const stage = view.stage;
+      if (!stage || stage.owner !== 'person') continue;
+      switch (stage.kind) {
+        case 'plan_approval':
+          kind = 'plan_approval';
+          break;
+        case 'direction_review':
+          kind = 'direction_review';
+          break;
+        case 'question':
+          kind = 'answer';
+          break;
+        case 'blocked':
+          if (view.stateMissing) continue;
+          kind = 'blocked';
+          break;
+        default:
+          kind = null;
+      }
+      if (stage.action) {
+        action = {
+          type: stage.action.type,
+          goalId: view.goalId,
+          ...(stage.action.questionId ? { questionId: stage.action.questionId } : {}),
+        };
+      }
     }
     if (!kind) continue;
 
@@ -69,13 +82,7 @@ export function deriveAttention(views: PodGoalView[]): AttentionItem[] {
       priority: PRIORITY[kind],
       coalesceKey,
       title: view.title,
-      action: stage.action
-        ? {
-            type: stage.action.type,
-            goalId: view.goalId,
-            ...(stage.action.questionId ? { questionId: stage.action.questionId } : {}),
-          }
-        : { type: 'open_goal', goalId: view.goalId },
+      action,
     });
   }
 

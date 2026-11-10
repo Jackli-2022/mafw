@@ -1808,6 +1808,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/goals/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["goals.resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/goals/{id}/stop": {
         parameters: {
             query?: never;
@@ -6756,6 +6772,26 @@ export interface operations {
         };
     };
     "goals.pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "goals.resume": {
         parameters: {
             query?: never;
             header?: never;

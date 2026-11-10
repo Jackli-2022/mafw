@@ -27,37 +27,51 @@ export function handleListBoundaries(
   return { status: 200, body: { items: deps.service.list(id) } };
 }
 
+function decide(
+  args: { id?: string; bid?: string },
+  deps: LeadBoundaryRouteDeps,
+  run: (topicId: string, boundaryId: string) => { status: number; body: any },
+): { status: number; body: any } {
+  const topicId = clean(args?.id);
+  const boundaryId = clean(args?.bid);
+  if (!topicId || !boundaryId) {
+    return { status: 400, body: { error: 'topic and boundary ids are required' } };
+  }
+  try {
+    return run(topicId, boundaryId);
+  } catch (err: any) {
+    return fail(err);
+  }
+}
+
 export function handleAcceptBoundary(
   args: { id?: string; bid?: string },
   deps: LeadBoundaryRouteDeps,
 ): { status: number; body: any } {
-  try {
-    return { status: 200, body: deps.service.accept(clean(args?.bid)) };
-  } catch (err: any) {
-    return fail(err);
-  }
+  return decide(args, deps, (topicId, boundaryId) => ({
+    status: 200,
+    body: deps.service.accept(topicId, boundaryId),
+  }));
 }
 
 export function handleMergeBoundary(
   args: { id?: string; bid?: string },
   deps: LeadBoundaryRouteDeps,
 ): { status: number; body: any } {
-  try {
-    return { status: 200, body: deps.service.merge(clean(args?.bid)) };
-  } catch (err: any) {
-    return fail(err);
-  }
+  return decide(args, deps, (topicId, boundaryId) => ({
+    status: 200,
+    body: deps.service.merge(topicId, boundaryId),
+  }));
 }
 
 export function handleUndoBoundary(
   args: { id?: string; bid?: string },
   deps: LeadBoundaryRouteDeps,
 ): { status: number; body: any } {
-  try {
-    return { status: 200, body: deps.service.undo(clean(args?.bid)) };
-  } catch (err: any) {
-    return fail(err);
-  }
+  return decide(args, deps, (topicId, boundaryId) => ({
+    status: 200,
+    body: deps.service.undo(topicId, boundaryId),
+  }));
 }
 
 export function attachLeadBoundaryRoutes(registry: RouteRegistry, deps: LeadBoundaryRouteDeps): void {
@@ -87,7 +101,12 @@ export function attachLeadBoundaryRoutes(registry: RouteRegistry, deps: LeadBoun
       send(res, { status: 200, body: { proposed: false } });
       return;
     }
-    const proposal = deps.observe({ sessionID, text });
-    send(res, { status: 200, body: { proposed: !!proposal, proposal } });
+    try {
+      const proposal = deps.observe({ sessionID, text });
+      send(res, { status: 200, body: { proposed: !!proposal, proposal } });
+    } catch (err: any) {
+      // Observation is advisory and must never fail the chat turn.
+      send(res, { status: 200, body: { proposed: false, error: String(err?.message ?? err) } });
+    }
   });
 }

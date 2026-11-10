@@ -1,4 +1,4 @@
-import type { LeadTopicView } from "@mafw/sdk"
+import type { LeadBoundaryView, LeadTopicView } from "@mafw/sdk"
 
 export interface LeadTopicListItem {
   id: string
@@ -34,4 +34,9 @@ export function buildTopicList(topics: readonly LeadTopicView[]): LeadTopicListI
     goalId: topic.goalId,
     resumedFrom: topic.resumedFrom,
   }))
+}
+
+/** Only open proposals are actionable; accepted/merged/undone stay as history. */
+export function proposedBoundaries(items: readonly LeadBoundaryView[]): LeadBoundaryView[] {
+  return items.filter((item) => item.status === "proposed")
 }
