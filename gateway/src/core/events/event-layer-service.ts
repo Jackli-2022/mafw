@@ -154,7 +154,7 @@ export class EventLayerService {
     if (!thread) throw new EventLayerError(404, `event thread not found: ${threadId}`);
     const pending = this.deps.store.listTriggers(threadId)
       .filter((trigger) => trigger.disposition === 'pending');
-    const subscriptions = this.deps.store.listSubscriptions(threadId);
+    const subscriptions = this.subscriptionsFor(threadId);
     for (const trigger of pending) {
       if (subscriptions.length === 0) continue;
       for (const subscription of subscriptions) {
@@ -189,7 +189,7 @@ export class EventLayerService {
       return latest;
     }
 
-    const subscriptions = this.deps.store.listSubscriptions(threadId);
+    const subscriptions = this.subscriptionsFor(threadId);
     if (subscriptions.length === 0) return latest;
     const decision = await this.deps.evaluate({
       thread,
@@ -274,7 +274,7 @@ export class EventLayerService {
     if (!latest || latest.decision !== 'accept') return;
     const thread = this.deps.store.getThread(threadId);
     if (!thread) return;
-    const subscriptions = this.deps.store.listSubscriptions(threadId);
+    const subscriptions = this.subscriptionsFor(threadId);
     const triggers = this.deps.store.listTriggers(threadId);
     for (const delivery of due) {
       const subscription = subscriptions.find((item) => item.id === delivery.subscriptionId);
@@ -307,6 +307,19 @@ export class EventLayerService {
         });
       }
     }
+  }
+
+  unsubscribeSubscriber(subscriberId: string): number {
+    return this.deps.store.removeSubscriptionsBySubscriber(subscriberId, this.deps.now());
+  }
+
+  private subscriptionsFor(threadId: string): EventSubscriptionRow[] {
+    const rows = [
+      ...this.deps.store.listSubscriptions(threadId),
+      ...this.deps.store.listSubscriptions('*'),
+    ];
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return [...byId.values()];
   }
 
   listSubscriptions(threadId: string): EventSubscriptionRow[] {

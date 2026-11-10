@@ -38,6 +38,9 @@ export interface StandingGoalServiceDeps {
     triage: RunTriage;
   }): Promise<{ goalId: string }>;
   executeAction?(action: StandingAction): Promise<{ ok: boolean; result?: Record<string, unknown>; error?: string }>;
+  subscribeEvents?(input: { standingGoal: StandingGoal; trigger: StandingTrigger }): Promise<void> | void;
+  unsubscribeEvents?(standingGoalId: string): Promise<void> | void;
+  eventLayerEnabled?(): boolean;
 }
 
 function clean(value: unknown): string {
@@ -83,6 +86,7 @@ export class StandingGoalService {
       now: this.deps.now(),
     });
     const nextRunAt = this.registerCronTriggers(goal);
+    this.registerEventTriggers(goal);
     const updated = this.deps.store.updateGoal(goal.id, { nextRunAt }, this.deps.now());
     this.deps.broadcast({ type: 'standing_goal.created', properties: { standingGoalId: goal.id } });
     return updated;
@@ -98,8 +102,10 @@ export class StandingGoalService {
     if (patch.triggers !== undefined) next.triggers = parseStandingTriggers(patch.triggers);
     const updated = this.deps.store.updateGoal(id, next, this.deps.now());
     this.unregisterCronTriggers(current);
+    void this.deps.unsubscribeEvents?.(current.id);
     if (updated.state === 'active') {
       const nextRunAt = this.registerCronTriggers(updated);
+      this.registerEventTriggers(updated);
       return this.deps.store.updateGoal(id, { nextRunAt }, this.deps.now());
     }
     return updated;
@@ -208,6 +214,23 @@ export class StandingGoalService {
     });
   }
 
+  async handleEventTrigger(
+    standingGoalId: string,
+    input: { triggerKey: string; payload: Record<string, unknown>; eventId: string; kind?: string },
+  ): Promise<GoalRun | null> {
+    this.requireEnabled();
+    const goal = this.requireGoal(standingGoalId);
+    const trigger = goal.triggers.find((item) => item.type === 'event');
+    if (!trigger) return null;
+    if (input.kind && trigger.eventKinds?.length && !trigger.eventKinds.includes(input.kind)) {
+      return null;
+    }
+    return this.startRun(goal, trigger, input.triggerKey, {
+      ...input.payload,
+      eventId: input.eventId,
+    });
+  }
+
   async onGoalFinished(
     goalId: string,
     outcome: { status: 'done' | 'failed'; costUsd?: number; tokens?: number; result?: Record<string, unknown> },
@@ -234,6 +257,7 @@ export class StandingGoalService {
   pause(id: string): StandingGoal {
     const goal = this.requireGoal(id);
     this.unregisterCronTriggers(goal);
+    void this.deps.unsubscribeEvents?.(goal.id);
     const updated = this.deps.store.setGoalState(id, 'paused', this.deps.now());
     this.deps.broadcast({ type: 'standing_goal.paused', properties: { standingGoalId: id } });
     return updated;
@@ -244,6 +268,7 @@ export class StandingGoalService {
     if (goal.state === 'stopped') throw new StandingGoalError(409, 'stopped standing goal cannot resume');
     this.deps.store.setGoalState(id, 'active', this.deps.now());
     const nextRunAt = this.registerCronTriggers(goal);
+    this.registerEventTriggers(goal);
     const updated = this.deps.store.updateGoal(id, { nextRunAt }, this.deps.now());
     this.deps.broadcast({ type: 'standing_goal.resumed', properties: { standingGoalId: id } });
     return updated;
@@ -252,6 +277,7 @@ export class StandingGoalService {
   stop(id: string): StandingGoal {
     const goal = this.requireGoal(id);
     this.unregisterCronTriggers(goal);
+    void this.deps.unsubscribeEvents?.(goal.id);
     const updated = this.deps.store.setGoalState(id, 'stopped', this.deps.now());
     this.deps.broadcast({ type: 'standing_goal.stopped', properties: { standingGoalId: id } });
     return updated;
@@ -262,9 +288,11 @@ export class StandingGoalService {
     for (const goal of this.deps.store.listAllGoals()) {
       if (goal.state === 'active') {
         const nextRunAt = this.registerCronTriggers(goal);
+        this.registerEventTriggers(goal);
         this.deps.store.updateGoal(goal.id, { nextRunAt }, this.deps.now());
       } else {
         this.unregisterCronTriggers(goal);
+        void this.deps.unsubscribeEvents?.(goal.id);
       }
     }
   }
@@ -424,6 +452,14 @@ export class StandingGoalService {
         properties: { standingGoalId: goal.id, runId: run.id, error },
       });
       return this.deps.store.getRun(run.id);
+    }
+  }
+
+  private registerEventTriggers(goal: StandingGoal): void {
+    if (this.deps.eventLayerEnabled && !this.deps.eventLayerEnabled()) return;
+    for (const trigger of goal.triggers) {
+      if (trigger.type !== 'event') continue;
+      void this.deps.subscribeEvents?.({ standingGoal: goal, trigger });
     }
   }
 

@@ -520,6 +520,13 @@ export class EventStore {
     return result.changes > 0;
   }
 
+  removeSubscriptionsBySubscriber(subscriberId: string, now: string): number {
+    const result = this.db.prepare(
+      'UPDATE event_subscriptions SET dropped_at = ? WHERE subscriber_id = ? AND dropped_at IS NULL',
+    ).run(now, subscriberId);
+    return result.changes;
+  }
+
   insertDecision(input: Omit<EventDecisionRow, 'createdAt'> & { now: string }): EventDecisionRow {
     this.db.prepare(`
       INSERT INTO event_decisions (

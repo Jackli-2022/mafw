@@ -362,6 +362,7 @@ import { attachGoalControlRoutes, pauseStatePatch, resumeStatePatch, selectRetry
 import { attachLeadBoundaryRoutes } from './routes/lead-boundaries';
 import { attachEventRoutes } from './routes/events';
 import { EventLayerService } from './core/events/event-layer-service';
+import type { StandingGoalService } from './core/standing/standing-service';
 import { EventStore as EventLayerStore } from './core/events/event-store';
 import { normalizeCronTick, normalizeGitHubEvent, normalizeInternalEvent, normalizeWebhookEvent } from './core/events/event-normalize';
 import { pollGitHubSource } from './core/events/sources/github-source';
@@ -767,6 +768,7 @@ class MafwScheduler {
   private automationEngine?: AutomationEngine;
   private eventLayerStore?: EventLayerStore;
   private eventLayer?: EventLayerService;
+  private standingGoals?: StandingGoalService;
   private ledger?: SchedulerLedger;
   private pushGateway?: PushGateway;
   private pairingService?: PairingService;
@@ -5037,6 +5039,14 @@ class MafwScheduler {
         ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
         : { decision: 'ignore', rationale: 'no work subscription' }),
       deliverWork: async ({ thread, trigger, subscription, decision }) => {
+        if (subscription.subscriberType === 'standing_goal' && this.standingGoals) {
+          await this.standingGoals.handleEventTrigger(subscription.subscriberId, {
+            triggerKey: `${subscription.subscriberId}:event:${trigger.id}`,
+            eventId: trigger.id,
+            payload: trigger.payload,
+            kind: trigger.kind,
+          });
+        }
         // P2.4 has no Standing Goal executor; surface the work handoff so the
         // P2.5 consumer can attach without changing the delivery path.
         this.broadcast({
