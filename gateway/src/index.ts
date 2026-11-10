@@ -358,6 +358,7 @@ import { SessionListResponse } from './routes/schemas/session';
 import { buildRouteCatalog } from './routes/route-catalog';
 import { attachWave1Handlers } from './routes/wave1-handlers';
 import { attachLeadTopicRoutes } from './routes/lead-topics';
+import { attachAttentionRoutes } from './routes/attention';
 import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
 import { attachPodHandlers } from './routes/pod-handlers';
@@ -5594,6 +5595,12 @@ class MafwScheduler {
         broadcast: (event) => this.broadcast(event as any),
         now: () => new Date().toISOString(),
         resume: (topicId) => this.leadTopicResume.resume(topicId),
+      });
+      attachAttentionRoutes(this.routeRegistry, {
+        views: (projectDir) => {
+          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.views(pod.id) : [];
+        },
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),

@@ -2388,6 +2388,19 @@
         }
       }
     },
+    "/api/attention": {
+      "get": {
+        "operationId": "attention.list",
+        "tags": [
+          "attention"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/lead/topics": {
       "get": {
         "operationId": "lead.topics.list",
