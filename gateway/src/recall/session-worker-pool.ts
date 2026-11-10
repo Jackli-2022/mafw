@@ -47,6 +47,10 @@ export class SessionWorkerPool {
   private flight = new Singleflight();
   private creationOrder: string[] = [];
   private registry: SessionRegistry;
+  /** source session → its worker-session ids. byScope cannot be used for
+   *  cleanup: worker records share the pair's TTL, so at eviction time they
+   *  are usually already expired — invisible to byScope's active-only view. */
+  private workerSids = new Map<string, string[]>();
 
   constructor(private opts: SessionWorkerPoolOptions) {
     const ttlMs = opts.ttlMs;
@@ -67,19 +71,20 @@ export class SessionWorkerPool {
 
   /** Unregister the session-registry records of a source session's workers. */
   private unregisterWorkersFor(sourceSessionID: string): void {
-    for (const rec of this.registry.byScope({ kind: 'worker' })) {
-      if (rec.metadata.originSessionID === sourceSessionID) {
-        this.registry.unregister(rec.sessionID);
-      }
+    const sids = this.workerSids.get(sourceSessionID);
+    if (!sids) return;
+    this.workerSids.delete(sourceSessionID);
+    for (const sid of sids) {
+      this.registry.unregister(sid); // works regardless of expiry
     }
   }
 
   /** Touch the session-registry records of a source session's workers. */
   private touchWorkersFor(sourceSessionID: string): void {
-    for (const rec of this.registry.byScope({ kind: 'worker' })) {
-      if (rec.metadata.originSessionID === sourceSessionID) {
-        this.registry.touch(rec.sessionID);
-      }
+    const sids = this.workerSids.get(sourceSessionID);
+    if (!sids) return;
+    for (const sid of sids) {
+      this.registry.touch(sid);
     }
   }
 
@@ -133,6 +138,12 @@ export class SessionWorkerPool {
   /** Register a worker session in the process table; the origin overlay
    *  (registerWorkerOrigin) patches the same record when it already exists. */
   private registerWorkerSession(workerSid: string, sourceSessionID: string, kind: WorkerKind, label: string): void {
+    const sids = this.workerSids.get(sourceSessionID);
+    if (sids) {
+      if (!sids.includes(workerSid)) sids.push(workerSid);
+    } else {
+      this.workerSids.set(sourceSessionID, [workerSid]);
+    }
     const existing = this.registry.lookup(workerSid);
     if (existing) {
       registerWorkerOrigin(workerSid, sourceSessionID); // patch in place
@@ -169,6 +180,7 @@ export class SessionWorkerPool {
     this.entries.clear(); // onEvict disposes pairs + unregisters workers
     // TtlMap.clear may or may not fire onEvict for every entry — be explicit.
     for (const source of sources) this.unregisterWorkersFor(source);
+    this.workerSids.clear();
     this.flight.clear();
     this.creationOrder = [];
     return Promise.resolve();

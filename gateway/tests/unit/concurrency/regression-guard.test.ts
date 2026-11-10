@@ -106,10 +106,18 @@ describe('scheduler migration guard (Phase B Task 3)', () => {
     expect(driver).toMatch(/new\s+MutexQueue\(\)/);
   });
 
-  it('index.ts declares the SessionRegistry and drives a unified sweeper (Phase C)', () => {
-    expect(index).toMatch(/new SessionRegistry\(\)/);
+  it('index.ts declares the registry wiring and drives a unified sweeper (Phase C)', () => {
+    expect(index).toMatch(/from\s+['"]\.\/session['"]/);
     expect(index).toMatch(/sessionRegistry\.sweep\(\)/);
     expect(index).not.toMatch(/internalSessionRoles\s*=\s*new\s+Map/);
+  });
+
+  it('index.ts uses the DEFAULT registry singleton (no split-brain with worker-origin)', () => {
+    // worker-origin falls back to getDefaultSessionRegistry(); the pool and
+    // views must write the SAME instance or origin resolution silently
+    // no-ops in production (final review C1).
+    expect(index).toMatch(/sessionRegistry\s*=\s*getDefaultSessionRegistry\(\)/);
+    expect(index).not.toMatch(/sessionRegistry\s*=\s*new\s+SessionRegistry\(\)/);
   });
 
   it('worker-origin is a registry view, not a module-level Map (Phase C)', () => {

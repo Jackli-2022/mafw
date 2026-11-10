@@ -176,8 +176,11 @@ class SessionRegistry {
 - **pool 的关键修正（builder ruling，推翻 §5.3 表格原文的该行）**：pair 缓存**留在
   TtlMap**——它以**源会话**（用户会话）为键，迁入注册表会把用户会话错标
   `kind:'worker'`。改为 **worker 会话本身**（w-* sid）在 onSessionCreated 注册
-  （role+origin+TTL），随 pair touch/逐出/overflow/disposeAll 同步注销；
-  「驱逐消费 Registry.sweep()」由 per-record onEvict + 60s 统一 sweeper 达成。
+  （role+origin+TTL），随 pair touch/逐出/overflow/disposeAll 同步注销（pool 自持
+  sid 列表——worker 记录与 pair 同 TTL，逐出时通常已过期，`byScope` 的 active-only
+  视野看不到它们）。pair 资源释放仍是**访问驱动**（下次 getWorker 的 TtlMap
+  sweep——与 base 行为一致）；60s 统一 sweeper 只回收簿记记录。终审补充：worker
+  记录的 per-record onEvict 未接（pair 不经注册表逐出），sweeper 不绑 pair 资源。
 - **统一 sweeper**：index.ts 60s `sessionRegistry.sweep()`；`sweepBusyAndQueue` 与
   memory-worker `compactIdleMs` 不并入（活跃簿记/策略检查，非进程表状态）。
 - **CI 守卫偏差**：§7 的字面 repo-wide `new Map.*[Ss]ession` grep 会命中合法留下的

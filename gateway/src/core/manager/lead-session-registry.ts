@@ -193,6 +193,14 @@ export class LeadSessionRegistry {
     }
   }
 
+  /** Public unmirror for archive paths OUTSIDE this registry (rotation downgrade,
+   *  pod manager archive dep — final review I2): every entry point that archives
+   *  a Lead session must converge here or the process table keeps a zombie
+   *  kind 'lead' record. Guarded: foreign records are never touched. */
+  unmirrorLeadSession(sessionId: string): void {
+    this.unmirrorLead(sessionId);
+  }
+
   private slotRows(canonical: string): SlotRow[] {
     const rows: SlotRow[] = [];
     for (const entry of this.deps.kvAll('manager-session')) {

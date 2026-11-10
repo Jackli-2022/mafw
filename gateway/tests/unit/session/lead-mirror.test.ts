@@ -78,6 +78,22 @@ describe('LeadSessionRegistry session-registry mirror (Task 5)', () => {
     expect(leadRecords).not.toContain('ses-dead'); // dead row unmirrored
   });
 
+  it('unmirrorLeadSession removes a lead record; foreign records untouched (rotation path, I2)', async () => {
+    const registry = new SessionRegistry();
+    const { base } = makeDeps();
+    const lead = new LeadSessionRegistry({ ...base, sessionRegistry: registry } as any);
+    const rec = await lead.ensure('C:/proj/a');
+    // A foreign record (worker) sharing the table:
+    registry.register({ sessionID: 'w1', scope: { kind: 'worker' }, ttlMs: 1000 });
+    expect(registry.byScope({ kind: 'lead' }).length).toBe(1);
+    lead.unmirrorLeadSession(rec.sessionId);
+    expect(registry.byScope({ kind: 'lead' }).length).toBe(0);
+    expect(registry.lookup(rec.sessionId)).toBeNull();
+    // Foreign record survives the unmirror.
+    lead.unmirrorLeadSession('w1');
+    expect(registry.lookup('w1')).not.toBeNull();
+  });
+
   it('mirror absent (no dep) → everything works as before', async () => {
     const { base } = makeDeps();
     const lead = new LeadSessionRegistry(base as any);

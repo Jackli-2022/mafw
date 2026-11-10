@@ -11,7 +11,7 @@ import { config } from "./config";
 import { MutexQueue } from './concurrency/mutex-queue';
 import { TtlMap } from './concurrency/ttl-map';
 import { Scheduler, TaskSkippedError, TaskTimeoutError } from './scheduler';
-import { SessionRegistry } from './session';
+import { getDefaultSessionRegistry } from './session';
 import { InternalRolesView } from './session/views/internal-roles';
 import { log } from './core/utils/logger';
 import {
@@ -544,9 +544,11 @@ class MafwScheduler {
   private queueSweepTimer: ReturnType<typeof setInterval> | null = null;
   private sessionSweepTimer: ReturnType<typeof setInterval> | null = null;
   // Unified session registry (kernel refactor Phase C) — the gateway's process
-  // table. Views below hold a reference; worker-origin / pool / lead / pod
-  // mirrors consume it (plan 2026-11-10-gateway-kernel-session-registry.md).
-  private sessionRegistry = new SessionRegistry();
+  // table. MUST be the default singleton: worker-origin (recall/worker-origin.ts)
+  // falls back to getDefaultSessionRegistry(), and a private instance would
+  // split the table in two (final review C1). Views below hold a reference;
+  // worker-origin / pool / lead / pod mirrors consume it.
+  private sessionRegistry = getDefaultSessionRegistry();
   // Internal worker sessions (memory pipelines) — their output must never be
   // captured back into T1 (recursion guard A). Role overlay over the session
   // registry (was: bare Map<string, string>; kv dual-write unchanged).
@@ -2491,6 +2493,10 @@ class MafwScheduler {
       log.warn(`[Lead] archived metadata update failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
     }
     this.unregisterInternalSession(sessionId);
+    // Phase C (final review I2): every archive entry point (rotation downgrade,
+    // pod manager dep, dead-row cleanup) converges here — drop the kind 'lead'
+    // process-table record too, or it survives as a TTL-less zombie.
+    this.leadSessionRegistry?.unmirrorLeadSession(sessionId);
     // stale slot 清理：归档后不得再被 findBySessionId/current 认领（不依赖 rotation 恰好写完新槽）。
     try {
       const rows = this.getGatewayDb().kvAll<unknown>('manager-session');

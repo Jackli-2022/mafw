@@ -80,10 +80,17 @@ describe('SessionWorkerPool × session registry (revised Task 4)', () => {
     const origDelete = client.session.delete.bind(client.session);
     (client.session as any).delete = async () => { disposed++; await origDelete(); };
     await worker.prompt('hi', 'sys');
-    expect(registry.byScope({ kind: 'worker' }).length).toBe(1);
+    const rec = registry.byScope({ kind: 'worker' })[0];
+    expect(rec).toBeDefined();
+    expect(rec.metadata.originSessionID).toBe('src-1');
     await new Promise((r) => setTimeout(r, 80));
     pool.getWorker('src-2', 'extract'); // triggers entries.sweep() → evicts the expired src-1 pair
-    expect(registry.byScope({ kind: 'worker' }).length).toBe(0); // worker record unregistered
+    // Worker record truly removed (lookup returns null only on removal —
+    // byScope would hide an expired-but-unswept record).
+    expect(registry.lookup(rec.sessionID)).toBeNull();
+    // Exactly-once: only the extract session existed (reflect was never
+    // prompted); a double-dispose bug would count 2.
+    expect(disposed).toBe(1);
     await pool.disposeAll();
   });
 

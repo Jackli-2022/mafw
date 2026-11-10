@@ -415,7 +415,7 @@ index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`rel
 |---|---|---|
 | `InternalRolesView`（index.ts） | overlay | `metadata.role`；自建记录 kind `internal`（delete 会整体注销），foreign 记录只清 role、owner 生命周期不动；kv 双写不变 |
 | worker-origin（recall/worker-origin.ts） | overlay | `metadata.originSessionID`；默认注册表单例（`getDefaultSessionRegistry`），`clearWorkerOrigins` 区分自建记录与 owner 记录 |
-| SessionWorkerPool | owner（worker 会话） | **pair 缓存留在 TtlMap**（以源会话为键——那是用户会话，不能标 kind worker）；**worker 会话**（w-* sid）在 onSessionCreated 注册（role+origin+TTL），随 pair touch/逐出/overflow/disposeAll 同步；pair 逐出经 per-record onEvict dispose，显式路径不双发 |
+| SessionWorkerPool | owner（worker 会话） | **pair 缓存留在 TtlMap**（以源会话为键——那是用户会话，不能标 kind worker）；**worker 会话**（w-* sid）在 onSessionCreated 注册（role+origin+TTL），随 pair touch/逐出/overflow/disposeAll 同步注销（pool 自持 sid 列表——byScope 看不到已过期记录）；pair 资源的释放仍是**访问驱动**（下次 getWorker 的 TtlMap sweep），60s sweeper 只回收簿记记录 |
 | LeadSessionRegistry | owner（lead） | observe-only 镜像：bind/ensure 写 kind `lead` 记录（projectId + podId），dead-row 归档注销；全部 Lead 逻辑（kv 行/活性/快照）不动 |
 | PodSessionSupervisor | owner（goal 域） | observe-only 镜像：ensure/retire 写 kind `goal` 记录（podId+memberId+goalId+revision，metadata leaseKind/runtime/generation）；租约逻辑（唯一索引兜底/单飞/冲突归因）不动 |
 
