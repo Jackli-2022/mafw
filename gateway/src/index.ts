@@ -1252,6 +1252,11 @@ class MafwScheduler {
         const worktree = await this.podWorktreeService.ensureExisting(goal.podId, goalId, revision);
         return worktree?.dir ?? null;
       },
+      goalMode: (goalId, revision) => {
+        const goal = this.podStore?.getGoalByGoalId(goalId);
+        if (!goal) return null;
+        return this.podStore.getGoalRevision(goal.podId, goalId, revision)?.goalMode ?? 'standard';
+      },
       newApprovalId: () => `pa_${randomUUID()}`,
       canCreateNode: (goalId: string) => {
         const podId = this.podService?.getPodIdForGoal(goalId);

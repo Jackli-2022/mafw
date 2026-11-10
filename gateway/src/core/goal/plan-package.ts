@@ -84,6 +84,14 @@ function normalizeWaves(raw: unknown): unknown {
   return raw;
 }
 
+function countWaveTasks(waves: unknown): number {
+  if (!Array.isArray(waves)) return 0;
+  return waves.reduce((count, wave) => {
+    if (!isPlainObject(wave) || !Array.isArray(wave.tasks)) return count;
+    return count + wave.tasks.length;
+  }, 0);
+}
+
 function normalizeStrategy(raw: unknown): PlanStrategy | undefined {
   if (raw === undefined || raw === null) return undefined;
   const strategy = clean(raw);
@@ -144,6 +152,14 @@ export function validatePlanPackage(input: unknown): PlanPackage {
   if (!isPlainObject(input)) throw new Error('plan package must be an object');
   const waves = normalizeWaves(input.waves);
   const strategy = normalizeStrategy(input.strategy);
+  if (strategy === 'quick') {
+    if (countWaveTasks(waves) !== 1) {
+      throw new Error('quick plan must have exactly one task');
+    }
+    if (Array.isArray(input.probes) && input.probes.length > 0) {
+      throw new Error('quick plan must not request probes');
+    }
+  }
   const approvalMode = normalizeApprovalMode(input.approvalMode);
   const continuation = validateContinuationRules(input.continuation);
   if (strategy === 'quick' && (approvalMode || continuation)) {
