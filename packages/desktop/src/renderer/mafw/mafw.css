@@ -7307,6 +7307,88 @@ html[data-theme="light"] body {
   border-radius: var(--r-lg);
   background: var(--bg-raised);
 }
+.mafw-standing-goals {
+  padding: 12px;
+  border: 1px solid var(--border-base);
+  border-radius: var(--r-lg);
+  background: var(--bg-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mafw-standing-goals-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mafw-standing-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.mafw-standing-goal:first-of-type { border-top: 0; padding-top: 2px; }
+.mafw-standing-goal-main { min-width: 0; }
+.mafw-standing-goal-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mafw-standing-goal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 4px;
+  color: var(--text-4);
+  font-size: 11px;
+}
+.mafw-standing-goal-state {
+  padding: 0 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-3);
+  line-height: 17px;
+}
+.mafw-standing-goal-state.is-active { color: var(--accent); border-color: var(--accent-soft); }
+.mafw-standing-goal-state.is-paused { color: var(--warning); }
+.mafw-standing-goal-state.is-stopped { color: var(--text-4); }
+.mafw-standing-goal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.mafw-standing-goal-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: var(--r-md);
+  background: var(--bg-inset);
+}
+.mafw-standing-goal-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.mafw-standing-goal-run-mode { font-family: var(--font-data); color: var(--text-2); }
+.mafw-standing-goal-run-status.is-done { color: var(--accent); }
+.mafw-standing-goal-run-status.is-failed { color: var(--red-9); }
+.mafw-standing-goal-run-status.is-waiting_person { color: var(--warning); }
+.mafw-standing-goal-run-rationale {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mafw-standing-goal-run-cost { font-family: var(--font-data); }
 .mafw-project-work .mafw-work-overview { flex: 0 0 auto; }
 .mafw-work-overview-head {
   align-items: flex-start;

@@ -1930,6 +1930,113 @@ export interface EventsNamespace {
   deliveries(threadId: string): Promise<{ items: EventDeliveryView[] }>
 }
 
+export type StandingGoalState = 'active' | 'paused' | 'stopped'
+export type StandingRunMode = 'goal' | 'report' | 'action' | 'skip'
+export type StandingRunStatus =
+  | 'queued'
+  | 'triaging'
+  | 'running'
+  | 'waiting_person'
+  | 'done'
+  | 'failed'
+  | 'skipped'
+export type StandingTriggerType = 'cron' | 'event' | 'manual'
+
+export interface StandingTriggerView {
+  id: string
+  type: StandingTriggerType
+  schedule?: string
+  timezone?: string
+  eventKinds?: string[]
+  filter?: Record<string, unknown>
+}
+
+export interface StandingGoalTemplate {
+  taskType?: 'feature' | 'bug' | 'research' | 'refactor' | 'ops'
+  acceptance?: string[]
+  boundaries?: string[]
+  planReview?: 'auto' | 'manual'
+}
+
+export interface StandingGoalBudget {
+  perRunTurns?: number
+  perRunCostUsd?: number
+  perDayCostUsd?: number
+}
+
+export interface StandingGoalView {
+  id: string
+  projectDir: string
+  title: string
+  objective: string
+  template: StandingGoalTemplate
+  triggers: StandingTriggerView[]
+  state: StandingGoalState
+  concurrency: number
+  cooldownMs: number
+  budget: StandingGoalBudget
+  approval: 'auto' | 'plan' | 'confirm'
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+  lastRunAt: string | null
+  nextRunAt: string | null
+}
+
+export interface GoalRunView {
+  id: string
+  standingGoalId: string
+  triggerType: StandingTriggerType
+  triggerKey: string
+  payload: Record<string, unknown>
+  status: StandingRunStatus
+  mode: StandingRunMode | null
+  rationale: string | null
+  goalId: string | null
+  sessionId: string | null
+  worktree: string | null
+  result: Record<string, unknown> | null
+  costUsd: number | null
+  tokens: number | null
+  startedAt: string | null
+  endedAt: string | null
+}
+
+export interface StandingGoalCreateInput {
+  projectDir: string
+  title: string
+  objective: string
+  template?: StandingGoalTemplate
+  triggers: StandingTriggerView[]
+  concurrency?: number
+  cooldownMs?: number
+  budget?: StandingGoalBudget
+  approval?: 'auto' | 'plan' | 'confirm'
+}
+
+export interface StandingGoalUpdateInput {
+  title?: string
+  objective?: string
+  template?: StandingGoalTemplate
+  triggers?: StandingTriggerView[]
+  concurrency?: number
+  cooldownMs?: number
+  budget?: StandingGoalBudget
+  approval?: 'auto' | 'plan' | 'confirm'
+}
+
+export interface StandingGoalsNamespace {
+  list(input?: { projectDir?: string }): Promise<{ items: StandingGoalView[] }>
+  create(input: StandingGoalCreateInput): Promise<{ goal: StandingGoalView }>
+  update(id: string, patch: StandingGoalUpdateInput): Promise<{ goal: StandingGoalView }>
+  runs(id: string): Promise<{ items: GoalRunView[] }>
+  pause(id: string): Promise<{ goal: StandingGoalView }>
+  resume(id: string): Promise<{ goal: StandingGoalView }>
+  stop(id: string): Promise<{ goal: StandingGoalView }>
+  run(id: string): Promise<{ run: GoalRunView }>
+  approveRun(id: string): Promise<{ run: GoalRunView }>
+}
+
 export interface EventSourceView {
   id: string
   kind: 'github' | 'cron' | 'internal' | 'webhook'

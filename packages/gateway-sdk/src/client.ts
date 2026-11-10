@@ -6,6 +6,7 @@ import {
   LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
   LeadBoundaryView, LeadBoundaryDecision,
   EventsNamespace, EventSourceView, EventThreadView, EventTriggerView, EventSubscriptionView, EventDeliveryView,
+  StandingGoalsNamespace, StandingGoalView, StandingGoalCreateInput, StandingGoalUpdateInput, GoalRunView,
   MemoryUnit, MemorySearchOptions, MemoryLayer, MemoryLayeredSearchOptions, MemoryLayeredSearchResult, T1SearchHit, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
@@ -1392,6 +1393,34 @@ export class MafwClient implements IMafwClient {
       this.request(`/api/event-subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     deliveries: async (threadId: string): Promise<{ items: EventDeliveryView[] }> =>
       this.request(`/api/event-deliveries?threadId=${encodeURIComponent(threadId)}`),
+  }
+
+  standingGoals: StandingGoalsNamespace = {
+    list: async (input = {}): Promise<{ items: StandingGoalView[] }> => {
+      const query = new URLSearchParams()
+      if (input.projectDir) query.set('projectDir', input.projectDir)
+      const suffix = query.toString()
+      return this.request(`/api/standing-goals${suffix ? `?${suffix}` : ''}`)
+    },
+    create: async (input: StandingGoalCreateInput): Promise<{ goal: StandingGoalView }> =>
+      this.request('/api/standing-goals', { method: 'POST', body: JSON.stringify(input) }),
+    update: async (id: string, patch: StandingGoalUpdateInput): Promise<{ goal: StandingGoalView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
+    runs: async (id: string): Promise<{ items: GoalRunView[] }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/runs`),
+    pause: async (id: string): Promise<{ goal: StandingGoalView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/pause`, { method: 'POST' }),
+    resume: async (id: string): Promise<{ goal: StandingGoalView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/resume`, { method: 'POST' }),
+    stop: async (id: string): Promise<{ goal: StandingGoalView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
+    run: async (id: string): Promise<{ run: GoalRunView }> =>
+      this.request(`/api/standing-goals/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+    approveRun: async (id: string): Promise<{ run: GoalRunView }> =>
+      this.request(`/api/goal-runs/${encodeURIComponent(id)}/approve`, { method: 'POST' }),
   }
 
   // ── Project Pod Lite ─────────────────────────────────────────────────────

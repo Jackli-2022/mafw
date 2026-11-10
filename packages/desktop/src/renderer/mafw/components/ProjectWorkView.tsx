@@ -5,6 +5,7 @@ import { WorkOverview } from "./WorkOverview"
 import { WorkPriorityList } from "./WorkPriorityList"
 import { GoalDetailPanel } from "./GoalDetailPanel"
 import { PodGoalComposer } from "./PodGoalComposer"
+import { StandingGoalsPanel } from "./StandingGoalsPanel"
 import { buildAttentionList, buildWorkPriority, type WorkFilter } from "../work-overview-model"
 import { goalRevisionOf, type GoalDetailFocus } from "../pod-model"
 import { isPodResultViewed } from "../pod-result-store"
@@ -191,6 +192,15 @@ export function ProjectWorkView(props: {
             />
           </section>
         </Show>
+
+        <StandingGoalsPanel
+          projectDir={props.projectDir}
+          active={props.active}
+          onOpenGoal={(goalId) => {
+            const goal = overviewGoals().find((item) => item.goalId === goalId)
+            if (goal) props.onOpenGoal(goal)
+          }}
+        />
 
         <WorkPriorityList
           items={priority()}

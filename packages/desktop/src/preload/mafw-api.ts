@@ -268,6 +268,18 @@ export function createMafwApi(): MafwAPI {
       deliveries: (threadId) => invoke("events", "deliveries", threadId),
     },
 
+    standingGoals: {
+      list: (input) => invoke("standingGoals", "list", input),
+      create: (input) => invoke("standingGoals", "create", input),
+      update: (id, patch) => invoke("standingGoals", "update", id, patch),
+      runs: (id) => invoke("standingGoals", "runs", id),
+      pause: (id) => invoke("standingGoals", "pause", id),
+      resume: (id) => invoke("standingGoals", "resume", id),
+      stop: (id) => invoke("standingGoals", "stop", id),
+      run: (id) => invoke("standingGoals", "run", id),
+      approveRun: (id) => invoke("standingGoals", "approveRun", id),
+    },
+
     pod: {
       ensure: (projectID) => invoke("pod", "ensure", projectID),
       lookup: (projectID) => invoke("pod", "lookup", projectID),
