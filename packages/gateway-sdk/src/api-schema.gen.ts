@@ -2492,6 +2492,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/{name}/deopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["skills.deopt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -7808,6 +7824,26 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "skills.deopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
             };
             cookie?: never;
         };
