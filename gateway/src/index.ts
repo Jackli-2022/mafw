@@ -223,6 +223,7 @@ import { attachMafwCommandRoutes } from './routes/mafw-commands';
 import { attachMergeMemoryRoutes } from './routes/merge-memory';
 import { attachTriageRoutes } from './routes/triage';
 import { attachApprovalsRoutes } from './routes/approvals';
+import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5617,6 +5618,18 @@ class MafwScheduler {
         allowlistStore: () => this.allowlistStore,
         permissionRules: () => this.permissionRules,
       });
+      // Phase D1 Task B1：question / permission 面迁 registry dispatch（5 分支；
+      // workspace 重试链与 capGuard 语义逐字保留）。
+      attachQuestionsPermissionsRoutes(this.routeRegistry, {
+        capGuard: (res, surface) => this.capGuard(res, surface),
+        capGuardQuestion: (res) => this.capGuardQuestion(res),
+        serveUrl: () => this.serveUrl,
+        currentProjectDir: () => this.currentProjectDir,
+        projectDir: () => this.projectDir,
+        runtime: () => this.runtime,
+        registeredProjects: () => this.registeredProjects,
+        permissionRules: () => this.permissionRules,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6839,106 +6852,7 @@ class MafwScheduler {
 
         // GET /api/approvals + POST /api/approvals/:id/respond — Phase D1 Task A5：已迁 registry dispatch。
 
-        // 鈹€鈹€ Question endpoints (AskCard 鈹€ proxy to native opencode Question API) 鈹€鈹€
-
-        // GET /api/questions ── list pending questions（契约：session.question.list）
-        if (req.url?.match(/^\/api\/questions(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuardQuestion(res)) return;
-          try {
-            const dir = resolveApprovalDirectory({
-              explicit: new URL(req.url, this.serveUrl).searchParams.get('directory'),
-              currentProjectDir: this.currentProjectDir,
-              projectDir: this.projectDir,
-            });
-            const question = this.runtime?.session?.question;
-            const items = question ? await question.list(dir ? { directory: dir } : undefined) : [];
-            res.end(JSON.stringify({ items: (items ?? []).map((item: any) => projectQuestionRequest(item)) }));
-          } catch (err: any) {
-            log.error('[Question] list error:', err.message);
-            res.end(JSON.stringify({ items: [] }));
-          }
-          return;
-        }
-
-        // POST /api/questions/{id}/reply ── { answers: string[][] }（契约 + workspace 重试）
-        const qReplyMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reply(?:\?|$)/);
-        if (qReplyMatch && req.method === 'POST') {
-          if (this.capGuardQuestion(res)) return;
-          const question = this.runtime?.session?.question;
-          if (!question) {
-            res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'question API not available on this runtime' })); return;
-          }
-          try {
-            const body = JSON.parse(await readBody(req));
-            // workspace 路由：默认（SDK 自带 projectDir）→ 各注册项目逐试
-            const dirs: Array<string | undefined> = [undefined, this.projectDir, ...this.registeredProjects.keys()];
-            let lastErr: any = null;
-            for (const dir of [...new Set(dirs)]) {
-              try {
-                await question.reply({ requestID: qReplyMatch[1], answers: body.answers, ...(dir ? { directory: dir } : {}) });
-                res.end(JSON.stringify({ status: 'ok' }));
-                return;
-              } catch (err: any) { lastErr = err; }
-            }
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'error', error: lastErr?.message ?? 'question reply failed on all workspaces' }));
-          } catch (err: any) {
-            log.error('[Question] reply error:', err.message);
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'error', error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/questions/{id}/reject（契约 + workspace 重试）
-        const qRejectMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reject(?:\?|$)/);
-        if (qRejectMatch && req.method === 'POST') {
-          if (this.capGuardQuestion(res)) return;
-          const question = this.runtime?.session?.question;
-          if (!question) {
-            res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'question API not available on this runtime' })); return;
-          }
-          try {
-            const dirs: Array<string | undefined> = [undefined, this.projectDir, ...this.registeredProjects.keys()];
-            let lastErr: any = null;
-            for (const dir of [...new Set(dirs)]) {
-              try {
-                await question.reject({ requestID: qRejectMatch[1], ...(dir ? { directory: dir } : {}) });
-                res.end(JSON.stringify({ status: 'ok' }));
-                return;
-              } catch (err: any) { lastErr = err; }
-            }
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'error', error: lastErr?.message ?? 'question reject failed on all workspaces' }));
-          } catch (err: any) {
-            log.error('[Question] reject error:', err.message);
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'error', error: err.message }));
-          }
-          return;
-        }
-
-        // 鈹€鈹€ Permission endpoints (PermissionCard 鈹€ proxy to native opencode Permission API) 鈹€鈹€
-
-        // GET /api/permissions ── list pending permission requests（契约：session.permissionList）
-        if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'approval.permissionList')) return;
-          try {
-            const dir = resolveApprovalDirectory({
-              explicit: new URL(req.url, this.serveUrl).searchParams.get('directory'),
-              currentProjectDir: this.currentProjectDir,
-              projectDir: this.projectDir,
-            });
-            const items = this.runtime?.session?.permissionList
-              ? await this.runtime.session.permissionList(dir ? { directory: dir } : undefined)
-              : [];
-            res.end(JSON.stringify({ items: projectPermissionList(items) }));
-          } catch (err: any) {
-            log.error('[Permission] list error:', err.message);
-            res.end(JSON.stringify({ items: [] }));
-          }
-          return;
-        }
+        // GET /api/questions + POST /api/questions/:id/{reply,reject} — Phase D1 Task B1：已迁 registry dispatch。
 
         // 鈹€鈹€ Provider & Agents (composer model pill / @agent mention) 鈹€鈹€
 
@@ -7052,23 +6966,8 @@ class MafwScheduler {
 
         // /api/approvals/allowlist + /api/approvals/rules (GET/POST/DELETE) — Phase D1 Task A5：已迁 registry dispatch。
 
-        // POST /api/permissions/{id}/reply — { reply, message?, persist? }（列表反查 sessionID → permissionReply）
-        const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
-        if (pReplyMatch && req.method === 'POST') {
-          await handlePermissionReplyById(req, res, pReplyMatch[1], {
-            runtime: this.runtime,
-            access: this.runtime?.access ?? null,
-            rules: this.permissionRules,
-            directories: () => [
-              this.currentProjectDir ?? undefined,
-              this.projectDir || undefined,
-              ...this.registeredProjects.keys(),
-            ],
-          });
-          return;
-        }
+        // POST /api/permissions/{id}/reply — Phase D1 Task B1：已迁 registry dispatch。
 
-        // ── Triage endpoints (Tier 4 — user only, not MCP) ──
         // GET /api/triage + POST /api/triage/:id/{confirm,reject,propose} — Phase D1 Task A4：已迁 registry dispatch。
 
         // ── Automation endpoints (Tier 4 — user only) ──
