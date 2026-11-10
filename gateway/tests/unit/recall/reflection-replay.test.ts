@@ -11,6 +11,7 @@ import { HarmonicIndexManager } from '../../../src/core/memory/harmonic-index';
 import { HarmonicUnitFileStore } from '../../../src/memory/harmonic-file-store';
 import { ReflectCursor } from '../../../src/recall/reflect-cursor';
 import { GatewayDatabase } from '../../../src/memory/gateway-db';
+import { config } from '../../../src/config';
 
 const trace = (id: string, content: string, source = 'user_input') => ({
   turn: {
@@ -104,6 +105,26 @@ describe('reflection raw T1 replay', () => {
     expect(mark).toHaveBeenCalledTimes(1);
     expect(mark).toHaveBeenCalledWith(['t1t_exact', 't1t_old', 't1t_new']);
     expect(res.distilled).toBeGreaterThan(0);
+    expect(res.replayedTraces).toBe(3);
+    expect(res.replayChars).toBeGreaterThan(0);
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('disabled replay skips evidence collection entirely', async () => {
+    const readTrace = jest.fn();
+    const { dir, pipe, prompts, db } = await setup(
+      async (_p, system) => {
+        if (system.includes('salient high-level questions')) return JSON.stringify({ questions: ['q'] });
+        return JSON.stringify({ insights: [{ category: 'insight', content: 'disabled replay insight' }] });
+      },
+      { enabled: false, deps: { readTrace, markT1Replayed: jest.fn() } },
+    );
+    const res = await pipe.runSession('s1');
+    const distill = prompts.find((p) => p.system.includes('distill durable'))!;
+    expect(distill.prompt).not.toContain('RAW T1 REPLAY START');
+    expect(readTrace).not.toHaveBeenCalled();
+    expect(res.replayedTraces).toBe(0);
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -169,5 +190,15 @@ describe('reflection insight provenance parsing', () => {
   test('prompt asks for exact sourceTraceIds', () => {
     expect(REFLECT_SYSTEM).toContain('sourceTraceIds');
     expect(REFLECT_SYSTEM).toContain('[trace:');
+  });
+
+  test('t1Replay config defaults are bounded', () => {
+    expect(config.recall.t1Replay).toEqual({
+      enabled: true,
+      exactK: 8,
+      activatedK: 3,
+      maxChars: 6000,
+      perTraceChars: 400,
+    });
   });
 });
