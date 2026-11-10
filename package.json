@@ -26,7 +26,7 @@
     "test:unit": "npm test --prefix gateway",
     "test:tui": "node --test packages/tui/tests/*.test.ts",
     "test:kit": "node --test \"packages/runtime-kit/src/*.test.ts\"",
-    "test:contract": "node --test \"packages/runtime-contract/src/**/*.test.ts\"",
+    "test:contract": "npm test -w @mafw/runtime-contract",
   "test:core": "node --test \"packages/runtime-core/src/**/*.test.ts\"",
     "test:desktop": "npm test -w @mafw/desktop",
     "test:plugin-contract": "npm test -w @mafw/plugin-contract",

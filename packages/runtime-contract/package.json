@@ -12,7 +12,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node -e \"require('fs').writeFileSync('dist/package.json', JSON.stringify({ type: 'commonjs' }))\"",
-    "test": "node --test \"src/**/*.test.ts\""
+    "typecheck:test": "tsc -p tsconfig.test.json",
+    "test": "npm run typecheck:test && node --test \"src/**/*.test.ts\""
   },
   "devDependencies": {
     "typescript": "^5.7.0"

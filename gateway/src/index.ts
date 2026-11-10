@@ -3205,9 +3205,9 @@ class MafwScheduler {
         config.recall.workerModel,
         {
           // Plan 6 Task 3: `completion-http` takes credentials through an
-          // injected resolver; the auth.json chain is wired here (single point).
-          credentialsResolver: (providerID) =>
-            getProviderApiKey(providerID, undefined, this.runtimeHost?.credentials) ?? null,
+          // injected resolver; `runtimeGetApiKey` is the single credential
+          // chain (runtime credentials → auth.json → null).
+          credentialsResolver: (providerID) => this.runtimeGetApiKey(providerID),
           baseUrl: (config.recall as any).scanApiUrl || undefined,
           scanEndpoints: (config.recall as any).scanEndpoints || undefined,
           timeoutMs: config.recall.scanTimeoutMs,
