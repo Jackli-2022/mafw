@@ -35,6 +35,10 @@ export {
   type AdapterDiff,
   type RuntimeMcpStatusInfo,
   type RuntimeMcpChannel,
+  type RuntimeMcpServerConfigInput,
+  type RuntimeMcpConfigPreview,
+  type RuntimeMcpConfigResult,
+  type RuntimeMcpConfigChannel,
   type RuntimeDiscoveryCommand,
   type RuntimeDiscoverySkill,
   type RuntimeDiscoverySkillContent,
@@ -45,6 +49,8 @@ export {
   type RuntimePtyInfo,
   type RuntimePtyConnection,
   type RuntimePtyChannel,
+  type RuntimePtyCreateOpts,
+  type RuntimePtyInbound,
   type RuntimeSnapshotTreeChannel,
   type RuntimeBackgroundChannel,
 } from './channels.ts';
@@ -59,6 +65,7 @@ export {
   type RuntimePreset,
   type RuntimeHostSurface,
   type RuntimeAgentProcess,
+  type RuntimeProviderTransport,
 } from './define-runtime.ts';
 export {
   type PermissionRule,
@@ -66,3 +73,9 @@ export {
   type RuntimeAgentDefinition,
 } from './agent-definition.ts';
 export { type RuntimeToolRegistration } from './tool-registration.ts';
+export {
+  MAFW,
+  MAFW_RUNTIME_EVENT_NAMES,
+  RUNTIME_IDENTITY_TYPES,
+  TOOL_PRIMITIVE_TYPES,
+} from './vocabulary.ts';

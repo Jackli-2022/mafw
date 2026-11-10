@@ -1,8 +1,7 @@
 import { httpComplete, resolveCompletionBaseUrl } from '../../../src/runtime/completion-http';
 
-jest.mock('../../../src/runtime/auth', () => ({
-  getProviderApiKey: () => null,
-}));
+// Plan 6 Task 3: `completion-http` no longer reads auth.json itself — the
+// caller injects a credentials resolver. No auth module mock is needed here.
 
 function okBody(overrides: any = {}) {
   return {
@@ -103,6 +102,36 @@ describe('httpComplete', () => {
       { model: { providerID: 'unknown-prov', modelID: 'm' }, user: [{ type: 'text', text: 'q' }] },
       {},
     )).rejects.toThrow('no endpoint or API key');
+  });
+
+  it('resolves the key through the injected credentials resolver', async () => {
+    const calls: Array<{ init: any }> = [];
+    const fetchFn = (async (_url: string, init?: any) => { calls.push({ init }); return okBody(); }) as any;
+    const seen: string[] = [];
+    const res = await httpComplete(
+      { model: { providerID: 'alibaba-cn', modelID: 'm' }, user: [{ type: 'text', text: 'q' }] },
+      {
+        fetchFn,
+        credentials: (providerID) => {
+          seen.push(providerID);
+          return 'sk-resolved';
+        },
+      },
+    );
+    expect(seen).toEqual(['alibaba-cn']);
+    expect(calls[0].init.headers.Authorization).toBe('Bearer sk-resolved');
+    expect(res.text).toBe('hello world');
+  });
+
+  it('keeps the endpoint fallback when the resolver yields a key only', async () => {
+    const calls: Array<{ url: string; init: any }> = [];
+    const fetchFn = (async (url: string, init?: any) => { calls.push({ url, init }); return okBody(); }) as any;
+    await httpComplete(
+      { model: { providerID: 'qwen', modelID: 'm' }, user: [{ type: 'text', text: 'q' }] },
+      { fetchFn, credentials: () => 'sk-resolved' },
+    );
+    expect(calls[0].url).toContain('dashscope.aliyuncs.com');
+    expect(calls[0].init.headers.Authorization).toBe('Bearer sk-resolved');
   });
 
   it('maps responseFormat to OpenAI response_format json_schema', async () => {

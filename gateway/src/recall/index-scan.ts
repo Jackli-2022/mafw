@@ -46,10 +46,15 @@ export interface ScanHttpDeps {
   fetchFn?: typeof fetch;
   /** Explicit endpoint override (default: resolveScanBaseUrl(providerID)). */
   baseUrl?: string;
-  /** Explicit API key (default: getProviderApiKey(providerID) via runtime auth). */
+  /** Explicit API key (default: `credentialsResolver`). */
   apiKey?: string;
-  authPath?: string;
-  credentials?: { getApiKey(provider: string): string | null };
+  /**
+   * Caller-provided credential resolver (Plan 6 Task 3: the HTTP transport no
+   * longer imports the gateway auth module). `src/index.ts` wires the
+   * runtime-credentials → opencode auth.json chain here, keeping the
+   * credential source at a single wiring point.
+   */
+  credentialsResolver?: (providerID: string) => string | null | undefined;
   /** Default timeout for scan() when options.timeoutMs is omitted. */
   timeoutMs?: number;
   /** Max chars of the memory index sent to the scan (budget). Default 80000. */
@@ -395,7 +400,17 @@ export class IndexScanService {
         }
         let res: CompletionResult;
         try {
-          res = await httpComplete(req, this.deps);
+          // Plan 6 Task 3: the transport no longer reads auth.json itself — the
+          // caller injects the credential chain (wired in src/index.ts).
+          res = await httpComplete(req, {
+            fetchFn: this.deps.fetchFn,
+            baseUrl: this.deps.baseUrl,
+            apiKey: this.deps.apiKey,
+            scanEndpoints: this.deps.scanEndpoints,
+            resolveEndpoint: this.deps.resolveEndpoint,
+            resolveApiKey: this.deps.resolveApiKey,
+            credentials: this.deps.credentialsResolver,
+          });
         } catch (httpErr: any) {
           if (/no endpoint or API key/.test(httpErr.message)) {
             if (!this.warnedUnresolvable) {

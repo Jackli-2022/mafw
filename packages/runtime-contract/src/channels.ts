@@ -142,12 +142,61 @@ export interface RuntimeMcpStatusInfo {
   disabled?: boolean;
 }
 
+export interface RuntimeMcpServerConfigInput {
+  name: string;
+  type: 'remote' | 'local';
+  /** remote 必填 */
+  url?: string;
+  /** local 必填（非空字符串数组） */
+  command?: string[];
+  /** 同名覆盖（缺省 → 冲突错误） */
+  overwrite?: boolean;
+  /** type 变更时显式替换（缺省 → 冲突错误） */
+  replace?: boolean;
+}
+
+export interface RuntimeMcpConfigPreview {
+  /** 乐观锁令牌（文件内容哈希），apply/remove/restore 必须回传。 */
+  token: string;
+  /** 展示给用户的目标文件绝对路径。 */
+  target: string;
+  /** 已掩码的统一 diff。 */
+  diff: string;
+  /** 预计备份文件名（无既有文件时缺省）。 */
+  backup?: string;
+  /** 覆盖时保留的未暴露字段。 */
+  preserved?: string[];
+  warnings?: string[];
+}
+
+export interface RuntimeMcpConfigResult {
+  /** 配置文件已持久化。 */
+  applied: boolean;
+  /** 运行时立即生效（尽力）。 */
+  runtimeApplied: boolean;
+  backup?: string;
+  error?: string;
+}
+
+export interface RuntimeMcpConfigChannel {
+  /** dry-run：计算 diff/token，不写盘。 */
+  preview(input: RuntimeMcpServerConfigInput): Promise<RuntimeMcpConfigPreview>;
+  /** dry-run：删除预览（返回 token 与移除后的 diff，不写盘）。 */
+  previewRemove(name: string): Promise<RuntimeMcpConfigPreview>;
+  /** 提交写入（token 不匹配 → etag_mismatch）。 */
+  apply(input: RuntimeMcpServerConfigInput & { token: string; confirm: true }): Promise<RuntimeMcpConfigResult>;
+  /** 删除配置项（先文件后运行时）。 */
+  remove(name: string, opts: { token: string; confirm: true }): Promise<RuntimeMcpConfigResult>;
+  /** 只回滚 mcp.servers 子树（外科式恢复）。 */
+  restore(opts: { token: string; confirm: true; backupPath?: string }): Promise<RuntimeMcpConfigResult>;
+}
+
 export interface RuntimeMcpChannel {
   list(opts?: { directory?: string }): Promise<RuntimeMcpStatusInfo[]>;
   connect?(name: string, opts?: { directory?: string }): Promise<boolean>;
   disconnect?(name: string, opts?: { directory?: string }): Promise<boolean>;
-  /** Adapter-owned config surface (mcpConfigApi); opaque to the kernel. */
-  config?: unknown;
+  /** Adapter-owned config surface (mcpConfigApi); typed but adapter-owned. */
+  config?: RuntimeMcpConfigChannel;
 }
 
 export interface RuntimeDiscoveryCommand {
@@ -193,17 +242,30 @@ export interface RuntimeInstructionEntry {
   value: unknown;
 }
 
+/** MAFW terminal surface: create options (PTY ownership follows the session directory). */
+export interface RuntimePtyCreateOpts {
+  /** 会话/工作区目录（PTY 归属，与 session directory 同规则）。 */
+  directory: string;
+  /** PTY 起始 cwd；缺省 = directory。 */
+  cwd?: string;
+  cols?: number;
+  rows?: number;
+  title?: string;
+}
+
 export interface RuntimePtyInfo {
   id: string;
   title?: string;
+  /** Native shell/command label, when the runtime exposes it. */
   command?: string;
   cwd?: string;
-  status?: string;
+  status?: 'running' | 'exited' | 'unknown';
 }
 
 export interface RuntimePtyConnection {
+  /** Native WebSocket URL (gateway-process only; never leaked to clients). */
+  url: string;
   id?: string;
-  url?: string;
   ticket?: string;
   protocol?: string;
   /** Gateway/proxy auth headers required by the socket handshake. */
@@ -212,14 +274,21 @@ export interface RuntimePtyConnection {
   cursor?: unknown;
 }
 
+/** Native payload → neutral inbound event (adapter-owned frame decoding). */
+export type RuntimePtyInbound =
+  | { kind: 'output'; data: string }
+  | { kind: 'meta'; event: string; payload?: unknown }
+  | { kind: 'close'; code?: number; reason?: string }
+  | { kind: 'ignore' };
+
 export interface RuntimePtyChannel {
-  create(opts: { directory?: string; title?: string; cols?: number; rows?: number; cwd?: string }): Promise<{ id: string }>;
+  create(opts: RuntimePtyCreateOpts): Promise<{ id: string }>;
   connect(opts: { id: string; directory?: string }): Promise<RuntimePtyConnection>;
   resize(opts: { id: string; directory?: string; cols: number; rows: number }): Promise<void>;
   remove(opts: { id: string; directory?: string }): Promise<void>;
   list?(opts?: { directory?: string }): Promise<RuntimePtyInfo[]>;
   /** Native frame decoding stays adapter-owned and opaque. */
-  decodeInbound?(data: unknown): unknown[];
+  decodeInbound?(data: unknown): RuntimePtyInbound[];
   encodeInput?(data: string): unknown;
 }
 

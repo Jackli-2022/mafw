@@ -7,7 +7,8 @@ import { randomUUID } from 'crypto';
 import type { RawRuntimeEvent } from './normalize';
 import { MAFW } from './mafw-vocabulary';
 
-export const TOOL_PRIMITIVE_TYPES: ReadonlySet<string> = new Set(['tool.call', 'tool.delta', 'tool.result']);
+/** 工具三原语（单源：`@mafw/runtime-contract`；Plan 6 Task 3）。 */
+export { TOOL_PRIMITIVE_TYPES } from '@mafw/runtime-contract';
 
 export interface ToolCallPrimitive {
   sessionID: string; messageID?: string; callID: string; tool: string;

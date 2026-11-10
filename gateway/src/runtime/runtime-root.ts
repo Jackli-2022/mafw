@@ -7,39 +7,12 @@
  *
  * 固定根：`~/.mafw/runtime-root`。
  * session 的工作目录仍然只由 `SessionCreateOpts.directory` 决定。
+ *
+ * Plan 6 Task 3：实现迁至 `@mafw/runtime-core`（`runtime-root.ts`）；本模块
+ * 只保留旧导出路径（re-export shim），调用方无需改动。
  */
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-
-export const RUNTIME_ROOT_DIRNAME = 'runtime-root';
-
-/** 默认数据根为 `~/.mafw`；测试可注入其他数据根。 */
-export function resolveRuntimeRoot(dataRoot: string = path.join(os.homedir(), '.mafw')): string {
-  return path.join(dataRoot, RUNTIME_ROOT_DIRNAME);
-}
-
-/**
- * 确保 root 存在并返回绝对路径。
- * - 相对路径拒绝（规范要求绝对路径）；
- * - 缺失时递归创建；
- * - 同名文件不是目录时 fail-loud。
- */
-export function ensureRuntimeRoot(root: string): string {
-  if (!path.isAbsolute(root)) {
-    throw new Error(`runtime root must be an absolute path: ${root}`);
-  }
-  try {
-    fs.mkdirSync(root, { recursive: true });
-  } catch (err: any) {
-    if (err?.code === 'EEXIST' || err?.code === 'ENOTDIR') {
-      throw new Error(`runtime root is not a directory: ${root}`);
-    }
-    throw err;
-  }
-  const stat = fs.statSync(root);
-  if (!stat.isDirectory()) {
-    throw new Error(`runtime root is not a directory: ${root}`);
-  }
-  return root;
-}
+export {
+  RUNTIME_ROOT_DIRNAME,
+  resolveRuntimeRoot,
+  ensureRuntimeRoot,
+} from '@mafw/runtime-core';

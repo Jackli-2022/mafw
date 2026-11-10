@@ -35,6 +35,12 @@ export interface RuntimeFactoryContext {
   gatewayPort?: number;
   rootDir?: string;
   projectDir?: string;
+  /**
+   * Serve listener requested by the host. Absent = the adapter keeps its own
+   * default (`127.0.0.1:4096`); the gateway never reaches into serve details
+   * beyond this seam.
+   */
+  serve?: { host?: string; port?: number };
   pluginConfig(name: string): Record<string, unknown>;
   credentials?: { getApiKey(provider: string): string | null };
   /**

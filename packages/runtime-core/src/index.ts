@@ -17,3 +17,5 @@ export * from './canonical-error.ts';
 export * from './stop-reason.ts';
 export * from './git.ts';
 export * from './background-job-events.ts';
+export * from './runtime-root.ts';
+export * from './completion-http.ts';

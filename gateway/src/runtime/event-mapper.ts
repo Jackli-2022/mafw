@@ -5,7 +5,7 @@
  *
  * Plan 6 Task 2：纯映射执行器已迁至 `@mafw/runtime-core`（`event-mapping.ts`），
  * 本模块只保留 gateway-only 的两件事：
- *  - canonical 词汇注入（MAFW 事件面 ∪ 工具三原语，单源在本仓库 gateway 词汇表）；
+ *  - canonical 词汇注入（MAFW 事件面 ∪ 工具三原语，单源在 `@mafw/runtime-contract`）；
  *  - `wrapGlobalEventStream`（runtime.global.event 包装，依赖 gateway 加载期语义）。
  */
 import {
@@ -14,8 +14,7 @@ import {
   canonicalTypeSet as coreCanonicalTypeSet,
 } from '@mafw/runtime-core';
 import type { EventMappingEntry, EventMapping, TranslationHooks } from '@mafw/runtime-core';
-import { MAFW_RUNTIME_EVENT_NAMES } from './mafw-vocabulary';
-import { TOOL_PRIMITIVE_TYPES } from './tool-part-assembler';
+import { RUNTIME_IDENTITY_TYPES } from './mafw-vocabulary';
 
 export {
   applyEventMappings,
@@ -33,10 +32,7 @@ export type {
 } from '@mafw/runtime-core';
 
 /** gateway 侧入口恒等翻译词汇：MAFW 事件面（= SDK RUNTIME_EVENT_TYPES）∪ 工具三原语。 */
-export const RUNTIME_IDENTITY_TYPES: readonly string[] = [
-  ...MAFW_RUNTIME_EVENT_NAMES,
-  ...TOOL_PRIMITIVE_TYPES,
-];
+export { RUNTIME_IDENTITY_TYPES };
 
 /**
  * gateway 词汇版恒等翻译行：core API 要求调用方给出 canonical 词汇（词汇 owner 在

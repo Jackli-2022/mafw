@@ -1,12 +1,14 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
-const vocab = readFileSync(join(__dirname, '../../../src/runtime/mafw-vocabulary.ts'), 'utf8');
+// Plan 6 Task 3: the vocabulary single source moved to @mafw/runtime-contract;
+// the gateway module is now a re-export shim.
+const vocab = readFileSync(join(__dirname, '../../../../packages/runtime-contract/src/vocabulary.ts'), 'utf8');
 const sdkEvents = readFileSync(join(__dirname, '../../../../packages/gateway-sdk/src/events.ts'), 'utf8');
 const tuiConn = readFileSync(join(__dirname, '../../../../packages/tui/src/store/connection.ts'), 'utf8');
 
 describe('queue.updated 词汇四层守卫（C7）+ 事件发射 wiring（C8）', () => {
-  it('词汇单源：MAFW map 含 queueUpdated', () => {
+  it('词汇单源（runtime-contract）：MAFW map 含 queueUpdated', () => {
     expect(vocab).toMatch(/queueUpdated: 'queue\.updated'/);
   });
   it('SDK events union 含 queue.updated（守卫层 2）', () => {

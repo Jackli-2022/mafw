@@ -56,6 +56,12 @@ export interface RuntimeAgentProcess {
   killServe?(): void;
 }
 
+/** Provider transport resolved by the adapter for gateway judge/scan paths. */
+export interface RuntimeProviderTransport {
+  baseUrl?: string | null;
+  apiKey?: string | null;
+}
+
 export interface RuntimeHostSurface {
   config?: { get(): Promise<unknown>; update(config: unknown): Promise<unknown> };
   credentials?: { getApiKey(provider: string): string | null };
@@ -64,6 +70,20 @@ export interface RuntimeHostSurface {
   getBaseUrl?(): string;
   /** Process primitives for serve-backed runtimes (spawn/kill/restart). */
   agentProcess?: RuntimeAgentProcess;
+  /**
+   * Headers the gateway reverse proxy must attach to serve traffic (Basic auth
+   * and location headers). This is the only supported way to obtain serve
+   * credentials after the driver moved out of the gateway.
+   */
+  proxyHeaders?(): Record<string, string>;
+  /**
+   * Resolve a provider's OpenAI-compatible transport for pre-activation
+   * judge/scan paths (adapter-local provider config → native provider list).
+   * Missing = the gateway falls back to its own chain.
+   */
+  resolveProviderTransport?(
+    providerID: string,
+  ): RuntimeProviderTransport | Promise<RuntimeProviderTransport>;
   /** Dialect label resolved by the adapter (diagnostics only). */
   activeDialect?: string;
 }

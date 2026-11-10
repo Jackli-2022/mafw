@@ -97,7 +97,7 @@ describe('IndexScanService direct-HTTP scan', () => {
     const svc = new IndexScanService(
       fakeIndex,
       { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
-      { fetchFn: fetchFn as any, authPath: 'Z:/nonexistent/auth.json' },
+      { fetchFn: fetchFn as any, credentialsResolver: () => null },
     );
     const res = await svc.scan('q');
     expect(res).toBeNull();
@@ -162,7 +162,6 @@ describe('IndexScanService direct-HTTP scan', () => {
         fetchFn: (async (url: string) => { calls.push(url); return okScanBody(); }) as any,
         resolveEndpoint: async () => 'https://gw.example/v1/chat/completions',
         resolveApiKey: async () => 'sk-inline',
-        authPath: 'Z:/nonexistent/auth.json',
       },
     );
     const res = await svc.scan('q');
