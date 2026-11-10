@@ -3,7 +3,7 @@ import { buildRouteCatalog } from '../../src/routes/route-catalog';
 import { attachWave1Handlers, type Wave1Gateway } from '../../src/routes/wave1-handlers';
 
 const WAVE1_OPIDS = [
-  'goals.sessions', 'triage.dismiss', 'manager.rotate',
+  'goals.sessions', 'goals.source', 'triage.dismiss', 'manager.rotate',
   'embedding.get', 'embedding.update', 'models.get', 'models.update',
   'session.fork', 'session.revert', 'session.unrevert', 'session.delete', 'session.rename', 'session.switchAgent', 'session.switchModel', 'session.summarize', 'session.structured', 'structured.submit',
   'tasks.submit', 'tasks.list', 'tasks.get', 'tasks.cancel', 'tasks.message', 'tasks.output',
@@ -66,6 +66,7 @@ describe('wave1-handlers: 迁移覆盖率', () => {
   describe('match smoke：Wave 1 路径命中 handler', () => {
     const cases: Array<[string, string, string]> = [
       ['GET', '/api/goals/g1/sessions', 'goals.sessions'],
+    ['GET', '/api/goals/g1/source', 'goals.source'],
       ['POST', '/api/triage/t1/dismiss', 'triage.dismiss'],
       ['POST', '/api/manager/session/rotate', 'manager.rotate'],
       ['GET', '/api/memory/embedding-config', 'embedding.get'],
