@@ -2,7 +2,7 @@ node_modules/
 gateway/node_modules/
 dist/
 gateway/dist/
-coverage/
+adapters/opencode/.build-lock/
 .superpowers/
 evaluation/longmemeval/data/
 evaluation/longmemeval/results/
