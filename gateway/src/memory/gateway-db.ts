@@ -60,6 +60,17 @@ export interface T1TraceRead {
   archived: boolean;
 }
 
+export type T1RetrievalKind = 'search' | 'recall' | 'redeem';
+
+export interface T1RetrievalStats {
+  total: number;
+  byKind: Record<T1RetrievalKind, number>;
+  uniqueTraces: number;
+  lastAt: number | null;
+}
+
+const T1_RETRIEVAL_KINDS: T1RetrievalKind[] = ['search', 'recall', 'redeem'];
+
 export interface GoalOutcome {
   goal_id: string;
   project_id: string | null;
@@ -304,6 +315,16 @@ export class GatewayDatabase {
         UNIQUE(session_id, turn_seq)
       );
       CREATE INDEX IF NOT EXISTS idx_t1_turns_session ON t1_turns(session_id, turn_seq);
+
+      CREATE TABLE IF NOT EXISTS t1_retrieval_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trace_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        score REAL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_retrieval_trace ON t1_retrieval_events(trace_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_t1_retrieval_created ON t1_retrieval_events(created_at);
 
       CREATE TABLE IF NOT EXISTS goal_outcomes (
         goal_id TEXT PRIMARY KEY,
@@ -880,6 +901,63 @@ export class GatewayDatabase {
       )
       .all(trace_id, trace_id) as T1Observation[];
     return { turn, rows, archived: turn.archived_at != null };
+  }
+
+  /** Observe-only T1 access event (no energy/ranking effect). */
+  recordT1RetrievalEvent(event: {
+    traceId: string;
+    kind: T1RetrievalKind;
+    score?: number;
+    ts?: number;
+  }): void {
+    const traceId = String(event?.traceId || '').trim();
+    if (!traceId || !T1_RETRIEVAL_KINDS.includes(event.kind)) return;
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO t1_retrieval_events (trace_id, kind, score, created_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(
+          traceId,
+          event.kind,
+          Number.isFinite(event.score) ? event.score : null,
+          Number.isFinite(event.ts) ? event.ts : Math.floor(Date.now() / 1000),
+        );
+    } catch (err: any) {
+      log.warn(`[T1Retrieval] record failed: ${err?.message || err}`);
+    }
+  }
+
+  /** Aggregate T1 retrieval observations; `since` is Unix seconds. */
+  t1RetrievalStats(opts?: { since?: number }): T1RetrievalStats {
+    const byKind: Record<T1RetrievalKind, number> = { search: 0, recall: 0, redeem: 0 };
+    const empty: T1RetrievalStats = { total: 0, byKind, uniqueTraces: 0, lastAt: null };
+    try {
+      const where = Number.isFinite(opts?.since) ? 'WHERE created_at >= ?' : '';
+      const params = Number.isFinite(opts?.since) ? [opts!.since] : [];
+      const kinds = this.db
+        .prepare(`SELECT kind, COUNT(*) AS c FROM t1_retrieval_events ${where} GROUP BY kind`)
+        .all(...params) as Array<{ kind: T1RetrievalKind; c: number }>;
+      for (const row of kinds) {
+        if (row.kind in byKind) byKind[row.kind] = row.c;
+      }
+      const summary = this.db
+        .prepare(
+          `SELECT COUNT(*) AS total, COUNT(DISTINCT trace_id) AS uniqueTraces, MAX(created_at) AS lastAt
+           FROM t1_retrieval_events ${where}`,
+        )
+        .get(...params) as { total: number; uniqueTraces: number; lastAt: number | null };
+      return {
+        total: summary.total ?? 0,
+        byKind,
+        uniqueTraces: summary.uniqueTraces ?? 0,
+        lastAt: summary.lastAt ?? null,
+      };
+    } catch (err: any) {
+      log.warn(`[T1Retrieval] stats failed: ${err?.message || err}`);
+      return empty;
+    }
   }
 
   /** List archived turns (grouped), optionally filtered to a session. */
