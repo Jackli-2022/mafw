@@ -632,7 +632,10 @@ describe('runtime isolation architecture boundaries', () => {
   it('every gated route entry point receives RuntimeAccess instead of capabilities', () => {
     const text = readSource('src/index.ts');
     // 两条 permission reply 入口都必须注入 access（拒绝路径也要能中性 503）。
-    expect(text).toMatch(/handlePermissionReplyById\(req, res, pReplyMatch\[1\], \{[^}]*access:/);
+    // Phase D1 Task B1: 直连入口随 permissions.reply 迁入 routes/questions-permissions.ts
+    // （registry params 已解码，id 取 params.id）。
+    const questionsPermissions = readSource('src/routes/questions-permissions.ts');
+    expect(questionsPermissions).toMatch(/handlePermissionReplyById\(req, res, params\.id, \{[^}]*access:/);
     expect(text).toMatch(/handlePermissionReply\(this\.runtime, req, res, permMatch\[1\], permMatch\[2\], \{[^}]*access:/);
   });
 

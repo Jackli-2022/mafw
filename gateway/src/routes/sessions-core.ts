@@ -135,12 +135,14 @@ export function attachSessionsCoreRoutes(registry: RouteRegistry, deps: Sessions
   });
 
   // Background 面自动词（兼容早期 serve 透传入口）
-  registry.attachHandler('session.background', async (req, res) => {
-    if (await handleSessionBackground(req, res, req.url!, {
+  // 委托的 boolean 必须原样上抛：false（URL 形状不匹配，如尾随斜杠——registry
+  // match() 会剥尾斜杠而模块内正则不会）时 dispatchAuthorized 才回退 legacy 链；
+  // 吞掉 false 会让请求既不写响应也不落回退（客户端挂起）。
+  registry.attachHandler('session.background', async (req, res) =>
+    handleSessionBackground(req, res, req.url!, {
       getRuntime: () => deps.runtime(),
       getAccess: () => deps.runtime()?.access ?? null,
-    })) return;
-  });
+    }));
 
   // POST /api/session/{id}/promptAsync — fire-and-forget prompt
   registry.attachHandler('session.promptAsync', async (req, res, params) => {

@@ -28,11 +28,11 @@ function fakeReq(opts: { url: string; method: string; body?: string }): Incoming
   return req as unknown as IncomingMessage;
 }
 
-function fakeRes(): { res: ServerResponse; status: number; body: string } {
-  const out = { res: null as unknown as ServerResponse, status: 200, body: '' };
+function fakeRes(): { res: ServerResponse; status: number; body: string; ended: boolean } {
+  const out = { res: null as unknown as ServerResponse, status: 200, body: '', ended: false };
   out.res = {
     writeHead: (status: number) => { out.status = status; },
-    end: (payload?: unknown) => { out.body = String(payload ?? ''); },
+    end: (payload?: unknown) => { out.body = String(payload ?? ''); out.ended = true; },
     setHeader: () => {},
   } as unknown as ServerResponse;
   return out;
@@ -261,6 +261,22 @@ describe('sessions core registry wiring (D1 Task D1)', () => {
     );
     expect(r.status).toBe(503);
     expect(JSON.parse(r.body).error).toBe("runtime surface 'session.background' is not available");
+  });
+
+  it('background propagates the delegate false on a trailing-slash URL (no hung request)', async () => {
+    // RouteRegistry.match() strips trailing slashes, so POST /api/session/s1/background/
+    // reaches this handler while handleSessionBackground's own anchored regex returns
+    // false. That false must reach dispatchAuthorized (only literal false falls back
+    // to the legacy chain) and no response may be written here.
+    const { registry } = setup({
+      runtime: { access: { can: () => true }, session: { background: async () => { throw new Error('must not run'); } } },
+    });
+    const r = fakeRes();
+    const handled = await handlerFor(registry, 'POST', '/api/session/s1/background/')!(
+      fakeReq({ url: '/api/session/s1/background/', method: 'POST' }), r.res,
+    );
+    expect(handled).toBe(false);
+    expect(r.ended).toBe(false);
   });
 
   it('promptAsync queue short-circuit: suspended sends enqueue instead of prompting', async () => {

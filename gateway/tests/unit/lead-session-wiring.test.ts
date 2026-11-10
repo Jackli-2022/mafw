@@ -25,8 +25,12 @@ describe('Lead lifecycle wiring', () => {
   });
 
   test('Goal snapshot resolves Lead sessions through the registry', () => {
-    expect(indexSource).toContain('this.leadSessionRegistry.findBySessionId(sessionID)');
+    // Phase D1 Task B3/B4: recall/context 迁入 routes/recall.ts —— 仍必须是
+    // registry 的 findBySessionId 解析（不得回退到 .value.sessionId 比较）。
+    const recallRoute = readFileSync(path.join(__dirname, '../../src/routes/recall.ts'), 'utf8');
+    expect(recallRoute).toMatch(/attachHandler\('recall\.context'[\s\S]{0,2000}deps\.leadSessionRegistry\(\)\.findBySessionId\(sessionID\)/);
     expect(indexSource).not.toContain('.value.sessionId === sessionID');
+    expect(recallRoute).not.toContain('.value.sessionId === sessionID');
   });
 
   test('startup only ensures registered projects with a Pod or in-flight goal', () => {
