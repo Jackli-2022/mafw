@@ -3995,6 +3995,19 @@
         }
       }
     },
+    "/api/skills": {
+      "get": {
+        "operationId": "skills.list",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/questions": {
       "get": {
         "operationId": "questions.list",
