@@ -224,6 +224,7 @@ import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions
 import { attachUsageRoutes } from './routes/usage';
 import { attachRecallRoutes } from './routes/recall';
 import { attachMemoryRoutes } from './routes/memory';
+import { attachDashboardRoutes } from './routes/dashboard';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5724,6 +5725,17 @@ class MafwScheduler {
         getGatewayDb: () => this.getGatewayDb(),
         handleValidate: (goalId, data) => this.handleValidate(goalId, data),
         handleComplete: (goalId, data) => this.handleComplete(goalId, data),
+      });
+      // Phase D1 Task G：dashboard 影子条（goals.list / dashboard.stats /
+      // memory.add / memory.setSticky）挂 registry dispatch；handleDashboardAPI
+      // 与联合分支整体保留（R5），四个精确 (method, path) 由 registry 先行接管。
+      attachDashboardRoutes(this.routeRegistry, {
+        activeGoals: () => this.activeGoals,
+        registeredProjectsSize: () => this.registeredProjects.size,
+        sseClientsSize: () => this.sseClients.size,
+        serveRunning: () => this.serveRunning,
+        trajectoryStore: () => this.trajectoryStore,
+        memoryService: () => this.memoryService,
       });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
