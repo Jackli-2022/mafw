@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHmac, timingSafeEqual } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
 import { spawn, execSync } from 'child_process';
@@ -367,6 +367,11 @@ import { attachAttentionRoutes } from './routes/attention';
 import { attachSchedulerRoutes } from './routes/scheduler';
 import { attachGoalControlRoutes, pauseStatePatch, resumeStatePatch, selectRetryRun } from './routes/goal-control';
 import { attachLeadBoundaryRoutes } from './routes/lead-boundaries';
+import { attachEventRoutes } from './routes/events';
+import { EventLayerService } from './core/events/event-layer-service';
+import { EventStore as EventLayerStore } from './core/events/event-store';
+import { normalizeCronTick, normalizeGitHubEvent, normalizeInternalEvent } from './core/events/event-normalize';
+import { pollGitHubSource } from './core/events/sources/github-source';
 import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
 import { attachPodHandlers } from './routes/pod-handlers';
@@ -767,6 +772,8 @@ class MafwScheduler {
   private terminalWss?: WebSocketServer;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
+  private eventLayerStore?: EventLayerStore;
+  private eventLayer?: EventLayerService;
   private ledger?: SchedulerLedger;
   private pushGateway?: PushGateway;
   private pairingService?: PairingService;
@@ -5057,6 +5064,67 @@ class MafwScheduler {
     this.ledger = new SchedulerLedger(projectDir);
     this.automationEngine = new AutomationEngine(mafwDir);
     this.automationEngine.setLedger(this.ledger);
+
+    // P2.4 event layer: domain ingress / threads / decisions / delivery.
+    // The first evaluator is deliberately conservative: only work
+    // subscriptions are accepted; P2.5 wires the Standing Goal evaluator.
+    const eventStore = new EventLayerStore(this.getGatewayDb().getStore());
+    this.eventLayerStore = eventStore;
+    this.eventLayer = new EventLayerService({
+      store: eventStore,
+      now: () => new Date().toISOString(),
+      newId: (prefix) => `${prefix}_${randomUUID()}`,
+      broadcast: (event) => this.broadcast(event as any),
+      enabled: () => process.env.MAFW_EVENT_LAYER === '1',
+      evaluate: async ({ subscriptions }) => (subscriptions.some((subscription) => subscription.mode === 'work')
+        ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
+        : { decision: 'ignore', rationale: 'no work subscription' }),
+      log: (message) => log.warn(message),
+    });
+
+    this.automationEngine.registerAction('event:github_poll', async (rule) => {
+      if (process.env.MAFW_EVENT_LAYER !== '1') return;
+      const sourceId = String(rule.args?.sourceId ?? '');
+      const source = sourceId ? eventStore.getSource(sourceId) : null;
+      if (!source || !source.enabled) return;
+      try {
+        const polled = await pollGitHubSource({
+          projectDir: source.projectDir,
+          sourceId: source.id,
+          config: {
+            repo: String(source.config.repo ?? ''),
+            token: typeof source.config.token === 'string' ? source.config.token : undefined,
+            labels: Array.isArray(source.config.labels) ? source.config.labels.map(String) : undefined,
+            branches: Array.isArray(source.config.branches) ? source.config.branches.map(String) : undefined,
+            authors: Array.isArray(source.config.authors) ? source.config.authors.map(String) : undefined,
+            cursor: source.cursor as any,
+          },
+          now: () => new Date().toISOString(),
+        });
+        for (const envelope of polled.envelopes) this.eventLayer!.ingest(envelope);
+        eventStore.updateSourceCursor(source.id, polled.cursor, new Date().toISOString());
+      } catch (err: any) {
+        this.broadcast({
+          type: 'event.source.error',
+          properties: { sourceId, error: String(err?.message ?? err) },
+        });
+      }
+    });
+
+    this.automationEngine.registerAction('event:cron_tick', async (rule) => {
+      if (process.env.MAFW_EVENT_LAYER !== '1') return;
+      const standingGoalId = String(rule.args?.standingGoalId ?? '');
+      const projectDir = String(rule.args?.projectDir ?? '');
+      if (!standingGoalId || !projectDir) return;
+      const now = new Date().toISOString();
+      this.eventLayer!.ingest(normalizeCronTick({
+        projectDir,
+        sourceId: 'cron',
+        standingGoalId,
+        scheduledAt: String(rule.args?.scheduledAt ?? now),
+        actualAt: now,
+      }));
+    });
     // Pipeline heartbeat (arXiv:2609.05510): background pipelines fail silently
     // by default — record last-run/last-success/counts and flag stalled ones.
     {
@@ -5310,15 +5378,45 @@ class MafwScheduler {
       eventBus.on(name, (data: any) => this.broadcast(emit(data)));
     }
     eventBus.on("goal_created", (data: any) => {
+      this.ingestInternalEvent("goal.created", data);
       if (shouldAutoStartGoalEvent(data)) setImmediate(() => void this.startGoal(data.goalId, data.projectDir));
     });
     eventBus.on("state_change", (data: any) => {
+      this.ingestInternalEvent("goal.state", data);
       // legacy /goal skill 链唤醒——driver.advance 幂等（在飞即短路）
       if (data?.goalId) setImmediate(() => void this.goalDriver?.advance(data.goalId));
     });
     eventBus.on("phase_transition", (data: any) => {
+      this.ingestInternalEvent("goal.phase", data);
       this.getMilestonePush()?.onPhaseTransition(data);
     });
+  }
+
+  private ingestInternalEvent(kind: string, data: any) {
+    if (!this.eventLayer || process.env.MAFW_EVENT_LAYER !== '1') return;
+    try {
+      const goalId = typeof data?.goalId === 'string' ? data.goalId : '';
+      const resolved = goalId ? this.resolveGoalProject(goalId) : null;
+      const projectDir = typeof data?.projectDir === 'string'
+        ? data.projectDir
+        : (resolved?.ok ? resolved.projectDir : '');
+      if (!projectDir) return;
+      const now = new Date().toISOString();
+      const eventId = String(data?.eventId ?? data?.id ?? `${kind}:${goalId || projectDir}:${now}`);
+      this.eventLayer.ingest(normalizeInternalEvent({
+        projectDir,
+        sourceId: 'internal',
+        eventId,
+        kind,
+        aggregateId: goalId || projectDir,
+        actor: 'system',
+        payload: data ?? {},
+        occurredAt: typeof data?.timestamp === 'string' ? data.timestamp : now,
+        receivedAt: now,
+      }));
+    } catch (err: any) {
+      log.debug(`[EventLayer] internal ingest skipped: ${err?.message ?? err}`);
+    }
   }
 
   private async startServe() {
@@ -5723,6 +5821,71 @@ class MafwScheduler {
             goalActive,
             goalJustClosed,
           });
+        },
+      });
+      attachEventRoutes(this.routeRegistry, {
+        enabled: () => process.env.MAFW_EVENT_LAYER === '1',
+        sources: {
+          list: (projectDir) => this.eventLayer!.listSources(projectDir),
+          create: (input: any) => this.eventLayer!.createSource({
+            projectDir: String(input?.projectDir ?? ''),
+            kind: input?.kind,
+            name: String(input?.name ?? ''),
+            config: input?.config && typeof input.config === 'object' ? input.config : {},
+          }),
+          setEnabled: (id, enabled) => {
+            this.eventLayerStore?.setSourceEnabled(id, enabled, new Date().toISOString());
+          },
+        },
+        threads: {
+          list: (projectDir, sourceId) => this.eventLayer!.listThreads(projectDir, sourceId),
+          triggers: (threadId) => this.eventLayer!.listTriggers(threadId),
+          subscriptions: (threadId) => this.eventLayer!.listSubscriptions(threadId),
+        },
+        subscribe: (input: any) => this.eventLayer!.subscribe({
+          threadId: String(input?.threadId ?? ''),
+          subscriberType: input?.subscriberType,
+          subscriberId: String(input?.subscriberId ?? ''),
+          mode: input?.mode,
+        }),
+        unsubscribe: (id) => {
+          this.eventLayerStore?.removeSubscription(id, new Date().toISOString());
+        },
+        deliveries: (threadId) => this.eventLayer!.listDeliveries(threadId),
+        webhook: async (sourceId, headers, body: any) => {
+          const source = this.eventLayerStore?.getSource(sourceId);
+          if (!source) return { accepted: false, status: 404 };
+          const secret = typeof source.config.secret === 'string' ? source.config.secret : '';
+          if (!secret) return { accepted: false, status: 401 };
+          const provided = String(headers['x-hub-signature-256'] ?? '');
+          const expected = `sha256=${createHmac('sha256', secret).update(JSON.stringify(body ?? {})).digest('hex')}`;
+          const a = Buffer.from(provided);
+          const b = Buffer.from(expected);
+          if (a.length !== b.length || !timingSafeEqual(a, b)) {
+            return { accepted: false, status: 401 };
+          }
+          if (!this.eventLayer) return { accepted: false, status: 503 };
+          const now = new Date().toISOString();
+          const repo = String(body?.repository?.full_name ?? '');
+          const number = Number(body?.number ?? body?.pull_request?.number ?? body?.issue?.number ?? 0);
+          if (!repo || !Number.isFinite(number) || number <= 0) {
+            return { accepted: false, status: 400 };
+          }
+          const envelope = normalizeGitHubEvent({
+            projectDir: source.projectDir,
+            sourceId: source.id,
+            deliveryId: String(headers['x-github-delivery'] ?? randomUUID()),
+            event: String(headers['x-github-event'] ?? 'unknown'),
+            action: String(body?.action ?? ''),
+            repo,
+            number,
+            actor: String(body?.sender?.login ?? '') || null,
+            payload: body ?? {},
+            occurredAt: String(body?.pull_request?.updated_at ?? body?.issue?.updated_at ?? now),
+            receivedAt: now,
+          });
+          const ingested = this.eventLayer.ingest(envelope);
+          return { accepted: true, duplicate: ingested.duplicate };
         },
       });
       attachWave2Handlers(this.routeRegistry, {

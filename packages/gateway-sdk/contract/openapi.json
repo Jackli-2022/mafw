@@ -2947,6 +2947,192 @@
         }
       }
     },
+    "/api/event-sources": {
+      "get": {
+        "operationId": "events.sources.list",
+        "tags": [
+          "events"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "events.sources.create",
+        "tags": [
+          "events"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/event-sources/{id}": {
+      "patch": {
+        "operationId": "events.sources.patch",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/event-threads": {
+      "get": {
+        "operationId": "events.threads.list",
+        "tags": [
+          "events"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/event-threads/{id}/triggers": {
+      "get": {
+        "operationId": "events.threads.triggers",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/event-threads/{id}/subscriptions": {
+      "get": {
+        "operationId": "events.threads.subscriptions.list",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "events.threads.subscriptions.create",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/event-subscriptions/{id}": {
+      "delete": {
+        "operationId": "events.subscriptions.delete",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/event-deliveries": {
+      "get": {
+        "operationId": "events.deliveries.list",
+        "tags": [
+          "events"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/event-sources/{id}/webhook": {
+      "post": {
+        "operationId": "events.webhook.receive",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/lead/topics": {
       "get": {
         "operationId": "lead.topics.list",
