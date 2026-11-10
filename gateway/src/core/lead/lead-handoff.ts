@@ -24,7 +24,7 @@ function textOf(message: MafwMessage): string {
     .join('\n');
 }
 
-function keptMessages(messages: MafwMessage[], fromMessageId?: string): MafwMessage[] {
+export function selectHandoffMessages(messages: MafwMessage[], fromMessageId?: string): MafwMessage[] {
   const start = fromMessageId ? messages.findIndex((m) => m.id === fromMessageId) : -1;
   // Fail open when the boundary is outside the fetched window: include what we
   // have rather than handing over an empty topic.
@@ -38,7 +38,7 @@ function keptMessages(messages: MafwMessage[], fromMessageId?: string): MafwMess
   });
 }
 
-function renderKept(messages: MafwMessage[]): string {
+export function renderHandoffMessages(messages: MafwMessage[]): string {
   return messages
     .map((message) => `${message.role === 'user' ? 'User' : 'Assistant'}: ${textOf(message)}`)
     .join('\n\n');
@@ -46,12 +46,12 @@ function renderKept(messages: MafwMessage[]): string {
 
 /** Full, untruncated text used for `<goalDir>/context/lead-handoff.md`. */
 export function renderHandoffText(messages: MafwMessage[], fromMessageId?: string): string {
-  return renderKept(keptMessages(messages, fromMessageId));
+  return renderHandoffMessages(selectHandoffMessages(messages, fromMessageId));
 }
 
 export function buildLeadHandoff(input: LeadHandoffInput): LeadHandoffResult {
   const maxChars = Math.max(1, input.maxChars ?? LEAD_HANDOFF_MAX_CHARS);
-  const kept = keptMessages(input.messages, input.fromMessageId);
+  const kept = selectHandoffMessages(input.messages, input.fromMessageId);
   if (kept.length === 0) {
     return { snapshot: '', messageRange: null, messageCount: 0, truncated: false };
   }
@@ -59,7 +59,7 @@ export function buildLeadHandoff(input: LeadHandoffInput): LeadHandoffResult {
   const from = kept[0].id;
   const to = kept[kept.length - 1].id;
   const messageRange = from && to ? { from, to } : null;
-  const text = renderKept(kept);
+  const text = renderHandoffMessages(kept);
   if (text.length <= maxChars) {
     return { snapshot: text, messageRange, messageCount: kept.length, truncated: false };
   }

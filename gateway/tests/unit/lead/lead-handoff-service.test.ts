@@ -12,7 +12,7 @@ const msg = (id: string, role: 'user' | 'assistant', text: string): MafwMessage 
   content: [{ type: 'text', text }],
 });
 
-function makeService(messages: MafwMessage[]) {
+function makeService(messages: MafwMessage[], onCommitted?: (prepared: any) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-'));
   const db = new Database(':memory:');
   const topics = new LeadTopicStore(db);
@@ -22,6 +22,7 @@ function makeService(messages: MafwMessage[]) {
     listMessages: async () => ({ data: messages }),
     now: () => '2026-11-10T00:00:00.000Z',
     newId: () => `topic_${++seq}`,
+    onCommitted,
   });
   return { dir, topics, service };
 }
@@ -143,5 +144,28 @@ describe('LeadHandoffService', () => {
     service.rollback(prepared!.topicId, prepared!.handoffPath);
     expect(topics.get(prepared!.topicId)).toBeNull();
     expect(fs.existsSync(prepared!.handoffPath)).toBe(false);
+  });
+
+  test('commit exposes the scoped messages to the summary/index hook', async () => {
+    const onCommitted = jest.fn();
+    const { dir, service } = makeService([
+      msg('m1', 'user', '决定：A'),
+      msg('m2', 'assistant', '好的'),
+      msg('m3', 'user', '待办：B'),
+    ], onCommitted);
+    const goalDir = path.join(dir, 'goals', 'g7');
+    const prepared = await service.prepareForGoal({
+      projectDir: '/p', leadSessionId: 's1', goalId: 'g7', goalDir, title: 'T7',
+    });
+    service.commit(prepared!);
+
+    expect(onCommitted).toHaveBeenCalledWith(expect.objectContaining({
+      topicId: prepared!.topicId,
+      messages: [
+        expect.objectContaining({ id: 'm1' }),
+        expect.objectContaining({ id: 'm2' }),
+        expect.objectContaining({ id: 'm3' }),
+      ],
+    }));
   });
 });

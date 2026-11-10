@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { GoalSourceRef } from '../goal/goal-intake';
 import type { MafwMessage } from '../../runtime/canonical-types';
-import { buildLeadHandoff, renderHandoffText } from './lead-handoff';
+import { buildLeadHandoff, renderHandoffMessages, selectHandoffMessages } from './lead-handoff';
 import type { LeadTopicStore } from './lead-topic-store';
 
 export interface LeadHandoffDeps {
@@ -13,6 +13,8 @@ export interface LeadHandoffDeps {
   /** Bounded history read; default 10s. */
   timeoutMs?: number;
   log?(message: string): void;
+  /** P1: index + summarize the committed topic (fail-open). */
+  onCommitted?(prepared: LeadHandoffPrepared): void;
 }
 
 export interface LeadHandoffPrepared {
@@ -21,6 +23,8 @@ export interface LeadHandoffPrepared {
   topicId: string;
   messageRange: { from: string; to: string } | null;
   fullText: string;
+  /** Scoped messages (text-only, completed assistant turns) for P1 indexing. */
+  messages: MafwMessage[];
   projectDir: string;
   goalId: string;
   leadSessionId: string;
@@ -90,6 +94,7 @@ export class LeadHandoffService {
     });
     if (!built.messageRange) return null;
 
+    const messages = selectHandoffMessages(scoped, previous?.endMessageId);
     const topicId = this.deps.newId();
     const capturedAt = this.deps.now();
     return {
@@ -104,7 +109,8 @@ export class LeadHandoffService {
       handoffPath: path.join(input.goalDir, 'context', 'lead-handoff.md'),
       topicId,
       messageRange: built.messageRange,
-      fullText: renderHandoffText(scoped, previous?.endMessageId),
+      fullText: renderHandoffMessages(messages),
+      messages,
       projectDir: input.projectDir,
       goalId: input.goalId,
       leadSessionId: input.leadSessionId,
@@ -137,6 +143,11 @@ export class LeadHandoffService {
     } catch (err: any) {
       // The Goal is already durable; provenance failure must not fail it.
       this.deps.log?.(`[LeadHandoff] topic insert failed for ${prepared.goalId}: ${err?.message ?? err}`);
+    }
+    try {
+      this.deps.onCommitted?.(prepared);
+    } catch (err: any) {
+      this.deps.log?.(`[LeadHandoff] post-commit indexing failed for ${prepared.goalId}: ${err?.message ?? err}`);
     }
   }
 

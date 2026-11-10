@@ -85,6 +85,9 @@ import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService, TECH_LEAD_AGENT } from './core/pod/pod-tech-lead-service';
 import { LeadTopicStore } from './core/lead/lead-topic-store';
 import { LeadHandoffService } from './core/lead/lead-handoff-service';
+import { TopicMessageIndexStore } from './core/lead/topic-message-index';
+import { LeadTopicSummaryService } from './core/lead/lead-topic-summary-service';
+import { summarizeTopic } from './core/lead/topic-summary';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
 import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
@@ -685,6 +688,9 @@ class MafwScheduler {
   private podSessionLifecycle!: PodSessionLifecycle;
   private podDirectionService!: PodDirectionService;
   private podTechLeadService!: PodTechLeadService;
+  private leadTopics!: LeadTopicStore;
+  private leadTopicIndex!: TopicMessageIndexStore;
+  private leadTopicSummary!: LeadTopicSummaryService;
   private podWorktreeService!: PodWorktreeService;
   private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
@@ -4602,10 +4608,22 @@ class MafwScheduler {
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'direction' } }),
       log: (message) => log.info(message),
     });
+    const leadTopics = new LeadTopicStore(this.getGatewayDb().getStore());
+    const leadTopicIndex = new TopicMessageIndexStore(this.getGatewayDb().getStore());
+    const leadTopicSummary = new LeadTopicSummaryService({
+      topics: leadTopics,
+      index: leadTopicIndex,
+      summarize: summarizeTopic,
+      now: () => new Date().toISOString(),
+      log: (message) => log.warn(message),
+    });
+    this.leadTopics = leadTopics;
+    this.leadTopicIndex = leadTopicIndex;
+    this.leadTopicSummary = leadTopicSummary;
     const leadHandoffService = process.env.MAFW_LEAD_HANDOFF === '0'
       ? null
       : new LeadHandoffService({
-          topics: new LeadTopicStore(this.getGatewayDb().getStore()),
+          topics: leadTopics,
           listMessages: async ({ sessionID, limit }) => {
             const page: any = await this.runtime!.session.messages({ sessionID, limit });
             return { data: page?.data ?? [] };
@@ -4613,6 +4631,7 @@ class MafwScheduler {
           now: () => new Date().toISOString(),
           newId: () => `topic_${randomUUID()}`,
           log: (message) => log.warn(message),
+          onCommitted: (prepared) => leadTopicSummary.indexAndSummarize(prepared),
         });
     this.podTechLeadService = new PodTechLeadService({
       store: this.podStore,
