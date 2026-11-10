@@ -188,6 +188,7 @@ export function createMafwApi(): MafwAPI {
       rejectPlan: (goalId, approvalId, feedback) => invoke("goals", "rejectPlan", goalId, approvalId, feedback),
       retryNode: (goalId, runId, opts) => invoke("goals", "retryNode", goalId, runId, opts),
       pause: (goalId) => invoke("goals", "pause", goalId),
+      resume: (goalId) => invoke("goals", "resume", goalId),
       stop: (goalId) => invoke("goals", "stop", goalId),
       retry: (goalId, runId) => invoke("goals", "retry", goalId, runId),
     },

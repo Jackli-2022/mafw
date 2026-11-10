@@ -30,7 +30,7 @@ import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { applyPartUpsert } from "./sse/chat-reducers"
 import { createToolPartScheduler } from "./sse/tool-part-scheduler"
 import { bumpGoalsRev, goalsRev } from "./goals-rev"
-import { buildTopicList, type LeadTopicListItem } from "./lead-topics"
+import { buildTopicList, proposedBoundaries, type LeadTopicListItem } from "./lead-topics"
 import type { LeadBoundaryView } from "@mafw/sdk"
 import { bumpCheckpointRev } from "./checkpoint-rev"
 import { keybindingFor } from "./keybinding-store"
@@ -2192,7 +2192,7 @@ export function MafwShell() {
         return []
       }
     }))
-    setTopicBoundaries(items.flat())
+    setTopicBoundaries(proposedBoundaries(items.flat()))
   }
   const resumeTopic = async (id: string): Promise<void> => {
     setTopicBusy(true)

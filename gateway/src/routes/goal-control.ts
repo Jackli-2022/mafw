@@ -2,9 +2,91 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import type { RouteRegistry } from './registry';
 import { readRouteBody } from './cognition';
 
-export type GoalControlActionKind = 'pause' | 'stop' | 'retry';
+export type GoalControlActionKind = 'pause' | 'resume' | 'stop' | 'retry';
+
+/** Minimal state shape persisted by the NodeDriver (v3). */
+export interface GoalControlState {
+  phase?: string | null;
+  nextAction?: string | null;
+  _resumePhase?: string | null;
+  _resumeNextAction?: string | null;
+}
+
+/**
+ * Pause must be reversible: persist the phase/nextAction pair before writing
+ * PAUSED so resume can restore exactly where the driver stopped.
+ */
+export function pauseStatePatch(
+  state: GoalControlState,
+  now: string,
+): Record<string, unknown> {
+  return {
+    phase: 'PAUSED',
+    nextAction: 'PAUSED',
+    _resumePhase: state._resumePhase ?? state.phase ?? null,
+    _resumeNextAction: state._resumeNextAction ?? state.nextAction ?? null,
+    updatedAt: now,
+  };
+}
+
+/** Restore a paused state; null when the Goal is not actually paused. */
+export function resumeStatePatch(
+  state: GoalControlState,
+): Record<string, unknown> | null {
+  if (state.nextAction !== 'PAUSED') return null;
+  return {
+    phase: state._resumePhase ?? 'PLANNING',
+    nextAction: state._resumeNextAction ?? 'WAIT_PHASE_COMPLETE',
+    _resumePhase: null,
+    _resumeNextAction: null,
+  };
+}
+
+export interface RetryRun {
+  id: number;
+  revision?: number | null;
+  status: string;
+}
+
+const RETRYABLE_RUN_STATUSES = new Set(['failed', 'error', 'aborted', 'timed_out', 'timeout']);
+
+export type RetryRunSelection =
+  | { ok: true; runId: number }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Retry is only valid for a failed run inside the active revision. A run from
+ * an old revision or a successful run is rejected instead of being replayed.
+ */
+export function selectRetryRun(
+  runs: readonly RetryRun[],
+  revision: number,
+  runId?: number,
+): RetryRunSelection {
+  const scoped = runs.filter((run) => (run.revision ?? 1) === revision);
+  if (runId !== undefined) {
+    const run = scoped.find((candidate) => candidate.id === runId);
+    if (!run) {
+      return { ok: false, status: 404, error: `node run ${runId} not found in revision ${revision}` };
+    }
+    if (!RETRYABLE_RUN_STATUSES.has(run.status)) {
+      return { ok: false, status: 409, error: `node run ${runId} did not fail (${run.status})` };
+    }
+    return { ok: true, runId };
+  }
+
+  const failed = [...scoped].reverse().find((run) => RETRYABLE_RUN_STATUSES.has(run.status));
+  if (!failed) return { ok: false, status: 409, error: 'goal has no failed run to retry' };
+  return { ok: true, runId: failed.id };
+}
 
 export interface GoalControlDeps {
+  /** True when the Goal exists (Pod row or legacy state file). */
+  hasGoal?(goalId: string): boolean;
+  /** True when the Goal already reached done/aborted. */
+  terminal?(goalId: string): boolean;
+  pause(goalId: string): Promise<void> | void;
+  resume(goalId: string): Promise<void> | void;
   patchState(goalId: string, patch: Record<string, unknown>): Promise<void> | void;
   destroySessions(goalId: string): Promise<void> | void;
   archiveGoal(goalId: string, opts: { verdict: string; rounds: number }): Promise<void> | void;
@@ -16,7 +98,12 @@ function clean(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-/** POST /api/goals/:id/{pause,stop,retry} — three distinct control semantics. */
+function failure(err: any): { status: number; body: { error: string } } {
+  const status = typeof err?.status === 'number' ? err.status : 500;
+  return { status, body: { error: String(err?.message ?? err) } };
+}
+
+/** POST /api/goals/:id/{pause,resume,stop,retry} — distinct control semantics. */
 export async function handleGoalControl(
   args: { id?: string; action?: GoalControlActionKind; runId?: number },
   deps: GoalControlDeps,
@@ -24,28 +111,47 @@ export async function handleGoalControl(
   const id = clean(args?.id);
   const action = args?.action;
   if (!id) return { status: 400, body: { error: 'goal id is required' } };
-  if (action !== 'pause' && action !== 'stop' && action !== 'retry') {
+  if (action !== 'pause' && action !== 'resume' && action !== 'stop' && action !== 'retry') {
     return { status: 400, body: { error: 'unknown control action' } };
   }
-
-  if (action === 'pause') {
-    await deps.patchState(id, { nextAction: 'PAUSED' });
-    return { status: 200, body: { status: 'paused' } };
+  if (deps.hasGoal && !deps.hasGoal(id)) {
+    return { status: 404, body: { error: `goal not found: ${id}` } };
+  }
+  if (deps.terminal?.(id)) {
+    return { status: 409, body: { error: `goal is terminal: ${id}` } };
   }
 
-  if (action === 'stop') {
-    await deps.destroySessions(id);
-    await deps.patchState(id, { nextAction: 'FAILED', planApproval: null });
-    await deps.archiveGoal(id, { verdict: 'CANCELLED', rounds: 0 });
-    return { status: 200, body: { status: 'stopped' } };
-  }
+  try {
+    if (action === 'pause') {
+      await deps.pause(id);
+      return { status: 200, body: { status: 'paused' } };
+    }
 
-  await deps.retry(id, typeof args?.runId === 'number' ? args.runId : undefined);
-  return { status: 200, body: { status: 'retried' } };
+    if (action === 'resume') {
+      await deps.resume(id);
+      return { status: 200, body: { status: 'resumed' } };
+    }
+
+    if (action === 'stop') {
+      await deps.destroySessions(id);
+      await deps.patchState(id, { nextAction: 'FAILED', planApproval: null });
+      await deps.archiveGoal(id, { verdict: 'CANCELLED', rounds: 0 });
+      return { status: 200, body: { status: 'stopped' } };
+    }
+
+    await deps.retry(id, typeof args?.runId === 'number' ? args.runId : undefined);
+    return { status: 200, body: { status: 'retried' } };
+  } catch (err: any) {
+    return failure(err);
+  }
 }
 
 export function attachGoalControlRoutes(registry: RouteRegistry, deps: GoalControlDeps): void {
-  const handler = (action: GoalControlActionKind) => async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+  const handler = (action: GoalControlActionKind) => async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    params: Record<string, string>,
+  ) => {
     let body: any = {};
     try { body = JSON.parse(await readRouteBody(req) || '{}'); } catch { body = {}; }
     const out = await handleGoalControl({ id: params.id, action, runId: body?.runId }, deps);
@@ -53,6 +159,7 @@ export function attachGoalControlRoutes(registry: RouteRegistry, deps: GoalContr
     res.end(JSON.stringify(out.body));
   };
   registry.attachHandler('goals.pause', handler('pause'));
+  registry.attachHandler('goals.resume', handler('resume'));
   registry.attachHandler('goals.stop', handler('stop'));
   registry.attachHandler('goals.retry', handler('retry'));
 }

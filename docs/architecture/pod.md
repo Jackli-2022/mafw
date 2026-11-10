@@ -296,3 +296,21 @@ spec `docs/superpowers/specs/2026-11-10-lead-techlead-p2-scheduler-design.md`；
   写成 semantic memory（cueAnchors: topicId/goalId/projectDir），按 `topicId+summaryHash` 幂等。
 - **UI**：桌面「需要你处理」attention-first 面板（健康状态不进主面）；Topic map 增加分叉与
   边界接受/合并/撤销操作。
+
+#### P2 review fixes（2026-11-10）
+
+- **统一准入**：`PodGoalService.canAdmitGoal` / `admitReadyGoal` 是唯一入口；`PodTechLeadService.createGoal`
+  在槽位不足时保持 `queued`（Tech Lead 仍可讨论），direction 决定后的 `startPlanning` 也走准入，
+  不再直接 `startGoalDirect`。
+- **Attention 可达性**：`review` 由终态 `resultReady && !accepted` 派生（`open_result`），`failed` 由
+  `lastError` 派生；`stateMissing` 且无错误的 blocked 不再冒充人类阻塞。
+- **Pause / Resume**：`pause` 把 `phase/nextAction` 存进 `_resumePhase/_resumeNextAction` 后写 PAUSED；
+  `POST /api/goals/:id/resume` 恢复并 `advance`。`retry` 只接受 active revision 内 failed/aborted/
+  timed-out run，显式 runId 跨 revision 或成功 run 返回 409/404。
+- **Fork 健壮性**：源 topic 必须属于同一 canonical project；新 topic 使用当前 Lead session 授权；
+  fork 失败回退 P0 current-topic handoff；commit 后写 summary + index，topic detail / 记忆提升不为空。
+- **Boundary**：accept 是真正 split（新 topic 从源尾消息开始，源 topic 转 `cold`，不复制 transcript /
+  goal / summary）；accept 后 merge/undo 返回 409。observe 直接使用 `previousUserText` /
+  `lastActiveAt` / `goalJustClosed`，同 topic+trigger 10 分钟内去重，阈值 0.5。
+- **记忆**：`buildTopicMemory` 只提升 Decisions / Open loops，剔除 `User words` / `Tool output`。
+- **桌面**：边界面板只渲染 `proposed`，accepted/merged/undone 作为历史不再可操作。

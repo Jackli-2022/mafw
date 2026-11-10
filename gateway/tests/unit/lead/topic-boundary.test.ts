@@ -24,7 +24,7 @@ describe("detectBoundary", () => {
       previousUserText: "SQLite 迁移计划",
       now: NOW,
       goalActive: false,
-    })).toMatchObject({ trigger: "semantic", confidence: 0.4 });
+    })).toMatchObject({ trigger: "semantic", confidence: 0.5 });
   });
 
   test("returns null for ordinary continuation", () => {

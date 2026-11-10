@@ -2749,6 +2749,29 @@
         }
       }
     },
+    "/api/goals/{id}/resume": {
+      "post": {
+        "operationId": "goals.resume",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/goals/{id}/stop": {
       "post": {
         "operationId": "goals.stop",

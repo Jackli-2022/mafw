@@ -6,6 +6,8 @@ import { LeadTopicStore } from '../../../src/core/lead/lead-topic-store';
 import { TopicMessageIndexStore } from '../../../src/core/lead/topic-message-index';
 import { TopicForkStore } from '../../../src/core/lead/topic-fork-store';
 import { LeadHandoffService } from '../../../src/core/lead/lead-handoff-service';
+import { LeadTopicSummaryService } from '../../../src/core/lead/lead-topic-summary-service';
+import { summarizeTopic } from '../../../src/core/lead/topic-summary';
 
 const NOW = '2026-11-10T00:00:00.000Z';
 
@@ -24,6 +26,12 @@ function setup() {
     { topicId: 't1', messageId: 'm1', role: 'user', text: '决定：A', tokenEstimate: 3, createdAt: NOW },
   ]);
   const forks = new TopicForkStore(db);
+  const summaryService = new LeadTopicSummaryService({
+    topics,
+    index,
+    summarize: summarizeTopic,
+    now: () => NOW,
+  });
   const service = new LeadHandoffService({
     topics,
     index,
@@ -31,6 +39,7 @@ function setup() {
     listMessages: async () => ({ data: [] }),
     now: () => NOW,
     newId: () => 't_new',
+    onCommitted: (prepared) => summaryService.indexAndSummarize(prepared),
   });
   return { dir, topics, index, forks, service };
 }
@@ -55,5 +64,34 @@ describe('LeadHandoffService fork', () => {
     expect(JSON.stringify(topics.get('t1'))).toBe(before);
     expect(fs.readFileSync(path.join(goalDir, 'context', 'lead-handoff.md'), 'utf8'))
       .toContain('<forked-topic');
+  });
+
+  test('indexes and summarizes the forked topic so detail and memory are not empty', async () => {
+    const { dir, topics, index, service } = setup();
+    const prepared = await service.buildForkForGoal({
+      projectDir: '/p', goalId: 'g2', goalDir: path.join(dir, 'goals', 'g2'),
+      title: 'Fork', sourceTopicId: 't1',
+    });
+
+    service.commit(prepared!);
+
+    expect(index.listByTopic('t_new').map((row) => row.messageId)).toEqual(['m1']);
+    expect(topics.get('t_new')?.summary).toBeTruthy();
+    expect(topics.get('t_new')?.summaryHash).toBeTruthy();
+  });
+
+  test('uses the current Lead session and rejects another project source', async () => {
+    const { dir, service } = setup();
+    const prepared = await service.buildForkForGoal({
+      projectDir: '/p', goalId: 'g2', goalDir: path.join(dir, 'goals', 'g2'),
+      title: 'Fork', sourceTopicId: 't1', leadSessionId: 'ses_current',
+    });
+    expect(prepared?.sourceRef.sessionID).toBe('ses_current');
+    expect(prepared?.leadSessionId).toBe('ses_current');
+
+    expect(await service.buildForkForGoal({
+      projectDir: '/other', goalId: 'g3', goalDir: path.join(dir, 'goals', 'g3'),
+      title: 'Fork', sourceTopicId: 't1', leadSessionId: 'ses_current',
+    })).toBeNull();
   });
 });

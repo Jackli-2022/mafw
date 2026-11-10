@@ -161,6 +161,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/attention', operationId: 'attention.list', tags: ['internal'] },
   { method: 'GET', path: '/api/scheduler/status', operationId: 'scheduler.status', tags: ['internal'] },
   { method: 'POST', path: '/api/goals/:id/pause', operationId: 'goals.pause', tags: ['goals'] },
+  { method: 'POST', path: '/api/goals/:id/resume', operationId: 'goals.resume', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:id/stop', operationId: 'goals.stop', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:id/retry', operationId: 'goals.retry', tags: ['goals'] },
   { method: 'GET', path: '/api/lead/topics/:id/boundaries', operationId: 'lead.boundaries.list', tags: ['lead'] },

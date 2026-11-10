@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import type { GoalSourceRef } from '../goal/goal-intake';
 import type { MafwMessage } from '../../runtime/canonical-types';
+import { canonicalProjectDir } from '../pod/pod-identity';
 import { buildLeadHandoff, renderHandoffMessages, selectHandoffMessages } from './lead-handoff';
 import { planFork } from './topic-fork';
 import type { LeadTopicStore } from './lead-topic-store';
@@ -41,6 +43,8 @@ export interface LeadHandoffPrepared {
   createdAt: string;
   /** P2 COW fork provenance (absent for ordinary current-topic handoffs). */
   fork?: { sourceTopicId: string; inheritedFrom: string; inheritedTo: string; mode: 'reference' | 'summary' };
+  /** Fork summary persisted on the new topic so detail/memory are not empty. */
+  summary?: string;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -140,9 +144,14 @@ export class LeadHandoffService {
     goalDir: string;
     title: string;
     sourceTopicId: string;
+    /** Current Lead session; source session is only provenance. */
+    leadSessionId?: string;
   }): Promise<LeadHandoffPrepared | null> {
     const source = this.deps.topics.get(input.sourceTopicId);
     if (!source) return null;
+    if (canonicalProjectDir(source.projectDir) !== canonicalProjectDir(input.projectDir)) {
+      return null;
+    }
     if (!this.deps.index || !this.deps.forks) return null;
 
     const resolvedGoalDir = path.resolve(input.goalDir);
@@ -160,10 +169,11 @@ export class LeadHandoffService {
     const plan = planFork({ topic: source, messages, summary });
     const topicId = this.deps.newId();
     const capturedAt = this.deps.now();
+    const leadSessionId = input.leadSessionId ?? source.leadSessionId;
 
     return {
       sourceRef: {
-        sessionID: source.leadSessionId,
+        sessionID: leadSessionId,
         messageID: plan.inheritedTo,
         snapshot: plan.summary.slice(0, 4000),
         capturedAt,
@@ -174,14 +184,15 @@ export class LeadHandoffService {
       topicId,
       messageRange: { from: plan.inheritedFrom, to: plan.inheritedTo },
       fullText: plan.handoffText,
-      messages: [],
+      messages,
       projectDir: input.projectDir,
       goalId: input.goalId,
-      leadSessionId: source.leadSessionId,
+      leadSessionId,
       title: input.title,
       startMessageId: plan.inheritedFrom,
       endMessageId: plan.inheritedTo,
       createdAt: capturedAt,
+      summary: plan.summary,
       fork: {
         sourceTopicId: plan.sourceTopicId,
         inheritedFrom: plan.inheritedFrom,
@@ -214,6 +225,13 @@ export class LeadHandoffService {
         inheritedMessageRange: prepared.fork
           ? { from: prepared.fork.inheritedFrom, to: prepared.fork.inheritedTo }
           : null,
+        ...(prepared.fork && prepared.summary
+          ? {
+              summary: prepared.summary,
+              summaryHash: createHash('sha256').update(prepared.summary).digest('hex').slice(0, 16),
+              summaryUpdatedAt: prepared.createdAt,
+            }
+          : {}),
       });
       if (prepared.fork) {
         this.deps.forks?.insert({
@@ -230,12 +248,10 @@ export class LeadHandoffService {
       // The Goal is already durable; provenance failure must not fail it.
       this.deps.log?.(`[LeadHandoff] topic insert failed for ${prepared.goalId}: ${err?.message ?? err}`);
     }
-    if (!prepared.fork) {
-      try {
-        this.deps.onCommitted?.(prepared);
-      } catch (err: any) {
-        this.deps.log?.(`[LeadHandoff] post-commit indexing failed for ${prepared.goalId}: ${err?.message ?? err}`);
-      }
+    try {
+      this.deps.onCommitted?.(prepared);
+    } catch (err: any) {
+      this.deps.log?.(`[LeadHandoff] post-commit indexing failed for ${prepared.goalId}: ${err?.message ?? err}`);
     }
   }
 

@@ -1047,6 +1047,9 @@ export class MafwClient implements IMafwClient {
     pause: async (goalId: string): Promise<{ status: string }> =>
       this.request(`/api/goals/${encodeURIComponent(goalId)}/pause`, { method: 'POST' }),
 
+    resume: async (goalId: string): Promise<{ status: string }> =>
+      this.request(`/api/goals/${encodeURIComponent(goalId)}/resume`, { method: 'POST' }),
+
     stop: async (goalId: string): Promise<{ status: string }> =>
       this.request(`/api/goals/${encodeURIComponent(goalId)}/stop`, { method: 'POST' }),
 

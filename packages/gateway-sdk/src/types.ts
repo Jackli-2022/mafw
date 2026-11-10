@@ -926,6 +926,8 @@ export interface GoalsNamespace {
   retryNode(goalId: string, runId: number, opts?: { confirm?: boolean }): Promise<{ success: boolean; runId: number }>
   /** P2: pause auto-advance without aborting the running turn. */
   pause(goalId: string): Promise<{ status: string }>
+  /** P2: restore the pre-pause phase/nextAction and continue. */
+  resume(goalId: string): Promise<{ status: string }>
   /** P2: revoke authorization and archive CANCELLED. */
   stop(goalId: string): Promise<{ status: string }>
   /** P2: retry the latest run (or start) without minting a revision. */

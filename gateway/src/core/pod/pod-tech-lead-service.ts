@@ -77,6 +77,8 @@ export interface PodTechLeadServiceDeps {
   /** 仅在 legacy/非讨论路径使用；讨论 Goal 永不发 goal_created。 */
   emitGoalCreated?(event: unknown): void;
   notify?(podId: string, kind?: string): void;
+  /** Scheduler admission for a new Goal; false = stay queued (no slot). */
+  canAdmit?(podId: string): boolean;
   log?(message: string): void;
 }
 
@@ -228,6 +230,15 @@ export class PodTechLeadService {
     let preparedHandoff: LeadHandoffPrepared | null = null;
     if (!sourceRef && input.createdBy && input.handoff !== 'none' && this.deps.leadHandoff) {
       const forkEnabled = process.env.MAFW_LEAD_COW_FORK !== '0';
+      const prepareCurrent = () => this.deps.leadHandoff!.prepareForGoal({
+        projectDir,
+        leadSessionId: input.createdBy!,
+        goalId,
+        goalDir,
+        title,
+        topicId: input.topicId,
+        untilMessageId: input.untilMessageId,
+      });
       const prepared = input.forkFromTopicId && forkEnabled && this.deps.leadHandoff.buildForkForGoal
         ? this.deps.leadHandoff.buildForkForGoal({
             projectDir,
@@ -235,20 +246,20 @@ export class PodTechLeadService {
             goalDir,
             title,
             sourceTopicId: input.forkFromTopicId,
-          })
-        : this.deps.leadHandoff.prepareForGoal({
-            projectDir,
             leadSessionId: input.createdBy,
-            goalId,
-            goalDir,
-            title,
-            topicId: input.topicId,
-            untilMessageId: input.untilMessageId,
-          });
-      preparedHandoff = await prepared.catch((err: any) => {
-        this.deps.log?.(`[Pod] handoff failed for ${goalId}: ${err?.message ?? err}`);
-        return null;
-      });
+          }).catch((err: any) => {
+            // COW is an optimization: a missing/foreign source must fall back
+            // to the P0 current-topic handoff instead of losing context.
+            this.deps.log?.(`[Pod] fork failed for ${goalId}, falling back to current topic: ${err?.message ?? err}`);
+            return null;
+          })
+        : prepareCurrent();
+      preparedHandoff = await prepared
+        .then((value) => value ?? prepareCurrent())
+        .catch((err: any) => {
+          this.deps.log?.(`[Pod] handoff failed for ${goalId}: ${err?.message ?? err}`);
+          return null;
+        });
       if (preparedHandoff) {
         sourceRef = preparedHandoff.sourceRef;
         handoffPath = preparedHandoff.handoffPath;
@@ -301,11 +312,17 @@ export class PodTechLeadService {
       // A discussing goal is the Pod's current goal but has no NodeDriver run. Marking it
       // active (instead of queued) is what keeps Pod scheduling from promoting it into
       // execute/plan before the direction tool explicitly starts planning.
-      if (detail.pod.status !== 'paused' && detail.pod.status !== 'archived') {
+      const admit = detail.pod.status !== 'paused'
+        && detail.pod.status !== 'archived'
+        && (this.deps.canAdmit?.(detail.pod.id) ?? true);
+      if (admit) {
         this.deps.store.setGoalStatus(goalRow.id, 'active', { startedAt: now });
+        const pointer = this.deps.store.getPod(detail.pod.id)?.activeGoalId
+          ?? this.deps.store.listActiveGoals(detail.pod.id)[0]?.goalId
+          ?? goalId;
         this.deps.store.updatePod(detail.pod.id, {
           status: 'active',
-          activeGoalId: goalId,
+          activeGoalId: pointer,
         }, now);
       }
     } catch (err) {

@@ -365,7 +365,7 @@ import { attachWave1Handlers } from './routes/wave1-handlers';
 import { attachLeadTopicRoutes } from './routes/lead-topics';
 import { attachAttentionRoutes } from './routes/attention';
 import { attachSchedulerRoutes } from './routes/scheduler';
-import { attachGoalControlRoutes } from './routes/goal-control';
+import { attachGoalControlRoutes, pauseStatePatch, resumeStatePatch, selectRetryRun } from './routes/goal-control';
 import { attachLeadBoundaryRoutes } from './routes/lead-boundaries';
 import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
@@ -4777,6 +4777,7 @@ class MafwScheduler {
       },
       emitGoalCreated: (event) => eventBus.emit('goal_created', event as any),
       notify: (podId, kind = 'goal') => this.broadcast({ type: 'pod.updated', properties: { podId, kind } }),
+      canAdmit: (podId) => this.podGoalService.canAdmitGoal(podId),
       log: (message) => log.info(message),
     });
     // Task 17：Lead 的上下文选择 + 每个节点/探针 prompt 的确定性 ContextManifest。
@@ -5162,7 +5163,7 @@ class MafwScheduler {
       podGoalDirection: {
         techLead: this.podTechLeadService,
         direction: this.podDirectionService,
-        startPlanning: (goalId: string) => this.startGoalDirect(goalId),
+        startPlanning: (goalId: string) => this.podGoalService.admitReadyGoal(goalId).then(() => undefined),
         ...(process.env.MAFW_GOAL_MODES === '0' ? {} : {
           setGoalMode: (goalId: string, mode: any) => this.podTechLeadService.setGoalMode(goalId, mode),
         }),
@@ -5651,12 +5652,16 @@ class MafwScheduler {
           if (!topic) throw Object.assign(new Error('topic not found'), { status: 404 });
           const pod = this.podStore.getPodByProject(canonicalProjectDir(topic.projectDir));
           if (!pod) throw Object.assign(new Error('pod not found'), { status: 404 });
+          const lead = this.leadSessionRegistry
+            ? (this.leadSessionRegistry.current(topic.projectDir)
+              ?? await this.leadSessionRegistry.ensure(topic.projectDir))
+            : null;
           const created = await this.podTechLeadService.createGoal({
             podId: pod.id,
             projectDir: topic.projectDir,
             title: input.goalTitle || topic.title,
             objective: topic.summary || topic.title,
-            createdBy: topic.leadSessionId,
+            createdBy: lead?.sessionId ?? topic.leadSessionId,
             forkFromTopicId: topicId,
           });
           return { goalId: created.goalId, sessionID: created.sessionID };
@@ -5675,25 +5680,20 @@ class MafwScheduler {
         },
       });
       attachGoalControlRoutes(this.routeRegistry, {
+        hasGoal: (goalId) => !!this.podStore?.getGoalByGoalId(goalId) || !!this.findGoalStatePath(goalId),
+        terminal: (goalId) => {
+          const status = this.podStore?.getGoalByGoalId(goalId)?.status;
+          return status === 'done' || status === 'aborted';
+        },
         patchState: (goalId, patch) => this.patchState(goalId, patch as any),
+        pause: (goalId) => this.pauseGoalControl(goalId),
+        resume: (goalId) => this.resumeGoalControl(goalId),
         destroySessions: (goalId) => this.destroyAllSessions(goalId),
         archiveGoal: async (goalId, opts) => {
           await this.archiveGoal(goalId, opts as any);
         },
-        retry: async (goalId, runId) => {
-          if (runId !== undefined && this.goalDriver) {
-            await this.goalDriver.retryNodeRun(goalId, runId);
-            return;
-          }
-          const runs = this.getGatewayDb().listNodeRuns(goalId);
-          const latest = runs[runs.length - 1]?.id;
-          if (latest !== undefined && this.goalDriver) {
-            await this.goalDriver.retryNodeRun(goalId, latest);
-            return;
-          }
-          await this.startGoalDirect(goalId);
-        },
-        startGoal: (goalId) => this.startGoalDirect(goalId),
+        retry: (goalId, runId) => this.retryGoalControl(goalId, runId),
+        startGoal: (goalId) => this.podGoalService.admitReadyGoal(goalId).then(() => undefined),
       });
       attachLeadBoundaryRoutes(this.routeRegistry, {
         service: this.leadBoundaries,
@@ -5703,14 +5703,28 @@ class MafwScheduler {
           const topic = this.leadTopics.latestForProject(projectDir);
           if (!topic) return null;
           const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
-          const goalActive = pod ? this.podStore.listActiveGoals(pod.id).length > 0 : false;
+          const goals = pod ? this.podStore.listGoals(pod.id) : [];
+          const goalActive = goals.some((goal) => goal.status === 'active');
+          const now = new Date().toISOString();
+          const recentWindowMs = 10 * 60_000;
+          const goalJustClosed = goals.some((goal) => {
+            if (goal.status !== 'done' || !goal.endedAt) return false;
+            const ended = Date.parse(goal.endedAt);
+            return Number.isFinite(ended) && Date.parse(now) - ended <= recentWindowMs;
+          });
+          const previousUserText = [...this.leadTopicIndex.listByTopic(topic.id)]
+            .reverse()
+            .find((row) => row.role === 'user')?.text;
           return this.leadBoundaries.observe({
             projectDir,
             leadSessionId: sessionID,
             fromTopicId: topic.id,
             text,
-            now: new Date().toISOString(),
+            ...(previousUserText ? { previousUserText } : {}),
+            lastActiveAt: topic.lastActiveAt,
+            now,
             goalActive,
+            goalJustClosed,
           });
         },
       });
@@ -5765,7 +5779,7 @@ class MafwScheduler {
           if (!goal) return null;
           return this.podStore.getGoalRevision(podId, goalId, revision ?? goal.activeRevision)?.status ?? null;
         },
-        startPlanning: (goalId) => this.startGoalDirect(goalId),
+        startPlanning: (goalId) => this.podGoalService.admitReadyGoal(goalId).then(() => undefined),
         access: this.podAccess,
       });
 
@@ -7549,6 +7563,51 @@ class MafwScheduler {
       goalId,
       data: patch
     });
+  }
+
+  private readGoalStateFile(goalId: string): Record<string, any> | null {
+    const found = this.findGoalStatePath(goalId);
+    if (!found) return null;
+    try {
+      return JSON.parse(fs.readFileSync(found.statePath, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Pause without aborting the running turn; resume restores the saved pair. */
+  private async pauseGoalControl(goalId: string): Promise<void> {
+    const state = this.readGoalStateFile(goalId);
+    if (!state) throw Object.assign(new Error(`goal state not found: ${goalId}`), { status: 404 });
+    await this.patchState(goalId, pauseStatePatch(state, new Date().toISOString()) as any);
+  }
+
+  private async resumeGoalControl(goalId: string): Promise<void> {
+    const state = this.readGoalStateFile(goalId);
+    if (!state) throw Object.assign(new Error(`goal state not found: ${goalId}`), { status: 404 });
+    const patch = resumeStatePatch(state);
+    if (!patch) throw Object.assign(new Error('goal is not paused'), { status: 409 });
+    await this.patchState(goalId, patch as any);
+    await this.goalDriver?.advance(goalId);
+  }
+
+  /**
+   * Retry is scoped to the active revision and only to a failed/timed-out run.
+   * A successful run is never replayed; when there is no failed run, the Goal
+   * goes back through scheduler admission instead of bypassing the slot limit.
+   */
+  private async retryGoalControl(goalId: string, runId?: number): Promise<void> {
+    const row = this.podStore?.getGoalByGoalId(goalId);
+    if (!row) throw Object.assign(new Error(`goal not found: ${goalId}`), { status: 404 });
+    if (row.status === 'done' || row.status === 'aborted') {
+      throw Object.assign(new Error('goal is terminal'), { status: 409 });
+    }
+    const revision = row.activeRevision ?? 1;
+    const selection = selectRetryRun(this.getGatewayDb().listNodeRuns(goalId), revision, runId);
+    if (!selection.ok) {
+      throw Object.assign(new Error(selection.error), { status: selection.status });
+    }
+    await this.goalDriver?.retryNodeRun(goalId, selection.runId);
   }
 
   private registeredGoalEntries(): GoalProjectEntry[] {

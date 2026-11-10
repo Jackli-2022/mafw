@@ -1,10 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const source = fs.readFileSync(
-  path.join(__dirname, '../../../src/index.ts'),
-  'utf-8',
-);
+const source = [
+  fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf-8'),
+  fs.readFileSync(path.join(__dirname, '../../../src/boot.ts'), 'utf-8'),
+].join('\n');
 
 describe('Pod gateway wiring', () => {
   test('constructs pod services', () => {

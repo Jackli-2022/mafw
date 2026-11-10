@@ -14,6 +14,7 @@ import type { PodWorktreeService, PodWorktreeDiff } from './pod-worktree-service
 import { podTaskKindOf } from './pod-task-service';
 import { summarizePodGoalProgress } from './pod-goal-progress';
 import { planPromotions } from './pod-scheduler';
+import { deriveAttention } from '../lead/attention';
 import type {
   FinishRevisionInput,
   FinishRevisionResult,
@@ -229,7 +230,8 @@ export class PodGoalService {
     const pod = this.deps.store.getPod(goal.podId);
     if (!pod) return;
 
-    const wasActive = pod.activeGoalId === goal.goalId;
+    const wasActive = pod.status !== 'paused' && pod.status !== 'archived'
+      && (pod.activeGoalId === goal.goalId || this.deps.store.listActiveGoals(pod.id).length > 0);
     const verdict = normalizeVerdict(outcome?.verdict);
     const nextStatus = verdict === 'CANCELLED' ? 'aborted' : 'done';
     this.deps.store.setGoalStatus(goal.id, nextStatus, {
@@ -241,21 +243,67 @@ export class PodGoalService {
     } catch {
       /* fail-open: memory promotion must not block Goal archival */
     }
+
+    const remaining = this.deps.store.listActiveGoals(pod.id);
+    const pointerStillValid = remaining.some((candidate) => candidate.goalId === pod.activeGoalId);
+    const nextPointer = pointerStillValid ? pod.activeGoalId : (remaining[0]?.goalId ?? null);
+    if (pod.activeGoalId === goal.goalId || !pointerStillValid) {
+      this.deps.store.updatePod(pod.id, {
+        activeGoalId: nextPointer,
+        status: pod.status === 'paused' || pod.status === 'archived'
+          ? pod.status
+          : (remaining.length > 0 ? 'active' : 'idle'),
+      }, this.deps.now());
+    }
     if (!wasActive) {
       this.deps.notify(pod.id);
       return;
     }
-
-    this.deps.store.updatePod(pod.id, {
-      activeGoalId: null,
-      status: pod.status === 'paused' || pod.status === 'archived' ? pod.status : 'idle',
-    }, this.deps.now());
     if (pod.status === 'paused' || pod.status === 'archived') {
       this.deps.notify(pod.id);
       return;
     }
     await this.promote(pod.id);
     this.deps.notify(pod.id);
+  }
+
+  /** Public admission check for a brand-new Goal (queued goal does not count yet). */
+  canAdmitGoal(podId: string): boolean {
+    const pod = this.deps.store.getPod(podId);
+    if (!pod || pod.status === 'paused' || pod.status === 'archived') return false;
+    return this.deps.store.listActiveGoals(podId).length < this.capacityFor(podId);
+  }
+
+  /**
+   * Admit a Goal whose direction decision is done. Starts it when a slot is
+   * free; otherwise parks it in the queue so the scheduler can promote it later.
+   */
+  async admitReadyGoal(goalId: string, projectDirHint?: string): Promise<boolean> {
+    const row = this.deps.store.getGoalByGoalId(goalId);
+    if (!row) throw new PodError(404, `goal not found: ${goalId}`);
+    const pod = this.deps.store.getPod(row.podId);
+    if (!pod) throw new PodError(404, `pod not found: ${row.podId}`);
+    if (!this.isStartable(goalId)) return false;
+    if (pod.status === 'paused' || pod.status === 'archived') return false;
+
+    const activeOthers = this.deps.store.listActiveGoals(pod.id)
+      .filter((candidate) => candidate.goalId !== goalId);
+    if (activeOthers.length >= this.capacityFor(pod.id, goalId)) {
+      if (row.status === 'active') this.deps.store.setGoalStatus(row.id, 'queued', {});
+      const pointer = pod.activeGoalId === goalId
+        ? (activeOthers[0]?.goalId ?? null)
+        : pod.activeGoalId;
+      this.deps.store.updatePod(pod.id, {
+        activeGoalId: pointer,
+        status: pointer ? 'active' : 'idle',
+      }, this.deps.now());
+      this.deps.notify(pod.id);
+      return false;
+    }
+
+    await this.startQueued(row.id, pod.id, goalId, projectDirHint ?? pod.projectDir);
+    this.deps.notify(pod.id);
+    return true;
   }
 
   async promote(podId: string): Promise<boolean> {
@@ -266,7 +314,7 @@ export class PodGoalService {
 
     const goals = this.deps.store.listGoals(podId);
     const humanAttention = new Set(
-      buildPodAttention(this.views(podId).filter((view) => !view.stateMissing)).map((item) => item.goalId),
+      deriveAttention(this.views(podId).filter((view) => !view.stateMissing)).map((item) => item.goalId),
     );
     const toCandidate = (goal: PodGoalRow) => ({
       goalId: goal.goalId,
@@ -302,7 +350,7 @@ export class PodGoalService {
     if (!pod) return null;
     const goals = this.deps.store.listGoals(podId);
     const humanAttention = new Set(
-      buildPodAttention(this.views(podId).filter((view) => !view.stateMissing)).map((item) => item.goalId),
+      deriveAttention(this.views(podId).filter((view) => !view.stateMissing)).map((item) => item.goalId),
     );
     const toCandidate = (goal: PodGoalRow) => ({
       goalId: goal.goalId,
@@ -327,11 +375,15 @@ export class PodGoalService {
   }
 
   private hasCapacity(podId: string): boolean {
-    const active = this.deps.store.listActiveGoals(podId).length;
+    return this.deps.store.listActiveGoals(podId).length < this.capacityFor(podId);
+  }
+
+  private capacityFor(podId: string, excludeGoalId?: string): number {
     const max = this.maxConcurrent();
-    if (active < max) return true;
-    const human = buildPodAttention(this.views(podId).filter((view) => !view.stateMissing)).length > 0;
-    return human && active < max + 1;
+    const human = deriveAttention(
+      this.views(podId).filter((view) => !view.stateMissing && view.goalId !== excludeGoalId),
+    ).length > 0;
+    return max + (human ? 1 : 0);
   }
 
   /**
@@ -361,20 +413,24 @@ export class PodGoalService {
       );
       return;
     }
+    const before = this.deps.store.getPod(podId);
+    const claimedPointer = !before?.activeGoalId;
     this.deps.store.setGoalStatus(rowId, 'active', { startedAt: this.deps.now() });
-    const current = this.deps.store.getPod(podId);
     this.deps.store.updatePod(podId, {
       status: 'active',
-      ...(current?.activeGoalId ? {} : { activeGoalId: goalId }),
+      ...(claimedPointer ? { activeGoalId: goalId } : {}),
     }, this.deps.now());
     try {
       await this.deps.startGoal(goalId, projectDir);
     } catch (err) {
       this.deps.store.setGoalStatus(rowId, 'queued', {});
-      this.deps.store.updatePod(podId, {
-        status: 'idle',
-        activeGoalId: null,
-      }, this.deps.now());
+      if (claimedPointer) {
+        const others = this.deps.store.listActiveGoals(podId);
+        this.deps.store.updatePod(podId, {
+          status: others.length > 0 ? 'active' : 'idle',
+          activeGoalId: others[0]?.goalId ?? null,
+        }, this.deps.now());
+      }
       throw err;
     }
   }
