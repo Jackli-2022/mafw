@@ -200,7 +200,7 @@ export type ChatPaneProps = {
    * 「与 Tech Lead 讨论」入口。由 shell 计算（Pod 状态 + Lead 判定都在那边）。
    * 2026-11-04：非终态持久显示，携带阶段标签（spec techlead-goal-entry §3.1）。
    */
-  techLeadInvite?: () => { goalId: string; title: string; stageLabel?: string } | null
+  techLeadInvite?: () => { goalId: string; title: string; stageLabel?: string; sourceLabel?: string } | null
   /** 打开 Goal 的 Tech Lead 隐藏会话（Goal 标题作用域的 tab）。 */
   onOpenTechLead?: (goalId: string) => void
   /** Task 20：当前 tab 是某个 Goal 的 Tech Lead 讨论时，发送走 sendTechLeadMessage。 */
@@ -2129,6 +2129,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               goalId={invite().goalId}
               title={invite().title}
               stageLabel={invite().stageLabel}
+              sourceLabel={invite().sourceLabel}
               onOpen={(goalId) => props.onOpenTechLead?.(goalId)}
             />
           )}

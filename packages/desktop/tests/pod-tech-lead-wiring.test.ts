@@ -65,3 +65,9 @@ test("邀请条随 Goal 持久并携带阶段标签", () => {
   assert.match(chatPane, /stageLabel=\{invite\(\)\.stageLabel\}/)
   assert.match(invite, /stageLabel/)
 })
+
+test("邀请条携带 handoff 来源标签，不泄漏 session id", () => {
+  assert.match(invite, /sourceLabel/)
+  assert.match(invite, /来自 Lead 话题|\{props\.sourceLabel\}/)
+  assert.doesNotMatch(invite, /ses_[a-zA-Z0-9]+/)
+})

@@ -27,19 +27,24 @@ export type TechLeadStageLike = { kind?: string | null; role?: string | null } |
  * 随时可以回来追问或纠偏；阶段标签由调用方（activeLeadGoalInvite）补充。
  */
 export function techLeadInvite(
-  goal: { stage?: TechLeadStageLike; endedAt?: string | null } | null | undefined,
+  goal: {
+    stage?: TechLeadStageLike
+    endedAt?: string | null
+    sourceRef?: { topicId?: string } | null
+  } | null | undefined,
   goalID: string,
-): { goalId: string; label: string } | null {
+): { goalId: string; label: string; sourceLabel?: string } | null {
   if (!goalID) return null
   // 2026-11-04：入口按 Goal 持久化——除终态外都提示（`PodGoal.endedAt` 是终态权威，
   // 老 gateway 缺 stage 时不再一票否决；spec techlead-goal-entry §3.1）。
   if (!goal || goal.endedAt) return null
-  return { goalId: goalID, label: TECH_LEAD_INVITE_LABEL }
+  const sourceLabel = goal.sourceRef?.topicId ? "来自 Lead 话题" : undefined
+  return { goalId: goalID, label: TECH_LEAD_INVITE_LABEL, ...(sourceLabel ? { sourceLabel } : {}) }
 }
 
 /** Lead 邀请位的 Goal 选择：discussing 优先（刚建完的引导位），其次第一个非终态 Goal。 */
 export function pickTechLeadInviteGoal<
-  T extends { goalId: string; stage?: TechLeadStageLike; endedAt?: string | null },
+  T extends { goalId: string; stage?: TechLeadStageLike; endedAt?: string | null; sourceRef?: { topicId?: string } | null },
 >(goals: readonly T[]): T | null {
   const eligible = goals.filter((goal) => !!techLeadInvite(goal, goal.goalId))
   return eligible.find((goal) => goal.stage?.kind === "discussing") ?? eligible[0] ?? null

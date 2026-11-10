@@ -660,6 +660,12 @@ export function GoalDetailPanel(props: {
               </Show>
             </div>
 
+            <Show when={podGoal()?.sourceRef}>
+              <div class="mafw-card-meta" data-goal-source>
+                上下文来源：{podGoal()!.sourceRef!.snapshot.slice(0, 120)}
+              </div>
+            </Show>
+
             <Show when={podGoal()?.lastError}>
               {(message) => <div class="mafw-goal-hint">最近错误：{message()}</div>}
             </Show>
