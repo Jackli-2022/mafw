@@ -259,6 +259,7 @@ describe('memory registry wiring (D1 Task F1)', () => {
         coverage: 0.5,
         retrieval: { total: 2, byKind: { search: 1, recall: 1, redeem: 0 }, uniqueTraces: 2, lastAt: 123 },
         provenance: { memories: 0, withExact: 0, coverage: 0 },
+        activation: { traces: 0, mean: 0, max: 0 },
       });
     } finally {
       setEmbeddingRuntime(null);
@@ -279,6 +280,12 @@ describe('memory registry wiring (D1 Task F1)', () => {
           }),
         },
       }) as any,
+      getGatewayDb: () => ({
+        count: () => 0,
+        archiveCount: () => 0,
+        t1RetrievalStats: () => ({ total: 0, byKind: { search: 0, recall: 0, redeem: 0 }, uniqueTraces: 0, lastAt: null }),
+        t1ActivationStats: () => ({ traces: 2, mean: 0.15, max: 0.2 }),
+      }) as any,
     });
     const r = fakeRes();
     await handlerFor(registry, 'GET', '/api/memory/stats')!(
@@ -286,6 +293,7 @@ describe('memory registry wiring (D1 Task F1)', () => {
     );
     const body = JSON.parse(r.body);
     expect(body.t1.provenance).toEqual({ memories: 4, withExact: 2, coverage: 0.5 });
+    expect(body.t1.activation).toEqual({ traces: 2, mean: 0.15, max: 0.2 });
   });
 
   it('sticky: no memory service → 503 with the empty note-board budget', async () => {

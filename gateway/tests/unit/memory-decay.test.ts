@@ -311,7 +311,30 @@ describe('memory:decay incremental decay', () => {
       t1BackfillIndexed: 0,
       t1BackfillMissing: 0,
       t1BackfillFailed: 0,
+      t1ActivationDecayed: 0,
     });
+  });
+
+  test('memory:decay decays T1 activation with the configured half-life', async () => {
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(Date.now() - DAY).toISOString() })],
+    });
+    const decay = jest.fn(() => 3);
+    const recorded: Array<[string, any]> = [];
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+    engine.setHeartbeat({ record: (name: string, r: any) => recorded.push([name, r]) } as any);
+    engine.setGatewayDbProvider(() => ({
+      pruneT1RetrievalEvents: () => 0,
+      decayT1TraceState: decay,
+    }) as any);
+
+    await engine.getAction('memory:decay')!({} as any, engine);
+
+    expect(decay).toHaveBeenCalledWith({ halfLifeDays: 14 });
+    expect(recorded[0][1].counts.t1ActivationDecayed).toBe(3);
   });
 
   test('runs the embedding backfill after decay (coverage top-up)', async () => {

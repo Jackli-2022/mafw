@@ -65,3 +65,5 @@
 - 暂未建立独立的 `T1Provenance(memory_id, trace_id, relation, weight)` 关系表；v1 以 OKF frontmatter + index entry 为真相源。
 - 未实现 activation/排序/驻留消费；那是 3B。
 - 未部署。
+
+> 后续：Phase 3B（`docs/releases/2026-11-10-t1-activation-3b.md`）已补齐 `t1_trace_state`、有界传播与每日衰减；排序消费仍未开启。

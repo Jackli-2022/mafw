@@ -235,6 +235,17 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
       if (prunedT1 > 0) {
         log.info(`[AutomationEngine] Pruned ${prunedT1} T1 retrieval event(s) past retention`);
       }
+      // Bounded T1 activation decays on the same daily pass; state only — no
+      // ranking consumer yet.
+      let t1ActivationDecayed = 0;
+      try {
+        const db = eng.getGatewayDb?.();
+        if (db?.decayT1TraceState) {
+          t1ActivationDecayed = db.decayT1TraceState({
+            halfLifeDays: config.recall.t1Recall?.activationHalfLifeDays ?? 14,
+          });
+        }
+      } catch { t1ActivationDecayed = 0; }
       if (res.migrated > 0) {
         log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
       } else {
@@ -253,6 +264,7 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
           t1BackfillIndexed: t1Backfill.indexed,
           t1BackfillMissing: t1Backfill.missing,
           t1BackfillFailed: t1Backfill.failed,
+          t1ActivationDecayed,
         },
       });
     } catch (err: any) {

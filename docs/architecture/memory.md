@@ -239,6 +239,7 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - `t1_retrieval_events`：T1 verbatim 观察向的检索事件（2026-11-10，Phase 2A）——`trace_id`/`kind=search|recall|redeem`/`score`/`created_at`；**只观测，不参与 energy 或排序**。`GatewayDatabase.t1RetrievalStats({since})` 按 Unix 秒聚合；`pruneT1RetrievalEvents({before})` 按保留期删除，由每日 `memory:decay` 以 `config.recall.t1Recall.retentionDays`（默认 90 天，0/负数关闭）触发，删除量进 heartbeat `prunedT1`
 - `t1_fts`：T1 词面索引（2026-11-10，Phase 2B）——FTS5 `trigram` tokenizer + `content/trace_id/observation_key/session_id/turn_id/source`；**可重建派生数据**，写入 `append()` 同步、`archiveTurn()` 不动（内容不变）、`deleteTurn()`/`deleteSession()` 按 `observation_key` 删除；表空且源表有行时构造期 `rebuildT1Fts()` 一次重建，也可手动重建（先清空，幂等）。trigram 要求查询 token ≥3 字符
 - `t1_vectors`：T1 二进制向量（2026-11-10，Phase 2B）——`key` PK / `dims` / `model` / `vector`（little-endian `Float32` BLOB）/ `updated_at`；`SqliteT1VectorStore` 按行更新，避免 JSON 全量重写。首次构造且当前 model 无行时从 `memory/vectors-t1-<tag>.json` 导入并把 JSON 改名为 `.migrated-<ISO>`（不删除）；`config.memory.embedding.t1VectorStore='json'` 可回滚到旧 JSON 后端
+- `t1_trace_state`：T1 trace 的有界激活状态（2026-11-10，Phase 3B）——`trace_id` PK / `activation`（0–1）/ `retrieval_count` / `last_retrieved_at` / `last_replayed_at` / `activation_updated_at`。检索事件每命中一次 `+0.1`（封顶 1），记忆兑换按 `source_trace_ids` 传播 `+0.05`（单次权重上限 0.2），每日 `memory:decay` 按半衰期（默认 14 天，`config.recall.t1Recall.activationHalfLifeDays`）指数衰减，heartbeat 记录 `t1ActivationDecayed`。**本阶段只写状态，不参与排序/energy/snapshot**
 - `kv_store`：易失关键小状态——
   - `manager-session`（key=projectDir，**per-project manager session**，替代旧 manager-session.json）
   - `reflect-cursor`（key=sessionID，反思增量游标）
@@ -256,6 +257,7 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - 精确 provenance（2026-11-10，Phase 3A）：Harmonic 单元新增可选 `source_trace_ids`（OKF frontmatter + index entry）。抽取 transcript 每行前缀 `[trace:<traceId>]`，curator 通过 `mafw_add_memory.sourceTraceIds` 回传支持该记忆的精确 trace；处理器用 `t1_turns` 校验（存在、去重、`t1:` 前缀兼容、最多 20 个），未知 id 直接丢弃且不影响写入。MCP 与 HTTP `/api/memory/add` 行为一致；merge/update 时 incoming 与 target 的 trace 取并集（上限 20）。
 - 精确 provenance 读取：`mafw_get_memory` 优先解析 `source_trace_ids`（最多 5 条）返回 `source.traces[{traceId,sessionId,turnId,archived,excerpt}]`；解析不到时回退旧 C0 `source.evidence`。`/api/memory/stats` 的 `t1.provenance` 暴露 `{memories,withExact,coverage}`。
 - 3A **不改变** energy、排序、activation 或 recall 注入；`source_trace_ids` 仅作为可审计来源与后续 activation 的精确边。
+- T1 activation 状态（3B）：`t1_retrieval_events` 的 `search/recall/redeem` 同时更新 `t1_trace_state`（每次 +0.1，封顶 1）；`mafw_get_memory` 成功解析精确来源时向源 trace 传播 +0.05（单次上限 0.2）；每日 `memory:decay` 指数衰减（默认半衰期 14 天）。`/api/memory/stats` 的 `t1.activation` 暴露 `{traces,mean,max}`。**3B 仍不读取 activation 排序**——排序消费留到有 A/B 数据的下一阶段。
 - T1 只读指针：`mafw_get_memory("t1:<traceId>")` 走 `readTrace()` 返回 active+archive 完整回合与 `archived`/`legacyAmbiguous`；旧 `t1:<sessionTail>:<turnId>` 继续兼容，并回退查 active 行。
 - R8 快照把 T1 当独立通道：Harmonic 零命中但 T1 命中时可生成 T1-only 快照（`T1_POINTER_HEADER` + `[t1|<traceId>]` 行）；`decideSnapshotUse` 接受 `ids=[]` 但 `t1Hits` 非空。快照 serve 记录 `recall` 事件；直接搜索记录 `search`；指针兑换记录 `redeem`。
 - `/api/memory/stats` 的 `t1` 字段暴露向量数、active/archive 行数、覆盖率与 7 天检索事件统计。

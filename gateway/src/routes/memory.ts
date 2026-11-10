@@ -108,6 +108,7 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         let activeRows = 0;
         let archiveRows = 0;
         let retrieval: any = emptyStats;
+        let activation = { traces: 0, mean: 0, max: 0 };
         try {
           vectors = (embeddingRuntime as any)?.t1Vectors?.size?.() ?? 0;
         } catch { /* fail-open */ }
@@ -117,6 +118,9 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           archiveRows = typeof db?.archiveCount === 'function' ? db.archiveCount() : 0;
           const since = Math.floor(Date.now() / 1000) - 7 * 86400;
           retrieval = typeof db?.t1RetrievalStats === 'function' ? db.t1RetrievalStats({ since }) : emptyStats;
+          activation = typeof db?.t1ActivationStats === 'function'
+            ? db.t1ActivationStats()
+            : activation;
         } catch { /* fail-open */ }
         const totalRows = activeRows + archiveRows;
         const withExact = indexEntries.filter(
@@ -133,6 +137,7 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
             withExact,
             coverage: indexEntries.length > 0 ? withExact / indexEntries.length : 0,
           },
+          activation,
         };
       })();
       res.writeHead(200, { 'Content-Type': 'application/json' });
