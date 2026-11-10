@@ -265,7 +265,7 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           const db: any = deps.getGatewayDb();
           if (typeof db?.recordT1RetrievalEvent === 'function') {
             for (const hit of hits) {
-              if (hit.traceId) db.recordT1RetrievalEvent({ traceId: hit.traceId, kind: 'search', score: hit.cosine });
+              if (hit.traceId) db.recordT1RetrievalEvent({ traceId: hit.traceId, kind: 'search', score: hit.score ?? hit.cosine });
             }
           }
         } catch { /* fail-open: T1 channel empty */ }

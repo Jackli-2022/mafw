@@ -178,7 +178,7 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
               const db: any = deps.getGatewayDb();
               for (const hit of (snap.t1Hits ?? [])) {
                 if (hit?.traceId) {
-                  db.recordT1RetrievalEvent?.({ traceId: hit.traceId, kind: 'recall', score: hit.cosine });
+                  db.recordT1RetrievalEvent?.({ traceId: hit.traceId, kind: 'recall', score: hit.score ?? hit.cosine });
                 }
               }
             } catch { /* fail-open */ }

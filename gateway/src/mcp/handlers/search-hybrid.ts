@@ -50,7 +50,7 @@ async function searchT1Hits(
   try {
     const hits = await services.searchT1(query, topK);
     for (const hit of hits) {
-      if (hit.traceId) services.recordT1Retrieval?.(hit.traceId, 'search', hit.cosine);
+      if (hit.traceId) services.recordT1Retrieval?.(hit.traceId, 'search', hit.score ?? hit.cosine);
     }
     return hits;
   } catch {
