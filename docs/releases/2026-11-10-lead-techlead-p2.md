@@ -1,9 +1,10 @@
 # 2026-11-10 · Lead / Tech Lead P2：调度器与 COW fork
 
-- **分支**：`feat/lead-techlead-p2`
+- **分支**：`feat/lead-techlead-p2-review`（P2 任务 HEAD `6f23a494` + 并行 D3 提交 + review fixes）
 - **基础**：`main`（P0/P0.5/P1 已合入）
 - **Spec**：`docs/superpowers/specs/2026-11-10-lead-techlead-p2-scheduler-design.md`
 - **Plan**：`docs/superpowers/plans/2026-11-10-lead-techlead-p2-scheduler.md`
+- **Head**：`144bbe72`（review fixes；`feat/lead-techlead-p2-review`）
 
 ## 交付内容
 
@@ -30,7 +31,7 @@
 
 ## 门禁
 
-- gateway 非 D3：**5806/5806**（`--testPathIgnorePatterns kernel-split-guards --testTimeout=30000`；
+- gateway 非 D3：**5807/5807**（`--testPathIgnorePatterns kernel-split-guards --testTimeout=30000`；
   D3 `kernel-split-guards` 仍是并行 RED，不属 P2）
 - SDK **203/203**
 - desktop **3201/3201**
