@@ -34,6 +34,9 @@ export interface GoalSourceRef {
   /** Immutable excerpt captured at handoff time; capped at 4000 chars. */
   snapshot: string;
   capturedAt: string;
+  /** Handoff topic provenance (P0). */
+  topicId?: string;
+  messageRange?: { from: string; to: string };
 }
 
 export const GOAL_SOURCE_SNAPSHOT_MAX = 4000;
@@ -51,6 +54,11 @@ export function normalizeGoalSourceRef(
     ? raw.snapshot.replace(/\r\n/g, '\n').trim().slice(0, GOAL_SOURCE_SNAPSHOT_MAX)
     : '';
   if (!snapshot && !sessionID && !messageID) return undefined;
+  const topicId = typeof raw.topicId === 'string' ? raw.topicId.trim() : '';
+  const rawRange = raw.messageRange as Record<string, unknown> | undefined;
+  const from = typeof rawRange?.from === 'string' ? rawRange.from.trim() : '';
+  const to = typeof rawRange?.to === 'string' ? rawRange.to.trim() : '';
+  const messageRange = from && to ? { from, to } : undefined;
   const capturedAt = typeof raw.capturedAt === 'string' && raw.capturedAt.trim()
     ? raw.capturedAt
     : fallbackCapturedAt;
@@ -59,6 +67,8 @@ export function normalizeGoalSourceRef(
     ...(messageID ? { messageID } : {}),
     snapshot,
     capturedAt,
+    ...(topicId ? { topicId } : {}),
+    ...(messageRange ? { messageRange } : {}),
   };
 }
 
