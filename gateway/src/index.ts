@@ -6340,27 +6340,7 @@ class MafwScheduler {
         // GET /api/goals/:id/sessions — P5 Wave 1 起由 registry dispatch 接管
         // （历史约束"须挂 Dashboard /api/goals* 兜底之前"由 dispatch 位置满足）。
 
-        // GET /api/goals/:id/source — handoff provenance + full topic text.
-        const sourceMatch = req.url?.match(/^\/api\/goals\/([^/]+)\/source(?:\?|$)/);
-        if (sourceMatch && req.method === 'GET') {
-          const goalId = decodeURIComponent(sourceMatch[1]);
-          const request = await this.loadRequest(goalId);
-          const mafwDir = this.goalDriverMafwDirCache.get(goalId)
-            ?? this.findGoalStatePath(goalId)?.info.mafwDir;
-          const handoffPath = mafwDir
-            ? path.join(mafwDir, 'goals', goalId, 'context', 'lead-handoff.md')
-            : null;
-          const fullText = handoffPath && fs.existsSync(handoffPath)
-            ? fs.readFileSync(handoffPath, 'utf8')
-            : null;
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            sourceRef: request?.sourceRef ?? null,
-            handoffPath: fullText ? handoffPath : null,
-            fullText,
-          }));
-          return;
-        }
+        // GET /api/goals/:id/source — registry route `goals.source` (handoff provenance + full text).
 
         // GET /api/goals/:id/timeline — 节点级 trace 聚合（须在 dashboard 兜底之前）
         if (await handleGoalTimeline(req, res, req.url!, {
@@ -9032,6 +9012,23 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   // 鈹€鈹€ LangGraph Node Options 鈹€鈹€
+
+  async goalSource(goalId: string): Promise<{ sourceRef: unknown; handoffPath: string | null; fullText: string | null }> {
+    const request = await this.loadRequest(goalId);
+    const mafwDir = this.goalDriverMafwDirCache.get(goalId)
+      ?? this.findGoalStatePath(goalId)?.info.mafwDir;
+    const handoffPath = mafwDir
+      ? path.join(mafwDir, 'goals', goalId, 'context', 'lead-handoff.md')
+      : null;
+    const fullText = handoffPath && fs.existsSync(handoffPath)
+      ? fs.readFileSync(handoffPath, 'utf8')
+      : null;
+    return {
+      sourceRef: (request as any)?.sourceRef ?? null,
+      handoffPath: fullText ? handoffPath : null,
+      fullText,
+    };
+  }
 
   private async handleDashboardAPI(req: http.IncomingMessage): Promise<any> {
     if (req.url?.startsWith("/api/goals")) {

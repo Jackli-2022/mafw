@@ -82,6 +82,12 @@ export interface Wave1Gateway {
   isCoordinationSession?(sessionID: string): boolean;
   /** switchAgent 门：注册表身份名判定（runtime 原生 agent 返回 false）。 */
   isRegistryIdentity?(name: string): boolean;
+  /** GET /api/goals/:id/source：handoff provenance + full text. */
+  goalSource?(goalId: string): Promise<{
+    sourceRef: unknown;
+    handoffPath: string | null;
+    fullText: string | null;
+  }>;
 }
 
 type Handler = NonNullable<RouteDef['handler']>;
@@ -95,6 +101,14 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
       listGoalSessions: (goalId: string) => gw.getGatewayDb().listGoalSessions(goalId),
       getSession: (sessionID: string) => gw.runtime?.session.get({ sessionID }).catch(() => null),
     })));
+
+  registry.attachHandler('goals.source', H(async (_req, res, params) => {
+    const source = gw.goalSource
+      ? await gw.goalSource(params.id)
+      : { sourceRef: null, handoffPath: null, fullText: null };
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(source));
+  }));
 
   registry.attachHandler('triage.dismiss', H(async (req, res, params) =>
     handleTriageDismiss(req, res, req.url || '', {

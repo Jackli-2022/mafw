@@ -156,6 +156,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/goals/:id/plan-approval', operationId: 'goals.planApproval', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id/sessions', operationId: 'goals.sessions', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id/timeline', operationId: 'goals.timeline', tags: ['goals'] },
+  { method: 'GET', path: '/api/goals/:id/source', operationId: 'goals.source', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:id/nodes/:runId/retry', operationId: 'goals.retryNode', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:goalId/questions/:questionId/respond', operationId: 'goals.respondQuestion', tags: ['goals'] },
   { method: 'POST', path: '/api/work/:goalId/validate', operationId: 'goals.validate', tags: ['goals'] },
