@@ -1,6 +1,6 @@
 # Lead / Tech Lead P0 + P0.5：Handoff 与 Goal 模式实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Lead 创建 Goal 时自动把「当前话题」原文交给 Tech Lead；用户从 Goal 卡片或 Lead 移交卡进入 Tech Lead；Lead 可按需读 Goal 状态；Tech Lead 在同一 Goal 路径上选择 quick / standard / standing 模式。
 
@@ -9,6 +9,8 @@
 **Tech Stack:** TypeScript、better-sqlite3、jest（gateway）、node:test + `@mafw/test-shim`（desktop）、SolidJS、`@mafw/ui` v2。
 
 **Spec:** `docs/superpowers/specs/2026-11-10-lead-techlead-p0-kernel-objects-design.md`、`docs/superpowers/specs/2026-11-10-goal-shapes-quick-goals-design.md`
+
+**交付状态（2026-11-10）：** 已完成并合入 `feat/gateway-kernel-d1-batch2`（merge `d50f4f18`，后续守卫重锚 `6bee9da0`）。新增测试 40（gateway 32 / desktop 8）；定向 161/161、desktop 3189/3189、gateway 5561 passed / 3 failed（均为 D1 路由迁移的源码扫描漂移，非本计划引入）；gateway `tsc` / desktop `tsgo` / `electron-vite build` 通过。未 push。交付记录见 `docs/releases/2026-11-10-lead-techlead-p0.md`。
 
 ## Global Constraints
 
@@ -42,7 +44,7 @@
 - Produces: `GoalSourceRef { sessionID?; messageID?; snapshot; capturedAt; topicId?; messageRange?: { from: string; to: string } }`
 - `normalizeGoalSourceRef(value, fallbackCapturedAt): GoalSourceRef | undefined` keeps old behavior; drops invalid `messageRange`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test("sourceRef keeps topic provenance and drops invalid range", () => {
@@ -63,12 +65,12 @@ test("sourceRef keeps topic provenance and drops invalid range", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/unit/goal/goal-intake.test.ts --runInBand --forceExit`
 Expected: FAIL — `topicId` / `messageRange` missing from result.
 
-- [ ] **Step 3: Implement the type and normalization**
+- [x] **Step 3: Implement the type and normalization**
 
 ```ts
 export interface GoalSourceRef {
@@ -93,12 +95,12 @@ const messageRange = from && to ? { from, to } : undefined;
 
 Include `topicId` / `messageRange` in the returned object only when non-empty.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test --prefix gateway -- tests/unit/goal/goal-intake.test.ts --runInBand --forceExit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/core/goal/goal-intake.ts gateway/tests/unit/goal/goal-intake.test.ts
@@ -130,7 +132,7 @@ export class LeadTopicStore {
 }
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import Database from "better-sqlite3";
@@ -151,12 +153,12 @@ test("inserts and reads topics newest-first", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/unit/lead/lead-topic-store.test.ts --runInBand --forceExit`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the store**
+- [x] **Step 3: Implement the store**
 
 Create the table in the constructor:
 
@@ -180,12 +182,12 @@ CREATE INDEX IF NOT EXISTS idx_lead_topic_goal ON lead_topic(goal_id);
 
 Map snake_case columns to `LeadTopicRow` in `latestForProject` / `listByProject` / `get`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test --prefix gateway -- tests/unit/lead/lead-topic-store.test.ts --runInBand --forceExit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/core/lead/lead-topic-store.ts gateway/tests/unit/lead/lead-topic-store.test.ts
@@ -223,7 +225,7 @@ Rules:
 - Join as `User: ...` / `Assistant: ...` lines.
 - If over `maxChars` (default 4000), keep head 60% + tail 40% with `\n…\n` between.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 const msg = (id: string, role: "user" | "assistant", text: string): MafwMessage => ({
@@ -250,12 +252,12 @@ test("filters non-text and truncates head+tail", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/unit/lead/lead-handoff.test.ts --runInBand --forceExit`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the function**
+- [x] **Step 3: Implement the function**
 
 Filter, slice after `fromMessageId`, build text, then:
 
@@ -265,12 +267,12 @@ const tail = maxChars - head - 3;
 return { snapshot: text.slice(0, head) + "…" + text.slice(-tail), ... };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test --prefix gateway -- tests/unit/lead/lead-handoff.test.ts --runInBand --forceExit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/core/lead/lead-handoff.ts gateway/tests/unit/lead/lead-handoff.test.ts
@@ -319,7 +321,7 @@ Behavior:
 6. Insert `LeadTopicRow` with new id, `endMessageId = built.messageRange.to`, `ownerRole:'tech-lead'`, `ownerSessionId:null`.
 7. Return `sourceRef { sessionID, messageID: to, snapshot, capturedAt: now, topicId, messageRange }`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test("writes full handoff and topic row, returns sourceRef", async () => {
@@ -343,21 +345,21 @@ test("writes full handoff and topic row, returns sourceRef", async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/unit/lead/lead-handoff-service.test.ts --runInBand --forceExit`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `buildForGoal`**
+- [x] **Step 3: Implement `buildForGoal`**
 
 Use `fs.mkdirSync(path.join(goalDir, 'context'), { recursive: true })` and `fs.writeFileSync`. Full text = the same filter/join but without truncation; export a helper `renderHandoffText(messages, fromMessageId)` from `lead-handoff.ts` and reuse it (do not duplicate the filter).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test --prefix gateway -- tests/unit/lead/lead-handoff-service.test.ts --runInBand --forceExit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/core/lead/lead-handoff-service.ts gateway/src/core/lead/lead-handoff.ts gateway/tests/unit/lead/lead-handoff-service.test.ts
@@ -377,7 +379,7 @@ git commit -m "feat(lead): build and persist current-topic handoff"
 - Consumes: `LeadHandoffService.buildForGoal`.
 - Produces: `PodTechLeadGoalInput.handoff?: 'current-topic' | 'none'`, `PodTechLeadGoalInput.untilMessageId?: string`; opening prompt includes `<lead-handoff>` with snapshot + path.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In the existing PodTechLeadService harness, inject `leadHandoff: { buildForGoal: jest.fn(async () => ({ sourceRef: { snapshot: "USER: hi", topicId: "t1", messageRange: { from: "m1", to: "m2" }, capturedAt: "now" }, handoffPath: "/tmp/h.md", topicId: "t1", messageRange: { from: "m1", to: "m2" } })) }` and assert:
 
@@ -389,12 +391,12 @@ const request = JSON.parse(fs.readFileSync(path.join(created.goalDir!, "request.
 expect(request.sourceRef.topicId).toBe("t1");
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/unit/pod/pod-tech-lead-service.test.ts --runInBand --forceExit`
 Expected: FAIL — no `leadHandoff` dep / no `<lead-handoff>` in prompt.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `PodTechLeadServiceDeps`:
 ```ts
@@ -433,12 +435,12 @@ leadHandoff: this.leadHandoffService,
 ```
 construct before `new PodTechLeadService(...)`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test --prefix gateway -- tests/unit/pod/pod-tech-lead-service.test.ts --runInBand --forceExit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/core/pod/pod-tech-lead-service.ts gateway/src/index.ts gateway/tests/unit/pod/pod-tech-lead-service.test.ts
@@ -457,7 +459,7 @@ git commit -m "feat(pod): seed Tech Lead with current-topic handoff"
 **Interfaces:**
 - Produces: schema accepts `sourceRef`, `handoff`, `topicId`; handler passes `handoff` / `topicId` to `createGoal`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test("passes handoff and sourceRef to the Tech Lead", async () => {
@@ -475,12 +477,12 @@ test("passes handoff and sourceRef to the Tech Lead", async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/unit/mcp/create-goal-direct.test.ts --runInBand --forceExit`
 Expected: FAIL — schema/handler drops `handoff` / `sourceRef`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to the schema properties:
 ```ts
@@ -501,12 +503,12 @@ topicId: { type: "string" },
 ```
 In the handler, pass `handoff: args.handoff === "none" ? "none" : "current-topic"` and `topicId: clean(args.topicId) || undefined`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test --prefix gateway -- tests/unit/mcp/create-goal-direct.test.ts --runInBand --forceExit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/mcp/tool-registry.ts gateway/src/mcp/handlers/create-goal.ts gateway/tests/unit/mcp/create-goal-direct.test.ts
@@ -538,7 +540,7 @@ export function buildLeadGoalStatus(
 ```
 - MCP `mafw_lead_goal_status` args `{ projectDir?: string; limit?: number }`; returns `{ goals: LeadGoalStatus[] }`.
 
-- [ ] **Step 1: Write the failing pure test**
+- [x] **Step 1: Write the failing pure test**
 
 ```ts
 test("projects active goals with attention counts", () => {
@@ -553,12 +555,12 @@ test("projects active goals with attention counts", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/unit/lead/goal-status.test.ts --runInBand --forceExit`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the pure function**
+- [x] **Step 3: Implement the pure function**
 
 Filter `!v.endedAt`; sort by `v.priority` desc then `v.enqueuedAt` desc; slice limit (default 5); map:
 - `stage: v.stage.kind`
@@ -567,13 +569,13 @@ Filter `!v.endedAt`; sort by `v.priority` desc then `v.enqueuedAt` desc; slice l
 - `pendingAttention`: attention.filter(a => a.goalId === v.goalId).length
 - `lastUpdate`: `v.startedAt ?? v.enqueuedAt`
 
-- [ ] **Step 4: Implement the MCP handler**
+- [x] **Step 4: Implement the MCP handler**
 
 `createLeadGoalStatusTool({ listViews, attention, now? })`; handler resolves `projectDir` from args or `services.sessionID`? Use deps injected from `index.ts`: `listViews(projectDir)` → find Pod by project → `podGoalService.views(podId)`. For the tool, if no projectDir, use `services.projectDir` or `process.cwd()`. Follow `mafw_pod_goal_context` 503 pattern when unwired.
 
 Add definition + handler map + annotation `readOnlyHint: true`.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 ```bash
@@ -581,7 +583,7 @@ npm test --prefix gateway -- tests/unit/lead/goal-status.test.ts tests/unit/mcp/
 ```
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add gateway/src/core/lead/goal-status.ts gateway/src/mcp/handlers/lead-goal-status.ts gateway/src/mcp/tool-registry.ts gateway/src/runtime/tool-classes.ts gateway/tests/unit/lead/goal-status.test.ts gateway/tests/unit/mcp/lead-goal-status.test.ts
@@ -605,7 +607,7 @@ git commit -m "feat(lead): add goal status tool"
 - `activeLeadGoalInvite` passes `sourceLabel`.
 - `GoalDetailPanel` renders a `上下文来源` line when `podGoal()?.sourceRef` exists, with snapshot first 120 chars and no session id.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // pod-tech-lead-invite.test.ts
@@ -627,7 +629,7 @@ expect(detail).toContain("上下文来源");
 expect(detail).toContain("sourceRef");
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run:
 ```bash
@@ -635,7 +637,7 @@ cd packages/desktop && node --conditions=browser --import tsx --import ../../pac
 ```
 Expected: FAIL — no `sourceLabel` / no `上下文来源`.
 
-- [ ] **Step 3: Implement the label and source section**
+- [x] **Step 3: Implement the label and source section**
 
 `PodTechLeadInvite.tsx`:
 ```tsx
@@ -657,11 +659,11 @@ return { goalId, label: TECH_LEAD_INVITE_LABEL, sourceLabel };
 </Show>
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run the same command. Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/desktop/src/renderer/mafw/components/PodTechLeadInvite.tsx packages/desktop/src/renderer/mafw/pod-store.ts packages/desktop/src/renderer/mafw/MafwShell.tsx packages/desktop/src/renderer/mafw/components/GoalDetailPanel.tsx packages/desktop/src/renderer/mafw/pod-tech-lead-invite.test.ts packages/desktop/tests/pod-tech-lead-wiring.test.ts packages/desktop/tests/goal-detail-unified.test.ts
@@ -684,7 +686,7 @@ git commit -m "feat(desktop): show handoff source on Tech Lead entry"
 - `LeadGoalStatusCard` props `{ goals: LeadGoalStatusCard[] }`; no fetch, parent passes `podStore.detail()?.goals`.
 - ChatPane header: a `ButtonV2` `variant="ghost"` `size="small"` "状态" toggle; card renders above composer only when toggled **and** the active session role is `lead` (use the existing `workspace.sessionRole(activeSessionId()) === "lead"` check, no new prop).
 
-- [ ] **Step 1: Write the failing pure test**
+- [x] **Step 1: Write the failing pure test**
 
 ```ts
 test("omits ended goals and keeps person stages first", () => {
@@ -696,18 +698,18 @@ test("omits ended goals and keeps person stages first", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd packages/desktop && node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/lead-goal-status.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the pure projection + component**
+- [x] **Step 3: Implement the pure projection + component**
 
 Projection: filter non-terminal; sort person > team > system; take 5; fields `{ goalId, title, stageLabel, progressText, blocker, pendingAttention }`.
 Component: `@mafw/ui` v2 `ButtonV2` + a `.mafw-queue-bar` card; no raw `<button>`.
 ChatPane: add `showLeadStatus` signal; `Show when={props.isLead && showLeadStatus()}` card above `.mafw-composer`.
 
-- [ ] **Step 4: Add wiring contract test**
+- [x] **Step 4: Add wiring contract test**
 
 ```ts
 const chat = readFileSync("src/renderer/mafw/components/ChatPane.tsx", "utf8");
@@ -716,7 +718,7 @@ expect(chat.indexOf("LeadGoalStatusCard")).toBeLessThan(chat.indexOf("mafw-compo
 expect(chat).not.toMatch(/ses_[a-zA-Z0-9]+/);
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 ```bash
@@ -724,7 +726,7 @@ cd packages/desktop && node --conditions=browser --import tsx --import ../../pac
 ```
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/desktop/src/renderer/mafw/components/LeadGoalStatusCard.tsx packages/desktop/src/renderer/mafw/lead-goal-status.ts packages/desktop/src/renderer/mafw/components/ChatPane.tsx packages/desktop/src/renderer/mafw/mafw.css packages/desktop/src/renderer/mafw/lead-goal-status.test.ts packages/desktop/tests/lead-goal-status-wiring.test.ts
@@ -740,7 +742,7 @@ git commit -m "feat(desktop): add on-demand Lead goal status card"
 - Modify: none
 - Run: gateway + desktop + typecheck + build
 
-- [ ] **Step 1: Write the failing integration test**
+- [x] **Step 1: Write the failing integration test**
 
 Use the `PodTechLeadService` harness with a fake `LeadHandoffService` or the real service + fake messages:
 1. Create a Lead session id.
@@ -749,12 +751,12 @@ Use the `PodTechLeadService` harness with a fake `LeadHandoffService` or the rea
 4. Assert `runtime.promptAsync` text contains `<lead-handoff>` and the snapshot.
 5. Assert `sourceRef.snapshot` does not contain `tool` / `system`.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/integration/lead-handoff.test.ts --runInBand --forceExit`
 Expected: FAIL before Tasks 1–7; PASS after.
 
-- [ ] **Step 3: Run the full gates**
+- [x] **Step 3: Run the full gates**
 
 ```bash
 npm test --prefix gateway -- --runInBand --forceExit
@@ -766,7 +768,7 @@ cd gateway && npx tsc --noEmit -p tsconfig.json
 
 Expected: all PASS / rc=0. Report the exact counts (gateway suites/cases, desktop cases).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add gateway/tests/integration/lead-handoff.test.ts
@@ -793,7 +795,7 @@ export type PodGoalMode = 'quick' | 'standard' | 'standing';
 // PodStore gains: setGoalRevisionMode(goalId: string, revision: number, mode: PodGoalMode): void
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 test("new revisions default to standard and setGoalRevisionMode updates", () => {
@@ -806,12 +808,12 @@ test("new revisions default to standard and setGoalRevisionMode updates", () => 
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/unit/pod/pod-store-revisions.test.ts --runInBand --forceExit`
 Expected: FAIL — `goalMode` undefined / method missing.
 
-- [ ] **Step 3: Implement the column and types**
+- [x] **Step 3: Implement the column and types**
 
 In `PodStore` constructor:
 ```ts
@@ -826,7 +828,7 @@ setGoalRevisionMode(goalId: string, revision: number, mode: PodGoalMode): void {
 ```
 In `PodGoalService.views`, pass `revision.goalMode` into `buildPodGoalView` (add optional 5th param `goalMode: PodGoalMode = 'standard'`), and set `PodGoalView.goalMode`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 ```bash
@@ -834,7 +836,7 @@ npm test --prefix gateway -- tests/unit/pod/pod-store-revisions.test.ts tests/un
 ```
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/core/pod/pod-store.ts gateway/src/core/pod/pod-view.ts gateway/src/core/pod/pod-goal-service.ts gateway/tests/unit/pod/pod-store-revisions.test.ts gateway/tests/unit/pod/pod-view-revisions.test.ts
@@ -857,7 +859,7 @@ git commit -m "feat(pod): add goal_mode to revisions and views"
 - `PodGoalDirectionDeps` gains `setGoalMode(goalId: string, mode: PodGoalMode): Promise<void> | void`.
 - `PodTechLeadService.setGoalMode(goalId: string, mode: PodGoalMode): Promise<void>`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 test("direction writes goalMode before starting planning", async () => {
@@ -885,12 +887,12 @@ test("standing is not supported yet", async () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test --prefix gateway -- tests/unit/mcp/pod-goal-direction.test.ts --runInBand --forceExit`
 Expected: FAIL — `goalMode` ignored.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Schema: add `goalMode: { type: 'string', enum: ['quick','standard','standing'] }`.
 
@@ -912,7 +914,7 @@ await deps.setGoalMode(goalId, goalMode);
 
 Tech Lead prompt: add "Before calling `mafw_pod_goal_direction`, choose `goalMode`: `quick` for one-file/low-risk work; `standard` otherwise. Never choose `standing` directly; that is P2.5."
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 ```bash
@@ -920,7 +922,7 @@ npm test --prefix gateway -- tests/unit/mcp/pod-goal-direction.test.ts tests/uni
 ```
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/mcp/tool-registry.ts gateway/src/mcp/handlers/pod-goal-direction.ts gateway/src/core/pod/pod-tech-lead-service.ts gateway/src/skills/tech-lead-identity.ts gateway/tests/unit/mcp/pod-goal-direction.test.ts gateway/tests/unit/pod/pod-tech-lead-service.test.ts
@@ -941,7 +943,7 @@ git commit -m "feat(pod): let Tech Lead choose quick/standard mode"
   `This Goal is quick: produce exactly one task, request no probes, and set strategy:'quick'.`
 - `validatePlanPackage` rejects a quick plan with `tasks.length !== 1` or `probes.length > 0`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 test("quick plan with two tasks is rejected", () => {
@@ -956,23 +958,23 @@ test("quick plan with a probe is rejected", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test --prefix gateway -- tests/unit/goal/plan-package.test.ts --runInBand --forceExit`
 Expected: FAIL — validator accepts multi-task quick.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - Add `goalMode` to the plan prompt input and append the directive when `goalMode === 'quick'`.
 - In `validatePlanPackage`, in the `strategy === 'quick'` branch, push `"quick plan must have exactly one task"` when `tasks.length !== 1`; push `"quick plan must not request probes"` when probes are non-empty.
 - Ensure `goalMode` is threaded from the active revision into the plan node prompt (driver/`node-prompts` call site).
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `npm test --prefix gateway -- tests/unit/goal/plan-package.test.ts tests/unit/goal-driver-quick-path.test.ts --runInBand --forceExit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gateway/src/core/goal/node-prompts.ts gateway/src/core/goal/plan-package.ts gateway/tests/unit/goal/plan-package.test.ts
@@ -992,7 +994,7 @@ git commit -m "feat(goal): enforce quick plan shape"
 - `PodGoalView.goalMode` from Task 11; render `Quick` / `Standard` / `Standing` as a `.mafw-card-meta` badge.
 - No new color tokens; use existing `--text-2` / `--border-subtle`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 const detail = readFileSync(new URL("./GoalDetailPanel.tsx", import.meta.url), "utf8");
@@ -1001,20 +1003,20 @@ expect(detail).toContain("Quick");
 expect(detail).not.toMatch(/ses_[a-zA-Z0-9]+/);
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd packages/desktop && node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test tests/goal-detail-unified.test.ts`
 Expected: FAIL — no `goalMode`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add a `goalModeLabel(mode)` helper (pure, `quick → "Quick"`, etc.) and render it next to the phase badge in `GoalDetailPanel`; add a small badge in `WorkOverview` goal rows. Use `@mafw/ui` v2 components only.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run the same command. Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/desktop/src/renderer/mafw/components/GoalDetailPanel.tsx packages/desktop/src/renderer/mafw/components/WorkOverview.tsx packages/desktop/tests/goal-detail-unified.test.ts
@@ -1029,7 +1031,7 @@ git commit -m "feat(desktop): show goal mode badge"
 - Create: `gateway/tests/integration/goal-modes-quick.test.ts`
 - Run: full gates
 
-- [ ] **Step 1: Write the failing integration test**
+- [x] **Step 1: Write the failing integration test**
 
 Using the existing `goal-driver-quick-path` / `pod-goal-direction` harness:
 1. Create a discussing Goal with a fake Tech Lead session.
@@ -1039,12 +1041,12 @@ Using the existing `goal-driver-quick-path` / `pod-goal-direction` harness:
 5. Create a second Goal with `goalMode:'quick'` and a two-task plan; assert validator rejects.
 6. Create a third Goal with `goalMode:'standard'`; assert the existing plan-approval path still runs.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npm test --prefix gateway -- tests/integration/goal-modes-quick.test.ts --runInBand --forceExit`
 Expected: FAIL before Tasks 11–14; PASS after.
 
-- [ ] **Step 3: Run full gates**
+- [x] **Step 3: Run full gates**
 
 ```bash
 npm test --prefix gateway -- --runInBand --forceExit
@@ -1056,7 +1058,7 @@ cd gateway && npx tsc --noEmit -p tsconfig.json
 
 Expected: all PASS / rc=0. Report exact counts.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add gateway/tests/integration/goal-modes-quick.test.ts
