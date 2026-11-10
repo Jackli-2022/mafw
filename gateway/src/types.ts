@@ -33,6 +33,20 @@ export interface Services {
   searchArchive?: (sessionID: string, anchors: string[], k: number) => import('./memory/gateway-db').T1Observation[];
   /** V1: t1 pointer redemption — archive rows by session tail + turn. */
   resolveT1?: (sessionTail: string, turnId: number) => import('./memory/gateway-db').T1Observation[];
+  /** T1 dense retrieval over active/archive verbatim rows. */
+  searchT1?: (query: string, k: number) => Promise<import('./recall/verbatim-recall').T1Hit[]>;
+  /** Observe-only T1 access event (never mutates energy/ranking). */
+  recordT1Retrieval?: (
+    traceId: string,
+    kind: import('./memory/gateway-db').T1RetrievalKind,
+    score?: number,
+  ) => void;
+  /** Resolve a permanent T1 trace id to its full active+archive turn. */
+  readTrace?: (traceId: string) => import('./memory/gateway-db').T1TraceRead | null;
+  /** Cheap existence check for exact T1 provenance validation on write. */
+  hasTrace?: (traceId: string) => boolean;
+  /** Bounded abstract→T1 activation propagation (never fails the read). */
+  propagateT1Activation?: (traceIds: string[]) => void;
 }
 
 export type ToolHandler = (

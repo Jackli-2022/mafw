@@ -16,6 +16,7 @@
  *    does not overlap it, falling back to the cheap live path (LLM topic
  *    detection carries stale context, arXiv:2605.09268 — keep it lexical).
  */
+import type { T1Hit } from './verbatim-recall';
 
 export interface RecallSnapshot {
   /** Query the snapshot was built from (rolling window of recent turns). */
@@ -35,8 +36,8 @@ export interface RecallSnapshot {
   /** Reranker top-1 probability the zone was decided from (hit-proxy
    *  calibration sample — see recall/fok-samples.ts). */
   top1prob?: number;
-  /** V1: verbatim t1 hits fused into this snapshot (session:turn excerpts). */
-  t1Hits?: Array<{ sessionId: string; turnId: number; cosine: number; excerpt: string }>;
+  /** V1: verbatim t1 hits fused into this snapshot (trace-aware). */
+  t1Hits?: T1Hit[];
 }
 
 export interface SnapshotConfig {
@@ -139,7 +140,8 @@ export function decideSnapshotUse(
   now: Date = new Date(),
   cfg: SnapshotConfig = SNAPSHOT_DEFAULTS,
 ): SnapshotDecision {
-  if (!snapshot || !snapshot.block || snapshot.ids.length === 0) return 'no-snapshot';
+  if (!snapshot || !snapshot.block) return 'no-snapshot';
+  if (snapshot.ids.length === 0 && !(snapshot.t1Hits && snapshot.t1Hits.length > 0)) return 'no-snapshot';
   const age = now.getTime() - Date.parse(snapshot.builtAt);
   if (Number.isNaN(age)) return 'no-snapshot';
   if (age > (cfg.ttlMs ?? SNAPSHOT_DEFAULTS.ttlMs)) return 'stale';

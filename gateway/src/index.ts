@@ -2635,6 +2635,7 @@ class MafwScheduler {
     const embeddingRuntime = initEmbeddingRuntime({
       getApiKeyFn: this.runtimeGetApiKey.bind(this),
       baseDir: mafwDir,
+      vectorDb: this.getGatewayDb().getStore(),
       getTextForId: async (id) => {
         try {
           const u = await new HarmonicUnitFileStore(mafwDir).read(id);
@@ -3267,19 +3268,8 @@ class MafwScheduler {
       // V1 verbatim layer: dense t1 round hits fused into the snapshot block.
       ...(config.recall.t1Recall?.enabled !== false
         ? (() => {
-            const { getEmbeddingRuntime: getRt } = require('./memory/embedding-runtime');
-            const { makeT1Search } = require('./recall/verbatim-recall');
-            const rt = getRt();
-            if (!rt?.t1Vectors) return {};
-            return {
-              searchT1: makeT1Search({
-                runtime: rt,
-                fetchRows: (sid: string, tid: number) => {
-                  const rows = db.readArchiveTurn(sid, tid);
-                  return rows.length ? rows : db.readTurn(sid, tid);
-                },
-              }),
-            };
+            const { createGatewayT1Search } = require('./recall/t1-search');
+            return { searchT1: createGatewayT1Search(db) };
           })()
         : {}),
       rerank: async (q: string, ms: any[]) => {
@@ -5106,6 +5096,7 @@ class MafwScheduler {
     // cognitive graph (memory:prune).
     this.automationEngine.setIndexManagerProvider(() => this.memoryService!.harmonicIndex);
     this.automationEngine.setGraphProvider(() => this.memoryService?.cognitiveGraph);
+    this.automationEngine.setGatewayDbProvider(() => this.getGatewayDb());
     // Unified scheduler submission: per-key skip + 30min watchdog + budget
     // admission for every action execution; user/LLM triggers run foreground.
     this.automationEngine.setScheduler(this.scheduler);
@@ -5151,7 +5142,13 @@ class MafwScheduler {
     const services = {
       memory: this.memoryService,
       searchArchive: (sid: string, anchors: string[], k: number) => this.getGatewayDb().searchArchive(sid, anchors, k),
-      resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findArchiveBySessionTail(tail, turnId),
+      resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findT1BySessionTail(tail, turnId),
+      searchT1: require('./recall/t1-search').createGatewayT1Search(this.getGatewayDb()),
+      recordT1Retrieval: (traceId: string, kind: any, score?: number) =>
+        this.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
+      readTrace: (traceId: string) => this.getGatewayDb().readTrace(traceId),
+      hasTrace: (traceId: string) => this.getGatewayDb().hasTrace(traceId),
+      propagateT1Activation: (traceIds: string[]) => this.getGatewayDb().propagateT1Activation(traceIds),
       cost,
       automation: this.automationEngine,
       ledger: this.ledger,
@@ -5968,6 +5965,7 @@ class MafwScheduler {
         mafwDir: () => this.mafwDir,
         getGatewayDb: () => this.getGatewayDb(),
         backfillEmbeddings: (limit) => this.backfillEmbeddings(limit),
+        searchT1: require('./recall/t1-search').createGatewayT1Search(this.getGatewayDb()),
       });
       // Phase D1 Task F2：goals inline 面迁 registry dispatch（6 分支 → 7 op；plan /
       // plan-approval 仍以原始 req.url 交给 handleGoalPlan 内部分流）。
@@ -8068,6 +8066,11 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         const salience = typeof data?.importance === 'number' && Number.isFinite(data.importance)
           ? importanceToSalience(data.importance)
           : judgeSalience({ text: content, novelty }).score;
+        // Exact T1 provenance (validated against live identity; unknown dropped).
+        const sourceTraceIds = require('./core/memory/provenance').normalizeSourceTraceIds(
+          data?.sourceTraceIds,
+          (id: string) => this.getGatewayDb().hasTrace(id),
+        );
         const unit = {
           id: generateHarmonicId(),
           type: memoryType,
@@ -8091,6 +8094,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           // V1 provenance: pipeline workers write via HTTP with their own
           // session id — map back to the source session for C0 reconstruction.
           source_session_id: (data?.sessionID && require('./recall/worker-origin').resolveWorkerOrigin(String(data.sessionID))) || (data?.sessionID ? String(data.sessionID) : undefined),
+          ...(sourceTraceIds.length > 0 ? { source_trace_ids: sourceTraceIds } : {}),
         };
         let supersedesTarget: any = null;
         if (data?.supersedes) {

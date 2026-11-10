@@ -9,7 +9,7 @@ import { reconstructSource } from "../../recall/source-reconstruction";
  * guessing. Superseded memories report the supersede chain with the latest
  * version attached so the agent never acts on stale notes.
  */
-export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive, resolveT1 }) => {
+export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive, resolveT1, readTrace, recordT1Retrieval, propagateT1Activation }) => {
   try {
     // V1: t1 pointer redemption — ids of the form `t1:<sessionTail>:<turnId>`
     // resolve to raw archived round rows (verbatim layer).
@@ -25,12 +25,46 @@ export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, sear
       if (!rows.length) {
         return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `no t1 rows for session tail ${tail} turn ${turnId}` }) }], isError: true };
       }
+      const traceId = rows[0].trace_id ?? undefined;
+      if (traceId) recordT1Retrieval?.(traceId, 'redeem');
       const t1Payload = {
         success: true,
         t1: {
           sessionId: rows[0].session_id,
           turnId,
+          ...(traceId ? { traceId } : {}),
           rows: rows.map(r => ({ source: r.source, content: r.content })),
+        },
+      };
+      return { content: [{ type: "text", text: JSON.stringify(t1Payload) }], structuredContent: t1Payload };
+    }
+
+    // V2: permanent trace pointer `t1:<traceId>` resolves active+archived rows
+    // by identity, independent of the legacy session-tail pointer above.
+    const traceMatch = rawId.replace(/^#/, '').match(/^t1:([^:]+)$/);
+    if (traceMatch) {
+      const traceId = traceMatch[1];
+      if (!readTrace) {
+        return { content: [{ type: "text", text: JSON.stringify({ success: false, error: 't1 trace resolution unavailable (gateway service missing)' }) }], isError: true };
+      }
+      const trace = readTrace(traceId);
+      if (!trace) {
+        return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `no t1 rows for trace ${traceId}` }) }], isError: true };
+      }
+      recordT1Retrieval?.(traceId, 'redeem');
+      const t1Payload = {
+        success: true,
+        t1: {
+          traceId,
+          sessionId: trace.turn.session_id,
+          turnId: trace.turn.turn_seq,
+          archived: trace.archived,
+          legacyAmbiguous: trace.turn.legacy_ambiguous === 1,
+          rows: trace.rows.map(r => ({
+            source: r.source,
+            content: r.content,
+            ...(r.observation_key ? { observationKey: r.observation_key } : {}),
+          })),
         },
       };
       return { content: [{ type: "text", text: JSON.stringify(t1Payload) }], structuredContent: t1Payload };
@@ -92,9 +126,45 @@ export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, sear
       latest = next;
     }
 
+    // Exact T1 provenance: source_trace_ids captured at write time win over
+    // C0 session search; unresolvable ids fall back to C0 below.
+    let source: {
+      sessionId: string;
+      evidence?: string;
+      traces?: Array<{ traceId: string; sessionId: string; turnId: number; archived: boolean; excerpt: string }>;
+    } | undefined;
+    const exactIds = Array.isArray((unit as any).source_trace_ids)
+      ? ((unit as any).source_trace_ids as unknown[])
+          .filter((x): x is string => typeof x === 'string' && Boolean(x.trim()))
+          .slice(0, 5)
+      : [];
+    if (exactIds.length > 0 && readTrace) {
+      const traces: NonNullable<typeof source>['traces'] = [];
+      for (const id of exactIds) {
+        try {
+          const t = readTrace(id);
+          if (!t) continue;
+          const first = t.rows.find((r) => (r.content || '').trim());
+          traces.push({
+            traceId: id,
+            sessionId: t.turn.session_id,
+            turnId: t.turn.turn_seq,
+            archived: t.archived,
+            excerpt: (first?.content || '').slice(0, 300),
+          });
+        } catch { /* fail-open: try the next id */ }
+      }
+      if (traces.length > 0) {
+        source = { sessionId: traces[0].sessionId, traces };
+        // Abstract→T1: redeeming an abstraction strengthens its exact sources.
+        try {
+          propagateT1Activation?.(traces.map((t) => t.traceId));
+        } catch { /* fail-open: activation is a side channel */ }
+      }
+    }
+
     // C0: reconstruct raw source-turn evidence from t1_archive when available.
-    let source: { sessionId: string; evidence: string } | undefined;
-    if (searchArchive && unit.source_session_id && config.recall.sourceEvidence.enabled) {
+    if (!source && searchArchive && unit.source_session_id && config.recall.sourceEvidence.enabled) {
       try {
         const turns = searchArchive(unit.source_session_id, unit.cue_anchors ?? [], config.recall.sourceEvidence.k);
         const evidence = reconstructSource(turns, config.recall.sourceEvidence.maxChars);

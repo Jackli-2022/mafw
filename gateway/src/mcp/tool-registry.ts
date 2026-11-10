@@ -171,10 +171,12 @@ export const DEFINITIONS: ToolDefinition[] = [
         count: { type: "number" },
         fok: { type: "object" },
         hint: { type: "string" },
+        t1Results: { type: "array", items: { type: "object" } },
+        t1Count: { type: "number" },
       },
       required: ["results", "canExpand", "round", "count", "hint"],
     },
-    description: "Search memory units using BM25 (脳energy) with optional iterative expansion. If results are insufficient and canExpand=true, call again with the returned state to expand via shared cue anchors. Stop when memories suffice; max 2 expansion rounds (3 calls total).",
+    description: "Search memory. layer=gist (default) searches Harmonic knowledge; layer=t1 searches raw T1 verbatim turns; layer=both returns both. T1 hits carry traceId and are redeemed with mafw_get_memory(\"t1:<traceId>\").",
     inputSchema: {
       type: "object",
       properties: {
@@ -183,6 +185,7 @@ export const DEFINITIONS: ToolDefinition[] = [
         memoryType: { type: "string", enum: ["episodic", "semantic", "procedural", "global"], description: "Optional filter" },
         policy: { type: "string", enum: ["guided", "oneshot"], default: "guided", description: "Retrieval strategy (reserved)" },
         retriever: { type: "string", enum: ["bm25", "hybrid", "token", "guided"], description: "Retrieval engine: bm25 (default), hybrid = BM25 + embedding RRF fusion (requires memory.embedding.provider), guided = multi-hop query expansion, token = legacy substring" },
+        layer: { type: "string", enum: ["gist", "t1", "both"], default: "gist", description: "Search layer: gist (default) = Harmonic knowledge, t1 = raw verbatim turns, both = both result sets" },
         state: { type: "string", description: "Iteration state from a previous call; pass to continue expanding" },
       },
       required: ["query"],
@@ -269,6 +272,7 @@ export const DEFINITIONS: ToolDefinition[] = [
         sticky: { type: "boolean", description: "Put this memory on the note board: injected into every turn's recall context until it expires (default 7 days). Use when the user explicitly says 'remember this / 璁颁笅鏉?/ 鍒繕浜?. Expiry only removes it from the board; the memory stays searchable." },
         stickyDays: { type: "number", description: "Note-board TTL in days (default 7, only with sticky: true)" },
         authority: { type: "string", enum: ["user", "agent", "tool", "pipeline"], description: "Provenance authority (G1). Default 'agent'. Use 'user' ONLY for verbatim user statements; 'tool' for verifiable tool-returned facts; 'pipeline' is reserved for background pipelines." },
+        sourceTraceIds: { type: "array", items: { type: "string" }, description: "Exact T1 source traces this memory was extracted from (copy the [trace:<id>] markers that support it, max 20). Unknown ids are ignored." },
       },
       required: ["content", "memoryType"],
     },
@@ -313,7 +317,7 @@ export const DEFINITIONS: ToolDefinition[] = [
       },
       required: ["success"],
     },
-    description: "Fetch a memory's full content by id. Accepts the full id (mem_...) or the 6-char pointer tail shown in <recall> blocks (#mem-xxxxxx). Superseded memories include the supersede chain with the latest version attached. Use this to expand a recall pointer into the full note before relying on it.",
+    description: "Fetch a memory's full content by id. Accepts mem_... / #mem-xxxxxx for Harmonic memories, t1:<traceId> for a permanent T1 verbatim turn, or legacy t1:<sessionTail>:<turnId>. Superseded memories include the latest version. Use this to expand a recall pointer before relying on it.",
     inputSchema: {
       type: "object",
       properties: {
