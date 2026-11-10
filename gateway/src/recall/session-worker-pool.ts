@@ -51,22 +51,47 @@ export class SessionWorkerPool {
    *  cleanup: worker records share the pair's TTL, so at eviction time they
    *  are usually already expired — invisible to byScope's active-only view. */
   private workerSids = new Map<string, string[]>();
+  /** Strong pair references for disposal. The TtlMap expires its entries —
+   *  by the time the sweeper fires, entries.get() returns nothing, so the
+   *  pair must be reachable here. */
+  private pairs = new Map<string, WorkerPair>();
+  /** evictPair guard: a pair is disposed exactly once across the THREE
+   *  triggers (TtlMap access-eviction, sweeper-driven record onEvict,
+   *  disposeAll). */
+  private evictedSources = new Set<string>();
 
   constructor(private opts: SessionWorkerPoolOptions) {
     const ttlMs = opts.ttlMs;
     this.registry = opts.registry ?? getDefaultSessionRegistry();
     this.entries = new TtlMap<string, WorkerPair>(ttlMs, {
       onEvict: (key: unknown, pair: WorkerPair) => {
-        void pair.extract.dispose();
-        void pair.reflect.dispose();
-        // The pair's worker sessions die with it — drop their records too.
-        this.unregisterWorkersFor(String(key));
+        this.evictPair(String(key), pair);
       },
     });
   }
 
   private maxSessions(): number {
     return this.opts.maxSessions ?? 64;
+  }
+
+  /** Single guarded disposal entry for a source session's pair. Safe to call
+   *  from any trigger (TtlMap onEvict, worker-record sweep onEvict, disposeAll);
+   *  the second and later calls are no-ops. The unified 60s sweeper reaps
+   *  expired worker records whose onEvict routes here — idle pairs are now
+   *  bounded WITHOUT requiring a getWorker access. */
+  private evictPair(sourceSessionID: string, pair?: WorkerPair): void {
+    if (this.evictedSources.has(sourceSessionID)) return;
+    this.evictedSources.add(sourceSessionID);
+    const held = pair ?? this.pairs.get(sourceSessionID) ?? this.entries.get(sourceSessionID);
+    if (held) {
+      void held.extract.dispose();
+      void held.reflect.dispose();
+    }
+    this.pairs.delete(sourceSessionID);
+    this.entries.delete(sourceSessionID); // no-op when already gone
+    const idx = this.creationOrder.indexOf(sourceSessionID);
+    if (idx !== -1) this.creationOrder.splice(idx, 1);
+    this.unregisterWorkersFor(sourceSessionID);
   }
 
   /** Unregister the session-registry records of a source session's workers. */
@@ -130,13 +155,17 @@ export class SessionWorkerPool {
         label,
       };
       this.entries.set(sessionID, pair, this.opts.ttlMs);
+      this.pairs.set(sessionID, pair);
       this.creationOrder.push(sessionID);
+      this.evictedSources.delete(sessionID); // fresh lifecycle — re-arm the guard
     }
     return kind === 'extract' ? pair.extract : pair.reflect;
   }
 
   /** Register a worker session in the process table; the origin overlay
-   *  (registerWorkerOrigin) patches the same record when it already exists. */
+   *  (registerWorkerOrigin) patches the same record when it already exists.
+   *  The per-record onEvict routes sweeper-driven expiry to evictPair — the
+   *  unified sweeper bounds idle pairs without requiring a getWorker access. */
   private registerWorkerSession(workerSid: string, sourceSessionID: string, kind: WorkerKind, label: string): void {
     const sids = this.workerSids.get(sourceSessionID);
     if (sids) {
@@ -145,7 +174,7 @@ export class SessionWorkerPool {
       this.workerSids.set(sourceSessionID, [workerSid]);
     }
     const existing = this.registry.lookup(workerSid);
-    if (existing) {
+    if (existing && existing.status === 'active') {
       registerWorkerOrigin(workerSid, sourceSessionID); // patch in place
       return;
     }
@@ -154,6 +183,7 @@ export class SessionWorkerPool {
       scope: { kind: 'worker', role: kind },
       metadata: { originSessionID: sourceSessionID, label },
       ttlMs: this.opts.ttlMs,
+      onEvict: () => this.evictPair(sourceSessionID),
     });
   }
 
@@ -176,11 +206,11 @@ export class SessionWorkerPool {
 
   /** Dispose every worker (gateway stop / restart). */
   disposeAll(): Promise<void> {
-    const sources = [...this.creationOrder];
-    this.entries.clear(); // onEvict disposes pairs + unregisters workers
-    // TtlMap.clear may or may not fire onEvict for every entry — be explicit.
-    for (const source of sources) this.unregisterWorkersFor(source);
+    for (const source of [...this.creationOrder]) {
+      this.evictPair(source); // guarded — converges with all other triggers
+    }
     this.workerSids.clear();
+    this.evictedSources.clear();
     this.flight.clear();
     this.creationOrder = [];
     return Promise.resolve();
