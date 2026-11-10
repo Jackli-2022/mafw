@@ -268,6 +268,7 @@ export class HarmonicIndexManager {
       // entry timeless, so new memories could never decay.
       created_at: unit.created_at || new Date().toISOString(),
       source_session_id: unit.source_session_id,
+      source_trace_ids: (unit as any).source_trace_ids,
       abstraction_level: (unit as any).abstraction_level,
       // V2 passthrough fix: these fields were passed by the store but silently
       // dropped here — G1's agent-priors reads entry.authority (pipeline ×0.7

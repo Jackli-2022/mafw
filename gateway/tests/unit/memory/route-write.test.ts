@@ -289,6 +289,22 @@ describe('routeAndWrite', () => {
     expect(s.writes[0].merged_from).toContain('old');
   });
 
+  test('update → unions exact T1 provenance from the target', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('old', [0.9, 0.44]);
+    const target = u('old');
+    target.source_trace_ids = ['t1t_old'];
+    const incoming = u('n1');
+    incoming.source_trace_ids = ['t1t_new'];
+    const s = memStore([target]);
+    await routeAndWrite(incoming, s as any, {
+      vectors: v,
+      provider,
+      judge: async (_x, ids) => ({ action: 'update', targetId: ids[0] }),
+    });
+    expect(s.writes[0].source_trace_ids).toEqual(['t1t_new', 't1t_old']);
+  });
+
   test('redundant → redundant anchor survives truncation when unit has 8 unique anchors', async () => {
     const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
     v.upsert('old', [0.9, 0.44]);
