@@ -33,6 +33,7 @@ function harness(over: Partial<ConstructorParameters<typeof EventLayerService>[0
     now: '2026-11-10T00:00:00.000Z',
   });
   const broadcast = jest.fn();
+  const evaluate = jest.fn(async () => ({ decision: 'ignore' as const, rationale: 'no evaluator' }));
   let seq = 0;
   const service = new EventLayerService({
     store,
@@ -40,6 +41,7 @@ function harness(over: Partial<ConstructorParameters<typeof EventLayerService>[0
     newId: (prefix) => (prefix === 'thread' ? 't1' : `${prefix}_${++seq}`),
     broadcast,
     enabled: () => true,
+    evaluate,
     ...over,
   });
   return { store, service, broadcast };
