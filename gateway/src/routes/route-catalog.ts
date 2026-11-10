@@ -263,9 +263,10 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'] },
   { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'] },
   { method: 'GET', path: '/api/recall/pinned', operationId: 'recall.pinned', tags: ['internal'] },
-  // Task B3：T2-4 fallback 面 / W1 常驻先验块（plugin / pi host extension 消费）
-  { method: 'GET', path: '/api/recall/instructions', operationId: 'recall.instructions', tags: ['recall'] },
-  { method: 'GET', path: '/api/recall/priors', operationId: 'recall.priors', tags: ['recall'] },
+  // Task B3：T2-4 fallback 面 / W1 常驻先验块（plugin / pi host extension 消费；
+  // 非 SDK 端点 → 与兄弟 NON_SDK 条目一致用 tags ['internal']，SDK 死契约检查据此豁免）
+  { method: 'GET', path: '/api/recall/instructions', operationId: 'recall.instructions', tags: ['internal'] },
+  { method: 'GET', path: '/api/recall/priors', operationId: 'recall.priors', tags: ['internal'] },
   // 记忆补充（memory.mergedSearch 已在 SDK-facing，不重复）
   { method: 'POST', path: '/api/memory/add', operationId: 'memory.add', tags: ['internal'] },
   { method: 'GET', path: '/api/memory/get', operationId: 'memory.get', tags: ['internal'] },

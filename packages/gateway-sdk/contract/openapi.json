@@ -4928,7 +4928,7 @@
       "get": {
         "operationId": "recall.instructions",
         "tags": [
-          "recall"
+          "internal"
         ],
         "responses": {
           "200": {
@@ -4941,7 +4941,7 @@
       "get": {
         "operationId": "recall.priors",
         "tags": [
-          "recall"
+          "internal"
         ],
         "responses": {
           "200": {
