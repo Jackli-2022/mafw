@@ -260,6 +260,7 @@ describe('memory registry wiring (D1 Task F1)', () => {
         retrieval: { total: 2, byKind: { search: 1, recall: 1, redeem: 0 }, uniqueTraces: 2, lastAt: 123 },
         provenance: { memories: 0, withExact: 0, coverage: 0 },
         activation: { traces: 0, mean: 0, max: 0 },
+        activationRanking: { mode: 'shadow', evaluations: 0, wouldReorder: 0, applied: 0 },
       });
     } finally {
       setEmbeddingRuntime(null);

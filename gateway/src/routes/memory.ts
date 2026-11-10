@@ -126,6 +126,16 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         const withExact = indexEntries.filter(
           (e: any) => Array.isArray(e.source_trace_ids) && e.source_trace_ids.length > 0,
         ).length;
+        let activationRanking = {
+          mode: config.recall.t1Recall?.activationRanking ?? 'shadow',
+          evaluations: 0,
+          wouldReorder: 0,
+          applied: 0,
+        };
+        try {
+          const { getT1RankingStats } = require('../recall/t1-search');
+          activationRanking = { mode: config.recall.t1Recall?.activationRanking ?? 'shadow', ...getT1RankingStats() };
+        } catch { /* fail-open: zero counters */ }
         return {
           vectors,
           activeRows,
@@ -138,6 +148,7 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
             coverage: indexEntries.length > 0 ? withExact / indexEntries.length : 0,
           },
           activation,
+          activationRanking,
         };
       })();
       res.writeHead(200, { 'Content-Type': 'application/json' });

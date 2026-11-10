@@ -63,3 +63,5 @@ t1_trace_state(
 - `last_replayed_at` 目前只保留字段，尚未由 replay 管线写入。
 - 排序消费未开启；`t1.activation` 目前只用于观测与后续 A/B。
 - 未部署。
+
+> 后续：Phase 3C（`docs/releases/2026-11-10-t1-ranking-3c.md`）已提供 `off|shadow|on` 有界重排；默认 `shadow`，不改变顺序。

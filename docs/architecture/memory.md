@@ -258,6 +258,7 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - 精确 provenance 读取：`mafw_get_memory` 优先解析 `source_trace_ids`（最多 5 条）返回 `source.traces[{traceId,sessionId,turnId,archived,excerpt}]`；解析不到时回退旧 C0 `source.evidence`。`/api/memory/stats` 的 `t1.provenance` 暴露 `{memories,withExact,coverage}`。
 - 3A **不改变** energy、排序、activation 或 recall 注入；`source_trace_ids` 仅作为可审计来源与后续 activation 的精确边。
 - T1 activation 状态（3B）：`t1_retrieval_events` 的 `search/recall/redeem` 同时更新 `t1_trace_state`（每次 +0.1，封顶 1）；`mafw_get_memory` 成功解析精确来源时向源 trace 传播 +0.05（单次上限 0.2）；每日 `memory:decay` 指数衰减（默认半衰期 14 天）。`/api/memory/stats` 的 `t1.activation` 暴露 `{traces,mean,max}`。**3B 仍不读取 activation 排序**——排序消费留到有 A/B 数据的下一阶段。
+- 有界 activation 排序（3C）：`config.recall.t1Recall.activationRanking='off'|'shadow'|'on'`（默认 `shadow`）。只有 RRF 分数 ≥ `activationRankBand`（默认 0.6）× 最高分的命中才可被激活提升，提升幅度 ≤ `activationRankWeight`（默认 0.1，硬上限 0.2）；activation 不能新增命中或救回带外结果。`shadow` 只计算并计数、不改顺序；`on` 才生效。`/api/memory/stats` 的 `t1.activationRanking` 暴露 `{mode,evaluations,wouldReorder,applied}` 供 A/B 决策。
 - T1 只读指针：`mafw_get_memory("t1:<traceId>")` 走 `readTrace()` 返回 active+archive 完整回合与 `archived`/`legacyAmbiguous`；旧 `t1:<sessionTail>:<turnId>` 继续兼容，并回退查 active 行。
 - R8 快照把 T1 当独立通道：Harmonic 零命中但 T1 命中时可生成 T1-only 快照（`T1_POINTER_HEADER` + `[t1|<traceId>]` 行）；`decideSnapshotUse` 接受 `ids=[]` 但 `t1Hits` 非空。快照 serve 记录 `recall` 事件；直接搜索记录 `search`；指针兑换记录 `redeem`。
 - `/api/memory/stats` 的 `t1` 字段暴露向量数、active/archive 行数、覆盖率与 7 天检索事件统计。
