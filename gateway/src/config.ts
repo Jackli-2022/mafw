@@ -261,6 +261,9 @@ export interface GatewayConfig {
       /** Local engine: 'onnx' (transformers.js in-process) | 'llamacpp'
        *  (llama-server sidecar; lower RSS, native speed, GPU-switchable). */
       engine: 'onnx' | 'llamacpp';
+      /** T1 vector namespace backend: 'sqlite' BLOB table (default) or legacy
+       *  per-model JSON file. Switch to 'json' for rollback. */
+      t1VectorStore?: 'sqlite' | 'json';
       /** llama-server sidecar options (engine='llamacpp'). */
       llamacpp: {
         port: number;
@@ -591,6 +594,7 @@ function defaults(projectDir: string): GatewayConfig {
         laya: { enabled: true, url: 'http://127.0.0.1:13129', tauHigh: 0.99, tauRedundantHigh: 1.0, device: 'cpu' },
         threads: 2,
         engine: 'onnx',
+        t1VectorStore: 'sqlite',
         llamacpp: {
           port: 0,
           threads: 2,

@@ -9,17 +9,19 @@
 // never block the synchronous path.
 
 import * as path from 'path';
+import type Database from 'better-sqlite3';
 import { config } from '../config';
 import { log } from '../core/utils/logger';
 import { createEmbeddingProvider, EmbeddingProvider } from './embedding-provider';
-import { MemoryVectorStore, EmbeddingIndexer } from './vector-store';
+import { MemoryVectorStore, EmbeddingIndexer, VectorStoreLike } from './vector-store';
+import { SqliteT1VectorStore } from './sqlite-vector-store';
 
 export interface EmbeddingRuntime {
   provider: EmbeddingProvider;
   vectors: MemoryVectorStore;
   indexer: EmbeddingIndexer;
   /** V1 verbatim layer: second vector namespace over t1 rounds. */
-  t1Vectors: MemoryVectorStore;
+  t1Vectors: VectorStoreLike;
   t1Indexer: EmbeddingIndexer;
   /** Debounced async flush of both embedding queues (call after each write). */
   scheduleFlush(): void;
@@ -45,6 +47,9 @@ export interface InitEmbeddingRuntimeOptions {
   getApiKeyFn?: (provider: string) => string | null;
   /** Test seam: override the provider factory (fake providers). */
   createProviderFn?: typeof createEmbeddingProvider;
+  /** Gateway SQLite handle for the T1 binary vector namespace. When absent,
+   *  T1 falls back to the legacy JSON store (tests/eval harnesses). */
+  vectorDb?: Database.Database;
 }
 
 export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): EmbeddingRuntime | null {
@@ -77,11 +82,16 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
 
     // V1 verbatim layer: a second, independent vector namespace over t1
     // rounds (raw observation/archive rows), keyed by session:turn:hash.
-    const t1Vectors = new MemoryVectorStore(
-      path.join(opts.baseDir, 'memory', `vectors-t1-${modelTag}.json`),
-      cfg.dimensions || provider.dims,
-      cfg.model,
-    );
+    // SQLite BLOBs avoid rewriting a ~500MB JSON file on every flush.
+    const t1JsonPath = path.join(opts.baseDir, 'memory', `vectors-t1-${modelTag}.json`);
+    const t1StoreKind = (cfg as any).t1VectorStore ?? 'sqlite';
+    const t1Vectors: VectorStoreLike = opts.vectorDb && t1StoreKind !== 'json'
+      ? new SqliteT1VectorStore(opts.vectorDb, {
+          dims: cfg.dimensions || provider.dims,
+          model: modelTag,
+          legacyJsonPath: t1JsonPath,
+        })
+      : new MemoryVectorStore(t1JsonPath, cfg.dimensions || provider.dims, cfg.model);
     const t1Indexer = new EmbeddingIndexer({ vectors: t1Vectors, provider });
 
     let flushTimer: ReturnType<typeof setTimeout> | null = null;

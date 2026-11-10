@@ -2623,6 +2623,7 @@ class MafwScheduler {
     const embeddingRuntime = initEmbeddingRuntime({
       getApiKeyFn: this.runtimeGetApiKey.bind(this),
       baseDir: mafwDir,
+      vectorDb: this.getGatewayDb().getStore(),
       getTextForId: async (id) => {
         try {
           const u = await new HarmonicUnitFileStore(mafwDir).read(id);
