@@ -21,6 +21,7 @@ import {
   type GatewayRuntimeIdentity,
 } from './release-info';
 import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
+import { readBody, normalizeDir, isPortHealthy } from './core/http/http-util';
 import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
 import { ensureGoalState, effectiveRevision, isTerminalState, loadGoalState } from './core/goal/state-v3';
@@ -410,31 +411,8 @@ interface Session {
   createdAt: string;
 }
 
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', (chunk: string) => body += chunk);
-    req.on('end', () => resolve(body));
-    req.on('error', reject);
-  });
-}
-
-// Normalize a directory path for comparison: lowercase + forward slashes
-// (Windows drives/case differences must not split sessions across projects).
-function normalizeDir(dir: string): string {
-  return dir.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
-}
-
-async function isPortHealthy(port: number): Promise<boolean> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
-      signal: AbortSignal.timeout(1000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
+// D3 Task 1: readBody / normalizeDir / isPortHealthy moved verbatim to
+// core/http/http-util.ts (single import line added at the top of the file).
 
 import { writeManagerSlot, projectLeadSessionMetadata, backfillManagerSlot, clearSlotsForSession } from './core/manager/manager-session-runtime';
 import { LeadSessionRegistry } from './core/manager/lead-session-registry';
