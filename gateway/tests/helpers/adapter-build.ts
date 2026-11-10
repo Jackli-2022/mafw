@@ -26,12 +26,14 @@
  *  - the loser waits (blocking poll) until the winner releases the lock, then
  *    re-checks freshness — double-checked locking, so the second caller is a
  *    no-op instead of a duplicate build;
- *  - a lock is stale when it is older than `LOCK_STALE_MS` (60s, deliberately
- *    below the wait timeout) **or** when its recorded PID is gone (only
- *    `ESRCH` proves that; `EPERM` still means alive). An unreadable owner file
- *    falls back to the age rule. A stale lock is removed — re-reading the token
- *    just before `rm` so a lock that was taken over meanwhile survives;
- *  - waiting is bounded by `LOCK_TIMEOUT_MS` (90s, so the helper fails with a
+ *  - a lock is stale when its recorded PID is provably gone (only `ESRCH`
+ *    proves that; `EPERM` still means alive), or when the owner file is
+ *    unreadable and the lock is older than `LOCK_STALE_MS` (60s). A **live**
+ *    owner is never stolen by age — a legitimate 60–150s build must not be
+ *    double-run; only the wait budget may give up on it. A stale lock is
+ *    removed after re-reading the token, so a lock that was taken over
+ *    meanwhile survives;
+ *  - waiting is bounded by `LOCK_TIMEOUT_MS` (150s, so the helper fails with a
  *    lock message before Jest's suite timeout); a timeout throws instead of
  *    silently producing an unbuilt `dist`;
  *  - release only deletes the lock when the owner token still matches, so a
@@ -63,12 +65,12 @@ export const BUILD_LOCK_OWNER_FILE = 'owner.json';
  */
 export const PACKAGING_SUITE_TIMEOUT_MS = 300_000;
 /** Give up waiting for another worker's build after this long. */
-export const LOCK_TIMEOUT_MS = 90_000;
+export const LOCK_TIMEOUT_MS = 150_000;
 /**
- * A lock older than this is assumed abandoned (crashed build) and stolen. Must
- * stay **below** `LOCK_TIMEOUT_MS`: otherwise a crashed holder's fresh lock
- * would make every waiter time out instead of healing itself. A lock whose
- * recorded owner PID is gone is stale regardless of age.
+ * Age after which a lock **with an unreadable owner file** is assumed abandoned
+ * and stolen. A live owner is never stolen by age — it is only bounded by
+ * `LOCK_TIMEOUT_MS` — so this must stay below the timeout to keep a crashed
+ * holder's legacy/corrupt lock self-healing within the wait budget.
  */
 export const LOCK_STALE_MS = 60_000;
 /** Poll interval while another worker builds. */
@@ -242,11 +244,10 @@ export interface BuildLockDecisionInput {
   exists: boolean;
   /** mtime of the lock directory (when it exists). */
   lockMtimeMs?: number;
-  /** PID recorded by the holder, when the owner file was readable. */
-  ownerPid?: number;
   /**
-   * Liveness of `ownerPid`; `false` makes the lock stale immediately, and
-   * `undefined` (unreadable owner file / unusable PID) falls back to age.
+   * Liveness of the recorded owner PID; `false` makes the lock stale
+   * immediately and `undefined` (unreadable owner file) falls back to the age
+   * rule. `true` is never stolen by age, only bounded by the wait budget.
    */
   ownerAlive?: boolean;
   now: number;
@@ -254,23 +255,31 @@ export interface BuildLockDecisionInput {
   waitStartedAt: number;
   /** Max time to wait for the holder; defaults to `LOCK_TIMEOUT_MS`. */
   waitMs?: number;
-  /** Age after which a lock is abandoned; defaults to `LOCK_STALE_MS`. */
+  /** Age after which a lock without a readable owner is abandoned. */
   staleMs?: number;
 }
 
 /**
  * Pure lock state machine, extracted so the wait/stale/timeout rules are
- * unit-testable without touching a real build. Staleness wins over timeout: if
- * the holder is gone, taking the lock over is better than failing. A provably
- * dead owner wins even against a young lock — that is the crashed-build case
- * the age rule can only approximate.
+ * unit-testable without touching a real build. Rule order matters:
+ *
+ *  1. a provably dead owner is stale regardless of age — stealing a crashed
+ *     build's lock is always better than timing out;
+ *  2. the age rule only applies when liveness is unknown (unreadable owner
+ *     file); a live owner is never stolen by age, because a slow but healthy
+ *     build would otherwise be started twice;
+ *  3. a live (or unknown-and-young) owner is waited on until the budget ends.
  */
 export function decideBuildLock(input: BuildLockDecisionInput): BuildLockDecision {
   if (!input.exists) return 'acquire';
   const staleMs = input.staleMs ?? LOCK_STALE_MS;
   const waitMs = input.waitMs ?? LOCK_TIMEOUT_MS;
   if (input.ownerAlive === false) return 'remove-stale';
-  if (typeof input.lockMtimeMs === 'number' && input.now - input.lockMtimeMs > staleMs) return 'remove-stale';
+  if (
+    input.ownerAlive === undefined
+    && typeof input.lockMtimeMs === 'number'
+    && input.now - input.lockMtimeMs > staleMs
+  ) return 'remove-stale';
   if (input.now - input.waitStartedAt >= waitMs) return 'timeout';
   return 'wait';
 }
@@ -349,7 +358,9 @@ function claimBuildLock(lockDir: string, now: () => number): () => void {
     released = true;
     try {
       // A stale steal may have handed the lock to another worker while this
-      // build was still finishing; only the current owner may delete it.
+      // build was still finishing; only the current owner may delete it. An
+      // unreadable owner file therefore deletes nothing on purpose: this holder
+      // waits for the age steal instead of risking another holder's lock.
       if (readBuildLockOwner(lockDir)?.token !== owner.token) return;
       fs.rmSync(lockDir, { recursive: true, force: true });
     } catch { /* releasing must never mask the build outcome */ }
@@ -374,7 +385,6 @@ export function acquireBuildLock(adapterDir: string = ADAPTER_DIR, options: Buil
     const decision = decideBuildLock({
       exists: !!stat,
       lockMtimeMs: stat?.mtimeMs,
-      ownerPid: owner?.pid,
       ownerAlive: owner ? probe(owner.pid) : undefined,
       now: now(),
       waitStartedAt,
@@ -422,11 +432,11 @@ export type BuildRunner = (adapterDir: string) => {
 
 /**
  * Backstop against a hung `esbuild`/`tsc`; normal builds take a few seconds.
- * Together with `LOCK_TIMEOUT_MS` this must stay inside
+ * `LOCK_TIMEOUT_MS + BUILD_TIMEOUT_MS` must stay below
  * `PACKAGING_SUITE_TIMEOUT_MS`, so the helper's own diagnostics win over a
  * Jest worker timeout.
  */
-export const BUILD_TIMEOUT_MS = 150_000;
+export const BUILD_TIMEOUT_MS = 120_000;
 
 function defaultRunner(adapterDir: string, timeoutMs: number): ReturnType<BuildRunner> {
   return spawnSync(process.execPath, [path.join(adapterDir, 'build.mjs')], {

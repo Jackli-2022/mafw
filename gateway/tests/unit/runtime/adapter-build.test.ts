@@ -208,13 +208,14 @@ describe('build lock decisions', () => {
 
   it('pins the lock/build budget inside the packaging suite timeout', () => {
     expect(LOCK_STALE_MS).toBe(60_000);
-    expect(LOCK_TIMEOUT_MS).toBe(90_000);
-    expect(BUILD_TIMEOUT_MS).toBe(150_000);
+    expect(LOCK_TIMEOUT_MS).toBe(150_000);
+    expect(BUILD_TIMEOUT_MS).toBe(120_000);
     expect(PACKAGING_SUITE_TIMEOUT_MS).toBe(300_000);
-    // Worst case for a waiter is the full lock wait plus its own build; it must
-    // still fail with a helper message before Jest's suite timeout fires.
+    // A crashed holder is stolen at 60s; the winner still has its full build
+    // budget, and even the worst-case waiter (full lock wait + its own build)
+    // must fail with a helper message before Jest's suite timeout fires.
     expect(LOCK_STALE_MS).toBeLessThan(LOCK_TIMEOUT_MS);
-    expect(LOCK_TIMEOUT_MS + BUILD_TIMEOUT_MS).toBeLessThanOrEqual(PACKAGING_SUITE_TIMEOUT_MS);
+    expect(LOCK_TIMEOUT_MS + BUILD_TIMEOUT_MS).toBeLessThan(PACKAGING_SUITE_TIMEOUT_MS);
   });
 
   it('steals a lock whose recorded owner PID is dead, even when it is young', () => {
@@ -224,9 +225,30 @@ describe('build lock decisions', () => {
       exists: true,
       lockMtimeMs: now, // brand new: only the dead PID can make it stale
       now,
-      ownerPid: 424_242,
       ownerAlive: false,
     })).toBe('remove-stale');
+  });
+
+  it('steals a dead owner even when the wait budget is already spent', () => {
+    // Staleness wins over timeout: the holder is provably gone.
+    expect(decideBuildLock({
+      exists: true,
+      lockMtimeMs: 10_000,
+      now: 20_000,
+      waitStartedAt: 0,
+      waitMs: 0,
+      staleMs: LOCK_STALE_MS,
+      ownerAlive: false,
+    })).toBe('remove-stale');
+  });
+
+  it('never steals a live owner by age, however old the lock is', () => {
+    const old = { exists: true, lockMtimeMs: 0, now: 10 * MINUTE, staleMs: MINUTE };
+    // Only the wait/timeout path may act on a live holder.
+    expect(decideBuildLock({
+      ...old, waitStartedAt: 9 * MINUTE, waitMs: 5 * MINUTE, ownerAlive: true,
+    })).toBe('wait');
+    expect(decideBuildLock({ ...old, waitStartedAt: 0, waitMs: MINUTE, ownerAlive: true })).toBe('timeout');
   });
 
   it('waits for a lock whose recorded owner PID is alive', () => {
@@ -236,7 +258,6 @@ describe('build lock decisions', () => {
       exists: true,
       lockMtimeMs: now,
       now,
-      ownerPid: process.pid,
       ownerAlive: true,
     })).toBe('wait');
   });
@@ -386,6 +407,21 @@ describe('build lock ownership', () => {
       sleep: () => {},
     })).toThrow(/timed out/);
     expect(readOwner().token).toBe('alive');
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  });
+
+  it('does not age-steal a live owner even when the lock looks old', () => {
+    // A legitimate 60-150s build must not be double-run: only the wait budget
+    // may give up on a live holder.
+    writeOwner({ token: 'slow', pid: process.pid, startedAt: Date.now() }, Date.now() - 10 * MINUTE);
+
+    expect(() => acquireBuildLock(adapterDir, {
+      now: () => Date.now(),
+      staleMs: MINUTE,
+      waitMs: 0,
+      sleep: () => {},
+    })).toThrow(/timed out/);
+    expect(readOwner().token).toBe('slow');
     fs.rmSync(lockDir, { recursive: true, force: true });
   });
 
