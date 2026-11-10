@@ -102,7 +102,30 @@ export interface T1TraceActivation {
   activationUpdatedAt: number;
 }
 
+export type SkillStatus = 'staging' | 'active' | 'paused' | 'deprecated';
+
+export interface SkillRegistryRecord {
+  name: string;
+  version: number;
+  status: SkillStatus;
+  sourceMemoryIds: string[];
+  sourceTraceIds: string[];
+  installedAt: number;
+  updatedAt: number;
+  deoptReason: string | null;
+}
+
 const T1_RETRIEVAL_KINDS: T1RetrievalKind[] = ['search', 'recall', 'redeem'];
+
+function parseJsonStringArray(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 export interface GoalOutcome {
   goal_id: string;
@@ -384,6 +407,20 @@ export class GatewayDatabase {
         activation_updated_at INTEGER NOT NULL DEFAULT (unixepoch())
       );
       CREATE INDEX IF NOT EXISTS idx_t1_state_activation ON t1_trace_state(activation);
+
+      -- Skill v1 capability registry: installed playbooks, version/status and
+      -- exact source pointers. Files remain the truth; this is the index.
+      CREATE TABLE IF NOT EXISTS skill_registry (
+        name TEXT PRIMARY KEY,
+        version INTEGER NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'active',
+        source_memory_ids TEXT,
+        source_trace_ids TEXT,
+        installed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        deopt_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_skill_registry_status ON skill_registry(status);
 
       CREATE TABLE IF NOT EXISTS goal_outcomes (
         goal_id TEXT PRIMARY KEY,
@@ -1178,11 +1215,100 @@ export class GatewayDatabase {
     return out;
   }
 
+  /** Record (or version-bump) an installed skill in the capability registry. */
+  recordSkillInstall(record: {
+    name: string;
+    version?: number;
+    status?: SkillStatus;
+    sourceMemoryIds?: string[];
+    sourceTraceIds?: string[];
+  }): { version: number } {
+    const name = String(record?.name || '').trim();
+    if (!name) throw new Error('skill name required');
+    const existing = this.getSkillRecord(name);
+    const requested = Number.isFinite(record.version) ? Math.max(1, Math.floor(record.version!)) : undefined;
+    const version = requested ?? (existing ? existing.version + 1 : 1);
+    const status: SkillStatus = record.status ?? 'active';
+    this.db
+      .prepare(
+        `INSERT INTO skill_registry
+           (name, version, status, source_memory_ids, source_trace_ids, installed_at, updated_at, deopt_reason)
+         VALUES (?, ?, ?, ?, ?, unixepoch(), unixepoch(), NULL)
+         ON CONFLICT(name) DO UPDATE SET
+           version = excluded.version,
+           status = excluded.status,
+           source_memory_ids = excluded.source_memory_ids,
+           source_trace_ids = excluded.source_trace_ids,
+           updated_at = excluded.updated_at,
+           deopt_reason = NULL`,
+      )
+      .run(
+        name,
+        version,
+        status,
+        JSON.stringify(record.sourceMemoryIds ?? []),
+        JSON.stringify(record.sourceTraceIds ?? []),
+      );
+    return { version };
+  }
+
+  getSkillRecord(name: string): SkillRegistryRecord | null {
+    const id = String(name || '').trim();
+    if (!id) return null;
+    try {
+      const row = this.db.prepare('SELECT * FROM skill_registry WHERE name = ?').get(id) as any;
+      if (!row) return null;
+      return {
+        name: row.name,
+        version: row.version,
+        status: row.status as SkillStatus,
+        sourceMemoryIds: parseJsonStringArray(row.source_memory_ids),
+        sourceTraceIds: parseJsonStringArray(row.source_trace_ids),
+        installedAt: row.installed_at,
+        updatedAt: row.updated_at,
+        deoptReason: row.deopt_reason ?? null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  listSkillRecords(status?: SkillStatus): SkillRegistryRecord[] {
+    try {
+      const rows = (status
+        ? this.db.prepare('SELECT * FROM skill_registry WHERE status = ? ORDER BY updated_at DESC').all(status)
+        : this.db.prepare('SELECT * FROM skill_registry ORDER BY updated_at DESC').all()) as any[];
+      return rows.map((row) => ({
+        name: row.name,
+        version: row.version,
+        status: row.status as SkillStatus,
+        sourceMemoryIds: parseJsonStringArray(row.source_memory_ids),
+        sourceTraceIds: parseJsonStringArray(row.source_trace_ids),
+        installedAt: row.installed_at,
+        updatedAt: row.updated_at,
+        deoptReason: row.deopt_reason ?? null,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  setSkillStatus(name: string, status: SkillStatus, reason?: string): boolean {
+    const id = String(name || '').trim();
+    if (!id) return false;
+    try {
+      return this.db
+        .prepare('UPDATE skill_registry SET status = ?, deopt_reason = ?, updated_at = unixepoch() WHERE name = ?')
+        .run(status, reason ?? null, id).changes > 0;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Highest-activation known traces for bounded replay selection. Zero/unknown
    * rows are excluded; limit is capped at 100.
-   */
-  topActivatedTraces(
+   */  topActivatedTraces(
     limit: number,
     opts: { minActivation?: number } = {},
   ): Array<{ traceId: string; activation: number }> {

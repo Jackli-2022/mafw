@@ -3,6 +3,9 @@
 // 此处零 LLM。判据依据：脑（一致映射 Schneider&Shiffrin / 练习 ACT-R / 习惯稳定性）
 // + 业界（JIT 热点编译 / Voyager 自验证 / AWM 复用频率 / Self-RAG 自适应）。
 
+import * as yaml from 'js-yaml';
+import { extractSkillContract, SkillContract, validateSkillContract } from './skill-contract';
+
 export const DEFAULT_PROMOTION_GATES = {
   minNeed7d: 3,
   minEnergy: 0.5,
@@ -52,21 +55,73 @@ export function evaluatePromotion(
 /**
  * OKF 记忆 → SKILL.md 渲染（md-to-md 通道）。name 取 id 尾 6 位保证 ascii 安全；
  * description 是 skill 发现性的命门（primary_abstraction + 触发词）。
+ * Skill v1: the playbook contract is rendered into frontmatter + explicit body
+ * sections; empty optional fields stay visibly "待补充" for the human reviewer.
  */
-export function renderSkillMd(unit: {
-  id: string;
-  primary_abstraction: string;
-  memory_value: string;
-  cue_anchors?: string[];
-}): { name: string; content: string } {
+export function renderSkillMd(
+  unit: {
+    id: string;
+    primary_abstraction: string;
+    memory_value: string;
+    cue_anchors?: string[];
+    source_trace_ids?: string[];
+  },
+  contract?: SkillContract,
+): { name: string; content: string } {
   const name = `ms-${unit.id.slice(-6)}`;
-  const triggers = (unit.cue_anchors ?? []).filter((a) => !a.includes(':')).slice(0, 5).join(' / ');
-  const content = `---
-name: ${name}
-description: ${unit.primary_abstraction}。触发词：${triggers}
----
+  const c = contract ?? extractSkillContract(unit);
+  const triggers = (c.triggers.length > 0 ? c.triggers : (unit.cue_anchors ?? [])
+    .filter((a) => !a.includes(':')).slice(0, 5)).slice(0, 5);
+  const description = `${unit.primary_abstraction}。触发词：${triggers.join(' / ')}`;
+  const frontmatter: Record<string, any> = {
+    name,
+    description,
+    version: 1,
+    status: 'staging',
+    source_memory_ids: [unit.id],
+  };
+  if (unit.source_trace_ids?.length) frontmatter.source_trace_ids = unit.source_trace_ids;
+  frontmatter.triggers = c.triggers;
+  frontmatter.negative_triggers = c.negativeTriggers;
+  frontmatter.inputs = c.inputs;
+  frontmatter.outputs = c.outputs;
+  frontmatter.steps = c.steps;
+  frontmatter.tools = c.tools;
+  frontmatter.permissions = c.permissions;
+  frontmatter.success_criteria = c.successCriteria;
+  frontmatter.failure_handling = c.failureHandling;
+  frontmatter.scope = c.scope;
 
-${unit.memory_value}
+  const section = (title: string, items: string[], ordered = false): string => {
+    const rows = items.length > 0
+      ? items.map((x, i) => (ordered ? `${i + 1}. ${x}` : `- ${x}`)).join('\n')
+      : '_待补充（人审）_';
+    return `## ${title}\n${rows}`;
+  };
+
+  const content = `---\n${yaml.dump(frontmatter, { lineWidth: -1, quotingType: '"', noRefs: true })}---
+
+# ${unit.primary_abstraction}
+
+${section('Steps', c.steps, true)}
+
+${section('Inputs', c.inputs)}
+
+${section('Outputs', c.outputs)}
+
+${section('Triggers', c.triggers)}
+
+${section('Negative Triggers', c.negativeTriggers)}
+
+${section('Tools', c.tools)}
+
+${section('Permissions', c.permissions)}
+
+${section('Success Criteria', c.successCriteria)}
+
+${section('Failure Handling', c.failureHandling)}
+
+${section('Scope', c.scope)}
 
 > 物化自记忆 ${unit.id}（记忆为索引，本文件为真相源；修订请改本文件后由 curator 回写）。
 `;
@@ -75,11 +130,27 @@ ${unit.memory_value}
 
 export interface ScanDeps {
   getIndex(): { entries: any[] };
-  readUnit(id: string): Promise<{ id: string; memory_value: string; cue_anchors?: string[] } | null>;
+  readUnit(id: string): Promise<{
+    id: string;
+    memory_value: string;
+    cue_anchors?: string[];
+    source_session_id?: string;
+    source_trace_ids?: string[];
+  } | null>;
   needFor: (id: string) => number;
   existingSkillCount: () => number;
   writeStaging: (name: string, content: string) => void;
-  createTriageItem: (item: { summary: { skillDraft: { name: string; memoryId: string } } }) => void;
+  createTriageItem: (item: {
+    summary: {
+      skillDraft: {
+        name: string;
+        memoryId: string;
+        version: number;
+        sourceMemoryIds: string[];
+        sourceTraceIds: string[];
+      };
+    };
+  }) => void;
   now: Date;
   gates?: typeof DEFAULT_PROMOTION_GATES;
 }
@@ -118,14 +189,32 @@ export async function scanPromotionCandidates(deps: ScanDeps): Promise<number> {
         cfg,
       );
       if (!decision.eligible) continue;
+      const contract = extractSkillContract({
+        memory_value: unit.memory_value,
+        cue_anchors: anchors,
+        source_session_id: unit.source_session_id,
+      });
+      const contractCheck = validateSkillContract(contract);
+      if (!contractCheck.valid) continue;
       const { name, content } = renderSkillMd({
         id: unit.id,
         primary_abstraction: entry.primary_abstraction ?? unit.id,
         memory_value: unit.memory_value,
         cue_anchors: anchors,
-      });
+        source_trace_ids: unit.source_trace_ids,
+      }, contract);
       deps.writeStaging(name, content);
-      deps.createTriageItem({ summary: { skillDraft: { name, memoryId: unit.id } } });
+      deps.createTriageItem({
+        summary: {
+          skillDraft: {
+            name,
+            memoryId: unit.id,
+            version: 1,
+            sourceMemoryIds: [unit.id],
+            sourceTraceIds: unit.source_trace_ids ?? [],
+          },
+        },
+      });
       promoted++;
     } catch {
       // fail-open: skip this candidate

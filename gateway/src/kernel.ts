@@ -162,6 +162,7 @@ import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/ro
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
+import { deoptSkill as deoptInstalledSkill } from './memory/skill-install';
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
 import { MediaService } from "./media/media-service";
@@ -2844,7 +2845,15 @@ class MafwScheduler {
             getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
             readUnit: async (id: string) => {
               const u = await store.read(id);
-              return u ? { id: u.id, memory_value: u.memory_value, cue_anchors: u.cue_anchors } : null;
+              return u
+                ? {
+                    id: u.id,
+                    memory_value: u.memory_value,
+                    cue_anchors: u.cue_anchors,
+                    source_session_id: u.source_session_id,
+                    source_trace_ids: u.source_trace_ids,
+                  }
+                : null;
             },
             needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
             existingSkillCount: () => this.installedSkillCount(),
@@ -3007,7 +3016,8 @@ class MafwScheduler {
   private installedSkillCount(): number {
     try {
       return fs.readdirSync(this.skillsDir(), { withFileTypes: true })
-        .filter((d) => d.isDirectory()).length;
+        .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+        .length;
     } catch {
       return 0;
     }
@@ -3020,6 +3030,12 @@ class MafwScheduler {
     writeMemory(unit: { id: string; memory_value: string; cue_anchors?: string[] }): Promise<unknown>;
     stagingDir: string;
     skillsDir: string;
+    recordInstall(record: {
+      name: string;
+      version: number;
+      sourceMemoryIds: string[];
+      sourceTraceIds: string[];
+    }): void;
   } {
     const mafwDir = this.mafwDir;
     const store = this.memoryService
@@ -3037,7 +3053,18 @@ class MafwScheduler {
       },
       stagingDir: path.join(mafwDir, 'skill-staging'),
       skillsDir: this.skillsDir(),
+      recordInstall: (record) => this.getGatewayDb().recordSkillInstall(record),
     };
+  }
+
+  /** Skill v1: move an installed playbook out of discovery scope. */
+  private deoptInstalledSkill(name: string, reason: string): { deopted: boolean; archivedTo?: string; error?: string } {
+    return deoptInstalledSkill(name, reason, {
+      skillsDir: this.skillsDir(),
+      ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+      renameDir: (src, dst) => fs.renameSync(src, dst),
+      recordStatus: (skillName, status, why) => this.getGatewayDb().setSkillStatus(skillName, status, why),
+    });
   }
 
   private getStaleVerifyPipeline(): StaleVerifyPipeline {
@@ -5091,6 +5118,7 @@ class MafwScheduler {
       get handleRuntimeEvent() { return (...a: any[]) => (self.handleRuntimeEvent as any)(...a); },
       get listSessions() { return (...a: any[]) => (self.listSessions as any)(...a); },
       get skillInstallDeps() { return (...a: any[]) => (self.skillInstallDeps as any)(...a); },
+      get deoptSkill() { return (...a: any[]) => (self.deoptInstalledSkill as any)(...a); },
       get eventLayer() { return self.eventLayer; },
       get eventLayerStore() { return self.eventLayerStore; },
       get standingGoals() { return self.standingGoals; },

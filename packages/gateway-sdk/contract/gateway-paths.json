@@ -3491,6 +3491,29 @@
         }
       }
     },
+    "/api/skills/{name}/deopt": {
+      "post": {
+        "operationId": "skills.deopt",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/questions": {
       "get": {
         "operationId": "questions.list",
