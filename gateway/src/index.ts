@@ -87,6 +87,7 @@ import { LeadHandoffService } from './core/lead/lead-handoff-service';
 import { TopicMessageIndexStore } from './core/lead/topic-message-index';
 import { LeadTopicSummaryService } from './core/lead/lead-topic-summary-service';
 import { LeadTopicResumeService } from './core/lead/lead-topic-resume-service';
+import { TopicForkStore } from './core/lead/topic-fork-store';
 import { summarizeTopic } from './core/lead/topic-summary';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
@@ -690,6 +691,7 @@ class MafwScheduler {
   private leadTopicIndex!: TopicMessageIndexStore;
   private leadTopicSummary!: LeadTopicSummaryService;
   private leadTopicResume!: LeadTopicResumeService;
+  private topicForks!: TopicForkStore;
   private podWorktreeService!: PodWorktreeService;
   private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
@@ -4378,6 +4380,7 @@ class MafwScheduler {
     });
     const leadTopics = new LeadTopicStore(this.getGatewayDb().getStore());
     const leadTopicIndex = new TopicMessageIndexStore(this.getGatewayDb().getStore());
+    const topicForks = new TopicForkStore(this.getGatewayDb().getStore());
     const leadTopicSummary = new LeadTopicSummaryService({
       topics: leadTopics,
       index: leadTopicIndex,
@@ -4388,6 +4391,7 @@ class MafwScheduler {
     this.leadTopics = leadTopics;
     this.leadTopicIndex = leadTopicIndex;
     this.leadTopicSummary = leadTopicSummary;
+    this.topicForks = topicForks;
     const leadTopicResume = new LeadTopicResumeService({
       topics: leadTopics,
       index: leadTopicIndex,
@@ -4404,6 +4408,8 @@ class MafwScheduler {
       ? null
       : new LeadHandoffService({
           topics: leadTopics,
+          index: leadTopicIndex,
+          forks: topicForks,
           listMessages: async ({ sessionID, limit }) => {
             const page: any = await this.runtime!.session.messages({ sessionID, limit });
             return { data: page?.data ?? [] };

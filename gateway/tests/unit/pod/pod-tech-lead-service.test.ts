@@ -43,7 +43,7 @@ describe('PodTechLeadService', () => {
   let registerInternalSession: jest.Mock;
   let emitGoalCreated: jest.Mock;
   let notify: jest.Mock;
-  let leadHandoff: { prepareForGoal: jest.Mock; commit: jest.Mock; rollback: jest.Mock };
+  let leadHandoff: { prepareForGoal: jest.Mock; buildForkForGoal: jest.Mock; commit: jest.Mock; rollback: jest.Mock };
   let service: PodTechLeadService;
   let supervisor: PodSessionSupervisor;
   let currentRuntime: string;
@@ -102,6 +102,7 @@ describe('PodTechLeadService', () => {
     notify = jest.fn();
     leadHandoff = {
       prepareForGoal: jest.fn(async () => null),
+      buildForkForGoal: jest.fn(async () => null),
       commit: jest.fn(),
       rollback: jest.fn(),
     };
@@ -229,6 +230,51 @@ describe('PodTechLeadService', () => {
     expect(JSON.parse(fs.readFileSync(created.requestPath, 'utf8')).sourceRef).toMatchObject({
       topicId: 't1',
       messageRange: { from: 'm1', to: 'm2' },
+    });
+  });
+
+  test('forks from a source topic instead of the current conversation', async () => {
+    leadHandoff.buildForkForGoal.mockResolvedValue({
+      sourceRef: {
+        snapshot: '决定：A',
+        topicId: 't_new',
+        messageRange: { from: 'm1', to: 'm3' },
+        capturedAt: NOW,
+      },
+      handoffPath: path.join(mafwDir, 'goals', 'goal-direct-1', 'context', 'lead-handoff.md'),
+      topicId: 't_new',
+      messageRange: { from: 'm1', to: 'm3' },
+      fullText: '<forked-topic sourceTopicId="t1">决定：A</forked-topic>',
+      messages: [],
+      projectDir: dir,
+      goalId: 'goal-direct-1',
+      leadSessionId: 'ses_lead',
+      title: 'Fork',
+      startMessageId: 'm1',
+      endMessageId: 'm3',
+      createdAt: NOW,
+      fork: { sourceTopicId: 't1', inheritedFrom: 'm1', inheritedTo: 'm3', mode: 'reference' },
+    });
+
+    const created = await service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Fork',
+      objective: 'O',
+      createdBy: 'ses_lead',
+      forkFromTopicId: 't1',
+    });
+
+    expect(leadHandoff.buildForkForGoal).toHaveBeenCalledWith(expect.objectContaining({
+      projectDir: dir,
+      goalId: 'goal-direct-1',
+      sourceTopicId: 't1',
+    }));
+    expect(leadHandoff.prepareForGoal).not.toHaveBeenCalled();
+    expect(leadHandoff.commit).toHaveBeenCalled();
+    expect(JSON.parse(fs.readFileSync(created.requestPath, 'utf8')).sourceRef).toMatchObject({
+      topicId: 't_new',
+      messageRange: { from: 'm1', to: 'm3' },
     });
   });
 
