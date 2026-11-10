@@ -828,6 +828,14 @@ opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
 - **spawn 契约与 SDK 完全一致**：`createOpencodeServer` 内部使用 cross-spawn、
   `opencode serve --hostname=127.0.0.1 --port=4096`、env `OPENCODE_CONFIG_CONTENT="{}"`、
   就绪信号 stdout `opencode server listening on <url>`（超时 5s 树杀报错）
+- **认证密码稳定化（2026-11-10）**：`resolveServePassword()` 优先级 = env
+  `MAFW_RUNTIME_PASSWORD` / `MAFW_OPENCODE_PASSWORD` / `OPENCODE_SERVER_PASSWORD` → 持久文件
+  `~/.mafw/serve-password`（`MAFW_SERVE_PASSWORD_FILE` 可覆盖，0600，原子写）→ 生成
+  `mafw-<uuid>` 并落盘。gateway 重启/外部 CLI daemon 重启后可用同一密码收养仍在运行的旧
+  serve；旧实现每进程随机密码，重启后必然 401 并把旧 serve 留成孤儿。
+- **孤儿 serve 清场（2026-11-10）**：启动时 `healthCheck` 失败 → `killServe()`；Windows 必须
+  `taskkill /F /T /PID`（裸 `process.kill` 不足以杀掉实际监听子进程），随后等待 500ms 再
+  spawn。否则旧 serve 占着 4096，新 gateway 只能退化为 MCP-only，所有 native 调用 401。
 - **健康轮询监督**：SDK 不暴露子进程/exit 回调，**owned 与 adopted serve 都走 watchdog**：
   每 30s 探测 `/global/health`，连续 3 次失败 → `recoverServe()` 重启并**重订阅事件流**
   （SSE 建立在 serve 之上，进程重启后必须重连，否则自动化触发器和桌面 SSE 转发全部静默失效）

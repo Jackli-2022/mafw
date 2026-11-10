@@ -5748,6 +5748,45 @@
           }
         }
       }
+    },
+    "/api/tools": {
+      "get": {
+        "operationId": "tools.list",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/tools/execute": {
+      "post": {
+        "operationId": "tools.execute",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/agent/capabilities": {
+      "get": {
+        "operationId": "agent.capabilities",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

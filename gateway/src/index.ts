@@ -204,7 +204,7 @@ import { isHiddenSession, selectVisibleSessions } from './core/session-visibilit
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { MAFW } from './runtime/mafw-vocabulary';
 import { activateRuntimeTools, buildMafwToolFactory } from './runtime/mafw-tools';
-import { handleToolsList, handleToolsExecute } from './routes/tools';
+import { attachToolsRoutes, handleToolsList, handleToolsExecute } from './routes/tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { enrichToolIdentity } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
@@ -213,7 +213,11 @@ import { SessionQueue } from './core/session-queue';
 import { shouldFlush } from './core/queue-flush';
 import { createCognitionGate } from './core/cognition/cognition-gate';
 import { validateRules, type CognitionRule } from './core/cognition/rules';
-import { handleCognitionGate, handleCognitionRewrite, handleCognitionRules } from './routes/cognition';
+import { attachCognitionRoutes } from './routes/cognition';
+import { attachPythonRoutes } from './routes/python';
+import { attachTtsRoutes } from './routes/tts';
+import { attachTerminalRoutes, attachAgentRoutes, attachMobileRoutes } from './routes/agent-terminal-mobile';
+import { attachMediaRoutes } from './routes/media-upload';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -1055,6 +1059,9 @@ class MafwScheduler {
         log.info('OpenCode Serve not reachable, checking for stale process...');
         // 清场原语归 runtime（serve 端口是实现细节；无原语的 runtime 无从清场）
         this.runtimeHost?.agentProcess?.killServe?.();
+        // taskkill /F /T 是异步生效的；给监听 socket 一点释放时间，避免紧随其后的
+        // spawn 仍撞 EADDRINUSE 并退化成 MCP-only。
+        await this.sleep(500);
         try {
           await this.startServe();
           serveReady = !!this.serveInstance;
@@ -5530,6 +5537,53 @@ class MafwScheduler {
       });
       // Task 3：中性 background jobs façade（三源统一；runtime shell 原生 DTO 不出 gateway）
       attachBackgroundJobHandlers(this.routeRegistry, () => ({ service: this.backgroundJobs ?? null }));
+      // Phase D1 Task 2：认知面动词迁 registry dispatch（loopback-only 语义随迁）。
+      attachCognitionRoutes(this.routeRegistry, { gate: () => this.cognitionGate });
+      // Phase D1 Task 3a：Python 内核面迁 registry dispatch（loopback-only）。
+      attachPythonRoutes(this.routeRegistry, { kernels: () => this.kernels });
+      // Phase D1 Task 3b：MAFW 工具面迁 registry dispatch（loopback-only）。
+      attachToolsRoutes(this.routeRegistry, {
+        buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
+        emitEvent: (evt) => this.handleRuntimeEvent(evt),
+      });
+      // Phase D1 Task 3c：TTS 面迁 registry dispatch（voices/speak 无 loopback
+      // 门、stream/interrupt 有——legacy 语义逐字等价）。
+      attachTtsRoutes(this.routeRegistry, {
+        ttsRegistry: () => this.ttsRegistry,
+        ttsReady: () => !!(this.ttsService && this.mediaAgent),
+        putArtifact: (dataUrl) => this.mediaAgent!.putArtifact(dataUrl),
+        inflight: this.ttsInflight,
+      });
+      // Phase D1 Task 3d：agent/terminal/mobile 面迁 registry dispatch。
+      attachTerminalRoutes(this.routeRegistry, {
+        getTerminalService: () => this.getTerminalService(),
+        getAccess: () => this.runtime?.access ?? null,
+      });
+      attachAgentRoutes(this.routeRegistry, {
+        listOutcomes: (() => this.getGatewayDb().listGoalOutcomes({ limit: 200 })) as any,
+        getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
+      });
+      attachMobileRoutes(this.routeRegistry, {
+        getMediaAgent: () => this.mediaAgent,
+        apiToken: () => (config.raw as any)?.server?.apiToken || '',
+        loadTtsArtifactHandler: async () => {
+          const { createTtsArtifactHandler } = await import('./mobile/tts-artifact.js');
+          return createTtsArtifactHandler({ agent: this.mediaAgent! });
+        },
+        loadMobileMediaHandler: async () => {
+          const { createMobileMediaHandler } = await import('./mobile/media-proxy.js');
+          return createMobileMediaHandler({
+            agent: this.mediaAgent!,
+            apiToken: (config.raw as any)?.server?.apiToken || '',
+          });
+        },
+      });
+      // Phase D1 Task 3e：媒体上传/分析面迁 registry dispatch（4 分支，
+      // loopback 门 + 尺寸帽 + chunk 流逐字保留）。
+      attachMediaRoutes(this.routeRegistry, {
+        getMediaAgent: () => this.mediaAgent,
+        getMediaService: () => this.mediaService,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -5668,415 +5722,30 @@ class MafwScheduler {
           return;
         }
 
-        if (req.url === "/api/tts/voices" && req.method === "GET") {
-          try {
-            const ttsCfg = (config.raw as any)?.media?.tts ?? {};
-            const engine = this.ttsRegistry.resolve(ttsCfg.engine);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              voices: engine.voices(),
-              engine: engine.name,
-              // 引擎档案（TTS）≠ runtime 能力位：字段名刻意不同（见 src/tts/types.ts）
-              capabilities: engine.profile,
-              engines: this.ttsRegistry.list().map(e => ({ name: e.name, source: e.source })),
-              models: [
-                { id: 'mimo-v2.5-tts', description: '预置音色语音合成（支持唱歌模式）' },
-                { id: 'mimo-v2.5-tts-voicedesign', description: '文本描述定制音色' },
-                { id: 'mimo-v2.5-tts-voiceclone', description: '音频样本复刻音色' },
-              ],
-              defaultVoice: ttsCfg.defaultVoice || '茉莉',
-              defaultModel: ttsCfg.model || 'mimo-v2.5-tts',
-            }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // /api/tts/voices + POST /api/tts + /api/tts/stream + /api/tts/interrupt
+        // — Phase D1 Task 3c：已迁 registry dispatch（attachTtsRoutes；voices/speak
+        // 无 loopback 门、stream/interrupt 有——语义逐字等价）。
 
-        // POST /api/tts — MiMo-V2.5-TTS speech synthesis (preset voices, wav)
-        if (req.url === "/api/tts" && req.method === "POST") {
-          try {
-            if (!this.ttsService || !this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'TTS not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const text = typeof body?.text === 'string' ? body.text : '';
-            if (!text.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'text is required' })); return; }
-            const voice = typeof body?.voice === 'string' ? body.voice : undefined;
-            const style = typeof body?.style === 'string' ? body.style : undefined;
-            const ttsCfg: any = (config.raw as any)?.media?.tts ?? {};
-            const ttsEngine = this.ttsRegistry.resolve(ttsCfg.engine);
-            const wav = await ttsEngine.synthesize(text, { voice, style });
-            const artifactId = this.mediaAgent.putArtifact(`data:audio/wav;base64,${wav.toString('base64')}`);
-            const baseUrl = `http://127.0.0.1:${config.server.apiPort}`;
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              artifactId,
-              voice: voice || ttsCfg.defaultVoice || '茉莉',
-              mime: 'audio/wav',
-              url: `${baseUrl}/a2a/artifacts/${artifactId}`,
-            }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/media/analyze-audio — Phase D1 Task 3e：已迁 registry dispatch。
+        // POST /api/media/upload — Phase D1 Task 3e：已迁 registry dispatch。
 
-        // POST /api/media/analyze-audio — 音频叙述式理解（自然语言：内容 + 情绪/语调轨迹 + 意图）。        // opt-in：只服务实时语音等场景；FLEURS 评测走默认 A2A 路径（不受影响）。
-        if (req.url === "/api/media/analyze-audio" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaService) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaService not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const dataUrl = typeof body?.dataUrl === 'string' ? body.dataUrl : '';
-            if (!dataUrl) { res.writeHead(400); res.end(JSON.stringify({ error: 'dataUrl is required' })); return; }
-            const mediaType = typeof body?.mediaType === 'string' && body.mediaType ? body.mediaType : 'audio/wav';
-            const promptText = typeof body?.prompt === 'string' ? body.prompt : undefined;
-            // 叙述式分析（内容 + 情绪/语调轨迹 + 意图，自然语言）；允许自定义 prompt 覆盖。
-            const result = promptText
-              ? await this.mediaService.analyze(
-                  { kind: 'audio', dataUrl, mediaType },
-                  promptText,
-                )
-              : await this.mediaService.analyzeAudioNarrative({ kind: 'audio', dataUrl, mediaType });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ result }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/media/create-task — Phase D1 Task 3e：已迁 registry dispatch。
 
-        // POST /api/media/upload — binary media upload for the A2A media agent.
-        // Body is the raw media bytes (octet-stream); the media type rides in
-        // the query string. Returns an artifact reference the desktop can pass
-        // to /api/media/create-task (the A2A SendMessage then carries only a
-        // URL part instead of a huge base64 body).
-        const mediaUrlPath = req.url?.split('?')[0]
-        if (mediaUrlPath === '/api/media/upload' && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const mediaType = parsedUrl.searchParams.get('type') || 'application/octet-stream';
-            if (!mediaType.startsWith('image/') && !mediaType.startsWith('video/') && !mediaType.startsWith('audio/')) {
-              res.writeHead(415);
-              res.end(JSON.stringify({ error: `Unsupported media type: ${mediaType}` }));
-              return;
-            }
-            const chunks: Buffer[] = [];
-            let total = 0;
-            const cap = mediaType.startsWith('video/') ? 50 * 1024 * 1024 : mediaType.startsWith('audio/') ? 25 * 1024 * 1024 : 20 * 1024 * 1024;
-            for await (const chunk of req) {
-              total += chunk.length;
-              if (total > cap) {
-                res.writeHead(413);
-                res.end(JSON.stringify({ error: `Media exceeds ${cap} byte limit` }));
-                return;
-              }
-              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-            }
-            const bytes = Buffer.concat(chunks);
-            if (bytes.length === 0) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'empty body' }));
-              return;
-            }
-            const artifactId = this.mediaAgent.putArtifactBytes(bytes, mediaType);
-            const baseUrl = `http://127.0.0.1:${config.server.apiPort}`;
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              artifactId,
-              mediaType,
-              size: bytes.length,
-              url: `${baseUrl}/a2a/artifacts/${artifactId}`,
-            }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/media/upload-and-create — Phase D1 Task 3e：已迁 registry dispatch。
 
-        // POST /api/media/create-task — create an A2A media task from an
-        // already-uploaded artifact (URL part reference). Response shape
-        // matches the legacy dataUrl createTask path.
-        if (req.url === '/api/media/create-task' && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const artifactId = typeof body?.artifactId === 'string' ? body.artifactId : '';
-            const question = typeof body?.question === 'string' ? body.question : '';
-            if (!artifactId) { res.writeHead(400); res.end(JSON.stringify({ error: 'artifactId is required' })); return; }
-            const mediaType = typeof body?.mediaType === 'string' && body.mediaType ? body.mediaType : this.mediaAgent.getArtifactMediaType(artifactId) || 'application/octet-stream';
-            const payload = {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'SendMessage',
-              params: {
-                message: {
-                  messageId: `fe-${Date.now()}`,
-                  role: 1,
-                  parts: [
-                    { url: `/a2a/artifacts/${artifactId}`, mediaType, filename: 'upload.bin' },
-                    ...(question ? [{ text: question }] : []),
-                  ],
-                },
-              },
-            };
-            const result = await this.mediaAgent.handleJsonRpc(payload, { 'a2a-version': '1.0' });
-            const parsed: any = JSON.parse(result.body);
-            if (parsed?.error) {
-              res.writeHead(result.status);
-              res.end(JSON.stringify({ error: parsed.error }));
-              return;
-            }
-            const task = parsed?.result?.task;
-            if (!task?.id) {
-              res.writeHead(502);
-              res.end(JSON.stringify({ error: 'no task returned' }));
-              return;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ id: task.id, contextId: task.contextId, state: task.status?.state || '' }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // Mobile TTS artifact + media proxy — Phase D1 Task 3d：已迁 registry dispatch。
 
-        // POST /api/media/upload-and-create — combined upload + createTask in a
-        // single request. Saves one IPC round-trip from the desktop renderer.
-        // Body is raw binary (octet-stream); mediaType rides in the query string.
-        // Returns immediately with taskID (state=working), model analysis runs async.
-        if (req.url?.startsWith('/api/media/upload-and-create') && req.method === 'POST') {
-          const t0 = Date.now();
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const mediaType = parsedUrl.searchParams.get('type') || 'application/octet-stream';
-            const question = parsedUrl.searchParams.get('question') || '';
-            if (!mediaType.startsWith('image/') && !mediaType.startsWith('video/') && !mediaType.startsWith('audio/')) {
-              res.writeHead(415);
-              res.end(JSON.stringify({ error: `Unsupported media type: ${mediaType}` }));
-              return;
-            }
-            const chunks: Buffer[] = [];
-            let total = 0;
-            const cap = mediaType.startsWith('video/') ? 50 * 1024 * 1024 : mediaType.startsWith('audio/') ? 25 * 1024 * 1024 : 20 * 1024 * 1024;
-            for await (const chunk of req) {
-              total += chunk.length;
-              if (total > cap) {
-                res.writeHead(413);
-                res.end(JSON.stringify({ error: `Media exceeds ${cap} byte limit` }));
-                return;
-              }
-              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-            }
-            const bytes = Buffer.concat(chunks);
-            const t1 = Date.now();
-            if (bytes.length === 0) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'empty body' }));
-              return;
-            }
-            const artifactId = this.mediaAgent.putArtifactBytes(bytes, mediaType);
-            const t2 = Date.now();
-            
-            // Create task immediately (state=working), analysis runs in background
-            const { taskId, contextId } = this.mediaAgent.createTaskAsync(artifactId, mediaType, question);
-            const t3 = Date.now();
-            
-            // Return immediately with taskID (state=working)
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              id: taskId,
-              contextId,
-              state: 'TASK_STATE_WORKING',
-              artifactId,
-              mediaType,
-              size: bytes.length,
-            }));
-            const t4 = Date.now();
-            log.info(`[upload-and-create] read=${t1-t0}ms artifact=${t2-t1}ms task=${t3-t2}ms respond=${t4-t3}ms total=${t4-t0}ms`);
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/tts/stream + POST /api/tts/interrupt — Phase D1 Task 3c：
+        // 已迁 registry dispatch（attachTtsRoutes；loopback 门随迁）。
 
-        // ── Mobile TTS artifact playback (GET /api/mobile/tts/artifacts/:id) ──
-        // Token-authed alternative to loopback-only /a2a/artifacts/:id so the
-        // mobile app can play synthesized TTS audio over LAN/Tailscale with
-        // just_audio + Authorization header (spec §8.3).
-        if (req.url?.startsWith('/api/mobile/tts/artifacts/')) {
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const { createTtsArtifactHandler } = await import('./mobile/tts-artifact.js');
-            const ttsArtifactHandler = createTtsArtifactHandler({ agent: this.mediaAgent });
-            const handled = await ttsArtifactHandler(req, res);
-            if (handled) return;
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-            return;
-          }
-        }
+        // POST /api/python/execute + restart + status — Phase D1 Task 3a：
+        // 已迁 registry dispatch（attachPythonRoutes；loopback 守卫随迁）。
 
-        // ── Mobile media proxy (POST /api/mobile/media/*) ──
-        // Simplified endpoints for the Android app: multipart upload → A2A task,
-        // and auth-proxy follow-up questions. Delegates to createMobileMediaHandler.
-        if (req.url?.startsWith('/api/mobile/media/')) {
-          const { createMobileMediaHandler } = await import('./mobile/media-proxy.js');
-          const mobileMediaHandler = createMobileMediaHandler({
-            agent: this.mediaAgent!,
-            apiToken,
-          });
-          const handled = await mobileMediaHandler(req, res);
-          if (handled) return;
-        }
+        // GET /api/tools + POST /api/tools/execute — Phase D1 Task 3b：
+        // 已迁 registry dispatch（attachToolsRoutes；loopback 守卫随迁）。
 
-        // POST /api/tts/stream — 流式 TTS（SSE，PCM16 mono 分块）。
-        // 响应头 x-tts-sample-rate 声明引擎采样率；
-        // 每块：data: {"data":"<base64 pcm16>","voice":"<voice>"}\n\n；结束：data: {"done":true}
-        // body.sessionId 可选：登记在途合成，供 /api/tts/interrupt 取消。
-        if (req.url === "/api/tts/stream" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const body = JSON.parse(await readBody(req));
-          const text = typeof body?.text === 'string' ? body.text : '';
-          if (!text.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'text is required' })); return; }
-          const voice = typeof body?.voice === 'string' ? body.voice : undefined;
-          const style = typeof body?.style === 'string' ? body.style : undefined;
-          const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : '';
-          try {
-            const ttsCfg = (config.raw as any)?.media?.tts ?? {};
-            const ttsEngine = this.ttsRegistry.resolve(ttsCfg.engine);
-            const abort = new AbortController();
-            req.on('close', () => abort.abort());
-            if (sessionId) {
-              let inflightSet = this.ttsInflight.get(sessionId);
-              if (!inflightSet) { inflightSet = new Set(); this.ttsInflight.set(sessionId, inflightSet); }
-              inflightSet.add(abort);
-              res.on('close', () => {
-                inflightSet.delete(abort);
-                if (inflightSet.size === 0) this.ttsInflight.delete(sessionId);
-              });
-            }
-            res.writeHead(200, {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-              'x-tts-sample-rate': String(ttsEngine.profile.sampleRate),
-            });
-            const gen = streamSentences(ttsEngine, text, { voice, style }, abort.signal);
-            for await (const chunk of gen) {
-              if (abort.signal.aborted) break;
-              res.write(`data: ${JSON.stringify({ data: chunk.pcm.toString('base64'), voice: voice || ttsCfg.defaultVoice || '茉莉' })}\n\n`);
-            }
-            if (!abort.signal.aborted) res.write('data: {"done":true}\n\n');
-            res.end();
-          } catch (err: any) {
-            log.error(`[TTS] stream synthesis failed (engine=${(config.raw as any)?.media?.tts?.engine ?? 'mimo'}): ${err?.message || String(err)}`);
-            if (!res.headersSent) {
-              res.writeHead(502);
-              res.end(JSON.stringify({ error: err?.message || String(err) }));
-            } else {
-              res.write(`data: ${JSON.stringify({ error: err?.message || String(err) })}\n\n`);
-              res.end();
-            }
-          }
-          return;
-        }
-
-        // POST /api/tts/interrupt — barge-in 打断：取消 session 在途 TTS 合成
-        if (req.url === "/api/tts/interrupt" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          await handleTtsInterrupt(req, res, { inflight: this.ttsInflight });
-          return;
-        }
-
-        // POST /api/python/execute — persistent Python kernel (session-scoped)
-        if (req.url === "/api/python/execute" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.kernels) { res.writeHead(503); res.end(JSON.stringify({ error: 'PyKernel not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const sessionID = typeof body?.sessionID === 'string' ? body.sessionID : '';
-            const code = typeof body?.code === 'string' ? body.code : '';
-            if (!sessionID || !code) { res.writeHead(400); res.end(JSON.stringify({ error: 'sessionID and code are required' })); return; }
-            const kernel = this.kernels.get(sessionID);
-            const result = await kernel.execute(code, {
-              timeoutMs: typeof body?.timeoutMs === 'number' ? body.timeoutMs : undefined,
-            });
-            if (result.truncated) {
-              const removed = 'output truncated';
-              result.stdout += `\n\n... (${removed}, 已截断)`;
-            }
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
-
-        // POST /api/python/restart — restart the session's kernel (state lost)
-        if (req.url === "/api/python/restart" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.kernels) { res.writeHead(503); res.end(JSON.stringify({ error: 'PyKernel not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const sessionID = typeof body?.sessionID === 'string' ? body.sessionID : '';
-            if (!sessionID) { res.writeHead(400); res.end(JSON.stringify({ error: 'sessionID is required' })); return; }
-            await this.kernels.restart(sessionID);
-            res.writeHead(200);
-            res.end(JSON.stringify({ ok: true }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
-
-        // GET /api/tools — MAFW 基础工具 spec 清单（out-of-process runtime 的注册面）
-        if (req.url === "/api/tools" && req.method === "GET") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          handleToolsList(res);
-          return;
-        }
-
-        // POST /api/tools/execute — 通用工具执行（out-of-process runtime 通道；同 /api/python/* 信任域）。
-        // 执行自动合成两帧 tool part（running→completed/error）经 handleRuntimeEvent 全管线广播（spec 2026-10-20）。
-        if (req.url === "/api/tools/execute" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          await handleToolsExecute(req, res, {
-            buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
-            emitEvent: (evt) => this.handleRuntimeEvent(evt),
-          });
-          return;
-        }
-
-        // GET /api/python/status — kernel status for a session
-        if (req.url === "/api/python/status" && req.method === "GET") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.kernels) { res.writeHead(503); res.end(JSON.stringify({ error: 'PyKernel not initialized' })); return; }
-            const sessionID = new URL(req.url, 'http://localhost').searchParams.get('sessionID') || '';
-            if (!sessionID) { res.writeHead(400); res.end(JSON.stringify({ error: 'sessionID is required' })); return; }
-            res.writeHead(200);
-            res.end(JSON.stringify(this.kernels.status(sessionID)));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // GET /api/python/status — kernel status for a session — Phase D1 Task 3a：
+        // 已迁 registry dispatch。
 
         // MCP endpoints on /mcp — dual transport:
         //   POST with ?sessionId=... → legacy SSE message channel
@@ -6712,14 +6381,7 @@ class MafwScheduler {
           })) return;
         }
 
-        // Neutral terminal PTY façade（terminal.pty）：CRUD + connect-ticket。
-        // 原生 /api/pty、connect-token 与原生帧只在 runtime adapter。
-        if (req.url?.startsWith('/api/terminal/sessions')) {
-          if (await handleTerminal(req, res, req.url!, {
-            service: this.getTerminalService(),
-            access: this.runtime?.access ?? null,
-          })) return;
-        }
+        // Neutral terminal PTY façade — Phase D1 Task 3d：已迁 registry dispatch。
 
         // MCP 管理门面（runtime-neutral）：gateway 只做能力门 + 契约调用；
         // opencode 的 v2 HTTP / CLI / 配置文档细节在 runtime/opencode-mcp.ts。
@@ -7935,24 +7597,8 @@ class MafwScheduler {
         }
 
         // ── 认知面 HTTP 动词（spec 2026-10-22-cognition-gate-rewrite §5.4；loopback-only）──
-        if (req.url?.startsWith('/api/cognition/gate') && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const body = await readBody(req);
-          await handleCognitionGate({ body: body ? JSON.parse(body) : null, gate: this.cognitionGate, res });
-          return;
-        }
-        if (req.url?.startsWith('/api/cognition/rewrite') && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const body = await readBody(req);
-          await handleCognitionRewrite({ body: body ? JSON.parse(body) : null, gate: this.cognitionGate, res });
-          return;
-        }
-        if (req.url?.startsWith('/api/cognition/rules') && req.method === 'GET') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const raw = config.cognition?.rules;
-          await handleCognitionRules({ res, getRules: () => validateRules(raw) });
-          return;
-        }
+        // Phase D1 Task 2：已迁 registry dispatch（attachCognitionRoutes；loopback
+        // 守卫与 per-request config 读取随 handler 迁移，行为等价）。
 
         // ── 会话队列 inbox 管理面（spec 2026-10-22-session-queue-inbox §5.5）──
         // GET /api/session/{id}/queue — 列队
@@ -8538,23 +8184,8 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/agent/capabilities — L1 能力账本 + L2 失败谱（自我认知只读面），fail-open。
-        if (req.url?.startsWith('/api/agent/capabilities') && req.method === 'GET') {
-          try {
-            const { handleCapabilities } = require('./routes/capability');
-            const result = await handleCapabilities({
-              listOutcomes: () => this.getGatewayDb().listGoalOutcomes({ limit: 200 }),
-              getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
-            });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            log.error('[Agent] capabilities error:', err.message);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ledger: { total: 0, passRate: 0 }, failureTaxonomy: [] }));
-          }
-          return;
-        }
+        // GET /api/agent/capabilities — Phase D1 Task 3d：已迁 registry dispatch
+        // （attachAgentRoutes；fail-open 语义随迁）。
 
         // POST /api/obs/capture — observation intake from the opencode plugin.
         // The gateway owns the T1 store (SQLite) and assigns turn IDs, so

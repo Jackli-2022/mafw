@@ -207,3 +207,48 @@ describe('serve-sidecar spawn options', () => {
     return child;
   }
 });
+
+describe('killServePort（stale serve 恢复）', () => {
+  let killServePort: any;
+  beforeEach(() => {
+    jest.resetModules();
+    killServePort = require('../../src/runtime/serve-sidecar').killServePort;
+  });
+
+  test('win32 用 taskkill /F /T 树杀（process.kill 不足以清掉监听进程）', () => {
+    const commands: string[] = [];
+    const execSync = jest.fn((cmd: string) => {
+      commands.push(cmd);
+      if (cmd.includes('netstat')) return Buffer.from('  TCP 127.0.0.1:4096 0.0.0.0:0 LISTENING 23404');
+      return Buffer.from('');
+    });
+    (killServePort as any)(4096, {
+      platform: 'win32',
+      execSync,
+      kill: () => { throw new Error('process.kill must not be used on win32'); },
+    });
+    expect(commands.some((cmd) => cmd.includes('taskkill /F /T /PID 23404'))).toBe(true);
+  });
+
+  test('posix 用 SIGKILL', () => {
+    const execSync = jest.fn(() => Buffer.from('23404\n'));
+    const kill = jest.fn();
+    (killServePort as any)(4096, { platform: 'linux', execSync, kill });
+    expect(kill).toHaveBeenCalledWith(23404, 'SIGKILL');
+  });
+
+  test('忽略 :40960 与 TIME_WAIT 行', () => {
+    const execSync = jest.fn(() => Buffer.from(
+      '  TCP 127.0.0.1:40960 0.0.0.0:0 LISTENING 111\n'
+      + '  TCP 127.0.0.1:4096 127.0.0.1:5555 TIME_WAIT 0',
+    ));
+    const kill = jest.fn();
+    (killServePort as any)(4096, { platform: 'win32', execSync, kill });
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  test('netstat/taskkill 失败时不抛错', () => {
+    const execSync = jest.fn(() => { throw new Error('no match'); });
+    expect(() => (killServePort as any)(4096, { platform: 'win32', execSync, kill: jest.fn() })).not.toThrow();
+  });
+});
