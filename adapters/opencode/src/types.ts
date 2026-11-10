@@ -20,7 +20,6 @@ import type {
   RuntimeCapabilities,
   RuntimeDiscoveryChannel,
   RuntimeMcpChannel,
-  RuntimeMcpConfigChannel,
   RuntimeProviderTransport,
   RuntimePtyChannel,
   RuntimeSnapshotTreeChannel,
@@ -270,7 +269,7 @@ export interface RuntimeClient {
   snapshotTree?: RuntimeSnapshotTreeChannel;
   /** Dedicated media-analysis carrier (absent for opencode: stateless completion). */
   mediaSession?: { create(opts: { directory: string }): Promise<{ id: string }> };
-  mcp?: RuntimeMcpChannel & { config?: RuntimeMcpConfigChannel };
+  mcp?: RuntimeMcpChannel;
   config: {
     get(): Promise<any>;
     update(config: any): Promise<any>;

@@ -8,9 +8,11 @@
  * reason that has nothing to do with what they pin.
  *
  * `ensureAdapterBuilt()` closes that gap without turning every test run into a
- * build: the bundle is rebuilt only when an output is missing, a required build
- * input is missing, or an input is at least as new as the oldest output
- * (`src/**\/*.ts`, `build.mjs`, `tsconfig.build.json`).
+ * build: the bundle is rebuilt only when an output is missing (including
+ * `dist/package.json`, which pins the CJS entry type), a required build input is
+ * missing, or an input is at least as new as the oldest output (`src/**\/*.ts`,
+ * `build.mjs`, `tsconfig.build.json`). A single build is capped by
+ * `BUILD_TIMEOUT_MS` so a hung `esbuild`/`tsc` cannot stall a Jest worker.
  *
  * Concurrency: a plain `npx jest` runs suites in worker processes, and two of
  * them (unit package contract + integration staging) can reach this helper at
@@ -37,8 +39,8 @@ import * as path from 'path';
 export const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 export const ADAPTER_DIR = path.join(REPO_ROOT, 'adapters', 'opencode');
 
-/** Outputs the packaging suites require. */
-export const BUILD_OUTPUTS = ['dist/index.js', 'dist/index.d.ts'] as const;
+/** Outputs the packaging suites require (`build.mjs` writes all three). */
+export const BUILD_OUTPUTS = ['dist/index.js', 'dist/index.d.ts', 'dist/package.json'] as const;
 
 /** Non-source build inputs at the adapter root. Missing any of these is stale. */
 const BUILD_INPUT_FILES = ['build.mjs', 'tsconfig.build.json'] as const;
@@ -261,26 +263,37 @@ export type BuildRunner = (adapterDir: string) => {
   status: number | null;
   stdout?: string | null;
   stderr?: string | null;
-  /** Set by `spawnSync` when the process could not be started at all. */
-  error?: { message?: string } | null;
+  /** Set by `spawnSync` when the process could not be started or timed out. */
+  error?: { message?: string; code?: string } | null;
   signal?: string | null;
 };
 
-function defaultRunner(adapterDir: string): ReturnType<BuildRunner> {
+/** Backstop against a hung `esbuild`/`tsc`; normal builds take a few seconds. */
+export const BUILD_TIMEOUT_MS = 180_000;
+
+function defaultRunner(adapterDir: string, timeoutMs: number): ReturnType<BuildRunner> {
   return spawnSync(process.execPath, [path.join(adapterDir, 'build.mjs')], {
     cwd: adapterDir,
     encoding: 'utf8',
     env: process.env,
+    timeout: timeoutMs,
   });
 }
 
-function describeBuildFailure(status: AdapterBuildStatus, result: ReturnType<BuildRunner>): string {
-  const outcome = result.status === null
-    ? `no exit status${result.error?.message ? ` (spawn failed: ${result.error.message})` : ' (spawn failed)'}`
-    : `exit ${result.status}`;
-  const signal = result.signal ? `; signal ${result.signal}` : '';
+function describeBuildFailure(
+  status: AdapterBuildStatus,
+  result: ReturnType<BuildRunner>,
+  timeoutMs: number,
+): string {
+  const timedOut = result.error?.code === 'ETIMEDOUT';
+  const cause = timedOut
+    ? `timed out after ${timeoutMs}ms${result.signal ? ` (killed by ${result.signal})` : ''}`
+    : result.status === null
+      ? `no exit status${result.error?.message ? ` (spawn failed: ${result.error.message})` : ' (spawn failed)'}`
+      : `exit ${result.status}`;
+  const signal = !timedOut && result.signal ? `; signal ${result.signal}` : '';
   const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
-  return `@mafw/adapter-opencode build failed (${status.reason ?? 'stale dist'}; ${outcome}${signal}):\n${output}`;
+  return `@mafw/adapter-opencode build failed (${status.reason ?? 'stale dist'}; ${cause}${signal}):\n${output}`;
 }
 
 function assertBuildOutputs(adapterDir: string): void {
@@ -298,16 +311,20 @@ export interface EnsureAdapterBuiltOptions {
   run?: BuildRunner;
   /** Lock timing/clock injection for tests. */
   lock?: BuildLockOptions;
+  /** Hard cap on the build process; defaults to `BUILD_TIMEOUT_MS`. */
+  timeoutMs?: number;
 }
 
 /**
  * Build `adapters/opencode/dist` when it is missing or stale. Fresh trees return
  * immediately (no lock, no spawn). Otherwise the build runs under
- * `acquireBuildLock` with a double-checked freshness test, and failures throw
- * with the build's stdout/stderr, spawn error and signal.
+ * `acquireBuildLock` with a double-checked freshness test, is capped by
+ * `BUILD_TIMEOUT_MS`, and failures throw with the build's stdout/stderr, spawn
+ * error, timeout and signal.
  */
 export function ensureAdapterBuilt(options: EnsureAdapterBuiltOptions = {}): void {
   const adapterDir = options.adapterDir ?? ADAPTER_DIR;
+  const timeoutMs = options.timeoutMs ?? BUILD_TIMEOUT_MS;
   if (adapterBuildStatus(adapterDir).fresh) return;
 
   const release = acquireBuildLock(adapterDir, options.lock);
@@ -316,8 +333,9 @@ export function ensureAdapterBuilt(options: EnsureAdapterBuiltOptions = {}): voi
     const status = adapterBuildStatus(adapterDir);
     if (status.fresh) return;
 
-    const result = (options.run ?? defaultRunner)(adapterDir);
-    if (result.status !== 0) throw new Error(describeBuildFailure(status, result));
+    const run = options.run ?? ((dir: string) => defaultRunner(dir, timeoutMs));
+    const result = run(adapterDir);
+    if (result.status !== 0) throw new Error(describeBuildFailure(status, result, timeoutMs));
     assertBuildOutputs(adapterDir);
   } finally {
     // The lock must drop on success and on throw, and also on the

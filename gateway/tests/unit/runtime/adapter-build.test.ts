@@ -43,6 +43,7 @@ function seedFreshLayout(): void {
   write('src/nested/deep.ts', 0);
   write('dist/index.js', MINUTE);
   write('dist/index.d.ts', MINUTE);
+  write('dist/package.json', MINUTE);
 }
 
 beforeEach(() => {
@@ -116,7 +117,7 @@ describe('freshness predicate', () => {
     expect(status.reason).toContain('disappeared while checking freshness');
   });
 
-  it('rebuilds when either output is missing', () => {
+  it('rebuilds when any output is missing, including dist/package.json', () => {
     seedFreshLayout();
     fs.rmSync(path.join(adapterDir, 'dist', 'index.d.ts'));
     expect(adapterBuildStatus(adapterDir).reason).toContain('dist/index.d.ts');
@@ -124,6 +125,14 @@ describe('freshness predicate', () => {
     seedFreshLayout();
     fs.rmSync(path.join(adapterDir, 'dist', 'index.js'));
     expect(adapterBuildStatus(adapterDir).reason).toContain('dist/index.js');
+
+    // `opencode-package.test.ts` requires it; a bundle without the CJS type
+    // marker would load as ESM, so a missing one must force a rebuild.
+    seedFreshLayout();
+    fs.rmSync(path.join(adapterDir, 'dist', 'package.json'));
+    const status = adapterBuildStatus(adapterDir);
+    expect(status.fresh).toBe(false);
+    expect(status.reason).toContain('dist/package.json');
   });
 });
 
@@ -237,6 +246,7 @@ describe('ensureAdapterBuilt', () => {
       expect(fs.existsSync(lockDir)).toBe(true);
       write('dist/index.js', MINUTE * 3);
       write('dist/index.d.ts', MINUTE * 3);
+      write('dist/package.json', MINUTE * 3);
       return { status: 0 };
     });
     ensureAdapterBuilt({ adapterDir, run });
@@ -268,6 +278,7 @@ describe('ensureAdapterBuilt', () => {
         sleep: () => {
           write('dist/index.js', MINUTE);
           write('dist/index.d.ts', MINUTE);
+          write('dist/package.json', MINUTE);
           fs.rmSync(lockDir, { recursive: true, force: true });
         },
       },
@@ -301,6 +312,22 @@ describe('ensureAdapterBuilt', () => {
     expect(fs.existsSync(lockDir)).toBe(false);
   });
 
+  it('diagnoses a build timeout by naming the limit and the kill signal', () => {
+    seedFreshLayout();
+    write('src/index.ts', MINUTE * 2);
+
+    // `spawnSync` reports a timeout as status null + error.code ETIMEDOUT.
+    const hung: BuildRunner = () => ({
+      status: null,
+      error: { message: 'spawnSync node ETIMEDOUT', code: 'ETIMEDOUT' },
+      signal: 'SIGTERM',
+    });
+    expect(() => ensureAdapterBuilt({ adapterDir, run: hung, timeoutMs: 1_000 })).toThrow(
+      /timed out after 1000ms \(killed by SIGTERM\)/,
+    );
+    expect(fs.existsSync(lockDir)).toBe(false);
+  });
+
   it('fails loudly when a successful build left outputs behind', () => {
     seedFreshLayout();
     write('src/index.ts', MINUTE * 2);
@@ -309,6 +336,14 @@ describe('ensureAdapterBuilt', () => {
     const liar: BuildRunner = () => ({ status: 0 });
     expect(() => ensureAdapterBuilt({ adapterDir, run: liar })).toThrow(
       /exited 0 but dist\/index\.d\.ts is missing/,
+    );
+
+    // `dist/package.json` is part of the contract too (CJS entry type).
+    seedFreshLayout();
+    write('src/index.ts', MINUTE * 2);
+    fs.rmSync(path.join(adapterDir, 'dist', 'package.json'));
+    expect(() => ensureAdapterBuilt({ adapterDir, run: liar })).toThrow(
+      /exited 0 but dist\/package\.json is missing/,
     );
     expect(fs.existsSync(lockDir)).toBe(false);
   });

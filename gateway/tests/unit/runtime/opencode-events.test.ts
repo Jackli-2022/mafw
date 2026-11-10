@@ -318,8 +318,11 @@ describe('OPENCODE_V2_EVENT_MAPPINGS（@v2 混合消费表——next 族为主 +
   });
 });
 
-describe('@2.1 session.inbox.* → queue.updated（回归：inbox 事件不得伪造 items 快照）', () => {
-  it('session.inbox.enqueued 只带 action/item/id，无 items 键', () => {
+// translate 层钉扎：@2.1 inbox 事件保留 action/item/id 且不合成 items。
+// 反向 mapper（canonical → AdapterEvent）的回归守卫在 adapter-event-mapper.test.ts，
+// 这里只钉 translateOpencode21Event 自身的输出形状。
+describe('@2.1 session.inbox.* → queue.updated（translate 不合成 items 快照）', () => {
+  it('session.inbox.enqueued 只带 action/item/id，translate 不补 items 键', () => {
     const out = translateOpencode21Event({
       type: 'session.inbox.enqueued',
       data: { sessionID: 's1', item: { id: 'q1', text: 'hi' }, id: 'q1' },
@@ -331,7 +334,8 @@ describe('@2.1 session.inbox.* → queue.updated（回归：inbox 事件不得�
       item: { id: 'q1', text: 'hi' },
       id: 'q1',
     });
-    // 伪造 items: [] 会让桌面把队列清空——必须完全缺省该键
+    // 只保留 translate 层的 action/item/id：2.1 inbox 事件无全量快照，
+    // 若在此层补 `items: []`，反向 mapper 与桌面会把它当清空队列广播。
     expect(out.payload.properties).not.toHaveProperty('items');
   });
 });
