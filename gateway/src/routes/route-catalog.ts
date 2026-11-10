@@ -322,6 +322,14 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/runtime/dry-event', operationId: 'runtime.dryEvent', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/conformance', operationId: 'runtime.conformance', tags: ['internal'] },
   { method: 'POST', path: '/api/sessions/:sid/permissions/:rid', operationId: 'permissions.replyRuntime', tags: ['internal'] },
+  // Task E2：subagent 面对不上 SDK 调用面（packages/gateway-sdk/src/client.ts 无
+  // /subagents 调用；packages/runtime-core/src 与 packages/desktop/src 也不发这些
+  // 请求，只有 gateway 内 mafw-tools 走 HTTP）→ NON_SDK + internal，SDK 死契约门豁免。
+  { method: 'POST', path: '/api/sessions/:id/subagents', operationId: 'session.subagents.spawn', tags: ['internal'] },
+  { method: 'GET', path: '/api/sessions/:id/subagents', operationId: 'session.subagents.list', tags: ['internal'] },
+  { method: 'POST', path: '/api/sessions/:id/subagents/:subId/message', operationId: 'session.subagents.message', tags: ['internal'] },
+  { method: 'POST', path: '/api/sessions/:id/subagents/:subId/cancel', operationId: 'session.subagents.cancel', tags: ['internal'] },
+  { method: 'GET', path: '/api/sessions/:id/subagents/:subId/result', operationId: 'session.subagents.result', tags: ['internal'] },
   { method: 'DELETE', path: '/api/session/:id', operationId: 'session.deleteLegacy', tags: ['internal'] },
   // Eval / LLM 压缩
   { method: 'POST', path: '/api/eval/chat/completions', operationId: 'eval.chatCompletions', tags: ['internal'] },

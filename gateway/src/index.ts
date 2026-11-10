@@ -113,10 +113,6 @@ import { PodA2ABridge } from './core/pod/pod-a2a-bridge';
 import { PodA2AAgent } from './core/pod/pod-a2a-agent';
 import { PodA2AArtifactStore } from './core/pod/pod-a2a-artifacts';
 import { canonicalProjectDir, podInternalSessionRoleForNode } from './core/pod/pod-identity';
-import {
-  handleSubagentCancel, handleSubagentList, handleSubagentMessage,
-  handleSubagentResult, handleSubagentSpawn,
-} from './routes/subagents';
 import { createToolRegistry } from "./mcp/tool-registry";
 import { abstractionLevelFor } from './core/memory/abstraction-level';
 import { MemoryService } from "./memory/service";
@@ -224,6 +220,7 @@ import { attachChatRoutes } from './routes/chat';
 import { attachObsRoutes } from './routes/obs';
 import { attachSessionsCoreRoutes } from './routes/sessions-core';
 import { attachSessionsReadRoutes } from './routes/sessions-read';
+import { attachSessionsPermissionsRoutes } from './routes/sessions-permissions';
 import { attachApprovalsRoutes } from './routes/approvals';
 import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
 import { attachUsageRoutes } from './routes/usage';
@@ -239,12 +236,10 @@ import { migrateEventLogInfoToMessage } from './events/event-log-migrate';
 import { enrichBroadcastFrame } from './events/broadcast-frame';
 import { parseSince, attachGlobalSse } from './events/sse-attach';
 import { ApprovalPolicyService } from './core/approval/policy-service';
-import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
 import { PermissionRulesStore } from './core/approval/rules-store';
 import { normalizeMode, SessionPermissionMode } from './core/approval/policy-service';
 import { applyApprovalPolicy } from './core/approval/hook';
-import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { SessionConfigService, SessionConfigError } from './core/session-config';
 import { archiveWorktree } from './core/tools/archive-worktree.js';
 import { resolveNodeModel } from './core/goal/node-model';
@@ -312,7 +307,6 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
   ...TOOL_PRIMITIVE_TYPES,
 ]);
 
-import { handlePermissionReply } from './routes/permission';
 import { surfaceUnavailableMessage } from './runtime/runtime-access';
 import { attachBackgroundJobHandlers } from './routes/background-jobs';
 import { performRuntimeSwitch, type RuntimeSwitchDeps } from './routes/runtime-switch';
@@ -5699,6 +5693,14 @@ class MafwScheduler {
         listDataParts: (sessionID, messageIds) => this.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
         subagentService: () => this.subagentService,
       });
+      // Phase D1 Task E2：sessions 审批 / 子代理面迁 registry dispatch（7 分支；
+      // permission-mode GET/POST method 拆分与 subagents 五操作逐字委托）。
+      attachSessionsPermissionsRoutes(this.routeRegistry, {
+        approvalPolicy: () => this.approvalPolicy,
+        runtime: () => this.runtime,
+        permissionRules: () => this.permissionRules,
+        subagentService: () => this.subagentService,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6904,14 +6906,7 @@ class MafwScheduler {
           return;
         }
 
-        // per-session 审批模式（manual/auto）—— 具体路径，必须在 /api/permissions/:id 之前匹配
-        const permModeMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/permission-mode(?:\?|$)/);
-        if (permModeMatch && (req.method === 'GET' || req.method === 'POST')) {
-          const pmDeps = { policy: this.approvalPolicy, budget: AUTO_APPROVE_BUDGET };
-          if (req.method === 'GET') await handlePermissionModeGet(res, permModeMatch[1], pmDeps);
-          else await handlePermissionModeSet(req, res, permModeMatch[1], pmDeps);
-          return;
-        }
+        // GET|POST /api/sessions/{sid}/permission-mode — Phase D1 Task E2：已迁 registry dispatch。
 
         // /api/approvals/allowlist + /api/approvals/rules (GET/POST/DELETE) — Phase D1 Task A5：已迁 registry dispatch。
 
@@ -6969,23 +6964,8 @@ class MafwScheduler {
         // GET /api/sessions —— code-first P0 起由 registry typed handler 接管
         // （attachTypedRoute('session.list')，schema 见 routes/schemas/session.ts）。
 
-        // POST /api/sessions/{id}/permissions/{requestId} — forward permission reply to runtime
-        const permMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/permissions\/([^/]+)(?:\?|$)/);
-        if (permMatch && req.method === 'POST') {
-          // 直连路由与主 reply 路由对称：always 也沉淀持久规则（反查失败 fail-open）
-          await handlePermissionReply(this.runtime, req, res, permMatch[1], permMatch[2], {
-            access: this.runtime?.access ?? null,
-            rules: this.permissionRules,
-            findRequest: async () => {
-              try {
-                if (!this.runtime?.session?.permissionList) return null;
-                const pending = await this.runtime.session.permissionList();
-                return (Array.isArray(pending) ? pending : []).find((p: any) => p?.id === permMatch[2]) ?? null;
-              } catch { return null; }
-            },
-          });
-          return;
-        }
+        // POST /api/sessions/{id}/permissions/{requestId} — Phase D1 Task E2：已迁 registry dispatch
+        // （always 持久规则沉淀与 permissionList 反查 fail-open 随迁）。
 
         // GET /api/sessions/{id} — Phase D1 Task D1：已迁 registry dispatch。
 
@@ -6996,10 +6976,8 @@ class MafwScheduler {
         // GET /api/sessions/{id}/trajectory — Phase D1 Task E1：已迁 registry dispatch
         // （store 缺失 / 抛错 → fail-open 200 {turns:[],events:[]}；rebuild 懒 require 随迁）。
 
-
         // GET /api/sessions/{id}/token-summary — Phase D1 Task E1：已迁 registry dispatch
         // （store 缺失 / 抛错 → fail-open 200 零值汇总）。
-
 
         // /api/usage/plugins* — P5 Wave 1 起由 registry dispatch 接管（7 条）
 
@@ -7041,35 +7019,11 @@ class MafwScheduler {
 
         // GET /api/usage + GET /api/usage/summary — Phase D1 Task B2：已迁 registry dispatch。
 
-        // ── Subagent spawn/list/message/cancel/result (gateway-owned) ──
-        const subagentMsg = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/message(?:\?|$)/);
-        if (subagentMsg && req.method === 'POST') {
-          await handleSubagentMessage(req, res, subagentMsg[1], subagentMsg[2], { service: this.subagentService });
-          return;
-        }
-        const subagentCancel = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/cancel(?:\?|$)/);
-        if (subagentCancel && req.method === 'POST') {
-          await handleSubagentCancel(res, subagentCancel[1], subagentCancel[2], { service: this.subagentService });
-          return;
-        }
-        const subagentResult = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/result(?:\?|$)/);
-        if (subagentResult && req.method === 'GET') {
-          await handleSubagentResult(res, subagentResult[1], subagentResult[2], { service: this.subagentService });
-          return;
-        }
-        const subagentsMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents(?:\?|$)/);
-        if (subagentsMatch && req.method === 'POST') {
-          await handleSubagentSpawn(req, res, subagentsMatch[1], { service: this.subagentService });
-          return;
-        }
-        if (subagentsMatch && req.method === 'GET') {
-          await handleSubagentList(res, subagentsMatch[1], { service: this.subagentService });
-          return;
-        }
+        // ── Subagent spawn/list/message/cancel/result — Phase D1 Task E2：已迁 registry dispatch。
+        // （legacy 共享 matcher 的 GET/POST 双 method 臂由 catalog method 维度拆分。）
 
         // GET /api/sessions/{id}/children — Phase D1 Task E1：已迁 registry dispatch
         // （runtime 缺失 / 抛错 → fail-open 200 {items:[]}；depth 补齐随迁）。
-
 
         // GET /api/recall/context — Phase D1 Task B4：已迁 registry dispatch（逐字迁移，fail-open 200）。
 
