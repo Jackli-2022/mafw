@@ -11,6 +11,8 @@
 // ─── 接口定义（legacy driver 形状，单源在 ./types） ──────────────────────────
 
 import { stopReasonOf } from '@mafw/runtime-core';
+import * as os from 'os';
+import * as path from 'path';
 import type { RuntimePtyInbound, RuntimePtyInfo } from '@mafw/runtime-contract';
 import { serveAuthHeaders } from './serve-sidecar';
 import { formToQuestion, formAnswerOf } from './form-question';
@@ -1031,6 +1033,13 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
     },
 
     discovery: {
+      roots() {
+        const configDir = path.join(os.homedir(), '.config', 'opencode');
+        return {
+          skillRoots: [path.join(configDir, 'skills')],
+          instructionRoots: [configDir],
+        };
+      },
       async list({ directory }) {
         const [cmd, skill] = await Promise.allSettled([
           directNative('/command', 'GET', undefined, directory),

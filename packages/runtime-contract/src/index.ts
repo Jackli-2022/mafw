@@ -45,6 +45,7 @@ export {
   type RuntimeDiscoveryWarning,
   type RuntimeDiscoveryResult,
   type RuntimeDiscoveryChannel,
+  type RuntimeDiscoveryRoots,
   type RuntimeInstructionEntry,
   type RuntimePtyInfo,
   type RuntimePtyConnection,
