@@ -531,4 +531,80 @@ describe('PodGoalService', () => {
     expect(views.find((view) => view.goalId === 'g1')?.goalMode).toBe('quick');
     expect(views.find((view) => view.goalId === 'g2')?.goalMode).toBe('standard');
   });
+
+  test('starts up to maxConcurrentGoals and keeps the rest queued', async () => {
+    service = makeService(undefined, { maxConcurrentGoals: () => 2 });
+
+    const first = await service.enqueueGoal('g1', projectDir);
+    const second = await service.enqueueGoal('g2', projectDir);
+    const third = await service.enqueueGoal('g3', projectDir);
+
+    expect(first.status).toBe('started');
+    expect(second.status).toBe('started');
+    expect(third.status).toBe('queued');
+    expect(store.listGoals(first.podId).filter((goal) => goal.status === 'active')
+      .map((goal) => goal.goalId).sort()).toEqual(['g1', 'g2']);
+    expect(startGoal).toHaveBeenCalledTimes(2);
+  });
+
+  test('calls onGoalCompleted once when a goal is archived', async () => {
+    const onGoalCompleted = jest.fn();
+    service = makeService(undefined, { onGoalCompleted });
+    await service.enqueueGoal('g1', projectDir);
+
+    await service.onGoalArchived('g1');
+
+    expect(onGoalCompleted).toHaveBeenCalledTimes(1);
+    expect(onGoalCompleted).toHaveBeenCalledWith('g1');
+  });
+
+  test('archiving a non-pointer active goal still promotes the queue', async () => {
+    service = makeService(undefined, { maxConcurrentGoals: () => 2 });
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+    await service.enqueueGoal('g3', projectDir);
+    expect(store.getPod(first.podId)?.activeGoalId).toBe('g1');
+    expect(store.listActiveGoals(first.podId).map((goal) => goal.goalId).sort()).toEqual(['g1', 'g2']);
+
+    await service.onGoalArchived('g2');
+
+    expect(store.getGoal(first.podId, 'g2')?.status).toBe('done');
+    expect(store.getGoal(first.podId, 'g3')?.status).toBe('active');
+    expect(store.getPod(first.podId)?.activeGoalId).toBe('g1');
+    expect(startGoal).toHaveBeenCalledWith('g3', projectDir);
+  });
+
+  test('a failed promote keeps an unrelated active goal pointer', async () => {
+    service = makeService(undefined, { maxConcurrentGoals: () => 2 });
+    const first = await service.enqueueGoal('g1', projectDir);
+    startGoal.mockImplementationOnce(async (goalId: string) => {
+      if (goalId === 'g2') throw new Error('runtime unavailable');
+    });
+
+    await expect(service.enqueueGoal('g2', projectDir)).rejects.toThrow('runtime unavailable');
+
+    expect(store.getGoal(first.podId, 'g2')?.status).toBe('queued');
+    expect(store.getPod(first.podId)).toMatchObject({ activeGoalId: 'g1', status: 'active' });
+    expect(store.listActiveGoals(first.podId).map((goal) => goal.goalId)).toEqual(['g1']);
+  });
+
+  test('admitReadyGoal respects maxConcurrent and defers to the queue', async () => {
+    service = makeService(undefined, { maxConcurrentGoals: () => 1 });
+    const first = await service.enqueueGoal('g1', projectDir);
+    await service.enqueueGoal('g2', projectDir);
+    store.createGoalRevision({
+      podId: first.podId,
+      goalId: 'g2',
+      revision: 1,
+      status: 'implementing',
+      now: '2026-10-29T00:00:00.000Z',
+    });
+
+    await expect(service.admitReadyGoal('g2', projectDir)).resolves.toBe(false);
+    expect(store.getGoal(first.podId, 'g2')?.status).toBe('queued');
+
+    await service.onGoalArchived('g1');
+    expect(store.getGoal(first.podId, 'g2')?.status).toBe('active');
+    expect(startGoal).toHaveBeenCalledWith('g2', projectDir);
+  });
 });

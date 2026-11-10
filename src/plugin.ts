@@ -23,6 +23,7 @@ import * as path from 'path';
 import { sessionEndingHook } from './hooks/session-ending';
 import { sessionRecallHook } from './hooks/session-recall';
 import { leadWorkingSetHook } from './hooks/lead-working-set';
+import { leadBoundaryHook } from './hooks/lead-boundary';
 import { mediaIngestHook } from './hooks/media-ingest';
 import { pythonGuideHook } from './hooks/bash-python-guide';
 import { writeToolPaths } from './utils/write-paths';
@@ -282,6 +283,7 @@ export default {
         // 媒体附件在 admission 阶段转为 A2A 指针（不进持久化输入）
         await convertPromptFilesToPointers(event?.prompt);
         if (text) void pushObservation(sessionID, 'user_input', text);
+        if (text) void leadBoundaryHook({ sessionID, text });
       } catch (err: any) {
         console.error('[MAFW] prompt hook failed (fail-open):', err?.message || err);
       }

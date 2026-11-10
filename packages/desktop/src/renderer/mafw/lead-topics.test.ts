@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildTopicList, leadTopicStateLabel } from './lead-topics';
+import { buildTopicList, leadTopicStateLabel, proposedBoundaries } from './lead-topics';
 
 describe('lead topic list model', () => {
   test('labels states and hides session ids', () => {
@@ -18,5 +18,15 @@ describe('lead topic list model', () => {
     expect(leadTopicStateLabel('cold')).toBe('更早');
     expect(leadTopicStateLabel('archived')).toBe('已归档');
     expect(leadTopicStateLabel('custom')).toBe('custom');
+  });
+
+  test('only proposed boundaries stay actionable', () => {
+    const items = [
+      { id: 'b1', status: 'proposed' },
+      { id: 'b2', status: 'accepted' },
+      { id: 'b3', status: 'merged' },
+      { id: 'b4', status: 'undone' },
+    ] as any;
+    expect(proposedBoundaries(items).map((item) => item.id)).toEqual(['b1']);
   });
 });

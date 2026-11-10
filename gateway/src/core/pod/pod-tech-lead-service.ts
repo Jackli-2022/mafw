@@ -66,7 +66,7 @@ export interface PodTechLeadServiceDeps {
   /** revision checkout provider; production always injects PodWorktreeService. */
   worktrees?: Pick<PodWorktreeService, 'ensure' | 'ensureExisting' | 'assertProjectRoot'>;
   /** Current-topic handoff builder; absent = no automatic handoff. */
-  leadHandoff?: Pick<LeadHandoffService, 'prepareForGoal' | 'commit' | 'rollback'>;
+  leadHandoff?: Pick<LeadHandoffService, 'prepareForGoal' | 'buildForkForGoal' | 'commit' | 'rollback'>;
   /** 项目解析（与 intake 同一来源）：返回 canonical projectDir 与 mafwDir。 */
   resolveProject(projectDir?: string): { projectDir: string; mafwDir: string } | null;
   now?(): string;
@@ -77,6 +77,8 @@ export interface PodTechLeadServiceDeps {
   /** 仅在 legacy/非讨论路径使用；讨论 Goal 永不发 goal_created。 */
   emitGoalCreated?(event: unknown): void;
   notify?(podId: string, kind?: string): void;
+  /** Scheduler admission for a new Goal; false = stay queued (no slot). */
+  canAdmit?(podId: string): boolean;
   log?(message: string): void;
 }
 
@@ -100,6 +102,8 @@ export interface PodTechLeadGoalInput {
   sourceRef?: GoalSourceRef;
   /** Hand off the current Lead topic (default current-topic when createdBy is set). */
   handoff?: 'current-topic' | 'none';
+  /** P2 COW fork: reference an existing topic instead of the current conversation. */
+  forkFromTopicId?: string;
   /** Optional explicit source topic; omitted = latest handoff topic. */
   topicId?: string;
   /** Optional exclusive upper bound for the handoff snapshot. */
@@ -225,18 +229,37 @@ export class PodTechLeadService {
     let handoffPath: string | undefined;
     let preparedHandoff: LeadHandoffPrepared | null = null;
     if (!sourceRef && input.createdBy && input.handoff !== 'none' && this.deps.leadHandoff) {
-      preparedHandoff = await this.deps.leadHandoff.prepareForGoal({
+      const forkEnabled = process.env.MAFW_LEAD_COW_FORK !== '0';
+      const prepareCurrent = () => this.deps.leadHandoff!.prepareForGoal({
         projectDir,
-        leadSessionId: input.createdBy,
+        leadSessionId: input.createdBy!,
         goalId,
         goalDir,
         title,
         topicId: input.topicId,
         untilMessageId: input.untilMessageId,
-      }).catch((err: any) => {
-        this.deps.log?.(`[Pod] handoff failed for ${goalId}: ${err?.message ?? err}`);
-        return null;
       });
+      const prepared = input.forkFromTopicId && forkEnabled && this.deps.leadHandoff.buildForkForGoal
+        ? this.deps.leadHandoff.buildForkForGoal({
+            projectDir,
+            goalId,
+            goalDir,
+            title,
+            sourceTopicId: input.forkFromTopicId,
+            leadSessionId: input.createdBy,
+          }).catch((err: any) => {
+            // COW is an optimization: a missing/foreign source must fall back
+            // to the P0 current-topic handoff instead of losing context.
+            this.deps.log?.(`[Pod] fork failed for ${goalId}, falling back to current topic: ${err?.message ?? err}`);
+            return null;
+          })
+        : prepareCurrent();
+      preparedHandoff = await prepared
+        .then((value) => value ?? prepareCurrent())
+        .catch((err: any) => {
+          this.deps.log?.(`[Pod] handoff failed for ${goalId}: ${err?.message ?? err}`);
+          return null;
+        });
       if (preparedHandoff) {
         sourceRef = preparedHandoff.sourceRef;
         handoffPath = preparedHandoff.handoffPath;
@@ -289,11 +312,17 @@ export class PodTechLeadService {
       // A discussing goal is the Pod's current goal but has no NodeDriver run. Marking it
       // active (instead of queued) is what keeps Pod scheduling from promoting it into
       // execute/plan before the direction tool explicitly starts planning.
-      if (detail.pod.status !== 'paused' && detail.pod.status !== 'archived') {
+      const admit = detail.pod.status !== 'paused'
+        && detail.pod.status !== 'archived'
+        && (this.deps.canAdmit?.(detail.pod.id) ?? true);
+      if (admit) {
         this.deps.store.setGoalStatus(goalRow.id, 'active', { startedAt: now });
+        const pointer = this.deps.store.getPod(detail.pod.id)?.activeGoalId
+          ?? this.deps.store.listActiveGoals(detail.pod.id)[0]?.goalId
+          ?? goalId;
         this.deps.store.updatePod(detail.pod.id, {
           status: 'active',
-          activeGoalId: goalId,
+          activeGoalId: pointer,
         }, now);
       }
     } catch (err) {

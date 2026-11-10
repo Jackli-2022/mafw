@@ -1041,6 +1041,12 @@ export class PodStore {
     return row ? goalFromRow(row) : null;
   }
 
+  listActiveGoals(podId: string): PodGoalRow[] {
+    return (this.db.prepare(
+      "SELECT * FROM pod_goals WHERE pod_id = ? AND status = 'active' ORDER BY started_at ASC, id ASC",
+    ).all(podId) as any[]).map(goalFromRow);
+  }
+
   listGoals(podId: string): PodGoalRow[] {
     return (this.db.prepare(
       'SELECT * FROM pod_goals WHERE pod_id = ? ORDER BY enqueued_at ASC',

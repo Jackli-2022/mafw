@@ -87,6 +87,11 @@ import { LeadHandoffService } from './core/lead/lead-handoff-service';
 import { TopicMessageIndexStore } from './core/lead/topic-message-index';
 import { LeadTopicSummaryService } from './core/lead/lead-topic-summary-service';
 import { LeadTopicResumeService } from './core/lead/lead-topic-resume-service';
+import { TopicForkStore } from './core/lead/topic-fork-store';
+import { LeadBoundaryService } from './core/lead/lead-boundary-service';
+import { TopicBoundaryStore } from './core/lead/topic-boundary-store';
+import { TopicMemoryService } from './core/lead/topic-memory-service';
+import { handleAddMemory } from './mcp/handlers/add-memory';
 import { summarizeTopic } from './core/lead/topic-summary';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
@@ -358,6 +363,10 @@ import { SessionListResponse } from './routes/schemas/session';
 import { buildRouteCatalog } from './routes/route-catalog';
 import { attachWave1Handlers } from './routes/wave1-handlers';
 import { attachLeadTopicRoutes } from './routes/lead-topics';
+import { attachAttentionRoutes } from './routes/attention';
+import { attachSchedulerRoutes } from './routes/scheduler';
+import { attachGoalControlRoutes, pauseStatePatch, resumeStatePatch, selectRetryRun } from './routes/goal-control';
+import { attachLeadBoundaryRoutes } from './routes/lead-boundaries';
 import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
 import { attachPodHandlers } from './routes/pod-handlers';
@@ -700,6 +709,9 @@ class MafwScheduler {
   private leadTopicIndex!: TopicMessageIndexStore;
   private leadTopicSummary!: LeadTopicSummaryService;
   private leadTopicResume!: LeadTopicResumeService;
+  private topicForks!: TopicForkStore;
+  private leadBoundaries!: LeadBoundaryService;
+  private topicMemory!: TopicMemoryService;
   private podWorktreeService!: PodWorktreeService;
   private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
@@ -4579,7 +4591,15 @@ class MafwScheduler {
         type: 'pod.updated',
         properties: { podId, kind, ...(goalId ? { goalId } : {}) },
       }),
+      onGoalCompleted: (goalId) => {
+        void this.topicMemory?.promoteForGoal(goalId);
+      },
       budget: this.podBudget,
+      maxConcurrentGoals: () => {
+        if (process.env.MAFW_LEAD_SCHEDULER === '0') return 1;
+        const parsed = Number(process.env.MAFW_POD_MAX_GOALS ?? 1);
+        return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 1;
+      },
       revisions: this.podGoalRevisionService,
       worktrees: this.podWorktreeService,
       sessions: { retireRevision: (goalId, revision) => this.podSessionLifecycle.retireRevision(goalId, revision) },
@@ -4648,6 +4668,7 @@ class MafwScheduler {
     });
     const leadTopics = new LeadTopicStore(this.getGatewayDb().getStore());
     const leadTopicIndex = new TopicMessageIndexStore(this.getGatewayDb().getStore());
+    const topicForks = new TopicForkStore(this.getGatewayDb().getStore());
     const leadTopicSummary = new LeadTopicSummaryService({
       topics: leadTopics,
       index: leadTopicIndex,
@@ -4658,6 +4679,35 @@ class MafwScheduler {
     this.leadTopics = leadTopics;
     this.leadTopicIndex = leadTopicIndex;
     this.leadTopicSummary = leadTopicSummary;
+    this.topicForks = topicForks;
+    const topicMemory = new TopicMemoryService({
+      topics: leadTopics,
+      addMemory: async (input) => {
+        await handleAddMemory(
+          { content: input.content, memoryType: 'semantic', cueAnchors: input.cueAnchors, importance: 6 } as any,
+          { memory: this.memoryService, mafwDir: config.resolvePath() } as any,
+        );
+      },
+      enabled: () => process.env.MAFW_LEAD_WORKING_SET !== '0',
+      now: () => new Date().toISOString(),
+      wasPromoted: (key) => !!this.getGatewayDb().kvGet('lead-topic-memory', key),
+      markPromoted: (key) => this.getGatewayDb().kvSet('lead-topic-memory', key, { at: new Date().toISOString() }),
+      log: (message) => log.warn(message),
+    });
+    this.topicMemory = topicMemory;
+    const leadBoundaries = new LeadBoundaryService({
+      boundaries: new TopicBoundaryStore(this.getGatewayDb().getStore()),
+      topics: leadTopics,
+      mode: () => {
+        const raw = process.env.MAFW_LEAD_AUTO_BOUNDARY;
+        return raw === 'off' ? 'off' : raw === 'on' ? 'on' : 'observe';
+      },
+      broadcast: (event) => this.broadcast(event as any),
+      now: () => new Date().toISOString(),
+      newId: () => `boundary_${randomUUID()}`,
+      log: (message) => log.warn(message),
+    });
+    this.leadBoundaries = leadBoundaries;
     const leadTopicResume = new LeadTopicResumeService({
       topics: leadTopics,
       index: leadTopicIndex,
@@ -4674,6 +4724,8 @@ class MafwScheduler {
       ? null
       : new LeadHandoffService({
           topics: leadTopics,
+          index: leadTopicIndex,
+          forks: topicForks,
           listMessages: async ({ sessionID, limit }) => {
             const page: any = await this.runtime!.session.messages({ sessionID, limit });
             return { data: page?.data ?? [] };
@@ -4725,6 +4777,7 @@ class MafwScheduler {
       },
       emitGoalCreated: (event) => eventBus.emit('goal_created', event as any),
       notify: (podId, kind = 'goal') => this.broadcast({ type: 'pod.updated', properties: { podId, kind } }),
+      canAdmit: (podId) => this.podGoalService.canAdmitGoal(podId),
       log: (message) => log.info(message),
     });
     // Task 17：Lead 的上下文选择 + 每个节点/探针 prompt 的确定性 ContextManifest。
@@ -5110,7 +5163,7 @@ class MafwScheduler {
       podGoalDirection: {
         techLead: this.podTechLeadService,
         direction: this.podDirectionService,
-        startPlanning: (goalId: string) => this.startGoalDirect(goalId),
+        startPlanning: (goalId: string) => this.podGoalService.admitReadyGoal(goalId).then(() => undefined),
         ...(process.env.MAFW_GOAL_MODES === '0' ? {} : {
           setGoalMode: (goalId: string, mode: any) => this.podTechLeadService.setGoalMode(goalId, mode),
         }),
@@ -5594,6 +5647,86 @@ class MafwScheduler {
         broadcast: (event) => this.broadcast(event as any),
         now: () => new Date().toISOString(),
         resume: (topicId) => this.leadTopicResume.resume(topicId),
+        fork: async (topicId, input) => {
+          const topic = this.leadTopics.get(topicId);
+          if (!topic) throw Object.assign(new Error('topic not found'), { status: 404 });
+          const pod = this.podStore.getPodByProject(canonicalProjectDir(topic.projectDir));
+          if (!pod) throw Object.assign(new Error('pod not found'), { status: 404 });
+          const lead = this.leadSessionRegistry
+            ? (this.leadSessionRegistry.current(topic.projectDir)
+              ?? await this.leadSessionRegistry.ensure(topic.projectDir))
+            : null;
+          const created = await this.podTechLeadService.createGoal({
+            podId: pod.id,
+            projectDir: topic.projectDir,
+            title: input.goalTitle || topic.title,
+            objective: topic.summary || topic.title,
+            createdBy: lead?.sessionId ?? topic.leadSessionId,
+            forkFromTopicId: topicId,
+          });
+          return { goalId: created.goalId, sessionID: created.sessionID };
+        },
+      });
+      attachAttentionRoutes(this.routeRegistry, {
+        views: (projectDir) => {
+          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.views(pod.id) : [];
+        },
+      });
+      attachSchedulerRoutes(this.routeRegistry, {
+        status: (projectDir) => {
+          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.schedulerStatus(pod.id) : null;
+        },
+      });
+      attachGoalControlRoutes(this.routeRegistry, {
+        hasGoal: (goalId) => !!this.podStore?.getGoalByGoalId(goalId) || !!this.findGoalStatePath(goalId),
+        terminal: (goalId) => {
+          const status = this.podStore?.getGoalByGoalId(goalId)?.status;
+          return status === 'done' || status === 'aborted';
+        },
+        patchState: (goalId, patch) => this.patchState(goalId, patch as any),
+        pause: (goalId) => this.pauseGoalControl(goalId),
+        resume: (goalId) => this.resumeGoalControl(goalId),
+        destroySessions: (goalId) => this.destroyAllSessions(goalId),
+        archiveGoal: async (goalId, opts) => {
+          await this.archiveGoal(goalId, opts as any);
+        },
+        retry: (goalId, runId) => this.retryGoalControl(goalId, runId),
+        startGoal: (goalId) => this.podGoalService.admitReadyGoal(goalId).then(() => undefined),
+      });
+      attachLeadBoundaryRoutes(this.routeRegistry, {
+        service: this.leadBoundaries,
+        observe: ({ sessionID, text }) => {
+          const projectDir = this.leadSessionRegistry?.findBySessionId(sessionID)?.projectDir;
+          if (!projectDir) return null;
+          const topic = this.leadTopics.latestForProject(projectDir);
+          if (!topic) return null;
+          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
+          const goals = pod ? this.podStore.listGoals(pod.id) : [];
+          const goalActive = goals.some((goal) => goal.status === 'active');
+          const now = new Date().toISOString();
+          const recentWindowMs = 10 * 60_000;
+          const goalJustClosed = goals.some((goal) => {
+            if (goal.status !== 'done' || !goal.endedAt) return false;
+            const ended = Date.parse(goal.endedAt);
+            return Number.isFinite(ended) && Date.parse(now) - ended <= recentWindowMs;
+          });
+          const previousUserText = [...this.leadTopicIndex.listByTopic(topic.id)]
+            .reverse()
+            .find((row) => row.role === 'user')?.text;
+          return this.leadBoundaries.observe({
+            projectDir,
+            leadSessionId: sessionID,
+            fromTopicId: topic.id,
+            text,
+            ...(previousUserText ? { previousUserText } : {}),
+            lastActiveAt: topic.lastActiveAt,
+            now,
+            goalActive,
+            goalJustClosed,
+          });
+        },
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),
@@ -5646,7 +5779,7 @@ class MafwScheduler {
           if (!goal) return null;
           return this.podStore.getGoalRevision(podId, goalId, revision ?? goal.activeRevision)?.status ?? null;
         },
-        startPlanning: (goalId) => this.startGoalDirect(goalId),
+        startPlanning: (goalId) => this.podGoalService.admitReadyGoal(goalId).then(() => undefined),
         access: this.podAccess,
       });
 
@@ -7430,6 +7563,51 @@ class MafwScheduler {
       goalId,
       data: patch
     });
+  }
+
+  private readGoalStateFile(goalId: string): Record<string, any> | null {
+    const found = this.findGoalStatePath(goalId);
+    if (!found) return null;
+    try {
+      return JSON.parse(fs.readFileSync(found.statePath, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Pause without aborting the running turn; resume restores the saved pair. */
+  private async pauseGoalControl(goalId: string): Promise<void> {
+    const state = this.readGoalStateFile(goalId);
+    if (!state) throw Object.assign(new Error(`goal state not found: ${goalId}`), { status: 404 });
+    await this.patchState(goalId, pauseStatePatch(state, new Date().toISOString()) as any);
+  }
+
+  private async resumeGoalControl(goalId: string): Promise<void> {
+    const state = this.readGoalStateFile(goalId);
+    if (!state) throw Object.assign(new Error(`goal state not found: ${goalId}`), { status: 404 });
+    const patch = resumeStatePatch(state);
+    if (!patch) throw Object.assign(new Error('goal is not paused'), { status: 409 });
+    await this.patchState(goalId, patch as any);
+    await this.goalDriver?.advance(goalId);
+  }
+
+  /**
+   * Retry is scoped to the active revision and only to a failed/timed-out run.
+   * A successful run is never replayed; when there is no failed run, the Goal
+   * goes back through scheduler admission instead of bypassing the slot limit.
+   */
+  private async retryGoalControl(goalId: string, runId?: number): Promise<void> {
+    const row = this.podStore?.getGoalByGoalId(goalId);
+    if (!row) throw Object.assign(new Error(`goal not found: ${goalId}`), { status: 404 });
+    if (row.status === 'done' || row.status === 'aborted') {
+      throw Object.assign(new Error('goal is terminal'), { status: 409 });
+    }
+    const revision = row.activeRevision ?? 1;
+    const selection = selectRetryRun(this.getGatewayDb().listNodeRuns(goalId), revision, runId);
+    if (!selection.ok) {
+      throw Object.assign(new Error(selection.error), { status: selection.status });
+    }
+    await this.goalDriver?.retryNodeRun(goalId, selection.runId);
   }
 
   private registeredGoalEntries(): GoalProjectEntry[] {

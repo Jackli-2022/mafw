@@ -1631,6 +1631,7 @@ html[data-theme="light"] body {
 .mafw-topic-index-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mafw-topic-index-row { display: flex; align-items: center; }
 .mafw-topic-index-row .mafw-card-meta { margin-left: 8px; }
+.mafw-topic-index-boundaries { display: flex; flex-direction: column; gap: 4px; border-top: 0.5px solid var(--border-subtle); padding-top: 6px; }
 .mafw-goal-source-full { max-height: 240px; overflow: auto; white-space: pre-wrap; margin: 6px 0 0; padding: 8px; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); font-size: 12px; }
 
 /* T2-3 data part 卡 */

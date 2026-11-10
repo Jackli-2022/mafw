@@ -290,4 +290,21 @@ describe('mafw_create_goal routed through the Tech Lead', () => {
     expect(intake).not.toHaveBeenCalled();
     expect(techLead.createGoal).toHaveBeenCalledTimes(1);
   });
+
+  test('passes forkFromTopicId to the Tech Lead', async () => {
+    const techLead = {
+      isLeadSession: jest.fn(() => true),
+      hasPod: jest.fn(() => true),
+      createGoal: jest.fn(async () => ({ goalId: 'g-fork' })),
+    };
+    const tool = createCreateGoalTool({ techLead, now: () => NOW });
+
+    await tool.execute({
+      title: 'Fork', objective: 'O', sessionID: 'ses_lead', forkFromTopicId: 't1',
+    });
+
+    expect(techLead.createGoal).toHaveBeenCalledWith(expect.objectContaining({
+      forkFromTopicId: 't1',
+    }));
+  });
 });

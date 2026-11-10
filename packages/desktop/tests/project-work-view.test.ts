@@ -22,7 +22,7 @@ test("ProjectWorkView owns the project work overview and Goal composer", () => {
 })
 
 test("ProjectWorkView builds one Goal projection for priority and the full list", () => {
-  assert.match(view, /import \{ buildWorkPriority, type WorkFilter \} from "\.\.\/work-overview-model"/)
+  assert.match(view, /import \{ (?:buildAttentionList, )?buildWorkPriority, type WorkFilter \} from "\.\.\/work-overview-model"/)
   assert.match(view, /const overviewGoals = createMemo/)
   assert.match(view, /buildWorkPriority\(\{/)
   assert.match(view, /goals: overviewGoals\(\)/)

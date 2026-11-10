@@ -268,3 +268,49 @@ session」变为可换入换出的工作集，原始 transcript 永不删除。
   topic list/get/resume 仍可用。
 
 
+
+#### P2 调度、COW fork 与话题边界（2026-11-10）
+
+spec `docs/superpowers/specs/2026-11-10-lead-techlead-p2-scheduler-design.md`；plan
+`docs/superpowers/plans/2026-11-10-lead-techlead-p2-scheduler.md`。
+
+- **Attention v2**：`deriveAttention(views)` 从结构化 stage 派生 person-first 列表（plan_approval 100 /
+  direction_review 90 / answer 80 / review 70 / failed 60 / blocked 50），同一 goal+kind 用
+  `coalesceKey` 合并；健康/进行中的 Goal 不进 person；`GET /api/attention` 的 count 即列表长度。
+- **调度**：`planPromotions` 按 priority + enqueuedAt 排序，`capacity = maxConcurrent + 1`（人类槽
+  仅在已有 active person Goal 时开启）；`PodGoalService.promote` 一次填满可用槽位，
+  `startQueued` 只在新 Pod 无 activeGoalId 时写指针。`MAFW_POD_MAX_GOALS` 默认 1；
+  `MAFW_LEAD_SCHEDULER=0` 强制单 active。`GET /api/scheduler/status` 只读诊断。
+- **控制语义**：`POST /api/goals/:id/{pause,stop,retry}` 分别对应「暂停自动推进（不硬中断 turn）/
+  撤销授权并 archive CANCELLED / 同一 revision 重试 latest run 或重新 start」；不新建 Goal/revision。
+- **COW fork**：`lead_topic` 增加 `forked_from` / `forked_at` / `inherited_message_range`；
+  `topic_fork` 记录 source/target/range/mode。`mafw_create_goal` 支持 `forkFromTopicId`；
+  `LeadHandoffService.buildForkForGoal` 只写 `<forked-topic>` 引用 + summary + 最近 user 原话，
+  源 transcript / summary 不变；`MAFW_LEAD_COW_FORK=0` 回退 P0 handoff。
+- **话题边界**：`topic_boundary` + `detectBoundary`（explicit 0.9 / goal_closed 0.8 / idle 0.6 /
+  semantic 0.4 / keyword 0.3）；active Goal 不 propose，阈值 0.7；`LeadBoundaryService`
+  支持 accept/merge/undo，accept 才创建新 topic；宿主插件在 prompt hook 里异步 POST
+  `/api/lead/boundaries/observe`（100ms fail-open）。`MAFW_LEAD_AUTO_BOUNDARY` 默认 `observe`
+  （写 proposed 不广播），`on` 才发 `topic.boundary.proposed`，`off` 不写。
+- **跨 topic 记忆**：Goal 终态调用 `TopicMemoryService.promoteForGoal`，只把 source topic summary
+  写成 semantic memory（cueAnchors: topicId/goalId/projectDir），按 `topicId+summaryHash` 幂等。
+- **UI**：桌面「需要你处理」attention-first 面板（健康状态不进主面）；Topic map 增加分叉与
+  边界接受/合并/撤销操作。
+
+#### P2 review fixes（2026-11-10）
+
+- **统一准入**：`PodGoalService.canAdmitGoal` / `admitReadyGoal` 是唯一入口；`PodTechLeadService.createGoal`
+  在槽位不足时保持 `queued`（Tech Lead 仍可讨论），direction 决定后的 `startPlanning` 也走准入，
+  不再直接 `startGoalDirect`。
+- **Attention 可达性**：`review` 由终态 `resultReady && !accepted` 派生（`open_result`），`failed` 由
+  `lastError` 派生；`stateMissing` 且无错误的 blocked 不再冒充人类阻塞。
+- **Pause / Resume**：`pause` 把 `phase/nextAction` 存进 `_resumePhase/_resumeNextAction` 后写 PAUSED；
+  `POST /api/goals/:id/resume` 恢复并 `advance`。`retry` 只接受 active revision 内 failed/aborted/
+  timed-out run，显式 runId 跨 revision 或成功 run 返回 409/404。
+- **Fork 健壮性**：源 topic 必须属于同一 canonical project；新 topic 使用当前 Lead session 授权；
+  fork 失败回退 P0 current-topic handoff；commit 后写 summary + index，topic detail / 记忆提升不为空。
+- **Boundary**：accept 是真正 split（新 topic 从源尾消息开始，源 topic 转 `cold`，不复制 transcript /
+  goal / summary）；accept 后 merge/undo 返回 409。observe 直接使用 `previousUserText` /
+  `lastActiveAt` / `goalJustClosed`，同 topic+trigger 10 分钟内去重，阈值 0.5。
+- **记忆**：`buildTopicMemory` 只提升 Decisions / Open loops，剔除 `User words` / `Tool output`。
+- **桌面**：边界面板只渲染 `proposed`，accepted/merged/undone 作为历史不再可操作。

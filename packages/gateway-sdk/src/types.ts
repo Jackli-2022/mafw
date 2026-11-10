@@ -924,6 +924,14 @@ export interface GoalsNamespace {
   rejectPlan(goalId: string, approvalId: string | undefined, feedback: string): Promise<{ success: boolean }>
   /** 节点重跑（execute 需 confirm）。 */
   retryNode(goalId: string, runId: number, opts?: { confirm?: boolean }): Promise<{ success: boolean; runId: number }>
+  /** P2: pause auto-advance without aborting the running turn. */
+  pause(goalId: string): Promise<{ status: string }>
+  /** P2: restore the pre-pause phase/nextAction and continue. */
+  resume(goalId: string): Promise<{ status: string }>
+  /** P2: revoke authorization and archive CANCELLED. */
+  stop(goalId: string): Promise<{ status: string }>
+  /** P2: retry the latest run (or start) without minting a revision. */
+  retry(goalId: string, runId?: number): Promise<{ status: string }>
 }
 
 export interface MemorySearchOptions {
@@ -1817,11 +1825,35 @@ export interface LeadRecallCandidate {
   matches: string[]
 }
 
+export interface LeadBoundaryView {
+  id: string
+  projectDir: string
+  leadSessionId: string
+  fromTopicId: string
+  toTopicId: string | null
+  trigger: 'explicit' | 'semantic' | 'idle' | 'goal_closed' | 'keyword'
+  confidence: number
+  status: 'proposed' | 'accepted' | 'merged' | 'split' | 'undone'
+  createdAt: string
+}
+
+export interface LeadBoundaryDecision {
+  status: 'accepted' | 'merged' | 'undone'
+  toTopicId?: string
+}
+
 export interface LeadNamespace {
   topics: {
     list(input?: { projectDir?: string; query?: string; limit?: number }): Promise<{ items: LeadTopicView[] }>
     get(id: string): Promise<{ topic: LeadTopicView; messages: LeadTopicIndexMessage[] }>
     resume(id: string): Promise<{ sessionID: string; resumedFrom: string | null }>
+    fork(id: string, input?: { goalTitle?: string }): Promise<{ goalId: string; sessionID?: string | null }>
+    boundaries(id: string): Promise<{ items: LeadBoundaryView[] }>
+  }
+  boundaries: {
+    accept(topicId: string, id: string): Promise<LeadBoundaryDecision>
+    merge(topicId: string, id: string): Promise<LeadBoundaryDecision>
+    undo(topicId: string, id: string): Promise<LeadBoundaryDecision>
   }
   workingSet(input?: { projectDir?: string }): Promise<LeadWorkingSet>
   compact(input: { topicId: string }): Promise<LeadCompactResult>

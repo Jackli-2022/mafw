@@ -86,6 +86,8 @@ export interface PodGoalView {
   phase: string | null;
   verdict: PodGoalVerdict | null;
   stage: PodGoalStage;
+  /** No GoalState yet (pre-execution); blocked stage must not mean human attention. */
+  stateMissing?: boolean;
   /** Execution shape chosen by the Tech Lead (quick / standard / standing). */
   goalMode?: PodGoalMode;
   /** The only list/count bucket exposed to Desktop. */
@@ -191,6 +193,7 @@ export function buildPodGoalView(
     ? description?.revisionStatus ?? null
     : null;
   const resultReady = terminal && !!description?.hasResultEvidence;
+  const stateMissing = stateIsMissing(row, description, revisionStatus);
   const stage = projectPodGoalStage({
     goalId: row.goalId,
     goalStatus: row.status,
@@ -200,7 +203,7 @@ export function buildPodGoalView(
     planApproval: description?.planApproval ?? null,
     pendingQuestion: description?.pendingQuestion ?? null,
     nodeSession: description?.nodeSession ?? null,
-    stateMissing: stateIsMissing(row, description, revisionStatus),
+    stateMissing,
     ...(queueReason ? { queueReason } : {}),
     revision: revisionStatus
       ? {
@@ -222,6 +225,7 @@ export function buildPodGoalView(
     phase: description?.phase ?? null,
     verdict,
     stage,
+    stateMissing,
     goalMode,
     bucket: projectPodWorkBucket({ stage, status: row.status, resultReady, accepted: description?.accepted === true }),
     resultReady,

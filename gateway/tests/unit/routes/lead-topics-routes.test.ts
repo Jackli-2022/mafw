@@ -1,4 +1,5 @@
 import {
+  handleForkTopic,
   handleGetTopic,
   handleListTopics,
   handleRecall,
@@ -82,5 +83,13 @@ describe("lead topic routes", () => {
   test("recall is empty when the working set is disabled", () => {
     const out = handleRecall({ projectDir: "/p", q: "sqlite" }, deps({ workingSetEnabled: () => false }));
     expect(out.body.candidates).toEqual([]);
+  });
+
+  test("forks a topic through the injected Goal creator", async () => {
+    const fork = jest.fn(async () => ({ goalId: "g-fork", sessionID: "ses_tl" }));
+    const out = await handleForkTopic({ id: "t1", goalTitle: "Fork" }, deps({ fork }));
+    expect(out).toMatchObject({ status: 200, body: { goalId: "g-fork", sessionID: "ses_tl" } });
+    expect(fork).toHaveBeenCalledWith("t1", { goalTitle: "Fork" });
+    expect((await handleForkTopic({ id: "t1" }, deps({ fork: undefined }))).status).toBe(503);
   });
 });

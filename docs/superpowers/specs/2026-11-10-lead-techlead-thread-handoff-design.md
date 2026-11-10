@@ -265,7 +265,7 @@ P0 不改语义：仍是 per-project / per-runtime 的 Lead slot。P0 不新增 
 - ✅ **P0.5**：`2026-11-10-goal-shapes-quick-goals-design.md` —— Goal 形态：同一 Goal 路径上的 Quick / Standard / Standing 模式；Tech Lead triage 写 `goal_mode`，不新增第二套执行器。
 - ◐ **P0.6**：`2026-11-10-runtime-switch-design.md` —— Runtime 切换：session 是 per-runtime frame；Goal / Topic / Event / Worktree 持久；checkpoint / restore。（独立线，仓库已有 runtime switch / checkpoint 实现，未纳入本次交付验证。）
 - ⬜ **P1**：`2026-11-10-lead-techlead-p1-working-set-design.md` —— 工作集与缺页：topic summary、warm/cold、recall、compaction policy、旧 topic resume。
-- ⬜ **P2**：`2026-11-10-lead-techlead-p2-scheduler-design.md` —— 调度器与 COW fork：attention scheduler、自动边界、多 Goal 并发、fork。
+- ⬜ **P2**：`2026-11-10-lead-techlead-p2-scheduler-design.md` —— 调度器与 COW fork：attention scheduler、自动边界、多 Goal 并发、fork；计划：`docs/superpowers/plans/2026-11-10-lead-techlead-p2-scheduler.md`（11 tasks）。
 - ⬜ **P2.4**：`2026-11-10-event-layer-design.md` —— 事件层：Source / Trigger / Thread / Subscription / Decision / Delivery。
 - ⬜ **P2.5**：`2026-11-10-standing-goals-design.md` —— 长效 Goal：cron / event trigger、GoalRun、Tech Lead triage（full / report / action / skip）。
 
