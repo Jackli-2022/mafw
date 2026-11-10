@@ -59,6 +59,8 @@ export interface ReflectionOptions {
     maxChars?: number;
     perTraceChars?: number;
   };
+  /** Phase 4B: episodes per reflection batch (default 10, min 1). */
+  reflectionBatchSize?: number;
 }
 
 export interface ReflectionResult {
@@ -308,6 +310,23 @@ export class ReflectionPipeline {
   private async reflectSession(sessionID: string, episodes: { id: string; text: string }[]): Promise<ReflectionResult> {
     const result: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0 };
     if (episodes.length === 0) return result;
+    const batchSize = Math.max(1, this.opts.reflectionBatchSize ?? 10);
+    if (episodes.length > batchSize) {
+      const aggregate: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0, replayedTraces: 0, replayChars: 0 };
+      for (let i = 0; i < episodes.length; i += batchSize) {
+        const r = await this.reflectSession(sessionID, episodes.slice(i, i + batchSize));
+        aggregate.reviewed += r.reviewed;
+        aggregate.distilled += r.distilled;
+        aggregate.deduped += r.deduped;
+        aggregate.superseded += r.superseded;
+        aggregate.failed += r.failed;
+        aggregate.replayedTraces += r.replayedTraces;
+        aggregate.replayChars += r.replayChars;
+        aggregate.sessions += r.sessions;
+      }
+      aggregate.sessions = aggregate.sessions > 0 ? 1 : 0;
+      return aggregate;
+    }
     result.reviewed = episodes.length;
 
     const promptLines: string[] = [];
