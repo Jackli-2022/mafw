@@ -5044,6 +5044,16 @@ class MafwScheduler {
         startPlanning: (goalId: string) => this.startGoalDirect(goalId),
         log: (message: string) => log.info(message),
       },
+      podGoalStatus: {
+        listViews: (projectDir: string) => {
+          const pod = this.podStore.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.views(pod.id) : [];
+        },
+        attention: (projectDir: string) => {
+          const pod = this.podStore.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.attention(pod.id) : [];
+        },
+      },
       desktop: desktopClient || undefined,
       restartAgent: async () => {
         if (!this.runtime?.access?.can('process.restart')) {

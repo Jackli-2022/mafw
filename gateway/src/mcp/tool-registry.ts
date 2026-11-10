@@ -705,6 +705,17 @@ export const DEFINITIONS: ToolDefinition[] = [
       properties: {},
     },
   },
+  {
+    name: "mafw_lead_goal_status",
+    description: "Read the project Lead goal-status projection: stage / progress / blockers / pending attention for active Goals. Read-only; does not read the Tech Lead transcript.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectDir: { type: "string", description: "Registered project directory (defaults to MAFW_PROJECT_DIR/current)" },
+        limit: { type: "number", description: "Maximum active Goals to return (default 5)" },
+      },
+    },
+  },
 ];
 
 // MCP stable spec 注解物化（2026-10-22 spec §5.3）：模块加载期一次性从 mafw 专属表
@@ -715,6 +726,7 @@ for (const def of DEFINITIONS) {
 }
 
 import { handleCreateGoal } from "./handlers/create-goal";
+import { handleLeadGoalStatus } from "./handlers/lead-goal-status";
 import { handlePodGoalDirection } from "./handlers/pod-goal-direction";
 import { handlePodGoalContext } from "./handlers/pod-context-select";
 import { handleUpdateState } from "./handlers/update-state";
@@ -762,6 +774,7 @@ export function createToolRegistry(): ToolRegistry {
     definitions: DEFINITIONS.map((d) => d.outputSchema ? d : { ...d, outputSchema: genericOutputSchema }),
     handlers: {
       mafw_create_goal: handleCreateGoal,
+      mafw_lead_goal_status: handleLeadGoalStatus,
       mafw_pod_goal_direction: handlePodGoalDirection,
       mafw_pod_goal_context: handlePodGoalContext,
       mafw_update_state: handleUpdateState,
