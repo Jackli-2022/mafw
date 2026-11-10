@@ -136,7 +136,7 @@ import { IndexScanService, resolveScanBaseUrl } from "./recall/index-scan";
 import { PipelineHeartbeat } from "./recall/pipeline-heartbeat";
 import { PipelineBudget } from "./recall/pipeline-budget";
 import { redactSecrets } from "./recall/redact";
-import { buildMafwCommandRegistry, handleMafwCommandRun, handleMafwCommandList } from "./routes/mafw-commands";
+import { buildMafwCommandRegistry } from "./routes/mafw-commands";
 import type { MafwCommandRegistry } from "./commands/registry";
 import { scanCommandDirs, watchCommandDirs, type CommandDir } from "./commands/custom-commands";
 import { registerCustomCommands } from "./commands/custom-exec";
@@ -222,6 +222,7 @@ import { attachProjectRoutes } from './routes/projects';
 import { attachMafwCommandRoutes } from './routes/mafw-commands';
 import { attachMergeMemoryRoutes } from './routes/merge-memory';
 import { attachTriageRoutes } from './routes/triage';
+import { attachApprovalsRoutes } from './routes/approvals';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -257,7 +258,6 @@ import { DataPartService } from './core/data-parts/data-part-service';
 import { handleSessionHistory } from './routes/session-history';
 import { defaultGit } from './core/diff/turn-diff';
 import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
-import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
 
 /**
@@ -313,10 +313,8 @@ import { handlePermissionReply, handlePermissionReplyById, resolveApprovalDirect
 import { surfaceUnavailableMessage } from './runtime/runtime-access';
 import { handleSessionBackground } from './routes/session-background';
 import { attachBackgroundJobHandlers } from './routes/background-jobs';
-import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
 import { handleSessionCreate } from './routes/session-create';
 import { resolveWorktreeAvailability, probeGitWorktreeSupport } from './core/worktree/worktree-availability';
-import { handleApprovalsRespond } from './routes/approvals-respond';
 import { performRuntimeSwitch, type RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps, PluginsPackageEntry } from './routes/plugins';
@@ -5613,6 +5611,12 @@ class MafwScheduler {
         mafwDir: () => this.mafwDir,
         ledger: () => this.ledger,
       });
+      // Phase D1 Task A5：approvals 面迁 registry dispatch（4 分支；数据根扫描路径全保留）。
+      attachApprovalsRoutes(this.routeRegistry, {
+        registeredProjects: () => this.registeredProjects,
+        allowlistStore: () => this.allowlistStore,
+        permissionRules: () => this.permissionRules,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6833,49 +6837,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/approvals — list pending approvals
-        if (req.url === '/api/approvals' && req.method === 'GET') {
-          const approvals: any[] = [];
-          const scanUserQuestions = (mafwDir: string) => {
-            try {
-              const qDir = path.join(mafwDir, 'user-questions');
-              if (fs.existsSync(qDir)) {
-                for (const f of fs.readdirSync(qDir).filter((f: string) => f.endsWith('.json'))) {
-                  const q = JSON.parse(fs.readFileSync(path.join(qDir, f), 'utf-8'));
-                  approvals.push({ id: f.replace('.json', ''), goalId: q.goalId, question: q.question, status: q.answered ? 'answered' : 'pending', createdAt: q.createdAt });
-                }
-                // legacy: questions previously stored under user-questions/{goalId}/
-                for (const gDir of fs.readdirSync(qDir)) {
-                  const gPath = path.join(qDir, gDir);
-                  if (!fs.statSync(gPath).isDirectory()) continue;
-                  for (const file of fs.readdirSync(gPath).filter((f: string) => f.endsWith('.json'))) {
-                    const q = JSON.parse(fs.readFileSync(path.join(gPath, file), 'utf-8'));
-                    approvals.push({ id: file.replace('.json', ''), goalId: gDir, question: q.question, status: q.answered ? 'answered' : 'pending', createdAt: q.createdAt });
-                  }
-                }
-              }
-            } catch { /* ignore */ }
-          };
-          // Read from .mafw/user-questions/ directories (flat layout)
-          for (const [, info] of this.registeredProjects) {
-            scanUserQuestions(info.mafwDir);
-          }
-          // MCP handleAskUser 写入 ~/.mafw/user-questions（数据根，非项目目录）——
-          // 不扫描会导致 QuestionWidget 的 approvals 回退查找永远失败（弹窗无问题文本）
-          scanUserQuestions(config.resolvePath());
-          res.end(JSON.stringify({ approvals }));
-          return;
-        }
-
-        // POST /api/approvals/{id}/respond — { decision: 'approve'|'reject' } 或 { answer: '文本' }
-        // 写 .mafw/user-questions/{id}.json（goal askUser 轮询消费；2026-09-20 替换空 stub）
-        const approveMatch = req.url?.match(/^\/api\/approvals\/([^/]+)\/respond$/);
-        if (approveMatch && req.method === 'POST') {
-          // 数据根优先：MCP handleAskUser 的问题文件在 ~/.mafw/user-questions
-          const dirs = [config.resolvePath(), ...[...this.registeredProjects.values()].map((info: any) => info.mafwDir)];
-          await handleApprovalsRespond(req, res, decodeURIComponent(approveMatch[1]), { resolveDirs: () => dirs });
-          return;
-        }
+        // GET /api/approvals + POST /api/approvals/:id/respond — Phase D1 Task A5：已迁 registry dispatch。
 
         // 鈹€鈹€ Question endpoints (AskCard 鈹€ proxy to native opencode Question API) 鈹€鈹€
 
@@ -7088,27 +7050,7 @@ class MafwScheduler {
           return;
         }
 
-        // 持久白名单 CRUD —— 同样必须在 /api/permissions/:id 之前
-        const allowlistMatch = req.url?.match(/^\/api\/approvals\/allowlist(?:\?|$)/);
-        if (allowlistMatch) {
-          const alDeps = { store: this.allowlistStore };
-          if (req.method === 'GET') await handleAllowlistGet(res, alDeps);
-          else if (req.method === 'POST') await handleAllowlistPost(req, res, alDeps);
-          else if (req.method === 'DELETE') await handleAllowlistDelete(req, res, alDeps);
-          else { res.writeHead(405); res.end(); }
-          return;
-        }
-
-        // 持久规则 CRUD（切片 1）—— 与 allowlist 同级注册
-        const rulesMatch = req.url?.match(/^\/api\/approvals\/rules(?:\?|$)/);
-        if (rulesMatch) {
-          const rulesDeps = { store: this.permissionRules };
-          if (req.method === 'GET') await handleRulesGet(res, rulesDeps);
-          else if (req.method === 'POST') await handleRulesPost(req, res, rulesDeps);
-          else if (req.method === 'DELETE') await handleRulesDelete(req, res, rulesDeps);
-          else { res.writeHead(405); res.end(); }
-          return;
-        }
+        // /api/approvals/allowlist + /api/approvals/rules (GET/POST/DELETE) — Phase D1 Task A5：已迁 registry dispatch。
 
         // POST /api/permissions/{id}/reply — { reply, message?, persist? }（列表反查 sessionID → permissionReply）
         const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);

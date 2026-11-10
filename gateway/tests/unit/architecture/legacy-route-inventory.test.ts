@@ -27,19 +27,20 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // Task A2: mafw-commands 1 match + 1 equals → 86+26=112.
     // Task A3: merge-memory 1 equals → 86+25=111.
     // Task A4: triage 3 match + 1 equals → 83+24=107.
-    expect(inv.byKind.match).toBe(83);
-    expect(inv.byKind.equals).toBe(24);
-    expect(inv.total).toBe(107);
+    // Task A5: approvals 3 match + 1 equals → 80+23=103.
+    expect(inv.byKind.match).toBe(80);
+    expect(inv.byKind.equals).toBe(23);
+    expect(inv.total).toBe(103);
   });
 
   it('groups match the D1 plan inventory', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
     expect(byPrefix.get('/api/recall')).toBe(4);
-    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage']) {
-      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A4)
+    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage', '/api/approvals']) {
+      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5)
     }
     // The biggest single group is the /api catch-all mass.
-    expect(byPrefix.get('/api')).toBe(69);
+    expect(byPrefix.get('/api')).toBe(66);
   });
 
   it('transport/root branches are pinned — they are D3, not D1', () => {
@@ -70,8 +71,8 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
   it('D1 migration targets are enumerable (api-prefixed groups, not transport)', () => {
     const apiGroups = inv.groups.filter((g) => g.prefix.startsWith('/api'));
     // Shrinks as whole prefixes migrate (A1: /api/projects → 14; A2: /api/mafw-commands → 13;
-    // A3: /api/merge-memory → 12; A4: /api/triage → 11).
-    expect(apiGroups.length).toBeGreaterThanOrEqual(11);
+    // A3: /api/merge-memory → 12; A4: /api/triage → 11; A5: /api/approvals → 10).
+    expect(apiGroups.length).toBeGreaterThanOrEqual(10);
     const transportPrefixes = ['/assets', '/static', '/mcp', '/', '/index.html', '/health', '/a2a', '/.well-known', '/register', '/control'];
     for (const g of apiGroups) {
       expect(transportPrefixes).not.toContain(g.prefix);
