@@ -89,6 +89,8 @@ import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService, TECH_LEAD_AGENT } from './core/pod/pod-tech-lead-service';
+import { LeadTopicStore } from './core/lead/lead-topic-store';
+import { LeadHandoffService } from './core/lead/lead-handoff-service';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
 import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
@@ -4603,12 +4605,22 @@ class MafwScheduler {
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'direction' } }),
       log: (message) => log.info(message),
     });
+    const leadHandoffService = new LeadHandoffService({
+      topics: new LeadTopicStore(this.getGatewayDb().getStore()),
+      listMessages: async ({ sessionID, limit }) => {
+        const page: any = await this.runtime!.session.messages({ sessionID, limit });
+        return { data: page?.data ?? [] };
+      },
+      now: () => new Date().toISOString(),
+      newId: () => `topic_${randomUUID()}`,
+    });
     this.podTechLeadService = new PodTechLeadService({
       store: this.podStore,
       pods: this.podService,
       sessions: this.podSessionSupervisor,
       runtimeName: () => this.runtimeName,
       worktrees: this.podWorktreeService,
+      leadHandoff: leadHandoffService,
       runtime: createTechLeadRuntimeAdapter({
         createSession: async ({ projectDir }) => {
           const created = await this.runtime!.session.create({ directory: projectDir });

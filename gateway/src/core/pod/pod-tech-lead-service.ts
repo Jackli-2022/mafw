@@ -16,6 +16,7 @@ import {
   type GoalSourceRef,
 } from '../goal/goal-intake';
 import * as fs from 'fs';
+import * as path from 'path';
 import {
   buildContextManifest,
   renderContextManifest,
@@ -32,6 +33,7 @@ import type { PodDetail, PodService } from './pod-service';
 import { canonicalProjectDir } from './pod-identity';
 import type { PodSessionLease, PodSessionScope, PodSessionSupervisor } from './pod-session-supervisor';
 import type { PodWorktreeService } from './pod-worktree-service';
+import type { LeadHandoffService } from '../lead/lead-handoff-service';
 
 /** Tech Lead 身份（IdentityRegistry 内置物化名）。 */
 export const TECH_LEAD_AGENT = 'mafw-tech-lead';
@@ -60,6 +62,8 @@ export interface PodTechLeadServiceDeps {
   runtime: PodTechLeadRuntime;
   /** revision checkout provider; production always injects PodWorktreeService. */
   worktrees?: Pick<PodWorktreeService, 'ensure' | 'ensureExisting' | 'assertProjectRoot'>;
+  /** Current-topic handoff builder; absent = no automatic handoff. */
+  leadHandoff?: Pick<LeadHandoffService, 'buildForGoal' | 'rollback'>;
   /** 项目解析（与 intake 同一来源）：返回 canonical projectDir 与 mafwDir。 */
   resolveProject(projectDir?: string): { projectDir: string; mafwDir: string } | null;
   now?(): string;
@@ -91,6 +95,10 @@ export interface PodTechLeadGoalInput {
   planReview?: GoalIntakeInput['planReview'];
   source?: string;
   sourceRef?: GoalSourceRef;
+  /** Hand off the current Lead topic (default current-topic when createdBy is set). */
+  handoff?: 'current-topic' | 'none';
+  /** Optional exclusive upper bound for the handoff snapshot. */
+  untilMessageId?: string;
   authorization?: GoalAuthorization;
   /** 调用者会话；提供时必须已绑定为 Lead。 */
   createdBy?: string;
@@ -196,6 +204,28 @@ export class PodTechLeadService {
       );
     }
 
+    let sourceRef = input.sourceRef;
+    let handoffPath: string | undefined;
+    let handoffTopicId: string | undefined;
+    if (!sourceRef && input.createdBy && input.handoff !== 'none' && this.deps.leadHandoff) {
+      const built = await this.deps.leadHandoff.buildForGoal({
+        projectDir,
+        leadSessionId: input.createdBy,
+        goalId,
+        goalDir: path.join(resolved.mafwDir, 'goals', goalId),
+        title,
+        untilMessageId: input.untilMessageId,
+      }).catch((err: any) => {
+        this.deps.log?.(`[Pod] handoff failed for ${goalId}: ${err?.message ?? err}`);
+        return null;
+      });
+      if (built) {
+        sourceRef = built.sourceRef;
+        handoffPath = built.handoffPath;
+        handoffTopicId = built.topicId;
+      }
+    }
+
     let intake: GoalIntakeResult;
     try {
       intake = createGoalIntake({
@@ -213,7 +243,7 @@ export class PodTechLeadService {
         planReview: input.planReview,
         projectDir,
         source: input.source || 'lead',
-        sourceRef: input.sourceRef,
+        sourceRef,
         authorization: input.authorization
           ?? { source: 'lead', requestMode: 'explicit', scope: projectDir },
         // Discussion goals must never reach the goal_created listener.
@@ -226,6 +256,9 @@ export class PodTechLeadService {
         emitGoalCreated: (event) => this.deps.emitGoalCreated?.(event),
       });
     } catch (err) {
+      if (handoffTopicId) {
+        this.deps.leadHandoff?.rollback(handoffTopicId, handoffPath);
+      }
       if (err instanceof GoalConflictError) throw new PodError(409, err.message);
       throw err;
     }
@@ -280,7 +313,7 @@ export class PodTechLeadService {
     let promptError: string | undefined;
     if (sessionID) {
       try {
-        await this.prompt(goalId, this.openingPrompt(title, objective || charter));
+        await this.prompt(goalId, this.openingPrompt(title, objective || charter, sourceRef, handoffPath));
       } catch (err: any) {
         promptError = String(err?.message ?? err);
         this.deps.log?.(`[Pod] Tech Lead opening prompt failed for ${goalId}: ${promptError}`);
@@ -459,7 +492,22 @@ export class PodTechLeadService {
     return body ? `${rendered}\n\n${body}` : rendered;
   }
 
-  private openingPrompt(title: string, objective: string): string {
+  private openingPrompt(
+    title: string,
+    objective: string,
+    sourceRef?: GoalSourceRef,
+    handoffPath?: string,
+  ): string {
+    const handoff = sourceRef
+      ? [
+          '',
+          '<lead-handoff>',
+          sourceRef.snapshot,
+          '</lead-handoff>',
+          `The user and the Lead discussed this above. Full text: ${handoffPath ?? '(inline snapshot)'}.`,
+          'Continue from it; do not ask the user to repeat confirmed points.',
+        ].join('\n')
+      : '';
     return [
       'Start the technical discussion for this Pod Goal.',
       `Goal: ${title}`,
@@ -467,7 +515,7 @@ export class PodTechLeadService {
       'Clarify constraints and direction with the user. Do not start planning here:',
       'call mafw_pod_goal_direction with mode "clear" when the direction is unambiguous,',
       'or "needs_user" when a real ambiguity needs the user to decide.',
-    ].filter(Boolean).join('\n');
+    ].filter(Boolean).join('\n') + handoff;
   }
 
   private requireGoal(goalId: string): PodGoalRow {

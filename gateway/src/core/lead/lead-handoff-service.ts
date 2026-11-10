@@ -94,4 +94,20 @@ export class LeadHandoffService {
       messageRange: built.messageRange,
     };
   }
+
+  /** Best-effort rollback when the Goal intake fails after the handoff was written. */
+  rollback(topicId: string, handoffPath?: string): void {
+    try {
+      this.deps.topics.remove(topicId);
+    } catch {
+      /* best effort */
+    }
+    if (handoffPath) {
+      try {
+        fs.rmSync(handoffPath, { force: true });
+      } catch {
+        /* best effort */
+      }
+    }
+  }
 }

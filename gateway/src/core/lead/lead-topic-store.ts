@@ -104,4 +104,9 @@ export class LeadTopicStore {
     const row = this.db.prepare('SELECT * FROM lead_topic WHERE id = ?').get(id) as LeadTopicDbRow | undefined;
     return row ? toRow(row) : null;
   }
+
+  /** Best-effort rollback when the Goal intake fails after the handoff was written. */
+  remove(id: string): void {
+    this.db.prepare('DELETE FROM lead_topic WHERE id = ?').run(id);
+  }
 }

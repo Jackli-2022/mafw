@@ -43,6 +43,7 @@ describe('PodTechLeadService', () => {
   let registerInternalSession: jest.Mock;
   let emitGoalCreated: jest.Mock;
   let notify: jest.Mock;
+  let leadHandoff: { buildForGoal: jest.Mock };
   let service: PodTechLeadService;
   let supervisor: PodSessionSupervisor;
   let currentRuntime: string;
@@ -99,6 +100,7 @@ describe('PodTechLeadService', () => {
     registerInternalSession = jest.fn();
     emitGoalCreated = jest.fn();
     notify = jest.fn();
+    leadHandoff = { buildForGoal: jest.fn(async () => null) };
     currentRuntime = 'opencode';
     supervisor = new PodSessionSupervisor({
       store,
@@ -119,6 +121,7 @@ describe('PodTechLeadService', () => {
       registerInternalSession,
       emitGoalCreated,
       notify,
+      leadHandoff,
     });
   });
 
@@ -177,6 +180,43 @@ describe('PodTechLeadService', () => {
     expect(second.sessionID).toBe('ses_tech_lead');
     expect(second.parts[0].text).toContain('[CONTEXT MANIFEST]');
     expect(second.parts[0].text).toContain('先调研现有 Pod');
+  });
+
+  test('seeds the Tech Lead with the current-topic handoff', async () => {
+    leadHandoff.buildForGoal.mockResolvedValue({
+      sourceRef: {
+        snapshot: 'USER: hi',
+        topicId: 't1',
+        messageRange: { from: 'm1', to: 'm2' },
+        capturedAt: NOW,
+      },
+      handoffPath: path.join(mafwDir, 'goals', 'goal-direct-1', 'context', 'lead-handoff.md'),
+      topicId: 't1',
+      messageRange: { from: 'm1', to: 'm2' },
+    });
+
+    const created = await service.createGoal({
+      podId: 'pod_1',
+      projectDir: dir,
+      title: 'Pod loop',
+      objective: 'O',
+      createdBy: 'ses_lead',
+      handoff: 'current-topic',
+    });
+
+    expect(leadHandoff.buildForGoal).toHaveBeenCalledWith(expect.objectContaining({
+      projectDir: dir,
+      leadSessionId: 'ses_lead',
+      goalId: 'goal-direct-1',
+      title: 'Pod loop',
+    }));
+    const prompt = runtime.promptAsync.mock.calls[0][0].parts[0].text;
+    expect(prompt).toContain('<lead-handoff>');
+    expect(prompt).toContain('USER: hi');
+    expect(JSON.parse(fs.readFileSync(created.requestPath, 'utf8')).sourceRef).toMatchObject({
+      topicId: 't1',
+      messageRange: { from: 'm1', to: 'm2' },
+    });
   });
 
   test('ensureSession reuses the scoped discussion session and history reads it', async () => {
