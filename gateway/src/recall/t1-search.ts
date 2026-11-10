@@ -6,6 +6,63 @@ import { makeT1Search, T1Hit } from './verbatim-recall';
 
 const RRF_K = 60;
 
+export type ActivationRankingMode = 'off' | 'shadow' | 'on';
+
+interface ActivationRankingOptions {
+  mode: ActivationRankingMode;
+  activation?: Map<string, number>;
+  /** Max relative boost (hard cap 0.2). Default 0.1. */
+  weight?: number;
+  /** Only hits with baseScore >= band × topScore are eligible. Default 0.6. */
+  band?: number;
+}
+
+/** A/B counters for the shadow/on activation ranking modes. */
+const rankingStats = { evaluations: 0, wouldReorder: 0, applied: 0 };
+
+export function getT1RankingStats(): { evaluations: number; wouldReorder: number; applied: number } {
+  return { ...rankingStats };
+}
+
+export function resetT1RankingStats(): void {
+  rankingStats.evaluations = 0;
+  rankingStats.wouldReorder = 0;
+  rankingStats.applied = 0;
+}
+
+/**
+ * Bounded activation re-rank. Activation may only reorder hits that already
+ * cleared the relevance band (baseScore >= band × topScore), and its boost is
+ * capped at `weight` (≤20%). It can never add hits or rescue irrelevant ones.
+ */
+export function applyT1ActivationRanking(
+  hits: T1Hit[],
+  opts: ActivationRankingOptions,
+): { results: T1Hit[]; reordered: boolean } {
+  if (opts.mode === 'off' || hits.length < 2 || !opts.activation || opts.activation.size === 0) {
+    return { results: hits, reordered: false };
+  }
+  const weight = Math.min(0.2, Math.max(0, Number.isFinite(opts.weight) ? opts.weight! : 0.1));
+  const band = Math.min(1, Math.max(0, Number.isFinite(opts.band) ? opts.band! : 0.6));
+  const baseScore = (hit: T1Hit) => hit.score ?? hit.cosine ?? 0;
+  const top = Math.max(...hits.map(baseScore));
+  if (top <= 0) return { results: hits, reordered: false };
+
+  const ranked = hits.map((hit, index) => {
+    const base = baseScore(hit);
+    const key = hit.traceId || `${hit.sessionId}:${hit.turnId}`;
+    const activation = Math.min(1, Math.max(0, opts.activation!.get(key) ?? 0));
+    const eligible = activation > 0 && base >= top * band;
+    return { hit, index, score: eligible ? base * (1 + weight * activation) : base };
+  });
+  ranked.sort((a, b) => b.score - a.score || a.index - b.index);
+  const reordered = ranked.some((x, i) => x.index !== i);
+  if (!reordered) return { results: hits, reordered: false };
+  if (opts.mode === 'shadow') return { results: hits, reordered: true };
+  return { results: ranked.map((x) => x.hit), reordered: true };
+}
+
+
 function hitKey(hit: { traceId?: string | null; sessionId: string; turnId: number }): string {
   return hit.traceId || `${hit.sessionId}:${hit.turnId}`;
 }
@@ -100,6 +157,32 @@ export function createGatewayT1Search(
         lexical = [];
       }
     }
-    return fuseT1Hits(dense, lexical, k);
+    const fused = fuseT1Hits(dense, lexical, k);
+    const t1Cfg = config.recall.t1Recall;
+    const mode: ActivationRankingMode = t1Cfg?.activationRanking ?? 'shadow';
+    if (mode === 'off' || fused.length < 2) return fused;
+
+    let activation: Map<string, number> | undefined;
+    try {
+      const ids = Array.from(new Set(fused.map((h) => h.traceId).filter((x): x is string => Boolean(x))));
+      activation = ids.length > 0 && typeof (db as any).t1Activations === 'function'
+        ? (db as any).t1Activations(ids)
+        : undefined;
+    } catch {
+      activation = undefined;
+    }
+
+    rankingStats.evaluations++;
+    const ranked = applyT1ActivationRanking(fused, {
+      mode,
+      activation,
+      weight: t1Cfg?.activationRankWeight,
+      band: t1Cfg?.activationRankBand,
+    });
+    if (ranked.reordered) {
+      if (mode === 'on') rankingStats.applied++;
+      else rankingStats.wouldReorder++;
+    }
+    return ranked.results;
   };
 }

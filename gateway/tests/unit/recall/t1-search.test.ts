@@ -1,4 +1,4 @@
-import { createGatewayT1Search, fuseT1Hits } from '../../../src/recall/t1-search';
+import { createGatewayT1Search, fuseT1Hits, applyT1ActivationRanking, getT1RankingStats, resetT1RankingStats } from '../../../src/recall/t1-search';
 import { t1VectorKey } from '../../../src/recall/verbatim-recall';
 import { config } from '../../../src/config';
 
@@ -146,8 +146,7 @@ describe('createGatewayT1Search', () => {
   });
 });
 
-describe('fuseT1Hits', () => {
-  test('ranks a hit present in both channels above single-channel hits', () => {
+describe('fuseT1Hits', () => {  test('ranks a hit present in both channels above single-channel hits', () => {
     const dense = [
       { sessionId: 's1', turnId: 1, traceId: 't1t_a', cosine: 0.9, excerpt: 'dense a' },
       { sessionId: 's1', turnId: 2, traceId: 't1t_b', cosine: 0.8, excerpt: 'dense b' },
@@ -169,5 +168,111 @@ describe('fuseT1Hits', () => {
     );
     expect(fused).toHaveLength(1);
     expect(fused[0].traceId).toBe('b');
+  });
+});
+
+describe('applyT1ActivationRanking', () => {
+  const hit = (traceId: string, score: number) => ({
+    sessionId: 's1', turnId: 1, traceId, cosine: 0, excerpt: traceId, score,
+  }) as any;
+
+  test('on: a close lower-ranked hit can overtake with a bounded boost', () => {
+    const out = applyT1ActivationRanking(
+      [hit('a', 1.0), hit('b', 0.95)],
+      { mode: 'on', activation: new Map([['b', 1]]), weight: 0.1, band: 0.6 },
+    );
+    expect(out.reordered).toBe(true);
+    expect(out.results.map((h) => h.traceId)).toEqual(['b', 'a']);
+  });
+
+  test('band gate: activation never lifts a far-less-relevant hit', () => {
+    const out = applyT1ActivationRanking(
+      [hit('a', 1.0), hit('low', 0.4)],
+      { mode: 'on', activation: new Map([['low', 1]]), weight: 0.1, band: 0.6 },
+    );
+    expect(out.reordered).toBe(false);
+    expect(out.results.map((h) => h.traceId)).toEqual(['a', 'low']);
+  });
+
+  test('shadow returns the original order even when it would reorder', () => {
+    const out = applyT1ActivationRanking(
+      [hit('a', 1.0), hit('b', 0.95)],
+      { mode: 'shadow', activation: new Map([['b', 1]]), weight: 0.1, band: 0.6 },
+    );
+    expect(out.reordered).toBe(true);
+    expect(out.results.map((h) => h.traceId)).toEqual(['a', 'b']);
+  });
+});
+
+describe('createGatewayT1Search activation ranking modes', () => {
+  const lexicalHit = (traceId: string, rankIndex: number) => ({
+    traceId, sessionId: 's1', turnId: rankIndex + 1, source: 'user_input',
+    excerpt: traceId, rank: -(rankIndex + 1),
+  });
+
+  function fakeDb(activations: Map<string, number>, lookup = jest.fn(() => activations)) {
+    return {
+      searchT1Lexical: () => [lexicalHit('t1t_a', 0), lexicalHit('t1t_b', 1)],
+      readArchiveTurn: () => [],
+      readTurn: () => [],
+      t1Activations: lookup,
+    } as any;
+  }
+
+  beforeEach(() => resetT1RankingStats());
+
+  test('off keeps relevance order and skips the activation lookup', async () => {
+    const prev = config.recall.t1Recall.activationRanking;
+    config.recall.t1Recall.activationRanking = 'off';
+    try {
+      const lookup = jest.fn(() => new Map([['t1t_b', 1]]));
+      const search = createGatewayT1Search(fakeDb(new Map(), lookup), () => null);
+      const hits = await search('q', 2);
+      expect(hits.map((h) => h.traceId)).toEqual(['t1t_a', 't1t_b']);
+      expect(lookup).not.toHaveBeenCalled();
+    } finally {
+      config.recall.t1Recall.activationRanking = prev;
+    }
+  });
+
+  test('shadow counts a would-be reorder but serves relevance order', async () => {
+    const prev = config.recall.t1Recall.activationRanking;
+    config.recall.t1Recall.activationRanking = 'shadow';
+    try {
+      const search = createGatewayT1Search(fakeDb(new Map([['t1t_b', 1]])), () => null);
+      const hits = await search('q', 2);
+      expect(hits.map((h) => h.traceId)).toEqual(['t1t_a', 't1t_b']);
+      expect(getT1RankingStats()).toEqual({ evaluations: 1, wouldReorder: 1, applied: 0 });
+    } finally {
+      config.recall.t1Recall.activationRanking = prev;
+    }
+  });
+
+  test('on applies the bounded reorder and counts it', async () => {
+    const prev = config.recall.t1Recall.activationRanking;
+    config.recall.t1Recall.activationRanking = 'on';
+    try {
+      const search = createGatewayT1Search(fakeDb(new Map([['t1t_b', 1]])), () => null);
+      const hits = await search('q', 2);
+      expect(hits.map((h) => h.traceId)).toEqual(['t1t_b', 't1t_a']);
+      expect(getT1RankingStats()).toEqual({ evaluations: 1, wouldReorder: 0, applied: 1 });
+    } finally {
+      config.recall.t1Recall.activationRanking = prev;
+    }
+  });
+
+  test('activation lookup failure falls back to relevance order', async () => {
+    const prev = config.recall.t1Recall.activationRanking;
+    config.recall.t1Recall.activationRanking = 'on';
+    try {
+      const search = createGatewayT1Search(
+        fakeDb(new Map(), () => { throw new Error('state down'); }),
+        () => null,
+      );
+      const hits = await search('q', 2);
+      expect(hits.map((h) => h.traceId)).toEqual(['t1t_a', 't1t_b']);
+    } finally {
+      config.recall.t1Recall.activationRanking = prev;
+    }
   });
 });
