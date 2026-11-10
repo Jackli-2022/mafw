@@ -29,6 +29,14 @@ import { goalsRev } from "../goals-rev"
 
 const TERMINAL_ACTIONS = new Set(["COMPLETED", "FAILED", "CANCELLED", "ARCHIVED"])
 
+const GOAL_MODE_LABELS: Record<string, string> = {
+  quick: "Quick",
+  standard: "Standard",
+  standing: "Standing",
+}
+const goalModeLabel = (mode?: string | null): string | null =>
+  mode ? (GOAL_MODE_LABELS[mode] ?? mode) : null
+
 /** revision.directionJson 是 DirectionState 的镜像；坏 JSON 只当没有（fail-open）。 */
 function parseDirectionState(json: string | null | undefined, revision: number | null): PodDirectionState | null {
   if (!json) return null
@@ -636,6 +644,9 @@ export function GoalDetailPanel(props: {
               </Show>
               <Show when={podGoal()?.strategy === "quick"}>
                 <span class="mafw-card-meta mafw-goal-chip is-accent">快速执行</span>
+              </Show>
+              <Show when={goalModeLabel(podGoal()?.goalMode)}>
+                <span class="mafw-card-meta mafw-goal-chip">{goalModeLabel(podGoal()?.goalMode)}</span>
               </Show>
               <Show when={podGoal()?.assessment === "unreviewed"}>
                 <span class="mafw-card-meta mafw-goal-chip">未独立评审</span>

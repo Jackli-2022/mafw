@@ -1231,6 +1231,7 @@ export interface PodGoal {
   progress?: PodGoalProgress | null
   sourceRef?: GoalSourceRef | null
   strategy?: PodGoalStrategy | null
+  goalMode?: 'quick' | 'standard' | 'standing'
   assessment?: PodGoalAssessment | null
   currentAssignment?: PodCurrentAssignment | null
   activeRevision?: number

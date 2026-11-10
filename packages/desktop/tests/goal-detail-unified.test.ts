@@ -135,3 +135,9 @@ test("Goal 详情展示上下文来源，不展示 session id", () => {
   assert.match(detail, /sourceRef/)
   assert.doesNotMatch(detail, /ses_[a-zA-Z0-9]+/)
 })
+
+test("Goal 详情展示 goalMode badge", () => {
+  assert.match(detail, /goalMode/)
+  assert.match(detail, /Quick/)
+  assert.doesNotMatch(detail, /ses_[a-zA-Z0-9]+/)
+})
