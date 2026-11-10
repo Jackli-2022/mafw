@@ -11,8 +11,9 @@
  * build: the bundle is rebuilt only when an output is missing (including
  * `dist/package.json`, which pins the CJS entry type), a required build input is
  * missing, or an input is at least as new as the oldest output (`src/**\/*.ts`,
- * `build.mjs`, `tsconfig.build.json`). A single build is capped by
- * `BUILD_TIMEOUT_MS` so a hung `esbuild`/`tsc` cannot stall a Jest worker.
+ * `build.mjs`, `tsconfig.json`, `tsconfig.build.json`, `package.json`). A single
+ * build is capped by `BUILD_TIMEOUT_MS` so a hung `esbuild`/`tsc` cannot stall
+ * a Jest worker.
  *
  * Concurrency: a plain `npx jest` runs suites in worker processes, and two of
  * them (unit package contract + integration staging) can reach this helper at
@@ -51,8 +52,15 @@ export const ADAPTER_DIR = path.join(REPO_ROOT, 'adapters', 'opencode');
 /** Outputs the packaging suites require (`build.mjs` writes all three). */
 export const BUILD_OUTPUTS = ['dist/index.js', 'dist/index.d.ts', 'dist/package.json'] as const;
 
-/** Non-source build inputs at the adapter root. Missing any of these is stale. */
-const BUILD_INPUT_FILES = ['build.mjs', 'tsconfig.build.json'] as const;
+/**
+ * Non-source build inputs at the adapter root. Missing any of these is stale.
+ *
+ * `tsconfig.json` and `package.json` belong here because `build.mjs` reads them
+ * (`tsconfig.build.json` extends `tsconfig.json`; the package name/exports/type
+ * shape what `dist` must satisfy): editing the compiler config or the package
+ * manifest has to invalidate the bundle even when no source file changed.
+ */
+const BUILD_INPUT_FILES = ['build.mjs', 'tsconfig.json', 'tsconfig.build.json', 'package.json'] as const;
 
 /** Lock directory: `mkdir` is atomic, so it doubles as the mutex. */
 export const BUILD_LOCK_NAME = '.build-lock';
@@ -142,7 +150,8 @@ export function adapterBuildStatus(
   const missingOutput = BUILD_OUTPUTS.find((_, index) => !outputs[index]);
   if (missingOutput) return { fresh: false, reason: `${missingOutput} is missing` };
 
-  // A missing `build.mjs`/`tsconfig.build.json` means the tree cannot be built
+  // A missing build input (`build.mjs`, the adapter `tsconfig.json` /
+  // `tsconfig.build.json`, or `package.json`) means the tree cannot be built
   // correctly: report stale instead of silently shrinking the input set.
   const missingInput = BUILD_INPUT_FILES
     .map((name) => path.join(adapterDir, name))
@@ -432,7 +441,9 @@ export type BuildRunner = (adapterDir: string) => {
 
 /**
  * Backstop against a hung `esbuild`/`tsc`; normal builds take a few seconds.
- * `LOCK_TIMEOUT_MS + BUILD_TIMEOUT_MS` must stay below
+ * It must stay *below* `LOCK_TIMEOUT_MS`: a waiter's wait budget has to outlive
+ * a healthy but slow build, otherwise the waiter gives up on a build that is
+ * still going to succeed. `LOCK_TIMEOUT_MS + BUILD_TIMEOUT_MS` must stay below
  * `PACKAGING_SUITE_TIMEOUT_MS`, so the helper's own diagnostics win over a
  * Jest worker timeout.
  */

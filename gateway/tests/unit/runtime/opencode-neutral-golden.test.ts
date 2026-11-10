@@ -56,6 +56,31 @@ function semanticOwner(event: any) {
     ?? event.payload?.properties?.message?.sessionID;
 }
 
+/**
+ * Payload keys that can never match between the two bridge copies, so they are
+ * stripped before the deep compare:
+ *
+ *  - `id` / `at` are minted per emitted AdapterEvent (`Date.now()` + a module
+ *    counter), so a copy that forwards one into the payload (`queue.updated.id`)
+ *    carries a per-run value;
+ *  - `turnID` is minted by whichever copy owns the turn queue (`bridge-<sid>-
+ *    bridge-<stamp>-<n>`); each module has its own counter;
+ *  - `native` (when present) is the untouched upstream frame, not a canonical
+ *    field.
+ *
+ * Everything else must still be deep-equal: a copy that keeps the right event
+ * type but loses or changes a property (e.g. `queue.updated.action`, or
+ * `turn.completed.ok` flipping) is the drift this pin exists to catch.
+ */
+const VOLATILE_PAYLOAD_FIELDS = ['id', 'at', 'turnID', 'native'] as const;
+
+/** `payload.properties` with the bridge-local identity fields removed. */
+function stablePayload(event: any): Record<string, any> {
+  const properties = { ...(event.payload?.properties ?? {}) };
+  for (const field of VOLATILE_PAYLOAD_FIELDS) delete properties[field];
+  return properties;
+}
+
 async function collectCanonical(definition: any, expected: number): Promise<any[]> {
   const bus = new RuntimeBus();
   bus.register(definition);
@@ -167,7 +192,8 @@ it('opencode @2.1 created/queue/background/diff survive the neutral round-trip (
 /**
  * The adapter package carries its own `toRuntimeDefinition` (it must not import
  * gateway source), so the two copies can drift silently. Same raw stream → same
- * canonical types and owners, whichever bridge produced them.
+ * canonical types, owners **and payload properties**, whichever bridge produced
+ * them.
  */
 it('gateway and adapter bridges emit the same canonical sequence for the same raw stream', async () => {
   const meta = {
@@ -196,5 +222,46 @@ it('gateway and adapter bridges emit the same canonical sequence for the same ra
   expect(types(viaGateway)).toEqual(types(viaAdapter));
   expect(owners(viaGateway)).toEqual(owners(viaAdapter));
   expect(owners(viaGateway)).toEqual(legacy.map(semanticOwner));
+
+  // Payload parity, not just event identity: the same type with a mutated
+  // `payload.properties` is still a behavioural drift between the copies.
+  expect(viaGateway.map(stablePayload)).toEqual(viaAdapter.map(stablePayload));
+
+  // Self-check that the compare above is not vacuous: the fixture exercises
+  // real payloads, and a terminal event carries the bridge-minted `turnID`
+  // that the normalizer must remove (each copy mints its own).
+  expect(viaAdapter.map(stablePayload).filter((properties) => Object.keys(properties).length > 1).length)
+    .toBeGreaterThan(0);
+  const terminal = viaAdapter.find((event) => event.payload.type === 'turn.completed');
+  expect(typeof terminal?.payload.properties.turnID).toBe('string');
+  expect(stablePayload(terminal)).not.toHaveProperty('turnID');
+});
+
+/**
+ * Same pin for the @2.1 dialect. Its events carry the payloads that actually
+ * move data (queue item/action, background job, session diff), so a copy that
+ * drops or renames one of those fields is caught here even when the v1 set
+ * stays identical.
+ */
+it('gateway and adapter bridges emit the same canonical payloads for @2.1 events', async () => {
+  const meta = {
+    name: 'opencode-21',
+    capabilities: {},
+    translate: { entry: V21_ENTRY, isCanonical: (type: string) => !!EVENT_FLOW_MATRIX[type] },
+  };
+
+  const viaAdapter = await collectCanonical(
+    toRuntimeDefinition(fakeRuntime(V21_RAW), meta),
+    V21_RAW.length,
+  );
+  const viaGateway = await collectCanonical(
+    gatewayToRuntimeDefinition(fakeRuntime(V21_RAW) as any, meta as any),
+    V21_RAW.length,
+  );
+
+  expect(viaGateway.map((event: any) => event.payload.type))
+    .toEqual(viaAdapter.map((event: any) => event.payload.type));
+  expect(viaGateway.map(semanticOwner)).toEqual(viaAdapter.map(semanticOwner));
+  expect(viaGateway.map(stablePayload)).toEqual(viaAdapter.map(stablePayload));
 });
 

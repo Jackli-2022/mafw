@@ -19,6 +19,7 @@ import {
   acquireBuildLock,
   adapterBuildFresh,
   adapterBuildStatus,
+  buildInputFiles,
   decideBuildLock,
   ensureAdapterBuilt,
   isProcessAlive,
@@ -46,7 +47,9 @@ function write(rel: string, mtimeOffset: number): string {
 /** Fresh layout: sources at T0, outputs at T0 + 1min. */
 function seedFreshLayout(): void {
   write('build.mjs', 0);
+  write('tsconfig.json', 0);
   write('tsconfig.build.json', 0);
+  write('package.json', 0);
   write('src/index.ts', 0);
   write('src/nested/deep.ts', 0);
   write('dist/index.js', MINUTE);
@@ -116,10 +119,39 @@ describe('freshness predicate', () => {
     expect(adapterBuildFresh(adapterDir)).toBe(false);
   });
 
+  it('rebuilds when tsconfig.json changes', () => {
+    // `tsconfig.build.json` extends it: a compiler-option edit must invalidate
+    // the bundle even when no source file moved.
+    seedFreshLayout();
+    write('tsconfig.json', MINUTE * 2);
+    expect(adapterBuildFresh(adapterDir)).toBe(false);
+  });
+
   it('rebuilds when tsconfig.build.json changes', () => {
     seedFreshLayout();
     write('tsconfig.build.json', MINUTE * 2);
     expect(adapterBuildFresh(adapterDir)).toBe(false);
+  });
+
+  it('rebuilds when package.json changes', () => {
+    // The package manifest decides the name/exports/type the bundle must
+    // satisfy (`dist/package.json` mirrors its CJS type), so it is an input.
+    seedFreshLayout();
+    write('package.json', MINUTE * 2);
+    expect(adapterBuildFresh(adapterDir)).toBe(false);
+  });
+
+  it('counts every adapter-root build input, not just the sources', () => {
+    seedFreshLayout();
+    const relative = buildInputFiles(adapterDir).map((file) => path.relative(adapterDir, file));
+    expect(relative).toEqual(expect.arrayContaining([
+      'build.mjs',
+      'tsconfig.json',
+      'tsconfig.build.json',
+      'package.json',
+      path.join('src', 'index.ts'),
+      path.join('src', 'nested', 'deep.ts'),
+    ]));
   });
 
   it('reports stale when a required build input is missing', () => {
@@ -130,6 +162,14 @@ describe('freshness predicate', () => {
     seedFreshLayout();
     fs.rmSync(path.join(adapterDir, 'build.mjs'));
     expect(adapterBuildStatus(adapterDir).reason).toContain('build.mjs');
+
+    seedFreshLayout();
+    fs.rmSync(path.join(adapterDir, 'tsconfig.json'));
+    expect(adapterBuildStatus(adapterDir).reason).toContain('tsconfig.json');
+
+    seedFreshLayout();
+    fs.rmSync(path.join(adapterDir, 'package.json'));
+    expect(adapterBuildStatus(adapterDir).reason).toContain('package.json');
   });
 
   it('reports a build input that disappears mid-check instead of throwing', () => {
@@ -215,6 +255,10 @@ describe('build lock decisions', () => {
     // budget, and even the worst-case waiter (full lock wait + its own build)
     // must fail with a helper message before Jest's suite timeout fires.
     expect(LOCK_STALE_MS).toBeLessThan(LOCK_TIMEOUT_MS);
+    // The waiter must outlive a healthy but slow build: if a build could run
+    // longer than the lock wait, a waiter would time out on a build that is
+    // still going to finish and succeed.
+    expect(BUILD_TIMEOUT_MS).toBeLessThan(LOCK_TIMEOUT_MS);
     expect(LOCK_TIMEOUT_MS + BUILD_TIMEOUT_MS).toBeLessThan(PACKAGING_SUITE_TIMEOUT_MS);
   });
 
@@ -525,7 +569,9 @@ describe('ensureAdapterBuilt', () => {
   it('skips the build when another worker finished while we waited', () => {
     write('src/index.ts', 0);
     write('build.mjs', 0);
+    write('tsconfig.json', 0);
     write('tsconfig.build.json', 0);
+    write('package.json', 0);
     // No dist yet → stale; a live lock makes us wait, and the holder finishes
     // (writes dist + drops the lock) before the retry.
     fs.mkdirSync(lockDir);

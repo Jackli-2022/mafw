@@ -9,11 +9,11 @@
  * something, joins the suite and can even pass, while `tsc` (and any editor)
  * flags it. Three such files had been sitting in `tests/` exactly like that.
  *
- * This gate is deliberately *syntax only*: it parses each test/helper file with
- * the TypeScript compiler API and fails on parse diagnostics. It is not a type
- * gate. A full `--noEmit` typecheck of the whole test tree still leaves a large
- * pre-existing error backlog and stays separate work; `tsconfig.test-types.json`
- * covers only the narrow slice that is already clean.
+ * This gate is deliberately *syntax only*: it parses every `.ts` file under
+ * `tests/` with the TypeScript compiler API and fails on parse diagnostics. It
+ * is not a type gate. A full `--noEmit` typecheck of the whole test tree still
+ * leaves a large pre-existing error backlog and stays separate work;
+ * `tsconfig.test-types.json` covers only the narrow slice that is already clean.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -27,10 +27,11 @@ type SourceWithParseDiagnostics = ts.SourceFile & {
 };
 
 /**
- * Parse `text` the way `createSourceFile` does for the compiler and return only
- * the parse (syntax) diagnostics. `parseDiagnostics` is populated when
- * `reportDiagnostics` is true but is not part of the public `SourceFile` typing,
- * hence the narrow cast.
+ * Parse `text` the way the compiler does and return only the parse (syntax)
+ * diagnostics. `createSourceFile` always records them on `parseDiagnostics`,
+ * which is internal rather than part of the public `SourceFile` typing, hence
+ * the narrow cast. The fifth argument is `setParentNodes` (`true` here); there
+ * is no `reportDiagnostics` argument to `createSourceFile`.
  */
 function parseDiagnosticsOf(fileName: string, text: string): readonly ts.Diagnostic[] {
   const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
@@ -62,13 +63,16 @@ function collectFiles(dir: string, accept: (file: string) => boolean): string[] 
   return found;
 }
 
-function isTestFile(file: string): boolean {
-  return file.endsWith('.test.ts');
+/** Every `.ts` under `tests/` counts: suites, helpers, mocks, fixtures, setup. */
+function isTypeScriptFile(file: string): boolean {
+  return file.endsWith('.ts');
 }
 
 describe('gateway test syntax gate', () => {
-  const testFiles = collectFiles(TESTS_ROOT, isTestFile);
-  const helperFiles = collectFiles(path.join(TESTS_ROOT, 'helpers'), (file) => file.endsWith('.ts'));
+  // A `.test.ts`-only walk let support files (fixtures, mocks, `tests/unit/
+  // helpers`, `jest-setup.ts`, `import-scan.ts`) fall outside the gate even
+  // though ts-jest still parses them when a suite imports them.
+  const testFiles = collectFiles(TESTS_ROOT, isTypeScriptFile);
 
   test('the gate actually reports parse diagnostics (self-check)', () => {
     // Guards the gate itself: if the compiler API stops surfacing
@@ -77,13 +81,12 @@ describe('gateway test syntax gate', () => {
     expect(diagnostics.length).toBeGreaterThan(0);
   });
 
-  test('every gateway test and helper file parses without syntax errors', () => {
-    const targets = [...testFiles, ...helperFiles];
+  test('every file under gateway/tests parses without syntax errors', () => {
     // Sanity check the sweep: an empty walk would make this test vacuous.
-    expect(targets.length).toBeGreaterThan(100);
+    expect(testFiles.length).toBeGreaterThan(100);
 
     const violations: string[] = [];
-    for (const file of targets) {
+    for (const file of testFiles) {
       const diagnostics = parseDiagnosticsOf(file, fs.readFileSync(file, 'utf8'));
       violations.push(...diagnostics.map(formatDiagnostic));
     }
