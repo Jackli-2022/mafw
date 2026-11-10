@@ -1,7 +1,7 @@
 # Gateway 内核重构：统一会话注册表 / 进程表（Phase C）
 
 日期：2026-11-09
-状态：待批准
+状态：已实施（2026-11-10，分支 feat/gateway-kernel-session-registry；实现注记见 §9）
 前置：Phase A（`concurrency/` 提供原语）；Runtime Driver Spec Phase 3 完成后更顺畅（opencode/pi session 逻辑已移入 adapter）
 关联设计：
 - `2026-11-09-gateway-kernel-concurrency-design.md`（Phase A）
@@ -164,3 +164,28 @@ class SessionRegistry {
 - `metadata` 的类型安全（泛型 vs `Record<string, unknown>`）
 - kv 持久化范围（internalSessionRoles 已有；其他是否也需要）
 - PodSessionSupervisor 的观察同步频率（实时 vs 定期）
+
+## 9. 实现注记（2026-11-10，Phase C 落地时的裁决）
+
+- **PiSessionRegistry 排除**：§2 盘点把它列在 `runtime/pi/pi-session.ts`，但 neutral
+  runtime driver 工作已把 pi 会话迁入 `adapters/pi/src/pi-session.ts`（网关外）。
+  网关进程表只覆盖网关自有状态；耦合适配器内部状态会逆着驱动层架构走。
+- **eventTaps / probeScopes TTL**：Phase A 已用 TtlMap 完成，验收项 2 预先满足。
+- **metadata 类型**：`Record<string, unknown>`（§8 选项 A），视图在边界自校验。
+- **kv 持久化**：仅 internalSessionRoles 的既有双写保留；其他视图原本就是内存态。
+- **pool 的关键修正（builder ruling，推翻 §5.3 表格原文的该行）**：pair 缓存**留在
+  TtlMap**——它以**源会话**（用户会话）为键，迁入注册表会把用户会话错标
+  `kind:'worker'`。改为 **worker 会话本身**（w-* sid）在 onSessionCreated 注册
+  （role+origin+TTL），随 pair touch/逐出/overflow/disposeAll 同步注销（pool 自持
+  sid 列表——worker 记录与 pair 同 TTL，逐出时通常已过期，`byScope` 的 active-only
+  视野看不到它们）。pair 资源释放仍是**访问驱动**（下次 getWorker 的 TtlMap
+  sweep——与 base 行为一致）；60s 统一 sweeper 只回收簿记记录。终审补充：worker
+  记录的 per-record onEvict 未接（pair 不经注册表逐出），sweeper 不绑 pair 资源。
+- **统一 sweeper**：index.ts 60s `sessionRegistry.sweep()`；`sweepBusyAndQueue` 与
+  memory-worker `compactIdleMs` 不并入（活跃簿记/策略检查，非进程表状态）。
+- **CI 守卫偏差**：§7 的字面 repo-wide `new Map.*[Ss]ession` grep 会命中合法留下的
+  活跃簿记（busySessions、recallCalledBySession）与 driver mutex；实际守卫按
+  「已迁移文件不得回潮裸 Map」钉扎（regression-guard.test.ts）。
+- **世代语义**：active 上重注册=原地更新（scope 可被新 owner 接管、metadata 合并）；
+  ended/回收后重注册 `generation+1`（`retiredGenerations` 10k FIFO stash，跨 sweep
+  保持 §6 的「retire → 重建 → +1」）；首次注册 generation=1。

@@ -11,6 +11,8 @@ import { config } from "./config";
 import { MutexQueue } from './concurrency/mutex-queue';
 import { TtlMap } from './concurrency/ttl-map';
 import { Scheduler, TaskSkippedError, TaskTimeoutError } from './scheduler';
+import { getDefaultSessionRegistry } from './session';
+import { InternalRolesView } from './session/views/internal-roles';
 import { log } from './core/utils/logger';
 import {
   createGatewayRuntimeIdentity,
@@ -540,10 +542,17 @@ class MafwScheduler {
   }
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private queueSweepTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionSweepTimer: ReturnType<typeof setInterval> | null = null;
+  // Unified session registry (kernel refactor Phase C) — the gateway's process
+  // table. MUST be the default singleton: worker-origin (recall/worker-origin.ts)
+  // falls back to getDefaultSessionRegistry(), and a private instance would
+  // split the table in two (final review C1). Views below hold a reference;
+  // worker-origin / pool / lead / pod mirrors consume it.
+  private sessionRegistry = getDefaultSessionRegistry();
   // Internal worker sessions (memory pipelines) — their output must never be
-  // captured back into T1 (recursion guard A). Maps sessionID → worker role
-  // (manager, turn-compress, index-scan, reflect) for token usage tracking.
-  private internalSessionRoles = new Map<string, string>();
+  // captured back into T1 (recursion guard A). Role overlay over the session
+  // registry (was: bare Map<string, string>; kv dual-write unchanged).
+  private internalSessionRoles = new InternalRolesView(this.sessionRegistry);
   // Identity layer (spec 2026-10-08-runtime-neutral-agent-identity): registry 是身份
   // 单一事实源；state 持 session→identity 绑定与 (runtime, identity) 物化状态。
   private identityRegistry = createBuiltinIdentityRegistry();
@@ -2484,6 +2493,10 @@ class MafwScheduler {
       log.warn(`[Lead] archived metadata update failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
     }
     this.unregisterInternalSession(sessionId);
+    // Phase C (final review I2): every archive entry point (rotation downgrade,
+    // pod manager dep, dead-row cleanup) converges here — drop the kind 'lead'
+    // process-table record too, or it survives as a TTL-less zombie.
+    this.leadSessionRegistry?.unmirrorLeadSession(sessionId);
     // stale slot 清理：归档后不得再被 findBySessionId/current 认领（不依赖 rotation 恰好写完新槽）。
     try {
       const rows = this.getGatewayDb().kvAll<unknown>('manager-session');
@@ -2504,6 +2517,8 @@ class MafwScheduler {
         ttlMs: config.recall.sessionWorkerTtlMs,
         compactIdleMs: config.recall.workerCompactIdleMs,
         promptTimeoutMs: config.recall.workerPromptTimeoutMs,
+        // Phase C: worker sessions register in the gateway's process table.
+        registry: this.sessionRegistry,
         // Recursion guard (A): internal worker sessions are registered so
         // /api/obs/capture never records their output as observations.
         onSessionCreated: (sessionId, role) => {
@@ -4390,6 +4405,8 @@ class MafwScheduler {
       },
       now: () => new Date().toISOString(),
       log: (message) => log.info(message),
+      // Phase C Task 5: observe-only mirror into the unified session registry.
+      sessionRegistry: this.sessionRegistry,
     });
     this.podProbeService = new PodProbeService({
       store: this.podStore,
@@ -4556,6 +4573,8 @@ class MafwScheduler {
       },
       broadcast: (event) => this.broadcast(event as any),
       log: (message) => log.info(message),
+      // Phase C Task 6: observe-only mirror into the unified session registry.
+      sessionRegistry: this.sessionRegistry,
     });
     this.podSessionLifecycle = new PodSessionLifecycle({
       store: this.podStore,
@@ -4922,6 +4941,17 @@ class MafwScheduler {
       if (!this.queueSweepTimer) {
         this.queueSweepTimer = setInterval(() => this.sweepBusyAndQueue(), 60_000);
         this.queueSweepTimer.unref?.();
+      }
+      // 统一会话 sweeper（Phase C Task 7）：回收过期 session 记录（worker
+      // 24h TTL → per-record onEvict dispose pair；其余视图按各自生命周期）。
+      // sweepBusyAndQueue 是活跃簿记（非进程表状态），保持自己的间隔——见
+      // plan Key Ruling 7。
+      if (!this.sessionSweepTimer) {
+        this.sessionSweepTimer = setInterval(() => {
+          const swept = this.sessionRegistry.sweep();
+          if (swept > 0) log.info(`[SessionRegistry] swept ${swept} expired session record(s)`);
+        }, 60_000);
+        this.sessionSweepTimer.unref?.();
       }
     }
     // memory:decay must mutate the gateway's LIVE index instance — a throwaway

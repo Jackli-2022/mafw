@@ -18,6 +18,7 @@
 - [Goal 编排：NodeDriver 状态机](#goal-编排nodedriver-状态机)
 - [事件层与常驻存在感](#事件层与常驻存在感)
 - [统一调度器（scheduler/，内核重构 Phase B）](#统一调度器scheduler内核重构-phase-b)
+- [统一会话注册表（session/，内核重构 Phase C）](#统一会话注册表session内核重构-phase-c)
 - [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
 - [插件系统（四类型 loader + 统一包宿主）](#插件系统四类型-loader--统一包宿主)
 - [API 端点](#api-端点)
@@ -396,6 +397,31 @@ index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`rel
 - **边界 recall 100ms 路径**：最敏感延迟路径零改动（零新增延迟风险）；foreground 通道
   在生产中由 user/llm 触发的 automation 消费。
 - HTTP 诊断端点（`/api/scheduler/stats`）留给 Phase D 诊断面合并。
+
+---
+
+## 统一会话注册表（session/，内核重构 Phase C）
+
+**文件**：`gateway/src/session/`（`scope.ts` + `registry.ts` + `views/`）。
+设计 spec：`docs/superpowers/specs/2026-11-09-gateway-kernel-session-registry-design.md`（§9 为落地注记）。
+
+网关的**进程表**：一个 sessionID 一条记录，回答「归属 / 状态 / TTL / 世代」。
+
+- **记录**：`SessionRecord { sessionID, scope, status, runtimeName, generation, createdAt, lastActiveAt, ttlMs, expiresAt, metadata }`；`scope.kind ∈ project|goal|probe|worker|lead|internal`。
+- **生命周期**：TTL 过期是**惰性**的（lookup/byScope 物化 `ended`，不删记录）；`sweep()` 收集过期记录并触发 **per-record onEvict**（显式 unregister 不触发）。`touch()` 刷新 `expiresAt`（对齐 pool 的按用续期）。世代：active 上重注册=原地更新（scope 可被新 owner 接管、metadata 合并）；ended/回收后重注册 `generation+1`（`retiredGenerations` 有界 stash 10k FIFO）。
+- **视图模型**：记录的 **owner**（决定生命周期）vs **overlay**（只在 metadata 上打补丁）。
+
+| 视图 | 角色 | 说明 |
+|---|---|---|
+| `InternalRolesView`（index.ts） | overlay | `metadata.role`；自建记录 kind `internal`（delete 会整体注销），foreign 记录只清 role、owner 生命周期不动；kv 双写不变 |
+| worker-origin（recall/worker-origin.ts） | overlay | `metadata.originSessionID`；默认注册表单例（`getDefaultSessionRegistry`），`clearWorkerOrigins` 区分自建记录与 owner 记录 |
+| SessionWorkerPool | owner（worker 会话） | **pair 缓存留在 TtlMap**（以源会话为键——那是用户会话，不能标 kind worker）；**worker 会话**（w-* sid）在 onSessionCreated 注册（role+origin+TTL），随 pair touch/逐出/overflow/disposeAll 同步注销（pool 自持 sid 列表——byScope 看不到已过期记录）；pair 资源的释放仍是**访问驱动**（下次 getWorker 的 TtlMap sweep），60s sweeper 只回收簿记记录 |
+| LeadSessionRegistry | owner（lead） | observe-only 镜像：bind/ensure 写 kind `lead` 记录（projectId + podId），dead-row 归档注销；全部 Lead 逻辑（kv 行/活性/快照）不动 |
+| PodSessionSupervisor | owner（goal 域） | observe-only 镜像：ensure/retire 写 kind `goal` 记录（podId+memberId+goalId+revision，metadata leaseKind/runtime/generation）；租约逻辑（唯一索引兜底/单飞/冲突归因）不动 |
+
+**统一 sweeper**：index.ts 60s `sessionRegistry.sweep()`（与 queueSweepTimer 并列；`sweepBusyAndQueue` 是活跃簿记非进程表状态，保留自己的间隔——spec §9 Key Ruling 7）。
+
+**范围外（裁决）**：`PiSessionRegistry` 已随 neutral runtime driver 迁入 `adapters/pi/src/`（网关外，适配器自治）；`eventTaps`/`probeScopes` TTL 由 Phase A TtlMap 完成；`busySessions`/`recallCalledBySession`（活跃簿记）、memory-worker `compactIdleMs`（prompt 时策略检查）不属于进程表。CI 守卫按「已迁移文件不得回潮裸 Map」钉扎（regression-guard.test.ts）。
 
 ---
 
