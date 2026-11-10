@@ -162,6 +162,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/lead/topics/:id', operationId: 'lead.topics.get', tags: ['lead'] },
   { method: 'GET', path: '/api/lead/working-set', operationId: 'lead.workingSet', tags: ['lead'] },
   { method: 'GET', path: '/api/lead/recall', operationId: 'lead.recall', tags: ['lead'] },
+  { method: 'POST', path: '/api/lead/compact', operationId: 'lead.compact', tags: ['lead'] },
   { method: 'POST', path: '/api/goals/:id/nodes/:runId/retry', operationId: 'goals.retryNode', tags: ['goals'] },
   { method: 'POST', path: '/api/goals/:goalId/questions/:questionId/respond', operationId: 'goals.respondQuestion', tags: ['goals'] },
   { method: 'POST', path: '/api/work/:goalId/validate', operationId: 'goals.validate', tags: ['goals'] },

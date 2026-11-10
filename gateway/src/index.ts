@@ -4,7 +4,6 @@ import * as os from 'os';
 import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
-import * as yaml from 'js-yaml';
 import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
@@ -138,7 +137,7 @@ import { exec } from "child_process";
 import { ConsolidationService, consolidationJudge } from "./memory/consolidation-service";
 import { resolveJudgeModel } from "./memory/judge-model";
 import { LayaConflictClient } from "./memory/laya-client";
-import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite, getRouteStats } from "./memory/route-write";
+import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/route-write";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
 import { getProviderApiKey } from "./runtime/auth";
@@ -237,8 +236,6 @@ import { attachEventsSseRoutes } from './routes/events-sse';
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
 const QUEUE_ITEM_TTL_MS = 24 * 3600_000;
-const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
-const isThinkingLevel = (v: unknown): v is string => typeof v === 'string' && THINKING_LEVELS.has(v);
 import { EventStore } from './events/event-store';
 import { migrateEventLogInfoToMessage } from './events/event-log-migrate';
 import { enrichBroadcastFrame } from './events/broadcast-frame';
@@ -295,7 +292,6 @@ import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './run
 import {
   enrichPermissionEvent,
   projectQuestionRequest,
-  projectSession,
   projectSessions,
 } from './runtime/view-projections';
 import { buildRuntimeDiagnostics, type RuntimeDiagnosticsView } from './runtime/runtime-diagnostics';
@@ -343,7 +339,6 @@ import { ensureServeForBuiltinRuntime } from './runtime/serve-for-runtime';
 import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime/runtime-root';
 import { isSelectableProject, parseRegisterIntent } from './runtime/project-selection';
 import type { UsagePluginsDeps } from './routes/usage-plugins';
-import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
 import type { ModelConfigDeps } from './routes/model-config';
 import { RouteRegistry } from './routes/registry';
@@ -5541,6 +5536,12 @@ class MafwScheduler {
           );
         },
         workingSetEnabled: () => process.env.MAFW_LEAD_WORKING_SET !== '0',
+        listMessages: async ({ sessionID, limit }) => {
+          const page: any = await this.runtime!.session.messages({ sessionID, limit });
+          return { data: page?.data ?? [] };
+        },
+        broadcast: (event) => this.broadcast(event as any),
+        now: () => new Date().toISOString(),
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),
@@ -7750,6 +7751,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   private async handleDashboardAPI(req: http.IncomingMessage): Promise<any> {
+    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
+    // Retained for catch-all shapes (R5).
     if (req.url?.startsWith("/api/goals")) {
       return {
         goals: Array.from(this.activeGoals.values()).map(s => ({
@@ -7762,6 +7765,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         })),
       };
     }
+    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
+    // Retained for catch-all shapes (R5).
     if (req.url?.startsWith("/api/stats")) {
       const base = {
         activeGoals: this.activeGoals.size,
@@ -7780,6 +7785,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       }
       return base;
     }
+    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
+    // Retained for catch-all shapes (R5).
     if (req.url === '/api/memory/add' && req.method === 'POST') {
       const body = await new Promise<string>((resolve) => {
         let b = '';
@@ -7901,6 +7908,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         return { success: false, error: err.message };
       }
     }
+    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
+    // Retained for catch-all shapes (R5).
     if (req.url === '/api/memory/pin' && req.method === 'POST') {
       const body = await new Promise<string>((resolve) => {
         let b = '';

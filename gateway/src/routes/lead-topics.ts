@@ -1,11 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { RouteRegistry } from './registry';
+import { readRouteBody } from './cognition';
 import type { LeadGoalStatus } from '../core/lead/goal-status';
 import { buildLeadContext, type LeadContext } from '../core/lead/lead-context';
 import type { LeadTopicRow, LeadTopicStore } from '../core/lead/lead-topic-store';
+import { compactTopic } from '../core/lead/topic-summary';
 import { recallTopics, type RecallCandidate, type RecallTopicInput } from '../core/lead/topic-recall';
 import type { TopicMessageIndexRow, TopicMessageIndexStore } from '../core/lead/topic-message-index';
-import { selectWorkingSet, type WorkingSet } from '../core/lead/working-set';
+import { estimateTopicTokens, selectWorkingSet, type WorkingSet } from '../core/lead/working-set';
+import type { MafwMessage } from '../runtime/canonical-types';
 
 export interface LeadTopicView {
   id: string;
@@ -20,10 +23,13 @@ export interface LeadTopicView {
 export interface LeadTopicRouteDeps {
   isLeadSession(sessionID: string): boolean;
   projectDirForSession(sessionID: string): string | null;
-  topics: Pick<LeadTopicStore, 'listByProject' | 'search' | 'get'>;
-  index: Pick<TopicMessageIndexStore, 'listByTopic' | 'listByProject'>;
+  topics: Pick<LeadTopicStore, 'listByProject' | 'search' | 'get' | 'updateSummary' | 'setState'>;
+  index: Pick<TopicMessageIndexStore, 'listByTopic' | 'listByProject' | 'replaceTopic'>;
   goals(projectDir: string): LeadGoalStatus[];
   workingSetEnabled(): boolean;
+  listMessages?(input: { sessionID: string; limit: number }): Promise<{ data: MafwMessage[] }>;
+  broadcast?(event: { type: string; properties: Record<string, unknown> }): void;
+  now?(): string;
 }
 
 const EMPTY_CONTEXT: LeadContext = {
@@ -166,6 +172,75 @@ export function handleRecall(
   };
 }
 
+function messageRows(topicId: string, messages: MafwMessage[], createdAt: string): TopicMessageIndexRow[] {
+  const rows: TopicMessageIndexRow[] = [];
+  for (const message of messages) {
+    if (message.role !== 'user' && message.role !== 'assistant') continue;
+    if (!message.id || !Array.isArray(message.content)) continue;
+    const text = message.content
+      .filter((part: any) => part?.type === 'text' && part.synthetic !== true && typeof part.text === 'string')
+      .map((part: any) => String(part.text).trim())
+      .filter(Boolean)
+      .join('\n');
+    if (!text) continue;
+    rows.push({
+      topicId,
+      messageId: message.id,
+      role: message.role,
+      text,
+      tokenEstimate: estimateTopicTokens(text),
+      createdAt,
+    });
+  }
+  return rows;
+}
+
+/** POST /api/lead/compact — page out a topic; never deletes the transcript. */
+export async function handleCompact(
+  args: { topicId?: string },
+  deps: LeadTopicRouteDeps,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!deps.workingSetEnabled()) {
+    return { status: 503, body: { error: 'lead working set is disabled' } };
+  }
+  const id = clean(args?.topicId);
+  const row = id ? deps.topics.get(id) : null;
+  if (!row) return { status: 404, body: { error: 'topic not found' } };
+  if (!deps.listMessages || !deps.broadcast) {
+    return { status: 503, body: { error: 'lead compaction is unavailable' } };
+  }
+
+  const now = deps.now?.() ?? new Date().toISOString();
+  const page = await deps.listMessages({ sessionID: row.leadSessionId, limit: 200 });
+  const result = compactTopic({ topicId: id, messages: page.data });
+  deps.topics.updateSummary(id, {
+    summary: result.summary,
+    summaryHash: result.summaryHash,
+    now,
+    residentTokens: result.afterTokens,
+  });
+  deps.topics.setState(id, 'warm', now);
+  deps.index.replaceTopic(id, messageRows(id, page.data, now));
+  deps.broadcast({
+    type: 'lead.compaction',
+    properties: {
+      topicId: id,
+      beforeTokens: result.beforeTokens,
+      afterTokens: result.afterTokens,
+    },
+  });
+
+  return {
+    status: 200,
+    body: {
+      topicId: id,
+      beforeTokens: result.beforeTokens,
+      afterTokens: result.afterTokens,
+      evictedMessageIds: result.evictedMessageIds,
+    },
+  };
+}
+
 function send(res: ServerResponse, out: { status: number; body: unknown }): void {
   res.writeHead(out.status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(out.body));
@@ -201,5 +276,10 @@ export function attachLeadTopicRoutes(registry: RouteRegistry, deps: LeadTopicRo
       projectDir: url.searchParams.get('projectDir') ?? undefined,
       q: url.searchParams.get('q') ?? undefined,
     }, deps));
+  });
+  registry.attachHandler('lead.compact', async (req: IncomingMessage, res: ServerResponse) => {
+    let body: any = {};
+    try { body = JSON.parse(await readRouteBody(req) || '{}'); } catch { body = {}; }
+    send(res, await handleCompact({ topicId: body?.topicId }, deps));
   });
 }

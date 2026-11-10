@@ -2762,6 +2762,19 @@
         }
       }
     },
+    "/api/lead/compact": {
+      "post": {
+        "operationId": "lead.compact",
+        "tags": [
+          "lead"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/goals/{id}/nodes/{runId}/retry": {
       "post": {
         "operationId": "goals.retryNode",

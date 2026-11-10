@@ -1824,6 +1824,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lead/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["lead.compact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/goals/{id}/nodes/{runId}/retry": {
         parameters: {
             query?: never;
@@ -6568,6 +6584,24 @@ export interface operations {
         };
     };
     "lead.recall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "lead.compact": {
         parameters: {
             query?: never;
             header?: never;
