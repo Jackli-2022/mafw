@@ -48,11 +48,11 @@
 
 ## 门禁结果
 
-- gateway 全量：`npx jest --runInBand --forceExit` → **740 suites / 5775 tests，0 fail**
+- gateway 全量：`npx jest --runInBand --forceExit` → **740 suites / 5777 tests，0 fail**
 - SDK：`cd packages/gateway-sdk && npm test` → **205 tests，0 fail**
 - 类型：`cd gateway; npx tsc --noEmit -p tsconfig.json` → **rc=0**
 - 根构建：`npm run build` → **rc=0**
-- 2B 新增测试：**30**（FTS 9、融合 6、自动回填 7、SQLite 向量 6、DB 分页等 2；总计从 5745 → 5775）
+- 2B 新增测试：**32**（FTS 10、融合 6、自动回填 8、SQLite 向量 6、decay T1 接线 2；总计从 5745 → 5777）
 
 ## 资源预期（一次性迁移）
 
