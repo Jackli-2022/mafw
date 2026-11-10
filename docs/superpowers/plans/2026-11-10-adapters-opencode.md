@@ -349,6 +349,12 @@ git commit -m "refactor(opencode): load the driver from the adapter package"
 - Modify: `gateway/tests/unit/runtime/dependency-boundary.test.ts`
 - Modify: `gateway/tests/unit/runtime/core-runtime-neutrality.test.ts`
 - Modify: `gateway/tests/unit/runtime/wire-deletion-guards.test.ts`
+- Modify: `gateway/tests/unit/runtime/opencode-discovery.test.ts` (mock adapter-local `serve-sidecar`)
+- Modify: `gateway/tests/unit/runtime/opencode-neutral-golden.test.ts` (exercise the adapter-local bridge, not the gateway legacy bridge)
+- Modify: `adapters/opencode/src/runtime.ts` (remove unused `RuntimeCredentials` import)
+- Modify: `gateway/src/index.ts` (`(ctx: RuntimeFactoryContext)` instead of `any`)
+- Modify: `gateway/src/runtime/provider-transport.ts` (header comment: scan-only, judge unchanged)
+- Modify: `gateway/src/runtime/opencode-adapter.ts` (one-time warn when the package is missing; do not silently degrade `getProviderApiKey`)
 - Modify: `docs/architecture/gateway.md`, `docs/architecture/plugin.md`, `docs/architecture/runtime.md`, `docs/guides/runtime-plugin-authoring.md`
 - Modify: `gateway/tests/integration/plugin-package-e2e.test.ts`
 
@@ -356,9 +362,14 @@ git commit -m "refactor(opencode): load the driver from the adapter package"
 
 Assert gateway `src/runtime` has no moved `opencode-*` driver files, only `runtime/opencode-adapter.ts` mentions `@mafw/adapter-opencode`/`adapters/opencode`, and the adapter source allowlist holds. Keep the full “no protocol names in gateway/src” guard for a later Phase 4 plan.
 
-- [ ] **Step 2: Docs**
+- [ ] **Step 2: Fix Task 6 deferred minors**
 
-Update the architecture tree/table: opencode is implemented in `adapters/opencode` and loaded via the gateway shim; note `serveAuthHeaders`/`proxyHeaders` seam and the `runtime-core` helper moves.
+Point the discovery mock at `adapters/opencode/src/serve-sidecar`; make `opencode-neutral-golden` exercise `adapters/opencode/src/legacy-definition.ts` (or add its fixture matrix); remove the unused adapter import; type the factory ctx as `RuntimeFactoryContext`; add the shim missing-package warning; correct the `provider-transport` comment.
+
+- [ ] **Step 3: Docs**
+
+Update the architecture tree/table: opencode is implemented in `adapters/opencode` and loaded via the gateway shim; note the `runtime-core` helper moves, `ctx.serve`/`proxyHeaders` seams, and the `self`-vs-declared translation ownership where relevant.
+
 
 - [ ] **Step 3: Final gates**
 
