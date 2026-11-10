@@ -237,23 +237,34 @@ describe('AutomationEngine live-instance discipline', () => {
 });
 
 describe('B2 minors: ids, statuses, throw parity', () => {
-  it('sequential timed-out runs produce distinct task ids (M2)', async () => {
+  it('same-tick action submissions produce distinct task ids (M2)', async () => {
     const dir = tmp();
     const s = new Scheduler();
     const engine = new AutomationEngine(dir);
     engine.setScheduler(s);
-    const warns: string[] = [];
-    const spy = jest.spyOn(log, 'warn').mockImplementation((m: string) => { warns.push(m); });
+    const gate = manual();
+    engine.registerAction('test:ids', () => gate.promise);
+
+    // Capture the descriptors submitted to the scheduler: both calls reach
+    // submit() in the SAME tick (the second rejects with TaskSkippedError
+    // inside submit, but its descriptor was still created) — this is the
+    // same-millisecond collision window M2 exists to fix.
+    const ids: string[] = [];
+    const origSubmit = s.submit.bind(s);
+    const spy = jest.spyOn(s, 'submit').mockImplementation(((task: any, fn: any) => {
+      ids.push(task.id);
+      return origSubmit(task, fn);
+    }) as any);
+
     try {
-      // never-resolving handler: both runs hit the 15ms watchdog
-      engine.registerAction('test:ids', () => new Promise(() => {}), { timeoutMs: 15 });
-      await (engine as any).executeAction('test:ids', rule, 'cron');
-      await new Promise((r) => setTimeout(r, 25));
-      await (engine as any).executeAction('test:ids', rule, 'cron');
-      await new Promise((r) => setTimeout(r, 25));
-      const idWarns = warns.filter((w) => w.includes('watchdog timeout'));
-      expect(idWarns.length).toBe(2);
-      expect(idWarns[0]).not.toBe(idWarns[1]);
+      const p1 = (engine as any).executeAction('test:ids', rule, 'cron');
+      const p2 = (engine as any).executeAction('test:ids', rule, 'cron'); // same tick — skips
+      gate.resolve(undefined);
+      await p1;
+      await p2;
+      expect(ids).toHaveLength(2);
+      expect(ids[0]).not.toBe(ids[1]);
+      expect(new Set(ids).size).toBe(2);
     } finally {
       spy.mockRestore();
     }

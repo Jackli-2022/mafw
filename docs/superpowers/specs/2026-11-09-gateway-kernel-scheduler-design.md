@@ -173,7 +173,12 @@ submit(task, fn) {
   如实反映状态、M4 非 Error throw 的 instanceof 对齐、M5 `maxConcurrent` 钳到 ≥1。
 - **NodeDriver mutex → MutexQueue**（`advance` + `withGoalMutex`，+ `MutexQueue.has()`）：
   事件驱动完成模型不适配 scheduler 任务模型，裁决只做原语统一。
+  **有意的偏差（终审确认）**：旧 promise-chain 下，`withGoalMutex` 操作 reject（如
+  approvePlan 抛 `stale_plan`——正常路径）会「毒化」其后的排队 advance——旧链的
+  `.then(() => advanceInner)` 直接跳过 advanceInner 并写一条伪 `driver:` lastError；
+  MutexQueue 修复了该毒化，排队的 advance 总是执行。此为改进，无调用方依赖旧行为。
 - **PodEventWake scan coalesce**：`runScan` 注入（scheduler midground + coalesce），
-  关闭定时器与 notify 并发的双投递竞态。
+  关闭定时器与 notify 并发的双投递竞态。已知边界：midground 扫描在 4 个 background
+  槽全忙时可延迟数分钟（60s 定时器重试，事件保持 pending，不涨 wakeAttempts）。
 - **RunCoordinator / serve watchdog 不迁**：前者是 409 冲突契约 + 状态机转移，
   后者是带超时的探针循环——都不是调度闸门。
