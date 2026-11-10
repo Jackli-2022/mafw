@@ -89,4 +89,32 @@ describe("buildLeadContext", () => {
     expect(index.text).toContain("- ");
     expect(ctx.trimmed).toContain("topic-index");
   });
+
+  test("keeps pinned topics in the index even when warm budget is zero", () => {
+    const ctx = buildLeadContext({
+      goals: [],
+      topics: [{ ...topic("p", "Pinned topic", "keep me"), state: "cold" }],
+      query: "",
+      pinnedTopicIds: ["p"],
+      budget: { warmTopicLimit: 0 },
+    });
+    const index = ctx.blocks.find((b) => b.kind === "topic-index")!;
+    expect(index.text).toContain("Pinned topic");
+  });
+
+  test("enforces a global ceiling: recalled first, then topic index, goal status last", () => {
+    const ctx = buildLeadContext({
+      goals: [status("g1", "working")],
+      topics: [topic("t1", "SQLite 迁移", "决定：使用 SQLite")],
+      query: "sqlite",
+      recalled: [{
+        candidate: { topicId: "t1", title: "SQLite 迁移", score: 0.9, matches: ["sqlite"] },
+        topic: recallTopic("t1"),
+      }],
+      budget: { maxResidentTokens: 5 },
+    });
+
+    expect(ctx.blocks.map((b) => b.kind)).toEqual(["goal-status"]);
+    expect(ctx.trimmed).toEqual(expect.arrayContaining(["recalled-topic", "topic-index"]));
+  });
 });

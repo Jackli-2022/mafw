@@ -70,6 +70,7 @@ export class LeadTopicResumeService {
     const targetSession = topic.ownerSessionId ?? topic.leadSessionId;
     if (await this.deps.sessions.isAlive(targetSession)) {
       this.deps.topics.setState(topicId, 'resident', now);
+      this.deps.topics.touch(topicId, now);
       this.demoteOtherResidents(topic.projectDir, topicId, now);
       return { sessionID: targetSession, resumedFrom: null };
     }

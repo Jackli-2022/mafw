@@ -63,4 +63,18 @@ describe("topic summary", () => {
     expect(result.summary).not.toContain("recalled secret");
     expect(result.summary).not.toContain("system prompt");
   });
+
+  test("a huge decision line cannot drop open loops or user words", () => {
+    const result = summarizeTopic([
+      msg("m1", "user", `决定：${"x".repeat(2000)}`),
+      msg("m2", "user", "待办：补迁移测试"),
+      msg("m3", "user", "继续，别丢用户原话"),
+    ], 800);
+
+    expect(result.summary.length).toBeLessThanOrEqual(800);
+    expect(result.summary).toContain("Open loops:");
+    expect(result.summary).toContain("待办：补迁移测试");
+    expect(result.summary).toContain("User words:");
+    expect(result.summary).toContain("继续，别丢用户原话");
+  });
 });

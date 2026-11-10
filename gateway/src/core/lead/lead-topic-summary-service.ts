@@ -5,7 +5,7 @@ import { summarizeTopic } from './topic-summary';
 import { estimateTopicTokens } from './working-set';
 
 export interface LeadTopicSummaryDeps {
-  topics: Pick<LeadTopicStore, 'updateSummary'>;
+  topics: Pick<LeadTopicStore, 'updateSummary' | 'get'>;
   index: Pick<TopicMessageIndexStore, 'replaceTopic'>;
   summarize: typeof summarizeTopic;
   now(): string;
@@ -20,6 +20,11 @@ function messageText(message: MafwMessage): string {
     .map((part: any) => String(part.text).trim())
     .filter(Boolean)
     .join('\n');
+}
+
+function messageCreatedAt(message: MafwMessage, fallback: string): string {
+  const created = (message as any)?.time?.created;
+  return typeof created === 'number' ? new Date(created).toISOString() : fallback;
 }
 
 /**
@@ -41,12 +46,13 @@ export class LeadTopicSummaryService {
           role: message.role === 'user' ? 'user' : 'assistant',
           text,
           tokenEstimate: estimateTopicTokens(text),
-          createdAt: prepared.createdAt,
+          createdAt: messageCreatedAt(message, prepared.createdAt),
         });
       }
       this.deps.index.replaceTopic(prepared.topicId, rows);
 
       const summary = this.deps.summarize(prepared.messages);
+      if (this.deps.topics.get(prepared.topicId)?.summaryHash === summary.summaryHash) return;
       this.deps.topics.updateSummary(prepared.topicId, {
         summary: summary.summary,
         summaryHash: summary.summaryHash,

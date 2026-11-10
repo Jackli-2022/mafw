@@ -26,7 +26,10 @@ function deps(over: Record<string, any> = {}) {
     isLeadSession: () => true,
     projectDirForSession: () => "/p",
     topics: { listByProject: () => [topicRow("t1")] },
-    index: { listByTopic: () => [] },
+    index: {
+      listByTopic: () => [],
+      listByProject: () => [],
+    },
     goals: () => [{
       goalId: "g1", title: "Goal g1", stage: "plan_approval",
       progress: { done: 0, total: 1 }, blockers: [], pendingAttention: 0,
@@ -51,6 +54,40 @@ describe("GET /api/lead/context", () => {
 
     const disabled = handleLeadContext({ sessionID: "ses_lead", query: "x" }, deps({ workingSetEnabled: () => false }));
     expect(disabled.body).toMatchObject({ blocks: [], totalTokens: 0, recalledTopicIds: [] });
+  });
+
+  test("does not recall the resident or archived topic", () => {
+    const base = topicRow("t1");
+    const topics = [
+      { ...base, id: "resident", title: "SQLite current", state: "resident" as const },
+      { ...base, id: "archived", title: "SQLite old", state: "archived" as const },
+      { ...base, id: "warm", title: "SQLite warm", state: "warm" as const },
+    ];
+    const out = handleLeadContext({ sessionID: "ses_lead", query: "sqlite" }, deps({
+      topics: { listByProject: () => topics },
+    }));
+    expect(out.body.recalledTopicIds).toEqual(["warm"]);
+  });
+
+  test("reads the index once and pins the active Goal source topic", () => {
+    const base = topicRow("p");
+    const out = handleLeadContext({ sessionID: "ses_lead", query: "" }, deps({
+      topics: { listByProject: () => [{ ...base, title: "Pinned topic", state: "cold" as const }] },
+      index: {
+        listByTopic: () => { throw new Error("N+1 index read"); },
+        listByProject: () => [{
+          topicId: "p", messageId: "m1", role: "user", text: "pinned",
+          tokenEstimate: 1, createdAt: "2026-11-10T00:00:00.000Z",
+        }],
+      },
+      goals: () => [{
+        goalId: "g1", title: "Goal g1", stage: "working",
+        progress: null, blockers: [], pendingAttention: 0,
+        lastUpdate: "2026-11-10T00:00:00.000Z", sourceTopicId: "p",
+      }],
+    }));
+
+    expect(out.body.blocks.find((b: any) => b.kind === "topic-index")?.text).toContain("Pinned topic");
   });
 
   test("is empty when the session cannot be mapped to a project", () => {

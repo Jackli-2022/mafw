@@ -62,4 +62,28 @@ describe('LeadTopicSummaryService', () => {
       topicId: 't1', messages: [msg('m1', 'user', 'x')], createdAt: NOW,
     })).not.toThrow();
   });
+
+  test('orders index rows by message time, not message id', () => {
+    const { index, service } = setup();
+    const old = { ...msg('z_old', 'user', 'old'), time: { created: Date.parse('2026-11-10T01:00:00.000Z') } };
+    const fresh = { ...msg('a_new', 'user', 'new'), time: { created: Date.parse('2026-11-10T02:00:00.000Z') } };
+
+    service.indexAndSummarize({ topicId: 't1', messages: [old, fresh], createdAt: NOW });
+    expect(index.listByTopic('t1').map((row) => row.messageId)).toEqual(['a_new', 'z_old']);
+  });
+
+  test('skips rewriting an unchanged summary hash', () => {
+    const updateSummary = jest.fn();
+    const messages = [msg('m1', 'user', '决定：A')];
+    const hash = summarizeTopic(messages).summaryHash;
+    const service = new LeadTopicSummaryService({
+      topics: { updateSummary, get: () => ({ summaryHash: hash }) } as any,
+      index: { replaceTopic: jest.fn() } as any,
+      summarize: summarizeTopic,
+      now: () => NOW,
+    });
+
+    service.indexAndSummarize({ topicId: 't1', messages, createdAt: NOW });
+    expect(updateSummary).not.toHaveBeenCalled();
+  });
 });

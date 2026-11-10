@@ -257,7 +257,8 @@ session」变为可换入换出的工作集，原始 transcript 永不删除。
   输出带 `topicId`/`title` 的 `<recalled-topic>`，无 summary 时显式 `(no summary yet)`。
 - **压缩**：`compactTopic` 确定性保留 decisions / open loops / 最近 user 原话，工具输出截断到
   8 行（错误行保留）；`POST /api/lead/compact` 只更新 summary/state/index 并广播
-  `lead.compaction`，不删除原始消息。
+  `lead.compaction`，不删除原始消息。自动阈值触发（≥70% / ≥40 turns）与旧行后台回填留 P2；
+  P1 为显式 compact + handoff 摘要。
 - **恢复**：`LeadTopicResumeService` 串行化同 topic 并发；session 存活 → 直接切回并把其它
   resident 降为 warm；session 已死 → `LeadSessionRegistry.ensure` 建新 session，注入
   `<resumed-topic>`（summary + 最近 5 条 user 原话），插入 `resumed_from` 新行，旧行 warm、

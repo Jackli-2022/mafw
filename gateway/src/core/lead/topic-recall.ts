@@ -16,11 +16,19 @@ export interface RecallCandidate {
 
 const CJK_RE = /[\u3400-\u9fff\uf900-\ufaff]/g;
 
+const STOPWORDS = new Set([
+  "the", "is", "are", "was", "were", "be", "been", "being", "of", "to", "in", "on",
+  "for", "and", "or", "a", "an", "it", "this", "that", "these", "those", "with",
+  "at", "by", "from", "as", "has", "have", "had", "do", "does", "did", "what",
+  "when", "where", "which", "who", "how", "status", "please", "can", "could",
+  "would", "should", "about", "any", "all", "my", "our", "your", "there", "here",
+]);
+
 function queryTokens(query: string): string[] {
   const lower = query.toLowerCase();
   const tokens = new Set<string>();
   for (const match of lower.replace(CJK_RE, " ").match(/[a-z0-9_]+/g) ?? []) {
-    if (match.length >= 2) tokens.add(match);
+    if (match.length >= 2 && !STOPWORDS.has(match)) tokens.add(match);
   }
   for (const run of lower.match(new RegExp(CJK_RE.source, "g")) ?? []) {
     if (run.length === 1) tokens.add(run);
@@ -35,14 +43,19 @@ function scoreTopic(tokens: string[], topic: RecallTopicInput): RecallCandidate 
   const indexText = topic.index.map((row) => row.text.toLowerCase()).join("\n");
   const matches: string[] = [];
   let score = 0;
+  let titleHit = false;
+  let summaryHit = false;
+  let indexHits = 0;
   for (const token of tokens) {
     let hit = false;
-    if (title.includes(token)) { score += 0.6; hit = true; }
-    if (summary.includes(token)) { score += 0.3; hit = true; }
-    if (indexText.includes(token)) { score += 0.1; hit = true; }
+    if (title.includes(token)) { score += 0.6; titleHit = true; hit = true; }
+    if (summary.includes(token)) { score += 0.3; summaryHit = true; hit = true; }
+    if (indexText.includes(token)) { score += 0.1; indexHits += 1; hit = true; }
     if (hit) matches.push(token);
   }
   if (matches.length === 0) return null;
+  // A single common index word is not enough evidence to page in a topic.
+  if (!titleHit && !summaryHit && indexHits < 2) return null;
   return { topicId: topic.id, title: topic.title, score: Number(score.toFixed(3)), matches };
 }
 

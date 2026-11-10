@@ -95,7 +95,7 @@ import { PodContextSelectionService } from './mcp/handlers/pod-context-select';
 import { ProbeWorkspaceFactory } from './core/pod/pod-probe-workspace';
 import type { GoalProbePort, GoalProbeSessionBinding } from './core/goal/driver';
 import type { ProbeRequest, ProbeReport } from './core/goal/probe';
-import { goalVerdictFromState, type PodGoalDescription } from './core/pod/pod-view';
+import { goalVerdictFromState, buildPodAttention, type PodGoalDescription } from './core/pod/pod-view';
 import { buildPodGoalResult } from './core/pod/pod-result';
 import {
   createGoalIntake,
@@ -5544,10 +5544,8 @@ class MafwScheduler {
         goals: (projectDir) => {
           const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
           if (!pod) return [];
-          return buildLeadGoalStatus(
-            this.podGoalService.views(pod.id),
-            this.podGoalService.attention(pod.id),
-          );
+          const views = this.podGoalService.views(pod.id);
+          return buildLeadGoalStatus(views, buildPodAttention(views));
         },
         workingSetEnabled: () => process.env.MAFW_LEAD_WORKING_SET !== '0',
         listMessages: async ({ sessionID, limit }) => {

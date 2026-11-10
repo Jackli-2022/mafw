@@ -77,8 +77,21 @@ describe("LeadTopicStore", () => {
     expect(row.lastActiveAt).toBe("2026-11-09T00:00:00.000Z");
   });
 
-  test("search matches title/summary and updates summary/state", () => {
+  test("setState never changes recency; touch does", () => {
     const db = new Database(":memory:");
+    const store = new LeadTopicStore(db);
+    store.insert({ ...baseTopic("t1"), lastActiveAt: "2026-11-10T01:00:00.000Z" });
+    store.insert({ ...baseTopic("t2"), lastActiveAt: "2026-11-10T02:00:00.000Z" });
+
+    store.setState("t1", "resident", "2026-11-10T03:00:00.000Z");
+    expect(store.get("t1")?.lastActiveAt).toBe("2026-11-10T01:00:00.000Z");
+    expect(store.latestForProject("/p")?.id).toBe("t2");
+
+    store.touch("t1", "2026-11-10T03:00:00.000Z");
+    expect(store.latestForProject("/p")?.id).toBe("t1");
+  });
+
+  test("search matches title/summary and updates summary/state", () => {    const db = new Database(":memory:");
     const store = new LeadTopicStore(db);
     store.insert({ ...baseTopic("t1"), summary: "SQLite migration decision" });
     store.insert({ ...baseTopic("t2"), summary: "UI polish" });
@@ -100,7 +113,7 @@ describe("LeadTopicStore", () => {
       summaryUpdatedAt: "2026-11-10T03:00:00.000Z",
       residentTokens: 42,
       state: "resident",
-      lastActiveAt: "2026-11-10T04:00:00.000Z",
+      lastActiveAt: "2026-11-10T03:00:00.000Z",
     });
   });
 });

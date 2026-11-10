@@ -26,6 +26,7 @@ export interface LeadTopicRouteDeps {
   topics: Pick<LeadTopicStore, 'listByProject' | 'search' | 'get' | 'updateSummary' | 'setState'>;
   index: Pick<TopicMessageIndexStore, 'listByTopic' | 'listByProject' | 'replaceTopic'>;
   goals(projectDir: string): LeadGoalStatus[];
+  pinnedTopicIds?(projectDir: string): string[];
   workingSetEnabled(): boolean;
   listMessages?(input: { sessionID: string; limit: number }): Promise<{ data: MafwMessage[] }>;
   broadcast?(event: { type: string; properties: Record<string, unknown> }): void;
@@ -65,12 +66,18 @@ function toView(row: LeadTopicRow): LeadTopicView {
   };
 }
 
-function recallInputs(rows: LeadTopicRow[], deps: LeadTopicRouteDeps): RecallTopicInput[] {
+function recallInputs(rows: LeadTopicRow[], indexRows: TopicMessageIndexRow[]): RecallTopicInput[] {
+  const byTopic = new Map<string, TopicMessageIndexRow[]>();
+  for (const row of indexRows) {
+    const items = byTopic.get(row.topicId) ?? [];
+    items.push(row);
+    byTopic.set(row.topicId, items);
+  }
   return rows.map((topic) => ({
     id: topic.id,
     title: topic.title,
     summary: topic.summary,
-    index: deps.index.listByTopic(topic.id),
+    index: byTopic.get(topic.id) ?? [],
   }));
 }
 
@@ -88,7 +95,10 @@ export function handleLeadContext(
   if (!projectDir) return { status: 200, body: EMPTY_CONTEXT };
 
   const topics = deps.topics.listByProject(projectDir, 50);
-  const inputs = recallInputs(topics, deps);
+  const goals = deps.goals(projectDir);
+  const indexRows = deps.index.listByProject(projectDir, 500);
+  const recallable = topics.filter((topic) => topic.state !== 'resident' && topic.state !== 'archived');
+  const inputs = recallInputs(recallable, indexRows);
   const recalled: Array<{ candidate: RecallCandidate; topic: RecallTopicInput }> = [];
   for (const candidate of recallTopics({ query, topics: inputs })) {
     const topic = inputs.find((item) => item.id === candidate.topicId);
@@ -98,10 +108,12 @@ export function handleLeadContext(
   return {
     status: 200,
     body: buildLeadContext({
-      goals: deps.goals(projectDir),
+      goals,
       topics,
       query,
       recalled,
+      pinnedTopicIds: deps.pinnedTopicIds?.(projectDir)
+        ?? goals.map((goal) => goal.sourceTopicId).filter((id): id is string => !!id),
     }),
   };
 }
@@ -165,12 +177,26 @@ export function handleRecall(
   if (!deps.workingSetEnabled()) return { status: 200, body: { candidates: [] } };
   const projectDir = projectDirOf(args?.projectDir);
   const rows = deps.topics.listByProject(projectDir, 100);
+  const indexRows = deps.index.listByProject(projectDir, 500);
   return {
     status: 200,
     body: {
-      candidates: recallTopics({ query: clean(args?.q), topics: recallInputs(rows, deps) }),
+      candidates: recallTopics({ query: clean(args?.q), topics: recallInputs(rows, indexRows) }),
     },
   };
+}
+
+function topicMessages(messages: MafwMessage[], row: LeadTopicRow): MafwMessage[] {
+  const start = messages.findIndex((message) => message.id === row.startMessageId);
+  const end = messages.findIndex((message) => message.id === row.endMessageId);
+  const from = start >= 0 ? start : 0;
+  const to = end >= 0 ? end : messages.length - 1;
+  return to >= from ? messages.slice(from, to + 1) : messages;
+}
+
+function messageCreatedAt(message: MafwMessage, fallback: string): string {
+  const created = (message as any)?.time?.created;
+  return typeof created === 'number' ? new Date(created).toISOString() : fallback;
 }
 
 function messageRows(topicId: string, messages: MafwMessage[], createdAt: string): TopicMessageIndexRow[] {
@@ -190,7 +216,7 @@ function messageRows(topicId: string, messages: MafwMessage[], createdAt: string
       role: message.role,
       text,
       tokenEstimate: estimateTopicTokens(text),
-      createdAt,
+      createdAt: messageCreatedAt(message, createdAt),
     });
   }
   return rows;
@@ -213,7 +239,8 @@ export async function handleCompact(
 
   const now = deps.now?.() ?? new Date().toISOString();
   const page = await deps.listMessages({ sessionID: row.leadSessionId, limit: 200 });
-  const result = compactTopic({ topicId: id, messages: page.data });
+  const scoped = topicMessages(page.data, row);
+  const result = compactTopic({ topicId: id, messages: scoped });
   deps.topics.updateSummary(id, {
     summary: result.summary,
     summaryHash: result.summaryHash,
@@ -221,7 +248,7 @@ export async function handleCompact(
     residentTokens: result.afterTokens,
   });
   deps.topics.setState(id, 'warm', now);
-  deps.index.replaceTopic(id, messageRows(id, page.data, now));
+  deps.index.replaceTopic(id, messageRows(id, scoped, now));
   deps.broadcast({
     type: 'lead.compaction',
     properties: {

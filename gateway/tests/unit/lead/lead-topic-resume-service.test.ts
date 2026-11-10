@@ -13,12 +13,14 @@ function setup(options: { alive: boolean; ownerSessionId?: string | null }) {
     startMessageId: 'm1', endMessageId: 'm2', goalId: 'g1',
     ownerRole: 'tech-lead', ownerSessionId: options.ownerSessionId ?? 'ses_old',
     createdAt: NOW, state: 'resident', summary: '决定：使用 SQLite',
+    lastActiveAt: '2026-11-09T22:00:00.000Z',
   });
   topics.insert({
     id: 't2', projectDir: '/p', leadSessionId: 'ses_old', title: 'Other',
     startMessageId: 'm3', endMessageId: 'm4', goalId: 'g2',
     ownerRole: 'tech-lead', ownerSessionId: 'ses_old',
     createdAt: NOW, state: 'resident',
+    lastActiveAt: '2026-11-09T23:00:00.000Z',
   });
   const index = new TopicMessageIndexStore(db);
   index.replaceTopic('t1', [
@@ -50,6 +52,7 @@ describe('LeadTopicResumeService', () => {
     expect(h.promptAsync).not.toHaveBeenCalled();
     expect(h.topics.get('t1')?.state).toBe('resident');
     expect(h.topics.get('t2')?.state).toBe('warm');
+    expect(h.topics.latestForProject('/p')?.id).toBe('t1');
   });
 
   test('dead session rebuilds with provenance and leaves the old transcript alone', async () => {

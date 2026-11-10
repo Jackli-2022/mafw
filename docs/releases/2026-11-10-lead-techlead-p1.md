@@ -25,14 +25,17 @@
 
 ## 门禁
 
-- gateway **5651/5651**（726 suites）
+- gateway **5661/5661**（726 suites）
 - desktop **3195/3195**（680 suites）
+- SDK **203/203**
 - root plugin tests **110/110**
 - gateway `tsc` rc=0；desktop `tsgo` rc=0；`electron-vite build` rc=0
 - 契约：`emit:openapi` 285 routes / 256 paths；`api-contract` / `legacy-route-inventory` 绿
 
 ## 暂缓
 
+- 自动压缩触发（context ≥70% / 回合 ≥40）与旧 `lead_topic` 行的后台摘要回填：P1 只在 handoff 时
+  生成摘要，并提供显式 `POST /api/lead/compact`；阈值触发留 P2 调度器。
 - LongMemEval / 自建多话题评测未执行。
 - 召回仍是 token 命中（不引入 embedding rerank）。
 - P2（attention scheduler / COW fork）、P2.4（事件层）、P2.5（Standing Goals）未开工。

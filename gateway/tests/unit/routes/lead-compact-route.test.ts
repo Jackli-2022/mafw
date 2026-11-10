@@ -82,4 +82,37 @@ describe("POST /api/lead/compact", () => {
     const h = deps();
     expect((await handleCompact({ topicId: "nope" }, h.deps)).status).toBe(404);
   });
+
+  test("scopes compaction to the topic message range", async () => {
+    const h = deps();
+    const state = h.state;
+    h.deps.topics.get = () => ({
+      id: "t1", projectDir: "/p", leadSessionId: "ses_lead", title: "T1",
+      startMessageId: "m1", endMessageId: "m2", goalId: "g1",
+      ownerRole: "tech-lead", ownerSessionId: null,
+      createdAt: "2026-11-10T00:00:00.000Z",
+      summary: state.summary, summaryHash: null, summaryUpdatedAt: null,
+      state: state.value, lastActiveAt: "2026-11-10T00:00:00.000Z",
+      residentTokens: 10, resumedFrom: null,
+    });
+    h.deps.listMessages = async () => ({
+      data: [
+        msg("m1", "user", "决定：主题一"),
+        msg("m2", "assistant", "收到"),
+        msg("m3", "user", "决定：主题二不应被压缩"),
+        msg("m4", "assistant", "ok"),
+      ],
+    });
+
+    const out = await handleCompact({ topicId: "t1" }, h.deps);
+    expect(out.status).toBe(200);
+    expect(h.topics.get("t1")?.summary).toContain("主题一");
+    expect(h.topics.get("t1")?.summary).not.toContain("主题二");
+    expect(h.index.replaceTopic).toHaveBeenCalledWith(
+      "t1",
+      expect.arrayContaining([expect.objectContaining({ messageId: "m1" })]),
+    );
+    const rows = h.index.replaceTopic.mock.calls[0][1];
+    expect(rows.map((row: any) => row.messageId)).toEqual(["m1", "m2"]);
+  });
 });

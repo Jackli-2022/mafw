@@ -222,10 +222,13 @@ export class LeadTopicStore {
     );
   }
 
-  setState(id: string, state: LeadTopicState, now: string): void {
-    this.db.prepare(`
-      UPDATE lead_topic SET state = ?, last_active_at = ? WHERE id = ?
-    `).run(state, now, id);
+  setState(id: string, state: LeadTopicState, _now: string): void {
+    this.db.prepare('UPDATE lead_topic SET state = ? WHERE id = ?').run(state, id);
+  }
+
+  /** Activity touch (resume target / explicit access); separate from state changes. */
+  touch(id: string, now: string): void {
+    this.db.prepare('UPDATE lead_topic SET last_active_at = ? WHERE id = ?').run(now, id);
   }
 
   /** Best-effort rollback when the Goal intake fails after the handoff was written. */

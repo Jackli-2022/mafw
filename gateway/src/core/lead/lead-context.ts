@@ -39,6 +39,7 @@ export function buildLeadContext(input: {
   topics: LeadTopicRow[];
   query: string;
   recalled?: Array<{ candidate: RecallCandidate; topic: RecallTopicInput }>;
+  pinnedTopicIds?: string[];
   budget?: Partial<WorkingSetBudget>;
 }): LeadContext {
   const blocks: LeadContextBlock[] = [];
@@ -59,6 +60,7 @@ export function buildLeadContext(input: {
       goalId: topic.goalId,
       residentTokens: topic.residentTokens,
     })),
+    pinnedTopicIds: input.pinnedTopicIds,
     budget,
   });
   const indexIds = [...workingSet.pinned, ...workingSet.warm];
@@ -80,7 +82,6 @@ export function buildLeadContext(input: {
   }
 
   const recallMax = Math.max(0, budget.recallMaxTokens ?? 1200);
-  const recalledTopicIds: string[] = [];
   let recallTokens = 0;
   for (const item of input.recalled ?? []) {
     const text = buildRecalledBlock(item.candidate, item.topic);
@@ -90,7 +91,6 @@ export function buildLeadContext(input: {
       continue;
     }
     recallTokens += tokens;
-    recalledTopicIds.push(item.candidate.topicId);
     blocks.push({
       kind: 'recalled-topic',
       topicId: item.candidate.topicId,
@@ -100,10 +100,52 @@ export function buildLeadContext(input: {
     });
   }
 
+  // Global ceiling: recalled first, then topic-index lines, then the block.
+  // Goal status is never trimmed (it is the minimum useful context).
+  const cap = Math.max(0, budget.maxResidentTokens ?? 76_800);
+  let total = blocks.reduce((sum, block) => sum + block.tokens, 0);
+  const markTrimmed = (kind: string): void => {
+    if (!trimmed.includes(kind)) trimmed.push(kind);
+  };
+  while (total > cap) {
+    let recallIndex = -1;
+    for (let i = blocks.length - 1; i >= 0; i -= 1) {
+      if (blocks[i].kind === 'recalled-topic') { recallIndex = i; break; }
+    }
+    if (recallIndex >= 0) {
+      total -= blocks[recallIndex].tokens;
+      blocks.splice(recallIndex, 1);
+      markTrimmed('recalled-topic');
+      continue;
+    }
+    const indexIndex = blocks.findIndex((block) => block.kind === 'topic-index');
+    if (indexIndex >= 0) {
+      const block = blocks[indexIndex];
+      const lines = block.text.split('\n');
+      if (lines.length > 3) {
+        lines.splice(lines.length - 2, 1);
+        const text = lines.join('\n');
+        const tokens = estimateTopicTokens(text);
+        total += tokens - block.tokens;
+        block.text = text;
+        block.tokens = tokens;
+        markTrimmed('topic-index');
+        continue;
+      }
+      total -= block.tokens;
+      blocks.splice(indexIndex, 1);
+      markTrimmed('topic-index');
+      continue;
+    }
+    break;
+  }
+
   return {
     blocks,
     totalTokens: blocks.reduce((sum, block) => sum + block.tokens, 0),
-    recalledTopicIds,
+    recalledTopicIds: blocks
+      .filter((block) => block.kind === 'recalled-topic' && block.topicId)
+      .map((block) => block.topicId!),
     trimmed,
   };
 }

@@ -28,6 +28,19 @@ describe("topic recall", () => {
     expect(recallTopics({ query: "sqlite", topics }).map((c) => c.topicId)).toEqual(["t1", "t2"]);
   });
 
+  test("does not recall a generic English query from common index words", () => {
+    const topics = [
+      topic({
+        id: "t1",
+        title: "Notes",
+        index: [
+          { topicId: "t1", messageId: "m1", role: "assistant", text: "the build is fine and the tests pass", tokenEstimate: 8, createdAt: "2026-11-10T00:00:00.000Z" },
+        ],
+      }),
+    ];
+    expect(recallTopics({ query: "what is the status of the build", topics })).toEqual([]);
+  });
+
   test("recalled block names the source topic and keeps summary", () => {
     const block = buildRecalledBlock(
       { topicId: "t1", title: "SQLite 迁移", score: 0.9, matches: ["sqlite"] },

@@ -8,6 +8,8 @@ export interface LeadGoalStatus {
   blockers: string[];
   pendingAttention: number;
   lastUpdate: string;
+  /** Source Lead topic pinned while the Goal is active (P1 working set). */
+  sourceTopicId?: string | null;
 }
 
 /**
@@ -41,6 +43,7 @@ export function buildLeadGoalStatus(
         blockers,
         pendingAttention: attentionByGoal.get(view.goalId) ?? 0,
         lastUpdate: view.startedAt ?? view.enqueuedAt,
+        sourceTopicId: view.sourceRef?.topicId ?? null,
       };
     });
 }

@@ -65,7 +65,41 @@ function toolLines(messages: MafwMessage[]): string[] {
   return tail.slice(-MAX_TOOL_LINES);
 }
 
+function takeBudgeted(lines: string[], budget: number, maxLines: number): string[] {
+  const out: string[] = [];
+  let used = 0;
+  for (const line of lines) {
+    if (out.length >= maxLines) break;
+    const room = budget - used;
+    if (room <= 8) break;
+    const text = `- ${line}`.slice(0, room);
+    out.push(text);
+    used += text.length + 1;
+  }
+  return out;
+}
+
+function takeToolLines(lines: string[], budget: number): string[] {
+  if (budget <= 8 || lines.length === 0) return [];
+  const picked: string[] = [];
+  let used = 0;
+  const add = (line: string): void => {
+    if (picked.includes(line)) return;
+    const cost = line.length + 1;
+    if (used + cost > budget) return;
+    picked.unshift(line);
+    used += cost;
+  };
+  for (const line of lines.filter((item) => ERROR_RE.test(item)).slice(-2).reverse()) add(line);
+  for (let i = lines.length - 1; i >= 0 && picked.length < MAX_TOOL_LINES; i -= 1) {
+    add(lines[i]);
+    if (used >= budget) break;
+  }
+  return picked.slice(0, MAX_TOOL_LINES);
+}
+
 function buildSummary(messages: MafwMessage[], maxChars: number): TopicSummary {
+  const limit = Math.max(200, maxChars);
   const texts = messages.flatMap(textParts);
   const joined = [
     ...texts,
@@ -86,14 +120,31 @@ function buildSummary(messages: MafwMessage[], maxChars: number): TopicSummary {
     .filter((message) => message.role === 'user')
     .flatMap(textParts)
     .slice(-3)
+    .reverse()
     .map((text) => text.replace(/\s+/g, ' ').slice(0, 200));
 
-  const lines = ['Decisions:', ...decisions.map((line) => `- ${line}`), 'Open loops:', ...openLoops.map((line) => `- ${line}`), 'User words:'];
-  if (userWords.length > 0) lines.push(...userWords.map((line) => `- ${line}`));
-  const tools = toolLines(messages);
-  if (tools.length > 0) lines.push('Tool output:', ...tools);
+  // Reserve header/newline overhead, then split the content budget by section.
+  // Decisions / open loops / user words each get their own cap so a single long
+  // line cannot evict another section (the hard P1 invariant).
+  const contentBudget = Math.max(120, limit - 70);
+  const decisionBudget = Math.floor(contentBudget * 0.4);
+  const openBudget = Math.floor(contentBudget * 0.3);
+  const userBudget = Math.floor(contentBudget * 0.2);
+  const toolBudget = Math.max(0, contentBudget - decisionBudget - openBudget - userBudget);
+  const baseLines = [
+    'Decisions:',
+    ...takeBudgeted(decisions, decisionBudget, 6),
+    'Open loops:',
+    ...takeBudgeted(openLoops, openBudget, 6),
+    'User words:',
+    ...takeBudgeted(userWords, userBudget, 3),
+  ];
 
-  const summary = lines.join('\n').slice(0, Math.max(0, maxChars));
+  let summary = baseLines.join('\n');
+  const tools = takeToolLines(toolLines(messages), Math.min(toolBudget, Math.max(0, limit - summary.length - 14)));
+  if (tools.length > 0) summary += `\nTool output:\n${tools.join('\n')}`;
+  if (summary.length > limit) summary = summary.slice(0, limit);
+
   return {
     summary,
     summaryHash: createHash('sha256').update(joined).digest('hex'),

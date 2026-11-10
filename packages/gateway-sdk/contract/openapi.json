@@ -2691,7 +2691,7 @@
       "get": {
         "operationId": "lead.context",
         "tags": [
-          "lead"
+          "internal"
         ],
         "responses": {
           "200": {

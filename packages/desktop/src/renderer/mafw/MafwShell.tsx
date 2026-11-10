@@ -2186,7 +2186,7 @@ export function MafwShell() {
     try {
       const result = await window.api.mafw.lead.topics.resume(id)
       setShowTopics(false)
-      openSessionTab(result.sessionID)
+      await openPodSession(result.sessionID)
     } catch (err: any) {
       showToastV2({ description: `恢复话题失败：${err?.message || err}`, duration: 3000 } as any)
     }

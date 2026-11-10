@@ -1292,8 +1292,10 @@ export class MafwClient implements IMafwClient {
         this.request(`/api/lead/topics/${encodeURIComponent(id)}/resume`, { method: 'POST' }),
     },
     workingSet: async (input = {}): Promise<LeadWorkingSet> => {
-      const suffix = input.projectDir ? `?projectDir=${encodeURIComponent(input.projectDir)}` : ''
-      return this.request(`/api/lead/working-set${suffix}`)
+      const query = new URLSearchParams()
+      if (input.projectDir) query.set('projectDir', input.projectDir)
+      const suffix = query.toString()
+      return this.request(`/api/lead/working-set${suffix ? `?${suffix}` : ''}`)
     },
     compact: async (input: { topicId: string }): Promise<LeadCompactResult> =>
       this.request('/api/lead/compact', { method: 'POST', body: JSON.stringify(input) }),
