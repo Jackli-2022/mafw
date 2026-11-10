@@ -221,6 +221,7 @@ import { attachMediaRoutes } from './routes/media-upload';
 import { attachProjectRoutes } from './routes/projects';
 import { attachMafwCommandRoutes } from './routes/mafw-commands';
 import { attachMergeMemoryRoutes } from './routes/merge-memory';
+import { attachTriageRoutes } from './routes/triage';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5605,6 +5606,13 @@ class MafwScheduler {
       attachMergeMemoryRoutes(this.routeRegistry, {
         memory: () => this.memoryService,
       });
+      // Phase D1 Task A4：triage 面迁 registry dispatch（4 分支；confirm 不读 body 原样保留）。
+      attachTriageRoutes(this.routeRegistry, {
+        automationEngine: () => this.automationEngine,
+        skillInstallDeps: () => this.skillInstallDeps(),
+        mafwDir: () => this.mafwDir,
+        ledger: () => this.ledger,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -7119,118 +7127,7 @@ class MafwScheduler {
         }
 
         // ── Triage endpoints (Tier 4 — user only, not MCP) ──
-
-        // GET /api/triage — list triage items (with llmSuggestions)
-        if (req.url === '/api/triage' && req.method === 'GET') {
-          const items = this.automationEngine?.getTriageItems() || [];
-          res.end(JSON.stringify({ items }));
-          return;
-        }
-
-        // POST /api/triage/{id}/confirm — user confirms triage — creates goal
-        const triageConfirmMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/confirm$/);
-        if (triageConfirmMatch && req.method === 'POST') {
-          const triageId = triageConfirmMatch[1];
-          const item = this.automationEngine?.getTriageItem(triageId);
-          if (!item) {
-            res.writeHead(404); res.end(JSON.stringify({ error: 'Triage item not found' })); return;
-          }
-          if (item.state !== 'PENDING_CONFIRMATION') {
-            res.writeHead(400); res.end(JSON.stringify({ error: `Already ${item.state}` })); return;
-          }
-          // W2: skill 物化草稿的确认分支——安装 skill + 记忆变指针（不建 goal）
-          const skillDraft = (item as any).summary?.skillDraft;
-          if (skillDraft?.name && skillDraft?.memoryId) {
-            const { installSkillDraft } = await import('./memory/skill-install.js');
-            const r = await installSkillDraft(skillDraft, this.skillInstallDeps());
-            this.automationEngine?.confirmTriage(triageId, item);
-            res.end(JSON.stringify({ status: 'confirmed', installed: r.installed }));
-            return;
-          }
-          // A1: 公理草稿确认分支——每条 candidate 经 L5 commit（不建 goal）
-          const axiomDraft = (item as any).summary?.axiomDraft;
-          if (axiomDraft?.candidates?.length) {
-            const l5 = new L5Store();
-            let committed = 0;
-            for (const pattern of axiomDraft.candidates as string[]) {
-              try {
-                l5.addHeuristic(pattern, ['axiom-distilled'], axiomDraft.sourceIds ?? []);
-                committed++;
-              } catch { /* fail-open per candidate */ }
-            }
-            this.automationEngine?.confirmTriage(triageId, item);
-            res.end(JSON.stringify({ status: 'confirmed', axioms: committed }));
-            return;
-          }
-          const goalId = `confirmed-${item.automationId}-${Date.now()}`;
-          this.automationEngine?.confirmTriage(goalId, item);
-          const requestsDir = path.join(this.mafwDir, 'requests');
-          if (!fs.existsSync(requestsDir)) fs.mkdirSync(requestsDir, { recursive: true });
-          fs.writeFileSync(path.join(requestsDir, `${goalId}.json`), JSON.stringify({
-            goalId,
-            source: 'triage-confirm',
-            automationId: item.automationId,
-            title: item.proposedGoal.title,
-            boundaries: item.proposedGoal.boundaries,
-            maxLoops: item.proposedGoal.estimatedLoops,
-            createdAt: new Date().toISOString(),
-          }, null, 2), 'utf-8');
-          this.ledger?.append({
-            timestamp: new Date().toISOString(),
-            event: 'AUTOMATION_TRIGGERED',
-            ruleId: item.automationId,
-            goalId,
-            source: 'user',
-            reason: 'triage_confirmed',
-          });
-          res.end(JSON.stringify({ status: 'confirmed', goalId }));
-          return;
-        }
-
-        // POST /api/triage/{id}/reject — user rejects triage
-        const triageRejectMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/reject$/);
-        if (triageRejectMatch && req.method === 'POST') {
-          const triageId = triageRejectMatch[1];
-          const ok = this.automationEngine?.rejectTriage(triageId);
-          this.ledger?.append({
-            timestamp: new Date().toISOString(),
-            event: 'AUTOMATION_TRIGGERED',
-            source: 'user',
-            reason: 'triage_rejected',
-            details: { triageId },
-          });
-          res.end(JSON.stringify({ status: ok ? 'rejected' : 'not_found' }));
-          return;
-        }
-
-        // POST /api/triage/{id}/propose — user proposes a decision suggestion
-        // (same flow as the MCP mafw_propose_triage_decision tool)
-        const triageProposeMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/propose$/);
-        if (triageProposeMatch && req.method === 'POST') {
-          try {
-            const triageId = triageProposeMatch[1];
-            const body = JSON.parse(await readBody(req));
-            const suggestion = body.suggestion as 'confirm' | 'reject';
-            if (!['confirm', 'reject'].includes(suggestion)) {
-              res.writeHead(400); res.end(JSON.stringify({ error: 'suggestion must be "confirm" or "reject"' })); return;
-            }
-            const reason = String(body.reason || '');
-            const priority = (body.priority as string) || 'medium';
-            const result = this.automationEngine?.proposeTriageDecision(triageId, suggestion, reason, priority);
-            if (!result) { res.writeHead(404); res.end(JSON.stringify({ error: 'Triage item not found' })); return; }
-            this.ledger?.append({
-              timestamp: new Date().toISOString(),
-              event: 'AUTOMATION_TRIGGERED',
-              source: 'user',
-              reason: `proposed_${suggestion}_for_${triageId}`,
-              details: { triageId, suggestion, priority },
-            });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET /api/triage + POST /api/triage/:id/{confirm,reject,propose} — Phase D1 Task A4：已迁 registry dispatch。
 
         // ── Automation endpoints (Tier 4 — user only) ──
 
