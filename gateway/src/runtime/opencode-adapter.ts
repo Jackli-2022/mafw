@@ -28,6 +28,7 @@ interface AdapterOpencodeModule {
   opencodeCapabilities(variant: OpencodeVariant, external: boolean): RuntimeCapabilities;
   OPENCODE_REGISTRATIONS: readonly { name: string; variant: OpencodeVariant }[];
   opencodeDiscoveryRoots(): { skillRoots?: string[]; instructionRoots?: string[] };
+  opencodeExternalMode(): boolean;
   getBridgeEventEntry(name: string): EventMappingEntry | undefined;
   setBridgeEventEntry(name: string, entry: EventMappingEntry): void;
 }
@@ -92,6 +93,11 @@ export const OPENCODE_REGISTRATIONS: readonly { name: string; variant: OpencodeV
 /** Discovered skill/instruction roots (gateway core stops hardcoding vendor paths). */
 export function opencodeDiscoveryRoots(): { skillRoots?: string[]; instructionRoots?: string[] } {
   return loaded?.opencodeDiscoveryRoots() ?? {};
+}
+
+/** External mode comes from the adapter (single env source). */
+export function opencodeExternalMode(): boolean {
+  return loaded?.opencodeExternalMode() ?? false;
 }
 
 function unavailable(): Error {

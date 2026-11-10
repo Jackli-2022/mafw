@@ -290,6 +290,7 @@ import { getBridgeEventEntry } from './runtime/legacy-plugin-bridge';
 import type { RuntimeDefinition, RuntimeFactoryContext } from '@mafw/runtime-contract';
 import {
   createOpencodeDefinition,
+  opencodeExternalMode,
   type OpencodeVariant,
 } from './runtime/opencode-adapter';
 import { DEFAULT_BUILTIN_RUNTIME, builtinAdapterRegistrations, builtinDiscoveryRoots } from './runtime/builtin-adapters';
@@ -997,7 +998,7 @@ class MafwScheduler {
     // fail-safe @v1）+ 钉死 `opencode@v1` / `opencode@v2`；三个名字共享同一
     // runtime 工厂（serve/adapter/凭据全同），差异仅在事件映射表。
     const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
-    const external = !!process.env.MAFW_SERVER_SERVE_URL;
+    const external = opencodeExternalMode();
     const opencodeDefinition = (variant: OpencodeVariant, name: string) => (ctx: RuntimeFactoryContext) => {
       return createOpencodeDefinition(ctx, {
         variant,
