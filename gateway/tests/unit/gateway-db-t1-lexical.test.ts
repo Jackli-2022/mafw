@@ -120,4 +120,10 @@ describe('T1 FTS5 lexical index', () => {
     appendTurn('s1', [{ source: 'user_input', content: 'safe content about foo bar' }]);
     expect(() => db.searchT1Lexical('foo" OR bar*', 5)).not.toThrow();
   });
+
+  test('append stays durable when the FTS index is broken', () => {
+    db.getStore().exec('DROP TABLE t1_fts');
+    expect(() => appendTurn('s1', [{ source: 'user_input', content: 'raw row survives' }])).not.toThrow();
+    expect(db.count()).toBe(1);
+  });
 });

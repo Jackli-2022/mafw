@@ -206,8 +206,9 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
       let t1Backfill = { indexed: 0, missing: 0, failed: 0 };
       try {
         const db = eng.getGatewayDb?.();
-        const limit = config.recall.t1Recall?.t1BackfillLimit ?? 200;
-        if (db && rt?.t1Indexer && rt?.t1Vectors && limit > 0) {
+        const t1Cfg = config.recall.t1Recall;
+        const limit = t1Cfg?.t1BackfillLimit ?? 200;
+        if (db && rt?.t1Indexer && rt?.t1Vectors && limit > 0 && t1Cfg?.enabled !== false) {
           t1Backfill = await backfillT1Vectors(
             {
               listRows: (offset, pageLimit) => db.listT1RowsForBackfill({ offset, limit: pageLimit }),

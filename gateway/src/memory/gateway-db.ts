@@ -829,13 +829,18 @@ export class GatewayDatabase {
           .prepare('UPDATE t1_turns SET archived_at = NULL WHERE trace_id = ?')
           .run(obs.trace_id);
         // Lexical derivative: same content, same observation key across the
-        // obs→archive move, so archiving needs no FTS change.
-        this.db
-          .prepare(
-            `INSERT INTO t1_fts (content, trace_id, observation_key, session_id, turn_id, source)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-          )
-          .run(obs.content, obs.trace_id, observationKey, obs.session_id, obs.turn_id, obs.source);
+        // obs→archive move, so archiving needs no FTS change. Fail-open — a
+        // broken derivative index must never reject the raw observation.
+        try {
+          this.db
+            .prepare(
+              `INSERT INTO t1_fts (content, trace_id, observation_key, session_id, turn_id, source)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+            )
+            .run(obs.content, obs.trace_id, observationKey, obs.session_id, obs.turn_id, obs.source);
+        } catch (err: any) {
+          log.warn(`[T1FTS] append indexing failed (raw row kept): ${err?.message || err}`);
+        }
       }
       return result.changes > 0 ? Number(result.lastInsertRowid) : null;
     });
