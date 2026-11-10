@@ -1108,6 +1108,41 @@ export class AutomationEngine {
     return true;
   }
 
+  /** P2.5: register one Standing Goal cron trigger as an automation rule. */
+  registerStandingCron(input: {
+    key: string;
+    schedule: string;
+    timezone: string;
+    standingGoalId: string;
+    triggerId: string;
+  }): { nextRunAt: string | null } {
+    const rule: AutomationRule = {
+      id: input.key,
+      enabled: true,
+      trigger: { type: 'cron', schedule: input.schedule, timezone: input.timezone },
+      action: { type: 'standing_goal:tick' },
+      args: { standingGoalId: input.standingGoalId, triggerId: input.triggerId },
+    };
+    const autoDir = path.join(this.mafwDir, 'automations');
+    if (!fs.existsSync(autoDir)) fs.mkdirSync(autoDir, { recursive: true });
+    fs.writeFileSync(path.join(autoDir, `${input.key}.json`), JSON.stringify(rule, null, 2), 'utf-8');
+    const previous = this.jobs.get(input.key);
+    if (previous) { previous.stop(); this.jobs.delete(input.key); }
+    this.rules.set(input.key, rule);
+    this.scheduleRule(input.key, rule);
+    return { nextRunAt: this.getNextTriggers(rule, 1).next5[0] ?? null };
+  }
+
+  unregisterStandingCron(key: string): void {
+    const job = this.jobs.get(key);
+    if (job) { job.stop(); this.jobs.delete(key); }
+    this.rules.delete(key);
+    try {
+      const filePath = path.join(this.mafwDir, 'automations', `${key}.json`);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch { /* best effort */ }
+  }
+
   private async llmCreateTriage(automationId: string, rule: AutomationRule): Promise<string> {
     const triageDir = path.join(this.mafwDir, 'triage');
     if (!fs.existsSync(triageDir)) fs.mkdirSync(triageDir, { recursive: true });

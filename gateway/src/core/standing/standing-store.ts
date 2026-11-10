@@ -196,6 +196,12 @@ export class StandingGoalStore {
     ).all(projectDir) as GoalDbRow[]).map(toGoal);
   }
 
+  listAllGoals(): StandingGoal[] {
+    return (this.db.prepare(
+      'SELECT * FROM standing_goals ORDER BY created_at ASC, id ASC',
+    ).all() as GoalDbRow[]).map(toGoal);
+  }
+
   updateGoal(
     id: string,
     patch: Partial<Pick<StandingGoal, 'title' | 'objective' | 'template' | 'triggers' | 'concurrency' | 'cooldownMs' | 'budget' | 'approval' | 'nextRunAt'>>,
