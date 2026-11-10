@@ -5784,21 +5784,8 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/media/resolve-task/<taskId> — resolve taskId to artifactId (for history)
-        const resolveTaskMatch = req.url?.match(/^\/api\/media\/resolve-task\/([^/]+)$/);
-        if (resolveTaskMatch && req.method === 'GET') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const artifactId = await this.mediaAgent.resolveTaskArtifactId(resolveTaskMatch[1]);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ artifactId: artifactId || null }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // GET /api/media/resolve-task/:id — Phase D1 Task C4：已迁 registry dispatch
+        // （loopback 门随迁，见 routes/media-upload.ts）。
 
         // GET /api/tts/voices — 当前引擎音色 + 能力（desktop picker）
         // GET /api/voice/status — voice config + registered ASR engines.

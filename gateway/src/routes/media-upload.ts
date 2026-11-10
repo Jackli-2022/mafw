@@ -1,13 +1,14 @@
 /**
- * Phase D1 Task 3e: media upload/analyze REST 面（registry dispatch 接线）。
+ * Phase D1 Task 3e / C4: media upload/analyze REST 面（registry dispatch 接线）。
  *
  *   POST /api/media/analyze-audio    — 音频叙述式理解
  *   POST /api/media/upload           — 二进制上传（octet-stream + ?type=）
  *   POST /api/media/create-task      — 从已上传 artifact 建 A2A 任务
  *   POST /api/media/upload-and-create — 上传+建任务一体
+ *   GET  /api/media/resolve-task/:id — taskId → artifactId（历史回放；Task C4）
  *
- * handler 体从 index.ts legacy 分支逐字迁移。媒体 4/5 分支 loopback-only
- * （upload-and-create 同）；upload 的尺寸帽与 chunk 流逐字保留。
+ * handler 体从 index.ts legacy 分支逐字迁移。媒体分支 loopback-only
+ * （upload-and-create / resolve-task 同）；upload 的尺寸帽与 chunk 流逐字保留。
  * Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
  */
 import type { IncomingMessage, ServerResponse } from 'http';
@@ -20,6 +21,7 @@ export interface MediaAgentLike {
   putArtifactBytes(bytes: Buffer, mediaType: string): string;
   putArtifact(dataUrl: string): string;
   getArtifactMediaType(artifactId: string): string | undefined;
+  resolveTaskArtifactId(taskId: string): Promise<string | undefined>;
   createTaskAsync(artifactId: string, mediaType: string, question: string): { taskId: string; contextId: string };
   handleJsonRpc(payload: unknown, headers: Record<string, string>): Promise<{ status: number; body: string }>;
 }
@@ -179,6 +181,19 @@ export function attachMediaRoutes(registry: RouteRegistry, deps: MediaRouteDeps)
       log.info(`[upload-and-create] read=${t1 - t0}ms artifact=${t2 - t1}ms task=${t3 - t2}ms respond=${t4 - t3}ms total=${t4 - t0}ms`);
     } catch (err: any) {
       json(res, 502, { error: err?.message || String(err) });
+    }
+  });
+
+  // GET /api/media/resolve-task/<taskId> — resolve taskId to artifactId (for history)
+  registry.attachHandler('media.resolveTask', async (req, res, params: Record<string, string>) => {
+    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { forbidden(res); return; }
+    try {
+      const agent = deps.getMediaAgent();
+      if (!agent) { json(res, 503, { error: 'MediaAgent not initialized' }); return; }
+      const artifactId = await agent.resolveTaskArtifactId(params.id);
+      json(res, 200, { artifactId: artifactId || null });
+    } catch (err: any) {
+      json(res, 500, { error: err?.message || String(err) });
     }
   });
 }

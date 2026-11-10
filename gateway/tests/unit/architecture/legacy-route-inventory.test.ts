@@ -35,9 +35,10 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // Task C1: automations draft/list 2 equals + :id/:id-history 2 match → 67+21=88.
     // Task C2: chat send/sendEnriched 2 equals → 67+19=86.
     // Task C3: obs/capture 1 equals → 67+18=85.
-    expect(inv.byKind.match).toBe(67);
+    // Task C4: media resolve-task 1 match → 66+18=84.
+    expect(inv.byKind.match).toBe(66);
     expect(inv.byKind.equals).toBe(18);
-    expect(inv.total).toBe(85);
+    expect(inv.total).toBe(84);
   });
 
   it('groups match the D1 plan inventory', () => {
@@ -46,9 +47,9 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
       expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5 + B1-B4 + C1-C3)
     }
     // questions/permissions/usage 的 7 条 match 分支落在 '/api' 聚合组（analyzer 对
-    // 2 段式 api 路径的分组口径），因此只校验聚合数下降：66 → 59 → 57。
+    // 2 段式 api 路径的分组口径），因此只校验聚合数下降：66 → 59 → 57 → 56。
     // The biggest single group is the /api catch-all mass.
-    expect(byPrefix.get('/api')).toBe(57);
+    expect(byPrefix.get('/api')).toBe(56);
   });
 
   it('transport/root branches are pinned — they are D3, not D1', () => {
