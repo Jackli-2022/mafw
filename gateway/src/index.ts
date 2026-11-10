@@ -5094,6 +5094,7 @@ class MafwScheduler {
       recordT1Retrieval: (traceId: string, kind: any, score?: number) =>
         this.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
       readTrace: (traceId: string) => this.getGatewayDb().readTrace(traceId),
+      hasTrace: (traceId: string) => this.getGatewayDb().hasTrace(traceId),
       cost,
       automation: this.automationEngine,
       ledger: this.ledger,
@@ -7886,6 +7887,11 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         const salience = typeof data?.importance === 'number' && Number.isFinite(data.importance)
           ? importanceToSalience(data.importance)
           : judgeSalience({ text: content, novelty }).score;
+        // Exact T1 provenance (validated against live identity; unknown dropped).
+        const sourceTraceIds = require('./core/memory/provenance').normalizeSourceTraceIds(
+          data?.sourceTraceIds,
+          (id: string) => this.getGatewayDb().hasTrace(id),
+        );
         const unit = {
           id: generateHarmonicId(),
           type: memoryType,
@@ -7909,6 +7915,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           // V1 provenance: pipeline workers write via HTTP with their own
           // session id — map back to the source session for C0 reconstruction.
           source_session_id: (data?.sessionID && require('./recall/worker-origin').resolveWorkerOrigin(String(data.sessionID))) || (data?.sessionID ? String(data.sessionID) : undefined),
+          ...(sourceTraceIds.length > 0 ? { source_trace_ids: sourceTraceIds } : {}),
         };
         let supersedesTarget: any = null;
         if (data?.supersedes) {

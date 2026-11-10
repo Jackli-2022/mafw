@@ -932,6 +932,17 @@ export class GatewayDatabase {
       .all(session_id, turn_id) as T1Observation[];
   }
 
+  /** Cheap existence check for provenance validation (never loads rows). */
+  hasTrace(traceId: string): boolean {
+    const id = String(traceId || '').trim();
+    if (!id) return false;
+    try {
+      return Boolean(this.db.prepare('SELECT 1 FROM t1_turns WHERE trace_id = ?').get(id));
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Read a turn's full observation set by logical trace id, combining active
    * (t1_observations) and archived (t1_archive) rows. Rows are ordered by
