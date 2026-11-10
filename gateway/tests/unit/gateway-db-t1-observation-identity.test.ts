@@ -40,6 +40,26 @@ describe('T1 observation identity', () => {
     })).toThrow('unknown trace_id');
   });
 
+  test('append verifies trace ownership and rejects a mismatched session/turn', () => {
+    const turnA = db.beginTurn('sess-a');
+    const turnB = db.beginTurn('sess-b');
+
+    // Attempting to append session A's row using session B's trace is a
+    // cross-session identity violation and must throw.
+    expect(() => db.append({
+      session_id: 'sess-a',
+      turn_id: turnA.turn_seq,
+      trace_id: turnB.trace_id,
+      source: 'user_input',
+      content: 'stolen',
+      failure: 0,
+    })).toThrow(/trace ownership mismatch/);
+
+    // Nothing was inserted under either turn.
+    expect(db.readTurn('sess-a', turnA.turn_seq)).toHaveLength(0);
+    expect(db.readTrace(turnB.trace_id)?.rows ?? []).toHaveLength(0);
+  });
+
   test('legacy rows without identity columns read back null (no lie, no throw)', () => {
     // Seed a row exactly as a pre-Task-4 database looks: the migrated
     // trace_id / observation_key columns exist but are NULL for old rows.

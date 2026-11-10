@@ -586,6 +586,9 @@ export class GatewayDatabase {
             WHERE session_id = ? AND turn_id = ? AND trace_id IS NULL`,
         );
 
+        let turnsCreated = 0;
+        let ambiguousTurns = 0;
+        let rowsBackfilled = 0;
         for (const c of composites) {
           const trace =
             't1l_' +
@@ -600,7 +603,7 @@ export class GatewayDatabase {
           const archivedAt =
             c.has_archive === 1 && c.has_active === 0 ? c.max_archived_at : null;
           const createdAt = c.min_created_at ?? Math.floor(Date.now() / 1000);
-          insertTurn.run(
+          turnsCreated += insertTurn.run(
             trace,
             c.session_id,
             c.turn_id,
@@ -608,14 +611,22 @@ export class GatewayDatabase {
             archivedAt,
             c.max_salience,
             ambiguous,
-          );
-          backfillActive.run(trace, c.session_id, c.turn_id);
-          backfillArchive.run(trace, c.session_id, c.turn_id);
+          ).changes;
+          if (ambiguous) ambiguousTurns += 1;
+          rowsBackfilled += backfillActive.run(trace, c.session_id, c.turn_id).changes;
+          rowsBackfilled += backfillArchive.run(trace, c.session_id, c.turn_id).changes;
         }
+        return { turnsCreated, ambiguousTurns, rowsBackfilled };
       });
-      txn();
+      const { turnsCreated, ambiguousTurns, rowsBackfilled } = txn();
+      log.info('t1 identity legacy migration complete', {
+        turnsCreated,
+        ambiguousTurns,
+        rowsBackfilled,
+      });
     } catch (err) {
-      log.error('t1 identity legacy migration failed (startup continues)', err);
+      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      log.error('t1 identity legacy migration failed (startup continues)', detail);
     }
   }
 
@@ -691,7 +702,9 @@ export class GatewayDatabase {
    * Insert one observation against an allocated logical turn.
    *
    * `trace_id` is required and must reference an existing `t1_turns` row
-   * (`trace_id required` / `unknown trace_id: <id>` otherwise). A missing
+   * (`trace_id required` / `unknown trace_id: <id>` otherwise). The referenced
+   * turn's `(session_id, turn_seq)` must match `obs.session_id` /
+   * `obs.turn_id` (`trace ownership mismatch: ...` otherwise). A missing
    * `observation_key` is generated as `t1o_<uuid>`. On write, the turn's
    * `encoding_salience` is raised to the maximum supplied salience.
    *
@@ -713,10 +726,17 @@ export class GatewayDatabase {
       throw new Error('trace_id required');
     }
     const turn = this.db
-      .prepare('SELECT trace_id FROM t1_turns WHERE trace_id = ?')
-      .get(obs.trace_id) as { trace_id: string } | undefined;
+      .prepare('SELECT trace_id, session_id, turn_seq FROM t1_turns WHERE trace_id = ?')
+      .get(obs.trace_id) as { trace_id: string; session_id: string; turn_seq: number } | undefined;
     if (!turn) {
       throw new Error(`unknown trace_id: ${obs.trace_id}`);
+    }
+    if (turn.session_id !== obs.session_id || turn.turn_seq !== obs.turn_id) {
+      throw new Error(
+        `trace ownership mismatch: trace_id ${obs.trace_id} owns ` +
+          `(session_id, turn_seq)=(${turn.session_id}, ${turn.turn_seq}) but append targeted ` +
+          `(session_id, turn_id)=(${obs.session_id}, ${obs.turn_id})`,
+      );
     }
     const observationKey = obs.observation_key || `t1o_${randomUUID()}`;
     const txn = this.db.transaction((): number | null => {
