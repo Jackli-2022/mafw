@@ -225,6 +225,7 @@ import { attachApprovalsRoutes } from './routes/approvals';
 import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
 import { attachUsageRoutes } from './routes/usage';
 import { attachRecallRoutes } from './routes/recall';
+import { attachMemoryRoutes } from './routes/memory';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5701,6 +5702,19 @@ class MafwScheduler {
         permissionRules: () => this.permissionRules,
         subagentService: () => this.subagentService,
       });
+      // Phase D1 Task F1：memory 查询/统计面迁 registry dispatch（9 分支；sticky 的
+      // 503-空壳与 fail-open 200、stats 的 10s fok 缓存直写逐字保留）。
+      attachMemoryRoutes(this.routeRegistry, {
+        memoryService: () => this.memoryService,
+        consolidationService: () => this.consolidationService,
+        heartbeat: () => this.heartbeat,
+        coactivationGraphStore: () => this.coactivationGraphStore,
+        fokStatsCache: () => this.fokStatsCache,
+        setFokStatsCache: (value) => { this.fokStatsCache = value; },
+        mafwDir: () => this.mafwDir,
+        getGatewayDb: () => this.getGatewayDb(),
+        backfillEmbeddings: (limit) => this.backfillEmbeddings(limit),
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -5933,277 +5947,8 @@ class MafwScheduler {
         // POST /api/mafw-commands/run + GET /api/mafw-commands — Phase D1 Task A2：已迁 registry dispatch。
         // POST /api/merge-memory — Phase D1 Task A3：已迁 registry dispatch。
 
-// GET /api/memory/merged-search — expose memory context injection results
-        if (req.url === "/api/memory/merged-search" && req.method === "GET") {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const query = parsedUrl.searchParams.get('query') || '';
-            const maxFacts = parseInt(parsedUrl.searchParams.get('maxFacts') || '5', 10);
-            if (!this.memoryService) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'Memory service not available' })); return;
-            }
-            const results = await this.memoryService.mergedSearch(query, maxFacts);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ results }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/memory/embeddings/backfill — index entries missing vectors.
-        // Optional ?limit=N to batch (full store ≈ 12s for short abstractions).
-        if (req.url?.match(/^\/api\/memory\/embeddings\/backfill(?:\?|$)/) && req.method === 'POST') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const limit = parseInt(parsedUrl.searchParams.get('limit') || '', 10);
-            const result = await this.backfillEmbeddings(!Number.isNaN(limit) && limit > 0 ? limit : undefined);
-            if (!result) {
-              res.writeHead(400); res.end(JSON.stringify({ error: 'embedding provider off (memory.embedding.provider)' })); return;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET/POST /api/memory/embedding-config — memory embedding engine
-        // settings（P5 Wave 1 起由 registry dispatch 接管，见 routes/wave1-handlers.ts；
-        // 历史顺序约束"须高于 /api/memory/* dashboard 委托"由 dispatch 位置满足）
-
-        // GET /api/memory/stats — consolidation health + vector coverage (P2)
-        if (req.url?.match(/^\/api\/memory\/stats(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const embeddingRuntime = getEmbeddingRuntime();
-            const consolidation = this.consolidationService?.getStats() ?? null;
-            const indexEntries = this.memoryService?.harmonicIndex.getIndex().entries ?? [];
-            const indexed = embeddingRuntime ? embeddingRuntime.vectors.size() : 0;
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              embedding: {
-                provider: config.memory.embedding.provider,
-                model: config.memory.embedding.model,
-                vectors: indexed,
-                indexEntries: indexEntries.length,
-                coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,
-              },
-              consolidation,
-              routing: (() => { try { return getRouteStats(); } catch { return null; } })(),
-              dedup: (() => { try { const { getDedupStats } = require('./memory/dedup-guard'); return getDedupStats(); } catch { return null; } })(),
-              commitment: (() => {
-                try {
-                  const { commitmentStats } = require('./recall/commitment');
-                  const inWindow = indexEntries.filter((e: any) => e.commitment_capped_at).length;
-                  return { ...commitmentStats, inWindow };
-                } catch { return null; }
-              })(),
-              reconsolidation: (() => {
-                try { return { eligible: getReconsolidationQueue().listEligible().length }; } catch { return null; }
-              })(),
-              pipelines: this.heartbeat?.snapshot() ?? [],
-              coactivation: (() => {
-                try { return this.coactivationGraphStore?.stats() ?? null; } catch { return null; }
-              })(),
-              abstractionLevels: (() => {
-                const counts: Record<string, number> = { '1': 0, '2': 0, '3': 0, unknown: 0 };
-                for (const e of indexEntries) {
-                  const lvl = (e as any).abstraction_level;
-                  if (lvl === 1 || lvl === 2 || lvl === 3) counts[String(lvl)]++;
-                  else counts.unknown++;
-                }
-                return counts;
-              })(),
-              // A4 observability: hit-proxy labeling counts (10s cache — the
-              // file read must not run on every stats poll).
-              fok: (() => {
-                try {
-                  const now = Date.now();
-                  if (!this.fokStatsCache || now - this.fokStatsCache.at > 10_000) {
-                    const { FOK_SAMPLES_FILE, fokSampleStats } = require('./recall/fok-samples');
-                    const lines = fs.existsSync(FOK_SAMPLES_FILE())
-                      ? fs.readFileSync(FOK_SAMPLES_FILE(), 'utf-8').split(/\r?\n/).filter(Boolean)
-                      : [];
-                    this.fokStatsCache = { at: now, stats: fokSampleStats(lines) };
-                  }
-                  return this.fokStatsCache.stats;
-                } catch { return null; }
-              })(),
-              // A3 observability: event stream counters (pending = unsettled
-              // batch for the daily pass; needTracked = live need signals).
-              retrievalEvents: (() => {
-                try {
-                  return getRetrievalEventBuffer().stats();
-                } catch { return null; }
-              })(),
-            }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/memory/sticky — structured note-board list for desktop UI.
-        // Same deps as the agent-facing recall/context block, JSON shape.
-        if (req.url?.match(/^\/api\/memory\/sticky(?:\?|$)/) && req.method === 'GET') {
-          try {
-            if (!this.memoryService) {
-              res.writeHead(503, { 'Content-Type': 'application/json' });
-              const { emptyNoteBoardBudget } = require('./routes/note-board');
-              res.end(JSON.stringify({ entries: [], budget: emptyNoteBoardBudget() }));
-              return;
-            }
-            const { handleNoteBoard } = require('./routes/note-board');
-            const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
-            const store = new HarmonicUnitFileStore(this.mafwDir, this.memoryService.harmonicIndex);
-            const nb = await handleNoteBoard({
-              getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
-              readUnit: (id: string) => store.read(id),
-            });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ entries: nb.entries, budget: nb.budget }));
-          } catch (err: any) {
-            log.warn(`[Scheduler] /api/memory/sticky failed: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            const { emptyNoteBoardBudget } = require('./routes/note-board');
-            res.end(JSON.stringify({ entries: [], budget: emptyNoteBoardBudget() }));
-          }
-          return;
-        }
-
-        // GET /api/memory/get?id=... — fetch one memory's full content by id
-        // (or 6-char pointer tail). Mirrors the mafw_get_memory MCP tool.
-        if (req.url?.match(/^\/api\/memory\/get(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const id = parsedUrl.searchParams.get('id') || '';
-            const { handleGetMemory } = require('./mcp/handlers/get-memory');
-            const result = await handleGetMemory({ id }, {
-              memory: this.memoryService,
-              mafwDir: this.mafwDir,
-              searchArchive: (sid: string, anchors: string[], k: number) => this.getGatewayDb().searchArchive(sid, anchors, k),
-              resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findArchiveBySessionTail(tail, turnId),
-            } as any);
-            const body = JSON.parse(result.content[0].text);
-            res.writeHead(result.isError ? 404 : 200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(body));
-          } catch (err: any) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/memory/search — harmonic index search; empty query lists all entries
-        if (req.url?.match(/^\/api\/memory\/search(?:\?|$)/) && req.method === 'GET') {
-          try {
-            if (!this.memoryService) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'Memory service not available' })); return;
-            }
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const query = parsedUrl.searchParams.get('query') || '';
-            const topK = parseInt(parsedUrl.searchParams.get('topK') || '50', 10);
-            const retrieverParam = parsedUrl.searchParams.get('retriever');
-            const store = new HarmonicUnitFileStore(this.mafwDir);
-            const index = store.indexManager_();
-            let entries;
-            if (query && retrieverParam === 'hybrid') {
-              const dense = await computeDenseScores(query, topK, index);
-              entries = index.search(query, topK, dense ? { retriever: 'bm25', denseScores: dense } : { retriever: 'bm25' });
-            } else if (query) {
-              const retriever = retrieverParam === 'bm25' ? 'bm25' : 'token';
-              entries = index.search(query, topK, { retriever });
-            } else {
-              entries = [...index.getIndex().entries]
-                  .sort((a, b) => b.energy - a.energy)
-                  .slice(0, topK);
-            }
-            const results: any[] = [];
-            for (const entry of entries) {
-              const unit = await store.read(entry.id);
-              if (unit) {
-                results.push(unit);
-              } else {
-                results.push({
-                  id: entry.id,
-                  type: entry.type,
-                  primary_abstraction: entry.primary_abstraction,
-                  cue_anchors: entry.cue_anchors,
-                  memory_value: '',
-                  energy: entry.energy,
-                  tier: entry.tier,
-                });
-              }
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ results }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // DELETE /api/memory/{id} — physically remove OKF file + index entry
-        const memoryDeleteMatch = req.url?.match(/^\/api\/memory\/([^/]+)$/);
-        if (memoryDeleteMatch && req.method === 'DELETE') {
-          try {
-            const store = new HarmonicUnitFileStore(this.mafwDir);
-            const removed = await store.delete(memoryDeleteMatch[1]);
-            if (removed && this.memoryService) {
-              this.memoryService.harmonicIndex.removeEntry(memoryDeleteMatch[1]);
-            }
-            res.writeHead(removed ? 200 : 404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(removed ? { status: 'deleted' } : { error: 'Not found' }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/memory/energy-distribution — bucket index entries by energy
-        if (req.url === "/api/memory/energy-distribution" && req.method === "GET") {
-          try {
-            if (!this.memoryService) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'Memory service not available' })); return;
-            }
-            const entries = new HarmonicUnitFileStore(this.mafwDir).indexManager_().getIndex().entries;
-            const dist = { critical: 0, high: 0, medium: 0, low: 0, total: entries.length };
-            for (const e of entries) {
-              if (e.energy >= 0.8) dist.critical++;
-              else if (e.energy >= 0.6) dist.high++;
-              else if (e.energy >= 0.4) dist.medium++;
-              else dist.low++;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(dist));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/l5/axioms — global L5 axioms + heuristics
-        if (req.url?.match(/^\/api\/l5\/axioms(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const topK = parseInt(parsedUrl.searchParams.get('topK') || '10', 10);
-            const { axioms, heuristics } = new L5Store().getTop(topK);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ axioms, heuristics }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
+        // GET /api/memory/{merged-search,stats,sticky,get,search,energy-distribution} + POST /api/memory/embeddings/backfill
+        // + DELETE /api/memory/{id} + GET /api/l5/axioms — Phase D1 Task F1：已迁 registry dispatch。
         // POST /api/goals/{goalId}/questions/{questionId}/respond
         const respondMatch = req.url?.match(/^\/api\/goals\/([^/]+)\/questions\/([^/]+)\/respond$/);
         if (respondMatch && req.method === 'POST') {

@@ -42,9 +42,11 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // token-summary/children) → 52+17=69.
     // Task E2: permission-mode 1 + permissions reply 1 + subagents 4 match
     // (message/cancel/result + the shared spawn/list const) → 46+17=63.
-    expect(inv.byKind.match).toBe(46);
-    expect(inv.byKind.equals).toBe(17);
-    expect(inv.total).toBe(63);
+    // Task F1: memory 7 match + merged-search/energy-distribution 2 equals →
+    // 39+15=54.
+    expect(inv.byKind.match).toBe(39);
+    expect(inv.byKind.equals).toBe(15);
+    expect(inv.total).toBe(54);
   });
 
   it('groups match the D1 plan inventory', () => {
@@ -53,9 +55,10 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
       expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5 + B1-B4 + C1-C3 + D1)
     }
     // questions/permissions/usage 的 7 条 match 分支落在 '/api' 聚合组（analyzer 对
-    // 2 段式 api 路径的分组口径），因此只校验聚合数下降：66 → 59 → 57 → 56 → 47 → 42 → 36。
+    // 2 段式 api 路径的分组口径），因此只校验聚合数下降：66 → 59 → 57 → 56 → 47 → 42 → 36 → 29。
+    // /api/memory 只剩 dashboard 侧残量（4：add / pin / 兜底 startsWith / catch-all）。
     // The biggest single group is the /api catch-all mass.
-    expect(byPrefix.get('/api')).toBe(36);
+    expect(byPrefix.get('/api')).toBe(29);
   });
 
   it('transport/root branches are pinned — they are D3, not D1', () => {
