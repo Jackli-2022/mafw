@@ -32,10 +32,6 @@ export function buildLeadGoalStatus(
       const blockers: string[] = [];
       if (view.lastError) blockers.push(view.lastError);
       if (view.pendingQuestion) blockers.push('waiting for user answer');
-      if ((view.stage.kind === 'blocked' || view.stage.kind === 'failed')
-        && !blockers.includes(view.stage.kind)) {
-        blockers.push(view.stage.kind);
-      }
       return {
         goalId: view.goalId,
         title: view.title,
