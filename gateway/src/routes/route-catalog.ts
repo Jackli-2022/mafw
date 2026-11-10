@@ -158,6 +158,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/goals/:id/timeline', operationId: 'goals.timeline', tags: ['goals'] },
   { method: 'GET', path: '/api/goals/:id/source', operationId: 'goals.source', tags: ['goals'] },
   { method: 'GET', path: '/api/lead/context', operationId: 'lead.context', tags: ['internal'] },
+  { method: 'GET', path: '/api/attention', operationId: 'attention.list', tags: ['attention'] },
   { method: 'GET', path: '/api/lead/topics', operationId: 'lead.topics.list', tags: ['lead'] },
   { method: 'GET', path: '/api/lead/topics/:id', operationId: 'lead.topics.get', tags: ['lead'] },
   { method: 'GET', path: '/api/lead/working-set', operationId: 'lead.workingSet', tags: ['lead'] },
