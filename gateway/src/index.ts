@@ -222,6 +222,7 @@ import { attachMafwCommandRoutes } from './routes/mafw-commands';
 import { attachMergeMemoryRoutes } from './routes/merge-memory';
 import { attachTriageRoutes } from './routes/triage';
 import { attachAutomationRoutes } from './routes/automations';
+import { attachChatRoutes } from './routes/chat';
 import { attachApprovalsRoutes } from './routes/approvals';
 import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
 import { attachUsageRoutes } from './routes/usage';
@@ -5655,6 +5656,15 @@ class MafwScheduler {
         automationEngine: () => this.automationEngine,
         ledger: () => this.ledger,
       });
+      // Phase D1 Task C2：chat 面迁 registry dispatch（2 分支；enriched 保留
+      // 自有 inline enrichment 副本，不并入 sendEnrichedInternal）。
+      attachChatRoutes(this.routeRegistry, {
+        registeredProjects: () => this.registeredProjects,
+        projectDir: () => this.projectDir,
+        runtime: () => this.runtime,
+        shouldHoldQueue: (sessionID) => this.runCoordinator?.shouldHoldQueue(sessionID),
+        memoryService: () => this.memoryService,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -5895,108 +5905,7 @@ class MafwScheduler {
           return;
         }
 
-        // Chat API — fire-and-forget promptAsync, returns sessionID for SSE streaming
-        if (req.url === "/api/chat" && req.method === "POST") {
-          try {
-            const body = await readBody(req);
-            const { message } = JSON.parse(body);
-            if (!message) { res.writeHead(400); res.end(JSON.stringify({ error: 'message required' })); return; }
-
-            const firstProject = this.registeredProjects.values().next().value;
-            const projectDir = firstProject?.projectDir || this.projectDir;
-
-            if (!this.runtime) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return;
-            }
-
-            const session = await this.runtime.session.create({ directory: projectDir });
-            const sessionID = session.id;
-            if (!sessionID) {
-              res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
-            }
-
-            const result = await this.runtime.session.promptAsync({
-              sessionID,
-              parts: [{ type: 'text', text: message }],
-            });
-            if (result?.error) {
-              log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
-              res.writeHead(500);
-              res.end(JSON.stringify({ error: 'promptAsync failed: ' + (result.error?.data?.message || result.error?.message || JSON.stringify(result.error)) }));
-              return;
-            }
-            log.info(`[Scheduler] promptAsync ok session=${sessionID} status=${result?.response?.status}`);
-
-            res.writeHead(200);
-            res.end(JSON.stringify({ sessionID }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/chat/enriched — chat with memory context injection
-        if (req.url === "/api/chat/enriched" && req.method === "POST") {
-          try {
-            const body = await readBody(req);
-            const { message, sessionID: existingID, parts, agent, model } = JSON.parse(body);
-            if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
-            if (existingID && this.runCoordinator?.shouldHoldQueue(existingID)) {
-              res.writeHead(409);
-              res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
-              return;
-            }
-
-            const firstProject = this.registeredProjects.values().next().value;
-            const projectDir = firstProject?.projectDir || this.projectDir;
-
-            if (!this.runtime) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return;
-            }
-
-            let enrichedMessage = message;
-            if (this.memoryService) {
-              const results = await this.memoryService.mergedSearch(message, 5);
-              if (results.length > 0) {
-                const { renderMemoryBlocks } = require('./recall/inject-format');
-                const chunks = renderMemoryBlocks(results.map((r: any) => ({
-                  source: r.source,
-                  type: r.type,
-                  content: r.content,
-                })));
-                if (chunks.length > 0) enrichedMessage = chunks.join('\n\n') + '\n\n' + message;
-              }
-            }
-
-    const sessionID = existingID || (await this.runtime.session.create({ directory: projectDir })).id;
-            if (!sessionID) {
-              res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
-            }
-            // Extra parts (file/agent attachments) ride along after the enriched text.
-            const promptParts: any[] = [];
-            if (enrichedMessage) promptParts.push({ type: 'text', text: enrichedMessage });
-            if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
-            const promptOpts: any = { sessionID, parts: promptParts };
-            if (agent) promptOpts.agent = agent;
-            if (model?.providerID && model?.modelID) promptOpts.model = model;
-            const result = await this.runtime.session.promptAsync(promptOpts);
-            if (result?.error) {
-              log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
-              res.writeHead(500);
-              res.end(JSON.stringify({ error: 'promptAsync failed: ' + (result.error?.data?.message || result.error?.message || JSON.stringify(result.error)) }));
-              return;
-            }
-            log.info(`[Scheduler] promptAsync ok session=${sessionID} status=${result?.response?.status}`);
-
-            res.writeHead(200);
-            res.end(JSON.stringify({ sessionID }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // Chat API + POST /api/chat/enriched — Phase D1 Task C2：已迁 registry dispatch。
 
         // POST /api/mafw-commands/run + GET /api/mafw-commands — Phase D1 Task A2：已迁 registry dispatch。
         // POST /api/merge-memory — Phase D1 Task A3：已迁 registry dispatch。
