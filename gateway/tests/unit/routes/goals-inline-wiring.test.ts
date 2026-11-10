@@ -134,6 +134,62 @@ describe('goals-inline registry wiring (D1 Task F2)', () => {
     expect(JSON.parse(r.body)).toEqual({ error: 'node run not found' });
   });
 
+  it('retry: canonical digit runId reaches handleNodeRetry and retries the run', async () => {
+    const retried: any[] = [];
+    const { registry } = setup({
+      getGatewayDb: () => ({
+        listNodeRuns: () => [{ id: 12, goal_id: 'g1', node: 'plan', status: 'failed', loop: 1 }],
+        getGoalOutcome: () => null,
+      }) as any,
+      goalDriver: () => ({
+        retryNodeRun: async (g: string, runId: number) => { retried.push([g, runId]); return { runId }; },
+      }) as any,
+    });
+    const r = fakeRes();
+    const handled = await handlerFor(registry, 'POST', '/api/goals/g1/nodes/12/retry')!(
+      fakeReq({ method: 'POST', url: '/api/goals/g1/nodes/12/retry', body: JSON.stringify({}) }), r.res,
+    );
+    expect(handled).not.toBe(false);
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toEqual({ success: true, runId: 12 });
+    expect(retried).toEqual([['g1', 12]]);
+  });
+
+  // Review fix round 1: the registry template `:runId` accepts ANY segment and
+  // match() strips query/trailing slash, so the handler's own digit-locked regex
+  // can miss. Legacy fell through to the dashboard for these shapes; the handler
+  // must return false (no 500, no response) so dispatchAuthorized does the same.
+  it('retry: non-digit runId → handled=false (legacy fall-through, no TypeError 500)', async () => {
+    const { registry } = setup();
+    const r = fakeRes();
+    const handled = await handlerFor(registry, 'POST', '/api/goals/g1/nodes/abc/retry')!(
+      fakeReq({ method: 'POST', url: '/api/goals/g1/nodes/abc/retry', body: JSON.stringify({ confirm: true }) }), r.res,
+    );
+    expect(handled).toBe(false);
+    expect(r.status).toBe(200);
+    expect(r.body).toBe('');
+  });
+
+  it('retry: digit runId with a query string → handled=false (fall-through)', async () => {
+    const { registry } = setup();
+    const r = fakeRes();
+    const handled = await handlerFor(registry, 'POST', '/api/goals/g1/nodes/12/retry?x=1')!(
+      fakeReq({ method: 'POST', url: '/api/goals/g1/nodes/12/retry?x=1', body: JSON.stringify({}) }), r.res,
+    );
+    expect(handled).toBe(false);
+    expect(r.body).toBe('');
+  });
+
+  it('retry: trailing-slash URL → handled=false (fall-through)', async () => {
+    const { registry } = setup();
+    const r = fakeRes();
+    const handled = await handlerFor(registry, 'POST', '/api/goals/g1/nodes/12/retry/')!(
+      fakeReq({ method: 'POST', url: '/api/goals/g1/nodes/12/retry/', body: JSON.stringify({}) }), r.res,
+    );
+    expect(handled).toBe(false);
+    expect(r.body).toBe('');
+  });
+
   describe('plan / plan-approval joint delegation', () => {
     function planSetup() {
       const mafwDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-plan-wiring-'));

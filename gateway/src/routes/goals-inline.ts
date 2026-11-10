@@ -91,7 +91,11 @@ export function attachGoalRoutes(registry: RouteRegistry, deps: GoalsInlineRoute
   registry.attachHandler('goals.retryNode', async (req: IncomingMessage, res: ServerResponse) => {
     const raw = await readRouteBody(req);
     let body: any; try { body = JSON.parse(raw); } catch { body = {}; }
-    const goalIdM = req.url!.match(/^\/api\/goals\/([^/]+)\/nodes\/\d+\/retry$/)!;
+    const goalIdM = req.url!.match(/^\/api\/goals\/([^/]+)\/nodes\/\d+\/retry$/);
+    // registry 模板 `:runId` 接受任意段，且 match() 会剥 query/尾斜杠 —— legacy 里
+    // 同一条正则既是入口门也是解构依据，迁到 registry 后必须显式回落（false →
+    // dispatchAuthorized 回退 legacy/dashboard，与 legacy 同形）。
+    if (!goalIdM) return false;
     const goalId = decodeURIComponent(goalIdM[1]);
     return handleNodeRetry(req, res, req.url!, {
       body,
