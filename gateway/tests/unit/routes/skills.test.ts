@@ -56,4 +56,22 @@ describe('skills routes', () => {
     expect(r.status).toBe(404);
     expect(JSON.parse(r.body).error).toContain('ENOENT');
   });
+
+  test('GET /api/skills lists registry rows with invocation stats', async () => {
+    const registry = new RouteRegistry().register(...buildRouteCatalog());
+    attachSkillRoutes(registry, {
+      deopt: () => ({ deopted: false }),
+      list: () => [{
+        name: 'ms-a', version: 2, status: 'active',
+        sourceMemoryIds: ['mem_1'], sourceTraceIds: ['t1t_a'],
+        installedAt: 1, updatedAt: 2, deoptReason: null,
+        stats: { total: 3, success: 0, failure: 1, unknown: 2, lastAt: 99 },
+      }],
+    });
+    const r = fakeRes();
+    const match = registry.match('GET', '/api/skills')!;
+    await match.def.handler!(fakeReq(), r.res, match.params);
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body).skills[0]).toMatchObject({ name: 'ms-a', stats: { total: 3, failure: 1 } });
+  });
 });

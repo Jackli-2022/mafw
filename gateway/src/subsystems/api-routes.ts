@@ -276,6 +276,7 @@ export interface ApiRouteDeps {
   listSessions: (projectID: string | null) => Promise<any[]>;
   skillInstallDeps: TriageDeps['skillInstallDeps'];
   deoptSkill(name: string, reason: string): { deopted: boolean; archivedTo?: string; error?: string };
+  listSkills(): Array<Record<string, unknown>>;
 
   // ── P2.4 event layer (live: constructed in initServices, inert when off) ──
   eventLayer?: EventLayerService;
@@ -669,6 +670,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
   // next discovery boundary.
   attachSkillRoutes(deps.routeRegistry, {
     deopt: (name, reason) => deps.deoptSkill(name, reason),
+    list: () => deps.listSkills(),
   });
   // Phase D1 Task A5：approvals 面迁 registry dispatch（4 分支；数据根扫描路径全保留）。
   attachApprovalsRoutes(deps.routeRegistry, {
