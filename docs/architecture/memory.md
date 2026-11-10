@@ -253,6 +253,9 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - `createGatewayT1Search`（`recall/t1-search.ts`）是 gateway 共享入口：dense 通道惰性读取 embedding runtime（热切换不残留旧 provider），archive 优先、active 回退；词面通道查 `t1_fts`。两路用 RRF 融合（`1/(60+rank)`，`fuseT1Hits`），同 trace 去重并优先保留词面 excerpt；单路失败/关闭时另一路照常返回，dense provider off 时仍有词面结果。`config.recall.t1Recall.lexical=false` 可关闭词面通道。
 - T1 自动回填：每日 `memory:decay` 在 Harmonic 回填后调用 `backfillT1Vectors`，archive 优先分页扫描，跳过已有 key，单次默认最多 200 条（`config.recall.t1Recall.t1BackfillLimit`，0/负数关闭）；heartbeat 记录 `t1BackfillIndexed`/`t1BackfillMissing`/`t1BackfillFailed`，`/api/memory/stats` 的 `t1.coverage` 暴露覆盖率。
 - T1 二进制向量：`SqliteT1VectorStore` 把向量存为 `gateway.db` 的 `t1_vectors` Float32 BLOB（按行 flush，无全量 JSON 重写）；无 DB 句柄的测试/评测环境自动回退 JSON store。首次迁移导入 `vectors-t1-<tag>.json` 后改名保留备份。
+- 精确 provenance（2026-11-10，Phase 3A）：Harmonic 单元新增可选 `source_trace_ids`（OKF frontmatter + index entry）。抽取 transcript 每行前缀 `[trace:<traceId>]`，curator 通过 `mafw_add_memory.sourceTraceIds` 回传支持该记忆的精确 trace；处理器用 `t1_turns` 校验（存在、去重、`t1:` 前缀兼容、最多 20 个），未知 id 直接丢弃且不影响写入。MCP 与 HTTP `/api/memory/add` 行为一致；merge/update 时 incoming 与 target 的 trace 取并集（上限 20）。
+- 精确 provenance 读取：`mafw_get_memory` 优先解析 `source_trace_ids`（最多 5 条）返回 `source.traces[{traceId,sessionId,turnId,archived,excerpt}]`；解析不到时回退旧 C0 `source.evidence`。`/api/memory/stats` 的 `t1.provenance` 暴露 `{memories,withExact,coverage}`。
+- 3A **不改变** energy、排序、activation 或 recall 注入；`source_trace_ids` 仅作为可审计来源与后续 activation 的精确边。
 - T1 只读指针：`mafw_get_memory("t1:<traceId>")` 走 `readTrace()` 返回 active+archive 完整回合与 `archived`/`legacyAmbiguous`；旧 `t1:<sessionTail>:<turnId>` 继续兼容，并回退查 active 行。
 - R8 快照把 T1 当独立通道：Harmonic 零命中但 T1 命中时可生成 T1-only 快照（`T1_POINTER_HEADER` + `[t1|<traceId>]` 行）；`decideSnapshotUse` 接受 `ids=[]` 但 `t1Hits` 非空。快照 serve 记录 `recall` 事件；直接搜索记录 `search`；指针兑换记录 `redeem`。
 - `/api/memory/stats` 的 `t1` 字段暴露向量数、active/archive 行数、覆盖率与 7 天检索事件统计。
