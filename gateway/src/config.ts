@@ -350,6 +350,8 @@ export interface GatewayConfig {
     sourceEvidence: { enabled: boolean; k: number; maxChars: number };
     /** V1 verbatim dense layer: fuse t1 round hits into R8 snapshots. */
     t1Recall: { enabled: boolean; k: number; maxChars: number; retentionDays: number; lexical: boolean; t1BackfillLimit: number; activationHalfLifeDays: number; activationRanking: 'off' | 'shadow' | 'on'; activationRankWeight: number; activationRankBand: number };
+    /** Phase 4A: bounded raw-T1 replay during reflection. */
+    t1Replay: { enabled: boolean; exactK: number; activatedK: number; maxChars: number; perTraceChars: number };
     /** V2 ⑦: commitment gradient — pipeline first-pass semantic/procedural
      *  writes cap at 0.6, graduate to 0.75 after the 48h window. */
     commitmentGradient?: boolean;
@@ -657,6 +659,7 @@ function defaults(projectDir: string): GatewayConfig {
       pipelineBudgetUsdPerDay: 0,
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
       t1Recall: { enabled: true, k: 3, maxChars: 600, retentionDays: 90, lexical: true, t1BackfillLimit: 200, activationHalfLifeDays: 14, activationRanking: 'shadow', activationRankWeight: 0.1, activationRankBand: 0.6 },
+      t1Replay: { enabled: true, exactK: 8, activatedK: 3, maxChars: 6000, perTraceChars: 400 },
       commitmentGradient: true,
       segmentation: 'shadow',
       eventSegmentInput: false,

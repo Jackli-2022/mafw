@@ -3519,7 +3519,15 @@ class MafwScheduler {
           this.heartbeat?.record('memory:reflect', {
             ok: res.failed === 0,
             error: res.failed > 0 ? `${res.failed} session(s) failed` : undefined,
-            counts: { sessions: res.sessions, reviewed: res.reviewed, distilled: res.distilled, superseded: res.superseded, failed: res.failed },
+            counts: {
+              sessions: res.sessions,
+              reviewed: res.reviewed,
+              distilled: res.distilled,
+              superseded: res.superseded,
+              failed: res.failed,
+              replayedTraces: res.replayedTraces,
+              replayChars: res.replayChars,
+            },
           });
         } catch (err: any) {
           this.heartbeat?.record('memory:reflect', { ok: false, error: err.message });
@@ -3936,6 +3944,24 @@ class MafwScheduler {
       // A4: selection-pressure feedback — prior insights' 7-day retrieval hits.
       needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
       budget: this.getPipelineBudget(),
+      // Phase 4A: bounded raw-T1 replay (exact provenance + activation + search).
+      ...(config.recall.t1Replay?.enabled !== false
+        ? {
+            t1Replay: {
+              enabled: true,
+              deps: {
+                readTrace: (traceId: string) => this.getGatewayDb().readTrace(traceId),
+                searchT1: require('./recall/t1-search').createGatewayT1Search(this.getGatewayDb()),
+                topActivatedTraces: (limit: number) => this.getGatewayDb().topActivatedTraces(limit),
+                markT1Replayed: (traceIds: string[]) => this.getGatewayDb().markT1Replayed(traceIds),
+              },
+              exactK: config.recall.t1Replay?.exactK,
+              activatedK: config.recall.t1Replay?.activatedK,
+              maxChars: config.recall.t1Replay?.maxChars,
+              perTraceChars: config.recall.t1Replay?.perTraceChars,
+            },
+          }
+        : {}),
     });
   }
 
