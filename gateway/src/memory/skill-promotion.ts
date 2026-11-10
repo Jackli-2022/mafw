@@ -4,7 +4,7 @@
 // + 业界（JIT 热点编译 / Voyager 自验证 / AWM 复用频率 / Self-RAG 自适应）。
 
 import * as yaml from 'js-yaml';
-import { extractSkillContract, SkillContract } from './skill-contract';
+import { extractSkillContract, SkillContract, validateSkillContract } from './skill-contract';
 
 export const DEFAULT_PROMOTION_GATES = {
   minNeed7d: 3,
@@ -130,11 +130,27 @@ ${section('Scope', c.scope)}
 
 export interface ScanDeps {
   getIndex(): { entries: any[] };
-  readUnit(id: string): Promise<{ id: string; memory_value: string; cue_anchors?: string[] } | null>;
+  readUnit(id: string): Promise<{
+    id: string;
+    memory_value: string;
+    cue_anchors?: string[];
+    source_session_id?: string;
+    source_trace_ids?: string[];
+  } | null>;
   needFor: (id: string) => number;
   existingSkillCount: () => number;
   writeStaging: (name: string, content: string) => void;
-  createTriageItem: (item: { summary: { skillDraft: { name: string; memoryId: string } } }) => void;
+  createTriageItem: (item: {
+    summary: {
+      skillDraft: {
+        name: string;
+        memoryId: string;
+        version: number;
+        sourceMemoryIds: string[];
+        sourceTraceIds: string[];
+      };
+    };
+  }) => void;
   now: Date;
   gates?: typeof DEFAULT_PROMOTION_GATES;
 }
@@ -173,14 +189,32 @@ export async function scanPromotionCandidates(deps: ScanDeps): Promise<number> {
         cfg,
       );
       if (!decision.eligible) continue;
+      const contract = extractSkillContract({
+        memory_value: unit.memory_value,
+        cue_anchors: anchors,
+        source_session_id: unit.source_session_id,
+      });
+      const contractCheck = validateSkillContract(contract);
+      if (!contractCheck.valid) continue;
       const { name, content } = renderSkillMd({
         id: unit.id,
         primary_abstraction: entry.primary_abstraction ?? unit.id,
         memory_value: unit.memory_value,
         cue_anchors: anchors,
-      });
+        source_trace_ids: unit.source_trace_ids,
+      }, contract);
       deps.writeStaging(name, content);
-      deps.createTriageItem({ summary: { skillDraft: { name, memoryId: unit.id } } });
+      deps.createTriageItem({
+        summary: {
+          skillDraft: {
+            name,
+            memoryId: unit.id,
+            version: 1,
+            sourceMemoryIds: [unit.id],
+            sourceTraceIds: unit.source_trace_ids ?? [],
+          },
+        },
+      });
       promoted++;
     } catch {
       // fail-open: skip this candidate

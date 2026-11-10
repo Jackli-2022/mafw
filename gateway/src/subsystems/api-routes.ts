@@ -52,6 +52,7 @@ import { attachProjectRoutes } from '../routes/projects';
 import { attachMafwCommandRoutes } from '../routes/mafw-commands';
 import { attachMergeMemoryRoutes } from '../routes/merge-memory';
 import { attachTriageRoutes } from '../routes/triage';
+import { attachSkillRoutes } from '../routes/skills';
 import { attachApprovalsRoutes } from '../routes/approvals';
 import { attachQuestionsPermissionsRoutes } from '../routes/questions-permissions';
 import { attachUsageRoutes } from '../routes/usage';
@@ -271,6 +272,7 @@ export interface ApiRouteDeps {
   handleRuntimeEvent: (evt: any) => void;
   listSessions: (projectID: string | null) => Promise<any[]>;
   skillInstallDeps: TriageDeps['skillInstallDeps'];
+  deoptSkill(name: string, reason: string): { deopted: boolean; archivedTo?: string; error?: string };
 
   // ── P2.4 event layer (live: constructed in initServices, inert when off) ──
   eventLayer?: EventLayerService;
@@ -624,6 +626,11 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     skillInstallDeps: () => deps.skillInstallDeps(),
     mafwDir: () => deps.mafwDir,
     ledger: () => deps.ledger,
+  });
+  // Skill v1: deopt is a human/internal action; directory move applies at the
+  // next discovery boundary.
+  attachSkillRoutes(deps.routeRegistry, {
+    deopt: (name, reason) => deps.deoptSkill(name, reason),
   });
   // Phase D1 Task A5：approvals 面迁 registry dispatch（4 分支；数据根扫描路径全保留）。
   attachApprovalsRoutes(deps.routeRegistry, {
