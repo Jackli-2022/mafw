@@ -7,7 +7,7 @@ import {
   type StandingTrigger,
 } from './standing-types';
 import { canStartRun, parseStandingTriggers, triggerKeyFor } from './standing-triggers';
-import { validateRunTriage, type RunTriage } from './standing-triage';
+import { validateRunTriage, type RunTriage, type StandingAction } from './standing-triage';
 import type { StandingGoalStore } from './standing-store';
 
 export interface StandingGoalServiceDeps {
@@ -37,7 +37,7 @@ export interface StandingGoalServiceDeps {
     mode: 'goal' | 'report';
     triage: RunTriage;
   }): Promise<{ goalId: string }>;
-  executeAction?(input: { standingGoal: StandingGoal; run: GoalRun; triage: RunTriage }): Promise<{ ok: boolean; result?: Record<string, unknown>; error?: string }>;
+  executeAction?(action: StandingAction): Promise<{ ok: boolean; result?: Record<string, unknown>; error?: string }>;
 }
 
 function clean(value: unknown): string {
@@ -144,6 +144,68 @@ export class StandingGoalService {
     if (!trigger) return null;
     const triggerKey = triggerKeyFor({ standingGoalId, trigger, scheduledAt });
     return this.startRun(goal, trigger, triggerKey, { scheduledAt });
+  }
+
+  async approveRun(runId: string): Promise<GoalRun> {
+    const run = this.deps.store.getRun(runId);
+    if (!run) throw new StandingGoalError(404, `goal run not found: ${runId}`);
+    if (run.status !== 'waiting_person') {
+      throw new StandingGoalError(409, `goal run is ${run.status}, not waiting_person`);
+    }
+    const goal = this.requireGoal(run.standingGoalId);
+    const pending = (run.result as any)?.pendingTriage;
+    const triage = validateRunTriage(pending);
+    const now = this.deps.now();
+    if (triage.mode === 'action') {
+      if (!this.deps.executeAction) throw new StandingGoalError(503, 'action executor unavailable');
+      const actionResult = await this.deps.executeAction(triage.action!);
+      const status = actionResult.ok ? 'done' : 'failed';
+      this.deps.store.updateRun(run.id, {
+        status,
+        result: actionResult.result ?? (actionResult.error ? { error: actionResult.error } : null),
+        endedAt: now,
+      });
+      this.deps.store.updateGoal(goal.id, { lastRunAt: now }, now);
+      this.deps.store.appendRunEvent(run.id, status === 'done' ? 'finished' : 'failed', { approved: true }, now);
+      this.deps.broadcast({
+        type: 'goal_run.finished',
+        properties: { standingGoalId: goal.id, runId: run.id, status },
+      });
+      if (status === 'failed') this.maybePauseAfterFailures(goal, now);
+      return this.deps.store.getRun(run.id)!;
+    }
+    if (triage.mode !== 'goal' && triage.mode !== 'report') {
+      throw new StandingGoalError(409, `run mode ${triage.mode} cannot be approved`);
+    }
+    if (!this.deps.createGoal) throw new StandingGoalError(503, 'goal executor unavailable');
+    const created = await this.deps.createGoal({ standingGoal: goal, run, mode: triage.mode, triage });
+    this.deps.store.updateRun(run.id, {
+      status: 'running',
+      mode: triage.mode,
+      rationale: triage.rationale,
+      goalId: created.goalId,
+      startedAt: now,
+    });
+    this.deps.store.updateGoal(goal.id, { lastRunAt: now }, now);
+    this.deps.store.appendRunEvent(run.id, 'started', { approved: true, goalId: created.goalId }, now);
+    this.deps.broadcast({
+      type: 'goal_run.started',
+      properties: { standingGoalId: goal.id, runId: run.id, goalId: created.goalId, mode: triage.mode },
+    });
+    return this.deps.store.getRun(run.id)!;
+  }
+
+  private maybePauseAfterFailures(goal: StandingGoal, now: string): void {
+    const dayStart = new Date(now);
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const failed = this.deps.store.listRunsForDay(goal.projectDir, dayStart.toISOString())
+      .filter((run) => run.standingGoalId === goal.id && run.status === 'failed');
+    if (failed.length < 3) return;
+    this.pause(goal.id);
+    this.deps.broadcast({
+      type: 'goal_run.needs_person',
+      properties: { standingGoalId: goal.id, reason: 'three consecutive failures' },
+    });
   }
 
   async onGoalFinished(
@@ -290,8 +352,24 @@ export class StandingGoalService {
       }
 
       if (triage.mode === 'action') {
+        const needsApproval = triage.requiresApproval === true || goal.approval === 'confirm';
+        if (needsApproval) {
+          this.deps.store.updateRun(run.id, {
+            status: 'waiting_person',
+            mode: 'action',
+            rationale: triage.rationale,
+            sessionId: triageResult.sessionId,
+            result: { pendingTriage: triage },
+          });
+          this.deps.store.appendRunEvent(run.id, 'needs_person', { mode: 'action' }, now);
+          this.deps.broadcast({
+            type: 'goal_run.needs_person',
+            properties: { standingGoalId: goal.id, runId: run.id, mode: 'action' },
+          });
+          return this.deps.store.getRun(run.id);
+        }
         if (!this.deps.executeAction) throw new Error('action executor unavailable');
-        const actionResult = await this.deps.executeAction({ standingGoal: goal, run, triage });
+        const actionResult = await this.deps.executeAction(triage.action!);
         const status = actionResult.ok ? 'done' : 'failed';
         this.deps.store.updateRun(run.id, {
           status,
