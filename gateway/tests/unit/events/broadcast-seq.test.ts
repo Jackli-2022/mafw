@@ -42,22 +42,30 @@ describe('enrichBroadcastFrame（spec §5.2 v2 Q2：双层放置）', () => {
   });
 });
 
-// wiring 断言（index.ts 实际调用——否则纯函数可能存在但未接线）：
+// wiring 断言（index.ts 实际调用——否则纯函数可能存在但未接线）。
+// D3 Task 7: broadcast()/setupEventBus() 本体在 src/server/event-hub.ts（D3-R4），
+// index.ts 只保留委派方法。
 const idxSrc = rf(pjoin(__dirname, '../../../src/index.ts'), 'utf8');
-describe('index.ts broadcast 接线（wiring）', () => {
+const hubSrc = rf(pjoin(__dirname, '../../../src/server/event-hub.ts'), 'utf8');
+describe('event hub broadcast 接线（wiring）', () => {
   it('broadcast 走 enrichBroadcastFrame + eventStore.append', () => {
-    expect(idxSrc).toContain('enrichBroadcastFrame(');
-    expect(idxSrc).toMatch(/eventStore\?\.append\(/);
-    expect(idxSrc).toMatch(/maybePrune\(/);
+    expect(hubSrc).toContain('enrichBroadcastFrame(');
+    expect(hubSrc).toMatch(/eventStore\?\.append\(/);
+    expect(hubSrc).toMatch(/maybePrune\(/);
   });
   it('EventStore 初始化受 config.events.persist 门控（fail-open）', () => {
+    // 惰性初始化仍留在 kernel.getGatewayDb（hub 不打开 DB），所以门控在 index.ts。
     expect(idxSrc).toMatch(/config\.events\.persist/);
   });
   it('append 先于 enrich：seq 来自单点 sink 的返回值（顺序反了就是 seq=null）', () => {
     // D2-R4：单一 sink 分配 seq → enrichBroadcastFrame 只读它。两行顺序是契约。
-    expect(idxSrc).toMatch(
+    expect(hubSrc).toMatch(
       /const seq = this\.eventStore\?\.append\(event\) \?\? null;\s*\n\s*const enriched = enrichBroadcastFrame\(event, seq,/,
     );
+  });
+  it('kernel 保留委派方法（70+ 调用点不变）', () => {
+    expect(idxSrc).toMatch(/this\.eventHub\.broadcast\(event\)/);
+    expect(idxSrc).toMatch(/this\.eventHub\.setupEventBus\(\)/);
   });
 });
 
@@ -124,8 +132,9 @@ describe('D2-R4：eventBus 扁平发射与 mafw_event 共用 EventStore seq 空�
 
   it('setupEventBus 的发射侧 = FLAT_EMITTERS → this.broadcast（注册表接线，无 if 链）', () => {
     // 源码钉子：注册表被循环消费且落到 broadcast；表本身覆盖已知扁平族。
-    expect(idxSrc).toMatch(/for \(const \[name, emit\] of FLAT_EMITTERS\)/);
-    expect(idxSrc).toMatch(/eventBus\.on\(name, \(data: any\) => this\.broadcast\(emit\(data\)\)\)/);
+    // D3 Task 7: 该接线随 setupEventBus() 一起搬到 src/server/event-hub.ts。
+    expect(hubSrc).toMatch(/for \(const \[name, emit\] of FLAT_EMITTERS\)/);
+    expect(hubSrc).toMatch(/eventBus\.on\(name, \(data: any\) => this\.broadcast\(emit\(data\)\)\)/);
     expect(FLAT_EMITTERS.size).toBeGreaterThan(0);
   });
 });

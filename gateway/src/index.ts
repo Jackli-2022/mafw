@@ -111,7 +111,6 @@ import {
   findGoalRequestPath,
   makePodGoalId,
   readGoalRequest,
-  shouldAutoStartGoalEvent,
 } from './core/goal/goal-intake';
 import { currentAssignmentSummary } from './core/goal/assignment';
 import { PodAccess } from './core/pod/pod-access';
@@ -202,7 +201,6 @@ import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast
 import { MAFW } from './runtime/mafw-vocabulary';
 import { activateRuntimeTools } from './runtime/mafw-tools';
 import { handleToolsList, handleToolsExecute } from './routes/tools';
-import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { BudgetGuard } from './core/budget-guard';
 import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
 import { SessionQueue } from './core/session-queue';
@@ -215,7 +213,7 @@ const BUSY_STALE_MS = 15 * 60_000;
 const QUEUE_ITEM_TTL_MS = 24 * 3600_000;
 import { EventStore } from './events/event-store';
 import { migrateEventLogInfoToMessage } from './events/event-log-migrate';
-import { enrichBroadcastFrame } from './events/broadcast-frame';
+import { EventHub } from './server/event-hub';
 import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
 import { PermissionRulesStore } from './core/approval/rules-store';
@@ -597,12 +595,23 @@ class MafwScheduler {
   /** Abort controller for the active event stream subscription. Cancelled
    *  before re-subscribing to prevent orphaned async iterator loops. */
   private eventStreamAbort: AbortController | null = null;
-  /** 持久事件日志（spec 2026-10-22；null = 纯直播 fail-open）。 */
+  /** 持久事件日志（spec 2026-10-22；null = 纯直播 fail-open）。惰性初始化见 getGatewayDb。 */
   private eventStore: EventStore | null = null;
-  /** Mode A SSE 连接：per-connection write 闭包（attachGlobalSse 返回——回放/直播统一入口）。 */
-  private sseClients = new Map<http.ServerResponse, (frame: string, seq: number | null) => void>();
-  /** WebSocket clients (mobile app): same events as SSE, JSON frames. */
-  private wsClients: Set<WebSocket> = new Set();
+  /**
+   * D3 Task 7：broadcast / SSE / WS fan-out + eventBus 接线整体在
+   * `server/event-hub.ts`。sseClients / wsClients 归 hub 所有（identity 承重：
+   * ws hub 与 plugin SSE writer 加入的是同一容器）；eventStore 仍由
+   * getGatewayDb 懒构造，经 live getter 交给 hub（G7 fail-open：永不阻塞启动）。
+   */
+  private readonly eventHub = new EventHub({
+    getEventStore: () => this.eventStore,
+    config: () => config,
+    log,
+    getPushGateway: () => this.pushGateway,
+    startGoal: (goalId, projectDir) => this.startGoal(goalId, projectDir),
+    getGoalDriver: () => this.goalDriver,
+    getMilestonePush: () => this.getMilestonePush(),
+  });
   private chatSessions: ChatSessionManager;
   private sdkSession!: SdkSessionResource;
   private instructionSync?: InstructionSyncService;
@@ -1991,8 +2000,8 @@ class MafwScheduler {
       // 复用 gateway 唯一的 broadcast 通道：把过滤 writer 注册成普通 SSE 客户端，
       // broadcast() 照常写帧，writer 只放行 plugin:<pkg>:* 并自行写响应。
       attachEventStream: (res, write) => {
-        this.sseClients.set(res, write);
-        return () => { this.sseClients.delete(res); };
+        this.eventHub.sseClients.set(res, write);
+        return () => { this.eventHub.sseClients.delete(res); };
       },
     };
   }
@@ -3010,29 +3019,9 @@ class MafwScheduler {
     }
   }
 
+  /** D3 Task 7: broadcast 本体在 server/event-hub.ts；保留方法名让 70+ 调用点不变。 */
   private broadcast(event: { type: string; [key: string]: any }): void {
-    log.info(`[SSE] broadcast ${event.type} clients=${this.sseClients.size}`);
-    // 持久事件日志（spec 2026-10-22）：同步分配单调 seq（part.delta 不入库不占 seq）。
-    // append 失败/缺席 → seq null → 无 id: 行（现状形状，fail-open）。
-    const seq = this.eventStore?.append(event) ?? null;
-    const enriched = enrichBroadcastFrame(event, seq, new Date().toISOString());
-    const data = (seq !== null ? `id: ${seq}\n` : '') + `data: ${JSON.stringify(enriched)}\n\n`;
-    for (const [client, write] of this.sseClients) {
-      try { write(data, seq); } catch { this.sseClients.delete(client); }
-    }
-    // WebSocket clients receive the same events as JSON frames (seq additive).
-    const frame = JSON.stringify(enriched);
-    for (const ws of this.wsClients) {
-      if (ws.readyState === WebSocket.OPEN) {
-        try { ws.send(frame); } catch { this.wsClients.delete(ws); }
-      }
-    }
-    // Push to registered mobile devices via PushGateway (online WS + offline fallback)
-    this.pushGateway?.onBroadcast(enriched).catch((err: any) => {
-      log.warn(`[PushGateway] broadcast failed: ${err.message}`);
-    });
-    // 摊销裁剪（每 pruneEveryN 次 append 检查一次；异常吞掉 fail-open）
-    this.eventStore?.maybePrune(config.events.logRetention, config.events.pruneEveryN);
+    return this.eventHub.broadcast(event);
   }
 
   /** Upstream WebSocket messages: { type: 'send', sessionID?, message, parts?, agent?, model? }. */
@@ -4320,22 +4309,9 @@ class MafwScheduler {
     }
   }
 
+  /** D3 Task 7: eventBus 订阅接线在 server/event-hub.ts；保留方法名给 boot.ts。 */
   private setupEventBus() {
-    // v2：eventBus → 扁平广播的翻译收敛为注册表（flat-emit-registry.ts，
-    // 发射侧不再硬编码 if 链）；特殊消费者保持独立订阅，与广播翻译正交。
-    for (const [name, emit] of FLAT_EMITTERS) {
-      eventBus.on(name, (data: any) => this.broadcast(emit(data)));
-    }
-    eventBus.on("goal_created", (data: any) => {
-      if (shouldAutoStartGoalEvent(data)) setImmediate(() => void this.startGoal(data.goalId, data.projectDir));
-    });
-    eventBus.on("state_change", (data: any) => {
-      // legacy /goal skill 链唤醒——driver.advance 幂等（在飞即短路）
-      if (data?.goalId) setImmediate(() => void this.goalDriver?.advance(data.goalId));
-    });
-    eventBus.on("phase_transition", (data: any) => {
-      this.getMilestonePush()?.onPhaseTransition(data);
-    });
+    return this.eventHub.setupEventBus();
   }
 
   private async startServe() {
@@ -4660,7 +4636,7 @@ class MafwScheduler {
       get mafwDir() { return self.mafwDir; },
       get recallCalledBySession() { return self.recallCalledBySession; },
       get goalDriverMafwDirCache() { return self.goalDriverMafwDirCache; },
-      get sseClients() { return self.sseClients; },
+      get sseClients() { return self.eventHub.sseClients; },
       get allowlistStore() { return self.allowlistStore; },
       get permissionRules() { return self.permissionRules; },
       get approvalPolicy() { return self.approvalPolicy; },
@@ -4853,7 +4829,7 @@ class MafwScheduler {
         // 心跳 + 60s PushGateway 维护整体搬入 http/ws-upgrade.ts；interval 归属 hub，
         // 由 shutdown() 的 dispose() 收口（此前的实现从不清理，随进程退出）。
         const hub = createWsHub(server, {
-          wsClients: this.wsClients,
+          wsClients: this.eventHub.wsClients,
           apiToken: () => (config.raw as any)?.server?.apiToken || '',
           pushGateway: () => this.pushGateway,
           handleWsMessage: (ws, raw) => this.handleWsMessage(ws, raw),
@@ -5941,7 +5917,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     return {
       activeGoals: () => this.activeGoals,
       registeredProjectsSize: () => this.registeredProjects.size,
-      sseClientsSize: () => this.sseClients.size,
+      sseClientsSize: () => this.eventHub.sseClients.size,
       serveRunning: () => this.serveRunning,
       trajectoryStore: () => this.trajectoryStore,
       memoryService: () => this.memoryService,

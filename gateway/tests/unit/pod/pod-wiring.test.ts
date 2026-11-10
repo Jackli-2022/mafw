@@ -4,6 +4,8 @@ import * as path from 'path';
 const source = [
   fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf-8'),
   fs.readFileSync(path.join(__dirname, '../../../src/boot.ts'), 'utf-8'),
+  // D3 Task 7: eventBus 订阅（goal_created → startGoal）随 setupEventBus 搬到 event-hub.ts。
+  fs.readFileSync(path.join(__dirname, '../../../src/server/event-hub.ts'), 'utf-8'),
 ].join('\n');
 
 describe('Pod gateway wiring', () => {
