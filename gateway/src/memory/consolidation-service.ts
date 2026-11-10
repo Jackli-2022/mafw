@@ -17,6 +17,7 @@
 
 import { log } from '../core/utils/logger';
 import { HarmonicUnit, higherAuthority } from '../core/memory/harmonic-types';
+import { unionSourceTraceIds } from '../core/memory/provenance';
 import { JUDGE_MAX_TOKENS, JUDGE_SYSTEM } from './judge-prompt';
 import { MemoryVectorStore, EmbeddingIndexer } from './vector-store';
 import { EmbeddingProvider } from './embedding-provider';
@@ -363,6 +364,7 @@ export class ConsolidationService {
       memory_value: `${incoming.memory_value}\n---\n[Updated ${new Date().toISOString()}] ${target.memory_value}`,
       cue_anchors: dedupeCap([...(incoming.cue_anchors || []), ...(target.cue_anchors || [])], 8),
       merged_from: [...(incoming.merged_from || []), target.id],
+      source_trace_ids: unionSourceTraceIds(incoming.source_trace_ids, target.source_trace_ids),
       // G1: authority only rises across a merge — user is never demoted and
       // pipeline inference never elevates the result.
       authority: higherAuthority(incoming.authority, target.authority),

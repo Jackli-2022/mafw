@@ -49,6 +49,8 @@ export interface MemoryRouteDeps {
   getGatewayDb: () => GatewayDatabase;
   /** Shared core of POST /api/memory/embeddings/backfill（GatewayServer 上保留）。 */
   backfillEmbeddings: (limit?: number) => Promise<any>;
+  /** T1 dense search over active/archive verbatim rows. */
+  searchT1?: (query: string, k: number) => Promise<import('../recall/verbatim-recall').T1Hit[]>;
 }
 
 export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDeps): void {
@@ -95,6 +97,60 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
       const consolidation = deps.consolidationService()?.getStats() ?? null;
       const indexEntries = deps.memoryService()?.harmonicIndex.getIndex().entries ?? [];
       const indexed = embeddingRuntime ? embeddingRuntime.vectors.size() : 0;
+      const t1 = (() => {
+        const emptyStats = {
+          total: 0,
+          byKind: { search: 0, recall: 0, redeem: 0 },
+          uniqueTraces: 0,
+          lastAt: null,
+        };
+        let vectors = 0;
+        let activeRows = 0;
+        let archiveRows = 0;
+        let retrieval: any = emptyStats;
+        let activation = { traces: 0, mean: 0, max: 0 };
+        try {
+          vectors = (embeddingRuntime as any)?.t1Vectors?.size?.() ?? 0;
+        } catch { /* fail-open */ }
+        try {
+          const db: any = deps.getGatewayDb();
+          activeRows = typeof db?.count === 'function' ? db.count() : 0;
+          archiveRows = typeof db?.archiveCount === 'function' ? db.archiveCount() : 0;
+          const since = Math.floor(Date.now() / 1000) - 7 * 86400;
+          retrieval = typeof db?.t1RetrievalStats === 'function' ? db.t1RetrievalStats({ since }) : emptyStats;
+          activation = typeof db?.t1ActivationStats === 'function'
+            ? db.t1ActivationStats()
+            : activation;
+        } catch { /* fail-open */ }
+        const totalRows = activeRows + archiveRows;
+        const withExact = indexEntries.filter(
+          (e: any) => Array.isArray(e.source_trace_ids) && e.source_trace_ids.length > 0,
+        ).length;
+        let activationRanking = {
+          mode: config.recall.t1Recall?.activationRanking ?? 'shadow',
+          evaluations: 0,
+          wouldReorder: 0,
+          applied: 0,
+        };
+        try {
+          const { getT1RankingStats } = require('../recall/t1-search');
+          activationRanking = { mode: config.recall.t1Recall?.activationRanking ?? 'shadow', ...getT1RankingStats() };
+        } catch { /* fail-open: zero counters */ }
+        return {
+          vectors,
+          activeRows,
+          archiveRows,
+          coverage: totalRows > 0 ? Math.min(1, vectors / totalRows) : 0,
+          retrieval,
+          provenance: {
+            memories: indexEntries.length,
+            withExact,
+            coverage: indexEntries.length > 0 ? withExact / indexEntries.length : 0,
+          },
+          activation,
+          activationRanking,
+        };
+      })();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         embedding: {
@@ -104,6 +160,7 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           indexEntries: indexEntries.length,
           coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,
         },
+        t1,
         consolidation,
         routing: (() => { try { return getRouteStats(); } catch { return null; } })(),
         dedup: (() => { try { const { getDedupStats } = require('../memory/dedup-guard'); return getDedupStats(); } catch { return null; } })(),
@@ -197,7 +254,11 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         memory: deps.memoryService(),
         mafwDir: deps.mafwDir(),
         searchArchive: (sid: string, anchors: string[], k: number) => deps.getGatewayDb().searchArchive(sid, anchors, k),
-        resolveT1: (tail: string, turnId: number) => deps.getGatewayDb().findArchiveBySessionTail(tail, turnId),
+        resolveT1: (tail: string, turnId: number) => deps.getGatewayDb().findT1BySessionTail(tail, turnId),
+        readTrace: (traceId: string) => deps.getGatewayDb().readTrace(traceId),
+        recordT1Retrieval: (traceId: string, kind: any, score?: number) =>
+          deps.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
+        propagateT1Activation: (traceIds: string[]) => deps.getGatewayDb().propagateT1Activation(traceIds),
       } as any);
       const body = JSON.parse(result.content[0].text);
       res.writeHead(result.isError ? 404 : 200, { 'Content-Type': 'application/json' });
@@ -211,12 +272,37 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
   // GET /api/memory/search — harmonic index search; empty query lists all entries
   registry.attachHandler('memory.search', async (req: IncomingMessage, res: ServerResponse) => {
     try {
-      if (!deps.memoryService()) {
-        res.writeHead(503); res.end(JSON.stringify({ error: 'Memory service not available' })); return;
-      }
       const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
       const query = parsedUrl.searchParams.get('query') || '';
       const topK = parseInt(parsedUrl.searchParams.get('topK') || '50', 10);
+      const layer = parsedUrl.searchParams.get('layer') || 'gist';
+      if (!['gist', 't1', 'both'].includes(layer)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'invalid layer: use gist|t1|both' }));
+        return;
+      }
+      let t1Results: any[] | undefined;
+      if (layer !== 'gist') {
+        t1Results = [];
+        try {
+          const hits = deps.searchT1 ? await deps.searchT1(query, topK) : [];
+          t1Results = hits;
+          const db: any = deps.getGatewayDb();
+          if (typeof db?.recordT1RetrievalEvent === 'function') {
+            for (const hit of hits) {
+              if (hit.traceId) db.recordT1RetrievalEvent({ traceId: hit.traceId, kind: 'search', score: hit.score ?? hit.cosine });
+            }
+          }
+        } catch { /* fail-open: T1 channel empty */ }
+      }
+      if (layer === 't1') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ results: [], t1Results }));
+        return;
+      }
+      if (!deps.memoryService()) {
+        res.writeHead(503); res.end(JSON.stringify({ error: 'Memory service not available' })); return;
+      }
       const retrieverParam = parsedUrl.searchParams.get('retriever');
       const store = new HarmonicUnitFileStore(deps.mafwDir());
       const index = store.indexManager_();
@@ -250,7 +336,7 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
         }
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ results }));
+      res.end(JSON.stringify(layer === 'both' ? { results, t1Results } : { results }));
     } catch (err: any) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: err.message }));

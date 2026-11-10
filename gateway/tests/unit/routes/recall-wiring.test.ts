@@ -34,7 +34,7 @@ function fakeRes(): { res: ServerResponse; status: number; body: string } {
   return out;
 }
 
-function setup(opts: { memoryService?: any; blocks?: any; sync?: any } = {}) {
+function setup(opts: { memoryService?: any; blocks?: any; sync?: any; db?: any } = {}) {
   const registry = new RouteRegistry().register(...buildRouteCatalog());
   attachRecallRoutes(registry, {
     buildInstructionBlocks: async () => opts.blocks ?? {
@@ -49,7 +49,7 @@ function setup(opts: { memoryService?: any; blocks?: any; sync?: any } = {}) {
     leadSessionRegistry: () => ({ findBySessionId: () => null }) as any,
     registeredProjects: () => new Map(),
     mafwDir: () => '/tmp/mafw-test',
-    getGatewayDb: () => ({ kvGet: () => null }) as any,
+    getGatewayDb: () => (opts.db ?? { kvGet: () => null }) as any,
     getScanService: () => null,
   });
   const handlerFor = (method: string, url: string) => {
@@ -64,6 +64,30 @@ function setup(opts: { memoryService?: any; blocks?: any; sync?: any } = {}) {
 const EMPTY_PINNED = { profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } };
 
 describe('recall thin three registry wiring (D1 Task B3)', () => {
+  it('serving a T1-only snapshot records recall observations', async () => {
+    const recorded: any[] = [];
+    const now = new Date().toISOString();
+    const { handlerFor } = setup({
+      db: {
+        kvGet: () => ({
+          query: 'hello',
+          block: 'T1-only block',
+          ids: [],
+          builtAt: now,
+          t1Hits: [{ sessionId: 's1', turnId: 1, traceId: 't1t_a', cosine: 0.81, excerpt: 'raw' }],
+        }),
+        recordT1RetrievalEvent: (e: any) => recorded.push(e),
+      },
+    });
+    const r = fakeRes();
+    await handlerFor('GET', '/api/recall/context?sessionID=s1&query=hello')!(
+      fakeReq({ url: '/api/recall/context?sessionID=s1&query=hello', method: 'GET' }), r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body).pointers).toContain('T1-only block');
+    expect(recorded).toEqual([{ traceId: 't1t_a', kind: 'recall', score: 0.81 }]);
+  });
+
   it('thin three + context catalog routes have handlers attached', () => {
     const { handlerFor } = setup();
     expect(handlerFor('GET', '/api/recall/instructions')).toBeDefined();

@@ -236,6 +236,10 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 **统一数据库 `~/.mafw/memory/gateway.db`**（`GatewayDatabase`，`gateway/src/memory/gateway-db.ts`）：
 - `t1_observations`：回合观察（插件经 `/api/obs/capture` 写入，turnID 网关分配，UNIQUE 去重；**入库前经 `redactSecrets()` 脱敏**（`gateway/src/recall/redact.ts`，sk-/ghp_/Bearer/JWT/key=value 等格式 → `[REDACTED]`），下游 turnCompress/worker prompt/archive 只读脱敏内容——存量历史行不回溯）
 - `t1_turns`：持久化逻辑回合身份（T1 identity，2026-11-10）——`trace_id` PK、`session_id`+`turn_seq` UNIQUE；`turn_seq` 单调且**不重用**（跨 `t1_turns`/active/archive 取 max）；`encoding_salience` 记录编码期 salience 抬升；`archived_at` 记录归档时间；`legacy_ambiguous` 标记重复 legacy 复合键（>1 个 `user_input` 或横跨 active+archive）。`t1_observations` 与 `t1_archive` 各带永久 `trace_id`/`observation_key`——归档不改变身份，legacy 行回读 NULL 直到构造期幂等 `migrateT1Identity()` backfill
+- `t1_retrieval_events`：T1 verbatim 观察向的检索事件（2026-11-10，Phase 2A）——`trace_id`/`kind=search|recall|redeem`/`score`/`created_at`；**只观测，不参与 energy 或排序**。`GatewayDatabase.t1RetrievalStats({since})` 按 Unix 秒聚合；`pruneT1RetrievalEvents({before})` 按保留期删除，由每日 `memory:decay` 以 `config.recall.t1Recall.retentionDays`（默认 90 天，0/负数关闭）触发，删除量进 heartbeat `prunedT1`
+- `t1_fts`：T1 词面索引（2026-11-10，Phase 2B）——FTS5 `trigram` tokenizer + `content/trace_id/observation_key/session_id/turn_id/source`；**可重建派生数据**，写入 `append()` 同步、`archiveTurn()` 不动（内容不变）、`deleteTurn()`/`deleteSession()` 按 `observation_key` 删除；表空且源表有行时构造期 `rebuildT1Fts()` 一次重建，也可手动重建（先清空，幂等）。trigram 要求查询 token ≥3 字符
+- `t1_vectors`：T1 二进制向量（2026-11-10，Phase 2B）——`key` PK / `dims` / `model` / `vector`（little-endian `Float32` BLOB）/ `updated_at`；`SqliteT1VectorStore` 按行更新，避免 JSON 全量重写。首次构造且当前 model 无行时从 `memory/vectors-t1-<tag>.json` 导入并把 JSON 改名为 `.migrated-<ISO>`（不删除）；`config.memory.embedding.t1VectorStore='json'` 可回滚到旧 JSON 后端
+- `t1_trace_state`：T1 trace 的有界激活状态（2026-11-10，Phase 3B）——`trace_id` PK / `activation`（0–1）/ `retrieval_count` / `last_retrieved_at` / `last_replayed_at` / `activation_updated_at`。检索事件每命中一次 `+0.1`（封顶 1），记忆兑换按 `source_trace_ids` 传播 `+0.05`（单次权重上限 0.2），每日 `memory:decay` 按半衰期（默认 14 天，`config.recall.t1Recall.activationHalfLifeDays`）指数衰减，heartbeat 记录 `t1ActivationDecayed`。**本阶段只写状态，不参与排序/energy/snapshot**
 - `kv_store`：易失关键小状态——
   - `manager-session`（key=projectDir，**per-project manager session**，替代旧 manager-session.json）
   - `reflect-cursor`（key=sessionID，反思增量游标）
@@ -243,6 +247,23 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - 旧 t1.db / manager-session.json / recall-reflect-cursor.json 启动时自动回填并入库后删除（`gateway/src/recall/gateway-db-migrate.ts`，幂等）
 - `GET /api/manager/session` 返回全部项目的 manager session 列表（`?projectDir=` 过滤单条）
 - `POST /api/manager/session/rotate`（`{projectDir, reason?}`，`routes/manager-rotate.ts`）：**开新话题**——旧 session metadata 降级 `role: 'manager-archived'`（去 pinned/exempt，回归普通生命周期，自动出现在桌面历史列表），强创建新 session 替换 kv 并重跑身份注入；与 `ensureManagerSession` 经 `managerSessionInflight` 互斥。MCP `mafw_new_topic` 已退役；HTTP/SDK rotate 仅内部兼容
+
+**T1 verbatim 检索（2026-11-10，Phase 2A）**：
+
+- `mafw_search_hybrid` / `GET /api/memory/search` 支持 `layer=gist|t1|both`；**省略 layer 时仍只搜 Harmonic**，旧结果形状不变。T1 结果带 `traceId`/`sessionId`/`turnId`/`cosine`/`excerpt`/`sources`/`score`，默认 gist 不产生 `t1Results`。
+- `createGatewayT1Search`（`recall/t1-search.ts`）是 gateway 共享入口：dense 通道惰性读取 embedding runtime（热切换不残留旧 provider），archive 优先、active 回退；词面通道查 `t1_fts`。两路用 RRF 融合（`1/(60+rank)`，`fuseT1Hits`），同 trace 去重并优先保留词面 excerpt；单路失败/关闭时另一路照常返回，dense provider off 时仍有词面结果。`config.recall.t1Recall.lexical=false` 可关闭词面通道。
+- T1 自动回填：每日 `memory:decay` 在 Harmonic 回填后调用 `backfillT1Vectors`，archive 优先分页扫描，跳过已有 key，单次默认最多 200 条（`config.recall.t1Recall.t1BackfillLimit`，0/负数关闭）；heartbeat 记录 `t1BackfillIndexed`/`t1BackfillMissing`/`t1BackfillFailed`，`/api/memory/stats` 的 `t1.coverage` 暴露覆盖率。
+- T1 二进制向量：`SqliteT1VectorStore` 把向量存为 `gateway.db` 的 `t1_vectors` Float32 BLOB（按行 flush，无全量 JSON 重写）；无 DB 句柄的测试/评测环境自动回退 JSON store。首次迁移导入 `vectors-t1-<tag>.json` 后改名保留备份。
+- 精确 provenance（2026-11-10，Phase 3A）：Harmonic 单元新增可选 `source_trace_ids`（OKF frontmatter + index entry）。抽取 transcript 每行前缀 `[trace:<traceId>]`，curator 通过 `mafw_add_memory.sourceTraceIds` 回传支持该记忆的精确 trace；处理器用 `t1_turns` 校验（存在、去重、`t1:` 前缀兼容、最多 20 个），未知 id 直接丢弃且不影响写入。MCP 与 HTTP `/api/memory/add` 行为一致；merge/update 时 incoming 与 target 的 trace 取并集（上限 20）。
+- 精确 provenance 读取：`mafw_get_memory` 优先解析 `source_trace_ids`（最多 5 条）返回 `source.traces[{traceId,sessionId,turnId,archived,excerpt}]`；解析不到时回退旧 C0 `source.evidence`。`/api/memory/stats` 的 `t1.provenance` 暴露 `{memories,withExact,coverage}`。
+- 3A **不改变** energy、排序、activation 或 recall 注入；`source_trace_ids` 仅作为可审计来源与后续 activation 的精确边。
+- T1 activation 状态（3B）：`t1_retrieval_events` 的 `search/recall/redeem` 同时更新 `t1_trace_state`（每次 +0.1，封顶 1）；`mafw_get_memory` 成功解析精确来源时向源 trace 传播 +0.05（单次上限 0.2）；每日 `memory:decay` 指数衰减（默认半衰期 14 天）。`/api/memory/stats` 的 `t1.activation` 暴露 `{traces,mean,max}`。**3B 仍不读取 activation 排序**——排序消费留到有 A/B 数据的下一阶段。
+- 有界 activation 排序（3C）：`config.recall.t1Recall.activationRanking='off'|'shadow'|'on'`（默认 `shadow`）。只有 RRF 分数 ≥ `activationRankBand`（默认 0.6）× 最高分的命中才可被激活提升，提升幅度 ≤ `activationRankWeight`（默认 0.1，硬上限 0.2）；activation 不能新增命中或救回带外结果。`shadow` 只计算并计数、不改顺序；`on` 才生效。`/api/memory/stats` 的 `t1.activationRanking` 暴露 `{mode,evaluations,wouldReorder,applied}` 供 A/B 决策。
+- T1 只读指针：`mafw_get_memory("t1:<traceId>")` 走 `readTrace()` 返回 active+archive 完整回合与 `archived`/`legacyAmbiguous`；旧 `t1:<sessionTail>:<turnId>` 继续兼容，并回退查 active 行。
+- R8 快照把 T1 当独立通道：Harmonic 零命中但 T1 命中时可生成 T1-only 快照（`T1_POINTER_HEADER` + `[t1|<traceId>]` 行）；`decideSnapshotUse` 接受 `ids=[]` 但 `t1Hits` 非空。快照 serve 记录 `recall` 事件；直接搜索记录 `search`；指针兑换记录 `redeem`。
+- `/api/memory/stats` 的 `t1` 字段暴露向量数、active/archive 行数、覆盖率与 7 天检索事件统计。
+- SDK `MafwClient.memory.searchLayered({ query, layer? })` 返回 `{ layer, results, t1Results }`；`memory.search()` 保持旧签名且不发送 `layer`。
+- 本阶段**不做** T1 activation/energy、provenance 传播、原文重放或 skill 行为变更。
 
 **Manager 常驻目标感知（2026-09-03）**：
 - **每轮 goal 快照**：`GET /api/recall/context` 识别活跃 manager session（kv sessionId 比对）后在 recall 块尾部追加 `<goal-snapshot>`（`core/manager/goal-snapshot.ts` 确定性聚合，≤10 条/500 字符，compaction 免疫）；非 manager session 不受影响。**按名引用渲染**（2026-09-15，wayfinder 约定）：`标题 (goalId) [phase=…]`——标题在前、id 在括号里，不用裸 id 刷屏

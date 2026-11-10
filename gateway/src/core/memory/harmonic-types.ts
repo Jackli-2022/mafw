@@ -50,6 +50,8 @@ export interface HarmonicUnit {
   sticky_until?: string;
   /** Origin session for pipeline-written memories (per-session worker bookkeeping). */
   source_session_id?: string;
+  /** Exact T1 provenance: permanent trace ids the memory was extracted from. */
+  source_trace_ids?: string[];
   /** G1: provenance authority. Absent = legacy → treated as 'pipeline' (lowest). */
   authority?: Authority;
   /** A5: ids of gist units distilled FROM this entry. NOT a supersede chain —
@@ -83,6 +85,8 @@ export interface HarmonicIndexEntry {
   filePath?: string;
   created_at?: string;
   source_session_id?: string;
+  /** Exact T1 provenance (see HarmonicUnit.source_trace_ids). */
+  source_trace_ids?: string[];
   /** Abstraction degree (orthogonal to type): 1=episodic, 2=semantic/procedural, 3=global. */
   abstraction_level?: number;
   superseded_by?: string;

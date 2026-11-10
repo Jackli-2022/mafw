@@ -47,6 +47,18 @@ describe('T1 archive identity fidelity', () => {
     expect(db.readTrace('t1t_missing')).toBeNull();
   });
 
+  test('findT1BySessionTail falls back to active rows when archive is empty', () => {
+    const t = db.beginTurn('s1');
+    db.append({
+      session_id: 's1', turn_id: t.turn_seq, trace_id: t.trace_id,
+      source: 'user_input', content: 'live only', failure: 0,
+    });
+    const rows = db.findT1BySessionTail('s1', t.turn_seq);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].content).toBe('live only');
+    expect(rows[0].trace_id).toBe(t.trace_id);
+  });
+
   test('late append reopens the archived turn and keeps the same trace', () => {
     const t = db.beginTurn('s1');
     db.append({

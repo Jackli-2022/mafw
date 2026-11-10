@@ -32,10 +32,23 @@ export function describeEmbedError(err: unknown): string {
   return message;
 }
 
-export class MemoryVectorStore {
+/**
+ * Minimal vector-store contract shared by the JSON and SQLite backends.
+ * Vectors may be number[] (JSON) or Float32Array (binary SQLite).
+ */
+export interface VectorStoreLike {
+  upsert(id: string, vector: number[]): void;
+  get(id: string): number[] | Float32Array | undefined;
+  remove(id: string): void;
+  flush(): void;
+  size(): number;
+  ids(): string[];
+  searchByCosine(query: number[], topK: number): Array<{ id: string; cosine: number }>;
+}
+
+export class MemoryVectorStore implements VectorStoreLike {
   private vectors = new Map<string, number[]>();
   private dirty = false;
-
   constructor(private filePath: string, public dims: number, private model = '') {
     this.load();
   }
@@ -122,7 +135,7 @@ function norm(vec: number[]): number {
 // ── EmbeddingIndexer ─────────────────────────────────────────────────────────
 
 export interface EmbeddingIndexerDeps {
-  vectors: MemoryVectorStore;
+  vectors: VectorStoreLike;
   provider: EmbeddingProvider;
   /** Optional resolver for backfill (defaults to unit text passed to onUnitWritten). */
   getTextForId?: (id: string) => Promise<string | null>;
@@ -141,7 +154,7 @@ interface QueueItem {
 
 export class EmbeddingIndexer {
   private queue = new Map<string, QueueItem>();
-  private vectors: MemoryVectorStore;
+  private vectors: VectorStoreLike;
   private provider: EmbeddingProvider;
   private getTextForId?: (id: string) => Promise<string | null>;
   private batchSize: number;

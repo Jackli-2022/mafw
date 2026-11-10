@@ -9,6 +9,7 @@ import { schemaFastPath } from "../../judge/schema";
 import { getEmbeddingRuntime } from "../../memory/embedding-runtime";
 import { getRouteWriteDeps, routeAndWrite } from "../../memory/route-write";
 import { importanceToSalience } from "../../core/memory/salience-perceptor";
+import { normalizeSourceTraceIds } from "../../core/memory/provenance";
 
 /** Mark each old id as superseded by `byId`; return only the ids actually marked. */
 function markSupersedes(
@@ -23,7 +24,7 @@ function markSupersedes(
   return marked;
 }
 
-export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) => {
+export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir, hasTrace }) => {
   try {
     const content = args.content as string;
     const memoryType = (args.memoryType as string) || config.memory.defaultMemoryType;
@@ -32,6 +33,9 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
     const supersedes = (args.supersedes as string[]) || [];
     const sticky = args.sticky === true;
     const stickyDays = typeof args.stickyDays === 'number' && args.stickyDays > 0 ? args.stickyDays : 7;
+    // Exact T1 provenance: validate against the live identity table; unknown
+    // ids are dropped (worker non-compliance must never fail the write).
+    const sourceTraceIds = normalizeSourceTraceIds(args.sourceTraceIds, (id) => (hasTrace ? hasTrace(id) : false));
 
     if (!["episodic", "semantic", "procedural", "global"].includes(memoryType)) {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Invalid memoryType: ${memoryType}` }) }], isError: true };
@@ -96,6 +100,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       // Sticky note board: guaranteed per-turn visibility until the date
       // passes; expiry only removes it from the board, never deletes the memory.
       ...(sticky ? { sticky_until: new Date(Date.now() + stickyDays * 86400e3).toISOString() } : {}),
+      ...(sourceTraceIds.length > 0 ? { source_trace_ids: sourceTraceIds } : {}),
     };
 
     const { HarmonicUnitFileStore } = await import("../../memory/harmonic-file-store.js");
@@ -126,6 +131,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
         updated: routed.action === 'update' ? routed.targetId : undefined,
         sticky_until: routed.action === 'create' ? (unit as any).sticky_until : undefined,
         superseded: supersededIds.length > 0 ? supersededIds : undefined,
+        sourceTraceIds: sourceTraceIds.length > 0 ? sourceTraceIds : undefined,
       }) }] };
     }
 
@@ -141,6 +147,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       tier: 'memories',
       sticky_until: (unit as any).sticky_until,
       superseded: supersededIds.length > 0 ? supersededIds : undefined,
+      sourceTraceIds: sourceTraceIds.length > 0 ? sourceTraceIds : undefined,
     }) }] };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ success: false, error: err.message }) }], isError: true };

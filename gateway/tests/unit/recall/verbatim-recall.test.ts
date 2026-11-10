@@ -73,6 +73,14 @@ describe('renderT1Lines', () => {
   test('empty hits → empty string', () => {
     expect(renderT1Lines([], { k: 3, maxChars: 600 })).toBe('');
   });
+  test('prefers the permanent trace id in pointer lines', () => {
+    const lines = renderT1Lines(
+      [{ sessionId: 'ses_PROVIDER123456', turnId: 7, traceId: 't1t_abc', cosine: 0.8, excerpt: 'hello' }],
+      { k: 3, maxChars: 600 },
+    );
+    expect(lines).toContain('[t1|t1t_abc]');
+    expect(lines).not.toContain('[t1|123456:7]');
+  });
 });
 
 describe('makeT1Search', () => {
@@ -98,6 +106,20 @@ describe('makeT1Search', () => {
     expect(hits[0].cosine).toBe(0.9);
     expect(hits[0].excerpt).toBe('row a');
     expect(hits[1].excerpt).toBe('row c');
+  });
+  test('returns the matched row trace id', async () => {
+    const key = t1VectorKey('s1', 1, 'row a');
+    const search = makeT1Search({
+      runtime: {
+        provider: { embed: async () => [[1, 0]] },
+        t1Vectors: { searchByCosine: () => [{ id: key, cosine: 0.9 }] } as any,
+      },
+      fetchRows: () => [
+        { session_id: 's1', turn_id: 1, trace_id: 't1t_source', source: 'user_input', content: 'row a' },
+      ],
+    });
+    const hits = await search('query', 1);
+    expect(hits[0].traceId).toBe('t1t_source');
   });
   test('missing rows → hit dropped (no empty excerpts)', async () => {
     const store = { searchByCosine: () => [{ id: key('sX', 9, 'gone'), cosine: 0.95 }] };

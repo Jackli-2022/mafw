@@ -24,6 +24,46 @@ describe('handleGetMemory t1 pointer redemption', () => {
     expect(body.success).toBe(false);
     expect(String(body.error)).toContain('t1');
   });
+  test('t1:<traceId> resolves through readTrace with archive metadata', async () => {
+    const recorded: any[] = [];
+    const res = await handleGetMemory({ id: 't1:t1t_abc' }, {
+      readTrace: (traceId: string) => traceId === 't1t_abc' ? {
+        turn: { trace_id: 't1t_abc', session_id: 'ses_FULL', turn_seq: 4, created_at: 1, archived_at: 2, encoding_salience: 0.5, legacy_ambiguous: 1 },
+        rows: [{ session_id: 'ses_FULL', turn_id: 4, trace_id: 't1t_abc', observation_key: 'obs_1', source: 'user_input', content: 'raw q', failure: 0, created_at: 1 }],
+        archived: true,
+      } : null,
+      recordT1Retrieval: (traceId: string, kind: string) => recorded.push({ traceId, kind }),
+    } as any);
+    const body = parse(res);
+    expect(body.success).toBe(true);
+    expect(body.t1).toMatchObject({
+      traceId: 't1t_abc',
+      sessionId: 'ses_FULL',
+      turnId: 4,
+      archived: true,
+      legacyAmbiguous: true,
+    });
+    expect(body.t1.rows[0]).toMatchObject({ source: 'user_input', content: 'raw q', observationKey: 'obs_1' });
+    expect(recorded).toEqual([{ traceId: 't1t_abc', kind: 'redeem' }]);
+  });
+  test('unknown trace id → helpful t1 error', async () => {
+    const res = await handleGetMemory({ id: 't1:t1t_missing' }, { readTrace: () => null } as any);
+    const body = parse(res);
+    expect(body.success).toBe(false);
+    expect(String(body.error)).toContain('t1');
+  });
+  test('legacy t1 pointer records a redeem event when the row has a trace id', async () => {
+    const recorded: any[] = [];
+    const rowsWithTrace = [
+      { session_id: 'ses_FULL123456', turn_id: 5, trace_id: 't1t_old', source: 'user_input', content: 'q' },
+    ];
+    const res = await handleGetMemory({ id: 't1:123456:5' }, {
+      resolveT1: () => rowsWithTrace as any,
+      recordT1Retrieval: (traceId: string, kind: string) => recorded.push({ traceId, kind }),
+    } as any);
+    expect(parse(res).success).toBe(true);
+    expect(recorded).toEqual([{ traceId: 't1t_old', kind: 'redeem' }]);
+  });
   test('non-t1 id → t1 branch not triggered', async () => {
     let called = false;
     const memory = { harmonicIndex: { getIndex: () => ({ entries: [] }) } };

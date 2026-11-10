@@ -13,6 +13,7 @@ import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachMemoryRoutes, type MemoryRouteDeps } from '../../../src/routes/memory';
 import { emptyNoteBoardBudget } from '../../../src/routes/note-board';
+import { setEmbeddingRuntime } from '../../../src/memory/embedding-runtime';
 
 function fakeReq(opts: { method: string; url: string; body?: string }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
@@ -177,6 +178,123 @@ describe('memory registry wiring (D1 Task F1)', () => {
     expect(body.abstractionLevels).toEqual({ '1': 1, '2': 0, '3': 0, unknown: 1 });
     expect(cache).not.toBeNull();
     expect(body.fok).toEqual(cache.stats);
+  });
+
+  it('search layer=t1 works without a Harmonic service and records search events', async () => {
+    const recorded: any[] = [];
+    const hits = [{ sessionId: 's1', turnId: 1, traceId: 't1t_a', cosine: 0.8, excerpt: 'raw' }];
+    const { registry } = setup({
+      searchT1: async () => hits,
+      getGatewayDb: () => ({ recordT1RetrievalEvent: (e: any) => recorded.push(e) }) as any,
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'GET', '/api/memory/search?query=raw&layer=t1')!(
+      fakeReq({ method: 'GET', url: '/api/memory/search?query=raw&layer=t1' }), r.res,
+    );
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toEqual({ results: [], t1Results: hits });
+    expect(recorded).toEqual([{ traceId: 't1t_a', kind: 'search', score: 0.8 }]);
+  });
+
+  it('search layer=both keeps Harmonic results and appends T1', async () => {
+    const { registry } = setup({
+      memoryService: () => ({
+        harmonicIndex: { getIndex: () => ({ entries: [] }) },
+      }) as any,
+      searchT1: async () => [{ sessionId: 's1', turnId: 1, traceId: 't1t_a', cosine: 0.8, excerpt: 'raw' }],
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'GET', '/api/memory/search?query=x&layer=both')!(
+      fakeReq({ method: 'GET', url: '/api/memory/search?query=x&layer=both' }), r.res,
+    );
+    expect(r.status).toBe(200);
+    const body = JSON.parse(r.body);
+    expect(body.results).toEqual([]);
+    expect(body.t1Results).toHaveLength(1);
+  });
+
+  it('search default shape stays gist-only and invalid layers are rejected', async () => {
+    const { registry } = setup({
+      memoryService: () => ({ harmonicIndex: { getIndex: () => ({ entries: [] }) } }) as any,
+    });
+    let r = fakeRes();
+    await handlerFor(registry, 'GET', '/api/memory/search?query=x')!(
+      fakeReq({ method: 'GET', url: '/api/memory/search?query=x' }), r.res,
+    );
+    expect(JSON.parse(r.body)).toEqual({ results: [] });
+
+    r = fakeRes();
+    await handlerFor(registry, 'GET', '/api/memory/search?query=x&layer=nope')!(
+      fakeReq({ method: 'GET', url: '/api/memory/search?query=x&layer=nope' }), r.res,
+    );
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body).error).toContain('gist|t1|both');
+  });
+
+  it('stats includes T1 coverage and retrieval counters', async () => {    const since = Math.floor(Date.now() / 1000) - 7 * 86400;
+    setEmbeddingRuntime({
+      vectors: { size: () => 0 },
+      t1Vectors: { size: () => 5 },
+    } as any);
+    try {
+      const { registry } = setup({
+        memoryService: () => ({ harmonicIndex: { getIndex: () => ({ entries: [] }) } }) as any,
+        getGatewayDb: () => ({
+          count: () => 3,
+          archiveCount: () => 7,
+          t1RetrievalStats: (_o: any) => ({
+            total: 2, byKind: { search: 1, recall: 1, redeem: 0 }, uniqueTraces: 2, lastAt: 123,
+          }),
+        }) as any,
+      });
+      const r = fakeRes();
+      await handlerFor(registry, 'GET', '/api/memory/stats')!(
+        fakeReq({ method: 'GET', url: '/api/memory/stats' }), r.res,
+      );
+      const body = JSON.parse(r.body);
+      expect(body.t1).toEqual({
+        vectors: 5,
+        activeRows: 3,
+        archiveRows: 7,
+        coverage: 0.5,
+        retrieval: { total: 2, byKind: { search: 1, recall: 1, redeem: 0 }, uniqueTraces: 2, lastAt: 123 },
+        provenance: { memories: 0, withExact: 0, coverage: 0 },
+        activation: { traces: 0, mean: 0, max: 0 },
+        activationRanking: { mode: 'shadow', evaluations: 0, wouldReorder: 0, applied: 0 },
+      });
+    } finally {
+      setEmbeddingRuntime(null);
+    }
+  });
+
+  it('stats reports exact T1 provenance coverage from index entries', async () => {
+    const { registry } = setup({
+      memoryService: () => ({
+        harmonicIndex: {
+          getIndex: () => ({
+            entries: [
+              { id: 'a', source_trace_ids: ['t1t_a'] },
+              { id: 'b', source_trace_ids: ['t1t_b', 't1t_c'] },
+              { id: 'c' },
+              { id: 'd', source_trace_ids: [] },
+            ],
+          }),
+        },
+      }) as any,
+      getGatewayDb: () => ({
+        count: () => 0,
+        archiveCount: () => 0,
+        t1RetrievalStats: () => ({ total: 0, byKind: { search: 0, recall: 0, redeem: 0 }, uniqueTraces: 0, lastAt: null }),
+        t1ActivationStats: () => ({ traces: 2, mean: 0.15, max: 0.2 }),
+      }) as any,
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'GET', '/api/memory/stats')!(
+      fakeReq({ method: 'GET', url: '/api/memory/stats' }), r.res,
+    );
+    const body = JSON.parse(r.body);
+    expect(body.t1.provenance).toEqual({ memories: 4, withExact: 2, coverage: 0.5 });
+    expect(body.t1.activation).toEqual({ traces: 2, mean: 0.15, max: 0.2 });
   });
 
   it('sticky: no memory service → 503 with the empty note-board budget', async () => {

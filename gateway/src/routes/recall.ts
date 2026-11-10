@@ -172,6 +172,16 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
                 'recall',
               );
             } catch { /* fail-open */ }
+            // T1 observe-only: a served snapshot is exposure of verbatim
+            // evidence. No energy/ranking effect in phase 2A.
+            try {
+              const db: any = deps.getGatewayDb();
+              for (const hit of (snap.t1Hits ?? [])) {
+                if (hit?.traceId) {
+                  db.recordT1RetrievalEvent?.({ traceId: hit.traceId, kind: 'recall', score: hit.score ?? hit.cosine });
+                }
+              }
+            } catch { /* fail-open */ }
             // A4 hit-proxy: log the probability-gated injection as a
             // calibration sample — hit when a pointer is later redeemed
             // via mafw_get_memory (join by id within TTL).

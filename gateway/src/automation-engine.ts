@@ -13,6 +13,7 @@ import { getRetrievalEventBuffer, RetrievalEvent } from './core/memory/retrieval
 import { actrBonus } from './core/memory/retrieval-bonus';
 import { getEmbeddingRuntime } from './memory/embedding-runtime';
 import { runEmbeddingBackfill } from './memory/embedding-backfill';
+import { backfillT1Vectors } from './memory/t1-backfill';
 import { Scheduler, TaskSkippedError, TaskTimeoutError, BudgetExceededError, TaskBudget } from './scheduler';
 
 import { SchedulerLedger } from './ledger';
@@ -196,10 +197,55 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
       const res = runEnergyDecay(indexManager, Date.now(), events, catd);
       // Coverage top-up: write-path embedding is fire-and-forget (failed batches
       // are dropped), so vectors drift behind the index. Idempotent + fail-open.
+      const rt = getEmbeddingRuntime();
       const backfill = await runEmbeddingBackfill(
-        getEmbeddingRuntime(),
+        rt,
         indexManager.getIndex().entries.map((e) => e.id),
       );
+      // T1 verbatim coverage: bounded archive-first backfill of missing vectors.
+      let t1Backfill = { indexed: 0, missing: 0, failed: 0 };
+      try {
+        const db = eng.getGatewayDb?.();
+        const t1Cfg = config.recall.t1Recall;
+        const limit = t1Cfg?.t1BackfillLimit ?? 200;
+        if (db && rt?.t1Indexer && rt?.t1Vectors && limit > 0 && t1Cfg?.enabled !== false) {
+          t1Backfill = await backfillT1Vectors(
+            {
+              listRows: (offset, pageLimit) => db.listT1RowsForBackfill({ offset, limit: pageLimit }),
+              hasVector: (key) => Boolean(rt.t1Vectors.get(key)),
+              enqueue: (key, text) => rt.t1Indexer.enqueueText(key, text),
+              flush: () => rt.t1Indexer.flushQueue(),
+            },
+            { limit },
+          );
+        }
+      } catch { /* fail-open: T1 coverage converges on a later run */ }
+      // T1 retrieval events are observe-only history: prune past retention in
+      // the same daily pass (retention never affects energy or ranking).
+      let prunedT1 = 0;
+      try {
+        const db = eng.getGatewayDb?.();
+        const retentionDays = config.recall.t1Recall?.retentionDays ?? 90;
+        if (db?.pruneT1RetrievalEvents && retentionDays > 0) {
+          prunedT1 = db.pruneT1RetrievalEvents({
+            before: Math.floor(Date.now() / 1000) - retentionDays * 86400,
+          });
+        }
+      } catch { prunedT1 = 0; }
+      if (prunedT1 > 0) {
+        log.info(`[AutomationEngine] Pruned ${prunedT1} T1 retrieval event(s) past retention`);
+      }
+      // Bounded T1 activation decays on the same daily pass; state only — no
+      // ranking consumer yet.
+      let t1ActivationDecayed = 0;
+      try {
+        const db = eng.getGatewayDb?.();
+        if (db?.decayT1TraceState) {
+          t1ActivationDecayed = db.decayT1TraceState({
+            halfLifeDays: config.recall.t1Recall?.activationHalfLifeDays ?? 14,
+          });
+        }
+      } catch { t1ActivationDecayed = 0; }
       if (res.migrated > 0) {
         log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
       } else {
@@ -214,6 +260,11 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
           bonused: res.bonused,
           backfillIndexed: backfill.indexed,
           backfillMissing: backfill.missing,
+          prunedT1,
+          t1BackfillIndexed: t1Backfill.indexed,
+          t1BackfillMissing: t1Backfill.missing,
+          t1BackfillFailed: t1Backfill.failed,
+          t1ActivationDecayed,
         },
       });
     } catch (err: any) {
@@ -319,6 +370,7 @@ export class AutomationEngine {
   private eventHandlerRefs: Map<string, Array<{ event: string; handler: (...args: any[]) => void }>> = new Map();
   private _indexManagerProvider?: () => HarmonicIndexManager;
   private _graphProvider?: () => CognitiveGraphManager | undefined;
+  private _gatewayDbProvider?: () => import('./memory/gateway-db').GatewayDatabase | undefined;
   private _heartbeat?: import('./recall/pipeline-heartbeat').PipelineHeartbeat;
   private _scheduler?: Scheduler;
   /** Instance-owned action registry �� the dispatch authority. Rebuilt from
@@ -413,6 +465,15 @@ export class AutomationEngine {
 
   getLiveIndexManager(): HarmonicIndexManager | undefined {
     return this._indexManagerProvider?.();
+  }
+
+  /** Inject the gateway's live database (T1 retrieval-event retention). */
+  setGatewayDbProvider(fn: () => import('./memory/gateway-db').GatewayDatabase | undefined): void {
+    this._gatewayDbProvider = fn;
+  }
+
+  getGatewayDb(): import('./memory/gateway-db').GatewayDatabase | undefined {
+    return this._gatewayDbProvider?.();
   }
 
   setRuntimeClient(client: import('./runtime/contract').BusinessRuntime): void {

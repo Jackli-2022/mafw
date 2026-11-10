@@ -7,7 +7,7 @@
  * inside the 100ms contract.
  */
 import { RecallSnapshot, snapshotQueryFromTurns, SNAPSHOT_DEFAULTS, SnapshotConfig } from './recall-snapshot';
-import { renderT1Lines, T1Hit } from './verbatim-recall';
+import { renderT1Lines, T1Hit, T1_POINTER_HEADER } from './verbatim-recall';
 import type { RecallMemory } from './recall-context';
 import type { FokZone } from './fok-gate';
 
@@ -53,24 +53,10 @@ export async function buildSnapshot(
   const query = snapshotQueryFromTurns(texts, cfg.maxChars ?? SNAPSHOT_DEFAULTS.maxChars);
   if (!query.trim()) return null;
 
-  let memories = await deps.search(query, topK * 2);
-  if (memories.length === 0) return null;
-  // R3 + R5 in one scoring pass; fail-open to the un-reranked ranking.
-  let fokStatus: FokZone | undefined;
-  let top1prob: number | undefined;
-  if (deps.verify) {
-    try {
-      const verified = await deps.verify(query, memories);
-      if (verified?.memories?.length) memories = verified.memories;
-      fokStatus = verified?.fokStatus;
-      top1prob = verified?.top1prob;
-    } catch { /* fail-open: keep the un-reranked ranking, no gate */ }
-  }
-  let block = deps.render(memories, fokStatus);
-  if (!block) return null;
-
-  // V1: verbatim fusion — append t1 round hits after the pointer block.
+  // V1: T1 is an independent channel. Search it even when Harmonic has no
+  // hits — verbatim evidence must be able to rescue an extraction miss.
   let t1Hits: T1Hit[] | undefined;
+  let t1Lines: string | null = null;
   if (deps.searchT1) {
     const t1K = cfg.t1K ?? SNAPSHOT_DEFAULTS.t1K ?? 3;
     try {
@@ -78,12 +64,31 @@ export async function buildSnapshot(
       if (hits && hits.length > 0) {
         const lines = renderT1Lines(hits, { k: t1K, maxChars: cfg.t1MaxChars ?? SNAPSHOT_DEFAULTS.t1MaxChars ?? 600 });
         if (lines) {
-          block = `${block}\n${lines}`;
           t1Hits = hits.slice(0, t1K);
+          t1Lines = lines;
         }
       }
     } catch { /* fail-open: harmonic-only snapshot */ }
   }
+
+  let memories = await deps.search(query, topK * 2);
+  // R3 + R5 in one scoring pass; fail-open to the un-reranked ranking. Skip the
+  // expensive path entirely when there are no gist candidates.
+  let fokStatus: FokZone | undefined;
+  let top1prob: number | undefined;
+  if (memories.length > 0 && deps.verify) {
+    try {
+      const verified = await deps.verify(query, memories);
+      if (verified?.memories?.length) memories = verified.memories;
+      fokStatus = verified?.fokStatus;
+      top1prob = verified?.top1prob;
+    } catch { /* fail-open: keep the un-reranked ranking, no gate */ }
+  }
+  let block = memories.length > 0 ? deps.render(memories, fokStatus) : null;
+  if (t1Lines) {
+    block = block ? `${block}\n${t1Lines}` : `${T1_POINTER_HEADER}\n${t1Lines}`;
+  }
+  if (!block) return null;
 
   const snapshot: RecallSnapshot = {
     query,

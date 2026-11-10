@@ -590,6 +590,27 @@ test("memory.search sends query param", async () => {
   await c.memory.search({ query: "test" })
   const url = (fetchMock as any).mock.calls[0][0] as string
   expect(url).toContain("query=test")
+  expect(url).not.toContain("layer=")
+})
+
+test("memory.searchLayered sends the layer and returns both result sets", async () => {
+  const t1 = [{ sessionId: "s1", turnId: 2, traceId: "t1t_a", cosine: 0.8, excerpt: "raw" }]
+  fetchMock.mockResolvedValue(okJson({ results: [], t1Results: t1 }))
+  const c = new MafwClient()
+  const res = await c.memory.searchLayered({ query: "deploy", layer: "t1", topK: 3 })
+  const url = (fetchMock as any).mock.calls[0][0] as string
+  expect(url).toContain("layer=t1")
+  expect(url).toContain("topK=3")
+  expect(res).toEqual({ layer: "t1", results: [], t1Results: t1 })
+})
+
+test("memory.searchLayered defaults to gist and normalizes missing arrays", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient()
+  const res = await c.memory.searchLayered({ query: "x" })
+  const url = (fetchMock as any).mock.calls[0][0] as string
+  expect(url).toContain("layer=gist")
+  expect(res).toEqual({ layer: "gist", results: [], t1Results: [] })
 })
 
 test("memory.mergedSearch returns facts", async () => {

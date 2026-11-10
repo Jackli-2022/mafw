@@ -60,6 +60,48 @@ export interface T1TraceRead {
   archived: boolean;
 }
 
+export type T1RetrievalKind = 'search' | 'recall' | 'redeem';
+
+/** One lexical T1 hit (best row per trace, ordered by FTS bm25). */
+export interface T1LexicalHit {
+  traceId: string;
+  sessionId: string;
+  turnId: number;
+  source: string;
+  excerpt: string;
+  /** FTS5 bm25 rank (lower is better). */
+  rank: number;
+}
+
+/**
+ * Turn a user query into a safe FTS5 MATCH expression: every token of at
+ * least three characters is double-quoted (so `.`/`-`/`:` are literal) and
+ * joined with OR. Returns '' when no token is trigram-eligible.
+ */
+export function buildT1FtsQuery(query: string): string {
+  const tokens = String(query || '').match(/[\p{L}\p{N}_./:\\-]{3,}/gu) ?? [];
+  const unique = Array.from(new Set(tokens.map((t) => t.toLowerCase()))).slice(0, 12);
+  return unique.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ');
+}
+
+export interface T1RetrievalStats {
+  total: number;
+  byKind: Record<T1RetrievalKind, number>;
+  uniqueTraces: number;
+  lastAt: number | null;
+}
+
+/** Bounded activation state for one T1 trace. */
+export interface T1TraceActivation {
+  activation: number;
+  retrievalCount: number;
+  lastRetrievedAt: number | null;
+  lastReplayedAt: number | null;
+  activationUpdatedAt: number;
+}
+
+const T1_RETRIEVAL_KINDS: T1RetrievalKind[] = ['search', 'recall', 'redeem'];
+
 export interface GoalOutcome {
   goal_id: string;
   project_id: string | null;
@@ -305,6 +347,42 @@ export class GatewayDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_t1_turns_session ON t1_turns(session_id, turn_seq);
 
+      -- Lexical derivative of T1 (rebuildable): trigram tokenizer supports
+      -- identifier/path/error-code substring matching that dense retrieval
+      -- misses. Metadata columns are UNINDEXED so deletes can target keys.
+      CREATE VIRTUAL TABLE IF NOT EXISTS t1_fts USING fts5(
+        content,
+        trace_id UNINDEXED,
+        observation_key UNINDEXED,
+        session_id UNINDEXED,
+        turn_id UNINDEXED,
+        source UNINDEXED,
+        tokenize='trigram'
+      );
+
+      CREATE TABLE IF NOT EXISTS t1_retrieval_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trace_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        score REAL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_retrieval_trace ON t1_retrieval_events(trace_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_t1_retrieval_created ON t1_retrieval_events(created_at);
+
+      -- Bounded activation state for T1 traces. Written from observe-only
+      -- retrieval events and exact memory provenance; consumed by a later
+      -- ranking phase (this table must not affect retrieval on its own).
+      CREATE TABLE IF NOT EXISTS t1_trace_state (
+        trace_id TEXT PRIMARY KEY,
+        activation REAL NOT NULL DEFAULT 0,
+        retrieval_count INTEGER NOT NULL DEFAULT 0,
+        last_retrieved_at INTEGER,
+        last_replayed_at INTEGER,
+        activation_updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_state_activation ON t1_trace_state(activation);
+
       CREATE TABLE IF NOT EXISTS goal_outcomes (
         goal_id TEXT PRIMARY KEY,
         project_id TEXT,
@@ -495,6 +573,8 @@ export class GatewayDatabase {
     // Task 4: backfill durable identity onto pre-Task-4 legacy rows. Idempotent
     // and transactional; a failure is logged and must never block startup.
     this.migrateT1Identity();
+    // Lexical index is a rebuildable derivative of the immutable T1 rows.
+    this.rebuildT1FtsIfEmpty();
   }
 
   /**
@@ -770,6 +850,19 @@ export class GatewayDatabase {
         this.db
           .prepare('UPDATE t1_turns SET archived_at = NULL WHERE trace_id = ?')
           .run(obs.trace_id);
+        // Lexical derivative: same content, same observation key across the
+        // obs→archive move, so archiving needs no FTS change. Fail-open — a
+        // broken derivative index must never reject the raw observation.
+        try {
+          this.db
+            .prepare(
+              `INSERT INTO t1_fts (content, trace_id, observation_key, session_id, turn_id, source)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+            )
+            .run(obs.content, obs.trace_id, observationKey, obs.session_id, obs.turn_id, obs.source);
+        } catch (err: any) {
+          log.warn(`[T1FTS] append indexing failed (raw row kept): ${err?.message || err}`);
+        }
       }
       return result.changes > 0 ? Number(result.lastInsertRowid) : null;
     });
@@ -811,10 +904,18 @@ export class GatewayDatabase {
 
   /** Remove all observations for a session up to (and including) a turn. */
   deleteTurn(session_id: string, turn_id: number): number {
-    const result = this.db
-      .prepare('DELETE FROM t1_observations WHERE session_id = ? AND turn_id = ?')
-      .run(session_id, turn_id);
-    return result.changes;
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `DELETE FROM t1_fts WHERE observation_key IN
+             (SELECT observation_key FROM t1_observations WHERE session_id = ? AND turn_id = ?)`,
+        )
+        .run(session_id, turn_id);
+      return this.db
+        .prepare('DELETE FROM t1_observations WHERE session_id = ? AND turn_id = ?')
+        .run(session_id, turn_id).changes;
+    });
+    return txn();
   }
 
   /**
@@ -853,6 +954,17 @@ export class GatewayDatabase {
       .all(session_id, turn_id) as T1Observation[];
   }
 
+  /** Cheap existence check for provenance validation (never loads rows). */
+  hasTrace(traceId: string): boolean {
+    const id = String(traceId || '').trim();
+    if (!id) return false;
+    try {
+      return Boolean(this.db.prepare('SELECT 1 FROM t1_turns WHERE trace_id = ?').get(id));
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Read a turn's full observation set by logical trace id, combining active
    * (t1_observations) and archived (t1_archive) rows. Rows are ordered by
@@ -880,6 +992,248 @@ export class GatewayDatabase {
       )
       .all(trace_id, trace_id) as T1Observation[];
     return { turn, rows, archived: turn.archived_at != null };
+  }
+
+  /** Observe-only T1 access event + bounded trace activation update. */
+  recordT1RetrievalEvent(event: {
+    traceId: string;
+    kind: T1RetrievalKind;
+    score?: number;
+    ts?: number;
+  }): void {
+    const traceId = String(event?.traceId || '').trim();
+    if (!traceId || !T1_RETRIEVAL_KINDS.includes(event.kind)) return;
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      const txn = this.db.transaction(() => {
+        this.db
+          .prepare(
+            `INSERT INTO t1_retrieval_events (trace_id, kind, score, created_at)
+             VALUES (?, ?, ?, ?)`,
+          )
+          .run(
+            traceId,
+            event.kind,
+            Number.isFinite(event.score) ? event.score : null,
+            Number.isFinite(event.ts) ? event.ts : now,
+          );
+        // Activation is a state field only: bounded increment, no ranking read.
+        const inserted = this.db
+          .prepare(
+            `INSERT OR IGNORE INTO t1_trace_state
+               (trace_id, activation, retrieval_count, last_retrieved_at, activation_updated_at)
+             SELECT trace_id, 0.1, 1, ?, ? FROM t1_turns WHERE trace_id = ?`,
+          )
+          .run(now, now, traceId).changes;
+        if (!inserted) {
+          this.db
+            .prepare(
+              `UPDATE t1_trace_state
+                  SET activation = MIN(1.0, activation + 0.1),
+                      retrieval_count = retrieval_count + 1,
+                      last_retrieved_at = ?,
+                      activation_updated_at = ?
+                WHERE trace_id = ?`,
+            )
+            .run(now, now, traceId);
+        }
+      });
+      txn();
+    } catch (err: any) {
+      log.warn(`[T1Retrieval] record failed: ${err?.message || err}`);
+    }
+  }
+
+  /** Read one trace's bounded activation state. */
+  t1TraceActivation(traceId: string): T1TraceActivation | null {
+    const id = String(traceId || '').trim();
+    if (!id) return null;
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT activation, retrieval_count, last_retrieved_at, last_replayed_at, activation_updated_at
+           FROM t1_trace_state WHERE trace_id = ?`,
+        )
+        .get(id) as
+        | {
+            activation: number;
+            retrieval_count: number;
+            last_retrieved_at: number | null;
+            last_replayed_at: number | null;
+            activation_updated_at: number;
+          }
+        | undefined;
+      if (!row) return null;
+      return {
+        activation: row.activation,
+        retrievalCount: row.retrieval_count,
+        lastRetrievedAt: row.last_retrieved_at,
+        lastReplayedAt: row.last_replayed_at,
+        activationUpdatedAt: row.activation_updated_at,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Abstract→T1 propagation: a redeemed memory with exact source traces gives
+   * those raw traces a small bounded activation increment. Unknown ids and
+   * non-positive weights are ignored.
+   */
+  propagateT1Activation(traceIds: string[], weight = 0.05): number {
+    const ids = Array.from(new Set((traceIds || []).map((x) => String(x || '').trim()).filter(Boolean)));
+    if (ids.length === 0) return 0;
+    const amount = Number.isFinite(weight) ? Math.min(0.2, Math.max(0, weight)) : 0;
+    const now = Math.floor(Date.now() / 1000);
+    let touched = 0;
+    try {
+      const txn = this.db.transaction(() => {
+        const insert = this.db.prepare(
+          `INSERT OR IGNORE INTO t1_trace_state
+             (trace_id, activation, retrieval_count, last_retrieved_at, activation_updated_at)
+           SELECT trace_id, ?, 0, NULL, ? FROM t1_turns WHERE trace_id = ?`,
+        );
+        const update = this.db.prepare(
+          `UPDATE t1_trace_state
+              SET activation = MIN(1.0, activation + ?),
+                  activation_updated_at = ?
+            WHERE trace_id = ?`,
+        );
+        for (const id of ids) {
+          const inserted = insert.run(amount, now, id).changes;
+          if (inserted > 0) {
+            touched++;
+          } else if (update.run(amount, now, id).changes > 0) {
+            touched++;
+          }
+        }
+      });
+      txn();
+    } catch (err: any) {
+      log.warn(`[T1Activation] propagate failed: ${err?.message || err}`);
+      return 0;
+    }
+    return touched;
+  }
+
+  /** Daily exponential decay of T1 trace activation (default half-life 14d). */
+  decayT1TraceState(opts: { now?: number; halfLifeDays?: number } = {}): number {
+    const now = Number.isFinite(opts.now) ? opts.now! : Math.floor(Date.now() / 1000);
+    const halfLifeDays = Number.isFinite(opts.halfLifeDays) ? opts.halfLifeDays! : 14;
+    if (!(halfLifeDays > 0)) return 0;
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT trace_id, activation, activation_updated_at
+             FROM t1_trace_state WHERE activation > 0`,
+        )
+        .all() as Array<{ trace_id: string; activation: number; activation_updated_at: number }>;
+      if (rows.length === 0) return 0;
+      let changed = 0;
+      const txn = this.db.transaction(() => {
+        const update = this.db.prepare(
+          'UPDATE t1_trace_state SET activation = ?, activation_updated_at = ? WHERE trace_id = ?',
+        );
+        for (const row of rows) {
+          const days = Math.max(0, (now - row.activation_updated_at) / 86400);
+          if (days <= 0) continue;
+          let next = row.activation * Math.pow(0.5, days / halfLifeDays);
+          if (next < 0.01) next = 0;
+          update.run(next, now, row.trace_id);
+          changed++;
+        }
+      });
+      txn();
+      return changed;
+    } catch (err: any) {
+      log.warn(`[T1Activation] decay failed: ${err?.message || err}`);
+      return 0;
+    }
+  }
+
+  /** Batch activation lookup for bounded re-ranking (cap 100 ids). */
+  t1Activations(traceIds: string[]): Map<string, number> {
+    const out = new Map<string, number>();
+    const ids: string[] = [];
+    for (const raw of traceIds || []) {
+      const id = String(raw || '').trim();
+      if (!id || out.has(id) || ids.includes(id)) continue;
+      ids.push(id);
+      if (ids.length >= 100) break;
+    }
+    if (ids.length === 0) return out;
+    try {
+      const placeholders = ids.map(() => '?').join(',');
+      const rows = this.db
+        .prepare(`SELECT trace_id, activation FROM t1_trace_state WHERE trace_id IN (${placeholders})`)
+        .all(...ids) as Array<{ trace_id: string; activation: number }>;
+      for (const row of rows) out.set(row.trace_id, row.activation);
+    } catch { /* fail-open: relevance order wins */ }
+    return out;
+  }
+
+  /** Aggregate activation state for /api/memory/stats. */
+  t1ActivationStats(): { traces: number; mean: number; max: number } {
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT COUNT(*) AS traces, AVG(activation) AS mean, MAX(activation) AS max
+             FROM t1_trace_state`,
+        )
+        .get() as { traces: number; mean: number | null; max: number | null };
+      return { traces: row.traces ?? 0, mean: row.mean ?? 0, max: row.max ?? 0 };
+    } catch {
+      return { traces: 0, mean: 0, max: 0 };
+    }
+  }
+
+  /**
+   * Delete T1 retrieval observations older than `before` (Unix seconds).
+   * Retention only — stats are observe-only, so pruning cannot affect memory
+   * energy, activation, or ranking. Returns the deleted row count.
+   */
+  pruneT1RetrievalEvents(opts: { before: number }): number {
+    if (!Number.isFinite(opts?.before)) return 0;
+    try {
+      return this.db
+        .prepare('DELETE FROM t1_retrieval_events WHERE created_at < ?')
+        .run(opts.before).changes;
+    } catch (err: any) {
+      log.warn(`[T1Retrieval] prune failed: ${err?.message || err}`);
+      return 0;
+    }
+  }
+
+  /** Aggregate T1 retrieval observations; `since` is Unix seconds. */
+  t1RetrievalStats(opts?: { since?: number }): T1RetrievalStats {
+    const byKind: Record<T1RetrievalKind, number> = { search: 0, recall: 0, redeem: 0 };
+    const empty: T1RetrievalStats = { total: 0, byKind, uniqueTraces: 0, lastAt: null };
+    try {
+      const where = Number.isFinite(opts?.since) ? 'WHERE created_at >= ?' : '';
+      const params = Number.isFinite(opts?.since) ? [opts!.since] : [];
+      const kinds = this.db
+        .prepare(`SELECT kind, COUNT(*) AS c FROM t1_retrieval_events ${where} GROUP BY kind`)
+        .all(...params) as Array<{ kind: T1RetrievalKind; c: number }>;
+      for (const row of kinds) {
+        if (row.kind in byKind) byKind[row.kind] = row.c;
+      }
+      const summary = this.db
+        .prepare(
+          `SELECT COUNT(*) AS total, COUNT(DISTINCT trace_id) AS uniqueTraces, MAX(created_at) AS lastAt
+           FROM t1_retrieval_events ${where}`,
+        )
+        .get(...params) as { total: number; uniqueTraces: number; lastAt: number | null };
+      return {
+        total: summary.total ?? 0,
+        byKind,
+        uniqueTraces: summary.uniqueTraces ?? 0,
+        lastAt: summary.lastAt ?? null,
+      };
+    } catch (err: any) {
+      log.warn(`[T1Retrieval] stats failed: ${err?.message || err}`);
+      return empty;
+    }
   }
 
   /** List archived turns (grouped), optionally filtered to a session. */
@@ -927,6 +1281,16 @@ export class GatewayDatabase {
       .all(tail, turnId) as T1Observation[];
   }
 
+  /** Legacy t1 pointer: archive first, then active rows for not-yet-archived turns. */
+  findT1BySessionTail(tail: string, turnId: number): T1Observation[] {
+    if (!tail || !Number.isInteger(turnId) || turnId < 0) return [];
+    const archived = this.findArchiveBySessionTail(tail, turnId);
+    if (archived.length) return archived;
+    return this.db
+      .prepare(`SELECT * FROM t1_observations WHERE session_id LIKE '%' || ? || '%' AND turn_id = ? ORDER BY id LIMIT 50`)
+      .all(tail, turnId) as T1Observation[];
+  }
+
   // ── Noop log (extraction coverage monitoring) ──────────────────────────
 
   /**
@@ -965,8 +1329,151 @@ export class GatewayDatabase {
       .all(...params, limit) as any[];
   }
 
+  /**
+   * Page through T1 rows for vector backfill: archive rows first (older), then
+   * active rows. Offset is a global row offset across both tables.
+   */
+  listT1RowsForBackfill(opts: { offset: number; limit: number }): Array<{
+    observationKey: string;
+    sessionId: string;
+    turnId: number;
+    content: string;
+  }> {
+    const offset = Math.max(0, Math.floor(opts.offset || 0));
+    const limit = Math.max(0, Math.floor(opts.limit || 0));
+    if (limit === 0) return [];
+    const archiveCount = (this.db.prepare('SELECT COUNT(*) AS c FROM t1_archive').get() as { c: number }).c;
+    const rows: Array<{ observationKey: string; sessionId: string; turnId: number; content: string }> = [];
+    const select = (table: 't1_archive' | 't1_observations', take: number, skip: number) =>
+      this.db
+        .prepare(
+          `SELECT observation_key AS observationKey, session_id AS sessionId,
+                  turn_id AS turnId, content
+           FROM ${table} WHERE observation_key IS NOT NULL
+           ORDER BY id LIMIT ? OFFSET ?`,
+        )
+        .all(take, skip) as Array<{ observationKey: string; sessionId: string; turnId: number; content: string }>;
+
+    if (offset < archiveCount) {
+      rows.push(...select('t1_archive', Math.min(limit, archiveCount - offset), offset));
+    }
+    if (rows.length < limit) {
+      const activeOffset = Math.max(0, offset - archiveCount);
+      rows.push(...select('t1_observations', limit - rows.length, activeOffset));
+    }
+    return rows;
+  }
+
   deleteSession(session_id: string): number {
-    return this.db.prepare('DELETE FROM t1_observations WHERE session_id = ?').run(session_id).changes;
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `DELETE FROM t1_fts WHERE observation_key IN
+             (SELECT observation_key FROM t1_observations WHERE session_id = ?)`,
+        )
+        .run(session_id);
+      return this.db.prepare('DELETE FROM t1_observations WHERE session_id = ?').run(session_id).changes;
+    });
+    return txn();
+  }
+
+  /**
+   * Rebuild the lexical derivative from active + archive rows. Idempotent:
+   * clears the FTS table first, so a crashed or partial rebuild cannot
+   * duplicate rows. Returns the number of indexed rows (0 on failure).
+   */
+  rebuildT1Fts(): number {
+    try {
+      const txn = this.db.transaction(() => {
+        this.db.prepare('DELETE FROM t1_fts').run();
+        const active = this.db
+          .prepare(
+            `INSERT INTO t1_fts (content, trace_id, observation_key, session_id, turn_id, source)
+             SELECT content, trace_id, observation_key, session_id, turn_id, source
+             FROM t1_observations WHERE observation_key IS NOT NULL`,
+          )
+          .run().changes;
+        const archived = this.db
+          .prepare(
+            `INSERT INTO t1_fts (content, trace_id, observation_key, session_id, turn_id, source)
+             SELECT content, trace_id, observation_key, session_id, turn_id, source
+             FROM t1_archive WHERE observation_key IS NOT NULL`,
+          )
+          .run().changes;
+        return active + archived;
+      });
+      return txn();
+    } catch (err: any) {
+      log.warn(`[T1FTS] rebuild failed: ${err?.message || err}`);
+      return 0;
+    }
+  }
+
+  private rebuildT1FtsIfEmpty(): void {
+    try {
+      const indexed = (this.db.prepare('SELECT COUNT(*) AS c FROM t1_fts').get() as { c: number }).c;
+      if (indexed > 0) return;
+      const rows = (
+        this.db
+          .prepare(
+            `SELECT (SELECT COUNT(*) FROM t1_observations) + (SELECT COUNT(*) FROM t1_archive) AS c`,
+          )
+          .get() as { c: number }
+      ).c;
+      if (rows === 0) return;
+      const count = this.rebuildT1Fts();
+      log.info(`[T1FTS] rebuilt ${count} row(s) into the lexical index`);
+    } catch (err: any) {
+      log.warn(`[T1FTS] startup rebuild skipped: ${err?.message || err}`);
+    }
+  }
+
+  /**
+   * Lexical T1 search over the FTS5 trigram index. Returns the best-ranked
+   * row per trace. Fail-open: malformed input or an FTS error returns [].
+   */
+  searchT1Lexical(query: string, topK: number): T1LexicalHit[] {
+    const match = buildT1FtsQuery(query);
+    if (!match || !Number.isFinite(topK) || topK <= 0) return [];
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT trace_id, session_id, turn_id, source,
+                  snippet(t1_fts, 0, '', '', '…', 32) AS excerpt,
+                  bm25(t1_fts) AS rank
+           FROM t1_fts
+           WHERE t1_fts MATCH ?
+           ORDER BY rank
+           LIMIT ?`,
+        )
+        .all(match, Math.max(topK * 4, 12)) as Array<{
+        trace_id: string;
+        session_id: string;
+        turn_id: number;
+        source: string;
+        excerpt: string;
+        rank: number;
+      }>;
+      const seen = new Set<string>();
+      const hits: T1LexicalHit[] = [];
+      for (const row of rows) {
+        if (!row.trace_id || seen.has(row.trace_id)) continue;
+        seen.add(row.trace_id);
+        hits.push({
+          traceId: row.trace_id,
+          sessionId: row.session_id,
+          turnId: row.turn_id,
+          source: row.source,
+          excerpt: row.excerpt || '',
+          rank: row.rank,
+        });
+        if (hits.length >= topK) break;
+      }
+      return hits;
+    } catch (err: any) {
+      log.warn(`[T1FTS] search failed: ${err?.message || err}`);
+      return [];
+    }
   }
 
   count(): number {

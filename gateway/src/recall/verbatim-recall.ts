@@ -4,8 +4,27 @@
 // fail-open and dependency-injected.
 import { hashText } from './index-scan';
 
-export interface T1Row { session_id: string; turn_id: number; source: string; content: string }
-export interface T1Hit { sessionId: string; turnId: number; cosine: number; excerpt: string }
+export interface T1Row {
+  session_id: string;
+  turn_id: number;
+  trace_id?: string | null;
+  source: string;
+  content: string;
+}
+export interface T1Hit {
+  sessionId: string;
+  turnId: number;
+  traceId?: string | null;
+  cosine: number;
+  excerpt: string;
+  /** Retrieval channels that produced this fused hit. */
+  sources?: Array<'dense' | 'lexical'>;
+  /** Fused RRF score (higher is better); absent on raw dense hits. */
+  score?: number;
+}
+
+/** Header used when a snapshot contains only T1 evidence. */
+export const T1_POINTER_HEADER = `[T1 原始记录 · 依据前请核实：取全文 → mafw_get_memory("t1:<traceId>")]`;
 
 export function t1VectorKey(sessionId: string, turnId: number, content: string): string {
   return `${sessionId}:${turnId}:${hashText(content)}`;
@@ -36,13 +55,16 @@ export function groupT1HitsToTurns(
   return [...best.values()].sort((a, b) => b.cosine - a.cosine).slice(0, cap);
 }
 
-export function excerptFromRows(rows: T1Row[], key: string, maxChars: number): string {
-  if (!rows.length) return '';
+function matchedRow(rows: T1Row[], key: string): T1Row | undefined {
   const parsed = parseT1Key(key);
-  const match = parsed
+  return parsed
     ? rows.find(r => r.session_id === parsed.sessionId && r.turn_id === parsed.turnId && t1VectorKey(r.session_id, r.turn_id, r.content) === key)
     : undefined;
-  const text = (match ?? rows[0]).content || '';
+}
+
+export function excerptFromRows(rows: T1Row[], key: string, maxChars: number): string {
+  if (!rows.length) return '';
+  const text = (matchedRow(rows, key) ?? rows[0]).content || '';
   return text.slice(0, maxChars);
 }
 
@@ -51,8 +73,8 @@ export function renderT1Lines(hits: T1Hit[], opts: { k: number; maxChars: number
   let used = 0;
   for (const h of hits.slice(0, opts.k)) {
     if (!h.excerpt) continue;
-    const tail = h.sessionId.slice(-6);
-    const text = `[t1|${tail}:${h.turnId}] ${h.excerpt.replace(/\s+/g, ' ').trim()}`;
+    const pointer = h.traceId ? `[t1|${h.traceId}]` : `[t1|${h.sessionId.slice(-6)}:${h.turnId}]`;
+    const text = `${pointer} ${h.excerpt.replace(/\s+/g, ' ').trim()}`;
     const remaining = opts.maxChars - used;
     if (remaining <= 0) break;
     const line = text.length > remaining ? `${text.slice(0, Math.max(0, remaining - 1))}…` : text;
@@ -88,7 +110,10 @@ export function makeT1Search(deps: T1SearchDeps): (query: string, k: number) => 
         if (!rows.length) continue;
         const matchKey = raw.find(h => h.id.startsWith(`${t.sessionId}:${t.turnId}:`))?.id ?? '';
         const excerpt = excerptFromRows(rows, matchKey, 220);
-        if (excerpt) out.push({ sessionId: t.sessionId, turnId: t.turnId, cosine: t.cosine, excerpt });
+        if (excerpt) {
+          const traceId = matchedRow(rows, matchKey)?.trace_id ?? rows[0].trace_id ?? null;
+          out.push({ sessionId: t.sessionId, turnId: t.turnId, traceId, cosine: t.cosine, excerpt });
+        }
       }
       return out;
     } catch {

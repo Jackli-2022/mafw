@@ -4,6 +4,7 @@ import * as os from 'os';
 import { AutomationEngine } from '../../src/automation-engine';
 import { HarmonicIndexManager } from '../../src/core/memory/harmonic-index';
 import { setEmbeddingRuntime } from '../../src/memory/embedding-runtime';
+import { config } from '../../src/config';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -150,6 +151,109 @@ describe('memory:decay incremental decay', () => {
     expect(entry.last_decay_at).toBeDefined();
   });
 
+  test('memory:decay also prunes T1 retrieval events past retention', async () => {
+    const now = Date.now();
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date(now).toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(now - DAY).toISOString() })],
+    });
+    const prune = jest.fn(() => 4);
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+    engine.setGatewayDbProvider(() => ({ pruneT1RetrievalEvents: prune }) as any);
+
+    await engine.getAction('memory:decay')!({} as any, engine);
+
+    expect(prune).toHaveBeenCalledTimes(1);
+    const cutoff = (prune.mock.calls[0][0] as { before: number }).before;
+    expect(cutoff).toBeLessThanOrEqual(Math.floor(now / 1000));
+    expect(cutoff).toBeGreaterThanOrEqual(Math.floor((now - 91 * DAY) / 1000));
+  });
+
+  test('memory:decay backfills missing T1 vectors and records heartbeat counts', async () => {
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(Date.now() - DAY).toISOString() })],
+    });
+    const enqueued: Array<[string, string]> = [];
+    setEmbeddingRuntime({
+      indexer: { backfill: async () => ({ indexed: 0, skipped: 0, missing: 0 }) },
+      vectors: { size: () => 0 },
+      t1Vectors: { get: () => undefined, size: () => 0 },
+      t1Indexer: {
+        enqueueText: (key: string, text: string) => enqueued.push([key, text]),
+        flushQueue: async () => ({ indexed: 1, failed: 0 }),
+      },
+    } as any);
+    try {
+      const recorded: Array<[string, any]> = [];
+      const engine = new AutomationEngine(tmpDir);
+      engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+      engine.setHeartbeat({ record: (name: string, r: any) => recorded.push([name, r]) } as any);
+      engine.setGatewayDbProvider(() => ({
+        pruneT1RetrievalEvents: () => 0,
+        listT1RowsForBackfill: ({ offset, limit }: any) => offset === 0
+          ? [{ observationKey: 't1o_1', sessionId: 's1', turnId: 1, content: 'missing raw row' }].slice(0, limit)
+          : [],
+      }) as any);
+
+      await engine.getAction('memory:decay')!({} as any, engine);
+
+      expect(enqueued).toHaveLength(1);
+      expect(enqueued[0][1]).toBe('missing raw row');
+      expect(recorded[0][1].counts.t1BackfillIndexed).toBe(1);
+      expect(recorded[0][1].counts.t1BackfillMissing).toBe(0);
+      expect(recorded[0][1].counts.t1BackfillFailed).toBe(0);
+    } finally {
+      setEmbeddingRuntime(null);
+    }
+  });
+
+  test('memory:decay skips T1 backfill when T1 recall is disabled', async () => {
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(Date.now() - DAY).toISOString() })],
+    });
+    const prev = config.recall.t1Recall.enabled;
+    config.recall.t1Recall.enabled = false;
+    const listRows = jest.fn(() => []);
+    setEmbeddingRuntime({
+      indexer: { backfill: async () => ({ indexed: 0, skipped: 0, missing: 0 }) },
+      vectors: { size: () => 0 },
+      t1Vectors: { get: () => undefined, size: () => 0 },
+      t1Indexer: {
+        enqueueText: () => {},
+        flushQueue: async () => ({ indexed: 0, failed: 0 }),
+      },
+    } as any);
+    try {
+      const engine = new AutomationEngine(tmpDir);
+      engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+      engine.setGatewayDbProvider(() => ({
+        pruneT1RetrievalEvents: () => 0,
+        listT1RowsForBackfill: listRows,
+      }) as any);
+      await engine.getAction('memory:decay')!({} as any, engine);
+      expect(listRows).not.toHaveBeenCalled();
+    } finally {
+      config.recall.t1Recall.enabled = prev;
+      setEmbeddingRuntime(null);
+    }
+  });
+
+  test('memory:decay stays green without a gateway DB provider', async () => {    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(Date.now() - DAY).toISOString() })],
+    });
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+    await expect(engine.getAction('memory:decay')!({} as any, engine)).resolves.toBeUndefined();
+  });
+
   test('decay migrates the LIVE index instance so a later live write does not clobber it', async () => {
     const now = Date.now();
     writeIndex(tmpDir, {
@@ -203,7 +307,34 @@ describe('memory:decay incremental decay', () => {
       bonused: 0,
       backfillIndexed: 0,
       backfillMissing: 0,
+      prunedT1: 0,
+      t1BackfillIndexed: 0,
+      t1BackfillMissing: 0,
+      t1BackfillFailed: 0,
+      t1ActivationDecayed: 0,
     });
+  });
+
+  test('memory:decay decays T1 activation with the configured half-life', async () => {
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(Date.now() - DAY).toISOString() })],
+    });
+    const decay = jest.fn(() => 3);
+    const recorded: Array<[string, any]> = [];
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+    engine.setHeartbeat({ record: (name: string, r: any) => recorded.push([name, r]) } as any);
+    engine.setGatewayDbProvider(() => ({
+      pruneT1RetrievalEvents: () => 0,
+      decayT1TraceState: decay,
+    }) as any);
+
+    await engine.getAction('memory:decay')!({} as any, engine);
+
+    expect(decay).toHaveBeenCalledWith({ halfLifeDays: 14 });
+    expect(recorded[0][1].counts.t1ActivationDecayed).toBe(3);
   });
 
   test('runs the embedding backfill after decay (coverage top-up)', async () => {
