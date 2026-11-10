@@ -217,6 +217,7 @@ import { attachCognitionRoutes } from './routes/cognition';
 import { attachPythonRoutes } from './routes/python';
 import { attachTtsRoutes } from './routes/tts';
 import { attachTerminalRoutes, attachAgentRoutes, attachMobileRoutes } from './routes/agent-terminal-mobile';
+import { attachMediaRoutes } from './routes/media-upload';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5577,6 +5578,12 @@ class MafwScheduler {
           });
         },
       });
+      // Phase D1 Task 3e：媒体上传/分析面迁 registry dispatch（4 分支，
+      // loopback 门 + 尺寸帽 + chunk 流逐字保留）。
+      attachMediaRoutes(this.routeRegistry, {
+        getMediaAgent: () => this.mediaAgent,
+        getMediaService: () => this.mediaService,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -5719,193 +5726,12 @@ class MafwScheduler {
         // — Phase D1 Task 3c：已迁 registry dispatch（attachTtsRoutes；voices/speak
         // 无 loopback 门、stream/interrupt 有——语义逐字等价）。
 
-        // POST /api/media/analyze-audio — 音频叙述式理解（自然语言：内容 + 情绪/语调轨迹 + 意图）。        // opt-in：只服务实时语音等场景；FLEURS 评测走默认 A2A 路径（不受影响）。
-        if (req.url === "/api/media/analyze-audio" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaService) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaService not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const dataUrl = typeof body?.dataUrl === 'string' ? body.dataUrl : '';
-            if (!dataUrl) { res.writeHead(400); res.end(JSON.stringify({ error: 'dataUrl is required' })); return; }
-            const mediaType = typeof body?.mediaType === 'string' && body.mediaType ? body.mediaType : 'audio/wav';
-            const promptText = typeof body?.prompt === 'string' ? body.prompt : undefined;
-            // 叙述式分析（内容 + 情绪/语调轨迹 + 意图，自然语言）；允许自定义 prompt 覆盖。
-            const result = promptText
-              ? await this.mediaService.analyze(
-                  { kind: 'audio', dataUrl, mediaType },
-                  promptText,
-                )
-              : await this.mediaService.analyzeAudioNarrative({ kind: 'audio', dataUrl, mediaType });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ result }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/media/analyze-audio — Phase D1 Task 3e：已迁 registry dispatch。
+        // POST /api/media/upload — Phase D1 Task 3e：已迁 registry dispatch。
 
-        // POST /api/media/upload — binary media upload for the A2A media agent.
-        // Body is the raw media bytes (octet-stream); the media type rides in
-        // the query string. Returns an artifact reference the desktop can pass
-        // to /api/media/create-task (the A2A SendMessage then carries only a
-        // URL part instead of a huge base64 body).
-        const mediaUrlPath = req.url?.split('?')[0]
-        if (mediaUrlPath === '/api/media/upload' && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const mediaType = parsedUrl.searchParams.get('type') || 'application/octet-stream';
-            if (!mediaType.startsWith('image/') && !mediaType.startsWith('video/') && !mediaType.startsWith('audio/')) {
-              res.writeHead(415);
-              res.end(JSON.stringify({ error: `Unsupported media type: ${mediaType}` }));
-              return;
-            }
-            const chunks: Buffer[] = [];
-            let total = 0;
-            const cap = mediaType.startsWith('video/') ? 50 * 1024 * 1024 : mediaType.startsWith('audio/') ? 25 * 1024 * 1024 : 20 * 1024 * 1024;
-            for await (const chunk of req) {
-              total += chunk.length;
-              if (total > cap) {
-                res.writeHead(413);
-                res.end(JSON.stringify({ error: `Media exceeds ${cap} byte limit` }));
-                return;
-              }
-              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-            }
-            const bytes = Buffer.concat(chunks);
-            if (bytes.length === 0) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'empty body' }));
-              return;
-            }
-            const artifactId = this.mediaAgent.putArtifactBytes(bytes, mediaType);
-            const baseUrl = `http://127.0.0.1:${config.server.apiPort}`;
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              artifactId,
-              mediaType,
-              size: bytes.length,
-              url: `${baseUrl}/a2a/artifacts/${artifactId}`,
-            }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/media/create-task — Phase D1 Task 3e：已迁 registry dispatch。
 
-        // POST /api/media/create-task — create an A2A media task from an
-        // already-uploaded artifact (URL part reference). Response shape
-        // matches the legacy dataUrl createTask path.
-        if (req.url === '/api/media/create-task' && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const artifactId = typeof body?.artifactId === 'string' ? body.artifactId : '';
-            const question = typeof body?.question === 'string' ? body.question : '';
-            if (!artifactId) { res.writeHead(400); res.end(JSON.stringify({ error: 'artifactId is required' })); return; }
-            const mediaType = typeof body?.mediaType === 'string' && body.mediaType ? body.mediaType : this.mediaAgent.getArtifactMediaType(artifactId) || 'application/octet-stream';
-            const payload = {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'SendMessage',
-              params: {
-                message: {
-                  messageId: `fe-${Date.now()}`,
-                  role: 1,
-                  parts: [
-                    { url: `/a2a/artifacts/${artifactId}`, mediaType, filename: 'upload.bin' },
-                    ...(question ? [{ text: question }] : []),
-                  ],
-                },
-              },
-            };
-            const result = await this.mediaAgent.handleJsonRpc(payload, { 'a2a-version': '1.0' });
-            const parsed: any = JSON.parse(result.body);
-            if (parsed?.error) {
-              res.writeHead(result.status);
-              res.end(JSON.stringify({ error: parsed.error }));
-              return;
-            }
-            const task = parsed?.result?.task;
-            if (!task?.id) {
-              res.writeHead(502);
-              res.end(JSON.stringify({ error: 'no task returned' }));
-              return;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ id: task.id, contextId: task.contextId, state: task.status?.state || '' }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
-
-        // POST /api/media/upload-and-create — combined upload + createTask in a
-        // single request. Saves one IPC round-trip from the desktop renderer.
-        // Body is raw binary (octet-stream); mediaType rides in the query string.
-        // Returns immediately with taskID (state=working), model analysis runs async.
-        if (req.url?.startsWith('/api/media/upload-and-create') && req.method === 'POST') {
-          const t0 = Date.now();
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const mediaType = parsedUrl.searchParams.get('type') || 'application/octet-stream';
-            const question = parsedUrl.searchParams.get('question') || '';
-            if (!mediaType.startsWith('image/') && !mediaType.startsWith('video/') && !mediaType.startsWith('audio/')) {
-              res.writeHead(415);
-              res.end(JSON.stringify({ error: `Unsupported media type: ${mediaType}` }));
-              return;
-            }
-            const chunks: Buffer[] = [];
-            let total = 0;
-            const cap = mediaType.startsWith('video/') ? 50 * 1024 * 1024 : mediaType.startsWith('audio/') ? 25 * 1024 * 1024 : 20 * 1024 * 1024;
-            for await (const chunk of req) {
-              total += chunk.length;
-              if (total > cap) {
-                res.writeHead(413);
-                res.end(JSON.stringify({ error: `Media exceeds ${cap} byte limit` }));
-                return;
-              }
-              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-            }
-            const bytes = Buffer.concat(chunks);
-            const t1 = Date.now();
-            if (bytes.length === 0) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'empty body' }));
-              return;
-            }
-            const artifactId = this.mediaAgent.putArtifactBytes(bytes, mediaType);
-            const t2 = Date.now();
-            
-            // Create task immediately (state=working), analysis runs in background
-            const { taskId, contextId } = this.mediaAgent.createTaskAsync(artifactId, mediaType, question);
-            const t3 = Date.now();
-            
-            // Return immediately with taskID (state=working)
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              id: taskId,
-              contextId,
-              state: 'TASK_STATE_WORKING',
-              artifactId,
-              mediaType,
-              size: bytes.length,
-            }));
-            const t4 = Date.now();
-            log.info(`[upload-and-create] read=${t1-t0}ms artifact=${t2-t1}ms task=${t3-t2}ms respond=${t4-t3}ms total=${t4-t0}ms`);
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/media/upload-and-create — Phase D1 Task 3e：已迁 registry dispatch。
 
         // Mobile TTS artifact + media proxy — Phase D1 Task 3d：已迁 registry dispatch。
 
