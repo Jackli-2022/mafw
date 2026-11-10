@@ -79,16 +79,21 @@ t1:<sessionTail>:<turnId>    # 旧格式：保留兼容，archive 优先再查 a
 
 ## 门禁结果
 
-- gateway 全量：`npx jest --runInBand --forceExit` → **737 suites / 5742 tests，0 fail**
+- gateway 全量：`npx jest --runInBand --forceExit` → **737 suites / 5745 tests，0 fail**
+- SDK：`cd packages/gateway-sdk && npm test` → **205 tests，0 fail**
 - 类型：`cd gateway; npx tsc --noEmit -p tsconfig.json` → **rc=0**
 - 根构建：`npm run build` → **rc=0**
-- 本阶段新增测试：**26**（T1 identity 原有测试未计）
+- 本阶段新增测试：**32**（2A 主体 26 + 收尾 6：事件 prune 3、SDK 分层 3；T1 identity 原有测试未计）
+
+## Minor 修复（2026-11-10 收尾）
+
+- `t1_retrieval_events` 增加保留期：`pruneT1RetrievalEvents({ before })`，由每日 `memory:decay` 调用，保留天数取 `config.recall.t1Recall.retentionDays`（默认 90，0/负数关闭）；删除数量记入 heartbeat `prunedT1`。观测数据始终不参与 energy/排序。
+- SDK 补分层 DTO：`MemoryLayer`、`T1SearchHit`、`MemoryLayeredSearchResult`、`T1RetrievalStats`，`MemoryStats.t1`；新增 `MafwClient.memory.searchLayered()`，`memory.search()` 保持旧行为且不发 `layer`。
 
 ## 已知限制
 
 - T1 仍只有 dense 检索；标识符/路径/错误码的精确词面通道留到 Phase 2B。
 - T1 向量覆盖仍不完整；自动回填与二进制索引留到 Phase 2B。
-- `t1_retrieval_events` 目前只增不删，尚无保留期/prune。
 - 旧 T1 指针在 `legacy_ambiguous` 复合键上仍可能命中多段历史；新 trace 指针是精确入口，但 legacy ambiguous 只能显式提示，不能恢复真实边界。
 - `search` / `recall` / `redeem` 事件只观测，不改变 T1 activation 或 Harmonic energy。
 - `mafw_get_memory` 的 HTTP/SDK 类型尚未补充 trace pointer 的专用 DTO；当前仍以通用 JSON 返回。
