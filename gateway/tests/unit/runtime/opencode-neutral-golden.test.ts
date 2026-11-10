@@ -5,12 +5,20 @@ import { toRuntimeDefinition as gatewayToRuntimeDefinition } from '../../../src/
 import { toRuntimeDefinition } from '../../../../adapters/opencode/src/legacy-definition';
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../../adapters/opencode/src/events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../../adapters/opencode/src/events';
 import { OPENCODE_21_EVENT_MAPPINGS, OPENCODE_21_EVENT_SOURCE, translateOpencode21Event } from '../../../../adapters/opencode/src/events-21';
+import { translateNative } from '../../../../adapters/opencode/src/emit';
+import { OpencodeTurnAttribution } from '../../../../adapters/opencode/src/turn-attribution';
 
 const ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,
   eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
+  transformEvent: OPENCODE_TRANSFORM_EVENT,
+};
+
+const V2_ENTRY = {
+  eventSource: OPENCODE_EVENT_SOURCE,
+  eventMappings: OPENCODE_V2_EVENT_MAPPINGS,
   transformEvent: OPENCODE_TRANSFORM_EVENT,
 };
 
@@ -277,5 +285,88 @@ it('gateway and adapter bridges emit the same canonical payloads for @2.1 events
   // `session.diff.diff`), not just identity that `stablePayload` strips.
   expect(viaAdapter.map(stablePayload).filter((properties) => Object.keys(properties).length > 0).length)
     .toBeGreaterThan(0);
+});
+
+/**
+ * W1: the native emission path must be property-identical to the legacy bridge
+ * it replaces. The golden file pins the expected payloads; this A/B compares
+ * the two implementations over the same raw stream so a drift in either copy
+ * is caught even when both happen to agree on the event type.
+ *
+ * `id`/`at`/`turnID` are bridge-local identity (`native` never appears on either
+ * copy); everything else — `type`, `sessionID`, `requestID` and the full `data`
+ * payload — must be deep-equal.
+ */
+interface NativeGoldenRow {
+  dialect: 'v1' | 'v2' | 'v21';
+  event: any;
+}
+
+const NATIVE_ROWS: NativeGoldenRow[] = readFileSync(
+  join(__dirname, '../../fixtures/events/opencode-native-golden.jsonl'),
+  'utf8',
+)
+  .trim()
+  .split('\n')
+  .map((line) => JSON.parse(line) as NativeGoldenRow);
+
+const NATIVE_ENTRIES = { v1: ENTRY, v2: V2_ENTRY, v21: V21_ENTRY };
+
+/** Property projection (volatile bridge identity removed, JSON-normalized). */
+function nativeProjection(event: any): any {
+  return JSON.parse(JSON.stringify({
+    type: event.type,
+    sessionID: event.sessionID,
+    requestID: event.requestID,
+    data: event.data,
+  }));
+}
+
+function nativeAdapterEvents(rows: NativeGoldenRow[], entry: any): any[] {
+  const attribution = new OpencodeTurnAttribution();
+  return rows.flatMap((row) => translateNative(row.event, entry, undefined, attribution));
+}
+
+async function legacyAdapterEvents(rawEvents: any[], entry: any): Promise<any[]> {
+  const definition = toRuntimeDefinition(fakeRuntime(rawEvents), {
+    name: 'opencode-native-parity',
+    capabilities: {},
+    translate: { entry, isCanonical: (type: string) => !!EVENT_FLOW_MATRIX[type] },
+  });
+  const seen: any[] = [];
+  definition.transport.onEvent((event) => seen.push(event));
+
+  // The fake stream has no completion signal; stop once the pump has been idle
+  // for a few ticks (or after a hard cap).
+  const started = Date.now();
+  let last = -1;
+  let stable = 0;
+  while (Date.now() - started < 2000 && stable < 3) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    if (seen.length === last) stable += 1;
+    else {
+      stable = 0;
+      last = seen.length;
+    }
+  }
+  return seen;
+}
+
+describe.each(['v1', 'v2', 'v21'] as const)('native emitter property parity (%s)', (dialect) => {
+  it('emits the same AdapterEvent properties as the legacy bridge', async () => {
+    const rows = NATIVE_ROWS.filter((row) => row.dialect === dialect);
+    expect(rows.length).toBeGreaterThan(0);
+
+    const native = nativeAdapterEvents(rows, NATIVE_ENTRIES[dialect]).map(nativeProjection);
+    const legacy = (await legacyAdapterEvents(rows.map((row) => row.event), NATIVE_ENTRIES[dialect]))
+      .map(nativeProjection);
+
+    // A shorter-but-equal sequence would hide a dropped event.
+    expect(legacy).toHaveLength(native.length);
+    expect(legacy).toEqual(native);
+
+    // Self-check that the compare is not vacuous: payloads carry real fields.
+    expect(native.filter((event) => Object.keys(event.data ?? {}).length > 0).length).toBeGreaterThan(0);
+  });
 });
 

@@ -30,10 +30,12 @@
  * the neutral contract/core packages).
  */
 import { backgroundJobFromSynthetic, stopReasonOf } from '@mafw/runtime-core';
-import type { EventMapping, EventSourceShape, RawRuntimeEvent, TransformEventFn } from '@mafw/runtime-core';
-import { MAFW } from '@mafw/runtime-contract';
+import type { EventMapping, EventMappingEntry, EventSourceShape, RawRuntimeEvent, TransformEventFn, TranslationHooks } from '@mafw/runtime-core';
+import { MAFW, type AdapterEvent } from '@mafw/runtime-contract';
 import { formToQuestion } from './form-question';
 import { canonicalError, canonicalMessage, errorTextOf } from './canonical';
+import { translateNative } from './emit';
+import type { OpencodeTurnAttribution } from './turn-attribution';
 
 /** 2.1.0 信封：type 顶层，sessionID 在 data，目录在 location。 */
 export const OPENCODE_21_EVENT_SOURCE: EventSourceShape = {
@@ -445,3 +447,18 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
       return raw;
   }
 };
+
+/** @2.1 native emission tail: raw → canonical → validated `AdapterEvent`. */
+const OPENCODE_21_NATIVE_ENTRY: EventMappingEntry = {
+  eventSource: OPENCODE_21_EVENT_SOURCE,
+  eventMappings: OPENCODE_21_EVENT_MAPPINGS,
+  transformEvent: translateOpencode21Event,
+};
+
+export function translateNative21(
+  raw: any,
+  hooks: TranslationHooks | undefined,
+  attribution: OpencodeTurnAttribution,
+): AdapterEvent[] {
+  return translateNative(raw, OPENCODE_21_NATIVE_ENTRY, hooks, attribution);
+}

@@ -28,6 +28,13 @@ import type { EventMapping, EventSourceShape, RawRuntimeEvent, TransformEventFn 
 import { RUNTIME_IDENTITY_TYPES } from '@mafw/runtime-contract';
 import { canonicalMessage } from './canonical';
 
+/**
+ * Native emission tail (W1): raw → canonical → validated `AdapterEvent`.
+ * Re-exported here so a transport can import the whole @v1/@v2 path from one
+ * module; the implementation lives in `emit.ts`.
+ */
+export { translateNative } from './emit';
+
 /** opencode 方言的 canonical 恒等翻译词汇（驱动方显式给出，不用 AdapterEvent 默认集）。 */
 export const OPENCODE_CANONICAL_IDENTITY_TYPES = RUNTIME_IDENTITY_TYPES;
 
