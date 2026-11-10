@@ -1176,6 +1176,70 @@ export class GatewayDatabase {
     return out;
   }
 
+  /**
+   * Highest-activation known traces for bounded replay selection. Zero/unknown
+   * rows are excluded; limit is capped at 100.
+   */
+  topActivatedTraces(
+    limit: number,
+    opts: { minActivation?: number } = {},
+  ): Array<{ traceId: string; activation: number }> {
+    const n = Math.max(0, Math.min(100, Math.floor(Number(limit) || 0)));
+    if (n === 0) return [];
+    const floor = Number.isFinite(opts.minActivation) ? opts.minActivation! : 0;
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT s.trace_id, s.activation
+             FROM t1_trace_state s
+            WHERE s.activation > 0 AND s.activation >= ?
+              AND EXISTS (SELECT 1 FROM t1_turns t WHERE t.trace_id = s.trace_id)
+            ORDER BY s.activation DESC, s.trace_id
+            LIMIT ?`,
+        )
+        .all(floor, n) as Array<{ trace_id: string; activation: number }>;
+      return rows.map((row) => ({ traceId: row.trace_id, activation: row.activation }));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Stamp replay exposure for known traces (state only; no activation bump). */
+  markT1Replayed(traceIds: string[], ts?: number): number {
+    const ids: string[] = [];
+    for (const raw of traceIds || []) {
+      const id = String(raw || '').trim();
+      if (!id || ids.includes(id)) continue;
+      ids.push(id);
+      if (ids.length >= 100) break;
+    }
+    if (ids.length === 0) return 0;
+    const at = Number.isFinite(ts) ? ts! : Math.floor(Date.now() / 1000);
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      let touched = 0;
+      const txn = this.db.transaction(() => {
+        const insert = this.db.prepare(
+          `INSERT OR IGNORE INTO t1_trace_state
+             (trace_id, activation, retrieval_count, last_replayed_at, activation_updated_at)
+           SELECT trace_id, 0, 0, ?, ? FROM t1_turns WHERE trace_id = ?`,
+        );
+        const update = this.db.prepare(
+          'UPDATE t1_trace_state SET last_replayed_at = ? WHERE trace_id = ?',
+        );
+        for (const id of ids) {
+          if (insert.run(at, now, id).changes > 0) touched++;
+          else if (update.run(at, id).changes > 0) touched++;
+        }
+      });
+      txn();
+      return touched;
+    } catch (err: any) {
+      log.warn(`[T1Replay] mark failed: ${err?.message || err}`);
+      return 0;
+    }
+  }
+
   /** Aggregate activation state for /api/memory/stats. */
   t1ActivationStats(): { traces: number; mean: number; max: number } {
     try {

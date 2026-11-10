@@ -16,7 +16,7 @@ import { getReconsolidationQueue } from '../recall/reconsolidation';
 import { getRetrievalEventBuffer } from '../core/memory/retrieval-events';
 
 export type RoutingOutcome =
-  | { action: 'skip'; targetId: string }
+  | { action: 'skip'; targetId: string; reinforced?: boolean }
   | { action: 'create' }
   | { action: 'update'; targetId: string }
   | { action: 'separate'; targetId: string; distinction?: string }
@@ -215,11 +215,37 @@ export async function routeAndWrite(
   unit: HarmonicUnit,
   store: RouteStore,
   deps: RouteWriteDeps,
-): Promise<{ action: 'skip' | 'create' | 'update' | 'separate' | 'redundant'; id: string; targetId?: string }> {
+): Promise<{ action: 'skip' | 'create' | 'update' | 'separate' | 'redundant'; id: string; targetId?: string; reinforced?: boolean }> {
   const decision = await decideRouting(unit, deps);
   if (decision.action === 'skip') {
     routeStats.skip++;
-    return { action: 'skip', id: decision.targetId, targetId: decision.targetId };
+    // Phase 4B: a duplicate carrying exact provenance reinforces the canonical
+    // memory instead of disappearing. Bounded energy bump; legacy writes
+    // without provenance keep the old pure no-op behavior.
+    let reinforced = false;
+    if ((unit.source_trace_ids?.length ?? 0) > 0) {
+      try {
+        const target = await store.read(decision.targetId);
+        if (target) {
+          const union = unionSourceTraceIds(unit.source_trace_ids, target.source_trace_ids);
+          if (union?.length) {
+            await store.write({
+              ...target,
+              source_trace_ids: union,
+              energy: Math.min(1, (target.energy ?? 0) + 0.02),
+              updated_at: new Date().toISOString(),
+            } as HarmonicUnit);
+            reinforced = true;
+          }
+        }
+      } catch { /* fail-open: skip remains a no-op */ }
+    }
+    return {
+      action: 'skip',
+      id: decision.targetId,
+      targetId: decision.targetId,
+      ...(reinforced ? { reinforced: true } : {}),
+    };
   }
   if (decision.action === 'redundant') {
     // Sink, not drop: energy 0.05 + provenance anchor keeps the entry

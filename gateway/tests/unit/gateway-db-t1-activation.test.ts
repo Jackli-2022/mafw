@@ -101,4 +101,28 @@ describe('T1 trace activation state', () => {
     const many = Array.from({ length: 150 }, (_, i) => `t1t_${i}`);
     expect(() => db.t1Activations(many)).not.toThrow();
   });
+
+  test('topActivatedTraces orders known traces and supports a floor', () => {
+    const a = db.beginTurn('s1');
+    const b = db.beginTurn('s2');
+    const zero = db.beginTurn('s3');
+    for (let i = 0; i < 5; i++) db.recordT1RetrievalEvent({ traceId: a.trace_id, kind: 'search' });
+    for (let i = 0; i < 2; i++) db.recordT1RetrievalEvent({ traceId: b.trace_id, kind: 'search' });
+    db.propagateT1Activation([zero.trace_id], 0);
+
+    expect(db.topActivatedTraces(10).map((x) => x.traceId)).toEqual([a.trace_id, b.trace_id]);
+    expect(db.topActivatedTraces(10, { minActivation: 0.3 }).map((x) => x.traceId)).toEqual([a.trace_id]);
+    expect(db.topActivatedTraces(1).map((x) => x.traceId)).toEqual([a.trace_id]);
+    expect(db.topActivatedTraces(0)).toEqual([]);
+  });
+
+  test('markT1Replayed stamps known traces only', () => {
+    const a = db.beginTurn('s1');
+    const b = db.beginTurn('s2');
+    expect(db.markT1Replayed([a.trace_id, b.trace_id, 't1t_missing'], 1234)).toBe(2);
+    expect(db.t1TraceActivation(a.trace_id)!.lastReplayedAt).toBe(1234);
+    expect(db.t1TraceActivation(b.trace_id)!.lastReplayedAt).toBe(1234);
+    expect(db.t1TraceActivation('t1t_missing')).toBeNull();
+    expect(db.markT1Replayed([], 4321)).toBe(0);
+  });
 });
