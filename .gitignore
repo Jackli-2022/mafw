@@ -45,7 +45,7 @@ gateway/src/**/*.js.map
 gateway/src/src/
 
 # 运行时数据
-scheduler/
+/scheduler/
 *.db
 tsconfig.tsbuildinfo
 

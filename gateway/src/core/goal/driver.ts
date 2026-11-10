@@ -3,6 +3,7 @@
 // 驱动：state 文件（真相源）+ per-session 事件监听（idle/error 双门完成判定）。
 // langgraph 三件套（graph/checkpointer/interrupt）退役；路由用 routing.ts 纯函数。
 import { Watermark } from '../../concurrency/watermark';
+import { MutexQueue } from '../../concurrency/mutex-queue';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
@@ -298,6 +299,8 @@ export interface DriverDeps {
   probes?: GoalProbePort;
   /** Pod revision worktree resolver: null/absent = legacy/main workspace. Throwing fails the node. */
   workdirForRevision?: (goalId: string, revision: number) => Promise<string | null>;
+  /** Execution shape chosen by the Tech Lead for this revision. */
+  goalMode?: (goalId: string, revision: number) => 'quick' | 'standard' | 'standing' | null;
 }
 
 const NODE_PHASE: Record<ExecutableGoalNode, { running: string; complete: string }> = {
@@ -308,7 +311,7 @@ const NODE_PHASE: Record<ExecutableGoalNode, { running: string; complete: string
 };
 
 export class NodeDriver {
-  private mutex = new Map<string, Promise<void>>();
+  private mutex = new MutexQueue();
   private listeners = new Map<string, (ev: 'idle' | 'error', failure?: {
     message: string;
     code: string;
@@ -363,18 +366,22 @@ export class NodeDriver {
     }
   }
 
-  /** 推进 goal（幂等、互斥）。所有入口（starter/完成回调/应答/恢复/watchdog）都走这里。 */
+  /** 推进 goal（幂等、互斥）。所有入口（starter/完成回调/应答/恢复/watchdog）都走这里。
+   * B2：原 raw promise-chain mutex → MutexQueue（Phase A 原语，FIFO per goal，语义等价）。 */
   async advance(goalId: string): Promise<void> {
-    const prev = this.mutex.get(goalId) ?? Promise.resolve();
-    const next = prev.then(() => this.advanceInner(goalId)).catch((err) => {
-      // 驱动器异常绝不外抛（spec §7）；落 lastError
+    await this.mutex.run(goalId, async () => {
       try {
-        const mafwDir = this.stateDirs.get(goalId);
-        if (mafwDir) writeGoalState(mafwDir, goalId, { lastError: `driver: ${err?.message ?? err}` });
-      } catch { /* last-resort */ }
+        await this.advanceInner(goalId);
+      } catch (err) {
+        // 驱动器异常绝不外抛（spec §7）；落 lastError。非 Error 对象
+        // （{code, message} 式库抛出）保留其 .message 而非渲染 [object Object]。
+        try {
+          const mafwDir = this.stateDirs.get(goalId);
+          const message = (err as any)?.message ?? String(err);
+          if (mafwDir) writeGoalState(mafwDir, goalId, { lastError: `driver: ${message}` });
+        } catch { /* last-resort */ }
+      }
     });
-    this.mutex.set(goalId, next);
-    try { await next; } finally { if (this.mutex.get(goalId) === next) this.mutex.delete(goalId); }
   }
 
   /**
@@ -615,6 +622,7 @@ export class NodeDriver {
     const basePrompt = renderNodePrompt(node, {
       goalId, projectDir: state.projectDir, mafwDir, round, maxRounds: state.maxRounds,
       revision,
+      goalMode: this.deps.goalMode?.(goalId, revision) ?? undefined,
       charterPath,
       requestPath,
       reviewFeedback: state.reviewFeedback || undefined,
@@ -1145,6 +1153,11 @@ export class NodeDriver {
    * 由下一次外部推进（watchdog/应答/审批）重新开始计数。
    */
   private async continueAdvance(goalId: string): Promise<void> {
+    // MutexQueue releases the key one microtask AFTER the task promise settles
+    // (queueMicrotask re-entrancy guard, Phase A design). Every caller here sits
+    // INSIDE an advanceInner chain where the goal's mutex is legitimately held,
+    // so the stale-true window is invisible to them — outside callers must not
+    // rely on has() immediately after an awaited advance in the same tick.
     if (!this.mutex.has(goalId)) {
       await this.advance(goalId);
       return;
@@ -1672,6 +1685,19 @@ export class NodeDriver {
         const manualPlan = (state.planReview ?? 'auto') === 'manual';
         const requestedQuick = planDoc.strategy === 'quick';
         const quickPlan = requestedQuick && !manualPlan;
+        // Defense in depth: an explicit quick revision must not silently fall back
+        // to the collaborative path (or request probes / manual approval).
+        if (this.deps.goalMode?.(goalId, revision) === 'quick') {
+          if (manualPlan) {
+            throw new Error('artifact_invalid: quick goal cannot require manual plan review');
+          }
+          if (planDoc.status === 'need_probe') {
+            throw new Error('artifact_invalid: quick goal cannot request probes');
+          }
+          if (planDoc.status === 'ready' && !requestedQuick) {
+            throw new Error("artifact_invalid: quick goal requires strategy:'quick'");
+          }
+        }
         if (planDoc.status === 'need_clarification') {
           patch = {
             pendingQuestion: {
@@ -2082,10 +2108,10 @@ export class NodeDriver {
   }
 
   private async withGoalMutex<T>(goalId: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.mutex.get(goalId) ?? Promise.resolve();
-    const next = prev.then(fn, fn);
-    this.mutex.set(goalId, next as Promise<void>);
-    try { return await next; } finally { if (this.mutex.get(goalId) === next) this.mutex.delete(goalId); }
+    // B2: MutexQueue.run — FIFO per goal; a previous task's rejection does not
+    // block the next (finish() drains on both settle paths), matching the old
+    // chain's `.then(fn, fn)` behavior; fn's result/errors propagate.
+    return this.mutex.run(goalId, fn);
   }
 
   /**

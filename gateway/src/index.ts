@@ -4,13 +4,14 @@ import * as os from 'os';
 import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
-import * as yaml from 'js-yaml';
 import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
-import { Guard, GuardTimeoutError } from './concurrency/guard';
 import { MutexQueue } from './concurrency/mutex-queue';
 import { TtlMap } from './concurrency/ttl-map';
+import { Scheduler, TaskSkippedError, TaskTimeoutError } from './scheduler';
+import { getDefaultSessionRegistry } from './session';
+import { InternalRolesView } from './session/views/internal-roles';
 import { log } from './core/utils/logger';
 import {
   createGatewayRuntimeIdentity,
@@ -30,11 +31,7 @@ import {
   type GoalResolution,
 } from './core/goal/goal-identity';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
-import { handleGoalTimeline } from './routes/goal-timeline';
-import { handleGoalPlan } from './routes/goal-plan';
-import { handleNodeRetry } from './routes/goal-node-retry';
-import { handleMcp } from './routes/mcp';
-import { handleMcpConfig } from './routes/mcp-config';
+import { attachGoalRoutes } from './routes/goals-inline';
 import { handleTerminal } from './routes/terminal';
 import { TerminalService } from './terminal/terminal-service';
 import { matchTerminalConnectUrl } from './terminal/terminal-protocol';
@@ -48,6 +45,15 @@ import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
 import { TaskService, TaskError } from './runtime/task-service';
+import { claimGatewayInstance } from './runtime/instance-ownership';
+import {
+  gatewayDiscoveryPath,
+  publishGatewayDiscovery,
+  readGatewayDiscovery,
+  type GatewayDiscoveryHandle,
+} from './runtime/gateway-discovery';
+import { mafwRuntimeDir } from './runtime/runtime-paths';
+import type { InstanceLock } from './runtime/instance-lock';
 import {
   BackgroundJobError,
   BackgroundJobRegistry,
@@ -58,8 +64,6 @@ import { PodStore } from './core/pod/pod-store';
 import { PodEventService } from './core/pod/pod-event-service';
 import { PodEventWake } from './core/pod/pod-event-wake';
 import { buildPodPresence, type PodPresence } from './core/pod/pod-presence';
-import { handlePresence } from './routes/presence';
-import { handlePodEvents } from './routes/pod-events';
 import { dispatchAuthorized } from './routes/registry-dispatch';
 import {
   classifyGoalArchive,
@@ -78,6 +82,12 @@ import { PodSessionSupervisor } from './core/pod/pod-session-supervisor';
 import { PodSessionLifecycle } from './core/pod/pod-session-lifecycle';
 import { PodDirectionService } from './core/pod/pod-direction-service';
 import { PodTechLeadService, TECH_LEAD_AGENT } from './core/pod/pod-tech-lead-service';
+import { LeadTopicStore } from './core/lead/lead-topic-store';
+import { LeadHandoffService } from './core/lead/lead-handoff-service';
+import { TopicMessageIndexStore } from './core/lead/topic-message-index';
+import { LeadTopicSummaryService } from './core/lead/lead-topic-summary-service';
+import { LeadTopicResumeService } from './core/lead/lead-topic-resume-service';
+import { summarizeTopic } from './core/lead/topic-summary';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
 import { PodProbeService, probeReportPath } from './core/pod/pod-probe-service';
@@ -85,7 +95,7 @@ import { PodContextSelectionService } from './mcp/handlers/pod-context-select';
 import { ProbeWorkspaceFactory } from './core/pod/pod-probe-workspace';
 import type { GoalProbePort, GoalProbeSessionBinding } from './core/goal/driver';
 import type { ProbeRequest, ProbeReport } from './core/goal/probe';
-import { goalVerdictFromState, type PodGoalDescription } from './core/pod/pod-view';
+import { goalVerdictFromState, buildPodAttention, type PodGoalDescription } from './core/pod/pod-view';
 import { buildPodGoalResult } from './core/pod/pod-result';
 import {
   createGoalIntake,
@@ -102,10 +112,6 @@ import { PodA2ABridge } from './core/pod/pod-a2a-bridge';
 import { PodA2AAgent } from './core/pod/pod-a2a-agent';
 import { PodA2AArtifactStore } from './core/pod/pod-a2a-artifacts';
 import { canonicalProjectDir, podInternalSessionRoleForNode } from './core/pod/pod-identity';
-import {
-  handleSubagentCancel, handleSubagentList, handleSubagentMessage,
-  handleSubagentResult, handleSubagentSpawn,
-} from './routes/subagents';
 import { createToolRegistry } from "./mcp/tool-registry";
 import { abstractionLevelFor } from './core/memory/abstraction-level';
 import { MemoryService } from "./memory/service";
@@ -124,8 +130,7 @@ import { ReflectCursor } from "./recall/reflect-cursor";
 import { IndexScanService, resolveScanBaseUrl } from "./recall/index-scan";
 import { PipelineHeartbeat } from "./recall/pipeline-heartbeat";
 import { PipelineBudget } from "./recall/pipeline-budget";
-import { redactSecrets } from "./recall/redact";
-import { buildMafwCommandRegistry, handleMafwCommandRun, handleMafwCommandList } from "./routes/mafw-commands";
+import { buildMafwCommandRegistry } from "./routes/mafw-commands";
 import type { MafwCommandRegistry } from "./commands/registry";
 import { scanCommandDirs, watchCommandDirs, type CommandDir } from "./commands/custom-commands";
 import { registerCustomCommands } from "./commands/custom-exec";
@@ -133,8 +138,7 @@ import { exec } from "child_process";
 import { ConsolidationService, consolidationJudge } from "./memory/consolidation-service";
 import { resolveJudgeModel } from "./memory/judge-model";
 import { LayaConflictClient } from "./memory/laya-client";
-import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite, getRouteStats } from "./memory/route-write";
-import { obsSalience } from "./recall/obs-salience";
+import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/route-write";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
 import { getProviderApiKey } from "./runtime/auth";
@@ -161,18 +165,15 @@ import { Qwen3AsrEngine } from './voice/engines/asr/qwen3-vllm';
 import { resolveVoiceConfig } from './voice/config';
 import { VoiceRuntime } from './voice/runtime';
 import { attachVoiceSocket, isVoiceUpgradePath } from './voice/transport/ws-voice';
-import { handleVoiceStatus } from './voice/routes/voice-status';
-import { handleEvalChatCompletion } from "./eval-endpoint";
 import { SessionKernels } from "./python/kernel-service";
 import { eventBus } from "./event-bus";
-import { AutomationEngine, actionRegistry } from "./automation-engine";
+import { AutomationEngine } from "./automation-engine";
 import { SchedulerLedger } from "./ledger";
 import { DesktopClient } from "./desktop-client";
 import { QuestionLedger } from './core/manager/question-ledger';
 import { ensureManagerRules } from './core/manager/system-rule-templates';
 import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
 import { MilestonePushNotifier } from './core/manager/milestone-push';
-import { buildGoalSnapshot } from './core/manager/goal-snapshot';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
@@ -183,7 +184,7 @@ import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
 import { createBuiltinIdentityRegistry, identityMaterializable, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
-import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
+import { IdentityState, withIdentityPrompt } from './runtime/identity-state';
 import { withInstructionSync } from './runtime/instruction-wrapper';
 import { InstructionSyncService } from './core/instructions/instruction-sync-service';
 import { DiscoveryService } from './core/discovery/discovery-service';
@@ -193,7 +194,7 @@ import { isHiddenSession, selectVisibleSessions } from './core/session-visibilit
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { MAFW } from './runtime/mafw-vocabulary';
 import { activateRuntimeTools, buildMafwToolFactory } from './runtime/mafw-tools';
-import { handleToolsList, handleToolsExecute } from './routes/tools';
+import { attachToolsRoutes, handleToolsList, handleToolsExecute } from './routes/tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { enrichToolIdentity } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
@@ -202,24 +203,48 @@ import { SessionQueue } from './core/session-queue';
 import { shouldFlush } from './core/queue-flush';
 import { createCognitionGate } from './core/cognition/cognition-gate';
 import { validateRules, type CognitionRule } from './core/cognition/rules';
-import { handleCognitionGate, handleCognitionRewrite, handleCognitionRules } from './routes/cognition';
+import { attachCognitionRoutes } from './routes/cognition';
+import { attachPythonRoutes } from './routes/python';
+import { attachTtsRoutes } from './routes/tts';
+import { attachTerminalRoutes, attachAgentRoutes, attachMobileRoutes } from './routes/agent-terminal-mobile';
+import { attachMediaRoutes } from './routes/media-upload';
+import { attachProjectRoutes } from './routes/projects';
+import { attachMafwCommandRoutes } from './routes/mafw-commands';
+import { attachMergeMemoryRoutes } from './routes/merge-memory';
+import { attachTriageRoutes } from './routes/triage';
+import { attachAutomationRoutes } from './routes/automations';
+import { attachChatRoutes } from './routes/chat';
+import { attachObsRoutes } from './routes/obs';
+import { attachSessionsCoreRoutes } from './routes/sessions-core';
+import { attachSessionsReadRoutes } from './routes/sessions-read';
+import { attachSessionsPermissionsRoutes } from './routes/sessions-permissions';
+import { attachApprovalsRoutes } from './routes/approvals';
+import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
+import { attachUsageRoutes } from './routes/usage';
+import { attachRecallRoutes } from './routes/recall';
+import { attachMemoryRoutes } from './routes/memory';
+import { attachDashboardRoutes } from './routes/dashboard';
+import { attachMiscRoutes } from './routes/misc';
+import { attachConfigRoutes } from './routes/config';
+import { attachLlmRoutes } from './routes/llm';
+import { attachMediaPluginRoutes } from './routes/media-plugins';
+import { attachPodsEventsRoutes } from './routes/pods-events-dispatch';
+import { attachMcpMgmtRoutes } from './routes/mcp-mgmt';
+import { attachManagerSessionRoutes } from './routes/manager-session';
+import { attachDevicesMobileRoutes } from './routes/devices-mobile';
+import { attachEventsSseRoutes } from './routes/events-sse';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
 const QUEUE_ITEM_TTL_MS = 24 * 3600_000;
-const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
-const isThinkingLevel = (v: unknown): v is string => typeof v === 'string' && THINKING_LEVELS.has(v);
 import { EventStore } from './events/event-store';
 import { migrateEventLogInfoToMessage } from './events/event-log-migrate';
 import { enrichBroadcastFrame } from './events/broadcast-frame';
-import { parseSince, attachGlobalSse } from './events/sse-attach';
 import { ApprovalPolicyService } from './core/approval/policy-service';
-import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
 import { PermissionRulesStore } from './core/approval/rules-store';
 import { normalizeMode, SessionPermissionMode } from './core/approval/policy-service';
 import { applyApprovalPolicy } from './core/approval/hook';
-import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { SessionConfigService, SessionConfigError } from './core/session-config';
 import { archiveWorktree } from './core/tools/archive-worktree.js';
 import { resolveNodeModel } from './core/goal/node-model';
@@ -235,10 +260,8 @@ import { handleFileHistoryRoutes } from './routes/file-history';
 import { RunStateService } from './core/run/run-state-service';
 import { RunCoordinator } from './core/run/run-coordinator';
 import { DataPartService } from './core/data-parts/data-part-service';
-import { handleSessionHistory } from './routes/session-history';
 import { defaultGit } from './core/diff/turn-diff';
 import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
-import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
 
 /**
@@ -269,11 +292,7 @@ import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
 import {
   enrichPermissionEvent,
-  projectAgents,
-  projectPermissionList,
-  projectProviderEnvelope,
   projectQuestionRequest,
-  projectSession,
   projectSessions,
 } from './runtime/view-projections';
 import { buildRuntimeDiagnostics, type RuntimeDiagnosticsView } from './runtime/runtime-diagnostics';
@@ -290,14 +309,8 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
   ...TOOL_PRIMITIVE_TYPES,
 ]);
 
-import { handlePermissionReply, handlePermissionReplyById, resolveApprovalDirectory } from './routes/permission';
 import { surfaceUnavailableMessage } from './runtime/runtime-access';
-import { handleSessionBackground } from './routes/session-background';
 import { attachBackgroundJobHandlers } from './routes/background-jobs';
-import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
-import { handleSessionCreate } from './routes/session-create';
-import { resolveWorktreeAvailability, probeGitWorktreeSupport } from './core/worktree/worktree-availability';
-import { handleApprovalsRespond } from './routes/approvals-respond';
 import { performRuntimeSwitch, type RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps, PluginsPackageEntry } from './routes/plugins';
@@ -325,9 +338,8 @@ import type { RestartAgentDeps } from './routes/restart-agent';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { ensureServeForBuiltinRuntime } from './runtime/serve-for-runtime';
 import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime/runtime-root';
-import { isSelectableProject, parseRegisterIntent, pickCurrentProject } from './runtime/project-selection';
+import { isSelectableProject, parseRegisterIntent } from './runtime/project-selection';
 import type { UsagePluginsDeps } from './routes/usage-plugins';
-import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
 import type { ModelConfigDeps } from './routes/model-config';
 import { RouteRegistry } from './routes/registry';
@@ -335,6 +347,8 @@ import { attachTypedRoute } from './routes/typed';
 import { SessionListResponse } from './routes/schemas/session';
 import { buildRouteCatalog } from './routes/route-catalog';
 import { attachWave1Handlers } from './routes/wave1-handlers';
+import { attachLeadTopicRoutes } from './routes/lead-topics';
+import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
 import { attachPodHandlers } from './routes/pod-handlers';
 import { attachPodA2ARoutes } from './routes/pod-a2a';
@@ -531,10 +545,17 @@ class MafwScheduler {
   }
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private queueSweepTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionSweepTimer: ReturnType<typeof setInterval> | null = null;
+  // Unified session registry (kernel refactor Phase C) — the gateway's process
+  // table. MUST be the default singleton: worker-origin (recall/worker-origin.ts)
+  // falls back to getDefaultSessionRegistry(), and a private instance would
+  // split the table in two (final review C1). Views below hold a reference;
+  // worker-origin / pool / lead / pod mirrors consume it.
+  private sessionRegistry = getDefaultSessionRegistry();
   // Internal worker sessions (memory pipelines) — their output must never be
-  // captured back into T1 (recursion guard A). Maps sessionID → worker role
-  // (manager, turn-compress, index-scan, reflect) for token usage tracking.
-  private internalSessionRoles = new Map<string, string>();
+  // captured back into T1 (recursion guard A). Role overlay over the session
+  // registry (was: bare Map<string, string>; kv dual-write unchanged).
+  private internalSessionRoles = new InternalRolesView(this.sessionRegistry);
   // Identity layer (spec 2026-10-08-runtime-neutral-agent-identity): registry 是身份
   // 单一事实源；state 持 session→identity 绑定与 (runtime, identity) 物化状态。
   private identityRegistry = createBuiltinIdentityRegistry();
@@ -545,7 +566,24 @@ class MafwScheduler {
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
-  private pipelineGuard = new Guard(); // action-level in-flight guards, keyed by action name
+  /**
+   * Unified priority scheduler (Phase B). AutomationEngine actions and
+   * snapshot builds submit through it; budget admission consults the
+   * pipeline daily USD cap using the pipelines' own allow() names.
+   */
+  private scheduler = new Scheduler({
+    budgetChecker: (task) => {
+      const b = task.budget;
+      if (b?.kind === 'pipeline' && b.pipeline) {
+        try {
+          return { ok: this.getPipelineBudget().allow(b.pipeline), reason: 'pipeline daily cap' };
+        } catch {
+          return { ok: true }; // fail-open — matches PipelineBudget's own stance
+        }
+      }
+      return { ok: true };
+    },
+  });
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
   private promptBudgetSessions = new Set<string>();
   /** busy 追踪（spec §5.1 v2）：value = busy 起始 ms；turn.started 置位、三终态清除；15min TTL 防楔死。 */
@@ -648,6 +686,10 @@ class MafwScheduler {
   private podSessionLifecycle!: PodSessionLifecycle;
   private podDirectionService!: PodDirectionService;
   private podTechLeadService!: PodTechLeadService;
+  private leadTopics!: LeadTopicStore;
+  private leadTopicIndex!: TopicMessageIndexStore;
+  private leadTopicSummary!: LeadTopicSummaryService;
+  private leadTopicResume!: LeadTopicResumeService;
   private podWorktreeService!: PodWorktreeService;
   private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
@@ -708,6 +750,9 @@ class MafwScheduler {
   private pairingService?: PairingService;
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
+  private instanceLock: InstanceLock | null = null;
+  private instanceDiscovery: GatewayDiscoveryHandle | null = null;
+  private discoveryHeartbeatTimer: NodeJS.Timeout | null = null;
   private podEventService?: PodEventService;
   private podEventWake?: PodEventWake;
   private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
@@ -763,31 +808,35 @@ class MafwScheduler {
       + ` instance=${this.runtimeIdentity.instanceId}`,
     );
 
-    // Single-instance guard: if a healthy gateway already owns apiPort, this
-    // instance is redundant — exit before spawning anything (avoids two
-    // gateways fighting over ports 3000/4096). In takeover mode (self-update
-    // successor) the old process is expected to still hold the port briefly,
-    // so wait for it to free before proceeding.
+    // One data directory, one gateway. Ownership is a lease held by the
+    // process that is about to bind — not a probe against the port. A
+    // contender either becomes the owner or reports the live instance so the
+    // caller can attach; a self-update successor waits for the old owner to
+    // release instead of stealing a live lock.
     const takeover = process.env.MAFW_TAKEOVER === '1';
-    if (await isPortHealthy(this.apiPort)) {
-      if (takeover) {
-        log.info('[Scheduler] Takeover mode: waiting for previous gateway to release the port...');
-        let freed = false;
-        for (let i = 0; i < 30; i++) {
-          await this.sleep(1000);
-          if (!(await isPortHealthy(this.apiPort))) { freed = true; break; }
-        }
-        if (!freed) {
-          log.error('[Scheduler] Takeover aborted: previous gateway never released the port');
-          process.exit(1);
-          return;
-        }
-        log.info('[Scheduler] Port free, taking over');
-      } else {
-        log.info(`[Scheduler] Another gateway already running on port ${this.apiPort}; exiting`);
-        process.exit(0);
-        return;
-      }
+    const ownership = await claimGatewayInstance({
+      runtimeDir: mafwRuntimeDir(),
+      takeover,
+    });
+    if (ownership.kind === 'deferred') {
+      const holder = ownership.holder;
+      process.stdout.write(`${JSON.stringify({ mafw: 'deferred', instance: holder })}\n`);
+      log.info(
+        `[Scheduler] Another gateway already owns ${mafwRuntimeDir()}`
+        + (holder ? ` (pid ${holder.pid}, port ${holder.port})` : '')
+        + '; exiting',
+      );
+      process.exit(0);
+      return;
+    }
+    if (ownership.kind === 'failed') {
+      log.error(`[Scheduler] Cannot own the gateway instance lock: ${ownership.error}`);
+      process.exit(1);
+      return;
+    }
+    this.instanceLock = ownership.lock;
+    if (takeover) {
+      log.info('[Scheduler] Takeover: acquired the instance lock from the previous gateway');
     }
 
     if (takeover) {
@@ -846,7 +895,20 @@ class MafwScheduler {
     bootLedger.bootReconcile(activeCheckpoints);
 
     // 1. Start HTTP API immediately (health check endpoint, MCP, etc.)
-    await this.startApiServer();
+    const listening = await this.startApiServer();
+    if (!listening) {
+      await this.releaseInstanceOwnership();
+      process.exit(1);
+      return;
+    }
+    try {
+      await this.publishInstanceDiscovery();
+    } catch (err: any) {
+      log.error(`[Scheduler] gateway discovery publish failed: ${err?.message ?? err}`);
+      await this.releaseInstanceOwnership();
+      process.exit(1);
+      return;
+    }
 
     // 2. 初始化 runtime 插件加载器
     this.runtimeLoader = new RuntimePluginLoader(config.resolvePath('runtime-plugins'));
@@ -1000,6 +1062,9 @@ class MafwScheduler {
         log.info('OpenCode Serve not reachable, checking for stale process...');
         // 清场原语归 runtime（serve 端口是实现细节；无原语的 runtime 无从清场）
         this.runtimeHost?.agentProcess?.killServe?.();
+        // taskkill /F /T 是异步生效的；给监听 socket 一点释放时间，避免紧随其后的
+        // spawn 仍撞 EADDRINUSE 并退化成 MCP-only。
+        await this.sleep(500);
         try {
           await this.startServe();
           serveReady = !!this.serveInstance;
@@ -1183,6 +1248,11 @@ class MafwScheduler {
         // mid-Goal (its earlier work lives in the project checkout).
         const worktree = await this.podWorktreeService.ensureExisting(goal.podId, goalId, revision);
         return worktree?.dir ?? null;
+      },
+      goalMode: (goalId, revision) => {
+        const goal = this.podStore?.getGoalByGoalId(goalId);
+        if (!goal) return null;
+        return this.podStore.getGoalRevision(goal.podId, goalId, revision)?.goalMode ?? 'standard';
       },
       newApprovalId: () => `pa_${randomUUID()}`,
       canCreateNode: (goalId: string) => {
@@ -1831,20 +1901,43 @@ class MafwScheduler {
     }
 
     // Compaction flush: 会话压缩发生时把该 session 的 pending T1 回合立即喂给
-    // turnCompress（fail-open；hourly cron 在飞则跳过本轮）。
+    // turnCompress（fail-open；同 session 的 flush 在飞则跳过本轮）。Per-session
+    // mutexKey 与 hourly cron 的 action key 不同，互不阻塞（pipeline 内部有
+    // per-session runExclusive 兜底）。
     if (f.compaction && sessionID && !memoryWorker) {
-      void this.runPipelineGuarded(`memory:turnCompress(compact-flush:${sessionID})`, async () => {
-        try {
-          const pipeline = this.getTurnPipeline();
-          const res = await pipeline.runSession(sessionID);
-          if (res.turns > 0) {
-            log.info(`[TurnPipeline] compaction flush session=${sessionID} turns=${res.turns} archived=${res.archived}`);
-            this.scanService?.refreshCache();
+      void this.scheduler
+        .submit(
+          {
+            id: `compact-flush:${sessionID}`,
+            priority: 'background',
+            mutexKey: `compact-flush:${sessionID}`,
+            strategy: 'skip',
+            timeoutMs: 30 * 60_000,
+          },
+          async () => {
+            try {
+              const pipeline = this.getTurnPipeline();
+              const res = await pipeline.runSession(sessionID);
+              if (res.turns > 0) {
+                log.info(`[TurnPipeline] compaction flush session=${sessionID} turns=${res.turns} archived=${res.archived}`);
+                this.scanService?.refreshCache();
+              }
+            } catch (err: any) {
+              log.warn(`[TurnPipeline] compaction flush failed (non-fatal): ${err.message}`);
+            }
+          },
+        )
+        .catch((err) => {
+          if (err instanceof TaskSkippedError) {
+            log.info(`[TurnPipeline] compaction flush ${sessionID} skipped: previous flush in flight`);
+            return;
           }
-        } catch (err: any) {
-          log.warn(`[TurnPipeline] compaction flush failed (non-fatal): ${err.message}`);
-        }
-      });
+          if (err instanceof TaskTimeoutError) {
+            log.warn(`[TurnPipeline] compaction flush ${sessionID} watchdog timeout`);
+            return;
+          }
+          log.warn(`[TurnPipeline] compaction flush ${sessionID} submit failed (non-fatal): ${err instanceof Error ? err.message : err}`);
+        });
     }
 
     // BudgetGuard: goal-session turn/cost hard stop (turnBudgetApi-lacking
@@ -2415,6 +2508,10 @@ class MafwScheduler {
       log.warn(`[Lead] archived metadata update failed for ${sessionId} (non-fatal): ${err?.message ?? err}`);
     }
     this.unregisterInternalSession(sessionId);
+    // Phase C (final review I2): every archive entry point (rotation downgrade,
+    // pod manager dep, dead-row cleanup) converges here — drop the kind 'lead'
+    // process-table record too, or it survives as a TTL-less zombie.
+    this.leadSessionRegistry?.unmirrorLeadSession(sessionId);
     // stale slot 清理：归档后不得再被 findBySessionId/current 认领（不依赖 rotation 恰好写完新槽）。
     try {
       const rows = this.getGatewayDb().kvAll<unknown>('manager-session');
@@ -2435,6 +2532,8 @@ class MafwScheduler {
         ttlMs: config.recall.sessionWorkerTtlMs,
         compactIdleMs: config.recall.workerCompactIdleMs,
         promptTimeoutMs: config.recall.workerPromptTimeoutMs,
+        // Phase C: worker sessions register in the gateway's process table.
+        registry: this.sessionRegistry,
         // Recursion guard (A): internal worker sessions are registered so
         // /api/obs/capture never records their output as observations.
         onSessionCreated: (sessionId, role) => {
@@ -3025,10 +3124,6 @@ class MafwScheduler {
   private runtimeValidationNotes: string[] = [];
   /** 激活期覆盖矩阵（清单驱动），GET /api/runtime(.contract) 暴露。 */
   private runtimeCoverage: RuntimeCoverage | null = null;
-  /** Serialises snapshot builds (shared GPU sidecars); queue mode — concurrent
-   *  requests wait for the current build rather than being dropped. */
-  private snapshotGuard = new Guard();
-
   /** Schedule a debounced snapshot refresh (called on each user turn). */
   private scheduleSnapshotRefresh(sessionID: string): void {
     const cfg = config.search.snapshot;
@@ -3047,15 +3142,17 @@ class MafwScheduler {
    * Build the expensive retrieval for a session in the background: BM25 +
    * expansion (+ optional reranker) rendered as the pointer block, stored in kv
    * so the boundary path can serve it inside the 100ms contract.
+   *
+   * Submitted to the unified scheduler as midground + defer-to-idle: one build
+   * at a time per key (concurrent requests queue, not drop), and queued builds
+   * wait for foreground quiescence before starting.
    */
   private async refreshSnapshot(sessionID: string): Promise<void> {
     if (!this.memoryService) return;
-    // One build at a time (shared GPU sidecars), but concurrent requests queue
-    // instead of being dropped: the latest session state is served after the
-    // current build finishes.
-    await this.snapshotGuard.run('snapshot', () => this.refreshSnapshotInner(sessionID), {
-      onConflict: 'queue',
-    });
+    await this.scheduler.submit(
+      { id: `snapshot:${sessionID}`, priority: 'midground', mutexKey: 'snapshot', strategy: 'defer-to-idle' },
+      () => this.refreshSnapshotInner(sessionID),
+    );
   }
 
   private async refreshSnapshotInner(sessionID: string): Promise<void> {
@@ -3279,30 +3376,6 @@ class MafwScheduler {
     return this.scanService;
   }
 
-  /**
-   * In-flight guarded pipeline action. AutomationEngine has no serialization
-   * (cron fires overlapping ticks; run-automation can trigger manually), so
-   * each pipeline runs at most once at a time.
-   */
-  private async runPipelineGuarded(name: string, fn: () => Promise<void>): Promise<void> {
-    try {
-      const result = await this.pipelineGuard.run(name, fn, {
-        onConflict: 'skip',
-        timeoutMs: 30 * 60_000,
-        onTimeout: 'error',
-      });
-      if (result === null) {
-        log.info(`[Scheduler] ${name} skipped: previous run still in flight`);
-      }
-    } catch (err) {
-      if (err instanceof GuardTimeoutError) {
-        log.warn(`[Scheduler] ${name} watchdog timeout: ${err.message}`);
-      } else {
-        log.warn(`[Scheduler] ${name} run error: ${err instanceof Error ? err.message : err}`);
-      }
-    }
-  }
-
   /** Goal 会话预算挂载：读 state/<goalId>.json 的 policySnapshot.{maxTurns,maxCostUsd}；
    *  两者都缺或 runtime 原生支持 turnBudgetApi 时不挂。 */
   private attachBudgetGuardForGoal(goalId: string, sessionID: string, mafwDir: string): void {
@@ -3391,8 +3464,15 @@ class MafwScheduler {
   }
 
   private registerMemoryPipelineActions(): void {
-    actionRegistry.set('memory:turnCompress', async () => {
-      await this.runPipelineGuarded('memory:turnCompress', async () => {
+    const engine = this.automationEngine;
+    if (!engine) return;
+    // Actions are registered through a provider so refreshActions() — called
+    // by engine.start() and reloadRules() — rebuilds the registry
+    // deterministically instead of relying on registration order (spec §5.4).
+    // Budget taskOpts use the pipelines' own internal PipelineBudget.allow()
+    // names so admission and per-call checks share one name (one deny log/day).
+    engine.setActionsProvider(() => {
+      engine.registerAction('memory:turnCompress', async () => {
         try {
           const pipeline = this.getTurnPipeline();
           const res = await pipeline.runOnce();
@@ -3410,10 +3490,8 @@ class MafwScheduler {
           this.heartbeat?.record('memory:turnCompress', { ok: false, error: err.message });
           log.warn(`[TurnPipeline] run failed: ${err.message}`);
         }
-      });
-    });
-    actionRegistry.set('memory:reflect', async () => {
-      await this.runPipelineGuarded('memory:reflect', async () => {
+      }, { budget: { kind: 'pipeline', pipeline: 'extract' } });
+      engine.registerAction('memory:reflect', async () => {
         try {
           const pipeline = this.getReflectPipeline();
           const res = await pipeline.runAll();
@@ -3480,15 +3558,13 @@ class MafwScheduler {
           this.heartbeat?.record('memory:graceRevisit', { ok: false, error: err.message });
           log.warn(`[GraceRevisit] phase failed: ${err.message}`);
         }
-      });
-    });
-    // memory:review — overrides the module-level stub (which only logged the
-    // dormant review queue). Now runs stale-memory verification: the curator
-    // worker re-checks high-value procedural/semantic memories against the
-    // live environment with read-only tools and supersedes contradicted ones
-    // (environment-probing curation, arXiv:2609.11060).
-    actionRegistry.set('memory:review', async () => {
-      await this.runPipelineGuarded('memory:review', async () => {
+      }, { budget: { kind: 'pipeline', pipeline: 'reflect' } });
+    // memory:review — the builtin stub only logged the dormant review queue;
+    // this registration replaces it: the curator worker re-checks high-value
+    // procedural/semantic memories against the live environment with read-only
+    // tools and supersedes contradicted ones (environment-probing curation,
+    // arXiv:2609.11060).
+    engine.registerAction('memory:review', async () => {
         try {
           const pipeline = this.getStaleVerifyPipeline();
           const res = await pipeline.runOnce();
@@ -3508,13 +3584,11 @@ class MafwScheduler {
           this.heartbeat?.record('memory:review', { ok: false, error: err.message });
           log.warn(`[StaleVerify] run failed: ${err.message}`);
         }
-      });
-    });
+      }, { budget: { kind: 'pipeline', pipeline: 'review' } });
     // D2: reconsolidation sweep — mutated (labile) memories are checked daily
     // against newer related memories; contradicted ones are updated through the
     // supersedes chain (budget-gated, fail-open).
-    actionRegistry.set('memory:reconsolidate', async () => {
-      await this.runPipelineGuarded('memory:reconsolidate', async () => {
+    engine.registerAction('memory:reconsolidate', async () => {
         try {
           if (!this.memoryService) return;
           const { ReconsolidatePipeline } = require('./recall/reconsolidate-pipeline');
@@ -3557,12 +3631,10 @@ class MafwScheduler {
           this.heartbeat?.record('memory:reconsolidate', { ok: false, error: err.message });
           log.warn(`[Reconsolidate] run failed: ${err.message}`);
         }
-      });
-    });
+      }, { budget: { kind: 'pipeline', pipeline: 'reconsolidate' } });
     // D4a: nightly dream prefetch — generate likely next-session queries for
     // recently-active sessions; the first user input of the day consumes them.
-    actionRegistry.set('memory:dream', async () => {
-      await this.runPipelineGuarded('memory:dream', async () => {
+    engine.registerAction('memory:dream', async () => {
         try {
           if (!this.scanService) return;
           const { selectDreamSessions, parseDreamQueries, DREAM_SYSTEM } = require('./recall/dream-prefetch');
@@ -3595,12 +3667,10 @@ class MafwScheduler {
           this.heartbeat?.record('memory:dream', { ok: false, error: err.message });
           log.warn(`[Dream] run failed: ${err.message}`);
         }
-      });
-    });
+      }, { budget: { kind: 'pipeline', pipeline: 'dream' } });
     // A1: weekly axiom distillation — high-need semantic insights become axiom
     // candidates queued for human triage; confirmation commits them to L5.
-    actionRegistry.set('memory:axiomDistill', async () => {
-      await this.runPipelineGuarded('memory:axiomDistill', async () => {
+    engine.registerAction('memory:axiomDistill', async () => {
         try {
           if (!this.memoryService) return;
           const { selectAxiomSources, parseAxiomCandidates, AXIOM_SYSTEM } = require('./memory/axiom-distill');
@@ -3647,12 +3717,10 @@ class MafwScheduler {
           this.heartbeat?.record('memory:axiomDistill', { ok: false, error: err.message });
           log.warn(`[AxiomDistill] run failed: ${err.message}`);
         }
-      });
-    });
+      }, { budget: { kind: 'pipeline', pipeline: 'axiomDistill' } });
     // W2: skill promotion — procedural memories passing G1-G5 become staged
     // SKILL.md drafts + triage items for human approval (weekly).
-    actionRegistry.set('memory:skillPromotion', async () => {
-      await this.runPipelineGuarded('memory:skillPromotion', async () => {
+    engine.registerAction('memory:skillPromotion', async () => {
         try {
           if (!this.memoryService) return;
           const stagingDir = path.join(this.mafwDir, 'skill-staging');
@@ -3994,10 +4062,13 @@ class MafwScheduler {
     // Give an in-flight pipeline a short window to settle before closing the
     // T1 store (closing mid-run would leave turns un-deleted → duplicate
     // extraction on next start), then dispose workers best-effort.
+    // Scheduler stats are at least as strict as the old pipelineGuard: running
+    // covers every in-flight task (pipeline actions, compact flushes, snapshot
+    // builds); the 5s cap bounds the wait either way.
     const settle = new Promise<void>((resolve) => {
       const started = Date.now();
       const check = () => {
-        if (this.pipelineGuard.size === 0 || Date.now() - started > 5000) resolve();
+        if (this.scheduler.stats().running === 0 || Date.now() - started > 5000) resolve();
         else setTimeout(check, 100);
       };
       check();
@@ -4048,7 +4119,14 @@ class MafwScheduler {
     // if (this.dashboard) {
     //   this.dashboard.stop();
     // }
+    void this.releaseInstanceOwnership();
     log.info('[Scheduler] Stopping...');
+  }
+
+  /** Graceful shutdown that also releases the instance lease before exit. */
+  async shutdown() {
+    this.stop();
+    await this.releaseInstanceOwnership();
   }
 
   // 鈹€鈹€ Services & Event Bus 鈹€鈹€
@@ -4250,6 +4328,13 @@ class MafwScheduler {
       },
       deliveryDelivered: (messageId, memberId) => this.podStore?.hasDelivery(messageId, memberId) ?? false,
       commitDelivered: (ids, sessionId) => this.podMessageDelivery?.commitDelivered(ids, sessionId),
+      // B2: coalesce scans via the unified scheduler — the 60s timer scan and a
+      // p2-notify scan landing together join the in-flight one (no double delivery).
+      // No task id: the scheduler's auto-id (task_<seq>) is collision-free.
+      runScan: (fn) => this.scheduler.submit(
+        { priority: 'midground', mutexKey: 'pod-event-wake', strategy: 'coalesce' },
+        fn,
+      ),
     });
     setInterval(() => { void this.podEventWake?.scan(); }, 60_000).unref?.();
     setTimeout(() => { void this.podEventWake?.scan(); }, 5_000).unref?.();
@@ -4336,6 +4421,8 @@ class MafwScheduler {
       },
       now: () => new Date().toISOString(),
       log: (message) => log.info(message),
+      // Phase C Task 5: observe-only mirror into the unified session registry.
+      sessionRegistry: this.sessionRegistry,
     });
     this.podProbeService = new PodProbeService({
       store: this.podStore,
@@ -4502,6 +4589,8 @@ class MafwScheduler {
       },
       broadcast: (event) => this.broadcast(event as any),
       log: (message) => log.info(message),
+      // Phase C Task 6: observe-only mirror into the unified session registry.
+      sessionRegistry: this.sessionRegistry,
     });
     this.podSessionLifecycle = new PodSessionLifecycle({
       store: this.podStore,
@@ -4518,12 +4607,50 @@ class MafwScheduler {
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'direction' } }),
       log: (message) => log.info(message),
     });
+    const leadTopics = new LeadTopicStore(this.getGatewayDb().getStore());
+    const leadTopicIndex = new TopicMessageIndexStore(this.getGatewayDb().getStore());
+    const leadTopicSummary = new LeadTopicSummaryService({
+      topics: leadTopics,
+      index: leadTopicIndex,
+      summarize: summarizeTopic,
+      now: () => new Date().toISOString(),
+      log: (message) => log.warn(message),
+    });
+    this.leadTopics = leadTopics;
+    this.leadTopicIndex = leadTopicIndex;
+    this.leadTopicSummary = leadTopicSummary;
+    const leadTopicResume = new LeadTopicResumeService({
+      topics: leadTopics,
+      index: leadTopicIndex,
+      sessions: this.leadSessionRegistry,
+      promptAsync: async ({ sessionID, parts }) => {
+        await this.runtime!.session.promptAsync({ sessionID, parts });
+      },
+      now: () => new Date().toISOString(),
+      newId: () => `topic_${randomUUID()}`,
+      log: (message) => log.warn(message),
+    });
+    this.leadTopicResume = leadTopicResume;
+    const leadHandoffService = process.env.MAFW_LEAD_HANDOFF === '0'
+      ? null
+      : new LeadHandoffService({
+          topics: leadTopics,
+          listMessages: async ({ sessionID, limit }) => {
+            const page: any = await this.runtime!.session.messages({ sessionID, limit });
+            return { data: page?.data ?? [] };
+          },
+          now: () => new Date().toISOString(),
+          newId: () => `topic_${randomUUID()}`,
+          log: (message) => log.warn(message),
+          onCommitted: (prepared) => leadTopicSummary.indexAndSummarize(prepared),
+        });
     this.podTechLeadService = new PodTechLeadService({
       store: this.podStore,
       pods: this.podService,
       sessions: this.podSessionSupervisor,
       runtimeName: () => this.runtimeName,
       worktrees: this.podWorktreeService,
+      leadHandoff: leadHandoffService ?? undefined,
       runtime: createTechLeadRuntimeAdapter({
         createSession: async ({ projectDir }) => {
           const created = await this.runtime!.session.create({ directory: projectDir });
@@ -4869,11 +4996,27 @@ class MafwScheduler {
         this.queueSweepTimer = setInterval(() => this.sweepBusyAndQueue(), 60_000);
         this.queueSweepTimer.unref?.();
       }
+      // 统一会话 sweeper（Phase C Task 7）：回收过期 session 记录（worker
+      // 24h TTL → per-record onEvict dispose pair；其余视图按各自生命周期）。
+      // sweepBusyAndQueue 是活跃簿记（非进程表状态），保持自己的间隔——见
+      // plan Key Ruling 7。
+      if (!this.sessionSweepTimer) {
+        this.sessionSweepTimer = setInterval(() => {
+          const swept = this.sessionRegistry.sweep();
+          if (swept > 0) log.info(`[SessionRegistry] swept ${swept} expired session record(s)`);
+        }, 60_000);
+        this.sessionSweepTimer.unref?.();
+      }
     }
     // memory:decay must mutate the gateway's LIVE index instance — a throwaway
     // manager's v1→v2 migration would be clobbered by the live instance's next
-    // save (the 2026-09 decay freeze).
+    // save (the 2026-09 decay freeze). Same live-instance discipline for the
+    // cognitive graph (memory:prune).
     this.automationEngine.setIndexManagerProvider(() => this.memoryService!.harmonicIndex);
+    this.automationEngine.setGraphProvider(() => this.memoryService?.cognitiveGraph);
+    // Unified scheduler submission: per-key skip + 30min watchdog + budget
+    // admission for every action execution; user/LLM triggers run foreground.
+    this.automationEngine.setScheduler(this.scheduler);
     ensureManagerRules(mafwDir);
     ensureMemoryPipelineRules(mafwDir);
     this.automationEngine.loadRules();
@@ -4929,7 +5072,20 @@ class MafwScheduler {
         techLead: this.podTechLeadService,
         direction: this.podDirectionService,
         startPlanning: (goalId: string) => this.startGoalDirect(goalId),
+        ...(process.env.MAFW_GOAL_MODES === '0' ? {} : {
+          setGoalMode: (goalId: string, mode: any) => this.podTechLeadService.setGoalMode(goalId, mode),
+        }),
         log: (message: string) => log.info(message),
+      },
+      podGoalStatus: {
+        listViews: (projectDir: string) => {
+          const pod = this.podStore.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.views(pod.id) : [];
+        },
+        attention: (projectDir: string) => {
+          const pod = this.podStore.getPodByProject(canonicalProjectDir(projectDir));
+          return pod ? this.podGoalService.attention(pod.id) : [];
+        },
       },
       desktop: desktopClient || undefined,
       restartAgent: async () => {
@@ -5348,8 +5504,8 @@ class MafwScheduler {
 
   // 鈹€鈹€ 2. HTTP API 鈹€鈹€
 
-  private async startApiServer() {
-    return new Promise<void>((resolve) => {
+  private async startApiServer(): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
       // P5 Wave 1: catalog shadow 登记 + 模块 handler 绑定（一次性，重复 attach 会抛错）。
       // adapter 显式桥接私有成员（结构化类型不认 private）。
       // runtime/runtimeCaps 必须是 getter（活引用）：attach 发生在 startApiServer，
@@ -5379,6 +5535,26 @@ class MafwScheduler {
         // switchAgent 双向门：coordination 槽位（LeadSessionRegistry 权威）与注册表身份。
         isCoordinationSession: (sid) => !!gwSelf.leadSessionRegistry?.findBySessionId(sid),
         isRegistryIdentity: (name) => !!gwSelf.identityRegistry?.get(name),
+      });
+      attachLeadTopicRoutes(this.routeRegistry, {
+        isLeadSession: (sessionID) => !!this.leadSessionRegistry?.findBySessionId(sessionID),
+        projectDirForSession: (sessionID) => this.leadSessionRegistry?.findBySessionId(sessionID)?.projectDir ?? null,
+        topics: this.leadTopics,
+        index: this.leadTopicIndex,
+        goals: (projectDir) => {
+          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
+          if (!pod) return [];
+          const views = this.podGoalService.views(pod.id);
+          return buildLeadGoalStatus(views, buildPodAttention(views));
+        },
+        workingSetEnabled: () => process.env.MAFW_LEAD_WORKING_SET !== '0',
+        listMessages: async ({ sessionID, limit }) => {
+          const page: any = await this.runtime!.session.messages({ sessionID, limit });
+          return { data: page?.data ?? [] };
+        },
+        broadcast: (event) => this.broadcast(event as any),
+        now: () => new Date().toISOString(),
+        resume: (topicId) => this.leadTopicResume.resume(topicId),
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),
@@ -5440,6 +5616,253 @@ class MafwScheduler {
       });
       // Task 3：中性 background jobs façade（三源统一；runtime shell 原生 DTO 不出 gateway）
       attachBackgroundJobHandlers(this.routeRegistry, () => ({ service: this.backgroundJobs ?? null }));
+      // Phase D1 Task 2：认知面动词迁 registry dispatch（loopback-only 语义随迁）。
+      attachCognitionRoutes(this.routeRegistry, { gate: () => this.cognitionGate });
+      // Phase D1 Task 3a：Python 内核面迁 registry dispatch（loopback-only）。
+      attachPythonRoutes(this.routeRegistry, { kernels: () => this.kernels });
+      // Phase D1 Task 3b：MAFW 工具面迁 registry dispatch（loopback-only）。
+      attachToolsRoutes(this.routeRegistry, {
+        buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
+        emitEvent: (evt) => this.handleRuntimeEvent(evt),
+      });
+      // Phase D1 Task 3c：TTS 面迁 registry dispatch（voices/speak 无 loopback
+      // 门、stream/interrupt 有——legacy 语义逐字等价）。
+      attachTtsRoutes(this.routeRegistry, {
+        ttsRegistry: () => this.ttsRegistry,
+        ttsReady: () => !!(this.ttsService && this.mediaAgent),
+        putArtifact: (dataUrl) => this.mediaAgent!.putArtifact(dataUrl),
+        inflight: this.ttsInflight,
+      });
+      // Phase D1 Task 3d：agent/terminal/mobile 面迁 registry dispatch。
+      attachTerminalRoutes(this.routeRegistry, {
+        getTerminalService: () => this.getTerminalService(),
+        getAccess: () => this.runtime?.access ?? null,
+      });
+      attachAgentRoutes(this.routeRegistry, {
+        listOutcomes: (() => this.getGatewayDb().listGoalOutcomes({ limit: 200 })) as any,
+        getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
+      });
+      attachMobileRoutes(this.routeRegistry, {
+        getMediaAgent: () => this.mediaAgent,
+        apiToken: () => (config.raw as any)?.server?.apiToken || '',
+        loadTtsArtifactHandler: async () => {
+          const { createTtsArtifactHandler } = await import('./mobile/tts-artifact.js');
+          return createTtsArtifactHandler({ agent: this.mediaAgent! });
+        },
+        loadMobileMediaHandler: async () => {
+          const { createMobileMediaHandler } = await import('./mobile/media-proxy.js');
+          return createMobileMediaHandler({
+            agent: this.mediaAgent!,
+            apiToken: (config.raw as any)?.server?.apiToken || '',
+          });
+        },
+      });
+      // Phase D1 Task 3e：媒体上传/分析面迁 registry dispatch（4 分支，
+      // loopback 门 + 尺寸帽 + chunk 流逐字保留）。
+      attachMediaRoutes(this.routeRegistry, {
+        getMediaAgent: () => this.mediaAgent,
+        getMediaService: () => this.mediaService,
+      });
+      // Phase D1 Task A1：project 面迁 registry dispatch（2 分支）。
+      attachProjectRoutes(this.routeRegistry, {
+        registeredProjects: () => this.registeredProjects,
+        currentProjectDir: () => this.currentProjectDir,
+        setCurrentProjectDir: (dir) => { this.currentProjectDir = dir; },
+        db: () => this.getGatewayDb(),
+      });
+      // Phase D1 Task A2：mafw-commands 面迁 registry dispatch（2 分支；409 hold-queue 预检随迁）。
+      attachMafwCommandRoutes(this.routeRegistry, {
+        getRegistry: () => this.getMafwCommandRegistry(),
+        registeredProjects: () => this.registeredProjects,
+        projectDir: () => this.projectDir,
+        shouldHoldQueue: (sessionID) => this.runCoordinator?.shouldHoldQueue(sessionID),
+      });
+      // Phase D1 Task A3：merge-memory 面迁 registry dispatch（1 分支；动态 import 保留）。
+      attachMergeMemoryRoutes(this.routeRegistry, {
+        memory: () => this.memoryService,
+      });
+      // Phase D1 Task A4：triage 面迁 registry dispatch（4 分支；confirm 不读 body 原样保留）。
+      attachTriageRoutes(this.routeRegistry, {
+        automationEngine: () => this.automationEngine,
+        skillInstallDeps: () => this.skillInstallDeps(),
+        mafwDir: () => this.mafwDir,
+        ledger: () => this.ledger,
+      });
+      // Phase D1 Task A5：approvals 面迁 registry dispatch（4 分支；数据根扫描路径全保留）。
+      attachApprovalsRoutes(this.routeRegistry, {
+        registeredProjects: () => this.registeredProjects,
+        allowlistStore: () => this.allowlistStore,
+        permissionRules: () => this.permissionRules,
+      });
+      // Phase D1 Task B1：question / permission 面迁 registry dispatch（5 分支；
+      // workspace 重试链与 capGuard 语义逐字保留）。
+      attachQuestionsPermissionsRoutes(this.routeRegistry, {
+        capGuard: (res, surface) => this.capGuard(res, surface),
+        capGuardQuestion: (res) => this.capGuardQuestion(res),
+        serveUrl: () => this.serveUrl,
+        currentProjectDir: () => this.currentProjectDir,
+        projectDir: () => this.projectDir,
+        runtime: () => this.runtime,
+        registeredProjects: () => this.registeredProjects,
+        permissionRules: () => this.permissionRules,
+      });
+      // Phase D1 Task B2：usage 聚合面迁 registry dispatch（2 分支；fail-open 200 随迁）。
+      attachUsageRoutes(this.routeRegistry, {
+        trajectoryStore: () => this.trajectoryStore,
+        usagePoller: () => this.usagePoller,
+      });
+      // Phase D1 Task B3/B4：recall 面迁 registry dispatch（instructions/pinned/priors/
+      // context；裸 startsWith 收紧为精确段匹配，懒 require 全部保留）。
+      attachRecallRoutes(this.routeRegistry, {
+        buildInstructionBlocks: () => this.buildInstructionBlocks(),
+        instructionSync: () => this.instructionSync ?? null,
+        memoryService: () => this.memoryService,
+        recallCalledBySession: () => this.recallCalledBySession,
+        leadSessionRegistry: () => this.leadSessionRegistry,
+        registeredProjects: () => this.registeredProjects,
+        mafwDir: () => this.mafwDir,
+        getGatewayDb: () => this.getGatewayDb(),
+        getScanService: () => this.getScanService(),
+      });
+      // Phase D1 Task C1：automation 面迁 registry dispatch（6 分支；draft 静态段
+      // 优先于 :id 由 registry 结构保证，legacy 注册序注释语义不变）。
+      attachAutomationRoutes(this.routeRegistry, {
+        automationEngine: () => this.automationEngine,
+        ledger: () => this.ledger,
+      });
+      // Phase D1 Task C2：chat 面迁 registry dispatch（2 分支；enriched 保留
+      // 自有 inline enrichment 副本，不并入 sendEnrichedInternal）。
+      attachChatRoutes(this.routeRegistry, {
+        registeredProjects: () => this.registeredProjects,
+        projectDir: () => this.projectDir,
+        runtime: () => this.runtime,
+        shouldHoldQueue: (sessionID) => this.runCoordinator?.shouldHoldQueue(sessionID),
+        memoryService: () => this.memoryService,
+      });
+      // Phase D1 Task C3：obs 捕获面迁 registry dispatch（手动 chunked reader、
+      // 1MB 静默丢弃、fail-open 200 语义逐字保留）。
+      attachObsRoutes(this.routeRegistry, {
+        internalSessionRoles: () => this.internalSessionRoles,
+        getGatewayDb: () => this.getGatewayDb(),
+        getScanService: () => this.getScanService(),
+        scheduleSnapshotRefresh: (sessionID) => this.scheduleSnapshotRefresh(sessionID),
+      });
+      // Phase D1 Task D1：sessions core 面迁 registry dispatch（10 分支；deleteLegacy
+      // 与 session.delete 的 cleanup 集合不同，R4 各自逐字保留）。
+      attachSessionsCoreRoutes(this.routeRegistry, {
+        getGatewayDb: () => this.getGatewayDb(),
+        resolvedProjectDir: () => this.resolvedProjectDir(),
+        sdkSession: () => this.sdkSession,
+        runtime: () => this.runtime,
+        podService: () => this.podService,
+        instructionSync: () => this.instructionSync,
+        discovery: () => this.discovery,
+        trajectoryStore: () => this.trajectoryStore,
+        identityRegistry: () => this.identityRegistry,
+        identityState: () => this.identityState,
+        runCoordinator: () => this.runCoordinator,
+        busySessions: () => this.busySessions,
+        sessionQueue: () => this.sessionQueue,
+        enqueueQueuedPrompt: (opts, source) => this.enqueueQueuedPrompt(opts, source),
+        attachBudgetGuardForPrompt: (sessionID, maxTurns, maxCostUsd) => this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd),
+        emitQueueUpdated: (sessionID, kind, items, itemId) => this.emitQueueUpdated(sessionID, kind, items, itemId),
+      });
+      // Phase D1 Task E1：sessions 读模型面迁 registry dispatch（5 分支；todo/trajectory/
+      // token-summary/children 的 fail-open 200 语义逐字保留）。
+      attachSessionsReadRoutes(this.routeRegistry, {
+        runtime: () => this.runtime,
+        trajectoryStore: () => this.trajectoryStore,
+        projectDir: () => this.projectDir,
+        listDataParts: (sessionID, messageIds) => this.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
+        subagentService: () => this.subagentService,
+      });
+      // Phase D1 Task E2：sessions 审批 / 子代理面迁 registry dispatch（7 分支；
+      // permission-mode GET/POST method 拆分与 subagents 五操作逐字委托）。
+      attachSessionsPermissionsRoutes(this.routeRegistry, {
+        approvalPolicy: () => this.approvalPolicy,
+        runtime: () => this.runtime,
+        permissionRules: () => this.permissionRules,
+        subagentService: () => this.subagentService,
+      });
+      // Phase D1 Task F1：memory 查询/统计面迁 registry dispatch（9 分支；sticky 的
+      // 503-空壳与 fail-open 200、stats 的 10s fok 缓存直写逐字保留）。
+      attachMemoryRoutes(this.routeRegistry, {
+        memoryService: () => this.memoryService,
+        consolidationService: () => this.consolidationService,
+        heartbeat: () => this.heartbeat,
+        coactivationGraphStore: () => this.coactivationGraphStore,
+        fokStatsCache: () => this.fokStatsCache,
+        setFokStatsCache: (value) => { this.fokStatsCache = value; },
+        mafwDir: () => this.mafwDir,
+        getGatewayDb: () => this.getGatewayDb(),
+        backfillEmbeddings: (limit) => this.backfillEmbeddings(limit),
+      });
+      // Phase D1 Task F2：goals inline 面迁 registry dispatch（6 分支 → 7 op；plan /
+      // plan-approval 仍以原始 req.url 交给 handleGoalPlan 内部分流）。
+      attachGoalRoutes(this.routeRegistry, {
+        mafwDir: () => this.mafwDir,
+        goalDriver: () => this.goalDriver,
+        goalDriverMafwDirCache: () => this.goalDriverMafwDirCache,
+        findGoalStatePath: (goalId) => this.findGoalStatePath(goalId),
+        loadRequest: (goalId) => this.loadRequest(goalId),
+        getGatewayDb: () => this.getGatewayDb(),
+        handleValidate: (goalId, data) => this.handleValidate(goalId, data),
+        handleComplete: (goalId, data) => this.handleComplete(goalId, data),
+      });
+      // Phase D1 Task G：dashboard 影子条（goals.list / dashboard.stats /
+      // memory.add / memory.setSticky）挂 registry dispatch；handleDashboardAPI
+      // 与联合分支整体保留（R5），四个精确 (method, path) 由 registry 先行接管。
+      attachDashboardRoutes(this.routeRegistry, {
+        activeGoals: () => this.activeGoals,
+        registeredProjectsSize: () => this.registeredProjects.size,
+        sseClientsSize: () => this.sseClients.size,
+        serveRunning: () => this.serveRunning,
+        trajectoryStore: () => this.trajectoryStore,
+        memoryService: () => this.memoryService,
+      });
+      // Phase D1 Task H1：long-tail singles 迁 registry dispatch（voice/presence/
+      // eval/orchestration/provider/agents + config GET/PUT + llm/compress +
+      // media plugins 对；私有 handleCompress 经 compress 依赖桥接）。
+      attachMiscRoutes(this.routeRegistry, {
+        voiceRuntime: () => this.voiceRuntime,
+        buildPresence: () => this.buildPresence(),
+        runtime: () => this.runtime,
+        resolvedProjectDir: () => this.resolvedProjectDir(),
+        getGatewayDb: () => this.getGatewayDb(),
+        capGuard: (res, surface) => this.capGuard(res, surface),
+        identityRegistry: () => this.identityRegistry,
+        identityState: () => this.identityState,
+        runtimeName: () => this.runtimeName,
+      });
+      attachConfigRoutes(this.routeRegistry);
+      attachLlmRoutes(this.routeRegistry, {
+        compress: (observations, model) => this.handleCompress(observations, model),
+      });
+      attachMediaPluginRoutes(this.routeRegistry, {
+        mediaPluginLoader: () => this.mediaPluginLoader,
+      });
+      // Phase D1 Task H2：devices / mobile 配对 / pods events / mcp 管理 / manager
+      // session / events SSE 迁 registry dispatch（15 条 legacy 分支；handler 体逐字，
+      // live getter 注入 pushGateway / pairingService / runtime / podEventService）。
+      attachDevicesMobileRoutes(this.routeRegistry, {
+        pushGateway: () => this.pushGateway,
+        pairingService: () => this.pairingService,
+      });
+      attachPodsEventsRoutes(this.routeRegistry, {
+        podEventService: () => this.podEventService,
+      });
+      attachMcpMgmtRoutes(this.routeRegistry, {
+        runtime: () => this.runtime,
+      });
+      attachManagerSessionRoutes(this.routeRegistry, {
+        leadSessionRegistry: () => this.leadSessionRegistry,
+        getGatewayDb: () => this.getGatewayDb(),
+      });
+      attachEventsSseRoutes(this.routeRegistry, {
+        chatSessions: () => this.chatSessions,
+        eventStore: () => this.eventStore,
+        sseClients: () => this.sseClients,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -5552,441 +5975,37 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/media/resolve-task/<taskId> — resolve taskId to artifactId (for history)
-        const resolveTaskMatch = req.url?.match(/^\/api\/media\/resolve-task\/([^/]+)$/);
-        if (resolveTaskMatch && req.method === 'GET') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const artifactId = await this.mediaAgent.resolveTaskArtifactId(resolveTaskMatch[1]);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ artifactId: artifactId || null }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // GET /api/media/resolve-task/:id — Phase D1 Task C4：已迁 registry dispatch
+        // （loopback 门随迁，见 routes/media-upload.ts）。
 
         // GET /api/tts/voices — 当前引擎音色 + 能力（desktop picker）
         // GET /api/voice/status — voice config + registered ASR engines.
-        if (req.url?.match(/^\/api\/voice\/status(?:\?|$)/) && req.method === "GET") {
-          await handleVoiceStatus(req, res, {
-            runtime: this.voiceRuntime,
-            config: resolveVoiceConfig(config.raw),
-          });
-          return;
-        }
+        // GET /api/voice/status — Phase D1 Task H1：已迁 registry dispatch。
 
-        if (req.url === "/api/tts/voices" && req.method === "GET") {
-          try {
-            const ttsCfg = (config.raw as any)?.media?.tts ?? {};
-            const engine = this.ttsRegistry.resolve(ttsCfg.engine);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              voices: engine.voices(),
-              engine: engine.name,
-              // 引擎档案（TTS）≠ runtime 能力位：字段名刻意不同（见 src/tts/types.ts）
-              capabilities: engine.profile,
-              engines: this.ttsRegistry.list().map(e => ({ name: e.name, source: e.source })),
-              models: [
-                { id: 'mimo-v2.5-tts', description: '预置音色语音合成（支持唱歌模式）' },
-                { id: 'mimo-v2.5-tts-voicedesign', description: '文本描述定制音色' },
-                { id: 'mimo-v2.5-tts-voiceclone', description: '音频样本复刻音色' },
-              ],
-              defaultVoice: ttsCfg.defaultVoice || '茉莉',
-              defaultModel: ttsCfg.model || 'mimo-v2.5-tts',
-            }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // /api/tts/voices + POST /api/tts + /api/tts/stream + /api/tts/interrupt
+        // — Phase D1 Task 3c：已迁 registry dispatch（attachTtsRoutes；voices/speak
+        // 无 loopback 门、stream/interrupt 有——语义逐字等价）。
 
-        // POST /api/tts — MiMo-V2.5-TTS speech synthesis (preset voices, wav)
-        if (req.url === "/api/tts" && req.method === "POST") {
-          try {
-            if (!this.ttsService || !this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'TTS not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const text = typeof body?.text === 'string' ? body.text : '';
-            if (!text.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'text is required' })); return; }
-            const voice = typeof body?.voice === 'string' ? body.voice : undefined;
-            const style = typeof body?.style === 'string' ? body.style : undefined;
-            const ttsCfg: any = (config.raw as any)?.media?.tts ?? {};
-            const ttsEngine = this.ttsRegistry.resolve(ttsCfg.engine);
-            const wav = await ttsEngine.synthesize(text, { voice, style });
-            const artifactId = this.mediaAgent.putArtifact(`data:audio/wav;base64,${wav.toString('base64')}`);
-            const baseUrl = `http://127.0.0.1:${config.server.apiPort}`;
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              artifactId,
-              voice: voice || ttsCfg.defaultVoice || '茉莉',
-              mime: 'audio/wav',
-              url: `${baseUrl}/a2a/artifacts/${artifactId}`,
-            }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/media/analyze-audio — Phase D1 Task 3e：已迁 registry dispatch。
+        // POST /api/media/upload — Phase D1 Task 3e：已迁 registry dispatch。
 
-        // POST /api/media/analyze-audio — 音频叙述式理解（自然语言：内容 + 情绪/语调轨迹 + 意图）。        // opt-in：只服务实时语音等场景；FLEURS 评测走默认 A2A 路径（不受影响）。
-        if (req.url === "/api/media/analyze-audio" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaService) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaService not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const dataUrl = typeof body?.dataUrl === 'string' ? body.dataUrl : '';
-            if (!dataUrl) { res.writeHead(400); res.end(JSON.stringify({ error: 'dataUrl is required' })); return; }
-            const mediaType = typeof body?.mediaType === 'string' && body.mediaType ? body.mediaType : 'audio/wav';
-            const promptText = typeof body?.prompt === 'string' ? body.prompt : undefined;
-            // 叙述式分析（内容 + 情绪/语调轨迹 + 意图，自然语言）；允许自定义 prompt 覆盖。
-            const result = promptText
-              ? await this.mediaService.analyze(
-                  { kind: 'audio', dataUrl, mediaType },
-                  promptText,
-                )
-              : await this.mediaService.analyzeAudioNarrative({ kind: 'audio', dataUrl, mediaType });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ result }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/media/create-task — Phase D1 Task 3e：已迁 registry dispatch。
 
-        // POST /api/media/upload — binary media upload for the A2A media agent.
-        // Body is the raw media bytes (octet-stream); the media type rides in
-        // the query string. Returns an artifact reference the desktop can pass
-        // to /api/media/create-task (the A2A SendMessage then carries only a
-        // URL part instead of a huge base64 body).
-        const mediaUrlPath = req.url?.split('?')[0]
-        if (mediaUrlPath === '/api/media/upload' && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const mediaType = parsedUrl.searchParams.get('type') || 'application/octet-stream';
-            if (!mediaType.startsWith('image/') && !mediaType.startsWith('video/') && !mediaType.startsWith('audio/')) {
-              res.writeHead(415);
-              res.end(JSON.stringify({ error: `Unsupported media type: ${mediaType}` }));
-              return;
-            }
-            const chunks: Buffer[] = [];
-            let total = 0;
-            const cap = mediaType.startsWith('video/') ? 50 * 1024 * 1024 : mediaType.startsWith('audio/') ? 25 * 1024 * 1024 : 20 * 1024 * 1024;
-            for await (const chunk of req) {
-              total += chunk.length;
-              if (total > cap) {
-                res.writeHead(413);
-                res.end(JSON.stringify({ error: `Media exceeds ${cap} byte limit` }));
-                return;
-              }
-              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-            }
-            const bytes = Buffer.concat(chunks);
-            if (bytes.length === 0) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'empty body' }));
-              return;
-            }
-            const artifactId = this.mediaAgent.putArtifactBytes(bytes, mediaType);
-            const baseUrl = `http://127.0.0.1:${config.server.apiPort}`;
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              artifactId,
-              mediaType,
-              size: bytes.length,
-              url: `${baseUrl}/a2a/artifacts/${artifactId}`,
-            }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/media/upload-and-create — Phase D1 Task 3e：已迁 registry dispatch。
 
-        // POST /api/media/create-task — create an A2A media task from an
-        // already-uploaded artifact (URL part reference). Response shape
-        // matches the legacy dataUrl createTask path.
-        if (req.url === '/api/media/create-task' && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const artifactId = typeof body?.artifactId === 'string' ? body.artifactId : '';
-            const question = typeof body?.question === 'string' ? body.question : '';
-            if (!artifactId) { res.writeHead(400); res.end(JSON.stringify({ error: 'artifactId is required' })); return; }
-            const mediaType = typeof body?.mediaType === 'string' && body.mediaType ? body.mediaType : this.mediaAgent.getArtifactMediaType(artifactId) || 'application/octet-stream';
-            const payload = {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'SendMessage',
-              params: {
-                message: {
-                  messageId: `fe-${Date.now()}`,
-                  role: 1,
-                  parts: [
-                    { url: `/a2a/artifacts/${artifactId}`, mediaType, filename: 'upload.bin' },
-                    ...(question ? [{ text: question }] : []),
-                  ],
-                },
-              },
-            };
-            const result = await this.mediaAgent.handleJsonRpc(payload, { 'a2a-version': '1.0' });
-            const parsed: any = JSON.parse(result.body);
-            if (parsed?.error) {
-              res.writeHead(result.status);
-              res.end(JSON.stringify({ error: parsed.error }));
-              return;
-            }
-            const task = parsed?.result?.task;
-            if (!task?.id) {
-              res.writeHead(502);
-              res.end(JSON.stringify({ error: 'no task returned' }));
-              return;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ id: task.id, contextId: task.contextId, state: task.status?.state || '' }));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // Mobile TTS artifact + media proxy — Phase D1 Task 3d：已迁 registry dispatch。
 
-        // POST /api/media/upload-and-create — combined upload + createTask in a
-        // single request. Saves one IPC round-trip from the desktop renderer.
-        // Body is raw binary (octet-stream); mediaType rides in the query string.
-        // Returns immediately with taskID (state=working), model analysis runs async.
-        if (req.url?.startsWith('/api/media/upload-and-create') && req.method === 'POST') {
-          const t0 = Date.now();
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const mediaType = parsedUrl.searchParams.get('type') || 'application/octet-stream';
-            const question = parsedUrl.searchParams.get('question') || '';
-            if (!mediaType.startsWith('image/') && !mediaType.startsWith('video/') && !mediaType.startsWith('audio/')) {
-              res.writeHead(415);
-              res.end(JSON.stringify({ error: `Unsupported media type: ${mediaType}` }));
-              return;
-            }
-            const chunks: Buffer[] = [];
-            let total = 0;
-            const cap = mediaType.startsWith('video/') ? 50 * 1024 * 1024 : mediaType.startsWith('audio/') ? 25 * 1024 * 1024 : 20 * 1024 * 1024;
-            for await (const chunk of req) {
-              total += chunk.length;
-              if (total > cap) {
-                res.writeHead(413);
-                res.end(JSON.stringify({ error: `Media exceeds ${cap} byte limit` }));
-                return;
-              }
-              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-            }
-            const bytes = Buffer.concat(chunks);
-            const t1 = Date.now();
-            if (bytes.length === 0) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'empty body' }));
-              return;
-            }
-            const artifactId = this.mediaAgent.putArtifactBytes(bytes, mediaType);
-            const t2 = Date.now();
-            
-            // Create task immediately (state=working), analysis runs in background
-            const { taskId, contextId } = this.mediaAgent.createTaskAsync(artifactId, mediaType, question);
-            const t3 = Date.now();
-            
-            // Return immediately with taskID (state=working)
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              id: taskId,
-              contextId,
-              state: 'TASK_STATE_WORKING',
-              artifactId,
-              mediaType,
-              size: bytes.length,
-            }));
-            const t4 = Date.now();
-            log.info(`[upload-and-create] read=${t1-t0}ms artifact=${t2-t1}ms task=${t3-t2}ms respond=${t4-t3}ms total=${t4-t0}ms`);
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // POST /api/tts/stream + POST /api/tts/interrupt — Phase D1 Task 3c：
+        // 已迁 registry dispatch（attachTtsRoutes；loopback 门随迁）。
 
-        // ── Mobile TTS artifact playback (GET /api/mobile/tts/artifacts/:id) ──
-        // Token-authed alternative to loopback-only /a2a/artifacts/:id so the
-        // mobile app can play synthesized TTS audio over LAN/Tailscale with
-        // just_audio + Authorization header (spec §8.3).
-        if (req.url?.startsWith('/api/mobile/tts/artifacts/')) {
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const { createTtsArtifactHandler } = await import('./mobile/tts-artifact.js');
-            const ttsArtifactHandler = createTtsArtifactHandler({ agent: this.mediaAgent });
-            const handled = await ttsArtifactHandler(req, res);
-            if (handled) return;
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-            return;
-          }
-        }
+        // POST /api/python/execute + restart + status — Phase D1 Task 3a：
+        // 已迁 registry dispatch（attachPythonRoutes；loopback 守卫随迁）。
 
-        // ── Mobile media proxy (POST /api/mobile/media/*) ──
-        // Simplified endpoints for the Android app: multipart upload → A2A task,
-        // and auth-proxy follow-up questions. Delegates to createMobileMediaHandler.
-        if (req.url?.startsWith('/api/mobile/media/')) {
-          const { createMobileMediaHandler } = await import('./mobile/media-proxy.js');
-          const mobileMediaHandler = createMobileMediaHandler({
-            agent: this.mediaAgent!,
-            apiToken,
-          });
-          const handled = await mobileMediaHandler(req, res);
-          if (handled) return;
-        }
+        // GET /api/tools + POST /api/tools/execute — Phase D1 Task 3b：
+        // 已迁 registry dispatch（attachToolsRoutes；loopback 守卫随迁）。
 
-        // POST /api/tts/stream — 流式 TTS（SSE，PCM16 mono 分块）。
-        // 响应头 x-tts-sample-rate 声明引擎采样率；
-        // 每块：data: {"data":"<base64 pcm16>","voice":"<voice>"}\n\n；结束：data: {"done":true}
-        // body.sessionId 可选：登记在途合成，供 /api/tts/interrupt 取消。
-        if (req.url === "/api/tts/stream" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const body = JSON.parse(await readBody(req));
-          const text = typeof body?.text === 'string' ? body.text : '';
-          if (!text.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'text is required' })); return; }
-          const voice = typeof body?.voice === 'string' ? body.voice : undefined;
-          const style = typeof body?.style === 'string' ? body.style : undefined;
-          const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : '';
-          try {
-            const ttsCfg = (config.raw as any)?.media?.tts ?? {};
-            const ttsEngine = this.ttsRegistry.resolve(ttsCfg.engine);
-            const abort = new AbortController();
-            req.on('close', () => abort.abort());
-            if (sessionId) {
-              let inflightSet = this.ttsInflight.get(sessionId);
-              if (!inflightSet) { inflightSet = new Set(); this.ttsInflight.set(sessionId, inflightSet); }
-              inflightSet.add(abort);
-              res.on('close', () => {
-                inflightSet.delete(abort);
-                if (inflightSet.size === 0) this.ttsInflight.delete(sessionId);
-              });
-            }
-            res.writeHead(200, {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-              'x-tts-sample-rate': String(ttsEngine.profile.sampleRate),
-            });
-            const gen = streamSentences(ttsEngine, text, { voice, style }, abort.signal);
-            for await (const chunk of gen) {
-              if (abort.signal.aborted) break;
-              res.write(`data: ${JSON.stringify({ data: chunk.pcm.toString('base64'), voice: voice || ttsCfg.defaultVoice || '茉莉' })}\n\n`);
-            }
-            if (!abort.signal.aborted) res.write('data: {"done":true}\n\n');
-            res.end();
-          } catch (err: any) {
-            log.error(`[TTS] stream synthesis failed (engine=${(config.raw as any)?.media?.tts?.engine ?? 'mimo'}): ${err?.message || String(err)}`);
-            if (!res.headersSent) {
-              res.writeHead(502);
-              res.end(JSON.stringify({ error: err?.message || String(err) }));
-            } else {
-              res.write(`data: ${JSON.stringify({ error: err?.message || String(err) })}\n\n`);
-              res.end();
-            }
-          }
-          return;
-        }
-
-        // POST /api/tts/interrupt — barge-in 打断：取消 session 在途 TTS 合成
-        if (req.url === "/api/tts/interrupt" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          await handleTtsInterrupt(req, res, { inflight: this.ttsInflight });
-          return;
-        }
-
-        // POST /api/python/execute — persistent Python kernel (session-scoped)
-        if (req.url === "/api/python/execute" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.kernels) { res.writeHead(503); res.end(JSON.stringify({ error: 'PyKernel not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const sessionID = typeof body?.sessionID === 'string' ? body.sessionID : '';
-            const code = typeof body?.code === 'string' ? body.code : '';
-            if (!sessionID || !code) { res.writeHead(400); res.end(JSON.stringify({ error: 'sessionID and code are required' })); return; }
-            const kernel = this.kernels.get(sessionID);
-            const result = await kernel.execute(code, {
-              timeoutMs: typeof body?.timeoutMs === 'number' ? body.timeoutMs : undefined,
-            });
-            if (result.truncated) {
-              const removed = 'output truncated';
-              result.stdout += `\n\n... (${removed}, 已截断)`;
-            }
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
-
-        // POST /api/python/restart — restart the session's kernel (state lost)
-        if (req.url === "/api/python/restart" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.kernels) { res.writeHead(503); res.end(JSON.stringify({ error: 'PyKernel not initialized' })); return; }
-            const body = JSON.parse(await readBody(req));
-            const sessionID = typeof body?.sessionID === 'string' ? body.sessionID : '';
-            if (!sessionID) { res.writeHead(400); res.end(JSON.stringify({ error: 'sessionID is required' })); return; }
-            await this.kernels.restart(sessionID);
-            res.writeHead(200);
-            res.end(JSON.stringify({ ok: true }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
-
-        // GET /api/tools — MAFW 基础工具 spec 清单（out-of-process runtime 的注册面）
-        if (req.url === "/api/tools" && req.method === "GET") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          handleToolsList(res);
-          return;
-        }
-
-        // POST /api/tools/execute — 通用工具执行（out-of-process runtime 通道；同 /api/python/* 信任域）。
-        // 执行自动合成两帧 tool part（running→completed/error）经 handleRuntimeEvent 全管线广播（spec 2026-10-20）。
-        if (req.url === "/api/tools/execute" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          await handleToolsExecute(req, res, {
-            buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
-            emitEvent: (evt) => this.handleRuntimeEvent(evt),
-          });
-          return;
-        }
-
-        // GET /api/python/status — kernel status for a session
-        if (req.url === "/api/python/status" && req.method === "GET") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.kernels) { res.writeHead(503); res.end(JSON.stringify({ error: 'PyKernel not initialized' })); return; }
-            const sessionID = new URL(req.url, 'http://localhost').searchParams.get('sessionID') || '';
-            if (!sessionID) { res.writeHead(400); res.end(JSON.stringify({ error: 'sessionID is required' })); return; }
-            res.writeHead(200);
-            res.end(JSON.stringify(this.kernels.status(sessionID)));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
+        // GET /api/python/status — kernel status for a session — Phase D1 Task 3a：
+        // 已迁 registry dispatch。
 
         // MCP endpoints on /mcp — dual transport:
         //   POST with ?sessionId=... → legacy SSE message channel
@@ -6065,597 +6084,35 @@ class MafwScheduler {
           return;
         }
 
-        // Chat API — fire-and-forget promptAsync, returns sessionID for SSE streaming
-        if (req.url === "/api/chat" && req.method === "POST") {
-          try {
-            const body = await readBody(req);
-            const { message } = JSON.parse(body);
-            if (!message) { res.writeHead(400); res.end(JSON.stringify({ error: 'message required' })); return; }
+        // Chat API + POST /api/chat/enriched — Phase D1 Task C2：已迁 registry dispatch。
 
-            const firstProject = this.registeredProjects.values().next().value;
-            const projectDir = firstProject?.projectDir || this.projectDir;
+        // POST /api/mafw-commands/run + GET /api/mafw-commands — Phase D1 Task A2：已迁 registry dispatch。
+        // POST /api/merge-memory — Phase D1 Task A3：已迁 registry dispatch。
 
-            if (!this.runtime) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return;
-            }
-
-            const session = await this.runtime.session.create({ directory: projectDir });
-            const sessionID = session.id;
-            if (!sessionID) {
-              res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
-            }
-
-            const result = await this.runtime.session.promptAsync({
-              sessionID,
-              parts: [{ type: 'text', text: message }],
-            });
-            if (result?.error) {
-              log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
-              res.writeHead(500);
-              res.end(JSON.stringify({ error: 'promptAsync failed: ' + (result.error?.data?.message || result.error?.message || JSON.stringify(result.error)) }));
-              return;
-            }
-            log.info(`[Scheduler] promptAsync ok session=${sessionID} status=${result?.response?.status}`);
-
-            res.writeHead(200);
-            res.end(JSON.stringify({ sessionID }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/chat/enriched — chat with memory context injection
-        if (req.url === "/api/chat/enriched" && req.method === "POST") {
-          try {
-            const body = await readBody(req);
-            const { message, sessionID: existingID, parts, agent, model } = JSON.parse(body);
-            if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
-            if (existingID && this.runCoordinator?.shouldHoldQueue(existingID)) {
-              res.writeHead(409);
-              res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
-              return;
-            }
-
-            const firstProject = this.registeredProjects.values().next().value;
-            const projectDir = firstProject?.projectDir || this.projectDir;
-
-            if (!this.runtime) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return;
-            }
-
-            let enrichedMessage = message;
-            if (this.memoryService) {
-              const results = await this.memoryService.mergedSearch(message, 5);
-              if (results.length > 0) {
-                const { renderMemoryBlocks } = require('./recall/inject-format');
-                const chunks = renderMemoryBlocks(results.map((r: any) => ({
-                  source: r.source,
-                  type: r.type,
-                  content: r.content,
-                })));
-                if (chunks.length > 0) enrichedMessage = chunks.join('\n\n') + '\n\n' + message;
-              }
-            }
-
-    const sessionID = existingID || (await this.runtime.session.create({ directory: projectDir })).id;
-            if (!sessionID) {
-              res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
-            }
-            // Extra parts (file/agent attachments) ride along after the enriched text.
-            const promptParts: any[] = [];
-            if (enrichedMessage) promptParts.push({ type: 'text', text: enrichedMessage });
-            if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
-            const promptOpts: any = { sessionID, parts: promptParts };
-            if (agent) promptOpts.agent = agent;
-            if (model?.providerID && model?.modelID) promptOpts.model = model;
-            const result = await this.runtime.session.promptAsync(promptOpts);
-            if (result?.error) {
-              log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
-              res.writeHead(500);
-              res.end(JSON.stringify({ error: 'promptAsync failed: ' + (result.error?.data?.message || result.error?.message || JSON.stringify(result.error)) }));
-              return;
-            }
-            log.info(`[Scheduler] promptAsync ok session=${sessionID} status=${result?.response?.status}`);
-
-            res.writeHead(200);
-            res.end(JSON.stringify({ sessionID }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/mafw-commands/run — 注册表派发（内置+自定义命令，UI-driven 不进 MCP）
-        if (req.url === "/api/mafw-commands/run" && req.method === "POST") {
-          const cmdBody = JSON.parse(await readBody(req));
-          const cmdSessionID = typeof cmdBody?.sessionID === 'string' ? cmdBody.sessionID : '';
-          if (cmdSessionID && this.runCoordinator?.shouldHoldQueue(cmdSessionID)) {
-            res.writeHead(409, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
-            return;
-          }
-          const reply = await handleMafwCommandRun(
-            {
-              registry: this.getMafwCommandRegistry(),
-              resolveProjectDir: () => this.registeredProjects.values().next().value?.projectDir || this.projectDir,
-            },
-            cmdBody,
-          );
-          res.writeHead(reply.status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(reply.body));
-          return;
-        }
-
-        // GET /api/mafw-commands — 命令元数据清单（客户端补全/面板）
-        if (req.url?.match(/^\/api\/mafw-commands(?:\?|$)/) && req.method === "GET") {
-          const reply = handleMafwCommandList({ registry: this.getMafwCommandRegistry(), resolveProjectDir: () => this.projectDir });
-          res.writeHead(reply.status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(reply.body));
-          return;
-        }
-        // POST /api/merge-memory — direct merge endpoint used by the plugin
-        // /merge-memory slash command (src/plugin.ts). Reuses the MCP handler.
-        if (req.url === "/api/merge-memory" && req.method === "POST") {
-          try {
-            const body = await readBody(req);
-            const { sourceWorktree, strategy, resolveStrategy } = JSON.parse(body);
-            if (!sourceWorktree) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ ok: false, error: 'sourceWorktree is required' }));
-              return;
-            }
-            const { handleMergeMemory } = await import('./mcp/handlers/merge-memory.js');
-            const result = await handleMergeMemory(
-              { sourceWorktree, resolveStrategy: strategy || resolveStrategy || 'manual' } as any,
-              { memory: this.memoryService } as any,
-            );
-            const text = result.content?.[0]?.text || '{}';
-            let parsed: any;
-            try { parsed = JSON.parse(text) } catch { parsed = { text } }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: parsed.success !== false, ...parsed }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ ok: false, error: err.message }));
-          }
-          return;
-        }
-
-// GET /api/memory/merged-search — expose memory context injection results
-        if (req.url === "/api/memory/merged-search" && req.method === "GET") {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const query = parsedUrl.searchParams.get('query') || '';
-            const maxFacts = parseInt(parsedUrl.searchParams.get('maxFacts') || '5', 10);
-            if (!this.memoryService) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'Memory service not available' })); return;
-            }
-            const results = await this.memoryService.mergedSearch(query, maxFacts);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ results }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/memory/embeddings/backfill — index entries missing vectors.
-        // Optional ?limit=N to batch (full store ≈ 12s for short abstractions).
-        if (req.url?.match(/^\/api\/memory\/embeddings\/backfill(?:\?|$)/) && req.method === 'POST') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const limit = parseInt(parsedUrl.searchParams.get('limit') || '', 10);
-            const result = await this.backfillEmbeddings(!Number.isNaN(limit) && limit > 0 ? limit : undefined);
-            if (!result) {
-              res.writeHead(400); res.end(JSON.stringify({ error: 'embedding provider off (memory.embedding.provider)' })); return;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET/POST /api/memory/embedding-config — memory embedding engine
-        // settings（P5 Wave 1 起由 registry dispatch 接管，见 routes/wave1-handlers.ts；
-        // 历史顺序约束"须高于 /api/memory/* dashboard 委托"由 dispatch 位置满足）
-
-        // GET /api/memory/stats — consolidation health + vector coverage (P2)
-        if (req.url?.match(/^\/api\/memory\/stats(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const embeddingRuntime = getEmbeddingRuntime();
-            const consolidation = this.consolidationService?.getStats() ?? null;
-            const indexEntries = this.memoryService?.harmonicIndex.getIndex().entries ?? [];
-            const indexed = embeddingRuntime ? embeddingRuntime.vectors.size() : 0;
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              embedding: {
-                provider: config.memory.embedding.provider,
-                model: config.memory.embedding.model,
-                vectors: indexed,
-                indexEntries: indexEntries.length,
-                coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,
-              },
-              consolidation,
-              routing: (() => { try { return getRouteStats(); } catch { return null; } })(),
-              dedup: (() => { try { const { getDedupStats } = require('./memory/dedup-guard'); return getDedupStats(); } catch { return null; } })(),
-              commitment: (() => {
-                try {
-                  const { commitmentStats } = require('./recall/commitment');
-                  const inWindow = indexEntries.filter((e: any) => e.commitment_capped_at).length;
-                  return { ...commitmentStats, inWindow };
-                } catch { return null; }
-              })(),
-              reconsolidation: (() => {
-                try { return { eligible: getReconsolidationQueue().listEligible().length }; } catch { return null; }
-              })(),
-              pipelines: this.heartbeat?.snapshot() ?? [],
-              coactivation: (() => {
-                try { return this.coactivationGraphStore?.stats() ?? null; } catch { return null; }
-              })(),
-              abstractionLevels: (() => {
-                const counts: Record<string, number> = { '1': 0, '2': 0, '3': 0, unknown: 0 };
-                for (const e of indexEntries) {
-                  const lvl = (e as any).abstraction_level;
-                  if (lvl === 1 || lvl === 2 || lvl === 3) counts[String(lvl)]++;
-                  else counts.unknown++;
-                }
-                return counts;
-              })(),
-              // A4 observability: hit-proxy labeling counts (10s cache — the
-              // file read must not run on every stats poll).
-              fok: (() => {
-                try {
-                  const now = Date.now();
-                  if (!this.fokStatsCache || now - this.fokStatsCache.at > 10_000) {
-                    const { FOK_SAMPLES_FILE, fokSampleStats } = require('./recall/fok-samples');
-                    const lines = fs.existsSync(FOK_SAMPLES_FILE())
-                      ? fs.readFileSync(FOK_SAMPLES_FILE(), 'utf-8').split(/\r?\n/).filter(Boolean)
-                      : [];
-                    this.fokStatsCache = { at: now, stats: fokSampleStats(lines) };
-                  }
-                  return this.fokStatsCache.stats;
-                } catch { return null; }
-              })(),
-              // A3 observability: event stream counters (pending = unsettled
-              // batch for the daily pass; needTracked = live need signals).
-              retrievalEvents: (() => {
-                try {
-                  return getRetrievalEventBuffer().stats();
-                } catch { return null; }
-              })(),
-            }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/memory/sticky — structured note-board list for desktop UI.
-        // Same deps as the agent-facing recall/context block, JSON shape.
-        if (req.url?.match(/^\/api\/memory\/sticky(?:\?|$)/) && req.method === 'GET') {
-          try {
-            if (!this.memoryService) {
-              res.writeHead(503, { 'Content-Type': 'application/json' });
-              const { emptyNoteBoardBudget } = require('./routes/note-board');
-              res.end(JSON.stringify({ entries: [], budget: emptyNoteBoardBudget() }));
-              return;
-            }
-            const { handleNoteBoard } = require('./routes/note-board');
-            const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
-            const store = new HarmonicUnitFileStore(this.mafwDir, this.memoryService.harmonicIndex);
-            const nb = await handleNoteBoard({
-              getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
-              readUnit: (id: string) => store.read(id),
-            });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ entries: nb.entries, budget: nb.budget }));
-          } catch (err: any) {
-            log.warn(`[Scheduler] /api/memory/sticky failed: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            const { emptyNoteBoardBudget } = require('./routes/note-board');
-            res.end(JSON.stringify({ entries: [], budget: emptyNoteBoardBudget() }));
-          }
-          return;
-        }
-
-        // GET /api/memory/get?id=... — fetch one memory's full content by id
-        // (or 6-char pointer tail). Mirrors the mafw_get_memory MCP tool.
-        if (req.url?.match(/^\/api\/memory\/get(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const id = parsedUrl.searchParams.get('id') || '';
-            const { handleGetMemory } = require('./mcp/handlers/get-memory');
-            const result = await handleGetMemory({ id }, {
-              memory: this.memoryService,
-              mafwDir: this.mafwDir,
-              searchArchive: (sid: string, anchors: string[], k: number) => this.getGatewayDb().searchArchive(sid, anchors, k),
-              resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findArchiveBySessionTail(tail, turnId),
-            } as any);
-            const body = JSON.parse(result.content[0].text);
-            res.writeHead(result.isError ? 404 : 200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(body));
-          } catch (err: any) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/memory/search — harmonic index search; empty query lists all entries
-        if (req.url?.match(/^\/api\/memory\/search(?:\?|$)/) && req.method === 'GET') {
-          try {
-            if (!this.memoryService) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'Memory service not available' })); return;
-            }
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const query = parsedUrl.searchParams.get('query') || '';
-            const topK = parseInt(parsedUrl.searchParams.get('topK') || '50', 10);
-            const retrieverParam = parsedUrl.searchParams.get('retriever');
-            const store = new HarmonicUnitFileStore(this.mafwDir);
-            const index = store.indexManager_();
-            let entries;
-            if (query && retrieverParam === 'hybrid') {
-              const dense = await computeDenseScores(query, topK, index);
-              entries = index.search(query, topK, dense ? { retriever: 'bm25', denseScores: dense } : { retriever: 'bm25' });
-            } else if (query) {
-              const retriever = retrieverParam === 'bm25' ? 'bm25' : 'token';
-              entries = index.search(query, topK, { retriever });
-            } else {
-              entries = [...index.getIndex().entries]
-                  .sort((a, b) => b.energy - a.energy)
-                  .slice(0, topK);
-            }
-            const results: any[] = [];
-            for (const entry of entries) {
-              const unit = await store.read(entry.id);
-              if (unit) {
-                results.push(unit);
-              } else {
-                results.push({
-                  id: entry.id,
-                  type: entry.type,
-                  primary_abstraction: entry.primary_abstraction,
-                  cue_anchors: entry.cue_anchors,
-                  memory_value: '',
-                  energy: entry.energy,
-                  tier: entry.tier,
-                });
-              }
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ results }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // DELETE /api/memory/{id} — physically remove OKF file + index entry
-        const memoryDeleteMatch = req.url?.match(/^\/api\/memory\/([^/]+)$/);
-        if (memoryDeleteMatch && req.method === 'DELETE') {
-          try {
-            const store = new HarmonicUnitFileStore(this.mafwDir);
-            const removed = await store.delete(memoryDeleteMatch[1]);
-            if (removed && this.memoryService) {
-              this.memoryService.harmonicIndex.removeEntry(memoryDeleteMatch[1]);
-            }
-            res.writeHead(removed ? 200 : 404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(removed ? { status: 'deleted' } : { error: 'Not found' }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/memory/energy-distribution — bucket index entries by energy
-        if (req.url === "/api/memory/energy-distribution" && req.method === "GET") {
-          try {
-            if (!this.memoryService) {
-              res.writeHead(503); res.end(JSON.stringify({ error: 'Memory service not available' })); return;
-            }
-            const entries = new HarmonicUnitFileStore(this.mafwDir).indexManager_().getIndex().entries;
-            const dist = { critical: 0, high: 0, medium: 0, low: 0, total: entries.length };
-            for (const e of entries) {
-              if (e.energy >= 0.8) dist.critical++;
-              else if (e.energy >= 0.6) dist.high++;
-              else if (e.energy >= 0.4) dist.medium++;
-              else dist.low++;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(dist));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/l5/axioms — global L5 axioms + heuristics
-        if (req.url?.match(/^\/api\/l5\/axioms(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const topK = parseInt(parsedUrl.searchParams.get('topK') || '10', 10);
-            const { axioms, heuristics } = new L5Store().getTop(topK);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ axioms, heuristics }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/goals/{goalId}/questions/{questionId}/respond
-        const respondMatch = req.url?.match(/^\/api\/goals\/([^/]+)\/questions\/([^/]+)\/respond$/);
-        if (respondMatch && req.method === 'POST') {
-          const goalId = respondMatch[1];
-          const questionId = respondMatch[2];
-          const body = await readBody(req);
-          let data: any;
-          try { data = JSON.parse(body); } catch {
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'bad_request', error: 'Invalid JSON' }));
-            return;
-          }
-          const ledger = new QuestionLedger(this.mafwDir);
-          const state = ledger.getQuestionState(questionId);
-          if (!state) {
-            res.writeHead(404);
-            res.end(JSON.stringify({ status: 'not_found' }));
-            return;
-          }
-          if (state !== 'pending') {
-            res.writeHead(409);
-            res.end(JSON.stringify({ status: 'conflict', currentState: state }));
-            return;
-          }
-          if (data.type === 'cancel') {
-            // NodeDriver 写 ledger cancelled + state → archive_fail（不再依赖 langgraph）
-            this.goalDriver?.handleCancel(goalId, questionId);
-            res.writeHead(200);
-            res.end(JSON.stringify({ status: 'accepted', action: 'cancelled' }));
-            return;
-          }
-          // answer or redirect —— NodeDriver（state 驱动，langgraph Command 退役）
-          this.goalDriver?.handleAnswer(goalId, questionId, data.answer || '');
-          res.writeHead(200);
-          res.end(JSON.stringify({ status: 'accepted' }));
-          return;
-        }
-
+        // GET /api/memory/{merged-search,stats,sticky,get,search,energy-distribution} + POST /api/memory/embeddings/backfill
+        // + DELETE /api/memory/{id} + GET /api/l5/axioms — Phase D1 Task F1：已迁 registry dispatch。
+        // POST /api/goals/{goalId}/questions/{questionId}/respond — Phase D1 Task F2：已迁 registry dispatch。
         // GET /api/goals/:id/sessions — P5 Wave 1 起由 registry dispatch 接管
         // （历史约束"须挂 Dashboard /api/goals* 兜底之前"由 dispatch 位置满足）。
 
-        // GET /api/goals/:id/timeline — 节点级 trace 聚合（须在 dashboard 兜底之前）
-        if (await handleGoalTimeline(req, res, req.url!, {
-          loadState: (goalId) => {
-            const mafwDir = this.goalDriverMafwDirCache.get(goalId)
-              ?? this.findGoalStatePath(goalId)?.info.mafwDir;
-            return mafwDir ? loadGoalState(mafwDir, goalId) : null;
-          },
-          listNodeRuns: (goalId) => this.getGatewayDb().listNodeRuns(goalId),
-          loadRequest: (goalId) => { try { return this.loadRequest(goalId); } catch { return null; } },
-          getOutcome: (goalId) => this.getGatewayDb().getGoalOutcome(goalId),
-        })) return;
-
-        // POST /api/goals/:id/nodes/:runId/retry — 节点重跑（execute 过 destructive 门）
-        if (req.url?.match(/^\/api\/goals\/[^/]+\/nodes\/\d+\/retry$/) && req.method === 'POST') {
-          const raw = await readBody(req);
-          let body: any; try { body = JSON.parse(raw); } catch { body = {}; }
-          const goalIdM = req.url.match(/^\/api\/goals\/([^/]+)\/nodes\/\d+\/retry$/)!;
-          const goalId = decodeURIComponent(goalIdM[1]);
-          if (await handleNodeRetry(req, res, req.url!, {
-            body,
-            getNodeRun: (runId) => this.getGatewayDb().listNodeRuns(goalId).find((r: any) => r.id === runId) ?? null,
-            retryNodeRun: (g, runId) => this.goalDriver!.retryNodeRun(g, runId),
-          })) return;
-        }
-
-        // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — W1 计划审阅
-        // （须在 dashboard /api/goals* 兜底之前）。
-        // Pod 事件（人侧查收）：list / 单条 seen / 按 goal+revision 批量 seen。
-        {
-          const seenAll = req.url?.match(/^\/api\/pods\/([^/]+)\/events\/seen(?:\?|$)/);
-          const seenOne = req.url?.match(/^\/api\/pods\/([^/]+)\/events\/([^/?]+)\/seen(?:\?|$)/);
-          const list = req.url?.match(/^\/api\/pods\/([^/]+)\/events(?:\?|$)/);
-          if (seenAll || seenOne || list) {
-            const podId = decodeURIComponent((seenAll ?? seenOne ?? list)![1]);
-            const params = new URL(req.url!, 'http://127.0.0.1').searchParams;
-            let body: any = {};
-            if (req.method === 'POST') {
-              try { body = JSON.parse(await readBody(req)); } catch { body = {}; }
-            }
-            const out = await handlePodEvents({ service: this.podEventService! })({
-              method: req.method ?? 'GET',
-              podId,
-              ...(seenOne ? { id: decodeURIComponent(seenOne[2]) } : {}),
-              ...(seenAll ? { action: 'seenAll' as const } : {}),
-              query: { state: params.get('state') ?? undefined, limit: params.get('limit') ?? undefined },
-              body,
-            });
-            res.writeHead(out.status, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(out.body));
-            return;
-          }
-        }
+        // GET /api/goals/:id/source — registry route `goals.source` (handoff provenance + full text).
+        // GET /api/goals/:id/timeline — Phase D1 Task F2：已迁 registry dispatch。
+        // POST /api/goals/:id/nodes/:runId/retry — Phase D1 Task F2：已迁 registry dispatch。
+        // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — Phase D1 Task F2：已迁 registry dispatch。
+        // GET /api/pods/:podId/events + POST .../events/:id/seen + POST .../events/seen
+        // — Phase D1 Task H2：已迁 registry dispatch（pod.events.list / seen / seenAll）。
 
         // 跨项目常驻存在感（tray/taskbar 的唯一数据源）。
-        if (req.url?.match(/^\/api\/presence(?:\?|$)/) && req.method === 'GET') {
-          const out = await handlePresence({ list: () => this.buildPresence() });
-          res.writeHead(out.status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(out.body));
-          return;
-        }
+        // GET /api/presence — Phase D1 Task H1：已迁 registry dispatch。
 
-        if (req.url?.match(/^\/api\/goals\/([^/]+)\/plan(?:\?|$)/) || req.url?.match(/^\/api\/goals\/([^/]+)\/plan-approval(?:\?|$)/)) {
-          let body: any = {};
-          if (req.method === 'POST') {
-            try { body = JSON.parse(await readBody(req)); } catch { body = {}; }
-          }
-          if (await handleGoalPlan(req, res, req.url!, {
-            body,
-            loadState: (goalId) => {
-              const mafwDir = this.goalDriverMafwDirCache.get(goalId)
-                ?? this.findGoalStatePath(goalId)?.info.mafwDir;
-              return mafwDir ? loadGoalState(mafwDir, goalId) : null;
-            },
-            approvePlan: (g, approvalId, opts) => this.goalDriver!.approvePlan(g, approvalId, opts),
-            rejectPlan: (g, feedback, approvalId) => this.goalDriver!.rejectPlan(g, feedback, approvalId),
-          })) return;
-        }
+        // POST /api/session/{id}/background — Phase D1 Task D1：已迁 registry dispatch。
 
-        // Background 中性动词（必须早于 serve 透传兜底）。
-        if (req.url?.match(/^\/api\/session\/[^/]+\/background(?:\?|$)/)) {
-          if (await handleSessionBackground(req, res, req.url!, {
-            getRuntime: () => this.runtime,
-            getAccess: () => this.runtime?.access ?? null,
-          })) return;
-        }
+        // Neutral terminal PTY façade — Phase D1 Task 3d：已迁 registry dispatch。
 
-        // Neutral terminal PTY façade（terminal.pty）：CRUD + connect-ticket。
-        // 原生 /api/pty、connect-token 与原生帧只在 runtime adapter。
-        if (req.url?.startsWith('/api/terminal/sessions')) {
-          if (await handleTerminal(req, res, req.url!, {
-            service: this.getTerminalService(),
-            access: this.runtime?.access ?? null,
-          })) return;
-        }
-
-        // MCP 管理门面（runtime-neutral）：gateway 只做能力门 + 契约调用；
-        // opencode 的 v2 HTTP / CLI / 配置文档细节在 runtime/opencode-mcp.ts。
-        if (req.url?.match(/^\/api\/mcp\//)) {
-          const rt = this.runtime;
-          const channel = rt?.mcp;
-          if (await handleMcp(req, res, req.url!, {
-            access: rt?.access ?? null,
-            list: (opts) => channel!.list(opts),
-            connect: (name, opts) => channel!.connect(name, opts),
-            disconnect: (name, opts) => channel!.disconnect(name, opts),
-          })) return;
-        }
-
-        // MCP 配置写入（mcpConfigApi）：持久化实现归 runtime 适配器，gateway 只透传。
-        if (req.url?.match(/^\/api\/mcp\/config\//)) {
-          const cfgChannel = this.runtime?.mcp?.config;
-          if (await handleMcpConfig(req, res, req.url!, {
-            access: this.runtime?.access ?? null,
-            preview: (input) => cfgChannel!.preview(input),
-            previewRemove: (name) => cfgChannel!.previewRemove(name),
-            apply: (input) => cfgChannel!.apply(input),
-            remove: (name, opts) => cfgChannel!.remove(name, opts),
-            restore: (opts) => cfgChannel!.restore(opts),
-          })) return;
-        }
+        // MCP 管理门面（runtime-neutral）+ MCP 配置写入（mcpConfigApi）
+        // — Phase D1 Task H2：已迁 registry dispatch（mcp.servers / connect /
+        // disconnect / configPreview / configPreviewRemove / configApply /
+        // configRestore / configRemove；委派 handleMcp / handleMcpConfig 不变）。
 
         // Dashboard API
         if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
@@ -6667,58 +6124,12 @@ class MafwScheduler {
         // POST /api/eval/chat/completions — EvalScope adapter: OpenAI-compatible
         // endpoint that drives a full main-agent run (media → agent → A2A →
         // MediaAgent → multimodal model) and returns the final answer.
-        if (req.url?.match(/^\/api\/eval\/chat\/completions(?:\?|$)/) && req.method === 'POST') {
-          try {
-            const body = JSON.parse(await readBody(req));
-            const evalHandler = handleEvalChatCompletion({
-              runtime: this.runtime,
-              directory: this.resolvedProjectDir(),
-              providerID: 'opencode-go',
-              modelID: 'deepseek-v4-flash',
-              timeoutMs: 300_000,
-            });
-            const result = await evalHandler(body);
-            res.setHeader("Content-Type", "application/json");
-            res.writeHead(result.status);
-            res.end(JSON.stringify(result.body));
-          } catch (err: any) {
-            log.error(`[Eval] chat error: ${err.message}`);
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: { message: err.message } }));
-          }
-          return;
-        }
+        // POST /api/eval/chat/completions — Phase D1 Task H1：已迁 registry dispatch。
 
         // GET /api/config —gateway effective config
-        if (req.url?.match(/^\/api\/config(?:\?|$)/) && req.method === 'GET') {
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify(config.raw));
-          return;
-        }
+        // GET /api/config — Phase D1 Task H1：已迁 registry dispatch。
 
-        // PUT /api/config —persist config overrides to the data-root
-        // config.yaml (the same file config.reload() reads), then hot-reload.
-        if (req.url?.match(/^\/api\/config(?:\?|$)/) && req.method === 'PUT') {
-          try {
-            const overrides = JSON.parse(await readBody(req));
-            const mafwDir = config.resolvePath();
-            const configPath = path.join(mafwDir, 'config.yaml');
-            if (!fs.existsSync(mafwDir)) fs.mkdirSync(mafwDir, { recursive: true });
-            const yamlStr = yaml.dump(overrides, { indent: 2, lineWidth: 120, noRefs: true, sortKeys: true });
-            fs.writeFileSync(configPath, yamlStr, 'utf-8');
-            const reload = config.reload();
-            if (reload.restartRequired.length > 0) {
-              log.warn(`[Config] PUT saved, restart required for: ${reload.restartRequired.join(', ')}`);
-            }
-            res.writeHead(200);
-            res.end(JSON.stringify({ success: true, restartRequired: reload.restartRequired }));
-          } catch (err: any) {
-            log.error('[Config] PUT error:', err.message);
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // PUT /api/config — Phase D1 Task H1：已迁 registry dispatch。
 
         // 插件注册：必须传递 projectDir + mafwDir
         if (req.url === '/register' && req.method === 'POST') {
@@ -6865,95 +6276,10 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/work/{goalId}/validate — MCP calls when agent completes goal creation
-        const validateMatch = req.url?.match(/^\/api\/work\/([^/]+)\/validate$/);
-        if (validateMatch && req.method === 'POST') {
-          try {
-            const goalId = validateMatch[1];
-            const body = await readBody(req);
-            const data = body ? JSON.parse(body) : {};
-            const result = await this.handleValidate(goalId, data);
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            const status = err.message === 'Goal already exists' ? 409 : 400;
-            res.writeHead(status);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/work/{goalId}/complete — MCP calls when agent completes a phase
-        const completeMatch = req.url?.match(/^\/api\/work\/([^/]+)\/complete$/);
-        if (completeMatch && req.method === 'POST') {
-          try {
-            const goalId = completeMatch[1];
-            const body = await readBody(req);
-            const data = body ? JSON.parse(body) : {};
-            const result = await this.handleComplete(goalId, data);
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
+        // POST /api/work/{goalId}/validate + POST /api/work/{goalId}/complete — Phase D1 Task F2：已迁 registry dispatch。
         // POST /api/manager/session/rotate — P5 Wave 1 起由 registry dispatch 接管
-        // GET /api/manager/session — return manager session info (per-project,
-        // read from the gateway DB). ?projectDir= filters a single project.
-        if (req.url && req.url.startsWith('/api/manager/session') && req.method === 'GET') {
-          const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-          const filter = parsedUrl.searchParams.get('projectDir') || '';
-          try {
-            if (filter) {
-              const current = this.leadSessionRegistry.current(filter);
-              if (!current) {
-                res.writeHead(404);
-                res.end(JSON.stringify({ error: 'No manager session for project' }));
-                return;
-              }
-              res.writeHead(200);
-              res.end(
-                JSON.stringify({
-                  projectDir: canonicalProjectDir(filter),
-                  sessionId: current.sessionId,
-                  createdAt: current.createdAt ?? null,
-                }),
-              );
-              return;
-            }
-            // Per-runtime slots: surface only the ACTIVE runtime's Lead per
-            // canonical project. Dormant runtimes and raw-key variants are
-            // resolved through the same lifecycle reader, never duplicated.
-            const all = this.getGatewayDb().kvAll('manager-session');
-            const projectDirs = new Set(all.map((entry) => canonicalProjectDir(entry.key)));
-            const live = Array.from(projectDirs)
-              .map((projectDir) => ({ projectDir, current: this.leadSessionRegistry.current(projectDir) }))
-              .filter((entry): entry is { projectDir: string; current: NonNullable<typeof entry.current> } => !!entry.current);
-            if (live.length === 0) {
-              res.writeHead(404);
-              res.end(JSON.stringify({ error: 'No manager session' }));
-              return;
-            }
-            res.writeHead(200);
-            res.end(
-              JSON.stringify(
-                live.map((entry) => ({
-                  projectDir: entry.projectDir,
-                  sessionId: entry.current.sessionId,
-                  createdAt: entry.current.createdAt ?? null,
-                })),
-              ),
-            );
-          } catch (err: any) {
-            log.warn(`[Scheduler] /api/manager/session failed: ${err.message}`);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: 'Failed to read manager sessions' }));
-          }
-          return;
-        }
+        // GET /api/manager/session — Phase D1 Task H2：已迁 registry dispatch
+        // （manager.session；?projectDir= 单项目 / 全量投影语义随迁）。
 
         // 健康检查
         if (req.url === '/health' && req.method === 'GET') {
@@ -6971,327 +6297,17 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/projects — list registered projects
-        if (req.url === '/api/projects' && req.method === 'GET') {
-          // 基础设施目录（runtime server root / "."）不是用户项目，不暴露给 Rail。
-          const runtimeRoot = resolveRuntimeRoot();
-          const projects = Array.from(this.registeredProjects.values())
-            .filter(p => isSelectableProject(p.projectDir, runtimeRoot))
-            .map(p => ({
-              id: p.projectDir,
-              worktree: p.projectDir,
-            }));
-          res.end(JSON.stringify({ projects }));
-          return;
-        }
+        // GET /api/projects + GET /api/projects/current — Phase D1 Task A1：已迁 registry dispatch。
 
-        // GET /api/projects/current — current/active project
-        if (req.url === '/api/projects/current' && req.method === 'GET') {
-          if (!this.currentProjectDir) {
-            this.currentProjectDir = this.getGatewayDb().kvGet<string>('current-project', 'default') || null;
-          }
-          const runtimeRoot = resolveRuntimeRoot();
-          const cur = pickCurrentProject({
-            stored: this.currentProjectDir,
-            registered: this.registeredProjects.keys(),
-            runtimeRoot,
-          });
-          if (cur !== this.currentProjectDir) {
-            // 修复被污染的 current-project（旧版插件自动注册曾把 runtime-root 选成当前项目）。
-            this.currentProjectDir = cur;
-            if (cur) this.getGatewayDb().kvSet('current-project', 'default', cur);
-          }
-          if (!cur) {
-            res.end(JSON.stringify({ project: null }));
-            return;
-          }
-          const info = this.registeredProjects.get(cur);
-          if (!info) {
-            res.end(JSON.stringify({ project: null }));
-            return;
-          }
-          res.end(JSON.stringify({
-            project: { id: cur, worktree: cur, mafwDir: info.mafwDir },
-          }));
-          return;
-        }
+        // POST /api/devices + GET /api/devices + DELETE /api/devices/:id
+        // — Phase D1 Task H2：已迁 registry dispatch（devices.register / list / delete）。
+        // GET/DELETE /api/mobile/devices(:id) + POST /api/mobile/devices/register
+        // + GET /api/mobile/pairing-code + POST /api/mobile/pairing/verify
+        // — Phase D1 Task H2：已迁 registry dispatch（mobile.devicesList / devicesDelete /
+        // devicesRegister / pairingCode / pairingVerify；配对令牌与 429 语义随迁）。
+        // GET /api/approvals + POST /api/approvals/:id/respond — Phase D1 Task A5：已迁 registry dispatch。
 
-        // POST /api/devices — register a mobile device for push notifications
-        if (req.url?.match(/^\/api\/devices(?:\?|$)/) && req.method === 'POST') {
-          try {
-            const body = JSON.parse(await readBody(req));
-            const { id, fcmToken, platform, token } = body;
-            if (!id || !fcmToken || !platform || !token) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'id, fcmToken, platform, token required' }));
-              return;
-            }
-            // SECURITY: Compute apiTokenHash server-side from the token
-            const { createHash } = require('crypto');
-            const apiTokenHash = createHash('sha256').update(token).digest('hex').slice(0, 16);
-            const entry = this.pushGateway?.registerDevice({ id, fcmToken, platform, apiTokenHash });
-            res.writeHead(200);
-            res.end(JSON.stringify({ ok: true, device: entry }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/mobile/devices — list registered devices
-        if (req.url?.match(/^\/api\/mobile\/devices(?:\?|$)/) && req.method === 'GET') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ devices: this.pushGateway ? this.pushGateway.listDevices() : [] }));
-          return;
-        }
-
-        // DELETE /api/mobile/devices/:id — remove a device
-        const mobileDeviceDeleteMatch = req.url?.match(/^\/api\/mobile\/devices\/([^/]+)(?:\?|$)/);
-        if (mobileDeviceDeleteMatch && req.method === 'DELETE') {
-          const id = decodeURIComponent(mobileDeviceDeleteMatch[1]);
-          const ok = this.pushGateway ? this.pushGateway.removeDevice(id) : false;
-          res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(ok ? { ok: true } : { error: 'device not found' }));
-          return;
-        }
-
-        // GET /api/devices — legacy alias for list
-        if (req.url?.match(/^\/api\/devices(?:\?|$)/) && req.method === 'GET') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ devices: this.pushGateway ? this.pushGateway.listDevices() : [] }));
-          return;
-        }
-
-        // DELETE /api/devices/:id — legacy alias for remove
-        const legacyDeviceDeleteMatch = req.url?.match(/^\/api\/devices\/([^/]+)(?:\?|$)/);
-        if (legacyDeviceDeleteMatch && req.method === 'DELETE') {
-          const id = decodeURIComponent(legacyDeviceDeleteMatch[1]);
-          const ok = this.pushGateway ? this.pushGateway.removeDevice(id) : false;
-          res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(ok ? { ok: true } : { error: 'device not found' }));
-          return;
-        }
-
-        // POST /api/mobile/devices/register — mobile device registration alias
-        // Maps mobile's { token, platform, deviceName } to gateway's { id, fcmToken, platform, apiTokenHash }
-        if (req.url?.match(/^\/api\/mobile\/devices\/register(?:\?|$)/) && req.method === 'POST') {
-          try {
-            const body = JSON.parse(await readBody(req));
-            const { token, platform, deviceName } = body;
-            if (!token || !platform) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'token and platform required' }));
-              return;
-            }
-            const { createHash } = require('crypto');
-            const id = createHash('sha256').update(token).digest('hex').slice(0, 32);
-            const apiTokenHash = createHash('sha256').update(token).digest('hex').slice(0, 16);
-            const entry = this.pushGateway?.registerDevice({ id, fcmToken: token, platform, apiTokenHash });
-            res.writeHead(200);
-            res.end(JSON.stringify({ ok: true, device: entry }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/mobile/pairing-code — generate a single-use pairing URL for mobile scan
-        if (req.url?.match(/^\/api\/mobile\/pairing-code(?:\?|$)/) && req.method === 'GET') {
-          try {
-            if (!this.pairingService) {
-              res.writeHead(503);
-              res.end(JSON.stringify({ error: 'Pairing service not available' }));
-              return;
-            }
-            const ip = req.socket.remoteAddress || '';
-            const result = this.pairingService.generatePairingCode(ip);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            const msg = err?.message || String(err);
-            const status = /rate limit/i.test(msg) ? 429 : 500;
-            res.writeHead(status, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: msg }));
-          }
-          return;
-        }
-
-        // POST /api/mobile/pairing/verify — consume a pairing nonce after mobile scan
-        if (req.url?.match(/^\/api\/mobile\/pairing\/verify(?:\?|$)/) && req.method === 'POST') {
-          try {
-            if (!this.pairingService) {
-              res.writeHead(503);
-              res.end(JSON.stringify({ error: 'Pairing service not available' }));
-              return;
-            }
-            const body = JSON.parse(await readBody(req));
-            const { nonce } = body;
-            if (!nonce) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'nonce required' }));
-              return;
-            }
-            const consumed = this.pairingService.consumeNonce(nonce);
-            if (!consumed) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'Invalid or expired pairing nonce' }));
-              return;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: true }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/approvals — list pending approvals
-        if (req.url === '/api/approvals' && req.method === 'GET') {
-          const approvals: any[] = [];
-          const scanUserQuestions = (mafwDir: string) => {
-            try {
-              const qDir = path.join(mafwDir, 'user-questions');
-              if (fs.existsSync(qDir)) {
-                for (const f of fs.readdirSync(qDir).filter((f: string) => f.endsWith('.json'))) {
-                  const q = JSON.parse(fs.readFileSync(path.join(qDir, f), 'utf-8'));
-                  approvals.push({ id: f.replace('.json', ''), goalId: q.goalId, question: q.question, status: q.answered ? 'answered' : 'pending', createdAt: q.createdAt });
-                }
-                // legacy: questions previously stored under user-questions/{goalId}/
-                for (const gDir of fs.readdirSync(qDir)) {
-                  const gPath = path.join(qDir, gDir);
-                  if (!fs.statSync(gPath).isDirectory()) continue;
-                  for (const file of fs.readdirSync(gPath).filter((f: string) => f.endsWith('.json'))) {
-                    const q = JSON.parse(fs.readFileSync(path.join(gPath, file), 'utf-8'));
-                    approvals.push({ id: file.replace('.json', ''), goalId: gDir, question: q.question, status: q.answered ? 'answered' : 'pending', createdAt: q.createdAt });
-                  }
-                }
-              }
-            } catch { /* ignore */ }
-          };
-          // Read from .mafw/user-questions/ directories (flat layout)
-          for (const [, info] of this.registeredProjects) {
-            scanUserQuestions(info.mafwDir);
-          }
-          // MCP handleAskUser 写入 ~/.mafw/user-questions（数据根，非项目目录）——
-          // 不扫描会导致 QuestionWidget 的 approvals 回退查找永远失败（弹窗无问题文本）
-          scanUserQuestions(config.resolvePath());
-          res.end(JSON.stringify({ approvals }));
-          return;
-        }
-
-        // POST /api/approvals/{id}/respond — { decision: 'approve'|'reject' } 或 { answer: '文本' }
-        // 写 .mafw/user-questions/{id}.json（goal askUser 轮询消费；2026-09-20 替换空 stub）
-        const approveMatch = req.url?.match(/^\/api\/approvals\/([^/]+)\/respond$/);
-        if (approveMatch && req.method === 'POST') {
-          // 数据根优先：MCP handleAskUser 的问题文件在 ~/.mafw/user-questions
-          const dirs = [config.resolvePath(), ...[...this.registeredProjects.values()].map((info: any) => info.mafwDir)];
-          await handleApprovalsRespond(req, res, decodeURIComponent(approveMatch[1]), { resolveDirs: () => dirs });
-          return;
-        }
-
-        // 鈹€鈹€ Question endpoints (AskCard 鈹€ proxy to native opencode Question API) 鈹€鈹€
-
-        // GET /api/questions ── list pending questions（契约：session.question.list）
-        if (req.url?.match(/^\/api\/questions(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuardQuestion(res)) return;
-          try {
-            const dir = resolveApprovalDirectory({
-              explicit: new URL(req.url, this.serveUrl).searchParams.get('directory'),
-              currentProjectDir: this.currentProjectDir,
-              projectDir: this.projectDir,
-            });
-            const question = this.runtime?.session?.question;
-            const items = question ? await question.list(dir ? { directory: dir } : undefined) : [];
-            res.end(JSON.stringify({ items: (items ?? []).map((item: any) => projectQuestionRequest(item)) }));
-          } catch (err: any) {
-            log.error('[Question] list error:', err.message);
-            res.end(JSON.stringify({ items: [] }));
-          }
-          return;
-        }
-
-        // POST /api/questions/{id}/reply ── { answers: string[][] }（契约 + workspace 重试）
-        const qReplyMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reply(?:\?|$)/);
-        if (qReplyMatch && req.method === 'POST') {
-          if (this.capGuardQuestion(res)) return;
-          const question = this.runtime?.session?.question;
-          if (!question) {
-            res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'question API not available on this runtime' })); return;
-          }
-          try {
-            const body = JSON.parse(await readBody(req));
-            // workspace 路由：默认（SDK 自带 projectDir）→ 各注册项目逐试
-            const dirs: Array<string | undefined> = [undefined, this.projectDir, ...this.registeredProjects.keys()];
-            let lastErr: any = null;
-            for (const dir of [...new Set(dirs)]) {
-              try {
-                await question.reply({ requestID: qReplyMatch[1], answers: body.answers, ...(dir ? { directory: dir } : {}) });
-                res.end(JSON.stringify({ status: 'ok' }));
-                return;
-              } catch (err: any) { lastErr = err; }
-            }
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'error', error: lastErr?.message ?? 'question reply failed on all workspaces' }));
-          } catch (err: any) {
-            log.error('[Question] reply error:', err.message);
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'error', error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/questions/{id}/reject（契约 + workspace 重试）
-        const qRejectMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reject(?:\?|$)/);
-        if (qRejectMatch && req.method === 'POST') {
-          if (this.capGuardQuestion(res)) return;
-          const question = this.runtime?.session?.question;
-          if (!question) {
-            res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'question API not available on this runtime' })); return;
-          }
-          try {
-            const dirs: Array<string | undefined> = [undefined, this.projectDir, ...this.registeredProjects.keys()];
-            let lastErr: any = null;
-            for (const dir of [...new Set(dirs)]) {
-              try {
-                await question.reject({ requestID: qRejectMatch[1], ...(dir ? { directory: dir } : {}) });
-                res.end(JSON.stringify({ status: 'ok' }));
-                return;
-              } catch (err: any) { lastErr = err; }
-            }
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'error', error: lastErr?.message ?? 'question reject failed on all workspaces' }));
-          } catch (err: any) {
-            log.error('[Question] reject error:', err.message);
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'error', error: err.message }));
-          }
-          return;
-        }
-
-        // 鈹€鈹€ Permission endpoints (PermissionCard 鈹€ proxy to native opencode Permission API) 鈹€鈹€
-
-        // GET /api/permissions ── list pending permission requests（契约：session.permissionList）
-        if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'approval.permissionList')) return;
-          try {
-            const dir = resolveApprovalDirectory({
-              explicit: new URL(req.url, this.serveUrl).searchParams.get('directory'),
-              currentProjectDir: this.currentProjectDir,
-              projectDir: this.projectDir,
-            });
-            const items = this.runtime?.session?.permissionList
-              ? await this.runtime.session.permissionList(dir ? { directory: dir } : undefined)
-              : [];
-            res.end(JSON.stringify({ items: projectPermissionList(items) }));
-          } catch (err: any) {
-            log.error('[Permission] list error:', err.message);
-            res.end(JSON.stringify({ items: [] }));
-          }
-          return;
-        }
+        // GET /api/questions + POST /api/questions/:id/{reply,reject} — Phase D1 Task B1：已迁 registry dispatch。
 
         // 鈹€鈹€ Provider & Agents (composer model pill / @agent mention) 鈹€鈹€
 
@@ -7304,62 +6320,12 @@ class MafwScheduler {
         // /api/plugins 路由时才执行——内联时代每个到达此处的请求都跑）。
 
         // GET /api/orchestration/outcomes — goal outcome query
-        if (req.url?.match(/^\/api\/orchestration\/outcomes(?:\?|$)/) && req.method === 'GET') {
-          const u = new URL(req.url, 'http://localhost');
-          const rows = this.getGatewayDb().listGoalOutcomes({
-            policy: u.searchParams.get('policy') || undefined,
-            verdict: u.searchParams.get('verdict') || undefined,
-            project: u.searchParams.get('project') || undefined,
-            limit: parseInt(u.searchParams.get('limit') || '100', 10),
-          });
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ outcomes: rows }));
-          return;
-        }
+        // GET /api/orchestration/outcomes — Phase D1 Task H1：已迁 registry dispatch。
 
         // GET /api/provider – list providers + models (legacy /provider)
-        if (req.url?.match(/^\/api\/provider(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'provider.list')) return;
-          try {
-            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const result = await this.runtime.provider.list();
-            res.end(JSON.stringify(projectProviderEnvelope(result ?? null)));
-          } catch (err: any) {
-            log.error('[Provider] list error:', err.message);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET /api/provider — Phase D1 Task H1：已迁 registry dispatch。
 
-        // GET /api/agents ─ merged list: registry identities (source:'mafw') first,
-        // then runtime-native agents (source:'runtime') — uniform picker across runtimes.
-        if (req.url?.match(/^\/api\/agents(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'provider.app.agents')) return;
-          try {
-            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const runtimeAgents = await this.runtime.app.agents();
-            const items = mergeAgentLists(
-              this.identityRegistry.list().map((s) => ({
-                name: s.name,
-                description: s.description,
-                scope: s.scope,
-                // deprecated 身份（manager）只保留给既有会话读取，不进可选列表。
-                deprecated: s.deprecated,
-                // 未物化身份不出现在列表（选了也会被 withIdentityPrompt 剥离，
-                // 列出是 UX 谎言）；runtime 无 agentConfigApi 时全部滤出。
-                materialized: this.identityState.isMaterialized(this.runtimeName, s.name),
-              })),
-              Array.isArray(runtimeAgents) ? runtimeAgents : [],
-            );
-            res.end(JSON.stringify({ items: projectAgents(items) }));
-          } catch (err: any) {
-            log.error('[Agents] list error:', err.message);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET /api/agents — Phase D1 Task H1：已迁 registry dispatch。
 
         // ── Runtime config (Settings page — runtime-neutral config surface) ──
 
@@ -7394,683 +6360,72 @@ class MafwScheduler {
           return;
         }
 
-        // per-session 审批模式（manual/auto）—— 具体路径，必须在 /api/permissions/:id 之前匹配
-        const permModeMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/permission-mode(?:\?|$)/);
-        if (permModeMatch && (req.method === 'GET' || req.method === 'POST')) {
-          const pmDeps = { policy: this.approvalPolicy, budget: AUTO_APPROVE_BUDGET };
-          if (req.method === 'GET') await handlePermissionModeGet(res, permModeMatch[1], pmDeps);
-          else await handlePermissionModeSet(req, res, permModeMatch[1], pmDeps);
-          return;
-        }
+        // GET|POST /api/sessions/{sid}/permission-mode — Phase D1 Task E2：已迁 registry dispatch。
 
-        // 持久白名单 CRUD —— 同样必须在 /api/permissions/:id 之前
-        const allowlistMatch = req.url?.match(/^\/api\/approvals\/allowlist(?:\?|$)/);
-        if (allowlistMatch) {
-          const alDeps = { store: this.allowlistStore };
-          if (req.method === 'GET') await handleAllowlistGet(res, alDeps);
-          else if (req.method === 'POST') await handleAllowlistPost(req, res, alDeps);
-          else if (req.method === 'DELETE') await handleAllowlistDelete(req, res, alDeps);
-          else { res.writeHead(405); res.end(); }
-          return;
-        }
+        // /api/approvals/allowlist + /api/approvals/rules (GET/POST/DELETE) — Phase D1 Task A5：已迁 registry dispatch。
 
-        // 持久规则 CRUD（切片 1）—— 与 allowlist 同级注册
-        const rulesMatch = req.url?.match(/^\/api\/approvals\/rules(?:\?|$)/);
-        if (rulesMatch) {
-          const rulesDeps = { store: this.permissionRules };
-          if (req.method === 'GET') await handleRulesGet(res, rulesDeps);
-          else if (req.method === 'POST') await handleRulesPost(req, res, rulesDeps);
-          else if (req.method === 'DELETE') await handleRulesDelete(req, res, rulesDeps);
-          else { res.writeHead(405); res.end(); }
-          return;
-        }
+        // POST /api/permissions/{id}/reply — Phase D1 Task B1：已迁 registry dispatch。
 
-        // POST /api/permissions/{id}/reply — { reply, message?, persist? }（列表反查 sessionID → permissionReply）
-        const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
-        if (pReplyMatch && req.method === 'POST') {
-          await handlePermissionReplyById(req, res, pReplyMatch[1], {
-            runtime: this.runtime,
-            access: this.runtime?.access ?? null,
-            rules: this.permissionRules,
-            directories: () => [
-              this.currentProjectDir ?? undefined,
-              this.projectDir || undefined,
-              ...this.registeredProjects.keys(),
-            ],
-          });
-          return;
-        }
-
-        // ── Triage endpoints (Tier 4 — user only, not MCP) ──
-
-        // GET /api/triage — list triage items (with llmSuggestions)
-        if (req.url === '/api/triage' && req.method === 'GET') {
-          const items = this.automationEngine?.getTriageItems() || [];
-          res.end(JSON.stringify({ items }));
-          return;
-        }
-
-        // POST /api/triage/{id}/confirm — user confirms triage — creates goal
-        const triageConfirmMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/confirm$/);
-        if (triageConfirmMatch && req.method === 'POST') {
-          const triageId = triageConfirmMatch[1];
-          const item = this.automationEngine?.getTriageItem(triageId);
-          if (!item) {
-            res.writeHead(404); res.end(JSON.stringify({ error: 'Triage item not found' })); return;
-          }
-          if (item.state !== 'PENDING_CONFIRMATION') {
-            res.writeHead(400); res.end(JSON.stringify({ error: `Already ${item.state}` })); return;
-          }
-          // W2: skill 物化草稿的确认分支——安装 skill + 记忆变指针（不建 goal）
-          const skillDraft = (item as any).summary?.skillDraft;
-          if (skillDraft?.name && skillDraft?.memoryId) {
-            const { installSkillDraft } = await import('./memory/skill-install.js');
-            const r = await installSkillDraft(skillDraft, this.skillInstallDeps());
-            this.automationEngine?.confirmTriage(triageId, item);
-            res.end(JSON.stringify({ status: 'confirmed', installed: r.installed }));
-            return;
-          }
-          // A1: 公理草稿确认分支——每条 candidate 经 L5 commit（不建 goal）
-          const axiomDraft = (item as any).summary?.axiomDraft;
-          if (axiomDraft?.candidates?.length) {
-            const l5 = new L5Store();
-            let committed = 0;
-            for (const pattern of axiomDraft.candidates as string[]) {
-              try {
-                l5.addHeuristic(pattern, ['axiom-distilled'], axiomDraft.sourceIds ?? []);
-                committed++;
-              } catch { /* fail-open per candidate */ }
-            }
-            this.automationEngine?.confirmTriage(triageId, item);
-            res.end(JSON.stringify({ status: 'confirmed', axioms: committed }));
-            return;
-          }
-          const goalId = `confirmed-${item.automationId}-${Date.now()}`;
-          this.automationEngine?.confirmTriage(goalId, item);
-          const requestsDir = path.join(this.mafwDir, 'requests');
-          if (!fs.existsSync(requestsDir)) fs.mkdirSync(requestsDir, { recursive: true });
-          fs.writeFileSync(path.join(requestsDir, `${goalId}.json`), JSON.stringify({
-            goalId,
-            source: 'triage-confirm',
-            automationId: item.automationId,
-            title: item.proposedGoal.title,
-            boundaries: item.proposedGoal.boundaries,
-            maxLoops: item.proposedGoal.estimatedLoops,
-            createdAt: new Date().toISOString(),
-          }, null, 2), 'utf-8');
-          this.ledger?.append({
-            timestamp: new Date().toISOString(),
-            event: 'AUTOMATION_TRIGGERED',
-            ruleId: item.automationId,
-            goalId,
-            source: 'user',
-            reason: 'triage_confirmed',
-          });
-          res.end(JSON.stringify({ status: 'confirmed', goalId }));
-          return;
-        }
-
-        // POST /api/triage/{id}/reject — user rejects triage
-        const triageRejectMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/reject$/);
-        if (triageRejectMatch && req.method === 'POST') {
-          const triageId = triageRejectMatch[1];
-          const ok = this.automationEngine?.rejectTriage(triageId);
-          this.ledger?.append({
-            timestamp: new Date().toISOString(),
-            event: 'AUTOMATION_TRIGGERED',
-            source: 'user',
-            reason: 'triage_rejected',
-            details: { triageId },
-          });
-          res.end(JSON.stringify({ status: ok ? 'rejected' : 'not_found' }));
-          return;
-        }
-
-        // POST /api/triage/{id}/propose — user proposes a decision suggestion
-        // (same flow as the MCP mafw_propose_triage_decision tool)
-        const triageProposeMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/propose$/);
-        if (triageProposeMatch && req.method === 'POST') {
-          try {
-            const triageId = triageProposeMatch[1];
-            const body = JSON.parse(await readBody(req));
-            const suggestion = body.suggestion as 'confirm' | 'reject';
-            if (!['confirm', 'reject'].includes(suggestion)) {
-              res.writeHead(400); res.end(JSON.stringify({ error: 'suggestion must be "confirm" or "reject"' })); return;
-            }
-            const reason = String(body.reason || '');
-            const priority = (body.priority as string) || 'medium';
-            const result = this.automationEngine?.proposeTriageDecision(triageId, suggestion, reason, priority);
-            if (!result) { res.writeHead(404); res.end(JSON.stringify({ error: 'Triage item not found' })); return; }
-            this.ledger?.append({
-              timestamp: new Date().toISOString(),
-              event: 'AUTOMATION_TRIGGERED',
-              source: 'user',
-              reason: `proposed_${suggestion}_for_${triageId}`,
-              details: { triageId, suggestion, priority },
-            });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET /api/triage + POST /api/triage/:id/{confirm,reject,propose} — Phase D1 Task A4：已迁 registry dispatch。
 
         // ── Automation endpoints (Tier 4 — user only) ──
-
-        // POST /api/automations/draft — create a draft rule (disabled).
-        // MUST be registered before the /api/automations/{id} matcher.
-        if (req.url === '/api/automations/draft' && req.method === 'POST') {
-          try {
-            const body = JSON.parse(await readBody(req));
-            const trigger = body.trigger || {};
-            const rule = {
-              id: body.id as string,
-              enabled: false,
-              trigger: {
-                type: 'cron' as const,
-                schedule: trigger.schedule || '',
-                timezone: trigger.timezone || 'UTC',
-              },
-              skill: body.skill as string | undefined,
-              action: body.action as any,
-              onResult: body.onResult as any,
-              goal_defaults: body.goal_defaults as any,
-            };
-            const result = this.automationEngine?.draftRule(rule);
-            if (!result) { res.writeHead(503); res.end(JSON.stringify({ error: 'Automation engine not available' })); return; }
-            this.ledger?.append({
-              timestamp: new Date().toISOString(),
-              event: 'AUTOMATION_TRIGGERED',
-              ruleId: result.id,
-              source: 'user',
-              reason: 'rule_drafted',
-            });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/automations — list automation rules with next trigger + recent history
-        if (req.url === '/api/automations' && req.method === 'GET') {
-          const rules = this.automationEngine?.getRules() || [];
-          const enriched = rules.map(r => ({
-            ...r,
-            nextTriggers: this.automationEngine?.getNextTriggers(r).next5 || [],
-            recentHistory: this.ledger?.getHistory(r.id, 3) || [],
-          }));
-          res.end(JSON.stringify({ rules: enriched }));
-          return;
-        }
-
-        // GET /api/automations/{id} — single rule detail
-        const autoGetMatch = req.url?.match(/^\/api\/automations\/([^/]+)(?:\?|$)/);
-        if (autoGetMatch && req.method === 'GET') {
-          const id = autoGetMatch[1];
-          const rule = this.automationEngine?.getRule(id);
-          if (!rule) { res.writeHead(404); res.end(JSON.stringify({ error: 'Rule not found' })); return; }
-          res.end(JSON.stringify({
-            ...rule,
-            nextTriggers: this.automationEngine?.getNextTriggers(rule)?.next5 || [],
-            history: this.ledger?.getHistory(id, 10) || [],
-          }));
-          return;
-        }
-
-        // PUT /api/automations/{id} — toggle an automation rule (enabled/disabled)
-        if (autoGetMatch && req.method === 'PUT') {
-          try {
-            const id = autoGetMatch[1];
-            const body = await readBody(req);
-            const { enabled } = JSON.parse(body);
-            const ok = this.automationEngine?.toggleRule(id, enabled);
-            this.ledger?.append({
-              timestamp: new Date().toISOString(),
-              event: 'AUTOMATION_TRIGGERED',
-              ruleId: id,
-              source: 'user',
-              reason: enabled ? 'enabled' : 'disabled',
-            });
-            res.end(JSON.stringify({ status: ok ? 'toggled' : 'not_found', enabled }));
-          } catch (err: any) {
-            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // DELETE /api/automations/{id} — delete an automation rule
-        if (autoGetMatch && req.method === 'DELETE') {
-          const id = autoGetMatch[1];
-          const ok = this.automationEngine?.deleteRule(id);
-          this.ledger?.append({
-            timestamp: new Date().toISOString(),
-            event: 'AUTOMATION_TRIGGERED',
-            ruleId: id,
-            source: 'user',
-            reason: 'deleted',
-          });
-          res.end(JSON.stringify({ status: ok ? 'deleted' : 'not_found' }));
-          return;
-        }
-
-        // GET /api/automations/{id}/history — audit trail for a rule
-        const autoHistoryMatch = req.url?.match(/^\/api\/automations\/([^/]+)\/history(?:\?|$)/);
-        if (autoHistoryMatch && req.method === 'GET') {
-          const id = autoHistoryMatch[1];
-          const limit = parseInt(new URL(req.url!, `http://${req.headers.host}`).searchParams.get('limit') || '20');
-          const history = this.ledger?.getHistory(id, limit) || [];
-          res.end(JSON.stringify({ history }));
-          return;
-        }
+        // POST /api/automations/draft — Phase D1 Task C1：已迁 registry dispatch。
+        // GET /api/automations — Phase D1 Task C1：已迁 registry dispatch。
+        // GET /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
+        // PUT /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
+        // DELETE /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
+        // GET /api/automations/:id/history — Phase D1 Task C1：已迁 registry dispatch。
 
         // POST /api/llm/compress — LLM compression proxy (via SDK)
-        if (req.url === '/api/llm/compress' && req.method === 'POST') {
-          try {
-            const body = await readBody(req);
-            const { observations, model } = JSON.parse(body);
-            if (!observations || !Array.isArray(observations)) throw new Error('observations array required');
-            const result = await this.handleCompress(observations, model);
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // POST /api/llm/compress — Phase D1 Task H1：已迁 registry dispatch（handleCompress 经 compress 依赖桥接）。
 
         // 鈹€鈹€ SdkSessionResource REST endpoints 鈹€鈹€
 
-        // POST /api/session — create a session（worktree 归属门在 routes/session-create.ts）
-        if (req.url === '/api/session' && req.method === 'POST') {
-          await handleSessionCreate(req, res, {
-            kvGet: (key, id) => this.getGatewayDb().kvGet<any>(key, id),
-            kvSet: (key, id, v) => this.getGatewayDb().kvSet(key, id, v),
-            kvDel: (key, id) => this.getGatewayDb().kvDelete(key, id),
-            // 目录必填：缺省时回退到 gateway 的单点解析（绝对路径）
-            createSession: (directory, metadata) => this.sdkSession.create(directory ?? this.resolvedProjectDir(), metadata),
-            // worktree 归属（设计 §7.1）：gateway git + session.create({directory}) 契约，
-            // 不再按 runtime 私有 worktreeApi 能力位拒绝支持的 runtime。
-            worktreeAvailability: async (directory) => {
-              let directorySupported = false;
-              try {
-                directorySupported = this.runtime?.access?.can('session.worktree') === true;
-              } catch { /* unknown surface → unsupported */ }
-              return resolveWorktreeAvailability({
-                directory,
-                directorySupported,
-                gitAvailable: await probeGitWorktreeSupport(directory),
-              });
-            },
-          });
-          return;
-        }
+        // POST /api/session — Phase D1 Task D1：已迁 registry dispatch。
 
-        // POST /api/session/{id}/promptAsync — fire-and-forget prompt
-        const promptAsyncMatch = req.url?.match(/^\/api\/session\/([^/]+)\/promptAsync(?:\?|$)/);
-        if (promptAsyncMatch && req.method === 'POST') {
-          try {
-            const sessionID = promptAsyncMatch[1];
-            const body = await readBody(req);
-            const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, thinkingLevel, variant, outputSchema } = body ? JSON.parse(body) : {};
-            if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
-            if (thinkingLevel !== undefined && !isThinkingLevel(thinkingLevel)) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: `invalid thinkingLevel: ${String(thinkingLevel)}` }));
-              return;
-            }
-            // Identity-aware (spec §3.2): picking a registry identity binds it for
-            // this turn — the policy layer evaluates the turn's tool calls against it.
-            // The agent param itself is injected/stripped by withIdentityPrompt at the runtime.
-            if (agent && this.identityRegistry.get(agent)) {
-              this.identityState.bind(sessionID, agent, 'turn');
-            }
-            // 队列交付（spec §5.3）：busy + delivery:'queue' → 入队短路响应。
-            // 终审 #4：budget 字段与 queue/暂停入队组合无强制语义（guard 只护当前回合，flush 后无保护）——显式 400 拒绝。
-            const holdsQueue = this.runCoordinator?.shouldHoldQueue(sessionID) === true;
-            if ((delivery === 'queue' || holdsQueue) && (typeof maxTurns === 'number' || typeof maxCostUsd === 'number')) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'queued/suspended send cannot carry maxTurns/maxCostUsd (budget guards the current turn only)' }));
-              return;
-            }
-            // 暂停中（T2-2）一律入队：会话已 idle，普通直发会绕过暂停。
-            if (holdsQueue || (delivery === 'queue' && this.busySessions.has(sessionID))) {
-              try {
-                const parsedBody = body ? JSON.parse(body) : {};
-                const q = await this.enqueueQueuedPrompt({
-                  sessionID, text: message, parts, agent, model, idempotencyKey,
-                  ...(parsedBody.expectReply !== undefined ? { expectReply: parsedBody.expectReply } : {}),
-                  ...(thinkingLevel ? { thinkingLevel } : {}),
-                  ...(variant ? { variant } : {}),
-                }, 'http');
-                res.writeHead(200);
-                res.end(JSON.stringify({ status: 'ok', ...q }));
-              } catch (qerr: any) {
-                res.writeHead(qerr?.statusCode ?? 500);
-                res.end(JSON.stringify({ error: qerr.message }));
-              }
-              return;
-            }
-            // P0-2：per-prompt 预算（guard 须先于 promptAsync 挂载——step 事件在回合执行中流出；
-            // 放在队列短路口之后：入队/暂停分支不挂 guard）。
-            this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);
-            await this.sdkSession.promptAsync(sessionID, message, parts, agent, model, outputSchema, {
-              ...(delivery ? { delivery } : {}),
-              ...(idempotencyKey ? { idempotencyKey } : {}),
-              ...(expectReply !== undefined ? { expectReply } : {}),
-              ...(thinkingLevel ? { thinkingLevel } : {}),
-              ...(variant ? { variant } : {}),
-            });
-            res.writeHead(200);
-            res.end(JSON.stringify({ status: 'ok' }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // POST /api/session/{id}/promptAsync — Phase D1 Task D1：已迁 registry dispatch。
 
-        // POST /api/session/{id}/prompt — synchronous prompt
-        const promptMatch = req.url?.match(/^\/api\/session\/([^/]+)\/prompt$/);
-        if (promptMatch && req.method === 'POST') {
-          try {
-            const sessionID = promptMatch[1];
-            if (this.runCoordinator?.shouldHoldQueue(sessionID)) {
-              res.writeHead(409);
-              res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
-              return;
-            }
-            const body = await readBody(req);
-            const opts = body ? JSON.parse(body) : {};
-            if (opts.thinkingLevel !== undefined && !isThinkingLevel(opts.thinkingLevel)) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: `invalid thinkingLevel: ${String(opts.thinkingLevel)}` }));
-              return;
-            }
-            const result = await this.sdkSession.prompt(sessionID, opts.parts || [], opts.system, opts.outputSchema, {
-              ...(opts.thinkingLevel ? { thinkingLevel: opts.thinkingLevel } : {}),
-              ...(opts.variant ? { variant: opts.variant } : {}),
-            });
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // POST /api/session/{id}/prompt — Phase D1 Task D1：已迁 registry dispatch。
 
-        // DELETE /api/session/{id} — delete a session
-        const deleteMatch = req.url?.match(/^\/api\/session\/([^/]+)$/);
-        if (deleteMatch && req.method === 'DELETE') {
-          try {
-            const sessionID = deleteMatch[1];
-            try {
-              await this.podService?.snapshotSession(sessionID);
-            } catch {
-              this.podService?.finalizeMissingSession(sessionID);
-            }
-            await this.sdkSession.delete(sessionID);
-            this.instructionSync?.forget(sessionID);
-            this.discovery?.forget(sessionID);
-            try { this.trajectoryStore?.deleteSession(sessionID); } catch (err: any) { log.warn(`[Trajectory] delete failed: ${err.message}`); }
-            res.writeHead(200);
-            res.end(JSON.stringify({ status: 'ok' }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // DELETE /api/session/{id} — Phase D1 Task D1：已迁 registry dispatch。
 
-        // POST /api/session/{id}/abort —abort an in-flight run
-        const abortMatch = req.url?.match(/^\/api\/session\/([^/]+)\/abort$/);
-        if (abortMatch && req.method === 'POST') {
-          try {
-            const sessionID = abortMatch[1];
-            if (!this.runtime) {
-              res.writeHead(503);
-              res.end(JSON.stringify({ error: 'LLM client not available' }));
-              return;
-            }
-            await this.runtime.session.abort({ sessionID });
-            res.writeHead(200);
-            res.end(JSON.stringify({ ok: true }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // POST /api/session/{id}/abort — Phase D1 Task D1：已迁 registry dispatch。
 
         // ── 认知面 HTTP 动词（spec 2026-10-22-cognition-gate-rewrite §5.4；loopback-only）──
-        if (req.url?.startsWith('/api/cognition/gate') && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const body = await readBody(req);
-          await handleCognitionGate({ body: body ? JSON.parse(body) : null, gate: this.cognitionGate, res });
-          return;
-        }
-        if (req.url?.startsWith('/api/cognition/rewrite') && req.method === 'POST') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const body = await readBody(req);
-          await handleCognitionRewrite({ body: body ? JSON.parse(body) : null, gate: this.cognitionGate, res });
-          return;
-        }
-        if (req.url?.startsWith('/api/cognition/rules') && req.method === 'GET') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          const raw = config.cognition?.rules;
-          await handleCognitionRules({ res, getRules: () => validateRules(raw) });
-          return;
-        }
+        // Phase D1 Task 2：已迁 registry dispatch（attachCognitionRoutes；loopback
+        // 守卫与 per-request config 读取随 handler 迁移，行为等价）。
 
         // ── 会话队列 inbox 管理面（spec 2026-10-22-session-queue-inbox §5.5）──
-        // GET /api/session/{id}/queue — 列队
-        const queueListMatch = req.url?.match(/^\/api\/session\/([^/]+)\/queue(?:\?|$)/);
-        if (queueListMatch && req.method === 'GET') {
-          const sessionID = queueListMatch[1];
-          res.writeHead(200);
-          res.end(JSON.stringify({ items: this.sessionQueue.list(sessionID) }));
-          return;
-        }
-        // DELETE /api/session/{id}/queue — 清空
-        const queueClearMatch = req.url?.match(/^\/api\/session\/([^/]+)\/queue$/);
-        if (queueClearMatch && req.method === 'DELETE') {
-          const sessionID = queueClearMatch[1];
-          const cleared = this.sessionQueue.clear(sessionID);
-          this.emitQueueUpdated(sessionID, 'clear', this.sessionQueue.list(sessionID));
-          res.writeHead(200);
-          res.end(JSON.stringify({ cleared: cleared.length }));
-          return;
-        }
-        // DELETE /api/session/{id}/queue/{itemId} — 取消单条
-        const queueCancelMatch = req.url?.match(/^\/api\/session\/([^/]+)\/queue\/([^/]+)$/);
-        if (queueCancelMatch && req.method === 'DELETE') {
-          const sessionID = queueCancelMatch[1];
-          const itemId = queueCancelMatch[2];
-          const cancelled = this.sessionQueue.cancel(sessionID, itemId);
-          if (!cancelled) {
-            res.writeHead(404);
-            res.end(JSON.stringify({ error: `queue item not found: ${itemId}` }));
-            return;
-          }
-          this.emitQueueUpdated(sessionID, 'cancel', this.sessionQueue.list(sessionID), itemId);
-          res.writeHead(200);
-          res.end(JSON.stringify({ cancelled: itemId }));
-          return;
-        }
+        // GET /api/session/{id}/queue — Phase D1 Task D1：已迁 registry dispatch。
+        // DELETE /api/session/{id}/queue — Phase D1 Task D1：已迁 registry dispatch。
+        // DELETE /api/session/{id}/queue/{itemId} — Phase D1 Task D1：已迁 registry dispatch。
 
         // DELETE/PATCH /api/sessions/:id — P5 Wave 1 起由 registry dispatch 接管
 
         // GET /api/sessions —— code-first P0 起由 registry typed handler 接管
         // （attachTypedRoute('session.list')，schema 见 routes/schemas/session.ts）。
 
-        // POST /api/sessions/{id}/permissions/{requestId} — forward permission reply to runtime
-        const permMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/permissions\/([^/]+)(?:\?|$)/);
-        if (permMatch && req.method === 'POST') {
-          // 直连路由与主 reply 路由对称：always 也沉淀持久规则（反查失败 fail-open）
-          await handlePermissionReply(this.runtime, req, res, permMatch[1], permMatch[2], {
-            access: this.runtime?.access ?? null,
-            rules: this.permissionRules,
-            findRequest: async () => {
-              try {
-                if (!this.runtime?.session?.permissionList) return null;
-                const pending = await this.runtime.session.permissionList();
-                return (Array.isArray(pending) ? pending : []).find((p: any) => p?.id === permMatch[2]) ?? null;
-              } catch { return null; }
-            },
-          });
-          return;
-        }
+        // POST /api/sessions/{id}/permissions/{requestId} — Phase D1 Task E2：已迁 registry dispatch
+        // （always 持久规则沉淀与 permissionList 反查 fail-open 随迁）。
 
-        // GET /api/sessions/{id} —get session via SDK (with local fallback)
-        const sessionsGetMatch = req.url?.match(/^\/api\/sessions\/([^/]+)(?:\?|$)/);
-        if (sessionsGetMatch && req.method === 'GET') {
-          try {
-            const id = sessionsGetMatch[1];
-            if (this.runtime) {
-              try {
-                const session = await this.runtime.session.get({ sessionID: id });
-                if (session) { res.writeHead(200); res.end(JSON.stringify(projectSession(session))); return; }
-              } catch {}
-            }
-            const session = await this.sdkSession.get(id);
-            res.writeHead(200);
-            res.end(JSON.stringify(session ? projectSession(session) : { error: 'not found' }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET /api/sessions/{id} — Phase D1 Task D1：已迁 registry dispatch。
 
-        // GET /api/sessions/{id}/messages — flat MAFW history（默认且唯一出口）
-        const messagesMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/messages(?:\?|$)/);
-        if (messagesMatch && req.method === 'GET') {
-          await handleSessionHistory(req, res, req.url!, {
-            getRuntime: () => this.runtime,
-            listDataParts: (sessionID, messageIds) =>
-              this.getGatewayDb().listSessionDataParts(sessionID, { messageIds }),
-            warn: (message) => log.warn(message),
-          });
-          return;
-        }
+        // GET /api/sessions/{id}/messages — Phase D1 Task E1：已迁 registry dispatch。
 
-        // GET /api/sessions/{id}/todo —fetch session todo list (task panel)
-        const todoMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/todo(?:\?|$)/);
-        if (todoMatch && req.method === 'GET') {
-          const id = todoMatch[1];
-          try {
-            if (!this.runtime) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ data: [] }));
-              return;
-            }
-            const result = await this.runtime.session.todo({ sessionID: id });
-            const rawData = Array.isArray(result) ? result : [];
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [] }));
-          } catch (err: any) {
-            log.warn(`[Scheduler] Failed to fetch todos for ${id}: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: [] }));
-          }
-          return;
-        }
+        // GET /api/sessions/{id}/todo — Phase D1 Task E1：已迁 registry dispatch（fail-open 200 {data:[]}）。
 
-        // GET /api/sessions/{id}/trajectory —agent trajectory timeline (task/desktop)
-        const trajectoryMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/trajectory(?:\?|$)/);
-        if (trajectoryMatch && req.method === 'GET') {
-          const id = trajectoryMatch[1];
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const limit = Math.min(parseInt(parsedUrl.searchParams.get('limit') || '50', 10), 200);
-            const beforeTurn = parsedUrl.searchParams.get('before_turn') ? Number(parsedUrl.searchParams.get('before_turn')) : undefined;
-            const rebuild = parsedUrl.searchParams.get('rebuild') === '1';
-            const store = this.trajectoryStore;
-            if (!store) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ turns: [], events: [] }));
-              return;
-            }
-            if (rebuild) {
-              try {
-                const result = await this.runtime?.session.messages({ sessionID: id, limit: 200 });
-                const data = result?.data || [];
-                const messages = Array.isArray(data) ? data : [];
-                const { handleTrajectoryRequest } = require('./trajectory/api') as typeof import('./trajectory/api');
-                const out = await handleTrajectoryRequest({ store, sessionID: id, opts: { limit, beforeTurn, rebuild }, messages: { data: messages }, projectID: this.projectDir || '.' });
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify(out));
-                return;
-              } catch (err: any) {
-                log.warn(`[Trajectory] rebuild failed (non-fatal): ${err.message}`);
-              }
-            }
-            const { handleTrajectoryRequest } = require('./trajectory/api') as typeof import('./trajectory/api');
-            const out = await handleTrajectoryRequest({ store, sessionID: id, opts: { limit, beforeTurn } });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(out));
-          } catch (err: any) {
-            log.warn(`[Trajectory] fetch failed (non-fatal): ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ turns: [], events: [] }));
-          }
-          return;
-        }
+        // GET /api/sessions/{id}/trajectory — Phase D1 Task E1：已迁 registry dispatch
+        // （store 缺失 / 抛错 → fail-open 200 {turns:[],events:[]}；rebuild 懒 require 随迁）。
 
-        // GET /api/sessions/{id}/token-summary — per-session token/cost totals
-        const tokenSummaryMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/token-summary(?:\?|$)/);
-        if (tokenSummaryMatch && req.method === 'GET') {
-          const id = tokenSummaryMatch[1];
-          try {
-            const store = this.trajectoryStore;
-            if (!store) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }));
-              return;
-            }
-            const summary = store.getSessionTokenSummary(id);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(summary));
-          } catch (err: any) {
-            log.warn(`[TokenSummary] fetch failed: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }));
-          }
-          return;
-        }
+        // GET /api/sessions/{id}/token-summary — Phase D1 Task E1：已迁 registry dispatch
+        // （store 缺失 / 抛错 → fail-open 200 零值汇总）。
 
         // /api/usage/plugins* — P5 Wave 1 起由 registry dispatch 接管（7 条）
 
         // GET /api/media/plugins — media engine plugin state list
-        if (req.url?.match(/^\/api\/media\/plugins(?:\?|$)/) && req.method === 'GET') {
-          const plugins = (this.mediaPluginLoader?.getState() ?? []).map(s => ({
-            file: s.file,
-            name: s.name,
-            status: s.status,
-            error: s.error,
-            modalities: s.modalities,
-          }));
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ plugins }));
-          return;
-        }
+        // GET /api/media/plugins — Phase D1 Task H1：已迁 registry dispatch。
 
-        // POST /api/media/plugins/reload — manual reload
-        if (req.url?.match(/^\/api\/media\/plugins\/reload$/) && req.method === 'POST') {
-          await this.mediaPluginLoader?.reload();
-          const plugins = (this.mediaPluginLoader?.getState() ?? []).map(s => ({
-            file: s.file,
-            name: s.name,
-            status: s.status,
-            error: s.error,
-            modalities: s.modalities,
-          }));
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true, plugins }));
-          return;
-        }
+        // POST /api/media/plugins/reload — Phase D1 Task H1：已迁 registry dispatch。
 
         // POST /api/media/switch — P5 Wave 1 起由 registry dispatch 接管
 
@@ -8079,523 +6434,28 @@ class MafwScheduler {
         // POST /api/sessions/:id/fork|revert|unrevert + /api/session/:id/summarize
         // — P5 Wave 1 起由 registry dispatch 接管
 
-        // GET /api/usage?sessionID=xxx&projectID=xxx — consolidated usage (summary + providers)
-        if (req.url?.match(/^\/api\/usage(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const sessionID = parsedUrl.searchParams.get('sessionID') || '';
-            const projectID = parsedUrl.searchParams.get('projectID') || '';
-            const store = this.trajectoryStore;
-            const empty = { totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, sessionCount: 0 };
-            const summary: any = { session: { ...empty, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }, project: { ...empty }, global: { ...empty } };
-            if (store) {
-              if (sessionID) summary.session = store.getSessionTokenSummary(sessionID);
-              if (projectID) summary.project = store.getProjectTokenSummary(projectID);
-              summary.global = store.getGlobalTokenSummary();
-            }
-            const memory = store ? store.getMemoryTokenSummary() : null;
-            let modelStats: ModelUsageWindows = { today: [], '7d': [], '30d': [], all: [] };
-            if (store) {
-              try {
-                modelStats = buildModelStats(store);
-              } catch (err: any) {
-                log.warn(`[Usage] modelStats failed: ${err.message}`);
-              }
-            }
-            const providerData = this.usagePoller ? await this.usagePoller.poll() : { providers: [], updatedAt: Date.now() };
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ summary, memory, modelStats: { windows: modelStats }, ...providerData }));
-          } catch (err: any) {
-            log.warn(`[Usage] failed: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ summary: null, providers: [], updatedAt: Date.now() }));
-          }
-          return;
-        }
+        // GET /api/usage + GET /api/usage/summary — Phase D1 Task B2：已迁 registry dispatch。
 
-        // GET /api/usage/summary — backward compat alias
-        if (req.url?.match(/^\/api\/usage\/summary(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const sessionID = parsedUrl.searchParams.get('sessionID') || '';
-            const projectID = parsedUrl.searchParams.get('projectID') || '';
-            const store = this.trajectoryStore;
-            const empty = { totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, sessionCount: 0 };
-            const result: any = { session: { ...empty, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }, project: { ...empty }, global: { ...empty } };
-            if (store) {
-              if (sessionID) result.session = store.getSessionTokenSummary(sessionID);
-              if (projectID) result.project = store.getProjectTokenSummary(projectID);
-              result.global = store.getGlobalTokenSummary();
-            }
-            const memory = store ? store.getMemoryTokenSummary() : null;
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ...result, memory }));
-          } catch (err: any) {
-            log.warn(`[UsageSummary] failed: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ session: null, project: null, global: null }));
-          }
-          return;
-        }
+        // ── Subagent spawn/list/message/cancel/result — Phase D1 Task E2：已迁 registry dispatch。
+        // （legacy 共享 matcher 的 GET/POST 双 method 臂由 catalog method 维度拆分。）
 
-        // ── Subagent spawn/list/message/cancel/result (gateway-owned) ──
-        const subagentMsg = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/message(?:\?|$)/);
-        if (subagentMsg && req.method === 'POST') {
-          await handleSubagentMessage(req, res, subagentMsg[1], subagentMsg[2], { service: this.subagentService });
-          return;
-        }
-        const subagentCancel = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/cancel(?:\?|$)/);
-        if (subagentCancel && req.method === 'POST') {
-          await handleSubagentCancel(res, subagentCancel[1], subagentCancel[2], { service: this.subagentService });
-          return;
-        }
-        const subagentResult = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/result(?:\?|$)/);
-        if (subagentResult && req.method === 'GET') {
-          await handleSubagentResult(res, subagentResult[1], subagentResult[2], { service: this.subagentService });
-          return;
-        }
-        const subagentsMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents(?:\?|$)/);
-        if (subagentsMatch && req.method === 'POST') {
-          await handleSubagentSpawn(req, res, subagentsMatch[1], { service: this.subagentService });
-          return;
-        }
-        if (subagentsMatch && req.method === 'GET') {
-          await handleSubagentList(res, subagentsMatch[1], { service: this.subagentService });
-          return;
-        }
+        // GET /api/sessions/{id}/children — Phase D1 Task E1：已迁 registry dispatch
+        // （runtime 缺失 / 抛错 → fail-open 200 {items:[]}；depth 补齐随迁）。
 
-        // GET /api/sessions/{id}/children —subagent sessions of this run (AgentPicker)
-        const childrenMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/children(?:\?|$)/);
-        if (childrenMatch && req.method === 'GET') {
-          const id = childrenMatch[1];
-          try {
-            if (!this.runtime) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ items: [] }));
-              return;
-            }
-            const result = await this.runtime.session.children({ sessionID: id });
-            const items = Array.isArray(result) ? result : [];
-            const parentDepth = await this.subagentService.depthOf(id);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ items: items.map((item: any) => ({
-              ...item,
-              depth: typeof item?.depth === 'number' ? item.depth : parentDepth + 1,
-            })) }));
-          } catch (err: any) {
-            log.warn(`[Scheduler] Failed to fetch children for ${id}: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ items: [] }));
-          }
-          return;
-        }
+        // GET /api/recall/context — Phase D1 Task B4：已迁 registry dispatch（逐字迁移，fail-open 200）。
 
-        // GET /api/recall/context —boundary recall for memory injection
-        if (req.url?.startsWith('/api/recall/context') && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const query = parsedUrl.searchParams.get('query') || '';
-            const sessionID = parsedUrl.searchParams.get('sessionID') || '';
-            // S4 认知一致性：记录 recall 触达（有界，conformance 消费）
-            if (sessionID) {
-              this.recallCalledBySession.set(sessionID, Date.now());
-              if (this.recallCalledBySession.size > 500) this.recallCalledBySession.clear();
-            }
-            const tGoal0 = Date.now();
-            // Goal snapshot: injected every turn for the ACTIVE manager session
-            // only (kv compare). Compaction-proof goal awareness (spec §3.4①).
-            let goalSnap: string | null = null;
-            if (sessionID) {
-              const lead = this.leadSessionRegistry.findBySessionId(sessionID);
-              if (lead) {
-                const entry = Array.from(this.registeredProjects.entries())
-                  .find(([raw]) => canonicalProjectDir(raw) === lead.projectDir);
-                const mafwDir = entry?.[1].mafwDir ?? path.join(lead.projectDir, '.mafw');
-                try { goalSnap = buildGoalSnapshot(mafwDir); } catch { /* fail-open */ }
-              }
-            }
-            // Sticky note board: user-commissioned reminders with guaranteed
-            // per-turn visibility until sticky_until passes (board-level
-            // expiry only). Deterministic filter, fail-open like pinned;
-            // injected even when the recall query is empty.
-            const tGoal = Date.now() - tGoal0;
-            const tNote0 = Date.now();
-            let noteBoard: string | null = null;
-            if (this.memoryService) {
-              try {
-                const { handleNoteBoard } = require('./routes/note-board');
-                const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
-                const store = new HarmonicUnitFileStore(this.mafwDir, this.memoryService.harmonicIndex);
-                const nb = await handleNoteBoard({
-                  getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
-                  readUnit: (id: string) => store.read(id),
-                });
-                noteBoard = nb.board;
-              } catch { /* fail-open */ }
-            }
-            const tNoteBoard = Date.now() - tNote0;
-            if (!query.trim()) {
-              const only = [noteBoard, goalSnap].filter(Boolean);
-              res.writeHead(200);
-              res.end(JSON.stringify({ pointers: only.length > 0 ? only.join('\n\n') : null }));
-              return;
-            }
-            const { formatRecallContext } = require('./recall/inject-format');
-            const { searchRecallMemories, computeRecallFokZone, recallNeighbors } = require('./recall/recall-context');
-            // R8: serve the precomputed snapshot when it still matches the topic
-            // (falls back to the live cheap search otherwise).
-            let snapshotPointers: string | null = null;
-            const snapCfg = config.search.snapshot;
-            if (snapCfg?.enabled && sessionID) {
-              try {
-                const { decideSnapshotUse } = require('./recall/recall-snapshot');
-                const snap = this.getGatewayDb().kvGet('recall-snapshot', sessionID) as any;
-                const decision = decideSnapshotUse(snap, query, new Date(), snapCfg);
-                if (decision === 'use' && snap) {
-                  snapshotPointers = snap.block;
-                  // A3: a served snapshot is a real injection — record exposure
-                  // for the daily ACT-R settlement (fail-open, in-memory only).
-                  try {
-                    const { recordRetrievalFromScored } = require('./core/memory/retrieval-events');
-                    recordRetrievalFromScored(
-                      ((snap.ids ?? []) as string[]).map((id) => ({ entry: { id } })),
-                      'recall',
-                    );
-                  } catch { /* fail-open */ }
-                  // A4 hit-proxy: log the probability-gated injection as a
-                  // calibration sample — hit when a pointer is later redeemed
-                  // via mafw_get_memory (join by id within TTL).
-                  try {
-                    if (Number.isFinite(snap.top1prob)) {
-                      const { appendFokEvent } = require('./recall/fok-samples');
-                      appendFokEvent({
-                        e: 'inj',
-                        ts: Date.now(),
-                        top1prob: snap.top1prob,
-                        zone: snap.fokStatus ?? 'inject',
-                        ids: (snap.ids ?? []) as string[],
-                      });
-                    }
-                  } catch { /* fail-open */ }
-                  log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms, fok=${snap.fokStatus ?? 'inject'})`);
-                } else if (decision !== 'no-snapshot') {
-                  // Log the containment score: short instruction-style user turns
-                  // ("继续", "可以") legitimately score 0 against a content window,
-                  // so this number tells us whether the threshold or the usage
-                  // pattern is responsible for the skip rate.
-                  let containment = 0;
-                  try {
-                    const { snapshotContainment } = require('./recall/recall-snapshot');
-                    containment = snap ? snapshotContainment(snap.query, query) : 0;
-                  } catch { /* ignore */ }
-                  log.info(`[Recall] snapshot skipped (${decision}, containment=${containment.toFixed(2)}, queryTokens=${query.trim().length}) for ${sessionID}`);
-                }
-              } catch { /* fail-open: live path */ }
-            }
-            let memories: any[] = [];
-            let fokStatus: 'inject' | 'low-confidence' | 'no-memory' = 'inject';
-            const tSearch0 = Date.now();
-            let arbiterNote: string | undefined;
-            if (!snapshotPointers && this.memoryService) {
-              // No push channel exists anymore (step-inject retired): nothing
-              // is filtered out of boundary recall.
-              const pushed = new Set<string>();
-              // Sync path is BM25-only (<50ms): the plugin client aborts after
-              // 100ms. Scan results arrive via async prefetch snapshot (C).
-              const scanSnapshot = this.getScanService()?.getSnapshot(sessionID) ?? null;
-              // R2 on the boundary fallback too (topic-shift turns / no snapshot):
-              // the dense query embedding costs ~8ms, but a busy sidecar must
-              // never blow the contract — hence the short deadline + BM25 fallback.
-              let denseScores: Map<string, number> | undefined;
-              if (config.search.boundaryDense !== false) {
-                try {
-                  const { computeDenseScores } = require('./memory/embedding-runtime');
-                  const { withTimeout } = require('./recall/recall-context');
-                  const dense = await withTimeout(
-                    Promise.resolve(computeDenseScores(query, 12, this.memoryService.harmonicIndex)),
-                    config.search.boundaryDenseTimeoutMs ?? 25,
-                  );
-                  denseScores = dense ?? undefined;
-                } catch { /* fail-open: BM25 only */ }
-              }
-              memories = await searchRecallMemories(
-                this.memoryService.harmonicIndex,
-                query,
-                pushed,
-                3,
-                {
-                  retriever: config.search.defaultRetriever,
-                  scanSnapshot,
-                  denseScores,
-                },
-              );
-              // R5 FOK gate (fail-open): weak evidence is stated, not silently
-              // withheld. Only active when config.search.fok.enabled.
-              fokStatus = computeRecallFokZone(this.memoryService.harmonicIndex, query, config.search.fok);
-              // G4 parametric arbiter (MARTA): annotate-only in v1 — prepends a
-              // note when parametric knowledge likely suffices; never skips.
-              if (config.search.arbiter !== false) {
-                try {
-                  const { arbitrateRetrieval, entityOverlap, getEntitySetCached } = require('./recall/parametric-arbiter');
-                  const entries = this.memoryService.harmonicIndex.getIndex().entries;
-                  const overlap = entityOverlap(query, getEntitySetCached(entries));
-                  const arb = arbitrateRetrieval(query, { entityOverlap: overlap, fokZone: fokStatus });
-                  arbiterNote = arb.note;
-                  // observe-first: one JSONL row per arbitrated boundary recall
-                  const line = JSON.stringify({ ts: Date.now(), q: query.length, overlap: +overlap.toFixed(3), zone: fokStatus, action: arb.action }) + '\n';
-                  fs.appendFile(path.join(config.resolvePath(), 'logs', 'arbiter-samples.jsonl'), line, () => {});
-                } catch { /* fail-open */ }
-              }
-              // A3: record the live-path retrieval for the daily ACT-R
-              // settlement (log-form bonus + exposure discount — the linear
-              // +0.02 direct write was unbounded with popularity feedback).
-              try {
-                const { recordRetrievalFromScored } = require('./core/memory/retrieval-events');
-                recordRetrievalFromScored(
-                  memories.map((m: any) => ({ entry: { id: m.id } })),
-                  'recall',
-                );
-              } catch { /* fail-open */ }
-            }
-            // R6 presentation (off by default): bundle chronological neighbours
-            // under their anchors. Never re-ranks — presentation only.
-            const tNb0 = Date.now();
-            let neighbors: Map<string, any[]> | undefined;
-            if (config.search.temporalNeighbors?.presentation && memories.length > 0 && this.memoryService) {
-              try {
-                const nb: Map<string, any[]> = recallNeighbors(
-                  this.memoryService.harmonicIndex,
-                  memories,
-                  config.search.temporalNeighbors,
-                );
-                neighbors = nb.size > 0 ? nb : undefined;
-              } catch { neighbors = undefined; }
-            }
-            const tNeighbors = Date.now() - tNb0;
-            const formatted = snapshotPointers
-              ? { pointers: snapshotPointers }
-              : formatRecallContext(memories, { status: fokStatus, neighbors });
-            if (arbiterNote && formatted.pointers) {
-              formatted.pointers = `${arbiterNote}\n${formatted.pointers}`;
-            }
-            const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
-            const pointers = blocks.length > 0 ? blocks.join('\n\n') : null;
-            // Latency breakdown (debug): the boundary path has a 100ms contract.
-            log.debug(`[Recall] timing session=${sessionID || '-'} search=${snapshotPointers ? 0 : Date.now() - tSearch0}ms noteBoard=${tNoteBoard}ms goal=${tGoal}ms neighbours=${tNeighbors}ms`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ pointers }));
-          } catch (err: any) {
-            log.error('[Scheduler] recall/context error:', err.message);
-            res.writeHead(200);
-            res.end(JSON.stringify({ pointers: null }));
-          }
-          return;
-        }
+        // GET /api/recall/{instructions,pinned,priors} — Phase D1 Task B3：已迁 registry dispatch。
 
-        // GET /api/recall/instructions — T2-4 fallback: which of the three
-        // instruction blocks are missing from the session's opencode entries.
-        if (req.url?.startsWith('/api/recall/instructions') && req.method === 'GET') {
-          const { handleRecallInstructions } = require('./routes/recall-instructions');
-          const handled = await handleRecallInstructions(req, res, req.url, {
-            getBlocks: () => this.buildInstructionBlocks(),
-            getSync: () => this.instructionSync ?? null,
-          });
-          if (handled) return;
-        }
+        // GET /api/agent/capabilities — Phase D1 Task 3d：已迁 registry dispatch
+        // （attachAgentRoutes；fail-open 语义随迁）。
 
-        // GET /api/recall/pinned — disclosure layer for system prompt injection.
-        // Pinned memories appear every turn regardless of retrieval; fail-open.
-        if (req.url?.startsWith('/api/recall/pinned') && req.method === 'GET') {
-          try {
-            if (!this.memoryService) {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } }));
-              return;
-            }
-            const { handleRecallPinned } = require('./routes/pinned-recall');
-            const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
-            const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
-            const result = await handleRecallPinned({
-              getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
-              readUnit: (id: string) => store.read(id),
-            });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            log.error('[Scheduler] recall/pinned error:', err.message);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } }));
-          }
-          return;
-        }
-
-        // GET /api/recall/priors — W1 常驻先验块（L5 公理 + L2 失败模式谱），fail-open。
-        if (req.url?.startsWith('/api/recall/priors') && req.method === 'GET') {
-          try {
-            const { handleAgentPriors } = require('./routes/agent-priors');
-            const result = await handleAgentPriors({
-              l5: new L5Store(),
-              getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
-              needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
-            });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            log.error('[Recall] priors error:', err.message);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ block: null, used: 0, budget: { maxChars: 800 } }));
-          }
-          return;
-        }
-
-        // GET /api/agent/capabilities — L1 能力账本 + L2 失败谱（自我认知只读面），fail-open。
-        if (req.url?.startsWith('/api/agent/capabilities') && req.method === 'GET') {
-          try {
-            const { handleCapabilities } = require('./routes/capability');
-            const result = await handleCapabilities({
-              listOutcomes: () => this.getGatewayDb().listGoalOutcomes({ limit: 200 }),
-              getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
-            });
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            log.error('[Agent] capabilities error:', err.message);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ledger: { total: 0, passRate: 0 }, failureTaxonomy: [] }));
-          }
-          return;
-        }
-
-        // POST /api/obs/capture — observation intake from the opencode plugin.
-        // The gateway owns the T1 store (SQLite) and assigns turn IDs, so
-        // plugin/serve restarts can never renumber turns or duplicate writes
-        // (database-level UNIQUE dedup).
-        if (req.url === '/api/obs/capture' && req.method === 'POST') {
-          let body = '';
-          let aborted = false;
-          req.on('data', (chunk: Buffer) => {
-            body += chunk.toString('utf-8');
-            if (body.length > 1_000_000) {
-              aborted = true;
-              req.destroy();
-            }
-          });
-          req.on('end', () => {
-            if (aborted) return;
-            try {
-              const data = JSON.parse(body);
-              const sessionID = String(data?.sessionID || '');
-              const source = String(data?.source || '');
-              const content = typeof data?.content === 'string' ? data.content : '';
-              const failure = data?.failure ? 1 : 0;
-              if (!sessionID || !['user_input', 'assistant_reply', 'tool_result', 'reasoning'].includes(source)) {
-                res.writeHead(400);
-                res.end(JSON.stringify({ ok: false, error: 'sessionID and valid source required' }));
-                return;
-              }
-              if (!content.trim()) {
-                res.writeHead(200);
-                res.end(JSON.stringify({ ok: true, id: null, deduped: true, turnId: 0 }));
-                return;
-              }
-              // Recursion guard (A): internal pipeline sessions must never feed
-              // their own output back into T1 as observations.
-              if (this.internalSessionRoles.has(sessionID)) {
-                res.writeHead(200);
-                res.end(JSON.stringify({ ok: true, id: null, deduped: true, turnId: 0, internal: true }));
-                return;
-              }
-              // Recursion guard (B): content that looks like a pipeline
-              // extraction prompt is pipeline-internal noise, never a real
-              // user/agent observation.
-              if (/Analyze the following agent observations|extract structured memories/i.test(content)) {
-                res.writeHead(200);
-                res.end(JSON.stringify({ ok: true, id: null, deduped: true, turnId: 0, filtered: true }));
-                return;
-              }
-              const turnId = source === 'user_input' ? this.getGatewayDb().nextTurnId(sessionID) : this.getGatewayDb().currentTurnId(sessionID);
-              const redacted = redactSecrets(content).slice(0, 100_000);
-              const id = this.getGatewayDb().append({
-                session_id: sessionID,
-                turn_id: turnId,
-                source: source as any,
-                // Redact secrets once at capture so every downstream consumer
-                // (turnCompress transcripts, worker prompts, archive) only
-                // ever sees redacted content.
-                content: redacted,
-                failure,
-                // S3: encoding-time salience tag (deterministic, LLM-free).
-                salience: obsSalience({ text: redacted }).score,
-              });
-              // V1 verbatim layer: fire-and-forget dense embedding of the raw
-              // row. Key = session:turn:contentHash — stable across the
-              // obs→archive move, idempotent on identical content. Fail-open.
-              try {
-                const rt = getEmbeddingRuntime();
-                const { t1VectorKey } = require('./recall/verbatim-recall');
-                if (rt?.t1Indexer && redacted) {
-                  rt.t1Indexer.enqueueText(t1VectorKey(sessionID, turnId, redacted), redacted.slice(0, 2000));
-                  rt.scheduleFlush();
-                }
-              } catch { /* fail-open */ }
-              // Async scan prefetch: precompute semantic recall for this turn
-              // so the next boundary recall can merge it without waiting.
-              if (source === 'user_input') {
-                this.getScanService()?.prefetch(sessionID, content.slice(0, 500));
-                // R8: refresh the predictive prefetch snapshot (debounced) so
-                // the next boundary recall can serve the expensive retrieval.
-                this.scheduleSnapshotRefresh(sessionID);
-                // D4a: consume any dream queries generated overnight for this
-                // session — prefetch them so the day's first recall hits a
-                // prebuilt snapshot (one-shot handoff).
-                try {
-                  const dq = this.getGatewayDb().kvGet<{ queries: string[] }>('dream-queries', sessionID);
-                  if (dq?.queries?.length) {
-                    this.getGatewayDb().kvDelete('dream-queries', sessionID);
-                    for (const q of dq.queries) this.getScanService()?.prefetch(sessionID, q);
-                  }
-                } catch { /* fail-open */ }
-              }
-              res.writeHead(200);
-              res.end(JSON.stringify({ ok: true, id, turnId, deduped: id === null }));
-            } catch (err: any) {
-              // fail-open: never let capture errors surface to the plugin
-              log.warn(`[Scheduler] /api/obs/capture failed: ${err.message}`);
-              res.writeHead(200);
-              res.end(JSON.stringify({ ok: false, error: err.message }));
-            }
-          });
-          return;
-        }
+        // POST /api/obs/capture — Phase D1 Task C3：已迁 registry dispatch
+        // （手动 chunked reader / 1MB 静默丢弃 / fail-open 200 逐字随迁）。
 
         // POST /api/events — P5 Wave 1 起由 registry dispatch 接管
 
-        // SSE 事件（→ Dashboard / Chat）
-        if (req.url && req.url.startsWith('/api/events') && req.method === 'GET') {
-          const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-          const sessionID = parsedUrl.searchParams.get('sessionID');
-
-          if (sessionID) {
-            // Mode B: subscribe to specific chat session's delta events
-            this.chatSessions.register(sessionID, res);
-          } else {
-            // Mode A: subscribe to global event stream (Dashboard)
-            // 2026-10-22 持久回放（spec 2026-10-22-persistent-event-replay-design §5.3）：
-            // Last-Event-ID 头（原生 EventSource 重连自动携带）/ ?since 参数 → 重放后直播
-            // （newest-window + firstReplayedSeq 截断信号）。
-            const since = parseSince(parsedUrl.searchParams, req.headers['last-event-id'] as string | undefined);
-            const conn = attachGlobalSse({
-              res,
-              store: this.eventStore,
-              replayLimit: config.events.replayLimit,
-              writeFrame: (r, frame) => { if (frame) r.write(frame); },
-              since,
-            });
-            this.sseClients.set(res, conn.write);
-            req.on('close', () => { this.sseClients.delete(res); });
-          }
-          return;
-        }
+        // SSE 事件（→ Dashboard / Chat）— Phase D1 Task H2：已迁 registry dispatch
+        // （event.subscribe；Mode A 全局流 + 持久回放 / Mode B chat session 订阅随迁）。
 
         // GET /health — standalone health endpoint (not proxied)
         if (req.url === '/health') {
@@ -8642,18 +6502,11 @@ class MafwScheduler {
       server.on('error', async (err: any) => {
         if (err.code === 'EADDRINUSE') {
           const alreadyRunning = await isPortHealthy(this.apiPort);
-          if (alreadyRunning) {
-            log.info(`[Scheduler] Another gateway already running on port ${this.apiPort}; exiting`);
-            process.exit(0);
-            return;
-          }
-          log.warn(`[Scheduler] Port ${this.apiPort} in use (no healthy gateway), retrying in 2s...`);
-          server.close();
-          setTimeout(() => this.startApiServer().then(resolve).catch(resolve), 2000);
-        } else {
-          log.error(`[Scheduler] HTTP API error: ${err.message}`);
-          resolve();
+          await this.exitAfterPortConflict(alreadyRunning);
+          return;
         }
+        log.error(`[Scheduler] HTTP API error: ${err.message}`);
+        resolve(false);
       });
       server.listen(this.apiPort, () => {
         log.info(`[Scheduler] HTTP API on port ${this.apiPort}`);
@@ -8814,9 +6667,70 @@ class MafwScheduler {
             wss.emit('connection', ws, req);
           });
         });
-        resolve();
+        resolve(true);
       });
     });
+  }
+
+  /** Bind failed and another MAFW gateway owns the port: release our lease and defer. */
+  private async exitAfterPortConflict(alreadyRunning: boolean): Promise<void> {
+    await this.releaseInstanceOwnership();
+    if (alreadyRunning) {
+      process.stdout.write(`${JSON.stringify({
+        mafw: 'deferred',
+        instance: await this.readCurrentInstanceDiscovery(),
+      })}\n`);
+      log.info(`[Scheduler] Another gateway already running on port ${this.apiPort}; exiting`);
+      process.exit(0);
+      return;
+    }
+    log.error(`[Scheduler] Port ${this.apiPort} is occupied by another process; exiting`);
+    process.exit(1);
+  }
+
+  private async readCurrentInstanceDiscovery() {
+    try {
+      return await readGatewayDiscovery(mafwRuntimeDir());
+    } catch {
+      return null;
+    }
+  }
+
+  private async publishInstanceDiscovery(): Promise<void> {
+    if (!this.releaseMetadata || !this.runtimeIdentity) return;
+    const runtimeDir = mafwRuntimeDir();
+    this.instanceDiscovery = await publishGatewayDiscovery({
+      instanceId: this.runtimeIdentity.instanceId,
+      pid: process.pid,
+      port: this.apiPort,
+      gatewayVersion: this.releaseMetadata.gatewayVersion,
+      experienceVersion: this.releaseMetadata.experienceVersion,
+      minimumClientExperienceVersion: this.releaseMetadata.minimumClientExperienceVersion,
+      schemaEpoch: this.releaseMetadata.schemaEpoch,
+      channel: this.runtimeIdentity.channel,
+      distribution: this.runtimeIdentity.distribution,
+      origin: process.env.MAFW_GATEWAY_ORIGIN?.trim() || 'standalone',
+    }, runtimeDir);
+    this.discoveryHeartbeatTimer = setInterval(() => {
+      void this.instanceDiscovery?.heartbeat().catch((err: any) => {
+        log.warn(`[Scheduler] gateway discovery heartbeat failed: ${err?.message ?? err}`);
+      });
+    }, 10_000);
+    this.discoveryHeartbeatTimer.unref?.();
+    log.info(`[Scheduler] gateway discovery published: ${gatewayDiscoveryPath(runtimeDir)} (port ${this.apiPort})`);
+  }
+
+  private async releaseInstanceOwnership(): Promise<void> {
+    if (this.discoveryHeartbeatTimer) {
+      clearInterval(this.discoveryHeartbeatTimer);
+      this.discoveryHeartbeatTimer = null;
+    }
+    const discovery = this.instanceDiscovery;
+    const lock = this.instanceLock;
+    this.instanceDiscovery = null;
+    this.instanceLock = null;
+    try { await discovery?.release(); } catch { /* best effort */ }
+    try { await lock?.release(); } catch { /* best effort */ }
   }
 
   // 鈹€鈹€ 3. 娉ㄥ唽琛ㄦ寔涔呭寲锛堝啓闃熷垪闃插苟鍙戯級 鈹€鈹€
@@ -9832,7 +7746,26 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   // 鈹€鈹€ LangGraph Node Options 鈹€鈹€
 
+  async goalSource(goalId: string): Promise<{ sourceRef: unknown; handoffPath: string | null; fullText: string | null }> {
+    const request = await this.loadRequest(goalId);
+    const mafwDir = this.goalDriverMafwDirCache.get(goalId)
+      ?? this.findGoalStatePath(goalId)?.info.mafwDir;
+    const handoffPath = mafwDir
+      ? path.join(mafwDir, 'goals', goalId, 'context', 'lead-handoff.md')
+      : null;
+    const fullText = handoffPath && fs.existsSync(handoffPath)
+      ? fs.readFileSync(handoffPath, 'utf8')
+      : null;
+    return {
+      sourceRef: (request as any)?.sourceRef ?? null,
+      handoffPath: fullText ? handoffPath : null,
+      fullText,
+    };
+  }
+
   private async handleDashboardAPI(req: http.IncomingMessage): Promise<any> {
+    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
+    // Retained for catch-all shapes (R5).
     if (req.url?.startsWith("/api/goals")) {
       return {
         goals: Array.from(this.activeGoals.values()).map(s => ({
@@ -9845,6 +7778,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         })),
       };
     }
+    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
+    // Retained for catch-all shapes (R5).
     if (req.url?.startsWith("/api/stats")) {
       const base = {
         activeGoals: this.activeGoals.size,
@@ -9863,6 +7798,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       }
       return base;
     }
+    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
+    // Retained for catch-all shapes (R5).
     if (req.url === '/api/memory/add' && req.method === 'POST') {
       const body = await new Promise<string>((resolve) => {
         let b = '';
@@ -9984,6 +7921,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         return { success: false, error: err.message };
       }
     }
+    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
+    // Retained for catch-all shapes (R5).
     if (req.url === '/api/memory/pin' && req.method === 'POST') {
       const body = await new Promise<string>((resolve) => {
         let b = '';
@@ -10301,14 +8240,12 @@ if (require.main === module) {
 
   process.on('SIGINT', () => {
     log.info('\n[Scheduler] Received SIGINT, shutting down...');
-    scheduler.stop();
-    process.exit(0);
+    void scheduler.shutdown().finally(() => process.exit(0));
   });
 
   process.on('SIGTERM', () => {
     log.info('\n[Scheduler] Received SIGTERM, shutting down...');
-    scheduler.stop();
-    process.exit(0);
+    void scheduler.shutdown().finally(() => process.exit(0));
   });
 
   scheduler.start().catch(err => {

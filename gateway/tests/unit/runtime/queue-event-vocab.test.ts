@@ -24,10 +24,12 @@ describe('queue.updated 词汇四层守卫（C7）+ 事件发射 wiring（C8）'
     expect(hits.length).toBeGreaterThanOrEqual(5);
   });
   it('管理路由三条（GET/DELETE queue + DELETE queue/:itemId）', () => {
-    expect(src).toContain('/queue(?:\\?|$)');
-    expect(src).toContain('queueCancelMatch');
-    expect(src).toContain('queueClearMatch');
-    expect(src).toContain('queueListMatch');
+    // Phase D1 Task D1: 三条管理路由迁入 routes/sessions-core.ts（registry params 取值）。
+    const sessionsCore = readFileSync(join(__dirname, '../../../src/routes/sessions-core.ts'), 'utf8');
+    expect(sessionsCore).toContain("attachHandler('session.queue.list'");
+    expect(sessionsCore).toContain("attachHandler('session.queue.clear'");
+    expect(sessionsCore).toContain("attachHandler('session.queue.cancel'");
+    expect(src).toContain('emitQueueUpdated');
   });
   it('route-catalog 登记 3 行', () => {
     const catalog = readFileSync(join(__dirname, '../../../src/routes/route-catalog.ts'), 'utf8');

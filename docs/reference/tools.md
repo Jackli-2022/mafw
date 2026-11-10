@@ -3,9 +3,9 @@
 > 迁移自根 `AGENTS.md`（2026-11-10），原文搬迁（未改写）；章节号沿用迁移前编号，
 > 交叉引用以标题为准。后续变更记录写 `docs/releases/`，不再回填本文件。
 
-## Tools 清单（v6.9 总共 44 个）
+## Tools 清单（2026-11-10：42 个 Gateway MCP 工具 + 14 个插件侧工具）
 
-### Gateway MCP 工具（40 个，`gateway/src/mcp/tool-registry.ts`）
+### Gateway MCP 工具（42 个，`gateway/src/mcp/tool-registry.ts`）
 
 | Tool | 用途 |
 |---|---|
@@ -24,7 +24,10 @@
 | `mafw_get_axioms` | 获取 L5 公理 |
 | `mafw_merge_memory` | ★ 跨 worktree 记忆融合 |
 | `mafw_resolve_merge` | 解决记忆融合冲突 |
-| `mafw_create_goal` | 创建 Goal（Manager 专用） |
+| `mafw_create_goal` | 创建 Goal（Lead 专用；`handoff` / `sourceRef` / `topicId`，默认移交 Lead 当前话题） |
+| `mafw_lead_goal_status` | Lead 的 Goal 状态投影（阶段 / 进度 / 阻塞 / 待处理 attention）；只读，不读 Tech Lead 原始 transcript |
+| `mafw_pod_goal_direction` | Tech Lead 方向裁定（`clear` / `needs_user` / `decided`；`goalMode` 选 quick/standard） |
+| `mafw_pod_goal_context` | Lead 为 Goal 选择上下文（可选文件 / 跨 Goal allowlist） |
 | `mafw_set_goal` | 设置活跃 Goal |
 | `mafw_get_goal_status` | 查询 Goal 状态 |
 | `mafw_list_goals` | 列出 Goal |
@@ -49,7 +52,7 @@
 | `mafw_desktop_scroll` | 桌面滚动 |
 | `mafw_restart_agent` | 重启 gateway 拥有的 agent 进程（opencode serve sidecar）；external/进程内 runtime 不可用 |
 
-> **接线要求（2026-09-08 修复）**：以上 39 个工具经 gateway MCP 暴露（`http://127.0.0.1:3000/mcp`），opencode 侧需在配置中有 `"mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true, "oauth": false } }` 才可用。接线有两条路径：①插件**激活时自接线**（`src/utils/self-wiring.ts` 的 `ensureMcpWiring()`——检测全局 `~/.config/opencode/opencode.jsonc` 缺 `"mcp"` 段则幂等补写，带 `.bak-mafw-<ts>` 备份，fail-open）；②手动写全局或项目级 opencode 配置。**排错关键**：旧键 `mcpServers`（v4.1 时代 `opencode.json.example`）已被 opencode 1.x 废弃并**静默忽略**，接线缺失无任何报错、工具直接消失；验证用 `opencode mcp list` 应显示 `mafw connected`。插件原生工具（6 个，§4.2）不经 MCP，独立可用。
+> **接线要求（2026-09-08 修复）**：以上 42 个工具经 gateway MCP 暴露（`http://127.0.0.1:3000/mcp`），opencode 侧需在配置中有 `"mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true, "oauth": false } }` 才可用。接线有两条路径：①插件**激活时自接线**（`src/utils/self-wiring.ts` 的 `ensureMcpWiring()`——检测全局 `~/.config/opencode/opencode.jsonc` 缺 `"mcp"` 段则幂等补写，带 `.bak-mafw-<ts>` 备份，fail-open）；②手动写全局或项目级 opencode 配置。**排错关键**：旧键 `mcpServers`（v4.1 时代 `opencode.json.example`）已被 opencode 1.x 废弃并**静默忽略**，接线缺失无任何报错、工具直接消失；验证用 `opencode mcp list` 应显示 `mafw connected`。插件原生工具（6 个，§4.2）不经 MCP，独立可用。
 >
 > **双传输端点（2026-09-09，commit 1fa8c304）**：`/mcp` 同时承载两种传输，客户端按形态自动分流——`POST /mcp`（无 sessionId）→ **无状态 StreamableHTTP**（官方 transport，`sessionIdGenerator: undefined` + `enableJsonResponse`，响应随 POST 内联返回；opencode 客户端优先此路径）；`POST /mcp?sessionId=` → legacy SSE 消息通道；`GET /mcp`（带 `mcp-protocol-version` 头）→ 405（无独立流，StreamableHTTP 客户端视为预期）；`GET /mcp`（无该头）→ legacy SSE 会话建立。**每条 SSE 连接独立 `Server` 实例**（SDK Protocol 单传输，共享会导致响应路由到"最后连接"的客户端——2026-09-09 间歇性 -32001 超时事故根因，回归测试 `gateway/tests/unit/mcp-sse-multi-client.test.ts`）+ 15s `: ping` 心跳（防 ~305s 客户端 idle-abort 重连轮转）+ 会话生命周期日志（`[MCP]` 前缀）。SDK `@modelcontextprotocol/sdk@^1.30`。
 

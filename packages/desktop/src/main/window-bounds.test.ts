@@ -29,21 +29,22 @@ describe("main window bounds", () => {
     expect("y" in opts).toBe(false)
   })
 
-  test("minimum window keeps the hard fallback at 1088x720", () => {
-    expect(MAIN_WINDOW_MIN_WIDTH).toBe(1088)
-    expect(MAIN_WINDOW_MIN_HEIGHT).toBe(720)
+  test("minimum window keeps the hard fallback at 900x600", () => {
+    expect(MAIN_WINDOW_MIN_WIDTH).toBe(900)
+    expect(MAIN_WINDOW_MIN_HEIGHT).toBe(600)
     const opts = mainWindowOptions({ width: 400, height: 300 })
-    expect(opts.minWidth).toBe(1088)
-    expect(opts.minHeight).toBe(720)
-    expect(opts.width).toBe(1088)
-    expect(opts.height).toBe(720)
+    expect(opts.minWidth).toBe(900)
+    expect(opts.minHeight).toBe(600)
+    expect(opts.width).toBe(900)
+    expect(opts.height).toBe(600)
   })
 
   test("default window targets 1720x1000 but respects work area", () => {
     expect(fitDefaultWindowSize({ width: 3000, height: 2000 })).toEqual({ width: 1720, height: 1000 })
     expect(fitDefaultWindowSize({ width: 1920, height: 1080 })).toEqual({ width: 1720, height: 1000 })
     expect(fitDefaultWindowSize({ width: 1920, height: 1040 })).toEqual({ width: 1720, height: 960 })
-    expect(fitDefaultWindowSize({ width: 1366, height: 768 })).toEqual({ width: 1286, height: 720 })
-    expect(fitDefaultWindowSize({ width: 1024, height: 768 })).toEqual({ width: 1088, height: 720 })
+    expect(fitDefaultWindowSize({ width: 1366, height: 768 })).toEqual({ width: 1286, height: 688 })
+    expect(fitDefaultWindowSize({ width: 1024, height: 768 })).toEqual({ width: 944, height: 688 })
+    expect(fitDefaultWindowSize({ width: 800, height: 500 })).toEqual({ width: 900, height: 600 })
   })
 })

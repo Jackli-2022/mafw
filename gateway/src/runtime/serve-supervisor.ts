@@ -60,6 +60,8 @@ export function createServeSupervisor(deps: ServeSupervisorDeps): ServeSuperviso
       starting = (async () => {
         try {
           deps.killServe();
+          // taskkill /F /T 异步生效：等监听 socket 释放后再 spawn。
+          await new Promise((resolve) => setTimeout(resolve, 500));
           instance = undefined;
           return await spawnAndWait();
         } finally { starting = undefined; }
@@ -74,6 +76,7 @@ export function createServeSupervisor(deps: ServeSupervisorDeps): ServeSuperviso
           deps.killServe();
           instance?.close();
           instance = undefined;
+          await new Promise((resolve) => setTimeout(resolve, 500));
           return await spawnAndWait();
         } finally { starting = undefined; }
       })();

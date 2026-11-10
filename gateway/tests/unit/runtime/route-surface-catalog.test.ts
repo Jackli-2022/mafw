@@ -381,9 +381,9 @@ export const NON_PRIMARY_GATES: NonPrimaryGate[] = [
   },
   {
     surface: 'session.worktree',
-    file: 'src/index.ts',
+    file: 'src/routes/sessions-core.ts',
     marker: "can('session.worktree')",
-    why: 'POST /api/session 的 worktree 开口径（gateway git + directory 契约）；由专门用例断言',
+    why: 'POST /api/session 的 worktree 开口径（gateway git + directory 契约；Phase D1 Task D1 起接线在 sessions-core）；由专门用例断言',
   },
   {
     surface: 'session.messages',
@@ -435,13 +435,15 @@ export const NON_PRIMARY_GATES: NonPrimaryGate[] = [
   },
   {
     surface: 'provider.list',
-    file: 'src/index.ts',
+    // Phase D1 Task H1: /api/provider 迁入 routes/misc.ts（capGuard 原文随迁）。
+    file: 'src/routes/misc.ts',
     marker: "capGuard(res, 'provider.list')",
     why: 'inline provider route（capGuard 统一中性 503）',
   },
   {
     surface: 'provider.app.agents',
-    file: 'src/index.ts',
+    // Phase D1 Task H1: /api/agents 迁入 routes/misc.ts（capGuard 原文随迁）。
+    file: 'src/routes/misc.ts',
     marker: "capGuard(res, 'provider.app.agents')",
     why: 'inline provider route',
   },
@@ -692,8 +694,8 @@ describe('route → surface catalog', () => {
   });
 
   it('worktree creation is gated in the composition root by session.worktree', () => {
-    const index = fs.readFileSync(path.join(GATEWAY_ROOT, 'src/index.ts'), 'utf8');
-    expect(index).toContain("access?.can('session.worktree')");
+    const sessionsCore = fs.readFileSync(path.join(GATEWAY_ROOT, 'src/routes/sessions-core.ts'), 'utf8');
+    expect(sessionsCore).toContain("access?.can('session.worktree')");
     // 409（该目录不支持 worktree）不是能力 503——两者必须分开表达。
     const create = fs.readFileSync(path.join(GATEWAY_ROOT, 'src/routes/session-create.ts'), 'utf8');
     expect(create).toContain('WorktreeUnavailableError');

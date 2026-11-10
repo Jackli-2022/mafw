@@ -80,6 +80,30 @@ describe('mafw_create_goal routed through the Tech Lead', () => {
     });
   });
 
+  test('passes handoff and sourceRef to the Tech Lead', async () => {
+    const createGoal = jest.fn(async () => ({ goalId: 'g1' }));
+    const tool = createCreateGoalTool({
+      techLead: {
+        isLeadSession: () => true,
+        hasPod: () => true,
+        createGoal,
+      },
+    });
+
+    await tool.execute({
+      title: 'T',
+      objective: 'O',
+      sessionID: 'lead_1',
+      handoff: 'current-topic',
+      sourceRef: { snapshot: 'hi', topicId: 't1' },
+    });
+
+    expect(createGoal).toHaveBeenCalledWith(expect.objectContaining({
+      handoff: 'current-topic',
+      sourceRef: expect.objectContaining({ topicId: 't1' }),
+    }));
+  });
+
   test('a non-Lead caller is rejected even before a Pod exists', async () => {
     const techLead = {
       isLeadSession: jest.fn(() => false),

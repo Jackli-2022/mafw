@@ -17,8 +17,11 @@
 - [Pod 协作 Goal Loop](#pod-协作-goal-loop)
 - [Goal 编排：NodeDriver 状态机](#goal-编排nodedriver-状态机)
 - [事件层与常驻存在感](#事件层与常驻存在感)
+- [统一调度器（scheduler/，内核重构 Phase B）](#统一调度器scheduler内核重构-phase-b)
+- [统一会话注册表（session/，内核重构 Phase C）](#统一会话注册表session内核重构-phase-c)
 - [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
 - [插件系统（四类型 loader + 统一包宿主）](#插件系统四类型-loader--统一包宿主)
+- [HTTP 路由分发（内核重构 Phase D1 现状）](#http-路由分发内核重构-phase-d1-现状)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -36,9 +39,11 @@ gateway/
 ├── bin/
 │   └── mafw.js                   # CLI 入口（进程管理、诊断、TUI）
 ├── src/
-│   ├── index.ts                  # MafwScheduler — 主调度器（~7500 行）
+│   ├── index.ts                  # MafwScheduler — 主调度器（~8200 行；HTTP 分发见「HTTP 路由分发」）
 │   ├── config.ts                 # 统一配置（三层优先级，MAFW_* 环境变量）
-│   ├── automation-engine.ts      # cron/事件自动化引擎 + action 注册表
+│   ├── concurrency/              # 并发原语：Singleflight/MutexQueue/Guard/TtlMap/Watermark（内核重构 Phase A）
+│   ├── scheduler/                # 统一调度器：优先级队列 + 冲突策略 + 预算准入（内核重构 Phase B）
+│   ├── automation-engine.ts      # cron/事件自动化引擎（action 注册表为实例所有，经 scheduler 提交）
 │   │
 │   ├── core/
 │   │   ├── goal/                 # Goal 编排（NodeDriver，2026-10-08 P1）
@@ -96,7 +101,7 @@ gateway/
 │   ├── media/                    # A2A Media Agent、pi-adapter、插件引擎加载器
 │   ├── python/                   # 持久 Python 内核（Jupyter wire 协议 + ZeroMQ）
 │   ├── tts/                      # TTS 引擎注册表（mimo 流式 / kokoro 本地）
-│   ├── routes/                   # 独立路由模块（runtime-switch、tools、model-config…）
+│   ├── routes/                   # 独立路由模块（40 个 attach* 入口 / 38 个文件 → RouteRegistry；见「HTTP 路由分发」）
 │   ├── plugins/                  # 统一插件包宿主（package-host/context/types）
 │   ├── commands/                 # slash 命令注册表（内置 + 用户/项目自定义）
 │   ├── usage/                    # 用量 provider 插件系统（内置适配器 = 同接口 JS 文件）
@@ -336,13 +341,99 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 
 ---
 
+## 统一调度器（scheduler/，内核重构 Phase B）
+
+**文件**：`gateway/src/scheduler/`（`task-descriptor.ts` + `scheduler.ts` + barrel）。
+设计 spec：`docs/superpowers/specs/2026-11-09-gateway-kernel-scheduler-design.md`；
+并发原语（Phase A）见 `gateway/src/concurrency/`。
+
+一个优先级任务队列统一管理后台/管线任务的准入与排序（Node 单线程，无可抢占——
+调度 = 排队顺序 + 提交时准入 + 启动时资格判定）：
+
+- **优先级**：`foreground > midground > background > idle`。foreground 立即执行、
+  永不排队、不受并发帽限制；其余经 pump 按 (优先级, 提交序) 挑选启动。
+- **策略**（同 `mutexKey` 冲突时）：`skip`（reject `TaskSkippedError`）、`coalesce`
+  （join 在飞任务的 promise，fn 只跑一次）、`queue`（FIFO）、`defer-to-idle`
+  （排队但等 foreground 清零才启动）。
+- **并发帽**：非 foreground 任务默认最多 4 个同时在飞（`maxConcurrent` 可配）；
+  mutex 被占的任务被跳过让位（work-conserving），保持队列位。
+- **预算准入**：`submit` 时对带 `budget` 的任务调注入的 checker；`kind:'pipeline'`
+  用管线自己的 `PipelineBudget.allow()` 名（extract/reflect/review/reconsolidate/
+  dream/axiomDistill），与管线内部 per-LLM-call 检查同源——只是把「跑起来才拒绝」
+  提前为「不启动」。拒绝 reject `BudgetExceededError`（AutomationEngine 捕获后
+  warn 日志，不向上传播——cron 回调是 fire-and-forget）。
+- **watchdog**：`timeoutMs` 从**开始执行**起算（排队等待不烧）；超时 reject
+  `TaskTimeoutError` + 释放 key，被弃 fn 继续后台跑（release 语义）。
+- **统计**：`stats()` → `{ queued, running, byPriority }`（queued per priority）。
+
+**消费方**：
+
+| 消费方 | 提交形态 |
+|---|---|
+| AutomationEngine `executeAction` | `background`（cron/event 触发）或 `foreground`（user/llm 触发——交互方在等），`mutexKey: action:<type>`，`skip` + 30min watchdog + taskOpts 预算 |
+| index.ts 快照构建 | `midground` + `defer-to-idle`，`mutexKey: 'snapshot'`（Phase A 的 drop→queue 升级为 queue+idle 让位） |
+| index.ts compaction flush | `background`，per-session `compact-flush:<sid>` key（与 cron action key 不同，互不阻塞） |
+
+**AutomationEngine 注册表**（同批改造）：action 注册从模块级全局 Map 改为实例所有
+（`registerAction` + taskOpts）；builtins（memory:decay/review/prune）在构造时注册并
+遵守 live-instance 纪律（`setIndexManagerProvider`/`setGraphProvider` 缺席则 warn 跳过，
+**绝不 new 临时副本**——2026-09 衰减冻结与 prune 图被 live 实例回写的教训）；
+index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`reloadRules()`
+调用 `refreshActions()` 确定性重建。
+
+**本批有意不迁移**（Phase B2 跟进）：
+- **NodeDriver 节点执行**：B2 已把其 raw promise-chain mutex 迁到 `MutexQueue`（`advance`/
+  `withGoalMutex` 统一 per-goal FIFO）；**scheduler 提交裁决不做**——节点完成是事件驱动
+  （turn.completed + 产物文件 + idle 归属 + grace + watchdog），fire-and-forget 派发不适配
+  「promise 落定 = 任务完成」的任务模型；per-goal 互斥已由 MutexQueue 提供。
+- **RunCoordinator suspend/resume**：不迁——`pendingSuspend` 是 **409 冲突契约**
+  （HTTP 显式拒绝），不是调度闸门；`awaitingStart`/`settled`/`suspended` 是运行状态机
+  转移，换掉会破坏 API 契约。
+- **serve 健康轮询**：不迁——探针循环不可能堆叠（healthCheck 有适配器层超时 + 自带
+  `serveRecovering` 标志），是探针循环不是任务闸门。
+- **SessionWorkerPool.runExclusive**：per-session promise-dedup（Phase A 已统一到
+  Singleflight），不是调度闸门。
+- **PodEventWake**：B2 已迁移——scan 经 scheduler `midground` + `coalesce`
+  （`mutexKey: 'pod-event-wake'`），定时器 + notify 并发合流，关闭双投递竞态。
+- **边界 recall 100ms 路径**：最敏感延迟路径零改动（零新增延迟风险）；foreground 通道
+  在生产中由 user/llm 触发的 automation 消费。
+- HTTP 诊断端点（`/api/scheduler/stats`）留给 Phase D 诊断面合并。
+
+---
+
+## 统一会话注册表（session/，内核重构 Phase C）
+
+**文件**：`gateway/src/session/`（`scope.ts` + `registry.ts` + `views/`）。
+设计 spec：`docs/superpowers/specs/2026-11-09-gateway-kernel-session-registry-design.md`（§9 为落地注记）。
+
+网关的**进程表**：一个 sessionID 一条记录，回答「归属 / 状态 / TTL / 世代」。
+
+- **记录**：`SessionRecord { sessionID, scope, status, runtimeName, generation, createdAt, lastActiveAt, ttlMs, expiresAt, metadata }`；`scope.kind ∈ project|goal|probe|worker|lead|internal`。
+- **生命周期**：TTL 过期是**惰性**的（lookup/byScope 物化 `ended`，不删记录）；`sweep()` 收集过期记录并触发 **per-record onEvict**（显式 unregister 不触发）。`touch()` 刷新 `expiresAt`（对齐 pool 的按用续期）。世代：active 上重注册=原地更新（scope 可被新 owner 接管、metadata 合并）；ended/回收后重注册 `generation+1`（`retiredGenerations` 有界 stash 10k FIFO）。
+- **视图模型**：记录的 **owner**（决定生命周期）vs **overlay**（只在 metadata 上打补丁）。
+
+| 视图 | 角色 | 说明 |
+|---|---|---|
+| `InternalRolesView`（index.ts） | overlay | `metadata.role`；自建记录 kind `internal`（delete 会整体注销），foreign 记录只清 role、owner 生命周期不动；kv 双写不变 |
+| worker-origin（recall/worker-origin.ts） | overlay | `metadata.originSessionID`；默认注册表单例（`getDefaultSessionRegistry`），`clearWorkerOrigins` 区分自建记录与 owner 记录 |
+| SessionWorkerPool | owner（worker 会话） | **pair 缓存留在 TtlMap**（以源会话为键——那是用户会话，不能标 kind worker）；**worker 会话**（w-* sid）在 onSessionCreated 注册（role+origin+TTL + per-record onEvict→evictPair）；`evictPair()` 是唯一的守卫式处置入口（TtlMap 访问逐出 / sweeper 记录逐出 / disposeAll 三路收敛，恰好一次）——60s sweeper 现在**独立兜住空闲 pair**，无需 getWorker 访问 |
+| LeadSessionRegistry | owner（lead） | observe-only 镜像：bind/ensure 写 kind `lead` 记录（projectId + podId），dead-row 归档注销；全部 Lead 逻辑（kv 行/活性/快照）不动 |
+| PodSessionSupervisor | owner（goal 域） | observe-only 镜像：ensure/retire 写 kind `goal` 记录（podId+memberId+goalId+revision，metadata leaseKind/runtime/generation）；租约逻辑（唯一索引兜底/单飞/冲突归因）不动 |
+
+**统一 sweeper**：index.ts 60s `sessionRegistry.sweep()`（与 queueSweepTimer 并列；`sweepBusyAndQueue` 是活跃簿记非进程表状态，保留自己的间隔——spec §9 Key Ruling 7）。
+
+**范围外（裁决）**：`PiSessionRegistry` 已随 neutral runtime driver 迁入 `adapters/pi/src/`（网关外，适配器自治）；`eventTaps`/`probeScopes` TTL 由 Phase A TtlMap 完成；`busySessions`/`recallCalledBySession`（活跃簿记）、memory-worker `compactIdleMs`（prompt 时策略检查）不属于进程表。CI 守卫按「已迁移文件不得回潮裸 Map」钉扎（regression-guard.test.ts）。
+
+---
+
 ## MafwScheduler 关键子系统
 
-**文件**：`gateway/src/index.ts`（`class MafwScheduler`，~7500 行）。
+**文件**：`gateway/src/index.ts`（`class MafwScheduler`，~8200 行；HTTP 分发见「HTTP 路由分发」）。
 主要子系统（细节见 `docs/architecture/*` 对应文档）：
 
 | 子系统 | 位置 | 说明 |
 |---|---|---|
+| 统一调度器 | `scheduler/` | 优先级队列 + 冲突策略 + 预算准入（见专节，内核重构 Phase B） |
 | serve sidecar 监管 | index.ts + 契约 | spawn/收养、watchdog、recoverServe、事件流重订阅 |
 | Runtime 能力契约 | `runtime/` | Tier 0-2 + 必选工具通道；opencode 内置 / pi 插件 / 热切换（见专节） |
 | 事件映射注册 | `runtime/event-mapper.ts` + `canonical-facets.ts` | 纯数据表（原生→canonical）+ facet 规则表；`path-expr.ts` 安全求值；工具三原语合帧（`tool-part-assembler.ts`） |
@@ -399,6 +490,59 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
   事件映射表、工具注册通道、conformance 场景四件套）
 - 限制：包 reload 只清主文件 `require.cache`（改包内 `lib/` 需 `mafw restart`）；
   env `MAFW_PLUGINS_DIR` 覆盖包目录（测试）
+
+---
+
+## HTTP 路由分发（内核重构 Phase D1 现状）
+
+> 2026-11-10 对照源码更新。设计：`docs/superpowers/specs/2026-11-09-gateway-kernel-microkernel-design.md` §5.2；
+> 交付记录：`docs/releases/2026-11-10-gateway-kernel-d1-routes-batch2.md`。
+
+请求在 `startApiServer()` 的单个 `http.createServer` 回调里按**固定顺序**流动：
+
+```
+OPTIONS → CORS 预检 204
+→ 鉴权（loopback 直通 / MAFW_SERVER_API_TOKEN bearer）          401
+→ RouteRegistry dispatch（dispatchAuthorized）— attach 过 handler 的 (method, path) 接管
+→ 插件 Web 通配面（ui/* 与 api/*；registry 只支持精确段数）
+→ 文件级历史（loopback-only）
+→ legacy if 链残量（transport + dashboard 兜底，见下表）
+→ 反代 serve（其余一切）
+```
+
+**顺序是契约**：registry 必须在鉴权之后（内部路由不得绕过 token 门），也必须早于
+legacy 链——`goals.sessions` 先于 dashboard 兜底、`memory/embedding-config` 先于
+`/api/memory/*` 委托、`sessions.*/permissions` 先于会话兜底等顺序依赖，由 dispatch
+位置一次性满足（替代 AGENTS §6.5 那类「靠分支顺序 + 正则锚定」的隐式契约）。
+
+**路由模块**：`gateway/src/routes/` 下 38 个文件、40 个 `attach*` 入口，向 `RouteRegistry`
+（`routes/registry.ts`；catalog = `routes/route-catalog.ts`，278 条 `operationId`）挂
+**208 个 handler**。每个模块 = `attach<Domain>Routes(registry, deps)`，handler 体从
+index.ts **逐字**搬迁（状态码 / 响应形状 / fail-open / 200-not-404 miss / 405-else 臂全保留），
+`this.x` 一律换成 **live getter** `() => this.x`（boot 后重赋的字段不能捕快照）。
+新增路由 = catalog 条目（`operationId` + method + path-template）+ `attachHandler`，缺一不可达；
+path-template 里 `{id}` 是字面量、只有 `:param` 才是参数（registry 拆分后 decodeURIComponent）。
+
+**委派契约（load-bearing）**：handler 委派给既有 handler 模块时必须 `return` 委派
+promise：`return handleX(req, res, req.url!, deps)`。`dispatchAuthorized` 把 `undefined`
+视为「已处理」，因此 `if (await handleX(...)) return;` 会吞掉委派方的 `false`
+（fall-through 契约）——请求既不写响应也不落反代，客户端挂死。D1 期间这类 bug 出现 3 次
+（`sessions.background` / `mcp.*` / `session.messages`），现各有回归测试逐条钉住。
+
+**D1 结束后 legacy 链只剩四类**（`tests/unit/architecture/legacy-route-inventory.test.ts`
+以 24 = 10 match + 14 equals 钉死，group 级逐组钉：transport 11 组 + `/api/memory` 4 +
+`/api/goals` 3 + `/api/stats` 2）：
+
+| 残量 | 分组 | 归属 |
+|---|---|---|
+| transport / 静态 / MCP / 根路径 | `/a2a`、`/.well-known`、`/a`、`/assets`、`/static`、`/`、`/index.html`、`/mcp`、`/register`、`/control`、`/health` | **D3**（`http-router.ts`：auth → registry → 404；不进 RouteRegistry） |
+| dashboard 兜底（R5） | `/api/goals`、`/api/stats`、`/api/memory` 联合 `startsWith` + `handleDashboardAPI` | 保留：四个明确影子条目已 registry-first（`goals.list` / `dashboard.stats` / `memory.add` / `memory.setSticky`），其余路径行为不变 |
+| `/api/goals/control` 等价臂（R6） | 与 `/control` 共享的 POST 分支 | 死代码（自 cdf678db2 起被 dashboard 兜底遮蔽）；D1 不修，合并时按潜在 bug 处理 |
+| runtime-config 内联残量 | `GET/PATCH /api/runtime-config`（`matchRuntimeConfigRoute` 门，index.ts 内联分发） | **未迁移**：analyzer 从不计数（R9），catalog 的 `runtime.config.get` / `runtime.config.update` 是**无 handler 的幻影条目**；连同 `/api/ws` upgrade（transport 级、不经 HTTP 分发链）一并归 **D3** |
+
+`index.ts` 从 **10098 行（D1 起点 `ed2e998e`）降到 8204 行**（−1894 / −18.8%），减掉的
+全是分支体；迁移留下的 tombstone 注释（`// <METHOD> <path> — Phase D1 Task <X>：已迁
+registry dispatch。`）留在原位，D3 可直接按注释清理。
 
 ---
 
@@ -649,8 +793,12 @@ deprecated，物理删除待后续 PR。历史细节见 git 历史中的本文�
 ```
 start()
   ├─ installFileLogging()              → ~/.mafw/logs/mafw.log
+  ├─ claimGatewayInstance()            → ~/.mafw/runtime/gateway.lock
+  │   ├─ 拿到锁 → 继续
+  │   └─ 已有活实例 → stdout {"mafw":"deferred","instance":…} → exit 0
   ├─ initServices()                    → Memory + Cost + MCP + Automation
   ├─ startApiServer()                  → HTTP API on port 3000
+  ├─ publishGatewayDiscovery()         → ~/.mafw/runtime/gateway.json + 10s heartbeat
   ├─ init SDK client                   → @opencode-ai/sdk
   ├─ probe isServeHealthy()            → 先探已有 opencode server
   │   ├─ 通 → 直接复用
@@ -662,17 +810,42 @@ start()
 ```
 Server 启动失败不崩溃，优雅降级到 MCP-only 模式。
 
+#### 单实例所有权与发现
+
+`~/.mafw` 是单写者资源：一个数据目录同时只能有一个 gateway。
+
+- **锁**：`~/.mafw/runtime/gateway.lock`，`O_EXCL` 创建；内容
+  `{pid, processStartTime, startedAt, heartbeatAt, nonce}`。陈旧判据 = pid 不存在 /
+  同 pid 但启动时间不符 / 心跳超过 30s；绝不靠“端口是否被占”。
+- **发现**：`listen` 成功后由 gateway 自己写 `~/.mafw/runtime/gateway.json`
+  （实际 `port`、`pid`、`instanceId`、版本、schema、`origin`、`heartbeatAt`），
+  每 10s 心跳，退出删除。`origin` 只用于诊断（`standalone` / `desktop-dev` /
+  `desktop-packaged`），不参与数据分区。
+- **退让**：拿不到锁且发现文件指向活实例时，输出 `deferred` JSON 并 `exit 0`；
+  不再用 `GET /health` 200 作为互斥判据。
+- **自更新**：`MAFW_TAKEOVER=1` 等待旧实例释放锁（最长 45s），不抢占活锁。
+
 #### Desktop → Gateway 探测连接
 
 `mafw-sidecar.ts:startGateway()` 按 `mafw-gateway-plan.ts` 的优先级决策：
 ```
-probeExistingGateway()（MAFW_SERVER_API_PORT → MAFW_GATEWAY_PORT → 3000，GET /health 确认）
-  → 通 → adopt：state="ready"，不 spawn
-  → 不通 → packaged 且 resources/gateway/dist/index.js 存在
-  │     → bundle：spawn(process.execPath, [entry], ELECTRON_RUN_AS_NODE=1, windowsHide)
-  │     → will-quit 时 taskkill /F /T 树杀（Windows）
-  → 否则 → cli：execFile("mafw", ["daemon"])（dev 回退，CLI 缺失则 failed）
+probeRunningGateway()
+  ├─ 读 ~/.mafw/runtime/gateway.json
+  │   └─ 心跳新鲜 → GET <port>/health → pid/instanceId 必须与发现文件一致
+  ├─ 没有/过期 → 回落 3000 + GET /health（旧实例迁移期）
+  └─ 有候选 → negotiateGateway
+       ├─ 兼容 → attach（state="ready"，不 spawn；版本不同只警告）
+       ├─ 旧于期望 / schema 不符 → conflict + 「用当前构建重启」
+       ├─ 没有 → packaged 且有 resources/gateway/dist/index.js
+       │         → bundle：spawn(process.execPath, [entry], ELECTRON_RUN_AS_NODE=1)
+       │         → dev：spawn 仓库 gateway/dist
+       │         → will-quit 时 taskkill /F /T 树杀（Windows）
+       └─ 否则 → cli：execFile("mafw", ["daemon"])（CLI 缺失则 failed）
 ```
+Desktop 不再写 `desktop-gateway/<channel>/*.json`；gateway 自己的发现文件是唯一事实源。
+「用当前构建重启」只停止 discovery pid + `/health` 身份都匹配的实例；
+legacy 实例只显示 `mafw stop` / `mafw restart` 提示。
+
 运行时健康检查每 30s 一次，连续 5 次失败后自动 restart。
 
 #### Client SDK → Gateway IPC 通道
@@ -709,6 +882,16 @@ opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
 - **spawn 契约与 SDK 完全一致**：`createOpencodeServer` 内部使用 cross-spawn、
   `opencode serve --hostname=127.0.0.1 --port=4096`、env `OPENCODE_CONFIG_CONTENT="{}"`、
   就绪信号 stdout `opencode server listening on <url>`（超时 5s 树杀报错）
+- **认证密码稳定化（2026-11-10）**：`resolveServePassword()` 优先级 = env
+  `MAFW_RUNTIME_PASSWORD` / `MAFW_OPENCODE_PASSWORD` / `OPENCODE_SERVER_PASSWORD` → 持久文件
+  `~/.mafw/serve-password`（`MAFW_SERVE_PASSWORD_FILE` 可覆盖，0600，原子写）→ 生成
+  `mafw-<uuid>` 并落盘。gateway 重启/外部 CLI daemon 重启后可用同一密码收养仍在运行的旧
+  serve；旧实现每进程随机密码，重启后必然 401 并把旧 serve 留成孤儿。
+- **孤儿 serve 清场（2026-11-10）**：启动时 `healthCheck` 失败 → `killServe()`；Windows 必须
+  `taskkill /F /T /PID`（裸 `process.kill` 不足以杀掉实际监听子进程），PID 取
+  `Get-NetTCPConnection ... | Where-Object RemotePort -eq 0`（本机 netstat 对监听 socket 报
+  PID 0，无法用于清场），随后等待 500ms 再 spawn。否则旧 serve 占着 4096，新 gateway
+  只能退化为 MCP-only，所有 native 调用 401。
 - **健康轮询监督**：SDK 不暴露子进程/exit 回调，**owned 与 adopted serve 都走 watchdog**：
   每 30s 探测 `/global/health`，连续 3 次失败 → `recoverServe()` 重启并**重订阅事件流**
   （SSE 建立在 serve 之上，进程重启后必须重连，否则自动化触发器和桌面 SSE 转发全部静默失效）

@@ -17,8 +17,11 @@ export type GatewayStartPlan =
       | "managed-newer"
       | "channel-mismatch"
       | "schema-mismatch"
+      | "experience-incompatible"
       | "port-conflict"
       | "legacy-external-unverified"
+      | "gateway-running"
+      | "gateway-outdated"
     detail: string
   }
   | { mode: "failed"; reason: string }
@@ -110,13 +113,53 @@ export function planGatewayStart(input: {
       && input.running.health.distribution === "desktop-managed"
       && input.running.health.instanceId === instance.instanceId
     if (!registered) {
-      // A source checkout shares the machine with whatever gateway the
-      // developer already runs (usually the global CLI daemon). Fighting it
-      // for port 3000 breaks the dev loop, so dev attaches to it instead.
-      // Packaged builds must never do this: an unregistered process could be
-      // an older desktop build or a stale CLI install.
+      // A source checkout shares `~/.mafw` with whatever gateway the developer
+      // already runs (usually the global CLI daemon). There is exactly one
+      // writer per data directory, so dev attaches after a *successful*
+      // handshake instead of spawning a second instance. Packaged builds must
+      // never trust an unregistered process: it could be an older release.
       if (input.devAdoptRunningGateway && !input.packaged) {
-        return { mode: "managed", entry, action: "adopt" }
+        const handshake = negotiateGateway({
+          mode: "external",
+          health: input.running.health,
+          expected: input.expected,
+        })
+        if (handshake.ok) {
+          return { mode: "managed", entry, action: "adopt" }
+        }
+        if (handshake.reason === "older-than-required") {
+          return {
+            mode: "conflict",
+            reason: "gateway-outdated",
+            detail: `a gateway is running (v${input.running.health.gatewayVersion ?? "unknown"}) but this desktop expects v${input.expected.gatewayVersion}; restart it with the current build (mafw stop / mafw restart)`,
+          }
+        }
+        if (handshake.reason === "schema-mismatch") {
+          return {
+            mode: "conflict",
+            reason: "schema-mismatch",
+            detail: `the running gateway uses schema epoch ${String(input.running.health.schemaEpoch ?? "unknown")} but this desktop expects ${input.expected.schemaEpoch}; restart it with the current build`,
+          }
+        }
+        if (handshake.reason === "experience-incompatible") {
+          return {
+            mode: "conflict",
+            reason: "experience-incompatible",
+            detail: `the running gateway experience version ${input.running.health.experienceVersion ?? "unknown"} is incompatible with this desktop (${input.expected.experienceVersion}); restart it with the current build`,
+          }
+        }
+        return {
+          mode: "conflict",
+          reason: "legacy-external-unverified",
+          detail: "the running gateway does not advertise a verifiable release version; restart it with the current build",
+        }
+      }
+      if (!input.packaged) {
+        return {
+          mode: "conflict",
+          reason: "gateway-running",
+          detail: "a gateway is already running on port 3000; stop it before starting the repo build (mafw stop)",
+        }
       }
       return {
         mode: "conflict",

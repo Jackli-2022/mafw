@@ -207,3 +207,72 @@ describe('serve-sidecar spawn options', () => {
     return child;
   }
 });
+
+describe('killServePort（stale serve 恢复）', () => {
+  let killServePort: any;
+  beforeEach(() => {
+    jest.resetModules();
+    killServePort = require('../../src/runtime/serve-sidecar').killServePort;
+  });
+
+  test('win32 优先用 Get-NetTCPConnection 的真实 PID（netstat 可能报 0）', () => {
+    const commands: string[] = [];
+    const execSync = jest.fn((cmd: string) => {
+      commands.push(cmd);
+      return Buffer.from('');
+    });
+    const execFileSync = jest.fn(() => Buffer.from('23404\n'));
+    (killServePort as any)(4096, {
+      platform: 'win32',
+      execSync,
+      execFileSync,
+      kill: () => { throw new Error('process.kill must not be used on win32'); },
+    });
+    expect(execFileSync).toHaveBeenCalledWith(
+      'powershell.exe',
+      expect.arrayContaining(['-Command', expect.stringContaining('Get-NetTCPConnection -LocalPort 4096')]),
+      expect.objectContaining({ windowsHide: true }),
+    );
+    expect(commands.some((cmd) => cmd.includes('taskkill /F /T /PID 23404'))).toBe(true);
+    expect(commands.some((cmd) => cmd.includes('netstat'))).toBe(false);
+  });
+
+  test('win32 Get-NetTCPConnection 无结果时回退 netstat', () => {
+    const commands: string[] = [];
+    const execFileSync = jest.fn(() => Buffer.from('0\n'));
+    const execSync = jest.fn((cmd: string) => {
+      commands.push(cmd);
+      if (cmd.includes('netstat')) return Buffer.from('  TCP 127.0.0.1:4096 0.0.0.0:0 LISTENING 23404');
+      return Buffer.from('');
+    });
+    (killServePort as any)(4096, { platform: 'win32', execSync, execFileSync, kill: jest.fn() });
+    expect(commands.some((cmd) => cmd.includes('taskkill /F /T /PID 23404'))).toBe(true);
+  });
+
+  test('posix 用 SIGKILL', () => {
+    const execSync = jest.fn(() => Buffer.from('23404\n'));
+    const kill = jest.fn();
+    (killServePort as any)(4096, { platform: 'linux', execSync, kill });
+    expect(kill).toHaveBeenCalledWith(23404, 'SIGKILL');
+  });
+
+  test('忽略 :40960 与 TIME_WAIT 行', () => {
+    const execFileSync = jest.fn(() => Buffer.from('0\n'));
+    const execSync = jest.fn(() => Buffer.from(
+      '  TCP 127.0.0.1:40960 0.0.0.0:0 LISTENING 111\n'
+      + '  TCP 127.0.0.1:4096 127.0.0.1:5555 TIME_WAIT 0',
+    ));
+    const kill = jest.fn();
+    (killServePort as any)(4096, { platform: 'win32', execSync, execFileSync, kill });
+    expect(kill).not.toHaveBeenCalled();
+    expect(execSync).not.toHaveBeenCalledWith(expect.stringContaining('taskkill'), expect.anything());
+  });
+
+  test('netstat/taskkill 失败时不抛错', () => {
+    const execFileSync = jest.fn(() => { throw new Error('no powershell'); });
+    const execSync = jest.fn(() => { throw new Error('no match'); });
+    expect(() => (killServePort as any)(4096, {
+      platform: 'win32', execSync, execFileSync, kill: jest.fn(),
+    })).not.toThrow();
+  });
+});

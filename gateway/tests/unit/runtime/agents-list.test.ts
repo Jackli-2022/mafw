@@ -54,9 +54,10 @@ describe('GET /api/agents identity list', () => {
 });
 
 describe('/api/agents wiring', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf-8');
+  // Phase D1 Task H1: /api/agents 已迁入 routes/misc.ts（registry dispatch）。
+  const source = fs.readFileSync(path.join(__dirname, '../../../src/routes/misc.ts'), 'utf-8');
 
   it('forwards the registry deprecated flag into the merge input', () => {
-    expect(source).toMatch(/identityRegistry\.list\(\)\.map\(\(s\) => \(\{[\s\S]{0,300}deprecated: s\.deprecated/);
+    expect(source).toMatch(/identityRegistry\(\)\.list\(\)\.map\(\(s(?::\s*any)?\)\s*=>\s*\(\{[\s\S]{0,300}deprecated:\s*s\.deprecated/);
   });
 });

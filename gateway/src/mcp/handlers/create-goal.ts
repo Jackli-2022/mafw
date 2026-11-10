@@ -116,6 +116,8 @@ export function createCreateGoalTool(deps: CreateGoalToolDeps = {}) {
             goalId: clean(args.goalId) || undefined,
             source: 'lead',
             sourceRef,
+            handoff: args.handoff === 'none' ? 'none' : 'current-topic',
+            topicId: clean(args.topicId) || undefined,
             authorization: {
               source: "lead",
               requestMode: "explicit",

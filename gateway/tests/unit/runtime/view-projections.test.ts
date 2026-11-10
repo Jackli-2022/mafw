@@ -275,30 +275,37 @@ describe('MafwQuestionRequest 投影', () => {
 
 describe('出口接线（index.ts）', () => {
   const source = fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf-8');
+  // Phase D1 Task D1: GET /api/sessions/:id 迁入 routes/sessions-core.ts。
+  const sessionsCore = fs.readFileSync(path.join(__dirname, '../../../src/routes/sessions-core.ts'), 'utf-8');
+  // Phase D1 Task B1: /api/permissions 与 /api/questions 列表迁入 routes/questions-permissions.ts
+  // （live 事件富化仍留在 index.ts）。
+  const questionsPermissions = fs.readFileSync(path.join(__dirname, '../../../src/routes/questions-permissions.ts'), 'utf-8');
+  // Phase D1 Task H1: /api/provider + /api/agents 迁入 routes/misc.ts。
+  const miscRoutes = fs.readFileSync(path.join(__dirname, '../../../src/routes/misc.ts'), 'utf-8');
 
   it('/api/sessions 列表与单条都过 projectSession（规范 status/reverted/model）', () => {
     // 列表自 code-first P0 起由 registry typed handler 接管（schema + 数据返回，不再手写 stringify）。
     expect(source).toMatch(/sessions:\s*projectSessions\(await this\.listSessions\(/);
-    expect(source).toMatch(/JSON\.stringify\(projectSession\(session\)\)/);
+    expect(sessionsCore).toMatch(/JSON\.stringify\(projectSession\(session\)\)/);
   });
 
   it('/api/provider 走 projectProviderEnvelope（models 恒数组，不再透传 all）', () => {
-    expect(source).toMatch(/JSON\.stringify\(projectProviderEnvelope\(result \?\? null\)\)/);
+    expect(miscRoutes).toMatch(/JSON\.stringify\(projectProviderEnvelope\(result \?\? null\)\)/);
   });
 
   it('/api/agents 走 projectAgents（id/label/selectable）', () => {
-    expect(source).toMatch(/JSON\.stringify\(\{ items: projectAgents\(items\) \}\)/);
+    expect(miscRoutes).toMatch(/JSON\.stringify\(\{ items: projectAgents\(items\) \}\)/);
   });
 
   it('/api/permissions 与 live permission.asked/replied 共用投影（enrichPermissionEvent）', () => {
-    expect(source).toMatch(/items: projectPermissionList\(items\)/);
+    expect(questionsPermissions).toMatch(/items: projectPermissionList\(items\)/);
     expect(source).toMatch(/enrichPermissionEvent\(props, sessionID\)/);
     // 缺口 2：replied 与 asked 同一投影（只富化 asked 时 pi 答复永远销不掉卡）
     expect(source).toMatch(/MAFW\.permissionAsked \|\| type === MAFW\.permissionReplied/);
   });
 
   it('/api/questions 与 live question.asked 共用 projectQuestionRequest', () => {
-    expect(source).toMatch(/items: \(items \?\? \[\]\)\.map\(\(item: any\) => projectQuestionRequest\(item\)\)/);
+    expect(questionsPermissions).toMatch(/items: \(items \?\? \[\]\)\.map\(\(item: any\) => projectQuestionRequest\(item\)\)/);
     expect(source).toMatch(/projectQuestionRequest\(props, sessionID\)/);
   });
 });

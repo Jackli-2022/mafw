@@ -49,4 +49,10 @@ describe('goal node prompts', () => {
     expect(prompt).toContain('429');
     expect(prompt).toContain('existing artifacts');
   });
+
+  test('quick goalMode adds the one-task directive', () => {
+    const prompt = renderNodePrompt('plan', { ...ctx, goalMode: 'quick' });
+    expect(prompt).toContain('This Goal is quick: produce exactly one task');
+    expect(prompt).toContain('request no probes');
+  });
 });

@@ -12,11 +12,18 @@
   `.beta` / `.dev`；dev 用 `ai.mafw.desktop.dev` 独立 userData。
 - **受管 gateway**：打包版默认 managed（payload 从 `resources/gateway` 安装到
   `<userData>/gateway/versions/<version>-<digest12>/`，逐文件 SHA-256 校验 + `.install-complete.json`）；
-  未登记进程一律 conflict，绝不静默采纳。dev checkout 发现 3000 已有健康 gateway 时直接采纳
-  （不接管所有权；`MAFW_DEV_ADOPT=0` 强制自起）。详见 `docs/architecture/gateway.md`。
+  未登记进程一律 conflict，绝不静默采纳。
+  dev checkout 先读 `~/.mafw/runtime/gateway.json`，用 `/health` 的 `pid`/`instanceId` 对账：
+  兼容则 attach（Config 显示「已连接」），版本/schema 不符则 conflict 并提供「用当前构建重启」；
+  `MAFW_DEV_ADOPT=0` 表示不 attach、提示先停止现有 gateway。详见 `docs/architecture/gateway.md`。
 - **主布局**：左 IconRail（46px，项目会话/搜索/便签/鲸群/审批/Config）+ 左 dock；主区 = chat 指挥列
   + 右工作台（`工作 / 工作台 / 执行 / 审阅`）。chat 档位 520/640/760（默认 760）；push 预算 1490；
-  `Ctrl+Alt+F` 专注模式；最小窗口 1088×720。
+  `Ctrl+Alt+F` 专注模式；最小窗口 **900×600**。窗口可用宽 ≥1240 并排（chat 520–760），
+  <1240 改为 **Chat / Workbench 全宽切换**（chat 保持 760 居中，composer 不被侧面板覆盖）。
+- **Lead / Tech Lead 入口（2026-11-10）**：Lead 会话 composer 上方保留 Tech Lead 邀请条（Goal
+  标题 + 阶段 + `来自 Lead 话题`）；Goal 详情「上下文来源」显示 snapshot 前 120 字并可「查看全文」
+  （`goals.source`）；详情显示 `goalMode` 徽标（Quick / Standard / Standing）；标题栏「状态」按需
+  打开 Lead 状态卡（stage / progress / blocker），不常驻占位。
 - **工作台**：L2 `文件 / 浏览器 / 终端`。文件树 + 编辑器 + 预览；浏览器多 tab（`persist:workbench-browser`，
   本地文件走 `mafw-file://`）；终端本地 + 多 SSH（xterm.js + ssh2，`mafw-terminal/1` 契约）。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），
@@ -177,17 +184,23 @@ chatview 是指挥列，左侧 rail 负责导航与团队状态。
 - **Focus**：`workbenchFocusActive({focus,content,open})` 只在项目路由 + dock 打开时把 chat 列收为 0；
   手动隐藏 dock 或项目切换自动退出；不持久化。默认快捷键 `Ctrl+Alt+F`（`Ctrl+Shift+M` 保留给
   main 进程全局 Quick Entry）。
+- **窄窗 Chat / Workbench 切换（2026-11-10 A 方案）**：`workbenchZoneFor(availableWidth)` 以
+  `1240 = 520 + 720` 为边界；`workbenchColumns({narrow,narrowWorkbench})` 输出
+  `left | 1fr | 0`（Chat）或 `left | 0 | 1fr`（Workbench），不再并排。标题栏出现 Chat/Workbench
+  分段控件；chat 视图 `.mafw-main.mafw-narrow-chat .mafw-chat` 宽 `min(760px, 100%)` 居中，
+  composer 全宽；隐藏 resize handle。320 只作为极端兜底。
 - **尺寸与字体**：chat 档位 `520/640/760`、默认/双击 **760**；`WORKBENCH_MIN_WIDTH=720`；
-  `PUSH_PAIR_BUDGET=1490`（默认 dock push 点约 1800）；默认窗口 1720×1000、硬下限 1088×720。
+  `PUSH_PAIR_BUDGET=1490`（默认 dock push 点约 1800）；默认窗口 1720×1000、硬下限 **900×600**。
   chat 作用域 token `--mafw-chat-reading/--mafw-chat-composer: 16px`，composer max-height 220px；
   全局 UI base font 仍 14px。
 - **入口收敛**：`WorkspaceHome` 与全页 `goals` 路由退役；legacy `goals`/`workspace` deep link 经
   `openProjectWork()` 重定向到 chat + 右「工作」。rail meta 组为「审批（badge）/Config」，项目工作不再占用
   全页目的地；`ProjectResources` 只保留团队/邮箱/Pod 记忆/便签/班底/注意力/最近消息，不再充当
   Memory/Approvals/Triage/Automation 工具目录。
-- **验证**：desktop **2726/2726（600 suites）**（较本批起点净 +12 用例），`tsgo --noEmit -p tsconfig.json`
-  与 `electron-vite build` rc=0。真实 GUI 冒烟通过：1088/1366/1600/1800 宽度、1600 chat=760、
-  1366 chat≈600、1088 chat≈322、1800 非最大化 chat=760/workbench=730；Focus 进 Config 显示 1490px
+- **验证（2026-11-04 历史；A 方案后 1088/322 不再出现）**：desktop **2726/2726（600 suites）**
+  （较本批起点净 +12 用例），`tsgo --noEmit -p tsconfig.json` 与 `electron-vite build` rc=0。
+  真实 GUI 冒烟通过：1088/1366/1600/1800 宽度、1600 chat=760、
+  1366 chat≈600、1800 非最大化 chat=760/workbench=730；Focus 进 Config 显示 1490px
   主内容而非 0px；隐藏 dock 自动退出 Focus；`Ctrl+Alt+F` 进出；正文/composer 16px、资源行 12px；
   存量 detent 640 保留、清键后回 760。截图：`.mafw/qa/right-primary-{1088,1366,1600,1800}.png`
   及 `right-primary-{1600,1800}-final.png`。

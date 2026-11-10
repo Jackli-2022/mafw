@@ -7,6 +7,7 @@ import type {
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
   MafwBackgroundJob, MafwBackgroundOutput,
   PodNamespace, WorkNamespace,
+  LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
   SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
@@ -54,6 +55,7 @@ export type MafwAPI = {
     info: () => Promise<GatewayStatus>
     start: () => Promise<GatewayStatus>
     restart: () => Promise<GatewayStatus>
+    restartLocal: () => Promise<GatewayStatus>
     getSourcePreference: () => Promise<"managed" | "external">
     setSourcePreference: (value: "managed" | "external") => Promise<"managed" | "external">
     useExternalOnce: () => Promise<{ ok: boolean }>
@@ -193,6 +195,7 @@ export type MafwAPI = {
     sessions: (id: string) => Promise<GoalSessionInfo[]>
     respondQuestion: (goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }) => Promise<{ status: string }>
     timeline: (id: string) => Promise<GoalTimeline>
+    source: (id: string) => Promise<{ sourceRef: import('@mafw/sdk').GoalSourceRef | null; handoffPath: string | null; fullText: string | null }>
     plan: (id: string) => Promise<GoalPlanInfo>
     approvePlan: (goalId: string, approvalId?: string) => Promise<{ success: boolean }>
     rejectPlan: (goalId: string, approvalId: string | undefined, feedback: string) => Promise<{ success: boolean }>
@@ -245,6 +248,16 @@ export type MafwAPI = {
 
   work: WorkNamespace
   pod: PodNamespace
+  lead: {
+    topics: {
+      list: (input?: { projectDir?: string; query?: string; limit?: number }) => Promise<{ items: LeadTopicView[] }>
+      get: (id: string) => Promise<{ topic: LeadTopicView; messages: LeadTopicIndexMessage[] }>
+      resume: (id: string) => Promise<{ sessionID: string; resumedFrom: string | null }>
+    }
+    workingSet: (input?: { projectDir?: string }) => Promise<LeadWorkingSet>
+    compact: (input: { topicId: string }) => Promise<LeadCompactResult>
+    recall: (input: { projectDir?: string; q: string }) => Promise<{ candidates: LeadRecallCandidate[] }>
+  }
 
   /** 托盘/OS 通知点击 → 打开 Goal（跨项目时先切项目）。 */
   navigate: {

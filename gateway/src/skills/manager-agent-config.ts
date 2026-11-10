@@ -2,7 +2,7 @@ import { AgentDefinition } from '../runtime/agent-definition';
 import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './manager-identity';
 
 const MAFW_TOOL_ALLOWLIST = [
-  'mafw_create_goal', 'mafw_update_state', 'mafw_search_hybrid', 'mafw_get_deltas',
+  'mafw_create_goal', 'mafw_lead_goal_status', 'mafw_update_state', 'mafw_search_hybrid', 'mafw_get_deltas',
   'mafw_load_state', 'mafw_ask_user', 'mafw_record_feedback', 'mafw_get_model_route',
   'mafw_add_memory', 'mafw_supersede_memory', 'mafw_pin_memory', 'mafw_commit_heuristic', 'mafw_get_axioms', 'mafw_merge_memory',
   'mafw_resolve_merge', 'mafw_set_goal', 'mafw_get_goal_status', 'mafw_list_goals',

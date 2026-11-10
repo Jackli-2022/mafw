@@ -210,3 +210,61 @@ workspace，结束后销毁）。
   toast 与落库一致。冒烟驱动修复：非 `.mafw` 未提交改动阻塞验收（不强制删除有改动的 worktree）；
   `result_ready` 优先于归档→row 更新的瞬时窗口（bucket 不再闪到 ended）。`.mafw` 产物按 spec
   不进分支（验收为 no-op，worktree 仍移除）。
+
+#### Lead 当前话题 Handoff 与 Goal 状态投影（2026-11-10）
+
+spec/plan：`docs/superpowers/specs/2026-11-10-lead-techlead-thread-handoff-design.md`、
+`docs/superpowers/specs/2026-11-10-lead-techlead-p0-kernel-objects-design.md`、
+`docs/superpowers/plans/2026-11-10-lead-techlead-p0-handoff.md`；交付记录
+`docs/releases/2026-11-10-lead-techlead-p0.md`（merge `d50f4f18`）。
+
+- **provenance**：`lead_topic` 只在 handoff 时写一行（不是通用话题表）；
+  `GoalSourceRef` 增加 `topicId` / `messageRange`，snapshot 仍 ≤4000 字符，只取 user/assistant
+  的 text，排除 tool/system/synthetic recall 与未完成 assistant 回合。
+- **两阶段写入**：`LeadHandoffService.prepareForGoal()` 只读消息并在内存构建；Goal/revision
+  落库成功后才 `commit()` 写 `<goalDir>/context/lead-handoff.md` 与 `lead_topic`。已有 Goal
+  目录直接 409，失败/并发不覆盖赢家文件；intake 失败回滚 topic。
+- **注入**：Tech Lead 开场 prompt 在 ContextManifest 之后追加 `<lead-handoff>` snapshot +
+  全文路径；ContextManifest 把 `context/lead-handoff.md` 列为可选 ref。handoff 读历史失败
+  fail-open，Goal 仍创建（`MAFW_LEAD_HANDOFF=0` 可关闭）。
+- **入口与查询**：`mafw_create_goal` 支持 `handoff: 'current-topic' | 'none'`、`sourceRef`、
+  `topicId`；`GET /api/goals/:id/source`（registry `goals.source`）返回 sourceRef + 全文；
+  `mafw_lead_goal_status` 提供 Lead 的 Goal 状态投影（stage / progress / blockers /
+  pendingAttention），不读 Tech Lead 原始 transcript。
+- **安全**：`isSafeGoalDirId` 前置校验 + goalDir basename 守卫；验收仍是人类专属，未新增 MCP
+  验收工具。
+
+#### P1 工作集与缺页（2026-11-10）
+
+spec `docs/superpowers/specs/2026-11-10-lead-techlead-p1-working-set-design.md`；plan
+`docs/superpowers/plans/2026-11-10-lead-techlead-p1-working-set.md`。Lead 的上下文从「一条长
+session」变为可换入换出的工作集，原始 transcript 永不删除。
+
+- **数据**：`lead_topic` 增加 `summary` / `summary_hash` / `summary_updated_at` / `state`
+  （resident/warm/cold/archived）/ `last_active_at` / `resident_tokens` / `resumed_from`；
+  旧库 `ensureColumn` 回填 `state='warm'`、`last_active_at=created_at`。`topic_message_index`
+  保存换出消息的可检索副本（`(topic_id, created_at)` 索引，`replaceTopic` 单事务重建）。
+- **工作集**：`selectWorkingSet` 按 pinned → resident → warm（`warmTopicLimit`，默认 5）→ cold
+  分类；resident 超 `maxResidentTokens` 时从最旧开始移入 `evicted`，至少保留 1 个。
+  默认预算：resident 76800 / warm 5×300 / recall 2×1200。
+- **上下文**：`GET /api/lead/context?sessionID=&query=` 返回 `goal-status` → `topic-index` →
+  `recalled-topic` 块；goal-status 不裁，topic-index 超预算截断，recalled 超 `recallMaxTokens`
+  整块丢弃。非 Lead session / 开关关闭返回空。宿主插件 `leadWorkingSetHook` 在
+  `experimental.chat.messages.transform` 里以 **100ms** 预算拉取并注入 `synthetic:true` part，
+  超时/非 200/空块一律 fail-open，不阻塞首 token。
+- **缺页召回**：`recallTopics` 用 latin token + CJK bigram 命中 title(+0.6)/summary(+0.3)/
+  index text(+0.1)；低于 `minScore`（默认 0.2）不注入，单次最多 2 个 topic。`buildRecalledBlock`
+  输出带 `topicId`/`title` 的 `<recalled-topic>`，无 summary 时显式 `(no summary yet)`。
+- **压缩**：`compactTopic` 确定性保留 decisions / open loops / 最近 user 原话，工具输出截断到
+  8 行（错误行保留）；`POST /api/lead/compact` 只更新 summary/state/index 并广播
+  `lead.compaction`，不删除原始消息。自动阈值触发（≥70% / ≥40 turns）与旧行后台回填留 P2；
+  P1 为显式 compact + handoff 摘要。
+- **恢复**：`LeadTopicResumeService` 串行化同 topic 并发；session 存活 → 直接切回并把其它
+  resident 降为 warm；session 已死 → `LeadSessionRegistry.ensure` 建新 session，注入
+  `<resumed-topic>`（summary + 最近 5 条 user 原话），插入 `resumed_from` 新行，旧行 warm、
+  旧 transcript 只读。
+- **UI**：Lead 会话标题栏「话题」按钮（仅 `isLead()`）打开 `TopicIndexPanel`，显示标题/状态/
+  摘要并可恢复；不展示 session id。`MAFW_LEAD_WORKING_SET=0` 回退 P0（context 空、compact 503），
+  topic list/get/resume 仍可用。
+
+

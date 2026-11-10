@@ -5,6 +5,7 @@ import type { PodEventItem } from "./pod-events"
 import {
   buildWorkPriority,
   filterWorkGoals,
+  goalModeLabel,
   goalProgressPercent,
   goalProgressText,
   workFilterCounts,
@@ -132,4 +133,12 @@ test("attention labels follow the action type", () => {
     const [priority] = buildWorkPriority({ goals: [item], events: [], isResultViewed: () => false })
     assert.equal(priority.kind === "attention" ? priority.label : null, label)
   }
+})
+
+test("goalModeLabel keeps Quick/Standard readable and falls back to the raw mode", () => {
+  assert.equal(goalModeLabel("quick"), "Quick")
+  assert.equal(goalModeLabel("standard"), "Standard")
+  assert.equal(goalModeLabel("standing"), "Standing")
+  assert.equal(goalModeLabel(undefined), null)
+  assert.equal(goalModeLabel("custom"), "custom")
 })

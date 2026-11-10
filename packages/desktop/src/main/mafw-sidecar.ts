@@ -9,6 +9,7 @@ import { write as writeLog } from "./logging"
 import { probeMafwCli } from "./mafw-cli-probe"
 import { planGatewayStart, type GatewayStartPlan } from "./mafw-gateway-plan"
 import { planManagedGatewaySpawn } from "./managed-gateway-spawn"
+import { resolveGatewayAttachment } from "./gateway-attachment"
 import {
   negotiateGateway,
   type GatewayHealthSnapshot,
@@ -21,9 +22,18 @@ import { readGatewayReleaseExpectation } from "./gateway-release-expectation"
 import {
   gatewayInstanceRegistryRoot,
   readGatewayInstanceRecords,
-  removeGatewayInstanceRecord,
-  writeGatewayInstanceRecord,
 } from "./gateway-instance-registry"
+import {
+  readGatewayDiscovery,
+  readGatewayDiscoverySync,
+  type GatewayDiscoveryRecord,
+} from "./gateway-discovery"
+import { decideLocalBuildRestart } from "./gateway-restart"
+import {
+  healthMatchesDiscovery,
+  probeGateway,
+  type RunningProbe,
+} from "./gateway-probe"
 import {
   clearSessionSourcePreference,
   consumeLegacyExternalOnce,
@@ -67,6 +77,12 @@ export type GatewayStatus = {
   url: string | null
   error: string | null
   spawnedByUs?: boolean
+  /** Ready, but using a gateway this desktop did not spawn (handshake passed). */
+  attached: boolean
+  /** `standalone` / `desktop-managed`, or null when the gateway did not report one. */
+  attachedOrigin: string | null
+  canRestartWithLocalBuild: boolean
+  restartHint: string | null
   source: GatewaySourcePreference | null
   expectedVersion: string | null
   actualVersion: string | null
@@ -84,11 +100,6 @@ type EventPayload = {
 }
 
 type EventListener = (event: EventPayload) => void
-
-type RunningProbe =
-  | { kind: "none" }
-  | { kind: "gateway"; health: GatewayHealthSnapshot; managedInstance: GatewayInstanceRecord | null }
-  | { kind: "port-conflict" }
 
 const stateListeners = new Set<Listener>()
 const eventListeners = new Set<EventListener>()
@@ -159,11 +170,17 @@ function tcpReachable(host: string, targetPort: number, timeoutMs = 350): Promis
   })
 }
 
-async function readGatewayHealth(url: string): Promise<GatewayHealthSnapshot | null> {
+async function readGatewayHealth(
+  url: string,
+  discovery: GatewayDiscoveryRecord | null = null,
+): Promise<GatewayHealthSnapshot | null> {
   try {
     const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(1500) })
     if (!response.ok) return null
     const health = await response.json() as GatewayHealthSnapshot
+    // A 200 is not identity. The discovery file and /health must describe the
+    // same process, otherwise this is a different server on a reused port.
+    if (discovery && !healthMatchesDiscovery(health, discovery)) return null
     try {
       await new MafwClient(url).project.current()
     } catch {
@@ -175,18 +192,13 @@ async function readGatewayHealth(url: string): Promise<GatewayHealthSnapshot | n
   }
 }
 
-async function probeGatewayAt(targetPort = 3000): Promise<RunningProbe> {
-  const url = `http://127.0.0.1:${targetPort}`
-  const health = await readGatewayHealth(url)
-  if (health) {
-    const records = await readGatewayInstanceRecords(INSTANCE_ROOT, CHANNEL)
-    const managedInstance = health.instanceId
-      ? records.find((record) => record.instanceId === health.instanceId) ?? null
-      : null
-    return { kind: "gateway", health, managedInstance }
-  }
-  if (await tcpReachable("127.0.0.1", targetPort)) return { kind: "port-conflict" }
-  return { kind: "none" }
+function probeRunningGateway(): Promise<RunningProbe> {
+  return probeGateway({
+    readDiscovery: () => readGatewayDiscovery(),
+    readHealth: (url, discovery) => readGatewayHealth(url, discovery),
+    readLegacyRecords: () => readGatewayInstanceRecords(INSTANCE_ROOT, CHANNEL),
+    tcpReachable,
+  })
 }
 
 /** Packaged apps ship the gateway under resources/gateway (see stage-gateway.ts). */
@@ -243,7 +255,7 @@ async function terminateManagedInstance(): Promise<boolean> {
     await waitForChildExit(child)
     killed = true
   } else if (record) {
-    const probe = await probeGatewayAt(3000)
+    const probe = await probeRunningGateway()
     const stillTheSameInstance = probe.kind === "gateway"
       && probe.health.instanceId === record.instanceId
     if (stillTheSameInstance) {
@@ -252,9 +264,6 @@ async function terminateManagedInstance(): Promise<boolean> {
     }
   }
 
-  if (record) {
-    await removeGatewayInstanceRecord(INSTANCE_ROOT, record)
-  }
   managedChild = null
   managedRecord = null
   expectedExit = false
@@ -263,8 +272,7 @@ async function terminateManagedInstance(): Promise<boolean> {
 
 async function spawnManagedGateway(
   entry: string,
-  release: GatewayReleaseExpectation,
-): Promise<{ child: ChildProcess; record: GatewayInstanceRecord }> {
+): Promise<{ child: ChildProcess; instanceId: string }> {
   const instanceId = randomUUID()
   const env: NodeJS.ProcessEnv = { ...process.env }
   delete env.MAFW_TAKEOVER
@@ -274,6 +282,7 @@ async function spawnManagedGateway(
     MAFW_DESKTOP_MANAGED: "1",
     MAFW_DESKTOP_CHANNEL: CHANNEL,
     MAFW_DESKTOP_INSTANCE_ID: instanceId,
+    MAFW_GATEWAY_ORIGIN: app.isPackaged ? "desktop-packaged" : "desktop-dev",
     MAFW_SERVER_API_PORT: "3000",
   })
 
@@ -290,25 +299,14 @@ async function spawnManagedGateway(
     windowsHide: true,
   })
   managedChild = child
+  managedRecord = null
   expectedExit = false
-  const record: GatewayInstanceRecord = {
-    instanceId,
-    pid: child.pid ?? 0,
-    channel: CHANNEL,
-    gatewayVersion: release.gatewayVersion,
-    schemaEpoch: release.schemaEpoch,
-    startedAt: new Date().toISOString(),
-    nonce: randomUUID(),
-  }
-  managedRecord = record
-  if (record.pid > 0) await writeGatewayInstanceRecord(INSTANCE_ROOT, record)
 
   child.stdout?.on("data", (chunk) => writeLog("utility", `[gateway] ${String(chunk).trimEnd()}`, undefined, "info"))
   child.stderr?.on("data", (chunk) => writeLog("utility", `[gateway] ${String(chunk).trimEnd()}`, undefined, "warn"))
   child.on("error", (err) => {
     writeLog("utility", "managed gateway spawn error", { error: err.message }, "error")
     managedChild = null
-    if (record.pid > 0) void removeGatewayInstanceRecord(INSTANCE_ROOT, record)
     managedRecord = null
     errorMessage = err.message
     notifyState("failed")
@@ -316,8 +314,6 @@ async function spawnManagedGateway(
   child.on("exit", (code) => {
     writeLog("utility", "managed gateway exited", { code, expectedExit }, code === 0 ? "info" : "warn")
     managedChild = null
-    if (record.pid > 0) void removeGatewayInstanceRecord(INSTANCE_ROOT, record)
-    if (managedRecord?.instanceId === record.instanceId) managedRecord = null
     if (expectedExit) {
       expectedExit = false
       return
@@ -327,7 +323,7 @@ async function spawnManagedGateway(
       notifyState("failed")
     }
   })
-  return { child, record }
+  return { child, instanceId }
 }
 
 function spawnCliDaemon(): boolean {
@@ -363,14 +359,19 @@ function pollUntilReady(
 
   healthInterval = setInterval(async () => {
     attempts += 1
-    const health = await readGatewayHealth(url)
+    const probe = await probeRunningGateway()
+    const health = probe.kind === "gateway" ? probe.health : await readGatewayHealth(url)
+    const detectedPort = probe.kind === "gateway" ? probe.port : 3000
     if (health) {
-      const handshake = negotiateGateway({
-        mode,
-        health,
-        expected: handshakeExpected!,
-        expectedInstanceId: instanceId,
-      })
+      const isSpawnedInstance = !!instanceId && health.instanceId === instanceId
+      const handshake = isSpawnedInstance
+        ? negotiateGateway({
+          mode,
+          health,
+          expected: handshakeExpected!,
+          expectedInstanceId: instanceId,
+        })
+        : negotiateGateway({ mode: "external", health, expected: handshakeExpected! })
       if (healthInterval) clearInterval(healthInterval)
       healthInterval = null
       if (!handshake.ok) {
@@ -386,8 +387,19 @@ function pollUntilReady(
         notifyState("conflict")
         return
       }
+      if (!isSpawnedInstance && mode === "managed") {
+        // Another client won the start race while our child was waiting for
+        // the lock. Adopt its instance; the child exits as a deferred loser.
+        expectedExit = true
+        spawnedByUs = false
+        managedRecord = null
+        writeLog("utility", "adopted the gateway that won the start race", {
+          instanceId: health.instanceId ?? null,
+          port: detectedPort,
+        }, "info")
+      }
       actualHealth = health
-      port = 3000
+      port = detectedPort
       notifyState("ready")
       return
     }
@@ -411,7 +423,7 @@ function pollUntilReady(
 function conflict(plan: Extract<GatewayStartPlan, { mode: "conflict" }>, running: RunningProbe): void {
   errorMessage = plan.detail
   actualHealth = running.kind === "gateway" ? running.health : null
-  port = running.kind === "none" ? null : 3000
+  port = running.kind === "none" ? null : running.kind === "gateway" ? running.port : 3000
   spawnedByUs = false
   notifyState("conflict")
 }
@@ -468,9 +480,9 @@ async function handleManagedStartFailure(error: string): Promise<void> {
     notifyState("starting")
     port = 3000
     spawnedByUs = true
-    const { record } = await spawnManagedGateway(fallbackEntry, fallbackExpected)
+    const { instanceId } = await spawnManagedGateway(fallbackEntry)
     errorMessage = `${error}; running previous gateway ${previousRelease.gatewayVersion}`
-    pollUntilReady(GATEWAY_URL, "managed", record.instanceId, async (retryError) => {
+    pollUntilReady(GATEWAY_URL, "managed", instanceId, async (retryError) => {
       errorMessage = `${retryError}; previous gateway payload also failed`
       notifyState("failed")
     }, fallbackExpected)
@@ -535,7 +547,7 @@ export async function startGateway(): Promise<void> {
     return
   }
 
-  const running = await probeGatewayAt(3000)
+  const running = await probeRunningGateway()
   const cliProbe = sourcePreference === "external" ? await probeMafwCli() : { available: false as const, reason: "managed mode" }
   const legacyExternalOverride = sourcePreference === "external"
     && (hasLegacyExternalSession() || consumeLegacyExternalOnce())
@@ -593,16 +605,24 @@ export async function startGateway(): Promise<void> {
       // Dev-only adoption of a gateway we did not spawn and did not register
       // (usually the global `mafw daemon`). Never stop it on quit.
       managedRecord = null
+      const versionDiffers = !!expected
+        && !!running.health.gatewayVersion
+        && running.health.gatewayVersion !== expected.gatewayVersion
       writeLog(
         "utility",
-        "mafw dev adopting running gateway",
-        { instanceId: running.health.instanceId ?? null, distribution: running.health.distribution ?? null },
-        "warn",
+        versionDiffers ? "mafw dev attached to a gateway with a different version" : "mafw dev attached to running gateway",
+        {
+          instanceId: running.health.instanceId ?? null,
+          distribution: running.health.distribution ?? null,
+          actual: running.health.gatewayVersion ?? null,
+          expected: expected?.gatewayVersion ?? null,
+        },
+        versionDiffers ? "warn" : "info",
       )
     }
     spawnedByUs = false
     actualHealth = running.health
-    port = 3000
+    port = running.port
     notifyState("ready")
     return
   }
@@ -610,7 +630,7 @@ export async function startGateway(): Promise<void> {
   if (plan.mode === "external" && plan.transport === "url") {
     if (running.kind === "gateway") {
       actualHealth = running.health
-      port = 3000
+      port = running.port
       spawnedByUs = false
       errorMessage = plan.warning === "legacy-unverified"
         ? "using an external gateway without verifiable version metadata for this session"
@@ -624,8 +644,10 @@ export async function startGateway(): Promise<void> {
   }
 
   if (running.kind === "gateway" && plan.mode === "managed" && plan.action === "spawn") {
+    const oldPort = running.port
     writeLog("utility", "managed gateway replacement requested", {
       oldInstance: running.managedInstance?.instanceId ?? null,
+      oldPort,
       expected: expected.gatewayVersion,
     }, "info")
     await stopRegisteredReplacement({
@@ -637,9 +659,9 @@ export async function startGateway(): Promise<void> {
         await terminateManagedInstance()
       },
     })
-    await waitForGatewayDown(() => checkHealth(GATEWAY_URL), { timeoutMs: 8000, intervalMs: 200 })
-    if (await tcpReachable("127.0.0.1", 3000)) {
-      errorMessage = "old managed gateway is still holding port 3000"
+    await waitForGatewayDown(() => checkHealth(`http://127.0.0.1:${oldPort}`), { timeoutMs: 8000, intervalMs: 200 })
+    if (await tcpReachable("127.0.0.1", oldPort)) {
+      errorMessage = `old managed gateway is still holding port ${oldPort}`
       notifyState("failed")
       return
     }
@@ -652,8 +674,8 @@ export async function startGateway(): Promise<void> {
   if (plan.mode === "managed") {
     const entry = preparedManagedEntry ?? plan.entry
     writeLog("utility", "mafw starting verified managed gateway", { entry }, "info")
-    const { record } = await spawnManagedGateway(entry, expected)
-    pollUntilReady(GATEWAY_URL, "managed", record.instanceId, handleManagedStartFailure)
+    const { instanceId } = await spawnManagedGateway(entry)
+    pollUntilReady(GATEWAY_URL, "managed", instanceId, handleManagedStartFailure)
     return
   }
 
@@ -691,14 +713,86 @@ export function restartGateway(): Promise<void> {
   return restartInflight
 }
 
+/**
+ * Stop the gateway described by `gateway.json` and start this desktop's build.
+ * Only a process whose /health matches the discovery record is eligible, so a
+ * stale file or a reused pid can never turn this into a kill-anything button.
+ */
+export async function restartGatewayWithLocalBuild(): Promise<void> {
+  const discovery = await readGatewayDiscovery()
+  const probe = await probeRunningGateway()
+  const decision = decideLocalBuildRestart({
+    state,
+    discovery,
+    health: probe.kind === "gateway" ? probe.health : null,
+  })
+  if (!decision.allowed || !discovery) {
+    errorMessage = decision.hint ?? "cannot restart the current gateway with the local build"
+    notifyState(state === "conflict" ? "conflict" : "failed")
+    return
+  }
+
+  writeLog("utility", "restarting gateway with the local build", {
+    pid: discovery.pid,
+    port: discovery.port,
+  }, "info")
+  // The gateway may be our own child. Mark the exit as intentional *before*
+  // killing it, otherwise its exit handler sees state="starting"/"ready" and
+  // schedules a spurious auto-restart.
+  const oldChild = managedChild
+  expectedExit = true
+  await killProcess(discovery.pid)
+  if (oldChild) {
+    await waitForChildExit(oldChild)
+  } else {
+    await waitForGatewayDown(() => checkHealth(`http://127.0.0.1:${discovery.port}`), {
+      timeoutMs: 8000,
+      intervalMs: 200,
+    })
+  }
+  if (await tcpReachable("127.0.0.1", discovery.port)) {
+    expectedExit = false
+    errorMessage = `old gateway is still holding port ${discovery.port}`
+    notifyState("failed")
+    return
+  }
+
+  if (healthInterval) {
+    clearInterval(healthInterval)
+    healthInterval = null
+  }
+  port = null
+  actualHealth = null
+  managedChild = null
+  managedRecord = null
+  spawnedByUs = false
+  errorMessage = null
+  notifyState("stopped")
+  await startGateway()
+}
+
 export function getGatewayStatus(): GatewayStatus {
   const quarantine = managedRoot ? readQuarantine(managedRoot) : null
+  const attachment = resolveGatewayAttachment({
+    ready: state === "ready",
+    spawnedByUs,
+    distribution: actualHealth?.distribution ?? null,
+  })
+  const restartDecision = decideLocalBuildRestart({
+    state,
+    discovery: readGatewayDiscoverySync(),
+    health: actualHealth,
+  })
   return {
     state,
     port,
     url: port ? `http://127.0.0.1:${port}` : null,
     error: errorMessage ?? (state === "failed" ? "Gateway failed to start" : null),
     spawnedByUs,
+    attached: attachment.attached,
+    attachedOrigin: attachment.attachedOrigin,
+    canRestartWithLocalBuild: restartDecision.allowed,
+    restartHint: restartDecision.hint,
     source: sourcePreference,
     expectedVersion: expected?.gatewayVersion ?? null,
     actualVersion: actualHealth?.gatewayVersion ?? null,

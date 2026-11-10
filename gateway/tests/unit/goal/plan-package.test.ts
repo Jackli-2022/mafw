@@ -211,3 +211,21 @@ function validateGoalEvalForTest() {
     mapping: baseGoalEval().mapping,
   };
 }
+
+describe('quick plan shape', () => {
+  test('rejects more than one task', () => {
+    expect(() => validatePlanPackage({
+      strategy: 'quick',
+      waves: [{ id: 'w1', tasks: [{ title: 'a' }, { title: 'b' }] }],
+    })).toThrow(/exactly one task/);
+  });
+
+  test('rejects probes', () => {
+    expect(() => validatePlanPackage({
+      strategy: 'quick',
+      waves: [{ id: 'w1', tasks: [{ title: 'a' }] }],
+      probes: [{ id: 'p1' }],
+    } as any)).toThrow(/must not request probes/);
+  });
+});
+

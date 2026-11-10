@@ -3,17 +3,19 @@ import { join } from 'path';
 
 /** P0-2 接线（2026-10-22 契约缺口研究）：SessionPromptOpts.maxTurns/maxCostUsd
  *  契约字段此前 HTTP 面不接收、BudgetGuard 只挂 goal 会话——本测试钉扎
- *  index.ts 的生产接线（路由解构 → prompt 前挂载 → 回合终态清理）。 */
+ *  生产接线（路由解构 → prompt 前挂载 → 回合终态清理）。Phase D1 Task D1 起
+ *  promptAsync 分支住在 routes/sessions-core.ts（方法本体仍在 index.ts）。 */
 const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+const routeSrc = readFileSync(join(__dirname, '../../../src/routes/sessions-core.ts'), 'utf8');
 
 describe('prompt 预算接线（wiring 源码断言）', () => {
   it('promptAsync 路由解构 maxTurns/maxCostUsd', () => {
-    expect(src).toContain('const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, thinkingLevel, variant, outputSchema } = body ? JSON.parse(body) : {};');
+    expect(routeSrc).toContain('const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, thinkingLevel, variant, outputSchema } = body ? JSON.parse(body) : {};');
   });
 
   it('promptAsync 调用前挂 per-prompt 预算（顺序：attach 先于 promptAsync）', () => {
-    const attach = src.indexOf('this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);');
-    const send = src.indexOf('await this.sdkSession.promptAsync(sessionID, message, parts, agent, model, outputSchema, {');
+    const attach = routeSrc.indexOf('deps.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);');
+    const send = routeSrc.indexOf('await deps.sdkSession().promptAsync(sessionID, message, parts, agent, model, outputSchema, {');
     expect(attach).toBeGreaterThan(0);
     expect(send).toBeGreaterThan(0);
     expect(attach).toBeLessThan(send); // step 事件在 prompt 执行中流出，guard 必须先挂

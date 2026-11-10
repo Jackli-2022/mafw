@@ -154,6 +154,16 @@
         "tags": [
           "session"
         ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -164,6 +174,16 @@
         "operationId": "session.queue.clear",
         "tags": [
           "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -221,6 +241,24 @@
         "operationId": "session.queue.cancel",
         "tags": [
           "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -2626,6 +2664,140 @@
         }
       }
     },
+    "/api/goals/{id}/source": {
+      "get": {
+        "operationId": "goals.source",
+        "tags": [
+          "goals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/context": {
+      "get": {
+        "operationId": "lead.context",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics": {
+      "get": {
+        "operationId": "lead.topics.list",
+        "tags": [
+          "lead"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics/{id}": {
+      "get": {
+        "operationId": "lead.topics.get",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/working-set": {
+      "get": {
+        "operationId": "lead.workingSet",
+        "tags": [
+          "lead"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/recall": {
+      "get": {
+        "operationId": "lead.recall",
+        "tags": [
+          "lead"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/compact": {
+      "post": {
+        "operationId": "lead.compact",
+        "tags": [
+          "lead"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/lead/topics/{id}/resume": {
+      "post": {
+        "operationId": "lead.topics.resume",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/goals/{id}/nodes/{runId}/retry": {
       "post": {
         "operationId": "goals.retryNode",
@@ -3806,6 +3978,27 @@
             "description": "OK"
           }
         }
+      },
+      "get": {
+        "operationId": "automations.get",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/automations/draft": {
@@ -4924,6 +5117,32 @@
         }
       }
     },
+    "/api/recall/instructions": {
+      "get": {
+        "operationId": "recall.instructions",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/recall/priors": {
+      "get": {
+        "operationId": "recall.priors",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/memory/add": {
       "post": {
         "operationId": "memory.add",
@@ -5628,6 +5847,143 @@
         }
       }
     },
+    "/api/sessions/{id}/subagents": {
+      "post": {
+        "operationId": "session.subagents.spawn",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "session.subagents.list",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/subagents/{subId}/message": {
+      "post": {
+        "operationId": "session.subagents.message",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/subagents/{subId}/cancel": {
+      "post": {
+        "operationId": "session.subagents.cancel",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/subagents/{subId}/result": {
+      "get": {
+        "operationId": "session.subagents.result",
+        "tags": [
+          "internal"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/session/{id}": {
       "delete": {
         "operationId": "session.deleteLegacy",
@@ -5741,6 +6097,45 @@
               "type": "string"
             }
           }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/tools": {
+      "get": {
+        "operationId": "tools.list",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/tools/execute": {
+      "post": {
+        "operationId": "tools.execute",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/agent/capabilities": {
+      "get": {
+        "operationId": "agent.capabilities",
+        "tags": [
+          "internal"
         ],
         "responses": {
           "200": {

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { actionRegistry } from '../../src/automation-engine';
+import { AutomationEngine } from '../../src/automation-engine';
 import { HarmonicIndexManager } from '../../src/core/memory/harmonic-index';
 import { setEmbeddingRuntime } from '../../src/memory/embedding-runtime';
 
@@ -43,9 +43,11 @@ describe('memory:decay incremental decay', () => {
   });
 
   async function runDecay(): Promise<void> {
-    const action = actionRegistry.get('memory:decay');
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+    const action = engine.getAction('memory:decay');
     expect(action).toBeDefined();
-    await action!({} as any, { mafwDir: tmpDir } as any);
+    await action!({} as any, engine);
   }
 
   test('decays only days since last_decay_at, not full age since created_at', async () => {
@@ -163,9 +165,11 @@ describe('memory:decay incremental decay', () => {
     const live = new HarmonicIndexManager(tmpDir);
     expect(live.getIndex().version).toBe(1);
 
-    const action = actionRegistry.get('memory:decay');
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => live);
+    const action = engine.getAction('memory:decay');
     expect(action).toBeDefined();
-    await action!({} as any, { mafwDir: tmpDir, getLiveIndexManager: () => live } as any);
+    await action!({} as any, engine);
 
     // Simulate any later memory write through the live instance.
     live.addEntry(makeEntry({ id: 'new1' }) as any, 'semantic');
@@ -184,11 +188,11 @@ describe('memory:decay incremental decay', () => {
     });
 
     const recorded: Array<[string, any]> = [];
-    const action = actionRegistry.get('memory:decay')!;
-    await action({} as any, {
-      mafwDir: tmpDir,
-      getHeartbeat: () => ({ record: (name: string, r: any) => recorded.push([name, r]) }),
-    } as any);
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+    engine.setHeartbeat({ record: (name: string, r: any) => recorded.push([name, r]) } as any);
+    const action = engine.getAction('memory:decay')!;
+    await action({} as any, engine);
 
     expect(recorded).toHaveLength(1);
     expect(recorded[0][0]).toBe('memory:decay');
@@ -225,11 +229,11 @@ describe('memory:decay incremental decay', () => {
 
     const recorded: Array<[string, any]> = [];
     try {
-      const action = actionRegistry.get('memory:decay')!;
-      await action({} as any, {
-        mafwDir: tmpDir,
-        getHeartbeat: () => ({ record: (name: string, r: any) => recorded.push([name, r]) }),
-      } as any);
+      const engine = new AutomationEngine(tmpDir);
+      engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+      engine.setHeartbeat({ record: (name: string, r: any) => recorded.push([name, r]) } as any);
+      const action = engine.getAction('memory:decay')!;
+      await action({} as any, engine);
     } finally {
       setEmbeddingRuntime(null);
     }
@@ -254,8 +258,10 @@ describe('memory:decay incremental decay', () => {
     // 3 fresh retrieval events for e1 only; e2 has none.
     const events = [1, 2, 3].map(() => ({ id: 'e1', prob: 1, kind: 'recall' as const, ts: now }));
     const live = new HarmonicIndexManager(tmpDir);
-    const action = actionRegistry.get('memory:decay')!;
-    await action({} as any, { mafwDir: tmpDir, getLiveIndexManager: () => live } as any);
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => live);
+    const action = engine.getAction('memory:decay')!;
+    await action({} as any, engine);
 
     // direct function form for deterministic math (no buffer in the action
     // when called this way — the settlement math is asserted via runEnergyDecay)
@@ -318,8 +324,10 @@ describe('memory:decay incremental decay', () => {
     setRetrievalEventBufferForTest(buf);
     try {
       const live = new HarmonicIndexManager(tmpDir);
-      const action = actionRegistry.get('memory:decay')!;
-      await action({} as any, { mafwDir: tmpDir, getLiveIndexManager: () => live } as any);
+      const engine = new AutomationEngine(tmpDir);
+      engine.setIndexManagerProvider(() => live);
+      const action = engine.getAction('memory:decay')!;
+      await action({} as any, engine);
       // drained: buffer empty afterwards, energy bumped (bonus > 0, no decay)
       expect(buf.drain()).toHaveLength(0);
       expect(live.getIndex().entries[0].energy).toBeGreaterThan(0.9);

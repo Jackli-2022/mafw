@@ -5,6 +5,7 @@ import type { PodGoal } from "@mafw/sdk"
 import {
   WORK_FILTERS,
   filterWorkGoals,
+  goalModeLabel,
   goalProgressText,
   workFilterCounts,
   type WorkFilter,
@@ -82,6 +83,9 @@ export function WorkOverview(props: {
                   <span class="mafw-work-item-meta">
                     <Show when={goal.bucket === "result_ready" && props.isViewed && !props.isViewed(goal)}>
                       <span class="mafw-work-chip is-unviewed">未查看</span>
+                    </Show>
+                    <Show when={goal.goalMode !== "standard" ? goalModeLabel(goal.goalMode) : null}>
+                      {(label) => <span class="mafw-work-chip">{label()}</span>}
                     </Show>
                     <span class="mafw-work-item-stage">{podStageLabel(goal.stage)}</span>
                     <Show when={goalProgressText(goal)}>

@@ -2,12 +2,14 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const index = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// Phase D1 Task D1: prompt/promptAsync 面迁入 registry route 模块。
+const sessionsCore = readFileSync(join(__dirname, '../../../src/routes/sessions-core.ts'), 'utf8');
 const queue = readFileSync(join(__dirname, '../../../src/core/session-queue.ts'), 'utf8');
 
 describe('thinking controls wiring', () => {
   it('promptAsync validates thinkingLevel and forwards it', () => {
-    expect(index).toContain('invalid thinkingLevel');
-    expect(index).toContain('thinkingLevel: opts.thinkingLevel');
+    expect(sessionsCore).toContain('invalid thinkingLevel');
+    expect(sessionsCore).toContain('thinkingLevel: opts.thinkingLevel');
     expect(index).toContain('thinkingLevel: item.thinkingLevel');
     expect(index).toContain('variant: item.variant');
   });

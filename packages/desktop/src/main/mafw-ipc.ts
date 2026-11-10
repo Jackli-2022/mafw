@@ -9,6 +9,7 @@ import {
   getGatewayPort,
   onGatewayStateChange,
   restartGateway,
+  restartGatewayWithLocalBuild,
   retryManagedGateway,
   setGatewaySourcePreference,
   startGateway,
@@ -342,6 +343,12 @@ export function registerMafwIpcHandlers() {
     restartScheduler.cancel()
     // stop → 等旧进程停止应答 → start（skip adopt 垂死进程竞态）
     await restartGateway()
+    return getGatewayStatus()
+  })
+
+  ipcMain.handle("mafw-gateway-restart-local", async () => {
+    restartScheduler.cancel()
+    await restartGatewayWithLocalBuild()
     return getGatewayStatus()
   })
 
