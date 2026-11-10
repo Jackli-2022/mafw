@@ -280,6 +280,8 @@ describe('出口接线（index.ts）', () => {
   // Phase D1 Task B1: /api/permissions 与 /api/questions 列表迁入 routes/questions-permissions.ts
   // （live 事件富化仍留在 index.ts）。
   const questionsPermissions = fs.readFileSync(path.join(__dirname, '../../../src/routes/questions-permissions.ts'), 'utf-8');
+  // Phase D1 Task H1: /api/provider + /api/agents 迁入 routes/misc.ts。
+  const miscRoutes = fs.readFileSync(path.join(__dirname, '../../../src/routes/misc.ts'), 'utf-8');
 
   it('/api/sessions 列表与单条都过 projectSession（规范 status/reverted/model）', () => {
     // 列表自 code-first P0 起由 registry typed handler 接管（schema + 数据返回，不再手写 stringify）。
@@ -288,11 +290,11 @@ describe('出口接线（index.ts）', () => {
   });
 
   it('/api/provider 走 projectProviderEnvelope（models 恒数组，不再透传 all）', () => {
-    expect(source).toMatch(/JSON\.stringify\(projectProviderEnvelope\(result \?\? null\)\)/);
+    expect(miscRoutes).toMatch(/JSON\.stringify\(projectProviderEnvelope\(result \?\? null\)\)/);
   });
 
   it('/api/agents 走 projectAgents（id/label/selectable）', () => {
-    expect(source).toMatch(/JSON\.stringify\(\{ items: projectAgents\(items\) \}\)/);
+    expect(miscRoutes).toMatch(/JSON\.stringify\(\{ items: projectAgents\(items\) \}\)/);
   });
 
   it('/api/permissions 与 live permission.asked/replied 共用投影（enrichPermissionEvent）', () => {

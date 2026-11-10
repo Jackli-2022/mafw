@@ -435,13 +435,15 @@ export const NON_PRIMARY_GATES: NonPrimaryGate[] = [
   },
   {
     surface: 'provider.list',
-    file: 'src/index.ts',
+    // Phase D1 Task H1: /api/provider 迁入 routes/misc.ts（capGuard 原文随迁）。
+    file: 'src/routes/misc.ts',
     marker: "capGuard(res, 'provider.list')",
     why: 'inline provider route（capGuard 统一中性 503）',
   },
   {
     surface: 'provider.app.agents',
-    file: 'src/index.ts',
+    // Phase D1 Task H1: /api/agents 迁入 routes/misc.ts（capGuard 原文随迁）。
+    file: 'src/routes/misc.ts',
     marker: "capGuard(res, 'provider.app.agents')",
     why: 'inline provider route',
   },

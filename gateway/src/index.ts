@@ -67,7 +67,6 @@ import { PodStore } from './core/pod/pod-store';
 import { PodEventService } from './core/pod/pod-event-service';
 import { PodEventWake } from './core/pod/pod-event-wake';
 import { buildPodPresence, type PodPresence } from './core/pod/pod-presence';
-import { handlePresence } from './routes/presence';
 import { handlePodEvents } from './routes/pod-events';
 import { dispatchAuthorized } from './routes/registry-dispatch';
 import {
@@ -166,8 +165,6 @@ import { Qwen3AsrEngine } from './voice/engines/asr/qwen3-vllm';
 import { resolveVoiceConfig } from './voice/config';
 import { VoiceRuntime } from './voice/runtime';
 import { attachVoiceSocket, isVoiceUpgradePath } from './voice/transport/ws-voice';
-import { handleVoiceStatus } from './voice/routes/voice-status';
-import { handleEvalChatCompletion } from "./eval-endpoint";
 import { SessionKernels } from "./python/kernel-service";
 import { eventBus } from "./event-bus";
 import { AutomationEngine } from "./automation-engine";
@@ -187,7 +184,7 @@ import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
 import { createBuiltinIdentityRegistry, identityMaterializable, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
-import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
+import { IdentityState, withIdentityPrompt } from './runtime/identity-state';
 import { withInstructionSync } from './runtime/instruction-wrapper';
 import { InstructionSyncService } from './core/instructions/instruction-sync-service';
 import { DiscoveryService } from './core/discovery/discovery-service';
@@ -227,6 +224,10 @@ import { attachUsageRoutes } from './routes/usage';
 import { attachRecallRoutes } from './routes/recall';
 import { attachMemoryRoutes } from './routes/memory';
 import { attachDashboardRoutes } from './routes/dashboard';
+import { attachMiscRoutes } from './routes/misc';
+import { attachConfigRoutes } from './routes/config';
+import { attachLlmRoutes } from './routes/llm';
+import { attachMediaPluginRoutes } from './routes/media-plugins';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -289,8 +290,6 @@ import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
 import {
   enrichPermissionEvent,
-  projectAgents,
-  projectProviderEnvelope,
   projectQuestionRequest,
   projectSession,
   projectSessions,
@@ -5770,6 +5769,27 @@ class MafwScheduler {
         trajectoryStore: () => this.trajectoryStore,
         memoryService: () => this.memoryService,
       });
+      // Phase D1 Task H1：long-tail singles 迁 registry dispatch（voice/presence/
+      // eval/orchestration/provider/agents + config GET/PUT + llm/compress +
+      // media plugins 对；私有 handleCompress 经 compress 依赖桥接）。
+      attachMiscRoutes(this.routeRegistry, {
+        voiceRuntime: () => this.voiceRuntime,
+        buildPresence: () => this.buildPresence(),
+        runtime: () => this.runtime,
+        resolvedProjectDir: () => this.resolvedProjectDir(),
+        getGatewayDb: () => this.getGatewayDb(),
+        capGuard: (res, surface) => this.capGuard(res, surface),
+        identityRegistry: () => this.identityRegistry,
+        identityState: () => this.identityState,
+        runtimeName: () => this.runtimeName,
+      });
+      attachConfigRoutes(this.routeRegistry);
+      attachLlmRoutes(this.routeRegistry, {
+        compress: (observations, model) => this.handleCompress(observations, model),
+      });
+      attachMediaPluginRoutes(this.routeRegistry, {
+        mediaPluginLoader: () => this.mediaPluginLoader,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -5887,13 +5907,7 @@ class MafwScheduler {
 
         // GET /api/tts/voices — 当前引擎音色 + 能力（desktop picker）
         // GET /api/voice/status — voice config + registered ASR engines.
-        if (req.url?.match(/^\/api\/voice\/status(?:\?|$)/) && req.method === "GET") {
-          await handleVoiceStatus(req, res, {
-            runtime: this.voiceRuntime,
-            config: resolveVoiceConfig(config.raw),
-          });
-          return;
-        }
+        // GET /api/voice/status — Phase D1 Task H1：已迁 registry dispatch。
 
         // /api/tts/voices + POST /api/tts + /api/tts/stream + /api/tts/interrupt
         // — Phase D1 Task 3c：已迁 registry dispatch（attachTtsRoutes；voices/speak
@@ -6039,12 +6053,7 @@ class MafwScheduler {
         }
 
         // 跨项目常驻存在感（tray/taskbar 的唯一数据源）。
-        if (req.url?.match(/^\/api\/presence(?:\?|$)/) && req.method === 'GET') {
-          const out = await handlePresence({ list: () => this.buildPresence() });
-          res.writeHead(out.status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(out.body));
-          return;
-        }
+        // GET /api/presence — Phase D1 Task H1：已迁 registry dispatch。
 
         // POST /api/session/{id}/background — Phase D1 Task D1：已迁 registry dispatch。
 
@@ -6086,58 +6095,12 @@ class MafwScheduler {
         // POST /api/eval/chat/completions — EvalScope adapter: OpenAI-compatible
         // endpoint that drives a full main-agent run (media → agent → A2A →
         // MediaAgent → multimodal model) and returns the final answer.
-        if (req.url?.match(/^\/api\/eval\/chat\/completions(?:\?|$)/) && req.method === 'POST') {
-          try {
-            const body = JSON.parse(await readBody(req));
-            const evalHandler = handleEvalChatCompletion({
-              runtime: this.runtime,
-              directory: this.resolvedProjectDir(),
-              providerID: 'opencode-go',
-              modelID: 'deepseek-v4-flash',
-              timeoutMs: 300_000,
-            });
-            const result = await evalHandler(body);
-            res.setHeader("Content-Type", "application/json");
-            res.writeHead(result.status);
-            res.end(JSON.stringify(result.body));
-          } catch (err: any) {
-            log.error(`[Eval] chat error: ${err.message}`);
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: { message: err.message } }));
-          }
-          return;
-        }
+        // POST /api/eval/chat/completions — Phase D1 Task H1：已迁 registry dispatch。
 
         // GET /api/config —gateway effective config
-        if (req.url?.match(/^\/api\/config(?:\?|$)/) && req.method === 'GET') {
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify(config.raw));
-          return;
-        }
+        // GET /api/config — Phase D1 Task H1：已迁 registry dispatch。
 
-        // PUT /api/config —persist config overrides to the data-root
-        // config.yaml (the same file config.reload() reads), then hot-reload.
-        if (req.url?.match(/^\/api\/config(?:\?|$)/) && req.method === 'PUT') {
-          try {
-            const overrides = JSON.parse(await readBody(req));
-            const mafwDir = config.resolvePath();
-            const configPath = path.join(mafwDir, 'config.yaml');
-            if (!fs.existsSync(mafwDir)) fs.mkdirSync(mafwDir, { recursive: true });
-            const yamlStr = yaml.dump(overrides, { indent: 2, lineWidth: 120, noRefs: true, sortKeys: true });
-            fs.writeFileSync(configPath, yamlStr, 'utf-8');
-            const reload = config.reload();
-            if (reload.restartRequired.length > 0) {
-              log.warn(`[Config] PUT saved, restart required for: ${reload.restartRequired.join(', ')}`);
-            }
-            res.writeHead(200);
-            res.end(JSON.stringify({ success: true, restartRequired: reload.restartRequired }));
-          } catch (err: any) {
-            log.error('[Config] PUT error:', err.message);
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // PUT /api/config — Phase D1 Task H1：已迁 registry dispatch。
 
         // 插件注册：必须传递 projectDir + mafwDir
         if (req.url === '/register' && req.method === 'POST') {
@@ -6505,62 +6468,12 @@ class MafwScheduler {
         // /api/plugins 路由时才执行——内联时代每个到达此处的请求都跑）。
 
         // GET /api/orchestration/outcomes — goal outcome query
-        if (req.url?.match(/^\/api\/orchestration\/outcomes(?:\?|$)/) && req.method === 'GET') {
-          const u = new URL(req.url, 'http://localhost');
-          const rows = this.getGatewayDb().listGoalOutcomes({
-            policy: u.searchParams.get('policy') || undefined,
-            verdict: u.searchParams.get('verdict') || undefined,
-            project: u.searchParams.get('project') || undefined,
-            limit: parseInt(u.searchParams.get('limit') || '100', 10),
-          });
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ outcomes: rows }));
-          return;
-        }
+        // GET /api/orchestration/outcomes — Phase D1 Task H1：已迁 registry dispatch。
 
         // GET /api/provider – list providers + models (legacy /provider)
-        if (req.url?.match(/^\/api\/provider(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'provider.list')) return;
-          try {
-            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const result = await this.runtime.provider.list();
-            res.end(JSON.stringify(projectProviderEnvelope(result ?? null)));
-          } catch (err: any) {
-            log.error('[Provider] list error:', err.message);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET /api/provider — Phase D1 Task H1：已迁 registry dispatch。
 
-        // GET /api/agents ─ merged list: registry identities (source:'mafw') first,
-        // then runtime-native agents (source:'runtime') — uniform picker across runtimes.
-        if (req.url?.match(/^\/api\/agents(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'provider.app.agents')) return;
-          try {
-            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const runtimeAgents = await this.runtime.app.agents();
-            const items = mergeAgentLists(
-              this.identityRegistry.list().map((s) => ({
-                name: s.name,
-                description: s.description,
-                scope: s.scope,
-                // deprecated 身份（manager）只保留给既有会话读取，不进可选列表。
-                deprecated: s.deprecated,
-                // 未物化身份不出现在列表（选了也会被 withIdentityPrompt 剥离，
-                // 列出是 UX 谎言）；runtime 无 agentConfigApi 时全部滤出。
-                materialized: this.identityState.isMaterialized(this.runtimeName, s.name),
-              })),
-              Array.isArray(runtimeAgents) ? runtimeAgents : [],
-            );
-            res.end(JSON.stringify({ items: projectAgents(items) }));
-          } catch (err: any) {
-            log.error('[Agents] list error:', err.message);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // GET /api/agents — Phase D1 Task H1：已迁 registry dispatch。
 
         // ── Runtime config (Settings page — runtime-neutral config surface) ──
 
@@ -6612,20 +6525,7 @@ class MafwScheduler {
         // GET /api/automations/:id/history — Phase D1 Task C1：已迁 registry dispatch。
 
         // POST /api/llm/compress — LLM compression proxy (via SDK)
-        if (req.url === '/api/llm/compress' && req.method === 'POST') {
-          try {
-            const body = await readBody(req);
-            const { observations, model } = JSON.parse(body);
-            if (!observations || !Array.isArray(observations)) throw new Error('observations array required');
-            const result = await this.handleCompress(observations, model);
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
+        // POST /api/llm/compress — Phase D1 Task H1：已迁 registry dispatch（handleCompress 经 compress 依赖桥接）。
 
         // 鈹€鈹€ SdkSessionResource REST endpoints 鈹€鈹€
 
@@ -6671,33 +6571,9 @@ class MafwScheduler {
         // /api/usage/plugins* — P5 Wave 1 起由 registry dispatch 接管（7 条）
 
         // GET /api/media/plugins — media engine plugin state list
-        if (req.url?.match(/^\/api\/media\/plugins(?:\?|$)/) && req.method === 'GET') {
-          const plugins = (this.mediaPluginLoader?.getState() ?? []).map(s => ({
-            file: s.file,
-            name: s.name,
-            status: s.status,
-            error: s.error,
-            modalities: s.modalities,
-          }));
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ plugins }));
-          return;
-        }
+        // GET /api/media/plugins — Phase D1 Task H1：已迁 registry dispatch。
 
-        // POST /api/media/plugins/reload — manual reload
-        if (req.url?.match(/^\/api\/media\/plugins\/reload$/) && req.method === 'POST') {
-          await this.mediaPluginLoader?.reload();
-          const plugins = (this.mediaPluginLoader?.getState() ?? []).map(s => ({
-            file: s.file,
-            name: s.name,
-            status: s.status,
-            error: s.error,
-            modalities: s.modalities,
-          }));
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true, plugins }));
-          return;
-        }
+        // POST /api/media/plugins/reload — Phase D1 Task H1：已迁 registry dispatch。
 
         // POST /api/media/switch — P5 Wave 1 起由 registry dispatch 接管
 
