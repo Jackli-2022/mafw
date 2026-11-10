@@ -4,7 +4,7 @@
 - **基础**：`main` `6a39dc17`（P2.4/P2.5 计划提交）
 - **Spec**：`docs/superpowers/specs/2026-11-10-event-layer-design.md`
 - **Plan**：`docs/superpowers/plans/2026-11-10-event-layer.md`
-- **Head**：待 task-9 提交后填入
+- **Head**：`2ff6eed7`（P2.4 tasks 1–9 + review/type fixes）
 
 ## 交付
 
