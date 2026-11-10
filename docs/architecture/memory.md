@@ -235,6 +235,7 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 
 **统一数据库 `~/.mafw/memory/gateway.db`**（`GatewayDatabase`，`gateway/src/memory/gateway-db.ts`）：
 - `t1_observations`：回合观察（插件经 `/api/obs/capture` 写入，turnID 网关分配，UNIQUE 去重；**入库前经 `redactSecrets()` 脱敏**（`gateway/src/recall/redact.ts`，sk-/ghp_/Bearer/JWT/key=value 等格式 → `[REDACTED]`），下游 turnCompress/worker prompt/archive 只读脱敏内容——存量历史行不回溯）
+- `t1_turns`：持久化逻辑回合身份（T1 identity，2026-11-10）——`trace_id` PK、`session_id`+`turn_seq` UNIQUE；`turn_seq` 单调且**不重用**（跨 `t1_turns`/active/archive 取 max）；`encoding_salience` 记录编码期 salience 抬升；`archived_at` 记录归档时间；`legacy_ambiguous` 标记重复 legacy 复合键（>1 个 `user_input` 或横跨 active+archive）。`t1_observations` 与 `t1_archive` 各带永久 `trace_id`/`observation_key`——归档不改变身份，legacy 行回读 NULL 直到构造期幂等 `migrateT1Identity()` backfill
 - `kv_store`：易失关键小状态——
   - `manager-session`（key=projectDir，**per-project manager session**，替代旧 manager-session.json）
   - `reflect-cursor`（key=sessionID，反思增量游标）
