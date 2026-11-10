@@ -29,8 +29,17 @@
 - gateway `tsc` rc=0；desktop `tsgo` rc=0；`electron-vite build` rc=0。
 - 未 push。
 
+## 后续收口（2026-11-10）
+
+- `3f79446f`：重锚 D1 迁移后的权限 / agents 源码守卫。
+- `06f395d8`：补 `docs/architecture/{pod,goal,desktop}.md` 与 `docs/reference/tools.md` 现状段。
+- `e52ffc4a`：`mafw_lead_goal_status` 进 Lead / Manager allowlist，Lead prompt 指向该工具。
+- `4d504f2f`：P0 minors 收口——WorkOverview mode chip、Lead 卡 `pendingAttention`、`views()` 改为一次 revision 查询、`created_at` tie-breaker 测试、旧库 `goal_mode` migration / rollback / `untilMessageId` 测试、driver quick 计划不匹配拒绝。
+- 收口后门禁：gateway **5606/5606**、desktop **3192/3192**、gateway `tsc` rc=0、desktop `tsgo` rc=0、`electron-vite build` rc=0。
+- P1 计划已排：`docs/superpowers/plans/2026-11-10-lead-techlead-p1-working-set.md`（12 tasks）。
+
 ## 暂缓 / 未做
 
-- 架构文档现状段：`docs/architecture/{pod,goal,desktop}.md`；工具清单 `docs/reference/tools.md`。
-- `mafw_lead_goal_status` 未进 Manager allowlist。
-- `WorkOverview` mode badge；Lead 卡 `pendingAttention`；`views()` 的 N+1 revision 读取；`created_at` tie-breaker；旧库 migration/rollback/`untilMessageId` 专项测试；driver quick/collaborative mismatch。
+- P1（工作集 / 缺页）、P2（调度器 / COW fork）、P2.4（事件层）、P2.5（Standing Goals）未开工。
+- LongMemEval / 自建多话题评测未执行。
+
