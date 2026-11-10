@@ -196,7 +196,6 @@ import { MAFW } from './runtime/mafw-vocabulary';
 import { activateRuntimeTools, buildMafwToolFactory } from './runtime/mafw-tools';
 import { attachToolsRoutes, handleToolsList, handleToolsExecute } from './routes/tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
-import { enrichToolIdentity } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
 import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
 import { SessionQueue } from './core/session-queue';
