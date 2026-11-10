@@ -18,15 +18,22 @@ import {
 export interface BuiltinAdapterRegistration {
   name: string;
   variant: OpencodeVariant;
-  capabilities: RuntimeCapabilities;
-  eventEntry: EventMappingEntry;
+  /** Loader options (capabilities/eventEntry are adapter-declared data). */
+  options: {
+    external: boolean;
+    capabilities: RuntimeCapabilities;
+    eventEntry: EventMappingEntry;
+  };
 }
 
 export function builtinAdapterRegistrations(external: boolean): BuiltinAdapterRegistration[] {
   return OPENCODE_REGISTRATIONS.map((registration) => ({
     name: registration.name,
     variant: registration.variant,
-    capabilities: opencodeCapabilities(registration.variant, external),
-    eventEntry: opencodeStaticEntry(registration.variant),
+    options: {
+      external,
+      capabilities: opencodeCapabilities(registration.variant, external),
+      eventEntry: opencodeStaticEntry(registration.variant),
+    },
   }));
 }

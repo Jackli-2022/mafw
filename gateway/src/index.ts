@@ -1025,11 +1025,7 @@ class MafwScheduler {
       this.runtimeLoader.registerBuiltinDefinition(
         registration.name,
         opencodeDefinition(registration.variant, registration.name),
-        {
-          external,
-          capabilities: registration.capabilities,
-          eventEntry: registration.eventEntry,
-        },
+        registration.options,
       );
     }
 
