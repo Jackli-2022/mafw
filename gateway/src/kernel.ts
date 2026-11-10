@@ -2839,7 +2839,15 @@ class MafwScheduler {
             getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
             readUnit: async (id: string) => {
               const u = await store.read(id);
-              return u ? { id: u.id, memory_value: u.memory_value, cue_anchors: u.cue_anchors } : null;
+              return u
+                ? {
+                    id: u.id,
+                    memory_value: u.memory_value,
+                    cue_anchors: u.cue_anchors,
+                    source_session_id: u.source_session_id,
+                    source_trace_ids: u.source_trace_ids,
+                  }
+                : null;
             },
             needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
             existingSkillCount: () => this.installedSkillCount(),
@@ -2892,7 +2900,8 @@ class MafwScheduler {
   private installedSkillCount(): number {
     try {
       return fs.readdirSync(this.skillsDir(), { withFileTypes: true })
-        .filter((d) => d.isDirectory()).length;
+        .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+        .length;
     } catch {
       return 0;
     }
