@@ -8,9 +8,9 @@ import * as yaml from 'js-yaml';
 import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
-import { Guard, GuardTimeoutError } from './concurrency/guard';
 import { MutexQueue } from './concurrency/mutex-queue';
 import { TtlMap } from './concurrency/ttl-map';
+import { Scheduler, TaskSkippedError, TaskTimeoutError } from './scheduler';
 import { log } from './core/utils/logger';
 import {
   createGatewayRuntimeIdentity,
@@ -165,7 +165,7 @@ import { handleVoiceStatus } from './voice/routes/voice-status';
 import { handleEvalChatCompletion } from "./eval-endpoint";
 import { SessionKernels } from "./python/kernel-service";
 import { eventBus } from "./event-bus";
-import { AutomationEngine, actionRegistry } from "./automation-engine";
+import { AutomationEngine } from "./automation-engine";
 import { SchedulerLedger } from "./ledger";
 import { DesktopClient } from "./desktop-client";
 import { QuestionLedger } from './core/manager/question-ledger';
@@ -545,7 +545,24 @@ class MafwScheduler {
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
-  private pipelineGuard = new Guard(); // action-level in-flight guards, keyed by action name
+  /**
+   * Unified priority scheduler (Phase B). AutomationEngine actions and
+   * snapshot builds submit through it; budget admission consults the
+   * pipeline daily USD cap using the pipelines' own allow() names.
+   */
+  private scheduler = new Scheduler({
+    budgetChecker: (task) => {
+      const b = task.budget;
+      if (b?.kind === 'pipeline' && b.pipeline) {
+        try {
+          return { ok: this.getPipelineBudget().allow(b.pipeline), reason: 'pipeline daily cap' };
+        } catch {
+          return { ok: true }; // fail-open — matches PipelineBudget's own stance
+        }
+      }
+      return { ok: true };
+    },
+  });
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
   private promptBudgetSessions = new Set<string>();
   /** busy 追踪（spec §5.1 v2）：value = busy 起始 ms；turn.started 置位、三终态清除；15min TTL 防楔死。 */
@@ -1831,20 +1848,43 @@ class MafwScheduler {
     }
 
     // Compaction flush: 会话压缩发生时把该 session 的 pending T1 回合立即喂给
-    // turnCompress（fail-open；hourly cron 在飞则跳过本轮）。
+    // turnCompress（fail-open；同 session 的 flush 在飞则跳过本轮）。Per-session
+    // mutexKey 与 hourly cron 的 action key 不同，互不阻塞（pipeline 内部有
+    // per-session runExclusive 兜底）。
     if (f.compaction && sessionID && !memoryWorker) {
-      void this.runPipelineGuarded(`memory:turnCompress(compact-flush:${sessionID})`, async () => {
-        try {
-          const pipeline = this.getTurnPipeline();
-          const res = await pipeline.runSession(sessionID);
-          if (res.turns > 0) {
-            log.info(`[TurnPipeline] compaction flush session=${sessionID} turns=${res.turns} archived=${res.archived}`);
-            this.scanService?.refreshCache();
+      void this.scheduler
+        .submit(
+          {
+            id: `compact-flush:${sessionID}`,
+            priority: 'background',
+            mutexKey: `compact-flush:${sessionID}`,
+            strategy: 'skip',
+            timeoutMs: 30 * 60_000,
+          },
+          async () => {
+            try {
+              const pipeline = this.getTurnPipeline();
+              const res = await pipeline.runSession(sessionID);
+              if (res.turns > 0) {
+                log.info(`[TurnPipeline] compaction flush session=${sessionID} turns=${res.turns} archived=${res.archived}`);
+                this.scanService?.refreshCache();
+              }
+            } catch (err: any) {
+              log.warn(`[TurnPipeline] compaction flush failed (non-fatal): ${err.message}`);
+            }
+          },
+        )
+        .catch((err) => {
+          if (err instanceof TaskSkippedError) {
+            log.info(`[TurnPipeline] compaction flush ${sessionID} skipped: previous flush in flight`);
+            return;
           }
-        } catch (err: any) {
-          log.warn(`[TurnPipeline] compaction flush failed (non-fatal): ${err.message}`);
-        }
-      });
+          if (err instanceof TaskTimeoutError) {
+            log.warn(`[TurnPipeline] compaction flush ${sessionID} watchdog timeout`);
+            return;
+          }
+          log.warn(`[TurnPipeline] compaction flush ${sessionID} submit failed (non-fatal): ${err instanceof Error ? err.message : err}`);
+        });
     }
 
     // BudgetGuard: goal-session turn/cost hard stop (turnBudgetApi-lacking
@@ -3025,10 +3065,6 @@ class MafwScheduler {
   private runtimeValidationNotes: string[] = [];
   /** 激活期覆盖矩阵（清单驱动），GET /api/runtime(.contract) 暴露。 */
   private runtimeCoverage: RuntimeCoverage | null = null;
-  /** Serialises snapshot builds (shared GPU sidecars); queue mode — concurrent
-   *  requests wait for the current build rather than being dropped. */
-  private snapshotGuard = new Guard();
-
   /** Schedule a debounced snapshot refresh (called on each user turn). */
   private scheduleSnapshotRefresh(sessionID: string): void {
     const cfg = config.search.snapshot;
@@ -3047,15 +3083,17 @@ class MafwScheduler {
    * Build the expensive retrieval for a session in the background: BM25 +
    * expansion (+ optional reranker) rendered as the pointer block, stored in kv
    * so the boundary path can serve it inside the 100ms contract.
+   *
+   * Submitted to the unified scheduler as midground + defer-to-idle: one build
+   * at a time per key (concurrent requests queue, not drop), and queued builds
+   * wait for foreground quiescence before starting.
    */
   private async refreshSnapshot(sessionID: string): Promise<void> {
     if (!this.memoryService) return;
-    // One build at a time (shared GPU sidecars), but concurrent requests queue
-    // instead of being dropped: the latest session state is served after the
-    // current build finishes.
-    await this.snapshotGuard.run('snapshot', () => this.refreshSnapshotInner(sessionID), {
-      onConflict: 'queue',
-    });
+    await this.scheduler.submit(
+      { id: `snapshot:${sessionID}`, priority: 'midground', mutexKey: 'snapshot', strategy: 'defer-to-idle' },
+      () => this.refreshSnapshotInner(sessionID),
+    );
   }
 
   private async refreshSnapshotInner(sessionID: string): Promise<void> {
@@ -3279,30 +3317,6 @@ class MafwScheduler {
     return this.scanService;
   }
 
-  /**
-   * In-flight guarded pipeline action. AutomationEngine has no serialization
-   * (cron fires overlapping ticks; run-automation can trigger manually), so
-   * each pipeline runs at most once at a time.
-   */
-  private async runPipelineGuarded(name: string, fn: () => Promise<void>): Promise<void> {
-    try {
-      const result = await this.pipelineGuard.run(name, fn, {
-        onConflict: 'skip',
-        timeoutMs: 30 * 60_000,
-        onTimeout: 'error',
-      });
-      if (result === null) {
-        log.info(`[Scheduler] ${name} skipped: previous run still in flight`);
-      }
-    } catch (err) {
-      if (err instanceof GuardTimeoutError) {
-        log.warn(`[Scheduler] ${name} watchdog timeout: ${err.message}`);
-      } else {
-        log.warn(`[Scheduler] ${name} run error: ${err instanceof Error ? err.message : err}`);
-      }
-    }
-  }
-
   /** Goal 会话预算挂载：读 state/<goalId>.json 的 policySnapshot.{maxTurns,maxCostUsd}；
    *  两者都缺或 runtime 原生支持 turnBudgetApi 时不挂。 */
   private attachBudgetGuardForGoal(goalId: string, sessionID: string, mafwDir: string): void {
@@ -3391,8 +3405,15 @@ class MafwScheduler {
   }
 
   private registerMemoryPipelineActions(): void {
-    actionRegistry.set('memory:turnCompress', async () => {
-      await this.runPipelineGuarded('memory:turnCompress', async () => {
+    const engine = this.automationEngine;
+    if (!engine) return;
+    // Actions are registered through a provider so refreshActions() — called
+    // by engine.start() and reloadRules() — rebuilds the registry
+    // deterministically instead of relying on registration order (spec §5.4).
+    // Budget taskOpts use the pipelines' own internal PipelineBudget.allow()
+    // names so admission and per-call checks share one name (one deny log/day).
+    engine.setActionsProvider(() => {
+      engine.registerAction('memory:turnCompress', async () => {
         try {
           const pipeline = this.getTurnPipeline();
           const res = await pipeline.runOnce();
@@ -3410,10 +3431,8 @@ class MafwScheduler {
           this.heartbeat?.record('memory:turnCompress', { ok: false, error: err.message });
           log.warn(`[TurnPipeline] run failed: ${err.message}`);
         }
-      });
-    });
-    actionRegistry.set('memory:reflect', async () => {
-      await this.runPipelineGuarded('memory:reflect', async () => {
+      }, { budget: { kind: 'pipeline', pipeline: 'extract' } });
+      engine.registerAction('memory:reflect', async () => {
         try {
           const pipeline = this.getReflectPipeline();
           const res = await pipeline.runAll();
@@ -3480,15 +3499,13 @@ class MafwScheduler {
           this.heartbeat?.record('memory:graceRevisit', { ok: false, error: err.message });
           log.warn(`[GraceRevisit] phase failed: ${err.message}`);
         }
-      });
-    });
-    // memory:review — overrides the module-level stub (which only logged the
-    // dormant review queue). Now runs stale-memory verification: the curator
-    // worker re-checks high-value procedural/semantic memories against the
-    // live environment with read-only tools and supersedes contradicted ones
-    // (environment-probing curation, arXiv:2609.11060).
-    actionRegistry.set('memory:review', async () => {
-      await this.runPipelineGuarded('memory:review', async () => {
+      }, { budget: { kind: 'pipeline', pipeline: 'reflect' } });
+    // memory:review — the builtin stub only logged the dormant review queue;
+    // this registration replaces it: the curator worker re-checks high-value
+    // procedural/semantic memories against the live environment with read-only
+    // tools and supersedes contradicted ones (environment-probing curation,
+    // arXiv:2609.11060).
+    engine.registerAction('memory:review', async () => {
         try {
           const pipeline = this.getStaleVerifyPipeline();
           const res = await pipeline.runOnce();
@@ -3508,13 +3525,11 @@ class MafwScheduler {
           this.heartbeat?.record('memory:review', { ok: false, error: err.message });
           log.warn(`[StaleVerify] run failed: ${err.message}`);
         }
-      });
-    });
+      }, { budget: { kind: 'pipeline', pipeline: 'review' } });
     // D2: reconsolidation sweep — mutated (labile) memories are checked daily
     // against newer related memories; contradicted ones are updated through the
     // supersedes chain (budget-gated, fail-open).
-    actionRegistry.set('memory:reconsolidate', async () => {
-      await this.runPipelineGuarded('memory:reconsolidate', async () => {
+    engine.registerAction('memory:reconsolidate', async () => {
         try {
           if (!this.memoryService) return;
           const { ReconsolidatePipeline } = require('./recall/reconsolidate-pipeline');
@@ -3557,12 +3572,10 @@ class MafwScheduler {
           this.heartbeat?.record('memory:reconsolidate', { ok: false, error: err.message });
           log.warn(`[Reconsolidate] run failed: ${err.message}`);
         }
-      });
-    });
+      }, { budget: { kind: 'pipeline', pipeline: 'reconsolidate' } });
     // D4a: nightly dream prefetch — generate likely next-session queries for
     // recently-active sessions; the first user input of the day consumes them.
-    actionRegistry.set('memory:dream', async () => {
-      await this.runPipelineGuarded('memory:dream', async () => {
+    engine.registerAction('memory:dream', async () => {
         try {
           if (!this.scanService) return;
           const { selectDreamSessions, parseDreamQueries, DREAM_SYSTEM } = require('./recall/dream-prefetch');
@@ -3595,12 +3608,10 @@ class MafwScheduler {
           this.heartbeat?.record('memory:dream', { ok: false, error: err.message });
           log.warn(`[Dream] run failed: ${err.message}`);
         }
-      });
-    });
+      }, { budget: { kind: 'pipeline', pipeline: 'dream' } });
     // A1: weekly axiom distillation — high-need semantic insights become axiom
     // candidates queued for human triage; confirmation commits them to L5.
-    actionRegistry.set('memory:axiomDistill', async () => {
-      await this.runPipelineGuarded('memory:axiomDistill', async () => {
+    engine.registerAction('memory:axiomDistill', async () => {
         try {
           if (!this.memoryService) return;
           const { selectAxiomSources, parseAxiomCandidates, AXIOM_SYSTEM } = require('./memory/axiom-distill');
@@ -3647,12 +3658,10 @@ class MafwScheduler {
           this.heartbeat?.record('memory:axiomDistill', { ok: false, error: err.message });
           log.warn(`[AxiomDistill] run failed: ${err.message}`);
         }
-      });
-    });
+      }, { budget: { kind: 'pipeline', pipeline: 'axiomDistill' } });
     // W2: skill promotion — procedural memories passing G1-G5 become staged
     // SKILL.md drafts + triage items for human approval (weekly).
-    actionRegistry.set('memory:skillPromotion', async () => {
-      await this.runPipelineGuarded('memory:skillPromotion', async () => {
+    engine.registerAction('memory:skillPromotion', async () => {
         try {
           if (!this.memoryService) return;
           const stagingDir = path.join(this.mafwDir, 'skill-staging');
@@ -3994,10 +4003,13 @@ class MafwScheduler {
     // Give an in-flight pipeline a short window to settle before closing the
     // T1 store (closing mid-run would leave turns un-deleted → duplicate
     // extraction on next start), then dispose workers best-effort.
+    // Scheduler stats are at least as strict as the old pipelineGuard: running
+    // covers every in-flight task (pipeline actions, compact flushes, snapshot
+    // builds); the 5s cap bounds the wait either way.
     const settle = new Promise<void>((resolve) => {
       const started = Date.now();
       const check = () => {
-        if (this.pipelineGuard.size === 0 || Date.now() - started > 5000) resolve();
+        if (this.scheduler.stats().running === 0 || Date.now() - started > 5000) resolve();
         else setTimeout(check, 100);
       };
       check();
@@ -4872,8 +4884,13 @@ class MafwScheduler {
     }
     // memory:decay must mutate the gateway's LIVE index instance — a throwaway
     // manager's v1→v2 migration would be clobbered by the live instance's next
-    // save (the 2026-09 decay freeze).
+    // save (the 2026-09 decay freeze). Same live-instance discipline for the
+    // cognitive graph (memory:prune).
     this.automationEngine.setIndexManagerProvider(() => this.memoryService!.harmonicIndex);
+    this.automationEngine.setGraphProvider(() => this.memoryService?.cognitiveGraph);
+    // Unified scheduler submission: per-key skip + 30min watchdog + budget
+    // admission for every action execution; user/LLM triggers run foreground.
+    this.automationEngine.setScheduler(this.scheduler);
     ensureManagerRules(mafwDir);
     ensureMemoryPipelineRules(mafwDir);
     this.automationEngine.loadRules();

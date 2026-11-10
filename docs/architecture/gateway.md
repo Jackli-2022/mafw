@@ -17,6 +17,7 @@
 - [Pod 协作 Goal Loop](#pod-协作-goal-loop)
 - [Goal 编排：NodeDriver 状态机](#goal-编排nodedriver-状态机)
 - [事件层与常驻存在感](#事件层与常驻存在感)
+- [统一调度器（scheduler/，内核重构 Phase B）](#统一调度器scheduler内核重构-phase-b)
 - [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
 - [插件系统（四类型 loader + 统一包宿主）](#插件系统四类型-loader--统一包宿主)
 - [API 端点](#api-端点)
@@ -38,7 +39,9 @@ gateway/
 ├── src/
 │   ├── index.ts                  # MafwScheduler — 主调度器（~7500 行）
 │   ├── config.ts                 # 统一配置（三层优先级，MAFW_* 环境变量）
-│   ├── automation-engine.ts      # cron/事件自动化引擎 + action 注册表
+│   ├── concurrency/              # 并发原语：Singleflight/MutexQueue/Guard/TtlMap/Watermark（内核重构 Phase A）
+│   ├── scheduler/                # 统一调度器：优先级队列 + 冲突策略 + 预算准入（内核重构 Phase B）
+│   ├── automation-engine.ts      # cron/事件自动化引擎（action 注册表为实例所有，经 scheduler 提交）
 │   │
 │   ├── core/
 │   │   ├── goal/                 # Goal 编排（NodeDriver，2026-10-08 P1）
@@ -336,6 +339,55 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 
 ---
 
+## 统一调度器（scheduler/，内核重构 Phase B）
+
+**文件**：`gateway/src/scheduler/`（`task-descriptor.ts` + `scheduler.ts` + barrel）。
+设计 spec：`docs/superpowers/specs/2026-11-09-gateway-kernel-scheduler-design.md`；
+并发原语（Phase A）见 `gateway/src/concurrency/`。
+
+一个优先级任务队列统一管理后台/管线任务的准入与排序（Node 单线程，无可抢占——
+调度 = 排队顺序 + 提交时准入 + 启动时资格判定）：
+
+- **优先级**：`foreground > midground > background > idle`。foreground 立即执行、
+  永不排队、不受并发帽限制；其余经 pump 按 (优先级, 提交序) 挑选启动。
+- **策略**（同 `mutexKey` 冲突时）：`skip`（reject `TaskSkippedError`）、`coalesce`
+  （join 在飞任务的 promise，fn 只跑一次）、`queue`（FIFO）、`defer-to-idle`
+  （排队但等 foreground 清零才启动）。
+- **并发帽**：非 foreground 任务默认最多 4 个同时在飞（`maxConcurrent` 可配）；
+  mutex 被占的任务被跳过让位（work-conserving），保持队列位。
+- **预算准入**：`submit` 时对带 `budget` 的任务调注入的 checker；`kind:'pipeline'`
+  用管线自己的 `PipelineBudget.allow()` 名（extract/reflect/review/reconsolidate/
+  dream/axiomDistill），与管线内部 per-LLM-call 检查同源——只是把「跑起来才拒绝」
+  提前为「不启动」。拒绝 reject `BudgetExceededError`（AutomationEngine 捕获后
+  warn 日志，不向上传播——cron 回调是 fire-and-forget）。
+- **watchdog**：`timeoutMs` 从**开始执行**起算（排队等待不烧）；超时 reject
+  `TaskTimeoutError` + 释放 key，被弃 fn 继续后台跑（release 语义）。
+- **统计**：`stats()` → `{ queued, running, byPriority }`（queued per priority）。
+
+**消费方**：
+
+| 消费方 | 提交形态 |
+|---|---|
+| AutomationEngine `executeAction` | `background`（cron/event 触发）或 `foreground`（user/llm 触发——交互方在等），`mutexKey: action:<type>`，`skip` + 30min watchdog + taskOpts 预算 |
+| index.ts 快照构建 | `midground` + `defer-to-idle`，`mutexKey: 'snapshot'`（Phase A 的 drop→queue 升级为 queue+idle 让位） |
+| index.ts compaction flush | `background`，per-session `compact-flush:<sid>` key（与 cron action key 不同，互不阻塞） |
+
+**AutomationEngine 注册表**（同批改造）：action 注册从模块级全局 Map 改为实例所有
+（`registerAction` + taskOpts）；builtins（memory:decay/review/prune）在构造时注册并
+遵守 live-instance 纪律（`setIndexManagerProvider`/`setGraphProvider` 缺席则 warn 跳过，
+**绝不 new 临时副本**——2026-09 衰减冻结与 prune 图被 live 实例回写的教训）；
+index.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`reloadRules()`
+调用 `refreshActions()` 确定性重建。
+
+**本批有意不迁移**（Phase B2 跟进）：NodeDriver 节点执行、RunCoordinator
+suspend/resume、SessionWorkerPool.runExclusive（per-session promise-dedup，
+Phase A 已统一到 Singleflight，路由进全局队列反而引入排队延迟）、PodEventWake
+扫描、边界 recall 100ms 路径（最敏感延迟路径零改动；foreground 通道在生产中
+由 user/llm 触发的 automation 消费）。HTTP 诊断端点（`/api/scheduler/stats`）
+留给 Phase D 诊断面合并。
+
+---
+
 ## MafwScheduler 关键子系统
 
 **文件**：`gateway/src/index.ts`（`class MafwScheduler`，~7500 行）。
@@ -343,6 +395,7 @@ goal_created 事件 → startGoal（hint > request 扫描 > 首项目）
 
 | 子系统 | 位置 | 说明 |
 |---|---|---|
+| 统一调度器 | `scheduler/` | 优先级队列 + 冲突策略 + 预算准入（见专节，内核重构 Phase B） |
 | serve sidecar 监管 | index.ts + 契约 | spawn/收养、watchdog、recoverServe、事件流重订阅 |
 | Runtime 能力契约 | `runtime/` | Tier 0-2 + 必选工具通道；opencode 内置 / pi 插件 / 热切换（见专节） |
 | 事件映射注册 | `runtime/event-mapper.ts` + `canonical-facets.ts` | 纯数据表（原生→canonical）+ facet 规则表；`path-expr.ts` 安全求值；工具三原语合帧（`tool-part-assembler.ts`） |
