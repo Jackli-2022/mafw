@@ -213,13 +213,20 @@ export async function createPiState(
       // Transport contract: sendTurn must not block on turn completion. The
       // event stream carries the terminal; a synchronous rejection is surfaced
       // as a turn.failed frame instead of swallowing it.
-      void registry.promptAsync(input.sessionID, text, {
-        system: input.system,
-        agent: input.agent,
-        expectReply: input.expectReply,
-        delivery: input.delivery === 'queue' ? undefined : input.delivery,
-        images: converted.images,
-      }).catch((err: any) => {
+      // A queued send may arrive while the native run is still finishing
+      // (gateway flushes inside the terminal handler). Wait for idle first so
+      // pi starts a fresh run instead of queueing a follow-up that the current
+      // loop may never consume. Steer is delivered into the running loop.
+      void (async () => {
+        if (input.delivery !== 'steer') await registry.waitForIdle(input.sessionID);
+        await registry.promptAsync(input.sessionID, text, {
+          system: input.system,
+          agent: input.agent,
+          expectReply: input.expectReply,
+          delivery: input.delivery === 'queue' ? undefined : input.delivery,
+          images: converted.images,
+        });
+      })().catch((err: any) => {
         if (!startsRun) {
           // A steer/follow-up failure must not emit a terminal for the
           // running turn; report it without touching the active turn id.

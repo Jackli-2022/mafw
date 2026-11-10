@@ -116,6 +116,14 @@ export class PiSessionRegistry {
 
   sessionFor(id: string): any | undefined { return this.sessions.get(id); }
 
+  /** Wait until the native session is idle (queue flushes arrive during terminal handling). */
+  async waitForIdle(id: string): Promise<void> {
+    const session = this.requireSession(id);
+    if (session.isStreaming && typeof session.waitForIdle === 'function') {
+      await session.waitForIdle();
+    }
+  }
+
   sessionIdFor(session: any): string | undefined { return this.bySession.get(session); }
 
   async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; expectReply?: boolean; delivery?: 'steer' | 'followup'; thinkingLevel?: ThinkingLevel; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<void> {

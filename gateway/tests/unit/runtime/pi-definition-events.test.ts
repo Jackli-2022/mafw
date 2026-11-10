@@ -1,4 +1,4 @@
-import { createPiState } from '../../../../adapters/pi/src/runtime';
+﻿import { createPiState } from '../../../../adapters/pi/src/runtime';
 import type { AdapterEvent } from '@mafw/runtime-contract';
 import type { RuntimePluginContext } from '../../../src/runtime/loader';
 import { RuntimeBus } from '../../../src/runtime/runtime-bus';
@@ -22,17 +22,28 @@ interface FakePiHarness {
   session: any;
   emit(event: Record<string, unknown>): void;
   promptImpl: { current: () => Promise<void> };
+  setStreaming(value: boolean): void;
+  promptCalls(): number;
 }
 
 function fakePiHarness(): FakePiHarness {
   const subscribers: Array<(event: any) => void> = [];
+  let streaming = false;
+  let promptCalls = 0;
+  const idleWaiters: Array<() => void> = [];
   const promptImpl = {
     current: () => new Promise<void>(() => { /* never resolves: sendTurn must not wait */ }),
   };
   const session: any = {
-    prompt: (_text: string) => promptImpl.current(),
+    prompt: (_text: string) => {
+      promptCalls += 1;
+      return promptImpl.current();
+    },
     sendUserMessage: async () => {},
-    waitForIdle: async () => {},
+    waitForIdle: () => {
+      if (!streaming) return Promise.resolve();
+      return new Promise<void>((resolve) => idleWaiters.push(resolve));
+    },
     abort: async () => {},
     dispose: async () => {},
     compact: async () => ({}),
@@ -40,7 +51,7 @@ function fakePiHarness(): FakePiHarness {
       subscribers.push(fn);
       return () => {};
     },
-    isStreaming: false,
+    get isStreaming() { return streaming; },
     messages: [],
     setSessionName: () => {},
   };
@@ -60,6 +71,13 @@ function fakePiHarness(): FakePiHarness {
     pi,
     session,
     promptImpl,
+    setStreaming: (value: boolean) => {
+      streaming = value;
+      if (!value) {
+        for (const resolve of idleWaiters.splice(0)) resolve();
+      }
+    },
+    promptCalls: () => promptCalls,
     emit: (event) => {
       // Real pi AgentEvent has no `session` field; the stream resolves the id
       // from the subscribed session object.
@@ -136,7 +154,7 @@ describe('pi definition event path', () => {
     await state.definition.transport.sendTurn({ sessionID, turnID: 't1', text: 'one' });
     harness.emit({ type: 'agent_start' });
 
-    harness.session.isStreaming = true;
+    harness.setStreaming(true);
     await state.definition.transport.sendTurn({ sessionID, turnID: 'steer-2', text: 'two', delivery: 'steer' });
     harness.emit({
       type: 'agent_end',
@@ -144,7 +162,7 @@ describe('pi definition event path', () => {
     });
     await tick();
 
-    harness.session.isStreaming = false;
+    harness.setStreaming(false);
     await state.definition.transport.sendTurn({ sessionID, turnID: 't3', text: 'three' });
     harness.emit({ type: 'agent_start' });
     harness.emit({
@@ -229,12 +247,33 @@ describe('pi definition event path', () => {
     await state.definition.transport.sendTurn({ sessionID, turnID: 't1', text: 'one' });
     harness.emit({ type: 'agent_start' });
 
-    harness.session.isStreaming = true;
+    harness.setStreaming(true);
     harness.promptImpl.current = async () => { throw new Error('steer rejected'); };
     await state.definition.transport.sendTurn({ sessionID, turnID: 'steer-2', text: 'two', delivery: 'steer' });
     await tick();
 
     expect(seen.filter((event) => event.type === 'turn.failed')).toHaveLength(0);
+
+    await state.definition.transport.stop?.();
+  });
+
+  it('waits for native idle before starting a queue flush turn', async () => {
+    const harness = fakePiHarness();
+    const state = await createPiState(fakeCtx(), { loadPi: async () => harness.pi });
+    state.definition.transport.onEvent(() => {});
+    const { sessionID } = await state.definition.transport.createSession({ directory: '/tmp/proj' });
+
+    await state.definition.transport.sendTurn({ sessionID, turnID: 't1', text: 'one' });
+    harness.emit({ type: 'agent_start' });
+    harness.setStreaming(true);
+
+    await state.definition.transport.sendTurn({ sessionID, turnID: 't2', text: 'two', delivery: 'queue' });
+    await tick();
+    expect(harness.promptCalls()).toBe(1);
+
+    harness.setStreaming(false);
+    await tick();
+    expect(harness.promptCalls()).toBe(2);
 
     await state.definition.transport.stop?.();
   });
@@ -250,14 +289,14 @@ describe('pi definition event path', () => {
     harness.emit({ type: 'agent_start' });
     // The gateway flushes its queue inside the terminal handler, before pi has
     // flipped isStreaming to false. The next run must still get its minted id.
-    harness.session.isStreaming = true;
+    harness.setStreaming(true);
     harness.emit({
       type: 'agent_end',
       messages: [{ role: 'assistant', content: [{ type: 'text', text: 'done' }], stopReason: 'stop' }],
     });
     await tick();
     await state.definition.transport.sendTurn({ sessionID, turnID: 't2', text: 'two' });
-    harness.session.isStreaming = false;
+    harness.setStreaming(false);
     harness.emit({ type: 'agent_start' });
     harness.emit({
       type: 'agent_end',
