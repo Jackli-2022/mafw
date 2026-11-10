@@ -1,24 +1,28 @@
 // Phase D1 baseline: index.ts's legacy dispatch chain, grouped by path prefix.
-// Numbers DECREASE as migration tasks delete branches. D1 END STATE (Task 9) is
-// pinned at 24 (10 match + 14 equals) and is exactly FOUR kinds of residue:
-//   1. transport/root branches — migrate to http-router.ts in D3, NOT to
-//      RouteRegistry: /a2a, /.well-known, /a, /assets, /static, /, /index.html,
-//      /mcp, /register, /control, /health;
-//   2. RETAINED dashboard dispatch (ruling R5) — the joint
-//      `/api/goals | /api/stats | /api/memory` catch-all + handleDashboardAPI.
-//      The four well-defined shadow entries (goals.list / dashboard.stats /
-//      memory.add / memory.setSticky) are registry-first; the catch-all keeps
-//      every other path's pre-D1 behavior;
-//   3. the dead `/api/goals/control` arm (ruling R6) — shadowed by the dashboard
-//      catch-all since cdf678db2 (latent bug, deliberately NOT fixed in D1);
-//   4. the runtime-config helper residue — **D3 Task 2 已清**：`GET/PATCH
-//      /api/runtime-config` 迁入 `routes/runtime-config.ts`（registry
-//      `runtime.config.get/update`，原幻影条目）。analyzer 从不计数这段 helper
-//      分发（R9 盲区），所以迁走不改变本文件的 24 = 10 + 14 基线；`/api/ws`
-//      upgrade 仍不在 HTTP 分发链内（transport-uncounted，D3 Task 3）。
-// Everything else that IS registry-attached lives in routes/*.ts.
+// Numbers DECREASE as migration tasks delete branches. D1 END STATE (Task 9) was
+// pinned at 24 (10 match + 14 equals); Phase D3 Task 3 moved the whole HTTP
+// transport chain into `src/http/transport.ts`, so what is LEFT in index.ts is
+// now only ONE kind of residue:
+//   1. RETAINED dashboard dispatch (ruling R5) — the joint
+//      `/api/goals | /api/stats | /api/memory` catch-all was handed to
+//      transport.ts as a `dashboardDispatch` dep, but its *implementation*
+//      (`handleDashboardAPI` + the joint inner branches) still lives in the
+//      class until D3 Task 4. The four well-defined shadow entries
+//      (goals.list / dashboard.stats / memory.add / memory.setSticky) are
+//      registry-first.
+//
+// Moved out of index.ts by D3 Task 3 (NOT deleted): `/a2a`, `/.well-known`,
+// `/a2a/artifacts/:id`, `/mcp` ×2, dashboard SPA (`/`, `/index.html`,
+// `/assets/*`, `/static/*`), `/register`, `/control` + the dead
+// `/api/goals/control` alias (ruling R6 — preserved verbatim, and still ordered
+// AFTER the dashboard joint), the rich `/health` and the dead plain `/health`,
+// plus the reverse-proxy fallback. Those branches are now pinned by the
+// transport inventory below (`src/http/transport.ts`), same anchoring semantics.
+//
+// /api/ws stays out of the HTTP chain entirely (WS upgrade, `http/ws-upgrade.ts`).
 // Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
 import { execFileSync } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 
@@ -32,6 +36,26 @@ function inventory(): Inventory {
   const script = path.join(__dirname, '..', '..', '..', 'scripts', 'analyze-routes.cjs');
   const out = execFileSync('node', [script, '--json'], { encoding: 'utf-8' });
   return JSON.parse(out) as Inventory;
+}
+
+const TRANSPORT = path.join(__dirname, '..', '..', '..', 'src', 'http', 'transport.ts');
+
+interface TransportInventory {
+  /** `url === '/…'` exact-path branches (raw url: byte-identical semantics). */
+  exact: string[];
+  /** `pathname.startsWith('/…')` prefix branches (normalized once, D3-R2). */
+  prefix: string[];
+  /** Prefix + single-segment slot branches (`/a2a/artifacts/<id>`). */
+  slots: number;
+  total: number;
+}
+
+function transportInventory(): TransportInventory {
+  const src = fs.readFileSync(TRANSPORT, 'utf-8');
+  const exact = [...src.matchAll(/url === ['"](\/[^'"]*)['"]/g)].map((m) => m[1]);
+  const prefix = [...src.matchAll(/pathname\.startsWith\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
+  const slots = (src.match(/matchArtifactId\(url\)/g) || []).length;
+  return { exact, prefix, slots, total: exact.length + prefix.length + slots };
 }
 
 describe('legacy route inventory (Phase D1 baseline)', () => {
@@ -71,10 +95,15 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // mobile list/delete/register + pairing-code/verify) → 10+14=24. The
     // manager/session + events SSE branches are `req.url && …startsWith` blind
     // spots (no `?.`) — never counted, migrated anyway.
-    // Task 9: END STATE pin — no further D1 migration changes these numbers.
-    expect(inv.byKind.match).toBe(10);
-    expect(inv.byKind.equals).toBe(14);
-    expect(inv.total).toBe(24);
+    // Task 9: D1 END STATE pin — 24 = 10 match + 14 equals.
+    // D3 Task 3: the whole transport chain (a2a/well-known/artifact/mcp ×2/SPA ×4/
+    // register/control + dead /api/goals/control/health ×2) left index.ts for
+    // http/transport.ts. What remains is the joint dashboard catch-all plus the
+    // three handleDashboardAPI inner branches (Task 4 moves them):
+    //   24 - 19 = 5 = 3 match + 2 equals.
+    expect(inv.byKind.match).toBe(3);
+    expect(inv.byKind.equals).toBe(2);
+    expect(inv.total).toBe(5);
   });
 
   it('groups match the D1 plan inventory', () => {
@@ -90,36 +119,28 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
 
   it('residual /api groups are the R5 dashboard dispatch only', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
-    // R5: the joint catch-all + handleDashboardAPI are retained verbatim. These
-    // are the ONLY /api-prefixed legacy hits left after D1 (Task 9 end state).
-    // /api/memory 4 = catch-all + memory.add + memory.pin + "not yet implemented".
-    // /api/goals 3 = catch-all + the dead /api/goals/control equality arm (R6) +
-    //                handleDashboardAPI's goals.list.
-    // /api/stats 2 = catch-all + handleDashboardAPI's dashboard.stats.
-    expect(byPrefix.get('/api/memory')).toBe(4);
-    expect(byPrefix.get('/api/goals')).toBe(3);
-    expect(byPrefix.get('/api/stats')).toBe(2);
+    // R5: the joint catch-all branch is handed to transport.ts, but the
+    // handleDashboardAPI body (and its three inner startsWith branches) is still
+    // in index.ts until D3 Task 4. These are the ONLY /api-prefixed legacy hits.
+    // /api/memory 3 = memory.add + memory.pin + the joint catch-all's memory arm.
+    // /api/goals 1 = handleDashboardAPI's goals.list.
+    // /api/stats 1 = handleDashboardAPI's dashboard.stats.
+    expect(byPrefix.get('/api/memory')).toBe(3);
+    expect(byPrefix.get('/api/goals')).toBe(1);
+    expect(byPrefix.get('/api/stats')).toBe(1);
   });
 
-  it('transport/root branches are pinned — they are D3, not D1', () => {
+  it('transport/root branches have left index.ts (D3 Task 3)', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
-    // Static/MCP/health/a2a/register/control/artifact: transport-level dispatch
-    // that migrates to http-router.ts in D3 — NOT RouteRegistry material in D1.
-    expect(byPrefix.get('/assets')).toBe(1);
-    expect(byPrefix.get('/static')).toBe(1);
-    expect(byPrefix.get('/mcp')).toBe(2);
-    expect(byPrefix.get('/')).toBe(2);
-    expect(byPrefix.get('/index.html')).toBe(2);
-    expect(byPrefix.get('/health')).toBe(2);
-    expect(byPrefix.get('/a2a')).toBe(1);
-    expect(byPrefix.get('/a')).toBe(1);
-    expect(byPrefix.get('/.well-known')).toBe(1);
-    expect(byPrefix.get('/register')).toBe(1);
-    expect(byPrefix.get('/control')).toBe(1);
+    // Static/MCP/health/a2a/register/control/artifact are transport-level dispatch:
+    // D3 Task 3 moved them into http/transport.ts (pinned by the inventory below).
+    for (const moved of ['/assets', '/static', '/mcp', '/', '/index.html', '/health', '/a2a', '/a', '/.well-known', '/register', '/control']) {
+      expect({ prefix: moved, count: byPrefix.get(moved) }).toEqual({ prefix: moved, count: undefined });
+    }
   });
 
   it('the chain lives in the route region (lines ordered sanely)', () => {
-    expect(inv.groups.length).toBeGreaterThan(5);
+    expect(inv.groups.length).toBeGreaterThan(0);
     for (const g of inv.groups) {
       expect(g.lines[0]).toBeLessThanOrEqual(g.lines[1]);
       expect(g.lines[0]).toBeGreaterThan(5000); // inside the request handler region
@@ -134,6 +155,86 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     const transportPrefixes = ['/assets', '/static', '/mcp', '/', '/index.html', '/health', '/a2a', '/.well-known', '/register', '/control'];
     for (const g of apiGroups) {
       expect(transportPrefixes).not.toContain(g.prefix);
+    }
+  });
+});
+
+// D3 Task 3: the transport residue is now pinned WHERE IT LIVES. The analyzer
+// above still reads index.ts only (that is what its 5-pin guards), so without
+// this the moved branches would silently stop being tracked.
+describe('transport inventory (D3 Task 3: http/transport.ts)', () => {
+  const tf = transportInventory();
+
+  it('pins every transport dispatcher by kind', () => {
+    // exact: /a2a, /.well-known/agent-card.json, /mcp (GET), / + /index.html
+    // (SPA serve + SPA fallback inner check), /register, /control,
+    // /api/goals/control (dead alias, R6), /health (rich + dead plain arm).
+    expect(tf.exact.sort()).toEqual([
+      '/',
+      '/',
+      '/.well-known/agent-card.json',
+      '/a2a',
+      '/api/goals/control',
+      '/control',
+      '/health',
+      '/health',
+      '/index.html',
+      '/index.html',
+      '/mcp',
+      '/register',
+    ]);
+    // prefix: /mcp (POST legacy-SSE vs StreamableHTTP), /assets/ + /static/
+    // (SPA assets), /api/goals + /api/stats + /api/memory (dashboard joint).
+    expect(tf.prefix.sort()).toEqual([
+      '/api/goals',
+      '/api/memory',
+      '/api/stats',
+      '/assets/',
+      '/mcp',
+      '/static/',
+    ]);
+    // one prefix+split slot: /a2a/artifacts/<id> (D3-R2 rewrite of the old regex).
+    expect(tf.slots).toBe(1);
+    expect(tf.total).toBe(19);
+  });
+
+  it('keeps zero req.url?. dispatch branches (D3-R2)', () => {
+    const src = fs.readFileSync(TRANSPORT, 'utf-8');
+    expect(src).not.toMatch(/req\.url\?\.match\s*\(/);
+    expect(src).not.toMatch(/req\.url\?\.startsWith\s*\(/);
+  });
+
+  it('preserves the dispatch order: OPTIONS → auth → registry → … → dashboard → control', () => {
+    // The ordering is the contract (spec §4, Review Focus 1/2). A future move
+    // that reorders these markers must fail here, not in production:
+    //   - OPTIONS(204) before auth (CORS preflight must not need a token);
+    //   - auth(401) before registry dispatch (P0-1);
+    //   - registry before plugin-web / file-history / transport branches;
+    //   - the dashboard joint catch-all before /control (ruling R6: otherwise the
+    //     dead /api/goals/control alias would be resurrected).
+    const src = fs.readFileSync(TRANSPORT, 'utf-8');
+    const markers = [
+      "res.setHeader('Content-Type', 'application/json')",
+      'if (req.method === "OPTIONS") {',
+      'authorizeRequest({',
+      'deps.dispatchAuthorized(req, res, apiToken)',
+      'deps.pluginWebWildcard(req, res)',
+      'deps.fileHistory(req, res, isLoopback)',
+      'url === "/a2a"',
+      'pathname.startsWith("/api/goals")',
+      "url === '/control'",
+      "url === '/health'",
+      'deps.proxyTarget()',
+      "'[Scheduler] Unhandled request error:'",
+    ];
+    const positions = markers.map((m) => {
+      const at = src.indexOf(m);
+      expect({ marker: m, found: at }).not.toEqual({ marker: m, found: -1 });
+      return at;
+    });
+    for (let i = 1; i < positions.length; i++) {
+      expect({ step: markers[i], after: markers[i - 1], ok: positions[i] > positions[i - 1] })
+        .toEqual({ step: markers[i], after: markers[i - 1], ok: true });
     }
   });
 });

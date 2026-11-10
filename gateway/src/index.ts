@@ -20,8 +20,11 @@ import {
   type GatewayReleaseMetadata,
   type GatewayRuntimeIdentity,
 } from './release-info';
-import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
-import { readBody, normalizeDir, isPortHealthy } from './core/http/http-util';
+import { isLoopbackAddr } from './core/auth';
+// D3 Task 3：HTTP 传输链 + WS 上行枢纽（原先内联在 startApiServer 的 626 行回调）。
+import { createRequestListener } from './http/transport';
+import { createWsHub, type WsHub } from './http/ws-upgrade';
+import { normalizeDir, isPortHealthy } from './core/http/http-util';
 import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
 import { ensureGoalState, effectiveRevision, isTerminalState, loadGoalState } from './core/goal/state-v3';
@@ -35,7 +38,6 @@ import { recoverGoals, watchdogScan } from './core/goal/recovery';
 import { attachGoalRoutes } from './routes/goals-inline';
 import { handleTerminal } from './routes/terminal';
 import { TerminalService } from './terminal/terminal-service';
-import { matchTerminalConnectUrl } from './terminal/terminal-protocol';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
@@ -170,7 +172,6 @@ import { Qwen3AsrSidecar } from './voice/sidecar/qwen3-asr-sidecar';
 import { Qwen3AsrEngine } from './voice/engines/asr/qwen3-vllm';
 import { resolveVoiceConfig } from './voice/config';
 import { VoiceRuntime } from './voice/runtime';
-import { attachVoiceSocket, isVoiceUpgradePath } from './voice/transport/ws-voice';
 import { SessionKernels } from "./python/kernel-service";
 import { eventBus } from "./event-bus";
 import { AutomationEngine } from "./automation-engine";
@@ -292,8 +293,6 @@ import { getBridgeEventEntry } from './runtime/adapter-bridge';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import { createOpencodeDefinition, opencodeCapabilities, opencodeStaticEntry, type OpencodeVariant } from './runtime/opencode-definition';
 
-import { injectServeAuth } from './runtime/proxy-auth';
-import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
 import {
   projectSessions,
@@ -322,10 +321,8 @@ import type { PluginWebRouteDeps } from './routes/plugin-web';
 import {
   handlePluginApiRoute,
   handlePluginWebAsset,
-  handlePluginWsUpgrade,
   parsePluginApiUrl,
   parsePluginWebAssetUrl,
-  parsePluginWsUrl,
 } from './routes/plugin-web';
 import { createPluginWebTicketStore } from './plugins/plugin-web-ticket';
 import type { DryEventDeps } from './routes/dry-event';
@@ -730,6 +727,8 @@ class MafwScheduler {
   private voiceStartError = '';
   private terminalService?: TerminalService;
   private terminalWss?: WebSocketServer;
+  /** D3 Task 3：WS 上行枢纽（wss / voiceWss / terminalWss + 心跳 interval 的归属）。 */
+  private wsHub?: WsHub;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
   private ledger?: SchedulerLedger;
@@ -3877,6 +3876,9 @@ class MafwScheduler {
   /** Graceful shutdown that also releases the instance lease before exit. */
   async shutdown() {
     this.stop();
+    // D3 Task 3：WS 心跳 / PushGateway 维护 interval 由 hub 收口。stop() 历史上
+    // 从不清理这两个 unref 定时器（进程退出即消失），这里只在优雅关闭路径清一次。
+    this.wsHub?.dispose();
     await this.releaseInstanceOwnership();
   }
 
@@ -5738,46 +5740,16 @@ class MafwScheduler {
         }),
       });
 
-      const server = http.createServer(async (req, res) => {
-        try {
-          res.setHeader('Content-Type', 'application/json');
-
-          // CORS headers for SSE
-          res.setHeader("Access-Control-Allow-Origin", config.server.cors.origin);
-          res.setHeader("Access-Control-Allow-Methods", config.server.cors.methods);
-          res.setHeader("Access-Control-Allow-Headers", config.server.cors.headers);
-
-          if (req.method === "OPTIONS") {
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-
-        // Loopback detection (delegated to core/auth.ts)
-        const isLoopback = isLoopbackAddr(req.socket.remoteAddress || '');
-
-        // API token auth: required for non-loopback connections when a token
-        // is configured (MAFW_SERVER_API_TOKEN). Loopback connections bypass.
-        const apiToken = (config.raw as any)?.server?.apiToken || '';
-        if (!authorizeRequest({ remoteAddress: req.socket.remoteAddress || '', headers: req.headers as any, url: req.url, host: String(req.headers.host || '') }, apiToken)) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'unauthorized' }));
-          return;
-        }
-
-        // P5 Wave 1: registry dispatch —— attach 过 handler 的路由在 legacy 链之前
-        // 统一接管（shadow 条目无 handler 自然落回内联链）。**必须在鉴权之后**（P0-1）：
-        // goals.sessions 须先于 dashboard 兜底、embedding-config 须先于 /api/memory/*
-        // 委托（AGENTS.md §6.5 顺序教训由 dispatch 位置一次性满足）。
-        if (await dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res)) return;
-
-        // Plugin Web surfaces：registry 只支持精确段数，`ui/*` / `api/*` 的通配
-        // 在这里匹配（必须早于 dashboard 委托与反代）。三个精确端点
-        // （web-ticket / ui 基路径 / events）由上面的 registry dispatch 接管。
-        if (await this.handlePluginWebWildcard(req, res)) return;
-
-        // 文件级历史（loopback-only）：office 技能保存前快照 / 桌面 / 调试。
-        if (await handleFileHistoryRoutes(req, res, {
+      // D3 Task 3：请求监听器整体搬入 http/transport.ts（CORS/OPTIONS → 鉴权 →
+      // registry → plugin web → file history → transport 分支 → dashboard 联合兜底 →
+      // /register → /control → /health → 反代 → 500）。deploy/attach 时序不变。
+      const server = http.createServer(createRequestListener({
+        cors: config.server.cors,
+        apiToken: () => (config.raw as any)?.server?.apiToken || '',
+        dispatchAuthorized: (req, res, apiToken) =>
+          dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res),
+        pluginWebWildcard: (req, res) => this.handlePluginWebWildcard(req, res),
+        fileHistory: (req, res, isLoopback) => handleFileHistoryRoutes(req, res, {
           service: () => this.fileHistory ?? null,
           isLoopback,
           resolveDirectory: async (sid) => {
@@ -5786,558 +5758,46 @@ class MafwScheduler {
               return sessionDirectoryOf(info);
             } catch { return null; }
           },
-        })) return;
-
-        // POST /a2a — A2A JSON-RPC (standard protocol methods)
-        if (req.url === "/a2a" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const rawBody = await readBody(req);
-            let body: string | Record<string, unknown>;
-            try { body = JSON.parse(rawBody); } catch { body = rawBody; }
-            const headers: Record<string, string | undefined> = {};
-            for (const key of Object.keys(req.headers)) headers[key] = String(req.headers[key] ?? '');
-            const result = await this.mediaAgent.handleJsonRpc(body, headers);
-            res.writeHead(result.status, result.headers);
-            res.end(result.body);
-          } catch (err: any) {
-            log.error('[A2A] error:', err?.message || String(err));
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
-
-        // GET /.well-known/agent-card.json — A2A agent discovery
-        if (req.url === '/.well-known/agent-card.json' && req.method === 'GET') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            res.setHeader('Content-Type', 'application/a2a+json');
-            res.end(JSON.stringify(this.mediaAgent.agentCard));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
-
-        // GET /a2a/artifacts/<id> — task artifact download (spec §6.7 output reference)
-        const artifactMatch = req.url?.match(/^\/a2a\/artifacts\/([^/]+)$/);
-        if (artifactMatch && req.method === 'GET') {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          try {
-            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
-            const artifact = this.mediaAgent.getArtifact(artifactMatch[1]);
-            if (!artifact) { res.writeHead(404); res.end(JSON.stringify({ error: 'artifact not found' })); return; }
-            const b64 = artifact.dataUrl.split(',')[1] || '';
-            res.setHeader('Content-Type', artifact.mediaType);
-            res.end(Buffer.from(b64, 'base64'));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: err?.message || String(err) }));
-          }
-          return;
-        }
-
-        // GET /api/media/resolve-task/:id — Phase D1 Task C4：已迁 registry dispatch
-        // （loopback 门随迁，见 routes/media-upload.ts）。
-
-        // GET /api/tts/voices — 当前引擎音色 + 能力（desktop picker）
-        // GET /api/voice/status — voice config + registered ASR engines.
-        // GET /api/voice/status — Phase D1 Task H1：已迁 registry dispatch。
-
-        // /api/tts/voices + POST /api/tts + /api/tts/stream + /api/tts/interrupt
-        // — Phase D1 Task 3c：已迁 registry dispatch（attachTtsRoutes；voices/speak
-        // 无 loopback 门、stream/interrupt 有——语义逐字等价）。
-
-        // POST /api/media/analyze-audio — Phase D1 Task 3e：已迁 registry dispatch。
-        // POST /api/media/upload — Phase D1 Task 3e：已迁 registry dispatch。
-
-        // POST /api/media/create-task — Phase D1 Task 3e：已迁 registry dispatch。
-
-        // POST /api/media/upload-and-create — Phase D1 Task 3e：已迁 registry dispatch。
-
-        // Mobile TTS artifact + media proxy — Phase D1 Task 3d：已迁 registry dispatch。
-
-        // POST /api/tts/stream + POST /api/tts/interrupt — Phase D1 Task 3c：
-        // 已迁 registry dispatch（attachTtsRoutes；loopback 门随迁）。
-
-        // POST /api/python/execute + restart + status — Phase D1 Task 3a：
-        // 已迁 registry dispatch（attachPythonRoutes；loopback 守卫随迁）。
-
-        // GET /api/tools + POST /api/tools/execute — Phase D1 Task 3b：
-        // 已迁 registry dispatch（attachToolsRoutes；loopback 守卫随迁）。
-
-        // GET /api/python/status — kernel status for a session — Phase D1 Task 3a：
-        // 已迁 registry dispatch。
-
-        // MCP endpoints on /mcp — dual transport:
-        //   POST with ?sessionId=... → legacy SSE message channel
-        //   POST without sessionId   → stateless StreamableHTTP (MCP 2025-03-26)
-        //   GET with mcp-protocol-version header → StreamableHTTP standalone
-        //     stream request → 405 (we serve no standalone stream; the
-        //     StreamableHTTP client treats 405 as expected and stays in
-        //     JSON-response mode)
-        //   GET without it → legacy SSE session establishment (old clients)
-        if (req.url?.startsWith("/mcp") && req.method === "POST") {
-          const isLegacySsePost = new URL(req.url, "http://localhost").searchParams.has("sessionId");
-          try {
-            if (isLegacySsePost) {
-              await this.mcpEndpoint!.handleMessage(req, res);
-            } else if (this.mcpStreamableEndpoint) {
-              await this.mcpStreamableEndpoint.handleRequest(req, res);
-            } else {
-              res.writeHead(503);
-              res.end(JSON.stringify({ error: "StreamableHTTP endpoint unavailable" }));
-            }
-          } catch (err: any) {
-            log.error("[MCP Message] Error:", err.message);
-            if (!res.headersSent) {
-              res.writeHead(500);
-              res.end(JSON.stringify({ error: err.message }));
-            }
-          }
-          return;
-        }
-
-        if (req.url === "/mcp" && req.method === "GET") {
-          if (req.headers["mcp-protocol-version"]) {
-            // StreamableHTTP client asking for a standalone SSE stream — we
-            // run stateless JSON mode only, so decline per spec.
-            res.writeHead(405, { Allow: "POST" });
-            res.end();
-            return;
-          }
-          try {
-            await this.mcpEndpoint!.handleSSE(req, res);
-          } catch (err: any) {
-            log.error("[MCP SSE] Error:", err.message);
-            if (!res.headersSent) {
-              res.writeHead(500);
-              res.end(JSON.stringify({ error: err.message }));
-            }
-          }
-          return;
-        }
-
-        // Dashboard SPA (HTML + assets)
-        const isSPAAsset = req.url?.startsWith("/assets/") || req.url?.startsWith("/static/");
-        if (req.url === "/" || isSPAAsset || req.url === "/index.html") {
-          const publicDir = config.paths.dashboardPublic;
-          if (req.url === "/" || req.url === "/index.html") {
-            res.setHeader("Content-Type", "text/html");
-            const indexPath = path.join(publicDir, "index.html");
-            if (fs.existsSync(indexPath)) {
-              res.end(fs.readFileSync(indexPath, "utf-8"));
-            } else {
-              res.writeHead(404);
-              res.end("index.html not found");
-            }
-          } else {
-            const assetPath = path.join(publicDir, req.url!.replace("/static/", ""));
-            if (fs.existsSync(assetPath)) {
-              const ext = path.extname(assetPath);
-              const mime: Record<string, string> = { '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
-              res.setHeader("Content-Type", mime[ext] || 'application/octet-stream');
-              res.end(fs.readFileSync(assetPath));
-            } else {
-              res.writeHead(404);
-              res.end("not found");
-            }
-          }
-          return;
-        }
-
-        // Chat API + POST /api/chat/enriched — Phase D1 Task C2：已迁 registry dispatch。
-
-        // POST /api/mafw-commands/run + GET /api/mafw-commands — Phase D1 Task A2：已迁 registry dispatch。
-        // POST /api/merge-memory — Phase D1 Task A3：已迁 registry dispatch。
-
-        // GET /api/memory/{merged-search,stats,sticky,get,search,energy-distribution} + POST /api/memory/embeddings/backfill
-        // + DELETE /api/memory/{id} + GET /api/l5/axioms — Phase D1 Task F1：已迁 registry dispatch。
-        // POST /api/goals/{goalId}/questions/{questionId}/respond — Phase D1 Task F2：已迁 registry dispatch。
-        // GET /api/goals/:id/sessions — P5 Wave 1 起由 registry dispatch 接管
-        // （历史约束"须挂 Dashboard /api/goals* 兜底之前"由 dispatch 位置满足）。
-
-        // GET /api/goals/:id/source — registry route `goals.source` (handoff provenance + full text).
-        // GET /api/goals/:id/timeline — Phase D1 Task F2：已迁 registry dispatch。
-        // POST /api/goals/:id/nodes/:runId/retry — Phase D1 Task F2：已迁 registry dispatch。
-        // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — Phase D1 Task F2：已迁 registry dispatch。
-        // GET /api/pods/:podId/events + POST .../events/:id/seen + POST .../events/seen
-        // — Phase D1 Task H2：已迁 registry dispatch（pod.events.list / seen / seenAll）。
-
-        // 跨项目常驻存在感（tray/taskbar 的唯一数据源）。
-        // GET /api/presence — Phase D1 Task H1：已迁 registry dispatch。
-
-        // POST /api/session/{id}/background — Phase D1 Task D1：已迁 registry dispatch。
-
-        // Neutral terminal PTY façade — Phase D1 Task 3d：已迁 registry dispatch。
-
-        // MCP 管理门面（runtime-neutral）+ MCP 配置写入（mcpConfigApi）
-        // — Phase D1 Task H2：已迁 registry dispatch（mcp.servers / connect /
-        // disconnect / configPreview / configPreviewRemove / configApply /
-        // configRestore / configRemove；委派 handleMcp / handleMcpConfig 不变）。
-
-        // Dashboard API
-        if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify(await this.handleDashboardAPI(req)));
-          return;
-        }
-
-        // POST /api/eval/chat/completions — EvalScope adapter: OpenAI-compatible
-        // endpoint that drives a full main-agent run (media → agent → A2A →
-        // MediaAgent → multimodal model) and returns the final answer.
-        // POST /api/eval/chat/completions — Phase D1 Task H1：已迁 registry dispatch。
-
-        // GET /api/config —gateway effective config
-        // GET /api/config — Phase D1 Task H1：已迁 registry dispatch。
-
-        // PUT /api/config — Phase D1 Task H1：已迁 registry dispatch。
-
-        // 插件注册：必须传递 projectDir + mafwDir
-        if (req.url === '/register' && req.method === 'POST') {
-          let body = '';
-          req.on('data', chunk => body += chunk);
-          req.on('end', async () => {
-            try {
-              const data = JSON.parse(body);
-              const intent = parseRegisterIntent(data);
-              if (!intent) {
-                res.writeHead(400);
-                res.end(JSON.stringify({ error: 'Missing projectDir or mafwDir' }));
-                return;
-              }
-              const { projectDir, mafwDir, setCurrent } = intent;
-
-              // Never register the user's home directory (or its standard data
-              // folders) as a project — desktop's opencode server plugin activates
-              // with cwd=$HOME (or a folder under it) and would otherwise pollute
-              // the registry with bogus "projects" (and manager sessions).
-              if (this.isUserDataDir(projectDir)) {
-                log.warn(`[Scheduler] Refusing to register user data directory as project: ${projectDir}`);
-                res.writeHead(400);
-                res.end(JSON.stringify({ error: 'User data directory cannot be a project' }));
-                return;
-              }
-
-              // 显式选择才允许切换当前项目；自动注册（插件激活）只登记。
-              if (setCurrent && !isSelectableProject(projectDir, resolveRuntimeRoot())) {
-                res.writeHead(400);
-                res.end(JSON.stringify({ error: 'Infrastructure directory cannot be the current project' }));
-                return;
-              }
-
-              const existing = this.registeredProjects.get(projectDir);
-              const changed = !existing || existing.mafwDir !== mafwDir;
-              this.registeredProjects.set(projectDir, {
-                projectDir,
-                mafwDir,
-                registeredAt: existing?.registeredAt ?? new Date().toISOString()
-              });
-
-              if (setCurrent) {
-                // 桌面 Rail 的"切换项目"（SDK project.setCurrent）。
-                this.currentProjectDir = projectDir;
-                this.getGatewayDb().kvSet('current-project', 'default', projectDir);
-              }
-
-              // 持久化到磁盘（写队列防并发覆盖）；无变化的自动注册不写盘/不广播，
-              // 避免 hourly 插件注册把项目列表刷到 UI。
-              if (changed || setCurrent) {
-                await this.persistRegistry();
-                // 桌面 renderer 依此事件刷新 Rail 项目列表（否则只在 gateway ready 时拉一次）。
-                this.broadcast(projectRegisteredEvent(projectDir));
-              }
-
-              if (this.runtime) {
-                try {
-                  await this.ensureManagerSession(projectDir, mafwDir);
-                } catch (err: any) {
-                  log.warn(`[Scheduler] Manager session bootstrap failed: ${err.message} (non-fatal)`);
-                }
-              }
-
-              log.info(`[Scheduler] Project registered: ${projectDir}`);
-              res.writeHead(200);
-              res.end(JSON.stringify({ status: 'ok', registered: projectDir }));
-            } catch (err) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'Invalid JSON' }));
-            }
-          });
-          return;
-        }
-
-        // 控制指令（/control 为 MCP handler 兼容路径；/api/goals/control 为 SDK goals.control 契约路径，两者等价）
-        if ((req.url === '/control' || req.url === '/api/goals/control') && req.method === 'POST') {
-          let body = '';
-          req.on('data', chunk => body += chunk);
-          req.on('end', async () => {
-            try {
-              const control = JSON.parse(body);
-              log.info(`[Scheduler] HTTP control: ${control.action} ${control.goalId || ''}`);
-
-              // 直接处理控制指令（同 processControlFile 逻辑）
-              switch (control.action) {
-                case 'PAUSE':
-                  if (control.goalId) await this.patchState(control.goalId, { nextAction: 'PAUSED' });
-                  break;
-                case 'ABORT':
-                  if (control.goalId) {
-                    await this.destroyAllSessions(control.goalId);
-                    // W1：取消语义 = 批准门也取消（防 terminal state 下 UI 残留 pending）
-                    await this.patchState(control.goalId, { nextAction: 'FAILED', planApproval: null });
-                    const state = this.activeGoals.get(control.goalId);
-                    // Find projectDir for this goal
-                    let projectDir: string | null = null;
-                    for (const [pDir, info] of this.registeredProjects) {
-                      if (fs.existsSync(path.join(info.mafwDir, 'state', `${control.goalId}.json`))) {
-                        projectDir = pDir;
-                        break;
-                      }
-                    }
-                    if (projectDir) {
-                      const { recordGoalOutcome } = await import('./orchestration/outcome-recorder.js');
-                      recordGoalOutcome(this.getGatewayDb(), {
-                        goalId: control.goalId,
-                        verdict: 'CANCELLED',
-                        rounds: state?.loop ?? 0,
-                        lastError: 'User cancelled',
-                        reviewFeedback: null,
-                        projectDir,
-                        mafwDir: path.join(projectDir, '.mafw'),
-                        projectId: projectDir,
-                      });
-                    }
-                    await this.archiveGoal(control.goalId, {
-                      verdict: 'CANCELLED',
-                      rounds: state?.loop ?? 0,
-                      lastError: 'User cancelled',
-                    });
-                  }
-                  break;
-                case 'FORCE_PHASE':
-                  if (control.goalId && control.targetPhase) {
-                    await this.destroyAllSessions(control.goalId);
-                    await this.patchState(control.goalId, {
-                      nextAction: `CREATE_${control.targetPhase.toUpperCase()}_SESSION`
-                    });
-                  }
-                  break;
-                case 'RESET_PARAMETRIC':
-                  log.info('[Scheduler] Resetting parametric cache...');
-                  break;
-              }
-
-              res.writeHead(200);
-              res.end(JSON.stringify({ status: 'ok' }));
-            } catch (err) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'Invalid JSON' }));
-            }
-          });
-          return;
-        }
-
-        // POST /api/work/{goalId}/validate + POST /api/work/{goalId}/complete — Phase D1 Task F2：已迁 registry dispatch。
-        // POST /api/manager/session/rotate — P5 Wave 1 起由 registry dispatch 接管
-        // GET /api/manager/session — Phase D1 Task H2：已迁 registry dispatch
-        // （manager.session；?projectDir= 单项目 / 全量投影语义随迁）。
-
-        // 健康检查
-        if (req.url === '/health' && req.method === 'GET') {
-          res.writeHead(200);
-          res.end(JSON.stringify({
-            status: 'ok',
-            serveRunning: !!this.serveInstance,
-            registeredProjects: Array.from(this.registeredProjects.keys()),
-            activeGoals: Array.from(this.activeGoals.keys()),
-            media: { configured: !!this.mediaService?.isConfigured },
-            ...(this.releaseMetadata && this.runtimeIdentity
-              ? gatewayHealthFields(this.releaseMetadata, this.runtimeIdentity)
-              : {}),
-          }));
-          return;
-        }
-
-        // GET /api/projects + GET /api/projects/current — Phase D1 Task A1：已迁 registry dispatch。
-
-        // POST /api/devices + GET /api/devices + DELETE /api/devices/:id
-        // — Phase D1 Task H2：已迁 registry dispatch（devices.register / list / delete）。
-        // GET/DELETE /api/mobile/devices(:id) + POST /api/mobile/devices/register
-        // + GET /api/mobile/pairing-code + POST /api/mobile/pairing/verify
-        // — Phase D1 Task H2：已迁 registry dispatch（mobile.devicesList / devicesDelete /
-        // devicesRegister / pairingCode / pairingVerify；配对令牌与 429 语义随迁）。
-        // GET /api/approvals + POST /api/approvals/:id/respond — Phase D1 Task A5：已迁 registry dispatch。
-
-        // GET /api/questions + POST /api/questions/:id/{reply,reject} — Phase D1 Task B1：已迁 registry dispatch。
-
-        // 鈹€鈹€ Provider & Agents (composer model pill / @agent mention) 鈹€鈹€
-
-        // ── /api/runtime routes — P5 Wave 2 起由 registry dispatch 接管
-        // （runtimeDeps/restartAgentDeps 构造上移至私有方法；内联块对未知
-        //   /api/runtime/* 悬空 return 吞请求的行为随之终结——现落回 legacy 链）
-
-        // ── Plugin Hub (all four plugin types) — P5 Wave 2 起由 registry dispatch
-        // 接管（pluginHubDeps 构造上移至私有方法；cleanupExamples 改为命中
-        // /api/plugins 路由时才执行——内联时代每个到达此处的请求都跑）。
-
-        // GET /api/orchestration/outcomes — goal outcome query
-        // GET /api/orchestration/outcomes — Phase D1 Task H1：已迁 registry dispatch。
-
-        // GET /api/provider – list providers + models (legacy /provider)
-        // GET /api/provider — Phase D1 Task H1：已迁 registry dispatch。
-
-        // GET /api/agents — Phase D1 Task H1：已迁 registry dispatch。
-
-        // ── Runtime config (Settings page — runtime-neutral config surface) ──
-
-        // GET/PATCH /api/runtime-config — Phase D3 Task 2：已迁 registry dispatch。
-        // （routes/runtime-config.ts；GET 包络 `{ config }` / PATCH `{ status:'ok',
-        // config }`、provider.config(.update) 门、503 'LLM client not available'
-        // 与 500 日志格式随迁，runtime / runtimeHost 经 live getter。）
-
-        // GET|POST /api/sessions/{sid}/permission-mode — Phase D1 Task E2：已迁 registry dispatch。
-
-        // /api/approvals/allowlist + /api/approvals/rules (GET/POST/DELETE) — Phase D1 Task A5：已迁 registry dispatch。
-
-        // POST /api/permissions/{id}/reply — Phase D1 Task B1：已迁 registry dispatch。
-
-        // GET /api/triage + POST /api/triage/:id/{confirm,reject,propose} — Phase D1 Task A4：已迁 registry dispatch。
-
-        // ── Automation endpoints (Tier 4 — user only) ──
-        // POST /api/automations/draft — Phase D1 Task C1：已迁 registry dispatch。
-        // GET /api/automations — Phase D1 Task C1：已迁 registry dispatch。
-        // GET /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
-        // PUT /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
-        // DELETE /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
-        // GET /api/automations/:id/history — Phase D1 Task C1：已迁 registry dispatch。
-
-        // POST /api/llm/compress — LLM compression proxy (via SDK)
-        // POST /api/llm/compress — Phase D1 Task H1：已迁 registry dispatch（handleCompress 经 compress 依赖桥接）。
-
-        // 鈹€鈹€ SdkSessionResource REST endpoints 鈹€鈹€
-
-        // POST /api/session — Phase D1 Task D1：已迁 registry dispatch。
-
-        // POST /api/session/{id}/promptAsync — Phase D1 Task D1：已迁 registry dispatch。
-
-        // POST /api/session/{id}/prompt — Phase D1 Task D1：已迁 registry dispatch。
-
-        // DELETE /api/session/{id} — Phase D1 Task D1：已迁 registry dispatch。
-
-        // POST /api/session/{id}/abort — Phase D1 Task D1：已迁 registry dispatch。
-
-        // ── 认知面 HTTP 动词（spec 2026-10-22-cognition-gate-rewrite §5.4；loopback-only）──
-        // Phase D1 Task 2：已迁 registry dispatch（attachCognitionRoutes；loopback
-        // 守卫与 per-request config 读取随 handler 迁移，行为等价）。
-
-        // ── 会话队列 inbox 管理面（spec 2026-10-22-session-queue-inbox §5.5）──
-        // GET /api/session/{id}/queue — Phase D1 Task D1：已迁 registry dispatch。
-        // DELETE /api/session/{id}/queue — Phase D1 Task D1：已迁 registry dispatch。
-        // DELETE /api/session/{id}/queue/{itemId} — Phase D1 Task D1：已迁 registry dispatch。
-
-        // DELETE/PATCH /api/sessions/:id — P5 Wave 1 起由 registry dispatch 接管
-
-        // GET /api/sessions —— code-first P0 起由 registry typed handler 接管
-        // （attachTypedRoute('session.list')，schema 见 routes/schemas/session.ts）。
-
-        // POST /api/sessions/{id}/permissions/{requestId} — Phase D1 Task E2：已迁 registry dispatch
-        // （always 持久规则沉淀与 permissionList 反查 fail-open 随迁）。
-
-        // GET /api/sessions/{id} — Phase D1 Task D1：已迁 registry dispatch。
-
-        // GET /api/sessions/{id}/messages — Phase D1 Task E1：已迁 registry dispatch。
-
-        // GET /api/sessions/{id}/todo — Phase D1 Task E1：已迁 registry dispatch（fail-open 200 {data:[]}）。
-
-        // GET /api/sessions/{id}/trajectory — Phase D1 Task E1：已迁 registry dispatch
-        // （store 缺失 / 抛错 → fail-open 200 {turns:[],events:[]}；rebuild 懒 require 随迁）。
-
-        // GET /api/sessions/{id}/token-summary — Phase D1 Task E1：已迁 registry dispatch
-        // （store 缺失 / 抛错 → fail-open 200 零值汇总）。
-
-        // /api/usage/plugins* — P5 Wave 1 起由 registry dispatch 接管（7 条）
-
-        // GET /api/media/plugins — media engine plugin state list
-        // GET /api/media/plugins — Phase D1 Task H1：已迁 registry dispatch。
-
-        // POST /api/media/plugins/reload — Phase D1 Task H1：已迁 registry dispatch。
-
-        // POST /api/media/switch — P5 Wave 1 起由 registry dispatch 接管
-
-        // GET/POST /api/model-config — P5 Wave 1 起由 registry dispatch 接管
-
-        // POST /api/sessions/:id/fork|revert|unrevert + /api/session/:id/summarize
-        // — P5 Wave 1 起由 registry dispatch 接管
-
-        // GET /api/usage + GET /api/usage/summary — Phase D1 Task B2：已迁 registry dispatch。
-
-        // ── Subagent spawn/list/message/cancel/result — Phase D1 Task E2：已迁 registry dispatch。
-        // （legacy 共享 matcher 的 GET/POST 双 method 臂由 catalog method 维度拆分。）
-
-        // GET /api/sessions/{id}/children — Phase D1 Task E1：已迁 registry dispatch
-        // （runtime 缺失 / 抛错 → fail-open 200 {items:[]}；depth 补齐随迁）。
-
-        // GET /api/recall/context — Phase D1 Task B4：已迁 registry dispatch（逐字迁移，fail-open 200）。
-
-        // GET /api/recall/{instructions,pinned,priors} — Phase D1 Task B3：已迁 registry dispatch。
-
-        // GET /api/agent/capabilities — Phase D1 Task 3d：已迁 registry dispatch
-        // （attachAgentRoutes；fail-open 语义随迁）。
-
-        // POST /api/obs/capture — Phase D1 Task C3：已迁 registry dispatch
-        // （手动 chunked reader / 1MB 静默丢弃 / fail-open 200 逐字随迁）。
-
-        // POST /api/events — P5 Wave 1 起由 registry dispatch 接管
-
-        // SSE 事件（→ Dashboard / Chat）— Phase D1 Task H2：已迁 registry dispatch
-        // （event.subscribe；Mode A 全局流 + 持久回放 / Mode B chat session 订阅随迁）。
-
-        // GET /health — standalone health endpoint (not proxied)
-        if (req.url === '/health') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'ok' }));
-          return;
-        }
-
-        // Reverse proxy to the agent backend for non-MAFW routes —
-        // target from the runtime contract (getBaseUrl), config 仅 bootstrap 兜底
-        const serveUrl = this.runtimeHost?.getBaseUrl?.() ?? config.server.serveUrl;
-        try {
-          const proxyUrl = new URL(req.url || '/', serveUrl);
-          const proxyReq = http.request(proxyUrl, {
-            method: req.method,
-            // 2.1.0：serve 强制 Basic——剔除入站 Authorization 后注入 serve 凭证
-            headers: { ...injectServeAuth(req.headers, serveAuthHeaders()), host: proxyUrl.host },
-          }, (proxyRes) => {
-            res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
-            proxyRes.pipe(res);
-          });
-          proxyReq.on('error', (err) => {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: 'Proxy error: ' + err.message }));
-          });
-          if (req.method !== 'GET' && req.method !== 'HEAD') {
-            req.pipe(proxyReq);
-          } else {
-            proxyReq.end();
-          }
-        } catch (err: any) {
-          res.writeHead(502);
-          res.end(JSON.stringify({ error: 'Proxy config error: ' + err.message }));
-        }
-      } catch (err: any) {
-        log.error('[Scheduler] Unhandled request error:', err.message);
-        if (!res.headersSent) {
-          try { res.writeHead(500); res.end(JSON.stringify({ error: err.message }));
-          } catch { /* response already ended */ }
-        }
-      }
-      });
+        }),
+        mediaAgent: () => this.mediaAgent,
+        mcpEndpoint: () => this.mcpEndpoint,
+        mcpStreamable: () => this.mcpStreamableEndpoint,
+        spaRoot: () => config.paths.dashboardPublic,
+        dashboardDispatch: async (req) => ({ status: 200, body: await this.handleDashboardAPI(req) }),
+        register: {
+          parseIntent: (data) => parseRegisterIntent(data),
+          isUserDataDir: (dir) => this.isUserDataDir(dir),
+          isSelectableProject: (dir) => isSelectableProject(dir, resolveRuntimeRoot()),
+          registeredProject: (dir) => this.registeredProjects.get(dir),
+          registerProject: (dir, entry) => { this.registeredProjects.set(dir, entry); },
+          setCurrentProject: (dir) => {
+            this.currentProjectDir = dir;
+            this.getGatewayDb().kvSet('current-project', 'default', dir);
+          },
+          persistRegistry: () => this.persistRegistry(),
+          broadcastProjectRegistered: (dir) => this.broadcast(projectRegisteredEvent(dir)),
+          hasRuntime: () => !!this.runtime,
+          ensureManagerSession: (dir, mafwDir) => this.ensureManagerSession(dir, mafwDir),
+        },
+        control: {
+          patchState: (goalId, patch) => this.patchState(goalId, patch as any),
+          destroyAllSessions: (goalId) => this.destroyAllSessions(goalId),
+          getActiveGoal: (goalId) => this.activeGoals.get(goalId),
+          registeredProjects: () => this.registeredProjects,
+          getGatewayDb: () => this.getGatewayDb(),
+          archiveGoal: (goalId, outcome) => this.archiveGoal(goalId, outcome as any),
+        },
+        health: {
+          serveRunning: () => !!this.serveInstance,
+          registeredProjectDirs: () => Array.from(this.registeredProjects.keys()),
+          activeGoalIds: () => Array.from(this.activeGoals.keys()),
+          mediaConfigured: () => !!this.mediaService?.isConfigured,
+          releaseFields: () => (this.releaseMetadata && this.runtimeIdentity
+            ? gatewayHealthFields(this.releaseMetadata, this.runtimeIdentity) as Record<string, unknown>
+            : {}),
+        },
+        proxyTarget: () => this.runtimeHost?.getBaseUrl?.() ?? config.server.serveUrl,
+      }));
 
       server.on('error', async (err: any) => {
         if (err.code === 'EADDRINUSE') {
@@ -6367,146 +5827,21 @@ class MafwScheduler {
         log.info(`[Scheduler]  - GET/POST /api/terminal/sessions  (mafw-terminal/1; WS .../:id/connect?ticket=)`);
         log.info(`[Scheduler]  - GET  /              (Dashboard SPA)`);
 
-        // WebSocket endpoint for mobile/remote clients: same event stream as
-        // SSE (/api/events) plus an upstream `send` command.
-        const wss = new WebSocketServer({ noServer: true });
-        this.voiceWss = new WebSocketServer({ noServer: true });
-        this.terminalWss = new WebSocketServer({ noServer: true });
-        wss.on('connection', (ws) => {
-          this.wsClients.add(ws);
-          (ws as any).isAlive = true;
-          (ws as any).missedPongs = 0;
-          ws.on('pong', () => { (ws as any).isAlive = true; (ws as any).missedPongs = 0; });
-          ws.send(JSON.stringify({ type: 'connected', timestamp: new Date().toISOString(), vocab: 'v2' }));
-          ws.on('message', (raw) => {
-            void this.handleWsMessage(ws, raw);
-          });
-          ws.on('close', () => {
-            this.wsClients.delete(ws);
-            const deviceId = (ws as any).deviceId;
-            if (deviceId) this.pushGateway?.removeOnlineWs(deviceId);
-          });
-          ws.on('error', () => {
-            this.wsClients.delete(ws);
-            const deviceId = (ws as any).deviceId;
-            if (deviceId) this.pushGateway?.removeOnlineWs(deviceId);
-          });
+        // D3 Task 3：WS 上行（mobile /api/ws / voice / terminal / plugin）+ 30s
+        // 心跳 + 60s PushGateway 维护整体搬入 http/ws-upgrade.ts；interval 归属 hub，
+        // 由 shutdown() 的 dispose() 收口（此前的实现从不清理，随进程退出）。
+        const hub = createWsHub(server, {
+          wsClients: this.wsClients,
+          apiToken: () => (config.raw as any)?.server?.apiToken || '',
+          pushGateway: () => this.pushGateway,
+          handleWsMessage: (ws, raw) => this.handleWsMessage(ws, raw),
+          getVoiceRuntime: () => this.getVoiceRuntime(),
+          getTerminalService: () => this.getTerminalService(),
+          pluginWebDeps: () => this.pluginWebDeps(),
         });
-
-        // WS heartbeat: ping every 30s, prune dead connections after 2 missed pongs (60s).
-        const wsPingInterval = setInterval(() => {
-          for (const ws of this.wsClients) {
-            if ((ws as any).isAlive === false) {
-              (ws as any).missedPongs = ((ws as any).missedPongs || 0) + 1;
-              if ((ws as any).missedPongs >= 2) {
-                this.wsClients.delete(ws);
-                const deviceId = (ws as any).deviceId;
-                if (deviceId) this.pushGateway?.removeOnlineWs(deviceId);
-                try { ws.terminate(); } catch { /* already closed */ }
-                continue;
-              }
-            }
-            (ws as any).isAlive = false;
-            try { ws.ping(); } catch {
-              this.wsClients.delete(ws);
-              const deviceId = (ws as any).deviceId;
-              if (deviceId) this.pushGateway?.removeOnlineWs(deviceId);
-            }
-          }
-        }, 30_000);
-        // Allow the process to exit without waiting for the ping timer.
-        if (wsPingInterval.unref) wsPingInterval.unref();
-
-        // Periodic PushGateway maintenance: sync lastSeen, prune stale online WS + expired device registrations.
-        const deviceCleanupInterval = setInterval(() => {
-          // 1. Remove WS entries with no activity for 2 minutes.
-          this.pushGateway?.cleanupStale(120_000);
-          // 2. Sync in-memory lastSeen to DeviceStore so active devices aren't pruned.
-          //    This bridges the gap between WS heartbeat (updates in-memory only)
-          //    and pruneDeviceStore (checks persisted lastSeen).
-          this.pushGateway?.syncLastSeenToDeviceStore();
-          // 3. Prune device-store entries not seen for 7 days (FCM token expiry hygiene).
-          const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-          const pruned = this.pushGateway?.pruneDeviceStore(cutoff);
-          if (pruned && pruned.length > 0) {
-            log.info(`[PushGateway] pruned ${pruned.length} stale device(s) from store`);
-          }
-        }, 60_000);
-        if (deviceCleanupInterval.unref) deviceCleanupInterval.unref();
-
-        server.on('upgrade', (req, socket, head) => {
-          const url = req.url || '';
-          // Token auth on upgrade: delegated to core/auth.ts
-          const rawAddr = (req.socket as any)?.remoteAddress || (socket as any).remoteAddress || '';
-          const wsToken = (config.raw as any)?.server?.apiToken || '';
-
-          if (isVoiceUpgradePath(url)) {
-            if (!isLoopbackAddr(rawAddr)) {
-              const wsAuth = authorizeWsUpgrade({ remoteAddress: rawAddr, headers: req.headers as any, url, host: String(req.headers.host || '') }, wsToken);
-              if (!wsAuth.ok) {
-                socket.write(wsAuth.rejectResponse!);
-                socket.destroy();
-                return;
-              }
-            }
-            this.voiceWss!.handleUpgrade(req, socket, head, (ws) => {
-              attachVoiceSocket(ws as any, {
-                createSession: async () => (await this.getVoiceRuntime()).createSession(
-                  (m) => ws.send(JSON.stringify(m)),
-                ),
-              });
-            });
-            return;
-          }
-
-          const terminalRequest = matchTerminalConnectUrl(url);
-          if (terminalRequest) {
-            // 中性终端 WS：loopback-only + 一次性 ticket（ticket 自带目录绑定）。
-            if (!isLoopbackAddr(rawAddr)) {
-              socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
-              socket.destroy();
-              return;
-            }
-            this.terminalWss!.handleUpgrade(req, socket, head, (ws) => {
-              void this.getTerminalService()
-                .bridge({ socket: ws as any, id: terminalRequest.id, ticket: terminalRequest.ticket })
-                .catch(() => {
-                  try { ws.close(4502, 'terminal bridge failed'); } catch { /* already closed */ }
-                });
-            });
-            return;
-          }
-
-          const pluginWs = parsePluginWsUrl(url);
-          if (pluginWs) {
-            // 票据 cookie / loopback 鉴权在 handler 内完成；拒绝也消费 socket。
-            handlePluginWsUpgrade(this.pluginWebDeps(), req, socket, head);
-            return;
-          }
-
-          if (!url.startsWith('/api/ws')) {
-            socket.destroy();
-            return;
-          }
-          const wsAuth = authorizeWsUpgrade({ remoteAddress: rawAddr, headers: req.headers as any, url, host: String(req.headers.host || '') }, wsToken);
-          if (!wsAuth.ok) {
-            socket.write(wsAuth.rejectResponse!);
-            socket.destroy();
-            return;
-          }
-          wss.handleUpgrade(req, socket, head, (ws) => {
-            // Extract deviceId from query string for PushGateway tracking
-            try {
-              const q = new URL(url, `http://${req.headers.host || 'localhost'}`);
-              const deviceId = q.searchParams.get('deviceId');
-              if (deviceId) {
-                (ws as any).deviceId = deviceId;
-                this.pushGateway?.addOnlineWs(deviceId, ws);
-              }
-            } catch { /* non-fatal */ }
-            wss.emit('connection', ws, req);
-          });
-        });
+        this.voiceWss = hub.voiceWss;
+        this.terminalWss = hub.terminalWss;
+        this.wsHub = hub;
         resolve(true);
       });
     });
