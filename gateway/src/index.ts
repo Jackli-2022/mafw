@@ -4396,6 +4396,8 @@ class MafwScheduler {
       },
       now: () => new Date().toISOString(),
       log: (message) => log.info(message),
+      // Phase C Task 5: observe-only mirror into the unified session registry.
+      sessionRegistry: this.sessionRegistry,
     });
     this.podProbeService = new PodProbeService({
       store: this.podStore,
