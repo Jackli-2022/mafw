@@ -85,4 +85,20 @@ describe('T1 trace activation state', () => {
     expect(stats.mean).toBeCloseTo(0.15, 5);
     expect(stats.max).toBeCloseTo(0.2, 5);
   });
+
+  test('batch activation lookup ignores unknown ids and caps input', () => {
+    const a = db.beginTurn('s1');
+    const b = db.beginTurn('s2');
+    for (let i = 0; i < 5; i++) db.recordT1RetrievalEvent({ traceId: a.trace_id, kind: 'search' });
+    for (let i = 0; i < 2; i++) db.recordT1RetrievalEvent({ traceId: b.trace_id, kind: 'recall' });
+
+    const map = db.t1Activations([a.trace_id, b.trace_id, 't1t_missing']);
+    expect(map.size).toBe(2);
+    expect(map.get(a.trace_id)).toBeCloseTo(0.5, 5);
+    expect(map.get(b.trace_id)).toBeCloseTo(0.2, 5);
+    expect(db.t1Activations([]).size).toBe(0);
+
+    const many = Array.from({ length: 150 }, (_, i) => `t1t_${i}`);
+    expect(() => db.t1Activations(many)).not.toThrow();
+  });
 });

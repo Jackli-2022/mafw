@@ -1152,6 +1152,27 @@ export class GatewayDatabase {
     }
   }
 
+  /** Batch activation lookup for bounded re-ranking (cap 100 ids). */
+  t1Activations(traceIds: string[]): Map<string, number> {
+    const out = new Map<string, number>();
+    const ids: string[] = [];
+    for (const raw of traceIds || []) {
+      const id = String(raw || '').trim();
+      if (!id || out.has(id) || ids.includes(id)) continue;
+      ids.push(id);
+      if (ids.length >= 100) break;
+    }
+    if (ids.length === 0) return out;
+    try {
+      const placeholders = ids.map(() => '?').join(',');
+      const rows = this.db
+        .prepare(`SELECT trace_id, activation FROM t1_trace_state WHERE trace_id IN (${placeholders})`)
+        .all(...ids) as Array<{ trace_id: string; activation: number }>;
+      for (const row of rows) out.set(row.trace_id, row.activation);
+    } catch { /* fail-open: relevance order wins */ }
+    return out;
+  }
+
   /** Aggregate activation state for /api/memory/stats. */
   t1ActivationStats(): { traces: number; mean: number; max: number } {
     try {
