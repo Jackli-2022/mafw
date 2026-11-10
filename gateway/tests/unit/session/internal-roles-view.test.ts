@@ -70,4 +70,28 @@ describe('InternalRolesView', () => {
     expect(v.has('gone')).toBe(false);
     expect(v.delete('gone')).toBe(false);
   });
+
+  it('set on an expired-but-unswept record re-registers (not dropped at next sweep)', async () => {
+    const r = new SessionRegistry();
+    const v = new InternalRolesView(r);
+    r.register({ sessionID: 's1', scope: { kind: 'worker' }, metadata: { pair: {} }, ttlMs: 50 });
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
+    v.set('s1', 'media'); // the record is lazy-ended — treat as absent, re-register
+    expect(v.get('s1')).toBe('media');
+    const rec = r.lookup('s1')!;
+    expect(rec.status).toBe('active');     // re-registered, not silently swept away
+    expect(rec.generation).toBe(2);         // lifecycle continued
+    expect(rec.scope.kind).toBe('internal'); // the view now owns the record (old pair was dead anyway)
+    expect(rec.scope.role).toBe('media');
+  });
+
+  it('delete on a foreign record with NO role set → false (Map.delete semantics)', () => {
+    const r = new SessionRegistry();
+    const v = new InternalRolesView(r);
+    r.register({ sessionID: 'plain', scope: { kind: 'worker' }, ttlMs: 1000 });
+    expect(v.delete('plain')).toBe(false); // nothing to delete
+    expect(r.lookup('plain')).not.toBeNull(); // record untouched
+    v.set('plain', 'media');
+    expect(v.delete('plain')).toBe(true); // role was present
+  });
 });

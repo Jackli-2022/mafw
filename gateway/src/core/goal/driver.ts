@@ -371,10 +371,11 @@ export class NodeDriver {
       try {
         await this.advanceInner(goalId);
       } catch (err) {
-        // 驱动器异常绝不外抛（spec §7）；落 lastError
+        // 驱动器异常绝不外抛（spec §7）；落 lastError。非 Error 对象
+        // （{code, message} 式库抛出）保留其 .message 而非渲染 [object Object]。
         try {
           const mafwDir = this.stateDirs.get(goalId);
-          const message = err instanceof Error ? err.message : String(err);
+          const message = (err as any)?.message ?? String(err);
           if (mafwDir) writeGoalState(mafwDir, goalId, { lastError: `driver: ${message}` });
         } catch { /* last-resort */ }
       }
@@ -1149,6 +1150,11 @@ export class NodeDriver {
    * 由下一次外部推进（watchdog/应答/审批）重新开始计数。
    */
   private async continueAdvance(goalId: string): Promise<void> {
+    // MutexQueue releases the key one microtask AFTER the task promise settles
+    // (queueMicrotask re-entrancy guard, Phase A design). Every caller here sits
+    // INSIDE an advanceInner chain where the goal's mutex is legitimately held,
+    // so the stale-true window is invisible to them — outside callers must not
+    // rely on has() immediately after an awaited advance in the same tick.
     if (!this.mutex.has(goalId)) {
       await this.advance(goalId);
       return;

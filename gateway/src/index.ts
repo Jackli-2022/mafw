@@ -4315,8 +4315,9 @@ class MafwScheduler {
       commitDelivered: (ids, sessionId) => this.podMessageDelivery?.commitDelivered(ids, sessionId),
       // B2: coalesce scans via the unified scheduler — the 60s timer scan and a
       // p2-notify scan landing together join the in-flight one (no double delivery).
+      // No task id: the scheduler's auto-id (task_<seq>) is collision-free.
       runScan: (fn) => this.scheduler.submit(
-        { id: `pod-event-wake:${Date.now()}`, priority: 'midground', mutexKey: 'pod-event-wake', strategy: 'coalesce' },
+        { priority: 'midground', mutexKey: 'pod-event-wake', strategy: 'coalesce' },
         fn,
       ),
     });

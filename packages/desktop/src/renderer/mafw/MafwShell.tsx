@@ -115,7 +115,7 @@ import { fileOpenPlan } from "./file-kind"
 import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
 import { buildMafwFileUrl } from "../../shared/mafw-file"
-import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
+import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, workbenchZoneFor, type WorkbenchDetent } from "./workbench-detents"
 import { captureWorkbenchFocusSnapshot, restoreWorkbenchFocusSnapshot, type WorkbenchFocusSnapshot } from "./workbench-focus"
 import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
@@ -1819,6 +1819,8 @@ export function MafwShell() {
   )
   try { localStorage.setItem("mafw-workbench-detent", String(workbenchBoot.detent)) } catch { /* ignore */ }
   const [rightDockOpen, setRightDockOpen] = createSignal(defaultDockOpen(localStorage.getItem("mafw-right-dock-open")))
+  // A 方案：窄窗不再并排，Chat / Workbench 两个全宽视图互斥切换；宽窗回到并排。
+  const [narrowView, setNarrowView] = createSignal<"chat" | "workbench">("chat")
   // Focus 是会话级瞬态：不持久化，项目切换时退出（spec 2026-11-04 §4.2）。
   const [workbenchFocus, setWorkbenchFocus] = createSignal(false)
   let workbenchFocusSnapshot: WorkbenchFocusSnapshot | null = null
@@ -1893,6 +1895,8 @@ export function MafwShell() {
   const welcomeFull = () => activeTab() === "chat" && !showConfig() && (showWelcome() || !activeSessionId())
   const chatActive = () => activeTab() === "chat" && !showConfig() && !welcomeFull()
   const workbenchContent = (): WorkbenchContentMode => (showConfig() ? "config" : "project")
+  const narrowZone = () => workbenchZoneFor(availableWidth()) === "narrow"
+  const narrowChat = () => narrowZone() && narrowView() === "chat"
   const chatSplit = () => workbenchSplit({ content: workbenchContent(), open: rightDockOpen() })
   const focusActive = () => workbenchFocusActive({ focus: workbenchFocus(), content: workbenchContent(), open: rightDockOpen() })
   const bodyColumns = () =>
@@ -1901,6 +1905,8 @@ export function MafwShell() {
       chatPx: chatPx(),
       split: chatSplit(),
       focus: focusActive(),
+      narrow: narrowZone(),
+      narrowWorkbench: narrowZone() && rightDockOpen() && narrowView() === "workbench",
     })
 
   const applyRightDock = (open: boolean) => {
@@ -1908,9 +1914,18 @@ export function MafwShell() {
       restoreFocusSnapshot()
       setWorkbenchFocus(false)
     }
+    if (narrowZone()) setNarrowView(open ? "workbench" : "chat")
     setRightDockOpen(open)
     try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch { /* ignore */ }
   }
+  const applyNarrowView = (view: "chat" | "workbench") => {
+    if (view === "workbench" && !rightDockOpen()) {
+      applyRightDock(true)
+      return
+    }
+    setNarrowView(view)
+  }
+  createEffect(() => { if (!narrowZone()) setNarrowView("chat") })
   const applyWorkbenchView = (view: WorkbenchView) => {
     setWorkbenchView(view)
     try { localStorage.setItem("mafw-workbench-view", view) } catch { /* ignore */ }
@@ -2033,11 +2048,13 @@ export function MafwShell() {
   const openWorkbench = (view: WorkbenchView, section?: ExecutionSection) => {
     if (section) applyExecutionSection(section)
     else applyWorkbenchView(view)
+    if (narrowZone()) setNarrowView("workbench")
     setRightDockOpen(true)
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
   }
   const openWorkbenchSurface = (surface: WorkbenchSurface) => {
     applyWorkbenchSurface(surface)
+    if (narrowZone()) setNarrowView("workbench")
     setRightDockOpen(true)
     try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
   }
@@ -2727,6 +2744,28 @@ export function MafwShell() {
           }}
         />
         <div class="mafw-topstrip-spacer" />
+        <Show when={narrowZone() && !showConfig()}>
+          <div class="mafw-narrow-switch" role="group" aria-label="Chat / Workbench">
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-narrow-tab"
+              aria-pressed={narrowView() === "chat"}
+              onClick={() => applyNarrowView("chat")}
+            >
+              Chat
+            </ButtonV2>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-narrow-tab"
+              aria-pressed={narrowView() === "workbench"}
+              onClick={() => applyNarrowView("workbench")}
+            >
+              Workbench
+            </ButtonV2>
+          </div>
+        </Show>
         <Show when={!showConfig()}>
           <TooltipV2 value={`${rightDockOpen() ? "隐藏" : "显示"}面板 (Ctrl+Alt+B)`} openDelay={300}>
             <ButtonV2
@@ -2779,7 +2818,7 @@ export function MafwShell() {
             onPodCreate={() => { void podStore.create() }}
           />
         </Show>
-        <div class="mafw-main">
+        <div class="mafw-main" classList={{ "mafw-narrow-chat": narrowChat() }}>
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
             {showConfig() ? (
@@ -2918,7 +2957,7 @@ export function MafwShell() {
               <AutomationsPage />
             ) : null}
           </div>
-          <Show when={chatSplit() && !focusActive()}>
+          <Show when={chatSplit() && !focusActive() && !narrowZone()}>
             <div
               class="mafw-chat-resize-wrap"
               onDblClick={() => applyDetent(WORKBENCH_DEFAULT_DETENT)}

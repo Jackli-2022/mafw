@@ -35,15 +35,17 @@ export interface SessionRecord {
   ttlMs: number | null;
   expiresAt: number | null;
   metadata: Record<string, unknown>;
-  /** Per-record eviction callback — fires from sweep() only. */
-  onEvict?: (record: SessionRecord) => void;
+  // NOTE: the per-record eviction callback lives on RegisterInput only —
+  // public record copies never expose it (internal plumbing).
 }
 
 export interface RegisterInput {
   sessionID: string;
   scope: SessionScope;
   metadata?: Record<string, unknown>;
-  /** undefined/null → no expiry. */
+  /** TTL from registration/touch. `undefined`/`null`/`0` (or negative) → the
+   *  record NEVER expires (an explicit 0 is "no TTL", not "immediately
+   *  expired" — pass a positive ttlMs for real expiry). */
   ttlMs?: number | null;
   runtimeName?: string;
   onEvict?: (record: SessionRecord) => void;
@@ -88,19 +90,23 @@ export class SessionRegistry {
       const ended = this.expiresAtOf(existing) !== null && this.now() >= this.expiresAtOf(existing)!;
       if (ended) {
         // The old record did end: fire its onEvict (dispose), drop it from the
-        // table, then rebuild in place with generation +1.
+        // table, then rebuild in place with generation +1. A new lifecycle
+        // starts — createdAt resets and metadata is REPLACED (stale owner
+        // data must not leak into the new record).
         this.collect(existing, this.materialize(existing, 'ended'));
         existing.generation = existing.generation + 1;
         existing.onEvict = input.onEvict; // fresh — the old callback already fired
+        existing.createdAt = this.now();
+        existing.metadata = { ...(input.metadata ?? {}) };
       } else {
         existing.onEvict = input.onEvict ?? existing.onEvict;
+        existing.metadata = { ...existing.metadata, ...(input.metadata ?? {}) };
       }
       existing.scope = input.scope;
       existing.runtimeName = input.runtimeName ?? existing.runtimeName;
       existing.lastActiveAt = this.now();
       existing.ttlMs = input.ttlMs ?? null;
       existing.expiresAt = this.expiresAtFor(input.ttlMs);
-      existing.metadata = { ...existing.metadata, ...(input.metadata ?? {}) };
       this.records.set(input.sessionID, existing); // collect() removed it when ended
       return this.materialize(existing, 'active');
     }
@@ -203,6 +209,7 @@ export class SessionRegistry {
   }
 
   private materialize(record: StoredRecord, status: SessionStatus): SessionRecord {
+    // onEvict is internal — never leak the callback on public copies.
     return {
       sessionID: record.sessionID,
       scope: { ...record.scope },
@@ -214,7 +221,6 @@ export class SessionRegistry {
       ttlMs: record.ttlMs,
       expiresAt: record.expiresAt,
       metadata: { ...record.metadata },
-      onEvict: record.onEvict,
     };
   }
 

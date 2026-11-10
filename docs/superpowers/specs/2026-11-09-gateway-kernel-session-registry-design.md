@@ -189,3 +189,9 @@ class SessionRegistry {
 - **世代语义**：active 上重注册=原地更新（scope 可被新 owner 接管、metadata 合并）；
   ended/回收后重注册 `generation+1`（`retiredGenerations` 10k FIFO stash，跨 sweep
   保持 §6 的「retire → 重建 → +1」）；首次注册 generation=1。
+- **minors 批收口（2026-11-10）**：ended 上重注册重置 createdAt 且 metadata **替换**
+  （新生命周期不继承陈旧 owner 数据）；overlay（roles/origin）对惰性 ended 记录按
+  不存在处理（重注册而非被下次 sweep 静默吞掉）；公共 record 副本不再泄漏 onEvict；
+  `InternalRolesView.delete` 语义对齐 Map.delete（无 role 返回 false）；pool 的
+  `evictPair()` 统一三路处置（守卫式恰好一次），worker 记录 per-record onEvict 接线
+  后 **60s sweeper 独立兜住空闲 pair**（此前只有访问驱动）。

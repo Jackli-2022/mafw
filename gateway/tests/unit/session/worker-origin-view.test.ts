@@ -60,4 +60,17 @@ describe('worker-origin view', () => {
     // View-created record is gone entirely.
     expect(registry.lookup('w2')).toBeNull();
   });
+
+  it('register on an expired-but-unswept record re-registers (deferred minor)', async () => {
+    const r = new SessionRegistry();
+    setWorkerOriginRegistryForTest(r);
+    r.register({ sessionID: 'w1', scope: { kind: 'worker' }, metadata: { pair: {} }, ttlMs: 50 });
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
+    registerWorkerOrigin('w1', 'source-late'); // record is lazy-ended — treat as absent
+    expect(resolveWorkerOrigin('w1')).toBe('source-late');
+    const rec = r.lookup('w1')!;
+    expect(rec.status).toBe('active');
+    expect(rec.generation).toBe(2);
+    expect(rec.metadata.originSessionID).toBe('source-late');
+  });
 });

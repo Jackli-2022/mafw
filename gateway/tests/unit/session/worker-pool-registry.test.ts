@@ -126,6 +126,57 @@ describe('SessionWorkerPool × session registry (revised Task 4)', () => {
     await pool.disposeAll();
   });
 
+  it('sweeper-driven eviction: registry.sweep() alone disposes the pair exactly once (deferred minor)', async () => {
+    let disposed = 0;
+    const client = makeClient();
+    const pool = new SessionWorkerPool({
+      client: client as any,
+      directory: '/tmp',
+      ttlMs: 50,
+      registry,
+    });
+    const origDelete = client.session.delete.bind(client.session);
+    (client.session as any).delete = async () => { disposed++; await origDelete(); };
+    const worker = pool.getWorker('src-1', 'extract');
+    await worker.prompt('hi', 'sys');
+    expect(pool.size()).toBe(1);
+    await new Promise((r) => setTimeout(r, 80));
+    // No getWorker access — the unified sweeper alone must bound the idle pair.
+    const swept = registry.sweep();
+    expect(swept).toBeGreaterThanOrEqual(1);
+    expect(disposed).toBe(1);          // exactly once (the created session)
+    expect(pool.size()).toBe(0);        // TtlMap entry removed too
+    expect(registry.byScope({ kind: 'worker' }).length).toBe(0); // records gone
+    await pool.disposeAll();            // idempotent: no further disposal
+    expect(disposed).toBe(1);
+  });
+
+  it('sweeper eviction with BOTH worker sessions: sibling unregistered mid-sweep, guard holds', async () => {
+    let disposed = 0;
+    const client = makeClient();
+    const pool = new SessionWorkerPool({
+      client: client as any,
+      directory: '/tmp',
+      ttlMs: 50,
+      registry,
+    });
+    const origDelete = client.session.delete.bind(client.session);
+    (client.session as any).delete = async () => { disposed++; await origDelete(); };
+    // Prompt BOTH kinds → two worker records exist; the first record's
+    // sweeper eviction unregisters the sibling mid-sweep (snapshot iteration).
+    await pool.getWorker('src-1', 'extract').prompt('hi', 'sys');
+    await pool.getWorker('src-1', 'reflect').prompt('hi', 'sys');
+    expect(registry.byScope({ kind: 'worker' }).length).toBe(2);
+    await new Promise((r) => setTimeout(r, 80));
+    const swept = registry.sweep();
+    expect(swept).toBeGreaterThanOrEqual(1);
+    expect(disposed).toBe(2);          // both sessions, each exactly once
+    expect(pool.size()).toBe(0);
+    expect(registry.byScope({ kind: 'worker' }).length).toBe(0);
+    await pool.disposeAll();
+    expect(disposed).toBe(2);          // guard: nothing double-disposed
+  });
+
   it('role overlay coexists on the worker record (Review Focus 4)', async () => {
     const pool = new SessionWorkerPool({
       client: makeClient() as any,

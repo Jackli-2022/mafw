@@ -22,11 +22,13 @@ export class InternalRolesView {
   set(sessionID: string, role: string): void {
     if (!sessionID || !role) return;
     const existing = this.registry.lookup(sessionID);
-    if (existing) {
-      // Foreign- or self-owned: patch the role in place.
+    if (existing && existing.status === 'active') {
+      // Foreign- or self-owned live record: patch the role in place.
       this.registry.updateMetadata(sessionID, { role });
       return;
     }
+    // Absent — or lazily expired and not yet swept: re-register. Patching an
+    // ended record would be silently dropped at the next sweep.
     this.registry.register({
       sessionID,
       scope: { kind: 'internal', role },
@@ -37,6 +39,8 @@ export class InternalRolesView {
   delete(sessionID: string): boolean {
     const existing = this.registry.lookup(sessionID);
     if (!existing) return false;
+    const hadRole = existing.metadata.role !== undefined;
+    if (!hadRole) return false; // Map.delete semantics: nothing to remove
     if (existing.scope.kind === 'internal') {
       // The view owns the record — remove it entirely.
       return this.registry.unregister(sessionID);

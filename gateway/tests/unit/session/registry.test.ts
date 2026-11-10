@@ -187,4 +187,26 @@ describe('SessionRegistry', () => {
     // A recent retirement still continues.
     expect(r.register({ sessionID: 's10049', scope: { kind: 'worker' } }).generation).toBe(2);
   });
+
+  it('register over ended resets createdAt and REPLACES metadata (deferred minor)', () => {
+    const c = clock();
+    const r = new SessionRegistry({ now: c.now });
+    r.register({ sessionID: 's1', scope: { kind: 'worker' }, metadata: { stale: true }, ttlMs: 1000 });
+    c.advance(2000);
+    const createdBefore = r.lookup('s1')!.createdAt;
+    c.advance(1000);
+    const rec = r.register({ sessionID: 's1', scope: { kind: 'worker' }, metadata: { fresh: true } });
+    expect(rec.createdAt).toBeGreaterThan(createdBefore); // fresh lifecycle
+    expect(rec.metadata).toEqual({ fresh: true });          // stale metadata not merged
+  });
+
+  it('materialize never leaks the onEvict callback on public copies (deferred minor)', () => {
+    const r = new SessionRegistry();
+    r.register({
+      sessionID: 's1', scope: { kind: 'worker' },
+      onEvict: () => {},
+    });
+    expect((r.lookup('s1') as any).onEvict).toBeUndefined();
+    expect((r.byScope({ kind: 'worker' })[0] as any).onEvict).toBeUndefined();
+  });
 });

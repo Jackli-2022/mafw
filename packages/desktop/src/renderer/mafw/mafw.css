@@ -517,6 +517,8 @@ html[data-theme="light"] body {
 
 /* ── Main ── */
 .mafw-main { display: grid; grid-template-rows: 1fr; overflow: hidden; min-width: 0; position: relative; grid-column: 2; }
+.mafw-narrow-switch { display: flex; align-items: center; gap: 2px; padding: 2px; margin-right: 4px; border: 1px solid var(--border-subtle); border-radius: 8px; }
+.mafw-narrow-switch .mafw-narrow-tab[aria-pressed="true"] { background: var(--bg-raised); color: var(--text-1); }
 .mafw-chat-resize { position: absolute; top: 0; bottom: 0; right: 0; z-index: 5; }
 .mafw-chat-resize-badge {
   position: absolute;
@@ -571,6 +573,9 @@ html[data-theme="light"] body {
   --mafw-chat-reading: 16px;
   --mafw-chat-composer: 16px;
 }
+
+/* A 方案：窄窗 Chat / Workbench 切换；chat 视图保持 760 居中，composer 不被侧面板覆盖。 */
+.mafw-main.mafw-narrow-chat .mafw-chat { width: min(760px, 100%); margin-left: auto; margin-right: auto; }
 
 .mafw-titlebar-dot {
   width: 6px;
