@@ -1627,6 +1627,7 @@ html[data-theme="light"] body {
 .mafw-run-count { font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; max-width: 60ch; white-space: nowrap; }
 .mafw-lead-status-card { flex-direction: column; align-items: stretch; gap: 4px; }
 .mafw-lead-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mafw-goal-source-full { max-height: 240px; overflow: auto; white-space: pre-wrap; margin: 6px 0 0; padding: 8px; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); font-size: 12px; }
 
 /* T2-3 data part 卡 */
 .mafw-data-part { margin: 6px 0; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); overflow: hidden; }

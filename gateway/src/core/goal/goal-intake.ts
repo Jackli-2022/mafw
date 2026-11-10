@@ -170,7 +170,7 @@ export function makePodGoalId(now: string, random: () => number): string {
  */
 const SAFE_GOAL_DIR_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-function isSafeGoalDirId(goalId: string): boolean {
+export function isSafeGoalDirId(goalId: string): boolean {
   return SAFE_GOAL_DIR_ID.test(goalId) && !goalId.includes('..');
 }
 

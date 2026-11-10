@@ -69,6 +69,7 @@ export const DEFINITIONS: ToolDefinition[] = [
         goalId: { type: "string", description: "Goal identifier" },
         mode: { type: "string", enum: ["clear", "needs_user", "decided"], description: "Direction outcome" },
         goalMode: { type: "string", enum: ["quick", "standard", "standing"], description: "Execution shape chosen by the Tech Lead (quick = one-task fast path; standard = plan/review; standing = long-lived template, not supported yet)" },
+        requiresApproval: { type: "boolean", description: "High-risk action needs human confirmation; quick is rejected" },
         userWords: { type: "string", description: "User words (verbatim) or the clear Tech Lead conclusion" },
         optionId: { type: "string", description: "Chosen direction option id (when options were offered)" },
         options: {

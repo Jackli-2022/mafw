@@ -130,9 +130,11 @@ test("Goal 详情头部提供按 Goal 的 Tech Lead 入口（终态降级只读�
   assert.match(detail, /props\.onClose\(\)/)
 })
 
-test("Goal 详情展示上下文来源，不展示 session id", () => {
+test("Goal 详情展示上下文来源与全文入口", () => {
   assert.match(detail, /上下文来源/)
   assert.match(detail, /sourceRef/)
+  assert.match(detail, /查看全文/)
+  assert.match(detail, /sourceFull/)
   assert.doesNotMatch(detail, /ses_[a-zA-Z0-9]+/)
 })
 

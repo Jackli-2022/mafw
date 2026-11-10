@@ -31,6 +31,7 @@ const STAGE_LABELS: Record<string, string> = {
   working: "执行中",
   waiting: "等待中",
   question: "待你回答",
+  blocked: "阻塞",
   ended: "已结束",
 };
 
@@ -55,6 +56,8 @@ export function buildLeadGoalStatusCards(
       title: goal.title,
       stageLabel: STAGE_LABELS[goal.stage?.kind ?? ""] ?? goal.stage?.kind ?? "未知",
       progressText: goal.progress ? `${goal.progress.done}/${goal.progress.total}` : "",
-      blocker: goal.pendingQuestion ? "待你回答" : (goal.lastError ?? ""),
+      blocker: goal.pendingQuestion
+        ? "待你回答"
+        : (goal.stage?.kind === "blocked" ? "阻塞" : (goal.lastError ?? "")),
     }));
 }

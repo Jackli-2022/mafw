@@ -8,7 +8,7 @@ const card = read("../src/renderer/mafw/components/LeadGoalStatusCard.tsx")
 
 test("Lead status card is on-demand and above the composer", () => {
   assert.match(chat, /LeadGoalStatusCard/)
-  const cardAt = chat.indexOf("LeadGoalStatusCard")
+  const cardAt = chat.indexOf("<LeadGoalStatusCard")
   const composerAt = chat.indexOf('class="mafw-composer"')
   assert.ok(cardAt > 0, "ChatPane must render LeadGoalStatusCard")
   assert.ok(composerAt > 0, "ChatPane must have a composer")

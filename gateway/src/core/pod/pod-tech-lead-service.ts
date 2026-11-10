@@ -9,6 +9,7 @@
 import {
   GoalConflictError,
   createGoalIntake,
+  isSafeGoalDirId,
   makePodGoalId,
   readGoalRequest,
   type GoalAuthorization,
@@ -35,7 +36,7 @@ import type { PodDetail, PodService } from './pod-service';
 import { canonicalProjectDir } from './pod-identity';
 import type { PodSessionLease, PodSessionScope, PodSessionSupervisor } from './pod-session-supervisor';
 import type { PodWorktreeService } from './pod-worktree-service';
-import type { LeadHandoffService } from '../lead/lead-handoff-service';
+import type { LeadHandoffService, LeadHandoffPrepared } from '../lead/lead-handoff-service';
 
 /** Tech Lead 身份（IdentityRegistry 内置物化名）。 */
 export const TECH_LEAD_AGENT = 'mafw-tech-lead';
@@ -65,7 +66,7 @@ export interface PodTechLeadServiceDeps {
   /** revision checkout provider; production always injects PodWorktreeService. */
   worktrees?: Pick<PodWorktreeService, 'ensure' | 'ensureExisting' | 'assertProjectRoot'>;
   /** Current-topic handoff builder; absent = no automatic handoff. */
-  leadHandoff?: Pick<LeadHandoffService, 'buildForGoal' | 'rollback'>;
+  leadHandoff?: Pick<LeadHandoffService, 'prepareForGoal' | 'commit' | 'rollback'>;
   /** 项目解析（与 intake 同一来源）：返回 canonical projectDir 与 mafwDir。 */
   resolveProject(projectDir?: string): { projectDir: string; mafwDir: string } | null;
   now?(): string;
@@ -120,6 +121,10 @@ export interface PodTechLeadGoalCreated {
   goalDir: string | null;
   charterPath: string;
   requestPath: string;
+  /** Handoff provenance written into request.json (when handoff ran). */
+  sourceRef?: GoalSourceRef;
+  /** Full handoff text path (when commit succeeded). */
+  handoffPath?: string;
   sessionError?: string;
   promptError?: string;
 }
@@ -208,25 +213,33 @@ export class PodTechLeadService {
       );
     }
 
+    if (!isSafeGoalDirId(goalId)) {
+      throw new PodError(400, `invalid goal id for goal-dir layout: ${goalId}`);
+    }
+    const goalDir = path.join(resolved.mafwDir, 'goals', goalId);
+    if (fs.existsSync(path.join(goalDir, 'goal.md')) || fs.existsSync(path.join(goalDir, 'request.json'))) {
+      throw new PodError(409, `goal ${goalId} already exists`);
+    }
+
     let sourceRef = input.sourceRef;
     let handoffPath: string | undefined;
-    let handoffTopicId: string | undefined;
+    let preparedHandoff: LeadHandoffPrepared | null = null;
     if (!sourceRef && input.createdBy && input.handoff !== 'none' && this.deps.leadHandoff) {
-      const built = await this.deps.leadHandoff.buildForGoal({
+      preparedHandoff = await this.deps.leadHandoff.prepareForGoal({
         projectDir,
         leadSessionId: input.createdBy,
         goalId,
-        goalDir: path.join(resolved.mafwDir, 'goals', goalId),
+        goalDir,
         title,
+        topicId: input.topicId,
         untilMessageId: input.untilMessageId,
       }).catch((err: any) => {
         this.deps.log?.(`[Pod] handoff failed for ${goalId}: ${err?.message ?? err}`);
         return null;
       });
-      if (built) {
-        sourceRef = built.sourceRef;
-        handoffPath = built.handoffPath;
-        handoffTopicId = built.topicId;
+      if (preparedHandoff) {
+        sourceRef = preparedHandoff.sourceRef;
+        handoffPath = preparedHandoff.handoffPath;
       }
     }
 
@@ -260,9 +273,6 @@ export class PodTechLeadService {
         emitGoalCreated: (event) => this.deps.emitGoalCreated?.(event),
       });
     } catch (err) {
-      if (handoffTopicId) {
-        this.deps.leadHandoff?.rollback(handoffTopicId, handoffPath);
-      }
       if (err instanceof GoalConflictError) throw new PodError(409, err.message);
       throw err;
     }
@@ -292,6 +302,14 @@ export class PodTechLeadService {
         try { fs.rmSync(intake.goalDir, { recursive: true, force: true }); } catch { /* best effort */ }
       }
       throw err;
+    }
+    if (preparedHandoff) {
+      try {
+        this.deps.leadHandoff?.commit(preparedHandoff);
+      } catch (err: any) {
+        this.deps.log?.(`[Pod] handoff persist failed for ${goalId}: ${err?.message ?? err}`);
+        handoffPath = undefined;
+      }
     }
     this.deps.notify?.(detail.pod.id, 'goal');
 
@@ -336,6 +354,8 @@ export class PodTechLeadService {
       goalDir: intake.goalDir,
       charterPath: intake.charterPath,
       requestPath: intake.requestPath,
+      ...(sourceRef ? { sourceRef } : {}),
+      ...(handoffPath ? { handoffPath } : {}),
       ...(sessionError ? { sessionError } : {}),
       ...(promptError ? { promptError } : {}),
     };
@@ -499,11 +519,20 @@ export class PodTechLeadService {
   }
 
   private withManifest(goalId: string, revision: number, body?: string): string {
+    const goal = this.deps.store.getGoalByGoalId(goalId);
+    const pod = goal ? this.deps.store.getPod(goal.podId) : null;
+    const resolved = pod ? this.deps.resolveProject(pod.projectDir) : null;
+    const handoffRel = 'context/lead-handoff.md';
+    const hasHandoff = !!resolved
+      && fs.existsSync(path.join(resolved.mafwDir, 'goals', goalId, handoffRel));
     const manifest = buildContextManifest({
       goalId,
       revision,
       stage: 'discussing',
       role: TECH_LEAD_INTERNAL_ROLE,
+      ...(hasHandoff ? {
+        optional: [{ path: handoffRel, label: 'Lead handoff', scope: 'goal' }],
+      } : {}),
     });
     const rendered = renderContextManifest(manifest);
     return body ? `${rendered}\n\n${body}` : rendered;
@@ -515,7 +544,7 @@ export class PodTechLeadService {
     sourceRef?: GoalSourceRef,
     handoffPath?: string,
   ): string {
-    const handoff = sourceRef
+    const handoff = sourceRef?.snapshot
       ? [
           '',
           '<lead-handoff>',

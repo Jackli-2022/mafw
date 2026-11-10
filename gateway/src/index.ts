@@ -4610,22 +4610,25 @@ class MafwScheduler {
       notify: (podId) => this.broadcast({ type: 'pod.updated', properties: { podId, kind: 'direction' } }),
       log: (message) => log.info(message),
     });
-    const leadHandoffService = new LeadHandoffService({
-      topics: new LeadTopicStore(this.getGatewayDb().getStore()),
-      listMessages: async ({ sessionID, limit }) => {
-        const page: any = await this.runtime!.session.messages({ sessionID, limit });
-        return { data: page?.data ?? [] };
-      },
-      now: () => new Date().toISOString(),
-      newId: () => `topic_${randomUUID()}`,
-    });
+    const leadHandoffService = process.env.MAFW_LEAD_HANDOFF === '0'
+      ? null
+      : new LeadHandoffService({
+          topics: new LeadTopicStore(this.getGatewayDb().getStore()),
+          listMessages: async ({ sessionID, limit }) => {
+            const page: any = await this.runtime!.session.messages({ sessionID, limit });
+            return { data: page?.data ?? [] };
+          },
+          now: () => new Date().toISOString(),
+          newId: () => `topic_${randomUUID()}`,
+          log: (message) => log.warn(message),
+        });
     this.podTechLeadService = new PodTechLeadService({
       store: this.podStore,
       pods: this.podService,
       sessions: this.podSessionSupervisor,
       runtimeName: () => this.runtimeName,
       worktrees: this.podWorktreeService,
-      leadHandoff: leadHandoffService,
+      leadHandoff: leadHandoffService ?? undefined,
       runtime: createTechLeadRuntimeAdapter({
         createSession: async ({ projectDir }) => {
           const created = await this.runtime!.session.create({ directory: projectDir });
@@ -5047,7 +5050,9 @@ class MafwScheduler {
         techLead: this.podTechLeadService,
         direction: this.podDirectionService,
         startPlanning: (goalId: string) => this.startGoalDirect(goalId),
-        setGoalMode: (goalId: string, mode: any) => this.podTechLeadService.setGoalMode(goalId, mode),
+        ...(process.env.MAFW_GOAL_MODES === '0' ? {} : {
+          setGoalMode: (goalId: string, mode: any) => this.podTechLeadService.setGoalMode(goalId, mode),
+        }),
         log: (message: string) => log.info(message),
       },
       podGoalStatus: {
@@ -6334,6 +6339,28 @@ class MafwScheduler {
 
         // GET /api/goals/:id/sessions — P5 Wave 1 起由 registry dispatch 接管
         // （历史约束"须挂 Dashboard /api/goals* 兜底之前"由 dispatch 位置满足）。
+
+        // GET /api/goals/:id/source — handoff provenance + full topic text.
+        const sourceMatch = req.url?.match(/^\/api\/goals\/([^/]+)\/source(?:\?|$)/);
+        if (sourceMatch && req.method === 'GET') {
+          const goalId = decodeURIComponent(sourceMatch[1]);
+          const request = await this.loadRequest(goalId);
+          const mafwDir = this.goalDriverMafwDirCache.get(goalId)
+            ?? this.findGoalStatePath(goalId)?.info.mafwDir;
+          const handoffPath = mafwDir
+            ? path.join(mafwDir, 'goals', goalId, 'context', 'lead-handoff.md')
+            : null;
+          const fullText = handoffPath && fs.existsSync(handoffPath)
+            ? fs.readFileSync(handoffPath, 'utf8')
+            : null;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            sourceRef: request?.sourceRef ?? null,
+            handoffPath: fullText ? handoffPath : null,
+            fullText,
+          }));
+          return;
+        }
 
         // GET /api/goals/:id/timeline — 节点级 trace 聚合（须在 dashboard 兜底之前）
         if (await handleGoalTimeline(req, res, req.url!, {

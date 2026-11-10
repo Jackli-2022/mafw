@@ -63,4 +63,11 @@ describe('buildLeadGoalStatus', () => {
 
     expect(status.map((s) => s.goalId)).toEqual(['high', 'low']);
   });
+
+  test('surfaces a blocked stage as a blocker', () => {
+    const status = buildLeadGoalStatus([
+      view({ goalId: 'blocked', stage: { owner: 'team', kind: 'blocked' } as any }),
+    ], []);
+    expect(status[0].blockers).toContain('blocked');
+  });
 });

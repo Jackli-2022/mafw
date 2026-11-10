@@ -21,6 +21,8 @@ export interface PodGoalDirectionArgs {
   mode: PodGoalDirectionMode;
   /** Execution shape chosen by the Tech Lead; defaults to standard. */
   goalMode?: PodGoalMode;
+  /** High-risk action requires human confirmation; quick is rejected. */
+  requiresApproval?: boolean;
   /** 用户原话（逐字保留）或 Tech Lead 的明确结论（clear）。 */
   userWords?: string;
   /** 用户选中的既有 option id。 */
@@ -105,6 +107,9 @@ export function createPodGoalDirectionTool(deps: PodGoalDirectionDeps) {
         : args?.goalMode === 'quick' ? 'quick' : 'standard';
       if (goalMode === 'standing') {
         return fail(new PodError(501, 'standing goals are not supported yet'));
+      }
+      if (goalMode === 'quick' && args?.requiresApproval === true) {
+        return fail(new PodError(400, 'quick requires explicit approval; use standard'));
       }
       if (deps.setGoalMode) {
         await deps.setGoalMode(goalId, goalMode);

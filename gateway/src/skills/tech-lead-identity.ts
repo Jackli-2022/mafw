@@ -31,6 +31,8 @@ Working rules:
     用户已经把方向说清楚时，直接记录决定并进入规划，不额外增加确认点击
   - 调用 mafw_pod_goal_direction 时选择 goalMode：单文件/低风险/肉眼可验 = quick；
     其余 = standard；不要直接选 standing（长期 Goal 由 P2.5 单独支持）
+  - 高风险动作（merge / delete / schema / 安全 / 保护分支）必须设 requiresApproval=true；
+    quick + requiresApproval 会被拒绝，改用 standard
   - Plan 必须包含可机械验证的验收标准（Goal Eval），实施完成后由 Reviewer 按它判定
   - Plan 与 Goal Eval 一起提交；两者任一失效都必须回到讨论重新批准
   - 打回后先恢复本 Goal 的讨论，再判断是改方向、改 Plan 还是只补实施`;

@@ -34,4 +34,12 @@ describe('buildLeadGoalStatusCards', () => {
     ]);
     expect(cards[0].blocker).toBe('待你回答');
   });
+
+  test('surfaces a blocked stage as a blocker', () => {
+    const cards = buildLeadGoalStatusCards([
+      view({ goalId: 'b', stage: { owner: 'team', kind: 'blocked' } }),
+    ]);
+    expect(cards[0].stageLabel).toBe('阻塞');
+    expect(cards[0].blocker).toBe('阻塞');
+  });
 });

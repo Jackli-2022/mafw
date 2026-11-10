@@ -182,6 +182,7 @@ export function createMafwApi(): MafwAPI {
       sessions: (id) => invoke("goals", "sessions", id),
       respondQuestion: (goalId, questionId, input) => invoke("goals", "respondQuestion", goalId, questionId, input),
       timeline: (id) => invoke("goals", "timeline", id),
+  source: (id) => invoke("goals", "source", id),
       plan: (id) => invoke("goals", "plan", id),
       approvePlan: (goalId, approvalId) => invoke("goals", "approvePlan", goalId, approvalId),
       rejectPlan: (goalId, approvalId, feedback) => invoke("goals", "rejectPlan", goalId, approvalId, feedback),

@@ -48,4 +48,26 @@ describe('buildLeadHandoff', () => {
     expect(renderHandoffText([msg('m1', 'user', 'hi'), msg('m2', 'assistant', 'there')]))
       .toBe('User: hi\n\nAssistant: there');
   });
+
+  test('drops synthetic recall parts and the in-flight assistant message', () => {
+    const synthetic = {
+      id: 'm1',
+      role: 'user',
+      content: [
+        { type: 'text', text: 'real question' },
+        { type: 'text', text: '<recall>secret pointer</recall>', synthetic: true },
+      ],
+    } as any;
+    const partial = {
+      id: 'm2',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'partial answer' }],
+      time: { created: 1 },
+    } as any;
+
+    const result = buildLeadHandoff({ messages: [synthetic, partial] });
+    expect(result.snapshot).toContain('real question');
+    expect(result.snapshot).not.toContain('secret pointer');
+    expect(result.snapshot).not.toContain('partial answer');
+  });
 });

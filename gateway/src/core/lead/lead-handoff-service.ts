@@ -10,46 +10,79 @@ export interface LeadHandoffDeps {
   listMessages(input: { sessionID: string; limit: number }): Promise<{ data: MafwMessage[] }>;
   now(): string;
   newId(): string;
+  /** Bounded history read; default 10s. */
+  timeoutMs?: number;
+  log?(message: string): void;
 }
 
-export interface LeadHandoffBuilt {
+export interface LeadHandoffPrepared {
   sourceRef: GoalSourceRef;
   handoffPath: string;
   topicId: string;
   messageRange: { from: string; to: string } | null;
+  fullText: string;
+  projectDir: string;
+  goalId: string;
+  leadSessionId: string;
+  title: string;
+  startMessageId: string;
+  endMessageId: string;
+  createdAt: string;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<T>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`handoff history read timed out after ${ms}ms`)), ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 /**
- * Builds the current-topic handoff for a Goal:
- * - start after the previous handoff topic (or at the session start);
- * - snapshot is text-only, capped at 4000 chars;
- * - the full text is written beside the Goal so the Tech Lead can read it;
- * - the topic row is handoff provenance only.
+ * Two-phase current-topic handoff:
+ * - `prepareForGoal` reads messages and builds the snapshot in memory (no side effects);
+ * - `commit` writes the full text and the topic row after the Goal/revision is durable.
+ * This keeps a duplicate/concurrent create from overwriting another Goal's handoff file.
  */
 export class LeadHandoffService {
   constructor(private readonly deps: LeadHandoffDeps) {}
 
-  async buildForGoal(input: {
+  async prepareForGoal(input: {
     projectDir: string;
     leadSessionId: string;
     goalId: string;
     goalDir: string;
     title: string;
+    topicId?: string;
     untilMessageId?: string;
     maxMessages?: number;
-  }): Promise<LeadHandoffBuilt | null> {
-    const previous = this.deps.topics.latestForProject(input.projectDir);
-    const fetched = (await this.deps.listMessages({
-      sessionID: input.leadSessionId,
-      limit: input.maxMessages ?? 200,
-    })).data;
+  }): Promise<LeadHandoffPrepared | null> {
+    const resolvedGoalDir = path.resolve(input.goalDir);
+    if (path.basename(resolvedGoalDir) !== input.goalId) {
+      throw new Error(`unsafe handoff goal dir for ${input.goalId}`);
+    }
+    const previous = input.topicId
+      ? this.deps.topics.get(input.topicId)
+      : this.deps.topics.latestForProject(input.projectDir);
+    if (input.topicId && !previous) return null;
+
+    const fetched = await withTimeout(
+      this.deps.listMessages({
+        sessionID: input.leadSessionId,
+        limit: input.maxMessages ?? 200,
+      }),
+      this.deps.timeoutMs ?? 10_000,
+    );
 
     const scoped = input.untilMessageId
       ? (() => {
-          const index = fetched.findIndex((message) => message.id === input.untilMessageId);
-          return index >= 0 ? fetched.slice(0, index + 1) : fetched;
+          const index = fetched.data.findIndex((message) => message.id === input.untilMessageId);
+          return index >= 0 ? fetched.data.slice(0, index + 1) : fetched.data;
         })()
-      : fetched;
+      : fetched.data;
 
     const built = buildLeadHandoff({
       messages: scoped,
@@ -59,27 +92,6 @@ export class LeadHandoffService {
 
     const topicId = this.deps.newId();
     const capturedAt = this.deps.now();
-    const handoffPath = path.join(input.goalDir, 'context', 'lead-handoff.md');
-    fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
-    fs.writeFileSync(
-      handoffPath,
-      renderHandoffText(scoped, previous?.endMessageId),
-      'utf8',
-    );
-
-    this.deps.topics.insert({
-      id: topicId,
-      projectDir: input.projectDir,
-      leadSessionId: input.leadSessionId,
-      title: input.title,
-      startMessageId: built.messageRange.from,
-      endMessageId: built.messageRange.to,
-      goalId: input.goalId,
-      ownerRole: 'tech-lead',
-      ownerSessionId: null,
-      createdAt: capturedAt,
-    });
-
     return {
       sourceRef: {
         sessionID: input.leadSessionId,
@@ -89,13 +101,46 @@ export class LeadHandoffService {
         topicId,
         messageRange: built.messageRange,
       },
-      handoffPath,
+      handoffPath: path.join(input.goalDir, 'context', 'lead-handoff.md'),
       topicId,
       messageRange: built.messageRange,
+      fullText: renderHandoffText(scoped, previous?.endMessageId),
+      projectDir: input.projectDir,
+      goalId: input.goalId,
+      leadSessionId: input.leadSessionId,
+      title: input.title,
+      startMessageId: built.messageRange.from,
+      endMessageId: built.messageRange.to,
+      createdAt: capturedAt,
     };
   }
 
-  /** Best-effort rollback when the Goal intake fails after the handoff was written. */
+  /** Persist the prepared handoff after the Goal/revision is durable. */
+  commit(prepared: LeadHandoffPrepared): void {
+    fs.mkdirSync(path.dirname(prepared.handoffPath), { recursive: true });
+    const tmp = `${prepared.handoffPath}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, prepared.fullText, 'utf8');
+    fs.renameSync(tmp, prepared.handoffPath);
+    try {
+      this.deps.topics.insert({
+        id: prepared.topicId,
+        projectDir: prepared.projectDir,
+        leadSessionId: prepared.leadSessionId,
+        title: prepared.title,
+        startMessageId: prepared.startMessageId,
+        endMessageId: prepared.endMessageId,
+        goalId: prepared.goalId,
+        ownerRole: 'tech-lead',
+        ownerSessionId: null,
+        createdAt: prepared.createdAt,
+      });
+    } catch (err: any) {
+      // The Goal is already durable; provenance failure must not fail it.
+      this.deps.log?.(`[LeadHandoff] topic insert failed for ${prepared.goalId}: ${err?.message ?? err}`);
+    }
+  }
+
+  /** Best-effort rollback for callers that committed before a later failure. */
   rollback(topicId: string, handoffPath?: string): void {
     try {
       this.deps.topics.remove(topicId);

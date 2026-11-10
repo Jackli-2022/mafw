@@ -213,4 +213,14 @@ describe('mafw_pod_goal_direction', () => {
     expect(setGoalMode).not.toHaveBeenCalled();
     expect(direction.decide).not.toHaveBeenCalled();
   });
+
+  test('rejects quick when high-risk approval is required', async () => {
+    const result = await tool.execute(
+      { goalId: 'g1', mode: 'clear', userWords: '按方案 A', goalMode: 'quick', requiresApproval: true },
+      { sessionID: 'ses_tl' },
+    );
+
+    expect(result.structuredContent).toMatchObject({ success: false, status: 400 });
+    expect(setGoalMode).not.toHaveBeenCalled();
+  });
 });

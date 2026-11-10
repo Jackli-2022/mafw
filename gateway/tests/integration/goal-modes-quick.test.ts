@@ -154,4 +154,13 @@ describe('goal modes: quick / standard integration', () => {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  test('wiring: driver consumes goalMode and index wires mode + source endpoint', () => {
+    const driver = fs.readFileSync(path.join(__dirname, '../../src/core/goal/driver.ts'), 'utf8');
+    expect(driver).toContain('goalMode: this.deps.goalMode?.(goalId, revision)');
+    const index = fs.readFileSync(path.join(__dirname, '../../src/index.ts'), 'utf8');
+    expect(index).toContain('goalMode: (goalId, revision)');
+    expect(index).toContain('lead-handoff.md');
+    expect(index).toContain('fullText');
+  });
 });

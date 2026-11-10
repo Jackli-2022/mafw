@@ -118,9 +118,12 @@ describe('Lead current-topic handoff (integration)', () => {
     expect(firstRequest.sourceRef.snapshot).toContain('讨论上下文');
     expect(firstRequest.sourceRef.snapshot).not.toContain('tool');
     expect(fs.existsSync(path.join(first.goalDir!, 'context', 'lead-handoff.md'))).toBe(true);
+    expect(first.sessionID).toBe('ses_tech_lead');
+    expect(first.promptError).toBeUndefined();
     const firstPrompt = runtime.promptAsync.mock.calls[0][0].parts[0].text;
     expect(firstPrompt).toContain('<lead-handoff>');
     expect(firstPrompt).toContain('讨论上下文');
+    expect(firstPrompt).toContain('lead-handoff.md');
 
     messages = [...messages, msg('m4', 'user', '第二个话题')];
     const second = await service.createGoal({

@@ -18,7 +18,7 @@ export const LEAD_HANDOFF_MAX_CHARS = 4000;
 function textOf(message: MafwMessage): string {
   if (!Array.isArray(message.content)) return '';
   return message.content
-    .filter((part: any) => part?.type === 'text' && typeof part.text === 'string')
+    .filter((part: any) => part?.type === 'text' && part.synthetic !== true && typeof part.text === 'string')
     .map((part: any) => String(part.text).trim())
     .filter(Boolean)
     .join('\n');
@@ -29,10 +29,13 @@ function keptMessages(messages: MafwMessage[], fromMessageId?: string): MafwMess
   // Fail open when the boundary is outside the fetched window: include what we
   // have rather than handing over an empty topic.
   const slice = fromMessageId && start >= 0 ? messages.slice(start + 1) : messages;
-  return slice.filter(
-    (message) =>
-      (message.role === 'user' || message.role === 'assistant') && textOf(message).length > 0,
-  );
+  return slice.filter((message) => {
+    if (message.role !== 'user' && message.role !== 'assistant') return false;
+    // Exclude the assistant message still being generated. History messages may
+    // omit `time` entirely; only skip when the field is present and incomplete.
+    if (message.role === 'assistant' && message.time && message.time.completed === undefined) return false;
+    return textOf(message).length > 0;
+  });
 }
 
 function renderKept(messages: MafwMessage[]): string {
