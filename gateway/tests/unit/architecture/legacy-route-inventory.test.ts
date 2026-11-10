@@ -29,9 +29,10 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // Task A4: triage 3 match + 1 equals → 83+24=107.
     // Task A5: approvals 3 match + 1 equals → 80+23=103.
     // Task B1: questions 3 match + permissions 2 match → 75+23=98.
-    expect(inv.byKind.match).toBe(75);
+    // Task B2: usage 2 match → 73+23=96.
+    expect(inv.byKind.match).toBe(73);
     expect(inv.byKind.equals).toBe(23);
-    expect(inv.total).toBe(98);
+    expect(inv.total).toBe(96);
   });
 
   it('groups match the D1 plan inventory', () => {
@@ -40,10 +41,10 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage', '/api/approvals']) {
       expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5)
     }
-    // questions/permissions 的 5 条 match 分支落在 '/api' 聚合组（analyzer 对
-    // 2 段式 api 路径的分组口径），因此只校验聚合数下降：66 → 61。
+    // questions/permissions/usage 的 7 条 match 分支落在 '/api' 聚合组（analyzer 对
+    // 2 段式 api 路径的分组口径），因此只校验聚合数下降：66 → 59。
     // The biggest single group is the /api catch-all mass.
-    expect(byPrefix.get('/api')).toBe(61);
+    expect(byPrefix.get('/api')).toBe(59);
   });
 
   it('transport/root branches are pinned — they are D3, not D1', () => {

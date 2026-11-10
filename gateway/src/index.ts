@@ -224,6 +224,7 @@ import { attachMergeMemoryRoutes } from './routes/merge-memory';
 import { attachTriageRoutes } from './routes/triage';
 import { attachApprovalsRoutes } from './routes/approvals';
 import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
+import { attachUsageRoutes } from './routes/usage';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5630,6 +5631,11 @@ class MafwScheduler {
         registeredProjects: () => this.registeredProjects,
         permissionRules: () => this.permissionRules,
       });
+      // Phase D1 Task B2：usage 聚合面迁 registry dispatch（2 分支；fail-open 200 随迁）。
+      attachUsageRoutes(this.routeRegistry, {
+        trajectoryStore: () => this.trajectoryStore,
+        usagePoller: () => this.usagePoller,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -7478,64 +7484,7 @@ class MafwScheduler {
         // POST /api/sessions/:id/fork|revert|unrevert + /api/session/:id/summarize
         // — P5 Wave 1 起由 registry dispatch 接管
 
-        // GET /api/usage?sessionID=xxx&projectID=xxx — consolidated usage (summary + providers)
-        if (req.url?.match(/^\/api\/usage(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const sessionID = parsedUrl.searchParams.get('sessionID') || '';
-            const projectID = parsedUrl.searchParams.get('projectID') || '';
-            const store = this.trajectoryStore;
-            const empty = { totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, sessionCount: 0 };
-            const summary: any = { session: { ...empty, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }, project: { ...empty }, global: { ...empty } };
-            if (store) {
-              if (sessionID) summary.session = store.getSessionTokenSummary(sessionID);
-              if (projectID) summary.project = store.getProjectTokenSummary(projectID);
-              summary.global = store.getGlobalTokenSummary();
-            }
-            const memory = store ? store.getMemoryTokenSummary() : null;
-            let modelStats: ModelUsageWindows = { today: [], '7d': [], '30d': [], all: [] };
-            if (store) {
-              try {
-                modelStats = buildModelStats(store);
-              } catch (err: any) {
-                log.warn(`[Usage] modelStats failed: ${err.message}`);
-              }
-            }
-            const providerData = this.usagePoller ? await this.usagePoller.poll() : { providers: [], updatedAt: Date.now() };
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ summary, memory, modelStats: { windows: modelStats }, ...providerData }));
-          } catch (err: any) {
-            log.warn(`[Usage] failed: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ summary: null, providers: [], updatedAt: Date.now() }));
-          }
-          return;
-        }
-
-        // GET /api/usage/summary — backward compat alias
-        if (req.url?.match(/^\/api\/usage\/summary(?:\?|$)/) && req.method === 'GET') {
-          try {
-            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-            const sessionID = parsedUrl.searchParams.get('sessionID') || '';
-            const projectID = parsedUrl.searchParams.get('projectID') || '';
-            const store = this.trajectoryStore;
-            const empty = { totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, sessionCount: 0 };
-            const result: any = { session: { ...empty, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }, project: { ...empty }, global: { ...empty } };
-            if (store) {
-              if (sessionID) result.session = store.getSessionTokenSummary(sessionID);
-              if (projectID) result.project = store.getProjectTokenSummary(projectID);
-              result.global = store.getGlobalTokenSummary();
-            }
-            const memory = store ? store.getMemoryTokenSummary() : null;
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ...result, memory }));
-          } catch (err: any) {
-            log.warn(`[UsageSummary] failed: ${err.message}`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ session: null, project: null, global: null }));
-          }
-          return;
-        }
+        // GET /api/usage + GET /api/usage/summary — Phase D1 Task B2：已迁 registry dispatch。
 
         // ── Subagent spawn/list/message/cancel/result (gateway-owned) ──
         const subagentMsg = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/message(?:\?|$)/);
