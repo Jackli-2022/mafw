@@ -23,9 +23,9 @@ import { config } from '../../src/config';
 import { createPluginPackageContext } from '../../src/plugins/package-context';
 import {
   PluginHost,
-  type PluginEventFrame,
   type PluginHostOptions,
 } from '../../src/plugins/package-host';
+import type { PluginEventFrame } from '../../src/plugins/plugin-events';
 import { PackageManager } from '../../src/plugins/package-manager';
 import { PackageStateStore } from '../../src/plugins/package-state-store';
 import { PACKAGING_SUITE_TIMEOUT_MS, ensureAdapterBuilt } from '../helpers/adapter-build';

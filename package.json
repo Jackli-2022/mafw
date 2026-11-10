@@ -24,6 +24,7 @@
     "emit:view-dto": "npm run emit:view-dto -w @mafw/sdk",
     "test": "npm test --prefix gateway",
     "test:unit": "npm test --prefix gateway",
+    "typecheck:gateway-tests": "cd gateway && npx tsc --noEmit -p tsconfig.test-types.json",
     "test:tui": "node --test packages/tui/tests/*.test.ts",
     "test:kit": "node --test \"packages/runtime-kit/src/*.test.ts\"",
     "test:contract": "npm test -w @mafw/runtime-contract",

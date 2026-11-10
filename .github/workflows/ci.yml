@@ -80,6 +80,9 @@ jobs:
       - name: Verify bundled plugin contract resolution
         run: npm run verify:plugin-contract
 
+      - name: Typecheck gateway tests (narrow slice)
+        run: npm run typecheck:gateway-tests
+
       - name: Test gateway
         run: npm test --prefix gateway -- --forceExit
 

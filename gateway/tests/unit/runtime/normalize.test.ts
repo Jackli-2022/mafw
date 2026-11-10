@@ -62,7 +62,7 @@ describe('normalizeOpencodeEvent', () => {
 
   it('extracts tool command from tool part snapshots (v2 carrier)', () => {
     const toolEvt = normalizeOpencodeEvent({
-      payload: { type: 'part.updated', properties: { part: { type: 'tool', sessionID: 's1', tool: 'bash', state: { status: 'running', input: { command: 'echo hi' } } } },
+      payload: { type: 'part.updated', properties: { part: { type: 'tool', sessionID: 's1', tool: 'bash', state: { status: 'running', input: { command: 'echo hi' } } } } },
     });
     expect(toolEvt.toolCommand).toBe('echo hi');
 
