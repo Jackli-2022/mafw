@@ -614,10 +614,7 @@ describe('gateway composition root', () => {
    * still passes (they inject the service themselves).
    */
   it('injects the shared TerminalService into the package context', () => {
-    const source = [
-      fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf8'),
-      fs.readFileSync(path.join(__dirname, '../../../src/boot.ts'), 'utf8'),
-    ].join('\n');
-    expect(source).toContain('terminal: () => kernel.getTerminalService(),');
+    const source = fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf8');
+    expect(source).toContain('terminal: () => this.getTerminalService(),');
   });
 });
