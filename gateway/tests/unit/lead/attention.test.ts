@@ -52,6 +52,7 @@ describe("deriveAttention", () => {
       view({ goalId: "q", stage: { owner: "person", kind: "question" } as any }),
       view({ goalId: "d", stage: { owner: "person", kind: "direction_review" } as any }),
       view({ goalId: "blocked", stage: { owner: "person", kind: "blocked" } as any }),
+      view({ goalId: "missing", stage: { owner: "person", kind: "blocked" } as any, stateMissing: true }),
       view({ goalId: "ended", endedAt: "2026-11-10T00:00:00.000Z", stage: { owner: "person", kind: "plan_approval" } as any }),
       view({ goalId: "ready", stage: { owner: "person", kind: "result_notified" } as any, resultReady: true }),
       view({ goalId: "not-ready", stage: { owner: "person", kind: "result_notified" } as any }),

@@ -2401,6 +2401,19 @@
         }
       }
     },
+    "/api/scheduler/status": {
+      "get": {
+        "operationId": "scheduler.status",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/lead/topics": {
       "get": {
         "operationId": "lead.topics.list",
