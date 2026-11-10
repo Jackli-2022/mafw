@@ -9,11 +9,12 @@
  * something, joins the suite and can even pass, while `tsc` (and any editor)
  * flags it. Three such files had been sitting in `tests/` exactly like that.
  *
- * This gate is deliberately *syntax only*: it parses every `.ts` file under
- * `tests/` with the TypeScript compiler API and fails on parse diagnostics. It
- * is not a type gate. A full `--noEmit` typecheck of the whole test tree still
- * leaves a large pre-existing error backlog and stays separate work;
- * `tsconfig.test-types.json` covers only the narrow slice that is already clean.
+ * This gate is deliberately *syntax only*: it parses every TypeScript file
+ * (`.ts`, `.tsx`, `.mts`, `.cts`) under `tests/` with the TypeScript compiler
+ * API and fails on parse diagnostics. It is not a type gate. A full `--noEmit`
+ * typecheck of the whole test tree still leaves a large pre-existing error
+ * backlog and stays separate work; `tsconfig.test-types.json` covers only the
+ * narrow slice that is already clean.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -36,7 +37,9 @@ type SourceWithParseDiagnostics = ts.SourceFile & {
  * `reportDiagnostics` argument to `createSourceFile`.
  */
 function parseDiagnosticsOf(fileName: string, text: string): readonly ts.Diagnostic[] {
-  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
+  // `.tsx` must be parsed as TSX, otherwise JSX reads as a syntax error.
+  const scriptKind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, true, scriptKind);
   return (source as SourceWithParseDiagnostics).parseDiagnostics ?? [];
 }
 
@@ -65,9 +68,9 @@ function collectFiles(dir: string, accept: (file: string) => boolean): string[] 
   return found;
 }
 
-/** Every `.ts` under `tests/` counts: suites, helpers, mocks, fixtures, setup. */
+/** Every TS/TSX/ESM-TS/CTS file under `tests/` counts: suites, helpers, mocks, fixtures, setup. */
 function isTypeScriptFile(file: string): boolean {
-  return file.endsWith('.ts');
+  return /\.(ts|tsx|mts|cts)$/.test(file);
 }
 
 describe('gateway test syntax gate', () => {

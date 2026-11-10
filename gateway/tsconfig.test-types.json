@@ -1,24 +1,30 @@
 // Narrow *type* gate for a deliberately small slice of the gateway test tree.
 //
 // The full test tree still carries a large pre-existing type-error backlog, so
-// this config is not `tests/tsconfig.json` under `--noEmit`. It covers only the
-// suites that were written against typed contracts (the adapter build/host-seam
-// and packaging tests plus their helpers), which keeps the gate honest without
-// loosening `strict`. Widening `include` is the backlog burn-down, not a fix.
+// this config is not `tests/tsconfig.json` under `--noEmit`. It inherits the
+// test-tree compiler options (commonjs, node resolution, jest types, and
+// `rootDir` = `gateway/`) from `tests/tsconfig.json` and only narrows
+// `include` — a child `include` replaces the parent's, so the slice stays
+// exactly the suites that were written against typed contracts (the adapter
+// build/host-seam and packaging tests plus their helpers). Widening `include`
+// is the backlog burn-down, not a fix.
+//
+// `opencode-neutral-golden.test.ts` cannot join this slice: it imports
+// `adapters/opencode/src/*`, which lives outside the inherited `rootDir` (= the
+// `gateway/` directory), so tsc reports TS6059. Overriding `rootDir` to `..`
+// makes it pass, but that is a separate decision (it widens what "gateway test
+// types" means) — it is not smuggled in here.
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tests/tsconfig.json",
   "compilerOptions": {
-    "noEmit": true,
-    "rootDir": "..",
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "types": ["jest", "node"]
+    "noEmit": true
   },
   "include": [
     "tests/helpers/**/*.ts",
     "tests/unit/runtime/adapter-build.test.ts",
     "tests/unit/runtime/host-seam-propagation.test.ts",
     "tests/unit/runtime/opencode-package.test.ts",
+    "tests/unit/test-syntax.test.ts",
     "tests/integration/plugin-package-e2e.test.ts"
   ]
 }

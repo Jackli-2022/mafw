@@ -79,6 +79,15 @@ function deadPid(): number {
   return child.pid;
 }
 
+/** A live PID that is not ours (`process.pid` is the same-process lock case). */
+function liveForeignPid(): number {
+  const pid = process.ppid;
+  if (pid === process.pid || isProcessAlive(pid) !== true) {
+    throw new Error(`expected a live parent process, got ppid=${pid}`);
+  }
+  return pid;
+}
+
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-adapter-build-'));
   adapterDir = path.join(root, 'adapters', 'opencode');
@@ -133,12 +142,13 @@ describe('freshness predicate', () => {
     expect(adapterBuildFresh(adapterDir)).toBe(false);
   });
 
-  it('rebuilds when package.json changes', () => {
-    // The package manifest decides the name/exports/type the bundle must
-    // satisfy (`dist/package.json` mirrors its CJS type), so it is an input.
+  it('does not count package.json as an input', () => {
+    // `build.mjs` never reads the manifest and writes a hard-coded
+    // `dist/package.json`, so a manifest-only edit cannot change the bundle.
+    // Staging/workspace resolution read the source manifest directly.
     seedFreshLayout();
     write('package.json', MINUTE * 2);
-    expect(adapterBuildFresh(adapterDir)).toBe(false);
+    expect(adapterBuildFresh(adapterDir)).toBe(true);
   });
 
   it('counts every adapter-root build input, not just the sources', () => {
@@ -148,10 +158,10 @@ describe('freshness predicate', () => {
       'build.mjs',
       'tsconfig.json',
       'tsconfig.build.json',
-      'package.json',
       path.join('src', 'index.ts'),
       path.join('src', 'nested', 'deep.ts'),
     ]));
+    expect(relative).not.toContain('package.json');
   });
 
   it('reports stale when a required build input is missing', () => {
@@ -166,10 +176,6 @@ describe('freshness predicate', () => {
     seedFreshLayout();
     fs.rmSync(path.join(adapterDir, 'tsconfig.json'));
     expect(adapterBuildStatus(adapterDir).reason).toContain('tsconfig.json');
-
-    seedFreshLayout();
-    fs.rmSync(path.join(adapterDir, 'package.json'));
-    expect(adapterBuildStatus(adapterDir).reason).toContain('package.json');
   });
 
   it('reports a build input that disappears mid-check instead of throwing', () => {
@@ -251,9 +257,11 @@ describe('build lock decisions', () => {
     expect(LOCK_TIMEOUT_MS).toBe(150_000);
     expect(BUILD_TIMEOUT_MS).toBe(120_000);
     expect(PACKAGING_SUITE_TIMEOUT_MS).toBe(300_000);
-    // A crashed holder is stolen at 60s; the winner still has its full build
-    // budget, and even the worst-case waiter (full lock wait + its own build)
-    // must fail with a helper message before Jest's suite timeout fires.
+    // A crashed holder with a readable PID is stolen immediately; the 60s age
+    // rule only covers a corrupt/unreadable owner file. Either way the winner
+    // still has its full build budget, and even the worst-case waiter (full
+    // lock wait + its own build) must fail with a helper message before Jest's
+    // suite timeout fires.
     expect(LOCK_STALE_MS).toBeLessThan(LOCK_TIMEOUT_MS);
     // The waiter must outlive a healthy but slow build: if a build could run
     // longer than the lock wait, a waiter would time out on a build that is
@@ -442,7 +450,7 @@ describe('build lock ownership', () => {
   });
 
   it('keeps waiting for a fresh lock whose owner PID is alive', () => {
-    writeOwner({ token: 'alive', pid: process.pid, startedAt: Date.now() });
+    writeOwner({ token: 'alive', pid: liveForeignPid(), startedAt: Date.now() });
 
     expect(() => acquireBuildLock(adapterDir, {
       now: () => Date.now(),
@@ -454,10 +462,31 @@ describe('build lock ownership', () => {
     fs.rmSync(lockDir, { recursive: true, force: true });
   });
 
+  it('reclaims a lock left behind by this process when release failed', () => {
+    // A failed release `rm` (Windows AV/EPERM) leaves a live owner PID, so no
+    // waiter could age-steal it; the same process must reclaim it, because one
+    // Node process cannot legitimately hold the lock twice.
+    writeOwner({ token: 'leaked', pid: process.pid, startedAt: Date.now() });
+
+    const release = acquireBuildLock(adapterDir, {
+      now: () => Date.now(),
+      staleMs: 10 * MINUTE, // neither the age rule nor a dead PID can fire
+      waitMs: 0,
+      sleep: () => {
+        throw new Error('a self-owned leftover must not make the caller sleep');
+      },
+    });
+    const owner = readOwner();
+    expect(owner.token).not.toBe('leaked');
+    expect(owner.pid).toBe(process.pid);
+    release();
+    expect(fs.existsSync(lockDir)).toBe(false);
+  });
+
   it('does not age-steal a live owner even when the lock looks old', () => {
     // A legitimate 60-150s build must not be double-run: only the wait budget
     // may give up on a live holder.
-    writeOwner({ token: 'slow', pid: process.pid, startedAt: Date.now() }, Date.now() - 10 * MINUTE);
+    writeOwner({ token: 'slow', pid: liveForeignPid(), startedAt: Date.now() }, Date.now() - 10 * MINUTE);
 
     expect(() => acquireBuildLock(adapterDir, {
       now: () => Date.now(),

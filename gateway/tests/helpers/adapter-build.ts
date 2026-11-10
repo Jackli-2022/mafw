@@ -11,9 +11,10 @@
  * build: the bundle is rebuilt only when an output is missing (including
  * `dist/package.json`, which pins the CJS entry type), a required build input is
  * missing, or an input is at least as new as the oldest output (`src/**\/*.ts`,
- * `build.mjs`, `tsconfig.json`, `tsconfig.build.json`, `package.json`). A single
- * build is capped by `BUILD_TIMEOUT_MS` so a hung `esbuild`/`tsc` cannot stall
- * a Jest worker.
+ * `build.mjs`, `tsconfig.json`, `tsconfig.build.json`). `package.json` is *not*
+ * an input: `build.mjs` never reads it and writes a hard-coded
+ * `dist/package.json`. A single build is capped by `BUILD_TIMEOUT_MS` so a hung
+ * `esbuild`/`tsc` cannot stall a Jest worker.
  *
  * Concurrency: a plain `npx jest` runs suites in worker processes, and two of
  * them (unit package contract + integration staging) can reach this helper at
@@ -39,7 +40,10 @@
  *    silently producing an unbuilt `dist`;
  *  - release only deletes the lock when the owner token still matches, so a
  *    holder that lost the lock to a stale steal cannot delete the new holder's
- *    lock from its `finally`. Release is idempotent and never throws.
+ *    lock from its `finally`. Release is idempotent, retries once (Windows
+ *    AV/EPERM scans are transient) and never throws. A lock whose owner is this
+ *    very process — a leftover from a failed release — is reclaimed instead of
+ *    waited on, because one Node process cannot legitimately hold it twice.
  */
 import { spawnSync } from 'child_process';
 import * as crypto from 'crypto';
@@ -55,14 +59,18 @@ export const BUILD_OUTPUTS = ['dist/index.js', 'dist/index.d.ts', 'dist/package.
 /**
  * Non-source build inputs at the adapter root. Missing any of these is stale.
  *
- * `tsconfig.json` and `package.json` are inputs even though `build.mjs` never
- * reads them directly: `tsc -p tsconfig.build.json` extends `tsconfig.json`, so
- * the compiler options shape `dist/index.d.ts`, and `package.json` governs the
- * package identity/exports that the staged `dist` must satisfy. Both affect the
- * build/package contract, so editing either has to invalidate `dist` even when
- * no source file changed.
+ * `tsconfig.json` is an input because `build.mjs` runs `tsc -p
+ * tsconfig.build.json`, which `extends` it: a compiler-option edit changes
+ * `dist/index.d.ts` even when no source moved.
+ *
+ * `package.json` is deliberately **not** an input. `build.mjs` never reads it
+ * and writes a hard-coded `dist/package.json` (`{ "type": "commonjs" }`), so a
+ * manifest edit would not change the bundle — treating it as an input only
+ * forced spurious rebuilds. Package identity (`name`/`exports`/`files`) is
+ * consumed from the source manifest by the staging script and the workspace
+ * link, both of which read it directly rather than through `dist`.
  */
-const BUILD_INPUT_FILES = ['build.mjs', 'tsconfig.json', 'tsconfig.build.json', 'package.json'] as const;
+const BUILD_INPUT_FILES = ['build.mjs', 'tsconfig.json', 'tsconfig.build.json'] as const;
 
 /** Lock directory: `mkdir` is atomic, so it doubles as the mutex. */
 export const BUILD_LOCK_NAME = '.build-lock';
@@ -152,9 +160,9 @@ export function adapterBuildStatus(
   const missingOutput = BUILD_OUTPUTS.find((_, index) => !outputs[index]);
   if (missingOutput) return { fresh: false, reason: `${missingOutput} is missing` };
 
-  // A missing build input (`build.mjs`, the adapter `tsconfig.json` /
-  // `tsconfig.build.json`, or `package.json`) means the tree cannot be built
-  // correctly: report stale instead of silently shrinking the input set.
+  // A missing build input (`build.mjs` or the adapter `tsconfig.json` /
+  // `tsconfig.build.json`) means the tree cannot be built correctly: report
+  // stale instead of silently shrinking the input set.
   const missingInput = BUILD_INPUT_FILES
     .map((name) => path.join(adapterDir, name))
     .find((file) => !fs.existsSync(file));
@@ -367,13 +375,23 @@ function claimBuildLock(lockDir: string, now: () => number): () => void {
   return () => {
     if (released) return; // idempotent: `finally` plus an explicit call is fine
     released = true;
+    const removeLock = (): boolean => {
+      try {
+        fs.rmSync(lockDir, { recursive: true, force: true });
+        return true;
+      } catch {
+        return false;
+      }
+    };
     try {
       // A stale steal may have handed the lock to another worker while this
       // build was still finishing; only the current owner may delete it. An
       // unreadable owner file therefore deletes nothing on purpose: this holder
       // waits for the age steal instead of risking another holder's lock.
       if (readBuildLockOwner(lockDir)?.token !== owner.token) return;
-      fs.rmSync(lockDir, { recursive: true, force: true });
+      // A failed `rm` (Windows AV/EPERM) used to leave a lock only this process
+      // could heal; retry once, then leave it to the same-PID reclaim path.
+      if (!removeLock()) removeLock();
     } catch { /* releasing must never mask the build outcome */ }
   };
 }
@@ -393,10 +411,16 @@ export function acquireBuildLock(adapterDir: string = ADAPTER_DIR, options: Buil
   for (;;) {
     const stat = statOrUndefined(lockDir);
     const owner = stat ? readBuildLockOwner(lockDir) : undefined;
+    // A lock owned by this very process is a leftover from a release whose `rm`
+    // failed (Windows AV/EPERM), not a live holder: this process builds
+    // synchronously, so it cannot legitimately hold the lock twice. Reclaiming
+    // is the only way to heal it — a foreign waiter sees `pid` alive and can
+    // only time out.
+    const selfOwned = owner?.pid === process.pid;
     const decision = decideBuildLock({
       exists: !!stat,
       lockMtimeMs: stat?.mtimeMs,
-      ownerAlive: owner ? probe(owner.pid) : undefined,
+      ownerAlive: owner ? (selfOwned ? false : probe(owner.pid)) : undefined,
       now: now(),
       waitStartedAt,
       waitMs: options.waitMs,

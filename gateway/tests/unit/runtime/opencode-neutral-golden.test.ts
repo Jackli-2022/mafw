@@ -262,9 +262,20 @@ it('gateway and adapter bridges emit the same canonical payloads for @2.1 events
     V21_RAW.length,
   );
 
+  // Length pin: a bridge that silently drops an event would otherwise make the
+  // A/B comparisons below compare shorter-but-equal sequences.
+  expect(viaAdapter).toHaveLength(V21_RAW.length);
+  expect(viaGateway).toHaveLength(V21_RAW.length);
+
   expect(viaGateway.map((event: any) => event.payload.type))
     .toEqual(viaAdapter.map((event: any) => event.payload.type));
   expect(viaGateway.map(semanticOwner)).toEqual(viaAdapter.map(semanticOwner));
   expect(viaGateway.map(stablePayload)).toEqual(viaAdapter.map(stablePayload));
+
+  // Self-check that the payload compare above is not vacuous: the fixture
+  // carries real fields (`queue.updated.action`, `background.job.updated.job`,
+  // `session.diff.diff`), not just identity that `stablePayload` strips.
+  expect(viaAdapter.map(stablePayload).filter((properties) => Object.keys(properties).length > 0).length)
+    .toBeGreaterThan(0);
 });
 
