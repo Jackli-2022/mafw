@@ -189,7 +189,7 @@ import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
 import { resolveMobileBaseUrl, detectReachableHost } from './mobile/tailscale-url';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
-import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
+import { normalizeRuntimeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
 import { createBuiltinIdentityRegistry, identityMaterializable, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
@@ -292,15 +292,13 @@ import { RuntimePluginLoader, createRuntimePluginContext, noRuntimeRegisteredErr
 import { PI_CAPABILITIES, createPiDefinition, setPiUnknownRecorder } from './runtime/pi-adapter';
 import { createPluginCredentials } from './runtime/plugin-credentials';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
-import { getBridgeEventEntry } from './runtime/adapter-bridge';
+import { getBridgeEventEntry } from './runtime/legacy-plugin-bridge';
 import type { RuntimeDefinition, RuntimeFactoryContext } from '@mafw/runtime-contract';
 import {
   createOpencodeDefinition,
-  opencodeCapabilities,
-  opencodeStaticEntry,
-  serveAuthHeaders,
   type OpencodeVariant,
 } from './runtime/opencode-adapter';
+import { builtinAdapterRegistrations } from './runtime/builtin-adapters';
 
 import { injectServeAuth } from './runtime/proxy-auth';
 import { resolveProviderTransportPrecedence } from './runtime/provider-transport';
@@ -996,10 +994,8 @@ class MafwScheduler {
       baseUrl: this.serveUrl,
       headers: {} as Record<string, string>,
     };
-    const opencodePassword = (process.env.MAFW_RUNTIME_PASSWORD ?? process.env.MAFW_OPENCODE_PASSWORD);
-    if (opencodePassword) {
-      sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
-    }
+    // Serve credentials are adapter-owned (`resolveServePassword`); the gateway
+    // only forwards host-provided headers through `host.proxyHeaders()`.
     // opencode 注册为正式内置插件（与用户插件同一接口；同名文件/包可覆盖）。
     // v2：携带事件翻译声明——opencode 不再有「免翻译特权」，原生流经同一
     // wrap 序列（映射差异行 + transformEvent 前缀丢弃）进 canonical 管线。
@@ -1008,14 +1004,7 @@ class MafwScheduler {
     // runtime 工厂（serve/adapter/凭据全同），差异仅在事件映射表。
     const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
     const external = !!process.env.MAFW_SERVER_SERVE_URL;
-    const registrationName: Record<OpencodeVariant, string> = {
-      adaptive: 'opencode',
-      v1: 'opencode@v1',
-      v2: 'opencode@v2',
-      v21: 'opencode@v21',
-    };
-    const opencodeDefinition = (variant: OpencodeVariant) => (ctx: RuntimeFactoryContext) => {
-      const name = registrationName[variant];
+    const opencodeDefinition = (variant: OpencodeVariant, name: string) => (ctx: RuntimeFactoryContext) => {
       return createOpencodeDefinition(ctx, {
         variant,
         registrationName: name,
@@ -1029,29 +1018,21 @@ class MafwScheduler {
         },
       });
     };
-    // 裸名 = 自适应方言（激活时探测一次，fail-safe @v1）
-    this.runtimeLoader.registerBuiltinDefinition('opencode', opencodeDefinition('adaptive'), {
-      external,
-      capabilities: opencodeCapabilities('adaptive', external),
-      eventEntry: opencodeStaticEntry('adaptive'),
-    });
-    // 钉死方言：映射表随定义固定，探测跳过
-    this.runtimeLoader.registerBuiltinDefinition('opencode@v1', opencodeDefinition('v1'), {
-      external,
-      capabilities: opencodeCapabilities('v1', external),
-      eventEntry: opencodeStaticEntry('v1'),
-    });
-    this.runtimeLoader.registerBuiltinDefinition('opencode@v2', opencodeDefinition('v2'), {
-      external,
-      capabilities: opencodeCapabilities('v2', external),
-      eventEntry: opencodeStaticEntry('v2'),
-    });
-    // 钉死 2.1.0 方言（顶层 type/data + session.* 富事件；dry-event/一致性测试用）
-    this.runtimeLoader.registerBuiltinDefinition('opencode@v21', opencodeDefinition('v21'), {
-      external,
-      capabilities: opencodeCapabilities('v21', external),
-      eventEntry: opencodeStaticEntry('v21'),
-    });
+    // Builtin adapters register from adapter-owned descriptors: the gateway has
+    // no per-runtime name/variant branches. The bare name is adaptive; pinned
+    // names keep their dialect tables.
+    for (const registration of builtinAdapterRegistrations(external)) {
+      this.runtimeLoader.registerBuiltinDefinition(
+        registration.name,
+        opencodeDefinition(registration.variant, registration.name),
+        {
+          external,
+          capabilities: registration.capabilities,
+          eventEntry: registration.eventEntry,
+        },
+      );
+    }
+
     const runtime = await this.createRuntime();
     this.runtime = runtime;
     this.setRuntimeDiagnostics();
@@ -1746,7 +1727,7 @@ class MafwScheduler {
   }
 
   private handleRuntimeEvent(evt: any): void {
-    const f = normalizeOpencodeEvent(evt);
+    const f = normalizeRuntimeEvent(evt);
     // opencode v2 sync 信封：与 legacy 事件双发的状态重同步噪声，gateway
     // 边界丢弃（处置登记于 event-flow-matrix.ts RUNTIME_NATIVE_DROPPED）。
     // 放行会重复处理 + desktop miss 告警 + [SSE] 日志刷屏。
@@ -6643,7 +6624,7 @@ class MafwScheduler {
             method: req.method,
             // 2.1.0：serve 强制 Basic——剔除入站 Authorization 后注入 serve 凭证
             headers: {
-              ...injectServeAuth(req.headers, this.runtimeHost?.proxyHeaders?.() ?? serveAuthHeaders()),
+              ...injectServeAuth(req.headers, this.runtimeHost?.proxyHeaders?.() ?? {}),
               host: proxyUrl.host,
             },
           }, (proxyRes) => {

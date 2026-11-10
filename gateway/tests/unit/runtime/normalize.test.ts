@@ -1,8 +1,8 @@
-﻿import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
+﻿import { normalizeRuntimeEvent } from '../../../src/runtime/normalize';
 
-describe('normalizeOpencodeEvent', () => {
+describe('normalizeRuntimeEvent', () => {
   it('unwraps GlobalEvent envelope and classifies turn.completed', () => {
-    const f = normalizeOpencodeEvent({
+    const f = normalizeRuntimeEvent({
       directory: '/proj',
       payload: { type: 'turn.completed', properties: { sessionID: 's1' } },
     });
@@ -15,7 +15,7 @@ describe('normalizeOpencodeEvent', () => {
   });
 
   it('classifies step-finish part as settled step', () => {
-    const f = normalizeOpencodeEvent({
+    const f = normalizeRuntimeEvent({
       payload: {
         type: 'part.updated',
         properties: { part: { type: 'step-finish', sessionID: 's1', messageID: 'm1', reason: 'stop' } },
@@ -26,7 +26,7 @@ describe('normalizeOpencodeEvent', () => {
   });
 
   it('classifies completed assistant message as settled step + complete signal', () => {
-    const f = normalizeOpencodeEvent({
+    const f = normalizeRuntimeEvent({
       payload: {
         type: 'message.updated',
         properties: { message: { id: 'm1', role: 'assistant', sessionID: 's1', time: { completed: 123 }, finish: 'stop' } },
@@ -37,14 +37,14 @@ describe('normalizeOpencodeEvent', () => {
   });
 
   it('ignores in-flight assistant message (no time.completed)', () => {
-    const f = normalizeOpencodeEvent({
+    const f = normalizeRuntimeEvent({
       payload: { type: 'message.updated', properties: { message: { id: 'm1', role: 'assistant', sessionID: 's1', time: {} } } },
     });
     expect(f.step).toBeNull();
   });
 
   it('extracts delta text from text part updates', () => {
-    const f = normalizeOpencodeEvent({
+    const f = normalizeRuntimeEvent({
       payload: { type: 'part.updated', properties: { part: { type: 'text', sessionID: 's1', text: 'hello' } } },
     });
     expect(f.chatSignal).toBe('delta');
@@ -53,7 +53,7 @@ describe('normalizeOpencodeEvent', () => {
   });
 
   it('classifies turn.failed (chatSignal error + chatError extraction)', () => {
-    const f = normalizeOpencodeEvent({
+    const f = normalizeRuntimeEvent({
       payload: { type: 'turn.failed', properties: { sessionID: 's1', error: { message: 'boom' } } },
     });
     expect(f.chatSignal).toBe('error');
@@ -61,19 +61,19 @@ describe('normalizeOpencodeEvent', () => {
   });
 
   it('extracts tool command from tool part snapshots (v2 carrier)', () => {
-    const toolEvt = normalizeOpencodeEvent({
+    const toolEvt = normalizeRuntimeEvent({
       payload: { type: 'part.updated', properties: { part: { type: 'tool', sessionID: 's1', tool: 'bash', state: { status: 'running', input: { command: 'echo hi' } } } } },
     });
     expect(toolEvt.toolCommand).toBe('echo hi');
 
-    const text = normalizeOpencodeEvent({
+    const text = normalizeRuntimeEvent({
       payload: { type: 'part.updated', properties: { part: { type: 'text', sessionID: 's1', text: 'hi' }, args: { command: 'echo hi' } } },
     });
     expect(text.toolCommand).toBeUndefined();
   });
 
   it('falls back to bare event shape (no payload envelope) and passthrough for unknown types', () => {
-    const f = normalizeOpencodeEvent({ type: 'custom.thing', properties: { sessionID: 's9' } });
+    const f = normalizeRuntimeEvent({ type: 'custom.thing', properties: { sessionID: 's9' } });
     expect(f.type).toBe('custom.thing');
     expect(f.sessionID).toBe('s9');
     expect(f.chatSignal).toBeNull();
@@ -81,18 +81,18 @@ describe('normalizeOpencodeEvent', () => {
   });
 
   it('sessionID falls back through part/info/payload paths', () => {
-    const viaPart = normalizeOpencodeEvent({
+    const viaPart = normalizeRuntimeEvent({
       payload: { type: 'part.updated', properties: { part: { type: 'text', sessionID: 'via-part' } } },
     });
     expect(viaPart.sessionID).toBe('via-part');
-    const viaInfo = normalizeOpencodeEvent({
+    const viaInfo = normalizeRuntimeEvent({
       payload: { type: 'message.updated', properties: { message: { role: 'user', sessionID: 'via-info', time: {} } } },
     });
     expect(viaInfo.sessionID).toBe('via-info');
   });
 
   it('maps session.compacted to compaction end facet', () => {
-    const f = normalizeOpencodeEvent({
+    const f = normalizeRuntimeEvent({
       payload: { type: 'session.compacted', properties: { sessionID: 's1' } },
     });
     expect(f.compaction).toBe('end');
@@ -100,14 +100,14 @@ describe('normalizeOpencodeEvent', () => {
   });
 
   it('maps session.compacting to compaction start facet', () => {
-    const f = normalizeOpencodeEvent({
+    const f = normalizeRuntimeEvent({
       payload: { type: 'session.compacting', properties: { sessionID: 's1' } },
     });
     expect(f.compaction).toBe('start');
   });
 
   it('unrelated events have null compaction facet', () => {
-    const f = normalizeOpencodeEvent({
+    const f = normalizeRuntimeEvent({
       payload: { type: 'turn.completed', properties: { sessionID: 's1' } },
     });
     expect(f.compaction).toBeNull();

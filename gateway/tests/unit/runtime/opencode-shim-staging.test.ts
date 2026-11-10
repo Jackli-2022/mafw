@@ -14,7 +14,6 @@ describe('opencode package shim against a partial staging', () => {
     // Static fallbacks keep registration alive for users on another runtime.
     expect(shim.opencodeStaticEntry('adaptive')).toEqual({});
     expect(shim.opencodeCapabilities('adaptive', false).sessionApi).toBe(false);
-    expect(shim.serveAuthHeaders()).toEqual({});
     expect(shim.readProviderApiKey({}, 'gateway')).toBeNull();
     expect(shim.readProviderTransportFromList([], 'gateway')).toEqual({ baseUrl: null, apiKey: null });
     expect(shim.getProviderApiKey('gateway')).toBeUndefined();

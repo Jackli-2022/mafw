@@ -1,6 +1,6 @@
 import { translatePiEvent, setPiUnknownRecorder, PI_EVENT_MAPPINGS, PI_EVENT_SOURCE, piTransformEvent } from '../../fixtures/pi-canonical-events';
 import { hasEventDeclarations } from '../../../src/runtime/event-mapper';
-import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
+import { normalizeRuntimeEvent } from '../../../src/runtime/normalize';
 import { normalizePiMessages } from '../../../../adapters/pi/src/pi-message-normalize';
 
 describe('pi 事件翻译覆盖 audit（B1）', () => {
@@ -41,7 +41,7 @@ describe('translatePiEvent', () => {
 
   it('turn_end full chain yields a step facet (BudgetGuard now fires on pi)', () => {
     const mapped = translatePiEvent({ type: 'turn_end' }, 'pi_x');
-    const facets = normalizeOpencodeEvent(mapped!);
+    const facets = normalizeRuntimeEvent(mapped!);
     expect(facets.step).toEqual({ sessionID: 'pi_x', assistantMessageID: 'pi_step_pi_x', finish: undefined });
   });
 
@@ -177,7 +177,7 @@ describe('pi F1/F8��canonical v3 Plan 2����̬���� + agent_st
     const mapped = translatePiEvent({ type: 'agent_end', messages: [
       { role: 'assistant', stopReason: 'error', errorMessage: 'boom' },
     ] }, 'pi_x');
-    const facets = normalizeOpencodeEvent(mapped!);
+    const facets = normalizeRuntimeEvent(mapped!);
     expect(facets.chatSignal).toBe('error');
   });
 });

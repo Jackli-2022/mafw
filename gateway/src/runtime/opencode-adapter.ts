@@ -15,7 +15,7 @@ import type { RuntimeCapabilities, RuntimeDefinition, RuntimeFactoryContext } fr
 import type { OpencodeDefinitionOptions, OpencodeDefinitionDeps, OpencodeVariant } from '@mafw/adapter-opencode';
 import { log } from '../core/utils/logger';
 import type { EventMappingEntry } from './event-mapper';
-import { setBridgeEventEntryProvider } from './adapter-bridge';
+import { setBridgeEventEntryProvider } from './legacy-plugin-bridge';
 
 interface AdapterOpencodeModule {
   createOpencodeDefinition(
@@ -25,6 +25,7 @@ interface AdapterOpencodeModule {
   ): Promise<RuntimeDefinition>;
   opencodeStaticEntry(variant: OpencodeVariant): EventMappingEntry;
   opencodeCapabilities(variant: OpencodeVariant, external: boolean): RuntimeCapabilities;
+  OPENCODE_REGISTRATIONS: readonly { name: string; variant: OpencodeVariant }[];
   getProviderApiKey(
     provider: string,
     authPath?: string,
@@ -32,8 +33,6 @@ interface AdapterOpencodeModule {
   ): string | undefined;
   getBridgeEventEntry(name: string): EventMappingEntry | undefined;
   setBridgeEventEntry(name: string, entry: EventMappingEntry): void;
-  /** Serve Basic-auth headers for the reverse proxy fallback. */
-  serveAuthHeaders(): Record<string, string>;
   /** Inline provider settings read from an opencode config document. */
   readProviderApiKey(cfg: unknown, providerID: string): string | null;
   readProviderBaseUrlWithPath(cfg: unknown, providerID: string): string | null;
@@ -117,6 +116,10 @@ const loaded = adapter();
 
 export const OPENCODE_RUNTIME_NAME = 'opencode';
 
+/** Adapter-owned registration descriptors (name + dialect variant). */
+export const OPENCODE_REGISTRATIONS: readonly { name: string; variant: OpencodeVariant }[] =
+  loaded?.OPENCODE_REGISTRATIONS ?? [];
+
 function unavailable(): Error {
   return new Error(
     `@mafw/adapter-opencode is not usable (${loadError instanceof Error ? loadError.message : String(loadError)})`,
@@ -152,11 +155,6 @@ export function getProviderApiKey(
   credentials?: { getApiKey(provider: string): string | null },
 ): string | undefined {
   return loaded?.getProviderApiKey(provider, authPath, credentials);
-}
-
-/** Serve Basic-auth headers used by the reverse proxy when the host has no seam. */
-export function serveAuthHeaders(): Record<string, string> {
-  return loaded?.serveAuthHeaders() ?? {};
 }
 
 /** Judge/scan fallback: inline `provider.<id>.settings` from the runtime config. */

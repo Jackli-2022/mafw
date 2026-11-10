@@ -1,4 +1,4 @@
-import { normalizeOpencodeEvent, EventFacets } from '../../../src/runtime/normalize';
+import { normalizeRuntimeEvent, EventFacets } from '../../../src/runtime/normalize';
 
 // —— oracle v2：MAFW 词汇的**手写参照实现**（与表驱动版独立成文）——
 // 2026-10-12 v2 语义：turn 三元组终态；broadcast 切面删除；toolCommand 载体
@@ -93,6 +93,6 @@ const FIXTURES: Array<[string, any]> = [
 
 describe('oracle v2: table-driven ≡ hand-written reference', () => {
   test.each(FIXTURES)('%s', (_name, evt) => {
-    expect(normalizeOpencodeEvent(evt)).toEqual(v2ReferenceNormalize(evt));
+    expect(normalizeRuntimeEvent(evt)).toEqual(v2ReferenceNormalize(evt));
   });
 });

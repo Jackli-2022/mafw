@@ -35,6 +35,7 @@ export * from './transport';
 export * from './channels';
 export * from './host';
 export * from './entry-registry';
+export * from './registration';
 export * from './legacy-definition';
 export * from './definition';
 

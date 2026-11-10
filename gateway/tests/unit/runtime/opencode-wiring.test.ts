@@ -24,13 +24,17 @@ function fakeRuntime() {
   } as any;
 }
 
-it('the composition root registers all four opencode definitions', () => {
+it('the composition root registers all four opencode definitions from adapter descriptors', () => {
   const src = readFileSync(join(GATEWAY, 'src', 'index.ts'), 'utf8');
-  expect(src).toContain("registerBuiltinDefinition('opencode'");
-  expect(src).toContain("registerBuiltinDefinition('opencode@v1'");
-  expect(src).toContain("registerBuiltinDefinition('opencode@v2'");
-  expect(src).toContain("registerBuiltinDefinition('opencode@v21'");
-  expect(src).not.toMatch(/registerBuiltin\('opencode/);
+  expect(src).toContain('builtinAdapterRegistrations(external)');
+  expect(src).not.toMatch(/registerBuiltinDefinition\('opencode/);
+  const descriptors = readFileSync(
+    join(GATEWAY, '..', 'adapters', 'opencode', 'src', 'registration.ts'),
+    'utf8',
+  );
+  for (const name of ['opencode', 'opencode@v1', 'opencode@v2', 'opencode@v21']) {
+    expect(descriptors).toContain(`name: '${name}'`);
+  }
   // Task 6: the factory receives the runtime context and loads the driver
   // through the package shim (no gateway imports of adapter internals).
   expect(src).toContain('createOpencodeDefinition(ctx,');
