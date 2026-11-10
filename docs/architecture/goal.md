@@ -70,3 +70,12 @@ spec `docs/superpowers/specs/2026-11-10-goal-shapes-quick-goals-design.md`；pla
   Quick / Standard / Standing 徽标。
 - **测试**：`pod-store-revisions` / `pod-view-revisions` / `pod-goal-direction` /
   `pod-tech-lead-service` / `plan-package` / `node-prompts` / `goal-modes-quick`（集成）。
+
+### Attention / 调度字段（2026-11-10，P2）
+
+- `PodGoalView` 新增 `stateMissing`：active 但还没有 GoalState 的 Goal 不再被误判为 blocked attention。
+- `PodAttentionItem.kind` 增加 `review` / `failed`；`deriveAttention` 输出 `priority` / `coalesceKey`，
+  用于 person-first 排序与同 Goal+kind 合并。
+- `GET /api/attention` 的列表长度即 count；`GET /api/scheduler/status` 暴露槽位、队列与
+  `planPromotions` 结果（诊断，不写库）。
+- `POST /api/goals/:id/{pause,stop,retry}` 是 P2 的三档控制面；retry 不产生新 revision。
