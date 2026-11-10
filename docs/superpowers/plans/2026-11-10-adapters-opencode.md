@@ -256,7 +256,7 @@ Update all gateway tests listed in the extraction map (`opencode-adapter`/events
 
 - [ ] **Step 3: Add gateway one-release re-export shims**
 
-Keep `gateway/src/runtime/auth.ts`, `provider-settings.ts`, `serve-sidecar.ts`, `mcp-jsonc.ts` as thin re-exports from the adapter for existing gateway consumers until Task 7 finishes.
+Keep every moved module reachable from its old gateway path until Task 7 finishes: `auth.ts`, `provider-settings.ts`, `serve-sidecar.ts`, `mcp-jsonc.ts`, `form-question.ts`, `opencode-canonical.ts`, `opencode-events.ts`, `opencode-21-events.ts`, `opencode-history.ts`, `opencode-snapshot.ts`, `opencode-mcp.ts`, `opencode-mcp-config.ts`, `opencode-dialect-probe.ts`. The old `opencode-adapter.ts` / `opencode-runtime.ts` must continue to compile during 6A/6B handoff; each shim is `export * from '@mafw/adapter-opencode'` or explicit re-exports matching the old public names.
 
 - [ ] **Step 4: Run targeted tests + adapter tsc**
 
