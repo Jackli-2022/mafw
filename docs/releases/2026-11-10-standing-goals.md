@@ -5,7 +5,7 @@
 - **基础**：`main` `7ee50700`（P2.4 合并后的发布记录）
 - **Spec**：`docs/superpowers/specs/2026-11-10-standing-goals-design.md`
 - **Plan**：`docs/superpowers/plans/2026-11-10-standing-goals.md`
-- **Head**：`b29fb24b`（Tasks 1–10 + two review fix passes）
+- **Head**：`33f7e643`（Tasks 1–10 + review fix passes）
 - **Merge**：待合入 `main`
 
 ## 交付
@@ -31,7 +31,7 @@
 
 ## 门禁（2026-11-11）
 
-- gateway：**6067 passed / 1 skipped / 6068 total**（新增 38）
+- gateway：**6068 passed / 1 skipped / 6069 total**（新增 39）
 - SDK：**205/205**
 - desktop：**3204/3204**（新增 2）
 - root：**112/112**
@@ -60,8 +60,8 @@
 - **第二轮复核**：automation 文件名改为 base64url（可逆、无碰撞，兼容旧文件名）；`approval='plan'`
   只对 `goal` 强制 manual plan review，不再误伤 `report`；批准执行失败会落 `failed`，不会卡在
   `running`；暂停目标仍允许手动 force run；关闭 flag 后残留订阅不再投递；GitHub payload 补齐
-  repo/author 供 filter 匹配；cron 用 `CronTime` 做真实表达式校验；面板对 `waiting_person`
-  显示顶层“待你确认”徽标。
+  repo/author 供 filter 匹配；GitHub payload 同时补齐 PR base/head branch；cron 用 `CronTime`
+  做真实表达式校验；面板对 `waiting_person` 显示顶层“待你确认”徽标。
 
 ## 设计裁定
 
