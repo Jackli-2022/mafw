@@ -53,6 +53,12 @@ describe('index.ts broadcast 接线（wiring）', () => {
   it('EventStore 初始化受 config.events.persist 门控（fail-open）', () => {
     expect(idxSrc).toMatch(/config\.events\.persist/);
   });
+  it('append 先于 enrich：seq 来自单点 sink 的返回值（顺序反了就是 seq=null）', () => {
+    // D2-R4：单一 sink 分配 seq → enrichBroadcastFrame 只读它。两行顺序是契约。
+    expect(idxSrc).toMatch(
+      /const seq = this\.eventStore\?\.append\(event\) \?\? null;\s*\n\s*const enriched = enrichBroadcastFrame\(event, seq,/,
+    );
+  });
 });
 
 /**

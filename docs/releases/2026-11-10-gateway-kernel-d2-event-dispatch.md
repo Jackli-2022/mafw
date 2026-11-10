@@ -10,8 +10,9 @@
 ## 交付内容
 
 - **`handleRuntimeEvent` 抽表**：index.ts 里 277 行、~24 块顺序敏感 if 链 → 6 行
-  delegator + 37 行 `buildDispatchCtx()`（全 live getter）；链体逐字搬进
-  **`gateway/src/runtime/event-dispatch.ts`**。index.ts 净减 ~230 行 + 8 个失效 import。
+  delegator + 30 行 `buildDispatchCtx()`（26 个成员：25 个 live getter + 1 个
+  `setTokenWriterSession` 写回口）；链体逐字搬进 **`gateway/src/runtime/event-dispatch.ts`**。
+  index.ts 净减 ~230 行 + 8 个失效 import。
 - **24 段有序表**（`DISPATCH_STAGES`；数组位置即执行顺序，Ruling D2-R1）：
   `nativeDrop → toolPrimitiveDrop → malformedWarn → unknownTypeTelemetry →
   enrichToolIdentity → conformanceTap → goalActivity → turnStartedBusy →
@@ -50,7 +51,8 @@
 | 2 | `45ba1809` | `refactor(gateway): extract handleRuntimeEvent into ordered stage table (D2 Task 2)` — 24 段逐字抽取 + comment sweep + 3 个 stale scanner 重指 |
 | 3 | `cb12aede` | `test(gateway): pin D2 dispatch topology + drop semantics + recover terminal-set pin (D2 Task 3)` — 30 条（8 + 22 新增）+ 1 条恢复的 `TURN_TERMINALS` 钉子 |
 | 4 | `e3af5954` | `test(gateway): harden D2 dispatch pins — sentinel, halt set, exported TURN_TERMINALS (D2 Task 4)` — 断言硬化 + seq 空间钉 + 边界守卫 |
-| 5 | 本提交 | `docs(gateway): D2 closeout` — docs 四文件 sweep + `gateway.md` 现状段 + `conformance-scenarios.ts` 指针 + 本记录 |
+| 5 | `d7c7217b` | `docs(gateway): D2 closeout` — docs 四文件 sweep + `gateway.md` 现状段 + `conformance-scenarios.ts` 指针 + 本记录 |
+| 6 | 本提交（fix round） | 数字纠正（`DispatchCtx` 26 成员 / `buildDispatchCtx` 30 行）+ seq append→enrich 顺序钉 + 记录定稿 |
 
 Task 3 的「23 条 pins」= 22 条新增 + 1 条恢复的 `TURN_TERMINALS` 定义钉子；加上 Task 1
 的 8 条，`event-dispatch.test.ts` 在 Task 3 结束时是 30 条。
@@ -112,3 +114,5 @@ throw 断链）」。**源码不是这样**：`applyApprovalPolicy` 把整段评
 - **全量事件消费者迁移**：另立 spec（幂等 + 影子流），D2 不承诺。
 - 已知边界：`matches` → `run` 的 TS 窄化用 `as` 重新取形（`DispatchStage` 签名无 per-run
   memo），语义不变；`isMemoryWorker` 在 4 个使用点重算（链同步，与 legacy 局部变量等价）。
+
+> spec（§5.3/5.4/7）未回改，以本记录与 `docs/architecture/gateway.md` 现状段为准。

@@ -565,7 +565,8 @@ index.ts handleRuntimeEvent(evt)
 - **数组位置就是执行顺序**（Ruling D2-R1）：`DISPATCH_STAGES` 是 24 段的有序数组，
   没有冗余 `order` 字段；拓扑断言一律 `stageIndex(name)` 比较（名字是稳定锚点）。
 - **`matches` = legacy 块级 if，`run` = 块体逐字**（`this.x` → `ctx.x()`；ctx 全为
-  **live getter**，27 个成员，`tokenWriterSession` 是唯一 getter/setter 写回口）。
+  **live getter**）：`DispatchCtx` **26 个成员** = 25 个 live getter + 1 个
+  `setTokenWriterSession` 写回口；`buildDispatchCtx()` 在 index.ts 里 30 行。
 - **只有三段可以 HALT**（legacy 的 `return`；HALT 停掉全部下游）：
 
 | # | stage | 门 | 语义 |
