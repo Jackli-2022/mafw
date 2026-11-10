@@ -119,7 +119,10 @@ export function compactTopic(input: {
   const messages = input.messages ?? [];
   const keep = Math.max(0, Math.trunc(input.keepRecentTurns ?? 6)) * 2;
   const keptFrom = Math.max(0, messages.length - keep);
-  const evictedMessageIds = messages.slice(0, keptFrom).map((message) => message.id);
+  const evictedMessageIds = messages
+    .slice(0, keptFrom)
+    .map((message) => message.id)
+    .filter((id): id is string => !!id);
   const summary = buildSummary(messages, input.maxChars ?? 1200);
   const beforeTokens = messages.reduce((sum, message) => {
     const text = [...textParts(message), ...toolOutputs(message)].join('\n');
