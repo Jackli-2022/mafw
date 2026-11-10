@@ -25,16 +25,17 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // terminal 1, agent 1, media 3 match. Baseline 135 → 87+29=116.
     // Task A1: projects 2 equals → 87+27=114.
     // Task A2: mafw-commands 1 match + 1 equals → 86+26=112.
+    // Task A3: merge-memory 1 equals → 86+25=111.
     expect(inv.byKind.match).toBe(86);
-    expect(inv.byKind.equals).toBe(26);
-    expect(inv.total).toBe(112);
+    expect(inv.byKind.equals).toBe(25);
+    expect(inv.total).toBe(111);
   });
 
   it('groups match the D1 plan inventory', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
     expect(byPrefix.get('/api/recall')).toBe(4);
-    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands']) {
-      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1/A2)
+    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory']) {
+      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1/A2/A3)
     }
     // The biggest single group is the /api catch-all mass.
     expect(byPrefix.get('/api')).toBe(72);
@@ -67,8 +68,9 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
 
   it('D1 migration targets are enumerable (api-prefixed groups, not transport)', () => {
     const apiGroups = inv.groups.filter((g) => g.prefix.startsWith('/api'));
-    // Shrinks as whole prefixes migrate (A1: /api/projects gone → 14; A2: /api/mafw-commands → 13).
-    expect(apiGroups.length).toBeGreaterThanOrEqual(13);
+    // Shrinks as whole prefixes migrate (A1: /api/projects → 14; A2: /api/mafw-commands → 13;
+    // A3: /api/merge-memory → 12).
+    expect(apiGroups.length).toBeGreaterThanOrEqual(12);
     const transportPrefixes = ['/assets', '/static', '/mcp', '/', '/index.html', '/health', '/a2a', '/.well-known', '/register', '/control'];
     for (const g of apiGroups) {
       expect(transportPrefixes).not.toContain(g.prefix);

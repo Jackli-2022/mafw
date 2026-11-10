@@ -220,6 +220,7 @@ import { attachTerminalRoutes, attachAgentRoutes, attachMobileRoutes } from './r
 import { attachMediaRoutes } from './routes/media-upload';
 import { attachProjectRoutes } from './routes/projects';
 import { attachMafwCommandRoutes } from './routes/mafw-commands';
+import { attachMergeMemoryRoutes } from './routes/merge-memory';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5600,6 +5601,10 @@ class MafwScheduler {
         projectDir: () => this.projectDir,
         shouldHoldQueue: (sessionID) => this.runCoordinator?.shouldHoldQueue(sessionID),
       });
+      // Phase D1 Task A3：merge-memory 面迁 registry dispatch（1 分支；动态 import 保留）。
+      attachMergeMemoryRoutes(this.routeRegistry, {
+        memory: () => this.memoryService,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -5944,34 +5949,7 @@ class MafwScheduler {
         }
 
         // POST /api/mafw-commands/run + GET /api/mafw-commands — Phase D1 Task A2：已迁 registry dispatch。
-
-        // POST /api/merge-memory — direct merge endpoint used by the plugin
-        // /merge-memory slash command (src/plugin.ts). Reuses the MCP handler.
-        if (req.url === "/api/merge-memory" && req.method === "POST") {
-          try {
-            const body = await readBody(req);
-            const { sourceWorktree, strategy, resolveStrategy } = JSON.parse(body);
-            if (!sourceWorktree) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ ok: false, error: 'sourceWorktree is required' }));
-              return;
-            }
-            const { handleMergeMemory } = await import('./mcp/handlers/merge-memory.js');
-            const result = await handleMergeMemory(
-              { sourceWorktree, resolveStrategy: strategy || resolveStrategy || 'manual' } as any,
-              { memory: this.memoryService } as any,
-            );
-            const text = result.content?.[0]?.text || '{}';
-            let parsed: any;
-            try { parsed = JSON.parse(text) } catch { parsed = { text } }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: parsed.success !== false, ...parsed }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ ok: false, error: err.message }));
-          }
-          return;
-        }
+        // POST /api/merge-memory — Phase D1 Task A3：已迁 registry dispatch。
 
 // GET /api/memory/merged-search — expose memory context injection results
         if (req.url === "/api/memory/merged-search" && req.method === "GET") {
