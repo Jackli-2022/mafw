@@ -1,0 +1,28 @@
+{
+  "name": "@mafw/adapter-opencode",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@mafw/runtime-contract": "*",
+    "@mafw/runtime-core": "*",
+    "cross-spawn": "^7.0.6",
+    "jsonc-parser": "^3.3.1"
+  },
+  "peerDependencies": {
+    "@opencode-ai/sdk": "*"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
+  }
+}

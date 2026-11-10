@@ -50,7 +50,8 @@
       "@mafw/plugin-contract": "../packages/plugin-contract",
       "@mafw/runtime-contract": "../packages/runtime-contract",
       "@mafw/runtime-core": "../packages/runtime-core",
-      "@mafw/adapter-pi": "../adapters/pi"
+      "@mafw/adapter-pi": "../adapters/pi",
+      "@mafw/adapter-opencode": "../adapters/opencode"
     }
   }
 }

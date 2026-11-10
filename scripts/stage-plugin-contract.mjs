@@ -46,6 +46,7 @@ export const CONTRACT_PACKAGES = [
   { name: RUNTIME_CONTRACT_PACKAGE, sourceDir: defaultRuntimeContractDir },
   { name: RUNTIME_CORE_PACKAGE, sourceDir: path.join(repoRoot, "packages", "runtime-core") },
   { name: "@mafw/adapter-pi", sourceDir: path.join(repoRoot, "adapters", "pi") },
+  { name: "@mafw/adapter-opencode", sourceDir: path.join(repoRoot, "adapters", "opencode") },
 ];
 
 function logLine(message) {

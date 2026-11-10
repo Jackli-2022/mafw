@@ -544,6 +544,44 @@ console.log(JSON.stringify({ resolved: require.resolve('@mafw/plugin-contract') 
     expect(fs.existsSync(path.join(nodeModules, '@mafw', 'plugin-contract'))).toBe(false);
   });
 
+  it('stages the opencode adapter next to the gateway contract', () => {
+    const nodeModules = path.join(base, 'staged-gateway', 'node_modules');
+    const probe = path.join(base, 'staged-gateway', 'probe.cjs');
+    fs.mkdirSync(path.dirname(probe), { recursive: true });
+    fs.writeFileSync(
+      probe,
+      `const adapter = require('@mafw/adapter-opencode');
+if (adapter.ADAPTER_PACKAGE_NAME !== '@mafw/adapter-opencode') process.exit(2);
+if (adapter.OPENCODE_RUNTIME_NAME !== 'opencode') process.exit(3);
+if (typeof adapter.loadOpencodeSdkV2 !== 'function') process.exit(4);
+console.log(JSON.stringify({ resolved: require.resolve('@mafw/adapter-opencode') }));
+`,
+    );
+
+    // Same entry point the production installs use: no --package/--source means
+    // every CONTRACT_PACKAGES entry is staged into one node_modules directory.
+    const staged = spawnSync(
+      process.execPath,
+      [STAGER, '--node-modules', nodeModules],
+      { encoding: 'utf8' },
+    );
+    expect(staged.status).toBe(0);
+    expect(staged.stdout).toContain('staged @mafw/adapter-opencode');
+
+    const stagedEntry = path.join(nodeModules, '@mafw', 'adapter-opencode', 'dist', 'index.js');
+    expect(fs.existsSync(stagedEntry)).toBe(true);
+    expect(fs.existsSync(path.join(nodeModules, '@mafw', 'adapter-opencode', 'dist', 'index.d.ts'))).toBe(true);
+
+    // The staged bundle resolves its external contract import from the same
+    // node_modules directory and loads without the repository workspace link.
+    const after = spawnSync(process.execPath, [probe], { encoding: 'utf8', cwd: path.dirname(probe) });
+    expect(after.stderr).toBe('');
+    expect(after.status).toBe(0);
+    expect(path.resolve((JSON.parse(after.stdout) as { resolved: string }).resolved)).toBe(
+      path.resolve(stagedEntry),
+    );
+  });
+
   it('is wired into the desktop bundle, deploy script, postinstall and CI', () => {
     const stageGateway = fs.readFileSync(
       path.join(REPO_ROOT, 'packages', 'desktop', 'scripts', 'stage-gateway.ts'),
@@ -565,15 +603,36 @@ console.log(JSON.stringify({ resolved: require.resolve('@mafw/plugin-contract') 
     expect(rootPkg.files).toContain('packages/plugin-contract/dist/');
     expect(rootPkg.files).toContain('packages/runtime-contract/dist/');
     expect(rootPkg.files).toContain('adapters/pi/dist/');
+    // The opencode driver ships exactly like the pi adapter: built `dist/` plus
+    // its manifest, staged by the same postinstall into gateway/node_modules.
+    expect(rootPkg.files).toContain('adapters/opencode/package.json');
+    expect(rootPkg.files).toContain('adapters/opencode/dist/');
+    expect(rootPkg.scripts.postinstall).toContain('@mafw/adapter-opencode');
+    expect(rootPkg.scripts.postinstall).toContain('gateway/node_modules');
+    expect(rootPkg.scripts.build).toContain('npm run build -w @mafw/adapter-opencode');
+    // Both adapters must be built before the gateway compiles against them.
+    expect(rootPkg.scripts.build.indexOf('@mafw/adapter-opencode')).toBeGreaterThan(
+      rootPkg.scripts.build.indexOf('@mafw/adapter-pi'),
+    );
+    expect(rootPkg.scripts.build.indexOf('@mafw/adapter-opencode')).toBeLessThan(
+      rootPkg.scripts.build.indexOf('gateway && npm run build'),
+    );
 
     const gatewayPkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'gateway', 'package.json'), 'utf8'));
     expect(gatewayPkg.mafw.bundledPackages['@mafw/plugin-contract']).toBe('../packages/plugin-contract');
     expect(gatewayPkg.mafw.bundledPackages['@mafw/runtime-contract']).toBe('../packages/runtime-contract');
     expect(gatewayPkg.mafw.bundledPackages['@mafw/adapter-pi']).toBe('../adapters/pi');
+    expect(gatewayPkg.mafw.bundledPackages['@mafw/adapter-opencode']).toBe('../adapters/opencode');
 
     const adapterPkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'adapters', 'pi', 'package.json'), 'utf8'));
     expect(adapterPkg.peerDependencies?.['@earendil-works/pi-coding-agent']).toBe('*');
     expect(adapterPkg.peerDependenciesMeta?.['@earendil-works/pi-coding-agent']?.optional).toBe(true);
+
+    const opencodePkg = JSON.parse(
+      fs.readFileSync(path.join(REPO_ROOT, 'adapters', 'opencode', 'package.json'), 'utf8'),
+    );
+    expect(opencodePkg.peerDependencies?.['@opencode-ai/sdk']).toBe('*');
+    expect(opencodePkg.peerDependenciesMeta?.['@opencode-ai/sdk']?.optional).toBe(true);
 
     for (const workspace of ['gateway-sdk', 'desktop']) {
       const workspacePkg = JSON.parse(
