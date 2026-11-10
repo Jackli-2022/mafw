@@ -834,8 +834,10 @@ opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
   `mafw-<uuid>` 并落盘。gateway 重启/外部 CLI daemon 重启后可用同一密码收养仍在运行的旧
   serve；旧实现每进程随机密码，重启后必然 401 并把旧 serve 留成孤儿。
 - **孤儿 serve 清场（2026-11-10）**：启动时 `healthCheck` 失败 → `killServe()`；Windows 必须
-  `taskkill /F /T /PID`（裸 `process.kill` 不足以杀掉实际监听子进程），随后等待 500ms 再
-  spawn。否则旧 serve 占着 4096，新 gateway 只能退化为 MCP-only，所有 native 调用 401。
+  `taskkill /F /T /PID`（裸 `process.kill` 不足以杀掉实际监听子进程），PID 取
+  `Get-NetTCPConnection ... | Where-Object RemotePort -eq 0`（本机 netstat 对监听 socket 报
+  PID 0，无法用于清场），随后等待 500ms 再 spawn。否则旧 serve 占着 4096，新 gateway
+  只能退化为 MCP-only，所有 native 调用 401。
 - **健康轮询监督**：SDK 不暴露子进程/exit 回调，**owned 与 adopted serve 都走 watchdog**：
   每 30s 探测 `/global/health`，连续 3 次失败 → `recoverServe()` 重启并**重订阅事件流**
   （SSE 建立在 serve 之上，进程重启后必须重连，否则自动化触发器和桌面 SSE 转发全部静默失效）

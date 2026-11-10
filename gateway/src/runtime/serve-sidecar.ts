@@ -21,6 +21,7 @@ import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime-root';
 export interface KillServeDeps {
   platform?: NodeJS.Platform;
   execSync?: (command: string, options?: Record<string, unknown>) => any;
+  execFileSync?: (file: string, args: string[], options?: Record<string, unknown>) => any;
   kill?: (pid: number, signal?: NodeJS.Signals | number) => void;
 }
 
@@ -45,12 +46,36 @@ export function parseListeningPid(output: string, port: number): number | null {
 export function killServePort(port: number, deps: KillServeDeps = {}): void {
   const platform = deps.platform ?? process.platform;
   const execSync = deps.execSync ?? childProcess.execSync;
+  const execFileSync = deps.execFileSync ?? childProcess.execFileSync;
   const kill = deps.kill ?? ((pid, signal) => process.kill(pid, signal));
   try {
     if (platform === 'win32') {
-      const out = execSync(`netstat -ano | findstr :${port}`, { windowsHide: true }).toString();
-      const pid = parseListeningPid(out, port);
-      if (pid) execSync(`taskkill /F /T /PID ${pid}`, { windowsHide: true, stdio: 'ignore' });
+      // netstat can report PID 0 for listening sockets (observed on a
+      // constrained/AppContainer-like session), so taskkill would be a no-op.
+      // Get-NetTCPConnection reports the real owner; fall back to netstat only
+      // when PowerShell is unavailable.
+      let pid: number | null = null;
+      try {
+        const out = execFileSync(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Where-Object RemotePort -eq 0 | Select-Object -First 1 -ExpandProperty OwningProcess`,
+          ],
+          { windowsHide: true },
+        ).toString().trim();
+        const parsed = Number(out);
+        if (Number.isFinite(parsed) && parsed > 0) pid = parsed;
+      } catch { /* fall through to netstat */ }
+      if (!pid) {
+        const out = execSync(`netstat -ano | findstr :${port}`, { windowsHide: true }).toString();
+        pid = parseListeningPid(out, port);
+      }
+      if (pid && pid > 0) {
+        execSync(`taskkill /F /T /PID ${pid}`, { windowsHide: true, stdio: 'ignore' });
+      }
     } else {
       const out = execSync(`lsof -ti:${port}`, { windowsHide: true }).toString().trim();
       const pid = Number(out) || null;
