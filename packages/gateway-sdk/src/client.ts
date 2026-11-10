@@ -4,7 +4,7 @@ import {
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline, GoalPlanInfo,
   GoalSourceRef,
   LeadNamespace, LeadTopicView, LeadTopicIndexMessage, LeadWorkingSet, LeadCompactResult, LeadRecallCandidate,
-  MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
+  MemoryUnit, MemorySearchOptions, MemoryLayer, MemoryLayeredSearchOptions, MemoryLayeredSearchResult, T1SearchHit, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   DiscoverySnapshot, DiscoverySkillContent,
@@ -1054,6 +1054,18 @@ export class MafwClient implements IMafwClient {
       if (opts.retriever) params.set('retriever', opts.retriever)
       const data = await this.request<{ results: MemoryUnit[] }>(`/api/memory/search?${params}`)
       return data.results || []
+    },
+
+    searchLayered: async (opts: MemoryLayeredSearchOptions): Promise<MemoryLayeredSearchResult> => {
+      const layer: MemoryLayer = opts.layer ?? 'gist'
+      const params = new URLSearchParams({ query: opts.query, layer })
+      if (opts.topK) params.set('topK', String(opts.topK))
+      if (opts.goalId) params.set('goalId', opts.goalId)
+      if (opts.retriever) params.set('retriever', opts.retriever)
+      const data = await this.request<{ results?: MemoryUnit[]; t1Results?: T1SearchHit[] }>(
+        `/api/memory/search?${params}`,
+      )
+      return { layer, results: data.results || [], t1Results: data.t1Results || [] }
     },
 
     mergedSearch: async (opts: MergedSearchOptions): Promise<MemoryFact[]> => {

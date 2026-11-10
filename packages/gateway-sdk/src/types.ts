@@ -110,6 +110,15 @@ export interface StickyNoteBudget {
   used: number
 }
 
+/** T1 retrieval observation counters (observe-only; 7-day window in stats). */
+export interface T1RetrievalStats {
+  total: number
+  byKind: Record<'search' | 'recall' | 'redeem', number>
+  uniqueTraces: number
+  /** Unix seconds of the newest event, or null. */
+  lastAt: number | null
+}
+
 /** GET /api/memory/stats — every field is optional (fail-open endpoint). */
 export interface MemoryStats {
   embedding?: { provider: string; model?: string; vectors: number; indexEntries: number; coverage: number } | null
@@ -123,6 +132,8 @@ export interface MemoryStats {
   fok?: { injections: number; redemptions: number; samples: number; hitRate: number | null } | null
   /** A3 retrieval event stream counters. */
   retrievalEvents?: { pending: number; needTracked: number } | null
+  /** T1 verbatim vector coverage + trailing-7-day retrieval observations. */
+  t1?: { vectors: number; activeRows: number; archiveRows: number; coverage: number; retrieval: T1RetrievalStats } | null
 }
 
 export interface ModelUsageStat {
@@ -934,8 +945,34 @@ export interface MemorySearchOptions {
   retriever?: 'bm25' | 'token' | 'hybrid'
 }
 
+/** 记忆检索层级：gist = Harmonic 抽象知识（默认）；t1 = 原始回合；both = 两路。 */
+export type MemoryLayer = 'gist' | 't1' | 'both'
+
+/** T1 verbatim 命中；traceId 用于 mafw_get_memory("t1:<traceId>") 取全文。 */
+export interface T1SearchHit {
+  sessionId: string
+  turnId: number
+  traceId?: string | null
+  cosine: number
+  excerpt: string
+}
+
+export interface MemoryLayeredSearchOptions extends MemorySearchOptions {
+  /** 省略时为 gist（与旧 search() 行为一致）。 */
+  layer?: MemoryLayer
+}
+
+export interface MemoryLayeredSearchResult {
+  /** 实际请求的层级（已补默认值）。 */
+  layer: MemoryLayer
+  results: MemoryUnit[]
+  t1Results: T1SearchHit[]
+}
+
 export interface MemoryNamespace {
   search(opts: MemorySearchOptions): Promise<MemoryUnit[]>
+  /** 分层检索：gist/t1/both，同时返回两路结果（缺失时为空数组）。 */
+  searchLayered(opts: MemoryLayeredSearchOptions): Promise<MemoryLayeredSearchResult>
   mergedSearch(opts: MergedSearchOptions): Promise<MemoryFact[]>
   getEnergyDistribution(): Promise<EnergyDistribution>
   getL5Axioms(topK?: number): Promise<{ axioms: Axiom[]; heuristics: L5Heuristic[] }>
