@@ -736,12 +736,22 @@ export async function restartGatewayWithLocalBuild(): Promise<void> {
     pid: discovery.pid,
     port: discovery.port,
   }, "info")
+  // The gateway may be our own child. Mark the exit as intentional *before*
+  // killing it, otherwise its exit handler sees state="starting"/"ready" and
+  // schedules a spurious auto-restart.
+  const oldChild = managedChild
+  expectedExit = true
   await killProcess(discovery.pid)
-  await waitForGatewayDown(() => checkHealth(`http://127.0.0.1:${discovery.port}`), {
-    timeoutMs: 8000,
-    intervalMs: 200,
-  })
+  if (oldChild) {
+    await waitForChildExit(oldChild)
+  } else {
+    await waitForGatewayDown(() => checkHealth(`http://127.0.0.1:${discovery.port}`), {
+      timeoutMs: 8000,
+      intervalMs: 200,
+    })
+  }
   if (await tcpReachable("127.0.0.1", discovery.port)) {
+    expectedExit = false
     errorMessage = `old gateway is still holding port ${discovery.port}`
     notifyState("failed")
     return

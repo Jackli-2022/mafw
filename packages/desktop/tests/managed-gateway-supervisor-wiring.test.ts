@@ -86,6 +86,19 @@ test("quit waits for the managed gateway and never uses the WSL-only stop callba
   assert.doesNotMatch(sidecar, /installQuitHook|app\.on\("will-quit"/)
 })
 
+test("local-build restart marks the old child exit intentional before killing it", () => {
+  const start = sidecar.indexOf("restarting gateway with the local build")
+  const end = sidecar.indexOf('notifyState("stopped")', start)
+  const block = sidecar.slice(start, end)
+  assert.match(block, /expectedExit = true/)
+  assert.match(block, /await killProcess\(discovery\.pid\)/)
+  assert.match(block, /await waitForChildExit\(oldChild\)/)
+  assert.ok(
+    block.indexOf("expectedExit = true") < block.indexOf("killProcess(discovery.pid)"),
+    "expectedExit must be set before the kill",
+  )
+})
+
 test("IPC and preload expose source switching and forced managed retry", () => {
   assert.match(ipc, /mafw-gateway-source-preference-get/)
   assert.match(ipc, /mafw-gateway-source-preference-set/)
