@@ -712,6 +712,40 @@ describe('runtime isolation architecture boundaries', () => {
   });
 });
 
+describe('event dispatch extraction (D2: the chain body lives outside the composition root)', () => {
+  it('index.ts no longer carries the dispatch chain body — wiring only', () => {
+    const code = stripComments(readSource('src/index.ts')).code;
+    // D2 把 24 段 if 链整段搬进 src/runtime/event-dispatch.ts：enrich / 审批 /
+    // 权限投影 / 两个早期丢弃门都不再出现在组合根（注释里的历史说明不算，
+    // stripComments 已剥离）。
+    expect(code).not.toContain('enrichToolIdentity(');
+    expect(code).not.toContain('applyApprovalPolicy(');
+    expect(code).not.toContain('enrichPermissionEvent(');
+    expect(code).not.toContain('projectQuestionRequest(');
+    expect(code).not.toMatch(/RUNTIME_NATIVE_DROPPED\.has\(/);
+    expect(code).not.toMatch(/TOOL_PRIMITIVE_TYPES\.has\(/);
+    // 接线点仍在组合根（否则表存在但没人调用——假绿）：normalize → runEventPipeline。
+    expect(code).toContain('runEventPipeline(');
+    expect(code).toMatch(/normalizeOpencodeEvent\(evt\)/);
+    expect(code).toMatch(/private handleRuntimeEvent\(evt: any\): void \{/);
+  });
+
+  it('runtime/event-dispatch.ts is the single home of the ordered stage table', () => {
+    const code = stripComments(readSource('src/runtime/event-dispatch.ts')).code;
+    expect(code).toContain('export const DISPATCH_STAGES: DispatchStage[]');
+    expect(code).toContain('export function runEventPipeline');
+    expect(code).toContain('export function stageIndex');
+    expect(code).toContain('export const TURN_TERMINALS');
+    // 链体的真实内容只在表里（组合根的 not.toContain 断言与这里成对，防止
+    // 「两边都删掉」把链悄悄弄没）。
+    expect(code).toContain('enrichToolIdentity(evt)');
+    expect(code).toContain('applyApprovalPolicy(');
+    for (const stage of ['nativeDrop', 'toolPrimitiveDrop', 'internalFilter', 'finalBroadcast']) {
+      expect(code).toContain(`name: '${stage}'`);
+    }
+  });
+});
+
 describe('composition root exceptions (spec §11: 按区段登记，禁止整文件豁免)', () => {
   it('index.ts has no unregistered runtime identity/capability/diagnostic reads', () => {
     expect(compositionRootViolations(readSource('src/index.ts'))).toEqual([]);

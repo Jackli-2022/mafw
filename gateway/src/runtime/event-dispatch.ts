@@ -124,8 +124,13 @@ export interface DispatchStage {
   run(f: EventFacets, evt: any, ctx: DispatchCtx): StageOutcome;
 }
 
-/** turn 终态三元组（memoryWorker 链中丢弃的唯一放行集）。 */
-const TURN_TERMINALS: ReadonlySet<string> = new Set([
+/**
+ * turn 终态三元组（memoryWorker 链中丢弃的唯一放行集）。
+ *
+ * 导出供测试**读值**（tests/unit/runtime/queue-busy-wiring.test.ts 直接断言集合
+ * 成员，而不是正则解析源码）——D2 Task 4 硬化：源码自省会被格式/注释漂移骗过。
+ */
+export const TURN_TERMINALS: ReadonlySet<string> = new Set([
   MAFW.turnCompleted,
   MAFW.turnFailed,
   MAFW.turnAborted,

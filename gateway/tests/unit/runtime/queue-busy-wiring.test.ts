@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SessionQueue } from '../../../src/core/session-queue';
 import { MAFW } from '../../../src/runtime/mafw-vocabulary';
+import { TURN_TERMINALS } from '../../../src/runtime/event-dispatch';
 
 const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
 // Phase D2: turn.started / 终态 busy 语义随 handleRuntimeEvent 链迁入 event-dispatch.ts。
@@ -16,24 +17,24 @@ describe('busy 追踪 wiring（spec §5.1 v2）', () => {
     expect(dispatchSrc).toMatch(/ctx\.busySessions\(\)\.delete\(sessionID\)/);
   });
   /**
-   * D2 迁出后恢复的字面量钉子：legacy 用 `/MAFW.turnCompleted || MAFW.turnFailed ||
+   * D2 迁出后恢复的钉子：legacy 用 `/MAFW.turnCompleted || MAFW.turnFailed ||
    * MAFW.turnAborted/` 正则钉住「哪三个类型是终态」；迁出时该正则被
-   * `TURN_TERMINALS.has(f.type)` 取代，成员集合失去断言。这里回到定义本身：
-   * 定义体必须**恰好**是这三个 MAFW 常量（不多不少、不含裸字符串），且常量值
+   * `TURN_TERMINALS.has(f.type)` 取代，成员集合失去断言。这里直接断言**导出的集合**：
+   * 顺序与值都必须**恰好**是这三个 MAFW 常量（不多不少、不含裸字符串），且常量值
    * 就是线上类型名——重命名常量或增减成员都会红。
+   *
+   * D2 Task 4 硬化：改为读 `event-dispatch.ts` 导出的 `TURN_TERMINALS` 值，不再正则
+   * 解析源码定义体（格式/注释漂移会让旧钉子假绿）。
    */
-  it('TURN_TERMINALS 定义体逐字钉住三个终态类型（迁移前的字面量语义）', () => {
-    const def = dispatchSrc.match(/const TURN_TERMINALS: ReadonlySet<string> = new Set\(\[([\s\S]*?)\]\)/);
-    expect(def).toBeTruthy();
-    const members = def![1]
-      .replace(/\/\/.*$/gm, '')   // 去行注释
-      .split(',')
-      .map((token) => token.trim())
-      .filter(Boolean);
-    expect(members).toEqual(['MAFW.turnCompleted', 'MAFW.turnFailed', 'MAFW.turnAborted']);
-    // 常量值 ↔ 线上类型名（常量被改名/改值都会红）。
-    expect(members.map((token) => (MAFW as Record<string, string>)[token.slice('MAFW.'.length)]))
-      .toEqual(['turn.completed', 'turn.failed', 'turn.aborted']);
+  it('TURN_TERMINALS 恰好是三个终态类型（读导出值，不解析源码）', () => {
+    expect(Array.from(TURN_TERMINALS)).toEqual([
+      MAFW.turnCompleted,
+      MAFW.turnFailed,
+      MAFW.turnAborted,
+    ]);
+    expect(TURN_TERMINALS.size).toBe(3);
+    // 常量值 ↔ 线上类型名（MAFW 词汇被改名/改值都会红）。
+    expect([...TURN_TERMINALS]).toEqual(['turn.completed', 'turn.failed', 'turn.aborted']);
   });
   it('防楔死：BUSY_STALE_MS 常量 + sweep 方法 + interval 注册', () => {
     expect(src).toContain('BUSY_STALE_MS = 15 * 60_000');

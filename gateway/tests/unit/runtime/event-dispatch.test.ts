@@ -17,7 +17,8 @@
  * Task 3 用**真实** `DISPATCH_STAGES` + `runEventPipeline`（不 mock 管线本身）+
  * 录制型 fake `DispatchCtx`，把 Review Focus 的 5 个失败模式钉成可执行断言：
  *   (a) 内部会话 drop 语义（非终态 halt + 终态仍出站）；
- *   (b) 派生广播先于 passthrough 的 seq 次序；
+ *   (b) 派生广播先于 passthrough 的次序（broadcast 是 EventStore 单一 sink，
+ *       调用序即 seq 序；EventStore 侧显式断言在 events/broadcast-seq.test.ts）；
  *   (c) 终态 4 步微观次序；
  *   (d) approval 同步评估（无延后）+ 抛错语义（hook 内 fail-open；管线级无 try/catch）；
  *   (e) enrich 先于 tap 快照（tap 看到的是富化后的载荷）。
@@ -28,6 +29,7 @@ import {
   runEventPipeline,
   stageIndex,
   type DispatchCtx,
+  type DispatchStage,
 } from '../../../src/runtime/event-dispatch';
 import { normalizeOpencodeEvent, type EventFacets } from '../../../src/runtime/normalize';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from '../../../src/runtime/event-flow-matrix';
@@ -237,6 +239,30 @@ describe('D2 dispatch stage table', () => {
   it('the passthrough broadcast is the final stage', () => {
     expect(stageIndex('finalBroadcast')).toBe(DISPATCH_STAGES.length - 1);
   });
+
+  it('the two early drop gates run in legacy order (native envelope before tool primitives)', () => {
+    expect(stageIndex('nativeDrop')).toBeLessThan(stageIndex('toolPrimitiveDrop'));
+    expect(stageIndex('toolPrimitiveDrop')).toBeLessThan(stageIndex('malformedWarn'));
+  });
+
+  /**
+   * 「只有三段可以 HALT」的结构化钉法（D2 Task 4 硬化）。
+   *
+   * 为什么不导出一个 `HALTING_STAGES` 常量：那会引入**第二个事实源**——有人往
+   * 表里加一段 `run: () => 'halt'` 而忘了同步常量，两个名单就各说各话。这里直接
+   * 从每段 `run` 的**函数体源文本**里找 halt 信号：它是真实执行体的镜像，加第四段
+   * 或者去掉某段的 `'halt'` 都会同时反映到表上。
+   *
+   * 已知边界：若某段把 halt 委托给一个 helper（`run: () => maybeHalt(...)`），本
+   * 断言会漏判——这种写法在 D2 表里不存在，且（a）与矩阵交叉校验在行为层兜住
+   * 三段 halt 的实际效果；新增 helper 形态需同步改这里。
+   */
+  it('exactly three stages can halt: nativeDrop, toolPrimitiveDrop, internalFilter', () => {
+    const halting = DISPATCH_STAGES
+      .filter((stage) => /['"]halt['"]/.test(stage.run.toString()))
+      .map((stage) => stage.name);
+    expect(halting).toEqual(['nativeDrop', 'toolPrimitiveDrop', 'internalFilter']);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -278,7 +304,11 @@ describe('(a) internal-session drop semantics', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// (b) 派生 vs passthrough 的 seq 次序（一个 turn.completed）
+// (b) 派生 vs passthrough 的广播次序（一个 turn.completed）
+//     seq 次序 = 广播调用次序：`broadcast()` 是 EventStore 的**单一 sink**
+//     （index.ts:3716 同步 append 分配 seq），所以这里的调用序就是持久层 seq 序。
+//     EventStore 侧的显式 seq 断言在 tests/unit/events/broadcast-seq.test.ts
+//     （D2-R4；本文件只钉管线拓扑，不重复造 EventStore 夹具）。
 // ─────────────────────────────────────────────────────────────────────────────
 describe('(b) derived-vs-passthrough broadcast order', () => {
   it('turn.completed broadcasts trajectory.event → trajectory.turn + usage.updated → passthrough', () => {
@@ -296,7 +326,8 @@ describe('(b) derived-vs-passthrough broadcast order', () => {
       MAFW.usageUpdated,      // stage 23（usage 合成派生）
       MAFW.turnCompleted,     // stage 24（passthrough）
     ]);
-    // EventStore 只有一个 sink：全部经 mafw_event 信封，且 passthrough 仍带 sessionID。
+    // EventStore 只有一个 sink：全部经 mafw_event 信封（调用序 == seq 序），
+    // 且 passthrough 仍带 sessionID。
     expect(world.broadcasts.every((b) => b.type === 'mafw_event')).toBe(true);
     expect(world.broadcasts[3].data.sessionID).toBe('s1');
     // 拓扑锚点（次序不是巧合，而是表位置）。
@@ -400,6 +431,33 @@ describe('(d) sync approval evaluation', () => {
     expect(world.broadcasts).toEqual([]);
     expect(world.trajectoryCalls).toEqual([]);
   });
+
+  it('no pipeline-level catch: a sentinel stage throw escapes runEventPipeline', () => {
+    // 上面那条依赖「sessionActivity 恰好没有段内 try/catch」——那是代理证据。
+    // 真正要钉的是**管线本身**不加 try/catch：临时把一段必抛的哨兵压进表尾
+    // （try/finally 弹出，表本身不被污染），管线必须把它原样抛出来；任何
+    // 「catch 后继续/吞掉」的实现都会让这条先红。
+    const world = makeWorld();
+    const sentinel: DispatchStage = {
+      name: '__sentinelThrow',
+      matches: () => true,
+      run: () => {
+        world.timeline.push('sentinel');
+        throw new Error('sentinel boom');
+      },
+    };
+    DISPATCH_STAGES.push(sentinel);
+    try {
+      expect(() => dispatch(world, MAFW.partUpdated, { sessionID: 's1', part: { type: 'text', text: 'x' } }))
+        .toThrow('sentinel boom');
+      // 哨兵确实执行了（不是别处先抛的同名错误）。
+      expect(world.timeline).toContain('sentinel');
+    } finally {
+      DISPATCH_STAGES.pop();
+    }
+    // 弹出后表恢复原状，后续用例不受影响。
+    expect(DISPATCH_STAGES[DISPATCH_STAGES.length - 1].name).toBe('finalBroadcast');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -441,6 +499,7 @@ describe('(e) enrich-before-tap', () => {
     expect(tapAt).toBeGreaterThan(-1);
     expect(world.timeline.indexOf('enrich:toolClass=shell')).toBeGreaterThan(-1);
     expect(world.timeline.indexOf('enrich:toolClass=shell')).toBeLessThan(tapAt);
+    expect(world.timeline.indexOf('enrich:canonicalTool=bash')).toBeGreaterThan(-1);
     expect(world.timeline.indexOf('enrich:canonicalTool=bash')).toBeLessThan(tapAt);
     // tap 看到的是**富化后**的载荷（shell → toolClass=shell / canonicalTool=bash）。
     expect(observed).toEqual([{ toolClass: 'shell', canonicalTool: 'bash' }]);
