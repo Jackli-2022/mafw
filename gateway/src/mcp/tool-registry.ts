@@ -35,6 +35,27 @@ export const DEFINITIONS: ToolDefinition[] = [
           properties: { maxTurns: { type: "number" }, maxCostUsd: { type: "number" } },
         },
         taskType: { type: "string", enum: ["feature", "bugfix", "refactor", "research", "docs", "test", "other"], description: "D4b task type (optional declaration; the plan node's judgement in waves.taskType wins). Powers task-typed capability priors and counterfactual pre-mortem." },
+        sourceRef: {
+          type: "object",
+          description: "Immutable handoff provenance (current Lead topic snapshot)",
+          properties: {
+            sessionID: { type: "string" },
+            messageID: { type: "string" },
+            snapshot: { type: "string" },
+            capturedAt: { type: "string" },
+            topicId: { type: "string" },
+            messageRange: {
+              type: "object",
+              properties: { from: { type: "string" }, to: { type: "string" } },
+            },
+          },
+        },
+        handoff: {
+          type: "string",
+          enum: ["current-topic", "none"],
+          description: "Hand off the current Lead topic; gateway builds sourceRef when omitted",
+        },
+        topicId: { type: "string", description: "Source Lead topic id (optional; gateway resolves the latest when omitted)" },
       },
       required: ["title"],
     },

@@ -97,6 +97,8 @@ export interface PodTechLeadGoalInput {
   sourceRef?: GoalSourceRef;
   /** Hand off the current Lead topic (default current-topic when createdBy is set). */
   handoff?: 'current-topic' | 'none';
+  /** Optional explicit source topic; omitted = latest handoff topic. */
+  topicId?: string;
   /** Optional exclusive upper bound for the handoff snapshot. */
   untilMessageId?: string;
   authorization?: GoalAuthorization;
