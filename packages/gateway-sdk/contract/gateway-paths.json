@@ -2821,6 +2821,191 @@
         }
       }
     },
+    "/api/standing-goals": {
+      "get": {
+        "operationId": "standingGoals.list",
+        "tags": [
+          "standing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "standingGoals.create",
+        "tags": [
+          "standing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}": {
+      "patch": {
+        "operationId": "standingGoals.update",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/runs": {
+      "get": {
+        "operationId": "standingGoals.runs",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/pause": {
+      "post": {
+        "operationId": "standingGoals.pause",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/resume": {
+      "post": {
+        "operationId": "standingGoals.resume",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/stop": {
+      "post": {
+        "operationId": "standingGoals.stop",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/standing-goals/{id}/run": {
+      "post": {
+        "operationId": "standingGoals.run",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/goal-runs/{id}/approve": {
+      "post": {
+        "operationId": "goalRuns.approve",
+        "tags": [
+          "standing"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/lead/topics": {
       "get": {
         "operationId": "lead.topics.list",

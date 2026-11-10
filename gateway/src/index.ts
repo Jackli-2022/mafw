@@ -361,8 +361,12 @@ import { attachSchedulerRoutes } from './routes/scheduler';
 import { attachGoalControlRoutes, pauseStatePatch, resumeStatePatch, selectRetryRun } from './routes/goal-control';
 import { attachLeadBoundaryRoutes } from './routes/lead-boundaries';
 import { attachEventRoutes } from './routes/events';
+import { attachStandingGoalRoutes } from './routes/standing-goals';
 import { EventLayerService } from './core/events/event-layer-service';
-import type { StandingGoalService } from './core/standing/standing-service';
+import { StandingGoalService as StandingGoals } from './core/standing/standing-service';
+import { StandingGoalStore } from './core/standing/standing-store';
+import { StandingActionExecutor } from './core/standing/standing-actions';
+import { buildStandingTriagePrompt } from './core/standing/standing-triage';
 import { EventStore as EventLayerStore } from './core/events/event-store';
 import { normalizeCronTick, normalizeGitHubEvent, normalizeInternalEvent, normalizeWebhookEvent } from './core/events/event-normalize';
 import { pollGitHubSource } from './core/events/sources/github-source';
@@ -768,7 +772,8 @@ class MafwScheduler {
   private automationEngine?: AutomationEngine;
   private eventLayerStore?: EventLayerStore;
   private eventLayer?: EventLayerService;
-  private standingGoals?: StandingGoalService;
+  private standingGoals?: StandingGoals;
+  private standingGoalStore?: StandingGoalStore;
   private ledger?: SchedulerLedger;
   private pushGateway?: PushGateway;
   private pairingService?: PairingService;
@@ -4547,8 +4552,10 @@ class MafwScheduler {
         type: 'pod.updated',
         properties: { podId, kind, ...(goalId ? { goalId } : {}) },
       }),
-      onGoalCompleted: (goalId) => {
+      onGoalCompleted: (goalId, outcome) => {
         void this.topicMemory?.promoteForGoal(goalId);
+        const failed = outcome?.verdict === 'CANCELLED' || outcome?.verdict === 'ERROR' || outcome?.verdict === 'FAIL';
+        void this.standingGoals?.onGoalFinished(goalId, { status: failed ? 'failed' : 'done' });
       },
       budget: this.podBudget,
       maxConcurrentGoals: () => {
@@ -5109,7 +5116,88 @@ class MafwScheduler {
       }));
       void this.processEventThread(ingested.thread.id);
     });
-    // Pipeline heartbeat (arXiv:2609.05510): background pipelines fail silently
+    // P2.5 Standing Goals: lifecycle + GoalRun triage. Default off.
+    const standingStore = new StandingGoalStore(this.getGatewayDb().getStore());
+    this.standingGoalStore = standingStore;
+    const actionExecutor = new StandingActionExecutor({
+      notify: (input) => this.broadcast({ type: 'standing_goal.notification', properties: input }),
+      comment: async () => { throw new Error('github source unavailable'); },
+      label: async () => { throw new Error('github source unavailable'); },
+      enabled: () => process.env.MAFW_STANDING_GOALS === '1',
+    });
+    const standingGoals = new StandingGoals({
+      store: standingStore,
+      now: () => new Date().toISOString(),
+      newId: (prefix) => `${prefix}_${randomUUID()}`,
+      registerCron: (input) => this.automationEngine!.registerStandingCron(input),
+      unregisterCron: (key) => this.automationEngine!.unregisterStandingCron(key),
+      enabled: () => process.env.MAFW_STANDING_GOALS === '1',
+      broadcast: (event) => this.broadcast(event as any),
+      log: (message) => log.warn(message),
+      createTriage: (input) => this.runStandingTriage(input),
+      createGoal: async ({ standingGoal, mode, triage }) => {
+        const canonical = canonicalProjectDir(standingGoal.projectDir);
+        const detail = await this.podService.ensure(canonical);
+        const created = await this.podTechLeadService.createGoal({
+          podId: detail.pod.id,
+          projectDir: canonical,
+          title: standingGoal.title,
+          objective: standingGoal.objective,
+          acceptance: standingGoal.template.acceptance,
+          boundaries: standingGoal.template.boundaries,
+          taskType: mode === 'report'
+            ? 'research'
+            : (standingGoal.template.taskType === 'bug'
+              ? 'bugfix'
+              : standingGoal.template.taskType === 'ops'
+                ? 'other'
+                : standingGoal.template.taskType),
+          planReview: standingGoal.template.planReview,
+          handoff: 'none',
+          budget: {
+            ...(standingGoal.budget.perRunTurns !== undefined ? { maxTurns: standingGoal.budget.perRunTurns } : {}),
+            ...(standingGoal.budget.perRunCostUsd !== undefined ? { maxCostUsd: standingGoal.budget.perRunCostUsd } : {}),
+          },
+        });
+        this.podStore.setGoalRevisionStatus({
+          podId: created.podId,
+          goalId: created.goalId,
+          revision: created.revision,
+          status: 'planning',
+          now: new Date().toISOString(),
+        });
+        await this.podGoalService.admitReadyGoal(created.goalId, canonical);
+        return { goalId: created.goalId };
+      },
+      executeAction: (action) => actionExecutor.execute(action),
+      subscribeEvents: ({ standingGoal }) => {
+        this.eventLayer?.subscribe({
+          threadId: '*',
+          subscriberType: 'standing_goal',
+          subscriberId: standingGoal.id,
+          mode: 'work',
+        });
+      },
+      unsubscribeEvents: (standingGoalId) => {
+        this.eventLayer?.unsubscribeSubscriber(standingGoalId);
+      },
+      eventLayerEnabled: () => process.env.MAFW_EVENT_LAYER === '1',
+    });
+    this.standingGoals = standingGoals;
+
+    this.automationEngine.registerAction('standing_goal:tick', async (rule) => {
+      if (process.env.MAFW_STANDING_GOALS !== '1') return;
+      const standingGoalId = String(rule.args?.standingGoalId ?? '');
+      if (!standingGoalId) return;
+      await this.standingGoals?.handleCronTick(
+        standingGoalId,
+        new Date().toISOString(),
+        String(rule.args?.triggerId ?? ''),
+      );
+    });
+    void this.standingGoals.reconcile().catch((err: any) => {
+      log.warn(`[StandingGoals] reconcile failed: ${err?.message ?? err}`);
+    });
     // by default — record last-run/last-success/counts and flag stalled ones.
     {
       const db = this.getGatewayDb();
@@ -5205,6 +5293,8 @@ class MafwScheduler {
       automation: this.automationEngine,
       ledger: this.ledger,
       mafwDir,
+      projectDir: () => this.resolvedProjectDir(),
+      standingGoals: this.standingGoals,
       listProjects: () => Array.from(this.registeredProjects.entries()).map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir })),
       podTechLead: this.podTechLeadService,
       podDirection: this.podDirectionService,
@@ -5410,6 +5500,38 @@ class MafwScheduler {
       await this.eventLayer.evaluate(threadId);
     } catch (err: any) {
       log.debug(`[EventLayer] process thread ${threadId} skipped: ${err?.message ?? err}`);
+    }
+  }
+
+  private async runStandingTriage(input: {
+    standingGoal: import('./core/standing/standing-types').StandingGoal;
+    trigger: import('./core/standing/standing-types').StandingTrigger;
+    payload: Record<string, unknown>;
+    recentRuns: import('./core/standing/standing-types').GoalRun[];
+  }): Promise<{ sessionId: string; output: unknown }> {
+    const runtime = this.runtime;
+    if (!runtime) throw new Error('runtime not available');
+    const created: any = await runtime.session.create({
+      directory: input.standingGoal.projectDir,
+    });
+    const sessionId = String(created?.id ?? created?.sessionID ?? '');
+    if (!sessionId) throw new Error('failed to create standing triage session');
+    try {
+      const result: any = await runtime.session.prompt({
+        sessionID: sessionId,
+        parts: [{ type: 'text', text: buildStandingTriagePrompt(input) }],
+      });
+      if (result?.error) throw new Error(String(result.error.message ?? result.error));
+      const text = (Array.isArray(result?.parts) ? result.parts : [])
+        .filter((part: any) => part?.type === 'text' && typeof part.text === 'string')
+        .map((part: any) => String(part.text))
+        .join('\n');
+      const start = text.lastIndexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start < 0 || end <= start) throw new Error('standing triage returned no JSON object');
+      return { sessionId, output: JSON.parse(text.slice(start, end + 1)) };
+    } finally {
+      try { await runtime.session.delete({ sessionID: sessionId }); } catch { /* fail-open */ }
     }
   }
 
@@ -5898,6 +6020,30 @@ class MafwScheduler {
           void this.processEventThread(ingested.thread.id);
           return { accepted: true, duplicate: ingested.duplicate };
         },
+      });
+      attachStandingGoalRoutes(this.routeRegistry, {
+        enabled: () => process.env.MAFW_STANDING_GOALS === '1' && !!this.standingGoals,
+        list: (projectDir) => this.standingGoals!.list(projectDir),
+        create: (input: any) => this.standingGoals!.create({
+          projectDir: String(input?.projectDir ?? ''),
+          title: String(input?.title ?? ''),
+          objective: String(input?.objective ?? ''),
+          template: input?.template && typeof input.template === 'object' ? input.template : {},
+          triggers: input?.triggers,
+          concurrency: input?.concurrency,
+          cooldownMs: input?.cooldownMs,
+          budget: input?.budget,
+          approval: input?.approval,
+          createdBy: input?.createdBy ?? null,
+        }),
+        update: (id, patch: any) => this.standingGoals!.update(id, patch ?? {}),
+        runs: (id) => this.standingGoals!.listRuns(id),
+        pause: (id) => this.standingGoals!.pause(id),
+        resume: (id) => this.standingGoals!.resume(id),
+        stop: (id) => this.standingGoals!.stop(id),
+        run: (id) => this.standingGoals!.runNow(id),
+        getRun: (id) => this.standingGoalStore!.getRun(id),
+        approveRun: (id) => this.standingGoals!.approveRun(id),
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),
