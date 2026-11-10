@@ -126,9 +126,39 @@ export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, sear
       latest = next;
     }
 
+    // Exact T1 provenance: source_trace_ids captured at write time win over
+    // C0 session search; unresolvable ids fall back to C0 below.
+    let source: {
+      sessionId: string;
+      evidence?: string;
+      traces?: Array<{ traceId: string; sessionId: string; turnId: number; archived: boolean; excerpt: string }>;
+    } | undefined;
+    const exactIds = Array.isArray((unit as any).source_trace_ids)
+      ? ((unit as any).source_trace_ids as unknown[])
+          .filter((x): x is string => typeof x === 'string' && Boolean(x.trim()))
+          .slice(0, 5)
+      : [];
+    if (exactIds.length > 0 && readTrace) {
+      const traces: NonNullable<typeof source>['traces'] = [];
+      for (const id of exactIds) {
+        try {
+          const t = readTrace(id);
+          if (!t) continue;
+          const first = t.rows.find((r) => (r.content || '').trim());
+          traces.push({
+            traceId: id,
+            sessionId: t.turn.session_id,
+            turnId: t.turn.turn_seq,
+            archived: t.archived,
+            excerpt: (first?.content || '').slice(0, 300),
+          });
+        } catch { /* fail-open: try the next id */ }
+      }
+      if (traces.length > 0) source = { sessionId: traces[0].sessionId, traces };
+    }
+
     // C0: reconstruct raw source-turn evidence from t1_archive when available.
-    let source: { sessionId: string; evidence: string } | undefined;
-    if (searchArchive && unit.source_session_id && config.recall.sourceEvidence.enabled) {
+    if (!source && searchArchive && unit.source_session_id && config.recall.sourceEvidence.enabled) {
       try {
         const turns = searchArchive(unit.source_session_id, unit.cue_anchors ?? [], config.recall.sourceEvidence.k);
         const evidence = reconstructSource(turns, config.recall.sourceEvidence.maxChars);

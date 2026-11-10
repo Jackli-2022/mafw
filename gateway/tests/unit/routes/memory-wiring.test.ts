@@ -231,8 +231,7 @@ describe('memory registry wiring (D1 Task F1)', () => {
     expect(JSON.parse(r.body).error).toContain('gist|t1|both');
   });
 
-  it('stats includes T1 coverage and retrieval counters', async () => {
-    const since = Math.floor(Date.now() / 1000) - 7 * 86400;
+  it('stats includes T1 coverage and retrieval counters', async () => {    const since = Math.floor(Date.now() / 1000) - 7 * 86400;
     setEmbeddingRuntime({
       vectors: { size: () => 0 },
       t1Vectors: { size: () => 5 },
@@ -259,10 +258,34 @@ describe('memory registry wiring (D1 Task F1)', () => {
         archiveRows: 7,
         coverage: 0.5,
         retrieval: { total: 2, byKind: { search: 1, recall: 1, redeem: 0 }, uniqueTraces: 2, lastAt: 123 },
+        provenance: { memories: 0, withExact: 0, coverage: 0 },
       });
     } finally {
       setEmbeddingRuntime(null);
     }
+  });
+
+  it('stats reports exact T1 provenance coverage from index entries', async () => {
+    const { registry } = setup({
+      memoryService: () => ({
+        harmonicIndex: {
+          getIndex: () => ({
+            entries: [
+              { id: 'a', source_trace_ids: ['t1t_a'] },
+              { id: 'b', source_trace_ids: ['t1t_b', 't1t_c'] },
+              { id: 'c' },
+              { id: 'd', source_trace_ids: [] },
+            ],
+          }),
+        },
+      }) as any,
+    });
+    const r = fakeRes();
+    await handlerFor(registry, 'GET', '/api/memory/stats')!(
+      fakeReq({ method: 'GET', url: '/api/memory/stats' }), r.res,
+    );
+    const body = JSON.parse(r.body);
+    expect(body.t1.provenance).toEqual({ memories: 4, withExact: 2, coverage: 0.5 });
   });
 
   it('sticky: no memory service → 503 with the empty note-board budget', async () => {

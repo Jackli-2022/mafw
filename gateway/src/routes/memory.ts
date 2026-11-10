@@ -119,12 +119,20 @@ export function attachMemoryRoutes(registry: RouteRegistry, deps: MemoryRouteDep
           retrieval = typeof db?.t1RetrievalStats === 'function' ? db.t1RetrievalStats({ since }) : emptyStats;
         } catch { /* fail-open */ }
         const totalRows = activeRows + archiveRows;
+        const withExact = indexEntries.filter(
+          (e: any) => Array.isArray(e.source_trace_ids) && e.source_trace_ids.length > 0,
+        ).length;
         return {
           vectors,
           activeRows,
           archiveRows,
           coverage: totalRows > 0 ? Math.min(1, vectors / totalRows) : 0,
           retrieval,
+          provenance: {
+            memories: indexEntries.length,
+            withExact,
+            coverage: indexEntries.length > 0 ? withExact / indexEntries.length : 0,
+          },
         };
       })();
       res.writeHead(200, { 'Content-Type': 'application/json' });
