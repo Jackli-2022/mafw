@@ -204,7 +204,7 @@ export class StandingGoalStore {
 
   updateGoal(
     id: string,
-    patch: Partial<Pick<StandingGoal, 'title' | 'objective' | 'template' | 'triggers' | 'concurrency' | 'cooldownMs' | 'budget' | 'approval' | 'nextRunAt'>>,
+    patch: Partial<Pick<StandingGoal, 'title' | 'objective' | 'template' | 'triggers' | 'concurrency' | 'cooldownMs' | 'budget' | 'approval' | 'nextRunAt' | 'lastRunAt'>>,
     now: string,
   ): StandingGoal {
     const current = this.getGoal(id);
@@ -213,7 +213,7 @@ export class StandingGoalStore {
     this.db.prepare(`
       UPDATE standing_goals SET
         title = ?, objective = ?, template = ?, triggers = ?, concurrency = ?, cooldown_ms = ?,
-        budget = ?, approval = ?, next_run_at = ?, updated_at = ?
+        budget = ?, approval = ?, next_run_at = ?, last_run_at = ?, updated_at = ?
       WHERE id = ?
     `).run(
       next.title,
@@ -225,6 +225,7 @@ export class StandingGoalStore {
       JSON.stringify(next.budget ?? {}),
       next.approval,
       next.nextRunAt,
+      next.lastRunAt,
       now,
       id,
     );
