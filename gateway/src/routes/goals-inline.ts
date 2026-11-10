@@ -89,13 +89,15 @@ export function attachGoalRoutes(registry: RouteRegistry, deps: GoalsInlineRoute
 
   // POST /api/goals/:id/nodes/:runId/retry — 节点重跑（execute 过 destructive 门）
   registry.attachHandler('goals.retryNode', async (req: IncomingMessage, res: ServerResponse) => {
-    const raw = await readRouteBody(req);
-    let body: any; try { body = JSON.parse(raw); } catch { body = {}; }
     const goalIdM = req.url!.match(/^\/api\/goals\/([^/]+)\/nodes\/\d+\/retry$/);
     // registry 模板 `:runId` 接受任意段，且 match() 会剥 query/尾斜杠 —— legacy 里
     // 同一条正则既是入口门也是解构依据，迁到 registry 后必须显式回落（false →
     // dispatchAuthorized 回退 legacy/dashboard，与 legacy 同形）。
+    // body 必须在门的**后面**读：被 decline 的 URL 一个字节都不消费（legacy 从不到
+    // 达这条分支，body 原样留给下游）。
     if (!goalIdM) return false;
+    const raw = await readRouteBody(req);
+    let body: any; try { body = JSON.parse(raw); } catch { body = {}; }
     const goalId = decodeURIComponent(goalIdM[1]);
     return handleNodeRetry(req, res, req.url!, {
       body,

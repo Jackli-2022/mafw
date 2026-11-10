@@ -1,6 +1,6 @@
 // Phase D1 baseline: index.ts's legacy dispatch chain, grouped by path prefix.
 // Numbers DECREASE as migration tasks delete branches. D1 END STATE (Task 9) is
-// pinned at 24 (10 match + 14 equals) and is exactly three kinds of residue:
+// pinned at 24 (10 match + 14 equals) and is exactly FOUR kinds of residue:
 //   1. transport/root branches — migrate to http-router.ts in D3, NOT to
 //      RouteRegistry: /a2a, /.well-known, /a, /assets, /static, /, /index.html,
 //      /mcp, /register, /control, /health;
@@ -10,11 +10,18 @@
 //      memory.add / memory.setSticky) are registry-first; the catch-all keeps
 //      every other path's pre-D1 behavior;
 //   3. the dead `/api/goals/control` arm (ruling R6) — shadowed by the dashboard
-//      catch-all since cdf678db2 (latent bug, deliberately NOT fixed in D1).
-// Everything else lives in routes/*.ts attached to the RouteRegistry.
+//      catch-all since cdf678db2 (latent bug, deliberately NOT fixed in D1);
+//   4. the runtime-config helper residue — `GET/PATCH /api/runtime-config` is
+//      still inline legacy dispatch (matchRuntimeConfigRoute, index.ts); the
+//      analyzer never counted it (R9), and catalog entries
+//      runtime.config.get/update are handler-less phantoms. Plus the `/api/ws`
+//      upgrade path, which lives outside the HTTP dispatch chain entirely
+//      (transport-uncounted, D3).
+// Everything else that IS registry-attached lives in routes/*.ts.
 // Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
 import { execFileSync } from 'child_process';
 import * as path from 'path';
+import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 
 interface Inventory {
   total: number;
@@ -129,5 +136,18 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     for (const g of apiGroups) {
       expect(transportPrefixes).not.toContain(g.prefix);
     }
+  });
+});
+
+// Task D fixed three catalog paths that used `{id}` / `{itemId}` templates — the
+// registry treats `{…}` as a literal segment, so those ops were silently
+// undispatchable shadows (migrated endpoints 404'd). This guard makes the whole
+// `{`/`}` class unrepresentable: catalog paths must use `:param` templates.
+describe('route catalog path class guard (D1 Task D regression)', () => {
+  it('no catalog path contains a brace template', () => {
+    const braced = buildRouteCatalog()
+      .filter((route) => route.path.includes('{') || route.path.includes('}'))
+      .map((route) => `${route.method} ${route.path} (${route.operationId})`);
+    expect(braced).toEqual([]);
   });
 });

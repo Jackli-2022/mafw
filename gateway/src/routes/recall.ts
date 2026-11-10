@@ -50,10 +50,11 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       getBlocks: () => deps.buildInstructionBlocks(),
       getSync: () => deps.instructionSync(),
     });
-    // legacy 是 `if (handled) return;`（未处理则落回反代）。registry 只在
-    // (GET, 精确 path) 命中时进入本 handler，handleRecallInstructions 的未命中
-    // 分支不可达 → 直接返回等价（见 Task B3 report）。
-    if (handled) return;
+    // legacy 是 `if (handled) return;`（未处理则落回反代）。dispatchAuthorized 把
+    // `undefined` 当作"已处理"，所以这里必须 **return 委派方的 boolean**：委派方
+    // 给出 false（fall-through 契约）时请求要能继续落回 dashboard / 反代，而不是
+    // 静默挂死。同形：routes/sessions-core.ts `session.background`、routes/mcp-mgmt.ts。
+    return handled;
   });
 
   // GET /api/recall/pinned — disclosure layer for system prompt injection.

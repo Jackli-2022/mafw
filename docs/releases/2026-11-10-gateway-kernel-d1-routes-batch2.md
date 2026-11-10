@@ -9,12 +9,16 @@
 
 ## 交付内容
 
-- **legacy if 链 116 → 24**（10 match + 14 equals）。D1 结束态只剩三类残量：
+- **legacy if 链 116 → 24**（10 match + 14 equals）。D1 结束态只剩四类残量：
   transport/静态/MCP/根路径（11 组，D3 归 `http-router.ts`）、dashboard 兜底（裁决 R5）、
-  `/api/goals/control` 死臂（裁决 R6）。
+  `/api/goals/control` 死臂（裁决 R6）、以及 **runtime-config 内联助手残量**
+  （`GET/PATCH /api/runtime-config` 仍走 `matchRuntimeConfigRoute` 内联分发；analyzer 不计数，
+  catalog 的 `runtime.config.*` 是无 handler 幻影条目）＋ 不经 HTTP 分发链的 `/api/ws` upgrade。
 - **路由模块**：`gateway/src/routes/` 38 个模块 / 40 个 `attach*` 入口 → `RouteRegistry`，
   共 208 个 handler；catalog 278 条 `operationId`。handler 体逐字搬迁（状态码 / 响应形状 /
   fail-open / 200-not-404 miss / 405-else 臂全保留），`this.x` 一律改 live getter。
+  「其余一切都在 `routes/*.ts`」这句话的正确读法是：**registry-attached 的面**都在 `routes/*.ts`，
+  不包含上面第四类（runtime-config 内联助手 + `/api/ws`）。
 - **`index.ts` 10098 → 8204 行**（−1894 / −18.8%），减的全是分支体；tombstone 注释留在原位。
 - **新增 catalog 条目**：`automations.get`（NON_SDK/internal，SDK 无单条 GET）、
   `recall.instructions`、`recall.priors`（NON_SDK/internal）、`session.subagents.*` ×5

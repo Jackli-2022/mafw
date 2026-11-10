@@ -18,7 +18,6 @@
  * R4：deleteLegacy 与 session.delete 的 cleanup 集合不同，各自逐字保留、不合并。
  * Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
  */
-import type { IncomingMessage, ServerResponse } from 'http';
 import { log } from '../core/utils/logger';
 import { projectSession } from '../runtime/view-projections';
 import { resolveWorktreeAvailability, probeGitWorktreeSupport } from '../core/worktree/worktree-availability';
@@ -28,7 +27,7 @@ import { readRouteBody } from './cognition';
 import { handleSessionCreate } from './session-create';
 import { handleSessionBackground } from './session-background';
 
-/** 与 index.ts L233 同一词表（index-local const，不可跨模块 import）。 */
+/** 与 core/session-config.ts 同一词表（D1 迁移逐字搬迁，未跨模块共享）。 */
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const isThinkingLevel = (v: unknown): v is string => typeof v === 'string' && THINKING_LEVELS.has(v);
 
@@ -264,5 +263,3 @@ export function attachSessionsCoreRoutes(registry: RouteRegistry, deps: Sessions
     res.end(JSON.stringify({ cancelled: itemId }));
   });
 }
-
-export type { IncomingMessage, ServerResponse };

@@ -190,6 +190,26 @@ describe('goals-inline registry wiring (D1 Task F2)', () => {
     expect(r.body).toBe('');
   });
 
+  // Review fix wave: the body read must sit AFTER the digit gate. Reading first
+  // drained the stream for URLs the handler declines, so the request that fell
+  // through to the proxy arrived body-less (legacy never reached this branch and
+  // left the body intact). Pin "declined ⇒ zero bytes consumed".
+  it('retry: fall-through does not consume the request body', async () => {
+    const { registry } = setup();
+    let drained = false;
+    const req = fakeReq({ method: 'POST', url: '/api/goals/g1/nodes/abc/retry', body: '{"confirm":true}' });
+    const originalOn = (req as any).on.bind(req);
+    (req as any).on = (ev: string, fn: unknown) => {
+      if (ev === 'data' || ev === 'end') drained = true;
+      return originalOn(ev, fn);
+    };
+    const r = fakeRes();
+    const handled = await handlerFor(registry, 'POST', '/api/goals/g1/nodes/abc/retry')!(req, r.res);
+    expect(handled).toBe(false);
+    expect(drained).toBe(false);
+    expect(r.body).toBe('');
+  });
+
   describe('plan / plan-approval joint delegation', () => {
     function planSetup() {
       const mafwDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-plan-wiring-'));

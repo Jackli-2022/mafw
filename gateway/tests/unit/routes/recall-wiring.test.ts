@@ -87,6 +87,34 @@ describe('recall thin three registry wiring (D1 Task B3)', () => {
     expect(body.blocks).toEqual({ memoryGuide: 'GUIDE', userProfile: 'PROFILE', agentPriors: 'PRIORS' });
   });
 
+  // Review fix wave: the recall.instructions handler must RETURN the delegate's
+  // boolean. `dispatchAuthorized` treats `undefined` as handled, so `if (handled)
+  // return;` silently swallowed the delegate's false (fall-through contract) and the
+  // request hung with no response. Delegates that decline (non-GET here) must yield
+  // handled=false + zero bytes written.
+  it('instructions returns the delegate boolean: declining delegate → false, no response', async () => {
+    const { handlerFor } = setup();
+    const r = fakeRes();
+    const handled = await handlerFor('GET', '/api/recall/instructions')!(
+      // Registry dispatches GET, but the delegate itself re-checks the method and
+      // declines anything else — that decline must reach dispatchAuthorized.
+      fakeReq({ url: '/api/recall/instructions', method: 'POST' }), r.res,
+    );
+    expect(handled).toBe(false);
+    expect(r.status).toBe(0);
+    expect(r.body).toBe('');
+  });
+
+  it('instructions returns the delegate boolean: handled path → true', async () => {
+    const { handlerFor } = setup();
+    const r = fakeRes();
+    const handled = await handlerFor('GET', '/api/recall/instructions')!(
+      fakeReq({ url: '/api/recall/instructions', method: 'GET' }), r.res,
+    );
+    expect(handled).toBe(true);
+    expect(r.status).toBe(200);
+  });
+
   it('pinned without a memory service returns the FULL empty payload', async () => {
     const { handlerFor } = setup();
     const r = fakeRes();

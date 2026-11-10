@@ -529,7 +529,7 @@ promise：`return handleX(req, res, req.url!, deps)`。`dispatchAuthorized` 把 
 （fall-through 契约）——请求既不写响应也不落反代，客户端挂死。D1 期间这类 bug 出现 3 次
 （`sessions.background` / `mcp.*` / `session.messages`），现各有回归测试逐条钉住。
 
-**D1 结束后 legacy 链只剩三类**（`tests/unit/architecture/legacy-route-inventory.test.ts`
+**D1 结束后 legacy 链只剩四类**（`tests/unit/architecture/legacy-route-inventory.test.ts`
 以 24 = 10 match + 14 equals 钉死，group 级逐组钉：transport 11 组 + `/api/memory` 4 +
 `/api/goals` 3 + `/api/stats` 2）：
 
@@ -538,6 +538,7 @@ promise：`return handleX(req, res, req.url!, deps)`。`dispatchAuthorized` 把 
 | transport / 静态 / MCP / 根路径 | `/a2a`、`/.well-known`、`/a`、`/assets`、`/static`、`/`、`/index.html`、`/mcp`、`/register`、`/control`、`/health` | **D3**（`http-router.ts`：auth → registry → 404；不进 RouteRegistry） |
 | dashboard 兜底（R5） | `/api/goals`、`/api/stats`、`/api/memory` 联合 `startsWith` + `handleDashboardAPI` | 保留：四个明确影子条目已 registry-first（`goals.list` / `dashboard.stats` / `memory.add` / `memory.setSticky`），其余路径行为不变 |
 | `/api/goals/control` 等价臂（R6） | 与 `/control` 共享的 POST 分支 | 死代码（自 cdf678db2 起被 dashboard 兜底遮蔽）；D1 不修，合并时按潜在 bug 处理 |
+| runtime-config 内联残量 | `GET/PATCH /api/runtime-config`（`matchRuntimeConfigRoute` 门，index.ts 内联分发） | **未迁移**：analyzer 从不计数（R9），catalog 的 `runtime.config.get` / `runtime.config.update` 是**无 handler 的幻影条目**；连同 `/api/ws` upgrade（transport 级、不经 HTTP 分发链）一并归 **D3** |
 
 `index.ts` 从 **10098 行（D1 起点 `ed2e998e`）降到 8204 行**（−1894 / −18.8%），减掉的
 全是分支体；迁移留下的 tombstone 注释（`// <METHOD> <path> — Phase D1 Task <X>：已迁
