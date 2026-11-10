@@ -12,6 +12,7 @@ import { randomUUID, createHash } from 'crypto';
 import Database from 'better-sqlite3';
 import { log } from '../core/utils/logger';
 import { ensureEventLayerSchema } from '../core/events/event-store';
+import { ensureStandingSchema } from '../core/standing/standing-store';
 
 export type ObservationSource = 'user_input' | 'assistant_reply' | 'tool_result' | 'reasoning';
 
@@ -488,6 +489,7 @@ export class GatewayDatabase {
     `);
 
     ensureEventLayerSchema(this.db);
+    ensureStandingSchema(this.db);
 
     // Migration: add assistant_text column to trajectory_turns if not exists
     try {
