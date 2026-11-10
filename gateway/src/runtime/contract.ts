@@ -203,26 +203,9 @@ export type StopReason =
   | 'error'
   | 'unknown';
 
-/** runtime finish（opencode AssistantMessage.finish）→ canonical StopReason。 */
-export function stopReasonOf(finish?: string | null): StopReason {
-  switch (finish) {
-    case 'stop': return 'end_turn';
-    case 'length': return 'max_tokens';
-    case 'tool-calls': return 'tool_use';
-    case 'content-filter': return 'refusal';
-    case 'error': return 'error';
-    case 'cancelled': return 'cancelled';
-    case 'interrupted': return 'cancelled';
-    case 'end_turn':
-    case 'max_tokens':
-    case 'tool_use':
-    case 'refusal':
-    case 'unknown':
-      return finish;
-    default:
-      return 'unknown';
-  }
-}
+/** runtime finish（opencode AssistantMessage.finish）→ canonical StopReason。
+ *  实现迁至 `@mafw/runtime-core`（Plan 6 Task 2）；本模块保留原导出路径。 */
+export { stopReasonOf } from '@mafw/runtime-core';
 
 export interface PromptResultEnvelope {
   parts: any[];

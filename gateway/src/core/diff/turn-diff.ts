@@ -5,7 +5,12 @@
 // last assistant end. WHERE those snapshot repos live is runtime-private:
 // this module only asks the adapter's `session.snapshotTree` channel
 // (RuntimeSnapshotTreeChannel.locate) for the repo containing the two trees.
-import { execFile } from 'child_process';
+import { defaultGit } from '@mafw/runtime-core';
+import type { GitRunner } from '@mafw/runtime-core';
+
+/** git 运行器抽象已迁至 `@mafw/runtime-core`（Plan 6 Task 2）；此处保留原导出路径。 */
+export { defaultGit } from '@mafw/runtime-core';
+export type { GitRunner, GitRunResult } from '@mafw/runtime-core';
 
 export interface FileDiffInfo {
   file?: string;
@@ -13,19 +18,6 @@ export interface FileDiffInfo {
   additions?: number;
   deletions?: number;
   status?: string;
-}
-
-export interface GitRunResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-export interface GitRunner {
-  run(
-    args: string[],
-    opts?: { timeoutMs?: number; maxBuffer?: number; env?: Record<string, string> },
-  ): Promise<GitRunResult>;
 }
 
 export class TurnDiffUnavailableError extends Error {
@@ -235,39 +227,6 @@ export function parseGitDiff(patchText: string): FileDiffInfo[] {
   return files;
 }
 
-export const defaultGit: GitRunner = {
-  run(args, opts) {
-    return new Promise((resolve, reject) => {
-      execFile(
-        'git',
-        args,
-        {
-          encoding: 'utf8',
-          windowsHide: true,
-          timeout: opts?.timeoutMs ?? TURN_DIFF_TIMEOUT_MS,
-          maxBuffer: opts?.maxBuffer ?? TURN_DIFF_MAX_BUFFER,
-          ...(opts?.env ? { env: { ...process.env, ...opts.env } } : {}),
-        },
-        (error: any, stdout, stderr) => {
-          // Spawn errors (git missing, timeout with killed=true) reject; normal
-          // non-zero git exits resolve so the caller can map them deliberately.
-          if (error && (error.code === 'ENOENT' || error.killed)) {
-            reject(error);
-            return;
-          }
-          const code = error
-            ? (typeof error.code === 'number' ? error.code : 1)
-            : 0;
-          resolve({
-            code,
-            stdout: String(stdout ?? ''),
-            stderr: String(stderr ?? ''),
-          });
-        },
-      );
-    });
-  },
-};
 
 /**
  * Compute the diff for one user turn from its snapshot tree range.

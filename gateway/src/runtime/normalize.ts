@@ -9,6 +9,7 @@
  * 与 handleOpencodeEvent 的多路消费行为逐点等价（oracle 测试钉扎）。
  */
 import { CANONICAL_FACET_RULES, evaluateFacetRules } from './canonical-facets';
+import type { RawRuntimeEvent } from '@mafw/runtime-core';
 
 /** 一个已结算的 LLM step（喂 BudgetGuard 回合计数）。 */
 export interface StepEndedProps {
@@ -17,14 +18,8 @@ export interface StepEndedProps {
   finish?: string
 }
 
-/** GlobalEvent 信封或裸事件，两者都接受。 */
-export interface RawRuntimeEvent {
-  directory?: string;
-  payload?: { type?: string; properties?: any; sessionID?: string; args?: any };
-  type?: string;
-  properties?: any;
-  sessionID?: string;
-}
+/** GlobalEvent 信封或裸事件，两者都接受（形状单源在 `@mafw/runtime-core`）。 */
+export type { RawRuntimeEvent } from '@mafw/runtime-core';
 
 /** permission.asked 切面载荷：双 runtime 形状在此对齐
  *  （opencode: id/permission/patterns/metadata；pi: requestId/toolName/args/risk）。 */
