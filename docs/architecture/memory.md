@@ -237,6 +237,8 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - `t1_observations`：回合观察（插件经 `/api/obs/capture` 写入，turnID 网关分配，UNIQUE 去重；**入库前经 `redactSecrets()` 脱敏**（`gateway/src/recall/redact.ts`，sk-/ghp_/Bearer/JWT/key=value 等格式 → `[REDACTED]`），下游 turnCompress/worker prompt/archive 只读脱敏内容——存量历史行不回溯）
 - `t1_turns`：持久化逻辑回合身份（T1 identity，2026-11-10）——`trace_id` PK、`session_id`+`turn_seq` UNIQUE；`turn_seq` 单调且**不重用**（跨 `t1_turns`/active/archive 取 max）；`encoding_salience` 记录编码期 salience 抬升；`archived_at` 记录归档时间；`legacy_ambiguous` 标记重复 legacy 复合键（>1 个 `user_input` 或横跨 active+archive）。`t1_observations` 与 `t1_archive` 各带永久 `trace_id`/`observation_key`——归档不改变身份，legacy 行回读 NULL 直到构造期幂等 `migrateT1Identity()` backfill
 - `t1_retrieval_events`：T1 verbatim 观察向的检索事件（2026-11-10，Phase 2A）——`trace_id`/`kind=search|recall|redeem`/`score`/`created_at`；**只观测，不参与 energy 或排序**。`GatewayDatabase.t1RetrievalStats({since})` 按 Unix 秒聚合；`pruneT1RetrievalEvents({before})` 按保留期删除，由每日 `memory:decay` 以 `config.recall.t1Recall.retentionDays`（默认 90 天，0/负数关闭）触发，删除量进 heartbeat `prunedT1`
+- `t1_fts`：T1 词面索引（2026-11-10，Phase 2B）——FTS5 `trigram` tokenizer + `content/trace_id/observation_key/session_id/turn_id/source`；**可重建派生数据**，写入 `append()` 同步、`archiveTurn()` 不动（内容不变）、`deleteTurn()`/`deleteSession()` 按 `observation_key` 删除；表空且源表有行时构造期 `rebuildT1Fts()` 一次重建，也可手动重建（先清空，幂等）。trigram 要求查询 token ≥3 字符
+- `t1_vectors`：T1 二进制向量（2026-11-10，Phase 2B）——`key` PK / `dims` / `model` / `vector`（little-endian `Float32` BLOB）/ `updated_at`；`SqliteT1VectorStore` 按行更新，避免 JSON 全量重写。首次构造且当前 model 无行时从 `memory/vectors-t1-<tag>.json` 导入并把 JSON 改名为 `.migrated-<ISO>`（不删除）；`config.memory.embedding.t1VectorStore='json'` 可回滚到旧 JSON 后端
 - `kv_store`：易失关键小状态——
   - `manager-session`（key=projectDir，**per-project manager session**，替代旧 manager-session.json）
   - `reflect-cursor`（key=sessionID，反思增量游标）
@@ -247,8 +249,10 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 
 **T1 verbatim 检索（2026-11-10，Phase 2A）**：
 
-- `mafw_search_hybrid` / `GET /api/memory/search` 支持 `layer=gist|t1|both`；**省略 layer 时仍只搜 Harmonic**，旧结果形状不变。T1 结果带 `traceId`/`sessionId`/`turnId`/`cosine`/`excerpt`，默认 gist 不产生 `t1Results`。
-- `createGatewayT1Search`（`recall/t1-search.ts`）是 gateway 共享入口：惰性读取 embedding runtime（热切换不残留旧 provider），archive 优先、active 回退；dense 失败或 provider off 时返回空，不影响 Harmonic。
+- `mafw_search_hybrid` / `GET /api/memory/search` 支持 `layer=gist|t1|both`；**省略 layer 时仍只搜 Harmonic**，旧结果形状不变。T1 结果带 `traceId`/`sessionId`/`turnId`/`cosine`/`excerpt`/`sources`/`score`，默认 gist 不产生 `t1Results`。
+- `createGatewayT1Search`（`recall/t1-search.ts`）是 gateway 共享入口：dense 通道惰性读取 embedding runtime（热切换不残留旧 provider），archive 优先、active 回退；词面通道查 `t1_fts`。两路用 RRF 融合（`1/(60+rank)`，`fuseT1Hits`），同 trace 去重并优先保留词面 excerpt；单路失败/关闭时另一路照常返回，dense provider off 时仍有词面结果。`config.recall.t1Recall.lexical=false` 可关闭词面通道。
+- T1 自动回填：每日 `memory:decay` 在 Harmonic 回填后调用 `backfillT1Vectors`，archive 优先分页扫描，跳过已有 key，单次默认最多 200 条（`config.recall.t1Recall.t1BackfillLimit`，0/负数关闭）；heartbeat 记录 `t1BackfillIndexed`/`t1BackfillMissing`/`t1BackfillFailed`，`/api/memory/stats` 的 `t1.coverage` 暴露覆盖率。
+- T1 二进制向量：`SqliteT1VectorStore` 把向量存为 `gateway.db` 的 `t1_vectors` Float32 BLOB（按行 flush，无全量 JSON 重写）；无 DB 句柄的测试/评测环境自动回退 JSON store。首次迁移导入 `vectors-t1-<tag>.json` 后改名保留备份。
 - T1 只读指针：`mafw_get_memory("t1:<traceId>")` 走 `readTrace()` 返回 active+archive 完整回合与 `archived`/`legacyAmbiguous`；旧 `t1:<sessionTail>:<turnId>` 继续兼容，并回退查 active 行。
 - R8 快照把 T1 当独立通道：Harmonic 零命中但 T1 命中时可生成 T1-only 快照（`T1_POINTER_HEADER` + `[t1|<traceId>]` 行）；`decideSnapshotUse` 接受 `ids=[]` 但 `t1Hits` 非空。快照 serve 记录 `recall` 事件；直接搜索记录 `search`；指针兑换记录 `redeem`。
 - `/api/memory/stats` 的 `t1` 字段暴露向量数、active/archive 行数、覆盖率与 7 天检索事件统计。

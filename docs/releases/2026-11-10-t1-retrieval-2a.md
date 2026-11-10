@@ -99,6 +99,8 @@ t1:<sessionTail>:<turnId>    # 旧格式：保留兼容，archive 优先再查 a
 - `mafw_get_memory` 的 HTTP/SDK 类型尚未补充 trace pointer 的专用 DTO；当前仍以通用 JSON 返回。
 - 未部署；部署需在最终 review 后单独执行。
 
+> 后续：Phase 2B（`docs/releases/2026-11-10-t1-retrieval-2b.md`）已补齐 FTS5 词面通道、自动向量回填与 SQLite 二进制向量存储。
+
 ## 未实现（后续阶段）
 
 - T1 activation / ACT-R 强化与 abstract→T1 传播
