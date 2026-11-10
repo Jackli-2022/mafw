@@ -3255,19 +3255,8 @@ class MafwScheduler {
       // V1 verbatim layer: dense t1 round hits fused into the snapshot block.
       ...(config.recall.t1Recall?.enabled !== false
         ? (() => {
-            const { getEmbeddingRuntime: getRt } = require('./memory/embedding-runtime');
-            const { makeT1Search } = require('./recall/verbatim-recall');
-            const rt = getRt();
-            if (!rt?.t1Vectors) return {};
-            return {
-              searchT1: makeT1Search({
-                runtime: rt,
-                fetchRows: (sid: string, tid: number) => {
-                  const rows = db.readArchiveTurn(sid, tid);
-                  return rows.length ? rows : db.readTurn(sid, tid);
-                },
-              }),
-            };
+            const { createGatewayT1Search } = require('./recall/t1-search');
+            return { searchT1: createGatewayT1Search(db) };
           })()
         : {}),
       rerank: async (q: string, ms: any[]) => {
@@ -5099,6 +5088,9 @@ class MafwScheduler {
       memory: this.memoryService,
       searchArchive: (sid: string, anchors: string[], k: number) => this.getGatewayDb().searchArchive(sid, anchors, k),
       resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findArchiveBySessionTail(tail, turnId),
+      searchT1: require('./recall/t1-search').createGatewayT1Search(this.getGatewayDb()),
+      recordT1Retrieval: (traceId: string, kind: any, score?: number) =>
+        this.getGatewayDb().recordT1RetrievalEvent({ traceId, kind, score }),
       cost,
       automation: this.automationEngine,
       ledger: this.ledger,

@@ -38,10 +38,59 @@ function getIndexEntries(memory: any) {
   return memory?.harmonicIndex?.getIndex?.()?.entries ?? memory?.getIndex?.()?.entries ?? [];
 }
 
-export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir }) => {
+const SEARCH_LAYERS = ['gist', 't1', 'both'] as const;
+type SearchLayer = typeof SEARCH_LAYERS[number];
+
+async function searchT1Hits(
+  services: Parameters<ToolHandler>[1],
+  query: string,
+  topK: number,
+): Promise<import('../../recall/verbatim-recall').T1Hit[]> {
+  if (!services.searchT1) return [];
+  try {
+    const hits = await services.searchT1(query, topK);
+    for (const hit of hits) {
+      if (hit.traceId) services.recordT1Retrieval?.(hit.traceId, 'search', hit.cosine);
+    }
+    return hits;
+  } catch {
+    return [];
+  }
+}
+
+function t1Hint(layer: SearchLayer): string {
+  if (layer === 't1') {
+    return 'T1 为原始观察正文；需要完整回合时调用 mafw_get_memory("t1:<traceId>")。';
+  }
+  return 'T1 原始记录可按 traceId 用 mafw_get_memory("t1:<traceId>") 取全文。';
+}
+
+export const handleSearchHybrid: ToolHandler = async (args, services) => {
+  const { memory, mafwDir } = services;
   try {
     const query = args.query as string;
     const topK = (args.topK as number) || config.search.defaultTopK;
+    const layer = String(args.layer ?? 'gist') as SearchLayer;
+    if (!SEARCH_LAYERS.includes(layer)) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'invalid layer: use gist|t1|both' }) }],
+        isError: true,
+      };
+    }
+    const t1Results = layer === 'gist' ? undefined : await searchT1Hits(services, query, topK);
+    if (layer === 't1') {
+      const payload = {
+        results: [],
+        ...(t1Results !== undefined ? { t1Results } : {}),
+        canExpand: false,
+        state: null,
+        round: 0,
+        count: 0,
+        t1Count: t1Results?.length ?? 0,
+        hint: t1Hint('t1'),
+      };
+      return { content: [{ type: 'text', text: JSON.stringify(payload) }], structuredContent: payload };
+    }
     const retrieverArg = (args.retriever as string) || config.search.defaultRetriever;
     // 'hybrid' = BM25 + dense (embedding) fused via RRF inside searchScored.
     const searchOpts: { retriever: 'token' | 'bm25' | 'guided'; denseScores?: Map<string, number> } = {
@@ -190,8 +239,18 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
       : frontier.length === 0
         ? '已无更多可扩展的相关记忆。'
         : '已达最大扩展轮数。';
+    const t1Note = t1Results && t1Results.length > 0 ? ` ${t1Hint('both')}` : '';
 
-    const searchPayload = { results: enriched, canExpand, state, round, count: enriched.length, fok, hint: `${hint}${fokNote ? ' ' + fokNote : ''}` };
+    const searchPayload = {
+      results: enriched,
+      ...(t1Results !== undefined ? { t1Results, t1Count: t1Results.length } : {}),
+      canExpand,
+      state,
+      round,
+      count: enriched.length,
+      fok,
+      hint: `${hint}${fokNote ? ' ' + fokNote : ''}${t1Note}`,
+    };
     return { content: [{ type: "text", text: JSON.stringify(searchPayload) }], structuredContent: searchPayload };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ error: err.message }) }], isError: true };

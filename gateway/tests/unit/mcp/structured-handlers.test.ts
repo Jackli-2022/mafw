@@ -59,8 +59,9 @@ describe('首批 structured 工具（spec G5，schema 照实 + 同源原则）',
       expect(def.outputSchema!.type).toBe('object');
     }
     const search = DEFINITIONS.find(d => d.name === 'mafw_search_hybrid')!;
-    for (const k of ['results', 'canExpand', 'round', 'count', 'hint']) {
+    for (const k of ['results', 'canExpand', 'round', 'count', 'hint', 't1Results', 't1Count']) {
       expect((search.outputSchema!.properties as any)[k]).toBeDefined();
     }
+    expect((search.inputSchema.properties as any).layer).toBeDefined();
   });
 });
