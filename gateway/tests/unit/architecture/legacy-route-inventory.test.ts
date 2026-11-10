@@ -21,11 +21,11 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
   const inv = inventory();
 
   it('index.ts has the documented legacy dispatch mass', () => {
-    // D1 Task 2 migrated /api/cognition (3 match branches); Task 3a migrated
-    // /api/python (3 === branches). Baseline 95+40=135 → 92+37=129.
+    // Task 2: /api/cognition (3 match). Task 3a: /api/python (3 ===).
+    // Task 3b: /api/tools (2 ===). Baseline 95+40=135 → 92+35=127.
     expect(inv.byKind.match).toBe(92);
-    expect(inv.byKind.equals).toBe(37);
-    expect(inv.total).toBe(129);
+    expect(inv.byKind.equals).toBe(35);
+    expect(inv.total).toBe(127);
   });
 
   it('groups match the D1 plan inventory', () => {
@@ -65,7 +65,7 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
 
   it('D1 migration targets are enumerable (api-prefixed groups, not transport)', () => {
     const apiGroups = inv.groups.filter((g) => g.prefix.startsWith('/api'));
-    expect(apiGroups.length).toBeGreaterThan(20);
+    expect(apiGroups.length).toBeGreaterThanOrEqual(20);
     const transportPrefixes = ['/assets', '/static', '/mcp', '/', '/index.html', '/health', '/a2a', '/.well-known', '/register', '/control'];
     for (const g of apiGroups) {
       expect(transportPrefixes).not.toContain(g.prefix);

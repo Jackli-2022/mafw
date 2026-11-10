@@ -5,6 +5,8 @@
 import * as http from 'http';
 import { MAFW_TOOL_SPECS, executeWithToolFrames } from '../runtime/mafw-tools';
 import type { MafwToolRegistration } from '../runtime/contract';
+import { isLoopbackAddr } from '../core/auth';
+import type { RouteRegistry } from './registry';
 
 export interface ToolsExecuteDeps {
   buildFactory: () => (sessionId: string) => MafwToolRegistration[];
@@ -15,6 +17,23 @@ export interface ToolsExecuteDeps {
 export function handleToolsList(res: http.ServerResponse): void {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ tools: MAFW_TOOL_SPECS }));
+}
+
+/** Phase D1 Task 3b: registry dispatch 接线（loopback 守卫随迁，语义等价）。 */
+export interface ToolsRouteWiringDeps {
+  buildFactory: () => (sessionId: string) => MafwToolRegistration[];
+  emitEvent: (evt: unknown) => void;
+}
+
+export function attachToolsRoutes(registry: RouteRegistry, deps: ToolsRouteWiringDeps): void {
+  registry.attachHandler('tools.list', async (req, res) => {
+    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    handleToolsList(res);
+  });
+  registry.attachHandler('tools.execute', async (req, res) => {
+    if (!isLoopbackAddr(req.socket?.remoteAddress || '')) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+    await handleToolsExecute(req, res, { buildFactory: deps.buildFactory, emitEvent: deps.emitEvent });
+  });
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {

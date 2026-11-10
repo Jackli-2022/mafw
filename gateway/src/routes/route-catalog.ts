@@ -327,6 +327,9 @@ const NON_SDK_ROUTES: RouteDef[] = [
   // 调用，已登记在 SDK_FACING_ROUTES（此前标 internal 以免 SDK 死契约）。
   { method: 'GET', path: '/api/plugins/:name/ui', operationId: 'plugins.webAsset', tags: ['internal'] },
   { method: 'GET', path: '/api/plugins/:name/events', operationId: 'plugins.webEvents', tags: ['internal'] },
+  // MAFW 基础工具面（out-of-process runtime 注册/执行通道；loopback-only）
+  { method: 'GET', path: '/api/tools', operationId: 'tools.list', tags: ['internal'] },
+  { method: 'POST', path: '/api/tools/execute', operationId: 'tools.execute', tags: ['internal'] },
 ];
 
 /** gateway 全量 HTTP 端点 shadow 登记（无 handler；Phase 3 逐条挂 handler 前不参与 dispatch）。

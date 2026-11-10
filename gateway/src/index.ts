@@ -204,7 +204,7 @@ import { isHiddenSession, selectVisibleSessions } from './core/session-visibilit
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { MAFW } from './runtime/mafw-vocabulary';
 import { activateRuntimeTools, buildMafwToolFactory } from './runtime/mafw-tools';
-import { handleToolsList, handleToolsExecute } from './routes/tools';
+import { attachToolsRoutes, handleToolsList, handleToolsExecute } from './routes/tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { enrichToolIdentity } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
@@ -5535,6 +5535,11 @@ class MafwScheduler {
       attachCognitionRoutes(this.routeRegistry, { gate: () => this.cognitionGate });
       // Phase D1 Task 3a：Python 内核面迁 registry dispatch（loopback-only）。
       attachPythonRoutes(this.routeRegistry, { kernels: () => this.kernels });
+      // Phase D1 Task 3b：MAFW 工具面迁 registry dispatch（loopback-only）。
+      attachToolsRoutes(this.routeRegistry, {
+        buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
+        emitEvent: (evt) => this.handleRuntimeEvent(evt),
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6008,23 +6013,8 @@ class MafwScheduler {
         // POST /api/python/execute + restart + status — Phase D1 Task 3a：
         // 已迁 registry dispatch（attachPythonRoutes；loopback 守卫随迁）。
 
-        // GET /api/tools — MAFW 基础工具 spec 清单（out-of-process runtime 的注册面）
-        if (req.url === "/api/tools" && req.method === "GET") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          handleToolsList(res);
-          return;
-        }
-
-        // POST /api/tools/execute — 通用工具执行（out-of-process runtime 通道；同 /api/python/* 信任域）。
-        // 执行自动合成两帧 tool part（running→completed/error）经 handleRuntimeEvent 全管线广播（spec 2026-10-20）。
-        if (req.url === "/api/tools/execute" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
-          await handleToolsExecute(req, res, {
-            buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
-            emitEvent: (evt) => this.handleRuntimeEvent(evt),
-          });
-          return;
-        }
+        // GET /api/tools + POST /api/tools/execute — Phase D1 Task 3b：
+        // 已迁 registry dispatch（attachToolsRoutes；loopback 守卫随迁）。
 
         // GET /api/python/status — kernel status for a session — Phase D1 Task 3a：
         // 已迁 registry dispatch。
