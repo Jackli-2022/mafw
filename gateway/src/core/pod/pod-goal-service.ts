@@ -94,6 +94,8 @@ export interface PodGoalServiceDeps {
   now(): string;
   newId(): string;
   notify(podId: string, kind?: string, goalId?: string): void;
+  /** P2: Goal reached a terminal state (memory promotion hook, fail-open). */
+  onGoalCompleted?(goalId: string): void;
   budget?: { canStart(podId: string): { ok: boolean; spentUsd: number; limitUsd: number } };
   /** P2: max normal slots per Pod (default 1; MAFW_POD_MAX_GOALS). */
   maxConcurrentGoals?(): number;
@@ -234,6 +236,11 @@ export class PodGoalService {
       endedAt: this.deps.now(),
       ...(verdict ? { verdict } : {}),
     });
+    try {
+      this.deps.onGoalCompleted?.(goalId);
+    } catch {
+      /* fail-open: memory promotion must not block Goal archival */
+    }
     if (!wasActive) {
       this.deps.notify(pod.id);
       return;

@@ -230,6 +230,14 @@ export class LeadTopicStore {
     return row ? toRow(row) : null;
   }
 
+  findByGoal(goalId: string): LeadTopicRow | null {
+    const row = this.db.prepare(`
+      SELECT * FROM lead_topic WHERE goal_id = ?
+      ORDER BY last_active_at DESC, created_at DESC, id DESC LIMIT 1
+    `).get(goalId) as LeadTopicDbRow | undefined;
+    return row ? toRow(row) : null;
+  }
+
   updateSummary(id: string, input: {
     summary: string;
     summaryHash: string;

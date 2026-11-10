@@ -90,6 +90,8 @@ import { LeadTopicResumeService } from './core/lead/lead-topic-resume-service';
 import { TopicForkStore } from './core/lead/topic-fork-store';
 import { LeadBoundaryService } from './core/lead/lead-boundary-service';
 import { TopicBoundaryStore } from './core/lead/topic-boundary-store';
+import { TopicMemoryService } from './core/lead/topic-memory-service';
+import { handleAddMemory } from './mcp/handlers/add-memory';
 import { summarizeTopic } from './core/lead/topic-summary';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
@@ -696,6 +698,7 @@ class MafwScheduler {
   private leadTopicResume!: LeadTopicResumeService;
   private topicForks!: TopicForkStore;
   private leadBoundaries!: LeadBoundaryService;
+  private topicMemory!: TopicMemoryService;
   private podWorktreeService!: PodWorktreeService;
   private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
@@ -4310,6 +4313,9 @@ class MafwScheduler {
         type: 'pod.updated',
         properties: { podId, kind, ...(goalId ? { goalId } : {}) },
       }),
+      onGoalCompleted: (goalId) => {
+        void this.topicMemory?.promoteForGoal(goalId);
+      },
       budget: this.podBudget,
       maxConcurrentGoals: () => {
         if (process.env.MAFW_LEAD_SCHEDULER === '0') return 1;
@@ -4396,6 +4402,21 @@ class MafwScheduler {
     this.leadTopicIndex = leadTopicIndex;
     this.leadTopicSummary = leadTopicSummary;
     this.topicForks = topicForks;
+    const topicMemory = new TopicMemoryService({
+      topics: leadTopics,
+      addMemory: async (input) => {
+        await handleAddMemory(
+          { content: input.content, memoryType: 'semantic', cueAnchors: input.cueAnchors, importance: 6 } as any,
+          { memory: this.memoryService, mafwDir: config.resolvePath() } as any,
+        );
+      },
+      enabled: () => process.env.MAFW_LEAD_WORKING_SET !== '0',
+      now: () => new Date().toISOString(),
+      wasPromoted: (key) => !!this.getGatewayDb().kvGet('lead-topic-memory', key),
+      markPromoted: (key) => this.getGatewayDb().kvSet('lead-topic-memory', key, { at: new Date().toISOString() }),
+      log: (message) => log.warn(message),
+    });
+    this.topicMemory = topicMemory;
     const leadBoundaries = new LeadBoundaryService({
       boundaries: new TopicBoundaryStore(this.getGatewayDb().getStore()),
       topics: leadTopics,
