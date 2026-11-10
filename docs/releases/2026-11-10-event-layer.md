@@ -4,7 +4,7 @@
 - **基础**：`main` `6a39dc17`（P2.4/P2.5 计划提交）
 - **Spec**：`docs/superpowers/specs/2026-11-10-event-layer-design.md`
 - **Plan**：`docs/superpowers/plans/2026-11-10-event-layer.md`
-- **Head**：`2ff6eed7`（P2.4 tasks 1–9 + review/type fixes）
+- **Head**：`45526287`（P2.4 tasks 1–9 + review fix pass）
 
 ## 交付
 
@@ -28,14 +28,25 @@
 
 ## 门禁
 
-- gateway：**6018/6018**（771 suites，`--testTimeout=30000`）
+- gateway：**6025/6025**（771 suites，`--testTimeout=30000`）
 - SDK：**205/205**
 - desktop：**3202/3202**
 - root：**112/112**
 - gateway tsc / desktop tsgo / electron-vite build rc=0
 
+## Review fix pass
+
+- Source API no longer returns `config`（token/secret）；PATCH source / DELETE subscription 对未知 id 返回 404。
+- Delivery 失败会记录 `attempts` / `lastError` / `next_retry_at`，到点重试；outbox 的 `failed` 行也会在
+  `nextRetryAt` 后重新进入 `pending()`。
+- `fanOut` 在没有订阅时保留 pending，后续订阅仍能取到事件；`unavailable` 决策保留批次供下次重评。
+- GitHub comments 不再套用 PR labels 过滤。
+- Webhook 使用 raw body 计算 HMAC，并在 registry 层跳过 apiToken（由 HMAC 认证）。
+- Index 在 ingest 后调用 fanOut/evaluate；P2.4 的 work handoff 广播 `event.delivery.work`，P2.5 接入真实执行。
+- 内部 eventBus 新增 memory 事件；事件层路由/诊断仍默认关闭。
+
 ## 暂缓
 
-- PR reviews / Actions CI 轮询（per-PR 分页 / Actions API）。
-- Webhook raw-body HMAC（当前按 JSON.stringify 计算）。
-- Tech Lead 真实 evaluator 由 P2.5 Standing Goals 接入；P2.4 默认只 accept work 订阅。
+- PR reviews / Actions CI 轮询（per-PR 分页 / Actions API）；normalizer 已支持 `pr_review` / `ci_status`。
+- `filtered` disposition、`event.delivery.changed` 事件、thread 关闭后的 handed_back 收口。
+- P2.5 Standing Goals 的真实 Tech Lead evaluator / GoalRun 执行。
