@@ -266,6 +266,7 @@ import { createOpencodeDefinition, opencodeCapabilities, opencodeStaticEntry, ty
 
 import { injectServeAuth } from './runtime/proxy-auth';
 import { serveAuthHeaders } from './runtime/serve-sidecar';
+import { resolveProviderTransportPrecedence } from './runtime/provider-transport';
 import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './runtime/runtime-facade';
 import {
   enrichPermissionEvent,
@@ -2395,6 +2396,53 @@ class MafwScheduler {
     return getProviderApiKey(provider, undefined, this.runtimeHost?.credentials) ?? null;
   }
 
+  /**
+   * Index-scan provider transport. Precedence is the pre-extraction order:
+   * runtime credentials → driver `resolveProviderTransport` → gateway config /
+   * provider-list fallback. The fallback only runs for still-missing fields, so
+   * a driver transport that already read its config does not double-read it.
+   */
+  private async resolveScanProviderTransport(
+    providerID: string,
+  ): Promise<{ baseUrl: string | null; apiKey: string | null }> {
+    return resolveProviderTransportPrecedence({
+      providerID,
+      credentials: this.runtimeHost?.credentials,
+      resolveTransport: (id) => this.runtimeHost?.resolveProviderTransport?.(id) ?? {},
+      fallback: async ({ needBaseUrl, needApiKey }) => {
+        let baseUrl: string | null = null;
+        let apiKey: string | null = null;
+        if (needBaseUrl || needApiKey) {
+          try {
+            const cfg: any = await this.runtimeHost?.config.get();
+            if (needBaseUrl) baseUrl = readProviderBaseUrlWithPath(cfg, providerID) ?? null;
+            if (needApiKey) apiKey = readProviderApiKey(cfg, providerID) ?? null;
+          } catch { /* fail-open to the next resolution step */ }
+        }
+        if (needBaseUrl && !baseUrl) {
+          try {
+            const list: any = await this.runtime?.provider?.list?.();
+            baseUrl = readProviderTransportFromList(list, providerID).baseUrl ?? null;
+          } catch { /* fail-open */ }
+        }
+        if (needApiKey && !apiKey) {
+          try {
+            const list: any = await this.runtime?.provider?.list?.();
+            apiKey = readProviderTransportFromList(list, providerID).apiKey ?? null;
+          } catch { /* fail-open */ }
+        }
+        return { baseUrl, apiKey };
+      },
+    });
+  }
+
+  /**
+   * Judge provider resolution keeps its historical shape: the static scan map
+   * plus auth.json. It never consulted the driver transport, so the extraction
+   * introduced no precedence change here (unlike the scan resolvers above).
+   */
+
+
   // ── Memory pipelines (turn compress / reflection) ───────────────────────
 
   private registerInternalSession(sessionId: string, role: string, identity?: string): void {
@@ -3221,42 +3269,11 @@ class MafwScheduler {
           // Any openai-compatible provider works out of the box: URL and key
           // come from the opencode provider config (inline-defined providers
           // like "gateway" keep their credentials in opencode.jsonc options).
-          resolveEndpoint: async (providerID) => {
-            // The active driver owns provider config; ask it first when it can
-            // resolve a transport (pre-activation: runtimeHost may be absent).
-            try {
-              const transport = await this.runtimeHost?.resolveProviderTransport?.(providerID);
-              if (transport?.baseUrl) return transport.baseUrl;
-            } catch { /* fail-open to the gateway chain */ }
-            try {
-              const cfg: any = await this.runtimeHost?.config.get();
-              const u = readProviderBaseUrlWithPath(cfg, providerID);
-              if (u) return u;
-            } catch { /* fail-open to the next resolution step */ }
-            try {
-              const list: any = await this.runtime?.provider?.list?.();
-              return readProviderTransportFromList(list, providerID).baseUrl;
-            } catch { /* fail-open */ }
-            return null;
-          },
-          resolveApiKey: async (providerID) => {
-            try {
-              const transport = await this.runtimeHost?.resolveProviderTransport?.(providerID);
-              if (transport?.apiKey) return transport.apiKey;
-            } catch { /* fail-open to the gateway chain */ }
-            try {
-              const viaCreds = this.runtimeHost?.credentials?.getApiKey(providerID);
-              if (viaCreds) return viaCreds;
-              const cfg: any = await this.runtimeHost?.config.get();
-              const k = readProviderApiKey(cfg, providerID);
-              if (k) return k;
-            } catch { /* fail-open to the next resolution step */ }
-            try {
-              const list: any = await this.runtime?.provider?.list?.();
-              return readProviderTransportFromList(list, providerID).apiKey;
-            } catch { /* fail-open */ }
-            return null;
-          },
+          // Precedence: runtime credentials → driver transport → gateway chain.
+          resolveEndpoint: async (providerID) =>
+            (await this.resolveScanProviderTransport(providerID)).baseUrl,
+          resolveApiKey: async (providerID) =>
+            (await this.resolveScanProviderTransport(providerID)).apiKey,
           recordUsage: (u) => {
             try {
               const store = this.trajectoryStore;
