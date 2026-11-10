@@ -19,6 +19,27 @@
 
 T0–T4 的 `tsgo -p` / `tsc -p` 均 rc=0。未推送远端。
 
+### 验收记录（2026-11-10，真实 desktop dev）
+
+| 场景 | 实际结果 |
+|---|---|
+| 全局 daemon（旧版，无 discovery）在跑，启动 desktop dev | `mafw dev attached to running gateway`；CDP `attached=true`、`attachedOrigin=standalone`、`spawnedByUs=false`、`canRestartWithLocalBuild=false`，提示 `mafw stop/restart` |
+| 停掉全局 daemon，冷启动 desktop dev | spawn 仓库 `gateway/dist`；`gateway.json` 出现（pid 65772 / port 3000），`/health.pid` 与 discovery/lock 一致 |
+| 陈旧 lock/discovery（pid 40216 已死） | 新实例接管；新 pid 65772，旧文件被覆盖 |
+| 手动起一个带 discovery 的 standalone gateway，再启动 dev | attach 成功；CDP `attached=true`、`attachedOrigin=standalone`、`canRestartWithLocalBuild=true` |
+| 对该 standalone 执行「用当前构建重启」 | 旧 pid 被杀；新 pid 40252、`distribution=desktop-managed`、`origin=desktop-dev`；日志 `stopped → starting → ready`，无 `failed` / auto-restart |
+| 关闭 dev app | 子 gateway 停止，3000 释放；Windows 强杀会留下 stale `gateway.lock`/`gateway.json`，下次启动按 pid/心跳接管（已实测） |
+| 恢复环境 | `mafw daemon` 重新拉起全局 gateway（pid 52260），health 200 |
+
+验收中发现并修复：
+
+- `54720fb8`：spawn 时漏传 `MAFW_GATEWAY_ORIGIN`，discovery 把 desktop-dev 误报成 `standalone`。
+- `dfedc9e0`：`restartLocal` 直接 kill 旧 child，exit handler 误报 `failed` 并触发一次多余 auto-restart；改为 kill 前置 `expectedExit` 并等待 child exit。
+
+并行变更说明：另一个会话把 `5251dac9`（scheduler）合进 `main`，未带本分支顶端；已用 `d22d9de9` 把 `feat/gateway-kernel-scheduler`（含 T0–T4）重新合入 `main`。
+
+最终门禁：desktop **3178/3178**、gateway **5271/5271**、`tsgo -p` / `tsc -p` rc=0。
+
 ## 0. 一句话模型
 
 **`~/.mafw` 是单写者资源：一个数据目录同时只能有一个 gateway。**
