@@ -71,4 +71,24 @@ describe('StandingGoalService event integration', () => {
       projectDir: '/other',
     })).resolves.toBeNull();
   });
+
+  test('event filters match nested GitHub payload fields', async () => {
+    const h = harness();
+    const goal = h.service.create({
+      ...base,
+      triggers: [{ id: 'e1', type: 'event', eventKinds: ['pr_opened'], filter: { branch: 'main' } }],
+    });
+    await expect(h.service.handleEventTrigger(goal.id, {
+      eventId: 'd-dev',
+      kind: 'pr_opened',
+      payload: { pull_request: { base: { ref: 'dev' } } },
+      projectDir: '/p',
+    })).resolves.toBeNull();
+    await expect(h.service.handleEventTrigger(goal.id, {
+      eventId: 'd-main',
+      kind: 'pr_opened',
+      payload: { pull_request: { base: { ref: 'main' } } },
+      projectDir: '/p',
+    })).resolves.toMatchObject({ triggerType: 'event' });
+  });
 });

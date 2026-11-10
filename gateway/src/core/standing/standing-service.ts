@@ -105,7 +105,9 @@ function payloadValue(payload: Record<string, unknown>, key: string): unknown {
   const aliases: Record<string, unknown> = {
     repo: anyPayload.repo ?? anyPayload.repository?.full_name,
     labels: payload.labels,
-    branch: anyPayload.branch ?? anyPayload.ref,
+    branch: anyPayload.branch ?? anyPayload.ref
+      ?? anyPayload.pull_request?.base?.ref
+      ?? anyPayload.pull_request?.head?.ref,
     author: anyPayload.author ?? anyPayload.sender?.login,
   };
   if (key in aliases) return aliases[key];
