@@ -221,6 +221,7 @@ import { attachProjectRoutes } from './routes/projects';
 import { attachMafwCommandRoutes } from './routes/mafw-commands';
 import { attachMergeMemoryRoutes } from './routes/merge-memory';
 import { attachTriageRoutes } from './routes/triage';
+import { attachAutomationRoutes } from './routes/automations';
 import { attachApprovalsRoutes } from './routes/approvals';
 import { attachQuestionsPermissionsRoutes } from './routes/questions-permissions';
 import { attachUsageRoutes } from './routes/usage';
@@ -291,7 +292,6 @@ import { createRuntimeFacade, type RuntimeFacade, type RuntimeHost } from './run
 import {
   enrichPermissionEvent,
   projectAgents,
-  projectPermissionList,
   projectProviderEnvelope,
   projectQuestionRequest,
   projectSession,
@@ -311,7 +311,7 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
   ...TOOL_PRIMITIVE_TYPES,
 ]);
 
-import { handlePermissionReply, handlePermissionReplyById, resolveApprovalDirectory } from './routes/permission';
+import { handlePermissionReply } from './routes/permission';
 import { surfaceUnavailableMessage } from './runtime/runtime-access';
 import { handleSessionBackground } from './routes/session-background';
 import { attachBackgroundJobHandlers } from './routes/background-jobs';
@@ -5649,6 +5649,12 @@ class MafwScheduler {
         getGatewayDb: () => this.getGatewayDb(),
         getScanService: () => this.getScanService(),
       });
+      // Phase D1 Task C1：automation 面迁 registry dispatch（6 分支；draft 静态段
+      // 优先于 :id 由 registry 结构保证，legacy 注册序注释语义不变）。
+      attachAutomationRoutes(this.routeRegistry, {
+        automationEngine: () => this.automationEngine,
+        ledger: () => this.ledger,
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6990,113 +6996,12 @@ class MafwScheduler {
         // GET /api/triage + POST /api/triage/:id/{confirm,reject,propose} — Phase D1 Task A4：已迁 registry dispatch。
 
         // ── Automation endpoints (Tier 4 — user only) ──
-
-        // POST /api/automations/draft — create a draft rule (disabled).
-        // MUST be registered before the /api/automations/{id} matcher.
-        if (req.url === '/api/automations/draft' && req.method === 'POST') {
-          try {
-            const body = JSON.parse(await readBody(req));
-            const trigger = body.trigger || {};
-            const rule = {
-              id: body.id as string,
-              enabled: false,
-              trigger: {
-                type: 'cron' as const,
-                schedule: trigger.schedule || '',
-                timezone: trigger.timezone || 'UTC',
-              },
-              skill: body.skill as string | undefined,
-              action: body.action as any,
-              onResult: body.onResult as any,
-              goal_defaults: body.goal_defaults as any,
-            };
-            const result = this.automationEngine?.draftRule(rule);
-            if (!result) { res.writeHead(503); res.end(JSON.stringify({ error: 'Automation engine not available' })); return; }
-            this.ledger?.append({
-              timestamp: new Date().toISOString(),
-              event: 'AUTOMATION_TRIGGERED',
-              ruleId: result.id,
-              source: 'user',
-              reason: 'rule_drafted',
-            });
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // GET /api/automations — list automation rules with next trigger + recent history
-        if (req.url === '/api/automations' && req.method === 'GET') {
-          const rules = this.automationEngine?.getRules() || [];
-          const enriched = rules.map(r => ({
-            ...r,
-            nextTriggers: this.automationEngine?.getNextTriggers(r).next5 || [],
-            recentHistory: this.ledger?.getHistory(r.id, 3) || [],
-          }));
-          res.end(JSON.stringify({ rules: enriched }));
-          return;
-        }
-
-        // GET /api/automations/{id} — single rule detail
-        const autoGetMatch = req.url?.match(/^\/api\/automations\/([^/]+)(?:\?|$)/);
-        if (autoGetMatch && req.method === 'GET') {
-          const id = autoGetMatch[1];
-          const rule = this.automationEngine?.getRule(id);
-          if (!rule) { res.writeHead(404); res.end(JSON.stringify({ error: 'Rule not found' })); return; }
-          res.end(JSON.stringify({
-            ...rule,
-            nextTriggers: this.automationEngine?.getNextTriggers(rule)?.next5 || [],
-            history: this.ledger?.getHistory(id, 10) || [],
-          }));
-          return;
-        }
-
-        // PUT /api/automations/{id} — toggle an automation rule (enabled/disabled)
-        if (autoGetMatch && req.method === 'PUT') {
-          try {
-            const id = autoGetMatch[1];
-            const body = await readBody(req);
-            const { enabled } = JSON.parse(body);
-            const ok = this.automationEngine?.toggleRule(id, enabled);
-            this.ledger?.append({
-              timestamp: new Date().toISOString(),
-              event: 'AUTOMATION_TRIGGERED',
-              ruleId: id,
-              source: 'user',
-              reason: enabled ? 'enabled' : 'disabled',
-            });
-            res.end(JSON.stringify({ status: ok ? 'toggled' : 'not_found', enabled }));
-          } catch (err: any) {
-            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // DELETE /api/automations/{id} — delete an automation rule
-        if (autoGetMatch && req.method === 'DELETE') {
-          const id = autoGetMatch[1];
-          const ok = this.automationEngine?.deleteRule(id);
-          this.ledger?.append({
-            timestamp: new Date().toISOString(),
-            event: 'AUTOMATION_TRIGGERED',
-            ruleId: id,
-            source: 'user',
-            reason: 'deleted',
-          });
-          res.end(JSON.stringify({ status: ok ? 'deleted' : 'not_found' }));
-          return;
-        }
-
-        // GET /api/automations/{id}/history — audit trail for a rule
-        const autoHistoryMatch = req.url?.match(/^\/api\/automations\/([^/]+)\/history(?:\?|$)/);
-        if (autoHistoryMatch && req.method === 'GET') {
-          const id = autoHistoryMatch[1];
-          const limit = parseInt(new URL(req.url!, `http://${req.headers.host}`).searchParams.get('limit') || '20');
-          const history = this.ledger?.getHistory(id, limit) || [];
-          res.end(JSON.stringify({ history }));
-          return;
-        }
+        // POST /api/automations/draft — Phase D1 Task C1：已迁 registry dispatch。
+        // GET /api/automations — Phase D1 Task C1：已迁 registry dispatch。
+        // GET /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
+        // PUT /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
+        // DELETE /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
+        // GET /api/automations/:id/history — Phase D1 Task C1：已迁 registry dispatch。
 
         // POST /api/llm/compress — LLM compression proxy (via SDK)
         if (req.url === '/api/llm/compress' && req.method === 'POST') {

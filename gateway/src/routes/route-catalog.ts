@@ -312,6 +312,10 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'DELETE', path: '/api/devices/:id', operationId: 'devices.delete', tags: ['internal'] },
   // P5 Wave 2 反向审计补遗
   { method: 'GET', path: '/.well-known/agent-card.json', operationId: 'a2a.agentCard', tags: ['internal'] },
+  // Task C1：单规则详情 GET /api/automations/:id 未进 @mafw/sdk 调用面
+  // （SDK 只有 list/toggle/remove/draft）→ 与 automations.history 同放
+  // NON_SDK 并标 internal，SDK 死契约门据此豁免。
+  { method: 'GET', path: '/api/automations/:id', operationId: 'automations.get', tags: ['internal'] },
   { method: 'GET', path: '/api/automations/:id/history', operationId: 'automations.history', tags: ['internal'] },
   { method: 'GET', path: '/api/goals/:id/loops/:n', operationId: 'goals.loopsAt', tags: ['internal'] },
   { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'] },

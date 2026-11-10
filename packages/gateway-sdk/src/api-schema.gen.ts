@@ -2467,7 +2467,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["automations.get"];
         put: operations["automations.toggle"];
         post?: never;
         delete: operations["automations.remove"];
@@ -7327,6 +7327,26 @@ export interface operations {
                         }[];
                     };
                 };
+            };
+        };
+    };
+    "automations.get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
