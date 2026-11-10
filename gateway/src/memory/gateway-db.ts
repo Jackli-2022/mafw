@@ -17,6 +17,10 @@ export interface T1Observation {
   id: number;
   session_id: string;
   turn_id: number;
+  /** Logical turn trace (`t1_turns.trace_id`) the observation belongs to. */
+  trace_id: string;
+  /** Stable per-observation identity (`t1o_<uuid>`); null for legacy rows. */
+  observation_key: string;
   source: ObservationSource;
   content: string;
   failure: number;
@@ -142,6 +146,8 @@ export class GatewayDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id TEXT NOT NULL,
         turn_id INTEGER NOT NULL,
+        trace_id TEXT,
+        observation_key TEXT,
         source TEXT NOT NULL,
         content TEXT NOT NULL,
         failure INTEGER DEFAULT 0,
@@ -417,6 +423,20 @@ export class GatewayDatabase {
       // Column already exists, ignore
     }
 
+    // Migration: add stable observation identity columns (logical turn trace
+    // + per-observation key) to t1_observations if not exists. Legacy rows
+    // read back null for both; new appends always populate them.
+    try {
+      this.db.exec(`ALTER TABLE t1_observations ADD COLUMN trace_id TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE t1_observations ADD COLUMN observation_key TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
+
     // Migration: D4b task-type dimension on goal_outcomes (legacy rows NULL →
     // aggregate into the global/'other' bucket).
     try {
@@ -508,18 +528,66 @@ export class GatewayDatabase {
   }
 
   /**
-   * Insert one observation. Database-level dedup via the UNIQUE constraint:
-   * a duplicate (same session/turn/source/content) is silently ignored.
-   * Returns the row id, or null when deduplicated.
+   * Insert one observation against an allocated logical turn.
+   *
+   * `trace_id` is required and must reference an existing `t1_turns` row
+   * (`trace_id required` / `unknown trace_id: <id>` otherwise). A missing
+   * `observation_key` is generated as `t1o_<uuid>`. On write, the turn's
+   * `encoding_salience` is raised to the maximum supplied salience.
+   *
+   * Database-level dedup via the UNIQUE constraint: a duplicate
+   * (same session/turn/source/content) is silently ignored. Returns the row
+   * id, or null when deduplicated.
    */
-  append(obs: Omit<T1Observation, 'id' | 'created_at'>): number | null {
-    const result = this.db
-      .prepare(
-        `INSERT OR IGNORE INTO t1_observations (session_id, turn_id, source, content, failure, salience)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(obs.session_id, obs.turn_id, obs.source, obs.content, obs.failure, obs.salience ?? null);
-    return result.changes > 0 ? Number(result.lastInsertRowid) : null;
+  append(obs: {
+    session_id: string;
+    turn_id: number;
+    trace_id: string;
+    observation_key?: string;
+    source: ObservationSource;
+    content: string;
+    failure: number;
+    salience?: number | null;
+  }): number | null {
+    if (!obs.trace_id || !obs.trace_id.trim()) {
+      throw new Error('trace_id required');
+    }
+    const turn = this.db
+      .prepare('SELECT trace_id FROM t1_turns WHERE trace_id = ?')
+      .get(obs.trace_id) as { trace_id: string } | undefined;
+    if (!turn) {
+      throw new Error(`unknown trace_id: ${obs.trace_id}`);
+    }
+    const observationKey = obs.observation_key || `t1o_${randomUUID()}`;
+    const txn = this.db.transaction((): number | null => {
+      const result = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO t1_observations (session_id, turn_id, trace_id, observation_key, source, content, failure, salience)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          obs.session_id,
+          obs.turn_id,
+          obs.trace_id,
+          observationKey,
+          obs.source,
+          obs.content,
+          obs.failure,
+          obs.salience ?? null,
+        );
+      // Raise — never lower — the turn's encoding salience.
+      if (obs.salience != null) {
+        this.db
+          .prepare(
+            `UPDATE t1_turns
+                SET encoding_salience = MAX(COALESCE(encoding_salience, 0), ?)
+              WHERE trace_id = ?`,
+          )
+          .run(obs.salience, obs.trace_id);
+      }
+      return result.changes > 0 ? Number(result.lastInsertRowid) : null;
+    });
+    return txn();
   }
 
   /** Per-session turn summaries (grouped), optionally filtered to a session. */

@@ -77,19 +77,28 @@ export function attachObsRoutes(registry: RouteRegistry, deps: ObsRouteDeps): vo
           res.end(JSON.stringify({ ok: true, id: null, deduped: true, turnId: 0, filtered: true }));
           return;
         }
-        const turnId = source === 'user_input' ? deps.getGatewayDb().nextTurnId(sessionID) : deps.getGatewayDb().currentTurnId(sessionID);
+        const db = deps.getGatewayDb();
+        // Redact secrets once at capture so every downstream consumer
+        // (turnCompress transcripts, worker prompts, archive) only
+        // ever sees redacted content. S3: encoding-time salience tag
+        // (deterministic, LLM-free) is computed before the turn is
+        // allocated so the turn's encoding_salience starts there.
         const redacted = redactSecrets(content).slice(0, 100_000);
-        const id = deps.getGatewayDb().append({
+        const salience = obsSalience({ text: redacted }).score;
+        // Allocate the logical turn: user input opens a fresh turn,
+        // every other source joins the current turn (allocating one if
+        // none exists yet).
+        const turn = source === 'user_input'
+          ? db.beginTurn(sessionID, salience)
+          : db.currentTurn(sessionID) ?? db.beginTurn(sessionID, salience);
+        const id = db.append({
           session_id: sessionID,
-          turn_id: turnId,
+          turn_id: turn.turn_seq,
+          trace_id: turn.trace_id,
           source: source as any,
-          // Redact secrets once at capture so every downstream consumer
-          // (turnCompress transcripts, worker prompts, archive) only
-          // ever sees redacted content.
           content: redacted,
           failure,
-          // S3: encoding-time salience tag (deterministic, LLM-free).
-          salience: obsSalience({ text: redacted }).score,
+          salience,
         });
         // V1 verbatim layer: fire-and-forget dense embedding of the raw
         // row. Key = session:turn:contentHash — stable across the
@@ -98,7 +107,7 @@ export function attachObsRoutes(registry: RouteRegistry, deps: ObsRouteDeps): vo
           const rt = getEmbeddingRuntime();
           const { t1VectorKey } = require('../recall/verbatim-recall');
           if (rt?.t1Indexer && redacted) {
-            rt.t1Indexer.enqueueText(t1VectorKey(sessionID, turnId, redacted), redacted.slice(0, 2000));
+            rt.t1Indexer.enqueueText(t1VectorKey(sessionID, turn.turn_seq, redacted), redacted.slice(0, 2000));
             rt.scheduleFlush();
           }
         } catch { /* fail-open */ }
@@ -121,7 +130,7 @@ export function attachObsRoutes(registry: RouteRegistry, deps: ObsRouteDeps): vo
           } catch { /* fail-open */ }
         }
         res.writeHead(200);
-        res.end(JSON.stringify({ ok: true, id, turnId, deduped: id === null }));
+        res.end(JSON.stringify({ ok: true, id, turnId: turn.turn_seq, traceId: turn.trace_id, deduped: id === null }));
       } catch (err: any) {
         // fail-open: never let capture errors surface to the plugin
         log.warn(`[Scheduler] /api/obs/capture failed: ${err.message}`);
