@@ -546,4 +546,15 @@ describe('PodGoalService', () => {
       .map((goal) => goal.goalId).sort()).toEqual(['g1', 'g2']);
     expect(startGoal).toHaveBeenCalledTimes(2);
   });
+
+  test('calls onGoalCompleted once when a goal is archived', async () => {
+    const onGoalCompleted = jest.fn();
+    service = makeService(undefined, { onGoalCompleted });
+    await service.enqueueGoal('g1', projectDir);
+
+    await service.onGoalArchived('g1');
+
+    expect(onGoalCompleted).toHaveBeenCalledTimes(1);
+    expect(onGoalCompleted).toHaveBeenCalledWith('g1');
+  });
 });
