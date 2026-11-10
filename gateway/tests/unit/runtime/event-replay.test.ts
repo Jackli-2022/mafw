@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
+import { normalizeRuntimeEvent } from '../../../src/runtime/normalize';
 import { mafwBroadcast } from '../../../src/runtime/event-broadcast';
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../../adapters/opencode/src/events';
@@ -19,7 +19,7 @@ describe('event replay (golden, v2 pipeline: opencode raw → translate → norm
     .split('\n')
     .map((l) => JSON.parse(l));
   const canonical = lines.flatMap((e) => applyEventMappings(e, OC_ENTRY, (t) => !!EVENT_FLOW_MATRIX[t]));
-  const facets = canonical.map((e) => normalizeOpencodeEvent(e));
+  const facets = canonical.map((e) => normalizeRuntimeEvent(e));
 
   it('opencode raw events translate to v2 canonical + expected facet sequence', () => {
     expect(canonical.map((e: any) => e.payload.type)).toEqual([
@@ -63,7 +63,7 @@ describe('event replay (golden, v2 pipeline: opencode raw → translate → norm
 
   it('Mode A rewrite is gone: turn.completed broadcasts as itself (passthrough)', () => {
     // v2：session.idle→message.complete 改写 hack 已删除——翻译层直接产 turn.completed
-    const facets = normalizeOpencodeEvent({ type: 'turn.completed', properties: { sessionID: 's1' } });
+    const facets = normalizeRuntimeEvent({ type: 'turn.completed', properties: { sessionID: 's1' } });
     expect(facets.chatSignal).toBe('complete');
     expect(mafwBroadcast({ type: 'turn.completed', sessionID: 's1' }).data.type).toBe('turn.completed');
   });

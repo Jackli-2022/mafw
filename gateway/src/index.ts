@@ -146,12 +146,6 @@ import { LayaConflictClient } from "./memory/laya-client";
 import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/route-write";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
-import {
-  getProviderApiKey,
-  readProviderApiKey,
-  readProviderBaseUrlWithPath,
-  readProviderTransportFromList,
-} from "./runtime/opencode-adapter";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
@@ -189,7 +183,7 @@ import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
 import { resolveMobileBaseUrl, detectReachableHost } from './mobile/tailscale-url';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
-import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
+import { normalizeRuntimeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
 import { createBuiltinIdentityRegistry, identityMaterializable, resolveIdentityAlias, toAgentDefinition } from './runtime/identity-registry';
@@ -292,15 +286,14 @@ import { RuntimePluginLoader, createRuntimePluginContext, noRuntimeRegisteredErr
 import { PI_CAPABILITIES, createPiDefinition, setPiUnknownRecorder } from './runtime/pi-adapter';
 import { createPluginCredentials } from './runtime/plugin-credentials';
 import { createNeutralRuntime } from './runtime/neutral-runtime';
-import { getBridgeEventEntry } from './runtime/adapter-bridge';
+import { getBridgeEventEntry } from './runtime/legacy-plugin-bridge';
 import type { RuntimeDefinition, RuntimeFactoryContext } from '@mafw/runtime-contract';
 import {
   createOpencodeDefinition,
-  opencodeCapabilities,
-  opencodeStaticEntry,
-  serveAuthHeaders,
+  opencodeExternalMode,
   type OpencodeVariant,
 } from './runtime/opencode-adapter';
+import { DEFAULT_BUILTIN_RUNTIME, builtinAdapterRegistrations, builtinDiscoveryRoots } from './runtime/builtin-adapters';
 
 import { injectServeAuth } from './runtime/proxy-auth';
 import { resolveProviderTransportPrecedence } from './runtime/provider-transport';
@@ -662,7 +655,7 @@ class MafwScheduler {
   private get runtimeCaps(): RuntimeCapabilities {
     return this.runtimeDiagnostics?.capabilities ?? this.runtimeCapsFallback;
   }
-  private runtimeName = 'opencode';
+  private runtimeName = DEFAULT_BUILTIN_RUNTIME;
   /** 组合根持有的诊断视图（业务核心只读 access/Experience；本视图供 /api/runtime 等 Admin 面）。 */
   private runtimeDiagnostics: RuntimeDiagnosticsView | null = null;
   /**
@@ -883,7 +876,7 @@ class MafwScheduler {
     // Install the shipped Office skill before serve spawns: opencode builds its
     // skill catalog at startup, so a later write would not be discovered.
     try {
-      const skill = await ensureGlobalOfficeSkill();
+      const skill = await ensureGlobalOfficeSkill({ skillsDir: this.skillsDir() });
       if (skill.ok) {
         if (skill.action !== 'unchanged') log.info(`[Office] global skill ${skill.action}: ${skill.target}`);
       } else {
@@ -895,7 +888,7 @@ class MafwScheduler {
     // The Creator identity requires the shipped plugin-creator skill before its
     // first inspect/write; install it beside the Office skill (same startup gate).
     try {
-      const skill = await ensurePluginCreatorSkill();
+      const skill = await ensurePluginCreatorSkill({ skillsDir: this.skillsDir() });
       if (skill.ok) {
         if (skill.action !== 'unchanged') log.info(`[PluginCreator] global skill ${skill.action}: ${skill.target}`);
       } else {
@@ -1003,10 +996,8 @@ class MafwScheduler {
       baseUrl: this.serveUrl,
       headers: {} as Record<string, string>,
     };
-    const opencodePassword = (process.env.MAFW_RUNTIME_PASSWORD ?? process.env.MAFW_OPENCODE_PASSWORD);
-    if (opencodePassword) {
-      sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
-    }
+    // Serve credentials are adapter-owned (`resolveServePassword`); the gateway
+    // only forwards host-provided headers through `host.proxyHeaders()`.
     // opencode 注册为正式内置插件（与用户插件同一接口；同名文件/包可覆盖）。
     // v2：携带事件翻译声明——opencode 不再有「免翻译特权」，原生流经同一
     // wrap 序列（映射差异行 + transformEvent 前缀丢弃）进 canonical 管线。
@@ -1014,15 +1005,8 @@ class MafwScheduler {
     // fail-safe @v1）+ 钉死 `opencode@v1` / `opencode@v2`；三个名字共享同一
     // runtime 工厂（serve/adapter/凭据全同），差异仅在事件映射表。
     const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
-    const external = !!process.env.MAFW_SERVER_SERVE_URL;
-    const registrationName: Record<OpencodeVariant, string> = {
-      adaptive: 'opencode',
-      v1: 'opencode@v1',
-      v2: 'opencode@v2',
-      v21: 'opencode@v21',
-    };
-    const opencodeDefinition = (variant: OpencodeVariant) => (ctx: RuntimeFactoryContext) => {
-      const name = registrationName[variant];
+    const external = opencodeExternalMode();
+    const opencodeDefinition = (variant: OpencodeVariant, name: string) => (ctx: RuntimeFactoryContext) => {
       return createOpencodeDefinition(ctx, {
         variant,
         registrationName: name,
@@ -1036,29 +1020,17 @@ class MafwScheduler {
         },
       });
     };
-    // 裸名 = 自适应方言（激活时探测一次，fail-safe @v1）
-    this.runtimeLoader.registerBuiltinDefinition('opencode', opencodeDefinition('adaptive'), {
-      external,
-      capabilities: opencodeCapabilities('adaptive', external),
-      eventEntry: opencodeStaticEntry('adaptive'),
-    });
-    // 钉死方言：映射表随定义固定，探测跳过
-    this.runtimeLoader.registerBuiltinDefinition('opencode@v1', opencodeDefinition('v1'), {
-      external,
-      capabilities: opencodeCapabilities('v1', external),
-      eventEntry: opencodeStaticEntry('v1'),
-    });
-    this.runtimeLoader.registerBuiltinDefinition('opencode@v2', opencodeDefinition('v2'), {
-      external,
-      capabilities: opencodeCapabilities('v2', external),
-      eventEntry: opencodeStaticEntry('v2'),
-    });
-    // 钉死 2.1.0 方言（顶层 type/data + session.* 富事件；dry-event/一致性测试用）
-    this.runtimeLoader.registerBuiltinDefinition('opencode@v21', opencodeDefinition('v21'), {
-      external,
-      capabilities: opencodeCapabilities('v21', external),
-      eventEntry: opencodeStaticEntry('v21'),
-    });
+    // Builtin adapters register from adapter-owned descriptors: the gateway has
+    // no per-runtime name/variant branches. The bare name is adaptive; pinned
+    // names keep their dialect tables.
+    for (const registration of builtinAdapterRegistrations(external)) {
+      this.runtimeLoader.registerBuiltinDefinition(
+        registration.name,
+        opencodeDefinition(registration.variant, registration.name),
+        registration.options,
+      );
+    }
+
     const runtime = await this.createRuntime();
     this.runtime = runtime;
     this.setRuntimeDiagnostics();
@@ -1079,17 +1051,17 @@ class MafwScheduler {
     const isExternal = !!runtime.external;
     let serveReady = false;
     if (isExternal) {
-      log.info(`[Scheduler] Using external OpenCode Serve at ${this.serveUrl} (runtime.external=true)`);
+      log.info(`[Scheduler] Using external Runtime serve at ${this.serveUrl} (runtime.external=true)`);
       try { await this.waitForServeReady(); serveReady = true; }
-      catch { log.warn('External OpenCode Serve not available — MCP-only mode'); }
+      catch { log.warn('External Runtime serve not available — MCP-only mode'); }
     } else {
       if (await this.isServeHealthy()) {
-        log.info('OpenCode Serve already running (adopted; health-poll watchdog)');
+        log.info('Runtime serve already running (adopted; health-poll watchdog)');
         serveReady = true;
         this.serveOwned = false;
         this.startServeWatchdog();
       } else {
-        log.info('OpenCode Serve not reachable, checking for stale process...');
+        log.info('Runtime serve not reachable, checking for stale process...');
         // 清场原语归 runtime（serve 端口是实现细节；无原语的 runtime 无从清场）
         this.runtimeHost?.agentProcess?.killServe?.();
         // taskkill /F /T 是异步生效的；给监听 socket 一点释放时间，避免紧随其后的
@@ -1099,7 +1071,7 @@ class MafwScheduler {
           await this.startServe();
           serveReady = !!this.serveInstance;
         } catch (err) {
-          log.error(`Failed to start OpenCode Serve: ${err instanceof Error ? err.message : String(err)}`);
+          log.error(`Failed to start Runtime serve: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     }
@@ -1109,7 +1081,7 @@ class MafwScheduler {
       // sidecars it is already running and the guard is a no-op.
       this.startServeWatchdog();
     }
-    // 外部 runtime（如 pi）声明 eventStream 时，事件订阅不等 opencode serve 就绪
+    // 外部 runtime（如 pi）声明 eventStream 时，事件订阅不等 runtime serve 就绪
     if (serveReady || (this.runtimeCaps.eventStream && isExternal)) {
       this.subscribeToEvents();
     }
@@ -1753,7 +1725,7 @@ class MafwScheduler {
   }
 
   private handleRuntimeEvent(evt: any): void {
-    const f = normalizeOpencodeEvent(evt);
+    const f = normalizeRuntimeEvent(evt);
     // opencode v2 sync 信封：与 legacy 事件双发的状态重同步噪声，gateway
     // 边界丢弃（处置登记于 event-flow-matrix.ts RUNTIME_NATIVE_DROPPED）。
     // 放行会重复处理 + desktop miss 告警 + [SSE] 日志刷屏。
@@ -2126,12 +2098,12 @@ class MafwScheduler {
    * 两级都失败时抛中性错误，不再直连 adapter。
    */
   private async createRuntime(): Promise<RuntimeFacade> {
-    const wanted = config.runtime?.plugin || 'opencode';
+    const wanted = config.runtime?.plugin || DEFAULT_BUILTIN_RUNTIME;
     const rt = await this.activatePluginRuntime(wanted, true);
     if (rt) return rt;
-    if (wanted !== 'opencode') {
+    if (wanted !== DEFAULT_BUILTIN_RUNTIME) {
       log.warn(`[Runtime] plugin '${wanted}' unavailable — falling back to opencode`);
-      const fallback = await this.activatePluginRuntime('opencode', false);
+      const fallback = await this.activatePluginRuntime(DEFAULT_BUILTIN_RUNTIME, false);
       if (fallback) return fallback;
     }
     // No direct adapter fallback: the definition registry is the only entry.
@@ -2141,7 +2113,7 @@ class MafwScheduler {
   /** 单激活路径（D 收敛）：plugin/builtin/package 同一序列。fatal=true 时校验失败抛错触发回退。 */
   private async activatePluginRuntime(name: string, fatal: boolean): Promise<RuntimeFacade | null> {
     const plugin = this.runtimeLoader?.get(name);
-    const creds = name === 'opencode' ? undefined : await this.runtimeCredentialsForPlugin();
+    const creds = name === DEFAULT_BUILTIN_RUNTIME ? undefined : await this.runtimeCredentialsForPlugin();
     const ctx = createRuntimePluginContext(creds, {
       projectDir: this.resolvedProjectDir(),
       rootDir: this.ensureRuntimeRootDir(),
@@ -2373,7 +2345,7 @@ class MafwScheduler {
         gatewayProjectDir: this.projectDir,
         mafwDir: this.mafwDir,
         homeDir: os.homedir(),
-        globalConfigDir: path.join(os.homedir(), '.config', 'opencode'),
+        globalConfigDir: this.runtimeConfigDir(),
       });
     }
     return this.discovery;
@@ -2514,7 +2486,7 @@ class MafwScheduler {
   /** 凭据单点接线（Plan 3 终审 #10）：active runtime credentials → legacy auth.json → null。
    *  全部消费方构造点的唯一凭据来源——链变更只改这里。 */
   private runtimeGetApiKey(provider: string): string | null {
-    return getProviderApiKey(provider, undefined, this.runtimeHost?.credentials) ?? null;
+    return this.runtimeHost?.credentials?.getApiKey(provider) ?? null;
   }
 
   /**
@@ -2526,34 +2498,12 @@ class MafwScheduler {
   private async resolveScanProviderTransport(
     providerID: string,
   ): Promise<{ baseUrl: string | null; apiKey: string | null }> {
+    // Runtime credentials first, then the driver transport. No gateway
+    // config/provider fallback: those are adapter-owned in Phase 4.
     return resolveProviderTransportPrecedence({
       providerID,
       credentials: this.runtimeHost?.credentials,
       resolveTransport: (id) => this.runtimeHost?.resolveProviderTransport?.(id) ?? {},
-      fallback: async ({ needBaseUrl, needApiKey }) => {
-        let baseUrl: string | null = null;
-        let apiKey: string | null = null;
-        if (needBaseUrl || needApiKey) {
-          try {
-            const cfg: any = await this.runtimeHost?.config.get();
-            if (needBaseUrl) baseUrl = readProviderBaseUrlWithPath(cfg, providerID) ?? null;
-            if (needApiKey) apiKey = readProviderApiKey(cfg, providerID) ?? null;
-          } catch { /* fail-open to the next resolution step */ }
-        }
-        if (needBaseUrl && !baseUrl) {
-          try {
-            const list: any = await this.runtime?.provider?.list?.();
-            baseUrl = readProviderTransportFromList(list, providerID).baseUrl ?? null;
-          } catch { /* fail-open */ }
-        }
-        if (needApiKey && !apiKey) {
-          try {
-            const list: any = await this.runtime?.provider?.list?.();
-            apiKey = readProviderTransportFromList(list, providerID).apiKey ?? null;
-          } catch { /* fail-open */ }
-        }
-        return { baseUrl, apiKey };
-      },
     });
   }
 
@@ -2662,7 +2612,7 @@ class MafwScheduler {
       const providerID = judgeModel?.providerID;
       const modelID = judgeModel?.modelID;
       const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
-      const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
+      const judgeApiKey = judgeBaseUrl ? this.runtimeGetApiKey(providerID!) : null;
       // Judge transport: prefer the runtime's stateless completion channel
       // (thunk — resolves inline-defined providers like "gateway" via opencode
       // provider config, hot-swap safe), fall back to direct HTTP. Gated by the
@@ -3818,7 +3768,14 @@ class MafwScheduler {
 
   /** 用户级 skills 目录（W2 安装目标）。 */
   private skillsDir(): string {
-    return path.join(os.homedir(), '.config', 'opencode', 'skills');
+    const roots = this.runtime?.discovery?.roots?.() ?? builtinDiscoveryRoots();
+    return roots.skillRoots?.[0] ?? path.join(this.mafwDir, 'skills');
+  }
+
+  /** Instruction/config root declared by the active/builtin adapter. */
+  private runtimeConfigDir(): string {
+    const roots = this.runtime?.discovery?.roots?.() ?? builtinDiscoveryRoots();
+    return roots.instructionRoots?.[0] ?? this.mafwDir;
   }
 
   /** 已安装 skill 数（含 staging 之外的用户级目录）——G5 列表膨胀闸门的输入。 */
@@ -4933,7 +4890,7 @@ class MafwScheduler {
       const providerID = judgeModel?.providerID;
       const modelID = judgeModel?.modelID;
       const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
-      const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
+      const judgeApiKey = judgeBaseUrl ? this.runtimeGetApiKey(providerID!) : null;
       setRouteWriteDeps({
         vectors: routeRt.vectors,
         provider: routeRt.provider,
@@ -5314,12 +5271,8 @@ class MafwScheduler {
         usageStats: statsProvider,
         // inline provider key 兜底（auth.json 无条目的自建 provider，如 gateway）——
         // thunk 惰性求值，runtime 此时尚未初始化也不影响。
-        resolveInlineApiKey: async (providerID: string) => {
-          try {
-            const cfg: any = await this.runtimeHost?.config.get();
-            return readProviderApiKey(cfg, providerID);
-          } catch { return null; }
-        },
+        resolveInlineApiKey: async (providerID: string) =>
+          (await this.runtimeHost?.resolveProviderTransport?.(providerID))?.apiKey ?? null,
       });
       await pluginLoader.init();
       this.pluginLoader = pluginLoader;
@@ -5458,7 +5411,7 @@ class MafwScheduler {
       log.warn('[Scheduler] active runtime does not own a server process — skipping serve spawn');
       return;
     }
-    log.info('Starting OpenCode Serve sidecar...');
+    log.info('Starting Runtime serve sidecar...');
     try {
       // host/port 归 runtime 自定（serve 端口是实现细节）；sidecar 实际 URL
       // 由 runtime 吸收（getBaseUrl 跟随），gateway 只记 bookkeeping。
@@ -5472,9 +5425,9 @@ class MafwScheduler {
         close: () => sidecar.close(),
       };
       this.serveOwned = true;
-      log.info(`OpenCode Serve started at ${sidecar.url} (owned sidecar)`);
+      log.info(`Runtime serve started at ${sidecar.url} (owned sidecar)`);
     } catch (err: any) {
-      log.error(`Failed to start OpenCode Serve: ${err.message}`);
+      log.error(`Failed to start Runtime serve: ${err.message}`);
       throw err;
     }
   }
@@ -5486,7 +5439,7 @@ class MafwScheduler {
   private handleServeExit(code: number | null) {
     if (!this.serveOwned || this.serveRecovering) return;
     // After a hot-switch to an in-process/external runtime, the (still owned)
-    // opencode serve is no longer the active backend: its exit must NOT trigger
+    // runtime serve is no longer the active backend: its exit must NOT trigger
     // recovery — pi has no spawnServe, so the orchestrator would fall into the
     // supervisor's kill+spawn path and retry forever (killing whatever listens
     // on the serve port each cycle). A later switch back re-ensures via
@@ -5506,7 +5459,7 @@ class MafwScheduler {
     const delay = this.serveExitStreak <= this.serveFastRetries
       ? [0, 5_000, 15_000][this.serveExitStreak - 1] ?? 15_000
       : this.serveBackoffMs;
-    log.warn(`[Scheduler] OpenCode Serve exited (code=${code}); restarting in ${delay}ms (streak=${this.serveExitStreak})`);
+    log.warn(`[Scheduler] Runtime serve exited (code=${code}); restarting in ${delay}ms (streak=${this.serveExitStreak})`);
     if (this.serveRetryTimer) clearTimeout(this.serveRetryTimer);
     this.serveRetryTimer = setTimeout(() => void this.recoverServe(), delay);
   }
@@ -5535,9 +5488,9 @@ class MafwScheduler {
     if (this.serveRecovering || !this.running) return;
     this.serveRecovering = true;
     try {
-      log.info('[Scheduler] Recovering OpenCode Serve...');
+      log.info('[Scheduler] Recovering Runtime serve...');
       await this.restartAgentOrchestrated();
-      log.info('[Scheduler] OpenCode Serve recovered');
+      log.info('[Scheduler] Runtime serve recovered');
       if (this.serveStableTimer) clearTimeout(this.serveStableTimer);
       this.serveStableTimer = setTimeout(() => {
         this.serveExitStreak = 0;
@@ -5615,7 +5568,7 @@ class MafwScheduler {
       localSessions = (await this.sdkSession.list()) as any[];
     } catch { localSessions = []; }
 
-    // Try SDK first (opencode server), fall back to local store
+    // Try SDK first (runtime server), fall back to local store
     const fromServe: any[] = [];
     if (this.runtime) {
       try {
@@ -5673,7 +5626,7 @@ class MafwScheduler {
         return;
       }
     }
-    throw new Error(`Failed to start OpenCode Serve after ${maxRetries * interval / 1000} seconds`);
+    throw new Error(`Failed to start Runtime serve after ${maxRetries * interval / 1000} seconds`);
   }
 
   /**
@@ -6528,7 +6481,7 @@ class MafwScheduler {
               const { projectDir, mafwDir, setCurrent } = intent;
 
               // Never register the user's home directory (or its standard data
-              // folders) as a project — desktop's opencode server plugin activates
+              // folders) as a project — desktop's runtime server plugin activates
               // with cwd=$HOME (or a folder under it) and would otherwise pollute
               // the registry with bogus "projects" (and manager sessions).
               if (this.isUserDataDir(projectDir)) {
@@ -6718,7 +6671,7 @@ class MafwScheduler {
             const configData = await this.runtimeHost?.config.get();
             res.end(JSON.stringify({ config: configData ?? {} }));
           } catch (err: any) {
-            log.error('[OpenCodeConfig] get error:', err.message);
+            log.error('[RuntimeConfig] get error:', err.message);
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
@@ -6734,7 +6687,7 @@ class MafwScheduler {
             const result = await this.runtimeHost?.config.update(body);
             res.end(JSON.stringify({ status: 'ok', config: result ?? null }));
           } catch (err: any) {
-            log.error('[OpenCodeConfig] update error:', err.message);
+            log.error('[RuntimeConfig] update error:', err.message);
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
@@ -6854,7 +6807,7 @@ class MafwScheduler {
             method: req.method,
             // 2.1.0：serve 强制 Basic——剔除入站 Authorization 后注入 serve 凭证
             headers: {
-              ...injectServeAuth(req.headers, this.runtimeHost?.proxyHeaders?.() ?? serveAuthHeaders()),
+              ...injectServeAuth(req.headers, this.runtimeHost?.proxyHeaders?.() ?? {}),
               host: proxyUrl.host,
             },
           }, (proxyRes) => {
@@ -7145,7 +7098,7 @@ class MafwScheduler {
   }
 
   // User data directories that must never be treated as projects (desktop's
-  // opencode server plugin activates with cwd=$HOME or a folder under it).
+  // runtime server plugin activates with cwd=$HOME or a folder under it).
   private userDataDirs(): Set<string> {
     const homeNorm = normalizeDir(os.homedir());
     const dirs = ['', 'Desktop', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos']
@@ -8135,7 +8088,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         sessionID: sessionId,
         parts: [{ type: 'text', text: prompt }],
         system: systemPrompt,
-        ...(model ? { model: { providerID: 'opencode', modelID: model } } : {}),
+        ...(model ? { model: { providerID: this.runtimeName, modelID: model } } : {}),
       });
       const text = result.parts
         ?.filter((p: any) => p.type === 'text')

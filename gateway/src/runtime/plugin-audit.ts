@@ -14,7 +14,7 @@
  */
 import { applyEventMappings, type EventMapping, type EventMappingEntry } from './event-mapper';
 import { checkEventFields } from './event-field-contract';
-import { normalizeOpencodeEvent } from './normalize';
+import { normalizeRuntimeEvent } from './normalize';
 import { EVENT_FLOW_MATRIX } from './event-flow-matrix';
 import { getPath } from './path-expr';
 import { isKnownEventType } from './event-telemetry';
@@ -370,7 +370,7 @@ export function traceSamples(
 
     const outputs: SampleOutput[] = out.map((evt: any) => {
       const type: string = evt?.payload?.type ?? evt?.type ?? '';
-      const f = normalizeOpencodeEvent(evt as any);
+      const f = normalizeRuntimeEvent(evt as any);
       const row = EVENT_FLOW_MATRIX[type];
       return {
         type,

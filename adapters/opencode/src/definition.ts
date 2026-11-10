@@ -11,7 +11,7 @@ import type {
   RuntimeDefinition,
   RuntimeFactoryContext,
 } from '@mafw/runtime-contract';
-import { RUNTIME_IDENTITY_TYPES } from '@mafw/runtime-contract';
+import { defineRuntime } from '@mafw/runtime-contract';
 import type { EventMappingEntry, TranslationHooks } from '@mafw/runtime-core';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './events';
 import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './events-21';
@@ -19,9 +19,17 @@ import { probeOpencodeDialect } from './dialect-probe';
 import { serveAuthHeaders } from './serve-sidecar';
 import { createOpencodeRuntime } from './runtime';
 import { fullCapabilities, type OpencodeRuntime } from './types';
-import { toRuntimeDefinition, setBridgeEventEntry } from './legacy-definition';
+import { createOpencodeTransport } from './transport';
+import { createOpencodeChannels } from './channels';
+import { createOpencodeHost } from './host';
+import { setBridgeEventEntry } from './entry-registry';
 
 export type OpencodeVariant = 'adaptive' | 'v1' | 'v2' | 'v21';
+
+/** Single source for external mode (the adapter owns the serve env contract). */
+export function opencodeExternalMode(): boolean {
+  return !!process.env.MAFW_SERVER_SERVE_URL;
+}
 
 export interface OpencodeDefinitionOptions {
   variant: OpencodeVariant;
@@ -59,9 +67,6 @@ const V21_ENTRY: EventMappingEntry = {
   eventMappings: OPENCODE_21_EVENT_MAPPINGS,
   transformEvent: translateOpencode21Event,
 };
-
-/** Canonical event vocabulary the driver translates into (explicit per Task 2). */
-const CANONICAL_EVENT_TYPES: ReadonlySet<string> = new Set(RUNTIME_IDENTITY_TYPES);
 
 /** Static entry for a pinned variant (tooling/dry-event, no activation needed). */
 export function opencodeStaticEntry(variant: OpencodeVariant): EventMappingEntry {
@@ -111,7 +116,7 @@ export async function createOpencodeDefinition(
   opts: OpencodeDefinitionOptions,
   deps: OpencodeDefinitionDeps = {},
 ): Promise<RuntimeDefinition> {
-  const external = deps.external ?? !!process.env.MAFW_SERVER_SERVE_URL;
+  const external = deps.external ?? opencodeExternalMode();
   const runtime = deps.runtime ?? await createOpencodeRuntime({
     baseUrl: opts.baseUrl,
     headers: opts.headers ? { ...opts.headers } : undefined,
@@ -125,40 +130,46 @@ export async function createOpencodeDefinition(
   const staticEntry = opencodeStaticEntry(opts.variant);
 
   let definition: RuntimeDefinition | undefined;
-  definition = toRuntimeDefinition(runtime, {
+  const onEntryResolved = (entry: EventMappingEntry) => {
+    if (definition?.host) definition.host.activeDialect = dialectOf(entry);
+    if (opts.registrationName) setBridgeEventEntry(opts.registrationName, entry);
+    setBridgeEventEntry('opencode', entry);
+  };
+
+  const transport = createOpencodeTransport(runtime, {
+    entry: staticEntry,
+    // Adaptive: resolve at first event, after the serve exists. Use the
+    // runtime's live base URL (it changes once the sidecar has started).
+    ...(opts.variant === 'adaptive'
+      ? { resolveEntry: () => resolveOpencodeEntry(opts.variant, runtime.getBaseUrl?.() ?? opts.baseUrl, deps) }
+      : {}),
+    ...(opts.hooks ? { hooks: opts.hooks } : {}),
+    onEntryResolved,
+    warn: (message) => ctx.log?.warn?.(message),
+  });
+  const { channels, channelsV2 } = createOpencodeChannels(runtime);
+  const host = createOpencodeHost(runtime);
+  // The gateway reverse proxy reads serve credentials only through this seam.
+  host.proxyHeaders = () => ({ ...serveAuthHeaders(), ...(opts.headers ?? {}) });
+  if (external) delete host.agentProcess;
+
+  definition = defineRuntime({
+    api: 1,
     name: 'opencode',
     displayName: 'opencode',
-    capabilities: opencodeCapabilities(opts.variant, external) as unknown as Record<string, unknown>,
+    preset: 'conversation',
+    transport,
     external,
-    entryAlias: opts.registrationName,
-    warn: ctx.log?.warn?.bind(ctx.log),
-    translate: {
-      entry: staticEntry,
-      // Adaptive: resolve at first event, after the serve exists. Use the
-      // runtime's live base URL (it changes once the sidecar has started).
-      ...(opts.variant === 'adaptive'
-        ? {
-            entryResolver: () => resolveOpencodeEntry(
-              opts.variant,
-              (runtime as any).getBaseUrl?.() ?? opts.baseUrl,
-              deps,
-            ),
-          }
-        : {}),
-      isCanonical: (type) => CANONICAL_EVENT_TYPES.has(type),
-      ...(opts.hooks ? { hooks: opts.hooks } : {}),
-    },
-    onEntryResolved: (entry) => {
-      if (definition?.host) definition.host.activeDialect = dialectOf(entry);
-      if (opts.registrationName) setBridgeEventEntry(opts.registrationName, entry);
-      setBridgeEventEntry('opencode', entry);
-    },
+    ...(runtime.semantics ? { semantics: runtime.semantics } : {}),
+    host,
+    channels,
+    ...(Object.keys(channelsV2).length > 0 ? { channelsV2, channelApi: 2 as const } : {}),
+    overrides: opencodeCapabilities(opts.variant, external),
   });
-  if (definition.host) {
-    // The gateway reverse proxy reads serve credentials only through this seam.
-    definition.host.proxyHeaders = () => ({ ...serveAuthHeaders(), ...(opts.headers ?? {}) });
-    if (opts.variant !== 'adaptive') definition.host.activeDialect = dialectOf(staticEntry);
-    if (external) delete definition.host.agentProcess;
-  }
+  // Registration-time tooling entry (dry-event/conformance) and pinned dialect
+  // label. Adaptive re-registers both maps once the probe resolves.
+  if (opts.registrationName) setBridgeEventEntry(opts.registrationName, staticEntry);
+  setBridgeEventEntry('opencode', staticEntry);
+  if (opts.variant !== 'adaptive') definition.host!.activeDialect = dialectOf(staticEntry);
   return definition;
 }

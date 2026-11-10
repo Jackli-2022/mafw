@@ -18,8 +18,8 @@ import { EventMappingEntry, validateEventMappings } from './event-mapper';
 import { resolveEventDeclaration } from './event-declaration';
 import { resolvePluginEntry } from './plugin-entry';
 import { RuntimeBus } from './runtime-bus';
-import { toRuntimeDefinition } from './adapter-bridge';
-import { setBridgeEventEntry } from './adapter-bridge';
+import { toRuntimeDefinition } from './legacy-plugin-bridge';
+import { setBridgeEventEntry } from './legacy-plugin-bridge';
 import type { RuntimeDefinition } from '@mafw/runtime-contract';
 import type { RuntimePackageEntry } from '../plugins/package-types';
 

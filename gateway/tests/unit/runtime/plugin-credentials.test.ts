@@ -1,10 +1,5 @@
 import { createPluginCredentials } from '../../../src/runtime/plugin-credentials';
 
-jest.mock('../../../../adapters/opencode/src/auth', () => ({
-  getProviderApiKey: jest.fn((provider: string, _authPath?: string, active?: { getApiKey(p: string): string | null }) =>
-    active?.getApiKey(provider) ?? `auth:${provider}`),
-}));
-
 describe('createPluginCredentials', () => {
   it('snapshots the active host credentials instead of reading them lazily', () => {
     const active = { getApiKey: (provider: string) => `active:${provider}` };
@@ -16,7 +11,9 @@ describe('createPluginCredentials', () => {
     expect(liveHost.credentials.getApiKey('gateway')).toBe('active:gateway');
   });
 
-  it('falls back to auth.json when the activating runtime has no credentials', () => {
-    expect(createPluginCredentials(undefined).getApiKey('xiaomi')).toBe('auth:xiaomi');
+  it('does not read adapter auth.json when the activating runtime has no credentials', () => {
+    // Phase 4 W4: auth.json is adapter-owned; the gateway's factory context only
+    // sees the active host snapshot.
+    expect(createPluginCredentials(undefined).getApiKey('xiaomi')).toBeNull();
   });
 });

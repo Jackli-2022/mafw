@@ -15,15 +15,15 @@ export type { EnsureSkillResult } from '../skills/global-skill';
 
 const SKILL_NAME = 'office-editing';
 
-export function officeSkillTarget(skillsDir?: string): string {
+export function officeSkillTarget(skillsDir: string): string {
   return globalSkillTarget(SKILL_NAME, skillsDir);
 }
 
 export async function ensureGlobalOfficeSkill(opts: {
   sourceRoot?: string;
-  skillsDir?: string;
+  skillsDir: string;
   /** Test/override: exact source file. */
   sourceFile?: string;
-} = {}): Promise<EnsureSkillResult> {
+}): Promise<EnsureSkillResult> {
   return ensureGlobalSkill({ skillName: SKILL_NAME, ...opts });
 }

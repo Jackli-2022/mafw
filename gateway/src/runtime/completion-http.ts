@@ -8,7 +8,7 @@
  * ```ts
  * httpComplete(req, {
  *   ...deps,
- *   credentials: (providerID) => getProviderApiKey(providerID, undefined, credentials),
+ *   credentials: (providerID) => runtimeHost.credentials?.getApiKey(providerID),
  * });
  * ```
  */

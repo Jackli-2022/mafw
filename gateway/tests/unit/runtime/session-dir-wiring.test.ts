@@ -21,7 +21,7 @@ describe('session directory wiring', () => {
 
   test('builtin-path ctx also gets projectDir (D 收敛后与插件同一激活路径)', () => {
     // activatePluginRuntime 单路径：builtin opencode creds=undefined，projectDir 恒传
-    expect(src).toContain("const creds = name === 'opencode' ? undefined : await this.runtimeCredentialsForPlugin();");
+    expect(src).toContain('name === DEFAULT_BUILTIN_RUNTIME ? undefined : await this.runtimeCredentialsForPlugin()');
   });
 
   test('internal session sites use resolvedProjectDir (pool / compress / btw)', () => {

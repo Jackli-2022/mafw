@@ -14,8 +14,9 @@
 import type { RuntimeCapabilities, RuntimeDefinition, RuntimeFactoryContext } from '@mafw/runtime-contract';
 import type { OpencodeDefinitionOptions, OpencodeDefinitionDeps, OpencodeVariant } from '@mafw/adapter-opencode';
 import { log } from '../core/utils/logger';
+import { minimalCapabilities } from './contract';
 import type { EventMappingEntry } from './event-mapper';
-import { setBridgeEventEntryProvider } from './adapter-bridge';
+import { setBridgeEventEntryProvider } from './legacy-plugin-bridge';
 
 interface AdapterOpencodeModule {
   createOpencodeDefinition(
@@ -25,49 +26,17 @@ interface AdapterOpencodeModule {
   ): Promise<RuntimeDefinition>;
   opencodeStaticEntry(variant: OpencodeVariant): EventMappingEntry;
   opencodeCapabilities(variant: OpencodeVariant, external: boolean): RuntimeCapabilities;
-  getProviderApiKey(
-    provider: string,
-    authPath?: string,
-    credentials?: { getApiKey(provider: string): string | null },
-  ): string | undefined;
+  OPENCODE_REGISTRATIONS: readonly { name: string; variant: OpencodeVariant }[];
+  opencodeDiscoveryRoots(): { skillRoots?: string[]; instructionRoots?: string[] };
+  opencodeExternalMode(): boolean;
   getBridgeEventEntry(name: string): EventMappingEntry | undefined;
   setBridgeEventEntry(name: string, entry: EventMappingEntry): void;
-  /** Serve Basic-auth headers for the reverse proxy fallback. */
-  serveAuthHeaders(): Record<string, string>;
-  /** Inline provider settings read from an opencode config document. */
-  readProviderApiKey(cfg: unknown, providerID: string): string | null;
-  readProviderBaseUrlWithPath(cfg: unknown, providerID: string): string | null;
-  readProviderTransportFromList(
-    list: unknown,
-    providerID: string,
-  ): { baseUrl: string | null; apiKey: string | null };
 }
 
 const FALLBACK_CAPABILITIES: RuntimeCapabilities = {
+  ...minimalCapabilities(),
   sessionApi: false,
   promptWhileBusy: false,
-  eventStream: false,
-  nativeApprovals: false,
-  providerConfigApi: false,
-  perLlmCallTransform: false,
-  sessionStorageApi: false,
-  agentConfigApi: false,
-  agentProcessApi: false,
-  completionApi: false,
-  sessionBranchApi: false,
-  revertUndoApi: false,
-  checkpointApi: false,
-  runStateApi: false,
-  turnBudgetApi: false,
-  questionApi: false,
-  diffApi: false,
-  worktreeApi: false,
-  instructionsApi: false,
-  discoveryApi: false,
-  mcpApi: false,
-  mcpConfigApi: false,
-  steerApi: false,
-  pluginCreatorApi: false,
 };
 
 let cached: AdapterOpencodeModule | undefined;
@@ -117,6 +86,20 @@ const loaded = adapter();
 
 export const OPENCODE_RUNTIME_NAME = 'opencode';
 
+/** Adapter-owned registration descriptors (name + dialect variant). */
+export const OPENCODE_REGISTRATIONS: readonly { name: string; variant: OpencodeVariant }[] =
+  loaded?.OPENCODE_REGISTRATIONS ?? [];
+
+/** Discovered skill/instruction roots (gateway core stops hardcoding vendor paths). */
+export function opencodeDiscoveryRoots(): { skillRoots?: string[]; instructionRoots?: string[] } {
+  return loaded?.opencodeDiscoveryRoots() ?? {};
+}
+
+/** External mode comes from the adapter (single env source). */
+export function opencodeExternalMode(): boolean {
+  return loaded?.opencodeExternalMode() ?? false;
+}
+
 function unavailable(): Error {
   return new Error(
     `@mafw/adapter-opencode is not usable (${loadError instanceof Error ? loadError.message : String(loadError)})`,
@@ -139,40 +122,6 @@ export function opencodeStaticEntry(variant: OpencodeVariant): EventMappingEntry
 
 export function opencodeCapabilities(variant: OpencodeVariant, external: boolean): RuntimeCapabilities {
   return loaded?.opencodeCapabilities(variant, external) ?? FALLBACK_CAPABILITIES;
-}
-
-/**
- * `auth.json` credential reader. Unlike the pre-extraction gateway copy this
- * fails soft when the adapter is missing, but it is no longer silent: the
- * package miss is logged once at load (`warnMissingOnce`).
- */
-export function getProviderApiKey(
-  provider: string,
-  authPath?: string,
-  credentials?: { getApiKey(provider: string): string | null },
-): string | undefined {
-  return loaded?.getProviderApiKey(provider, authPath, credentials);
-}
-
-/** Serve Basic-auth headers used by the reverse proxy when the host has no seam. */
-export function serveAuthHeaders(): Record<string, string> {
-  return loaded?.serveAuthHeaders() ?? {};
-}
-
-/** Judge/scan fallback: inline `provider.<id>.settings` from the runtime config. */
-export function readProviderApiKey(cfg: unknown, providerID: string): string | null {
-  return loaded?.readProviderApiKey(cfg, providerID) ?? null;
-}
-
-export function readProviderBaseUrlWithPath(cfg: unknown, providerID: string): string | null {
-  return loaded?.readProviderBaseUrlWithPath(cfg, providerID) ?? null;
-}
-
-export function readProviderTransportFromList(
-  list: unknown,
-  providerID: string,
-): { baseUrl: string | null; apiKey: string | null } {
-  return loaded?.readProviderTransportFromList(list, providerID) ?? { baseUrl: null, apiKey: null };
 }
 
 export function getBridgeEventEntry(name: string): EventMappingEntry | undefined {

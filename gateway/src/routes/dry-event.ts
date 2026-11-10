@@ -6,7 +6,7 @@
  * normalize facets + 矩阵每跳处置 + 字段契约警告。纯函数组装，无副作用。
  */
 import * as http from 'http';
-import { normalizeOpencodeEvent } from '../runtime/normalize';
+import { normalizeRuntimeEvent } from '../runtime/normalize';
 import { EVENT_FLOW_MATRIX } from '../runtime/event-flow-matrix';
 import { isKnownEventType } from '../runtime/event-telemetry';
 import { checkEventFields } from '../runtime/event-field-contract';
@@ -110,7 +110,7 @@ export async function handleDryEvent(
 
   const type: string = mapped?.payload?.type || mapped?.type || '';
   const known = isKnownEventType(type);
-  const f = normalizeOpencodeEvent(mapped);
+  const f = normalizeRuntimeEvent(mapped);
   const row = known ? EVENT_FLOW_MATRIX[type] : undefined;
   send(200, {
     ...(body?.plugin ? { plugin: body.plugin, mapping } : {}),

@@ -13,15 +13,15 @@ import {
 
 export const PLUGIN_CREATOR_SKILL_NAME = 'plugin-creator';
 
-export function pluginCreatorSkillTarget(skillsDir?: string): string {
+export function pluginCreatorSkillTarget(skillsDir: string): string {
   return globalSkillTarget(PLUGIN_CREATOR_SKILL_NAME, skillsDir);
 }
 
 export async function ensurePluginCreatorSkill(opts: {
   sourceRoot?: string;
-  skillsDir?: string;
+  skillsDir: string;
   /** Test/override: exact source file. */
   sourceFile?: string;
-} = {}): Promise<EnsureSkillResult> {
+}): Promise<EnsureSkillResult> {
   return ensureGlobalSkill({ skillName: PLUGIN_CREATOR_SKILL_NAME, ...opts });
 }

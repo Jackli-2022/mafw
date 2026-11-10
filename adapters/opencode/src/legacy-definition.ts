@@ -74,7 +74,11 @@ export function canonicalToAdapterEvent(
     id: nextID(),
     sessionID,
     turnID,
-    requestID: typeof props.requestId === 'string' ? props.requestId : typeof props.id === 'string' ? props.id : undefined,
+    requestID: typeof props.requestId === 'string'
+      ? props.requestId
+      : typeof props.requestID === 'string'
+        ? props.requestID
+        : typeof props.id === 'string' ? props.id : undefined,
     at: Date.now(),
   };
   const make = (t: AdapterEvent['type'], data: unknown): AdapterEvent => ({ ...base, type: t, data } as AdapterEvent);
@@ -135,17 +139,9 @@ export function canonicalToAdapterEvent(
   }
 }
 
-const bridgeEntries = new Map<string, EventMappingEntry>();
-
 /** Event-translation declaration registered by a bridged definition (tooling). */
-export function getBridgeEventEntry(name: string): EventMappingEntry | undefined {
-  return bridgeEntries.get(name);
-}
-
-/** Update the tooling entry after a deferred dialect probe resolves. */
-export function setBridgeEventEntry(name: string, entry: EventMappingEntry): void {
-  bridgeEntries.set(name, entry);
-}
+export { getBridgeEventEntry, setBridgeEventEntry } from './entry-registry';
+import { setBridgeEventEntry as setToolingEntry } from './entry-registry';
 
 export interface AdapterBridgeMeta {
   name: string;
@@ -464,8 +460,8 @@ export function toRuntimeDefinition(
   const channelsV2: RuntimeChannelsV2 = {};
   const entryForTooling = meta.translate?.entry;
   if (entryForTooling) {
-    bridgeEntries.set(meta.name, entryForTooling);
-    if (meta.entryAlias) bridgeEntries.set(meta.entryAlias, entryForTooling);
+    setToolingEntry(meta.name, entryForTooling);
+    if (meta.entryAlias) setToolingEntry(meta.entryAlias, entryForTooling);
   }
   if (legacy.mcp) channelsV2.mcp = legacy.mcp;
   if (legacy.discovery) channelsV2.discovery = legacy.discovery as unknown as RuntimeChannelsV2['discovery'];

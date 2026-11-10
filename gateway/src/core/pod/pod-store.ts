@@ -3,6 +3,7 @@ import type { ProbeStatus } from '../goal/probe';
 import type { PodGoalWorktreeStatus } from './pod-worktree-path';
 import type { PodGoalVerdict } from './pod-stage';
 
+import { LEGACY_RUNTIME_TAG } from '../../runtime/legacy-runtime-tags';
 export type PodStatus = 'active' | 'idle' | 'paused' | 'archived';
 export type PodMemberRole = 'lead' | 'tech_lead' | 'builder' | 'reviewer';
 /**
@@ -306,7 +307,7 @@ export interface PodSessionRow {
 }
 
 /** Legacy Pod session rows predate runtime tagging; the only writer then was opencode. */
-export const LEGACY_POD_SESSION_RUNTIME = 'opencode';
+export const LEGACY_POD_SESSION_RUNTIME = LEGACY_RUNTIME_TAG;
 
 export class PodError extends Error {
   constructor(public status: number, message: string) {

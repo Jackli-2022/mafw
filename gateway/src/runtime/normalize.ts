@@ -63,7 +63,7 @@ export interface EventFacets {
   approval: ApprovalFacet | null;
 }
 
-export function normalizeOpencodeEvent(evt: RawRuntimeEvent): EventFacets {
+export function normalizeRuntimeEvent(evt: RawRuntimeEvent): EventFacets {
   const payload = evt?.payload || {};
   const type = payload?.type || evt?.type || '';
   const props = payload?.properties || evt?.properties || {};

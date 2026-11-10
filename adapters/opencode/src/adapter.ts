@@ -16,6 +16,7 @@ import { serveAuthHeaders } from './serve-sidecar';
 import { formToQuestion, formAnswerOf } from './form-question';
 import { canonicalMessage } from './canonical';
 import { createOpenCodeSnapshotTreeChannel } from './snapshot';
+import { opencodeDiscoveryRoots } from './discovery-roots';
 import type {
   RuntimeClient,
   SessionCreateOpts,
@@ -1031,6 +1032,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
     },
 
     discovery: {
+      roots: opencodeDiscoveryRoots,
       async list({ directory }) {
         const [cmd, skill] = await Promise.allSettled([
           directNative('/command', 'GET', undefined, directory),

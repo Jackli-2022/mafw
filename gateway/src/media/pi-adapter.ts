@@ -69,7 +69,7 @@ export function createPiPromptAdapter(deps: PiAdapterDeps = {}): PromptFn {
   return async function piPrompt(parts: PromptPart[], opts: { providerID: string; modelID: string }): Promise<string> {
     const apiKey = deps.getApiKey?.(opts.providerID) ?? null;
     if (!apiKey) {
-      throw new Error(`No API key for provider "${opts.providerID}" — connect it in opencode first (auth.json)`);
+      throw new Error(`No API key for provider "${opts.providerID}" — connect it in the active runtime first (auth.json)`);
     }
 
     const filePart = parts.find((p) => p.type === 'file');

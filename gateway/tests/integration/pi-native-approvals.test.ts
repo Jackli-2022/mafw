@@ -1,7 +1,7 @@
 import { createPiRuntime } from '../fixtures/pi-test-runtime';
 import { translatePiAdapterEvent } from '../../../adapters/pi/src/pi-adapter-events';
 import { mapAdapterEvent } from '../../src/runtime/adapter-event-mapper';
-import { normalizeOpencodeEvent } from '../../src/runtime/normalize';
+import { normalizeRuntimeEvent } from '../../src/runtime/normalize';
 import { ApprovalBridge } from '../../../adapters/pi/src/pi-approval-bridge';
 
 jest.mock('../../src/core/utils/logger', () => ({
@@ -80,7 +80,7 @@ describe('pi nativeApprovals integration', () => {
     await (rt as any).dispose();
   });
 
-  it('should translate permission.asked through the native adapter event and normalizeOpencodeEvent', () => {
+  it('should translate permission.asked through the native adapter event and normalizeRuntimeEvent', () => {
     const rawEvent = {
       type: 'permission.asked',
       sessionID: 'pi_test',
@@ -96,7 +96,7 @@ describe('pi nativeApprovals integration', () => {
     const mapped = mapAdapterEvent(translated!);
     expect(mapped.canonical?.payload?.properties.toolName).toBe('bash');
 
-    const facets = normalizeOpencodeEvent(mapped.canonical!);
+    const facets = normalizeRuntimeEvent(mapped.canonical!);
     expect(facets.type).toBe('permission.asked');
     expect(facets.sessionID).toBe('pi_test');
     expect(facets.properties.requestId).toBe('req-100');
@@ -117,7 +117,7 @@ describe('pi nativeApprovals integration', () => {
     const mapped = mapAdapterEvent(translated!);
     expect(mapped.canonical?.payload?.properties.approved).toBe(true);
 
-    const facets = normalizeOpencodeEvent(mapped.canonical!);
+    const facets = normalizeRuntimeEvent(mapped.canonical!);
     expect(facets.type).toBe('permission.replied');
     expect(facets.properties.approved).toBe(true);
   });

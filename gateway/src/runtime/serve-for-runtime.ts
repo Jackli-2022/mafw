@@ -10,7 +10,7 @@ interface EnsureLogger {
 }
 
 /**
- * Make sure the opencode serve sidecar exists before handing out a builtin
+ * Make sure the runtime serve sidecar exists before handing out a builtin
  * opencode runtime. A gateway started under an external runtime (pi) never
  * spawns serve; switching back to opencode without this step yields a client
  * pointing at a dead port. Idempotent: ensureStarted() adopts an already
@@ -24,7 +24,7 @@ export async function ensureServeForBuiltinRuntime(
   try {
     const url = await supervisor.ensureStarted();
     hooks.startWatchdog();
-    log.info(`[Runtime] opencode serve ready at ${url}`);
+    log.info(`[Runtime] runtime serve ready at ${url}`);
   } catch (err: any) {
     // external serve mode (user-managed) or spawn failure: surface but do not
     // block the switch — the runtime will surface connection errors on use.

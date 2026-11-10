@@ -18,12 +18,15 @@
  * canonical `properties.turnID` when the dialect provided one.
  */
 import { RUNTIME_IDENTITY_TYPES, validateAdapterEvent, type AdapterEvent } from '@mafw/runtime-contract';
-import { applyEventMappings, getPath } from '@mafw/runtime-core';
+import { applyEventMappings } from '@mafw/runtime-core';
 import type { EventMappingEntry, RawRuntimeEvent, TranslationHooks } from '@mafw/runtime-core';
 import type { OpencodeTurnAttribution } from './turn-attribution';
 
 /** Canonical vocabulary the dialect tables are allowed to produce. */
 export const OPENCODE_CANONICAL_TYPES: ReadonlySet<string> = new Set(RUNTIME_IDENTITY_TYPES);
+
+/** Native types whose transform intentionally suppresses the frame. */
+const TRANSFORM_SUPPRESSED: ReadonlySet<string> = new Set(['session.next.synthetic']);
 
 /** Native types a dialect entry explicitly declares (mapping rows, incl. drops). */
 const declaredTypes = new WeakMap<EventMappingEntry, ReadonlySet<string>>();
@@ -92,11 +95,14 @@ export function toAdapterEvent(evt: RawRuntimeEvent, ctx: EmitContext = {}): Ada
     sessionID,
     turnID,
     // Canonical permission/question rows carry `requestId` (v2.1 mapping) or the
-    // request id inline (`id`). Preserve the legacy heuristic verbatim so the
-    // native path is property-identical.
+    // request id inline (`id`). v1/v2 replies carry the native uppercase
+    // `requestID`; preserve all three so the native path never drops a real
+    // approval reply.
     requestID: typeof props.requestId === 'string'
       ? props.requestId
-      : typeof props.id === 'string' ? props.id : undefined,
+      : typeof props.requestID === 'string'
+        ? props.requestID
+        : typeof props.id === 'string' ? props.id : undefined,
     at: ctx.at ?? Date.now(),
   };
   const make = (t: AdapterEvent['type'], data: unknown): AdapterEvent => ({ ...base, type: t, data } as AdapterEvent);
@@ -179,7 +185,7 @@ export function translateNative(
     ? {
         ...hooks,
         onSuppressed: (type) => {
-          if (declared.has(type)) hooks.onSuppressed?.(type);
+          if (declared.has(type) || TRANSFORM_SUPPRESSED.has(type)) hooks.onSuppressed?.(type);
           else hooks.onUnmatched?.(type);
         },
       }
@@ -187,9 +193,13 @@ export function translateNative(
 
   const canonicalEvents = applyEventMappings(raw, entry, (type) => OPENCODE_CANONICAL_TYPES.has(type), routedHooks);
   const emitted: AdapterEvent[] = [];
+  // A 1→N fan-out belongs to one turn. The first attributed event fixes the id
+  // for the rest of the batch, so a terminal + its anchor message cannot inherit
+  // the next queued turn's id.
+  let batchTurnID: string | undefined;
 
   for (const canonical of canonicalEvents) {
-    const event = toAdapterEvent(canonical);
+    const event = toAdapterEvent(canonical, batchTurnID ? { turnID: batchTurnID } : {});
     if (!event) {
       const type = typeOf(canonical);
       if (type) hooks?.onUnmatched?.(type);
@@ -197,6 +207,7 @@ export function translateNative(
     }
     const attributed = attribution.attribute(event);
     if (!attributed) continue;
+    if (!batchTurnID && attributed.turnID) batchTurnID = attributed.turnID;
     const validation = validateAdapterEvent(attributed);
     if (!validation.ok) {
       hooks?.onTranslationError?.(attributed, validation.errors.join('; '));

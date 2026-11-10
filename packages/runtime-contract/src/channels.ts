@@ -232,9 +232,18 @@ export interface RuntimeDiscoveryResult {
   warnings: RuntimeDiscoveryWarning[];
 }
 
+export interface RuntimeDiscoveryRoots {
+  /** Directories the gateway may write/read for skills (opencode: ~/.config/opencode/skills). */
+  skillRoots?: string[];
+  /** Directories for instruction files (opencode: the config dir). */
+  instructionRoots?: string[];
+}
+
 export interface RuntimeDiscoveryChannel {
   list(opts: { directory: string }): Promise<RuntimeDiscoveryResult>;
   loadSkill?(opts: { directory: string; key: string }): Promise<RuntimeDiscoverySkillContent | null>;
+  /** Host-facing roots so gateway core stops hardcoding vendor config paths. */
+  roots?(): RuntimeDiscoveryRoots;
 }
 
 export interface RuntimeInstructionEntry {
