@@ -34,6 +34,7 @@ function harness(over: Partial<any> = {}) {
     commitDelivered: (ids: string[]) => { committed.push(ids); },
     now: () => over.now ?? 1_000_000,
     budget: { perHour: 6, dedupeMs: 600_000 },
+    runScan: over.runScan,
   });
   return { wake, prompts, suppressed, delivered, committed };
 }
@@ -101,4 +102,35 @@ it('a fresh instance still sees pending wakes (restart recovery)', async () => {
   await second.wake.scan('p');
   expect(second.prompts).toHaveLength(1);
   expect(second.delivered).toEqual(['e1']);
+});
+
+it('coalesces concurrent scans through the injected runScan (B2 Task 3)', async () => {
+  let scanFnRuns = 0;
+  // promise-caching single-flight — what the scheduler's coalesce strategy provides
+  let inflight: Promise<any> | null = null;
+  const runScan = (fn: () => Promise<any>) => {
+    if (!inflight) {
+      scanFnRuns++;
+      inflight = fn().finally(() => { inflight = null; });
+    }
+    return inflight;
+  };
+  const h = harness({
+    pending: [ev({ id: 'e1' }), ev({ id: 'e2' })],
+    runScan: runScan as any,
+  });
+  // Both scans submitted synchronously — the second joins before the first settles.
+  const p1 = h.wake.scan('p');
+  const p2 = h.wake.scan(); // notify-style all-pods scan while the first is in flight
+  const [r1, r2] = await Promise.all([p1, p2]);
+  expect(scanFnRuns).toBe(1);            // underlying scan ran once
+  expect(r1).toEqual(r2);                // both callers share the result
+  expect(h.prompts).toHaveLength(1);     // no double injection
+  expect(h.delivered).toEqual(['e1', 'e2']);
+});
+
+it('scan without runScan dep still runs directly (back-compat)', async () => {
+  const h = harness({ pending: [ev()] });
+  const out = await h.wake.scan('p');
+  expect(out.delivered).toBe(1);
 });
