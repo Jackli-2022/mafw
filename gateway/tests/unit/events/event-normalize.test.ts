@@ -2,6 +2,7 @@ import {
   normalizeCronTick,
   normalizeGitHubEvent,
   normalizeInternalEvent,
+  normalizeWebhookEvent,
 } from '../../../src/core/events/event-normalize';
 
 describe('event normalize', () => {
@@ -72,6 +73,21 @@ describe('event normalize', () => {
       externalKey: 'goal:g1',
       idempotencyKey: 'internal:e1',
       sourceKind: 'internal',
+    });
+
+    expect(normalizeWebhookEvent({
+      projectDir: '/p',
+      sourceId: 'hooks',
+      deliveryId: 'w1',
+      kind: 'deploy.finished',
+      actor: 'ci',
+      payload: { status: 'ok' },
+      occurredAt: '2026-11-10T00:00:00.000Z',
+      receivedAt: '2026-11-10T00:00:01.000Z',
+    })).toMatchObject({
+      sourceKind: 'webhook',
+      externalKey: 'webhook:hooks:w1',
+      idempotencyKey: 'webhook:w1',
     });
   });
 });

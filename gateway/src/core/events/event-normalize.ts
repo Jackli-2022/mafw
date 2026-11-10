@@ -105,3 +105,29 @@ export function normalizeInternalEvent(input: {
     title: `${input.kind}:${input.aggregateId}`,
   };
 }
+
+export function normalizeWebhookEvent(input: {
+  projectDir: string;
+  sourceId: string;
+  deliveryId: string;
+  kind: string;
+  actor: string | null;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+  receivedAt: string;
+}): EventEnvelope {
+  return {
+    projectDir: input.projectDir,
+    sourceId: input.sourceId,
+    sourceKind: 'webhook',
+    externalId: input.deliveryId,
+    externalKey: `webhook:${input.sourceId}:${input.deliveryId}`,
+    kind: input.kind,
+    actor: input.actor,
+    payload: input.payload,
+    occurredAt: input.occurredAt,
+    receivedAt: input.receivedAt,
+    idempotencyKey: `webhook:${input.deliveryId}`,
+    title: `${input.kind}:${input.deliveryId}`,
+  };
+}

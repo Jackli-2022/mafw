@@ -370,7 +370,7 @@ import { attachLeadBoundaryRoutes } from './routes/lead-boundaries';
 import { attachEventRoutes } from './routes/events';
 import { EventLayerService } from './core/events/event-layer-service';
 import { EventStore as EventLayerStore } from './core/events/event-store';
-import { normalizeCronTick, normalizeGitHubEvent, normalizeInternalEvent } from './core/events/event-normalize';
+import { normalizeCronTick, normalizeGitHubEvent, normalizeInternalEvent, normalizeWebhookEvent } from './core/events/event-normalize';
 import { pollGitHubSource } from './core/events/sources/github-source';
 import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
@@ -5897,24 +5897,40 @@ class MafwScheduler {
           }
           if (!this.eventLayer) return { accepted: false, status: 503 };
           const now = new Date().toISOString();
-          const repo = String(body?.repository?.full_name ?? '');
-          const number = Number(body?.number ?? body?.pull_request?.number ?? body?.issue?.number ?? 0);
-          if (!repo || !Number.isFinite(number) || number <= 0) {
-            return { accepted: false, status: 400 };
+          const deliveryId = String(headers['x-github-delivery'] ?? randomUUID());
+          const eventKind = String(headers['x-github-event'] ?? 'webhook');
+          let envelope;
+          if (source.kind === 'github') {
+            const repo = String(body?.repository?.full_name ?? '');
+            const number = Number(body?.number ?? body?.pull_request?.number ?? body?.issue?.number ?? 0);
+            if (!repo || !Number.isFinite(number) || number <= 0) {
+              return { accepted: false, status: 400 };
+            }
+            envelope = normalizeGitHubEvent({
+              projectDir: source.projectDir,
+              sourceId: source.id,
+              deliveryId,
+              event: eventKind,
+              action: String(body?.action ?? ''),
+              repo,
+              number,
+              actor: String(body?.sender?.login ?? '') || null,
+              payload: body ?? {},
+              occurredAt: String(body?.pull_request?.updated_at ?? body?.issue?.updated_at ?? now),
+              receivedAt: now,
+            });
+          } else {
+            envelope = normalizeWebhookEvent({
+              projectDir: source.projectDir,
+              sourceId: source.id,
+              deliveryId,
+              kind: eventKind,
+              actor: String(body?.sender?.login ?? body?.actor ?? '') || null,
+              payload: body ?? {},
+              occurredAt: String(body?.occurred_at ?? body?.timestamp ?? now),
+              receivedAt: now,
+            });
           }
-          const envelope = normalizeGitHubEvent({
-            projectDir: source.projectDir,
-            sourceId: source.id,
-            deliveryId: String(headers['x-github-delivery'] ?? randomUUID()),
-            event: String(headers['x-github-event'] ?? 'unknown'),
-            action: String(body?.action ?? ''),
-            repo,
-            number,
-            actor: String(body?.sender?.login ?? '') || null,
-            payload: body ?? {},
-            occurredAt: String(body?.pull_request?.updated_at ?? body?.issue?.updated_at ?? now),
-            receivedAt: now,
-          });
           const ingested = this.eventLayer.ingest(envelope);
           void this.processEventThread(ingested.thread.id);
           return { accepted: true, duplicate: ingested.duplicate };
