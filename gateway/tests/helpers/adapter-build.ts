@@ -22,8 +22,9 @@
  *  - the loser waits (blocking poll) until the winner releases the lock, then
  *    re-checks freshness — double-checked locking, so the second caller is a
  *    no-op instead of a duplicate build;
- *  - a lock older than `LOCK_STALE_MS` (~5 min) is treated as abandoned (a
- *    crashed/ killed build) and removed;
+ *  - a lock older than `LOCK_STALE_MS` (90s, deliberately below the wait
+ *    timeout) is treated as abandoned (a crashed/killed build) and removed, so
+ *    the next waiter heals itself instead of timing out;
  *  - waiting is bounded by `LOCK_TIMEOUT_MS` (2 min, so the helper fails with a
  *    lock message before Jest's 240s suite timeout); a timeout throws instead of
  *    silently producing an unbuilt `dist`;
@@ -46,8 +47,12 @@ const BUILD_INPUT_FILES = ['build.mjs', 'tsconfig.build.json'] as const;
 export const BUILD_LOCK_NAME = '.build-lock';
 /** Give up waiting for another worker's build after this long. */
 export const LOCK_TIMEOUT_MS = 2 * 60_000;
-/** A lock older than this is assumed abandoned (crashed build). */
-export const LOCK_STALE_MS = 5 * 60_000;
+/**
+ * A lock older than this is assumed abandoned (crashed build) and stolen.
+ * Must stay **below** `LOCK_TIMEOUT_MS`: otherwise a crashed holder's fresh
+ * lock would make every waiter time out instead of healing itself.
+ */
+export const LOCK_STALE_MS = 90_000;
 /** Poll interval while another worker builds. */
 export const LOCK_POLL_MS = 250;
 
@@ -96,6 +101,11 @@ function statOrUndefined(file: string): BuildInput | undefined {
   }
 }
 
+export interface BuildStatusDeps {
+  /** Injection point for tests: `statOrUndefined` by default. */
+  stat?: (file: string) => BuildInput | undefined;
+}
+
 /**
  * Pure freshness predicate: no build side effects, safe to unit-test with temp
  * directories. Fresh means every output exists, every required build input
@@ -103,8 +113,12 @@ function statOrUndefined(file: string): BuildInput | undefined {
  * count as stale because coarse resolutions (zip/tar extraction, some CI
  * checkouts) would otherwise hide a source edit behind a same-second dist.
  */
-export function adapterBuildStatus(adapterDir: string = ADAPTER_DIR): AdapterBuildStatus {
-  const outputs = BUILD_OUTPUTS.map((rel) => statOrUndefined(path.join(adapterDir, rel)));
+export function adapterBuildStatus(
+  adapterDir: string = ADAPTER_DIR,
+  deps: BuildStatusDeps = {},
+): AdapterBuildStatus {
+  const statFile = deps.stat ?? statOrUndefined;
+  const outputs = BUILD_OUTPUTS.map((rel) => statFile(path.join(adapterDir, rel)));
   const missingOutput = BUILD_OUTPUTS.find((_, index) => !outputs[index]);
   if (missingOutput) return { fresh: false, reason: `${missingOutput} is missing` };
 
@@ -117,7 +131,17 @@ export function adapterBuildStatus(adapterDir: string = ADAPTER_DIR): AdapterBui
     return { fresh: false, reason: `${path.relative(adapterDir, missingInput)} is missing` };
   }
 
-  const inputs = buildInputFiles(adapterDir).map((file) => statOrUndefined(file)!);
+  const inputs: BuildInput[] = [];
+  for (const file of buildInputFiles(adapterDir)) {
+    const stat = statFile(file);
+    // A source can vanish between the directory walk and the stat (concurrent
+    // checkout/clean). Report it as stale with the file name instead of
+    // dereferencing `undefined` and throwing an opaque TypeError.
+    if (!stat) {
+      return { fresh: false, reason: `${path.relative(adapterDir, file)} disappeared while checking freshness` };
+    }
+    inputs.push(stat);
+  }
   const present = outputs as BuildInput[];
   const newestInput = inputs.reduce((a, b) => (b.mtimeMs > a.mtimeMs ? b : a));
   const oldestOutput = present.reduce((a, b) => (b.mtimeMs < a.mtimeMs ? b : a));

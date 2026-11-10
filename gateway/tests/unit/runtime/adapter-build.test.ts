@@ -10,6 +10,8 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   BUILD_LOCK_NAME,
+  LOCK_STALE_MS,
+  LOCK_TIMEOUT_MS,
   acquireBuildLock,
   adapterBuildFresh,
   adapterBuildStatus,
@@ -99,6 +101,21 @@ describe('freshness predicate', () => {
     expect(adapterBuildStatus(adapterDir).reason).toContain('build.mjs');
   });
 
+  it('reports a build input that disappears mid-check instead of throwing', () => {
+    seedFreshLayout();
+    const vanishing = path.join('src', 'index.ts');
+    const status = adapterBuildStatus(adapterDir, {
+      stat: (file) => {
+        if (file.endsWith(vanishing)) return undefined; // vanished between walk and stat
+        const stat = fs.statSync(file);
+        return { file, mtimeMs: stat.mtimeMs };
+      },
+    });
+    expect(status.fresh).toBe(false);
+    expect(status.reason).toContain(vanishing);
+    expect(status.reason).toContain('disappeared while checking freshness');
+  });
+
   it('rebuilds when either output is missing', () => {
     seedFreshLayout();
     fs.rmSync(path.join(adapterDir, 'dist', 'index.d.ts'));
@@ -133,6 +150,21 @@ describe('build lock decisions', () => {
 
   it('times out once the wait budget is spent on a live lock', () => {
     expect(decideBuildLock({ ...base, exists: true, lockMtimeMs: 29_000, now: 30_000 })).toBe('timeout');
+  });
+
+  it('keeps the stale threshold below the wait timeout so a dead holder self-heals', () => {
+    // If stale >= timeout, a crashed build's fresh lock makes every waiter time
+    // out instead of stealing it; pin the relationship, not just the numbers.
+    expect(LOCK_STALE_MS).toBeLessThan(LOCK_TIMEOUT_MS);
+    // A lock that outlives the stale threshold is stolen before the budget ends.
+    expect(decideBuildLock({
+      exists: true,
+      lockMtimeMs: 0,
+      now: LOCK_STALE_MS + 1,
+      waitStartedAt: 0,
+      staleMs: LOCK_STALE_MS,
+      waitMs: LOCK_TIMEOUT_MS,
+    })).toBe('remove-stale');
   });
 });
 
