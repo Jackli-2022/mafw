@@ -1,5 +1,6 @@
 import type {
   PodGoalDirectionStatus,
+  PodGoalMode,
   PodGoalRevisionStatus,
   PodGoalRow,
   PodMessageDeliveryRow,
@@ -85,6 +86,8 @@ export interface PodGoalView {
   phase: string | null;
   verdict: PodGoalVerdict | null;
   stage: PodGoalStage;
+  /** Execution shape chosen by the Tech Lead (quick / standard / standing). */
+  goalMode?: PodGoalMode;
   /** The only list/count bucket exposed to Desktop. */
   bucket: PodWorkBucket;
   resultReady: boolean;
@@ -177,6 +180,7 @@ export function buildPodGoalView(
   description: PodGoalDescription | null,
   queueReason: PodQueueReason | undefined,
   progress: PodGoalProgress | null = null,
+  goalMode: PodGoalMode = 'standard',
 ): PodGoalView {
   const terminal = !!description?.terminal || row.status === 'done' || row.status === 'aborted';
   const verdict = row.verdict ?? description?.verdict ?? null;
@@ -218,6 +222,7 @@ export function buildPodGoalView(
     phase: description?.phase ?? null,
     verdict,
     stage,
+    goalMode,
     bucket: projectPodWorkBucket({ stage, status: row.status, resultReady, accepted: description?.accepted === true }),
     resultReady,
     accepted: description?.accepted === true,

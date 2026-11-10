@@ -447,12 +447,16 @@ export class PodGoalService {
       items.push({ kind, status: task.status });
       tasksByGoal.set(task.goalId, items);
     }
-    return this.deps.store.listGoals(podId).map((row) => buildPodGoalView(
-      row,
-      this.describeWithRevision(row, runningProbe),
-      this.queueReasonFor(pod, row),
-      summarizePodGoalProgress(tasksByGoal.get(row.goalId) ?? []),
-    ));
+    return this.deps.store.listGoals(podId).map((row) => {
+      const revision = this.deps.store.getGoalRevision(podId, row.goalId, row.activeRevision);
+      return buildPodGoalView(
+        row,
+        this.describeWithRevision(row, runningProbe),
+        this.queueReasonFor(pod, row),
+        summarizePodGoalProgress(tasksByGoal.get(row.goalId) ?? []),
+        revision?.goalMode ?? 'standard',
+      );
+    });
   }
 
   /**

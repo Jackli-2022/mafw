@@ -44,6 +44,11 @@ function desc(patch: Partial<PodGoalDescription> = {}): PodGoalDescription {
 }
 
 describe('buildPodGoalView — revision aware', () => {
+  test('exposes goal mode from the active revision', () => {
+    expect(buildPodGoalView(row(), desc(), null, null, 'quick')).toMatchObject({ goalMode: 'quick' });
+    expect(buildPodGoalView(row(), desc(), null)).toMatchObject({ goalMode: 'standard' });
+  });
+
   test('exposes the revision the stage describes', () => {
     expect(buildPodGoalView(row({ activeRevision: 2 }), desc({ revision: 2 }), null))
       .toMatchObject({ revision: 2, activeRevision: 2 });
