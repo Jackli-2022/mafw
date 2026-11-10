@@ -36,6 +36,16 @@ describe('T1 retrieval events', () => {
     db.close();
   });
 
+  test('prune deletes only events before the cutoff', () => {
+    const db = new GatewayDatabase(':memory:');
+    db.recordT1RetrievalEvent({ traceId: 't1t_old', kind: 'search', ts: 100 });
+    db.recordT1RetrievalEvent({ traceId: 't1t_new', kind: 'search', ts: 200 });
+    expect(db.pruneT1RetrievalEvents({ before: 150 })).toBe(1);
+    expect(db.t1RetrievalStats().total).toBe(1);
+    expect(db.t1RetrievalStats().byKind.search).toBe(1);
+    db.close();
+  });
+
   test('empty stats are zeroed', () => {
     const db = new GatewayDatabase(':memory:');
     expect(db.t1RetrievalStats()).toEqual({

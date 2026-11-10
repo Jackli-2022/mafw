@@ -5042,6 +5042,7 @@ class MafwScheduler {
     // cognitive graph (memory:prune).
     this.automationEngine.setIndexManagerProvider(() => this.memoryService!.harmonicIndex);
     this.automationEngine.setGraphProvider(() => this.memoryService?.cognitiveGraph);
+    this.automationEngine.setGatewayDbProvider(() => this.getGatewayDb());
     // Unified scheduler submission: per-key skip + 30min watchdog + budget
     // admission for every action execution; user/LLM triggers run foreground.
     this.automationEngine.setScheduler(this.scheduler);

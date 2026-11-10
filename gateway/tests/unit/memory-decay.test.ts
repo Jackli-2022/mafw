@@ -150,6 +150,37 @@ describe('memory:decay incremental decay', () => {
     expect(entry.last_decay_at).toBeDefined();
   });
 
+  test('memory:decay also prunes T1 retrieval events past retention', async () => {
+    const now = Date.now();
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date(now).toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(now - DAY).toISOString() })],
+    });
+    const prune = jest.fn(() => 4);
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+    engine.setGatewayDbProvider(() => ({ pruneT1RetrievalEvents: prune }) as any);
+
+    await engine.getAction('memory:decay')!({} as any, engine);
+
+    expect(prune).toHaveBeenCalledTimes(1);
+    const cutoff = (prune.mock.calls[0][0] as { before: number }).before;
+    expect(cutoff).toBeLessThanOrEqual(Math.floor(now / 1000));
+    expect(cutoff).toBeGreaterThanOrEqual(Math.floor((now - 91 * DAY) / 1000));
+  });
+
+  test('memory:decay stays green without a gateway DB provider', async () => {
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(Date.now() - DAY).toISOString() })],
+    });
+    const engine = new AutomationEngine(tmpDir);
+    engine.setIndexManagerProvider(() => new HarmonicIndexManager(tmpDir));
+    await expect(engine.getAction('memory:decay')!({} as any, engine)).resolves.toBeUndefined();
+  });
+
   test('decay migrates the LIVE index instance so a later live write does not clobber it', async () => {
     const now = Date.now();
     writeIndex(tmpDir, {
@@ -203,6 +234,7 @@ describe('memory:decay incremental decay', () => {
       bonused: 0,
       backfillIndexed: 0,
       backfillMissing: 0,
+      prunedT1: 0,
     });
   });
 

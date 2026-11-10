@@ -929,6 +929,23 @@ export class GatewayDatabase {
     }
   }
 
+  /**
+   * Delete T1 retrieval observations older than `before` (Unix seconds).
+   * Retention only — stats are observe-only, so pruning cannot affect memory
+   * energy, activation, or ranking. Returns the deleted row count.
+   */
+  pruneT1RetrievalEvents(opts: { before: number }): number {
+    if (!Number.isFinite(opts?.before)) return 0;
+    try {
+      return this.db
+        .prepare('DELETE FROM t1_retrieval_events WHERE created_at < ?')
+        .run(opts.before).changes;
+    } catch (err: any) {
+      log.warn(`[T1Retrieval] prune failed: ${err?.message || err}`);
+      return 0;
+    }
+  }
+
   /** Aggregate T1 retrieval observations; `since` is Unix seconds. */
   t1RetrievalStats(opts?: { since?: number }): T1RetrievalStats {
     const byKind: Record<T1RetrievalKind, number> = { search: 0, recall: 0, redeem: 0 };

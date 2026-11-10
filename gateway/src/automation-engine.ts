@@ -200,6 +200,21 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
         getEmbeddingRuntime(),
         indexManager.getIndex().entries.map((e) => e.id),
       );
+      // T1 retrieval events are observe-only history: prune past retention in
+      // the same daily pass (retention never affects energy or ranking).
+      let prunedT1 = 0;
+      try {
+        const db = eng.getGatewayDb?.();
+        const retentionDays = config.recall.t1Recall?.retentionDays ?? 90;
+        if (db?.pruneT1RetrievalEvents && retentionDays > 0) {
+          prunedT1 = db.pruneT1RetrievalEvents({
+            before: Math.floor(Date.now() / 1000) - retentionDays * 86400,
+          });
+        }
+      } catch { prunedT1 = 0; }
+      if (prunedT1 > 0) {
+        log.info(`[AutomationEngine] Pruned ${prunedT1} T1 retrieval event(s) past retention`);
+      }
       if (res.migrated > 0) {
         log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
       } else {
@@ -214,6 +229,7 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
           bonused: res.bonused,
           backfillIndexed: backfill.indexed,
           backfillMissing: backfill.missing,
+          prunedT1,
         },
       });
     } catch (err: any) {
@@ -319,6 +335,7 @@ export class AutomationEngine {
   private eventHandlerRefs: Map<string, Array<{ event: string; handler: (...args: any[]) => void }>> = new Map();
   private _indexManagerProvider?: () => HarmonicIndexManager;
   private _graphProvider?: () => CognitiveGraphManager | undefined;
+  private _gatewayDbProvider?: () => import('./memory/gateway-db').GatewayDatabase | undefined;
   private _heartbeat?: import('./recall/pipeline-heartbeat').PipelineHeartbeat;
   private _scheduler?: Scheduler;
   /** Instance-owned action registry �� the dispatch authority. Rebuilt from
@@ -413,6 +430,15 @@ export class AutomationEngine {
 
   getLiveIndexManager(): HarmonicIndexManager | undefined {
     return this._indexManagerProvider?.();
+  }
+
+  /** Inject the gateway's live database (T1 retrieval-event retention). */
+  setGatewayDbProvider(fn: () => import('./memory/gateway-db').GatewayDatabase | undefined): void {
+    this._gatewayDbProvider = fn;
+  }
+
+  getGatewayDb(): import('./memory/gateway-db').GatewayDatabase | undefined {
+    return this._gatewayDbProvider?.();
   }
 
   setRuntimeClient(client: import('./runtime/contract').BusinessRuntime): void {
