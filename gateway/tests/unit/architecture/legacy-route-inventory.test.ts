@@ -31,16 +31,16 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     // Task B1: questions 3 match + permissions 2 match → 75+23=98.
     // Task B2: usage 2 match → 73+23=96.
     // Task B3: recall thin three 3 match → 70+23=93.
-    expect(inv.byKind.match).toBe(70);
+    // Task B4: recall/context 1 match → 69+23=92.
+    expect(inv.byKind.match).toBe(69);
     expect(inv.byKind.equals).toBe(23);
-    expect(inv.total).toBe(93);
+    expect(inv.total).toBe(92);
   });
 
   it('groups match the D1 plan inventory', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
-    expect(byPrefix.get('/api/recall')).toBe(1); // Task B3: thin three migrated → only /api/recall/context left
-    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage', '/api/approvals']) {
-      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5)
+    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage', '/api/approvals', '/api/recall']) {
+      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5 + B1-B4)
     }
     // questions/permissions/usage 的 7 条 match 分支落在 '/api' 聚合组（analyzer 对
     // 2 段式 api 路径的分组口径），因此只校验聚合数下降：66 → 59。
