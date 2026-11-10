@@ -571,6 +571,10 @@ console.log(JSON.stringify({ resolved: require.resolve('@mafw/plugin-contract') 
     expect(gatewayPkg.mafw.bundledPackages['@mafw/runtime-contract']).toBe('../packages/runtime-contract');
     expect(gatewayPkg.mafw.bundledPackages['@mafw/adapter-pi']).toBe('../adapters/pi');
 
+    const adapterPkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'adapters', 'pi', 'package.json'), 'utf8'));
+    expect(adapterPkg.peerDependencies?.['@earendil-works/pi-coding-agent']).toBe('*');
+    expect(adapterPkg.peerDependenciesMeta?.['@earendil-works/pi-coding-agent']?.optional).toBe(true);
+
     for (const workspace of ['gateway-sdk', 'desktop']) {
       const workspacePkg = JSON.parse(
         fs.readFileSync(path.join(REPO_ROOT, 'packages', workspace, 'package.json'), 'utf8'),

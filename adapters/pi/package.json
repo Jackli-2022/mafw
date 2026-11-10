@@ -12,6 +12,14 @@
     "@mafw/runtime-contract": "*",
     "@mafw/runtime-core": "*"
   },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "esbuild": "^0.25.12"
   }

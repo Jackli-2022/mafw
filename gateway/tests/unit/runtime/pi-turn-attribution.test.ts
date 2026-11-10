@@ -81,6 +81,18 @@ describe('PiTurnAttribution', () => {
     expect(attr.attribute(evt('turn.started')).turnID).toBe('t2');
   });
 
+  it('forget clears per-session attribution state on delete', () => {
+    const attr = new PiTurnAttribution();
+    attr.enqueue('s1', 't1');
+    attr.attribute(evt('turn.started'));
+    expect(attr.hasInFlight('s1')).toBe(true);
+
+    attr.forget('s1');
+    expect(attr.hasInFlight('s1')).toBe(false);
+    expect(attr.activeTurnID('s1')).toBeUndefined();
+    expect(attr.attribute(evt('message.updated')).turnID).toBeUndefined();
+  });
+
   it('leaves sessionless events untouched', () => {
     const attr = new PiTurnAttribution();
     const notice = evt('runtime.notice', { sessionID: undefined });

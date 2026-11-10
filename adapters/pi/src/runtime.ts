@@ -325,7 +325,10 @@ export async function createPiState(
       if (typeof sm.appendSessionInfo !== 'function') throw new Error('pi session.update: SessionManager.appendSessionInfo unavailable');
       sm.appendSessionInfo(patch.title ?? '');
     },
-    delete: async (sessionID) => { await registry.delete(sessionID); },
+    delete: async (sessionID) => {
+      await registry.delete(sessionID);
+      attribution.forget(sessionID);
+    },
     abort: async (sessionID) => { await registry.abort(sessionID); },
     todo: async () => registry.todo(),
     children: async () => registry.children() as Promise<AdapterSession[]>,

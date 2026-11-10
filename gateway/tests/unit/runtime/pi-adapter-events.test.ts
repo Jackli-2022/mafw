@@ -104,6 +104,20 @@ describe('translatePiAdapterEvent', () => {
     }, 's1')!.type).toBe('turn.completed');
   });
 
+  it('disposes per-session subscriptions', async () => {
+    const unsubscribe = jest.fn();
+    const session = { subscribe: jest.fn(() => unsubscribe) };
+    const stream = new PiEventStream(() => 's1');
+
+    stream.trackSession(session);
+    expect(session.subscribe).toHaveBeenCalledTimes(1);
+
+    await stream.dispose();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    await stream.dispose();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('PiEventStream emits AdapterEvent from the raw subscription (no event.session field)', async () => {
     const session = { subscribe: (_fn: any) => {} };
     const stream = new PiEventStream((candidate) => (candidate === session ? 's1' : undefined));

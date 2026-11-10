@@ -62,6 +62,14 @@ export class PiTurnAttribution {
     return active;
   }
 
+  /** Drop all state for a deleted session. */
+  forget(sessionID: string): void {
+    this.queues.delete(sessionID);
+    this.active.delete(sessionID);
+    this.fallback.delete(sessionID);
+    this.suppressed.delete(sessionID);
+  }
+
   /** Drop a turn that failed before it could start (prompt rejection). */
   withdraw(sessionID: string, turnID: string): void {
     const queue = this.queues.get(sessionID);

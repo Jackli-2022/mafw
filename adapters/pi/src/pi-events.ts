@@ -13,13 +13,14 @@ export { setPiUnknownRecorder };
  */
 export class PiEventStream {
   private listeners = new Set<(evt: AdapterEvent) => void>();
+  private unsubscribes = new Set<() => void>();
 
   constructor(private resolveSessionId: (session: any) => string | undefined) {}
 
   /** Register a pi session and subscribe its raw event stream. */
   trackSession(session: any): void {
     if (typeof session?.subscribe !== 'function') return;
-    session.subscribe((raw: any) => {
+    const unsubscribe = session.subscribe((raw: any) => {
       const id = this.resolveSessionId(session);
       if (!id) return;
       const translated = translatePiAdapterEvent(raw, id);
@@ -27,6 +28,7 @@ export class PiEventStream {
         for (const listener of this.listeners) listener(translated);
       }
     });
+    if (typeof unsubscribe === 'function') this.unsubscribes.add(unsubscribe);
   }
 
   /** Return a new AsyncIterable; listeners share the underlying fan-out. */
@@ -58,5 +60,9 @@ export class PiEventStream {
 
   async dispose(): Promise<void> {
     this.listeners.clear();
+    for (const unsubscribe of this.unsubscribes) {
+      try { unsubscribe(); } catch { /* session may already be disposed */ }
+    }
+    this.unsubscribes.clear();
   }
 }
