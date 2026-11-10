@@ -155,7 +155,16 @@ export function setBridgeEventEntryProvider(provider?: BridgeEventEntryProvider)
 
 /** Event-translation declaration registered by a bridged definition (dry-event/audit tooling). */
 export function getBridgeEventEntry(name: string): EventMappingEntry | undefined {
-  return bridgeEntries.get(name) ?? bridgeEntryProvider?.get(name);
+  // The external registry wins: for an extracted driver its map is the live one
+  // (the adaptive dialect probe updates only the adapter map after activation),
+  // while `bridgeEntries` keeps the registration-time static entry. Without a
+  // provider — or when it has no entry for `name` — the local legacy map is
+  // authoritative, so bridged file/package plugins behave exactly as before.
+  try {
+    const provided = bridgeEntryProvider?.get(name);
+    if (provided) return provided;
+  } catch { /* tooling registry must not break dry-event */ }
+  return bridgeEntries.get(name);
 }
 
 /** Update the tooling entry after a deferred dialect probe resolves. */

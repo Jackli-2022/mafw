@@ -3,11 +3,11 @@
  *
  * 为什么单独成文件：错误归一同时被**两个方向**消费——
  *  - 读路径（history / live）：opencode 原生 `{name, data:{message}}` → DTO
- *    （`runtime/opencode-canonical.ts` 的 `canonicalMessage`）；
+ *    （`adapters/opencode/src/canonical.ts` 的 `canonicalMessage`）；
  *  - 存量数据修复（replay）：`events/event-log-migrate.ts` 把已持久化的旧
  *    `message.updated` 帧里的原生错误改成规范形。
  * 后者属于业务层（`src/events`），不应依赖 opencode adapter 模块，故把纯函数
- * 放在中性文件里，`opencode-canonical` 原样再导出（既有导入路径零改动）。
+ * 放在中性文件里，opencode adapter 的 canonical 模块原样再导出（既有导入路径零改动）。
  *
  * 不变量（两侧必须逐字一致，否则 replay ≠ live）：
  *  - 已是规范形（`kind` + `message` 都是字符串）→ 原样返回（幂等）；

@@ -407,7 +407,7 @@ export async function createOpencodeRuntime(
     },
   };
   // 工具注册通道（tools）由 adapter 提供（Tier-0 必选面的一部分——ack no-op +
-  // OPENCODE_NATIVE_TOOLS 清单，见 opencode-adapter.ts）。
+  // OPENCODE_NATIVE_TOOLS 清单，见本包 ./adapter.ts）。
 
   // completionApi: stateless single-shot completion over the shared direct-HTTP
   // transport. Endpoint/key resolution mirrors index-scan's chain (opencode
@@ -452,7 +452,7 @@ export async function createOpencodeRuntime(
   // the serve port; gateway orchestrates the respawn + event resubscribe).
   // Gateway core never hardcodes agent-specific spawn details.
   // MCP 运行时管理（mcpApi）：opencode 的 v2 HTTP / CLI 兜底 / 配置文档形状全部
-  // 收敛在 opencode-mcp.ts；gateway 只消费 RuntimeMcpChannel 契约。
+  // 收敛在本包 ./mcp.ts；gateway 只消费 RuntimeMcpChannel 契约。
   rt.mcp = createOpencodeMcpChannel({
     getBaseUrl: () => rt.getBaseUrl?.() ?? config.baseUrl,
     headers: () => ({ ...serveAuthHeaders(), ...(config.headers ?? {}) }),

@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { defineRuntime } from '@mafw/runtime-contract';
 import { RuntimeBus } from '../../../src/runtime/runtime-bus';
-import { toRuntimeDefinition, getBridgeEventEntry } from '../../../src/runtime/adapter-bridge';
+import { toRuntimeDefinition, getBridgeEventEntry, setBridgeEventEntry } from '../../../src/runtime/adapter-bridge';
 import { setBridgeEventEntry as setAdapterBridgeEventEntry } from '../../../../adapters/opencode/src/legacy-definition';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS } from '../../../../adapters/opencode/src/events';
 // Loading the shim registers the adapter's tooling map with the gateway bridge.
@@ -69,4 +69,62 @@ it('forwards the adapter-owned tooling entry into the gateway bridge', () => {
   const entry = { eventSource: OPENCODE_EVENT_SOURCE, eventMappings: OPENCODE_V1_EVENT_MAPPINGS };
   setAdapterBridgeEventEntry('opencode@bridge-seam', entry);
   expect(getBridgeEventEntry('opencode@bridge-seam')).toBe(entry);
+});
+
+it('the adaptive dialect probe republishes @2.1 over the static v1 registration', async () => {
+  // Review regression: `registerBuiltinDefinition` publishes the static v1
+  // entry (index.ts → setBridgeEventEntry, mirrored to the adapter map), and
+  // the deferred probe later updates *only* the adapter map. The gateway read
+  // must therefore prefer the provider map, otherwise dry-event/conformance
+  // keep translating v21 traffic with the v1 table after activation.
+  const { createOpencodeDefinition, opencodeStaticEntry } = await import(
+    '../../../../adapters/opencode/src/definition'
+  );
+  const { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS } = await import(
+    '../../../../adapters/opencode/src/events-21'
+  );
+
+  setBridgeEventEntry('opencode', opencodeStaticEntry('adaptive'));
+  expect(getBridgeEventEntry('opencode')?.eventMappings).toBe(OPENCODE_V1_EVENT_MAPPINGS);
+
+  const raw = [{
+    id: 'probe-1',
+    created: 1,
+    type: 'session.created',
+    data: { sessionID: 's21', slug: 'quiet' },
+    location: { directory: '/p' },
+  }];
+  const runtime = {
+    ...fakeRuntime(),
+    global: {
+      event: async () => ({
+        stream: (async function* () { for (const event of raw) yield event; })(),
+      }),
+    },
+  } as any;
+
+  const definition = await createOpencodeDefinition({} as any, {
+    variant: 'adaptive',
+    registrationName: 'opencode',
+    baseUrl: 'http://127.0.0.1:4096',
+  }, {
+    runtime,
+    probe: async () => 'v21',
+    external: true,
+  });
+
+  // First event arms the deferred entry resolver inside the adapter bridge.
+  definition.transport.onEvent(() => {});
+
+  const started = Date.now();
+  while (
+    getBridgeEventEntry('opencode')?.eventMappings !== OPENCODE_21_EVENT_MAPPINGS
+    && Date.now() - started < 2000
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  const resolved = getBridgeEventEntry('opencode');
+  expect(resolved?.eventMappings).toBe(OPENCODE_21_EVENT_MAPPINGS);
+  expect(resolved?.eventSource).toBe(OPENCODE_21_EVENT_SOURCE);
 });

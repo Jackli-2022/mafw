@@ -80,7 +80,7 @@ function warnMissingOnce(): void {
   const detail = loadError instanceof Error ? loadError.message : String(loadError);
   try {
     log.warn(
-      `[opencode] @mafw/adapter-opencode is not available (${detail}); `
+      `[opencode] @mafw/adapter-opencode is not usable (${detail}); `
       + 'opencode definitions, provider credentials and serve auth headers are unavailable',
     );
   } catch {
@@ -92,7 +92,14 @@ function adapter(): AdapterOpencodeModule | undefined {
   if (cached) return cached;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    cached = require('@mafw/adapter-opencode') as AdapterOpencodeModule;
+    const mod = require('@mafw/adapter-opencode') as AdapterOpencodeModule;
+    // Partial staging guard: a half-copied bundle must fail here, visibly,
+    // instead of caching a module whose surfaces are `undefined` (activation
+    // would otherwise die later with an opaque "not a function").
+    if (typeof mod?.createOpencodeDefinition !== 'function') {
+      throw new Error('@mafw/adapter-opencode is partially staged: missing createOpencodeDefinition()');
+    }
+    cached = mod;
     // The adapter keeps its own dry-event map (it cannot import the gateway).
     // Mirror it so getBridgeEventEntry() sees the post-probe dialect entry.
     setBridgeEventEntryProvider({
@@ -112,7 +119,7 @@ export const OPENCODE_RUNTIME_NAME = 'opencode';
 
 function unavailable(): Error {
   return new Error(
-    `@mafw/adapter-opencode is not available (${loadError instanceof Error ? loadError.message : String(loadError)})`,
+    `@mafw/adapter-opencode is not usable (${loadError instanceof Error ? loadError.message : String(loadError)})`,
   );
 }
 

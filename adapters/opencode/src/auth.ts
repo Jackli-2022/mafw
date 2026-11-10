@@ -4,8 +4,10 @@
  * Aligns with the neutral `RuntimeCredentials` contract (@mafw/runtime-contract)
  * and plugin ctx apiKey(name) semantics.
  *
- * Plan 6 Task 5: moved from `gateway/src/runtime/auth.ts` into the opencode
- * adapter package; the gateway keeps a re-export shim for one release.
+ * Plan 6: moved from `gateway/src/runtime/auth.ts` into the opencode adapter
+ * package. The gateway reaches it only through the single package shim
+ * (`gateway/src/runtime/opencode-adapter.ts`); the one-release re-export shim
+ * was removed in Task 7.
  */
 import * as fs from 'fs';
 import * as os from 'os';
