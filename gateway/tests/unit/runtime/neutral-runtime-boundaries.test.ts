@@ -47,12 +47,14 @@ it('the loader has no legacy builtin registration API', () => {
 });
 
 it('the composition root registers no legacy builtins', () => {
-  const index = readCode(path.join(__dirname, '../../../src/index.ts'));
+  // D3 Task 8: composition root = kernel.ts.
+  const index = readCode(path.join(__dirname, '../../../src/kernel.ts'));
   expect(index).not.toMatch(/runtimeLoader\.registerBuiltin\s*\(/);
 });
 
 it('the composition root has no direct adapter fallback', () => {
-  const index = readCode(path.join(__dirname, '../../../src/index.ts'));
+  // D3 Task 8: composition root = kernel.ts.
+  const index = readCode(path.join(__dirname, '../../../src/kernel.ts'));
   expect(index).not.toMatch(/createOpencodeRuntime\s*\(/);
   expect(index).not.toMatch(/builtin:opencode\(direct\)/);
 });

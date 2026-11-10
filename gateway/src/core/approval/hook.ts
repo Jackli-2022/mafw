@@ -1,4 +1,4 @@
-// handleOpencodeEvent 的 approval 钩子：同步评估 → 富化广播 props.mafwPolicy
+// handleRuntimeEvent 的 approval 钩子：同步评估 → 富化广播 props.mafwPolicy
 // → auto 路径 fire-and-forget permissionReply（失败 warn 不重试，桌面 5s 对账兜底）。
 // 调用点必须在 internal 过滤（memoryWorker drop）之前 —— 内部会话 deny 先于事件丢弃。
 //

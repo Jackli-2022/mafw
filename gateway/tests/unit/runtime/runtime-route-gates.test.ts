@@ -188,10 +188,10 @@ describe('worktree availability', () => {
 // 源码守卫：POST /api/session 的 worktree 门必须留在 gateway 接线里（gateway git +
 // session.create({directory}) 契约），且 409 映射留在被抽出的 route 中。防止后续重构
 // 把门拆掉或退回 worktreeApi。Phase D1 Task D1 起接线住在 routes/sessions-core.ts
-// （index.ts 只做 attachSessionsCoreRoutes）。
+// （组合根在 kernel.ts；D3 Task 8 前是 index.ts）。
 describe('POST /api/session worktree gate wiring', () => {
   const SRC = path.resolve(__dirname, '../../../src');
-  const indexSrc = fs.readFileSync(path.join(SRC, 'index.ts'), 'utf8');
+  const indexSrc = fs.readFileSync(path.join(SRC, 'kernel.ts'), 'utf8');
   const sessionsCoreSrc = fs.readFileSync(path.join(SRC, 'routes', 'sessions-core.ts'), 'utf8');
   const createRouteSrc = fs.readFileSync(path.join(SRC, 'routes', 'session-create.ts'), 'utf8');
 

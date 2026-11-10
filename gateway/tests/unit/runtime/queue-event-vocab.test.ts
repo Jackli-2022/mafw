@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// D3 Task 8: the composition root (class MafwScheduler) moved to kernel.ts.
+const src = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8');
 // Plan 6 Task 3: the vocabulary single source moved to @mafw/runtime-contract;
 // the gateway module is now a re-export shim.
 const vocab = readFileSync(join(__dirname, '../../../../packages/runtime-contract/src/vocabulary.ts'), 'utf8');

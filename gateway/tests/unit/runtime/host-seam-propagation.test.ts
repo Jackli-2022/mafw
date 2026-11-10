@@ -6,14 +6,15 @@
  * only way an out-of-process driver learns where the host lives. Dropping one in
  * the composition root silently degrades a driver instead of failing anywhere,
  * so the seam is pinned twice: behaviour of the factory, and the exact call site
- * in `gateway/src/index.ts`.
+ * in the composition root (`gateway/src/kernel.ts` since the D3 split; the entry
+ * `index.ts` is a 33-line bootstrap now).
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import type { RuntimeCredentials } from '../../../src/runtime/contract';
 import { createRuntimePluginContext } from '../../../src/runtime/loader';
 
-const SOURCE = path.resolve(__dirname, '..', '..', '..', 'src', 'index.ts');
+const SOURCE = path.resolve(__dirname, '..', '..', '..', 'src', 'kernel.ts');
 
 it('passes every host seam through the plugin context and keeps the credentials object', () => {
   const credentials = { media: { baseUrl: 'http://127.0.0.1:1' } } as unknown as RuntimeCredentials;

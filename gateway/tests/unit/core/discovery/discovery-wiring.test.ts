@@ -5,7 +5,8 @@ const read = (rel: string) => readFileSync(join(__dirname, rel), 'utf8').replace
 
 describe('discovery wiring', () => {
   it('broadcasts command changes, runtime switches, and forgets deleted sessions', () => {
-    const index = read('../../../../src/index.ts');
+    // D3 Task 8: 组合根（class MafwScheduler）在 kernel.ts。
+    const index = read('../../../../src/kernel.ts');
     expect(index).toContain("broadcastKnown('commands_changed')");
     expect(index).toContain("broadcastKnown('runtime_switched')");
     // Phase D1 Task D1: DELETE /api/session/:id migrated into routes/sessions-core.ts.

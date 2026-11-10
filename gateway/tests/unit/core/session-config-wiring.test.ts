@@ -6,7 +6,8 @@ import * as path from 'path';
 
 describe('session-config wiring', () => {
   it('supportsThinkingLevel 走 session.setThinkingLevel 契约面', () => {
-    const src = fs.readFileSync(path.join(__dirname, '../../../src/index.ts'), 'utf8');
+    // D3 Task 8: 组合根（class MafwScheduler）在 kernel.ts。
+    const src = fs.readFileSync(path.join(__dirname, '../../../src/kernel.ts'), 'utf8');
     const idx = src.indexOf('supportsThinkingLevel:');
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 400);

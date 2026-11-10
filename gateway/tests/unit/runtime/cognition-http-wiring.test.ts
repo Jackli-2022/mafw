@@ -32,12 +32,15 @@ describe('POST /api/cognition/gate 路由（deps 注入）', () => {
   });
 });
 
-// wiring 断言（index.ts 巨类源码模式；Phase D1 Task 2 后动词接线在 routes/cognition.ts）：
+// wiring 断言（kernel.ts 巨类源码模式；Phase D1 Task 2 后动词接线在 routes/cognition.ts）：
 import { readFileSync } from 'fs';
 import { join } from 'path';
-const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+// D3 Task 8: 组合根（class MafwScheduler）搬到 kernel.ts。
+const src = readFileSync(join(__dirname, '../../../src/kernel.ts'), 'utf8');
+// D3 Task 6: attach 调用搬入 subsystems/api-routes.ts（字面量随迁，同 strictness）。
+const apiRoutesSrc = readFileSync(join(__dirname, '../../../src/subsystems/api-routes.ts'), 'utf8');
 const cognitionRouteSrc = readFileSync(join(__dirname, '../../../src/routes/cognition.ts'), 'utf8');
-describe('index.ts cognition 接线', () => {
+describe('kernel.ts cognition 接线', () => {
   it('CognitionGate 实例 + isInternalSession 接 internalSessionRoles（C5）', () => {
     expect(src).toMatch(/createCognitionGate\(/);
     expect(src).toMatch(/internalSessionRoles\.has/);
@@ -45,8 +48,8 @@ describe('index.ts cognition 接线', () => {
   it('cognition_gate 扁平事件经 broadcast（Review Focus #4）', () => {
     expect(src).toMatch(/type: 'cognition_gate'/);
   });
-  it('HTTP 动词注册 + loopback 门（D1 Task 2 后在 routes/cognition.ts）', () => {
-    expect(src).toMatch(/attachCognitionRoutes\(/);
+  it('HTTP 动词注册 + loopback 门（D1 Task 2 后在 routes/cognition.ts；D3 Task 6 attach 在 subsystems/api-routes.ts）', () => {
+    expect(apiRoutesSrc).toMatch(/attachCognitionRoutes\(/);
     expect(cognitionRouteSrc).toMatch(/\/api\/cognition\/gate/);
     expect(cognitionRouteSrc).toMatch(/isLoopbackAddr/);
   });

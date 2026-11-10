@@ -6,7 +6,7 @@
  * v2（2026-10-12）：broadcast 切面删除（Mode A 改写 hack 消亡，广播统一
  * passthrough）；toolCommand 升为 facet 规则行（原内置特例删除）。
  * 注意：facets 是正交的（一个事件可同时有 step 与 chatSignal），这是为了
- * 与 handleOpencodeEvent 的多路消费行为逐点等价（oracle 测试钉扎）。
+ * 与 handleRuntimeEvent 的多路消费行为逐点等价（oracle 测试钉扎）。
  */
 import { CANONICAL_FACET_RULES, evaluateFacetRules } from './canonical-facets';
 import type { RawRuntimeEvent } from '@mafw/runtime-core';
@@ -32,7 +32,7 @@ export interface ApprovalFacet {
 
 /**
  * 畸形事件判定：类型与属性全空 = 归一化后无任何可消费信息。
- * handleOpencodeEvent 入口据此做限频 warn——runtime 插件发坏事件时
+ * handleRuntimeEvent 入口据此做限频 warn——runtime 插件发坏事件时
  * 给出可定位诊断，而不是静默穿过下发到桌面/TUI。
  */
 export function isMalformedEvent(evt: RawRuntimeEvent | null | undefined): boolean {

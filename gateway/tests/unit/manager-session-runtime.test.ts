@@ -158,7 +158,10 @@ describe('migration wiring（legacy 文件导入按 opencode 打标）', () => {
     path.join(__dirname, '../../src/recall/gateway-db-migrate.ts'),
     'utf-8',
   );
-  const indexSrc = fs.readFileSync(path.join(__dirname, '../../src/index.ts'), 'utf-8');
+  // D3 Task 8：组合根（方法体 backfillManagerSessionSlots 等）搬到 src/kernel.ts。
+  const indexSrc = fs.readFileSync(path.join(__dirname, '../../src/kernel.ts'), 'utf-8');
+  // D3 Task 5：启动序移入 src/boot.ts —— 调用点在那里，方法体（backfillManagerSlot）仍在 index.ts。
+  const bootSrc = fs.readFileSync(path.join(__dirname, '../../src/boot.ts'), 'utf-8');
 
   it('gateway-db-migrate 用 writeManagerSlot(..., "opencode", ...) 打标', () => {
     expect(migrateSrc).toContain("writeManagerSlot(existing, 'opencode', {");
@@ -166,7 +169,7 @@ describe('migration wiring（legacy 文件导入按 opencode 打标）', () => {
   });
 
   it('启动时对存量 untagged 行做一次 backfill（fail-open）', () => {
-    expect(indexSrc).toContain('this.backfillManagerSessionSlots()');
+    expect(bootSrc).toContain('kernel.backfillManagerSessionSlots()');
     expect(indexSrc).toContain('backfillManagerSlot(row.value)');
   });
 });
