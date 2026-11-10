@@ -164,3 +164,16 @@ submit(task, fn) {
 - **budget 准入为增量**：管线内部 per-LLM-call 检查保留（更细粒度）；scheduler 层
   只是把「跑起来才拒绝」提前为「不启动」，名称与内部 `allow()` 完全一致
   （同一 PipelineBudget 实例，同一天只打一条 deny 日志）。
+
+## 9.1 B2 收口（2026-11-10）
+
+- **5 个 review minors 修复**：M1 `Promise.resolve(fn())` 非 promise 防御、M2 task id
+  序号化（`_actionSeq`，Date.now() 1ms 内可撞）、M3 `executeAction` 返回
+  `ActionRunStatus`（ran/skipped/timeout/denied/error/missing），`runRuleFromLLM` 消息
+  如实反映状态、M4 非 Error throw 的 instanceof 对齐、M5 `maxConcurrent` 钳到 ≥1。
+- **NodeDriver mutex → MutexQueue**（`advance` + `withGoalMutex`，+ `MutexQueue.has()`）：
+  事件驱动完成模型不适配 scheduler 任务模型，裁决只做原语统一。
+- **PodEventWake scan coalesce**：`runScan` 注入（scheduler midground + coalesce），
+  关闭定时器与 notify 并发的双投递竞态。
+- **RunCoordinator / serve watchdog 不迁**：前者是 409 冲突契约 + 状态机转移，
+  后者是带超时的探针循环——都不是调度闸门。
