@@ -23,16 +23,17 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
   it('index.ts has the documented legacy dispatch mass', () => {
     // Tasks 2-3e migrated: cognition 3, python 3, tools 2, tts 4, mobile 2,
     // terminal 1, agent 1, media 3 match. Baseline 135 → 87+29=116.
+    // Task A1: projects 2 equals → 87+27=114.
     expect(inv.byKind.match).toBe(87);
-    expect(inv.byKind.equals).toBe(29);
-    expect(inv.total).toBe(116);
+    expect(inv.byKind.equals).toBe(27);
+    expect(inv.total).toBe(114);
   });
 
   it('groups match the D1 plan inventory', () => {
     const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
     expect(byPrefix.get('/api/recall')).toBe(4);
-    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media']) {
-      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e)
+    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects']) {
+      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1)
     }
     // The biggest single group is the /api catch-all mass.
     expect(byPrefix.get('/api')).toBe(73);
@@ -65,7 +66,8 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
 
   it('D1 migration targets are enumerable (api-prefixed groups, not transport)', () => {
     const apiGroups = inv.groups.filter((g) => g.prefix.startsWith('/api'));
-    expect(apiGroups.length).toBeGreaterThanOrEqual(15);
+    // Shrinks as whole prefixes migrate (A1: /api/projects gone → 14).
+    expect(apiGroups.length).toBeGreaterThanOrEqual(14);
     const transportPrefixes = ['/assets', '/static', '/mcp', '/', '/index.html', '/health', '/a2a', '/.well-known', '/register', '/control'];
     for (const g of apiGroups) {
       expect(transportPrefixes).not.toContain(g.prefix);

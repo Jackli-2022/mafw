@@ -218,6 +218,7 @@ import { attachPythonRoutes } from './routes/python';
 import { attachTtsRoutes } from './routes/tts';
 import { attachTerminalRoutes, attachAgentRoutes, attachMobileRoutes } from './routes/agent-terminal-mobile';
 import { attachMediaRoutes } from './routes/media-upload';
+import { attachProjectRoutes } from './routes/projects';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -340,7 +341,7 @@ import type { RestartAgentDeps } from './routes/restart-agent';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { ensureServeForBuiltinRuntime } from './runtime/serve-for-runtime';
 import { ensureRuntimeRoot, resolveRuntimeRoot } from './runtime/runtime-root';
-import { isSelectableProject, parseRegisterIntent, pickCurrentProject } from './runtime/project-selection';
+import { isSelectableProject, parseRegisterIntent } from './runtime/project-selection';
 import type { UsagePluginsDeps } from './routes/usage-plugins';
 import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
@@ -5584,6 +5585,13 @@ class MafwScheduler {
         getMediaAgent: () => this.mediaAgent,
         getMediaService: () => this.mediaService,
       });
+      // Phase D1 Task A1：project 面迁 registry dispatch（2 分支）。
+      attachProjectRoutes(this.routeRegistry, {
+        registeredProjects: () => this.registeredProjects,
+        currentProjectDir: () => this.currentProjectDir,
+        setCurrentProjectDir: (dir) => { this.currentProjectDir = dir; },
+        db: () => this.getGatewayDb(),
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -6723,50 +6731,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/projects — list registered projects
-        if (req.url === '/api/projects' && req.method === 'GET') {
-          // 基础设施目录（runtime server root / "."）不是用户项目，不暴露给 Rail。
-          const runtimeRoot = resolveRuntimeRoot();
-          const projects = Array.from(this.registeredProjects.values())
-            .filter(p => isSelectableProject(p.projectDir, runtimeRoot))
-            .map(p => ({
-              id: p.projectDir,
-              worktree: p.projectDir,
-            }));
-          res.end(JSON.stringify({ projects }));
-          return;
-        }
-
-        // GET /api/projects/current — current/active project
-        if (req.url === '/api/projects/current' && req.method === 'GET') {
-          if (!this.currentProjectDir) {
-            this.currentProjectDir = this.getGatewayDb().kvGet<string>('current-project', 'default') || null;
-          }
-          const runtimeRoot = resolveRuntimeRoot();
-          const cur = pickCurrentProject({
-            stored: this.currentProjectDir,
-            registered: this.registeredProjects.keys(),
-            runtimeRoot,
-          });
-          if (cur !== this.currentProjectDir) {
-            // 修复被污染的 current-project（旧版插件自动注册曾把 runtime-root 选成当前项目）。
-            this.currentProjectDir = cur;
-            if (cur) this.getGatewayDb().kvSet('current-project', 'default', cur);
-          }
-          if (!cur) {
-            res.end(JSON.stringify({ project: null }));
-            return;
-          }
-          const info = this.registeredProjects.get(cur);
-          if (!info) {
-            res.end(JSON.stringify({ project: null }));
-            return;
-          }
-          res.end(JSON.stringify({
-            project: { id: cur, worktree: cur, mafwDir: info.mafwDir },
-          }));
-          return;
-        }
+        // GET /api/projects + GET /api/projects/current — Phase D1 Task A1：已迁 registry dispatch。
 
         // POST /api/devices — register a mobile device for push notifications
         if (req.url?.match(/^\/api\/devices(?:\?|$)/) && req.method === 'POST') {
