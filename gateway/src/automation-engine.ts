@@ -252,6 +252,10 @@ function registerBuiltinActionsOn(engine: AutomationEngine): void {
   });
 }
 
+/** Outcome of one action execution, surfaced to interactive callers
+ *  (runRuleFromLLM); cron/event callers ignore it. */
+export type ActionRunStatus = 'ran' | 'skipped' | 'timeout' | 'denied' | 'error' | 'missing';
+
 export interface AutomationRule {
   id: string;
   enabled: boolean;
@@ -321,6 +325,9 @@ export class AutomationEngine {
    *  builtins + the host provider on start()/reloadRules(). */
   private actions = new Map<string, RegisteredAction>();
   private actionsProvider?: () => void;
+  /** Monotonic per-engine sequence for task ids (Date.now() collides when two
+   *  triggers of the same action land in the same millisecond — B2 M2). */
+  private _actionSeq = 0;
 
   constructor(mafwDir: string) {
     this.mafwDir = mafwDir;
@@ -627,11 +634,11 @@ export class AutomationEngine {
     actionType: string,
     rule: AutomationRule,
     source?: 'cron' | 'event' | 'user' | 'llm',
-  ): Promise<void> {
+  ): Promise<ActionRunStatus> {
     const entry = this.actions.get(actionType);
     if (!entry) {
       log.warn(`[AutomationEngine] No handler registered for action: ${actionType}`);
-      return;
+      return 'missing';
     }
     const handler = entry.handler;
 
@@ -641,10 +648,11 @@ export class AutomationEngine {
     if (!this._scheduler) {
       try {
         await handler(rule, this);
+        return 'ran';
       } catch (err: any) {
-        log.error(`[AutomationEngine] Action ${actionType} failed: ${err.message}`);
+        log.error(`[AutomationEngine] Action ${actionType} failed: ${err instanceof Error ? err.message : err}`);
+        return 'error';
       }
-      return;
     }
 
     // Unified submission: per-key skip, 30min watchdog (overridable via
@@ -653,7 +661,7 @@ export class AutomationEngine {
     try {
       await this._scheduler.submit(
         {
-          id: `automation:${actionType}:${Date.now()}`,
+          id: `automation:${actionType}:${++this._actionSeq}`,
           priority: source === 'user' || source === 'llm' ? 'foreground' : 'background',
           mutexKey: `action:${actionType}`,
           strategy: 'skip',
@@ -662,20 +670,22 @@ export class AutomationEngine {
         },
         () => handler(rule, this),
       );
+      return 'ran';
     } catch (err) {
       if (err instanceof TaskSkippedError) {
         log.info(`[AutomationEngine] ${actionType} skipped: previous run still in flight`);
-        return;
+        return 'skipped';
       }
       if (err instanceof TaskTimeoutError) {
-        log.warn(`[AutomationEngine] ${actionType} watchdog timeout — run continues in background`);
-        return;
+        log.warn(`[AutomationEngine] ${actionType} watchdog timeout (${err.message}) — run continues in background`);
+        return 'timeout';
       }
       if (err instanceof BudgetExceededError) {
         log.warn(`[AutomationEngine] ${actionType} denied by budget: ${err.message}`);
-        return;
+        return 'denied';
       }
       log.error(`[AutomationEngine] Action ${actionType} failed: ${err instanceof Error ? err.message : err}`);
+      return 'error';
     }
   }
 
@@ -820,7 +830,7 @@ export class AutomationEngine {
     log.info(`[AutomationEngine] LLM triggered rule ${id}`);
 
     if (rule.action) {
-      await this.executeAction(rule.action.type, rule, 'llm');
+      const status = await this.executeAction(rule.action.type, rule, 'llm');
       ledger.append({
         timestamp: new Date().toISOString(),
         event: 'AUTOMATION_TRIGGERED',
@@ -828,7 +838,7 @@ export class AutomationEngine {
         source: 'llm',
         reason: `action:${rule.action.type} (LLM-triggered)`,
       });
-      return { triageId: '', message: `Action ${rule.action.type} executed` };
+      return { triageId: '', message: `Action ${rule.action.type} ${status === 'ran' ? 'executed' : status}` };
     }
 
     const triageId = await this.llmCreateTriage(id, rule);
