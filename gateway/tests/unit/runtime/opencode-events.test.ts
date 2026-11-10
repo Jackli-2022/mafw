@@ -1,5 +1,6 @@
 import { applyEventMappings, canonicalIdentity, RUNTIME_IDENTITY_TYPES } from '../../../src/runtime/event-mapper';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../../adapters/opencode/src/events';
+import { translateOpencode21Event } from '../../../../adapters/opencode/src/events-21';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 import { MAFW_RUNTIME_EVENT_NAMES } from '../../../src/runtime/mafw-vocabulary';
 import { TOOL_PRIMITIVE_TYPES, ToolPartAssembler } from '../../../src/runtime/tool-part-assembler';
@@ -314,5 +315,23 @@ describe('OPENCODE_V2_EVENT_MAPPINGS（@v2 混合消费表——next 族为主 +
       if (f === 'sync' || f === 'message.part.complete') continue;
       expect(wire.has(f)).toBe(true);
     }
+  });
+});
+
+describe('@2.1 session.inbox.* → queue.updated（回归：inbox 事件不得伪造 items 快照）', () => {
+  it('session.inbox.enqueued 只带 action/item/id，无 items 键', () => {
+    const out = translateOpencode21Event({
+      type: 'session.inbox.enqueued',
+      data: { sessionID: 's1', item: { id: 'q1', text: 'hi' }, id: 'q1' },
+    } as any) as any;
+    expect(out.payload.type).toBe('queue.updated');
+    expect(out.payload.properties).toMatchObject({
+      sessionID: 's1',
+      action: 'enqueued',
+      item: { id: 'q1', text: 'hi' },
+      id: 'q1',
+    });
+    // 伪造 items: [] 会让桌面把队列清空——必须完全缺省该键
+    expect(out.payload.properties).not.toHaveProperty('items');
   });
 });

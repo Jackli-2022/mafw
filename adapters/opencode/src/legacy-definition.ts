@@ -114,7 +114,7 @@ export function canonicalToAdapterEvent(
     case 'usage.updated': return make('usage.updated', { usage: props.usage ?? props, contextTokens: props.contextTokens, contextWindow: props.contextWindow });
     case 'background.job.updated': return make('background.job.updated', { job: props.job });
     case 'queue.updated': return make('queue.updated', {
-      items: Array.isArray(props.items) ? props.items : [],
+      ...(Array.isArray(props.items) ? { items: props.items } : {}),
       ...(props.action ? { action: props.action } : {}),
       ...(props.item ? { item: props.item } : {}),
       ...(props.id ? { id: props.id } : {}),

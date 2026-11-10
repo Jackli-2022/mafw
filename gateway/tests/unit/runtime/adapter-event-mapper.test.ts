@@ -1,4 +1,9 @@
+import { MAFW } from '@mafw/runtime-contract';
+import { backgroundJobEvent, backgroundJobFromSynthetic } from '@mafw/runtime-core';
+import { translateOpencode21Event } from '../../../../adapters/opencode/src/events-21';
+import { canonicalToAdapterEvent as canonicalToAdapterEventAdapterPackage } from '../../../../adapters/opencode/src/legacy-definition';
 import { mapAdapterEvent } from '../../../src/runtime/adapter-event-mapper';
+import { canonicalToAdapterEvent } from '../../../src/runtime/adapter-bridge';
 
 function ev(type: string, data: any, extra: any = {}) {
   return { id: 'e1', type, sessionID: 's1', at: 1, data, ...extra } as any;
@@ -51,8 +56,66 @@ it('maps queue.updated and preserves the item snapshot', () => {
     type: 'queue.updated',
     properties: { items: [{ id: 'q1' }] },
   });
-  // absent snapshot defaults to an empty list rather than dropping the event
-  expect(mapAdapterEvent(ev('queue.updated', {})).canonical?.payload.properties.items).toEqual([]);
+});
+
+it('omits queue.updated items when the payload carries no snapshot', () => {
+  const out = mapAdapterEvent(ev('queue.updated', { action: 'enqueued', item: { id: 'q1' }, id: 'q1' }));
+  expect(out.canonical?.payload.type).toBe('queue.updated');
+  expect(out.canonical?.payload.properties).not.toHaveProperty('items');
+  expect(out.canonical?.payload.properties).toMatchObject({ action: 'enqueued', item: { id: 'q1' }, id: 'q1' });
+});
+
+it('omits queue.updated items when the payload snapshot is malformed', () => {
+  const out = mapAdapterEvent(ev('queue.updated', { items: 'not-an-array' }));
+  expect(out.canonical?.payload.type).toBe('queue.updated');
+  expect(out.canonical?.payload.properties).not.toHaveProperty('items');
+});
+
+it('round-trips an inbox queue event without synthesising an items snapshot', () => {
+  const source = {
+    payload: {
+      type: 'queue.updated',
+      properties: { sessionID: 's1', action: 'enqueued', item: { id: 'q1' }, id: 'q1' },
+    },
+    sessionID: 's1',
+  };
+  const adapter = canonicalToAdapterEvent(source as any)!;
+  expect(adapter.type).toBe('queue.updated');
+  expect(adapter.data).toMatchObject({ action: 'enqueued', item: { id: 'q1' }, id: 'q1' });
+  expect(adapter.data).not.toHaveProperty('items');
+
+  const back = mapAdapterEvent(adapter).canonical!.payload.properties;
+  expect(back).toMatchObject({ action: 'enqueued', item: { id: 'q1' }, id: 'q1' });
+  expect(back).not.toHaveProperty('items');
+
+  // 两份 canonicalToAdapterEvent 副本（gateway bridge / adapter 包）行为必须一致
+  const adapterCopy = canonicalToAdapterEventAdapterPackage(source as any)!;
+  expect(adapterCopy.type).toBe('queue.updated');
+  expect(adapterCopy.data).toMatchObject({ action: 'enqueued', item: { id: 'q1' }, id: 'q1' });
+  expect(adapterCopy.data).not.toHaveProperty('items');
+});
+
+it('pins background jobs across runtime-core, the mapper and the v21 synthetic transform', () => {
+  const metadata = { source: 'shell', shellID: 'sh_1', status: 'completed', exitCode: 0 };
+  const job = backgroundJobFromSynthetic('s1', metadata)!;
+  const event = backgroundJobEvent(job);
+  expect(event.payload.type).toBe(MAFW.backgroundJobUpdated);
+
+  // mapper ← runtime-core 信封（type + properties 逐字流入）
+  const mapped = mapAdapterEvent(ev(event.payload.type, event.payload.properties));
+  expect(mapped.dropped).toBeUndefined();
+  expect(mapped.canonical?.payload.type).toBe('background.job.updated');
+  expect(mapped.canonical?.payload.properties.job).toBe(job);
+
+  // v21 synthetic 变换 → 同一 canonical 类型与同一 job 语义
+  const translated = translateOpencode21Event({
+    type: 'session.next.synthetic',
+    data: { sessionID: 's1', metadata },
+  }) as any;
+  expect(translated.payload.type).toBe(MAFW.backgroundJobUpdated);
+  expect(translated.payload.properties.job).toMatchObject({
+    source: 'runtime-shell', kind: 'shell', status: 'completed', sessionID: 's1',
+  });
 });
 
 it('maps session.diff and preserves messageID/diff', () => {

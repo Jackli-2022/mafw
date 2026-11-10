@@ -146,8 +146,10 @@ export function mapAdapterEvent(event: AdapterEvent): MappedAdapterEvent {
     case 'queue.updated':
       return { canonical: canonical('queue.updated', {
         sessionID: event.sessionID,
-        items: data.items ?? [],
-        // @2.1 inbox events carry a single item + action (no full snapshot).
+        // Full snapshot ONLY when the payload really carries one. A 2.1 inbox
+        // event has action/item/id but no snapshot; synthesising `items: []`
+        // would make clients (desktop/TUI) clear the queue.
+        ...(Array.isArray(data.items) ? { items: data.items } : {}),
         ...(data.action ? { action: data.action } : {}),
         ...(data.item ? { item: data.item } : {}),
         ...(data.id ? { id: data.id } : {}),
