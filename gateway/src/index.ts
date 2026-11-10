@@ -219,6 +219,7 @@ import { attachTtsRoutes } from './routes/tts';
 import { attachTerminalRoutes, attachAgentRoutes, attachMobileRoutes } from './routes/agent-terminal-mobile';
 import { attachMediaRoutes } from './routes/media-upload';
 import { attachProjectRoutes } from './routes/projects';
+import { attachMafwCommandRoutes } from './routes/mafw-commands';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -5592,6 +5593,13 @@ class MafwScheduler {
         setCurrentProjectDir: (dir) => { this.currentProjectDir = dir; },
         db: () => this.getGatewayDb(),
       });
+      // Phase D1 Task A2：mafw-commands 面迁 registry dispatch（2 分支；409 hold-queue 预检随迁）。
+      attachMafwCommandRoutes(this.routeRegistry, {
+        getRegistry: () => this.getMafwCommandRegistry(),
+        registeredProjects: () => this.registeredProjects,
+        projectDir: () => this.projectDir,
+        shouldHoldQueue: (sessionID) => this.runCoordinator?.shouldHoldQueue(sessionID),
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -5935,34 +5943,8 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/mafw-commands/run — 注册表派发（内置+自定义命令，UI-driven 不进 MCP）
-        if (req.url === "/api/mafw-commands/run" && req.method === "POST") {
-          const cmdBody = JSON.parse(await readBody(req));
-          const cmdSessionID = typeof cmdBody?.sessionID === 'string' ? cmdBody.sessionID : '';
-          if (cmdSessionID && this.runCoordinator?.shouldHoldQueue(cmdSessionID)) {
-            res.writeHead(409, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
-            return;
-          }
-          const reply = await handleMafwCommandRun(
-            {
-              registry: this.getMafwCommandRegistry(),
-              resolveProjectDir: () => this.registeredProjects.values().next().value?.projectDir || this.projectDir,
-            },
-            cmdBody,
-          );
-          res.writeHead(reply.status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(reply.body));
-          return;
-        }
+        // POST /api/mafw-commands/run + GET /api/mafw-commands — Phase D1 Task A2：已迁 registry dispatch。
 
-        // GET /api/mafw-commands — 命令元数据清单（客户端补全/面板）
-        if (req.url?.match(/^\/api\/mafw-commands(?:\?|$)/) && req.method === "GET") {
-          const reply = handleMafwCommandList({ registry: this.getMafwCommandRegistry(), resolveProjectDir: () => this.projectDir });
-          res.writeHead(reply.status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(reply.body));
-          return;
-        }
         // POST /api/merge-memory — direct merge endpoint used by the plugin
         // /merge-memory slash command (src/plugin.ts). Reuses the MCP handler.
         if (req.url === "/api/merge-memory" && req.method === "POST") {
