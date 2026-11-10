@@ -51,6 +51,14 @@ export interface T1Turn {
   legacy_ambiguous: number;
 }
 
+/** A turn's full observation set (active + archived) resolved by trace id. */
+export interface T1TraceRead {
+  turn: T1Turn;
+  rows: T1Observation[];
+  /** Whether the turn is currently archived (from `t1_turns.archived_at`). */
+  archived: boolean;
+}
+
 export interface GoalOutcome {
   goal_id: string;
   project_id: string | null;
@@ -263,9 +271,12 @@ export class GatewayDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id TEXT NOT NULL,
         turn_id INTEGER NOT NULL,
+        trace_id TEXT,
+        observation_key TEXT,
         source TEXT NOT NULL,
         content TEXT NOT NULL,
         failure INTEGER DEFAULT 0,
+        salience REAL,
         created_at INTEGER NOT NULL,
         archived_at INTEGER DEFAULT (unixepoch())
       );
@@ -439,6 +450,26 @@ export class GatewayDatabase {
       // Column already exists, ignore
     }
 
+    // Migration: copy stable observation identity (logical turn trace +
+    // per-observation key) and salience onto t1_archive so archived rows keep
+    // the same identity as their active counterparts. Legacy archived rows
+    // read back null for all three.
+    try {
+      this.db.exec(`ALTER TABLE t1_archive ADD COLUMN trace_id TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE t1_archive ADD COLUMN observation_key TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE t1_archive ADD COLUMN salience REAL`);
+    } catch {
+      // Column already exists, ignore
+    }
+
     // Migration: D4b task-type dimension on goal_outcomes (legacy rows NULL →
     // aggregate into the global/'other' bucket).
     try {
@@ -587,6 +618,12 @@ export class GatewayDatabase {
           )
           .run(obs.salience, obs.trace_id);
       }
+      // A late observation reopens an archived turn (identity unchanged).
+      if (result.changes > 0) {
+        this.db
+          .prepare('UPDATE t1_turns SET archived_at = NULL WHERE trace_id = ?')
+          .run(obs.trace_id);
+      }
       return result.changes > 0 ? Number(result.lastInsertRowid) : null;
     });
     return txn();
@@ -635,21 +672,28 @@ export class GatewayDatabase {
 
   /**
    * Archive a processed turn: move from t1_observations to t1_archive, then
-   * delete from t1_observations. Preserves the raw observation data for future
-   * re-extraction with upgraded pipelines. Returns the number of rows archived.
+   * delete from t1_observations. Preserves the raw observation data (including
+   * the logical trace id, observation key, and salience) for future
+   * re-extraction with upgraded pipelines, and stamps `t1_turns.archived_at`
+   * to record when the turn was archived. Returns the number of rows archived.
    */
   archiveTurn(session_id: string, turn_id: number): number {
     const txn = this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO t1_archive (session_id, turn_id, source, content, failure, created_at)
-           SELECT session_id, turn_id, source, content, failure, created_at
+          `INSERT INTO t1_archive (session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at)
+           SELECT session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at
            FROM t1_observations WHERE session_id = ? AND turn_id = ?`,
         )
         .run(session_id, turn_id);
       const del = this.db
         .prepare('DELETE FROM t1_observations WHERE session_id = ? AND turn_id = ?')
         .run(session_id, turn_id);
+      if (del.changes > 0) {
+        this.db
+          .prepare('UPDATE t1_turns SET archived_at = unixepoch() WHERE session_id = ? AND turn_seq = ?')
+          .run(session_id, turn_id);
+      }
       return del.changes;
     });
     return txn();
@@ -660,6 +704,35 @@ export class GatewayDatabase {
     return this.db
       .prepare('SELECT * FROM t1_archive WHERE session_id = ? AND turn_id = ? ORDER BY id')
       .all(session_id, turn_id) as T1Observation[];
+  }
+
+  /**
+   * Read a turn's full observation set by logical trace id, combining active
+   * (t1_observations) and archived (t1_archive) rows. Rows are ordered by
+   * `created_at`, then stable row id within each source (archived rows sort
+   * before active rows on created_at ties, preserving replay order across an
+   * archival/reopen cycle). Returns `archived` from the turn metadata.
+   * Returns null when the trace id is unknown.
+   */
+  readTrace(trace_id: string): T1TraceRead | null {
+    const turn = this.db
+      .prepare('SELECT * FROM t1_turns WHERE trace_id = ?')
+      .get(trace_id) as T1Turn | undefined;
+    if (!turn) return null;
+    const rows = this.db
+      .prepare(
+        `SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at
+         FROM (
+           SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at, 0 AS src
+             FROM t1_archive WHERE trace_id = ?
+           UNION ALL
+           SELECT id, session_id, turn_id, trace_id, observation_key, source, content, failure, salience, created_at, 1 AS src
+             FROM t1_observations WHERE trace_id = ?
+         )
+         ORDER BY created_at, src, id`,
+      )
+      .all(trace_id, trace_id) as T1Observation[];
+    return { turn, rows, archived: turn.archived_at != null };
   }
 
   /** List archived turns (grouped), optionally filtered to a session. */
