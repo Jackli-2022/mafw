@@ -35,6 +35,35 @@ it('maps turn-scoped runtime.error to turn.failed', () => {
   expect(out.canonical?.payload.type).toBe('turn.failed');
 });
 
+it('maps background.job.updated and preserves the job snapshot', () => {
+  const job = { id: 'sh1', source: 'runtime-shell', kind: 'shell', status: 'running', sessionID: 's1' };
+  const out = mapAdapterEvent(ev('background.job.updated', { job }));
+  expect(out.dropped).toBeUndefined();
+  expect(out.canonical?.payload).toMatchObject({
+    type: 'background.job.updated',
+    properties: { sessionID: 's1', job },
+  });
+});
+
+it('maps queue.updated and preserves the item snapshot', () => {
+  const out = mapAdapterEvent(ev('queue.updated', { items: [{ id: 'q1' }] }));
+  expect(out.canonical?.payload).toMatchObject({
+    type: 'queue.updated',
+    properties: { items: [{ id: 'q1' }] },
+  });
+  // absent snapshot defaults to an empty list rather than dropping the event
+  expect(mapAdapterEvent(ev('queue.updated', {})).canonical?.payload.properties.items).toEqual([]);
+});
+
+it('maps session.diff and preserves messageID/diff', () => {
+  const out = mapAdapterEvent(ev('session.diff', { messageID: 'm1', diff: [{ file: 'a.ts' }] }));
+  expect(out.dropped).toBeUndefined();
+  expect(out.canonical?.payload).toMatchObject({
+    type: 'session.diff',
+    properties: { sessionID: 's1', messageID: 'm1', diff: [{ file: 'a.ts' }] },
+  });
+});
+
 it('drops malformed part.updated', () => {
   const out = mapAdapterEvent(ev('part.updated', { part: { type: 'tool' } }));
   expect(out.dropped).toBeDefined();

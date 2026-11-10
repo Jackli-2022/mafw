@@ -33,6 +33,10 @@ export type AdapterEventType =
   // plan and usage
   | 'plan.updated'
   | 'usage.updated'
+  // opencode-only data plane (background dock / queue inbox / changes dock)
+  | 'background.job.updated'
+  | 'queue.updated'
+  | 'session.diff'
   // permission and questions
   | 'permission.asked'
   | 'permission.replied'
@@ -57,6 +61,7 @@ export const ADAPTER_EVENT_TYPES: readonly AdapterEventType[] = [
   'message.updated', 'message.removed',
   'part.updated', 'part.delta', 'part.completed', 'part.removed', 'data.updated',
   'plan.updated', 'usage.updated',
+  'background.job.updated', 'queue.updated', 'session.diff',
   'permission.asked', 'permission.replied',
   'question.asked', 'question.replied', 'question.rejected',
   'runtime.notice', 'runtime.error',
@@ -105,6 +110,9 @@ export type AdapterEvent =
   | E<'data.updated'>
   | E<'plan.updated'>
   | E<'usage.updated'>
+  | E<'background.job.updated'>
+  | E<'queue.updated'>
+  | E<'session.diff'>
   | E<'permission.asked'>
   | E<'permission.replied'>
   | E<'question.asked'>

@@ -80,7 +80,13 @@ export function canonicalToAdapterEvent(
   const make = (t: AdapterEvent['type'], data: unknown): AdapterEvent => ({ ...base, type: t, data } as AdapterEvent);
 
   switch (type) {
-    case 'session.created': return make('session.created', { session: props.info });
+    case 'session.created': {
+      // @2.1 emits a flat `data` payload (no `properties.info`); keep the
+      // session identifiable either way instead of dropping the event.
+      const info = props.info && typeof props.info === 'object' ? props.info : props;
+      const id = info.id ?? props.sessionID;
+      return make('session.created', { session: { ...info, ...(id ? { id } : {}) } });
+    }
     case 'session.updated': return make('session.updated', { patch: props.info });
     case 'session.deleted': return make('session.deleted', {});
     case 'session.compacting': return make('session.compacting', {});
@@ -108,6 +114,14 @@ export function canonicalToAdapterEvent(
     case 'question.rejected': return make('question.rejected', {});
     case 'plan.updated': return make('plan.updated', { items: props.todos ?? props.items ?? props });
     case 'usage.updated': return make('usage.updated', { usage: props.usage ?? props, contextTokens: props.contextTokens, contextWindow: props.contextWindow });
+    case 'background.job.updated': return make('background.job.updated', { job: props.job });
+    case 'queue.updated': return make('queue.updated', {
+      items: Array.isArray(props.items) ? props.items : [],
+      ...(props.action ? { action: props.action } : {}),
+      ...(props.item ? { item: props.item } : {}),
+      ...(props.id ? { id: props.id } : {}),
+    });
+    case 'session.diff': return make('session.diff', { messageID: props.messageID, diff: props.diff ?? [] });
     case 'tool.call': return make('tool.call', { callID: props.callID, name: props.tool ?? props.name, input: props.input ?? {}, title: props.title });
     case 'tool.delta': return make('tool.delta', { callID: props.callID, field: props.kind ?? props.field, delta: props.text ?? props.delta });
     case 'tool.result': return make('tool.result', {

@@ -139,6 +139,24 @@ export function mapAdapterEvent(event: AdapterEvent): MappedAdapterEvent {
         ...(data.contextWindow !== undefined ? { contextWindow: data.contextWindow } : {}),
       }, event.sessionID) };
 
+    // opencode-only data plane: background dock snapshot, queue inbox snapshot
+    // and the changes dock. Without these the neutral bridge drops the events.
+    case 'background.job.updated':
+      return { canonical: canonical('background.job.updated', { sessionID: event.sessionID, job: data.job }, event.sessionID) };
+    case 'queue.updated':
+      return { canonical: canonical('queue.updated', {
+        sessionID: event.sessionID,
+        items: data.items ?? [],
+        // @2.1 inbox events carry a single item + action (no full snapshot).
+        ...(data.action ? { action: data.action } : {}),
+        ...(data.item ? { item: data.item } : {}),
+        ...(data.id ? { id: data.id } : {}),
+      }, event.sessionID) };
+    case 'session.diff':
+      return { canonical: canonical('session.diff', {
+        sessionID: event.sessionID, messageID: data.messageID, diff: data.diff ?? [],
+      }, event.sessionID) };
+
     case 'permission.asked':
       if (!isRecord(data.request)) return { dropped: { reason: 'permission.asked payload has no request' } };
       return { canonical: canonical('permission.asked', { ...data.request, ...data }, event.sessionID) };

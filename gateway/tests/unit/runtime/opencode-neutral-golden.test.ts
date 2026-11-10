@@ -5,11 +5,19 @@ import { toRuntimeDefinition } from '../../../src/runtime/adapter-bridge';
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../src/runtime/opencode-events';
+import { OPENCODE_21_EVENT_MAPPINGS, OPENCODE_21_EVENT_SOURCE, translateOpencode21Event } from '../../../src/runtime/opencode-21-events';
 
 const ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,
   eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
   transformEvent: OPENCODE_TRANSFORM_EVENT,
+};
+
+/** opencode 2.1 dialect: top-level `{ type, data }` envelope. */
+const V21_ENTRY = {
+  eventSource: OPENCODE_21_EVENT_SOURCE,
+  eventMappings: OPENCODE_21_EVENT_MAPPINGS,
+  transformEvent: translateOpencode21Event,
 };
 
 const RAW = readFileSync(join(__dirname, '../../fixtures/events/runtime-raw-session.jsonl'), 'utf8')
@@ -67,4 +75,68 @@ it('opencode neutral path reproduces the translated canonical sequence', async (
     ?? event.payload?.properties?.part?.sessionID
     ?? event.payload?.properties?.message?.sessionID;
   expect(seen.map(owner)).toEqual(legacy.map(owner));
+});
+
+/** opencode 2.1 raw events that have no AdapterEvent home until Task 1. */
+const V21_RAW = [
+  {
+    id: 'v1', created: 1, type: 'session.created',
+    data: { sessionID: 's21', slug: 'quiet' }, location: { directory: '/p' },
+  },
+  {
+    id: 'v2', created: 2, type: 'session.inbox.enqueued',
+    data: { sessionID: 's21', item: { id: 'q1', text: 'later' } }, location: { directory: '/p' },
+  },
+  {
+    id: 'v3', created: 3, type: 'session.next.synthetic',
+    data: { sessionID: 's21', metadata: { source: 'shell', shellID: 'sh_1', status: 'completed', exitCode: 0 } },
+    location: { directory: '/p' },
+  },
+  {
+    id: 'v4', created: 4, type: 'session.diff',
+    data: { sessionID: 's21', diff: [{ file: 'a.ts' }] }, location: { directory: '/p' },
+  },
+];
+
+it('opencode @2.1 created/queue/background/diff survive the neutral round-trip (no drops)', async () => {
+  const bus = new RuntimeBus();
+  const definition = toRuntimeDefinition(fakeRuntime(V21_RAW), {
+    name: 'opencode-21',
+    capabilities: {},
+    translate: { entry: V21_ENTRY, isCanonical: (type) => !!EVENT_FLOW_MATRIX[type] },
+  });
+  const adapterEvents: any[] = [];
+  definition.transport.onEvent((event) => adapterEvents.push(event));
+  bus.register(definition);
+
+  const seen: any[] = [];
+  bus.subscribe((delivered) => {
+    if (delivered.canonical) seen.push(delivered.canonical);
+  });
+
+  const started = Date.now();
+  while (seen.length < V21_RAW.length && Date.now() - started < 2000) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  // Lossless: every @2.1 event keeps its canonical type through AdapterEvent.
+  expect(seen.map((event) => event.payload.type)).toEqual([
+    'session.created', 'queue.updated', 'background.job.updated', 'session.diff',
+  ]);
+
+  // @2.1 session.created has a flat `data` payload (no properties.info); the
+  // AdapterEvent must still carry an identifiable session.
+  const created = adapterEvents.find((event) => event.type === 'session.created');
+  expect((created?.data.session ?? created?.data.info)?.id).toBe('s21');
+
+  const queue = seen.find((event) => event.payload.type === 'queue.updated');
+  expect(queue?.payload.properties).toMatchObject({
+    sessionID: 's21', action: 'enqueued', item: { id: 'q1', text: 'later' },
+  });
+
+  const background = seen.find((event) => event.payload.type === 'background.job.updated');
+  expect(background?.payload.properties.job).toMatchObject({ id: 'sh_1', sessionID: 's21' });
+
+  const diff = seen.find((event) => event.payload.type === 'session.diff');
+  expect(diff?.payload.properties).toMatchObject({ sessionID: 's21', diff: [{ file: 'a.ts' }] });
 });
