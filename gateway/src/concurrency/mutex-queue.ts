@@ -45,6 +45,11 @@ export class MutexQueue {
     return this.queues.get(key)?.length ?? 0;
   }
 
+  /** True while the key has a running task OR queued tasks. */
+  has(key: string): boolean {
+    return this.running.has(key) || (this.queues.get(key)?.length ?? 0) > 0;
+  }
+
   private finish(key: string): void {
     this.running.delete(key);
     const q = this.queues.get(key);
