@@ -5827,6 +5827,7 @@ class MafwScheduler {
         mafwDir: () => this.mafwDir,
         getGatewayDb: () => this.getGatewayDb(),
         backfillEmbeddings: (limit) => this.backfillEmbeddings(limit),
+        searchT1: require('./recall/t1-search').createGatewayT1Search(this.getGatewayDb()),
       });
       // Phase D1 Task F2：goals inline 面迁 registry dispatch（6 分支 → 7 op；plan /
       // plan-approval 仍以原始 req.url 交给 handleGoalPlan 内部分流）。
