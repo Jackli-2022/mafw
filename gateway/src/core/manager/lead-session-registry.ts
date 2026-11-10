@@ -255,7 +255,7 @@ export class LeadSessionRegistry {
     }
   }
 
-  private async isAlive(sessionId: string): Promise<boolean> {
+  async isAlive(sessionId: string): Promise<boolean> {
     try {
       return await this.deps.isAlive(sessionId);
     } catch (err: any) {

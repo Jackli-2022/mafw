@@ -2775,6 +2775,29 @@
         }
       }
     },
+    "/api/lead/topics/{id}/resume": {
+      "post": {
+        "operationId": "lead.topics.resume",
+        "tags": [
+          "lead"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/goals/{id}/nodes/{runId}/retry": {
       "post": {
         "operationId": "goals.retryNode",

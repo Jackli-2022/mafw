@@ -30,6 +30,7 @@ export interface LeadTopicRouteDeps {
   listMessages?(input: { sessionID: string; limit: number }): Promise<{ data: MafwMessage[] }>;
   broadcast?(event: { type: string; properties: Record<string, unknown> }): void;
   now?(): string;
+  resume?(topicId: string): Promise<{ sessionID: string; resumedFrom: string | null }>;
 }
 
 const EMPTY_CONTEXT: LeadContext = {
@@ -241,6 +242,22 @@ export async function handleCompact(
   };
 }
 
+/** POST /api/lead/topics/:id/resume — switch to (or rebuild) an old topic. */
+export async function handleResumeTopic(
+  args: { id?: string },
+  deps: LeadTopicRouteDeps,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const id = clean(args?.id);
+  if (!id) return { status: 400, body: { error: 'topic id is required' } };
+  if (!deps.resume) return { status: 503, body: { error: 'lead topic resume is unavailable' } };
+  try {
+    return { status: 200, body: await deps.resume(id) };
+  } catch (err: any) {
+    const status = typeof err?.status === 'number' ? err.status : 500;
+    return { status, body: { error: String(err?.message ?? err) } };
+  }
+}
+
 function send(res: ServerResponse, out: { status: number; body: unknown }): void {
   res.writeHead(out.status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(out.body));
@@ -281,5 +298,8 @@ export function attachLeadTopicRoutes(registry: RouteRegistry, deps: LeadTopicRo
     let body: any = {};
     try { body = JSON.parse(await readRouteBody(req) || '{}'); } catch { body = {}; }
     send(res, await handleCompact({ topicId: body?.topicId }, deps));
+  });
+  registry.attachHandler('lead.topics.resume', async (_req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    send(res, await handleResumeTopic({ id: params.id }, deps));
   });
 }

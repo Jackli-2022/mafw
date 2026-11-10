@@ -86,6 +86,7 @@ import { LeadTopicStore } from './core/lead/lead-topic-store';
 import { LeadHandoffService } from './core/lead/lead-handoff-service';
 import { TopicMessageIndexStore } from './core/lead/topic-message-index';
 import { LeadTopicSummaryService } from './core/lead/lead-topic-summary-service';
+import { LeadTopicResumeService } from './core/lead/lead-topic-resume-service';
 import { summarizeTopic } from './core/lead/topic-summary';
 import { PodWorktreeService } from './core/pod/pod-worktree-service';
 import { createTechLeadRuntimeAdapter } from './core/pod/pod-tech-lead-runtime-adapter';
@@ -688,6 +689,7 @@ class MafwScheduler {
   private leadTopics!: LeadTopicStore;
   private leadTopicIndex!: TopicMessageIndexStore;
   private leadTopicSummary!: LeadTopicSummaryService;
+  private leadTopicResume!: LeadTopicResumeService;
   private podWorktreeService!: PodWorktreeService;
   private podContextSelectionService!: PodContextSelectionService;
   private podProbeService!: PodProbeService;
@@ -4617,6 +4619,18 @@ class MafwScheduler {
     this.leadTopics = leadTopics;
     this.leadTopicIndex = leadTopicIndex;
     this.leadTopicSummary = leadTopicSummary;
+    const leadTopicResume = new LeadTopicResumeService({
+      topics: leadTopics,
+      index: leadTopicIndex,
+      sessions: this.leadSessionRegistry,
+      promptAsync: async ({ sessionID, parts }) => {
+        await this.runtime!.session.promptAsync({ sessionID, parts });
+      },
+      now: () => new Date().toISOString(),
+      newId: () => `topic_${randomUUID()}`,
+      log: (message) => log.warn(message),
+    });
+    this.leadTopicResume = leadTopicResume;
     const leadHandoffService = process.env.MAFW_LEAD_HANDOFF === '0'
       ? null
       : new LeadHandoffService({
@@ -5542,6 +5556,7 @@ class MafwScheduler {
         },
         broadcast: (event) => this.broadcast(event as any),
         now: () => new Date().toISOString(),
+        resume: (topicId) => this.leadTopicResume.resume(topicId),
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),
