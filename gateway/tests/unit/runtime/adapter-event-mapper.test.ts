@@ -58,6 +58,18 @@ it('maps queue.updated and preserves the item snapshot', () => {
   });
 });
 
+it('preserves an explicitly empty queue.updated snapshot', () => {
+  const out = mapAdapterEvent(ev('queue.updated', { items: [] }));
+  expect(out.dropped).toBeUndefined();
+  expect(out.canonical?.payload).toMatchObject({
+    type: 'queue.updated',
+    properties: { items: [] },
+  });
+  // A real empty snapshot clears the client queue; it must survive as `[]`,
+  // not be mistaken for "no snapshot" and dropped.
+  expect(out.canonical?.payload.properties.items).toEqual([]);
+});
+
 it('omits queue.updated items when the payload carries no snapshot', () => {
   const out = mapAdapterEvent(ev('queue.updated', { action: 'enqueued', item: { id: 'q1' }, id: 'q1' }));
   expect(out.canonical?.payload.type).toBe('queue.updated');
@@ -93,6 +105,23 @@ it('round-trips an inbox queue event without synthesising an items snapshot', ()
   expect(adapterCopy.type).toBe('queue.updated');
   expect(adapterCopy.data).toMatchObject({ action: 'enqueued', item: { id: 'q1' }, id: 'q1' });
   expect(adapterCopy.data).not.toHaveProperty('items');
+});
+
+it('round-trips an explicit empty items snapshot instead of dropping it', () => {
+  const source = {
+    payload: { type: 'queue.updated', properties: { sessionID: 's1', items: [] } },
+    sessionID: 's1',
+  };
+  // Reverse (canonical → AdapterEvent) keeps `[]`: the guard is "is it an
+  // array", not "is it non-empty", in both bridge copies.
+  for (const convert of [canonicalToAdapterEvent, canonicalToAdapterEventAdapterPackage]) {
+    const adapter = convert(source as any)!;
+    expect(adapter.type).toBe('queue.updated');
+    expect(adapter.data.items).toEqual([]);
+    // …and forward again: an empty snapshot still means "clear the queue".
+    const back = mapAdapterEvent(adapter).canonical!.payload.properties;
+    expect(back.items).toEqual([]);
+  }
 });
 
 it('pins background jobs across runtime-core, the mapper and the v21 synthetic transform', () => {

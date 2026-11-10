@@ -20,6 +20,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { ensureAdapterBuilt } from '../../helpers/adapter-build';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const ADAPTER_DIR = path.join(REPO_ROOT, 'adapters', 'opencode');
@@ -30,6 +31,13 @@ const DIST_TYPES = path.join(DIST_DIR, 'index.d.ts');
 function readJson<T = any>(file: string): T {
   return JSON.parse(fs.readFileSync(file, 'utf8')) as T;
 }
+
+// These assertions read the *built* bundle while Jest resolves the package to
+// its TypeScript source, so a clean checkout has no `dist/`. Build on demand
+// (skipped when dist is fresh) instead of requiring a prior root build.
+beforeAll(() => {
+  ensureAdapterBuilt();
+}, 240_000);
 
 /**
  * Loads the built bundle the way the gateway does — plain `require()` in a child

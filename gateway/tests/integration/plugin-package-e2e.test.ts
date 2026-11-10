@@ -28,6 +28,7 @@ import {
 } from '../../src/plugins/package-host';
 import { PackageManager } from '../../src/plugins/package-manager';
 import { PackageStateStore } from '../../src/plugins/package-state-store';
+import { ensureAdapterBuilt } from '../helpers/adapter-build';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const EXAMPLE_DIR = path.join(REPO_ROOT, 'docs', 'examples', 'plugins', 'service-monitor');
@@ -545,6 +546,9 @@ console.log(JSON.stringify({ resolved: require.resolve('@mafw/plugin-contract') 
   });
 
   it('stages the opencode adapter next to the gateway contract', () => {
+    // The stager copies `adapters/opencode/dist`, so the bundle must exist even
+    // on a clean checkout (Jest itself resolves the package to source).
+    ensureAdapterBuilt();
     const nodeModules = path.join(base, 'staged-gateway', 'node_modules');
     const probe = path.join(base, 'staged-gateway', 'probe.cjs');
     fs.mkdirSync(path.dirname(probe), { recursive: true });
@@ -591,7 +595,7 @@ console.log(JSON.stringify({ resolved: require.resolve('@mafw/adapter-opencode')
     expect(path.resolve((JSON.parse(after.stdout) as { resolved: string }).resolved)).toBe(
       path.resolve(stagedEntry),
     );
-  });
+  }, 240_000);
 
   it('is wired into the desktop bundle, deploy script, postinstall and CI', () => {
     const stageGateway = fs.readFileSync(

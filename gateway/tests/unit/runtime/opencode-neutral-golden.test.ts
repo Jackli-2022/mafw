@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { RuntimeBus } from '../../../src/runtime/runtime-bus';
+import { toRuntimeDefinition as gatewayToRuntimeDefinition } from '../../../src/runtime/adapter-bridge';
 import { toRuntimeDefinition } from '../../../../adapters/opencode/src/legacy-definition';
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
@@ -45,6 +46,28 @@ function fakeRuntime(raw: any[]) {
     },
     tools: { registerTools() {}, nativeTools: () => [] },
   } as any;
+}
+
+/** Semantic owner of a delivered event: the bridge re-attaches the top-level sessionID. */
+function semanticOwner(event: any) {
+  return event.sessionID
+    ?? event.payload?.properties?.sessionID
+    ?? event.payload?.properties?.part?.sessionID
+    ?? event.payload?.properties?.message?.sessionID;
+}
+
+async function collectCanonical(definition: any, expected: number): Promise<any[]> {
+  const bus = new RuntimeBus();
+  bus.register(definition);
+  const seen: any[] = [];
+  bus.subscribe((delivered) => {
+    if (delivered.canonical) seen.push(delivered.canonical);
+  });
+  const started = Date.now();
+  while (seen.length < expected && Date.now() - started < 2000) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return seen;
 }
 
 it('opencode neutral path reproduces the translated canonical sequence', async () => {
@@ -140,3 +163,38 @@ it('opencode @2.1 created/queue/background/diff survive the neutral round-trip (
   const diff = seen.find((event) => event.payload.type === 'session.diff');
   expect(diff?.payload.properties).toMatchObject({ sessionID: 's21', diff: [{ file: 'a.ts' }] });
 });
+
+/**
+ * The adapter package carries its own `toRuntimeDefinition` (it must not import
+ * gateway source), so the two copies can drift silently. Same raw stream → same
+ * canonical types and owners, whichever bridge produced them.
+ */
+it('gateway and adapter bridges emit the same canonical sequence for the same raw stream', async () => {
+  const meta = {
+    name: 'opencode',
+    capabilities: {},
+    translate: { entry: ENTRY, isCanonical: (type: string) => !!EVENT_FLOW_MATRIX[type] },
+  };
+
+  const viaAdapter = await collectCanonical(toRuntimeDefinition(fakeRuntime(RAW), meta), legacy.length);
+  // The gateway bridge is typed against `AgentRuntime`; the shared fake runtime is
+  // the same shape the adapter bridge accepts.
+  const viaGateway = await collectCanonical(
+    gatewayToRuntimeDefinition(fakeRuntime(RAW) as any, meta as any),
+    legacy.length,
+  );
+
+  const types = (events: any[]) => events.map((event) => event.payload.type);
+  const owners = (events: any[]) => events.map(semanticOwner);
+
+  expect(viaAdapter).toHaveLength(legacy.length);
+  expect(viaGateway).toHaveLength(legacy.length);
+
+  // Pinned against the translated fixture, not just against each other: two
+  // identically broken bridges would still pass a pure A/B comparison.
+  expect(types(viaAdapter)).toEqual(legacy.map((event: any) => event.payload.type));
+  expect(types(viaGateway)).toEqual(types(viaAdapter));
+  expect(owners(viaGateway)).toEqual(owners(viaAdapter));
+  expect(owners(viaGateway)).toEqual(legacy.map(semanticOwner));
+});
+
