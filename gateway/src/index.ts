@@ -32,9 +32,7 @@ import {
   type GoalResolution,
 } from './core/goal/goal-identity';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
-import { handleGoalTimeline } from './routes/goal-timeline';
-import { handleGoalPlan } from './routes/goal-plan';
-import { handleNodeRetry } from './routes/goal-node-retry';
+import { attachGoalRoutes } from './routes/goals-inline';
 import { handleMcp } from './routes/mcp';
 import { handleMcpConfig } from './routes/mcp-config';
 import { handleTerminal } from './routes/terminal';
@@ -5715,6 +5713,18 @@ class MafwScheduler {
         getGatewayDb: () => this.getGatewayDb(),
         backfillEmbeddings: (limit) => this.backfillEmbeddings(limit),
       });
+      // Phase D1 Task F2：goals inline 面迁 registry dispatch（6 分支 → 7 op；plan /
+      // plan-approval 仍以原始 req.url 交给 handleGoalPlan 内部分流）。
+      attachGoalRoutes(this.routeRegistry, {
+        mafwDir: () => this.mafwDir,
+        goalDriver: () => this.goalDriver,
+        goalDriverMafwDirCache: () => this.goalDriverMafwDirCache,
+        findGoalStatePath: (goalId) => this.findGoalStatePath(goalId),
+        loadRequest: (goalId) => this.loadRequest(goalId),
+        getGatewayDb: () => this.getGatewayDb(),
+        handleValidate: (goalId, data) => this.handleValidate(goalId, data),
+        handleComplete: (goalId, data) => this.handleComplete(goalId, data),
+      });
       // code-first P0 试点：schema 是响应事实源，handler 返回数据（不写 res）。
       attachTypedRoute(this.routeRegistry, {
         operationId: 'session.list',
@@ -5949,74 +5959,13 @@ class MafwScheduler {
 
         // GET /api/memory/{merged-search,stats,sticky,get,search,energy-distribution} + POST /api/memory/embeddings/backfill
         // + DELETE /api/memory/{id} + GET /api/l5/axioms — Phase D1 Task F1：已迁 registry dispatch。
-        // POST /api/goals/{goalId}/questions/{questionId}/respond
-        const respondMatch = req.url?.match(/^\/api\/goals\/([^/]+)\/questions\/([^/]+)\/respond$/);
-        if (respondMatch && req.method === 'POST') {
-          const goalId = respondMatch[1];
-          const questionId = respondMatch[2];
-          const body = await readBody(req);
-          let data: any;
-          try { data = JSON.parse(body); } catch {
-            res.writeHead(400);
-            res.end(JSON.stringify({ status: 'bad_request', error: 'Invalid JSON' }));
-            return;
-          }
-          const ledger = new QuestionLedger(this.mafwDir);
-          const state = ledger.getQuestionState(questionId);
-          if (!state) {
-            res.writeHead(404);
-            res.end(JSON.stringify({ status: 'not_found' }));
-            return;
-          }
-          if (state !== 'pending') {
-            res.writeHead(409);
-            res.end(JSON.stringify({ status: 'conflict', currentState: state }));
-            return;
-          }
-          if (data.type === 'cancel') {
-            // NodeDriver 写 ledger cancelled + state → archive_fail（不再依赖 langgraph）
-            this.goalDriver?.handleCancel(goalId, questionId);
-            res.writeHead(200);
-            res.end(JSON.stringify({ status: 'accepted', action: 'cancelled' }));
-            return;
-          }
-          // answer or redirect —— NodeDriver（state 驱动，langgraph Command 退役）
-          this.goalDriver?.handleAnswer(goalId, questionId, data.answer || '');
-          res.writeHead(200);
-          res.end(JSON.stringify({ status: 'accepted' }));
-          return;
-        }
-
+        // POST /api/goals/{goalId}/questions/{questionId}/respond — Phase D1 Task F2：已迁 registry dispatch。
         // GET /api/goals/:id/sessions — P5 Wave 1 起由 registry dispatch 接管
         // （历史约束"须挂 Dashboard /api/goals* 兜底之前"由 dispatch 位置满足）。
 
-        // GET /api/goals/:id/timeline — 节点级 trace 聚合（须在 dashboard 兜底之前）
-        if (await handleGoalTimeline(req, res, req.url!, {
-          loadState: (goalId) => {
-            const mafwDir = this.goalDriverMafwDirCache.get(goalId)
-              ?? this.findGoalStatePath(goalId)?.info.mafwDir;
-            return mafwDir ? loadGoalState(mafwDir, goalId) : null;
-          },
-          listNodeRuns: (goalId) => this.getGatewayDb().listNodeRuns(goalId),
-          loadRequest: (goalId) => { try { return this.loadRequest(goalId); } catch { return null; } },
-          getOutcome: (goalId) => this.getGatewayDb().getGoalOutcome(goalId),
-        })) return;
-
-        // POST /api/goals/:id/nodes/:runId/retry — 节点重跑（execute 过 destructive 门）
-        if (req.url?.match(/^\/api\/goals\/[^/]+\/nodes\/\d+\/retry$/) && req.method === 'POST') {
-          const raw = await readBody(req);
-          let body: any; try { body = JSON.parse(raw); } catch { body = {}; }
-          const goalIdM = req.url.match(/^\/api\/goals\/([^/]+)\/nodes\/\d+\/retry$/)!;
-          const goalId = decodeURIComponent(goalIdM[1]);
-          if (await handleNodeRetry(req, res, req.url!, {
-            body,
-            getNodeRun: (runId) => this.getGatewayDb().listNodeRuns(goalId).find((r: any) => r.id === runId) ?? null,
-            retryNodeRun: (g, runId) => this.goalDriver!.retryNodeRun(g, runId),
-          })) return;
-        }
-
-        // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — W1 计划审阅
-        // （须在 dashboard /api/goals* 兜底之前）。
+        // GET /api/goals/:id/timeline — Phase D1 Task F2：已迁 registry dispatch。
+        // POST /api/goals/:id/nodes/:runId/retry — Phase D1 Task F2：已迁 registry dispatch。
+        // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — Phase D1 Task F2：已迁 registry dispatch。
         // Pod 事件（人侧查收）：list / 单条 seen / 按 goal+revision 批量 seen。
         {
           const seenAll = req.url?.match(/^\/api\/pods\/([^/]+)\/events\/seen(?:\?|$)/);
@@ -6049,23 +5998,6 @@ class MafwScheduler {
           res.writeHead(out.status, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(out.body));
           return;
-        }
-
-        if (req.url?.match(/^\/api\/goals\/([^/]+)\/plan(?:\?|$)/) || req.url?.match(/^\/api\/goals\/([^/]+)\/plan-approval(?:\?|$)/)) {
-          let body: any = {};
-          if (req.method === 'POST') {
-            try { body = JSON.parse(await readBody(req)); } catch { body = {}; }
-          }
-          if (await handleGoalPlan(req, res, req.url!, {
-            body,
-            loadState: (goalId) => {
-              const mafwDir = this.goalDriverMafwDirCache.get(goalId)
-                ?? this.findGoalStatePath(goalId)?.info.mafwDir;
-              return mafwDir ? loadGoalState(mafwDir, goalId) : null;
-            },
-            approvePlan: (g, approvalId, opts) => this.goalDriver!.approvePlan(g, approvalId, opts),
-            rejectPlan: (g, feedback, approvalId) => this.goalDriver!.rejectPlan(g, feedback, approvalId),
-          })) return;
         }
 
         // POST /api/session/{id}/background — Phase D1 Task D1：已迁 registry dispatch。
@@ -6306,41 +6238,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/work/{goalId}/validate — MCP calls when agent completes goal creation
-        const validateMatch = req.url?.match(/^\/api\/work\/([^/]+)\/validate$/);
-        if (validateMatch && req.method === 'POST') {
-          try {
-            const goalId = validateMatch[1];
-            const body = await readBody(req);
-            const data = body ? JSON.parse(body) : {};
-            const result = await this.handleValidate(goalId, data);
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            const status = err.message === 'Goal already exists' ? 409 : 400;
-            res.writeHead(status);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // POST /api/work/{goalId}/complete — MCP calls when agent completes a phase
-        const completeMatch = req.url?.match(/^\/api\/work\/([^/]+)\/complete$/);
-        if (completeMatch && req.method === 'POST') {
-          try {
-            const goalId = completeMatch[1];
-            const body = await readBody(req);
-            const data = body ? JSON.parse(body) : {};
-            const result = await this.handleComplete(goalId, data);
-            res.writeHead(200);
-            res.end(JSON.stringify(result));
-          } catch (err: any) {
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
+        // POST /api/work/{goalId}/validate + POST /api/work/{goalId}/complete — Phase D1 Task F2：已迁 registry dispatch。
         // POST /api/manager/session/rotate — P5 Wave 1 起由 registry dispatch 接管
         // GET /api/manager/session — return manager session info (per-project,
         // read from the gateway DB). ?projectDir= filters a single project.
