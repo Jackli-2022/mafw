@@ -639,6 +639,11 @@ export class EventStore {
     return row ? toOutbox(row) : null;
   }
 
+  getOutbox(id: string): EventOutboxRow | null {
+    const row = this.db.prepare('SELECT * FROM event_outbox WHERE id = ?').get(id) as OutboxDbRow | undefined;
+    return row ? toOutbox(row) : null;
+  }
+
   listOutbox(state?: EventOutboxRow['state']): EventOutboxRow[] {
     const rows = state
       ? this.db.prepare('SELECT * FROM event_outbox WHERE state = ? ORDER BY created_at ASC, id ASC').all(state)
