@@ -1,3 +1,4 @@
+import * as path from 'path';
 import type { StandingGoalService } from '../../core/standing/standing-service';
 import type { StandingGoal } from '../../core/standing/standing-types';
 
@@ -28,9 +29,14 @@ function fail(error: unknown): ToolResult {
 export interface StandingGoalToolDeps {
   service?: Pick<StandingGoalService, 'create' | 'update' | 'list' | 'runNow'> | null;
   projectDir?: () => string;
+  enabled?: () => boolean;
+  isProjectDir?: (dir: string) => boolean;
 }
 
 function serviceOf(deps: StandingGoalToolDeps): Pick<StandingGoalService, 'create' | 'update' | 'list' | 'runNow'> {
+  if (deps.enabled && !deps.enabled()) {
+    throw Object.assign(new Error('standing goals disabled'), { status: 503 });
+  }
   if (!deps.service) throw Object.assign(new Error('standing goals service unavailable'), { status: 503 });
   return deps.service;
 }
@@ -39,8 +45,12 @@ export function createStandingGoalTool(deps: StandingGoalToolDeps) {
   return {
     async execute(args: any, _ctx: { sessionID?: string }): Promise<ToolResult> {
       try {
+        const projectDir = String(args?.projectDir ?? deps.projectDir?.() ?? process.cwd());
+        if (deps.isProjectDir && !deps.isProjectDir(projectDir)) {
+          throw Object.assign(new Error('projectDir is not a registered project'), { status: 400 });
+        }
         const goal = serviceOf(deps).create({
-          projectDir: String(args?.projectDir ?? deps.projectDir?.() ?? process.cwd()),
+          projectDir,
           title: String(args?.title ?? ''),
           objective: String(args?.objective ?? ''),
           template: args?.template ?? {},
@@ -49,7 +59,7 @@ export function createStandingGoalTool(deps: StandingGoalToolDeps) {
           cooldownMs: args?.cooldownMs,
           budget: args?.budget,
           approval: args?.approval,
-          createdBy: args?.createdBy ?? null,
+          createdBy: args?.createdBy ?? _ctx?.sessionID ?? null,
         });
         return ok({ goal });
       } catch (err) {
@@ -104,6 +114,12 @@ function depsFromServices(services: any): StandingGoalToolDeps {
   return {
     service: services?.standingGoals ?? services?.standingGoalService ?? null,
     projectDir: () => String(projectDir ?? process.env.MAFW_PROJECT_DIR ?? process.cwd()),
+    enabled: () => process.env.MAFW_STANDING_GOALS === '1',
+    isProjectDir: (dir: string) => {
+      const target = path.resolve(dir).toLowerCase();
+      const projects: Array<{ projectDir?: string }> = services?.listProjects?.() ?? [];
+      return projects.some((project) => project?.projectDir && path.resolve(project.projectDir).toLowerCase() === target);
+    },
   };
 }
 

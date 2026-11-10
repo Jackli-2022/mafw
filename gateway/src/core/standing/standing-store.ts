@@ -16,6 +16,7 @@ interface GoalDbRow {
   template: string | null;
   triggers: string | null;
   state: string;
+  state_reason: string | null;
   concurrency: number;
   cooldown_ms: number;
   budget: string | null;
@@ -64,6 +65,7 @@ function toGoal(row: GoalDbRow): StandingGoal {
     template: parseJson(row.template, {}),
     triggers: parseJson(row.triggers, []),
     state: row.state as StandingState,
+    stateReason: row.state_reason,
     concurrency: Number(row.concurrency ?? 1),
     cooldownMs: Number(row.cooldown_ms ?? 0),
     budget: parseJson(row.budget, {}),
@@ -111,6 +113,7 @@ export function ensureStandingSchema(db: Database): void {
       cooldown_ms INTEGER NOT NULL DEFAULT 0,
       budget TEXT NOT NULL DEFAULT '{}',
       approval TEXT NOT NULL DEFAULT 'plan',
+      state_reason TEXT,
       created_by TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -150,6 +153,10 @@ export function ensureStandingSchema(db: Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_goal_run_events_run ON goal_run_events(run_id, created_at ASC);
   `);
+  const goalColumns = db.prepare('PRAGMA table_info(standing_goals)').all() as Array<{ name: string }>;
+  if (!goalColumns.some((column) => column.name === 'state_reason')) {
+    db.exec('ALTER TABLE standing_goals ADD COLUMN state_reason TEXT');
+  }
 }
 
 export class StandingGoalStore {
@@ -204,7 +211,7 @@ export class StandingGoalStore {
 
   updateGoal(
     id: string,
-    patch: Partial<Pick<StandingGoal, 'title' | 'objective' | 'template' | 'triggers' | 'concurrency' | 'cooldownMs' | 'budget' | 'approval' | 'nextRunAt' | 'lastRunAt'>>,
+    patch: Partial<Pick<StandingGoal, 'title' | 'objective' | 'template' | 'triggers' | 'concurrency' | 'cooldownMs' | 'budget' | 'approval' | 'nextRunAt' | 'lastRunAt' | 'stateReason'>>,
     now: string,
   ): StandingGoal {
     const current = this.getGoal(id);
@@ -213,7 +220,7 @@ export class StandingGoalStore {
     this.db.prepare(`
       UPDATE standing_goals SET
         title = ?, objective = ?, template = ?, triggers = ?, concurrency = ?, cooldown_ms = ?,
-        budget = ?, approval = ?, next_run_at = ?, last_run_at = ?, updated_at = ?
+        budget = ?, approval = ?, next_run_at = ?, last_run_at = ?, state_reason = ?, updated_at = ?
       WHERE id = ?
     `).run(
       next.title,
@@ -226,16 +233,17 @@ export class StandingGoalStore {
       next.approval,
       next.nextRunAt,
       next.lastRunAt,
+      next.stateReason ?? null,
       now,
       id,
     );
     return this.getGoal(id)!;
   }
 
-  setGoalState(id: string, state: StandingState, now: string): StandingGoal {
+  setGoalState(id: string, state: StandingState, now: string, reason?: string | null): StandingGoal {
     this.db.prepare(
-      'UPDATE standing_goals SET state = ?, updated_at = ? WHERE id = ?',
-    ).run(state, now, id);
+      'UPDATE standing_goals SET state = ?, state_reason = ?, updated_at = ? WHERE id = ?',
+    ).run(state, reason ?? null, now, id);
     return this.getGoal(id)!;
   }
 
@@ -305,6 +313,25 @@ export class StandingGoalStore {
       id,
     );
     return this.getRun(id)!;
+  }
+
+  /** Atomically claim a waiting run; only one approver can win. */
+  claimWaitingRun(id: string, now: string): boolean {
+    const result = this.db.prepare(
+      `UPDATE goal_runs
+       SET status = 'running', started_at = COALESCE(started_at, ?)
+       WHERE id = ? AND status = 'waiting_person'`,
+    ).run(now, id);
+    return result.changes === 1;
+  }
+
+  listStaleOpenRuns(olderThanIso: string): GoalRun[] {
+    return (this.db.prepare(
+      `SELECT * FROM goal_runs
+       WHERE status IN ('queued', 'triaging', 'running', 'waiting_person')
+         AND created_at < ?
+       ORDER BY created_at ASC`,
+    ).all(olderThanIso) as RunDbRow[]).map(toRun);
   }
 
   findRunByTriggerKey(standingGoalId: string, triggerKey: string): GoalRun | null {

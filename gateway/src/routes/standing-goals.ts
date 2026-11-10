@@ -132,11 +132,14 @@ export async function handleRunStandingGoal(
 }
 
 export async function handleApproveRun(
-  args: { id?: string },
+  args: { id?: string; actorSessionID?: string },
   deps: StandingGoalRouteDeps,
 ): Promise<{ status: number; body: any }> {
   const off = gate(deps);
   if (off) return off;
+  if (args?.actorSessionID) {
+    return { status: 403, body: { error: 'goal run approval is human-only' } };
+  }
   const id = clean(args?.id);
   if (!id) return { status: 400, body: { error: 'goal run id is required' } };
   const run = deps.getRun(id);
@@ -186,7 +189,8 @@ export function attachStandingGoalRoutes(registry: RouteRegistry, deps: Standing
   registry.attachHandler('standingGoals.run', async (_req, res, params) => {
     send(res, await handleRunStandingGoal({ id: params.id }, deps));
   });
-  registry.attachHandler('goalRuns.approve', async (_req, res, params) => {
-    send(res, await handleApproveRun({ id: params.id }, deps));
+  registry.attachHandler('goalRuns.approve', async (req, res, params) => {
+    const body = await bodyOf(req);
+    send(res, await handleApproveRun({ id: params.id, actorSessionID: body?.actorSessionID }, deps));
   });
 }

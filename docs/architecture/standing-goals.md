@@ -35,6 +35,8 @@ create ──► active ──pause──► paused ──resume──► active
   `standing_goal:tick`）。
 - `update` 会先注销旧 cron/event 订阅，再按新定义注册；`pause` / `stop` 同样注销。
 - 启动时 `reconcile()` 修复缺失的 cron 规则并清理非 active 目标的订阅。
+- `reconcile()` 会把超过 24h 仍处于 queued/triaging/running/waiting_person 的 run 标记失败，
+  释放并发槽。
 - cron 规则键：`standing-goal:<standingGoalId>:<triggerId>`。
 
 ## 触发器与去重
@@ -49,13 +51,14 @@ create ──► active ──pause──► paused ──resume──► active
 
 1. `trigger_key` 已存在 → 不再创建运行。
 2. 并发：`queued / triaging / running / waiting_person` 达到 `concurrency` → 拒绝。
-3. 日预算：当天该项目所有运行成本之和 ≥ `budget.perDayCostUsd` → 拒绝，暂停目标并广播
-   `goal_run.budget_exhausted`。
+3. 日预算：当天**该 Standing Goal** 的运行成本之和 ≥ `budget.perDayCostUsd` → 拒绝，暂停目标并广播
+   `goal_run.budget_exhausted`（`stateReason` 记录原因）。
 4. 冷却：距离最近一次 `startedAt` 不足 `cooldownMs` → 拒绝。
 
 事件触发使用 wildcard 事件订阅（`threadId='*'`，`subscriberType='standing_goal'`，
 `mode='work'`）；`EventLayerService` 在 fan-out 时合并线程订阅与 wildcard 订阅。
-`context` 订阅永远不会创建运行。
+评估与投递都会校验 **事件线程所属项目 = Standing Goal 项目**，跨项目事件不会创建运行；
+`filter`（repo / labels / branch / author）在触发器上保留并匹配。`context` 订阅永远不会创建运行。
 
 ## 运行状态机
 
@@ -92,13 +95,13 @@ Review / 人工验收路径；P2.5 不新增执行器，也不会自动合并。
 
 - 动作执行器 `StandingActionExecutor` 只认识 comment / label / notify；merge、close、
   delete、protected branch 等高风险动作不在允许集合内。
-- `requiresApproval: true` 或目标 `approval: 'confirm'` 的运行进入 `waiting_person`，
-  暂停在动作执行前。
+- `requiresApproval: true` 或目标 `approval: 'confirm'` 的运行（**含 goal / report**）进入
+  `waiting_person`，暂停在执行前。
+- `approval: 'plan'` 时，代码类 Goal 的 `planReview` 强制为 `manual`，计划必须经人工放行。
 - `POST /api/goal-runs/:id/approve` 由人类触发：动作运行执行动作，`goal`/`report`
-  运行继续创建普通 Goal。**没有 MCP 验收工具**，AI 会话不能批准自己的动作。
-- `comment` / `label` 需要已连接的 GitHub source token；未配置时动作失败并可见地记录，
-  不会静默降级。
-- 同一目标当天累计 3 次失败会暂停并广播 `goal_run.needs_person`。
+  运行继续创建普通 Goal。**没有 MCP 验收工具**；携带 `actorSessionID` 的请求返回 403。
+- v1 只实现 `notify`；`comment` / `label` 动作会显式失败（不静默降级），等待动作传输接入。
+- 同一目标连续 3 次失败会暂停并记录 `stateReason`，同时广播 `goal_run.needs_person`。
 
 ## 事件
 

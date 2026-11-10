@@ -3770,6 +3770,74 @@ class MafwScheduler {
           log.warn(`[SkillPromotion] run failed: ${err.message}`);
         }
       });
+      // Host actions must be registered through the provider too: start() and
+      // reloadRules() clear bare registerAction() entries before rebuilding.
+      this.registerHostAutomationActions(engine);
+    });
+  }
+
+  /** Event-layer + Standing Goal host actions (survive automation reloads). */
+  private registerHostAutomationActions(engine: AutomationEngine): void {
+    engine.registerAction('event:github_poll', async (rule) => {
+      if (process.env.MAFW_EVENT_LAYER !== '1') return;
+      const sourceId = String(rule.args?.sourceId ?? '');
+      const store = this.eventLayerStore;
+      const layer = this.eventLayer;
+      if (!store || !layer) return;
+      const source = sourceId ? store.getSource(sourceId) : null;
+      if (!source || !source.enabled) return;
+      try {
+        const polled = await pollGitHubSource({
+          projectDir: source.projectDir,
+          sourceId: source.id,
+          config: {
+            repo: String(source.config.repo ?? ''),
+            token: typeof source.config.token === 'string' ? source.config.token : undefined,
+            labels: Array.isArray(source.config.labels) ? source.config.labels.map(String) : undefined,
+            branches: Array.isArray(source.config.branches) ? source.config.branches.map(String) : undefined,
+            authors: Array.isArray(source.config.authors) ? source.config.authors.map(String) : undefined,
+            cursor: source.cursor as any,
+          },
+          now: () => new Date().toISOString(),
+        });
+        for (const envelope of polled.envelopes) {
+          const ingested = layer.ingest(envelope);
+          void this.processEventThread(ingested.thread.id);
+        }
+        store.updateSourceCursor(source.id, polled.cursor, new Date().toISOString());
+      } catch (err: any) {
+        this.broadcast({
+          type: 'event.source.error',
+          properties: { sourceId, error: String(err?.message ?? err) },
+        });
+      }
+    });
+
+    engine.registerAction('event:cron_tick', async (rule) => {
+      if (process.env.MAFW_EVENT_LAYER !== '1' || !this.eventLayer) return;
+      const standingGoalId = String(rule.args?.standingGoalId ?? '');
+      const projectDir = String(rule.args?.projectDir ?? '');
+      if (!standingGoalId || !projectDir) return;
+      const now = new Date().toISOString();
+      const ingested = this.eventLayer.ingest(normalizeCronTick({
+        projectDir,
+        sourceId: 'cron',
+        standingGoalId,
+        scheduledAt: String(rule.args?.scheduledAt ?? now),
+        actualAt: now,
+      }));
+      void this.processEventThread(ingested.thread.id);
+    });
+
+    engine.registerAction('standing_goal:tick', async (rule) => {
+      if (process.env.MAFW_STANDING_GOALS !== '1') return;
+      const standingGoalId = String(rule.args?.standingGoalId ?? '');
+      if (!standingGoalId) return;
+      await this.standingGoals?.handleCronTick(
+        standingGoalId,
+        String(rule.args?.scheduledAt ?? new Date().toISOString()),
+        String(rule.args?.triggerId ?? ''),
+      );
     });
   }
 
@@ -4554,8 +4622,28 @@ class MafwScheduler {
       }),
       onGoalCompleted: (goalId, outcome) => {
         void this.topicMemory?.promoteForGoal(goalId);
-        const failed = outcome?.verdict === 'CANCELLED' || outcome?.verdict === 'ERROR' || outcome?.verdict === 'FAIL';
-        void this.standingGoals?.onGoalFinished(goalId, { status: failed ? 'failed' : 'done' });
+        const failed = outcome?.verdict === 'CANCELLED'
+          || outcome?.verdict === 'ERROR'
+          || outcome?.verdict === 'FAIL'
+          || outcome?.verdict === 'MAX_RETRIES';
+        let costUsd = 0;
+        let tokens = 0;
+        try {
+          for (const session of this.getGatewayDb().listGoalSessions(goalId)) {
+            const summary = this.trajectoryStore?.getSessionTokenSummary(session.session_id);
+            if (!summary) continue;
+            costUsd += summary.totalCost;
+            tokens += summary.totalTokens.input + summary.totalTokens.output + summary.totalTokens.reasoning;
+          }
+        } catch (err: any) {
+          log.warn(`[StandingGoals] cost lookup failed for ${goalId}: ${err?.message ?? err}`);
+        }
+        void this.standingGoals?.onGoalFinished(goalId, {
+          status: failed ? 'failed' : 'done',
+          costUsd,
+          tokens,
+          result: outcome?.verdict ? { verdict: outcome.verdict } : undefined,
+        }).catch((err: any) => log.warn(`[StandingGoals] finish hook failed: ${err?.message ?? err}`));
       },
       budget: this.podBudget,
       maxConcurrentGoals: () => {
@@ -5042,16 +5130,25 @@ class MafwScheduler {
       newId: (prefix) => `${prefix}_${randomUUID()}`,
       broadcast: (event) => this.broadcast(event as any),
       enabled: () => process.env.MAFW_EVENT_LAYER === '1',
-      evaluate: async ({ subscriptions }) => (subscriptions.some((subscription) => subscription.mode === 'work')
-        ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
-        : { decision: 'ignore', rationale: 'no work subscription' }),
+      evaluate: async ({ thread, subscriptions }) => {
+        const relevant = subscriptions.filter((subscription) => {
+          if (subscription.subscriberType !== 'standing_goal') return true;
+          if (process.env.MAFW_STANDING_GOALS !== '1') return false;
+          const goal = this.standingGoalStore?.getGoal(subscription.subscriberId);
+          if (!goal || goal.state !== 'active') return false;
+          return canonicalProjectDir(goal.projectDir) === canonicalProjectDir(thread.projectDir);
+        });
+        return relevant.some((subscription) => subscription.mode === 'work')
+          ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
+          : { decision: 'ignore', rationale: 'no work subscription' };
+      },
       deliverWork: async ({ thread, trigger, subscription, decision }) => {
         if (subscription.subscriberType === 'standing_goal' && this.standingGoals) {
           await this.standingGoals.handleEventTrigger(subscription.subscriberId, {
-            triggerKey: `${subscription.subscriberId}:event:${trigger.id}`,
             eventId: trigger.id,
             payload: trigger.payload,
             kind: trigger.kind,
+            projectDir: thread.projectDir,
           });
         }
         // P2.4 has no Standing Goal executor; surface the work handoff so the
@@ -5069,60 +5166,13 @@ class MafwScheduler {
       log: (message) => log.warn(message),
     });
 
-    this.automationEngine.registerAction('event:github_poll', async (rule) => {
-      if (process.env.MAFW_EVENT_LAYER !== '1') return;
-      const sourceId = String(rule.args?.sourceId ?? '');
-      const source = sourceId ? eventStore.getSource(sourceId) : null;
-      if (!source || !source.enabled) return;
-      try {
-        const polled = await pollGitHubSource({
-          projectDir: source.projectDir,
-          sourceId: source.id,
-          config: {
-            repo: String(source.config.repo ?? ''),
-            token: typeof source.config.token === 'string' ? source.config.token : undefined,
-            labels: Array.isArray(source.config.labels) ? source.config.labels.map(String) : undefined,
-            branches: Array.isArray(source.config.branches) ? source.config.branches.map(String) : undefined,
-            authors: Array.isArray(source.config.authors) ? source.config.authors.map(String) : undefined,
-            cursor: source.cursor as any,
-          },
-          now: () => new Date().toISOString(),
-        });
-        for (const envelope of polled.envelopes) {
-          const ingested = this.eventLayer!.ingest(envelope);
-          void this.processEventThread(ingested.thread.id);
-        }
-        eventStore.updateSourceCursor(source.id, polled.cursor, new Date().toISOString());
-      } catch (err: any) {
-        this.broadcast({
-          type: 'event.source.error',
-          properties: { sourceId, error: String(err?.message ?? err) },
-        });
-      }
-    });
-
-    this.automationEngine.registerAction('event:cron_tick', async (rule) => {
-      if (process.env.MAFW_EVENT_LAYER !== '1') return;
-      const standingGoalId = String(rule.args?.standingGoalId ?? '');
-      const projectDir = String(rule.args?.projectDir ?? '');
-      if (!standingGoalId || !projectDir) return;
-      const now = new Date().toISOString();
-      const ingested = this.eventLayer!.ingest(normalizeCronTick({
-        projectDir,
-        sourceId: 'cron',
-        standingGoalId,
-        scheduledAt: String(rule.args?.scheduledAt ?? now),
-        actualAt: now,
-      }));
-      void this.processEventThread(ingested.thread.id);
-    });
     // P2.5 Standing Goals: lifecycle + GoalRun triage. Default off.
     const standingStore = new StandingGoalStore(this.getGatewayDb().getStore());
     this.standingGoalStore = standingStore;
     const actionExecutor = new StandingActionExecutor({
       notify: (input) => this.broadcast({ type: 'standing_goal.notification', properties: input }),
-      comment: async () => { throw new Error('github source unavailable'); },
-      label: async () => { throw new Error('github source unavailable'); },
+      comment: async () => { throw new Error('comment action is not available in v1 (notify only)'); },
+      label: async () => { throw new Error('label action is not available in v1 (notify only)'); },
       enabled: () => process.env.MAFW_STANDING_GOALS === '1',
     });
     const standingGoals = new StandingGoals({
@@ -5131,6 +5181,7 @@ class MafwScheduler {
       newId: (prefix) => `${prefix}_${randomUUID()}`,
       registerCron: (input) => this.automationEngine!.registerStandingCron(input),
       unregisterCron: (key) => this.automationEngine!.unregisterStandingCron(key),
+      nextCronRun: (key) => this.automationEngine!.nextStandingCronRun(key),
       enabled: () => process.env.MAFW_STANDING_GOALS === '1',
       broadcast: (event) => this.broadcast(event as any),
       log: (message) => log.warn(message),
@@ -5152,7 +5203,9 @@ class MafwScheduler {
               : standingGoal.template.taskType === 'ops'
                 ? 'other'
                 : standingGoal.template.taskType),
-          planReview: standingGoal.template.planReview,
+          planReview: standingGoal.approval === 'plan'
+            ? 'manual'
+            : standingGoal.template.planReview,
           handoff: 'none',
           budget: {
             ...(standingGoal.budget.perRunTurns !== undefined ? { maxTurns: standingGoal.budget.perRunTurns } : {}),
@@ -5185,16 +5238,6 @@ class MafwScheduler {
     });
     this.standingGoals = standingGoals;
 
-    this.automationEngine.registerAction('standing_goal:tick', async (rule) => {
-      if (process.env.MAFW_STANDING_GOALS !== '1') return;
-      const standingGoalId = String(rule.args?.standingGoalId ?? '');
-      if (!standingGoalId) return;
-      await this.standingGoals?.handleCronTick(
-        standingGoalId,
-        new Date().toISOString(),
-        String(rule.args?.triggerId ?? ''),
-      );
-    });
     void this.standingGoals.reconcile().catch((err: any) => {
       log.warn(`[StandingGoals] reconcile failed: ${err?.message ?? err}`);
     });
@@ -5519,6 +5562,8 @@ class MafwScheduler {
     try {
       const result: any = await runtime.session.prompt({
         sessionID: sessionId,
+        agent: 'plan',
+        maxTurns: 2,
         parts: [{ type: 'text', text: buildStandingTriagePrompt(input) }],
       });
       if (result?.error) throw new Error(String(result.error.message ?? result.error));
@@ -5529,7 +5574,15 @@ class MafwScheduler {
       const start = text.lastIndexOf('{');
       const end = text.lastIndexOf('}');
       if (start < 0 || end <= start) throw new Error('standing triage returned no JSON object');
-      return { sessionId, output: JSON.parse(text.slice(start, end + 1)) };
+      const usage = result?.usage;
+      return {
+        sessionId,
+        output: JSON.parse(text.slice(start, end + 1)),
+        ...(typeof usage?.costUsd === 'number' ? { costUsd: usage.costUsd } : {}),
+        ...(usage ? {
+          tokens: Number(usage.input ?? 0) + Number(usage.output ?? 0) + Number(usage.reasoning ?? 0),
+        } : {}),
+      };
     } finally {
       try { await runtime.session.delete({ sessionID: sessionId }); } catch { /* fail-open */ }
     }
@@ -6025,7 +6078,16 @@ class MafwScheduler {
         enabled: () => process.env.MAFW_STANDING_GOALS === '1' && !!this.standingGoals,
         list: (projectDir) => this.standingGoals!.list(projectDir),
         create: (input: any) => this.standingGoals!.create({
-          projectDir: String(input?.projectDir ?? ''),
+          projectDir: (() => {
+            const dir = String(input?.projectDir ?? '');
+            const canonical = dir ? canonicalProjectDir(dir) : '';
+            const registered = dir && Array.from(this.registeredProjects.keys())
+              .some((candidate) => canonicalProjectDir(candidate) === canonical);
+            if (!registered) {
+              throw Object.assign(new Error('projectDir is not a registered project'), { status: 400 });
+            }
+            return dir;
+          })(),
           title: String(input?.title ?? ''),
           objective: String(input?.objective ?? ''),
           template: input?.template && typeof input.template === 'object' ? input.template : {},

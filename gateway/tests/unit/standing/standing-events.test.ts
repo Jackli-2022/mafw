@@ -60,4 +60,15 @@ describe('StandingGoalService event integration', () => {
     expect(await h.service.handleCronTick(goal.id, '2026-11-10T01:00:00.000Z'))
       .toMatchObject({ status: 'running' });
   });
+
+  test('events from another project never create a run', async () => {
+    const h = harness();
+    const goal = h.service.create({ ...base, triggers: [eventTrigger] });
+    await expect(h.service.handleEventTrigger(goal.id, {
+      eventId: 'd-other',
+      payload: { number: 1 },
+      kind: 'pr_opened',
+      projectDir: '/other',
+    })).resolves.toBeNull();
+  });
 });

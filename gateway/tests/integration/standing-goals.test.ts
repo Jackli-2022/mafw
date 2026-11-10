@@ -9,46 +9,11 @@ const base = {
   template: { taskType: 'research' as const },
 };
 
-function integrationHarness(over: { cost?: number } = {}) {
+function integrationHarness() {
   const db = new Database(':memory:');
   const store = new StandingGoalStore(db);
   let seq = 0;
   const now = '2026-11-10T00:00:00.000Z';
-
-  if (over.cost !== undefined) {
-    store.insertGoal({
-      id: 'seed-goal',
-      projectDir: base.projectDir,
-      title: 'seed',
-      objective: 'seed',
-      template: {},
-      triggers: [],
-      state: 'active',
-      concurrency: 1,
-      cooldownMs: 0,
-      budget: {},
-      approval: 'auto',
-      createdBy: null,
-      now,
-    });
-    store.insertRun({
-      id: 'seed-run',
-      standingGoalId: 'seed-goal',
-      triggerType: 'manual',
-      triggerKey: 'seed-manual',
-      payload: {},
-      status: 'done',
-      mode: 'report',
-      rationale: 'seed',
-      goalId: null,
-      sessionId: null,
-      worktree: null,
-      result: null,
-      costUsd: over.cost,
-      tokens: null,
-      now,
-    });
-  }
 
   const cronJobs = new Map<string, { schedule: string; timezone: string }>();
   const broadcast = jest.fn();
@@ -97,16 +62,34 @@ describe('standing goals integration', () => {
   });
 
   test('budget exhaustion pauses the standing goal and raises attention', async () => {
-    const h = integrationHarness({ cost: 10 });
+    const h = integrationHarness();
     const goal = h.service.create({
       ...base,
       triggers: [{ id: 'c1', type: 'cron', schedule: '0 9 * * *', timezone: 'Asia/Shanghai' }],
       budget: { perDayCostUsd: 1 },
     });
+    h.store.insertRun({
+      id: 'seed-run-own',
+      standingGoalId: goal.id,
+      triggerType: 'manual',
+      triggerKey: 'seed-own-manual',
+      payload: {},
+      status: 'done',
+      mode: 'report',
+      rationale: 'seed',
+      goalId: null,
+      sessionId: null,
+      worktree: null,
+      result: null,
+      costUsd: 10,
+      tokens: null,
+      now: '2026-11-10T00:00:00.000Z',
+    });
 
     const run = await h.service.handleCronTick(goal.id, '2026-11-10T01:00:00.000Z');
     expect(run).toBeNull();
     expect(h.store.getGoal(goal.id)?.state).toBe('paused');
+    expect(h.store.getGoal(goal.id)?.stateReason).toContain('budget');
     expect(h.broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: 'goal_run.budget_exhausted' }));
     expect(h.createTriage).not.toHaveBeenCalled();
     h.db.close();

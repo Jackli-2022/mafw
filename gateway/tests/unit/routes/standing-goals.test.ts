@@ -58,4 +58,8 @@ describe('standing goal routes', () => {
   test('approve rejects a run that is not waiting_person', async () => {
     expect((await handleApproveRun({ id: 'r1' }, deps({ getRun: () => ({ id: 'r1', status: 'running' }) }))).status).toBe(409);
   });
+
+  test('approve rejects agent actor sessions (human-only)', async () => {
+    expect((await handleApproveRun({ id: 'r1', actorSessionID: 'ses_agent' }, deps())).status).toBe(403);
+  });
 });

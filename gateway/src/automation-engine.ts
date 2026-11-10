@@ -1097,9 +1097,14 @@ export class AutomationEngine {
     }
   }
 
+  /** Windows-safe filename for a logical automation rule id. */
+  private automationRulePath(id: string): string {
+    const safe = id.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_');
+    return path.join(this.mafwDir, 'automations', `${safe}.json`);
+  }
+
   deleteRule(id: string): boolean {
-    const autoDir = path.join(this.mafwDir, 'automations');
-    const filePath = path.join(autoDir, `${id}.json`);
+    const filePath = this.automationRulePath(id);
     if (!fs.existsSync(filePath)) return false;
     fs.unlinkSync(filePath);
     this.rules.delete(id);
@@ -1125,7 +1130,7 @@ export class AutomationEngine {
     };
     const autoDir = path.join(this.mafwDir, 'automations');
     if (!fs.existsSync(autoDir)) fs.mkdirSync(autoDir, { recursive: true });
-    fs.writeFileSync(path.join(autoDir, `${input.key}.json`), JSON.stringify(rule, null, 2), 'utf-8');
+    fs.writeFileSync(this.automationRulePath(input.key), JSON.stringify(rule, null, 2), 'utf-8');
     const previous = this.jobs.get(input.key);
     if (previous) { previous.stop(); this.jobs.delete(input.key); }
     this.rules.set(input.key, rule);
@@ -1133,12 +1138,18 @@ export class AutomationEngine {
     return { nextRunAt: this.getNextTriggers(rule, 1).next5[0] ?? null };
   }
 
+  /** Next cron fire time for a Standing Goal rule (best effort). */
+  nextStandingCronRun(key: string): string | null {
+    const rule = this.rules.get(key);
+    return rule ? (this.getNextTriggers(rule, 1).next5[0] ?? null) : null;
+  }
+
   unregisterStandingCron(key: string): void {
     const job = this.jobs.get(key);
     if (job) { job.stop(); this.jobs.delete(key); }
     this.rules.delete(key);
     try {
-      const filePath = path.join(this.mafwDir, 'automations', `${key}.json`);
+      const filePath = this.automationRulePath(key);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch { /* best effort */ }
   }

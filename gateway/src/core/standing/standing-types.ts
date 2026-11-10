@@ -47,6 +47,7 @@ export interface StandingGoal {
   template: StandingTemplate;
   triggers: StandingTrigger[];
   state: StandingState;
+  stateReason?: string | null;
   concurrency: number;
   cooldownMs: number;
   budget: StandingBudget;

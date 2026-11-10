@@ -113,6 +113,30 @@ describe('AutomationEngine action registry lifecycle', () => {
     await run;
     expect(finished).toBe(true);
   });
+  it('standing cron filenames are Windows-safe and survive reload', () => {
+    const dir = tmp();
+    const engine = new AutomationEngine(dir);
+    const key = 'standing-goal:sg1:c1';
+    engine.setActionsProvider(() => {
+      engine.registerAction('standing_goal:tick', async () => {});
+    });
+    engine.refreshActions();
+    const registered = engine.registerStandingCron({
+      key,
+      schedule: '0 9 * * *',
+      timezone: 'UTC',
+      standingGoalId: 'sg1',
+      triggerId: 'c1',
+    });
+    expect(registered.nextRunAt).toBeTruthy();
+    const files = fs.readdirSync(path.join(dir, 'automations'));
+    expect(files).toEqual(['standing-goal_sg1_c1.json']);
+    expect(engine.nextStandingCronRun(key)).toBeTruthy();
+
+    engine.reloadRules();
+    expect(engine.hasAction('standing_goal:tick')).toBe(true);
+    expect(engine.nextStandingCronRun(key)).toBeTruthy();
+  });
 });
 
 describe('AutomationEngine scheduler submission', () => {

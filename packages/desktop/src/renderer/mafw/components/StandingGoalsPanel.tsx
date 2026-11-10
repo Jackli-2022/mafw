@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+﻿import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import type { GoalRunView, StandingGoalView, StandingRunStatus } from "@mafw/sdk"
 
@@ -40,14 +40,12 @@ export function StandingGoalsPanel(props: {
   const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set())
   const [busyGoalId, setBusyGoalId] = createSignal("")
   const [error, setError] = createSignal("")
-  const [loaded, setLoaded] = createSignal(false)
 
   const load = async (): Promise<void> => {
     const dir = props.projectDir
     if (!dir) {
       setGoals([])
       setRunsByGoal({})
-      setLoaded(false)
       return
     }
     try {
@@ -64,11 +62,10 @@ export function StandingGoalsPanel(props: {
       setRunsByGoal(Object.fromEntries(entries))
       setError("")
     } catch (err: any) {
+      const message = String(err?.message ?? err)
       setGoals([])
       setRunsByGoal({})
-      setError(String(err?.message ?? err))
-    } finally {
-      setLoaded(true)
+      setError(/\b503\b|disabled|not enabled/i.test(message) ? "" : message)
     }
   }
 
@@ -135,6 +132,9 @@ export function StandingGoalsPanel(props: {
                 <div class="mafw-standing-goal-title">{goal.title}</div>
                 <div class="mafw-standing-goal-meta">
                   <span class={`mafw-standing-goal-state is-${goal.state}`}>{STATE_LABEL[goal.state]}</span>
+                  <Show when={goal.stateReason}>
+                    <span class="mafw-standing-goal-reason">{goal.stateReason}</span>
+                  </Show>
                   <span aria-label="next run">下次运行 {formatTime(goal.nextRunAt)}</span>
                   <span>上次运行 {formatTime(goal.lastRunAt)}</span>
                   <span>成功率 {successRate(goal.id)}</span>
@@ -233,10 +233,6 @@ export function StandingGoalsPanel(props: {
             </article>
           )}
         </For>
-      </Show>
-
-      <Show when={loaded() && !hasGoals() && !error()}>
-        <div class="mafw-project-work-hint">长效目标默认关闭；在 gateway 设置 MAFW_STANDING_GOALS=1 后启用。</div>
       </Show>
     </section>
   )

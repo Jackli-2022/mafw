@@ -68,4 +68,34 @@ describe('StandingGoalService run lifecycle', () => {
       .toMatchObject({ status: 'skipped', mode: 'skip', rationale: 'duplicate' });
     expect(h.createGoal).not.toHaveBeenCalled();
   });
+
+  test('confirm approval gates goal runs until a human approves', async () => {
+    const h = harness();
+    const goal = h.service.create({
+      ...base,
+      triggers: [cronTrigger],
+      approval: 'confirm',
+    });
+    const run = await h.service.handleCronTick(goal.id, '2026-11-10T01:00:00.000Z');
+    expect(run).toMatchObject({ status: 'waiting_person', mode: 'goal' });
+    expect(h.createGoal).not.toHaveBeenCalled();
+
+    const approved = await h.service.approveRun(run!.id);
+    expect(approved).toMatchObject({ status: 'running', mode: 'goal', goalId: 'g1' });
+    expect(h.createGoal).toHaveBeenCalledTimes(1);
+  });
+
+  test('run cost accumulates triage and goal spend', async () => {
+    const h = harness();
+    h.createTriage.mockResolvedValue({
+      sessionId: 'ses_triage',
+      output: { mode: 'report', rationale: 'summary' },
+      costUsd: 0.25,
+      tokens: 120,
+    });
+    const goal = h.service.create({ ...base, triggers: [cronTrigger] });
+    const run = await h.service.handleCronTick(goal.id, '2026-11-10T01:00:00.000Z');
+    await h.service.onGoalFinished(run!.goalId!, { status: 'done', costUsd: 1.5, tokens: 300 });
+    expect(h.store.getRun(run!.id)).toMatchObject({ costUsd: 1.75, tokens: 420, status: 'done' });
+  });
 });

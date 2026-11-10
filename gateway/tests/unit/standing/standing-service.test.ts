@@ -64,4 +64,18 @@ describe('StandingGoalService lifecycle', () => {
     expect(() => service.create({ ...base, triggers: [] })).toThrow();
     expect(() => service.list('/p')).not.toThrow();
   });
+
+  test('stopped is terminal and clears nextRunAt', () => {
+    const h = harness();
+    const goal = h.service.create({ ...base, triggers: [cronTrigger] });
+    expect(goal.nextRunAt).toBe('2026-11-11T01:00:00.000Z');
+    expect(h.service.stop(goal.id).nextRunAt).toBeNull();
+    expect(() => h.service.pause(goal.id)).toThrow();
+    expect(() => h.service.resume(goal.id)).toThrow();
+    try {
+      h.service.pause(goal.id);
+    } catch (err: any) {
+      expect(err.status).toBe(409);
+    }
+  });
 });

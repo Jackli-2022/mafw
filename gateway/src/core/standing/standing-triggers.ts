@@ -3,6 +3,18 @@ import { StandingGoalError, type GoalRun, type StandingGoal, type StandingTrigge
 const TRIGGER_TYPES = new Set(['cron', 'event', 'manual']);
 const OPEN_STATUSES = new Set(['queued', 'triaging', 'running', 'waiting_person']);
 
+function assertCronShape(schedule: string, timezone: string): void {
+  const fields = schedule.trim().split(/\s+/);
+  if (fields.length < 5 || fields.length > 6) {
+    throw new StandingGoalError(400, `invalid cron schedule: ${schedule}`);
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+  } catch {
+    throw new StandingGoalError(400, `invalid timezone: ${timezone}`);
+  }
+}
+
 export function parseStandingTriggers(value: unknown): StandingTrigger[] {
   if (!Array.isArray(value)) {
     throw new StandingGoalError(400, 'triggers must be an array');
@@ -22,7 +34,11 @@ export function parseStandingTriggers(value: unknown): StandingTrigger[] {
       if (!schedule || !timezone) {
         throw new StandingGoalError(400, 'cron triggers require schedule and timezone');
       }
-      return { id, type, schedule, timezone };
+      assertCronShape(schedule, timezone);
+      const filter = raw.filter && typeof raw.filter === 'object' && !Array.isArray(raw.filter)
+        ? raw.filter as Record<string, unknown>
+        : undefined;
+      return { id, type, schedule, timezone, ...(filter ? { filter } : {}) };
     }
     if (type === 'event') {
       const eventKinds = Array.isArray(raw.eventKinds)
@@ -31,7 +47,10 @@ export function parseStandingTriggers(value: unknown): StandingTrigger[] {
       if (eventKinds.length === 0) {
         throw new StandingGoalError(400, 'event triggers require at least one event kind');
       }
-      return { id, type, eventKinds };
+      const filter = raw.filter && typeof raw.filter === 'object' && !Array.isArray(raw.filter)
+        ? raw.filter as Record<string, unknown>
+        : undefined;
+      return { id, type, eventKinds, ...(filter ? { filter } : {}) };
     }
     return { id, type: 'manual' };
   });

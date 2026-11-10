@@ -1,3 +1,4 @@
+import * as path from 'path';
 import {
   StandingGoalError,
   type GoalRun,
@@ -22,6 +23,7 @@ export interface StandingGoalServiceDeps {
     triggerId: string;
   }): Promise<{ nextRunAt: string | null }> | { nextRunAt: string | null };
   unregisterCron(key: string): Promise<void> | void;
+  nextCronRun?(key: string): string | null;
   enabled(): boolean;
   log?(message: string): void;
   broadcast(event: { type: string; properties?: Record<string, unknown> }): void;
@@ -30,7 +32,7 @@ export interface StandingGoalServiceDeps {
     trigger: StandingTrigger;
     payload: Record<string, unknown>;
     recentRuns: GoalRun[];
-  }): Promise<{ sessionId: string; output: unknown }>;
+  }): Promise<{ sessionId: string; output: unknown; costUsd?: number; tokens?: number }>;
   createGoal?(input: {
     standingGoal: StandingGoal;
     run: GoalRun;
@@ -52,6 +54,82 @@ function earliest(values: Array<string | null | undefined>): string | null {
   return valid[0] ?? null;
 }
 
+const APPROVAL_POLICIES = new Set(['auto', 'plan', 'confirm']);
+
+function assertFiniteNumber(value: unknown, label: string, min: number): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < min) {
+    throw new StandingGoalError(400, `${label} must be a finite number >= ${min}`);
+  }
+  return number;
+}
+
+function validateBudget(value: unknown): StandingBudget {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new StandingGoalError(400, 'budget must be an object');
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    ...(raw.perRunTurns !== undefined ? { perRunTurns: assertFiniteNumber(raw.perRunTurns, 'budget.perRunTurns', 1) } : {}),
+    ...(raw.perRunCostUsd !== undefined ? { perRunCostUsd: assertFiniteNumber(raw.perRunCostUsd, 'budget.perRunCostUsd', 0) } : {}),
+    ...(raw.perDayCostUsd !== undefined ? { perDayCostUsd: assertFiniteNumber(raw.perDayCostUsd, 'budget.perDayCostUsd', 0) } : {}),
+  };
+}
+
+function validateApproval(value: unknown): StandingGoal['approval'] {
+  const approval = clean(value) || 'plan';
+  if (!APPROVAL_POLICIES.has(approval)) {
+    throw new StandingGoalError(400, `invalid approval policy: ${approval}`);
+  }
+  return approval as StandingGoal['approval'];
+}
+
+function validateTemplate(value: unknown): StandingTemplate {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new StandingGoalError(400, 'template must be an object');
+  }
+  return value as StandingTemplate;
+}
+
+function normalizeScheduledAt(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return `${parsed.toISOString().slice(0, 16)}:00.000Z`;
+}
+
+function payloadValue(payload: Record<string, unknown>, key: string): unknown {
+  const aliases: Record<string, string> = {
+    repo: 'repository.full_name',
+    labels: 'labels',
+    branch: 'ref',
+    author: 'sender.login',
+  };
+  const pathKey = aliases[key] ?? key;
+  let cursor: any = payload;
+  for (const part of pathKey.split('.')) {
+    if (cursor == null || typeof cursor !== 'object') return undefined;
+    cursor = cursor[part];
+  }
+  return cursor;
+}
+
+function matchesFilter(filter: Record<string, unknown> | undefined, payload: Record<string, unknown>): boolean {
+  if (!filter) return true;
+  for (const [key, expected] of Object.entries(filter)) {
+    if (expected === undefined) continue;
+    const actual = payloadValue(payload, key);
+    const expectedValues = Array.isArray(expected) ? expected : [expected];
+    const actualValues = Array.isArray(actual) ? actual : [actual];
+    if (!expectedValues.some((value) => actualValues.some((candidate) => String(candidate) === String(value)))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export class StandingGoalService {
   constructor(private readonly deps: StandingGoalServiceDeps) {}
 
@@ -68,28 +146,38 @@ export class StandingGoalService {
     createdBy?: string | null;
   }): StandingGoal {
     this.requireEnabled();
+    if (!input.projectDir || !path.isAbsolute(input.projectDir)) {
+      throw new StandingGoalError(400, 'projectDir must be an absolute path');
+    }
     const triggers = parseStandingTriggers(input.triggers);
     if (triggers.length === 0) throw new StandingGoalError(400, 'at least one trigger is required');
+    const now = this.deps.now();
     const goal = this.deps.store.insertGoal({
       id: this.deps.newId('standing-goal'),
       projectDir: input.projectDir,
       title: clean(input.title) || 'Standing Goal',
       objective: clean(input.objective) || clean(input.title),
-      template: input.template ?? {},
+      template: validateTemplate(input.template),
       triggers,
       state: 'active',
-      concurrency: Math.max(1, Math.trunc(input.concurrency ?? 1)),
-      cooldownMs: Math.max(0, Math.trunc(input.cooldownMs ?? 0)),
-      budget: input.budget ?? {},
-      approval: input.approval ?? 'plan',
+      concurrency: Math.max(1, Math.trunc(assertFiniteNumber(input.concurrency, 'concurrency', 1) ?? 1)),
+      cooldownMs: Math.max(0, Math.trunc(assertFiniteNumber(input.cooldownMs, 'cooldownMs', 0) ?? 0)),
+      budget: validateBudget(input.budget),
+      approval: validateApproval(input.approval),
       createdBy: input.createdBy ?? null,
-      now: this.deps.now(),
+      now,
     });
-    const nextRunAt = this.registerCronTriggers(goal);
-    this.registerEventTriggers(goal);
-    const updated = this.deps.store.updateGoal(goal.id, { nextRunAt }, this.deps.now());
-    this.deps.broadcast({ type: 'standing_goal.created', properties: { standingGoalId: goal.id } });
-    return updated;
+    try {
+      const nextRunAt = this.registerCronTriggers(goal);
+      this.registerEventTriggers(goal);
+      const updated = this.deps.store.updateGoal(goal.id, { nextRunAt }, now);
+      this.deps.broadcast({ type: 'standing_goal.created', properties: { standingGoalId: goal.id } });
+      return updated;
+    } catch (err: any) {
+      this.deps.store.setGoalState(goal.id, 'paused', now, 'trigger registration failed');
+      this.deps.log?.(`[StandingGoals] create failed after persist: ${err?.message ?? err}`);
+      throw new StandingGoalError(500, `failed to register standing goal triggers: ${err?.message ?? err}`);
+    }
   }
 
   update(
@@ -98,15 +186,34 @@ export class StandingGoalService {
   ): StandingGoal {
     this.requireEnabled();
     const current = this.requireGoal(id);
+    if (current.state === 'stopped') throw new StandingGoalError(409, 'stopped standing goal cannot be updated');
     const next: any = { ...patch };
-    if (patch.triggers !== undefined) next.triggers = parseStandingTriggers(patch.triggers);
+    if (patch.triggers !== undefined) {
+      const triggers = parseStandingTriggers(patch.triggers);
+      if (triggers.length === 0) throw new StandingGoalError(400, 'at least one trigger is required');
+      next.triggers = triggers;
+    }
+    if (patch.template !== undefined) next.template = validateTemplate(patch.template);
+    if (patch.budget !== undefined) next.budget = validateBudget(patch.budget);
+    if (patch.approval !== undefined) next.approval = validateApproval(patch.approval);
+    if (patch.concurrency !== undefined) {
+      next.concurrency = Math.max(1, Math.trunc(assertFiniteNumber(patch.concurrency, 'concurrency', 1)!));
+    }
+    if (patch.cooldownMs !== undefined) {
+      next.cooldownMs = Math.max(0, Math.trunc(assertFiniteNumber(patch.cooldownMs, 'cooldownMs', 0)!));
+    }
     const updated = this.deps.store.updateGoal(id, next, this.deps.now());
     this.unregisterCronTriggers(current);
     void this.deps.unsubscribeEvents?.(current.id);
     if (updated.state === 'active') {
-      const nextRunAt = this.registerCronTriggers(updated);
-      this.registerEventTriggers(updated);
-      return this.deps.store.updateGoal(id, { nextRunAt }, this.deps.now());
+      try {
+        const nextRunAt = this.registerCronTriggers(updated);
+        this.registerEventTriggers(updated);
+        return this.deps.store.updateGoal(id, { nextRunAt }, this.deps.now());
+      } catch (err: any) {
+        this.deps.store.setGoalState(id, 'paused', this.deps.now(), 'trigger registration failed');
+        throw new StandingGoalError(500, `failed to register standing goal triggers: ${err?.message ?? err}`);
+      }
     }
     return updated;
   }
@@ -126,14 +233,14 @@ export class StandingGoalService {
   ): Promise<GoalRun | null> {
     this.requireEnabled();
     const goal = this.requireGoal(id);
-    const selected = trigger ?? goal.triggers[0];
-    if (!selected) return null;
+    if (goal.state !== 'active') return null;
+    const selected = trigger ?? { id: 'manual', type: 'manual' } as StandingTrigger;
     const now = this.deps.now();
     const triggerKey = triggerKeyFor({
       standingGoalId: goal.id,
       trigger: selected,
-      scheduledAt: String(payload.scheduledAt ?? now),
-      eventId: String(payload.eventId ?? this.deps.newId('event')),
+      scheduledAt: now,
+      eventId: this.deps.newId('event'),
       manualId: this.deps.newId('manual'),
     });
     return this.startRun(goal, selected, triggerKey, payload);
@@ -146,10 +253,16 @@ export class StandingGoalService {
   ): Promise<GoalRun | null> {
     this.requireEnabled();
     const goal = this.requireGoal(standingGoalId);
+    if (goal.state !== 'active') return null;
     const trigger = goal.triggers.find((item) => item.type === 'cron' && (!triggerId || item.id === triggerId));
     if (!trigger) return null;
-    const triggerKey = triggerKeyFor({ standingGoalId, trigger, scheduledAt });
-    return this.startRun(goal, trigger, triggerKey, { scheduledAt });
+    const scheduled = normalizeScheduledAt(scheduledAt);
+    const triggerKey = triggerKeyFor({ standingGoalId, trigger, scheduledAt: scheduled });
+    const run = await this.startRun(goal, trigger, triggerKey, { scheduledAt: scheduled });
+    const key = `standing-goal:${goal.id}:${trigger.id}`;
+    const nextRunAt = this.deps.nextCronRun?.(key) ?? null;
+    this.deps.store.updateGoal(goal.id, { nextRunAt }, this.deps.now());
+    return run;
   }
 
   async approveRun(runId: string): Promise<GoalRun> {
@@ -162,6 +275,9 @@ export class StandingGoalService {
     const pending = (run.result as any)?.pendingTriage;
     const triage = validateRunTriage(pending);
     const now = this.deps.now();
+    if (!this.deps.store.claimWaitingRun(run.id, now)) {
+      throw new StandingGoalError(409, 'goal run is no longer waiting_person');
+    }
     if (triage.mode === 'action') {
       if (!this.deps.executeAction) throw new StandingGoalError(503, 'action executor unavailable');
       const actionResult = await this.deps.executeAction(triage.action!);
@@ -202,12 +318,14 @@ export class StandingGoalService {
   }
 
   private maybePauseAfterFailures(goal: StandingGoal, now: string): void {
-    const dayStart = new Date(now);
-    dayStart.setUTCHours(0, 0, 0, 0);
-    const failed = this.deps.store.listRunsForDay(goal.projectDir, dayStart.toISOString())
-      .filter((run) => run.standingGoalId === goal.id && run.status === 'failed');
-    if (failed.length < 3) return;
-    this.pause(goal.id);
+    const runs = this.deps.store.listRuns(goal.id, 20);
+    let consecutive = 0;
+    for (const run of runs) {
+      if (run.status === 'failed') consecutive += 1;
+      else if (run.status === 'done' || run.status === 'skipped') break;
+    }
+    if (consecutive < 3) return;
+    this.pause(goal.id, 'three consecutive failures');
     this.deps.broadcast({
       type: 'goal_run.needs_person',
       properties: { standingGoalId: goal.id, reason: 'three consecutive failures' },
@@ -216,19 +334,36 @@ export class StandingGoalService {
 
   async handleEventTrigger(
     standingGoalId: string,
-    input: { triggerKey: string; payload: Record<string, unknown>; eventId: string; kind?: string },
+    input: {
+      payload: Record<string, unknown>;
+      eventId: string;
+      kind?: string;
+      triggerId?: string;
+      projectDir?: string;
+    },
   ): Promise<GoalRun | null> {
     this.requireEnabled();
     const goal = this.requireGoal(standingGoalId);
-    const trigger = goal.triggers.find((item) => item.type === 'event');
-    if (!trigger) return null;
-    if (input.kind && trigger.eventKinds?.length && !trigger.eventKinds.includes(input.kind)) {
+    if (goal.state !== 'active') return null;
+    if (input.projectDir && path.resolve(input.projectDir) !== path.resolve(goal.projectDir)) {
       return null;
     }
-    return this.startRun(goal, trigger, input.triggerKey, {
-      ...input.payload,
-      eventId: input.eventId,
-    });
+    const eventTriggers = goal.triggers.filter((item) => item.type === 'event' && (!input.triggerId || item.id === input.triggerId));
+    if (eventTriggers.length === 0) return null;
+    let first: GoalRun | null = null;
+    for (const trigger of eventTriggers) {
+      if (input.kind && trigger.eventKinds?.length && !trigger.eventKinds.includes(input.kind)) continue;
+      if (!matchesFilter(trigger.filter, input.payload)) continue;
+      const key = goal.triggers.filter((item) => item.type === 'event').length > 1
+        ? `${goal.id}:event:${trigger.id}:${input.eventId}`
+        : triggerKeyFor({ standingGoalId: goal.id, trigger, eventId: input.eventId });
+      const run = await this.startRun(goal, trigger, key, {
+        ...input.payload,
+        eventId: input.eventId,
+      });
+      if (run && !first) first = run;
+    }
+    return first;
   }
 
   async onGoalFinished(
@@ -242,57 +377,85 @@ export class StandingGoalService {
     this.deps.store.updateRun(run.id, {
       status,
       endedAt: now,
-      ...(outcome.costUsd !== undefined ? { costUsd: outcome.costUsd } : {}),
-      ...(outcome.tokens !== undefined ? { tokens: outcome.tokens } : {}),
-      ...(outcome.result !== undefined ? { result: outcome.result } : {}),
+      ...(outcome.costUsd !== undefined ? { costUsd: (run.costUsd ?? 0) + outcome.costUsd } : {}),
+      ...(outcome.tokens !== undefined ? { tokens: (run.tokens ?? 0) + outcome.tokens } : {}),
+      ...(outcome.result !== undefined ? { result: { ...(run.result ?? {}), ...outcome.result } } : {}),
     });
     this.deps.store.updateGoal(run.standingGoalId, { lastRunAt: now }, now);
-    this.deps.store.appendRunEvent(run.id, 'finished', { status }, now);
+    this.deps.store.appendRunEvent(run.id, status === 'done' ? 'finished' : 'failed', { status }, now);
     this.deps.broadcast({
-      type: 'goal_run.finished',
+      type: status === 'done' ? 'goal_run.finished' : 'goal_run.failed',
       properties: { standingGoalId: run.standingGoalId, runId: run.id, goalId, status },
     });
+    if (status === 'failed') {
+      const goal = this.deps.store.getGoal(run.standingGoalId);
+      if (goal) this.maybePauseAfterFailures(goal, now);
+    }
   }
 
-  pause(id: string): StandingGoal {
+  pause(id: string, reason?: string | null): StandingGoal {
     const goal = this.requireGoal(id);
+    if (goal.state === 'stopped') throw new StandingGoalError(409, 'stopped standing goal cannot pause');
     this.unregisterCronTriggers(goal);
     void this.deps.unsubscribeEvents?.(goal.id);
-    const updated = this.deps.store.setGoalState(id, 'paused', this.deps.now());
-    this.deps.broadcast({ type: 'standing_goal.paused', properties: { standingGoalId: id } });
-    return updated;
+    const updated = this.deps.store.setGoalState(id, 'paused', this.deps.now(), reason ?? null);
+    this.deps.store.updateGoal(id, { nextRunAt: null }, this.deps.now());
+    this.deps.broadcast({ type: 'standing_goal.paused', properties: { standingGoalId: id, reason: reason ?? null } });
+    return this.deps.store.getGoal(id) ?? updated;
   }
 
   resume(id: string): StandingGoal {
     const goal = this.requireGoal(id);
     if (goal.state === 'stopped') throw new StandingGoalError(409, 'stopped standing goal cannot resume');
-    this.deps.store.setGoalState(id, 'active', this.deps.now());
-    const nextRunAt = this.registerCronTriggers(goal);
-    this.registerEventTriggers(goal);
-    const updated = this.deps.store.updateGoal(id, { nextRunAt }, this.deps.now());
-    this.deps.broadcast({ type: 'standing_goal.resumed', properties: { standingGoalId: id } });
-    return updated;
+    this.deps.store.setGoalState(id, 'active', this.deps.now(), null);
+    try {
+      const nextRunAt = this.registerCronTriggers(goal);
+      this.registerEventTriggers(goal);
+      const updated = this.deps.store.updateGoal(id, { nextRunAt }, this.deps.now());
+      this.deps.broadcast({ type: 'standing_goal.resumed', properties: { standingGoalId: id } });
+      return updated;
+    } catch (err: any) {
+      this.deps.store.setGoalState(id, 'paused', this.deps.now(), 'trigger registration failed');
+      throw new StandingGoalError(500, `failed to register standing goal triggers: ${err?.message ?? err}`);
+    }
   }
 
   stop(id: string): StandingGoal {
     const goal = this.requireGoal(id);
     this.unregisterCronTriggers(goal);
     void this.deps.unsubscribeEvents?.(goal.id);
-    const updated = this.deps.store.setGoalState(id, 'stopped', this.deps.now());
+    const updated = this.deps.store.setGoalState(id, 'stopped', this.deps.now(), null);
+    this.deps.store.updateGoal(id, { nextRunAt: null }, this.deps.now());
     this.deps.broadcast({ type: 'standing_goal.stopped', properties: { standingGoalId: id } });
-    return updated;
+    return this.deps.store.getGoal(id) ?? updated;
   }
 
   async reconcile(): Promise<void> {
     if (!this.deps.enabled()) return;
+    const nowMs = Date.parse(this.deps.now());
+    if (Number.isFinite(nowMs)) {
+      const staleBefore = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
+      for (const run of this.deps.store.listStaleOpenRuns(staleBefore)) {
+        this.deps.store.updateRun(run.id, {
+          status: 'failed',
+          result: { error: 'stale open run recovered' },
+          endedAt: this.deps.now(),
+        });
+        this.deps.store.appendRunEvent(run.id, 'failed', { error: 'stale open run recovered' }, this.deps.now());
+      }
+    }
     for (const goal of this.deps.store.listAllGoals()) {
-      if (goal.state === 'active') {
-        const nextRunAt = this.registerCronTriggers(goal);
-        this.registerEventTriggers(goal);
-        this.deps.store.updateGoal(goal.id, { nextRunAt }, this.deps.now());
-      } else {
-        this.unregisterCronTriggers(goal);
-        void this.deps.unsubscribeEvents?.(goal.id);
+      try {
+        if (goal.state === 'active') {
+          const nextRunAt = this.registerCronTriggers(goal, false);
+          this.registerEventTriggers(goal);
+          this.deps.store.updateGoal(goal.id, { nextRunAt }, this.deps.now());
+        } else {
+          this.unregisterCronTriggers(goal);
+          void this.deps.unsubscribeEvents?.(goal.id);
+        }
+      } catch (err: any) {
+        this.deps.log?.(`[StandingGoals] reconcile failed for ${goal.id}: ${err?.message ?? err}`);
       }
     }
   }
@@ -303,12 +466,14 @@ export class StandingGoalService {
     triggerKey: string,
     payload: Record<string, unknown>,
   ): Promise<GoalRun | null> {
+    if (goal.state !== 'active') return null;
     if (this.deps.store.findRunByTriggerKey(goal.id, triggerKey)) return null;
     const now = this.deps.now();
     const dayStart = new Date(now);
     dayStart.setUTCHours(0, 0, 0, 0);
     const todayCostUsd = this.deps.store
       .listRunsForDay(goal.projectDir, dayStart.toISOString())
+      .filter((run) => run.standingGoalId === goal.id)
       .reduce((sum, run) => sum + (run.costUsd ?? 0), 0);
     const admission = canStartRun({
       goal,
@@ -318,7 +483,7 @@ export class StandingGoalService {
     });
     if (!admission.ok) {
       if (admission.reason === 'budget') {
-        this.pause(goal.id);
+        this.pause(goal.id, admission.message);
         this.deps.broadcast({
           type: 'goal_run.budget_exhausted',
           properties: { standingGoalId: goal.id, reason: admission.message },
@@ -327,23 +492,29 @@ export class StandingGoalService {
       return null;
     }
 
-    const run = this.deps.store.insertRun({
-      id: this.deps.newId('goal_run'),
-      standingGoalId: goal.id,
-      triggerType: trigger.type,
-      triggerKey,
-      payload,
-      status: 'queued',
-      mode: null,
-      rationale: null,
-      goalId: null,
-      sessionId: null,
-      worktree: null,
-      result: null,
-      costUsd: null,
-      tokens: null,
-      now,
-    });
+    let run: GoalRun;
+    try {
+      run = this.deps.store.insertRun({
+        id: this.deps.newId('goal_run'),
+        standingGoalId: goal.id,
+        triggerType: trigger.type,
+        triggerKey,
+        payload,
+        status: 'queued',
+        mode: null,
+        rationale: null,
+        goalId: null,
+        sessionId: null,
+        worktree: null,
+        result: null,
+        costUsd: null,
+        tokens: null,
+        now,
+      });
+    } catch (err: any) {
+      if (String(err?.code ?? '').includes('SQLITE_CONSTRAINT')) return null;
+      throw err;
+    }
     this.deps.store.appendRunEvent(run.id, 'created', { triggerType: trigger.type }, now);
     this.deps.broadcast({
       type: 'goal_run.created',
@@ -359,8 +530,18 @@ export class StandingGoalService {
         payload,
         recentRuns: this.deps.store.listRuns(goal.id, 5),
       });
+      if (triageResult.costUsd !== undefined || triageResult.tokens !== undefined) {
+        this.deps.store.updateRun(run.id, {
+          ...(triageResult.costUsd !== undefined ? { costUsd: triageResult.costUsd } : {}),
+          ...(triageResult.tokens !== undefined ? { tokens: triageResult.tokens } : {}),
+        });
+      }
       const triage = validateRunTriage(triageResult.output);
       this.deps.store.appendRunEvent(run.id, 'triaged', { mode: triage.mode }, now);
+      this.deps.broadcast({
+        type: 'goal_run.triaged',
+        properties: { standingGoalId: goal.id, runId: run.id, mode: triage.mode },
+      });
 
       if (triage.mode === 'skip') {
         this.deps.store.updateRun(run.id, {
@@ -379,23 +560,24 @@ export class StandingGoalService {
         return this.deps.store.getRun(run.id);
       }
 
+      const needsApproval = triage.requiresApproval === true || goal.approval === 'confirm';
+      if (needsApproval) {
+        this.deps.store.updateRun(run.id, {
+          status: 'waiting_person',
+          mode: triage.mode,
+          rationale: triage.rationale,
+          sessionId: triageResult.sessionId,
+          result: { pendingTriage: triage },
+        });
+        this.deps.store.appendRunEvent(run.id, 'needs_person', { mode: triage.mode }, now);
+        this.deps.broadcast({
+          type: 'goal_run.needs_person',
+          properties: { standingGoalId: goal.id, runId: run.id, mode: triage.mode },
+        });
+        return this.deps.store.getRun(run.id);
+      }
+
       if (triage.mode === 'action') {
-        const needsApproval = triage.requiresApproval === true || goal.approval === 'confirm';
-        if (needsApproval) {
-          this.deps.store.updateRun(run.id, {
-            status: 'waiting_person',
-            mode: 'action',
-            rationale: triage.rationale,
-            sessionId: triageResult.sessionId,
-            result: { pendingTriage: triage },
-          });
-          this.deps.store.appendRunEvent(run.id, 'needs_person', { mode: 'action' }, now);
-          this.deps.broadcast({
-            type: 'goal_run.needs_person',
-            properties: { standingGoalId: goal.id, runId: run.id, mode: 'action' },
-          });
-          return this.deps.store.getRun(run.id);
-        }
         if (!this.deps.executeAction) throw new Error('action executor unavailable');
         const actionResult = await this.deps.executeAction(triage.action!);
         const status = actionResult.ok ? 'done' : 'failed';
@@ -410,9 +592,10 @@ export class StandingGoalService {
         this.deps.store.updateGoal(goal.id, { lastRunAt: now }, now);
         this.deps.store.appendRunEvent(run.id, status === 'done' ? 'finished' : 'failed', { mode: 'action' }, now);
         this.deps.broadcast({
-          type: 'goal_run.finished',
+          type: status === 'done' ? 'goal_run.finished' : 'goal_run.failed',
           properties: { standingGoalId: goal.id, runId: run.id, status },
         });
+        if (status === 'failed') this.maybePauseAfterFailures(goal, now);
         return this.deps.store.getRun(run.id);
       }
 
@@ -451,6 +634,7 @@ export class StandingGoalService {
         type: 'goal_run.failed',
         properties: { standingGoalId: goal.id, runId: run.id, error },
       });
+      this.maybePauseAfterFailures(goal, this.deps.now());
       return this.deps.store.getRun(run.id);
     }
   }
@@ -463,25 +647,30 @@ export class StandingGoalService {
     }
   }
 
-  private registerCronTriggers(goal: StandingGoal): string | null {
+  private registerCronTriggers(goal: StandingGoal, strict = true): string | null {
     const next: Array<string | null> = [];
     for (const trigger of goal.triggers) {
       if (trigger.type !== 'cron') continue;
-      const result = this.deps.registerCron({
-        key: `standing-goal:${goal.id}:${trigger.id}`,
-        schedule: trigger.schedule!,
-        timezone: trigger.timezone!,
-        standingGoalId: goal.id,
-        triggerId: trigger.id,
-      });
-      if (result && typeof (result as any).then === 'function') {
-        // The automation adapter is synchronous in production; tests may use a
-        // promise. Keep the nextRunAt best-effort without blocking create().
-        void (result as Promise<{ nextRunAt: string | null }>).then((value) => {
-          if (value?.nextRunAt) this.deps.store.updateGoal(goal.id, { nextRunAt: value.nextRunAt }, this.deps.now());
+      try {
+        const result = this.deps.registerCron({
+          key: `standing-goal:${goal.id}:${trigger.id}`,
+          schedule: trigger.schedule!,
+          timezone: trigger.timezone!,
+          standingGoalId: goal.id,
+          triggerId: trigger.id,
         });
-      } else {
-        next.push((result as { nextRunAt: string | null })?.nextRunAt ?? null);
+        if (result && typeof (result as any).then === 'function') {
+          // The automation adapter is synchronous in production; tests may use a
+          // promise. Keep the nextRunAt best-effort without blocking create().
+          void (result as Promise<{ nextRunAt: string | null }>).then((value) => {
+            if (value?.nextRunAt) this.deps.store.updateGoal(goal.id, { nextRunAt: value.nextRunAt }, this.deps.now());
+          });
+        } else {
+          next.push((result as { nextRunAt: string | null })?.nextRunAt ?? null);
+        }
+      } catch (err: any) {
+        if (strict) throw err;
+        this.deps.log?.(`[StandingGoals] cron registration failed for ${goal.id}/${trigger.id}: ${err?.message ?? err}`);
       }
     }
     return earliest(next);

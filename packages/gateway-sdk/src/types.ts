@@ -1972,6 +1972,7 @@ export interface StandingGoalView {
   template: StandingGoalTemplate
   triggers: StandingTriggerView[]
   state: StandingGoalState
+  stateReason?: string | null
   concurrency: number
   cooldownMs: number
   budget: StandingGoalBudget

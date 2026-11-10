@@ -30,4 +30,15 @@ describe('standing goal MCP tools', () => {
     expect(result.isError).toBe(true);
     expect(JSON.parse((result.content[0] as any).text)).toMatchObject({ success: false, status: 503 });
   });
+
+  test('feature flag off gates the tool even when a service exists', async () => {
+    const tool = createStandingGoalTool({
+      service: { create: jest.fn() } as any,
+      projectDir: () => '/p',
+      enabled: () => false,
+    });
+    const result = await tool.execute({ title: 'x', objective: 'y', triggers: [] }, {});
+    expect(result.isError).toBe(true);
+    expect(JSON.parse((result.content[0] as any).text)).toMatchObject({ success: false, status: 503 });
+  });
 });
