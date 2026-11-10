@@ -193,7 +193,7 @@ import { QuestionLedger } from './core/manager/question-ledger';
 import { ensureManagerRules } from './core/manager/system-rule-templates';
 import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
 import { MilestonePushNotifier } from './core/manager/milestone-push';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
@@ -696,11 +696,9 @@ class MafwScheduler {
   private voiceRuntimePromise?: Promise<VoiceRuntime>;
   private voiceAsrRegistry = new AsrEngineRegistry();
   private voiceRuntimeConfig = resolveVoiceConfig({});
-  private voiceWss?: WebSocketServer;
   private voiceStartBlockedUntil = 0;
   private voiceStartError = '';
   private terminalService?: TerminalService;
-  private terminalWss?: WebSocketServer;
   /** D3 Task 3：WS 上行枢纽（wss / voiceWss / terminalWss + 心跳 interval 的归属）。 */
   private wsHub?: WsHub;
   private kernels?: SessionKernels;
@@ -4849,8 +4847,6 @@ class MafwScheduler {
           getTerminalService: () => this.getTerminalService(),
           pluginWebDeps: () => this.pluginWebDeps(),
         });
-        this.voiceWss = hub.voiceWss;
-        this.terminalWss = hub.terminalWss;
         this.wsHub = hub;
         resolve(true);
       });

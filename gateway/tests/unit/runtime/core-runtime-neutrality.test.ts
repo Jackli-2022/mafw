@@ -353,6 +353,8 @@ describe('contract surfaces and composition-root wiring', () => {
 
 // 守卫本身的可信度：`codeOf` 只剥注释、不裁文件——行结构逐行对齐、尾部保留、
 // 没有「几十行被整体置空」的失明段（旧正则的假绿形态）。
+// 注：`src/index.ts` 留在这份清单里是故意的——它是剥离器的入口完整性样本
+// （入口被截尾/整体置空会假绿）；`can('media.session')` 等正向断言已在 kernel.ts。
 describe('comment stripping keeps every scanned file whole', () => {
   const FILES = [
     'src/index.ts',

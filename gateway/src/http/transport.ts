@@ -231,38 +231,6 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       return;
     }
 
-    // GET /api/media/resolve-task/:id — Phase D1 Task C4：已迁 registry dispatch
-    // （loopback 门随迁，见 routes/media-upload.ts）。
-
-    // GET /api/tts/voices — 当前引擎音色 + 能力（desktop picker）
-    // GET /api/voice/status — voice config + registered ASR engines.
-    // GET /api/voice/status — Phase D1 Task H1：已迁 registry dispatch。
-
-    // /api/tts/voices + POST /api/tts + /api/tts/stream + /api/tts/interrupt
-    // — Phase D1 Task 3c：已迁 registry dispatch（attachTtsRoutes；voices/speak
-    // 无 loopback 门、stream/interrupt 有——语义逐字等价）。
-
-    // POST /api/media/analyze-audio — Phase D1 Task 3e：已迁 registry dispatch。
-    // POST /api/media/upload — Phase D1 Task 3e：已迁 registry dispatch。
-
-    // POST /api/media/create-task — Phase D1 Task 3e：已迁 registry dispatch。
-
-    // POST /api/media/upload-and-create — Phase D1 Task 3e：已迁 registry dispatch。
-
-    // Mobile TTS artifact + media proxy — Phase D1 Task 3d：已迁 registry dispatch。
-
-    // POST /api/tts/stream + POST /api/tts/interrupt — Phase D1 Task 3c：
-    // 已迁 registry dispatch（attachTtsRoutes；loopback 门随迁）。
-
-    // POST /api/python/execute + restart + status — Phase D1 Task 3a：
-    // 已迁 registry dispatch（attachPythonRoutes；loopback 守卫随迁）。
-
-    // GET /api/tools + POST /api/tools/execute — Phase D1 Task 3b：
-    // 已迁 registry dispatch（attachToolsRoutes；loopback 守卫随迁）。
-
-    // GET /api/python/status — kernel status for a session — Phase D1 Task 3a：
-    // 已迁 registry dispatch。
-
     // MCP endpoints on /mcp — dual transport:
     //   POST with ?sessionId=... → legacy SSE message channel
     //   POST without sessionId   → stateless StreamableHTTP (MCP 2025-03-26)
@@ -340,35 +308,8 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       return;
     }
 
-    // Chat API + POST /api/chat/enriched — Phase D1 Task C2：已迁 registry dispatch。
-
-    // POST /api/mafw-commands/run + GET /api/mafw-commands — Phase D1 Task A2：已迁 registry dispatch。
-    // POST /api/merge-memory — Phase D1 Task A3：已迁 registry dispatch。
-
-    // GET /api/memory/{merged-search,stats,sticky,get,search,energy-distribution} + POST /api/memory/embeddings/backfill
-    // + DELETE /api/memory/{id} + GET /api/l5/axioms — Phase D1 Task F1：已迁 registry dispatch。
-    // POST /api/goals/{goalId}/questions/{questionId}/respond — Phase D1 Task F2：已迁 registry dispatch。
-    // GET /api/goals/:id/sessions — P5 Wave 1 起由 registry dispatch 接管
-    // （历史约束"须挂 Dashboard /api/goals* 兜底之前"由 dispatch 位置满足）。
-
-    // GET /api/goals/:id/source — registry route `goals.source` (handoff provenance + full text).
-    // GET /api/goals/:id/timeline — Phase D1 Task F2：已迁 registry dispatch。
-    // POST /api/goals/:id/nodes/:runId/retry — Phase D1 Task F2：已迁 registry dispatch。
-    // GET /api/goals/:id/plan + POST /api/goals/:id/plan-approval — Phase D1 Task F2：已迁 registry dispatch。
-    // GET /api/pods/:podId/events + POST .../events/:id/seen + POST .../events/seen
-    // — Phase D1 Task H2：已迁 registry dispatch（pod.events.list / seen / seenAll）。
-
-    // 跨项目常驻存在感（tray/taskbar 的唯一数据源）。
-    // GET /api/presence — Phase D1 Task H1：已迁 registry dispatch。
-
-    // POST /api/session/{id}/background — Phase D1 Task D1：已迁 registry dispatch。
-
-    // Neutral terminal PTY façade — Phase D1 Task 3d：已迁 registry dispatch。
-
-    // MCP 管理门面（runtime-neutral）+ MCP 配置写入（mcpConfigApi）
-    // — Phase D1 Task H2：已迁 registry dispatch（mcp.servers / connect /
-    // disconnect / configPreview / configPreviewRemove / configApply /
-    // configRestore / configRemove；委派 handleMcp / handleMcpConfig 不变）。
+    // Everything else under `/api/*` is a registry route (`routes/*`) dispatched
+    // above; this chain only carries transport-level branches.
 
     // Dashboard API
     if (pathname.startsWith("/api/goals") || pathname.startsWith("/api/stats") || pathname.startsWith("/api/memory")) {
@@ -378,16 +319,6 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       res.end(JSON.stringify(dashboard.body));
       return;
     }
-
-    // POST /api/eval/chat/completions — EvalScope adapter: OpenAI-compatible
-    // endpoint that drives a full main-agent run (media → agent → A2A →
-    // MediaAgent → multimodal model) and returns the final answer.
-    // POST /api/eval/chat/completions — Phase D1 Task H1：已迁 registry dispatch。
-
-    // GET /api/config —gateway effective config
-    // GET /api/config — Phase D1 Task H1：已迁 registry dispatch。
-
-    // PUT /api/config — Phase D1 Task H1：已迁 registry dispatch。
 
     // 插件注册：必须传递 projectDir + mafwDir
     if (url === '/register' && req.method === 'POST') {
@@ -533,11 +464,6 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       return;
     }
 
-    // POST /api/work/{goalId}/validate + POST /api/work/{goalId}/complete — Phase D1 Task F2：已迁 registry dispatch。
-    // POST /api/manager/session/rotate — P5 Wave 1 起由 registry dispatch 接管
-    // GET /api/manager/session — Phase D1 Task H2：已迁 registry dispatch
-    // （manager.session；?projectDir= 单项目 / 全量投影语义随迁）。
-
     // 健康检查
     if (url === '/health' && req.method === 'GET') {
       res.writeHead(200);
@@ -551,140 +477,6 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
       }));
       return;
     }
-
-    // GET /api/projects + GET /api/projects/current — Phase D1 Task A1：已迁 registry dispatch。
-
-    // POST /api/devices + GET /api/devices + DELETE /api/devices/:id
-    // — Phase D1 Task H2：已迁 registry dispatch（devices.register / list / delete）。
-    // GET/DELETE /api/mobile/devices(:id) + POST /api/mobile/devices/register
-    // + GET /api/mobile/pairing-code + POST /api/mobile/pairing/verify
-    // — Phase D1 Task H2：已迁 registry dispatch（mobile.devicesList / devicesDelete /
-    // devicesRegister / pairingCode / pairingVerify；配对令牌与 429 语义随迁）。
-    // GET /api/approvals + POST /api/approvals/:id/respond — Phase D1 Task A5：已迁 registry dispatch。
-
-    // GET /api/questions + POST /api/questions/:id/{reply,reject} — Phase D1 Task B1：已迁 registry dispatch。
-
-    // 鈹€鈹€ Provider & Agents (composer model pill / @agent mention) 鈹€鈹€
-
-    // ── /api/runtime routes — P5 Wave 2 起由 registry dispatch 接管
-    // （runtimeDeps/restartAgentDeps 构造上移至私有方法；内联块对未知
-    //   /api/runtime/* 悬空 return 吞请求的行为随之终结——现落回 legacy 链）
-
-    // ── Plugin Hub (all four plugin types) — P5 Wave 2 起由 registry dispatch
-    // 接管（pluginHubDeps 构造上移至私有方法；cleanupExamples 改为命中
-    // /api/plugins 路由时才执行——内联时代每个到达此处的请求都跑）。
-
-    // GET /api/orchestration/outcomes — goal outcome query
-    // GET /api/orchestration/outcomes — Phase D1 Task H1：已迁 registry dispatch。
-
-    // GET /api/provider – list providers + models (legacy /provider)
-    // GET /api/provider — Phase D1 Task H1：已迁 registry dispatch。
-
-    // GET /api/agents — Phase D1 Task H1：已迁 registry dispatch。
-
-    // ── Runtime config (Settings page — runtime-neutral config surface) ──
-
-    // GET/PATCH /api/runtime-config — Phase D3 Task 2：已迁 registry dispatch。
-    // （routes/runtime-config.ts；GET 包络 `{ config }` / PATCH `{ status:'ok',
-    // config }`、provider.config(.update) 门、503 'LLM client not available'
-    // 与 500 日志格式随迁，runtime / runtimeHost 经 live getter。）
-
-    // GET|POST /api/sessions/{sid}/permission-mode — Phase D1 Task E2：已迁 registry dispatch。
-
-    // /api/approvals/allowlist + /api/approvals/rules (GET/POST/DELETE) — Phase D1 Task A5：已迁 registry dispatch。
-
-    // POST /api/permissions/{id}/reply — Phase D1 Task B1：已迁 registry dispatch。
-
-    // GET /api/triage + POST /api/triage/:id/{confirm,reject,propose} — Phase D1 Task A4：已迁 registry dispatch。
-
-    // ── Automation endpoints (Tier 4 — user only) ──
-    // POST /api/automations/draft — Phase D1 Task C1：已迁 registry dispatch。
-    // GET /api/automations — Phase D1 Task C1：已迁 registry dispatch。
-    // GET /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
-    // PUT /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
-    // DELETE /api/automations/:id — Phase D1 Task C1：已迁 registry dispatch。
-    // GET /api/automations/:id/history — Phase D1 Task C1：已迁 registry dispatch。
-
-    // POST /api/llm/compress — LLM compression proxy (via SDK)
-    // POST /api/llm/compress — Phase D1 Task H1：已迁 registry dispatch（handleCompress 经 compress 依赖桥接）。
-
-    // 鈹€鈹€ SdkSessionResource REST endpoints 鈹€鈹€
-
-    // POST /api/session — Phase D1 Task D1：已迁 registry dispatch。
-
-    // POST /api/session/{id}/promptAsync — Phase D1 Task D1：已迁 registry dispatch。
-
-    // POST /api/session/{id}/prompt — Phase D1 Task D1：已迁 registry dispatch。
-
-    // DELETE /api/session/{id} — Phase D1 Task D1：已迁 registry dispatch。
-
-    // POST /api/session/{id}/abort — Phase D1 Task D1：已迁 registry dispatch。
-
-    // ── 认知面 HTTP 动词（spec 2026-10-22-cognition-gate-rewrite §5.4；loopback-only）──
-    // Phase D1 Task 2：已迁 registry dispatch（attachCognitionRoutes；loopback
-    // 守卫与 per-request config 读取随 handler 迁移，行为等价）。
-
-    // ── 会话队列 inbox 管理面（spec 2026-10-22-session-queue-inbox §5.5）──
-    // GET /api/session/{id}/queue — Phase D1 Task D1：已迁 registry dispatch。
-    // DELETE /api/session/{id}/queue — Phase D1 Task D1：已迁 registry dispatch。
-    // DELETE /api/session/{id}/queue/{itemId} — Phase D1 Task D1：已迁 registry dispatch。
-
-    // DELETE/PATCH /api/sessions/:id — P5 Wave 1 起由 registry dispatch 接管
-
-    // GET /api/sessions —— code-first P0 起由 registry typed handler 接管
-    // （attachTypedRoute('session.list')，schema 见 routes/schemas/session.ts）。
-
-    // POST /api/sessions/{id}/permissions/{requestId} — Phase D1 Task E2：已迁 registry dispatch
-    // （always 持久规则沉淀与 permissionList 反查 fail-open 随迁）。
-
-    // GET /api/sessions/{id} — Phase D1 Task D1：已迁 registry dispatch。
-
-    // GET /api/sessions/{id}/messages — Phase D1 Task E1：已迁 registry dispatch。
-
-    // GET /api/sessions/{id}/todo — Phase D1 Task E1：已迁 registry dispatch（fail-open 200 {data:[]}）。
-
-    // GET /api/sessions/{id}/trajectory — Phase D1 Task E1：已迁 registry dispatch
-    // （store 缺失 / 抛错 → fail-open 200 {turns:[],events:[]}；rebuild 懒 require 随迁）。
-
-    // GET /api/sessions/{id}/token-summary — Phase D1 Task E1：已迁 registry dispatch
-    // （store 缺失 / 抛错 → fail-open 200 零值汇总）。
-
-    // /api/usage/plugins* — P5 Wave 1 起由 registry dispatch 接管（7 条）
-
-    // GET /api/media/plugins — media engine plugin state list
-    // GET /api/media/plugins — Phase D1 Task H1：已迁 registry dispatch。
-
-    // POST /api/media/plugins/reload — Phase D1 Task H1：已迁 registry dispatch。
-
-    // POST /api/media/switch — P5 Wave 1 起由 registry dispatch 接管
-
-    // GET/POST /api/model-config — P5 Wave 1 起由 registry dispatch 接管
-
-    // POST /api/sessions/:id/fork|revert|unrevert + /api/session/:id/summarize
-    // — P5 Wave 1 起由 registry dispatch 接管
-
-    // GET /api/usage + GET /api/usage/summary — Phase D1 Task B2：已迁 registry dispatch。
-
-    // ── Subagent spawn/list/message/cancel/result — Phase D1 Task E2：已迁 registry dispatch。
-    // （legacy 共享 matcher 的 GET/POST 双 method 臂由 catalog method 维度拆分。）
-
-    // GET /api/sessions/{id}/children — Phase D1 Task E1：已迁 registry dispatch
-    // （runtime 缺失 / 抛错 → fail-open 200 {items:[]}；depth 补齐随迁）。
-
-    // GET /api/recall/context — Phase D1 Task B4：已迁 registry dispatch（逐字迁移，fail-open 200）。
-
-    // GET /api/recall/{instructions,pinned,priors} — Phase D1 Task B3：已迁 registry dispatch。
-
-    // GET /api/agent/capabilities — Phase D1 Task 3d：已迁 registry dispatch
-    // （attachAgentRoutes；fail-open 语义随迁）。
-
-    // POST /api/obs/capture — Phase D1 Task C3：已迁 registry dispatch
-    // （手动 chunked reader / 1MB 静默丢弃 / fail-open 200 逐字随迁）。
-
-    // POST /api/events — P5 Wave 1 起由 registry dispatch 接管
-
-    // SSE 事件（→ Dashboard / Chat）— Phase D1 Task H2：已迁 registry dispatch
-    // （event.subscribe；Mode A 全局流 + 持久回放 / Mode B chat session 订阅随迁）。
 
     // GET /health — standalone health endpoint (not proxied)
     if (url === '/health') {
