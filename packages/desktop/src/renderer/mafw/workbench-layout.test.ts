@@ -10,6 +10,21 @@ describe("workbench layout pure functions", () => {
     assert.equal(workbenchColumns({ leftPx: 46, chatPx: 760, split: true, focus: false }), "46px 760px minmax(0, 1fr)")
   })
 
+  test("workbenchColumns：narrow 只显示 Chat 或 Workbench，不并排", () => {
+    assert.equal(workbenchColumns({
+      leftPx: 46, chatPx: 760, split: true, focus: false,
+      narrow: true, narrowWorkbench: false,
+    }), "46px minmax(0, 1fr) 0px")
+    assert.equal(workbenchColumns({
+      leftPx: 46, chatPx: 760, split: true, focus: false,
+      narrow: true, narrowWorkbench: true,
+    }), "46px 0px minmax(0, 1fr)")
+    assert.equal(workbenchColumns({
+      leftPx: 0, chatPx: 760, split: false, focus: false,
+      narrow: true, narrowWorkbench: false,
+    }), "0px minmax(0, 1fr) 0px")
+  })
+
   test("detentFromLegacy：旧 chat 宽度 px → 绝对档位（缺失/非法 → 760）", () => {
     assert.equal(detentFromLegacy("417", 1394), 520)
     assert.equal(detentFromLegacy("558", 1394), 520)

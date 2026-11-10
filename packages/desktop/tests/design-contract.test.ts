@@ -929,7 +929,7 @@ describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接�
     expect(shell).toMatch(/dir !== previous\) \{\s*restoreFocusSnapshot\(\)\s*setWorkbenchFocus\(false\)/)
     expect(shell).toMatch(/const focusActive = \(\) => workbenchFocusActive\(\{ focus: workbenchFocus\(\), content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
     expect(shell).toMatch(/focus: focusActive\(\)/)
-    expect(shell).toMatch(/<Show when=\{chatSplit\(\) && !focusActive\(\)\}>/)
+    expect(shell).toMatch(/<Show when=\{chatSplit\(\) && !focusActive\(\) && !narrowZone\(\)\}>/)
     expect(shell).not.toMatch(/mafw-workbench-focus/)
   })
   test("CSS：布局开关样式存在，no-drag 由 topstrip button 规则覆盖", () => {
