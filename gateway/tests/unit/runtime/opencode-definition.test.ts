@@ -210,3 +210,60 @@ describe('createOpencodeDefinition', () => {
     expect(validation.hard).toEqual([]);
   });
 });
+
+describe('native definition transport', () => {
+  it('emits validated AdapterEvents and echoes the gateway turn id', async () => {
+    const raw = [
+      { type: 'session.execution.started', data: { sessionID: 's1' } },
+      { type: 'session.execution.succeeded', data: { sessionID: 's1', finish: 'stop' } },
+    ];
+    const runtime = fakeRuntime({
+      global: {
+        event: async () => ({
+          stream: (async function* () {
+            for (const event of raw) yield event;
+          })(),
+        }),
+      },
+    });
+    const def = await createOpencodeDefinition(
+      ctx,
+      { variant: 'v21', baseUrl: 'http://x' },
+      { runtime },
+    );
+    const seen: any[] = [];
+    const unsubscribe = def.transport.onEvent((event) => seen.push(event));
+    await def.transport.sendTurn({ sessionID: 's1', turnID: 't1', text: 'hi' });
+    const started = Date.now();
+    while (seen.length < 2 && Date.now() - started < 1500) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    unsubscribe();
+
+    expect(seen.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['turn.started', 'turn.completed']),
+    );
+    expect(seen.every((event) => event.turnID === 't1')).toBe(true);
+    for (const event of seen) {
+      expect(event.id).toMatch(/^opencode_evt_/);
+      expect(event.data).toBeDefined();
+    }
+  });
+
+  it('maps steer to the native delivery hint', async () => {
+    let delivered: any;
+    const runtime = fakeRuntime({
+      session: {
+        ...fakeRuntime().session,
+        promptAsync: async (input: any) => { delivered = input; },
+      },
+    });
+    const def = await createOpencodeDefinition(
+      ctx,
+      { variant: 'v21', baseUrl: 'http://x' },
+      { runtime },
+    );
+    await expect(def.transport.steer!('s1', 'go')).resolves.toBe('steered');
+    expect(delivered).toMatchObject({ sessionID: 's1', message: 'go', delivery: 'steer', expectReply: false });
+  });
+});

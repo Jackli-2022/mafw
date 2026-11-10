@@ -31,6 +31,10 @@ export * from './auth';
 export * from './serve-sidecar';
 export * from './adapter';
 export * from './runtime';
+export * from './transport';
+export * from './channels';
+export * from './host';
+export * from './entry-registry';
 export * from './legacy-definition';
 export * from './definition';
 

@@ -74,7 +74,11 @@ export function canonicalToAdapterEvent(
     id: nextID(),
     sessionID,
     turnID,
-    requestID: typeof props.requestId === 'string' ? props.requestId : typeof props.id === 'string' ? props.id : undefined,
+    requestID: typeof props.requestId === 'string'
+      ? props.requestId
+      : typeof props.requestID === 'string'
+        ? props.requestID
+        : typeof props.id === 'string' ? props.id : undefined,
     at: Date.now(),
   };
   const make = (t: AdapterEvent['type'], data: unknown): AdapterEvent => ({ ...base, type: t, data } as AdapterEvent);
