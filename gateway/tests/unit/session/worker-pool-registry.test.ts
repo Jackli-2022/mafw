@@ -151,6 +151,36 @@ describe('SessionWorkerPool × session registry (revised Task 4)', () => {
     expect(disposed).toBe(1);
   });
 
+  it('evictedSources guard is FIFO-bounded (minor fix)', async () => {
+    const Cap = (SessionWorkerPool as unknown as { EVICTED_SOURCES_CAP: number });
+    const original = Cap.EVICTED_SOURCES_CAP;
+    Cap.EVICTED_SOURCES_CAP = 5; // small cap for a cheap test
+    try {
+      const pool = new SessionWorkerPool({
+        client: makeClient() as any,
+        directory: '/tmp',
+        ttlMs: 60_000,
+        registry,
+      });
+      // Seven one-shot sources: create + evict each.
+      for (let i = 0; i < 7; i++) {
+        pool.getWorker(`src-${i}`, 'extract');
+        (pool as any).evictPair(`src-${i}`);
+      }
+      const guard = (pool as any).evictedSources as Set<string>;
+      expect(guard.size).toBeLessThanOrEqual(5);
+      expect(guard.has('src-0')).toBe(false); // oldest trimmed
+      expect(guard.has('src-6')).toBe(true);
+      // A fresh register re-arms its guard (the trimmed src-0 works again).
+      pool.getWorker('src-0', 'extract');
+      (pool as any).evictPair('src-0');
+      expect(guard.has('src-0')).toBe(true);
+      await pool.disposeAll();
+    } finally {
+      Cap.EVICTED_SOURCES_CAP = original;
+    }
+  });
+
   it('sweeper eviction with BOTH worker sessions: sibling unregistered mid-sweep, guard holds', async () => {
     let disposed = 0;
     const client = makeClient();

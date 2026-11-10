@@ -200,6 +200,26 @@ describe('SessionRegistry', () => {
     expect(rec.metadata).toEqual({ fresh: true });          // stale metadata not merged
   });
 
+  it('sweep skips records unregistered mid-sweep: sibling onEvict never fires, count honest (minor fix)', () => {
+    const c = clock();
+    const r = new SessionRegistry({ now: c.now });
+    let bEvicted = 0;
+    // a's onEvict unregisters b (the pool's evictPair pattern).
+    r.register({
+      sessionID: 'a', scope: { kind: 'worker' }, ttlMs: 1000,
+      onEvict: () => { r.unregister('b'); },
+    });
+    r.register({
+      sessionID: 'b', scope: { kind: 'worker' }, ttlMs: 1000,
+      onEvict: () => { bEvicted++; },
+    });
+    c.advance(2000);
+    const swept = r.sweep();
+    expect(swept).toBe(1);            // only a was actually collected from the table
+    expect(bEvicted).toBe(0);         // b was explicitly unregistered — invariant holds
+    expect(r.lookup('b')).toBeNull();
+  });
+
   it('materialize never leaks the onEvict callback on public copies (deferred minor)', () => {
     const r = new SessionRegistry();
     r.register({

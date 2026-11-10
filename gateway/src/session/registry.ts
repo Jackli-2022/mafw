@@ -166,6 +166,11 @@ export class SessionRegistry {
   sweep(): number {
     let swept = 0;
     for (const record of Array.from(this.records.values())) {
+      // A mid-sweep onEvict may have unregistered later snapshot entries (the
+      // pool's evictPair unregisters sibling worker records). Those were
+      // EXPLICITLY unregistered — the "unregister never fires onEvict"
+      // invariant must hold for them too, and the count must stay honest.
+      if (!this.records.has(record.sessionID)) continue;
       if (record.expiresAt !== null && this.now() >= record.expiresAt) {
         this.collect(record, this.materialize(record, 'ended'));
         swept++;

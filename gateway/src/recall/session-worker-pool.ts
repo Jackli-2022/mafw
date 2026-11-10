@@ -43,6 +43,10 @@ export interface SessionWorkerPoolOptions {
 }
 
 export class SessionWorkerPool {
+  /** FIFO bound for the evictPair guard set (same discipline as the session
+   *  registry's retiredGenerations stash). */
+  static readonly EVICTED_SOURCES_CAP = 10_000;
+
   private entries: TtlMap<string, WorkerPair>;
   private flight = new Singleflight();
   private creationOrder: string[] = [];
@@ -57,8 +61,9 @@ export class SessionWorkerPool {
   private pairs = new Map<string, WorkerPair>();
   /** evictPair guard: a pair is disposed exactly once across the THREE
    *  triggers (TtlMap access-eviction, sweeper-driven record onEvict,
-   *  disposeAll). */
+   *  disposeAll). FIFO-bounded (see markEvicted). */
   private evictedSources = new Set<string>();
+  private evictedOrder: string[] = [];
 
   constructor(private opts: SessionWorkerPoolOptions) {
     const ttlMs = opts.ttlMs;
@@ -81,8 +86,11 @@ export class SessionWorkerPool {
    *  bounded WITHOUT requiring a getWorker access. */
   private evictPair(sourceSessionID: string, pair?: WorkerPair): void {
     if (this.evictedSources.has(sourceSessionID)) return;
-    this.evictedSources.add(sourceSessionID);
-    const held = pair ?? this.pairs.get(sourceSessionID) ?? this.entries.get(sourceSessionID);
+    this.markEvicted(sourceSessionID);
+    // Strong refs only: the TtlMap expires entries (and its get() both fires
+    // onEvict AND returns undefined for expired keys), so it must NOT be used
+    // as a lookup here — the pair would be silently undisposed.
+    const held = pair ?? this.pairs.get(sourceSessionID);
     if (held) {
       void held.extract.dispose();
       void held.reflect.dispose();
@@ -92,6 +100,19 @@ export class SessionWorkerPool {
     const idx = this.creationOrder.indexOf(sourceSessionID);
     if (idx !== -1) this.creationOrder.splice(idx, 1);
     this.unregisterWorkersFor(sourceSessionID);
+  }
+
+  /** Guard insert with the same discipline as the registry's retired stash:
+   *  FIFO-trim at EVICTED_SOURCES_CAP so one-shot session spam cannot grow
+   *  the guard set without bound. Fresh registers re-arm the guard. */
+  private markEvicted(sourceSessionID: string): void {
+    if (this.evictedSources.has(sourceSessionID)) return;
+    this.evictedSources.add(sourceSessionID);
+    this.evictedOrder.push(sourceSessionID);
+    if (this.evictedOrder.length > SessionWorkerPool.EVICTED_SOURCES_CAP) {
+      const oldest = this.evictedOrder.shift()!;
+      this.evictedSources.delete(oldest);
+    }
   }
 
   /** Unregister the session-registry records of a source session's workers. */
@@ -211,6 +232,7 @@ export class SessionWorkerPool {
     }
     this.workerSids.clear();
     this.evictedSources.clear();
+    this.evictedOrder = [];
     this.flight.clear();
     this.creationOrder = [];
     return Promise.resolve();
