@@ -5774,6 +5774,19 @@
           }
         }
       }
+    },
+    "/api/agent/capabilities": {
+      "get": {
+        "operationId": "agent.capabilities",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

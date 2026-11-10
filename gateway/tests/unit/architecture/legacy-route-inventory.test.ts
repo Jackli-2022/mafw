@@ -22,10 +22,11 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
 
   it('index.ts has the documented legacy dispatch mass', () => {
     // Task 2: /api/cognition (3 match). Task 3a: /api/python (3 ===).
-    // Task 3b: /api/tools (2 ===). Baseline 95+40=135 → 92+35=127.
-    expect(inv.byKind.match).toBe(92);
-    expect(inv.byKind.equals).toBe(35);
-    expect(inv.total).toBe(127);
+    // Task 3b: /api/tools (2 ===). Task 3c: /api/tts (4 ===). Task 3d:
+    // mobile (2) + terminal (1) + agent (1). Baseline 135 → 88+31=119.
+    expect(inv.byKind.match).toBe(88);
+    expect(inv.byKind.equals).toBe(31);
+    expect(inv.total).toBe(119);
   });
 
   it('groups match the D1 plan inventory', () => {
@@ -33,7 +34,10 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     expect(byPrefix.get('/api/recall')).toBe(4);
     expect(byPrefix.get('/api/cognition')).toBeUndefined(); // migrated in Task 2
     expect(byPrefix.get('/api/python')).toBeUndefined();   // migrated in Task 3a
-    expect(byPrefix.get('/api/mobile')).toBe(2);
+    expect(byPrefix.get('/api/tts')).toBeUndefined();       // migrated in Task 3c
+    expect(byPrefix.get('/api/mobile')).toBeUndefined();   // migrated in Task 3d
+    expect(byPrefix.get('/api/terminal')).toBeUndefined(); // migrated in Task 3d
+    expect(byPrefix.get('/api/agent')).toBeUndefined();    // migrated in Task 3d
     // The biggest single group is the /api catch-all mass.
     expect(byPrefix.get('/api')).toBe(73);
   });
@@ -65,7 +69,7 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
 
   it('D1 migration targets are enumerable (api-prefixed groups, not transport)', () => {
     const apiGroups = inv.groups.filter((g) => g.prefix.startsWith('/api'));
-    expect(apiGroups.length).toBeGreaterThanOrEqual(20);
+    expect(apiGroups.length).toBeGreaterThanOrEqual(16);
     const transportPrefixes = ['/assets', '/static', '/mcp', '/', '/index.html', '/health', '/a2a', '/.well-known', '/register', '/control'];
     for (const g of apiGroups) {
       expect(transportPrefixes).not.toContain(g.prefix);
