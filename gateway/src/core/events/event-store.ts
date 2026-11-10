@@ -415,6 +415,10 @@ export class EventStore {
     return row ? toThread(row) : null;
   }
 
+  touchThread(id: string, now: string): void {
+    this.db.prepare('UPDATE event_threads SET last_trigger_at = ? WHERE id = ?').run(now, id);
+  }
+
   listThreads(projectDir: string, sourceId?: string): EventThreadRow[] {
     const rows = sourceId
       ? this.db.prepare(
