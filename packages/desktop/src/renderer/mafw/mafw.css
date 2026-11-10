@@ -7357,6 +7357,7 @@ html[data-theme="light"] body {
 .mafw-standing-goal-state.is-paused { color: var(--warning); }
 .mafw-standing-goal-state.is-stopped { color: var(--text-4); }
 .mafw-standing-goal-reason { color: var(--warning); }
+.mafw-standing-goal-attention { color: var(--warning); font-weight: 600; }
 .mafw-standing-goal-actions {
   display: flex;
   flex-wrap: wrap;

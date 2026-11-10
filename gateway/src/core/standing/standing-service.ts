@@ -101,15 +101,16 @@ function normalizeScheduledAt(value: string): string {
 }
 
 function payloadValue(payload: Record<string, unknown>, key: string): unknown {
-  const aliases: Record<string, string> = {
-    repo: 'repository.full_name',
-    labels: 'labels',
-    branch: 'ref',
-    author: 'sender.login',
+  const anyPayload = payload as any;
+  const aliases: Record<string, unknown> = {
+    repo: anyPayload.repo ?? anyPayload.repository?.full_name,
+    labels: payload.labels,
+    branch: anyPayload.branch ?? anyPayload.ref,
+    author: anyPayload.author ?? anyPayload.sender?.login,
   };
-  const pathKey = aliases[key] ?? key;
+  if (key in aliases) return aliases[key];
   let cursor: any = payload;
-  for (const part of pathKey.split('.')) {
+  for (const part of key.split('.')) {
     if (cursor == null || typeof cursor !== 'object') return undefined;
     cursor = cursor[part];
   }
@@ -233,7 +234,7 @@ export class StandingGoalService {
   ): Promise<GoalRun | null> {
     this.requireEnabled();
     const goal = this.requireGoal(id);
-    if (goal.state !== 'active') return null;
+    if (goal.state === 'stopped') return null;
     const selected = trigger ?? { id: 'manual', type: 'manual' } as StandingTrigger;
     const now = this.deps.now();
     const triggerKey = triggerKeyFor({
@@ -243,7 +244,7 @@ export class StandingGoalService {
       eventId: this.deps.newId('event'),
       manualId: this.deps.newId('manual'),
     });
-    return this.startRun(goal, selected, triggerKey, payload);
+    return this.startRun(goal, selected, triggerKey, payload, { allowPaused: true });
   }
 
   async handleCronTick(
@@ -259,8 +260,9 @@ export class StandingGoalService {
     const scheduled = normalizeScheduledAt(scheduledAt);
     const triggerKey = triggerKeyFor({ standingGoalId, trigger, scheduledAt: scheduled });
     const run = await this.startRun(goal, trigger, triggerKey, { scheduledAt: scheduled });
-    const key = `standing-goal:${goal.id}:${trigger.id}`;
-    const nextRunAt = this.deps.nextCronRun?.(key) ?? null;
+    const nextRunAt = earliest(goal.triggers
+      .filter((item) => item.type === 'cron')
+      .map((item) => this.deps.nextCronRun?.(`standing-goal:${goal.id}:${item.id}`) ?? null));
     this.deps.store.updateGoal(goal.id, { nextRunAt }, this.deps.now());
     return run;
   }
@@ -278,43 +280,59 @@ export class StandingGoalService {
     if (!this.deps.store.claimWaitingRun(run.id, now)) {
       throw new StandingGoalError(409, 'goal run is no longer waiting_person');
     }
-    if (triage.mode === 'action') {
-      if (!this.deps.executeAction) throw new StandingGoalError(503, 'action executor unavailable');
-      const actionResult = await this.deps.executeAction(triage.action!);
-      const status = actionResult.ok ? 'done' : 'failed';
+    try {
+      if (triage.mode === 'action') {
+        if (!this.deps.executeAction) throw new StandingGoalError(503, 'action executor unavailable');
+        const actionResult = await this.deps.executeAction(triage.action!);
+        const status = actionResult.ok ? 'done' : 'failed';
+        this.deps.store.updateRun(run.id, {
+          status,
+          result: actionResult.result ?? (actionResult.error ? { error: actionResult.error } : null),
+          endedAt: now,
+        });
+        this.deps.store.updateGoal(goal.id, { lastRunAt: now }, now);
+        this.deps.store.appendRunEvent(run.id, status === 'done' ? 'finished' : 'failed', { approved: true }, now);
+        this.deps.broadcast({
+          type: status === 'done' ? 'goal_run.finished' : 'goal_run.failed',
+          properties: { standingGoalId: goal.id, runId: run.id, status },
+        });
+        if (status === 'failed') this.maybePauseAfterFailures(goal, now);
+        return this.deps.store.getRun(run.id)!;
+      }
+      if (triage.mode !== 'goal' && triage.mode !== 'report') {
+        throw new StandingGoalError(409, `run mode ${triage.mode} cannot be approved`);
+      }
+      if (!this.deps.createGoal) throw new StandingGoalError(503, 'goal executor unavailable');
+      const created = await this.deps.createGoal({ standingGoal: goal, run, mode: triage.mode, triage });
       this.deps.store.updateRun(run.id, {
-        status,
-        result: actionResult.result ?? (actionResult.error ? { error: actionResult.error } : null),
-        endedAt: now,
+        status: 'running',
+        mode: triage.mode,
+        rationale: triage.rationale,
+        goalId: created.goalId,
+        startedAt: now,
       });
       this.deps.store.updateGoal(goal.id, { lastRunAt: now }, now);
-      this.deps.store.appendRunEvent(run.id, status === 'done' ? 'finished' : 'failed', { approved: true }, now);
+      this.deps.store.appendRunEvent(run.id, 'started', { approved: true, goalId: created.goalId }, now);
       this.deps.broadcast({
-        type: 'goal_run.finished',
-        properties: { standingGoalId: goal.id, runId: run.id, status },
+        type: 'goal_run.started',
+        properties: { standingGoalId: goal.id, runId: run.id, goalId: created.goalId, mode: triage.mode },
       });
-      if (status === 'failed') this.maybePauseAfterFailures(goal, now);
       return this.deps.store.getRun(run.id)!;
+    } catch (err: any) {
+      const error = String(err?.message ?? err);
+      this.deps.store.updateRun(run.id, {
+        status: 'failed',
+        result: { error },
+        endedAt: this.deps.now(),
+      });
+      this.deps.store.appendRunEvent(run.id, 'failed', { approved: true, error }, this.deps.now());
+      this.deps.broadcast({
+        type: 'goal_run.failed',
+        properties: { standingGoalId: goal.id, runId: run.id, error },
+      });
+      this.maybePauseAfterFailures(goal, this.deps.now());
+      throw new StandingGoalError(500, `approved run failed: ${error}`);
     }
-    if (triage.mode !== 'goal' && triage.mode !== 'report') {
-      throw new StandingGoalError(409, `run mode ${triage.mode} cannot be approved`);
-    }
-    if (!this.deps.createGoal) throw new StandingGoalError(503, 'goal executor unavailable');
-    const created = await this.deps.createGoal({ standingGoal: goal, run, mode: triage.mode, triage });
-    this.deps.store.updateRun(run.id, {
-      status: 'running',
-      mode: triage.mode,
-      rationale: triage.rationale,
-      goalId: created.goalId,
-      startedAt: now,
-    });
-    this.deps.store.updateGoal(goal.id, { lastRunAt: now }, now);
-    this.deps.store.appendRunEvent(run.id, 'started', { approved: true, goalId: created.goalId }, now);
-    this.deps.broadcast({
-      type: 'goal_run.started',
-      properties: { standingGoalId: goal.id, runId: run.id, goalId: created.goalId, mode: triage.mode },
-    });
-    return this.deps.store.getRun(run.id)!;
   }
 
   private maybePauseAfterFailures(goal: StandingGoal, now: string): void {
@@ -465,8 +483,9 @@ export class StandingGoalService {
     trigger: StandingTrigger,
     triggerKey: string,
     payload: Record<string, unknown>,
+    options: { allowPaused?: boolean } = {},
   ): Promise<GoalRun | null> {
-    if (goal.state !== 'active') return null;
+    if (goal.state !== 'active' && !(options.allowPaused && goal.state === 'paused')) return null;
     if (this.deps.store.findRunByTriggerKey(goal.id, triggerKey)) return null;
     const now = this.deps.now();
     const dayStart = new Date(now);

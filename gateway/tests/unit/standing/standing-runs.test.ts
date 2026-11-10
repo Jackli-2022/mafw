@@ -98,4 +98,20 @@ describe('StandingGoalService run lifecycle', () => {
     await h.service.onGoalFinished(run!.goalId!, { status: 'done', costUsd: 1.5, tokens: 300 });
     expect(h.store.getRun(run!.id)).toMatchObject({ costUsd: 1.75, tokens: 420, status: 'done' });
   });
+
+  test('manual run forces a paused goal and uses a manual trigger', async () => {
+    const h = harness();
+    const goal = h.service.create({ ...base, triggers: [cronTrigger] });
+    h.service.pause(goal.id);
+    const run = await h.service.runNow(goal.id);
+    expect(run).toMatchObject({ status: 'running', triggerType: 'manual' });
+  });
+
+  test('failed approved goal is marked failed, not stranded in running', async () => {
+    const h = harness({ createGoal: jest.fn(async () => { throw new Error('boom'); }) });
+    const goal = h.service.create({ ...base, triggers: [cronTrigger], approval: 'confirm' });
+    const run = await h.service.handleCronTick(goal.id, '2026-11-10T01:00:00.000Z');
+    await expect(h.service.approveRun(run!.id)).rejects.toMatchObject({ status: 500 });
+    expect(h.store.getRun(run!.id)).toMatchObject({ status: 'failed' });
+  });
 });

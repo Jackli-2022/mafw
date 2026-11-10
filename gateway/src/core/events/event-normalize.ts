@@ -43,7 +43,12 @@ export function normalizeGitHubEvent(input: {
     externalKey: `${input.repo}#${input.number}`,
     kind,
     actor: input.actor,
-    payload: input.payload,
+    payload: {
+      repo: input.repo,
+      number: input.number,
+      author: input.actor,
+      ...input.payload,
+    },
     occurredAt: input.occurredAt,
     receivedAt: input.receivedAt,
     idempotencyKey: `github:${input.deliveryId}`,

@@ -5143,7 +5143,9 @@ class MafwScheduler {
           : { decision: 'ignore', rationale: 'no work subscription' };
       },
       deliverWork: async ({ thread, trigger, subscription, decision }) => {
-        if (subscription.subscriberType === 'standing_goal' && this.standingGoals) {
+        if (subscription.subscriberType === 'standing_goal'
+          && this.standingGoals
+          && process.env.MAFW_STANDING_GOALS === '1') {
           await this.standingGoals.handleEventTrigger(subscription.subscriberId, {
             eventId: trigger.id,
             payload: trigger.payload,
@@ -5203,7 +5205,7 @@ class MafwScheduler {
               : standingGoal.template.taskType === 'ops'
                 ? 'other'
                 : standingGoal.template.taskType),
-          planReview: standingGoal.approval === 'plan'
+          planReview: mode === 'goal' && standingGoal.approval === 'plan'
             ? 'manual'
             : standingGoal.template.planReview,
           handoff: 'none',

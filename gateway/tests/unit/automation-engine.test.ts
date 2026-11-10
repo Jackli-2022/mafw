@@ -130,7 +130,9 @@ describe('AutomationEngine action registry lifecycle', () => {
     });
     expect(registered.nextRunAt).toBeTruthy();
     const files = fs.readdirSync(path.join(dir, 'automations'));
-    expect(files).toEqual(['standing-goal_sg1_c1.json']);
+    expect(files).toHaveLength(1);
+    expect(files[0]).not.toContain(':');
+    expect(files[0].endsWith('.json')).toBe(true);
     expect(engine.nextStandingCronRun(key)).toBeTruthy();
 
     engine.reloadRules();

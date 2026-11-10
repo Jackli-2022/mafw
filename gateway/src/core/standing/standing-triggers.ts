@@ -1,17 +1,19 @@
+import { CronTime } from 'cron';
 import { StandingGoalError, type GoalRun, type StandingGoal, type StandingTrigger } from './standing-types';
 
 const TRIGGER_TYPES = new Set(['cron', 'event', 'manual']);
 const OPEN_STATUSES = new Set(['queued', 'triaging', 'running', 'waiting_person']);
 
 function assertCronShape(schedule: string, timezone: string): void {
-  const fields = schedule.trim().split(/\s+/);
-  if (fields.length < 5 || fields.length > 6) {
-    throw new StandingGoalError(400, `invalid cron schedule: ${schedule}`);
-  }
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: timezone });
   } catch {
     throw new StandingGoalError(400, `invalid timezone: ${timezone}`);
+  }
+  try {
+    new CronTime(schedule, timezone);
+  } catch (err: any) {
+    throw new StandingGoalError(400, `invalid cron schedule: ${err?.message ?? schedule}`);
   }
 }
 

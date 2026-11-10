@@ -831,7 +831,7 @@ export class AutomationEngine {
       for (const file of fs.readdirSync(autoDir).filter((f: string) => f.endsWith('.json'))) {
         try {
           const rule: AutomationRule = JSON.parse(fs.readFileSync(path.join(autoDir, file), 'utf-8'));
-          rule.id = file.replace('.json', '');
+          if (!rule.id) rule.id = file.replace('.json', '');
           if (!rules.find(r => r.id === rule.id)) {
             rules.push(rule);
           }
@@ -844,7 +844,7 @@ export class AutomationEngine {
   getRule(id: string): AutomationRule | undefined {
     const cached = this.rules.get(id);
     if (cached) return cached;
-    const filePath = path.join(this.mafwDir, 'automations', `${id}.json`);
+    const filePath = this.existingAutomationRulePath(id);
     if (fs.existsSync(filePath)) {
       try {
         const rule: AutomationRule = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -1035,7 +1035,7 @@ export class AutomationEngine {
     const autoDir = path.join(this.mafwDir, 'automations');
     if (!fs.existsSync(autoDir)) fs.mkdirSync(autoDir, { recursive: true });
 
-    const existingPath = path.join(autoDir, `${rule.id}.json`);
+    const existingPath = this.existingAutomationRulePath(String(rule.id));
     if (fs.existsSync(existingPath)) {
       const existing: AutomationRule = JSON.parse(fs.readFileSync(existingPath, 'utf-8'));
       if (existing.enabled) {
@@ -1069,8 +1069,7 @@ export class AutomationEngine {
   }
 
   toggleRule(id: string, enabled: boolean): boolean {
-    const autoDir = path.join(this.mafwDir, 'automations');
-    const filePath = path.join(autoDir, `${id}.json`);
+    const filePath = this.existingAutomationRulePath(id);
     if (!fs.existsSync(filePath)) return false;
     try {
       const rule: AutomationRule = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -1097,14 +1096,25 @@ export class AutomationEngine {
     }
   }
 
-  /** Windows-safe filename for a logical automation rule id. */
+  /** Filesystem-safe (and reversible) filename for a logical automation rule id. */
   private automationRulePath(id: string): string {
-    const safe = id.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_');
+    const safe = Buffer.from(id, 'utf8').toString('base64url');
     return path.join(this.mafwDir, 'automations', `${safe}.json`);
   }
 
+  /** Prefer the encoded path, but keep legacy human-readable rule files working. */
+  private existingAutomationRulePath(id: string): string {
+    const encoded = this.automationRulePath(id);
+    if (fs.existsSync(encoded)) return encoded;
+    if (!/[<>:"/\\|?*\u0000-\u001f]/.test(id)) {
+      const legacy = path.join(this.mafwDir, 'automations', `${id}.json`);
+      if (fs.existsSync(legacy)) return legacy;
+    }
+    return encoded;
+  }
+
   deleteRule(id: string): boolean {
-    const filePath = this.automationRulePath(id);
+    const filePath = this.existingAutomationRulePath(id);
     if (!fs.existsSync(filePath)) return false;
     fs.unlinkSync(filePath);
     this.rules.delete(id);

@@ -40,6 +40,7 @@ export function StandingGoalsPanel(props: {
   const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set())
   const [busyGoalId, setBusyGoalId] = createSignal("")
   const [error, setError] = createSignal("")
+  const [enabled, setEnabled] = createSignal(true)
 
   const load = async (): Promise<void> => {
     const dir = props.projectDir
@@ -60,12 +61,18 @@ export function StandingGoalsPanel(props: {
         }
       }))
       setRunsByGoal(Object.fromEntries(entries))
+      setEnabled(true)
       setError("")
     } catch (err: any) {
       const message = String(err?.message ?? err)
       setGoals([])
       setRunsByGoal({})
-      setError(/\b503\b|disabled|not enabled/i.test(message) ? "" : message)
+      if (/\b503\b|disabled|not enabled/i.test(message)) {
+        setEnabled(false)
+        setError("")
+      } else {
+        setError(message)
+      }
     }
   }
 
@@ -84,6 +91,9 @@ export function StandingGoalsPanel(props: {
     const done = finished.filter((run) => run.status === "done").length
     return `${Math.round((done / finished.length) * 100)}%`
   }
+
+  const waitingCount = (goalId: string): number =>
+    (runsByGoal()[goalId] ?? []).filter((run) => run.status === "waiting_person").length
 
   const toggle = (goalId: string): void => {
     setExpanded((current) => {
@@ -109,7 +119,8 @@ export function StandingGoalsPanel(props: {
   const hasGoals = createMemo(() => goals().length > 0)
 
   return (
-    <section class="mafw-standing-goals" aria-label="长效目标">
+    <Show when={enabled()} fallback={null}>
+      <section class="mafw-standing-goals" aria-label="长效目标">
       <div class="mafw-standing-goals-head">
         <div>
           <div class="mafw-work-kicker">长效目标</div>
@@ -138,6 +149,9 @@ export function StandingGoalsPanel(props: {
                   <span aria-label="next run">下次运行 {formatTime(goal.nextRunAt)}</span>
                   <span>上次运行 {formatTime(goal.lastRunAt)}</span>
                   <span>成功率 {successRate(goal.id)}</span>
+                  <Show when={waitingCount(goal.id) > 0}>
+                    <span class="mafw-standing-goal-attention">待你确认 {waitingCount(goal.id)}</span>
+                  </Show>
                 </div>
               </div>
               <div class="mafw-standing-goal-actions">
@@ -234,6 +248,7 @@ export function StandingGoalsPanel(props: {
           )}
         </For>
       </Show>
-    </section>
+      </section>
+    </Show>
   )
 }
