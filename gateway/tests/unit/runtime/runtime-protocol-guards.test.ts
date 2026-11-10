@@ -135,8 +135,8 @@ describe('Phase 4 protocol guards', () => {
       expect(registration.options.capabilities).toBeDefined();
       expect(registration.options.eventEntry).toBeDefined();
     }
-    const boot = fs.readFileSync(path.join(SRC, 'boot.ts'), 'utf8');
-    expect(boot).toContain('builtinAdapterRegistrations(external)');
-    expect(boot).not.toMatch(/registerBuiltinDefinition\('(?:opencode|opencode@)/);
+    const index = fs.readFileSync(path.join(SRC, 'boot.ts'), 'utf8');
+    expect(index).toContain('builtinAdapterRegistrations(external)');
+    expect(index).not.toMatch(/registerBuiltinDefinition\('(?:opencode|opencode@)/);
   });
 });
