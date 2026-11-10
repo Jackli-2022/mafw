@@ -85,6 +85,7 @@ interface DeliveryDbRow {
   read_at: string | null;
   ack_at: string | null;
   answered_at: string | null;
+  next_retry_at: string | null;
 }
 
 interface ChannelDbRow {
@@ -199,6 +200,7 @@ function toDelivery(row: DeliveryDbRow): EventDeliveryRow {
     readAt: row.read_at,
     ackAt: row.ack_at,
     answeredAt: row.answered_at,
+    nextRetryAt: row.next_retry_at,
   };
 }
 
@@ -307,6 +309,7 @@ export function ensureEventLayerSchema(db: Database): void {
       read_at TEXT,
       ack_at TEXT,
       answered_at TEXT,
+      next_retry_at TEXT,
       UNIQUE(trigger_id, subscription_id)
     );
     CREATE INDEX IF NOT EXISTS idx_event_deliveries_trigger ON event_deliveries(trigger_id);
@@ -334,6 +337,10 @@ export function ensureEventLayerSchema(db: Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_event_outbox_state ON event_outbox(state, next_retry_at);
   `);
+  const deliveryColumns = db.prepare('PRAGMA table_info(event_deliveries)').all() as Array<{ name: string }>;
+  if (!deliveryColumns.some((column) => column.name === 'next_retry_at')) {
+    db.exec('ALTER TABLE event_deliveries ADD COLUMN next_retry_at TEXT');
+  }
 }
 
 export class EventStore {
@@ -507,8 +514,10 @@ export class EventStore {
     ).all(threadId) as SubscriptionDbRow[]).map(toSubscription);
   }
 
-  removeSubscription(id: string, now: string): void {
-    this.db.prepare('UPDATE event_subscriptions SET dropped_at = ? WHERE id = ?').run(now, id);
+  removeSubscription(id: string, now: string): boolean {
+    const result = this.db.prepare('UPDATE event_subscriptions SET dropped_at = ? WHERE id = ? AND dropped_at IS NULL')
+      .run(now, id);
+    return result.changes > 0;
   }
 
   insertDecision(input: Omit<EventDecisionRow, 'createdAt'> & { now: string }): EventDecisionRow {
@@ -538,13 +547,13 @@ export class EventStore {
   }
 
   insertDelivery(
-    input: Omit<EventDeliveryRow, 'attempts' | 'lastError' | 'deliveredAt' | 'readAt' | 'ackAt' | 'answeredAt'>,
+    input: Omit<EventDeliveryRow, 'attempts' | 'lastError' | 'deliveredAt' | 'readAt' | 'ackAt' | 'answeredAt' | 'nextRetryAt'>,
   ): EventDeliveryRow {
     this.db.prepare(`
       INSERT OR IGNORE INTO event_deliveries (
         id, trigger_id, subscription_id, state, attempts, last_error,
-        delivered_at, read_at, ack_at, answered_at
-      ) VALUES (?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, NULL)
+        delivered_at, read_at, ack_at, answered_at, next_retry_at
+      ) VALUES (?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, NULL, NULL)
     `).run(input.id, input.triggerId, input.subscriptionId, input.state);
     return this.getDeliveryByTrigger(input.triggerId, input.subscriptionId)!;
   }
@@ -572,14 +581,14 @@ export class EventStore {
 
   updateDelivery(
     id: string,
-    patch: Partial<Pick<EventDeliveryRow, 'state' | 'attempts' | 'lastError' | 'deliveredAt' | 'readAt' | 'ackAt' | 'answeredAt'>>,
+    patch: Partial<Pick<EventDeliveryRow, 'state' | 'attempts' | 'lastError' | 'deliveredAt' | 'readAt' | 'ackAt' | 'answeredAt' | 'nextRetryAt'>>,
   ): EventDeliveryRow {
     const current = this.getDelivery(id);
     if (!current) throw new Error(`delivery not found: ${id}`);
     const next = { ...current, ...patch };
     this.db.prepare(`
       UPDATE event_deliveries SET
-        state = ?, attempts = ?, last_error = ?, delivered_at = ?, read_at = ?, ack_at = ?, answered_at = ?
+        state = ?, attempts = ?, last_error = ?, delivered_at = ?, read_at = ?, ack_at = ?, answered_at = ?, next_retry_at = ?
       WHERE id = ?
     `).run(
       next.state,
@@ -589,6 +598,7 @@ export class EventStore {
       next.readAt,
       next.ackAt,
       next.answeredAt,
+      next.nextRetryAt,
       id,
     );
     return this.getDelivery(id)!;

@@ -48,7 +48,9 @@ export class EventOutbox {
 
   pending(): EventOutboxRow[] {
     const now = Date.parse(this.deps.now());
-    return this.deps.store.listOutbox('pending').filter((row) =>
-      !row.nextRetryAt || Date.parse(row.nextRetryAt) <= now);
+    return [
+      ...this.deps.store.listOutbox('pending'),
+      ...this.deps.store.listOutbox('failed').filter((row) => row.nextRetryAt && Date.parse(row.nextRetryAt) <= now),
+    ].filter((row) => !row.nextRetryAt || Date.parse(row.nextRetryAt) <= now);
   }
 }

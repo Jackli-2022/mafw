@@ -16,6 +16,7 @@ const delivery = (over: Partial<EventDeliveryRow> = {}): EventDeliveryRow => ({
   readAt: null,
   ackAt: null,
   answeredAt: null,
+  nextRetryAt: null,
   ...over,
 });
 

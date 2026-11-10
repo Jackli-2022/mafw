@@ -21,7 +21,7 @@ function envelope(over: Partial<EventEnvelope> = {}): EventEnvelope {
   };
 }
 
-function harness() {
+function harness(over: Record<string, any> = {}, nowFn = () => '2026-11-10T00:00:02.000Z') {
   const db = new Database(':memory:');
   const store = new EventStore(db);
   store.insertSource({
@@ -33,12 +33,12 @@ function harness() {
     now: '2026-11-10T00:00:00.000Z',
   });
   const broadcast = jest.fn();
-  const evaluate = jest.fn(async () => ({ decision: 'accept' as const, mode: 'full' as const, rationale: 'new PR' }));
-  const deliverWork = jest.fn(async () => {});
+  const evaluate = over.evaluate ?? jest.fn(async () => ({ decision: 'accept' as const, mode: 'full' as const, rationale: 'new PR' }));
+  const deliverWork = over.deliverWork ?? jest.fn(async () => {});
   let seq = 0;
   const service = new EventLayerService({
     store,
-    now: () => '2026-11-10T00:00:02.000Z',
+    now: nowFn,
     newId: (prefix) => (prefix === 'thread' ? 't1' : `${prefix}_${++seq}`),
     broadcast,
     enabled: () => true,
@@ -67,6 +67,7 @@ describe('EventLayerService fan-out and evaluation', () => {
 
   test('same trigger set is evaluated once', async () => {
     const h = harness();
+    h.service.subscribe({ threadId: 't1', subscriberType: 'standing_goal', subscriberId: 'sg1', mode: 'work' });
     h.service.ingest(envelope({ idempotencyKey: 'k1' }));
 
     const first = await h.service.evaluate('t1');
@@ -74,5 +75,52 @@ describe('EventLayerService fan-out and evaluation', () => {
 
     expect(second?.id).toBe(first?.id);
     expect(h.evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  test('failed work delivery is recorded and retried after backoff', async () => {
+    let now = '2026-11-10T00:00:02.000Z';
+    const deliverWork = jest.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(undefined);
+    const h = harness({ deliverWork }, () => now);
+    h.service.subscribe({ threadId: 't1', subscriberType: 'standing_goal', subscriberId: 'sg1', mode: 'work' });
+    h.service.ingest(envelope({ idempotencyKey: 'k1' }));
+    h.service.fanOut('t1');
+    await h.service.evaluate('t1');
+
+    expect(h.service.listDeliveries('t1')[0]).toMatchObject({
+      state: 'failed',
+      attempts: 1,
+      lastError: 'offline',
+    });
+
+    now = '2026-11-10T00:00:05.000Z';
+    await h.service.evaluate('t1');
+    expect(deliverWork).toHaveBeenCalledTimes(2);
+    expect(h.service.listDeliveries('t1')[0]).toMatchObject({ state: 'delivered', lastError: null });
+  });
+
+  test('unavailable decision leaves the batch pending for a later retry', async () => {
+    const evaluate = jest.fn(async () => ({ decision: 'unavailable' as const, rationale: 'timeout' }));
+    const h = harness({ evaluate });
+    h.service.subscribe({ threadId: 't1', subscriberType: 'standing_goal', subscriberId: 'sg1', mode: 'work' });
+    h.service.ingest(envelope({ idempotencyKey: 'k1' }));
+    h.service.fanOut('t1');
+
+    await h.service.evaluate('t1');
+    await h.service.evaluate('t1');
+
+    expect(evaluate).toHaveBeenCalledTimes(2);
+    expect(h.service.listTriggers('t1')[0].disposition).toBe('fanned_out');
+  });
+
+  test('a thread without subscriptions can fan out later', () => {
+    const h = harness();
+    h.service.ingest(envelope({ idempotencyKey: 'k1' }));
+    expect(h.service.fanOut('t1')).toHaveLength(0);
+    expect(h.service.listTriggers('t1')[0].disposition).toBe('pending');
+
+    h.service.subscribe({ threadId: 't1', subscriberType: 'standing_goal', subscriberId: 'sg1', mode: 'work' });
+    expect(h.service.fanOut('t1')).toHaveLength(1);
   });
 });

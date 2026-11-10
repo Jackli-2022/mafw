@@ -91,6 +91,7 @@ export interface EventDeliveryRow {
   readAt: string | null;
   ackAt: string | null;
   answeredAt: string | null;
+  nextRetryAt: string | null;
 }
 
 export interface EventChannelRow {

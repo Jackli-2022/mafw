@@ -53,4 +53,28 @@ describe('pollGitHubSource', () => {
 
     expect(out.envelopes).toEqual([]);
   });
+
+  test('does not apply PR labels to comments', async () => {
+    const fetchImpl = fetchRoutes({
+      '/issues?': [],
+      '/comments?': [{
+        id: 9,
+        body: 'looks good',
+        issue_url: 'https://api.github.com/repos/acme/app/issues/42',
+        updated_at: '2026-11-10T00:00:02.000Z',
+        user: { login: 'alice' },
+      }],
+    });
+
+    const out = await pollGitHubSource({
+      projectDir: '/p',
+      sourceId: 's1',
+      config: { repo: 'acme/app', labels: ['review'] },
+      fetchImpl,
+      now: () => '2026-11-10T00:00:03.000Z',
+    });
+
+    expect(out.envelopes).toHaveLength(1);
+    expect(out.envelopes[0]).toMatchObject({ kind: 'issue_comment', externalKey: 'acme/app#42' });
+  });
 });

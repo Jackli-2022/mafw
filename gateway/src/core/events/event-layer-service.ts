@@ -10,6 +10,7 @@ import type {
 } from './event-types';
 import type { EventStore } from './event-store';
 import type { EventDecision, EventEvaluator } from './event-evaluator';
+import { nextRetryDelayMs } from './event-delivery';
 
 export interface EventLayerDeps {
   store: EventStore;
@@ -155,6 +156,7 @@ export class EventLayerService {
       .filter((trigger) => trigger.disposition === 'pending');
     const subscriptions = this.deps.store.listSubscriptions(threadId);
     for (const trigger of pending) {
+      if (subscriptions.length === 0) continue;
       for (const subscription of subscriptions) {
         this.deps.store.insertDelivery({
           id: this.deps.newId('delivery'),
@@ -177,15 +179,18 @@ export class EventLayerService {
   async evaluate(threadId: string): Promise<import('./event-types').EventDecisionRow | null> {
     const thread = this.deps.store.getThread(threadId);
     if (!thread) throw new EventLayerError(404, `event thread not found: ${threadId}`);
+    await this.retryDueDeliveries(threadId);
     const triggers = this.deps.store.listTriggers(threadId)
       .filter((trigger) => trigger.disposition === 'pending' || trigger.disposition === 'fanned_out');
     const latest = this.deps.store.latestDecision(threadId);
     if (triggers.length === 0) return latest;
-    if (latest && sameTriggerSet(latest.triggerIds, triggers.map((trigger) => trigger.id))) {
+    if (latest && latest.decision !== 'unavailable'
+      && sameTriggerSet(latest.triggerIds, triggers.map((trigger) => trigger.id))) {
       return latest;
     }
 
     const subscriptions = this.deps.store.listSubscriptions(threadId);
+    if (subscriptions.length === 0) return latest;
     const decision = await this.deps.evaluate({
       thread,
       triggers,
@@ -204,6 +209,14 @@ export class EventLayerService {
       now: this.deps.now(),
     });
 
+    if (decision.decision === 'unavailable') {
+      this.deps.broadcast({
+        type: 'event.decision.made',
+        properties: { threadId, decisionId: row.id, decision: row.decision, mode: row.mode },
+      });
+      return row;
+    }
+
     const disposition = decision.decision === 'accept' ? 'accepted' : 'ignored';
     for (const trigger of triggers) {
       this.deps.store.setTriggerDisposition(trigger.id, disposition);
@@ -215,9 +228,31 @@ export class EventLayerService {
         const delivery = this.deps.store.getDeliveryByTrigger(trigger.id, subscription.id);
         if (!delivery) continue;
         if (subscription.mode === 'work' && this.deps.deliverWork) {
-          await this.deps.deliverWork({ thread, trigger, subscription, decision });
+          try {
+            await this.deps.deliverWork({ thread, trigger, subscription, decision });
+            this.deps.store.updateDelivery(delivery.id, {
+              state: 'delivered',
+              deliveredAt: now,
+              nextRetryAt: null,
+              lastError: null,
+            });
+          } catch (err: any) {
+            const attempts = delivery.attempts + 1;
+            this.deps.store.updateDelivery(delivery.id, {
+              state: 'failed',
+              attempts,
+              lastError: String(err?.message ?? err),
+              nextRetryAt: new Date(Date.parse(now) + nextRetryDelayMs(attempts)).toISOString(),
+            });
+          }
+        } else {
+          this.deps.store.updateDelivery(delivery.id, {
+            state: 'delivered',
+            deliveredAt: now,
+            nextRetryAt: null,
+            lastError: null,
+          });
         }
-        this.deps.store.updateDelivery(delivery.id, { state: 'delivered', deliveredAt: now });
       }
     }
 
@@ -226,6 +261,52 @@ export class EventLayerService {
       properties: { threadId, decisionId: row.id, decision: row.decision, mode: row.mode },
     });
     return row;
+  }
+
+  private async retryDueDeliveries(threadId: string): Promise<void> {
+    const now = this.deps.now();
+    const due = this.deps.store.listDeliveries(threadId).filter((delivery) =>
+      delivery.state === 'failed'
+      && !!delivery.nextRetryAt
+      && Date.parse(delivery.nextRetryAt) <= Date.parse(now));
+    if (due.length === 0) return;
+    const latest = this.deps.store.latestDecision(threadId);
+    if (!latest || latest.decision !== 'accept') return;
+    const thread = this.deps.store.getThread(threadId);
+    if (!thread) return;
+    const subscriptions = this.deps.store.listSubscriptions(threadId);
+    const triggers = this.deps.store.listTriggers(threadId);
+    for (const delivery of due) {
+      const subscription = subscriptions.find((item) => item.id === delivery.subscriptionId);
+      const trigger = triggers.find((item) => item.id === delivery.triggerId);
+      if (!subscription || !trigger || subscription.mode !== 'work' || !this.deps.deliverWork) continue;
+      try {
+        await this.deps.deliverWork({
+          thread,
+          trigger,
+          subscription,
+          decision: {
+            decision: latest.decision,
+            ...(latest.mode ? { mode: latest.mode } : {}),
+            rationale: latest.rationale,
+          },
+        });
+        this.deps.store.updateDelivery(delivery.id, {
+          state: 'delivered',
+          deliveredAt: now,
+          nextRetryAt: null,
+          lastError: null,
+        });
+      } catch (err: any) {
+        const attempts = delivery.attempts + 1;
+        this.deps.store.updateDelivery(delivery.id, {
+          state: 'failed',
+          attempts,
+          lastError: String(err?.message ?? err),
+          nextRetryAt: new Date(Date.parse(now) + nextRetryDelayMs(attempts)).toISOString(),
+        });
+      }
+    }
   }
 
   listSubscriptions(threadId: string): EventSubscriptionRow[] {

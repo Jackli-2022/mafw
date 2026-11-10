@@ -48,11 +48,11 @@ function labelNames(item: any): string[] {
     : [];
 }
 
-function passesFilters(item: any, config: GitHubSourceConfig): boolean {
+function passesFilters(item: any, config: GitHubSourceConfig, applyLabels = true): boolean {
   const login = String(item?.user?.login ?? item?.actor?.login ?? '');
   if (login.endsWith('[bot]') && !(config.authors ?? []).includes(login)) return false;
   if (config.authors?.length && !config.authors.includes(login)) return false;
-  if (config.labels?.length) {
+  if (applyLabels && config.labels?.length) {
     const labels = labelNames(item);
     if (!labels.some((label) => config.labels!.includes(label))) return false;
   }
@@ -119,7 +119,7 @@ export async function pollGitHubSource(input: {
   const commentsUrl = `${API}/repos/${config.repo}/issues/comments?sort=updated&direction=asc&per_page=100&since=${encodeURIComponent(commentsSince)}`;
   const comments = await fetchJson(fetchImpl, commentsUrl, config);
   for (const comment of Array.isArray(comments) ? comments : []) {
-    if (!passesFilters(comment, config)) continue;
+    if (!passesFilters(comment, config, false)) continue;
     const issueNumber = Number(String(comment.issue_url ?? '').split('/').at(-1));
     if (!Number.isFinite(issueNumber)) continue;
     const updated = String(comment.updated_at ?? comment.created_at ?? input.now());

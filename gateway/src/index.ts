@@ -5079,6 +5079,19 @@ class MafwScheduler {
       evaluate: async ({ subscriptions }) => (subscriptions.some((subscription) => subscription.mode === 'work')
         ? { decision: 'accept', mode: 'full', rationale: 'work subscription' }
         : { decision: 'ignore', rationale: 'no work subscription' }),
+      deliverWork: async ({ thread, trigger, subscription, decision }) => {
+        // P2.4 has no Standing Goal executor; surface the work handoff so the
+        // P2.5 consumer can attach without changing the delivery path.
+        this.broadcast({
+          type: 'event.delivery.work',
+          properties: {
+            threadId: thread.id,
+            triggerId: trigger.id,
+            subscriptionId: subscription.id,
+            mode: decision.mode ?? null,
+          },
+        });
+      },
       log: (message) => log.warn(message),
     });
 
@@ -5101,7 +5114,10 @@ class MafwScheduler {
           },
           now: () => new Date().toISOString(),
         });
-        for (const envelope of polled.envelopes) this.eventLayer!.ingest(envelope);
+        for (const envelope of polled.envelopes) {
+          const ingested = this.eventLayer!.ingest(envelope);
+          void this.processEventThread(ingested.thread.id);
+        }
         eventStore.updateSourceCursor(source.id, polled.cursor, new Date().toISOString());
       } catch (err: any) {
         this.broadcast({
@@ -5117,13 +5133,14 @@ class MafwScheduler {
       const projectDir = String(rule.args?.projectDir ?? '');
       if (!standingGoalId || !projectDir) return;
       const now = new Date().toISOString();
-      this.eventLayer!.ingest(normalizeCronTick({
+      const ingested = this.eventLayer!.ingest(normalizeCronTick({
         projectDir,
         sourceId: 'cron',
         standingGoalId,
         scheduledAt: String(rule.args?.scheduledAt ?? now),
         actualAt: now,
       }));
+      void this.processEventThread(ingested.thread.id);
     });
     // Pipeline heartbeat (arXiv:2609.05510): background pipelines fail silently
     // by default — record last-run/last-success/counts and flag stalled ones.
@@ -5390,6 +5407,9 @@ class MafwScheduler {
       this.ingestInternalEvent("goal.phase", data);
       this.getMilestonePush()?.onPhaseTransition(data);
     });
+    for (const name of ['memory_written', 'memory_energy_changed', 'memory_distillation_complete']) {
+      eventBus.on(name, (data: any) => this.ingestInternalEvent(name, data));
+    }
   }
 
   private ingestInternalEvent(kind: string, data: any) {
@@ -5403,7 +5423,7 @@ class MafwScheduler {
       if (!projectDir) return;
       const now = new Date().toISOString();
       const eventId = String(data?.eventId ?? data?.id ?? `${kind}:${goalId || projectDir}:${now}`);
-      this.eventLayer.ingest(normalizeInternalEvent({
+      const ingested = this.eventLayer.ingest(normalizeInternalEvent({
         projectDir,
         sourceId: 'internal',
         eventId,
@@ -5414,8 +5434,19 @@ class MafwScheduler {
         occurredAt: typeof data?.timestamp === 'string' ? data.timestamp : now,
         receivedAt: now,
       }));
+      void this.processEventThread(ingested.thread.id);
     } catch (err: any) {
       log.debug(`[EventLayer] internal ingest skipped: ${err?.message ?? err}`);
+    }
+  }
+
+  private async processEventThread(threadId: string): Promise<void> {
+    if (!this.eventLayer) return;
+    try {
+      this.eventLayer.fanOut(threadId);
+      await this.eventLayer.evaluate(threadId);
+    } catch (err: any) {
+      log.debug(`[EventLayer] process thread ${threadId} skipped: ${err?.message ?? err}`);
     }
   }
 
@@ -5834,7 +5865,9 @@ class MafwScheduler {
             config: input?.config && typeof input.config === 'object' ? input.config : {},
           }),
           setEnabled: (id, enabled) => {
-            this.eventLayerStore?.setSourceEnabled(id, enabled, new Date().toISOString());
+            if (!this.eventLayerStore?.getSource(id)) return false;
+            this.eventLayerStore.setSourceEnabled(id, enabled, new Date().toISOString());
+            return true;
           },
         },
         threads: {
@@ -5848,17 +5881,15 @@ class MafwScheduler {
           subscriberId: String(input?.subscriberId ?? ''),
           mode: input?.mode,
         }),
-        unsubscribe: (id) => {
-          this.eventLayerStore?.removeSubscription(id, new Date().toISOString());
-        },
+        unsubscribe: (id) => this.eventLayerStore?.removeSubscription(id, new Date().toISOString()) ?? false,
         deliveries: (threadId) => this.eventLayer!.listDeliveries(threadId),
-        webhook: async (sourceId, headers, body: any) => {
+        webhook: async (sourceId, headers, body: any, rawBody?: string) => {
           const source = this.eventLayerStore?.getSource(sourceId);
           if (!source) return { accepted: false, status: 404 };
           const secret = typeof source.config.secret === 'string' ? source.config.secret : '';
           if (!secret) return { accepted: false, status: 401 };
           const provided = String(headers['x-hub-signature-256'] ?? '');
-          const expected = `sha256=${createHmac('sha256', secret).update(JSON.stringify(body ?? {})).digest('hex')}`;
+          const expected = `sha256=${createHmac('sha256', secret).update(rawBody ?? JSON.stringify(body ?? {})).digest('hex')}`;
           const a = Buffer.from(provided);
           const b = Buffer.from(expected);
           if (a.length !== b.length || !timingSafeEqual(a, b)) {
@@ -5885,6 +5916,7 @@ class MafwScheduler {
             receivedAt: now,
           });
           const ingested = this.eventLayer.ingest(envelope);
+          void this.processEventThread(ingested.thread.id);
           return { accepted: true, duplicate: ingested.duplicate };
         },
       });

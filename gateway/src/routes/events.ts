@@ -12,12 +12,32 @@ import type {
 
 const SOURCE_KINDS: readonly EventSourceKind[] = ['github', 'cron', 'internal', 'webhook'];
 
+export interface EventSourceView {
+  id: string;
+  kind: EventSourceKind;
+  name: string;
+  enabled: boolean;
+  cursor: Record<string, unknown>;
+  updatedAt: string;
+}
+
+function sourceView(row: EventSourceRow): EventSourceView {
+  return {
+    id: row.id,
+    kind: row.kind,
+    name: row.name,
+    enabled: row.enabled,
+    cursor: row.cursor,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export interface EventRouteDeps {
   enabled(): boolean;
   sources: {
     list(projectDir: string): EventSourceRow[];
     create(input: unknown): EventSourceRow;
-    setEnabled(id: string, enabled: boolean): void;
+    setEnabled(id: string, enabled: boolean): boolean;
   };
   threads: {
     list(projectDir: string, sourceId?: string): EventThreadRow[];
@@ -25,12 +45,13 @@ export interface EventRouteDeps {
     subscriptions(threadId: string): EventSubscriptionRow[];
   };
   subscribe(input: unknown): EventSubscriptionRow;
-  unsubscribe(id: string): void;
+  unsubscribe(id: string): boolean;
   deliveries(threadId: string): EventDeliveryRow[];
   webhook(
     sourceId: string,
     headers: Record<string, string | undefined>,
     body: unknown,
+    rawBody?: string,
   ): Promise<{ accepted: boolean; duplicate?: boolean; status?: number }>;
 }
 
@@ -56,7 +77,7 @@ export function handleListSources(
 ): { status: number; body: any } {
   const off = gate(deps);
   if (off) return off;
-  return { status: 200, body: { items: deps.sources.list(projectDirOf(args?.projectDir)) } };
+  return { status: 200, body: { items: deps.sources.list(projectDirOf(args?.projectDir)).map(sourceView) } };
 }
 
 export function handleCreateSource(
@@ -73,7 +94,7 @@ export function handleCreateSource(
   try {
     return {
       status: 200,
-      body: deps.sources.create({ projectDir: projectDirOf(args?.projectDir), kind, name, config }),
+      body: sourceView(deps.sources.create({ projectDir: projectDirOf(args?.projectDir), kind, name, config })),
     };
   } catch (err: any) {
     return fail(typeof err?.status === 'number' ? err.status : 500, String(err?.message ?? err));
@@ -89,8 +110,9 @@ export function handlePatchSource(
   const id = clean(args?.id);
   if (!id) return fail(400, 'event source id is required');
   if (typeof args?.enabled !== 'boolean') return fail(400, 'enabled must be a boolean');
-  deps.sources.setEnabled(id, args.enabled);
-  return { status: 200, body: { ok: true } };
+  return deps.sources.setEnabled(id, args.enabled)
+    ? { status: 200, body: { ok: true } }
+    : fail(404, `event source not found: ${id}`);
 }
 
 export function handleListThreads(
@@ -158,8 +180,9 @@ export function handleDeleteSubscription(
   if (off) return off;
   const id = clean(args?.id);
   if (!id) return fail(400, 'event subscription id is required');
-  deps.unsubscribe(id);
-  return { status: 200, body: { ok: true } };
+  return deps.unsubscribe(id)
+    ? { status: 200, body: { ok: true } }
+    : fail(404, `event subscription not found: ${id}`);
 }
 
 export function handleListDeliveries(
@@ -178,12 +201,13 @@ export async function handleWebhook(
   headers: Record<string, string | undefined>,
   body: unknown,
   deps: EventRouteDeps,
+  rawBody?: string,
 ): Promise<{ status: number; body: any }> {
   const off = gate(deps);
   if (off) return off;
   const id = clean(args?.id);
   if (!id) return fail(400, 'event source id is required');
-  const result = await deps.webhook(id, headers, body);
+  const result = await deps.webhook(id, headers, body, rawBody);
   if (!result.accepted) return fail(result.status ?? 401, 'webhook rejected');
   return { status: 200, body: { accepted: true, duplicate: result.duplicate ?? false } };
 }
@@ -234,13 +258,21 @@ export function attachEventRoutes(registry: RouteRegistry, deps: EventRouteDeps)
     send(res, handleListDeliveries({ threadId: url.searchParams.get('threadId') ?? undefined }, deps));
   });
   registry.attachHandler('events.webhook.receive', async (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => {
+    let rawBody = '';
     let body: any = {};
-    try { body = JSON.parse(await readRouteBody(req) || '{}'); } catch { body = {}; }
+    try {
+      rawBody = await readRouteBody(req);
+      body = JSON.parse(rawBody || '{}');
+    } catch {
+      rawBody = '';
+      body = {};
+    }
     send(res, await handleWebhook(
       { id: params.id },
       Object.fromEntries(Object.entries(req.headers).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value])),
       body,
       deps,
+      rawBody,
     ));
   });
 }
