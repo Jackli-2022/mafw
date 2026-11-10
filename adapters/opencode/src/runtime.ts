@@ -324,7 +324,12 @@ export async function createOpencodeRuntime(
            *  返回完整 entry（含 transformEvent——终审 Critical #1：遗漏会使
            *  wrapDialectEventStream 的整体替换丢掉转换器，message.updated 全灭）。 */
           async resolveEventEntry(): Promise<EventMappingEntry> {
-            const dialect = await probeOpencodeDialect(rt.getBaseUrl());
+            const dialect = await probeOpencodeDialect(
+              rt.getBaseUrl(),
+              undefined,
+              undefined,
+              () => ({ ...serveAuthHeaders(), ...(config.headers ?? {}) }),
+            );
             rt.activeDialect = dialect;
             // 2.1.0：顶层 type/data 信封 + session.* 富事件流 → @2.1 合成表
             if (dialect === 'v21') {

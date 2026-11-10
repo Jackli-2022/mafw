@@ -21,10 +21,14 @@ const V2_SIGNALS = ['"type":"sync"', '"type":"session.next.'] as const;
 const V21_SIGNALS = ['"type":"server.connected"', '"type":"session.execution.'] as const;
 
 /** 2.1 的确定性探针：/api/session 是 2.1 新增的真 API 面（旧 serve 根路径落 SPA）。 */
-async function isV21Api(baseUrl: string, fetchImpl: typeof fetch): Promise<boolean> {
+async function isV21Api(
+  baseUrl: string,
+  fetchImpl: typeof fetch,
+  headers: () => Record<string, string>,
+): Promise<boolean> {
   try {
     const res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/api/session?limit=1`, {
-      headers: { accept: 'application/json', ...serveAuthHeaders() },
+      headers: { accept: 'application/json', ...headers() },
       signal: AbortSignal.timeout(2000),
     });
     if (!res?.ok) return false;
@@ -42,10 +46,11 @@ export async function probeOpencodeDialect(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
   timeoutMs = 2500,
+  headers: () => Record<string, string> = serveAuthHeaders,
 ): Promise<'v1' | 'v2' | 'v21'> {
   // 2.1 优先走确定性 API 检测（SSE peek 在 serve 未就绪时会误判 v1，
   // 2026-10-23 实测：启动竞态让 gateway 落在 v1 表，2.1 事件全部不翻译）。
-  if (await isV21Api(baseUrl, fetchImpl)) return 'v21';
+  if (await isV21Api(baseUrl, fetchImpl, headers)) return 'v21';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   // 硬超时竞速：不依赖 body reader 在 abort 时 reject（传输层行为不可假设）；
@@ -58,7 +63,7 @@ export async function probeOpencodeDialect(
     // 2.1.0（2026-10-22 修复）：API 全挂 /api 前缀 + 强制 Basic auth——根路径
     // /global/event 无认证落 SPA HTML（res.ok true 但无事件流，静默 fail-safe）。
     const res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/api/event`, {
-      headers: { accept: 'text/event-stream', ...serveAuthHeaders() },
+      headers: { accept: 'text/event-stream', ...headers() },
       signal: controller.signal,
     });
     if (!res.ok || !res.body) return 'v1';
@@ -78,10 +83,10 @@ export async function probeOpencodeDialect(
         if (buffer.includes(signal)) return 'v2';
       }
     }
-    return (await isV21Api(baseUrl, fetchImpl)) ? 'v21' : 'v1';
+    return (await isV21Api(baseUrl, fetchImpl, headers)) ? 'v21' : 'v1';
   } catch {
     // peek 期间 serve 可能刚好就绪——返回前再确定性确认一次
-    return (await isV21Api(baseUrl, fetchImpl)) ? 'v21' : 'v1';
+    return (await isV21Api(baseUrl, fetchImpl, headers)) ? 'v21' : 'v1';
   } finally {
     clearTimeout(timer);
     controller.abort(); // 无论结果，断开 peek 连接

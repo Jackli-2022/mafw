@@ -108,6 +108,41 @@ export function createOpencodeTransport(
     resolve();
   };
 
+  let subscriptionGeneration = 0;
+  let reconnectDelay = 250;
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let legacySubscribed = false;
+
+  const subscribeLoop = async () => {
+    const generation = ++subscriptionGeneration;
+    const cancelled = () => closed || generation !== subscriptionGeneration || listeners.size === 0;
+    while (!cancelled()) {
+      try {
+        const connection = await runtime.global.event();
+        const stream = connection?.stream;
+        if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') {
+          throw new Error('event stream unavailable');
+        }
+        for await (const raw of stream) {
+          if (cancelled()) return;
+          receive(raw);
+        }
+        reconnectDelay = 250;
+      } catch {
+        // stream teardown / serve restart: retry below.
+      }
+      if (cancelled()) return;
+      // A reconnect may target a different serve dialect; re-arm the probe and
+      // drop the pre-probe buffer so stale frames cannot be translated later.
+      transport.rewire?.();
+      await new Promise<void>((resolve) => {
+        reconnectTimer = setTimeout(resolve, reconnectDelay);
+        reconnectTimer.unref?.();
+      });
+      reconnectDelay = Math.min(reconnectDelay * 2, 5000);
+    }
+  };
+
   const transport: OpencodeTransport = {
     async createSession(input) {
       const created = await runtime.session.create({ directory: input.directory, parentID: input.parentID });
@@ -155,37 +190,36 @@ export function createOpencodeTransport(
     },
     async stop() {
       closed = true;
+      subscriptionGeneration += 1;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       for (const unsubscribe of unsubscribers) unsubscribe();
       unsubscribers.clear();
       await (runtime as any).dispose?.();
     },
     onEvent(listener) {
       listeners.add(listener);
-      const legacyOnEvent = (runtime as any).onEvent;
-      if (typeof legacyOnEvent === 'function') {
-        const unsubscribe = legacyOnEvent(receive);
-        unsubscribers.add(unsubscribe);
+      if (!legacySubscribed) {
+        const legacyOnEvent = (runtime as any).onEvent;
+        if (typeof legacyOnEvent === 'function') {
+          unsubscribers.add(legacyOnEvent(receive));
+        }
+        legacySubscribed = true;
       }
-      if (runtime.global?.event) {
-        let cancelled = false;
-        void runtime.global.event().then(async (connection: any) => {
-          const stream = connection?.stream;
-          if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') return;
-          try {
-            for await (const raw of stream) {
-              if (cancelled || closed) return;
-              receive(raw);
-            }
-          } catch {
-            // stream teardown is not fatal; W5 adds reconnect.
-          }
-        }).catch(() => {});
-        unsubscribers.add(() => { cancelled = true; });
+      if (listeners.size === 1) {
+        void subscribeLoop();
       }
+      let active = true;
       return () => {
+        if (!active) return;
+        active = false;
         listeners.delete(listener);
-        for (const unsubscribe of unsubscribers) unsubscribe();
-        unsubscribers.clear();
+        if (listeners.size === 0) {
+          subscriptionGeneration += 1;
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          for (const unsubscribe of unsubscribers) unsubscribe();
+          unsubscribers.clear();
+          legacySubscribed = false;
+        }
       };
     },
   };
