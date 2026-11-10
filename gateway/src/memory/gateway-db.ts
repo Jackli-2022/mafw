@@ -11,6 +11,7 @@ import * as path from 'path';
 import { randomUUID, createHash } from 'crypto';
 import Database from 'better-sqlite3';
 import { log } from '../core/utils/logger';
+import { ensureEventLayerSchema } from '../core/events/event-store';
 
 export type ObservationSource = 'user_input' | 'assistant_reply' | 'tool_result' | 'reasoning';
 
@@ -485,6 +486,8 @@ export class GatewayDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_session_data_parts ON session_data_parts(session_id, message_id, created_at);
     `);
+
+    ensureEventLayerSchema(this.db);
 
     // Migration: add assistant_text column to trajectory_turns if not exists
     try {

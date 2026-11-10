@@ -1031,3 +1031,10 @@ spec `docs/superpowers/specs/2026-11-09-desktop-gateway-managed-runtime-design.m
   实机证据：`versions/5.1.0-fbdbee783d70/.install-complete.json`、
   `~/.mafw/runtime/desktop-gateway/prod/<instanceId>.json`、health `distribution=desktop-managed`。
 
+
+## 领域事件层（P2.4）
+
+`gateway/src/core/events/` 提供 Source → Trigger → Thread → Subscription → Decision → Delivery
+领域事件层；`MAFW_EVENT_LAYER=1` 启用。AutomationEngine 通过 `event:github_poll` /
+`event:cron_tick` 动作把事件交给 `EventLayerService`；GitHub 第一版轮询 issues/PRs + comments，
+reviews/CI 归 follow-up。完整表、API、背压与测试见 `docs/architecture/events.md`。

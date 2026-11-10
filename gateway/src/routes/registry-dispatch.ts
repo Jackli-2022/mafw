@@ -26,7 +26,10 @@ export async function dispatchAuthorized(
   if (!matched?.def.handler) return false;
 
   const remoteAddress = req.socket?.remoteAddress || '';
-  const allowed = authorizeRequest(
+  // Webhook senders authenticate with HMAC inside the handler, not the
+  // gateway apiToken (GitHub/Slack cannot send a MAFW bearer token).
+  const hmacAuthenticated = matched.def.operationId === 'events.webhook.receive';
+  const allowed = hmacAuthenticated || authorizeRequest(
     {
       remoteAddress,
       headers: req.headers as any,
