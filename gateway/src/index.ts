@@ -351,6 +351,8 @@ import { attachTypedRoute } from './routes/typed';
 import { SessionListResponse } from './routes/schemas/session';
 import { buildRouteCatalog } from './routes/route-catalog';
 import { attachWave1Handlers } from './routes/wave1-handlers';
+import { attachLeadTopicRoutes } from './routes/lead-topics';
+import { buildLeadGoalStatus } from './core/lead/goal-status';
 import { attachWave2Handlers } from './routes/wave2-handlers';
 import { attachPodHandlers } from './routes/pod-handlers';
 import { attachPodA2ARoutes } from './routes/pod-a2a';
@@ -5524,6 +5526,21 @@ class MafwScheduler {
         // switchAgent 双向门：coordination 槽位（LeadSessionRegistry 权威）与注册表身份。
         isCoordinationSession: (sid) => !!gwSelf.leadSessionRegistry?.findBySessionId(sid),
         isRegistryIdentity: (name) => !!gwSelf.identityRegistry?.get(name),
+      });
+      attachLeadTopicRoutes(this.routeRegistry, {
+        isLeadSession: (sessionID) => !!this.leadSessionRegistry?.findBySessionId(sessionID),
+        projectDirForSession: (sessionID) => this.leadSessionRegistry?.findBySessionId(sessionID)?.projectDir ?? null,
+        topics: this.leadTopics,
+        index: this.leadTopicIndex,
+        goals: (projectDir) => {
+          const pod = this.podStore?.getPodByProject(canonicalProjectDir(projectDir));
+          if (!pod) return [];
+          return buildLeadGoalStatus(
+            this.podGoalService.views(pod.id),
+            this.podGoalService.attention(pod.id),
+          );
+        },
+        workingSetEnabled: () => process.env.MAFW_LEAD_WORKING_SET !== '0',
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),

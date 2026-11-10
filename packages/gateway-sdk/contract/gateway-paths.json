@@ -2375,6 +2375,19 @@
         }
       }
     },
+    "/api/lead/context": {
+      "get": {
+        "operationId": "lead.context",
+        "tags": [
+          "lead"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/goals/{id}/nodes/{runId}/retry": {
       "post": {
         "operationId": "goals.retryNode",
