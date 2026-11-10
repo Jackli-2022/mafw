@@ -14,9 +14,18 @@
  *      './kernel'` + `export { MafwScheduler }` (ruling D3-R7 — one test and
  *      several docs import `MafwScheduler` from `src/index`).
  *
- * RED at D3 start (2026-11-10, BASE 42c78685): index.ts is ~8120 lines, the
- * three modules are absent, and index.ts carries 7 `req.url?.…` dispatch
- * branches that Task 3/8 must move/rewrite. Tasks 3-8 make this green.
+ * RED at D3 start (2026-11-10, BASE 42c78685): index.ts was ~8120 lines, the
+ * three modules were absent, and index.ts carried 7 `req.url?.…` dispatch
+ * branches. Task 3 moved the transport chain (index.ts → 5 branches), Task 4
+ * moved `handleDashboardAPI` (→ 0 branches), so the dispatch guard below is
+ * GREEN. The guard's remaining REDs are the three D3 acceptance items that only
+ * Task 5 (boot.ts) / Task 8 (kernel.ts + http-router.ts + entry shape) close:
+ * `index.ts < 1000`, `boot.ts`/`kernel.ts`/`http-router.ts` exist, and the
+ * `import { MafwScheduler } from './kernel'` + `export { MafwScheduler }` shape.
+ *
+ * The dashboard arms moved to `src/subsystems/dashboard-legacy.ts`, where their
+ * shapes are pinned by `legacy-route-inventory.test.ts` — the ban stays on the
+ * D3-owned files (entry + router + transport) only.
  *
  * D3-R2 allowlist note: three PRE-EXISTING `req.url?.…` dispatchers live
  * outside this guard's scope (`mobile/media-proxy.ts` ×2,
@@ -135,6 +144,8 @@ describe('D3-R2: transport dispatch is confined and URL-parse free', () => {
   it('index.ts has zero `req.url?.match/startsWith` dispatch branches', () => {
     const source = readSrc('index.ts');
     expect(source).not.toBeNull();
+    // D3 Task 4 closed the last 3 arms (handleDashboardAPI). Zero is the pin:
+    // the entry must never select a route from the URL again.
     expect(dispatchHits(source as string)).toEqual([]);
   });
 

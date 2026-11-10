@@ -91,7 +91,8 @@ export interface HealthPort {
 }
 
 export interface TransportDeps {
-  cors: TransportCorsHeaders;
+  /** `config.server.cors` — live getter (config is reloadable at runtime). */
+  cors(): TransportCorsHeaders;
   /** `(config.raw as any)?.server?.apiToken || ''` — live (config is reloadable). */
   apiToken(): string;
   /** Registry-first dispatch (`routes/registry-dispatch`); auth already passed. */
@@ -105,7 +106,10 @@ export interface TransportDeps {
   mcpStreamable(): McpStreamableEndpoint | undefined;
   /** `config.paths.dashboardPublic`. */
   spaRoot(): string;
-  /** `Scheduler.handleDashboardAPI` (R5 joint catch-all; Task 4 moves its body). */
+  /**
+   * `subsystems/dashboard-legacy.ts` `handleDashboardAPI` (R5 joint catch-all;
+   * the kernel hands it `this.dashboardLegacyDeps()`). Returns the JSON body.
+   */
   dashboardDispatch(req: http.IncomingMessage): Promise<{ status: number; body: unknown }>;
   register: RegisterIntakePort;
   control: ControlPort;
@@ -136,10 +140,11 @@ export function createRequestListener(deps: TransportDeps): RequestListener {
     try {
       res.setHeader('Content-Type', 'application/json');
 
-      // CORS headers for SSE
-      res.setHeader("Access-Control-Allow-Origin", deps.cors.origin);
-      res.setHeader("Access-Control-Allow-Methods", deps.cors.methods);
-      res.setHeader("Access-Control-Allow-Headers", deps.cors.headers);
+      // CORS headers come from the live `config.server.cors` getter (reloadable).
+      const cors = deps.cors();
+      res.setHeader("Access-Control-Allow-Origin", cors.origin);
+      res.setHeader("Access-Control-Allow-Methods", cors.methods);
+      res.setHeader("Access-Control-Allow-Headers", cors.headers);
 
       if (req.method === "OPTIONS") {
       res.writeHead(204);

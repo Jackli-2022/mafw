@@ -24,6 +24,8 @@ import { isLoopbackAddr } from './core/auth';
 // D3 Task 3：HTTP 传输链 + WS 上行枢纽（原先内联在 startApiServer 的 626 行回调）。
 import { createRequestListener } from './http/transport';
 import { createWsHub, type WsHub } from './http/ws-upgrade';
+// D3 Task 4：dashboard legacy 总分发器移入 subsystems/（R5 保留，逐字搬移）。
+import { handleDashboardAPI, type DashboardLegacyDeps } from './subsystems/dashboard-legacy';
 import { normalizeDir, isPortHealthy } from './core/http/http-util';
 import { NodeDriver } from './core/goal/driver';
 import { parseReviewRubric, taskIdsFromWavePlan } from './core/goal/review-rubric';
@@ -5744,7 +5746,7 @@ class MafwScheduler {
       // registry → plugin web → file history → transport 分支 → dashboard 联合兜底 →
       // /register → /control → /health → 反代 → 500）。deploy/attach 时序不变。
       const server = http.createServer(createRequestListener({
-        cors: config.server.cors,
+        cors: () => config.server.cors,
         apiToken: () => (config.raw as any)?.server?.apiToken || '',
         dispatchAuthorized: (req, res, apiToken) =>
           dispatchAuthorized({ registry: this.routeRegistry, apiToken }, req, res),
@@ -5763,7 +5765,7 @@ class MafwScheduler {
         mcpEndpoint: () => this.mcpEndpoint,
         mcpStreamable: () => this.mcpStreamableEndpoint,
         spaRoot: () => config.paths.dashboardPublic,
-        dashboardDispatch: async (req) => ({ status: 200, body: await this.handleDashboardAPI(req) }),
+        dashboardDispatch: async (req) => ({ status: 200, body: await handleDashboardAPI(req, this.dashboardLegacyDeps()) }),
         register: {
           parseIntent: (data) => parseRegisterIntent(data),
           isUserDataDir: (dir) => this.isUserDataDir(dir),
@@ -6938,200 +6940,18 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     };
   }
 
-  private async handleDashboardAPI(req: http.IncomingMessage): Promise<any> {
-    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
-    // Retained for catch-all shapes (R5).
-    if (req.url?.startsWith("/api/goals")) {
-      return {
-        goals: Array.from(this.activeGoals.values()).map(s => ({
-          goalId: s.goalId,
-          phase: s.phase,
-          loop: s.loop,
-          nextAction: s.nextAction,
-          error: s.error || null,
-          updatedAt: s.updatedAt,
-        })),
-      };
-    }
-    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
-    // Retained for catch-all shapes (R5).
-    if (req.url?.startsWith("/api/stats")) {
-      const base = {
-        activeGoals: this.activeGoals.size,
-        registeredProjects: this.registeredProjects.size,
-        sseClients: this.sseClients.size,
-        serveRunning: this.serveRunning,
-      };
-      try {
-        const store = this.trajectoryStore;
-        if (store) {
-          const global = store.getGlobalTokenSummary();
-          return { ...base, tokens: global };
-        }
-      } catch (err: any) {
-        log.warn(`[Stats] token summary failed: ${err.message}`);
-      }
-      return base;
-    }
-    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
-    // Retained for catch-all shapes (R5).
-    if (req.url === '/api/memory/add' && req.method === 'POST') {
-      const body = await new Promise<string>((resolve) => {
-        let b = '';
-        req.on('data', (c: Buffer) => (b += c.toString('utf-8')));
-        req.on('end', () => resolve(b));
-      });
-      try {
-        const data = JSON.parse(body);
-        const content = String(data?.content || '').trim();
-        const memoryType = String(data?.memoryType || 'semantic');
-        if (!content || !['episodic', 'semantic', 'procedural', 'global'].includes(memoryType)) {
-          return { success: false, error: 'content and valid memoryType required' };
-        }
-        // V2 ①b L1: exact-content guard — skip verbatim re-submits (worker
-        // double-writes). LRU is in-memory; read-time collapse backstops.
-        if (config.memory.dedup?.exactHash !== false) {
-          const { exactHashOf, seenExactHash } = require('./memory/dedup-guard.js');
-          if (seenExactHash(exactHashOf(content))) {
-            return { success: true, deduped: true, reason: 'exact-hash' };
-          }
-        }
-        const { normalizeAuthority } = require('./core/memory/harmonic-types.js');
-        const authority = normalizeAuthority(data?.authority);
-        if (authority === null) {
-          return { success: false, error: `invalid authority: ${String(data?.authority)} (user|agent|tool|pipeline)` };
-        }
-        if (!this.memoryService) return { success: false, error: 'memoryService not ready' };
-        const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
-        const { generateHarmonicId } = require('./core/memory/harmonic-types.js');
-        const { importanceToSalience } = require('./core/memory/salience-perceptor.js');
-        const { judgeSalience } = require('./judge/salience.js');
-        const { getEmbeddingRuntime } = require('./memory/embedding-runtime.js');
-        const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
-        const now = new Date().toISOString();
-        let novelty: number | undefined;
-        try {
-          const rt = getEmbeddingRuntime();
-          if (rt) {
-            const [v] = await rt.provider.embed([content], 'document');
-            if (v) {
-              const hits = rt.vectors.searchByCosine(v, 1);
-              novelty = hits.length > 0 ? 1 - hits[0].cosine : 1;
-            }
-          }
-        } catch { /* fail-open */ }
-        const salience = typeof data?.importance === 'number' && Number.isFinite(data.importance)
-          ? importanceToSalience(data.importance)
-          : judgeSalience({ text: content, novelty }).score;
-        const unit = {
-          id: generateHarmonicId(),
-          type: memoryType,
-          primary_abstraction: String(data?.primaryAbstraction || content).slice(0, 200),
-          cue_anchors: Array.isArray(data?.cueAnchors) ? data.cueAnchors.slice(0, 8).map(String) : [],
-          memory_value: content.slice(0, 4000),
-          energy: 0.8,
-          salience,
-          novelty,
-          abstraction_level: abstractionLevelFor(memoryType),
-          created_at: now,
-          updated_at: now,
-          pinned: data?.pinned === true || undefined,
-          // G1: provenance authority — default 'agent' (direct agent write);
-          // absent field on legacy entries is treated as 'pipeline' downstream.
-          authority: authority ?? 'agent',
-          // Sticky note board parity with the MCP mafw_add_memory handler.
-          ...(data?.sticky === true ? {
-            sticky_until: new Date(Date.now() + (typeof data?.stickyDays === 'number' && data.stickyDays > 0 ? data.stickyDays : 7) * 86400e3).toISOString(),
-          } : {}),
-          // V1 provenance: pipeline workers write via HTTP with their own
-          // session id — map back to the source session for C0 reconstruction.
-          source_session_id: (data?.sessionID && require('./recall/worker-origin').resolveWorkerOrigin(String(data.sessionID))) || (data?.sessionID ? String(data.sessionID) : undefined),
-        };
-        let supersedesTarget: any = null;
-        if (data?.supersedes) {
-          const sid = String(data.supersedes);
-          supersedesTarget = this.memoryService.harmonicIndex.getIndex().entries.find((e: any) => e.id === sid);
-          if (!supersedesTarget) return { success: false, error: `supersedes target not found: ${sid}` };
-          unit.energy = Math.max(unit.energy, supersedesTarget.energy ?? 0);
-        }
-        // A2: tentative draft abstractions are energy-capped at write time
-        // until the daily reflection pipeline promotes or discards them.
-        try {
-          const { capTentativeEnergy } = require('./recall/turn-pipeline');
-          Object.assign(unit, capTentativeEnergy(unit as any));
-        } catch { /* fail-open */ }
-        // V2 ⑦: commitment gradient — pipeline worker first-pass writes cap
-        // at 0.6; manual/user writes are exempt. Worker detection via the
-        // V1 origin registry (registered = pipeline worker session).
-        try {
-          const { capCommitment } = require('./recall/commitment');
-          const isPipelineWorker = Boolean(
-            data?.sessionID && require('./recall/worker-origin').resolveWorkerOrigin(String(data.sessionID)));
-          Object.assign(unit, capCommitment(unit as any, {
-            isPipeline: isPipelineWorker,
-            enabled: config.recall?.commitmentGradient !== false,
-          }));
-        } catch { /* fail-open */ }
-        const routeDeps = getRouteWriteDeps();
-        if (routeDeps) {
-          const routed = await routeAndWrite(unit as any, store as any, routeDeps);
-          if (routed.action === 'create' && supersedesTarget && !supersedesTarget.superseded_by) {
-            store.markSuperseded(supersedesTarget.id, unit.id);
-          }
-          return {
-            success: true,
-            id: routed.id,
-            deduped: routed.action === 'skip' ? true : undefined,
-            updated: routed.action === 'update' ? routed.targetId : undefined,
-            sticky_until: routed.action === 'create' ? (unit as any).sticky_until : undefined,
-          };
-        }
-        await store.write(unit);
-        if (supersedesTarget && !supersedesTarget.superseded_by) {
-          store.markSuperseded(supersedesTarget.id, unit.id);
-        }
-        return { success: true, id: unit.id, sticky_until: (unit as any).sticky_until };
-      } catch (err: any) {
-        log.warn(`[Scheduler] /api/memory/add failed: ${err.message}`);
-        return { success: false, error: err.message };
-      }
-    }
-    // Dead since D1 Task G: registry (routes/dashboard.ts) owns this exact pair; edit there.
-    // Retained for catch-all shapes (R5).
-    if (req.url === '/api/memory/pin' && req.method === 'POST') {
-      const body = await new Promise<string>((resolve) => {
-        let b = '';
-        req.on('data', (c: Buffer) => (b += c.toString('utf-8')));
-        req.on('end', () => resolve(b));
-      });
-      try {
-        const data = JSON.parse(body);
-        const id = String(data?.id || '');
-        if (!id) return { success: false, error: 'id required' };
-        if (!this.memoryService) return { success: false, error: 'memoryService not ready' };
-        const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
-        const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
-        const pinned = data?.pinned === true;
-        const hasSticky = typeof data?.sticky === 'boolean';
-        if (hasSticky) {
-          const days = typeof data?.stickyDays === 'number' && data.stickyDays > 0 ? data.stickyDays : 7;
-          const until = data.sticky === true ? new Date(Date.now() + days * 86400e3).toISOString() : null;
-          const ok = store.setSticky(id, until);
-          if (!ok) return { success: false, error: `memory not found: ${id}` };
-          return { success: true, id, sticky: data.sticky === true, sticky_until: until ?? undefined };
-        }
-        const ok = store.setPinned(id, pinned);
-        if (!ok) return { success: false, error: `memory not found: ${id}` };
-        return { success: true, id, pinned };
-      } catch (err: any) {
-        log.warn(`[Scheduler] /api/memory/pin failed: ${err.message}`);
-        return { success: false, error: err.message };
-      }
-    }
-    if (req.url?.startsWith("/api/memory")) {
-      return { status: "ok", message: "Memory API not yet implemented" };
-    }
-    return { error: "Unknown endpoint" };
+  /** D3 Task 4: dashboard legacy dispatch lives in subsystems/dashboard-legacy.ts. */
+  private dashboardLegacyDeps(): DashboardLegacyDeps {
+    // Live getters only: activeGoals is read fresh per request, the counters
+    // and the two late-bound services may be reassigned after startup.
+    return {
+      activeGoals: () => this.activeGoals,
+      registeredProjectsSize: () => this.registeredProjects.size,
+      sseClientsSize: () => this.sseClients.size,
+      serveRunning: () => this.serveRunning,
+      trajectoryStore: () => this.trajectoryStore,
+      memoryService: () => this.memoryService,
+    };
   }
 
   private sleep(ms: number): Promise<void> {

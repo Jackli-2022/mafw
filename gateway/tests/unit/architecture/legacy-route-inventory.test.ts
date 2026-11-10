@@ -1,23 +1,17 @@
 // Phase D1 baseline: index.ts's legacy dispatch chain, grouped by path prefix.
-// Numbers DECREASE as migration tasks delete branches. D1 END STATE (Task 9) was
-// pinned at 24 (10 match + 14 equals); Phase D3 Task 3 moved the whole HTTP
-// transport chain into `src/http/transport.ts`, so what is LEFT in index.ts is
-// now only ONE kind of residue:
-//   1. RETAINED dashboard dispatch (ruling R5) — the joint
-//      `/api/goals | /api/stats | /api/memory` catch-all was handed to
-//      transport.ts as a `dashboardDispatch` dep, but its *implementation*
-//      (`handleDashboardAPI` + the joint inner branches) still lives in the
-//      class until D3 Task 4. The four well-defined shadow entries
-//      (goals.list / dashboard.stats / memory.add / memory.setSticky) are
-//      registry-first.
+// Numbers DECREASED as migration tasks deleted branches. D1 END STATE (Task 9)
+// was pinned at 24 (10 match + 14 equals); Phase D3 Task 3 moved the whole HTTP
+// transport chain into `src/http/transport.ts` (24 → 5), and D3 Task 4 moved the
+// last residue — `handleDashboardAPI` (ruling R5) — into
+// `src/subsystems/dashboard-legacy.ts` (5 → 0).
 //
-// Moved out of index.ts by D3 Task 3 (NOT deleted): `/a2a`, `/.well-known`,
-// `/a2a/artifacts/:id`, `/mcp` ×2, dashboard SPA (`/`, `/index.html`,
-// `/assets/*`, `/static/*`), `/register`, `/control` + the dead
-// `/api/goals/control` alias (ruling R6 — preserved verbatim, and still ordered
-// AFTER the dashboard joint), the rich `/health` and the dead plain `/health`,
-// plus the reverse-proxy fallback. Those branches are now pinned by the
-// transport inventory below (`src/http/transport.ts`), same anchoring semantics.
+// index.ts is therefore route-dispatch free: no `req.url?.` branch at all. The
+// moved dispatch is pinned WHERE IT LIVES:
+//   - `src/http/transport.ts` — the transport inventory below (Task 3);
+//   - `src/subsystems/dashboard-legacy.ts` — the dashboard inventory below
+//     (the joint `/api/goals | /api/stats | /api/memory` catch-all that Task 3
+//     handed to transport as the `dashboardDispatch` dep).
+// Moving a branch again without retargeting these pins fails here.
 //
 // /api/ws stays out of the HTTP chain entirely (WS upgrade, `http/ws-upgrade.ts`).
 // Spec: 2026-11-09-gateway-kernel-microkernel-design.md §5.2.
@@ -38,7 +32,9 @@ function inventory(): Inventory {
   return JSON.parse(out) as Inventory;
 }
 
+const INDEX = path.join(__dirname, '..', '..', '..', 'src', 'index.ts');
 const TRANSPORT = path.join(__dirname, '..', '..', '..', 'src', 'http', 'transport.ts');
+const DASHBOARD_LEGACY = path.join(__dirname, '..', '..', '..', 'src', 'subsystems', 'dashboard-legacy.ts');
 
 interface TransportInventory {
   /** `url === '/…'` exact-path branches (raw url: byte-identical semantics). */
@@ -58,76 +54,42 @@ function transportInventory(): TransportInventory {
   return { exact, prefix, slots, total: exact.length + prefix.length + slots };
 }
 
-describe('legacy route inventory (Phase D1 baseline)', () => {
+interface DashboardInventory {
+  /** `req.url?.startsWith('/…')` arms (method-agnostic catch-all shapes). */
+  startsWith: string[];
+  /** `req.url === '/…'` arms (POST memory.add / memory.pin). */
+  exact: string[];
+  total: number;
+}
+
+function dashboardInventory(): DashboardInventory {
+  const src = fs.readFileSync(DASHBOARD_LEGACY, 'utf-8');
+  const startsWith = [...src.matchAll(/req\.url\?\.startsWith\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
+  const exact = [...src.matchAll(/req\.url === ['"]([^'"]+)['"]/g)].map((m) => m[1]);
+  return { startsWith, exact, total: startsWith.length + exact.length };
+}
+
+describe('legacy route inventory (Phase D1 baseline → D3 zero residue)', () => {
   const inv = inventory();
 
-  it('index.ts has the documented legacy dispatch mass', () => {
-    // Tasks 2-3e migrated: cognition 3, python 3, tools 2, tts 4, mobile 2,
-    // terminal 1, agent 1, media 3 match. Baseline 135 → 87+29=116.
-    // Task A1: projects 2 equals → 87+27=114.
-    // Task A2: mafw-commands 1 match + 1 equals → 86+26=112.
-    // Task A3: merge-memory 1 equals → 86+25=111.
-    // Task A4: triage 3 match + 1 equals → 83+24=107.
-    // Task A5: approvals 3 match + 1 equals → 80+23=103.
-    // Task B1: questions 3 match + permissions 2 match → 75+23=98.
-    // Task B2: usage 2 match → 73+23=96.
-    // Task B3: recall thin three 3 match → 70+23=93.
-    // Task B4: recall/context 1 match → 69+23=92.
-    // Task C1: automations draft/list 2 equals + :id/:id-history 2 match → 67+21=88.
-    // Task C2: chat send/sendEnriched 2 equals → 67+19=86.
-    // Task C3: obs/capture 1 equals → 67+18=85.
-    // Task C4: media resolve-task 1 match → 66+18=84.
-    // Task D1: sessions core 1 equals + 9 match (create/get/deleteLegacy/abort/
-    // background/promptAsync/prompt/queue list+clear+cancel) → 57+17=74.
-    // Task E1: sessions read models 5 match (messages/todo/trajectory/
-    // token-summary/children) → 52+17=69.
-    // Task E2: permission-mode 1 + permissions reply 1 + subagents 4 match
-    // (message/cancel/result + the shared spawn/list const) → 46+17=63.
-    // Task F1: memory 7 match + merged-search/energy-distribution 2 equals →
-    // 39+15=54.
-    // Task F2: goals inline 6 match (respond/retry/plan×2/validate/complete) →
-    // 33+15=48.
-    // Task H1: long-tail singles 10 match (voice/presence/eval/config×2/
-    // orchestration/provider/agents/media-plugins×2) + llm/compress 1 equals →
-    // 23+14=37.
-    // Task H2: pods events 3 match (seenAll/seenOne/list shared consts) + mcp 2 match
-    // (facade + config facade) + devices/mobile 8 match (devices POST/GET/DELETE +
-    // mobile list/delete/register + pairing-code/verify) → 10+14=24. The
-    // manager/session + events SSE branches are `req.url && …startsWith` blind
-    // spots (no `?.`) — never counted, migrated anyway.
-    // Task 9: D1 END STATE pin — 24 = 10 match + 14 equals.
-    // D3 Task 3: the whole transport chain (a2a/well-known/artifact/mcp ×2/SPA ×4/
-    // register/control + dead /api/goals/control/health ×2) left index.ts for
-    // http/transport.ts. What remains is the joint dashboard catch-all plus the
-    // three handleDashboardAPI inner branches (Task 4 moves them):
+  it('index.ts carries zero legacy dispatch mass', () => {
+    // Migration trail: D1 baseline 135 → 24 at D1 Task 9 (10 match + 14 equals),
+    // then D3 Task 3 moved the HTTP transport chain (a2a/well-known/artifact/
+    // mcp ×2/SPA ×4/register/control + dead /api/goals/control/health ×2):
     //   24 - 19 = 5 = 3 match + 2 equals.
-    expect(inv.byKind.match).toBe(3);
-    expect(inv.byKind.equals).toBe(2);
-    expect(inv.total).toBe(5);
+    // D3 Task 4 moved handleDashboardAPI (goals.list / dashboard.stats /
+    // memory.add / memory.pin / /api/memory catch-all) to subsystems/:
+    //   5 - 5 = 0.
+    expect(inv.byKind.match).toBe(0);
+    expect(inv.byKind.equals).toBe(0);
+    expect(inv.total).toBe(0);
   });
 
-  it('groups match the D1 plan inventory', () => {
-    const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
-    for (const gone of ['/api/cognition', '/api/python', '/api/tts', '/api/mobile', '/api/terminal', '/api/agent', '/api/media', '/api/projects', '/api/mafw-commands', '/api/merge-memory', '/api/triage', '/api/approvals', '/api/recall', '/api/automations', '/api/chat', '/api/obs', '/api/session', '/api/llm', '/api/events', '/api/devices', '/api/pods', '/api/voice', '/api/presence', '/api/eval', '/api/config', '/api/orchestration', '/api/provider', '/api/agents', '/api/questions', '/api/permissions', '/api/usage']) {
-      expect(byPrefix.get(gone)).toBeUndefined(); // all migrated (Tasks 2-3e + A1-A5 + B1-B4 + C1-C3 + D1 + E1-E2 + F1-F2 + H1-H2)
-    }
-    // questions/permissions/usage 的 7 条 match 分支曾落在 '/api' 聚合组（analyzer 对
-    // 2 段式 api 路径的分组口径）：66 → 59 → 57 → 56 → 47 → 42 → 36 → 29 → 23 → 13。
-    // Task H2 迁走最后 13 条（pods events 3 / mcp 2 / devices+mobile 8）→ 该组消失。
-    expect(byPrefix.get('/api')).toBeUndefined();
-  });
-
-  it('residual /api groups are the R5 dashboard dispatch only', () => {
-    const byPrefix = new Map(inv.groups.map((g) => [g.prefix, g.count]));
-    // R5: the joint catch-all branch is handed to transport.ts, but the
-    // handleDashboardAPI body (and its three inner startsWith branches) is still
-    // in index.ts until D3 Task 4. These are the ONLY /api-prefixed legacy hits.
-    // /api/memory 3 = memory.add + memory.pin + the joint catch-all's memory arm.
-    // /api/goals 1 = handleDashboardAPI's goals.list.
-    // /api/stats 1 = handleDashboardAPI's dashboard.stats.
-    expect(byPrefix.get('/api/memory')).toBe(3);
-    expect(byPrefix.get('/api/goals')).toBe(1);
-    expect(byPrefix.get('/api/stats')).toBe(1);
+  it('has no residual route groups at all', () => {
+    // The analyzer's groups are the positive-mass signal: zero groups means no
+    // `/api/…` (or transport) prefix survives in index.ts. A new inline branch
+    // resurrects a group here before it can reach production.
+    expect(inv.groups).toEqual([]);
   });
 
   it('transport/root branches have left index.ts (D3 Task 3)', () => {
@@ -139,29 +101,17 @@ describe('legacy route inventory (Phase D1 baseline)', () => {
     }
   });
 
-  it('the chain lives in the route region (lines ordered sanely)', () => {
-    expect(inv.groups.length).toBeGreaterThan(0);
-    for (const g of inv.groups) {
-      expect(g.lines[0]).toBeLessThanOrEqual(g.lines[1]);
-      expect(g.lines[0]).toBeGreaterThan(5000); // inside the request handler region
-      expect(g.lines[1]).toBeLessThan(11000);
-    }
-  });
-
-  it('D1 migration targets are enumerable (api-prefixed groups, not transport)', () => {
-    const apiGroups = inv.groups.filter((g) => g.prefix.startsWith('/api'));
-    // Per-prefix counts shrink as whole domains migrate; no fixed group-count
-    // ratchet here (it would have to change every batch).
-    const transportPrefixes = ['/assets', '/static', '/mcp', '/', '/index.html', '/health', '/a2a', '/.well-known', '/register', '/control'];
-    for (const g of apiGroups) {
-      expect(transportPrefixes).not.toContain(g.prefix);
-    }
+  it('index.ts has no bare `req.url?.` and no `req.url ===` dispatch left (D3-R2)', () => {
+    // Independent of the analyzer's regexes: the D3-owned entry file must not
+    // select a route from the URL at all — that is transport + registry work.
+    const src = fs.readFileSync(INDEX, 'utf-8');
+    expect(src).not.toMatch(/\breq\.url\?\.(?:match|startsWith)\s*\(/);
+    expect(src).not.toMatch(/\breq\.url === ['"]/);
   });
 });
 
-// D3 Task 3: the transport residue is now pinned WHERE IT LIVES. The analyzer
-// above still reads index.ts only (that is what its 5-pin guards), so without
-// this the moved branches would silently stop being tracked.
+// D3 Task 3: the transport residue is now pinned WHERE IT LIVES (the analyzer
+// above only reads index.ts, which now pins 0).
 describe('transport inventory (D3 Task 3: http/transport.ts)', () => {
   const tf = transportInventory();
 
@@ -236,6 +186,36 @@ describe('transport inventory (D3 Task 3: http/transport.ts)', () => {
       expect({ step: markers[i], after: markers[i - 1], ok: positions[i] > positions[i - 1] })
         .toEqual({ step: markers[i], after: markers[i - 1], ok: true });
     }
+  });
+});
+
+// D3 Task 4: the dashboard legacy dispatcher is now pinned WHERE IT LIVES. It
+// still runs (R5), but out of the kernel and behind the transport's
+// `dashboardDispatch` dep, so its shapes must stay byte-identical.
+describe('dashboard legacy inventory (D3 Task 4: subsystems/dashboard-legacy.ts)', () => {
+  const dl = dashboardInventory();
+
+  it('pins the retained dashboard dispatchers by kind', () => {
+    // startsWith: /api/goals (goals.list), /api/stats (dashboard.stats),
+    // /api/memory (the "not yet implemented" catch-all).
+    expect(dl.startsWith.sort()).toEqual(['/api/goals', '/api/memory', '/api/stats']);
+    // exact POST pairs: memory.add, memory.pin.
+    expect(dl.exact.sort()).toEqual(['/api/memory/add', '/api/memory/pin']);
+    expect(dl.total).toBe(5);
+  });
+
+  it('is wired through transport as `dashboardDispatch`, after the joint branch', () => {
+    // The transport still owns the joint branch position (before /control, R6);
+    // the kernel hands it this module and nothing in the kernel body remains.
+    const indexSrc = fs.readFileSync(INDEX, 'utf-8');
+    expect(indexSrc).toContain('handleDashboardAPI(req, this.dashboardLegacyDeps())');
+    expect(indexSrc).not.toMatch(/handleDashboardAPI\s*\(req:\s*http\.IncomingMessage\)/);
+
+    const moduleSrc = fs.readFileSync(DASHBOARD_LEGACY, 'utf-8');
+    expect(moduleSrc).toContain('export async function handleDashboardAPI(');
+    expect(moduleSrc).toContain('deps: DashboardLegacyDeps');
+    // Lazy requires were re-anchored one level up (Global Constraint).
+    expect(moduleSrc).not.toMatch(/require\('\.\//);
   });
 });
 

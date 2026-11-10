@@ -91,7 +91,7 @@ function makeDeps(over: Partial<TransportDeps> = {}): { deps: TransportDeps; spi
     proxyTarget: jest.fn(() => 'http://127.0.0.1:9'),
   };
   const deps: TransportDeps = {
-    cors: { origin: '*', methods: 'GET,POST', headers: 'content-type' },
+    cors: () => ({ origin: '*', methods: 'GET,POST', headers: 'content-type' }),
     apiToken: () => TOKEN,
     dispatchAuthorized: spies.dispatchAuthorized,
     pluginWebWildcard: spies.pluginWebWildcard,
