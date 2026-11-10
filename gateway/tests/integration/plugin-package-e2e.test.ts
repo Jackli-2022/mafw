@@ -28,7 +28,7 @@ import {
 } from '../../src/plugins/package-host';
 import { PackageManager } from '../../src/plugins/package-manager';
 import { PackageStateStore } from '../../src/plugins/package-state-store';
-import { ensureAdapterBuilt } from '../helpers/adapter-build';
+import { PACKAGING_SUITE_TIMEOUT_MS, ensureAdapterBuilt } from '../helpers/adapter-build';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const EXAMPLE_DIR = path.join(REPO_ROOT, 'docs', 'examples', 'plugins', 'service-monitor');
@@ -595,7 +595,7 @@ console.log(JSON.stringify({ resolved: require.resolve('@mafw/adapter-opencode')
     expect(path.resolve((JSON.parse(after.stdout) as { resolved: string }).resolved)).toBe(
       path.resolve(stagedEntry),
     );
-  }, 240_000);
+  }, PACKAGING_SUITE_TIMEOUT_MS);
 
   it('is wired into the desktop bundle, deploy script, postinstall and CI', () => {
     const stageGateway = fs.readFileSync(

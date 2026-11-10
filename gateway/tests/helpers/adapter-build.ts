@@ -21,18 +21,25 @@
  * under an atomic directory lock (`<adapterDir>/.build-lock`, created with
  * `mkdirSync` so the winner is decided by the filesystem):
  *
+ *  - the winner records `.build-lock/owner.json` (`{ token, pid, startedAt }`)
+ *    so the lock knows *who* holds it, not just how old it is;
  *  - the loser waits (blocking poll) until the winner releases the lock, then
  *    re-checks freshness — double-checked locking, so the second caller is a
  *    no-op instead of a duplicate build;
- *  - a lock older than `LOCK_STALE_MS` (90s, deliberately below the wait
- *    timeout) is treated as abandoned (a crashed/killed build) and removed, so
- *    the next waiter heals itself instead of timing out;
- *  - waiting is bounded by `LOCK_TIMEOUT_MS` (2 min, so the helper fails with a
- *    lock message before Jest's 240s suite timeout); a timeout throws instead of
+ *  - a lock is stale when it is older than `LOCK_STALE_MS` (60s, deliberately
+ *    below the wait timeout) **or** when its recorded PID is gone (only
+ *    `ESRCH` proves that; `EPERM` still means alive). An unreadable owner file
+ *    falls back to the age rule. A stale lock is removed — re-reading the token
+ *    just before `rm` so a lock that was taken over meanwhile survives;
+ *  - waiting is bounded by `LOCK_TIMEOUT_MS` (90s, so the helper fails with a
+ *    lock message before Jest's suite timeout); a timeout throws instead of
  *    silently producing an unbuilt `dist`;
- *  - the lock is always removed in `finally`.
+ *  - release only deletes the lock when the owner token still matches, so a
+ *    holder that lost the lock to a stale steal cannot delete the new holder's
+ *    lock from its `finally`. Release is idempotent and never throws.
  */
 import { spawnSync } from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -47,14 +54,23 @@ const BUILD_INPUT_FILES = ['build.mjs', 'tsconfig.build.json'] as const;
 
 /** Lock directory: `mkdir` is atomic, so it doubles as the mutex. */
 export const BUILD_LOCK_NAME = '.build-lock';
-/** Give up waiting for another worker's build after this long. */
-export const LOCK_TIMEOUT_MS = 2 * 60_000;
+/** Ownership record written into the lock directory by the winning process. */
+export const BUILD_LOCK_OWNER_FILE = 'owner.json';
 /**
- * A lock older than this is assumed abandoned (crashed build) and stolen.
- * Must stay **below** `LOCK_TIMEOUT_MS`: otherwise a crashed holder's fresh
- * lock would make every waiter time out instead of healing itself.
+ * Jest timeout for the packaging suites that call `ensureAdapterBuilt`: lock
+ * wait + build must finish inside this budget, or the worker is killed with an
+ * opaque timeout instead of the helper's own diagnostic.
  */
-export const LOCK_STALE_MS = 90_000;
+export const PACKAGING_SUITE_TIMEOUT_MS = 300_000;
+/** Give up waiting for another worker's build after this long. */
+export const LOCK_TIMEOUT_MS = 90_000;
+/**
+ * A lock older than this is assumed abandoned (crashed build) and stolen. Must
+ * stay **below** `LOCK_TIMEOUT_MS`: otherwise a crashed holder's fresh lock
+ * would make every waiter time out instead of healing itself. A lock whose
+ * recorded owner PID is gone is stale regardless of age.
+ */
+export const LOCK_STALE_MS = 60_000;
 /** Poll interval while another worker builds. */
 export const LOCK_POLL_MS = 250;
 
@@ -165,11 +181,74 @@ export function adapterBuildFresh(adapterDir: string = ADAPTER_DIR): boolean {
 
 export type BuildLockDecision = 'acquire' | 'remove-stale' | 'wait' | 'timeout';
 
+/** What the lock holder records about itself. */
+export interface BuildLockOwner {
+  /** Random per-acquisition id; release/stale-removal must still match it. */
+  token: string;
+  /** PID of the holder, used as the liveness signal. */
+  pid: number;
+  /** Wall-clock acquisition time (diagnostics only, not the age rule). */
+  startedAt: number;
+}
+
+function ownerFilePath(lockDir: string): string {
+  return path.join(lockDir, BUILD_LOCK_OWNER_FILE);
+}
+
+/**
+ * Read and validate `.build-lock/owner.json`. Returns `undefined` when it is
+ * missing, half-written or corrupt — callers then fall back to the age rule
+ * instead of guessing that the holder is dead.
+ */
+export function readBuildLockOwner(lockDir: string): BuildLockOwner | undefined {
+  try {
+    const raw = JSON.parse(fs.readFileSync(ownerFilePath(lockDir), 'utf8')) as Partial<BuildLockOwner>;
+    if (typeof raw?.token !== 'string' || raw.token.length === 0) return undefined;
+    if (typeof raw.pid !== 'number' || !Number.isInteger(raw.pid) || raw.pid <= 0) return undefined;
+    return {
+      token: raw.token,
+      pid: raw.pid,
+      startedAt: typeof raw.startedAt === 'number' ? raw.startedAt : 0,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** `true` = alive, `false` = provably gone, `undefined` = cannot tell. */
+export type LivenessProbe = (pid: number) => boolean | undefined;
+
+/**
+ * `process.kill(pid, 0)` liveness probe. Only `ESRCH` proves the process is
+ * gone; `EPERM` (a live process owned by someone else, common on Windows) must
+ * count as alive — treating it as dead would steal a healthy holder's lock.
+ */
+export function isProcessAlive(
+  pid: number,
+  kill?: (pid: number, signal: number) => void,
+): boolean | undefined {
+  if (!Number.isInteger(pid) || pid <= 0) return undefined;
+  const probe = kill ?? ((target: number, signal: number) => { process.kill(target, signal); });
+  try {
+    probe(pid, 0);
+    return true;
+  } catch (err: any) {
+    return err?.code === 'ESRCH' ? false : true;
+  }
+}
+
 export interface BuildLockDecisionInput {
   /** Does the lock directory exist right now? */
   exists: boolean;
   /** mtime of the lock directory (when it exists). */
   lockMtimeMs?: number;
+  /** PID recorded by the holder, when the owner file was readable. */
+  ownerPid?: number;
+  /**
+   * Liveness of `ownerPid`; `false` makes the lock stale immediately, and
+   * `undefined` (unreadable owner file / unusable PID) falls back to age.
+   */
+  ownerAlive?: boolean;
   now: number;
   /** When this process started waiting. */
   waitStartedAt: number;
@@ -182,15 +261,48 @@ export interface BuildLockDecisionInput {
 /**
  * Pure lock state machine, extracted so the wait/stale/timeout rules are
  * unit-testable without touching a real build. Staleness wins over timeout: if
- * the holder is gone, taking the lock over is better than failing.
+ * the holder is gone, taking the lock over is better than failing. A provably
+ * dead owner wins even against a young lock — that is the crashed-build case
+ * the age rule can only approximate.
  */
 export function decideBuildLock(input: BuildLockDecisionInput): BuildLockDecision {
   if (!input.exists) return 'acquire';
   const staleMs = input.staleMs ?? LOCK_STALE_MS;
   const waitMs = input.waitMs ?? LOCK_TIMEOUT_MS;
+  if (input.ownerAlive === false) return 'remove-stale';
   if (typeof input.lockMtimeMs === 'number' && input.now - input.lockMtimeMs > staleMs) return 'remove-stale';
   if (input.now - input.waitStartedAt >= waitMs) return 'timeout';
   return 'wait';
+}
+
+export interface StaleLockDeps {
+  /** Injection point for tests: `readBuildLockOwner` by default. */
+  readOwner?: (lockDir: string) => BuildLockOwner | undefined;
+}
+
+/**
+ * Remove a lock that was decided stale, but only if its owner token is still
+ * the one the decision was based on: between "stale" and `rm`, the abandoned
+ * lock may have been taken over by a healthy holder. Returns whether the lock
+ * was removed (a mismatch aborts and leaves it alone).
+ *
+ * The re-read narrows the race but cannot close it — there is no atomic
+ * compare-and-delete — so the residual window stays a few syscalls wide.
+ */
+export function removeStaleBuildLock(
+  lockDir: string,
+  expectedToken: string | null,
+  deps: StaleLockDeps = {},
+): boolean {
+  const readOwner = deps.readOwner ?? readBuildLockOwner;
+  const token = readOwner(lockDir)?.token ?? null;
+  if (token !== expectedToken) return false;
+  try {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Blocking sleep without a busy loop (Node main thread may use Atomics.wait). */
@@ -206,6 +318,42 @@ export interface BuildLockOptions {
   now?: () => number;
   /** Injection point for tests: defaults to a blocking `Atomics.wait` sleep. */
   sleep?: (ms: number) => void;
+  /** Injection point for tests: defaults to `isProcessAlive`. */
+  probe?: LivenessProbe;
+}
+
+/**
+ * Write the ownership record for a lock directory we just created and return
+ * its token-checked release.
+ */
+function claimBuildLock(lockDir: string, now: () => number): () => void {
+  const owner: BuildLockOwner = {
+    token: crypto.randomUUID(),
+    pid: process.pid,
+    startedAt: now(),
+  };
+  try {
+    fs.writeFileSync(ownerFilePath(lockDir), JSON.stringify(owner));
+  } catch (err: any) {
+    // Without an ownership record the release could not prove the lock is ours,
+    // so do not leave a lock nobody may remove: drop what we created and fail.
+    try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    throw new Error(
+      `could not record the build lock owner in ${lockDir}: ${err?.message ?? err}`,
+    );
+  }
+
+  let released = false;
+  return () => {
+    if (released) return; // idempotent: `finally` plus an explicit call is fine
+    released = true;
+    try {
+      // A stale steal may have handed the lock to another worker while this
+      // build was still finishing; only the current owner may delete it.
+      if (readBuildLockOwner(lockDir)?.token !== owner.token) return;
+      fs.rmSync(lockDir, { recursive: true, force: true });
+    } catch { /* releasing must never mask the build outcome */ }
+  };
 }
 
 /**
@@ -217,18 +365,17 @@ export function acquireBuildLock(adapterDir: string = ADAPTER_DIR, options: Buil
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? blockingSleep;
   const pollMs = options.pollMs ?? LOCK_POLL_MS;
+  const probe = options.probe ?? isProcessAlive;
   const waitStartedAt = now();
-  const release = () => {
-    try {
-      fs.rmSync(lockDir, { recursive: true, force: true });
-    } catch { /* releasing must never mask the build outcome */ }
-  };
 
   for (;;) {
     const stat = statOrUndefined(lockDir);
+    const owner = stat ? readBuildLockOwner(lockDir) : undefined;
     const decision = decideBuildLock({
       exists: !!stat,
       lockMtimeMs: stat?.mtimeMs,
+      ownerPid: owner?.pid,
+      ownerAlive: owner ? probe(owner.pid) : undefined,
       now: now(),
       waitStartedAt,
       waitMs: options.waitMs,
@@ -242,14 +389,19 @@ export function acquireBuildLock(adapterDir: string = ADAPTER_DIR, options: Buil
       );
     }
     if (decision === 'remove-stale') {
-      release();
+      // Removal aborts when the token changed, i.e. someone else already owns a
+      // healthy lock: treat that like any other live holder and keep waiting.
+      if (!removeStaleBuildLock(lockDir, owner?.token ?? null)) {
+        sleep(pollMs);
+        continue;
+      }
       // Retry immediately: the stale holder is gone, no reason to wait a poll.
       continue;
     }
     if (decision === 'acquire') {
       try {
         fs.mkdirSync(lockDir);
-        return release;
+        return claimBuildLock(lockDir, now);
       } catch (err: any) {
         // Lost the mkdir race — keep waiting instead of building twice.
         if (err?.code !== 'EEXIST') throw err;
@@ -268,8 +420,13 @@ export type BuildRunner = (adapterDir: string) => {
   signal?: string | null;
 };
 
-/** Backstop against a hung `esbuild`/`tsc`; normal builds take a few seconds. */
-export const BUILD_TIMEOUT_MS = 180_000;
+/**
+ * Backstop against a hung `esbuild`/`tsc`; normal builds take a few seconds.
+ * Together with `LOCK_TIMEOUT_MS` this must stay inside
+ * `PACKAGING_SUITE_TIMEOUT_MS`, so the helper's own diagnostics win over a
+ * Jest worker timeout.
+ */
+export const BUILD_TIMEOUT_MS = 150_000;
 
 function defaultRunner(adapterDir: string, timeoutMs: number): ReturnType<BuildRunner> {
   return spawnSync(process.execPath, [path.join(adapterDir, 'build.mjs')], {

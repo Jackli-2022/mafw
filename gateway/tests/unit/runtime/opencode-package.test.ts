@@ -20,7 +20,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ensureAdapterBuilt } from '../../helpers/adapter-build';
+import { PACKAGING_SUITE_TIMEOUT_MS, ensureAdapterBuilt } from '../../helpers/adapter-build';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const ADAPTER_DIR = path.join(REPO_ROOT, 'adapters', 'opencode');
@@ -37,7 +37,7 @@ function readJson<T = any>(file: string): T {
 // (skipped when dist is fresh) instead of requiring a prior root build.
 beforeAll(() => {
   ensureAdapterBuilt();
-}, 240_000);
+}, PACKAGING_SUITE_TIMEOUT_MS);
 
 /**
  * Loads the built bundle the way the gateway does — plain `require()` in a child

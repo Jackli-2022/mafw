@@ -5,18 +5,26 @@
  * is never touched, so the suite stays fast and does not race the packaging
  * tests that share the helper.
  */
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
   BUILD_LOCK_NAME,
+  BUILD_LOCK_OWNER_FILE,
+  BUILD_TIMEOUT_MS,
   LOCK_STALE_MS,
   LOCK_TIMEOUT_MS,
+  PACKAGING_SUITE_TIMEOUT_MS,
   acquireBuildLock,
   adapterBuildFresh,
   adapterBuildStatus,
   decideBuildLock,
   ensureAdapterBuilt,
+  isProcessAlive,
+  readBuildLockOwner,
+  removeStaleBuildLock,
+  type BuildLockOwner,
   type BuildRunner,
 } from '../../helpers/adapter-build';
 
@@ -44,6 +52,28 @@ function seedFreshLayout(): void {
   write('dist/index.js', MINUTE);
   write('dist/index.d.ts', MINUTE);
   write('dist/package.json', MINUTE);
+}
+
+function ownerFile(): string {
+  return path.join(lockDir, BUILD_LOCK_OWNER_FILE);
+}
+
+/** Create the lock dir with an owner file (optionally backdated lock mtime). */
+function writeOwner(owner: BuildLockOwner, lockMtimeMs?: number): void {
+  fs.mkdirSync(lockDir, { recursive: true });
+  fs.writeFileSync(ownerFile(), JSON.stringify(owner));
+  if (lockMtimeMs !== undefined) fs.utimesSync(lockDir, new Date(lockMtimeMs), new Date(lockMtimeMs));
+}
+
+function readOwner(): BuildLockOwner {
+  return JSON.parse(fs.readFileSync(ownerFile(), 'utf8')) as BuildLockOwner;
+}
+
+/** PID of a child that already exited: `spawnSync` only returns after it did. */
+function deadPid(): number {
+  const child = spawnSync(process.execPath, ['-e', '']);
+  if (!child.pid) throw new Error('could not spawn a probe process');
+  return child.pid;
 }
 
 beforeEach(() => {
@@ -175,6 +205,77 @@ describe('build lock decisions', () => {
       waitMs: LOCK_TIMEOUT_MS,
     })).toBe('remove-stale');
   });
+
+  it('pins the lock/build budget inside the packaging suite timeout', () => {
+    expect(LOCK_STALE_MS).toBe(60_000);
+    expect(LOCK_TIMEOUT_MS).toBe(90_000);
+    expect(BUILD_TIMEOUT_MS).toBe(150_000);
+    expect(PACKAGING_SUITE_TIMEOUT_MS).toBe(300_000);
+    // Worst case for a waiter is the full lock wait plus its own build; it must
+    // still fail with a helper message before Jest's suite timeout fires.
+    expect(LOCK_STALE_MS).toBeLessThan(LOCK_TIMEOUT_MS);
+    expect(LOCK_TIMEOUT_MS + BUILD_TIMEOUT_MS).toBeLessThanOrEqual(PACKAGING_SUITE_TIMEOUT_MS);
+  });
+
+  it('steals a lock whose recorded owner PID is dead, even when it is young', () => {
+    const now = 10_000;
+    expect(decideBuildLock({
+      ...base,
+      exists: true,
+      lockMtimeMs: now, // brand new: only the dead PID can make it stale
+      now,
+      ownerPid: 424_242,
+      ownerAlive: false,
+    })).toBe('remove-stale');
+  });
+
+  it('waits for a lock whose recorded owner PID is alive', () => {
+    const now = 10_000;
+    expect(decideBuildLock({
+      ...base,
+      exists: true,
+      lockMtimeMs: now,
+      now,
+      ownerPid: process.pid,
+      ownerAlive: true,
+    })).toBe('wait');
+  });
+
+  it('falls back to the age rule when the owner liveness is unknown', () => {
+    // Fresh + unknown liveness must not be stolen (only age can make it stale).
+    expect(decideBuildLock({
+      ...base, exists: true, lockMtimeMs: 10_000, now: 10_000, ownerAlive: undefined,
+    })).toBe('wait');
+    // Old + unknown liveness is still healed by the age rule.
+    expect(decideBuildLock({
+      ...base, exists: true, lockMtimeMs: 0, now: 60_001, ownerAlive: undefined,
+    })).toBe('remove-stale');
+  });
+});
+
+describe('process liveness probe', () => {
+  it('treats a live PID as alive', () => {
+    expect(isProcessAlive(process.pid)).toBe(true);
+  });
+
+  it('treats an exited PID as dead (ESRCH)', () => {
+    expect(isProcessAlive(deadPid())).toBe(false);
+  });
+
+  it('treats only ESRCH as dead: EPERM still means alive', () => {
+    const throwing = (code: string) => () => {
+      const err: NodeJS.ErrnoException = new Error(code);
+      err.code = code;
+      throw err;
+    };
+    expect(isProcessAlive(1234, throwing('EPERM'))).toBe(true);
+    expect(isProcessAlive(1234, throwing('ESRCH'))).toBe(false);
+  });
+
+  it('reports an unusable PID as unknown instead of dead', () => {
+    expect(isProcessAlive(0)).toBeUndefined();
+    expect(isProcessAlive(Number.NaN)).toBeUndefined();
+  });
 });
 
 describe('build lock', () => {
@@ -226,6 +327,131 @@ describe('build lock', () => {
     fs.mkdirSync(lockDir);
     expect(() => acquireBuildLock(adapterDir, { waitMs: 0, sleep: () => {} })).toThrow(/timed out/);
     fs.rmSync(lockDir, { recursive: true, force: true });
+  });
+});
+
+describe('build lock ownership', () => {
+  it('records the owner token, PID and start time in the lock directory', () => {
+    const before = Date.now();
+    const release = acquireBuildLock(adapterDir);
+    const owner = readOwner();
+    expect(typeof owner.token).toBe('string');
+    expect(owner.token.length).toBeGreaterThan(8);
+    expect(owner.pid).toBe(process.pid);
+    expect(owner.startedAt).toBeGreaterThanOrEqual(before);
+    expect(owner.startedAt).toBeLessThanOrEqual(Date.now());
+    expect(readBuildLockOwner(lockDir)?.token).toBe(owner.token);
+    release();
+  });
+
+  it('does not release a lock another worker now owns (token mismatch)', () => {
+    const release = acquireBuildLock(adapterDir);
+    const stolen = { ...readOwner(), token: 'someone-else' };
+    fs.writeFileSync(ownerFile(), JSON.stringify(stolen));
+
+    release();
+    expect(fs.existsSync(lockDir)).toBe(true);
+    expect(readOwner().token).toBe('someone-else');
+    // Releasing again is still a no-op, and never throws.
+    expect(() => release()).not.toThrow();
+    expect(fs.existsSync(lockDir)).toBe(true);
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  });
+
+  it('steals a fresh lock whose owner PID has exited', () => {
+    writeOwner({ token: 'dead', pid: deadPid(), startedAt: Date.now() });
+
+    const release = acquireBuildLock(adapterDir, {
+      now: () => Date.now(),
+      staleMs: 10 * MINUTE, // age rule cannot fire: only the dead PID can
+      waitMs: 1_000,
+      sleep: () => {
+        throw new Error('a dead owner must not make the caller sleep');
+      },
+    });
+    const owner = readOwner();
+    expect(owner.token).not.toBe('dead');
+    expect(owner.pid).toBe(process.pid);
+    release();
+    expect(fs.existsSync(lockDir)).toBe(false);
+  });
+
+  it('keeps waiting for a fresh lock whose owner PID is alive', () => {
+    writeOwner({ token: 'alive', pid: process.pid, startedAt: Date.now() });
+
+    expect(() => acquireBuildLock(adapterDir, {
+      now: () => Date.now(),
+      staleMs: 10 * MINUTE,
+      waitMs: 0,
+      sleep: () => {},
+    })).toThrow(/timed out/);
+    expect(readOwner().token).toBe('alive');
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  });
+
+  it('feeds the recorded PID into the lock decision', () => {
+    const dead = deadPid();
+    writeOwner({ token: 'dead', pid: dead, startedAt: Date.now() });
+    const seen: number[] = [];
+    const release = acquireBuildLock(adapterDir, {
+      now: () => Date.now(),
+      staleMs: 10 * MINUTE,
+      waitMs: 0,
+      probe: (pid) => {
+        seen.push(pid);
+        return false;
+      },
+      sleep: () => {},
+    });
+    expect(seen).toContain(dead);
+    release();
+  });
+
+  it('does not let a stale steal delete the new holder lock on the old holder release', () => {
+    const releaseOld = acquireBuildLock(adapterDir);
+    // The old holder's process dies: its lock is young but its PID is gone.
+    writeOwner({ token: 'old', pid: deadPid(), startedAt: Date.now() });
+    expect(fs.existsSync(lockDir)).toBe(true);
+
+    const releaseNew = acquireBuildLock(adapterDir, {
+      staleMs: 10 * MINUTE, waitMs: 1_000, sleep: () => {},
+    });
+    expect(readOwner().token).not.toBe('old');
+
+    releaseOld(); // old `finally` runs after the steal
+    expect(fs.existsSync(lockDir)).toBe(true);
+    expect(readOwner().pid).toBe(process.pid);
+    releaseNew();
+    expect(fs.existsSync(lockDir)).toBe(false);
+  });
+
+  it('removes a stale lock and aborts if the token changes meanwhile', () => {
+    writeOwner({ token: 'stale', pid: process.pid, startedAt: 0 }, Date.now() - 10 * MINUTE);
+    expect(removeStaleBuildLock(lockDir, 'stale')).toBe(true);
+    expect(fs.existsSync(lockDir)).toBe(false);
+
+    writeOwner({ token: 'stale', pid: process.pid, startedAt: 0 }, Date.now() - 10 * MINUTE);
+    expect(removeStaleBuildLock(lockDir, 'stale', {
+      readOwner: () => ({ token: 'fresh', pid: process.pid, startedAt: Date.now() }),
+    })).toBe(false);
+    expect(fs.existsSync(lockDir)).toBe(true);
+    expect(readOwner().token).toBe('stale');
+  });
+
+  it('falls back to the age rule when the owner file is unreadable', () => {
+    fs.mkdirSync(lockDir);
+    fs.writeFileSync(ownerFile(), 'not json');
+    // Fresh + corrupt: cannot prove the holder is dead, so wait (and time out).
+    expect(() => acquireBuildLock(adapterDir, { waitMs: 0, sleep: () => {} })).toThrow(/timed out/);
+
+    // Old + corrupt: the age rule still heals the lock.
+    fs.utimesSync(lockDir, new Date(Date.now() - 10 * MINUTE), new Date(Date.now() - 10 * MINUTE));
+    const release = acquireBuildLock(adapterDir, {
+      staleMs: MINUTE, waitMs: 1_000, sleep: () => { throw new Error('must not sleep'); },
+    });
+    expect(readOwner().pid).toBe(process.pid);
+    release();
+    expect(fs.existsSync(lockDir)).toBe(false);
   });
 });
 
