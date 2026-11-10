@@ -210,3 +210,27 @@ workspace，结束后销毁）。
   toast 与落库一致。冒烟驱动修复：非 `.mafw` 未提交改动阻塞验收（不强制删除有改动的 worktree）；
   `result_ready` 优先于归档→row 更新的瞬时窗口（bucket 不再闪到 ended）。`.mafw` 产物按 spec
   不进分支（验收为 no-op，worktree 仍移除）。
+
+#### Lead 当前话题 Handoff 与 Goal 状态投影（2026-11-10）
+
+spec/plan：`docs/superpowers/specs/2026-11-10-lead-techlead-thread-handoff-design.md`、
+`docs/superpowers/specs/2026-11-10-lead-techlead-p0-kernel-objects-design.md`、
+`docs/superpowers/plans/2026-11-10-lead-techlead-p0-handoff.md`；交付记录
+`docs/releases/2026-11-10-lead-techlead-p0.md`（merge `d50f4f18`）。
+
+- **provenance**：`lead_topic` 只在 handoff 时写一行（不是通用话题表）；
+  `GoalSourceRef` 增加 `topicId` / `messageRange`，snapshot 仍 ≤4000 字符，只取 user/assistant
+  的 text，排除 tool/system/synthetic recall 与未完成 assistant 回合。
+- **两阶段写入**：`LeadHandoffService.prepareForGoal()` 只读消息并在内存构建；Goal/revision
+  落库成功后才 `commit()` 写 `<goalDir>/context/lead-handoff.md` 与 `lead_topic`。已有 Goal
+  目录直接 409，失败/并发不覆盖赢家文件；intake 失败回滚 topic。
+- **注入**：Tech Lead 开场 prompt 在 ContextManifest 之后追加 `<lead-handoff>` snapshot +
+  全文路径；ContextManifest 把 `context/lead-handoff.md` 列为可选 ref。handoff 读历史失败
+  fail-open，Goal 仍创建（`MAFW_LEAD_HANDOFF=0` 可关闭）。
+- **入口与查询**：`mafw_create_goal` 支持 `handoff: 'current-topic' | 'none'`、`sourceRef`、
+  `topicId`；`GET /api/goals/:id/source`（registry `goals.source`）返回 sourceRef + 全文；
+  `mafw_lead_goal_status` 提供 Lead 的 Goal 状态投影（stage / progress / blockers /
+  pendingAttention），不读 Tech Lead 原始 transcript。
+- **安全**：`isSafeGoalDirId` 前置校验 + goalDir basename 守卫；验收仍是人类专属，未新增 MCP
+  验收工具。
+

@@ -20,6 +20,10 @@
   + 右工作台（`工作 / 工作台 / 执行 / 审阅`）。chat 档位 520/640/760（默认 760）；push 预算 1490；
   `Ctrl+Alt+F` 专注模式；最小窗口 **900×600**。窗口可用宽 ≥1240 并排（chat 520–760），
   <1240 改为 **Chat / Workbench 全宽切换**（chat 保持 760 居中，composer 不被侧面板覆盖）。
+- **Lead / Tech Lead 入口（2026-11-10）**：Lead 会话 composer 上方保留 Tech Lead 邀请条（Goal
+  标题 + 阶段 + `来自 Lead 话题`）；Goal 详情「上下文来源」显示 snapshot 前 120 字并可「查看全文」
+  （`goals.source`）；详情显示 `goalMode` 徽标（Quick / Standard / Standing）；标题栏「状态」按需
+  打开 Lead 状态卡（stage / progress / blocker），不常驻占位。
 - **工作台**：L2 `文件 / 浏览器 / 终端`。文件树 + 编辑器 + 预览；浏览器多 tab（`persist:workbench-browser`，
   本地文件走 `mafw-file://`）；终端本地 + 多 SSH（xterm.js + ssh2，`mafw-terminal/1` 契约）。
 - **编辑器**：默认 **Monaco**（VS Code 内核；`mafw-editor-engine=codemirror` 回退，挂载失败自动回退），

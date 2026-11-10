@@ -48,3 +48,25 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
 - **preload** `mafw-api.ts`/`mafw-types.ts` goals 段补 `timeline`/`retryNode`（SDK P1 已有方法 + `GoalTimeline` 类型）
 - **产物**：桌面无 mafwDir，产物以相对路径 chips 展示、点击复制（OS 打开留后续）
 - 测试：desktop `npm test`（node --test + test-shim）864 用例全绿（goal-timeline 10 + dispatcher 增量 2）；`electron-vite build` 成功。手工冒烟（真实 goal 观察泳道实时变化）留待 GUI 环境
+
+### Goal 执行形态：Quick / Standard / Standing（2026-11-10）
+
+spec `docs/superpowers/specs/2026-11-10-goal-shapes-quick-goals-design.md`；plan
+`docs/superpowers/plans/2026-11-10-lead-techlead-p0-handoff.md`（Tasks 11–15）。Quick 不是第二套
+执行路径：同一 Goal / revision / NodeDriver，只改变计划形状与审阅门。
+
+- **存储**：`pod_goal_revisions.goal_mode`（`quick | standard | standing`，默认 `standard`，
+  旧库 `ensureColumn` 补齐）；`PodGoalView.goalMode` 供列表/详情展示。模式按 revision 持久，
+  打回后的新 revision 从默认值重新选择。
+- **选择**：Tech Lead 在 `mafw_pod_goal_direction` 传 `goalMode`；未传 = `standard`。
+  `standing` 暂返回 501；`requiresApproval: true`（高风险：merge / delete / schema / 安全 /
+  保护分支）时 quick 返回 400；`planReview: 'manual'` 的 Goal 拒绝 quick。`MAFW_GOAL_MODES=0`
+  关闭该参数（只允许 standard）。
+- **计划约束**：quick 计划必须 `strategy:'quick'`、恰好一个 task、`probes` 为空；
+  `plan-package.ts` 的 validator 拒绝多 task / 带探针的 quick，`node-prompts.ts` 在 plan prompt
+  注入单 task 指令。quick 跳过独立 Reviewer，结果记为 `UNREVIEWED`；Goal Eval 可省略。
+- **driver**：`DriverDeps.goalMode(goalId, revision)` 由组合根读取 revision 行，plan prompt 据此
+  追加 quick directive；未配置时等价 standard。SDK view 增加 `goalMode`，桌面 Goal 详情显示
+  Quick / Standard / Standing 徽标。
+- **测试**：`pod-store-revisions` / `pod-view-revisions` / `pod-goal-direction` /
+  `pod-tech-lead-service` / `plan-package` / `node-prompts` / `goal-modes-quick`（集成）。
